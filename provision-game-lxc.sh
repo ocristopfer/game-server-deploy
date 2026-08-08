@@ -53,6 +53,16 @@ push_file_to_ct() {
   run_ct "chmod ${mode} '$dest'"
 }
 
+# Instala um atalho em /usr/local/bin e cria symlink em /usr/bin.
+# `pct exec` nao usa shell de login e seu PATH nao inclui /usr/local/bin; o symlink
+# faz o atalho funcionar tanto logado no CT quanto via `pct exec <CTID> -- <atalho>`.
+install_helper() {
+  local name="$1"
+  local src="$2"
+  push_file_to_ct "$src" "/usr/local/bin/${name}" 0755
+  run_ct "ln -sfn /usr/local/bin/${name} /usr/bin/${name}"
+}
+
 resolve_variables() {
   [[ -n "${GAME_KEY:-}" ]] || die "GAME_KEY nao definido no game.env"
   [[ -n "${STEAM_APP_ID:-}" ]] || die "STEAM_APP_ID nao definido no game.env"
@@ -83,6 +93,7 @@ resolve_variables() {
   GAME_PORTS="${GAME_PORTS:-}"
   START_SCRIPT="${START_SCRIPT:-}"
   START_ARGS="${START_ARGS:-}"
+  POST_INSTALL_CMD="${POST_INSTALL_CMD:-}"
   SERVICE_NAME="${GAME_KEY}.service"
 
   if [[ "$IP_CIDR" == "dhcp" ]]; then
@@ -239,6 +250,12 @@ detect_start_script() {
   msg "Script de start detectado: $START_SCRIPT"
 }
 
+run_post_install() {
+  [[ -n "$POST_INSTALL_CMD" ]] || return 0
+  msg "Executando POST_INSTALL_CMD do jogo dentro do CT"
+  run_ct "$POST_INSTALL_CMD" || die "POST_INSTALL_CMD falhou (veja a saida acima)"
+}
+
 render_update_helper() {
   msg "Criando helper de atualizacao (/usr/local/bin/update-game)"
   local tmp_file
@@ -252,7 +269,7 @@ su - steam -c "${STEAMCMD_DIR}/steamcmd.sh +force_install_dir ${GAME_DIR} +login
 systemctl start ${SERVICE_NAME}
 echo "Atualizacao concluida."
 EOF
-  push_file_to_ct "$tmp_file" "/usr/local/bin/update-game" 0755
+  install_helper "update-game" "$tmp_file"
   rm -f "$tmp_file"
 }
 
@@ -293,7 +310,7 @@ fi
 echo "Update disponivel: \$installed -> \$latest. Atualizando..."
 exec /usr/local/bin/update-game
 EOF
-  push_file_to_ct "$tmp_file" "/usr/local/bin/check-game-update" 0755
+  install_helper "check-game-update" "$tmp_file"
   rm -f "$tmp_file"
 
   tmp_file="$(mktemp)"
@@ -330,6 +347,29 @@ EOF
     run_ct "systemctl daemon-reload && systemctl disable --now game-update-check.timer >/dev/null 2>&1 || true"
     msg "AUTO_UPDATE=0: timer instalado porem desabilitado"
   fi
+}
+
+render_service_helpers() {
+  msg "Criando atalhos de controle (game-start/stop/restart/status/logs)"
+  local tmp_file name body
+  tmp_file="$(mktemp)"
+  for name in game-start game-stop game-restart game-status game-logs; do
+    case "$name" in
+      game-start)   body="exec systemctl start ${SERVICE_NAME}" ;;
+      game-stop)    body="exec systemctl stop ${SERVICE_NAME}" ;;
+      game-restart) body="exec systemctl restart ${SERVICE_NAME}" ;;
+      game-status)  body="exec systemctl status ${SERVICE_NAME} --no-pager \"\$@\"" ;;
+      game-logs)    body="exec journalctl -u ${SERVICE_NAME} \"\${@:--f}\"" ;;
+    esac
+    cat > "$tmp_file" <<EOF
+#!/usr/bin/env bash
+# Controle do servidor de ${GAME_DISPLAY_NAME} (${SERVICE_NAME}).
+set -Eeuo pipefail
+${body}
+EOF
+    install_helper "$name" "$tmp_file"
+  done
+  rm -f "$tmp_file"
 }
 
 render_systemd_unit() {
@@ -416,10 +456,16 @@ EOF
 
   cat <<EOF
 
-Comandos uteis (no host Proxmox):
-  pct exec ${CTID} -- systemctl status ${SERVICE_NAME} --no-pager
-  pct exec ${CTID} -- journalctl -u ${SERVICE_NAME} -f
-  pct exec ${CTID} -- update-game        # atualiza o jogo via SteamCMD
+Atalhos (funcionam logado no CT via 'pct enter ${CTID}' ou pelo host com 'pct exec ${CTID} -- <atalho>'):
+  game-restart      # reinicia o servidor
+  game-stop         # para o servidor
+  game-start        # sobe o servidor
+  game-status       # status do servico
+  game-logs         # log ao vivo (aceita args do journalctl, ex.: game-logs -n 50)
+  update-game       # atualiza o jogo via SteamCMD (para/atualiza/reinicia)
+
+Exemplo a partir do host Proxmox:
+  pct exec ${CTID} -- game-restart
 
 EOF
 }
@@ -437,8 +483,10 @@ main() {
   install_steamcmd_in_ct
   install_game_in_ct
   detect_start_script
+  run_post_install
   render_update_helper
   render_update_checker
+  render_service_helpers
   render_systemd_unit
   start_game_service
   print_summary

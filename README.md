@@ -10,8 +10,9 @@ via SSH para o host Proxmox e executa o `provision-game-lxc.sh` la (que usa `pct
 
 ## Pre-requisitos
 
-- Acesso SSH por chave como `root` ao host Proxmox
-- `ssh` e `tar` disponiveis no Windows (nativos no Windows 10/11)
+- Acesso SSH como `root` ao host Proxmox (por chave de preferencia — com senha o
+  script pede a senha 3x, uma por etapa)
+- `ssh` e `scp` disponiveis no Windows (nativos no Windows 10/11)
 
 ## Uso
 
@@ -59,6 +60,7 @@ Rodar de novo e idempotente: atualiza config do CT e revalida o jogo. `RECREATE_
 | Jogo | Comando | Portas |
 |------|---------|--------|
 | RuneScape: Dragonwilds | `.\deploy-game.ps1 -Game dragonwilds` | 7777/udp |
+| Palworld | `.\deploy-game.ps1 -Game palworld` | 8211/udp, 27015/udp |
 
 ### RuneScape: Dragonwilds — notas
 
@@ -69,13 +71,53 @@ Rodar de novo e idempotente: atualiza config do CT e revalida o jogo. `RECREATE_
 - Limite de jogadores: fixo em 6 (travado pela Jagex, nao configuravel)
 - Saves: `/opt/game/RSDragonwilds/Saved/SaveGames/`
 
-## Comandos uteis (no host Proxmox)
+### Palworld — notas
+
+- App do servidor dedicado: `2394010` (build Linux nativo, `PalServer.sh`)
+- Portas: **8211/UDP** (jogo) e **27015/UDP** (query da Steam, necessaria para aparecer
+  na lista da comunidade). RCON (25575/TCP) so se habilitado no `.ini` — nao redirecione
+- O deploy cria o symlink `~steam/.steam/sdk64/steamclient.so` (exigido pelo `PalServer.sh`)
+  e semeia o `PalWorldSettings.ini` a partir do `DefaultPalWorldSettings.ini`
+- Config: `/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini` — tudo fica dentro
+  de `OptionSettings=(...)`, em uma unica linha: `ServerName`, `ServerPassword`,
+  `AdminPassword`, `ServerPlayerMaxNum` (max 32), `PublicPort`, taxas de XP/captura etc.
+  Pare o servidor antes de editar (`systemctl stop palworld`)
+- Memoria: o servidor cresce com o mundo/jogadores — recomendado 16GB (8GB e o minimo pratico)
+- Saves: `/opt/game/Pal/Saved/SaveGames/0/`
+
+## Comandos uteis
+
+O deploy instala atalhos no container. Eles funcionam **dos dois jeitos**: logado como root
+dentro do CT (`pct enter <CTID>` ou SSH) ou direto do host Proxmox com `pct exec`.
+
+| Atalho | O que faz |
+|--------|-----------|
+| `game-restart` | reinicia o servidor |
+| `game-stop` | para o servidor |
+| `game-start` | sobe o servidor |
+| `game-status` | status do servico |
+| `game-logs` | log ao vivo (aceita args do journalctl, ex.: `game-logs -n 50`) |
+| `update-game` | atualiza o jogo via SteamCMD (para/atualiza/reinicia) |
+| `check-game-update` | checa se ha update sem aplicar nada desnecessario |
 
 ```bash
-pct exec <CTID> -- systemctl status dragonwilds.service --no-pager
-pct exec <CTID> -- journalctl -u dragonwilds.service -f
-pct exec <CTID> -- update-game     # atualiza o jogo via SteamCMD (para/atualiza/reinicia)
+# dentro do container
+game-restart
+game-logs
+
+# a partir do host Proxmox
+pct exec <CTID> -- game-restart
+pct exec <CTID> -- game-status
+pct exec <CTID> -- update-game
 ```
+
+> Os atalhos ficam em `/usr/local/bin` com symlink em `/usr/bin`. O symlink existe porque
+> `pct exec` nao usa shell de login e o PATH dele nao inclui `/usr/local/bin` — sem ele,
+> `pct exec <CTID> -- update-game` falha com `Failed to exec`.
+>
+> Em containers criados antes desta versao os symlinks nao existem; recrie-os com
+> `pct exec <CTID> -- bash -lc 'for f in update-game check-game-update; do ln -sfn /usr/local/bin/$f /usr/bin/$f; done'`
+> ou rode o deploy novamente.
 
 ## Update automatico
 
@@ -86,6 +128,6 @@ update de verdade** — sem update, nada e tocado. Desative com `AUTO_UPDATE=0`.
 
 ```bash
 pct exec <CTID> -- systemctl list-timers game-update-check.timer   # proximo horario
-pct exec <CTID> -- check-game-update                               # checar agora
+pct exec <CTID> -- check-game-update                                # checar agora
 pct exec <CTID> -- journalctl -u game-update-check.service -n 20   # log das checagens
 ```
