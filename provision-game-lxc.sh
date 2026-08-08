@@ -201,6 +201,25 @@ install_base_packages_in_ct() {
   "
 }
 
+setup_panel_access() {
+  # Deixa o CT pronto para ser controlado pelo painel administrativo (deploy-admin.ps1),
+  # que fala SSH direto com cada container de jogo. Sem PANEL_PUBKEY, nada e instalado.
+  [[ -n "${PANEL_PUBKEY:-}" ]] || return 0
+  msg "Habilitando acesso do painel administrativo via SSH"
+  run_ct "
+    set -e
+    if ! command -v sshd >/dev/null 2>&1; then
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq && apt-get install -y -qq openssh-server
+    fi
+    systemctl enable --now ssh >/dev/null 2>&1 || systemctl enable --now sshd
+    install -d -m 700 /root/.ssh
+    touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
+    grep -qF '${PANEL_PUBKEY}' /root/.ssh/authorized_keys \
+      || echo '${PANEL_PUBKEY}' >> /root/.ssh/authorized_keys
+  "
+}
+
 ensure_steam_user() {
   msg "Garantindo usuario steam no CT"
   run_ct "id -u steam >/dev/null 2>&1 || useradd -m -s /bin/bash steam"
@@ -479,6 +498,7 @@ main() {
   ensure_container
   start_container
   install_base_packages_in_ct
+  setup_panel_access
   ensure_steam_user
   install_steamcmd_in_ct
   install_game_in_ct

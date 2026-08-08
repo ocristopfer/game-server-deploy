@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Erro {{ code }}{% endblock %}
+{% block content %}
+<div class="card empty">
+  <h1>{{ code }}</h1>
+  <p class="muted">{{ message }}</p>
+  <a class="btn primary" href="{{ url_for('dashboard') }}">Voltar ao painel</a>
+</div>
+{% endblock %}

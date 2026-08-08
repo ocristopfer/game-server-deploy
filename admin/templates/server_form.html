@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Adicionar' if mode == 'new' else 'Editar' }} servidor{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ 'Adicionar servidor' if mode == 'new' else 'Editar servidor' }}</h1>
+</div>
+
+<div class="card form">
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>Nome
+      <input name="name" value="{{ data.name }}" required autofocus>
+      <small>Como o servidor aparece no painel. Ex.: <code>Dragonwilds</code></small>
+    </label>
+    <label>Host
+      <input name="host" value="{{ data.host }}" placeholder="192.168.2.20" required>
+      <small>IP ou hostname do container do jogo. O painel se conecta nele por SSH.</small>
+    </label>
+    <div class="row">
+      <label>Usuario SSH
+        <input name="ssh_user" value="{{ data.ssh_user }}" placeholder="root" required>
+      </label>
+      <label>Porta SSH
+        <input name="ssh_port" value="{{ data.ssh_port }}" inputmode="numeric" required>
+      </label>
+    </div>
+    <label>Servico systemd
+      <input name="service" value="{{ data.service }}" placeholder="dragonwilds.service" required>
+      <small>Normalmente <code>&lt;nome-do-jogo&gt;.service</code>. O <code>.service</code> e adicionado se faltar.</small>
+    </label>
+    <label>Portas do jogo <span class="muted">(opcional)</span>
+      <input name="game_port" value="{{ data.game_port }}" placeholder="7777/udp">
+      <small>Apenas informativo, para lembrar o que redirecionar no roteador.</small>
+    </label>
+    <label>Notas <span class="muted">(opcional)</span>
+      <textarea name="notes" rows="4">{{ data.notes }}</textarea>
+    </label>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Salvar</button>
+      <a class="btn ghost" href="{{ url_for('dashboard') }}">Cancelar</a>
+    </div>
+  </form>
+  <p class="muted small">
+    O container precisa ter <code>sshd</code> rodando e a chave do painel autorizada —
+    veja <a href="{{ url_for('ssh_key') }}">Acesso SSH</a>.
+  </p>
+</div>
+
+{% if mode == 'edit' %}
+<div class="card danger-zone">
+  <h2>Remover do painel</h2>
+  <p class="muted">Apaga apenas o cadastro. O container e os arquivos do jogo nao sao tocados.</p>
+  <form method="post" action="{{ url_for('server_delete', sid=sid) }}"
+        onsubmit="return confirm('Remover este servidor do painel?')">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button class="btn danger" type="submit">Remover</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

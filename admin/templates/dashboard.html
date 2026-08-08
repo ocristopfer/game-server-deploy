@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Servidores — Painel de Jogos{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Servidores</h1>
+  <a class="btn primary" href="{{ url_for('server_new') }}">+ Adicionar servidor</a>
+</div>
+
+{% if not servers %}
+  <div class="card empty">
+    <p>Nenhum servidor cadastrado ainda.</p>
+    <p class="muted">Cadastre o IP de um container de jogo para controlar start, stop,
+      update e rodar comandos por aqui.</p>
+    <p class="muted small">O painel acessa cada container por SSH — antes autorize a
+      chave dele no container em <a href="{{ url_for('ssh_key') }}">Acesso SSH</a>.</p>
+    <a class="btn primary" href="{{ url_for('server_new') }}">Adicionar o primeiro</a>
+  </div>
+{% endif %}
+
+<div class="grid">
+{% for s in servers %}
+  {% set st = status[s.id] %}
+  <div class="card server">
+    <div class="server-head">
+      <h2><a href="{{ url_for('server_detail', sid=s.id) }}">{{ s.name }}</a></h2>
+      <span class="badge {{ 'on' if st.service == 'active' else ('off' if st.reachable else 'cold') }}">
+        {{ st.service }}
+      </span>
+    </div>
+    <dl class="meta">
+      <div><dt>Host</dt><dd>{{ s.ssh_user }}@{{ s.host }}{% if s.ssh_port != 22 %}:{{ s.ssh_port }}{% endif %}</dd></div>
+      <div><dt>Servico</dt><dd>{{ s.service }}</dd></div>
+      {% if s.game_port %}<div><dt>Portas</dt><dd>{{ s.game_port }}</dd></div>{% endif %}
+    </dl>
+    {% if st.error %}<p class="flash error small">{{ st.error }}</p>{% endif %}
+    <div class="actions">
+      {% for key in ['start', 'restart', 'stop', 'update'] %}
+        {% set label, _cmd, confirm = actions[key] %}
+        <form method="post" action="{{ url_for('server_action', sid=s.id, action=key) }}" class="inline"
+              {% if confirm %}onsubmit="return confirm('{{ label }} — {{ s.name }}?')"{% endif %}>
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <button class="btn {{ 'danger' if key == 'stop' else '' }}" type="submit">{{ label.split(' ')[0] }}</button>
+        </form>
+      {% endfor %}
+      {% if allow_shell %}
+        <a class="btn ghost" href="{{ url_for('console', sid=s.id) }}">Console</a>
+      {% endif %}
+      <a class="btn ghost" href="{{ url_for('server_detail', sid=s.id) }}">Detalhes</a>
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Acesso SSH — Painel de Jogos{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Acesso SSH</h1></div>
+
+<div class="card">
+  <p>O painel controla cada servidor por SSH, usando a chave abaixo. Para um container
+     aparecer como acessivel, ele precisa de <code>sshd</code> rodando e desta chave
+     autorizada no usuario informado no cadastro (normalmente <code>root</code>).</p>
+
+  <h2>Chave publica do painel</h2>
+  {% if pubkey %}
+    <pre class="log" id="pubkey">{{ pubkey }}</pre>
+    <button class="btn" type="button" onclick="
+      navigator.clipboard.writeText(document.getElementById('pubkey').textContent.trim());
+      this.textContent = 'Copiado!';">Copiar chave</button>
+  {% else %}
+    <p class="flash error">Chave nao encontrada. Rode o deploy do painel novamente.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Autorizar num container de jogo</h2>
+  <p class="muted">A partir do host Proxmox, trocando <code>&lt;CTID&gt;</code> pelo id do container:</p>
+  <pre class="log">pct exec &lt;CTID&gt; -- bash -lc '
+  apt-get update -qq && apt-get install -y -qq openssh-server
+  systemctl enable --now ssh
+  mkdir -p /root/.ssh &amp;&amp; chmod 700 /root/.ssh
+  echo "{{ pubkey }}" &gt;&gt; /root/.ssh/authorized_keys
+  chmod 600 /root/.ssh/authorized_keys
+'</pre>
+  <p class="muted small">
+    Containers provisionados pelo <code>deploy-game.ps1</code> com <code>PANEL_PUBKEY</code>
+    no <code>.env</code> ja saem prontos — este passo e so para os criados antes disso.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Host keys</h2>
+  <p class="muted">
+    Na primeira conexao o painel aprende e fixa a host key do container
+    (<code>accept-new</code>). Se o container for recriado, a chave muda e a conexao
+    passa a falhar com <code>REMOTE HOST IDENTIFICATION HAS CHANGED</code> — nesse caso
+    remova a entrada antiga:
+  </p>
+  <pre class="log">ssh-keygen -f /var/lib/gamepanel/known_hosts -R &lt;ip-do-container&gt;</pre>
+  <p class="muted small">Rode dentro do container do painel, como o usuario <code>gamepanel</code>.</p>
+</div>
+{% endblock %}

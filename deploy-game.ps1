@@ -134,7 +134,7 @@ Copy-Item (Join-Path $ScriptDir "provision-game-lxc.sh") (Join-Path $BundleDir "
 Write-LfFile (Join-Path $BundleDir "game.env") $GameEnvContent
 
 $deployLines = @()
-foreach ($key in @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMPLATE_PATTERN","BRIDGE","IP_CIDR","GATEWAY","CT_PASSWORD","TZ","MEMORY","CORES","ROOTFS_SIZE_GB","SWAP","AUTO_UPDATE","UPDATE_SCHEDULE","RECREATE_CT")) {
+foreach ($key in @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMPLATE_PATTERN","BRIDGE","IP_CIDR","GATEWAY","CT_PASSWORD","TZ","MEMORY","CORES","ROOTFS_SIZE_GB","SWAP","AUTO_UPDATE","UPDATE_SCHEDULE","RECREATE_CT","PANEL_PUBKEY")) {
     if ($cfg.ContainsKey($key) -and $cfg[$key] -ne "") {
         $deployLines += "$key=`"$($cfg[$key])`""
     }

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Conta — Painel de Jogos{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Conta</h1></div>
+<div class="card form">
+  <h2>Trocar senha</h2>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>Senha atual
+      <input name="current" type="password" autocomplete="current-password" required>
+    </label>
+    <label>Nova senha
+      <input name="new" type="password" autocomplete="new-password" minlength="8" required>
+      <small>Minimo de 8 caracteres.</small>
+    </label>
+    <label>Confirmar nova senha
+      <input name="confirm" type="password" autocomplete="new-password" minlength="8" required>
+    </label>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Salvar</button>
+      <a class="btn ghost" href="{{ url_for('dashboard') }}">Cancelar</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

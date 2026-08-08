@@ -49,9 +49,12 @@ a partir do `games/_template.env`.
 2. Instala dependencias (`lib32gcc-s1` etc.), cria o usuario `steam` e instala o SteamCMD
    em `/opt/steamcmd` (pula se ja existir)
 3. Instala/valida o jogo em `/opt/game` via `app_update <id> validate` (login anonimo)
-4. Cria o servico systemd `<jogo>.service` (start no boot, restart em falha) e o helper
-   `update-game` dentro do CT
+4. Cria o servico systemd `<jogo>.service` (start no boot, restart em falha) e os
+   atalhos `update-game`, `game-restart` etc. dentro do CT
 5. Sobe o servidor, valida que ficou ativo e imprime o resumo com **as portas a redirecionar**
+
+Se `PANEL_PUBKEY` estiver no `.env`, o passo 2 tambem instala o `sshd` e autoriza a
+chave do [painel administrativo](#painel-administrativo-web) — o CT ja nasce gerenciavel pela tela.
 
 Rodar de novo e idempotente: atualiza config do CT e revalida o jogo. `RECREATE_CT=1` destroi e recria.
 
@@ -131,3 +134,91 @@ pct exec <CTID> -- systemctl list-timers game-update-check.timer   # proximo hor
 pct exec <CTID> -- check-game-update                                # checar agora
 pct exec <CTID> -- journalctl -u game-update-check.service -n 20   # log das checagens
 ```
+
+## Painel administrativo (web)
+
+Um container separado sobe um painel web para gerenciar todos os servidores: cadastrar,
+ver status, start/stop/restart, atualizar pelo SteamCMD, ler logs e **rodar comandos
+direto dentro de cada container**.
+
+```powershell
+.\deploy-admin.ps1                # usa as chaves ADMIN_* do .env
+.\deploy-admin.ps1 -Interactive   # pergunta cada valor
+```
+
+No fim o deploy mostra a URL (`http://<ip-do-ct>:8080`), o usuario e a senha.
+
+### Como ele fala com os servidores
+
+O painel **nao tem acesso ao host Proxmox** — ele nao usa `pct` e nao tem chave para o
+hipervisor. Cada servidor cadastrado e um destino SSH, e o painel se conecta direto no
+container do jogo:
+
+```
+[ CT gamepanel ] --ssh--> [ CT dragonwilds ]  systemctl / journalctl / update-game
+                 --ssh--> [ CT palworld    ]
+```
+
+Para um container ser gerenciavel ele precisa de `sshd` e da chave publica do painel
+autorizada. Ha tres formas de conseguir isso:
+
+| Situacao | O que fazer |
+|----------|-------------|
+| CT de jogo novo | preencha `PANEL_PUBKEY` no `.env` — o `deploy-game.ps1` ja deixa pronto |
+| CTs de jogo existentes | preencha `ADMIN_AUTHORIZE_CTIDS=210 211` e rode o `deploy-admin.ps1` |
+| Caso a caso | copie o comando pronto da tela **Acesso SSH** do painel |
+
+A chave publica aparece no resumo do deploy do painel e na tela "Acesso SSH".
+
+### Cadastrando um servidor
+
+Em **Adicionar**, informe:
+
+- **Host** — IP do container do jogo (ex.: `192.168.2.20`)
+- **Servico** — a unit systemd (ex.: `dragonwilds.service`)
+- **Usuario/porta SSH** — normalmente `root` e `22`
+
+Start, stop, restart, update e o console rodam a partir dai. Acoes demoradas (update)
+viram um job com a saida atualizando ao vivo na tela.
+
+### Console de comandos
+
+Cada servidor tem uma aba **Console**: voce digita um comando e ele executa como `root`
+**dentro daquele container de jogo**, com a saida na tela e o historico registrado (quem
+rodou, o que rodou, exit code).
+
+- Nao e um terminal interativo: nao ha TTY, entao `vim`, `top` e `htop` nao funcionam.
+  Use `journalctl -n 50`, `df -h`, `cat`, `sed -i`, `ls` etc.
+- Ctrl+Enter executa; as setas ↑/↓ percorrem o historico.
+- Limite de tempo por comando: 600s (`GAMEPANEL_SHELL_TIMEOUT`).
+
+Isso e execucao remota de comandos exposta numa pagina web — quem entrar no painel tem
+root nos containers de jogo. Se nao quiser essa capacidade, desligue com
+`ADMIN_ALLOW_SHELL=0` no `.env`; a rota passa a responder 403 e o botao some.
+
+### Seguranca
+
+- Login com usuario unico, senha com hash **scrypt** no SQLite, sessao em cookie assinado
+  (HttpOnly, SameSite=Lax) e bloqueio apos 5 tentativas erradas em 5 minutos
+- Todos os POSTs exigem token **CSRF**
+- O painel serve **HTTP puro** — pensado para LAN. Nao exponha na internet sem um proxy
+  reverso com TLS na frente
+- Comprometer o painel da acesso root aos **containers de jogo**, nao ao Proxmox
+
+### Arquivos
+
+| Caminho (no CT do painel) | O que e |
+|---------------------------|---------|
+| `/opt/gamepanel/` | aplicacao (Flask) |
+| `/var/lib/gamepanel/panel.db` | SQLite: usuarios, servidores, historico |
+| `/var/lib/gamepanel/known_hosts` | host keys aprendidas dos containers |
+| `/etc/gamepanel/id_ed25519` | chave SSH do painel |
+| `/etc/gamepanel/panel.env` | configuracao lida pelo systemd |
+
+```bash
+pct exec <ADMIN_CTID> -- systemctl status gamepanel.service --no-pager
+pct exec <ADMIN_CTID> -- journalctl -u gamepanel.service -f
+```
+
+Esqueceu a senha? Rode o `deploy-admin.ps1` de novo com `ADMIN_PASSWORD` preenchido —
+ele redefine a senha do usuario sem tocar nos servidores cadastrados.

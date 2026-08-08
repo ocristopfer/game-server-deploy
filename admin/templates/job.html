@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Acao #{{ job.id }} — Painel de Jogos{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ job_label(job.action) }}
+    <span class="badge {{ {'ok':'on','error':'off','running':'cold'}[job.status] }}" id="badge">{{ job.status }}</span>
+  </h1>
+  {% if server %}<a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">{{ server.name }}</a>{% endif %}
+</div>
+
+<div class="card">
+  <dl class="meta wide">
+    <div><dt>Destino</dt><dd>{{ job.target }}</dd></div>
+    <div><dt>Iniciado</dt><dd>{{ job.created_at.replace('T', ' ')[:19] }} UTC</dd></div>
+    <div><dt>Por</dt><dd>{{ job.username }}</dd></div>
+  </dl>
+  {% if job.command %}<pre class="log cmd">$ {{ job.command }}</pre>{% endif %}
+  <p class="muted" id="hint">
+    {% if job.status == 'running' %}
+      Em execucao — a saida abaixo atualiza sozinha. Um update de jogo pode levar varios minutos.
+    {% else %}
+      Concluido com exit code {{ job.exit_code if job.exit_code is not none else '—' }}.
+    {% endif %}
+  </p>
+  <pre class="log" id="output">{{ job.output or '(aguardando saida...)' }}</pre>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if job.status == 'running' %}
+<script>
+  const url = "{{ url_for('api_job', jid=job.id) }}";
+  const poll = setInterval(async () => {
+    try {
+      const res = await fetch(url, {headers: {'Accept': 'application/json'}});
+      if (!res.ok) return;
+      const data = await res.json();
+      document.getElementById('output').textContent = data.output || '(aguardando saida...)';
+      const badge = document.getElementById('badge');
+      badge.textContent = data.status;
+      if (data.status !== 'running') {
+        clearInterval(poll);
+        badge.classList.remove('cold');
+        badge.classList.add(data.status === 'ok' ? 'on' : 'off');
+        document.getElementById('hint').textContent =
+          'Concluido com exit code ' + (data.exit_code === null ? '—' : data.exit_code) + '.';
+      }
+    } catch (err) {
+      console.debug('polling falhou, tentando de novo', err);
+    }
+  }, 2000);
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ server.name }} — Painel de Jogos{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ server.name }}
+    <span class="badge {{ 'on' if status.service == 'active' else ('off' if status.reachable else 'cold') }}">
+      {{ status.service }}
+    </span>
+  </h1>
+  <div class="actions">
+    {% if allow_shell %}<a class="btn ghost" href="{{ url_for('console', sid=server.id) }}">Console</a>{% endif %}
+    <a class="btn ghost" href="{{ url_for('server_edit', sid=server.id) }}">Editar</a>
+  </div>
+</div>
+
+{% if status.error %}<div class="flash error">{{ status.error }}</div>{% endif %}
+
+<div class="card">
+  <dl class="meta wide">
+    <div><dt>Host</dt><dd>{{ server.ssh_user }}@{{ server.host }}</dd></div>
+    <div><dt>Porta SSH</dt><dd>{{ server.ssh_port }}</dd></div>
+    <div><dt>Servico</dt><dd>{{ server.service }}</dd></div>
+    {% if server.game_port %}<div><dt>Portas do jogo</dt><dd>{{ server.game_port }}</dd></div>{% endif %}
+  </dl>
+  {% if server.notes %}<p class="notes">{{ server.notes }}</p>{% endif %}
+
+  <div class="actions">
+    {% for key, (label, _cmd, confirm) in actions.items() %}
+      <form method="post" action="{{ url_for('server_action', sid=server.id, action=key) }}" class="inline"
+            {% if confirm %}onsubmit="return confirm('{{ label }} — {{ server.name }}?')"{% endif %}>
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button class="btn {{ 'danger' if key == 'stop' else '' }}" type="submit">{{ label }}</button>
+      </form>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="page-head tight">
+    <h2>Log do servico</h2>
+    <form method="get" class="inline">
+      <label class="inline-label">linhas
+        <input name="lines" value="{{ lines }}" size="4" inputmode="numeric">
+      </label>
+      <button class="btn ghost" type="submit">Recarregar</button>
+    </form>
+  </div>
+  {% if log_error %}
+    <p class="flash error">{{ log_error }}</p>
+  {% else %}
+    <pre class="log">{{ logs or '(sem linhas de log)' }}</pre>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Acoes recentes</h2>
+  {% if jobs %}
+  <table class="jobs">
+    <thead><tr><th>Quando</th><th>Acao</th><th>Por</th><th>Resultado</th><th></th></tr></thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr>
+        <td class="muted">{{ j.created_at.replace('T', ' ')[:19] }}</td>
+        <td>{{ job_label(j.action) }}{% if j.command %} <code class="trunc">{{ j.command }}</code>{% endif %}</td>
+        <td class="muted">{{ j.username }}</td>
+        <td><span class="badge {{ {'ok':'on','error':'off','running':'cold'}[j.status] }}">{{ j.status }}</span></td>
+        <td><a href="{{ url_for('job_detail', jid=j.id) }}">saida</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="muted">Nenhuma acao executada por aqui ainda.</p>
+  {% endif %}
+</div>
+{% endblock %}
