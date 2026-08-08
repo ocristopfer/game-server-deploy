@@ -74,6 +74,10 @@ validate_host_requirements() {
   need_cmd pveam
   [[ -d "$APP_SRC_DIR" ]] || die "Diretorio da aplicacao nao encontrado: $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/app.py" ]] || die "app.py nao encontrado em $APP_SRC_DIR"
+  # Sem estes o painel sobe e so quebra no navegador com 'TemplateNotFound'.
+  [[ -f "$APP_SRC_DIR/templates/login.html" ]] || die "templates/ ausente ou incompleto em $APP_SRC_DIR"
+  [[ -f "$APP_SRC_DIR/templates/base.html" ]] || die "templates/base.html nao encontrado em $APP_SRC_DIR"
+  [[ -f "$APP_SRC_DIR/static/style.css" ]] || die "static/style.css nao encontrado em $APP_SRC_DIR"
 }
 
 ensure_debian_template() {
@@ -167,10 +171,28 @@ ensure_app_user() {
 push_application() {
   msg "Publicando a aplicacao em ${APP_DIR}"
   run_ct "rm -rf ${APP_DIR}/templates ${APP_DIR}/static"
-  # tar via stdin: um unico pct exec leva app.py + templates/ + static/ de uma vez.
-  tar -C "$APP_SRC_DIR" -czf - app.py templates static \
-    | pct exec "$CTID" -- tar -xzf - -C "$APP_DIR"
-  run_ct "chown -R root:root ${APP_DIR} && chmod 0644 ${APP_DIR}/app.py"
+  run_ct "install -d ${APP_DIR}/templates ${APP_DIR}/static"
+
+  # pct push copia arquivo a arquivo. E mais lento que mandar um tar.gz pelo stdin do
+  # 'pct exec', mas deterministico: aquele stream binario podia nao ser entregue, o tar
+  # do outro lado extraia zero arquivos e ainda assim saia com 0 — o deploy passava e o
+  # painel so quebrava em runtime com 'TemplateNotFound'.
+  local src
+  pct push "$CTID" "$APP_SRC_DIR/app.py" "${APP_DIR}/app.py" --perms 0644
+  for src in "$APP_SRC_DIR"/templates/*.html; do
+    [[ -f "$src" ]] || continue
+    pct push "$CTID" "$src" "${APP_DIR}/templates/$(basename "$src")" --perms 0644
+  done
+  for src in "$APP_SRC_DIR"/static/*; do
+    [[ -f "$src" ]] || continue
+    pct push "$CTID" "$src" "${APP_DIR}/static/$(basename "$src")" --perms 0644
+  done
+  run_ct "chown -R root:root ${APP_DIR}"
+
+  # Falhar aqui e melhor do que descobrir pela tela de erro do navegador.
+  run_ct "test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/static/style.css" \
+    || die "Templates/estaticos nao chegaram em ${APP_DIR} (veja a saida do pct push acima)"
+  msg "Publicados: $(run_ct "ls ${APP_DIR}/templates | wc -l" | tr -d '\r') templates"
 }
 
 ensure_ssh_key() {
@@ -334,7 +356,7 @@ Senha     : ${PANEL_PASSWORD}
             ^ senha gerada automaticamente - anote agora e troque em "Conta" apos entrar
 EOF
   else
-    echo "Senha     : (a definida em ADMIN_PASSWORD)"
+    echo "Senha     : a definida em ADMIN_PASSWORD no .env"
   fi
   cat <<EOF
 

@@ -19,6 +19,10 @@ function Read-EnvFile([string]$Path) {
         if ($idx -lt 1) { continue }
         $key = $trimmed.Substring(0, $idx).Trim()
         $value = $trimmed.Substring($idx + 1).Trim()
+        # Valor vazio seguido de comentario ("CHAVE=   # nota"): apos o Trim acima o '#'
+        # fica no inicio e o split abaixo nao casa, fazendo o texto do comentario virar
+        # o valor. Tratar antes, senao "ADMIN_PASSWORD=  # nota" define a nota como senha.
+        if ($value.StartsWith("#")) { $value = "" }
         $value = ($value -split '\s+#')[0].Trim().Trim('"').Trim("'")
         $map[$key] = $value
     }

@@ -23,7 +23,10 @@ function Read-EnvFile([string]$Path) {
         if ($idx -lt 1) { continue }
         $key = $trimmed.Substring(0, $idx).Trim()
         $value = $trimmed.Substring($idx + 1).Trim()
-        # remove comentario inline e aspas
+        # remove comentario inline e aspas. O caso "CHAVE=   # nota" precisa vir antes:
+        # apos o Trim acima o '#' fica no inicio e o split nao casa, fazendo o texto do
+        # comentario virar o valor.
+        if ($value.StartsWith("#")) { $value = "" }
         $value = ($value -split '\s+#')[0].Trim().Trim('"').Trim("'")
         $map[$key] = $value
     }
