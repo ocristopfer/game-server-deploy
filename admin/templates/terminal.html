@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Terminal &mdash; {{ server.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Terminal &mdash; {{ server.name }}</h1>
+  <div class="actions">
+    <a class="btn ghost" href="{{ url_for('console', sid=server.id) }}">Comando unico</a>
+    <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
+  </div>
+</div>
+
+<div class="flash">
+  Sessao SSH interativa como <strong>{{ server.ssh_user }}</strong> em
+  <code>{{ server.host }}</code>. Tem TTY de verdade: <code>htop</code>, <code>nano</code>,
+  <code>vim</code> e prompts de confirmacao funcionam. A sessao cai sozinha depois de
+  {{ idle_timeout // 60 }} min sem uso.
+</div>
+
+<div class="term" id="term"
+     data-csrf="{{ csrf_token() }}"
+     data-open-url="{{ url_for('api_term_open', sid=server.id) }}"
+     data-api-base="/api/term/">
+  <div class="term-bar">
+    <span class="badge cold" id="term-status">iniciando...</span>
+    <span class="muted small" id="term-size">80x24</span>
+    <span class="spacer"></span>
+    <button type="button" class="btn small" data-ctrl="C" title="Interromper (SIGINT)">Ctrl+C</button>
+    <button type="button" class="btn small" data-ctrl="D" title="Fim de entrada (EOF)">Ctrl+D</button>
+    <button type="button" class="btn small" data-ctrl="Z" title="Suspender">Ctrl+Z</button>
+    <button type="button" class="btn small" id="term-clear">Limpar</button>
+    <button type="button" class="btn small" id="term-fullscreen">Tela cheia</button>
+    <button type="button" class="btn small danger" id="term-close">Encerrar</button>
+    <button type="button" class="btn small primary" id="term-reconnect" hidden>Reconectar</button>
+  </div>
+
+  <div class="term-view" id="term-view">
+    <div id="term-scrollback"></div>
+    <div id="term-screen"></div>
+  </div>
+  <textarea id="term-input" class="term-input" autocomplete="off" autocorrect="off"
+            autocapitalize="off" spellcheck="false" aria-label="entrada do terminal"></textarea>
+</div>
+
+<p class="muted small">
+  O teclado vai direto para o shell: <code>Tab</code> completa, <code>&uarr;</code> percorre o
+  historico do bash e <code>Ctrl+C</code> interrompe. Para copiar, selecione com o mouse
+  (com texto selecionado o <code>Ctrl+C</code> copia em vez de interromper); <code>Ctrl+V</code> cola.
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='terminal.js') }}" defer></script>
+{% endblock %}

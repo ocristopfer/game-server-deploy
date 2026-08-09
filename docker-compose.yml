@@ -1,0 +1,56 @@
+# Ambiente local para mexer no painel sem precisar do Proxmox.
+#
+#   docker compose up --build        (painel em http://localhost:8080, admin/admin12345)
+#
+# Sobe o painel + dois "containers de jogo" falsos: Debian com sshd, um systemctl de
+# mentira que liga/desliga um processo, journalctl que le o log desse processo e os
+# arquivos .ini que o jogo de verdade teria. Da para testar start/stop/update, o
+# terminal interativo e o editor de configuracao de ponta a ponta.
+#
+# A chave SSH do painel e gerada na primeira subida e publicada no volume 'panel-keys';
+# cada container de jogo a instala no authorized_keys do root ao iniciar.
+
+services:
+  panel:
+    build: ./docker/panel
+    container_name: gamepanel-dev
+    ports:
+      - "8080:8080"
+    environment:
+      GAMEPANEL_DEV: "1"              # recarrega templates e codigo a cada save
+      GAMEPANEL_ALLOW_SHELL: "1"
+      GAMEPANEL_ALLOW_FILES: "1"
+      GAMEPANEL_FILE_DEFAULT: "/opt/game"
+      PANEL_USER: admin
+      PANEL_PASSWORD: admin12345
+    volumes:
+      - ./admin:/opt/gamepanel:ro     # o codigo vem do repo: edite e recarregue a pagina
+      - panel-keys:/keys
+      - panel-conf:/etc/gamepanel
+      - panel-data:/var/lib/gamepanel
+    depends_on:
+      - game-palworld
+      - game-dragonwilds
+
+  game-palworld:
+    build: ./docker/game
+    container_name: game-palworld
+    environment:
+      GAME_KIND: palworld
+      GAME_SERVICE: palworld.service
+    volumes:
+      - panel-keys:/keys:ro
+
+  game-dragonwilds:
+    build: ./docker/game
+    container_name: game-dragonwilds
+    environment:
+      GAME_KIND: dragonwilds
+      GAME_SERVICE: dragonwilds.service
+    volumes:
+      - panel-keys:/keys:ro
+
+volumes:
+  panel-keys:
+  panel-conf:
+  panel-data:

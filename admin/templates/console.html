@@ -3,13 +3,18 @@
 {% block content %}
 <div class="page-head">
   <h1>Console — {{ server.name }}</h1>
-  <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
+  <div class="actions">
+    {% if allow_term %}<a class="btn ghost" href="{{ url_for('terminal', sid=server.id) }}">Terminal interativo</a>{% endif %}
+    <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
+  </div>
 </div>
 
 <div class="flash">
   Os comandos rodam como <strong>{{ server.ssh_user }}</strong> dentro do container
   <code>{{ server.host }}</code>, via SSH. Cada execucao tem limite de
   {{ shell_timeout }}s e fica registrada no historico abaixo.
+  {% if allow_term %}Para algo interativo (nano, htop, prompts de confirmacao) use o
+  <a href="{{ url_for('terminal', sid=server.id) }}">terminal</a>.{% endif %}
 </div>
 
 <div class="card">

@@ -32,6 +32,13 @@
       <input name="game_port" value="{{ data.game_port }}" placeholder="7777/udp">
       <small>Apenas informativo, para lembrar o que redirecionar no roteador.</small>
     </label>
+    <label>Pasta de configuracao <span class="muted">(opcional)</span>
+      <input name="config_path" value="{{ data.config_path }}" placeholder="/opt/game" spellcheck="false">
+      <small>
+        Onde a tela <strong>Arquivos</strong> abre por padrao. Ex.:
+        <code>/opt/game/Pal/Saved/Config/LinuxServer</code>
+      </small>
+    </label>
     <label>Notas <span class="muted">(opcional)</span>
       <textarea name="notes" rows="4">{{ data.notes }}</textarea>
     </label>

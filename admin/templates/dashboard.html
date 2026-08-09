@@ -42,8 +42,11 @@
           <button class="btn {{ 'danger' if key == 'stop' else '' }}" type="submit">{{ label.split(' ')[0] }}</button>
         </form>
       {% endfor %}
-      {% if allow_shell %}
-        <a class="btn ghost" href="{{ url_for('console', sid=s.id) }}">Console</a>
+      {% if allow_term %}
+        <a class="btn ghost" href="{{ url_for('terminal', sid=s.id) }}">Terminal</a>
+      {% endif %}
+      {% if allow_files %}
+        <a class="btn ghost" href="{{ url_for('files', sid=s.id) }}">Arquivos</a>
       {% endif %}
       <a class="btn ghost" href="{{ url_for('server_detail', sid=s.id) }}">Detalhes</a>
     </div>

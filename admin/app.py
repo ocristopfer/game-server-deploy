@@ -12,6 +12,8 @@ Dependencias: python3-flask (apt). Hash de senha e sessao usam apenas a stdlib.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import os
@@ -24,6 +26,19 @@ import threading
 import time
 from datetime import datetime, timezone
 from functools import wraps
+
+# O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
+# resto do painel continua funcionando e a tela do terminal responde 503.
+try:
+    import fcntl
+    import pty
+    import signal
+    import struct
+    import termios
+
+    HAVE_PTY = True
+except ImportError:  # pragma: no cover - Windows
+    HAVE_PTY = False
 
 from flask import (
     Flask,
@@ -57,6 +72,25 @@ ALLOW_SHELL = os.environ.get("GAMEPANEL_ALLOW_SHELL", "1") == "1"
 SHELL_TIMEOUT = int(os.environ.get("GAMEPANEL_SHELL_TIMEOUT", "600"))
 SHELL_MAX_LEN = 4000
 
+# Terminal interativo: sessao SSH viva com PTY, teclado ligado no shell do container.
+# Herda o ALLOW_SHELL (e o mesmo poder do console, so que interativo).
+TERM_MAX_SESSIONS = int(os.environ.get("GAMEPANEL_TERM_MAX", "4"))
+TERM_IDLE_TIMEOUT = int(os.environ.get("GAMEPANEL_TERM_IDLE", "900"))
+TERM_BUFFER_BYTES = 512 * 1024
+TERM_POLL_WAIT = 20.0  # long-poll: segura a resposta ate chegar saida nova
+
+# Editor de arquivos: le/grava arquivos de configuracao do jogo pelo mesmo SSH.
+ALLOW_FILES = os.environ.get("GAMEPANEL_ALLOW_FILES", "1") == "1"
+FILE_MAX_BYTES = int(os.environ.get("GAMEPANEL_FILE_MAX", str(1024 * 1024)))
+# Raizes onde o navegador de arquivos pode entrar. "/" = sem restricao.
+FILE_ROOTS = tuple(
+    p for p in os.environ.get("GAMEPANEL_FILE_ROOTS", "/").split(",") if p.strip()
+)
+FILE_DEFAULT_PATH = os.environ.get("GAMEPANEL_FILE_DEFAULT", "/opt/game")
+FILE_LIST_MAX = 800
+# Padroes usados pelo botao "procurar arquivos de config".
+CONFIG_GLOBS = ("*.ini", "*.cfg", "*.conf", "*.json", "*.yaml", "*.yml", "*.properties", "*.txt")
+
 UNIT_RE = re.compile(r"^[A-Za-z0-9@._-]{1,80}\.service$")
 HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
 USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
@@ -86,8 +120,14 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     PERMANENT_SESSION_LIFETIME=60 * 60 * 12,
-    MAX_CONTENT_LENGTH=64 * 1024,
+    # Precisa caber o maior arquivo editavel em base64 (4/3) mais o JSON em volta.
+    MAX_CONTENT_LENGTH=max(4 * 1024 * 1024, FILE_MAX_BYTES * 2),
 )
+
+# Modo desenvolvimento (docker compose): recarrega os templates sem reiniciar.
+if os.environ.get("GAMEPANEL_DEV") == "1":
+    app.jinja_env.auto_reload = True
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 # ------------------------------------------------------------------- banco
 
@@ -108,6 +148,7 @@ CREATE TABLE IF NOT EXISTS servers (
   service    TEXT NOT NULL,
   game_port  TEXT NOT NULL DEFAULT '',
   notes      TEXT NOT NULL DEFAULT '',
+  config_path TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   UNIQUE (host, ssh_port)
 );
@@ -155,11 +196,22 @@ def _close_db(_exc) -> None:
         conn.close()
 
 
+# Colunas acrescentadas depois da primeira versao: CREATE TABLE IF NOT EXISTS nao
+# altera tabelas que ja existem, entao cada uma precisa do seu ALTER aqui.
+MIGRATIONS = (
+    ("servers", "config_path", "ALTER TABLE servers ADD COLUMN config_path TEXT NOT NULL DEFAULT ''"),
+)
+
+
 def init_db() -> None:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = _connect()
     with conn:
         conn.executescript(SCHEMA)
+        for table, column, ddl in MIGRATIONS:
+            cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in cols:
+                conn.execute(ddl)
     conn.close()
 
 
@@ -243,9 +295,11 @@ def csrf_token() -> str:
 def _check_csrf():
     if request.method != "POST":
         return None
-    sent = request.form.get("csrf", "")
+    # O terminal e o editor postam JSON (sem formulario), entao mandam o mesmo token
+    # pelo cabecalho X-CSRF-Token.
+    sent = request.form.get("csrf", "") or request.headers.get("X-CSRF-Token", "")
     if not sent or not hmac.compare_digest(sent, session.get("csrf", "")):
-        abort(400, "token CSRF invalido ou expirado — recarregue a pagina")
+        abort(400, "token CSRF invalido ou expirado - recarregue a pagina")
     return None
 
 
@@ -256,6 +310,8 @@ def _inject():
         "current_user": session.get("username"),
         "job_label": job_label,
         "allow_shell": ALLOW_SHELL,
+        "allow_term": ALLOW_SHELL and HAVE_PTY,
+        "allow_files": ALLOW_FILES,
     }
 
 
@@ -266,15 +322,9 @@ class RemoteError(RuntimeError):
     pass
 
 
-def ssh_run(
-    server: sqlite3.Row, remote_cmd: str, timeout: int = QUICK_TIMEOUT
-) -> subprocess.CompletedProcess:
-    """Executa um comando no container de jogo via SSH.
-
-    `remote_cmd` ja vem montado com shlex.quote pelos helpers abaixo; o SSH o entrega
-    inteiro para o shell do destino, entao nada aqui pode vir cru de um formulario.
-    """
-    cmd = [
+def ssh_argv(server, connect_timeout: int = 10, extra: tuple[str, ...] = ()) -> list[str]:
+    """Argumentos comuns do cliente ssh (usados pelos comandos e pelo terminal)."""
+    return [
         "ssh",
         "-i", SSH_KEY,
         "-p", str(server["ssh_port"]),
@@ -282,11 +332,37 @@ def ssh_run(
         "-o", f"UserKnownHostsFile={KNOWN_HOSTS}",
         # accept-new: aprende a host key no primeiro acesso, mas alerta se ela mudar.
         "-o", "StrictHostKeyChecking=accept-new",
-        "-o", f"ConnectTimeout={min(timeout, 10)}",
+        "-o", f"ConnectTimeout={connect_timeout}",
+        *extra,
         f"{server['ssh_user']}@{server['host']}",
-        remote_cmd,
     ]
+
+
+def ssh_run(
+    server: sqlite3.Row,
+    remote_cmd: str,
+    timeout: int = QUICK_TIMEOUT,
+    stdin_data: bytes | None = None,
+) -> subprocess.CompletedProcess:
+    """Executa um comando no container de jogo via SSH.
+
+    `remote_cmd` ja vem montado com shlex.quote pelos helpers abaixo; o SSH o entrega
+    inteiro para o shell do destino, entao nada aqui pode vir cru de um formulario.
+    `stdin_data` alimenta a entrada do comando remoto (usado para gravar arquivos).
+    """
+    cmd = ssh_argv(server, connect_timeout=min(timeout, 10)) + [remote_cmd]
     try:
+        if stdin_data is not None:
+            proc = subprocess.run(
+                cmd, input=stdin_data, capture_output=True, timeout=timeout, check=False
+            )
+            # Binario na entrada, texto na saida: as mensagens de erro sao sempre texto.
+            return subprocess.CompletedProcess(
+                proc.args,
+                proc.returncode,
+                proc.stdout.decode("utf-8", "replace"),
+                proc.stderr.decode("utf-8", "replace"),
+            )
         return subprocess.run(
             cmd, capture_output=True, text=True, timeout=timeout, check=False
         )
@@ -390,10 +466,36 @@ ACTIONS = {
 
 JOB_LABELS = {key: label for key, (label, _cmd, _c) in ACTIONS.items()}
 JOB_LABELS["shell"] = "Comando no container"
+JOB_LABELS["terminal"] = "Terminal interativo"
+JOB_LABELS["edit-file"] = "Arquivo salvo"
 
 
 def job_label(action: str) -> str:
     return JOB_LABELS.get(action, action)
+
+
+def log_job(
+    action: str,
+    server: sqlite3.Row | dict,
+    username: str,
+    command: str = "",
+    output: str = "",
+    status: str = "ok",
+) -> int:
+    """Registra no historico algo que ja aconteceu (edicao de arquivo, sessao de
+    terminal). Diferente de start_job, nao dispara nada — so deixa o rastro."""
+    conn = db()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO jobs (server_id, target, action, status, exit_code, output,"
+            " command, username, created_at, finished_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                server["id"], f"{server['ssh_user']}@{server['host']}", action, status,
+                0 if status == "ok" else None, output[-200000:], command, username,
+                now_iso(), now_iso(),
+            ),
+        )
+    return int(cur.lastrowid)
 
 
 def start_job(
@@ -521,6 +623,14 @@ def _form_server(form) -> tuple[dict, list[str]]:
     if not port_raw.isdigit() or not 1 <= int(port_raw) <= 65535:
         errors.append("Porta SSH invalida.")
 
+    config_path = form.get("config_path", "").strip()[:400]
+    if config_path:
+        try:
+            config_path = clean_path(config_path)
+        except ValueError as exc:
+            errors.append(f"Pasta de configuracao invalida: {exc}")
+            config_path = ""
+
     return (
         {
             "name": name,
@@ -530,6 +640,7 @@ def _form_server(form) -> tuple[dict, list[str]]:
             "service": service,
             "game_port": form.get("game_port", "").strip()[:120],
             "notes": form.get("notes", "").strip()[:2000],
+            "config_path": config_path,
         },
         errors,
     )
@@ -540,7 +651,7 @@ def _form_server(form) -> tuple[dict, list[str]]:
 def server_new():
     data = {
         "name": "", "host": "", "ssh_user": "root", "ssh_port": 22,
-        "service": "", "game_port": "", "notes": "",
+        "service": "", "game_port": "", "notes": "", "config_path": "",
     }
     if request.method == "POST":
         data, errors = _form_server(request.form)
@@ -550,11 +661,12 @@ def server_new():
                 with conn:
                     conn.execute(
                         "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
-                        " game_port, notes, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                        " game_port, notes, config_path, created_at)"
+                        " VALUES (?,?,?,?,?,?,?,?,?)",
                         (
                             data["name"], data["host"], data["ssh_port"],
                             data["ssh_user"], data["service"], data["game_port"],
-                            data["notes"], now_iso(),
+                            data["notes"], data["config_path"], now_iso(),
                         ),
                     )
                 flash(f"Servidor {data['name']} cadastrado.", "ok")
@@ -581,11 +693,11 @@ def server_edit(sid: int):
                 with conn:
                     conn.execute(
                         "UPDATE servers SET name=?, host=?, ssh_port=?, ssh_user=?,"
-                        " service=?, game_port=?, notes=? WHERE id=?",
+                        " service=?, game_port=?, notes=?, config_path=? WHERE id=?",
                         (
                             data["name"], data["host"], data["ssh_port"],
                             data["ssh_user"], data["service"], data["game_port"],
-                            data["notes"], sid,
+                            data["notes"], data["config_path"], sid,
                         ),
                     )
                 invalidate_status(sid)
@@ -706,6 +818,601 @@ def console(sid: int):
     )
 
 
+# ------------------------------------------------------- terminal interativo
+
+TERM_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+
+
+def _set_winsize(fd: int, cols: int, rows: int) -> None:
+    packed = struct.pack("HHHH", rows, cols, 0, 0)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, packed)
+
+
+def _become_tty_leader() -> None:
+    """Roda no filho, entre fork e exec: sessao nova + PTY como terminal de controle.
+
+    Sem o TIOCSCTTY o ssh enxerga um terminal que nao e o dele e recusa o modo raw,
+    e o teclado passa a chegar em blocos de linha em vez de tecla a tecla.
+    """
+    os.setsid()
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+
+class TermSession:
+    """Uma sessao SSH interativa viva: um `ssh -tt` amarrado a um PTY local.
+
+    O navegador nao fala com o PTY direto — empurra teclas por POST e puxa a saida por
+    long-poll, dizendo por um offset em bytes o que ja leu. Sem WebSocket de proposito:
+    o painel roda em gunicorn com workers sync, que nao os suporta.
+    """
+
+    def __init__(self, server: dict, uid: int, username: str, cols: int, rows: int):
+        self.id = secrets.token_urlsafe(24)
+        self.uid = uid
+        self.username = username
+        self.server_id = int(server["id"])
+        self.opened_at = time.time()
+        self.last_seen = time.time()
+        self.cols, self.rows = cols, rows
+        self.alive = True
+        self.exit_code: int | None = None
+
+        self._lock = threading.Lock()
+        self._write_lock = threading.Lock()
+        self._wake = threading.Event()
+        self._buf = bytearray()
+        self._base = 0  # offset absoluto do primeiro byte ainda guardado
+
+        self.master, slave = pty.openpty()
+        try:
+            _set_winsize(self.master, cols, rows)
+            argv = ssh_argv(
+                server,
+                extra=("-tt", "-o", "ServerAliveInterval=20", "-o", "ServerAliveCountMax=3"),
+            )
+            # Ambiente minimo e explicito: e o TERM daqui que decide os codigos que o
+            # emulador do navegador vai ter de entender.
+            env = {
+                "TERM": "xterm-256color",
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "HOME": os.environ.get("HOME", "/tmp"),
+                "LANG": "C.UTF-8",
+            }
+            self.proc = subprocess.Popen(
+                argv, stdin=slave, stdout=slave, stderr=slave,
+                close_fds=True, preexec_fn=_become_tty_leader, env=env,
+            )
+        except OSError as exc:
+            os.close(self.master)
+            raise RemoteError(f"falha ao abrir a sessao: {exc}")
+        finally:
+            os.close(slave)
+
+        threading.Thread(target=self._reader, daemon=True).start()
+
+    # -- saida ------------------------------------------------------------
+    def _reader(self) -> None:
+        while True:
+            try:
+                chunk = os.read(self.master, 65536)
+            except (OSError, ValueError):
+                chunk = b""
+            if not chunk:  # PTY fechou = ssh terminou
+                break
+            with self._lock:
+                self._buf += chunk
+                excess = len(self._buf) - TERM_BUFFER_BYTES
+                if excess > 0:
+                    del self._buf[:excess]
+                    self._base += excess
+            self._wake.set()
+        try:
+            self.exit_code = self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.exit_code = None
+        self.alive = False
+        self._wake.set()
+
+    def read(self, offset: int, wait: float = TERM_POLL_WAIT) -> tuple[bytes, int, bool]:
+        """Devolve (dados, novo_offset, perdeu_bytes) esperando ate `wait` por novidade."""
+        deadline = time.monotonic() + wait
+        while True:
+            with self._lock:
+                end = self._base + len(self._buf)
+                start = max(offset, self._base)
+                if start < end:
+                    data = bytes(self._buf[start - self._base:])
+                    return data, start + len(data), start > offset
+                # Sem novidade: limpa o sinal ainda com o lock para nao perder um
+                # append que aconteca entre a checagem e o wait().
+                self._wake.clear()
+            remaining = deadline - time.monotonic()
+            if not self.alive or remaining <= 0:
+                return b"", max(offset, self._base), False
+            self._wake.wait(timeout=min(1.0, remaining))
+
+    # -- entrada e controle ------------------------------------------------
+    def write(self, data: bytes) -> None:
+        with self._write_lock:
+            while data:
+                try:
+                    sent = os.write(self.master, data)
+                except (OSError, ValueError) as exc:
+                    raise RemoteError(f"sessao encerrada: {exc}")
+                data = data[sent:]
+
+    def resize(self, cols: int, rows: int) -> None:
+        self.cols, self.rows = cols, rows
+        try:
+            _set_winsize(self.master, cols, rows)
+        except OSError:
+            pass
+
+    def close(self) -> None:
+        self.alive = False
+        try:
+            os.killpg(os.getpgid(self.proc.pid), signal.SIGHUP)
+        except (OSError, ProcessLookupError):
+            pass
+        try:
+            os.close(self.master)
+        except OSError:
+            pass
+        self._wake.set()
+
+
+_terms: dict[str, TermSession] = {}
+_terms_lock = threading.Lock()
+_reaper_started = False
+
+
+def _reap_terms() -> None:
+    """Mata sessoes ociosas — cada uma segura um processo ssh e um PTY."""
+    while True:
+        time.sleep(30)
+        now = time.time()
+        for term in list(_terms.values()):
+            idle = now - term.last_seen
+            # Sessao encerrada fica um pouco no ar para o navegador ler a saida final.
+            if idle > TERM_IDLE_TIMEOUT or (not term.alive and idle > 60):
+                term.close()
+                with _terms_lock:
+                    _terms.pop(term.id, None)
+
+
+def _term_of_user(tid: str) -> TermSession:
+    if not TERM_ID_RE.match(tid or ""):
+        abort(404)
+    with _terms_lock:
+        term = _terms.get(tid)
+    # Sessao de outro usuario e tratada como inexistente.
+    if not term or term.uid != session.get("uid"):
+        abort(404, "sessao de terminal expirada ou encerrada")
+    term.last_seen = time.time()
+    return term
+
+
+def _terminal_guard():
+    if not ALLOW_SHELL:
+        abort(403, "O terminal esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).")
+    if not HAVE_PTY:
+        abort(503, "Terminal indisponivel: este sistema nao tem PTY.")
+
+
+@app.get("/servers/<int:sid>/terminal")
+@login_required
+def terminal(sid: int):
+    _terminal_guard()
+    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    if not server:
+        abort(404)
+    return render_template(
+        "terminal.html", server=server, idle_timeout=TERM_IDLE_TIMEOUT
+    )
+
+
+@app.post("/api/term/<int:sid>/open")
+@login_required
+def api_term_open(sid: int):
+    global _reaper_started
+    _terminal_guard()
+    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    if not server:
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    cols = max(20, min(400, int(body.get("cols") or 80)))
+    rows = max(5, min(150, int(body.get("rows") or 24)))
+
+    with _terms_lock:
+        # Uma aba esquecida nao pode impedir a proxima de abrir: derruba as mortas.
+        for dead in [t for t in _terms.values() if not t.alive]:
+            _terms.pop(dead.id, None)
+        if len(_terms) >= TERM_MAX_SESSIONS:
+            return jsonify({
+                "error": f"limite de {TERM_MAX_SESSIONS} terminais simultaneos atingido"
+            }), 429
+
+    try:
+        term = TermSession(dict(server), session["uid"], session.get("username", "?"), cols, rows)
+    except RemoteError as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    with _terms_lock:
+        _terms[term.id] = term
+        if not _reaper_started:
+            threading.Thread(target=_reap_terms, daemon=True).start()
+            _reaper_started = True
+
+    log_job(
+        "terminal", server, session.get("username", "?"),
+        command=f"terminal interativo aberto ({cols}x{rows})",
+        output=f"sessao {term.id[:8]} em {server['ssh_user']}@{server['host']}",
+    )
+    return jsonify({"id": term.id, "offset": 0, "cols": cols, "rows": rows})
+
+
+@app.get("/api/term/<tid>/read")
+@login_required
+def api_term_read(tid: str):
+    _terminal_guard()
+    term = _term_of_user(tid)
+    try:
+        offset = max(0, int(request.args.get("offset", "0")))
+    except ValueError:
+        offset = 0
+    data, new_offset, lost = term.read(offset)
+    return jsonify({
+        "data": base64.b64encode(data).decode("ascii"),
+        "offset": new_offset,
+        "lost": lost,
+        "alive": term.alive,
+        "exit_code": term.exit_code,
+    })
+
+
+@app.post("/api/term/<tid>/keys")
+@login_required
+def api_term_keys(tid: str):
+    _terminal_guard()
+    term = _term_of_user(tid)
+    body = request.get_json(silent=True) or {}
+    data = body.get("data", "")
+    if not isinstance(data, str) or len(data) > 64 * 1024:
+        abort(400, "entrada invalida")
+    try:
+        term.write(data.encode("utf-8"))
+    except RemoteError as exc:
+        return jsonify({"error": str(exc), "alive": False}), 409
+    return jsonify({"ok": True, "alive": term.alive})
+
+
+@app.post("/api/term/<tid>/resize")
+@login_required
+def api_term_resize(tid: str):
+    _terminal_guard()
+    term = _term_of_user(tid)
+    body = request.get_json(silent=True) or {}
+    try:
+        cols = max(20, min(400, int(body.get("cols", 80))))
+        rows = max(5, min(150, int(body.get("rows", 24))))
+    except (TypeError, ValueError):
+        abort(400, "tamanho invalido")
+    term.resize(cols, rows)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/term/<tid>/close")
+@login_required
+def api_term_close(tid: str):
+    _terminal_guard()
+    term = _term_of_user(tid)
+    term.close()
+    with _terms_lock:
+        _terms.pop(term.id, None)
+    return jsonify({"ok": True})
+
+
+# ------------------------------------------------- editor de configuracoes
+
+
+def clean_path(raw: str) -> str:
+    """Normaliza um caminho absoluto vindo da tela (resolve '..' de forma lexica)."""
+    path = (raw or "").strip()
+    if not path.startswith("/"):
+        raise ValueError("use um caminho absoluto (comecando com /)")
+    if "\x00" in path or "\n" in path or "\r" in path:
+        raise ValueError("caractere invalido no caminho")
+    if len(path) > 400:
+        raise ValueError("caminho longo demais")
+    parts: list[str] = []
+    for seg in path.split("/"):
+        if seg in ("", "."):
+            continue
+        if seg == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(seg)
+    cleaned = "/" + "/".join(parts)
+    if FILE_ROOTS and "/" not in FILE_ROOTS:
+        allowed = any(cleaned == r or cleaned.startswith(r.rstrip("/") + "/") for r in FILE_ROOTS)
+        if not allowed:
+            raise ValueError(f"fora das pastas permitidas ({', '.join(FILE_ROOTS)})")
+    return cleaned
+
+
+def parent_of(path: str) -> str:
+    return path.rsplit("/", 1)[0] or "/"
+
+
+LIST_SCRIPT = r"""
+set -e
+d=$1
+[ -d "$d" ] || { echo "pasta nao encontrada: $d" >&2; exit 3; }
+find "$d" -maxdepth 1 -mindepth 1 -printf '%y\t%Y\t%s\t%TY-%Tm-%Td %TH:%TM\t%M\t%f\n' \
+  2>/dev/null | head -n "$2"
+"""
+
+READ_SCRIPT = r"""
+set -e
+f=$1
+[ -e "$f" ] || { echo "arquivo nao encontrado" >&2; exit 3; }
+[ -f "$f" ] || { echo "nao e um arquivo comum" >&2; exit 4; }
+sz=$(stat -Lc %s -- "$f")
+[ "$sz" -le "$2" ] || { echo "arquivo grande demais: $sz bytes" >&2; exit 5; }
+stat -Lc 'META|%s|%y|%a|%U|%G' -- "$f"
+base64 -w0 -- "$f"
+"""
+
+# Grava por cima do arquivo existente (cat >) em vez de trocar o inode: assim dono,
+# grupo e permissao continuam os do jogo — o servidor roda como 'steam', nao root.
+WRITE_SCRIPT = r"""
+set -e
+f=$1
+d=$(dirname "$f")
+[ -d "$d" ] || { echo "pasta nao existe: $d" >&2; exit 3; }
+t=$(mktemp "$d/.gamepanel-XXXXXX")
+trap 'rm -f "$t"' EXIT
+base64 -d > "$t"
+if [ -e "$f" ]; then
+  [ -f "$f" ] || { echo "nao e um arquivo comum" >&2; exit 4; }
+  cp -a -- "$f" "$f.$(date +%Y%m%d-%H%M%S).bak"
+  cat "$t" > "$f"
+else
+  cat "$t" > "$f"
+  chmod 0644 "$f"
+fi
+echo "gravado: $(stat -Lc %s -- "$f") bytes"
+"""
+
+
+def _files_guard():
+    if not ALLOW_FILES:
+        abort(403, "O editor de arquivos esta desabilitado (GAMEPANEL_ALLOW_FILES=0).")
+
+
+def _server_or_404(sid: int) -> sqlite3.Row:
+    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    if not server:
+        abort(404)
+    return server
+
+
+def list_dir(server: sqlite3.Row, path: str) -> tuple[list[dict], bool]:
+    proc = ssh_run(server, q("bash", "-lc", LIST_SCRIPT, "gp", path, str(FILE_LIST_MAX)), timeout=40)
+    if proc.returncode != 0:
+        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao listar a pasta")
+    entries: list[dict] = []
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t", 5)
+        if len(parts) != 6:
+            continue
+        kind, target_kind, size, mtime, mode, name = parts
+        real = target_kind if kind == "l" else kind
+        entries.append({
+            "name": name,
+            "dir": real == "d",
+            "link": kind == "l",
+            "size": int(size) if size.isdigit() else 0,
+            "mtime": mtime,
+            "mode": mode,
+            "path": (path.rstrip("/") + "/" + name) if path != "/" else "/" + name,
+        })
+    entries.sort(key=lambda e: (not e["dir"], e["name"].lower()))
+    return entries, len(entries) >= FILE_LIST_MAX
+
+
+def read_file(server: sqlite3.Row, path: str) -> dict:
+    proc = ssh_run(
+        server, q("bash", "-lc", READ_SCRIPT, "gp", path, str(FILE_MAX_BYTES)), timeout=90
+    )
+    if proc.returncode != 0:
+        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao ler o arquivo")
+    head, _, payload = proc.stdout.partition("\n")
+    meta = head.split("|")
+    if meta[0] != "META" or len(meta) < 6:
+        raise RemoteError("resposta inesperada do container ao ler o arquivo")
+    try:
+        raw = base64.b64decode(payload.strip() or "", validate=True)
+    except (binascii.Error, ValueError):
+        raise RemoteError("conteudo do arquivo chegou corrompido")
+    binary = b"\x00" in raw
+    text = "" if binary else raw.decode("utf-8", "replace")
+    return {
+        "path": path,
+        "size": int(meta[1]) if meta[1].isdigit() else len(raw),
+        "mtime": meta[2][:19],
+        "mode": meta[3],
+        "owner": f"{meta[4]}:{meta[5]}",
+        "binary": binary,
+        "text": text,
+        # \r\n vira \n no textarea; guardamos para devolver o arquivo como estava.
+        "crlf": b"\r\n" in raw,
+    }
+
+
+@app.get("/servers/<int:sid>/files")
+@login_required
+def files(sid: int):
+    _files_guard()
+    server = _server_or_404(sid)
+    default_dir = server["config_path"] or FILE_DEFAULT_PATH
+
+    entries: list[dict] = []
+    truncated = False
+    errors: list[str] = []
+    opened = None
+
+    file_arg = request.args.get("file", "").strip()
+    dir_arg = request.args.get("path", "").strip()
+
+    try:
+        current = clean_path(file_arg or dir_arg or default_dir)
+    except ValueError as exc:
+        errors.append(str(exc))
+        current = "/"
+    if file_arg and current != "/":
+        try:
+            opened = read_file(server, current)
+        except RemoteError as exc:
+            errors.append(str(exc))
+        current = parent_of(current)
+
+    try:
+        entries, truncated = list_dir(server, current)
+    except RemoteError as exc:
+        errors.append(str(exc))
+
+    # Migalhas de pao: /opt/game/Pal -> [/, /opt, /opt/game, /opt/game/Pal]
+    crumbs, walked = [{"name": "/", "path": "/"}], ""
+    for seg in current.strip("/").split("/"):
+        if not seg:
+            continue
+        walked += "/" + seg
+        crumbs.append({"name": seg, "path": walked})
+
+    return render_template(
+        "files.html", server=server, entries=entries, truncated=truncated,
+        current=current, crumbs=crumbs, opened=opened, errors=errors,
+        max_kb=FILE_MAX_BYTES // 1024, matches=None,
+    )
+
+
+@app.get("/servers/<int:sid>/files/search")
+@login_required
+def files_search(sid: int):
+    """Varre a pasta do jogo atras dos arquivos de configuracao mais provaveis."""
+    _files_guard()
+    server = _server_or_404(sid)
+    try:
+        root = clean_path(request.args.get("path", "") or server["config_path"] or FILE_DEFAULT_PATH)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("files", sid=sid))
+
+    names = " -o ".join(f"-name {shlex.quote(g)}" for g in CONFIG_GLOBS)
+    script = (
+        "set -e\n"
+        'd=$1\n'
+        '[ -d "$d" ] || { echo "pasta nao encontrada: $d" >&2; exit 3; }\n'
+        f'find "$d" -maxdepth 5 -type f \\( {names} \\) '
+        r"-printf '%s\t%TY-%Tm-%Td %TH:%TM\t%p\n' 2>/dev/null | LC_ALL=C sort -k3 | head -n 300"
+        "\n"
+    )
+    matches: list[dict] = []
+    errors: list[str] = []
+    try:
+        proc = ssh_run(server, q("bash", "-lc", script, "gp", root), timeout=90)
+        if proc.returncode != 0:
+            raise RemoteError((proc.stderr or proc.stdout).strip() or "falha na busca")
+        for line in proc.stdout.splitlines():
+            parts = line.split("\t", 2)
+            if len(parts) != 3:
+                continue
+            matches.append({
+                "size": int(parts[0]) if parts[0].isdigit() else 0,
+                "mtime": parts[1],
+                "path": parts[2],
+            })
+    except RemoteError as exc:
+        errors.append(str(exc))
+
+    return render_template(
+        "files.html", server=server, entries=[], truncated=False, current=root,
+        crumbs=[{"name": "/", "path": "/"}], opened=None, errors=errors,
+        max_kb=FILE_MAX_BYTES // 1024, matches=matches,
+    )
+
+
+@app.post("/servers/<int:sid>/files/save")
+@login_required
+def files_save(sid: int):
+    _files_guard()
+    server = _server_or_404(sid)
+    raw_path = request.form.get("path", "")
+    content = request.form.get("content", "")
+    keep_crlf = request.form.get("crlf") == "1"
+
+    try:
+        path = clean_path(raw_path)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("files", sid=sid))
+
+    # O navegador manda \r\n; so devolvemos assim se o arquivo original ja usava CRLF.
+    text = content.replace("\r\n", "\n")
+    if keep_crlf:
+        text = text.replace("\n", "\r\n")
+    data = text.encode("utf-8")
+    if len(data) > FILE_MAX_BYTES:
+        flash(f"Arquivo grande demais para salvar (limite de {FILE_MAX_BYTES // 1024} KB).", "error")
+        return redirect(url_for("files", sid=sid, file=path))
+
+    try:
+        proc = ssh_run(
+            server, q("bash", "-lc", WRITE_SCRIPT, "gp", path), timeout=120,
+            stdin_data=base64.b64encode(data),
+        )
+        if proc.returncode != 0:
+            raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao gravar")
+        log_job(
+            "edit-file", server, session.get("username", "?"),
+            command=path, output=proc.stdout.strip(),
+        )
+        flash(f"{path} salvo ({len(data)} bytes). Uma copia .bak foi guardada ao lado.", "ok")
+    except RemoteError as exc:
+        log_job(
+            "edit-file", server, session.get("username", "?"),
+            command=path, output=str(exc), status="error",
+        )
+        flash(f"Nao consegui salvar: {exc}", "error")
+
+    return redirect(url_for("files", sid=sid, file=path))
+
+
+@app.get("/servers/<int:sid>/files/raw")
+@login_required
+def files_raw(sid: int):
+    """Baixa o arquivo como esta no container (util antes de uma edicao grande)."""
+    _files_guard()
+    server = _server_or_404(sid)
+    try:
+        path = clean_path(request.args.get("path", ""))
+        info = read_file(server, path)
+    except (ValueError, RemoteError) as exc:
+        abort(400, str(exc))
+    if info["binary"]:
+        abort(400, "arquivo binario: baixe pelo terminal (scp) em vez do painel")
+    return app.response_class(
+        info["text"].encode("utf-8"),
+        mimetype="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="{path.rsplit("/", 1)[-1]}"'
+        },
+    )
+
+
 # --------------------------------------------------------------------- jobs
 
 
@@ -795,6 +1502,11 @@ def _forbidden(exc):
 @app.errorhandler(404)
 def _not_found(_exc):
     return render_template("error.html", code=404, message="Pagina nao encontrada."), 404
+
+
+@app.errorhandler(503)
+def _unavailable(exc):
+    return render_template("error.html", code=503, message=str(exc)), 503
 
 
 # --------------------------------------------------------------- bootstrap CLI

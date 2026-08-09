@@ -144,6 +144,71 @@ table.jobs th, table.jobs td { text-align: left; padding: 8px 10px; border-botto
 table.jobs th { color: var(--muted); font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
 table.jobs tr:last-child td { border-bottom: none; }
 
+/* ---------- terminal interativo ---------- */
+.term {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden; margin-bottom: 14px;
+}
+.term.full {
+  position: fixed; inset: 0; z-index: 50; margin: 0; border-radius: 0;
+}
+.term-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px; background: var(--panel-2); border-bottom: 1px solid var(--line);
+}
+.term-bar .spacer { flex: 1; }
+.btn.small, button.small { padding: 4px 9px; font-size: .82rem; }
+
+.term-view {
+  background: #0a0d11; padding: 6px 8px; overflow: auto;
+  height: 62vh; cursor: text;
+}
+.term.full .term-view { height: calc(100vh - 45px); }
+.term-view .tl {
+  font: 13px/18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #c9d3de; white-space: pre; letter-spacing: 0;
+}
+.term-view .cur { background: var(--accent); color: #06131f; }
+/* A entrada real e um textarea invisivel: e ele que recebe teclado, IME e colagem. */
+.term-input {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  border: 0; opacity: 0; overflow: hidden; resize: none;
+}
+
+/* ---------- editor de arquivos ---------- */
+.filebar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.path-form { display: flex; gap: 8px; flex: 1; min-width: 260px; }
+.path-form input { margin-top: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.crumbs { margin-top: 10px; font-size: .88rem; }
+.crumbs .sep { color: var(--muted); margin: 0 4px; }
+
+.filegrid { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 18px; align-items: start; }
+.filegrid .card { margin-bottom: 0; }
+.filelist { list-style: none; margin: 0; padding: 0; max-height: 62vh; overflow: auto; }
+.filelist li {
+  display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+  padding: 5px 6px; border-radius: 6px; font-size: .9rem;
+}
+.filelist li:hover { background: var(--panel-2); }
+.filelist li.open { background: var(--panel-2); outline: 1px solid var(--line); }
+.filelist li.dir a { font-weight: 600; }
+.filelist li a { overflow-wrap: anywhere; }
+
+.editor .filename {
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+#content {
+  min-height: 58vh; background: #0a0d11; white-space: pre; overflow-wrap: normal;
+  overflow-x: auto; tab-size: 4;
+  font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (max-width: 900px) {
+  .filegrid { grid-template-columns: 1fr; }
+  .filelist { max-height: 30vh; }
+}
+
 @media (max-width: 600px) {
   .wrap { padding: 16px; }
   .topbar { padding: 12px 16px; }
