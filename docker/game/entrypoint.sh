@@ -61,11 +61,30 @@ INI
   chmod 0755 /opt/game/RSDragonwildsServer.sh
 }
 
+# Um save binario e um log grande: e com eles que da para testar o download e o modo
+# somente-leitura do editor sem instalar jogo nenhum.
+seed_arquivos_grandes() {
+  local saves="$1" log="$2"
+  install -d -o steam -g steam "$(dirname "$saves")" "$(dirname "$log")"
+  [ -s "$saves" ] || dd if=/dev/urandom of="$saves" bs=1M count=6 status=none
+  if [ ! -s "$log" ]; then
+    awk 'BEGIN { for (i = 1; i <= 60000; i++)
+      printf "2026-01-01 00:00:00 [Info] linha de log numero %d - mundo salvo, jogadores: %d\n", i, i % 8 }' >"$log"
+  fi
+}
+
 seed_game_files() {
   install -d -o steam -g steam /opt/game
   case "$GAME_KIND" in
-    palworld) seed_palworld ;;
-    dragonwilds) seed_dragonwilds ;;
+    palworld)
+      seed_palworld
+      seed_arquivos_grandes /opt/game/Pal/Saved/SaveGames/0/Level.sav /opt/game/Pal/Saved/Logs/Pal.log
+      ;;
+    dragonwilds)
+      seed_dragonwilds
+      seed_arquivos_grandes /opt/game/RSDragonwilds/Saved/SaveGames/world.sav \
+        /opt/game/RSDragonwilds/Saved/Logs/RSDragonwilds.log
+      ;;
     *) echo "[aviso] GAME_KIND desconhecido: $GAME_KIND" >&2 ;;
   esac
   # Dono igual ao do jogo de verdade: e assim que da para ver se o editor do painel

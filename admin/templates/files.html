@@ -36,7 +36,11 @@
         {% for m in matches %}
         <li>
           <a href="{{ url_for('files', sid=server.id, file=m.path) }}">{{ m.path }}</a>
-          <span class="muted small">{{ m.size }} B &middot; {{ m.mtime }}</span>
+          <span class="muted small">
+            {{ m.size | tamanho }} &middot; {{ m.mtime }}
+            <a class="dl" title="Baixar {{ m.path }}"
+               href="{{ url_for('files_download', sid=server.id, path=m.path) }}">baixar</a>
+          </span>
         </li>
         {% endfor %}
       </ul>
@@ -56,7 +60,13 @@
           {% else %}
             <a href="{{ url_for('files', sid=server.id, file=e.path) }}">{{ e.name }}</a>
           {% endif %}
-          <span class="muted small">{{ '-' if e.dir else e.size ~ ' B' }} &middot; {{ e.mtime }}</span>
+          <span class="muted small">
+            {{ '-' if e.dir else e.size | tamanho }} &middot; {{ e.mtime }}
+            {% if not e.dir %}
+              <a class="dl" title="Baixar {{ e.name }}"
+                 href="{{ url_for('files_download', sid=server.id, path=e.path) }}">baixar</a>
+            {% endif %}
+          </span>
         </li>
         {% else %}
         <li class="muted">pasta vazia</li>
@@ -70,10 +80,31 @@
     {% if opened %}
       <div class="page-head tight">
         <h2 class="filename">{{ opened.path }}</h2>
-        <span class="muted small">{{ opened.size }} B &middot; {{ opened.mode }} &middot; {{ opened.owner }} &middot; {{ opened.mtime }}</span>
+        <span class="muted small">{{ opened.size | tamanho }} &middot; {{ opened.mode }} &middot; {{ opened.owner }} &middot; {{ opened.mtime }}</span>
       </div>
+
       {% if opened.binary %}
-        <p class="flash error">Arquivo binario &mdash; o painel nao edita isso para nao corromper o jogo.</p>
+        <div class="flash">
+          <strong>Arquivo binario.</strong> O painel nao edita isso para nao corromper o
+          jogo &mdash; mas da para baixar o arquivo inteiro.
+        </div>
+        <div class="form-actions">
+          <a class="btn primary" href="{{ url_for('files_download', sid=server.id, path=opened.path) }}">
+            Baixar ({{ opened.size | tamanho }})
+          </a>
+        </div>
+      {% elif opened.truncated %}
+        <div class="flash">
+          <strong>Somente leitura:</strong> o arquivo tem {{ opened.size | tamanho }} e passa do
+          limite de edicao ({{ max_kb }} KB). Abaixo estao os ultimos
+          {{ opened.shown | tamanho }} &mdash; baixe o arquivo para trabalhar nele inteiro.
+        </div>
+        <div class="form-actions">
+          <a class="btn primary" href="{{ url_for('files_download', sid=server.id, path=opened.path) }}">
+            Baixar ({{ opened.size | tamanho }})
+          </a>
+        </div>
+        <pre class="log">{{ opened.text }}</pre>
       {% else %}
       <form method="post" action="{{ url_for('files_save', sid=server.id) }}" id="editor-form">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -83,12 +114,12 @@
         <div class="form-actions">
           <button class="btn primary" type="submit">Salvar</button>
           <a class="btn ghost" href="{{ url_for('files', sid=server.id, file=opened.path) }}">Descartar</a>
-          <a class="btn ghost" href="{{ url_for('files_raw', sid=server.id, path=opened.path) }}">Baixar</a>
+          <a class="btn ghost" href="{{ url_for('files_download', sid=server.id, path=opened.path) }}">Baixar</a>
           <span class="muted small" id="editor-pos"></span>
         </div>
         <p class="muted small">
           Ctrl+S salva. Antes de gravar, o painel guarda uma copia
-          <code>{{ opened.path.rsplit('/', 1)[-1] }}.&lt;data&gt;.bak</code> na mesma pasta, e mantem
+          <code>{{ opened.name }}.&lt;data&gt;.bak</code> na mesma pasta, e mantem
           dono e permissao do arquivo original.
           {% if opened.crlf %} Este arquivo usa fim de linha CRLF &mdash; sera salvo assim.{% endif %}
         </p>
@@ -97,7 +128,12 @@
     {% else %}
       <h2>Editor</h2>
       <p class="muted">
-        Escolha um arquivo na lista ao lado para editar. O limite e {{ max_kb }} KB por arquivo.
+        Escolha um arquivo na lista ao lado para editar &mdash; ate {{ max_kb }} KB.
+        Acima disso o painel mostra os ultimos {{ preview_kb }} KB so para leitura.
+      </p>
+      <p class="muted small">
+        Qualquer arquivo pode ser baixado pelo link <em>baixar</em> da lista, inclusive
+        binarios (saves, .so, .pak) e arquivos grandes demais para o editor.
       </p>
       {% if server.config_path %}
         <p class="muted small">Pasta de config deste servidor: <code>{{ server.config_path }}</code></p>
@@ -118,7 +154,7 @@
 {% endblock %}
 
 {% block scripts %}
-{% if opened and not opened.binary %}
+{% if opened and opened.editable %}
 <script>
   const area = document.getElementById('content');
   const form = document.getElementById('editor-form');

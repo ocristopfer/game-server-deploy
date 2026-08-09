@@ -194,6 +194,10 @@ table.jobs tr:last-child td { border-bottom: none; }
 .filelist li.open { background: var(--panel-2); outline: 1px solid var(--line); }
 .filelist li.dir a { font-weight: 600; }
 .filelist li a { overflow-wrap: anywhere; }
+.filelist .muted { white-space: nowrap; }
+/* O "baixar" so aparece na linha sob o cursor, senao a lista vira um mural de links. */
+.filelist a.dl { margin-left: 8px; opacity: 0; }
+.filelist li:hover a.dl, .filelist a.dl:focus { opacity: 1; }
 
 .editor .filename {
   font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

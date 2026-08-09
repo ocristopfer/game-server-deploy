@@ -24,6 +24,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+import urllib.parse
 from datetime import datetime, timezone
 from functools import wraps
 
@@ -50,6 +51,7 @@ from flask import (
     render_template,
     request,
     session,
+    stream_with_context,
     url_for,
 )
 
@@ -81,7 +83,16 @@ TERM_POLL_WAIT = 20.0  # long-poll: segura a resposta ate chegar saida nova
 
 # Editor de arquivos: le/grava arquivos de configuracao do jogo pelo mesmo SSH.
 ALLOW_FILES = os.environ.get("GAMEPANEL_ALLOW_FILES", "1") == "1"
-FILE_MAX_BYTES = int(os.environ.get("GAMEPANEL_FILE_MAX", str(1024 * 1024)))
+# Limite para EDITAR (o arquivo inteiro vai para um textarea e volta num POST).
+FILE_MAX_BYTES = int(os.environ.get("GAMEPANEL_FILE_MAX", str(4 * 1024 * 1024)))
+# Acima do limite de edicao o painel ainda mostra o fim do arquivo, so para leitura.
+FILE_PREVIEW_BYTES = int(os.environ.get("GAMEPANEL_FILE_PREVIEW", str(256 * 1024)))
+# Download nao passa por memoria (vai em streaming), entao o teto e bem maior.
+# 0 = sem limite.
+FILE_DOWNLOAD_MAX = int(os.environ.get("GAMEPANEL_FILE_DOWNLOAD_MAX", str(2 * 1024 * 1024 * 1024)))
+DOWNLOAD_CHUNK = 256 * 1024
+# Teto do corpo de um request: o arquivo editado sobe percent-encoded (ate 3x) + folga.
+REQUEST_LIMIT = max(4 * 1024 * 1024, FILE_MAX_BYTES * 4 + 65536)
 # Raizes onde o navegador de arquivos pode entrar. "/" = sem restricao.
 FILE_ROOTS = tuple(
     p for p in os.environ.get("GAMEPANEL_FILE_ROOTS", "/").split(",") if p.strip()
@@ -122,7 +133,10 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=60 * 60 * 12,
     # O editor posta o arquivo como formulario: no pior caso cada byte vira %XX (3x),
     # entao o limite do request tem de ser bem maior que o do arquivo em si.
-    MAX_CONTENT_LENGTH=max(4 * 1024 * 1024, FILE_MAX_BYTES * 4 + 65536),
+    MAX_CONTENT_LENGTH=REQUEST_LIMIT,
+    # O Werkzeug 3.1 passou a cortar campo de formulario em 500 KB por padrao. Sem
+    # subir isto tambem, salvar um arquivo grande morre com 413 antes de chegar na view.
+    MAX_FORM_MEMORY_SIZE=REQUEST_LIMIT,
 )
 
 # Modo desenvolvimento (docker compose): recarrega os templates sem reiniciar.
@@ -469,6 +483,7 @@ JOB_LABELS = {key: label for key, (label, _cmd, _c) in ACTIONS.items()}
 JOB_LABELS["shell"] = "Comando no container"
 JOB_LABELS["terminal"] = "Terminal interativo"
 JOB_LABELS["edit-file"] = "Arquivo salvo"
+JOB_LABELS["download-file"] = "Arquivo baixado"
 
 
 def job_label(action: str) -> str:
@@ -797,7 +812,11 @@ def api_logs(sid: int):
     server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
     if not server:
         abort(404)
+    # Cursor recusado (adulterado, ou de um journalctl que nao os emite) vira leitura
+    # completa: sem isso o cliente anexaria o log inteiro por cima do que ja esta na tela.
     cursor = request.args.get("cursor", "")
+    if not CURSOR_RE.match(cursor or ""):
+        cursor = ""
     try:
         text, new_cursor = read_logs(server, _log_lines_arg(request.args.get("lines")), cursor)
     except RemoteError as exc:
@@ -1200,6 +1219,19 @@ def parent_of(path: str) -> str:
     return path.rsplit("/", 1)[0] or "/"
 
 
+@app.template_filter("tamanho")
+def _human_size(num: int | None) -> str:
+    """1536 -> '1.5 KB'. Um save de jogo em bytes crus nao diz nada para ninguem."""
+    valor = float(num or 0)
+    for unidade in ("B", "KB", "MB", "GB"):
+        if valor < 1024 or unidade == "GB":
+            if unidade == "B":
+                return f"{int(valor)} B"
+            return f"{valor:.1f} {unidade}"
+        valor /= 1024
+    return f"{valor:.1f} GB"
+
+
 LIST_SCRIPT = r"""
 set -e
 d=$1
@@ -1208,15 +1240,31 @@ find "$d" -maxdepth 1 -mindepth 1 -printf '%y\t%Y\t%s\t%TY-%Tm-%Td %TH:%TM\t%M\t
   2>/dev/null | head -n "$2"
 """
 
+# $2 = limite de edicao, $3 = quanto trazer do fim quando o arquivo passa do limite.
+# Arquivo grande nao e mais um erro: vem so o fim dele, marcado como 'tail'.
 READ_SCRIPT = r"""
 set -e
 f=$1
 [ -e "$f" ] || { echo "arquivo nao encontrado" >&2; exit 3; }
 [ -f "$f" ] || { echo "nao e um arquivo comum" >&2; exit 4; }
 sz=$(stat -Lc %s -- "$f")
-[ "$sz" -le "$2" ] || { echo "arquivo grande demais: $sz bytes" >&2; exit 5; }
+if [ "$sz" -le "$2" ]; then kind=full; else kind=tail; fi
+stat -Lc "META|%s|%y|%a|%U|%G|$kind" -- "$f"
+if [ "$kind" = full ]; then
+  base64 -w0 -- "$f"
+else
+  tail -c "$3" -- "$f" | base64 -w0
+fi
+"""
+
+# Usado antes do download: confere que da para baixar e quanto tem para vir.
+STAT_SCRIPT = r"""
+set -e
+f=$1
+[ -e "$f" ] || { echo "arquivo nao encontrado" >&2; exit 3; }
+[ -f "$f" ] || { echo "nao e um arquivo comum (pastas nao sao baixaveis)" >&2; exit 4; }
+[ -r "$f" ] || { echo "sem permissao de leitura" >&2; exit 5; }
 stat -Lc 'META|%s|%y|%a|%U|%G' -- "$f"
-base64 -w0 -- "$f"
 """
 
 # Grava por cima do arquivo existente (cat >) em vez de trocar o inode: assim dono,
@@ -1280,29 +1328,63 @@ def list_dir(server: sqlite3.Row, path: str) -> tuple[list[dict], bool]:
     return entries, len(entries) >= FILE_LIST_MAX
 
 
+def _parse_meta(head: str, campos: int) -> list[str]:
+    meta = head.split("|")
+    if meta[0] != "META" or len(meta) < campos:
+        raise RemoteError("resposta inesperada do container ao ler o arquivo")
+    return meta
+
+
+def stat_file(server: sqlite3.Row, path: str) -> dict:
+    """Metadados sem trazer o conteudo — usado antes de comecar um download."""
+    proc = ssh_run(server, q("bash", "-lc", STAT_SCRIPT, "gp", path), timeout=40)
+    if proc.returncode != 0:
+        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao ler o arquivo")
+    meta = _parse_meta(proc.stdout.strip(), 6)
+    return {
+        "path": path,
+        "name": path.rsplit("/", 1)[-1] or "arquivo",
+        "size": int(meta[1]) if meta[1].isdigit() else 0,
+        "mtime": meta[2][:19],
+        "mode": meta[3],
+        "owner": f"{meta[4]}:{meta[5]}",
+    }
+
+
 def read_file(server: sqlite3.Row, path: str) -> dict:
+    """Le o arquivo para o editor.
+
+    Arquivo dentro do limite vem inteiro e editavel. Acima do limite vem so o fim
+    (somente leitura) — quem precisa do arquivo completo usa o download.
+    """
     proc = ssh_run(
-        server, q("bash", "-lc", READ_SCRIPT, "gp", path, str(FILE_MAX_BYTES)), timeout=90
+        server,
+        q("bash", "-lc", READ_SCRIPT, "gp", path, str(FILE_MAX_BYTES), str(FILE_PREVIEW_BYTES)),
+        timeout=180,
     )
     if proc.returncode != 0:
         raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao ler o arquivo")
     head, _, payload = proc.stdout.partition("\n")
-    meta = head.split("|")
-    if meta[0] != "META" or len(meta) < 6:
-        raise RemoteError("resposta inesperada do container ao ler o arquivo")
+    meta = _parse_meta(head, 7)
     try:
         raw = base64.b64decode(payload.strip() or "", validate=True)
     except (binascii.Error, ValueError):
         raise RemoteError("conteudo do arquivo chegou corrompido")
     binary = b"\x00" in raw
+    truncated = meta[6] == "tail"
     text = "" if binary else raw.decode("utf-8", "replace")
     return {
         "path": path,
+        "name": path.rsplit("/", 1)[-1] or "arquivo",
         "size": int(meta[1]) if meta[1].isdigit() else len(raw),
         "mtime": meta[2][:19],
         "mode": meta[3],
         "owner": f"{meta[4]}:{meta[5]}",
         "binary": binary,
+        # Fim do arquivo apenas: editar e salvar daqui apagaria todo o resto.
+        "truncated": truncated,
+        "shown": len(raw),
+        "editable": not binary and not truncated,
         "text": text,
         # \r\n vira \n no textarea; guardamos para devolver o arquivo como estava.
         "crlf": b"\r\n" in raw,
@@ -1352,7 +1434,8 @@ def files(sid: int):
     return render_template(
         "files.html", server=server, entries=entries, truncated=truncated,
         current=current, crumbs=crumbs, opened=opened, errors=errors,
-        max_kb=FILE_MAX_BYTES // 1024, matches=None,
+        max_kb=FILE_MAX_BYTES // 1024, preview_kb=FILE_PREVIEW_BYTES // 1024,
+        matches=None,
     )
 
 
@@ -1398,7 +1481,8 @@ def files_search(sid: int):
     return render_template(
         "files.html", server=server, entries=[], truncated=False, current=root,
         crumbs=[{"name": "/", "path": "/"}], opened=None, errors=errors,
-        max_kb=FILE_MAX_BYTES // 1024, matches=matches,
+        max_kb=FILE_MAX_BYTES // 1024, preview_kb=FILE_PREVIEW_BYTES // 1024,
+        matches=matches,
     )
 
 
@@ -1426,6 +1510,20 @@ def files_save(sid: int):
         flash(f"Arquivo grande demais para salvar (limite de {FILE_MAX_BYTES // 1024} KB).", "error")
         return redirect(url_for("files", sid=sid, file=path))
 
+    # O arquivo pode ter crescido desde que a tela abriu (log, save do jogo). Gravar o
+    # que esta no textarea agora apagaria tudo o que nao coube nele.
+    try:
+        atual = stat_file(server, path)
+        if atual["size"] > FILE_MAX_BYTES:
+            flash(
+                f"{path} tem {atual['size'] // 1024} KB e passou do limite de edicao"
+                f" ({FILE_MAX_BYTES // 1024} KB). Nada foi gravado — baixe o arquivo para mexer nele.",
+                "error",
+            )
+            return redirect(url_for("files", sid=sid, file=path))
+    except RemoteError:
+        pass  # arquivo novo, ou stat falhou: o proprio gravar reporta o erro
+
     try:
         proc = ssh_run(
             server, q("bash", "-lc", WRITE_SCRIPT, "gp", path), timeout=120,
@@ -1448,25 +1546,68 @@ def files_save(sid: int):
     return redirect(url_for("files", sid=sid, file=path))
 
 
-@app.get("/servers/<int:sid>/files/raw")
+def _attachment_header(name: str) -> str:
+    """Content-Disposition que aguenta acento e aspas no nome do arquivo."""
+    ascii_name = re.sub(r'[^A-Za-z0-9._-]', "_", name) or "arquivo"
+    quoted = urllib.parse.quote(name, safe="")
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"
+
+
+def stream_remote_file(server: sqlite3.Row, path: str):
+    """Joga o arquivo do container direto para o navegador, sem passar por disco.
+
+    E `cat` na outra ponta lido em pedacos: um save de varios GB desce sem o painel
+    guardar nada em memoria.
+    """
+    argv = ssh_argv(server) + [q("cat", "--", path)]
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def gerar():
+        try:
+            while True:
+                chunk = proc.stdout.read(DOWNLOAD_CHUNK)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            # Navegador que cancela no meio nao pode deixar um ssh orfao segurando fd.
+            if proc.poll() is None:
+                proc.kill()
+            for pipe in (proc.stdout, proc.stderr):
+                if pipe:
+                    pipe.close()
+            proc.wait()
+
+    return gerar()
+
+
+@app.get("/servers/<int:sid>/files/download")
 @login_required
-def files_raw(sid: int):
-    """Baixa o arquivo como esta no container (util antes de uma edicao grande)."""
+def files_download(sid: int):
+    """Baixa qualquer arquivo do container — inclusive binario ou grande demais para o editor."""
     _files_guard()
     server = _server_or_404(sid)
     try:
         path = clean_path(request.args.get("path", ""))
-        info = read_file(server, path)
+        info = stat_file(server, path)
     except (ValueError, RemoteError) as exc:
         abort(400, str(exc))
-    if info["binary"]:
-        abort(400, "arquivo binario: baixe pelo terminal (scp) em vez do painel")
+
+    if FILE_DOWNLOAD_MAX and info["size"] > FILE_DOWNLOAD_MAX:
+        abort(400, f"arquivo de {info['size']} bytes acima do limite de download"
+                   f" ({FILE_DOWNLOAD_MAX} bytes) — use scp para este")
+
+    log_job(
+        "download-file", server, session.get("username", "?"),
+        command=path, output=f"{info['size']} bytes",
+    )
     return app.response_class(
-        info["text"].encode("utf-8"),
-        mimetype="text/plain; charset=utf-8",
+        stream_with_context(stream_remote_file(server, path)),
+        mimetype="application/octet-stream",
         headers={
-            "Content-Disposition":
-                f'attachment; filename="{path.rsplit("/", 1)[-1]}"'
+            "Content-Disposition": _attachment_header(info["name"]),
+            "Content-Length": str(info["size"]),
+            "X-Content-Type-Options": "nosniff",
         },
     )
 

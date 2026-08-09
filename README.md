@@ -210,7 +210,16 @@ do jogo direto no navegador.
   arquivo existente**, preservando dono e permissao (o jogo roda como `steam`, nao root).
 - `Ctrl+S` salva; sair com alteracoes pendentes pede confirmacao. Da para baixar o
   arquivo antes de mexer.
-- Arquivos binarios sao recusados; o limite e `ADMIN_FILE_MAX_KB` (padrao 1024 KB).
+- **Download**: todo arquivo tem um link `baixar` na lista — inclusive binarios (saves,
+  `.pak`, `.so`) e arquivos grandes demais para o editor. O download vai em streaming
+  (`cat` pelo SSH lido em blocos), entao um save de varios GB desce sem o painel
+  guardar nada em memoria. Teto em `ADMIN_FILE_DOWNLOAD_MAX_MB` (padrao 2048; `0` = sem
+  limite) e cada download fica no historico do servidor.
+- Edicao ate `ADMIN_FILE_MAX_KB` (padrao 4096 KB). Acima disso o arquivo abre em
+  **somente leitura** mostrando os ultimos `ADMIN_FILE_PREVIEW_KB` (padrao 256 KB) —
+  util para espiar um log grande — com o botao de baixar ao lado. Salvar fica bloqueado
+  ai (inclusive no servidor), senao gravar o preview truncaria o arquivo.
+- Binarios nao sao editaveis (so baixaveis): o painel detecta pelo byte nulo.
 - `ADMIN_FILE_ROOTS` restringe onde o navegador de arquivos pode entrar (padrao: tudo).
 - Pare o servidor antes de editar o que ele reescreve ao sair — varios jogos sobrescrevem
   o `.ini` no shutdown.
