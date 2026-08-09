@@ -33,6 +33,9 @@
       {% if s.game_port %}<div><dt>Portas</dt><dd>{{ s.game_port }}</dd></div>{% endif %}
     </dl>
     {% if st.error %}<p class="flash error small">{{ st.error }}</p>{% endif %}
+    <div class="mini-meters" data-server="{{ s.id }}">
+      <span class="muted small">medindo recursos...</span>
+    </div>
     <div class="actions">
       {% for key in ['start', 'restart', 'stop', 'update'] %}
         {% set label, _cmd, confirm = actions[key] %}
@@ -53,4 +56,34 @@
   </div>
 {% endfor %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if servers %}
+<script src="{{ url_for('static', filename='metrics.js') }}"></script>
+<script>
+  // Os medidores entram depois que a pagina abre: uma leitura de recursos custa ~1s de
+  // SSH e nao pode segurar a lista de servidores.
+  const caixas = document.querySelectorAll('.mini-meters');
+
+  async function atualizarMedidores() {
+    if (document.hidden) return;
+    try {
+      const res = await fetch("{{ url_for('api_metrics') }}", {headers: {'Accept': 'application/json'}});
+      if (!res.ok) return;
+      const tudo = await res.json();
+      caixas.forEach((caixa) => {
+        const data = tudo[caixa.dataset.server];
+        if (data) caixa.innerHTML = PanelMetrics.resumo(data);
+      });
+    } catch (err) {
+      console.debug('medidores do painel falharam', err);
+    }
+  }
+
+  atualizarMedidores();
+  setInterval(atualizarMedidores, 10000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarMedidores(); });
+</script>
+{% endif %}
 {% endblock %}

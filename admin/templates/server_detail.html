@@ -42,6 +42,57 @@
   </div>
 </div>
 
+<div class="card" id="recursos" data-url="{{ url_for('api_server_metrics', sid=server.id) }}">
+  <div class="page-head tight">
+    <h2>Recursos</h2>
+    <span class="muted small" id="recursos-info">
+      {% if metrics.error %}indisponivel{% else %}atualiza a cada 5s{% endif %}
+    </span>
+  </div>
+  {% if metrics.error %}
+    <p class="muted">Nao consegui ler os medidores: {{ metrics.error }}</p>
+  {% else %}
+  <div class="meters" id="meters">
+    <div class="meter" data-key="cpu">
+      <div class="meter-head"><span>CPU</span><span class="val">{{ '%.1f'|format(metrics.cpu_pct) if metrics.cpu_pct is not none else '-' }}%</span></div>
+      <div class="bar{{ metrics.cpu_pct | nivel }}"><i style="width: {{ metrics.cpu_pct or 0 }}%"></i></div>
+      <div class="meter-foot">{{ metrics.cores }} nucleo(s) &middot; load {{ metrics.load or '-' }}</div>
+    </div>
+    <div class="meter" data-key="mem">
+      <div class="meter-head"><span>Memoria</span><span class="val">{{ '%.1f'|format(metrics.mem.pct) if metrics.mem.pct is not none else '-' }}%</span></div>
+      <div class="bar{{ metrics.mem.pct | nivel }}"><i style="width: {{ metrics.mem.pct or 0 }}%"></i></div>
+      <div class="meter-foot">{{ metrics.mem.used | tamanho }} de {{ metrics.mem.total | tamanho }}</div>
+    </div>
+    {% if metrics.swap.total %}
+    <div class="meter" data-key="swap">
+      <div class="meter-head"><span>Swap</span><span class="val">{{ '%.1f'|format(metrics.swap.pct) if metrics.swap.pct is not none else '-' }}%</span></div>
+      <div class="bar{{ metrics.swap.pct | nivel }}"><i style="width: {{ metrics.swap.pct or 0 }}%"></i></div>
+      <div class="meter-foot">{{ metrics.swap.used | tamanho }} de {{ metrics.swap.total | tamanho }}</div>
+    </div>
+    {% endif %}
+    {% for d in metrics.disks %}
+    <div class="meter" data-key="disk:{{ d.mount }}">
+      <div class="meter-head"><span>Disco {{ d.mount }}</span><span class="val">{{ '%.1f'|format(d.pct) if d.pct is not none else '-' }}%</span></div>
+      <div class="bar{{ d.pct | nivel }}"><i style="width: {{ d.pct or 0 }}%"></i></div>
+      <div class="meter-foot">{{ d.used | tamanho }} de {{ d.total | tamanho }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <dl class="meta wide" id="recursos-extra">
+    <div><dt>Rede</dt><dd data-key="net">
+      {{ metrics.net_rx | tamanho }}/s rx &middot; {{ metrics.net_tx | tamanho }}/s tx
+    </dd></div>
+    <div><dt>Uptime</dt><dd data-key="uptime">{{ metrics.uptime | duracao }}</dd></div>
+    <div><dt>Processo do jogo</dt><dd data-key="proc">
+      {% if metrics.proc.pid %}
+        PID {{ metrics.proc.pid }} &middot; {{ metrics.proc.rss | tamanho }} RAM
+        {%- if metrics.proc.cpu_pct is not none %} &middot; {{ '%.1f'|format(metrics.proc.cpu_pct) }}% CPU{% endif %}
+      {% else %}parado{% endif %}
+    </dd></div>
+  </dl>
+  {% endif %}
+</div>
+
 <div class="card">
   <div class="page-head tight">
     <h2>Log do servico</h2>
@@ -90,6 +141,40 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='metrics.js') }}"></script>
+<script>
+  const cardRecursos = document.getElementById('recursos');
+  const grade = document.getElementById('meters');
+  const infoRecursos = document.getElementById('recursos-info');
+
+  async function atualizarRecursos() {
+    if (!grade || document.hidden) return;
+    try {
+      const res = await fetch(cardRecursos.dataset.url, {headers: {'Accept': 'application/json'}});
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || ('http ' + res.status));
+      grade.innerHTML = PanelMetrics.completos(data);
+      const extra = document.getElementById('recursos-extra');
+      extra.querySelector('[data-key="net"]').textContent =
+        PanelMetrics.tamanho(data.net_rx) + '/s rx · ' + PanelMetrics.tamanho(data.net_tx) + '/s tx';
+      extra.querySelector('[data-key="uptime"]').textContent = PanelMetrics.duracao(data.uptime);
+      extra.querySelector('[data-key="proc"]').textContent = data.proc && data.proc.pid
+        ? 'PID ' + data.proc.pid + ' · ' + PanelMetrics.tamanho(data.proc.rss) +
+          ' RAM' + (data.proc.cpu_pct === null ? '' : ' · ' + data.proc.cpu_pct.toFixed(1) + '% CPU')
+        : 'parado';
+      infoRecursos.textContent = 'atualiza a cada 5s';
+    } catch (err) {
+      console.debug('medidores falharam, tentando de novo', err);
+      infoRecursos.textContent = 'sem leitura no momento';
+    }
+  }
+
+  if (grade) {
+    setInterval(atualizarRecursos, 5000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarRecursos(); });
+  }
+</script>
+
 {% if not log_error %}
 <script>
   const box = document.getElementById('log-box');

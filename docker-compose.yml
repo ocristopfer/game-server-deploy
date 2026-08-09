@@ -40,6 +40,10 @@ services:
       GAME_SERVICE: palworld.service
     volumes:
       - panel-keys:/keys:ro
+    # Limites como os de um LXC: sem eles o cgroup nao tem teto e os medidores do
+    # painel mostrariam a memoria e a CPU da maquina inteira.
+    mem_limit: 1g
+    cpus: 2
 
   game-dragonwilds:
     build: ./docker/game
@@ -49,6 +53,8 @@ services:
       GAME_SERVICE: dragonwilds.service
     volumes:
       - panel-keys:/keys:ro
+    mem_limit: 2g
+    cpus: 1
 
 volumes:
   panel-keys:

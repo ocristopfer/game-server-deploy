@@ -144,6 +144,37 @@ table.jobs th, table.jobs td { text-align: left; padding: 8px 10px; border-botto
 table.jobs th { color: var(--muted); font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
 table.jobs tr:last-child td { border-bottom: none; }
 
+/* ---------- medidores de recursos ---------- */
+.meters {
+  display: grid; gap: 14px 22px; margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.meter-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 10px; font-size: .82rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.meter-head .val { font-size: 1rem; color: var(--text); font-variant-numeric: tabular-nums; }
+.meter-foot { margin-top: 5px; font-size: .8rem; color: var(--muted); }
+
+.bar {
+  display: block; height: 7px; margin-top: 6px; overflow: hidden;
+  background: var(--panel-2); border-radius: 999px;
+}
+.bar > i {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--accent); transition: width .4s ease;
+}
+.bar.warn > i { background: var(--warn); }
+.bar.hot > i { background: var(--err); }
+
+/* Versao compacta nos cards do painel de servidores. */
+.mini-meters { display: flex; flex-direction: column; gap: 6px; }
+.mini { display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--muted); }
+.mini-label { width: 42px; flex: none; }
+.mini .bar { flex: 1; margin-top: 0; height: 6px; }
+.mini-val { width: 46px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+
 /* ---------- terminal interativo ---------- */
 .term {
   position: relative;  /* ancora o textarea invisivel da entrada */

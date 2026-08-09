@@ -138,9 +138,9 @@ pct exec <CTID> -- journalctl -u game-update-check.service -n 20   # log das che
 ## Painel administrativo (web)
 
 Um container separado sobe um painel web para gerenciar todos os servidores: cadastrar,
-ver status, start/stop/restart, atualizar pelo SteamCMD, ler logs, **abrir um terminal
-interativo** e **editar os arquivos de configuracao dos jogos** — tudo direto dentro de
-cada container.
+ver status e **uso de CPU/memoria/disco/rede**, start/stop/restart, atualizar pelo
+SteamCMD, ler logs (com modo ao vivo), **abrir um terminal interativo** e **editar ou
+baixar os arquivos dos jogos** — tudo direto dentro de cada container.
 
 ```powershell
 .\deploy-admin.ps1                # usa as chaves ADMIN_* do .env
@@ -183,6 +183,25 @@ Em **Adicionar**, informe:
 
 Start, stop, restart, update, terminal e editor rodam a partir dai. Acoes demoradas
 (update) viram um job com a saida atualizando ao vivo na tela.
+
+### Medidores de recursos
+
+Cada servidor mostra quanto do container esta em uso, lido por SSH direto de `/proc` e
+dos cgroups &mdash; sem agente, sem instalar nada no container do jogo.
+
+- **Tela do servidor**: barras de CPU, memoria, swap e disco (por ponto de montagem),
+  mais taxa de rede (rx/tx), load average, uptime e o **processo do jogo** (PID, RAM
+  residente e CPU dele, separado do resto do container). Atualiza a cada 5s.
+- **Lista de servidores**: tres barras compactas (CPU, RAM, disco) por card, carregadas
+  depois da pagina para nao atrasar a abertura. Atualiza a cada 10s.
+- A barra fica amarela em 80% e vermelha em 92%.
+- A medicao respeita os limites do container: usa `cpu.max` e `memory.max` do cgroup
+  quando existem (o `cpulimit`/`memory` do LXC), entao um CT limitado a 2 nucleos chega
+  a 100% com 2 nucleos ocupados &mdash; e nao a 16% dos 12 do host. Sem limite definido,
+  cai para `/proc` (com lxcfs, que o Proxmox usa por padrao, os valores ja sao por CT).
+- CPU e rede sao medidos por duas amostras espacadas em 0,5s dentro do container, numa
+  unica ida de SSH. O resultado fica em cache por `ADMIN_METRICS_TTL` segundos (padrao 4)
+  para varias abas abertas nao virarem varias conexoes por segundo.
 
 ### Terminal interativo
 
@@ -271,7 +290,7 @@ docker compose down -v            # zera banco, chaves e arquivos de teste
 
 | Caminho (no CT do painel) | O que e |
 |---------------------------|---------|
-| `/opt/gamepanel/` | aplicacao (Flask + `static/terminal.js`) |
+| `/opt/gamepanel/` | aplicacao (Flask + `static/terminal.js` + `static/metrics.js`) |
 | `/var/lib/gamepanel/panel.db` | SQLite: usuarios, servidores, historico |
 | `/var/lib/gamepanel/known_hosts` | host keys aprendidas dos containers |
 | `/etc/gamepanel/id_ed25519` | chave SSH do painel |

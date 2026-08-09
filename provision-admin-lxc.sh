@@ -68,6 +68,7 @@ resolve_variables() {
   FILE_DEFAULT="${ADMIN_FILE_DEFAULT:-/opt/game}"
   TERM_MAX="${ADMIN_TERM_MAX:-4}"
   TERM_IDLE="${ADMIN_TERM_IDLE:-900}"
+  METRICS_TTL="${ADMIN_METRICS_TTL:-4}"
   RECREATE_CT="${RECREATE_ADMIN_CT:-0}"
 
   if [[ "$IP_CIDR" == "dhcp" ]]; then
@@ -89,8 +90,10 @@ validate_host_requirements() {
   [[ -f "$APP_SRC_DIR/templates/terminal.html" ]] || die "templates/terminal.html nao encontrado em $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/templates/files.html" ]] || die "templates/files.html nao encontrado em $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/static/style.css" ]] || die "static/style.css nao encontrado em $APP_SRC_DIR"
-  # Sem o terminal.js a tela do terminal abre em branco, sem erro nenhum no servidor.
+  # Sem estes JS a tela abre em branco (terminal) ou sem medidores, e nada disso da
+  # erro no servidor — so quebra no navegador.
   [[ -f "$APP_SRC_DIR/static/terminal.js" ]] || die "static/terminal.js nao encontrado em $APP_SRC_DIR"
+  [[ -f "$APP_SRC_DIR/static/metrics.js" ]] || die "static/metrics.js nao encontrado em $APP_SRC_DIR"
 }
 
 ensure_debian_template() {
@@ -203,7 +206,7 @@ push_application() {
   run_ct "chown -R root:root ${APP_DIR}"
 
   # Falhar aqui e melhor do que descobrir pela tela de erro do navegador.
-  run_ct "test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/static/style.css && test -f ${APP_DIR}/static/terminal.js" \
+  run_ct "test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/static/style.css && test -f ${APP_DIR}/static/terminal.js && test -f ${APP_DIR}/static/metrics.js" \
     || die "Templates/estaticos nao chegaram em ${APP_DIR} (veja a saida do pct push acima)"
   msg "Publicados: $(run_ct "ls ${APP_DIR}/templates | wc -l" | tr -d '\r') templates"
 }
@@ -235,6 +238,7 @@ GAMEPANEL_PORT=${PANEL_PORT}
 GAMEPANEL_ALLOW_SHELL=${ALLOW_SHELL}
 GAMEPANEL_TERM_MAX=${TERM_MAX}
 GAMEPANEL_TERM_IDLE=${TERM_IDLE}
+GAMEPANEL_METRICS_TTL=${METRICS_TTL}
 GAMEPANEL_ALLOW_FILES=${ALLOW_FILES}
 GAMEPANEL_FILE_MAX=$((FILE_MAX_KB * 1024))
 GAMEPANEL_FILE_PREVIEW=$((FILE_PREVIEW_KB * 1024))

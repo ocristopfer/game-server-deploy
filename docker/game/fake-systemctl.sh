@@ -8,12 +8,22 @@ LOG_DIR=/var/log/fakegame
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 
 quiet=0
+value_only=0
+propriedade=""
 args=()
 for a in "$@"; do
   case "$a" in
     --quiet|-q) quiet=1 ;;
+    --value) value_only=1 ;;
+    -p) propriedade="PROXIMO" ;;
     --no-pager|--now|--system|--user|-l) ;;
-    *) args+=("$a") ;;
+    *)
+      if [ "$propriedade" = "PROXIMO" ]; then
+        propriedade="$a"
+      else
+        args+=("$a")
+      fi
+      ;;
   esac
 done
 
@@ -44,6 +54,13 @@ stop_unit() {
 }
 
 case "$cmd" in
+  show)
+    # O painel usa 'systemctl show -p MainPID --value <unit>' para medir o processo
+    # do jogo (RAM e CPU dele, nao do container inteiro).
+    valor=0
+    if [ "$propriedade" = "MainPID" ] && running; then valor="$(cat "$pidfile")"; fi
+    if [ "$value_only" -eq 1 ]; then echo "$valor"; else echo "${propriedade}=${valor}"; fi
+    ;;
   start)   start_unit ;;
   stop)    stop_unit ;;
   restart) stop_unit; start_unit ;;

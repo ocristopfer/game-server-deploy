@@ -67,6 +67,8 @@ KNOWN_HOSTS = os.environ.get("GAMEPANEL_KNOWN_HOSTS", "/var/lib/gamepanel/known_
 QUICK_TIMEOUT = 20
 JOB_TIMEOUT = int(os.environ.get("GAMEPANEL_JOB_TIMEOUT", "5400"))
 STATUS_TTL = 8.0
+# Medidores de CPU/memoria/disco/rede: cada leitura custa uma ida de SSH de ~1s.
+METRICS_TTL = float(os.environ.get("GAMEPANEL_METRICS_TTL", "4"))
 
 # Console web: executa comandos como root DENTRO do container de jogo escolhido.
 # E a funcionalidade mais poderosa do painel — desligue com GAMEPANEL_ALLOW_SHELL=0.
@@ -407,6 +409,218 @@ def public_key() -> str:
         return ""
 
 
+# ------------------------------------------------------------------ recursos
+
+# Duas amostras espacadas dentro do proprio container: CPU e rede so fazem sentido como
+# variacao no tempo, e medir com uma unica ida de SSH sai mais barato do que guardar a
+# amostra anterior aqui e torcer para o intervalo entre telas ser regular.
+METRICS_SCRIPT = r"""
+set -u
+CG=/sys/fs/cgroup
+unit=$1
+dir=$2
+
+cpu_usec() {
+  if [ -r "$CG/cpu.stat" ]; then
+    awk '/^usage_usec/ { print $2; exit }' "$CG/cpu.stat"
+  else
+    echo -
+  fi
+}
+# Cada numero sai no seu proprio campo (separador '|'): dois valores num campo so
+# fariam o painel ler o total da CPU como texto e zerar a conta.
+proc_stat() { awk '/^cpu /{ t=0; for (i=2; i<=NF; i++) t+=$i; printf "%d|%d", t, $5+$6; exit }' /proc/stat; }
+# Soma todas as interfaces menos a loopback (rx = campo 2, tx = campo 10 apos o ':').
+net_bytes() {
+  awk 'NR>2 { sub(/:/, " "); if ($1 != "lo") { rx += $2; tx += $10 } }
+       END { printf "%d|%d", rx+0, tx+0 }' /proc/net/dev
+}
+pid_ticks() {
+  if [ "$1" -gt 0 ] && [ -r "/proc/$1/stat" ]; then
+    awk '{ print $14 + $15 }' "/proc/$1/stat"
+  else
+    echo 0
+  fi
+}
+
+pid=$(systemctl show -p MainPID --value "$unit" 2>/dev/null || echo 0)
+case "$pid" in ''|*[!0-9]*) pid=0 ;; esac
+
+amostra() {
+  printf 'sample|%s|%s|%s|%s|%s\n' \
+    "$(awk '{ print $1; exit }' /proc/uptime)" \
+    "$(cpu_usec)" "$(proc_stat)" "$(net_bytes)" "$(pid_ticks "$pid")"
+}
+
+amostra
+sleep 0.5
+amostra
+
+printf 'cores|%s\n' "$(nproc 2>/dev/null || echo 1)"
+# cpu.max = "<quota> <periodo>" (ou "max"): e o teto real quando o container tem
+# limite de CPU (cpulimit no Proxmox), que o nproc sozinho nao mostra.
+[ -r "$CG/cpu.max" ] && printf 'cpumax|%s\n' "$(cat "$CG/cpu.max")"
+printf 'tick|%s\n' "$(getconf CLK_TCK 2>/dev/null || echo 100)"
+printf 'load|%s\n' "$(cut -d' ' -f1-3 /proc/loadavg)"
+printf 'boot|%s\n' "$(awk '{ print $1; exit }' /proc/uptime)"
+awk '/^MemTotal:|^MemAvailable:|^SwapTotal:|^SwapFree:/ { printf "meminfo|%s|%s\n", $1, $2 }' /proc/meminfo
+# Em container o cgroup e mais honesto que o /proc/meminfo quando nao ha lxcfs.
+[ -r "$CG/memory.current" ] && printf 'cgmem|%s|%s\n' \
+  "$(cat "$CG/memory.current")" "$(cat "$CG/memory.max" 2>/dev/null || echo max)"
+df -P -B1 / "$dir" 2>/dev/null | awk 'NR>1 { printf "disk|%s|%s|%s\n", $6, $2, $3 }'
+printf 'proc|%s|%s\n' "$pid" \
+  "$(awk '/^VmRSS:/ { print $2; exit }' "/proc/$pid/status" 2>/dev/null || echo 0)"
+"""
+
+
+def _num(value: str, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _pct(part: float, whole: float) -> float | None:
+    if whole <= 0:
+        return None
+    return round(max(0.0, min(100.0, part * 100.0 / whole)), 1)
+
+
+def _parse_metrics(raw: str) -> dict:
+    """Transforma a saida do script acima em numeros prontos para a tela."""
+    samples: list[list[str]] = []
+    meminfo: dict[str, float] = {}
+    disks: dict[str, dict] = {}
+    cores, clk_tck = 1.0, 100.0
+    load, uptime = "", 0.0
+    cg_current, cg_max = None, None
+    pid, rss_kb = 0, 0.0
+
+    for line in raw.splitlines():
+        parts = line.split("|")
+        tag = parts[0]
+        # uptime | cpu_usec | stat_total | stat_idle | rx | tx | ticks do processo
+        if tag == "sample" and len(parts) >= 8:
+            samples.append(parts[1:])
+        elif tag == "cores":
+            cores = max(1.0, _num(parts[1], 1))
+        elif tag == "cpumax" and len(parts) >= 2:
+            quota, _, periodo = parts[1].strip().partition(" ")
+            if quota != "max" and _num(periodo) > 0:
+                cores = max(0.1, _num(quota) / _num(periodo))
+        elif tag == "tick":
+            clk_tck = max(1.0, _num(parts[1], 100))
+        elif tag == "load":
+            load = parts[1]
+        elif tag == "boot":
+            uptime = _num(parts[1])
+        elif tag == "meminfo" and len(parts) >= 3:
+            meminfo[parts[1].rstrip(":")] = _num(parts[2]) * 1024  # /proc/meminfo vem em kB
+        elif tag == "cgmem" and len(parts) >= 3:
+            cg_current = _num(parts[1])
+            cg_max = None if parts[2].strip() == "max" else _num(parts[2])
+        elif tag == "disk" and len(parts) >= 4:
+            disks[parts[1]] = {
+                "mount": parts[1], "total": _num(parts[2]), "used": _num(parts[3]),
+                "pct": _pct(_num(parts[3]), _num(parts[2])),
+            }
+        elif tag == "proc" and len(parts) >= 3:
+            pid = int(_num(parts[1]))
+            rss_kb = _num(parts[2])
+
+    out: dict = {
+        # Pode ser fracionario quando o container tem limite de CPU (ex.: 1.5 nucleos).
+        "cores": int(cores) if cores == int(cores) else round(cores, 1),
+        "load": load, "uptime": uptime,
+        "disks": sorted(disks.values(), key=lambda d: d["mount"]),
+        "cpu_pct": None, "net_rx": None, "net_tx": None,
+        "proc": {"pid": pid, "rss": rss_kb * 1024, "cpu_pct": None},
+    }
+
+    if len(samples) >= 2:
+        a, b = samples[0], samples[-1]
+        dt = _num(b[0]) - _num(a[0])
+        if dt > 0:
+            # cpu.stat do cgroup mede o container; /proc/stat so acerta com lxcfs no meio.
+            if a[1] != "-" and b[1] != "-":
+                out["cpu_pct"] = _pct((_num(b[1]) - _num(a[1])) / 1e6, dt * cores)
+            else:
+                total = _num(b[2]) - _num(a[2])
+                idle = _num(b[3]) - _num(a[3])
+                out["cpu_pct"] = _pct(total - idle, total)
+            out["net_rx"] = max(0.0, (_num(b[4]) - _num(a[4])) / dt)
+            out["net_tx"] = max(0.0, (_num(b[5]) - _num(a[5])) / dt)
+            if pid:
+                usados = (_num(b[6]) - _num(a[6])) / clk_tck
+                out["proc"]["cpu_pct"] = _pct(usados, dt * cores)
+
+    total = meminfo.get("MemTotal", 0.0)
+    disponivel = meminfo.get("MemAvailable", 0.0)
+    usada = max(0.0, total - disponivel)
+    # Limite do cgroup manda quando ele existe e e menor que a RAM da maquina: e o teto
+    # real do container, e o /proc/meminfo sem lxcfs mostraria a memoria do host inteiro.
+    if cg_current is not None and cg_max and (not total or cg_max < total):
+        total, usada = cg_max, cg_current
+    elif cg_current is not None and not total:
+        total, usada = cg_current, cg_current
+    out["mem"] = {"total": total, "used": usada, "pct": _pct(usada, total)}
+
+    swap_total = meminfo.get("SwapTotal", 0.0)
+    swap_usado = max(0.0, swap_total - meminfo.get("SwapFree", 0.0))
+    out["swap"] = {"total": swap_total, "used": swap_usado, "pct": _pct(swap_usado, swap_total)}
+    return out
+
+
+_metrics_cache: dict[int, tuple[float, dict]] = {}
+_metrics_lock = threading.Lock()
+
+
+def server_metrics(server: sqlite3.Row, force: bool = False) -> dict:
+    """Uso de CPU, memoria, disco e rede do container. Cache curto para varias abas
+    abertas na mesma tela nao virarem varias sessoes de SSH por segundo."""
+    key = int(server["id"])
+    agora = time.monotonic()
+    if not force:
+        with _metrics_lock:
+            cached = _metrics_cache.get(key)
+        if cached and agora - cached[0] < METRICS_TTL:
+            return cached[1]
+
+    alvo = server["config_path"] or FILE_DEFAULT_PATH
+    try:
+        raw = ssh_output(
+            server, q("bash", "-lc", METRICS_SCRIPT, "gp", server["service"], alvo), timeout=30
+        )
+        data = _parse_metrics(raw)
+        data["error"] = ""
+    except RemoteError as exc:
+        data = {"error": str(exc)}
+
+    with _metrics_lock:
+        _metrics_cache[key] = (agora, data)
+    return data
+
+
+def all_metrics(servers) -> dict[int, dict]:
+    """Igual ao all_status: em serie, cinco servidores custariam cinco vezes mais."""
+    results: dict[int, dict] = {}
+    lock = threading.Lock()
+
+    def work(srv):
+        data = server_metrics(srv)
+        with lock:
+            results[int(srv["id"])] = data
+
+    threads = [threading.Thread(target=work, args=(s,), daemon=True) for s in servers]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=35)
+    for srv in servers:
+        results.setdefault(int(srv["id"]), {"error": "tempo esgotado"})
+    return results
+
+
 # --------------------------------------------------------------- status cache
 
 _status_cache: dict[int, tuple[float, dict]] = {}
@@ -618,6 +832,24 @@ def api_status():
     return jsonify({str(sid): state for sid, state in all_status(servers).items()})
 
 
+@app.get("/api/metrics")
+@login_required
+def api_metrics():
+    """Medidores de todos os servidores — alimenta os mini-graficos do painel."""
+    servers = db().execute("SELECT * FROM servers ORDER BY name").fetchall()
+    return jsonify({str(sid): data for sid, data in all_metrics(servers).items()})
+
+
+@app.get("/api/servers/<int:sid>/metrics")
+@login_required
+def api_server_metrics(sid: int):
+    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    if not server:
+        abort(404)
+    data = server_metrics(server)
+    return jsonify(data), (502 if data.get("error") else 200)
+
+
 def _form_server(form) -> tuple[dict, list[str]]:
     errors: list[str] = []
     name = form.get("name", "").strip()
@@ -757,6 +989,7 @@ def server_detail(sid: int):
         "server_detail.html",
         server=server,
         status=server_status(server),
+        metrics=server_metrics(server),
         jobs=jobs,
         logs=logs,
         log_cursor=log_cursor,
@@ -1217,6 +1450,31 @@ def clean_path(raw: str) -> str:
 
 def parent_of(path: str) -> str:
     return path.rsplit("/", 1)[0] or "/"
+
+
+@app.template_filter("nivel")
+def _bar_level(pct: float | None) -> str:
+    """Classe da barra: perto do teto ela muda de cor (mesma regra do metrics.js)."""
+    if pct is None:
+        return ""
+    if pct >= 92:
+        return " hot"
+    if pct >= 80:
+        return " warn"
+    return ""
+
+
+@app.template_filter("duracao")
+def _human_uptime(segundos: float | None) -> str:
+    total = int(segundos or 0)
+    dias, resto = divmod(total, 86400)
+    horas, resto = divmod(resto, 3600)
+    minutos = resto // 60
+    if dias:
+        return f"{dias}d {horas}h"
+    if horas:
+        return f"{horas}h {minutos}min"
+    return f"{minutos}min"
 
 
 @app.template_filter("tamanho")
