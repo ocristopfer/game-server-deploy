@@ -146,6 +146,7 @@ table.jobs tr:last-child td { border-bottom: none; }
 
 /* ---------- terminal interativo ---------- */
 .term {
+  position: relative;  /* ancora o textarea invisivel da entrada */
   background: var(--panel); border: 1px solid var(--line);
   border-radius: var(--radius); overflow: hidden; margin-bottom: 14px;
 }

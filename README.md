@@ -138,8 +138,9 @@ pct exec <CTID> -- journalctl -u game-update-check.service -n 20   # log das che
 ## Painel administrativo (web)
 
 Um container separado sobe um painel web para gerenciar todos os servidores: cadastrar,
-ver status, start/stop/restart, atualizar pelo SteamCMD, ler logs e **rodar comandos
-direto dentro de cada container**.
+ver status, start/stop/restart, atualizar pelo SteamCMD, ler logs, **abrir um terminal
+interativo** e **editar os arquivos de configuracao dos jogos** — tudo direto dentro de
+cada container.
 
 ```powershell
 .\deploy-admin.ps1                # usa as chaves ADMIN_* do .env
@@ -177,24 +178,76 @@ Em **Adicionar**, informe:
 - **Host** — IP do container do jogo (ex.: `192.168.2.20`)
 - **Servico** — a unit systemd (ex.: `dragonwilds.service`)
 - **Usuario/porta SSH** — normalmente `root` e `22`
+- **Pasta de configuracao** (opcional) — onde a tela **Arquivos** abre por padrao
+  (ex.: `/opt/game/Pal/Saved/Config/LinuxServer`)
 
-Start, stop, restart, update e o console rodam a partir dai. Acoes demoradas (update)
-viram um job com a saida atualizando ao vivo na tela.
+Start, stop, restart, update, terminal e editor rodam a partir dai. Acoes demoradas
+(update) viram um job com a saida atualizando ao vivo na tela.
+
+### Terminal interativo
+
+A aba **Terminal** abre uma sessao SSH de verdade dentro do container, com TTY: `htop`,
+`nano`, `vi`, `tail -f` e prompts de confirmacao funcionam como num terminal local.
+
+- Emulador proprio (`admin/static/terminal.js`), sem dependencia externa: cores 16/256/RGB,
+  tela alternativa, regiao de rolagem e as teclas especiais (setas, F1-F12, Ctrl+letra).
+- Transporte por HTTP (long-poll para a saida, POST para as teclas) — o painel roda em
+  gunicorn sync, que nao suporta WebSocket.
+- Botoes de Ctrl+C / Ctrl+D / Ctrl+Z, tela cheia e `Ctrl+V` para colar. Com texto
+  selecionado, `Ctrl+C` copia em vez de interromper.
+- Limites: `ADMIN_TERM_MAX` sessoes simultaneas (padrao 4) e `ADMIN_TERM_IDLE` segundos
+  sem uso ate a sessao ser derrubada (padrao 900).
+- Cada sessao aberta fica registrada no historico do servidor (quem abriu e quando).
+
+### Editor de configuracoes
+
+A aba **Arquivos** navega pelo sistema de arquivos do container e edita os `.ini`/`.cfg`
+do jogo direto no navegador.
+
+- **Procurar arquivos de config** varre a pasta do jogo (ate 5 niveis) atras de `.ini`,
+  `.cfg`, `.conf`, `.json`, `.yaml`, `.properties` e `.txt`.
+- Ao salvar, o painel guarda `<arquivo>.<data>.bak` na mesma pasta e grava **por cima do
+  arquivo existente**, preservando dono e permissao (o jogo roda como `steam`, nao root).
+- `Ctrl+S` salva; sair com alteracoes pendentes pede confirmacao. Da para baixar o
+  arquivo antes de mexer.
+- Arquivos binarios sao recusados; o limite e `ADMIN_FILE_MAX_KB` (padrao 1024 KB).
+- `ADMIN_FILE_ROOTS` restringe onde o navegador de arquivos pode entrar (padrao: tudo).
+- Pare o servidor antes de editar o que ele reescreve ao sair — varios jogos sobrescrevem
+  o `.ini` no shutdown.
 
 ### Console de comandos
 
 Cada servidor tem uma aba **Console**: voce digita um comando e ele executa como `root`
 **dentro daquele container de jogo**, com a saida na tela e o historico registrado (quem
-rodou, o que rodou, exit code).
+rodou, o que rodou, exit code). Util para um comando so, sem abrir sessao.
 
-- Nao e um terminal interativo: nao ha TTY, entao `vim`, `top` e `htop` nao funcionam.
-  Use `journalctl -n 50`, `df -h`, `cat`, `sed -i`, `ls` etc.
+- Sem TTY: para `vim`/`htop` e prompts, use o **Terminal**.
 - Ctrl+Enter executa; as setas ↑/↓ percorrem o historico.
 - Limite de tempo por comando: 600s (`GAMEPANEL_SHELL_TIMEOUT`).
 
-Isso e execucao remota de comandos exposta numa pagina web — quem entrar no painel tem
-root nos containers de jogo. Se nao quiser essa capacidade, desligue com
-`ADMIN_ALLOW_SHELL=0` no `.env`; a rota passa a responder 403 e o botao some.
+Console e terminal sao execucao remota de comandos exposta numa pagina web — quem entrar
+no painel tem root nos containers de jogo. Se nao quiser essa capacidade, desligue com
+`ADMIN_ALLOW_SHELL=0` no `.env` (as duas telas somem e as rotas respondem 403); o editor
+de arquivos tem o proprio interruptor, `ADMIN_ALLOW_FILES=0`.
+
+### Testando o painel localmente (docker compose)
+
+Para mexer no painel sem depender do Proxmox:
+
+```bash
+docker compose up --build         # http://localhost:8080 - admin / admin12345
+```
+
+Sobem tres containers: o painel e dois "servidores de jogo" falsos (Debian com `sshd`, um
+`systemctl`/`journalctl` simulados e os `.ini` que o jogo teria). Os dois ja vem
+cadastrados no painel, entao da para testar start/stop/update, o terminal e o editor de
+ponta a ponta. O codigo entra por bind mount com `--reload`: editar `admin/app.py` ou os
+templates e recarregar a pagina basta.
+
+```bash
+docker compose logs -f panel
+docker compose down -v            # zera banco, chaves e arquivos de teste
+```
 
 ### Seguranca
 
@@ -209,7 +262,7 @@ root nos containers de jogo. Se nao quiser essa capacidade, desligue com
 
 | Caminho (no CT do painel) | O que e |
 |---------------------------|---------|
-| `/opt/gamepanel/` | aplicacao (Flask) |
+| `/opt/gamepanel/` | aplicacao (Flask + `static/terminal.js`) |
 | `/var/lib/gamepanel/panel.db` | SQLite: usuarios, servidores, historico |
 | `/var/lib/gamepanel/known_hosts` | host keys aprendidas dos containers |
 | `/etc/gamepanel/id_ed25519` | chave SSH do painel |

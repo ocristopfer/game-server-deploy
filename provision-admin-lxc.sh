@@ -59,6 +59,13 @@ resolve_variables() {
   PANEL_USER="${ADMIN_USER:-admin}"
   PANEL_PASSWORD="${ADMIN_PASSWORD:-}"
   ALLOW_SHELL="${ADMIN_ALLOW_SHELL:-1}"
+  # Terminal interativo (usa o mesmo ALLOW_SHELL) e editor de arquivos de config.
+  ALLOW_FILES="${ADMIN_ALLOW_FILES:-1}"
+  FILE_MAX_KB="${ADMIN_FILE_MAX_KB:-1024}"
+  FILE_ROOTS="${ADMIN_FILE_ROOTS:-/}"
+  FILE_DEFAULT="${ADMIN_FILE_DEFAULT:-/opt/game}"
+  TERM_MAX="${ADMIN_TERM_MAX:-4}"
+  TERM_IDLE="${ADMIN_TERM_IDLE:-900}"
   RECREATE_CT="${RECREATE_ADMIN_CT:-0}"
 
   if [[ "$IP_CIDR" == "dhcp" ]]; then
@@ -77,7 +84,11 @@ validate_host_requirements() {
   # Sem estes o painel sobe e so quebra no navegador com 'TemplateNotFound'.
   [[ -f "$APP_SRC_DIR/templates/login.html" ]] || die "templates/ ausente ou incompleto em $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/templates/base.html" ]] || die "templates/base.html nao encontrado em $APP_SRC_DIR"
+  [[ -f "$APP_SRC_DIR/templates/terminal.html" ]] || die "templates/terminal.html nao encontrado em $APP_SRC_DIR"
+  [[ -f "$APP_SRC_DIR/templates/files.html" ]] || die "templates/files.html nao encontrado em $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/static/style.css" ]] || die "static/style.css nao encontrado em $APP_SRC_DIR"
+  # Sem o terminal.js a tela do terminal abre em branco, sem erro nenhum no servidor.
+  [[ -f "$APP_SRC_DIR/static/terminal.js" ]] || die "static/terminal.js nao encontrado em $APP_SRC_DIR"
 }
 
 ensure_debian_template() {
@@ -190,7 +201,7 @@ push_application() {
   run_ct "chown -R root:root ${APP_DIR}"
 
   # Falhar aqui e melhor do que descobrir pela tela de erro do navegador.
-  run_ct "test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/static/style.css" \
+  run_ct "test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/static/style.css && test -f ${APP_DIR}/static/terminal.js" \
     || die "Templates/estaticos nao chegaram em ${APP_DIR} (veja a saida do pct push acima)"
   msg "Publicados: $(run_ct "ls ${APP_DIR}/templates | wc -l" | tr -d '\r') templates"
 }
@@ -220,6 +231,12 @@ GAMEPANEL_SSH_KEY=${CONF_DIR}/id_ed25519
 GAMEPANEL_KNOWN_HOSTS=${DATA_DIR}/known_hosts
 GAMEPANEL_PORT=${PANEL_PORT}
 GAMEPANEL_ALLOW_SHELL=${ALLOW_SHELL}
+GAMEPANEL_TERM_MAX=${TERM_MAX}
+GAMEPANEL_TERM_IDLE=${TERM_IDLE}
+GAMEPANEL_ALLOW_FILES=${ALLOW_FILES}
+GAMEPANEL_FILE_MAX=$((FILE_MAX_KB * 1024))
+GAMEPANEL_FILE_ROOTS=${FILE_ROOTS}
+GAMEPANEL_FILE_DEFAULT=${FILE_DEFAULT}
 EOF
   push_file_to_ct "$tmp_file" "${CONF_DIR}/panel.env" 0640
   rm -f "$tmp_file"
@@ -262,7 +279,10 @@ User=${APP_USER}
 Group=${APP_USER}
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${CONF_DIR}/panel.env
-ExecStart=/usr/bin/gunicorn --workers 1 --threads 8 --timeout 120 \\
+# Um worker so: as sessoes de terminal vivem na memoria do processo, e com dois
+# workers metade dos pedidos cairia no processo que nao tem a sessao. As threads
+# sustentam os long-polls do terminal (um por aba aberta) alem das telas normais.
+ExecStart=/usr/bin/gunicorn --workers 1 --threads 16 --timeout 120 \\
   --bind 0.0.0.0:${PANEL_PORT} --access-logfile - app:app
 Restart=on-failure
 RestartSec=5
@@ -382,7 +402,13 @@ EOF
   cat <<EOF
 
 Proximo passo: entre no painel e cadastre seus servidores em "Adicionar", informando o
-IP do container e o servico (ex.: 192.168.2.20, dragonwilds.service).
+IP do container e o servico (ex.: 192.168.2.20, dragonwilds.service). Preencha tambem a
+"Pasta de configuracao" (ex.: /opt/game) para a tela Arquivos abrir no lugar certo.
+
+Cada servidor tem tres formas de mexer no container:
+  Terminal  - shell interativo de verdade (htop, nano, prompts) direto no navegador
+  Arquivos  - editor de texto dos .ini/.cfg do jogo, com backup .bak automatico
+  Console   - um comando por vez, com o resultado gravado no historico
 
 Comandos uteis (no host Proxmox):
   pct exec ${CTID} -- systemctl status gamepanel.service --no-pager

@@ -120,8 +120,9 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     PERMANENT_SESSION_LIFETIME=60 * 60 * 12,
-    # Precisa caber o maior arquivo editavel em base64 (4/3) mais o JSON em volta.
-    MAX_CONTENT_LENGTH=max(4 * 1024 * 1024, FILE_MAX_BYTES * 2),
+    # O editor posta o arquivo como formulario: no pior caso cada byte vira %XX (3x),
+    # entao o limite do request tem de ser bem maior que o do arquivo em si.
+    MAX_CONTENT_LENGTH=max(4 * 1024 * 1024, FILE_MAX_BYTES * 4 + 65536),
 )
 
 # Modo desenvolvimento (docker compose): recarrega os templates sem reiniciar.
@@ -1181,6 +1182,9 @@ if [ -e "$f" ]; then
 else
   cat "$t" > "$f"
   chmod 0644 "$f"
+  # Arquivo novo herda o dono da pasta: o jogo roda como 'steam' e precisa continuar
+  # conseguindo reescrever o proprio config.
+  chown --reference="$d" "$f" 2>/dev/null || true
 fi
 echo "gravado: $(stat -Lc %s -- "$f") bytes"
 """
@@ -1502,6 +1506,14 @@ def _forbidden(exc):
 @app.errorhandler(404)
 def _not_found(_exc):
     return render_template("error.html", code=404, message="Pagina nao encontrada."), 404
+
+
+@app.errorhandler(413)
+def _too_large(_exc):
+    return render_template(
+        "error.html", code=413,
+        message=f"Conteudo grande demais (o editor aceita ate {FILE_MAX_BYTES // 1024} KB por arquivo).",
+    ), 413
 
 
 @app.errorhandler(503)

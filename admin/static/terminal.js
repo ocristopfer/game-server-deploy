@@ -438,6 +438,11 @@
 
   Term.prototype.render = function () {
     var out = [], showCursor = this.cursorVisible && this.focused;
+    // Na tela alternativa (htop, vi) o historico some, como num terminal de verdade:
+    // deixa-lo visivel empurraria a tela cheia para fora da area util.
+    if (this.scrollEl && this.scrollEl.style) {
+      this.scrollEl.style.display = this.alt ? 'none' : '';
+    }
     for (var i = 0; i < this.rows; i++) {
       var cx = (showCursor && i === this.y) ? Math.min(this.x, this.cols - 1) : -1;
       out.push('<div class="tl">' + renderLine(this.lines[i], cx) + '</div>');
