@@ -45,17 +45,24 @@
 <div class="card">
   <div class="page-head tight">
     <h2>Log do servico</h2>
-    <form method="get" class="inline">
-      <label class="inline-label">linhas
-        <input name="lines" value="{{ lines }}" size="4" inputmode="numeric">
-      </label>
-      <button class="btn ghost" type="submit">Recarregar</button>
-    </form>
+    <div class="actions">
+      <span class="badge cold" id="follow-state" hidden>ao vivo</span>
+      <button class="btn" type="button" id="follow-toggle"
+              data-url="{{ url_for('api_logs', sid=server.id) }}"
+              data-cursor="{{ log_cursor }}" data-lines="{{ lines }}"
+              data-server="{{ server.id }}">Seguir log</button>
+      <form method="get" class="inline">
+        <label class="inline-label">linhas
+          <input name="lines" value="{{ lines }}" size="4" inputmode="numeric">
+        </label>
+        <button class="btn ghost" type="submit">Recarregar</button>
+      </form>
+    </div>
   </div>
   {% if log_error %}
     <p class="flash error">{{ log_error }}</p>
   {% else %}
-    <pre class="log">{{ logs or '(sem linhas de log)' }}</pre>
+    <pre class="log" id="log-box">{{ logs or '(sem linhas de log)' }}</pre>
   {% endif %}
 </div>
 
@@ -80,4 +87,70 @@
     <p class="muted">Nenhuma acao executada por aqui ainda.</p>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if not log_error %}
+<script>
+  const box = document.getElementById('log-box');
+  const toggle = document.getElementById('follow-toggle');
+  const state = document.getElementById('follow-state');
+  const chave = 'gamepanel:follow:' + toggle.dataset.server;
+  let cursor = toggle.dataset.cursor || '';
+  let timer = null;
+  let buscando = false;
+
+  const noFim = () => box.scrollHeight - box.scrollTop - box.clientHeight < 30;
+  const paraOFim = () => { box.scrollTop = box.scrollHeight; };
+
+  async function puxar() {
+    if (buscando || document.hidden) return;
+    buscando = true;
+    try {
+      const url = toggle.dataset.url + '?lines=' + toggle.dataset.lines +
+        (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+      const res = await fetch(url, {headers: {'Accept': 'application/json'}});
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || ('http ' + res.status));
+      const colado = noFim();
+      if (data.append) {
+        // So chegou o que e novo: anexa sem repintar o que ja estava na tela.
+        if (data.text) box.textContent += (box.textContent.endsWith('\n') ? '' : '\n') + data.text;
+      } else if (data.text || !cursor) {
+        box.textContent = data.text || '(sem linhas de log)';
+      }
+      cursor = data.cursor || cursor;
+      if (colado) paraOFim();
+      state.textContent = 'ao vivo';
+      state.className = 'badge on';
+    } catch (err) {
+      console.debug('follow do log falhou, tentando de novo', err);
+      state.textContent = 'sem conexao';
+      state.className = 'badge off';
+    } finally {
+      buscando = false;
+    }
+  }
+
+  function seguir(ligar) {
+    clearInterval(timer);
+    timer = null;
+    toggle.textContent = ligar ? 'Parar de seguir' : 'Seguir log';
+    toggle.classList.toggle('primary', ligar);
+    state.hidden = !ligar;
+    localStorage.setItem(chave, ligar ? '1' : '0');
+    if (!ligar) return;
+    state.textContent = 'ao vivo';
+    state.className = 'badge on';
+    paraOFim();
+    puxar();
+    timer = setInterval(puxar, 3000);
+  }
+
+  toggle.addEventListener('click', () => seguir(!timer));
+  // Aba escondida nao gasta conexao ssh a toa; ao voltar, puxa na hora.
+  document.addEventListener('visibilitychange', () => { if (timer && !document.hidden) puxar(); });
+  if (localStorage.getItem(chave) === '1') seguir(true);
+</script>
+{% endif %}
 {% endblock %}

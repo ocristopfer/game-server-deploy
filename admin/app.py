@@ -732,17 +732,10 @@ def server_detail(sid: int):
     jobs = conn.execute(
         "SELECT * FROM jobs WHERE server_id = ? ORDER BY id DESC LIMIT 15", (sid,)
     ).fetchall()
+    lines = _log_lines_arg(request.args.get("lines"))
+    logs, log_cursor, log_error = "", "", ""
     try:
-        lines = max(10, min(500, int(request.args.get("lines", "80"))))
-    except ValueError:
-        lines = 80
-    logs, log_error = "", ""
-    try:
-        logs = ssh_output(
-            server,
-            q("journalctl", "-u", server["service"], "--no-pager", "-n", str(lines)),
-            timeout=30,
-        )
+        logs, log_cursor = read_logs(server, lines)
     except RemoteError as exc:
         log_error = str(exc)
     return render_template(
@@ -751,10 +744,71 @@ def server_detail(sid: int):
         status=server_status(server),
         jobs=jobs,
         logs=logs,
+        log_cursor=log_cursor,
         log_error=log_error,
         lines=lines,
         actions=ACTIONS,
     )
+
+
+# O cursor e uma chave opaca do journald ("s=...;i=...;b=..."): validada aqui porque
+# volta do navegador e entra num comando remoto.
+CURSOR_RE = re.compile(r"^[A-Za-z0-9=;:._-]{1,400}$")
+LOG_FOLLOW_MAX = 500
+
+
+def _log_lines_arg(raw: str, default: int = 80) -> int:
+    try:
+        return max(10, min(500, int(raw)))
+    except (TypeError, ValueError):
+        return default
+
+
+def read_logs(server: sqlite3.Row, lines: int, cursor: str = "") -> tuple[str, str]:
+    """Le o log do servico. Com cursor, traz so o que entrou depois dele.
+
+    Devolve (texto, novo_cursor). O cursor vem vazio quando o journalctl do container
+    nao souber emiti-lo — nesse caso a tela recarrega o bloco inteiro a cada volta.
+    """
+    if cursor and CURSOR_RE.match(cursor):
+        cmd = q(
+            "journalctl", "-u", server["service"], "--no-pager", "--show-cursor",
+            "--after-cursor", cursor, "-n", str(LOG_FOLLOW_MAX),
+        )
+    else:
+        cmd = q(
+            "journalctl", "-u", server["service"], "--no-pager", "--show-cursor",
+            "-n", str(lines),
+        )
+    raw = ssh_output(server, cmd, timeout=30)
+
+    out = raw.splitlines()
+    new_cursor = ""
+    if out and out[-1].startswith("-- cursor:"):
+        new_cursor = out.pop().split(":", 1)[1].strip()
+    body = "\n".join(ln for ln in out if ln.strip() != "-- No entries --")
+    return body, new_cursor
+
+
+@app.get("/api/servers/<int:sid>/logs")
+@login_required
+def api_logs(sid: int):
+    """Alimenta o "seguir log" da tela de detalhe."""
+    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    if not server:
+        abort(404)
+    cursor = request.args.get("cursor", "")
+    try:
+        text, new_cursor = read_logs(server, _log_lines_arg(request.args.get("lines")), cursor)
+    except RemoteError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify({
+        "text": text,
+        "cursor": new_cursor,
+        # Sem cursor (primeira volta, ou journalctl antigo) o cliente troca o bloco
+        # inteiro; com cursor ele so anexa as linhas novas.
+        "append": bool(cursor and new_cursor),
+    })
 
 
 @app.post("/servers/<int:sid>/action/<action>")
