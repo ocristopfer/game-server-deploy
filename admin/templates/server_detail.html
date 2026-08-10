@@ -45,6 +45,7 @@
 <div class="card" id="jogadores" data-url="{{ url_for('api_server_players', sid=server.id) }}">
   <div class="page-head tight">
     <h2>Jogadores</h2>
+    <a class="btn ghost small" href="{{ url_for('players_setup', sid=server.id) }}">Configurar contagem</a>
     <span class="badge {{ 'on' if players.players else 'cold' }}" id="jogadores-badge">
       {%- if players.players is not none -%}
         {{ players.players }}{% if players.max_players %}/{{ players.max_players }}{% endif %} online
@@ -55,15 +56,16 @@
   </div>
   {% if not players.configured %}
     <p class="muted">
-      Contagem desligada. Informe a <strong>porta de consulta</strong> (query Steam/A2S) em
-      <a href="{{ url_for('server_edit', sid=server.id) }}">Editar servidor</a> &mdash;
-      no Palworld e a <code>27015/udp</code>.
+      Contagem desligada. Use o
+      <a href="{{ url_for('players_setup', sid=server.id) }}">assistente</a>: ele testa as
+      portas UDP que o jogo abriu e, se nenhuma responder, ajuda a contar pelo log.
     </p>
   {% elif players.error %}
     <p class="muted">Nao consegui consultar: {{ players.error }}</p>
     <p class="muted small">
-      Confira se a porta de query esta certa, se o servidor esta no ar e se ele publica
-      consulta A2S (nem todo jogo publica).
+      Confira no <a href="{{ url_for('players_setup', sid=server.id) }}">assistente</a> se a
+      porta esta certa e se o servidor esta no ar. Jogo que nao publica consulta na rede
+      (como o RuneScape Dragonwilds) precisa da contagem pelo log.
     </p>
   {% else %}
     <div id="jogadores-info">

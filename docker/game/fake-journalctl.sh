@@ -18,6 +18,9 @@ while [ $# -gt 0 ]; do
     -f|--follow) follow=1 ;;
     --show-cursor) show_cursor=1 ;;
     --after-cursor) after="${2:-}"; shift ;;
+    # O log falso e curto e some a cada start, entao --since nao muda nada aqui;
+    # -o so escolhe formato, e as linhas ja saem prontas do fake-game-loop.
+    --since|--until|-o|--output) shift ;;
     --no-pager|-e|-x) ;;
     *) ;;
   esac

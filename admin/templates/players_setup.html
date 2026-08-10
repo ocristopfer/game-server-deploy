@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Contagem de jogadores &mdash; {{ server.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Contagem de jogadores &mdash; {{ server.name }}</h1>
+  <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
+</div>
+
+<div class="flash">
+  Duas formas de saber quantos estao jogando. A <strong>consulta direta</strong> e a mesma
+  que o navegador de servidores do jogo usa &mdash; quando o jogo publica uma. Se nenhuma
+  porta responder, sobra contar pelo <strong>log do servidor</strong>.
+</div>
+
+<nav class="crumbs">
+  <a class="btn {{ 'primary' if aba == 'porta' else 'ghost' }}"
+     href="{{ url_for('players_setup', sid=server.id, aba='porta') }}">1. Consulta direta</a>
+  <a class="btn {{ 'primary' if aba == 'log' else 'ghost' }}"
+     href="{{ url_for('players_setup', sid=server.id, aba='log') }}">2. Pelo log</a>
+</nav>
+
+{% if aba == 'porta' %}
+<div class="card">
+  <h2>Portas testadas</h2>
+  <p class="muted small">
+    O painel perguntou ao container quais portas UDP o jogo abriu e mandou um
+    <code>A2S_INFO</code> em cada uma, somando as portas usuais da Steam.
+  </p>
+  {% if aviso %}<p class="flash error">{{ aviso }}</p>{% endif %}
+  <table class="jobs">
+    <thead><tr><th>Porta</th><th>Resposta</th><th>Servidor</th><th></th></tr></thead>
+    <tbody>
+      {% for p in portas %}
+      <tr>
+        <td><code>{{ p.port }}/udp</code></td>
+        <td>
+          {% if p.ok %}
+            <span class="badge on">{{ p.players }}{% if p.max_players %}/{{ p.max_players }}{% endif %} jogadores</span>
+          {% else %}
+            <span class="muted small">{{ p.error or 'sem resposta' }}</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ p.server_name or '-' }}</td>
+        <td>
+          {% if p.ok %}
+          <form method="post" action="{{ url_for('players_use', sid=server.id) }}" class="inline">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="player_source" value="a2s">
+            <input type="hidden" name="query_port" value="{{ p.port }}">
+            <button class="btn primary" type="submit">Usar esta</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">Nenhuma porta para testar.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted small">
+    Nenhuma respondeu? Entao este jogo nao publica consulta na rede local &mdash; a
+    contagem que aparece no navegador do jogo vem do servico da Steam/Epic, nao do
+    servidor. Use a aba <a href="{{ url_for('players_setup', sid=server.id, aba='log') }}">Pelo log</a>.
+  </p>
+</div>
+{% else %}
+<div class="card">
+  <h2>Linhas do log que parecem de entrada/saida</h2>
+  {% if erro_log %}<p class="flash error">{{ erro_log }}</p>{% endif %}
+  {% if amostras %}
+    <pre class="log">{% for l in amostras %}{{ l }}
+{% endfor %}</pre>
+    <p class="muted small">
+      Ache a linha que aparece quando alguem entra e a que aparece quando alguem sai,
+      e escreva os padroes abaixo. Use <code>(?P&lt;name&gt;.+)</code> onde estiver o nome
+      do jogador &mdash; com o nome nos dois padroes o painel lista quem esta online;
+      sem ele, mostra so a contagem.
+    </p>
+  {% else %}
+    <p class="muted">Nenhuma linha com palavras de entrada/saida no log desta execucao.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Testar o padrao</h2>
+  <form method="get" action="{{ url_for('players_setup', sid=server.id) }}">
+    <input type="hidden" name="aba" value="log">
+    <input type="hidden" name="testar" value="1">
+    <label>Linha de entrada
+      <input name="join_re" value="{{ join_re }}" spellcheck="false"
+             placeholder="Join succeeded: (?P&lt;name&gt;.+)">
+    </label>
+    <label>Linha de saida <span class="muted">(opcional)</span>
+      <input name="leave_re" value="{{ leave_re }}" spellcheck="false"
+             placeholder="UNetConnection::Close|Player left: (?P&lt;name&gt;.+)">
+    </label>
+    <div class="form-actions">
+      <button class="btn" type="submit">Testar</button>
+    </div>
+  </form>
+
+  {% if teste %}
+    <div class="flash {{ 'ok' if teste.players else '' }}">
+      Resultado: <strong>{{ teste.players }}</strong> jogador(es) online agora
+      {% if teste.list %} &mdash; {{ teste.list | map(attribute='name') | join(', ') }}{% endif %}
+    </div>
+    {% if teste.casaram %}
+      <p class="muted small">Ultimas linhas que casaram com os padroes:</p>
+      <pre class="log">{% for l in teste.casaram %}{{ l }}
+{% endfor %}</pre>
+    {% else %}
+      <p class="muted small">Nenhuma linha casou com os padroes &mdash; confira a grafia.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('players_use', sid=server.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="player_source" value="log">
+      <input type="hidden" name="join_re" value="{{ join_re }}">
+      <input type="hidden" name="leave_re" value="{{ leave_re }}">
+      <button class="btn primary" type="submit">Usar estes padroes</button>
+    </form>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

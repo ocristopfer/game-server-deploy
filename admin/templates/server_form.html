@@ -35,10 +35,31 @@
       </label>
       <label>Porta de consulta <span class="muted">(opcional)</span>
         <input name="query_port" value="{{ data.query_port or '' }}" placeholder="27015" inputmode="numeric">
-        <small>
-          Porta de query Steam (A2S) para contar jogadores online. Palworld:
-          <code>27015</code>. Vazio ou <code>0</code> desliga a contagem.
-        </small>
+        <small>Porta de query Steam (A2S). Palworld: <code>27015</code>.</small>
+      </label>
+    </div>
+
+    <label>Contagem de jogadores
+      <select name="player_source">
+        <option value="none" {{ 'selected' if data.player_source in ('', 'none') and not data.query_port }}>Desligada</option>
+        <option value="a2s" {{ 'selected' if data.player_source == 'a2s' or (not data.player_source and data.query_port) }}>Consulta Steam (A2S) na porta acima</option>
+        <option value="log" {{ 'selected' if data.player_source == 'log' }}>Pelo log do servidor</option>
+      </select>
+      <small>
+        Jogo que nao publica consulta na rede (RuneScape Dragonwilds, por exemplo) so da
+        para contar pelo log. {% if mode == 'edit' %}O
+        <a href="{{ url_for('players_setup', sid=sid) }}">assistente</a> testa as portas e
+        acha os padroes do log para voce.{% endif %}
+      </small>
+    </label>
+    <div class="row">
+      <label>Log: linha de entrada
+        <input name="join_re" value="{{ data.join_re }}" spellcheck="false"
+               placeholder="Join succeeded: (?P&lt;name&gt;.+)">
+      </label>
+      <label>Log: linha de saida
+        <input name="leave_re" value="{{ data.leave_re }}" spellcheck="false"
+               placeholder="UNetConnection::Close">
       </label>
     </div>
     <label>Pasta de configuracao <span class="muted">(opcional)</span>

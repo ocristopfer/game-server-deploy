@@ -24,7 +24,7 @@
     <div class="server-head">
       <h2><a href="{{ url_for('server_detail', sid=s.id) }}">{{ s.name }}</a></h2>
       <div class="badges">
-        {% if s.query_port %}<span class="badge" data-players="{{ s.id }}" hidden></span>{% endif %}
+        {% if player_source(s) %}<span class="badge" data-players="{{ s.id }}" hidden></span>{% endif %}
         <span class="badge {{ 'on' if st.service == 'active' else ('off' if st.reachable else 'cold') }}">
           {{ st.service }}
         </span>

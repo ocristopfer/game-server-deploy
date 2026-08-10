@@ -101,9 +101,14 @@ main() {
   echo "==> iniciando ${GAME_SERVICE} (simulado)"
   systemctl start "$GAME_SERVICE" || true
 
-  # Porta de query da Steam: e daqui que o painel tira a contagem de jogadores.
-  echo "==> subindo o query A2S falso na porta ${GAME_QUERY_PORT:-27015}/udp"
-  setsid nohup python3 /usr/local/bin/fake-a2s >/var/log/fake-a2s.log 2>&1 &
+  # Porta de query da Steam. GAME_QUERY_A2S=0 imita um jogo que NAO publica consulta
+  # (o RuneScape Dragonwilds e assim): ai so sobra contar pelo log.
+  if [ "${GAME_QUERY_A2S:-1}" = "1" ]; then
+    echo "==> subindo o query A2S falso na porta ${GAME_QUERY_PORT:-27015}/udp"
+    setsid nohup python3 /usr/local/bin/fake-a2s >/var/log/fake-a2s.log 2>&1 &
+  else
+    echo "==> sem query A2S (jogo que nao publica consulta na rede)"
+  fi
   echo "==> sshd pronto em $(hostname)"
   exec /usr/sbin/sshd -D -e
 }

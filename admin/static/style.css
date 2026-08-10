@@ -93,12 +93,12 @@ dl.meta dd { margin: 0; }
 /* ---------- formularios e botoes ---------- */
 label { display: block; margin-bottom: 16px; font-size: .9rem; color: var(--muted); }
 label.inline-label { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
-input, textarea {
+input, textarea, select {
   display: block; width: 100%; margin-top: 6px; padding: 9px 11px;
   background: var(--bg); color: var(--text);
   border: 1px solid var(--line); border-radius: 8px; font: inherit;
 }
-input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 label small { display: block; margin-top: 5px; color: var(--muted); font-size: .8rem; }
 textarea { resize: vertical; }
 

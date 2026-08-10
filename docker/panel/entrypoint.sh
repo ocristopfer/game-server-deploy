@@ -27,8 +27,9 @@ panel.ensure_admin_user(os.environ.get("PANEL_USER", "admin"),
 SEEDS = [
     ("Palworld (teste)", "game-palworld", "palworld.service", "8211/udp",
      "/opt/game/Pal/Saved/Config/LinuxServer", 27015),
+    # Sem porta de consulta: este imita o jogo que so da para contar pelo log.
     ("Dragonwilds (teste)", "game-dragonwilds", "dragonwilds.service", "7777/udp",
-     "/opt/game/RSDragonwilds/Saved/Config/LinuxServer", 27015),
+     "/opt/game/RSDragonwilds/Saved/Config/LinuxServer", 0),
 ]
 
 conn = panel._connect()

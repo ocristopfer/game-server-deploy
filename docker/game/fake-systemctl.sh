@@ -59,6 +59,10 @@ case "$cmd" in
     # do jogo (RAM e CPU dele, nao do container inteiro).
     valor=0
     if [ "$propriedade" = "MainPID" ] && running; then valor="$(cat "$pidfile")"; fi
+    # O painel usa o ActiveEnterTimestamp para so contar eventos do log desta execucao.
+    if [ "$propriedade" = "ActiveEnterTimestamp" ]; then
+      if running; then valor="$(date -r "$pidfile" '+%a %Y-%m-%d %H:%M:%S %Z')"; else valor=""; fi
+    fi
     if [ "$value_only" -eq 1 ]; then echo "$valor"; else echo "${propriedade}=${valor}"; fi
     ;;
   start)   start_unit ;;

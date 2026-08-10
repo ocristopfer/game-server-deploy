@@ -173,6 +173,9 @@ CREATE TABLE IF NOT EXISTS servers (
   notes      TEXT NOT NULL DEFAULT '',
   config_path TEXT NOT NULL DEFAULT '',
   query_port INTEGER NOT NULL DEFAULT 0,
+  player_source TEXT NOT NULL DEFAULT '',
+  join_re    TEXT NOT NULL DEFAULT '',
+  leave_re   TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   UNIQUE (host, ssh_port)
 );
@@ -225,6 +228,9 @@ def _close_db(_exc) -> None:
 MIGRATIONS = (
     ("servers", "config_path", "ALTER TABLE servers ADD COLUMN config_path TEXT NOT NULL DEFAULT ''"),
     ("servers", "query_port", "ALTER TABLE servers ADD COLUMN query_port INTEGER NOT NULL DEFAULT 0"),
+    ("servers", "player_source", "ALTER TABLE servers ADD COLUMN player_source TEXT NOT NULL DEFAULT ''"),
+    ("servers", "join_re", "ALTER TABLE servers ADD COLUMN join_re TEXT NOT NULL DEFAULT ''"),
+    ("servers", "leave_re", "ALTER TABLE servers ADD COLUMN leave_re TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -337,6 +343,9 @@ def _inject():
         "allow_shell": ALLOW_SHELL,
         "allow_term": ALLOW_SHELL and HAVE_PTY,
         "allow_files": ALLOW_FILES,
+        # A tela precisa saber se a contagem esta ligada, e ela pode vir da porta de
+        # consulta OU do log — nao da para olhar so o query_port.
+        "player_source": player_source,
     }
 
 
@@ -553,14 +562,206 @@ def query_players(host: str, port: int) -> dict:
     return info
 
 
+# ------------------------------------------------------ jogadores (pelo log)
+
+# Nem todo jogo publica consulta A2S (o RuneScape Dragonwilds, por exemplo, nao publica).
+# Quando o servidor anuncia entradas e saidas no log, da para contar por ali: o painel
+# reproduz os eventos desde o ultimo start do servico e ve quem sobrou.
+LOG_SCAN_MAX = 20000
+RE_MAX_LEN = 300
+# Palavras que costumam aparecer na linha de entrada/saida — usadas so pelo assistente
+# que ajuda a descobrir o padrao do jogo.
+LOG_HINT_WORDS = (
+    "join", "joined", "left", "leave", "connect", "disconnect", "login", "logout",
+    "player", "jogador", "entrou", "saiu",
+)
+TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})")
+
+# Le do start do servico para ca: eventos de execucoes anteriores contariam jogador
+# que ja foi embora ha muito tempo.
+LOG_PLAYERS_SCRIPT = r"""
+set -u
+unit=$1
+max=$2
+inicio=$(systemctl show -p ActiveEnterTimestamp --value "$unit" 2>/dev/null || true)
+if [ -n "$inicio" ]; then
+  journalctl -u "$unit" --since "$inicio" --no-pager -o short-iso 2>/dev/null | tail -n "$max"
+else
+  journalctl -u "$unit" --no-pager -o short-iso -n "$max" 2>/dev/null
+fi
+"""
+
+
+def compile_pattern(raw: str, rotulo: str):
+    """Compila um padrao vindo da tela; devolve None quando esta vazio."""
+    texto = (raw or "").strip()
+    if not texto:
+        return None
+    if len(texto) > RE_MAX_LEN:
+        raise QueryError(f"padrao de {rotulo} longo demais (limite de {RE_MAX_LEN} caracteres)")
+    try:
+        return re.compile(texto)
+    except re.error as exc:
+        raise QueryError(f"padrao de {rotulo} invalido: {exc}")
+
+
+def _log_timestamp(line: str) -> str:
+    m = TS_RE.match(line)
+    return f"{m.group(1)} {m.group(2)}" if m else ""
+
+
+# Linha gigante (stack trace) nao pode custar caro no regex.
+LOG_LINE_MAX = 500
+
+
+def _events_by_name(linhas, entrar, sair) -> dict:
+    """Os dois padroes capturam (?P<name>...): da para dizer QUEM esta online."""
+    online: dict[str, str] = {}
+    for line in linhas:
+        curta = line[:LOG_LINE_MAX]
+        entrou = entrar.search(curta)
+        if entrou:
+            nome = (entrou.groupdict().get("name") or "").strip()
+            if nome:
+                online[nome] = _log_timestamp(line)
+            continue
+        saiu = sair.search(curta) if sair else None
+        if saiu:
+            online.pop((saiu.groupdict().get("name") or "").strip(), None)
+    return {
+        "players": len(online),
+        "list": [{"name": n, "since": t, "score": 0, "seconds": 0} for n, t in online.items()],
+    }
+
+
+def _events_by_count(linhas, entrar, sair) -> dict:
+    """Sem nome na saida (varios servidores Unreal so avisam que alguem saiu):
+    sobra somar as entradas e subtrair as saidas."""
+    total = 0
+    for line in linhas:
+        curta = line[:LOG_LINE_MAX]
+        if entrar.search(curta):
+            total += 1
+        elif sair and sair.search(curta):
+            total = max(0, total - 1)
+    return {"players": total, "list": []}
+
+
+def _apply_log_events(linhas, entrar, sair) -> dict:
+    """Reproduz os eventos do log em ordem e devolve quem ficou."""
+    com_nome = bool(entrar.groupindex.get("name")) and (
+        not sair or bool(sair.groupindex.get("name"))
+    )
+    return _events_by_name(linhas, entrar, sair) if com_nome else _events_by_count(linhas, entrar, sair)
+
+
+# ------------------------------------------- descobrir como contar jogadores
+
+# O jogo abre os sockets dele dentro do container: em vez de chutar a porta de consulta,
+# pergunta ao proprio container quais portas UDP estao escutando e testa uma a uma.
+# /proc/net/udp existe sempre; 'ss' nao vem instalado em todo container.
+UDP_PORTS_SCRIPT = r"""
+set -u
+hex=$(awk 'NR>1 { split($2, a, ":"); print a[2] }' /proc/net/udp /proc/net/udp6 2>/dev/null | sort -u)
+for h in $hex; do
+  printf '%d\n' "0x$h" 2>/dev/null || true
+done | sort -un
+"""
+
+# Portas de consulta que a maioria dos jogos Steam usa quando nao ha nada declarado.
+QUERY_PORT_GUESSES = (27015, 27016, 27005)
+
+
+def _portas_do_texto(texto: str) -> list[int]:
+    """Tira numeros de porta do campo livre 'Portas do jogo' (ex.: '8211/udp 27015/udp')."""
+    return [int(n) for n in re.findall(r"\d{2,5}", texto or "") if 1 <= int(n) <= 65535]
+
+
+def candidate_ports(server: sqlite3.Row) -> tuple[list[int], str]:
+    """Portas a testar: as que o container esta escutando + as declaradas + as usuais."""
+    escutando: list[int] = []
+    aviso = ""
+    try:
+        raw = ssh_output(server, q("bash", "-lc", UDP_PORTS_SCRIPT, "gp"), timeout=30)
+        escutando = [int(p) for p in raw.split() if p.isdigit()]
+    except (RemoteError, ValueError) as exc:
+        aviso = f"nao consegui listar as portas UDP do container: {exc}"
+
+    candidatas: list[int] = []
+    for porta in escutando + _portas_do_texto(server["game_port"]) + list(QUERY_PORT_GUESSES):
+        if 1 <= porta <= 65535 and porta not in candidatas:
+            candidatas.append(porta)
+    return candidatas, aviso
+
+
+def probe_ports(host: str, portas: list[int]) -> list[dict]:
+    """Dispara um A2S_INFO em cada porta candidata, todas ao mesmo tempo."""
+    resultados: dict[int, dict] = {}
+    lock = threading.Lock()
+
+    def testa(porta: int):
+        item = {"port": porta, "ok": False, "players": None, "max_players": None,
+                "server_name": "", "error": ""}
+        try:
+            info = query_players(host, porta)
+            item.update({
+                "ok": True, "players": info["players"], "max_players": info["max_players"],
+                "server_name": info["server_name"],
+            })
+        except QueryError as exc:
+            item["error"] = str(exc)
+        with lock:
+            resultados[porta] = item
+
+    threads = [threading.Thread(target=testa, args=(p,), daemon=True) for p in portas]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=QUERY_TIMEOUT * 2 + 2)
+    return [resultados.get(p, {"port": p, "ok": False, "error": MSG_TIMEOUT}) for p in portas]
+
+
+def read_log_lines(server: sqlite3.Row) -> list[str]:
+    raw = ssh_output(
+        server,
+        q("bash", "-lc", LOG_PLAYERS_SCRIPT, "gp", server["service"], str(LOG_SCAN_MAX)),
+        timeout=60,
+    )
+    return raw.splitlines()
+
+
+def players_from_log(server: sqlite3.Row) -> dict:
+    entrar = compile_pattern(server["join_re"], "entrada")
+    if not entrar:
+        raise QueryError("informe o padrao da linha de entrada de jogador")
+    sair = compile_pattern(server["leave_re"], "saida")
+    try:
+        linhas = read_log_lines(server)
+    except RemoteError as exc:
+        raise QueryError(str(exc))
+
+    resultado = _apply_log_events(linhas, entrar, sair)
+    resultado.update({"error": "", "max_players": None, "server_name": "", "map": ""})
+    return resultado
+
+
 _players_cache: dict[int, tuple[float, dict]] = {}
 _players_lock = threading.Lock()
 
 
+def player_source(server: sqlite3.Row) -> str:
+    """Como contar os jogadores deste servidor: 'a2s', 'log' ou '' (desligado)."""
+    escolhido = (server["player_source"] or "").strip()
+    if escolhido in ("a2s", "log", "none"):
+        return "" if escolhido == "none" else escolhido
+    # Cadastro antigo, anterior ao campo: porta de consulta preenchida = A2S.
+    return "a2s" if int(server["query_port"] or 0) else ""
+
+
 def server_players(server: sqlite3.Row, force: bool = False) -> dict:
-    porta = int(server["query_port"] or 0)
-    if not porta:
-        return {"configured": False, "error": "", "players": None, "list": []}
+    origem = player_source(server)
+    if not origem:
+        return {"configured": False, "error": "", "players": None, "list": [], "source": ""}
 
     key = int(server["id"])
     agora = time.monotonic()
@@ -571,10 +772,17 @@ def server_players(server: sqlite3.Row, force: bool = False) -> dict:
             return cached[1]
 
     try:
-        data = query_players(server["host"], porta)
+        if origem == "log":
+            data = players_from_log(server)
+        else:
+            porta = int(server["query_port"] or 0)
+            if not porta:
+                raise QueryError("informe a porta de consulta (query Steam) do servidor")
+            data = query_players(server["host"], porta)
         data["configured"] = True
     except QueryError as exc:
         data = {"configured": True, "error": str(exc), "players": None, "list": []}
+    data["source"] = origem
 
     with _players_lock:
         _players_cache[key] = (agora, data)
@@ -598,7 +806,7 @@ def all_players(servers) -> dict[int, dict]:
         t.join(timeout=QUERY_TIMEOUT * 3 + 2)
     for srv in servers:
         results.setdefault(int(srv["id"]), {"configured": True, "error": MSG_TIMEOUT,
-                                            "players": None, "list": []})
+                                            "players": None, "list": [], "source": ""})
     return results
 
 
@@ -1112,6 +1320,89 @@ def api_server_players(sid: int):
     return jsonify(server_players(server))
 
 
+@app.get("/servers/<int:sid>/players/descobrir")
+@login_required
+def players_setup(sid: int):
+    """Assistente: acha a porta que responde a consulta e ajuda a achar o padrao no log."""
+    server = _server_or_404(sid)
+    aba = request.args.get("aba", "porta")
+
+    portas, aviso = [], ""
+    if aba == "porta":
+        candidatas, aviso = candidate_ports(server)
+        portas = probe_ports(server["host"], candidatas[:12])
+
+    # Assistente do log: linhas candidatas e teste do padrao digitado.
+    amostras: list[str] = []
+    teste = None
+    erro_log = ""
+    join_re = request.args.get("join_re", server["join_re"])
+    leave_re = request.args.get("leave_re", server["leave_re"])
+    if aba == "log":
+        try:
+            linhas = read_log_lines(server)
+            chaves = re.compile("|".join(LOG_HINT_WORDS), re.I)
+            amostras = [ln for ln in linhas if chaves.search(ln)][-120:]
+            if request.args.get("testar"):
+                entrar = compile_pattern(join_re, "entrada")
+                if not entrar:
+                    raise QueryError("informe o padrao da linha de entrada")
+                sair = compile_pattern(leave_re, "saida")
+                teste = _apply_log_events(linhas, entrar, sair)
+                teste["casaram"] = [
+                    ln for ln in amostras
+                    if entrar.search(ln[:LOG_LINE_MAX]) or (sair and sair.search(ln[:LOG_LINE_MAX]))
+                ][-20:]
+        except (RemoteError, QueryError) as exc:
+            erro_log = str(exc)
+
+    return render_template(
+        "players_setup.html", server=server, aba=aba, portas=portas, aviso=aviso,
+        amostras=amostras, teste=teste, erro_log=erro_log,
+        join_re=join_re, leave_re=leave_re,
+    )
+
+
+@app.post("/servers/<int:sid>/players/usar")
+@login_required
+def players_use(sid: int):
+    """Grava a forma de contagem escolhida no assistente."""
+    server = _server_or_404(sid)
+    origem = request.form.get("player_source", "")
+    conn = db()
+    if origem == "a2s":
+        porta = request.form.get("query_port", "0")
+        if not porta.isdigit() or not 1 <= int(porta) <= 65535:
+            flash("Porta invalida.", "error")
+            return redirect(url_for("players_setup", sid=sid))
+        with conn:
+            conn.execute(
+                "UPDATE servers SET query_port = ?, player_source = 'a2s' WHERE id = ?",
+                (int(porta), sid),
+            )
+        flash(f"Contagem de jogadores ligada pela consulta na porta {porta}/udp.", "ok")
+    elif origem == "log":
+        errors: list[str] = []
+        entrada = _padrao(request.form.get("join_re"), "entrada", errors)
+        saida = _padrao(request.form.get("leave_re"), "saida", errors)
+        if errors or not entrada:
+            flash(errors[0] if errors else "Informe o padrao da linha de entrada.", "error")
+            return redirect(url_for("players_setup", sid=sid, aba="log"))
+        with conn:
+            conn.execute(
+                "UPDATE servers SET join_re = ?, leave_re = ?, player_source = 'log' WHERE id = ?",
+                (entrada, saida, sid),
+            )
+        flash("Contagem de jogadores ligada pelo log do servidor.", "ok")
+    else:
+        flash("Escolha invalida.", "error")
+        return redirect(url_for("players_setup", sid=sid))
+
+    with _players_lock:
+        _players_cache.pop(sid, None)
+    return redirect(url_for("server_detail", sid=sid))
+
+
 @app.get("/api/servers/<int:sid>/metrics")
 @login_required
 def api_server_metrics(sid: int):
@@ -1151,11 +1442,28 @@ def _pasta_config(valor: str, errors: list[str]) -> str:
         return ""
 
 
+def _padrao(valor: str, rotulo: str, errors: list[str]) -> str:
+    """Guarda o regex so depois de conferir que ele compila."""
+    texto = (valor or "").strip()[:RE_MAX_LEN]
+    if not texto:
+        return ""
+    try:
+        compile_pattern(texto, rotulo)
+    except QueryError as exc:
+        errors.append(str(exc))
+        return ""
+    return texto
+
+
 def _form_server(form) -> tuple[dict, list[str]]:
     errors: list[str] = []
     name = form.get("name", "").strip()
     host = form.get("host", "").strip()
     ssh_user = form.get("ssh_user", "").strip() or "root"
+    origem = (form.get("player_source", "") or "").strip()
+    if origem not in ("", "none", "a2s", "log"):
+        errors.append("Forma de contar jogadores invalida.")
+        origem = ""
 
     if not name:
         errors.append("Informe um nome.")
@@ -1178,6 +1486,9 @@ def _form_server(form) -> tuple[dict, list[str]]:
                 form.get("query_port"), 0, 0,
                 "Porta de consulta invalida (use 0 para desligar).", errors,
             ),
+            "player_source": origem,
+            "join_re": _padrao(form.get("join_re"), "entrada", errors),
+            "leave_re": _padrao(form.get("leave_re"), "saida", errors),
         },
         errors,
     )
@@ -1189,6 +1500,7 @@ def server_new():
     data = {
         "name": "", "host": "", "ssh_user": "root", "ssh_port": 22,
         "service": "", "game_port": "", "notes": "", "config_path": "", "query_port": 0,
+        "player_source": "", "join_re": "", "leave_re": "",
     }
     if request.method == "POST":
         data, errors = _form_server(request.form)
@@ -1198,12 +1510,14 @@ def server_new():
                 with conn:
                     conn.execute(
                         "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
-                        " game_port, notes, config_path, query_port, created_at)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        " game_port, notes, config_path, query_port, player_source,"
+                        " join_re, leave_re, created_at)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             data["name"], data["host"], data["ssh_port"],
                             data["ssh_user"], data["service"], data["game_port"],
                             data["notes"], data["config_path"], data["query_port"],
+                            data["player_source"], data["join_re"], data["leave_re"],
                             now_iso(),
                         ),
                     )
@@ -1231,12 +1545,13 @@ def server_edit(sid: int):
                 with conn:
                     conn.execute(
                         "UPDATE servers SET name=?, host=?, ssh_port=?, ssh_user=?,"
-                        " service=?, game_port=?, notes=?, config_path=?, query_port=?"
-                        " WHERE id=?",
+                        " service=?, game_port=?, notes=?, config_path=?, query_port=?,"
+                        " player_source=?, join_re=?, leave_re=? WHERE id=?",
                         (
                             data["name"], data["host"], data["ssh_port"],
                             data["ssh_user"], data["service"], data["game_port"],
-                            data["notes"], data["config_path"], data["query_port"], sid,
+                            data["notes"], data["config_path"], data["query_port"],
+                            data["player_source"], data["join_re"], data["leave_re"], sid,
                         ),
                     )
                 invalidate_status(sid)
