@@ -175,9 +175,12 @@ start_container() {
 }
 
 install_packages() {
-  msg "Instalando dependencias no CT (python3-flask, gunicorn, openssh-client)"
+  # openssh-server e do painel para fora: e ele que permite atualizar o codigo direto
+  # do Windows (deploy-admin.ps1 sem -Full), sem passar pelo Proxmox.
+  msg "Instalando dependencias no CT (python3-flask, gunicorn, openssh-client/server)"
   run_ct "export DEBIAN_FRONTEND=noninteractive && apt-get update -qq && \
-    apt-get install -y -qq python3 python3-flask gunicorn openssh-client ca-certificates tar gzip"
+    apt-get install -y -qq python3 python3-flask gunicorn openssh-client openssh-server \
+    ca-certificates tar gzip"
 }
 
 ensure_app_user() {
@@ -225,6 +228,25 @@ ensure_ssh_key() {
 
   PANEL_PUBKEY="$(pct exec "$CTID" -- cat "${CONF_DIR}/id_ed25519.pub" | tr -d '\r\n')"
   [[ -n "$PANEL_PUBKEY" ]] || die "Nao consegui ler a chave publica do painel"
+}
+
+enable_direct_deploy() {
+  # Autoriza a chave do operador no CT do painel. Com ela, o proximo deploy manda os
+  # arquivos direto por scp e nem toca no Proxmox.
+  local pubkey="${ADMIN_SSH_PUBKEY:-}"
+  run_ct "systemctl enable --now ssh >/dev/null 2>&1 || systemctl enable --now sshd >/dev/null 2>&1 || true"
+  # So por chave: o CT nasce com senha de root conhecida do .env.
+  run_ct "sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config && \
+    systemctl reload ssh >/dev/null 2>&1 || true"
+
+  if [[ -z "$pubkey" ]]; then
+    warn "ADMIN_SSH_PUBKEY vazio: o envio direto para o CT nao vai funcionar"
+    return 0
+  fi
+  msg "Autorizando sua chave SSH no CT do painel (para o envio direto)"
+  run_ct "install -d -m 700 /root/.ssh && touch /root/.ssh/authorized_keys && \
+    chmod 600 /root/.ssh/authorized_keys && \
+    grep -qF '${pubkey}' /root/.ssh/authorized_keys || echo '${pubkey}' >> /root/.ssh/authorized_keys"
 }
 
 render_panel_config() {
@@ -427,6 +449,10 @@ Comandos uteis (no host Proxmox):
   pct exec ${CTID} -- systemctl status gamepanel.service --no-pager
   pct exec ${CTID} -- journalctl -u gamepanel.service -f
 
+Proximos deploys: com o CT ja criado, .\\deploy-admin.ps1 manda o codigo direto para
+ele por SSH (segundos, sem tocar no Proxmox). Use -Full para mexer no CT em si
+(recursos, rede, senha do painel) ou recriar.
+
 EOF
 }
 
@@ -441,6 +467,7 @@ main() {
   ensure_app_user
   push_application
   ensure_ssh_key
+  enable_direct_deploy
   render_panel_config
   bootstrap_admin_user
   render_service

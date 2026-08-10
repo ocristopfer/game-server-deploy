@@ -1,7 +1,18 @@
 param(
     # Modo interativo: pergunta cada valor (o .env vira apenas default dos prompts)
     [switch]$Interactive,
+    # Forca o caminho completo pelo Proxmox (criar/reconfigurar o CT). Sem isto, se o
+    # container do painel ja existe e responde por SSH, o codigo vai direto para ele.
+    [switch]$Full,
     [string]$ProxmoxHost = "",
+    # Senha do root do Proxmox. Sem isto (e sem chave autorizada) o deploy nao entra.
+    # O normal e deixar em PROXMOX_PASSWORD no .env.
+    [string]$ProxmoxPassword = "",
+    # Depois de entrar por senha, autoriza sua chave publica no Proxmox para os
+    # proximos deploys nao pedirem mais nada.
+    [switch]$InstallKey,
+    # Endereco do CT do painel para o envio direto (vazio = deduz do .env)
+    [string]$PanelHost = "",
     [string]$EnvFile = "",
     [string]$RemoteBundleDir = "/root/game-admin-deploy"
 )
@@ -53,6 +64,164 @@ function Copy-AsLf([string]$Source, [string]$Dest) {
     Write-LfFile $Dest ([System.IO.File]::ReadAllText($Source))
 }
 
+# ----- Acesso ao Proxmox: chave quando existe, senha do .env quando nao -----
+
+# O ssh/scp do Windows nao aceita senha por parametro, mas o OpenSSH 8.4+ chama o
+# programa apontado por SSH_ASKPASS quando SSH_ASKPASS_REQUIRE=force. O arquivo abaixo
+# nao guarda a senha: ele so ecoa uma variavel de ambiente deste processo.
+$script:AskPassFile = ""
+
+function Enable-PasswordAuth([string]$Password) {
+    if ($script:AskPassFile -eq "") {
+        $script:AskPassFile = Join-Path $env:TEMP "gamepanel-askpass.cmd"
+        Set-Content -Path $script:AskPassFile -Encoding ASCII -Value @(
+            "@echo off",
+            "echo %GAMEPANEL_SSH_PASSWORD%"
+        )
+    }
+    $env:GAMEPANEL_SSH_PASSWORD = $Password
+    $env:SSH_ASKPASS = $script:AskPassFile
+    $env:SSH_ASKPASS_REQUIRE = "force"
+    # Alguns builds so consultam o askpass com DISPLAY definido.
+    if (-not $env:DISPLAY) { $env:DISPLAY = "localhost:0" }
+}
+
+function Disable-PasswordAuth {
+    foreach ($nome in @("GAMEPANEL_SSH_PASSWORD", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE")) {
+        Remove-Item "env:$nome" -ErrorAction SilentlyContinue
+    }
+    if ($script:AskPassFile -ne "" -and (Test-Path $script:AskPassFile)) {
+        Remove-Item $script:AskPassFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-KeyAuth([string]$Target) {
+    # "Nao entrou" e resposta esperada aqui; ver o comentario em Test-PanelReachable.
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new `
+            "root@$Target" "true" 2>$null | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $anterior
+    }
+}
+
+function Initialize-ProxmoxAuth([string]$Target, [string]$Password) {
+    if (Test-KeyAuth $Target) {
+        Write-Host "Proxmox: entrando por chave SSH." -ForegroundColor DarkGray
+        return $false
+    }
+    if ($Password -eq "") {
+        throw ("Nao consegui entrar em root@$Target por chave SSH. " +
+               "Preencha PROXMOX_PASSWORD no .env (ou use -ProxmoxPassword), " +
+               "ou autorize sua chave publica no Proxmox.")
+    }
+    Enable-PasswordAuth $Password
+    Write-Host "Proxmox: sem chave autorizada, usando a senha do .env." -ForegroundColor DarkGray
+    return $true
+}
+
+function Install-KeyOnProxmox([string]$Target, [string]$PubKey) {
+    if ($PubKey -eq "") {
+        Write-Host "Sem chave publica local para instalar (rode ssh-keygen)." -ForegroundColor Yellow
+        return
+    }
+    Write-Host "Autorizando sua chave publica em root@$Target..." -ForegroundColor Cyan
+    $cmd = "install -d -m 700 /root/.ssh && touch /root/.ssh/authorized_keys && " +
+           "chmod 600 /root/.ssh/authorized_keys && " +
+           "grep -qF '$PubKey' /root/.ssh/authorized_keys || echo '$PubKey' >> /root/.ssh/authorized_keys"
+    ssh "root@$Target" $cmd
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao autorizar a chave em root@$Target" }
+    Write-Host "Pronto: os proximos deploys entram por chave, sem senha." -ForegroundColor Green
+}
+
+# ----- Envio direto para o CT do painel (sem passar pelo Proxmox) -----
+
+# Endereco do painel: parametro > ADMIN_HOST > o IP fixo do ADMIN_IP_CIDR.
+# Com ADMIN_IP_CIDR=dhcp nao da para deduzir - informe ADMIN_HOST ou -PanelHost.
+function Resolve-PanelHost($Map, [string]$Override) {
+    if ($Override -ne "") { return $Override }
+    $fromEnv = Get-Cfg $Map "ADMIN_HOST"
+    if ($fromEnv -ne "") { return $fromEnv }
+    $cidr = Get-Cfg $Map "ADMIN_IP_CIDR"
+    if ($cidr -ne "" -and $cidr -ne "dhcp") { return ($cidr -split '/')[0] }
+    return ""
+}
+
+function Test-PanelReachable([string]$Target) {
+    if ($Target -eq "") { return $false }
+    # "Nao respondeu" e uma resposta valida aqui, nao um erro do deploy. No PowerShell
+    # 5.1 o stderr do ssh redirecionado vira excecao quando ErrorActionPreference e
+    # 'Stop', entao o modo estrito fica suspenso so nesta checagem.
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        # BatchMode: sem chave autorizada, falha na hora em vez de pedir senha.
+        ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new `
+            "root@$Target" "test -f /opt/gamepanel/app.py" 2>$null | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $anterior
+    }
+}
+
+# Chave publica do operador: com ela no CT, os proximos deploys vao direto.
+function Get-LocalPubKey([string]$Configured) {
+    if ($Configured -ne "") { return $Configured }
+    foreach ($name in @("id_ed25519.pub", "id_rsa.pub")) {
+        $path = Join-Path $env:USERPROFILE ".ssh\$name"
+        if (Test-Path $path) { return ((Get-Content $path -Raw).Trim()) }
+    }
+    return ""
+}
+
+function Invoke-DirectDeploy([string]$Target, [string]$SrcDir, [string]$Port) {
+    $remoteTmp = "/tmp/gamepanel-deploy"
+    Write-Host "`nCT do painel encontrado em $Target - enviando o codigo direto (sem Proxmox)." -ForegroundColor Cyan
+
+    ssh "root@$Target" "rm -rf '$remoteTmp' && mkdir -p '$remoteTmp/templates' '$remoteTmp/static'"
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $remoteTmp em root@$Target" }
+
+    scp (Join-Path $SrcDir "app.py") "root@${Target}:$remoteTmp/app.py"
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar app.py" }
+    scp (Join-Path $SrcDir "templates\*.html") "root@${Target}:$remoteTmp/templates/"
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os templates" }
+    scp (Join-Path $SrcDir "static\*") "root@${Target}:$remoteTmp/static/"
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os estaticos" }
+
+    # Troca o conteudo e reinicia. Os templates antigos sao removidos para um arquivo
+    # renomeado no repo nao continuar vivo no container.
+    $install = @'
+set -e
+install -d /opt/gamepanel/templates /opt/gamepanel/static
+rm -f /opt/gamepanel/templates/*.html /opt/gamepanel/static/*
+install -m 0644 /tmp/gamepanel-deploy/app.py /opt/gamepanel/app.py
+install -m 0644 /tmp/gamepanel-deploy/templates/*.html /opt/gamepanel/templates/
+install -m 0644 /tmp/gamepanel-deploy/static/* /opt/gamepanel/static/
+chown -R root:root /opt/gamepanel
+rm -rf /tmp/gamepanel-deploy
+systemctl restart gamepanel.service
+sleep 3
+systemctl is-active --quiet gamepanel.service
+'@
+    ssh "root@$Target" $install
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "`nO painel nao voltou. Ultimas linhas do log:" -ForegroundColor Yellow
+        ssh "root@$Target" "journalctl -u gamepanel.service --no-pager -n 30"
+        throw "gamepanel.service nao ficou ativo apos o envio direto"
+    }
+
+    $count = (ssh "root@$Target" "ls /opt/gamepanel/templates | wc -l").Trim()
+    Write-Host "`nPainel atualizado em http://${Target}:$Port ($count templates)." -ForegroundColor Green
+    Write-Host "Config (ADMIN_*), recursos do CT e usuario so mudam no modo completo: .\deploy-admin.ps1 -Full" -ForegroundColor DarkGray
+}
+
 # ----- Configuracao -----
 if ($EnvFile -eq "") { $EnvFile = Join-Path $ScriptDir ".env" }
 $cfg = Read-EnvFile $EnvFile
@@ -86,20 +255,6 @@ if ($Interactive) {
     throw "Modo automatico requer o arquivo .env ($EnvFile). Copie o .env.example ou use -Interactive."
 }
 
-if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido (parametro, .env ou modo interativo)." }
-foreach ($required in @("ADMIN_CTID", "STORAGE", "BRIDGE")) {
-    if ((Get-Cfg $cfg $required) -eq "") {
-        throw "Valor obrigatorio ausente: $required (preencha o .env ou use -Interactive)"
-    }
-}
-if ((Get-Cfg $cfg "ADMIN_IP_CIDR" "dhcp") -ne "dhcp" -and
-    (Get-Cfg $cfg "ADMIN_GATEWAY" (Get-Cfg $cfg "GATEWAY")) -eq "") {
-    throw "ADMIN_GATEWAY (ou GATEWAY) obrigatorio quando ADMIN_IP_CIDR nao e dhcp"
-}
-if ((Get-Cfg $cfg "ADMIN_CTID") -eq (Get-Cfg $cfg "CTID")) {
-    throw "ADMIN_CTID nao pode ser igual ao CTID usado pelos servidores de jogo ($($cfg['CTID']))"
-}
-
 # ----- Monta o bundle -----
 $BundleDir = Join-Path ([System.IO.Path]::GetTempPath()) "game-admin-bundle"
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
@@ -114,8 +269,47 @@ foreach ($file in Get-ChildItem -Path $AdminSrc -File -Recurse) {
     Copy-AsLf $file.FullName (Join-Path (Join-Path $BundleDir "admin") $relative)
 }
 
+# ----- Atalho: CT ja existe e responde? Manda o codigo direto para ele -----
+if (-not $Interactive -and -not $Full) {
+    $TargetPanel = Resolve-PanelHost $cfg $PanelHost
+    if (Test-PanelReachable $TargetPanel) {
+        Invoke-DirectDeploy $TargetPanel (Join-Path $BundleDir "admin") (Get-Cfg $cfg "ADMIN_PORT" "8080")
+        return
+    }
+    if ($TargetPanel -ne "") {
+        Write-Host "CT do painel nao respondeu em $TargetPanel - seguindo pelo Proxmox." -ForegroundColor DarkGray
+    }
+}
+
+# ----- Caminho completo: cria/reconfigura o CT pelo host Proxmox -----
+if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido (parametro, .env ou modo interativo)." }
+foreach ($required in @("ADMIN_CTID", "STORAGE", "BRIDGE")) {
+    if ((Get-Cfg $cfg $required) -eq "") {
+        throw "Valor obrigatorio ausente: $required (preencha o .env ou use -Interactive)"
+    }
+}
+if ((Get-Cfg $cfg "ADMIN_IP_CIDR" "dhcp") -ne "dhcp" -and
+    (Get-Cfg $cfg "ADMIN_GATEWAY" (Get-Cfg $cfg "GATEWAY")) -eq "") {
+    throw "ADMIN_GATEWAY (ou GATEWAY) obrigatorio quando ADMIN_IP_CIDR nao e dhcp"
+}
+if ((Get-Cfg $cfg "ADMIN_CTID") -eq (Get-Cfg $cfg "CTID")) {
+    throw "ADMIN_CTID nao pode ser igual ao CTID usado pelos servidores de jogo ($($cfg['CTID']))"
+}
+
+# Chave do operador vai junto: e ela que habilita o envio direto nos proximos deploys.
+$cfg["ADMIN_SSH_PUBKEY"] = Get-LocalPubKey (Get-Cfg $cfg "ADMIN_SSH_PUBKEY")
+if ((Get-Cfg $cfg "ADMIN_SSH_PUBKEY") -eq "") {
+    Write-Host "Sem chave publica SSH local: o CT nao vai aceitar envio direto (rode ssh-keygen)." -ForegroundColor DarkGray
+}
+
+if ($ProxmoxPassword -eq "") { $ProxmoxPassword = Get-Cfg $cfg "PROXMOX_PASSWORD" }
+$UsandoSenha = Initialize-ProxmoxAuth $ProxmoxHost $ProxmoxPassword
+if ($UsandoSenha -and $InstallKey) {
+    Install-KeyOnProxmox $ProxmoxHost (Get-Cfg $cfg "ADMIN_SSH_PUBKEY")
+}
+
 $adminKeys = @(
-    "ADMIN_CTID","ADMIN_HOSTNAME","ADMIN_IP_CIDR","ADMIN_GATEWAY",
+    "ADMIN_CTID","ADMIN_HOSTNAME","ADMIN_IP_CIDR","ADMIN_GATEWAY","ADMIN_SSH_PUBKEY",
     "ADMIN_MEMORY","ADMIN_CORES","ADMIN_DISK_GB","ADMIN_SWAP","ADMIN_PORT",
     "ADMIN_USER","ADMIN_PASSWORD","ADMIN_ALLOW_SHELL","ADMIN_AUTHORIZE_CTIDS",
     "ADMIN_ALLOW_FILES","ADMIN_FILE_MAX_KB","ADMIN_FILE_PREVIEW_KB",
@@ -133,22 +327,30 @@ foreach ($key in $adminKeys) {
 Write-LfFile (Join-Path $BundleDir "admin.env") (($adminLines -join "`n") + "`n")
 
 # ----- Envia e executa no Proxmox -----
-Write-Host "`nEnviando bundle do painel para root@$ProxmoxHost..." -ForegroundColor Cyan
-ssh "root@$ProxmoxHost" "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
-if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
+try {
+    Write-Host "`nEnviando bundle do painel para root@$ProxmoxHost..." -ForegroundColor Cyan
+    ssh "root@$ProxmoxHost" "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
 
-$topLevel = @(
-    (Join-Path $BundleDir "provision-admin-lxc.sh"),
-    (Join-Path $BundleDir "admin.env")
-)
-scp @topLevel "root@${ProxmoxHost}:$RemoteBundleDir/"
-if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para root@$ProxmoxHost" }
+    $topLevel = @(
+        (Join-Path $BundleDir "provision-admin-lxc.sh"),
+        (Join-Path $BundleDir "admin.env")
+    )
+    scp @topLevel "root@${ProxmoxHost}:$RemoteBundleDir/"
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para root@$ProxmoxHost" }
 
-scp -r (Join-Path $BundleDir "admin") "root@${ProxmoxHost}:$RemoteBundleDir/"
-if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar a aplicacao para root@$ProxmoxHost" }
+    scp -r (Join-Path $BundleDir "admin") "root@${ProxmoxHost}:$RemoteBundleDir/"
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar a aplicacao para root@$ProxmoxHost" }
 
-Write-Host "Provisionando o painel no Proxmox...`n" -ForegroundColor Cyan
-ssh "root@$ProxmoxHost" "cd '$RemoteBundleDir' && bash ./provision-admin-lxc.sh"
-if ($LASTEXITCODE -ne 0) { throw "Provisionamento do painel falhou no host Proxmox (veja a saida acima)" }
+    Write-Host "Provisionando o painel no Proxmox...`n" -ForegroundColor Cyan
+    ssh "root@$ProxmoxHost" "cd '$RemoteBundleDir' && bash ./provision-admin-lxc.sh"
+    if ($LASTEXITCODE -ne 0) { throw "Provisionamento do painel falhou no host Proxmox (veja a saida acima)" }
 
-Write-Host "Painel implantado." -ForegroundColor Green
+    Write-Host "Painel implantado." -ForegroundColor Green
+    if ($UsandoSenha -and -not $InstallKey) {
+        Write-Host "Dica: rode com -InstallKey uma vez para autorizar sua chave e parar de usar senha." -ForegroundColor DarkGray
+    }
+} finally {
+    # A senha some do ambiente mesmo se o deploy falhar no meio.
+    Disable-PasswordAuth
+}
