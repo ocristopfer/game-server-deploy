@@ -70,6 +70,22 @@ function Copy-AsLf([string]$Source, [string]$Dest) {
 # programa apontado por SSH_ASKPASS quando SSH_ASKPASS_REQUIRE=force. O arquivo abaixo
 # nao guarda a senha: ele so ecoa uma variavel de ambiente deste processo.
 $script:AskPassFile = ""
+# Opcoes extras aplicadas a todo ssh/scp do deploy. No modo senha elas desligam a
+# tentativa por chave: sem isso o ssh pode cair no prompt do console, que num deploy
+# nao-interativo simplesmente trava.
+$script:SshOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
+
+function Invoke-Ssh([string]$Target, [string]$Command) {
+    ssh @script:SshOpts "root@$Target" $Command
+}
+
+function Invoke-Scp([string[]]$Sources, [string]$Destination, [switch]$Recurse) {
+    if ($Recurse) {
+        scp @script:SshOpts -r @Sources $Destination
+    } else {
+        scp @script:SshOpts @Sources $Destination
+    }
+}
 
 function Enable-PasswordAuth([string]$Password) {
     if ($script:AskPassFile -eq "") {
@@ -84,6 +100,7 @@ function Enable-PasswordAuth([string]$Password) {
     $env:SSH_ASKPASS_REQUIRE = "force"
     # Alguns builds so consultam o askpass com DISPLAY definido.
     if (-not $env:DISPLAY) { $env:DISPLAY = "localhost:0" }
+    $script:SshOpts += @("-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password")
 }
 
 function Disable-PasswordAuth {
@@ -134,7 +151,7 @@ function Install-KeyOnProxmox([string]$Target, [string]$PubKey) {
     $cmd = "install -d -m 700 /root/.ssh && touch /root/.ssh/authorized_keys && " +
            "chmod 600 /root/.ssh/authorized_keys && " +
            "grep -qF '$PubKey' /root/.ssh/authorized_keys || echo '$PubKey' >> /root/.ssh/authorized_keys"
-    ssh "root@$Target" $cmd
+    Invoke-Ssh $Target $cmd
     if ($LASTEXITCODE -ne 0) { throw "Falha ao autorizar a chave em root@$Target" }
     Write-Host "Pronto: os proximos deploys entram por chave, sem senha." -ForegroundColor Green
 }
@@ -185,14 +202,14 @@ function Invoke-DirectDeploy([string]$Target, [string]$SrcDir, [string]$Port) {
     $remoteTmp = "/tmp/gamepanel-deploy"
     Write-Host "`nCT do painel encontrado em $Target - enviando o codigo direto (sem Proxmox)." -ForegroundColor Cyan
 
-    ssh "root@$Target" "rm -rf '$remoteTmp' && mkdir -p '$remoteTmp/templates' '$remoteTmp/static'"
+    Invoke-Ssh $Target "rm -rf '$remoteTmp' && mkdir -p '$remoteTmp/templates' '$remoteTmp/static'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $remoteTmp em root@$Target" }
 
-    scp (Join-Path $SrcDir "app.py") "root@${Target}:$remoteTmp/app.py"
+    Invoke-Scp @((Join-Path $SrcDir "app.py")) "root@${Target}:$remoteTmp/app.py"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar app.py" }
-    scp (Join-Path $SrcDir "templates\*.html") "root@${Target}:$remoteTmp/templates/"
+    Invoke-Scp @((Join-Path $SrcDir "templates\*.html")) "root@${Target}:$remoteTmp/templates/"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os templates" }
-    scp (Join-Path $SrcDir "static\*") "root@${Target}:$remoteTmp/static/"
+    Invoke-Scp @((Join-Path $SrcDir "static\*")) "root@${Target}:$remoteTmp/static/"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os estaticos" }
 
     # Troca o conteudo e reinicia. Os templates antigos sao removidos para um arquivo
@@ -210,14 +227,14 @@ systemctl restart gamepanel.service
 sleep 3
 systemctl is-active --quiet gamepanel.service
 '@
-    ssh "root@$Target" $install
+    Invoke-Ssh $Target $install
     if ($LASTEXITCODE -ne 0) {
         Write-Host "`nO painel nao voltou. Ultimas linhas do log:" -ForegroundColor Yellow
-        ssh "root@$Target" "journalctl -u gamepanel.service --no-pager -n 30"
+        Invoke-Ssh $Target "journalctl -u gamepanel.service --no-pager -n 30"
         throw "gamepanel.service nao ficou ativo apos o envio direto"
     }
 
-    $count = (ssh "root@$Target" "ls /opt/gamepanel/templates | wc -l").Trim()
+    $count = (Invoke-Ssh $Target "ls /opt/gamepanel/templates | wc -l").Trim()
     Write-Host "`nPainel atualizado em http://${Target}:$Port ($count templates)." -ForegroundColor Green
     Write-Host "Config (ADMIN_*), recursos do CT e usuario so mudam no modo completo: .\deploy-admin.ps1 -Full" -ForegroundColor DarkGray
 }
@@ -329,21 +346,21 @@ Write-LfFile (Join-Path $BundleDir "admin.env") (($adminLines -join "`n") + "`n"
 # ----- Envia e executa no Proxmox -----
 try {
     Write-Host "`nEnviando bundle do painel para root@$ProxmoxHost..." -ForegroundColor Cyan
-    ssh "root@$ProxmoxHost" "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
+    Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
 
     $topLevel = @(
         (Join-Path $BundleDir "provision-admin-lxc.sh"),
         (Join-Path $BundleDir "admin.env")
     )
-    scp @topLevel "root@${ProxmoxHost}:$RemoteBundleDir/"
+    Invoke-Scp $topLevel "root@${ProxmoxHost}:$RemoteBundleDir/"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para root@$ProxmoxHost" }
 
-    scp -r (Join-Path $BundleDir "admin") "root@${ProxmoxHost}:$RemoteBundleDir/"
+    Invoke-Scp @((Join-Path $BundleDir "admin")) "root@${ProxmoxHost}:$RemoteBundleDir/" -Recurse
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar a aplicacao para root@$ProxmoxHost" }
 
     Write-Host "Provisionando o painel no Proxmox...`n" -ForegroundColor Cyan
-    ssh "root@$ProxmoxHost" "cd '$RemoteBundleDir' && bash ./provision-admin-lxc.sh"
+    Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./provision-admin-lxc.sh"
     if ($LASTEXITCODE -ne 0) { throw "Provisionamento do painel falhou no host Proxmox (veja a saida acima)" }
 
     Write-Host "Painel implantado." -ForegroundColor Green

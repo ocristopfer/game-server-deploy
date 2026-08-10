@@ -150,6 +150,44 @@ de cada container.
 
 No fim o deploy mostra a URL (`http://<ip-do-ct>:8080`), o usuario e a senha.
 
+### Deploy rapido: direto no CT, sem passar pelo Proxmox
+
+Com o container do painel **ja criado e alcancavel por SSH**, o `deploy-admin.ps1` manda
+o codigo direto para ele (`scp` + `systemctl restart`) e nem abre conexao com o Proxmox.
+E o caminho normal do dia a dia: leva segundos em vez de minutos.
+
+- O endereco vem de `-PanelHost`, de `ADMIN_HOST` no `.env` ou do IP fixo em
+  `ADMIN_IP_CIDR`. Com `ADMIN_IP_CIDR=dhcp` e sem `ADMIN_HOST`, nao da para deduzir e o
+  deploy segue pelo Proxmox.
+- O provisionamento instala `openssh-server` no CT do painel e autoriza a **sua** chave
+  publica (`ADMIN_SSH_PUBKEY`, detectada automaticamente do seu `~/.ssh`). E isso que
+  habilita o envio direto; sem chave, o painel so aceita deploy pelo Proxmox.
+- O envio direto troca `app.py`, `templates/` e `static/` (removendo templates que
+  sairam do repo) e reinicia o servico, abortando com as ultimas linhas do log se ele
+  nao voltar.
+- **Config nao vai por ai**: mudar `ADMIN_*` (portas, limites, senha do painel) ou os
+  recursos do CT exige o caminho completo:
+
+```powershell
+.\deploy-admin.ps1 -Full          # cria/reconfigura o CT pelo Proxmox
+```
+
+### Acesso ao Proxmox por senha
+
+O ideal e ter sua chave publica autorizada no Proxmox. Quando nao ha chave, preencha
+`PROXMOX_PASSWORD` no `.env` (ou passe `-ProxmoxPassword`) e o deploy entra por senha:
+
+```powershell
+.\deploy-admin.ps1 -Full -InstallKey   # entra por senha e autoriza sua chave no Proxmox
+```
+
+- O deploy tenta a chave primeiro e so cai para a senha se ela nao for aceita.
+- A senha nunca vai para disco: ela e passada ao `ssh` pelo mecanismo `SSH_ASKPASS`
+  atraves de uma variavel de ambiente deste processo, e some do ambiente no fim (mesmo
+  se o deploy falhar no meio).
+- `-InstallKey` autoriza sua chave publica no Proxmox uma unica vez; dai em diante nao
+  precisa mais da senha no `.env`.
+
 ### Como ele fala com os servidores
 
 O painel **nao tem acesso ao host Proxmox** — ele nao usa `pct` e nao tem chave para o
@@ -189,21 +227,38 @@ Start, stop, restart, update, terminal e editor rodam a partir dai. Acoes demora
 
 ### Jogadores conectados
 
-O painel consulta o servidor pelo protocolo **A2S da Steam** (a mesma consulta que a
-lista de servidores do cliente faz): UDP direto do painel para a porta de query do jogo.
-Nao passa por SSH, nao precisa de senha nem de RCON, e nao exige nada instalado no
-container.
+Ha duas formas, e a tela **Configurar contagem** (botao no card "Jogadores") descobre
+qual serve para cada jogo.
 
-Para ligar, preencha **Porta de consulta** no cadastro do servidor (`0` ou vazio
-desliga). No Palworld e a `27015/udp` — a mesma porta que faz o servidor aparecer na
-lista da comunidade.
+**1. Consulta direta (A2S da Steam)** — a mesma consulta que o navegador de servidores
+do jogo faz: UDP do painel para a porta de query. Nao passa por SSH, nao precisa de
+senha nem RCON, e nao exige nada instalado no container. Palworld responde na
+`27015/udp`.
 
-- **Tela do servidor**: contagem `3/32 online`, nome publicado, mundo e a tabela de
-  jogadores com nome, ha quanto tempo estao conectados e pontos. Atualiza a cada 10s.
+O assistente **pergunta ao container quais portas UDP o jogo abriu** (le `/proc/net/udp`
+pelo SSH) e dispara um `A2S_INFO` em cada uma, somando as portas usuais da Steam. Se
+alguma responder, um clique em "Usar esta" ja liga a contagem.
+
+**2. Pelo log do servidor** — para jogo que nao publica consulta na rede. O
+**RuneScape Dragonwilds e assim**: a contagem que aparece no navegador do jogo vem do
+servico da Steam/Epic, nao do servidor, entao nao ha o que consultar na LAN. Como o
+`START_ARGS` dele tem `-log`, a Unreal despeja o log no stdout e o journald guarda —
+da para contar reproduzindo as entradas e saidas desde o ultimo start do servico.
+
+Como nenhum jogo escreve o log igual ao outro, os padroes sao configuraveis e o
+assistente ajuda a achar: ele mostra as linhas do log que parecem de entrada/saida, deixa
+testar dois regex e ver o resultado antes de salvar.
+
+- Com `(?P<name>...)` nos dois padroes, o painel lista **quem** esta online e desde
+  quando. Sem o nome na saida (comum na Unreal, que so avisa que a conexao caiu), ele
+  soma entradas e subtrai saidas e mostra so a contagem.
+- So conta o que aconteceu depois do ultimo start do servico, entao jogador de uma
+  execucao anterior nao fica preso na conta.
+
+Nas duas formas:
+
+- **Tela do servidor**: contagem `3/32 online` e a tabela de jogadores. Atualiza a cada 10s.
 - **Lista de servidores**: selo com a contagem em cada card.
-- A lista de nomes vem do `A2S_PLAYER` e e opcional: varios servidores Unreal respondem
-  so a contagem. Nesse caso o painel mostra o numero e avisa que aquele jogo nao publica
-  os nomes.
 - Servidor fora do ar ou porta errada nao trava a tela: a consulta desiste em
   `ADMIN_QUERY_TIMEOUT` segundos (padrao 3) e a pagina abre com o aviso. O resultado
   fica em cache por `ADMIN_PLAYERS_TTL` segundos (padrao 5).
