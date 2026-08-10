@@ -56,6 +56,7 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; }
 }
 .card.server { margin-bottom: 0; display: flex; flex-direction: column; gap: 14px; }
 .server-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .server-head h2 { margin: 0; }
 .card.empty { text-align: center; }
 .card.login { max-width: 380px; margin: 10vh auto 0; }

@@ -3,9 +3,14 @@
 #   docker compose up --build        (painel em http://localhost:8080, admin/admin12345)
 #
 # Sobe o painel + dois "containers de jogo" falsos: Debian com sshd, um systemctl de
-# mentira que liga/desliga um processo, journalctl que le o log desse processo e os
-# arquivos .ini que o jogo de verdade teria. Da para testar start/stop/update, o
-# terminal interativo e o editor de configuracao de ponta a ponta.
+# mentira que liga/desliga um processo, journalctl que le o log desse processo, um
+# servidor de query A2S que reporta jogadores e os arquivos que o jogo de verdade teria
+# (.ini, save binario, log grande). Da para testar start/stop/update, medidores de
+# recursos, contagem de jogadores, terminal interativo e o editor/download de ponta a
+# ponta.
+#
+# O numero de jogadores oscila sozinho; para fixar um valor:
+#   docker compose exec game-palworld sh -c 'echo 7 > /run/fake-players'
 #
 # A chave SSH do painel e gerada na primeira subida e publicada no volume 'panel-keys';
 # cada container de jogo a instala no authorized_keys do root ao iniciar.

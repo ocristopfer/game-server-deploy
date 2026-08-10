@@ -13,14 +13,15 @@ Dependencias: python3-flask (apt). Hash de senha e sessao usam apenas a stdlib.
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
 import hmac
 import os
 import re
 import secrets
 import shlex
+import socket
 import sqlite3
+import struct
 import subprocess
 import threading
 import time
@@ -34,7 +35,6 @@ try:
     import fcntl
     import pty
     import signal
-    import struct
     import termios
 
     HAVE_PTY = True
@@ -104,6 +104,12 @@ FILE_LIST_MAX = 800
 # Padroes usados pelo botao "procurar arquivos de config".
 CONFIG_GLOBS = ("*.ini", "*.cfg", "*.conf", "*.json", "*.yaml", "*.yml", "*.properties", "*.txt")
 
+SQL_SERVER_BY_ID = "SELECT * FROM servers WHERE id = ?"
+SQL_ALL_SERVERS = "SELECT * FROM servers ORDER BY name"
+TPL_ERROR = "error.html"
+TPL_LOGIN = "login.html"
+MSG_TIMEOUT = "tempo esgotado"
+
 UNIT_RE = re.compile(r"^[A-Za-z0-9@._-]{1,80}\.service$")
 HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
 USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
@@ -166,6 +172,7 @@ CREATE TABLE IF NOT EXISTS servers (
   game_port  TEXT NOT NULL DEFAULT '',
   notes      TEXT NOT NULL DEFAULT '',
   config_path TEXT NOT NULL DEFAULT '',
+  query_port INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   UNIQUE (host, ssh_port)
 );
@@ -217,6 +224,7 @@ def _close_db(_exc) -> None:
 # altera tabelas que ja existem, entao cada uma precisa do seu ALTER aqui.
 MIGRATIONS = (
     ("servers", "config_path", "ALTER TABLE servers ADD COLUMN config_path TEXT NOT NULL DEFAULT ''"),
+    ("servers", "query_port", "ALTER TABLE servers ADD COLUMN query_port INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -409,6 +417,191 @@ def public_key() -> str:
         return ""
 
 
+# ------------------------------------------------------------- jogadores (A2S)
+
+# Consulta o servidor pelo protocolo A2S da Steam — o mesmo que a lista de servidores
+# do cliente usa. Vai por UDP direto do painel para a porta de query do jogo: nao passa
+# por SSH, nao precisa de senha e nao exige nada instalado no container.
+QUERY_TIMEOUT = float(os.environ.get("GAMEPANEL_QUERY_TIMEOUT", "3"))
+PLAYERS_TTL = float(os.environ.get("GAMEPANEL_PLAYERS_TTL", "5"))
+
+A2S_HEADER = b"\xff\xff\xff\xff"
+A2S_SPLIT = b"\xff\xff\xff\xfe"
+A2S_INFO_REQ = A2S_HEADER + b"TSource Engine Query\x00"
+
+
+class QueryError(RuntimeError):
+    pass
+
+
+class _Buffer:
+    """Leitor sequencial do corpo da resposta (tudo little-endian)."""
+
+    def __init__(self, data: bytes):
+        self.data = data
+        self.pos = 0
+
+    def _take(self, n: int) -> bytes:
+        if self.pos + n > len(self.data):
+            raise QueryError("resposta do servidor terminou antes do esperado")
+        out = self.data[self.pos:self.pos + n]
+        self.pos += n
+        return out
+
+    def byte(self) -> int:
+        return self._take(1)[0]
+
+    def short(self) -> int:
+        return struct.unpack("<h", self._take(2))[0]
+
+    def long(self) -> int:
+        return struct.unpack("<l", self._take(4))[0]
+
+    def float(self) -> float:
+        return struct.unpack("<f", self._take(4))[0]
+
+    def string(self) -> str:
+        fim = self.data.find(b"\x00", self.pos)
+        if fim < 0:
+            raise QueryError("texto sem terminador na resposta")
+        out = self.data[self.pos:fim]
+        self.pos = fim + 1
+        # Nome de servidor costuma vir com emoji e cor; nada disso pode derrubar a tela.
+        return out.decode("utf-8", "replace")
+
+
+def _udp_receive(sock: socket.socket) -> bytes:
+    """Le uma resposta, remontando quando o servidor divide em varios pacotes."""
+    data, _ = sock.recvfrom(8192)
+    if data[:4] != A2S_SPLIT:
+        return data
+
+    partes: dict[int, bytes] = {}
+    total = 1
+    while True:
+        _pid, total, numero, _tam = struct.unpack_from("<lBBh", data, 4)
+        partes[numero] = data[12:]
+        if len(partes) >= total:
+            break
+        data, _ = sock.recvfrom(8192)
+        if data[:4] != A2S_SPLIT:
+            raise QueryError("resposta dividida veio incompleta")
+    inteiro = b"".join(partes[i] for i in sorted(partes))
+    if inteiro[:4] == A2S_HEADER:
+        return inteiro
+    raise QueryError("resposta dividida em formato desconhecido (compactada?)")
+
+
+def _a2s_ask(sock: socket.socket, addr, pedido: bytes, resposta: bytes) -> _Buffer:
+    """Manda o pedido e trata o desafio (challenge) que o servidor pode exigir."""
+    sock.sendto(pedido, addr)
+    data = _udp_receive(sock)
+    if data[4:5] == b"A":  # S2C_CHALLENGE: repete o pedido carregando o desafio
+        desafio = data[5:9]
+        if pedido == A2S_INFO_REQ:
+            sock.sendto(pedido + desafio, addr)
+        else:
+            sock.sendto(pedido[:5] + desafio, addr)
+        data = _udp_receive(sock)
+    if data[4:5] != resposta:
+        raise QueryError(f"resposta inesperada do servidor (tipo {data[4:5]!r})")
+    buf = _Buffer(data)
+    buf.pos = 5
+    return buf
+
+
+def query_players(host: str, port: int) -> dict:
+    """Numero de jogadores (A2S_INFO) e, quando o jogo publica, a lista (A2S_PLAYER)."""
+    addr = (host, port)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(QUERY_TIMEOUT)
+        try:
+            buf = _a2s_ask(sock, addr, A2S_INFO_REQ, b"I")
+            buf.byte()  # versao do protocolo
+            info = {
+                "server_name": buf.string(),
+                "map": buf.string(),
+                "folder": buf.string(),
+                "game": buf.string(),
+            }
+            buf.short()  # steam appid
+            info["players"] = buf.byte()
+            info["max_players"] = buf.byte()
+            info["bots"] = buf.byte()
+        except socket.timeout:
+            raise QueryError(f"sem resposta em {QUERY_TIMEOUT:g}s na porta {port}/udp")
+        except (OSError, struct.error) as exc:
+            raise QueryError(f"falha ao consultar {host}:{port} - {exc}")
+
+        # A lista de nomes e opcional: varios servidores Unreal so respondem a contagem.
+        lista: list[dict] = []
+        try:
+            buf = _a2s_ask(sock, addr, A2S_HEADER + b"U" + b"\xff\xff\xff\xff", b"D")
+            quantos = buf.byte()
+            for _ in range(min(quantos, 128)):
+                buf.byte()  # indice, que os servidores costumam zerar
+                lista.append({
+                    "name": buf.string(),
+                    "score": buf.long(),
+                    "seconds": max(0.0, buf.float()),
+                })
+        except (QueryError, OSError, struct.error):  # socket.timeout ja e um OSError
+            lista = []
+
+    info["list"] = [p for p in lista if p["name"]]
+    info["error"] = ""
+    return info
+
+
+_players_cache: dict[int, tuple[float, dict]] = {}
+_players_lock = threading.Lock()
+
+
+def server_players(server: sqlite3.Row, force: bool = False) -> dict:
+    porta = int(server["query_port"] or 0)
+    if not porta:
+        return {"configured": False, "error": "", "players": None, "list": []}
+
+    key = int(server["id"])
+    agora = time.monotonic()
+    if not force:
+        with _players_lock:
+            cached = _players_cache.get(key)
+        if cached and agora - cached[0] < PLAYERS_TTL:
+            return cached[1]
+
+    try:
+        data = query_players(server["host"], porta)
+        data["configured"] = True
+    except QueryError as exc:
+        data = {"configured": True, "error": str(exc), "players": None, "list": []}
+
+    with _players_lock:
+        _players_cache[key] = (agora, data)
+    return data
+
+
+def all_players(servers) -> dict[int, dict]:
+    """Consulta todos em paralelo: sao 3s de espera cada quando um esta fora do ar."""
+    results: dict[int, dict] = {}
+    lock = threading.Lock()
+
+    def work(srv):
+        data = server_players(srv)
+        with lock:
+            results[int(srv["id"])] = data
+
+    threads = [threading.Thread(target=work, args=(s,), daemon=True) for s in servers]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=QUERY_TIMEOUT * 3 + 2)
+    for srv in servers:
+        results.setdefault(int(srv["id"]), {"configured": True, "error": MSG_TIMEOUT,
+                                            "players": None, "list": []})
+    return results
+
+
 # ------------------------------------------------------------------ recursos
 
 # Duas amostras espacadas dentro do proprio container: CPU e rede so fazem sentido como
@@ -486,84 +679,147 @@ def _pct(part: float, whole: float) -> float | None:
     return round(max(0.0, min(100.0, part * 100.0 / whole)), 1)
 
 
-def _parse_metrics(raw: str) -> dict:
-    """Transforma a saida do script acima em numeros prontos para a tela."""
-    samples: list[list[str]] = []
-    meminfo: dict[str, float] = {}
-    disks: dict[str, dict] = {}
-    cores, clk_tck = 1.0, 100.0
-    load, uptime = "", 0.0
-    cg_current, cg_max = None, None
-    pid, rss_kb = 0, 0.0
+# Uma funcao por linha que o script remoto emite. A chave e a etiqueta da linha e o
+# numero e quantos campos ela precisa ter para valer (linha curta e descartada).
+def _tag_sample(dados, parts):
+    # uptime | cpu_usec | stat_total | stat_idle | rx | tx | ticks do processo
+    dados["samples"].append(parts[1:])
 
+
+def _tag_cores(dados, parts):
+    dados["cores"] = max(1.0, _num(parts[1], 1))
+
+
+def _tag_cpumax(dados, parts):
+    quota, _, periodo = parts[1].strip().partition(" ")
+    if quota != "max" and _num(periodo) > 0:
+        dados["cores"] = max(0.1, _num(quota) / _num(periodo))
+
+
+def _tag_tick(dados, parts):
+    dados["clk_tck"] = max(1.0, _num(parts[1], 100))
+
+
+def _tag_load(dados, parts):
+    dados["load"] = parts[1]
+
+
+def _tag_boot(dados, parts):
+    dados["uptime"] = _num(parts[1])
+
+
+def _tag_meminfo(dados, parts):
+    dados["meminfo"][parts[1].rstrip(":")] = _num(parts[2]) * 1024  # vem em kB
+
+
+def _tag_cgmem(dados, parts):
+    dados["cg_current"] = _num(parts[1])
+    dados["cg_max"] = None if parts[2].strip() == "max" else _num(parts[2])
+
+
+def _tag_disk(dados, parts):
+    dados["disks"][parts[1]] = {
+        "mount": parts[1], "total": _num(parts[2]), "used": _num(parts[3]),
+        "pct": _pct(_num(parts[3]), _num(parts[2])),
+    }
+
+
+def _tag_proc(dados, parts):
+    dados["pid"] = int(_num(parts[1]))
+    dados["rss_kb"] = _num(parts[2])
+
+
+METRIC_TAGS = {
+    "sample": (8, _tag_sample),
+    "cores": (2, _tag_cores),
+    "cpumax": (2, _tag_cpumax),
+    "tick": (2, _tag_tick),
+    "load": (2, _tag_load),
+    "boot": (2, _tag_boot),
+    "meminfo": (3, _tag_meminfo),
+    "cgmem": (3, _tag_cgmem),
+    "disk": (4, _tag_disk),
+    "proc": (3, _tag_proc),
+}
+
+
+def _collect_metrics(raw: str) -> dict:
+    """Primeira passada: cada linha do script vira uma entrada crua, sem contas."""
+    dados: dict = {
+        "samples": [], "meminfo": {}, "disks": {},
+        "cores": 1.0, "clk_tck": 100.0, "load": "", "uptime": 0.0,
+        "cg_current": None, "cg_max": None, "pid": 0, "rss_kb": 0.0,
+    }
     for line in raw.splitlines():
         parts = line.split("|")
-        tag = parts[0]
-        # uptime | cpu_usec | stat_total | stat_idle | rx | tx | ticks do processo
-        if tag == "sample" and len(parts) >= 8:
-            samples.append(parts[1:])
-        elif tag == "cores":
-            cores = max(1.0, _num(parts[1], 1))
-        elif tag == "cpumax" and len(parts) >= 2:
-            quota, _, periodo = parts[1].strip().partition(" ")
-            if quota != "max" and _num(periodo) > 0:
-                cores = max(0.1, _num(quota) / _num(periodo))
-        elif tag == "tick":
-            clk_tck = max(1.0, _num(parts[1], 100))
-        elif tag == "load":
-            load = parts[1]
-        elif tag == "boot":
-            uptime = _num(parts[1])
-        elif tag == "meminfo" and len(parts) >= 3:
-            meminfo[parts[1].rstrip(":")] = _num(parts[2]) * 1024  # /proc/meminfo vem em kB
-        elif tag == "cgmem" and len(parts) >= 3:
-            cg_current = _num(parts[1])
-            cg_max = None if parts[2].strip() == "max" else _num(parts[2])
-        elif tag == "disk" and len(parts) >= 4:
-            disks[parts[1]] = {
-                "mount": parts[1], "total": _num(parts[2]), "used": _num(parts[3]),
-                "pct": _pct(_num(parts[3]), _num(parts[2])),
-            }
-        elif tag == "proc" and len(parts) >= 3:
-            pid = int(_num(parts[1]))
-            rss_kb = _num(parts[2])
+        minimo, trata = METRIC_TAGS.get(parts[0], (0, None))
+        if trata and len(parts) >= minimo:
+            trata(dados, parts)
+    return dados
+
+
+def _rates_from_samples(dados: dict) -> dict:
+    """CPU e rede saem da diferenca entre as duas amostras."""
+    saida = {"cpu_pct": None, "net_rx": None, "net_tx": None, "proc_cpu_pct": None}
+    samples = dados["samples"]
+    if len(samples) < 2:
+        return saida
+
+    a, b = samples[0], samples[-1]
+    dt = _num(b[0]) - _num(a[0])
+    if dt <= 0:
+        return saida
+
+    cores = dados["cores"]
+    # cpu.stat do cgroup mede o container; /proc/stat so acerta com lxcfs no meio.
+    if a[1] != "-" and b[1] != "-":
+        saida["cpu_pct"] = _pct((_num(b[1]) - _num(a[1])) / 1e6, dt * cores)
+    else:
+        total = _num(b[2]) - _num(a[2])
+        saida["cpu_pct"] = _pct(total - (_num(b[3]) - _num(a[3])), total)
+
+    saida["net_rx"] = max(0.0, (_num(b[4]) - _num(a[4])) / dt)
+    saida["net_tx"] = max(0.0, (_num(b[5]) - _num(a[5])) / dt)
+    if dados["pid"]:
+        usados = (_num(b[6]) - _num(a[6])) / dados["clk_tck"]
+        saida["proc_cpu_pct"] = _pct(usados, dt * cores)
+    return saida
+
+
+def _memory_from(dados: dict) -> dict:
+    total = dados["meminfo"].get("MemTotal", 0.0)
+    usada = max(0.0, total - dados["meminfo"].get("MemAvailable", 0.0))
+    atual, teto = dados["cg_current"], dados["cg_max"]
+    # Limite do cgroup manda quando existe e e menor que a RAM da maquina: e o teto real
+    # do container, e o /proc/meminfo sem lxcfs mostraria a memoria do host inteiro.
+    if atual is not None and teto and (not total or teto < total):
+        total, usada = teto, atual
+    elif atual is not None and not total:
+        total, usada = atual, atual
+    return {"total": total, "used": usada, "pct": _pct(usada, total)}
+
+
+def _parse_metrics(raw: str) -> dict:
+    """Transforma a saida do script acima em numeros prontos para a tela."""
+    dados = _collect_metrics(raw)
+    taxas = _rates_from_samples(dados)
+    cores = dados["cores"]
+    meminfo = dados["meminfo"]
 
     out: dict = {
         # Pode ser fracionario quando o container tem limite de CPU (ex.: 1.5 nucleos).
         "cores": int(cores) if cores == int(cores) else round(cores, 1),
-        "load": load, "uptime": uptime,
-        "disks": sorted(disks.values(), key=lambda d: d["mount"]),
-        "cpu_pct": None, "net_rx": None, "net_tx": None,
-        "proc": {"pid": pid, "rss": rss_kb * 1024, "cpu_pct": None},
+        "load": dados["load"], "uptime": dados["uptime"],
+        "disks": sorted(dados["disks"].values(), key=lambda d: d["mount"]),
+        "cpu_pct": taxas["cpu_pct"],
+        "net_rx": taxas["net_rx"], "net_tx": taxas["net_tx"],
+        "proc": {
+            "pid": dados["pid"],
+            "rss": dados["rss_kb"] * 1024,
+            "cpu_pct": taxas["proc_cpu_pct"],
+        },
+        "mem": _memory_from(dados),
     }
-
-    if len(samples) >= 2:
-        a, b = samples[0], samples[-1]
-        dt = _num(b[0]) - _num(a[0])
-        if dt > 0:
-            # cpu.stat do cgroup mede o container; /proc/stat so acerta com lxcfs no meio.
-            if a[1] != "-" and b[1] != "-":
-                out["cpu_pct"] = _pct((_num(b[1]) - _num(a[1])) / 1e6, dt * cores)
-            else:
-                total = _num(b[2]) - _num(a[2])
-                idle = _num(b[3]) - _num(a[3])
-                out["cpu_pct"] = _pct(total - idle, total)
-            out["net_rx"] = max(0.0, (_num(b[4]) - _num(a[4])) / dt)
-            out["net_tx"] = max(0.0, (_num(b[5]) - _num(a[5])) / dt)
-            if pid:
-                usados = (_num(b[6]) - _num(a[6])) / clk_tck
-                out["proc"]["cpu_pct"] = _pct(usados, dt * cores)
-
-    total = meminfo.get("MemTotal", 0.0)
-    disponivel = meminfo.get("MemAvailable", 0.0)
-    usada = max(0.0, total - disponivel)
-    # Limite do cgroup manda quando ele existe e e menor que a RAM da maquina: e o teto
-    # real do container, e o /proc/meminfo sem lxcfs mostraria a memoria do host inteiro.
-    if cg_current is not None and cg_max and (not total or cg_max < total):
-        total, usada = cg_max, cg_current
-    elif cg_current is not None and not total:
-        total, usada = cg_current, cg_current
-    out["mem"] = {"total": total, "used": usada, "pct": _pct(usada, total)}
 
     swap_total = meminfo.get("SwapTotal", 0.0)
     swap_usado = max(0.0, swap_total - meminfo.get("SwapFree", 0.0))
@@ -617,7 +873,7 @@ def all_metrics(servers) -> dict[int, dict]:
     for t in threads:
         t.join(timeout=35)
     for srv in servers:
-        results.setdefault(int(srv["id"]), {"error": "tempo esgotado"})
+        results.setdefault(int(srv["id"]), {"error": MSG_TIMEOUT})
     return results
 
 
@@ -677,7 +933,7 @@ def all_status(servers) -> dict[int, dict]:
     for srv in servers:
         results.setdefault(
             int(srv["id"]),
-            {"reachable": False, "service": "desconhecido", "error": "tempo esgotado"},
+            {"reachable": False, "service": "desconhecido", "error": MSG_TIMEOUT},
         )
     return results
 
@@ -790,7 +1046,7 @@ def login():
         remaining = _lockout_remaining(key)
         if remaining:
             flash(f"Muitas tentativas. Tente de novo em {remaining}s.", "error")
-            return render_template("login.html"), 429
+            return render_template(TPL_LOGIN), 429
         row = db().execute(
             "SELECT * FROM users WHERE username = ?", (username,)
         ).fetchone()
@@ -805,8 +1061,8 @@ def login():
             return redirect(nxt if nxt.startswith("/") else url_for("dashboard"))
         _record_fail(key)
         flash("Usuario ou senha invalidos.", "error")
-        return render_template("login.html"), 401
-    return render_template("login.html")
+        return render_template(TPL_LOGIN), 401
+    return render_template(TPL_LOGIN)
 
 
 @app.post("/logout")
@@ -819,7 +1075,7 @@ def logout():
 @app.get("/")
 @login_required
 def dashboard():
-    servers = db().execute("SELECT * FROM servers ORDER BY name").fetchall()
+    servers = db().execute(SQL_ALL_SERVERS).fetchall()
     return render_template(
         "dashboard.html", servers=servers, status=all_status(servers), actions=ACTIONS
     )
@@ -828,7 +1084,7 @@ def dashboard():
 @app.get("/api/status")
 @login_required
 def api_status():
-    servers = db().execute("SELECT * FROM servers ORDER BY name").fetchall()
+    servers = db().execute(SQL_ALL_SERVERS).fetchall()
     return jsonify({str(sid): state for sid, state in all_status(servers).items()})
 
 
@@ -836,18 +1092,63 @@ def api_status():
 @login_required
 def api_metrics():
     """Medidores de todos os servidores — alimenta os mini-graficos do painel."""
-    servers = db().execute("SELECT * FROM servers ORDER BY name").fetchall()
+    servers = db().execute(SQL_ALL_SERVERS).fetchall()
     return jsonify({str(sid): data for sid, data in all_metrics(servers).items()})
+
+
+@app.get("/api/players")
+@login_required
+def api_players():
+    servers = db().execute(SQL_ALL_SERVERS).fetchall()
+    return jsonify({str(sid): data for sid, data in all_players(servers).items()})
+
+
+@app.get("/api/servers/<int:sid>/players")
+@login_required
+def api_server_players(sid: int):
+    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
+    if not server:
+        abort(404)
+    return jsonify(server_players(server))
 
 
 @app.get("/api/servers/<int:sid>/metrics")
 @login_required
 def api_server_metrics(sid: int):
-    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
     data = server_metrics(server)
     return jsonify(data), (502 if data.get("error") else 200)
+
+
+def _porta(valor: str, padrao: int, minimo: int, erro: str, errors: list[str]) -> int:
+    """Le uma porta do formulario; `minimo` 0 permite desligar o recurso."""
+    bruto = (valor or "").strip() or str(padrao)
+    if bruto.isdigit() and minimo <= int(bruto) <= 65535:
+        return int(bruto)
+    errors.append(erro)
+    return padrao
+
+
+def _servico(valor: str, errors: list[str]) -> str:
+    service = (valor or "").strip()
+    if service and not service.endswith(".service"):
+        service = f"{service}.service"  # o sufixo e o de sempre: nao vale incomodar
+    if not UNIT_RE.match(service):
+        errors.append("Servico invalido (ex.: dragonwilds.service).")
+    return service
+
+
+def _pasta_config(valor: str, errors: list[str]) -> str:
+    caminho = (valor or "").strip()[:400]
+    if not caminho:
+        return ""
+    try:
+        return clean_path(caminho)
+    except ValueError as exc:
+        errors.append(f"Pasta de configuracao invalida: {exc}")
+        return ""
 
 
 def _form_server(form) -> tuple[dict, list[str]]:
@@ -855,8 +1156,6 @@ def _form_server(form) -> tuple[dict, list[str]]:
     name = form.get("name", "").strip()
     host = form.get("host", "").strip()
     ssh_user = form.get("ssh_user", "").strip() or "root"
-    service = form.get("service", "").strip()
-    port_raw = form.get("ssh_port", "").strip() or "22"
 
     if not name:
         errors.append("Informe um nome.")
@@ -864,31 +1163,21 @@ def _form_server(form) -> tuple[dict, list[str]]:
         errors.append("Host invalido (use o IP ou hostname do container).")
     if not USER_RE.match(ssh_user):
         errors.append("Usuario SSH invalido.")
-    if service and not service.endswith(".service"):
-        service = f"{service}.service"
-    if not UNIT_RE.match(service or ""):
-        errors.append("Servico invalido (ex.: dragonwilds.service).")
-    if not port_raw.isdigit() or not 1 <= int(port_raw) <= 65535:
-        errors.append("Porta SSH invalida.")
-
-    config_path = form.get("config_path", "").strip()[:400]
-    if config_path:
-        try:
-            config_path = clean_path(config_path)
-        except ValueError as exc:
-            errors.append(f"Pasta de configuracao invalida: {exc}")
-            config_path = ""
 
     return (
         {
             "name": name,
             "host": host,
             "ssh_user": ssh_user,
-            "ssh_port": int(port_raw) if port_raw.isdigit() else 22,
-            "service": service,
+            "ssh_port": _porta(form.get("ssh_port"), 22, 1, "Porta SSH invalida.", errors),
+            "service": _servico(form.get("service"), errors),
             "game_port": form.get("game_port", "").strip()[:120],
             "notes": form.get("notes", "").strip()[:2000],
-            "config_path": config_path,
+            "config_path": _pasta_config(form.get("config_path"), errors),
+            "query_port": _porta(
+                form.get("query_port"), 0, 0,
+                "Porta de consulta invalida (use 0 para desligar).", errors,
+            ),
         },
         errors,
     )
@@ -899,7 +1188,7 @@ def _form_server(form) -> tuple[dict, list[str]]:
 def server_new():
     data = {
         "name": "", "host": "", "ssh_user": "root", "ssh_port": 22,
-        "service": "", "game_port": "", "notes": "", "config_path": "",
+        "service": "", "game_port": "", "notes": "", "config_path": "", "query_port": 0,
     }
     if request.method == "POST":
         data, errors = _form_server(request.form)
@@ -909,12 +1198,13 @@ def server_new():
                 with conn:
                     conn.execute(
                         "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
-                        " game_port, notes, config_path, created_at)"
-                        " VALUES (?,?,?,?,?,?,?,?,?)",
+                        " game_port, notes, config_path, query_port, created_at)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (
                             data["name"], data["host"], data["ssh_port"],
                             data["ssh_user"], data["service"], data["game_port"],
-                            data["notes"], data["config_path"], now_iso(),
+                            data["notes"], data["config_path"], data["query_port"],
+                            now_iso(),
                         ),
                     )
                 flash(f"Servidor {data['name']} cadastrado.", "ok")
@@ -929,7 +1219,7 @@ def server_new():
 @app.route("/servers/<int:sid>/edit", methods=["GET", "POST"])
 @login_required
 def server_edit(sid: int):
-    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
     data = dict(server)
@@ -941,11 +1231,12 @@ def server_edit(sid: int):
                 with conn:
                     conn.execute(
                         "UPDATE servers SET name=?, host=?, ssh_port=?, ssh_user=?,"
-                        " service=?, game_port=?, notes=?, config_path=? WHERE id=?",
+                        " service=?, game_port=?, notes=?, config_path=?, query_port=?"
+                        " WHERE id=?",
                         (
                             data["name"], data["host"], data["ssh_port"],
                             data["ssh_user"], data["service"], data["game_port"],
-                            data["notes"], data["config_path"], sid,
+                            data["notes"], data["config_path"], data["query_port"], sid,
                         ),
                     )
                 invalidate_status(sid)
@@ -973,7 +1264,7 @@ def server_delete(sid: int):
 @login_required
 def server_detail(sid: int):
     conn = db()
-    server = conn.execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    server = conn.execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
     jobs = conn.execute(
@@ -990,6 +1281,7 @@ def server_detail(sid: int):
         server=server,
         status=server_status(server),
         metrics=server_metrics(server),
+        players=server_players(server),
         jobs=jobs,
         logs=logs,
         log_cursor=log_cursor,
@@ -1042,7 +1334,7 @@ def read_logs(server: sqlite3.Row, lines: int, cursor: str = "") -> tuple[str, s
 @login_required
 def api_logs(sid: int):
     """Alimenta o "seguir log" da tela de detalhe."""
-    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
     # Cursor recusado (adulterado, ou de um journalctl que nao os emite) vira leitura
@@ -1068,7 +1360,7 @@ def api_logs(sid: int):
 def server_action(sid: int, action: str):
     if action not in ACTIONS:
         abort(404)
-    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
     job_id = start_job(action, server, session.get("username", "?"))
@@ -1085,7 +1377,7 @@ def console(sid: int):
     if not ALLOW_SHELL:
         abort(403, "O console esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).")
     conn = db()
-    server = conn.execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    server = conn.execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
 
@@ -1182,7 +1474,9 @@ class TermSession:
             env = {
                 "TERM": "xterm-256color",
                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                "HOME": os.environ.get("HOME", "/tmp"),
+                # O ssh so usa o HOME para procurar ~/.ssh, e aqui a chave e o
+                # known_hosts vao explicitos; a pasta de dados serve de porto seguro.
+                "HOME": os.environ.get("HOME") or os.path.dirname(KNOWN_HOSTS),
                 "LANG": "C.UTF-8",
             }
             self.proc = subprocess.Popen(
@@ -1259,7 +1553,7 @@ class TermSession:
         self.alive = False
         try:
             os.killpg(os.getpgid(self.proc.pid), signal.SIGHUP)
-        except (OSError, ProcessLookupError):
+        except OSError:  # inclui ProcessLookupError quando o ssh ja morreu
             pass
         try:
             os.close(self.master)
@@ -1278,7 +1572,11 @@ def _reap_terms() -> None:
     while True:
         time.sleep(30)
         now = time.time()
-        for term in list(_terms.values()):
+        # Copia sob o lock: o laco remove sessoes do dicionario, e uma aba abrindo
+        # outra sessao ao mesmo tempo mudaria o dicionario no meio da iteracao.
+        with _terms_lock:
+            abertas = tuple(_terms.values())
+        for term in abertas:
             idle = now - term.last_seen
             # Sessao encerrada fica um pouco no ar para o navegador ler a saida final.
             if idle > TERM_IDLE_TIMEOUT or (not term.alive and idle > 60):
@@ -1310,7 +1608,7 @@ def _terminal_guard():
 @login_required
 def terminal(sid: int):
     _terminal_guard()
-    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
     return render_template(
@@ -1323,7 +1621,7 @@ def terminal(sid: int):
 def api_term_open(sid: int):
     global _reaper_started
     _terminal_guard()
-    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
     body = request.get_json(silent=True) or {}
@@ -1422,15 +1720,8 @@ def api_term_close(tid: str):
 # ------------------------------------------------- editor de configuracoes
 
 
-def clean_path(raw: str) -> str:
-    """Normaliza um caminho absoluto vindo da tela (resolve '..' de forma lexica)."""
-    path = (raw or "").strip()
-    if not path.startswith("/"):
-        raise ValueError("use um caminho absoluto (comecando com /)")
-    if "\x00" in path or "\n" in path or "\r" in path:
-        raise ValueError("caractere invalido no caminho")
-    if len(path) > 400:
-        raise ValueError("caminho longo demais")
+def _resolve_segments(path: str) -> str:
+    """Resolve '..' e '.' sem tocar no destino (nao segue link nem consulta o disco)."""
     parts: list[str] = []
     for seg in path.split("/"):
         if seg in ("", "."):
@@ -1440,11 +1731,29 @@ def clean_path(raw: str) -> str:
                 parts.pop()
             continue
         parts.append(seg)
-    cleaned = "/" + "/".join(parts)
-    if FILE_ROOTS and "/" not in FILE_ROOTS:
-        allowed = any(cleaned == r or cleaned.startswith(r.rstrip("/") + "/") for r in FILE_ROOTS)
-        if not allowed:
-            raise ValueError(f"fora das pastas permitidas ({', '.join(FILE_ROOTS)})")
+    return "/" + "/".join(parts)
+
+
+def _check_roots(path: str) -> None:
+    if not FILE_ROOTS or "/" in FILE_ROOTS:  # "/" configurado = sem restricao
+        return
+    # rstrip + "/" para /opt/game nao liberar /opt/gamex sem querer.
+    if any(path == r or path.startswith(r.rstrip("/") + "/") for r in FILE_ROOTS):
+        return
+    raise ValueError(f"fora das pastas permitidas ({', '.join(FILE_ROOTS)})")
+
+
+def clean_path(raw: str) -> str:
+    """Normaliza um caminho absoluto vindo da tela (resolve '..' de forma lexica)."""
+    path = (raw or "").strip()
+    if not path.startswith("/"):
+        raise ValueError("use um caminho absoluto (comecando com /)")
+    if "\x00" in path or "\n" in path or "\r" in path:
+        raise ValueError("caractere invalido no caminho")
+    if len(path) > 400:
+        raise ValueError("caminho longo demais")
+    cleaned = _resolve_segments(path)
+    _check_roots(cleaned)
     return cleaned
 
 
@@ -1474,7 +1783,10 @@ def _human_uptime(segundos: float | None) -> str:
         return f"{dias}d {horas}h"
     if horas:
         return f"{horas}h {minutos}min"
-    return f"{minutos}min"
+    if minutos:
+        return f"{minutos}min"
+    # Jogador que acabou de entrar: "0min" nao diz nada.
+    return f"{total}s"
 
 
 @app.template_filter("tamanho")
@@ -1556,7 +1868,7 @@ def _files_guard():
 
 
 def _server_or_404(sid: int) -> sqlite3.Row:
-    server = db().execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
+    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
     return server
@@ -1626,7 +1938,7 @@ def read_file(server: sqlite3.Row, path: str) -> dict:
     meta = _parse_meta(head, 7)
     try:
         raw = base64.b64decode(payload.strip() or "", validate=True)
-    except (binascii.Error, ValueError):
+    except ValueError:  # binascii.Error e uma subclasse de ValueError
         raise RemoteError("conteudo do arquivo chegou corrompido")
     binary = b"\x00" in raw
     truncated = meta[6] == "tail"
@@ -1883,7 +2195,7 @@ def job_detail(jid: int):
     server = None
     if job["server_id"]:
         server = conn.execute(
-            "SELECT * FROM servers WHERE id = ?", (job["server_id"],)
+            SQL_SERVER_BY_ID, (job["server_id"],)
         ).fetchone()
     return render_template("job.html", job=job, server=server)
 
@@ -1948,30 +2260,30 @@ def health():
 
 @app.errorhandler(400)
 def _bad_request(exc):
-    return render_template("error.html", code=400, message=str(exc)), 400
+    return render_template(TPL_ERROR, code=400, message=str(exc)), 400
 
 
 @app.errorhandler(403)
 def _forbidden(exc):
-    return render_template("error.html", code=403, message=str(exc)), 403
+    return render_template(TPL_ERROR, code=403, message=str(exc)), 403
 
 
 @app.errorhandler(404)
 def _not_found(_exc):
-    return render_template("error.html", code=404, message="Pagina nao encontrada."), 404
+    return render_template(TPL_ERROR, code=404, message="Pagina nao encontrada."), 404
 
 
 @app.errorhandler(413)
 def _too_large(_exc):
     return render_template(
-        "error.html", code=413,
+        TPL_ERROR, code=413,
         message=f"Conteudo grande demais (o editor aceita ate {FILE_MAX_BYTES // 1024} KB por arquivo).",
     ), 413
 
 
 @app.errorhandler(503)
 def _unavailable(exc):
-    return render_template("error.html", code=503, message=str(exc)), 503
+    return render_template(TPL_ERROR, code=503, message=str(exc)), 503
 
 
 # --------------------------------------------------------------- bootstrap CLI

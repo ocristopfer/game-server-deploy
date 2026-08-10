@@ -79,7 +79,7 @@
   <div class="card editor">
     {% if opened %}
       <div class="page-head tight">
-        <h2 class="filename">{{ opened.path }}</h2>
+        <h2 class="filename" id="nome-do-arquivo">{{ opened.path }}</h2>
         <span class="muted small">{{ opened.size | tamanho }} &middot; {{ opened.mode }} &middot; {{ opened.owner }} &middot; {{ opened.mtime }}</span>
       </div>
 
@@ -110,7 +110,8 @@
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="path" value="{{ opened.path }}">
         <input type="hidden" name="crlf" value="{{ '1' if opened.crlf else '0' }}">
-        <textarea name="content" id="content" spellcheck="false" wrap="off">{{ opened.text }}</textarea>
+        <textarea name="content" id="content" spellcheck="false" wrap="off"
+                  aria-labelledby="nome-do-arquivo">{{ opened.text }}</textarea>
         <div class="form-actions">
           <button class="btn primary" type="submit">Salvar</button>
           <a class="btn ghost" href="{{ url_for('files', sid=server.id, file=opened.path) }}">Descartar</a>

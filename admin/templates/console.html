@@ -75,10 +75,16 @@
 {% endblock %}
 
 {% block scripts %}
+{# Os dados do servidor viajam como JSON num bloco separado: expressao Jinja no meio
+   do codigo quebra qualquer ferramenta que leia o arquivo como JavaScript de verdade. #}
+<script id="historico-comandos" type="application/json">
+  {{ history | map(attribute='command') | list | tojson }}
+</script>
 <script>
   const field = document.getElementById('command');
   const form = document.getElementById('console-form');
-  const history = {{ history | map(attribute='command') | list | tojson }};
+  // 'historico', nao 'history': const history sombrearia o window.history da pagina.
+  const historico = JSON.parse(document.getElementById('historico-comandos').textContent);
   let cursor = -1;
 
   // Ctrl+Enter envia; Enter sozinho quebra linha (comandos multilinha sao validos).
@@ -88,14 +94,14 @@
       form.requestSubmit();
       return;
     }
-    if (ev.key === 'ArrowUp' && field.selectionStart === 0 && cursor + 1 < history.length) {
+    if (ev.key === 'ArrowUp' && field.selectionStart === 0 && cursor + 1 < historico.length) {
       ev.preventDefault();
       cursor += 1;
-      field.value = history[cursor];
+      field.value = historico[cursor];
     } else if (ev.key === 'ArrowDown' && cursor > -1) {
       ev.preventDefault();
       cursor -= 1;
-      field.value = cursor === -1 ? '' : history[cursor];
+      field.value = cursor === -1 ? '' : historico[cursor];
     }
   });
 </script>

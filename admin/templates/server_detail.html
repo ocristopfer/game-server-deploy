@@ -42,6 +42,53 @@
   </div>
 </div>
 
+<div class="card" id="jogadores" data-url="{{ url_for('api_server_players', sid=server.id) }}">
+  <div class="page-head tight">
+    <h2>Jogadores</h2>
+    <span class="badge {{ 'on' if players.players else 'cold' }}" id="jogadores-badge">
+      {%- if players.players is not none -%}
+        {{ players.players }}{% if players.max_players %}/{{ players.max_players }}{% endif %} online
+      {%- else -%}
+        sem leitura
+      {%- endif -%}
+    </span>
+  </div>
+  {% if not players.configured %}
+    <p class="muted">
+      Contagem desligada. Informe a <strong>porta de consulta</strong> (query Steam/A2S) em
+      <a href="{{ url_for('server_edit', sid=server.id) }}">Editar servidor</a> &mdash;
+      no Palworld e a <code>27015/udp</code>.
+    </p>
+  {% elif players.error %}
+    <p class="muted">Nao consegui consultar: {{ players.error }}</p>
+    <p class="muted small">
+      Confira se a porta de query esta certa, se o servidor esta no ar e se ele publica
+      consulta A2S (nem todo jogo publica).
+    </p>
+  {% else %}
+    <div id="jogadores-info">
+      <dl class="meta wide">
+        {% if players.server_name %}<div><dt>Nome publicado</dt><dd>{{ players.server_name }}</dd></div>{% endif %}
+        {% if players.map %}<div><dt>Mundo</dt><dd>{{ players.map }}</dd></div>{% endif %}
+        <div><dt>Online</dt><dd>{{ players.players }}{% if players.max_players %} de {{ players.max_players }}{% endif %}</dd></div>
+      </dl>
+    </div>
+    <table class="jobs" id="jogadores-tabela">
+      <thead><tr><th>Jogador</th><th>Conectado ha</th><th>Pontos</th></tr></thead>
+      <tbody>
+        {% for p in players.list %}
+        <tr><td>{{ p.name }}</td><td class="muted">{{ p.seconds | duracao }}</td><td class="muted">{{ p.score }}</td></tr>
+        {% else %}
+        <tr><td colspan="3" class="muted">
+          {% if players.players %}Este jogo nao publica a lista de nomes &mdash; so a contagem.
+          {% else %}Ninguem conectado agora.{% endif %}
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+
 <div class="card" id="recursos" data-url="{{ url_for('api_server_metrics', sid=server.id) }}">
   <div class="page-head tight">
     <h2>Recursos</h2>
@@ -55,29 +102,36 @@
   <div class="meters" id="meters">
     <div class="meter" data-key="cpu">
       <div class="meter-head"><span>CPU</span><span class="val">{{ '%.1f'|format(metrics.cpu_pct) if metrics.cpu_pct is not none else '-' }}%</span></div>
-      <div class="bar{{ metrics.cpu_pct | nivel }}"><i style="width: {{ metrics.cpu_pct or 0 }}%"></i></div>
+      <div class="bar{{ metrics.cpu_pct | nivel }}"><i data-pct="{{ metrics.cpu_pct or 0 }}"></i></div>
       <div class="meter-foot">{{ metrics.cores }} nucleo(s) &middot; load {{ metrics.load or '-' }}</div>
     </div>
     <div class="meter" data-key="mem">
       <div class="meter-head"><span>Memoria</span><span class="val">{{ '%.1f'|format(metrics.mem.pct) if metrics.mem.pct is not none else '-' }}%</span></div>
-      <div class="bar{{ metrics.mem.pct | nivel }}"><i style="width: {{ metrics.mem.pct or 0 }}%"></i></div>
+      <div class="bar{{ metrics.mem.pct | nivel }}"><i data-pct="{{ metrics.mem.pct or 0 }}"></i></div>
       <div class="meter-foot">{{ metrics.mem.used | tamanho }} de {{ metrics.mem.total | tamanho }}</div>
     </div>
     {% if metrics.swap.total %}
     <div class="meter" data-key="swap">
       <div class="meter-head"><span>Swap</span><span class="val">{{ '%.1f'|format(metrics.swap.pct) if metrics.swap.pct is not none else '-' }}%</span></div>
-      <div class="bar{{ metrics.swap.pct | nivel }}"><i style="width: {{ metrics.swap.pct or 0 }}%"></i></div>
+      <div class="bar{{ metrics.swap.pct | nivel }}"><i data-pct="{{ metrics.swap.pct or 0 }}"></i></div>
       <div class="meter-foot">{{ metrics.swap.used | tamanho }} de {{ metrics.swap.total | tamanho }}</div>
     </div>
     {% endif %}
     {% for d in metrics.disks %}
     <div class="meter" data-key="disk:{{ d.mount }}">
       <div class="meter-head"><span>Disco {{ d.mount }}</span><span class="val">{{ '%.1f'|format(d.pct) if d.pct is not none else '-' }}%</span></div>
-      <div class="bar{{ d.pct | nivel }}"><i style="width: {{ d.pct or 0 }}%"></i></div>
+      <div class="bar{{ d.pct | nivel }}"><i data-pct="{{ d.pct or 0 }}"></i></div>
       <div class="meter-foot">{{ d.used | tamanho }} de {{ d.total | tamanho }}</div>
     </div>
     {% endfor %}
   </div>
+  <script>
+    // A largura vem em data-pct e e aplicada aqui: percentual escrito direto no
+    // atributo style faria toda ferramenta de CSS tropecar na sintaxe do template.
+    document.querySelectorAll('#meters .bar > i[data-pct]').forEach(function (barra) {
+      barra.style.width = barra.dataset.pct + '%';
+    });
+  </script>
   <dl class="meta wide" id="recursos-extra">
     <div><dt>Rede</dt><dd data-key="net">
       {{ metrics.net_rx | tamanho }}/s rx &middot; {{ metrics.net_tx | tamanho }}/s tx
@@ -147,6 +201,13 @@
   const grade = document.getElementById('meters');
   const infoRecursos = document.getElementById('recursos-info');
 
+  function textoProcesso(proc) {
+    if (!proc || !proc.pid) return 'parado';
+    let texto = 'PID ' + proc.pid + ' · ' + PanelMetrics.tamanho(proc.rss) + ' RAM';
+    if (proc.cpu_pct !== null) texto += ' · ' + proc.cpu_pct.toFixed(1) + '% CPU';
+    return texto;
+  }
+
   async function atualizarRecursos() {
     if (!grade || document.hidden) return;
     try {
@@ -158,10 +219,7 @@
       extra.querySelector('[data-key="net"]').textContent =
         PanelMetrics.tamanho(data.net_rx) + '/s rx · ' + PanelMetrics.tamanho(data.net_tx) + '/s tx';
       extra.querySelector('[data-key="uptime"]').textContent = PanelMetrics.duracao(data.uptime);
-      extra.querySelector('[data-key="proc"]').textContent = data.proc && data.proc.pid
-        ? 'PID ' + data.proc.pid + ' · ' + PanelMetrics.tamanho(data.proc.rss) +
-          ' RAM' + (data.proc.cpu_pct === null ? '' : ' · ' + data.proc.cpu_pct.toFixed(1) + '% CPU')
-        : 'parado';
+      extra.querySelector('[data-key="proc"]').textContent = textoProcesso(data.proc);
       infoRecursos.textContent = 'atualiza a cada 5s';
     } catch (err) {
       console.debug('medidores falharam, tentando de novo', err);
@@ -172,6 +230,45 @@
   if (grade) {
     setInterval(atualizarRecursos, 5000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarRecursos(); });
+  }
+
+  const cardJogadores = document.getElementById('jogadores');
+  const tabelaJogadores = document.getElementById('jogadores-tabela');
+
+  function textoDuracao(seg) { return PanelMetrics.duracao(seg); }
+
+  async function atualizarJogadores() {
+    if (!tabelaJogadores || document.hidden) return;
+    try {
+      const res = await fetch(cardJogadores.dataset.url, {headers: {'Accept': 'application/json'}});
+      const data = await res.json();
+      if (!res.ok || data.error) return;
+      const badge = document.getElementById('jogadores-badge');
+      badge.textContent = data.players + (data.max_players ? '/' + data.max_players : '') + ' online';
+      badge.className = 'badge ' + (data.players ? 'on' : 'cold');
+
+      const corpo = tabelaJogadores.querySelector('tbody');
+      if (data.list && data.list.length) {
+        corpo.innerHTML = data.list.map((p) => {
+          const nome = document.createElement('td');
+          nome.textContent = p.name;              // nome vem do jogo: nunca como HTML
+          return '<tr>' + nome.outerHTML +
+            '<td class="muted">' + textoDuracao(p.seconds) + '</td>' +
+            '<td class="muted">' + Number(p.score) + '</td></tr>';
+        }).join('');
+      } else {
+        corpo.innerHTML = '<tr><td colspan="3" class="muted">' +
+          (data.players ? 'Este jogo nao publica a lista de nomes - so a contagem.'
+                        : 'Ninguem conectado agora.') + '</td></tr>';
+      }
+    } catch (err) {
+      console.debug('consulta de jogadores falhou', err);
+    }
+  }
+
+  if (tabelaJogadores) {
+    setInterval(atualizarJogadores, 10000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarJogadores(); });
   }
 </script>
 

@@ -24,7 +24,8 @@
     var d = Math.floor(t / 86400), h = Math.floor((t % 86400) / 3600), m = Math.floor((t % 3600) / 60);
     if (d) return d + 'd ' + h + 'h';
     if (h) return h + 'h ' + m + 'min';
-    return m + 'min';
+    if (m) return m + 'min';
+    return t + 's';   // jogador que acabou de entrar
   }
 
   function pctTexto(v) { return (v === null || v === undefined) ? '-' : Number(v).toFixed(1); }

@@ -138,9 +138,10 @@ pct exec <CTID> -- journalctl -u game-update-check.service -n 20   # log das che
 ## Painel administrativo (web)
 
 Um container separado sobe um painel web para gerenciar todos os servidores: cadastrar,
-ver status e **uso de CPU/memoria/disco/rede**, start/stop/restart, atualizar pelo
-SteamCMD, ler logs (com modo ao vivo), **abrir um terminal interativo** e **editar ou
-baixar os arquivos dos jogos** — tudo direto dentro de cada container.
+ver status, **jogadores conectados** e **uso de CPU/memoria/disco/rede**,
+start/stop/restart, atualizar pelo SteamCMD, ler logs (com modo ao vivo), **abrir um
+terminal interativo** e **editar ou baixar os arquivos dos jogos** — tudo direto dentro
+de cada container.
 
 ```powershell
 .\deploy-admin.ps1                # usa as chaves ADMIN_* do .env
@@ -180,9 +181,32 @@ Em **Adicionar**, informe:
 - **Usuario/porta SSH** — normalmente `root` e `22`
 - **Pasta de configuracao** (opcional) — onde a tela **Arquivos** abre por padrao
   (ex.: `/opt/game/Pal/Saved/Config/LinuxServer`)
+- **Porta de consulta** (opcional) — porta de query Steam/A2S para contar os jogadores
+  online (Palworld: `27015`)
 
 Start, stop, restart, update, terminal e editor rodam a partir dai. Acoes demoradas
 (update) viram um job com a saida atualizando ao vivo na tela.
+
+### Jogadores conectados
+
+O painel consulta o servidor pelo protocolo **A2S da Steam** (a mesma consulta que a
+lista de servidores do cliente faz): UDP direto do painel para a porta de query do jogo.
+Nao passa por SSH, nao precisa de senha nem de RCON, e nao exige nada instalado no
+container.
+
+Para ligar, preencha **Porta de consulta** no cadastro do servidor (`0` ou vazio
+desliga). No Palworld e a `27015/udp` — a mesma porta que faz o servidor aparecer na
+lista da comunidade.
+
+- **Tela do servidor**: contagem `3/32 online`, nome publicado, mundo e a tabela de
+  jogadores com nome, ha quanto tempo estao conectados e pontos. Atualiza a cada 10s.
+- **Lista de servidores**: selo com a contagem em cada card.
+- A lista de nomes vem do `A2S_PLAYER` e e opcional: varios servidores Unreal respondem
+  so a contagem. Nesse caso o painel mostra o numero e avisa que aquele jogo nao publica
+  os nomes.
+- Servidor fora do ar ou porta errada nao trava a tela: a consulta desiste em
+  `ADMIN_QUERY_TIMEOUT` segundos (padrao 3) e a pagina abre com o aviso. O resultado
+  fica em cache por `ADMIN_PLAYERS_TTL` segundos (padrao 5).
 
 ### Medidores de recursos
 

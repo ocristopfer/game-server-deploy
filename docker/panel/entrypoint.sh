@@ -26,22 +26,22 @@ panel.ensure_admin_user(os.environ.get("PANEL_USER", "admin"),
 
 SEEDS = [
     ("Palworld (teste)", "game-palworld", "palworld.service", "8211/udp",
-     "/opt/game/Pal/Saved/Config/LinuxServer"),
+     "/opt/game/Pal/Saved/Config/LinuxServer", 27015),
     ("Dragonwilds (teste)", "game-dragonwilds", "dragonwilds.service", "7777/udp",
-     "/opt/game/RSDragonwilds/Saved/Config/LinuxServer"),
+     "/opt/game/RSDragonwilds/Saved/Config/LinuxServer", 27015),
 ]
 
 conn = panel._connect()
 with conn:
-    for name, host, service, ports, config_path in SEEDS:
+    for name, host, service, ports, config_path, query_port in SEEDS:
         exists = conn.execute("SELECT 1 FROM servers WHERE host = ?", (host,)).fetchone()
         if exists:
             continue
         conn.execute(
             "INSERT INTO servers (name, host, ssh_port, ssh_user, service, game_port,"
-            " notes, config_path, created_at) VALUES (?,?,22,'root',?,?,?,?,?)",
+            " notes, config_path, query_port, created_at) VALUES (?,?,22,'root',?,?,?,?,?,?)",
             (name, host, service, ports, "Container de teste do docker compose.",
-             config_path, panel.now_iso()),
+             config_path, query_port, panel.now_iso()),
         )
         print(f"servidor de teste cadastrado: {name} ({host})")
 conn.close()

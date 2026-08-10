@@ -28,10 +28,19 @@
       <input name="service" value="{{ data.service }}" placeholder="dragonwilds.service" required>
       <small>Normalmente <code>&lt;nome-do-jogo&gt;.service</code>. O <code>.service</code> e adicionado se faltar.</small>
     </label>
-    <label>Portas do jogo <span class="muted">(opcional)</span>
-      <input name="game_port" value="{{ data.game_port }}" placeholder="7777/udp">
-      <small>Apenas informativo, para lembrar o que redirecionar no roteador.</small>
-    </label>
+    <div class="row">
+      <label>Portas do jogo <span class="muted">(opcional)</span>
+        <input name="game_port" value="{{ data.game_port }}" placeholder="7777/udp">
+        <small>Apenas informativo, para lembrar o que redirecionar no roteador.</small>
+      </label>
+      <label>Porta de consulta <span class="muted">(opcional)</span>
+        <input name="query_port" value="{{ data.query_port or '' }}" placeholder="27015" inputmode="numeric">
+        <small>
+          Porta de query Steam (A2S) para contar jogadores online. Palworld:
+          <code>27015</code>. Vazio ou <code>0</code> desliga a contagem.
+        </small>
+      </label>
+    </div>
     <label>Pasta de configuracao <span class="muted">(opcional)</span>
       <input name="config_path" value="{{ data.config_path }}" placeholder="/opt/game" spellcheck="false">
       <small>

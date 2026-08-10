@@ -69,6 +69,8 @@ resolve_variables() {
   TERM_MAX="${ADMIN_TERM_MAX:-4}"
   TERM_IDLE="${ADMIN_TERM_IDLE:-900}"
   METRICS_TTL="${ADMIN_METRICS_TTL:-4}"
+  QUERY_TIMEOUT="${ADMIN_QUERY_TIMEOUT:-3}"
+  PLAYERS_TTL="${ADMIN_PLAYERS_TTL:-5}"
   RECREATE_CT="${RECREATE_ADMIN_CT:-0}"
 
   if [[ "$IP_CIDR" == "dhcp" ]]; then
@@ -239,6 +241,8 @@ GAMEPANEL_ALLOW_SHELL=${ALLOW_SHELL}
 GAMEPANEL_TERM_MAX=${TERM_MAX}
 GAMEPANEL_TERM_IDLE=${TERM_IDLE}
 GAMEPANEL_METRICS_TTL=${METRICS_TTL}
+GAMEPANEL_QUERY_TIMEOUT=${QUERY_TIMEOUT}
+GAMEPANEL_PLAYERS_TTL=${PLAYERS_TTL}
 GAMEPANEL_ALLOW_FILES=${ALLOW_FILES}
 GAMEPANEL_FILE_MAX=$((FILE_MAX_KB * 1024))
 GAMEPANEL_FILE_PREVIEW=$((FILE_PREVIEW_KB * 1024))
@@ -411,7 +415,8 @@ EOF
 
 Proximo passo: entre no painel e cadastre seus servidores em "Adicionar", informando o
 IP do container e o servico (ex.: 192.168.2.20, dragonwilds.service). Preencha tambem a
-"Pasta de configuracao" (ex.: /opt/game) para a tela Arquivos abrir no lugar certo.
+"Pasta de configuracao" (ex.: /opt/game) para a tela Arquivos abrir no lugar certo, e a
+"Porta de consulta" (Palworld: 27015) para o painel contar os jogadores online.
 
 Cada servidor tem tres formas de mexer no container:
   Terminal  - shell interativo de verdade (htop, nano, prompts) direto no navegador

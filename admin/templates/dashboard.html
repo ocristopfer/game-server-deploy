@@ -23,9 +23,12 @@
   <div class="card server">
     <div class="server-head">
       <h2><a href="{{ url_for('server_detail', sid=s.id) }}">{{ s.name }}</a></h2>
-      <span class="badge {{ 'on' if st.service == 'active' else ('off' if st.reachable else 'cold') }}">
-        {{ st.service }}
-      </span>
+      <div class="badges">
+        {% if s.query_port %}<span class="badge" data-players="{{ s.id }}" hidden></span>{% endif %}
+        <span class="badge {{ 'on' if st.service == 'active' else ('off' if st.reachable else 'cold') }}">
+          {{ st.service }}
+        </span>
+      </div>
     </div>
     <dl class="meta">
       <div><dt>Host</dt><dd>{{ s.ssh_user }}@{{ s.host }}{% if s.ssh_port != 22 %}:{{ s.ssh_port }}{% endif %}</dd></div>
@@ -81,9 +84,37 @@
     }
   }
 
-  atualizarMedidores();
+  // Contagem de jogadores: consulta UDP direta (rapida), separada dos medidores para
+  // nao ficar esperando o SSH de cada container.
+  const selosJogadores = document.querySelectorAll('[data-players]');
+
+  async function atualizarJogadores() {
+    if (!selosJogadores.length || document.hidden) return;
+    try {
+      const res = await fetch("{{ url_for('api_players') }}", {headers: {'Accept': 'application/json'}});
+      if (!res.ok) return;
+      const tudo = await res.json();
+      selosJogadores.forEach((selo) => {
+        const data = tudo[selo.dataset.players];
+        if (!data || !data.configured || data.error || data.players === null) return;
+        selo.textContent = data.players + (data.max_players ? '/' + data.max_players : '') + ' jogadores';
+        selo.className = 'badge ' + (data.players ? 'on' : 'cold');
+        selo.hidden = false;
+      });
+    } catch (err) {
+      console.debug('contagem de jogadores falhou', err);
+    }
+  }
+
+  function atualizarTudo() {
+    atualizarMedidores();
+    atualizarJogadores();
+  }
+
+  atualizarTudo();
   setInterval(atualizarMedidores, 10000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarMedidores(); });
+  setInterval(atualizarJogadores, 10000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarTudo(); });
 </script>
 {% endif %}
 {% endblock %}

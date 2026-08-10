@@ -100,6 +100,10 @@ main() {
   sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
   echo "==> iniciando ${GAME_SERVICE} (simulado)"
   systemctl start "$GAME_SERVICE" || true
+
+  # Porta de query da Steam: e daqui que o painel tira a contagem de jogadores.
+  echo "==> subindo o query A2S falso na porta ${GAME_QUERY_PORT:-27015}/udp"
+  setsid nohup python3 /usr/local/bin/fake-a2s >/var/log/fake-a2s.log 2>&1 &
   echo "==> sshd pronto em $(hostname)"
   exec /usr/sbin/sshd -D -e
 }
