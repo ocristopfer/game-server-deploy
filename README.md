@@ -58,6 +58,52 @@ chave do [painel administrativo](#painel-administrativo-web) — o CT ja nasce g
 
 Rodar de novo e idempotente: atualiza config do CT e revalida o jogo. `RECREATE_CT=1` destroi e recria.
 
+## Um container por jogo
+
+Cada jogo mora no proprio CT, com IP proprio. No `.env`, qualquer chave da secao
+"Container LXC" pode ser especializada por jogo com o sufixo `_<GAME_KEY em maiusculas>`:
+
+```ini
+CTID_DRAGONWILDS=210
+IP_CIDR_DRAGONWILDS=192.168.2.20/24
+
+CTID_PALWORLD=211
+IP_CIDR_PALWORLD=192.168.2.21/24
+MEMORY_PALWORLD=16384        # vale para qualquer chave: CORES_, ROOTFS_SIZE_GB_, SWAP_...
+```
+
+O `CTID`/`IP_CIDR` sem sufixo continuam existindo como **fallback**: valem para o deploy
+generico (`-AppId`) e para jogos sem bloco proprio. O hostname do CT ja e o nome do jogo,
+entao nao precisa de `HOSTNAME_OVERRIDE`.
+
+Como o deploy e idempotente **por CTID**, apontar dois jogos para o mesmo id nao criaria um
+container novo — reconfiguraria o que ja existe e trocaria o jogo que roda la dentro. Por
+isso o `deploy-game.ps1` para antes de enviar qualquer coisa se o CTID ou o IP resolvido ja
+for de outro jogo ou do painel:
+
+```
+THROW: CTID 210 ja pertence ao jogo DRAGONWILDS (CTID_DRAGONWILDS no .env).
+       Defina CTID_SATISFACTORY com um id livre.
+```
+
+No inicio de cada deploy o script imprime o alvo resolvido — confira antes de deixar rodar:
+
+```
+Valores especificos de SATISFACTORY: CTID, IP_CIDR
+Alvo: CT 212 (satisfactory) em 192.168.2.22/24
+```
+
+Layout de referencia (o do `.env.example`):
+
+| CTID | Jogo | IP |
+|------|------|-----|
+| 209 | gamepanel (painel) | 192.168.2.19 |
+| 210 | dragonwilds | 192.168.2.20 |
+| 211 | palworld | 192.168.2.21 |
+| 212 | satisfactory | 192.168.2.22 |
+| 213 | enshrouded | 192.168.2.23 |
+| 219 | fallback / `-AppId` | 192.168.2.29 |
+
 ## Jogos definidos
 
 | Jogo | Comando | Portas |
@@ -244,7 +290,7 @@ autorizada. Ha tres formas de conseguir isso:
 | Situacao | O que fazer |
 |----------|-------------|
 | CT de jogo novo | preencha `PANEL_PUBKEY` no `.env` — o `deploy-game.ps1` ja deixa pronto |
-| CTs de jogo existentes | preencha `ADMIN_AUTHORIZE_CTIDS=210 211` e rode o `deploy-admin.ps1` |
+| CTs de jogo existentes | preencha `ADMIN_AUTHORIZE_CTIDS=210,211,212,213` e rode o `deploy-admin.ps1` |
 | Caso a caso | copie o comando pronto da tela **Acesso SSH** do painel |
 
 A chave publica aparece no resumo do deploy do painel e na tela "Acesso SSH".

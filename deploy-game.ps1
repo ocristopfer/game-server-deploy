@@ -39,6 +39,29 @@ function Get-Cfg($Map, [string]$Key, [string]$Default = "") {
     return $Default
 }
 
+# Sufixo usado nas chaves por jogo do .env: dragonwilds -> CTID_DRAGONWILDS
+function Get-GameSuffix([string]$Key) {
+    return (($Key.ToUpper()) -replace '[^A-Z0-9]', '_')
+}
+
+# {valor -> sufixo} das chaves <Key>_<JOGO> que pertencem a OUTROS jogos.
+# Serve para detectar que o CTID/IP resolvido ja e o container de outro jogo.
+function Get-ScopedOwners($Map, [string]$Key, [string]$SelfSuffix) {
+    $owners = @{}
+    $prefix = "${Key}_"
+    foreach ($k in @($Map.Keys)) {
+        if (-not $k.StartsWith($prefix)) { continue }
+        $suffix = $k.Substring($prefix.Length)
+        if ($suffix -ne $SelfSuffix -and $Map[$k] -ne "") { $owners[$Map[$k]] = $suffix }
+    }
+    return $owners
+}
+
+# "192.168.2.20/24" -> "192.168.2.20" (compara IP ignorando a mascara)
+function Get-IpOnly([string]$Cidr) {
+    return (($Cidr -split "/")[0]).Trim()
+}
+
 function Ask([string]$Label, [string]$Default) {
     if ($Default -ne "") {
         $answer = Read-Host "$Label [$Default]"
@@ -84,6 +107,30 @@ GAME_PORTS=""
 if ($EnvFile -eq "") { $EnvFile = Join-Path $ScriptDir ".env" }
 $cfg = Read-EnvFile $EnvFile
 
+# ----- Valores por jogo (CTID_<JOGO>, IP_CIDR_<JOGO>, MEMORY_<JOGO>...) -----
+# Cada jogo mora no proprio container. Sem essas chaves, todo deploy cairia no CTID/IP
+# generico do .env e o segundo jogo sobrescreveria o container do primeiro.
+$GameKey = $Game
+if ($GameEnvContent -match '(?m)^\s*GAME_KEY\s*=\s*"?([^"\s#]+)') { $GameKey = $Matches[1] }
+$GameSuffix = Get-GameSuffix $GameKey
+
+$OverridableKeys = @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMPLATE_PATTERN",
+                     "BRIDGE","IP_CIDR","GATEWAY","CT_PASSWORD","TZ","MEMORY","CORES",
+                     "ROOTFS_SIZE_GB","SWAP","AUTO_UPDATE","UPDATE_SCHEDULE","RECREATE_CT","PANEL_PUBKEY")
+$overridden = @()
+foreach ($key in $OverridableKeys) {
+    $scoped = "${key}_${GameSuffix}"
+    if ($cfg.ContainsKey($scoped) -and $cfg[$scoped] -ne "") {
+        $cfg[$key] = $cfg[$scoped]
+        $overridden += $key
+    }
+}
+if ($overridden.Count -gt 0) {
+    Write-Host ("Valores especificos de ${GameSuffix}: " + ($overridden -join ", ")) -ForegroundColor DarkGray
+} else {
+    Write-Host "Sem chaves _${GameSuffix} no .env - usando CTID/IP genericos." -ForegroundColor DarkGray
+}
+
 if ($ProxmoxHost -eq "") {
     $ProxmoxHost = if ($cfg.ContainsKey("PROXMOX_HOST")) { $cfg["PROXMOX_HOST"] } else { "" }
 }
@@ -120,6 +167,34 @@ foreach ($required in @("CTID", "STORAGE", "BRIDGE", "IP_CIDR")) {
 if ($cfg["IP_CIDR"] -ne "dhcp" -and (Get-Cfg $cfg "GATEWAY") -eq "") {
     throw "GATEWAY obrigatorio quando IP_CIDR nao e dhcp"
 }
+
+# ----- Guarda contra colisao de container -----
+# Deploy e idempotente por CTID: apontar para o CTID de outro jogo NAO cria um container
+# novo, reconfigura o que ja existe e troca o jogo que roda la dentro.
+$ctidOwners = Get-ScopedOwners $cfg "CTID" $GameSuffix
+if ($ctidOwners.ContainsKey($cfg["CTID"])) {
+    throw ("CTID $($cfg['CTID']) ja pertence ao jogo $($ctidOwners[$cfg['CTID']]) (CTID_$($ctidOwners[$cfg['CTID']]) no .env). " +
+           "Defina CTID_${GameSuffix} com um id livre.")
+}
+if ((Get-Cfg $cfg "ADMIN_CTID") -eq $cfg["CTID"]) {
+    throw "CTID $($cfg['CTID']) e o do painel (ADMIN_CTID). Defina CTID_${GameSuffix} com um id livre."
+}
+
+if ($cfg["IP_CIDR"] -ne "dhcp") {
+    $meuIp = Get-IpOnly $cfg["IP_CIDR"]
+    foreach ($par in (Get-ScopedOwners $cfg "IP_CIDR" $GameSuffix).GetEnumerator()) {
+        if ((Get-IpOnly $par.Key) -eq $meuIp) {
+            throw ("IP $meuIp ja e do jogo $($par.Value) (IP_CIDR_$($par.Value) no .env). " +
+                   "Defina IP_CIDR_${GameSuffix} com um endereco livre.")
+        }
+    }
+    $adminIp = Get-Cfg $cfg "ADMIN_IP_CIDR"
+    if ($adminIp -ne "" -and $adminIp -ne "dhcp" -and (Get-IpOnly $adminIp) -eq $meuIp) {
+        throw "IP $meuIp e o do painel (ADMIN_IP_CIDR). Defina IP_CIDR_${GameSuffix} com um endereco livre."
+    }
+}
+
+Write-Host ("Alvo: CT $($cfg['CTID']) ($GameKey) em $($cfg['IP_CIDR'])") -ForegroundColor Cyan
 
 # ----- Monta o bundle -----
 $BundleDir = Join-Path ([System.IO.Path]::GetTempPath()) "game-deploy-bundle"
