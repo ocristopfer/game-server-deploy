@@ -64,6 +64,8 @@ Rodar de novo e idempotente: atualiza config do CT e revalida o jogo. `RECREATE_
 |------|---------|--------|
 | RuneScape: Dragonwilds | `.\deploy-game.ps1 -Game dragonwilds` | 7777/udp |
 | Palworld | `.\deploy-game.ps1 -Game palworld` | 8211/udp, 27015/udp |
+| Satisfactory | `.\deploy-game.ps1 -Game satisfactory` | 7777/udp, 7777/tcp |
+| Enshrouded | `.\deploy-game.ps1 -Game enshrouded` | 15636/udp, 15637/udp |
 
 ### RuneScape: Dragonwilds — notas
 
@@ -87,6 +89,43 @@ Rodar de novo e idempotente: atualiza config do CT e revalida o jogo. `RECREATE_
   Pare o servidor antes de editar (`systemctl stop palworld`)
 - Memoria: o servidor cresce com o mundo/jogadores — recomendado 16GB (8GB e o minimo pratico)
 - Saves: `/opt/game/Pal/Saved/SaveGames/0/`
+
+### Satisfactory — notas
+
+- App do servidor dedicado: `1690800` (build Linux nativo, `FactoryServer.sh`)
+- Portas: uma so, **7777/UDP** (jogo) e **7777/TCP** (API HTTPS de gerenciamento que o
+  cliente usa para adotar e configurar o servidor). Abra as duas. As portas antigas
+  15000/15777 sairam na 1.0
+- O deploy cria o symlink `~steam/.steam/sdk64/steamclient.so` (sem ele o servidor sobe
+  mas nao registra na Steam)
+- Config: nao ha `.ini` para preencher antes — no cliente, **Servidores > Adicionar servidor**
+  com `IP:7777`, defina a senha de admin e reivindique o servidor. Ajustes finos depois em
+  `/home/steam/.config/Epic/FactoryGame/Saved/Config/LinuxServer/`
+  (`ServerSettings.ini`, `GameUserSettings.ini`), com o servidor parado
+- Nao publica query A2S da Steam — a contagem de jogadores no painel vem do log
+- Memoria: 12GB e o recomendado oficial; fabricas grandes passam disso, por isso 16GB
+- Saves: `/home/steam/.config/Epic/FactoryGame/Saved/SaveGames/server/`
+
+### Enshrouded — notas
+
+- App do servidor dedicado: `2278520` — **sem build Linux**. O deploy baixa o build Windows
+  (`STEAM_PLATFORM=windows`) e roda o `enshrouded_server.exe` via **Wine**, igual ao que o
+  LinuxGSM e as imagens Docker da comunidade fazem
+- Portas: **15637/UDP** e a principal (`queryPort`) — e o que o jogador digita no cliente.
+  A `15636/UDP` (`gamePort`) saiu de uso no Content Update #2; abrir as duas nao atrapalha.
+  Tudo UDP, nada de TCP
+- A porta **nao** vai por linha de comando: o servidor le tudo do `enshrouded_server.json`.
+  Se mudar a porta la, ajuste tambem `GAME_PORT`/`GAME_PORTS` em `games/enshrouded.env`
+- Config: `/opt/game/enshrouded_server.json` — o deploy cria um modelo no primeiro run.
+  **Troque as senhas** de `userGroups` (Admin / Friend / Guest): cada jogador entra com a
+  senha do grupo dele, nao existe senha unica de servidor. `slotCount` vai ate 16.
+  Pare o servidor antes de editar (`systemctl stop enshrouded`)
+- Nao publica query A2S da Steam — a contagem de jogadores no painel vem do log
+- Memoria: 16GB (recomendacao oficial para 16 slots, mais a folga do Wine).
+  Disco: o build Windows passa de 12GB, por isso 40GB
+- O primeiro start demora mais que o normal: o Wine monta o prefixo e o jogo gera o mundo.
+  Acompanhe com `game-logs`
+- Saves: `/opt/game/savegame/` (prefixo do Wine em `/home/steam/.wine-enshrouded`)
 
 ## Comandos uteis
 

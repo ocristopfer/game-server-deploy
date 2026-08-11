@@ -93,8 +93,18 @@ resolve_variables() {
   GAME_PORTS="${GAME_PORTS:-}"
   START_SCRIPT="${START_SCRIPT:-}"
   START_ARGS="${START_ARGS:-}"
+  PRE_INSTALL_CMD="${PRE_INSTALL_CMD:-}"
   POST_INSTALL_CMD="${POST_INSTALL_CMD:-}"
   SERVICE_NAME="${GAME_KEY}.service"
+
+  # Jogos sem build nativo Linux (ex.: Enshrouded) precisam baixar o build Windows
+  # e rodar via Wine. O flag tem que vir ANTES do +login no SteamCMD.
+  STEAM_PLATFORM="${STEAM_PLATFORM:-}"
+  if [[ -n "$STEAM_PLATFORM" ]]; then
+    STEAMCMD_PLATFORM_ARG="+@sSteamCmdForcePlatformType ${STEAM_PLATFORM} "
+  else
+    STEAMCMD_PLATFORM_ARG=""
+  fi
 
   if [[ "$IP_CIDR" == "dhcp" ]]; then
     NET0="name=eth0,bridge=${BRIDGE},ip=dhcp,type=veth"
@@ -238,13 +248,22 @@ install_steamcmd_in_ct() {
   "
 }
 
+run_pre_install() {
+  [[ -n "$PRE_INSTALL_CMD" ]] || return 0
+  msg "Executando PRE_INSTALL_CMD do jogo dentro do CT"
+  run_ct "$PRE_INSTALL_CMD" || die "PRE_INSTALL_CMD falhou (veja a saida acima)"
+}
+
 install_game_in_ct() {
   msg "Instalando ${GAME_DISPLAY_NAME} (app ${STEAM_APP_ID}) via SteamCMD - pode demorar (download de varios GB)"
+  if [[ -n "$STEAM_PLATFORM" ]]; then
+    msg "Forcando plataforma do SteamCMD: ${STEAM_PLATFORM}"
+  fi
   run_ct "install -d -o steam -g steam ${GAME_DIR}"
 
   local attempt
   for attempt in 1 2 3; do
-    if run_ct "su - steam -c '${STEAMCMD_DIR}/steamcmd.sh +force_install_dir ${GAME_DIR} +login anonymous +app_update ${STEAM_APP_ID} validate +quit'"; then
+    if run_ct "su - steam -c '${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}+force_install_dir ${GAME_DIR} +login anonymous +app_update ${STEAM_APP_ID} validate +quit'"; then
       return 0
     fi
     warn "SteamCMD falhou (tentativa ${attempt}/3), tentando novamente em 10s"
@@ -284,7 +303,7 @@ render_update_helper() {
 # Atualiza ${GAME_DISPLAY_NAME} e reinicia o servico.
 set -Eeuo pipefail
 systemctl stop ${SERVICE_NAME} || true
-su - steam -c "${STEAMCMD_DIR}/steamcmd.sh +force_install_dir ${GAME_DIR} +login anonymous +app_update ${STEAM_APP_ID} validate +quit"
+su - steam -c "${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}+force_install_dir ${GAME_DIR} +login anonymous +app_update ${STEAM_APP_ID} validate +quit"
 systemctl start ${SERVICE_NAME}
 echo "Atualizacao concluida."
 EOF
@@ -310,7 +329,7 @@ if [[ -z "\$installed" ]]; then
   exec /usr/local/bin/update-game
 fi
 
-latest=\$(su - steam -c "${STEAMCMD_DIR}/steamcmd.sh +login anonymous +app_info_update 1 +app_info_print ${STEAM_APP_ID} +quit" \
+latest=\$(su - steam -c "${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}+login anonymous +app_info_update 1 +app_info_print ${STEAM_APP_ID} +quit" \
   | tr -d '\r' \
   | sed -n '/"branches"/,\$p' \
   | sed -n '/"public"/,/}/p' \
@@ -501,9 +520,12 @@ main() {
   setup_panel_access
   ensure_steam_user
   install_steamcmd_in_ct
+  run_pre_install
   install_game_in_ct
-  detect_start_script
+  # post-install roda antes da deteccao porque um jogo pode CRIAR o proprio
+  # script de start ali (ex.: wrapper do Wine para builds sem versao Linux)
   run_post_install
+  detect_start_script
   render_update_helper
   render_update_checker
   render_service_helpers
