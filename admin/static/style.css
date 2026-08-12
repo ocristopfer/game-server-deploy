@@ -241,6 +241,47 @@ table.jobs tr:last-child td { border-bottom: none; }
   font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* ---------- edicao rapida de configuracao ---------- */
+.conf-files { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.conf-files .path-form { flex: 1; min-width: 280px; }
+.conf-path { margin: 10px 0 0; overflow-wrap: anywhere; }
+.conf-path form.inline { margin-left: 2px; }
+
+.chip {
+  padding: 5px 12px; border-radius: 999px; font-size: .85rem;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
+}
+.chip:hover { text-decoration: none; color: var(--text); border-color: var(--accent); }
+.chip.on { color: var(--text); border-color: var(--accent); background: var(--bg); }
+
+.conf-busca { width: auto; min-width: 220px; margin-top: 0; }
+
+.conf-sec { border: none; border-top: 1px solid var(--line); margin: 0; padding: 14px 0 4px; }
+.conf-sec:first-of-type { border-top: none; padding-top: 0; }
+.conf-sec legend {
+  padding: 0; color: var(--muted); font-size: .78rem;
+  text-transform: uppercase; letter-spacing: .04em; overflow-wrap: anywhere;
+}
+.conf-grid {
+  display: grid; gap: 10px 18px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.conf-item { margin: 0; }
+.conf-item[hidden] { display: none; }
+.conf-key {
+  display: block; color: var(--text); font-size: .85rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+.conf-item input, .conf-item select {
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 7px 9px;
+}
+
+.conf-nova { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.conf-nova select { flex: 1 1 200px; margin-top: 0; }
+.conf-nova input { flex: 1 1 180px; margin-top: 0; }
+
 @media (max-width: 900px) {
   .filegrid { grid-template-columns: 1fr; }
   .filelist { max-height: 30vh; }

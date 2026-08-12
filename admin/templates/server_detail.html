@@ -8,6 +8,7 @@
     </span>
   </h1>
   <div class="actions">
+    {% if allow_files %}<a class="btn" href="{{ url_for('config_quick', sid=server.id) }}">Config</a>{% endif %}
     {% if allow_term %}<a class="btn ghost" href="{{ url_for('terminal', sid=server.id) }}">Terminal</a>{% endif %}
     {% if allow_files %}<a class="btn ghost" href="{{ url_for('files', sid=server.id) }}">Arquivos</a>{% endif %}
     {% if allow_shell %}<a class="btn ghost" href="{{ url_for('console', sid=server.id) }}">Console</a>{% endif %}
@@ -23,8 +24,17 @@
     <div><dt>Porta SSH</dt><dd>{{ server.ssh_port }}</dd></div>
     <div><dt>Servico</dt><dd>{{ server.service }}</dd></div>
     {% if server.game_port %}<div><dt>Portas do jogo</dt><dd>{{ server.game_port }}</dd></div>{% endif %}
-    {% if server.config_path %}
-    <div><dt>Config</dt>
+    {% if server.config_files %}
+    <div><dt>Configuracao</dt>
+      <dd>
+        {% for arquivo in server.config_files.splitlines() %}
+        <a href="{{ url_for('config_quick', sid=server.id, file=arquivo) }}"
+           title="{{ arquivo }}">{{ arquivo.rsplit('/', 1)[-1] }}</a>{{ ", " if not loop.last }}
+        {% endfor %}
+      </dd>
+    </div>
+    {% elif server.config_path %}
+    <div><dt>Pasta de config</dt>
       <dd><a href="{{ url_for('files', sid=server.id, path=server.config_path) }}">{{ server.config_path }}</a></dd>
     </div>
     {% endif %}

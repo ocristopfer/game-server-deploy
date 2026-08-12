@@ -1,6 +1,13 @@
 # Config real (contem senha) - versione apenas o .env.example
 .env
 
+# Stacks geradas pelo deploy-docker.ps1 (o *.secret.env leva a senha da conta Steam).
+# Sao regeradas a cada deploy e valem so para a maquina onde o deploy rodou.
+/docker/stacks/
+
+# Bytecode do python (aparece ao rodar os testes do painel)
+__pycache__/
+
 # Save games (mundos podem ter varios MB)
 *.sav
 /The Girls World/

@@ -1,0 +1,29 @@
+# Painel administrativo - imagem de producao (o Dockerfile ao lado e o de
+# desenvolvimento, que recebe o codigo por bind mount).
+#
+# O contexto de build e a RAIZ do repositorio, porque o codigo do painel entra na imagem:
+#   docker build -f docker/panel/Dockerfile.prod -t gamepanel .
+FROM debian:13-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3 python3-flask gunicorn openssh-client ca-certificates tzdata \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV GAMEPANEL_DB=/var/lib/gamepanel/panel.db \
+    GAMEPANEL_SECRET_FILE=/etc/gamepanel/secret_key \
+    GAMEPANEL_SSH_KEY=/etc/gamepanel/id_ed25519 \
+    GAMEPANEL_KNOWN_HOSTS=/var/lib/gamepanel/known_hosts \
+    GAMEPANEL_PORT=8080
+
+COPY docker/panel/entrypoint.sh /usr/local/bin/panel-entrypoint
+COPY admin /opt/gamepanel
+RUN chmod 0755 /usr/local/bin/panel-entrypoint
+
+# A chave SSH e o banco ficam em volumes: recriar o container nao pode invalidar o
+# acesso aos containers de jogo nem perder os cadastros.
+VOLUME ["/etc/gamepanel", "/var/lib/gamepanel"]
+WORKDIR /opt/gamepanel
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/panel-entrypoint"]

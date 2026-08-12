@@ -48,6 +48,9 @@
           <button class="btn {{ 'danger' if key == 'stop' else '' }}" type="submit">{{ label.split(' ')[0] }}</button>
         </form>
       {% endfor %}
+      {% if allow_files %}
+        <a class="btn ghost" href="{{ url_for('config_quick', sid=s.id) }}">Config</a>
+      {% endif %}
       {% if allow_term %}
         <a class="btn ghost" href="{{ url_for('terminal', sid=s.id) }}">Terminal</a>
       {% endif %}

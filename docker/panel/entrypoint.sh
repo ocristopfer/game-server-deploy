@@ -1,54 +1,57 @@
 #!/bin/sh
-# Prepara o painel para o ambiente local: chave SSH, usuario admin e dois servidores
-# ja cadastrados apontando para os containers de jogo falsos.
+# Sobe o painel no container: chave SSH, usuario admin e (so no ambiente de
+# desenvolvimento) os dois servidores de teste ja cadastrados.
+#
+# PANEL_SEED_DEMO=1  -> cadastra os containers falsos do docker-compose.yml
+# GAMEPANEL_DEV=1    -> gunicorn com --reload (o codigo vem por bind mount)
 set -e
 
 install -d -m 0755 /var/lib/gamepanel /etc/gamepanel /keys
 
 if [ ! -f "$GAMEPANEL_SSH_KEY" ]; then
   echo "==> gerando a chave SSH do painel"
-  ssh-keygen -t ed25519 -N '' -C 'gamepanel@dev' -f "$GAMEPANEL_SSH_KEY" >/dev/null
+  ssh-keygen -t ed25519 -N '' -C 'gamepanel@docker' -f "$GAMEPANEL_SSH_KEY" >/dev/null
 fi
 # Os containers de jogo leem daqui na hora de montar o authorized_keys.
 cp -f "${GAMEPANEL_SSH_KEY}.pub" /keys/panel.pub
 touch "$GAMEPANEL_KNOWN_HOSTS"
 
-echo "==> criando usuario ${PANEL_USER:-admin} e semeando os servidores de teste"
-python3 - <<'PY'
-import os
+echo "==> garantindo o usuario ${PANEL_USER:-admin}"
+python3 /opt/gamepanel/app.py --create-user "${PANEL_USER:-admin}" \
+  --password "${PANEL_PASSWORD:-admin12345}"
+
+if [ "${PANEL_SEED_DEMO:-0}" = "1" ]; then
+  echo "==> cadastrando os servidores de teste (PANEL_SEED_DEMO=1)"
+  python3 - <<'PY'
 import sys
 
 sys.path.insert(0, "/opt/gamepanel")
 import app as panel  # noqa: E402  (o import ja cria/migra o banco)
 
-panel.ensure_admin_user(os.environ.get("PANEL_USER", "admin"),
-                        os.environ.get("PANEL_PASSWORD", "admin12345"))
-
 SEEDS = [
-    ("Palworld (teste)", "game-palworld", "palworld.service", "8211/udp",
-     "/opt/game/Pal/Saved/Config/LinuxServer", 27015),
+    dict(name="Palworld (teste)", host="game-palworld", service="palworld.service",
+         game_port="8211/udp", query_port=27015,
+         config_path="/opt/game/Pal/Saved/Config/LinuxServer",
+         config_files="/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini",
+         notes="Container de teste do docker compose."),
     # Sem porta de consulta: este imita o jogo que so da para contar pelo log.
-    ("Dragonwilds (teste)", "game-dragonwilds", "dragonwilds.service", "7777/udp",
-     "/opt/game/RSDragonwilds/Saved/Config/LinuxServer", 0),
+    dict(name="Dragonwilds (teste)", host="game-dragonwilds", service="dragonwilds.service",
+         game_port="7777/udp", query_port=0,
+         config_path="/opt/game/RSDragonwilds/Saved/Config/LinuxServer",
+         config_files="/opt/game/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini",
+         notes="Container de teste do docker compose."),
 ]
 
-conn = panel._connect()
-with conn:
-    for name, host, service, ports, config_path, query_port in SEEDS:
-        exists = conn.execute("SELECT 1 FROM servers WHERE host = ?", (host,)).fetchone()
-        if exists:
-            continue
-        conn.execute(
-            "INSERT INTO servers (name, host, ssh_port, ssh_user, service, game_port,"
-            " notes, config_path, query_port, created_at) VALUES (?,?,22,'root',?,?,?,?,?,?)",
-            (name, host, service, ports, "Container de teste do docker compose.",
-             config_path, query_port, panel.now_iso()),
-        )
-        print(f"servidor de teste cadastrado: {name} ({host})")
-conn.close()
+for seed in SEEDS:
+    criado = panel.ensure_server(**seed)
+    print(f"servidor de teste {'cadastrado' if criado else 'ja existia'}: {seed['name']}")
 PY
+fi
 
 echo "==> painel em http://localhost:${GAMEPANEL_PORT} (usuario ${PANEL_USER:-admin})"
-exec gunicorn \
-  --workers 1 --threads 16 --timeout 120 --reload \
+if [ "${GAMEPANEL_DEV:-0}" = "1" ]; then
+  exec gunicorn --workers 1 --threads 16 --timeout 120 --reload \
+    --bind "0.0.0.0:${GAMEPANEL_PORT}" --access-logfile - app:app
+fi
+exec gunicorn --workers 1 --threads 16 --timeout 120 \
   --bind "0.0.0.0:${GAMEPANEL_PORT}" --access-logfile - app:app

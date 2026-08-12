@@ -69,6 +69,18 @@
         <code>/opt/game/Pal/Saved/Config/LinuxServer</code>
       </small>
     </label>
+    <label>Arquivos de configuracao <span class="muted">(um por linha)</span>
+      <textarea name="config_files" rows="3" spellcheck="false"
+                placeholder="/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini">{{ data.config_files }}</textarea>
+      <small>
+        Informe aqui o arquivo que voce edita de verdade: a tela
+        {% if mode == 'edit' %}<a href="{{ url_for('config_quick', sid=sid) }}"><strong>Config</strong></a>
+        {% else %}<strong>Config</strong>{% endif %}
+        abre ele direto como formulario (um campo por chave, com botao para acrescentar
+        chave nova) &mdash; sem navegar por pastas. Em branco, a propria tela ajuda a
+        procurar os candidatos no container.
+      </small>
+    </label>
     <label>Notas <span class="muted">(opcional)</span>
       <textarea name="notes" rows="4">{{ data.notes }}</textarea>
     </label>

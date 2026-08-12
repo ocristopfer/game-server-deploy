@@ -1,12 +1,20 @@
-# Game Server Deploy (Proxmox LXC + SteamCMD)
+# Game Server Deploy (Proxmox LXC ou Docker + SteamCMD)
 
-Deploy simplificado de servidores dedicados de jogos em containers LXC no Proxmox,
-inspirado no [LinuxGSM](https://github.com/GameServerManagers/LinuxGSM) porem muito mais simples:
-um comando cria o container, instala o SteamCMD, baixa o jogo, cria o servico systemd
-e no final mostra **quais portas redirecionar no roteador**.
+Deploy simplificado de servidores dedicados de jogos, inspirado no
+[LinuxGSM](https://github.com/GameServerManagers/LinuxGSM) porem muito mais simples: um
+comando cria o container, instala o SteamCMD, baixa o jogo, cria o servico e no final
+mostra **quais portas redirecionar no roteador**.
 
-Segue o mesmo padrao do deploy do Frigate: o `.ps1` roda no Windows, envia o bundle
-via SSH para o host Proxmox e executa o `provision-game-lxc.sh` la (que usa `pct`).
+Dois destinos, a mesma definicao de jogo (`games/<jogo>.env`) nos dois:
+
+| Destino | Comando | Quando usar |
+|---------|---------|-------------|
+| **LXC no Proxmox** | `.\deploy-game.ps1 -Game palworld` | voce tem um Proxmox e quer o jogo num container proprio, com systemd de verdade |
+| **Docker** | `.\deploy-docker.ps1 -Game palworld` | qualquer maquina com Docker (ate o seu PC), sem Proxmox no caminho |
+
+No caminho Proxmox o `.ps1` roda no Windows, envia o bundle via SSH para o host e executa
+o `provision-game-lxc.sh` la (que usa `pct`). No caminho Docker o mesmo `.ps1` gera a
+stack, constroi a imagem e sobe o container — e ja cadastra o servidor no painel.
 
 ## Pre-requisitos
 
@@ -114,6 +122,11 @@ Layout de referencia (o do `.env.example`):
 | Satisfactory | `.\deploy-game.ps1 -Game satisfactory` | 7777/udp, 7777/tcp |
 | Enshrouded | `.\deploy-game.ps1 -Game enshrouded` | 15636/udp, 15637/udp |
 | DayZ | `.\deploy-game.ps1 -Game dayz` | 2302-2304/udp, 27016/udp |
+
+Troque `deploy-game.ps1` por `deploy-docker.ps1` para o mesmo jogo em Docker. Alem da
+instalacao, cada `games/<jogo>.env` diz ao painel onde fica a configuracao
+(`CONFIG_PATH`/`CONFIG_FILES`) e como contar jogadores (`QUERY_PORT`/`PLAYER_SOURCE`) —
+e o que faz o servidor nascer cadastrado e com a tela **Config** pronta.
 
 ### RuneScape: Dragonwilds — notas
 
@@ -277,6 +290,83 @@ pct exec <CTID> -- check-game-update                                # checar ago
 pct exec <CTID> -- journalctl -u game-update-check.service -n 20   # log das checagens
 ```
 
+## Deploy em Docker (sem Proxmox)
+
+Mesmos jogos, mesma definicao em `games/<jogo>.env`, mesmo painel — so que em containers
+Docker. Serve para rodar tudo no seu proprio PC, num NUC, num servidor qualquer com
+Docker instalado, ou num Docker remoto.
+
+```powershell
+.\deploy-docker.ps1 -Panel                  # sobe o painel (http://localhost:8080)
+.\deploy-docker.ps1 -Game palworld          # sobe o jogo e o cadastra no painel
+.\deploy-docker.ps1 -Game dayz -SteamGuardCode 12345
+.\deploy-docker.ps1 -Game palworld -Down    # para o servidor (o mundo fica no volume)
+.\deploy-docker.ps1 -Game palworld -Recreate
+```
+
+Suba o painel **antes** do primeiro jogo: e dele que sai a chave SSH que o container do
+jogo autoriza. Depois disso cada deploy de jogo ja nasce gerenciavel e **cadastrado**,
+com o arquivo de configuracao apontado — a tela **Config** abre pronta.
+
+### O que o deploy faz
+
+1. Cria a rede `games` (e por ela que o painel fala com os jogos, por nome de container)
+2. Gera a stack em `docker/stacks/<jogo>.yml` — da para ler antes de subir (o arquivo e
+   regerado a cada deploy, entao ajuste o `.env`, nao o `.yml`)
+3. Constroi a imagem `gamesrv-<jogo>` (Debian + SteamCMD + `sshd` + os atalhos do painel)
+4. Sobe o container `game-<jogo>` com as portas do jogo publicadas e limites de
+   memoria/CPU vindos de `MEMORY`/`CORES` do `.env` (ou do recomendado do jogo)
+5. Cadastra o servidor no painel (`--register-server`), com portas, forma de contar
+   jogadores e arquivos de configuracao
+
+O container faz o mesmo que o `provision-game-lxc.sh` faz no LXC: instala o jogo pelo
+SteamCMD, roda os `PRE_INSTALL_CMD`/`POST_INSTALL_CMD` do jogo, detecta o script de start
+e sobe o servidor. Como nao ha systemd dentro de um container, o papel dele e feito por um
+`systemctl`/`journalctl` proprios (em `docker/gameserver/`) com **a mesma interface** que o
+painel usa — por isso start/stop/restart, logs ao vivo, medidores e contagem de jogadores
+funcionam igual nos dois destinos.
+
+### Dados e atualizacoes
+
+- Dois volumes por jogo: `game-<jogo>-data` (o jogo e os saves, em `/opt/game`) e
+  `game-<jogo>-steam` (token da Steam e prefixo do Wine). **Recriar o container nao
+  baixa o jogo de novo nem perde o mundo.**
+- `restart: unless-stopped` e `stop_grace_period: 120s`: no `docker stop` o servidor
+  recebe o TERM e tem tempo de salvar antes de morrer.
+- Update automatico diario dentro do container (`UPDATE_TIME`, padrao 06:00), com a mesma
+  regra do LXC: so atualiza se o buildid da Steam mudou. `AUTO_UPDATE=0` desliga.
+- `UPDATE_ON_START=1` (ou `-UpdateOnStart`) revalida os arquivos do jogo a cada start.
+
+```bash
+docker logs -f game-palworld            # acompanhar o download/instalacao
+docker exec game-palworld game-status
+docker exec game-palworld game-logs -n 50
+docker exec game-palworld update-game
+docker exec -it game-palworld bash
+```
+
+### Docker remoto
+
+`DOCKER_HOST` no `.env` (ou `-DockerHost`) manda o deploy para outra maquina, sem instalar
+nada la alem do Docker:
+
+```
+DOCKER_HOST=ssh://root@192.168.1.50
+```
+
+A imagem e construida no destino (o contexto sobe pela conexao), entao nao ha bind mount
+de caminho local — o que roda no seu PC roda igual no servidor.
+
+### Portas e acesso
+
+As portas de `GAME_PORTS` sao publicadas no host (`8211:8211/udp`...) — e o que voce
+redireciona no roteador. O SSH do container **nao** e publicado: o painel entra pela rede
+interna `games`. Se quiser entrar de fora, defina `SSH_PORT_<JOGO>` no `.env`.
+
+Jogos que exigem conta Steam (DayZ) leem `STEAM_USER`/`STEAM_PASS` do `.env`; o deploy
+escreve essas variaveis em `docker/stacks/<jogo>.secret.env` (fora do git) em vez de
+deixa-las na stack.
+
 ## Painel administrativo (web)
 
 Um container separado sobe um painel web para gerenciar todos os servidores: cadastrar,
@@ -361,6 +451,9 @@ Em **Adicionar**, informe:
 - **Usuario/porta SSH** — normalmente `root` e `22`
 - **Pasta de configuracao** (opcional) — onde a tela **Arquivos** abre por padrao
   (ex.: `/opt/game/Pal/Saved/Config/LinuxServer`)
+- **Arquivos de configuracao** (opcional, um por linha) — o arquivo que voce edita de
+  verdade (ex.: `/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini`). E ele que
+  a tela **Config** abre como formulario, campo a campo
 - **Porta de consulta** (opcional) — porta de query Steam/A2S para contar os jogadores
   online (Palworld: `27015`)
 
@@ -439,10 +532,52 @@ A aba **Terminal** abre uma sessao SSH de verdade dentro do container, com TTY: 
   sem uso ate a sessao ser derrubada (padrao 900).
 - Cada sessao aberta fica registrada no historico do servidor (quem abriu e quando).
 
+### Edicao rapida de configuracao (tela Config)
+
+Mudar o nome do servidor ou o numero maximo de jogadores nao devia significar procurar o
+arquivo, achar a linha certa e nao errar a virgula. **Informe qual e o arquivo de
+configuracao do jogo e a tela `Config` o abre como formulario**: um campo por chave, com
+o valor atual preenchido.
+
+- O arquivo vem do cadastro do servidor, campo **Arquivos de configuracao** (um caminho
+  por linha, ate 8). No deploy em Docker ele ja vem preenchido a partir de
+  `CONFIG_FILES` do `games/<jogo>.env`.
+- Nao sabe o caminho? A tela chega com **Procurar**: ela varre a pasta do jogo e lista os
+  candidatos com um botao *fixar aqui*. Na tela **Arquivos**, o botao *Editar campo a
+  campo* fixa o arquivo aberto. Nos dois casos o arquivo passa a abrir direto dali em diante.
+- **Adicionar configuracao** cria uma chave que ainda nao existe no arquivo, no bloco
+  escolhido — sem precisar saber a sintaxe do formato.
+- Campo de filtro no topo: o `PalWorldSettings.ini` tem ~50 chaves numa unica linha.
+- Marque **reiniciar o servidor depois de salvar**: quase todo jogo so le a configuracao
+  ao iniciar.
+
+Formatos entendidos (detectados pelo nome + conteudo):
+
+| Formato | Exemplo | Detalhe |
+|---------|---------|---------|
+| `.ini`/`.conf`/`.properties` | Satisfactory, Dragonwilds | secoes `[...]`, comentarios preservados |
+| `.ini` da Unreal | Palworld | as ~50 chaves de `OptionSettings=(A=1,B=2,...)` viram campos individuais |
+| `.json` | Enshrouded | objetos aninhados viram secoes (`userGroups.0.password`); tipo do valor preservado |
+| `serverDZ.cfg` | DayZ | `chave = valor;`, blocos `class X { }` e o comentario `//` da linha vira a ajuda do campo |
+
+O que ele **nao** faz: reescrever o arquivo inteiro. A gravacao aplica **so os campos que
+voce alterou**, procurando cada um pela chave (nao pela linha) num arquivo relido na hora
+de salvar — comentarios, ordem, formatacao e chaves desconhecidas ficam como estavam. Como
+no editor de texto, sai um `.bak` antes de qualquer gravacao e o dono/permissao do arquivo
+sao preservados. Se o formato nao for reconhecido, a tela manda voce para o editor de texto.
+
+O motor fica em `admin/gameconf.py`, isolado do resto do painel (nao fala SSH nem HTTP),
+com testes proprios:
+
+```bash
+docker compose exec panel python3 /opt/gamepanel/test_gameconf.py
+```
+
 ### Editor de configuracoes
 
 A aba **Arquivos** navega pelo sistema de arquivos do container e edita os `.ini`/`.cfg`
-do jogo direto no navegador.
+do jogo direto no navegador — e a saida para tudo que a tela **Config** nao cobre
+(formato exotico, arquivo binario, log grande, download).
 
 - **Procurar arquivos de config** varre a pasta do jogo (ate 5 niveis) atras de `.ini`,
   `.cfg`, `.conf`, `.json`, `.yaml`, `.properties` e `.txt`.
@@ -489,12 +624,18 @@ docker compose up --build         # http://localhost:8080 - admin / admin12345
 
 Sobem tres containers: o painel e dois "servidores de jogo" falsos (Debian com `sshd`, um
 `systemctl`/`journalctl` simulados e os `.ini` que o jogo teria). Os dois ja vem
-cadastrados no painel, entao da para testar start/stop/update, o terminal e o editor de
-ponta a ponta. O codigo entra por bind mount com `--reload`: editar `admin/app.py` ou os
-templates e recarregar a pagina basta.
+cadastrados no painel — com o `.ini` apontado, entao a tela **Config** tambem da para
+testar de ponta a ponta, junto com start/stop/update, terminal e editor. O codigo entra
+por bind mount com `--reload`: editar `admin/app.py` ou os templates e recarregar a
+pagina basta.
+
+Nao confunda com o deploy de verdade: aqui os containers se chamam `game-palworld-dev` e
+a imagem em `docker/game/` **nao instala jogo nenhum** (a de verdade e a de
+`docker/gameserver/`, usada pelo `deploy-docker.ps1`).
 
 ```bash
 docker compose logs -f panel
+docker compose exec panel python3 /opt/gamepanel/test_gameconf.py   # testes do parser
 docker compose down -v            # zera banco, chaves e arquivos de teste
 ```
 

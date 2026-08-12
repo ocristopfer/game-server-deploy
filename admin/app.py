@@ -41,6 +41,7 @@ try:
 except ImportError:  # pragma: no cover - Windows
     HAVE_PTY = False
 
+import gameconf
 from flask import (
     Flask,
     abort,
@@ -103,6 +104,11 @@ FILE_DEFAULT_PATH = os.environ.get("GAMEPANEL_FILE_DEFAULT", "/opt/game")
 FILE_LIST_MAX = 800
 # Padroes usados pelo botao "procurar arquivos de config".
 CONFIG_GLOBS = ("*.ini", "*.cfg", "*.conf", "*.json", "*.yaml", "*.yml", "*.properties", "*.txt")
+# Quantos arquivos de configuracao um servidor pode ter registrados para a tela "Config".
+CONFIG_FILES_MAX = 8
+# Teto de campos no formulario da tela "Config": acima disso o arquivo quase certamente
+# nao e configuracao (um log casa com "chave=valor" em varias linhas).
+CONFIG_SETTINGS_MAX = 600
 
 SQL_SERVER_BY_ID = "SELECT * FROM servers WHERE id = ?"
 SQL_ALL_SERVERS = "SELECT * FROM servers ORDER BY name"
@@ -172,6 +178,8 @@ CREATE TABLE IF NOT EXISTS servers (
   game_port  TEXT NOT NULL DEFAULT '',
   notes      TEXT NOT NULL DEFAULT '',
   config_path TEXT NOT NULL DEFAULT '',
+  -- Arquivos (um por linha) que a tela "Config" abre direto, sem navegar por pastas.
+  config_files TEXT NOT NULL DEFAULT '',
   query_port INTEGER NOT NULL DEFAULT 0,
   player_source TEXT NOT NULL DEFAULT '',
   join_re    TEXT NOT NULL DEFAULT '',
@@ -231,6 +239,7 @@ MIGRATIONS = (
     ("servers", "player_source", "ALTER TABLE servers ADD COLUMN player_source TEXT NOT NULL DEFAULT ''"),
     ("servers", "join_re", "ALTER TABLE servers ADD COLUMN join_re TEXT NOT NULL DEFAULT ''"),
     ("servers", "leave_re", "ALTER TABLE servers ADD COLUMN leave_re TEXT NOT NULL DEFAULT ''"),
+    ("servers", "config_files", "ALTER TABLE servers ADD COLUMN config_files TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -1161,6 +1170,7 @@ JOB_LABELS = {key: label for key, (label, _cmd, _c) in ACTIONS.items()}
 JOB_LABELS["shell"] = "Comando no container"
 JOB_LABELS["terminal"] = "Terminal interativo"
 JOB_LABELS["edit-file"] = "Arquivo salvo"
+JOB_LABELS["edit-config"] = "Configuracao alterada"
 JOB_LABELS["download-file"] = "Arquivo baixado"
 
 
@@ -1442,6 +1452,26 @@ def _pasta_config(valor: str, errors: list[str]) -> str:
         return ""
 
 
+def _arquivos_config(valor: str, errors: list[str]) -> str:
+    """Le a lista de arquivos de configuracao (um caminho absoluto por linha)."""
+    caminhos: list[str] = []
+    for linha in (valor or "").replace(",", "\n").splitlines():
+        bruto = linha.strip()
+        if not bruto:
+            continue
+        try:
+            limpo = clean_path(bruto)
+        except ValueError as exc:
+            errors.append(f"Arquivo de configuracao invalido ({bruto}): {exc}")
+            continue
+        if limpo not in caminhos:
+            caminhos.append(limpo)
+    if len(caminhos) > CONFIG_FILES_MAX:
+        errors.append(f"No maximo {CONFIG_FILES_MAX} arquivos de configuracao por servidor.")
+        caminhos = caminhos[:CONFIG_FILES_MAX]
+    return "\n".join(caminhos)
+
+
 def _padrao(valor: str, rotulo: str, errors: list[str]) -> str:
     """Guarda o regex so depois de conferir que ele compila."""
     texto = (valor or "").strip()[:RE_MAX_LEN]
@@ -1482,6 +1512,7 @@ def _form_server(form) -> tuple[dict, list[str]]:
             "game_port": form.get("game_port", "").strip()[:120],
             "notes": form.get("notes", "").strip()[:2000],
             "config_path": _pasta_config(form.get("config_path"), errors),
+            "config_files": _arquivos_config(form.get("config_files"), errors),
             "query_port": _porta(
                 form.get("query_port"), 0, 0,
                 "Porta de consulta invalida (use 0 para desligar).", errors,
@@ -1499,7 +1530,8 @@ def _form_server(form) -> tuple[dict, list[str]]:
 def server_new():
     data = {
         "name": "", "host": "", "ssh_user": "root", "ssh_port": 22,
-        "service": "", "game_port": "", "notes": "", "config_path": "", "query_port": 0,
+        "service": "", "game_port": "", "notes": "", "config_path": "",
+        "config_files": "", "query_port": 0,
         "player_source": "", "join_re": "", "leave_re": "",
     }
     if request.method == "POST":
@@ -1510,15 +1542,15 @@ def server_new():
                 with conn:
                     conn.execute(
                         "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
-                        " game_port, notes, config_path, query_port, player_source,"
-                        " join_re, leave_re, created_at)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        " game_port, notes, config_path, config_files, query_port,"
+                        " player_source, join_re, leave_re, created_at)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             data["name"], data["host"], data["ssh_port"],
                             data["ssh_user"], data["service"], data["game_port"],
-                            data["notes"], data["config_path"], data["query_port"],
-                            data["player_source"], data["join_re"], data["leave_re"],
-                            now_iso(),
+                            data["notes"], data["config_path"], data["config_files"],
+                            data["query_port"], data["player_source"], data["join_re"],
+                            data["leave_re"], now_iso(),
                         ),
                     )
                 flash(f"Servidor {data['name']} cadastrado.", "ok")
@@ -1545,13 +1577,14 @@ def server_edit(sid: int):
                 with conn:
                     conn.execute(
                         "UPDATE servers SET name=?, host=?, ssh_port=?, ssh_user=?,"
-                        " service=?, game_port=?, notes=?, config_path=?, query_port=?,"
-                        " player_source=?, join_re=?, leave_re=? WHERE id=?",
+                        " service=?, game_port=?, notes=?, config_path=?, config_files=?,"
+                        " query_port=?, player_source=?, join_re=?, leave_re=? WHERE id=?",
                         (
                             data["name"], data["host"], data["ssh_port"],
                             data["ssh_user"], data["service"], data["game_port"],
-                            data["notes"], data["config_path"], data["query_port"],
-                            data["player_source"], data["join_re"], data["leave_re"], sid,
+                            data["notes"], data["config_path"], data["config_files"],
+                            data["query_port"], data["player_source"], data["join_re"],
+                            data["leave_re"], sid,
                         ),
                     )
                 invalidate_status(sid)
@@ -2324,18 +2357,8 @@ def files(sid: int):
     )
 
 
-@app.get("/servers/<int:sid>/files/search")
-@login_required
-def files_search(sid: int):
+def find_config_files(server: sqlite3.Row, root: str) -> list[dict]:
     """Varre a pasta do jogo atras dos arquivos de configuracao mais provaveis."""
-    _files_guard()
-    server = _server_or_404(sid)
-    try:
-        root = clean_path(request.args.get("path", "") or server["config_path"] or FILE_DEFAULT_PATH)
-    except ValueError as exc:
-        flash(str(exc), "error")
-        return redirect(url_for("files", sid=sid))
-
     names = " -o ".join(f"-name {shlex.quote(g)}" for g in CONFIG_GLOBS)
     script = (
         "set -e\n"
@@ -2345,21 +2368,48 @@ def files_search(sid: int):
         r"-printf '%s\t%TY-%Tm-%Td %TH:%TM\t%p\n' 2>/dev/null | LC_ALL=C sort -k3 | head -n 300"
         "\n"
     )
+    proc = ssh_run(server, q("bash", "-lc", script, "gp", root), timeout=90)
+    if proc.returncode != 0:
+        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha na busca")
+    achados: list[dict] = []
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        achados.append({
+            "size": int(parts[0]) if parts[0].isdigit() else 0,
+            "mtime": parts[1],
+            "path": parts[2],
+        })
+    return achados
+
+
+def write_file(server: sqlite3.Row, path: str, data: bytes) -> str:
+    """Grava o arquivo no container (com .bak, dono e permissao preservados)."""
+    proc = ssh_run(
+        server, q("bash", "-lc", WRITE_SCRIPT, "gp", path), timeout=120,
+        stdin_data=base64.b64encode(data),
+    )
+    if proc.returncode != 0:
+        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao gravar")
+    return proc.stdout.strip()
+
+
+@app.get("/servers/<int:sid>/files/search")
+@login_required
+def files_search(sid: int):
+    _files_guard()
+    server = _server_or_404(sid)
+    try:
+        root = clean_path(request.args.get("path", "") or server["config_path"] or FILE_DEFAULT_PATH)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("files", sid=sid))
+
     matches: list[dict] = []
     errors: list[str] = []
     try:
-        proc = ssh_run(server, q("bash", "-lc", script, "gp", root), timeout=90)
-        if proc.returncode != 0:
-            raise RemoteError((proc.stderr or proc.stdout).strip() or "falha na busca")
-        for line in proc.stdout.splitlines():
-            parts = line.split("\t", 2)
-            if len(parts) != 3:
-                continue
-            matches.append({
-                "size": int(parts[0]) if parts[0].isdigit() else 0,
-                "mtime": parts[1],
-                "path": parts[2],
-            })
+        matches = find_config_files(server, root)
     except RemoteError as exc:
         errors.append(str(exc))
 
@@ -2410,15 +2460,10 @@ def files_save(sid: int):
         pass  # arquivo novo, ou stat falhou: o proprio gravar reporta o erro
 
     try:
-        proc = ssh_run(
-            server, q("bash", "-lc", WRITE_SCRIPT, "gp", path), timeout=120,
-            stdin_data=base64.b64encode(data),
-        )
-        if proc.returncode != 0:
-            raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao gravar")
+        saida = write_file(server, path, data)
         log_job(
             "edit-file", server, session.get("username", "?"),
-            command=path, output=proc.stdout.strip(),
+            command=path, output=saida,
         )
         flash(f"{path} salvo ({len(data)} bytes). Uma copia .bak foi guardada ao lado.", "ok")
     except RemoteError as exc:
@@ -2495,6 +2540,212 @@ def files_download(sid: int):
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+# ------------------------------------------------- edicao rapida de config
+#
+# Mesmo motor de leitura/gravacao da tela "Arquivos", so que o arquivo chega na tela
+# como formulario: um campo por chave. Quem sabe o que quer mudar (nome do servidor,
+# senha de admin, numero de jogadores) nao precisa achar o arquivo nem contar virgula.
+
+
+def config_paths(server: sqlite3.Row) -> list[str]:
+    """Arquivos de configuracao registrados no cadastro do servidor."""
+    return [linha.strip() for linha in (server["config_files"] or "").splitlines() if linha.strip()]
+
+
+def load_config_doc(server: sqlite3.Row, path: str) -> tuple[gameconf.ConfigFile, dict]:
+    """Le o arquivo no container e o interpreta campo a campo."""
+    info = read_file(server, path)
+    if info["binary"]:
+        raise gameconf.ConfigError(
+            "este arquivo e binario — a edicao campo a campo nao se aplica a ele"
+        )
+    if info["truncated"]:
+        raise gameconf.ConfigError(
+            f"o arquivo tem {info['size'] // 1024} KB e passa do limite de edicao"
+            f" ({FILE_MAX_BYTES // 1024} KB) — arquivo de configuracao nao costuma"
+            " chegar a esse tamanho, confira se e o arquivo certo"
+        )
+    # O parser trabalha so com \n; se o arquivo usava CRLF ele volta assim na gravacao.
+    doc = gameconf.load(info["name"], info["text"].replace("\r\n", "\n"))
+    if len(doc.settings) > CONFIG_SETTINGS_MAX:
+        raise gameconf.ConfigError(
+            f"o arquivo tem {len(doc.settings)} chaves (o formulario para em"
+            f" {CONFIG_SETTINGS_MAX}) — pelo jeito nao e um arquivo de configuracao"
+        )
+    return doc, info
+
+
+def _save_config_files(sid: int, caminhos: list[str]) -> None:
+    conn = db()
+    with conn:
+        conn.execute(
+            "UPDATE servers SET config_files = ? WHERE id = ?", ("\n".join(caminhos), sid)
+        )
+
+
+@app.get("/servers/<int:sid>/config")
+@login_required
+def config_quick(sid: int):
+    _files_guard()
+    server = _server_or_404(sid)
+    arquivos = config_paths(server)
+    errors: list[str] = []
+
+    alvo = (request.args.get("file") or "").strip()
+    if alvo:
+        try:
+            alvo = clean_path(alvo)
+        except ValueError as exc:
+            errors.append(str(exc))
+            alvo = ""
+    if not alvo and arquivos:
+        alvo = arquivos[0]
+
+    doc = info = None
+    if alvo:
+        try:
+            doc, info = load_config_doc(server, alvo)
+        except (RemoteError, gameconf.ConfigError) as exc:
+            errors.append(f"{alvo}: {exc}")
+
+    # Sem arquivo registrado a tela ja chega com a lista de candidatos do container:
+    # e o caminho de "informar qual e o arquivo" sem sair procurando por pastas.
+    sugestoes = None
+    if request.args.get("descobrir") == "1" or (not arquivos and not alvo):
+        try:
+            sugestoes = find_config_files(server, server["config_path"] or FILE_DEFAULT_PATH)
+        except RemoteError as exc:
+            errors.append(str(exc))
+            sugestoes = []
+
+    return render_template(
+        "config.html", server=server, arquivos=arquivos, alvo=alvo, doc=doc, info=info,
+        sugestoes=sugestoes, errors=errors, registrado=alvo in arquivos,
+        max_files=CONFIG_FILES_MAX,
+    )
+
+
+@app.post("/servers/<int:sid>/config/files")
+@login_required
+def config_files_edit(sid: int):
+    """Registra (ou tira) um arquivo da tela rapida, com um clique."""
+    _files_guard()
+    server = _server_or_404(sid)
+    try:
+        path = clean_path(request.form.get("path", ""))
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("config_quick", sid=sid))
+
+    caminhos = config_paths(server)
+    if request.form.get("acao") == "remover":
+        caminhos = [p for p in caminhos if p != path]
+        _save_config_files(sid, caminhos)
+        flash(f"{path} saiu da tela de configuracao (o arquivo nao foi tocado).", "ok")
+        return redirect(url_for("config_quick", sid=sid))
+
+    if path in caminhos:
+        return redirect(url_for("config_quick", sid=sid, file=path))
+    if len(caminhos) >= CONFIG_FILES_MAX:
+        flash(f"Limite de {CONFIG_FILES_MAX} arquivos por servidor.", "error")
+        return redirect(url_for("config_quick", sid=sid))
+    caminhos.append(path)
+    _save_config_files(sid, caminhos)
+    flash(f"{path} agora abre direto na tela Config.", "ok")
+    return redirect(url_for("config_quick", sid=sid, file=path))
+
+
+@app.template_filter("ident")
+def _ident(value: str) -> str:
+    """Identificador de secao/chave dentro do formulario.
+
+    Os ids do gameconf usam \\x1f para separar niveis; percent-encoded eles atravessam
+    o HTML sem virar caractere de controle solto no meio de um atributo.
+    """
+    return urllib.parse.quote(value or "", safe="")
+
+
+def _edits_do_formulario(form) -> list[gameconf.Edit]:
+    """Monta a lista de alteracoes: so o que o usuario realmente mexeu."""
+    total = form.get("n", "0")
+    total = int(total) if total.isdigit() else 0
+    edits: list[gameconf.Edit] = []
+    for i in range(min(total, 4000)):
+        chave = (form.get(f"key.{i}", "") or "").strip()
+        if not chave:
+            continue  # linha de "adicionar configuracao" deixada em branco
+        valor = (form.get(f"val.{i}", "") or "").replace("\r", "")
+        ident = urllib.parse.unquote((form.get(f"id.{i}", "") or "").strip())
+        if ident and valor == (form.get(f"orig.{i}", "") or "").replace("\r", ""):
+            continue  # campo intocado: nao reescreve a linha
+        edits.append(gameconf.Edit(
+            id=ident,
+            section=urllib.parse.unquote(form.get(f"sec.{i}", "") or ""),
+            key=chave,
+            value=valor,
+        ))
+    return edits
+
+
+@app.post("/servers/<int:sid>/config/save")
+@login_required
+def config_save(sid: int):
+    _files_guard()
+    server = _server_or_404(sid)
+    try:
+        path = clean_path(request.form.get("path", ""))
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("config_quick", sid=sid))
+
+    voltar = url_for("config_quick", sid=sid, file=path)
+    try:
+        edits = _edits_do_formulario(request.form)
+    except gameconf.ConfigError as exc:
+        flash(str(exc), "error")
+        return redirect(voltar)
+    if not edits:
+        flash("Nenhum campo foi alterado.", "ok")
+        return redirect(voltar)
+
+    # O arquivo e relido AGORA: o jogo pode te-lo reescrito desde que a tela abriu, e as
+    # alteracoes sao aplicadas por chave — nao por numero de linha.
+    try:
+        doc, info = load_config_doc(server, path)
+        texto = doc.apply(edits)
+    except (RemoteError, gameconf.ConfigError) as exc:
+        flash(f"Nao consegui salvar: {exc}", "error")
+        return redirect(voltar)
+
+    if info["crlf"]:
+        texto = texto.replace("\n", "\r\n")
+    data = texto.encode("utf-8")
+    if len(data) > FILE_MAX_BYTES:
+        flash(f"Arquivo grande demais para salvar (limite de {FILE_MAX_BYTES // 1024} KB).", "error")
+        return redirect(voltar)
+
+    mexidas = ", ".join(dict.fromkeys(e.key for e in edits))
+    try:
+        saida = write_file(server, path, data)
+    except RemoteError as exc:
+        log_job("edit-config", server, session.get("username", "?"),
+                command=f"{path}: {mexidas}", output=str(exc), status="error")
+        flash(f"Nao consegui salvar: {exc}", "error")
+        return redirect(voltar)
+
+    log_job("edit-config", server, session.get("username", "?"),
+            command=f"{path}: {mexidas}", output=f"{saida}\nalterado: {mexidas}")
+    flash(f"{len(edits)} configuracao(oes) salva(s) em {path}: {mexidas}."
+          " Uma copia .bak foi guardada ao lado.", "ok")
+
+    # Quase todo jogo so le a configuracao no start — por isso o reiniciar mora aqui.
+    if request.form.get("restart") == "1":
+        job_id = start_job("restart", server, session.get("username", "?"))
+        invalidate_status(sid)
+        return redirect(url_for("job_detail", jid=job_id))
+    return redirect(voltar)
 
 
 # --------------------------------------------------------------------- jobs
@@ -2627,6 +2878,64 @@ def ensure_admin_user(username: str, password: str) -> None:
     conn.close()
 
 
+def ensure_server(
+    name: str,
+    host: str,
+    service: str,
+    ssh_port: int = 22,
+    ssh_user: str = "root",
+    game_port: str = "",
+    notes: str = "",
+    config_path: str = "",
+    config_files: str = "",
+    query_port: int = 0,
+    player_source: str = "",
+) -> bool:
+    """Cadastra (ou atualiza) um servidor sem passar pela tela. Devolve True se criou.
+
+    E por aqui que o deploy registra o container recem-criado no painel — inclusive o
+    arquivo de configuracao do jogo, para a tela "Config" ja abrir pronta. Num redeploy
+    os dados do container mandam, mas o que e escolha de quem usa o painel (arquivos de
+    config acrescentados a mao, forma de contar jogadores) nao e apagado.
+    """
+    init_db()
+    conn = _connect()
+    criado = False
+    try:
+        with conn:
+            atual = conn.execute(
+                "SELECT * FROM servers WHERE host = ? AND ssh_port = ?", (host, ssh_port)
+            ).fetchone()
+            if atual is None:
+                conn.execute(
+                    "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
+                    " game_port, notes, config_path, config_files, query_port,"
+                    " player_source, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (name, host, ssh_port, ssh_user, service, game_port, notes,
+                     config_path, config_files, query_port, player_source, now_iso()),
+                )
+                criado = True
+            else:
+                arquivos = [p for p in (atual["config_files"] or "").splitlines() if p.strip()]
+                for novo in config_files.splitlines():
+                    if novo.strip() and novo.strip() not in arquivos:
+                        arquivos.append(novo.strip())
+                conn.execute(
+                    "UPDATE servers SET name=?, ssh_user=?, service=?, game_port=?,"
+                    " notes=?, config_path=?, config_files=?, query_port=?,"
+                    " player_source=? WHERE id=?",
+                    (
+                        name, ssh_user, service, game_port, notes or atual["notes"],
+                        config_path or atual["config_path"],
+                        "\n".join(arquivos[:CONFIG_FILES_MAX]), query_port,
+                        atual["player_source"] or player_source, atual["id"],
+                    ),
+                )
+    finally:
+        conn.close()
+    return criado
+
+
 init_db()
 
 
@@ -2638,11 +2947,45 @@ if __name__ == "__main__":
     parser.add_argument("--password", metavar="SENHA")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=int(os.environ.get("GAMEPANEL_PORT", "8080")))
+    # Usado pelo deploy (deploy-docker.ps1) para deixar o servidor ja cadastrado.
+    parser.add_argument("--register-server", metavar="NOME")
+    parser.add_argument("--server-host", default="")
+    parser.add_argument("--service", default="")
+    parser.add_argument("--ssh-port", type=int, default=22)
+    parser.add_argument("--ssh-user", default="root")
+    parser.add_argument("--game-port", default="")
+    parser.add_argument("--query-port", type=int, default=0)
+    parser.add_argument("--config-path", default="")
+    parser.add_argument("--config-files", default="")
+    parser.add_argument("--player-source", default="")
+    parser.add_argument("--notes", default="")
     opts = parser.parse_args()
 
     if opts.create_user:
         if not opts.password:
             raise SystemExit("--create-user exige --password")
         ensure_admin_user(opts.create_user, opts.password)
+    elif opts.register_server:
+        if not opts.server_host or not opts.service:
+            raise SystemExit("--register-server exige --server-host e --service")
+        criado = ensure_server(
+            name=opts.register_server,
+            host=opts.server_host,
+            service=opts.service,
+            ssh_port=opts.ssh_port,
+            ssh_user=opts.ssh_user,
+            game_port=opts.game_port,
+            notes=opts.notes,
+            config_path=opts.config_path,
+            # A linha de comando nao aceita quebra de linha com conforto: aqui os
+            # arquivos vem separados por virgula.
+            config_files="\n".join(
+                p.strip() for p in opts.config_files.split(",") if p.strip()
+            ),
+            query_port=opts.query_port,
+            player_source=opts.player_source,
+        )
+        print(f"servidor '{opts.register_server}' {'cadastrado' if criado else 'atualizado'}"
+              f" ({opts.server_host})")
     else:
         app.run(host=opts.host, port=opts.port)

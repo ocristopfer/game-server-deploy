@@ -23,6 +23,7 @@ services:
       - "8080:8080"
     environment:
       GAMEPANEL_DEV: "1"              # recarrega templates e codigo a cada save
+      PANEL_SEED_DEMO: "1"            # cadastra os dois containers falsos abaixo
       GAMEPANEL_ALLOW_SHELL: "1"
       GAMEPANEL_ALLOW_FILES: "1"
       GAMEPANEL_FILE_DEFAULT: "/opt/game"
@@ -39,7 +40,10 @@ services:
 
   game-palworld:
     build: ./docker/game
-    container_name: game-palworld
+    # O sufixo -dev evita colidir com o container real do deploy-docker.ps1, que se
+    # chama game-palworld. Dentro da rede do compose o nome do servico continua
+    # respondendo por DNS, entao o painel acha o container como game-palworld.
+    container_name: game-palworld-dev
     environment:
       GAME_KIND: palworld
       GAME_SERVICE: palworld.service
@@ -52,7 +56,7 @@ services:
 
   game-dragonwilds:
     build: ./docker/game
-    container_name: game-dragonwilds
+    container_name: game-dragonwilds-dev
     environment:
       GAME_KIND: dragonwilds
       GAME_SERVICE: dragonwilds.service

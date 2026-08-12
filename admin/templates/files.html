@@ -4,6 +4,7 @@
 <div class="page-head">
   <h1>Arquivos &mdash; {{ server.name }}</h1>
   <div class="actions">
+    <a class="btn" href="{{ url_for('config_quick', sid=server.id) }}">Config</a>
     {% if allow_term %}<a class="btn ghost" href="{{ url_for('terminal', sid=server.id) }}">Terminal</a>{% endif %}
     <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
   </div>
@@ -124,6 +125,14 @@
           dono e permissao do arquivo original.
           {% if opened.crlf %} Este arquivo usa fim de linha CRLF &mdash; sera salvo assim.{% endif %}
         </p>
+      </form>
+      <form method="post" action="{{ url_for('config_files_edit', sid=server.id) }}" class="form-actions">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="path" value="{{ opened.path }}">
+        <button class="btn ghost small" type="submit">Editar campo a campo</button>
+        <span class="muted small">
+          abre este arquivo como formulario e o fixa na tela <strong>Config</strong>
+        </span>
       </form>
       {% endif %}
     {% else %}
