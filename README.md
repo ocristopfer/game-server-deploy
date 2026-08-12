@@ -102,6 +102,7 @@ Layout de referencia (o do `.env.example`):
 | 211 | palworld | 192.168.2.21 |
 | 212 | satisfactory | 192.168.2.22 |
 | 213 | enshrouded | 192.168.2.23 |
+| 214 | dayz | 192.168.2.24 |
 | 219 | fallback / `-AppId` | 192.168.2.29 |
 
 ## Jogos definidos
@@ -112,6 +113,7 @@ Layout de referencia (o do `.env.example`):
 | Palworld | `.\deploy-game.ps1 -Game palworld` | 8211/udp, 27015/udp |
 | Satisfactory | `.\deploy-game.ps1 -Game satisfactory` | 7777/udp, 7777/tcp |
 | Enshrouded | `.\deploy-game.ps1 -Game enshrouded` | 15636/udp, 15637/udp |
+| DayZ | `.\deploy-game.ps1 -Game dayz` | 2302-2304/udp, 27016/udp |
 
 ### RuneScape: Dragonwilds — notas
 
@@ -172,6 +174,61 @@ Layout de referencia (o do `.env.example`):
 - O primeiro start demora mais que o normal: o Wine monta o prefixo e o jogo gera o mundo.
   Acompanhe com `game-logs`
 - Saves: `/opt/game/savegame/` (prefixo do Wine em `/home/steam/.wine-enshrouded`)
+
+### DayZ — notas
+
+- App do servidor dedicado: `223350` (build **nativo Linux**, binario `DayZServer`)
+- **Unico jogo daqui que nao baixa com login anonimo.** O depot do servidor exige uma
+  conta Steam que **possua o DayZ** — veja [Jogos que exigem conta Steam](#jogos-que-exigem-conta-steam)
+- Portas: **2302/UDP** (jogo), **2303** e **2304/UDP** (engine/Steam) e **27016/UDP**
+  (`steamQueryPort`). Sem a 27016 o servidor nao aparece no navegador do cliente.
+  Tudo UDP. No painel, cadastre **27016** como porta de consulta — o DayZ publica A2S
+- O deploy cria o symlink `~steam/.steam/sdk64/steamclient.so`, as pastas `profiles/` e
+  `battleye/`, e semeia o `serverDZ.cfg` (o exemplo que vem no pacote nao tras `steamQueryPort`)
+- Config: `/opt/game/serverDZ.cfg` — `hostname`, `password` (entrada), `passwordAdmin`,
+  `maxPlayers`, e o `template` da missao (`dayzOffline.chernarusplus` ou `dayzOffline.enoch`
+  para Livonia). Pare o servidor antes de editar (`systemctl stop dayz`)
+- Persistencia: `/opt/game/mpmissions/dayzOffline.chernarusplus/storage_1/` — o numero segue
+  o `instanceId` do `serverDZ.cfg`. Logs e stats em `/opt/game/profiles/`
+- Memoria: 8GB (vanilla com ~20 jogadores fica perto de 4GB; mods passam disso)
+
+## Jogos que exigem conta Steam
+
+Quase todo servidor dedicado baixa com `+login anonymous`. O DayZ nao: o depot esta atras
+de uma conta que possua o jogo. Esses jogos marcam `STEAM_ANONYMOUS=0` no `games/<jogo>.env`,
+e o deploy le as credenciais do `.env` — **nunca do `games/*.env`, que vai para o git**:
+
+```ini
+STEAM_USER=conta-dedicada
+STEAM_PASS=senha-da-conta
+```
+
+Se a conta usa Steam Guard, o codigo vale poucos segundos — passe na hora do deploy em vez
+de deixar no `.env`:
+
+```powershell
+.\deploy-game.ps1 -Game dayz -SteamGuardCode 12345
+```
+
+Sem credencial nenhuma, o deploy para antes de enviar qualquer coisa:
+
+```
+THROW: O servidor de dayz nao esta disponivel por login anonimo na Steam.
+       Preencha STEAM_USER e STEAM_PASS no .env (conta que POSSUA o jogo) ou use -Interactive.
+```
+
+Detalhes de como a senha e tratada:
+
+- Ela so aparece na **primeira** instalacao. Depois disso o SteamCMD guarda o token em
+  `~steam/Steam/config/config.vdf` dentro do CT, e o `update-game`/`check-game-update`
+  usam so `+login <usuario>` — a senha **nao** fica gravada nos scripts do container
+- O `deploy.env` enviado ao Proxmox vai para `/root/game-deploy` com `chmod 600`, e a
+  copia local em `%TEMP%` e apagada no fim do deploy
+- Se o token expirar, o update automatico falha (nao trava: roda com `timeout` e sem stdin).
+  Rode o deploy de novo com `-SteamGuardCode` para renovar
+- Use uma conta **dedicada** ao servidor, nao a sua principal
+
+> Recomendado: `-Interactive` pergunta a senha sem ecoar na tela, em vez de deixa-la no `.env`.
 
 ## Comandos uteis
 

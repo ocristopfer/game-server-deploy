@@ -5,6 +5,9 @@ param(
     [string]$AppId = "",
     # Modo interativo: pergunta cada valor (o .env vira apenas default dos prompts)
     [switch]$Interactive,
+    # Codigo do Steam Guard (jogos cujo servidor exige conta Steam, ex: dayz).
+    # O codigo expira rapido - passe na hora do deploy em vez de deixar no .env.
+    [string]$SteamGuardCode = "",
     [string]$ProxmoxHost = "",
     [string]$EnvFile = "",
     [string]$RemoteBundleDir = "/root/game-deploy"
@@ -60,6 +63,20 @@ function Get-ScopedOwners($Map, [string]$Key, [string]$SelfSuffix) {
 # "192.168.2.20/24" -> "192.168.2.20" (compara IP ignorando a mascara)
 function Get-IpOnly([string]$Cidr) {
     return (($Cidr -split "/")[0]).Trim()
+}
+
+# Pergunta sem ecoar na tela (senha da conta Steam). Vazio = mantem o default.
+function AskSecret([string]$Label, [string]$Default) {
+    $marca = ""
+    if ($Default -ne "") { $marca = " [Enter mantem o valor do .env]" }
+    $sec = Read-Host "$Label$marca" -AsSecureString
+    if ($sec.Length -eq 0) { return $Default }
+    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+    try {
+        return [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+    } finally {
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
 }
 
 function Ask([string]$Label, [string]$Default) {
@@ -135,6 +152,12 @@ if ($ProxmoxHost -eq "") {
     $ProxmoxHost = if ($cfg.ContainsKey("PROXMOX_HOST")) { $cfg["PROXMOX_HOST"] } else { "" }
 }
 
+# Jogos cujo depot do servidor exige conta Steam (STEAM_ANONYMOUS=0 no games/<jogo>.env).
+# As credenciais vivem no .env/prompt - nunca no games/*.env, que vai para o git.
+$SteamAnon = $true
+if ($GameEnvContent -match '(?m)^\s*STEAM_ANONYMOUS\s*=\s*"?0') { $SteamAnon = $false }
+if ($SteamGuardCode -ne "") { $cfg["STEAM_GUARD_CODE"] = $SteamGuardCode }
+
 if ($Interactive) {
     Write-Host "`n=== Modo interativo (Enter aceita o valor entre colchetes) ===`n" -ForegroundColor Cyan
     $ProxmoxHost            = Ask "Host Proxmox (ssh root)" $ProxmoxHost
@@ -152,6 +175,12 @@ if ($Interactive) {
     $cfg["ROOTFS_SIZE_GB"]  = Ask "Disco GB (vazio = recomendado do jogo)" ($cfg["ROOTFS_SIZE_GB"])
     $cfg["CT_PASSWORD"]     = Ask "Senha root do CT" ($cfg["CT_PASSWORD"])
     $cfg["RECREATE_CT"]     = Ask "Recriar CT se existir? (0/1)" (Get-Cfg $cfg "RECREATE_CT" "0")
+    if (-not $SteamAnon) {
+        Write-Host "`n$GameKey nao aceita login anonimo: informe uma conta Steam que POSSUA o jogo." -ForegroundColor Yellow
+        $cfg["STEAM_USER"]       = Ask       "Conta Steam (login)" (Get-Cfg $cfg "STEAM_USER")
+        $cfg["STEAM_PASS"]       = AskSecret "Senha da conta Steam" (Get-Cfg $cfg "STEAM_PASS")
+        $cfg["STEAM_GUARD_CODE"] = Ask       "Codigo do Steam Guard (vazio se a conta nao usa)" (Get-Cfg $cfg "STEAM_GUARD_CODE")
+    }
 } else {
     if (-not (Test-Path $EnvFile)) {
         throw "Modo automatico requer o arquivo .env ($EnvFile). Copie o .env.example ou use -Interactive."
@@ -166,6 +195,18 @@ foreach ($required in @("CTID", "STORAGE", "BRIDGE", "IP_CIDR")) {
 }
 if ($cfg["IP_CIDR"] -ne "dhcp" -and (Get-Cfg $cfg "GATEWAY") -eq "") {
     throw "GATEWAY obrigatorio quando IP_CIDR nao e dhcp"
+}
+
+if (-not $SteamAnon) {
+    foreach ($k in @("STEAM_USER","STEAM_PASS")) {
+        if ((Get-Cfg $cfg $k) -eq "") {
+            throw ("O servidor de $GameKey nao esta disponivel por login anonimo na Steam. " +
+                   "Preencha STEAM_USER e STEAM_PASS no .env (conta que POSSUA o jogo) ou use -Interactive. Faltando: $k")
+        }
+    }
+    if ((Get-Cfg $cfg "STEAM_GUARD_CODE") -eq "") {
+        Write-Host "Sem STEAM_GUARD_CODE. Se a conta usa Steam Guard, o login vai falhar - repita com -SteamGuardCode <codigo>." -ForegroundColor Yellow
+    }
 }
 
 # ----- Guarda contra colisao de container -----
@@ -212,7 +253,7 @@ Copy-Item (Join-Path $ScriptDir "provision-game-lxc.sh") (Join-Path $BundleDir "
 Write-LfFile (Join-Path $BundleDir "game.env") $GameEnvContent
 
 $deployLines = @()
-foreach ($key in @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMPLATE_PATTERN","BRIDGE","IP_CIDR","GATEWAY","CT_PASSWORD","TZ","MEMORY","CORES","ROOTFS_SIZE_GB","SWAP","AUTO_UPDATE","UPDATE_SCHEDULE","RECREATE_CT","PANEL_PUBKEY")) {
+foreach ($key in @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMPLATE_PATTERN","BRIDGE","IP_CIDR","GATEWAY","CT_PASSWORD","TZ","MEMORY","CORES","ROOTFS_SIZE_GB","SWAP","AUTO_UPDATE","UPDATE_SCHEDULE","RECREATE_CT","PANEL_PUBKEY","STEAM_USER","STEAM_PASS","STEAM_GUARD_CODE")) {
     if ($cfg.ContainsKey($key) -and $cfg[$key] -ne "") {
         $deployLines += "$key=`"$($cfg[$key])`""
     }
@@ -230,8 +271,14 @@ $bundleFiles = @(Get-ChildItem -Path $BundleDir -File | ForEach-Object { $_.Full
 scp @bundleFiles "root@${ProxmoxHost}:$RemoteBundleDir/"
 if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para root@$ProxmoxHost" }
 
+# deploy.env leva senha do CT e, em jogos como o dayz, a senha da conta Steam
+ssh "root@$ProxmoxHost" "chmod 700 '$RemoteBundleDir' && chmod 600 '$RemoteBundleDir/deploy.env'" | Out-Null
+
 Write-Host "Executando provisionamento no Proxmox (o download do jogo pode demorar)...`n" -ForegroundColor Cyan
 ssh "root@$ProxmoxHost" "cd '$RemoteBundleDir' && bash ./provision-game-lxc.sh"
 if ($LASTEXITCODE -ne 0) { throw "Provisionamento falhou no host Proxmox (veja a saida acima)" }
+
+# O bundle local tem copia do deploy.env (senhas) - nao deixa sobrando no %TEMP%
+if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 
 Write-Host "Deploy finalizado." -ForegroundColor Green

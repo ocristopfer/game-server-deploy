@@ -23,7 +23,10 @@ warn() { printf '\n[WARN] %s\n' "$*" >&2; }
 die() { printf '\n[ERROR] %s\n' "$*" >&2; exit 1; }
 
 on_error() {
-  die "Provisionamento falhou na linha ${1} executando: ${2}"
+  local cmd="$2"
+  # O comando que falhou pode ser a linha do SteamCMD com a senha da conta Steam
+  [[ -n "${STEAM_PASS:-}" ]] && cmd="${cmd//${STEAM_PASS}/******}"
+  die "Provisionamento falhou na linha ${1} executando: ${cmd}"
 }
 trap 'on_error "${LINENO}" "${BASH_COMMAND}"' ERR
 
@@ -104,6 +107,39 @@ resolve_variables() {
     STEAMCMD_PLATFORM_ARG="+@sSteamCmdForcePlatformType ${STEAM_PLATFORM} "
   else
     STEAMCMD_PLATFORM_ARG=""
+  fi
+
+  # Quase todo servidor dedicado baixa com login anonimo. Alguns (DayZ) tem o depot
+  # do servidor atras de uma conta que possua o jogo - o game.env marca com
+  # STEAM_ANONYMOUS=0 e as credenciais vem do .env (deploy.env), nunca do game.env.
+  STEAM_ANONYMOUS="${STEAM_ANONYMOUS:-1}"
+  STEAM_USER="${STEAM_USER:-}"
+  STEAM_PASS="${STEAM_PASS:-}"
+  STEAM_GUARD_CODE="${STEAM_GUARD_CODE:-}"
+
+  if [[ "$STEAM_ANONYMOUS" == "1" ]]; then
+    STEAMCMD_LOGIN="+login anonymous"
+    STEAMCMD_LOGIN_CACHED="+login anonymous"
+    STEAMCMD_GUARD=""
+    STEAMCMD_TIMEOUT_UPDATE=""
+    STEAMCMD_TIMEOUT_INFO=""
+  else
+    [[ -n "$STEAM_USER" ]] || die "${GAME_DISPLAY_NAME} nao aceita login anonimo na Steam. Preencha STEAM_USER e STEAM_PASS no .env com uma conta que POSSUA o jogo."
+    [[ -n "$STEAM_PASS" ]] || die "STEAM_PASS vazio (necessario para o primeiro login de ${STEAM_USER} na Steam)."
+    # Os valores entram num `su - steam -c '...'`; uma aspa simples quebraria a linha
+    case "${STEAM_USER}${STEAM_PASS}${STEAM_GUARD_CODE}" in
+      *\'*) die "STEAM_USER/STEAM_PASS/STEAM_GUARD_CODE nao podem conter aspa simples (')." ;;
+    esac
+    STEAMCMD_GUARD=""
+    [[ -n "$STEAM_GUARD_CODE" ]] && STEAMCMD_GUARD=" ${STEAM_GUARD_CODE}"
+    STEAMCMD_LOGIN="+login ${STEAM_USER} ${STEAM_PASS}${STEAMCMD_GUARD}"
+    # Depois do primeiro login o SteamCMD guarda o token em ~steam/Steam/config/config.vdf.
+    # Os helpers dentro do CT usam so o usuario - a senha nao fica gravada la dentro.
+    STEAMCMD_LOGIN_CACHED="+login ${STEAM_USER}"
+    # Sem token valido o SteamCMD pediria a senha e ficaria parado; o timer nao tem
+    # quem responda, entao os helpers rodam com prazo e sem stdin.
+    STEAMCMD_TIMEOUT_UPDATE="timeout 7200 "
+    STEAMCMD_TIMEOUT_INFO="timeout 300 "
   fi
 
   if [[ "$IP_CIDR" == "dhcp" ]]; then
@@ -259,16 +295,23 @@ install_game_in_ct() {
   if [[ -n "$STEAM_PLATFORM" ]]; then
     msg "Forcando plataforma do SteamCMD: ${STEAM_PLATFORM}"
   fi
+  if [[ "$STEAM_ANONYMOUS" != "1" ]]; then
+    msg "Login na Steam como ${STEAM_USER} (este app nao aceita login anonimo)"
+  fi
   run_ct "install -d -o steam -g steam ${GAME_DIR}"
 
   local attempt
   for attempt in 1 2 3; do
-    if run_ct "su - steam -c '${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}+force_install_dir ${GAME_DIR} +login anonymous +app_update ${STEAM_APP_ID} validate +quit'"; then
+    if run_ct "su - steam -c '${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}+force_install_dir ${GAME_DIR} ${STEAMCMD_LOGIN} +app_update ${STEAM_APP_ID} validate +quit'"; then
       return 0
     fi
     warn "SteamCMD falhou (tentativa ${attempt}/3), tentando novamente em 10s"
     sleep 10
   done
+  if [[ "$STEAM_ANONYMOUS" != "1" ]]; then
+    warn "Login com conta: se a saida acima fala em Steam Guard / Two-factor, rode o deploy"
+    warn "de novo com o codigo do momento: .\\deploy-game.ps1 -Game ${GAME_KEY} -SteamGuardCode 12345"
+  fi
   die "SteamCMD nao conseguiu instalar o app ${STEAM_APP_ID} apos 3 tentativas"
 }
 
@@ -303,7 +346,7 @@ render_update_helper() {
 # Atualiza ${GAME_DISPLAY_NAME} e reinicia o servico.
 set -Eeuo pipefail
 systemctl stop ${SERVICE_NAME} || true
-su - steam -c "${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}+force_install_dir ${GAME_DIR} +login anonymous +app_update ${STEAM_APP_ID} validate +quit"
+${STEAMCMD_TIMEOUT_UPDATE}su - steam -c "${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}+force_install_dir ${GAME_DIR} ${STEAMCMD_LOGIN_CACHED} +app_update ${STEAM_APP_ID} validate +quit" </dev/null
 systemctl start ${SERVICE_NAME}
 echo "Atualizacao concluida."
 EOF
@@ -329,7 +372,7 @@ if [[ -z "\$installed" ]]; then
   exec /usr/local/bin/update-game
 fi
 
-latest=\$(su - steam -c "${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}+login anonymous +app_info_update 1 +app_info_print ${STEAM_APP_ID} +quit" \
+latest=\$(${STEAMCMD_TIMEOUT_INFO}su - steam -c "${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}${STEAMCMD_LOGIN_CACHED} +app_info_update 1 +app_info_print ${STEAM_APP_ID} +quit" </dev/null \
   | tr -d '\r' \
   | sed -n '/"branches"/,\$p' \
   | sed -n '/"public"/,/}/p' \
