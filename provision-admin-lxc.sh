@@ -86,6 +86,8 @@ validate_host_requirements() {
   need_cmd pveam
   [[ -d "$APP_SRC_DIR" ]] || die "Diretorio da aplicacao nao encontrado: $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/app.py" ]] || die "app.py nao encontrado em $APP_SRC_DIR"
+  # O app importa este modulo no topo: sem ele o painel nem inicia.
+  [[ -f "$APP_SRC_DIR/gameconf.py" ]] || die "gameconf.py nao encontrado em $APP_SRC_DIR"
   # Sem estes o painel sobe e so quebra no navegador com 'TemplateNotFound'.
   [[ -f "$APP_SRC_DIR/templates/login.html" ]] || die "templates/ ausente ou incompleto em $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/templates/base.html" ]] || die "templates/base.html nao encontrado em $APP_SRC_DIR"
@@ -198,8 +200,13 @@ push_application() {
   # 'pct exec', mas deterministico: aquele stream binario podia nao ser entregue, o tar
   # do outro lado extraia zero arquivos e ainda assim saia com 0 — o deploy passava e o
   # painel so quebrava em runtime com 'TemplateNotFound'.
+  # Todos os .py, nao so o app.py: o painel ja e mais de um modulo (gameconf.py, o
+  # leitor/gravador da tela Config) e um faltando derruba o import do app inteiro.
   local src
-  pct push "$CTID" "$APP_SRC_DIR/app.py" "${APP_DIR}/app.py" --perms 0644
+  for src in "$APP_SRC_DIR"/*.py; do
+    [[ -f "$src" ]] || continue
+    pct push "$CTID" "$src" "${APP_DIR}/$(basename "$src")" --perms 0644
+  done
   for src in "$APP_SRC_DIR"/templates/*.html; do
     [[ -f "$src" ]] || continue
     pct push "$CTID" "$src" "${APP_DIR}/templates/$(basename "$src")" --perms 0644
@@ -211,8 +218,8 @@ push_application() {
   run_ct "chown -R root:root ${APP_DIR}"
 
   # Falhar aqui e melhor do que descobrir pela tela de erro do navegador.
-  run_ct "test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/static/style.css && test -f ${APP_DIR}/static/terminal.js && test -f ${APP_DIR}/static/metrics.js" \
-    || die "Templates/estaticos nao chegaram em ${APP_DIR} (veja a saida do pct push acima)"
+  run_ct "test -f ${APP_DIR}/app.py && test -f ${APP_DIR}/gameconf.py && test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/static/style.css && test -f ${APP_DIR}/static/terminal.js && test -f ${APP_DIR}/static/metrics.js" \
+    || die "Arquivos da aplicacao nao chegaram em ${APP_DIR} (veja a saida do pct push acima)"
   msg "Publicados: $(run_ct "ls ${APP_DIR}/templates | wc -l" | tr -d '\r') templates"
 }
 

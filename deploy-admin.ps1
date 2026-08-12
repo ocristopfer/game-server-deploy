@@ -205,8 +205,10 @@ function Invoke-DirectDeploy([string]$Target, [string]$SrcDir, [string]$Port) {
     Invoke-Ssh $Target "rm -rf '$remoteTmp' && mkdir -p '$remoteTmp/templates' '$remoteTmp/static'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $remoteTmp em root@$Target" }
 
-    Invoke-Scp @((Join-Path $SrcDir "app.py")) "root@${Target}:$remoteTmp/app.py"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar app.py" }
+    # Todos os .py, nao so o app.py: o painel ja tem mais de um modulo (gameconf.py, o
+    # leitor/gravador da tela Config) e um faltando derruba o import do app inteiro.
+    Invoke-Scp @((Join-Path $SrcDir "*.py")) "root@${Target}:$remoteTmp/"
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o codigo do painel (*.py)" }
     Invoke-Scp @((Join-Path $SrcDir "templates\*.html")) "root@${Target}:$remoteTmp/templates/"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os templates" }
     Invoke-Scp @((Join-Path $SrcDir "static\*")) "root@${Target}:$remoteTmp/static/"
@@ -218,9 +220,11 @@ function Invoke-DirectDeploy([string]$Target, [string]$SrcDir, [string]$Port) {
 set -e
 install -d /opt/gamepanel/templates /opt/gamepanel/static
 rm -f /opt/gamepanel/templates/*.html /opt/gamepanel/static/*
-install -m 0644 /tmp/gamepanel-deploy/app.py /opt/gamepanel/app.py
+install -m 0644 /tmp/gamepanel-deploy/*.py /opt/gamepanel/
 install -m 0644 /tmp/gamepanel-deploy/templates/*.html /opt/gamepanel/templates/
 install -m 0644 /tmp/gamepanel-deploy/static/* /opt/gamepanel/static/
+# Bytecode da versao anterior: um .pyc de modulo que sumiu ainda seria importavel.
+rm -rf /opt/gamepanel/__pycache__
 chown -R root:root /opt/gamepanel
 rm -rf /tmp/gamepanel-deploy
 systemctl restart gamepanel.service
@@ -283,6 +287,8 @@ $AdminSrc = Join-Path $ScriptDir "admin"
 if (-not (Test-Path $AdminSrc)) { throw "Diretorio 'admin' nao encontrado em $ScriptDir" }
 foreach ($file in Get-ChildItem -Path $AdminSrc -File -Recurse) {
     $relative = $file.FullName.Substring($AdminSrc.Length).TrimStart('\', '/')
+    # __pycache__ e binario (e o Copy-AsLf converte fim de linha): fica de fora.
+    if ($relative -like "__pycache__*" -or $relative -like "*\__pycache__\*") { continue }
     Copy-AsLf $file.FullName (Join-Path (Join-Path $BundleDir "admin") $relative)
 }
 
