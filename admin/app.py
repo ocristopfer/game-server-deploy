@@ -1145,6 +1145,7 @@ def probe_http_ports(server: sqlite3.Row, portas: list[int]) -> tuple[list[dict]
             "url": f"{esquema}://127.0.0.1:{porta}{caminho}",
         })
 
+    achados = _resume_genericos(achados)
     # JSON primeiro, depois quem pediu senha (401/403 = "existe API aqui").
     achados.sort(key=lambda a: (
         0 if "json" in a["content_type"] else 1,
@@ -1153,6 +1154,32 @@ def probe_http_ports(server: sqlite3.Row, portas: list[int]) -> tuple[list[dict]
     ))
     mudas = [p for p in portas if p not in responderam]
     return achados, mudas, ""
+
+
+# Status que indicam "achei alguma coisa": 200 e resposta, 401/403 e "existe API aqui,
+# ela so quer senha". Qualquer outra coisa e um servidor HTTP que nao conhece a rota.
+STATUS_UTEIS = (200, 401, 403)
+
+
+def _resume_genericos(achados: list[dict]) -> list[dict]:
+    """Porta que respondeu 404 em tudo vira UMA linha, nao sete.
+
+    Um processo qualquer subindo um HTTP numa porta alta (o cliente da Steam faz isso)
+    enche a tela de linhas inuteis e some com o achado de verdade. Aqui ele fica como
+    uma nota so, marcada para a tela nao oferecer "usar esta URL".
+    """
+    por_porta: dict[int, list[dict]] = {}
+    for item in achados:
+        por_porta.setdefault(item["port"], []).append(item)
+
+    saida: list[dict] = []
+    for itens in por_porta.values():
+        if any(i["status"] in STATUS_UTEIS for i in itens):
+            saida.extend(i for i in itens if i["status"] in STATUS_UTEIS)
+            continue
+        raiz = next((i for i in itens if i["path"] == "/"), itens[0])
+        saida.append({**raiz, "generico": True})
+    return saida
 
 
 def probe_ports(host: str, portas: list[int]) -> list[dict]:
@@ -1796,6 +1823,9 @@ def _aba_http(server: sqlite3.Row, http: dict, testar: bool) -> dict:
     _udp, candidatas, aviso = candidate_ports(server)
     achados, mudas, erro_probe = probe_http_ports(server, candidatas)
     saida = {"achados": achados, "mudas": mudas, "aviso": aviso or erro_probe,
+             # Achado que vale um clique: porta que respondeu numa rota conhecida. Sem
+             # nenhum, a tela explica que a API costuma vir desligada de fabrica.
+             "tem_api": any(not a.get("generico") for a in achados),
              "teste_http": None, "erro_http": ""}
     if not testar:
         return saida
@@ -1850,7 +1880,8 @@ def players_setup(sid: int):
     leave_re = request.args.get("leave_re", server["leave_re"])
 
     dados = {"portas": [], "aviso": "", "achados": [], "mudas": [], "amostras": [],
-             "teste": None, "teste_http": None, "erro_log": "", "erro_http": ""}
+             "tem_api": False, "teste": None, "teste_http": None,
+             "erro_log": "", "erro_http": ""}
     if aba == "http":
         dados.update(_aba_http(server, http, testar))
     elif aba == "log":

@@ -84,15 +84,20 @@
       <tr>
         <td><code>{{ a.scheme }}://127.0.0.1:{{ a.port }}{{ a.path }}</code></td>
         <td>
-          {% if a.status == 200 %}<span class="badge on">200</span>
+          {% if a.generico %}<span class="muted">{{ a.status }} em tudo</span>
+          {% elif a.status == 200 %}<span class="badge on">200</span>
           {% elif a.status in (401, 403) %}<span class="badge">{{ a.status }} pede senha</span>
           {% else %}<span class="muted">{{ a.status }}</span>{% endif %}
         </td>
         <td class="muted small">{{ a.content_type }}</td>
         <td>
-          <a class="btn ghost" href="{{ url_for('players_setup', sid=server.id, aba='http',
-             http_url=a.url, http_auth=http.http_auth, http_body=http.http_body,
-             http_list_path=http.http_list_path, http_count_path=http.http_count_path) }}">Usar esta URL</a>
+          {% if a.generico %}
+            <span class="muted small">fala HTTP, mas nao e API de jogo</span>
+          {% else %}
+            <a class="btn ghost" href="{{ url_for('players_setup', sid=server.id, aba='http',
+               http_url=a.url, http_auth=http.http_auth, http_body=http.http_body,
+               http_list_path=http.http_list_path, http_count_path=http.http_count_path) }}">Usar esta URL</a>
+          {% endif %}
         </td>
       </tr>
       {% else %}
@@ -103,8 +108,18 @@
   {% if mudas %}
   <p class="muted small">
     Sem resposta HTTP em: {% for p in mudas %}<code>{{ p }}/tcp</code>{% if not loop.last %}, {% endif %}{% endfor %}.
-    Pode ser porta de jogo pura, ou uma API que precisa ser ligada na configuracao
-    (no Palworld, <code>RESTAPIEnabled=True</code>).
+  </p>
+  {% endif %}
+  {% if not tem_api %}
+  <p class="flash">
+    <strong>Nenhuma API de jogo respondeu.</strong> Quase sempre e porque ela vem
+    <em>desligada</em> de fabrica e precisa ser ligada na configuracao do servidor &mdash;
+    a porta so passa a existir depois disso. No <strong>Palworld</strong>, no
+    <code>PalWorldSettings.ini</code> (dentro de <code>OptionSettings=(...)</code>):
+    <code>RESTAPIEnabled=True</code>, <code>RESTAPIPort=8212</code> e uma
+    <code>AdminPassword</code> forte. Pare o servidor, edite, suba de novo e recarregue
+    esta pagina. Se o jogo simplesmente nao tem API (RuneScape Dragonwilds nao tem),
+    use a aba <a href="{{ url_for('players_setup', sid=server.id, aba='log') }}">Pelo log</a>.
   </p>
   {% endif %}
 </div>
