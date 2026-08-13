@@ -28,8 +28,8 @@
   <p class="muted small">
     O painel leu de <code>/proc</code> quais portas UDP estao abertas dentro do container
     e <strong>qual processo abriu cada uma</strong>, e mandou um <code>A2S_INFO</code> em
-    todas. Porta sem dono na coluna &quot;Aberta por&quot; nao foi detectada: e um chute
-    conhecido ou veio do cadastro, e serve para quando o servidor esta parado.
+    todas. As detectadas vem primeiro; as marcadas como <em>chute</em> nao estavam abertas
+    e so servem para quando o servidor esta parado.
   </p>
   {% if aviso %}<p class="flash error">{{ aviso }}</p>{% endif %}
   <table class="jobs">
@@ -68,11 +68,25 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if udp_mudas %}
+  <p class="flash">
+    <strong>Este jogo nao publica consulta UDP.</strong> O processo do servidor abriu
+    {{ udp_do_jogo }} porta{{ 's' if udp_do_jogo > 1 }} UDP e
+    nenhuma respondeu ao <code>A2S_INFO</code> &mdash; nao e porta errada nem firewall:
+    sao as portas do proprio jogo, e elas nao falam o protocolo. A contagem que aparece
+    no navegador do jogo, quando existe, vem do servico da Steam/Epic e nao do servidor.
+    Confira a aba <a href="{{ url_for('players_setup', sid=server.id, aba='http') }}">API
+    HTTP</a> (varios jogos trocaram a query UDP por uma API em TCP) e, se ali tambem nao
+    houver nada, a contagem so pode sair do
+    <a href="{{ url_for('players_setup', sid=server.id, aba='log') }}">log</a>.
+  </p>
+  {% else %}
   <p class="muted small">
     Nenhuma respondeu? Veja a aba
     <a href="{{ url_for('players_setup', sid=server.id, aba='http') }}">API HTTP</a> &mdash;
     varios jogos trocaram a query UDP por uma API de administracao em TCP.
   </p>
+  {% endif %}
 </div>
 
 {% elif aba == 'http' %}

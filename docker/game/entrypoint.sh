@@ -107,7 +107,18 @@ main() {
     echo "==> subindo o query A2S falso na porta ${GAME_QUERY_PORT:-27015}/udp"
     setsid nohup python3 /usr/local/bin/fake-a2s >/var/log/fake-a2s.log 2>&1 &
   else
-    echo "==> sem query A2S (jogo que nao publica consulta na rede)"
+    # O jogo sem query A2S NAO fica sem porta: ele abre a porta do jogo e simplesmente
+    # nao responde a consulta (o RuneScape Dragonwilds e assim). Abrir um socket UDP mudo
+    # aqui reproduz isso, e e o que faz o assistente do painel concluir "o processo do
+    # jogo abriu a porta e nao respondeu" em vez de "nao achei porta nenhuma".
+    echo "==> sem query A2S: abrindo ${GAME_UDP_PORT:-7777}/udp mudo (como o jogo real)"
+    setsid nohup python3 -c "
+import socket, time
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.bind(('0.0.0.0', ${GAME_UDP_PORT:-7777}))
+while True:
+    time.sleep(3600)
+" >/var/log/fake-udp-mudo.log 2>&1 &
   fi
 
   # API REST de administracao, no formato da do Palworld. GAME_API=0 imita o jogo que

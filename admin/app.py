@@ -1898,8 +1898,17 @@ def api_server_players(sid: int):
 def _aba_porta(server: sqlite3.Row) -> dict:
     """Aba 1: dispara A2S em cada porta UDP que o container esta escutando."""
     candidatas, _tcp, donos, aviso = candidate_ports(server)
-    portas = probe_ports(server["host"], candidatas[:12])
-    return {"portas": _com_dono(portas, donos, "udp"), "aviso": aviso}
+    portas = _com_dono(probe_ports(server["host"], candidatas[:12]), donos, "udp")
+    # Porta aberta pelo processo do jogo e que nao respondeu A2S e uma conclusao, nao um
+    # erro: o jogo simplesmente nao publica consulta. Sem essa contagem a tela so diria
+    # "sem resposta" e deixaria a duvida entre "porta errada" e "nao existe consulta".
+    do_jogo = [p for p in portas if p["origem"] == "detectada" and not p["infra"]]
+    return {
+        "portas": portas,
+        "aviso": aviso,
+        "udp_do_jogo": len(do_jogo),
+        "udp_mudas": bool(do_jogo) and not any(p["ok"] for p in do_jogo),
+    }
 
 
 def _aba_http(server: sqlite3.Row, http: dict, testar: bool) -> dict:
@@ -1966,8 +1975,8 @@ def players_setup(sid: int):
     leave_re = request.args.get("leave_re", server["leave_re"])
 
     dados = {"portas": [], "aviso": "", "achados": [], "mudas": [], "amostras": [],
-             "tem_api": False, "teste": None, "teste_http": None,
-             "erro_log": "", "erro_http": ""}
+             "tem_api": False, "udp_do_jogo": 0, "udp_mudas": False,
+             "teste": None, "teste_http": None, "erro_log": "", "erro_http": ""}
     if aba == "http":
         dados.update(_aba_http(server, http, testar))
     elif aba == "log":

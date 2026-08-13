@@ -68,8 +68,11 @@ services:
     environment:
       GAME_KIND: dragonwilds
       GAME_SERVICE: dragonwilds.service
-      # Imita o jogo real: nao publica consulta A2S, so anuncia entradas e saidas no log.
+      # Imita o jogo real: abre a 7777/udp mas NAO responde consulta A2S, e so anuncia
+      # entradas e saidas no log. E o caso em que o assistente do painel tem que concluir
+      # "o processo do jogo abriu a porta e nao respondeu" e mandar para a aba do log.
       GAME_QUERY_A2S: "0"
+      GAME_UDP_PORT: "7777"
       GAME_LOG_PLAYERS: "1"
     volumes:
       - panel-keys:/keys:ro
