@@ -218,15 +218,22 @@ table.jobs tr:last-child td { border-bottom: none; }
 .filegrid { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 18px; align-items: start; }
 .filegrid .card { margin-bottom: 0; }
 .filelist { list-style: none; margin: 0; padding: 0; max-height: 62vh; overflow: auto; }
+/* Nome e "tamanho . data . acoes" dividem a linha, mas com wrap: quando o nome e
+   comprido a segunda parte desce para baixo dele em vez de espremer o link. */
 .filelist li {
-  display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
-  padding: 5px 6px; border-radius: 6px; font-size: .9rem;
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px;
+  align-items: baseline; padding: 5px 6px; border-radius: 6px; font-size: .9rem;
 }
 .filelist li:hover { background: var(--panel-2); }
 .filelist li.open { background: var(--panel-2); outline: 1px solid var(--line); }
 .filelist li.dir a { font-weight: 600; }
+/* A base larga e o que faz o nome ficar legivel: sem ela o flex encolhia o link ate
+   a largura de uma letra e o nome descia em coluna, uma letra por linha. */
+.filelist li > a { flex: 1 1 60%; min-width: 0; overflow-wrap: anywhere; }
 .filelist li a { overflow-wrap: anywhere; }
-.filelist .muted { white-space: nowrap; }
+/* A meta pode quebrar entre suas partes; o "tamanho . data" e que fica inteiro. */
+.filelist .muted { white-space: normal; }
+.filelist .nowrap { white-space: nowrap; }
 /* "baixar"/"apagar" so aparecem na linha sob o cursor, senao a lista vira um mural
    de links. O apagar e um POST (CSRF), entao e um button.link dentro de um form
    inline - com a cor de acao destrutiva. */

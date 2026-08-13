@@ -38,7 +38,7 @@
         <li>
           <a href="{{ url_for('files', sid=server.id, file=m.path) }}">{{ m.path }}</a>
           <span class="muted small">
-            {{ m.size | tamanho }} &middot; {{ m.mtime }}
+            <span class="nowrap">{{ m.size | tamanho }} &middot; {{ m.mtime }}</span>
             <a class="dl" title="Baixar {{ m.path }}"
                href="{{ url_for('files_download', sid=server.id, path=m.path) }}">baixar</a>
             <form method="post" action="{{ url_for('files_delete', sid=server.id) }}"
@@ -68,7 +68,7 @@
             <a href="{{ url_for('files', sid=server.id, file=e.path) }}">{{ e.name }}</a>
           {% endif %}
           <span class="muted small">
-            {{ '-' if e.dir else e.size | tamanho }} &middot; {{ e.mtime }}
+            <span class="nowrap">{{ '-' if e.dir else e.size | tamanho }} &middot; {{ e.mtime }}</span>
             {% if not e.dir %}
               <a class="dl" title="Baixar {{ e.name }}"
                  href="{{ url_for('files_download', sid=server.id, path=e.path) }}">baixar</a>
