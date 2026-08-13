@@ -41,6 +41,12 @@
             {{ m.size | tamanho }} &middot; {{ m.mtime }}
             <a class="dl" title="Baixar {{ m.path }}"
                href="{{ url_for('files_download', sid=server.id, path=m.path) }}">baixar</a>
+            <form method="post" action="{{ url_for('files_delete', sid=server.id) }}"
+                  class="inline-del js-del" data-alvo="{{ m.path }}">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <input type="hidden" name="path" value="{{ m.path }}">
+              <button class="link" type="submit" title="Apagar {{ m.path }}">apagar</button>
+            </form>
           </span>
         </li>
         {% endfor %}
@@ -67,6 +73,15 @@
               <a class="dl" title="Baixar {{ e.name }}"
                  href="{{ url_for('files_download', sid=server.id, path=e.path) }}">baixar</a>
             {% endif %}
+            {# O nome vem do container: ele viaja por data-alvo (escapado como HTML) e
+               so encontra o JavaScript pelo dataset, nunca dentro do codigo. #}
+            <form method="post" action="{{ url_for('files_delete', sid=server.id) }}"
+                  class="inline-del js-del" data-alvo="{{ e.path }}">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <input type="hidden" name="path" value="{{ e.path }}">
+              <button class="link" type="submit"
+                      title="Apagar {{ e.name }}{{ ' (so se estiver vazia)' if e.dir else '' }}">apagar</button>
+            </form>
           </span>
         </li>
         {% else %}
@@ -135,6 +150,19 @@
         </span>
       </form>
       {% endif %}
+
+      {# Vale para os tres casos acima (binario, so leitura e editavel): o que nao da
+         para editar ainda da para apagar. #}
+      <form method="post" action="{{ url_for('files_delete', sid=server.id) }}"
+            class="form-actions js-del" data-alvo="{{ opened.path }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="path" value="{{ opened.path }}">
+        <button class="btn danger small" type="submit">Apagar arquivo</button>
+        <span class="muted small">
+          tira <code>{{ opened.name }}</code> do container na hora &mdash; aqui nao ha
+          copia <code>.bak</code> nem como desfazer
+        </span>
+      </form>
     {% else %}
       <h2>Editor</h2>
       <p class="muted">
@@ -193,11 +221,28 @@
   ['keyup', 'click', 'input'].forEach((ev) => area.addEventListener(ev, showPos));
   showPos();
 
-  let saving = false;
-  form.addEventListener('submit', () => { saving = true; });
+  // Em window porque o script de exclusao (abaixo, fora deste if) tambem levanta a
+  // bandeira: apagar o arquivo aberto e uma saida deliberada como salvar.
+  window.gpSaving = false;
+  form.addEventListener('submit', () => { window.gpSaving = true; });
   window.addEventListener('beforeunload', (ev) => {
-    if (!saving && area.value !== original) ev.preventDefault();
+    if (!window.gpSaving && area.value !== original) ev.preventDefault();
   });
 </script>
 {% endif %}
+<script>
+  // Apagar nao tem .bak nem lixeira: cada form de exclusao pergunta antes, pelo nome.
+  // O nome chega pelo dataset (ja decodificado pelo navegador), nunca dentro do codigo.
+  document.querySelectorAll('form.js-del').forEach((f) => {
+    f.addEventListener('submit', (ev) => {
+      if (!confirm('Apagar ' + f.dataset.alvo + '?\n\nIsto nao tem volta.')) {
+        ev.preventDefault();
+        return;
+      }
+      // Editor aberto com alteracoes: apagar e uma saida deliberada, nao precisa do
+      // aviso de "voce tem alteracoes nao salvas" por cima da confirmacao.
+      window.gpSaving = true;
+    });
+  });
+</script>
 {% endblock %}

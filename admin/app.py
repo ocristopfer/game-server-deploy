@@ -1170,6 +1170,7 @@ JOB_LABELS = {key: label for key, (label, _cmd, _c) in ACTIONS.items()}
 JOB_LABELS["shell"] = "Comando no container"
 JOB_LABELS["terminal"] = "Terminal interativo"
 JOB_LABELS["edit-file"] = "Arquivo salvo"
+JOB_LABELS["delete-file"] = "Arquivo apagado"
 JOB_LABELS["edit-config"] = "Configuracao alterada"
 JOB_LABELS["download-file"] = "Arquivo baixado"
 
@@ -2209,6 +2210,25 @@ fi
 echo "gravado: $(stat -Lc %s -- "$f") bytes"
 """
 
+# Apagar nao tem .bak: um save de varios GB nao cabe numa copia de seguranca, e quem
+# manda apagar quer o espaco de volta. Por isso o escopo e estreito: arquivo comum,
+# link, ou pasta VAZIA (rmdir) — nada de remocao recursiva a partir da tela.
+DELETE_SCRIPT = r"""
+set -e
+f=$1
+[ -e "$f" ] || [ -L "$f" ] || { echo "arquivo nao encontrado" >&2; exit 3; }
+if [ -d "$f" ] && [ ! -L "$f" ]; then
+  rmdir -- "$f" 2>/dev/null || { echo "a pasta nao esta vazia (esvazie antes de apagar)" >&2; exit 4; }
+  echo "pasta apagada: $f"
+else
+  sz=$(stat -Lc %s -- "$f" 2>/dev/null || echo 0)
+  # -f para o rm nunca parar perguntando por arquivo sem permissao de escrita; o erro
+  # que importa (pasta somente leitura) continua vindo.
+  rm -f -- "$f"
+  echo "apagado: $f ($sz bytes)"
+fi
+"""
+
 
 def _files_guard():
     if not ALLOW_FILES:
@@ -2395,6 +2415,14 @@ def write_file(server: sqlite3.Row, path: str, data: bytes) -> str:
     return proc.stdout.strip()
 
 
+def delete_file(server: sqlite3.Row, path: str) -> str:
+    """Apaga um arquivo (ou pasta vazia) no container. Nao tem volta."""
+    proc = ssh_run(server, q("bash", "-lc", DELETE_SCRIPT, "gp", path), timeout=60)
+    if proc.returncode != 0:
+        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao apagar")
+    return proc.stdout.strip()
+
+
 @app.get("/servers/<int:sid>/files/search")
 @login_required
 def files_search(sid: int):
@@ -2474,6 +2502,46 @@ def files_save(sid: int):
         flash(f"Nao consegui salvar: {exc}", "error")
 
     return redirect(url_for("files", sid=sid, file=path))
+
+
+@app.post("/servers/<int:sid>/files/delete")
+@login_required
+def files_delete(sid: int):
+    _files_guard()
+    server = _server_or_404(sid)
+
+    try:
+        path = clean_path(request.form.get("path", ""))
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("files", sid=sid))
+
+    # Raiz permitida nao se apaga: sem isso um clique errado poderia levar /opt/game
+    # inteiro (a pasta so cai vazia, mas nem esse caso vale a pena permitir).
+    raizes = {"/"} | {r.rstrip("/") or "/" for r in FILE_ROOTS}
+    if path in raizes:
+        flash(f"{path} e uma pasta raiz do editor — nao da para apagar por aqui.", "error")
+        return redirect(url_for("files", sid=sid, path=path))
+
+    volta = parent_of(path)
+    try:
+        saida = delete_file(server, path)
+        log_job("delete-file", server, session.get("username", "?"), command=path, output=saida)
+        flash(f"{saida} (sem copia .bak — apagar nao tem volta).", "ok")
+        # Arquivo fixado na tela Config que deixou de existir: tirar do cadastro evita
+        # que a tela abra sempre num erro de leitura.
+        registrados = config_paths(server)
+        if path in registrados:
+            _save_config_files(sid, [p for p in registrados if p != path])
+            flash(f"{path} tambem saiu dos arquivos da tela Config.", "ok")
+    except RemoteError as exc:
+        log_job(
+            "delete-file", server, session.get("username", "?"),
+            command=path, output=str(exc), status="error",
+        )
+        flash(f"Nao consegui apagar: {exc}", "error")
+
+    return redirect(url_for("files", sid=sid, path=volta))
 
 
 def _attachment_header(name: str) -> str:

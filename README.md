@@ -14,7 +14,8 @@ Dois destinos, a mesma definicao de jogo (`games/<jogo>.env`) nos dois:
 
 No caminho Proxmox o `.ps1` roda no Windows, envia o bundle via SSH para o host e executa
 o `provision-game-lxc.sh` la (que usa `pct`). No caminho Docker o mesmo `.ps1` gera a
-stack, constroi a imagem e sobe o container — e ja cadastra o servidor no painel.
+stack, constroi a imagem e sobe o container. Nos dois, o servidor termina o deploy **ja
+cadastrado no painel**.
 
 ## Pre-requisitos
 
@@ -60,9 +61,15 @@ a partir do `games/_template.env`.
 4. Cria o servico systemd `<jogo>.service` (start no boot, restart em falha) e os
    atalhos `update-game`, `game-restart` etc. dentro do CT
 5. Sobe o servidor, valida que ficou ativo e imprime o resumo com **as portas a redirecionar**
+6. **Cadastra o servidor no painel** (`--register-server`), com IP do CT, unit systemd,
+   portas, forma de contar jogadores e arquivos de configuracao — a tela **Config** ja
+   abre pronta. `-NoRegister` pula esta etapa
 
-Se `PANEL_PUBKEY` estiver no `.env`, o passo 2 tambem instala o `sshd` e autoriza a
-chave do [painel administrativo](#painel-administrativo-web) — o CT ja nasce gerenciavel pela tela.
+O passo 2 tambem instala o `sshd` no CT e autoriza a chave do
+[painel administrativo](#painel-administrativo-web) — sem ela o servidor apareceria
+cadastrado na tela mas sem responder. A chave e lida do proprio painel (`ADMIN_CTID`, ou
+`ADMIN_HOST`/`ADMIN_IP_CIDR` quando ele nao mora neste Proxmox); `PANEL_PUBKEY` no `.env`
+continua valendo e tem prioridade.
 
 Rodar de novo e idempotente: atualiza config do CT e revalida o jogo. `RECREATE_CT=1` destroi e recria.
 
@@ -372,8 +379,8 @@ deixa-las na stack.
 Um container separado sobe um painel web para gerenciar todos os servidores: cadastrar,
 ver status, **jogadores conectados** e **uso de CPU/memoria/disco/rede**,
 start/stop/restart, atualizar pelo SteamCMD, ler logs (com modo ao vivo), **abrir um
-terminal interativo** e **editar ou baixar os arquivos dos jogos** — tudo direto dentro
-de cada container.
+terminal interativo** e **editar, baixar ou apagar os arquivos dos jogos** — tudo direto
+dentro de cada container.
 
 ```powershell
 .\deploy-admin.ps1                # usa as chaves ADMIN_* do .env
@@ -436,13 +443,19 @@ autorizada. Ha tres formas de conseguir isso:
 
 | Situacao | O que fazer |
 |----------|-------------|
-| CT de jogo novo | preencha `PANEL_PUBKEY` no `.env` — o `deploy-game.ps1` ja deixa pronto |
+| CT de jogo novo | nada: o `deploy-game.ps1` le a chave do painel e ja deixa o CT pronto (ou preencha `PANEL_PUBKEY` no `.env` para fixar uma) |
 | CTs de jogo existentes | preencha `ADMIN_AUTHORIZE_CTIDS=210,211,212,213` e rode o `deploy-admin.ps1` |
 | Caso a caso | copie o comando pronto da tela **Acesso SSH** do painel |
 
 A chave publica aparece no resumo do deploy do painel e na tela "Acesso SSH".
 
 ### Cadastrando um servidor
+
+Servidor implantado pelo `deploy-game.ps1` ou pelo `deploy-docker.ps1` **ja chega
+cadastrado** — a tela abaixo serve para um container que voce criou por fora, ou para
+ajustar o que veio do deploy. Um redeploy nao duplica: o painel casa pelo par host+porta
+SSH e atualiza o servidor existente, preservando o que voce mudou pela tela (arquivos de
+config acrescentados a mao, forma de contar jogadores).
 
 Em **Adicionar**, informe:
 
@@ -595,6 +608,13 @@ do jogo direto no navegador — e a saida para tudo que a tela **Config** nao co
   util para espiar um log grande — com o botao de baixar ao lado. Salvar fica bloqueado
   ai (inclusive no servidor), senao gravar o preview truncaria o arquivo.
 - Binarios nao sao editaveis (so baixaveis): o painel detecta pelo byte nulo.
+- **Apagar**: cada linha da lista tem um `apagar` (e o arquivo aberto tem o botao
+  **Apagar arquivo**, que vale ate para binario e para o modo somente leitura). Pede
+  confirmacao com o caminho na tela e **nao tem volta**: aqui nao ha `.bak` nem lixeira —
+  seria inutil num save de varios GB. So apaga arquivo, link ou **pasta vazia** (`rmdir`):
+  a tela nao faz remocao recursiva, e as raizes de `ADMIN_FILE_ROOTS` sao intocaveis.
+  Cada exclusao fica no historico do servidor, e se o arquivo estava fixado na tela
+  **Config** ele sai do cadastro junto.
 - `ADMIN_FILE_ROOTS` restringe onde o navegador de arquivos pode entrar (padrao: tudo).
 - Pare o servidor antes de editar o que ele reescreve ao sair — varios jogos sobrescrevem
   o `.ini` no shutdown.

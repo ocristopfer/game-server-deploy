@@ -8,6 +8,8 @@ param(
     # Codigo do Steam Guard (jogos cujo servidor exige conta Steam, ex: dayz).
     # O codigo expira rapido - passe na hora do deploy em vez de deixar no .env.
     [string]$SteamGuardCode = "",
+    # Nao cadastra o servidor no painel ao final do deploy
+    [switch]$NoRegister,
     [string]$ProxmoxHost = "",
     [string]$EnvFile = "",
     [string]$RemoteBundleDir = "/root/game-deploy"
@@ -17,9 +19,19 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Read-EnvFile([string]$Path) {
+    if (-not (Test-Path $Path)) { return @{} }
+    return (Read-EnvLines (Get-Content $Path))
+}
+
+# Mesmo parser para o texto do games/<jogo>.env, que no deploy generico (-AppId) e
+# gerado em memoria e nunca chega a existir como arquivo.
+function Read-EnvText([string]$Text) {
+    return (Read-EnvLines ($Text -split "`r?`n"))
+}
+
+function Read-EnvLines([string[]]$Lines) {
     $map = @{}
-    if (-not (Test-Path $Path)) { return $map }
-    foreach ($line in Get-Content $Path) {
+    foreach ($line in $Lines) {
         $trimmed = $line.Trim()
         if ($trimmed -eq "" -or $trimmed.StartsWith("#")) { continue }
         $idx = $trimmed.IndexOf("=")
@@ -89,6 +101,43 @@ function Ask([string]$Label, [string]$Default) {
     return $answer
 }
 
+# ----- ssh auxiliar (consultas e cadastro no painel) -----
+# No PowerShell 5.1 o stderr de um executavel nativo vira excecao quando
+# ErrorActionPreference e 'Stop' - inclusive quando o comando termina com sucesso.
+# Por isso toda chamada daqui relaxa a preferencia: o erro de verdade e o $LASTEXITCODE.
+# -Batch para destinos que so valem a pena por chave (o CT do painel): sem chave
+# autorizada a consulta falha na hora em vez de parar o deploy num prompt de senha.
+function Invoke-SshQuery([string]$Target, [string]$Command, [switch]$Batch) {
+    $opcoes = @("-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new")
+    if ($Batch) { $opcoes += @("-o", "BatchMode=yes") }
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $saida = ssh @opcoes "root@$Target" $Command 2>$null
+    } finally {
+        $ErrorActionPreference = $anterior
+    }
+    return $saida
+}
+
+# Igual a de cima, mas com a saida indo para a tela (o cadastro no painel responde
+# "servidor 'X' cadastrado").
+function Invoke-SshLive([string]$Target, [string]$Command) {
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new "root@$Target" $Command
+    } finally {
+        $ErrorActionPreference = $anterior
+    }
+}
+
+# Primeira linha util de uma saida que pode vir como array de linhas
+function Get-FirstLine($Output) {
+    if ($null -eq $Output) { return "" }
+    return (($Output | Select-Object -First 1) -as [string]).Trim()
+}
+
 # ----- Selecao do jogo -----
 if ($Game -eq "" -and $AppId -eq "") {
     $available = Get-ChildItem (Join-Path $ScriptDir "games") -Filter "*.env" |
@@ -127,9 +176,12 @@ $cfg = Read-EnvFile $EnvFile
 # ----- Valores por jogo (CTID_<JOGO>, IP_CIDR_<JOGO>, MEMORY_<JOGO>...) -----
 # Cada jogo mora no proprio container. Sem essas chaves, todo deploy cairia no CTID/IP
 # generico do .env e o segundo jogo sobrescreveria o container do primeiro.
-$GameKey = $Game
-if ($GameEnvContent -match '(?m)^\s*GAME_KEY\s*=\s*"?([^"\s#]+)') { $GameKey = $Matches[1] }
+# O mesmo texto que vai no bundle, ja como mapa: dele saem GAME_KEY e, no fim do
+# deploy, os dados do cadastro no painel (portas, config, contagem de jogadores).
+$jogo = Read-EnvText $GameEnvContent
+$GameKey = Get-Cfg $jogo "GAME_KEY" $Game
 $GameSuffix = Get-GameSuffix $GameKey
+$Display = Get-Cfg $jogo "GAME_DISPLAY_NAME" $GameKey
 
 $OverridableKeys = @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMPLATE_PATTERN",
                      "BRIDGE","IP_CIDR","GATEWAY","CT_PASSWORD","TZ","MEMORY","CORES",
@@ -154,8 +206,7 @@ if ($ProxmoxHost -eq "") {
 
 # Jogos cujo depot do servidor exige conta Steam (STEAM_ANONYMOUS=0 no games/<jogo>.env).
 # As credenciais vivem no .env/prompt - nunca no games/*.env, que vai para o git.
-$SteamAnon = $true
-if ($GameEnvContent -match '(?m)^\s*STEAM_ANONYMOUS\s*=\s*"?0') { $SteamAnon = $false }
+$SteamAnon = (Get-Cfg $jogo "STEAM_ANONYMOUS" "1") -ne "0"
 if ($SteamGuardCode -ne "") { $cfg["STEAM_GUARD_CODE"] = $SteamGuardCode }
 
 if ($Interactive) {
@@ -237,6 +288,47 @@ if ($cfg["IP_CIDR"] -ne "dhcp") {
 
 Write-Host ("Alvo: CT $($cfg['CTID']) ($GameKey) em $($cfg['IP_CIDR'])") -ForegroundColor Cyan
 
+# ----- Painel: onde ele roda e qual e a chave publica dele -----
+# Caminhos fixos do CT do painel (provision-admin-lxc.sh). O cadastro roda como o
+# usuario do painel, nao como root: o sqlite cria os arquivos -wal/-shm ao lado do
+# banco, e criados por root o painel (que roda como gamepanel) perderia a escrita.
+$PanelApp = "/opt/gamepanel/app.py"
+$PanelUser = "gamepanel"
+$PanelPubKeyPath = "/etc/gamepanel/id_ed25519.pub"
+$AdminCtid = Get-Cfg $cfg "ADMIN_CTID"
+
+# Endereco do painel para falar direto com ele (painel fora deste Proxmox).
+function Resolve-PanelHost($Map) {
+    $fromEnv = Get-Cfg $Map "ADMIN_HOST"
+    if ($fromEnv -ne "") { return $fromEnv }
+    $cidr = Get-Cfg $Map "ADMIN_IP_CIDR"
+    if ($cidr -ne "" -and $cidr -ne "dhcp") { return (Get-IpOnly $cidr) }
+    return ""
+}
+$PanelHost = Resolve-PanelHost $cfg
+
+# Sem PANEL_PUBKEY o CT nasce sem deixar o painel entrar, e o cadastro do fim do deploy
+# apareceria na tela como um servidor que nao responde. A chave e do proprio painel,
+# entao da para busca-la em vez de exigir que ela esteja copiada no .env.
+if ((Get-Cfg $cfg "PANEL_PUBKEY") -eq "") {
+    $lida = ""
+    if ($AdminCtid -ne "") {
+        $lida = Get-FirstLine (Invoke-SshQuery $ProxmoxHost "pct exec $AdminCtid -- cat $PanelPubKeyPath")
+        if ($LASTEXITCODE -ne 0) { $lida = "" }
+    }
+    if ($lida -eq "" -and $PanelHost -ne "") {
+        $lida = Get-FirstLine (Invoke-SshQuery $PanelHost "cat $PanelPubKeyPath" -Batch)
+        if ($LASTEXITCODE -ne 0) { $lida = "" }
+    }
+    if ($lida -ne "") {
+        $cfg["PANEL_PUBKEY"] = $lida
+        Write-Host "Chave publica do painel lida do proprio painel (PANEL_PUBKEY vazio no .env)." -ForegroundColor DarkGray
+    } else {
+        Write-Host ("Sem PANEL_PUBKEY e sem painel acessivel: o CT nao vai aceitar o painel por SSH. " +
+                    "Suba o painel (.\deploy-admin.ps1) ou preencha PANEL_PUBKEY no .env.") -ForegroundColor Yellow
+    }
+}
+
 # ----- Monta o bundle -----
 $BundleDir = Join-Path ([System.IO.Path]::GetTempPath()) "game-deploy-bundle"
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
@@ -281,4 +373,74 @@ if ($LASTEXITCODE -ne 0) { throw "Provisionamento falhou no host Proxmox (veja a
 # O bundle local tem copia do deploy.env (senhas) - nao deixa sobrando no %TEMP%
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 
+# ----- Cadastro no painel -----
+# Mesmo caminho do deploy em Docker: o painel se cadastra pela propria CLI
+# (app.py --register-server), que e idempotente - num redeploy ele atualiza o
+# servidor existente em vez de duplicar.
+
+# Escapa um valor para virar um argumento entre aspas simples no shell remoto.
+function ConvertTo-ShQuoted([string]$Value) {
+    return "'" + ($Value -replace "'", "'\''") + "'"
+}
+
+# Endereco do CT do jogo: com IP fixo ja sabemos; com dhcp so o CT sabe.
+function Get-CtIp([string]$Cidr, [string]$Ctid) {
+    if ($Cidr -ne "dhcp") { return (Get-IpOnly $Cidr) }
+    $saida = Get-FirstLine (Invoke-SshQuery $ProxmoxHost "pct exec $Ctid -- hostname -I")
+    if ($LASTEXITCODE -ne 0 -or $saida -eq "") { return "" }
+    return (($saida -split '\s+')[0])
+}
+
+$registrado = $false
+$CtIp = ""
+if (-not $NoRegister) {
+    $CtIp = Get-CtIp $cfg["IP_CIDR"] $cfg["CTID"]
+    if ($CtIp -eq "") {
+        Write-Host "Nao consegui descobrir o IP do CT $($cfg['CTID']) - cadastre o servidor pela tela Adicionar." -ForegroundColor Yellow
+    } else {
+        $cmdArgs = @(
+            "--register-server", $Display,
+            "--server-host", $CtIp,
+            "--service", "$GameKey.service",
+            "--game-port", (Get-Cfg $jogo "GAME_PORTS"),
+            "--query-port", (Get-Cfg $jogo "QUERY_PORT" "0"),
+            "--config-path", (Get-Cfg $jogo "CONFIG_PATH"),
+            "--config-files", (Get-Cfg $jogo "CONFIG_FILES"),
+            "--player-source", (Get-Cfg $jogo "PLAYER_SOURCE"),
+            "--notes", "CT $($cfg['CTID']) no Proxmox $ProxmoxHost (deploy-game.ps1)."
+        )
+        $partes = @("runuser", "-u", $PanelUser, "--", "python3", $PanelApp)
+        foreach ($valor in $cmdArgs) { $partes += (ConvertTo-ShQuoted $valor) }
+        $registerCmd = ($partes -join " ")
+
+        # 1) Pelo proprio host Proxmox, que e o caminho que sempre existe num deploy LXC:
+        #    o painel mora num CT do mesmo host e nao precisa aceitar SSH de fora.
+        if ($AdminCtid -ne "") {
+            Invoke-SshQuery $ProxmoxHost "pct exec $AdminCtid -- test -f $PanelApp" | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "`nCadastrando $Display no painel (CT $AdminCtid)..." -ForegroundColor Cyan
+                Invoke-SshLive $ProxmoxHost "pct exec $AdminCtid -- $registerCmd"
+                $registrado = ($LASTEXITCODE -eq 0)
+            } else {
+                Write-Host "Painel nao encontrado no CT $AdminCtid ($PanelApp)." -ForegroundColor DarkGray
+            }
+        }
+        # 2) Painel fora deste Proxmox (ADMIN_HOST/ADMIN_IP_CIDR), falando direto com ele.
+        if (-not $registrado -and $PanelHost -ne "") {
+            Invoke-SshQuery $PanelHost "test -f $PanelApp" -Batch | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "`nCadastrando $Display no painel ($PanelHost)..." -ForegroundColor Cyan
+                Invoke-SshLive $PanelHost $registerCmd
+                $registrado = ($LASTEXITCODE -eq 0)
+            }
+        }
+        if (-not $registrado) {
+            Write-Host "Nao consegui cadastrar no painel - use a tela Adicionar (host $CtIp, servico $GameKey.service)." -ForegroundColor Yellow
+        }
+    }
+}
+
 Write-Host "Deploy finalizado." -ForegroundColor Green
+if ($registrado) {
+    Write-Host "Servidor cadastrado no painel: $Display ($CtIp) - a tela Config ja abre o arquivo do jogo." -ForegroundColor Green
+}
