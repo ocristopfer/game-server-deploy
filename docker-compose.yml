@@ -47,6 +47,11 @@ services:
     environment:
       GAME_KIND: palworld
       GAME_SERVICE: palworld.service
+      # API REST em 127.0.0.1:8212, como a do Palworld de verdade (admin/troque-me).
+      # E o que exercita a contagem de jogadores por HTTP no assistente do painel.
+      GAME_API: "1"
+      GAME_API_PORT: "8212"
+      GAME_API_PASSWORD: troque-me
     volumes:
       - panel-keys:/keys:ro
     # Limites como os de um LXC: sem eles o cgroup nao tem teto e os medidores do

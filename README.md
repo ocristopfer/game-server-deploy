@@ -142,13 +142,24 @@ e o que faz o servidor nascer cadastrado e com a tela **Config** pronta.
 - Config criada no primeiro start (localize com `find /opt/game -name DedicatedServer.ini`):
   nome do servidor, senha do mundo, senha de admin, OwnerID. Pare o servidor antes de editar!
 - Limite de jogadores: fixo em 6 (travado pela Jagex, nao configuravel)
+- **Nao publica nada consultavel**: nem query A2S da Steam, nem RCON, nem API HTTP. O
+  `DedicatedServer.ini` nao tem chave para isso e o jogo nao tem navegador de servidores
+  (entra-se por IP direto). Guias de hosting que mandam abrir `27015` estao copiando
+  texto de outros jogos Unreal. A contagem de jogadores no painel so pode vir do log
 - Saves: `/opt/game/RSDragonwilds/Saved/SaveGames/`
 
 ### Palworld — notas
 
 - App do servidor dedicado: `2394010` (build Linux nativo, `PalServer.sh`)
 - Portas: **8211/UDP** (jogo) e **27015/UDP** (query da Steam, necessaria para aparecer
-  na lista da comunidade). RCON (25575/TCP) so se habilitado no `.ini` — nao redirecione
+  na lista da comunidade). A **API REST (8212/TCP)** e o RCON (25575/TCP) so existem se
+  habilitados no `.ini` — nao redirecione nenhum dos dois no roteador
+- Tres formas de contar jogadores, da melhor para a pior: **API REST** (`8212/tcp`, da os
+  nomes, o level e o ping), **A2S** (`27015/udp`, so a contagem — o Palworld nao responde
+  `A2S_PLAYER`) e o log. Para ligar a REST: `RESTAPIEnabled=True`, `RESTAPIPort=8212` e
+  uma `AdminPassword` forte; no painel, **Configurar contagem > API HTTP** com
+  `http://127.0.0.1:8212/v1/api/players` e `basic:admin:<a senha>`.
+  O RCON foi marcado como *deprecated* pela Pocketpair em favor da REST
 - O deploy cria o symlink `~steam/.steam/sdk64/steamclient.so` (exigido pelo `PalServer.sh`)
   e semeia o `PalWorldSettings.ini` a partir do `DefaultPalWorldSettings.ini`
 - Config: `/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini` — tudo fica dentro
@@ -475,7 +486,7 @@ Start, stop, restart, update, terminal e editor rodam a partir dai. Acoes demora
 
 ### Jogadores conectados
 
-Ha duas formas, e a tela **Configurar contagem** (botao no card "Jogadores") descobre
+Ha tres formas, e a tela **Configurar contagem** (botao no card "Jogadores") descobre
 qual serve para cada jogo.
 
 **1. Consulta direta (A2S da Steam)** — a mesma consulta que o navegador de servidores
@@ -483,11 +494,42 @@ do jogo faz: UDP do painel para a porta de query. Nao passa por SSH, nao precisa
 senha nem RCON, e nao exige nada instalado no container. Palworld responde na
 `27015/udp`.
 
-O assistente **pergunta ao container quais portas UDP o jogo abriu** (le `/proc/net/udp`
-pelo SSH) e dispara um `A2S_INFO` em cada uma, somando as portas usuais da Steam. Se
-alguma responder, um clique em "Usar esta" ja liga a contagem.
+O assistente **pergunta ao container quais portas o jogo abriu** (le `/proc/net/udp` e
+`/proc/net/tcp` pelo SSH) e dispara um `A2S_INFO` em cada porta UDP, somando as portas
+usuais da Steam. Se alguma responder, um clique em "Usar esta" ja liga a contagem.
 
-**2. Pelo log do servidor** — para jogo que nao publica consulta na rede. O
+**2. API HTTP do jogo** — a melhor das tres quando existe, porque devolve os **nomes** e
+nao so a contagem. Cada vez mais jogo troca a query UDP por uma API de administracao em
+TCP: Palworld (REST em `8212/tcp`), Satisfactory (HTTPS em `7777/tcp`), Minecraft com
+plugin, Factorio.
+
+Nada aqui e codificado por jogo. Voce aponta uma URL e o painel:
+
+- chama **de dentro do container, pelo mesmo SSH** do resto do painel. Essas APIs sao
+  feitas para escutar em `127.0.0.1` (a documentacao do Palworld pede explicitamente
+  para nao expor a porta na internet) e assim continuam fechadas para fora — nada de
+  abrir porta no roteador;
+- aceita `GET` ou `POST` (basta preencher o corpo JSON), com autenticacao
+  `basic:usuario:senha`, `bearer:token` ou um cabecalho `Authorization` pronto;
+- **acha a lista de jogadores sozinho** na resposta, procurando chaves conhecidas
+  (`players`, `onlinePlayers`, `name`, `playerName`, `currentplayernum`, `numPlayers`,
+  `maxPlayers`...). Quando ele erra, voce aponta o caminho a mao
+  (`data.serverGameState.numConnectedPlayers`) — a resposta crua aparece na tela para
+  voce ver o nome certo do campo.
+
+O assistente lista as portas TCP em `LISTEN` dentro do container e bate nelas por HTTP
+(e, se nao houver resposta, por HTTPS). Um `401` ja e um bom achado: existe API ali, ela
+so quer senha.
+
+No Palworld, ligue a API no `PalWorldSettings.ini` (`RESTAPIEnabled=True`,
+`RESTAPIPort=8212`) e use `http://127.0.0.1:8212/v1/api/players` com
+`basic:admin:` + a `AdminPassword`.
+
+> A senha da API fica guardada em texto puro no `panel.db` (ela precisa ir no cabecalho
+> de cada chamada). O banco ja guarda o caminho da chave SSH que da root nos containers,
+> entao trate o arquivo como segredo de qualquer forma.
+
+**3. Pelo log do servidor** — para jogo que nao publica nada na rede. O
 **RuneScape Dragonwilds e assim**: a contagem que aparece no navegador do jogo vem do
 servico da Steam/Epic, nao do servidor, entao nao ha o que consultar na LAN. Como o
 `START_ARGS` dele tem `-log`, a Unreal despeja o log no stdout e o journald guarda —

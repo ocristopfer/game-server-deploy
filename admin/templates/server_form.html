@@ -43,13 +43,14 @@
       <select name="player_source">
         <option value="none" {{ 'selected' if data.player_source in ('', 'none') and not data.query_port }}>Desligada</option>
         <option value="a2s" {{ 'selected' if data.player_source == 'a2s' or (not data.player_source and data.query_port) }}>Consulta Steam (A2S) na porta acima</option>
+        <option value="http" {{ 'selected' if data.player_source == 'http' }}>API HTTP do jogo (da os nomes)</option>
         <option value="log" {{ 'selected' if data.player_source == 'log' }}>Pelo log do servidor</option>
       </select>
       <small>
-        Jogo que nao publica consulta na rede (RuneScape Dragonwilds, por exemplo) so da
+        Jogo que nao publica nada na rede (RuneScape Dragonwilds, por exemplo) so da
         para contar pelo log. {% if mode == 'edit' %}O
-        <a href="{{ url_for('players_setup', sid=sid) }}">assistente</a> testa as portas e
-        acha os padroes do log para voce.{% endif %}
+        <a href="{{ url_for('players_setup', sid=sid) }}">assistente</a> testa as portas
+        UDP e TCP, monta a chamada da API e acha os padroes do log para voce.{% endif %}
       </small>
     </label>
     <div class="row">
@@ -60,6 +61,35 @@
       <label>Log: linha de saida
         <input name="leave_re" value="{{ data.leave_re }}" spellcheck="false"
                placeholder="UNetConnection::Close">
+      </label>
+    </div>
+
+    <div class="row">
+      <label>API: URL
+        <input name="http_url" value="{{ data.http_url }}" spellcheck="false"
+               placeholder="http://127.0.0.1:8212/v1/api/players">
+        <small>Chamada de dentro do container, por SSH. Palworld: porta <code>8212</code>.</small>
+      </label>
+      <label>API: autenticacao
+        <input name="http_auth" value="{{ data.http_auth }}" spellcheck="false"
+               placeholder="basic:admin:senha-de-admin">
+        <small><code>basic:usuario:senha</code> ou <code>bearer:token</code>. Fica em texto puro no banco.</small>
+      </label>
+    </div>
+    <div class="row">
+      <label>API: corpo JSON <span class="muted">(opcional)</span>
+        <input name="http_body" value="{{ data.http_body }}" spellcheck="false"
+               placeholder='{"function":"QueryServerState"}'>
+        <small>Preenchido vira <code>POST</code>; vazio e <code>GET</code>.</small>
+      </label>
+      <label>API: caminho da lista / da contagem <span class="muted">(opcional)</span>
+        <div class="row">
+          <input name="http_list_path" value="{{ data.http_list_path }}" spellcheck="false"
+                 placeholder="players">
+          <input name="http_count_path" value="{{ data.http_count_path }}" spellcheck="false"
+                 placeholder="data.numConnectedPlayers">
+        </div>
+        <small>Vazios: o painel procura sozinho na resposta.</small>
       </label>
     </div>
     <label>Pasta de configuracao <span class="muted">(opcional)</span>

@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Testes da contagem de jogadores por API HTTP e da descoberta de portas.
+
+Sem dependencia externa alem do Flask que o painel ja usa:
+
+    docker compose exec panel python3 /opt/gamepanel/test_players.py
+
+O que estes testes garantem e a promessa do recurso: o painel le a resposta de uma API
+que ele nunca viu antes, sem nada codificado por jogo. Se um jogo novo devolver JSON com
+os campos de sempre (players/name, currentplayernum, maxPlayers...), tem que funcionar
+sem tocar no codigo.
+"""
+import os
+import tempfile
+
+# O import de app.py cria/migra o banco: aponta para um arquivo descartavel.
+os.environ.setdefault("GAMEPANEL_DB", os.path.join(tempfile.mkdtemp(), "teste.db"))
+
+import app as panel  # noqa: E402
+
+falhas = []
+
+
+def check(nome, condicao, detalhe=""):
+    if condicao:
+        print(f"  ok   {nome}")
+    else:
+        print(f"  FALHOU {nome} {detalhe}")
+        falhas.append(nome)
+
+
+def igual(nome, obtido, esperado):
+    check(nome, obtido == esperado, f"\n    obtido:   {obtido!r}\n    esperado: {esperado!r}")
+
+
+def erro(nome, funcao, *args):
+    try:
+        funcao(*args)
+    except panel.QueryError:
+        print(f"  ok   {nome}")
+        return
+    print(f"  FALHOU {nome} (nao levantou QueryError)")
+    falhas.append(nome)
+
+
+def nomes(resultado):
+    return [p["name"] for p in resultado["list"]]
+
+
+# ------------------------------------------------------------------ respostas reais
+
+# Formato do /v1/api/players do Palworld.
+PALWORLD_PLAYERS = {
+    "players": [
+        {"name": "Cristopfer", "accountName": "steam_0", "playerId": "0000000A",
+         "userId": "steam_76561198000000001", "ip": "10.0.0.20", "ping": 12.5,
+         "location_x": 1.0, "location_y": 2.0, "level": 8, "building_count": 3},
+        {"name": "Ana", "accountName": "steam_1", "playerId": "0000000B",
+         "userId": "steam_76561198000000002", "ip": "10.0.0.21", "ping": 30.0,
+         "location_x": 3.0, "location_y": 4.0, "level": 5, "building_count": 0},
+    ]
+}
+
+# Formato do /v1/api/metrics do Palworld: so numeros, nenhuma lista.
+PALWORLD_METRICS = {
+    "serverfps": 60, "currentplayernum": 3, "serverframetime": 16.67,
+    "maxplayernum": 32, "uptime": 4210, "days": 5, "basecampnum": 2,
+}
+
+# Formato do QueryServerState do Satisfactory: tudo aninhado dentro de data.
+SATISFACTORY = {
+    "data": {
+        "serverGameState": {
+            "activeSessionName": "Fabrica",
+            "numConnectedPlayers": 2,
+            "playerLimit": 4,
+            "techTier": 6,
+            "isGamePaused": False,
+        }
+    }
+}
+
+
+print("API HTTP: descoberta automatica")
+r = panel.read_players_json(PALWORLD_PLAYERS)
+igual("Palworld /players conta pela lista", r["players"], 2)
+igual("Palworld /players pega os nomes", nomes(r), ["Cristopfer", "Ana"])
+
+r = panel.read_players_json(PALWORLD_METRICS)
+igual("Palworld /metrics conta por currentplayernum", r["players"], 3)
+igual("Palworld /metrics acha o maximo", r["max_players"], 32)
+igual("Palworld /metrics nao inventa nomes", nomes(r), [])
+
+r = panel.read_players_json(SATISFACTORY)
+igual("Satisfactory conta aninhado", r["players"], 2)
+igual("Satisfactory acha o playerLimit", r["max_players"], 4)
+
+# Ninguem online e uma resposta valida: a chave 'players' identifica a lista mesmo vazia.
+r = panel.read_players_json({"players": []})
+igual("lista vazia vira zero, nao erro", r["players"], 0)
+
+# Lista solta na raiz, sem objeto em volta.
+r = panel.read_players_json([{"name": "Bea"}, {"name": "Caio"}])
+igual("lista na raiz da resposta", nomes(r), ["Bea", "Caio"])
+
+# Chave de nome diferente: o jogo novo nao precisa usar exatamente 'name'.
+r = panel.read_players_json({"onlinePlayers": [{"playerName": "Duda", "ping": 9}]})
+igual("nome em playerName", nomes(r), ["Duda"])
+
+r = panel.read_players_json({"result": {"numPlayers": 7, "maxPlayers": 16}})
+igual("contagem em numPlayers", r["players"], 7)
+
+igual("nome do servidor quando existe",
+      panel.read_players_json({"serverName": "Casa", "numPlayers": 1})["server_name"], "Casa")
+
+erro("resposta sem jogador nenhum reclama", panel.read_players_json, {"status": "ok"})
+
+
+print("API HTTP: caminhos apontados a mao")
+igual("caminho da lista",
+      nomes(panel.read_players_json(PALWORLD_PLAYERS, "players")), ["Cristopfer", "Ana"])
+igual("caminho da contagem",
+      panel.read_players_json(SATISFACTORY, "", "data.serverGameState.numConnectedPlayers")["players"], 2)
+igual("caminho com indice",
+      nomes(panel.read_players_json({"a": [{"lista": [{"name": "Edu"}]}]}, "a[0].lista")), ["Edu"])
+igual("contagem apontada para uma lista usa o tamanho",
+      panel.read_players_json(PALWORLD_PLAYERS, "", "players")["players"], 2)
+erro("caminho que nao existe reclama", panel.read_players_json, PALWORLD_PLAYERS, "jogadores")
+erro("caminho de lista que nao e lista reclama", panel.read_players_json, PALWORLD_METRICS, "serverfps")
+
+
+print("API HTTP: autenticacao e status")
+igual("basic vira base64", panel.auth_header("basic:admin:troque-me"),
+      "Basic YWRtaW46dHJvcXVlLW1l")
+igual("basic com ':' na senha", panel.auth_header("basic:admin:a:b"),
+      "Basic YWRtaW46YTpi")
+igual("bearer", panel.auth_header("bearer:abc123"), "Bearer abc123")
+igual("cabecalho pronto passa direto", panel.auth_header("ApiKey xyz"), "ApiKey xyz")
+igual("vazio nao vira cabecalho", panel.auth_header("  "), "")
+
+igual("status separado do corpo",
+      panel._split_status('{"a":1}\n__HTTP_STATUS__200'), ('{"a":1}', 200))
+igual("sem marcador o status fica zero",
+      panel._split_status("resposta crua"), ("resposta crua", 0))
+
+
+print("API HTTP: URL")
+check("URL local aceita", bool(panel.URL_RE.match("http://127.0.0.1:8212/v1/api/players")))
+check("HTTPS aceito", bool(panel.URL_RE.match("https://127.0.0.1:7777/api/v1")))
+check("sem esquema recusado", not panel.URL_RE.match("127.0.0.1:8212/x"))
+check("file:// recusado", not panel.URL_RE.match("file:///etc/passwd"))
+check("espaco recusado", not panel.URL_RE.match("http://127.0.0.1:8212/a b"))
+
+
+print("Descoberta de portas")
+igual("portas do texto livre",
+      panel._portas_do_texto("8211/udp 27015/udp"), [8211, 27015])
+igual("sem repetir e sem a porta do ssh",
+      panel._sem_repetir([8211, 22, 8211, 27015, 99999]), [8211, 27015])
+
+print()
+if falhas:
+    print(f"{len(falhas)} teste(s) falharam: {', '.join(falhas)}")
+    raise SystemExit(1)
+print("todos os testes passaram")

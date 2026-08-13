@@ -109,6 +109,16 @@ main() {
   else
     echo "==> sem query A2S (jogo que nao publica consulta na rede)"
   fi
+
+  # API REST de administracao, no formato da do Palworld. GAME_API=0 imita o jogo que
+  # nao tem API nenhuma (o RuneScape Dragonwilds e assim). Escuta so em 127.0.0.1: o
+  # painel chega nela por SSH, de dentro do container.
+  if [ "${GAME_API:-0}" = "1" ]; then
+    echo "==> subindo a API REST falsa em 127.0.0.1:${GAME_API_PORT:-8212}/tcp"
+    setsid nohup python3 /usr/local/bin/fake-restapi >/var/log/fake-restapi.log 2>&1 &
+  else
+    echo "==> sem API REST (jogo que nao publica API de administracao)"
+  fi
   echo "==> sshd pronto em $(hostname)"
   exec /usr/sbin/sshd -D -e
 }

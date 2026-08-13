@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import os
 import re
 import secrets
@@ -184,6 +185,15 @@ CREATE TABLE IF NOT EXISTS servers (
   player_source TEXT NOT NULL DEFAULT '',
   join_re    TEXT NOT NULL DEFAULT '',
   leave_re   TEXT NOT NULL DEFAULT '',
+  -- Contagem por API HTTP do proprio jogo (Palworld, Satisfactory, ...).
+  http_url   TEXT NOT NULL DEFAULT '',
+  -- 'basic:usuario:senha', 'bearer:token' ou um cabecalho Authorization ja pronto.
+  http_auth  TEXT NOT NULL DEFAULT '',
+  -- Corpo JSON: vazio faz GET, preenchido faz POST.
+  http_body  TEXT NOT NULL DEFAULT '',
+  -- Caminhos dentro do JSON (ex.: 'data.players'); vazios = descobrir sozinho.
+  http_list_path  TEXT NOT NULL DEFAULT '',
+  http_count_path TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   UNIQUE (host, ssh_port)
 );
@@ -240,6 +250,11 @@ MIGRATIONS = (
     ("servers", "join_re", "ALTER TABLE servers ADD COLUMN join_re TEXT NOT NULL DEFAULT ''"),
     ("servers", "leave_re", "ALTER TABLE servers ADD COLUMN leave_re TEXT NOT NULL DEFAULT ''"),
     ("servers", "config_files", "ALTER TABLE servers ADD COLUMN config_files TEXT NOT NULL DEFAULT ''"),
+    ("servers", "http_url", "ALTER TABLE servers ADD COLUMN http_url TEXT NOT NULL DEFAULT ''"),
+    ("servers", "http_auth", "ALTER TABLE servers ADD COLUMN http_auth TEXT NOT NULL DEFAULT ''"),
+    ("servers", "http_body", "ALTER TABLE servers ADD COLUMN http_body TEXT NOT NULL DEFAULT ''"),
+    ("servers", "http_list_path", "ALTER TABLE servers ADD COLUMN http_list_path TEXT NOT NULL DEFAULT ''"),
+    ("servers", "http_count_path", "ALTER TABLE servers ADD COLUMN http_count_path TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -443,6 +458,10 @@ def public_key() -> str:
 QUERY_TIMEOUT = float(os.environ.get("GAMEPANEL_QUERY_TIMEOUT", "3"))
 PLAYERS_TTL = float(os.environ.get("GAMEPANEL_PLAYERS_TTL", "5"))
 
+# De onde a contagem de jogadores pode sair. 'none' e o desligado explicito — diferente
+# do vazio, que significa "cadastro antigo, deduza pela porta de consulta".
+PLAYER_SOURCES = ("a2s", "http", "log", "none")
+
 A2S_HEADER = b"\xff\xff\xff\xff"
 A2S_SPLIT = b"\xff\xff\xff\xfe"
 A2S_INFO_REQ = A2S_HEADER + b"TSource Engine Query\x00"
@@ -571,6 +590,292 @@ def query_players(host: str, port: int) -> dict:
     return info
 
 
+# ------------------------------------------- jogadores (API HTTP do proprio jogo)
+
+# Cada vez mais jogo publica uma API HTTP de administracao em vez de (ou alem de) uma
+# query UDP: Palworld (REST em 8212/tcp), Satisfactory (HTTPS em 7777/tcp), Minecraft
+# com plugin, Factorio... E a melhor fonte de todas, porque devolve os NOMES e nao so
+# a contagem. Nada aqui e especifico de um jogo: o painel busca uma URL, le o JSON e
+# acha a lista/contagem sozinho — ou pelo caminho que voce apontar.
+#
+# A chamada sai de DENTRO do container, por SSH, e nao do painel: essas APIs sao feitas
+# para escutar em localhost (a documentacao do Palworld pede explicitamente para NAO
+# expor a porta na internet) e assim continuam fechadas para fora.
+HTTP_TIMEOUT = float(os.environ.get("GAMEPANEL_HTTP_TIMEOUT", "6"))
+HTTP_MAX_BYTES = 256 * 1024
+HTTP_URL_MAX = 400
+HTTP_BODY_MAX = 2000
+HTTP_PATH_MAX = 120
+# Colunas que descrevem a chamada; viajam juntas entre formulario, assistente e banco.
+HTTP_FIELDS = ("http_url", "http_auth", "http_body", "http_list_path", "http_count_path")
+URL_RE = re.compile(r"^https?://[A-Za-z0-9._\-]{1,253}(:\d{1,5})?(/[^\s]*)?$")
+STATUS_MARK = "__HTTP_STATUS__"
+
+# curl e a primeira opcao; python3 cobre os containers que so tem o interpretador
+# (a nossa imagem de teste, por exemplo, nao traz curl).
+HTTP_FETCH_SCRIPT = r"""
+set -u
+url=$1
+auth=$2
+corpo=$3
+tmo=$4
+
+if command -v curl >/dev/null 2>&1; then
+  # -k: essas APIs usam certificado autoassinado (o Satisfactory, por exemplo).
+  if [ -n "$corpo" ] && [ -n "$auth" ]; then
+    curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" \
+      -H "Authorization: $auth" -H 'Content-Type: application/json' \
+      --data-binary "$corpo" "$url"
+  elif [ -n "$corpo" ]; then
+    curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" \
+      -H 'Content-Type: application/json' --data-binary "$corpo" "$url"
+  elif [ -n "$auth" ]; then
+    curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" \
+      -H "Authorization: $auth" "$url"
+  else
+    curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" "$url"
+  fi
+  exit $?
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  python3 - "$url" "$auth" "$corpo" "$tmo" <<'PY'
+import sys
+import urllib.error
+import urllib.request
+
+url, auth, corpo, tmo = sys.argv[1:5]
+req = urllib.request.Request(url, data=corpo.encode() if corpo else None)
+if corpo:
+    req.add_header("Content-Type", "application/json")
+if auth:
+    req.add_header("Authorization", auth)
+ctx = None
+if url.startswith("https"):
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+try:
+    resp = urllib.request.urlopen(req, timeout=float(tmo), context=ctx)
+    dados, codigo = resp.read(), resp.getcode()
+except urllib.error.HTTPError as exc:
+    # 401/404/500 sao respostas, nao falhas: o painel quer ver o codigo.
+    dados, codigo = exc.read(), exc.code
+except Exception as exc:
+    # Porta fechada, DNS, timeout: uma linha para o painel mostrar, nao um traceback.
+    sys.stderr.write("nao consegui chamar %s: %s\n" % (url, exc))
+    raise SystemExit(1)
+sys.stdout.write(dados.decode("utf-8", "replace"))
+sys.stdout.write("\n__HTTP_STATUS__%d" % codigo)
+PY
+  exit $?
+fi
+
+echo "o container nao tem curl nem python3 para falar HTTP" >&2
+exit 127
+"""
+
+
+def auth_header(guardado: str) -> str:
+    """Transforma o que esta no banco no cabecalho Authorization.
+
+    Formatos: 'basic:usuario:senha', 'bearer:token' ou o cabecalho ja pronto.
+    """
+    texto = (guardado or "").strip()
+    if not texto:
+        return ""
+    tipo, _, resto = texto.partition(":")
+    if tipo.lower() == "basic":
+        return "Basic " + base64.b64encode(resto.encode()).decode()
+    if tipo.lower() == "bearer":
+        return "Bearer " + resto
+    return texto
+
+
+def _split_status(bruto: str) -> tuple[str, int]:
+    """Separa o corpo do marcador de status que o script anexa no fim."""
+    pos = bruto.rfind(STATUS_MARK)
+    if pos < 0:
+        return bruto, 0
+    try:
+        status = int(bruto[pos + len(STATUS_MARK):].strip() or 0)
+    except ValueError:
+        status = 0
+    return bruto[:pos].rstrip("\n"), status
+
+
+def http_json(server: sqlite3.Row, url: str, auth: str, corpo: str):
+    """Busca a URL de dentro do container e devolve o JSON ja interpretado."""
+    url = (url or "").strip()
+    if len(url) > HTTP_URL_MAX or not URL_RE.match(url):
+        raise QueryError("URL invalida (ex.: http://127.0.0.1:8212/v1/api/players)")
+    try:
+        bruto = ssh_output(
+            server,
+            q("bash", "-lc", HTTP_FETCH_SCRIPT, "gp", url,
+              auth_header(auth), (corpo or "").strip(), f"{HTTP_TIMEOUT:g}"),
+            timeout=int(HTTP_TIMEOUT) + 15,
+        )
+    except RemoteError as exc:
+        raise QueryError(str(exc))
+
+    texto, status = _split_status(bruto)
+    if status in (401, 403):
+        raise QueryError(f"a API respondeu {status} - confira o usuario/senha de admin")
+    if status >= 400:
+        raise QueryError(f"a API respondeu HTTP {status}")
+    if len(texto) > HTTP_MAX_BYTES:
+        raise QueryError("resposta da API grande demais para ser lida aqui")
+    try:
+        return json.loads(texto)
+    except ValueError:
+        amostra = texto.strip()[:120] or "(vazia)"
+        raise QueryError(f"a resposta nao e JSON: {amostra}")
+
+
+# Chaves que os jogos costumam usar. Comparadas sem maiusculas nem separadores, entao
+# 'numConnectedPlayers', 'num_connected_players' e 'NUMCONNECTEDPLAYERS' sao a mesma.
+LIST_KEYS = {"players", "playerlist", "onlineplayers", "connectedplayers", "clients"}
+NAME_KEYS = ("name", "playername", "accountname", "username", "displayname", "nick")
+COUNT_KEYS = {"players", "playercount", "numplayers", "onlineplayers", "currentplayernum",
+              "numconnectedplayers", "playersonline", "online"}
+MAX_KEYS = {"maxplayers", "maxplayernum", "maxplayercount", "serverplayermaxnum",
+            "playerlimit", "slots"}
+SERVER_NAME_KEYS = {"servername", "hostname"}
+JSON_MAX_DEPTH = 5
+PATH_RE = re.compile(r"[^.\[\]]+|\[\d+\]")
+
+
+def _slug(chave: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(chave).lower())
+
+
+def _json_walk(dados, caminho: str):
+    """Anda um caminho estilo 'a.b[0].c'. Caminho vazio devolve o objeto inteiro."""
+    atual = dados
+    for parte in PATH_RE.findall(caminho or ""):
+        if parte.startswith("["):
+            indice = int(parte[1:-1])
+            if not isinstance(atual, list) or indice >= len(atual):
+                raise QueryError(f"'{caminho}' nao existe na resposta")
+            atual = atual[indice]
+        elif isinstance(atual, dict) and parte in atual:
+            atual = atual[parte]
+        else:
+            raise QueryError(f"'{caminho}' nao existe na resposta")
+    return atual
+
+
+def _nome_do_item(item) -> str:
+    if not isinstance(item, dict):
+        return str(item).strip() if isinstance(item, str) else ""
+    por_slug = {_slug(k): v for k, v in item.items()}
+    for chave in NAME_KEYS:
+        valor = por_slug.get(chave)
+        if isinstance(valor, str) and valor.strip():
+            return valor.strip()
+    return ""
+
+
+def _lista_de_jogadores(item) -> bool:
+    """Uma lista so vale se for de objetos — e, se tiver alguem, com cara de jogador."""
+    if not isinstance(item, list) or not all(isinstance(i, dict) for i in item):
+        return False
+    return not item or bool(_nome_do_item(item[0]))
+
+
+def _acha_lista(dados, profundidade: int = 0):
+    """Primeira lista de jogadores da resposta, procurando pelo nome da chave e pela forma."""
+    if _lista_de_jogadores(dados):
+        return dados
+    if not isinstance(dados, dict) or profundidade >= JSON_MAX_DEPTH:
+        return None
+    # A chave manda: {"players": []} com ninguem online e resposta valida, e pela
+    # forma (lista vazia) nao daria para reconhecer.
+    for chave, valor in dados.items():
+        if _slug(chave) in LIST_KEYS and isinstance(valor, list):
+            return valor if all(isinstance(i, dict) for i in valor) else None
+    for valor in dados.values():
+        achou = _acha_lista(valor, profundidade + 1)
+        if achou is not None:
+            return achou
+    return None
+
+
+def _acha_valor(dados, chaves: set, tipos: tuple, profundidade: int = 0):
+    """Primeiro valor do tipo pedido guardado em uma das chaves conhecidas."""
+    if not isinstance(dados, dict) or profundidade >= JSON_MAX_DEPTH:
+        return None
+    for chave, valor in dados.items():
+        if _slug(chave) in chaves and isinstance(valor, tipos) and not isinstance(valor, bool):
+            return valor
+    for valor in dados.values():
+        achou = _acha_valor(valor, chaves, tipos, profundidade + 1)
+        if achou is not None:
+            return achou
+    return None
+
+
+def read_players_json(dados, caminho_lista: str = "", caminho_contagem: str = "") -> dict:
+    """Tira jogadores de um JSON qualquer.
+
+    Sem caminhos preenchidos o painel procura sozinho uma lista de jogadores e, se nao
+    houver, um numero em alguma chave conhecida (currentplayernum, numplayers, ...).
+    """
+    lista = None
+    if caminho_lista:
+        lista = _json_walk(dados, caminho_lista)
+        if not isinstance(lista, list):
+            raise QueryError(f"'{caminho_lista}' nao aponta para uma lista")
+    elif not caminho_contagem:
+        lista = _acha_lista(dados)
+
+    quantos = None
+    if caminho_contagem:
+        bruto = _json_walk(dados, caminho_contagem)
+        if isinstance(bruto, list):
+            quantos = len(bruto)
+        elif isinstance(bruto, (int, float)) and not isinstance(bruto, bool):
+            quantos = int(bruto)
+        else:
+            raise QueryError(f"'{caminho_contagem}' nao e um numero nem uma lista")
+    elif lista is None:
+        achou = _acha_valor(dados, COUNT_KEYS, (int, float))
+        quantos = int(achou) if achou is not None else None
+
+    nomes = []
+    if isinstance(lista, list):
+        for item in lista[:128]:
+            nome = _nome_do_item(item)
+            if nome:
+                nomes.append({"name": nome, "since": "", "score": 0, "seconds": 0})
+        if quantos is None:
+            quantos = len(lista)
+
+    if quantos is None:
+        raise QueryError(
+            "nao achei jogadores na resposta - preencha o caminho da lista ou da contagem"
+        )
+
+    maximo = _acha_valor(dados, MAX_KEYS, (int, float))
+    return {
+        "players": quantos,
+        "list": nomes,
+        "max_players": int(maximo) if maximo is not None else None,
+        "server_name": _acha_valor(dados, SERVER_NAME_KEYS, (str,)) or "",
+        "map": "",
+        "error": "",
+    }
+
+
+def players_from_http(server: sqlite3.Row) -> dict:
+    if not (server["http_url"] or "").strip():
+        raise QueryError("informe a URL da API do jogo")
+    dados = http_json(server, server["http_url"], server["http_auth"], server["http_body"])
+    return read_players_json(dados, server["http_list_path"], server["http_count_path"])
+
+
 # ------------------------------------------------------ jogadores (pelo log)
 
 # Nem todo jogo publica consulta A2S (o RuneScape Dragonwilds, por exemplo, nao publica).
@@ -667,18 +972,36 @@ def _apply_log_events(linhas, entrar, sair) -> dict:
 # ------------------------------------------- descobrir como contar jogadores
 
 # O jogo abre os sockets dele dentro do container: em vez de chutar a porta de consulta,
-# pergunta ao proprio container quais portas UDP estao escutando e testa uma a uma.
-# /proc/net/udp existe sempre; 'ss' nao vem instalado em todo container.
-UDP_PORTS_SCRIPT = r"""
+# pergunta ao proprio container quais portas estao escutando e testa uma a uma. UDP vira
+# consulta A2S; TCP vira sondagem HTTP (e onde moram as APIs de administracao).
+# /proc/net/* existe sempre; 'ss' e 'netstat' nao vem instalados em todo container.
+LISTEN_PORTS_SCRIPT = r"""
 set -u
-hex=$(awk 'NR>1 { split($2, a, ":"); print a[2] }' /proc/net/udp /proc/net/udp6 2>/dev/null | sort -u)
-for h in $hex; do
-  printf '%d\n' "0x$h" 2>/dev/null || true
-done | sort -un
+lista() {
+  arquivo=$1 proto=$2 estado=$3
+  [ -r "$arquivo" ] || return 0
+  # Coluna 2 = endereco local (IP:PORTA em hex), coluna 4 = estado. Em TCP so
+  # interessa 0A (LISTEN); em UDP o socket ligado ja e a porta aberta.
+  awk -v p="$proto" -v e="$estado" \
+    'NR > 1 && (e == "" || $4 == e) { split($2, a, ":"); print p, a[2] }' "$arquivo"
+}
+{
+  lista /proc/net/udp  udp ""
+  lista /proc/net/udp6 udp ""
+  lista /proc/net/tcp  tcp 0A
+  lista /proc/net/tcp6 tcp 0A
+} | while read -r proto hex; do
+  printf '%s %d\n' "$proto" "0x$hex" 2>/dev/null || true
+done | sort -u -k1,1 -k2,2n
 """
 
 # Portas de consulta que a maioria dos jogos Steam usa quando nao ha nada declarado.
 QUERY_PORT_GUESSES = (27015, 27016, 27005)
+# Portas de API de administracao mais comuns: 8212 (REST do Palworld), 7777 (HTTPS do
+# Satisfactory), 8080 (padrao de quem escreve um painelzinho proprio).
+API_PORT_GUESSES = (8212, 7777, 8080)
+# O sshd e o proprio painel entrando no container: sondar essa porta so gera ruido.
+PORTAS_IGNORADAS = (22,)
 
 
 def _portas_do_texto(texto: str) -> list[int]:
@@ -686,21 +1009,150 @@ def _portas_do_texto(texto: str) -> list[int]:
     return [int(n) for n in re.findall(r"\d{2,5}", texto or "") if 1 <= int(n) <= 65535]
 
 
-def candidate_ports(server: sqlite3.Row) -> tuple[list[int], str]:
-    """Portas a testar: as que o container esta escutando + as declaradas + as usuais."""
-    escutando: list[int] = []
+def _sem_repetir(portas) -> list[int]:
+    saida: list[int] = []
+    for porta in portas:
+        if 1 <= porta <= 65535 and porta not in saida and porta not in PORTAS_IGNORADAS:
+            saida.append(porta)
+    return saida
+
+
+def candidate_ports(server: sqlite3.Row) -> tuple[list[int], list[int], str]:
+    """Portas a testar (UDP, TCP): as que o container escuta + as declaradas + as usuais."""
+    escutando: dict[str, list[int]] = {"udp": [], "tcp": []}
     aviso = ""
     try:
-        raw = ssh_output(server, q("bash", "-lc", UDP_PORTS_SCRIPT, "gp"), timeout=30)
-        escutando = [int(p) for p in raw.split() if p.isdigit()]
+        raw = ssh_output(server, q("bash", "-lc", LISTEN_PORTS_SCRIPT, "gp"), timeout=30)
+        for linha in raw.splitlines():
+            proto, _, porta = linha.strip().partition(" ")
+            if proto in escutando and porta.isdigit():
+                escutando[proto].append(int(porta))
     except (RemoteError, ValueError) as exc:
-        aviso = f"nao consegui listar as portas UDP do container: {exc}"
+        aviso = f"nao consegui listar as portas abertas do container: {exc}"
 
-    candidatas: list[int] = []
-    for porta in escutando + _portas_do_texto(server["game_port"]) + list(QUERY_PORT_GUESSES):
-        if 1 <= porta <= 65535 and porta not in candidatas:
-            candidatas.append(porta)
-    return candidatas, aviso
+    declaradas = _portas_do_texto(server["game_port"])
+    udp = _sem_repetir(escutando["udp"] + declaradas + list(QUERY_PORT_GUESSES))
+    tcp = _sem_repetir(escutando["tcp"] + declaradas + list(API_PORT_GUESSES))
+    return udp, tcp, aviso
+
+
+# Sondagem HTTP das portas TCP. Roda dentro do container (uma unica ida de SSH para
+# todas as portas) porque API de administracao costuma escutar so em 127.0.0.1 — de
+# fora do container ela pareceria fechada.
+#
+# Duas etapas por porta: primeiro um GET em "/" so para saber se ali fala HTTP; so
+# quem responde alguma coisa leva os caminhos conhecidos. Assim uma porta que nao e
+# HTTP custa uma tentativa, nao seis.
+HTTP_PROBE_TIMEOUT = float(os.environ.get("GAMEPANEL_PROBE_TIMEOUT", "2"))
+HTTP_PROBE_PORTS_MAX = 12
+HTTP_PROBE_SCRIPT = r"""
+set -u
+tmo=$1
+shift
+caminhos='/v1/api/info /v1/api/metrics /v1/api/players /api/v1 /status /api/info'
+
+sonda=""
+if command -v curl >/dev/null 2>&1; then
+  pega() { curl -sS -k -m "$tmo" -o /dev/null -w '%{http_code} %{content_type}' "$1" 2>/dev/null || echo "000 -"; }
+elif command -v python3 >/dev/null 2>&1; then
+  sonda=$(mktemp 2>/dev/null) || sonda=/tmp/gamepanel-sonda.py
+  cat >"$sonda" <<'PY'
+import sys
+import urllib.error
+import urllib.request
+
+url, tmo = sys.argv[1], float(sys.argv[2])
+try:
+    if url.startswith("https"):
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    else:
+        ctx = None
+    resp = urllib.request.urlopen(url, timeout=tmo, context=ctx)
+    print(resp.getcode(), resp.headers.get("Content-Type", "-") or "-")
+except urllib.error.HTTPError as exc:
+    print(exc.code, exc.headers.get("Content-Type", "-") or "-")
+except Exception:
+    print("000 -")
+PY
+  pega() { python3 "$sonda" "$1" "$tmo" 2>/dev/null || echo "000 -"; }
+else
+  echo "o container nao tem curl nem python3 para sondar as portas" >&2
+  exit 127
+fi
+
+for porta in "$@"; do
+  esquema=http
+  raiz=$(pega "http://127.0.0.1:${porta}/")
+  case "$raiz" in
+    000*)
+      # Nada em HTTP: pode ser uma API que so aceita TLS (o Satisfactory e assim).
+      raiz=$(pega "https://127.0.0.1:${porta}/")
+      esquema=https
+      ;;
+  esac
+  printf '%s|%s|/|%s\n' "$porta" "$esquema" "$raiz"
+  case "$raiz" in
+    000*) continue ;;
+  esac
+  for caminho in $caminhos; do
+    printf '%s|%s|%s|%s\n' "$porta" "$esquema" "$caminho" \
+      "$(pega "${esquema}://127.0.0.1:${porta}${caminho}")"
+  done
+done
+
+[ -n "$sonda" ] && rm -f "$sonda"
+exit 0
+"""
+
+
+def probe_http_ports(server: sqlite3.Row, portas: list[int]) -> tuple[list[dict], list[int], str]:
+    """Sonda as portas TCP com HTTP. Devolve (o que respondeu, portas mudas, aviso)."""
+    portas = portas[:HTTP_PROBE_PORTS_MAX]
+    if not portas:
+        return [], [], ""
+    # Pior caso: 2 tentativas na raiz + 6 caminhos, por porta.
+    limite = int(HTTP_PROBE_TIMEOUT * 8 * len(portas)) + 20
+    try:
+        raw = ssh_output(
+            server,
+            q("bash", "-lc", HTTP_PROBE_SCRIPT, "gp", f"{HTTP_PROBE_TIMEOUT:g}",
+              *[str(p) for p in portas]),
+            timeout=limite,
+        )
+    except RemoteError as exc:
+        return [], portas, f"nao consegui sondar as portas TCP: {exc}"
+
+    achados: list[dict] = []
+    responderam: set[int] = set()
+    for linha in raw.splitlines():
+        campos = linha.split("|")
+        if len(campos) != 4 or not campos[0].isdigit():
+            continue
+        porta, esquema, caminho, resultado = campos
+        status, _, tipo = resultado.strip().partition(" ")
+        if not status.isdigit() or int(status) == 0:
+            continue
+        responderam.add(int(porta))
+        achados.append({
+            "port": int(porta),
+            "scheme": esquema,
+            "path": caminho,
+            "status": int(status),
+            "content_type": (tipo or "-").split(";")[0].strip(),
+            "url": f"{esquema}://127.0.0.1:{porta}{caminho}",
+        })
+
+    # JSON primeiro, depois quem pediu senha (401/403 = "existe API aqui").
+    achados.sort(key=lambda a: (
+        0 if "json" in a["content_type"] else 1,
+        0 if a["status"] in (200, 401, 403) else 1,
+        a["port"], a["path"],
+    ))
+    mudas = [p for p in portas if p not in responderam]
+    return achados, mudas, ""
 
 
 def probe_ports(host: str, portas: list[int]) -> list[dict]:
@@ -759,9 +1211,9 @@ _players_lock = threading.Lock()
 
 
 def player_source(server: sqlite3.Row) -> str:
-    """Como contar os jogadores deste servidor: 'a2s', 'log' ou '' (desligado)."""
+    """Como contar os jogadores deste servidor: 'a2s', 'http', 'log' ou '' (desligado)."""
     escolhido = (server["player_source"] or "").strip()
-    if escolhido in ("a2s", "log", "none"):
+    if escolhido in PLAYER_SOURCES:
         return "" if escolhido == "none" else escolhido
     # Cadastro antigo, anterior ao campo: porta de consulta preenchida = A2S.
     return "a2s" if int(server["query_port"] or 0) else ""
@@ -783,6 +1235,8 @@ def server_players(server: sqlite3.Row, force: bool = False) -> dict:
     try:
         if origem == "log":
             data = players_from_log(server)
+        elif origem == "http":
+            data = players_from_http(server)
         else:
             porta = int(server["query_port"] or 0)
             if not porta:
@@ -1331,46 +1785,82 @@ def api_server_players(sid: int):
     return jsonify(server_players(server))
 
 
+def _aba_porta(server: sqlite3.Row) -> dict:
+    """Aba 1: dispara A2S em cada porta UDP que o container esta escutando."""
+    candidatas, _tcp, aviso = candidate_ports(server)
+    return {"portas": probe_ports(server["host"], candidatas[:12]), "aviso": aviso}
+
+
+def _aba_http(server: sqlite3.Row, http: dict, testar: bool) -> dict:
+    """Aba 2: quais portas TCP falam HTTP, e o teste da URL escolhida."""
+    _udp, candidatas, aviso = candidate_ports(server)
+    achados, mudas, erro_probe = probe_http_ports(server, candidatas)
+    saida = {"achados": achados, "mudas": mudas, "aviso": aviso or erro_probe,
+             "teste_http": None, "erro_http": ""}
+    if not testar:
+        return saida
+    try:
+        dados = http_json(server, http["http_url"], http["http_auth"], http["http_body"])
+        teste = read_players_json(dados, http["http_list_path"], http["http_count_path"])
+        # A resposta crua ajuda a preencher os caminhos quando a busca automatica erra.
+        teste["amostra"] = json.dumps(dados, indent=2, ensure_ascii=False)[:4000]
+        saida["teste_http"] = teste
+    except QueryError as exc:
+        saida["erro_http"] = str(exc)
+    return saida
+
+
+def _aba_log(server: sqlite3.Row, join_re: str, leave_re: str, testar: bool) -> dict:
+    """Aba 3: linhas do log com cara de entrada/saida e o teste dos padroes."""
+    saida = {"amostras": [], "teste": None, "erro_log": ""}
+    try:
+        linhas = read_log_lines(server)
+        chaves = re.compile("|".join(LOG_HINT_WORDS), re.I)
+        amostras = [ln for ln in linhas if chaves.search(ln)][-120:]
+        saida["amostras"] = amostras
+        if not testar:
+            return saida
+        entrar = compile_pattern(join_re, "entrada")
+        if not entrar:
+            raise QueryError("informe o padrao da linha de entrada")
+        sair = compile_pattern(leave_re, "saida")
+        teste = _apply_log_events(linhas, entrar, sair)
+        teste["casaram"] = [
+            ln for ln in amostras
+            if entrar.search(ln[:LOG_LINE_MAX]) or (sair and sair.search(ln[:LOG_LINE_MAX]))
+        ][-20:]
+        saida["teste"] = teste
+    except (RemoteError, QueryError) as exc:
+        saida["erro_log"] = str(exc)
+    return saida
+
+
 @app.get("/servers/<int:sid>/players/descobrir")
 @login_required
 def players_setup(sid: int):
-    """Assistente: acha a porta que responde a consulta e ajuda a achar o padrao no log."""
+    """Assistente: acha a porta/API que responde e ajuda a achar o padrao no log."""
     server = _server_or_404(sid)
     aba = request.args.get("aba", "porta")
+    testar = bool(request.args.get("testar"))
 
-    portas, aviso = [], ""
-    if aba == "porta":
-        candidatas, aviso = candidate_ports(server)
-        portas = probe_ports(server["host"], candidatas[:12])
-
-    # Assistente do log: linhas candidatas e teste do padrao digitado.
-    amostras: list[str] = []
-    teste = None
-    erro_log = ""
+    # Os campos das tres abas viajam pela URL para o botao "Testar" nao perder o que
+    # ja foi digitado.
+    http = {campo: request.args.get(campo, server[campo]) for campo in HTTP_FIELDS}
     join_re = request.args.get("join_re", server["join_re"])
     leave_re = request.args.get("leave_re", server["leave_re"])
-    if aba == "log":
-        try:
-            linhas = read_log_lines(server)
-            chaves = re.compile("|".join(LOG_HINT_WORDS), re.I)
-            amostras = [ln for ln in linhas if chaves.search(ln)][-120:]
-            if request.args.get("testar"):
-                entrar = compile_pattern(join_re, "entrada")
-                if not entrar:
-                    raise QueryError("informe o padrao da linha de entrada")
-                sair = compile_pattern(leave_re, "saida")
-                teste = _apply_log_events(linhas, entrar, sair)
-                teste["casaram"] = [
-                    ln for ln in amostras
-                    if entrar.search(ln[:LOG_LINE_MAX]) or (sair and sair.search(ln[:LOG_LINE_MAX]))
-                ][-20:]
-        except (RemoteError, QueryError) as exc:
-            erro_log = str(exc)
+
+    dados = {"portas": [], "aviso": "", "achados": [], "mudas": [], "amostras": [],
+             "teste": None, "teste_http": None, "erro_log": "", "erro_http": ""}
+    if aba == "http":
+        dados.update(_aba_http(server, http, testar))
+    elif aba == "log":
+        dados.update(_aba_log(server, join_re, leave_re, testar))
+    else:
+        dados.update(_aba_porta(server))
 
     return render_template(
-        "players_setup.html", server=server, aba=aba, portas=portas, aviso=aviso,
-        amostras=amostras, teste=teste, erro_log=erro_log,
-        join_re=join_re, leave_re=leave_re,
+        "players_setup.html", server=server, aba=aba,
+        http=http, join_re=join_re, leave_re=leave_re, **dados,
     )
 
 
@@ -1392,6 +1882,19 @@ def players_use(sid: int):
                 (int(porta), sid),
             )
         flash(f"Contagem de jogadores ligada pela consulta na porta {porta}/udp.", "ok")
+    elif origem == "http":
+        errors: list[str] = []
+        campos = _campos_http(request.form, errors)
+        if errors or not campos["http_url"]:
+            flash(errors[0] if errors else "Informe a URL da API.", "error")
+            return redirect(url_for("players_setup", sid=sid, aba="http"))
+        with conn:
+            conn.execute(
+                "UPDATE servers SET http_url=?, http_auth=?, http_body=?,"
+                " http_list_path=?, http_count_path=?, player_source='http' WHERE id=?",
+                (*[campos[c] for c in HTTP_FIELDS], sid),
+            )
+        flash("Contagem de jogadores ligada pela API HTTP do servidor.", "ok")
     elif origem == "log":
         errors: list[str] = []
         entrada = _padrao(request.form.get("join_re"), "entrada", errors)
@@ -1473,6 +1976,43 @@ def _arquivos_config(valor: str, errors: list[str]) -> str:
     return "\n".join(caminhos)
 
 
+CAMINHO_JSON_RE = re.compile(r"^[A-Za-z0-9_.\[\]-]{0,120}$")
+
+
+def _campos_http(form, errors: list[str]) -> dict:
+    """Le e confere os campos da chamada HTTP (URL, autenticacao, corpo, caminhos)."""
+    url = (form.get("http_url", "") or "").strip()[:HTTP_URL_MAX]
+    if url and not URL_RE.match(url):
+        errors.append("URL da API invalida (ex.: http://127.0.0.1:8212/v1/api/players).")
+        url = ""
+
+    corpo = (form.get("http_body", "") or "").strip()[:HTTP_BODY_MAX]
+    if corpo:
+        try:
+            json.loads(corpo)
+        except ValueError as exc:
+            errors.append(f"Corpo da requisicao nao e JSON valido: {exc}.")
+            corpo = ""
+
+    caminhos = {}
+    for campo, rotulo in (("http_list_path", "lista"), ("http_count_path", "contagem")):
+        texto = (form.get(campo, "") or "").strip()[:HTTP_PATH_MAX]
+        if texto and not CAMINHO_JSON_RE.match(texto):
+            errors.append(f"Caminho da {rotulo} invalido (use algo como 'data.players').")
+            texto = ""
+        caminhos[campo] = texto
+
+    return {
+        "http_url": url,
+        # Guarda a senha da API como ela precisa ser mandada. O banco do painel ja da
+        # acesso de root aos containers, entao isso nao amplia o estrago de um vazamento
+        # — mas trate o arquivo panel.db como segredo.
+        "http_auth": (form.get("http_auth", "") or "").strip()[:300],
+        "http_body": corpo,
+        **caminhos,
+    }
+
+
 def _padrao(valor: str, rotulo: str, errors: list[str]) -> str:
     """Guarda o regex so depois de conferir que ele compila."""
     texto = (valor or "").strip()[:RE_MAX_LEN]
@@ -1492,7 +2032,7 @@ def _form_server(form) -> tuple[dict, list[str]]:
     host = form.get("host", "").strip()
     ssh_user = form.get("ssh_user", "").strip() or "root"
     origem = (form.get("player_source", "") or "").strip()
-    if origem not in ("", "none", "a2s", "log"):
+    if origem and origem not in PLAYER_SOURCES:
         errors.append("Forma de contar jogadores invalida.")
         origem = ""
 
@@ -1521,20 +2061,33 @@ def _form_server(form) -> tuple[dict, list[str]]:
             "player_source": origem,
             "join_re": _padrao(form.get("join_re"), "entrada", errors),
             "leave_re": _padrao(form.get("leave_re"), "saida", errors),
+            **_campos_http(form, errors),
         },
         errors,
     )
 
 
+# Colunas que o formulario preenche, na mesma ordem do INSERT/UPDATE abaixo. Manter a
+# lista em um lugar so evita o classico "acrescentei a coluna e esqueci de um dos SQLs".
+SERVER_FIELDS = (
+    "name", "host", "ssh_port", "ssh_user", "service", "game_port", "notes",
+    "config_path", "config_files", "query_port", "player_source", "join_re", "leave_re",
+    *HTTP_FIELDS,
+)
+SQL_INSERT_SERVER = (
+    f"INSERT INTO servers ({', '.join(SERVER_FIELDS)}, created_at)"
+    f" VALUES ({', '.join('?' * (len(SERVER_FIELDS) + 1))})"
+)
+SQL_UPDATE_SERVER = (
+    f"UPDATE servers SET {', '.join(c + '=?' for c in SERVER_FIELDS)} WHERE id=?"
+)
+
+
 @app.route("/servers/new", methods=["GET", "POST"])
 @login_required
 def server_new():
-    data = {
-        "name": "", "host": "", "ssh_user": "root", "ssh_port": 22,
-        "service": "", "game_port": "", "notes": "", "config_path": "",
-        "config_files": "", "query_port": 0,
-        "player_source": "", "join_re": "", "leave_re": "",
-    }
+    data = dict.fromkeys(SERVER_FIELDS, "")
+    data.update({"ssh_user": "root", "ssh_port": 22, "query_port": 0})
     if request.method == "POST":
         data, errors = _form_server(request.form)
         if not errors:
@@ -1542,17 +2095,8 @@ def server_new():
                 conn = db()
                 with conn:
                     conn.execute(
-                        "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
-                        " game_port, notes, config_path, config_files, query_port,"
-                        " player_source, join_re, leave_re, created_at)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            data["name"], data["host"], data["ssh_port"],
-                            data["ssh_user"], data["service"], data["game_port"],
-                            data["notes"], data["config_path"], data["config_files"],
-                            data["query_port"], data["player_source"], data["join_re"],
-                            data["leave_re"], now_iso(),
-                        ),
+                        SQL_INSERT_SERVER,
+                        (*[data[c] for c in SERVER_FIELDS], now_iso()),
                     )
                 flash(f"Servidor {data['name']} cadastrado.", "ok")
                 return redirect(url_for("dashboard"))
@@ -1577,18 +2121,13 @@ def server_edit(sid: int):
                 conn = db()
                 with conn:
                     conn.execute(
-                        "UPDATE servers SET name=?, host=?, ssh_port=?, ssh_user=?,"
-                        " service=?, game_port=?, notes=?, config_path=?, config_files=?,"
-                        " query_port=?, player_source=?, join_re=?, leave_re=? WHERE id=?",
-                        (
-                            data["name"], data["host"], data["ssh_port"],
-                            data["ssh_user"], data["service"], data["game_port"],
-                            data["notes"], data["config_path"], data["config_files"],
-                            data["query_port"], data["player_source"], data["join_re"],
-                            data["leave_re"], sid,
-                        ),
+                        SQL_UPDATE_SERVER, (*[data[c] for c in SERVER_FIELDS], sid)
                     )
                 invalidate_status(sid)
+                # A contagem fica em cache por alguns segundos: trocar a fonte pelo
+                # formulario tem que valer na hora, como vale pelo assistente.
+                with _players_lock:
+                    _players_cache.pop(sid, None)
                 flash("Servidor atualizado.", "ok")
                 return redirect(url_for("server_detail", sid=sid))
             except sqlite3.IntegrityError:

@@ -7,16 +7,19 @@
 </div>
 
 <div class="flash">
-  Duas formas de saber quantos estao jogando. A <strong>consulta direta</strong> e a mesma
-  que o navegador de servidores do jogo usa &mdash; quando o jogo publica uma. Se nenhuma
-  porta responder, sobra contar pelo <strong>log do servidor</strong>.
+  Tres formas de saber quantos estao jogando, da melhor para a ultima:
+  a <strong>API do jogo</strong> (da os nomes), a <strong>consulta direta</strong>
+  que o navegador de servidores usa (da a contagem) e, quando o jogo nao publica nada
+  na rede, o <strong>log do servidor</strong>.
 </div>
 
 <nav class="crumbs">
   <a class="btn {{ 'primary' if aba == 'porta' else 'ghost' }}"
-     href="{{ url_for('players_setup', sid=server.id, aba='porta') }}">1. Consulta direta</a>
+     href="{{ url_for('players_setup', sid=server.id, aba='porta') }}">1. Consulta direta (UDP)</a>
+  <a class="btn {{ 'primary' if aba == 'http' else 'ghost' }}"
+     href="{{ url_for('players_setup', sid=server.id, aba='http') }}">2. API HTTP (TCP)</a>
   <a class="btn {{ 'primary' if aba == 'log' else 'ghost' }}"
-     href="{{ url_for('players_setup', sid=server.id, aba='log') }}">2. Pelo log</a>
+     href="{{ url_for('players_setup', sid=server.id, aba='log') }}">3. Pelo log</a>
 </nav>
 
 {% if aba == 'porta' %}
@@ -58,11 +61,130 @@
     </tbody>
   </table>
   <p class="muted small">
-    Nenhuma respondeu? Entao este jogo nao publica consulta na rede local &mdash; a
-    contagem que aparece no navegador do jogo vem do servico da Steam/Epic, nao do
-    servidor. Use a aba <a href="{{ url_for('players_setup', sid=server.id, aba='log') }}">Pelo log</a>.
+    Nenhuma respondeu? Veja a aba
+    <a href="{{ url_for('players_setup', sid=server.id, aba='http') }}">API HTTP</a> &mdash;
+    varios jogos trocaram a query UDP por uma API de administracao em TCP.
   </p>
 </div>
+
+{% elif aba == 'http' %}
+<div class="card">
+  <h2>Portas TCP que responderam HTTP</h2>
+  <p class="muted small">
+    O painel listou as portas TCP em <code>LISTEN</code> dentro do container e bateu
+    nelas por HTTP <strong>de dentro do proprio container</strong> &mdash; essas APIs
+    costumam escutar so em <code>127.0.0.1</code>, e e assim que elas devem continuar.
+    Um <code>401</code> tambem e um bom sinal: existe API ali, ela so quer senha.
+  </p>
+  {% if aviso %}<p class="flash error">{{ aviso }}</p>{% endif %}
+  <table class="jobs">
+    <thead><tr><th>Endereco</th><th>Status</th><th>Tipo</th><th></th></tr></thead>
+    <tbody>
+      {% for a in achados %}
+      <tr>
+        <td><code>{{ a.scheme }}://127.0.0.1:{{ a.port }}{{ a.path }}</code></td>
+        <td>
+          {% if a.status == 200 %}<span class="badge on">200</span>
+          {% elif a.status in (401, 403) %}<span class="badge">{{ a.status }} pede senha</span>
+          {% else %}<span class="muted">{{ a.status }}</span>{% endif %}
+        </td>
+        <td class="muted small">{{ a.content_type }}</td>
+        <td>
+          <a class="btn ghost" href="{{ url_for('players_setup', sid=server.id, aba='http',
+             http_url=a.url, http_auth=http.http_auth, http_body=http.http_body,
+             http_list_path=http.http_list_path, http_count_path=http.http_count_path) }}">Usar esta URL</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">Nenhuma porta TCP respondeu HTTP.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if mudas %}
+  <p class="muted small">
+    Sem resposta HTTP em: {% for p in mudas %}<code>{{ p }}/tcp</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+    Pode ser porta de jogo pura, ou uma API que precisa ser ligada na configuracao
+    (no Palworld, <code>RESTAPIEnabled=True</code>).
+  </p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Testar a chamada</h2>
+  <form method="get" action="{{ url_for('players_setup', sid=server.id) }}">
+    <input type="hidden" name="aba" value="http">
+    <input type="hidden" name="testar" value="1">
+    <label>URL
+      <input name="http_url" value="{{ http.http_url }}" spellcheck="false"
+             placeholder="http://127.0.0.1:8212/v1/api/players">
+      <small>
+        Sempre <code>127.0.0.1</code>: a chamada sai de dentro do container, pelo mesmo
+        SSH do resto do painel. Nao precisa abrir nada no roteador.
+      </small>
+    </label>
+    <div class="row">
+      <label>Autenticacao <span class="muted">(opcional)</span>
+        <input name="http_auth" value="{{ http.http_auth }}" spellcheck="false"
+               placeholder="basic:admin:senha-de-admin">
+        <small>
+          <code>basic:usuario:senha</code>, <code>bearer:token</code> ou um cabecalho
+          <code>Authorization</code> pronto. Palworld: <code>basic:admin:</code> + a
+          <code>AdminPassword</code> do <code>PalWorldSettings.ini</code>.
+        </small>
+      </label>
+      <label>Corpo JSON <span class="muted">(opcional)</span>
+        <input name="http_body" value="{{ http.http_body }}" spellcheck="false"
+               placeholder='{"function":"QueryServerState"}'>
+        <small>Preenchido, a chamada vira <code>POST</code>. Vazio, e um <code>GET</code>.</small>
+      </label>
+    </div>
+    <div class="row">
+      <label>Caminho da lista <span class="muted">(opcional)</span>
+        <input name="http_list_path" value="{{ http.http_list_path }}" spellcheck="false"
+               placeholder="players">
+      </label>
+      <label>Caminho da contagem <span class="muted">(opcional)</span>
+        <input name="http_count_path" value="{{ http.http_count_path }}" spellcheck="false"
+               placeholder="data.serverGameState.numConnectedPlayers">
+      </label>
+    </div>
+    <p class="muted small">
+      Deixe os dois caminhos vazios primeiro: o painel procura sozinho uma lista de
+      jogadores e, se nao achar, um numero em chaves conhecidas
+      (<code>currentplayernum</code>, <code>numPlayers</code>, ...). So preencha se ele errar
+      &mdash; a resposta crua aparece abaixo para voce ver o nome certo do campo.
+    </p>
+    <div class="form-actions">
+      <button class="btn" type="submit">Testar</button>
+    </div>
+  </form>
+
+  {% if erro_http %}<p class="flash error">{{ erro_http }}</p>{% endif %}
+  {% if teste_http %}
+    <div class="flash ok">
+      Resultado: <strong>{{ teste_http.players }}</strong>
+      {%- if teste_http.max_players %}/{{ teste_http.max_players }}{% endif %} jogador(es)
+      {%- if teste_http.list %} &mdash; {{ teste_http.list | map(attribute='name') | join(', ') }}{% endif %}
+    </div>
+    <details>
+      <summary class="muted small">Resposta crua da API</summary>
+      <pre class="log">{{ teste_http.amostra }}</pre>
+    </details>
+    <form method="post" action="{{ url_for('players_use', sid=server.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="player_source" value="http">
+      {% for campo, valor in http.items() %}
+      <input type="hidden" name="{{ campo }}" value="{{ valor }}">
+      {% endfor %}
+      <button class="btn primary" type="submit">Usar esta API</button>
+    </form>
+    <p class="muted small">
+      A senha da API fica guardada no banco do painel em texto puro (e ela precisa ir
+      no cabecalho de cada chamada). Trate <code>panel.db</code> como segredo.
+    </p>
+  {% endif %}
+</div>
+
 {% else %}
 <div class="card">
   <h2>Linhas do log que parecem de entrada/saida</h2>
