@@ -695,9 +695,18 @@ Nao confunda com o deploy de verdade: aqui os containers se chamam `game-palworl
 a imagem em `docker/game/` **nao instala jogo nenhum** (a de verdade e a de
 `docker/gameserver/`, usada pelo `deploy-docker.ps1`).
 
+Os dois containers falsos sao propositalmente diferentes, para cobrir as tres formas de
+contar jogadores: o `game-palworld` tem query A2S (`27015/udp`) **e** uma API REST no
+formato da do Palworld (`127.0.0.1:8212`, `admin`/`troque-me`); o `game-dragonwilds` nao
+tem nenhuma das duas — so anuncia entradas e saidas no log, como o jogo real. A imagem de
+teste tambem nao tem `curl` de proposito: assim o ambiente local exercita o caminho
+alternativo da chamada HTTP (o container de jogo de verdade tem `curl`).
+
 ```bash
 docker compose logs -f panel
 docker compose exec panel python3 /opt/gamepanel/test_gameconf.py   # testes do parser
+docker compose exec panel python3 /opt/gamepanel/test_players.py    # testes da contagem
+docker compose exec game-palworld sh -c 'echo 7 > /run/fake-players' # fixa a contagem
 docker compose down -v            # zera banco, chaves e arquivos de teste
 ```
 

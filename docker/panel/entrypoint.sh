@@ -29,6 +29,8 @@ sys.path.insert(0, "/opt/gamepanel")
 import app as panel  # noqa: E402  (o import ja cria/migra o banco)
 
 SEEDS = [
+    # Sem player_source: o painel deduz a2s pela porta de consulta. A API REST falsa
+    # (127.0.0.1:8212, admin/troque-me) fica esperando em Configurar contagem > API HTTP.
     dict(name="Palworld (teste)", host="game-palworld", service="palworld.service",
          game_port="8211/udp", query_port=27015,
          config_path="/opt/game/Pal/Saved/Config/LinuxServer",
