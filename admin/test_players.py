@@ -158,6 +158,40 @@ igual("portas do texto livre",
 igual("sem repetir e sem a porta do ssh",
       panel._sem_repetir([8211, 22, 8211, 27015, 99999]), [8211, 27015])
 
+# Os tres estados que a tela precisa diferenciar, vindos do mapa porta -> dono.
+DONOS = {
+    ("tcp", 8212): {"pid": 40, "proc": "PalServer-Linu", "infra": False},
+    ("tcp", 22): {"pid": 1, "proc": "sshd", "infra": True},
+    ("tcp", 33039): {"pid": 0, "proc": "?", "infra": False},
+}
+itens = panel._com_dono(
+    [{"port": 8212}, {"port": 22}, {"port": 33039}, {"port": 7777}], DONOS, "tcp")
+igual("porta do jogo tem processo dono",
+      (itens[0]["origem"], itens[0]["proc"], itens[0]["pid"]), ("detectada", "PalServer-Linu", 40))
+igual("sshd marcado como infra", (itens[1]["origem"], itens[1]["infra"]), ("detectada", True))
+igual("socket aberto sem processo dono no container", itens[2]["origem"], "sem-dono")
+igual("porta que nunca esteve aberta e chute", itens[3]["origem"], "nao-vista")
+
+# A sondagem so vale a pena onde ha resposta util: porta que devolve 404 em tudo vira
+# uma linha marcada, nao uma para cada caminho testado.
+BRUTOS = [
+    {"port": 33039, "path": p, "status": 404, "content_type": "text/html",
+     "scheme": "http", "url": f"http://127.0.0.1:33039{p}"}
+    for p in ("/", "/v1/api/info", "/v1/api/players", "/status")
+] + [
+    {"port": 8212, "path": "/v1/api/players", "status": 401,
+     "content_type": "application/json", "scheme": "http", "url": "x"},
+    {"port": 8212, "path": "/status", "status": 404,
+     "content_type": "application/json", "scheme": "http", "url": "x"},
+]
+resumo = panel._resume_genericos(BRUTOS)
+igual("porta 404-em-tudo vira uma linha so",
+      [(i["port"], i["path"], i.get("generico", False)) for i in resumo if i["port"] == 33039],
+      [(33039, "/", True)])
+igual("porta com API guarda so as rotas uteis",
+      [(i["port"], i["path"]) for i in resumo if i["port"] == 8212],
+      [(8212, "/v1/api/players")])
+
 print()
 if falhas:
     print(f"{len(falhas)} teste(s) falharam: {', '.join(falhas)}")

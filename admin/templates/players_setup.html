@@ -26,16 +26,24 @@
 <div class="card">
   <h2>Portas testadas</h2>
   <p class="muted small">
-    O painel perguntou ao container quais portas UDP o jogo abriu e mandou um
-    <code>A2S_INFO</code> em cada uma, somando as portas usuais da Steam.
+    O painel leu de <code>/proc</code> quais portas UDP estao abertas dentro do container
+    e <strong>qual processo abriu cada uma</strong>, e mandou um <code>A2S_INFO</code> em
+    todas. Porta sem dono na coluna &quot;Aberta por&quot; nao foi detectada: e um chute
+    conhecido ou veio do cadastro, e serve para quando o servidor esta parado.
   </p>
   {% if aviso %}<p class="flash error">{{ aviso }}</p>{% endif %}
   <table class="jobs">
-    <thead><tr><th>Porta</th><th>Resposta</th><th>Servidor</th><th></th></tr></thead>
+    <thead><tr><th>Porta</th><th>Aberta por</th><th>Resposta</th><th>Servidor</th><th></th></tr></thead>
     <tbody>
       {% for p in portas %}
       <tr>
         <td><code>{{ p.port }}/udp</code></td>
+        <td class="muted small">
+          {%- if p.origem == 'detectada' %}<code>{{ p.proc }}</code> (pid {{ p.pid }})
+            {%- if p.infra %} &mdash; infra, nao e o jogo{% endif %}
+          {%- elif p.origem == 'sem-dono' %}aberta, sem processo dono neste container
+          {%- else %}nao estava aberta (chute){% endif -%}
+        </td>
         <td>
           {% if p.ok %}
             <span class="badge on">{{ p.players }}{% if p.max_players %}/{{ p.max_players }}{% endif %} jogadores</span>
@@ -56,7 +64,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="muted">Nenhuma porta para testar.</td></tr>
+      <tr><td colspan="5" class="muted">Nenhuma porta para testar.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -71,18 +79,26 @@
 <div class="card">
   <h2>Portas TCP que responderam HTTP</h2>
   <p class="muted small">
-    O painel listou as portas TCP em <code>LISTEN</code> dentro do container e bateu
-    nelas por HTTP <strong>de dentro do proprio container</strong> &mdash; essas APIs
-    costumam escutar so em <code>127.0.0.1</code>, e e assim que elas devem continuar.
-    Um <code>401</code> tambem e um bom sinal: existe API ali, ela so quer senha.
+    O painel leu de <code>/proc</code> as portas TCP em <code>LISTEN</code> dentro do
+    container e <strong>qual processo abriu cada uma</strong>, e bateu nelas por HTTP
+    <strong>de dentro do proprio container</strong> &mdash; essas APIs costumam escutar so
+    em <code>127.0.0.1</code>, e e assim que elas devem continuar. Um <code>401</code>
+    tambem e um bom sinal: existe API ali, ela so quer senha. Confira a coluna
+    &quot;Aberta por&quot;: se nao for o processo do jogo, nao e a API dele.
   </p>
   {% if aviso %}<p class="flash error">{{ aviso }}</p>{% endif %}
   <table class="jobs">
-    <thead><tr><th>Endereco</th><th>Status</th><th>Tipo</th><th></th></tr></thead>
+    <thead><tr><th>Endereco</th><th>Aberta por</th><th>Status</th><th>Tipo</th><th></th></tr></thead>
     <tbody>
       {% for a in achados %}
       <tr>
         <td><code>{{ a.scheme }}://127.0.0.1:{{ a.port }}{{ a.path }}</code></td>
+        <td class="muted small">
+          {%- if a.origem == 'detectada' %}<code>{{ a.proc }}</code> (pid {{ a.pid }})
+            {%- if a.infra %} &mdash; infra, nao e o jogo{% endif %}
+          {%- elif a.origem == 'sem-dono' %}aberta, sem processo dono neste container
+          {%- else %}nao estava aberta (chute){% endif -%}
+        </td>
         <td>
           {% if a.generico %}<span class="muted">{{ a.status }} em tudo</span>
           {% elif a.status == 200 %}<span class="badge on">200</span>
@@ -101,13 +117,16 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="muted">Nenhuma porta TCP respondeu HTTP.</td></tr>
+      <tr><td colspan="5" class="muted">Nenhuma porta TCP respondeu HTTP.</td></tr>
       {% endfor %}
     </tbody>
   </table>
   {% if mudas %}
   <p class="muted small">
-    Sem resposta HTTP em: {% for p in mudas %}<code>{{ p }}/tcp</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+    Sem resposta HTTP em:
+    {%- for p in mudas %} <code>{{ p.port }}/tcp</code>
+      {%- if p.proc %} (<code>{{ p.proc }}</code>){% endif %}{% if not loop.last %},{% endif %}
+    {%- endfor %}.
   </p>
   {% endif %}
   {% if not tem_api %}

@@ -972,27 +972,53 @@ def _apply_log_events(linhas, entrar, sair) -> dict:
 # ------------------------------------------- descobrir como contar jogadores
 
 # O jogo abre os sockets dele dentro do container: em vez de chutar a porta de consulta,
-# pergunta ao proprio container quais portas estao escutando e testa uma a uma. UDP vira
-# consulta A2S; TCP vira sondagem HTTP (e onde moram as APIs de administracao).
-# /proc/net/* existe sempre; 'ss' e 'netstat' nao vem instalados em todo container.
+# pergunta ao proprio container quais portas estao escutando, QUEM as abriu, e testa uma
+# a uma. UDP vira consulta A2S; TCP vira sondagem HTTP (e onde moram as APIs de
+# administracao).
+#
+# Tudo sai de /proc: 'ss', 'netstat' e 'lsof' nao vem instalados em todo container.
+# O caminho e o mesmo que o `ss -p` faz: /proc/net/* da porta + inode do socket, e os
+# descritores abertos de cada processo (/proc/PID/fd) dizem de quem e aquele inode.
+# Saber o dono e o que separa a porta do jogo do ruido (sshd, DNS do Docker, um HTTP
+# qualquer numa porta alta).
 LISTEN_PORTS_SCRIPT = r"""
 set -u
-lista() {
+
+# inode do socket -> pid. Como o painel entra como root, enxerga todos os processos.
+donos() {
+  for dir in /proc/[0-9]*; do
+    [ -d "$dir/fd" ] || continue
+    ls -l "$dir/fd" 2>/dev/null | awk -v pid="${dir#/proc/}" '
+      match($0, /socket:\[[0-9]+\]/) {
+        print substr($0, RSTART + 8, RLENGTH - 9), pid
+      }'
+  done
+}
+
+# Coluna 2 = endereco local (IP:PORTA em hex), 4 = estado, 10 = inode. Em TCP so
+# interessa 0A (LISTEN); em UDP o socket ligado ja e a porta aberta.
+sockets() {
   arquivo=$1 proto=$2 estado=$3
   [ -r "$arquivo" ] || return 0
-  # Coluna 2 = endereco local (IP:PORTA em hex), coluna 4 = estado. Em TCP so
-  # interessa 0A (LISTEN); em UDP o socket ligado ja e a porta aberta.
   awk -v p="$proto" -v e="$estado" \
-    'NR > 1 && (e == "" || $4 == e) { split($2, a, ":"); print p, a[2] }' "$arquivo"
+    'NR > 1 && (e == "" || $4 == e) { split($2, a, ":"); print p, a[2], $10 }' "$arquivo"
 }
+
+mapa=$(donos)
 {
-  lista /proc/net/udp  udp ""
-  lista /proc/net/udp6 udp ""
-  lista /proc/net/tcp  tcp 0A
-  lista /proc/net/tcp6 tcp 0A
-} | while read -r proto hex; do
-  printf '%s %d\n' "$proto" "0x$hex" 2>/dev/null || true
-done | sort -u -k1,1 -k2,2n
+  sockets /proc/net/udp  udp ""
+  sockets /proc/net/udp6 udp ""
+  sockets /proc/net/tcp  tcp 0A
+  sockets /proc/net/tcp6 tcp 0A
+} | sort -u | while read -r proto hex inode; do
+  porta=$(printf '%d' "0x$hex" 2>/dev/null) || continue
+  pid=$(printf '%s\n' "$mapa" | awk -v i="$inode" '$1 == i { print $2; exit }')
+  nome='?'
+  if [ -n "$pid" ] && [ -r "/proc/$pid/comm" ]; then
+    nome=$(cat "/proc/$pid/comm" 2>/dev/null) || nome='?'
+  fi
+  printf '%s %s %s %s\n' "$proto" "$porta" "${pid:-0}" "${nome:-?}"
+done
 """
 
 # Portas de consulta que a maioria dos jogos Steam usa quando nao ha nada declarado.
@@ -1017,23 +1043,80 @@ def _sem_repetir(portas) -> list[int]:
     return saida
 
 
-def candidate_ports(server: sqlite3.Row) -> tuple[list[int], list[int], str]:
-    """Portas a testar (UDP, TCP): as que o container escuta + as declaradas + as usuais."""
+# Processos que sempre abrem porta num container e nunca sao o jogo: marca-los deixa a
+# lista legivel sem esconder nada de quem esta procurando.
+PROCESSOS_DE_INFRA = frozenset({
+    "sshd", "sshd-session", "systemd", "systemd-resolve", "systemd-resolved", "dockerd",
+    "containerd", "dnsmasq", "cron", "rsyslogd", "chronyd", "ntpd",
+})
+
+
+def candidate_ports(server: sqlite3.Row) -> tuple[list[int], list[int], dict, str]:
+    """Portas a testar (UDP, TCP), quem abriu cada uma, e o aviso se a leitura falhou.
+
+    A lista vem do container (portas realmente abertas, com o processo dono) e so entao
+    recebe as portas declaradas no cadastro e os chutes conhecidos, como rede de seguranca
+    para quando o servidor esta parado — nessa hora nao ha socket nenhum para detectar.
+    """
     escutando: dict[str, list[int]] = {"udp": [], "tcp": []}
+    donos: dict[tuple[str, int], dict] = {}
     aviso = ""
     try:
-        raw = ssh_output(server, q("bash", "-lc", LISTEN_PORTS_SCRIPT, "gp"), timeout=30)
+        raw = ssh_output(server, q("bash", "-lc", LISTEN_PORTS_SCRIPT, "gp"), timeout=60)
         for linha in raw.splitlines():
-            proto, _, porta = linha.strip().partition(" ")
-            if proto in escutando and porta.isdigit():
-                escutando[proto].append(int(porta))
+            campos = linha.split(None, 3)
+            if len(campos) != 4 or campos[0] not in escutando or not campos[1].isdigit():
+                continue
+            proto, porta, pid, nome = campos[0], int(campos[1]), campos[2], campos[3]
+            escutando[proto].append(porta)
+            # Mesma porta em IPv4 e IPv6: fica a primeira que soube dizer o dono.
+            if donos.get((proto, porta), {}).get("proc", "?") == "?":
+                donos[(proto, porta)] = {
+                    "pid": int(pid) if pid.isdigit() else 0,
+                    "proc": nome.strip() or "?",
+                    "infra": nome.strip() in PROCESSOS_DE_INFRA,
+                }
     except (RemoteError, ValueError) as exc:
         aviso = f"nao consegui listar as portas abertas do container: {exc}"
 
+    def prioridade(proto: str, porta: int) -> int:
+        """Porta com processo dono de verdade primeiro; infra por ultimo.
+
+        No meio ficam as sem dono: existe socket, mas nenhum processo DESTE container o
+        abriu (o resolvedor DNS do Docker, por exemplo, que vive fora do namespace).
+        """
+        dono = donos.get((proto, porta))
+        if dono is None or dono["proc"] == "?":
+            return 1
+        return 2 if dono["infra"] else 0
+
+    def util_primeiro(proto: str) -> list[int]:
+        return sorted(escutando[proto], key=lambda p: (prioridade(proto, p), p))
+
     declaradas = _portas_do_texto(server["game_port"])
-    udp = _sem_repetir(escutando["udp"] + declaradas + list(QUERY_PORT_GUESSES))
-    tcp = _sem_repetir(escutando["tcp"] + declaradas + list(API_PORT_GUESSES))
-    return udp, tcp, aviso
+    udp = _sem_repetir(util_primeiro("udp") + declaradas + list(QUERY_PORT_GUESSES))
+    tcp = _sem_repetir(util_primeiro("tcp") + declaradas + list(API_PORT_GUESSES))
+    return udp, tcp, donos, aviso
+
+
+def _com_dono(itens: list[dict], donos: dict, proto: str) -> list[dict]:
+    """Anexa o processo dono a cada porta sondada, para a tela poder mostrar.
+
+    Tres estados diferentes, e a tela precisa saber qual e qual:
+    'detectada'  - o socket existe e o processo dono foi identificado;
+    'sem-dono'   - o socket existe, mas nenhum processo deste container o abriu;
+    'nao-vista'  - a porta nem estava aberta (veio do cadastro ou da lista de chutes).
+    """
+    for item in itens:
+        dono = donos.get((proto, item["port"]))
+        if dono is None:
+            item.update({"origem": "nao-vista", "proc": "", "pid": 0, "infra": False})
+        elif dono["proc"] == "?":
+            item.update({"origem": "sem-dono", "proc": "", "pid": 0, "infra": False})
+        else:
+            item.update({"origem": "detectada", "proc": dono["proc"],
+                         "pid": dono["pid"], "infra": dono["infra"]})
+    return itens
 
 
 # Sondagem HTTP das portas TCP. Roda dentro do container (uma unica ida de SSH para
@@ -1814,14 +1897,17 @@ def api_server_players(sid: int):
 
 def _aba_porta(server: sqlite3.Row) -> dict:
     """Aba 1: dispara A2S em cada porta UDP que o container esta escutando."""
-    candidatas, _tcp, aviso = candidate_ports(server)
-    return {"portas": probe_ports(server["host"], candidatas[:12]), "aviso": aviso}
+    candidatas, _tcp, donos, aviso = candidate_ports(server)
+    portas = probe_ports(server["host"], candidatas[:12])
+    return {"portas": _com_dono(portas, donos, "udp"), "aviso": aviso}
 
 
 def _aba_http(server: sqlite3.Row, http: dict, testar: bool) -> dict:
     """Aba 2: quais portas TCP falam HTTP, e o teste da URL escolhida."""
-    _udp, candidatas, aviso = candidate_ports(server)
+    _udp, candidatas, donos, aviso = candidate_ports(server)
     achados, mudas, erro_probe = probe_http_ports(server, candidatas)
+    _com_dono(achados, donos, "tcp")
+    mudas = _com_dono([{"port": p} for p in mudas], donos, "tcp")
     saida = {"achados": achados, "mudas": mudas, "aviso": aviso or erro_probe,
              # Achado que vale um clique: porta que respondeu numa rota conhecida. Sem
              # nenhum, a tela explica que a API costuma vir desligada de fabrica.

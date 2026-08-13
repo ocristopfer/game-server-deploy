@@ -494,9 +494,23 @@ do jogo faz: UDP do painel para a porta de query. Nao passa por SSH, nao precisa
 senha nem RCON, e nao exige nada instalado no container. Palworld responde na
 `27015/udp`.
 
-O assistente **pergunta ao container quais portas o jogo abriu** (le `/proc/net/udp` e
-`/proc/net/tcp` pelo SSH) e dispara um `A2S_INFO` em cada porta UDP, somando as portas
-usuais da Steam. Se alguma responder, um clique em "Usar esta" ja liga a contagem.
+O assistente **descobre as portas sozinho, e descobre tambem quem as abriu**. Ele le
+`/proc/net/{udp,udp6,tcp,tcp6}` pelo SSH (porta + inode do socket) e cruza com os
+descritores abertos de cada processo em `/proc/PID/fd` — o mesmo caminho que o `ss -p`
+faz, mas sem depender de `ss`, `netstat` ou `lsof` estarem instalados. Cada porta aparece
+na tela com o processo dono, em um de tres estados:
+
+| Estado | O que significa |
+|--------|-----------------|
+| `PalServer-Linu (pid 40)` | socket aberto e processo dono identificado — e essa que interessa |
+| `sshd (pid 1) — infra` | processo que sempre abre porta e nunca e o jogo; vai para o fim da fila |
+| `aberta, sem processo dono neste container` | o socket existe mas nenhum processo daqui o abriu (o resolvedor DNS do Docker, por exemplo) |
+| `nao estava aberta (chute)` | nao foi detectada: veio do cadastro ou da lista de portas conhecidas |
+
+As portas com dono real sao testadas primeiro. A lista de chutes (`27015`, `8212`,
+`7777`...) entra so no fim, como rede de seguranca para quando o servidor esta **parado**
+— nessa hora nao ha socket nenhum para detectar. Se alguma responder, um clique em
+"Usar esta" ja liga a contagem.
 
 **2. API HTTP do jogo** — a melhor das tres quando existe, porque devolve os **nomes** e
 nao so a contagem. Cada vez mais jogo troca a query UDP por uma API de administracao em
