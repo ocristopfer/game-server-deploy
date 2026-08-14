@@ -584,6 +584,53 @@ Vale para os **dois** scripts — `deploy-admin.ps1` e `deploy-game.ps1`:
   senha de root: as consultas a ele continuam exigindo chave (`BatchMode`), para uma senha
   errada falhar na hora em vez de travar o deploy num prompt.
 
+### Contagem de jogadores por servidor (valores testados)
+
+Estes valores ficam no banco do painel, nao no repo - se o painel for recriado, e daqui
+que eles voltam. Todos foram validados contra o log/API real de cada servidor.
+
+| Jogo | Fonte | Nomes? |
+|------|-------|--------|
+| Palworld | API REST `http://127.0.0.1:8212/v1/api/players`, auth `basic:admin:<AdminPassword>`, caminho da lista `players` | sim |
+| Dragonwilds | log (regex abaixo) | sim |
+| Satisfactory | API HTTPS `https://127.0.0.1:7787/api/v1`, auth `bearer:<token>`, corpo `{"function":"QueryServerState"}`, caminho da contagem `data.serverGameState.numConnectedPlayers` | nao |
+| Icarus | A2S na porta de query | so contagem |
+| Enshrouded | log | - |
+
+**Dragonwilds** - `Configurar contagem > Pelo log`:
+
+```
+entrada: PlayerChar entered world \[Account\[[^\]]*\] Character Name\[(?P<name>[^\]]+)\]
+saida:   Player Removed from session \[[^\]]*\]-\[(?P<name>[^\]]+)\]
+```
+
+**Satisfactory** - alternativa por log, caso nao queira token (so contagem, porque a linha
+de saida do jogo nao traz o nome):
+
+```
+entrada: LogNet: Join succeeded: (?P<name>.+)
+saida:   LogNet: UNetConnection::Close:
+```
+
+**Palworld** - alternativa por log, caso a REST caia:
+
+```
+entrada: \[LOG\] (?P<name>.+?) joined the server\.
+saida:   \[LOG\] (?P<name>.+?) left the server\.
+```
+
+Notas que economizam tempo depois:
+
+- O token do Satisfactory sai de `PasswordLogin` com a senha de admin do jogo e **nao tem
+  validade** (o payload e so `{"pl":"Administrator"}`). Ele e admin pleno na API - trate
+  como senha. Se um dia responder 401/`insufficient_scope`, gere outro pelo mesmo caminho.
+- A REST do Palworld so sobe com as chaves **dentro** do `OptionSettings=(...)`, numa unica
+  linha, sob `[/Script/Pal.PalGameWorldSettings]`. Chave solta no arquivo e silenciosamente
+  ignorada, e o servidor roda no padrao sem avisar.
+- A contagem por log le do **start do servico** para ca (`journalctl --since ActiveEnterTimestamp`)
+  e casa so os primeiros 500 caracteres de cada linha. Reiniciar o servidor zera a contagem
+  ate alguem entrar de novo - limitacao inerente da fonte log, nao bug do painel.
+
 ### Como ele fala com os servidores
 
 O painel **nao tem acesso ao host Proxmox** — ele nao usa `pct` e nao tem chave para o
