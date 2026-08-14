@@ -127,20 +127,86 @@ Layout de referencia (o do `.env.example`):
 |------|---------|--------|
 | RuneScape: Dragonwilds | `.\deploy-game.ps1 -Game dragonwilds` | 7777/udp |
 | Palworld | `.\deploy-game.ps1 -Game palworld` | 8211/udp, 27015/udp |
-| Satisfactory | `.\deploy-game.ps1 -Game satisfactory` | 7777/udp, 7777/tcp |
+| Satisfactory | `.\deploy-game.ps1 -Game satisfactory` | 7787/udp, 7787/tcp |
 | Enshrouded | `.\deploy-game.ps1 -Game enshrouded` | 15636/udp, 15637/udp |
 | DayZ | `.\deploy-game.ps1 -Game dayz` | 2302-2304/udp, 27016/udp |
-| Icarus | `.\deploy-game.ps1 -Game icarus` | 17777/udp, 27015/udp |
+| Icarus | `.\deploy-game.ps1 -Game icarus` | 17777/udp, 27017/udp |
 
 Troque `deploy-game.ps1` por `deploy-docker.ps1` para o mesmo jogo em Docker. Alem da
 instalacao, cada `games/<jogo>.env` diz ao painel onde fica a configuracao
 (`CONFIG_PATH`/`CONFIG_FILES`) e como contar jogadores (`QUERY_PORT`/`PLAYER_SOURCE`) —
 e o que faz o servidor nascer cadastrado e com a tela **Config** pronta.
 
+### Mapa de portas e NAT
+
+Cada jogo tem CT e IP proprios, entao **na LAN nao existe conflito**: dois servidores
+poderiam usar a mesma porta em IPs diferentes sem se atrapalhar. O conflito aparece no
+**roteador**, onde existe um IP publico so e cada porta externa aponta para um unico
+destino. Por isso as portas abaixo sao unicas entre si — nao por exigencia dos jogos,
+mas para que todo redirecionamento seja **1:1** (porta externa = porta interna).
+
+| Jogo | Destino | Redirecionar no roteador | Nunca redirecionar |
+|------|---------|--------------------------|--------------------|
+| Dragonwilds | 192.168.2.20 | `7777/udp` (+ `7778`, `7779` se criar mundos extras) | — |
+| Palworld | 192.168.2.21 | `8211/udp`, `27015/udp` | REST `8212/tcp`, RCON `25575/tcp` |
+| Satisfactory | 192.168.2.22 | `7787/udp`, `7787/tcp` | — |
+| Enshrouded | 192.168.2.23 | `15636/udp`, `15637/udp` | — |
+| DayZ | 192.168.2.24 | `2302/udp`, `2303/udp`, `2304/udp`, `27016/udp` | — |
+| Icarus | 192.168.2.25 | `17777/udp`, `27017/udp` | — |
+
+**O 1:1 nao e preferencia estetica** nos jogos que publicam query A2S — Palworld, DayZ e
+Icarus. Esses servidores anunciam a *propria* porta ao master server da Steam; se o NAT
+traduzir `27020` externo para `27015` interno, a Steam divulga uma porta que nao existe do
+lado de fora e o servidor fica invisivel no navegador, mesmo respondendo. Nos jogos de IP
+direto (Dragonwilds, Satisfactory, Enshrouded) uma traducao assimetrica funcionaria, mas
+manter tudo 1:1 evita ter uma porta na LAN e outra na internet.
+
+**Regra de desempate: antiguidade.** Quando dois jogos querem a mesma porta, ela fica com
+o que foi configurado primeiro (a ordem dos CTIDs conta essa historia: 210 dragonwilds,
+211 palworld, 212 satisfactory, 213 enshrouded, 214 dayz, 215 icarus). Quem chega depois
+muda. Isso evita mexer em servidor com gente jogando e em bookmark ja salvo no cliente —
+o custo cai sempre no jogo mais novo, que ainda nao tem historico.
+
+As duas colisoes resolvidas por essa regra:
+
+- **`7777`** — disputada por Dragonwilds (CT 210) e Satisfactory (CT 212). Ficou com o
+  **Dragonwilds**, mais antigo, que ainda reserva 7778/7779 para mundos extras. O
+  Satisfactory foi para **7787**, levando junto o TCP da API de gerenciamento
+- **`27015`** — query padrao da Steam, disputada por Palworld (CT 211) e Icarus (CT 215).
+  Ficou com o **Palworld**; o Icarus foi para **27017** (a 27016 e do DayZ)
+
+Nada de painel, SSH ou API de jogo vai para a internet. O painel (192.168.2.19) e acessado
+pela LAN ou por VPN; o SSH dos containers so responde a partir do painel.
+
+#### Como isso vira regra no OPNsense
+
+Existe um alias de porta por jogo (`JOGO_<Nome>`), versionado em
+[`aliases.json`](aliases.json), e uma regra de port forward por jogo, em
+[`download_rules.csv`](download_rules.csv). O molde da regra e sempre o mesmo:
+
+| Campo | Valor |
+|-------|-------|
+| Interface | WAN |
+| Protocol | UDP (so o Satisfactory usa **TCP/UDP**) |
+| Destination | WAN address |
+| Destination port range | o alias do jogo |
+| Redirect target IP | o IP do CT do jogo |
+| Redirect target port | **o mesmo alias** |
+
+O mesmo alias nos dois campos de porta e o que produz o mapeamento 1:1 — sem isso, os
+jogos com query A2S somem do navegador da Steam. Alias de porta no OPNsense **nao guarda
+protocolo**: ele vem da regra, e por isso o Satisfactory precisa de TCP/UDP explicito
+(UDP e o jogo, TCP e a API de gerenciamento, ambos na mesma porta).
+
+O CSV exportado **nao traz as colunas de destination nem de destination port**, entao ele
+serve como referencia e backup, nao como fonte de importacao: reimportar pode deixar esses
+campos vazios, e uma regra sem porta de destino casa *qualquer* porta para aquele host.
+
 ### RuneScape: Dragonwilds — notas
 
 - App do servidor dedicado: `4019830` (build Linux nativo, `RSDragonwildsServer.sh`)
-- Porta padrao **7777/UDP**; cada mundo adicional usa a seguinte (7778, 7779...)
+- Porta padrao **7777/UDP**; cada mundo adicional usa a seguinte (7778, 7779...), entao a
+  faixa 7777-7779 fica reservada a este jogo — veja [Mapa de portas e NAT](#mapa-de-portas-e-nat)
 - Config criada no primeiro start (localize com `find /opt/game -name DedicatedServer.ini`):
   nome do servidor, senha do mundo, senha de admin, OwnerID. Pare o servidor antes de editar!
 - Limite de jogadores: fixo em 6 (travado pela Jagex, nao configuravel)
@@ -174,13 +240,14 @@ e o que faz o servidor nascer cadastrado e com a tela **Config** pronta.
 ### Satisfactory — notas
 
 - App do servidor dedicado: `1690800` (build Linux nativo, `FactoryServer.sh`)
-- Portas: uma so, **7777/UDP** (jogo) e **7777/TCP** (API HTTPS de gerenciamento que o
-  cliente usa para adotar e configurar o servidor). Abra as duas. As portas antigas
-  15000/15777 sairam na 1.0
+- Portas: uma so, em dois protocolos — **7787/UDP** (jogo) e **7787/TCP** (API HTTPS de
+  gerenciamento que o cliente usa para adotar e configurar o servidor). Abra as duas.
+  O padrao do jogo e 7777, cedida ao Dragonwilds por antiguidade
+  ([Mapa de portas e NAT](#mapa-de-portas-e-nat)). As portas antigas 15000/15777 sairam na 1.0
 - O deploy cria o symlink `~steam/.steam/sdk64/steamclient.so` (sem ele o servidor sobe
   mas nao registra na Steam)
 - Config: nao ha `.ini` para preencher antes — no cliente, **Servidores > Adicionar servidor**
-  com `IP:7777`, defina a senha de admin e reivindique o servidor. Ajustes finos depois em
+  com `IP:7787`, defina a senha de admin e reivindique o servidor. Ajustes finos depois em
   `/home/steam/.config/Epic/FactoryGame/Saved/Config/LinuxServer/`
   (`ServerSettings.ini`, `GameUserSettings.ini`), com o servidor parado
 - Nao publica query A2S da Steam — a contagem de jogadores no painel vem do log
@@ -212,10 +279,11 @@ e o que faz o servidor nascer cadastrado e com a tela **Config** pronta.
 
 - App do servidor dedicado: `2089300` — **sem build Linux**. Igual ao Enshrouded, o deploy
   baixa o build Windows (`STEAM_PLATFORM=windows`) e roda o `IcarusServer.exe` via **Wine**
-- Portas: **17777/UDP** (jogo) e **27015/UDP** (query da Steam, usada pelo navegador de
+- Portas: **17777/UDP** (jogo) e **27017/UDP** (query da Steam, usada pelo navegador de
   servidores do proprio Icarus). As duas vao por linha de comando (`-PORT=` / `-QueryPort=`),
-  entao mudar `GAME_PORT` no `.env` basta. Tudo UDP
-- Publica **A2S** na 27015 — a contagem de jogadores no painel vem da query, nao do log.
+  entao mudar `GAME_PORT` no `.env` basta. Tudo UDP. A query nao fica na 27015 padrao
+  porque o Palworld ja a ocupa — veja [Mapa de portas e NAT](#mapa-de-portas-e-nat)
+- Publica **A2S** na 27017 — a contagem de jogadores no painel vem da query, nao do log.
   Nao ha RCON nem API HTTP: a administracao e feita dentro do jogo, com o `AdminPassword`
 - Config: `/opt/game/Icarus/Saved/Config/WindowsServer/ServerSettings.ini` — o jogo so o
   cria ao gerar o primeiro prospect, entao o deploy semeia um modelo. **Troque o
@@ -480,10 +548,12 @@ E o caminho normal do dia a dia: leva segundos em vez de minutos.
 ### Acesso ao Proxmox por senha
 
 O ideal e ter sua chave publica autorizada no Proxmox. Quando nao ha chave, preencha
-`PROXMOX_PASSWORD` no `.env` (ou passe `-ProxmoxPassword`) e o deploy entra por senha:
+`PROXMOX_PASSWORD` no `.env` (ou passe `-ProxmoxPassword`) e o deploy entra por senha.
+Vale para os **dois** scripts — `deploy-admin.ps1` e `deploy-game.ps1`:
 
 ```powershell
-.\deploy-admin.ps1 -Full -InstallKey   # entra por senha e autoriza sua chave no Proxmox
+.\deploy-admin.ps1 -Full -InstallKey        # painel: entra por senha e autoriza sua chave
+.\deploy-game.ps1 -Game icarus -InstallKey  # jogo: idem, no mesmo host Proxmox
 ```
 
 - O deploy tenta a chave primeiro e so cai para a senha se ela nao for aceita.
@@ -492,6 +562,12 @@ O ideal e ter sua chave publica autorizada no Proxmox. Quando nao ha chave, pree
   se o deploy falhar no meio).
 - `-InstallKey` autoriza sua chave publica no Proxmox uma unica vez; dai em diante nao
   precisa mais da senha no `.env`.
+- A autenticacao e resolvida **uma vez por deploy**, antes do primeiro `ssh`, e vale para
+  todas as chamadas seguintes (envio do bundle, provisionamento, consultas). Um deploy
+  chama `ssh`/`scp` meia duzia de vezes; sem isso cada chamada abriria seu proprio prompt.
+- O modo senha se aplica **so ao host Proxmox**. O CT do painel e outra maquina, com outra
+  senha de root: as consultas a ele continuam exigindo chave (`BatchMode`), para uma senha
+  errada falhar na hora em vez de travar o deploy num prompt.
 
 ### Como ele fala com os servidores
 
@@ -569,7 +645,7 @@ As portas com dono real sao testadas primeiro. A lista de chutes (`27015`, `8212
 
 **2. API HTTP do jogo** — a melhor das tres quando existe, porque devolve os **nomes** e
 nao so a contagem. Cada vez mais jogo troca a query UDP por uma API de administracao em
-TCP: Palworld (REST em `8212/tcp`), Satisfactory (HTTPS em `7777/tcp`), Minecraft com
+TCP: Palworld (REST em `8212/tcp`), Satisfactory (HTTPS em `7787/tcp`), Minecraft com
 plugin, Factorio.
 
 Nada aqui e codificado por jogo. Voce aponta uma URL e o painel:

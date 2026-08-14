@@ -11,6 +11,10 @@ param(
     # Nao cadastra o servidor no painel ao final do deploy
     [switch]$NoRegister,
     [string]$ProxmoxHost = "",
+    # Senha do root do Proxmox. O normal e deixar em PROXMOX_PASSWORD no .env.
+    [string]$ProxmoxPassword = "",
+    # Autoriza sua chave publica no Proxmox e para de depender de senha nos proximos deploys
+    [switch]$InstallKey,
     [string]$EnvFile = "",
     [string]$RemoteBundleDir = "/root/game-deploy"
 )
@@ -101,14 +105,139 @@ function Ask([string]$Label, [string]$Default) {
     return $answer
 }
 
+# ----- Acesso ao Proxmox: chave quando existe, senha do .env quando nao -----
+# Mesmo mecanismo do deploy-admin.ps1. O ssh/scp do Windows nao aceita senha por
+# parametro, mas o OpenSSH 8.4+ chama o programa apontado por SSH_ASKPASS quando
+# SSH_ASKPASS_REQUIRE=force. O arquivo criado abaixo nao guarda a senha: ele so ecoa
+# uma variavel de ambiente deste processo.
+$script:AskPassFile = ""
+# Opcoes aplicadas a TODO ssh/scp do deploy. No modo senha elas desligam a tentativa
+# por chave: sem isso o ssh pode cair no prompt do console, que num deploy longo
+# significa parar no meio esperando alguem digitar.
+$script:SshOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
+# Host a que a autenticacao acima se aplica (o Proxmox). O CT do painel e outra maquina,
+# com outra senha de root - mandar a senha do Proxmox para ele so geraria falha de auth.
+$script:AuthTarget = ""
+
+function Get-SshOptsFor([string]$Target) {
+    if ($Target -ne "" -and $Target -eq $script:AuthTarget) { return $script:SshOpts }
+    return @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
+}
+
+function Enable-PasswordAuth([string]$Password) {
+    if ($script:AskPassFile -eq "") {
+        $script:AskPassFile = Join-Path $env:TEMP "gamedeploy-askpass.cmd"
+        Set-Content -Path $script:AskPassFile -Encoding ASCII -Value @(
+            "@echo off",
+            "echo %GAMEDEPLOY_SSH_PASSWORD%"
+        )
+    }
+    $env:GAMEDEPLOY_SSH_PASSWORD = $Password
+    $env:SSH_ASKPASS = $script:AskPassFile
+    $env:SSH_ASKPASS_REQUIRE = "force"
+    # Alguns builds so consultam o askpass com DISPLAY definido.
+    if (-not $env:DISPLAY) { $env:DISPLAY = "localhost:0" }
+    $script:SshOpts += @("-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password")
+}
+
+function Disable-PasswordAuth {
+    foreach ($nome in @("GAMEDEPLOY_SSH_PASSWORD", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE")) {
+        Remove-Item "env:$nome" -ErrorAction SilentlyContinue
+    }
+    if ($script:AskPassFile -ne "" -and (Test-Path $script:AskPassFile)) {
+        Remove-Item $script:AskPassFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-KeyAuth([string]$Target) {
+    # "Nao entrou" e resposta esperada aqui, nao erro do deploy - por isso a preferencia
+    # relaxada (ver o comentario do bloco de ssh auxiliar mais abaixo).
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new `
+            "root@$Target" "true" 2>$null | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $anterior
+    }
+}
+
+function Initialize-ProxmoxAuth([string]$Target, [string]$Password) {
+    $script:AuthTarget = $Target
+    if (Test-KeyAuth $Target) {
+        Write-Host "Proxmox: entrando por chave SSH." -ForegroundColor DarkGray
+        return $false
+    }
+    if ($Password -eq "") {
+        throw ("Nao consegui entrar em root@$Target por chave SSH. " +
+               "Preencha PROXMOX_PASSWORD no .env (ou use -ProxmoxPassword), " +
+               "ou autorize sua chave publica no Proxmox.")
+    }
+    Enable-PasswordAuth $Password
+    Write-Host "Proxmox: sem chave autorizada, usando a senha do .env." -ForegroundColor DarkGray
+    return $true
+}
+
+# Chave publica do operador: com ela autorizada no Proxmox, os deploys seguintes nao
+# pedem senha nenhuma - nem uma vez por chamada de ssh.
+function Get-LocalPubKey {
+    foreach ($name in @("id_ed25519.pub", "id_rsa.pub")) {
+        $path = Join-Path $env:USERPROFILE ".ssh\$name"
+        if (Test-Path $path) { return ((Get-Content $path -Raw).Trim()) }
+    }
+    return ""
+}
+
+function Install-KeyOnProxmox([string]$Target) {
+    $pub = Get-LocalPubKey
+    if ($pub -eq "") {
+        Write-Host "Sem chave publica local para instalar (rode ssh-keygen -t ed25519)." -ForegroundColor Yellow
+        return
+    }
+    Write-Host "Autorizando sua chave publica em root@$Target..." -ForegroundColor Cyan
+    $cmd = "install -d -m 700 /root/.ssh && touch /root/.ssh/authorized_keys && " +
+           "chmod 600 /root/.ssh/authorized_keys && " +
+           "grep -qF '$pub' /root/.ssh/authorized_keys || echo '$pub' >> /root/.ssh/authorized_keys"
+    Invoke-Ssh $Target $cmd
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao autorizar a chave em root@$Target" }
+    Write-Host "Pronto: os proximos deploys entram por chave, sem senha." -ForegroundColor Green
+}
+
 # ----- ssh auxiliar (consultas e cadastro no painel) -----
 # No PowerShell 5.1 o stderr de um executavel nativo vira excecao quando
 # ErrorActionPreference e 'Stop' - inclusive quando o comando termina com sucesso.
 # Por isso toda chamada daqui relaxa a preferencia: o erro de verdade e o $LASTEXITCODE.
+
+# ssh/scp do fluxo principal: carregam o $script:SshOpts, que e onde vive a
+# autenticacao (chave ou senha via askpass).
+function Invoke-Ssh([string]$Target, [string]$Command) {
+    $opcoes = Get-SshOptsFor $Target
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        ssh @opcoes "root@$Target" $Command
+    } finally {
+        $ErrorActionPreference = $anterior
+    }
+}
+
+function Invoke-Scp([string[]]$Sources, [string]$Destination) {
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        scp @script:SshOpts @Sources $Destination
+    } finally {
+        $ErrorActionPreference = $anterior
+    }
+}
+
 # -Batch para destinos que so valem a pena por chave (o CT do painel): sem chave
 # autorizada a consulta falha na hora em vez de parar o deploy num prompt de senha.
 function Invoke-SshQuery([string]$Target, [string]$Command, [switch]$Batch) {
-    $opcoes = @("-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new")
+    $opcoes = @(Get-SshOptsFor $Target) + @("-o", "ConnectTimeout=10")
     if ($Batch) { $opcoes += @("-o", "BatchMode=yes") }
     $anterior = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -123,10 +252,11 @@ function Invoke-SshQuery([string]$Target, [string]$Command, [switch]$Batch) {
 # Igual a de cima, mas com a saida indo para a tela (o cadastro no painel responde
 # "servidor 'X' cadastrado").
 function Invoke-SshLive([string]$Target, [string]$Command) {
+    $opcoes = Get-SshOptsFor $Target
     $anterior = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new "root@$Target" $Command
+        ssh @opcoes "root@$Target" $Command
     } finally {
         $ErrorActionPreference = $anterior
     }
@@ -239,6 +369,20 @@ if ($Interactive) {
 }
 
 if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido (parametro, .env ou modo interativo)." }
+
+# Autenticacao decidida UMA vez, antes de qualquer ssh/scp: por chave se ela ja estiver
+# autorizada, senao pela senha do .env via askpass. Sem isso cada ssh do deploy abre seu
+# proprio prompt - e este script chama ssh meia duzia de vezes por jogo.
+if ($ProxmoxPassword -eq "") { $ProxmoxPassword = Get-Cfg $cfg "PROXMOX_PASSWORD" }
+$UsandoSenha = Initialize-ProxmoxAuth $ProxmoxHost $ProxmoxPassword
+if ($InstallKey) {
+    if ($UsandoSenha) {
+        Install-KeyOnProxmox $ProxmoxHost
+    } else {
+        Write-Host "Chave SSH ja autorizada no Proxmox - nada a instalar." -ForegroundColor DarkGray
+    }
+}
+
 foreach ($required in @("CTID", "STORAGE", "BRIDGE", "IP_CIDR")) {
     if (-not $cfg.ContainsKey($required) -or $cfg[$required] -eq "") {
         throw "Valor obrigatorio ausente: $required (preencha o .env ou use -Interactive)"
@@ -354,20 +498,20 @@ Write-LfFile (Join-Path $BundleDir "deploy.env") (($deployLines -join "`n") + "`
 
 # ----- Envia e executa no Proxmox -----
 Write-Host "`nEnviando bundle para root@$ProxmoxHost..." -ForegroundColor Cyan
-ssh "root@$ProxmoxHost" "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
+Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
 if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
 
 # scp em vez de 'tar -czf - | ssh tar -xzf -': o PowerShell converte para texto o que
 # passa por um pipe entre dois executaveis nativos, o que corrompe o stream do tar.gz.
 $bundleFiles = @(Get-ChildItem -Path $BundleDir -File | ForEach-Object { $_.FullName })
-scp @bundleFiles "root@${ProxmoxHost}:$RemoteBundleDir/"
+Invoke-Scp $bundleFiles "root@${ProxmoxHost}:$RemoteBundleDir/"
 if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para root@$ProxmoxHost" }
 
 # deploy.env leva senha do CT e, em jogos como o dayz, a senha da conta Steam
-ssh "root@$ProxmoxHost" "chmod 700 '$RemoteBundleDir' && chmod 600 '$RemoteBundleDir/deploy.env'" | Out-Null
+Invoke-Ssh $ProxmoxHost "chmod 700 '$RemoteBundleDir' && chmod 600 '$RemoteBundleDir/deploy.env'" | Out-Null
 
 Write-Host "Executando provisionamento no Proxmox (o download do jogo pode demorar)...`n" -ForegroundColor Cyan
-ssh "root@$ProxmoxHost" "cd '$RemoteBundleDir' && bash ./provision-game-lxc.sh"
+Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./provision-game-lxc.sh"
 if ($LASTEXITCODE -ne 0) { throw "Provisionamento falhou no host Proxmox (veja a saida acima)" }
 
 # O bundle local tem copia do deploy.env (senhas) - nao deixa sobrando no %TEMP%
@@ -440,7 +584,14 @@ if (-not $NoRegister) {
     }
 }
 
+# Tira a senha do ambiente e apaga o askpass do %TEMP%. Nao fica para o proximo comando
+# desta mesma janela do PowerShell.
+Disable-PasswordAuth
+
 Write-Host "Deploy finalizado." -ForegroundColor Green
 if ($registrado) {
     Write-Host "Servidor cadastrado no painel: $Display ($CtIp) - a tela Config ja abre o arquivo do jogo." -ForegroundColor Green
+}
+if ($UsandoSenha -and -not $InstallKey) {
+    Write-Host "Dica: rode uma vez com -InstallKey para autorizar sua chave e parar de usar senha." -ForegroundColor DarkGray
 }
