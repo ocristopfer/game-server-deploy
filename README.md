@@ -239,14 +239,21 @@ e o que faz o servidor nascer cadastrado e com a tela **Config** pronta.
   sob `xvfb-run -a`. O **`xauth` vai explicito** na mesma linha do `apt-get`: ele e so um
   *Recommends* do `xvfb`, entao com `--no-install-recommends` nao vem junto e o `xvfb-run`
   morre com `error: xauth command not found` (exit 3) antes de chegar no Wine
-- O `IcarusServer.exe` da raiz tem so 256KB — e o *bootstrap* da Unreal. O binario real
-  e `Icarus/Binaries/Win64/IcarusServer-Win64-Shipping.exe` (~108MB), e e ele quem abre
-  a janela. Util saber ao procurar processo com `ps`
+- **O wrapper chama o binario `Shipping` direto**, nao o `IcarusServer.exe` da raiz. Aquele
+  tem so 256KB e e o *bootstrap* da Unreal: headless ele sobe, fica vivo gastando ~1s de CPU
+  e **nunca gera o processo do servidor** — sem porta, sem log, e com o systemd reportando
+  `active` o tempo todo. O binario real e `Icarus/Binaries/Win64/IcarusServer-Win64-Shipping.exe`
+  (~108MB). No `ps`, um servidor sadio mostra ESSE binario, com RSS na casa dos GB;
+  se aparecer so o `IcarusServer.exe` com ~17MB, e o bootstrap travado
 - No journal aparece `XDG_RUNTIME_DIR is invalid or not set`: e ruido do `libwayland-client`
   em servico systemd ([bug 1093464](https://lists.debian.org/debian-wine/2025/12/msg00004.html)),
   nao e a causa de falha nenhuma. O wrapper define a variavel so para calar a mensagem
 - Nao use `WINEDEBUG=-all` no wrapper: ele silencia as linhas `err:` do Wine, que sao a
   unica pista quando o `.exe` morre antes de gerar log proprio. O padrao aqui e `fixme-all`
+- `START_ARGS` leva `-stdout -FullStdOutLogOutput` para a Unreal escrever no stdout do
+  processo, e nao so no arquivo. Sem isso o `game-logs` fica **mudo com o servidor
+  saudavel** (o unico stderr seria o do Wine), o que confunde na hora de diagnosticar.
+  Nao use `-log`: ele abre uma janela de console que fica presa dentro do X virtual
 - Memoria: 16GB (recomendacao oficial, mais a folga do Wine); o jogo e pesado em
   single-thread, entao core rapido vale mais que muitos cores.
   Disco: a instalacao ocupa ~10,5GB (1,1GB so de `.pdb`), por isso 32GB com folga
