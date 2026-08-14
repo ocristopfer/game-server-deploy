@@ -118,6 +118,7 @@ Layout de referencia (o do `.env.example`):
 | 212 | satisfactory | 192.168.2.22 |
 | 213 | enshrouded | 192.168.2.23 |
 | 214 | dayz | 192.168.2.24 |
+| 215 | icarus | 192.168.2.25 |
 | 219 | fallback / `-AppId` | 192.168.2.29 |
 
 ## Jogos definidos
@@ -129,6 +130,7 @@ Layout de referencia (o do `.env.example`):
 | Satisfactory | `.\deploy-game.ps1 -Game satisfactory` | 7777/udp, 7777/tcp |
 | Enshrouded | `.\deploy-game.ps1 -Game enshrouded` | 15636/udp, 15637/udp |
 | DayZ | `.\deploy-game.ps1 -Game dayz` | 2302-2304/udp, 27016/udp |
+| Icarus | `.\deploy-game.ps1 -Game icarus` | 17777/udp, 27015/udp |
 
 Troque `deploy-game.ps1` por `deploy-docker.ps1` para o mesmo jogo em Docker. Alem da
 instalacao, cada `games/<jogo>.env` diz ao painel onde fica a configuracao
@@ -205,6 +207,52 @@ e o que faz o servidor nascer cadastrado e com a tela **Config** pronta.
 - O primeiro start demora mais que o normal: o Wine monta o prefixo e o jogo gera o mundo.
   Acompanhe com `game-logs`
 - Saves: `/opt/game/savegame/` (prefixo do Wine em `/home/steam/.wine-enshrouded`)
+
+### Icarus — notas
+
+- App do servidor dedicado: `2089300` — **sem build Linux**. Igual ao Enshrouded, o deploy
+  baixa o build Windows (`STEAM_PLATFORM=windows`) e roda o `IcarusServer.exe` via **Wine**
+- Portas: **17777/UDP** (jogo) e **27015/UDP** (query da Steam, usada pelo navegador de
+  servidores do proprio Icarus). As duas vao por linha de comando (`-PORT=` / `-QueryPort=`),
+  entao mudar `GAME_PORT` no `.env` basta. Tudo UDP
+- Publica **A2S** na 27015 — a contagem de jogadores no painel vem da query, nao do log.
+  Nao ha RCON nem API HTTP: a administracao e feita dentro do jogo, com o `AdminPassword`
+- Config: `/opt/game/Icarus/Saved/Config/WindowsServer/ServerSettings.ini` — o jogo so o
+  cria ao gerar o primeiro prospect, entao o deploy semeia um modelo. **Troque o
+  `AdminPassword`**; ajuste `SessionName`, `MaxPlayers` e `JoinPassword` (vazio = aberto).
+  Pare o servidor antes de editar (`systemctl stop icarus`): o jogo reescreve esse arquivo
+  ao sair (`LastProspectName` etc.)
+- `ShutdownIfEmptyFor` / `ShutdownIfNotJoinedFor` vem em 300s (o servidor se desliga sozinho
+  quando ninguem entra). O systemd reinicia logo depois; se preferir o servidor sempre de pe,
+  aumente os dois valores
+- O mundo nao nasce com o servidor: quem cria o **prospect** e um jogador conectado, pelo
+  menu do jogo (ou preencha `CreateProspect`/`LoadProspect` no `.ini`)
+- **`vm.max_map_count`**: a Unreal sob Wine morre com `Freeing X bytes from backup pool` se
+  o valor for o padrao. Em CT nao privilegiado o `sysctl` de dentro nao pega — ajuste no
+  **host Proxmox**: `sysctl -w vm.max_map_count=262144` e
+  `echo "vm.max_map_count=262144" > /etc/sysctl.d/99-icarus.conf`
+- **Precisa de X virtual (`xvfb`)**, e essa e a diferenca em relacao ao Enshrouded: o
+  build de servidor do Icarus tenta criar uma *janela* na largada, mesmo sem renderizar
+  nada. Sem display o Wine morre em ~1s com `nodrv_CreateWindow: Application tried to
+  create a window, but no driver could be loaded` e **exit 41**, antes de sequer criar
+  `Saved/Logs/`. Por isso o `PRE_INSTALL_CMD` instala o `xvfb` e o wrapper roda o Wine
+  sob `xvfb-run -a`. O **`xauth` vai explicito** na mesma linha do `apt-get`: ele e so um
+  *Recommends* do `xvfb`, entao com `--no-install-recommends` nao vem junto e o `xvfb-run`
+  morre com `error: xauth command not found` (exit 3) antes de chegar no Wine
+- O `IcarusServer.exe` da raiz tem so 256KB — e o *bootstrap* da Unreal. O binario real
+  e `Icarus/Binaries/Win64/IcarusServer-Win64-Shipping.exe` (~108MB), e e ele quem abre
+  a janela. Util saber ao procurar processo com `ps`
+- No journal aparece `XDG_RUNTIME_DIR is invalid or not set`: e ruido do `libwayland-client`
+  em servico systemd ([bug 1093464](https://lists.debian.org/debian-wine/2025/12/msg00004.html)),
+  nao e a causa de falha nenhuma. O wrapper define a variavel so para calar a mensagem
+- Nao use `WINEDEBUG=-all` no wrapper: ele silencia as linhas `err:` do Wine, que sao a
+  unica pista quando o `.exe` morre antes de gerar log proprio. O padrao aqui e `fixme-all`
+- Memoria: 16GB (recomendacao oficial, mais a folga do Wine); o jogo e pesado em
+  single-thread, entao core rapido vale mais que muitos cores.
+  Disco: a instalacao ocupa ~10,5GB (1,1GB so de `.pdb`), por isso 32GB com folga
+- O primeiro start demora mais que o normal: o Wine monta o prefixo. Acompanhe com `game-logs`
+- Saves: `/opt/game/Icarus/Saved/PlayerData/` e `/opt/game/Icarus/Saved/Prospects/`
+  (prefixo do Wine em `/home/steam/.wine-icarus`)
 
 ### DayZ — notas
 
