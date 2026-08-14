@@ -562,6 +562,21 @@ Vale para os **dois** scripts — `deploy-admin.ps1` e `deploy-game.ps1`:
   se o deploy falhar no meio).
 - `-InstallKey` autoriza sua chave publica no Proxmox uma unica vez; dai em diante nao
   precisa mais da senha no `.env`.
+- **Chave com passphrase precisa do `ssh-agent`.** Sem ele, o deploy continua caindo na
+  senha mesmo com a chave autorizada: o `ssh` oferece a chave publica, o servidor aceita
+  (`Server accepts key` no `ssh -v`) e a autenticacao falha logo depois, porque assinar
+  exige a passphrase e um deploy nao tem onde perguntar. O sintoma engana - parece chave
+  recusada, e na verdade e chave nao assinada. Habilite o agent uma vez, num PowerShell
+  **como administrador**:
+
+  ```powershell
+  Set-Service ssh-agent -StartupType Automatic
+  Start-Service ssh-agent
+  ssh-add $env:USERPROFILE\.ssh\id_ed25519   # janela normal, digite a passphrase
+  ```
+
+  Confira com `ssh -o BatchMode=yes root@<proxmox> "echo ok"`: respondeu `ok`, o deploy
+  para de usar senha.
 - A autenticacao e resolvida **uma vez por deploy**, antes do primeiro `ssh`, e vale para
   todas as chamadas seguintes (envio do bundle, provisionamento, consultas). Um deploy
   chama `ssh`/`scp` meia duzia de vezes; sem isso cada chamada abriria seu proprio prompt.
