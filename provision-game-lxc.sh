@@ -109,6 +109,31 @@ resolve_variables() {
     STEAMCMD_PLATFORM_ARG=""
   fi
 
+  # ----- Runtime para .exe de Windows (vazio = jogo nativo Linux) -----
+  # wine   = pacote da distro. Simples, mas sem esync/fsync: cada primitiva de
+  #          sincronizacao do Windows vira syscall cara, e isso aparece como gargalo
+  #          em jogo com muitas threads.
+  # proton = build do Proton-GE baixado do GitHub. Traz o proprio wine com fsync
+  #          (futex_waitv, kernel >= 5.16) ligado por padrao, que e o ganho real.
+  # Os dois expoem o mesmo comando dentro do CT: win-run <exe> [args].
+  WINDOWS_RUNTIME="${WINDOWS_RUNTIME:-}"
+  case "$WINDOWS_RUNTIME" in
+    ""|wine|proton) ;;
+    *) die "WINDOWS_RUNTIME invalido: '${WINDOWS_RUNTIME}' (use wine, proton ou deixe vazio)" ;;
+  esac
+  # Versao FIXA de proposito: 'latest' faria o servidor trocar de runtime sozinho
+  # num redeploy qualquer, e regressao de Proton e dificil de diagnosticar depois.
+  PROTON_VERSION="${PROTON_VERSION:-GE-Proton11-5}"
+  PROTON_DIR="/opt/proton/${PROTON_VERSION}"
+  # Padrao conservador. Desligar explorer.exe/services.exe economiza processo em
+  # servidor headless, mas quebra jogo que abre janela (ex.: Icarus) - por isso e
+  # decisao de cada games/<jogo>.env, nao um default.
+  WINE_DLL_OVERRIDES="${WINE_DLL_OVERRIDES:-mscoree,mshtml=}"
+  # 1 quando o .exe insiste em criar janela mesmo sendo servidor.
+  WINDOWS_RUNTIME_XVFB="${WINDOWS_RUNTIME_XVFB:-0}"
+  WINE_PREFIX_DIR="${WINE_PREFIX_DIR:-/home/steam/.wine-${GAME_KEY}}"
+  PROTON_PREFIX_DIR="${PROTON_PREFIX_DIR:-/home/steam/.proton-${GAME_KEY}}"
+
   # Quase todo servidor dedicado baixa com login anonimo. Alguns (DayZ) tem o depot
   # do servidor atras de uma conta que possua o jogo - o game.env marca com
   # STEAM_ANONYMOUS=0 e as credenciais vem do .env (deploy.env), nunca do game.env.
@@ -284,6 +309,145 @@ install_steamcmd_in_ct() {
   "
 }
 
+# Instala o runtime de Windows (wine ou proton) e o comando win-run, que e o que
+# os scripts de start dos jogos chamam. Roda ANTES do PRE_INSTALL_CMD para o jogo
+# poder contar com o runtime pronto e so cuidar do que e especifico dele.
+setup_windows_runtime() {
+  [[ -n "$WINDOWS_RUNTIME" ]] || return 0
+  msg "Preparando runtime de Windows: ${WINDOWS_RUNTIME}"
+
+  local pacotes="xz-utils"
+  [[ "$WINDOWS_RUNTIME" == "wine" ]] && pacotes="wine"
+  [[ "$WINDOWS_RUNTIME" == "proton" ]] && pacotes="python3 xz-utils"
+  # xvfb-run precisa do xauth, que e apenas Recommends do xvfb: com
+  # --no-install-recommends ele nao viria, e o start morreria com
+  # "xvfb-run: error: xauth command not found".
+  [[ "$WINDOWS_RUNTIME_XVFB" == "1" ]] && pacotes="${pacotes} xvfb xauth"
+
+  run_ct "
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    faltando=''
+    for p in ${pacotes}; do
+      dpkg -s \"\$p\" >/dev/null 2>&1 || faltando=\"\$faltando \$p\"
+    done
+    if [ -n \"\$faltando\" ]; then
+      apt-get update
+      apt-get install -y --no-install-recommends \$faltando
+    else
+      echo 'Pacotes do runtime ja instalados'
+    fi
+  " || die "Falha instalando pacotes do runtime ${WINDOWS_RUNTIME}"
+
+  if [[ "$WINDOWS_RUNTIME" == "wine" ]]; then
+    run_ct "command -v wine >/dev/null 2>&1" || die "wine nao ficou disponivel no CT"
+    run_ct "echo \"Wine: \$(wine --version)\""
+  fi
+
+  if [[ "$WINDOWS_RUNTIME" == "proton" ]]; then
+    local url="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${PROTON_VERSION}/${PROTON_VERSION}-x86_64.tar.gz"
+    run_ct "
+      set -e
+      if [ -x '${PROTON_DIR}/proton' ]; then
+        echo 'Proton ${PROTON_VERSION} ja instalado'
+        exit 0
+      fi
+      install -d '${PROTON_DIR}'
+      tmp=\$(mktemp -d)
+      echo 'Baixando ${PROTON_VERSION} (~450MB)...'
+      curl -fsSL '${url}' -o \"\$tmp/proton.tar.gz\"
+      # --strip-components=1: o tarball tem um diretorio raiz cujo nome nao segue a
+      # tag (GE-Proton11-5 vira GE-Proton11-5-x86_64). Extrair o conteudo direto no
+      # PROTON_DIR deixa o caminho previsivel qualquer que seja esse nome.
+      tar -xzf \"\$tmp/proton.tar.gz\" -C '${PROTON_DIR}' --strip-components=1
+      rm -rf \"\$tmp\"
+      [ -x '${PROTON_DIR}/proton' ] || { echo 'ERRO: ${PROTON_DIR}/proton nao existe apos extrair'; ls -la '${PROTON_DIR}'; exit 1; }
+      chmod -R a+rX '${PROTON_DIR}'
+      echo 'Proton ${PROTON_VERSION} instalado'
+    " || die "Falha instalando o Proton ${PROTON_VERSION}"
+  fi
+
+  # Configuracao lida pelo win-run. Fica fora do script para trocar runtime sem
+  # reescrever o executavel.
+  local tmp_file
+  tmp_file="$(mktemp)"
+  cat > "$tmp_file" <<EOF
+# Gerado pelo deploy - nao edite a mao (o proximo deploy sobrescreve).
+RUNTIME=${WINDOWS_RUNTIME}
+GAME_KEY=${GAME_KEY}
+PROTON_DIR=${PROTON_DIR}
+PROTON_PREFIX=${PROTON_PREFIX_DIR}
+WINE_PREFIX=${WINE_PREFIX_DIR}
+WINE_DLL_OVERRIDES=${WINE_DLL_OVERRIDES}
+USE_XVFB=${WINDOWS_RUNTIME_XVFB}
+EOF
+  push_file_to_ct "$tmp_file" "/etc/game-runtime.env" 0644
+  rm -f "$tmp_file"
+
+  tmp_file="$(mktemp)"
+  cat > "$tmp_file" <<'EOF'
+#!/usr/bin/env bash
+# win-run <exe> [args...] - roda um .exe de Windows com o runtime configurado
+# no deploy (wine ou proton). Instalado por provision-game-lxc.sh.
+set -Eeuo pipefail
+
+[ -r /etc/game-runtime.env ] || { echo "win-run: /etc/game-runtime.env ausente"; exit 1; }
+# shellcheck disable=SC1091
+. /etc/game-runtime.env
+
+[ $# -ge 1 ] || { echo "uso: win-run <exe> [args...]"; exit 2; }
+exe="$1"; shift
+[ -f "$exe" ] || { echo "win-run: executavel nao encontrado: $exe"; exit 1; }
+
+export HOME="${HOME:-/home/steam}"
+
+# Servico systemd nao passa por PAM, entao ninguem cria o XDG_RUNTIME_DIR e o
+# libwayland-client polui o journal com "XDG_RUNTIME_DIR is invalid or not set".
+export XDG_RUNTIME_DIR="/tmp/.xdg-${GAME_KEY}-$(id -u)"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+
+# fixme-all e nao -all: as linhas "err:" sao a unica pista quando o .exe morre
+# antes de gerar log proprio.
+export WINEDEBUG="${WINEDEBUG:-fixme-all}"
+export WINEDLLOVERRIDES="${WINE_DLL_OVERRIDES:-mscoree,mshtml=}"
+
+# ntsync implementa as primitivas do NT dentro do kernel e e mais rapido que o
+# fsync. Nao basta o device existir: no Proton ele e opt-in por variavel. Quando o
+# /dev/ntsync nao esta exposto ao container, segue no fsync sem reclamar.
+if [ -e /dev/ntsync ] && [ -w /dev/ntsync ]; then
+  export PROTON_USE_NTSYNC="${PROTON_USE_NTSYNC:-1}"
+  export WINE_NTSYNC="${WINE_NTSYNC:-1}"
+fi
+
+if [ "${RUNTIME}" = "proton" ]; then
+  # O Proton espera o layout do Steam: um diretorio de compat (onde nasce o pfx) e
+  # um "client install path". O segundo so precisa existir.
+  export STEAM_COMPAT_DATA_PATH="${PROTON_PREFIX}"
+  export STEAM_COMPAT_CLIENT_INSTALL_PATH="${HOME}/.steam/steam"
+  mkdir -p "$STEAM_COMPAT_DATA_PATH" "$STEAM_COMPAT_CLIENT_INSTALL_PATH"
+  [ -x "${PROTON_DIR}/proton" ] || { echo "win-run: ${PROTON_DIR}/proton ausente"; exit 1; }
+  set -- "${PROTON_DIR}/proton" run "$exe" "$@"
+else
+  export WINEPREFIX="${WINE_PREFIX}"
+  export WINEARCH=win64
+  mkdir -p "$WINEPREFIX"
+  set -- wine "$exe" "$@"
+fi
+
+if [ "${USE_XVFB:-0}" = "1" ]; then
+  # Alguns servidores criam janela mesmo headless; -a escolhe um display livre,
+  # o que importa quando o systemd reinicia rapido e o lock anterior ainda existe.
+  exec xvfb-run -a -s "-screen 0 640x480x24 -nolisten tcp" "$@"
+fi
+exec "$@"
+EOF
+  install_helper "win-run" "$tmp_file"
+  rm -f "$tmp_file"
+
+  run_ct "install -d -o steam -g steam ${WINE_PREFIX_DIR} ${PROTON_PREFIX_DIR} /home/steam/.steam/steam"
+}
+
 run_pre_install() {
   [[ -n "$PRE_INSTALL_CMD" ]] || return 0
   msg "Executando PRE_INSTALL_CMD do jogo dentro do CT"
@@ -456,6 +620,10 @@ EOF
 render_systemd_unit() {
   msg "Criando servico systemd ${SERVICE_NAME}"
   local rendered_args="${START_ARGS//\{PORT\}/${GAME_PORT}}"
+  # esync/fsync do Proton criam um descritor por objeto de sincronizacao; com o
+  # limite padrao (1024) o servidor cai com "failed to create eventfd" sob carga.
+  local extra_limites=""
+  [[ -n "$WINDOWS_RUNTIME" ]] && extra_limites=$'LimitNOFILE=1048576\n'
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
@@ -472,6 +640,7 @@ WorkingDirectory=${GAME_DIR}
 ExecStart=${GAME_DIR}/${START_SCRIPT} ${rendered_args}
 Restart=on-failure
 RestartSec=10
+${extra_limites}
 
 [Install]
 WantedBy=multi-user.target
@@ -563,6 +732,7 @@ main() {
   setup_panel_access
   ensure_steam_user
   install_steamcmd_in_ct
+  setup_windows_runtime
   run_pre_install
   install_game_in_ct
   # post-install roda antes da deteccao porque um jogo pode CRIAR o proprio

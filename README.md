@@ -137,6 +137,60 @@ instalacao, cada `games/<jogo>.env` diz ao painel onde fica a configuracao
 (`CONFIG_PATH`/`CONFIG_FILES`) e como contar jogadores (`QUERY_PORT`/`PLAYER_SOURCE`) —
 e o que faz o servidor nascer cadastrado e com a tela **Config** pronta.
 
+### Jogos sem build Linux: wine ou Proton
+
+Enshrouded e Icarus so publicam servidor para Windows. O deploy baixa o build Windows
+(`STEAM_PLATFORM=windows`) e roda o `.exe` dentro do CT com o runtime escolhido em
+`games/<jogo>.env`:
+
+| Variavel | Para que serve |
+|----------|----------------|
+| `WINDOWS_RUNTIME` | `wine` (pacote da distro), `proton` (Proton-GE baixado do GitHub) ou vazio para jogo nativo |
+| `PROTON_VERSION` | tag fixa do Proton-GE, ex. `GE-Proton11-5` |
+| `WINE_DLL_OVERRIDES` | vai para `WINEDLLOVERRIDES`; padrao `mscoree,mshtml=` |
+| `WINDOWS_RUNTIME_XVFB` | `1` quando o `.exe` cria janela mesmo headless |
+
+O `provision-game-lxc.sh` instala o runtime, grava `/etc/game-runtime.env` e cria o comando
+**`win-run`** dentro do CT. O script de start do jogo vira uma linha:
+
+```bash
+exec win-run /opt/game/servidor.exe "$@"
+```
+
+Trocar de runtime e mudar `WINDOWS_RUNTIME` e redeployar - nenhum script de jogo muda.
+
+**Por que Proton e nao o wine da distro.** O wine do Debian nao tem esync nem fsync: cada
+mutex/evento/semaforo do Windows vira syscall cara, e em servidor muito multi-thread isso
+vira gargalo de CPU. O Proton-GE traz o proprio wine com **fsync** (`futex_waitv`, kernel
+>= 5.16) ligado por padrao. Por isso o Enshrouded usa `proton`.
+
+O **Icarus fica em `wine` de proposito**: ele cria janela e depende do `explorer.exe`, e o
+caminho wine+xvfb ja esta validado nele. Trocar para `proton` e uma linha, mas mantenha o
+`WINDOWS_RUNTIME_XVFB=1`.
+
+**Cuidado com os overrides.** Desligar `explorer.exe`/`services.exe`/`wbemprox.dll` economiza
+processo em servidor headless (o Enshrouded usa os tres), mas **quebra jogo que abre janela**
+- no Icarus, sem `explorer.exe` o servidor morre com `nodrv_CreateWindow`. Por isso o padrao
+e conservador e a decisao fica em cada `games/<jogo>.env`. O `services.exe=d` e o mais
+agressivo: se o servidor parar de subir depois de uma atualizacao do jogo, tire ele primeiro.
+
+A unit systemd ganha `LimitNOFILE=1048576` quando ha runtime de Windows: esync/fsync criam um
+descritor por objeto de sincronizacao e o limite padrao (1024) derruba o servidor sob carga.
+
+**Ganho extra opcional - `ntsync`.** O kernel do Proxmox 6.14 traz o modulo `ntsync`
+(`/lib/modules/$(uname -r)/kernel/drivers/misc/ntsync.ko`), que implementa as primitivas do
+NT dentro do kernel e e mais rapido que fsync. Ele **nao vem carregado**. Para usar, no host:
+
+```bash
+modprobe ntsync && echo ntsync > /etc/modules-load.d/ntsync.conf
+ls -l /dev/ntsync
+pct set <CTID> -dev0 /dev/ntsync,mode=0666   # expoe o device ao container
+pct reboot <CTID>
+```
+
+Sem `/dev/ntsync` dentro do CT o Proton usa fsync normalmente - nao quebra nada, so nao
+aproveita o caminho mais rapido.
+
 ### Mapa de portas e NAT
 
 Cada jogo tem CT e IP proprios, entao **na LAN nao existe conflito**: dois servidores
