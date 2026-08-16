@@ -129,6 +129,11 @@ resolve_variables() {
   # servidor headless, mas quebra jogo que abre janela (ex.: Icarus) - por isso e
   # decisao de cada games/<jogo>.env, nao um default.
   WINE_DLL_OVERRIDES="${WINE_DLL_OVERRIDES:-mscoree,mshtml=}"
+  # O valor e gravado entre aspas simples no /etc/game-runtime.env; uma aspa
+  # simples aqui quebraria o arquivo e so apareceria como erro no start do jogo.
+  case "$WINE_DLL_OVERRIDES" in
+    *\'*) die "WINE_DLL_OVERRIDES nao pode conter aspa simples (')." ;;
+  esac
   # 1 quando o .exe insiste em criar janela mesmo sendo servidor.
   WINDOWS_RUNTIME_XVFB="${WINDOWS_RUNTIME_XVFB:-0}"
   WINE_PREFIX_DIR="${WINE_PREFIX_DIR:-/home/steam/.wine-${GAME_KEY}}"
@@ -373,13 +378,16 @@ setup_windows_runtime() {
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
 # Gerado pelo deploy - nao edite a mao (o proximo deploy sobrescreve).
-RUNTIME=${WINDOWS_RUNTIME}
-GAME_KEY=${GAME_KEY}
-PROTON_DIR=${PROTON_DIR}
-PROTON_PREFIX=${PROTON_PREFIX_DIR}
-WINE_PREFIX=${WINE_PREFIX_DIR}
-WINE_DLL_OVERRIDES=${WINE_DLL_OVERRIDES}
-USE_XVFB=${WINDOWS_RUNTIME_XVFB}
+# Os valores vao entre aspas simples porque este arquivo e lido com 'source': o
+# WINE_DLL_OVERRIDES usa ';' como separador, e sem aspas o shell trataria cada
+# trecho depois do ';' como um comando ("services.exe=d: command not found").
+RUNTIME='${WINDOWS_RUNTIME}'
+GAME_KEY='${GAME_KEY}'
+PROTON_DIR='${PROTON_DIR}'
+PROTON_PREFIX='${PROTON_PREFIX_DIR}'
+WINE_PREFIX='${WINE_PREFIX_DIR}'
+WINE_DLL_OVERRIDES='${WINE_DLL_OVERRIDES}'
+USE_XVFB='${WINDOWS_RUNTIME_XVFB}'
 EOF
   push_file_to_ct "$tmp_file" "/etc/game-runtime.env" 0644
   rm -f "$tmp_file"
