@@ -164,9 +164,20 @@ mutex/evento/semaforo do Windows vira syscall cara, e em servidor muito multi-th
 vira gargalo de CPU. O Proton-GE traz o proprio wine com **fsync** (`futex_waitv`, kernel
 >= 5.16) ligado por padrao. Por isso o Enshrouded usa `proton`.
 
-O **Icarus fica em `wine` de proposito**: ele cria janela e depende do `explorer.exe`, e o
-caminho wine+xvfb ja esta validado nele. Trocar para `proton` e uma linha, mas mantenha o
-`WINDOWS_RUNTIME_XVFB=1`.
+**Regra para escolher o runtime** (medida nos dois jogos, nao presumida):
+
+> Proton fora do Steam **quebra a API de game server da Steam**. Se o jogo depende de
+> registro na Steam / query A2S, use `wine`. Se ele nao usa (entra-se por IP direto),
+> use `proton` e ganhe o ntsync.
+
+| Jogo | Runtime | Por que |
+|------|---------|---------|
+| Enshrouded | `proton` | nao publica A2S (entra-se por IP), entao so colhe o ganho |
+| Icarus | `wine` | **precisa** da Steam: sob Proton o log vira `[AppId: 0] Game Server API initialized 0` (em vez de `[AppId: 1149460] ... 1`) e a query `27017` nunca abre - o servidor some do navegador do jogo e o painel perde a contagem por A2S |
+
+No Icarus, sob Proton, o servidor ate sobe e usa ntsync - o que engana. O que falta e
+silencioso. Tentativas que **nao** resolveram: `lsteamclient=d` e forcar
+`SteamAppId`/`SteamGameId` com o appid correto do jogo.
 
 **O detalhe que faz servidor dedicado funcionar sob Proton.** Por padrao o Proton lanca o
 jogo atraves do shim `steam.exe`, que espera um **cliente Steam vivo** para completar um
