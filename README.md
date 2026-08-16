@@ -168,11 +168,30 @@ O **Icarus fica em `wine` de proposito**: ele cria janela e depende do `explorer
 caminho wine+xvfb ja esta validado nele. Trocar para `proton` e uma linha, mas mantenha o
 `WINDOWS_RUNTIME_XVFB=1`.
 
-**Cuidado com os overrides.** Desligar `explorer.exe`/`services.exe`/`wbemprox.dll` economiza
-processo em servidor headless (o Enshrouded usa os tres), mas **quebra jogo que abre janela**
-- no Icarus, sem `explorer.exe` o servidor morre com `nodrv_CreateWindow`. Por isso o padrao
-e conservador e a decisao fica em cada `games/<jogo>.env`. O `services.exe=d` e o mais
-agressivo: se o servidor parar de subir depois de uma atualizacao do jogo, tire ele primeiro.
+**O detalhe que faz servidor dedicado funcionar sob Proton.** Por padrao o Proton lanca o
+jogo atraves do shim `steam.exe`, que espera um **cliente Steam vivo** para completar um
+handshake. Num servidor dedicado nao existe cliente Steam, e o resultado e um deadlock
+silencioso: processo de pe, RSS parado em ~34MB, **zero CPU**, nenhuma porta aberta e nem o
+log do proprio jogo criado. O `systemd` reporta `active` o tempo todo.
+
+O diagnostico que fecha isso: a thread principal fica em `wchan=pipe_read`, com o processo
+segurando as duas pontas do mesmo pipe.
+
+A saida esta no proprio `proton`: com **`UMU_ID` definido** e o executavel passado em
+**caminho Windows** (`Z:\opt\game\servidor.exe`), ele segue por
+`"Executable is inside wine prefix, launching normally"` e chama o wine direto, sem shim.
+O `win-run` faz as duas coisas automaticamente. Depois disso o mesmo servidor carrega em
+menos de 20s, com 35 threads e a thread principal em `ntsync_schedule`.
+
+Coisas que **nao** eram o problema, ja testadas e descartadas (para ninguem repetir):
+`LimitNOFILE`, diretorio de trabalho, prefixo corrompido, systemd vs execucao manual, e
+desligar o `lsteamclient` (ele chega desligado ao processo e o travamento continua).
+
+**Cuidado com os overrides.** Desligar `explorer.exe`/`services.exe`/`wbemprox.dll` parece
+economia obvia em servidor headless, mas foi **medido e reprovado**: sob Proton, cada um dos
+tres trava o Enshrouded na largada. No Icarus, sem `explorer.exe` o servidor morre com
+`nodrv_CreateWindow`. Por isso o padrao e conservador. Lembre que o Proton ja injeta os
+proprios overrides por cima do seu (`steam.exe=b`, `winebth.sys=d`, `d3d11=n`...).
 
 A unit systemd ganha `LimitNOFILE=1048576` quando ha runtime de Windows: esync/fsync criam um
 descritor por objeto de sincronizacao e o limite padrao (1024) derruba o servidor sob carga.

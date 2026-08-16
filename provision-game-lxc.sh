@@ -323,7 +323,10 @@ setup_windows_runtime() {
 
   local pacotes="xz-utils"
   [[ "$WINDOWS_RUNTIME" == "wine" ]] && pacotes="wine"
-  [[ "$WINDOWS_RUNTIME" == "proton" ]] && pacotes="python3 xz-utils"
+  # libvulkan1: o launcher do Proton importa vulkan.py, que faz CDLL('libvulkan.so.1')
+  # na carga. Sem o loader ele nem comeca - morre em OSError antes de rodar o jogo,
+  # mesmo em servidor headless que nunca vai renderizar nada.
+  [[ "$WINDOWS_RUNTIME" == "proton" ]] && pacotes="python3 xz-utils libvulkan1"
   # xvfb-run precisa do xauth, que e apenas Recommends do xvfb: com
   # --no-install-recommends ele nao viria, e o start morreria com
   # "xvfb-run: error: xauth command not found".
@@ -435,7 +438,18 @@ if [ "${RUNTIME}" = "proton" ]; then
   export STEAM_COMPAT_CLIENT_INSTALL_PATH="${HOME}/.steam/steam"
   mkdir -p "$STEAM_COMPAT_DATA_PATH" "$STEAM_COMPAT_CLIENT_INSTALL_PATH"
   [ -x "${PROTON_DIR}/proton" ] || { echo "win-run: ${PROTON_DIR}/proton ausente"; exit 1; }
-  set -- "${PROTON_DIR}/proton" run "$exe" "$@"
+
+  # ESTAS DUAS LINHAS SAO O QUE FAZ SERVIDOR DEDICADO FUNCIONAR SOB PROTON.
+  # Por padrao o Proton injeta o shim steam.exe, que espera um cliente Steam vivo
+  # para completar um handshake. Sem cliente (o caso aqui), o servidor trava para
+  # sempre bloqueado em pipe_read: processo de pe, 34MB, zero CPU, sem porta, sem
+  # nem chegar a escrever o log do jogo.
+  # O proprio proton tem o desvio: com UMU_ID definido e o executavel em caminho
+  # WINDOWS, ele segue por "Executable is inside wine prefix, launching normally"
+  # e chama o wine direto, sem shim nenhum.
+  export UMU_ID="${UMU_ID:-0}"
+  exe_win="Z:${exe//\//\\}"
+  set -- "${PROTON_DIR}/proton" run "$exe_win" "$@"
 else
   export WINEPREFIX="${WINE_PREFIX}"
   export WINEARCH=win64
@@ -454,6 +468,21 @@ EOF
   rm -f "$tmp_file"
 
   run_ct "install -d -o steam -g steam ${WINE_PREFIX_DIR} ${PROTON_PREFIX_DIR} /home/steam/.steam/steam"
+
+  # A camada lsteamclient do Proton procura a steamclient.so NATIVA nos caminhos do
+  # cliente Steam. Sem ela o processo aborta em assert. O SteamCMD ja traz essa
+  # biblioteca, entao aponta-se para ela - mesmo truque que palworld/satisfactory
+  # usam com o sdk64.
+  if [[ "$WINDOWS_RUNTIME" == "proton" ]]; then
+    run_ct "
+      set -e
+      install -d -o steam -g steam /home/steam/.steam/steam/ubuntu12_64 /home/steam/.steam/root/ubuntu12_64 /home/steam/.steam/sdk64
+      for destino in /home/steam/.steam/steam/ubuntu12_64 /home/steam/.steam/root/ubuntu12_64 /home/steam/.steam/sdk64; do
+        ln -sf ${STEAMCMD_DIR}/linux64/steamclient.so \"\$destino/steamclient.so\"
+      done
+      chown -R steam:steam /home/steam/.steam
+    " || die "Falha preparando os symlinks de steamclient.so para o Proton"
+  fi
 }
 
 run_pre_install() {
