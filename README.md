@@ -164,20 +164,18 @@ mutex/evento/semaforo do Windows vira syscall cara, e em servidor muito multi-th
 vira gargalo de CPU. O Proton-GE traz o proprio wine com **fsync** (`futex_waitv`, kernel
 >= 5.16) ligado por padrao. Por isso o Enshrouded usa `proton`.
 
-**Regra para escolher o runtime** (medida nos dois jogos, nao presumida):
+**O `UMU_ID` tem que ser o appid REAL do jogo.** Esta e a segunda armadilha do Proton fora
+do Steam, e ela e silenciosa: com um `UMU_ID` qualquer (0, por exemplo) o Proton propaga
+`SteamAppId=0` e a **API de game server da Steam falha**. O log do jogo mostra
+`[AppId: 0] Game Server API initialized 0` em vez de `[AppId: 1149460] ... 1`, a porta de
+query nunca abre, e o servidor fica de pe, invisivel no navegador e sem contagem no painel.
 
-> Proton fora do Steam **quebra a API de game server da Steam**. Se o jogo depende de
-> registro na Steam / query A2S, use `wine`. Se ele nao usa (entra-se por IP direto),
-> use `proton` e ganhe o ntsync.
+O `win-run` resolve sozinho: le o `steam_appid.txt` que acompanha o executavel e exporta
+`UMU_ID`/`SteamAppId`/`SteamGameId` com esse valor. Se o jogo nao tiver o arquivo, cai em
+`0` - o que e correto para quem nao usa Steam (Enshrouded).
 
-| Jogo | Runtime | Por que |
-|------|---------|---------|
-| Enshrouded | `proton` | nao publica A2S (entra-se por IP), entao so colhe o ganho |
-| Icarus | `wine` | **precisa** da Steam: sob Proton o log vira `[AppId: 0] Game Server API initialized 0` (em vez de `[AppId: 1149460] ... 1`) e a query `27017` nunca abre - o servidor some do navegador do jogo e o painel perde a contagem por A2S |
-
-No Icarus, sob Proton, o servidor ate sobe e usa ntsync - o que engana. O que falta e
-silencioso. Tentativas que **nao** resolveram: `lsteamclient=d` e forcar
-`SteamAppId`/`SteamGameId` com o appid correto do jogo.
+Os dois jogos rodam em `proton`: Enshrouded porque nao depende da Steam, Icarus porque com
+o appid certo a Steam inicializa normalmente **e** ele ainda ganha o ntsync.
 
 **O detalhe que faz servidor dedicado funcionar sob Proton.** Por padrao o Proton lanca o
 jogo atraves do shim `steam.exe`, que espera um **cliente Steam vivo** para completar um

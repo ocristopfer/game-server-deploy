@@ -447,6 +447,18 @@ if [ "${RUNTIME}" = "proton" ]; then
   # O proprio proton tem o desvio: com UMU_ID definido e o executavel em caminho
   # WINDOWS, ele segue por "Executable is inside wine prefix, launching normally"
   # e chama o wine direto, sem shim nenhum.
+  # O UMU_ID precisa ser o appid REAL do jogo, nao um valor qualquer: o Proton o
+  # propaga como SteamAppId, e com 0 a API de game server da Steam falha. O Icarus
+  # registrava "[AppId: 0] Game Server API initialized 0" e nunca abria a porta de
+  # query - servidor de pe, invisivel no navegador e sem contagem no painel.
+  # O appid vem do steam_appid.txt que acompanha o executavel.
+  if [ -z "${UMU_ID:-}" ]; then
+    arq_appid="$(dirname "$exe")/steam_appid.txt"
+    if [ -r "$arq_appid" ]; then
+      UMU_ID="$(tr -d '\r\n' < "$arq_appid")"
+      export SteamAppId="$UMU_ID" SteamGameId="$UMU_ID"
+    fi
+  fi
   export UMU_ID="${UMU_ID:-0}"
   exe_win="Z:${exe//\//\\}"
   set -- "${PROTON_DIR}/proton" run "$exe_win" "$@"

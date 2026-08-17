@@ -194,6 +194,13 @@ CREATE TABLE IF NOT EXISTS servers (
   -- Caminhos dentro do JSON (ex.: 'data.players'); vazios = descobrir sozinho.
   http_list_path  TEXT NOT NULL DEFAULT '',
   http_count_path TEXT NOT NULL DEFAULT '',
+  -- Login automatico (APIs cujo token expira, como a do Satisfactory): o painel
+  -- posta http_login_body em http_login_url, tira o token de http_token_path e
+  -- guarda em http_token. Quando a API responde 401/403, ele refaz o login.
+  http_login_url  TEXT NOT NULL DEFAULT '',
+  http_login_body TEXT NOT NULL DEFAULT '',
+  http_token_path TEXT NOT NULL DEFAULT '',
+  http_token      TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   UNIQUE (host, ssh_port)
 );
@@ -255,6 +262,13 @@ MIGRATIONS = (
     ("servers", "http_body", "ALTER TABLE servers ADD COLUMN http_body TEXT NOT NULL DEFAULT ''"),
     ("servers", "http_list_path", "ALTER TABLE servers ADD COLUMN http_list_path TEXT NOT NULL DEFAULT ''"),
     ("servers", "http_count_path", "ALTER TABLE servers ADD COLUMN http_count_path TEXT NOT NULL DEFAULT ''"),
+    # Login automatico: APIs que emitem token com prazo (Satisfactory) quebram a
+    # contagem quando ele expira. Com estes campos o painel troca senha por token
+    # sozinho e renova quando a API responde 401/403.
+    ("servers", "http_login_url", "ALTER TABLE servers ADD COLUMN http_login_url TEXT NOT NULL DEFAULT ''"),
+    ("servers", "http_login_body", "ALTER TABLE servers ADD COLUMN http_login_body TEXT NOT NULL DEFAULT ''"),
+    ("servers", "http_token_path", "ALTER TABLE servers ADD COLUMN http_token_path TEXT NOT NULL DEFAULT ''"),
+    ("servers", "http_token", "ALTER TABLE servers ADD COLUMN http_token TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -471,6 +485,16 @@ class QueryError(RuntimeError):
     pass
 
 
+class AuthError(QueryError):
+    """A API recusou a credencial (401/403).
+
+    Separada de QueryError para o caminho HTTP saber quando vale a pena refazer o
+    login: token expirado e o caso comum em API de jogo (a do Satisfactory emite
+    token com prazo), e ai o certo e renovar sozinho em vez de exigir que alguem
+    cole um token novo na mao.
+    """
+
+
 class _Buffer:
     """Leitor sequencial do corpo da resposta (tudo little-endian)."""
 
@@ -607,7 +631,8 @@ HTTP_URL_MAX = 400
 HTTP_BODY_MAX = 2000
 HTTP_PATH_MAX = 120
 # Colunas que descrevem a chamada; viajam juntas entre formulario, assistente e banco.
-HTTP_FIELDS = ("http_url", "http_auth", "http_body", "http_list_path", "http_count_path")
+HTTP_FIELDS = ("http_url", "http_auth", "http_body", "http_list_path", "http_count_path",
+               "http_login_url", "http_login_body", "http_token_path")
 URL_RE = re.compile(r"^https?://[A-Za-z0-9._\-]{1,253}(:\d{1,5})?(/[^\s]*)?$")
 STATUS_MARK = "__HTTP_STATUS__"
 
@@ -722,7 +747,9 @@ def http_json(server: sqlite3.Row, url: str, auth: str, corpo: str):
 
     texto, status = _split_status(bruto)
     if status in (401, 403):
-        raise QueryError(f"a API respondeu {status} - confira o usuario/senha de admin")
+        # AuthError e uma QueryError especializada: quem tem login configurado usa
+        # isso como gatilho para renovar o token em vez de so reportar o erro.
+        raise AuthError(f"a API respondeu {status} - confira o usuario/senha de admin")
     if status >= 400:
         raise QueryError(f"a API respondeu HTTP {status}")
     if len(texto) > HTTP_MAX_BYTES:
@@ -869,10 +896,73 @@ def read_players_json(dados, caminho_lista: str = "", caminho_contagem: str = ""
     }
 
 
+def _tem_login(server: sqlite3.Row) -> bool:
+    """True quando o servidor esta configurado para obter o token sozinho."""
+    try:
+        return bool((server["http_login_url"] or "").strip()
+                    and (server["http_token_path"] or "").strip())
+    except (IndexError, KeyError):
+        # Linha vinda de um SELECT sem as colunas novas (ou banco antes da migracao).
+        return False
+
+
+def _valor_guardado(server: sqlite3.Row, coluna: str) -> str:
+    try:
+        return (server[coluna] or "").strip()
+    except (IndexError, KeyError):
+        return ""
+
+
+def http_login(server: sqlite3.Row) -> str:
+    """Troca a credencial por um token e guarda no banco. Devolve o token."""
+    url = _valor_guardado(server, "http_login_url")
+    caminho = _valor_guardado(server, "http_token_path")
+    if not url or not caminho:
+        raise QueryError("login automatico incompleto (falta URL de login ou caminho do token)")
+
+    # O login vai SEM Authorization: e ele quem produz a credencial.
+    dados = http_json(server, url, "", _valor_guardado(server, "http_login_body"))
+    token = _json_walk(dados, caminho)
+    if not isinstance(token, str) or not token.strip():
+        raise QueryError(
+            f"o login respondeu, mas nao achei um token em '{caminho}'"
+        )
+    token = token.strip()
+    # Conexao propria, e nao db(): db() vive no 'g' do Flask e a contagem tambem roda
+    # fora de request (cache/pollagem em thread). Aqui a escrita e uma linha so.
+    con = _connect()
+    try:
+        with con:
+            con.execute("UPDATE servers SET http_token = ? WHERE id = ?",
+                        (token, int(server["id"])))
+    finally:
+        con.close()
+    return token
+
+
 def players_from_http(server: sqlite3.Row) -> dict:
     if not (server["http_url"] or "").strip():
         raise QueryError("informe a URL da API do jogo")
-    dados = http_json(server, server["http_url"], server["http_auth"], server["http_body"])
+
+    com_login = _tem_login(server)
+    if com_login:
+        token = _valor_guardado(server, "http_token")
+        # Sem token guardado (primeira vez, ou depois de trocar a senha) ja entra
+        # pelo login em vez de gastar uma chamada que vai falhar.
+        auth = f"bearer:{token}" if token else f"bearer:{http_login(server)}"
+    else:
+        auth = server["http_auth"]
+
+    try:
+        dados = http_json(server, server["http_url"], auth, server["http_body"])
+    except AuthError:
+        if not com_login:
+            raise
+        # Token expirado ou revogado: renova uma vez e repete. Se falhar de novo,
+        # o erro sobe - ai o problema e a credencial, nao o prazo do token.
+        dados = http_json(server, server["http_url"],
+                          f"bearer:{http_login(server)}", server["http_body"])
+
     return read_players_json(dados, server["http_list_path"], server["http_count_path"])
 
 
@@ -1925,7 +2015,16 @@ def _aba_http(server: sqlite3.Row, http: dict, testar: bool) -> dict:
     if not testar:
         return saida
     try:
-        dados = http_json(server, http["http_url"], http["http_auth"], http["http_body"])
+        # O teste usa os valores do FORMULARIO, nao os do banco: e o unico jeito de
+        # conferir o login antes de salvar. Por isso monta-se uma linha temporaria.
+        provisorio = dict(server)
+        provisorio.update(http)
+        if (http.get("http_login_url") or "").strip() and (http.get("http_token_path") or "").strip():
+            token = http_login(provisorio)
+            auth = f"bearer:{token}"
+        else:
+            auth = http["http_auth"]
+        dados = http_json(server, http["http_url"], auth, http["http_body"])
         teste = read_players_json(dados, http["http_list_path"], http["http_count_path"])
         # A resposta crua ajuda a preencher os caminhos quando a busca automatica erra.
         teste["amostra"] = json.dumps(dados, indent=2, ensure_ascii=False)[:4000]
@@ -2017,10 +2116,17 @@ def players_use(sid: int):
         with conn:
             conn.execute(
                 "UPDATE servers SET http_url=?, http_auth=?, http_body=?,"
-                " http_list_path=?, http_count_path=?, player_source='http' WHERE id=?",
+                " http_list_path=?, http_count_path=?,"
+                " http_login_url=?, http_login_body=?, http_token_path=?,"
+                # Token guardado zera ao salvar: se a URL/credencial mudou, o antigo
+                # nao vale mais, e a proxima consulta ja faz login com o que ficou.
+                " http_token='', player_source='http' WHERE id=?",
                 (*[campos[c] for c in HTTP_FIELDS], sid),
             )
-        flash("Contagem de jogadores ligada pela API HTTP do servidor.", "ok")
+        if campos["http_login_url"]:
+            flash("Contagem ligada pela API, com login automatico (o token renova sozinho).", "ok")
+        else:
+            flash("Contagem de jogadores ligada pela API HTTP do servidor.", "ok")
     elif origem == "log":
         errors: list[str] = []
         entrada = _padrao(request.form.get("join_re"), "entrada", errors)
@@ -2121,15 +2227,35 @@ def _campos_http(form, errors: list[str]) -> dict:
             corpo = ""
 
     caminhos = {}
-    for campo, rotulo in (("http_list_path", "lista"), ("http_count_path", "contagem")):
+    for campo, rotulo in (("http_list_path", "lista"), ("http_count_path", "contagem"),
+                          ("http_token_path", "token")):
         texto = (form.get(campo, "") or "").strip()[:HTTP_PATH_MAX]
         if texto and not CAMINHO_JSON_RE.match(texto):
             errors.append(f"Caminho da {rotulo} invalido (use algo como 'data.players').")
             texto = ""
         caminhos[campo] = texto
 
+    # Login automatico: os tres campos andam juntos. Preencher so parte deles quase
+    # sempre e engano, e falhar aqui e melhor do que descobrir na hora da consulta.
+    login_url = (form.get("http_login_url", "") or "").strip()[:HTTP_URL_MAX]
+    if login_url and not URL_RE.match(login_url):
+        errors.append("URL de login invalida (ex.: https://127.0.0.1:7787/api/v1).")
+        login_url = ""
+    login_body = (form.get("http_login_body", "") or "").strip()[:HTTP_BODY_MAX]
+    if login_body:
+        try:
+            json.loads(login_body)
+        except ValueError as exc:
+            errors.append(f"Corpo do login nao e JSON valido: {exc}.")
+            login_body = ""
+    if (login_url or login_body) and not caminhos["http_token_path"]:
+        errors.append("Para o login automatico, informe tambem o caminho do token "
+                      "(ex.: data.authenticationToken).")
+
     return {
         "http_url": url,
+        "http_login_url": login_url,
+        "http_login_body": login_body,
         # Guarda a senha da API como ela precisa ser mandada. O banco do painel ja da
         # acesso de root aos containers, entao isso nao amplia o estrago de um vazamento
         # — mas trate o arquivo panel.db como segredo.

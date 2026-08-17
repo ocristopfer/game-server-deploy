@@ -196,6 +196,32 @@
                placeholder="data.serverGameState.numConnectedPlayers">
       </label>
     </div>
+
+    <h3>Login automatico <span class="muted">(opcional)</span></h3>
+    <p class="muted small">
+      Para APIs cujo token <strong>expira</strong> — a do Satisfactory e assim. Preenchendo
+      estes tres campos, o painel troca a senha por um token sozinho, guarda, e quando a API
+      responder <code>401</code> ele refaz o login e repete a consulta. Deixe a
+      <em>Autenticacao</em> acima vazia: quem manda o cabecalho passa a ser o token obtido aqui.
+    </p>
+    <div class="row">
+      <label>URL de login
+        <input name="http_login_url" value="{{ http.http_login_url }}" spellcheck="false"
+               placeholder="https://127.0.0.1:7787/api/v1">
+      </label>
+      <label>Caminho do token
+        <input name="http_token_path" value="{{ http.http_token_path }}" spellcheck="false"
+               placeholder="data.authenticationToken">
+      </label>
+    </div>
+    <label>Corpo JSON do login
+      <input name="http_login_body" value="{{ http.http_login_body }}" spellcheck="false"
+             placeholder='{"function":"PasswordLogin","data":{"password":"SENHA","minimumPrivilegeLevel":"Administrator"}}'>
+      <small>
+        Satisfactory: a senha e a de <strong>admin</strong> definida no cliente ao reivindicar
+        o servidor. O corpo vai para a mesma API, sem cabecalho de autenticacao.
+      </small>
+    </label>
     <p class="muted small">
       Deixe os dois caminhos vazios primeiro: o painel procura sozinho uma lista de
       jogadores e, se nao achar, um numero em chaves conhecidas
