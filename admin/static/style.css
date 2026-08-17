@@ -291,6 +291,22 @@ table.jobs tr:last-child td { border-bottom: none; }
   padding: 7px 9px;
 }
 
+/* Campo reconhecido pelo catalogo (gamefields.py): ganha nome em portugues, unidade e
+   explicacao. O nome tecnico continua visivel - e por ele que se acha o campo na
+   documentacao do jogo e nos foruns. */
+.conf-mapeado .conf-key {
+  font-family: inherit; font-size: .9rem; text-transform: none; letter-spacing: 0;
+}
+.conf-raw {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .72rem; font-style: normal; color: var(--muted); margin-left: 6px;
+}
+.conf-num { display: flex; align-items: center; gap: 6px; }
+.conf-num input { flex: 1 1 auto; min-width: 0; }
+.conf-unit { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.conf-ajuda { display: block; margin-top: 4px; color: var(--muted); line-height: 1.45; }
+.conf-ajuda em { font-style: normal; white-space: nowrap; opacity: .85; }
+
 .conf-nova { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 .conf-nova select { flex: 1 1 200px; margin-top: 0; }
 .conf-nova input { flex: 1 1 180px; margin-top: 0; }

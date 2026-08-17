@@ -102,8 +102,15 @@
       <legend>{{ sec.label }}</legend>
       <div class="conf-grid">
         {% for s in sec.settings %}
-        <label class="conf-item" data-key="{{ s.key | lower }}">
-          <span class="conf-key">{{ s.key }}</span>
+        <label class="conf-item{{ ' conf-mapeado' if s.spec }}"
+               data-key="{{ s.key | lower }}{{ ' ' ~ (s.spec.label | lower) if s.spec and s.spec.label }}">
+          <span class="conf-key">
+            {%- if s.spec and s.spec.label -%}
+              {{ s.spec.label }} <em class="conf-raw">{{ s.key }}</em>
+            {%- else -%}
+              {{ s.key }}
+            {%- endif -%}
+          </span>
           <input type="hidden" name="id.{{ ns.i }}" value="{{ s.id | ident }}">
           <input type="hidden" name="sec.{{ ns.i }}" value="{{ s.section | ident }}">
           <input type="hidden" name="key.{{ ns.i }}" value="{{ s.key }}">
@@ -114,14 +121,49 @@
             <input type="hidden" name="orig.{{ ns.i }}"
                    value="{{ doc.bool_words[0] if ligado else doc.bool_words[1] }}">
             <select name="val.{{ ns.i }}">
-              <option value="{{ doc.bool_words[0] }}" {{ 'selected' if ligado }}>{{ doc.bool_words[0] }}</option>
-              <option value="{{ doc.bool_words[1] }}" {{ 'selected' if not ligado }}>{{ doc.bool_words[1] }}</option>
+              <option value="{{ doc.bool_words[0] }}" {{ 'selected' if ligado }}>
+                {{ 'Ligado' if s.spec else doc.bool_words[0] }}</option>
+              <option value="{{ doc.bool_words[1] }}" {{ 'selected' if not ligado }}>
+                {{ 'Desligado' if s.spec else doc.bool_words[1] }}</option>
             </select>
+          {% elif s.spec and s.spec.kind == 'enum' %}
+            {# Lista fechada: acaba o erro de digitar um valor que o jogo descarta em
+               silencio. Valor fora da lista (versao nova do jogo) entra como opcao
+               extra para nao ser perdido ao salvar. #}
+            <input type="hidden" name="orig.{{ ns.i }}" value="{{ s.value }}">
+            <select name="val.{{ ns.i }}">
+              {% for valor, rotulo in s.spec.options.items() %}
+                <option value="{{ valor }}" {{ 'selected' if s.value == valor }}>{{ rotulo }}</option>
+              {% endfor %}
+              {% if s.value and s.value not in s.spec.options %}
+                <option value="{{ s.value }}" selected>{{ s.value }} (fora do catalogo)</option>
+              {% endif %}
+            </select>
+          {% elif s.spec and s.spec.kind in ('number', 'factor', 'duration') %}
+            <input type="hidden" name="orig.{{ ns.i }}" value="{{ s.display_value }}">
+            <span class="conf-num">
+              <input name="val.{{ ns.i }}" value="{{ s.display_value }}" spellcheck="false"
+                     type="number" inputmode="decimal"
+                     {% if s.spec.step %}step="{{ s.spec.step }}"{% endif %}
+                     {% if s.spec.minimum is not none %}min="{{ s.spec.minimum }}"{% endif %}
+                     {% if s.spec.maximum is not none %}max="{{ s.spec.maximum }}"{% endif %}>
+              {% if s.spec.unit %}<span class="conf-unit">{{ s.spec.unit }}</span>{% endif %}
+            </span>
+          {% elif s.spec and s.spec.kind == 'password' %}
+            <input name="val.{{ ns.i }}" value="{{ s.value }}" spellcheck="false"
+                   autocomplete="off">
           {% else %}
             <input name="val.{{ ns.i }}" value="{{ s.value }}" spellcheck="false"
                    {% if s.kind == 'number' %}inputmode="decimal"{% endif %}>
           {% endif %}
-          {% if s.comment %}<small>{{ s.comment }}</small>{% endif %}
+          {% if s.spec and s.spec.help %}
+            <small class="conf-ajuda">{{ s.spec.help }}
+              {%- if s.spec.kind in ('number', 'factor', 'duration')
+                     and (s.spec.minimum is not none or s.spec.maximum is not none) %}
+                <em>({{ s.spec.minimum }}{{ ' a ' ~ s.spec.maximum if s.spec.maximum is not none }}{{ ' ' ~ s.spec.unit if s.spec.unit }})</em>
+              {%- endif %}
+            </small>
+          {% elif s.comment %}<small>{{ s.comment }}</small>{% endif %}
         </label>
         {% set ns.i = ns.i + 1 %}
         {% else %}

@@ -43,6 +43,7 @@ except ImportError:  # pragma: no cover - Windows
     HAVE_PTY = False
 
 import gameconf
+import gamefields
 from flask import (
     Flask,
     abort,
@@ -3466,6 +3467,10 @@ def config_quick(sid: int):
     if alvo:
         try:
             doc, info = load_config_doc(server, alvo)
+            # Aqui o formulario deixa de ser "chave = texto" e passa a saber o que cada
+            # campo significa: booleano vira caixa, enum vira lista, duracao aparece em
+            # minutos em vez de nanossegundos.
+            enriquece_settings(doc, info["name"])
         except (RemoteError, gameconf.ConfigError) as exc:
             errors.append(f"{alvo}: {exc}")
 
@@ -3526,11 +3531,31 @@ def _ident(value: str) -> str:
     return urllib.parse.quote(value or "", safe="")
 
 
-def _edits_do_formulario(form) -> list[gameconf.Edit]:
-    """Monta a lista de alteracoes: so o que o usuario realmente mexeu."""
+def enriquece_settings(doc: gameconf.ConfigFile, nome_arquivo: str) -> None:
+    """Anexa a descricao do catalogo a cada campo lido do arquivo.
+
+    Campo sem entrada no catalogo fica exatamente como antes (texto livre): o objetivo
+    e melhorar o que da para melhorar, nunca esconder chave que o jogo passou a usar.
+    """
+    for secao in doc.sections:
+        for s in secao.settings:
+            spec = gamefields.describe(nome_arquivo, s.key)
+            s.spec = spec
+            s.display_value = spec.to_display(s.value) if spec else s.value
+
+
+def _edits_do_formulario(form, nome_arquivo: str = "") -> tuple[list[gameconf.Edit], list[str]]:
+    """Monta a lista de alteracoes: so o que o usuario realmente mexeu.
+
+    Devolve tambem os erros de validacao. O valor chega na unidade da TELA (minutos,
+    multiplicador) e e convertido para a unidade do ARQUIVO (nanossegundos) aqui - por
+    isso a conferencia acontece antes da conversao, para a mensagem falar a lingua de
+    quem digitou.
+    """
     total = form.get("n", "0")
     total = int(total) if total.isdigit() else 0
     edits: list[gameconf.Edit] = []
+    erros: list[str] = []
     for i in range(min(total, 4000)):
         chave = (form.get(f"key.{i}", "") or "").strip()
         if not chave:
@@ -3539,13 +3564,22 @@ def _edits_do_formulario(form) -> list[gameconf.Edit]:
         ident = urllib.parse.unquote((form.get(f"id.{i}", "") or "").strip())
         if ident and valor == (form.get(f"orig.{i}", "") or "").replace("\r", ""):
             continue  # campo intocado: nao reescreve a linha
+
+        spec = gamefields.describe(nome_arquivo, chave) if nome_arquivo else None
+        if spec:
+            problema = spec.validate(valor)
+            if problema:
+                erros.append(f"{spec.label or chave}: {problema}")
+                continue
+            valor = spec.from_display(valor)
+
         edits.append(gameconf.Edit(
             id=ident,
             section=urllib.parse.unquote(form.get(f"sec.{i}", "") or ""),
             key=chave,
             value=valor,
         ))
-    return edits
+    return edits, erros
 
 
 @app.post("/servers/<int:sid>/config/save")
@@ -3561,9 +3595,17 @@ def config_save(sid: int):
 
     voltar = url_for("config_quick", sid=sid, file=path)
     try:
-        edits = _edits_do_formulario(request.form)
+        # O nome do arquivo escolhe o catalogo: e ele que diz o que validar e em que
+        # unidade o valor foi digitado.
+        edits, erros_validacao = _edits_do_formulario(request.form, path.rsplit("/", 1)[-1])
     except gameconf.ConfigError as exc:
         flash(str(exc), "error")
+        return redirect(voltar)
+    if erros_validacao:
+        # Nada e gravado quando ha erro: salvar metade das alteracoes deixaria o arquivo
+        # num estado que a pessoa nao pediu e nao sabe qual e.
+        flash("Nao salvei nada porque ha valor fora do limite - " + "; ".join(erros_validacao[:3]),
+              "error")
         return redirect(voltar)
     if not edits:
         flash("Nenhum campo foi alterado.", "ok")
