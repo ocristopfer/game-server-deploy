@@ -9,6 +9,8 @@
   </h1>
   <div class="actions">
     {% if allow_files %}<a class="btn" href="{{ url_for('config_quick', sid=server.id) }}">Config</a>{% endif %}
+    <a class="btn ghost" href="{{ url_for('backups', sid=server.id) }}">Backups</a>
+    <a class="btn ghost" href="{{ url_for('schedules', sid=server.id) }}">Agendamentos</a>
     {% if allow_term and is_admin %}<a class="btn ghost" href="{{ url_for('terminal', sid=server.id) }}">Terminal</a>{% endif %}
     {% if allow_files and is_admin %}<a class="btn ghost" href="{{ url_for('files', sid=server.id) }}">Arquivos</a>{% endif %}
     {% if allow_shell and is_admin %}<a class="btn ghost" href="{{ url_for('console', sid=server.id) }}">Console</a>{% endif %}

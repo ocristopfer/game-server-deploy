@@ -111,6 +111,17 @@
         procurar os candidatos no container.
       </small>
     </label>
+    <label>Caminhos de backup <span class="muted">(um por linha, opcional)</span>
+      <textarea name="backup_paths" rows="3" spellcheck="false"
+                placeholder="/opt/game/Pal/Saved/SaveGames">{{ data.backup_paths }}</textarea>
+      <small>
+        O que a tela {% if mode == 'edit' %}<a href="{{ url_for('backups', sid=sid) }}"><strong>Backups</strong></a>
+        {% else %}<strong>Backups</strong>{% endif %} guarda no <code>.tar.gz</code>.
+        Em branco vale a <strong>pasta de configuracao</strong> acima. Aponte a pasta do
+        <strong>save</strong>, nao a raiz do jogo: <code>/opt/game</code> inteiro leva
+        dezenas de GB de binario que o SteamCMD rebaixa de graca.
+      </small>
+    </label>
     <label>Notas <span class="muted">(opcional)</span>
       <textarea name="notes" rows="4">{{ data.notes }}</textarea>
     </label>

@@ -204,6 +204,122 @@ igual("a sessao dela cai no proximo clique",
       descartavel.get("/").status_code, 302)
 
 
+print("Historico de jobs respeita o papel")
+# O job guarda a saida inteira do que rodou. Como o operador leva 403 no console e no
+# editor de arquivos, ele tambem nao pode ler o RESULTADO deles — nem abrindo o job pelo
+# id, nem de relance no historico da tela do servidor.
+SEGREDO = "SENHA-QUE-SO-O-ADMIN-PODE-VER"
+ROTINA = "acao-de-rotina-do-operador"
+
+panel._login_fails.clear()
+conn = conexao()
+with conn:
+    conn.execute("UPDATE users SET role = ? WHERE username = 'chefe'", (panel.ROLE_ADMIN,))
+    conn.execute("UPDATE users SET role = ? WHERE username = 'peao'", (panel.ROLE_OPERADOR,))
+    # Host que nao resolve: a tela do servidor tenta SSH e volta rapido com "inacessivel",
+    # que e o suficiente — o que se testa aqui e o historico, nao a conexao.
+    conn.execute(
+        "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"
+        " VALUES ('alvo', 'nao-existe-de-proposito.invalid', 22, 'root', 'jogo.service', ?)",
+        (panel.now_iso(),),
+    )
+alvo_id = conn.execute("SELECT id FROM servers WHERE name = 'alvo'").fetchone()["id"]
+jobs_por_acao = {}
+with conn:
+    for acao in ("shell", "terminal", "edit-file", "delete-file", "download-file",
+                 "start", "edit-config"):
+        restrito = acao in panel.JOB_ACTIONS_ADMIN
+        marca = SEGREDO if restrito else ROTINA
+        cur = conn.execute(
+            "INSERT INTO jobs (server_id, target, action, status, exit_code, output,"
+            " command, username, created_at, finished_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (alvo_id, "root@alvo", acao, "ok", 0, marca, marca, "chefe",
+             panel.now_iso(), panel.now_iso()),
+        )
+        jobs_por_acao[acao] = int(cur.lastrowid)
+conn.close()
+
+panel._login_fails.clear()
+peao2 = entrar("peao", "senha-do-peao")
+chefe3 = entrar("chefe", "senha-do-chefe")
+
+for acao, jid in jobs_por_acao.items():
+    restrito = acao in panel.JOB_ACTIONS_ADMIN
+    esperado = 403 if restrito else 200
+    igual(f"operador em /jobs/{acao}", peao2.get(f"/jobs/{jid}").status_code, esperado)
+    igual(f"operador em /api/jobs/{acao}", peao2.get(f"/api/jobs/{jid}").status_code, esperado)
+    igual(f"admin em /jobs/{acao}", chefe3.get(f"/jobs/{jid}").status_code, 200)
+
+corpo_admin = chefe3.get(f"/jobs/{jobs_por_acao['shell']}").get_data(as_text=True)
+check("admin continua lendo a saida do console", SEGREDO in corpo_admin)
+
+detalhe = peao2.get(f"/servers/{alvo_id}")
+igual("operador abre a tela do servidor", detalhe.status_code, 200)
+pagina = detalhe.get_data(as_text=True)
+check("o comando do console nao aparece no historico do operador", SEGREDO not in pagina)
+check("o que ele pode fazer continua no historico", ROTINA in pagina)
+
+pagina_admin = chefe3.get(f"/servers/{alvo_id}").get_data(as_text=True)
+check("o historico completo continua na tela do admin", SEGREDO in pagina_admin)
+
+
+print("Backup e upload seguem o mesmo corte de papel")
+# Criar copia e operacao (o operador pode). Restaurar, apagar e baixar destroem dado ou
+# tiram o save do container — sao de administrador, como o console e o editor.
+conn = conexao()
+with conn:
+    conn.execute("UPDATE servers SET config_path = '/opt/game/Saved' WHERE id = ?", (alvo_id,))
+alvo = conn.execute("SELECT * FROM servers WHERE id = ?", (alvo_id,)).fetchone()
+conn.close()
+
+igual("sem backup_paths, vale a pasta de configuracao",
+      panel.backup_paths(alvo), ["/opt/game/Saved"])
+igual("o prefixo sai da unidade systemd", panel.backup_prefix(alvo), "jogo")
+
+conn = conexao()
+with conn:
+    conn.execute(
+        "UPDATE servers SET backup_paths = ? WHERE id = ?",
+        ("/opt/game/Saved/SaveGames\n/opt/game/config.ini", alvo_id),
+    )
+escolhidos = conn.execute("SELECT * FROM servers WHERE id = ?", (alvo_id,)).fetchone()
+conn.close()
+igual("backup_paths preenchido manda no config_path", panel.backup_paths(escolhidos),
+      ["/opt/game/Saved/SaveGames", "/opt/game/config.ini"])
+
+igual("operador ve a tela de backups", peao2.get(f"/servers/{alvo_id}/backups").status_code, 200)
+igual("operador dispara o backup",
+      postar(peao2, f"/servers/{alvo_id}/backups/criar").status_code, 302)
+igual("operador nao restaura",
+      postar(peao2, f"/servers/{alvo_id}/backups/restaurar",
+             {"nome": "jogo-20260101-000000.tar.gz"}).status_code, 403)
+igual("operador nao apaga copia",
+      postar(peao2, f"/servers/{alvo_id}/backups/remover",
+             {"nome": "jogo-20260101-000000.tar.gz"}).status_code, 403)
+igual("operador nao baixa copia",
+      peao2.get(f"/servers/{alvo_id}/backups/baixar?nome=jogo-20260101-000000.tar.gz").status_code,
+      403)
+igual("operador nao envia arquivo",
+      postar(peao2, f"/servers/{alvo_id}/files/upload").status_code, 403)
+
+# O nome do backup volta da tela e entra num comando remoto: o que nao casar com
+# "<algo>.tar.gz" tem de morrer no painel, antes de chegar no shell do container.
+for ruim in ("../../etc/passwd", "/etc/shadow", "x.tar.gz; rm -rf /", "sem-extensao",
+             "..-..tar.gz", ""):
+    igual(f"admin tambem nao passa {ruim!r}",
+          postar(chefe3, f"/servers/{alvo_id}/backups/remover", {"nome": ruim}).status_code, 400)
+
+
+print("Volta do login so aceita destino interno")
+# "/" no comeco nao basta: para o navegador "//host" e "/\\host" sao enderecos absolutos,
+# e mandariam quem acabou de digitar a senha para outro site.
+for bruto in ("//evil.example.com/x", "/\\evil.example.com", "https://evil.example.com",
+              "http://evil.example.com", "evil", "", "/conta\r\nSet-Cookie: x=1"):
+    igual(f"recusa {bruto!r}", panel.destino_seguro(bruto), "")
+for bruto in ("/servers/1/config", "/usuarios", "/"):
+    igual(f"aceita {bruto!r}", panel.destino_seguro(bruto), bruto)
+
+
 print()
 if falhas:
     print(f"{len(falhas)} teste(s) falharam: {', '.join(falhas)}")

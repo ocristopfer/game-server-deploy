@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Backups &mdash; {{ server.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Backups &mdash; {{ server.name }}</h1>
+  <div class="actions">
+    <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
+  </div>
+</div>
+
+<div class="card">
+  <h2>O que entra na copia</h2>
+  {% if caminhos %}
+    <ul class="filelist">
+      {% for c in caminhos %}<li><code>{{ c }}</code></li>{% endfor %}
+    </ul>
+    <p class="muted small">
+      Guardado como <code>.tar.gz</code> em <code>{{ backup_dir }}</code>, dentro do
+      proprio container.
+      {% if manter %}As <strong>{{ manter }}</strong> copias mais novas ficam; as
+      antigas saem sozinhas.{% else %}Nenhuma copia e apagada automaticamente.{% endif %}
+      {% if is_admin %}
+        Para mudar o que entra, edite os
+        <a href="{{ url_for('server_edit', sid=server.id) }}">caminhos de backup</a> do cadastro.
+      {% endif %}
+    </p>
+    <form method="post" action="{{ url_for('backup_create', sid=server.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button class="btn primary" type="submit">Fazer backup agora</button>
+    </form>
+    <p class="muted small">
+      Da para tirar a copia com o servidor ligado, e o normal. So saiba que um save
+      gravado no meio da copia pode entrar pela metade &mdash; para uma copia perfeita,
+      pare o servidor antes.
+    </p>
+  {% else %}
+    <p class="flash error">
+      Este servidor nao tem o que guardar. Preencha a <strong>pasta de configuracao</strong>
+      ou os <strong>caminhos de backup</strong>
+      {% if is_admin %}<a href="{{ url_for('server_edit', sid=server.id) }}">no cadastro</a>{% else %}
+      (peca a um administrador){% endif %}.
+    </p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Copias guardadas</h2>
+  {% if erro %}<p class="flash error">{{ erro }}</p>{% endif %}
+  {% if copias %}
+  <table class="jobs">
+    <thead><tr><th>Arquivo</th><th>Quando</th><th>Tamanho</th><th></th></tr></thead>
+    <tbody>
+      {% for c in copias %}
+      <tr>
+        <td>
+          <code>{{ c.name }}</code>
+          {% if c.seguranca %}<span class="badge" title="Tirada pelo painel logo antes de uma restauracao">antes de restaurar</span>{% endif %}
+        </td>
+        <td class="muted">{{ c.mtime }}</td>
+        <td class="muted">{{ c.size | tamanho }}</td>
+        <td>
+          {% if is_admin %}
+          <a class="btn ghost small"
+             href="{{ url_for('backup_download', sid=server.id, nome=c.name) }}">baixar</a>
+          <form method="post" action="{{ url_for('backup_restore', sid=server.id) }}" class="inline"
+                onsubmit="return confirm('Restaurar {{ c.name }} em {{ server.name }}?\n\nO servidor sera PARADO, os arquivos de agora serao substituidos e ele volta a subir. Uma copia do estado atual e guardada antes.')">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="nome" value="{{ c.name }}">
+            <button class="btn" type="submit">restaurar</button>
+          </form>
+          <form method="post" action="{{ url_for('backup_delete', sid=server.id) }}" class="inline"
+                onsubmit="return confirm('Apagar {{ c.name }}? Nao tem volta.')">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="nome" value="{{ c.name }}">
+            <button class="btn danger" type="submit">apagar</button>
+          </form>
+          {% else %}
+          <span class="muted small">baixar, restaurar e apagar sao de administrador</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif not erro %}
+    <p class="muted">Nenhuma copia ainda.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -134,8 +134,9 @@ Layout de referencia (o do `.env.example`):
 
 Troque `deploy-game.ps1` por `deploy-docker.ps1` para o mesmo jogo em Docker. Alem da
 instalacao, cada `games/<jogo>.env` diz ao painel onde fica a configuracao
-(`CONFIG_PATH`/`CONFIG_FILES`) e como contar jogadores (`QUERY_PORT`/`PLAYER_SOURCE`) —
-e o que faz o servidor nascer cadastrado e com a tela **Config** pronta.
+(`CONFIG_PATH`/`CONFIG_FILES`), o que guardar no backup (`BACKUP_PATHS`) e como contar
+jogadores (`QUERY_PORT`/`PLAYER_SOURCE`) — e o que faz o servidor nascer cadastrado, com
+a tela **Config** pronta e o **Backup** apontado para o save certo.
 
 ### Jogos sem build Linux: wine ou Proton
 
@@ -946,9 +947,115 @@ do jogo direto no navegador — e a saida para tudo que a tela **Config** nao co
   a tela nao faz remocao recursiva, e as raizes de `ADMIN_FILE_ROOTS` sao intocaveis.
   Cada exclusao fica no historico do servidor, e se o arquivo estava fixado na tela
   **Config** ele sai do cadastro junto.
+- **Enviar arquivo**: acima da lista ha um campo de upload que grava na pasta aberta no
+  momento — e como entra um mod, um `.ini` pronto ou um save vindo de outro servidor. O
+  arquivo sobe em pedacos e vai direto para o container, sem passar inteiro pela memoria
+  do painel; se ja existir um com o mesmo nome, ele e substituido e uma copia `.bak` fica
+  ao lado. O caminho que o navegador manda no nome e descartado (so a ultima parte vale),
+  entao `../../etc/cron.d/x` vira `x` na pasta aberta.
+  Limite padrao de **512 MB** (`GAMEPANEL_UPLOAD_MAX`). Antes de aumentar, lembre que o
+  corpo do envio e guardado num arquivo temporario **do container do painel** antes de a
+  aplicacao ver um byte — o teto precisa caber no disco de la, nao no do jogo.
 - `ADMIN_FILE_ROOTS` restringe onde o navegador de arquivos pode entrar (padrao: tudo).
 - Pare o servidor antes de editar o que ele reescreve ao sair — varios jogos sobrescrevem
   o `.ini` no shutdown.
+
+### Backups
+
+Cada servidor tem uma aba **Backups**: um `.tar.gz` das pastas que valem a pena guardar,
+criado e mantido **dentro do proprio container do jogo** (`/var/backups/gamepanel` por
+padrao). O painel dispara, lista, baixa, restaura e apaga — ele nao vira deposito de save.
+
+O que entra na copia sai do campo **Caminhos de backup** do cadastro do servidor, e o
+deploy ja o preenche: cada `games/<jogo>.env` tem um `BACKUP_PATHS` que o
+`deploy-game.ps1` / `deploy-docker.ps1` passa para o painel no cadastro. Nao precisa
+mexer em nada para ter backup do save certo — e num redeploy o painel **mantem** o que
+voce tiver ajustado pela tela.
+
+| Jogo | `BACKUP_PATHS` |
+|------|----------------|
+| Palworld | `/opt/game/Pal/Saved/SaveGames` |
+| Dragonwilds | `/opt/game/RSDragonwilds/Saved/SaveGames` |
+| Enshrouded | `/opt/game/savegame` |
+| Icarus | `/opt/game/Icarus/Saved/PlayerData`, `/opt/game/Icarus/Saved/Prospects` |
+| DayZ | `/opt/game/mpmissions/dayzOffline.chernarusplus/storage_1`, `/opt/game/profiles` (o numero segue o `instanceId`) |
+| Satisfactory | `/home/steam/.config/Epic/FactoryGame/Saved/SaveGames/server` |
+
+Servidor cadastrado a mao (ou antes desta versao) fica com o campo vazio e cai na **pasta
+de configuracao** — funciona, mas aponte o save para nao guardar so o `.ini`. E aponte o
+*save*, nunca a raiz do jogo: `/opt/game` inteiro leva dezenas de GB de binario que o
+SteamCMD rebaixa de graca.
+
+Detalhes que importam:
+
+- **Caminho que ainda nao existe e ignorado com um aviso**, nao e erro: a pasta de save so
+  nasce quando alguem entra no servidor pela primeira vez, e as outras continuam entrando
+  na copia. O backup so falha se nenhum dos caminhos existir.
+
+- **Retencao**: ficam as `GAMEPANEL_BACKUP_KEEP` copias mais novas (padrao **5**) e as
+  antigas saem sozinhas. `0` desliga a limpeza.
+- **Com o servidor ligado funciona** e e o uso normal. O `tar` avisa quando um arquivo
+  mudou durante a copia — o backup continua valendo, mas um save gravado bem nessa hora
+  pode entrar pela metade. Para uma copia perfeita, pare o servidor antes.
+- Antes de gravar, o painel compara o tamanho do alvo com o espaco livre e **recusa** o
+  backup se nao couber: encher o disco do container derruba o jogo junto.
+- **Restaurar para o servidor, extrai e religa** — e devolve cada arquivo exatamente de
+  onde ele saiu (o `tar` guarda os caminhos relativos a `/`). Servidor que ja estava
+  parado continua parado. Antes de extrair, o painel tira **sozinho** uma copia do estado
+  atual, marcada `-antes-de-restaurar`: e a saida de quem escolheu o backup errado.
+- **Papeis**: tirar copia e operacao, e o **operador** pode dispara-la. Baixar, restaurar
+  e apagar sao de **administrador** — as duas ultimas destroem dado, e baixar tira o save
+  inteiro do container.
+
+Variaveis: `GAMEPANEL_BACKUP_DIR`, `GAMEPANEL_BACKUP_KEEP`, `GAMEPANEL_BACKUP_TIMEOUT`.
+
+### Agendamentos
+
+Cada servidor tem uma aba **Agendamentos**: o painel dispara sozinho **reiniciar, parar,
+iniciar, atualizar (SteamCMD)** ou **backup**, em tres formatos —
+
+- **todo dia** numa hora fixa (o classico "reiniciar as 5h");
+- **uma vez por semana**, num dia e hora ("backup completo todo domingo as 3h");
+- **a cada N horas**, contadas a partir do momento em que a tarefa foi salva.
+
+Cada disparo entra no historico como qualquer outra acao, com `agendador` no lugar do
+usuario — da para conferir tudo em [Historico](#historico) filtrando por esse nome. O
+botao **rodar agora** dispara na hora, sem esperar o horario: e como se testa uma tarefa
+recem-criada sem ficar acordado ate as 5h.
+
+Detalhes que importam:
+
+- **O relogio e o do container do painel.** A propria tela mostra que horas sao para ele e
+  qual o fuso; se nao bater com a sua hora, o que esta errado e o `TZ` do container (o
+  padrao dos containers e **UTC**).
+- **Tarefa atrasada nao dispara.** Se o painel passou a noite fora do ar, o "reiniciar as
+  5h" **nao** cai as 14h no meio da partida: ele espera a proxima ocorrencia. A tolerancia
+  e de 1h (`GAMEPANEL_SCHEDULE_GRACE`).
+- **Nao roda duas vezes.** O horario do ultimo disparo fica gravado e e marcado *antes* de
+  a tarefa comecar — um `update` que leva 40 minutos nao e disparado de novo no meio.
+- **Um worker so.** O relogio e uma thread dentro do processo do painel, e o `gunicorn`
+  aqui roda com `--workers 1` justamente por isso (a sessao do terminal tem o mesmo
+  motivo). Com dois processos, cada um teria a sua thread e toda tarefa dispararia em
+  dobro.
+- Pela linha de comando (`--register-server`, `--create-user`) o relogio **nao sobe**: um
+  deploy nao pode disparar tarefa de passagem.
+- **Papeis**: qualquer um ve a lista; criar, ligar/desligar, remover e "rodar agora" sao de
+  administrador. Remover o servidor do painel leva as tarefas dele junto.
+
+### Historico
+
+O menu do topo tem **Historico**: tudo o que aconteceu, em todos os servidores, com filtro
+por servidor, acao e quem fez. E onde se responde "quem parou o servidor ontem" e "o
+agendador rodou o backup essa semana?". A tela de cada servidor continua mostrando so os
+15 ultimos.
+
+O operador nao ve ali (nem em `/jobs/<id>`) o que ele nao pode fazer — terminal, console e
+arquivos; veja [Usuarios e papeis](#usuarios-e-papeis).
+
+**Retencao**: cada registro guarda a saida inteira do que rodou (ate 200 KB), e um backup
+diario sozinho poe 365 linhas por ano no banco. O painel apaga o que passa de
+**60 dias** (`GAMEPANEL_JOBS_KEEP_DAYS`, `0` desliga), numa limpeza que roda de hora em
+hora junto com o relogio do agendamento.
 
 ### Console de comandos
 
@@ -982,12 +1089,26 @@ Sao dois papeis:
 | Cadastrar / editar / remover servidor | nao | sim |
 | Registrar um novo arquivo na tela Config | nao | sim |
 | Terminal, Console e navegador de **Arquivos** | nao | sim |
+| Enviar arquivo para o container | nao | sim |
+| Ver a lista de **Backups** e tirar copia | sim | sim |
+| Baixar, restaurar ou apagar um backup | nao | sim |
+| **Historico** global e por servidor | sim | sim |
+| Historico de terminal, console e arquivos | nao | sim |
+| Ver os **Agendamentos** | sim | sim |
+| Criar, ligar/desligar ou remover agendamento | nao | sim |
 | **Usuarios** | nao | sim |
 
 O corte segue o que da **root no container**: terminal, console e editor de arquivos
 ficam com o administrador, e junto com eles o cadastro do servidor (que aponta o SSH do
 painel) e o registro de qual arquivo a tela Config abre — sem isso o operador poderia
 apontar a tela Config para `/etc/shadow` e contornar a restricao.
+
+O corte vale tambem para o **historico**: um job guarda a saida inteira do que rodou, e a
+de um comando no console carrega tudo o que apareceu na tela. Por isso os registros de
+`shell`, `terminal`, `edit-file`, `delete-file` e `download-file` somem da lista da tela
+do servidor para o operador e respondem **403** em `/jobs/<id>` e `/api/jobs/<id>` — sem
+isso, quem leva 403 no console leria o resultado dele pelo id do job. `edit-config` fica
+de fora da restricao de proposito: mexer na configuracao do jogo e trabalho de operador.
 
 O papel e lido do banco a cada clique, entao tirar o acesso de alguem vale na hora, e
 apagar uma conta derruba a sessao dela. O painel nunca fica sem administrador: nao da
@@ -1029,8 +1150,10 @@ alternativo da chamada HTTP (o container de jogo de verdade tem `curl`).
 ```bash
 docker compose logs -f panel
 docker compose exec panel python3 /opt/gamepanel/test_gameconf.py   # testes do parser
+docker compose exec panel python3 /opt/gamepanel/test_gamefields.py # testes do catalogo
 docker compose exec panel python3 /opt/gamepanel/test_players.py    # testes da contagem
-docker compose exec panel python3 /opt/gamepanel/test_users.py      # testes dos papeis
+docker compose exec panel python3 /opt/gamepanel/test_users.py      # papeis, backup, upload
+docker compose exec panel python3 /opt/gamepanel/test_schedules.py  # agendamento e historico
 docker compose exec game-palworld sh -c 'echo 7 > /run/fake-players' # fixa a contagem
 docker compose down -v            # zera banco, chaves e arquivos de teste
 ```
@@ -1040,9 +1163,16 @@ docker compose down -v            # zera banco, chaves e arquivos de teste
 - Login por usuario, senha com hash **scrypt** no SQLite, sessao em cookie assinado
   (HttpOnly, SameSite=Lax) e bloqueio apos 5 tentativas erradas em 5 minutos
 - Dois papeis (**administrador** e **operador**): shell, editor de arquivos, cadastro de
-  servidor e gestao de usuarios sao so do administrador — veja
-  [Usuarios e papeis](#usuarios-e-papeis)
+  servidor, gestao de usuarios **e o historico dessas acoes** sao so do administrador —
+  veja [Usuarios e papeis](#usuarios-e-papeis)
 - Todos os POSTs exigem token **CSRF**
+- Respostas levam `X-Frame-Options: DENY` (o painel nao pode ser embutido em iframe),
+  `X-Content-Type-Options: nosniff` e `Referrer-Policy: same-origin`
+- A volta do `?next=` do login so aceita caminho interno — `//host` e `/\host` sao
+  absolutos para o navegador e ficariam de fora do painel
+- O assistente de contagem de jogadores envia por **POST**: a senha de admin do jogo
+  (`Autenticacao`, `Corpo JSON do login`) nao pode passar pela barra de enderecos, pelo
+  `Referer` nem pelo log de um proxy reverso
 - O painel serve **HTTP puro** — pensado para LAN. Nao exponha na internet sem um proxy
   reverso com TLS na frente
 - Comprometer o painel da acesso root aos **containers de jogo**, nao ao Proxmox
@@ -1056,6 +1186,9 @@ docker compose down -v            # zera banco, chaves e arquivos de teste
 | `/var/lib/gamepanel/known_hosts` | host keys aprendidas dos containers |
 | `/etc/gamepanel/id_ed25519` | chave SSH do painel |
 | `/etc/gamepanel/panel.env` | configuracao lida pelo systemd |
+
+Os **backups nao ficam aqui**: cada `.tar.gz` mora no container do jogo, em
+`/var/backups/gamepanel` (`GAMEPANEL_BACKUP_DIR`) — veja [Backups](#backups).
 
 ```bash
 pct exec <ADMIN_CTID> -- systemctl status gamepanel.service --no-pager

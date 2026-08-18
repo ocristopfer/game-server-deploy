@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Historico &mdash; Painel de Jogos{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Historico</h1>
+</div>
+
+<div class="card">
+  <form method="get" action="{{ url_for('history') }}" class="filebar">
+    <label class="inline-field">Servidor
+      <select name="servidor" aria-label="filtrar por servidor">
+        <option value="">todos</option>
+        {% for s in servers %}
+        <option value="{{ s.id }}" {% if filtro_srv == s.id|string %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="inline-field">Acao
+      <select name="acao" aria-label="filtrar por acao">
+        <option value="">todas</option>
+        {% for a in acoes %}
+        <option value="{{ a }}" {% if filtro_acao == a %}selected{% endif %}>{{ job_label(a) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="inline-field">Quem
+      <select name="usuario" aria-label="filtrar por usuario">
+        <option value="">qualquer um</option>
+        {% for u in usuarios %}
+        <option value="{{ u }}" {% if filtro_user == u %}selected{% endif %}>{{ u }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">Filtrar</button>
+    <a class="btn ghost small" href="{{ url_for('history') }}">limpar</a>
+  </form>
+</div>
+
+<div class="card">
+  {% if jobs %}
+  <table class="jobs">
+    <thead><tr><th>Quando</th><th>Servidor</th><th>Acao</th><th>Quem</th><th>Resultado</th></tr></thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr>
+        <td class="muted small nowrap">{{ j.created_at[:16] | replace('T', ' ') }}</td>
+        <td>{{ nomes.get(j.server_id, '(removido)') }}</td>
+        <td>
+          <a href="{{ url_for('job_detail', jid=j.id) }}">{{ job_label(j.action) }}</a>
+          {% if j.command %} <code class="trunc">{{ j.command }}</code>{% endif %}
+        </td>
+        <td class="muted">
+          {{ j.username or '-' }}
+          {% if j.username == 'agendador' %}<span class="badge" title="Disparado pelo relogio do painel">auto</span>{% endif %}
+        </td>
+        <td>
+          {% if j.status == 'ok' %}<span class="badge on">ok</span>
+          {% elif j.status == 'running' %}<span class="badge">rodando</span>
+          {% else %}<span class="badge off">erro{% if j.exit_code is not none %} {{ j.exit_code }}{% endif %}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="actions">
+    {% if pagina > 0 %}
+      <a class="btn ghost" href="{{ url_for('history', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina - 1) }}">&larr; mais recentes</a>
+    {% endif %}
+    {% if tem_mais %}
+      <a class="btn ghost" href="{{ url_for('history', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina + 1) }}">mais antigas &rarr;</a>
+    {% endif %}
+  </div>
+  {% else %}
+    <p class="muted">Nada no historico com esses filtros.</p>
+  {% endif %}
+  <p class="muted small">
+    {% if manter_dias %}
+      O painel guarda os ultimos <strong>{{ manter_dias }} dias</strong>
+      (<code>GAMEPANEL_JOBS_KEEP_DAYS</code>) &mdash; cada registro carrega a saida inteira
+      do que rodou, e sem limpeza o banco so cresce.
+    {% else %}
+      A limpeza automatica esta desligada (<code>GAMEPANEL_JOBS_KEEP_DAYS=0</code>): o
+      historico cresce sem limite.
+    {% endif %}
+    {% if not is_admin %}
+      Terminal, console e arquivos nao aparecem aqui &mdash; sao acoes de administrador.
+    {% endif %}
+  </p>
+</div>
+{% endblock %}

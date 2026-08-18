@@ -550,6 +550,9 @@ if (-not $NoRegister) {
             "--query-port", (Get-Cfg $jogo "QUERY_PORT" "0"),
             "--config-path", (Get-Cfg $jogo "CONFIG_PATH"),
             "--config-files", (Get-Cfg $jogo "CONFIG_FILES"),
+            # Pastas de save que a tela Backups do painel guarda. Num redeploy o painel
+            # mantem o que ja estava la: quem ajustou pela tela nao perde o ajuste.
+            "--backup-paths", (Get-Cfg $jogo "BACKUP_PATHS"),
             "--player-source", (Get-Cfg $jogo "PLAYER_SOURCE"),
             "--notes", "CT $($cfg['CTID']) no Proxmox $ProxmoxHost (deploy-game.ps1)."
         )

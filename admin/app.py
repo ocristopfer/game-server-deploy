@@ -27,7 +27,7 @@ import subprocess
 import threading
 import time
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 # O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
@@ -104,6 +104,42 @@ FILE_ROOTS = tuple(
 )
 FILE_DEFAULT_PATH = os.environ.get("GAMEPANEL_FILE_DEFAULT", "/opt/game")
 FILE_LIST_MAX = 800
+# Upload: o arquivo sobe em multipart e desce por SSH em streaming, sem passar inteiro
+# pela memoria do painel — por isso o teto aqui e bem maior que o do editor, que carrega
+# tudo num textarea. 0 = sem limite.
+#
+# Cuidado ao aumentar: o Werkzeug guarda o corpo do multipart num arquivo temporario do
+# CONTAINER DO PAINEL antes de a view ver um byte. Subir 2 GB exige 2 GB livres la — e o
+# CT do painel costuma ser pequeno. 512 MB cobre mod e save sem esse risco.
+FILE_UPLOAD_MAX = int(os.environ.get("GAMEPANEL_UPLOAD_MAX", str(512 * 1024 * 1024)))
+UPLOAD_CHUNK = 256 * 1024
+
+# Backup: tar.gz das pastas que valem a pena guardar (save + configuracao do jogo),
+# criado DENTRO do container e guardado la. O painel nao vira deposito de save — ele
+# dispara, lista, baixa e restaura.
+BACKUP_DIR = os.environ.get("GAMEPANEL_BACKUP_DIR", "/var/backups/gamepanel")
+# Quantas copias manter por servidor; as mais antigas saem sozinhas. 0 = nunca apagar.
+BACKUP_KEEP = int(os.environ.get("GAMEPANEL_BACKUP_KEEP", "5"))
+BACKUP_TIMEOUT = int(os.environ.get("GAMEPANEL_BACKUP_TIMEOUT", "3600"))
+BACKUP_PATHS_MAX = 8
+BACKUP_LIST_MAX = 100
+
+# Agendamento: tarefas que o painel dispara sozinho (reiniciar de madrugada, backup
+# diario). O relogio e o do CONTAINER DO PAINEL — se as horas nao baterem com as suas,
+# o que esta errado e o TZ dele.
+SCHEDULE_TICK = 30.0
+# Tarefa atrasada demais nao dispara. Se o painel passou a noite fora do ar, ninguem quer
+# o "reiniciar as 5h" caindo as 14h, no meio da partida: ela espera a proxima ocorrencia.
+SCHEDULE_GRACE = int(os.environ.get("GAMEPANEL_SCHEDULE_GRACE", "3600"))
+# Nome que aparece no historico no lugar do usuario, quando quem disparou foi o relogio.
+SCHEDULE_USER = "agendador"
+
+# Retencao do historico: cada job guarda ate 200 KB de saida, e um backup diario sozinho
+# ja poe 365 linhas por ano no banco. 0 desliga a limpeza.
+JOBS_KEEP_DAYS = int(os.environ.get("GAMEPANEL_JOBS_KEEP_DAYS", "60"))
+JOBS_PURGE_EVERY = 3600.0
+HISTORY_PAGE = 60
+
 # Padroes usados pelo botao "procurar arquivos de config".
 CONFIG_GLOBS = ("*.ini", "*.cfg", "*.conf", "*.json", "*.yaml", "*.yml", "*.properties", "*.txt")
 # Quantos arquivos de configuracao um servidor pode ter registrados para a tela "Config".
@@ -198,6 +234,8 @@ CREATE TABLE IF NOT EXISTS servers (
   config_path TEXT NOT NULL DEFAULT '',
   -- Arquivos (um por linha) que a tela "Config" abre direto, sem navegar por pastas.
   config_files TEXT NOT NULL DEFAULT '',
+  -- Pastas/arquivos (um por linha) que entram no backup. Vazio = usa o config_path.
+  backup_paths TEXT NOT NULL DEFAULT '',
   query_port INTEGER NOT NULL DEFAULT 0,
   player_source TEXT NOT NULL DEFAULT '',
   join_re    TEXT NOT NULL DEFAULT '',
@@ -237,6 +275,27 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_server ON jobs(server_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
+
+CREATE TABLE IF NOT EXISTS schedules (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- CASCADE: tirar o servidor do painel leva junto o que estava agendado para ele.
+  server_id   INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  action      TEXT NOT NULL,             -- restart | stop | start | update | backup
+  -- 'diario' (hora fixa), 'semanal' (dia da semana + hora), 'intervalo' (a cada N horas)
+  kind        TEXT NOT NULL,
+  hour        INTEGER NOT NULL DEFAULT 5,
+  minute      INTEGER NOT NULL DEFAULT 0,
+  weekday     INTEGER NOT NULL DEFAULT 0,   -- 0 = segunda ... 6 = domingo
+  every_hours INTEGER NOT NULL DEFAULT 6,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  -- Quando disparou pela ultima vez, em hora LOCAL com fuso (o mesmo relogio do
+  -- agendamento). E o que impede a mesma ocorrencia de rodar duas vezes.
+  last_run    TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sched_server ON schedules(server_id);
 """
 
 
@@ -283,6 +342,9 @@ MIGRATIONS = (
     ("servers", "join_re", "ALTER TABLE servers ADD COLUMN join_re TEXT NOT NULL DEFAULT ''"),
     ("servers", "leave_re", "ALTER TABLE servers ADD COLUMN leave_re TEXT NOT NULL DEFAULT ''"),
     ("servers", "config_files", "ALTER TABLE servers ADD COLUMN config_files TEXT NOT NULL DEFAULT ''"),
+    # Backup: o que guardar de cada servidor. Cadastro antigo fica vazio e cai no
+    # config_path, que e o comportamento que ele ja teria se a coluna sempre existisse.
+    ("servers", "backup_paths", "ALTER TABLE servers ADD COLUMN backup_paths TEXT NOT NULL DEFAULT ''"),
     ("servers", "http_url", "ALTER TABLE servers ADD COLUMN http_url TEXT NOT NULL DEFAULT ''"),
     ("servers", "http_auth", "ALTER TABLE servers ADD COLUMN http_auth TEXT NOT NULL DEFAULT ''"),
     ("servers", "http_body", "ALTER TABLE servers ADD COLUMN http_body TEXT NOT NULL DEFAULT ''"),
@@ -425,6 +487,22 @@ def csrf_token() -> str:
         token = secrets.token_urlsafe(32)
         session["csrf"] = token
     return token
+
+
+# Rotas que recebem corpo grande. O teto geral (MAX_CONTENT_LENGTH) e apertado porque o
+# editor manda o arquivo percent-encoded dentro de um formulario; o upload precisa de bem
+# mais que isso.
+#
+# Este hook tem de vir ANTES do _check_csrf no arquivo: a ordem de registro e a ordem de
+# execucao, e e o _check_csrf quem toca em request.form primeiro — o teto e conferido na
+# hora em que o corpo e lido, entao ajustar so la dentro da view chegaria tarde (413).
+BIG_BODY_ENDPOINTS = {"files_upload"}
+
+
+@app.before_request
+def _teto_do_corpo():
+    if request.endpoint in BIG_BODY_ENDPOINTS:
+        request.max_content_length = (FILE_UPLOAD_MAX + UPLOAD_CHUNK) if FILE_UPLOAD_MAX else None
 
 
 @app.before_request
@@ -1899,10 +1977,56 @@ JOB_LABELS["edit-file"] = "Arquivo salvo"
 JOB_LABELS["delete-file"] = "Arquivo apagado"
 JOB_LABELS["edit-config"] = "Configuracao alterada"
 JOB_LABELS["download-file"] = "Arquivo baixado"
+JOB_LABELS["upload-file"] = "Arquivo enviado"
+JOB_LABELS["backup"] = "Backup"
+JOB_LABELS["restore-backup"] = "Backup restaurado"
+JOB_LABELS["delete-backup"] = "Backup apagado"
+
+# O historico guarda a saida INTEIRA do que rodou. Estas acoes so um admin consegue
+# disparar (console, terminal, editor de arquivos), entao a saida delas — que carrega o
+# comando digitado, o conteudo do arquivo e o que mais tenha passado pela tela — tambem
+# so ele pode ler. Sem esta lista, o operador que leva 403 no console leria o resultado
+# do console abrindo o job pelo id. 'edit-config' fica de fora de proposito: mexer na
+# configuracao do jogo e coisa de operador, e a saida dela nao passa disso.
+JOB_ACTIONS_ADMIN = frozenset({
+    "shell", "terminal", "edit-file", "delete-file", "download-file",
+    # 'backup' fica de fora: criar copia e operacao, e o operador pode dispara-la. Ja
+    # restaurar e apagar destroem dado, e baixar tira o save do container — sao de admin,
+    # e o registro delas acompanha.
+    "upload-file", "restore-backup", "delete-backup",
+})
 
 
 def job_label(action: str) -> str:
     return JOB_LABELS.get(action, action)
+
+
+def job_ou_403(job: sqlite3.Row) -> None:
+    """Barra o operador na saida de um job que ele nao teria permissao de disparar."""
+    if job["action"] in JOB_ACTIONS_ADMIN and not is_admin():
+        abort(403, "Este registro e de uma acao restrita a administradores do painel.")
+
+
+def filtro_de_papel() -> tuple[str, tuple]:
+    """Pedaco de WHERE que esconde do operador os jobs das acoes restritas.
+
+    Sai daqui e nao de cada consulta porque sao duas telas (o historico do servidor e o
+    global) e uma rota de API: a lista de acoes tem de ser a mesma nos tres.
+    """
+    if is_admin():
+        return "", ()
+    escondidas = tuple(sorted(JOB_ACTIONS_ADMIN))
+    marcadores = ",".join("?" * len(escondidas))
+    return f" AND action NOT IN ({marcadores})", escondidas
+
+
+def jobs_do_servidor(conn: sqlite3.Connection, sid: int, limite: int) -> list:
+    """Historico do servidor ja filtrado pelo papel de quem esta olhando."""
+    corte, valores = filtro_de_papel()
+    return conn.execute(
+        f"SELECT * FROM jobs WHERE server_id = ?{corte} ORDER BY id DESC LIMIT ?",
+        (sid, *valores, limite),
+    ).fetchall()
 
 
 def log_job(
@@ -1977,7 +2101,180 @@ def start_job(
     return job_id
 
 
+# ------------------------------------------------------------- agendamento
+#
+# Uma thread so, acordando a cada SCHEDULE_TICK, olha o que venceu e dispara pelo MESMO
+# start_job das telas — tarefa agendada aparece no historico como qualquer outra, com
+# 'agendador' no lugar do usuario.
+#
+# Isto depende de o painel rodar com UM worker (e como o gunicorn e configurado aqui,
+# veja o provision-admin-lxc.sh): com dois processos, cada um teria a sua thread e a
+# mesma tarefa dispararia em dobro.
+
+SCHEDULE_KINDS = ("diario", "semanal", "intervalo")
+SCHEDULE_ACTIONS = ("restart", "stop", "start", "update", "backup")
+DIAS_SEMANA = ("segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo")
+# "toda segunda" mas "todo sabado": os dias de semana vem de "segunda-feira" (feminino),
+# sabado e domingo sao masculinos.
+ARTIGO_DIA = ("toda", "toda", "toda", "toda", "toda", "todo", "todo")
+EVERY_HOURS_MAX = 168  # uma semana
+
+
+def agora_local() -> datetime:
+    """Hora local do painel, com fuso. E o relogio que o agendamento enxerga."""
+    return datetime.now().astimezone().replace(microsecond=0)
+
+
+def _parse_dt(texto: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(texto)
+    except (TypeError, ValueError):
+        return None
+
+
+def rotulo_agendamento(sched) -> str:
+    """Como a tarefa e descrita na tela e no historico."""
+    hora = f"{int(sched['hour']):02d}:{int(sched['minute']):02d}"
+    if sched["kind"] == "intervalo":
+        horas = int(sched["every_hours"])
+        return f"a cada {horas}h" if horas != 1 else "a cada hora"
+    if sched["kind"] == "semanal":
+        indice = int(sched["weekday"]) % 7
+        return f"{ARTIGO_DIA[indice]} {DIAS_SEMANA[indice]} as {hora}"
+    return f"todo dia as {hora}"
+
+
+def ocorrencia_anterior(sched, agora: datetime) -> datetime | None:
+    """Ultimo horario em que esta tarefa deveria ter rodado ('intervalo' nao tem)."""
+    if sched["kind"] == "intervalo":
+        return None
+    alvo = agora.replace(hour=int(sched["hour"]), minute=int(sched["minute"]),
+                         second=0, microsecond=0)
+    if sched["kind"] == "semanal":
+        atras = (agora.weekday() - int(sched["weekday"])) % 7
+        alvo -= timedelta(days=atras)
+        if alvo > agora:
+            alvo -= timedelta(days=7)
+        return alvo
+    if alvo > agora:
+        alvo -= timedelta(days=1)
+    return alvo
+
+
+def venceu(sched, agora: datetime) -> bool:
+    """A tarefa deveria disparar agora?"""
+    ultimo = _parse_dt(sched["last_run"])
+    if sched["kind"] == "intervalo":
+        if ultimo is None:
+            return True
+        return (agora - ultimo) >= timedelta(hours=max(1, int(sched["every_hours"])))
+
+    alvo = ocorrencia_anterior(sched, agora)
+    if ultimo is not None and ultimo >= alvo:
+        return False  # esta ocorrencia ja rodou
+    # Atrasada demais: o painel estava fora do ar quando a hora passou. Nao dispara e nao
+    # anota nada — na proxima ocorrencia a conta acima volta a fechar sozinha.
+    return (agora - alvo).total_seconds() <= SCHEDULE_GRACE
+
+
+def dispara_agendamento(conn: sqlite3.Connection, sched) -> int:
+    """Coloca a tarefa para rodar. Devolve o id do job (0 quando nao deu para disparar)."""
+    server = conn.execute(SQL_SERVER_BY_ID, (sched["server_id"],)).fetchone()
+    if not server:
+        return 0
+    if sched["action"] == "backup":
+        caminhos = backup_paths(server)
+        if not caminhos:
+            return 0  # sem o que guardar: nao adianta acordar o container
+        remoto, limite = comando_de_backup(server, caminhos), BACKUP_TIMEOUT
+    else:
+        remoto, limite = ACTIONS[sched["action"]][1](server), JOB_TIMEOUT
+    job_id = start_job(
+        sched["action"], server, SCHEDULE_USER, remote_cmd=remoto,
+        command=f"agendado: {rotulo_agendamento(sched)}", timeout=limite,
+    )
+    invalidate_status(int(server["id"]))
+    return job_id
+
+
+def roda_agendamentos() -> int:
+    """Uma passada do relogio. Devolve quantas tarefas disparou."""
+    agora = agora_local()
+    conn = db()
+    disparadas = 0
+    for sched in conn.execute("SELECT * FROM schedules WHERE enabled = 1").fetchall():
+        if sched["action"] not in SCHEDULE_ACTIONS or not venceu(sched, agora):
+            continue
+        # Marca ANTES de disparar: se o job demorar (um update leva quase uma hora), a
+        # proxima volta do relogio nao pode achar que a tarefa ainda esta vencida.
+        with conn:
+            conn.execute("UPDATE schedules SET last_run = ? WHERE id = ?",
+                         (agora.isoformat(), sched["id"]))
+        if dispara_agendamento(conn, sched):
+            disparadas += 1
+    return disparadas
+
+
+_ultima_limpeza = 0.0
+
+
+def limpa_historico(forcar: bool = False) -> int:
+    """Apaga jobs velhos. Devolve quantos sairam."""
+    global _ultima_limpeza
+    if not JOBS_KEEP_DAYS:
+        return 0
+    agora = time.monotonic()
+    if not forcar and agora - _ultima_limpeza < JOBS_PURGE_EVERY:
+        return 0
+    _ultima_limpeza = agora
+    corte = (datetime.now(timezone.utc) - timedelta(days=JOBS_KEEP_DAYS)).isoformat()
+    conn = db()
+    with conn:
+        cur = conn.execute("DELETE FROM jobs WHERE created_at < ?", (corte,))
+    return cur.rowcount or 0
+
+
+_scheduler_started = False
+_scheduler_lock = threading.Lock()
+
+
+def _scheduler_loop() -> None:
+    while True:
+        time.sleep(SCHEDULE_TICK)
+        try:
+            # Contexto de aplicacao: e o que faz o db() desta thread funcionar como o das
+            # rotas (conexao propria, fechada no fim pelo teardown).
+            with app.app_context():
+                roda_agendamentos()
+                limpa_historico()
+        except Exception:  # noqa: BLE001 - a thread nao pode morrer por causa de um tick
+            app.logger.exception("falha no agendador")
+
+
+def start_scheduler() -> None:
+    global _scheduler_started
+    with _scheduler_lock:
+        if _scheduler_started:
+            return
+        _scheduler_started = True
+    threading.Thread(target=_scheduler_loop, daemon=True).start()
+
+
 # ------------------------------------------------------------------- rotas
+
+
+def destino_seguro(bruto: str) -> str:
+    r"""Para onde voltar depois do login. Vazio quando o destino nao e do painel.
+
+    Comecar com "/" nao basta: para o navegador "//evil.com" e "/\evil.com" sao enderecos
+    ABSOLUTOS, e mandariam quem acabou de digitar a senha para fora do painel.
+    """
+    destino = (bruto or "").strip()
+    if not destino.startswith("/") or destino[:2] in ("//", "/\\"):
+        return ""
+    if any(c in destino for c in "\r\n\t"):
+        return ""
+    return destino
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -2002,8 +2299,7 @@ def login():
             session["username"] = row["username"]
             session.permanent = True
             csrf_token()
-            nxt = request.args.get("next", "")
-            return redirect(nxt if nxt.startswith("/") else url_for("dashboard"))
+            return redirect(destino_seguro(request.args.get("next", "")) or url_for("dashboard"))
         _record_fail(key)
         flash("Usuario ou senha invalidos.", "error")
         return render_template(TPL_LOGIN), 401
@@ -2131,19 +2427,23 @@ def _aba_log(server: sqlite3.Row, join_re: str, leave_re: str, testar: bool) -> 
     return saida
 
 
-@app.get("/servers/<int:sid>/players/descobrir")
+@app.route("/servers/<int:sid>/players/descobrir", methods=["GET", "POST"])
 @admin_required
 def players_setup(sid: int):
     """Assistente: acha a porta/API que responde e ajuda a achar o padrao no log."""
     server = _server_or_404(sid)
-    aba = request.args.get("aba", "porta")
-    testar = bool(request.args.get("testar"))
+    # Os campos das tres abas precisam sobreviver ao botao "Testar", e entre eles esta a
+    # senha de admin do jogo (http_auth, http_login_body). Por isso o formulario e POST:
+    # na URL a senha ficaria no historico do navegador, no cabecalho Referer e no log de
+    # qualquer proxy na frente do painel. O GET continua servindo a navegacao entre abas,
+    # que so carrega o nome da aba.
+    origem = request.form if request.method == "POST" else request.args
+    aba = origem.get("aba", "porta")
+    testar = bool(origem.get("testar"))
 
-    # Os campos das tres abas viajam pela URL para o botao "Testar" nao perder o que
-    # ja foi digitado.
-    http = {campo: request.args.get(campo, server[campo]) for campo in HTTP_FIELDS}
-    join_re = request.args.get("join_re", server["join_re"])
-    leave_re = request.args.get("leave_re", server["leave_re"])
+    http = {campo: origem.get(campo, server[campo]) for campo in HTTP_FIELDS}
+    join_re = origem.get("join_re", server["join_re"])
+    leave_re = origem.get("leave_re", server["leave_re"])
 
     dados = {"portas": [], "aviso": "", "achados": [], "mudas": [], "amostras": [],
              "tem_api": False, "udp_do_jogo": 0, "udp_mudas": False,
@@ -2280,6 +2580,33 @@ def _arquivos_config(valor: str, errors: list[str]) -> str:
     return "\n".join(caminhos)
 
 
+def _caminhos_backup(valor: str, errors: list[str]) -> str:
+    """Le a lista do que entra no backup (um caminho absoluto por linha).
+
+    Vazio e a resposta certa para a maioria dos cadastros: sem nada aqui o backup leva a
+    pasta de configuracao do servidor, que e onde o save costuma morar.
+    """
+    caminhos: list[str] = []
+    for linha in (valor or "").replace(",", "\n").splitlines():
+        bruto = linha.strip()
+        if not bruto:
+            continue
+        try:
+            limpo = clean_path(bruto)
+        except ValueError as exc:
+            errors.append(f"Caminho de backup invalido ({bruto}): {exc}")
+            continue
+        if limpo == "/":
+            errors.append("Backup da raiz nao: aponte a pasta do save ou da configuracao.")
+            continue
+        if limpo not in caminhos:
+            caminhos.append(limpo)
+    if len(caminhos) > BACKUP_PATHS_MAX:
+        errors.append(f"No maximo {BACKUP_PATHS_MAX} caminhos de backup por servidor.")
+        caminhos = caminhos[:BACKUP_PATHS_MAX]
+    return "\n".join(caminhos)
+
+
 CAMINHO_JSON_RE = re.compile(r"^[A-Za-z0-9_.\[\]-]{0,120}$")
 
 
@@ -2378,6 +2705,7 @@ def _form_server(form) -> tuple[dict, list[str]]:
             "notes": form.get("notes", "").strip()[:2000],
             "config_path": _pasta_config(form.get("config_path"), errors),
             "config_files": _arquivos_config(form.get("config_files"), errors),
+            "backup_paths": _caminhos_backup(form.get("backup_paths"), errors),
             "query_port": _porta(
                 form.get("query_port"), 0, 0,
                 "Porta de consulta invalida (use 0 para desligar).", errors,
@@ -2395,7 +2723,8 @@ def _form_server(form) -> tuple[dict, list[str]]:
 # lista em um lugar so evita o classico "acrescentei a coluna e esqueci de um dos SQLs".
 SERVER_FIELDS = (
     "name", "host", "ssh_port", "ssh_user", "service", "game_port", "notes",
-    "config_path", "config_files", "query_port", "player_source", "join_re", "leave_re",
+    "config_path", "config_files", "backup_paths", "query_port", "player_source",
+    "join_re", "leave_re",
     *HTTP_FIELDS,
 )
 SQL_INSERT_SERVER = (
@@ -2479,9 +2808,7 @@ def server_detail(sid: int):
     server = conn.execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
-    jobs = conn.execute(
-        "SELECT * FROM jobs WHERE server_id = ? ORDER BY id DESC LIMIT 15", (sid,)
-    ).fetchall()
+    jobs = jobs_do_servidor(conn, sid, 15)
     lines = _log_lines_arg(request.args.get("lines"))
     logs, log_cursor, log_error = "", "", ""
     try:
@@ -3192,6 +3519,205 @@ def read_file(server: sqlite3.Row, path: str) -> dict:
     }
 
 
+# $1 = pasta dos backups, $2 = prefixo do servidor, $3 = quantas copias manter,
+# $4 = sufixo do nome (a copia de seguranca do restore usa isto), $5.. = o que guardar.
+BACKUP_SCRIPT = r"""
+set -e
+dir=$1
+nome=$2
+manter=$3
+sufixo=$4
+shift 4
+[ $# -gt 0 ] || { echo "nenhuma pasta para guardar" >&2; exit 3; }
+
+# Caminho que ainda nao existe NAO e erro: a pasta de save so nasce quando alguem entra
+# no servidor pela primeira vez, e o cadastro do jogo ja aponta para ela. Cada ausente
+# vira um aviso e os demais continuam entrando; so para se nao sobrar nenhum.
+# (Roda os argumentos: tira o primeiro, e se ele existir devolve no fim da lista.)
+n=$#
+i=0
+while [ "$i" -lt "$n" ]; do
+  p=$1
+  shift
+  i=$((i + 1))
+  if [ -e "$p" ]; then
+    set -- "$@" "$p"
+  else
+    echo "ignorado (ainda nao existe): $p"
+  fi
+done
+[ $# -gt 0 ] || { echo "nada a guardar: nenhum dos caminhos existe no container" >&2; exit 3; }
+mkdir -p -- "$dir"
+
+# Espaco livre x tamanho do alvo. O .tar.gz sai bem menor que o original, entao esta
+# margem e folgada de proposito: encher o disco do container derruba o jogo junto.
+precisa=$(du -sk -- "$@" 2>/dev/null | awk '{ t += $1 } END { print t+0 }')
+livre=$(df -Pk -- "$dir" | awk 'NR>1 { print $4; exit }')
+if [ "${livre:-0}" -lt "${precisa:-0}" ]; then
+  echo "sem espaco em $dir: o alvo ocupa ${precisa}KB e sobram ${livre}KB" >&2
+  exit 4
+fi
+
+alvo="$dir/$nome-$(date +%Y%m%d-%H%M%S)$sufixo.tar.gz"
+tmp="$alvo.parcial"
+lista=$(mktemp)
+trap 'rm -f "$tmp" "$lista"' EXIT
+# Caminho absoluto vira relativo dentro do tar (-C /): e o que faz o restore devolver
+# cada arquivo exatamente de onde ele saiu.
+for p in "$@"; do printf '%s\n' "${p#/}" >> "$lista"; done
+
+# tar sai com 1 quando um arquivo muda durante a leitura — normal com o servidor ligado,
+# e nao invalida o backup. So o codigo 2 (erro de verdade) aborta.
+set +e
+tar -czf "$tmp" --warning=no-file-changed -C / -T "$lista"
+rc=$?
+set -e
+[ "$rc" -le 1 ] || { echo "tar falhou (codigo $rc)" >&2; exit 5; }
+[ "$rc" -eq 1 ] && echo "aviso: algum arquivo mudou durante a copia (servidor ligado) - o backup vale, mas parar o servidor da uma copia mais fiel"
+
+mv -- "$tmp" "$alvo"
+echo "backup pronto: $alvo ($(stat -Lc %s -- "$alvo") bytes)"
+
+# Retencao: mantem as N copias mais novas DESTE servidor e apaga o resto.
+if [ "$manter" -gt 0 ]; then
+  ls -1t -- "$dir/$nome-"*.tar.gz 2>/dev/null | tail -n +$((manter + 1)) | while IFS= read -r velho; do
+    rm -f -- "$velho" && echo "retencao: apagado $(basename -- "$velho")"
+  done
+fi
+"""
+
+# $1 = pasta dos backups, $2 = prefixo do servidor.
+BACKUP_LIST_SCRIPT = r"""
+set -e
+dir=$1
+nome=$2
+[ -d "$dir" ] || exit 0
+# Nome primeiro: como ele comeca com a data, o sort reverso ja poe o mais novo em cima.
+find "$dir" -maxdepth 1 -type f -name "$nome-*.tar.gz" \
+  -printf '%f\t%s\t%TY-%Tm-%Td %TH:%TM\n' 2>/dev/null | LC_ALL=C sort -r | head -n "$3"
+"""
+
+# $1 = pasta dos backups, $2 = nome do arquivo, $3 = unidade systemd do jogo.
+RESTORE_SCRIPT = r"""
+set -e
+dir=$1
+arq=$2
+unit=$3
+# O nome vem da tela: barra aqui deixaria escolher qualquer .tar.gz do container.
+case "$arq" in
+  ''|*/*|*..*) echo "nome de backup invalido" >&2; exit 3 ;;
+esac
+f="$dir/$arq"
+[ -f "$f" ] || { echo "backup nao encontrado: $arq" >&2; exit 3; }
+# Confere ANTES de parar o servidor: descobrir que o arquivo esta corrompido com o jogo
+# ja parado e a pior hora possivel.
+gzip -t -- "$f" 2>/dev/null || { echo "arquivo corrompido (gzip nao le): $arq" >&2; exit 4; }
+tar -tzf "$f" >/dev/null 2>&1 || { echo "arquivo corrompido (tar nao le): $arq" >&2; exit 4; }
+
+estava=$(systemctl is-active "$unit" 2>/dev/null || true)
+if [ "$estava" = active ]; then
+  systemctl stop "$unit"
+  echo "servidor parado para a restauracao"
+fi
+
+tar -xzf "$f" -C /
+echo "restaurado: $arq"
+
+# Servidor que ja estava parado continua parado: restaurar nao e ligar.
+if [ "$estava" = active ]; then
+  systemctl start "$unit"
+  echo "servidor religado"
+fi
+"""
+
+# $1 = pasta dos backups, $2 = nome do arquivo.
+BACKUP_DELETE_SCRIPT = r"""
+set -e
+dir=$1
+arq=$2
+case "$arq" in
+  ''|*/*|*..*) echo "nome de backup invalido" >&2; exit 3 ;;
+esac
+f="$dir/$arq"
+[ -f "$f" ] || { echo "backup nao encontrado: $arq" >&2; exit 3; }
+sz=$(stat -Lc %s -- "$f")
+rm -f -- "$f"
+echo "backup apagado: $arq ($sz bytes)"
+"""
+
+# $1 = destino final. O conteudo vem CRU pela entrada padrao (sem base64: o arquivo pode
+# ter gigabytes, e codificar inflaria 33% a toa).
+UPLOAD_SCRIPT = r"""
+set -e
+f=$1
+d=$(dirname -- "$f")
+[ -d "$d" ] || { echo "pasta nao existe: $d" >&2; exit 3; }
+[ -d "$f" ] && { echo "ja existe uma PASTA com esse nome" >&2; exit 4; }
+t=$(mktemp "$d/.gamepanel-XXXXXX")
+trap 'rm -f "$t"' EXIT
+cat > "$t"
+if [ -e "$f" ]; then
+  [ -f "$f" ] || { echo "o destino nao e um arquivo comum" >&2; exit 4; }
+  cp -a -- "$f" "$f.$(date +%Y%m%d-%H%M%S).bak"
+  # cat > por cima em vez de mv: preserva dono e permissao do arquivo que ja estava la.
+  cat "$t" > "$f"
+else
+  cat "$t" > "$f"
+  chmod 0644 -- "$f"
+  # Arquivo novo herda o dono da pasta: o jogo roda como 'steam' e precisa poder ler.
+  chown --reference="$d" -- "$f" 2>/dev/null || true
+fi
+echo "enviado: $f ($(stat -Lc %s -- "$f") bytes)"
+"""
+
+
+def ssh_stream_in(server, remote_cmd: str, origem, timeout: int) -> str:
+    """Executa um comando remoto alimentando a entrada dele a partir de `origem`.
+
+    Diferente do `ssh_run(stdin_data=...)`, que precisa do conteudo inteiro na memoria:
+    aqui os bytes passam em pedacos, do arquivo que o navegador enviou direto para o
+    `cat` do outro lado. E o que permite subir um mod ou um save de varios GB.
+    """
+    argv = ssh_argv(server, connect_timeout=10) + [remote_cmd]
+    try:
+        proc = subprocess.Popen(
+            argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+    except OSError as exc:
+        raise RemoteError(f"falha ao executar ssh: {exc}")
+
+    try:
+        while True:
+            chunk = origem.read(UPLOAD_CHUNK)
+            if not chunk:
+                break
+            proc.stdin.write(chunk)
+    except (BrokenPipeError, OSError):
+        # O outro lado desistiu (sem espaco, sem permissao): o motivo esta no stderr,
+        # entao nao adianta reclamar do cano quebrado aqui.
+        pass
+    finally:
+        # Fechar a entrada e o que faz o `cat` remoto terminar. A referencia tem de ir
+        # junto: o communicate() abaixo daria flush num arquivo ja fechado e estouraria
+        # ValueError com o arquivo JA gravado do outro lado — erro na tela, upload feito.
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+        proc.stdin = None
+
+    try:
+        saida, erro = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        raise RemoteError(f"tempo esgotado ({timeout}s) enviando para {server['host']}")
+    if proc.returncode != 0:
+        detalhe = (erro or saida or b"").decode("utf-8", "replace").strip()
+        raise RemoteError(detalhe or f"falha ao enviar (exit {proc.returncode})")
+    return saida.decode("utf-8", "replace").strip()
+
+
 @app.get("/servers/<int:sid>/files")
 @admin_required
 def files(sid: int):
@@ -3465,6 +3991,232 @@ def files_download(sid: int):
     return app.response_class(
         stream_with_context(stream_remote_file(server, path)),
         mimetype="application/octet-stream",
+        headers={
+            "Content-Disposition": _attachment_header(info["name"]),
+            "Content-Length": str(info["size"]),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+# ------------------------------------------------------------------ upload
+
+
+@app.post("/servers/<int:sid>/files/upload")
+@admin_required
+def files_upload(sid: int):
+    """Manda um arquivo do computador para dentro do container (mod, save, config)."""
+    _files_guard()
+    server = _server_or_404(sid)
+    # O teto deste request ja foi levantado no _teto_do_corpo (BIG_BODY_ENDPOINTS).
+    destino_dir = request.form.get("path", "") or FILE_DEFAULT_PATH
+    voltar = url_for("files", sid=sid, path=destino_dir)
+    enviado = request.files.get("arquivo")
+    if not enviado or not enviado.filename:
+        flash("Escolha um arquivo para enviar.", "error")
+        return redirect(voltar)
+
+    # O navegador manda o nome como o disco de origem o tinha: fica so a ultima parte,
+    # para "../../etc/passwd" nao virar caminho.
+    nome = enviado.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not nome or nome in (".", ".."):
+        flash("Nome de arquivo invalido.", "error")
+        return redirect(voltar)
+
+    try:
+        pasta = clean_path(destino_dir)
+        alvo = clean_path(f"{pasta.rstrip('/')}/{nome}")
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(voltar)
+
+    try:
+        saida = ssh_stream_in(
+            server, q("bash", "-lc", UPLOAD_SCRIPT, "gp", alvo),
+            enviado.stream, timeout=JOB_TIMEOUT,
+        )
+    except RemoteError as exc:
+        log_job("upload-file", server, session.get("username", "?"),
+                command=alvo, output=str(exc), status="error")
+        flash(f"Nao consegui enviar: {exc}", "error")
+        return redirect(voltar)
+
+    log_job("upload-file", server, session.get("username", "?"), command=alvo, output=saida)
+    flash(f"{saida}. Se o arquivo ja existia, uma copia .bak ficou ao lado.", "ok")
+    return redirect(url_for("files", sid=sid, path=pasta))
+
+
+# ------------------------------------------------------------------ backup
+#
+# O backup mora DENTRO do container do jogo, nao no painel: e um tar.gz das pastas que
+# valem a pena guardar (o save, e a configuracao junto). O painel dispara, lista, baixa e
+# restaura — e a restauracao para o servidor, extrai e religa, porque o jogo com o mundo
+# trocado embaixo dele grava por cima do que acabou de voltar.
+
+
+def backup_paths(server: sqlite3.Row) -> list[str]:
+    """O que entra no backup deste servidor.
+
+    Sem nada cadastrado vale a pasta de configuracao, que e onde o save costuma morar —
+    e o padrao que evita cadastrar servidor nenhum so para ter backup.
+    """
+    escolhidos = [ln.strip() for ln in (server["backup_paths"] or "").splitlines() if ln.strip()]
+    if escolhidos:
+        return escolhidos[:BACKUP_PATHS_MAX]
+    padrao = (server["config_path"] or "").strip()
+    return [padrao] if padrao else []
+
+
+def backup_prefix(server: sqlite3.Row) -> str:
+    """Prefixo dos arquivos deste servidor: e ele que separa (e limita) as copias.
+
+    Sai do nome da unidade systemd, que ja e unica por container. O saneamento importa
+    porque o prefixo entra num glob de shell la do outro lado.
+    """
+    bruto = (server["service"] or "jogo").rsplit(".service", 1)[0]
+    limpo = re.sub(r"[^A-Za-z0-9_-]", "-", bruto).strip("-")
+    return limpo or "jogo"
+
+
+BACKUP_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}\.tar\.gz$")
+
+
+def _backup_ou_400(nome: str) -> str:
+    """Confere o nome que voltou da tela antes de ele entrar num comando remoto."""
+    nome = (nome or "").strip()
+    if not BACKUP_NAME_RE.match(nome) or ".." in nome:
+        abort(400, "nome de backup invalido")
+    return nome
+
+
+def list_backups(server: sqlite3.Row) -> list[dict]:
+    proc = ssh_run(
+        server,
+        q("bash", "-lc", BACKUP_LIST_SCRIPT, "gp", BACKUP_DIR, backup_prefix(server),
+          str(BACKUP_LIST_MAX)),
+        timeout=40,
+    )
+    if proc.returncode != 0:
+        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao listar os backups")
+    copias: list[dict] = []
+    for linha in proc.stdout.splitlines():
+        partes = linha.split("\t", 2)
+        if len(partes) != 3:
+            continue
+        copias.append({
+            "name": partes[0],
+            "size": int(partes[1]) if partes[1].isdigit() else 0,
+            "mtime": partes[2],
+            # A copia que o proprio painel tira antes de restaurar: some no meio das
+            # outras se nao for marcada, e e justamente a que salva quem restaurou errado.
+            "seguranca": partes[0].endswith("-antes-de-restaurar.tar.gz"),
+        })
+    return copias
+
+
+@app.get("/servers/<int:sid>/backups")
+@login_required
+def backups(sid: int):
+    server = _server_or_404(sid)
+    caminhos = backup_paths(server)
+    copias, erro = [], ""
+    try:
+        copias = list_backups(server)
+    except RemoteError as exc:
+        erro = str(exc)
+    return render_template(
+        "backups.html", server=server, copias=copias, erro=erro, caminhos=caminhos,
+        backup_dir=BACKUP_DIR, manter=BACKUP_KEEP,
+    )
+
+
+def comando_de_backup(server: sqlite3.Row, caminhos: list[str], sufixo: str = "") -> str:
+    """Monta o comando remoto do backup. Usado pela tela, pelo restore e pelo agendador."""
+    return q("bash", "-lc", BACKUP_SCRIPT, "gp", BACKUP_DIR,
+             backup_prefix(server), str(BACKUP_KEEP), sufixo, *caminhos)
+
+
+@app.post("/servers/<int:sid>/backups/criar")
+@login_required
+def backup_create(sid: int):
+    """Dispara o backup. E operacao, nao administracao: o operador pode tirar copia."""
+    server = _server_or_404(sid)
+    caminhos = backup_paths(server)
+    if not caminhos:
+        flash("Este servidor nao tem o que guardar: preencha a pasta de configuracao"
+              " ou os caminhos de backup no cadastro.", "error")
+        return redirect(url_for("backups", sid=sid))
+    job_id = start_job(
+        "backup", server, session.get("username", "?"),
+        remote_cmd=comando_de_backup(server, caminhos),
+        command=", ".join(caminhos),
+        timeout=BACKUP_TIMEOUT,
+    )
+    return redirect(url_for("job_detail", jid=job_id))
+
+
+@app.post("/servers/<int:sid>/backups/restaurar")
+@admin_required
+def backup_restore(sid: int):
+    """Volta o servidor para uma copia. Para o jogo, extrai e religa."""
+    server = _server_or_404(sid)
+    nome = _backup_ou_400(request.form.get("nome", ""))
+    caminhos = backup_paths(server)
+
+    # Copia de seguranca ANTES de extrair: restaurar e a operacao mais destrutiva do
+    # painel, e sem isto quem escolhe o backup errado nao tem para onde voltar. Os dois
+    # comandos vao num job so — se o backup falhar, o '&&' impede a restauracao.
+    passos = []
+    if caminhos:
+        passos.append(comando_de_backup(server, caminhos, "-antes-de-restaurar"))
+    passos.append(q("bash", "-lc", RESTORE_SCRIPT, "gp", BACKUP_DIR, nome, server["service"]))
+
+    job_id = start_job(
+        "restore-backup", server, session.get("username", "?"),
+        remote_cmd=" && ".join(passos),
+        command=nome,
+        timeout=BACKUP_TIMEOUT,
+    )
+    invalidate_status(sid)
+    return redirect(url_for("job_detail", jid=job_id))
+
+
+@app.post("/servers/<int:sid>/backups/remover")
+@admin_required
+def backup_delete(sid: int):
+    server = _server_or_404(sid)
+    nome = _backup_ou_400(request.form.get("nome", ""))
+    try:
+        saida = ssh_output(
+            server, q("bash", "-lc", BACKUP_DELETE_SCRIPT, "gp", BACKUP_DIR, nome), timeout=40
+        )
+    except RemoteError as exc:
+        log_job("delete-backup", server, session.get("username", "?"),
+                command=nome, output=str(exc), status="error")
+        flash(f"Nao consegui apagar: {exc}", "error")
+        return redirect(url_for("backups", sid=sid))
+    log_job("delete-backup", server, session.get("username", "?"), command=nome, output=saida)
+    flash(saida, "ok")
+    return redirect(url_for("backups", sid=sid))
+
+
+@app.get("/servers/<int:sid>/backups/baixar")
+@admin_required
+def backup_download(sid: int):
+    """Tira a copia do container. Mesmo streaming do download de arquivo."""
+    server = _server_or_404(sid)
+    nome = _backup_ou_400(request.args.get("nome", ""))
+    caminho = f"{BACKUP_DIR.rstrip('/')}/{nome}"
+    try:
+        info = stat_file(server, caminho)
+    except RemoteError as exc:
+        abort(400, str(exc))
+
+    log_job("download-file", server, session.get("username", "?"),
+            command=caminho, output=f"{info['size']} bytes")
+    return app.response_class(
+        stream_with_context(stream_remote_file(server, caminho)),
+        mimetype="application/gzip",
         headers={
             "Content-Disposition": _attachment_header(info["name"]),
             "Content-Length": str(info["size"]),
@@ -3753,6 +4505,7 @@ def job_detail(jid: int):
     job = conn.execute("SELECT * FROM jobs WHERE id = ?", (jid,)).fetchone()
     if not job:
         abort(404)
+    job_ou_403(job)
     server = None
     if job["server_id"]:
         server = conn.execute(
@@ -3767,6 +4520,7 @@ def api_job(jid: int):
     job = db().execute("SELECT * FROM jobs WHERE id = ?", (jid,)).fetchone()
     if not job:
         abort(404)
+    job_ou_403(job)
     return jsonify(
         {
             "status": job["status"],
@@ -3774,6 +4528,199 @@ def api_job(jid: int):
             "output": job["output"],
             "finished_at": job["finished_at"],
         }
+    )
+
+
+# ------------------------------------------------------------- agendamentos
+
+
+def _inteiro(valor, minimo: int, maximo: int, padrao: int) -> int:
+    bruto = (valor or "").strip()
+    if bruto.lstrip("-").isdigit() and minimo <= int(bruto) <= maximo:
+        return int(bruto)
+    return padrao
+
+
+def _form_agendamento(form, errors: list[str]) -> dict:
+    acao = (form.get("action", "") or "").strip()
+    if acao not in SCHEDULE_ACTIONS:
+        errors.append("Escolha o que a tarefa deve fazer.")
+        acao = "restart"
+    kind = (form.get("kind", "") or "").strip()
+    if kind not in SCHEDULE_KINDS:
+        errors.append("Escolha quando a tarefa deve rodar.")
+        kind = "diario"
+
+    hora = _inteiro(form.get("hour"), 0, 23, -1)
+    minuto = _inteiro(form.get("minute"), 0, 59, -1)
+    if kind != "intervalo" and (hora < 0 or minuto < 0):
+        errors.append("Horario invalido (use hora 0-23 e minuto 0-59).")
+    horas = _inteiro(form.get("every_hours"), 1, EVERY_HOURS_MAX, -1)
+    if kind == "intervalo" and horas < 0:
+        errors.append(f"Intervalo invalido (de 1 a {EVERY_HOURS_MAX} horas).")
+
+    return {
+        "action": acao,
+        "kind": kind,
+        "hour": max(0, hora),
+        "minute": max(0, minuto),
+        "weekday": _inteiro(form.get("weekday"), 0, 6, 0),
+        "every_hours": max(1, horas),
+    }
+
+
+def _agendamento_ou_404(aid: int) -> sqlite3.Row:
+    sched = db().execute("SELECT * FROM schedules WHERE id = ?", (aid,)).fetchone()
+    if not sched:
+        abort(404)
+    return sched
+
+
+@app.get("/servers/<int:sid>/agendamentos")
+@login_required
+def schedules(sid: int):
+    server = _server_or_404(sid)
+    conn = db()
+    tarefas = conn.execute(
+        "SELECT * FROM schedules WHERE server_id = ? ORDER BY id", (sid,)
+    ).fetchall()
+    agora = agora_local()
+    # A tela mostra a proxima vez que cada tarefa roda: sem isso "todo dia as 5h" nao
+    # deixa claro se ela ja rodou hoje ou se ainda vai rodar.
+    proximas = {}
+    for t in tarefas:
+        anterior = ocorrencia_anterior(t, agora)
+        if t["kind"] == "intervalo":
+            ultimo = _parse_dt(t["last_run"]) or agora
+            proximas[t["id"]] = (ultimo + timedelta(hours=int(t["every_hours"]))).strftime("%d/%m %H:%M")
+        else:
+            passo = timedelta(days=7 if t["kind"] == "semanal" else 1)
+            proximas[t["id"]] = (anterior + passo).strftime("%d/%m %H:%M")
+    return render_template(
+        "schedules.html", server=server, tarefas=tarefas, proximas=proximas,
+        acoes=SCHEDULE_ACTIONS, job_labels=JOB_LABELS, dias=DIAS_SEMANA,
+        rotulo=rotulo_agendamento, agora=agora, max_horas=EVERY_HOURS_MAX,
+    )
+
+
+@app.post("/servers/<int:sid>/agendamentos")
+@admin_required
+def schedule_new(sid: int):
+    _server_or_404(sid)
+    errors: list[str] = []
+    dados = _form_agendamento(request.form, errors)
+    if errors:
+        for err in errors:
+            flash(err, "error")
+        return redirect(url_for("schedules", sid=sid))
+
+    # 'intervalo' comeca a contar de agora: sem isto, "a cada 6h" dispararia no instante
+    # em que fosse salvo, o que ninguem espera de um agendamento.
+    inicio = agora_local().isoformat() if dados["kind"] == "intervalo" else ""
+    conn = db()
+    with conn:
+        conn.execute(
+            "INSERT INTO schedules (server_id, action, kind, hour, minute, weekday,"
+            " every_hours, enabled, last_run, created_at) VALUES (?,?,?,?,?,?,?,1,?,?)",
+            (sid, dados["action"], dados["kind"], dados["hour"], dados["minute"],
+             dados["weekday"], dados["every_hours"], inicio, now_iso()),
+        )
+    flash(f"{job_label(dados['action'])} agendado.", "ok")
+    return redirect(url_for("schedules", sid=sid))
+
+
+@app.post("/agendamentos/<int:aid>/alternar")
+@admin_required
+def schedule_toggle(aid: int):
+    sched = _agendamento_ou_404(aid)
+    conn = db()
+    with conn:
+        conn.execute("UPDATE schedules SET enabled = ? WHERE id = ?",
+                     (0 if sched["enabled"] else 1, aid))
+    flash("Tarefa desligada." if sched["enabled"] else "Tarefa ligada.", "ok")
+    return redirect(url_for("schedules", sid=sched["server_id"]))
+
+
+@app.post("/agendamentos/<int:aid>/remover")
+@admin_required
+def schedule_delete(aid: int):
+    sched = _agendamento_ou_404(aid)
+    conn = db()
+    with conn:
+        conn.execute("DELETE FROM schedules WHERE id = ?", (aid,))
+    flash("Tarefa removida.", "ok")
+    return redirect(url_for("schedules", sid=sched["server_id"]))
+
+
+@app.post("/agendamentos/<int:aid>/rodar")
+@admin_required
+def schedule_run(aid: int):
+    """Roda a tarefa agora, sem esperar a hora — e como se confere se ela funciona."""
+    sched = _agendamento_ou_404(aid)
+    job_id = dispara_agendamento(db(), sched)
+    if not job_id:
+        flash("Nao consegui disparar (servidor sem caminhos de backup?).", "error")
+        return redirect(url_for("schedules", sid=sched["server_id"]))
+    return redirect(url_for("job_detail", jid=job_id))
+
+
+# --------------------------------------------------------------- historico
+
+
+@app.get("/historico")
+@login_required
+def history():
+    """Tudo o que aconteceu no painel, de todos os servidores.
+
+    O historico por servidor mostra os ultimos 15; e aqui que se responde "quem mexeu
+    nisso" e "o que o agendador andou fazendo".
+    """
+    conn = db()
+    servers = conn.execute(SQL_ALL_SERVERS).fetchall()
+    nomes = {int(s["id"]): s["name"] for s in servers}
+
+    filtro_srv = (request.args.get("servidor", "") or "").strip()
+    filtro_acao = (request.args.get("acao", "") or "").strip()
+    filtro_user = (request.args.get("usuario", "") or "").strip()[:80]
+    try:
+        pagina = max(0, int(request.args.get("p", "0")))
+    except ValueError:
+        pagina = 0
+
+    onde, valores = ["1 = 1"], []
+    if filtro_srv.isdigit():
+        onde.append("server_id = ?")
+        valores.append(int(filtro_srv))
+    if filtro_acao in JOB_LABELS:
+        onde.append("action = ?")
+        valores.append(filtro_acao)
+    if filtro_user:
+        onde.append("username = ?")
+        valores.append(filtro_user)
+
+    corte, escondidas = filtro_de_papel()
+    sql_onde = " AND ".join(onde) + corte
+    valores.extend(escondidas)
+
+    # Pede um a mais que o tamanho da pagina: e como se sabe se existe proxima sem contar
+    # a tabela inteira.
+    linhas = conn.execute(
+        f"SELECT * FROM jobs WHERE {sql_onde} ORDER BY id DESC LIMIT ? OFFSET ?",
+        (*valores, HISTORY_PAGE + 1, pagina * HISTORY_PAGE),
+    ).fetchall()
+    tem_mais = len(linhas) > HISTORY_PAGE
+    jobs = linhas[:HISTORY_PAGE]
+
+    usuarios = [r[0] for r in conn.execute(
+        f"SELECT DISTINCT username FROM jobs WHERE username <> '' {corte} ORDER BY username",
+        escondidas,
+    ).fetchall()]
+
+    return render_template(
+        "history.html", jobs=jobs, servers=servers, nomes=nomes, usuarios=usuarios,
+        acoes=sorted(JOB_LABELS), filtro_srv=filtro_srv, filtro_acao=filtro_acao,
+        filtro_user=filtro_user, pagina=pagina, tem_mais=tem_mais,
+        manter_dias=JOBS_KEEP_DAYS,
     )
 
 
@@ -3941,6 +4888,21 @@ def user_delete(uid: int):
     return redirect(url_for("users_list"))
 
 
+@app.after_request
+def _cabecalhos_de_seguranca(resp):
+    """O painel da poder de root nos containers: nao pode ser embutido em outra pagina.
+
+    Sem X-Frame-Options um site qualquer poe o painel num iframe invisivel e captura os
+    cliques de quem esta logado (clickjacking) — e os botoes daqui param servidor.
+    O Referrer-Policy impede que o endereco de uma tela do painel saia junto com um
+    clique para fora.
+    """
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    return resp
+
+
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"})
@@ -3963,10 +4925,17 @@ def _not_found(_exc):
 
 @app.errorhandler(413)
 def _too_large(_exc):
-    return render_template(
-        TPL_ERROR, code=413,
-        message=f"Conteudo grande demais (o editor aceita ate {FILE_MAX_BYTES // 1024} KB por arquivo).",
-    ), 413
+    # Os dois tetos sao bem diferentes, e cair no 413 sem saber em qual deles nao ajuda
+    # ninguem: o editor carrega o arquivo inteiro num textarea, o upload nao.
+    if request.endpoint in BIG_BODY_ENDPOINTS:
+        message = (
+            f"Arquivo grande demais para o envio (limite de {_human_size(FILE_UPLOAD_MAX)})."
+            " Para mandar um maior, suba o GAMEPANEL_UPLOAD_MAX do painel — conferindo"
+            " antes se ha esse espaco livre no container do painel."
+        )
+    else:
+        message = f"Conteudo grande demais (o editor aceita ate {FILE_MAX_BYTES // 1024} KB por arquivo)."
+    return render_template(TPL_ERROR, code=413, message=message), 413
 
 
 @app.errorhandler(503)
@@ -4024,6 +4993,7 @@ def ensure_server(
     notes: str = "",
     config_path: str = "",
     config_files: str = "",
+    backup_paths: str = "",
     query_port: int = 0,
     player_source: str = "",
 ) -> bool:
@@ -4045,10 +5015,12 @@ def ensure_server(
             if atual is None:
                 conn.execute(
                     "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
-                    " game_port, notes, config_path, config_files, query_port,"
-                    " player_source, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    " game_port, notes, config_path, config_files, backup_paths,"
+                    " query_port, player_source, created_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (name, host, ssh_port, ssh_user, service, game_port, notes,
-                     config_path, config_files, query_port, player_source, now_iso()),
+                     config_path, config_files, backup_paths, query_port,
+                     player_source, now_iso()),
                 )
                 criado = True
             else:
@@ -4058,12 +5030,16 @@ def ensure_server(
                         arquivos.append(novo.strip())
                 conn.execute(
                     "UPDATE servers SET name=?, ssh_user=?, service=?, game_port=?,"
-                    " notes=?, config_path=?, config_files=?, query_port=?,"
-                    " player_source=? WHERE id=?",
+                    " notes=?, config_path=?, config_files=?, backup_paths=?,"
+                    " query_port=?, player_source=? WHERE id=?",
                     (
                         name, ssh_user, service, game_port, notes or atual["notes"],
                         config_path or atual["config_path"],
-                        "\n".join(arquivos[:CONFIG_FILES_MAX]), query_port,
+                        "\n".join(arquivos[:CONFIG_FILES_MAX]),
+                        # Escolha de quem usa o painel: um redeploy nao pode apagar os
+                        # caminhos de backup ajustados a mao.
+                        atual["backup_paths"] or backup_paths,
+                        query_port,
                         atual["player_source"] or player_source, atual["id"],
                     ),
                 )
@@ -4073,6 +5049,13 @@ def ensure_server(
 
 
 init_db()
+
+# Sob o gunicorn este modulo e IMPORTADO — e o momento certo de subir o relogio. Pela
+# linha de comando ele e o __main__ e isto nao roda: um `--register-server` no meio de um
+# deploy nao pode disparar a tarefa agendada de passagem (e o processo morre em seguida,
+# deixando o job pendurado em 'running').
+if __name__ != "__main__":
+    start_scheduler()
 
 
 if __name__ == "__main__":
@@ -4095,6 +5078,7 @@ if __name__ == "__main__":
     parser.add_argument("--query-port", type=int, default=0)
     parser.add_argument("--config-path", default="")
     parser.add_argument("--config-files", default="")
+    parser.add_argument("--backup-paths", default="")
     parser.add_argument("--player-source", default="")
     parser.add_argument("--notes", default="")
     opts = parser.parse_args()
@@ -4120,10 +5104,14 @@ if __name__ == "__main__":
             config_files="\n".join(
                 p.strip() for p in opts.config_files.split(",") if p.strip()
             ),
+            backup_paths="\n".join(
+                p.strip() for p in opts.backup_paths.split(",") if p.strip()
+            ),
             query_port=opts.query_port,
             player_source=opts.player_source,
         )
         print(f"servidor '{opts.register_server}' {'cadastrado' if criado else 'atualizado'}"
               f" ({opts.server_host})")
     else:
+        start_scheduler()
         app.run(host=opts.host, port=opts.port)

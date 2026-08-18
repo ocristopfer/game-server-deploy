@@ -212,6 +212,13 @@ table.jobs tr:last-child td { border-bottom: none; }
 .filebar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .path-form { display: flex; gap: 8px; flex: 1; min-width: 260px; }
 .path-form input { margin-top: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+/* Envio de arquivo: separado da barra de caminho por uma linha, para nao virar um
+   amontoado de controles no topo da tela. */
+.upload-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.upload-form input[type="file"] { flex: 1; min-width: 220px; margin-top: 0; font-size: .85rem; }
+/* Filtro do historico: rotulo em cima do campo, tudo na mesma linha. */
+.inline-field { display: flex; flex-direction: column; gap: 4px; font-size: .82rem; color: var(--muted); }
+.inline-field select { margin-top: 0; }
 .crumbs { margin-top: 10px; font-size: .88rem; }
 .crumbs .sep { color: var(--muted); margin: 0 4px; }
 

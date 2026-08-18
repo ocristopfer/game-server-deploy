@@ -13,6 +13,7 @@
   <a class="brand" href="{{ url_for('dashboard') }}">🎮 Painel de Jogos</a>
   <nav>
     <a href="{{ url_for('dashboard') }}">Servidores</a>
+    <a href="{{ url_for('history') }}">Historico</a>
     {% if is_admin %}
       <a href="{{ url_for('server_new') }}">Adicionar</a>
       <a href="{{ url_for('users_list') }}">Usuarios</a>

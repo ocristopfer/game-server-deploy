@@ -124,9 +124,18 @@
           {% if a.generico %}
             <span class="muted small">fala HTTP, mas nao e API de jogo</span>
           {% else %}
-            <a class="btn ghost" href="{{ url_for('players_setup', sid=server.id, aba='http',
-               http_url=a.url, http_auth=http.http_auth, http_body=http.http_body,
-               http_list_path=http.http_list_path, http_count_path=http.http_count_path) }}">Usar esta URL</a>
+            {# POST, e nao um link: entre os campos que precisam sobreviver ao clique
+               esta a senha de admin do jogo, e na URL ela ficaria no historico do
+               navegador e no log de qualquer proxy na frente do painel. #}
+            <form method="post" action="{{ url_for('players_setup', sid=server.id) }}" class="inline">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <input type="hidden" name="aba" value="http">
+              <input type="hidden" name="http_url" value="{{ a.url }}">
+              {% for campo, valor in http.items() if campo != 'http_url' %}
+              <input type="hidden" name="{{ campo }}" value="{{ valor }}">
+              {% endfor %}
+              <button class="btn ghost" type="submit">Usar esta URL</button>
+            </form>
           {% endif %}
         </td>
       </tr>
@@ -159,7 +168,10 @@
 
 <div class="card">
   <h2>Testar a chamada</h2>
-  <form method="get" action="{{ url_for('players_setup', sid=server.id) }}">
+  {# POST de proposito: este formulario carrega a senha de admin do jogo (Autenticacao e
+     Corpo JSON do login). Num GET ela iria na barra de enderecos. #}
+  <form method="post" action="{{ url_for('players_setup', sid=server.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="aba" value="http">
     <input type="hidden" name="testar" value="1">
     <label>URL
@@ -279,7 +291,8 @@
 
 <div class="card">
   <h2>Testar o padrao</h2>
-  <form method="get" action="{{ url_for('players_setup', sid=server.id) }}">
+  <form method="post" action="{{ url_for('players_setup', sid=server.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="aba" value="log">
     <input type="hidden" name="testar" value="1">
     <label>Linha de entrada

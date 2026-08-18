@@ -23,6 +23,20 @@
       Procurar arquivos de config
     </a>
   </div>
+  {# O upload vai para a pasta que esta aberta agora — por isso ele mora aqui, ao lado
+     das migalhas, e nao numa tela propria. #}
+  <form method="post" action="{{ url_for('files_upload', sid=server.id) }}"
+        enctype="multipart/form-data" class="filebar upload-form">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="path" value="{{ current }}">
+    <input type="file" name="arquivo" required aria-label="arquivo para enviar">
+    <button class="btn" type="submit">Enviar para {{ current }}</button>
+  </form>
+  <p class="muted small">
+    O arquivo sobe em pedacos, direto para o container &mdash; da para mandar mod ou save
+    de varios GB. Se ja existir um com o mesmo nome, ele e substituido e uma copia
+    <code>.bak</code> fica ao lado.
+  </p>
   <nav class="crumbs">
     {% for c in crumbs %}<a href="{{ url_for('files', sid=server.id, path=c.path) }}">{{ c.name }}</a>{% if not loop.last %}<span class="sep">/</span>{% endif %}{% endfor %}
   </nav>
