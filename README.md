@@ -674,11 +674,23 @@ que eles voltam. Todos foram validados contra o log/API real de cada servidor.
 
 | Jogo | Fonte | Nomes? |
 |------|-------|--------|
-| Palworld | API REST `http://127.0.0.1:8212/v1/api/players`, auth `basic:admin:<AdminPassword>`, caminho da lista `players` | sim |
-| Dragonwilds | log (regex abaixo) | sim |
-| Satisfactory | API HTTPS `https://127.0.0.1:7787/api/v1`, auth `bearer:<token>`, corpo `{"function":"QueryServerState"}`, caminho da contagem `data.serverGameState.numConnectedPlayers` | nao |
+| Palworld | API REST `http://127.0.0.1:8212/v1/api/players`, auth `basic:admin:<AdminPassword>`, caminho da lista `players` | **sim** |
+| Dragonwilds | log do servico (regex abaixo) | **sim** |
+| DayZ | log **em arquivo**: `/opt/game/profiles/*.ADM` (regex abaixo) | **sim** |
+| Satisfactory | log do servico (regex abaixo) | **aproximado** |
 | Icarus | A2S na porta de query | so contagem |
-| Enshrouded | log | - |
+| Enshrouded | log do servico | so contagem |
+
+As tres formas de contar ja vem preenchidas pelo deploy (`JOIN_RE`, `LEAVE_RE`,
+`LOG_PATH` no `games/<jogo>.env`); o assistente do painel serve para ajustar.
+
+**Como o painel decide o que mostrar**, pelos `(?P<name>...)` dos padroes:
+
+| Onde ha o nome | O que sai na tela |
+|----------------|-------------------|
+| entrada **e** saida | quem esta online, exato |
+| so na **entrada** | contagem exata + os ultimos a entrar, marcados como palpite |
+| em nenhuma | so a contagem |
 
 **Dragonwilds** - `Configurar contagem > Pelo log`:
 
@@ -687,13 +699,33 @@ entrada: PlayerChar entered world \[Account\[[^\]]*\] Character Name\[(?P<name>[
 saida:   Player Removed from session \[[^\]]*\]-\[(?P<name>[^\]]+)\]
 ```
 
-**Satisfactory** - alternativa por log, caso nao queira token (so contagem, porque a linha
-de saida do jogo nao traz o nome):
+**DayZ** - os nomes **nao** saem da consulta A2S (o jogo responde a contagem e devolve os
+nomes em branco). Eles estao no log de administracao `.ADM`, que o `-adminlog` do nosso
+`START_ARGS` ja liga. Como o jogo abre um `.ADM` por sessao, o caminho leva `*` e o painel
+pega sempre o mais novo:
+
+```
+arquivo: /opt/game/profiles/*.ADM
+entrada: Player "(?P<name>[^"]+)" is connected
+saida:   Player "(?P<name>[^"]+)"\(id=[^)]*\) has been disconnected
+```
+
+**Satisfactory** - a API so devolve a contagem (`numConnectedPlayers`); nao ha rota de
+lista de jogadores. Pelo log da para ter os nomes, mas so **por aproximacao**: a linha de
+entrada traz o nome e a de saida **nao**, entao o painel acerta *quantos* estao online e
+mostra os *ultimos a entrar* como palpite - avisando na tela que e isso. Se um dia a linha
+de saida passar a trazer o nome, basta por o `(?P<name>...)` nela e a lista vira exata.
 
 ```
 entrada: LogNet: Join succeeded: (?P<name>.+)
 saida:   LogNet: UNetConnection::Close:
 ```
+
+**Icarus e Enshrouded** - por enquanto so a contagem. O Icarus responde `A2S_INFO` mas nao
+`A2S_PLAYER` (o painel tenta os dois em toda consulta); o log do Enshrouded anuncia
+conexoes sem nomear ninguem. Se o log do seu servidor tiver o nome, o assistente
+(`Configurar contagem > Pelo log`) mostra as linhas de verdade do container e da para
+montar o padrao ali mesmo - inclusive apontando um arquivo, como no DayZ.
 
 **Palworld** - alternativa por log, caso a REST caia:
 

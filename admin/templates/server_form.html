@@ -62,6 +62,14 @@
         <input name="leave_re" value="{{ data.leave_re }}" spellcheck="false"
                placeholder="UNetConnection::Close">
       </label>
+      <label>Log: arquivo <span class="muted">(opcional)</span>
+        <input name="log_path" value="{{ data.log_path }}" spellcheck="false"
+               placeholder="/opt/game/profiles/*.ADM">
+        <small>
+          Em branco le a saida do servico. Preenchido, le esse arquivo &mdash; e como se
+          alcanca o nome do jogador em jogos que so o escrevem em log proprio (DayZ).
+        </small>
+      </label>
     </div>
 
     <div class="row">

@@ -142,6 +142,16 @@
         {% endfor %}
       </tbody>
     </table>
+    {% if players.aproximado %}
+    <p class="muted small">
+      A <strong>contagem</strong> esta certa, mas os <strong>nomes</strong> sao um palpite:
+      o log deste jogo avisa que alguem saiu sem dizer quem, entao o painel mostra os
+      ultimos a entrar. Se a linha de saida do seu servidor tiver o nome, ponha
+      <code>(?P&lt;name&gt;...)</code> nela{% if is_admin %} no
+      <a href="{{ url_for('players_setup', sid=server.id, aba='log') }}">assistente</a>{% endif %}
+      e a lista passa a ser exata.
+    </p>
+    {% endif %}
     {% if 'announce' in acoes %}
     <form method="post" action="{{ url_for('player_action', sid=server.id) }}" class="filebar">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">

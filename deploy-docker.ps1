@@ -410,6 +410,11 @@ if (-not $NoRegister) {
             # mantem o que ja estava la: quem ajustou pela tela nao perde o ajuste.
             "--backup-paths", (Get-Cfg $jogo "BACKUP_PATHS"),
             "--player-source", (Get-Cfg $jogo "PLAYER_SOURCE"),
+            # Contagem pelo log: padroes e, quando o nome so existe em arquivo proprio
+            # (o .ADM do DayZ), o caminho dele.
+            "--join-re", (Get-Cfg $jogo "JOIN_RE"),
+            "--leave-re", (Get-Cfg $jogo "LEAVE_RE"),
+            "--log-path", (Get-Cfg $jogo "LOG_PATH"),
             "--notes", "Container Docker $Container (deploy-docker.ps1)."
         )
         Invoke-DockerLive $cmdArgs

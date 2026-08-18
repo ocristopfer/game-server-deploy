@@ -264,6 +264,11 @@ CREATE TABLE IF NOT EXISTS servers (
   player_source TEXT NOT NULL DEFAULT '',
   join_re    TEXT NOT NULL DEFAULT '',
   leave_re   TEXT NOT NULL DEFAULT '',
+  -- De onde ler o log para contar jogadores. Vazio = journalctl do servico. Preenchido,
+  -- e um caminho (pode ter *) para um ARQUIVO dentro do container: varios jogos so
+  -- escrevem o nome de quem entra em arquivo proprio, nunca na saida padrao. O DayZ e
+  -- assim (profiles/*.ADM, ligado pelo -adminlog).
+  log_path   TEXT NOT NULL DEFAULT '',
   -- Contagem por API HTTP do proprio jogo (Palworld, Satisfactory, ...).
   http_url   TEXT NOT NULL DEFAULT '',
   -- 'basic:usuario:senha', 'bearer:token' ou um cabecalho Authorization ja pronto.
@@ -385,6 +390,9 @@ MIGRATIONS = (
     ("servers", "player_source", "ALTER TABLE servers ADD COLUMN player_source TEXT NOT NULL DEFAULT ''"),
     ("servers", "join_re", "ALTER TABLE servers ADD COLUMN join_re TEXT NOT NULL DEFAULT ''"),
     ("servers", "leave_re", "ALTER TABLE servers ADD COLUMN leave_re TEXT NOT NULL DEFAULT ''"),
+    # Log em arquivo: sem esta coluna a contagem so enxergava o journalctl, e o nome do
+    # jogador do DayZ (que so existe no .ADM) ficava fora de alcance.
+    ("servers", "log_path", "ALTER TABLE servers ADD COLUMN log_path TEXT NOT NULL DEFAULT ''"),
     ("servers", "config_files", "ALTER TABLE servers ADD COLUMN config_files TEXT NOT NULL DEFAULT ''"),
     # Backup: o que guardar de cada servidor. Cadastro antigo fica vazio e cai no
     # config_path, que e o comportamento que ele ja teria se a coluna sempre existisse.
@@ -1341,10 +1349,24 @@ TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})")
 
 # Le do start do servico para ca: eventos de execucoes anteriores contariam jogador
 # que ja foi embora ha muito tempo.
+# $3 = caminho do arquivo de log (pode ter *). Vazio cai no journalctl do servico.
 LOG_PLAYERS_SCRIPT = r"""
 set -u
 unit=$1
 max=$2
+alvo=${3:-}
+
+if [ -n "$alvo" ]; then
+  # $alvo vai SEM aspas de proposito, para o shell do container expandir o '*'. Quem
+  # garante que isso e seguro e o LOG_PATH_RE do painel, que so deixa passar caminho
+  # absoluto com letras, numeros, . _ - / * ? — nada de espaco, aspas, $ ou ;.
+  arq=$(ls -1t $alvo 2>/dev/null | head -n 1)
+  [ -n "$arq" ] || { echo "nenhum arquivo de log casa com $alvo" >&2; exit 3; }
+  [ -r "$arq" ] || { echo "sem permissao de leitura em $arq" >&2; exit 4; }
+  tail -n "$max" -- "$arq"
+  exit 0
+fi
+
 inicio=$(systemctl show -p ActiveEnterTimestamp --value "$unit" 2>/dev/null || true)
 if [ -n "$inicio" ]; then
   journalctl -u "$unit" --since "$inicio" --no-pager -o short-iso 2>/dev/null | tail -n "$max"
@@ -1409,12 +1431,51 @@ def _events_by_count(linhas, entrar, sair) -> dict:
     return {"players": total, "list": []}
 
 
+def _events_meio_nome(linhas, entrar, sair) -> dict:
+    """Entrada com nome, saida sem — o caso do Satisfactory.
+
+    O log diz que alguem saiu, mas nao diz quem. A CONTAGEM continua sendo a mesma de
+    antes (entradas menos saidas, exata); a lista passa a mostrar os ultimos a entrar,
+    tantos quantos a conta disser. E um palpite, e a tela avisa que e — mas jogar os
+    nomes fora, que era o que o painel fazia, nao ajudava ninguem.
+    """
+    total = 0
+    ordem: list[tuple[str, str]] = []
+    for line in linhas:
+        curta = line[:LOG_LINE_MAX]
+        entrou = entrar.search(curta)
+        if entrou:
+            total += 1
+            nome = (entrou.groupdict().get("name") or "").strip()
+            if nome:
+                # Reconexao volta para o fim da fila em vez de duplicar.
+                ordem = [p for p in ordem if p[0] != nome]
+                ordem.append((nome, _log_timestamp(line)))
+            continue
+        if sair and sair.search(curta):
+            total = max(0, total - 1)
+            if ordem:
+                ordem.pop(0)  # sai quem esta ha mais tempo: o chute menos ruim
+    lista = ordem[-total:] if total else []
+    return {
+        "players": total,
+        "list": [{"name": n, "since": t, "score": 0, "seconds": 0} for n, t in lista],
+        "aproximado": True,
+    }
+
+
 def _apply_log_events(linhas, entrar, sair) -> dict:
-    """Reproduz os eventos do log em ordem e devolve quem ficou."""
-    com_nome = bool(entrar.groupindex.get("name")) and (
-        not sair or bool(sair.groupindex.get("name"))
-    )
-    return _events_by_name(linhas, entrar, sair) if com_nome else _events_by_count(linhas, entrar, sair)
+    """Reproduz os eventos do log em ordem e devolve quem ficou.
+
+    Tres casos, do melhor para o pior: nome nos dois lados (sabe-se quem esta online),
+    nome so na entrada (sabe-se quantos, e quem provavelmente), nome em lugar nenhum
+    (so a contagem).
+    """
+    if not entrar.groupindex.get("name"):
+        return _events_by_count(linhas, entrar, sair)
+    if not sair or sair.groupindex.get("name"):
+        return _events_by_name(linhas, entrar, sair)
+    return _events_meio_nome(linhas, entrar, sair)
 
 
 # ------------------------------------------- descobrir como contar jogadores
@@ -1740,10 +1801,33 @@ def probe_ports(host: str, portas: list[int]) -> list[dict]:
     return [resultados.get(p, {"port": p, "ok": False, "error": MSG_TIMEOUT}) for p in portas]
 
 
+# Caminho do arquivo de log. O '*' e permitido (o DayZ abre um .ADM por sessao), mas
+# nada que o shell do container interprete como outra coisa: sem espaco, aspas, $, ; ou &.
+LOG_PATH_RE = re.compile(r"^/[A-Za-z0-9._*?/-]{1,200}$")
+
+
+def log_path_valido(bruto: str) -> str:
+    """Confere o caminho do log antes de ele entrar num comando remoto."""
+    caminho = (bruto or "").strip()
+    if not caminho:
+        return ""
+    if not LOG_PATH_RE.match(caminho) or ".." in caminho:
+        raise ValueError(
+            "caminho de log invalido - use um caminho absoluto, sem espacos"
+            " (o '*' e permitido, ex.: /opt/game/profiles/*.ADM)"
+        )
+    return caminho
+
+
 def read_log_lines(server: sqlite3.Row) -> list[str]:
+    """Linhas do log: de um arquivo, quando o servidor tem um; senao do journalctl."""
+    try:
+        alvo = log_path_valido(_valor_guardado(server, "log_path"))
+    except ValueError as exc:
+        raise QueryError(str(exc))
     raw = ssh_output(
         server,
-        q("bash", "-lc", LOG_PLAYERS_SCRIPT, "gp", server["service"], str(LOG_SCAN_MAX)),
+        q("bash", "-lc", LOG_PLAYERS_SCRIPT, "gp", server["service"], str(LOG_SCAN_MAX), alvo),
         timeout=60,
     )
     return raw.splitlines()
@@ -2868,11 +2952,16 @@ def _aba_http(server: sqlite3.Row, http: dict, testar: bool) -> dict:
     return saida
 
 
-def _aba_log(server: sqlite3.Row, join_re: str, leave_re: str, testar: bool) -> dict:
+def _aba_log(server: sqlite3.Row, join_re: str, leave_re: str, log_path: str,
+             testar: bool) -> dict:
     """Aba 3: linhas do log com cara de entrada/saida e o teste dos padroes."""
     saida = {"amostras": [], "teste": None, "erro_log": ""}
     try:
-        linhas = read_log_lines(server)
+        # O caminho vem do FORMULARIO, nao do banco: e o unico jeito de conferir um
+        # arquivo novo (o .ADM do DayZ, por exemplo) antes de salvar.
+        provisorio = dict(server)
+        provisorio["log_path"] = log_path
+        linhas = read_log_lines(provisorio)
         chaves = re.compile("|".join(LOG_HINT_WORDS), re.I)
         amostras = [ln for ln in linhas if chaves.search(ln)][-120:]
         saida["amostras"] = amostras
@@ -2910,6 +2999,7 @@ def players_setup(sid: int):
     http = {campo: origem.get(campo, server[campo]) for campo in HTTP_FIELDS}
     join_re = origem.get("join_re", server["join_re"])
     leave_re = origem.get("leave_re", server["leave_re"])
+    log_path = origem.get("log_path", server["log_path"])
 
     dados = {"portas": [], "aviso": "", "achados": [], "mudas": [], "amostras": [],
              "tem_api": False, "udp_do_jogo": 0, "udp_mudas": False,
@@ -2917,13 +3007,13 @@ def players_setup(sid: int):
     if aba == "http":
         dados.update(_aba_http(server, http, testar))
     elif aba == "log":
-        dados.update(_aba_log(server, join_re, leave_re, testar))
+        dados.update(_aba_log(server, join_re, leave_re, log_path, testar))
     else:
         dados.update(_aba_porta(server))
 
     return render_template(
         "players_setup.html", server=server, aba=aba,
-        http=http, join_re=join_re, leave_re=leave_re, **dados,
+        http=http, join_re=join_re, leave_re=leave_re, log_path=log_path, **dados,
     )
 
 
@@ -2969,13 +3059,15 @@ def players_use(sid: int):
         errors: list[str] = []
         entrada = _padrao(request.form.get("join_re"), "entrada", errors)
         saida = _padrao(request.form.get("leave_re"), "saida", errors)
+        caminho = _caminho_log(request.form.get("log_path"), errors)
         if errors or not entrada:
             flash(errors[0] if errors else "Informe o padrao da linha de entrada.", "error")
             return redirect(url_for("players_setup", sid=sid, aba="log"))
         with conn:
             conn.execute(
-                "UPDATE servers SET join_re = ?, leave_re = ?, player_source = 'log' WHERE id = ?",
-                (entrada, saida, sid),
+                "UPDATE servers SET join_re = ?, leave_re = ?, log_path = ?,"
+                " player_source = 'log' WHERE id = ?",
+                (entrada, saida, caminho, sid),
             )
         flash("Contagem de jogadores ligada pelo log do servidor.", "ok")
     else:
@@ -3166,6 +3258,14 @@ def _campos_http(form, errors: list[str]) -> dict:
     }
 
 
+def _caminho_log(valor: str, errors: list[str]) -> str:
+    try:
+        return log_path_valido(valor)
+    except ValueError as exc:
+        errors.append(str(exc).capitalize())
+        return ""
+
+
 def _padrao(valor: str, rotulo: str, errors: list[str]) -> str:
     """Guarda o regex so depois de conferir que ele compila."""
     texto = (valor or "").strip()[:RE_MAX_LEN]
@@ -3208,6 +3308,7 @@ def _form_server(form) -> tuple[dict, list[str]]:
             "config_path": _pasta_config(form.get("config_path"), errors),
             "config_files": _arquivos_config(form.get("config_files"), errors),
             "backup_paths": _caminhos_backup(form.get("backup_paths"), errors),
+            "log_path": _caminho_log(form.get("log_path"), errors),
             "query_port": _porta(
                 form.get("query_port"), 0, 0,
                 "Porta de consulta invalida (use 0 para desligar).", errors,
@@ -3226,7 +3327,7 @@ def _form_server(form) -> tuple[dict, list[str]]:
 SERVER_FIELDS = (
     "name", "host", "ssh_port", "ssh_user", "service", "game_port", "notes",
     "config_path", "config_files", "backup_paths", "query_port", "player_source",
-    "join_re", "leave_re",
+    "join_re", "leave_re", "log_path",
     *HTTP_FIELDS,
 )
 SQL_INSERT_SERVER = (
@@ -5755,6 +5856,9 @@ def ensure_server(
     config_path: str = "",
     config_files: str = "",
     backup_paths: str = "",
+    join_re: str = "",
+    leave_re: str = "",
+    log_path: str = "",
     query_port: int = 0,
     player_source: str = "",
 ) -> bool:
@@ -5777,11 +5881,11 @@ def ensure_server(
                 conn.execute(
                     "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
                     " game_port, notes, config_path, config_files, backup_paths,"
-                    " query_port, player_source, created_at)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    " query_port, player_source, join_re, leave_re, log_path, created_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (name, host, ssh_port, ssh_user, service, game_port, notes,
                      config_path, config_files, backup_paths, query_port,
-                     player_source, now_iso()),
+                     player_source, join_re, leave_re, log_path, now_iso()),
                 )
                 criado = True
             else:
@@ -5792,16 +5896,22 @@ def ensure_server(
                 conn.execute(
                     "UPDATE servers SET name=?, ssh_user=?, service=?, game_port=?,"
                     " notes=?, config_path=?, config_files=?, backup_paths=?,"
-                    " query_port=?, player_source=? WHERE id=?",
+                    " query_port=?, player_source=?, join_re=?, leave_re=?, log_path=?"
+                    " WHERE id=?",
                     (
                         name, ssh_user, service, game_port, notes or atual["notes"],
                         config_path or atual["config_path"],
                         "\n".join(arquivos[:CONFIG_FILES_MAX]),
                         # Escolha de quem usa o painel: um redeploy nao pode apagar os
-                        # caminhos de backup ajustados a mao.
+                        # caminhos de backup ajustados a mao. Vale igual para os padroes
+                        # do log, que costumam ser afinados na tela.
                         atual["backup_paths"] or backup_paths,
                         query_port,
-                        atual["player_source"] or player_source, atual["id"],
+                        atual["player_source"] or player_source,
+                        atual["join_re"] or join_re,
+                        atual["leave_re"] or leave_re,
+                        atual["log_path"] or log_path,
+                        atual["id"],
                     ),
                 )
     finally:
@@ -5840,6 +5950,9 @@ if __name__ == "__main__":
     parser.add_argument("--config-path", default="")
     parser.add_argument("--config-files", default="")
     parser.add_argument("--backup-paths", default="")
+    parser.add_argument("--join-re", default="")
+    parser.add_argument("--leave-re", default="")
+    parser.add_argument("--log-path", default="")
     parser.add_argument("--player-source", default="")
     parser.add_argument("--notes", default="")
     opts = parser.parse_args()
@@ -5868,6 +5981,9 @@ if __name__ == "__main__":
             backup_paths="\n".join(
                 p.strip() for p in opts.backup_paths.split(",") if p.strip()
             ),
+            join_re=opts.join_re,
+            leave_re=opts.leave_re,
+            log_path=opts.log_path,
             query_port=opts.query_port,
             player_source=opts.player_source,
         )

@@ -192,6 +192,75 @@ igual("porta com API guarda so as rotas uteis",
       [(i["port"], i["path"]) for i in resumo if i["port"] == 8212],
       [(8212, "/v1/api/players")])
 
+print("Nomes vindos do log")
+LINHAS_ADM = [
+    '16:21:58 | Player "Cristopfer" is connected (id=QnVIrhpDQ=)',
+    '16:22:04 | Player "Guilherme" is connected (id=AbCdEfGh=)',
+    '16:23:10 | Player "Cristopfer"(id=QnVIrhpDQ=) has been disconnected',
+    '16:24:00 | Player "Ana" is connected (id=ZZZZ0000=)',
+]
+ENTRA_DZ = panel.compile_pattern(r'Player "(?P<name>[^"]+)" is connected', "entrada")
+SAI_DZ = panel.compile_pattern(
+    r'Player "(?P<name>[^"]+)"\(id=[^)]*\) has been disconnected', "saida")
+
+# Nome nos DOIS lados (DayZ pelo .ADM): da para dizer exatamente quem ficou.
+r = panel._apply_log_events(LINHAS_ADM, ENTRA_DZ, SAI_DZ)
+igual("com nome nos dois lados, a lista e exata",
+      [p["name"] for p in r["list"]], ["Guilherme", "Ana"])
+igual("e a contagem bate", r["players"], 2)
+check("e nao se declara aproximada", not r.get("aproximado"))
+
+# Nome so na ENTRADA (Satisfactory): o log avisa que alguem saiu, sem dizer quem.
+LINHAS_SAT = [
+    "LogNet: Join succeeded: Cristopfer",
+    "LogNet: Join succeeded: Guilherme",
+    "LogNet: UNetConnection::Close: [UNetConnection] ...",
+    "LogNet: Join succeeded: Ana",
+]
+ENTRA_SF = panel.compile_pattern(r"LogNet: Join succeeded: (?P<name>.+)", "entrada")
+SAI_SF = panel.compile_pattern(r"LogNet: UNetConnection::Close:", "saida")
+r = panel._apply_log_events(LINHAS_SAT, ENTRA_SF, SAI_SF)
+# A contagem continua sendo entradas menos saidas, igual a de antes desta melhoria.
+igual("contagem exata mesmo sem saber quem saiu", r["players"], 2)
+igual("mostra os ultimos a entrar", [p["name"] for p in r["list"]], ["Guilherme", "Ana"])
+check("e se declara aproximada", r.get("aproximado"))
+
+# Reconexao nao pode duplicar o mesmo nome na lista.
+r = panel._apply_log_events(
+    ["LogNet: Join succeeded: Ana", "LogNet: Join succeeded: Ana"], ENTRA_SF, SAI_SF)
+igual("reconexao nao duplica o nome", [p["name"] for p in r["list"]], ["Ana"])
+
+# Sem nome em lugar nenhum: sobra a contagem, como sempre foi.
+r = panel._apply_log_events(
+    ["alguem entrou", "alguem entrou", "alguem saiu"],
+    panel.compile_pattern("alguem entrou", "entrada"),
+    panel.compile_pattern("alguem saiu", "saida"))
+igual("sem nome nenhum, so a contagem", (r["players"], r["list"]), (1, []))
+
+# Mais saidas do que entradas (log cortado no comeco) nao pode virar contagem negativa.
+r = panel._apply_log_events(
+    ["LogNet: UNetConnection::Close: x", "LogNet: UNetConnection::Close: y"],
+    ENTRA_SF, SAI_SF)
+igual("saida sem entrada nao fica negativo", r["players"], 0)
+
+
+print("Caminho do arquivo de log")
+igual("vazio continua vazio (usa o journalctl)", panel.log_path_valido(""), "")
+igual("caminho simples passa", panel.log_path_valido("/opt/game/game.log"), "/opt/game/game.log")
+igual("com * passa (o DayZ abre um .ADM por sessao)",
+      panel.log_path_valido("/opt/game/profiles/*.ADM"), "/opt/game/profiles/*.ADM")
+# O caminho entra SEM aspas no comando remoto (para o shell expandir o '*'), entao tudo
+# que o shell interpretaria de outro jeito tem de morrer aqui.
+for ruim in ("/tmp/x.log; touch /tmp/invadiu", "/opt/game/$(id).log", "/opt/game/`id`.log",
+             "/opt/game/x.log|id", "/opt/game/a b.log", "relativo/x.log",
+             "/opt/../../etc/shadow", "/opt/game/x.log&", "/opt/game/'x'.log"):
+    try:
+        panel.log_path_valido(ruim)
+        check(f"recusa {ruim!r}", False, "(aceitou!)")
+    except ValueError:
+        check(f"recusa {ruim!r}", True)
+
+
 print("Acoes sobre jogadores")
 # Kick e ban pedem um identificador; o nome nao serve porque muda e repete.
 igual("acha o userId", panel._id_do_item({"name": "Ana", "userId": "steam_123"}), "steam_123")
