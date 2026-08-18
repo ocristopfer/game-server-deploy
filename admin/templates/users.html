@@ -19,7 +19,8 @@
           {% else %}
           <form method="post" action="{{ url_for('user_role', uid=u.id) }}" class="users-papel">
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <select name="role" title="Papel de {{ u.username }}" aria-label="Papel">
+            <label class="sr-only" for="papel-{{ u.id }}">Papel de {{ u.username }}</label>
+            <select name="role" id="papel-{{ u.id }}">
               {% for r in roles %}
                 <option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ role_labels[r] }}</option>
               {% endfor %}

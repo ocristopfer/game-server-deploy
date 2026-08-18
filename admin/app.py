@@ -114,6 +114,7 @@ CONFIG_SETTINGS_MAX = 600
 
 SQL_SERVER_BY_ID = "SELECT * FROM servers WHERE id = ?"
 SQL_ALL_SERVERS = "SELECT * FROM servers ORDER BY name"
+SQL_SET_PASSWORD = "UPDATE users SET password_hash = ? WHERE id = ?"
 TPL_ERROR = "error.html"
 TPL_LOGIN = "login.html"
 MSG_TIMEOUT = "tempo esgotado"
@@ -2164,7 +2165,7 @@ def players_setup(sid: int):
 @admin_required
 def players_use(sid: int):
     """Grava a forma de contagem escolhida no assistente."""
-    server = _server_or_404(sid)
+    _server_or_404(sid)  # so pelo 404: daqui para baixo os UPDATE usam o proprio sid
     origem = request.form.get("player_source", "")
     conn = db()
     if origem == "a2s":
@@ -3515,6 +3516,43 @@ def _save_config_files(sid: int, caminhos: list[str]) -> None:
         )
 
 
+def _config_alvo(arquivos: list[str], errors: list[str]) -> str:
+    """Qual arquivo a tela Config abre: o pedido na URL, ou o primeiro registrado."""
+    pedido = (request.args.get("file") or "").strip()
+    if not pedido:
+        return arquivos[0] if arquivos else ""
+    try:
+        alvo = clean_path(pedido)
+    except ValueError as exc:
+        errors.append(str(exc))
+        return arquivos[0] if arquivos else ""
+    # O caminho vem da URL: sem esta trava a tela Config seria um leitor de arquivo
+    # qualquer do container (como root), justo o que o operador nao tem permissao de
+    # abrir. Para ele valem so os arquivos que um admin ja registrou no servidor.
+    if alvo not in arquivos and not is_admin():
+        abort(403, "Operador so abre os arquivos de configuracao ja registrados neste servidor.")
+    return alvo
+
+
+def _config_sugestoes(server: sqlite3.Row, arquivos: list[str], alvo: str,
+                      errors: list[str]) -> list | None:
+    """Candidatos a arquivo de configuracao no container; None = nem vale procurar.
+
+    Sem nenhum arquivo registrado a tela ja chega com a lista pronta: e o caminho de
+    "informar qual e o arquivo" sem sair navegando por pastas. Procurar e listar pasta
+    do container, entao so admin faz.
+    """
+    if not is_admin():
+        return None
+    if request.args.get("descobrir") != "1" and (arquivos or alvo):
+        return None
+    try:
+        return find_config_files(server, server["config_path"] or FILE_DEFAULT_PATH)
+    except RemoteError as exc:
+        errors.append(str(exc))
+        return []
+
+
 @app.get("/servers/<int:sid>/config")
 @login_required
 def config_quick(sid: int):
@@ -3522,21 +3560,7 @@ def config_quick(sid: int):
     server = _server_or_404(sid)
     arquivos = config_paths(server)
     errors: list[str] = []
-
-    alvo = (request.args.get("file") or "").strip()
-    if alvo:
-        try:
-            alvo = clean_path(alvo)
-        except ValueError as exc:
-            errors.append(str(exc))
-            alvo = ""
-    # O caminho vem da URL: sem esta trava a tela Config seria um leitor de arquivo
-    # qualquer do container (como root), justo o que o operador nao tem permissao de
-    # abrir. Para ele valem so os arquivos que um admin ja registrou no servidor.
-    if alvo and alvo not in arquivos and not is_admin():
-        abort(403, "Operador so abre os arquivos de configuracao ja registrados neste servidor.")
-    if not alvo and arquivos:
-        alvo = arquivos[0]
+    alvo = _config_alvo(arquivos, errors)
 
     doc = info = None
     if alvo:
@@ -3549,16 +3573,7 @@ def config_quick(sid: int):
         except (RemoteError, gameconf.ConfigError) as exc:
             errors.append(f"{alvo}: {exc}")
 
-    # Sem arquivo registrado a tela ja chega com a lista de candidatos do container:
-    # e o caminho de "informar qual e o arquivo" sem sair procurando por pastas.
-    sugestoes = None
-    # Procurar candidatos e listar pastas do container — leitura que so admin faz.
-    if is_admin() and (request.args.get("descobrir") == "1" or (not arquivos and not alvo)):
-        try:
-            sugestoes = find_config_files(server, server["config_path"] or FILE_DEFAULT_PATH)
-        except RemoteError as exc:
-            errors.append(str(exc))
-            sugestoes = []
+    sugestoes = _config_sugestoes(server, arquivos, alvo, errors)
 
     return render_template(
         "config.html", server=server, arquivos=arquivos, alvo=alvo, doc=doc, info=info,
@@ -3789,10 +3804,7 @@ def account():
         else:
             conn = db()
             with conn:
-                conn.execute(
-                    "UPDATE users SET password_hash = ? WHERE id = ?",
-                    (hash_password(new), session["uid"]),
-                )
+                conn.execute(SQL_SET_PASSWORD, (hash_password(new), session["uid"]))
             flash("Senha alterada.", "ok")
             return redirect(url_for("dashboard"))
     return render_template("account.html")
@@ -3907,10 +3919,7 @@ def user_password(uid: int):
         return redirect(url_for("users_list"))
     conn = db()
     with conn:
-        conn.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
-            (hash_password(request.form.get("new", "")), uid),
-        )
+        conn.execute(SQL_SET_PASSWORD, (hash_password(request.form.get("new", "")), uid))
     flash(f"Senha de '{alvo['username']}' redefinida.", "ok")
     return redirect(url_for("users_list"))
 
@@ -3990,10 +3999,7 @@ def ensure_admin_user(username: str, password: str, role: str = "") -> None:
             )
             print(f"Senha do usuario '{username}' redefinida; papel: {role}.")
         elif row:
-            conn.execute(
-                "UPDATE users SET password_hash = ? WHERE id = ?",
-                (hash_password(password), row["id"]),
-            )
+            conn.execute(SQL_SET_PASSWORD, (hash_password(password), row["id"]))
             print(f"Senha do usuario '{username}' redefinida.")
         else:
             # Usuario criado pela linha de comando e admin por padrao: e o do deploy,

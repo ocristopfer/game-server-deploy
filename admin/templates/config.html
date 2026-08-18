@@ -189,7 +189,8 @@
     <div id="conf-novas">
       {% for extra in range(2) %}
       <div class="conf-nova">
-        <select name="sec.{{ ns.i }}" aria-label="bloco">
+        <label class="sr-only" for="sec-{{ ns.i }}">Bloco da configuracao nova</label>
+        <select name="sec.{{ ns.i }}" id="sec-{{ ns.i }}">
           {% for sec in doc.sections %}
           <option value="{{ sec.id | ident }}">{{ sec.label }}</option>
           {% endfor %}
@@ -271,6 +272,14 @@
       campo.name = campo.name.replace(/\.\d+$/, '.' + i);
       if (campo.tagName !== 'SELECT') campo.value = '';
     });
+    // O id do bloco e o "for" do rotulo tem de andar junto com o indice: clonados como
+    // estao, a linha nova repetiria o id da anterior e o rotulo apontaria para ela.
+    const bloco = modelo.querySelector('select');
+    const rotulo = modelo.querySelector('label[for]');
+    if (bloco) {
+      bloco.id = 'sec-' + i;
+      if (rotulo) rotulo.htmlFor = bloco.id;
+    }
     novas.appendChild(modelo);
     total.value = i + 1;
   });

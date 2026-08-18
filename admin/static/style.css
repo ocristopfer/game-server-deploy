@@ -311,6 +311,13 @@ table.jobs tr:last-child td { border-bottom: none; }
 .conf-nova select { flex: 1 1 200px; margin-top: 0; }
 .conf-nova input { flex: 1 1 180px; margin-top: 0; }
 
+/* Rotulo que existe so para o leitor de tela: o titulo da coluna ja diz o que e o
+   campo, mas um <select> sem label nao se explica fora da tabela. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
 /* ---------- usuarios ---------- */
 /* O reset de senha fica dobrado dentro da linha da tabela: sao dois campos que so
    interessam na hora de usar, e abertos empurrariam a lista para fora da tela. */
