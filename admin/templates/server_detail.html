@@ -9,10 +9,10 @@
   </h1>
   <div class="actions">
     {% if allow_files %}<a class="btn" href="{{ url_for('config_quick', sid=server.id) }}">Config</a>{% endif %}
-    {% if allow_term %}<a class="btn ghost" href="{{ url_for('terminal', sid=server.id) }}">Terminal</a>{% endif %}
-    {% if allow_files %}<a class="btn ghost" href="{{ url_for('files', sid=server.id) }}">Arquivos</a>{% endif %}
-    {% if allow_shell %}<a class="btn ghost" href="{{ url_for('console', sid=server.id) }}">Console</a>{% endif %}
-    <a class="btn ghost" href="{{ url_for('server_edit', sid=server.id) }}">Editar</a>
+    {% if allow_term and is_admin %}<a class="btn ghost" href="{{ url_for('terminal', sid=server.id) }}">Terminal</a>{% endif %}
+    {% if allow_files and is_admin %}<a class="btn ghost" href="{{ url_for('files', sid=server.id) }}">Arquivos</a>{% endif %}
+    {% if allow_shell and is_admin %}<a class="btn ghost" href="{{ url_for('console', sid=server.id) }}">Console</a>{% endif %}
+    {% if is_admin %}<a class="btn ghost" href="{{ url_for('server_edit', sid=server.id) }}">Editar</a>{% endif %}
   </div>
 </div>
 
@@ -35,7 +35,11 @@
     </div>
     {% elif server.config_path %}
     <div><dt>Pasta de config</dt>
-      <dd><a href="{{ url_for('files', sid=server.id, path=server.config_path) }}">{{ server.config_path }}</a></dd>
+      <dd>
+        {% if is_admin %}
+          <a href="{{ url_for('files', sid=server.id, path=server.config_path) }}">{{ server.config_path }}</a>
+        {% else %}{{ server.config_path }}{% endif %}
+      </dd>
     </div>
     {% endif %}
   </dl>
@@ -55,7 +59,9 @@
 <div class="card" id="jogadores" data-url="{{ url_for('api_server_players', sid=server.id) }}">
   <div class="page-head tight">
     <h2>Jogadores</h2>
+    {% if is_admin %}
     <a class="btn ghost small" href="{{ url_for('players_setup', sid=server.id) }}">Configurar contagem</a>
+    {% endif %}
     <span class="badge {{ 'on' if players.players else 'cold' }}" id="jogadores-badge">
       {%- if players.players is not none -%}
         {{ players.players }}{% if players.max_players %}/{{ players.max_players }}{% endif %} online
@@ -65,18 +71,29 @@
     </span>
   </div>
   {% if not players.configured %}
+    {% if is_admin %}
     <p class="muted">
       Contagem desligada. Use o
       <a href="{{ url_for('players_setup', sid=server.id) }}">assistente</a>: ele testa as
       portas UDP e TCP que o jogo abriu, monta a chamada da API HTTP quando existe uma e,
       se nada responder, ajuda a contar pelo log.
     </p>
+    {% else %}
+    <p class="muted">
+      Contagem desligada. Um administrador do painel liga isso no assistente de contagem.
+    </p>
+    {% endif %}
   {% elif players.error %}
     <p class="muted">Nao consegui consultar: {{ players.error }}</p>
     <p class="muted small">
+      {% if is_admin %}
       Confira no <a href="{{ url_for('players_setup', sid=server.id) }}">assistente</a> se a
-      porta/URL esta certa e se o servidor esta no ar. Jogo que nao publica nada na rede
-      (como o RuneScape Dragonwilds) precisa da contagem pelo log.
+      porta/URL esta certa e se o servidor esta no ar.
+      {% else %}
+      Confira se o servidor esta no ar; se estiver, avise um administrador do painel.
+      {% endif %}
+      Jogo que nao publica nada na rede (como o RuneScape Dragonwilds) precisa da
+      contagem pelo log.
     </p>
   {% else %}
     <div id="jogadores-info">

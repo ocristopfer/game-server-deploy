@@ -965,6 +965,41 @@ no painel tem root nos containers de jogo. Se nao quiser essa capacidade, deslig
 `ADMIN_ALLOW_SHELL=0` no `.env` (as duas telas somem e as rotas respondem 403); o editor
 de arquivos tem o proprio interruptor, `ADMIN_ALLOW_FILES=0`.
 
+### Usuarios e papeis
+
+O painel comeca com um usuario so — o que o `deploy-admin.ps1` cria (`ADMIN_USER`). A
+tela **Usuarios** (visivel so para administrador) cria os demais: voce escolhe o nome, o
+papel e define a senha inicial, que a pessoa troca depois em **Conta**. Nao ha e-mail nem
+link de convite envolvido.
+
+Sao dois papeis:
+
+| Tela | Operador | Administrador |
+|------|----------|---------------|
+| Servidores, status, jogadores, log | sim | sim |
+| Start / stop / restart / update | sim | sim |
+| **Config** (arquivos ja registrados) | sim | sim |
+| Cadastrar / editar / remover servidor | nao | sim |
+| Registrar um novo arquivo na tela Config | nao | sim |
+| Terminal, Console e navegador de **Arquivos** | nao | sim |
+| **Usuarios** | nao | sim |
+
+O corte segue o que da **root no container**: terminal, console e editor de arquivos
+ficam com o administrador, e junto com eles o cadastro do servidor (que aponta o SSH do
+painel) e o registro de qual arquivo a tela Config abre — sem isso o operador poderia
+apontar a tela Config para `/etc/shadow` e contornar a restricao.
+
+O papel e lido do banco a cada clique, entao tirar o acesso de alguem vale na hora, e
+apagar uma conta derruba a sessao dela. O painel nunca fica sem administrador: nao da
+para remover nem rebaixar o ultimo, nem mexer no proprio papel.
+
+Esqueceu a senha de todo mundo, ou perdeu o acesso de administrador? A linha de comando
+continua sendo a saida de emergencia (roda dentro do CT do painel):
+
+```bash
+python3 /opt/gamepanel/app.py --create-user chefe --password nova-senha --role admin
+```
+
 ### Testando o painel localmente (docker compose)
 
 Para mexer no painel sem depender do Proxmox:
@@ -995,14 +1030,18 @@ alternativo da chamada HTTP (o container de jogo de verdade tem `curl`).
 docker compose logs -f panel
 docker compose exec panel python3 /opt/gamepanel/test_gameconf.py   # testes do parser
 docker compose exec panel python3 /opt/gamepanel/test_players.py    # testes da contagem
+docker compose exec panel python3 /opt/gamepanel/test_users.py      # testes dos papeis
 docker compose exec game-palworld sh -c 'echo 7 > /run/fake-players' # fixa a contagem
 docker compose down -v            # zera banco, chaves e arquivos de teste
 ```
 
 ### Seguranca
 
-- Login com usuario unico, senha com hash **scrypt** no SQLite, sessao em cookie assinado
+- Login por usuario, senha com hash **scrypt** no SQLite, sessao em cookie assinado
   (HttpOnly, SameSite=Lax) e bloqueio apos 5 tentativas erradas em 5 minutos
+- Dois papeis (**administrador** e **operador**): shell, editor de arquivos, cadastro de
+  servidor e gestao de usuarios sao so do administrador — veja
+  [Usuarios e papeis](#usuarios-e-papeis)
 - Todos os POSTs exigem token **CSRF**
 - O painel serve **HTTP puro** — pensado para LAN. Nao exponha na internet sem um proxy
   reverso com TLS na frente
@@ -1024,4 +1063,5 @@ pct exec <ADMIN_CTID> -- journalctl -u gamepanel.service -f
 ```
 
 Esqueceu a senha? Rode o `deploy-admin.ps1` de novo com `ADMIN_PASSWORD` preenchido —
-ele redefine a senha do usuario sem tocar nos servidores cadastrados.
+ele redefine a senha do usuario sem tocar nos servidores cadastrados (nem no papel dele).
+Para os demais usuarios, um administrador redefine a senha na tela **Usuarios**.

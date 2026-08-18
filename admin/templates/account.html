@@ -2,6 +2,20 @@
 {% block title %}Conta — Painel de Jogos{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Conta</h1></div>
+
+<div class="card">
+  <dl class="meta wide">
+    <div><dt>Usuario</dt><dd>{{ current_user }}</dd></div>
+    <div><dt>Papel</dt><dd>{{ role_label }}</dd></div>
+  </dl>
+  {% if not is_admin %}
+  <p class="muted small">
+    Como operador voce liga, desliga, atualiza e edita a configuracao dos servidores ja
+    cadastrados. Cadastro de servidor, terminal, arquivos e usuarios sao do administrador.
+  </p>
+  {% endif %}
+</div>
+
 <div class="card form">
   <h2>Trocar senha</h2>
   <form method="post">

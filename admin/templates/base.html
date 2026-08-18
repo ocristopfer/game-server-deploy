@@ -13,9 +13,12 @@
   <a class="brand" href="{{ url_for('dashboard') }}">🎮 Painel de Jogos</a>
   <nav>
     <a href="{{ url_for('dashboard') }}">Servidores</a>
-    <a href="{{ url_for('server_new') }}">Adicionar</a>
+    {% if is_admin %}
+      <a href="{{ url_for('server_new') }}">Adicionar</a>
+      <a href="{{ url_for('users_list') }}">Usuarios</a>
+    {% endif %}
     <a href="{{ url_for('ssh_key') }}">Acesso SSH</a>
-    <a href="{{ url_for('account') }}">{{ current_user }}</a>
+    <a href="{{ url_for('account') }}" title="{{ role_label }}">{{ current_user }}</a>
     <form method="post" action="{{ url_for('logout') }}" class="inline">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <button class="link" type="submit">sair</button>

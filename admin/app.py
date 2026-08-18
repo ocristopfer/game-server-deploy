@@ -122,6 +122,18 @@ UNIT_RE = re.compile(r"^[A-Za-z0-9@._-]{1,80}\.service$")
 HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
 USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
+# Papeis do painel. A divisao segue o que da poder de root no container: shell, editor
+# de arquivos e cadastro de servidor sao de admin; operar quem ja esta cadastrado
+# (start/stop/update, configuracao do jogo, log, jogadores) e de operador.
+ROLE_ADMIN = "admin"
+ROLE_OPERADOR = "operador"
+ROLES = (ROLE_ADMIN, ROLE_OPERADOR)
+ROLE_LABELS = {
+    ROLE_ADMIN: "Administrador",
+    ROLE_OPERADOR: "Operador",
+}
+PASSWORD_MIN = 8
+
 app = Flask(__name__)
 
 
@@ -167,6 +179,9 @@ CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   username      TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  -- 'admin' (tudo, inclusive cadastrar servidor, shell e arquivos) ou 'operador'
+  -- (opera os servidores ja cadastrados). Veja ROLES logo abaixo.
+  role          TEXT NOT NULL DEFAULT 'operador',
   created_at    TEXT NOT NULL
 );
 
@@ -251,7 +266,16 @@ def _close_db(_exc) -> None:
 
 # Colunas acrescentadas depois da primeira versao: CREATE TABLE IF NOT EXISTS nao
 # altera tabelas que ja existem, entao cada uma precisa do seu ALTER aqui.
+# O terceiro item e um comando SQL ou uma tupla deles (o ALTER mais o conserto das
+# linhas antigas, quando o valor padrao da coluna nao serve para quem ja existia).
 MIGRATIONS = (
+    # Papeis: antes desta coluna todo mundo que logava podia tudo, e o unico usuario
+    # era o criado pelo deploy. Logo, quem ja existe vira admin — o padrao 'operador'
+    # da coluna vale so para quem for criado dali em diante.
+    ("users", "role", (
+        "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'operador'",
+        "UPDATE users SET role = 'admin'",
+    )),
     ("servers", "config_path", "ALTER TABLE servers ADD COLUMN config_path TEXT NOT NULL DEFAULT ''"),
     ("servers", "query_port", "ALTER TABLE servers ADD COLUMN query_port INTEGER NOT NULL DEFAULT 0"),
     ("servers", "player_source", "ALTER TABLE servers ADD COLUMN player_source TEXT NOT NULL DEFAULT ''"),
@@ -281,7 +305,8 @@ def init_db() -> None:
         for table, column, ddl in MIGRATIONS:
             cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
             if column not in cols:
-                conn.execute(ddl)
+                for comando in (ddl if isinstance(ddl, tuple) else (ddl,)):
+                    conn.execute(comando)
     conn.close()
 
 
@@ -343,14 +368,54 @@ def _clear_fails(key: str) -> None:
         _login_fails.pop(key, None)
 
 
+def usuario_logado() -> sqlite3.Row | None:
+    """Linha do usuario da sessao, lida do banco uma vez por request.
+
+    O papel NAO fica no cookie: tirar o admin de alguem tem de valer no proximo clique,
+    e nao so quando a sessao dele expirar. Uma consulta por id em SQLite local custa
+    menos que qualquer coisa que este painel faca em seguida.
+    """
+    cached = getattr(g, "_user", False)
+    if cached is not False:
+        return cached
+    uid = session.get("uid")
+    row = None
+    if uid:
+        row = db().execute(
+            "SELECT id, username, role, created_at FROM users WHERE id = ?", (uid,)
+        ).fetchone()
+    g._user = row
+    return row
+
+
+def is_admin() -> bool:
+    row = usuario_logado()
+    return bool(row) and row["role"] == ROLE_ADMIN
+
+
 def login_required(view):
     @wraps(view)
     def wrapper(*args, **kwargs):
-        if not session.get("uid"):
+        if usuario_logado() is None:
+            # Conta apagada com a sessao ainda aberta: o cookie continua assinado e
+            # valido, entao sem conferir o banco ela seguiria funcionando ate expirar.
+            session.clear()
             return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)
 
     return wrapper
+
+
+def admin_required(view):
+    """Rotas que dao poder de root no container ou mexem em quem tem acesso."""
+
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not is_admin():
+            abort(403, "Esta tela e restrita a administradores do painel.")
+        return view(*args, **kwargs)
+
+    return login_required(wrapper)
 
 
 def csrf_token() -> str:
@@ -375,9 +440,14 @@ def _check_csrf():
 
 @app.context_processor
 def _inject():
+    usuario = usuario_logado()
     return {
         "csrf_token": csrf_token,
-        "current_user": session.get("username"),
+        "current_user": usuario["username"] if usuario else None,
+        # As telas escondem o que o operador nao pode abrir. Quem manda e o
+        # @admin_required na rota; isto aqui e so para nao mostrar botao que da 403.
+        "is_admin": bool(usuario) and usuario["role"] == ROLE_ADMIN,
+        "role_label": ROLE_LABELS.get(usuario["role"], usuario["role"]) if usuario else "",
         "job_label": job_label,
         "allow_shell": ALLOW_SHELL,
         "allow_term": ALLOW_SHELL and HAVE_PTY,
@@ -2061,7 +2131,7 @@ def _aba_log(server: sqlite3.Row, join_re: str, leave_re: str, testar: bool) -> 
 
 
 @app.get("/servers/<int:sid>/players/descobrir")
-@login_required
+@admin_required
 def players_setup(sid: int):
     """Assistente: acha a porta/API que responde e ajuda a achar o padrao no log."""
     server = _server_or_404(sid)
@@ -2091,7 +2161,7 @@ def players_setup(sid: int):
 
 
 @app.post("/servers/<int:sid>/players/usar")
-@login_required
+@admin_required
 def players_use(sid: int):
     """Grava a forma de contagem escolhida no assistente."""
     server = _server_or_404(sid)
@@ -2337,7 +2407,7 @@ SQL_UPDATE_SERVER = (
 
 
 @app.route("/servers/new", methods=["GET", "POST"])
-@login_required
+@admin_required
 def server_new():
     data = dict.fromkeys(SERVER_FIELDS, "")
     data.update({"ssh_user": "root", "ssh_port": 22, "query_port": 0})
@@ -2361,7 +2431,7 @@ def server_new():
 
 
 @app.route("/servers/<int:sid>/edit", methods=["GET", "POST"])
-@login_required
+@admin_required
 def server_edit(sid: int):
     server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
@@ -2391,7 +2461,7 @@ def server_edit(sid: int):
 
 
 @app.post("/servers/<int:sid>/delete")
-@login_required
+@admin_required
 def server_delete(sid: int):
     conn = db()
     with conn:
@@ -2513,7 +2583,7 @@ def server_action(sid: int, action: str):
 
 
 @app.route("/servers/<int:sid>/console", methods=["GET", "POST"])
-@login_required
+@admin_required
 def console(sid: int):
     if not ALLOW_SHELL:
         abort(403, "O console esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).")
@@ -2746,7 +2816,7 @@ def _terminal_guard():
 
 
 @app.get("/servers/<int:sid>/terminal")
-@login_required
+@admin_required
 def terminal(sid: int):
     _terminal_guard()
     server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
@@ -2758,7 +2828,7 @@ def terminal(sid: int):
 
 
 @app.post("/api/term/<int:sid>/open")
-@login_required
+@admin_required
 def api_term_open(sid: int):
     global _reaper_started
     _terminal_guard()
@@ -2798,7 +2868,7 @@ def api_term_open(sid: int):
 
 
 @app.get("/api/term/<tid>/read")
-@login_required
+@admin_required
 def api_term_read(tid: str):
     _terminal_guard()
     term = _term_of_user(tid)
@@ -2817,7 +2887,7 @@ def api_term_read(tid: str):
 
 
 @app.post("/api/term/<tid>/keys")
-@login_required
+@admin_required
 def api_term_keys(tid: str):
     _terminal_guard()
     term = _term_of_user(tid)
@@ -2833,7 +2903,7 @@ def api_term_keys(tid: str):
 
 
 @app.post("/api/term/<tid>/resize")
-@login_required
+@admin_required
 def api_term_resize(tid: str):
     _terminal_guard()
     term = _term_of_user(tid)
@@ -2848,7 +2918,7 @@ def api_term_resize(tid: str):
 
 
 @app.post("/api/term/<tid>/close")
-@login_required
+@admin_required
 def api_term_close(tid: str):
     _terminal_guard()
     term = _term_of_user(tid)
@@ -3122,7 +3192,7 @@ def read_file(server: sqlite3.Row, path: str) -> dict:
 
 
 @app.get("/servers/<int:sid>/files")
-@login_required
+@admin_required
 def files(sid: int):
     _files_guard()
     server = _server_or_404(sid)
@@ -3216,7 +3286,7 @@ def delete_file(server: sqlite3.Row, path: str) -> str:
 
 
 @app.get("/servers/<int:sid>/files/search")
-@login_required
+@admin_required
 def files_search(sid: int):
     _files_guard()
     server = _server_or_404(sid)
@@ -3242,7 +3312,7 @@ def files_search(sid: int):
 
 
 @app.post("/servers/<int:sid>/files/save")
-@login_required
+@admin_required
 def files_save(sid: int):
     _files_guard()
     server = _server_or_404(sid)
@@ -3297,7 +3367,7 @@ def files_save(sid: int):
 
 
 @app.post("/servers/<int:sid>/files/delete")
-@login_required
+@admin_required
 def files_delete(sid: int):
     _files_guard()
     server = _server_or_404(sid)
@@ -3372,7 +3442,7 @@ def stream_remote_file(server: sqlite3.Row, path: str):
 
 
 @app.get("/servers/<int:sid>/files/download")
-@login_required
+@admin_required
 def files_download(sid: int):
     """Baixa qualquer arquivo do container — inclusive binario ou grande demais para o editor."""
     _files_guard()
@@ -3460,6 +3530,11 @@ def config_quick(sid: int):
         except ValueError as exc:
             errors.append(str(exc))
             alvo = ""
+    # O caminho vem da URL: sem esta trava a tela Config seria um leitor de arquivo
+    # qualquer do container (como root), justo o que o operador nao tem permissao de
+    # abrir. Para ele valem so os arquivos que um admin ja registrou no servidor.
+    if alvo and alvo not in arquivos and not is_admin():
+        abort(403, "Operador so abre os arquivos de configuracao ja registrados neste servidor.")
     if not alvo and arquivos:
         alvo = arquivos[0]
 
@@ -3477,7 +3552,8 @@ def config_quick(sid: int):
     # Sem arquivo registrado a tela ja chega com a lista de candidatos do container:
     # e o caminho de "informar qual e o arquivo" sem sair procurando por pastas.
     sugestoes = None
-    if request.args.get("descobrir") == "1" or (not arquivos and not alvo):
+    # Procurar candidatos e listar pastas do container — leitura que so admin faz.
+    if is_admin() and (request.args.get("descobrir") == "1" or (not arquivos and not alvo)):
         try:
             sugestoes = find_config_files(server, server["config_path"] or FILE_DEFAULT_PATH)
         except RemoteError as exc:
@@ -3492,7 +3568,7 @@ def config_quick(sid: int):
 
 
 @app.post("/servers/<int:sid>/config/files")
-@login_required
+@admin_required
 def config_files_edit(sid: int):
     """Registra (ou tira) um arquivo da tela rapida, com um clique."""
     _files_guard()
@@ -3592,6 +3668,9 @@ def config_save(sid: int):
     except ValueError as exc:
         flash(str(exc), "error")
         return redirect(url_for("config_quick", sid=sid))
+    # Mesma trava do config_quick, agora na escrita: o caminho chega pelo formulario.
+    if path not in config_paths(server) and not is_admin():
+        abort(403, "Operador so salva os arquivos de configuracao ja registrados neste servidor.")
 
     voltar = url_for("config_quick", sid=sid, file=path)
     try:
@@ -3702,12 +3781,11 @@ def account():
         row = db().execute(
             "SELECT * FROM users WHERE id = ?", (session["uid"],)
         ).fetchone()
+        erro = valida_senha(new, confirm)
         if not row or not verify_password(current, row["password_hash"]):
             flash("Senha atual incorreta.", "error")
-        elif len(new) < 8:
-            flash("A nova senha precisa ter ao menos 8 caracteres.", "error")
-        elif new != confirm:
-            flash("A confirmacao nao confere.", "error")
+        elif erro:
+            flash(erro, "error")
         else:
             conn = db()
             with conn:
@@ -3718,6 +3796,140 @@ def account():
             flash("Senha alterada.", "ok")
             return redirect(url_for("dashboard"))
     return render_template("account.html")
+
+
+# ------------------------------------------------------------------ usuarios
+
+
+def valida_senha(nova: str, confirma: str) -> str:
+    """Devolve a mensagem de erro; string vazia quando a senha serve."""
+    if len(nova) < PASSWORD_MIN:
+        return f"A senha precisa ter ao menos {PASSWORD_MIN} caracteres."
+    if nova != confirma:
+        return "A confirmacao nao confere."
+    return ""
+
+
+def conta_admins(excluindo: int = 0) -> int:
+    """Quantos administradores sobrariam sem o usuario `excluindo`."""
+    return db().execute(
+        "SELECT COUNT(*) FROM users WHERE role = ? AND id <> ?", (ROLE_ADMIN, excluindo)
+    ).fetchone()[0]
+
+
+def _usuario_ou_404(uid: int) -> sqlite3.Row:
+    row = db().execute(
+        "SELECT id, username, role FROM users WHERE id = ?", (uid,)
+    ).fetchone()
+    if not row:
+        abort(404)
+    return row
+
+
+@app.get("/usuarios")
+@admin_required
+def users_list():
+    rows = db().execute(
+        "SELECT id, username, role, created_at FROM users ORDER BY role, username"
+    ).fetchall()
+    return render_template(
+        "users.html", users=rows, roles=ROLES, role_labels=ROLE_LABELS,
+        meu_id=session.get("uid"), min_len=PASSWORD_MIN,
+    )
+
+
+@app.post("/usuarios")
+@admin_required
+def user_new():
+    username = request.form.get("username", "").strip().lower()
+    role = request.form.get("role", ROLE_OPERADOR)
+    senha = request.form.get("new", "")
+    if not USER_RE.match(username):
+        erro = ("Nome de usuario invalido: use de 1 a 32 caracteres entre letras"
+                " minusculas, numeros, '-' e '_', comecando por letra ou '_'.")
+    elif role not in ROLES:
+        erro = "Papel invalido."
+    else:
+        erro = valida_senha(senha, request.form.get("confirm", ""))
+    if erro:
+        flash(erro, "error")
+        return redirect(url_for("users_list"))
+
+    conn = db()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, role, created_at)"
+                " VALUES (?,?,?,?)",
+                (username, hash_password(senha), role, now_iso()),
+            )
+    except sqlite3.IntegrityError:
+        # username e UNIQUE: e o unico jeito de dois admins criarem o mesmo nome ao
+        # mesmo tempo sem um sobrescrever o outro.
+        flash(f"Ja existe um usuario chamado '{username}'.", "error")
+        return redirect(url_for("users_list"))
+    flash(f"Usuario '{username}' criado como {ROLE_LABELS[role].lower()}."
+          " Passe a senha para ele e peca para troca-la na tela Conta.", "ok")
+    return redirect(url_for("users_list"))
+
+
+@app.post("/usuarios/<int:uid>/papel")
+@admin_required
+def user_role(uid: int):
+    alvo = _usuario_ou_404(uid)
+    role = request.form.get("role", "")
+    if role not in ROLES:
+        abort(400, "Papel invalido.")
+    if uid == session.get("uid"):
+        # Rebaixar a si mesmo tranca a pessoa fora desta tela no mesmo clique.
+        flash("Voce nao pode mudar o proprio papel — peca a outro administrador.", "error")
+    elif role == alvo["role"]:
+        flash(f"'{alvo['username']}' ja e {ROLE_LABELS[role].lower()}.", "ok")
+    elif alvo["role"] == ROLE_ADMIN and conta_admins(excluindo=uid) == 0:
+        flash("Este e o unico administrador: promova outra pessoa antes de rebaixa-lo.",
+              "error")
+    else:
+        conn = db()
+        with conn:
+            conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, uid))
+        flash(f"'{alvo['username']}' agora e {ROLE_LABELS[role].lower()}.", "ok")
+    return redirect(url_for("users_list"))
+
+
+@app.post("/usuarios/<int:uid>/senha")
+@admin_required
+def user_password(uid: int):
+    """Reset feito pelo admin — sem a senha atual, que e justamente a esquecida."""
+    alvo = _usuario_ou_404(uid)
+    erro = valida_senha(request.form.get("new", ""), request.form.get("confirm", ""))
+    if erro:
+        flash(erro, "error")
+        return redirect(url_for("users_list"))
+    conn = db()
+    with conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(request.form.get("new", "")), uid),
+        )
+    flash(f"Senha de '{alvo['username']}' redefinida.", "ok")
+    return redirect(url_for("users_list"))
+
+
+@app.post("/usuarios/<int:uid>/remover")
+@admin_required
+def user_delete(uid: int):
+    alvo = _usuario_ou_404(uid)
+    if uid == session.get("uid"):
+        flash("Voce nao pode remover a propria conta.", "error")
+    elif alvo["role"] == ROLE_ADMIN and conta_admins(excluindo=uid) == 0:
+        flash("Nao da para remover o unico administrador do painel.", "error")
+    else:
+        conn = db()
+        with conn:
+            conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+        # A sessao dele morre no proximo clique: o login_required confere o banco.
+        flash(f"Usuario '{alvo['username']}' removido.", "ok")
+    return redirect(url_for("users_list"))
 
 
 @app.get("/health")
@@ -3756,26 +3968,43 @@ def _unavailable(exc):
 # --------------------------------------------------------------- bootstrap CLI
 
 
-def ensure_admin_user(username: str, password: str) -> None:
-    """Cria o usuario inicial, ou reseta a senha se ele ja existir."""
+def ensure_admin_user(username: str, password: str, role: str = "") -> None:
+    """Cria o usuario inicial, ou reseta a senha se ele ja existir.
+
+    Continua sendo a saida de emergencia quando ninguem consegue entrar: e por aqui
+    que se devolve o papel de admin a alguem sem passar pela tela (`--role admin`).
+    Sem `--role`, um usuario que ja existe mantem o papel que tinha.
+    """
+    if role and role not in ROLES:
+        raise SystemExit(f"papel invalido: {role} (use {' ou '.join(ROLES)})")
     init_db()
     conn = _connect()
     with conn:
         row = conn.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
         ).fetchone()
-        if row:
+        if row and role:
+            conn.execute(
+                "UPDATE users SET password_hash = ?, role = ? WHERE id = ?",
+                (hash_password(password), role, row["id"]),
+            )
+            print(f"Senha do usuario '{username}' redefinida; papel: {role}.")
+        elif row:
             conn.execute(
                 "UPDATE users SET password_hash = ? WHERE id = ?",
                 (hash_password(password), row["id"]),
             )
             print(f"Senha do usuario '{username}' redefinida.")
         else:
+            # Usuario criado pela linha de comando e admin por padrao: e o do deploy,
+            # que precisa cadastrar servidor e criar os demais na tela.
+            papel = role or ROLE_ADMIN
             conn.execute(
-                "INSERT INTO users (username, password_hash, created_at) VALUES (?,?,?)",
-                (username, hash_password(password), now_iso()),
+                "INSERT INTO users (username, password_hash, role, created_at)"
+                " VALUES (?,?,?,?)",
+                (username, hash_password(password), papel, now_iso()),
             )
-            print(f"Usuario '{username}' criado.")
+            print(f"Usuario '{username}' criado ({papel}).")
     conn.close()
 
 
@@ -3846,6 +4075,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Painel de servidores de jogos")
     parser.add_argument("--create-user", metavar="USUARIO")
     parser.add_argument("--password", metavar="SENHA")
+    parser.add_argument("--role", default="", choices=("", *ROLES),
+                        help="papel do usuario (padrao: admin ao criar; manter ao redefinir)")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=int(os.environ.get("GAMEPANEL_PORT", "8080")))
     # Usado pelo deploy (deploy-docker.ps1) para deixar o servidor ja cadastrado.
@@ -3865,7 +4096,7 @@ if __name__ == "__main__":
     if opts.create_user:
         if not opts.password:
             raise SystemExit("--create-user exige --password")
-        ensure_admin_user(opts.create_user, opts.password)
+        ensure_admin_user(opts.create_user, opts.password, opts.role)
     elif opts.register_server:
         if not opts.server_host or not opts.service:
             raise SystemExit("--register-server exige --server-host e --service")

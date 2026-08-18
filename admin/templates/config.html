@@ -4,7 +4,7 @@
 <div class="page-head">
   <h1>Config &mdash; {{ server.name }}</h1>
   <div class="actions">
-    <a class="btn ghost" href="{{ url_for('files', sid=server.id) }}">Arquivos</a>
+    {% if is_admin %}<a class="btn ghost" href="{{ url_for('files', sid=server.id) }}">Arquivos</a>{% endif %}
     <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
   </div>
 </div>
@@ -20,8 +20,10 @@
     {% else %}
       <span class="muted">
         Nenhum arquivo de configuracao informado ainda para este servidor.
+        {% if not is_admin %}Peca a um administrador do painel para registrar o arquivo.{% endif %}
       </span>
     {% endfor %}
+    {% if is_admin %}
     <form method="post" action="{{ url_for('config_files_edit', sid=server.id) }}" class="path-form">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input name="path" placeholder="/opt/game/.../ServerSettings.ini" spellcheck="false"
@@ -30,14 +32,17 @@
     </form>
     <a class="btn ghost small"
        href="{{ url_for('config_quick', sid=server.id, descobrir=1, file=alvo) }}">Procurar</a>
+    {% endif %}
   </div>
   {% if alvo %}
     <p class="muted small conf-path">
       <code>{{ alvo }}</code>
       {% if info %} &middot; {{ info.size | tamanho }} &middot; {{ info.owner }} &middot; {{ info.mtime }}{% endif %}
       {% if doc %} &middot; formato {{ doc.rotulo }}{% endif %}
+      {% if is_admin %}
       &middot; <a href="{{ url_for('files', sid=server.id, file=alvo) }}">editar como texto</a>
-      {% if registrado %}
+      {% endif %}
+      {% if registrado and is_admin %}
       &middot;
       <form method="post" action="{{ url_for('config_files_edit', sid=server.id) }}" class="inline">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -223,7 +228,11 @@
 <div class="card">
   <p class="muted">
     Nao consegui abrir <code>{{ alvo }}</code> como formulario.
-    <a href="{{ url_for('files', sid=server.id, file=alvo) }}">Edite como texto</a>.
+    {% if is_admin %}
+      <a href="{{ url_for('files', sid=server.id, file=alvo) }}">Edite como texto</a>.
+    {% else %}
+      Avise um administrador do painel &mdash; a edicao como texto e restrita a ele.
+    {% endif %}
   </p>
 </div>
 {% endif %}

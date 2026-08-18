@@ -311,6 +311,18 @@ table.jobs tr:last-child td { border-bottom: none; }
 .conf-nova select { flex: 1 1 200px; margin-top: 0; }
 .conf-nova input { flex: 1 1 180px; margin-top: 0; }
 
+/* ---------- usuarios ---------- */
+/* O reset de senha fica dobrado dentro da linha da tabela: sao dois campos que so
+   interessam na hora de usar, e abertos empurrariam a lista para fora da tela. */
+.users-reset { display: inline-block; }
+.users-reset > summary { list-style: none; cursor: pointer; }
+.users-reset > summary::-webkit-details-marker { display: none; }
+.users-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.users-form input { width: 10rem; margin-top: 0; }
+.users-papel { display: flex; gap: 6px; align-items: center; }
+.users-papel select { margin-top: 0; width: auto; }
+table.jobs td.acoes { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+
 @media (max-width: 900px) {
   .filegrid { grid-template-columns: 1fr; }
   .filelist { max-height: 30vh; }

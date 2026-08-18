@@ -3,17 +3,23 @@
 {% block content %}
 <div class="page-head">
   <h1>Servidores</h1>
-  <a class="btn primary" href="{{ url_for('server_new') }}">+ Adicionar servidor</a>
+  {% if is_admin %}
+    <a class="btn primary" href="{{ url_for('server_new') }}">+ Adicionar servidor</a>
+  {% endif %}
 </div>
 
 {% if not servers %}
   <div class="card empty">
     <p>Nenhum servidor cadastrado ainda.</p>
-    <p class="muted">Cadastre o IP de um container de jogo para controlar start, stop,
-      update e rodar comandos por aqui.</p>
-    <p class="muted small">O painel acessa cada container por SSH — antes autorize a
-      chave dele no container em <a href="{{ url_for('ssh_key') }}">Acesso SSH</a>.</p>
-    <a class="btn primary" href="{{ url_for('server_new') }}">Adicionar o primeiro</a>
+    {% if is_admin %}
+      <p class="muted">Cadastre o IP de um container de jogo para controlar start, stop,
+        update e rodar comandos por aqui.</p>
+      <p class="muted small">O painel acessa cada container por SSH — antes autorize a
+        chave dele no container em <a href="{{ url_for('ssh_key') }}">Acesso SSH</a>.</p>
+      <a class="btn primary" href="{{ url_for('server_new') }}">Adicionar o primeiro</a>
+    {% else %}
+      <p class="muted">Peca a um administrador do painel para cadastrar o servidor.</p>
+    {% endif %}
   </div>
 {% endif %}
 
@@ -51,10 +57,10 @@
       {% if allow_files %}
         <a class="btn ghost" href="{{ url_for('config_quick', sid=s.id) }}">Config</a>
       {% endif %}
-      {% if allow_term %}
+      {% if allow_term and is_admin %}
         <a class="btn ghost" href="{{ url_for('terminal', sid=s.id) }}">Terminal</a>
       {% endif %}
-      {% if allow_files %}
+      {% if allow_files and is_admin %}
         <a class="btn ghost" href="{{ url_for('files', sid=s.id) }}">Arquivos</a>
       {% endif %}
       <a class="btn ghost" href="{{ url_for('server_detail', sid=s.id) }}">Detalhes</a>
