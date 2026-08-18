@@ -216,6 +216,48 @@ table.jobs tr:last-child td { border-bottom: none; }
    amontoado de controles no topo da tela. */
 .upload-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .upload-form input[type="file"] { flex: 1; min-width: 220px; margin-top: 0; font-size: .85rem; }
+/* ---------- graficos de uso ----------
+   Marcas finas, grade recessiva, e o texto sempre nas cores de texto do painel: a cor da
+   serie mora na LINHA, e a identidade chega pelo tracinho ao lado do rotulo. */
+.grafico { display: block; width: 100%; height: auto; margin-top: 6px; touch-action: none; }
+.grafico:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grafico .grade,
+.grafico .eixo { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+/* A mira nasce escondida por CSS, e nao pelo atributo `hidden`: em SVG ele nao e
+   honrado do mesmo jeito que em HTML, e a linha aparecia colada no eixo Y. */
+.grafico .mira { display: none; stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.grafico .mira.ativa { display: inline; }
+.grafico .serie {
+  fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.grafico .tick { fill: var(--muted); font-size: 11px; }
+.grafico .ponta { fill: var(--text); font-size: 12px; font-weight: 600; }
+
+.legenda { display: flex; gap: 14px; align-items: center; }
+.legenda .chave { display: flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--muted); }
+.legenda .chave i { width: 14px; height: 2px; border-radius: 1px; }
+
+/* O cartao ancora o balao; o SVG nao pode conter HTML. */
+.card[data-grafico] { position: relative; }
+.balao {
+  position: absolute; top: 46px; z-index: 5; pointer-events: none;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: .82rem; min-width: 128px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+}
+.balao-hora { color: var(--muted); margin-bottom: 4px; }
+.balao-linha { display: flex; align-items: center; gap: 7px; line-height: 1.7; }
+.balao-linha i { width: 12px; height: 2px; border-radius: 1px; flex: none; }
+.balao-linha strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.balao-linha span { color: var(--muted); }
+
+.numerica td { font-variant-numeric: tabular-nums; }
+
+/* Lista de caixas de selecao (quais alertas ligar). */
+.opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 6px 18px; margin: 8px 0 4px; }
+.checkbox { display: flex; align-items: center; gap: 8px; font-size: .9rem; }
+.checkbox input { width: auto; margin: 0; }
 /* Filtro do historico: rotulo em cima do campo, tudo na mesma linha. */
 .inline-field { display: flex; flex-direction: column; gap: 4px; font-size: .82rem; color: var(--muted); }
 .inline-field select { margin-top: 0; }

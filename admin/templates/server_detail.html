@@ -9,6 +9,7 @@
   </h1>
   <div class="actions">
     {% if allow_files %}<a class="btn" href="{{ url_for('config_quick', sid=server.id) }}">Config</a>{% endif %}
+    <a class="btn ghost" href="{{ url_for('charts', sid=server.id) }}">Graficos</a>
     <a class="btn ghost" href="{{ url_for('backups', sid=server.id) }}">Backups</a>
     <a class="btn ghost" href="{{ url_for('schedules', sid=server.id) }}">Agendamentos</a>
     {% if allow_term and is_admin %}<a class="btn ghost" href="{{ url_for('terminal', sid=server.id) }}">Terminal</a>{% endif %}
@@ -105,19 +106,55 @@
         <div><dt>Online</dt><dd>{{ players.players }}{% if players.max_players %} de {{ players.max_players }}{% endif %}</dd></div>
       </dl>
     </div>
+    {% set acoes = acoes_de_jogador(server) %}
     <table class="jobs" id="jogadores-tabela">
-      <thead><tr><th>Jogador</th><th>Conectado ha</th><th>Pontos</th></tr></thead>
+      <thead><tr><th>Jogador</th><th>Conectado ha</th><th>Pontos</th>{% if acoes %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for p in players.list %}
-        <tr><td>{{ p.name }}</td><td class="muted">{{ p.seconds | duracao }}</td><td class="muted">{{ p.score }}</td></tr>
+        <tr>
+          <td>{{ p.name }}</td>
+          <td class="muted">{{ p.seconds | duracao }}</td>
+          <td class="muted">{{ p.score }}</td>
+          {% if acoes %}
+          <td>
+            {% if p.id %}
+              {% for a in acoes if a != 'announce' %}
+              <form method="post" action="{{ url_for('player_action', sid=server.id) }}" class="inline"
+                    onsubmit="return confirm('{{ rotulo_de_acao.get(a, a) }} {{ p.name }} de {{ server.name }}?')">
+                <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+                <input type="hidden" name="acao" value="{{ a }}">
+                <input type="hidden" name="jogador" value="{{ p.id }}">
+                <input type="hidden" name="nome" value="{{ p.name }}">
+                <button class="btn {{ 'danger' if a == 'ban' else 'ghost' }} small" type="submit">{{ rotulo_de_acao.get(a, a) }}</button>
+              </form>
+              {% endfor %}
+            {% else %}
+              <span class="muted small">sem identificador</span>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
         {% else %}
-        <tr><td colspan="3" class="muted">
+        <tr><td colspan="{{ 4 if acoes else 3 }}" class="muted">
           {% if players.players %}Este jogo nao publica a lista de nomes &mdash; so a contagem.
           {% else %}Ninguem conectado agora.{% endif %}
         </td></tr>
         {% endfor %}
       </tbody>
     </table>
+    {% if 'announce' in acoes %}
+    <form method="post" action="{{ url_for('player_action', sid=server.id) }}" class="filebar">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="acao" value="announce">
+      <input name="mensagem" maxlength="200" required class="path-form"
+             placeholder="Aviso para todo mundo no servidor" aria-label="mensagem do aviso">
+      <button class="btn" type="submit">Avisar</button>
+    </form>
+    <p class="muted small">
+      Expulsar, banir e avisar saem pela API do proprio jogo &mdash; a mesma que conta os
+      jogadores. Cada uma fica no <a href="{{ url_for('history') }}">historico</a>.
+    </p>
+    {% endif %}
   {% endif %}
 </div>
 
@@ -227,7 +264,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='metrics.js') }}"></script>
+<script src="{{ static_url('metrics.js') }}"></script>
 <script>
   const cardRecursos = document.getElementById('recursos');
   const grade = document.getElementById('meters');

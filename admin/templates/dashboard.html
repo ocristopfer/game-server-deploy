@@ -72,7 +72,7 @@
 
 {% block scripts %}
 {% if servers %}
-<script src="{{ url_for('static', filename='metrics.js') }}"></script>
+<script src="{{ static_url('metrics.js') }}"></script>
 <script>
   // Os medidores entram depois que a pagina abre: uma leitura de recursos custa ~1s de
   // SSH e nao pode segurar a lista de servidores.

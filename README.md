@@ -843,6 +843,29 @@ Nas duas formas:
   `ADMIN_QUERY_TIMEOUT` segundos (padrao 3) e a pagina abre com o aviso. O resultado
   fica em cache por `ADMIN_PLAYERS_TTL` segundos (padrao 5).
 
+### Expulsar, banir e avisar
+
+Quando a contagem de jogadores esta ligada **pela API do jogo**, a lista de quem esta
+online ganha os botoes **Expulsar** e **Banir**, e abaixo dela um campo para **avisar todo
+mundo**. Sai tudo pela mesma API que ja conta os jogadores — outra rota, mesma senha, e o
+mesmo token com prazo (que o painel renova sozinho).
+
+O painel reconhece a API pela URL de contagem ja cadastrada. Dos jogos que este repo
+instala, **so o Palworld** publica essas acoes (o Satisfactory nao tem kick na API dele).
+Jogo novo entra como mais uma entrada no catalogo `API_ACOES` do `app.py`, sem tocar no
+resto. Sem API reconhecida, os botoes simplesmente nao aparecem.
+
+- **Kick e ban precisam do identificador** que a API publica (`userId` no Palworld), nunca
+  do nome: nome muda e repete. Jogador que a API listar sem identificador aparece com
+  "sem identificador" no lugar dos botoes.
+- A mensagem (ate 200 caracteres) e a que o jogo mostra a quem foi expulso, ou a todos no
+  caso do aviso.
+- Estas rotas respondem **200 com o corpo vazio** — o painel aceita isso como sucesso em
+  vez de reclamar que "a resposta nao e JSON".
+- Cada acao fica no [Historico](#historico) com quem fez, quem levou e a mensagem.
+- **Papel**: e de **operador**. Moderar quem esta jogando nao da acesso ao container, e
+  quem ja pode reiniciar o servidor pode tirar alguem de dentro dele.
+
 ### Medidores de recursos
 
 Cada servidor mostra quanto do container esta em uso, lido por SSH direto de `/proc` e
@@ -861,6 +884,30 @@ dos cgroups &mdash; sem agente, sem instalar nada no container do jogo.
 - CPU e rede sao medidos por duas amostras espacadas em 0,5s dentro do container, numa
   unica ida de SSH. O resultado fica em cache por `ADMIN_METRICS_TTL` segundos (padrao 4)
   para varias abas abertas nao virarem varias conexoes por segundo.
+
+### Graficos de uso
+
+Os medidores mostram o **agora**; a aba **Graficos** mostra o que aconteceu. O painel
+guarda uma amostra de CPU, memoria e jogadores a cada **5 minutos**
+(`GAMEPANEL_SAMPLE_EVERY`) enquanto esta no ar, e a tela desenha as ultimas **6h / 24h /
+7 dias**. E o que responde "por que travou ontem a noite" depois que a noite passou.
+
+- **Sao dois graficos, nao um.** Porcentagem e quantidade de gente nao dividem eixo:
+  sobrepor as duas escalas num plot so inventaria uma relacao que os dados nao tem. CPU e
+  memoria ficam juntos (as duas sao %), jogadores vai separado.
+- **Buraco continua buraco.** Servidor fora do ar nao vira amostra (zero seria mentira:
+  nao foi "usou 0% de CPU"), e a linha **parte** em vez de atravessar reto. Uma leitura
+  solta entre dois buracos vira um ponto, para nao sumir.
+- **O SVG vem pronto do servidor.** Sem JavaScript a tela continua inteira: cada linha
+  tem o valor na ponta e ha a tabela com os mesmos numeros. O JS so acrescenta a mira e
+  o balaozinho — e some com o rotulo de ponta quando as duas linhas se encontram no canto
+  direito, porque dois rotulos empilhados se desgrudam das linhas e viram ruido.
+- **Retencao propria**: as amostras saem depois de **7 dias**
+  (`GAMEPANEL_SAMPLES_KEEP_DAYS`), na mesma limpeza de hora em hora do historico.
+
+O custo esta na coleta: cada amostra e uma leitura de medidores, a chamada mais cara do
+painel (o script remoto dorme 0,5s para tirar duas amostras de CPU). Por isso o intervalo
+e de 5 minutos e nao de um — 288 pontos por dia ja sao mais do que o grafico mostra.
 
 ### Terminal interativo
 
@@ -1042,6 +1089,45 @@ Detalhes que importam:
 - **Papeis**: qualquer um ve a lista; criar, ligar/desligar, remover e "rodar agora" sao de
   administrador. Remover o servidor do painel leva as tarefas dele junto.
 
+### Alertas
+
+O menu tem **Alertas** (so administrador): uma URL de **webhook** e o painel avisa quando
+algo acontece sem ninguem estar olhando. Serve para **Discord** (Editar canal &rarr;
+Integracoes &rarr; Webhooks &rarr; Copiar URL), **Slack** (Incoming Webhook) ou qualquer
+endereco que aceite `POST` de JSON — a chamada leva os campos `content` **e** `text`, e
+cada servico le o seu.
+
+O que da para avisar:
+
+| Evento | Padrao |
+|--------|--------|
+| Servidor parou de rodar | ligado |
+| Painel perdeu contato (SSH) | ligado |
+| Tarefa **agendada** falhou | ligado |
+| Disco quase cheio (limite ajustavel, 50-100%) | ligado |
+| Servidor voltou a rodar | desligado |
+| Contato restabelecido | desligado |
+
+As regras que evitam o alerta virar ruido — que e o que faz um canal deixar de ser lido:
+
+- **Avisa na mudanca, nunca em repeticao.** O alerta sai quando o servidor cai, e nao a
+  cada minuto enquanto ele estiver caido. Vale igual para o disco.
+- **Acao pelo painel nao vira susto.** Parar, reiniciar, atualizar ou restaurar derruba o
+  servico de proposito; nos 180s seguintes (`GAMEPANEL_ALERT_QUIET`) a queda e esperada e
+  nao gera alerta.
+- **Ao subir, o painel so anota.** Reiniciar o painel nao dispara um alerta por servidor
+  que ja estava parado.
+- **Sem contato, ele nao opina sobre o servico.** Se o SSH caiu, sai o alerta de contato e
+  so — dizer que o jogo parou seria invencao.
+- **De tarefa que falha, so a agendada avisa.** Quem clicou o botao ja esta com o erro na
+  tela.
+
+O estado do servidor e conferido a cada **60s** (`GAMEPANEL_MONITOR_EVERY`) e o disco a
+cada **10 min** (`GAMEPANEL_DISK_CHECK_EVERY`) — o medidor custa uma ida de SSH bem mais
+cara que o status. A URL fica no banco (nao exige redeploy para mudar);
+`GAMEPANEL_WEBHOOK_URL` serve so de valor inicial, para o deploy ja deixar pronto.
+**Trate a URL como senha**: quem a tiver escreve no seu canal.
+
 ### Historico
 
 O menu do topo tem **Historico**: tudo o que aconteceu, em todos os servidores, com filtro
@@ -1086,6 +1172,7 @@ Sao dois papeis:
 | Servidores, status, jogadores, log | sim | sim |
 | Start / stop / restart / update | sim | sim |
 | **Config** (arquivos ja registrados) | sim | sim |
+| Expulsar, banir e avisar jogadores | sim | sim |
 | Cadastrar / editar / remover servidor | nao | sim |
 | Registrar um novo arquivo na tela Config | nao | sim |
 | Terminal, Console e navegador de **Arquivos** | nao | sim |
@@ -1093,9 +1180,11 @@ Sao dois papeis:
 | Ver a lista de **Backups** e tirar copia | sim | sim |
 | Baixar, restaurar ou apagar um backup | nao | sim |
 | **Historico** global e por servidor | sim | sim |
+| **Graficos** de uso | sim | sim |
 | Historico de terminal, console e arquivos | nao | sim |
 | Ver os **Agendamentos** | sim | sim |
 | Criar, ligar/desligar ou remover agendamento | nao | sim |
+| **Alertas** (webhook) | nao | sim |
 | **Usuarios** | nao | sim |
 
 O corte segue o que da **root no container**: terminal, console e editor de arquivos
@@ -1154,6 +1243,8 @@ docker compose exec panel python3 /opt/gamepanel/test_gamefields.py # testes do 
 docker compose exec panel python3 /opt/gamepanel/test_players.py    # testes da contagem
 docker compose exec panel python3 /opt/gamepanel/test_users.py      # papeis, backup, upload
 docker compose exec panel python3 /opt/gamepanel/test_schedules.py  # agendamento e historico
+docker compose exec panel python3 /opt/gamepanel/test_alerts.py     # alertas por webhook
+docker compose exec panel python3 /opt/gamepanel/test_charts.py     # graficos de uso
 docker compose exec game-palworld sh -c 'echo 7 > /run/fake-players' # fixa a contagem
 docker compose down -v            # zera banco, chaves e arquivos de teste
 ```
@@ -1175,13 +1266,15 @@ docker compose down -v            # zera banco, chaves e arquivos de teste
   `Referer` nem pelo log de um proxy reverso
 - O painel serve **HTTP puro** — pensado para LAN. Nao exponha na internet sem um proxy
   reverso com TLS na frente
+- A URL do webhook de [Alertas](#alertas) e um segredo (quem a tiver escreve no seu canal)
+  e fica em texto puro no `panel.db`, como a senha da API de contagem
 - Comprometer o painel da acesso root aos **containers de jogo**, nao ao Proxmox
 
 ### Arquivos
 
 | Caminho (no CT do painel) | O que e |
 |---------------------------|---------|
-| `/opt/gamepanel/` | aplicacao (Flask + `static/terminal.js` + `static/metrics.js`) |
+| `/opt/gamepanel/` | aplicacao (Flask + `static/terminal.js`, `metrics.js`, `charts.js`) |
 | `/var/lib/gamepanel/panel.db` | SQLite: usuarios, servidores, historico |
 | `/var/lib/gamepanel/known_hosts` | host keys aprendidas dos containers |
 | `/etc/gamepanel/id_ed25519` | chave SSH do painel |

@@ -26,7 +26,9 @@ import struct
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -139,6 +141,28 @@ SCHEDULE_USER = "agendador"
 JOBS_KEEP_DAYS = int(os.environ.get("GAMEPANEL_JOBS_KEEP_DAYS", "60"))
 JOBS_PURGE_EVERY = 3600.0
 HISTORY_PAGE = 60
+
+# Amostras para os graficos de uso. Cada uma custa uma leitura de medidores — a chamada
+# mais cara do painel (o script remoto dorme 0,5s para tirar duas amostras de CPU) —,
+# entao o intervalo e generoso: 5 min dao 288 pontos por dia, de sobra para o grafico.
+SAMPLE_EVERY = float(os.environ.get("GAMEPANEL_SAMPLE_EVERY", "300"))
+SAMPLES_KEEP_DAYS = int(os.environ.get("GAMEPANEL_SAMPLES_KEEP_DAYS", "7"))
+
+# Alertas: o painel avisa por webhook (Discord, Slack, o que aceitar um POST de JSON)
+# quando um servidor cai, some do SSH, enche o disco ou quando uma tarefa agendada falha.
+# A URL fica no banco (tela "Alertas"); esta variavel so serve de valor inicial, para o
+# deploy poder deixar tudo pronto.
+WEBHOOK_URL_PADRAO = os.environ.get("GAMEPANEL_WEBHOOK_URL", "")
+WEBHOOK_TIMEOUT = float(os.environ.get("GAMEPANEL_WEBHOOK_TIMEOUT", "6"))
+# De quanto em quanto tempo o painel confere o estado de cada servidor. Cada volta custa
+# uma ida de SSH por servidor — nao adianta descer muito.
+MONITOR_EVERY = float(os.environ.get("GAMEPANEL_MONITOR_EVERY", "60"))
+# O disco sai dos medidores, que custam bem mais caro (o script remoto dorme 0,5s para
+# tirar duas amostras). Ele nao enche em um minuto, entao a conferida e espacada.
+DISK_CHECK_EVERY = float(os.environ.get("GAMEPANEL_DISK_CHECK_EVERY", "600"))
+# Uma acao do painel (parar, reiniciar, atualizar) derruba o servidor de proposito. Nesta
+# janela depois dela, queda nao vira alerta — senao todo restart pelo botao viraria susto.
+ALERT_QUIET = float(os.environ.get("GAMEPANEL_ALERT_QUIET", "180"))
 
 # Padroes usados pelo botao "procurar arquivos de config".
 CONFIG_GLOBS = ("*.ini", "*.cfg", "*.conf", "*.json", "*.yaml", "*.yml", "*.properties", "*.txt")
@@ -296,6 +320,26 @@ CREATE TABLE IF NOT EXISTS schedules (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sched_server ON schedules(server_id);
+
+-- Uma linha por servidor a cada SAMPLE_EVERY: e o que permite responder "por que travou
+-- ontem a noite" depois que a noite passou. CASCADE junto com o servidor.
+CREATE TABLE IF NOT EXISTS samples (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  taken_at  TEXT NOT NULL,
+  cpu_pct   REAL,
+  mem_pct   REAL,
+  players   INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_samples ON samples(server_id, taken_at);
+
+-- Configuracao que se muda pela tela e tem de sobreviver ao restart do painel (hoje so
+-- os alertas). Fica aqui, e nao em variavel de ambiente, para nao exigir redeploy.
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -517,11 +561,25 @@ def _check_csrf():
     return None
 
 
+def static_url(nome: str) -> str:
+    """URL de um arquivo estatico com a marca do mtime.
+
+    Sem isto, um deploy que muda o style.css ou o terminal.js continua servindo o que o
+    navegador guardou — e o relato chega como "a tela quebrou depois da atualizacao".
+    """
+    try:
+        marca = int(os.path.getmtime(os.path.join(app.static_folder, nome)))
+    except OSError:
+        marca = 0
+    return url_for("static", filename=nome, v=marca)
+
+
 @app.context_processor
 def _inject():
     usuario = usuario_logado()
     return {
         "csrf_token": csrf_token,
+        "static_url": static_url,
         "current_user": usuario["username"] if usuario else None,
         # As telas escondem o que o operador nao pode abrir. Quem manda e o
         # @admin_required na rota; isto aqui e so para nao mostrar botao que da 403.
@@ -534,6 +592,9 @@ def _inject():
         # A tela precisa saber se a contagem esta ligada, e ela pode vir da porta de
         # consulta OU do log — nao da para olhar so o query_port.
         "player_source": player_source,
+        # Quais acoes a API daquele servidor aceita (vazio na maioria dos jogos).
+        "acoes_de_jogador": acoes_de_jogador,
+        "rotulo_de_acao": PLAYER_ACTION_LABELS,
     }
 
 
@@ -604,6 +665,38 @@ def ssh_output(server: sqlite3.Row, remote_cmd: str, timeout: int = QUICK_TIMEOU
 
 def q(*parts: str) -> str:
     return " ".join(shlex.quote(p) for p in parts)
+
+
+def em_paralelo(tarefas: dict, timeout: float = 40.0) -> dict:
+    """Roda varias leituras remotas ao mesmo tempo; devolve {nome: (valor, erro)}.
+
+    Cada uma custa a sua ida de SSH, e elas nao dependem umas das outras — em serie a
+    tela paga a soma, e com um servidor fora do ar paga a soma dos timeouts.
+
+    Nada aqui pode tocar no `g` do Flask (a conexao por request nao atravessa thread).
+    As funcoes usadas na tela de detalhe ou nao falam com o banco, ou abrem conexao
+    propria — o `http_login` da contagem por API e o caso, e ele ja faz assim.
+    """
+    saida: dict = {}
+    lock = threading.Lock()
+
+    def work(nome, funcao):
+        try:
+            valor, erro = funcao(), ""
+        except (RemoteError, QueryError) as exc:
+            valor, erro = None, str(exc)
+        with lock:
+            saida[nome] = (valor, erro)
+
+    threads = [threading.Thread(target=work, args=(n, f), daemon=True)
+               for n, f in tarefas.items()]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=timeout)
+    for nome in tarefas:
+        saida.setdefault(nome, (None, MSG_TIMEOUT))
+    return saida
 
 
 def public_key() -> str:
@@ -880,8 +973,13 @@ def _split_status(bruto: str) -> tuple[str, int]:
     return bruto[:pos].rstrip("\n"), status
 
 
-def http_json(server: sqlite3.Row, url: str, auth: str, corpo: str):
-    """Busca a URL de dentro do container e devolve o JSON ja interpretado."""
+def http_json(server: sqlite3.Row, url: str, auth: str, corpo: str, exigir_json: bool = True):
+    """Chama a URL de dentro do container e devolve o JSON ja interpretado.
+
+    `exigir_json=False` para quem so quer saber se deu certo: expulsar, banir e avisar
+    respondem 200 com o corpo VAZIO, e ai "a resposta nao e JSON" seria um erro inventado
+    em cima de uma acao que funcionou.
+    """
     url = (url or "").strip()
     if len(url) > HTTP_URL_MAX or not URL_RE.match(url):
         raise QueryError("URL invalida (ex.: http://127.0.0.1:8212/v1/api/players)")
@@ -907,6 +1005,8 @@ def http_json(server: sqlite3.Row, url: str, auth: str, corpo: str):
     try:
         return json.loads(texto)
     except ValueError:
+        if not exigir_json:
+            return {}
         amostra = texto.strip()[:120] or "(vazia)"
         raise QueryError(f"a resposta nao e JSON: {amostra}")
 
@@ -952,6 +1052,24 @@ def _nome_do_item(item) -> str:
         valor = por_slug.get(chave)
         if isinstance(valor, str) and valor.strip():
             return valor.strip()
+    return ""
+
+
+# Kick e ban pedem um identificador, nunca o nome: nome muda, repete e nao e chave.
+ID_KEYS = ("userid", "playeruid", "playerid", "steamid", "accountid", "uid")
+
+
+def _id_do_item(item) -> str:
+    """Identificador do jogador, quando a API publica um. Vazio quando nao publica."""
+    if not isinstance(item, dict):
+        return ""
+    por_slug = {_slug(k): v for k, v in item.items()}
+    for chave in ID_KEYS:
+        valor = por_slug.get(chave)
+        if isinstance(valor, bool) or not isinstance(valor, (str, int)):
+            continue
+        if str(valor).strip():
+            return str(valor).strip()
     return ""
 
 
@@ -1026,7 +1144,8 @@ def read_players_json(dados, caminho_lista: str = "", caminho_contagem: str = ""
         for item in lista[:128]:
             nome = _nome_do_item(item)
             if nome:
-                nomes.append({"name": nome, "since": "", "score": 0, "seconds": 0})
+                nomes.append({"name": nome, "id": _id_do_item(item), "since": "",
+                              "score": 0, "seconds": 0})
         if quantos is None:
             quantos = len(lista)
 
@@ -1090,10 +1209,14 @@ def http_login(server: sqlite3.Row) -> str:
     return token
 
 
-def players_from_http(server: sqlite3.Row) -> dict:
-    if not (server["http_url"] or "").strip():
-        raise QueryError("informe a URL da API do jogo")
+def chama_api_do_jogo(server: sqlite3.Row, url: str, corpo: str = "",
+                      exigir_json: bool = True):
+    """Chama a API do jogo com a credencial cadastrada, renovando o token se ele venceu.
 
+    Mora aqui, e nao dentro do players_from_http, porque a contagem deixou de ser a unica
+    coisa que fala com essa API: expulsar, banir e avisar usam a mesma porta, a mesma
+    senha e o mesmo token com prazo.
+    """
     com_login = _tem_login(server)
     if com_login:
         token = _valor_guardado(server, "http_token")
@@ -1104,16 +1227,101 @@ def players_from_http(server: sqlite3.Row) -> dict:
         auth = server["http_auth"]
 
     try:
-        dados = http_json(server, server["http_url"], auth, server["http_body"])
+        return http_json(server, url, auth, corpo, exigir_json)
     except AuthError:
         if not com_login:
             raise
         # Token expirado ou revogado: renova uma vez e repete. Se falhar de novo,
         # o erro sobe - ai o problema e a credencial, nao o prazo do token.
-        dados = http_json(server, server["http_url"],
-                          f"bearer:{http_login(server)}", server["http_body"])
+        return http_json(server, url, f"bearer:{http_login(server)}", corpo, exigir_json)
 
+
+def players_from_http(server: sqlite3.Row) -> dict:
+    if not (server["http_url"] or "").strip():
+        raise QueryError("informe a URL da API do jogo")
+    dados = chama_api_do_jogo(server, server["http_url"], server["http_body"])
     return read_players_json(dados, server["http_list_path"], server["http_count_path"])
+
+
+# ------------------------------------------- acoes sobre quem esta jogando
+#
+# Expulsar, banir e avisar saem pela MESMA API que ja conta os jogadores — outra rota,
+# mesma credencial. Nao ha padrao entre os jogos, entao vai um catalogo, reconhecido pela
+# URL de contagem que o servidor ja tem cadastrada.
+#
+# Dos jogos que este repo instala, so o Palworld publica essas acoes (o Satisfactory nao
+# tem kick na API). Jogo novo entra como mais uma entrada aqui, sem tocar no resto.
+
+PLAYER_MSG_MAX = 200
+PLAYER_ACTION_LABELS = {
+    "announce": "Avisar todo mundo",
+    "kick": "Expulsar",
+    "ban": "Banir",
+}
+
+API_ACOES = (
+    {
+        "nome": "Palworld (REST)",
+        "url": re.compile(r"^(?P<base>https?://[^/\s]+/v1/api)/players/?$", re.I),
+        # acao -> (rota, corpo). {base} e a raiz da API, {jogador} o identificador e
+        # {mensagem} o texto que o jogo mostra.
+        "acoes": {
+            "announce": ("{base}/announce", {"message": "{mensagem}"}),
+            "kick": ("{base}/kick", {"userid": "{jogador}", "message": "{mensagem}"}),
+            "ban": ("{base}/ban", {"userid": "{jogador}", "message": "{mensagem}"}),
+        },
+    },
+)
+
+
+def api_de_acoes(server: sqlite3.Row) -> dict | None:
+    """A API deste servidor aceita acoes? Devolve a entrada do catalogo, ou None."""
+    if player_source(server) != "http":
+        return None
+    url = (server["http_url"] or "").strip()
+    for entrada in API_ACOES:
+        casa = entrada["url"].match(url)
+        if casa:
+            return {**entrada, "base": casa.group("base")}
+    return None
+
+
+def acoes_de_jogador(server: sqlite3.Row) -> list[str]:
+    """Quais acoes a tela pode oferecer neste servidor."""
+    api = api_de_acoes(server)
+    return sorted(api["acoes"]) if api else []
+
+
+def _preenche(molde: str, base: str, jogador: str, mensagem: str) -> str:
+    """Troca os marcadores do catalogo.
+
+    De proposito NAO usa str.format: a mensagem vem de quem esta digitando, e uma chave
+    solta ('{') estouraria o format — ou pior, viraria um caminho para dentro do objeto.
+    """
+    return (molde.replace("{base}", base)
+                 .replace("{jogador}", jogador)
+                 .replace("{mensagem}", mensagem))
+
+
+def acao_de_jogador(server: sqlite3.Row, acao: str, jogador: str, mensagem: str) -> str:
+    """Executa a acao na API do jogo. Devolve a frase que vai para a tela."""
+    api = api_de_acoes(server)
+    if not api or acao not in api["acoes"]:
+        raise QueryError("este servidor nao publica essa acao")
+    if acao == "announce":
+        if not mensagem:
+            raise QueryError("escreva o aviso")
+    elif not jogador:
+        raise QueryError("nao sei quem expulsar: a API nao publicou o identificador"
+                         " deste jogador")
+
+    rota, molde = api["acoes"][acao]
+    corpo = {chave: _preenche(valor, api["base"], jogador, mensagem)
+             for chave, valor in molde.items()}
+    # exigir_json=False: estas rotas respondem 200 com o corpo vazio.
+    chama_api_do_jogo(server, _preenche(rota, api["base"], jogador, mensagem),
+                      json.dumps(corpo), exigir_json=False)
+    return PLAYER_ACTION_LABELS.get(acao, acao)
 
 
 # ------------------------------------------------------ jogadores (pelo log)
@@ -1981,6 +2189,8 @@ JOB_LABELS["upload-file"] = "Arquivo enviado"
 JOB_LABELS["backup"] = "Backup"
 JOB_LABELS["restore-backup"] = "Backup restaurado"
 JOB_LABELS["delete-backup"] = "Backup apagado"
+# Moderacao nao da root em container nenhum: e operacao, e fica visivel para o operador.
+JOB_LABELS["player-action"] = "Acao sobre jogador"
 
 # O historico guarda a saida INTEIRA do que rodou. Estas acoes so um admin consegue
 # disparar (console, terminal, editor de arquivos), entao a saida delas — que carrega o
@@ -2094,11 +2304,253 @@ def start_job(
                 " WHERE id=?",
                 (status, code, output.strip()[-200000:], now_iso(), job_id),
             )
+        # Falha de tarefa AGENDADA vira alerta: e a unica que ninguem esta olhando. Quem
+        # clicou o botao ja esta com o resultado na tela.
+        if status == "error" and username == SCHEDULE_USER:
+            try:
+                notifica(conn2, "job-falhou",
+                         f"{target.get('name', '?')}: {job_label(action)} falhou",
+                         (output or "").strip()[-500:])
+            except Exception:  # noqa: BLE001 - alerta nunca derruba o job
+                app.logger.exception("falha ao avisar sobre o job %s", job_id)
         conn2.close()
         invalidate_status(server_id)
 
     threading.Thread(target=run, daemon=True).start()
     return job_id
+
+
+# ----------------------------------------------------------------- alertas
+#
+# O painel ja sabe o estado de cada servidor (e a tela do dashboard pergunta o tempo
+# todo). O que faltava era ele CONTAR isso para alguem sem ninguem estar olhando: um
+# POST de JSON para a URL que o Discord ou o Slack dao de graca.
+
+ALERT_EVENTS = {
+    "caiu": "Servidor parou de rodar",
+    "voltou": "Servidor voltou a rodar",
+    "inacessivel": "Painel perdeu contato (SSH)",
+    "acessivel": "Contato restabelecido",
+    "job-falhou": "Tarefa agendada falhou",
+    "disco-cheio": "Disco quase cheio",
+}
+# O que vem ligado: as mas noticias. 'voltou'/'acessivel' sao alivio, nao urgencia — quem
+# quiser o par completo liga na tela.
+ALERT_DEFAULT = "caiu,inacessivel,job-falhou,disco-cheio"
+DISK_PCT_DEFAULT = 90
+
+
+def config_get(conn: sqlite3.Connection, chave: str, padrao: str = "") -> str:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (chave,)).fetchone()
+    return row["value"] if row else padrao
+
+
+def config_set(conn: sqlite3.Connection, chave: str, valor: str) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (chave, valor),
+        )
+
+
+def webhook_config(conn: sqlite3.Connection) -> dict:
+    eventos = config_get(conn, "webhook_events", ALERT_DEFAULT)
+    try:
+        disco = int(config_get(conn, "webhook_disk_pct", str(DISK_PCT_DEFAULT)))
+    except ValueError:
+        disco = DISK_PCT_DEFAULT
+    return {
+        "url": config_get(conn, "webhook_url", WEBHOOK_URL_PADRAO).strip(),
+        "eventos": {e for e in eventos.split(",") if e in ALERT_EVENTS},
+        "disco": min(100, max(50, disco)),
+    }
+
+
+def envia_webhook(url: str, texto: str) -> str:
+    """Faz o POST. Devolve "" quando deu certo, ou o motivo da falha.
+
+    O corpo leva 'content' E 'text': o primeiro e o campo do Discord, o segundo o do
+    Slack. Cada um le o seu e ignora o outro, entao a mesma chamada serve para os dois
+    (e para qualquer coisa que aceite JSON).
+    """
+    if not URL_RE.match(url or ""):
+        return "URL invalida (use http:// ou https://)"
+    corpo = json.dumps({"content": texto, "text": texto}).encode("utf-8")
+    pedido = urllib.request.Request(
+        url, data=corpo, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(pedido, timeout=WEBHOOK_TIMEOUT) as resp:
+            resp.read(2048)
+        return ""
+    except urllib.error.HTTPError as exc:
+        return f"o webhook respondeu HTTP {exc.code}"
+    except Exception as exc:  # noqa: BLE001 - rede: DNS, TLS, timeout, recusa...
+        return f"nao consegui chamar o webhook: {exc}"
+
+
+def notifica(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str = "") -> bool:
+    """Manda um alerta, se ele estiver ligado. Devolve se chegou a sair."""
+    cfg = webhook_config(conn)
+    if not cfg["url"] or evento not in cfg["eventos"]:
+        return False
+    texto = f"**{titulo}**"
+    if detalhe:
+        texto += f"\n{detalhe}"
+    erro = envia_webhook(cfg["url"], texto)
+    if erro:
+        app.logger.warning("alerta '%s' nao saiu: %s", evento, erro)
+        return False
+    return True
+
+
+def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
+    """Teve acao do painel neste servidor ha pouco?
+
+    Reiniciar pelo botao derruba o servico por alguns segundos, e isso NAO e uma queda.
+    Sem esta janela, todo restart e todo update viraria alerta.
+    """
+    corte = (datetime.now(timezone.utc) - timedelta(seconds=ALERT_QUIET)).isoformat()
+    return conn.execute(
+        "SELECT 1 FROM jobs WHERE server_id = ? AND created_at >= ?"
+        " AND action IN ('start','stop','restart','update','restore-backup') LIMIT 1",
+        (sid, corte),
+    ).fetchone() is not None
+
+
+# server_id -> ultimo estado visto. Fica so na memoria de proposito: reiniciar o painel
+# refaz a linha de base, e ninguem recebe um alerta de algo que ja estava assim.
+_estado_monitor: dict[int, dict] = {}
+_ultimo_monitor = 0.0
+_ultimo_disco = 0.0
+
+
+def _alerta_de_estado(conn, server, estado, anterior, cfg) -> None:
+    sid, nome = int(server["id"]), server["name"]
+    alvo = f"{server['ssh_user']}@{server['host']}"
+
+    if estado["reachable"] != anterior["reachable"]:
+        if estado["reachable"]:
+            notifica(conn, "acessivel", f"{nome}: contato restabelecido", alvo)
+        else:
+            notifica(conn, "inacessivel", f"{nome}: painel perdeu contato",
+                     f"{alvo}\n{estado.get('error') or 'sem detalhe'}")
+        return  # sem contato nao da para falar do servico com honestidade
+
+    if not estado["reachable"]:
+        return
+    if estado["service"] == anterior["service"]:
+        return
+    if estado["service"] == "active":
+        notifica(conn, "voltou", f"{nome}: servidor voltou a rodar", alvo)
+    elif anterior["service"] == "active" and not _job_recente(conn, sid):
+        notifica(conn, "caiu", f"{nome}: servidor parou de rodar",
+                 f"{alvo}\nservico {server['service']} esta '{estado['service']}'")
+
+
+def _alerta_de_disco(conn, server, cfg) -> None:
+    sid = int(server["id"])
+    dados = server_metrics(server)
+    if dados.get("error"):
+        return
+    pior = max((d for d in dados.get("disks", []) if d.get("pct") is not None),
+               key=lambda d: d["pct"], default=None)
+    if not pior:
+        return
+    cheio = pior["pct"] >= cfg["disco"]
+    marca = _estado_monitor.setdefault(sid, {})
+    # So avisa na VIRADA: um disco a 95%% continua a 95%% na volta seguinte, e ninguem
+    # merece o mesmo alerta a cada minuto ate arrumar.
+    if cheio and not marca.get("disco_cheio"):
+        notifica(conn, "disco-cheio", f"{server['name']}: disco quase cheio",
+                 f"{pior['mount']} em {pior['pct']}% "
+                 f"({_human_size(pior['used'])} de {_human_size(pior['total'])})")
+    marca["disco_cheio"] = cheio
+
+
+def monitora_servidores(forcar: bool = False) -> int:
+    """Confere o estado de todo mundo e dispara o que mudou. Devolve quantos olhou."""
+    global _ultimo_monitor, _ultimo_disco
+    conn = db()
+    cfg = webhook_config(conn)
+    if not cfg["url"] or not cfg["eventos"]:
+        return 0
+
+    agora = time.monotonic()
+    if not forcar and agora - _ultimo_monitor < MONITOR_EVERY:
+        return 0
+    _ultimo_monitor = agora
+    ver_disco = "disco-cheio" in cfg["eventos"] and (
+        forcar or agora - _ultimo_disco >= DISK_CHECK_EVERY
+    )
+    if ver_disco:
+        _ultimo_disco = agora
+
+    servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
+    for server in servidores:
+        sid = int(server["id"])
+        estado = server_status(server)
+        anterior = _estado_monitor.get(sid)
+        if anterior is None:
+            # Primeira olhada: so anota. Alertar aqui encheria o canal de "esta parado"
+            # toda vez que o painel reiniciasse.
+            _estado_monitor[sid] = {"reachable": estado["reachable"],
+                                    "service": estado["service"]}
+        else:
+            _alerta_de_estado(conn, server, estado, anterior, cfg)
+            anterior.update(reachable=estado["reachable"], service=estado["service"])
+        if ver_disco and estado["reachable"]:
+            _alerta_de_disco(conn, server, cfg)
+
+    # Servidor removido do painel nao pode ficar guardando estado para sempre.
+    vivos = {int(s["id"]) for s in servidores}
+    for morto in [k for k in _estado_monitor if k not in vivos]:
+        _estado_monitor.pop(morto, None)
+    return len(servidores)
+
+
+# -------------------------------------------------------- amostras de uso
+
+_ultima_amostra = 0.0
+
+
+def coleta_amostras(forcar: bool = False) -> int:
+    """Guarda uma linha de CPU/memoria/jogadores por servidor. Devolve quantas gravou."""
+    global _ultima_amostra
+    agora = time.monotonic()
+    if not forcar and agora - _ultima_amostra < SAMPLE_EVERY:
+        return 0
+    _ultima_amostra = agora
+
+    conn = db()
+    carimbo = now_iso()
+    linhas = []
+    for server in conn.execute(SQL_ALL_SERVERS).fetchall():
+        dados = server_metrics(server)
+        if dados.get("error"):
+            # Container fora do ar nao vira linha: um buraco no grafico e a informacao
+            # certa, e zero seria mentira (nao foi "usou 0% de CPU").
+            continue
+        contagem = None
+        if player_source(server):
+            try:
+                jogando = server_players(server)
+                contagem = None if jogando.get("error") else jogando.get("players")
+            except (QueryError, RemoteError):
+                contagem = None
+        linhas.append((
+            int(server["id"]), carimbo, dados.get("cpu_pct"),
+            (dados.get("mem") or {}).get("pct"), contagem,
+        ))
+
+    if linhas:
+        with conn:
+            conn.executemany(
+                "INSERT INTO samples (server_id, taken_at, cpu_pct, mem_pct, players)"
+                " VALUES (?,?,?,?,?)", linhas,
+            )
+    return len(linhas)
 
 
 # ------------------------------------------------------------- agendamento
@@ -2219,16 +2671,28 @@ _ultima_limpeza = 0.0
 
 
 def limpa_historico(forcar: bool = False) -> int:
-    """Apaga jobs velhos. Devolve quantos sairam."""
+    """Apaga o que envelheceu — jobs e amostras. Devolve quantos JOBS sairam.
+
+    As duas limpezas andam juntas porque tem a mesma razao de existir (o banco do painel
+    nao pode crescer para sempre) e o mesmo relogio de hora em hora; so os prazos mudam,
+    porque uma amostra e minuscula perto da saida de um job.
+    """
     global _ultima_limpeza
-    if not JOBS_KEEP_DAYS:
-        return 0
     agora = time.monotonic()
     if not forcar and agora - _ultima_limpeza < JOBS_PURGE_EVERY:
         return 0
     _ultima_limpeza = agora
-    corte = (datetime.now(timezone.utc) - timedelta(days=JOBS_KEEP_DAYS)).isoformat()
     conn = db()
+
+    if SAMPLES_KEEP_DAYS:
+        velhas = (datetime.now(timezone.utc)
+                  - timedelta(days=SAMPLES_KEEP_DAYS)).isoformat()
+        with conn:
+            conn.execute("DELETE FROM samples WHERE taken_at < ?", (velhas,))
+
+    if not JOBS_KEEP_DAYS:
+        return 0
+    corte = (datetime.now(timezone.utc) - timedelta(days=JOBS_KEEP_DAYS)).isoformat()
     with conn:
         cur = conn.execute("DELETE FROM jobs WHERE created_at < ?", (corte,))
     return cur.rowcount or 0
@@ -2246,6 +2710,8 @@ def _scheduler_loop() -> None:
             # rotas (conexao propria, fechada no fim pelo teardown).
             with app.app_context():
                 roda_agendamentos()
+                monitora_servidores()
+                coleta_amostras()
                 limpa_historico()
         except Exception:  # noqa: BLE001 - a thread nao pode morrer por causa de um tick
             app.logger.exception("falha no agendador")
@@ -2519,6 +2985,42 @@ def players_use(sid: int):
     with _players_lock:
         _players_cache.pop(sid, None)
     return redirect(url_for("server_detail", sid=sid))
+
+
+@app.post("/servers/<int:sid>/players/acao")
+@login_required
+def player_action(sid: int):
+    """Expulsa, bane ou avisa, pela API do proprio jogo.
+
+    E operacao, nao administracao: moderar quem esta jogando nao da acesso ao container,
+    entao o operador pode — do mesmo jeito que ele ja reinicia o servidor.
+    """
+    server = _server_or_404(sid)
+    acao = (request.form.get("acao", "") or "").strip()
+    jogador = (request.form.get("jogador", "") or "").strip()[:200]
+    nome = (request.form.get("nome", "") or "").strip()[:100]
+    mensagem = (request.form.get("mensagem", "") or "").strip()[:PLAYER_MSG_MAX]
+    quem = nome or jogador or "todos"
+    registro = f"{PLAYER_ACTION_LABELS.get(acao, acao)}: {quem}"
+    if mensagem:
+        registro += f" ({mensagem})"
+    voltar = url_for("server_detail", sid=sid)
+
+    try:
+        rotulo = acao_de_jogador(server, acao, jogador, mensagem)
+    except (QueryError, RemoteError) as exc:
+        log_job("player-action", server, session.get("username", "?"),
+                command=registro, output=str(exc), status="error")
+        flash(f"Nao consegui: {exc}", "error")
+        return redirect(voltar)
+
+    log_job("player-action", server, session.get("username", "?"),
+            command=registro, output="a API aceitou o pedido")
+    # A contagem fica alguns segundos em cache e ainda tem quem acabou de sair.
+    with _players_lock:
+        _players_cache.pop(sid, None)
+    flash(f"{rotulo}: {quem}." if acao != "announce" else f"Aviso enviado: {mensagem}", "ok")
+    return redirect(voltar)
 
 
 @app.get("/api/servers/<int:sid>/metrics")
@@ -2810,17 +3312,30 @@ def server_detail(sid: int):
         abort(404)
     jobs = jobs_do_servidor(conn, sid, 15)
     lines = _log_lines_arg(request.args.get("lines"))
-    logs, log_cursor, log_error = "", "", ""
-    try:
-        logs, log_cursor = read_logs(server, lines)
-    except RemoteError as exc:
-        log_error = str(exc)
+
+    # Status, medidores, jogadores e log sao quatro idas de SSH independentes. Em serie a
+    # tela custava a soma das quatro — e com o container fora do ar, a soma dos quatro
+    # timeouts antes de mostrar "inacessivel".
+    lido = em_paralelo({
+        "status": lambda: server_status(server),
+        "metrics": lambda: server_metrics(server),
+        "players": lambda: server_players(server),
+        "logs": lambda: read_logs(server, lines),
+    })
+    # read_logs devolve (texto, cursor) — o par inteiro vem no lugar do "valor".
+    par_log, log_error = lido["logs"]
+    logs, log_cursor = par_log if par_log else ("", "")
+
     return render_template(
         "server_detail.html",
         server=server,
-        status=server_status(server),
-        metrics=server_metrics(server),
-        players=server_players(server),
+        status=lido["status"][0] or {"reachable": False, "service": "desconhecido",
+                                     "error": lido["status"][1]},
+        metrics=lido["metrics"][0] or {"error": lido["metrics"][1]},
+        # Mesma forma que o server_players devolve, para a tela nao precisar saber que
+        # houve erro na leitura em vez de erro na contagem.
+        players=lido["players"][0] or {"configured": True, "error": lido["players"][1],
+                                       "players": None, "list": [], "source": ""},
         jobs=jobs,
         logs=logs,
         log_cursor=log_cursor,
@@ -4664,6 +5179,195 @@ def schedule_run(aid: int):
     return redirect(url_for("job_detail", jid=job_id))
 
 
+# ---------------------------------------------------------- graficos de uso
+#
+# As amostras viram COORDENADAS aqui, no servidor: a tela recebe um SVG ja pronto e
+# continua legivel sem JavaScript. O JS por cima so acrescenta a mira e o balaozinho —
+# nenhum valor depende dele (a ponta de cada linha tem rotulo, e ha a tabela embaixo).
+
+CHART_W, CHART_H = 720, 220
+CHART_L, CHART_R, CHART_T, CHART_B = 44, 64, 12, 28
+# Duas amostras separadas por mais que isto viram um BURACO na linha, nao um traco reto
+# atravessando: servidor que passou duas horas fora do ar nao "andou em linha reta".
+CHART_GAP = 2.5
+CHART_TICKS = 5
+# Distancia minima entre dois rotulos de ponta para os dois continuarem legiveis.
+PONTA_MIN = 16
+
+CHART_RANGES = ((6, "6 horas"), (24, "24 horas"), (168, "7 dias"))
+
+# Slots 1 e 2 do catalogo categorico (versao para fundo escuro), validados contra o fundo
+# do painel: separacao para daltonismo muito acima do minimo. A cor fica na LINHA; texto,
+# eixo e legenda usam as cores de texto do painel.
+CHART_CPU = "#3987e5"
+CHART_MEM = "#d95926"
+
+# Tetos "limpos" para o eixo de jogadores: 3 jogadores nao merecem um eixo ate 3.
+TETOS = (1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 64, 80, 100,
+         150, 200, 300, 500, 750, 1000)
+
+
+def _teto_limpo(pico: float) -> int:
+    for teto in TETOS:
+        if pico <= teto:
+            return teto
+    return int(pico) + 1
+
+
+def monta_grafico(amostras, series, teto: float, inicio, fim, formato_tempo: str) -> dict:
+    """Transforma as amostras em coordenadas prontas para o SVG.
+
+    `series` diz quais colunas desenhar; cada uma vira uma lista de SEGMENTOS, porque o
+    grafico pode ter buracos (ver CHART_GAP).
+    """
+    span = max(1.0, (fim - inicio).total_seconds())
+    largura = CHART_W - CHART_L - CHART_R
+    alto = CHART_H - CHART_T - CHART_B
+
+    def px(quando) -> float:
+        return round(CHART_L + largura * ((quando - inicio).total_seconds() / span), 1)
+
+    def py(valor) -> float:
+        fatia = 0.0 if teto <= 0 else min(1.0, max(0.0, valor / teto))
+        return round(CHART_T + alto * (1 - fatia), 1)
+
+    linhas = []
+    for serie in series:
+        segmentos: list[list[str]] = []
+        atual: list[str] = []
+        anterior = None
+        ponta = None
+        for quando, valores in amostras:
+            valor = valores.get(serie["chave"])
+            if valor is None:
+                # Buraco: fecha o segmento e recomeca do outro lado.
+                if atual:
+                    segmentos.append(atual)
+                atual, anterior = [], None
+                continue
+            if anterior is not None and (quando - anterior).total_seconds() > SAMPLE_EVERY * CHART_GAP:
+                if atual:
+                    segmentos.append(atual)
+                atual = []
+            atual.append(f"{px(quando)},{py(valor)}")
+            ponta = {"x": px(quando), "y": py(valor), "valor": valor}
+            anterior = quando
+        if atual:
+            segmentos.append(atual)
+        if not segmentos:
+            continue
+        linhas.append({
+            "chave": serie["chave"],
+            "rotulo": serie["rotulo"],
+            "cor": serie["cor"],
+            "sufixo": serie.get("sufixo", ""),
+            # Um segmento de um ponto so nao vira polyline (nao teria comprimento): vira
+            # um ponto desenhado, senao a amostra solta sumiria da tela.
+            "tracos": [" ".join(s) for s in segmentos if len(s) > 1],
+            "pontos": [s[0] for s in segmentos if len(s) == 1],
+            "ponta": ponta,
+        })
+
+    # Rotulo direto so vale enquanto as pontas nao se encostam. Quando as linhas
+    # convergem no canto direito, empurrar um rotulo para cima do outro os desgruda das
+    # linhas e vira ruido — melhor deixar a legenda, a mira e a tabela carregarem, que e
+    # o que elas ja fazem.
+    pontas = [l["ponta"]["y"] for l in linhas if l["ponta"]]
+    rotula_ponta = all(
+        abs(a - b) >= PONTA_MIN
+        for i, a in enumerate(pontas) for b in pontas[i + 1:]
+    )
+
+    grade = []
+    for fatia in (0.0, 0.5, 1.0):
+        valor = teto * fatia
+        grade.append({
+            "y": py(valor),
+            "rotulo": f"{valor:g}" + (series[0].get("sufixo", "") if series else ""),
+        })
+
+    tempos = []
+    for i in range(CHART_TICKS):
+        quando = inicio + timedelta(seconds=span * i / (CHART_TICKS - 1))
+        tempos.append({"x": px(quando), "rotulo": quando.astimezone().strftime(formato_tempo)})
+
+    return {
+        "linhas": linhas,
+        "grade": grade,
+        "tempos": tempos,
+        "vazio": not linhas,
+        "rotula_ponta": rotula_ponta,
+        "w": CHART_W, "h": CHART_H,
+        "l": CHART_L, "r": CHART_W - CHART_R, "t": CHART_T, "b": CHART_H - CHART_B,
+        # O que a mira precisa para converter uma coordenada de volta em valor e em hora,
+        # sem o painel ter de mandar os dados duas vezes (o SVG ja os carrega).
+        "teto": teto,
+        "inicio_ms": int(inicio.timestamp() * 1000),
+        "span_s": span,
+    }
+
+
+@app.get("/servers/<int:sid>/graficos")
+@login_required
+def charts(sid: int):
+    """CPU, memoria e jogadores ao longo do tempo.
+
+    Sao DOIS graficos e nao um: porcentagem e contagem de gente nao cabem no mesmo eixo,
+    e forcar as duas escalas num plot so inventa uma relacao que nao existe nos dados.
+    """
+    server = _server_or_404(sid)
+    validas = [h for h, _ in CHART_RANGES]
+    try:
+        horas = int(request.args.get("h", "24"))
+    except ValueError:
+        horas = 24
+    if horas not in validas:
+        horas = 24
+
+    fim = datetime.now(timezone.utc)
+    inicio = fim - timedelta(hours=horas)
+    linhas = db().execute(
+        "SELECT taken_at, cpu_pct, mem_pct, players FROM samples"
+        " WHERE server_id = ? AND taken_at >= ? ORDER BY taken_at",
+        (sid, inicio.isoformat()),
+    ).fetchall()
+
+    amostras = []
+    for linha in linhas:
+        quando = _parse_dt(linha["taken_at"])
+        if quando:
+            amostras.append((quando, {"cpu": linha["cpu_pct"], "mem": linha["mem_pct"],
+                                      "players": linha["players"]}))
+
+    formato = "%d/%m" if horas > 48 else "%H:%M"
+    uso = monta_grafico(
+        amostras,
+        [{"chave": "cpu", "rotulo": "CPU", "cor": CHART_CPU, "sufixo": "%"},
+         {"chave": "mem", "rotulo": "Memoria", "cor": CHART_MEM, "sufixo": "%"}],
+        100, inicio, fim, formato,
+    )
+    pico = max((v["players"] for _, v in amostras if v["players"] is not None), default=0)
+    jogadores = monta_grafico(
+        amostras,
+        [{"chave": "players", "rotulo": "Jogadores", "cor": CHART_CPU}],
+        _teto_limpo(pico), inicio, fim, formato,
+    )
+
+    # A tabela e o par acessivel do grafico: mesmos numeros, sem depender de cor nem de
+    # passar o mouse. Do mais novo para o mais velho, que e como se procura um pico.
+    tabela = [
+        {"quando": q.astimezone().strftime("%d/%m %H:%M"), **v}
+        for q, v in reversed(amostras)
+    ][:200]
+
+    return render_template(
+        "charts.html", server=server, uso=uso, jogadores=jogadores, tabela=tabela,
+        horas=horas, faixas=CHART_RANGES, total=len(amostras), pico=pico,
+        a_cada=int(SAMPLE_EVERY / 60), guarda_dias=SAMPLES_KEEP_DAYS,
+        cores={"cpu": CHART_CPU, "mem": CHART_MEM},
+    )
+
+
 # --------------------------------------------------------------- historico
 
 
@@ -4755,6 +5459,63 @@ def account():
             flash("Senha alterada.", "ok")
             return redirect(url_for("dashboard"))
     return render_template("account.html")
+
+
+# ------------------------------------------------------------------ alertas
+
+
+@app.get("/alertas")
+@admin_required
+def alerts():
+    conn = db()
+    return render_template(
+        "alerts.html", cfg=webhook_config(conn), eventos=ALERT_EVENTS,
+        do_env=bool(WEBHOOK_URL_PADRAO), monitor=int(MONITOR_EVERY),
+        disco_a_cada=int(DISK_CHECK_EVERY / 60), quieto=int(ALERT_QUIET),
+    )
+
+
+@app.post("/alertas")
+@admin_required
+def alerts_save():
+    conn = db()
+    url = (request.form.get("webhook_url", "") or "").strip()[:400]
+    if url and not URL_RE.match(url):
+        flash("URL invalida (comece com http:// ou https://).", "error")
+        return redirect(url_for("alerts"))
+
+    escolhidos = [e for e in request.form.getlist("eventos") if e in ALERT_EVENTS]
+    disco = (request.form.get("disk_pct", "") or "").strip()
+    if not disco.isdigit() or not 50 <= int(disco) <= 100:
+        flash("O aviso de disco cheio vale de 50% a 100%.", "error")
+        return redirect(url_for("alerts"))
+
+    config_set(conn, "webhook_url", url)
+    config_set(conn, "webhook_events", ",".join(escolhidos))
+    config_set(conn, "webhook_disk_pct", disco)
+    # A linha de base fica velha quando a configuracao muda; zerando, a proxima volta do
+    # monitor so anota o estado atual em vez de avisar sobre o que ja estava assim.
+    _estado_monitor.clear()
+    flash("Alertas salvos." if url else "Alertas desligados (sem URL).", "ok")
+    return redirect(url_for("alerts"))
+
+
+@app.post("/alertas/testar")
+@admin_required
+def alerts_test():
+    """Manda uma mensagem agora, para conferir se a URL esta certa."""
+    conn = db()
+    cfg = webhook_config(conn)
+    if not cfg["url"]:
+        flash("Preencha e salve a URL antes de testar.", "error")
+        return redirect(url_for("alerts"))
+    erro = envia_webhook(
+        cfg["url"],
+        f"**Teste do painel de jogos**\nSe voce esta lendo isto, os alertas funcionam."
+        f" ({usuario_logado()['username']})",
+    )
+    flash(erro or "Mensagem enviada - confira o canal.", "error" if erro else "ok")
+    return redirect(url_for("alerts"))
 
 
 # ------------------------------------------------------------------ usuarios

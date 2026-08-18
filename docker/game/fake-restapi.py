@@ -75,6 +75,22 @@ ROTAS = {
     "/v1/api/players": jogadores,
 }
 
+# Rotas de acao. Como as de verdade, elas respondem 200 com o corpo VAZIO - e justamente
+# esse detalhe que o painel precisa aguentar sem chamar de erro.
+ROTAS_POST = ("/v1/api/announce", "/v1/api/kick", "/v1/api/ban")
+ARQUIVO_ACOES = "/run/fake-actions.log"
+
+
+def registra_acao(rota: str, corpo: dict) -> None:
+    """Deixa a acao num arquivo, para os testes conferirem o que chegou."""
+    linha = json.dumps({"rota": rota, "corpo": corpo}, ensure_ascii=False)
+    print(f"fake-restapi: acao {linha}", flush=True)
+    try:
+        with open(ARQUIVO_ACOES, "a", encoding="utf-8") as fh:
+            fh.write(linha + "\n")
+    except OSError:
+        pass
+
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -92,18 +108,46 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(dados)
 
+    def _autorizado(self) -> bool:
+        # A de verdade exige Basic auth em tudo; e justamente o 401 que o assistente
+        # do painel usa para dizer "existe uma API aqui, ela so quer senha".
+        if self.headers.get("Authorization", "") == ESPERADO:
+            return True
+        self._responde(401, {"error": "unauthorized"},
+                       (("WWW-Authenticate", 'Basic realm="palworld"'),))
+        return False
+
     def do_GET(self) -> None:  # noqa: N802 - nome exigido pela stdlib
         rota = ROTAS.get(self.path.split("?")[0])
         if rota is None:
             self._responde(404, {"error": "not found"})
             return
-        # A de verdade exige Basic auth em tudo; e justamente o 401 que o assistente
-        # do painel usa para dizer "existe uma API aqui, ela so quer senha".
-        if self.headers.get("Authorization", "") != ESPERADO:
-            self._responde(401, {"error": "unauthorized"},
-                           (("WWW-Authenticate", 'Basic realm="palworld"'),))
+        if not self._autorizado():
             return
         self._responde(200, rota(quantos_agora()))
+
+    def do_POST(self) -> None:  # noqa: N802 - nome exigido pela stdlib
+        caminho = self.path.split("?")[0]
+        if caminho not in ROTAS_POST:
+            self._responde(404, {"error": "not found"})
+            return
+        if not self._autorizado():
+            return
+        tamanho = int(self.headers.get("Content-Length") or 0)
+        bruto = self.rfile.read(tamanho).decode("utf-8", "replace") if tamanho else ""
+        try:
+            corpo = json.loads(bruto) if bruto else {}
+        except ValueError:
+            self._responde(400, {"error": "body is not json"})
+            return
+        if caminho != "/v1/api/announce" and not str(corpo.get("userid", "")).strip():
+            self._responde(400, {"error": "userid is required"})
+            return
+        registra_acao(caminho, corpo)
+        # 200 com corpo VAZIO, como a de verdade.
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
 
 def main() -> None:

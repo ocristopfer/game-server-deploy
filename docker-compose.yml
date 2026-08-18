@@ -7,7 +7,9 @@
 # servidor de query A2S que reporta jogadores, uma API REST no formato da do Palworld e
 # os arquivos que o jogo de verdade teria (.ini, save binario, log grande). Da para
 # testar start/stop/update, medidores de recursos, as tres formas de contar jogadores,
-# terminal interativo e o editor/download de ponta a ponta.
+# terminal interativo, backup/restauracao, agendamento, alertas e o editor/upload/download
+# de ponta a ponta. A API REST tambem aceita kick/ban/announce (respondendo 200 com corpo
+# vazio, como a de verdade) e registra o que recebeu em /run/fake-actions.log.
 #
 # Os dois containers sao propositalmente diferentes: o palworld tem query A2S e API REST,
 # o dragonwilds nao tem nenhum dos dois (como o jogo real) e so anuncia no log.

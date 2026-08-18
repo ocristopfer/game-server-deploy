@@ -192,6 +192,48 @@ igual("porta com API guarda so as rotas uteis",
       [(i["port"], i["path"]) for i in resumo if i["port"] == 8212],
       [(8212, "/v1/api/players")])
 
+print("Acoes sobre jogadores")
+# Kick e ban pedem um identificador; o nome nao serve porque muda e repete.
+igual("acha o userId", panel._id_do_item({"name": "Ana", "userId": "steam_123"}), "steam_123")
+igual("aceita outras grafias", panel._id_do_item({"name": "Ana", "player_uid": "AB01"}), "AB01")
+igual("numero tambem vale", panel._id_do_item({"name": "Ana", "playerid": 42}), "42")
+igual("sem identificador devolve vazio", panel._id_do_item({"name": "Ana", "ping": 12}), "")
+igual("booleano nao e identificador", panel._id_do_item({"name": "Ana", "uid": True}), "")
+
+# O id entra na lista normalizada, ao lado do nome.
+lido = panel.read_players_json({"players": [{"name": "Ana", "userId": "steam_1"},
+                                            {"name": "Bea"}]})
+igual("id vem junto na lista", [p["id"] for p in lido["list"]], ["steam_1", ""])
+
+
+def servidor(url, origem="http"):
+    return {"http_url": url, "player_source": origem, "query_port": 0,
+            "join_re": "", "leave_re": ""}
+
+
+api = panel.api_de_acoes(servidor("http://127.0.0.1:8212/v1/api/players"))
+check("reconhece a API do Palworld", api is not None)
+igual("acha a raiz da API", api["base"], "http://127.0.0.1:8212/v1/api")
+igual("oferece as tres acoes", sorted(api["acoes"]), ["announce", "ban", "kick"])
+igual("com barra no fim tambem",
+      panel.api_de_acoes(servidor("http://127.0.0.1:8212/v1/api/players/"))["base"],
+      "http://127.0.0.1:8212/v1/api")
+
+# URL que nao e de API conhecida nao pode oferecer botao nenhum: a tela so mostra o que
+# existe do outro lado.
+for url in ("http://127.0.0.1:7777/api/v1", "http://127.0.0.1:8212/v1/api/metrics",
+            "http://127.0.0.1:8212/players", ""):
+    igual(f"nao inventa acao para {url!r}", panel.acoes_de_jogador(servidor(url)), [])
+igual("contagem pelo log nao tem acao",
+      panel.acoes_de_jogador(servidor("http://127.0.0.1:8212/v1/api/players", "log")), [])
+
+# A mensagem vem de quem digita: uma chave solta nao pode estourar a montagem do corpo.
+igual("chave solta na mensagem nao quebra",
+      panel._preenche("{mensagem}", "b", "j", "olha o {isso} ai"), "olha o {isso} ai")
+igual("troca os tres marcadores",
+      panel._preenche("{base}/x/{jogador}/{mensagem}", "http://a/v1", "id7", "oi"),
+      "http://a/v1/x/id7/oi")
+
 print()
 if falhas:
     print(f"{len(falhas)} teste(s) falharam: {', '.join(falhas)}")

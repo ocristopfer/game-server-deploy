@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Alertas &mdash; Painel de Jogos{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Alertas</h1>
+</div>
+
+<div class="flash">
+  O painel avisa por <strong>webhook</strong> quando algo acontece sem ninguem estar
+  olhando. Serve para <strong>Discord</strong> (Editar canal &rarr; Integracoes &rarr;
+  Webhooks &rarr; Copiar URL), <strong>Slack</strong> (Incoming Webhook) ou qualquer
+  endereco que aceite um <code>POST</code> de JSON &mdash; a mesma chamada leva os campos
+  <code>content</code> e <code>text</code>, entao cada um le o seu.
+</div>
+
+<div class="card">
+  <h2>Para onde avisar</h2>
+  <form method="post" action="{{ url_for('alerts_save') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>URL do webhook
+      <input name="webhook_url" value="{{ cfg.url }}" spellcheck="false"
+             placeholder="https://discord.com/api/webhooks/...">
+      <small>
+        Em branco desliga tudo. A URL e um segredo: quem a tiver escreve no seu canal.
+        {% if do_env %}O valor inicial veio de <code>GAMEPANEL_WEBHOOK_URL</code>; o que
+        for salvo aqui passa a valer no lugar dele.{% endif %}
+      </small>
+    </label>
+
+    <h3>O que avisar</h3>
+    <div class="opcoes">
+      {% for chave, rotulo in eventos.items() %}
+      <label class="checkbox">
+        <input type="checkbox" name="eventos" value="{{ chave }}"
+               {% if chave in cfg.eventos %}checked{% endif %}>
+        {{ rotulo }}
+      </label>
+      {% endfor %}
+    </div>
+    <p class="muted small">
+      As mas noticias vem ligadas. <em>Servidor voltou a rodar</em> e
+      <em>Contato restabelecido</em> ficam desligados por padrao &mdash; ligue se preferir
+      o par completo em vez de so o susto.
+    </p>
+
+    <label>Avisar quando o disco passar de
+      <input name="disk_pct" type="number" min="50" max="100" value="{{ cfg.disco }}">
+      <small>
+        Por cento, no disco mais cheio do container. Avisa uma vez, na virada: um disco a
+        95% continua a 95% na volta seguinte e ninguem merece o mesmo alerta a cada minuto.
+      </small>
+    </label>
+
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Salvar</button>
+    </div>
+  </form>
+
+  <form method="post" action="{{ url_for('alerts_test') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button class="btn" type="submit">Enviar mensagem de teste</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Como funciona</h2>
+  <ul class="filelist">
+    <li>O painel confere o estado de cada servidor a cada <strong>{{ monitor }}s</strong>
+      e o disco a cada <strong>{{ disco_a_cada }} min</strong> (o medidor custa bem mais
+      caro que o status).</li>
+    <li>Ele avisa na <strong>mudanca</strong>, nunca em repeticao: o alerta sai quando o
+      servidor cai, nao a cada volta enquanto ele estiver caido.</li>
+    <li>Parar, reiniciar, atualizar ou restaurar <strong>pelo painel</strong> nao vira
+      alerta &mdash; nos {{ quieto }}s seguintes a uma dessas acoes a queda e esperada.</li>
+    <li>Ao subir, o painel so <strong>anota</strong> o estado de todo mundo. Reiniciar o
+      painel nao dispara um alerta por servidor que ja estava parado.</li>
+    <li>De tarefa que falha, so a <strong>agendada</strong> vira alerta: quem clicou o
+      botao ja esta com o erro na tela.</li>
+  </ul>
+</div>
+{% endblock %}

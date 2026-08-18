@@ -310,6 +310,17 @@ for ruim in ("../../etc/passwd", "/etc/shadow", "x.tar.gz; rm -rf /", "sem-exten
           postar(chefe3, f"/servers/{alvo_id}/backups/remover", {"nome": ruim}).status_code, 400)
 
 
+print("Moderar jogador e operacao, nao administracao")
+# Expulsar e banir nao dao acesso ao container: quem ja pode reiniciar o servidor pode
+# moderar quem esta nele. O 400 vem da validacao da acao, DEPOIS de passar pelo papel —
+# e justamente isso que prova que o operador nao levou 403.
+resp = postar(peao2, f"/servers/{alvo_id}/players/acao", {"acao": "kick", "jogador": "x"})
+igual("operador nao leva 403 em acao de jogador", resp.status_code, 302)
+igual("admin tambem passa",
+      postar(chefe3, f"/servers/{alvo_id}/players/acao",
+             {"acao": "announce", "mensagem": "oi"}).status_code, 302)
+
+
 print("Volta do login so aceita destino interno")
 # "/" no comeco nao basta: para o navegador "//host" e "/\\host" sao enderecos absolutos,
 # e mandariam quem acabou de digitar a senha para outro site.
