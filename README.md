@@ -131,8 +131,11 @@ Layout de referencia (o do `.env.example`):
 | Enshrouded | `.\deploy-game.ps1 -Game enshrouded` | 15636/udp, 15637/udp |
 | DayZ | `.\deploy-game.ps1 -Game dayz` | 2302-2304/udp, 27016/udp |
 | Icarus | `.\deploy-game.ps1 -Game icarus` | 17777/udp, 27017/udp |
+| TeamSpeak 6 Server | `.\deploy-game.ps1 -Game teamspeak` | 9987/udp, 30033/tcp |
 
-Troque `deploy-game.ps1` por `deploy-docker.ps1` para o mesmo jogo em Docker. Alem da
+O TeamSpeak so existe no caminho Proxmox/LXC (nao vem da Steam, entao `deploy-docker.ps1`
+nao o suporta) - veja [TeamSpeak 6 — notas](#teamspeak-6--notas). Troque `deploy-game.ps1`
+por `deploy-docker.ps1` para os demais jogos, em Docker. Alem da
 instalacao, cada `games/<jogo>.env` diz ao painel onde fica a configuracao
 (`CONFIG_PATH`/`CONFIG_FILES`), o que guardar no backup (`BACKUP_PATHS`) e como contar
 jogadores (`QUERY_PORT`/`PLAYER_SOURCE`) — e o que faz o servidor nascer cadastrado, com
@@ -236,13 +239,16 @@ mas para que todo redirecionamento seja **1:1** (porta externa = porta interna).
 | Enshrouded | 192.168.2.23 | `15636/udp`, `15637/udp` | — |
 | DayZ | 192.168.2.24 | `2302/udp`, `2303/udp`, `2304/udp`, `27016/udp` | — |
 | Icarus | 192.168.2.25 | `17777/udp`, `27017/udp` | — |
+| TeamSpeak 6 Server | 192.168.2.26 | `9987/udp`, `30033/tcp` | query `10011/tcp`, `10022/tcp`, `10080/tcp` |
 
 **O 1:1 nao e preferencia estetica** nos jogos que publicam query A2S — Palworld, DayZ e
 Icarus. Esses servidores anunciam a *propria* porta ao master server da Steam; se o NAT
 traduzir `27020` externo para `27015` interno, a Steam divulga uma porta que nao existe do
 lado de fora e o servidor fica invisivel no navegador, mesmo respondendo. Nos jogos de IP
 direto (Dragonwilds, Satisfactory, Enshrouded) uma traducao assimetrica funcionaria, mas
-manter tudo 1:1 evita ter uma porta na LAN e outra na internet.
+manter tudo 1:1 evita ter uma porta na LAN e outra na internet. O TeamSpeak nao publica A2S
+(nao e Steam), entao essa exigencia nao se aplica a ele - so importa que `9987` e `30033`
+cheguem no CT certo.
 
 **Regra de desempate: antiguidade.** Quando dois jogos querem a mesma porta, ela fica com
 o que foi configurado primeiro (a ordem dos CTIDs conta essa historia: 210 dragonwilds,
@@ -428,6 +434,40 @@ campos vazios, e uma regra sem porta de destino casa *qualquer* porta para aquel
 - Persistencia: `/opt/game/mpmissions/dayzOffline.chernarusplus/storage_1/` — o numero segue
   o `instanceId` do `serverDZ.cfg`. Logs e stats em `/opt/game/profiles/`
 - Memoria: 8GB (vanilla com ~20 jogadores fica perto de 4GB; mods passam disso)
+
+### TeamSpeak 6 — notas
+
+**Nao e um jogo Steam.** O TeamSpeak 6 Server e um tarball baixado direto do
+[GitHub da TeamSpeak](https://github.com/teamspeak/teamspeak6-server) (`tsserver`, hoje
+na versao **beta** `v6.0.0-beta12.1` — nao existe versao estavel do TS6 ainda). Por isso
+ele tem provisionamento proprio, `provision-teamspeak-lxc.sh`, em vez de reusar o
+`provision-game-lxc.sh` (que so sabe instalar via SteamCMD) — os dois scripts nao se tocam.
+`games/teamspeak.env` aponta pro script certo via `PROVISION_SCRIPT`; fora isso o comando e
+igual ao de qualquer outro jogo: `.\deploy-game.ps1 -Game teamspeak`.
+
+- **Versao fixada de proposito** (mesmo motivo do `PROTON_VERSION`, veja acima): o deploy
+  nunca segue "latest" sozinho. Atualizar = mudar `DOWNLOAD_VERSION`/`DOWNLOAD_URL` em
+  `games/teamspeak.env` e rodar o deploy de novo. Dentro do CT, `update-game` reinstala a
+  mesma versao (util como reparo); nao ha timer de checagem automatica como nos jogos Steam
+- Portas: **9987/UDP** (voz) e **30033/TCP** (transferencia de arquivos) vao no roteador.
+  As portas de consulta — **10011/TCP** (ServerQuery raw), **10022/TCP** (ServerQuery SSH)
+  e **10080/TCP** (WebQuery, a API HTTP) — ficam amarradas em `127.0.0.1` dentro do CT:
+  nunca redirecione nenhuma delas
+- **Credenciais do primeiro start**: o TeamSpeak imprime, **uma unica vez**, o token de
+  admin do cliente, o login/senha do ServerQuery e a api-key do WebQuery. O deploy captura
+  isso em `/opt/game/CREDENTIALS.txt` (`pct exec <CTID> -- cat /opt/game/CREDENTIALS.txt`)
+  — leia antes de perder, o proprio TeamSpeak nunca reemite depois da primeira vez (a unica
+  forma de gerar outro seria apagar o banco e perder toda a configuracao)
+- Contagem de jogadores: por padrao so a **contagem**, pelo log (`PLAYER_SOURCE=log`, sem
+  nomes — o TeamSpeak nao publica A2S). Para nomes de verdade, no painel **Configurar
+  contagem > API HTTP**: URL `http://127.0.0.1:10080/1/clientlist`, campo **lista** = `body`
+  (a resposta do WebQuery vem embrulhada em `{"body": [...], "status": {...}}`),
+  autenticacao `bearer:<api-key>` (a api-key esta no `CREDENTIALS.txt` acima)
+- Sem licenca paga (https://sales.teamspeak.com/), o servidor aceita **1 virtual server** e
+  **32 slots** — de sobra pra um grupo de amigos
+- A versao sem licenca usa `/dev/shm` (shared memory) pra detectar outra instancia rodando;
+  o deploy avisa se `/dev/shm` nao estiver montado como tmpfs dentro do CT
+- Memoria: 1GB e sobra — e um servidor de voz, nao um jogo. Disco: 8GB
 
 ## Jogos que exigem conta Steam
 

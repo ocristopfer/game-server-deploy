@@ -1022,7 +1022,7 @@ def http_json(server: sqlite3.Row, url: str, auth: str, corpo: str, exigir_json:
 # Chaves que os jogos costumam usar. Comparadas sem maiusculas nem separadores, entao
 # 'numConnectedPlayers', 'num_connected_players' e 'NUMCONNECTEDPLAYERS' sao a mesma.
 LIST_KEYS = {"players", "playerlist", "onlineplayers", "connectedplayers", "clients"}
-NAME_KEYS = ("name", "playername", "accountname", "username", "displayname", "nick")
+NAME_KEYS = ("name", "playername", "accountname", "username", "displayname", "nick", "clientnickname")
 COUNT_KEYS = {"players", "playercount", "numplayers", "onlineplayers", "currentplayernum",
               "numconnectedplayers", "playersonline", "online"}
 MAX_KEYS = {"maxplayers", "maxplayernum", "maxplayercount", "serverplayermaxnum",

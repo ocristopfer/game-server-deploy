@@ -485,7 +485,11 @@ function Write-LfFile([string]$Path, [string]$Content) {
     [System.IO.File]::WriteAllText($Path, $normalized, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-Copy-Item (Join-Path $ScriptDir "provision-game-lxc.sh") (Join-Path $BundleDir "provision-game-lxc.sh")
+# Qual .sh mandar pro Proxmox: provision-game-lxc.sh (SteamCMD) pra quase todo jogo, ou o
+# que o proprio games/<jogo>.env pedir (ex.: teamspeak.env usa provision-teamspeak-lxc.sh,
+# que nao depende da Steam). Sem a chave, comportamento identico ao de sempre.
+$ProvisionScript = Get-Cfg $jogo "PROVISION_SCRIPT" "provision-game-lxc.sh"
+Copy-Item (Join-Path $ScriptDir $ProvisionScript) (Join-Path $BundleDir $ProvisionScript)
 Write-LfFile (Join-Path $BundleDir "game.env") $GameEnvContent
 
 $deployLines = @()
@@ -511,7 +515,7 @@ if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para roo
 Invoke-Ssh $ProxmoxHost "chmod 700 '$RemoteBundleDir' && chmod 600 '$RemoteBundleDir/deploy.env'" | Out-Null
 
 Write-Host "Executando provisionamento no Proxmox (o download do jogo pode demorar)...`n" -ForegroundColor Cyan
-Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./provision-game-lxc.sh"
+Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./$ProvisionScript"
 if ($LASTEXITCODE -ne 0) { throw "Provisionamento falhou no host Proxmox (veja a saida acima)" }
 
 # O bundle local tem copia do deploy.env (senhas) - nao deixa sobrando no %TEMP%
