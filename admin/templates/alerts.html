@@ -48,6 +48,19 @@
     </p>
   {% endif %}
 
+  {% if pendencias %}
+    <div class="flash pendencia">
+      <strong>Ligado, mas sem onde olhar.</strong> Estes eventos nunca vao disparar do
+      jeito que o painel esta hoje &mdash; e canal em silencio parece "esta tudo bem":
+      <ul>
+        {% for chave, falta in pendencias.items() %}
+        <li><em>{{ eventos[chave] }}</em>: nenhum servidor tem {{ falta }}.</li>
+        {% endfor %}
+      </ul>
+      Ajuste no <a href="{{ url_for('dashboard') }}">cadastro de cada servidor</a>.
+    </div>
+  {% endif %}
+
   {% for h in cfg.destinos %}
   <form class="hook{% if not h.ativo %} desligado{% endif %}" method="post"
         action="{{ url_for('alerts_hook_save', hid=h.id) }}">
@@ -163,6 +176,25 @@
       servidor cai, nao a cada volta enquanto ele estiver caido.</li>
     <li>Cada evento vai para <strong>todos os destinos</strong> que o marcaram. Um
       destino fora do ar nao impede os outros de receber.</li>
+    <li><strong>Servico de pe nao quer dizer jogo de pe.</strong> Alem da queda, o painel
+      olha tres coisas que passariam batido:
+      <ul>
+        <li><em>Jogo quebrou</em> &mdash; o systemd marcou o servico como
+          <code>failed</code>. E diferente de "parou": alguem parar pelo painel nao
+          gera este alerta, e este aqui sai mesmo dentro da janela de silencio.</li>
+        <li><em>Loop de restart</em> &mdash; o jogo morre e o systemd levanta de novo,
+          sem parar. Entre uma queda e outra o servico responde <code>active</code>, e o
+          alerta de queda nunca dispara. Sai uma vez por episodio.</li>
+        <li><em>Jogo nao responde</em> &mdash; o processo esta vivo mas mudo na consulta
+          do proprio jogo, por {{ mudo_voltas }} verificacoes seguidas. So vale para quem
+          conta jogadores por <strong>A2S ou API HTTP</strong>: contagem por log nao
+          pergunta nada ao jogo.</li>
+      </ul>
+    </li>
+    <li><em>Erro no log do jogo</em> le o fim do log a cada
+      <strong>{{ log_a_cada }}s</strong> e procura a expressao cadastrada em cada
+      servidor. Sem expressao, nem a leitura acontece. A mesma linha nao avisa duas
+      vezes.</li>
     <li>Parar, reiniciar, atualizar ou restaurar <strong>pelo painel</strong> nao vira
       alerta &mdash; nos {{ quieto }}s seguintes a uma dessas acoes a queda e esperada.</li>
     <li>Ao subir, o painel so <strong>anota</strong> o estado de todo mundo. Reiniciar o

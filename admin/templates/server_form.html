@@ -72,6 +72,17 @@
       </label>
     </div>
 
+    <label>Log: linha de erro <span class="muted">(opcional)</span>
+      <input name="error_re" value="{{ data.error_re }}" spellcheck="false"
+             placeholder="Fatal error|Out of memory|Assertion failed">
+      <small>
+        Liga o alerta <strong>Erro no log do jogo</strong> em
+        <a href="{{ url_for('alerts') }}">Alertas</a>: o painel procura esta expressao no
+        fim do log e avisa quando ela aparece. Em branco, nem a leitura acontece.
+        Comece estreito &mdash; um padrao largo demais transforma o canal em copia do log.
+      </small>
+    </label>
+
     <div class="row">
       <label>API: URL
         <input name="http_url" value="{{ data.http_url }}" spellcheck="false"

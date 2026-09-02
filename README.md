@@ -1183,14 +1183,52 @@ digite a nova no campo abaixo dela; em branco, mantem a que ja esta la.
 
 O que da para avisar:
 
-| Evento | Padrao |
-|--------|--------|
-| Servidor parou de rodar | ligado |
-| Painel perdeu contato (SSH) | ligado |
-| Tarefa **agendada** falhou | ligado |
-| Disco quase cheio (limite ajustavel, 50-100%) | ligado |
-| Servidor voltou a rodar | desligado |
-| Contato restabelecido | desligado |
+| Evento | Padrao | Precisa configurar |
+|--------|--------|--------------------|
+| Servidor parou de rodar | ligado | — |
+| Jogo quebrou (servico em `failed`) | ligado | — |
+| Jogo caindo em loop de restart | ligado | — |
+| Jogo nao responde (de pe, mas mudo) | ligado | contagem por A2S ou API HTTP |
+| Painel perdeu contato (SSH) | ligado | — |
+| Tarefa **agendada** falhou | ligado | — |
+| Disco quase cheio (limite ajustavel, 50-100%) | ligado | — |
+| Servidor voltou a rodar | desligado | — |
+| Contato restabelecido | desligado | — |
+| Jogo voltou a responder | desligado | contagem por A2S ou API HTTP |
+| Erro no log do jogo | desligado | expressao de erro no cadastro |
+
+#### Servico de pe nao e jogo de pe
+
+O alerta de queda so enxerga o systemd: se a unidade responde `active`, para ele esta tudo
+bem. Isso deixa passar justamente as falhas mais chatas, em que o painel fica verde e
+ninguem consegue jogar. Os quatro eventos abaixo cobrem esse buraco:
+
+- **Jogo quebrou** — o systemd marcou a unidade como `failed` (saiu com erro, estourou o
+  limite de restarts, levou OOM). E diferente de "parou": parar pelo painel nao dispara
+  este alerta, e este aqui e o unico que **sai mesmo dentro da janela de silencio** — se
+  voce mandou reiniciar e o resultado foi `failed`, e exatamente o que voce precisa saber.
+- **Loop de restart** — com `Restart=always` o jogo pode morrer a cada 20 segundos que o
+  `ActiveState` responde `active` quase sempre: a queda nunca "acontece" e o canal fica
+  mudo. Quem denuncia e o `NRestarts` do systemd, que so sobe. Sai **uma vez por
+  episodio**; uma volta inteira sem restart novo fecha o episodio. Precisa de systemd
+  >= 235; sem isso o painel simplesmente nao avisa desse evento.
+- **Jogo nao responde** — o processo esta vivo mas mudo na consulta do proprio jogo, por
+  3 verificacoes seguidas (`GAMEPANEL_MUTE_ROUNDS`). Uma consulta A2S e UDP e perder um
+  pacote e rotina, por isso a insistencia. Nao conta enquanto o servico esta subindo nem
+  dentro da janela de silencio — jogo carregando mapa nao responde e isso e normal. So
+  vale para quem conta jogadores por **A2S ou API HTTP**: contagem por log nao pergunta
+  nada ao jogo, entao nao tem o que ficar mudo.
+- **Erro no log do jogo** — o painel le as ultimas 200 linhas do log (o mesmo da
+  contagem: `journalctl` ou o `log_path`) a cada 120s (`GAMEPANEL_LOG_CHECK_EVERY`) e
+  procura a **expressao de erro** cadastrada no servidor (campo *Log: linha de erro*).
+  Em branco, nem a leitura acontece. A mesma linha nao avisa duas vezes, e ha um teto de
+  um alerta destes por servidor a cada 10 min (`GAMEPANEL_LOG_ERR_COOLDOWN`) — a
+  expressao vem da tela, e um `.` distraido casa com tudo.
+
+A tela de Alertas avisa quando um evento esta **ligado sem ter onde olhar** (marcou "jogo
+nao responde" e nenhum servidor tem consulta configurada, por exemplo). Alerta ligado e
+mudo e pior que alerta desligado: o silencio do canal passa a ser lido como "esta tudo
+bem".
 
 As regras que evitam o alerta virar ruido — que e o que faz um canal deixar de ser lido:
 
@@ -1198,7 +1236,7 @@ As regras que evitam o alerta virar ruido — que e o que faz um canal deixar de
   cada minuto enquanto ele estiver caido. Vale igual para o disco.
 - **Acao pelo painel nao vira susto.** Parar, reiniciar, atualizar ou restaurar derruba o
   servico de proposito; nos 180s seguintes (`GAMEPANEL_ALERT_QUIET`) a queda e esperada e
-  nao gera alerta.
+  nao gera alerta. A excecao e o **jogo quebrou**: terminar em `failed` nunca e esperado.
 - **Ao subir, o painel so anota.** Reiniciar o painel nao dispara um alerta por servidor
   que ja estava parado.
 - **Sem contato, ele nao opina sobre o servico.** Se o SSH caiu, sai o alerta de contato e

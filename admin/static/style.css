@@ -321,6 +321,18 @@ label.curto { max-width: 34ch; }
 .regras li { margin-bottom: 7px; }
 .regras li:last-child { margin-bottom: 0; }
 .regras strong { color: var(--text); font-weight: 600; }
+.regras ul { margin: 6px 0 0; padding-left: 18px; }
+.regras ul li { margin-bottom: 5px; }
+.regras em { font-style: normal; color: var(--text); }
+
+/* Evento ligado que nao tem em qual servidor olhar: e um aviso, nao um erro - o painel
+   esta funcionando, so nao vai ter o que dizer sobre esse evento. */
+.flash.pendencia {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  font-size: .9rem; margin: 0 0 14px;
+}
+.flash.pendencia ul { margin: 6px 0; padding-left: 20px; }
+.flash.pendencia em { font-style: normal; color: var(--text); }
 /* Filtro do historico: rotulo em cima do campo, tudo na mesma linha. */
 .inline-field { display: flex; flex-direction: column; gap: 4px; font-size: .82rem; color: var(--muted); }
 .inline-field select { margin-top: 0; }

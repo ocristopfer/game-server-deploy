@@ -292,6 +292,9 @@ CREATE TABLE IF NOT EXISTS servers (
   http_login_body TEXT NOT NULL DEFAULT '',
   http_token_path TEXT NOT NULL DEFAULT '',
   http_token      TEXT NOT NULL DEFAULT '',
+  -- Alerta "erro no log": expressao regular procurada nas ultimas linhas do log do jogo
+  -- (o mesmo log da contagem — journalctl ou log_path). Vazia desliga a checagem.
+  error_re   TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   UNIQUE (host, ssh_port)
 );
@@ -428,6 +431,9 @@ MIGRATIONS = (
     ("servers", "http_login_body", "ALTER TABLE servers ADD COLUMN http_login_body TEXT NOT NULL DEFAULT ''"),
     ("servers", "http_token_path", "ALTER TABLE servers ADD COLUMN http_token_path TEXT NOT NULL DEFAULT ''"),
     ("servers", "http_token", "ALTER TABLE servers ADD COLUMN http_token TEXT NOT NULL DEFAULT ''"),
+    # Alerta de erro no log: a expressao e por servidor porque cada jogo grita de um
+    # jeito. Vazia (o padrao) desliga a checagem — inclusive a ida de SSH dela.
+    ("servers", "error_re", "ALTER TABLE servers ADD COLUMN error_re TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -1872,15 +1878,20 @@ def log_path_valido(bruto: str) -> str:
     return caminho
 
 
-def read_log_lines(server: sqlite3.Row) -> list[str]:
-    """Linhas do log: de um arquivo, quando o servidor tem um; senao do journalctl."""
+def read_log_lines(server: sqlite3.Row, limite: int = LOG_SCAN_MAX) -> list[str]:
+    """Linhas do log: de um arquivo, quando o servidor tem um; senao do journalctl.
+
+    O limite e parametro porque os dois usos pedem tamanhos bem diferentes: a contagem de
+    jogadores precisa do historico inteiro da subida (quem entrou e nao saiu), e a
+    varredura de erro so quer o rabo do log, de minuto em minuto.
+    """
     try:
         alvo = log_path_valido(_valor_guardado(server, "log_path"))
     except ValueError as exc:
         raise QueryError(str(exc))
     raw = ssh_output(
         server,
-        q("bash", "-lc", LOG_PLAYERS_SCRIPT, "gp", server["service"], str(LOG_SCAN_MAX), alvo),
+        q("bash", "-lc", LOG_PLAYERS_SCRIPT, "gp", server["service"], str(limite), alvo),
         timeout=60,
     )
     return raw.splitlines()
@@ -2258,15 +2269,32 @@ def server_status(server: sqlite3.Row, force: bool = False) -> dict:
         if cached and now - cached[0] < STATUS_TTL:
             return cached[1]
 
-    state = {"reachable": False, "service": "desconhecido", "error": ""}
+    state = {"reachable": False, "service": "desconhecido", "error": "",
+             "sub": "", "restarts": 0, "result": ""}
     try:
-        # `is-active` sai !=0 quando o servico esta parado, e isso nao e erro de conexao:
-        # o '|| true' garante que so uma falha de SSH de verdade caia no except.
-        raw = ssh_output(
-            server, q("systemctl", "is-active", server["service"]) + " || true"
-        )
+        # `systemctl show` no lugar de `is-active`: mesma ida de SSH, mas traz junto o que
+        # distingue "eu parei" de "quebrou" (Result) e o contador de restarts automaticos
+        # (NRestarts), que e o unico jeito de enxergar um loop de crash — entre uma queda
+        # e a proxima o `is-active` responde 'active' e o painel nunca via nada.
+        # Ele sai com 0 mesmo para unidade que nao existe, entao nao precisa de '|| true'.
+        raw = ssh_output(server, q(
+            "systemctl", "show", server["service"],
+            "-p", "ActiveState", "-p", "SubState", "-p", "NRestarts", "-p", "Result",
+        ))
+        campos = {}
+        for linha in raw.splitlines():
+            chave, _, valor = linha.partition("=")
+            campos[chave.strip()] = valor.strip()
         state["reachable"] = True
-        state["service"] = raw.splitlines()[-1].strip() if raw else "inactive"
+        state["service"] = campos.get("ActiveState") or "inactive"
+        state["sub"] = campos.get("SubState", "")
+        state["result"] = campos.get("Result", "")
+        # NRestarts so existe no systemd >= 235; sem ele o loop de restart nao e
+        # detectavel e o painel simplesmente nao avisa desse evento nesse servidor.
+        try:
+            state["restarts"] = int(campos.get("NRestarts", "0") or 0)
+        except ValueError:
+            state["restarts"] = 0
     except RemoteError as exc:
         state["error"] = str(exc)
         state["service"] = "inacessivel"
@@ -2466,15 +2494,42 @@ def start_job(
 ALERT_EVENTS = {
     "caiu": "Servidor parou de rodar",
     "voltou": "Servidor voltou a rodar",
+    "quebrou": "Jogo quebrou (servico em 'failed')",
+    "reiniciando": "Jogo caindo em loop de restart",
+    "travou": "Jogo nao responde (de pe, mas mudo)",
+    "respondeu": "Jogo voltou a responder",
+    "erro-no-log": "Erro no log do jogo",
     "inacessivel": "Painel perdeu contato (SSH)",
     "acessivel": "Contato restabelecido",
     "job-falhou": "Tarefa agendada falhou",
     "disco-cheio": "Disco quase cheio",
 }
-# O que vem ligado: as mas noticias. 'voltou'/'acessivel' sao alivio, nao urgencia — quem
-# quiser o par completo liga na tela.
-ALERT_DEFAULT = "caiu,inacessivel,job-falhou,disco-cheio"
+# Precisam de configuracao no cadastro do servidor para fazer alguma coisa. A tela avisa
+# quem esta marcado sem ter onde olhar — senao o alerta fica ligado e mudo, e a pessoa
+# conclui que o jogo nunca falha.
+ALERT_PRECISA_CONFIG = {
+    "travou": "contagem de jogadores por consulta (A2S) ou API HTTP",
+    "respondeu": "contagem de jogadores por consulta (A2S) ou API HTTP",
+    "erro-no-log": "uma expressao de erro no cadastro do servidor",
+}
+# O que vem ligado: as mas noticias que funcionam sem configurar nada. 'voltou',
+# 'acessivel' e 'respondeu' sao alivio, nao urgencia — quem quiser o par completo liga na
+# tela. 'erro-no-log' fica fora porque custa uma ida de SSH a mais por servidor e nao faz
+# nada sem uma expressao cadastrada.
+ALERT_DEFAULT = "caiu,quebrou,reiniciando,travou,inacessivel,job-falhou,disco-cheio"
 DISK_PCT_DEFAULT = 90
+
+# Quantas voltas seguidas o jogo precisa ficar mudo antes do alerta. Uma consulta A2S e
+# UDP: um pacote perdido e rotina, e alertar no primeiro silencio encheria o canal de
+# susto falso.
+MUTE_ROUNDS = max(1, int(os.environ.get("GAMEPANEL_MUTE_ROUNDS", "3")))
+# O log e o unico destes que custa uma ida de SSH propria, entao tem o seu intervalo.
+LOG_CHECK_EVERY = float(os.environ.get("GAMEPANEL_LOG_CHECK_EVERY", "120"))
+# Quantas linhas do fim do log olhar em cada passada.
+LOG_ERR_LINES = 200
+# Teto de um alerta de log por servidor nesta janela. A expressao vem da tela e um '.'
+# distraido casa com tudo — sem esta trava, um engano de digitacao vira uma enxurrada.
+LOG_ERR_COOLDOWN = float(os.environ.get("GAMEPANEL_LOG_ERR_COOLDOWN", "600"))
 
 
 def config_get(conn: sqlite3.Connection, chave: str, padrao: str = "") -> str:
@@ -2633,6 +2688,7 @@ def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
 _estado_monitor: dict[int, dict] = {}
 _ultimo_monitor = 0.0
 _ultimo_disco = 0.0
+_ultimo_log = 0.0
 
 
 def _alerta_de_estado(conn, server, estado, anterior, cfg) -> None:
@@ -2653,9 +2709,151 @@ def _alerta_de_estado(conn, server, estado, anterior, cfg) -> None:
         return
     if estado["service"] == "active":
         notifica(conn, "voltou", f"{nome}: servidor voltou a rodar", alvo)
-    elif anterior["service"] == "active" and not _job_recente(conn, sid):
+        return
+    if anterior["service"] != "active":
+        return
+
+    # 'failed' e o systemd dizendo que o jogo quebrou (saiu com erro, estourou o limite de
+    # restarts, foi morto pelo OOM). Nao passa pela janela de silencio: se alguem mandou
+    # reiniciar e o resultado foi 'failed', isso e exatamente o que a pessoa precisa saber.
+    if estado["service"] == "failed":
+        notifica(conn, "quebrou", f"{nome}: o jogo quebrou",
+                 f"{alvo}\nservico {server['service']} esta 'failed'"
+                 + (f" (Result={estado['result']})" if estado.get("result") else ""))
+    elif not _job_recente(conn, sid):
         notifica(conn, "caiu", f"{nome}: servidor parou de rodar",
                  f"{alvo}\nservico {server['service']} esta '{estado['service']}'")
+
+
+def _alerta_de_restart(conn, server, estado, anterior) -> None:
+    """Loop de crash: o systemd ressuscitando o jogo sem parar.
+
+    E o buraco que o alerta de queda nao cobre. Com `Restart=always` o jogo pode morrer a
+    cada 20 segundos que o `ActiveState` responde 'active' quase sempre — a queda nunca
+    'acontece' aos olhos do painel, e o canal fica em silencio enquanto ninguem consegue
+    jogar. Quem denuncia e o NRestarts, que so sobe.
+    """
+    sid, nome = int(server["id"]), server["name"]
+    agora = int(estado.get("restarts") or 0)
+    antes = int(anterior.get("restarts") or 0)
+
+    # O contador zera quando alguem reinicia a unidade na mao (e ao recarregar o daemon).
+    # Isso nao e um loop: e so uma linha de base nova.
+    if agora < antes:
+        anterior["restarts"] = agora
+        anterior["loop_avisado"] = False
+        return
+    if agora == antes:
+        # Uma volta inteira sem nenhum restart novo: o loop passou, e o proximo pode
+        # voltar a avisar.
+        anterior["loop_avisado"] = False
+        return
+
+    quantos = agora - antes
+    anterior["restarts"] = agora
+    # Enquanto o contador sobe volta apos volta, o alerta sai UMA vez. Repetir a cada
+    # minuto seria o mesmo spam que a regra da mudanca existe para evitar.
+    if anterior.get("loop_avisado") or _job_recente(conn, sid):
+        return
+    anterior["loop_avisado"] = True
+    notifica(
+        conn, "reiniciando", f"{nome}: o jogo esta caindo em loop",
+        f"{server['ssh_user']}@{server['host']}\n"
+        f"o systemd reiniciou {server['service']} {quantos}x desde a ultima olhada"
+        f" ({agora} no total desta subida)",
+    )
+
+
+def _alerta_de_mudez(conn, server, estado, anterior) -> None:
+    """Servico de pe, jogo mudo: nao responde mais a consulta do proprio jogo.
+
+    E o caso que mais engana. O processo continua vivo, o systemd continua feliz, o
+    dashboard continua verde — e ninguem consegue entrar. So vale para quem responde a
+    uma sondagem de verdade (A2S ou API HTTP); contagem por log nao pergunta nada ao
+    jogo, entao nao tem o que ficar mudo.
+    """
+    sid, nome = int(server["id"]), server["name"]
+    if player_source(server) not in ("a2s", "http"):
+        return
+
+    # Jogo que acabou de subir ainda esta carregando mapa e nao responde: contar essas
+    # voltas transformaria toda partida do zero num alerta. O mesmo para a janela de
+    # silencio depois de uma acao pelo painel.
+    if estado["service"] != "active" or _job_recente(conn, sid):
+        anterior["mudo"] = 0
+        return
+
+    dados = server_players(server)
+    if not dados.get("configured"):
+        return
+
+    if not dados.get("error"):
+        anterior["mudo"] = 0
+        if anterior.get("mudo_avisado"):
+            anterior["mudo_avisado"] = False
+            notifica(conn, "respondeu", f"{nome}: o jogo voltou a responder",
+                     f"{dados.get('players')} jogador(es) online")
+        return
+
+    anterior["mudo"] = int(anterior.get("mudo") or 0) + 1
+    if anterior["mudo"] < MUTE_ROUNDS or anterior.get("mudo_avisado"):
+        return
+    anterior["mudo_avisado"] = True
+    notifica(
+        conn, "travou", f"{nome}: o jogo nao responde",
+        f"{server['ssh_user']}@{server['host']}\n"
+        f"o servico {server['service']} esta rodando, mas o jogo nao responde ha"
+        f" {anterior['mudo']} verificacoes\n{dados['error']}",
+    )
+
+
+def _alerta_de_log(conn, server, anterior) -> None:
+    """Procura a expressao de erro do servidor no rabo do log do jogo.
+
+    E o unico alerta que depende de configuracao: cada jogo grita de um jeito, entao a
+    expressao vem do cadastro. Sem ela, nem a ida de SSH acontece.
+    """
+    padrao = _valor_guardado(server, "error_re")
+    if not padrao:
+        return
+    nome = server["name"]
+    try:
+        regex = compile_pattern(padrao, "erro")
+    except QueryError as exc:
+        app.logger.warning("expressao de erro de '%s' invalida: %s", nome, exc)
+        return
+    try:
+        linhas = read_log_lines(server, LOG_ERR_LINES)
+    except (RemoteError, QueryError) as exc:
+        # Log ilegivel nao e erro DO JOGO. Se o servidor sumiu, quem avisa e o
+        # 'inacessivel'; inventar um alerta de log aqui seria contar a mesma coisa duas
+        # vezes, com o nome errado.
+        app.logger.info("nao consegui ler o log de '%s' para procurar erro: %s", nome, exc)
+        return
+
+    achados = [l.strip() for l in linhas if regex.search(l)]
+    if not achados:
+        # A linha saiu do rabo do log: se o erro voltar, e um erro novo e avisa de novo.
+        anterior["ultimo_erro"] = ""
+        return
+
+    ultima = achados[-1][:300]
+    # Mesma linha da volta passada: um jogo que repete o erro a cada segundo renderia um
+    # alerta por minuto ate alguem desligar o webhook.
+    if ultima == anterior.get("ultimo_erro"):
+        return
+    # Trava de seguranca para expressao larga demais (um `.` casa tudo): mesmo com linhas
+    # sempre diferentes, o canal nao leva mais de um alerta destes por janela.
+    agora = time.monotonic()
+    ultimo_envio = float(anterior.get("erro_em") or 0)
+    if ultimo_envio and agora - ultimo_envio < LOG_ERR_COOLDOWN:
+        anterior["ultimo_erro"] = ultima
+        return
+    anterior["ultimo_erro"] = ultima
+    anterior["erro_em"] = agora
+    quantas = f" ({len(achados)} linhas casaram)" if len(achados) > 1 else ""
+    notifica(conn, "erro-no-log", f"{nome}: erro no log do jogo",
+             f"{server['ssh_user']}@{server['host']}{quantas}\n{ultima}")
 
 
 def _alerta_de_disco(conn, server, cfg) -> None:
@@ -2680,7 +2878,7 @@ def _alerta_de_disco(conn, server, cfg) -> None:
 
 def monitora_servidores(forcar: bool = False) -> int:
     """Confere o estado de todo mundo e dispara o que mudou. Devolve quantos olhou."""
-    global _ultimo_monitor, _ultimo_disco
+    global _ultimo_monitor, _ultimo_disco, _ultimo_log
     conn = db()
     cfg = webhook_config(conn)
     # Sem nenhum destino ligado pedindo algum evento, a volta inteira seria SSH gasto
@@ -2697,6 +2895,12 @@ def monitora_servidores(forcar: bool = False) -> int:
     )
     if ver_disco:
         _ultimo_disco = agora
+    # O log e o unico que custa uma ida de SSH so dele, entao anda no seu proprio ritmo.
+    ver_log = "erro-no-log" in cfg["eventos"] and (
+        forcar or agora - _ultimo_log >= LOG_CHECK_EVERY
+    )
+    if ver_log:
+        _ultimo_log = agora
 
     servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
     for server in servidores:
@@ -2705,14 +2909,33 @@ def monitora_servidores(forcar: bool = False) -> int:
         anterior = _estado_monitor.get(sid)
         if anterior is None:
             # Primeira olhada: so anota. Alertar aqui encheria o canal de "esta parado"
-            # toda vez que o painel reiniciasse.
+            # toda vez que o painel reiniciasse. Vale para o contador de restarts do
+            # mesmo jeito: o que interessa e quanto ele sobe DAQUI para a frente.
             _estado_monitor[sid] = {"reachable": estado["reachable"],
-                                    "service": estado["service"]}
-        else:
-            _alerta_de_estado(conn, server, estado, anterior, cfg)
-            anterior.update(reachable=estado["reachable"], service=estado["service"])
-        if ver_disco and estado["reachable"]:
-            _alerta_de_disco(conn, server, cfg)
+                                    "service": estado["service"],
+                                    "restarts": int(estado.get("restarts") or 0)}
+            continue
+
+        _alerta_de_estado(conn, server, estado, anterior, cfg)
+        if estado["reachable"]:
+            if "reiniciando" in cfg["eventos"]:
+                _alerta_de_restart(conn, server, estado, anterior)
+            else:
+                # Sem o evento ligado o contador ainda precisa acompanhar, senao ligar o
+                # alerta no meio do dia renderia um "loop" falso com tudo o que se
+                # acumulou enquanto ele estava desligado.
+                anterior["restarts"] = int(estado.get("restarts") or 0)
+            # Este custa uma sondagem no jogo (UDP ou HTTP) — nao vale a pena pagar por
+            # ela com o evento desligado.
+            if cfg["eventos"] & {"travou", "respondeu"}:
+                _alerta_de_mudez(conn, server, estado, anterior)
+            if ver_log:
+                _alerta_de_log(conn, server, anterior)
+            if ver_disco:
+                _alerta_de_disco(conn, server, cfg)
+        # Depois dos alertas: eles precisam comparar com o estado ANTERIOR, e atualizar
+        # antes faria toda mudanca desaparecer no meio do caminho.
+        anterior.update(reachable=estado["reachable"], service=estado["service"])
 
     # Servidor removido do painel nao pode ficar guardando estado para sempre.
     vivos = {int(s["id"]) for s in servidores}
@@ -3443,6 +3666,7 @@ def _form_server(form) -> tuple[dict, list[str]]:
             "player_source": origem,
             "join_re": _padrao(form.get("join_re"), "entrada", errors),
             "leave_re": _padrao(form.get("leave_re"), "saida", errors),
+            "error_re": _padrao(form.get("error_re"), "erro", errors),
             **_campos_http(form, errors),
         },
         errors,
@@ -3454,7 +3678,7 @@ def _form_server(form) -> tuple[dict, list[str]]:
 SERVER_FIELDS = (
     "name", "host", "ssh_port", "ssh_user", "service", "game_port", "notes",
     "config_path", "config_files", "backup_paths", "query_port", "player_source",
-    "join_re", "leave_re", "log_path",
+    "join_re", "leave_re", "log_path", "error_re",
     *HTTP_FIELDS,
 )
 SQL_INSERT_SERVER = (
@@ -5701,7 +5925,30 @@ def alerts():
         padrao=limpa_eventos(ALERT_DEFAULT), do_env=bool(WEBHOOK_URL_PADRAO),
         monitor=int(MONITOR_EVERY), disco_a_cada=int(DISK_CHECK_EVERY / 60),
         quieto=int(ALERT_QUIET), limite_hooks=WEBHOOK_MAX,
+        mudo_voltas=MUTE_ROUNDS, log_a_cada=int(LOG_CHECK_EVERY),
+        pendencias=alertas_sem_base(conn),
     )
+
+
+def alertas_sem_base(conn: sqlite3.Connection) -> dict:
+    """Eventos ligados que nao tem em quais servidores olhar.
+
+    Alerta ligado e mudo e pior do que alerta desligado: a pessoa marca 'jogo nao
+    responde', nenhum servidor tem consulta configurada, e o silencio do canal passa a
+    ser lido como "esta tudo bem".
+    """
+    ligados = webhook_config(conn)["eventos"]
+    if not ligados & set(ALERT_PRECISA_CONFIG):
+        return {}
+    servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
+    com_consulta = sum(1 for s in servidores if player_source(s) in ("a2s", "http"))
+    com_regex = sum(1 for s in servidores if _valor_guardado(s, "error_re"))
+    faltando = {}
+    if ("travou" in ligados or "respondeu" in ligados) and not com_consulta:
+        faltando["travou"] = ALERT_PRECISA_CONFIG["travou"]
+    if "erro-no-log" in ligados and not com_regex:
+        faltando["erro-no-log"] = ALERT_PRECISA_CONFIG["erro-no-log"]
+    return faltando
 
 
 @app.post("/alertas")

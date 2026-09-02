@@ -74,8 +74,9 @@ servidor = {"id": 1, "name": "Palworld", "host": "10.0.0.9", "ssh_user": "root",
             "service": "palworld.service"}
 
 
-def estado(reachable=True, service="active", error=""):
-    return {"reachable": reachable, "service": service, "error": error}
+def estado(reachable=True, service="active", error="", restarts=0, result="", sub=""):
+    return {"reachable": reachable, "service": service, "error": error,
+            "restarts": restarts, "result": result, "sub": sub}
 
 
 print("Configuracao")
@@ -247,6 +248,165 @@ panel._alerta_de_estado(conn, alvo, estado(service="inactive"),
 igual("passada a janela, a queda avisa", len(enviadas), 1)
 
 
+# ------------------------------------------------------- o jogo, nao o servico
+# O buraco que estes tres cobrem: "servico rodando" nao e "jogo funcionando". Um jogo
+# pode estar travado, caindo em loop ou cuspindo erro no log com o systemd achando que
+# esta tudo bem — e ate aqui nada disso virava alerta.
+
+print("O jogo quebrou (failed)")
+liga(["caiu", "quebrou"])
+with conn:
+    conn.execute("DELETE FROM jobs")
+
+limpa()
+panel._alerta_de_estado(conn, alvo, estado(service="failed", result="exit-code"),
+                        estado(service="active"), panel.webhook_config(conn))
+igual("servico em failed avisa", len(enviadas), 1)
+check("e a mensagem diz que QUEBROU, nao que pararam",
+      "quebrou" in enviadas[0][1] and "exit-code" in enviadas[0][1], enviadas[0][1])
+
+# Parar pelo painel e 'inactive' e cai na janela de silencio. Terminar em 'failed' logo
+# depois de uma acao e outra coisa: foi a acao que quebrou o jogo, e e o caso em que mais
+# se quer saber.
+with conn:
+    conn.execute(
+        "INSERT INTO jobs (server_id, target, action, status, username, created_at)"
+        " VALUES (?,?,?,?,?,?)",
+        (sid, "root@10.0.0.9", "restart", "ok", "admin", panel.now_iso()))
+limpa()
+panel._alerta_de_estado(conn, alvo, estado(service="inactive"),
+                        estado(service="active"), panel.webhook_config(conn))
+igual("parar pelo painel continua silencioso", len(enviadas), 0)
+panel._alerta_de_estado(conn, alvo, estado(service="failed"),
+                        estado(service="active"), panel.webhook_config(conn))
+igual("mas quebrar logo apos a acao avisa", len(enviadas), 1)
+with conn:
+    conn.execute("DELETE FROM jobs")
+
+
+print("Loop de restart")
+liga(["reiniciando"])
+anterior = {"reachable": True, "service": "active", "restarts": 2}
+
+limpa()
+panel._alerta_de_restart(conn, alvo, estado(restarts=5), anterior)
+igual("o contador subiu, avisa", len(enviadas), 1)
+check("a mensagem diz quantas vezes", "3x" in enviadas[0][1], enviadas[0][1])
+
+# Enquanto o contador continua subindo e o MESMO episodio: avisar a cada volta seria o
+# spam que a regra da mudanca existe para evitar.
+limpa()
+panel._alerta_de_restart(conn, alvo, estado(restarts=8), anterior)
+igual("continua subindo, nao repete", len(enviadas), 0)
+
+# Uma volta inteira sem restart novo fecha o episodio.
+panel._alerta_de_restart(conn, alvo, estado(restarts=8), anterior)
+check("volta sem restart destrava o alerta", not anterior["loop_avisado"])
+limpa()
+panel._alerta_de_restart(conn, alvo, estado(restarts=11), anterior)
+igual("um loop novo volta a avisar", len(enviadas), 1)
+
+# `systemctl restart` na mao zera o NRestarts. Isso e linha de base nova, nao um loop.
+limpa()
+panel._alerta_de_restart(conn, alvo, estado(restarts=0), anterior)
+igual("contador zerado nao vira alerta", len(enviadas), 0)
+igual("e a linha de base acompanha", anterior["restarts"], 0)
+
+
+print("Jogo de pe, mas mudo")
+liga(["travou", "respondeu"])
+# So quem responde a uma sondagem de verdade pode ficar mudo.
+sondado = dict(alvo, player_source="a2s", query_port=27015)
+resposta = {"configured": True, "error": "tempo esgotado", "players": None, "list": []}
+panel.server_players = lambda server, force=False: resposta
+mudez = {"reachable": True, "service": "active", "restarts": 0}
+
+limpa()
+for _ in range(panel.MUTE_ROUNDS - 1):
+    panel._alerta_de_mudez(conn, sondado, estado(), mudez)
+igual("nao avisa no primeiro silencio (UDP perde pacote)", len(enviadas), 0)
+panel._alerta_de_mudez(conn, sondado, estado(), mudez)
+igual(f"avisa na volta {panel.MUTE_ROUNDS}", len(enviadas), 1)
+check("a mensagem separa 'rodando' de 'respondendo'",
+      "nao responde" in enviadas[0][1], enviadas[0][1])
+
+limpa()
+panel._alerta_de_mudez(conn, sondado, estado(), mudez)
+igual("continua mudo, nao repete", len(enviadas), 0)
+
+limpa()
+resposta = {"configured": True, "error": "", "players": 4, "list": []}
+panel._alerta_de_mudez(conn, sondado, estado(), mudez)
+igual("voltou a responder, avisa uma vez", len(enviadas), 1)
+panel._alerta_de_mudez(conn, sondado, estado(), mudez)
+igual("e nao fica repetindo o alivio", len(enviadas), 1)
+
+# Jogo carregando mapa nao responde e nao pode virar alerta: a contagem so comeca com o
+# servico ativo e fora da janela de silencio.
+resposta = {"configured": True, "error": "tempo esgotado", "players": None, "list": []}
+limpa()
+mudez["mudo"] = 0
+for _ in range(panel.MUTE_ROUNDS + 2):
+    panel._alerta_de_mudez(conn, sondado, estado(service="activating"), mudez)
+igual("servico subindo nao conta como mudez", len(enviadas), 0)
+
+# Contagem por log nao pergunta nada ao jogo: nao ha o que ficar mudo.
+limpa()
+por_log = dict(alvo, player_source="log", query_port=0)
+for _ in range(panel.MUTE_ROUNDS + 2):
+    panel._alerta_de_mudez(conn, por_log, estado(), {"service": "active"})
+igual("contagem por log nao gera alerta de mudez", len(enviadas), 0)
+
+
+print("Erro no log do jogo")
+liga(["erro-no-log"])
+linhas = ["tudo bem por aqui", "Fatal error: world corrupted", "seguindo"]
+panel.read_log_lines = lambda server, limite=0: linhas
+com_regex = dict(alvo, error_re="Fatal error")
+memoria = {}
+
+limpa()
+panel._alerta_de_log(conn, com_regex, memoria)
+igual("erro no log avisa", len(enviadas), 1)
+check("e leva a linha inteira", "world corrupted" in enviadas[0][1], enviadas[0][1])
+
+# A mesma linha continua no rabo do log na volta seguinte. Avisar de novo seria um
+# alerta por minuto ate alguem arrumar.
+limpa()
+panel._alerta_de_log(conn, com_regex, memoria)
+igual("a mesma linha nao avisa duas vezes", len(enviadas), 0)
+
+# Cooldown: mesmo com linha nova, o canal nao leva uma enxurrada de uma expressao larga.
+limpa()
+linhas = ["Fatal error: outra coisa"]
+panel._alerta_de_log(conn, com_regex, memoria)
+igual("linha nova dentro da janela nao passa", len(enviadas), 0)
+check("mas a memoria acompanha a linha nova",
+      "outra coisa" in memoria["ultimo_erro"], memoria["ultimo_erro"])
+
+# Passada a janela, um erro novo volta a avisar.
+memoria["erro_em"] = 0
+limpa()
+linhas = ["Fatal error: mais uma"]
+panel._alerta_de_log(conn, com_regex, memoria)
+igual("passado o cooldown, avisa de novo", len(enviadas), 1)
+
+limpa()
+linhas = ["nada de mais aqui"]
+panel._alerta_de_log(conn, com_regex, memoria)
+igual("log limpo nao avisa", len(enviadas), 0)
+igual("e a memoria do erro e esquecida", memoria["ultimo_erro"], "")
+
+limpa()
+panel._alerta_de_log(conn, alvo, {})
+igual("servidor sem expressao nem chega a ler o log", len(enviadas), 0)
+
+# Expressao torta e problema de cadastro, nao motivo para derrubar a volta do monitor.
+limpa()
+panel._alerta_de_log(conn, dict(alvo, error_re="("), {})
+igual("expressao invalida nao estoura", len(enviadas), 0)
+
+
 print("Disco cheio")
 liga(["disco-cheio"], disco=90)
 discos = {"disks": [{"mount": "/", "pct": 40.0, "used": 4, "total": 10},
@@ -410,6 +570,50 @@ igual("limite fora da faixa e recusado e o anterior fica",
 
 postar(f"/alertas/destinos/{hid}/remover")
 igual("remover tira da lista", len(panel.webhooks_lista(conn)), 1)
+
+# Evento ligado sem nenhum servidor onde olhar: a tela tem de dizer isso em voz alta.
+# Alerta ligado e mudo e pior que desligado — o canal calado passa por "esta tudo bem".
+with conn:
+    conn.execute("DELETE FROM servers")
+    conn.execute(
+        "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"
+        " VALUES ('Sem consulta', '10.0.0.7', 22, 'root', 'x.service', ?)",
+        (panel.now_iso(),))
+    conn.execute("UPDATE webhooks SET eventos = 'travou,erro-no-log', ativo = 1")
+faltando = panel.alertas_sem_base(conn)
+igual("acusa os dois eventos sem base", sorted(faltando), ["erro-no-log", "travou"])
+html = tela()
+check("e a tela mostra o aviso", "Ligado, mas sem onde olhar" in html)
+
+# Configurado o que faltava, o aviso some.
+with conn:
+    conn.execute("UPDATE servers SET player_source = 'a2s', query_port = 27015,"
+                 " error_re = 'Fatal error'")
+igual("configurado, nao sobra pendencia", panel.alertas_sem_base(conn), {})
+check("e o aviso sai da tela", "Ligado, mas sem onde olhar" not in tela())
+
+# O cadastro precisa gravar a expressao de erro: sem isso o alerta de log nunca liga.
+sid_novo = conn.execute("SELECT id FROM servers").fetchone()["id"]
+resp = postar(f"/servers/{sid_novo}/edit", {
+    "name": "Sem consulta", "host": "10.0.0.7", "ssh_port": "22", "ssh_user": "root",
+    "service": "x.service", "player_source": "none", "error_re": "Out of memory",
+})
+igual("o cadastro grava a expressao de erro",
+      conn.execute("SELECT error_re FROM servers WHERE id = ?",
+                   (sid_novo,)).fetchone()["error_re"], "Out of memory")
+postar(f"/servers/{sid_novo}/edit", {
+    "name": "Sem consulta", "host": "10.0.0.7", "ssh_port": "22", "ssh_user": "root",
+    "service": "x.service", "player_source": "none", "error_re": "(",
+})
+igual("expressao que nao compila e recusada no cadastro",
+      conn.execute("SELECT error_re FROM servers WHERE id = ?",
+                   (sid_novo,)).fetchone()["error_re"], "Out of memory")
+
+form = cli.get(f"/servers/{sid_novo}/edit").get_data(as_text=True)
+check("o cadastro mostra o campo com o valor salvo",
+      'name="error_re"' in form and "Out of memory" in form)
+check("e o cadastro novo tambem tem o campo",
+      'name="error_re"' in cli.get("/servers/new").get_data(as_text=True))
 
 # A tela mexe em credenciais: operador nao entra.
 panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERADOR)
