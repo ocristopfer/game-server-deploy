@@ -154,6 +154,13 @@ SAMPLES_KEEP_DAYS = int(os.environ.get("GAMEPANEL_SAMPLES_KEEP_DAYS", "7"))
 # deploy poder deixar tudo pronto.
 WEBHOOK_URL_PADRAO = os.environ.get("GAMEPANEL_WEBHOOK_URL", "")
 WEBHOOK_TIMEOUT = float(os.environ.get("GAMEPANEL_WEBHOOK_TIMEOUT", "6"))
+# O Cloudflare na frente do Discord devolve 403 (erro 1010) para o User-Agent padrao do
+# urllib ("Python-urllib/3.x"), antes mesmo do pedido chegar no webhook. Mandar um
+# User-Agent proprio resolve, e nenhum outro destino se incomoda com ele.
+WEBHOOK_UA = os.environ.get("GAMEPANEL_WEBHOOK_UA", "GamePanel/1.0 (alertas)")
+# Teto de destinos. Cada alerta vira um POST por destino, em serie, dentro da volta do
+# monitor — uma lista sem fim faria a volta esperar por todos eles.
+WEBHOOK_MAX = int(os.environ.get("GAMEPANEL_WEBHOOK_MAX", "10"))
 # De quanto em quanto tempo o painel confere o estado de cada servidor. Cada volta custa
 # uma ida de SSH por servidor — nao adianta descer muito.
 MONITOR_EVERY = float(os.environ.get("GAMEPANEL_MONITOR_EVERY", "60"))
@@ -345,6 +352,18 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT ''
 );
+
+-- Destinos dos alertas. Cada linha e um canal (um Discord, um Slack, um endpoint
+-- proprio) com a SUA lista de eventos: da para mandar tudo para o canal da equipe e so
+-- 'servidor caiu' para o canal geral, sem os dois receberem a mesma coisa.
+CREATE TABLE IF NOT EXISTS webhooks (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  nome       TEXT NOT NULL DEFAULT '',
+  url        TEXT NOT NULL,
+  eventos    TEXT NOT NULL DEFAULT '',
+  ativo      INTEGER NOT NULL DEFAULT 1,
+  criado_em  TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -422,7 +441,41 @@ def init_db() -> None:
             if column not in cols:
                 for comando in (ddl if isinstance(ddl, tuple) else (ddl,)):
                     conn.execute(comando)
+        _migra_webhook_unico(conn)
     conn.close()
+
+
+def _migra_webhook_unico(conn: sqlite3.Connection) -> None:
+    """Leva o webhook antigo (settings.webhook_url) para a tabela de destinos.
+
+    A marca 'webhooks_migrado' e o que impede a volta: sem ela, quem apagasse o unico
+    destino veria o antigo renascer no restart seguinte.
+    """
+    ja = conn.execute(
+        "SELECT 1 FROM settings WHERE key = 'webhooks_migrado'"
+    ).fetchone()
+    if ja:
+        return
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('webhooks_migrado', '1')"
+        " ON CONFLICT(key) DO NOTHING"
+    )
+    antigo = conn.execute(
+        "SELECT value FROM settings WHERE key = 'webhook_url'"
+    ).fetchone()
+    # Sem nada no banco vale o do deploy: GAMEPANEL_WEBHOOK_URL era o valor inicial da
+    # URL unica e continua sendo o do primeiro destino.
+    url = (antigo["value"] if antigo else "").strip() or WEBHOOK_URL_PADRAO.strip()
+    if not url:
+        return
+    ev = conn.execute(
+        "SELECT value FROM settings WHERE key = 'webhook_events'"
+    ).fetchone()
+    conn.execute(
+        "INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
+        " VALUES (?, ?, ?, 1, ?)",
+        ("Webhook", url, (ev["value"] if ev else ALERT_DEFAULT), now_iso()),
+    )
 
 
 def now_iso() -> str:
@@ -2438,17 +2491,69 @@ def config_set(conn: sqlite3.Connection, chave: str, valor: str) -> None:
         )
 
 
+def limpa_eventos(bruto: str) -> set:
+    """Filtra pela lista conhecida: evento que saiu do codigo nao volta pelo banco."""
+    return {e for e in (bruto or "").split(",") if e in ALERT_EVENTS}
+
+
+def webhooks_lista(conn: sqlite3.Connection) -> list:
+    """Todos os destinos, na ordem de cadastro, com os eventos ja como conjunto."""
+    linhas = conn.execute(
+        "SELECT id, nome, url, eventos, ativo FROM webhooks ORDER BY id"
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "nome": r["nome"] or "Sem nome",
+            "url": r["url"],
+            "url_curta": mascara_url(r["url"]),
+            "eventos": limpa_eventos(r["eventos"]),
+            "ativo": bool(r["ativo"]),
+        }
+        for r in linhas
+    ]
+
+
 def webhook_config(conn: sqlite3.Connection) -> dict:
-    eventos = config_get(conn, "webhook_events", ALERT_DEFAULT)
+    """Estado dos alertas: os destinos, o que o conjunto deles cobre, e o limite do disco.
+
+    'eventos' e a UNIAO dos destinos ligados — e o que o monitor usa para decidir se vale
+    a pena olhar alguma coisa. Quem recebe o que se resolve depois, destino a destino.
+    """
     try:
         disco = int(config_get(conn, "webhook_disk_pct", str(DISK_PCT_DEFAULT)))
     except ValueError:
         disco = DISK_PCT_DEFAULT
+    destinos = webhooks_lista(conn)
+    cobertos = set()
+    for d in destinos:
+        if d["ativo"] and d["url"]:
+            cobertos |= d["eventos"]
     return {
-        "url": config_get(conn, "webhook_url", WEBHOOK_URL_PADRAO).strip(),
-        "eventos": {e for e in eventos.split(",") if e in ALERT_EVENTS},
+        "destinos": destinos,
+        "ativos": [d for d in destinos if d["ativo"] and d["url"]],
+        "eventos": cobertos,
         "disco": min(100, max(50, disco)),
     }
+
+
+def mascara_url(url: str) -> str:
+    """Deixa so o bastante para reconhecer o destino, sem expor o token.
+
+    A URL de webhook e uma credencial: quem le a tela por cima do ombro (ou num
+    screenshot colado num chat) nao deveria sair de la podendo escrever no canal.
+    """
+    if not url:
+        return ""
+    corte = url.split("://", 1)[-1]
+    host, _, resto = corte.partition("/")
+    if not resto:
+        return host
+    partes = [p for p in resto.split("/") if p]
+    if len(partes) >= 2:
+        # Discord: .../webhooks/<id>/<token>. O id identifica, o token e que e segredo.
+        return f"{host}/.../{partes[-2]}/{'*' * 8}"
+    return f"{host}/.../{'*' * 8}"
 
 
 def envia_webhook(url: str, texto: str) -> str:
@@ -2462,31 +2567,51 @@ def envia_webhook(url: str, texto: str) -> str:
         return "URL invalida (use http:// ou https://)"
     corpo = json.dumps({"content": texto, "text": texto}).encode("utf-8")
     pedido = urllib.request.Request(
-        url, data=corpo, headers={"Content-Type": "application/json"}
+        url,
+        data=corpo,
+        headers={"Content-Type": "application/json", "User-Agent": WEBHOOK_UA},
     )
     try:
         with urllib.request.urlopen(pedido, timeout=WEBHOOK_TIMEOUT) as resp:
             resp.read(2048)
         return ""
     except urllib.error.HTTPError as exc:
-        return f"o webhook respondeu HTTP {exc.code}"
+        # O corpo da resposta e onde o destino diz o que nao gostou (o Discord manda um
+        # JSON com 'message'). Sem ele, um 400 por payload torto e um 403 por bloqueio
+        # do Cloudflare ficam com a mesma cara na tela.
+        try:
+            motivo = exc.read(300).decode("utf-8", "replace").strip().replace("\n", " ")
+        except Exception:  # noqa: BLE001 - resposta ja consumida/fechada
+            motivo = ""
+        return f"o webhook respondeu HTTP {exc.code}" + (f": {motivo}" if motivo else "")
     except Exception as exc:  # noqa: BLE001 - rede: DNS, TLS, timeout, recusa...
         return f"nao consegui chamar o webhook: {exc}"
 
 
 def notifica(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str = "") -> bool:
-    """Manda um alerta, se ele estiver ligado. Devolve se chegou a sair."""
-    cfg = webhook_config(conn)
-    if not cfg["url"] or evento not in cfg["eventos"]:
+    """Manda o alerta para cada destino que pediu esse evento.
+
+    Devolve se saiu para ALGUEM. Um destino fora do ar (Discord de pe, Slack caido) nao
+    cala os outros: cada um e tentado e cada falha vai para o log com o nome do destino,
+    entao da para saber qual deles esta quebrado sem adivinhar.
+    """
+    alvos = [d for d in webhooks_lista(conn)
+             if d["ativo"] and d["url"] and evento in d["eventos"]]
+    if not alvos:
         return False
     texto = f"**{titulo}**"
     if detalhe:
         texto += f"\n{detalhe}"
-    erro = envia_webhook(cfg["url"], texto)
-    if erro:
-        app.logger.warning("alerta '%s' nao saiu: %s", evento, erro)
-        return False
-    return True
+    saiu = False
+    for destino in alvos:
+        erro = envia_webhook(destino["url"], texto)
+        if erro:
+            app.logger.warning(
+                "alerta '%s' nao saiu para '%s': %s", evento, destino["nome"], erro
+            )
+        else:
+            saiu = True
+    return saiu
 
 
 def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
@@ -2558,7 +2683,9 @@ def monitora_servidores(forcar: bool = False) -> int:
     global _ultimo_monitor, _ultimo_disco
     conn = db()
     cfg = webhook_config(conn)
-    if not cfg["url"] or not cfg["eventos"]:
+    # Sem nenhum destino ligado pedindo algum evento, a volta inteira seria SSH gasto
+    # para produzir um alerta que ninguem receberia.
+    if not cfg["eventos"]:
         return 0
 
     agora = time.monotonic()
@@ -5571,51 +5698,133 @@ def alerts():
     conn = db()
     return render_template(
         "alerts.html", cfg=webhook_config(conn), eventos=ALERT_EVENTS,
-        do_env=bool(WEBHOOK_URL_PADRAO), monitor=int(MONITOR_EVERY),
-        disco_a_cada=int(DISK_CHECK_EVERY / 60), quieto=int(ALERT_QUIET),
+        padrao=limpa_eventos(ALERT_DEFAULT), do_env=bool(WEBHOOK_URL_PADRAO),
+        monitor=int(MONITOR_EVERY), disco_a_cada=int(DISK_CHECK_EVERY / 60),
+        quieto=int(ALERT_QUIET), limite_hooks=WEBHOOK_MAX,
     )
 
 
 @app.post("/alertas")
 @admin_required
 def alerts_save():
+    """So o que vale para todos os destinos: hoje, o limite do disco."""
     conn = db()
-    url = (request.form.get("webhook_url", "") or "").strip()[:400]
-    if url and not URL_RE.match(url):
-        flash("URL invalida (comece com http:// ou https://).", "error")
-        return redirect(url_for("alerts"))
-
-    escolhidos = [e for e in request.form.getlist("eventos") if e in ALERT_EVENTS]
     disco = (request.form.get("disk_pct", "") or "").strip()
     if not disco.isdigit() or not 50 <= int(disco) <= 100:
         flash("O aviso de disco cheio vale de 50% a 100%.", "error")
         return redirect(url_for("alerts"))
-
-    config_set(conn, "webhook_url", url)
-    config_set(conn, "webhook_events", ",".join(escolhidos))
     config_set(conn, "webhook_disk_pct", disco)
-    # A linha de base fica velha quando a configuracao muda; zerando, a proxima volta do
-    # monitor so anota o estado atual em vez de avisar sobre o que ja estava assim.
-    _estado_monitor.clear()
-    flash("Alertas salvos." if url else "Alertas desligados (sem URL).", "ok")
+    _zera_linha_de_base()
+    flash("Preferencias salvas.", "ok")
     return redirect(url_for("alerts"))
 
 
-@app.post("/alertas/testar")
+def _zera_linha_de_base() -> None:
+    """A memoria do monitor fica velha quando a configuracao muda.
+
+    Zerando, a proxima volta so ANOTA o estado atual em vez de disparar um alerta sobre
+    o que ja estava daquele jeito antes da mudanca.
+    """
+    _estado_monitor.clear()
+
+
+def _le_form_webhook() -> tuple:
+    """Valida o formulario de um destino. Devolve (dados, erro)."""
+    nome = (request.form.get("nome", "") or "").strip()[:60]
+    url = (request.form.get("url", "") or "").strip()[:400]
+    eventos = [e for e in request.form.getlist("eventos") if e in ALERT_EVENTS]
+    ativo = 1 if request.form.get("ativo") else 0
+    if url and not URL_RE.match(url):
+        return None, "URL invalida (comece com http:// ou https://)."
+    return {"nome": nome, "url": url, "eventos": ",".join(eventos), "ativo": ativo}, ""
+
+
+@app.post("/alertas/destinos")
 @admin_required
-def alerts_test():
-    """Manda uma mensagem agora, para conferir se a URL esta certa."""
+def alerts_hook_new():
     conn = db()
-    cfg = webhook_config(conn)
-    if not cfg["url"]:
-        flash("Preencha e salve a URL antes de testar.", "error")
+    quantos = conn.execute("SELECT COUNT(*) AS n FROM webhooks").fetchone()["n"]
+    if quantos >= WEBHOOK_MAX:
+        flash(f"Limite de {WEBHOOK_MAX} destinos atingido.", "error")
+        return redirect(url_for("alerts"))
+    dados, erro = _le_form_webhook()
+    if erro or not dados["url"]:
+        flash(erro or "Informe a URL do webhook.", "error")
+        return redirect(url_for("alerts"))
+    with conn:
+        conn.execute(
+            "INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (dados["nome"] or "Destino", dados["url"], dados["eventos"],
+             dados["ativo"], now_iso()),
+        )
+    _zera_linha_de_base()
+    flash("Destino adicionado.", "ok")
+    return redirect(url_for("alerts"))
+
+
+@app.post("/alertas/destinos/<int:hid>")
+@admin_required
+def alerts_hook_save(hid: int):
+    conn = db()
+    atual = conn.execute("SELECT url FROM webhooks WHERE id = ?", (hid,)).fetchone()
+    if not atual:
+        flash("Destino nao encontrado.", "error")
+        return redirect(url_for("alerts"))
+    dados, erro = _le_form_webhook()
+    if erro:
+        flash(erro, "error")
+        return redirect(url_for("alerts"))
+    # Campo de URL em branco quer dizer "mantem a que ja esta la". A tela mostra a URL
+    # mascarada, entao nao ha o que reenviar: so quem digitar uma nova a troca.
+    url = dados["url"] or atual["url"]
+    with conn:
+        conn.execute(
+            "UPDATE webhooks SET nome = ?, url = ?, eventos = ?, ativo = ? WHERE id = ?",
+            (dados["nome"] or "Destino", url, dados["eventos"], dados["ativo"], hid),
+        )
+    _zera_linha_de_base()
+    flash("Destino salvo.", "ok")
+    return redirect(url_for("alerts"))
+
+
+@app.post("/alertas/destinos/<int:hid>/remover")
+@admin_required
+def alerts_hook_del(hid: int):
+    conn = db()
+    with conn:
+        conn.execute("DELETE FROM webhooks WHERE id = ?", (hid,))
+    flash("Destino removido.", "ok")
+    return redirect(url_for("alerts"))
+
+
+@app.post("/alertas/destinos/<int:hid>/testar")
+@admin_required
+def alerts_hook_test(hid: int):
+    """Manda uma mensagem agora para UM destino, para conferir se a URL esta certa."""
+    conn = db()
+    row = conn.execute(
+        "SELECT nome, url FROM webhooks WHERE id = ?", (hid,)
+    ).fetchone()
+    if not row or not row["url"]:
+        flash("Destino nao encontrado.", "error")
+        return redirect(url_for("alerts"))
+    # Se ha uma URL digitada no formulario, testa ELA: o ponto do botao e conferir a URL
+    # nova antes de gravar, e nao repetir o teste da que ja estava salva.
+    digitada = (request.form.get("url", "") or "").strip()[:400]
+    if digitada and not URL_RE.match(digitada):
+        flash("URL invalida (comece com http:// ou https://).", "error")
         return redirect(url_for("alerts"))
     erro = envia_webhook(
-        cfg["url"],
+        digitada or row["url"],
         f"**Teste do painel de jogos**\nSe voce esta lendo isto, os alertas funcionam."
         f" ({usuario_logado()['username']})",
     )
-    flash(erro or "Mensagem enviada - confira o canal.", "error" if erro else "ok")
+    nome = row["nome"] or "destino"
+    flash(
+        f"{nome}: {erro}" if erro else f"Mensagem enviada para {nome} - confira o canal.",
+        "error" if erro else "ok",
+    )
     return redirect(url_for("alerts"))
 
 

@@ -1,81 +1,176 @@
 {% extends "base.html" %}
 {% block title %}Alertas &mdash; Painel de Jogos{% endblock %}
+
+{% macro caixas(prefixo, marcados) %}
+  {# A lista de eventos e a mesma nos destinos e no formulario de cadastro; o prefixo so
+     serve para o `for` do rotulo nao apontar para o id de outro destino. #}
+  <div class="opcoes">
+    {% for chave, rotulo in eventos.items() %}
+    <label class="checkbox" for="{{ prefixo }}-{{ chave }}">
+      <input type="checkbox" id="{{ prefixo }}-{{ chave }}" name="eventos"
+             value="{{ chave }}" {% if chave in marcados %}checked{% endif %}>
+      <span>{{ rotulo }}</span>
+    </label>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
 {% block content %}
 <div class="page-head">
   <h1>Alertas</h1>
+  <div class="badges">
+    {% if cfg.ativos %}
+      <span class="badge on">{{ cfg.ativos | length }}
+        destino{{ 's' if cfg.ativos | length != 1 }} ligado{{ 's' if cfg.ativos | length != 1 }}</span>
+    {% else %}
+      <span class="badge cold">nenhum destino ligado</span>
+    {% endif %}
+  </div>
 </div>
 
-<div class="flash">
+<p class="muted intro">
   O painel avisa por <strong>webhook</strong> quando algo acontece sem ninguem estar
-  olhando. Serve para <strong>Discord</strong> (Editar canal &rarr; Integracoes &rarr;
-  Webhooks &rarr; Copiar URL), <strong>Slack</strong> (Incoming Webhook) ou qualquer
-  endereco que aceite um <code>POST</code> de JSON &mdash; a mesma chamada leva os campos
-  <code>content</code> e <code>text</code>, entao cada um le o seu.
+  olhando. Cada destino tem a sua propria lista de eventos &mdash; da para mandar tudo
+  para o canal da equipe e so as quedas para o canal geral. Serve para
+  <strong>Discord</strong> (Editar canal &rarr; Integracoes &rarr; Webhooks &rarr; Copiar
+  URL), <strong>Slack</strong> (Incoming Webhook) ou qualquer endereco que aceite um
+  <code>POST</code> de JSON &mdash; a chamada leva os campos <code>content</code> e
+  <code>text</code>, entao cada um le o seu.
+</p>
+
+<div class="card">
+  <h2>Destinos</h2>
+
+  {% if not cfg.destinos %}
+    <p class="muted small vazio">
+      Nenhum destino cadastrado &mdash; os alertas estao desligados. Adicione o primeiro
+      abaixo.
+    </p>
+  {% endif %}
+
+  {% for h in cfg.destinos %}
+  <form class="hook{% if not h.ativo %} desligado{% endif %}" method="post"
+        action="{{ url_for('alerts_hook_save', hid=h.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+    <div class="hook-head">
+      <label class="hook-nome">
+        <span class="sr-only">Nome do destino</span>
+        <input name="nome" value="{{ h.nome }}" maxlength="60"
+               placeholder="Canal da equipe">
+      </label>
+      <label class="inline-label hook-liga">
+        <input type="checkbox" name="ativo" value="1" {% if h.ativo %}checked{% endif %}>
+        <span>{{ 'Ligado' if h.ativo else 'Desligado' }}</span>
+      </label>
+    </div>
+
+    <p class="hook-url" title="A URL fica escondida: e uma credencial">
+      <code class="trunc">{{ h.url_curta }}</code>
+    </p>
+    <label class="hook-troca">
+      <span class="rotulo">Trocar a URL</span>
+      <input name="url" value="" spellcheck="false" autocomplete="off"
+             placeholder="deixe em branco para manter a atual">
+    </label>
+
+    <div class="hook-eventos">
+      <span class="rotulo">Avisar sobre</span>
+      {{ caixas('h%d' % h.id, h.eventos) }}
+      {% if not h.eventos %}
+        <p class="muted small aviso">Sem nenhum evento marcado este destino nunca recebe nada.</p>
+      {% endif %}
+    </div>
+
+    <div class="form-actions hook-acoes">
+      <button class="btn primary" type="submit">Salvar</button>
+      <button class="btn" type="submit"
+              formaction="{{ url_for('alerts_hook_test', hid=h.id) }}"
+              formnovalidate>Testar</button>
+      <span class="spacer"></span>
+      <button class="btn danger" type="submit"
+              formaction="{{ url_for('alerts_hook_del', hid=h.id) }}" formnovalidate
+              onclick="return confirm('Remover o destino {{ h.nome }}?')">Remover</button>
+    </div>
+  </form>
+  {% endfor %}
+
+  {% if cfg.destinos | length >= limite_hooks %}
+    <p class="muted small">
+      Limite de {{ limite_hooks }} destinos atingido &mdash; remova um para cadastrar outro.
+    </p>
+  {% else %}
+  <details class="hook-novo"{% if not cfg.destinos %} open{% endif %}>
+    <summary>+ Adicionar destino</summary>
+    <form method="post" action="{{ url_for('alerts_hook_new') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="ativo" value="1">
+      <div class="row">
+        <label>Nome
+          <input name="nome" maxlength="60" placeholder="Canal da equipe">
+          <small>So para voce se achar nesta lista.</small>
+        </label>
+        <label>URL do webhook
+          <input name="url" spellcheck="false" autocomplete="off" required
+                 placeholder="https://discord.com/api/webhooks/...">
+          <small>E um segredo: quem a tiver escreve no seu canal.</small>
+        </label>
+      </div>
+      <span class="rotulo">Avisar sobre</span>
+      {{ caixas('novo', padrao) }}
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Adicionar</button>
+      </div>
+    </form>
+  </details>
+  {% endif %}
+
+  {% if do_env %}
+    <p class="muted small">
+      O deploy trouxe uma URL em <code>GAMEPANEL_WEBHOOK_URL</code>; ela virou o primeiro
+      destino desta lista e a partir daqui so vale o que estiver cadastrado.
+    </p>
+  {% endif %}
 </div>
 
 <div class="card">
-  <h2>Para onde avisar</h2>
+  <h2>Preferencias</h2>
   <form method="post" action="{{ url_for('alerts_save') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label>URL do webhook
-      <input name="webhook_url" value="{{ cfg.url }}" spellcheck="false"
-             placeholder="https://discord.com/api/webhooks/...">
+    <label class="curto">Avisar quando o disco passar de
+      <span class="com-unidade">
+        <input name="disk_pct" type="number" min="50" max="100" value="{{ cfg.disco }}">
+        <span class="unidade">%</span>
+      </span>
       <small>
-        Em branco desliga tudo. A URL e um segredo: quem a tiver escreve no seu canal.
-        {% if do_env %}O valor inicial veio de <code>GAMEPANEL_WEBHOOK_URL</code>; o que
-        for salvo aqui passa a valer no lugar dele.{% endif %}
+        No disco mais cheio do container. Avisa uma vez, na virada: um disco a 95%
+        continua a 95% na volta seguinte e ninguem merece o mesmo alerta a cada minuto.
       </small>
     </label>
-
-    <h3>O que avisar</h3>
-    <div class="opcoes">
-      {% for chave, rotulo in eventos.items() %}
-      <label class="checkbox">
-        <input type="checkbox" name="eventos" value="{{ chave }}"
-               {% if chave in cfg.eventos %}checked{% endif %}>
-        {{ rotulo }}
-      </label>
-      {% endfor %}
-    </div>
-    <p class="muted small">
-      As mas noticias vem ligadas. <em>Servidor voltou a rodar</em> e
-      <em>Contato restabelecido</em> ficam desligados por padrao &mdash; ligue se preferir
-      o par completo em vez de so o susto.
-    </p>
-
-    <label>Avisar quando o disco passar de
-      <input name="disk_pct" type="number" min="50" max="100" value="{{ cfg.disco }}">
-      <small>
-        Por cento, no disco mais cheio do container. Avisa uma vez, na virada: um disco a
-        95% continua a 95% na volta seguinte e ninguem merece o mesmo alerta a cada minuto.
-      </small>
-    </label>
-
     <div class="form-actions">
       <button class="btn primary" type="submit">Salvar</button>
     </div>
-  </form>
-
-  <form method="post" action="{{ url_for('alerts_test') }}">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <button class="btn" type="submit">Enviar mensagem de teste</button>
   </form>
 </div>
 
 <div class="card">
   <h2>Como funciona</h2>
-  <ul class="filelist">
+  <ul class="regras">
     <li>O painel confere o estado de cada servidor a cada <strong>{{ monitor }}s</strong>
       e o disco a cada <strong>{{ disco_a_cada }} min</strong> (o medidor custa bem mais
       caro que o status).</li>
     <li>Ele avisa na <strong>mudanca</strong>, nunca em repeticao: o alerta sai quando o
       servidor cai, nao a cada volta enquanto ele estiver caido.</li>
+    <li>Cada evento vai para <strong>todos os destinos</strong> que o marcaram. Um
+      destino fora do ar nao impede os outros de receber.</li>
     <li>Parar, reiniciar, atualizar ou restaurar <strong>pelo painel</strong> nao vira
       alerta &mdash; nos {{ quieto }}s seguintes a uma dessas acoes a queda e esperada.</li>
     <li>Ao subir, o painel so <strong>anota</strong> o estado de todo mundo. Reiniciar o
       painel nao dispara um alerta por servidor que ja estava parado.</li>
     <li>De tarefa que falha, so a <strong>agendada</strong> vira alerta: quem clicou o
       botao ja esta com o erro na tela.</li>
+    <li>Mexer nesta tela zera a linha de base do monitor, para a volta seguinte nao
+      avisar sobre o que ja estava assim antes da mudanca.</li>
   </ul>
 </div>
 {% endblock %}

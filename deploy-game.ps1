@@ -211,6 +211,12 @@ function Install-KeyOnProxmox([string]$Target) {
 # ErrorActionPreference e 'Stop' - inclusive quando o comando termina com sucesso.
 # Por isso toda chamada daqui relaxa a preferencia: o erro de verdade e o $LASTEXITCODE.
 
+# O .gitattributes guarda todo .ps1 em CRLF, entao toda here-string deste arquivo nasce
+# com um \r no fim de cada linha. Quem le do outro lado e o bash, e para ele o \r faz
+# parte do argumento: 'sleep 3' vira "intervalo invalido" e um nome de servico ganha um
+# \x0d no fim. Toda entrada de comando remoto passa por aqui primeiro.
+function ConvertTo-Lf([string]$Texto) { return ($Texto -replace "`r", "") }
+
 # ssh/scp do fluxo principal: carregam o $script:SshOpts, que e onde vive a
 # autenticacao (chave ou senha via askpass).
 function Invoke-Ssh([string]$Target, [string]$Command) {
@@ -218,7 +224,7 @@ function Invoke-Ssh([string]$Target, [string]$Command) {
     $anterior = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        ssh @opcoes "root@$Target" $Command
+        ssh @opcoes "root@$Target" (ConvertTo-Lf $Command)
     } finally {
         $ErrorActionPreference = $anterior
     }
@@ -242,7 +248,7 @@ function Invoke-SshQuery([string]$Target, [string]$Command, [switch]$Batch) {
     $anterior = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $saida = ssh @opcoes "root@$Target" $Command 2>$null
+        $saida = ssh @opcoes "root@$Target" (ConvertTo-Lf $Command) 2>$null
     } finally {
         $ErrorActionPreference = $anterior
     }
@@ -256,7 +262,7 @@ function Invoke-SshLive([string]$Target, [string]$Command) {
     $anterior = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        ssh @opcoes "root@$Target" $Command
+        ssh @opcoes "root@$Target" (ConvertTo-Lf $Command)
     } finally {
         $ErrorActionPreference = $anterior
     }

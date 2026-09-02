@@ -1163,11 +1163,23 @@ Detalhes que importam:
 
 ### Alertas
 
-O menu tem **Alertas** (so administrador): uma URL de **webhook** e o painel avisa quando
-algo acontece sem ninguem estar olhando. Serve para **Discord** (Editar canal &rarr;
+O menu tem **Alertas** (so administrador): **webhooks** e o painel avisa quando algo
+acontece sem ninguem estar olhando. Serve para **Discord** (Editar canal &rarr;
 Integracoes &rarr; Webhooks &rarr; Copiar URL), **Slack** (Incoming Webhook) ou qualquer
 endereco que aceite `POST` de JSON — a chamada leva os campos `content` **e** `text`, e
 cada servico le o seu.
+
+Da para cadastrar **varios destinos** (ate 10, `GAMEPANEL_WEBHOOK_MAX`), cada um com a
+**sua** lista de eventos e um interruptor de ligado/desligado: o canal da equipe recebe
+tudo, o canal geral so as quedas, e o webhook do servidor de testes fica desligado sem
+precisar ser apagado. Cada evento sai para todos os destinos que o marcaram, um POST por
+destino — se um estiver fora do ar, os outros recebem do mesmo jeito e a falha vai para o
+log do painel com o nome do destino. O botao **Testar** de cada linha manda uma mensagem
+na hora; se voce digitou uma URL nova, ele testa a nova, antes de salvar.
+
+Na tela a URL aparece **mascarada** (`discord.com/.../1544786528700604457/********`) —
+ela e uma credencial, e um screenshot da tela nao deveria entregar o canal. Para trocar,
+digite a nova no campo abaixo dela; em branco, mantem a que ja esta la.
 
 O que da para avisar:
 
@@ -1196,9 +1208,15 @@ As regras que evitam o alerta virar ruido — que e o que faz um canal deixar de
 
 O estado do servidor e conferido a cada **60s** (`GAMEPANEL_MONITOR_EVERY`) e o disco a
 cada **10 min** (`GAMEPANEL_DISK_CHECK_EVERY`) — o medidor custa uma ida de SSH bem mais
-cara que o status. A URL fica no banco (nao exige redeploy para mudar);
-`GAMEPANEL_WEBHOOK_URL` serve so de valor inicial, para o deploy ja deixar pronto.
+cara que o status. Sem nenhum destino ligado pedindo algum evento, a volta nem acontece.
+Os destinos ficam no banco (nao exige redeploy para mudar); `GAMEPANEL_WEBHOOK_URL` serve
+so de valor inicial do **primeiro** destino, para o deploy ja deixar pronto.
 **Trate a URL como senha**: quem a tiver escreve no seu canal.
+
+> **403 do Discord?** O Cloudflare na frente dele recusa o `User-Agent` padrao do Python
+> (`Python-urllib/3.x`) antes do pedido chegar no webhook. O painel manda um proprio
+> (`GAMEPANEL_WEBHOOK_UA`), entao isso ja esta resolvido — se voce vir 403 mesmo assim, a
+> mensagem de erro na tela agora traz a resposta do destino, que diz o motivo.
 
 ### Historico
 
@@ -1338,8 +1356,10 @@ docker compose down -v            # zera banco, chaves e arquivos de teste
   `Referer` nem pelo log de um proxy reverso
 - O painel serve **HTTP puro** — pensado para LAN. Nao exponha na internet sem um proxy
   reverso com TLS na frente
-- A URL do webhook de [Alertas](#alertas) e um segredo (quem a tiver escreve no seu canal)
-  e fica em texto puro no `panel.db`, como a senha da API de contagem
+- As URLs dos webhooks de [Alertas](#alertas) sao segredos (quem as tiver escreve no seu
+  canal) e ficam em texto puro no `panel.db`, como a senha da API de contagem. Na tela
+  elas aparecem mascaradas, mas quem tem o arquivo do banco tem as URLs inteiras — se uma
+  vazar, apague o webhook no Discord/Slack e cadastre outro aqui
 - Comprometer o painel da acesso root aos **containers de jogo**, nao ao Proxmox
 
 ### Arquivos

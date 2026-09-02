@@ -75,8 +75,16 @@ $script:AskPassFile = ""
 # nao-interativo simplesmente trava.
 $script:SshOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
 
+# O .gitattributes guarda todo .ps1 em CRLF, entao toda here-string deste arquivo nasce
+# com um \r no fim de cada linha. Do outro lado quem le e o bash, e para ele o \r faz
+# parte do argumento: 'sleep 3' vira "intervalo invalido", 'gamepanel.service' vira um
+# servico que nao existe e ate o 'set -e' do topo falha - o script segue adiante quebrado
+# e o deploy termina dizendo que deu certo. Some com ele aqui, uma vez, em vez de em cada
+# here-string.
+function ConvertTo-Lf([string]$Texto) { return ($Texto -replace "`r", "") }
+
 function Invoke-Ssh([string]$Target, [string]$Command) {
-    ssh @script:SshOpts "root@$Target" $Command
+    ssh @script:SshOpts "root@$Target" (ConvertTo-Lf $Command)
 }
 
 function Invoke-Scp([string[]]$Sources, [string]$Destination, [switch]$Recurse) {
@@ -211,18 +219,27 @@ function Invoke-DirectDeploy([string]$Target, [string]$SrcDir, [string]$Port) {
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o codigo do painel (*.py)" }
     Invoke-Scp @((Join-Path $SrcDir "templates\*.html")) "root@${Target}:$remoteTmp/templates/"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os templates" }
-    Invoke-Scp @((Join-Path $SrcDir "static\*")) "root@${Target}:$remoteTmp/static/"
+    # -Recurse: static/ pode ter subpasta, e sem isso ela ficaria de fora do envio.
+    Invoke-Scp @((Join-Path $SrcDir "static\*")) "root@${Target}:$remoteTmp/static/" -Recurse
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os estaticos" }
 
     # Troca o conteudo e reinicia. Os templates antigos sao removidos para um arquivo
     # renomeado no repo nao continuar vivo no container.
+    #
+    # Em static/ a limpeza e por ARQUIVO (`find -maxdepth 1 -type f`), nao `rm -f *`: um
+    # glob que pega uma subpasta faz o `rm -f` e o `install` falharem com "Is a
+    # directory", e com o `set -e` do topo isso derruba o deploy no meio da troca. Apagar
+    # a subpasta junto tambem nao serve: o que estiver dentro dela pode ter sido criado
+    # no container e nao existe aqui para ser reenviado.
     $install = @'
 set -e
 install -d /opt/gamepanel/templates /opt/gamepanel/static
-rm -f /opt/gamepanel/templates/*.html /opt/gamepanel/static/*
+rm -f /opt/gamepanel/templates/*.html
+find /opt/gamepanel/static -maxdepth 1 -type f -delete
 install -m 0644 /tmp/gamepanel-deploy/*.py /opt/gamepanel/
 install -m 0644 /tmp/gamepanel-deploy/templates/*.html /opt/gamepanel/templates/
-install -m 0644 /tmp/gamepanel-deploy/static/* /opt/gamepanel/static/
+cp -r /tmp/gamepanel-deploy/static/. /opt/gamepanel/static/
+chmod -R a+rX /opt/gamepanel/static
 # Bytecode da versao anterior: um .pyc de modulo que sumiu ainda seria importavel.
 rm -rf /opt/gamepanel/__pycache__
 chown -R root:root /opt/gamepanel
@@ -238,7 +255,13 @@ systemctl is-active --quiet gamepanel.service
         throw "gamepanel.service nao ficou ativo apos o envio direto"
     }
 
+    # Zero template e um painel que nao serve nenhuma tela: o install nao chegou a
+    # copiar nada. Sem esta conferencia o deploy anuncia sucesso em cima de um container
+    # que foi deixado pela metade.
     $count = (Invoke-Ssh $Target "ls /opt/gamepanel/templates | wc -l").Trim()
+    if ($count -eq "0") {
+        throw "O envio terminou com /opt/gamepanel/templates vazio - o install nao rodou"
+    }
     Write-Host "`nPainel atualizado em http://${Target}:$Port ($count templates)." -ForegroundColor Green
     Write-Host "Config (ADMIN_*), recursos do CT e usuario so mudam no modo completo: .\deploy-admin.ps1 -Full" -ForegroundColor DarkGray
 }

@@ -52,9 +52,21 @@ URL = "http://exemplo.invalid/hook"
 conn = panel._connect()
 
 
+def destino(url, eventos, nome="Teste", ativo=1):
+    """Cadastra um destino e devolve o id."""
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (nome, url, ",".join(eventos), ativo, panel.now_iso()))
+    return cur.lastrowid
+
+
 def liga(eventos, disco=90):
-    panel.config_set(conn, "webhook_url", URL)
-    panel.config_set(conn, "webhook_events", ",".join(eventos))
+    """Deixa UM destino cadastrado, com estes eventos. O padrao dos testes antigos."""
+    with conn:
+        conn.execute("DELETE FROM webhooks")
+    destino(URL, eventos)
     panel.config_set(conn, "webhook_disk_pct", str(disco))
 
 
@@ -69,16 +81,76 @@ def estado(reachable=True, service="active", error=""):
 print("Configuracao")
 liga(["caiu"])
 cfg = panel.webhook_config(conn)
-igual("url lida do banco", cfg["url"], URL)
+igual("destino lido do banco", [d["url"] for d in cfg["ativos"]], [URL])
 igual("evento lido do banco", cfg["eventos"], {"caiu"})
 # Evento inventado (banco mexido a mao, versao antiga) nao pode virar chave desconhecida.
-panel.config_set(conn, "webhook_events", "caiu,formatar-o-disco")
+with conn:
+    conn.execute("UPDATE webhooks SET eventos = 'caiu,formatar-o-disco'")
 igual("evento desconhecido e descartado", panel.webhook_config(conn)["eventos"], {"caiu"})
 panel.config_set(conn, "webhook_disk_pct", "5")
 igual("limite de disco tem piso", panel.webhook_config(conn)["disco"], 50)
 panel.config_set(conn, "webhook_disk_pct", "nao e numero")
 igual("limite ilegivel cai no padrao", panel.webhook_config(conn)["disco"],
       panel.DISK_PCT_DEFAULT)
+
+
+print("Varios destinos")
+# O ponto do recurso: dois canais, listas diferentes. Cada evento tem de sair para quem
+# pediu por ele, e so para esses.
+with conn:
+    conn.execute("DELETE FROM webhooks")
+equipe = destino("http://equipe.invalid/hook", ["caiu", "voltou"], "Equipe")
+geral = destino("http://geral.invalid/hook", ["caiu"], "Geral")
+mudo = destino("http://mudo.invalid/hook", ["caiu"], "Desligado", ativo=0)
+
+limpa()
+igual("evento pedido pelos dois sai duas vezes",
+      (panel.notifica(conn, "caiu", "caiu"), len(enviadas)), (True, 2))
+igual("cada um recebe na sua URL", sorted(u for u, _ in enviadas),
+      ["http://equipe.invalid/hook", "http://geral.invalid/hook"])
+check("destino desligado nao recebe",
+      all("mudo.invalid" not in u for u, _ in enviadas))
+
+limpa()
+panel.notifica(conn, "voltou", "voltou")
+igual("evento de um so sai uma vez", [u for u, _ in enviadas],
+      ["http://equipe.invalid/hook"])
+
+limpa()
+igual("evento que ninguem pediu nao sai",
+      (panel.notifica(conn, "disco-cheio", "disco"), len(enviadas)), (False, 0))
+
+igual("a uniao dos destinos ligados e o que o monitor observa",
+      panel.webhook_config(conn)["eventos"], {"caiu", "voltou"})
+
+# Um destino fora do ar nao pode calar os outros: o Discord de pe continua recebendo
+# mesmo com o Slack recusando a conexao.
+limpa()
+panel.envia_webhook = lambda url, texto: (
+    captura(url, texto) if "equipe" in url else "recusou a conexao")
+igual("um destino quebrado nao impede os outros",
+      (panel.notifica(conn, "caiu", "caiu"), len(enviadas)), (True, 1))
+panel.envia_webhook = captura
+
+limpa()
+with conn:
+    conn.execute("UPDATE webhooks SET ativo = 0")
+igual("todos desligados, nada sai",
+      (panel.notifica(conn, "caiu", "caiu"), len(enviadas)), (False, 0))
+with conn:
+    conn.execute("DELETE FROM webhooks WHERE id IN (?, ?, ?)", (equipe, geral, mudo))
+
+
+print("A URL nao aparece inteira na tela")
+# Ela e uma credencial: quem le a tela por cima do ombro nao pode sair de la podendo
+# escrever no canal.
+mascarada = panel.mascara_url(
+    "https://discord.com/api/webhooks/1544786528700604457/segredo-que-nao-pode-vazar")
+check("o token some", "segredo-que-nao-pode-vazar" not in mascarada, mascarada)
+check("o id continua visivel para reconhecer o canal",
+      "1544786528700604457" in mascarada, mascarada)
+check("o host continua visivel", mascarada.startswith("discord.com"), mascarada)
+igual("URL vazia nao vira mascara", panel.mascara_url(""), "")
 
 
 print("Quando o painel decide avisar")
@@ -129,10 +201,11 @@ panel._alerta_de_estado(conn, servidor, estado(service="inactive"),
                         estado(service="active"), panel.webhook_config(conn))
 igual("evento desligado nao sai", len(enviadas), 0)
 
-# Sem URL nada sai, nem com todos os eventos ligados.
+# Sem nenhum destino nada sai, nem com todos os eventos ligados.
 limpa()
-panel.config_set(conn, "webhook_url", "")
-igual("sem URL nao sai nada",
+with conn:
+    conn.execute("DELETE FROM webhooks")
+igual("sem destino nao sai nada",
       panel.notifica(conn, "caiu", "titulo", "detalhe"), False)
 
 
@@ -248,6 +321,105 @@ check("recusa o que nao e http(s)",
 check("recusa endereco vazio", envia_real("", "oi").startswith("URL invalida"))
 check("recusa esquema estranho",
       envia_real("file:///etc/passwd", "oi").startswith("URL invalida"))
+
+
+print("A tela de alertas")
+# Daqui para baixo o teste e do fluxo da tela: cadastrar, editar, testar e remover
+# destinos. Nada sai para a rede — o capturador volta no lugar do envio.
+panel.envia_webhook = captura
+with conn:
+    conn.execute("DELETE FROM webhooks")
+panel._login_fails.clear()
+panel.ensure_admin_user("chefe", "senha-do-chefe")
+
+cli = panel.app.test_client()
+cli.get("/login")
+with cli.session_transaction() as sess:
+    entrada = sess.get("csrf", "")
+resp = cli.post("/login", data={"username": "chefe", "password": "senha-do-chefe",
+                                "csrf": entrada}, follow_redirects=False)
+if resp.status_code != 302:
+    raise SystemExit(f"login falhou (status {resp.status_code})")
+
+
+def postar(url, dados=None):
+    d = dict(dados or {})
+    with cli.session_transaction() as sess:
+        d["csrf"] = sess.get("csrf", "")
+    return cli.post(url, data=d, follow_redirects=False)
+
+
+def tela():
+    return cli.get("/alertas").get_data(as_text=True)
+
+
+igual("a tela sem destino nenhum abre", cli.get("/alertas").status_code, 200)
+check("e diz que nao ha nada ligado", "nenhum destino ligado" in tela())
+
+SEGREDO = "https://discord.com/api/webhooks/123/tok-que-nao-pode-vazar"
+igual("cadastra destino",
+      postar("/alertas/destinos", {"nome": "Equipe", "ativo": "1", "url": SEGREDO,
+                                   "eventos": ["caiu", "disco-cheio"]}).status_code, 302)
+postar("/alertas/destinos", {"nome": "Torto", "url": "nao-e-url"})
+igual("URL torta nao vira destino", len(panel.webhooks_lista(conn)), 1)
+
+html = tela()
+check("o destino aparece pelo nome", "Equipe" in html)
+check("o token NAO chega ao HTML", "tok-que-nao-pode-vazar" not in html)
+check("o id fica visivel para reconhecer o canal", "discord.com/.../123" in html)
+
+hid = panel.webhooks_lista(conn)[0]["id"]
+# O caminho normal e mexer so nos eventos: a URL fica mascarada e o campo de troca vem
+# vazio, entao um POST sem URL NAO pode limpar a que esta salva.
+postar(f"/alertas/destinos/{hid}",
+       {"nome": "Equipe", "url": "", "ativo": "1", "eventos": ["caiu"]})
+atual = panel.webhooks_lista(conn)[0]
+igual("salvar com o campo vazio mantem a URL", atual["url"], SEGREDO)
+igual("e os eventos mudam", atual["eventos"], {"caiu"})
+
+postar(f"/alertas/destinos/{hid}", {"nome": "Equipe", "url": "", "eventos": ["caiu"]})
+igual("sem a caixa 'ativo' o destino desliga",
+      panel.webhooks_lista(conn)[0]["ativo"], False)
+postar(f"/alertas/destinos/{hid}",
+       {"nome": "Equipe", "url": "", "ativo": "1", "eventos": ["caiu"]})
+
+postar("/alertas/destinos", {"nome": "Geral", "ativo": "1",
+                             "url": "https://discord.com/api/webhooks/999/outro",
+                             "eventos": ["caiu"]})
+html = tela()
+check("a lista mostra os dois", "Equipe" in html and "Geral" in html)
+# Cada destino precisa do seu proprio id de caixa: repetido, clicar no rotulo de um
+# marcaria o evento do outro.
+check("cada destino tem o seu grupo de caixas",
+      'id="h%d-caiu"' % hid in html and 'id="h%d-caiu"' % (hid + 1) in html)
+
+# Testar serve para conferir uma URL ANTES de salvar: se ha uma digitada, e ela que vai.
+limpa()
+postar(f"/alertas/destinos/{hid}/testar", {"url": "https://novo.invalid/hook"})
+igual("testar usa a URL digitada", [u for u, _ in enviadas],
+      ["https://novo.invalid/hook"])
+limpa()
+postar(f"/alertas/destinos/{hid}/testar", {"url": ""})
+igual("sem nada digitado, testa a que esta salva", [u for u, _ in enviadas], [SEGREDO])
+
+postar("/alertas", {"disk_pct": "80"})
+igual("o limite do disco salva", panel.webhook_config(conn)["disco"], 80)
+postar("/alertas", {"disk_pct": "10"})
+igual("limite fora da faixa e recusado e o anterior fica",
+      panel.webhook_config(conn)["disco"], 80)
+
+postar(f"/alertas/destinos/{hid}/remover")
+igual("remover tira da lista", len(panel.webhooks_lista(conn)), 1)
+
+# A tela mexe em credenciais: operador nao entra.
+panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERADOR)
+outro = panel.app.test_client()
+outro.get("/login")
+with outro.session_transaction() as sess:
+    e2 = sess.get("csrf", "")
+outro.post("/login", data={"username": "peao", "password": "senha-do-peao", "csrf": e2})
+check("operador nao chega em Alertas",
+      outro.get("/alertas").status_code in (302, 403))
 
 conn.close()
 
