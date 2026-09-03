@@ -62,12 +62,14 @@ def destino(url, eventos, nome="Teste", ativo=1):
     return cur.lastrowid
 
 
-def liga(eventos, disco=90):
+def liga(eventos, disco=90, memoria=90, cpu=90):
     """Deixa UM destino cadastrado, com estes eventos. O padrao dos testes antigos."""
     with conn:
         conn.execute("DELETE FROM webhooks")
     destino(URL, eventos)
     panel.config_set(conn, "webhook_disk_pct", str(disco))
+    panel.config_set(conn, "webhook_mem_pct", str(memoria))
+    panel.config_set(conn, "webhook_cpu_pct", str(cpu))
 
 
 servidor = {"id": 1, "name": "Palworld", "host": "10.0.0.9", "ssh_user": "root",
@@ -93,6 +95,11 @@ igual("limite de disco tem piso", panel.webhook_config(conn)["disco"], 50)
 panel.config_set(conn, "webhook_disk_pct", "nao e numero")
 igual("limite ilegivel cai no padrao", panel.webhook_config(conn)["disco"],
       panel.DISK_PCT_DEFAULT)
+panel.config_set(conn, "webhook_mem_pct", "5")
+igual("limite de memoria tem piso", panel.webhook_config(conn)["memoria"], 50)
+panel.config_set(conn, "webhook_cpu_pct", "vazio")
+igual("limite de CPU ilegivel cai no padrao", panel.webhook_config(conn)["cpu"],
+      panel.CPU_PCT_DEFAULT)
 
 
 print("Varios destinos")
@@ -506,6 +513,124 @@ igual("depois de um erro no medidor, o disco cheio nao vira alerta repetido",
       len(enviadas), 0)
 
 
+print("Memoria quase cheia")
+liga(["memoria-alta"], memoria=90)
+GIB = 1024 ** 3
+memoria = {"mem": {"pct": 95.0, "used": 3.8 * GIB, "total": 4.0 * GIB}}
+panel.server_metrics = lambda server, force=False: memoria
+
+# Como no disco, a memoria do monitor NAO pode ser zerada entre as chamadas: e ela que
+# guarda "isto ja estava cheio da ultima vez".
+limpa()
+panel._alerta_de_memoria(conn, alvo, panel.webhook_config(conn))
+igual("passou do limite, avisa", len(enviadas), 1)
+check("a mensagem traz a porcentagem e o tamanho legivel",
+      "95.0%" in enviadas[0][1] and "3.8 GB" in enviadas[0][1] and
+      "4.0 GB" in enviadas[0][1], enviadas)
+
+enviadas.clear()
+panel._alerta_de_memoria(conn, alvo, panel.webhook_config(conn))
+igual("continua cheia, nao repete", len(enviadas), 0)
+
+# Liberou memoria: a marca cai e uma nova subida volta a avisar.
+memoria = {"mem": {"pct": 40.0, "used": 1.6 * GIB, "total": 4.0 * GIB}}
+panel._alerta_de_memoria(conn, alvo, panel.webhook_config(conn))
+igual("baixou, nao avisa (esse evento nao existe)", len(enviadas), 0)
+memoria = {"mem": {"pct": 97.0, "used": 3.9 * GIB, "total": 4.0 * GIB}}
+panel._alerta_de_memoria(conn, alvo, panel.webhook_config(conn))
+igual("encheu de novo, avisa de novo", len(enviadas), 1)
+
+# Medidor que falhou nao pode virar alerta nem estourar...
+memoria = {"error": "tempo esgotado"}
+enviadas.clear()
+panel._alerta_de_memoria(conn, alvo, panel.webhook_config(conn))
+igual("medidor com erro nao avisa nada", len(enviadas), 0)
+# ...e nao pode apagar a marca de que a memoria estava cheia.
+memoria = {"mem": {"pct": 97.0, "used": 3.9 * GIB, "total": 4.0 * GIB}}
+panel._alerta_de_memoria(conn, alvo, panel.webhook_config(conn))
+igual("depois de um erro no medidor, a memoria cheia nao vira alerta repetido",
+      len(enviadas), 0)
+
+# Container sem teto de memoria legivel devolve pct None. Comparar None com o limite
+# estouraria a volta inteira do monitor, e tratar como 0 esconderia o problema.
+memoria = {"mem": {"pct": None, "used": 0, "total": 0}}
+limpa()
+panel._alerta_de_memoria(conn, alvo, panel.webhook_config(conn))
+igual("sem medida de memoria nao avisa", len(enviadas), 0)
+
+
+print("CPU alta")
+liga(["cpu-alta"], cpu=90)
+uso = {"cpu_pct": 94.5, "cores": 4, "proc": {"cpu_pct": 92.1}}
+panel.server_metrics = lambda server, force=False: uso
+
+limpa()
+panel._alerta_de_cpu(conn, alvo, panel.webhook_config(conn))
+igual("passou do limite, avisa", len(enviadas), 1)
+# Sem os nucleos, "94.5%" nao diz se e uma maquina afogada ou um nucleo de quatro; e sem
+# a fatia do jogo nao da para saber se o culpado e o servidor ou outra coisa no container.
+check("a mensagem traz os nucleos e a fatia do jogo",
+      "94.5%" in enviadas[0][1] and "4 nucleos" in enviadas[0][1] and
+      "jogo: 92.1%" in enviadas[0][1], enviadas)
+
+enviadas.clear()
+panel._alerta_de_cpu(conn, alvo, panel.webhook_config(conn))
+igual("continua alta, nao repete", len(enviadas), 0)
+
+uso = {"cpu_pct": 12.0, "cores": 4, "proc": {}}
+panel._alerta_de_cpu(conn, alvo, panel.webhook_config(conn))
+igual("baixou, nao avisa (esse evento nao existe)", len(enviadas), 0)
+uso = {"cpu_pct": 99.0, "cores": 1, "proc": {}}
+panel._alerta_de_cpu(conn, alvo, panel.webhook_config(conn))
+igual("subiu de novo, avisa de novo", len(enviadas), 1)
+check("um nucleo so nao vira plural", "em 1 nucleo" in enviadas[0][1] and
+      "nucleos" not in enviadas[0][1], enviadas)
+# Sem PID do jogo o medidor nao tem a fatia dele; a mensagem so omite esse pedaco.
+check("sem a fatia do jogo, a mensagem nao inventa", "jogo:" not in enviadas[0][1],
+      enviadas)
+
+# Duas amostras sao o minimo para calcular uso de CPU; com uma so o medidor devolve None.
+uso = {"cpu_pct": None, "cores": 4, "proc": {}}
+limpa()
+panel._alerta_de_cpu(conn, alvo, panel.webhook_config(conn))
+igual("sem amostra de CPU nao avisa", len(enviadas), 0)
+
+uso = {"error": "tempo esgotado"}
+panel._alerta_de_cpu(conn, alvo, panel.webhook_config(conn))
+igual("medidor com erro nao avisa nada", len(enviadas), 0)
+
+
+print("O monitor liga os tres medidores")
+# Disco, memoria e CPU saem da mesma leitura e correm no mesmo relogio. E facil ligar o
+# evento na tela e esquecer o fio dentro da volta do monitor: entao a volta e testada.
+apertado = {"disks": [{"mount": "/", "pct": 99.0, "used": 99, "total": 100}],
+            "mem": {"pct": 99.0, "used": 99, "total": 100},
+            "cpu_pct": 99.0, "cores": 2, "proc": {}}
+panel.server_metrics = lambda server, force=False: apertado
+panel.server_status = lambda server, force=False: estado()
+
+liga(["disco-cheio", "memoria-alta", "cpu-alta"])
+limpa()
+with panel.app.app_context():
+    panel.monitora_servidores(forcar=True)   # a primeira volta so anota
+    panel.monitora_servidores(forcar=True)
+texto = "\n".join(t for _, t in enviadas)
+check("a volta do monitor dispara os tres",
+      "disco quase cheio" in texto and "memoria quase cheia" in texto and
+      "uso de CPU alto" in texto, enviadas)
+
+# E o contrario: evento desmarcado na tela nao pode sair de carona nos outros.
+liga(["disco-cheio"])
+limpa()
+with panel.app.app_context():
+    panel.monitora_servidores(forcar=True)
+    panel.monitora_servidores(forcar=True)
+texto = "\n".join(t for _, t in enviadas)
+check("so o disco esta ligado, so o disco sai",
+      "disco quase cheio" in texto and "memoria quase cheia" not in texto and
+      "uso de CPU alto" not in texto, enviadas)
+
+
 print("Linha de base ao subir o painel")
 liga(["caiu", "inacessivel"])
 panel.server_metrics = lambda server, force=False: {"disks": []}
@@ -627,6 +752,25 @@ igual("o limite do disco salva", panel.webhook_config(conn)["disco"], 80)
 postar("/alertas", {"disk_pct": "10"})
 igual("limite fora da faixa e recusado e o anterior fica",
       panel.webhook_config(conn)["disco"], 80)
+
+postar("/alertas", {"disk_pct": "80", "mem_pct": "85", "cpu_pct": "70"})
+igual("o limite da memoria salva", panel.webhook_config(conn)["memoria"], 85)
+igual("o limite da CPU salva", panel.webhook_config(conn)["cpu"], 70)
+# Um limite recusado nao pode deixar os outros dois ja gravados: a tela volta dizendo
+# "recusado" e o operador nao teria como saber que metade da mudanca passou.
+postar("/alertas", {"disk_pct": "75", "mem_pct": "10", "cpu_pct": "95"})
+igual("memoria fora da faixa e recusada e a anterior fica",
+      panel.webhook_config(conn)["memoria"], 85)
+igual("e nada e salvo junto com a recusada (disco)",
+      panel.webhook_config(conn)["disco"], 80)
+igual("e nada e salvo junto com a recusada (CPU)",
+      panel.webhook_config(conn)["cpu"], 70)
+
+html = tela()
+check("a tela traz os campos de memoria e CPU",
+      'name="mem_pct"' in html and 'name="cpu_pct"' in html)
+check("com os valores salvos", 'value="85"' in html and 'value="70"' in html)
+check("e as caixas dos eventos novos", 'memoria-alta' in html and 'cpu-alta' in html)
 
 postar(f"/alertas/destinos/{hid}/remover")
 igual("remover tira da lista", len(panel.webhooks_lista(conn)), 1)

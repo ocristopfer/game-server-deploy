@@ -2505,6 +2505,8 @@ ALERT_EVENTS = {
     "acessivel": "Contato restabelecido",
     "job-falhou": "Tarefa agendada falhou",
     "disco-cheio": "Disco quase cheio",
+    "memoria-alta": "Memoria quase cheia",
+    "cpu-alta": "Uso de CPU alto",
 }
 # Precisam de configuracao no cadastro do servidor para fazer alguma coisa. A tela avisa
 # quem esta marcado sem ter onde olhar — senao o alerta fica ligado e mudo, e a pessoa
@@ -2522,6 +2524,11 @@ ALERT_PRECISA_CONFIG = {
 # nada sem uma expressao cadastrada.
 ALERT_DEFAULT = "caiu,quebrou,reiniciando,travou,inacessivel,job-falhou,disco-cheio"
 DISK_PCT_DEFAULT = 90
+MEM_PCT_DEFAULT = 90
+CPU_PCT_DEFAULT = 90
+# Os tres saem da MESMA leitura do medidor: com o cache de server_metrics no meio, olhar
+# os tres custa uma ida de SSH so, entao eles andam juntos no mesmo relogio.
+RECURSO_EVENTOS = {"disco-cheio", "memoria-alta", "cpu-alta"}
 
 # Quantas voltas seguidas o jogo precisa ficar mudo antes do alerta. Uma consulta A2S e
 # UDP: um pacote perdido e rotina, e alertar no primeiro silencio encheria o canal de
@@ -2583,6 +2590,14 @@ def webhook_config(conn: sqlite3.Connection) -> dict:
         disco = int(config_get(conn, "webhook_disk_pct", str(DISK_PCT_DEFAULT)))
     except ValueError:
         disco = DISK_PCT_DEFAULT
+    try:
+        memoria = int(config_get(conn, "webhook_mem_pct", str(MEM_PCT_DEFAULT)))
+    except ValueError:
+        memoria = MEM_PCT_DEFAULT
+    try:
+        cpu = int(config_get(conn, "webhook_cpu_pct", str(CPU_PCT_DEFAULT)))
+    except ValueError:
+        cpu = CPU_PCT_DEFAULT
     destinos = webhooks_lista(conn)
     cobertos = set()
     for d in destinos:
@@ -2593,6 +2608,8 @@ def webhook_config(conn: sqlite3.Connection) -> dict:
         "ativos": [d for d in destinos if d["ativo"] and d["url"]],
         "eventos": cobertos,
         "disco": min(100, max(50, disco)),
+        "memoria": min(100, max(50, memoria)),
+        "cpu": min(100, max(50, cpu)),
     }
 
 
@@ -2880,6 +2897,45 @@ def _alerta_de_disco(conn, server, cfg) -> None:
     marca["disco_cheio"] = cheio
 
 
+def _alerta_de_memoria(conn, server, cfg) -> None:
+    sid = int(server["id"])
+    dados = server_metrics(server)
+    if dados.get("error"):
+        return
+    mem = dados.get("mem")
+    if not mem or mem.get("pct") is None:
+        return
+    cheio = mem["pct"] >= cfg["memoria"]
+    marca = _estado_monitor.setdefault(sid, {})
+    # So avisa na virada
+    if cheio and not marca.get("memoria_alta"):
+        notifica(conn, "memoria-alta", f"{server['name']}: memoria quase cheia",
+                 f"{mem['pct']}% ({_human_size(mem['used'])} de {_human_size(mem['total'])})")
+    marca["memoria_alta"] = cheio
+
+
+def _alerta_de_cpu(conn, server, cfg) -> None:
+    sid = int(server["id"])
+    dados = server_metrics(server)
+    if dados.get("error"):
+        return
+    cpu = dados.get("cpu_pct")
+    if cpu is None:
+        return
+    alto = cpu >= cfg["cpu"]
+    marca = _estado_monitor.setdefault(sid, {})
+    # So avisa na virada
+    if alto and not marca.get("cpu_alta"):
+        cores = dados.get("cores", 1)
+        proc = dados.get("proc", {})
+        proc_cpu = proc.get("cpu_pct")
+        detalhe = f"{cpu}% em {cores} nucleo{'s' if cores != 1 else ''}"
+        if proc_cpu is not None:
+            detalhe += f" (jogo: {proc_cpu}%)"
+        notifica(conn, "cpu-alta", f"{server['name']}: uso de CPU alto", detalhe)
+    marca["cpu_alta"] = alto
+
+
 def _alerta_de_jogadores(conn, server, estado, anterior, cfg) -> None:
     """Avisa quando jogadores entram ou saem do servidor.
 
@@ -2976,10 +3032,12 @@ def monitora_servidores(forcar: bool = False) -> int:
     if not forcar and agora - _ultimo_monitor < MONITOR_EVERY:
         return 0
     _ultimo_monitor = agora
-    ver_disco = "disco-cheio" in cfg["eventos"] and (
+    # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
+    # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
+    recursos = cfg["eventos"] & RECURSO_EVENTOS if (
         forcar or agora - _ultimo_disco >= DISK_CHECK_EVERY
-    )
-    if ver_disco:
+    ) else set()
+    if recursos:
         _ultimo_disco = agora
     # O log e o unico que custa uma ida de SSH so dele, entao anda no seu proprio ritmo.
     ver_log = "erro-no-log" in cfg["eventos"] and (
@@ -3019,8 +3077,12 @@ def monitora_servidores(forcar: bool = False) -> int:
                 _alerta_de_jogadores(conn, server, estado, anterior, cfg)
             if ver_log:
                 _alerta_de_log(conn, server, anterior)
-            if ver_disco:
+            if "disco-cheio" in recursos:
                 _alerta_de_disco(conn, server, cfg)
+            if "memoria-alta" in recursos:
+                _alerta_de_memoria(conn, server, cfg)
+            if "cpu-alta" in recursos:
+                _alerta_de_cpu(conn, server, cfg)
         # Depois dos alertas: eles precisam comparar com o estado ANTERIOR, e atualizar
         # antes faria toda mudanca desaparecer no meio do caminho.
         anterior.update(reachable=estado["reachable"], service=estado["service"])
@@ -6042,16 +6104,35 @@ def alertas_sem_base(conn: sqlite3.Connection) -> dict:
     return faltando
 
 
+# Os limites em porcentagem da tela de Alertas: campo do formulario, chave no banco e
+# como o aviso de recusa chama a coisa.
+LIMITES_ALERTA = (
+    ("disk_pct", "webhook_disk_pct", "disco cheio"),
+    ("mem_pct", "webhook_mem_pct", "memoria cheia"),
+    ("cpu_pct", "webhook_cpu_pct", "CPU alta"),
+)
+
+
 @app.post("/alertas")
 @admin_required
 def alerts_save():
-    """So o que vale para todos os destinos: hoje, o limite do disco."""
+    """So o que vale para todos os destinos: hoje, os limites de disco, memoria e CPU."""
     conn = db()
-    disco = (request.form.get("disk_pct", "") or "").strip()
-    if not disco.isdigit() or not 50 <= int(disco) <= 100:
-        flash("O aviso de disco cheio vale de 50% a 100%.", "error")
-        return redirect(url_for("alerts"))
-    config_set(conn, "webhook_disk_pct", disco)
+    novos = []
+    for campo, chave, nome in LIMITES_ALERTA:
+        # Campo que nem veio no formulario fica como esta. Tratar ausencia como erro
+        # faria um formulario sem o campo derrubar um limite que ja estava certo.
+        if campo not in request.form:
+            continue
+        valor = (request.form.get(campo, "") or "").strip()
+        if not valor.isdigit() or not 50 <= int(valor) <= 100:
+            flash(f"O aviso de {nome} vale de 50% a 100%.", "error")
+            return redirect(url_for("alerts"))
+        novos.append((chave, valor))
+    # So grava depois de validar todos: meio salvo e pior que nada salvo, porque a tela
+    # volta dizendo "recusado" enquanto um dos limites ja mudou por baixo.
+    for chave, valor in novos:
+        config_set(conn, chave, valor)
     _zera_linha_de_base()
     flash("Preferencias salvas.", "ok")
     return redirect(url_for("alerts"))

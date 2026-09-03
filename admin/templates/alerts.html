@@ -160,6 +160,27 @@
         continua a 95% na volta seguinte e ninguem merece o mesmo alerta a cada minuto.
       </small>
     </label>
+    <label class="curto">Avisar quando a memoria passar de
+      <span class="com-unidade">
+        <input name="mem_pct" type="number" min="50" max="100" value="{{ cfg.memoria }}">
+        <span class="unidade">%</span>
+      </span>
+      <small>
+        Memoria do container, contra o limite dele (nao o da maquina inteira). Avisa uma
+        vez, na virada, do mesmo jeito que o disco.
+      </small>
+    </label>
+    <label class="curto">Avisar quando a CPU passar de
+      <span class="com-unidade">
+        <input name="cpu_pct" type="number" min="50" max="100" value="{{ cfg.cpu }}">
+        <span class="unidade">%</span>
+      </span>
+      <small>
+        Uso do container sobre os nucleos que ele tem, medido junto com o disco (a cada
+        {{ disco_a_cada }} min). Como e uma amostra curta de vez em quando, serve para
+        pegar CPU presa no teto, nao pico de um segundo.
+      </small>
+    </label>
     <div class="form-actions">
       <button class="btn primary" type="submit">Salvar</button>
     </div>
@@ -170,8 +191,8 @@
   <h2>Como funciona</h2>
   <ul class="regras">
     <li>O painel confere o estado de cada servidor a cada <strong>{{ monitor }}s</strong>
-      e o disco a cada <strong>{{ disco_a_cada }} min</strong> (o medidor custa bem mais
-      caro que o status).</li>
+      e disco, memoria e CPU a cada <strong>{{ disco_a_cada }} min</strong> (o medidor
+      custa bem mais caro que o status, e as tres leituras saem de uma vez so).</li>
     <li>Ele avisa na <strong>mudanca</strong>, nunca em repeticao: o alerta sai quando o
       servidor cai, nao a cada volta enquanto ele estiver caido.</li>
     <li>Cada evento vai para <strong>todos os destinos</strong> que o marcaram. Um
