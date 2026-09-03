@@ -631,6 +631,88 @@ check("so o disco esta ligado, so o disco sai",
       "uso de CPU alto" not in texto, enviadas)
 
 
+print("Diario de alertas")
+# O diario e a resposta para "nao chega nada no Discord": sem ele, alerta que nao
+# aconteceu e alerta que nao saiu sao a mesma tela vazia.
+liga(["caiu"])
+with conn:
+    conn.execute("DELETE FROM alert_log")
+limpa()
+panel.notifica(conn, "caiu", "Palworld: parou", "detalhe")
+diario = panel.alertas_recentes(conn)
+igual("o envio vira uma linha", len(diario), 1)
+igual("com o destino e o estado", (diario[0]["evento"], diario[0]["status"]),
+      ("caiu", "enviado"))
+
+# Evento que ninguem marcou: e o caso mais comum de canal mudo, e precisa ficar
+# registrado com essa cara — senao a pessoa procura defeito onde nao ha.
+panel.notifica(conn, "cpu-alta", "Palworld: CPU alta", "99%")
+diario = panel.alertas_recentes(conn)
+igual("alerta sem ninguem escutando tambem e registrado", diario[0]["status"],
+      "sem-destino")
+igual("e diz qual evento se perdeu", diario[0]["evento"], "cpu-alta")
+
+# Webhook fora do ar tem de aparecer como falha, com o motivo junto.
+panel.envia_webhook = lambda url, texto: "500 Internal Server Error"
+panel.notifica(conn, "caiu", "Palworld: parou de novo", "")
+panel.envia_webhook = captura
+diario = panel.alertas_recentes(conn)
+igual("envio que falhou fica marcado", diario[0]["status"], "falhou")
+check("com o motivo do lado", "500" in diario[0]["erro"], diario[0])
+
+# O diario nao pode crescer para sempre nem apagar o que interessa.
+guardado = panel.ALERT_LOG_KEEP
+panel.ALERT_LOG_KEEP = 3
+for i in range(6):
+    panel.notifica(conn, "caiu", f"alerta {i}", "")
+with panel.app.app_context():
+    panel.limpa_historico(forcar=True)
+diario = panel.alertas_recentes(conn)
+igual("a limpeza segura o tamanho", len(diario), 3)
+check("e guarda os mais NOVOS", "alerta 5" in diario[0]["titulo"], diario[0])
+panel.ALERT_LOG_KEEP = guardado
+
+
+print("Uma tarefa quebrada nao cala as outras")
+# O bug que fez tudo emudecer: as quatro tarefas do relogio dividiam um try so, entao
+# uma excecao em roda_agendamentos matava o monitor no mesmo tique — para sempre, porque
+# a tarefa quebrada quebrava de novo a cada volta.
+liga(["caiu"])
+with conn:
+    conn.execute("DELETE FROM alert_log")
+    # Job recente de um teste anterior abriria a janela de silencio e engoliria o alerta
+    # de queda — o que se quer medir aqui e a tarefa quebrada, nao a janela.
+    conn.execute("DELETE FROM jobs")
+limpa()
+agendamentos_real = panel.roda_agendamentos
+
+
+def explode():
+    raise RuntimeError("agenda quebrada de proposito")
+
+
+panel.roda_agendamentos = explode
+panel.server_metrics = lambda server, force=False: {"disks": []}
+panel.server_status = lambda server, force=False: estado()
+# O monitor tem relogio proprio (MONITOR_EVERY); zerado, cada tique vale uma volta.
+panel._ultimo_monitor = 0.0
+with panel.app.app_context():
+    panel._scheduler_tick()                       # linha de base
+panel.server_status = lambda server, force=False: estado(service="inactive")
+panel._ultimo_monitor = 0.0
+with panel.app.app_context():
+    panel._scheduler_tick()
+panel.roda_agendamentos = agendamentos_real
+
+texto = "\n".join(t for _, t in enviadas)
+check("o monitor roda mesmo com a agenda quebrada", "parou de rodar" in texto, enviadas)
+falhas_no_diario = [a for a in panel.alertas_recentes(conn)
+                    if a["status"] == "erro-interno"]
+check("e a quebra fica visivel no diario", falhas_no_diario, "nada registrado")
+check("dizendo qual tarefa caiu", "agendamentos" in falhas_no_diario[0]["titulo"],
+      falhas_no_diario[0] if falhas_no_diario else "")
+
+
 print("Linha de base ao subir o painel")
 liga(["caiu", "inacessivel"])
 panel.server_metrics = lambda server, force=False: {"disks": []}

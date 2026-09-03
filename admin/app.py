@@ -26,6 +26,7 @@ import struct
 import subprocess
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -367,6 +368,23 @@ CREATE TABLE IF NOT EXISTS webhooks (
   ativo      INTEGER NOT NULL DEFAULT 1,
   criado_em  TEXT NOT NULL DEFAULT ''
 );
+
+-- Diario de alertas: uma linha por TENTATIVA de envio, e tambem uma por alerta que
+-- nasceu sem destino algum. Canal mudo tem duas causas opostas — nada aconteceu, ou
+-- aconteceu e nao saiu — e do lado de fora elas sao identicas. Sem este registro a
+-- unica saida e adivinhar.
+CREATE TABLE IF NOT EXISTS alert_log (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  criado_em  TEXT NOT NULL,
+  evento     TEXT NOT NULL DEFAULT '',
+  titulo     TEXT NOT NULL DEFAULT '',
+  detalhe    TEXT NOT NULL DEFAULT '',
+  destino    TEXT NOT NULL DEFAULT '',
+  -- 'enviado', 'falhou', 'sem-destino' ou 'erro-interno'
+  status     TEXT NOT NULL DEFAULT '',
+  erro       TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_alert_log_id ON alert_log (id DESC);
 """
 
 
@@ -2529,6 +2547,8 @@ CPU_PCT_DEFAULT = 90
 # Os tres saem da MESMA leitura do medidor: com o cache de server_metrics no meio, olhar
 # os tres custa uma ida de SSH so, entao eles andam juntos no mesmo relogio.
 RECURSO_EVENTOS = {"disco-cheio", "memoria-alta", "cpu-alta"}
+# Quantas linhas do diario de alertas ficam guardadas.
+ALERT_LOG_KEEP = int(os.environ.get("GAMEPANEL_ALERT_LOG_KEEP", "500"))
 
 # Quantas voltas seguidas o jogo precisa ficar mudo antes do alerta. Uma consulta A2S e
 # UDP: um pacote perdido e rotina, e alertar no primeiro silencio encheria o canal de
@@ -2674,6 +2694,10 @@ def notifica(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str = 
     alvos = [d for d in webhooks_lista(conn)
              if d["ativo"] and d["url"] and evento in d["eventos"]]
     if not alvos:
+        # Registrado de proposito: "o alerta disparou e ninguem pediu por ele" e a causa
+        # mais comum de canal mudo, e e indistinguivel de "nao aconteceu nada" para quem
+        # so olha o Discord. No diario as duas viram coisas diferentes.
+        _registra_alerta(conn, evento, titulo, detalhe, "", "sem-destino")
         return False
     texto = f"**{titulo}**"
     if detalhe:
@@ -2685,9 +2709,38 @@ def notifica(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str = 
             app.logger.warning(
                 "alerta '%s' nao saiu para '%s': %s", evento, destino["nome"], erro
             )
+            _registra_alerta(conn, evento, titulo, detalhe, destino["nome"],
+                             "falhou", erro)
         else:
             saiu = True
+            _registra_alerta(conn, evento, titulo, detalhe, destino["nome"], "enviado")
     return saiu
+
+
+def _registra_alerta(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str,
+                     destino: str, status: str, erro: str = "") -> None:
+    """Grava uma linha do diario.
+
+    Engole o proprio erro de proposito: o diario existe para explicar o alerta, e seria
+    absurdo ele impedir o alerta de sair. No pior caso fica sem registro, nunca sem envio.
+    """
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO alert_log (criado_em, evento, titulo, detalhe, destino,"
+                " status, erro) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (now_iso(), evento, titulo[:200], detalhe[:500], destino[:80],
+                 status, erro[:300]))
+    except sqlite3.Error:
+        app.logger.exception("nao consegui gravar no diario de alertas")
+
+
+def alertas_recentes(conn: sqlite3.Connection, limite: int = 60) -> list[dict]:
+    """As ultimas linhas do diario, da mais nova para a mais velha."""
+    linhas = conn.execute(
+        "SELECT * FROM alert_log ORDER BY id DESC LIMIT ?", (limite,)
+    ).fetchall()
+    return [dict(l) for l in linhas]
 
 
 def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
@@ -3274,6 +3327,15 @@ def limpa_historico(forcar: bool = False) -> int:
         with conn:
             conn.execute("DELETE FROM samples WHERE taken_at < ?", (velhas,))
 
+    # O diario se mede em linhas, nao em dias: o que se quer dele e "as ultimas N", e um
+    # prazo em dias deixaria a tela vazia justo num painel quieto, que e quando a duvida
+    # "sera que isso ainda funciona?" aparece.
+    with conn:
+        conn.execute(
+            "DELETE FROM alert_log WHERE id <= "
+            "(SELECT MIN(id) FROM (SELECT id FROM alert_log ORDER BY id DESC LIMIT ?)) - 1",
+            (ALERT_LOG_KEEP,))
+
     if not JOBS_KEEP_DAYS:
         return 0
     corte = (datetime.now(timezone.utc) - timedelta(days=JOBS_KEEP_DAYS)).isoformat()
@@ -3286,6 +3348,40 @@ _scheduler_started = False
 _scheduler_lock = threading.Lock()
 
 
+def _falha_do_relogio(nome: str) -> None:
+    """Anota no log do processo E no diario de alertas.
+
+    O diario e o que a pessoa consegue ver: o traceback no stderr do gunicorn so aparece
+    para quem sabe procurar, e a queixa que traz alguem ate aqui e sempre a mesma — "nao
+    chega nada no Discord".
+    """
+    app.logger.exception("falha na tarefa '%s' do relogio", nome)
+    try:
+        _registra_alerta(db(), "", f"a tarefa '{nome}' do relogio falhou",
+                         traceback.format_exc(limit=4)[-500:], "", "erro-interno")
+    except Exception:  # noqa: BLE001 - registrar a falha nao pode virar outra falha
+        pass
+
+
+def _scheduler_tick() -> None:
+    """Uma volta do relogio. Precisa de contexto de aplicacao por causa do db().
+
+    Cada tarefa vai no SEU try. Dividindo um try so, uma agenda quebrada levava junto o
+    monitor e as amostras: a excecao subia na primeira tarefa e as outras tres nunca
+    rodavam — para sempre, porque a tarefa quebrada quebrava de novo a cada volta. Por
+    fora o painel parecia inteiro, e o botao de testar webhook (que nao passa por aqui)
+    continuava funcionando e afastando a suspeita do lugar certo.
+    """
+    for nome, tarefa in (("agendamentos", roda_agendamentos),
+                         ("monitor", monitora_servidores),
+                         ("amostras", coleta_amostras),
+                         ("limpeza", limpa_historico)):
+        try:
+            tarefa()
+        except Exception:  # noqa: BLE001 - uma tarefa nao derruba as outras
+            _falha_do_relogio(nome)
+
+
 def _scheduler_loop() -> None:
     while True:
         time.sleep(SCHEDULE_TICK)
@@ -3293,10 +3389,7 @@ def _scheduler_loop() -> None:
             # Contexto de aplicacao: e o que faz o db() desta thread funcionar como o das
             # rotas (conexao propria, fechada no fim pelo teardown).
             with app.app_context():
-                roda_agendamentos()
-                monitora_servidores()
-                coleta_amostras()
-                limpa_historico()
+                _scheduler_tick()
         except Exception:  # noqa: BLE001 - a thread nao pode morrer por causa de um tick
             app.logger.exception("falha no agendador")
 
@@ -6076,7 +6169,7 @@ def alerts():
         monitor=int(MONITOR_EVERY), disco_a_cada=int(DISK_CHECK_EVERY / 60),
         quieto=int(ALERT_QUIET), limite_hooks=WEBHOOK_MAX,
         mudo_voltas=MUTE_ROUNDS, log_a_cada=int(LOG_CHECK_EVERY),
-        pendencias=alertas_sem_base(conn),
+        pendencias=alertas_sem_base(conn), diario=alertas_recentes(conn),
     )
 
 

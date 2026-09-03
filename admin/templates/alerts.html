@@ -188,6 +188,52 @@
 </div>
 
 <div class="card">
+  <h2>Diario de alertas</h2>
+  {% if not diario %}
+    <p class="muted">Nada registrado ainda. Cada alerta que o painel decidir mandar
+      aparece aqui &mdash; inclusive os que <strong>nao</strong> sairam.</p>
+  {% else %}
+    <table class="jobs">
+      <thead>
+        <tr><th>Quando (UTC)</th><th>Evento</th><th>O que</th><th>Destino</th>
+          <th>Saida</th></tr>
+      </thead>
+      <tbody>
+        {% for a in diario %}
+          <tr>
+            <td class="muted small">{{ a.criado_em[:19] | replace('T', ' ') }}</td>
+            <td class="small">{{ eventos.get(a.evento) or a.evento or '—' }}</td>
+            <td class="small">{{ a.titulo }}
+              {% if a.detalhe %}<br><span class="muted">{{ a.detalhe }}</span>{% endif %}
+            </td>
+            <td class="small">{{ a.destino or '—' }}</td>
+            <td class="small">
+              {% if a.status == 'enviado' %}
+                <span class="badge on">enviado</span>
+              {% elif a.status == 'falhou' %}
+                <span class="badge off">falhou</span>
+                <br><span class="muted">{{ a.erro }}</span>
+              {% elif a.status == 'sem-destino' %}
+                <span class="badge cold">sem destino</span>
+              {% else %}
+                <span class="badge off">erro interno</span>
+                <br><span class="muted">{{ a.erro }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted small">
+      <strong>sem destino</strong> quer dizer que o alerta aconteceu de verdade e nenhum
+      destino ativo tinha esse evento marcado &mdash; o canal fica mudo por escolha, nao
+      por defeito. <strong>erro interno</strong> e uma tarefa do relogio que quebrou:
+      enquanto ela aparecer aqui, os alertas dela nao estao sendo checados.
+    </p>
+  {% endif %}
+</div>
+
+<div class="card">
   <h2>Como funciona</h2>
   <ul class="regras">
     <li>O painel confere o estado de cada servidor a cada <strong>{{ monitor }}s</strong>
