@@ -2498,6 +2498,8 @@ ALERT_EVENTS = {
     "reiniciando": "Jogo caindo em loop de restart",
     "travou": "Jogo nao responde (de pe, mas mudo)",
     "respondeu": "Jogo voltou a responder",
+    "jogador-entrou": "Jogador conectou",
+    "jogador-saiu": "Jogador desconectou",
     "erro-no-log": "Erro no log do jogo",
     "inacessivel": "Painel perdeu contato (SSH)",
     "acessivel": "Contato restabelecido",
@@ -2510,6 +2512,8 @@ ALERT_EVENTS = {
 ALERT_PRECISA_CONFIG = {
     "travou": "contagem de jogadores por consulta (A2S) ou API HTTP",
     "respondeu": "contagem de jogadores por consulta (A2S) ou API HTTP",
+    "jogador-entrou": "contagem de jogadores (A2S, API HTTP ou log)",
+    "jogador-saiu": "contagem de jogadores (A2S, API HTTP ou log)",
     "erro-no-log": "uma expressao de erro no cadastro do servidor",
 }
 # O que vem ligado: as mas noticias que funcionam sem configurar nada. 'voltou',
@@ -2876,6 +2880,88 @@ def _alerta_de_disco(conn, server, cfg) -> None:
     marca["disco_cheio"] = cheio
 
 
+def _alerta_de_jogadores(conn, server, estado, anterior, cfg) -> None:
+    """Avisa quando jogadores entram ou saem do servidor.
+
+    Compara a lista de jogadores atual com a da verificacao anterior. Se o jogo
+    tiver nomes (pelo log com (?P<name>...), API HTTP ou A2S), cita o nome de quem
+    entrou ou saiu. Se o jogo so devolver a contagem, avisa a variacao numerica.
+    """
+    sid, nome = int(server["id"]), server["name"]
+    if not player_source(server):
+        return
+
+    # Se o servico nao estiver ativo ou tiver job recente (restart, update),
+    # reseta o estado para nao disparar alertas falsos de desconexao.
+    if estado.get("service") != "active" or _job_recente(conn, sid):
+        anterior["jogadores_nomes"] = None
+        anterior["jogadores_count"] = None
+        return
+
+    dados = server_players(server)
+    if not dados.get("configured") or dados.get("error"):
+        return
+
+    lista = dados.get("list") or []
+    nomes_atuais = {p["name"].strip() for p in lista if p.get("name") and p["name"].strip()}
+    contagem_atual = dados.get("players")
+    if contagem_atual is None and nomes_atuais:
+        contagem_atual = len(nomes_atuais)
+    contagem_atual = max(0, int(contagem_atual or 0))
+
+    # Primeira olhada deste servidor: so estabelece a linha de base
+    if anterior.get("jogadores_nomes") is None and anterior.get("jogadores_count") is None:
+        anterior["jogadores_nomes"] = nomes_atuais
+        anterior["jogadores_count"] = contagem_atual
+        return
+
+    nomes_anteriores = anterior.get("jogadores_nomes") or set()
+    contagem_anterior = int(anterior.get("jogadores_count") or 0)
+
+    # Caso 1: Temos nomes (seja exato ou aproximado)
+    if nomes_atuais or nomes_anteriores:
+        entraram = nomes_atuais - nomes_anteriores
+        sairam = nomes_anteriores - nomes_atuais
+
+        if "jogador-entrou" in cfg["eventos"]:
+            for player in sorted(entraram):
+                detalhe = (
+                    "nenhum jogador online"
+                    if contagem_atual == 0
+                    else f"{contagem_atual} jogador{'es' if contagem_atual != 1 else ''} online"
+                )
+                notifica(conn, "jogador-entrou", f"{nome}: {player} entrou no jogo", detalhe)
+
+        if "jogador-saiu" in cfg["eventos"]:
+            for player in sorted(sairam):
+                detalhe = (
+                    "nenhum jogador online"
+                    if contagem_atual == 0
+                    else f"{contagem_atual} jogador{'es' if contagem_atual != 1 else ''} online"
+                )
+                notifica(conn, "jogador-saiu", f"{nome}: {player} saiu do jogo", detalhe)
+
+    # Caso 2: Apenas contagem (jogo sem nomes de jogadores)
+    else:
+        if contagem_atual > contagem_anterior and "jogador-entrou" in cfg["eventos"]:
+            dif = contagem_atual - contagem_anterior
+            texto = "um jogador conectou" if dif == 1 else f"{dif} jogadores conectaram"
+            detalhe = f"{contagem_atual} jogador{'es' if contagem_atual != 1 else ''} online"
+            notifica(conn, "jogador-entrou", f"{nome}: {texto}", detalhe)
+        elif contagem_atual < contagem_anterior and "jogador-saiu" in cfg["eventos"]:
+            dif = contagem_anterior - contagem_atual
+            texto = "um jogador saiu" if dif == 1 else f"{dif} jogadores saíram"
+            detalhe = (
+                "nenhum jogador online"
+                if contagem_atual == 0
+                else f"{contagem_atual} jogador{'es' if contagem_atual != 1 else ''} online"
+            )
+            notifica(conn, "jogador-saiu", f"{nome}: {texto}", detalhe)
+
+    anterior["jogadores_nomes"] = nomes_atuais
+    anterior["jogadores_count"] = contagem_atual
+
+
 def monitora_servidores(forcar: bool = False) -> int:
     """Confere o estado de todo mundo e dispara o que mudou. Devolve quantos olhou."""
     global _ultimo_monitor, _ultimo_disco, _ultimo_log
@@ -2929,6 +3015,8 @@ def monitora_servidores(forcar: bool = False) -> int:
             # ela com o evento desligado.
             if cfg["eventos"] & {"travou", "respondeu"}:
                 _alerta_de_mudez(conn, server, estado, anterior)
+            if cfg["eventos"] & {"jogador-entrou", "jogador-saiu"}:
+                _alerta_de_jogadores(conn, server, estado, anterior, cfg)
             if ver_log:
                 _alerta_de_log(conn, server, anterior)
             if ver_disco:
@@ -5942,10 +6030,13 @@ def alertas_sem_base(conn: sqlite3.Connection) -> dict:
         return {}
     servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
     com_consulta = sum(1 for s in servidores if player_source(s) in ("a2s", "http"))
+    com_jogadores = sum(1 for s in servidores if player_source(s))
     com_regex = sum(1 for s in servidores if _valor_guardado(s, "error_re"))
     faltando = {}
     if ("travou" in ligados or "respondeu" in ligados) and not com_consulta:
         faltando["travou"] = ALERT_PRECISA_CONFIG["travou"]
+    if ("jogador-entrou" in ligados or "jogador-saiu" in ligados) and not com_jogadores:
+        faltando["jogador-entrou"] = ALERT_PRECISA_CONFIG["jogador-entrou"]
     if "erro-no-log" in ligados and not com_regex:
         faltando["erro-no-log"] = ALERT_PRECISA_CONFIG["erro-no-log"]
     return faltando

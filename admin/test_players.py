@@ -210,6 +210,19 @@ igual("com nome nos dois lados, a lista e exata",
 igual("e a contagem bate", r["players"], 2)
 check("e nao se declara aproximada", not r.get("aproximado"))
 
+# Nome nos DOIS lados (Enshrouded pelo journalctl):
+LINHAS_ENSH = [
+    "Sep 03 13:46:31 enshrouded start-enshrouded.sh[83856]: [server] Player 'Cristopfer' logged in with Permissions:",
+    "Sep 03 13:46:35 enshrouded start-enshrouded.sh[83856]: [server] Player 'Amigo' logged in with Permissions:",
+    "Sep 03 13:47:36 enshrouded start-enshrouded.sh[83856]: [server] Remove Player 'Cristopfer'",
+]
+ENTRA_ENSH = panel.compile_pattern(r"\[server\] Player '(?P<name>[^']+)' logged in", "entrada")
+SAI_ENSH = panel.compile_pattern(r"\[server\] Remove Player '(?P<name>[^']+)'", "saida")
+r = panel._apply_log_events(LINHAS_ENSH, ENTRA_ENSH, SAI_ENSH)
+igual("Enshrouded lista quem ficou online", [p["name"] for p in r["list"]], ["Amigo"])
+igual("Enshrouded contagem bate", r["players"], 1)
+check("Enshrouded lista nao e aproximada", not r.get("aproximado"))
+
 # Nome so na ENTRADA (Satisfactory): o log avisa que alguem saiu, sem dizer quem.
 LINHAS_SAT = [
     "LogNet: Join succeeded: Cristopfer",

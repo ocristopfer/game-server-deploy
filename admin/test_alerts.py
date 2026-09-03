@@ -358,6 +358,66 @@ for _ in range(panel.MUTE_ROUNDS + 2):
 igual("contagem por log nao gera alerta de mudez", len(enviadas), 0)
 
 
+print("Entrada e saida de jogadores")
+liga(["jogador-entrou", "jogador-saiu"])
+cfg_jog = panel.webhook_config(conn)
+srv_jogadores = dict(alvo, player_source="log", query_port=0)
+
+res_players = {"configured": True, "error": "", "players": 1, "list": [{"name": "Cristopfer"}]}
+panel.server_players = lambda server, force=False: res_players
+memoria_jog = {"reachable": True, "service": "active"}
+
+limpa()
+# Primeira olhada: estabelece linha de base, nao avisa quem ja estava jogando
+panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_jog, cfg_jog)
+igual("primeira olhada so anota (linha de base)", len(enviadas), 0)
+igual("guardou o jogador online", memoria_jog["jogadores_nomes"], {"Cristopfer"})
+
+# Segunda olhada sem mudanca: nada sai
+limpa()
+panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_jog, cfg_jog)
+igual("sem mudanca de jogadores, nao avisa", len(enviadas), 0)
+
+# Jogador novo entra
+limpa()
+res_players = {"configured": True, "error": "", "players": 2, "list": [{"name": "Cristopfer"}, {"name": "Ana"}]}
+panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_jog, cfg_jog)
+igual("jogador novo avisa entrada", len(enviadas), 1)
+check("mensagem diz quem entrou", "Ana entrou no jogo" in enviadas[0][1], enviadas[0][1])
+check("mensagem mostra contagem", "2 jogadores online" in enviadas[0][1], enviadas[0][1])
+
+# Jogador sai
+limpa()
+res_players = {"configured": True, "error": "", "players": 1, "list": [{"name": "Cristopfer"}]}
+panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_jog, cfg_jog)
+igual("jogador saindo avisa saida", len(enviadas), 1)
+check("mensagem diz quem saiu", "Ana saiu do jogo" in enviadas[0][1], enviadas[0][1])
+
+# Ultimo jogador sai
+limpa()
+res_players = {"configured": True, "error": "", "players": 0, "list": []}
+panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_jog, cfg_jog)
+igual("ultimo jogador saindo avisa", len(enviadas), 1)
+check("detalhe diz nenhum jogador", "nenhum jogador online" in enviadas[0][1], enviadas[0][1])
+
+# Servidor so com contagem (sem nomes)
+limpa()
+res_players = {"configured": True, "error": "", "players": 0, "list": []}
+memoria_count = {"reachable": True, "service": "active"}
+panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_count, cfg_jog)
+res_players = {"configured": True, "error": "", "players": 3, "list": []}
+panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_count, cfg_jog)
+igual("contagem numerica subindo avisa", len(enviadas), 1)
+check("detalhe avisa variacao", "3 jogadores conectaram" in enviadas[0][1], enviadas[0][1])
+
+# Servico parado / reiniciando nao manda alerta falso de saida
+limpa()
+memoria_jog = {"reachable": True, "service": "active", "jogadores_nomes": {"Cristopfer"}, "jogadores_count": 1}
+panel._alerta_de_jogadores(conn, srv_jogadores, estado(service="failed"), memoria_jog, cfg_jog)
+igual("servico parado nao dispara alerta de saida", len(enviadas), 0)
+igual("e a memoria reseta", memoria_jog["jogadores_nomes"], None)
+
+
 print("Erro no log do jogo")
 liga(["erro-no-log"])
 linhas = ["tudo bem por aqui", "Fatal error: world corrupted", "seguindo"]
