@@ -130,7 +130,11 @@ BACKUP_LIST_MAX = 100
 # Agendamento: tarefas que o painel dispara sozinho (reiniciar de madrugada, backup
 # diario). O relogio e o do CONTAINER DO PAINEL — se as horas nao baterem com as suas,
 # o que esta errado e o TZ dele.
-SCHEDULE_TICK = 30.0
+# Este e o piso de TODOS os avisos do painel: nada pode chegar mais rapido do que a volta
+# do relogio. Ele mesmo custa quase nada (as quatro tarefas tem cada uma o seu proprio
+# ritmo la dentro e saem na hora quando nao e a vez delas), entao 15s da folga para o
+# alerta de jogador sem multiplicar SSH de ninguem.
+SCHEDULE_TICK = float(os.environ.get("GAMEPANEL_SCHEDULE_TICK", "15"))
 # Tarefa atrasada demais nao dispara. Se o painel passou a noite fora do ar, ninguem quer
 # o "reiniciar as 5h" caindo as 14h, no meio da partida: ela espera a proxima ocorrencia.
 SCHEDULE_GRACE = int(os.environ.get("GAMEPANEL_SCHEDULE_GRACE", "3600"))
@@ -165,6 +169,11 @@ WEBHOOK_MAX = int(os.environ.get("GAMEPANEL_WEBHOOK_MAX", "10"))
 # De quanto em quanto tempo o painel confere o estado de cada servidor. Cada volta custa
 # uma ida de SSH por servidor — nao adianta descer muito.
 MONITOR_EVERY = float(os.environ.get("GAMEPANEL_MONITOR_EVERY", "60"))
+# Jogador entrando e a unica coisa que alguem espera ver "agora" — quem recebe o aviso
+# costuma querer entrar junto, e um minuto depois ja e tarde. Por isso ele tem relogio
+# proprio, mais curto que o do estado. A volta rapida NAO paga SSH: ela pula o status do
+# servico e consulta so o jogo (A2S/HTTP vao direto na porta do jogo).
+PLAYER_CHECK_EVERY = float(os.environ.get("GAMEPANEL_PLAYER_CHECK_EVERY", "15"))
 # O disco sai dos medidores, que custam bem mais caro (o script remoto dorme 0,5s para
 # tirar duas amostras). Ele nao enche em um minuto, entao a conferida e espacada.
 DISK_CHECK_EVERY = float(os.environ.get("GAMEPANEL_DISK_CHECK_EVERY", "600"))
@@ -2761,6 +2770,7 @@ def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
 # refaz a linha de base, e ninguem recebe um alerta de algo que ja estava assim.
 _estado_monitor: dict[int, dict] = {}
 _ultimo_monitor = 0.0
+_ultimo_estado = 0.0
 _ultimo_disco = 0.0
 _ultimo_log = 0.0
 
@@ -2989,12 +2999,16 @@ def _alerta_de_cpu(conn, server, cfg) -> None:
     marca["cpu_alta"] = alto
 
 
-def _alerta_de_jogadores(conn, server, estado, anterior, cfg) -> None:
+def _alerta_de_jogadores(conn, server, servico, anterior, cfg) -> None:
     """Avisa quando jogadores entram ou saem do servidor.
 
     Compara a lista de jogadores atual com a da verificacao anterior. Se o jogo
     tiver nomes (pelo log com (?P<name>...), API HTTP ou A2S), cita o nome de quem
     entrou ou saiu. Se o jogo so devolver a contagem, avisa a variacao numerica.
+
+    Recebe o `servico` (string) em vez do estado inteiro de proposito: a volta rapida do
+    monitor nao consulta o systemd, e passa aqui o ultimo estado ja conhecido. Pedir o
+    dicionario obrigaria a pagar um SSH so para preencher um campo que ja se sabe.
     """
     sid, nome = int(server["id"]), server["name"]
     if not player_source(server):
@@ -3002,7 +3016,7 @@ def _alerta_de_jogadores(conn, server, estado, anterior, cfg) -> None:
 
     # Se o servico nao estiver ativo ou tiver job recente (restart, update),
     # reseta o estado para nao disparar alertas falsos de desconexao.
-    if estado.get("service") != "active" or _job_recente(conn, sid):
+    if servico != "active" or _job_recente(conn, sid):
         anterior["jogadores_nomes"] = None
         anterior["jogadores_count"] = None
         return
@@ -3073,7 +3087,7 @@ def _alerta_de_jogadores(conn, server, estado, anterior, cfg) -> None:
 
 def monitora_servidores(forcar: bool = False) -> int:
     """Confere o estado de todo mundo e dispara o que mudou. Devolve quantos olhou."""
-    global _ultimo_monitor, _ultimo_disco, _ultimo_log
+    global _ultimo_monitor, _ultimo_estado, _ultimo_disco, _ultimo_log
     conn = db()
     cfg = webhook_config(conn)
     # Sem nenhum destino ligado pedindo algum evento, a volta inteira seria SSH gasto
@@ -3082,9 +3096,19 @@ def monitora_servidores(forcar: bool = False) -> int:
         return 0
 
     agora = time.monotonic()
-    if not forcar and agora - _ultimo_monitor < MONITOR_EVERY:
+    # O passo do monitor e o do alerta mais apressado que esteja LIGADO. Com jogadores
+    # ligados a volta fica curta; sem eles nada muda em relacao a antes.
+    quer_jogadores = bool(cfg["eventos"] & {"jogador-entrou", "jogador-saiu"})
+    passo = min(MONITOR_EVERY, PLAYER_CHECK_EVERY) if quer_jogadores else MONITOR_EVERY
+    if not forcar and agora - _ultimo_monitor < passo:
         return 0
     _ultimo_monitor = agora
+    # ...mas so a contagem de jogadores anda nesse passo curto. Estado do servico, mudez
+    # e restart continuam no ritmo antigo: cada um deles custa SSH por servidor, e
+    # acelerar tudo junto multiplicaria essa conta por quatro sem necessidade.
+    ver_estado = forcar or agora - _ultimo_estado >= MONITOR_EVERY
+    if ver_estado:
+        _ultimo_estado = agora
     # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
     # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
     recursos = cfg["eventos"] & RECURSO_EVENTOS if (
@@ -3102,8 +3126,18 @@ def monitora_servidores(forcar: bool = False) -> int:
     servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
     for server in servidores:
         sid = int(server["id"])
-        estado = server_status(server)
         anterior = _estado_monitor.get(sid)
+        # Volta rapida: so jogadores, e sem tocar no SSH. O servico que interessa aqui e
+        # "estava de pe na ultima olhada de verdade", e isso ja esta guardado. Se ele
+        # tiver caido desde entao, a consulta ao proprio jogo falha e _alerta_de_jogadores
+        # sai sem avisar nada — o atraso de um estado velho nao inventa alerta.
+        if not ver_estado:
+            if quer_jogadores and anterior is not None:
+                _alerta_de_jogadores(conn, server, anterior.get("service", ""),
+                                     anterior, cfg)
+            continue
+
+        estado = server_status(server)
         if anterior is None:
             # Primeira olhada: so anota. Alertar aqui encheria o canal de "esta parado"
             # toda vez que o painel reiniciasse. Vale para o contador de restarts do
@@ -3126,8 +3160,8 @@ def monitora_servidores(forcar: bool = False) -> int:
             # ela com o evento desligado.
             if cfg["eventos"] & {"travou", "respondeu"}:
                 _alerta_de_mudez(conn, server, estado, anterior)
-            if cfg["eventos"] & {"jogador-entrou", "jogador-saiu"}:
-                _alerta_de_jogadores(conn, server, estado, anterior, cfg)
+            if quer_jogadores:
+                _alerta_de_jogadores(conn, server, estado["service"], anterior, cfg)
             if ver_log:
                 _alerta_de_log(conn, server, anterior)
             if "disco-cheio" in recursos:
@@ -6167,6 +6201,8 @@ def alerts():
         "alerts.html", cfg=webhook_config(conn), eventos=ALERT_EVENTS,
         padrao=limpa_eventos(ALERT_DEFAULT), do_env=bool(WEBHOOK_URL_PADRAO),
         monitor=int(MONITOR_EVERY), disco_a_cada=int(DISK_CHECK_EVERY / 60),
+        # O piso do relogio conta: o alerta nao pode chegar mais rapido que a volta dele.
+        jogadores_a_cada=int(max(PLAYER_CHECK_EVERY, SCHEDULE_TICK)),
         quieto=int(ALERT_QUIET), limite_hooks=WEBHOOK_MAX,
         mudo_voltas=MUTE_ROUNDS, log_a_cada=int(LOG_CHECK_EVERY),
         pendencias=alertas_sem_base(conn), diario=alertas_recentes(conn),

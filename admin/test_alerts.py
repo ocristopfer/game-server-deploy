@@ -9,6 +9,7 @@ deixa de ser lido; alerta a menos e um servidor caido as 3h que ninguem descobre
 """
 import os
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 
 os.environ["GAMEPANEL_DB"] = os.path.join(tempfile.mkdtemp(), "teste.db")
@@ -376,19 +377,19 @@ memoria_jog = {"reachable": True, "service": "active"}
 
 limpa()
 # Primeira olhada: estabelece linha de base, nao avisa quem ja estava jogando
-panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_jog, cfg_jog)
+panel._alerta_de_jogadores(conn, srv_jogadores, "active", memoria_jog, cfg_jog)
 igual("primeira olhada so anota (linha de base)", len(enviadas), 0)
 igual("guardou o jogador online", memoria_jog["jogadores_nomes"], {"Cristopfer"})
 
 # Segunda olhada sem mudanca: nada sai
 limpa()
-panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_jog, cfg_jog)
+panel._alerta_de_jogadores(conn, srv_jogadores, "active", memoria_jog, cfg_jog)
 igual("sem mudanca de jogadores, nao avisa", len(enviadas), 0)
 
 # Jogador novo entra
 limpa()
 res_players = {"configured": True, "error": "", "players": 2, "list": [{"name": "Cristopfer"}, {"name": "Ana"}]}
-panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_jog, cfg_jog)
+panel._alerta_de_jogadores(conn, srv_jogadores, "active", memoria_jog, cfg_jog)
 igual("jogador novo avisa entrada", len(enviadas), 1)
 check("mensagem diz quem entrou", "Ana entrou no jogo" in enviadas[0][1], enviadas[0][1])
 check("mensagem mostra contagem", "2 jogadores online" in enviadas[0][1], enviadas[0][1])
@@ -396,14 +397,14 @@ check("mensagem mostra contagem", "2 jogadores online" in enviadas[0][1], enviad
 # Jogador sai
 limpa()
 res_players = {"configured": True, "error": "", "players": 1, "list": [{"name": "Cristopfer"}]}
-panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_jog, cfg_jog)
+panel._alerta_de_jogadores(conn, srv_jogadores, "active", memoria_jog, cfg_jog)
 igual("jogador saindo avisa saida", len(enviadas), 1)
 check("mensagem diz quem saiu", "Ana saiu do jogo" in enviadas[0][1], enviadas[0][1])
 
 # Ultimo jogador sai
 limpa()
 res_players = {"configured": True, "error": "", "players": 0, "list": []}
-panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_jog, cfg_jog)
+panel._alerta_de_jogadores(conn, srv_jogadores, "active", memoria_jog, cfg_jog)
 igual("ultimo jogador saindo avisa", len(enviadas), 1)
 check("detalhe diz nenhum jogador", "nenhum jogador online" in enviadas[0][1], enviadas[0][1])
 
@@ -411,18 +412,69 @@ check("detalhe diz nenhum jogador", "nenhum jogador online" in enviadas[0][1], e
 limpa()
 res_players = {"configured": True, "error": "", "players": 0, "list": []}
 memoria_count = {"reachable": True, "service": "active"}
-panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_count, cfg_jog)
+panel._alerta_de_jogadores(conn, srv_jogadores, "active", memoria_count, cfg_jog)
 res_players = {"configured": True, "error": "", "players": 3, "list": []}
-panel._alerta_de_jogadores(conn, srv_jogadores, estado(), memoria_count, cfg_jog)
+panel._alerta_de_jogadores(conn, srv_jogadores, "active", memoria_count, cfg_jog)
 igual("contagem numerica subindo avisa", len(enviadas), 1)
 check("detalhe avisa variacao", "3 jogadores conectaram" in enviadas[0][1], enviadas[0][1])
 
 # Servico parado / reiniciando nao manda alerta falso de saida
 limpa()
 memoria_jog = {"reachable": True, "service": "active", "jogadores_nomes": {"Cristopfer"}, "jogadores_count": 1}
-panel._alerta_de_jogadores(conn, srv_jogadores, estado(service="failed"), memoria_jog, cfg_jog)
+panel._alerta_de_jogadores(conn, srv_jogadores, "failed", memoria_jog, cfg_jog)
 igual("servico parado nao dispara alerta de saida", len(enviadas), 0)
 igual("e a memoria reseta", memoria_jog["jogadores_nomes"], None)
+
+# --------------------------------------------------- a volta rapida do monitor
+# Jogador entrando precisa chegar em segundos, nao no minuto seguinte: quem recebe o
+# aviso costuma querer entrar junto. A volta rapida existe para isso — e ela nao pode
+# custar SSH, senao acelerar o alerta multiplicaria a conta de todo o resto.
+print("Volta rapida so para jogadores")
+liga(["jogador-entrou", "jogador-saiu", "caiu"])
+with conn:
+    conn.execute("DELETE FROM jobs")
+    conn.execute("UPDATE servers SET player_source = 'log', query_port = 0")
+
+idas_de_ssh = []
+
+
+def status_contado(server, force=False):
+    idas_de_ssh.append(int(server["id"]))
+    return estado()
+
+
+panel.server_status = status_contado
+panel.server_metrics = lambda server, force=False: {"disks": []}
+res_players = {"configured": True, "error": "", "players": 0, "list": []}
+
+limpa()
+with panel.app.app_context():
+    # Os dois relogios zerados = volta completa. Sao precisas duas: a primeira anota o
+    # estado do servidor, a segunda a linha de base dos jogadores.
+    panel._ultimo_monitor = panel._ultimo_estado = 0.0
+    panel.monitora_servidores()
+    panel._ultimo_monitor = panel._ultimo_estado = 0.0
+    panel.monitora_servidores()
+igual("a volta completa consultou o systemd", len(idas_de_ssh), 2)
+
+# Agora a volta RAPIDA. Os relogios recuam 20s: o do estado (60s) ainda nao venceu, o
+# dos jogadores (15s) sim — que e exatamente a situacao no meio de dois minutos.
+idas_de_ssh.clear()
+panel._ultimo_monitor = panel._ultimo_estado = time.monotonic() - 20
+res_players = {"configured": True, "error": "", "players": 1, "list": [{"name": "Ana"}]}
+with panel.app.app_context():
+    panel.monitora_servidores()
+check("a entrada chega na volta rapida",
+      any("Ana entrou no jogo" in t for _, t in enviadas), enviadas)
+igual("e ela nao gastou nenhuma ida de SSH", idas_de_ssh, [])
+
+# O passo curto so existe por causa do evento de jogador. Sem ele os mesmos 20s nao
+# bastam, e o monitor continua no ritmo de antes — ninguem paga SSH a mais de graca.
+liga(["caiu"])
+panel._ultimo_monitor = panel._ultimo_estado = time.monotonic() - 20
+with panel.app.app_context():
+    igual("sem alerta de jogador, 20s ainda nao e hora",
+          panel.monitora_servidores(), 0)
 
 
 print("Erro no log do jogo")
@@ -694,12 +746,12 @@ def explode():
 panel.roda_agendamentos = explode
 panel.server_metrics = lambda server, force=False: {"disks": []}
 panel.server_status = lambda server, force=False: estado()
-# O monitor tem relogio proprio (MONITOR_EVERY); zerado, cada tique vale uma volta.
-panel._ultimo_monitor = 0.0
+# Os dois relogios do monitor zerados: cada tique vale uma volta COMPLETA, com estado.
+panel._ultimo_monitor = panel._ultimo_estado = 0.0
 with panel.app.app_context():
     panel._scheduler_tick()                       # linha de base
 panel.server_status = lambda server, force=False: estado(service="inactive")
-panel._ultimo_monitor = 0.0
+panel._ultimo_monitor = panel._ultimo_estado = 0.0
 with panel.app.app_context():
     panel._scheduler_tick()
 panel.roda_agendamentos = agendamentos_real
