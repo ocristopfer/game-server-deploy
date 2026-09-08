@@ -986,14 +986,14 @@ if command -v curl >/dev/null 2>&1; then
   # -k: essas APIs usam certificado autoassinado (o Satisfactory, por exemplo).
   if [ -n "$corpo" ] && [ -n "$auth" ]; then
     curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" \
-      -H "Authorization: $auth" -H 'Content-Type: application/json' \
+      -H "$auth" -H 'Content-Type: application/json' \
       --data-binary "$corpo" "$url"
   elif [ -n "$corpo" ]; then
     curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" \
       -H 'Content-Type: application/json' --data-binary "$corpo" "$url"
   elif [ -n "$auth" ]; then
     curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" \
-      -H "Authorization: $auth" "$url"
+      -H "$auth" "$url"
   else
     curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" "$url"
   fi
@@ -1011,7 +1011,9 @@ req = urllib.request.Request(url, data=corpo.encode() if corpo else None)
 if corpo:
     req.add_header("Content-Type", "application/json")
 if auth:
-    req.add_header("Authorization", auth)
+    # Vem 'Nome: valor' pronto (nem toda API autentica por Authorization).
+    nome, _, valor = auth.partition(":")
+    req.add_header(nome.strip(), valor.strip())
 ctx = None
 if url.startswith("https"):
     import ssl
@@ -1040,19 +1042,30 @@ exit 127
 
 
 def auth_header(guardado: str) -> str:
-    """Transforma o que esta no banco no cabecalho Authorization.
+    """Transforma o que esta no banco no cabecalho HTTP INTEIRO ('Nome: valor').
 
-    Formatos: 'basic:usuario:senha', 'bearer:token' ou o cabecalho ja pronto.
+    Formatos: 'basic:usuario:senha', 'bearer:token', 'header:Nome: valor' e o valor solto.
+
+    Devolve o cabecalho com nome e tudo, e nao so o valor, por causa das APIs que nao
+    autenticam por Authorization — o WebQuery do TeamSpeak quer 'x-api-key'. Com so o
+    valor na mao, o unico nome possivel seria o fixo no script remoto.
+
+    O valor solto (cadastro antigo, de quando isto devolvia so o valor) continua saindo
+    como Authorization: mudar isso calaria a contagem de quem ja tinha um token gravado.
     """
     texto = (guardado or "").strip()
     if not texto:
         return ""
     tipo, _, resto = texto.partition(":")
     if tipo.lower() == "basic":
-        return "Basic " + base64.b64encode(resto.encode()).decode()
+        return "Authorization: Basic " + base64.b64encode(resto.encode()).decode()
     if tipo.lower() == "bearer":
-        return "Bearer " + resto
-    return texto
+        return "Authorization: Bearer " + resto
+    # 'header:' e a saida para o resto do mundo. O que vem depois vai cru, com nome e
+    # tudo, porque so quem cadastrou sabe como a API dela chama esse cabecalho.
+    if tipo.lower() == "header" and ":" in resto:
+        return resto.strip()
+    return "Authorization: " + texto
 
 
 def _split_status(bruto: str) -> tuple[str, int]:
@@ -1149,6 +1162,26 @@ def _nome_do_item(item) -> str:
     return ""
 
 
+def _e_cliente_de_consulta(item) -> bool:
+    """Conexao de ServerQuery, nao gente no canal.
+
+    O TeamSpeak devolve na MESMA lista quem esta no voz (client_type 0) e as conexoes de
+    consulta (client_type 1) — e uma delas e a do proprio painel, que acabou de perguntar.
+    Sem tirar essas, o painel se contaria como usuario online e mandaria "entrou no jogo"
+    sobre si mesmo a cada volta. Jogo que nao publica client_type nao e afetado.
+    """
+    if not isinstance(item, dict):
+        return False
+    tipo = {_slug(k): v for k, v in item.items()}.get("clienttype")
+    if tipo is None:
+        return False
+    try:
+        # O WebQuery manda tudo como string ("client_type": "1").
+        return int(tipo) != 0
+    except (TypeError, ValueError):
+        return False
+
+
 # Kick e ban pedem um identificador, nunca o nome: nome muda, repete e nao e chave.
 ID_KEYS = ("userid", "playeruid", "playerid", "steamid", "accountid", "uid")
 
@@ -1219,6 +1252,10 @@ def read_players_json(dados, caminho_lista: str = "", caminho_contagem: str = ""
             raise QueryError(f"'{caminho_lista}' nao aponta para uma lista")
     elif not caminho_contagem:
         lista = _acha_lista(dados)
+
+    # Antes de contar e de tirar nomes: o que sai daqui nao e jogador, e contaria como um.
+    if isinstance(lista, list):
+        lista = [item for item in lista if not _e_cliente_de_consulta(item)]
 
     quantos = None
     if caminho_contagem:

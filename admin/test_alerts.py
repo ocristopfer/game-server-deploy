@@ -49,6 +49,16 @@ def limpa():
     panel._estado_monitor.clear()
 
 
+def relogios_vencidos():
+    """Poe os relogios do monitor num passado que vence qualquer limite.
+
+    Zera-los nao serve: time.monotonic() conta desde o boot da MAQUINA, e num container
+    recem-subido o zero pode estar a menos de um minuto de distancia — ai o monitor sai
+    cedo e o teste falha por causa do uptime de quem rodou, nao do codigo.
+    """
+    panel._ultimo_monitor = panel._ultimo_estado = time.monotonic() - 3600
+
+
 URL = "http://exemplo.invalid/hook"
 conn = panel._connect()
 
@@ -449,11 +459,11 @@ res_players = {"configured": True, "error": "", "players": 0, "list": []}
 
 limpa()
 with panel.app.app_context():
-    # Os dois relogios zerados = volta completa. Sao precisas duas: a primeira anota o
+    # Relogios vencidos = volta COMPLETA. Sao precisas duas: a primeira anota o
     # estado do servidor, a segunda a linha de base dos jogadores.
-    panel._ultimo_monitor = panel._ultimo_estado = 0.0
+    relogios_vencidos()
     panel.monitora_servidores()
-    panel._ultimo_monitor = panel._ultimo_estado = 0.0
+    relogios_vencidos()
     panel.monitora_servidores()
 igual("a volta completa consultou o systemd", len(idas_de_ssh), 2)
 
@@ -746,12 +756,12 @@ def explode():
 panel.roda_agendamentos = explode
 panel.server_metrics = lambda server, force=False: {"disks": []}
 panel.server_status = lambda server, force=False: estado()
-# Os dois relogios do monitor zerados: cada tique vale uma volta COMPLETA, com estado.
-panel._ultimo_monitor = panel._ultimo_estado = 0.0
+# Relogios vencidos: cada tique vale uma volta COMPLETA, com consulta de estado.
+relogios_vencidos()
 with panel.app.app_context():
     panel._scheduler_tick()                       # linha de base
 panel.server_status = lambda server, force=False: estado(service="inactive")
-panel._ultimo_monitor = panel._ultimo_estado = 0.0
+relogios_vencidos()
 with panel.app.app_context():
     panel._scheduler_tick()
 panel.roda_agendamentos = agendamentos_real

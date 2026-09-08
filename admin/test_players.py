@@ -129,14 +129,57 @@ erro("caminho que nao existe reclama", panel.read_players_json, PALWORLD_PLAYERS
 erro("caminho de lista que nao e lista reclama", panel.read_players_json, PALWORLD_METRICS, "serverfps")
 
 
+print("TeamSpeak (WebQuery)")
+# Resposta real do /1/clientlist: tudo string, nome em client_nickname, e as conexoes de
+# ServerQuery misturadas na mesma lista. Uma delas e a DO PAINEL, que acabou de perguntar.
+TEAMSPEAK = {
+    "body": [
+        {"clid": "1", "cid": "1", "client_nickname": "Ana", "client_type": "0"},
+        {"clid": "2", "cid": "1", "client_nickname": "Cristopfer", "client_type": "0"},
+        {"clid": "9", "cid": "0", "client_nickname": "serveradmin from 127.0.0.1:5",
+         "client_type": "1"},
+    ],
+    "status": {"code": 0, "message": "ok"},
+}
+r = panel.read_players_json(TEAMSPEAK, "body")
+igual("le os nomes do TeamSpeak sem nada codificado", nomes(r), ["Ana", "Cristopfer"])
+igual("e a conexao de consulta nao entra na conta", r["players"], 2)
+check("o proprio painel nao aparece como usuario",
+      all("serveradmin" not in n for n in nomes(r)), nomes(r))
+
+# So de query online: e zero gente no canal, nao "um usuario".
+igual("servidor vazio com o painel conectado da zero",
+      panel.read_players_json(
+          {"body": [{"clid": "9", "client_nickname": "serveradmin", "client_type": "1"}]},
+          "body")["players"], 0)
+
+# client_type ausente (todo o resto dos jogos) nao pode sumir com jogador nenhum.
+igual("jogo sem client_type nao e filtrado",
+      nomes(panel.read_players_json([{"name": "Bea"}, {"name": "Caio"}])), ["Bea", "Caio"])
+# Valor estranho no campo tambem nao: na duvida, jogador fica.
+igual("client_type ilegivel nao derruba o jogador",
+      nomes(panel.read_players_json([{"name": "Duda", "client_type": "x"}])), ["Duda"])
+
+
 print("API HTTP: autenticacao e status")
+# auth_header devolve o cabecalho INTEIRO ('Nome: valor'), nao so o valor: ha API que nao
+# autentica por Authorization, e com so o valor na mao o nome seria sempre o mesmo.
 igual("basic vira base64", panel.auth_header("basic:admin:troque-me"),
-      "Basic YWRtaW46dHJvcXVlLW1l")
+      "Authorization: Basic YWRtaW46dHJvcXVlLW1l")
 igual("basic com ':' na senha", panel.auth_header("basic:admin:a:b"),
-      "Basic YWRtaW46YTpi")
-igual("bearer", panel.auth_header("bearer:abc123"), "Bearer abc123")
-igual("cabecalho pronto passa direto", panel.auth_header("ApiKey xyz"), "ApiKey xyz")
+      "Authorization: Basic YWRtaW46YTpi")
+igual("bearer", panel.auth_header("bearer:abc123"), "Authorization: Bearer abc123")
+# Cadastro antigo guardava o VALOR solto; ele tem de continuar saindo como Authorization,
+# senao trocar esta funcao calaria a contagem de quem ja tinha um token gravado.
+igual("valor solto continua indo como Authorization",
+      panel.auth_header("ApiKey xyz"), "Authorization: ApiKey xyz")
+igual("cabecalho proprio manda nome e valor",
+      panel.auth_header("header:x-api-key: SEGREDO"), "x-api-key: SEGREDO")
 igual("vazio nao vira cabecalho", panel.auth_header("  "), "")
+# 'header:' sem os dois pontos do nome nao e cabecalho nenhum; cai na regra antiga em vez
+# de virar um header sem valor.
+igual("header sem nome:valor nao inventa cabecalho",
+      panel.auth_header("header:coisa"), "Authorization: header:coisa")
 
 igual("status separado do corpo",
       panel._split_status('{"a":1}\n__HTTP_STATUS__200'), ('{"a":1}', 200))
