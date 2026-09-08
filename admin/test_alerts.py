@@ -443,7 +443,9 @@ print("Volta rapida so para jogadores")
 liga(["jogador-entrou", "jogador-saiu", "caiu"])
 with conn:
     conn.execute("DELETE FROM jobs")
-    conn.execute("UPDATE servers SET player_source = 'log', query_port = 0")
+    # A2S: a consulta vai direto na porta do jogo, sem SSH. E o caso em que a volta
+    # curta se paga.
+    conn.execute("UPDATE servers SET player_source = 'a2s', query_port = 27015")
 
 idas_de_ssh = []
 
@@ -477,6 +479,36 @@ with panel.app.app_context():
 check("a entrada chega na volta rapida",
       any("Ana entrou no jogo" in t for _, t in enviadas), enviadas)
 igual("e ela nao gastou nenhuma ida de SSH", idas_de_ssh, [])
+
+# Contagem por LOG nao entra na volta curta: cada leitura dessas e uma ida de SSH que
+# arrasta o log inteiro, e a 15s isso viraria megabytes por minuto para achar duas linhas.
+# Quem conta por log espera a volta completa.
+with conn:
+    conn.execute("UPDATE servers SET player_source = 'log', query_port = 0")
+limpa()
+res_players = {"configured": True, "error": "", "players": 0, "list": []}
+with panel.app.app_context():
+    # Duas completas para ter linha de base: a primeira anota o estado, a segunda os
+    # jogadores (servidor vazio).
+    relogios_vencidos()
+    panel.monitora_servidores()
+    relogios_vencidos()
+    panel.monitora_servidores()
+
+# Chegou gente, mas so o relogio curto venceu: por log, o painel nao vai atras.
+res_players = {"configured": True, "error": "", "players": 2,
+               "list": [{"name": "Ana"}, {"name": "Bea"}]}
+panel._ultimo_monitor = time.monotonic() - 20
+with panel.app.app_context():
+    panel.monitora_servidores()
+igual("contagem por log nao entra na volta curta", len(enviadas), 0)
+
+# ...mas na volta completa seguinte ela avisa normalmente.
+relogios_vencidos()
+with panel.app.app_context():
+    panel.monitora_servidores()
+check("e na volta completa o aviso sai",
+      any("entrou no jogo" in t for _, t in enviadas), enviadas)
 
 # O passo curto so existe por causa do evento de jogador. Sem ele os mesmos 20s nao
 # bastam, e o monitor continua no ritmo de antes — ninguem paga SSH a mais de graca.
@@ -691,6 +723,137 @@ texto = "\n".join(t for _, t in enviadas)
 check("so o disco esta ligado, so o disco sai",
       "disco quase cheio" in texto and "memoria quase cheia" not in texto and
       "uso de CPU alto" not in texto, enviadas)
+
+
+print("Log em tempo real")
+# Contagem por log era o unico caso sem jeito de ficar rapida por consulta. A saida foi
+# parar de perguntar: uma conexao SSH longa ouvindo o log. O que se testa aqui e QUEM
+# ganha essa conexao e QUANDO ela e refeita — o resto e subprocesso, que so o servidor
+# de verdade exercita.
+entrar_re = panel.compile_pattern(r"\[server\] Player '(?P<name>[^']+)' logged in",
+                                  "entrada")
+sair_re = panel.compile_pattern(r"\[server\] Remove Player '(?P<name>[^']+)'", "saida")
+check("linha de entrada e reconhecida", panel._linha_de_jogador(
+    "2026-09-08 10:00:00 [server] Player 'Ana' logged in", entrar_re, sair_re))
+check("linha de saida tambem", panel._linha_de_jogador(
+    "2026-09-08 10:05:00 [server] Remove Player 'Ana'", entrar_re, sair_re))
+check("ruido do log nao dispara nada", not panel._linha_de_jogador(
+    "2026-09-08 10:00:01 [server] Saving world chunk 42", entrar_re, sair_re))
+# Log de jogo tem linha gigante (stack trace, dump de estado); o corte protege o regex de
+# varrer megabytes por linha.
+check("linha absurda nao e varrida inteira", not panel._linha_de_jogador(
+    "x" * 50000 + " [server] Player 'Ana' logged in", entrar_re, sair_re))
+
+
+def _srv(sid, **campos):
+    base = {"id": sid, "host": "10.0.0.9", "ssh_port": 22, "ssh_user": "root",
+            "service": "jogo.service", "log_path": "", "query_port": 0,
+            "player_source": "log", "join_re": r"Player '(?P<name>[^']+)' logged in",
+            "leave_re": ""}
+    return {**base, **campos}
+
+
+cfg_stream = {"eventos": {"jogador-entrou", "jogador-saiu"}}
+igual("servidor por log ganha conexao",
+      sorted(panel.streams_desejados([_srv(1)], cfg_stream)), [1])
+# A2S e HTTP ja respondem de graca na volta curta: abrir conexao permanente para eles
+# seria pagar por nada.
+igual("A2S nao ganha conexao permanente",
+      panel.streams_desejados([_srv(1, player_source="a2s", query_port=27015)],
+                              cfg_stream), {})
+igual("sem padrao de entrada nao ha o que ouvir",
+      panel.streams_desejados([_srv(1, join_re="")], cfg_stream), {})
+igual("com o evento desligado, nenhuma conexao",
+      panel.streams_desejados([_srv(1)], {"eventos": {"caiu"}}), {})
+
+# A assinatura e o que decide refazer a conexao: trocar o regex tem de derrubar a antiga,
+# senao o painel segue ouvindo com o padrao velho ate o proximo restart do painel.
+igual("mesmo cadastro, mesma assinatura",
+      panel._assinatura_de_stream(_srv(1)), panel._assinatura_de_stream(_srv(1)))
+check("regex novo muda a assinatura",
+      panel._assinatura_de_stream(_srv(1)) != panel._assinatura_de_stream(
+          _srv(1, join_re="outro (?P<name>.+)")))
+check("caminho de log novo muda a assinatura",
+      panel._assinatura_de_stream(_srv(1)) != panel._assinatura_de_stream(
+          _srv(1, log_path="/opt/game/logs/x.log")))
+check("host novo muda a assinatura",
+      panel._assinatura_de_stream(_srv(1)) != panel._assinatura_de_stream(
+          _srv(1, host="10.0.0.10")))
+
+# Cadastro invalido nao pode virar laco: a thread desiste, e o supervisor tem de respeitar
+# isso em vez de recriar a cada volta para ela morrer igual.
+morto = panel._LogStream(_srv(9, join_re="("), panel._assinatura_de_stream(_srv(9)))
+morto._acompanha()
+check("regex que nao compila faz a thread desistir", morto.desistiu, morto.erro)
+check("e o motivo fica registrado", "entrada" in morto.erro, morto.erro)
+
+
+print("Supervisor das conexoes de log")
+# Nenhum SSH de verdade aqui: o que se mede e a decisao de abrir, trocar e fechar.
+criados = []
+
+
+class StreamFalso:
+    def __init__(self, server, assinatura):
+        self.sid, self.assinatura = int(server["id"]), assinatura
+        self.desistiu, self._vivo, self.parado = False, True, False
+        criados.append(self)
+
+    def start(self):
+        pass
+
+    def stop(self):
+        self.parado, self._vivo = True, False
+
+    def vivo(self):
+        return self._vivo
+
+
+stream_real = panel._LogStream
+panel._LogStream = StreamFalso
+panel._streams.clear()
+liga(["jogador-entrou", "jogador-saiu"])
+with conn:
+    conn.execute("UPDATE servers SET player_source=?, query_port=0, join_re=?",
+                 ("log", r"Player (?P<name>\S+) logged in"))
+
+with panel.app.app_context():
+    igual("abre uma conexao para o servidor por log", panel.supervisiona_streams(), 1)
+    igual("e nao abre outra na volta seguinte", panel.supervisiona_streams(), 1)
+igual("so uma conexao foi criada", len(criados), 1)
+
+# Trocar o regex no cadastro tem de derrubar a conexao antiga: senao o painel segue
+# ouvindo com o padrao velho ate alguem reiniciar o painel.
+with conn:
+    conn.execute("UPDATE servers SET join_re=?", (r"Jogador (?P<name>\S+) entrou",))
+with panel.app.app_context():
+    panel.supervisiona_streams()
+check("regex novo derruba a conexao antiga", criados[0].parado)
+igual("e abre outra no lugar", len(criados), 2)
+
+# Conexao que morreu sozinha (servidor reiniciou, rede caiu) volta na proxima volta.
+criados[-1]._vivo = False
+with panel.app.app_context():
+    panel.supervisiona_streams()
+igual("conexao morta e levantada de novo", len(criados), 3)
+
+# ...mas quem desistiu por cadastro invalido NAO pode voltar: recriar nao conserta regex
+# torto, e a cada volta seria uma thread nova morrendo igual, enchendo o log de erro.
+criados[-1]._vivo = False
+criados[-1].desistiu = True
+with panel.app.app_context():
+    panel.supervisiona_streams()
+igual("quem desistiu por cadastro invalido nao vira laco", len(criados), 3)
+
+liga(["caiu"])
+with panel.app.app_context():
+    igual("evento de jogador desligado fecha tudo", panel.supervisiona_streams(), 0)
+
+panel._LogStream = stream_real
+panel._streams.clear()
+# Daqui para baixo os testes rodam o relogio inteiro (_scheduler_tick), e ele supervisiona
+# streams. Desligado, nenhum teste abre SSH de verdade contra um host que nao existe.
+panel.LOG_STREAM = False
 
 
 print("Diario de alertas")

@@ -359,6 +359,37 @@ igual("troca os tres marcadores",
       panel._preenche("{base}/x/{jogador}/{mensagem}", "http://a/v1", "id7", "oi"),
       "http://a/v1/x/id7/oi")
 
+
+print("SSH: conexao reaproveitada")
+# Sem reaproveitar, cada leitura do monitor paga TCP + troca de chaves + autenticacao
+# para depois rodar um comando de milissegundos. Com varias leituras por minuto por
+# servidor, o aperto de mao vira o grosso do custo.
+import tempfile as _tmp  # noqa: E402
+
+panel.SSH_CONTROL_DIR = os.path.join(_tmp.mkdtemp(), "ssh-control")
+alvo_ssh = {"ssh_port": 22, "ssh_user": "root", "host": "10.0.0.9"}
+
+curto = panel.ssh_argv(alvo_ssh, multiplex=True)
+check("a chamada curta reaproveita conexao", "ControlMaster=auto" in curto, curto)
+check("com socket por destino e prazo de sobrevida",
+      any(o.startswith("ControlPath=") for o in curto)
+      and any(o.startswith("ControlPersist=") for o in curto), curto)
+check("o diretorio do socket e criado", os.path.isdir(panel.SSH_CONTROL_DIR))
+# O socket da acesso a uma sessao JA autenticada nos containers: ninguem alem do painel
+# pode entrar nessa pasta.
+igual("e so o dono enxerga a pasta do socket",
+      oct(os.stat(panel.SSH_CONTROL_DIR).st_mode)[-3:], "700")
+
+# Terminal, upload e download NAO dividem conexao: o terminal segura a sessao por horas e
+# um arquivo de varios GB entupiria o TCP compartilhado, travando o monitor atras dele.
+igual("o padrao e nao reaproveitar",
+      [o for o in panel.ssh_argv(alvo_ssh) if "Control" in o], [])
+
+# Sem poder criar a pasta, seguir sem reaproveitar e melhor do que nao falar SSH.
+panel.SSH_CONTROL_DIR = "/proc/impossivel/ssh-control"
+igual("pasta impossivel nao derruba o SSH",
+      [o for o in panel.ssh_argv(alvo_ssh, multiplex=True) if "Control" in o], [])
+
 print()
 if falhas:
     print(f"{len(falhas)} teste(s) falharam: {', '.join(falhas)}")

@@ -241,8 +241,15 @@
       custa bem mais caro que o status, e as tres leituras saem de uma vez so).</li>
     <li><strong>Jogador entrando e a excecao:</strong> esse o painel confere a cada
       <strong>{{ jogadores_a_cada }}s</strong>, porque quem recebe o aviso costuma querer
-      entrar junto e um minuto depois ja e tarde. Essa volta curta pergunta so ao jogo,
-      sem SSH &mdash; por isso ela cabe sem encarecer o resto.</li>
+      entrar junto e um minuto depois ja e tarde. Essa volta curta pergunta direto ao
+      jogo, sem SSH &mdash; por isso ela cabe sem encarecer o resto. Vale para quem conta
+      por <strong>A2S ou API HTTP</strong>.</li>
+    <li>Quem conta por <strong>log</strong> nao e perguntado: o painel deixa uma conexao
+      aberta <em>ouvindo</em> o log ({% if streams %}<strong>{{ streams }}</strong> agora
+      {% else %}nenhuma no momento{% endif %}) e reage a linha no segundo em que ela sai.
+      Perguntar de 15 em 15 segundos custaria uma leitura do log inteiro a cada vez; assim
+      so se le quando alguem de fato entrou ou saiu. Se a conexao cair, o aviso volta a
+      sair pela volta de {{ monitor }}s ate ela se restabelecer.</li>
     <li>Ele avisa na <strong>mudanca</strong>, nunca em repeticao: o alerta sai quando o
       servidor cai, nao a cada volta enquanto ele estiver caido.</li>
     <li>Cada evento vai para <strong>todos os destinos</strong> que o marcaram. Um

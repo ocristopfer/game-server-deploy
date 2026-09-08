@@ -68,6 +68,15 @@ SECRET_FILE = os.environ.get("GAMEPANEL_SECRET_FILE", "/etc/gamepanel/secret_key
 SSH_KEY = os.environ.get("GAMEPANEL_SSH_KEY", "/etc/gamepanel/id_ed25519")
 # Gravavel: as host keys dos containers sao aprendidas no primeiro acesso (accept-new).
 KNOWN_HOSTS = os.environ.get("GAMEPANEL_KNOWN_HOSTS", "/var/lib/gamepanel/known_hosts")
+# Onde ficam os sockets de conexao reaproveitada do SSH. Ao lado do known_hosts, e nao no
+# /tmp: o socket da acesso a uma sessao ja autenticada nos containers de jogo, e /tmp e
+# espaco compartilhado — pasta do proprio painel, com 0700, fecha essa porta.
+SSH_CONTROL_DIR = os.environ.get(
+    "GAMEPANEL_SSH_CONTROL_DIR", os.path.join(os.path.dirname(KNOWN_HOSTS), "ssh-control"))
+# Quanto a conexao mestre fica de pe depois que o comando dela termina. E o que faz a
+# volta seguinte do monitor pegar carona em vez de pagar outro aperto de mao; 60s cobre
+# com folga o ritmo do monitor (15s a 60s) sem deixar conexao ociosa pendurada por horas.
+SSH_CONTROL_PERSIST = os.environ.get("GAMEPANEL_SSH_CONTROL_PERSIST", "60")
 
 # Comandos rapidos (status, logs) x comandos longos (update baixa o jogo inteiro).
 QUICK_TIMEOUT = 20
@@ -171,9 +180,25 @@ WEBHOOK_MAX = int(os.environ.get("GAMEPANEL_WEBHOOK_MAX", "10"))
 MONITOR_EVERY = float(os.environ.get("GAMEPANEL_MONITOR_EVERY", "60"))
 # Jogador entrando e a unica coisa que alguem espera ver "agora" — quem recebe o aviso
 # costuma querer entrar junto, e um minuto depois ja e tarde. Por isso ele tem relogio
-# proprio, mais curto que o do estado. A volta rapida NAO paga SSH: ela pula o status do
-# servico e consulta so o jogo (A2S/HTTP vao direto na porta do jogo).
+# proprio, mais curto que o do estado.
 PLAYER_CHECK_EVERY = float(os.environ.get("GAMEPANEL_PLAYER_CHECK_EVERY", "15"))
+# ...mas so vale para quem responde de graca. A2S e HTTP saem de dentro do container sem
+# nada extra; a contagem por LOG e outra historia: cada consulta e uma ida de SSH que
+# arrasta ate LOG_SCAN_MAX linhas para o painel aplicar o regex. Nesse ritmo curto isso
+# seriam megabytes por minuto por servidor, para achar duas linhas novas. Quem conta por
+# log fica no relogio do estado ate existir leitura incremental ou log em streaming.
+PLAYER_FAST_SOURCES = {"a2s", "http"}
+# Quem conta por log ganha tempo real por outro caminho: uma conexao SSH longa rodando
+# `journalctl -f`. Em vez de perguntar "tem alguem novo?" de minuto em minuto, o painel
+# fica ouvindo e reage a linha no instante em que ela sai.
+LOG_STREAM = os.environ.get("GAMEPANEL_LOG_STREAM", "1") not in ("0", "false", "no")
+# Uma entrada e uma saida no mesmo segundo (alguem trocando de servidor, um grupo
+# entrando junto) nao podem virar uma releitura do log cada. A primeira linha dispara,
+# as seguintes dessa janela pegam carona na mesma conferida.
+LOG_STREAM_DEBOUNCE = float(os.environ.get("GAMEPANEL_LOG_STREAM_DEBOUNCE", "3"))
+# Depois de a conexao cair, quanto esperar antes de tentar de novo. Servidor desligado
+# nao pode virar um laco de SSH a cada segundo.
+LOG_STREAM_RETRY = float(os.environ.get("GAMEPANEL_LOG_STREAM_RETRY", "30"))
 # O disco sai dos medidores, que custam bem mais caro (o script remoto dorme 0,5s para
 # tirar duas amostras). Ele nao enche em um minuto, entao a conferida e espacada.
 DISK_CHECK_EVERY = float(os.environ.get("GAMEPANEL_DISK_CHECK_EVERY", "600"))
@@ -699,8 +724,35 @@ class RemoteError(RuntimeError):
     pass
 
 
-def ssh_argv(server, connect_timeout: int = 10, extra: tuple[str, ...] = ()) -> list[str]:
-    """Argumentos comuns do cliente ssh (usados pelos comandos e pelo terminal)."""
+def _mux_argv() -> list[str]:
+    """Opcoes que fazem varias chamadas dividirem UMA conexao TCP.
+
+    Sem isto cada leitura do monitor paga TCP + troca de chaves + autenticacao + um
+    processo novo — uns 100ms na LAN para depois rodar um `systemctl show` de 5ms. Com a
+    conexao mestre de pe, a segunda chamada em diante custa quase nada.
+
+    %C e o hash de (host, porta, usuario): nome curto e unico por destino, que importa
+    porque socket de unix tem limite baixo de caminho.
+    """
+    try:
+        os.makedirs(SSH_CONTROL_DIR, mode=0o700, exist_ok=True)
+    except OSError:
+        # Sem onde por o socket, seguir sem reaproveitar e melhor do que nao falar SSH.
+        return []
+    return ["-o", "ControlMaster=auto",
+            "-o", f"ControlPath={os.path.join(SSH_CONTROL_DIR, '%C')}",
+            "-o", f"ControlPersist={SSH_CONTROL_PERSIST}"]
+
+
+def ssh_argv(server, connect_timeout: int = 10, extra: tuple[str, ...] = (),
+             multiplex: bool = False) -> list[str]:
+    """Argumentos comuns do cliente ssh (usados pelos comandos e pelo terminal).
+
+    `multiplex` so para as chamadas CURTAS e frequentes do monitor. Fica desligado por
+    padrao porque as outras tres nao querem dividir conexao: o terminal segura a sessao
+    por horas, e subir/baixar arquivo de varios GB entupiria o TCP compartilhado e
+    travaria toda leitura do monitor atras da transferencia.
+    """
     return [
         "ssh",
         "-i", SSH_KEY,
@@ -710,6 +762,7 @@ def ssh_argv(server, connect_timeout: int = 10, extra: tuple[str, ...] = ()) -> 
         # accept-new: aprende a host key no primeiro acesso, mas alerta se ela mudar.
         "-o", "StrictHostKeyChecking=accept-new",
         "-o", f"ConnectTimeout={connect_timeout}",
+        *(_mux_argv() if multiplex else ()),
         *extra,
         f"{server['ssh_user']}@{server['host']}",
     ]
@@ -720,14 +773,20 @@ def ssh_run(
     remote_cmd: str,
     timeout: int = QUICK_TIMEOUT,
     stdin_data: bytes | None = None,
+    multiplex: bool = True,
 ) -> subprocess.CompletedProcess:
     """Executa um comando no container de jogo via SSH.
 
     `remote_cmd` ja vem montado com shlex.quote pelos helpers abaixo; o SSH o entrega
     inteiro para o shell do destino, entao nada aqui pode vir cru de um formulario.
     `stdin_data` alimenta a entrada do comando remoto (usado para gravar arquivos).
+
+    `multiplex=False` para o que demora: um update de uma hora seguraria a conexao mestre
+    o tempo todo, e qualquer soluco nele derrubaria junto as leituras do monitor que
+    estivessem pegando carona.
     """
-    cmd = ssh_argv(server, connect_timeout=min(timeout, 10)) + [remote_cmd]
+    cmd = ssh_argv(server, connect_timeout=min(timeout, 10),
+                   multiplex=multiplex) + [remote_cmd]
     try:
         if stdin_data is not None:
             proc = subprocess.run(
@@ -1473,6 +1532,27 @@ TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})")
 # Le do start do servico para ca: eventos de execucoes anteriores contariam jogador
 # que ja foi embora ha muito tempo.
 # $3 = caminho do arquivo de log (pode ter *). Vazio cai no journalctl do servico.
+# Acompanha o log e vai cuspindo linha nova enquanto o SSH estiver de pe. `-n 0`/`tail -n
+# 0` de proposito: o passado nao interessa aqui: quem sabe dizer quem esta online agora e
+# a contagem normal, e este script so avisa que ACONTECEU alguma coisa. Assim o painel nao
+# precisa reproduzir a maquina de estados do log em dois lugares diferentes.
+LOG_FOLLOW_SCRIPT = r"""
+set -u
+unit=$1
+alvo=${2:-}
+
+if [ -n "$alvo" ]; then
+  # Sem aspas para o shell expandir o '*' — o LOG_PATH_RE do painel e quem garante que
+  # nao ha espaco, aspas, $ ou ';' aqui dentro.
+  arq=$(ls -1t $alvo 2>/dev/null | head -n 1)
+  [ -n "$arq" ] || { echo "nenhum arquivo de log casa com $alvo" >&2; exit 3; }
+  # -F (e nao -f) para sobreviver a rotacao do arquivo.
+  exec tail -n 0 -F -- "$arq"
+fi
+
+exec journalctl -u "$unit" -n 0 -f -o short-iso --no-pager
+"""
+
 LOG_PLAYERS_SCRIPT = r"""
 set -u
 unit=$1
@@ -2519,7 +2599,10 @@ def start_job(
 
     def run():
         try:
-            proc = ssh_run(target, remote_cmd, timeout=timeout)
+            # Conexao propria: um update leva quase uma hora, e a mestre compartilhada
+            # ficaria presa a ele — com o monitor inteiro dependendo de um comando que
+            # pode cair no meio.
+            proc = ssh_run(target, remote_cmd, timeout=timeout, multiplex=False)
             output = (proc.stdout or "") + (proc.stderr or "")
             status = "ok" if proc.returncode == 0 else "error"
             code = proc.returncode
@@ -3122,6 +3205,218 @@ def _alerta_de_jogadores(conn, server, servico, anterior, cfg) -> None:
     anterior["jogadores_count"] = contagem_atual
 
 
+# ------------------------------------------------- log em tempo real
+#
+# Contagem por log era o unico caso sem jeito de ficar rapida: cada conferida e uma ida de
+# SSH que arrasta o log inteiro, entao perguntar de 15 em 15 segundos custaria megabytes
+# por minuto para achar duas linhas. A saida e parar de perguntar: uma conexao SSH longa
+# com `journalctl -f` deixa o painel OUVINDO, e a linha chega no segundo em que sai.
+#
+# O ponto do desenho: o stream e um GATILHO, nao uma segunda contagem. Ele so diz "algo
+# aconteceu" e manda refazer a conta pelo caminho de sempre. Reproduzir aqui a maquina de
+# estados do log seria um segundo lugar para errar — e pior, um que divergiria em silencio
+# do numero que a tela mostra.
+
+_streams: dict[int, "_LogStream"] = {}
+_streams_lock = threading.Lock()
+# Um alerta de jogador por servidor de cada vez: o stream e a volta do monitor mexem no
+# MESMO _estado_monitor[sid], e sem isto os dois poderiam avisar a mesma entrada.
+_jogadores_locks: dict[int, threading.Lock] = {}
+_jogadores_meta = threading.Lock()
+
+
+def lock_de_jogadores(sid: int) -> threading.Lock:
+    with _jogadores_meta:
+        return _jogadores_locks.setdefault(sid, threading.Lock())
+
+
+def _linha_de_jogador(linha: str, entrar, sair) -> bool:
+    """Esta linha do log e uma entrada ou saida de jogador?"""
+    curta = linha[:LOG_LINE_MAX]
+    if entrar and entrar.search(curta):
+        return True
+    return bool(sair and sair.search(curta))
+
+
+def _assinatura_de_stream(server) -> tuple:
+    """O que, mudando, obriga a refazer a conexao (regex nova, log em outro lugar...)."""
+    return (
+        server["host"], int(server["ssh_port"] or 22), server["ssh_user"],
+        server["service"], _valor_guardado(server, "log_path"),
+        _valor_guardado(server, "join_re"), _valor_guardado(server, "leave_re"),
+    )
+
+
+def streams_desejados(servidores, cfg) -> dict[int, tuple]:
+    """Quais servidores merecem uma conexao de log aberta, e com que assinatura."""
+    if not (LOG_STREAM and cfg["eventos"] & {"jogador-entrou", "jogador-saiu"}):
+        return {}
+    # So quem conta por log: A2S e HTTP ja respondem de graca na volta curta, e abrir uma
+    # conexao permanente para eles seria pagar por nada.
+    return {int(s["id"]): _assinatura_de_stream(s) for s in servidores
+            if player_source(s) == "log" and _valor_guardado(s, "join_re")}
+
+
+class _LogStream:
+    """Uma conexao SSH longa ouvindo o log de UM servidor."""
+
+    def __init__(self, server, assinatura):
+        # Row nao atravessa thread (ela pertence a conexao do request): copia.
+        self.dados = dict(server)
+        self.sid = int(server["id"])
+        self.assinatura = assinatura
+        self.proc: subprocess.Popen | None = None
+        self.parar = threading.Event()
+        self.ultimo_disparo = 0.0
+        self.erro = ""
+        # Erro de configuracao (regex que nao compila, caminho de log invalido) nao se
+        # resolve tentando de novo. Sem esta marca o supervisor recriaria a thread a cada
+        # volta, para ela morrer igual — um laco que so enche o log de erro.
+        self.desistiu = False
+        self.thread = threading.Thread(target=self._roda, daemon=True)
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def stop(self) -> None:
+        self.parar.set()
+        proc = self.proc
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+
+    def vivo(self) -> bool:
+        return self.thread.is_alive()
+
+    def _roda(self) -> None:
+        while not self.parar.is_set():
+            try:
+                self._acompanha()
+            except Exception as exc:  # noqa: BLE001 - a thread nao morre por um tropeco
+                self.erro = str(exc)
+                app.logger.exception("o acompanhamento de log de '%s' caiu",
+                                     self.dados.get("name"))
+            # Servidor desligado nao pode virar um laco de SSH por segundo.
+            if self.parar.wait(LOG_STREAM_RETRY):
+                return
+
+    def _desiste(self, motivo: str) -> None:
+        self.erro = motivo
+        self.desistiu = True
+        self.parar.set()
+
+    def _acompanha(self) -> None:
+        # Cadastro torto para aqui: nao adianta reconectar contra um regex que nao compila.
+        try:
+            entrar = compile_pattern(self.dados.get("join_re"), "entrada")
+            sair = compile_pattern(self.dados.get("leave_re"), "saida")
+            alvo = log_path_valido(self.dados.get("log_path") or "")
+        except (QueryError, ValueError) as exc:
+            return self._desiste(str(exc))
+        if not entrar:
+            return self._desiste("sem padrao de entrada, nao ha o que ouvir")
+        # Sem multiplexar: esta conexao fica de pe por horas, e a mestre compartilhada
+        # existe justamente para as chamadas curtas do monitor.
+        argv = ssh_argv(
+            self.dados, connect_timeout=10,
+            extra=("-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"),
+        ) + [q("bash", "-lc", LOG_FOLLOW_SCRIPT, "gp", self.dados["service"], alvo)]
+        self.proc = subprocess.Popen(
+            argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, errors="replace", bufsize=1,
+        )
+        self.erro = ""
+        try:
+            for linha in self.proc.stdout:
+                if self.parar.is_set():
+                    break
+                if _linha_de_jogador(linha, entrar, sair):
+                    self._confere()
+        finally:
+            self.stop_proc()
+
+    def stop_proc(self) -> None:
+        proc, self.proc = self.proc, None
+        if not proc:
+            return
+        for fluxo in (proc.stdout, proc.stderr):
+            try:
+                if fluxo:
+                    fluxo.close()
+            except OSError:
+                pass
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+        try:
+            proc.wait(timeout=5)      # sem isto sobra zumbi a cada reconexao
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    def _confere(self) -> None:
+        """A linha chegou: refaz a contagem pelo caminho normal e avisa se mudou."""
+        agora = time.monotonic()
+        if agora - self.ultimo_disparo < LOG_STREAM_DEBOUNCE:
+            return                     # um grupo entrando junto e UMA conferida
+        self.ultimo_disparo = agora
+        anterior = _estado_monitor.get(self.sid)
+        if anterior is None:
+            return                     # sem linha de base ainda: a volta do monitor faz
+        # O cache guarda o numero de ANTES da linha que acabou de chegar.
+        with _players_lock:
+            _players_cache.pop(self.sid, None)
+        conn = _connect()              # esta thread vive fora do contexto do request
+        try:
+            cfg = webhook_config(conn)
+            with lock_de_jogadores(self.sid):
+                _alerta_de_jogadores(conn, self.dados, anterior.get("service", ""),
+                                     anterior, cfg)
+        finally:
+            conn.close()
+
+
+def streams_vivos() -> int:
+    """Quantas conexoes de log estao mesmo ouvindo agora (para a tela nao mentir)."""
+    with _streams_lock:
+        return sum(1 for s in _streams.values() if s.vivo())
+
+
+def supervisiona_streams() -> int:
+    """Liga, desliga e ressuscita as conexoes de log. Devolve quantas ficaram registradas."""
+    conn = db()
+    servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
+    desejados = streams_desejados(servidores, webhook_config(conn))
+    por_id = {int(s["id"]): s for s in servidores}
+
+    with _streams_lock:
+        atuais = list(_streams.items())
+    for sid, stream in atuais:
+        # Sai quem deixou de ser desejado e quem mudou de configuracao (regex nova, log em
+        # outro caminho). Thread morta tambem sai, para o passo abaixo levantar de novo —
+        # menos quando ela desistiu por cadastro invalido, que recriar nao conserta: essa
+        # fica de lapide ate alguem arrumar o cadastro e a assinatura mudar.
+        trocou = sid not in desejados or desejados[sid] != stream.assinatura
+        if trocou or (not stream.vivo() and not stream.desistiu):
+            stream.stop()
+            with _streams_lock:
+                _streams.pop(sid, None)
+
+    for sid, assinatura in desejados.items():
+        with _streams_lock:
+            if sid in _streams:
+                continue
+            novo = _LogStream(por_id[sid], assinatura)
+            _streams[sid] = novo
+        novo.start()
+
+    with _streams_lock:
+        return len(_streams)
+
+
 def monitora_servidores(forcar: bool = False) -> int:
     """Confere o estado de todo mundo e dispara o que mudou. Devolve quantos olhou."""
     global _ultimo_monitor, _ultimo_estado, _ultimo_disco, _ultimo_log
@@ -3169,9 +3464,14 @@ def monitora_servidores(forcar: bool = False) -> int:
         # tiver caido desde entao, a consulta ao proprio jogo falha e _alerta_de_jogadores
         # sai sem avisar nada — o atraso de um estado velho nao inventa alerta.
         if not ver_estado:
-            if quer_jogadores and anterior is not None:
-                _alerta_de_jogadores(conn, server, anterior.get("service", ""),
-                                     anterior, cfg)
+            # Contagem por log nao entra na volta curta: ela custa SSH, e pagar isso a
+            # cada 15s so para reler o mesmo log inteiro nao se sustenta. Esses servidores
+            # continuam avisando no ritmo da volta completa.
+            if (quer_jogadores and anterior is not None
+                    and player_source(server) in PLAYER_FAST_SOURCES):
+                with lock_de_jogadores(sid):
+                    _alerta_de_jogadores(conn, server, anterior.get("service", ""),
+                                         anterior, cfg)
             continue
 
         estado = server_status(server)
@@ -3198,7 +3498,11 @@ def monitora_servidores(forcar: bool = False) -> int:
             if cfg["eventos"] & {"travou", "respondeu"}:
                 _alerta_de_mudez(conn, server, estado, anterior)
             if quer_jogadores:
-                _alerta_de_jogadores(conn, server, estado["service"], anterior, cfg)
+                # Com stream de log ligado esta chamada vira rede de seguranca: se ele
+                # tiver caido, ninguem fica sem aviso — so mais devagar. O lock e o que
+                # impede os dois de avisarem a mesma entrada.
+                with lock_de_jogadores(sid):
+                    _alerta_de_jogadores(conn, server, estado["service"], anterior, cfg)
             if ver_log:
                 _alerta_de_log(conn, server, anterior)
             if "disco-cheio" in recursos:
@@ -3445,6 +3749,7 @@ def _scheduler_tick() -> None:
     """
     for nome, tarefa in (("agendamentos", roda_agendamentos),
                          ("monitor", monitora_servidores),
+                         ("log-em-tempo-real", supervisiona_streams),
                          ("amostras", coleta_amostras),
                          ("limpeza", limpa_historico)):
         try:
@@ -6243,6 +6548,7 @@ def alerts():
         quieto=int(ALERT_QUIET), limite_hooks=WEBHOOK_MAX,
         mudo_voltas=MUTE_ROUNDS, log_a_cada=int(LOG_CHECK_EVERY),
         pendencias=alertas_sem_base(conn), diario=alertas_recentes(conn),
+        streams=streams_vivos(),
     )
 
 
