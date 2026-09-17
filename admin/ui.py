@@ -94,7 +94,7 @@ _POR_ENDPOINT = {
 }
 
 
-def nav_ativa_de(endpoint: str) -> str:
+def nav_ativa_de(endpoint: str | None) -> str:
     """Qual item da navegacao principal esta ativo, dada a rota em curso.
 
     Calculado aqui, uma vez, em vez de cada template declarar o seu: o jeito antigo
@@ -196,11 +196,15 @@ ACOES = (
 POR_CHAVE = {a.chave: a for a in ACOES}
 
 
-def acoes_do_grupo(grupo: str) -> tuple[Acao, ...]:
-    return tuple(a for a in ACOES if a.grupo == grupo)
+def acoes_do_grupo(grupo: str) -> list[Acao]:
+    return [a for a in ACOES if a.grupo == grupo]
 
 
-def energia_do_cartao(servico: str) -> tuple[Acao, ...]:
+# Estas funcoes devolvem LISTA, e nao tupla, de proposito: o tamanho varia com o
+# estado do servidor. Tupla de comprimento variavel e uma promessa que o tipo nao
+# cumpre - quem le `tuple[Acao, ...]` espera uma forma fixa, e a analise estatica
+# reclama com razao.
+def energia_do_cartao(servico: str) -> list[Acao]:
     """Os botoes de energia que fazem sentido no cartao do painel, dado o estado.
 
     O cartao mostra DOIS controles, nao quatro. Um servidor de pe nao precisa de um
@@ -209,11 +213,11 @@ def energia_do_cartao(servico: str) -> tuple[Acao, ...]:
     celular. O que sobra continua a um toque de distancia, no menu do cartao.
     """
     if servico == "active":
-        return (POR_CHAVE["restart"], POR_CHAVE["stop"])
-    return (POR_CHAVE["start"],)
+        return [POR_CHAVE["restart"], POR_CHAVE["stop"]]
+    return [POR_CHAVE["start"]]
 
 
-def energia_restante(servico: str) -> tuple[Acao, ...]:
+def energia_restante(servico: str) -> list[Acao]:
     """As acoes de energia que o cartao nao mostrou — vao para o menu dele.
 
     Nada some: o que sai da linha de botoes reaparece a um toque. O que nao pode
@@ -221,4 +225,4 @@ def energia_restante(servico: str) -> tuple[Acao, ...]:
     isso a partir de `energia_do_cartao`, em vez de uma segunda lista escrita a mao.
     """
     na_frente = {a.chave for a in energia_do_cartao(servico)}
-    return tuple(a for a in acoes_do_grupo(GRUPO_ENERGIA) if a.chave not in na_frente)
+    return [a for a in acoes_do_grupo(GRUPO_ENERGIA) if a.chave not in na_frente]

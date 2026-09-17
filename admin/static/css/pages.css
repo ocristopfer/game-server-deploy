@@ -195,7 +195,8 @@
 
 .legenda { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
 .legenda .chave { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--muted); }
-.legenda .chave i { width: 14px; height: 2px; border-radius: 1px; }
+/* O tracinho da legenda e um SVG (ver charts.html): largura fixa, sem esticar. */
+.legenda .chave-cor { width: 14px; height: 2px; flex: none; }
 
 /* O cartao ancora o balao; o SVG nao pode conter HTML. */
 .card[data-grafico] { position: relative; }

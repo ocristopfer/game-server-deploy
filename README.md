@@ -1065,7 +1065,7 @@ O motor fica em `admin/gameconf.py`, isolado do resto do painel (nao fala SSH ne
 com testes proprios:
 
 ```bash
-docker compose exec panel python3 /opt/gamepanel/test_gameconf.py
+docker compose exec panel python3 -m pytest /opt/gamepanel/test_gameconf.py -q
 ```
 
 ### Editor de configuracoes
@@ -1406,16 +1406,17 @@ alternativo da chamada HTTP (o container de jogo de verdade tem `curl`).
 
 ```bash
 docker compose logs -f panel
-docker compose exec panel python3 /opt/gamepanel/test_gameconf.py   # testes do parser
-docker compose exec panel python3 /opt/gamepanel/test_gamefields.py # testes do catalogo
-docker compose exec panel python3 /opt/gamepanel/test_players.py    # testes da contagem
-docker compose exec panel python3 /opt/gamepanel/test_users.py      # papeis, backup, upload
-docker compose exec panel python3 /opt/gamepanel/test_schedules.py  # agendamento e historico
-docker compose exec panel python3 /opt/gamepanel/test_alerts.py     # alertas por webhook
-docker compose exec panel python3 /opt/gamepanel/test_charts.py     # graficos de uso
+docker compose exec -w /opt/gamepanel panel python3 -m pytest -q          # as 7 suites (323 testes)
+docker compose exec -w /opt/gamepanel panel python3 -m pytest test_alerts.py -q  # so uma
 docker compose exec game-palworld sh -c 'echo 7 > /run/fake-players' # fixa a contagem
 docker compose down -v            # zera banco, chaves e arquivos de teste
 ```
+
+As suites (`test_gameconf.py` o parser, `test_gamefields.py` o catalogo,
+`test_players.py` a contagem, `test_users.py` papeis/backup/upload, `test_schedules.py`
+agendamento e historico, `test_alerts.py` alertas por webhook, `test_charts.py` os
+graficos) sao pytest — nao rodam mais como script solto. Veja o
+[CLAUDE.md](CLAUDE.md) para rodar fora do Docker, num `.venv` local.
 
 ### Seguranca
 

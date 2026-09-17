@@ -25,8 +25,20 @@ from dataclasses import dataclass, field
 # em arquivo de config nenhum, entao serve de separador sem escape.
 SEP = "\x1f"
 
+# Rotulo do bloco sem nome: chave solta no topo de um .ini, ou o nivel de cima de um
+# .json. Vira titulo de secao na tela de Configuracao, e os tres formatos precisam
+# dizer a MESMA coisa - nao "(sem secao)" num e "(raiz)" no outro para a mesma ideia.
+SEM_SECAO = "(sem secao)"
+RAIZ = "(raiz)"
+
 VALUE_MAX = 4000
-KEY_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\- ]{0,79}$")
+# Nome de chave aceito num arquivo de configuracao de jogo.
+#
+# O `re.ASCII` nao e detalhe: sem ele, `\w` em Python casa letra acentuada, digito
+# arabe-indico e mais uns 900 caracteres Unicode - e este nome vai parar dentro do
+# arquivo do jogo, escrito por SSH. Com a flag, `\w` e exatamente `[A-Za-z0-9_]`, que
+# era a forma antiga desta expressao.
+KEY_RE = re.compile(r"^\w[\w.\- ]{0,79}$", re.ASCII)
 BOOL_WORDS = {"true": True, "false": False, "1": True, "0": False,
               "sim": True, "nao": False, "yes": True, "no": False}
 NUM_RE = re.compile(r"^-?\d+(\.\d+)?$")
@@ -136,7 +148,7 @@ class ConfigFile:
         return sec
 
     def _add(self, setting: Setting, label: str = "") -> None:
-        self._section(setting.section, label or setting.section or "(sem secao)")
+        self._section(setting.section, label or setting.section or SEM_SECAO)
         self._sections[setting.section].settings.append(setting)
         self.settings.append(setting)
 
@@ -187,6 +199,15 @@ _COMMENT_RE = re.compile(r"^\s*[#;]")
 _PAIR_RE = re.compile(r"^(\s*)([^=\s\[#;][^=]*)=(.*)$")
 
 
+def _profundidade(ch: str, atual: int) -> int:
+    """Quanto este caractere mexe no aninhamento de parenteses/colchetes."""
+    if ch in "([":
+        return atual + 1
+    if ch in ")]":
+        return atual - 1
+    return atual
+
+
 def _split_tuple(inner: str) -> list[str] | None:
     """Quebra 'A=1,B="x,y",C=(D=2)' nos pares de primeiro nivel.
 
@@ -199,19 +220,15 @@ def _split_tuple(inner: str) -> list[str] | None:
     for ch in inner:
         if aspas:
             buf += ch
-            if ch == '"':
-                aspas = False
+            aspas = ch != '"'
             continue
         if ch == '"':
             aspas = True
             buf += ch
             continue
-        if ch in "([":
-            depth += 1
-        elif ch in ")]":
-            depth -= 1
-            if depth < 0:
-                return None
+        depth = _profundidade(ch, depth)
+        if depth < 0:
+            return None  # fechou um parentese que nunca abriu: nao e lista de pares
         if ch == "," and depth == 0:
             partes.append(buf)
             buf = ""
@@ -222,6 +239,19 @@ def _split_tuple(inner: str) -> list[str] | None:
     if buf.strip():
         partes.append(buf)
     return partes
+
+
+def _pares_da_tupla(valor: str) -> list[str] | None:
+    """Os pares de um valor no formato da Unreal, ou None se nao for um.
+
+    `OptionSettings=(Difficulty=None,ExpRate=1.0)` - onde o Palworld guarda TODA a
+    configuracao - nao e um valor: e uma configuracao inteira dentro de uma linha. O
+    `=` no meio e o que separa isso de um valor comum entre parenteses.
+    """
+    miolo = valor.strip()
+    if not (miolo.startswith("(") and miolo.endswith(")") and "=" in miolo):
+        return None
+    return _split_tuple(miolo[1:-1])
 
 
 def _unquote(value: str) -> tuple[str, bool]:
@@ -284,7 +314,7 @@ class IniConfig(ConfigFile):
         self._pairs: dict[str, int] = {}                        # id -> posicao dentro da tupla
         self._section_end: dict[str, int] = {}                  # id -> ultima linha util
         secao = ""
-        self._section(secao, "(sem secao)")
+        self._section(secao, SEM_SECAO)
         comentario: list[str] = []
         vistos: dict[str, int] = {}
 
@@ -304,39 +334,39 @@ class IniConfig(ConfigFile):
                 continue
 
             par = _PAIR_RE.match(linha)
-            if not par:
-                comentario = []
-                continue
-            prefixo, chave_bruta, resto = par.groups()
-            nome = chave_bruta.rstrip()
-            valor = resto.strip()
-            # sep e sufixo guardam o espacamento original: gravar de volta nao pode
-            # reformatar uma linha que o usuario nem tocou.
-            sep = chave_bruta[len(nome):] + "=" + resto[:len(resto) - len(resto.lstrip())]
-            sufixo = resto[len(resto.rstrip()):]
-            self._section_end[secao] = i
-
-            # Ids repetem quando a mesma chave aparece duas vezes na secao (comum na
-            # Unreal): o sufixo mantem cada ocorrencia com identidade propria.
-            base = f"{secao}{SEP}{nome}"
-            vistos[base] = vistos.get(base, 0) + 1
-            sid = base if vistos[base] == 1 else f"{base}{SEP}#{vistos[base]}"
-
-            pares = None
-            miolo = valor.strip()
-            if miolo.startswith("(") and miolo.endswith(")") and "=" in miolo:
-                pares = _split_tuple(miolo[1:-1])
-            if pares is not None:
-                self._parse_tuple(sid, secao, nome, i, prefixo, sep, sufixo, pares)
-                comentario = []
-                continue
-
-            self._plain[sid] = (i, prefixo, nome, sep)
-            self._add(Setting(
-                id=sid, section=secao, key=nome, value=valor,
-                kind=_kind_of(valor), comment=" ".join(comentario),
-            ), label=f"[{secao}]" if secao else "(sem secao)")
+            if par:
+                self._le_par(i, par, secao, comentario, vistos)
+            # Comentario so vale para a linha seguinte: qualquer outra coisa o descarta.
             comentario = []
+
+    def _le_par(self, i: int, par, secao: str, comentario: list[str],
+                vistos: dict[str, int]) -> None:
+        """Uma linha `chave = valor` do .ini vira um campo (ou varios, se for tupla)."""
+        prefixo, chave_bruta, resto = par.groups()
+        nome = chave_bruta.rstrip()
+        valor = resto.strip()
+        # sep e sufixo guardam o espacamento original: gravar de volta nao pode
+        # reformatar uma linha que o usuario nem tocou.
+        sep = chave_bruta[len(nome):] + "=" + resto[:len(resto) - len(resto.lstrip())]
+        sufixo = resto[len(resto.rstrip()):]
+        self._section_end[secao] = i
+
+        # Ids repetem quando a mesma chave aparece duas vezes na secao (comum na
+        # Unreal): o sufixo mantem cada ocorrencia com identidade propria.
+        base = f"{secao}{SEP}{nome}"
+        vistos[base] = vistos.get(base, 0) + 1
+        sid = base if vistos[base] == 1 else f"{base}{SEP}#{vistos[base]}"
+
+        pares = _pares_da_tupla(valor)
+        if pares is not None:
+            self._parse_tuple(sid, secao, nome, i, prefixo, sep, sufixo, pares)
+            return
+
+        self._plain[sid] = (i, prefixo, nome, sep)
+        self._add(Setting(
+            id=sid, section=secao, key=nome, value=valor,
+            kind=_kind_of(valor), comment=" ".join(comentario),
+        ), label=f"[{secao}]" if secao else SEM_SECAO)
 
     def _parse_tuple(self, sid, secao, nome, linha, prefixo, sep, sufixo, pares) -> None:
         alvo = sid  # a secao das sub-configuracoes e o proprio id da linha
@@ -370,35 +400,53 @@ class IniConfig(ConfigFile):
         tuplas_mexidas: set[str] = set()
 
         for edit in edits:
-            valor = check_value(edit.value)
-            atual = self._resolve(edit)
-
-            if atual is not None and atual.id in self._plain:
-                i, prefixo, nome, sep = self._plain[atual.id]
-                linhas[i] = f"{prefixo}{nome}{sep}{valor}"
-                continue
-
-            if atual is not None and atual.id in self._pairs:
-                grupo = self._tuples[atual.section]
-                grupo.pairs[self._pairs[atual.id]].value = valor
-                tuplas_mexidas.add(atual.section)
-                continue
-
-            chave = check_key(edit.key)
-            if edit.section in self._tuples:  # configuracao nova dentro do OptionSettings
-                grupo = self._tuples[edit.section]
-                grupo.pairs.append(_Pair(key=chave, value=valor, quoted=False))
-                tuplas_mexidas.add(edit.section)
-                continue
-
-            novas_por_secao.setdefault(edit.section, []).append(f"{chave}={valor}")
+            self._aplica_edit(edit, linhas, novas_por_secao, tuplas_mexidas)
 
         for sid in tuplas_mexidas:
             grupo = self._tuples[sid]
             linhas[grupo.line] = grupo.render()
 
-        # De tras para frente: inserir no fim de uma secao nao pode deslocar as linhas
-        # das secoes ainda por inserir.
+        self._insere_novas(linhas, novas_por_secao)
+        return "\n".join(linhas)
+
+    def _aplica_edit(self, edit: Edit, linhas: list[str],
+                     novas_por_secao: dict[str, list[str]],
+                     tuplas_mexidas: set[str]) -> None:
+        """Grava UMA alteracao. Sao quatro destinos possiveis, nesta ordem:
+
+        a linha que ja existe, um par dentro de uma tupla da Unreal, uma chave nova
+        dentro dessa tupla, ou uma chave nova no fim da secao (esta ultima fica
+        pendente: inserir linha aqui deslocaria tudo o que vem depois).
+        """
+        valor = check_value(edit.value)
+        atual = self._resolve(edit)
+
+        if atual is not None and atual.id in self._plain:
+            i, prefixo, nome, sep = self._plain[atual.id]
+            linhas[i] = f"{prefixo}{nome}{sep}{valor}"
+            return
+
+        if atual is not None and atual.id in self._pairs:
+            grupo = self._tuples[atual.section]
+            grupo.pairs[self._pairs[atual.id]].value = valor
+            tuplas_mexidas.add(atual.section)
+            return
+
+        chave = check_key(edit.key)
+        if edit.section in self._tuples:  # configuracao nova dentro do OptionSettings
+            grupo = self._tuples[edit.section]
+            grupo.pairs.append(_Pair(key=chave, value=valor, quoted=False))
+            tuplas_mexidas.add(edit.section)
+            return
+
+        novas_por_secao.setdefault(edit.section, []).append(f"{chave}={valor}")
+
+    def _insere_novas(self, linhas: list[str], novas_por_secao: dict[str, list[str]]) -> None:
+        """Acrescenta as chaves novas no fim de cada secao.
+
+        De tras para frente: inserir no fim de uma secao nao pode deslocar as linhas
+        das secoes ainda por inserir.
+        """
         pendentes = sorted(
             novas_por_secao.items(),
             key=lambda item: self._section_end.get(item[0], len(linhas)),
@@ -407,16 +455,43 @@ class IniConfig(ConfigFile):
         for secao, novas in pendentes:
             fim = self._section_end.get(secao)
             if fim is None:
+                # Secao que nao existia no arquivo: nasce no fim, com cabecalho.
                 if secao:
                     linhas.append(f"[{secao}]")
                 linhas.extend(novas)
                 continue
             _insert_after(linhas, fim, novas)
 
-        return "\n".join(linhas)
-
 
 # --------------------------------------------------------------------- json
+
+
+def _texto_json(valor) -> str:
+    """Valor do JSON como a tela o mostra.
+
+    `null` vira campo vazio, e booleano vira a grafia do JSON ("true"/"false") e nao a
+    do Python ("True"): o que sai daqui volta para o arquivo, e `True` quebraria o JSON.
+    """
+    if valor is None:
+        return ""
+    if valor is True:
+        return "true"
+    if valor is False:
+        return "false"
+    return str(valor)
+
+
+def _tipo_json(valor) -> str:
+    """Que campo o formulario desenha para este valor: caixa, numero ou texto.
+
+    `bool` antes de `(int, float)` de proposito: em Python `True` e um `int`, e na
+    ordem contraria toda caixa de marcar viraria um campo de numero.
+    """
+    if isinstance(valor, bool):
+        return "bool"
+    if isinstance(valor, (int, float)):
+        return "number"
+    return "text"
 
 
 class JsonConfig(ConfigFile):
@@ -438,7 +513,7 @@ class JsonConfig(ConfigFile):
             raise ConfigError(f"JSON invalido: {exc}")
         if not isinstance(self.data, (dict, list)):
             raise ConfigError("JSON precisa ser um objeto ou lista para virar formulario")
-        self._section("", "(raiz)")
+        self._section("", RAIZ)
         self._walk(self.data, "")
 
     def _walk(self, node, caminho: str) -> None:
@@ -452,11 +527,8 @@ class JsonConfig(ConfigFile):
                 continue
             self._add(Setting(
                 id=filho, section=caminho, key=chave,
-                value="" if valor is None else ("true" if valor is True else
-                                                "false" if valor is False else str(valor)),
-                kind="bool" if isinstance(valor, bool) else
-                     "number" if isinstance(valor, (int, float)) else "text",
-            ), label=caminho or "(raiz)")
+                value=_texto_json(valor), kind=_tipo_json(valor),
+            ), label=caminho or RAIZ)
 
     def _parent(self, caminho: str):
         node = self.data
@@ -544,7 +616,7 @@ class DayzConfig(ConfigFile):
         self._pos: dict[str, tuple[int, str, str, str, bool, str]] = {}
         self._section_end: dict[str, int] = {}
         pilha: list[str] = []
-        self._section("", "(raiz)")
+        self._section("", RAIZ)
         comentario = ""
 
         for i, linha in enumerate(self._lines):
@@ -564,23 +636,26 @@ class DayzConfig(ConfigFile):
                 continue
 
             par = _DZ_PAIR_RE.match(linha)
-            if not par:
-                comentario = ""
-                continue
-            prefixo, nome, igual, bruto, nota = par.groups()
-            # O espaco depois do '=' fica no separador, para a linha voltar igualzinha.
-            sep = igual + bruto[:len(bruto) - len(bruto.lstrip())]
-            valor = bruto.strip()
-            secao = ".".join(pilha)
-            self._section_end[secao] = i
-            texto, aspas = _unquote(valor)
-            sid = f"{secao}{SEP}{nome}" if secao else nome
-            self._pos[sid] = (i, prefixo, nome, sep, aspas, nota or "")
-            self._add(Setting(
-                id=sid, section=secao, key=nome, value=texto, kind=_kind_of(texto),
-                comment=(nota or "").lstrip("/").strip() or comentario,
-            ), label=secao or "(raiz)")
+            if par:
+                self._le_par(i, par, ".".join(pilha), comentario)
+            # Comentario so vale para a linha seguinte: qualquer outra coisa o descarta.
             comentario = ""
+
+    def _le_par(self, i: int, par, secao: str, comentario: str) -> None:
+        """Uma linha `chave = valor;` do serverDZ.cfg vira um campo."""
+        prefixo, nome, igual, bruto, nota = par.groups()
+        # O espaco depois do '=' fica no separador, para a linha voltar igualzinha.
+        sep = igual + bruto[:len(bruto) - len(bruto.lstrip())]
+        texto, aspas = _unquote(bruto.strip())
+        self._section_end[secao] = i
+        sid = f"{secao}{SEP}{nome}" if secao else nome
+        self._pos[sid] = (i, prefixo, nome, sep, aspas, nota or "")
+        self._add(Setting(
+            id=sid, section=secao, key=nome, value=texto, kind=_kind_of(texto),
+            # O comentario no fim da linha ganha do que veio na linha de cima: ele fala
+            # desta chave, e e o unico lugar onde o formato documenta o que ela faz.
+            comment=(nota or "").lstrip("/").strip() or comentario,
+        ), label=secao or RAIZ)
 
     @staticmethod
     def _formata(valor: str, aspas: bool) -> str:
@@ -616,7 +691,10 @@ class DayzConfig(ConfigFile):
             if fim is None:
                 linhas.extend(novas)
                 continue
-            recuo = re.match(r"^\s*", linhas[fim]).group(0)
+            # O recuo da linha de referencia, sem regex: `^\s*` casa sempre, mas o tipo
+            # de `re.match` continua sendo Optional e o analisador tem razao em cobrar.
+            referencia = linhas[fim]
+            recuo = referencia[:len(referencia) - len(referencia.lstrip())]
             _insert_after(linhas, fim, [f"{recuo}{nova}" for nova in novas])
 
         return "\n".join(linhas)

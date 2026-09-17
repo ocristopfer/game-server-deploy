@@ -11,7 +11,7 @@
 
 {# --------------------------------------------------------------- botao / link
    Um so componente para os dois, porque para quem usa o painel nao ha diferenca:
-   com `href` sai um <a>, sem `href` sai um <button>. #}
+   com `href` sai uma ancora, sem `href` sai um botao. #}
 {% macro botao(rotulo, href='', variante='', tamanho='', icone='', tipo='submit', titulo='', confirmar='', bloco=false, extra='') -%}
   {%- set classes = ['btn'] -%}
   {%- if variante %}{% set classes = classes + ['btn--' ~ variante] %}{% endif -%}
@@ -54,12 +54,12 @@
 
 
 {# --------------------------------------------------------------------- menu
-   <details> puro: abre no clique e no teclado sem JavaScript nenhum. O JS so
+   Elemento `details` puro: abre no clique e no teclado sem JavaScript nenhum. O JS so
    acrescenta "fecha ao clicar fora" (features/menu.js).
 
    Uso:
      {% call ui.menu('Mais', alinhar='dir') %}
-       <a class="menu__item" href="...">...</a>
+       ancora com class="menu__item" para cada destino
      {% endcall %} #}
 {% macro menu(rotulo, icone='⋯', alinhar='dir', titulo='') -%}
 <details class="menu">
@@ -100,14 +100,3 @@
 </div>
 {% endmacro %}
 
-
-{# --------------------------------------------------------------- tabela
-   Toda tabela do painel entra aqui. A caixa e que rola de lado no celular: sem ela,
-   uma tabela de cinco colunas empurra a pagina inteira para fora da tela. #}
-{% macro tabela_inicio(classe='') %}
-<div class="table-wrap"><table class="jobs {{ classe }}">
-{% endmacro %}
-
-{% macro tabela_fim() %}
-</table></div>
-{% endmacro %}

@@ -1,0 +1,28 @@
+{
+  "//": [
+    "Configuracao do Pylance/Pyright para ESTE repositorio.",
+    "",
+    "Existe por um motivo so: o editor precisa achar o Flask e os modulos irmaos do",
+    "painel (gameconf, gamefields, ui), que sao importados sem prefixo de pacote.",
+    "Sem isto o app.py abre com 'Import \"flask\" could not be resolved' e o aviso",
+    "fica ali para sempre, ensinando a ignorar a lista de problemas.",
+    "",
+    "pythonPlatform=Linux porque e onde o painel roda. Sem isso o editor analisa a",
+    "stdlib do Windows e acusa fcntl.ioctl, termios.TIOCSWINSZ, os.setsid, pty.openpty",
+    "e signal.SIGHUP como inexistentes - justamente o bloco que o app.py ja protege com",
+    "try/except ImportError para continuar funcionando fora do Linux.",
+    "",
+    "O .venv e FERRAMENTA DE DESENVOLVIMENTO, nao dependencia do painel. Em producao",
+    "o container instala python3-flask pelo apt e nao baixa pacote de lugar nenhum -",
+    "ver CLAUDE.md. Quem manda no que o painel pode importar continua sendo o",
+    "provision-admin-lxc.sh, nao este arquivo."
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["admin"],
+  "include": ["admin"],
+  "exclude": ["**/node_modules", "**/.*", "**/__pycache__", ".venv", "docker/stacks"],
+  "typeCheckingMode": "basic",
+  "pythonPlatform": "Linux",
+  "pythonVersion": "3.13"
+}

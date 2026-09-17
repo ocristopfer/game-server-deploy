@@ -79,10 +79,9 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--accent);
 }
 textarea { resize: vertical; line-height: 1.6; }
+/* 20px e o corpo do controle; o alvo de toque quem garante e o rotulo em volta. */
 input[type="checkbox"], input[type="radio"] {
-  width: auto; min-height: 0; min-width: 0;
-  /* 20px e o corpo do controle; o alvo de toque quem garante e o rotulo em volta. */
-  width: 20px; height: 20px;
+  width: 20px; height: 20px; min-width: 0; min-height: 0;
   accent-color: var(--accent);
 }
 input[type="file"] { padding: var(--sp-2); }

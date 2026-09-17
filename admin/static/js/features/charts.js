@@ -10,13 +10,13 @@
  */
 import { criar } from '../core/dom.js';
 
-const num = (el, nome) => parseFloat(el.getAttribute(nome)) || 0;
+const num = (el, nome) => Number.parseFloat(el.getAttribute(nome)) || 0;
 
 function pontosDe(poly) {
   return (poly.getAttribute('points') || '').trim().split(/\s+/)
     .map((par) => {
       const [x, y] = par.split(',');
-      return { x: parseFloat(x), y: parseFloat(y) };
+      return { x: Number.parseFloat(x), y: Number.parseFloat(y) };
     })
     .filter((p) => !Number.isNaN(p.x) && !Number.isNaN(p.y));
 }
@@ -44,8 +44,8 @@ export const grafico = {
   montar(svg) {
     const mira = svg.querySelector('.mira');
     const series = Array.from(svg.querySelectorAll('.serie')).map((poly) => ({
-      nome: poly.getAttribute('data-serie') || '',
-      sufixo: poly.getAttribute('data-sufixo') || '',
+      nome: poly.dataset.serie || '',
+      sufixo: poly.dataset.sufixo || '',
       cor: poly.getAttribute('stroke') || 'currentColor',
       pontos: pontosDe(poly),
     }));

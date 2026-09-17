@@ -22,7 +22,7 @@ export async function lerJSON(url, opcoes = {}) {
   let resp;
   try {
     resp = await fetch(url, {
-      headers: { Accept: 'application/json', ...(opcoes.headers || {}) },
+      headers: { Accept: 'application/json', ...opcoes.headers },
       cache: 'no-store',
       credentials: 'same-origin',
       signal: opcoes.signal,
@@ -39,7 +39,7 @@ export async function lerJSON(url, opcoes = {}) {
   }
 
   if (!resp.ok) {
-    throw new ErroDeRede((dados && dados.error) || `http ${resp.status}`, resp.status);
+    throw new ErroDeRede(dados?.error || `http ${resp.status}`, resp.status);
   }
   return dados;
 }

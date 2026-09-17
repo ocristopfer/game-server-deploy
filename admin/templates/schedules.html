@@ -55,7 +55,7 @@
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <div class="row">
       <label>O que fazer
-        <select name="action" aria-label="acao da tarefa">
+        <select name="action">
           {% for a in acoes %}<option value="{{ a }}">{{ job_labels.get(a, a) }}</option>{% endfor %}
         </select>
         <small>
@@ -65,7 +65,7 @@
         </small>
       </label>
       <label>Quando
-        <select name="kind" aria-label="frequencia da tarefa">
+        <select name="kind">
           <option value="diario">Todo dia, numa hora fixa</option>
           <option value="semanal">Uma vez por semana</option>
           <option value="intervalo">A cada N horas</option>
@@ -82,7 +82,7 @@
     </div>
     <div class="row">
       <label>Dia da semana <span class="muted">(semanal)</span>
-        <select name="weekday" aria-label="dia da semana">
+        <select name="weekday">
           {% for d in dias %}<option value="{{ loop.index0 }}">{{ d }}</option>{% endfor %}
         </select>
       </label>

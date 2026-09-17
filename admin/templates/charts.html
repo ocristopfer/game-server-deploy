@@ -3,9 +3,29 @@
 {% import "components/servidor.html" as srv with context %}
 {% block title %}Graficos &mdash; {{ server.name }}{% endblock %}
 
+{% macro chave_da_legenda(cor, rotulo) -%}
+<span class="chave">
+  <svg class="chave-cor" viewBox="0 0 14 2" aria-hidden="true"><rect width="14" height="2" rx="1" fill="{{ cor }}"/></svg>
+  {{ rotulo }}
+</span>
+{%- endmacro %}
+
 {% macro grafico(g, titulo) %}
   {# O SVG chega pronto do servidor: sem JavaScript a tela continua inteira. O JS so
-     acrescenta a mira e o balaozinho por cima. #}
+     acrescenta a mira e o balaozinho por cima.
+
+     EXCECAO ACEITA (Sonar Web:S6845, "tabIndex so em elemento interativo"): o
+     tabindex aqui e deliberado. Este SVG responde a seta esquerda/direita e a Esc
+     (features/charts.js) - e por ele que quem navega por teclado le valor a valor,
+     sem mouse. A regra le o `role="img"` e conclui que o elemento e passivo; nao ha
+     role em ARIA que diga "figura que se explora pelo teclado". Para leitor de tela o
+     caminho e outro e ja existe: a tabela "Ver os numeros em tabela" logo abaixo, com
+     os mesmos valores. Nao tire o tabindex sem por outra coisa no lugar - tirar so
+     silencia o aviso e cega quem depende dele.
+
+     Marca de supressao aqui nao adianta: foi testada como comentario HTML na linha de
+     cima e na mesma linha da tag, e o aviso continua nas duas. Esta regra so se cala
+     pela configuracao do SonarLint/SonarQube, fora do repositorio. #}
   <svg class="grafico" viewBox="0 0 {{ g.w }} {{ g.h }}" role="img" tabindex="0"
        aria-label="{{ titulo }} ao longo do tempo"
        data-teto="{{ g.teto }}" data-topo="{{ g.t }}" data-base="{{ g.b }}"
@@ -70,10 +90,15 @@
   <div class="card__head">
     <h2>CPU e memoria</h2>
     {# Duas series: legenda sempre presente, e a identidade vem do traco colorido ao
-       lado do texto (o texto em si nunca veste a cor da serie). #}
+       lado do texto (o texto em si nunca veste a cor da serie).
+
+       O tracinho e um SVG com `fill`, e nao um quadrado com `style="background: ..."`:
+       a cor vem do servidor, e valor de template dentro de um atributo `style` nao e
+       CSS valido para ferramenta nenhuma - o arquivo inteiro passa a acusar erro. Como
+       atributo de SVG ela e so um atributo, igual ao `stroke` das linhas do grafico. #}
     <div class="legenda">
-      <span class="chave"><i style="background: {{ cores.cpu }}"></i>CPU</span>
-      <span class="chave"><i style="background: {{ cores.mem }}"></i>Memoria</span>
+      {{ chave_da_legenda(cores.cpu, 'CPU') }}
+      {{ chave_da_legenda(cores.mem, 'Memoria') }}
     </div>
   </div>
   {{ grafico(uso, 'CPU e memoria') }}

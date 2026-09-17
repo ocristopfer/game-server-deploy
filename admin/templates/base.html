@@ -110,7 +110,12 @@
 {% endif %}
 
 {# Um modulo so, que monta as features pedidas pela marcacao desta pagina.
-   Nenhum template do painel tem <script> com logica dentro. #}
+   Nenhum template do painel tem tag de script com logica dentro.
+
+   "tag de script" por extenso de proposito: uma tag literal dentro de um comentario
+   Jinja e invisivel para o Jinja, mas nao para quem le o arquivo como HTML - o editor
+   abre uma tag que nunca fecha, passa a ler o resto do arquivo como JavaScript e marca
+   tudo como erro de sintaxe. Vale para qualquer marcacao dentro de comentario. #}
 <script type="module" src="{{ static_url('js/app.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>

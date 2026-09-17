@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Testes da contagem de jogadores por API HTTP e da descoberta de portas.
 
-Sem dependencia externa alem do Flask que o painel ja usa:
-
-    docker compose exec panel python3 /opt/gamepanel/test_players.py
+    pytest admin/test_players.py
 
 O que estes testes garantem e a promessa do recurso: o painel le a resposta de uma API
 que ele nunca viu antes, sem nada codificado por jogo. Se um jogo novo devolver JSON com
@@ -11,40 +9,26 @@ os campos de sempre (players/name, currentplayernum, maxPlayers...), tem que fun
 sem tocar no codigo.
 """
 import os
-import tempfile
 
-# O import de app.py cria/migra o banco: aponta para um arquivo descartavel.
-os.environ.setdefault("GAMEPANEL_DB", os.path.join(tempfile.mkdtemp(), "teste.db"))
+import pytest
 
-import app as panel  # noqa: E402
+import app as panel
 
-falhas = []
-
-
-def check(nome, condicao, detalhe=""):
-    if condicao:
-        print(f"  ok   {nome}")
-    else:
-        print(f"  FALHOU {nome} {detalhe}")
-        falhas.append(nome)
-
-
-def igual(nome, obtido, esperado):
-    check(nome, obtido == esperado, f"\n    obtido:   {obtido!r}\n    esperado: {esperado!r}")
-
-
-def erro(nome, funcao, *args):
-    try:
-        funcao(*args)
-    except panel.QueryError:
-        print(f"  ok   {nome}")
-        return
-    print(f"  FALHOU {nome} (nao levantou QueryError)")
-    falhas.append(nome)
+# Permissao de pasta (0o700) e "todo caminho fora de /proc e gravavel" sao POSIX puro:
+# o Windows nao aplica bit de dono/grupo/outros do jeito que `os.stat().st_mode`
+# reporta, e nao tem um `/proc` que recusa `mkdir`. As duas suites abaixo so fazem
+# sentido no container (Debian), que e onde o painel roda de verdade - ver CLAUDE.md.
+posix_apenas = pytest.mark.skipif(
+    os.name != "posix", reason="permissao de pasta e /proc sao POSIX; valem no container")
 
 
 def nomes(resultado):
     return [p["name"] for p in resultado["list"]]
+
+
+def servidor(url, origem="http"):
+    return {"http_url": url, "player_source": origem, "query_port": 0,
+            "join_re": "", "leave_re": ""}
 
 
 # ------------------------------------------------------------------ respostas reais
@@ -81,55 +65,88 @@ SATISFACTORY = {
 }
 
 
-print("API HTTP: descoberta automatica")
-r = panel.read_players_json(PALWORLD_PLAYERS)
-igual("Palworld /players conta pela lista", r["players"], 2)
-igual("Palworld /players pega os nomes", nomes(r), ["Cristopfer", "Ana"])
-
-r = panel.read_players_json(PALWORLD_METRICS)
-igual("Palworld /metrics conta por currentplayernum", r["players"], 3)
-igual("Palworld /metrics acha o maximo", r["max_players"], 32)
-igual("Palworld /metrics nao inventa nomes", nomes(r), [])
-
-r = panel.read_players_json(SATISFACTORY)
-igual("Satisfactory conta aninhado", r["players"], 2)
-igual("Satisfactory acha o playerLimit", r["max_players"], 4)
-
-# Ninguem online e uma resposta valida: a chave 'players' identifica a lista mesmo vazia.
-r = panel.read_players_json({"players": []})
-igual("lista vazia vira zero, nao erro", r["players"], 0)
-
-# Lista solta na raiz, sem objeto em volta.
-r = panel.read_players_json([{"name": "Bea"}, {"name": "Caio"}])
-igual("lista na raiz da resposta", nomes(r), ["Bea", "Caio"])
-
-# Chave de nome diferente: o jogo novo nao precisa usar exatamente 'name'.
-r = panel.read_players_json({"onlinePlayers": [{"playerName": "Duda", "ping": 9}]})
-igual("nome em playerName", nomes(r), ["Duda"])
-
-r = panel.read_players_json({"result": {"numPlayers": 7, "maxPlayers": 16}})
-igual("contagem em numPlayers", r["players"], 7)
-
-igual("nome do servidor quando existe",
-      panel.read_players_json({"serverName": "Casa", "numPlayers": 1})["server_name"], "Casa")
-
-erro("resposta sem jogador nenhum reclama", panel.read_players_json, {"status": "ok"})
+def test_palworld_players_conta_pela_lista():
+    r = panel.read_players_json(PALWORLD_PLAYERS)
+    assert r["players"] == 2
+    assert nomes(r) == ["Cristopfer", "Ana"]
 
 
-print("API HTTP: caminhos apontados a mao")
-igual("caminho da lista",
-      nomes(panel.read_players_json(PALWORLD_PLAYERS, "players")), ["Cristopfer", "Ana"])
-igual("caminho da contagem",
-      panel.read_players_json(SATISFACTORY, "", "data.serverGameState.numConnectedPlayers")["players"], 2)
-igual("caminho com indice",
-      nomes(panel.read_players_json({"a": [{"lista": [{"name": "Edu"}]}]}, "a[0].lista")), ["Edu"])
-igual("contagem apontada para uma lista usa o tamanho",
-      panel.read_players_json(PALWORLD_PLAYERS, "", "players")["players"], 2)
-erro("caminho que nao existe reclama", panel.read_players_json, PALWORLD_PLAYERS, "jogadores")
-erro("caminho de lista que nao e lista reclama", panel.read_players_json, PALWORLD_METRICS, "serverfps")
+def test_palworld_metrics_conta_por_currentplayernum():
+    r = panel.read_players_json(PALWORLD_METRICS)
+    assert r["players"] == 3
+    assert r["max_players"] == 32
+    assert nomes(r) == [], "essa resposta nao tem nome nenhum"
 
 
-print("TeamSpeak (WebQuery)")
+def test_satisfactory_conta_aninhado_em_data():
+    r = panel.read_players_json(SATISFACTORY)
+    assert r["players"] == 2
+    assert r["max_players"] == 4
+
+
+def test_lista_vazia_vira_zero_nao_erro():
+    """A chave 'players' identifica a lista mesmo vazia: ninguem online e resposta valida."""
+    assert panel.read_players_json({"players": []})["players"] == 0
+
+
+def test_lista_solta_na_raiz_da_resposta():
+    r = panel.read_players_json([{"name": "Bea"}, {"name": "Caio"}])
+    assert nomes(r) == ["Bea", "Caio"]
+
+
+def test_chave_de_nome_diferente_de_name():
+    """O jogo novo nao precisa usar exatamente 'name'."""
+    r = panel.read_players_json({"onlinePlayers": [{"playerName": "Duda", "ping": 9}]})
+    assert nomes(r) == ["Duda"]
+
+
+def test_contagem_em_chave_numPlayers():
+    assert panel.read_players_json({"result": {"numPlayers": 7, "maxPlayers": 16}})["players"] == 7
+
+
+def test_nome_do_servidor_quando_existe():
+    r = panel.read_players_json({"serverName": "Casa", "numPlayers": 1})
+    assert r["server_name"] == "Casa"
+
+
+def test_resposta_sem_jogador_nenhum_reclama():
+    with pytest.raises(panel.QueryError):
+        panel.read_players_json({"status": "ok"})
+
+
+# ------------------------------------------------------- caminhos apontados a mao
+
+def test_caminho_da_lista_apontado_a_mao():
+    assert nomes(panel.read_players_json(PALWORLD_PLAYERS, "players")) == ["Cristopfer", "Ana"]
+
+
+def test_caminho_da_contagem_apontado_a_mao():
+    r = panel.read_players_json(
+        SATISFACTORY, "", "data.serverGameState.numConnectedPlayers")
+    assert r["players"] == 2
+
+
+def test_caminho_com_indice_de_lista():
+    r = panel.read_players_json({"a": [{"lista": [{"name": "Edu"}]}]}, "a[0].lista")
+    assert nomes(r) == ["Edu"]
+
+
+def test_contagem_apontada_para_uma_lista_usa_o_tamanho():
+    assert panel.read_players_json(PALWORLD_PLAYERS, "", "players")["players"] == 2
+
+
+def test_caminho_que_nao_existe_reclama():
+    with pytest.raises(panel.QueryError):
+        panel.read_players_json(PALWORLD_PLAYERS, "jogadores")
+
+
+def test_caminho_de_lista_que_nao_e_lista_reclama():
+    with pytest.raises(panel.QueryError):
+        panel.read_players_json(PALWORLD_METRICS, "serverfps")
+
+
+# --------------------------------------------------------------- TeamSpeak (WebQuery)
+
 # Resposta real do /1/clientlist: tudo string, nome em client_nickname, e as conexoes de
 # ServerQuery misturadas na mesma lista. Uma delas e a DO PAINEL, que acabou de perguntar.
 TEAMSPEAK = {
@@ -141,65 +158,82 @@ TEAMSPEAK = {
     ],
     "status": {"code": 0, "message": "ok"},
 }
-r = panel.read_players_json(TEAMSPEAK, "body")
-igual("le os nomes do TeamSpeak sem nada codificado", nomes(r), ["Ana", "Cristopfer"])
-igual("e a conexao de consulta nao entra na conta", r["players"], 2)
-check("o proprio painel nao aparece como usuario",
-      all("serveradmin" not in n for n in nomes(r)), nomes(r))
-
-# So de query online: e zero gente no canal, nao "um usuario".
-igual("servidor vazio com o painel conectado da zero",
-      panel.read_players_json(
-          {"body": [{"clid": "9", "client_nickname": "serveradmin", "client_type": "1"}]},
-          "body")["players"], 0)
-
-# client_type ausente (todo o resto dos jogos) nao pode sumir com jogador nenhum.
-igual("jogo sem client_type nao e filtrado",
-      nomes(panel.read_players_json([{"name": "Bea"}, {"name": "Caio"}])), ["Bea", "Caio"])
-# Valor estranho no campo tambem nao: na duvida, jogador fica.
-igual("client_type ilegivel nao derruba o jogador",
-      nomes(panel.read_players_json([{"name": "Duda", "client_type": "x"}])), ["Duda"])
 
 
-print("API HTTP: autenticacao e status")
-# auth_header devolve o cabecalho INTEIRO ('Nome: valor'), nao so o valor: ha API que nao
-# autentica por Authorization, e com so o valor na mao o nome seria sempre o mesmo.
-igual("basic vira base64", panel.auth_header("basic:admin:troque-me"),
-      "Authorization: Basic YWRtaW46dHJvcXVlLW1l")
-igual("basic com ':' na senha", panel.auth_header("basic:admin:a:b"),
-      "Authorization: Basic YWRtaW46YTpi")
-igual("bearer", panel.auth_header("bearer:abc123"), "Authorization: Bearer abc123")
-# Cadastro antigo guardava o VALOR solto; ele tem de continuar saindo como Authorization,
-# senao trocar esta funcao calaria a contagem de quem ja tinha um token gravado.
-igual("valor solto continua indo como Authorization",
-      panel.auth_header("ApiKey xyz"), "Authorization: ApiKey xyz")
-igual("cabecalho proprio manda nome e valor",
-      panel.auth_header("header:x-api-key: SEGREDO"), "x-api-key: SEGREDO")
-igual("vazio nao vira cabecalho", panel.auth_header("  "), "")
-# 'header:' sem os dois pontos do nome nao e cabecalho nenhum; cai na regra antiga em vez
-# de virar um header sem valor.
-igual("header sem nome:valor nao inventa cabecalho",
-      panel.auth_header("header:coisa"), "Authorization: header:coisa")
-
-igual("status separado do corpo",
-      panel._split_status('{"a":1}\n__HTTP_STATUS__200'), ('{"a":1}', 200))
-igual("sem marcador o status fica zero",
-      panel._split_status("resposta crua"), ("resposta crua", 0))
+def test_teamspeak_le_os_nomes_sem_nada_codificado():
+    r = panel.read_players_json(TEAMSPEAK, "body")
+    assert nomes(r) == ["Ana", "Cristopfer"]
+    assert r["players"] == 2, "a conexao de consulta nao entra na conta"
+    assert all("serveradmin" not in n for n in nomes(r)), "o painel nao aparece como usuario"
 
 
-print("API HTTP: URL")
-check("URL local aceita", bool(panel.URL_RE.match("http://127.0.0.1:8212/v1/api/players")))
-check("HTTPS aceito", bool(panel.URL_RE.match("https://127.0.0.1:7777/api/v1")))
-check("sem esquema recusado", not panel.URL_RE.match("127.0.0.1:8212/x"))
-check("file:// recusado", not panel.URL_RE.match("file:///etc/passwd"))
-check("espaco recusado", not panel.URL_RE.match("http://127.0.0.1:8212/a b"))
+def test_teamspeak_so_com_a_query_online_da_zero():
+    """So de query online: e zero gente no canal, nao "um usuario"."""
+    r = panel.read_players_json(
+        {"body": [{"clid": "9", "client_nickname": "serveradmin", "client_type": "1"}]}, "body")
+    assert r["players"] == 0
 
 
-print("Descoberta de portas")
-igual("portas do texto livre",
-      panel._portas_do_texto("8211/udp 27015/udp"), [8211, 27015])
-igual("sem repetir e sem a porta do ssh",
-      panel._sem_repetir([8211, 22, 8211, 27015, 99999]), [8211, 27015])
+def test_jogo_sem_client_type_nao_e_filtrado():
+    """client_type ausente (todo o resto dos jogos) nao pode sumir com jogador nenhum."""
+    assert nomes(panel.read_players_json([{"name": "Bea"}, {"name": "Caio"}])) == ["Bea", "Caio"]
+
+
+def test_client_type_ilegivel_nao_derruba_o_jogador():
+    """Valor estranho no campo tambem nao: na duvida, o jogador fica."""
+    assert nomes(panel.read_players_json([{"name": "Duda", "client_type": "x"}])) == ["Duda"]
+
+
+# --------------------------------------------------------- autenticacao e status
+
+@pytest.mark.parametrize("bruto, esperado", [
+    ("basic:admin:troque-me", "Authorization: Basic YWRtaW46dHJvcXVlLW1l"),
+    ("basic:admin:a:b", "Authorization: Basic YWRtaW46YTpi"),  # ':' na senha
+    ("bearer:abc123", "Authorization: Bearer abc123"),
+    # Cadastro antigo guardava o VALOR solto; continua saindo como Authorization, senao
+    # trocar esta funcao calaria a contagem de quem ja tinha um token gravado.
+    ("ApiKey xyz", "Authorization: ApiKey xyz"),
+    ("header:x-api-key: SEGREDO", "x-api-key: SEGREDO"),
+    ("  ", ""),
+    # 'header:' sem os dois pontos do nome nao e cabecalho nenhum; cai na regra antiga.
+    ("header:coisa", "Authorization: header:coisa"),
+])
+def test_auth_header(bruto, esperado):
+    """auth_header devolve o cabecalho INTEIRO ('Nome: valor'), nao so o valor: ha API
+    que nao autentica por Authorization, e com so o valor o nome seria sempre o mesmo."""
+    assert panel.auth_header(bruto) == esperado
+
+
+def test_split_status_separa_do_corpo():
+    assert panel._split_status('{"a":1}\n__HTTP_STATUS__200') == ('{"a":1}', 200)
+
+
+def test_split_status_sem_marcador_fica_zero():
+    assert panel._split_status("resposta crua") == ("resposta crua", 0)
+
+
+# ---------------------------------------------------------------------------- URL
+
+@pytest.mark.parametrize("url, aceita", [
+    ("http://127.0.0.1:8212/v1/api/players", True),
+    ("https://127.0.0.1:7777/api/v1", True),
+    ("127.0.0.1:8212/x", False),          # sem esquema
+    ("file:///etc/passwd", False),
+    ("http://127.0.0.1:8212/a b", False), # espaco
+])
+def test_url_re(url, aceita):
+    assert bool(panel.URL_RE.match(url)) is aceita
+
+
+# ------------------------------------------------------------- descoberta de portas
+
+def test_portas_do_texto_livre():
+    assert panel._portas_do_texto("8211/udp 27015/udp") == [8211, 27015]
+
+
+def test_sem_repetir_e_sem_a_porta_do_ssh():
+    assert panel._sem_repetir([8211, 22, 8211, 27015, 99999]) == [8211, 27015]
+
 
 # Os tres estados que a tela precisa diferenciar, vindos do mapa porta -> dono.
 DONOS = {
@@ -207,191 +241,238 @@ DONOS = {
     ("tcp", 22): {"pid": 1, "proc": "sshd", "infra": True},
     ("tcp", 33039): {"pid": 0, "proc": "?", "infra": False},
 }
-itens = panel._com_dono(
-    [{"port": 8212}, {"port": 22}, {"port": 33039}, {"port": 7777}], DONOS, "tcp")
-igual("porta do jogo tem processo dono",
-      (itens[0]["origem"], itens[0]["proc"], itens[0]["pid"]), ("detectada", "PalServer-Linu", 40))
-igual("sshd marcado como infra", (itens[1]["origem"], itens[1]["infra"]), ("detectada", True))
-igual("socket aberto sem processo dono no container", itens[2]["origem"], "sem-dono")
-igual("porta que nunca esteve aberta e chute", itens[3]["origem"], "nao-vista")
-
-# A sondagem so vale a pena onde ha resposta util: porta que devolve 404 em tudo vira
-# uma linha marcada, nao uma para cada caminho testado.
-BRUTOS = [
-    {"port": 33039, "path": p, "status": 404, "content_type": "text/html",
-     "scheme": "http", "url": f"http://127.0.0.1:33039{p}"}
-    for p in ("/", "/v1/api/info", "/v1/api/players", "/status")
-] + [
-    {"port": 8212, "path": "/v1/api/players", "status": 401,
-     "content_type": "application/json", "scheme": "http", "url": "x"},
-    {"port": 8212, "path": "/status", "status": 404,
-     "content_type": "application/json", "scheme": "http", "url": "x"},
-]
-resumo = panel._resume_genericos(BRUTOS)
-igual("porta 404-em-tudo vira uma linha so",
-      [(i["port"], i["path"], i.get("generico", False)) for i in resumo if i["port"] == 33039],
-      [(33039, "/", True)])
-igual("porta com API guarda so as rotas uteis",
-      [(i["port"], i["path"]) for i in resumo if i["port"] == 8212],
-      [(8212, "/v1/api/players")])
-
-print("Nomes vindos do log")
-LINHAS_ADM = [
-    '16:21:58 | Player "Cristopfer" is connected (id=QnVIrhpDQ=)',
-    '16:22:04 | Player "Guilherme" is connected (id=AbCdEfGh=)',
-    '16:23:10 | Player "Cristopfer"(id=QnVIrhpDQ=) has been disconnected',
-    '16:24:00 | Player "Ana" is connected (id=ZZZZ0000=)',
-]
-ENTRA_DZ = panel.compile_pattern(r'Player "(?P<name>[^"]+)" is connected', "entrada")
-SAI_DZ = panel.compile_pattern(
-    r'Player "(?P<name>[^"]+)"\(id=[^)]*\) has been disconnected', "saida")
-
-# Nome nos DOIS lados (DayZ pelo .ADM): da para dizer exatamente quem ficou.
-r = panel._apply_log_events(LINHAS_ADM, ENTRA_DZ, SAI_DZ)
-igual("com nome nos dois lados, a lista e exata",
-      [p["name"] for p in r["list"]], ["Guilherme", "Ana"])
-igual("e a contagem bate", r["players"], 2)
-check("e nao se declara aproximada", not r.get("aproximado"))
-
-# Nome nos DOIS lados (Enshrouded pelo journalctl):
-LINHAS_ENSH = [
-    "Sep 03 13:46:31 enshrouded start-enshrouded.sh[83856]: [server] Player 'Cristopfer' logged in with Permissions:",
-    "Sep 03 13:46:35 enshrouded start-enshrouded.sh[83856]: [server] Player 'Amigo' logged in with Permissions:",
-    "Sep 03 13:47:36 enshrouded start-enshrouded.sh[83856]: [server] Remove Player 'Cristopfer'",
-]
-ENTRA_ENSH = panel.compile_pattern(r"\[server\] Player '(?P<name>[^']+)' logged in", "entrada")
-SAI_ENSH = panel.compile_pattern(r"\[server\] Remove Player '(?P<name>[^']+)'", "saida")
-r = panel._apply_log_events(LINHAS_ENSH, ENTRA_ENSH, SAI_ENSH)
-igual("Enshrouded lista quem ficou online", [p["name"] for p in r["list"]], ["Amigo"])
-igual("Enshrouded contagem bate", r["players"], 1)
-check("Enshrouded lista nao e aproximada", not r.get("aproximado"))
-
-# Nome so na ENTRADA (Satisfactory): o log avisa que alguem saiu, sem dizer quem.
-LINHAS_SAT = [
-    "LogNet: Join succeeded: Cristopfer",
-    "LogNet: Join succeeded: Guilherme",
-    "LogNet: UNetConnection::Close: [UNetConnection] ...",
-    "LogNet: Join succeeded: Ana",
-]
-ENTRA_SF = panel.compile_pattern(r"LogNet: Join succeeded: (?P<name>.+)", "entrada")
-SAI_SF = panel.compile_pattern(r"LogNet: UNetConnection::Close:", "saida")
-r = panel._apply_log_events(LINHAS_SAT, ENTRA_SF, SAI_SF)
-# A contagem continua sendo entradas menos saidas, igual a de antes desta melhoria.
-igual("contagem exata mesmo sem saber quem saiu", r["players"], 2)
-igual("mostra os ultimos a entrar", [p["name"] for p in r["list"]], ["Guilherme", "Ana"])
-check("e se declara aproximada", r.get("aproximado"))
-
-# Reconexao nao pode duplicar o mesmo nome na lista.
-r = panel._apply_log_events(
-    ["LogNet: Join succeeded: Ana", "LogNet: Join succeeded: Ana"], ENTRA_SF, SAI_SF)
-igual("reconexao nao duplica o nome", [p["name"] for p in r["list"]], ["Ana"])
-
-# Sem nome em lugar nenhum: sobra a contagem, como sempre foi.
-r = panel._apply_log_events(
-    ["alguem entrou", "alguem entrou", "alguem saiu"],
-    panel.compile_pattern("alguem entrou", "entrada"),
-    panel.compile_pattern("alguem saiu", "saida"))
-igual("sem nome nenhum, so a contagem", (r["players"], r["list"]), (1, []))
-
-# Mais saidas do que entradas (log cortado no comeco) nao pode virar contagem negativa.
-r = panel._apply_log_events(
-    ["LogNet: UNetConnection::Close: x", "LogNet: UNetConnection::Close: y"],
-    ENTRA_SF, SAI_SF)
-igual("saida sem entrada nao fica negativo", r["players"], 0)
 
 
-print("Caminho do arquivo de log")
-igual("vazio continua vazio (usa o journalctl)", panel.log_path_valido(""), "")
-igual("caminho simples passa", panel.log_path_valido("/opt/game/game.log"), "/opt/game/game.log")
-igual("com * passa (o DayZ abre um .ADM por sessao)",
-      panel.log_path_valido("/opt/game/profiles/*.ADM"), "/opt/game/profiles/*.ADM")
-# O caminho entra SEM aspas no comando remoto (para o shell expandir o '*'), entao tudo
-# que o shell interpretaria de outro jeito tem de morrer aqui.
-for ruim in ("/tmp/x.log; touch /tmp/invadiu", "/opt/game/$(id).log", "/opt/game/`id`.log",
-             "/opt/game/x.log|id", "/opt/game/a b.log", "relativo/x.log",
-             "/opt/../../etc/shadow", "/opt/game/x.log&", "/opt/game/'x'.log"):
-    try:
+def test_com_dono_classifica_cada_porta():
+    itens = panel._com_dono(
+        [{"port": 8212}, {"port": 22}, {"port": 33039}, {"port": 7777}], DONOS, "tcp")
+    assert (itens[0]["origem"], itens[0]["proc"], itens[0]["pid"]) == (
+        "detectada", "PalServer-Linu", 40)
+    assert (itens[1]["origem"], itens[1]["infra"]) == ("detectada", True), "sshd e infra"
+    assert itens[2]["origem"] == "sem-dono", "socket aberto sem processo dono no container"
+    assert itens[3]["origem"] == "nao-vista", "porta que nunca esteve aberta e chute"
+
+
+def test_resume_genericos_agrupa_porta_404_em_tudo():
+    """A sondagem so vale a pena onde ha resposta util: porta que devolve 404 em tudo
+    vira uma linha marcada, nao uma para cada caminho testado."""
+    brutos = [
+        {"port": 33039, "path": p, "status": 404, "content_type": "text/html",
+         "scheme": "http", "url": f"http://127.0.0.1:33039{p}"}
+        for p in ("/", "/v1/api/info", "/v1/api/players", "/status")
+    ] + [
+        {"port": 8212, "path": "/v1/api/players", "status": 401,
+         "content_type": "application/json", "scheme": "http", "url": "x"},
+        {"port": 8212, "path": "/status", "status": 404,
+         "content_type": "application/json", "scheme": "http", "url": "x"},
+    ]
+    resumo = panel._resume_genericos(brutos)
+    assert [(i["port"], i["path"], i.get("generico", False))
+            for i in resumo if i["port"] == 33039] == [(33039, "/", True)]
+    assert [(i["port"], i["path"]) for i in resumo if i["port"] == 8212] == [
+        (8212, "/v1/api/players")], "guarda so as rotas uteis"
+
+
+# ------------------------------------------------------------------ nomes do log
+
+def test_dayz_adm_nome_nos_dois_lados_da_lista_exata():
+    """Nome nos DOIS lados (DayZ pelo .ADM): da para dizer exatamente quem ficou."""
+    linhas = [
+        '16:21:58 | Player "Cristopfer" is connected (id=QnVIrhpDQ=)',
+        '16:22:04 | Player "Guilherme" is connected (id=AbCdEfGh=)',
+        '16:23:10 | Player "Cristopfer"(id=QnVIrhpDQ=) has been disconnected',
+        '16:24:00 | Player "Ana" is connected (id=ZZZZ0000=)',
+    ]
+    entra = panel.compile_pattern(r'Player "(?P<name>[^"]+)" is connected', "entrada")
+    sai = panel.compile_pattern(
+        r'Player "(?P<name>[^"]+)"\(id=[^)]*\) has been disconnected', "saida")
+    r = panel._apply_log_events(linhas, entra, sai)
+    assert [p["name"] for p in r["list"]] == ["Guilherme", "Ana"]
+    assert r["players"] == 2
+    assert not r.get("aproximado")
+
+
+def test_enshrouded_journalctl_nome_nos_dois_lados():
+    linhas = [
+        "Sep 03 13:46:31 enshrouded start-enshrouded.sh[83856]: [server] Player 'Cristopfer' logged in with Permissions:",
+        "Sep 03 13:46:35 enshrouded start-enshrouded.sh[83856]: [server] Player 'Amigo' logged in with Permissions:",
+        "Sep 03 13:47:36 enshrouded start-enshrouded.sh[83856]: [server] Remove Player 'Cristopfer'",
+    ]
+    entra = panel.compile_pattern(r"\[server\] Player '(?P<name>[^']+)' logged in", "entrada")
+    sai = panel.compile_pattern(r"\[server\] Remove Player '(?P<name>[^']+)'", "saida")
+    r = panel._apply_log_events(linhas, entra, sai)
+    assert [p["name"] for p in r["list"]] == ["Amigo"]
+    assert r["players"] == 1
+    assert not r.get("aproximado")
+
+
+def test_satisfactory_nome_so_na_entrada_e_aproximado():
+    """O log avisa que alguem saiu, sem dizer quem."""
+    linhas = [
+        "LogNet: Join succeeded: Cristopfer",
+        "LogNet: Join succeeded: Guilherme",
+        "LogNet: UNetConnection::Close: [UNetConnection] ...",
+        "LogNet: Join succeeded: Ana",
+    ]
+    entra = panel.compile_pattern(r"LogNet: Join succeeded: (?P<name>.+)", "entrada")
+    sai = panel.compile_pattern(r"LogNet: UNetConnection::Close:", "saida")
+    r = panel._apply_log_events(linhas, entra, sai)
+    # A contagem continua sendo entradas menos saidas, igual a de antes desta melhoria.
+    assert r["players"] == 2
+    assert [p["name"] for p in r["list"]] == ["Guilherme", "Ana"], "mostra os ultimos a entrar"
+    assert r.get("aproximado")
+
+
+def test_reconexao_nao_duplica_o_nome():
+    entra = panel.compile_pattern(r"LogNet: Join succeeded: (?P<name>.+)", "entrada")
+    sai = panel.compile_pattern(r"LogNet: UNetConnection::Close:", "saida")
+    r = panel._apply_log_events(
+        ["LogNet: Join succeeded: Ana", "LogNet: Join succeeded: Ana"], entra, sai)
+    assert [p["name"] for p in r["list"]] == ["Ana"]
+
+
+def test_sem_nome_em_lugar_nenhum_so_a_contagem():
+    entra = panel.compile_pattern("alguem entrou", "entrada")
+    sai = panel.compile_pattern("alguem saiu", "saida")
+    r = panel._apply_log_events(["alguem entrou", "alguem entrou", "alguem saiu"], entra, sai)
+    assert (r["players"], r["list"]) == (1, [])
+
+
+def test_mais_saidas_que_entradas_nao_fica_negativo():
+    """Log cortado no comeco: mais saidas do que entradas nao pode virar contagem negativa."""
+    entra = panel.compile_pattern(r"LogNet: Join succeeded: (?P<name>.+)", "entrada")
+    sai = panel.compile_pattern(r"LogNet: UNetConnection::Close:", "saida")
+    r = panel._apply_log_events(
+        ["LogNet: UNetConnection::Close: x", "LogNet: UNetConnection::Close: y"], entra, sai)
+    assert r["players"] == 0
+
+
+# ------------------------------------------------------------ caminho de log
+
+def test_log_path_vazio_continua_vazio():
+    """Vazio significa "usa o journalctl"."""
+    assert panel.log_path_valido("") == ""
+
+
+def test_log_path_simples_passa():
+    assert panel.log_path_valido("/opt/game/game.log") == "/opt/game/game.log"
+
+
+def test_log_path_com_asterisco_passa():
+    """O DayZ abre um .ADM por sessao; o '*' pega sempre o mais novo."""
+    assert panel.log_path_valido("/opt/game/profiles/*.ADM") == "/opt/game/profiles/*.ADM"
+
+
+@pytest.mark.parametrize("ruim", [
+    "/tmp/x.log; touch /tmp/invadiu", "/opt/game/$(id).log", "/opt/game/`id`.log",
+    "/opt/game/x.log|id", "/opt/game/a b.log", "relativo/x.log",
+    "/opt/../../etc/shadow", "/opt/game/x.log&", "/opt/game/'x'.log",
+])
+def test_log_path_torto_e_recusado(ruim):
+    """O caminho entra SEM aspas no comando remoto (para o shell expandir o '*'), entao
+    tudo que o shell interpretaria de outro jeito tem de morrer aqui."""
+    with pytest.raises(ValueError):
         panel.log_path_valido(ruim)
-        check(f"recusa {ruim!r}", False, "(aceitou!)")
-    except ValueError:
-        check(f"recusa {ruim!r}", True)
 
 
-print("Acoes sobre jogadores")
-# Kick e ban pedem um identificador; o nome nao serve porque muda e repete.
-igual("acha o userId", panel._id_do_item({"name": "Ana", "userId": "steam_123"}), "steam_123")
-igual("aceita outras grafias", panel._id_do_item({"name": "Ana", "player_uid": "AB01"}), "AB01")
-igual("numero tambem vale", panel._id_do_item({"name": "Ana", "playerid": 42}), "42")
-igual("sem identificador devolve vazio", panel._id_do_item({"name": "Ana", "ping": 12}), "")
-igual("booleano nao e identificador", panel._id_do_item({"name": "Ana", "uid": True}), "")
+# --------------------------------------------------------------- acoes sobre jogadores
 
-# O id entra na lista normalizada, ao lado do nome.
-lido = panel.read_players_json({"players": [{"name": "Ana", "userId": "steam_1"},
-                                            {"name": "Bea"}]})
-igual("id vem junto na lista", [p["id"] for p in lido["list"]], ["steam_1", ""])
-
-
-def servidor(url, origem="http"):
-    return {"http_url": url, "player_source": origem, "query_port": 0,
-            "join_re": "", "leave_re": ""}
+@pytest.mark.parametrize("item, esperado", [
+    ({"name": "Ana", "userId": "steam_123"}, "steam_123"),
+    ({"name": "Ana", "player_uid": "AB01"}, "AB01"),           # outra grafia
+    ({"name": "Ana", "playerid": 42}, "42"),                   # numero tambem vale
+    ({"name": "Ana", "ping": 12}, ""),                         # sem identificador
+    ({"name": "Ana", "uid": True}, ""),                        # booleano nao e id
+])
+def test_id_do_item(item, esperado):
+    """Kick e ban pedem um identificador; o nome nao serve porque muda e repete."""
+    assert panel._id_do_item(item) == esperado
 
 
-api = panel.api_de_acoes(servidor("http://127.0.0.1:8212/v1/api/players"))
-check("reconhece a API do Palworld", api is not None)
-igual("acha a raiz da API", api["base"], "http://127.0.0.1:8212/v1/api")
-igual("oferece as tres acoes", sorted(api["acoes"]), ["announce", "ban", "kick"])
-igual("com barra no fim tambem",
-      panel.api_de_acoes(servidor("http://127.0.0.1:8212/v1/api/players/"))["base"],
-      "http://127.0.0.1:8212/v1/api")
-
-# URL que nao e de API conhecida nao pode oferecer botao nenhum: a tela so mostra o que
-# existe do outro lado.
-for url in ("http://127.0.0.1:7777/api/v1", "http://127.0.0.1:8212/v1/api/metrics",
-            "http://127.0.0.1:8212/players", ""):
-    igual(f"nao inventa acao para {url!r}", panel.acoes_de_jogador(servidor(url)), [])
-igual("contagem pelo log nao tem acao",
-      panel.acoes_de_jogador(servidor("http://127.0.0.1:8212/v1/api/players", "log")), [])
-
-# A mensagem vem de quem digita: uma chave solta nao pode estourar a montagem do corpo.
-igual("chave solta na mensagem nao quebra",
-      panel._preenche("{mensagem}", "b", "j", "olha o {isso} ai"), "olha o {isso} ai")
-igual("troca os tres marcadores",
-      panel._preenche("{base}/x/{jogador}/{mensagem}", "http://a/v1", "id7", "oi"),
-      "http://a/v1/x/id7/oi")
+def test_id_entra_na_lista_normalizada_ao_lado_do_nome():
+    lido = panel.read_players_json(
+        {"players": [{"name": "Ana", "userId": "steam_1"}, {"name": "Bea"}]})
+    assert [p["id"] for p in lido["list"]] == ["steam_1", ""]
 
 
-print("SSH: conexao reaproveitada")
-# Sem reaproveitar, cada leitura do monitor paga TCP + troca de chaves + autenticacao
-# para depois rodar um comando de milissegundos. Com varias leituras por minuto por
-# servidor, o aperto de mao vira o grosso do custo.
-import tempfile as _tmp  # noqa: E402
+def test_api_de_acoes_reconhece_o_palworld():
+    api = panel.api_de_acoes(servidor("http://127.0.0.1:8212/v1/api/players"))
+    assert api is not None
+    assert api["base"] == "http://127.0.0.1:8212/v1/api"
+    assert sorted(api["acoes"]) == ["announce", "ban", "kick"]
 
-panel.SSH_CONTROL_DIR = os.path.join(_tmp.mkdtemp(), "ssh-control")
-alvo_ssh = {"ssh_port": 22, "ssh_user": "root", "host": "10.0.0.9"}
 
-curto = panel.ssh_argv(alvo_ssh, multiplex=True)
-check("a chamada curta reaproveita conexao", "ControlMaster=auto" in curto, curto)
-check("com socket por destino e prazo de sobrevida",
-      any(o.startswith("ControlPath=") for o in curto)
-      and any(o.startswith("ControlPersist=") for o in curto), curto)
-check("o diretorio do socket e criado", os.path.isdir(panel.SSH_CONTROL_DIR))
-# O socket da acesso a uma sessao JA autenticada nos containers: ninguem alem do painel
-# pode entrar nessa pasta.
-igual("e so o dono enxerga a pasta do socket",
-      oct(os.stat(panel.SSH_CONTROL_DIR).st_mode)[-3:], "700")
+def test_api_de_acoes_aceita_barra_no_fim():
+    api = panel.api_de_acoes(servidor("http://127.0.0.1:8212/v1/api/players/"))
+    assert api is not None
+    assert api["base"] == "http://127.0.0.1:8212/v1/api"
 
-# Terminal, upload e download NAO dividem conexao: o terminal segura a sessao por horas e
-# um arquivo de varios GB entupiria o TCP compartilhado, travando o monitor atras dele.
-igual("o padrao e nao reaproveitar",
-      [o for o in panel.ssh_argv(alvo_ssh) if "Control" in o], [])
 
-# Sem poder criar a pasta, seguir sem reaproveitar e melhor do que nao falar SSH.
-panel.SSH_CONTROL_DIR = "/proc/impossivel/ssh-control"
-igual("pasta impossivel nao derruba o SSH",
-      [o for o in panel.ssh_argv(alvo_ssh, multiplex=True) if "Control" in o], [])
+@pytest.mark.parametrize("url", [
+    "http://127.0.0.1:7777/api/v1", "http://127.0.0.1:8212/v1/api/metrics",
+    "http://127.0.0.1:8212/players", "",
+])
+def test_acoes_de_jogador_nao_inventa_para_url_desconhecida(url):
+    """A tela so mostra o que existe do outro lado."""
+    assert panel.acoes_de_jogador(servidor(url)) == []
 
-print()
-if falhas:
-    print(f"{len(falhas)} teste(s) falharam: {', '.join(falhas)}")
-    raise SystemExit(1)
-print("todos os testes passaram")
+
+def test_contagem_pelo_log_nao_tem_acao():
+    assert panel.acoes_de_jogador(
+        servidor("http://127.0.0.1:8212/v1/api/players", "log")) == []
+
+
+def test_preenche_nao_quebra_com_chave_solta_na_mensagem():
+    """A mensagem vem de quem digita: uma chave solta nao pode estourar a montagem."""
+    assert panel._preenche("{mensagem}", "b", "j", "olha o {isso} ai") == "olha o {isso} ai"
+
+
+def test_preenche_troca_os_tres_marcadores():
+    assert panel._preenche("{base}/x/{jogador}/{mensagem}", "http://a/v1", "id7", "oi") == \
+        "http://a/v1/x/id7/oi"
+
+
+# --------------------------------------------------------------- SSH: reaproveitar
+
+@pytest.fixture
+def diretorio_de_controle(tmp_path, monkeypatch):
+    """Aponta `SSH_CONTROL_DIR` para uma pasta descartavel, e a devolve pronta para uso."""
+    caminho = tmp_path / "ssh-control"
+    monkeypatch.setattr(panel, "SSH_CONTROL_DIR", str(caminho))
+    return caminho
+
+
+ALVO_SSH = {"ssh_port": 22, "ssh_user": "root", "host": "10.0.0.9"}
+
+
+def test_conexao_curta_reaproveita_via_control_master(diretorio_de_controle):
+    """Sem reaproveitar, cada leitura do monitor paga TCP + troca de chaves +
+    autenticacao para depois rodar um comando de milissegundos. Com varias leituras
+    por minuto por servidor, o aperto de mao vira o grosso do custo."""
+    curto = panel.ssh_argv(ALVO_SSH, multiplex=True)
+    assert "ControlMaster=auto" in curto
+    assert any(o.startswith("ControlPath=") for o in curto)
+    assert any(o.startswith("ControlPersist=") for o in curto)
+    assert os.path.isdir(panel.SSH_CONTROL_DIR)
+
+
+@posix_apenas
+def test_pasta_do_socket_so_o_dono_enxerga(diretorio_de_controle):
+    """O socket da acesso a uma sessao JA autenticada nos containers: ninguem alem do
+    painel pode entrar nessa pasta."""
+    panel.ssh_argv(ALVO_SSH, multiplex=True)
+    assert oct(os.stat(panel.SSH_CONTROL_DIR).st_mode)[-3:] == "700"
+
+
+def test_padrao_e_nao_reaproveitar_conexao():
+    """Terminal, upload e download NAO dividem conexao: o terminal segura a sessao por
+    horas e um arquivo de varios GB entupiria o TCP compartilhado, travando o monitor
+    atras dele."""
+    assert [o for o in panel.ssh_argv(ALVO_SSH) if "Control" in o] == []
+
+
+@posix_apenas
+def test_pasta_impossivel_nao_derruba_o_ssh(monkeypatch):
+    """Sem poder criar a pasta, seguir sem reaproveitar e melhor do que nao falar SSH."""
+    monkeypatch.setattr(panel, "SSH_CONTROL_DIR", "/proc/impossivel/ssh-control")
+    assert [o for o in panel.ssh_argv(ALVO_SSH, multiplex=True) if "Control" in o] == []

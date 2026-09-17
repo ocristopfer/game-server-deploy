@@ -26,6 +26,15 @@ from dataclasses import dataclass, field
 # escreve 120 nanossegundos, e o jogo silenciosamente usa o minimo.
 NS = 1_000_000_000
 
+# Rotulos que aparecem em varios jogos com nomes tecnicos diferentes (`ServerName`,
+# `SessionName`, `hostname`, `name`). O nome do CAMPO muda de jogo para jogo; o que a
+# pessoa procura na tela, nao - e e justamente por isso que ele precisa sair igual nos
+# quatro. Escritos a mao, um deles viraria "Nome de servidor" numa atualizacao e a
+# busca por nome deixaria de achar aquele campo naquele jogo.
+ROTULO_NOME = "Nome do servidor"
+ROTULO_SENHA_ENTRADA = "Senha de entrada"
+ROTULO_SENHA_ADMIN = "Senha de admin"
+
 
 @dataclass
 class FieldSpec:
@@ -65,25 +74,38 @@ class FieldSpec:
 
         A conferencia e feita na unidade da TELA (minutos, multiplicador), que e onde
         a pessoa erra - reportar limite em nanossegundos nao ajudaria ninguem.
+
+        Campo vazio nunca e erro: o jogo tem um padrao para a chave ausente, e apagar
+        o valor e uma forma legitima de voltar para ele.
         """
         texto = (texto or "").strip()
         if not texto:
             return ""
         if self.kind == "enum" and self.options:
-            if texto not in self.options:
-                validos = ", ".join(sorted(self.options))
-                return f"valor invalido; use um de: {validos}"
-            return ""
+            return self._valida_enum(texto)
         if self.kind in ("number", "factor", "duration"):
-            try:
-                valor = float(texto)
-            except ValueError:
-                return "precisa ser um numero"
-            if self.minimum is not None and valor < self.minimum:
-                return f"minimo {self.minimum:g}{self.unit and ' ' + self.unit}"
-            if self.maximum is not None and valor > self.maximum:
-                return f"maximo {self.maximum:g}{self.unit and ' ' + self.unit}"
+            return self._valida_numero(texto)
         return ""
+
+    def _valida_enum(self, texto: str) -> str:
+        if texto in self.options:
+            return ""
+        return f"valor invalido; use um de: {', '.join(sorted(self.options))}"
+
+    def _valida_numero(self, texto: str) -> str:
+        try:
+            valor = float(texto)
+        except ValueError:
+            return "precisa ser um numero"
+        if self.minimum is not None and valor < self.minimum:
+            return f"minimo {self._com_unidade(self.minimum)}"
+        if self.maximum is not None and valor > self.maximum:
+            return f"maximo {self._com_unidade(self.maximum)}"
+        return ""
+
+    def _com_unidade(self, valor: float) -> str:
+        """"2 min", "0.25 x", ou so "16" quando o campo nao tem unidade."""
+        return f"{valor:g}{self.unit and ' ' + self.unit}"
 
 
 def _fator(label: str, ajuda: str, minimo=0.25, maximo=4.0) -> FieldSpec:
@@ -106,10 +128,9 @@ def _bool(label: str, ajuda: str) -> FieldSpec:
     return FieldSpec(label=label, help=ajuda, kind="bool")
 
 
-# ---------------------------------------------------------------- Enshrouded
-# Arquivo: enshrouded_server.json
+# ------------------------------------------- Enshrouded (le enshrouded_server.json)
 ENSHROUDED = {
-    "name": FieldSpec("Nome do servidor", "Como ele aparece na lista de servidores do jogo."),
+    "name": FieldSpec(ROTULO_NOME, "Como ele aparece na lista de servidores do jogo."),
     "slotCount": FieldSpec("Vagas", "Quantos jogadores podem estar conectados ao mesmo tempo.",
                            kind="number", minimum=1, maximum=16, step=1),
     "queryPort": FieldSpec("Porta", "Porta que o jogador digita para entrar. Mudar aqui exige "
@@ -246,12 +267,12 @@ ENSHROUDED = {
 }
 
 
-# ---------------------------------------------------------------- Palworld
-# Arquivo: PalWorldSettings.ini (tudo dentro de OptionSettings=(...))
+# ------------------------------------------- Palworld (le PalWorldSettings.ini, tudo
+# dentro de OptionSettings=(...))
 PALWORLD = {
-    "ServerName": FieldSpec("Nome do servidor", "Como ele aparece na lista da comunidade."),
-    "ServerPassword": FieldSpec("Senha de entrada", "Vazio = servidor aberto.", kind="password"),
-    "AdminPassword": FieldSpec("Senha de admin",
+    "ServerName": FieldSpec(ROTULO_NOME, "Como ele aparece na lista da comunidade."),
+    "ServerPassword": FieldSpec(ROTULO_SENHA_ENTRADA, "Vazio = servidor aberto.", kind="password"),
+    "AdminPassword": FieldSpec(ROTULO_SENHA_ADMIN,
                                "Usada nos comandos administrativos e na API REST.", kind="password"),
     "ServerPlayerMaxNum": FieldSpec("Vagas", "Maximo de jogadores simultaneos (limite de 32).",
                                     kind="number", minimum=1, maximum=32, step=1),
@@ -282,12 +303,11 @@ PALWORLD = {
 }
 
 
-# ---------------------------------------------------------------- Icarus
-# Arquivo: ServerSettings.ini
+# ----------------------------------------------- Icarus (le ServerSettings.ini)
 ICARUS = {
-    "SessionName": FieldSpec("Nome do servidor", "Como ele aparece no navegador de servidores."),
-    "JoinPassword": FieldSpec("Senha de entrada", "Vazio = qualquer um entra.", kind="password"),
-    "AdminPassword": FieldSpec("Senha de admin", "Da acesso aos comandos de administrador no jogo.",
+    "SessionName": FieldSpec(ROTULO_NOME, "Como ele aparece no navegador de servidores."),
+    "JoinPassword": FieldSpec(ROTULO_SENHA_ENTRADA, "Vazio = qualquer um entra.", kind="password"),
+    "AdminPassword": FieldSpec(ROTULO_SENHA_ADMIN, "Da acesso aos comandos de administrador no jogo.",
                                kind="password"),
     "MaxPlayers": FieldSpec("Vagas", "Maximo de jogadores simultaneos.",
                             kind="number", minimum=1, maximum=64, step=1),
@@ -312,12 +332,11 @@ ICARUS = {
 }
 
 
-# ---------------------------------------------------------------- DayZ
-# Arquivo: serverDZ.cfg
+# --------------------------------------------------- DayZ (le serverDZ.cfg)
 DAYZ = {
-    "hostname": FieldSpec("Nome do servidor", "Como aparece no navegador de servidores."),
-    "password": FieldSpec("Senha de entrada", "Vazio = servidor aberto.", kind="password"),
-    "passwordAdmin": FieldSpec("Senha de admin", "Acesso ao console remoto. TROQUE antes de expor.",
+    "hostname": FieldSpec(ROTULO_NOME, "Como aparece no navegador de servidores."),
+    "password": FieldSpec(ROTULO_SENHA_ENTRADA, "Vazio = servidor aberto.", kind="password"),
+    "passwordAdmin": FieldSpec(ROTULO_SENHA_ADMIN, "Acesso ao console remoto. TROQUE antes de expor.",
                                kind="password"),
     "maxPlayers": FieldSpec("Vagas", "Maximo de jogadores simultaneos.",
                             kind="number", minimum=1, maximum=127, step=1),

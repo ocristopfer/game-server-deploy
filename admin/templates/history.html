@@ -8,7 +8,7 @@
 <div class="card">
   <form method="get" action="{{ url_for('history') }}" class="cluster">
     <label class="inline-field">Servidor
-      <select name="servidor" aria-label="filtrar por servidor">
+      <select name="servidor">
         <option value="">todos</option>
         {% for s in servers %}
         <option value="{{ s.id }}" {% if filtro_srv == s.id|string %}selected{% endif %}>{{ s.name }}</option>
@@ -16,7 +16,7 @@
       </select>
     </label>
     <label class="inline-field">Acao
-      <select name="acao" aria-label="filtrar por acao">
+      <select name="acao">
         <option value="">todas</option>
         {% for a in acoes %}
         <option value="{{ a }}" {% if filtro_acao == a %}selected{% endif %}>{{ job_label(a) }}</option>
@@ -24,7 +24,7 @@
       </select>
     </label>
     <label class="inline-field">Quem
-      <select name="usuario" aria-label="filtrar por usuario">
+      <select name="usuario">
         <option value="">qualquer um</option>
         {% for u in usuarios %}
         <option value="{{ u }}" {% if filtro_user == u %}selected{% endif %}>{{ u }}</option>

@@ -8,6 +8,11 @@
 # Bytecode do python (aparece ao rodar os testes do painel)
 __pycache__/
 
+# Ambiente local de ferramenta (Flask para o editor resolver o import e para rodar os
+# testes sem docker). NAO e dependencia do painel: em producao o Flask vem do apt.
+# Recriar: python -m venv .venv && .venv/Scripts/pip install -r admin/requirements-dev.txt
+.venv/
+
 # Save games (mundos podem ter varios MB)
 *.sav
 /The Girls World/

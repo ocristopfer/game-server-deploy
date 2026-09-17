@@ -97,7 +97,7 @@ validate_host_requirements() {
   [[ -f "$APP_SRC_DIR/templates/components/ui.html" ]] || die "templates/components/ nao encontrado em $APP_SRC_DIR"
   # Templates que nao sao .html: o worker e a ficha do aplicativo instalavel. Saem do
   # Flask (tem url_for dentro), por isso vivem em templates/ e nao em static/.
-  [[ -f "$APP_SRC_DIR/templates/sw.js" ]] || die "templates/sw.js nao encontrado em $APP_SRC_DIR"
+  [[ -f "$APP_SRC_DIR/templates/sw.js.jinja" ]] || die "templates/sw.js.jinja nao encontrado em $APP_SRC_DIR"
   # Sem o CSS a tela abre sem estilo nenhum; sem o JS ela abre sem medidores e sem
   # terminal. Nada disso da erro no servidor - so quebra no navegador.
   [[ -f "$APP_SRC_DIR/static/css/tokens.css" ]] || die "static/css/ nao encontrado em $APP_SRC_DIR"
@@ -234,7 +234,7 @@ push_application() {
   run_ct "chown -R root:root ${APP_DIR}"
 
   # Falhar aqui e melhor do que descobrir pela tela de erro do navegador.
-  run_ct "test -f ${APP_DIR}/app.py && test -f ${APP_DIR}/gameconf.py && test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/templates/components/ui.html && test -f ${APP_DIR}/templates/sw.js && test -f ${APP_DIR}/static/css/tokens.css && test -f ${APP_DIR}/static/js/app.js && test -f ${APP_DIR}/static/js/terminal.js" \
+  run_ct "test -f ${APP_DIR}/app.py && test -f ${APP_DIR}/gameconf.py && test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/templates/components/ui.html && test -f ${APP_DIR}/templates/sw.js.jinja && test -f ${APP_DIR}/static/css/tokens.css && test -f ${APP_DIR}/static/js/app.js && test -f ${APP_DIR}/static/js/terminal.js" \
     || die "Arquivos da aplicacao nao chegaram em ${APP_DIR} (veja a saida do pct push acima)"
   msg "Publicados: $(run_ct "ls ${APP_DIR}/templates | wc -l" | tr -d '\r') templates"
 }

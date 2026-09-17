@@ -30,8 +30,10 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from typing import Any, NamedTuple
 
 # O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
 # resto do painel continua funcionando e a tela do terminal responde 503.
@@ -61,6 +63,16 @@ from flask import (
     stream_with_context,
     url_for,
 )
+
+# Um servidor cadastrado, como o resto do painel o enxerga.
+#
+# Ou e a linha do SQLite, ou uma COPIA dela em dict - e a copia nao e detalhe de
+# implementacao: uma `sqlite3.Row` pertence a conexao que a produziu, e conexao de
+# SQLite nao atravessa thread. Toda tarefa longa (um update de jogo leva quase uma hora)
+# roda com `dict(server)` em vez da Row; ver `start_job`. As duas formas respondem a
+# `server["host"]`, que e tudo o que estas funcoes precisam.
+Servidor = sqlite3.Row | Mapping[str, Any]
+
 
 # ---------------------------------------------------------------- configuracao
 
@@ -218,6 +230,10 @@ CONFIG_SETTINGS_MAX = 600
 SQL_SERVER_BY_ID = "SELECT * FROM servers WHERE id = ?"
 SQL_ALL_SERVERS = "SELECT * FROM servers ORDER BY name"
 SQL_SET_PASSWORD = "UPDATE users SET password_hash = ? WHERE id = ?"
+# Formato de data curto do painel ("17/09 05:00"). Estava escrito a mao em tres
+# telas; uma delas com um espaco a mais bastaria para a lista parecer desalinhada.
+FORMATO_DATA_CURTA = "%d/%m %H:%M"
+
 TPL_ERROR = "error.html"
 TPL_LOGIN = "login.html"
 MSG_TIMEOUT = "tempo esgotado"
@@ -238,7 +254,25 @@ ROLE_LABELS = {
 }
 PASSWORD_MIN = 8
 
-app = Flask(__name__)
+# CSRF: o painel tem a propria protecao, e nao o Flask-WTF.
+#
+# Analisador estatico costuma marcar este `Flask(__name__)` como "CSRF desabilitado"
+# porque nao ve um `CSRFProtect(app)`. Aqui a protecao e o par `csrf_token()` (o
+# gerador que os templates chamam) e `_check_csrf` (um `before_request` que barra
+# qualquer metodo que mude estado sem o token da sessao) - procure pelos dois neste
+# arquivo. A escolha e a mesma do resto do painel: dependencia so a stdlib mais o
+# `python3-flask` do apt, porque o container do painel nao baixa pacote de lugar
+# nenhum. Nao remova `_check_csrf` achando que o Flask cobre isso sozinho: ele nao
+# cobre.
+#
+# A marca de supressao na linha abaixo e o "hotspot revisado" do proprio analisador
+# (regra python:S4502). Sem ela o aviso volta a cada analise e acaba virando ruido que
+# se aprende a ignorar - que e como um aviso de CSRF de verdade passaria batido um dia.
+#
+# Ela vai sozinha na linha, sem texto depois: a marca tem sintaxe propria, e explicacao
+# colada nela e uma supressao malformada (foi o que aconteceu aqui na primeira vez). O
+# porque fica neste bloco, que e onde se procura por ele.
+app = Flask(__name__)  # NOSONAR
 
 
 def _load_secret_key() -> bytes:
@@ -602,9 +636,10 @@ def usuario_logado() -> sqlite3.Row | None:
     e nao so quando a sessao dele expirar. Uma consulta por id em SQLite local custa
     menos que qualquer coisa que este painel faca em seguida.
     """
-    cached = getattr(g, "_user", False)
-    if cached is not False:
-        return cached
+    # `in` e nao `getattr(..., sentinela)`: o cache guarda None de proposito (ninguem
+    # logado), entao "tem chave" e "tem valor" sao perguntas diferentes aqui.
+    if "_user" in g:
+        return g._user
     uid = session.get("uid")
     row = None
     if uid:
@@ -692,7 +727,7 @@ def static_url(nome: str) -> str:
     em css/, js/ e icons/.
     """
     try:
-        marca = int(os.path.getmtime(os.path.join(app.static_folder, nome)))
+        marca = int(os.path.getmtime(os.path.join(app.static_folder or "", nome)))
     except OSError:
         marca = 0
     return url_for("static", filename=nome, v=marca)
@@ -799,7 +834,7 @@ def ssh_argv(server, connect_timeout: int = 10, extra: tuple[str, ...] = (),
 
 
 def ssh_run(
-    server: sqlite3.Row,
+    server: Servidor,
     remote_cmd: str,
     timeout: int = QUICK_TIMEOUT,
     stdin_data: bytes | None = None,
@@ -838,7 +873,7 @@ def ssh_run(
         raise RemoteError(f"falha ao executar ssh: {exc}")
 
 
-def ssh_output(server: sqlite3.Row, remote_cmd: str, timeout: int = QUICK_TIMEOUT) -> str:
+def ssh_output(server: Servidor, remote_cmd: str, timeout: int = QUICK_TIMEOUT) -> str:
     proc = ssh_run(server, remote_cmd, timeout=timeout)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip()
@@ -1005,7 +1040,9 @@ def query_players(host: str, port: int) -> dict:
         try:
             buf = _a2s_ask(sock, addr, A2S_INFO_REQ, b"I")
             buf.byte()  # versao do protocolo
-            info = {
+            # `dict` sem parametro de proposito: a resposta A2S mistura texto (nome do
+            # servidor, mapa) e numero (jogadores, teto) na mesma ficha.
+            info: dict = {
                 "server_name": buf.string(),
                 "map": buf.string(),
                 "folder": buf.string(),
@@ -1169,7 +1206,7 @@ def _split_status(bruto: str) -> tuple[str, int]:
     return bruto[:pos].rstrip("\n"), status
 
 
-def http_json(server: sqlite3.Row, url: str, auth: str, corpo: str, exigir_json: bool = True):
+def http_json(server: Servidor, url: str, auth: str, corpo: str, exigir_json: bool = True):
     """Chama a URL de dentro do container e devolve o JSON ja interpretado.
 
     `exigir_json=False` para quem so quer saber se deu certo: expulsar, banir e avisar
@@ -1328,46 +1365,69 @@ def _acha_valor(dados, chaves: set, tipos: tuple, profundidade: int = 0):
     return None
 
 
+def _lista_do_json(dados, caminho_lista: str, caminho_contagem: str) -> list | None:
+    """A lista de jogadores da resposta, ou None quando a API nao publica uma.
+
+    Com o caminho da contagem preenchido e sem o da lista, nem se procura: quem
+    informou onde esta o numero esta dizendo que lista nao ha.
+    """
+    if caminho_lista:
+        lista = _json_walk(dados, caminho_lista)
+        if not isinstance(lista, list):
+            raise QueryError(f"'{caminho_lista}' nao aponta para uma lista")
+    elif caminho_contagem:
+        return None
+    else:
+        lista = _acha_lista(dados)
+
+    if not isinstance(lista, list):
+        return None
+    # Antes de contar e de tirar nomes: o que sai daqui nao e jogador, e contaria como um.
+    return [item for item in lista if not _e_cliente_de_consulta(item)]
+
+
+def _contagem_do_json(dados, caminho_contagem: str, lista: list | None) -> int | None:
+    """Quantos estao online, pelo caminho informado ou por chave conhecida.
+
+    Devolve None quando ha lista: nesse caso quem conta e o tamanho dela.
+    """
+    if caminho_contagem:
+        bruto = _json_walk(dados, caminho_contagem)
+        if isinstance(bruto, list):
+            return len(bruto)
+        if isinstance(bruto, (int, float)) and not isinstance(bruto, bool):
+            return int(bruto)
+        raise QueryError(f"'{caminho_contagem}' nao e um numero nem uma lista")
+    if lista is not None:
+        return None
+    achou = _acha_valor(dados, COUNT_KEYS, (int, float))
+    return int(achou) if achou is not None else None
+
+
+def _nomes_do_json(lista: list | None) -> list[dict]:
+    """A lista no formato que as telas do painel esperam. Teto de 128 por resposta."""
+    if lista is None:
+        return []
+    saida = []
+    for item in lista[:128]:
+        nome = _nome_do_item(item)
+        if nome:
+            saida.append({"name": nome, "id": _id_do_item(item), "since": "",
+                          "score": 0, "seconds": 0})
+    return saida
+
+
 def read_players_json(dados, caminho_lista: str = "", caminho_contagem: str = "") -> dict:
     """Tira jogadores de um JSON qualquer.
 
     Sem caminhos preenchidos o painel procura sozinho uma lista de jogadores e, se nao
     houver, um numero em alguma chave conhecida (currentplayernum, numplayers, ...).
     """
-    lista = None
-    if caminho_lista:
-        lista = _json_walk(dados, caminho_lista)
-        if not isinstance(lista, list):
-            raise QueryError(f"'{caminho_lista}' nao aponta para uma lista")
-    elif not caminho_contagem:
-        lista = _acha_lista(dados)
-
-    # Antes de contar e de tirar nomes: o que sai daqui nao e jogador, e contaria como um.
-    if isinstance(lista, list):
-        lista = [item for item in lista if not _e_cliente_de_consulta(item)]
-
-    quantos = None
-    if caminho_contagem:
-        bruto = _json_walk(dados, caminho_contagem)
-        if isinstance(bruto, list):
-            quantos = len(bruto)
-        elif isinstance(bruto, (int, float)) and not isinstance(bruto, bool):
-            quantos = int(bruto)
-        else:
-            raise QueryError(f"'{caminho_contagem}' nao e um numero nem uma lista")
-    elif lista is None:
-        achou = _acha_valor(dados, COUNT_KEYS, (int, float))
-        quantos = int(achou) if achou is not None else None
-
-    nomes = []
-    if isinstance(lista, list):
-        for item in lista[:128]:
-            nome = _nome_do_item(item)
-            if nome:
-                nomes.append({"name": nome, "id": _id_do_item(item), "since": "",
-                              "score": 0, "seconds": 0})
-        if quantos is None:
-            quantos = len(lista)
+    lista = _lista_do_json(dados, caminho_lista, caminho_contagem)
+    quantos = _contagem_do_json(dados, caminho_contagem, lista)
+    nomes = _nomes_do_json(lista)
+    if quantos is None and lista is not None:
+        quantos = len(lista)
 
     if quantos is None:
         raise QueryError(
@@ -1385,7 +1445,7 @@ def read_players_json(dados, caminho_lista: str = "", caminho_contagem: str = ""
     }
 
 
-def _tem_login(server: sqlite3.Row) -> bool:
+def _tem_login(server: Servidor) -> bool:
     """True quando o servidor esta configurado para obter o token sozinho."""
     try:
         return bool((server["http_login_url"] or "").strip()
@@ -1395,14 +1455,14 @@ def _tem_login(server: sqlite3.Row) -> bool:
         return False
 
 
-def _valor_guardado(server: sqlite3.Row, coluna: str) -> str:
+def _valor_guardado(server: Servidor, coluna: str) -> str:
     try:
         return (server[coluna] or "").strip()
     except (IndexError, KeyError):
         return ""
 
 
-def http_login(server: sqlite3.Row) -> str:
+def http_login(server: Servidor) -> str:
     """Troca a credencial por um token e guarda no banco. Devolve o token."""
     url = _valor_guardado(server, "http_login_url")
     caminho = _valor_guardado(server, "http_token_path")
@@ -1429,7 +1489,7 @@ def http_login(server: sqlite3.Row) -> str:
     return token
 
 
-def chama_api_do_jogo(server: sqlite3.Row, url: str, corpo: str = "",
+def chama_api_do_jogo(server: Servidor, url: str, corpo: str = "",
                       exigir_json: bool = True):
     """Chama a API do jogo com a credencial cadastrada, renovando o token se ele venceu.
 
@@ -1456,7 +1516,7 @@ def chama_api_do_jogo(server: sqlite3.Row, url: str, corpo: str = "",
         return http_json(server, url, f"bearer:{http_login(server)}", corpo, exigir_json)
 
 
-def players_from_http(server: sqlite3.Row) -> dict:
+def players_from_http(server: Servidor) -> dict:
     if not (server["http_url"] or "").strip():
         raise QueryError("informe a URL da API do jogo")
     dados = chama_api_do_jogo(server, server["http_url"], server["http_body"])
@@ -1479,22 +1539,30 @@ PLAYER_ACTION_LABELS = {
     "ban": "Banir",
 }
 
+# Os marcadores do catalogo, como constantes: sao a interface entre a tabela abaixo e
+# o `_preenche`, e escreve-los a mao em cada linha e como um deles vira "{mensagen}"
+# num jogo so, sem ninguem notar ate alguem tentar expulsar alguem.
+MARCA_BASE = "{base}"
+MARCA_JOGADOR = "{jogador}"
+MARCA_MENSAGEM = "{mensagem}"
+
 API_ACOES = (
     {
         "nome": "Palworld (REST)",
         "url": re.compile(r"^(?P<base>https?://[^/\s]+/v1/api)/players/?$", re.I),
-        # acao -> (rota, corpo). {base} e a raiz da API, {jogador} o identificador e
-        # {mensagem} o texto que o jogo mostra.
+        # acao -> (rota, corpo).
         "acoes": {
-            "announce": ("{base}/announce", {"message": "{mensagem}"}),
-            "kick": ("{base}/kick", {"userid": "{jogador}", "message": "{mensagem}"}),
-            "ban": ("{base}/ban", {"userid": "{jogador}", "message": "{mensagem}"}),
+            "announce": (f"{MARCA_BASE}/announce", {"message": MARCA_MENSAGEM}),
+            "kick": (f"{MARCA_BASE}/kick",
+                     {"userid": MARCA_JOGADOR, "message": MARCA_MENSAGEM}),
+            "ban": (f"{MARCA_BASE}/ban",
+                    {"userid": MARCA_JOGADOR, "message": MARCA_MENSAGEM}),
         },
     },
 )
 
 
-def api_de_acoes(server: sqlite3.Row) -> dict | None:
+def api_de_acoes(server: Servidor) -> dict | None:
     """A API deste servidor aceita acoes? Devolve a entrada do catalogo, ou None."""
     if player_source(server) != "http":
         return None
@@ -1506,7 +1574,7 @@ def api_de_acoes(server: sqlite3.Row) -> dict | None:
     return None
 
 
-def acoes_de_jogador(server: sqlite3.Row) -> list[str]:
+def acoes_de_jogador(server: Servidor) -> list[str]:
     """Quais acoes a tela pode oferecer neste servidor."""
     api = api_de_acoes(server)
     return sorted(api["acoes"]) if api else []
@@ -1518,12 +1586,12 @@ def _preenche(molde: str, base: str, jogador: str, mensagem: str) -> str:
     De proposito NAO usa str.format: a mensagem vem de quem esta digitando, e uma chave
     solta ('{') estouraria o format — ou pior, viraria um caminho para dentro do objeto.
     """
-    return (molde.replace("{base}", base)
-                 .replace("{jogador}", jogador)
-                 .replace("{mensagem}", mensagem))
+    return (molde.replace(MARCA_BASE, base)
+                 .replace(MARCA_JOGADOR, jogador)
+                 .replace(MARCA_MENSAGEM, mensagem))
 
 
-def acao_de_jogador(server: sqlite3.Row, acao: str, jogador: str, mensagem: str) -> str:
+def acao_de_jogador(server: Servidor, acao: str, jogador: str, mensagem: str) -> str:
     """Executa a acao na API do jogo. Devolve a frase que vai para a tela."""
     api = api_de_acoes(server)
     if not api or acao not in api["acoes"]:
@@ -1609,7 +1677,7 @@ fi
 """
 
 
-def compile_pattern(raw: str, rotulo: str):
+def compile_pattern(raw: str | None, rotulo: str):
     """Compila um padrao vindo da tela; devolve None quando esta vazio."""
     texto = (raw or "").strip()
     if not texto:
@@ -1793,7 +1861,30 @@ PROCESSOS_DE_INFRA = frozenset({
 })
 
 
-def candidate_ports(server: sqlite3.Row) -> tuple[list[int], list[int], dict, str]:
+def _le_portas_abertas(raw: str, escutando: dict, donos: dict) -> None:
+    """Preenche `escutando` e `donos` com o que o LISTEN_PORTS_SCRIPT devolveu.
+
+    Cada linha e "<proto> <porta> <pid> <nome do processo>". Linha que nao tiver essa
+    forma e ignorada sem reclamar: o script le /proc a unha, e um container estranho
+    pode devolver algo que nao casa - deixar de listar uma porta e melhor do que
+    derrubar o assistente inteiro.
+    """
+    for linha in raw.splitlines():
+        campos = linha.split(None, 3)
+        if len(campos) != 4 or campos[0] not in escutando or not campos[1].isdigit():
+            continue
+        proto, porta, pid, nome = campos[0], int(campos[1]), campos[2], campos[3]
+        escutando[proto].append(porta)
+        # Mesma porta em IPv4 e IPv6: fica a primeira que soube dizer o dono.
+        if donos.get((proto, porta), {}).get("proc", "?") == "?":
+            donos[(proto, porta)] = {
+                "pid": int(pid) if pid.isdigit() else 0,
+                "proc": nome.strip() or "?",
+                "infra": nome.strip() in PROCESSOS_DE_INFRA,
+            }
+
+
+def candidate_ports(server: Servidor) -> tuple[list[int], list[int], dict, str]:
     """Portas a testar (UDP, TCP), quem abriu cada uma, e o aviso se a leitura falhou.
 
     A lista vem do container (portas realmente abertas, com o processo dono) e so entao
@@ -1805,19 +1896,7 @@ def candidate_ports(server: sqlite3.Row) -> tuple[list[int], list[int], dict, st
     aviso = ""
     try:
         raw = ssh_output(server, q("bash", "-lc", LISTEN_PORTS_SCRIPT, "gp"), timeout=60)
-        for linha in raw.splitlines():
-            campos = linha.split(None, 3)
-            if len(campos) != 4 or campos[0] not in escutando or not campos[1].isdigit():
-                continue
-            proto, porta, pid, nome = campos[0], int(campos[1]), campos[2], campos[3]
-            escutando[proto].append(porta)
-            # Mesma porta em IPv4 e IPv6: fica a primeira que soube dizer o dono.
-            if donos.get((proto, porta), {}).get("proc", "?") == "?":
-                donos[(proto, porta)] = {
-                    "pid": int(pid) if pid.isdigit() else 0,
-                    "proc": nome.strip() or "?",
-                    "infra": nome.strip() in PROCESSOS_DE_INFRA,
-                }
+        _le_portas_abertas(raw, escutando, donos)
     except (RemoteError, ValueError) as exc:
         aviso = f"nao consegui listar as portas abertas do container: {exc}"
 
@@ -1933,7 +2012,7 @@ exit 0
 """
 
 
-def probe_http_ports(server: sqlite3.Row, portas: list[int]) -> tuple[list[dict], list[int], str]:
+def probe_http_ports(server: Servidor, portas: list[int]) -> tuple[list[dict], list[int], str]:
     """Sonda as portas TCP com HTTP. Devolve (o que respondeu, portas mudas, aviso)."""
     portas = portas[:HTTP_PROBE_PORTS_MAX]
     if not portas:
@@ -2039,7 +2118,7 @@ def probe_ports(host: str, portas: list[int]) -> list[dict]:
 LOG_PATH_RE = re.compile(r"^/[A-Za-z0-9._*?/-]{1,200}$")
 
 
-def log_path_valido(bruto: str) -> str:
+def log_path_valido(bruto: str | None) -> str:
     """Confere o caminho do log antes de ele entrar num comando remoto."""
     caminho = (bruto or "").strip()
     if not caminho:
@@ -2052,7 +2131,7 @@ def log_path_valido(bruto: str) -> str:
     return caminho
 
 
-def read_log_lines(server: sqlite3.Row, limite: int = LOG_SCAN_MAX) -> list[str]:
+def read_log_lines(server: Servidor, limite: int = LOG_SCAN_MAX) -> list[str]:
     """Linhas do log: de um arquivo, quando o servidor tem um; senao do journalctl.
 
     O limite e parametro porque os dois usos pedem tamanhos bem diferentes: a contagem de
@@ -2071,7 +2150,7 @@ def read_log_lines(server: sqlite3.Row, limite: int = LOG_SCAN_MAX) -> list[str]
     return raw.splitlines()
 
 
-def players_from_log(server: sqlite3.Row) -> dict:
+def players_from_log(server: Servidor) -> dict:
     entrar = compile_pattern(server["join_re"], "entrada")
     if not entrar:
         raise QueryError("informe o padrao da linha de entrada de jogador")
@@ -2090,7 +2169,7 @@ _players_cache: dict[int, tuple[float, dict]] = {}
 _players_lock = threading.Lock()
 
 
-def player_source(server: sqlite3.Row) -> str:
+def player_source(server: Servidor) -> str:
     """Como contar os jogadores deste servidor: 'a2s', 'http', 'log' ou '' (desligado)."""
     escolhido = (server["player_source"] or "").strip()
     if escolhido in PLAYER_SOURCES:
@@ -2099,7 +2178,7 @@ def player_source(server: sqlite3.Row) -> str:
     return "a2s" if int(server["query_port"] or 0) else ""
 
 
-def server_players(server: sqlite3.Row, force: bool = False) -> dict:
+def server_players(server: Servidor, force: bool = False) -> dict:
     origem = player_source(server)
     if not origem:
         return {"configured": False, "error": "", "players": None, "list": [], "source": ""}
@@ -2311,7 +2390,7 @@ def _collect_metrics(raw: str) -> dict:
 
 def _rates_from_samples(dados: dict) -> dict:
     """CPU e rede saem da diferenca entre as duas amostras."""
-    saida = {"cpu_pct": None, "net_rx": None, "net_tx": None, "proc_cpu_pct": None}
+    saida: dict = {"cpu_pct": None, "net_rx": None, "net_tx": None, "proc_cpu_pct": None}
     samples = dados["samples"]
     if len(samples) < 2:
         return saida
@@ -2382,7 +2461,7 @@ _metrics_cache: dict[int, tuple[float, dict]] = {}
 _metrics_lock = threading.Lock()
 
 
-def server_metrics(server: sqlite3.Row, force: bool = False) -> dict:
+def server_metrics(server: Servidor, force: bool = False) -> dict:
     """Uso de CPU, memoria, disco e rede do container. Cache curto para varias abas
     abertas na mesma tela nao virarem varias sessoes de SSH por segundo."""
     key = int(server["id"])
@@ -2434,7 +2513,7 @@ _status_cache: dict[int, tuple[float, dict]] = {}
 _status_lock = threading.Lock()
 
 
-def server_status(server: sqlite3.Row, force: bool = False) -> dict:
+def server_status(server: Servidor, force: bool = False) -> dict:
     key = int(server["id"])
     now = time.monotonic()
     if not force:
@@ -2591,9 +2670,21 @@ def jobs_do_servidor(conn: sqlite3.Connection, sid: int, limite: int) -> list:
     ).fetchall()
 
 
+def _id_inserido(cur: sqlite3.Cursor) -> int:
+    """O id da linha recem-inserida.
+
+    `lastrowid` e Optional no tipo porque um cursor pode nao ter inserido nada; depois
+    de um INSERT que deu certo, nunca. Falhar alto aqui e melhor do que espalhar um
+    `or 0` que viraria "job numero zero" no historico.
+    """
+    if cur.lastrowid is None:
+        raise RuntimeError("INSERT nao devolveu id da linha")
+    return cur.lastrowid
+
+
 def log_job(
     action: str,
-    server: sqlite3.Row | dict,
+    server: Servidor | dict,
     username: str,
     command: str = "",
     output: str = "",
@@ -2612,19 +2703,20 @@ def log_job(
                 now_iso(), now_iso(),
             ),
         )
-    return int(cur.lastrowid)
+    return _id_inserido(cur)
 
 
 def start_job(
     action: str,
-    server: sqlite3.Row,
+    server: Servidor,
     username: str,
     remote_cmd: str | None = None,
     command: str = "",
     timeout: int = JOB_TIMEOUT,
 ) -> int:
-    if remote_cmd is None:
-        remote_cmd = ACTIONS[action][1](server)
+    # Resolvido AQUI, e nao dentro do `run()` la embaixo: o que a thread executa nao
+    # pode depender de um parametro opcional que alguem mude no meio do caminho.
+    comando_remoto: str = remote_cmd if remote_cmd is not None else ACTIONS[action][1](server)
     conn = db()
     with conn:
         cur = conn.execute(
@@ -2635,7 +2727,7 @@ def start_job(
                 "running", command, username, now_iso(),
             ),
         )
-    job_id = int(cur.lastrowid)
+    job_id = _id_inserido(cur)
     server_id = int(server["id"])
     # A thread nao pode usar a Row ligada a conexao do request: copia o que precisa.
     target = dict(server)
@@ -2645,7 +2737,7 @@ def start_job(
             # Conexao propria: um update leva quase uma hora, e a mestre compartilhada
             # ficaria presa a ele — com o monitor inteiro dependendo de um comando que
             # pode cair no meio.
-            proc = ssh_run(target, remote_cmd, timeout=timeout, multiplex=False)
+            proc = ssh_run(target, comando_remoto, timeout=timeout, multiplex=False)
             output = (proc.stdout or "") + (proc.stderr or "")
             status = "ok" if proc.returncode == 0 else "error"
             code = proc.returncode
@@ -2666,7 +2758,8 @@ def start_job(
                 notifica(conn2, "job-falhou",
                          f"{target.get('name', '?')}: {job_label(action)} falhou",
                          (output or "").strip()[-500:])
-            except Exception:  # noqa: BLE001 - alerta nunca derruba o job
+            # Alerta nunca derruba o job.
+            except Exception:  # noqa: BLE001
                 app.logger.exception("falha ao avisar sobre o job %s", job_id)
         conn2.close()
         invalidate_status(server_id)
@@ -2677,8 +2770,8 @@ def start_job(
 
 # ----------------------------------------------------------------- alertas
 #
-# O painel ja sabe o estado de cada servidor (e a tela do dashboard pergunta o tempo
-# todo). O que faltava era ele CONTAR isso para alguem sem ninguem estar olhando: um
+# O painel ja sabe o estado de cada servidor (e a tela do dashboard pergunta isso o
+# tempo inteiro). O que faltava era ele CONTAR para alguem sem ninguem estar olhando: um
 # POST de JSON para a URL que o Discord ou o Slack dao de graca.
 
 ALERT_EVENTS = {
@@ -2849,10 +2942,12 @@ def envia_webhook(url: str, texto: str) -> str:
         # do Cloudflare ficam com a mesma cara na tela.
         try:
             motivo = exc.read(300).decode("utf-8", "replace").strip().replace("\n", " ")
-        except Exception:  # noqa: BLE001 - resposta ja consumida/fechada
+        # Resposta ja consumida/fechada.
+        except Exception:  # noqa: BLE001
             motivo = ""
         return f"o webhook respondeu HTTP {exc.code}" + (f": {motivo}" if motivo else "")
-    except Exception as exc:  # noqa: BLE001 - rede: DNS, TLS, timeout, recusa...
+    # Rede: DNS, TLS, timeout, recusa...
+    except Exception as exc:  # noqa: BLE001
         return f"nao consegui chamar o webhook: {exc}"
 
 
@@ -2938,7 +3033,13 @@ _ultimo_disco = 0.0
 _ultimo_log = 0.0
 
 
-def _alerta_de_estado(conn, server, estado, anterior, cfg) -> None:
+def _alerta_de_estado(conn, server, estado, anterior) -> None:
+    """Contato com o container e estado do servico.
+
+    NAO recebe `cfg`: quem decide se um evento sai e o `notifica`, que le a
+    configuracao por conta propria. Um parametro que ninguem usa vira ruido na
+    assinatura e mentira na leitura ("ah, entao aqui olha a config").
+    """
     sid, nome = int(server["id"]), server["name"]
     alvo = f"{server['ssh_user']}@{server['host']}"
 
@@ -3069,6 +3170,8 @@ def _alerta_de_log(conn, server, anterior) -> None:
     except QueryError as exc:
         app.logger.warning("expressao de erro de '%s' invalida: %s", nome, exc)
         return
+    if regex is None:
+        return  # padrao so de espacos: nao ha o que procurar
     try:
         linhas = read_log_lines(server, LOG_ERR_LINES)
     except (RemoteError, QueryError) as exc:
@@ -3162,6 +3265,16 @@ def _alerta_de_cpu(conn, server, cfg) -> None:
     marca["cpu_alta"] = alto
 
 
+# Evento de recurso -> quem confere. Os tres leem o MESMO medidor e andam no mesmo
+# relogio; como tabela, ligar um quarto (rede, por exemplo) e acrescentar uma linha,
+# nao mais um `if` dentro do laco do monitor.
+ALERTAS_DE_RECURSO = {
+    "disco-cheio": _alerta_de_disco,
+    "memoria-alta": _alerta_de_memoria,
+    "cpu-alta": _alerta_de_cpu,
+}
+
+
 def _alerta_de_jogadores(conn, server, servico, anterior, cfg) -> None:
     """Avisa quando jogadores entram ou saem do servidor.
 
@@ -3188,12 +3301,7 @@ def _alerta_de_jogadores(conn, server, servico, anterior, cfg) -> None:
     if not dados.get("configured") or dados.get("error"):
         return
 
-    lista = dados.get("list") or []
-    nomes_atuais = {p["name"].strip() for p in lista if p.get("name") and p["name"].strip()}
-    contagem_atual = dados.get("players")
-    if contagem_atual is None and nomes_atuais:
-        contagem_atual = len(nomes_atuais)
-    contagem_atual = max(0, int(contagem_atual or 0))
+    nomes_atuais, contagem_atual = _leitura_de_jogadores(dados)
 
     # Primeira olhada deste servidor: so estabelece a linha de base
     if anterior.get("jogadores_nomes") is None and anterior.get("jogadores_count") is None:
@@ -3204,48 +3312,67 @@ def _alerta_de_jogadores(conn, server, servico, anterior, cfg) -> None:
     nomes_anteriores = anterior.get("jogadores_nomes") or set()
     contagem_anterior = int(anterior.get("jogadores_count") or 0)
 
-    # Caso 1: Temos nomes (seja exato ou aproximado)
     if nomes_atuais or nomes_anteriores:
-        entraram = nomes_atuais - nomes_anteriores
-        sairam = nomes_anteriores - nomes_atuais
-
-        if "jogador-entrou" in cfg["eventos"]:
-            for player in sorted(entraram):
-                detalhe = (
-                    "nenhum jogador online"
-                    if contagem_atual == 0
-                    else f"{contagem_atual} jogador{'es' if contagem_atual != 1 else ''} online"
-                )
-                notifica(conn, "jogador-entrou", f"{nome}: {player} entrou no jogo", detalhe)
-
-        if "jogador-saiu" in cfg["eventos"]:
-            for player in sorted(sairam):
-                detalhe = (
-                    "nenhum jogador online"
-                    if contagem_atual == 0
-                    else f"{contagem_atual} jogador{'es' if contagem_atual != 1 else ''} online"
-                )
-                notifica(conn, "jogador-saiu", f"{nome}: {player} saiu do jogo", detalhe)
-
-    # Caso 2: Apenas contagem (jogo sem nomes de jogadores)
+        # O jogo da os nomes (exatos ou aproximados): o aviso cita quem foi.
+        _avisa_por_nome(conn, nome, cfg, nomes_atuais, nomes_anteriores, contagem_atual)
     else:
-        if contagem_atual > contagem_anterior and "jogador-entrou" in cfg["eventos"]:
-            dif = contagem_atual - contagem_anterior
-            texto = "um jogador conectou" if dif == 1 else f"{dif} jogadores conectaram"
-            detalhe = f"{contagem_atual} jogador{'es' if contagem_atual != 1 else ''} online"
-            notifica(conn, "jogador-entrou", f"{nome}: {texto}", detalhe)
-        elif contagem_atual < contagem_anterior and "jogador-saiu" in cfg["eventos"]:
-            dif = contagem_anterior - contagem_atual
-            texto = "um jogador saiu" if dif == 1 else f"{dif} jogadores saíram"
-            detalhe = (
-                "nenhum jogador online"
-                if contagem_atual == 0
-                else f"{contagem_atual} jogador{'es' if contagem_atual != 1 else ''} online"
-            )
-            notifica(conn, "jogador-saiu", f"{nome}: {texto}", detalhe)
+        # So a contagem: o aviso fala da variacao.
+        _avisa_por_contagem(conn, nome, cfg, contagem_atual, contagem_anterior)
 
     anterior["jogadores_nomes"] = nomes_atuais
     anterior["jogadores_count"] = contagem_atual
+
+
+def _leitura_de_jogadores(dados: dict) -> tuple[set, int]:
+    """Normaliza a resposta da consulta em (nomes, contagem).
+
+    Jogo que so devolve numero vem com a lista vazia; jogo que so devolve nomes vem
+    sem contagem. Os dois casos saem daqui com a mesma forma, e e isso que permite ao
+    resto da funcao nao repetir `or 0` e `or []` a cada linha.
+    """
+    lista = dados.get("list") or []
+    nomes = {p["name"].strip() for p in lista if p.get("name") and p["name"].strip()}
+    contagem = dados.get("players")
+    if contagem is None and nomes:
+        contagem = len(nomes)
+    return nomes, max(0, int(contagem or 0))
+
+
+def _texto_de_online(contagem: int) -> str:
+    """"3 jogadores online", "1 jogador online", "nenhum jogador online".
+
+    Existia em quatro lugares desta tela, com uma diferenca sutil entre eles: um dos
+    quatro nao tratava o zero e podia dizer "0 jogadores online". Um lugar so.
+    """
+    if contagem == 0:
+        return "nenhum jogador online"
+    return f"{contagem} jogador{'es' if contagem != 1 else ''} online"
+
+
+def _avisa_por_nome(conn, nome, cfg, atuais: set, anteriores: set, contagem: int) -> None:
+    """Um aviso por pessoa que entrou ou saiu."""
+    detalhe = _texto_de_online(contagem)
+    if "jogador-entrou" in cfg["eventos"]:
+        for jogador in sorted(atuais - anteriores):
+            notifica(conn, "jogador-entrou", f"{nome}: {jogador} entrou no jogo", detalhe)
+    if "jogador-saiu" in cfg["eventos"]:
+        for jogador in sorted(anteriores - atuais):
+            notifica(conn, "jogador-saiu", f"{nome}: {jogador} saiu do jogo", detalhe)
+
+
+def _avisa_por_contagem(conn, nome, cfg, atual: int, anterior: int) -> None:
+    """Um aviso por variacao, para o jogo que nao publica nomes."""
+    if atual == anterior:
+        return
+    detalhe = _texto_de_online(atual)
+    if atual > anterior and "jogador-entrou" in cfg["eventos"]:
+        dif = atual - anterior
+        texto = "um jogador conectou" if dif == 1 else f"{dif} jogadores conectaram"
+        notifica(conn, "jogador-entrou", f"{nome}: {texto}", detalhe)
+    elif atual < anterior and "jogador-saiu" in cfg["eventos"]:
+        dif = anterior - atual
+        texto = "um jogador saiu" if dif == 1 else f"{dif} jogadores saíram"
+        notifica(conn, "jogador-saiu", f"{nome}: {texto}", detalhe)
 
 
 # ------------------------------------------------- log em tempo real
@@ -3337,7 +3464,8 @@ class _LogStream:
         while not self.parar.is_set():
             try:
                 self._acompanha()
-            except Exception as exc:  # noqa: BLE001 - a thread nao morre por um tropeco
+            # A thread nao morre por um tropeco.
+            except Exception as exc:  # noqa: BLE001
                 self.erro = str(exc)
                 app.logger.exception("o acompanhamento de log de '%s' caiu",
                                      self.dados.get("name"))
@@ -3370,9 +3498,14 @@ class _LogStream:
             argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, errors="replace", bufsize=1,
         )
+        # Guardado numa variavel local: `self.proc.stdout` e Optional (Popen sem PIPE
+        # nao tem saida), e e daqui que sai o laco que fica horas lendo.
+        saida = self.proc.stdout
+        if saida is None:
+            return self._desiste("nao consegui abrir a saida do ssh")
         self.erro = ""
         try:
-            for linha in self.proc.stdout:
+            for linha in saida:
                 if self.parar.is_set():
                     break
                 if _linha_de_jogador(linha, entrar, sair):
@@ -3460,37 +3593,48 @@ def supervisiona_streams() -> int:
         return len(_streams)
 
 
-def monitora_servidores(forcar: bool = False) -> int:
-    """Confere o estado de todo mundo e dispara o que mudou. Devolve quantos olhou."""
-    global _ultimo_monitor, _ultimo_estado, _ultimo_disco, _ultimo_log
-    conn = db()
-    cfg = webhook_config(conn)
-    # Sem nenhum destino ligado pedindo algum evento, a volta inteira seria SSH gasto
-    # para produzir um alerta que ninguem receberia.
-    if not cfg["eventos"]:
-        return 0
+class _Ritmo(NamedTuple):
+    """O que ESTA volta do monitor vai conferir.
 
-    agora = time.monotonic()
+    Nem tudo anda no mesmo passo, e a razao e custo: a contagem de jogadores pergunta
+    direto ao jogo (barato), estado/mudez/restart custam um SSH por servidor, disco,
+    memoria e CPU saem de um medidor caro que vale ler junto, e o log custa uma ida de
+    SSH so dele. Separar essa decisao do laco e o que fez a funcao de monitorar caber
+    na cabeca: aqui e "o que vence agora", la e "o que fazer com cada servidor".
+    """
+
+    ver_estado: bool
+    quer_jogadores: bool
+    recursos: set
+    ver_log: bool
+
+
+def _ritmo_do_monitor(cfg: dict, agora: float, forcar: bool) -> _Ritmo | None:
+    """Decide o que vence nesta volta e adianta os relogios. None = ainda nao e hora."""
+    global _ultimo_monitor, _ultimo_estado, _ultimo_disco, _ultimo_log
+
     # O passo do monitor e o do alerta mais apressado que esteja LIGADO. Com jogadores
     # ligados a volta fica curta; sem eles nada muda em relacao a antes.
     quer_jogadores = bool(cfg["eventos"] & {"jogador-entrou", "jogador-saiu"})
     passo = min(MONITOR_EVERY, PLAYER_CHECK_EVERY) if quer_jogadores else MONITOR_EVERY
     if not forcar and agora - _ultimo_monitor < passo:
-        return 0
+        return None
     _ultimo_monitor = agora
+
     # ...mas so a contagem de jogadores anda nesse passo curto. Estado do servico, mudez
     # e restart continuam no ritmo antigo: cada um deles custa SSH por servidor, e
     # acelerar tudo junto multiplicaria essa conta por quatro sem necessidade.
     ver_estado = forcar or agora - _ultimo_estado >= MONITOR_EVERY
     if ver_estado:
         _ultimo_estado = agora
+
     # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
     # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
-    recursos = cfg["eventos"] & RECURSO_EVENTOS if (
-        forcar or agora - _ultimo_disco >= DISK_CHECK_EVERY
-    ) else set()
+    vence_recurso = forcar or agora - _ultimo_disco >= DISK_CHECK_EVERY
+    recursos = cfg["eventos"] & RECURSO_EVENTOS if vence_recurso else set()
     if recursos:
         _ultimo_disco = agora
+
     # O log e o unico que custa uma ida de SSH so dele, entao anda no seu proprio ritmo.
     ver_log = "erro-no-log" in cfg["eventos"] and (
         forcar or agora - _ultimo_log >= LOG_CHECK_EVERY
@@ -3498,23 +3642,79 @@ def monitora_servidores(forcar: bool = False) -> int:
     if ver_log:
         _ultimo_log = agora
 
+    return _Ritmo(ver_estado, quer_jogadores, recursos, ver_log)
+
+
+def _volta_curta(conn, server, anterior, cfg, ritmo: _Ritmo) -> None:
+    """A volta de 15s: so jogadores, e sem tocar no SSH.
+
+    O servico que interessa aqui e "estava de pe na ultima olhada de verdade", e isso
+    ja esta guardado. Se ele tiver caido desde entao, a consulta ao proprio jogo falha
+    e `_alerta_de_jogadores` sai sem avisar nada — o atraso de um estado velho nao
+    inventa alerta.
+
+    Contagem por log fica de fora: ela custa SSH, e pagar isso a cada 15s so para reler
+    o mesmo log inteiro nao se sustenta. Esses servidores continuam avisando no ritmo
+    da volta completa.
+    """
+    if not ritmo.quer_jogadores or anterior is None:
+        return
+    if player_source(server) not in PLAYER_FAST_SOURCES:
+        return
+    with lock_de_jogadores(int(server["id"])):
+        _alerta_de_jogadores(conn, server, anterior.get("service", ""), anterior, cfg)
+
+
+def _alertas_do_servidor(conn, server, estado, anterior, cfg, ritmo: _Ritmo) -> None:
+    """Os alertas que so fazem sentido com o container ALCANCAVEL."""
+    if "reiniciando" in cfg["eventos"]:
+        _alerta_de_restart(conn, server, estado, anterior)
+    else:
+        # Sem o evento ligado o contador ainda precisa acompanhar, senao ligar o alerta
+        # no meio do dia renderia um "loop" falso com tudo o que se acumulou enquanto
+        # ele estava desligado.
+        anterior["restarts"] = int(estado.get("restarts") or 0)
+
+    # Este custa uma sondagem no jogo (UDP ou HTTP) — nao vale a pena pagar por ela com
+    # o evento desligado.
+    if cfg["eventos"] & {"travou", "respondeu"}:
+        _alerta_de_mudez(conn, server, estado, anterior)
+
+    if ritmo.quer_jogadores:
+        # Com stream de log ligado esta chamada vira rede de seguranca: se ele tiver
+        # caido, ninguem fica sem aviso — so mais devagar. O lock e o que impede os dois
+        # de avisarem a mesma entrada.
+        with lock_de_jogadores(int(server["id"])):
+            _alerta_de_jogadores(conn, server, estado["service"], anterior, cfg)
+
+    if ritmo.ver_log:
+        _alerta_de_log(conn, server, anterior)
+
+    for evento, checa in ALERTAS_DE_RECURSO.items():
+        if evento in ritmo.recursos:
+            checa(conn, server, cfg)
+
+
+def monitora_servidores(forcar: bool = False) -> int:
+    """Confere o estado de todo mundo e dispara o que mudou. Devolve quantos olhou."""
+    conn = db()
+    cfg = webhook_config(conn)
+    # Sem nenhum destino ligado pedindo algum evento, a volta inteira seria SSH gasto
+    # para produzir um alerta que ninguem receberia.
+    if not cfg["eventos"]:
+        return 0
+
+    ritmo = _ritmo_do_monitor(cfg, time.monotonic(), forcar)
+    if ritmo is None:
+        return 0
+
     servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
     for server in servidores:
         sid = int(server["id"])
         anterior = _estado_monitor.get(sid)
-        # Volta rapida: so jogadores, e sem tocar no SSH. O servico que interessa aqui e
-        # "estava de pe na ultima olhada de verdade", e isso ja esta guardado. Se ele
-        # tiver caido desde entao, a consulta ao proprio jogo falha e _alerta_de_jogadores
-        # sai sem avisar nada — o atraso de um estado velho nao inventa alerta.
-        if not ver_estado:
-            # Contagem por log nao entra na volta curta: ela custa SSH, e pagar isso a
-            # cada 15s so para reler o mesmo log inteiro nao se sustenta. Esses servidores
-            # continuam avisando no ritmo da volta completa.
-            if (quer_jogadores and anterior is not None
-                    and player_source(server) in PLAYER_FAST_SOURCES):
-                with lock_de_jogadores(sid):
-                    _alerta_de_jogadores(conn, server, anterior.get("service", ""),
-                                         anterior, cfg)
+
+        if not ritmo.ver_estado:
+            _volta_curta(conn, server, anterior, cfg, ritmo)
             continue
 
         estado = server_status(server)
@@ -3527,42 +3727,22 @@ def monitora_servidores(forcar: bool = False) -> int:
                                     "restarts": int(estado.get("restarts") or 0)}
             continue
 
-        _alerta_de_estado(conn, server, estado, anterior, cfg)
+        _alerta_de_estado(conn, server, estado, anterior)
         if estado["reachable"]:
-            if "reiniciando" in cfg["eventos"]:
-                _alerta_de_restart(conn, server, estado, anterior)
-            else:
-                # Sem o evento ligado o contador ainda precisa acompanhar, senao ligar o
-                # alerta no meio do dia renderia um "loop" falso com tudo o que se
-                # acumulou enquanto ele estava desligado.
-                anterior["restarts"] = int(estado.get("restarts") or 0)
-            # Este custa uma sondagem no jogo (UDP ou HTTP) — nao vale a pena pagar por
-            # ela com o evento desligado.
-            if cfg["eventos"] & {"travou", "respondeu"}:
-                _alerta_de_mudez(conn, server, estado, anterior)
-            if quer_jogadores:
-                # Com stream de log ligado esta chamada vira rede de seguranca: se ele
-                # tiver caido, ninguem fica sem aviso — so mais devagar. O lock e o que
-                # impede os dois de avisarem a mesma entrada.
-                with lock_de_jogadores(sid):
-                    _alerta_de_jogadores(conn, server, estado["service"], anterior, cfg)
-            if ver_log:
-                _alerta_de_log(conn, server, anterior)
-            if "disco-cheio" in recursos:
-                _alerta_de_disco(conn, server, cfg)
-            if "memoria-alta" in recursos:
-                _alerta_de_memoria(conn, server, cfg)
-            if "cpu-alta" in recursos:
-                _alerta_de_cpu(conn, server, cfg)
+            _alertas_do_servidor(conn, server, estado, anterior, cfg, ritmo)
         # Depois dos alertas: eles precisam comparar com o estado ANTERIOR, e atualizar
         # antes faria toda mudanca desaparecer no meio do caminho.
         anterior.update(reachable=estado["reachable"], service=estado["service"])
 
-    # Servidor removido do painel nao pode ficar guardando estado para sempre.
+    _esquece_servidores_removidos(servidores)
+    return len(servidores)
+
+
+def _esquece_servidores_removidos(servidores) -> None:
+    """Servidor removido do painel nao pode ficar guardando estado para sempre."""
     vivos = {int(s["id"]) for s in servidores}
     for morto in [k for k in _estado_monitor if k not in vivos]:
         _estado_monitor.pop(morto, None)
-    return len(servidores)
 
 
 # -------------------------------------------------------- amostras de uso
@@ -3677,6 +3857,8 @@ def venceu(sched, agora: datetime) -> bool:
         return (agora - ultimo) >= timedelta(hours=max(1, int(sched["every_hours"])))
 
     alvo = ocorrencia_anterior(sched, agora)
+    if alvo is None:
+        return False  # so 'intervalo' nao tem ocorrencia, e ele ja saiu acima
     if ultimo is not None and ultimo >= alvo:
         return False  # esta ocorrencia ja rodou
     # Atrasada demais: o painel estava fora do ar quando a hora passou. Nao dispara e nao
@@ -3777,7 +3959,8 @@ def _falha_do_relogio(nome: str) -> None:
     try:
         _registra_alerta(db(), "", f"a tarefa '{nome}' do relogio falhou",
                          traceback.format_exc(limit=4)[-500:], "", "erro-interno")
-    except Exception:  # noqa: BLE001 - registrar a falha nao pode virar outra falha
+    # Registrar a falha nao pode virar outra falha.
+    except Exception:  # noqa: BLE001
         pass
 
 
@@ -3797,7 +3980,8 @@ def _scheduler_tick() -> None:
                          ("limpeza", limpa_historico)):
         try:
             tarefa()
-        except Exception:  # noqa: BLE001 - uma tarefa nao derruba as outras
+        # Uma tarefa nao derruba as outras.
+        except Exception:  # noqa: BLE001
             _falha_do_relogio(nome)
 
 
@@ -3809,7 +3993,8 @@ def _scheduler_loop() -> None:
             # rotas (conexao propria, fechada no fim pelo teardown).
             with app.app_context():
                 _scheduler_tick()
-        except Exception:  # noqa: BLE001 - a thread nao pode morrer por causa de um tick
+        # A thread nao pode morrer por causa de um tick.
+        except Exception:  # noqa: BLE001
             app.logger.exception("falha no agendador")
 
 
@@ -3922,7 +4107,7 @@ def api_server_players(sid: int):
     return jsonify(server_players(server))
 
 
-def _aba_porta(server: sqlite3.Row) -> dict:
+def _aba_porta(server: Servidor) -> dict:
     """Aba 1: dispara A2S em cada porta UDP que o container esta escutando."""
     candidatas, _tcp, donos, aviso = candidate_ports(server)
     portas = _com_dono(probe_ports(server["host"], candidatas[:12]), donos, "udp")
@@ -3938,7 +4123,7 @@ def _aba_porta(server: sqlite3.Row) -> dict:
     }
 
 
-def _aba_http(server: sqlite3.Row, http: dict, testar: bool) -> dict:
+def _aba_http(server: Servidor, http: dict, testar: bool) -> dict:
     """Aba 2: quais portas TCP falam HTTP, e o teste da URL escolhida."""
     _udp, candidatas, donos, aviso = candidate_ports(server)
     achados, mudas, erro_probe = probe_http_ports(server, candidatas)
@@ -3971,7 +4156,7 @@ def _aba_http(server: sqlite3.Row, http: dict, testar: bool) -> dict:
     return saida
 
 
-def _aba_log(server: sqlite3.Row, join_re: str, leave_re: str, log_path: str,
+def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
              testar: bool) -> dict:
     """Aba 3: linhas do log com cara de entrada/saida e o teste dos padroes."""
     saida = {"amostras": [], "teste": None, "erro_log": ""}
@@ -4036,62 +4221,86 @@ def players_setup(sid: int):
     )
 
 
+def _liga_contagem_a2s(conn, sid: int):
+    """Consulta UDP direta (A2S). Devolve um redirect quando o formulario esta errado."""
+    porta = request.form.get("query_port", "0")
+    if not porta.isdigit() or not 1 <= int(porta) <= 65535:
+        flash("Porta invalida.", "error")
+        return redirect(url_for("players_setup", sid=sid))
+    with conn:
+        conn.execute(
+            "UPDATE servers SET query_port = ?, player_source = 'a2s' WHERE id = ?",
+            (int(porta), sid),
+        )
+    flash(f"Contagem de jogadores ligada pela consulta na porta {porta}/udp.", "ok")
+    return None
+
+
+def _liga_contagem_http(conn, sid: int):
+    """API HTTP do proprio jogo."""
+    errors: list[str] = []
+    campos = _campos_http(request.form, errors)
+    if errors or not campos["http_url"]:
+        flash(errors[0] if errors else "Informe a URL da API.", "error")
+        return redirect(url_for("players_setup", sid=sid, aba="http"))
+    with conn:
+        conn.execute(
+            "UPDATE servers SET http_url=?, http_auth=?, http_body=?,"
+            " http_list_path=?, http_count_path=?,"
+            " http_login_url=?, http_login_body=?, http_token_path=?,"
+            # Token guardado zera ao salvar: se a URL/credencial mudou, o antigo
+            # nao vale mais, e a proxima consulta ja faz login com o que ficou.
+            " http_token='', player_source='http' WHERE id=?",
+            (*[campos[c] for c in HTTP_FIELDS], sid),
+        )
+    if campos["http_login_url"]:
+        flash("Contagem ligada pela API, com login automatico (o token renova sozinho).", "ok")
+    else:
+        flash("Contagem de jogadores ligada pela API HTTP do servidor.", "ok")
+    return None
+
+
+def _liga_contagem_log(conn, sid: int):
+    """Ultimo recurso: as linhas de entrada e saida no log do servidor."""
+    errors: list[str] = []
+    entrada = _padrao(request.form.get("join_re"), "entrada", errors)
+    saida = _padrao(request.form.get("leave_re"), "saida", errors)
+    caminho = _caminho_log(request.form.get("log_path"), errors)
+    if errors or not entrada:
+        flash(errors[0] if errors else "Informe o padrao da linha de entrada.", "error")
+        return redirect(url_for("players_setup", sid=sid, aba="log"))
+    with conn:
+        conn.execute(
+            "UPDATE servers SET join_re = ?, leave_re = ?, log_path = ?,"
+            " player_source = 'log' WHERE id = ?",
+            (entrada, saida, caminho, sid),
+        )
+    flash("Contagem de jogadores ligada pelo log do servidor.", "ok")
+    return None
+
+
+# Fonte de contagem -> quem grava a escolha. Uma fonte nova (RCON, por exemplo) e uma
+# funcao e uma linha aqui; a rota abaixo nao muda.
+FONTES_DE_CONTAGEM = {
+    "a2s": _liga_contagem_a2s,
+    "http": _liga_contagem_http,
+    "log": _liga_contagem_log,
+}
+
+
 @app.post("/servers/<int:sid>/players/usar")
 @admin_required
 def players_use(sid: int):
     """Grava a forma de contagem escolhida no assistente."""
     _server_or_404(sid)  # so pelo 404: daqui para baixo os UPDATE usam o proprio sid
-    origem = request.form.get("player_source", "")
-    conn = db()
-    if origem == "a2s":
-        porta = request.form.get("query_port", "0")
-        if not porta.isdigit() or not 1 <= int(porta) <= 65535:
-            flash("Porta invalida.", "error")
-            return redirect(url_for("players_setup", sid=sid))
-        with conn:
-            conn.execute(
-                "UPDATE servers SET query_port = ?, player_source = 'a2s' WHERE id = ?",
-                (int(porta), sid),
-            )
-        flash(f"Contagem de jogadores ligada pela consulta na porta {porta}/udp.", "ok")
-    elif origem == "http":
-        errors: list[str] = []
-        campos = _campos_http(request.form, errors)
-        if errors or not campos["http_url"]:
-            flash(errors[0] if errors else "Informe a URL da API.", "error")
-            return redirect(url_for("players_setup", sid=sid, aba="http"))
-        with conn:
-            conn.execute(
-                "UPDATE servers SET http_url=?, http_auth=?, http_body=?,"
-                " http_list_path=?, http_count_path=?,"
-                " http_login_url=?, http_login_body=?, http_token_path=?,"
-                # Token guardado zera ao salvar: se a URL/credencial mudou, o antigo
-                # nao vale mais, e a proxima consulta ja faz login com o que ficou.
-                " http_token='', player_source='http' WHERE id=?",
-                (*[campos[c] for c in HTTP_FIELDS], sid),
-            )
-        if campos["http_login_url"]:
-            flash("Contagem ligada pela API, com login automatico (o token renova sozinho).", "ok")
-        else:
-            flash("Contagem de jogadores ligada pela API HTTP do servidor.", "ok")
-    elif origem == "log":
-        errors: list[str] = []
-        entrada = _padrao(request.form.get("join_re"), "entrada", errors)
-        saida = _padrao(request.form.get("leave_re"), "saida", errors)
-        caminho = _caminho_log(request.form.get("log_path"), errors)
-        if errors or not entrada:
-            flash(errors[0] if errors else "Informe o padrao da linha de entrada.", "error")
-            return redirect(url_for("players_setup", sid=sid, aba="log"))
-        with conn:
-            conn.execute(
-                "UPDATE servers SET join_re = ?, leave_re = ?, log_path = ?,"
-                " player_source = 'log' WHERE id = ?",
-                (entrada, saida, caminho, sid),
-            )
-        flash("Contagem de jogadores ligada pelo log do servidor.", "ok")
-    else:
+    liga = FONTES_DE_CONTAGEM.get(request.form.get("player_source", ""))
+    if liga is None:
         flash("Escolha invalida.", "error")
         return redirect(url_for("players_setup", sid=sid))
+
+    recusa = liga(db(), sid)
+    if recusa is not None:
+        return recusa
 
     with _players_lock:
         _players_cache.pop(sid, None)
@@ -4223,43 +4432,64 @@ def _caminhos_backup(valor: str, errors: list[str]) -> str:
 CAMINHO_JSON_RE = re.compile(r"^[A-Za-z0-9_.\[\]-]{0,120}$")
 
 
-def _campos_http(form, errors: list[str]) -> dict:
-    """Le e confere os campos da chamada HTTP (URL, autenticacao, corpo, caminhos)."""
-    url = (form.get("http_url", "") or "").strip()[:HTTP_URL_MAX]
-    if url and not URL_RE.match(url):
-        errors.append("URL da API invalida (ex.: http://127.0.0.1:8212/v1/api/players).")
-        url = ""
+def _campo(form, nome: str, teto: int) -> str:
+    """Um campo de texto do formulario: sem espacos nas pontas e com teto de tamanho."""
+    return (form.get(nome, "") or "").strip()[:teto]
 
-    corpo = (form.get("http_body", "") or "").strip()[:HTTP_BODY_MAX]
-    if corpo:
-        try:
-            json.loads(corpo)
-        except ValueError as exc:
-            errors.append(f"Corpo da requisicao nao e JSON valido: {exc}.")
-            corpo = ""
 
+def _url_ou_erro(bruto: str, erro: str, errors: list[str]) -> str:
+    """URL valida, ou string vazia com o erro anotado. Vazio nao e erro: e "nao usa"."""
+    if bruto and not URL_RE.match(bruto):
+        errors.append(erro)
+        return ""
+    return bruto
+
+
+def _json_ou_erro(bruto: str, rotulo: str, errors: list[str]) -> str:
+    """Corpo JSON valido, ou string vazia com o erro anotado."""
+    if not bruto:
+        return ""
+    try:
+        json.loads(bruto)
+    except ValueError as exc:
+        errors.append(f"{rotulo} nao e JSON valido: {exc}.")
+        return ""
+    return bruto
+
+
+def _caminhos_json(form, errors: list[str]) -> dict:
+    """Os tres caminhos de navegacao na resposta (lista, contagem, token)."""
     caminhos = {}
     for campo, rotulo in (("http_list_path", "lista"), ("http_count_path", "contagem"),
                           ("http_token_path", "token")):
-        texto = (form.get(campo, "") or "").strip()[:HTTP_PATH_MAX]
+        texto = _campo(form, campo, HTTP_PATH_MAX)
         if texto and not CAMINHO_JSON_RE.match(texto):
             errors.append(f"Caminho da {rotulo} invalido (use algo como 'data.players').")
             texto = ""
         caminhos[campo] = texto
+    return caminhos
+
+
+def _campos_http(form, errors: list[str]) -> dict:
+    """Le e confere os campos da chamada HTTP (URL, autenticacao, corpo, caminhos)."""
+    url = _url_ou_erro(
+        _campo(form, "http_url", HTTP_URL_MAX),
+        "URL da API invalida (ex.: http://127.0.0.1:8212/v1/api/players).", errors,
+    )
+    corpo = _json_ou_erro(
+        _campo(form, "http_body", HTTP_BODY_MAX), "Corpo da requisicao", errors,
+    )
+    caminhos = _caminhos_json(form, errors)
 
     # Login automatico: os tres campos andam juntos. Preencher so parte deles quase
     # sempre e engano, e falhar aqui e melhor do que descobrir na hora da consulta.
-    login_url = (form.get("http_login_url", "") or "").strip()[:HTTP_URL_MAX]
-    if login_url and not URL_RE.match(login_url):
-        errors.append("URL de login invalida (ex.: https://127.0.0.1:7787/api/v1).")
-        login_url = ""
-    login_body = (form.get("http_login_body", "") or "").strip()[:HTTP_BODY_MAX]
-    if login_body:
-        try:
-            json.loads(login_body)
-        except ValueError as exc:
-            errors.append(f"Corpo do login nao e JSON valido: {exc}.")
-            login_body = ""
+    login_url = _url_ou_erro(
+        _campo(form, "http_login_url", HTTP_URL_MAX),
+        "URL de login invalida (ex.: https://127.0.0.1:7787/api/v1).", errors,
+    )
+    login_body = _json_ou_erro(
+        _campo(form, "http_login_body", HTTP_BODY_MAX), "Corpo do login", errors,
+    )
     if (login_url or login_body) and not caminhos["http_token_path"]:
         errors.append("Para o login automatico, informe tambem o caminho do token "
                       "(ex.: data.authenticationToken).")
@@ -4271,13 +4501,13 @@ def _campos_http(form, errors: list[str]) -> dict:
         # Guarda a senha da API como ela precisa ser mandada. O banco do painel ja da
         # acesso de root aos containers, entao isso nao amplia o estrago de um vazamento
         # — mas trate o arquivo panel.db como segredo.
-        "http_auth": (form.get("http_auth", "") or "").strip()[:300],
+        "http_auth": _campo(form, "http_auth", 300),
         "http_body": corpo,
         **caminhos,
     }
 
 
-def _caminho_log(valor: str, errors: list[str]) -> str:
+def _caminho_log(valor: str | None, errors: list[str]) -> str:
     try:
         return log_path_valido(valor)
     except ValueError as exc:
@@ -4285,7 +4515,7 @@ def _caminho_log(valor: str, errors: list[str]) -> str:
         return ""
 
 
-def _padrao(valor: str, rotulo: str, errors: list[str]) -> str:
+def _padrao(valor: str | None, rotulo: str, errors: list[str]) -> str:
     """Guarda o regex so depois de conferir que ele compila."""
     texto = (valor or "").strip()[:RE_MAX_LEN]
     if not texto:
@@ -4362,7 +4592,7 @@ SQL_UPDATE_SERVER = (
 @app.route("/servers/new", methods=["GET", "POST"])
 @admin_required
 def server_new():
-    data = dict.fromkeys(SERVER_FIELDS, "")
+    data: dict = dict.fromkeys(SERVER_FIELDS, "")
     data.update({"ssh_user": "root", "ssh_port": 22, "query_port": 0})
     if request.method == "POST":
         data, errors = _form_server(request.form)
@@ -4476,14 +4706,14 @@ CURSOR_RE = re.compile(r"^[A-Za-z0-9=;:._-]{1,400}$")
 LOG_FOLLOW_MAX = 500
 
 
-def _log_lines_arg(raw: str, default: int = 80) -> int:
+def _log_lines_arg(raw: str | None, default: int = 80) -> int:
     try:
-        return max(10, min(500, int(raw)))
+        return max(10, min(500, int(raw or "")))
     except (TypeError, ValueError):
         return default
 
 
-def read_logs(server: sqlite3.Row, lines: int, cursor: str = "") -> tuple[str, str]:
+def read_logs(server: Servidor, lines: int, cursor: str = "") -> tuple[str, str]:
     """Le o log do servico. Com cursor, traz so o que entrou depois dele.
 
     Devolve (texto, novo_cursor). O cursor vem vazio quando o journalctl do container
@@ -5072,7 +5302,7 @@ def _server_or_404(sid: int) -> sqlite3.Row:
     return server
 
 
-def list_dir(server: sqlite3.Row, path: str) -> tuple[list[dict], bool]:
+def list_dir(server: Servidor, path: str) -> tuple[list[dict], bool]:
     proc = ssh_run(server, q("bash", "-lc", LIST_SCRIPT, "gp", path, str(FILE_LIST_MAX)), timeout=40)
     if proc.returncode != 0:
         raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao listar a pasta")
@@ -5103,7 +5333,7 @@ def _parse_meta(head: str, campos: int) -> list[str]:
     return meta
 
 
-def stat_file(server: sqlite3.Row, path: str) -> dict:
+def stat_file(server: Servidor, path: str) -> dict:
     """Metadados sem trazer o conteudo — usado antes de comecar um download."""
     proc = ssh_run(server, q("bash", "-lc", STAT_SCRIPT, "gp", path), timeout=40)
     if proc.returncode != 0:
@@ -5119,7 +5349,7 @@ def stat_file(server: sqlite3.Row, path: str) -> dict:
     }
 
 
-def read_file(server: sqlite3.Row, path: str) -> dict:
+def read_file(server: Servidor, path: str) -> dict:
     """Le o arquivo para o editor.
 
     Arquivo dentro do limite vem inteiro e editavel. Acima do limite vem so o fim
@@ -5326,22 +5556,30 @@ def ssh_stream_in(server, remote_cmd: str, origem, timeout: int) -> str:
     except OSError as exc:
         raise RemoteError(f"falha ao executar ssh: {exc}")
 
+    # Numa variavel local porque `Popen.stdin` e Optional no tipo (Popen sem PIPE nao
+    # tem entrada) e porque ela e zerada no `finally` la embaixo - o `close()` de la
+    # precisa falar do MESMO objeto que o laco usou.
+    entrada = proc.stdin
+    if entrada is None:
+        raise RemoteError("nao consegui abrir a entrada do ssh")
+
     try:
         while True:
             chunk = origem.read(UPLOAD_CHUNK)
             if not chunk:
                 break
-            proc.stdin.write(chunk)
-    except (BrokenPipeError, OSError):
+            entrada.write(chunk)
+    except OSError:
         # O outro lado desistiu (sem espaco, sem permissao): o motivo esta no stderr,
-        # entao nao adianta reclamar do cano quebrado aqui.
+        # entao nao adianta reclamar do cano quebrado aqui. BrokenPipeError - o caso
+        # tipico - ja e um OSError, entao listar os dois nao pegava nada a mais.
         pass
     finally:
         # Fechar a entrada e o que faz o `cat` remoto terminar. A referencia tem de ir
         # junto: o communicate() abaixo daria flush num arquivo ja fechado e estouraria
         # ValueError com o arquivo JA gravado do outro lado — erro na tela, upload feito.
         try:
-            proc.stdin.close()
+            entrada.close()
         except OSError:
             pass
         proc.stdin = None
@@ -5405,7 +5643,7 @@ def files(sid: int):
     )
 
 
-def find_config_files(server: sqlite3.Row, root: str) -> list[dict]:
+def find_config_files(server: Servidor, root: str) -> list[dict]:
     """Varre a pasta do jogo atras dos arquivos de configuracao mais provaveis."""
     names = " -o ".join(f"-name {shlex.quote(g)}" for g in CONFIG_GLOBS)
     script = (
@@ -5432,7 +5670,7 @@ def find_config_files(server: sqlite3.Row, root: str) -> list[dict]:
     return achados
 
 
-def write_file(server: sqlite3.Row, path: str, data: bytes) -> str:
+def write_file(server: Servidor, path: str, data: bytes) -> str:
     """Grava o arquivo no container (com .bak, dono e permissao preservados)."""
     proc = ssh_run(
         server, q("bash", "-lc", WRITE_SCRIPT, "gp", path), timeout=120,
@@ -5443,7 +5681,7 @@ def write_file(server: sqlite3.Row, path: str, data: bytes) -> str:
     return proc.stdout.strip()
 
 
-def delete_file(server: sqlite3.Row, path: str) -> str:
+def delete_file(server: Servidor, path: str) -> str:
     """Apaga um arquivo (ou pasta vazia) no container. Nao tem volta."""
     proc = ssh_run(server, q("bash", "-lc", DELETE_SCRIPT, "gp", path), timeout=60)
     if proc.returncode != 0:
@@ -5466,8 +5704,10 @@ def files_search(sid: int):
     nao quebrar link antigo nem historico de navegador.
     """
     _server_or_404(sid)
-    pasta = request.args.get("path", "")
-    return redirect(url_for("config_quick", sid=sid, descobrir=1, **({"pasta": pasta} if pasta else {})))
+    # `pasta` so entra na URL quando existe: `pasta=` vazio faria a busca procurar na
+    # raiz do container em vez da pasta de config do cadastro.
+    extras: dict[str, Any] = {"pasta": request.args["path"]} if request.args.get("path") else {}
+    return redirect(url_for("config_quick", sid=sid, descobrir=1, **extras))
 
 
 @app.post("/servers/<int:sid>/files/save")
@@ -5572,7 +5812,7 @@ def _attachment_header(name: str) -> str:
     return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"
 
 
-def stream_remote_file(server: sqlite3.Row, path: str):
+def stream_remote_file(server: Servidor, path: str):
     """Joga o arquivo do container direto para o navegador, sem passar por disco.
 
     E `cat` na outra ponta lido em pedacos: um save de varios GB desce sem o painel
@@ -5580,11 +5820,15 @@ def stream_remote_file(server: sqlite3.Row, path: str):
     """
     argv = ssh_argv(server) + [q("cat", "--", path)]
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # `Popen.stdout` e Optional no tipo; aqui ele existe porque o PIPE foi pedido acima.
+    saida = proc.stdout
+    if saida is None:
+        raise RemoteError("nao consegui abrir a saida do ssh")
 
     def gerar():
         try:
             while True:
-                chunk = proc.stdout.read(DOWNLOAD_CHUNK)
+                chunk = saida.read(DOWNLOAD_CHUNK)
                 if not chunk:
                     break
                 yield chunk
@@ -5686,7 +5930,7 @@ def files_upload(sid: int):
 # trocado embaixo dele grava por cima do que acabou de voltar.
 
 
-def backup_paths(server: sqlite3.Row) -> list[str]:
+def backup_paths(server: Servidor) -> list[str]:
     """O que entra no backup deste servidor.
 
     Sem nada cadastrado vale a pasta de configuracao, que e onde o save costuma morar —
@@ -5699,7 +5943,7 @@ def backup_paths(server: sqlite3.Row) -> list[str]:
     return [padrao] if padrao else []
 
 
-def backup_prefix(server: sqlite3.Row) -> str:
+def backup_prefix(server: Servidor) -> str:
     """Prefixo dos arquivos deste servidor: e ele que separa (e limita) as copias.
 
     Sai do nome da unidade systemd, que ja e unica por container. O saneamento importa
@@ -5721,7 +5965,7 @@ def _backup_ou_400(nome: str) -> str:
     return nome
 
 
-def list_backups(server: sqlite3.Row) -> list[dict]:
+def list_backups(server: Servidor) -> list[dict]:
     proc = ssh_run(
         server,
         q("bash", "-lc", BACKUP_LIST_SCRIPT, "gp", BACKUP_DIR, backup_prefix(server),
@@ -5762,7 +6006,7 @@ def backups(sid: int):
     )
 
 
-def comando_de_backup(server: sqlite3.Row, caminhos: list[str], sufixo: str = "") -> str:
+def comando_de_backup(server: Servidor, caminhos: list[str], sufixo: str = "") -> str:
     """Monta o comando remoto do backup. Usado pela tela, pelo restore e pelo agendador."""
     return q("bash", "-lc", BACKUP_SCRIPT, "gp", BACKUP_DIR,
              backup_prefix(server), str(BACKUP_KEEP), sufixo, *caminhos)
@@ -5864,12 +6108,12 @@ def backup_download(sid: int):
 # senha de admin, numero de jogadores) nao precisa achar o arquivo nem contar virgula.
 
 
-def config_paths(server: sqlite3.Row) -> list[str]:
+def config_paths(server: Servidor) -> list[str]:
     """Arquivos de configuracao registrados no cadastro do servidor."""
     return [linha.strip() for linha in (server["config_files"] or "").splitlines() if linha.strip()]
 
 
-def load_config_doc(server: sqlite3.Row, path: str) -> tuple[gameconf.ConfigFile, dict]:
+def load_config_doc(server: Servidor, path: str) -> tuple[gameconf.ConfigFile, dict]:
     """Le o arquivo no container e o interpreta campo a campo."""
     info = read_file(server, path)
     if info["binary"]:
@@ -5918,7 +6162,7 @@ def _config_alvo(arquivos: list[str], errors: list[str]) -> str:
     return alvo
 
 
-def _config_sugestoes(server: sqlite3.Row, arquivos: list[str], alvo: str,
+def _config_sugestoes(server: Servidor, arquivos: list[str], alvo: str,
                       errors: list[str]) -> list | None:
     """Candidatos a arquivo de configuracao no container; None = nem vale procurar.
 
@@ -6041,29 +6285,43 @@ def _edits_do_formulario(form, nome_arquivo: str = "") -> tuple[list[gameconf.Ed
     edits: list[gameconf.Edit] = []
     erros: list[str] = []
     for i in range(min(total, 4000)):
-        chave = (form.get(f"key.{i}", "") or "").strip()
-        if not chave:
-            continue  # linha de "adicionar configuracao" deixada em branco
-        valor = (form.get(f"val.{i}", "") or "").replace("\r", "")
-        ident = urllib.parse.unquote((form.get(f"id.{i}", "") or "").strip())
-        if ident and valor == (form.get(f"orig.{i}", "") or "").replace("\r", ""):
-            continue  # campo intocado: nao reescreve a linha
-
-        spec = gamefields.describe(nome_arquivo, chave) if nome_arquivo else None
-        if spec:
-            problema = spec.validate(valor)
-            if problema:
-                erros.append(f"{spec.label or chave}: {problema}")
-                continue
-            valor = spec.from_display(valor)
-
-        edits.append(gameconf.Edit(
-            id=ident,
-            section=urllib.parse.unquote(form.get(f"sec.{i}", "") or ""),
-            key=chave,
-            value=valor,
-        ))
+        edit = _edit_da_linha(form, i, nome_arquivo, erros)
+        if edit is not None:
+            edits.append(edit)
     return edits, erros
+
+
+def _edit_da_linha(form, i: int, nome_arquivo: str, erros: list[str]) -> gameconf.Edit | None:
+    """Uma linha do formulario vira uma alteracao — ou nada.
+
+    Nada acontece em tres casos: linha de "adicionar configuracao" deixada em branco,
+    campo que ninguem tocou (comparado com o `orig.N` escondido) e valor que o catalogo
+    recusou. Os tres estao aqui juntos porque sao a mesma pergunta: "esta linha tem algo
+    para gravar?".
+    """
+    chave = (form.get(f"key.{i}", "") or "").strip()
+    if not chave:
+        return None
+
+    valor = (form.get(f"val.{i}", "") or "").replace("\r", "")
+    ident = urllib.parse.unquote((form.get(f"id.{i}", "") or "").strip())
+    if ident and valor == (form.get(f"orig.{i}", "") or "").replace("\r", ""):
+        return None  # campo intocado: nao reescreve a linha
+
+    spec = gamefields.describe(nome_arquivo, chave) if nome_arquivo else None
+    if spec:
+        problema = spec.validate(valor)
+        if problema:
+            erros.append(f"{spec.label or chave}: {problema}")
+            return None
+        valor = spec.from_display(valor)
+
+    return gameconf.Edit(
+        id=ident,
+        section=urllib.parse.unquote(form.get(f"sec.{i}", "") or ""),
+        key=chave,
+        value=valor,
+    )
 
 
 @app.post("/servers/<int:sid>/config/save")
@@ -6217,6 +6475,22 @@ def _agendamento_ou_404(aid: int) -> sqlite3.Row:
     return sched
 
 
+def _proxima_ocorrencia(sched, agora: datetime) -> datetime:
+    """Quando esta tarefa roda da proxima vez.
+
+    'intervalo' conta a partir da ultima execucao; diario e semanal somam um passo a
+    ocorrencia anterior. `ocorrencia_anterior` so devolve None para 'intervalo', que
+    nunca chega na segunda metade - mas a checagem fica explicita, porque a alternativa
+    e um `TypeError` numa tela que so quebra para quem tem agendamento cadastrado.
+    """
+    if sched["kind"] == "intervalo":
+        ultimo = _parse_dt(sched["last_run"]) or agora
+        return ultimo + timedelta(hours=int(sched["every_hours"]))
+
+    anterior = ocorrencia_anterior(sched, agora) or agora
+    return anterior + timedelta(days=7 if sched["kind"] == "semanal" else 1)
+
+
 @app.get("/servers/<int:sid>/agendamentos")
 @login_required
 def schedules(sid: int):
@@ -6230,13 +6504,7 @@ def schedules(sid: int):
     # deixa claro se ela ja rodou hoje ou se ainda vai rodar.
     proximas = {}
     for t in tarefas:
-        anterior = ocorrencia_anterior(t, agora)
-        if t["kind"] == "intervalo":
-            ultimo = _parse_dt(t["last_run"]) or agora
-            proximas[t["id"]] = (ultimo + timedelta(hours=int(t["every_hours"]))).strftime("%d/%m %H:%M")
-        else:
-            passo = timedelta(days=7 if t["kind"] == "semanal" else 1)
-            proximas[t["id"]] = (anterior + passo).strftime("%d/%m %H:%M")
+        proximas[t["id"]] = _proxima_ocorrencia(t, agora).strftime(FORMATO_DATA_CURTA)
     return render_template(
         "schedules.html", server=server, tarefas=tarefas, proximas=proximas,
         acoes=SCHEDULE_ACTIONS, job_labels=JOB_LABELS, dias=DIAS_SEMANA,
@@ -6340,6 +6608,41 @@ def _teto_limpo(pico: float) -> int:
     return int(pico) + 1
 
 
+def _segmentos_da_serie(amostras, chave: str, px, py) -> tuple[list[list[str]], dict | None]:
+    """Uma serie vira uma lista de SEGMENTOS de coordenadas, mais a ponta.
+
+    Segmentos, e nao uma linha so, porque o grafico tem buracos de dois tipos: amostra
+    sem valor para esta serie (a contagem de jogadores desligada, por exemplo) e painel
+    que ficou fora do ar entre duas amostras (ver CHART_GAP). Emendar por cima dos dois
+    desenharia uma reta que afirma algo que ninguem mediu.
+    """
+    segmentos: list[list[str]] = []
+    atual: list[str] = []
+    anterior = None
+    ponta = None
+
+    def fecha():
+        nonlocal atual
+        if atual:
+            segmentos.append(atual)
+        atual = []
+
+    for quando, valores in amostras:
+        valor = valores.get(chave)
+        if valor is None:
+            fecha()
+            anterior = None
+            continue
+        if anterior is not None and (quando - anterior).total_seconds() > SAMPLE_EVERY * CHART_GAP:
+            fecha()
+        atual.append(f"{px(quando)},{py(valor)}")
+        ponta = {"x": px(quando), "y": py(valor), "valor": valor}
+        anterior = quando
+
+    fecha()
+    return segmentos, ponta
+
+
 def monta_grafico(amostras, series, teto: float, inicio, fim, formato_tempo: str) -> dict:
     """Transforma as amostras em coordenadas prontas para o SVG.
 
@@ -6359,27 +6662,7 @@ def monta_grafico(amostras, series, teto: float, inicio, fim, formato_tempo: str
 
     linhas = []
     for serie in series:
-        segmentos: list[list[str]] = []
-        atual: list[str] = []
-        anterior = None
-        ponta = None
-        for quando, valores in amostras:
-            valor = valores.get(serie["chave"])
-            if valor is None:
-                # Buraco: fecha o segmento e recomeca do outro lado.
-                if atual:
-                    segmentos.append(atual)
-                atual, anterior = [], None
-                continue
-            if anterior is not None and (quando - anterior).total_seconds() > SAMPLE_EVERY * CHART_GAP:
-                if atual:
-                    segmentos.append(atual)
-                atual = []
-            atual.append(f"{px(quando)},{py(valor)}")
-            ponta = {"x": px(quando), "y": py(valor), "valor": valor}
-            anterior = quando
-        if atual:
-            segmentos.append(atual)
+        segmentos, ponta = _segmentos_da_serie(amostras, serie["chave"], px, py)
         if not segmentos:
             continue
         linhas.append({
@@ -6482,7 +6765,7 @@ def charts(sid: int):
     # A tabela e o par acessivel do grafico: mesmos numeros, sem depender de cor nem de
     # passar o mouse. Do mais novo para o mais velho, que e como se procura um pico.
     tabela = [
-        {"quando": q.astimezone().strftime("%d/%m %H:%M"), **v}
+        {"quando": q.astimezone().strftime(FORMATO_DATA_CURTA), **v}
         for q, v in reversed(amostras)
     ][:200]
 
@@ -6764,7 +7047,7 @@ def alerts_hook_test(hid: int):
     erro = envia_webhook(
         digitada or row["url"],
         f"**Teste do painel de jogos**\nSe voce esta lendo isto, os alertas funcionam."
-        f" ({usuario_logado()['username']})",
+        f" ({session.get('username', '?')})",
     )
     nome = row["nome"] or "destino"
     flash(
@@ -6942,7 +7225,7 @@ def _arquivos_do_casco() -> tuple[list[str], int]:
     urls: list[str] = []
     marca = 0
     for pasta in CASCO_PASTAS:
-        raiz = os.path.join(app.static_folder, pasta)
+        raiz = os.path.join(app.static_folder or "", pasta)
         for base, _dirs, arquivos in os.walk(raiz):
             for nome in sorted(arquivos):
                 caminho = os.path.join(base, nome)
@@ -6960,7 +7243,7 @@ def manifest():
     virem do proprio Flask — inclusive a marca de versao do `static_url`.
     """
     resp = app.response_class(
-        render_template("manifest.webmanifest"),
+        render_template("manifest.webmanifest.jinja"),
         mimetype="application/manifest+json",
     )
     resp.headers["Cache-Control"] = "no-cache"
@@ -6977,7 +7260,7 @@ def service_worker():
     """
     precache, versao = _arquivos_do_casco()
     resp = app.response_class(
-        render_template("sw.js", versao=versao, precache=precache),
+        render_template("sw.js.jinja", versao=versao, precache=precache),
         mimetype="text/javascript",
     )
     # Sem isto o proprio arquivo do worker ficaria em cache e o painel nunca
@@ -7072,78 +7355,103 @@ def ensure_admin_user(username: str, password: str, role: str = "") -> None:
     conn.close()
 
 
-def ensure_server(
-    name: str,
-    host: str,
-    service: str,
-    ssh_port: int = 22,
-    ssh_user: str = "root",
-    game_port: str = "",
-    notes: str = "",
-    config_path: str = "",
-    config_files: str = "",
-    backup_paths: str = "",
-    join_re: str = "",
-    leave_re: str = "",
-    log_path: str = "",
-    query_port: int = 0,
-    player_source: str = "",
-) -> bool:
+class ServidorDoDeploy(NamedTuple):
+    """Os dados de um servidor vindos do deploy, num objeto so.
+
+    Eram quinze parametros soltos. Quinze posicoes e o tipo de assinatura em que um
+    `join_re` vai parar no lugar do `leave_re` e ninguem percebe ate a contagem de
+    jogadores comecar a mentir. Como tupla nomeada, o campo tem nome no ponto de
+    chamada e o objeto viaja inteiro entre as funcoes abaixo.
+    """
+
+    name: str
+    host: str
+    service: str
+    ssh_port: int = 22
+    ssh_user: str = "root"
+    game_port: str = ""
+    notes: str = ""
+    config_path: str = ""
+    config_files: str = ""
+    backup_paths: str = ""
+    join_re: str = ""
+    leave_re: str = ""
+    log_path: str = ""
+    query_port: int = 0
+    player_source: str = ""
+
+
+def _insere_servidor(conn: sqlite3.Connection, dados: ServidorDoDeploy) -> None:
+    conn.execute(
+        "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
+        " game_port, notes, config_path, config_files, backup_paths,"
+        " query_port, player_source, join_re, leave_re, log_path, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (dados.name, dados.host, dados.ssh_port, dados.ssh_user, dados.service,
+         dados.game_port, dados.notes, dados.config_path, dados.config_files,
+         dados.backup_paths, dados.query_port, dados.player_source,
+         dados.join_re, dados.leave_re, dados.log_path, now_iso()),
+    )
+
+
+def _junta_arquivos_de_config(guardados: str, novos: str) -> str:
+    """Os arquivos ja cadastrados mais os do deploy, sem repetir e sem perder nenhum."""
+    lista = [p for p in (guardados or "").splitlines() if p.strip()]
+    for novo in novos.splitlines():
+        if novo.strip() and novo.strip() not in lista:
+            lista.append(novo.strip())
+    return "\n".join(lista[:CONFIG_FILES_MAX])
+
+
+def _atualiza_servidor(conn: sqlite3.Connection, atual, dados: ServidorDoDeploy) -> None:
+    """Redeploy: o container manda no que e dele, o painel manda no que e escolha.
+
+    Nome, servico, portas e caminho de config vem do deploy — sao fatos do container.
+    Ja caminhos de backup, forma de contar jogadores e padroes do log costumam ser
+    afinados na tela, e um redeploy nao pode apaga-los.
+    """
+    conn.execute(
+        "UPDATE servers SET name=?, ssh_user=?, service=?, game_port=?,"
+        " notes=?, config_path=?, config_files=?, backup_paths=?,"
+        " query_port=?, player_source=?, join_re=?, leave_re=?, log_path=?"
+        " WHERE id=?",
+        (
+            dados.name, dados.ssh_user, dados.service, dados.game_port,
+            dados.notes or atual["notes"],
+            dados.config_path or atual["config_path"],
+            _junta_arquivos_de_config(atual["config_files"], dados.config_files),
+            atual["backup_paths"] or dados.backup_paths,
+            dados.query_port,
+            atual["player_source"] or dados.player_source,
+            atual["join_re"] or dados.join_re,
+            atual["leave_re"] or dados.leave_re,
+            atual["log_path"] or dados.log_path,
+            atual["id"],
+        ),
+    )
+
+
+def ensure_server(dados: ServidorDoDeploy) -> bool:
     """Cadastra (ou atualiza) um servidor sem passar pela tela. Devolve True se criou.
 
     E por aqui que o deploy registra o container recem-criado no painel — inclusive o
-    arquivo de configuracao do jogo, para a tela "Config" ja abrir pronta. Num redeploy
-    os dados do container mandam, mas o que e escolha de quem usa o painel (arquivos de
-    config acrescentados a mao, forma de contar jogadores) nao e apagado.
+    arquivo de configuracao do jogo, para a tela "Configuracao" ja abrir pronta.
     """
     init_db()
     conn = _connect()
-    criado = False
     try:
         with conn:
             atual = conn.execute(
-                "SELECT * FROM servers WHERE host = ? AND ssh_port = ?", (host, ssh_port)
+                "SELECT * FROM servers WHERE host = ? AND ssh_port = ?",
+                (dados.host, dados.ssh_port),
             ).fetchone()
             if atual is None:
-                conn.execute(
-                    "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
-                    " game_port, notes, config_path, config_files, backup_paths,"
-                    " query_port, player_source, join_re, leave_re, log_path, created_at)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (name, host, ssh_port, ssh_user, service, game_port, notes,
-                     config_path, config_files, backup_paths, query_port,
-                     player_source, join_re, leave_re, log_path, now_iso()),
-                )
-                criado = True
-            else:
-                arquivos = [p for p in (atual["config_files"] or "").splitlines() if p.strip()]
-                for novo in config_files.splitlines():
-                    if novo.strip() and novo.strip() not in arquivos:
-                        arquivos.append(novo.strip())
-                conn.execute(
-                    "UPDATE servers SET name=?, ssh_user=?, service=?, game_port=?,"
-                    " notes=?, config_path=?, config_files=?, backup_paths=?,"
-                    " query_port=?, player_source=?, join_re=?, leave_re=?, log_path=?"
-                    " WHERE id=?",
-                    (
-                        name, ssh_user, service, game_port, notes or atual["notes"],
-                        config_path or atual["config_path"],
-                        "\n".join(arquivos[:CONFIG_FILES_MAX]),
-                        # Escolha de quem usa o painel: um redeploy nao pode apagar os
-                        # caminhos de backup ajustados a mao. Vale igual para os padroes
-                        # do log, que costumam ser afinados na tela.
-                        atual["backup_paths"] or backup_paths,
-                        query_port,
-                        atual["player_source"] or player_source,
-                        atual["join_re"] or join_re,
-                        atual["leave_re"] or leave_re,
-                        atual["log_path"] or log_path,
-                        atual["id"],
-                    ),
-                )
+                _insere_servidor(conn, dados)
+                return True
+            _atualiza_servidor(conn, atual, dados)
+            return False
     finally:
         conn.close()
-    return criado
 
 
 init_db()
@@ -7191,7 +7499,12 @@ if __name__ == "__main__":
     elif opts.register_server:
         if not opts.server_host or not opts.service:
             raise SystemExit("--register-server exige --server-host e --service")
-        criado = ensure_server(
+        # A linha de comando nao aceita quebra de linha com conforto: aqui as listas
+        # (arquivos de config, caminhos de backup) vem separadas por virgula.
+        def por_virgula(bruto: str) -> str:
+            return "\n".join(p.strip() for p in bruto.split(",") if p.strip())
+
+        criado = ensure_server(ServidorDoDeploy(
             name=opts.register_server,
             host=opts.server_host,
             service=opts.service,
@@ -7200,20 +7513,14 @@ if __name__ == "__main__":
             game_port=opts.game_port,
             notes=opts.notes,
             config_path=opts.config_path,
-            # A linha de comando nao aceita quebra de linha com conforto: aqui os
-            # arquivos vem separados por virgula.
-            config_files="\n".join(
-                p.strip() for p in opts.config_files.split(",") if p.strip()
-            ),
-            backup_paths="\n".join(
-                p.strip() for p in opts.backup_paths.split(",") if p.strip()
-            ),
+            config_files=por_virgula(opts.config_files),
+            backup_paths=por_virgula(opts.backup_paths),
             join_re=opts.join_re,
             leave_re=opts.leave_re,
             log_path=opts.log_path,
             query_port=opts.query_port,
             player_source=opts.player_source,
-        )
+        ))
         print(f"servidor '{opts.register_server}' {'cadastrado' if criado else 'atualizado'}"
               f" ({opts.server_host})")
     else:
