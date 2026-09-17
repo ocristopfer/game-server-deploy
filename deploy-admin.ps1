@@ -217,29 +217,40 @@ function Invoke-DirectDeploy([string]$Target, [string]$SrcDir, [string]$Port) {
     # leitor/gravador da tela Config) e um faltando derruba o import do app inteiro.
     Invoke-Scp @((Join-Path $SrcDir "*.py")) "root@${Target}:$remoteTmp/"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o codigo do painel (*.py)" }
-    Invoke-Scp @((Join-Path $SrcDir "templates\*.html")) "root@${Target}:$remoteTmp/templates/"
+    # -Recurse e glob aberto (nao "*.html"): templates/ tem subpasta (components/, os
+    # macros de interface) e dois templates que nao sao .html - o sw.js e o
+    # manifest.webmanifest do aplicativo instalavel, que saem do Flask com url_for
+    # dentro. Com o filtro antigo o painel subia sem os componentes e sem o PWA, e o
+    # erro so aparecia na primeira tela aberta.
+    Invoke-Scp @((Join-Path $SrcDir "templates\*")) "root@${Target}:$remoteTmp/templates/" -Recurse
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os templates" }
     # -Recurse: static/ pode ter subpasta, e sem isso ela ficaria de fora do envio.
     Invoke-Scp @((Join-Path $SrcDir "static\*")) "root@${Target}:$remoteTmp/static/" -Recurse
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os estaticos" }
 
-    # Troca o conteudo e reinicia. Os templates antigos sao removidos para um arquivo
-    # renomeado no repo nao continuar vivo no container.
+    # Troca o conteudo e reinicia.
     #
-    # Em static/ a limpeza e por ARQUIVO (`find -maxdepth 1 -type f`), nao `rm -f *`: um
-    # glob que pega uma subpasta faz o `rm -f` e o `install` falharem com "Is a
-    # directory", e com o `set -e` do topo isso derruba o deploy no meio da troca. Apagar
-    # a subpasta junto tambem nao serve: o que estiver dentro dela pode ter sido criado
-    # no container e nao existe aqui para ser reenviado.
+    # templates/ e apagada INTEIRA antes da copia: tudo ali vem do repo, entao um
+    # template renomeado (ou um componente que saiu de components/) nao pode continuar
+    # vivo no container.
+    #
+    # static/ nao pode levar o mesmo tratamento: `maps/` e criada no proprio container
+    # e nao existe aqui para ser reenviada. A limpeza e por arquivo no topo e pelas
+    # subpastas que sao do repo (css/, js/, icons/) - assim um .js renomeado some, e o
+    # que o container criou fica. Nada de `rm -f *` solto: o glob pegaria a subpasta e o
+    # `rm -f` falharia com "Is a directory", derrubando o deploy no meio da troca por
+    # causa do `set -e`.
     $install = @'
 set -e
 install -d /opt/gamepanel/templates /opt/gamepanel/static
-rm -f /opt/gamepanel/templates/*.html
+rm -rf /opt/gamepanel/templates
+install -d /opt/gamepanel/templates
 find /opt/gamepanel/static -maxdepth 1 -type f -delete
+rm -rf /opt/gamepanel/static/css /opt/gamepanel/static/js /opt/gamepanel/static/icons
 install -m 0644 /tmp/gamepanel-deploy/*.py /opt/gamepanel/
-install -m 0644 /tmp/gamepanel-deploy/templates/*.html /opt/gamepanel/templates/
+cp -r /tmp/gamepanel-deploy/templates/. /opt/gamepanel/templates/
 cp -r /tmp/gamepanel-deploy/static/. /opt/gamepanel/static/
-chmod -R a+rX /opt/gamepanel/static
+chmod -R a+rX /opt/gamepanel/static /opt/gamepanel/templates
 # Bytecode da versao anterior: um .pyc de modulo que sumiu ainda seria importavel.
 rm -rf /opt/gamepanel/__pycache__
 chown -R root:root /opt/gamepanel

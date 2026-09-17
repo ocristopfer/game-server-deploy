@@ -1,0 +1,47 @@
+{
+  "id": "/",
+  "name": "Painel de Jogos",
+  "short_name": "Jogos",
+  "description": "Liga, desliga, atualiza e acompanha os servidores de jogos.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "/?fonte=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0f1216",
+  "theme_color": "#171c22",
+  "categories": ["utilities", "productivity"],
+  "icons": [
+    {
+      "src": "{{ url_for('static', filename='icons/icon-192.png') }}",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "{{ url_for('static', filename='icons/icon-512.png') }}",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "{{ url_for('static', filename='icons/icon-maskable-512.png') }}",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Servidores",
+      "url": "{{ url_for('dashboard') }}",
+      "icons": [{ "src": "{{ url_for('static', filename='icons/icon-192.png') }}", "sizes": "192x192" }]
+    },
+    {
+      "name": "Historico",
+      "url": "{{ url_for('history') }}"
+    }
+  ]
+}

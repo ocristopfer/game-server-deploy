@@ -93,11 +93,16 @@ validate_host_requirements() {
   [[ -f "$APP_SRC_DIR/templates/base.html" ]] || die "templates/base.html nao encontrado em $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/templates/terminal.html" ]] || die "templates/terminal.html nao encontrado em $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/templates/files.html" ]] || die "templates/files.html nao encontrado em $APP_SRC_DIR"
-  [[ -f "$APP_SRC_DIR/static/style.css" ]] || die "static/style.css nao encontrado em $APP_SRC_DIR"
-  # Sem estes JS a tela abre em branco (terminal) ou sem medidores, e nada disso da
-  # erro no servidor — so quebra no navegador.
-  [[ -f "$APP_SRC_DIR/static/terminal.js" ]] || die "static/terminal.js nao encontrado em $APP_SRC_DIR"
-  [[ -f "$APP_SRC_DIR/static/metrics.js" ]] || die "static/metrics.js nao encontrado em $APP_SRC_DIR"
+  # Os macros de interface: sem eles todo template quebra no primeiro {% import %}.
+  [[ -f "$APP_SRC_DIR/templates/components/ui.html" ]] || die "templates/components/ nao encontrado em $APP_SRC_DIR"
+  # Templates que nao sao .html: o worker e a ficha do aplicativo instalavel. Saem do
+  # Flask (tem url_for dentro), por isso vivem em templates/ e nao em static/.
+  [[ -f "$APP_SRC_DIR/templates/sw.js" ]] || die "templates/sw.js nao encontrado em $APP_SRC_DIR"
+  # Sem o CSS a tela abre sem estilo nenhum; sem o JS ela abre sem medidores e sem
+  # terminal. Nada disso da erro no servidor - so quebra no navegador.
+  [[ -f "$APP_SRC_DIR/static/css/tokens.css" ]] || die "static/css/ nao encontrado em $APP_SRC_DIR"
+  [[ -f "$APP_SRC_DIR/static/js/app.js" ]] || die "static/js/app.js nao encontrado em $APP_SRC_DIR"
+  [[ -f "$APP_SRC_DIR/static/js/terminal.js" ]] || die "static/js/terminal.js nao encontrado em $APP_SRC_DIR"
 }
 
 ensure_debian_template() {
@@ -191,6 +196,20 @@ ensure_app_user() {
   run_ct "install -d -o root -g root -m 0755 ${APP_DIR}"
 }
 
+# Copia uma arvore inteira para dentro do container, criando as pastas conforme
+# aparecem. `pct push` nao cria diretorio e nao e recursivo: e isto que da conta de
+# templates/components/ e de static/{css,js,icons}.
+push_tree() {
+  local origem="$1" destino="$2" src rel
+  while IFS= read -r src; do
+    rel="${src#"$origem"/}"
+    if [[ "$rel" == */* ]]; then
+      run_ct "install -d '${destino}/${rel%/*}'"
+    fi
+    pct push "$CTID" "$src" "${destino}/${rel}" --perms 0644
+  done < <(find "$origem" -type f | sort)
+}
+
 push_application() {
   msg "Publicando a aplicacao em ${APP_DIR}"
   run_ct "rm -rf ${APP_DIR}/templates ${APP_DIR}/static"
@@ -207,18 +226,15 @@ push_application() {
     [[ -f "$src" ]] || continue
     pct push "$CTID" "$src" "${APP_DIR}/$(basename "$src")" --perms 0644
   done
-  for src in "$APP_SRC_DIR"/templates/*.html; do
-    [[ -f "$src" ]] || continue
-    pct push "$CTID" "$src" "${APP_DIR}/templates/$(basename "$src")" --perms 0644
-  done
-  for src in "$APP_SRC_DIR"/static/*; do
-    [[ -f "$src" ]] || continue
-    pct push "$CTID" "$src" "${APP_DIR}/static/$(basename "$src")" --perms 0644
-  done
+  # Percorre em PROFUNDIDADE: templates/ tem components/ e static/ tem css/, js/core,
+  # js/features e icons/. O laco antigo era raso e so pegava o primeiro nivel - com a
+  # arvore de hoje, o painel subiria sem os componentes, sem CSS e sem JS nenhum.
+  push_tree "$APP_SRC_DIR/templates" "${APP_DIR}/templates"
+  push_tree "$APP_SRC_DIR/static" "${APP_DIR}/static"
   run_ct "chown -R root:root ${APP_DIR}"
 
   # Falhar aqui e melhor do que descobrir pela tela de erro do navegador.
-  run_ct "test -f ${APP_DIR}/app.py && test -f ${APP_DIR}/gameconf.py && test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/static/style.css && test -f ${APP_DIR}/static/terminal.js && test -f ${APP_DIR}/static/metrics.js" \
+  run_ct "test -f ${APP_DIR}/app.py && test -f ${APP_DIR}/gameconf.py && test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/templates/components/ui.html && test -f ${APP_DIR}/templates/sw.js && test -f ${APP_DIR}/static/css/tokens.css && test -f ${APP_DIR}/static/js/app.js && test -f ${APP_DIR}/static/js/terminal.js" \
     || die "Arquivos da aplicacao nao chegaram em ${APP_DIR} (veja a saida do pct push acima)"
   msg "Publicados: $(run_ct "ls ${APP_DIR}/templates | wc -l" | tr -d '\r') templates"
 }

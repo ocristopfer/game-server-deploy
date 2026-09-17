@@ -1,7 +1,9 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
 {% block title %}Conta — Painel de Jogos{% endblock %}
+
 {% block content %}
-<div class="page-head"><h1>Conta</h1></div>
+{{ ui.cabecalho('Conta') }}
 
 <div class="card">
   <dl class="meta wide">
@@ -16,7 +18,7 @@
   {% endif %}
 </div>
 
-<div class="card form">
+<div class="card card--form">
   <h2>Trocar senha</h2>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -31,9 +33,19 @@
       <input name="confirm" type="password" autocomplete="new-password" minlength="8" required>
     </label>
     <div class="form-actions">
-      <button class="btn primary" type="submit">Salvar</button>
-      <a class="btn ghost" href="{{ url_for('dashboard') }}">Cancelar</a>
+      {{ ui.botao('Salvar', variante='primary', bloco=true) }}
+      {{ ui.botao('Cancelar', href=url_for('dashboard'), variante='ghost', bloco=true) }}
     </div>
   </form>
+</div>
+
+{# O "sair" vivia so no canto da barra de cima. No celular, com a barra reduzida ao
+   menu, a Conta e onde as pessoas procuram por ele. #}
+<div class="card card--perigo card--form">
+  <h2>Sair</h2>
+  <p class="muted small">Encerra a sessao neste aparelho.</p>
+  <div class="form-actions">
+    {{ ui.acao(url_for('logout'), 'Sair do painel', variante='danger', icone='🚪', bloco=true) }}
+  </div>
 </div>
 {% endblock %}

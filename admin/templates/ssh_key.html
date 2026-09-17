@@ -1,7 +1,9 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
 {% block title %}Acesso SSH — Painel de Jogos{% endblock %}
+
 {% block content %}
-<div class="page-head"><h1>Acesso SSH</h1></div>
+{{ ui.cabecalho('Acesso SSH') }}
 
 <div class="card">
   <p>O painel controla cada servidor por SSH, usando a chave abaixo. Para um container
@@ -11,9 +13,10 @@
   <h2>Chave publica do painel</h2>
   {% if pubkey %}
     <pre class="log" id="pubkey">{{ pubkey }}</pre>
-    <button class="btn" type="button" onclick="
-      navigator.clipboard.writeText(document.getElementById('pubkey').textContent.trim());
-      this.textContent = 'Copiado!';">Copiar chave</button>
+    <div class="form-actions">
+      {{ ui.botao('Copiar chave', tipo='button', icone='📋',
+                  extra='data-copiar="#pubkey" hidden') }}
+    </div>
   {% else %}
     <p class="flash error">Chave nao encontrada. Rode o deploy do painel novamente.</p>
   {% endif %}
@@ -31,7 +34,7 @@
 '</pre>
   <p class="muted small">
     Containers provisionados pelo <code>deploy-game.ps1</code> com <code>PANEL_PUBKEY</code>
-    no <code>.env</code> ja saem prontos — este passo e so para os criados antes disso.
+    no <code>.env</code> ja saem prontos &mdash; este passo e so para os criados antes disso.
   </p>
 </div>
 
@@ -40,7 +43,7 @@
   <p class="muted">
     Na primeira conexao o painel aprende e fixa a host key do container
     (<code>accept-new</code>). Se o container for recriado, a chave muda e a conexao
-    passa a falhar com <code>REMOTE HOST IDENTIFICATION HAS CHANGED</code> — nesse caso
+    passa a falhar com <code>REMOTE HOST IDENTIFICATION HAS CHANGED</code> &mdash; nesse caso
     remova a entrada antiga:
   </p>
   <pre class="log">ssh-keygen -f /var/lib/gamepanel/known_hosts -R &lt;ip-do-container&gt;</pre>

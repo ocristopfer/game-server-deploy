@@ -1,13 +1,19 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
 {% block title %}Terminal &mdash; {{ server.name }}{% endblock %}
+
 {% block content %}
-<div class="page-head">
-  <h1>Terminal &mdash; {{ server.name }}</h1>
-  <div class="actions">
-    <a class="btn ghost" href="{{ url_for('console', sid=server.id) }}">Comando unico</a>
-    <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
-  </div>
-</div>
+{{ ui.cabecalho('Terminal — ' ~ server.name) }}
+{{ srv.abas(server, 'terminal') }}
+
+{# Ver o comentario em console.html: um destino na navegacao, dois modos aqui. #}
+<nav class="tabs" aria-label="Modo do terminal">
+  <span class="tabs__item" aria-current="page">
+    <span class="icone" aria-hidden="true">⌨️</span>Sessao interativa</span>
+  <a class="tabs__item" href="{{ url_for('console', sid=server.id) }}">
+    <span class="icone" aria-hidden="true">▶</span>Comando unico</a>
+</nav>
 
 <div class="flash">
   Sessao SSH interativa como <strong>{{ server.ssh_user }}</strong> em
@@ -24,13 +30,13 @@
     <span class="badge cold" id="term-status">iniciando...</span>
     <span class="muted small" id="term-size">80x24</span>
     <span class="spacer"></span>
-    <button type="button" class="btn small" data-ctrl="C" title="Interromper (SIGINT)">Ctrl+C</button>
-    <button type="button" class="btn small" data-ctrl="D" title="Fim de entrada (EOF)">Ctrl+D</button>
-    <button type="button" class="btn small" data-ctrl="Z" title="Suspender">Ctrl+Z</button>
-    <button type="button" class="btn small" id="term-clear">Limpar</button>
-    <button type="button" class="btn small" id="term-fullscreen">Tela cheia</button>
-    <button type="button" class="btn small danger" id="term-close">Encerrar</button>
-    <button type="button" class="btn small primary" id="term-reconnect" hidden>Reconectar</button>
+    <button type="button" class="btn btn--sm" data-ctrl="C" title="Interromper (SIGINT)">Ctrl+C</button>
+    <button type="button" class="btn btn--sm" data-ctrl="D" title="Fim de entrada (EOF)">Ctrl+D</button>
+    <button type="button" class="btn btn--sm" data-ctrl="Z" title="Suspender">Ctrl+Z</button>
+    <button type="button" class="btn btn--sm" id="term-clear">Limpar</button>
+    <button type="button" class="btn btn--sm" id="term-fullscreen">Tela cheia</button>
+    <button type="button" class="btn btn--sm btn--danger" id="term-close">Encerrar</button>
+    <button type="button" class="btn btn--sm btn--primary" id="term-reconnect" hidden>Reconectar</button>
   </div>
 
   <div class="term-view" id="term-view">
@@ -39,6 +45,27 @@
   </div>
   <textarea id="term-input" class="term-input" autocomplete="off" autocorrect="off"
             autocapitalize="off" spellcheck="false" aria-label="entrada do terminal"></textarea>
+
+  {# Fileira de teclas que o teclado virtual do celular nao tem. Sem ela, vim, htop e
+     qualquer menu curses sao inoperaveis no telefone: nao ha Esc, nao ha Tab, nao ha
+     setas. Cada botao manda a MESMA sequencia que o teclado fisico mandaria. #}
+  <div class="term-teclas" role="group" aria-label="Teclas especiais">
+    <button type="button" class="btn" id="term-teclado" title="Abrir o teclado">⌨</button>
+    <button type="button" class="btn" data-tecla="Escape">Esc</button>
+    <button type="button" class="btn" data-tecla="Tab">Tab</button>
+    <button type="button" class="btn" data-ctrl="C" title="Interromper">^C</button>
+    <button type="button" class="btn" data-tecla="ArrowUp" aria-label="seta para cima">↑</button>
+    <button type="button" class="btn" data-tecla="ArrowDown" aria-label="seta para baixo">↓</button>
+    <button type="button" class="btn" data-tecla="ArrowLeft" aria-label="seta para a esquerda">←</button>
+    <button type="button" class="btn" data-tecla="ArrowRight" aria-label="seta para a direita">→</button>
+    <button type="button" class="btn" data-tecla="Home">Home</button>
+    <button type="button" class="btn" data-tecla="End">End</button>
+    <button type="button" class="btn" data-tecla="PageUp">PgUp</button>
+    <button type="button" class="btn" data-tecla="PageDown">PgDn</button>
+    <button type="button" class="btn" data-tecla="Barra">/</button>
+    <button type="button" class="btn" data-tecla="Pipe">|</button>
+    <button type="button" class="btn" data-tecla="Til">~</button>
+  </div>
 </div>
 
 <p class="muted small">
@@ -49,5 +76,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ static_url('terminal.js') }}" defer></script>
+{# 28 KB de emulador VT100: carregados so por esta tela, nunca pelo resto do painel. #}
+<script src="{{ static_url('js/terminal.js') }}" defer></script>
 {% endblock %}

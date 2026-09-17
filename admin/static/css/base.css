@@ -1,0 +1,109 @@
+/* Camada 2 — BASE.
+ *
+ * Reset curto, tipografia e os elementos crus (a, p, table, input). Nada aqui sabe
+ * o que e um "card" ou um "servidor": sao regras que valem para qualquer tela.
+ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  /* 16px de base nao e escolha estetica: abaixo disso o Safari do iPhone da zoom
+     sozinho ao focar um campo, e a tela inteira sai do lugar. */
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font: var(--fs-md)/1.55 var(--fonte);
+  /* No PWA, arrastar a pagina inteira para baixo parece um site quebrado, nao um
+     app — o "puxar para atualizar" fica a cargo do botao de recarregar do sistema. */
+  overscroll-behavior-y: none;
+}
+
+h1, h2, h3 { margin: 0; line-height: 1.25; font-weight: 600; }
+h1 { font-size: var(--fs-xl); display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+h2 { font-size: var(--fs-lg); }
+h3 { font-size: var(--fs-base); }
+p { margin: 0 0 var(--sp-3); }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Foco visivel so quando o foco veio do teclado: o anel em todo clique de mouse
+   vira ruido, e sem anel nenhum quem navega por Tab se perde. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+code {
+  background: var(--panel-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font: .88em/1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+img, svg, video { max-width: 100%; }
+
+hr { border: none; border-top: 1px solid var(--line); margin: var(--sp-4) 0; }
+
+ul, ol { margin: 0 0 var(--sp-3); padding-left: var(--sp-5); }
+
+/* ---------- campos ----------
+   Os campos herdam 1rem de proposito (ver o comentario do html acima). */
+input, textarea, select, button {
+  font: inherit;
+  color: inherit;
+}
+
+input, textarea, select {
+  display: block;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  transition: border-color var(--transicao);
+}
+input:hover, textarea:hover, select:hover { border-color: var(--line-forte); }
+input:focus, textarea:focus, select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+textarea { resize: vertical; line-height: 1.6; }
+input[type="checkbox"], input[type="radio"] {
+  width: auto; min-height: 0; min-width: 0;
+  /* 20px e o corpo do controle; o alvo de toque quem garante e o rotulo em volta. */
+  width: 20px; height: 20px;
+  accent-color: var(--accent);
+}
+input[type="file"] { padding: var(--sp-2); }
+::placeholder { color: var(--muted); opacity: .75; }
+
+/* ---------- tabelas ----------
+   A tabela nunca e responsavel pela propria rolagem: quem rola e o .table-wrap
+   da camada de layout. Assim a barra de rolagem fica na borda do cartao. */
+table { width: 100%; border-collapse: collapse; }
+
+/* ---------- utilidades de texto ---------- */
+.muted { color: var(--muted); }
+.small { font-size: var(--fs-sm); }
+.nowrap { white-space: nowrap; }
+.mono { font-family: var(--mono); }
+.quebra { overflow-wrap: anywhere; }
+
+/* Rotulo que existe so para o leitor de tela. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+[hidden] { display: none !important; }

@@ -1,0 +1,112 @@
+{# Componentes que falam de servidor.
+
+   Separados de ui.html porque conhecem o dominio: status de servico, acoes de
+   energia, as telas de um servidor. Qualquer tela do painel pode usa-los, e e por
+   isso que a barra de navegacao de um servidor e IGUAL em todas — antes cada
+   template listava o seu proprio subconjunto de links, na sua propria ordem. #}
+{% import "components/ui.html" as ui with context %}
+
+
+{# Selo de estado do servico. Uma regra so, num lugar so: antes esta expressao
+   ternaria de tres niveis estava copiada em tres templates. #}
+{% macro estado(status) -%}
+  {{ ui.selo(status.service, 'on' if status.service == 'active' else ('off' if status.reachable else 'cold')) }}
+{%- endmacro %}
+
+
+{# ------------------------------------------------------------- navegacao
+   A fita de abas das telas de um servidor. As secoes vem do `ui.py`; este macro so
+   sabe desenhar o que vier — e por isso uma tela nova aparece aqui sozinha. #}
+{% macro abas(server, ativa) %}
+<nav class="tabs" aria-label="Telas deste servidor">
+  {% for s in secoes_do_servidor %}
+    <a class="tabs__item" href="{{ url_for(endpoint_da_secao(s), sid=server.id) }}"
+       title="{{ s.ajuda }}"
+       {% if s.chave == ativa %}aria-current="page"{% endif %}>
+      <span class="icone" aria-hidden="true">{{ s.icone }}</span>{{ s.rotulo }}
+    </a>
+  {% endfor %}
+</nav>
+{% endmacro %}
+
+
+{# ---------------------------------------------------------------- acoes
+   Os botoes de ligar/desligar. `compacto` e a versao do cartao do painel: rotulo
+   curto e botao esticado, porque ali eles dividem uma linha de celular. #}
+{% macro energia(server, acoes, compacto=false) %}
+<div class="cluster energia">
+  {% for a in acoes %}
+    {{ ui.acao(
+         url_for('server_action', sid=server.id, action=a.chave),
+         a.curto if compacto else a.rotulo,
+         variante=a.variante,
+         icone=a.icone,
+         confirmar=(a.rotulo ~ ' — ' ~ server.name ~ '?') if a.confirma else '',
+         bloco=compacto) }}
+  {% endfor %}
+</div>
+{% endmacro %}
+
+
+{# Manutencao e um grupo a parte de proposito: "Atualizar" derruba o servidor por
+   varios minutos e nao pode ficar encostado no "Reiniciar" como se fosse do mesmo
+   peso. Quem so queria reiniciar nao tropeca num update de 30 GB. #}
+{% macro manutencao(server, acoes) %}
+<div class="cluster">
+  {% for a in acoes %}
+    {{ ui.acao(
+         url_for('server_action', sid=server.id, action=a.chave),
+         a.rotulo,
+         variante=a.variante,
+         icone=a.icone,
+         confirmar=(a.rotulo ~ ' — ' ~ server.name ~ '?') if a.confirma else '') }}
+  {% endfor %}
+</div>
+{% endmacro %}
+
+
+{# ------------------------------------------------------------ cartao do painel
+   Um servidor na lista. O cartao inteiro leva para a tela do servidor (o nome e o
+   link); a linha de baixo tem so o controle de energia que faz sentido agora e um
+   menu com o resto. Antes eram oito botoes por cartao, um deles ("Detalhes")
+   apontando para o mesmo lugar que o titulo logo acima. #}
+{% macro cartao(server, status) %}
+<article class="card server">
+  <div class="server__head">
+    <div class="server__nome">
+      <h2><a href="{{ url_for('server_detail', sid=server.id) }}">{{ server.name }}</a></h2>
+      <span class="server__host">{{ server.ssh_user }}@{{ server.host }}{% if server.ssh_port != 22 %}:{{ server.ssh_port }}{% endif %}</span>
+    </div>
+    <div class="badges server__selos">
+      {% if player_source(server) %}<span class="badge" data-players="{{ server.id }}" hidden></span>{% endif %}
+      {{ estado(status) }}
+    </div>
+  </div>
+
+  {% if status.error %}<p class="flash error small">{{ status.error }}</p>{% endif %}
+
+  <div class="mini-meters" data-server="{{ server.id }}">
+    <span class="muted small">medindo recursos...</span>
+  </div>
+
+  <div class="server__acoes">
+    {{ energia(server, energia_do_cartao(status.service), compacto=true) }}
+    {% call ui.menu('', icone='⋯', titulo='Mais acoes em ' ~ server.name) %}
+      <span class="menu__titulo">{{ server.name }}</span>
+      {% for s in secoes_do_servidor %}
+        <a class="menu__item" role="menuitem" href="{{ url_for(endpoint_da_secao(s), sid=server.id) }}">
+          <span class="icone" aria-hidden="true">{{ s.icone }}</span>{{ s.rotulo }}
+        </a>
+      {% endfor %}
+      <hr class="menu__sep">
+      <span class="menu__titulo">Servidor</span>
+      {% for a in energia_restante(status.service) + acoes_de_manutencao %}
+        {{ ui.menu_acao(
+             url_for('server_action', sid=server.id, action=a.chave),
+             a.rotulo, icone=a.icone,
+             confirmar=(a.rotulo ~ ' — ' ~ server.name ~ '?') if a.confirma else '') }}
+      {% endfor %}
+    {% endcall %}
+  </div>
+</article>
+{% endmacro %}

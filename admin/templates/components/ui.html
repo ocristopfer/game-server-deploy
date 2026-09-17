@@ -1,0 +1,113 @@
+{# Componentes de interface do painel.
+
+   Regra deste arquivo: nada aqui sabe o que e um servidor, um backup ou um alerta.
+   Sao pecas genericas — botao, selo, menu, cabecalho — e e por isso que podem ser
+   usadas por qualquer tela sem arrastar junto o contexto de outra.
+
+   Toda peca que dispara um POST monta o proprio campo de CSRF. Antes isso era uma
+   linha copiada em ~40 formularios; um esquecimento ali e um botao que da 400 em
+   producao e em nenhum teste. #}
+
+
+{# --------------------------------------------------------------- botao / link
+   Um so componente para os dois, porque para quem usa o painel nao ha diferenca:
+   com `href` sai um <a>, sem `href` sai um <button>. #}
+{% macro botao(rotulo, href='', variante='', tamanho='', icone='', tipo='submit', titulo='', confirmar='', bloco=false, extra='') -%}
+  {%- set classes = ['btn'] -%}
+  {%- if variante %}{% set classes = classes + ['btn--' ~ variante] %}{% endif -%}
+  {%- if tamanho %}{% set classes = classes + ['btn--' ~ tamanho] %}{% endif -%}
+  {%- if bloco %}{% set classes = classes + ['btn--bloco'] %}{% endif -%}
+  {%- if href -%}
+    <a class="{{ classes | join(' ') }}" href="{{ href }}"
+       {%- if titulo %} title="{{ titulo }}"{% endif %}
+       {%- if confirmar %} data-confirmar="{{ confirmar }}"{% endif %} {{ extra | safe }}>
+      {%- if icone %}<span class="icone" aria-hidden="true">{{ icone }}</span>{% endif %}{{ rotulo }}</a>
+  {%- else -%}
+    <button class="{{ classes | join(' ') }}" type="{{ tipo }}"
+            {%- if titulo %} title="{{ titulo }}"{% endif %}
+            {%- if confirmar %} data-confirmar="{{ confirmar }}"{% endif %} {{ extra | safe }}>
+      {%- if icone %}<span class="icone" aria-hidden="true">{{ icone }}</span>{% endif %}{{ rotulo }}</button>
+  {%- endif -%}
+{%- endmacro %}
+
+
+{# ------------------------------------------------------------------ acao POST
+   Um formulario de um botao so. Existe porque toda acao que muda alguma coisa no
+   painel e um POST com CSRF — e escrever isso a mao trinta vezes e como esse campo
+   acaba faltando em uma delas. #}
+{% macro acao(url, rotulo, variante='', confirmar='', icone='', tamanho='', campos={}, bloco=false, titulo='') -%}
+<form method="post" action="{{ url }}" class="{{ 'acao-bloco' if bloco else 'inline' }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  {%- for nome, valor in campos.items() %}
+  <input type="hidden" name="{{ nome }}" value="{{ valor }}">
+  {%- endfor %}
+  {{ botao(rotulo, variante=variante, tamanho=tamanho, icone=icone, confirmar=confirmar,
+           titulo=titulo, bloco=bloco) }}
+</form>
+{%- endmacro %}
+
+
+{# ---------------------------------------------------------------------- selo #}
+{% macro selo(texto, tom='', titulo='') -%}
+<span class="badge {{ tom }}"{% if titulo %} title="{{ titulo }}"{% endif %}>{{ texto }}</span>
+{%- endmacro %}
+
+
+{# --------------------------------------------------------------------- menu
+   <details> puro: abre no clique e no teclado sem JavaScript nenhum. O JS so
+   acrescenta "fecha ao clicar fora" (features/menu.js).
+
+   Uso:
+     {% call ui.menu('Mais', alinhar='dir') %}
+       <a class="menu__item" href="...">...</a>
+     {% endcall %} #}
+{% macro menu(rotulo, icone='⋯', alinhar='dir', titulo='') -%}
+<details class="menu">
+  <summary title="{{ titulo or rotulo }}" aria-label="{{ titulo or rotulo }}">
+    {%- if icone %}<span class="icone" aria-hidden="true">{{ icone }}</span>{% endif %}
+    {%- if rotulo %}<span>{{ rotulo }}</span>{% endif %}
+  </summary>
+  <div class="menu__lista{{ ' menu__lista--esq' if alinhar == 'esq' }}" role="menu">
+    {{ caller() }}
+  </div>
+</details>
+{%- endmacro %}
+
+
+{# Item de menu que dispara um POST (com CSRF), e nao uma navegacao. #}
+{% macro menu_acao(url, rotulo, icone='', confirmar='', perigo=false, campos={}) -%}
+<form method="post" action="{{ url }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  {%- for nome, valor in campos.items() %}
+  <input type="hidden" name="{{ nome }}" value="{{ valor }}">
+  {%- endfor %}
+  <button class="menu__item{{ ' menu__item--danger' if perigo }}" type="submit" role="menuitem"
+          {%- if confirmar %} data-confirmar="{{ confirmar }}"{% endif %}>
+    {%- if icone %}<span class="icone" aria-hidden="true">{{ icone }}</span>{% endif %}{{ rotulo }}</button>
+</form>
+{%- endmacro %}
+
+
+{# ------------------------------------------------------------- cabecalho
+   Titulo a esquerda, acoes a direita. No celular vira duas linhas empilhadas —
+   quem cuida disso e o .page-head do CSS, nao um segundo template. #}
+{% macro cabecalho(titulo, selo_texto='', selo_tom='') %}
+<div class="page-head">
+  <div class="page-head__titulo">
+    <h1>{{ titulo }}{% if selo_texto %} {{ selo(selo_texto, selo_tom) }}{% endif %}</h1>
+  </div>
+  {% if caller %}<div class="cluster">{{ caller() }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+
+{# --------------------------------------------------------------- tabela
+   Toda tabela do painel entra aqui. A caixa e que rola de lado no celular: sem ela,
+   uma tabela de cinco colunas empurra a pagina inteira para fora da tela. #}
+{% macro tabela_inicio(classe='') %}
+<div class="table-wrap"><table class="jobs {{ classe }}">
+{% endmacro %}
+
+{% macro tabela_fim() %}
+</table></div>
+{% endmacro %}

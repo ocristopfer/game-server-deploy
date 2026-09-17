@@ -1,10 +1,10 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
 {% block title %}Contagem de jogadores &mdash; {{ server.name }}{% endblock %}
 {% block content %}
-<div class="page-head">
-  <h1>Contagem de jogadores &mdash; {{ server.name }}</h1>
-  <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
-</div>
+{{ ui.cabecalho("Contagem de jogadores — " ~ server.name) }}
+{{ srv.abas(server, "visao") }}
 
 <div class="flash">
   Tres formas de saber quantos estao jogando, da melhor para a ultima:
@@ -13,13 +13,13 @@
   na rede, o <strong>log do servidor</strong>.
 </div>
 
-<nav class="crumbs">
-  <a class="btn {{ 'primary' if aba == 'porta' else 'ghost' }}"
-     href="{{ url_for('players_setup', sid=server.id, aba='porta') }}">1. Consulta direta (UDP)</a>
-  <a class="btn {{ 'primary' if aba == 'http' else 'ghost' }}"
-     href="{{ url_for('players_setup', sid=server.id, aba='http') }}">2. API HTTP (TCP)</a>
-  <a class="btn {{ 'primary' if aba == 'log' else 'ghost' }}"
-     href="{{ url_for('players_setup', sid=server.id, aba='log') }}">3. Pelo log</a>
+<nav class="tabs" aria-label="Como contar">
+  <a class="tabs__item" href="{{ url_for('players_setup', sid=server.id, aba='porta') }}"
+     {% if aba == 'porta' %}aria-current="page"{% endif %}>1. Consulta direta (UDP)</a>
+  <a class="tabs__item" href="{{ url_for('players_setup', sid=server.id, aba='http') }}"
+     {% if aba == 'http' %}aria-current="page"{% endif %}>2. API HTTP (TCP)</a>
+  <a class="tabs__item" href="{{ url_for('players_setup', sid=server.id, aba='log') }}"
+     {% if aba == 'log' %}aria-current="page"{% endif %}>3. Pelo log</a>
 </nav>
 
 {% if aba == 'porta' %}
@@ -32,7 +32,7 @@
     e so servem para quando o servidor esta parado.
   </p>
   {% if aviso %}<p class="flash error">{{ aviso }}</p>{% endif %}
-  <table class="jobs">
+  <div class="table-wrap"><table class="jobs">
     <thead><tr><th>Porta</th><th>Aberta por</th><th>Resposta</th><th>Servidor</th><th></th></tr></thead>
     <tbody>
       {% for p in portas %}
@@ -58,7 +58,7 @@
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
             <input type="hidden" name="player_source" value="a2s">
             <input type="hidden" name="query_port" value="{{ p.port }}">
-            <button class="btn primary" type="submit">Usar esta</button>
+            {{ ui.botao("Usar esta", variante="primary") }}
           </form>
           {% endif %}
         </td>
@@ -67,7 +67,7 @@
       <tr><td colspan="5" class="muted">Nenhuma porta para testar.</td></tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% if udp_mudas %}
   <p class="flash">
     <strong>Este jogo nao publica consulta UDP.</strong> O processo do servidor abriu
@@ -101,7 +101,7 @@
     &quot;Aberta por&quot;: se nao for o processo do jogo, nao e a API dele.
   </p>
   {% if aviso %}<p class="flash error">{{ aviso }}</p>{% endif %}
-  <table class="jobs">
+  <div class="table-wrap"><table class="jobs">
     <thead><tr><th>Endereco</th><th>Aberta por</th><th>Status</th><th>Tipo</th><th></th></tr></thead>
     <tbody>
       {% for a in achados %}
@@ -134,7 +134,7 @@
               {% for campo, valor in http.items() if campo != 'http_url' %}
               <input type="hidden" name="{{ campo }}" value="{{ valor }}">
               {% endfor %}
-              <button class="btn ghost" type="submit">Usar esta URL</button>
+              {{ ui.botao("Usar esta URL", variante="ghost") }}
             </form>
           {% endif %}
         </td>
@@ -143,7 +143,7 @@
       <tr><td colspan="5" class="muted">Nenhuma porta TCP respondeu HTTP.</td></tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% if mudas %}
   <p class="muted small">
     Sem resposta HTTP em:
@@ -244,7 +244,7 @@
       &mdash; a resposta crua aparece abaixo para voce ver o nome certo do campo.
     </p>
     <div class="form-actions">
-      <button class="btn" type="submit">Testar</button>
+      {{ ui.botao("Testar", icone="🧪") }}
     </div>
   </form>
 
@@ -265,7 +265,7 @@
       {% for campo, valor in http.items() %}
       <input type="hidden" name="{{ campo }}" value="{{ valor }}">
       {% endfor %}
-      <button class="btn primary" type="submit">Usar esta API</button>
+      {{ ui.botao("Usar esta API", variante="primary", bloco=true) }}
     </form>
     <p class="muted small">
       A senha da API fica guardada no banco do painel em texto puro (e ela precisa ir
@@ -318,7 +318,7 @@
              placeholder="UNetConnection::Close|Player left: (?P&lt;name&gt;.+)">
     </label>
     <div class="form-actions">
-      <button class="btn" type="submit">Testar</button>
+      {{ ui.botao("Testar", icone="🧪") }}
     </div>
   </form>
 
@@ -340,7 +340,7 @@
       <input type="hidden" name="join_re" value="{{ join_re }}">
       <input type="hidden" name="leave_re" value="{{ leave_re }}">
       <input type="hidden" name="log_path" value="{{ log_path }}">
-      <button class="btn primary" type="submit">Usar estes padroes</button>
+      {{ ui.botao("Usar estes padroes", variante="primary", bloco=true) }}
     </form>
   {% endif %}
 </div>

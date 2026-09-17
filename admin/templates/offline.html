@@ -1,0 +1,39 @@
+{# Tela de "sem conexao".
+
+   NAO estende o base.html de proposito: esta pagina fica guardada no aparelho, e o
+   base traz o nome de quem esta logado na barra de cima. Uma copia disso em cache
+   poderia reaparecer depois do logout, ou para outra pessoa no mesmo celular. Aqui
+   nao ha nada para vazar — so o que aconteceu e o botao de tentar de novo. #}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sem conexao — Painel de Jogos</title>
+  <meta name="theme-color" content="#171c22">
+  <link rel="stylesheet" href="{{ static_url('css/tokens.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/base.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/layout.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/components.css') }}">
+  <link rel="icon" href="{{ static_url('icons/favicon.svg') }}" type="image/svg+xml">
+</head>
+<body>
+<main class="wrap">
+  <div class="card card--vazio card--login">
+    <h1><span aria-hidden="true">📡</span> Sem conexao</h1>
+    <p class="muted">
+      O painel nao respondeu. Ele so funciona com acesso a rede onde os containers
+      estao &mdash; ligar e desligar servidor nao tem como acontecer offline.
+    </p>
+    <p class="muted small">
+      Se voce esta fora de casa, confira se a VPN esta ligada.
+    </p>
+    {# Um link, e nao um botao com onclick: assim esta pagina nao precisa de uma
+       linha de JavaScript para funcionar. #}
+    <div class="form-actions">
+      <a class="btn btn--primary btn--bloco" href="{{ url_for('dashboard') }}">Tentar de novo</a>
+    </div>
+  </div>
+</main>
+</body>
+</html>

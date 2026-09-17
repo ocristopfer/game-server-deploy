@@ -1,23 +1,12 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
 {% block title %}{{ server.name }} — Painel de Jogos{% endblock %}
+
 {% block content %}
-<div class="page-head">
-  <h1>{{ server.name }}
-    <span class="badge {{ 'on' if status.service == 'active' else ('off' if status.reachable else 'cold') }}">
-      {{ status.service }}
-    </span>
-  </h1>
-  <div class="actions">
-    {% if allow_files %}<a class="btn" href="{{ url_for('config_quick', sid=server.id) }}">Config</a>{% endif %}
-    <a class="btn ghost" href="{{ url_for('charts', sid=server.id) }}">Graficos</a>
-    <a class="btn ghost" href="{{ url_for('backups', sid=server.id) }}">Backups</a>
-    <a class="btn ghost" href="{{ url_for('schedules', sid=server.id) }}">Agendamentos</a>
-    {% if allow_term and is_admin %}<a class="btn ghost" href="{{ url_for('terminal', sid=server.id) }}">Terminal</a>{% endif %}
-    {% if allow_files and is_admin %}<a class="btn ghost" href="{{ url_for('files', sid=server.id) }}">Arquivos</a>{% endif %}
-    {% if allow_shell and is_admin %}<a class="btn ghost" href="{{ url_for('console', sid=server.id) }}">Console</a>{% endif %}
-    {% if is_admin %}<a class="btn ghost" href="{{ url_for('server_edit', sid=server.id) }}">Editar</a>{% endif %}
-  </div>
-</div>
+{{ ui.cabecalho(server.name, selo_texto=status.service,
+                selo_tom='on' if status.service == 'active' else ('off' if status.reachable else 'cold')) }}
+{{ srv.abas(server, 'visao') }}
 
 {% if status.error %}<div class="flash error">{{ status.error }}</div>{% endif %}
 
@@ -48,31 +37,39 @@
   </dl>
   {% if server.notes %}<p class="notes">{{ server.notes }}</p>{% endif %}
 
-  <div class="actions">
-    {% for key, (label, _cmd, confirm) in actions.items() %}
-      <form method="post" action="{{ url_for('server_action', sid=server.id, action=key) }}" class="inline"
-            {% if confirm %}onsubmit="return confirm('{{ label }} — {{ server.name }}?')"{% endif %}>
-        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-        <button class="btn {{ 'danger' if key == 'stop' else '' }}" type="submit">{{ label }}</button>
-      </form>
-    {% endfor %}
+  {# Dois grupos, e nao uma fila de cinco botoes iguais: "Atualizar" derruba o jogo
+     por varios minutos e nao pode ter o mesmo peso de "Reiniciar". #}
+  <div class="stack mt-4">
+    <div>
+      <span class="rotulo">Servidor</span>
+      {{ srv.energia(server, acoes_de_energia) }}
+    </div>
+    <div>
+      <span class="rotulo">Manutencao</span>
+      {{ srv.manutencao(server, acoes_de_manutencao) }}
+    </div>
   </div>
 </div>
 
-<div class="card" id="jogadores" data-url="{{ url_for('api_server_players', sid=server.id) }}">
-  <div class="page-head tight">
+<div class="card" data-jogadores-servidor="{{ url_for('api_server_players', sid=server.id) }}">
+  <div class="card__head">
     <h2>Jogadores</h2>
-    {% if is_admin %}
-    <a class="btn ghost small" href="{{ url_for('players_setup', sid=server.id) }}">Configurar contagem</a>
-    {% endif %}
-    <span class="badge {{ 'on' if players.players else 'cold' }}" id="jogadores-badge">
-      {%- if players.players is not none -%}
-        {{ players.players }}{% if players.max_players %}/{{ players.max_players }}{% endif %} online
-      {%- else -%}
-        sem leitura
-      {%- endif -%}
-    </span>
+    <div class="cluster">
+      <span class="badge {{ 'on' if players.players else 'cold' }}" id="jogadores-badge">
+        {%- if players.players is not none -%}
+          {{ players.players }}{% if players.max_players %}/{{ players.max_players }}{% endif %} online
+        {%- else -%}
+          sem leitura
+        {%- endif -%}
+      </span>
+      {% if is_admin %}
+        {{ ui.botao('Configurar', href=url_for('players_setup', sid=server.id),
+                    variante='ghost', tamanho='sm', icone='🎚',
+                    titulo='Como o painel conta os jogadores deste servidor') }}
+      {% endif %}
+    </div>
   </div>
+
   {% if not players.configured %}
     {% if is_admin %}
     <p class="muted">
@@ -99,15 +96,14 @@
       contagem pelo log.
     </p>
   {% else %}
-    <div id="jogadores-info">
-      <dl class="meta wide">
-        {% if players.server_name %}<div><dt>Nome publicado</dt><dd>{{ players.server_name }}</dd></div>{% endif %}
-        {% if players.map %}<div><dt>Mundo</dt><dd>{{ players.map }}</dd></div>{% endif %}
-        <div><dt>Online</dt><dd>{{ players.players }}{% if players.max_players %} de {{ players.max_players }}{% endif %}</dd></div>
-      </dl>
-    </div>
+    <dl class="meta wide">
+      {% if players.server_name %}<div><dt>Nome publicado</dt><dd>{{ players.server_name }}</dd></div>{% endif %}
+      {% if players.map %}<div><dt>Mundo</dt><dd>{{ players.map }}</dd></div>{% endif %}
+      <div><dt>Online</dt><dd>{{ players.players }}{% if players.max_players %} de {{ players.max_players }}{% endif %}</dd></div>
+    </dl>
+
     {% set acoes = acoes_de_jogador(server) %}
-    <table class="jobs" id="jogadores-tabela">
+    <div class="table-wrap"><table class="jobs" id="jogadores-tabela">
       <thead><tr><th>Jogador</th><th>Conectado ha</th><th>Pontos</th>{% if acoes %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for p in players.list %}
@@ -116,17 +112,15 @@
           <td class="muted">{{ p.seconds | duracao }}</td>
           <td class="muted">{{ p.score }}</td>
           {% if acoes %}
-          <td>
+          <td class="acoes">
             {% if p.id %}
               {% for a in acoes if a != 'announce' %}
-              <form method="post" action="{{ url_for('player_action', sid=server.id) }}" class="inline"
-                    onsubmit="return confirm('{{ rotulo_de_acao.get(a, a) }} {{ p.name }} de {{ server.name }}?')">
-                <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-                <input type="hidden" name="acao" value="{{ a }}">
-                <input type="hidden" name="jogador" value="{{ p.id }}">
-                <input type="hidden" name="nome" value="{{ p.name }}">
-                <button class="btn {{ 'danger' if a == 'ban' else 'ghost' }} small" type="submit">{{ rotulo_de_acao.get(a, a) }}</button>
-              </form>
+                {{ ui.acao(url_for('player_action', sid=server.id),
+                           rotulo_de_acao.get(a, a),
+                           variante='danger' if a == 'ban' else 'ghost',
+                           tamanho='sm',
+                           confirmar=rotulo_de_acao.get(a, a) ~ ' ' ~ p.name ~ ' de ' ~ server.name ~ '?',
+                           campos={'acao': a, 'jogador': p.id, 'nome': p.name}) }}
               {% endfor %}
             {% else %}
               <span class="muted small">sem identificador</span>
@@ -141,7 +135,8 @@
         </td></tr>
         {% endfor %}
       </tbody>
-    </table>
+    </table></div>
+
     {% if players.aproximado %}
     <p class="muted small">
       A <strong>contagem</strong> esta certa, mas os <strong>nomes</strong> sao um palpite:
@@ -152,13 +147,16 @@
       e a lista passa a ser exata.
     </p>
     {% endif %}
+
     {% if 'announce' in acoes %}
     <form method="post" action="{{ url_for('player_action', sid=server.id) }}" class="filebar">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="acao" value="announce">
-      <input name="mensagem" maxlength="200" required class="path-form"
-             placeholder="Aviso para todo mundo no servidor" aria-label="mensagem do aviso">
-      <button class="btn" type="submit">Avisar</button>
+      <span class="path-form">
+        <input name="mensagem" maxlength="200" required
+               placeholder="Aviso para todo mundo no servidor" aria-label="mensagem do aviso">
+        {{ ui.botao('Avisar', icone='📣') }}
+      </span>
     </form>
     <p class="muted small">
       Expulsar, banir e avisar saem pela API do proprio jogo &mdash; a mesma que conta os
@@ -168,8 +166,8 @@
   {% endif %}
 </div>
 
-<div class="card" id="recursos" data-url="{{ url_for('api_server_metrics', sid=server.id) }}">
-  <div class="page-head tight">
+<div class="card" data-medidores-servidor="{{ url_for('api_server_metrics', sid=server.id) }}">
+  <div class="card__head">
     <h2>Recursos</h2>
     <span class="muted small" id="recursos-info">
       {% if metrics.error %}indisponivel{% else %}atualiza a cada 5s{% endif %}
@@ -204,13 +202,6 @@
     </div>
     {% endfor %}
   </div>
-  <script>
-    // A largura vem em data-pct e e aplicada aqui: percentual escrito direto no
-    // atributo style faria toda ferramenta de CSS tropecar na sintaxe do template.
-    document.querySelectorAll('#meters .bar > i[data-pct]').forEach(function (barra) {
-      barra.style.width = barra.dataset.pct + '%';
-    });
-  </script>
   <dl class="meta wide" id="recursos-extra">
     <div><dt>Rede</dt><dd data-key="net">
       {{ metrics.net_rx | tamanho }}/s rx &middot; {{ metrics.net_tx | tamanho }}/s tx
@@ -226,20 +217,22 @@
   {% endif %}
 </div>
 
-<div class="card">
-  <div class="page-head tight">
+<div class="card" {% if not log_error %}data-log-feed{% endif %}>
+  <div class="card__head">
     <h2>Log do servico</h2>
-    <div class="actions">
+    <div class="cluster">
       <span class="badge cold" id="follow-state" hidden>ao vivo</span>
-      <button class="btn" type="button" id="follow-toggle"
-              data-url="{{ url_for('api_logs', sid=server.id) }}"
+      {% if not log_error %}
+      <button class="btn btn--sm" type="button" id="follow-toggle"
+              data-log-feed-url="{{ url_for('api_logs', sid=server.id) }}"
               data-cursor="{{ log_cursor }}" data-lines="{{ lines }}"
               data-server="{{ server.id }}">Seguir log</button>
-      <form method="get" class="inline">
-        <label class="inline-label">linhas
-          <input name="lines" value="{{ lines }}" size="4" inputmode="numeric">
+      {% endif %}
+      <form method="get" class="cluster">
+        <label class="inline-label small">linhas
+          <input name="lines" value="{{ lines }}" size="4" inputmode="numeric" class="campo-curto">
         </label>
-        <button class="btn ghost" type="submit">Recarregar</button>
+        {{ ui.botao('Recarregar', variante='ghost', tamanho='sm') }}
       </form>
     </div>
   </div>
@@ -253,12 +246,12 @@
 <div class="card">
   <h2>Acoes recentes</h2>
   {% if jobs %}
-  <table class="jobs">
+  <div class="table-wrap"><table class="jobs">
     <thead><tr><th>Quando</th><th>Acao</th><th>Por</th><th>Resultado</th><th></th></tr></thead>
     <tbody>
       {% for j in jobs %}
       <tr>
-        <td class="muted">{{ j.created_at.replace('T', ' ')[:19] }}</td>
+        <td class="muted small nowrap">{{ j.created_at.replace('T', ' ')[:19] }}</td>
         <td>{{ job_label(j.action) }}{% if j.command %} <code class="trunc">{{ j.command }}</code>{% endif %}</td>
         <td class="muted">{{ j.username }}</td>
         <td><span class="badge {{ {'ok':'on','error':'off','running':'cold'}[j.status] }}">{{ j.status }}</span></td>
@@ -266,152 +259,9 @@
       </tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
     <p class="muted">Nenhuma acao executada por aqui ainda.</p>
   {% endif %}
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ static_url('metrics.js') }}"></script>
-<script>
-  const cardRecursos = document.getElementById('recursos');
-  const grade = document.getElementById('meters');
-  const infoRecursos = document.getElementById('recursos-info');
-
-  function textoProcesso(proc) {
-    if (!proc || !proc.pid) return 'parado';
-    let texto = 'PID ' + proc.pid + ' · ' + PanelMetrics.tamanho(proc.rss) + ' RAM';
-    if (proc.cpu_pct !== null) texto += ' · ' + proc.cpu_pct.toFixed(1) + '% CPU';
-    return texto;
-  }
-
-  async function atualizarRecursos() {
-    if (!grade || document.hidden) return;
-    try {
-      const res = await fetch(cardRecursos.dataset.url, {headers: {'Accept': 'application/json'}});
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || ('http ' + res.status));
-      grade.innerHTML = PanelMetrics.completos(data);
-      const extra = document.getElementById('recursos-extra');
-      extra.querySelector('[data-key="net"]').textContent =
-        PanelMetrics.tamanho(data.net_rx) + '/s rx · ' + PanelMetrics.tamanho(data.net_tx) + '/s tx';
-      extra.querySelector('[data-key="uptime"]').textContent = PanelMetrics.duracao(data.uptime);
-      extra.querySelector('[data-key="proc"]').textContent = textoProcesso(data.proc);
-      infoRecursos.textContent = 'atualiza a cada 5s';
-    } catch (err) {
-      console.debug('medidores falharam, tentando de novo', err);
-      infoRecursos.textContent = 'sem leitura no momento';
-    }
-  }
-
-  if (grade) {
-    setInterval(atualizarRecursos, 5000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarRecursos(); });
-  }
-
-  const cardJogadores = document.getElementById('jogadores');
-  const tabelaJogadores = document.getElementById('jogadores-tabela');
-
-  function textoDuracao(seg) { return PanelMetrics.duracao(seg); }
-
-  async function atualizarJogadores() {
-    if (!tabelaJogadores || document.hidden) return;
-    try {
-      const res = await fetch(cardJogadores.dataset.url, {headers: {'Accept': 'application/json'}});
-      const data = await res.json();
-      if (!res.ok || data.error) return;
-      const badge = document.getElementById('jogadores-badge');
-      badge.textContent = data.players + (data.max_players ? '/' + data.max_players : '') + ' online';
-      badge.className = 'badge ' + (data.players ? 'on' : 'cold');
-
-      const corpo = tabelaJogadores.querySelector('tbody');
-      if (data.list && data.list.length) {
-        corpo.innerHTML = data.list.map((p) => {
-          const nome = document.createElement('td');
-          nome.textContent = p.name;              // nome vem do jogo: nunca como HTML
-          return '<tr>' + nome.outerHTML +
-            '<td class="muted">' + textoDuracao(p.seconds) + '</td>' +
-            '<td class="muted">' + Number(p.score) + '</td></tr>';
-        }).join('');
-      } else {
-        corpo.innerHTML = '<tr><td colspan="3" class="muted">' +
-          (data.players ? 'Este jogo nao publica a lista de nomes - so a contagem.'
-                        : 'Ninguem conectado agora.') + '</td></tr>';
-      }
-    } catch (err) {
-      console.debug('consulta de jogadores falhou', err);
-    }
-  }
-
-  if (tabelaJogadores) {
-    setInterval(atualizarJogadores, 10000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarJogadores(); });
-  }
-</script>
-
-{% if not log_error %}
-<script>
-  const box = document.getElementById('log-box');
-  const toggle = document.getElementById('follow-toggle');
-  const state = document.getElementById('follow-state');
-  const chave = 'gamepanel:follow:' + toggle.dataset.server;
-  let cursor = toggle.dataset.cursor || '';
-  let timer = null;
-  let buscando = false;
-
-  const noFim = () => box.scrollHeight - box.scrollTop - box.clientHeight < 30;
-  const paraOFim = () => { box.scrollTop = box.scrollHeight; };
-
-  async function puxar() {
-    if (buscando || document.hidden) return;
-    buscando = true;
-    try {
-      const url = toggle.dataset.url + '?lines=' + toggle.dataset.lines +
-        (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
-      const res = await fetch(url, {headers: {'Accept': 'application/json'}});
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || ('http ' + res.status));
-      const colado = noFim();
-      if (data.append) {
-        // So chegou o que e novo: anexa sem repintar o que ja estava na tela.
-        if (data.text) box.textContent += (box.textContent.endsWith('\n') ? '' : '\n') + data.text;
-      } else if (data.text || !cursor) {
-        box.textContent = data.text || '(sem linhas de log)';
-      }
-      cursor = data.cursor || cursor;
-      if (colado) paraOFim();
-      state.textContent = 'ao vivo';
-      state.className = 'badge on';
-    } catch (err) {
-      console.debug('follow do log falhou, tentando de novo', err);
-      state.textContent = 'sem conexao';
-      state.className = 'badge off';
-    } finally {
-      buscando = false;
-    }
-  }
-
-  function seguir(ligar) {
-    clearInterval(timer);
-    timer = null;
-    toggle.textContent = ligar ? 'Parar de seguir' : 'Seguir log';
-    toggle.classList.toggle('primary', ligar);
-    state.hidden = !ligar;
-    localStorage.setItem(chave, ligar ? '1' : '0');
-    if (!ligar) return;
-    state.textContent = 'ao vivo';
-    state.className = 'badge on';
-    paraOFim();
-    puxar();
-    timer = setInterval(puxar, 3000);
-  }
-
-  toggle.addEventListener('click', () => seguir(!timer));
-  // Aba escondida nao gasta conexao ssh a toa; ao voltar, puxa na hora.
-  document.addEventListener('visibilitychange', () => { if (timer && !document.hidden) puxar(); });
-  if (localStorage.getItem(chave) === '1') seguir(true);
-</script>
-{% endif %}
 {% endblock %}

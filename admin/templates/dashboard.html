@@ -1,129 +1,39 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
 {% block title %}Servidores — Painel de Jogos{% endblock %}
+
 {% block content %}
-<div class="page-head">
-  <h1>Servidores</h1>
+{% call ui.cabecalho('Servidores') %}
   {% if is_admin %}
-    <a class="btn primary" href="{{ url_for('server_new') }}">+ Adicionar servidor</a>
+    {{ ui.botao('Adicionar servidor', href=url_for('server_new'), variante='primary', icone='➕') }}
   {% endif %}
-</div>
+{% endcall %}
 
 {% if not servers %}
-  <div class="card empty">
+  <div class="card card--vazio">
     <p>Nenhum servidor cadastrado ainda.</p>
     {% if is_admin %}
       <p class="muted">Cadastre o IP de um container de jogo para controlar start, stop,
         update e rodar comandos por aqui.</p>
-      <p class="muted small">O painel acessa cada container por SSH — antes autorize a
+      <p class="muted small">O painel acessa cada container por SSH &mdash; antes autorize a
         chave dele no container em <a href="{{ url_for('ssh_key') }}">Acesso SSH</a>.</p>
-      <a class="btn primary" href="{{ url_for('server_new') }}">Adicionar o primeiro</a>
+      <div class="form-actions">
+        {{ ui.botao('Adicionar o primeiro', href=url_for('server_new'), variante='primary') }}
+      </div>
     {% else %}
       <p class="muted">Peca a um administrador do painel para cadastrar o servidor.</p>
     {% endif %}
   </div>
 {% endif %}
 
-<div class="grid">
-{% for s in servers %}
-  {% set st = status[s.id] %}
-  <div class="card server">
-    <div class="server-head">
-      <h2><a href="{{ url_for('server_detail', sid=s.id) }}">{{ s.name }}</a></h2>
-      <div class="badges">
-        {% if player_source(s) %}<span class="badge" data-players="{{ s.id }}" hidden></span>{% endif %}
-        <span class="badge {{ 'on' if st.service == 'active' else ('off' if st.reachable else 'cold') }}">
-          {{ st.service }}
-        </span>
-      </div>
-    </div>
-    <dl class="meta">
-      <div><dt>Host</dt><dd>{{ s.ssh_user }}@{{ s.host }}{% if s.ssh_port != 22 %}:{{ s.ssh_port }}{% endif %}</dd></div>
-      <div><dt>Servico</dt><dd>{{ s.service }}</dd></div>
-      {% if s.game_port %}<div><dt>Portas</dt><dd>{{ s.game_port }}</dd></div>{% endif %}
-    </dl>
-    {% if st.error %}<p class="flash error small">{{ st.error }}</p>{% endif %}
-    <div class="mini-meters" data-server="{{ s.id }}">
-      <span class="muted small">medindo recursos...</span>
-    </div>
-    <div class="actions">
-      {% for key in ['start', 'restart', 'stop', 'update'] %}
-        {% set label, _cmd, confirm = actions[key] %}
-        <form method="post" action="{{ url_for('server_action', sid=s.id, action=key) }}" class="inline"
-              {% if confirm %}onsubmit="return confirm('{{ label }} — {{ s.name }}?')"{% endif %}>
-          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-          <button class="btn {{ 'danger' if key == 'stop' else '' }}" type="submit">{{ label.split(' ')[0] }}</button>
-        </form>
-      {% endfor %}
-      {% if allow_files %}
-        <a class="btn ghost" href="{{ url_for('config_quick', sid=s.id) }}">Config</a>
-      {% endif %}
-      {% if allow_term and is_admin %}
-        <a class="btn ghost" href="{{ url_for('terminal', sid=s.id) }}">Terminal</a>
-      {% endif %}
-      {% if allow_files and is_admin %}
-        <a class="btn ghost" href="{{ url_for('files', sid=s.id) }}">Arquivos</a>
-      {% endif %}
-      <a class="btn ghost" href="{{ url_for('server_detail', sid=s.id) }}">Detalhes</a>
-    </div>
-  </div>
-{% endfor %}
+{# Uma leitura de medidores e uma de jogadores alimentam TODOS os cartoes: os dois
+   endereços ficam aqui, na lista, e nao um por cartao. #}
+<div class="grid"
+     data-medidores-painel="{{ url_for('api_metrics') }}"
+     data-jogadores-painel="{{ url_for('api_players') }}">
+  {% for s in servers %}
+    {{ srv.cartao(s, status[s.id]) }}
+  {% endfor %}
 </div>
-{% endblock %}
-
-{% block scripts %}
-{% if servers %}
-<script src="{{ static_url('metrics.js') }}"></script>
-<script>
-  // Os medidores entram depois que a pagina abre: uma leitura de recursos custa ~1s de
-  // SSH e nao pode segurar a lista de servidores.
-  const caixas = document.querySelectorAll('.mini-meters');
-
-  async function atualizarMedidores() {
-    if (document.hidden) return;
-    try {
-      const res = await fetch("{{ url_for('api_metrics') }}", {headers: {'Accept': 'application/json'}});
-      if (!res.ok) return;
-      const tudo = await res.json();
-      caixas.forEach((caixa) => {
-        const data = tudo[caixa.dataset.server];
-        if (data) caixa.innerHTML = PanelMetrics.resumo(data);
-      });
-    } catch (err) {
-      console.debug('medidores do painel falharam', err);
-    }
-  }
-
-  // Contagem de jogadores: consulta UDP direta (rapida), separada dos medidores para
-  // nao ficar esperando o SSH de cada container.
-  const selosJogadores = document.querySelectorAll('[data-players]');
-
-  async function atualizarJogadores() {
-    if (!selosJogadores.length || document.hidden) return;
-    try {
-      const res = await fetch("{{ url_for('api_players') }}", {headers: {'Accept': 'application/json'}});
-      if (!res.ok) return;
-      const tudo = await res.json();
-      selosJogadores.forEach((selo) => {
-        const data = tudo[selo.dataset.players];
-        if (!data || !data.configured || data.error || data.players === null) return;
-        selo.textContent = data.players + (data.max_players ? '/' + data.max_players : '') + ' jogadores';
-        selo.className = 'badge ' + (data.players ? 'on' : 'cold');
-        selo.hidden = false;
-      });
-    } catch (err) {
-      console.debug('contagem de jogadores falhou', err);
-    }
-  }
-
-  function atualizarTudo() {
-    atualizarMedidores();
-    atualizarJogadores();
-  }
-
-  atualizarTudo();
-  setInterval(atualizarMedidores, 10000);
-  setInterval(atualizarJogadores, 10000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarTudo(); });
-</script>
-{% endif %}
 {% endblock %}

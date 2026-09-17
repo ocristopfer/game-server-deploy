@@ -1,12 +1,12 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
 {% block title %}Historico &mdash; Painel de Jogos{% endblock %}
+
 {% block content %}
-<div class="page-head">
-  <h1>Historico</h1>
-</div>
+{{ ui.cabecalho('Historico') }}
 
 <div class="card">
-  <form method="get" action="{{ url_for('history') }}" class="filebar">
+  <form method="get" action="{{ url_for('history') }}" class="cluster">
     <label class="inline-field">Servidor
       <select name="servidor" aria-label="filtrar por servidor">
         <option value="">todos</option>
@@ -31,14 +31,16 @@
         {% endfor %}
       </select>
     </label>
-    <button class="btn" type="submit">Filtrar</button>
-    <a class="btn ghost small" href="{{ url_for('history') }}">limpar</a>
+    <div class="cluster">
+      {{ ui.botao('Filtrar', icone='🔎') }}
+      {{ ui.botao('limpar', href=url_for('history'), variante='ghost', tamanho='sm') }}
+    </div>
   </form>
 </div>
 
 <div class="card">
   {% if jobs %}
-  <table class="jobs">
+  <div class="table-wrap"><table class="jobs">
     <thead><tr><th>Quando</th><th>Servidor</th><th>Acao</th><th>Quem</th><th>Resultado</th></tr></thead>
     <tbody>
       {% for j in jobs %}
@@ -61,19 +63,21 @@
       </tr>
       {% endfor %}
     </tbody>
-  </table>
-  <div class="actions">
+  </table></div>
+  <div class="cluster mt-4">
     {% if pagina > 0 %}
-      <a class="btn ghost" href="{{ url_for('history', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina - 1) }}">&larr; mais recentes</a>
+      {{ ui.botao('mais recentes', variante='ghost', icone='←',
+                  href=url_for('history', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina - 1)) }}
     {% endif %}
     {% if tem_mais %}
-      <a class="btn ghost" href="{{ url_for('history', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina + 1) }}">mais antigas &rarr;</a>
+      {{ ui.botao('mais antigas →', variante='ghost',
+                  href=url_for('history', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina + 1)) }}
     {% endif %}
   </div>
   {% else %}
     <p class="muted">Nada no historico com esses filtros.</p>
   {% endif %}
-  <p class="muted small">
+  <p class="muted small mt-4">
     {% if manter_dias %}
       O painel guarda os ultimos <strong>{{ manter_dias }} dias</strong>
       (<code>GAMEPANEL_JOBS_KEEP_DAYS</code>) &mdash; cada registro carrega a saida inteira

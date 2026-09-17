@@ -1,0 +1,148 @@
+/* Camada 3 — LAYOUT.
+ *
+ * O esqueleto do aplicativo e as primitivas de arranjo (.stack, .cluster, .grid).
+ * Mobile primeiro: o que esta fora de media query e a tela do celular; as media
+ * queries so acrescentam espaco quando ele existe.
+ */
+
+/* ---------- barra de cima ----------
+   No celular ela carrega marca + conta. A navegacao mora na barra de baixo, ao
+   alcance do polegar; a partir de 900px as duas viram uma so, aqui em cima. */
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-barra);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: calc(var(--appbar-h) + var(--safe-top));
+  padding: var(--safe-top) calc(var(--sp-4) + var(--safe-right)) 0 calc(var(--sp-4) + var(--safe-left));
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+
+.appbar__marca {
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-weight: 700; font-size: var(--fs-base); color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.appbar__marca:hover { text-decoration: none; }
+.appbar__marca .logo { font-size: 1.25rem; line-height: 1; }
+/* No celular a marca inteira nao cabe ao lado de dois botoes: fica so o icone. */
+.appbar__nome { display: none; }
+
+.appbar__espaco { flex: 1; }
+
+/* Navegacao principal dentro da barra de cima: escondida no celular. */
+.appbar__nav { display: none; }
+
+/* ---------- barra de baixo (celular) ---------- */
+.tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: var(--z-barra);
+  display: flex;
+  padding-bottom: var(--safe-bottom);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line);
+}
+.tabbar__item {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  min-height: var(--tabbar-h);
+  padding: var(--sp-2) 2px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+.tabbar__item:hover { text-decoration: none; color: var(--text); }
+.tabbar__item .icone { font-size: 1.15rem; line-height: 1; }
+.tabbar__item[aria-current="page"] { color: var(--accent); }
+
+/* ---------- corpo ---------- */
+.wrap {
+  max-width: var(--largura-max);
+  margin: 0 auto;
+  padding: var(--sp-4) calc(var(--sp-4) + var(--safe-right)) var(--sp-5) calc(var(--sp-4) + var(--safe-left));
+}
+/* Com barra de baixo, o ultimo cartao precisa caber acima dela. */
+/* So o conteudo reserva o espaco da barra de baixo. Se a regra pegasse qualquer
+   .wrap, a faixa de "ha uma versao nova" (que e um .wrap proprio, acima do main)
+   abriria um vao de 80px no meio da tela. */
+body.tem-tabbar main.wrap {
+  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-5));
+}
+
+/* ---------- cabecalho de pagina ---------- */
+.page-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.page-head.tight { margin-bottom: var(--sp-3); }
+.page-head__titulo { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+.page-head__titulo h1, .page-head__titulo h2 { min-width: 0; overflow-wrap: anywhere; }
+
+/* ---------- primitivas de arranjo ---------- */
+.stack { display: flex; flex-direction: column; gap: var(--sp-3); }
+.stack--sm { gap: var(--sp-2); }
+.stack--lg { gap: var(--sp-5); }
+
+/* Fila que quebra. E o arranjo de quase todo grupo de botoes do painel. */
+.cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.cluster--entre { justify-content: space-between; }
+.cluster--fim { justify-content: flex-end; }
+.cluster__espaco { flex: 1; }
+
+.grid {
+  display: grid;
+  gap: var(--sp-4);
+  grid-template-columns: 1fr;
+}
+
+/* ---------- tabela com rolagem propria ----------
+   Tabela larga nao pode empurrar a pagina: quem rola de lado e esta caixa. */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 calc(var(--sp-4) * -1);
+  padding: 0 var(--sp-4);
+}
+.table-wrap > table { min-width: 34rem; }
+
+/* ---------- respiro em telas maiores ---------- */
+@media (min-width: 600px) {
+  .wrap { padding: var(--sp-5) calc(var(--sp-5) + var(--safe-right)) var(--sp-6) calc(var(--sp-5) + var(--safe-left)); }
+  body.tem-tabbar main.wrap { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-6)); }
+  .table-wrap { margin: 0 calc(var(--sp-5) * -1); padding: 0 var(--sp-5); }
+  .appbar__nome { display: inline; }
+  .page-head {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+}
+
+/* A partir daqui cabe tudo em cima: a barra de baixo sai de cena. */
+@media (min-width: 900px) {
+  .tabbar { display: none; }
+  body.tem-tabbar main.wrap { padding-bottom: var(--sp-6); }
+  .appbar { gap: var(--sp-5); }
+  .appbar__nav { display: flex; align-items: center; gap: var(--sp-4); }
+  .appbar__nav a { color: var(--muted); font-size: var(--fs-md); white-space: nowrap; }
+  .appbar__nav a:hover { color: var(--text); }
+  .appbar__nav a[aria-current="page"] { color: var(--text); font-weight: 600; }
+}
+
+/* ---------- utilidades ----------
+   Deliberadamente poucas: sao as tres que evitam um atributo style solto no meio de
+   um template. Qualquer coisa alem disso pertence a um componente. */
+.mt-4 { margin-top: var(--sp-4); }
+.campo-curto { width: 6rem; min-height: var(--tap-sm); }
+.centro { text-align: center; }

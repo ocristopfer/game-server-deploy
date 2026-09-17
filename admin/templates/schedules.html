@@ -1,18 +1,16 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
 {% block title %}Agendamentos &mdash; {{ server.name }}{% endblock %}
+
 {% block content %}
-<div class="page-head">
-  <h1>Agendamentos &mdash; {{ server.name }}</h1>
-  <div class="actions">
-    <a class="btn ghost" href="{{ url_for('backups', sid=server.id) }}">Backups</a>
-    <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
-  </div>
-</div>
+{{ ui.cabecalho('Agendamentos — ' ~ server.name) }}
+{{ srv.abas(server, 'schedules') }}
 
 <div class="card">
   <h2>Tarefas deste servidor</h2>
   {% if tarefas %}
-  <table class="jobs">
+  <div class="table-wrap"><table class="jobs">
     <thead><tr><th>Tarefa</th><th>Quando</th><th>Proxima</th><th>Ultima vez</th><th></th></tr></thead>
     <tbody>
       {% for t in tarefas %}
@@ -20,22 +18,16 @@
         <td>{{ job_labels.get(t.action, t.action) }}</td>
         <td>{{ rotulo(t) }}</td>
         <td class="muted">{% if t.enabled %}{{ proximas[t.id] }}{% else %}<span class="badge">desligada</span>{% endif %}</td>
-        <td class="muted small">{{ t.last_run[:16] | replace('T', ' ') or 'nunca' }}</td>
-        <td>
+        <td class="muted small nowrap">{{ t.last_run[:16] | replace('T', ' ') or 'nunca' }}</td>
+        <td class="acoes">
           {% if is_admin %}
-          <form method="post" action="{{ url_for('schedule_run', aid=t.id) }}" class="inline">
-            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <button class="btn ghost small" type="submit" title="Roda agora, sem esperar a hora">rodar agora</button>
-          </form>
-          <form method="post" action="{{ url_for('schedule_toggle', aid=t.id) }}" class="inline">
-            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <button class="btn" type="submit">{{ 'ligar' if not t.enabled else 'desligar' }}</button>
-          </form>
-          <form method="post" action="{{ url_for('schedule_delete', aid=t.id) }}" class="inline"
-                onsubmit="return confirm('Remover: {{ job_labels.get(t.action, t.action) }} {{ rotulo(t) }}?')">
-            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <button class="btn danger" type="submit">remover</button>
-          </form>
+            {{ ui.acao(url_for('schedule_run', aid=t.id), 'rodar agora', variante='ghost',
+                       tamanho='sm', titulo='Roda agora, sem esperar a hora') }}
+            {{ ui.acao(url_for('schedule_toggle', aid=t.id),
+                       'ligar' if not t.enabled else 'desligar', tamanho='sm') }}
+            {{ ui.acao(url_for('schedule_delete', aid=t.id), 'remover', variante='danger',
+                       tamanho='sm',
+                       confirmar='Remover: ' ~ job_labels.get(t.action, t.action) ~ ' ' ~ rotulo(t) ~ '?') }}
           {% else %}
           <span class="muted small">so administrador altera</span>
           {% endif %}
@@ -43,11 +35,11 @@
       </tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
     <p class="muted">Nada agendado para este servidor.</p>
   {% endif %}
-  <p class="muted small">
+  <p class="muted small mt-4">
     O relogio e o do <strong>painel</strong> &mdash; agora sao
     <strong>{{ agora.strftime('%d/%m %H:%M') }}</strong> ({{ agora.strftime('%Z') or 'sem fuso definido' }}).
     Se nao bater com a sua hora, ajuste o <code>TZ</code> do container do painel.
@@ -82,26 +74,28 @@
     </div>
     <div class="row">
       <label>Hora <span class="muted">(diario e semanal)</span>
-        <input name="hour" type="number" min="0" max="23" value="5">
+        <input name="hour" type="number" min="0" max="23" value="5" inputmode="numeric">
       </label>
       <label>Minuto
-        <input name="minute" type="number" min="0" max="59" value="0">
+        <input name="minute" type="number" min="0" max="59" value="0" inputmode="numeric">
       </label>
+    </div>
+    <div class="row">
       <label>Dia da semana <span class="muted">(semanal)</span>
         <select name="weekday" aria-label="dia da semana">
           {% for d in dias %}<option value="{{ loop.index0 }}">{{ d }}</option>{% endfor %}
         </select>
       </label>
       <label>A cada <span class="muted">(intervalo)</span>
-        <input name="every_hours" type="number" min="1" max="{{ max_horas }}" value="6">
+        <input name="every_hours" type="number" min="1" max="{{ max_horas }}" value="6" inputmode="numeric">
         <small>horas, contadas a partir de agora</small>
       </label>
     </div>
     <div class="form-actions">
-      <button class="btn primary" type="submit">Agendar</button>
+      {{ ui.botao('Agendar', variante='primary', icone='⏰', bloco=true) }}
     </div>
   </form>
-  <p class="muted small">
+  <p class="muted small mt-4">
     Cada disparo aparece no <a href="{{ url_for('history') }}">historico</a> como qualquer
     outra acao, com <code>agendador</code> no lugar do usuario.
   </p>

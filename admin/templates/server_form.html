@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
 {% block title %}{{ 'Adicionar' if mode == 'new' else 'Editar' }} servidor{% endblock %}
 {% block content %}
-<div class="page-head">
-  <h1>{{ 'Adicionar servidor' if mode == 'new' else 'Editar servidor' }}</h1>
-</div>
+{{ ui.cabecalho("Adicionar servidor" if mode == "new" else "Editar servidor") }}
+{% if mode == "edit" %}{{ srv.abas(server, "editar") }}{% endif %}
 
-<div class="card form">
+<div class="card card--form">
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>Nome
@@ -147,8 +148,8 @@
       <textarea name="notes" rows="4">{{ data.notes }}</textarea>
     </label>
     <div class="form-actions">
-      <button class="btn primary" type="submit">Salvar</button>
-      <a class="btn ghost" href="{{ url_for('dashboard') }}">Cancelar</a>
+      {{ ui.botao("Salvar", variante="primary", bloco=true) }}
+      {{ ui.botao("Cancelar", href=url_for("dashboard"), variante="ghost", bloco=true) }}
     </div>
   </form>
   <p class="muted small">
@@ -158,14 +159,14 @@
 </div>
 
 {% if mode == 'edit' %}
-<div class="card danger-zone">
+<div class="card card--perigo card--form">
   <h2>Remover do painel</h2>
   <p class="muted">Apaga apenas o cadastro. O container e os arquivos do jogo nao sao tocados.</p>
-  <form method="post" action="{{ url_for('server_delete', sid=sid) }}"
-        onsubmit="return confirm('Remover este servidor do painel?')">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <button class="btn danger" type="submit">Remover</button>
-  </form>
+  <div class="form-actions">
+    {{ ui.acao(url_for("server_delete", sid=sid), "Remover do painel", variante="danger",
+               icone="🗑", bloco=true,
+               confirmar="Remover este servidor do painel?") }}
+  </div>
 </div>
 {% endif %}
 {% endblock %}

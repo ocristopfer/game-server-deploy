@@ -1,13 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Config &mdash; {{ server.name }}{% endblock %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
+{% block title %}Configuracao &mdash; {{ server.name }}{% endblock %}
+
 {% block content %}
-<div class="page-head">
-  <h1>Config &mdash; {{ server.name }}</h1>
-  <div class="actions">
-    {% if is_admin %}<a class="btn ghost" href="{{ url_for('files', sid=server.id) }}">Arquivos</a>{% endif %}
-    <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
-  </div>
-</div>
+{{ ui.cabecalho('Configuracao — ' ~ server.name) }}
+{{ srv.abas(server, 'config') }}
 
 {% for err in errors %}<div class="flash error">{{ err }}</div>{% endfor %}
 
@@ -23,17 +21,25 @@
         {% if not is_admin %}Peca a um administrador do painel para registrar o arquivo.{% endif %}
       </span>
     {% endfor %}
-    {% if is_admin %}
-    <form method="post" action="{{ url_for('config_files_edit', sid=server.id) }}" class="path-form">
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <input name="path" placeholder="/opt/game/.../ServerSettings.ini" spellcheck="false"
-             aria-label="caminho do arquivo de configuracao">
-      <button class="btn" type="submit">Usar este arquivo</button>
-    </form>
-    <a class="btn ghost small"
-       href="{{ url_for('config_quick', sid=server.id, descobrir=1, file=alvo) }}">Procurar</a>
-    {% endif %}
   </div>
+
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('config_files_edit', sid=server.id) }}"
+        class="filebar mt-4">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <span class="path-form">
+      <input name="path" placeholder="/opt/game/.../ServerSettings.ini" spellcheck="false"
+             autocapitalize="none" aria-label="caminho do arquivo de configuracao">
+      {{ ui.botao('Usar este arquivo') }}
+    </span>
+    {# Procurar candidatos existe SO aqui. Antes havia um segundo botao "Procurar
+       arquivos de config" na tela de Arquivos, rodando a mesma varredura e devolvendo
+       a mesma lista — so que la o resultado nao dava para fixar em lugar nenhum. #}
+    {{ ui.botao('Procurar no container', variante='ghost', tamanho='sm', icone='🔎',
+                href=url_for('config_quick', sid=server.id, descobrir=1, file=alvo)) }}
+  </form>
+  {% endif %}
+
   {% if alvo %}
     <p class="muted small conf-path">
       <code>{{ alvo }}</code>
@@ -48,7 +54,7 @@
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="path" value="{{ alvo }}">
         <input type="hidden" name="acao" value="remover">
-        <button class="link" type="submit">tirar da lista</button>
+        <button class="btn-link" type="submit">tirar da lista</button>
       </form>
       {% endif %}
     </p>
@@ -64,11 +70,11 @@
     <li>
       <a href="{{ url_for('config_quick', sid=server.id, file=s.path) }}">{{ s.path }}</a>
       <span class="muted small">
-        {{ s.size | tamanho }} &middot; {{ s.mtime }}
+        <span class="nowrap">{{ s.size | tamanho }} &middot; {{ s.mtime }}</span>
         <form method="post" action="{{ url_for('config_files_edit', sid=server.id) }}" class="inline">
           <input type="hidden" name="csrf" value="{{ csrf_token() }}">
           <input type="hidden" name="path" value="{{ s.path }}">
-          <button class="link" type="submit">fixar aqui</button>
+          <button class="btn-link" type="submit">fixar aqui</button>
         </form>
       </span>
     </li>
@@ -80,8 +86,8 @@
   </p>
   {% else %}
   <p class="muted">
-    Nada encontrado em <code>{{ server.config_path or '/opt/game' }}</code>. Ajuste a
-    &quot;Pasta de configuracao&quot; em
+    Nada encontrado em <code>{{ request.args.get('pasta') or server.config_path or '/opt/game' }}</code>.
+    Ajuste a &quot;Pasta de configuracao&quot; em
     <a href="{{ url_for('server_edit', sid=server.id) }}">Editar servidor</a> ou informe o
     caminho completo do arquivo na barra acima.
   </p>
@@ -90,15 +96,15 @@
 {% endif %}
 
 {% if doc %}
-<form method="post" action="{{ url_for('config_save', sid=server.id) }}" id="conf-form">
+<form method="post" action="{{ url_for('config_save', sid=server.id) }}" data-config-form>
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <input type="hidden" name="path" value="{{ alvo }}">
   {% set ns = namespace(i=0) %}
 
   <div class="card">
-    <div class="page-head tight">
+    <div class="card__head">
       <h2>Configuracoes ({{ doc.settings | length }})</h2>
-      <input id="conf-busca" class="conf-busca" placeholder="filtrar por nome..."
+      <input class="conf-busca" placeholder="filtrar por nome..." data-filtro-config
              spellcheck="false" autocomplete="off" aria-label="filtrar configuracoes">
     </div>
 
@@ -156,9 +162,10 @@
             </span>
           {% elif s.spec and s.spec.kind == 'password' %}
             <input name="val.{{ ns.i }}" value="{{ s.value }}" spellcheck="false"
-                   autocomplete="off">
+                   autocomplete="off" autocapitalize="none">
           {% else %}
             <input name="val.{{ ns.i }}" value="{{ s.value }}" spellcheck="false"
+                   autocapitalize="none"
                    {% if s.kind == 'number' %}inputmode="decimal"{% endif %}>
           {% endif %}
           {% if s.spec and s.spec.help %}
@@ -196,29 +203,32 @@
           {% endfor %}
         </select>
         <input name="key.{{ ns.i }}" placeholder="Nome (ex.: ServerPassword)"
-               spellcheck="false" aria-label="nome da configuracao nova">
+               spellcheck="false" autocapitalize="none" aria-label="nome da configuracao nova">
         <input name="val.{{ ns.i }}" placeholder="Valor" spellcheck="false"
-               aria-label="valor da configuracao nova">
+               autocapitalize="none" aria-label="valor da configuracao nova">
       </div>
       {% set ns.i = ns.i + 1 %}
       {% endfor %}
     </div>
+    {# Nasce escondido: sem JavaScript ele nao faria nada, e as duas linhas acima
+       continuam funcionando. #}
     <div class="form-actions">
-      <button class="btn ghost small" type="button" id="conf-mais">+ outra linha</button>
+      {{ ui.botao('+ outra linha', variante='ghost', tamanho='sm', tipo='button',
+                  extra='data-config-mais hidden') }}
     </div>
   </div>
 
   <div class="card">
     <input type="hidden" name="n" value="{{ ns.i }}">
     <div class="form-actions">
-      <button class="btn primary" type="submit">Salvar</button>
-      <label class="inline-label">
-        <input type="checkbox" name="restart" value="1" style="width:auto">
-        reiniciar o servidor depois de salvar
+      {{ ui.botao('Salvar', variante='primary', bloco=true) }}
+      <label class="checkbox">
+        <input type="checkbox" name="restart" value="1">
+        <span>reiniciar o servidor depois de salvar</span>
       </label>
       <span class="muted small" id="conf-mudou"></span>
     </div>
-    <p class="muted small">
+    <p class="muted small mt-4">
       Grava so as chaves alteradas, mantendo comentarios e o resto do arquivo. Uma copia
       <code>.bak</code> fica ao lado antes de qualquer gravacao. A maioria dos jogos so le
       a configuracao ao iniciar &mdash; sem reiniciar, a mudanca nao vale.
@@ -236,63 +246,5 @@
     {% endif %}
   </p>
 </div>
-{% endif %}
-{% endblock %}
-
-{% block scripts %}
-{% if doc %}
-<script>
-  // Filtro por nome: com o Palworld sao ~50 chaves numa linha so do .ini.
-  const busca = document.getElementById('conf-busca');
-  const itens = Array.from(document.querySelectorAll('.conf-item'));
-  const secoes = Array.from(document.querySelectorAll('.conf-sec'));
-  const vazio = document.getElementById('conf-vazio');
-
-  busca.addEventListener('input', () => {
-    const termo = busca.value.trim().toLowerCase();
-    itens.forEach((el) => {
-      el.hidden = termo !== '' && !el.dataset.key.includes(termo);
-    });
-    let visiveis = 0;
-    secoes.forEach((sec) => {
-      const tem = Array.from(sec.querySelectorAll('.conf-item')).some((el) => !el.hidden);
-      sec.hidden = !tem;
-      if (tem) visiveis += 1;
-    });
-    vazio.hidden = visiveis > 0;
-  });
-
-  // Linhas extras de "adicionar configuracao": clonam a ultima e renumeram os campos.
-  const total = document.querySelector('input[name="n"]');
-  const novas = document.getElementById('conf-novas');
-  document.getElementById('conf-mais').addEventListener('click', () => {
-    const modelo = novas.lastElementChild.cloneNode(true);
-    const i = Number.parseInt(total.value, 10);
-    modelo.querySelectorAll('[name]').forEach((campo) => {
-      campo.name = campo.name.replace(/\.\d+$/, '.' + i);
-      if (campo.tagName !== 'SELECT') campo.value = '';
-    });
-    // O id do bloco e o "for" do rotulo tem de andar junto com o indice: clonados como
-    // estao, a linha nova repetiria o id da anterior e o rotulo apontaria para ela.
-    const bloco = modelo.querySelector('select');
-    const rotulo = modelo.querySelector('label[for]');
-    if (bloco) {
-      bloco.id = 'sec-' + i;
-      if (rotulo) rotulo.htmlFor = bloco.id;
-    }
-    novas.appendChild(modelo);
-    total.value = i + 1;
-  });
-
-  // Aviso de alteracao pendente (o mesmo do editor de texto).
-  const form = document.getElementById('conf-form');
-  const marca = document.getElementById('conf-mudou');
-  let salvando = false;
-  form.addEventListener('input', () => { marca.textContent = 'ha alteracoes nao salvas'; });
-  form.addEventListener('submit', () => { salvando = true; });
-  window.addEventListener('beforeunload', (ev) => {
-    if (!salvando && marca.textContent) ev.preventDefault();
-  });
-</script>
 {% endif %}
 {% endblock %}

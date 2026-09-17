@@ -676,6 +676,40 @@
       inputEl.focus();
     });
   });
+  // Teclas que o teclado virtual do celular simplesmente nao tem. Sem esta fileira,
+  // vim, htop e qualquer menu curses sao inoperaveis no telefone: nao ha Esc, nao ha
+  // Tab e nao ha setas. Cada botao manda a MESMA sequencia que o teclado fisico
+  // mandaria, entao nada aqui e um caminho paralelo ao do keydown.
+  var SEQUENCIAS = {
+    Escape: '\x1b',
+    Tab: '\t',
+    ArrowUp: function () { return term.appCursor ? '\x1bOA' : '\x1b[A'; },
+    ArrowDown: function () { return term.appCursor ? '\x1bOB' : '\x1b[B'; },
+    ArrowRight: function () { return term.appCursor ? '\x1bOC' : '\x1b[C'; },
+    ArrowLeft: function () { return term.appCursor ? '\x1bOD' : '\x1b[D'; },
+    Home: '\x1b[H',
+    End: '\x1b[F',
+    PageUp: '\x1b[5~',
+    PageDown: '\x1b[6~',
+    Pipe: '|',
+    Barra: '/',
+    Til: '~',
+  };
+  document.querySelectorAll('[data-tecla]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var seq = SEQUENCIAS[btn.dataset.tecla];
+      if (!seq) return;
+      send(typeof seq === 'function' ? seq() : seq);
+      inputEl.focus();
+    });
+  });
+
+  // No celular o teclado so aparece se um campo receber foco por um gesto do usuario.
+  var tecladoBtn = document.getElementById('term-teclado');
+  if (tecladoBtn) {
+    tecladoBtn.addEventListener('click', function () { inputEl.focus(); });
+  }
+
   document.getElementById('term-clear').addEventListener('click', function () {
     scrollEl.innerHTML = '';
     send('\x0c');  // Ctrl+L: deixa o shell redesenhar o prompt
@@ -706,10 +740,17 @@
       body: JSON.stringify({ cols: size.cols, rows: size.rows })
     }).catch(function () {});
   }
-  window.addEventListener('resize', function () {
+  function agendarResize() {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(applyResize, 200);
-  });
+  }
+  window.addEventListener('resize', agendarResize);
+  // No celular, abrir o teclado nao dispara 'resize' da janela em todo navegador —
+  // quem encolhe e a viewport visual. Sem isto o shell continua achando que tem 24
+  // linhas enquanto metade da tela virou teclado.
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', agendarResize);
+  }
   window.addEventListener('beforeunload', function () { closeSession(true); });
   document.getElementById('term-close').addEventListener('click', function () {
     closeSession(false);

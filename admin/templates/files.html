@@ -1,27 +1,21 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
 {% block title %}Arquivos &mdash; {{ server.name }}{% endblock %}
+
 {% block content %}
-<div class="page-head">
-  <h1>Arquivos &mdash; {{ server.name }}</h1>
-  <div class="actions">
-    <a class="btn" href="{{ url_for('config_quick', sid=server.id) }}">Config</a>
-    {% if allow_term %}<a class="btn ghost" href="{{ url_for('terminal', sid=server.id) }}">Terminal</a>{% endif %}
-    <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
-  </div>
-</div>
+{{ ui.cabecalho('Arquivos — ' ~ server.name) }}
+{{ srv.abas(server, 'files') }}
 
 {% for err in errors %}<div class="flash error">{{ err }}</div>{% endfor %}
 
 <div class="card">
   <div class="filebar">
     <form method="get" action="{{ url_for('files', sid=server.id) }}" class="path-form">
-      <input name="path" value="{{ current }}" spellcheck="false" aria-label="caminho">
-      <button class="btn" type="submit">Ir</button>
+      <input name="path" value="{{ current }}" spellcheck="false" autocapitalize="none"
+             aria-label="caminho">
+      {{ ui.botao('Ir') }}
     </form>
-    <a class="btn ghost small"
-       href="{{ url_for('files_search', sid=server.id, path=server.config_path or current) }}">
-      Procurar arquivos de config
-    </a>
   </div>
   {# O upload vai para a pasta que esta aberta agora — por isso ele mora aqui, ao lado
      das migalhas, e nao numa tela propria. #}
@@ -30,85 +24,60 @@
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="path" value="{{ current }}">
     <input type="file" name="arquivo" required aria-label="arquivo para enviar">
-    <button class="btn" type="submit">Enviar para {{ current }}</button>
+    {{ ui.botao('Enviar para esta pasta', icone='⬆') }}
   </form>
   <p class="muted small">
     O arquivo sobe em pedacos, direto para o container &mdash; da para mandar mod ou save
     de varios GB. Se ja existir um com o mesmo nome, ele e substituido e uma copia
     <code>.bak</code> fica ao lado.
   </p>
-  <nav class="crumbs">
+  <nav class="crumbs" aria-label="Caminho">
     {% for c in crumbs %}<a href="{{ url_for('files', sid=server.id, path=c.path) }}">{{ c.name }}</a>{% if not loop.last %}<span class="sep">/</span>{% endif %}{% endfor %}
   </nav>
 </div>
 
 <div class="filegrid">
   <div class="card browser">
-    {% if matches is not none %}
-      <h2>Arquivos de configuracao em {{ current }}</h2>
-      {% if matches %}
-      <ul class="filelist">
-        {% for m in matches %}
-        <li>
-          <a href="{{ url_for('files', sid=server.id, file=m.path) }}">{{ m.path }}</a>
-          <span class="muted small">
-            <span class="nowrap">{{ m.size | tamanho }} &middot; {{ m.mtime }}</span>
-            <a class="dl" title="Baixar {{ m.path }}"
-               href="{{ url_for('files_download', sid=server.id, path=m.path) }}">baixar</a>
-            <form method="post" action="{{ url_for('files_delete', sid=server.id) }}"
-                  class="inline-del js-del" data-alvo="{{ m.path }}">
-              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-              <input type="hidden" name="path" value="{{ m.path }}">
-              <button class="link" type="submit" title="Apagar {{ m.path }}">apagar</button>
-            </form>
-          </span>
-        </li>
-        {% endfor %}
-      </ul>
-      {% else %}
-        <p class="muted">Nada encontrado (procura ate 5 niveis por .ini, .cfg, .json, .yaml...).</p>
+    <h2 class="quebra">{{ current }}</h2>
+    <ul class="filelist">
+      {% if current != '/' %}
+      <li><a href="{{ url_for('files', sid=server.id, path=current.rsplit('/', 1)[0] or '/') }}">.. (subir)</a></li>
       {% endif %}
-    {% else %}
-      <h2>{{ current }}</h2>
-      <ul class="filelist">
-        {% if current != '/' %}
-        <li><a href="{{ url_for('files', sid=server.id, path=current.rsplit('/', 1)[0] or '/') }}">.. (subir)</a></li>
-        {% endif %}
-        {% for e in entries %}
-        <li class="{{ 'dir' if e.dir else 'file' }}{{ ' open' if opened and opened.path == e.path }}">
-          {% if e.dir %}
-            <a href="{{ url_for('files', sid=server.id, path=e.path) }}">{{ e.name }}/</a>
-          {% else %}
-            <a href="{{ url_for('files', sid=server.id, file=e.path) }}">{{ e.name }}</a>
-          {% endif %}
-          <span class="muted small">
-            <span class="nowrap">{{ '-' if e.dir else e.size | tamanho }} &middot; {{ e.mtime }}</span>
-            {% if not e.dir %}
-              <a class="dl" title="Baixar {{ e.name }}"
-                 href="{{ url_for('files_download', sid=server.id, path=e.path) }}">baixar</a>
-            {% endif %}
-            {# O nome vem do container: ele viaja por data-alvo (escapado como HTML) e
-               so encontra o JavaScript pelo dataset, nunca dentro do codigo. #}
-            <form method="post" action="{{ url_for('files_delete', sid=server.id) }}"
-                  class="inline-del js-del" data-alvo="{{ e.path }}">
-              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-              <input type="hidden" name="path" value="{{ e.path }}">
-              <button class="link" type="submit"
-                      title="Apagar {{ e.name }}{{ ' (so se estiver vazia)' if e.dir else '' }}">apagar</button>
-            </form>
-          </span>
-        </li>
+      {% for e in entries %}
+      <li class="{{ 'dir' if e.dir else 'file' }}{{ ' open' if opened and opened.path == e.path }}">
+        {% if e.dir %}
+          <a href="{{ url_for('files', sid=server.id, path=e.path) }}">{{ e.name }}/</a>
         {% else %}
-        <li class="muted">pasta vazia</li>
-        {% endfor %}
-      </ul>
-      {% if truncated %}<p class="muted small">Listagem cortada nos primeiros itens desta pasta.</p>{% endif %}
-    {% endif %}
+          <a href="{{ url_for('files', sid=server.id, file=e.path) }}">{{ e.name }}</a>
+        {% endif %}
+        <span class="muted small">
+          <span class="nowrap">{{ '-' if e.dir else e.size | tamanho }} &middot; {{ e.mtime }}</span>
+          {% if not e.dir %}
+            <a class="dl" title="Baixar {{ e.name }}"
+               href="{{ url_for('files_download', sid=server.id, path=e.path) }}">baixar</a>
+          {% endif %}
+          {# O nome vem do container: ele viaja por data-confirmar (escapado como
+             HTML) e nunca dentro de codigo JavaScript. #}
+          <form method="post" action="{{ url_for('files_delete', sid=server.id) }}"
+                class="inline-del">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="path" value="{{ e.path }}">
+            <button class="btn-link btn-link--danger" type="submit"
+                    data-confirmar="Apagar {{ e.path }}?&#10;&#10;Isto nao tem volta."
+                    title="Apagar {{ e.name }}{{ ' (so se estiver vazia)' if e.dir else '' }}">apagar</button>
+          </form>
+        </span>
+      </li>
+      {% else %}
+      <li class="muted">pasta vazia</li>
+      {% endfor %}
+    </ul>
+    {% if truncated %}<p class="muted small">Listagem cortada nos primeiros itens desta pasta.</p>{% endif %}
   </div>
 
   <div class="card editor">
     {% if opened %}
-      <div class="page-head tight">
+      <div class="card__head">
         <h2 class="filename" id="nome-do-arquivo">{{ opened.path }}</h2>
         <span class="muted small">{{ opened.size | tamanho }} &middot; {{ opened.mode }} &middot; {{ opened.owner }} &middot; {{ opened.mtime }}</span>
       </div>
@@ -119,9 +88,9 @@
           jogo &mdash; mas da para baixar o arquivo inteiro.
         </div>
         <div class="form-actions">
-          <a class="btn primary" href="{{ url_for('files_download', sid=server.id, path=opened.path) }}">
-            Baixar ({{ opened.size | tamanho }})
-          </a>
+          {{ ui.botao('Baixar (' ~ opened.size | tamanho ~ ')',
+                      href=url_for('files_download', sid=server.id, path=opened.path),
+                      variante='primary', icone='⬇', bloco=true) }}
         </div>
       {% elif opened.truncated %}
         <div class="flash">
@@ -130,53 +99,52 @@
           {{ opened.shown | tamanho }} &mdash; baixe o arquivo para trabalhar nele inteiro.
         </div>
         <div class="form-actions">
-          <a class="btn primary" href="{{ url_for('files_download', sid=server.id, path=opened.path) }}">
-            Baixar ({{ opened.size | tamanho }})
-          </a>
+          {{ ui.botao('Baixar (' ~ opened.size | tamanho ~ ')',
+                      href=url_for('files_download', sid=server.id, path=opened.path),
+                      variante='primary', icone='⬇', bloco=true) }}
         </div>
         <pre class="log">{{ opened.text }}</pre>
       {% else %}
-      <form method="post" action="{{ url_for('files_save', sid=server.id) }}" id="editor-form">
+      <form method="post" action="{{ url_for('files_save', sid=server.id) }}" data-editor>
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="path" value="{{ opened.path }}">
         <input type="hidden" name="crlf" value="{{ '1' if opened.crlf else '0' }}">
         <textarea name="content" id="content" spellcheck="false" wrap="off"
+                  autocapitalize="off" autocorrect="off"
                   aria-labelledby="nome-do-arquivo">{{ opened.text }}</textarea>
         <div class="form-actions">
-          <button class="btn primary" type="submit">Salvar</button>
-          <a class="btn ghost" href="{{ url_for('files', sid=server.id, file=opened.path) }}">Descartar</a>
-          <a class="btn ghost" href="{{ url_for('files_download', sid=server.id, path=opened.path) }}">Baixar</a>
+          {{ ui.botao('Salvar', variante='primary', bloco=true) }}
+          {{ ui.botao('Descartar', href=url_for('files', sid=server.id, file=opened.path), variante='ghost') }}
+          {{ ui.botao('Baixar', href=url_for('files_download', sid=server.id, path=opened.path), variante='ghost') }}
           <span class="muted small" id="editor-pos"></span>
         </div>
-        <p class="muted small">
+        <p class="muted small mt-4">
           Ctrl+S salva. Antes de gravar, o painel guarda uma copia
           <code>{{ opened.name }}.&lt;data&gt;.bak</code> na mesma pasta, e mantem
           dono e permissao do arquivo original.
           {% if opened.crlf %} Este arquivo usa fim de linha CRLF &mdash; sera salvo assim.{% endif %}
         </p>
       </form>
-      <form method="post" action="{{ url_for('config_files_edit', sid=server.id) }}" class="form-actions">
-        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-        <input type="hidden" name="path" value="{{ opened.path }}">
-        <button class="btn ghost small" type="submit">Editar campo a campo</button>
+      <div class="form-actions">
+        {{ ui.acao(url_for('config_files_edit', sid=server.id), 'Editar campo a campo',
+                   variante='ghost', tamanho='sm', icone='⚙️', campos={'path': opened.path}) }}
         <span class="muted small">
-          abre este arquivo como formulario e o fixa na tela <strong>Config</strong>
+          abre este arquivo como formulario e o fixa na tela <strong>Configuracao</strong>
         </span>
-      </form>
+      </div>
       {% endif %}
 
       {# Vale para os tres casos acima (binario, so leitura e editavel): o que nao da
          para editar ainda da para apagar. #}
-      <form method="post" action="{{ url_for('files_delete', sid=server.id) }}"
-            class="form-actions js-del" data-alvo="{{ opened.path }}">
-        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-        <input type="hidden" name="path" value="{{ opened.path }}">
-        <button class="btn danger small" type="submit">Apagar arquivo</button>
+      <div class="form-actions">
+        {{ ui.acao(url_for('files_delete', sid=server.id), 'Apagar arquivo',
+                   variante='danger', tamanho='sm', campos={'path': opened.path},
+                   confirmar='Apagar ' ~ opened.path ~ '? Isto nao tem volta.') }}
         <span class="muted small">
           tira <code>{{ opened.name }}</code> do container na hora &mdash; aqui nao ha
           copia <code>.bak</code> nem como desfazer
         </span>
-      </form>
+      </div>
     {% else %}
       <h2>Editor</h2>
       <p class="muted">
@@ -186,6 +154,12 @@
       <p class="muted small">
         Qualquer arquivo pode ser baixado pelo link <em>baixar</em> da lista, inclusive
         binarios (saves, .so, .pak) e arquivos grandes demais para o editor.
+      </p>
+      <p class="muted small">
+        Procurando o arquivo de configuracao do jogo? A busca por candidatos fica em
+        <a href="{{ url_for('config_quick', sid=server.id, descobrir=1) }}">Configuracao</a>
+        &mdash; e la que o resultado dela serve para alguma coisa (fixar o arquivo e
+        edita-lo campo a campo).
       </p>
       {% if server.config_path %}
         <p class="muted small">Pasta de config deste servidor: <code>{{ server.config_path }}</code></p>
@@ -203,60 +177,4 @@
     {% endif %}
   </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-{% if opened and opened.editable %}
-<script>
-  const area = document.getElementById('content');
-  const form = document.getElementById('editor-form');
-  const pos = document.getElementById('editor-pos');
-  const original = area.value;
-
-  // Tab dentro do editor indenta em vez de pular para o proximo botao.
-  area.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Tab') {
-      ev.preventDefault();
-      const s = area.selectionStart, e = area.selectionEnd;
-      area.setRangeText('\t', s, e, 'end');
-    } else if (ev.key === 's' && (ev.ctrlKey || ev.metaKey)) {
-      ev.preventDefault();
-      form.requestSubmit();
-    }
-  });
-
-  function showPos() {
-    const upto = area.value.slice(0, area.selectionStart);
-    const line = upto.split('\n').length;
-    const col = upto.length - upto.lastIndexOf('\n');
-    pos.textContent = 'linha ' + line + ', coluna ' + col +
-      (area.value === original ? '' : ' - alterado');
-  }
-  ['keyup', 'click', 'input'].forEach((ev) => area.addEventListener(ev, showPos));
-  showPos();
-
-  // Em window porque o script de exclusao (abaixo, fora deste if) tambem levanta a
-  // bandeira: apagar o arquivo aberto e uma saida deliberada como salvar.
-  window.gpSaving = false;
-  form.addEventListener('submit', () => { window.gpSaving = true; });
-  window.addEventListener('beforeunload', (ev) => {
-    if (!window.gpSaving && area.value !== original) ev.preventDefault();
-  });
-</script>
-{% endif %}
-<script>
-  // Apagar nao tem .bak nem lixeira: cada form de exclusao pergunta antes, pelo nome.
-  // O nome chega pelo dataset (ja decodificado pelo navegador), nunca dentro do codigo.
-  document.querySelectorAll('form.js-del').forEach((f) => {
-    f.addEventListener('submit', (ev) => {
-      if (!confirm('Apagar ' + f.dataset.alvo + '?\n\nIsto nao tem volta.')) {
-        ev.preventDefault();
-        return;
-      }
-      // Editor aberto com alteracoes: apagar e uma saida deliberada, nao precisa do
-      // aviso de "voce tem alteracoes nao salvas" por cima da confirmacao.
-      window.gpSaving = true;
-    });
-  });
-</script>
 {% endblock %}

@@ -1,27 +1,39 @@
 {% extends "base.html" %}
-{% block title %}Console — {{ server.name }}{% endblock %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
+{% block title %}Terminal — {{ server.name }}{% endblock %}
+
 {% block content %}
-<div class="page-head">
-  <h1>Console — {{ server.name }}</h1>
-  <div class="actions">
-    {% if allow_term %}<a class="btn ghost" href="{{ url_for('terminal', sid=server.id) }}">Terminal interativo</a>{% endif %}
-    <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
-  </div>
-</div>
+{{ ui.cabecalho('Terminal — ' ~ server.name) }}
+{{ srv.abas(server, 'terminal') }}
+
+{# Interativo e comando unico sao dois MODOS da mesma coisa, nao duas telas
+   concorrentes na navegacao. Antes cada uma era um botao proprio no cabecalho de
+   quatro telas diferentes, com nomes ("Terminal", "Console", "Comando unico",
+   "Terminal interativo") que ninguem conseguia distinguir de fora. #}
+{% if allow_term %}
+<nav class="tabs" aria-label="Modo do terminal">
+  <a class="tabs__item" href="{{ url_for('terminal', sid=server.id) }}">
+    <span class="icone" aria-hidden="true">⌨️</span>Sessao interativa</a>
+  <span class="tabs__item" aria-current="page">
+    <span class="icone" aria-hidden="true">▶</span>Comando unico</span>
+</nav>
+{% endif %}
 
 <div class="flash">
   Os comandos rodam como <strong>{{ server.ssh_user }}</strong> dentro do container
   <code>{{ server.host }}</code>, via SSH. Cada execucao tem limite de
   {{ shell_timeout }}s e fica registrada no historico abaixo.
-  {% if allow_term %}Para algo interativo (nano, htop, prompts de confirmacao) use o
-  <a href="{{ url_for('terminal', sid=server.id) }}">terminal</a>.{% endif %}
+  {% if allow_term %}Para algo interativo (nano, htop, prompts de confirmacao) use a
+  <a href="{{ url_for('terminal', sid=server.id) }}">sessao interativa</a>.{% endif %}
 </div>
 
 <div class="card">
-  <form method="post" id="console-form">
+  <form method="post" data-console>
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>Comando
       <textarea name="command" id="command" rows="3" spellcheck="false" autofocus
+                autocapitalize="off" autocorrect="off"
                 placeholder="systemctl status dragonwilds.service"></textarea>
       <small>
         Nao-interativo: sem TTY, sem <code>vim</code>/<code>top</code>/<code>htop</code>.
@@ -30,21 +42,23 @@
       </small>
     </label>
     <div class="form-actions">
-      <button class="btn primary" type="submit">Executar</button>
+      {{ ui.botao('Executar', variante='primary', icone='▶') }}
       <span class="muted small">Historico: &uarr; e &darr; percorrem os comandos anteriores.</span>
     </div>
   </form>
 </div>
 
 {% if job %}
-<div class="card">
-  <div class="page-head tight">
+<div class="card"
+     {% if job.status == 'running' %}data-job-url="{{ url_for('api_job', jid=job.id) }}"
+     data-job-rodando="(executando...)" data-job-fim="exit code {codigo}"{% endif %}>
+  <div class="card__head">
     <h2>Saida</h2>
-    <span class="badge {{ {'ok':'on','error':'off','running':'cold'}[job.status] }}" id="badge">{{ job.status }}</span>
+    <span class="badge {{ {'ok':'on','error':'off','running':'cold'}[job.status] }}" data-job-selo>{{ job.status }}</span>
   </div>
   <pre class="log cmd">$ {{ job.command }}</pre>
-  <pre class="log" id="output">{{ job.output or '(executando...)' }}</pre>
-  <p class="muted" id="hint">
+  <pre class="log" data-job-saida>{{ job.output or '(executando...)' }}</pre>
+  <p class="muted" data-job-dica>
     {% if job.status == 'running' %}Em execucao...
     {% else %}exit code {{ job.exit_code if job.exit_code is not none else '—' }}{% endif %}
   </p>
@@ -54,12 +68,12 @@
 <div class="card">
   <h2>Comandos anteriores</h2>
   {% if history %}
-  <table class="jobs">
+  <div class="table-wrap"><table class="jobs">
     <thead><tr><th>Quando</th><th>Comando</th><th>Por</th><th>Resultado</th><th></th></tr></thead>
     <tbody>
       {% for j in history %}
       <tr>
-        <td class="muted">{{ j.created_at.replace('T', ' ')[:19] }}</td>
+        <td class="muted small nowrap">{{ j.created_at.replace('T', ' ')[:19] }}</td>
         <td><code class="trunc">{{ j.command }}</code></td>
         <td class="muted">{{ j.username }}</td>
         <td><span class="badge {{ {'ok':'on','error':'off','running':'cold'}[j.status] }}">{{ j.status }}</span></td>
@@ -67,7 +81,7 @@
       </tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
     <p class="muted">Nenhum comando executado neste servidor ainda.</p>
   {% endif %}
@@ -75,59 +89,9 @@
 {% endblock %}
 
 {% block scripts %}
-{# Os dados do servidor viajam como JSON num bloco separado: expressao Jinja no meio
-   do codigo quebra qualquer ferramenta que leia o arquivo como JavaScript de verdade. #}
+{# Os comandos anteriores viajam como JSON num bloco separado: expressao Jinja no
+   meio do codigo quebra qualquer ferramenta que leia o arquivo como JavaScript. #}
 <script id="historico-comandos" type="application/json">
   {{ history | map(attribute='command') | list | tojson }}
 </script>
-<script>
-  const field = document.getElementById('command');
-  const form = document.getElementById('console-form');
-  // 'historico', nao 'history': const history sombrearia o window.history da pagina.
-  const historico = JSON.parse(document.getElementById('historico-comandos').textContent);
-  let cursor = -1;
-
-  // Ctrl+Enter envia; Enter sozinho quebra linha (comandos multilinha sao validos).
-  field.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
-      ev.preventDefault();
-      form.requestSubmit();
-      return;
-    }
-    if (ev.key === 'ArrowUp' && field.selectionStart === 0 && cursor + 1 < historico.length) {
-      ev.preventDefault();
-      cursor += 1;
-      field.value = historico[cursor];
-    } else if (ev.key === 'ArrowDown' && cursor > -1) {
-      ev.preventDefault();
-      cursor -= 1;
-      field.value = cursor === -1 ? '' : historico[cursor];
-    }
-  });
-</script>
-
-{% if job and job.status == 'running' %}
-<script>
-  const url = "{{ url_for('api_job', jid=job.id) }}";
-  const poll = setInterval(async () => {
-    try {
-      const res = await fetch(url, {headers: {'Accept': 'application/json'}});
-      if (!res.ok) return;
-      const data = await res.json();
-      document.getElementById('output').textContent = data.output || '(executando...)';
-      const badge = document.getElementById('badge');
-      badge.textContent = data.status;
-      if (data.status !== 'running') {
-        clearInterval(poll);
-        badge.classList.remove('cold');
-        badge.classList.add(data.status === 'ok' ? 'on' : 'off');
-        document.getElementById('hint').textContent =
-          'exit code ' + (data.exit_code === null ? '—' : data.exit_code);
-      }
-    } catch (err) {
-      console.debug('polling falhou, tentando de novo', err);
-    }
-  }, 1500);
-</script>
-{% endif %}
 {% endblock %}

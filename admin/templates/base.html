@@ -1,35 +1,94 @@
+{# Casco do aplicativo.
+
+   No celular: barra fina em cima (marca + menu) e barra de abas embaixo, ao alcance
+   do polegar. A partir de 900px as duas viram uma so, em cima — quem cuida disso e
+   o CSS, nao um segundo template.
+
+   A navegacao vem do `ui.py` (NAV_PRINCIPAL / NAV_SECUNDARIA), nao esta escrita aqui:
+   e o mesmo motivo de sempre — menu escrito a mao em varios lugares vira menus
+   diferentes em lugares diferentes. #}
+{% import "components/ui.html" as ui with context %}
 <!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# viewport-fit=cover entrega a tela inteira no aparelho com recorte; quem devolve
+     o espaco seguro sao as variaveis --safe-* dos tokens. #}
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}Painel de Jogos{% endblock %}</title>
-  <link rel="stylesheet" href="{{ static_url('style.css') }}">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🎮</text></svg>">
+
+  <meta name="theme-color" content="#171c22">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Liga, desliga, atualiza e acompanha os servidores de jogos.">
+  {# Um painel com poder de root nos containers nao tem o que fazer num buscador. #}
+  <meta name="robots" content="noindex, nofollow">
+
+  {# --- aplicativo instalado --- #}
+  <link rel="manifest" href="{{ url_for('manifest') }}">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Jogos">
+  <link rel="apple-touch-icon" href="{{ static_url('icons/apple-touch-icon.png') }}">
+  <link rel="icon" href="{{ static_url('icons/favicon.svg') }}" type="image/svg+xml">
+  <link rel="icon" href="{{ static_url('icons/icon-192.png') }}" sizes="192x192" type="image/png">
+
+  {# --- estilo, em camadas ---
+     A ordem importa: tokens definem os valores, base aplica aos elementos crus,
+     layout monta o esqueleto, components desenha as pecas, pages ajusta o que e de
+     uma tela so. Cada camada so pode depender das anteriores. #}
+  <link rel="stylesheet" href="{{ static_url('css/tokens.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/base.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/layout.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/components.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/pages.css') }}">
 </head>
-<body>
+<body class="{{ 'tem-tabbar' if current_user }}" data-sw="{{ url_for('service_worker') }}">
+
 {% if current_user %}
-<header class="topbar">
-  <a class="brand" href="{{ url_for('dashboard') }}">🎮 Painel de Jogos</a>
-  <nav>
-    <a href="{{ url_for('dashboard') }}">Servidores</a>
-    <a href="{{ url_for('history') }}">Historico</a>
-    {% if is_admin %}
-      <a href="{{ url_for('server_new') }}">Adicionar</a>
-      <a href="{{ url_for('alerts') }}">Alertas</a>
-      <a href="{{ url_for('users_list') }}">Usuarios</a>
-    {% endif %}
-    <a href="{{ url_for('ssh_key') }}">Acesso SSH</a>
-    <a href="{{ url_for('account') }}" title="{{ role_label }}">{{ current_user }}</a>
-    <form method="post" action="{{ url_for('logout') }}" class="inline">
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <button class="link" type="submit">sair</button>
-    </form>
+<header class="appbar">
+  <a class="appbar__marca" href="{{ url_for('dashboard') }}">
+    <span class="logo" aria-hidden="true">🎮</span>
+    <span class="appbar__nome">Painel de Jogos</span>
+  </a>
+
+  {# Em tela larga a navegacao principal sobe para ca; no celular ela vive na barra
+     de baixo e este bloco esta escondido por CSS. #}
+  <nav class="appbar__nav" aria-label="Navegacao principal">
+    {% for item in nav_principal %}
+      <a href="{{ url_for(item.endpoint) }}"
+         {% if item.chave == nav_ativa %}aria-current="page"{% endif %}>{{ item.rotulo }}</a>
+    {% endfor %}
   </nav>
+
+  <span class="appbar__espaco"></span>
+
+  {{ ui.botao('Instalar', icone='⬇', tamanho='sm', tipo='button',
+              extra='data-instalar hidden') }}
+
+  {% call ui.menu('', icone='⋯', titulo='Mais') %}
+    <span class="menu__titulo">{{ current_user }} &middot; {{ role_label }}</span>
+    {% for item in nav_secundaria %}
+      <a class="menu__item" role="menuitem" href="{{ url_for(item.endpoint) }}">
+        <span class="icone" aria-hidden="true">{{ item.icone }}</span>{{ item.rotulo }}
+      </a>
+    {% endfor %}
+    <hr class="menu__sep">
+    {{ ui.menu_acao(url_for('logout'), 'Sair', icone='🚪') }}
+  {% endcall %}
 </header>
 {% endif %}
 
 <main class="wrap">
+  {# Versao nova esperando para assumir: aparece so quando o service worker avisa.
+     Fica DENTRO do main, junto dos outros avisos — como um bloco proprio antes dele,
+     o espaco reservado para a barra de abas abria um vao no meio da tela. #}
+  <div class="flash cluster" data-versao-nova hidden>
+    <span>Ha uma versao nova do painel.</span>
+    <span class="cluster__espaco"></span>
+    <button class="btn btn--sm btn--primary" type="button">Atualizar agora</button>
+  </div>
+
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, message in messages %}
       <div class="flash {{ category }}">{{ message }}</div>
@@ -37,6 +96,22 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+
+{% if current_user %}
+<nav class="tabbar" aria-label="Navegacao principal">
+  {% for item in nav_principal %}
+    <a class="tabbar__item" href="{{ url_for(item.endpoint) }}"
+       {% if item.chave == nav_ativa %}aria-current="page"{% endif %}>
+      <span class="icone" aria-hidden="true">{{ item.icone }}</span>
+      <span>{{ item.rotulo }}</span>
+    </a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{# Um modulo so, que monta as features pedidas pela marcacao desta pagina.
+   Nenhum template do painel tem <script> com logica dentro. #}
+<script type="module" src="{{ static_url('js/app.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -1,0 +1,380 @@
+/* Camada 4 — COMPONENTES.
+ *
+ * Cada bloco aqui e uma peca fechada, com uma responsabilidade so, desenhada para
+ * ser usada por qualquer tela. Variacao entra por modificador (.btn--danger), nunca
+ * por "esse botao dentro daquela tela" — regra de descendente e o que faz um CSS
+ * parar de poder ser reaproveitado.
+ */
+
+/* ============================================================ botao */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: var(--tap);
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  /* Toque nao tem "hover": sem isto o iOS deixa o botao aceso depois do clique. */
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--transicao), border-color var(--transicao), opacity var(--transicao);
+}
+.btn:hover { border-color: var(--line-forte); background: var(--panel-3); text-decoration: none; }
+.btn:active { transform: translateY(1px); }
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+
+.btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-texto); font-weight: 600; }
+.btn--primary:hover { background: color-mix(in srgb, var(--accent) 85%, #fff); border-color: var(--accent); }
+.btn--danger { color: var(--err-texto); border-color: var(--err-borda); background: var(--err-fundo); }
+.btn--danger:hover { background: color-mix(in srgb, var(--err) 22%, transparent); border-color: var(--err); }
+.btn--ghost { background: transparent; }
+.btn--ghost:hover { background: var(--panel-2); }
+
+.btn--sm { min-height: var(--tap-sm); padding: 6px 12px; font-size: var(--fs-sm); }
+/* No celular quase todo botao principal de formulario ocupa a linha inteira: alvo
+   maior, e a coluna de acoes deixa de ser um amontoado. */
+.btn--bloco { width: 100%; }
+.btn--icone { padding: 10px; min-width: var(--tap); }
+.btn .icone { font-size: 1.05em; line-height: 1; }
+
+/* Botao que se apresenta como link (sair, apagar dentro de uma lista). */
+.btn-link {
+  display: inline-flex; align-items: center;
+  min-height: var(--tap-sm);
+  padding: 0; border: none; background: none;
+  color: var(--muted); text-decoration: underline; cursor: pointer;
+}
+.btn-link:hover { color: var(--text); }
+.btn-link--danger { color: var(--err-texto); }
+.btn-link--danger:hover { color: #ffd7d3; }
+
+/* Formulario de um botao so: existe para carregar o CSRF, nao para ocupar linha. */
+form.inline { display: inline; }
+/* O mesmo formulario quando o botao dentro dele ocupa a largura toda (celular). */
+form.acao-bloco { display: block; flex: 1; min-width: 0; }
+
+/* ============================================================ cartao */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.card:last-child { margin-bottom: 0; }
+.card--limpo { background: transparent; border: none; padding: 0; }
+.card--vazio { text-align: center; }
+.card--perigo { border-color: color-mix(in srgb, var(--err) 30%, var(--line)); }
+.card--form { max-width: 42rem; }
+.card--login { max-width: 25rem; margin: var(--sp-6) auto 0; }
+.card--login h1 { justify-content: center; }
+
+.card__head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+.card__head h2 { min-width: 0; overflow-wrap: anywhere; }
+
+@media (min-width: 600px) {
+  .card { padding: var(--sp-5); }
+}
+
+/* ============================================================ selo */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.badge.on { color: var(--ok); border-color: var(--ok-borda); }
+.badge.off { color: var(--err); border-color: var(--err-borda); }
+.badge.cold { color: var(--warn); border-color: var(--warn-borda); }
+.badges { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+
+/* ============================================================ aviso */
+.flash {
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+  margin-bottom: var(--sp-3);
+  font-size: var(--fs-md);
+}
+.flash:last-child { margin-bottom: 0; }
+.flash.error { border-color: var(--err-borda); color: var(--err-texto); background: var(--err-fundo); }
+.flash.ok { border-color: var(--ok-borda); color: #8ce39a; }
+.flash.pendencia { border-color: var(--warn-borda); font-size: var(--fs-sm); }
+.flash.pendencia ul { margin: var(--sp-2) 0; }
+.flash em { font-style: normal; color: var(--text); }
+
+/* ============================================================ abas rolaveis
+   A navegacao interna de um servidor tem oito destinos. Empilhados viram uma
+   parede; numa fita que rola de lado eles cabem no celular e continuam todos
+   visiveis no desktop. */
+.tabs {
+  display: flex;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  margin: 0 calc(var(--sp-4) * -1) var(--sp-4);
+  padding: 0 var(--sp-4) var(--sp-2);
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tabs__item {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  flex: none;
+  min-height: var(--tap-sm);
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  scroll-snap-align: start;
+}
+.tabs__item:hover { text-decoration: none; color: var(--text); border-color: var(--line-forte); }
+.tabs__item[aria-current="page"] {
+  color: var(--accent-texto); background: var(--accent); border-color: var(--accent); font-weight: 600;
+}
+@media (min-width: 600px) {
+  .tabs { margin: 0 calc(var(--sp-5) * -1) var(--sp-4); padding: 0 var(--sp-5) var(--sp-2); }
+}
+
+/* ============================================================ menu suspenso
+   <details> puro: abre sem JavaScript, fecha no Esc e no clique fora por um
+   punhado de linhas em menu.js. E o que tira de cena os botoes secundarios. */
+.menu { position: relative; }
+.menu > summary {
+  list-style: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  min-height: var(--tap); min-width: var(--tap);
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: var(--fs-md);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary:hover { border-color: var(--line-forte); background: var(--panel-3); }
+.menu[open] > summary { border-color: var(--accent); }
+
+.menu__lista {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--sp-1));
+  z-index: var(--z-menu);
+  min-width: 13rem;
+  /* O menu de um servidor lista oito telas mais as acoes: num celular deitado isso
+     passa da altura da tela. Ele rola dentro de si em vez de sair pela borda. */
+  max-height: min(70vh, 30rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-1);
+  border: 1px solid var(--line-forte);
+  border-radius: var(--r-md);
+  background: var(--panel-2);
+  box-shadow: var(--sombra-3);
+}
+.menu__lista--esq { right: auto; left: 0; }
+.menu__item {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%;
+  min-height: var(--tap-sm);
+  padding: var(--sp-2) var(--sp-3);
+  border: none; border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+}
+.menu__item:hover { background: var(--panel-3); text-decoration: none; }
+.menu__item--danger { color: var(--err-texto); }
+.menu__sep { height: 1px; margin: var(--sp-1) 0; background: var(--line); border: none; }
+.menu__titulo {
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+  color: var(--muted); font-size: var(--fs-xs);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+
+/* ============================================================ lista de dados */
+dl.meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--sp-3) var(--sp-4);
+  margin: 0;
+}
+dl.meta.wide { margin-bottom: var(--sp-4); }
+dl.meta div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+dl.meta dt {
+  color: var(--muted); font-size: var(--fs-xs);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+dl.meta dd { margin: 0; overflow-wrap: anywhere; }
+
+.notes { white-space: pre-wrap; color: var(--muted); border-left: 2px solid var(--line); padding-left: var(--sp-3); }
+.intro { max-width: 70ch; margin: 0 0 var(--sp-4); font-size: var(--fs-md); }
+
+/* ============================================================ formulario */
+label { display: block; margin-bottom: var(--sp-4); font-size: var(--fs-sm); color: var(--muted); }
+label > input, label > textarea, label > select, label > .com-unidade { margin-top: var(--sp-1); }
+label small { display: block; margin-top: var(--sp-1); color: var(--muted); font-size: var(--fs-xs); line-height: 1.5; }
+label.inline-label { display: inline-flex; align-items: center; gap: var(--sp-2); margin: 0; }
+label.inline-label input { margin-top: 0; }
+
+/* Rotulo de um grupo, nao de um campo: mesma voz dos titulos de dl.meta. */
+.rotulo {
+  display: block; color: var(--muted); font-size: var(--fs-xs);
+  text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-1);
+}
+
+.form-actions {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+.form-actions .spacer { display: none; }
+
+.row { display: flex; flex-direction: column; gap: 0; }
+.row > label { flex: 1; }
+
+.checkbox {
+  display: flex; align-items: center; gap: var(--sp-2);
+  min-height: var(--tap-sm);
+  margin: 0; font-size: var(--fs-md); cursor: pointer;
+}
+.checkbox input { flex: none; margin: 0; }
+.checkbox span { color: var(--text); }
+
+.opcoes {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-1) var(--sp-4);
+  margin: var(--sp-1) 0 0;
+}
+
+label.curto { max-width: 34ch; }
+.com-unidade { display: flex; align-items: center; gap: var(--sp-2); }
+.com-unidade input { width: 6rem; margin-top: 0; }
+.unidade { color: var(--muted); font-size: var(--fs-sm); }
+
+.inline-field {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  margin: 0; font-size: var(--fs-xs); color: var(--muted);
+}
+.inline-field select, .inline-field input { margin-top: 0; }
+
+@media (min-width: 600px) {
+  .form-actions { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .form-actions > .btn { width: auto; }
+  .form-actions .spacer { display: block; flex: 1; }
+  .row { flex-direction: row; gap: var(--sp-4); }
+  .opcoes { grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+}
+
+/* ============================================================ tabela de dados */
+table.jobs { font-size: var(--fs-sm); }
+table.jobs th, table.jobs td {
+  text-align: left; padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--line); vertical-align: top;
+}
+table.jobs th {
+  color: var(--muted); font-weight: 500; font-size: var(--fs-xs);
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}
+table.jobs tr:last-child td { border-bottom: none; }
+table.jobs td.acoes { white-space: nowrap; }
+table.jobs td.acoes > * { margin-right: var(--sp-1); }
+.numerica td { font-variant-numeric: tabular-nums; }
+
+code.trunc {
+  display: inline-block; max-width: 28ch; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+}
+@media (min-width: 900px) { code.trunc { max-width: 46ch; } }
+
+/* ============================================================ bloco de log */
+pre.log {
+  background: var(--preto);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: var(--sp-3);
+  margin: 0;
+  max-height: 55vh;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  font: 12.5px/1.55 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+pre.log.cmd { color: var(--accent); margin-bottom: var(--sp-2); max-height: 8rem; }
+
+/* ============================================================ medidores */
+.meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--sp-3) var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+.meter-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2);
+  font-size: var(--fs-xs); color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.meter-head .val { font-size: var(--fs-base); color: var(--text); font-variant-numeric: tabular-nums; }
+.meter-foot { margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--muted); }
+
+.bar {
+  display: block; height: 7px; margin-top: var(--sp-1); overflow: hidden;
+  background: var(--panel-2); border-radius: var(--r-pill);
+}
+.bar > i {
+  display: block; height: 100%; border-radius: var(--r-pill);
+  background: var(--accent); transition: width .4s ease;
+}
+.bar.warn > i { background: var(--warn); }
+.bar.hot > i { background: var(--err); }
+
+/* Versao de uma linha, usada nos cartoes do painel. */
+.mini-meters { display: flex; flex-direction: column; gap: var(--sp-1); }
+.mini { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--muted); }
+.mini-label { width: 2.6rem; flex: none; }
+.mini .bar { flex: 1; margin-top: 0; height: 6px; }
+.mini-val { width: 3rem; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ============================================================ fichas e migalhas */
+.chip {
+  display: inline-flex; align-items: center;
+  min-height: var(--tap-sm);
+  padding: 6px 14px;
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--panel-2); color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.chip:hover { text-decoration: none; color: var(--text); border-color: var(--accent); }
+.chip.on { color: var(--text); border-color: var(--accent); background: var(--bg); }
+
+.crumbs {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-sm);
+}
+.crumbs .sep { color: var(--muted); }

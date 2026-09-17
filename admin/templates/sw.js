@@ -1,0 +1,116 @@
+/* Service worker do Painel de Jogos.
+ *
+ * Este arquivo e SERVIDO PELO FLASK (nao pelo /static/) por dois motivos:
+ *
+ *   1. o escopo de um service worker e a pasta em que ele mora — servido de
+ *      /static/sw.js ele so enxergaria /static/, e nao a navegacao do painel;
+ *   2. a VERSAO abaixo e carimbada no momento de servir, a partir do mtime dos
+ *      arquivos estaticos. Byte novo no CSS = arquivo do worker diferente = o
+ *      navegador instala a versao nova e joga fora o cache velho. Sem isso, um
+ *      deploy chega ao celular de alguem como "a tela quebrou depois da atualizacao".
+ *
+ * O QUE ESTE WORKER NAO FAZ, de proposito:
+ *
+ *   - nao guarda HTML de pagina logada. O painel da poder de root nos containers e
+ *     roda com varios usuarios; uma tela de servidores guardada em cache poderia
+ *     reaparecer depois do logout, ou para a pessoa errada no mesmo aparelho. A
+ *     navegacao e sempre rede, e a queda cai na pagina de "sem conexao".
+ *   - nao guarda nada de /api/. Um medidor de CPU servido do cache mente sobre o
+ *     estado de um servidor de verdade — e pior do que nao mostrar numero nenhum.
+ *   - nao passa perto de download de arquivo nem de backup: sao respostas de varios
+ *     GB em streaming, e atravessar o worker so as tornaria mais lentas.
+ */
+const VERSAO = '{{ versao }}';
+const CACHE = `gamepanel-${VERSAO}`;
+const OFFLINE = '{{ url_for("offline") }}';
+
+/* O casco do aplicativo: o que precisa estar no aparelho para a pagina de "sem
+ * conexao" abrir inteira, com o mesmo visual do resto do painel. */
+const CASCO = [
+  OFFLINE,
+{% for arquivo in precache %}  '{{ arquivo }}',
+{% endfor %}];
+
+/* Caminhos que o worker nao toca nem para repassar. */
+const FORA = ['/api/', '/files/download', '/backups/baixar', '/health'];
+
+self.addEventListener('install', (ev) => {
+  // Sem skipWaiting() de proposito: a versao nova fica ESPERANDO, e quem manda ela
+  // assumir e a pessoa, pelo botao "Atualizar agora". Trocar sozinho recarrega a
+  // pagina — e este painel tem uma tela de terminal com sessao SSH aberta. Perder um
+  // `nano` no meio da edicao porque o CSS mudou nao e uma troca aceitavel.
+  ev.waitUntil(
+    caches.open(CACHE)
+      // allSettled, e nao addAll: este e tudo-ou-nada, e um arquivo que mudou de nome
+      // derrubaria a instalacao inteira, deixando o painel sem worker nenhum.
+      .then((cache) => Promise.allSettled(CASCO.map((url) => cache.add(url)))),
+  );
+});
+
+self.addEventListener('activate', (ev) => {
+  ev.waitUntil(
+    caches.keys()
+      .then((nomes) => Promise.all(
+        nomes.filter((n) => n.startsWith('gamepanel-') && n !== CACHE)
+          .map((n) => caches.delete(n)),
+      ))
+      .then(() => self.clients.claim()),
+  );
+});
+
+/* A pagina pede para a versao nova assumir agora (botao "atualizar"). */
+self.addEventListener('message', (ev) => {
+  if (ev.data && ev.data.tipo === 'assumir') self.skipWaiting();
+});
+
+self.addEventListener('fetch', (ev) => {
+  const req = ev.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  if (FORA.some((p) => url.pathname.includes(p))) return;
+
+  if (url.pathname.startsWith('/static/')) {
+    ev.respondWith(estaticoDoCache(req));
+    return;
+  }
+
+  if (req.mode === 'navigate') {
+    ev.respondWith(navegacao(req));
+  }
+});
+
+/* Estatico: responde do cache na hora e busca a versao nova em segundo plano.
+ *
+ * Da para ser agressivo aqui porque o nome do cache carrega a versao: na virada de
+ * deploy o cache inteiro e descartado, entao "velho" aqui significa no maximo
+ * "da mesma versao". */
+async function estaticoDoCache(req) {
+  const cache = await caches.open(CACHE);
+  const guardado = await cache.match(req, { ignoreSearch: true });
+
+  const daRede = fetch(req).then((resp) => {
+    if (resp && resp.ok) cache.put(req, resp.clone());
+    return resp;
+  }).catch(() => null);
+
+  if (guardado) return guardado;
+  const fresco = await daRede;
+  // Sem rede e sem copia: devolve um erro de verdade, e nao uma promessa pendurada.
+  return fresco || new Response('', { status: 504, statusText: 'sem conexao' });
+}
+
+/* Navegacao: sempre rede. Sem rede, a pagina de "sem conexao". */
+async function navegacao(req) {
+  try {
+    return await fetch(req);
+  } catch {
+    const cache = await caches.open(CACHE);
+    const pagina = await cache.match(OFFLINE);
+    return pagina || new Response(
+      '<h1>Sem conexao</h1><p>O painel nao respondeu.</p>',
+      { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+    );
+  }
+}

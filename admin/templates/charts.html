@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
 {% block title %}Graficos &mdash; {{ server.name }}{% endblock %}
 
 {% macro grafico(g, titulo) %}
@@ -41,29 +43,23 @@
 {% endmacro %}
 
 {% block content %}
-<div class="page-head">
-  <h1>Graficos &mdash; {{ server.name }}</h1>
-  <div class="actions">
-    <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
-  </div>
-</div>
+{{ ui.cabecalho('Graficos — ' ~ server.name) }}
+{{ srv.abas(server, 'charts') }}
 
 {# Um filtro so, acima de tudo o que ele governa: os dois graficos e a tabela mostram
    sempre a mesma fatia de tempo, entao os numeros nunca se contradizem. #}
-<div class="card">
-  <nav class="crumbs" aria-label="periodo">
-    {% for h, rotulo in faixas %}
-      <a class="btn {{ 'primary' if h == horas else 'ghost' }}"
-         href="{{ url_for('charts', sid=server.id, h=h) }}">{{ rotulo }}</a>
-    {% endfor %}
-    <span class="muted small">
-      {{ total }} amostra(s) &middot; uma a cada {{ a_cada }} min &middot; guardadas por {{ guarda_dias }} dias
-    </span>
-  </nav>
-</div>
+<nav class="tabs" aria-label="Periodo">
+  {% for h, rotulo in faixas %}
+    <a class="tabs__item" href="{{ url_for('charts', sid=server.id, h=h) }}"
+       {% if h == horas %}aria-current="page"{% endif %}>{{ rotulo }}</a>
+  {% endfor %}
+</nav>
+<p class="muted small">
+  {{ total }} amostra(s) &middot; uma a cada {{ a_cada }} min &middot; guardadas por {{ guarda_dias }} dias
+</p>
 
 {% if uso.vazio and jogadores.vazio %}
-<div class="card empty">
+<div class="card card--vazio">
   <p>Ainda nao ha amostras deste periodo.</p>
   <p class="muted">O painel guarda uma leitura a cada {{ a_cada }} minutos enquanto esta no ar
     &mdash; volte daqui a pouco, ou escolha um periodo maior.</p>
@@ -71,10 +67,10 @@
 {% else %}
 
 <div class="card" data-grafico="uso">
-  <div class="page-head tight">
+  <div class="card__head">
     <h2>CPU e memoria</h2>
-    {# Duas series: legenda sempre presente, e a identidade vem do traco colorido ao lado
-       do texto (o texto em si nunca veste a cor da serie). #}
+    {# Duas series: legenda sempre presente, e a identidade vem do traco colorido ao
+       lado do texto (o texto em si nunca veste a cor da serie). #}
     <div class="legenda">
       <span class="chave"><i style="background: {{ cores.cpu }}"></i>CPU</span>
       <span class="chave"><i style="background: {{ cores.mem }}"></i>Memoria</span>
@@ -88,7 +84,7 @@
    gente" nao dividem escala, e sobrepor as duas inventaria uma relacao que os dados
    nao tem. #}
 <div class="card" data-grafico="jogadores">
-  <div class="page-head tight">
+  <div class="card__head">
     <h2>Jogadores</h2>
     {# Uma serie so: o titulo ja a nomeia, entao nao ha legenda. O espaco vai para o
        numero que se procura num grafico de jogadores. #}
@@ -105,10 +101,10 @@
   <details>
     <summary>Ver os numeros em tabela</summary>
     <p class="muted small">
-      Os mesmos valores do grafico, sem depender de cor nem de passar o mouse.
+      Os mesmos valores do grafico, sem depender de cor nem de passar o dedo por cima.
       Do mais recente para o mais antigo.
     </p>
-    <table class="jobs numerica">
+    <div class="table-wrap"><table class="jobs numerica">
       <thead><tr><th>Quando</th><th>CPU</th><th>Memoria</th><th>Jogadores</th></tr></thead>
       <tbody>
         {% for l in tabela %}
@@ -120,12 +116,8 @@
         </tr>
         {% endfor %}
       </tbody>
-    </table>
+    </table></div>
   </details>
 </div>
 {% endif %}
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ static_url('charts.js') }}" defer></script>
 {% endblock %}

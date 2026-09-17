@@ -47,6 +47,7 @@ except ImportError:  # pragma: no cover - Windows
 
 import gameconf
 import gamefields
+import ui
 from flask import (
     Flask,
     abort,
@@ -683,8 +684,12 @@ def _check_csrf():
 def static_url(nome: str) -> str:
     """URL de um arquivo estatico com a marca do mtime.
 
-    Sem isto, um deploy que muda o style.css ou o terminal.js continua servindo o que o
-    navegador guardou — e o relato chega como "a tela quebrou depois da atualizacao".
+    Sem isto, um deploy que muda o css/components.css ou o js/terminal.js continua
+    servindo o que o navegador guardou — e o relato chega como "a tela quebrou depois
+    da atualizacao".
+
+    Aceita caminho com subpasta ("css/tokens.css"): a arvore de estaticos e organizada
+    em css/, js/ e icons/.
     """
     try:
         marca = int(os.path.getmtime(os.path.join(app.static_folder, nome)))
@@ -714,6 +719,31 @@ def _inject():
         # Quais acoes a API daquele servidor aceita (vazio na maioria dos jogos).
         "acoes_de_jogador": acoes_de_jogador,
         "rotulo_de_acao": PLAYER_ACTION_LABELS,
+        **_contexto_de_navegacao(),
+    }
+
+
+def _contexto_de_navegacao() -> dict:
+    """O mapa da interface, ja filtrado para quem esta logado e para este deploy.
+
+    Os templates nao decidem mais o que existe no menu: eles desenham o que vier
+    daqui. Antes, a lista de telas de um servidor estava escrita a mao em seis
+    templates diferentes, cada um com um subconjunto proprio — e era por isso que
+    "Graficos" existia numa tela e nao na outra.
+    """
+    admin = is_admin()
+    secoes = ui.secoes_visiveis(admin=admin, arquivos=ALLOW_FILES, shell=ALLOW_SHELL)
+    tem_pty = ALLOW_SHELL and HAVE_PTY
+    return {
+        "nav_principal": tuple(i for i in ui.NAV_PRINCIPAL if not i.admin or admin),
+        "nav_secundaria": tuple(i for i in ui.NAV_SECUNDARIA if not i.admin or admin),
+        "nav_ativa": ui.nav_ativa_de(request.endpoint),
+        "secoes_do_servidor": secoes,
+        "endpoint_da_secao": lambda secao: ui.endpoint_da_secao(secao, tem_pty=tem_pty),
+        "acoes_de_energia": ui.acoes_do_grupo(ui.GRUPO_ENERGIA),
+        "acoes_de_manutencao": ui.acoes_do_grupo(ui.GRUPO_MANUTENCAO),
+        "energia_do_cartao": ui.energia_do_cartao,
+        "energia_restante": ui.energia_restante,
     }
 
 
@@ -2478,13 +2508,26 @@ def all_status(servers) -> dict[int, dict]:
 
 # ------------------------------------------------------------------- jobs
 
-# chave -> (rotulo, monta o comando remoto, pede confirmacao na UI)
+# O que cada acao RODA no container. Como ela se apresenta (rotulo, icone, grupo,
+# peso visual) e outra responsabilidade, e mora no `ui.py` — aqui ficam so os
+# comandos, que e o que este modulo tem para dizer sobre elas.
+COMANDOS = {
+    "start": lambda s: q("systemctl", "start", s["service"]),
+    "restart": lambda s: q("systemctl", "restart", s["service"]),
+    "stop": lambda s: q("systemctl", "stop", s["service"]),
+    "update": lambda s: "/usr/local/bin/update-game",
+    "check-update": lambda s: "/usr/local/bin/check-game-update",
+}
+
+# As duas listas nao podem divergir em silencio: uma acao com botao e sem comando da
+# 500 no clique, e uma com comando e sem botao e codigo morto que ninguem percebe.
+assert set(COMANDOS) == set(ui.POR_CHAVE), "ui.ACOES e COMANDOS fora de sincronia"
+
+# Forma antiga, montada a partir das duas: chave -> (rotulo, comando, confirma).
+# Continua sendo o que `start_job` e o historico consomem.
 ACTIONS = {
-    "start": ("Iniciar servidor", lambda s: q("systemctl", "start", s["service"]), False),
-    "restart": ("Reiniciar servidor", lambda s: q("systemctl", "restart", s["service"]), True),
-    "stop": ("Parar servidor", lambda s: q("systemctl", "stop", s["service"]), True),
-    "update": ("Atualizar jogo (SteamCMD)", lambda s: "/usr/local/bin/update-game", True),
-    "check-update": ("Checar update", lambda s: "/usr/local/bin/check-game-update", False),
+    chave: (ui.POR_CHAVE[chave].rotulo, comando, ui.POR_CHAVE[chave].confirma)
+    for chave, comando in COMANDOS.items()
 }
 
 JOB_LABELS = {key: label for key, (label, _cmd, _c) in ACTIONS.items()}
@@ -3848,10 +3891,17 @@ def api_status():
     return jsonify({str(sid): state for sid, state in all_status(servers).items()})
 
 
-@app.get("/api/metrics")
+@app.get("/api/recursos")
 @login_required
 def api_metrics():
-    """Medidores de todos os servidores — alimenta os mini-graficos do painel."""
+    """Medidores de todos os servidores — alimenta os mini-graficos do painel.
+
+    O caminho e "/api/recursos", e nao "/api/metrics", de proposito: "/api/metrics" e
+    uma regra corriqueira das listas de filtro de rastreadores (uBlock Origin, AdGuard,
+    DNS filtrado). Com uma delas ligada, o navegador nem chega a mandar o pedido — ele
+    devolve um pixel transparente com status 499 — e o painel ficava eternamente em
+    "medindo recursos...", sem erro visivel em lugar nenhum. Nome em portugues tambem
+    e o que o resto das rotas do painel usa (/historico, /alertas, /graficos)."""
     servers = db().execute(SQL_ALL_SERVERS).fetchall()
     return jsonify({str(sid): data for sid, data in all_metrics(servers).items()})
 
@@ -4084,7 +4134,7 @@ def player_action(sid: int):
     return redirect(voltar)
 
 
-@app.get("/api/servers/<int:sid>/metrics")
+@app.get("/api/servers/<int:sid>/recursos")
 @login_required
 def api_server_metrics(sid: int):
     server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
@@ -4360,7 +4410,11 @@ def server_edit(sid: int):
                 errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
         for err in errors:
             flash(err, "error")
-    return render_template("server_form.html", data=data, mode="edit", sid=sid)
+    # `server` (a linha do banco, nao o formulario) vai junto: e dele que a barra de
+    # navegacao do servidor tira o id e o nome. Sem isso esta tela seria a unica do
+    # servidor sem a barra — e era exatamente assim que a navegacao ia divergindo.
+    return render_template("server_form.html", data=data, mode="edit", sid=sid,
+                           server=server)
 
 
 @app.post("/servers/<int:sid>/delete")
@@ -5348,7 +5402,6 @@ def files(sid: int):
         "files.html", server=server, entries=entries, truncated=truncated,
         current=current, crumbs=crumbs, opened=opened, errors=errors,
         max_kb=FILE_MAX_BYTES // 1024, preview_kb=FILE_PREVIEW_BYTES // 1024,
-        matches=None,
     )
 
 
@@ -5401,27 +5454,20 @@ def delete_file(server: sqlite3.Row, path: str) -> str:
 @app.get("/servers/<int:sid>/files/search")
 @admin_required
 def files_search(sid: int):
-    _files_guard()
-    server = _server_or_404(sid)
-    try:
-        root = clean_path(request.args.get("path", "") or server["config_path"] or FILE_DEFAULT_PATH)
-    except ValueError as exc:
-        flash(str(exc), "error")
-        return redirect(url_for("files", sid=sid))
+    """Procurar arquivos de configuracao — agora numa tela so.
 
-    matches: list[dict] = []
-    errors: list[str] = []
-    try:
-        matches = find_config_files(server, root)
-    except RemoteError as exc:
-        errors.append(str(exc))
+    Isto era uma SEGUNDA implementacao da mesma coisa: `find_config_files` numa lista
+    dentro de Arquivos, e a mesma `find_config_files` na mesma lista dentro de
+    Configuracao. Duas telas, dois botoes chamados "Procurar", um resultado que so
+    valia num dos dois lugares (so a tela de Configuracao sabe fixar o arquivo
+    encontrado).
 
-    return render_template(
-        "files.html", server=server, entries=[], truncated=False, current=root,
-        crumbs=[{"name": "/", "path": "/"}], opened=None, errors=errors,
-        max_kb=FILE_MAX_BYTES // 1024, preview_kb=FILE_PREVIEW_BYTES // 1024,
-        matches=matches,
-    )
+    A busca ficou onde ela serve para alguma coisa. Esta rota continua existindo para
+    nao quebrar link antigo nem historico de navegador.
+    """
+    _server_or_404(sid)
+    pasta = request.args.get("path", "")
+    return redirect(url_for("config_quick", sid=sid, descobrir=1, **({"pasta": pasta} if pasta else {})))
 
 
 @app.post("/servers/<int:sid>/files/save")
@@ -5884,8 +5930,17 @@ def _config_sugestoes(server: sqlite3.Row, arquivos: list[str], alvo: str,
         return None
     if request.args.get("descobrir") != "1" and (arquivos or alvo):
         return None
+    # `pasta` deixa procurar noutro lugar que nao a pasta de config do cadastro. E o
+    # que a tela de Arquivos oferecia com um botao proprio; agora e um parametro
+    # desta busca, que e a unica que existe.
+    padrao = server["config_path"] or FILE_DEFAULT_PATH
     try:
-        return find_config_files(server, server["config_path"] or FILE_DEFAULT_PATH)
+        raiz = clean_path(request.args.get("pasta", "") or padrao)
+    except ValueError as exc:
+        errors.append(str(exc))
+        raiz = padrao
+    try:
+        return find_config_files(server, raiz)
     except RemoteError as exc:
         errors.append(str(exc))
         return []
@@ -6868,6 +6923,78 @@ def _cabecalhos_de_seguranca(resp):
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+# ------------------------------------------------- aplicativo instalavel (PWA)
+
+# Pastas cujo conteudo o painel consegue servir sem rede depois de instalado.
+CASCO_PASTAS = ("css", "js", "icons")
+
+
+def _arquivos_do_casco() -> tuple[list[str], int]:
+    """URLs do casco do aplicativo e a marca de versao dele.
+
+    A versao e o mtime mais recente entre esses arquivos. E o que faz um deploy
+    chegar ao celular: byte novo no CSS -> versao nova -> arquivo do service worker
+    diferente -> o navegador instala e descarta o cache velho. Sem isso, quem
+    instalou o painel continuaria vendo a tela da semana passada.
+    """
+    urls: list[str] = []
+    marca = 0
+    for pasta in CASCO_PASTAS:
+        raiz = os.path.join(app.static_folder, pasta)
+        for base, _dirs, arquivos in os.walk(raiz):
+            for nome in sorted(arquivos):
+                caminho = os.path.join(base, nome)
+                relativo = os.path.relpath(caminho, app.static_folder).replace(os.sep, "/")
+                urls.append(static_url(relativo))
+                marca = max(marca, int(os.path.getmtime(caminho)))
+    return urls, marca
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    """Ficha do aplicativo: nome, icones, cor e tela inicial.
+
+    Sai de um template (e nao de um arquivo estatico) para os caminhos dos icones
+    virem do proprio Flask — inclusive a marca de versao do `static_url`.
+    """
+    resp = app.response_class(
+        render_template("manifest.webmanifest"),
+        mimetype="application/manifest+json",
+    )
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.get("/sw.js")
+def service_worker():
+    """O service worker, servido da RAIZ de proposito.
+
+    O escopo de um service worker e a pasta em que ele mora: em /static/sw.js ele so
+    enxergaria /static/ e nao veria a navegacao do painel. Por isso ele nao e um
+    arquivo estatico — e uma rota.
+    """
+    precache, versao = _arquivos_do_casco()
+    resp = app.response_class(
+        render_template("sw.js", versao=versao, precache=precache),
+        mimetype="text/javascript",
+    )
+    # Sem isto o proprio arquivo do worker ficaria em cache e o painel nunca
+    # descobriria que existe uma versao nova dele.
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+
+@app.get("/offline")
+def offline():
+    """Tela de "sem conexao", guardada no aparelho junto com o casco.
+
+    Nao exige login: ela e servida do cache, sem passar pelo servidor, e nao mostra
+    dado nenhum — so explica o que aconteceu e oferece "tentar de novo".
+    """
+    return render_template("offline.html")
 
 
 @app.errorhandler(400)

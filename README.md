@@ -646,6 +646,35 @@ dentro de cada container.
 
 No fim o deploy mostra a URL (`http://<ip-do-ct>:8080`), o usuario e a senha.
 
+### No celular: instalar como aplicativo
+
+O painel e um **PWA**: da para instalar na tela inicial do celular e abrir sem barra de
+navegador. A interface e desenhada **para o telefone primeiro** &mdash; e dali que se
+reinicia um servidor as onze da noite, nao da mesa do escritorio.
+
+- **Instalar**: no Android/Chrome aparece um botao **Instalar** na barra de cima assim
+  que o navegador reconhece o painel como instalavel. No iPhone/Safari e
+  _Compartilhar &rarr; Adicionar a Tela de Inicio_.
+- **Navegacao**: no celular as quatro secoes principais (Servidores, Historico, Alertas,
+  Conta) ficam numa **barra de abas embaixo**, ao alcance do polegar; o resto
+  (adicionar servidor, usuarios, acesso SSH, sair) esta no menu **⋯** da barra de cima.
+  A partir de 900px de largura tudo isso sobe para a barra de cima e a de baixo some.
+- **Terminal no telefone**: a tela do terminal ganha uma fileira com as teclas que o
+  teclado virtual nao tem &mdash; `Esc`, `Tab`, `^C`, setas, `Home/End`, `PgUp/PgDn`,
+  `/`, `|`, `~`. Sem ela, `vim` e `htop` sao inoperaveis no celular.
+- **Sem conexao**: o aplicativo guarda so o proprio casco (CSS, JS, icones) e uma tela de
+  &quot;sem conexao&quot;. **Nenhuma pagina logada e nenhuma leitura de `/api/` vai para
+  o cache**: um painel com poder de root nos containers nao pode reexibir a tela de
+  servidores depois do logout, nem mostrar o uso de CPU de uma hora atras como se fosse
+  de agora.
+- **Versao nova**: quando o deploy troca os arquivos, o painel mostra uma faixa
+  _&quot;Ha uma versao nova&quot;_ com um botao. Ele nao se recarrega sozinho de
+  proposito &mdash; pode haver uma sessao de terminal aberta no meio de uma edicao.
+
+O que decide &quot;versao nova&quot; e o mtime dos arquivos de `static/`, carimbado no
+`/sw.js` na hora de servir. Um deploy que muda o CSS gera um service worker diferente, o
+navegador instala e descarta o cache velho.
+
 ### Deploy rapido: direto no CT, sem passar pelo Proxmox
 
 Com o container do painel **ja criado e alcancavel por SSH**, o `deploy-admin.ps1` manda
@@ -658,9 +687,11 @@ E o caminho normal do dia a dia: leva segundos em vez de minutos.
 - O provisionamento instala `openssh-server` no CT do painel e autoriza a **sua** chave
   publica (`ADMIN_SSH_PUBKEY`, detectada automaticamente do seu `~/.ssh`). E isso que
   habilita o envio direto; sem chave, o painel so aceita deploy pelo Proxmox.
-- O envio direto troca `app.py`, `templates/` e `static/` (removendo templates que
-  sairam do repo) e reinicia o servico, abortando com as ultimas linhas do log se ele
-  nao voltar.
+- O envio direto troca os `.py`, `templates/` e `static/` inteiros &mdash; subpastas
+  incluidas (`templates/components/`, `static/css`, `static/js`, `static/icons`),
+  removendo o que saiu do repo &mdash; e reinicia o servico, abortando com as ultimas
+  linhas do log se ele nao voltar. A pasta `static/maps` fica de fora da limpeza: ela e
+  criada dentro do container e nao existe aqui para ser reenviada.
 - **Config nao vai por ai**: mudar `ADMIN_*` (portas, limites, senha do painel) ou os
   recursos do CT exige o caminho completo:
 
@@ -986,7 +1017,7 @@ e de 5 minutos e nao de um — 288 pontos por dia ja sao mais do que o grafico m
 A aba **Terminal** abre uma sessao SSH de verdade dentro do container, com TTY: `htop`,
 `nano`, `vi`, `tail -f` e prompts de confirmacao funcionam como num terminal local.
 
-- Emulador proprio (`admin/static/terminal.js`), sem dependencia externa: cores 16/256/RGB,
+- Emulador proprio (`admin/static/js/terminal.js`), sem dependencia externa: cores 16/256/RGB,
   tela alternativa, regiao de rolagem e as teclas especiais (setas, F1-F12, Ctrl+letra).
 - Transporte por HTTP (long-poll para a saida, POST para as teclas) — o painel roda em
   gunicorn sync, que nao suporta WebSocket.
@@ -1271,15 +1302,24 @@ diario sozinho poe 365 linhas por ano no banco. O painel apaga o que passa de
 **60 dias** (`GAMEPANEL_JOBS_KEEP_DAYS`, `0` desliga), numa limpeza que roda de hora em
 hora junto com o relogio do agendamento.
 
-### Console de comandos
+### Comando unico (dentro do Terminal)
 
-Cada servidor tem uma aba **Console**: voce digita um comando e ele executa como `root`
-**dentro daquele container de jogo**, com a saida na tela e o historico registrado (quem
-rodou, o que rodou, exit code). Util para um comando so, sem abrir sessao.
+A tela **Terminal** tem dois modos, e o segundo e o **Comando unico**: voce digita um
+comando, ele executa como `root` **dentro daquele container de jogo**, e a saida fica na
+tela com o historico registrado (quem rodou, o que rodou, exit code). Util para um
+comando so, sem abrir sessao.
 
-- Sem TTY: para `vim`/`htop` e prompts, use o **Terminal**.
+Os dois modos ficam na mesma tela de proposito. Eles ja foram dois destinos separados no
+menu (&quot;Terminal&quot; e &quot;Console&quot;), com nomes que ninguem conseguia
+distinguir de fora &mdash; e cada tela do painel oferecia um subconjunto diferente dos
+dois. Hoje a navegacao tem **um** lugar para linha de comando; a escolha entre sessao
+interativa e comando avulso e feita la dentro.
+
+- Sem TTY: para `vim`/`htop` e prompts, use a **sessao interativa**.
 - Ctrl+Enter executa; as setas ↑/↓ percorrem o historico.
 - Limite de tempo por comando: 600s (`GAMEPANEL_SHELL_TIMEOUT`).
+- Sem PTY (painel rodando fora de Linux), o destino &quot;Terminal&quot; abre direto
+  neste modo &mdash; e continua sendo uma entrada so no menu.
 
 Console e terminal sao execucao remota de comandos exposta numa pagina web — quem entrar
 no painel tem root nos containers de jogo. Se nao quiser essa capacidade, desligue com
@@ -1404,7 +1444,7 @@ docker compose down -v            # zera banco, chaves e arquivos de teste
 
 | Caminho (no CT do painel) | O que e |
 |---------------------------|---------|
-| `/opt/gamepanel/` | aplicacao (Flask + `static/terminal.js`, `metrics.js`, `charts.js`) |
+| `/opt/gamepanel/` | aplicacao: `app.py`, `ui.py`, `templates/` (com `components/`) e `static/` (`css/`, `js/`, `icons/`) |
 | `/var/lib/gamepanel/panel.db` | SQLite: usuarios, servidores, historico |
 | `/var/lib/gamepanel/known_hosts` | host keys aprendidas dos containers |
 | `/etc/gamepanel/id_ed25519` | chave SSH do painel |
@@ -1412,6 +1452,37 @@ docker compose down -v            # zera banco, chaves e arquivos de teste
 
 Os **backups nao ficam aqui**: cada `.tar.gz` mora no container do jogo, em
 `/var/backups/gamepanel` (`GAMEPANEL_BACKUP_DIR`) — veja [Backups](#backups).
+
+### Como a interface e montada
+
+Tres decisoes explicam a organizacao do `admin/`, e as tres nasceram do mesmo problema:
+a mesma coisa escrita em varios lugares acaba virando coisas diferentes.
+
+**`ui.py` &mdash; o mapa da interface.** Quais telas um servidor tem, em que ordem, com
+que icone, e quem pode abrir cada uma. A lista de telas ja esteve escrita a mao em seis
+templates, cada um com um subconjunto proprio: era por isso que &quot;Graficos&quot;
+aparecia numa tela e nao na outra. Hoje **tela nova = uma linha nessa tupla**, e ela
+aparece sozinha na barra do servidor e no menu do cartao do painel. O modulo e puro (nao
+importa Flask); quem liga isso ao pedido em curso e o `app.py`.
+
+O mesmo vale para as acoes: `ui.ACOES` diz como cada uma se apresenta (rotulo, icone,
+grupo, peso visual) e `app.COMANDOS` diz o que ela roda. Uma `assert` no import garante
+que as duas listas nao divirjam &mdash; acao com botao e sem comando da 500 no clique,
+acao com comando e sem botao e codigo morto.
+
+**`templates/components/` &mdash; as pecas.** `ui.html` tem o que e generico (botao,
+selo, menu, cabecalho, tabela) e `servidor.html` o que conhece o dominio (estado do
+servico, barra de navegacao, controles de energia, cartao do painel). Toda acao que muda
+alguma coisa monta o proprio campo de CSRF: era uma linha copiada em ~40 formularios, e
+basta esquece-la uma vez para ter um botao que da 400 so em producao.
+
+**`static/css/` e `static/js/` &mdash; camadas.** O CSS vai de `tokens` (valores) a
+`pages` (o que e de uma tela so), cada camada podendo depender so das anteriores. O JS e
+um modulo por comportamento, com o mesmo contrato &mdash; `{ seletor, montar(el) }` — e o
+`app.js` so liga cada um aos elementos que a pagina trouxe. **Nenhum template tem
+`<script>` com logica dentro**, nem `onsubmit="return confirm(...)"`: a mensagem de
+confirmacao viaja em `data-confirmar`, e o nome do arquivo (que vem do container) nunca
+mais entra dentro de codigo JavaScript.
 
 ```bash
 pct exec <ADMIN_CTID> -- systemctl status gamepanel.service --no-pager

@@ -1,18 +1,22 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
 {% block title %}Entrar — Painel de Jogos{% endblock %}
 {% block content %}
-<div class="card login">
-  <h1>🎮 Painel de Jogos</h1>
-  <p class="muted">Entre para gerenciar os servidores.</p>
+<div class="card card--login">
+  <h1><span aria-hidden="true">🎮</span> Painel de Jogos</h1>
+  <p class="muted centro">Entre para gerenciar os servidores.</p>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>Usuario
-      <input name="username" autocomplete="username" autofocus required>
+      <input name="username" autocomplete="username" autocapitalize="none"
+             spellcheck="false" autofocus required>
     </label>
     <label>Senha
       <input name="password" type="password" autocomplete="current-password" required>
     </label>
-    <button class="primary" type="submit">Entrar</button>
+    <div class="form-actions">
+      {{ ui.botao('Entrar', variante='primary', bloco=true) }}
+    </div>
   </form>
 </div>
 {% endblock %}

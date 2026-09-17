@@ -1,10 +1,12 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
 {% block title %}Usuarios — Painel de Jogos{% endblock %}
+
 {% block content %}
-<div class="page-head"><h1>Usuarios</h1></div>
+{{ ui.cabecalho('Usuarios') }}
 
 <div class="card">
-  <table class="jobs">
+  <div class="table-wrap"><table class="jobs">
     <thead><tr><th>Usuario</th><th>Papel</th><th>Criado em</th><th></th></tr></thead>
     <tbody>
       {% for u in users %}
@@ -25,44 +27,42 @@
                 <option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ role_labels[r] }}</option>
               {% endfor %}
             </select>
-            <button class="btn ghost small" type="submit">Trocar</button>
+            {{ ui.botao('Trocar', variante='ghost', tamanho='sm') }}
           </form>
           {% endif %}
         </td>
-        <td class="muted">{{ u.created_at.replace('T', ' ')[:19] }}</td>
+        <td class="muted small nowrap">{{ u.created_at.replace('T', ' ')[:19] }}</td>
         <td class="acoes">
           <details class="users-reset">
-            <summary class="btn ghost small">Redefinir senha</summary>
+            <summary class="btn btn--ghost btn--sm">Redefinir senha</summary>
             <form method="post" action="{{ url_for('user_password', uid=u.id) }}" class="users-form">
               <input type="hidden" name="csrf" value="{{ csrf_token() }}">
               <input name="new" type="password" autocomplete="new-password" aria-label="nova senha"
                      minlength="{{ min_len }}" placeholder="nova senha" required>
               <input name="confirm" type="password" autocomplete="new-password" aria-label="confirmar"
                      minlength="{{ min_len }}" placeholder="confirmar" required>
-              <button class="btn small" type="submit">Salvar</button>
+              {{ ui.botao('Salvar', tamanho='sm') }}
             </form>
           </details>
           {% if u.id != meu_id %}
-          <form method="post" action="{{ url_for('user_delete', uid=u.id) }}" class="inline"
-                onsubmit="return confirm('Remover o usuario {{ u.username }}?')">
-            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <button class="btn danger small" type="submit">Remover</button>
-          </form>
+            {{ ui.acao(url_for('user_delete', uid=u.id), 'Remover',
+                       variante='danger', tamanho='sm',
+                       confirmar='Remover o usuario ' ~ u.username ~ '?') }}
           {% endif %}
         </td>
       </tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </div>
 
-<div class="card form">
+<div class="card card--form">
   <h2>Novo usuario</h2>
   <form method="post" action="{{ url_for('user_new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>Usuario
       <input name="username" pattern="[a-z_][a-z0-9_-]{0,31}" required autofocus
-             spellcheck="false" autocomplete="off">
+             spellcheck="false" autocomplete="off" autocapitalize="none">
       <small>Letras minusculas, numeros, <code>-</code> e <code>_</code>. Ex.: <code>joao</code></small>
     </label>
     <label>Papel
@@ -74,7 +74,7 @@
         <strong>Operador</strong>: liga, desliga, atualiza, edita a configuracao ja
         registrada, ve log e jogadores.
         <strong>Administrador</strong>: tudo isso mais cadastrar servidor, terminal,
-        console, navegador de arquivos e esta tela.
+        navegador de arquivos e esta tela.
       </small>
     </label>
     <div class="row">
@@ -88,10 +88,10 @@
       </label>
     </div>
     <div class="form-actions">
-      <button class="btn primary" type="submit">Criar</button>
+      {{ ui.botao('Criar', variante='primary', bloco=true) }}
     </div>
   </form>
-  <p class="muted small">
+  <p class="muted small mt-4">
     Voce define a senha e passa para a pessoa; ela troca depois em
     <a href="{{ url_for('account') }}">Conta</a>. O painel nao envia e-mail.
   </p>
@@ -99,19 +99,20 @@
 
 <div class="card">
   <h2>O que cada papel abre</h2>
-  <table class="jobs">
+  <div class="table-wrap"><table class="jobs">
     <thead><tr><th>Tela</th><th>Operador</th><th>Administrador</th></tr></thead>
     <tbody>
       <tr><td>Servidores, status, jogadores, log</td><td>sim</td><td>sim</td></tr>
       <tr><td>Start / stop / restart / update</td><td>sim</td><td>sim</td></tr>
-      <tr><td>Config (arquivos ja registrados)</td><td>sim</td><td>sim</td></tr>
+      <tr><td>Configuracao (arquivos ja registrados)</td><td>sim</td><td>sim</td></tr>
+      <tr><td>Graficos, backups e agendamentos</td><td>sim</td><td>sim</td></tr>
       <tr><td>Cadastrar / editar / remover servidor</td><td class="muted">nao</td><td>sim</td></tr>
       <tr><td>Registrar novo arquivo de config</td><td class="muted">nao</td><td>sim</td></tr>
-      <tr><td>Terminal, console e navegador de arquivos</td><td class="muted">nao</td><td>sim</td></tr>
+      <tr><td>Terminal e navegador de arquivos</td><td class="muted">nao</td><td>sim</td></tr>
       <tr><td>Usuarios</td><td class="muted">nao</td><td>sim</td></tr>
     </tbody>
-  </table>
-  <p class="muted small">
+  </table></div>
+  <p class="muted small mt-4">
     O corte segue o que da acesso de root ao container: terminal, editor de arquivos e o
     cadastro do servidor (que aponta o SSH do painel) ficam com o administrador.
   </p>

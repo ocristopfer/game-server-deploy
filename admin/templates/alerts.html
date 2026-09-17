@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
 {% block title %}Alertas &mdash; Painel de Jogos{% endblock %}
 
 {% macro caixas(prefixo, marcados) %}
@@ -16,17 +17,13 @@
 {% endmacro %}
 
 {% block content %}
-<div class="page-head">
-  <h1>Alertas</h1>
-  <div class="badges">
-    {% if cfg.ativos %}
-      <span class="badge on">{{ cfg.ativos | length }}
-        destino{{ 's' if cfg.ativos | length != 1 }} ligado{{ 's' if cfg.ativos | length != 1 }}</span>
-    {% else %}
-      <span class="badge cold">nenhum destino ligado</span>
-    {% endif %}
-  </div>
-</div>
+{% call ui.cabecalho('Alertas') %}
+  {% if cfg.ativos %}
+    {{ ui.selo(cfg.ativos | length ~ ' destino' ~ ('s' if cfg.ativos | length != 1 else '') ~ ' ligado' ~ ('s' if cfg.ativos | length != 1 else ''), 'on') }}
+  {% else %}
+    {{ ui.selo('nenhum destino ligado', 'cold') }}
+  {% endif %}
+{% endcall %}
 
 <p class="muted intro">
   O painel avisa por <strong>webhook</strong> quando algo acontece sem ninguem estar
@@ -69,10 +66,9 @@
     <div class="hook-head">
       <label class="hook-nome">
         <span class="sr-only">Nome do destino</span>
-        <input name="nome" value="{{ h.nome }}" maxlength="60"
-               placeholder="Canal da equipe">
+        <input name="nome" value="{{ h.nome }}" maxlength="60" placeholder="Canal da equipe">
       </label>
-      <label class="inline-label hook-liga">
+      <label class="checkbox hook-liga">
         <input type="checkbox" name="ativo" value="1" {% if h.ativo %}checked{% endif %}>
         <span>{{ 'Ligado' if h.ativo else 'Desligado' }}</span>
       </label>
@@ -83,7 +79,7 @@
     </p>
     <label class="hook-troca">
       <span class="rotulo">Trocar a URL</span>
-      <input name="url" value="" spellcheck="false" autocomplete="off"
+      <input name="url" value="" spellcheck="false" autocomplete="off" autocapitalize="none"
              placeholder="deixe em branco para manter a atual">
     </label>
 
@@ -96,14 +92,12 @@
     </div>
 
     <div class="form-actions hook-acoes">
-      <button class="btn primary" type="submit">Salvar</button>
-      <button class="btn" type="submit"
-              formaction="{{ url_for('alerts_hook_test', hid=h.id) }}"
-              formnovalidate>Testar</button>
+      {{ ui.botao('Salvar', variante='primary') }}
+      {{ ui.botao('Testar', extra='formaction="' ~ url_for('alerts_hook_test', hid=h.id) ~ '" formnovalidate') }}
       <span class="spacer"></span>
-      <button class="btn danger" type="submit"
-              formaction="{{ url_for('alerts_hook_del', hid=h.id) }}" formnovalidate
-              onclick="return confirm('Remover o destino {{ h.nome }}?')">Remover</button>
+      {{ ui.botao('Remover', variante='danger',
+                  confirmar='Remover o destino ' ~ h.nome ~ '?',
+                  extra='formaction="' ~ url_for('alerts_hook_del', hid=h.id) ~ '" formnovalidate') }}
     </div>
   </form>
   {% endfor %}
@@ -124,7 +118,7 @@
           <small>So para voce se achar nesta lista.</small>
         </label>
         <label>URL do webhook
-          <input name="url" spellcheck="false" autocomplete="off" required
+          <input name="url" spellcheck="false" autocomplete="off" autocapitalize="none" required
                  placeholder="https://discord.com/api/webhooks/...">
           <small>E um segredo: quem a tiver escreve no seu canal.</small>
         </label>
@@ -132,7 +126,7 @@
       <span class="rotulo">Avisar sobre</span>
       {{ caixas('novo', padrao) }}
       <div class="form-actions">
-        <button class="btn primary" type="submit">Adicionar</button>
+        {{ ui.botao('Adicionar', variante='primary', bloco=true) }}
       </div>
     </form>
   </details>
@@ -152,7 +146,7 @@
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label class="curto">Avisar quando o disco passar de
       <span class="com-unidade">
-        <input name="disk_pct" type="number" min="50" max="100" value="{{ cfg.disco }}">
+        <input name="disk_pct" type="number" min="50" max="100" value="{{ cfg.disco }}" inputmode="numeric">
         <span class="unidade">%</span>
       </span>
       <small>
@@ -162,7 +156,7 @@
     </label>
     <label class="curto">Avisar quando a memoria passar de
       <span class="com-unidade">
-        <input name="mem_pct" type="number" min="50" max="100" value="{{ cfg.memoria }}">
+        <input name="mem_pct" type="number" min="50" max="100" value="{{ cfg.memoria }}" inputmode="numeric">
         <span class="unidade">%</span>
       </span>
       <small>
@@ -172,7 +166,7 @@
     </label>
     <label class="curto">Avisar quando a CPU passar de
       <span class="com-unidade">
-        <input name="cpu_pct" type="number" min="50" max="100" value="{{ cfg.cpu }}">
+        <input name="cpu_pct" type="number" min="50" max="100" value="{{ cfg.cpu }}" inputmode="numeric">
         <span class="unidade">%</span>
       </span>
       <small>
@@ -182,7 +176,7 @@
       </small>
     </label>
     <div class="form-actions">
-      <button class="btn primary" type="submit">Salvar</button>
+      {{ ui.botao('Salvar', variante='primary', bloco=true) }}
     </div>
   </form>
 </div>
@@ -193,15 +187,14 @@
     <p class="muted">Nada registrado ainda. Cada alerta que o painel decidir mandar
       aparece aqui &mdash; inclusive os que <strong>nao</strong> sairam.</p>
   {% else %}
-    <table class="jobs">
+    <div class="table-wrap"><table class="jobs">
       <thead>
-        <tr><th>Quando (UTC)</th><th>Evento</th><th>O que</th><th>Destino</th>
-          <th>Saida</th></tr>
+        <tr><th>Quando (UTC)</th><th>Evento</th><th>O que</th><th>Destino</th><th>Saida</th></tr>
       </thead>
       <tbody>
         {% for a in diario %}
           <tr>
-            <td class="muted small">{{ a.criado_em[:19] | replace('T', ' ') }}</td>
+            <td class="muted small nowrap">{{ a.criado_em[:19] | replace('T', ' ') }}</td>
             <td class="small">{{ eventos.get(a.evento) or a.evento or '—' }}</td>
             <td class="small">{{ a.titulo }}
               {% if a.detalhe %}<br><span class="muted">{{ a.detalhe }}</span>{% endif %}
@@ -223,8 +216,8 @@
           </tr>
         {% endfor %}
       </tbody>
-    </table>
-    <p class="muted small">
+    </table></div>
+    <p class="muted small mt-4">
       <strong>sem destino</strong> quer dizer que o alerta aconteceu de verdade e nenhum
       destino ativo tinha esse evento marcado &mdash; o canal fica mudo por escolha, nao
       por defeito. <strong>erro interno</strong> e uma tarefa do relogio que quebrou:

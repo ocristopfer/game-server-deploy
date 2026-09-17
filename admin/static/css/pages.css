@@ -1,0 +1,263 @@
+/* Camada 5 — TELAS.
+ *
+ * O que e mesmo de uma tela so: o cartao de servidor, o editor de arquivos, o
+ * terminal, os graficos. Tudo que aparecer aqui duas vezes pertence a camada de
+ * componentes, nao a esta.
+ */
+
+/* ============================================================ cartao de servidor
+   No celular ele e a tela inteira: nome, estado, medidores e UM controle de
+   energia. O resto vive no menu e na tela do servidor — oito botoes por cartao,
+   vezes cinco servidores, e uma parede de quarenta alvos de toque. */
+.card.server {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  margin-bottom: 0;
+  padding: var(--sp-4);
+}
+.server__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.server__nome { min-width: 0; }
+.server__nome h2 { font-size: var(--fs-lg); overflow-wrap: anywhere; }
+.server__nome h2 a { color: var(--text); }
+.server__host {
+  display: block; margin-top: 2px;
+  color: var(--muted); font-size: var(--fs-xs); font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+.server__selos { flex: none; }
+/* Linha de controle do cartao: energia a esquerda, menu a direita. */
+.server__acoes { display: flex; align-items: center; gap: var(--sp-2); }
+.server__acoes .energia { flex: 1; display: flex; gap: var(--sp-2); }
+.server__acoes .energia .btn { flex: 1; }
+.server__acoes .menu { flex: none; }
+
+/* ============================================================ arquivos */
+.filegrid { display: grid; grid-template-columns: 1fr; gap: var(--sp-4); align-items: start; }
+.filegrid .card { margin-bottom: 0; }
+
+.filelist { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow: auto; }
+.filelist li {
+  display: flex; flex-wrap: wrap; justify-content: space-between;
+  gap: 2px var(--sp-3); align-items: baseline;
+  min-height: var(--tap-sm);
+  padding: var(--sp-2) var(--sp-2); border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+}
+.filelist li:hover { background: var(--panel-2); }
+.filelist li.open { background: var(--panel-2); outline: 1px solid var(--line); }
+.filelist li.dir a { font-weight: 600; }
+/* A base larga e o que faz o nome ficar legivel: sem ela o flex encolhia o link ate
+   a largura de uma letra e o nome descia em coluna, uma letra por linha. */
+.filelist li > a { flex: 1 1 60%; min-width: 0; overflow-wrap: anywhere; }
+.filelist .muted { white-space: normal; }
+/* "baixar" e "apagar" so aparecem sob o cursor no DESKTOP, senao a lista vira um
+   mural de links. No toque nao existe "a linha sob o cursor", entao elas ficam
+   sempre visiveis — e a largura entra na conta junto com `hover` de proposito:
+   navegador de celular que se declara `hover: hover` (acontece) esconderia acoes
+   que ali nao ha como revelar. */
+.filelist a.dl, .filelist form.inline-del { margin-left: var(--sp-2); }
+.filelist form.inline-del { display: inline; }
+@media (hover: hover) and (pointer: fine) and (min-width: 900px) {
+  .filelist a.dl, .filelist form.inline-del { opacity: 0; transition: opacity var(--transicao); }
+  .filelist li:hover a.dl, .filelist a.dl:focus,
+  .filelist li:hover form.inline-del, .filelist form.inline-del:focus-within { opacity: 1; }
+}
+.filelist form.inline-del button { color: var(--err-texto); }
+
+.filebar { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.path-form { display: flex; gap: var(--sp-2); flex: 1 1 100%; min-width: 0; }
+.path-form input { margin-top: 0; font: 13px/1.5 var(--mono); min-width: 0; }
+.path-form .btn { flex: none; }
+/* Envio de arquivo: separado da barra de caminho por uma linha, para nao virar um
+   amontoado de controles no topo da tela. */
+.upload-form { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.upload-form input[type="file"] { flex: 1 1 100%; min-width: 0; margin-top: 0; font-size: var(--fs-sm); }
+
+.editor .filename { font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
+#content {
+  min-height: 45vh; background: var(--preto); white-space: pre; overflow-wrap: normal;
+  overflow-x: auto; tab-size: 4;
+  font: 12.5px/1.6 var(--mono);
+}
+
+@media (min-width: 600px) {
+  .path-form { flex: 1 1 16rem; }
+  .upload-form input[type="file"] { flex: 1 1 14rem; }
+}
+@media (min-width: 900px) {
+  .filegrid { grid-template-columns: minmax(16rem, 1fr) 2fr; gap: var(--sp-5); }
+  .filelist { max-height: 62vh; }
+  #content { min-height: 58vh; }
+}
+
+/* ============================================================ configuracao */
+.conf-files { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.conf-path { margin: var(--sp-3) 0 0; overflow-wrap: anywhere; }
+.conf-path form.inline { margin-left: 2px; }
+.conf-busca { width: 100%; margin-top: 0; }
+
+.conf-sec { border: none; border-top: 1px solid var(--line); margin: 0; padding: var(--sp-3) 0 var(--sp-1); }
+.conf-sec:first-of-type { border-top: none; padding-top: 0; }
+.conf-sec legend {
+  padding: 0; color: var(--muted); font-size: var(--fs-xs);
+  text-transform: uppercase; letter-spacing: .04em; overflow-wrap: anywhere;
+}
+.conf-grid { display: grid; gap: var(--sp-3) var(--sp-4); grid-template-columns: 1fr; }
+.conf-item { margin: 0; }
+.conf-item[hidden] { display: none; }
+.conf-key { display: block; color: var(--text); font-size: var(--fs-sm); font-family: var(--mono); overflow-wrap: anywhere; }
+.conf-item input, .conf-item select { font: 13px/1.5 var(--mono); }
+
+/* Campo reconhecido pelo catalogo (gamefields.py): ganha nome em portugues, unidade e
+   explicacao. O nome tecnico continua visivel — e por ele que se acha o campo na
+   documentacao do jogo e nos foruns. */
+.conf-mapeado .conf-key { font-family: inherit; font-size: var(--fs-md); text-transform: none; letter-spacing: 0; }
+.conf-raw { font-family: var(--mono); font-size: var(--fs-xs); font-style: normal; color: var(--muted); margin-left: 6px; }
+.conf-num { display: flex; align-items: center; gap: var(--sp-1); }
+.conf-num input { flex: 1 1 auto; min-width: 0; }
+.conf-unit { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.conf-ajuda { display: block; margin-top: var(--sp-1); color: var(--muted); line-height: 1.45; }
+.conf-ajuda em { font-style: normal; white-space: nowrap; opacity: .85; }
+.conf-nova { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
+.conf-nova select, .conf-nova input { flex: 1 1 100%; margin-top: 0; }
+
+@media (min-width: 600px) {
+  .conf-grid { grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
+  .conf-busca { width: auto; min-width: 14rem; }
+  .conf-nova select { flex: 1 1 12rem; }
+  .conf-nova input { flex: 1 1 11rem; }
+}
+
+/* ============================================================ alertas */
+/* Um destino de alerta. E um cartao dentro do cartao: sem a moldura, tres destinos
+   seguidos viram um formulario so e nao da para ver onde um termina. */
+.hook {
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--panel-2); padding: var(--sp-4); margin-bottom: var(--sp-3);
+}
+.hook.desligado { opacity: .62; }
+.hook.desligado:focus-within, .hook.desligado:hover { opacity: 1; }
+.hook-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-2); }
+.hook-nome { flex: 1 1 14rem; margin: 0; }
+.hook-nome input { margin-top: 0; font-weight: 600; font-size: var(--fs-base); }
+.hook-liga { flex: none; color: var(--muted); font-size: var(--fs-sm); }
+.hook-url { margin: 0 0 var(--sp-2); }
+.hook-url code { color: var(--muted); }
+/* O campo de troca e secundario: o normal e nao mexer nele, entao ele nao pode ter o
+   mesmo peso visual do nome. */
+.hook-troca { margin: 0 0 var(--sp-3); }
+.hook-troca input { font-size: var(--fs-sm); }
+.hook-eventos { margin-bottom: var(--sp-3); }
+.hook-eventos .aviso { margin: var(--sp-2) 0 0; color: var(--warn); }
+.hook-acoes { padding-top: var(--sp-3); border-top: 1px solid var(--line); margin-top: 0; }
+
+.hook-novo > summary {
+  cursor: pointer; color: var(--accent); font-size: var(--fs-md);
+  min-height: var(--tap); display: flex; align-items: center;
+  list-style: none; width: fit-content;
+}
+.hook-novo > summary::-webkit-details-marker { display: none; }
+.hook-novo > summary:hover { text-decoration: underline; }
+.hook-novo[open] { border: 1px dashed var(--line); border-radius: var(--r-md); padding: var(--sp-3) var(--sp-4); }
+.hook-novo[open] > summary { margin-bottom: var(--sp-2); }
+.vazio { margin: 0 0 var(--sp-3); }
+
+.regras { margin: 0; padding-left: var(--sp-5); color: var(--muted); font-size: var(--fs-sm); }
+.regras li { margin-bottom: var(--sp-2); }
+.regras li:last-child { margin-bottom: 0; }
+.regras strong { color: var(--text); font-weight: 600; }
+.regras ul { margin: var(--sp-1) 0 0; padding-left: var(--sp-4); }
+.regras em { font-style: normal; color: var(--text); }
+
+/* ============================================================ usuarios */
+/* O reset de senha fica dobrado dentro da linha da tabela: sao dois campos que so
+   interessam na hora de usar, e abertos empurrariam a lista para fora da tela. */
+.users-reset { display: inline-block; }
+.users-reset > summary { list-style: none; cursor: pointer; }
+.users-reset > summary::-webkit-details-marker { display: none; }
+.users-form { display: flex; gap: var(--sp-1); flex-wrap: wrap; align-items: center; margin-top: var(--sp-2); }
+.users-form input { width: 9rem; margin-top: 0; }
+.users-papel { display: flex; gap: var(--sp-1); align-items: center; }
+.users-papel select { margin-top: 0; width: auto; }
+
+/* ============================================================ graficos
+   Marcas finas, grade recessiva, e o texto sempre nas cores de texto do painel: a
+   cor da serie mora na LINHA, e a identidade chega pelo tracinho ao lado do rotulo. */
+.grafico { display: block; width: 100%; height: auto; margin-top: var(--sp-1); touch-action: pan-y; }
+.grafico:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grafico .grade, .grafico .eixo { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+/* A mira nasce escondida por CSS, e nao pelo atributo `hidden`: em SVG ele nao e
+   honrado do mesmo jeito que em HTML, e a linha aparecia colada no eixo Y. */
+.grafico .mira { display: none; stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.grafico .mira.ativa { display: inline; }
+.grafico .serie { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.grafico .tick { fill: var(--muted); font-size: 11px; }
+.grafico .ponta { fill: var(--text); font-size: 12px; font-weight: 600; }
+
+.legenda { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+.legenda .chave { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--muted); }
+.legenda .chave i { width: 14px; height: 2px; border-radius: 1px; }
+
+/* O cartao ancora o balao; o SVG nao pode conter HTML. */
+.card[data-grafico] { position: relative; }
+.balao {
+  position: absolute; top: 3rem; z-index: 5; pointer-events: none;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); min-width: 8rem;
+  box-shadow: var(--sombra-2);
+}
+.balao-hora { color: var(--muted); margin-bottom: var(--sp-1); }
+.balao-linha { display: flex; align-items: center; gap: var(--sp-1); line-height: 1.7; }
+.balao-linha i { width: 12px; height: 2px; border-radius: 1px; flex: none; }
+.balao-linha strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.balao-linha span { color: var(--muted); }
+
+/* ============================================================ terminal */
+.term {
+  position: relative;  /* ancora o textarea invisivel da entrada */
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--r-md); overflow: hidden; margin-bottom: var(--sp-3);
+}
+.term.full {
+  position: fixed; inset: 0; z-index: var(--z-tela-cheia); margin: 0; border-radius: 0;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  background: var(--preto);
+}
+.term-bar {
+  display: flex; align-items: center; gap: var(--sp-1); flex-wrap: nowrap;
+  overflow-x: auto; scrollbar-width: none;
+  padding: var(--sp-2); background: var(--panel-2); border-bottom: 1px solid var(--line);
+}
+.term-bar::-webkit-scrollbar { display: none; }
+.term-bar > * { flex: none; }
+.term-bar .spacer { flex: 1 0 var(--sp-2); }
+
+.term-view {
+  background: var(--preto); padding: var(--sp-1) var(--sp-2); overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  height: 55vh; cursor: text;
+}
+.term.full .term-view { height: calc(100dvh - 7rem - var(--safe-top) - var(--safe-bottom)); }
+.term-view .tl { font: 13px/18px var(--mono); color: #c9d3de; white-space: pre; letter-spacing: 0; }
+.term-view .cur { background: var(--accent); color: var(--accent-texto); }
+/* A entrada real e um textarea invisivel: e ele que recebe teclado, IME e colagem.
+   Ele NAO pode ter width/height zero nem display:none, ou o teclado do celular nao
+   abre; fica de 1px e transparente. */
+.term-input {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  border: 0; opacity: 0; overflow: hidden; resize: none;
+}
+
+/* Fileira de teclas que o teclado virtual do celular nao tem (Esc, Tab, setas).
+   Sem ela, vim e htop sao inoperaveis no telefone. */
+.term-teclas {
+  display: flex; gap: var(--sp-1); overflow-x: auto; scrollbar-width: none;
+  padding: var(--sp-2); background: var(--panel-2); border-top: 1px solid var(--line);
+}
+.term-teclas::-webkit-scrollbar { display: none; }
+.term-teclas .btn { flex: none; min-width: 3rem; padding: 8px 10px; font-size: var(--fs-sm); }
+@media (min-width: 900px) {
+  .term-view { height: 62vh; }
+  .term-bar { flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
+  /* Com teclado fisico a fileira extra e so ocupacao de espaco. */
+  .term-teclas { display: none; }
+}

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Painel de Jogos">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f9cf9"/>
+      <stop offset="1" stop-color="#1f56a8"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <path fill="#ecf2fa" d="M22 21h20a11 11 0 0 1 11 11 11 11 0 0 1-19.2 7.4h-3.6A11 11 0 0 1 11 32a11 11 0 0 1 11-11z"/>
+  <g fill="#2f6fd0">
+    <rect x="17.5" y="29.5" width="11" height="5" rx="2.5"/>
+    <rect x="20.5" y="26.5" width="5" height="11" rx="2.5"/>
+    <circle cx="40" cy="35" r="2.6"/>
+    <circle cx="45.5" cy="29.5" r="2.6"/>
+  </g>
+</svg>

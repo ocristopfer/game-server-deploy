@@ -1,12 +1,11 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/servidor.html" as srv with context %}
 {% block title %}Backups &mdash; {{ server.name }}{% endblock %}
+
 {% block content %}
-<div class="page-head">
-  <h1>Backups &mdash; {{ server.name }}</h1>
-  <div class="actions">
-    <a class="btn ghost" href="{{ url_for('server_detail', sid=server.id) }}">Voltar</a>
-  </div>
-</div>
+{{ ui.cabecalho('Backups — ' ~ server.name) }}
+{{ srv.abas(server, 'backups') }}
 
 <div class="card">
   <h2>O que entra na copia</h2>
@@ -24,11 +23,11 @@
         <a href="{{ url_for('server_edit', sid=server.id) }}">caminhos de backup</a> do cadastro.
       {% endif %}
     </p>
-    <form method="post" action="{{ url_for('backup_create', sid=server.id) }}">
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <button class="btn primary" type="submit">Fazer backup agora</button>
-    </form>
-    <p class="muted small">
+    <div class="form-actions">
+      {{ ui.acao(url_for('backup_create', sid=server.id), 'Fazer backup agora',
+                 variante='primary', icone='💾', bloco=true) }}
+    </div>
+    <p class="muted small mt-4">
       Da para tirar a copia com o servidor ligado, e o normal. So saiba que um save
       gravado no meio da copia pode entrar pela metade &mdash; para uma copia perfeita,
       pare o servidor antes.
@@ -47,7 +46,7 @@
   <h2>Copias guardadas</h2>
   {% if erro %}<p class="flash error">{{ erro }}</p>{% endif %}
   {% if copias %}
-  <table class="jobs">
+  <div class="table-wrap"><table class="jobs">
     <thead><tr><th>Arquivo</th><th>Quando</th><th>Tamanho</th><th></th></tr></thead>
     <tbody>
       {% for c in copias %}
@@ -56,24 +55,18 @@
           <code>{{ c.name }}</code>
           {% if c.seguranca %}<span class="badge" title="Tirada pelo painel logo antes de uma restauracao">antes de restaurar</span>{% endif %}
         </td>
-        <td class="muted">{{ c.mtime }}</td>
-        <td class="muted">{{ c.size | tamanho }}</td>
-        <td>
+        <td class="muted small nowrap">{{ c.mtime }}</td>
+        <td class="muted nowrap">{{ c.size | tamanho }}</td>
+        <td class="acoes">
           {% if is_admin %}
-          <a class="btn ghost small"
-             href="{{ url_for('backup_download', sid=server.id, nome=c.name) }}">baixar</a>
-          <form method="post" action="{{ url_for('backup_restore', sid=server.id) }}" class="inline"
-                onsubmit="return confirm('Restaurar {{ c.name }} em {{ server.name }}?\n\nO servidor sera PARADO, os arquivos de agora serao substituidos e ele volta a subir. Uma copia do estado atual e guardada antes.')">
-            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <input type="hidden" name="nome" value="{{ c.name }}">
-            <button class="btn" type="submit">restaurar</button>
-          </form>
-          <form method="post" action="{{ url_for('backup_delete', sid=server.id) }}" class="inline"
-                onsubmit="return confirm('Apagar {{ c.name }}? Nao tem volta.')">
-            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <input type="hidden" name="nome" value="{{ c.name }}">
-            <button class="btn danger" type="submit">apagar</button>
-          </form>
+            {{ ui.botao('baixar', href=url_for('backup_download', sid=server.id, nome=c.name),
+                        variante='ghost', tamanho='sm', icone='⬇') }}
+            {{ ui.acao(url_for('backup_restore', sid=server.id), 'restaurar', tamanho='sm',
+                       campos={'nome': c.name},
+                       confirmar='Restaurar ' ~ c.name ~ ' em ' ~ server.name ~ '?\n\nO servidor sera PARADO, os arquivos de agora serao substituidos e ele volta a subir. Uma copia do estado atual e guardada antes.') }}
+            {{ ui.acao(url_for('backup_delete', sid=server.id), 'apagar', variante='danger',
+                       tamanho='sm', campos={'nome': c.name},
+                       confirmar='Apagar ' ~ c.name ~ '? Nao tem volta.') }}
           {% else %}
           <span class="muted small">baixar, restaurar e apagar sao de administrador</span>
           {% endif %}
@@ -81,7 +74,7 @@
       </tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% elif not erro %}
     <p class="muted">Nenhuma copia ainda.</p>
   {% endif %}
