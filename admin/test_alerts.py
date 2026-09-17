@@ -181,7 +181,8 @@ def test_queda_avisa(banco, webhooks):
     panel._alerta_de_estado(banco, SERVIDOR, estado(service="inactive"),
                             estado(service="active"))
     assert len(webhooks) == 1
-    assert "Palworld" in webhooks[0][1] and "palworld.service" in webhooks[0][1]
+    assert "Palworld" in webhooks[0][1]
+    assert "palworld.service" in webhooks[0][1]
 
 
 def test_volta_avisa(banco, webhooks):
@@ -284,8 +285,8 @@ def test_servico_em_failed_avisa_que_quebrou(banco, alvo, webhooks):
     panel._alerta_de_estado(banco, alvo, estado(service="failed", result="exit-code"),
                             estado(service="active"))
     assert len(webhooks) == 1
-    assert "quebrou" in webhooks[0][1] and "exit-code" in webhooks[0][1], \
-        "a mensagem diz que QUEBROU, nao que pararam"
+    assert "quebrou" in webhooks[0][1], "a mensagem diz que QUEBROU, nao que pararam"
+    assert "exit-code" in webhooks[0][1]
 
 
 def test_quebrar_logo_apos_a_acao_do_painel_ainda_avisa(banco, alvo, webhooks):
@@ -536,7 +537,9 @@ def test_entrada_chega_na_volta_rapida_sem_ssh(banco, monitor_a2s, webhooks, mon
 
     # Os relogios recuam 20s: o do estado (60s) ainda nao venceu, o dos jogadores (15s)
     # sim — que e exatamente a situacao no meio de dois minutos.
-    panel._ultimo_monitor = panel._ultimo_estado = time.monotonic() - 20
+    recuo = time.monotonic() - 20
+    monkeypatch.setattr(panel, "_ultimo_monitor", recuo)
+    monkeypatch.setattr(panel, "_ultimo_estado", recuo)
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: {
         "configured": True, "error": "", "players": 1, "list": [{"name": "Ana"}]})
     with panel.app.app_context():
@@ -569,7 +572,7 @@ def test_contagem_por_log_nao_entra_na_volta_curta(banco, alvo, webhooks, monkey
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: {
         "configured": True, "error": "", "players": 2,
         "list": [{"name": "Ana"}, {"name": "Bea"}]})
-    panel._ultimo_monitor = time.monotonic() - 20
+    monkeypatch.setattr(panel, "_ultimo_monitor", time.monotonic() - 20)
     with panel.app.app_context():
         panel.monitora_servidores()
     assert len(webhooks) == 0
@@ -587,7 +590,9 @@ def test_sem_alerta_de_jogador_20s_ainda_nao_e_hora(banco, alvo, monkeypatch):
     liga(banco, ["caiu"])
     monkeypatch.setattr(panel, "server_status", lambda server, force=False: estado())
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {"disks": []})
-    panel._ultimo_monitor = panel._ultimo_estado = time.monotonic() - 20
+    recuo = time.monotonic() - 20
+    monkeypatch.setattr(panel, "_ultimo_monitor", recuo)
+    monkeypatch.setattr(panel, "_ultimo_estado", recuo)
     with panel.app.app_context():
         assert panel.monitora_servidores() == 0
 
@@ -700,7 +705,9 @@ def test_memoria_quase_cheia(banco, alvo, webhooks, monkeypatch):
     # Como no disco, a memoria do monitor NAO pode ser zerada entre as chamadas.
     panel._alerta_de_memoria(banco, alvo, panel.webhook_config(banco))
     assert len(webhooks) == 1
-    assert "95.0%" in webhooks[0][1] and "3.8 GB" in webhooks[0][1] and "4.0 GB" in webhooks[0][1]
+    assert "95.0%" in webhooks[0][1]
+    assert "3.8 GB" in webhooks[0][1]
+    assert "4.0 GB" in webhooks[0][1]
 
     webhooks.clear()
     panel._alerta_de_memoria(banco, alvo, panel.webhook_config(banco))
@@ -751,8 +758,9 @@ def test_cpu_alta(banco, alvo, webhooks, monkeypatch):
     assert len(webhooks) == 1
     # Sem os nucleos, "94.5%" nao diz se e uma maquina afogada ou um nucleo de quatro; e
     # sem a fatia do jogo nao da para saber se o culpado e o servidor ou outra coisa.
-    assert "94.5%" in webhooks[0][1] and "4 nucleos" in webhooks[0][1] \
-        and "jogo: 92.1%" in webhooks[0][1]
+    assert "94.5%" in webhooks[0][1]
+    assert "4 nucleos" in webhooks[0][1]
+    assert "jogo: 92.1%" in webhooks[0][1]
 
     webhooks.clear()
     panel._alerta_de_cpu(banco, alvo, panel.webhook_config(banco))
@@ -767,8 +775,8 @@ def test_cpu_alta(banco, alvo, webhooks, monkeypatch):
         "cpu_pct": 99.0, "cores": 1, "proc": {}})
     panel._alerta_de_cpu(banco, alvo, panel.webhook_config(banco))
     assert len(webhooks) == 1, "subiu de novo, avisa de novo"
-    assert "em 1 nucleo" in webhooks[0][1] and "nucleos" not in webhooks[0][1], \
-        "um nucleo so nao vira plural"
+    assert "em 1 nucleo" in webhooks[0][1], "um nucleo so nao vira plural"
+    assert "nucleos" not in webhooks[0][1]
     assert "jogo:" not in webhooks[0][1], "sem PID do jogo, a mensagem nao inventa a fatia"
 
     # Duas amostras sao o minimo para calcular uso de CPU; com uma so o medidor devolve None.
@@ -869,7 +877,10 @@ def test_streams_desejados_so_para_quem_conta_por_log():
 def test_assinatura_de_stream_muda_com_o_cadastro():
     """A assinatura e o que decide refazer a conexao: trocar o regex tem de derrubar a
     antiga, senao o painel segue ouvindo com o padrao velho ate o proximo restart."""
-    assert panel._assinatura_de_stream(_srv(1)) == panel._assinatura_de_stream(_srv(1))
+    # Duas chamadas, dois dicts DISTINTOS (mas com o mesmo conteudo): o que se confere
+    # e que a assinatura depende dos dados do cadastro, nao da identidade do objeto.
+    de_novo = panel._assinatura_de_stream(_srv(1))
+    assert panel._assinatura_de_stream(_srv(1)) == de_novo, "mesmo cadastro, mesma assinatura"
     assert panel._assinatura_de_stream(_srv(1)) != panel._assinatura_de_stream(
         _srv(1, join_re="outro (?P<name>.+)"))
     assert panel._assinatura_de_stream(_srv(1)) != panel._assinatura_de_stream(
@@ -1196,10 +1207,12 @@ def test_dois_destinos_tem_grupos_de_caixas_separados(banco, tela_de_alertas, de
                                  "url": "https://discord.com/api/webhooks/999/outro",
                                  "eventos": ["caiu"]})
     html = tela()
-    assert "Equipe" in html and "Geral" in html
+    assert "Equipe" in html
+    assert "Geral" in html
     # Cada destino precisa do seu proprio id de caixa: repetido, clicar no rotulo de um
     # marcaria o evento do outro.
-    assert f'id="h{hid}-caiu"' in html and f'id="h{hid + 1}-caiu"' in html
+    assert f'id="h{hid}-caiu"' in html
+    assert f'id="h{hid + 1}-caiu"' in html
 
 
 def test_testar_usa_a_url_digitada_ou_a_salva(tela_de_alertas, destino_cadastrado, webhooks):
@@ -1237,9 +1250,12 @@ def test_limites_de_recurso_pela_tela(banco, tela_de_alertas):
     assert panel.webhook_config(banco)["cpu"] == 70
 
     html = tela()
-    assert 'name="mem_pct"' in html and 'name="cpu_pct"' in html
-    assert 'value="85"' in html and 'value="70"' in html
-    assert "memoria-alta" in html and "cpu-alta" in html
+    assert 'name="mem_pct"' in html
+    assert 'name="cpu_pct"' in html
+    assert 'value="85"' in html
+    assert 'value="70"' in html
+    assert "memoria-alta" in html
+    assert "cpu-alta" in html
 
 
 def test_remover_tira_da_lista(banco, tela_de_alertas, destino_cadastrado):
@@ -1305,7 +1321,8 @@ def test_cadastro_grava_e_valida_a_expressao_de_erro(banco, tela_de_alertas):
         "error_re"] == "Out of memory", "expressao que nao compila e recusada no cadastro"
 
     form = cli.get(f"/servers/{sid_novo}/edit").get_data(as_text=True)
-    assert 'name="error_re"' in form and "Out of memory" in form
+    assert 'name="error_re"' in form
+    assert "Out of memory" in form
     assert 'name="error_re"' in cli.get("/servers/new").get_data(as_text=True)
 
 
