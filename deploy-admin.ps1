@@ -64,6 +64,30 @@ function Copy-AsLf([string]$Source, [string]$Dest) {
     Write-LfFile $Dest ([System.IO.File]::ReadAllText($Source))
 }
 
+# So estas extensoes sao texto. Qualquer outra (a comecar por .png) e binaria: ler com
+# ReadAllText decodifica como UTF-8 e todo byte fora do plano ASCII vira o caractere de
+# substituicao (U+FFFD), e o \r`n -> `n do Write-LfFile ainda come um byte 0x0D que por
+# acaso caia depois de um 0x0A. Foi assim que os icones do manifest chegaram corrompidos
+# no servidor - a assinatura de PNG (89 50 4E 47 0D 0A 1A 0A) virou EF BF BD 50 4E 47 0A
+# 1A 0A, e o Chrome parou de aceitar qualquer icone do app (erro "no-acceptable-icon").
+$script:ExtensoesDeTexto = @(".py", ".html", ".jinja", ".css", ".js", ".svg", ".ini",
+    ".cfg", ".json", ".webmanifest", ".md", ".txt", ".sh")
+
+function Copy-Binario([string]$Source, [string]$Dest) {
+    $dir = Split-Path -Parent $Dest
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    Copy-Item -LiteralPath $Source -Destination $Dest -Force
+}
+
+function Copy-ArquivoDoAdmin([string]$Source, [string]$Dest) {
+    $ext = [System.IO.Path]::GetExtension($Source).ToLowerInvariant()
+    if ($script:ExtensoesDeTexto -contains $ext) {
+        Copy-AsLf $Source $Dest
+    } else {
+        Copy-Binario $Source $Dest
+    }
+}
+
 # ----- Acesso ao Proxmox: chave quando existe, senha do .env quando nao -----
 
 # O ssh/scp do Windows nao aceita senha por parametro, mas o OpenSSH 8.4+ chama o
@@ -321,9 +345,9 @@ $AdminSrc = Join-Path $ScriptDir "admin"
 if (-not (Test-Path $AdminSrc)) { throw "Diretorio 'admin' nao encontrado em $ScriptDir" }
 foreach ($file in Get-ChildItem -Path $AdminSrc -File -Recurse) {
     $relative = $file.FullName.Substring($AdminSrc.Length).TrimStart('\', '/')
-    # __pycache__ e binario (e o Copy-AsLf converte fim de linha): fica de fora.
+    # __pycache__ nao serve para nada no destino - so peso extra no envio.
     if ($relative -like "__pycache__*" -or $relative -like "*\__pycache__\*") { continue }
-    Copy-AsLf $file.FullName (Join-Path (Join-Path $BundleDir "admin") $relative)
+    Copy-ArquivoDoAdmin $file.FullName (Join-Path (Join-Path $BundleDir "admin") $relative)
 }
 
 # ----- Atalho: CT ja existe e responde? Manda o codigo direto para ele -----

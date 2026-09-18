@@ -337,6 +337,16 @@ Regras que ja custaram caro aqui (ver tambem a memoria do projeto):
   relaxado, senao o script morre em cima de um sucesso.
 - **Here-string que vai por ssh** leva `\r` do CRLF e quebra o bash do outro lado —
   normalize no `Invoke-Ssh`.
+- **`Copy-AsLf` (ReadAllText + normaliza fim de linha) so serve para texto.** Aplicado a
+  um `.png` ele decodifica o arquivo como UTF-8: todo byte fora do plano ASCII vira o
+  caractere de substituicao (U+FFFD), e a assinatura de PNG (`89 50 4E 47 0D 0A 1A 0A`)
+  chega no servidor como `EF BF BD 50 4E 47 0A 1A 0A` — arquivo corrompido, e o Chrome
+  recusa o icone do PWA (`no-acceptable-icon`) sem avisar em lugar nenhum do deploy. Foi
+  o que aconteceu: o loop que monta o bundle em `deploy-admin.ps1` passava todo arquivo
+  de `admin/` por `Copy-AsLf`, exceto `__pycache__`. O fix e uma lista de extensoes de
+  texto (`Copy-ArquivoDoAdmin`) — qualquer coisa fora dela vai por `Copy-Item` (copia de
+  bytes, sem decodificar nada). Extensao binaria nova em `static/` (fonte, imagem)
+  **entra binaria por padrao** — so vira texto se voce adicionar a extensao na lista.
 
 ---
 
