@@ -122,7 +122,7 @@ cat /tmp/carregar.out | sed 's/^/          /'
 grep -q '^token_ok True' /tmp/carregar.out && ok "token do env = token do arquivo" || nok "token divergente"
 grep -q '^segredo True' /tmp/carregar.out && ok "segredo com aspas, barra, cifrao e crase sobrevive ao env do systemd" || nok "segredo corrompido no env"
 grep -q '^chave_opn True' /tmp/carregar.out && ok "chave com / + = intacta" || nok "chave do OPNsense corrompida"
-grep -q '^ips 192.168.2.30 192.168.2.99 (.192.168.2.19.,)' /tmp/carregar.out && ok "faixa de IPs e lista de origens" || nok "faixa/origens erradas"
+grep -q "^ips 192.168.2.30 192.168.2.99 ('192.168.2.19', '127.0.0.1')" /tmp/carregar.out && ok "faixa de IPs e origens: painel + loopback (teste de saude)" || nok "faixa/origens erradas"
 grep -q '^chaves 2 True True' /tmp/carregar.out && ok "CT novo recebe a chave do broker E a do painel" || nok "chaves do CT novo erradas"
 grep -q 'template vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst' /tmp/carregar.out && ok "template dos jogos = o Debian 13 mais novo do storage" || nok "template errado"
 grep -q '^prefixo 24' /tmp/carregar.out && ok "mascara vem do BROKER_IP_CIDR" || nok "mascara errada"
@@ -153,6 +153,8 @@ for s in "$T1" 'segredo-do-proxmox' 'chave+de=teste' 'a"b'; do
   grep -qF -- "$s" /tmp/deploy1.log && nok "segredo '${s:0:8}...' apareceu no log do deploy" || ok "segredo '${s:0:8}...' fora do log"
 done
 grep -q "REGRAS DE FIREWALL" /tmp/deploy1.log && ok "resumo traz as regras de firewall" || nok "resumo sem firewall"
+grep -q "1. 192.168.2.19 -> 192.168.2.18:8443/tcp" /tmp/deploy1.log && ok "regra 1 do resumo traz o IP do painel" || nok "resumo sem o IP do painel"
+grep -q "3. 192.168.2.18 -> 192.168.1.1:8443 " /tmp/deploy1.log && ok "resumo sem barra sobrando nas URLs" || nok "resumo com URL suja: $(grep '3. 192.168.2.18' /tmp/deploy1.log)"
 [ ! -f "$work/broker.secrets.env" ] && ok "copia dos segredos apagada do bundle" || nok "segredos ficaram no bundle"
 
 echo "== 2o deploy (idempotencia) =="
@@ -179,8 +181,32 @@ echo "== falhas claras =="
 cp "$work/secrets.modelo" "$work/broker.secrets.env"; sed -i '/^PROXMOX_TOKEN=/d' "$work/broker.secrets.env"
 ( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./provision-broker-lxc.sh ) > /tmp/deploy5.log 2>&1
 [ $? -ne 0 ] && grep -q "PROXMOX_TOKEN nao definido" /tmp/deploy5.log && ok "falta de PROXMOX_TOKEN derruba o deploy nomeando a variavel" || nok "deploy nao reclamou do PROXMOX_TOKEN"
-( cd "$work" && BROKER_IP_CIDR='dhcp' BROKER_SKIP_HEALTHCHECK=1 bash -c 'source ./broker.conf.env; BROKER_IP_CIDR=dhcp; export BROKER_IP_CIDR; source ./broker.secrets.env; exec bash ./provision-broker-lxc.sh' ) >/tmp/deploy6.log 2>&1
-[ $? -ne 0 ] && ok "IP dhcp e recusado" || nok "IP dhcp aceito"
+# Impressao nao informada + servidor inalcancavel a partir do host (o que aconteceu de verdade com
+# o OPNsense): tem de falhar ALTO, dizendo o que fazer. Antes saia calado (set -e + pipefail).
+cp "$work/secrets.modelo" "$work/broker.secrets.env"
+sed -i "/^OPNSENSE_CERT_SHA256=/d;s#^OPNSENSE_URL=.*#OPNSENSE_URL='https://127.0.0.1:1/'#" "$work/broker.secrets.env"
+( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./provision-broker-lxc.sh ) > /tmp/deploy7.log 2>&1
+rc=$?
+[ $rc -ne 0 ] && grep -q "nao conseguiu ler o certificado de https://127.0.0.1:1/" /tmp/deploy7.log && grep -q "OPNSENSE_CERT_SHA256 no broker.secrets.env" /tmp/deploy7.log \
+  && ok "servidor inalcancavel: o deploy falha DIZENDO o que fazer (nao sai calado)" || nok "deploy saiu sem explicar (rc=$rc): $(tail -3 /tmp/deploy7.log | tr '\n' ' ')"
+# Qualquer falha inesperada mostra a linha e o comando (trap ERR), sem valor de segredo.
+cp "$work/secrets.modelo" "$work/broker.secrets.env"
+sed 's#^  run_ct "chown -R root:root ${APP_DIR}"#  false#' "$work/provision-broker-lxc.sh" > "$work/quebrado.sh"
+( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./quebrado.sh ) > /tmp/deploy8.log 2>&1
+rc=$?
+if [ $rc -ne 0 ] && grep -q "falhou na linha .* executando: false" /tmp/deploy8.log && ! grep -qF "segredo-do-proxmox" /tmp/deploy8.log; then
+  ok "falha inesperada mostra linha e comando (sem segredo)"
+else
+  nok "trap ERR nao explicou a falha (rc=$rc): $(tail -3 /tmp/deploy8.log | tr '
+' ' ')"
+fi
+# IP dhcp: o certificado e a regra de firewall dependem do IP; o script recarrega o
+# broker.conf.env, entao e ELE que precisa mudar (uma variavel de fora seria sobrescrita).
+cp "$work/secrets.modelo" "$work/broker.secrets.env"
+sed -i "s#^BROKER_IP_CIDR=.*#BROKER_IP_CIDR='dhcp'#" "$work/broker.conf.env"
+( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./provision-broker-lxc.sh ) > /tmp/deploy6.log 2>&1
+rc=$?
+[ $rc -ne 0 ] && grep -q "BROKER_IP_CIDR precisa ser um IP fixo" /tmp/deploy6.log && ok "IP dhcp e recusado, com a explicacao" || nok "IP dhcp aceito ou recusado sem explicar (rc=$rc)"
 
 echo
 echo "falhas: $falhas"

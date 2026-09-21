@@ -216,3 +216,17 @@ def test_servidor_que_responde_lixo_no_apply():
             backend.abrir(300, "10.0.0.30", PORTAS)
     finally:
         servidor.parar()
+
+
+def test_sonda_de_saude_nao_espera_o_prazo_inteiro(monkeypatch):
+    import time
+    from broker import opnsense as modulo
+    monkeypatch.setattr(modulo, "SONDA_TIMEOUT", 0.3)
+    servidor = ServidorFalso(lambda *_a: (time.sleep(1.5), (200, {"rows": []}))[1])
+    try:
+        backend = Opnsense(Cliente(servidor.url, {}, timeout=30), "wan")
+        inicio = time.monotonic()
+        assert backend.acessivel() is False
+        assert time.monotonic() - inicio < 1.2
+    finally:
+        servidor.parar()

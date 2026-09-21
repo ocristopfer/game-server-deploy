@@ -23,6 +23,8 @@ from .conexao import Cliente, Resposta
 
 PREFIXO_DA_DESCRICAO = "gamepanel:"
 LIMITE_DE_FAIXA = 5000
+# Sonda de saude: um servico que nao responde em poucos segundos ja e a resposta.
+SONDA_TIMEOUT = 5.0
 _UUID_RE = re.compile(r"[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 _PORTA_RE = re.compile(r"\d{1,5}")
 _FAIXA_RE = re.compile(r"(\d{1,5})[-:](\d{1,5})")
@@ -203,7 +205,8 @@ class Opnsense:
     def acessivel(self) -> bool:
         try:
             return self._c.requisitar("POST", "/api/firewall/d_nat/search_rule",
-                                      json_corpo={"current": 1, "rowCount": 1}).ok
+                                      json_corpo={"current": 1, "rowCount": 1},
+                                      timeout=SONDA_TIMEOUT).ok
         except Exception:  # noqa: BLE001
             return False
 

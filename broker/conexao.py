@@ -89,11 +89,11 @@ class Cliente:
     def __repr__(self) -> str:
         return f"Cliente({self._host}:{self._porta})"
 
-    def _conexao(self) -> http.client.HTTPConnection:
+    def _conexao(self, timeout: float) -> http.client.HTTPConnection:
         if not self._https:
-            return http.client.HTTPConnection(self._host, self._porta, timeout=self._timeout)
+            return http.client.HTTPConnection(self._host, self._porta, timeout=timeout)
         if not self._impressao:
-            return http.client.HTTPSConnection(self._host, self._porta, timeout=self._timeout,
+            return http.client.HTTPSConnection(self._host, self._porta, timeout=timeout,
                                                context=ssl.create_default_context())
         # A cadeia nao e validada porque o certificado e autoassinado; quem autentica o
         # servidor e a comparacao da impressao em _ConexaoFixada.connect. Por isso os tres
@@ -102,11 +102,13 @@ class Cliente:
         contexto.minimum_version = ssl.TLSVersion.TLSv1_2
         contexto.check_hostname = False  # NOSONAR - identidade por impressao fixada
         contexto.verify_mode = ssl.CERT_NONE  # NOSONAR - identidade por impressao fixada
-        return _ConexaoFixada(self._host, self._porta, timeout=self._timeout, context=contexto,
+        return _ConexaoFixada(self._host, self._porta, timeout=timeout, context=contexto,
                               impressao=self._impressao)
 
     def requisitar(self, metodo: str, caminho: str, *, form: dict | None = None,
-                   json_corpo: object = None) -> Resposta:
+                   json_corpo: object = None, timeout: float | None = None) -> Resposta:
+        """`timeout` (s) vale so para esta chamada: uma sonda de saude precisa de poucos segundos,
+        enquanto uma instalacao longa usa o padrao do cliente."""
         cabecalhos = dict(self._cabecalhos)
         corpo: bytes | None = None
         if form is not None:
@@ -115,7 +117,7 @@ class Cliente:
         elif json_corpo is not None:
             corpo = json.dumps(json_corpo).encode()
             cabecalhos["Content-Type"] = "application/json"
-        conexao = self._conexao()
+        conexao = self._conexao(self._timeout if timeout is None else timeout)
         try:
             conexao.request(metodo, self._prefixo + caminho, body=corpo, headers=cabecalhos)
             resposta = conexao.getresponse()

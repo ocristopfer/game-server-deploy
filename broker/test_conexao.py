@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import shutil
 import ssl
+import time
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -154,3 +155,23 @@ def test_tls_autoassinado_sem_impressao_nao_e_aceito(servidor_tls):
     url, _ = servidor_tls
     with pytest.raises(ErroDeConexao):
         Cliente(url, {}).requisitar("GET", "/")
+
+
+# --- prazo por chamada -----------------------------------------------------------------------------
+
+def _lento(segundos: float):
+    def tratador(*_a):
+        time.sleep(segundos)
+        return 200, {"ok": True}
+    return tratador
+
+
+def test_prazo_da_chamada_vale_so_para_ela():
+    servidor = ServidorFalso(_lento(0.8))
+    try:
+        cliente = Cliente(servidor.url, {}, timeout=30)
+        with pytest.raises(ErroDeConexao, match="TimeoutError"):
+            cliente.requisitar("GET", "/x", timeout=0.2)
+        assert cliente.requisitar("GET", "/x").ok, "o prazo padrao do cliente nao foi alterado"
+    finally:
+        servidor.parar()

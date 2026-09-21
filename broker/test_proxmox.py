@@ -172,3 +172,19 @@ def test_backend_sem_servidor_e_erro_de_conexao_nao_excecao_solta():
     from broker.conexao import ErroDeConexao
     with pytest.raises(ErroDeConexao):
         backend.ctids_e_ips()
+
+
+def test_sonda_de_saude_nao_espera_o_prazo_inteiro(monkeypatch):
+    """Firewall que descarta o pacote deixaria a sonda esperando 30 s: a saude responderia lenta
+    justo quando esta quebrada."""
+    import time
+    from broker import proxmox as modulo
+    monkeypatch.setattr(modulo, "SONDA_TIMEOUT", 0.3)
+    servidor = ServidorFalso(lambda *_a: (time.sleep(1.5), (200, {}))[1])
+    try:
+        backend = Proxmox(Cliente(servidor.url, {}, timeout=30), ConfigProxmox(**BASE), dormir=lambda _s: None)
+        inicio = time.monotonic()
+        assert backend.acessivel() is False
+        assert time.monotonic() - inicio < 1.2
+    finally:
+        servidor.parar()

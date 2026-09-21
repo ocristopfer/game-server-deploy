@@ -366,6 +366,20 @@ broker de brinquedo (`broker/dev.py`, backends falsos): `docker compose up --bui
   URL/token/impressao com `GAMEPANEL_ALLOW_BROKER=0`, e `-LigarNoPainel` pede confirmacao.
   **Prove com `bash docker/ct-sandbox/broker.sh`** (modo/dono, env relido pelo `carregar` real,
   segredo com aspas/barra/cifrao/crase, idempotencia, rotacao).
+- **`set -e` + `pipefail` + `$(...)` = saida CALADA.** Falha dentro de uma substituicao encerra o
+  script antes do `[[ -n "$x" ]] || die "..."` que a explicaria (foi o que o primeiro deploy real
+  fez quando o host Proxmox nao alcancou o OPNsense: parou sem mensagem). Todo script de
+  provisionamento tem `trap ERR` (linha + comando, sem segredo) e usa `|| true` dentro do `$(...)`
+  que alimenta um `die`. O sandbox tem casos para os dois.
+- **ssh/scp no PowerShell 5.1:** o stderr do remoto (ate um `systemctl enable` que da certo imprime
+  "Created symlink") vira excecao com `$ErrorActionPreference = "Stop"` e saida redirecionada.
+  `Invoke-Native` (deploy-broker.ps1) relaxa a preferencia so durante o comando; o que decide e o
+  `$LASTEXITCODE`.
+- **Teste de saude de dentro do CT usa `127.0.0.1`, que entra em `BROKER_ALLOW_IPS`** junto do IP do
+  painel (lista vazia = qualquer origem, entao ali o loopback NAO e acrescentado). Sonda de saude tem
+  prazo curto (`SONDA_TIMEOUT`): um firewall que descarta pacote nao pode fazer a saude demorar 30 s.
+- **A API do Proxmox e a do OPNsense precisam de regra de firewall do CT do broker** (o resumo do
+  deploy lista). Sem elas o broker sobe, mas a saude mostra "NAO RESPONDE" e nada e criado.
 - **`broker/config.py` valida TUDO e lista TODOS os problemas de uma vez**, so pelo NOME da
   variavel (nunca o valor). Config ruim derruba o START (`SystemExit(2)`), nunca um pedido.
   https exige impressao SHA-256; http so em loopback.

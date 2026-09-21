@@ -77,12 +77,23 @@ $script:SshOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTime
 # linha, e para o bash do outro lado o \r faz parte do argumento.
 function ConvertTo-Lf([string]$Texto) { return ($Texto -replace "`r", "") }
 
+# O ssh/scp escrevem no stderr mesmo quando dao certo (o `systemctl enable` do Proxmox, por
+# exemplo, imprime "Created symlink ..." la). No Windows PowerShell 5.1, com a saida redirecionada
+# e $ErrorActionPreference = "Stop", essa linha vira excecao e derruba o deploy em cima de um
+# sucesso. O que decide e o codigo de saida ($LASTEXITCODE), que os chamadores conferem.
+function Invoke-Native([scriptblock]$Comando) {
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Comando } finally { $ErrorActionPreference = $anterior }
+}
+
 function Invoke-Ssh([string]$Target, [string]$Command) {
-    ssh @script:SshOpts "root@$Target" (ConvertTo-Lf $Command)
+    Invoke-Native { ssh @script:SshOpts "root@$Target" (ConvertTo-Lf $Command) }
 }
 
 function Invoke-Scp([string[]]$Sources, [string]$Destination, [switch]$Recurse) {
-    if ($Recurse) { scp @script:SshOpts -r @Sources $Destination } else { scp @script:SshOpts @Sources $Destination }
+    if ($Recurse) { Invoke-Native { scp @script:SshOpts -r @Sources $Destination } }
+    else { Invoke-Native { scp @script:SshOpts @Sources $Destination } }
 }
 
 function Enable-PasswordAuth([string]$Password) {

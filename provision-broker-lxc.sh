@@ -23,6 +23,12 @@ msg() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m[aviso]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[erro]\033[0m %s\n' "$*" >&2; exit 1; }
 
+# Sem isto uma falha dentro de $(...) encerra o script em silencio (set -e + pipefail): o `die`
+# com a explicacao, logo depois, nunca chega a rodar. BASH_COMMAND e o texto do comando ANTES da
+# expansao, entao nenhum segredo aparece aqui.
+on_error() { die "Provisionamento falhou na linha ${1} executando: ${2}"; }
+trap 'on_error "${LINENO}" "${BASH_COMMAND}"' ERR
+
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Comando obrigatorio ausente: $1"; }
 
 run_ct() { pct exec "$CTID" -- bash -lc "$1"; }
@@ -87,6 +93,7 @@ resolve_variables() {
   PROXMOX_TEMPLATE_STORAGE="${PROXMOX_TEMPLATE_STORAGE:-$TEMPLATE_STORAGE}"
   OPNSENSE_WAN="${OPNSENSE_WAN:-wan}"
   ADMIN_CTID="${ADMIN_CTID:-}"
+  PANEL_IP="${PANEL_IP:-${BROKER_ALLOW_IPS%%,*}}"
 }
 
 validate_bundle() {
@@ -251,7 +258,7 @@ ensure_tls() {
     -keyout ${CONF_DIR}/tls/key.pem -out ${CONF_DIR}/tls/cert.pem 2>/dev/null"
   run_ct "chown ${APP_USER}:${APP_USER} ${CONF_DIR}/tls/cert.pem ${CONF_DIR}/tls/key.pem && chmod 0644 ${CONF_DIR}/tls/cert.pem && chmod 0600 ${CONF_DIR}/tls/key.pem"
   BROKER_CERT_SHA256="$(pct exec "$CTID" -- openssl x509 -in "${CONF_DIR}/tls/cert.pem" -noout -fingerprint -sha256 \
-    | cut -d= -f2 | tr -d '\r\n')"
+    | cut -d= -f2 | tr -d '\r\n' || true)"
   [[ -n "$BROKER_CERT_SHA256" ]] || die "Nao consegui calcular a impressao do certificado do broker"
 }
 
@@ -264,7 +271,7 @@ ensure_token() {
   fi
   run_ct "test -s ${CONF_DIR}/token || { head -c 36 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-48 > ${CONF_DIR}/token; }"
   run_ct "chown root:root ${CONF_DIR}/token && chmod 0600 ${CONF_DIR}/token"
-  BROKER_TOKEN="$(pct exec "$CTID" -- cat "${CONF_DIR}/token" | tr -d '\r\n')"
+  BROKER_TOKEN="$(pct exec "$CTID" -- cat "${CONF_DIR}/token" | tr -d '\r\n' || true)"
   [[ ${#BROKER_TOKEN} -ge 32 ]] || die "Token do broker invalido (menos de 32 caracteres)"
 }
 
@@ -286,8 +293,10 @@ fingerprint_de() {
   hostport="${url#*://}"; hostport="${hostport%%/*}"
   host="${hostport%%:*}"; port="${hostport##*:}"
   [[ "$port" != "$hostport" ]] || port=443
-  echo | openssl s_client -connect "${host}:${port}" -servername "$host" 2>/dev/null \
-    | openssl x509 -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2 | tr -d '\r\n'
+  # timeout: um firewall que descarta o pacote deixaria o openssl esperando por minutos. O `|| true`
+  # devolve texto vazio em vez de derrubar o $(...): quem chama explica o que fazer.
+  { echo | timeout 15 openssl s_client -connect "${host}:${port}" -servername "$host" 2>/dev/null \
+      | openssl x509 -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2 | tr -d '\r\n'; } || true
 }
 
 resolve_upstream_fingerprints() {
@@ -295,12 +304,12 @@ resolve_upstream_fingerprints() {
   OPNSENSE_CERT_SHA256="${OPNSENSE_CERT_SHA256:-}"
   if [[ -z "$PROXMOX_CERT_SHA256" && "$PROXMOX_URL" == https://* ]]; then
     PROXMOX_CERT_SHA256="$(fingerprint_de "$PROXMOX_URL")"
-    [[ -n "$PROXMOX_CERT_SHA256" ]] || die "Nao consegui ler o certificado de $PROXMOX_URL; defina PROXMOX_CERT_SHA256"
+    [[ -n "$PROXMOX_CERT_SHA256" ]] || die "O host Proxmox nao conseguiu ler o certificado de $PROXMOX_URL (firewall?). Defina PROXMOX_CERT_SHA256 no broker.secrets.env: o verificar-broker-acesso.ps1 imprime a impressao a partir da sua maquina"
     FIXOU_PROXMOX=1
   fi
   if [[ -z "$OPNSENSE_CERT_SHA256" && "$OPNSENSE_URL" == https://* ]]; then
     OPNSENSE_CERT_SHA256="$(fingerprint_de "$OPNSENSE_URL")"
-    [[ -n "$OPNSENSE_CERT_SHA256" ]] || die "Nao consegui ler o certificado de $OPNSENSE_URL; defina OPNSENSE_CERT_SHA256"
+    [[ -n "$OPNSENSE_CERT_SHA256" ]] || die "O host Proxmox nao conseguiu ler o certificado de $OPNSENSE_URL (firewall?). Defina OPNSENSE_CERT_SHA256 no broker.secrets.env: o verificar-broker-acesso.ps1 imprime a impressao a partir da sua maquina"
     FIXOU_OPNSENSE=1
   fi
 }
@@ -313,7 +322,14 @@ render_broker_config() {
   {
     echo "# Gerado pelo provision-broker-lxc.sh - o proximo deploy sobrescreve."
     env_line BROKER_TOKEN "$BROKER_TOKEN"
-    env_line BROKER_ALLOW_IPS "${BROKER_ALLOW_IPS:-}"
+    # Loopback junto do painel: o teste de saude do proprio deploy roda de dentro do CT. So
+    # processo do CT alcanca 127.0.0.1, e quem esta la dentro ja tem o token. Lista VAZIA = qualquer
+    # origem (so o token), e ai o loopback nao entra: restringiria em vez de acrescentar.
+    if [[ -n "${BROKER_ALLOW_IPS:-}" ]]; then
+      env_line BROKER_ALLOW_IPS "${BROKER_ALLOW_IPS},127.0.0.1"
+    else
+      env_line BROKER_ALLOW_IPS ""
+    fi
     env_line BROKER_STATE_DIR "$DATA_DIR"
     env_line BROKER_GAMES_DIR "${APP_DIR}/games"
     env_line BROKER_LIB_DIR "${APP_DIR}/lib"
@@ -401,17 +417,25 @@ start_broker() {
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<PY
-import json, ssl, sys, urllib.request
+import json, ssl, sys, urllib.error, urllib.request
 token = open('${CONF_DIR}/token').read().strip()
 req = urllib.request.Request('https://127.0.0.1:${BROKER_PORT}/v1/saude', headers={'Authorization': 'Bearer ' + token})
-dados = json.loads(urllib.request.urlopen(req, context=ssl._create_unverified_context(), timeout=20).read())
-print('saude:', dados)
+try:
+    dados = json.loads(urllib.request.urlopen(req, context=ssl._create_unverified_context(), timeout=40).read())
+except urllib.error.HTTPError as erro:
+    print('saude: o broker respondeu HTTP', erro.code, '(403 = origem fora de BROKER_ALLOW_IPS)')
+    sys.exit(2)
+except OSError as erro:
+    print('saude: nao consegui falar com o broker:', type(erro).__name__)
+    sys.exit(2)
+for nome, rotulo in (('broker', 'broker'), ('proxmox', 'API do Proxmox'), ('opnsense', 'API do OPNsense')):
+    print('saude: %-16s %s' % (rotulo, 'OK' if dados.get(nome) else 'NAO RESPONDE'))
 sys.exit(0 if dados.get('proxmox') and dados.get('opnsense') else 3)
 PY
   push_file_to_ct "$tmp_file" /root/saude-do-broker.py 0600
   rm -f "$tmp_file"
   run_ct "python3 /root/saude-do-broker.py; rc=\$?; rm -f /root/saude-do-broker.py; exit \$rc" \
-    || warn "O broker subiu, mas Proxmox ou OPNsense nao responderam (veja 'saude' acima): confira as URLs, os tokens e o firewall do CT ${CTID}"
+    || warn "O broker esta de pe, mas nem tudo respondeu (veja 'saude' acima). Se for a API do Proxmox ou do OPNsense, falta a regra de firewall do CT ${CT_IP} para ela (ver REGRAS DE FIREWALL no fim)"
 }
 
 # Opcional (BROKER_CONFIGURE_PANEL=1): grava no painel a URL, o token e a impressao do broker.
@@ -442,6 +466,9 @@ configure_panel() {
 }
 
 print_summary() {
+  local url
+  url="${PROXMOX_URL#*://}"; PROXMOX_HOSTPORT="${url%%/*}"
+  url="${OPNSENSE_URL#*://}"; OPNSENSE_HOSTPORT="${url%%/*}"
   cat <<EOF
 
 ========================================================================
@@ -479,11 +506,11 @@ EOF
 
 REGRAS DE FIREWALL (OPNsense) - o broker tem chaves de infraestrutura, isole-o:
   1. ${PANEL_IP:-<IP do painel>} -> ${CT_IP}:${BROKER_PORT}/tcp        (so o painel fala com o broker)
-  2. ${CT_IP} -> ${PROXMOX_URL#*://}                                   (API do Proxmox)
-  3. ${CT_IP} -> ${OPNSENSE_URL#*://}                                  (API do OPNsense)
+  2. ${CT_IP} -> ${PROXMOX_HOSTPORT}      (API do Proxmox)
+  3. ${CT_IP} -> ${OPNSENSE_HOSTPORT}     (API do OPNsense)
   4. ${CT_IP} -> ${BROKER_IP_PREFIX}.${BROKER_IP_INICIO:-30}-${BROKER_IP_FIM:-99}:22/tcp   (SSH nos CTs novos)
   5. ${CT_IP} -> internet DNS/HTTPS (apt); bloqueie o resto
-  E no OPNsense, deixe o GUI/API (${OPNSENSE_URL#*://}) acessivel SO a ${CT_IP} e a voce.
+  E no OPNsense, deixe o GUI/API (${OPNSENSE_HOSTPORT}) acessivel SO a ${CT_IP} e a voce.
 
 EOF
 }

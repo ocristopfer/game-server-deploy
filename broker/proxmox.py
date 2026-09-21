@@ -26,6 +26,8 @@ _NOME_RE = re.compile(r"[A-Za-z0-9._-]{1,64}", re.ASCII)
 _VOLID_RE = re.compile(r"[A-Za-z0-9._-]+:vztmpl/[A-Za-z0-9._+-]+", re.ASCII)
 _IP_DE_REDE_RE = re.compile(r"ip=(\d{1,3}(?:\.\d{1,3}){3})")
 ERRO_MAX = 200
+# Sonda de saude: um servico que nao responde em poucos segundos ja e a resposta.
+SONDA_TIMEOUT = 5.0
 
 
 class ErroDoProxmox(RuntimeError):
@@ -134,7 +136,7 @@ class Proxmox:
 
     def acessivel(self) -> bool:
         try:
-            return self._c.requisitar("GET", "/api2/json/version").ok
+            return self._c.requisitar("GET", "/api2/json/version", timeout=SONDA_TIMEOUT).ok
         except Exception:  # noqa: BLE001
             return False
 
