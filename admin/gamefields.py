@@ -367,8 +367,8 @@ DAYZ = {
 # "Edit Settings" do jogo. Nao inventar chave dessas neste catalogo: o jogo ignora.
 DRAGONWILDS = {
     "OwnerId": FieldSpec("ID do dono",
-                         "Seu Player ID, no rodape do menu de Configuracoes do jogo. "
-                         "Sem ele o servidor NAO sobe."),
+                         "Seu Player ID, no rodape do menu de Configuracoes do jogo (nao e "
+                         "o Steam ID de 17 digitos). Sem ele o servidor NAO sobe."),
     "ServerName": FieldSpec(ROTULO_NOME, "Como ele aparece para quem entra."),
     "DefaultWorldName": FieldSpec("Nome do mundo padrao",
                                   "Nome do mundo criado no primeiro start. "
@@ -380,6 +380,9 @@ DRAGONWILDS = {
     "WorldPassword": FieldSpec(ROTULO_SENHA_ENTRADA, "Vazio = qualquer um entra.",
                                kind="password"),
     "ServerGuid": FieldSpec("GUID do servidor", "Gerado pelo proprio jogo. Nao edite a mao."),
+    "KnownPlayerList": FieldSpec("Jogadores conhecidos",
+                                 "Preenchido pelo proprio jogo (quem ja entrou, privilegios "
+                                 "e banimentos). Nao edite a mao."),
 }
 
 
