@@ -1,0 +1,3 @@
+#!/bin/bash
+echo "journalctl $*" >> /var/log/fake-calls.log
+echo "-- fake journal --"

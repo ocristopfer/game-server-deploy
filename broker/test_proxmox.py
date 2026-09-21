@@ -1,0 +1,174 @@
+"""Backend Proxmox real contra um Proxmox falso que repete as regras do servidor de verdade."""
+from __future__ import annotations
+
+import pytest
+
+from broker.backends import EspecificacaoDeCt
+from broker.conexao import Cliente
+from broker.http_falso import ServidorFalso
+from broker.proxmox import ConfigProxmox, ErroDoProxmox, Proxmox
+
+ESPEC = EspecificacaoDeCt(ctid=300, hostname="alfa-300", ip="10.0.0.30", jogo="alfa",
+                          memoria_mb=4096, cores=2, disco_gb=20)
+
+
+def test_criar_envia_o_que_o_proxmox_aceita(pve):
+    pve.backend.criar_ct(ESPEC)
+    ct = pve.falso.cts[300]
+    assert ct["features"] == "nesting=1", "sem keyctl: so o root@pam pode"
+    assert ct["pool"] == "games"
+    assert ct["net0"] == "name=eth0,bridge=vmbr1,ip=10.0.0.30/24,gw=192.168.2.1,type=veth"
+    assert ct["rootfs"] == "vm-pool:20"
+    assert (ct["memory"], ct["cores"], ct["unprivileged"]) == ("4096", "2", "1")
+    assert "AAAAC3Nza-chave-de-teste" in ct["chaves"]
+
+
+def test_tag_e_gravada_depois_da_criacao_nao_na_criacao(pve):
+    pve.backend.criar_ct(ESPEC)
+    assert pve.falso.cts[300]["tags"] == "gamepanel-broker"
+    metodos = [(m, c) for m, c, _ in pve.servidor.requisicoes if m in ("POST", "PUT")]
+    assert metodos[0][0] == "POST"
+    assert metodos[1] == ("PUT", "/api2/json/nodes/pve/lxc/300/config")
+
+
+def test_tag_que_falha_nao_derruba_a_criacao(pve):
+    pve.falso.falha_na_tag = True
+    pve.backend.criar_ct(ESPEC)
+    assert 300 in pve.falso.cts
+    assert pve.backend.pertence_ao_broker(300), "a identidade e o pool, nao a tag"
+
+
+def test_tarefa_com_warnings_e_sucesso(pve):
+    pve.falso.saida_da_criacao = "WARNINGS: 1"
+    pve.backend.criar_ct(ESPEC)
+
+
+def test_espera_a_tarefa_terminar(pve):
+    pve.falso.rodadas_ate_parar = 3
+    pve.backend.criar_ct(ESPEC)
+    assert len(pve.esperas) == 3
+    assert set(pve.esperas) == {2.0}
+
+
+def test_tarefa_que_nunca_termina_estoura_o_tempo(pve):
+    pve.falso.rodadas_ate_parar = 10_000
+    with pytest.raises(ErroDoProxmox, match="excedeu o tempo"):
+        pve.backend.criar_ct(ESPEC)
+
+
+def test_tarefa_que_falha_traz_a_causa_e_o_fim_do_log(pve):
+    pve.falso.saida_da_criacao = "unable to create CT 300 - storage full"
+    with pytest.raises(ErroDoProxmox) as erro:
+        pve.backend.criar_ct(ESPEC)
+    assert "storage full" in str(erro.value)
+    assert "Systemd 257" in str(erro.value)
+
+
+def test_erro_de_autenticacao_mostra_o_status_e_nao_o_token(pve):
+    pve.backend._c = Cliente(pve.servidor.url, {"Authorization": "PVEAPIToken=errado"})
+    with pytest.raises(ErroDoProxmox) as erro:
+        pve.backend.criar_ct(ESPEC)
+    assert "HTTP 401" in str(erro.value)
+    assert "errado" not in str(erro.value)
+
+
+def test_ct_ja_existente_nao_e_sobrescrito(pve):
+    pve.falso.externo(300)
+    with pytest.raises(ErroDoProxmox, match="already exists"):
+        pve.backend.criar_ct(ESPEC)
+    assert pve.falso.cts[300]["hostname"] == "de-fora"
+
+
+def test_iniciar_e_parar(pve):
+    pve.backend.criar_ct(ESPEC)
+    pve.backend.iniciar(300)
+    assert pve.falso.cts[300]["status"] == "running"
+    pve.backend.parar(300)
+    assert pve.falso.cts[300]["status"] == "stopped"
+
+
+def test_destruir_ct_ligado_para_antes(pve):
+    pve.backend.criar_ct(ESPEC)
+    pve.backend.iniciar(300)
+    pve.backend.destruir(300)
+    assert 300 not in pve.falso.cts
+
+
+def test_destruir_ct_parado(pve):
+    pve.backend.criar_ct(ESPEC)
+    pve.backend.destruir(300)
+    assert 300 not in pve.falso.cts
+
+
+def test_nao_mexe_em_ct_fora_do_pool(pve):
+    pve.falso.externo(210, net0="name=eth0,ip=192.168.2.20/24")
+    for acao in (pve.backend.destruir, pve.backend.parar):
+        with pytest.raises(ErroDoProxmox, match="nao esta no pool"):
+            acao(210)
+    assert 210 in pve.falso.cts
+    assert not any(m == "DELETE" for m, _, _ in pve.servidor.requisicoes)
+
+
+def test_pertence_ao_broker(pve):
+    pve.backend.criar_ct(ESPEC)
+    pve.falso.externo(210)
+    assert pve.backend.pertence_ao_broker(300)
+    assert not pve.backend.pertence_ao_broker(210)
+    assert not pve.backend.pertence_ao_broker(999)
+
+
+def test_ctids_e_ips_do_que_o_token_enxerga(pve):
+    pve.backend.criar_ct(ESPEC)
+    pve.falso.externo(210, net0="name=eth0,ip=192.168.2.20/24")
+    ctids, ips = pve.backend.ctids_e_ips()
+    assert ctids == {300}, "CT fora do pool nao aparece: o token nao o enxerga"
+    assert ips == {"10.0.0.30"}
+
+
+def test_acessivel(pve):
+    assert pve.backend.acessivel() is True
+    pve.servidor.parar()
+    assert pve.backend.acessivel() is False
+
+
+def test_espera_usa_o_upid_codificado(pve):
+    pve.backend.criar_ct(ESPEC)
+    caminhos = [c for m, c, _ in pve.servidor.requisicoes if "/tasks/" in c]
+    assert caminhos
+    assert all(c.startswith("/api2/json/nodes/pve/tasks/UPID:pve:") for c in caminhos)
+
+
+# --- validacao da config ---------------------------------------------------------------
+
+BASE = dict(node="pve", pool="games", storage="vm-pool", bridge="vmbr1", gateway="192.168.2.1",
+            template="vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
+            chaves_ssh=("ssh-ed25519 AAAA x",))
+
+
+@pytest.mark.parametrize("campo", ["node", "pool", "storage", "bridge"])
+@pytest.mark.parametrize("valor", ["a b", "a/b", "a;b", "", "$(x)"])
+def test_config_recusa_nome_perigoso(campo, valor):
+    with pytest.raises(ValueError):
+        ConfigProxmox(**{**BASE, campo: valor})
+
+
+@pytest.mark.parametrize("template", ["debian.tar.zst", "s:iso/x.iso", "s:vztmpl/../x", "s:vztmpl/a b"])
+def test_config_recusa_template_estranho(template):
+    with pytest.raises(ValueError, match="template"):
+        ConfigProxmox(**{**BASE, "template": template})
+
+
+@pytest.mark.parametrize("chaves", [(), ("nao-e-chave",), ("ssh-ed25519 A\nssh-ed25519 B",)])
+def test_config_recusa_chaves_ruins(chaves):
+    with pytest.raises(ValueError, match="chaves_ssh"):
+        ConfigProxmox(**{**BASE, "chaves_ssh": chaves})
+
+
+def test_backend_sem_servidor_e_erro_de_conexao_nao_excecao_solta():
+    servidor = ServidorFalso(lambda *_a: (200, {}))
+    url = servidor.url
+    servidor.parar()
+    backend = Proxmox(Cliente(url, {}), ConfigProxmox(**BASE), dormir=lambda _s: None)
+    from broker.conexao import ErroDeConexao
+    with pytest.raises(ErroDeConexao):
+        backend.ctids_e_ips()

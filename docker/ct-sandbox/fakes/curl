@@ -1,0 +1,20 @@
+#!/bin/bash
+# curl de mentira: gera os tarballs que o instalador espera, sem tocar na rede.
+url=""; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in -o) out="$2"; shift ;; -*) ;; *) url="$1" ;; esac
+  shift
+done
+echo "curl $url" >> /var/log/fake-calls.log
+tmp=$(mktemp -d)
+case "$url" in
+  *steamcmd_linux.tar.gz)
+    install -d "$tmp/linux64"; cp /usr/local/lib/fake-steamcmd.sh "$tmp/steamcmd.sh"
+    : > "$tmp/linux64/steamclient.so"; tar -czf - -C "$tmp" . ;;
+  *proton-ge-custom*)
+    install -d "$tmp/GE-Proton-fake"
+    printf '#!/bin/sh\necho proton-fake "$@"\n' > "$tmp/GE-Proton-fake/proton"
+    chmod +x "$tmp/GE-Proton-fake/proton"; tar -czf "$out" -C "$tmp" GE-Proton-fake ;;
+  *) echo "curl fake: url inesperada: $url" >&2; exit 22 ;;
+esac
+rm -rf "$tmp"

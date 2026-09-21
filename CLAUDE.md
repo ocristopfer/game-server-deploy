@@ -20,9 +20,11 @@ docker compose up --build -d          # painel em http://localhost:8080 (admin/a
 docker compose restart panel          # depois de mexer em app.py/ui.py
 ```
 
-As sete suites (`test_gamefields.py`, `test_gameconf.py`, `test_charts.py`,
-`test_schedules.py`, `test_users.py`, `test_players.py`, `test_alerts.py`) sao **pytest**
-— 323 testes ao todo, com fixtures compartilhadas em `admin/conftest.py`
+As nove suites do painel (`test_gamefields.py`, `test_gameconf.py`, `test_charts.py`,
+`test_schedules.py`, `test_users.py`, `test_players.py`, `test_alerts.py`,
+`test_broker.py`, `test_broker_client.py`) sao **pytest** — 436 testes ao todo (mais 415 do
+pacote `broker/`, que roda so pelo `.venv`, da raiz), com fixtures compartilhadas em
+`admin/conftest.py`
 (`banco`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
 `chefe`/`peao`: um admin e um operador ja logados; `entrar`/`postar`: login e POST com
 CSRF). **Rode a suite inteira** depois de mexer em `app.py` — elas cobrem exatamente as
@@ -91,14 +93,17 @@ mudam, e e ali que mora o 403 que ninguem tinha visto.
 ## Onde cada coisa mora
 
 ```
-pytest.ini             onde o pytest procura os testes (admin/) e config de cache
+pytest.ini             onde o pytest procura os testes (admin/ e broker/) e config de cache
+broker/                servico que cria instancias de jogo (Proxmox) e abre portas (OPNsense);
+                       pacote Python, ver a secao "Broker" abaixo
 admin/
   app.py               rotas, SSH, banco, alertas, agendador  (arquivo grande; ver abaixo)
   ui.py                mapa da interface: navegacao e acoes   (puro, sem Flask)
   gameconf.py          leitor/gravador de .ini/.json/.cfg do jogo
   gamefields.py        catalogo: o que cada chave de config significa
   conftest.py          fixtures pytest compartilhadas: banco, webhooks, chefe, peao...
-  test_*.py            as 7 suites (323 testes) - ver a secao de testes, no topo
+  broker_client.py     cliente do broker (so stdlib, TLS fixado por impressao); ver "Broker"
+  test_*.py            as 9 suites (436 testes) - ver a secao de testes, no topo
   requirements-dev.txt Flask para o .venv local (so ferramenta, nao dependencia do painel)
   templates/
     components/        macros: ui.html (generico) e servidor.html (dominio)
@@ -188,7 +193,7 @@ dessas tabelas.
 `monkeypatch.setattr(panel, "server_status", ...)`, que desfaz sozinho no fim de cada
 teste — antes disso era uma atribuicao direta (`panel.server_status = ...`) sem `finally`
 nenhum, e a suite so nao vazava estado porque cada arquivo era um processo Python
-separado. Hoje as sete suites dividem um processo (pytest as importa todas juntas), e
+separado. Hoje as suites dividem um processo (pytest as importa todas juntas), e
 sao o `monkeypatch` e a fixture `banco` (tabelas limpas a cada teste, em
 `admin/conftest.py`) que garantem o isolamento.
 
@@ -314,12 +319,112 @@ Modulos ES, sem build, sem dependencia externa.
 
 ---
 
+## Broker (`broker/`)
+
+O painel nao guarda credencial de Proxmox nem de OPNsense: quem guarda e o broker, que
+expoe verbos fixos (criar/desativar/remover instancia, catalogo). Pronto: nucleo,
+backends REAIS de Proxmox (`proxmox.py`) e OPNsense (`opnsense.py`) e o cliente HTTP
+(`conexao.py`), todos testados contra servidores falsos (`http_falso.py`), o instalador por
+SSH (`ssh_install.py` + `lib/ct-install.sh`), a tela no painel e o DEPLOY do broker
+(`config.py`, `prod.py`, `provision-broker-lxc.sh`, `deploy-broker.ps1`). Falta so uma criacao
+REAL de ponta a ponta (nada disto rodou contra o seu Proxmox/OPNsense ainda). Segredos de
+teste e de deploy ficam em `broker.secrets.env` (fora do git);
+`verificar-broker-acesso.ps1` confere so leitura e `spike-broker-escrita.ps1` cria e
+apaga um CT/regra de teste.
+
+**Lado do painel** (`admin/`): telas `/catalogo` e `/instancias`, flag
+`GAMEPANEL_ALLOW_BROKER` (desligada por padrao; config ruim DESLIGA o recurso em vez de
+derrubar o painel), `servers.broker_id` e `jobs.broker_op`. No compose de dev sobe um
+broker de brinquedo (`broker/dev.py`, backends falsos): `docker compose up --build`.
+
+- **Um instalador de jogo, dois transportes.** As fases que rodam DENTRO do CT (SteamCMD,
+  Wine/Proton, systemd) moram em `lib/ct-fases.sh`, lido por `provision-game-lxc.sh` (host:
+  `pct exec`) e por `lib/ct-install.sh` (dentro do CT, o que o broker roda por SSH). O
+  bundle do `deploy-game.ps1` e uma pasta SEM subpastas: a lib viaja como `ct-fases.sh` ao
+  lado do script. **Mexeu numa fase? Rode `bash docker/ct-sandbox/comparar.sh`** (precisa do
+  Docker): roda o instalador ANTES e DEPOIS para 8 jogos com `pct`, `systemctl`, `apt-get` e
+  SteamCMD falsos e faz diff de arquivos, conteudo e linhas de comando; tambem compara host x
+  broker e confere o `install.env` que o Python gera. Sem isso a refatoracao e no escuro: nao
+  existe teste de shell no repositorio.
+- **`install.env` e sempre `shlex.quote`.** Hook (`PRE/POST_INSTALL_CMD`) so existe no catalogo
+  curado; jogo da API escolhe **receitas** (`apply_recipes`, lista fechada), nunca escreve shell.
+  Receita desconhecida derruba a instalacao. A chave do broker sai do CT ao fim
+  (`_limpar`, roda SEMPRE) e se ela nao sair a criacao FALHA.
+- **`games/*.env` tem de passar no `source` do bash.** Regex de log (`JOIN_RE`) com parenteses
+  precisa de aspas: sem elas 5 dos 8 jogos quebravam o deploy pelo Proxmox (o
+  `provision-game-lxc.sh` da `source` no arquivo cru). Conferir:
+  `for f in games/*.env; do bash -c "set -a; source $f"; done`.
+- **Escrever texto para o bash no Windows:** `print()`/stdout em modo texto troca `\n` por
+  `\r\n` e o `source` le cada valor com um `\r` (o erro sai como `WINDOWS_RUNTIME invalido: ''`).
+  Grave com `newline="\n"` ou bytes.
+- **Deploy do broker** (`deploy-broker.ps1` -> `provision-broker-lxc.sh`, no host Proxmox): CT
+  unprivileged proprio, FORA do pool `games`, com gunicorn+TLS (1 worker, a trava de IP mora na
+  memoria) e systemd endurecido. **Token, chave SSH e certificado PERSISTEM entre deploys**
+  (regenerar quebraria o painel); so mudam com `-RotateToken` / `-RotateCert`. Os segredos
+  chegam em `broker.secrets.env` (0600, apagado no fim) e vao para `/etc/gamebroker/broker.env`;
+  nada de segredo na unit. O deploy **nao liga o recurso no painel**: `-ConfigurarPainel` grava
+  URL/token/impressao com `GAMEPANEL_ALLOW_BROKER=0`, e `-LigarNoPainel` pede confirmacao.
+  **Prove com `bash docker/ct-sandbox/broker.sh`** (modo/dono, env relido pelo `carregar` real,
+  segredo com aspas/barra/cifrao/crase, idempotencia, rotacao).
+- **`broker/config.py` valida TUDO e lista TODOS os problemas de uma vez**, so pelo NOME da
+  variavel (nunca o valor). Config ruim derruba o START (`SystemExit(2)`), nunca um pedido.
+  https exige impressao SHA-256; http so em loopback.
+- **Valor no `EnvironmentFile` do systemd:** `NOME="valor"` com `\` e `"` escapados (`$` nao
+  expande ali). Teste com parser caractere a caractere: um regex guloso engole uma aspa sem
+  escape e esconde o defeito.
+- **Impressao dos certificados do Proxmox/OPNsense e lida do servidor no deploy (TOFU) e
+  IMPRESSA para voce conferir.** Se ja souber a impressao, ponha em `*_CERT_SHA256`.
+- **E um pacote** (`broker/__init__.py`), nao arquivos soltos como `admin/`: os dois teriam
+  `app.py` e `conftest.py` e colidiriam no mesmo processo do pytest. Rode da raiz:
+  `.\.venv\Scripts\python.exe -m pytest broker`.
+- **`servico.py` so conhece as interfaces de `backends.py`.** Proxmox, OPNsense, SSH e rede
+  reais entram depois sem mexer nele; os testes usam `fakes.py`.
+- **Catalogo em dois niveis**: `games/*.env` (curado, pode ter `PRE/POST_INSTALL_CMD`) e
+  jogos cadastrados pela API (**so dado**). O `.env` e lido por `catalogo.ler_env`, nunca por
+  `source`, e campo que o broker nao conhece e RECUSADO — e assim que `pre_install_cmd`
+  deixa de entrar de contrabando. Campo novo em jogo dinamico = regex propria em
+  `catalogo.py` e um caso em `CASOS_INVALIDOS` do teste.
+- **Porta interna == externa, sempre.** Jogo `deslocavel` (`PORTS_SHIFTABLE=1`) anda todas as
+  portas juntas; os demais sao recusados se a porta estiver ocupada. Ver `alocador.py`.
+- **Desfazer nao pode mentir**: se a limpeza falha, a reserva vira `falhou` e continua
+  bloqueando IP/CTID/portas ate alguem remover (`servico._desfazer`).
+- **TLS e por IMPRESSAO, nunca `verify=False`.** Proxmox e OPNsense sao autoassinados;
+  `conexao.Cliente` aceita so o certificado cuja SHA-256 e a configurada (o
+  `verificar-broker-acesso.ps1` a imprime), e recusa `http://` fora de loopback. Impressao
+  digitada errada e ERRO, nao "sem pin" (ja foi um bug: lixo virava string vazia).
+- **Regras que o Proxmox real impoe** (o `PveFalso` as repete, entao regredir quebra teste):
+  tag na criacao e `keyctl` sao 403 para o token; tarefa `WARNINGS: n` e sucesso; a tag e
+  gravada DEPOIS. A identidade de um CT do broker e o **pool**, nao a tag.
+- **O OPNsense guarda porta em ALIAS.** `opnsense.portas_ocupadas` le o alias do resumo em
+  HTML do `search_rule` e **falha fechada**: regra do WAN que nao entende => `ErroDeLeitura`
+  e nada novo e aberto. Regra desativada continua ocupando a porta. `fechar` casa a
+  descricao `gamepanel:<ctid>` por IGUALDADE (por prefixo, o 30 apagaria o 300).
+- **`remover` nao libera CTID/IP de CT que talvez exista.** O token so enxerga o pool, e
+  "apagado a mao" e "movido de pool" dao o mesmo 403; so `somente_banco` limpa o registro.
+- **Job do broker nao e `start_job`.** Criar instancia demora minutos e nao tem servidor SSH
+  ainda: `start_broker_job` grava um job SEM servidor e `acompanha_operacao` faz polling no
+  broker gravando o log a cada volta (o `start_job` comum so grava no fim). No fim
+  cadastra o servidor pelo `ensure_server`; se isso falhar o job diz que **a instancia
+  existe** no Proxmox. `retoma_jobs_do_broker` religa o acompanhamento depois de um restart.
+- **Tudo do broker e so de admin**, inclusive a saida dos jobs (`JOB_ACTIONS_ADMIN`): ela cita
+  IP, CTID e portas. A rota empilha `@admin_required` e depois `@broker_required`.
+- **`broker_client` e chamado sempre pelo modulo** (`broker_client.criar(...)`): e assim que os
+  testes o trocam por um falso. Nao faca `from broker_client import criar`.
+- **Tabela no celular: uma coluna.** Com estado e acoes em colunas proprias, as ACOES saiam
+  da tela (rolagem lateral). Ver `instancias.html` e `catalogo.html`. E o servidor local so
+  recarrega template com `GAMEPANEL_DEV=1`: sem ele voce testa o template ANTIGO.
+- **Handler `Exception` do Flask engole 404/405** se nao houver um de `HTTPException` antes
+  (ja aconteceu aqui: rota errada virava "erro interno").
+
+---
+
 ## Deploy — os dois caminhos publicam a arvore inteira
 
 | caminho | quando |
 |---|---|
 | `deploy-admin.ps1` | envio direto por SSH (troca codigo e reinicia) |
 | `provision-admin-lxc.sh` | provisionamento completo pelo Proxmox (`pct push`) |
+| `deploy-broker.ps1` + `provision-broker-lxc.sh` | o broker (CT proprio); ver a secao "Broker" |
 
 Os dois copiam `templates/` e `static/` **recursivamente**. Ao criar uma subpasta nova,
 confira os dois — eles ja quebraram por copiar so o primeiro nivel. `static/maps` fica

@@ -1,0 +1,11 @@
+#!/bin/bash
+# pct de mentira: o "CT" e este proprio container, entao `pct exec CT -- cmd` roda cmd aqui.
+case "${1:-}" in
+  status) echo "status: running" ;;
+  exec)   shift 2; [ "${1:-}" = "--" ] && shift; exec "$@" ;;
+  push)   # pct push <ct> <origem> <destino> [--perms 0644]
+    origem="$3"; destino="$4"; modo="0644"
+    [ "${5:-}" = "--perms" ] && modo="${6:-0644}"
+    install -D -m "$modo" "$origem" "$destino" ;;
+  *)      echo "pct $*" >> /var/log/fake-calls.log ;;
+esac

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% block title %}Catalogo de jogos — Painel de Jogos{% endblock %}
+
+{% block content %}
+{% call ui.cabecalho('Catalogo de jogos') %}
+  {{ ui.botao('Instancias', href=url_for('instances_list'), variante='ghost', icone='🧩') }}
+{% endcall %}
+
+<div class="card">
+  <div class="table-wrap"><table class="jobs">
+    {# UMA coluna, um bloco por jogo. Com duas ou tres, a de "criavel" (que e a resposta
+       desta tela) ficava atras de uma rolagem lateral no celular. #}
+    <thead><tr><th>Jogo</th></tr></thead>
+    <tbody>
+      {% for j in jogos %}
+      <tr>
+        <td>
+          <strong>{{ j.nome }}</strong> <span class="muted small">{{ j.chave }}</span>
+          {% if j.criavel %}<span class="badge on">criavel</span>{% else %}<span class="badge cold">manual</span>{% endif %}
+          <div class="muted small">
+            app {{ j.app_id or '—' }} · {{ j.memoria_mb }} MB · {{ j.cores }} CPU · {{ j.disco_gb }} GB · {{ j.origem }}
+          </div>
+          <div class="small">
+            Portas: {{ j.portas | join(', ') }}{% if j.deslocavel %} <span class="badge cold" title="Em conflito, todas as portas andam juntas">desloca</span>{% endif %}
+          </div>
+          {% if not j.criavel %}<div class="muted small">{{ j.motivo }}</div>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td class="muted">Catalogo vazio (ou o broker nao respondeu).</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="muted small mt-4">
+    <strong>curado</strong>: vem dos arquivos <code>games/*.env</code> do repositorio.
+    <strong>dinamico</strong>: adicionado por aqui. Jogo que exige conta Steam ou instalador
+    proprio (TeamSpeak) continua sendo criado pelo <code>deploy-game.ps1</code>.
+  </p>
+</div>
+
+<div class="card card--form">
+  <h2>Adicionar jogo</h2>
+  <p class="muted small">
+    So dados: o broker <strong>nao aceita comandos</strong>. O que precisa de instalacao
+    especial (Wine, Proton, symlink do Steam) entra pelas receitas abaixo.
+  </p>
+  <form method="post" action="{{ url_for('catalog_new') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <div class="row">
+      <label>Chave
+        <input name="chave" value="{{ form.get('chave', '') }}" required maxlength="24" spellcheck="false"
+               autocapitalize="none" pattern="[a-z][a-z0-9\-]{1,23}" placeholder="meujogo">
+        <small>Minusculas, numeros e hifen. Vira o nome do container e do servico.</small>
+      </label>
+      <label>Nome
+        <input name="nome" value="{{ form.get('nome', '') }}" required maxlength="40" placeholder="Meu Jogo">
+      </label>
+    </div>
+    <label>App ID do servidor dedicado (Steam)
+      <input name="app_id" value="{{ form.get('app_id', '') }}" required inputmode="numeric" placeholder="2394010">
+      <small>O do <strong>servidor dedicado</strong>, nao o do jogo. Consulte o SteamDB.</small>
+    </label>
+    <div class="row">
+      <label>Portas
+        <input name="portas" value="{{ form.get('portas', '') }}" required spellcheck="false" placeholder="7777/udp 27015/udp">
+        <small>Porta/protocolo, separadas por espaco. Abaixo de 1024 nao e permitido.</small>
+      </label>
+      <label>Porta do jogo
+        <input name="porta_jogo" value="{{ form.get('porta_jogo', '') }}" required inputmode="numeric" placeholder="7777">
+      </label>
+      <label>Porta de consulta <span class="muted">(opcional)</span>
+        <input name="porta_query" value="{{ form.get('porta_query', '') }}" inputmode="numeric" placeholder="27015">
+      </label>
+    </div>
+    <div class="row">
+      <label>Script de start <span class="muted">(opcional)</span>
+        <input name="start_script" value="{{ form.get('start_script', '') }}" spellcheck="false" placeholder="PalServer.sh">
+      </label>
+      <label>Argumentos <span class="muted">(opcional)</span>
+        <input name="start_args" value="{{ form.get('start_args', '') }}" spellcheck="false" placeholder="-port={PORT}">
+        <small>Use <code>{PORT}</code> e <code>{QUERY_PORT}</code>. Nada de <code>; | &amp; $</code>.</small>
+      </label>
+    </div>
+    <div class="row">
+      <label>Memoria (MB)
+        <input name="memoria_mb" value="{{ form.get('memoria_mb', '') }}" inputmode="numeric" placeholder="4096">
+      </label>
+      <label>CPUs
+        <input name="cores" value="{{ form.get('cores', '') }}" inputmode="numeric" placeholder="2">
+      </label>
+      <label>Disco (GB)
+        <input name="disco_gb" value="{{ form.get('disco_gb', '') }}" inputmode="numeric" placeholder="20">
+      </label>
+    </div>
+    <label>Pasta de configuracao <span class="muted">(opcional)</span>
+      <input name="config_path" value="{{ form.get('config_path', '') }}" spellcheck="false" placeholder="/opt/game/Config">
+      <small>Caminho absoluto sob <code>/opt/game</code> ou <code>/home/steam</code>.</small>
+    </label>
+    <label>Arquivos de configuracao <span class="muted">(um por linha)</span>
+      <textarea name="config_files" rows="2" spellcheck="false">{{ form.get('config_files', '') }}</textarea>
+    </label>
+    <label>Pastas de backup <span class="muted">(uma por linha)</span>
+      <textarea name="backup_paths" rows="2" spellcheck="false">{{ form.get('backup_paths', '') }}</textarea>
+    </label>
+    <div class="row">
+      <label>Contagem de jogadores
+        <select name="player_source">
+          <option value="log" {{ 'selected' if form.get('player_source', 'log') == 'log' }}>Pelo log do servidor</option>
+          <option value="a2s" {{ 'selected' if form.get('player_source') == 'a2s' }}>Consulta Steam (A2S)</option>
+        </select>
+      </label>
+      <label>Plataforma
+        <select name="plataforma">
+          <option value="">Linux (padrao)</option>
+          <option value="windows" {{ 'selected' if form.get('plataforma') == 'windows' }}>Windows (exige Wine ou Proton)</option>
+        </select>
+      </label>
+    </div>
+    <label>Log: linha de entrada <span class="muted">(opcional)</span>
+      <input name="join_re" value="{{ form.get('join_re', '') }}" spellcheck="false" placeholder="(?P&lt;name&gt;.+) joined">
+    </label>
+    <label>Log: linha de saida <span class="muted">(opcional)</span>
+      <input name="leave_re" value="{{ form.get('leave_re', '') }}" spellcheck="false" placeholder="(?P&lt;name&gt;.+) left">
+    </label>
+    <fieldset>
+      <legend>Receitas de instalacao</legend>
+      {% for r in receitas %}
+        <label class="check"><input type="checkbox" name="receitas" value="{{ r }}"> {{ r }}</label>
+      {% endfor %}
+    </fieldset>
+    <label class="check">
+      <input type="checkbox" name="deslocavel" value="1" {{ 'checked' if form.get('deslocavel') == '1' }}>
+      Pode mudar de porta (varias instancias do mesmo jogo)
+    </label>
+    <small>So marque se o jogo aceita a porta pelos argumentos, senao ele anunciaria uma porta e escutaria outra.</small>
+    <div class="form-actions">
+      {{ ui.botao('Adicionar ao catalogo', variante='primary', bloco=true) }}
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -24,6 +24,7 @@ import socket
 import sqlite3
 import struct
 import subprocess
+import sys
 import threading
 import time
 import traceback
@@ -47,6 +48,7 @@ try:
 except ImportError:  # pragma: no cover - Windows
     HAVE_PTY = False
 
+import broker_client
 import gameconf
 import gamefields
 import ui
@@ -110,6 +112,36 @@ TERM_MAX_SESSIONS = int(os.environ.get("GAMEPANEL_TERM_MAX", "4"))
 TERM_IDLE_TIMEOUT = int(os.environ.get("GAMEPANEL_TERM_IDLE", "900"))
 TERM_BUFFER_BYTES = 512 * 1024
 TERM_POLL_WAIT = 20.0  # long-poll: segura a resposta ate chegar saida nova
+
+# Broker de provisionamento: cria instancias de jogo e abre portas no firewall. O painel
+# nao guarda credencial de Proxmox/OPNsense, so o token do broker. DESLIGADO por padrao: quem
+# liga (GAMEPANEL_ALLOW_BROKER=1) precisa apontar URL, arquivo do token e, em https, a
+# impressao SHA-256 do certificado. Sem isso o recurso nao aparece em lugar nenhum.
+BROKER_URL = os.environ.get("GAMEPANEL_BROKER_URL", "")
+BROKER_TOKEN_FILE = os.environ.get("GAMEPANEL_BROKER_TOKEN_FILE", "")
+BROKER_CERT_SHA256 = os.environ.get("GAMEPANEL_BROKER_CERT_SHA256", "")
+BROKER_POLL = float(os.environ.get("GAMEPANEL_BROKER_POLL", "2"))
+# Voltas seguidas sem resposta do broker antes de dar o job por perdido.
+BROKER_FALHAS_MAX = 15
+
+
+def _configura_broker() -> bool:
+    """Liga o cliente do broker. Qualquer configuracao ruim DESLIGA o recurso (e loga o
+    motivo) em vez de derrubar o painel: o resto dele nao depende disto."""
+    if os.environ.get("GAMEPANEL_ALLOW_BROKER", "0") != "1":
+        return False
+    try:
+        with open(BROKER_TOKEN_FILE, encoding="utf-8") as arquivo:
+            token = arquivo.read().strip()
+        broker_client.configurar(BROKER_URL, token, BROKER_CERT_SHA256,
+                                 permitir_http=os.environ.get("GAMEPANEL_DEV", "") == "1")
+    except (OSError, ValueError) as erro:
+        print(f"[painel] broker DESLIGADO: {erro}", file=sys.stderr)
+        return False
+    return True
+
+
+ALLOW_BROKER = _configura_broker()
 
 # Editor de arquivos: le/grava arquivos de configuracao do jogo pelo mesmo SSH.
 ALLOW_FILES = os.environ.get("GAMEPANEL_ALLOW_FILES", "1") == "1"
@@ -365,6 +397,9 @@ CREATE TABLE IF NOT EXISTS servers (
   -- Alerta "erro no log": expressao regular procurada nas ultimas linhas do log do jogo
   -- (o mesmo log da contagem — journalctl ou log_path). Vazia desliga a checagem.
   error_re   TEXT NOT NULL DEFAULT '',
+  -- Id da instancia no broker (0 = servidor cadastrado a mao). E o que liga a tela de
+  -- instancias ao servidor, e o que remover a instancia usa para apagar este cadastro.
+  broker_id  INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   UNIQUE (host, ssh_port)
 );
@@ -380,7 +415,10 @@ CREATE TABLE IF NOT EXISTS jobs (
   command     TEXT NOT NULL DEFAULT '',  -- preenchido apenas pelo console
   username    TEXT NOT NULL DEFAULT '',
   created_at  TEXT NOT NULL,
-  finished_at TEXT
+  finished_at TEXT,
+  -- Operacao do broker que este job acompanha (vazio nos demais). Sobrevive a um restart
+  -- do painel: e por ela que o acompanhamento e retomado.
+  broker_op   TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_server ON jobs(server_id, id DESC);
@@ -521,6 +559,8 @@ MIGRATIONS = (
     # Alerta de erro no log: a expressao e por servidor porque cada jogo grita de um
     # jeito. Vazia (o padrao) desliga a checagem — inclusive a ida de SSH dela.
     ("servers", "error_re", "ALTER TABLE servers ADD COLUMN error_re TEXT NOT NULL DEFAULT ''"),
+    ("servers", "broker_id", "ALTER TABLE servers ADD COLUMN broker_id INTEGER NOT NULL DEFAULT 0"),
+    ("jobs", "broker_op", "ALTER TABLE jobs ADD COLUMN broker_op TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -748,6 +788,7 @@ def _inject():
         "allow_shell": ALLOW_SHELL,
         "allow_term": ALLOW_SHELL and HAVE_PTY,
         "allow_files": ALLOW_FILES,
+        "allow_broker": ALLOW_BROKER,
         # A tela precisa saber se a contagem esta ligada, e ela pode vir da porta de
         # consulta OU do log — nao da para olhar so o query_port.
         "player_source": player_source,
@@ -770,8 +811,8 @@ def _contexto_de_navegacao() -> dict:
     secoes = ui.secoes_visiveis(admin=admin, arquivos=ALLOW_FILES, shell=ALLOW_SHELL)
     tem_pty = ALLOW_SHELL and HAVE_PTY
     return {
-        "nav_principal": tuple(i for i in ui.NAV_PRINCIPAL if not i.admin or admin),
-        "nav_secundaria": tuple(i for i in ui.NAV_SECUNDARIA if not i.admin or admin),
+        "nav_principal": ui.itens_visiveis(ui.NAV_PRINCIPAL, admin=admin, broker=ALLOW_BROKER),
+        "nav_secundaria": ui.itens_visiveis(ui.NAV_SECUNDARIA, admin=admin, broker=ALLOW_BROKER),
         "nav_ativa": ui.nav_ativa_de(request.endpoint),
         "secoes_do_servidor": secoes,
         "endpoint_da_secao": lambda secao: ui.endpoint_da_secao(secao, tem_pty=tem_pty),
@@ -2622,6 +2663,10 @@ JOB_LABELS["restore-backup"] = "Backup restaurado"
 JOB_LABELS["delete-backup"] = "Backup apagado"
 # Moderacao nao da root em container nenhum: e operacao, e fica visivel para o operador.
 JOB_LABELS["player-action"] = "Acao sobre jogador"
+JOB_LABELS["broker-criar"] = "Instancia criada (broker)"
+JOB_LABELS["broker-desativar"] = "Instancia desativada (broker)"
+JOB_LABELS["broker-remover"] = "Instancia removida (broker)"
+JOB_LABELS["broker-jogo"] = "Jogo adicionado ao catalogo"
 
 # O historico guarda a saida INTEIRA do que rodou. Estas acoes so um admin consegue
 # disparar (console, terminal, editor de arquivos), entao a saida delas — que carrega o
@@ -2635,6 +2680,8 @@ JOB_ACTIONS_ADMIN = frozenset({
     # restaurar e apagar destroem dado, e baixar tira o save do container — sao de admin,
     # e o registro delas acompanha.
     "upload-file", "restore-backup", "delete-backup",
+    # Tudo do broker e de admin: a saida cita IP, CTID e portas da infraestrutura.
+    "broker-criar", "broker-desativar", "broker-remover", "broker-jogo",
 })
 
 
@@ -6430,6 +6477,325 @@ def api_job(jid: int):
     )
 
 
+# ------------------------------------------------------------------- broker
+#
+# Criar instancia de jogo e abrir porta no firewall. Quem tem as credenciais de Proxmox e
+# OPNsense e o broker (broker/); aqui o painel so PEDE, acompanha e cadastra o resultado.
+
+# Espelho do broker/catalogo.RECEITAS: so para desenhar as caixas do formulario. Quem
+# decide o que vale e o broker, que recusa receita que nao conhece.
+BROKER_RECEITAS = ("wine", "proton", "steamclient-sdk64")
+_NUMERO_RE = re.compile(r"[0-9]{1,10}", re.ASCII)
+
+
+def broker_required(view):
+    """Rota que so existe quando o deploy ligou o broker. Empilha DEPOIS de
+    `admin_required`: o operador leva o 403 de administrador, e so o admin descobre que o
+    recurso esta desligado."""
+
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not ALLOW_BROKER:
+            abort(403, "O broker esta desligado neste painel (GAMEPANEL_ALLOW_BROKER=0).")
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+def _dispara(tarefa) -> None:
+    """Roda `tarefa` numa thread. Existe para os testes trocarem por uma execucao direta."""
+    threading.Thread(target=tarefa, daemon=True).start()
+
+
+def _atualiza_job(job_id: int, **campos) -> None:
+    # Conexao propria: quem chama esta vivo numa thread fora do contexto do request. Os
+    # NOMES das colunas vem dos chamadores (fixos); so os valores viajam como parametro.
+    conn = _connect()
+    try:
+        with conn:
+            conn.execute(
+                f"UPDATE jobs SET {', '.join(c + '=?' for c in campos)} WHERE id=?",
+                (*campos.values(), job_id),
+            )
+    finally:
+        conn.close()
+
+
+def _fecha_job(job_id: int, status: str, saida: str, codigo: int | None = None,
+               server_id: int | None = None) -> None:
+    campos: dict = {"status": status, "exit_code": codigo, "output": saida.strip()[-200000:],
+                    "finished_at": now_iso()}
+    if server_id is not None:
+        campos["server_id"] = server_id
+    _atualiza_job(job_id, **campos)
+
+
+def _cadastra_servidor_do_broker(r: dict) -> int:
+    """Registra no painel a instancia que o broker acabou de criar. Devolve o id do servidor.
+
+    Passa pelo mesmo `ensure_server` do deploy, entao a tela de configuracao ja abre pronta.
+    """
+    host = str(r["host"])
+    servico = str(r["service"])
+    if not HOST_RE.match(host) or not UNIT_RE.match(servico):
+        raise ValueError("o broker devolveu host ou servico com formato invalido")
+    ensure_server(ServidorDoDeploy(
+        name=str(r["name"])[:80], host=host, service=servico,
+        game_port=" ".join(str(p) for p in r.get("ports") or []),
+        notes=str(r.get("notes", "")),
+        config_path=str(r.get("config_path", "")),
+        config_files="\n".join(r.get("config_files") or []),
+        backup_paths="\n".join(r.get("backup_paths") or []),
+        join_re=str(r.get("join_re", "")), leave_re=str(r.get("leave_re", "")),
+        log_path=str(r.get("log_path", "")), query_port=int(r.get("query_port") or 0),
+        player_source=str(r.get("player_source", "")), broker_id=int(r.get("broker_id") or 0),
+    ))
+    conn = _connect()
+    try:
+        linha = conn.execute("SELECT id FROM servers WHERE host = ? AND ssh_port = 22", (host,)).fetchone()
+    finally:
+        conn.close()
+    if linha is None:
+        raise ValueError("o servidor nao foi gravado")
+    return int(linha["id"])
+
+
+def _conclui_operacao_do_broker(job_id: int, op: dict) -> None:
+    log = str(op.get("log", ""))
+    if op.get("estado") != "ok":
+        _fecha_job(job_id, "error", log, codigo=1)
+        return
+    try:
+        sid = _cadastra_servidor_do_broker(op.get("resultado") or {})
+    except (KeyError, TypeError, ValueError, sqlite3.Error) as erro:
+        # A instancia EXISTE no Proxmox: o texto precisa dizer isso, senao parece que nada foi feito.
+        _fecha_job(job_id, "error", f"{log}\nA instancia foi criada, mas nao consegui cadastra-la "
+                   f"no painel: {erro}", codigo=1)
+        return
+    _fecha_job(job_id, "ok", f"{log}\nServidor cadastrado no painel (id {sid}).", codigo=0, server_id=sid)
+
+
+def acompanha_operacao(job_id: int, op_id: str, dormir=time.sleep) -> None:
+    """Le a operacao do broker ate ela terminar, gravando o log no job a cada volta.
+
+    E isso que faz a tela do job mostrar o progresso ao vivo: o `start_job` comum so grava
+    a saida no fim, e uma criacao de servidor leva minutos de download.
+    """
+    limite = time.monotonic() + JOB_TIMEOUT
+    falhas = 0
+    log = ""
+    while time.monotonic() < limite:
+        try:
+            op = broker_client.operacao(op_id)
+        except broker_client.BrokerError as erro:
+            falhas += 1
+            if falhas >= BROKER_FALHAS_MAX:
+                _fecha_job(job_id, "error", f"{log}\nPerdi o contato com o broker: {erro}")
+                return
+            dormir(BROKER_POLL)
+            continue
+        falhas = 0
+        log = str(op.get("log", ""))[-200000:]
+        _atualiza_job(job_id, output=log)
+        if op.get("estado") != "executando":
+            _conclui_operacao_do_broker(job_id, op)
+            return
+        dormir(BROKER_POLL)
+    _fecha_job(job_id, "error", f"{log}\nTempo esgotado esperando o broker.")
+
+
+def start_broker_job(action: str, username: str, op_id: str, comando: str) -> int:
+    conn = db()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO jobs (server_id, target, action, status, command, username,"
+            " created_at, broker_op) VALUES (NULL, 'broker', ?, 'running', ?, ?, ?, ?)",
+            (action, comando, username, now_iso(), op_id),
+        )
+    job_id = _id_inserido(cur)
+    _dispara(lambda: acompanha_operacao(job_id, op_id))
+    return job_id
+
+
+def retoma_jobs_do_broker() -> int:
+    """Depois de um restart do painel, volta a acompanhar as operacoes que ainda estavam
+    rodando no broker. Sem isto o job ficaria 'running' para sempre, e o servidor recem
+    criado nunca seria cadastrado."""
+    if not ALLOW_BROKER:
+        return 0
+    conn = _connect()
+    try:
+        pendentes = conn.execute(
+            "SELECT id, broker_op FROM jobs WHERE status = 'running' AND broker_op != ''"
+        ).fetchall()
+    finally:
+        conn.close()
+    for job in pendentes:
+        _dispara(lambda jid=job["id"], op=job["broker_op"]: acompanha_operacao(jid, op))
+    return len(pendentes)
+
+
+def _registra_acao_do_broker(action: str, username: str, comando: str, saida: str,
+                             status: str = "ok") -> int:
+    """Deixa no historico uma acao curta do broker (desativar, remover, jogo novo)."""
+    conn = db()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO jobs (server_id, target, action, status, exit_code, output, command,"
+            " username, created_at, finished_at) VALUES (NULL, 'broker', ?, ?, ?, ?, ?, ?, ?, ?)",
+            (action, status, 0 if status == "ok" else 1, saida[-200000:], comando,
+             username, now_iso(), now_iso()),
+        )
+    return _id_inserido(cur)
+
+
+def _ator() -> str:
+    return session.get("username", "")
+
+
+def _linhas(texto: str) -> list[str]:
+    return [p.strip() for p in (texto or "").replace(",", "\n").splitlines() if p.strip()]
+
+
+def _jogo_do_form(form) -> tuple[dict, list[str]]:
+    """Le o formulario de jogo novo. So converte tipos: quem valida de verdade e o broker
+    (ele recusa campo desconhecido, caminho fora de /opt/game, comando escondido...)."""
+    erros: list[str] = []
+    dados: dict = {}
+    for campo in ("chave", "nome", "plataforma", "start_script", "start_args", "config_path",
+                  "log_path", "join_re", "leave_re", "player_source"):
+        valor = (form.get(campo) or "").strip()
+        if valor:
+            dados[campo] = valor
+    for campo, rotulo in (("app_id", "App ID"), ("porta_jogo", "Porta do jogo"),
+                          ("porta_query", "Porta de consulta"), ("memoria_mb", "Memoria"),
+                          ("cores", "CPUs"), ("disco_gb", "Disco")):
+        bruto = (form.get(campo) or "").strip()
+        if not bruto:
+            continue
+        if _NUMERO_RE.fullmatch(bruto):
+            dados[campo] = int(bruto)
+        else:
+            erros.append(f"{rotulo} deve ser um numero.")
+    dados["portas"] = [p for p in re.split(r"[\s,]+", (form.get("portas") or "").strip()) if p]
+    dados["config_files"] = _linhas(form.get("config_files", ""))
+    dados["backup_paths"] = _linhas(form.get("backup_paths", ""))
+    dados["receitas"] = [r for r in form.getlist("receitas") if r in BROKER_RECEITAS]
+    dados["deslocavel"] = form.get("deslocavel") == "1"
+    return dados, erros
+
+
+@app.route("/catalogo", methods=["GET"])
+@admin_required
+@broker_required
+def catalog():
+    try:
+        jogos = broker_client.catalogo()
+    except broker_client.BrokerError as erro:
+        flash(f"Broker: {erro.mensagem}", "error")
+        jogos = []
+    return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECEITAS, form={})
+
+
+@app.post("/catalogo/novo")
+@admin_required
+@broker_required
+def catalog_new():
+    dados, erros = _jogo_do_form(request.form)
+    if not erros:
+        try:
+            broker_client.adicionar_jogo(dados, _ator())
+        except broker_client.BrokerError as erro:
+            erros.append(f"Broker: {erro.mensagem}")
+    if erros:
+        for erro in erros:
+            flash(erro, "error")
+        try:
+            jogos = broker_client.catalogo()
+        except broker_client.BrokerError:
+            jogos = []
+        return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECEITAS,
+                               form=request.form), 400
+    _registra_acao_do_broker("broker-jogo", _ator(), dados.get("chave", ""), "Jogo adicionado ao catalogo.")
+    flash(f"Jogo {dados.get('nome', dados.get('chave', ''))} adicionado ao catalogo.", "ok")
+    return redirect(url_for("catalog"))
+
+
+@app.get("/instancias")
+@admin_required
+@broker_required
+def instances_list():
+    try:
+        instancias = broker_client.instancias()
+        jogos = [j for j in broker_client.catalogo() if j.get("criavel")]
+    except broker_client.BrokerError as erro:
+        flash(f"Broker: {erro.mensagem}", "error")
+        instancias, jogos = [], []
+    ligados = {
+        r["broker_id"]: r
+        for r in db().execute("SELECT id, name, broker_id FROM servers WHERE broker_id > 0")
+    }
+    return render_template("instancias.html", instancias=instancias, jogos=jogos, servidores=ligados)
+
+
+@app.post("/instancias/nova")
+@admin_required
+@broker_required
+def instance_new():
+    jogo = (request.form.get("jogo") or "").strip()
+    nome = (request.form.get("nome") or "").strip()
+    try:
+        resposta = broker_client.criar(jogo, nome, _ator())
+    except broker_client.BrokerError as erro:
+        flash(f"Broker: {erro.mensagem}", "error")
+        return redirect(url_for("instances_list"))
+    op_id = str(resposta.get("operacao_id", ""))
+    if not op_id:
+        flash("Broker: resposta sem identificador de operacao.", "error")
+        return redirect(url_for("instances_list"))
+    job_id = start_broker_job("broker-criar", _ator(), op_id, f"{jogo}: {nome}")
+    return redirect(url_for("job_detail", jid=job_id))
+
+
+@app.post("/instancias/<int:iid>/desativar")
+@admin_required
+@broker_required
+def instance_deactivate(iid: int):
+    try:
+        broker_client.desativar(iid, _ator())
+    except broker_client.BrokerError as erro:
+        _registra_acao_do_broker("broker-desativar", _ator(), f"instancia {iid}", erro.mensagem, "error")
+        flash(f"Broker: {erro.mensagem}", "error")
+    else:
+        _registra_acao_do_broker("broker-desativar", _ator(), f"instancia {iid}",
+                                 "Portas fechadas no firewall e container parado.")
+        flash("Instancia desativada: portas fechadas e container parado.", "ok")
+    return redirect(url_for("instances_list"))
+
+
+@app.post("/instancias/<int:iid>/remover")
+@admin_required
+@broker_required
+def instance_remove(iid: int):
+    confirma = (request.form.get("confirma") or "").strip()
+    somente_banco = request.form.get("somente_banco") == "1"
+    try:
+        broker_client.remover(iid, confirma, _ator(), somente_banco)
+    except broker_client.BrokerError as erro:
+        _registra_acao_do_broker("broker-remover", _ator(), f"instancia {iid}", erro.mensagem, "error")
+        flash(f"Broker: {erro.mensagem}", "error")
+        return redirect(url_for("instances_list"))
+    conn = db()
+    with conn:
+        # O servidor do painel aponta para um container que deixou de existir.
+        conn.execute("DELETE FROM servers WHERE broker_id = ?", (iid,))
+    _registra_acao_do_broker(
+        "broker-remover", _ator(), f"instancia {iid}",
+        "So o registro foi esquecido." if somente_banco else "Container destruido e servidor removido do painel.")
+    flash("Instancia removida.", "ok")
+    return redirect(url_for("instances_list"))
+
+
 # ------------------------------------------------------------- agendamentos
 
 
@@ -7379,18 +7745,20 @@ class ServidorDoDeploy(NamedTuple):
     log_path: str = ""
     query_port: int = 0
     player_source: str = ""
+    # Instancia do broker que originou este servidor (0 = cadastro manual/deploy antigo).
+    broker_id: int = 0
 
 
 def _insere_servidor(conn: sqlite3.Connection, dados: ServidorDoDeploy) -> None:
     conn.execute(
         "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
         " game_port, notes, config_path, config_files, backup_paths,"
-        " query_port, player_source, join_re, leave_re, log_path, created_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " query_port, player_source, join_re, leave_re, log_path, broker_id, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (dados.name, dados.host, dados.ssh_port, dados.ssh_user, dados.service,
          dados.game_port, dados.notes, dados.config_path, dados.config_files,
          dados.backup_paths, dados.query_port, dados.player_source,
-         dados.join_re, dados.leave_re, dados.log_path, now_iso()),
+         dados.join_re, dados.leave_re, dados.log_path, dados.broker_id, now_iso()),
     )
 
 
@@ -7462,6 +7830,7 @@ init_db()
 # deixando o job pendurado em 'running').
 if __name__ != "__main__":
     start_scheduler()
+    retoma_jobs_do_broker()
 
 
 if __name__ == "__main__":
@@ -7525,4 +7894,5 @@ if __name__ == "__main__":
               f" ({opts.server_host})")
     else:
         start_scheduler()
+        retoma_jobs_do_broker()
         app.run(host=opts.host, port=opts.port)

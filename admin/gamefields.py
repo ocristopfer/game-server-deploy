@@ -360,9 +360,33 @@ DAYZ = {
 }
 
 
+# ------------------------------ RuneScape: Dragonwilds (le DedicatedServer.ini)
+# O .ini so cuida de identidade e acesso do servidor. As regras do MUNDO (capacidade de
+# carga, estabilidade e custo de construcao, PvP, dificuldade...) NAO estao aqui: moram
+# no save do mundo (.sav), e mods como o "No Carry Capacity" so as expoem no menu
+# "Edit Settings" do jogo. Nao inventar chave dessas neste catalogo: o jogo ignora.
+DRAGONWILDS = {
+    "OwnerId": FieldSpec("ID do dono",
+                         "Seu Player ID, no rodape do menu de Configuracoes do jogo. "
+                         "Sem ele o servidor NAO sobe."),
+    "ServerName": FieldSpec(ROTULO_NOME, "Como ele aparece para quem entra."),
+    "DefaultWorldName": FieldSpec("Nome do mundo padrao",
+                                  "Nome do mundo criado no primeiro start. "
+                                  "Trocar depois nao renomeia um mundo que ja existe."),
+    "AdminPassword": FieldSpec(ROTULO_SENHA_ADMIN,
+                               "Quem souber esta senha abre a aba Server Management no menu "
+                               "do jogo e vira admin. TROQUE antes de expor o servidor.",
+                               kind="password"),
+    "WorldPassword": FieldSpec(ROTULO_SENHA_ENTRADA, "Vazio = qualquer um entra.",
+                               kind="password"),
+    "ServerGuid": FieldSpec("GUID do servidor", "Gerado pelo proprio jogo. Nao edite a mao."),
+}
+
+
 # Qual catalogo vale para qual arquivo. A comparacao e pelo NOME do arquivo, que e o
 # que o painel ja usa para escolher o parser.
 CATALOGOS = (
+    (re.compile(r"^DedicatedServer\.ini$", re.I), DRAGONWILDS),
     (re.compile(r"^enshrouded_server\.json$", re.I), ENSHROUDED),
     (re.compile(r"^PalWorldSettings\.ini$", re.I), PALWORLD),
     (re.compile(r"^ServerSettings\.ini$", re.I), ICARUS),

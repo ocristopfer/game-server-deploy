@@ -1,0 +1,2 @@
+#!/bin/bash
+echo "systemctl $*" >> /var/log/fake-calls.log

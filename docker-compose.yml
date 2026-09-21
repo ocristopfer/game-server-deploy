@@ -32,8 +32,15 @@ services:
       GAMEPANEL_ALLOW_SHELL: "1"
       GAMEPANEL_ALLOW_FILES: "1"
       GAMEPANEL_FILE_DEFAULT: "/opt/game"
+      # Broker de brinquedo abaixo (backends falsos). Em producao isto fica DESLIGADO ate
+      # o painel ter uma camada extra na frente (ver o plano do broker).
+      GAMEPANEL_ALLOW_BROKER: "1"
+      GAMEPANEL_BROKER_URL: "http://broker:8090"   # http so vale aqui: GAMEPANEL_DEV=1
+      GAMEPANEL_BROKER_TOKEN_FILE: /run/secrets/broker-token
       PANEL_USER: admin
       PANEL_PASSWORD: admin12345
+    secrets:
+      - broker-token
     volumes:
       - ./admin:/opt/gamepanel:ro     # o codigo vem do repo: edite e recarregue a pagina
       - panel-keys:/keys
@@ -42,6 +49,24 @@ services:
     depends_on:
       - game-palworld
       - game-dragonwilds
+      - broker
+
+  # Broker de mentira: o de verdade (catalogo, alocador, cotas, API), mas com Proxmox,
+  # OPNsense e instalador falsos. A criacao de uma instancia leva ~10 s, com progresso.
+  # As instancias "criadas" ganham IPs 10.77.0.x que nao existem: o painel vai acusar
+  # "sem contato" para elas, e isso e esperado.
+  broker:
+    build: ./docker/broker
+    container_name: gamebroker-dev
+    environment:
+      BROKER_TOKEN_FILE: /run/secrets/broker-token
+      BROKER_GAMES_DIR: /opt/gamebroker/games
+      BROKER_DEV_PASSO: "1.5"
+    secrets:
+      - broker-token
+    volumes:
+      - ./broker:/opt/gamebroker/broker:ro
+      - ./games:/opt/gamebroker/games:ro
 
   game-palworld:
     build: ./docker/game
@@ -80,6 +105,12 @@ services:
       - panel-keys:/keys:ro
     mem_limit: 2g
     cpus: 1
+
+secrets:
+  # Token de DESENVOLVIMENTO (nao e segredo, so passa da checagem de tamanho). Em producao
+  # o token nasce dentro do CT do broker e nunca entra no repositorio.
+  broker-token:
+    file: ./docker/broker/dev-token
 
 volumes:
   panel-keys:

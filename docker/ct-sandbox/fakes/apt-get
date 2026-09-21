@@ -1,0 +1,2 @@
+#!/bin/bash
+echo "apt-get $*" >> /var/log/fake-calls.log

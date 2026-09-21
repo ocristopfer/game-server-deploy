@@ -1,6 +1,9 @@
 # Config real (contem senha) - versione apenas o .env.example
 .env
 
+# Tokens do broker (Proxmox e OPNsense). Versione so o broker.secrets.env.example.
+broker.secrets.env
+
 # Stacks geradas pelo deploy-docker.ps1 (o *.secret.env leva a senha da conta Steam).
 # Sao regeradas a cada deploy e valem so para a maquina onde o deploy rodou.
 /docker/stacks/
@@ -19,3 +22,6 @@ __pycache__/
 
 # Claude Code local
 .claude/
+
+# Saidas do sandbox de comparacao do instalador (docker/ct-sandbox/comparar.sh)
+docker/ct-sandbox/.work/

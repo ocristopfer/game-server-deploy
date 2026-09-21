@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% block title %}Instancias de jogo — Painel de Jogos{% endblock %}
+
+{% block content %}
+{% call ui.cabecalho('Instancias de jogo') %}
+  {{ ui.botao('Catalogo', href=url_for('catalog'), variante='ghost', icone='📚') }}
+{% endcall %}
+
+<div class="card card--form">
+  <h2>Nova instancia</h2>
+  {% if jogos %}
+  <form method="post" action="{{ url_for('instance_new') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>Jogo
+      <select name="jogo" required>
+        {% for j in jogos %}
+          <option value="{{ j.chave }}">{{ j.nome }} — portas {{ j.portas | join(', ') }}</option>
+        {% endfor %}
+      </select>
+      <small>So aparecem os jogos que o broker sabe instalar sozinho.</small>
+    </label>
+    <label>Nome
+      <input name="nome" maxlength="40" required autocomplete="off" spellcheck="false"
+             pattern="[A-Za-z0-9][A-Za-z0-9 ._\-]{0,39}">
+      <small>Como a instancia aparece no painel. Letras, numeros, espaco, ponto, hifen e sublinhado.</small>
+    </label>
+    <div class="form-actions">
+      {{ ui.botao('Criar instancia', variante='primary', bloco=true,
+                  confirmar='Criar o container, instalar o jogo e abrir as portas no firewall? Isso pode levar varios minutos.') }}
+    </div>
+  </form>
+  <p class="muted small mt-4">
+    O broker escolhe o IP e as portas livres, cria o container, instala o jogo e so entao
+    abre o firewall. Voce acompanha o progresso na tela da acao.
+  </p>
+  {% else %}
+    <p class="muted">Nenhum jogo criavel no catalogo (ou o broker nao respondeu).</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="table-wrap"><table class="jobs">
+    {# UMA coluna, um bloco por instancia: com estado e acoes em colunas proprias, as ACOES
+       (Desativar, Remover) saiam da tela do celular, atras de uma rolagem lateral. #}
+    <thead><tr><th>Instancia</th></tr></thead>
+    <tbody>
+      {% for i in instancias %}
+      <tr>
+        <td>
+          {% if servidores.get(i.id) %}
+            <a href="{{ url_for('server_detail', sid=servidores[i.id].id) }}"><strong>{{ i.nome }}</strong></a>
+          {% else %}
+            <strong>{{ i.nome }}</strong>
+          {% endif %}
+          <span class="badge {{ {'ativa':'on','desativada':'cold','reservada':'cold','falhou':'off'}.get(i.estado, 'cold') }}">{{ i.estado }}</span>
+          <div class="muted small">{{ i.jogo }} · {{ i.ip }} · CT {{ i.ctid }}</div>
+          <div class="muted small">
+            Portas: {% for p in i.portas %}{{ p.numero }}/{{ p.proto }}{% if not loop.last %}, {% endif %}{% endfor %}
+          </div>
+          {% if i.detalhe %}<div class="muted small">{{ i.detalhe }}</div>{% endif %}
+          {% if i.estado == 'ativa' %}
+            {{ ui.acao(url_for('instance_deactivate', iid=i.id), 'Desativar', tamanho='sm',
+                       confirmar='Desativar ' ~ i.nome ~ '? O servidor sera PARADO e as portas fecham no firewall.') }}
+          {% elif i.estado in ('desativada', 'falhou') %}
+            <details>
+              <summary class="btn btn--danger btn--sm">Remover</summary>
+              <form method="post" action="{{ url_for('instance_remove', iid=i.id) }}">
+                <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+                <label>Digite o nome para confirmar
+                  <input name="confirma" placeholder="{{ i.nome }}" autocomplete="off" spellcheck="false" required>
+                </label>
+                <label class="check">
+                  <input type="checkbox" name="somente_banco" value="1">
+                  Esquecer so o registro (o container ja nao existe mais no Proxmox)
+                </label>
+                {{ ui.botao('Remover', variante='danger', tamanho='sm',
+                            confirmar='Remover ' ~ i.nome ~ '? O container e o jogo serao APAGADOS.') }}
+              </form>
+            </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td class="muted">Nenhuma instancia criada pelo broker ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}

@@ -27,6 +27,7 @@ from dataclasses import dataclass
 # A secao que depende de um recurso desligado nao aparece em lugar nenhum.
 RECURSO_ARQUIVOS = "files"
 RECURSO_SHELL = "shell"
+RECURSO_BROKER = "broker"
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,11 @@ NAV_PRINCIPAL = (
 # Menu do canto da barra de cima: o resto.
 NAV_SECUNDARIA = (
     Item("novo", "Adicionar servidor", "➕", "server_new", admin=True),
+    # Os dois do broker so existem no deploy que ligou GAMEPANEL_ALLOW_BROKER.
+    Item("instancias", "Instancias de jogo", "🧩", "instances_list", admin=True,
+         recurso=RECURSO_BROKER),
+    Item("catalogo", "Catalogo de jogos", "📚", "catalog", admin=True,
+         recurso=RECURSO_BROKER),
     Item("usuarios", "Usuarios", "👥", "users_list", admin=True),
     Item("ssh", "Acesso SSH", "🔑", "ssh_key"),
 )
@@ -79,6 +85,8 @@ _ATIVA_EXTRA = {
         "backup_delete", "backup_download", "schedules", "schedule_new",
         "schedule_toggle", "schedule_delete", "schedule_run",
         "players_setup", "players_use", "player_action", "job_detail",
+        "instances_list", "instance_new", "instance_deactivate", "instance_remove",
+        "catalog", "catalog_new",
     ),
     "alertas": ("alerts", "alerts_save", "alerts_hook_new", "alerts_hook_save",
                 "alerts_hook_del", "alerts_hook_test"),
@@ -130,6 +138,18 @@ SECOES_DO_SERVIDOR = (
     Item("editar", "Editar", "✏️", "server_edit", admin=True,
          ajuda="Host, servico, portas e caminhos"),
 )
+
+
+def itens_visiveis(itens: tuple[Item, ...], *, admin: bool, broker: bool) -> tuple[Item, ...]:
+    """Itens de navegacao que esta pessoa, neste deploy, pode abrir.
+
+    Um item com `recurso` desligado some do menu: nada de link que leva a 403.
+    """
+    permitidos = {RECURSO_BROKER: broker, "": True}
+    return tuple(
+        i for i in itens
+        if (not i.admin or admin) and permitidos.get(i.recurso, True)
+    )
 
 
 def secoes_visiveis(*, admin: bool, arquivos: bool, shell: bool) -> tuple[Item, ...]:

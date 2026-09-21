@@ -88,6 +88,9 @@ def test_outros_jogos_tem_catalogo_proprio():
     assert campo("PalWorldSettings.ini", "ServerPlayerMaxNum").kind == "number"
     assert campo("ServerSettings.ini", "ShutdownIfEmptyFor").unit == "s"
     assert campo("serverDZ.cfg", "steamQueryPort").kind == "number"
+    assert campo("DedicatedServer.ini", "WorldPassword").kind == "password"
+    assert campo("/opt/game/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini",
+                 "AdminPassword").kind == "password"
 
 
 def test_o_catalogo_e_achado_pelo_nome_do_arquivo_no_caminho_completo():

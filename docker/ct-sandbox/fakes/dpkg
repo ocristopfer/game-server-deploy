@@ -1,0 +1,3 @@
+#!/bin/bash
+# "Nada instalado": faz o instalador percorrer o caminho do apt-get (que e falso).
+exit 1
