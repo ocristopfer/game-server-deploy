@@ -191,6 +191,23 @@ def _inteiro_env(dados: dict[str, str], chave: str, padrao: int) -> int:
     return int(bruto) if bruto else padrao
 
 
+def problema_de_deslocavel(portas: tuple[Porta, ...], porta_jogo: int, porta_query: int,
+                           start_args: str) -> str:
+    """Um jogo so anda de porta se o broker consegue AVISAR o jogo de todas elas.
+
+    O broker entrega ao jogo duas portas ({PORT} e {QUERY_PORT}). Uma terceira (DayZ tem
+    2303/2304) ficaria aberta no firewall num numero que o jogo nao escuta, e o cliente
+    conectaria em vazio. Sem o marcador no START_ARGS o jogo ignora o numero sorteado.
+    """
+    if any(p.numero not in (porta_jogo, porta_query) for p in portas):
+        return "so aceita as portas do jogo e da query (o broker nao avisa portas extras ao jogo)"
+    if "{PORT}" not in start_args:
+        return "start_args precisa de {PORT}: e por ele que o jogo recebe a porta sorteada"
+    if porta_query and "{QUERY_PORT}" not in start_args:
+        return "start_args precisa de {QUERY_PORT}: e por ele que o jogo recebe a porta de consulta"
+    return ""
+
+
 def _motivo_de_nao_criar(dados: dict[str, str], app_id: int, portas: tuple[Porta, ...]) -> str:
     if dados.get("PROVISION_SCRIPT"):
         return "instalador proprio (nao e Steam); use o deploy-game.ps1"
@@ -211,6 +228,12 @@ def jogo_de_env(nome_do_arquivo: str, dados: dict[str, str]) -> Jogo:
     portas = tuple(_porta(p) for p in _partes(dados.get("GAME_PORTS", ""), r"\s+"))
     runtime = dados.get("WINDOWS_RUNTIME", "")
     motivo = _motivo_de_nao_criar(dados, app_id, portas)
+    deslocavel = dados.get("PORTS_SHIFTABLE", "0") == "1"
+    if deslocavel:
+        problema = problema_de_deslocavel(portas, _inteiro_env(dados, "GAME_PORT", 0),
+                                          _inteiro_env(dados, "QUERY_PORT", 0), dados.get("START_ARGS", ""))
+        if problema:
+            raise ValueError(f"PORTS_SHIFTABLE=1 invalido: {problema}")
     return Jogo(
         chave=chave, nome=dados.get("GAME_DISPLAY_NAME", chave), app_id=app_id,
         plataforma=dados.get("STEAM_PLATFORM", ""), portas=portas,
@@ -227,7 +250,7 @@ def jogo_de_env(nome_do_arquivo: str, dados: dict[str, str]) -> Jogo:
         join_re=dados.get("JOIN_RE", ""), leave_re=dados.get("LEAVE_RE", ""),
         log_path=dados.get("LOG_PATH", ""),
         receitas=(runtime,) if runtime in RECEITAS_WINDOWS else (),
-        deslocavel=dados.get("PORTS_SHIFTABLE", "0") == "1",
+        deslocavel=deslocavel,
         origem=ORIGEM_CURADO, criavel=not motivo, motivo=motivo,
         pre_install=dados.get("PRE_INSTALL_CMD", ""),
         post_install=dados.get("POST_INSTALL_CMD", ""),
@@ -398,6 +421,11 @@ def validar_dinamico(dados: object) -> Jogo:
     deslocavel = dados.get("deslocavel", False)
     if not isinstance(deslocavel, bool):
         raise ErroDeValidacao("deslocavel", "deve ser verdadeiro ou falso")
+    start_args = _args_de_start(dados)
+    if deslocavel:
+        problema = problema_de_deslocavel(portas, porta_jogo, porta_query, start_args)
+        if problema:
+            raise ErroDeValidacao("deslocavel", problema)
 
     return Jogo(
         chave=_texto(dados, "chave", CHAVE_RE, obrigatorio=True),
@@ -407,7 +435,7 @@ def validar_dinamico(dados: object) -> Jogo:
         memoria_mb=_inteiro(dados, "memoria_mb", 512, 65536, padrao=4096),
         cores=_inteiro(dados, "cores", 1, 16, padrao=2),
         disco_gb=_inteiro(dados, "disco_gb", 4, 500, padrao=20),
-        start_script=_script_de_start(dados), start_args=_args_de_start(dados),
+        start_script=_script_de_start(dados), start_args=start_args,
         config_path=_caminho_unico(dados, "config_path"),
         config_files=_caminhos(dados, "config_files", 8),
         backup_paths=_caminhos(dados, "backup_paths", 8),

@@ -40,6 +40,7 @@ echo "segredo do instalador"
 ENV_BETA = """GAME_KEY=beta
 GAME_DISPLAY_NAME="Beta"
 STEAM_APP_ID=1002
+START_ARGS="-port={PORT} -queryport={QUERY_PORT}"
 GAME_PORT=8001
 GAME_PORTS="8001/udp 8002/udp"
 QUERY_PORT=8002
@@ -113,7 +114,7 @@ def ambiente(tmp_path: Path, catalogo: Catalogo, relogio: Relogio):
         banco=banco, catalogo=catalogo, relogio=relogio, adiar=False, pendentes=[],
         proxmox=ProxmoxFalso(), opnsense=OpnsenseFalso(), instalador=InstaladorFalso(), rede=RedeFalsa(),
         config=Config(ctids=range(300, 310), ips=ips_da_faixa("10.0.0", 30, 40),
-                      max_instancias=5, max_criacoes_por_hora=10),
+                      portas=range(9000, 9020), max_instancias=5, max_criacoes_por_hora=10),
     )
 
     def executar(tarefa):

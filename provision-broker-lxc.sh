@@ -338,10 +338,13 @@ render_broker_config() {
     env_line BROKER_GATEWAY "$GATEWAY"
     env_line BROKER_PREFIXO_REDE "${IP_CIDR##*/}"
     env_line BROKER_IP_PREFIX "$BROKER_IP_PREFIX"
-    env_line BROKER_IP_INICIO "${BROKER_IP_INICIO:-30}"
-    env_line BROKER_IP_FIM "${BROKER_IP_FIM:-99}"
-    env_line BROKER_CTID_INICIO "${BROKER_CTID_INICIO:-300}"
-    env_line BROKER_CTID_FIM "${BROKER_CTID_FIM:-399}"
+    env_line BROKER_IP_INICIO "${BROKER_IP_INICIO:-102}"
+    env_line BROKER_IP_FIM "${BROKER_IP_FIM:-199}"
+    # O CTID de cada jogo e a base + o ultimo numero do IP (.102 -> 302): "3" + os dois ultimos
+    # digitos do IP. 0 = CTID escolhido a parte (BROKER_CTID_INICIO/FIM, so nesse modo).
+    env_line BROKER_CTID_BASE "${BROKER_CTID_BASE:-200}"
+    env_line BROKER_PORT_INICIO "${BROKER_PORT_INICIO:-31000}"
+    env_line BROKER_PORT_FIM "${BROKER_PORT_FIM:-31999}"
     env_line BROKER_MAX_INSTANCIAS "${BROKER_MAX_INSTANCIAS:-8}"
     env_line BROKER_MAX_CRIACOES_HORA "${BROKER_MAX_CRIACOES_HORA:-4}"
     env_line PROXMOX_URL "$PROXMOX_URL"
@@ -479,7 +482,8 @@ Container : CT ${CTID} (${CT_HOSTNAME}) - ${CORES} core(s), ${MEMORY}MB RAM, ${R
 Endereco  : https://${CT_IP}:${BROKER_PORT}
 Impressao : ${BROKER_CERT_SHA256}
             ^ certificado do PROPRIO broker (o painel fixa esta impressao)
-Pool      : ${PROXMOX_POOL}  |  CTIDs ${BROKER_CTID_INICIO:-300}-${BROKER_CTID_FIM:-399}  |  IPs ${BROKER_IP_PREFIX}.${BROKER_IP_INICIO:-30}-${BROKER_IP_FIM:-99}
+Pool      : ${PROXMOX_POOL}  |  IPs ${BROKER_IP_PREFIX}.${BROKER_IP_INICIO:-102}-${BROKER_IP_FIM:-199}  |  CTID = ${BROKER_CTID_BASE:-200} + ultimo numero do IP
+Portas    : jogos que andam de porta usam ${BROKER_PORT_INICIO:-31000}-${BROKER_PORT_FIM:-31999} (faixa propria, fora das portas padrao dos jogos)
 
 Certificados que o broker fixou (CONFIRA: se nao forem os seus, algo esta no meio do caminho):
   Proxmox  : ${PROXMOX_CERT_SHA256:-(nao-https)}${FIXOU_PROXMOX:+   <- lido do servidor agora}
@@ -508,9 +512,11 @@ REGRAS DE FIREWALL (OPNsense) - o broker tem chaves de infraestrutura, isole-o:
   1. ${PANEL_IP:-<IP do painel>} -> ${CT_IP}:${BROKER_PORT}/tcp        (so o painel fala com o broker)
   2. ${CT_IP} -> ${PROXMOX_HOSTPORT}      (API do Proxmox)
   3. ${CT_IP} -> ${OPNSENSE_HOSTPORT}     (API do OPNsense)
-  4. ${CT_IP} -> ${BROKER_IP_PREFIX}.${BROKER_IP_INICIO:-30}-${BROKER_IP_FIM:-99}:22/tcp   (SSH nos CTs novos)
+  4. ${CT_IP} -> ${BROKER_IP_PREFIX}.${BROKER_IP_INICIO:-102}-${BROKER_IP_FIM:-199}:22/tcp   (SSH nos CTs novos)
   5. ${CT_IP} -> internet DNS/HTTPS (apt); bloqueie o resto
   E no OPNsense, deixe o GUI/API (${OPNSENSE_HOSTPORT}) acessivel SO a ${CT_IP} e a voce.
+  (Trafego entre maquinas da MESMA sub-rede, como o do Proxmox e dos CTs, passa pelo switch/bridge e
+   nao pelo OPNsense: as regras 1, 2 e 4 so importam se algo estiver em outra sub-rede/VLAN.)
 
 EOF
 }

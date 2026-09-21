@@ -42,8 +42,9 @@ def montar_servico(cfg: ConfigBroker, executor: Executor | None = None, rede: Re
     return Servico(
         Banco(str(cfg.estado / "broker.db")), Catalogo(cfg.pasta_games, cfg.estado / "dinamico"),
         proxmox, opnsense, InstaladorSsh(cfg.ssh, executor), rede or RedeReal(),
-        Config(ctids=cfg.ctids, ips=cfg.ips, max_instancias=cfg.max_instancias,
-               max_criacoes_por_hora=cfg.max_criacoes_por_hora), **argumentos)
+        Config(ctids=cfg.ctids, ctid_base=cfg.ctid_base, ips=cfg.ips, portas=cfg.portas,
+               max_instancias=cfg.max_instancias, max_criacoes_por_hora=cfg.max_criacoes_por_hora),
+        **argumentos)
 
 
 def criar_app_de_config(cfg: ConfigBroker, **kwargs) -> Flask:

@@ -5,6 +5,7 @@ import sqlite3
 
 import pytest
 
+from broker.alocador import ips_da_faixa
 from broker.banco import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK
 from broker.erros import Conflito, CotaExcedida, ErroDeValidacao, NaoEncontrado, SemRecurso
 
@@ -55,11 +56,48 @@ def test_segunda_instancia_pega_outro_ctid_e_ip(ambiente):
     assert (inst["ctid"], inst["ip"]) == (301, "10.0.0.31")
 
 
-def test_mesmo_jogo_deslocavel_duas_vezes_desloca_as_portas(ambiente):
+def test_jogo_deslocavel_recebe_portas_da_faixa_do_broker(ambiente):
+    resposta = _criar(ambiente, "beta", "um")
+    portas = ambiente.banco.instancia(resposta["instancia_id"])["portas"]
+    assert [p["numero"] for p in portas] == [9000, 9001], "faixa propria, nao as portas padrao 8001/8002"
+    resultado = ambiente.servico.operacao(resposta["operacao_id"])["resultado"]
+    assert (resultado["game_port"], resultado["query_port"]) == (9000, 9001)
+
+
+def test_mesmo_jogo_deslocavel_duas_vezes_pega_o_proximo_bloco(ambiente):
     _criar(ambiente, "beta", "um")
     resposta = _criar(ambiente, "beta", "dois")
     portas = ambiente.banco.instancia(resposta["instancia_id"])["portas"]
-    assert [p["numero"] for p in portas] == [8003, 8004]
+    assert [p["numero"] for p in portas] == [9002, 9003]
+
+
+def test_faixa_do_broker_pula_porta_que_o_opnsense_ja_redireciona(ambiente):
+    ambiente.opnsense.externas = {(9000, "udp")}
+    portas = ambiente.banco.instancia(_criar(ambiente, "beta")["instancia_id"])["portas"]
+    assert [p["numero"] for p in portas] == [9001, 9002]
+
+
+# --- CTID que acompanha o IP ---------------------------------------------------
+
+def test_ctid_sai_do_ip_quando_ha_base(ambiente):
+    ambiente.com_config(ctid_base=200, ips=ips_da_faixa("10.0.0", 102, 110))
+    inst = ambiente.banco.instancia(_criar(ambiente)["instancia_id"])
+    assert (inst["ip"], inst["ctid"], inst["hostname"]) == ("10.0.0.102", 302, "alfa-302")
+    assert ambiente.proxmox.chamadas == [("criar_ct", 302), ("iniciar", 302)]
+
+
+def test_com_base_a_segunda_instancia_segue_o_ip(ambiente):
+    ambiente.com_config(ctid_base=200, ips=ips_da_faixa("10.0.0", 102, 110))
+    _criar(ambiente, "beta", "um")
+    inst = ambiente.banco.instancia(_criar(ambiente, "beta", "dois")["instancia_id"])
+    assert (inst["ip"], inst["ctid"]) == ("10.0.0.103", 303)
+
+
+def test_com_base_ctid_ocupado_no_proxmox_pula_o_ip_inteiro(ambiente):
+    ambiente.com_config(ctid_base=200, ips=ips_da_faixa("10.0.0", 102, 110))
+    ambiente.proxmox.externos_ctids = {302}
+    inst = ambiente.banco.instancia(_criar(ambiente)["instancia_id"])
+    assert (inst["ip"], inst["ctid"]) == ("10.0.0.103", 303)
 
 
 # --- ocupacao vinda de fora do broker ----------------------------------------

@@ -22,7 +22,7 @@
             app {{ j.app_id or '—' }} · {{ j.memoria_mb }} MB · {{ j.cores }} CPU · {{ j.disco_gb }} GB · {{ j.origem }}
           </div>
           <div class="small">
-            Portas: {{ j.portas | join(', ') }}{% if j.deslocavel %} <span class="badge cold" title="Em conflito, todas as portas andam juntas">desloca</span>{% endif %}
+            Portas: {{ j.portas | join(', ') }}{% if j.deslocavel %} <span class="badge cold" title="O broker sorteia as portas numa faixa propria dele; as listadas aqui sao so as padrao do jogo">porta sorteada</span>{% endif %}
           </div>
           {% if not j.criavel %}<div class="muted small">{{ j.motivo }}</div>{% endif %}
         </td>
@@ -131,9 +131,9 @@
     </fieldset>
     <label class="check">
       <input type="checkbox" name="deslocavel" value="1" {{ 'checked' if form.get('deslocavel') == '1' }}>
-      Pode mudar de porta (varias instancias do mesmo jogo)
+      O broker sorteia as portas (varias instancias do mesmo jogo)
     </label>
-    <small>So marque se o jogo aceita a porta pelos argumentos, senao ele anunciaria uma porta e escutaria outra.</small>
+    <small>So marque se o jogo aceita as portas pelos argumentos: os argumentos de start precisam ter {PORT} (e {QUERY_PORT}, se houver porta de consulta) e o jogo so pode ter essas duas portas.</small>
     <div class="form-actions">
       {{ ui.botao('Adicionar ao catalogo', variante='primary', bloco=true) }}
     </div>

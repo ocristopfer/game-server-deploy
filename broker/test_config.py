@@ -67,6 +67,44 @@ def test_valores_opcionais_sobrescrevem_os_padroes(env):
     assert cfg.opnsense_wan == "opt1"
 
 
+def test_padroes_da_faixa_de_portas_e_do_ctid(env):
+    cfg = carregar(env)
+    assert (cfg.portas.start, cfg.portas.stop - 1) == (31000, 31999)
+    assert cfg.ctid_base == 0, "sem BROKER_CTID_BASE o CTID continua sendo escolhido a parte"
+
+
+def test_ctid_base_e_faixa_de_portas_configuraveis(env):
+    env.update(BROKER_CTID_BASE="200", BROKER_IP_INICIO="102", BROKER_IP_FIM="110",
+               BROKER_PORT_INICIO="40000", BROKER_PORT_FIM="40099")
+    cfg = carregar(env)
+    assert cfg.ctid_base == 200
+    assert (cfg.portas.start, cfg.portas.stop - 1) == (40000, 40099)
+    assert (cfg.ips[0], cfg.ips[-1]) == ("192.168.2.102", "192.168.2.110")
+
+
+@pytest.mark.parametrize(("nome", "valor"), [
+    ("BROKER_PORT_INICIO", "80"), ("BROKER_PORT_INICIO", "abc"), ("BROKER_PORT_FIM", "70000"),
+    ("BROKER_CTID_BASE", "-1"), ("BROKER_CTID_BASE", "abc"),
+])
+def test_faixa_de_portas_e_base_invalidas(env, nome, valor):
+    env[nome] = valor
+    with pytest.raises(ErroDeConfig, match=nome):
+        carregar(env)
+
+
+def test_faixa_de_portas_invertida(env):
+    env.update(BROKER_PORT_INICIO="32000", BROKER_PORT_FIM="31000")
+    with pytest.raises(ErroDeConfig, match="BROKER_PORT_FIM"):
+        carregar(env)
+
+
+def test_ctid_base_pequena_demais_deixaria_o_ctid_abaixo_de_100(env):
+    # Base 10 + primeiro IP .30 = CTID 40: o Proxmox nao aceita CTID abaixo de 100.
+    env["BROKER_CTID_BASE"] = "10"
+    with pytest.raises(ErroDeConfig, match="BROKER_CTID_BASE"):
+        carregar(env)
+
+
 OBRIGATORIAS = ["BROKER_TOKEN", "BROKER_PANEL_PUBKEY", "BROKER_GATEWAY", "BROKER_IP_PREFIX", "PROXMOX_URL",
                 "PROXMOX_TOKEN", "PROXMOX_NODE", "PROXMOX_STORAGE", "PROXMOX_TEMPLATE", "PROXMOX_BRIDGE",
                 "OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET"]

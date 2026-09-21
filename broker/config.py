@@ -50,7 +50,9 @@ class ConfigBroker:
     opnsense_impressao: str
     opnsense_wan: str
     ctids: range
+    ctid_base: int
     ips: tuple[str, ...]
+    portas: range
     max_instancias: int
     max_criacoes_por_hora: int
     ssh: ConfigSsh
@@ -110,16 +112,31 @@ def _ips_permitidos(leitor: _Leitor) -> tuple[str, ...]:
     return tuple(ips)
 
 
-def _faixas(leitor: _Leitor) -> tuple[range, tuple[str, ...]]:
+def _faixas(leitor: _Leitor) -> tuple[range, int, tuple[str, ...]]:
     ctid_ini = leitor.inteiro("BROKER_CTID_INICIO", 300, 100, 999_999_999)
     ctid_fim = leitor.inteiro("BROKER_CTID_FIM", 399, 100, 999_999_999)
     if ctid_fim < ctid_ini:
         leitor.problemas.append("BROKER_CTID_FIM: menor que BROKER_CTID_INICIO")
+    # 0 = CTID escolhido a parte, na faixa acima; senao o CTID e a base + o ultimo numero do IP.
+    ctid_base = leitor.inteiro("BROKER_CTID_BASE", 0, 0, 999_999_000)
     prefixo = leitor.texto("BROKER_IP_PREFIX")
     ini = leitor.inteiro("BROKER_IP_INICIO", 30, 1, 254)
     fim = leitor.inteiro("BROKER_IP_FIM", 99, 1, 254)
+    if ctid_base and ctid_base + ini < 100:
+        leitor.problemas.append("BROKER_CTID_BASE: com o primeiro IP da faixa o CTID ficaria abaixo de 100")
     ips = leitor.tentar("BROKER_IP_PREFIX/INICIO/FIM", lambda: ips_da_faixa(prefixo, ini, fim)) if prefixo else None
-    return range(ctid_ini, ctid_fim + 1), ips or ()
+    return range(ctid_ini, ctid_fim + 1), ctid_base, ips or ()
+
+
+def _faixa_de_portas(leitor: _Leitor) -> range:
+    """Faixa so do broker para jogos que andam de porta. Fica fora das portas padrao dos jogos
+    e abaixo das efemeras do Linux (32768+), que o proprio firewall usa em conexoes de saida."""
+    ini = leitor.inteiro("BROKER_PORT_INICIO", 31000, 1024, 65535)
+    fim = leitor.inteiro("BROKER_PORT_FIM", 31999, 1024, 65535)
+    if fim < ini:
+        leitor.problemas.append("BROKER_PORT_FIM: menor que BROKER_PORT_INICIO")
+        return range(0)
+    return range(ini, fim + 1)
 
 
 def _confere_url(leitor: _Leitor, nome: str, url: str) -> None:
@@ -151,7 +168,8 @@ def carregar(env: Mapping[str, str]) -> ConfigBroker:
     chave_painel = leitor.texto("BROKER_PANEL_PUBKEY")
     chave_broker = leitor.tentar("BROKER_SSH_KEY.pub", lambda: Path(f"{chave_ssh}.pub").read_text(encoding="utf-8").strip()) or ""
 
-    ctids, ips = _faixas(leitor)
+    ctids, ctid_base, ips = _faixas(leitor)
+    portas = _faixa_de_portas(leitor)
     gateway = leitor.texto("BROKER_GATEWAY")
     prefixo_rede = leitor.inteiro("BROKER_PREFIXO_REDE", 24, 8, 30)
     # Le TODAS as variaveis antes; so constroi o objeto se elas vieram completas. Senao a mesma
@@ -186,4 +204,4 @@ def carregar(env: Mapping[str, str]) -> ConfigBroker:
     return ConfigBroker(
         token=token, estado=estado, pasta_games=Path(leitor.texto("BROKER_GAMES_DIR", "/opt/gamebroker/games")),
         pasta_lib=pasta_lib, proxmox_url=px_url, proxmox=proxmox, opnsense_url=op_url,
-        ctids=ctids, ips=ips, ssh=ssh, **cfg_parcial)
+        ctids=ctids, ctid_base=ctid_base, ips=ips, portas=portas, ssh=ssh, **cfg_parcial)

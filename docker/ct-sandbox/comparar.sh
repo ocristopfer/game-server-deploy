@@ -44,7 +44,7 @@ GAME_PORTS="7778/udp 27017/udp"
 RECIPES="steamclient-sdk64"
 ENV
 
-# O install.env que o BROKER gera (broker/ssh_install.py:montar_env), com portas deslocadas e uma
+# O install.env que o BROKER gera (broker/ssh_install.py:montar_env), com portas da faixa do broker e uma
 # receita: prova a costura entre o Python e o ct-install.sh de verdade.
 PYBIN="$raiz/.venv/Scripts/python.exe"; [ -x "$PYBIN" ] || PYBIN=python3
 "$PYBIN" - > "$work/games/gerado-pelo-broker.env" <<'PY'
@@ -57,7 +57,7 @@ jogo = validar_dinamico({
     "portas": ["7777/udp", "27016/udp"], "porta_jogo": 7777, "porta_query": 27016,
     "start_script": "Server.sh", "start_args": "-port={PORT} -queryport={QUERY_PORT}",
     "receitas": ["steamclient-sdk64"], "deslocavel": True})
-portas = [PortaAlocada(7777, 7779, "udp", "jogo"), PortaAlocada(27016, 27018, "udp", "query")]
+portas = [PortaAlocada(7777, 31000, "udp", "jogo"), PortaAlocada(27016, 31001, "udp", "query")]
 # Bytes, nao print(): no Windows o stdout em modo texto troca \n por \r\n, e o bash do CT leria
 # cada valor com um \r no fim (o instalador de verdade grava com newline="\n").
 import sys
@@ -137,18 +137,18 @@ else
   printf 'FALHOU    recursos novos  %-20s (veja %s)\n' receita "$r"; falhas=$((falhas + 1))
 fi
 
-# Costura Python -> ct-install.sh: o install.env gerado pelo broker, com portas 7779/27018.
+# Costura Python -> ct-install.sh: o install.env gerado pelo broker, com portas 31000/31001.
 rodar gerado-inst inst gerado-pelo-broker.env "" "" install
 g="$work/out/gerado-inst"
 esperado=1
 [ "$(cat "$g/exit" 2>/dev/null)" = 0 ] || esperado=0
 grep -q "INSTALACAO CONCLUIDA: Gerado pelo broker" "$g/saida.log" || esperado=0
-grep -q -- 'ExecStart=/opt/game/Server.sh -port=7779 -queryport=27018' "$g/conteudo.txt" || esperado=0
+grep -q -- 'ExecStart=/opt/game/Server.sh -port=31000 -queryport=31001' "$g/conteudo.txt" || esperado=0
 grep -q "app_update 999002 validate" "$g/steamcmd.log" || esperado=0
 grep -q "login anonymous" "$g/steamcmd.log" || esperado=0
 grep -q 'sdk64/steamclient.so' "$g/arquivos.txt" || esperado=0
 if [ "$esperado" = 1 ]; then
-  printf 'OK        costura         %-20s (install.env do broker -> ct-install.sh, portas 7779/27018)\n' gerado
+  printf 'OK        costura         %-20s (install.env do broker -> ct-install.sh, portas 31000/31001)\n' gerado
 else
   printf 'FALHOU    costura         %-20s (veja %s)\n' gerado "$g"; falhas=$((falhas + 1))
 fi

@@ -398,8 +398,24 @@ broker de brinquedo (`broker/dev.py`, backends falsos): `docker compose up --bui
   `source`, e campo que o broker nao conhece e RECUSADO — e assim que `pre_install_cmd`
   deixa de entrar de contrabando. Campo novo em jogo dinamico = regex propria em
   `catalogo.py` e um caso em `CASOS_INVALIDOS` do teste.
-- **Porta interna == externa, sempre.** Jogo `deslocavel` (`PORTS_SHIFTABLE=1`) anda todas as
-  portas juntas; os demais sao recusados se a porta estiver ocupada. Ver `alocador.py`.
+- **Porta interna == externa, sempre.** Jogo `deslocavel` (`PORTS_SHIFTABLE=1`) recebe um bloco
+  de portas seguidas da FAIXA do broker (`BROKER_PORT_INICIO/FIM`, padrao 31000-31999, abaixo das
+  efemeras 32768+ e longe das portas padrao dos jogos), nunca as portas padrao; os demais ficam
+  nas portas padrao e sao recusados se estiverem ocupadas. Isso e ir para a faixa mesmo com a
+  porta padrao livre: mistura de "servidor antigo na porta padrao" com "servidor do broker na
+  faixa" e o que impede um dia colidir. O jogo so e `deslocavel` se o broker consegue AVISA-LO de
+  todas as portas: `START_ARGS` com `{PORT}` (e `{QUERY_PORT}` se ha query) e nenhuma porta extra
+  alem de jogo e query (`catalogo.problema_de_deslocavel`, validado no carregamento). Hoje:
+  Dragonwilds, Satisfactory, Palworld e Icarus. Enshrouded (portas no JSON) e DayZ (2303/2304
+  derivadas) nao. Ver `alocador.py`.
+- **Enderecos: o IP diz o CTID.** Painel `.100` (CT 300), broker `.101` (CT 301), jogos do
+  broker `.102-.199` (CT 302-399): `CTID = BROKER_CTID_BASE (200) + ultimo numero do IP`, ou
+  seja "3" + os dois ultimos digitos do IP (`alocador.escolher_ip_e_ctid`; um IP so serve se o
+  CTID dele tambem esta livre). Tudo em 300-399 e deste sistema; os CTs 2xx sao os antigos, feitos
+  a mao ou pelo `deploy-game.ps1`, e ficam onde estao. As VMs 100-111 do Proxmox nao colidem. Com
+  `BROKER_CTID_BASE=0` o CTID volta a ser escolhido a parte, na faixa `BROKER_CTID_INICIO/FIM`.
+  **O DHCP do OPNsense nao pode cobrir `.100-.199`**: a checagem por ping nao pega um aparelho
+  que ainda vai chegar.
 - **Desfazer nao pode mentir**: se a limpeza falha, a reserva vira `falhou` e continua
   bloqueando IP/CTID/portas ate alguem remover (`servico._desfazer`).
 - **TLS e por IMPRESSAO, nunca `verify=False`.** Proxmox e OPNsense sao autoassinados;
@@ -439,6 +455,11 @@ broker de brinquedo (`broker/dev.py`, backends falsos): `docker compose up --bui
 | `deploy-admin.ps1` | envio direto por SSH (troca codigo e reinicia) |
 | `provision-admin-lxc.sh` | provisionamento completo pelo Proxmox (`pct push`) |
 | `deploy-broker.ps1` + `provision-broker-lxc.sh` | o broker (CT proprio); ver a secao "Broker" |
+
+**`ADMIN_HOST` do `.env` vence `ADMIN_IP_CIDR`** no atalho de envio direto do `deploy-admin.ps1`
+(sem `-Full`): ao mudar o painel de CT/IP, troque os DOIS, senao o deploy cai no CT antigo e o
+publica la (foi assim que o painel publico velho recebeu codigo novo sem ninguem pedir). `-Full`
+segue o `ADMIN_CTID`. O deploy do broker tambem deduz o IP permitido a partir do `ADMIN_HOST`.
 
 Os dois copiam `templates/` e `static/` **recursivamente**. Ao criar uma subpasta nova,
 confira os dois — eles ja quebraram por copiar so o primeiro nivel. `static/maps` fica

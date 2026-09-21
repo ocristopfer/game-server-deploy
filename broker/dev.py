@@ -48,7 +48,7 @@ def main() -> None:
     servico = Servico(
         Banco(str(estado / "broker.db")), catalogo, ProxmoxFalso(), OpnsenseFalso(),
         InstaladorLento(float(os.environ.get("BROKER_DEV_PASSO", "1.5"))), RedeFalsa(),
-        Config(ctids=range(300, 400), ips=ips_da_faixa("10.77.0", 30, 99)))
+        Config(ctid_base=200, ips=ips_da_faixa("10.77.0", 102, 199)))
     app = criar_app(servico, token)
     app.run(host="0.0.0.0", port=int(os.environ.get("BROKER_PORT", "8090")), threaded=True)  # NOSONAR - so no compose de dev
 

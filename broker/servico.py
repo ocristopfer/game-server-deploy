@@ -27,6 +27,10 @@ ERRO_MAX = 300
 class Config:
     ctids: range = range(300, 400)
     ips: tuple[str, ...] = ()
+    # Diferente de 0: o CTID sai do IP (`ctid_base` + ultimo numero) e `ctids` nao e usado.
+    ctid_base: int = 0
+    # Faixa so do broker para jogos `deslocavel`; nao pode cruzar com as portas dos servidores antigos.
+    portas: range = range(31000, 32000)
     max_instancias: int = 8
     max_criacoes_por_hora: int = 4
 
@@ -118,9 +122,13 @@ class Servico:
         # sido criado na mao, e a regra de NAT tambem.
         ctids_px, ips_px = self.proxmox.ctids_e_ips()
         ctids_db, ips_db, portas_db = self.banco.usados()
-        ctid = alocador.escolher_ctid(self.config.ctids, ctids_px | ctids_db)
-        ip = alocador.escolher_ip(self.config.ips, ips_px | ips_db, self.rede.responde)
-        portas = alocador.alocar_portas(jogo, self.opnsense.portas_externas() | portas_db)
+        if self.config.ctid_base:
+            ip, ctid = alocador.escolher_ip_e_ctid(self.config.ips, self.config.ctid_base,
+                                                   ctids_px | ctids_db, ips_px | ips_db, self.rede.responde)
+        else:
+            ctid = alocador.escolher_ctid(self.config.ctids, ctids_px | ctids_db)
+            ip = alocador.escolher_ip(self.config.ips, ips_px | ips_db, self.rede.responde)
+        portas = alocador.alocar_portas(jogo, self.opnsense.portas_externas() | portas_db, self.config.portas)
         instancia_id = self.banco.reservar(ctid, ip, jogo.chave, nome, f"{jogo.chave}-{ctid}", ator, portas)
         return instancia_id, portas
 

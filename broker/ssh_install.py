@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .alocador import PortaAlocada
+from .alocador import PAPEL_JOGO, PAPEL_QUERY, PortaAlocada, porta_do_papel
 from .catalogo import RECEITAS_WINDOWS, Jogo
 
 DESTINO_REMOTO = "/root/gamepanel-install"
@@ -106,14 +106,14 @@ def montar_env(jogo: Jogo, portas: Sequence[PortaAlocada]) -> str:
     runtimes = [r for r in jogo.receitas if r in RECEITAS_WINDOWS]
     if len(runtimes) > 1:
         raise ErroDeInstalacao("escolha 'wine' OU 'proton', nao os dois")
-    # Porta interna == externa (ver alocador.py): o jogo e avisado das portas JA deslocadas.
-    deslocamento = (portas[0].numero - portas[0].base) if portas else 0
+    # Porta interna == externa (ver alocador.py): o jogo e avisado das portas JA alocadas.
+    porta_jogo = porta_do_papel(portas, PAPEL_JOGO) or jogo.porta_jogo
+    porta_query = (porta_do_papel(portas, PAPEL_QUERY) or jogo.porta_query) if jogo.porta_query else 0
     variaveis = {
         "GAME_KEY": jogo.chave, "GAME_DISPLAY_NAME": jogo.nome, "STEAM_APP_ID": str(jogo.app_id),
         "STEAM_PLATFORM": jogo.plataforma, "STEAM_ANONYMOUS": "1",
         "START_SCRIPT": jogo.start_script, "START_ARGS": jogo.start_args,
-        "GAME_PORT": str(jogo.porta_jogo + deslocamento),
-        "QUERY_PORT": str(jogo.porta_query + deslocamento if jogo.porta_query else 0),
+        "GAME_PORT": str(porta_jogo), "QUERY_PORT": str(porta_query),
         "GAME_PORTS": " ".join(str(p) for p in portas),
         "WINDOWS_RUNTIME": runtimes[0] if runtimes else "",
         "RECIPES": " ".join(r for r in jogo.receitas if r not in RECEITAS_WINDOWS),

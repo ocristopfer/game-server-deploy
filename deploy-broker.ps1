@@ -214,6 +214,8 @@ $conf = [ordered]@{
     BROKER_IP_FIM = (Get-Cfg $cfg "BROKER_IP_FIM"); BROKER_CTID_INICIO = (Get-Cfg $cfg "BROKER_CTID_INICIO")
     BROKER_CTID_FIM = (Get-Cfg $cfg "BROKER_CTID_FIM"); BROKER_MAX_INSTANCIAS = (Get-Cfg $cfg "BROKER_MAX_INSTANCIAS")
     BROKER_MAX_CRIACOES_HORA = (Get-Cfg $cfg "BROKER_MAX_CRIACOES_HORA")
+    BROKER_CTID_BASE = (Get-Cfg $cfg "BROKER_CTID_BASE"); BROKER_PORT_INICIO = (Get-Cfg $cfg "BROKER_PORT_INICIO")
+    BROKER_PORT_FIM = (Get-Cfg $cfg "BROKER_PORT_FIM")
     BROKER_ALLOW_IPS = (Get-Cfg $cfg "BROKER_ALLOW_IPS" $panelIp)
     ADMIN_CTID = (Get-Cfg $cfg "ADMIN_CTID"); BROKER_PANEL_PUBKEY = (Get-Cfg $cfg "PANEL_PUBKEY")
     RECREATE_BROKER_CT = $(if ($RecreateCt) { "1" } else { "0" })

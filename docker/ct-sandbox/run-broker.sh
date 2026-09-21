@@ -113,6 +113,7 @@ print('token_ok', cfg.token == open('/etc/gamebroker/token').read().strip())
 print('segredo', cfg.opnsense_secret == 'a"b\\c$d`e f')
 print('chave_opn', cfg.opnsense_key == 'qSNu/chave+de=teste')
 print('ips', cfg.ips[0], cfg.ips[-1], cfg.ips_permitidos)
+print('enderecos', cfg.ctid_base, cfg.portas.start, cfg.portas.stop - 1)
 print('chaves', len(cfg.proxmox.chaves_ssh), cfg.proxmox.chaves_ssh[0] == open('/etc/gamebroker/ssh/id_ed25519.pub').read().strip(), 'painel@gp' in cfg.proxmox.chaves_ssh[1])
 print('template', cfg.proxmox.template)
 print('impressoes', cfg.proxmox_impressao[:8], cfg.opnsense_impressao[:8])
@@ -122,7 +123,8 @@ cat /tmp/carregar.out | sed 's/^/          /'
 grep -q '^token_ok True' /tmp/carregar.out && ok "token do env = token do arquivo" || nok "token divergente"
 grep -q '^segredo True' /tmp/carregar.out && ok "segredo com aspas, barra, cifrao e crase sobrevive ao env do systemd" || nok "segredo corrompido no env"
 grep -q '^chave_opn True' /tmp/carregar.out && ok "chave com / + = intacta" || nok "chave do OPNsense corrompida"
-grep -q "^ips 192.168.2.30 192.168.2.99 ('192.168.2.19', '127.0.0.1')" /tmp/carregar.out && ok "faixa de IPs e origens: painel + loopback (teste de saude)" || nok "faixa/origens erradas"
+grep -q "^ips 192.168.2.102 192.168.2.199 ('192.168.2.19', '127.0.0.1')" /tmp/carregar.out && ok "faixa de IPs e origens: painel + loopback (teste de saude)" || nok "faixa/origens erradas"
+grep -q '^enderecos 200 31000 31999' /tmp/carregar.out && ok "CTID = 200 + ultimo numero do IP; portas dos jogos em 31000-31999" || nok "base do CTID ou faixa de portas erradas"
 grep -q '^chaves 2 True True' /tmp/carregar.out && ok "CT novo recebe a chave do broker E a do painel" || nok "chaves do CT novo erradas"
 grep -q 'template vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst' /tmp/carregar.out && ok "template dos jogos = o Debian 13 mais novo do storage" || nok "template errado"
 grep -q '^prefixo 24' /tmp/carregar.out && ok "mascara vem do BROKER_IP_CIDR" || nok "mascara errada"

