@@ -47,8 +47,9 @@ from gamepanel.runtime import ssh as ssh_transport
 # Apelido: ha uma rota `terminal()` neste mesmo modulo (a tela /servers/<id>/terminal),
 # e o nome `terminal` sem apelido acabaria REBATIZADO por ela — o import ficaria valendo
 # so ate a definicao da rota, silenciosamente (mypy pegou isso: "Name already defined").
-# Apelido pelo mesmo motivo do `term_runtime` acima: ha uma rota `files()`
-# (`/servers/<id>/files`) neste modulo.
+# Apelidos pelo mesmo motivo: ha rotas `files()` (`/servers/<id>/files`) e
+# `backups()` (`/servers/<id>/backups`) neste modulo.
+from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import terminal as term_runtime
 from gamepanel.security import qr, totp
@@ -3976,131 +3977,7 @@ def read_file(server: Servidor, path: str) -> dict:
     return files_rt.read_file(ssh_run, server, path, FILE_MAX_BYTES, FILE_PREVIEW_BYTES)
 
 
-# $1 = pasta dos backups, $2 = prefixo do servidor, $3 = quantas copias manter,
-# $4 = sufixo do nome (a copia de seguranca do restore usa isto), $5.. = o que guardar.
-BACKUP_SCRIPT = r"""
-set -e
-dir=$1
-nome=$2
-manter=$3
-sufixo=$4
-shift 4
-[ $# -gt 0 ] || { echo "nenhuma pasta para guardar" >&2; exit 3; }
-
-# Caminho que ainda nao existe NAO e erro: a pasta de save so nasce quando alguem entra
-# no servidor pela primeira vez, e o cadastro do jogo ja aponta para ela. Cada ausente
-# vira um aviso e os demais continuam entrando; so para se nao sobrar nenhum.
-# (Roda os argumentos: tira o primeiro, e se ele existir devolve no fim da lista.)
-n=$#
-i=0
-while [ "$i" -lt "$n" ]; do
-  p=$1
-  shift
-  i=$((i + 1))
-  if [ -e "$p" ]; then
-    set -- "$@" "$p"
-  else
-    echo "ignorado (ainda nao existe): $p"
-  fi
-done
-[ $# -gt 0 ] || { echo "nada a guardar: nenhum dos caminhos existe no container" >&2; exit 3; }
-mkdir -p -- "$dir"
-
-# Espaco livre x tamanho do alvo. O .tar.gz sai bem menor que o original, entao esta
-# margem e folgada de proposito: encher o disco do container derruba o jogo junto.
-precisa=$(du -sk -- "$@" 2>/dev/null | awk '{ t += $1 } END { print t+0 }')
-livre=$(df -Pk -- "$dir" | awk 'NR>1 { print $4; exit }')
-if [ "${livre:-0}" -lt "${precisa:-0}" ]; then
-  echo "sem espaco em $dir: o alvo ocupa ${precisa}KB e sobram ${livre}KB" >&2
-  exit 4
-fi
-
-alvo="$dir/$nome-$(date +%Y%m%d-%H%M%S)$sufixo.tar.gz"
-tmp="$alvo.parcial"
-lista=$(mktemp)
-trap 'rm -f "$tmp" "$lista"' EXIT
-# Caminho absoluto vira relativo dentro do tar (-C /): e o que faz o restore devolver
-# cada arquivo exatamente de onde ele saiu.
-for p in "$@"; do printf '%s\n' "${p#/}" >> "$lista"; done
-
-# tar sai com 1 quando um arquivo muda durante a leitura — normal com o servidor ligado,
-# e nao invalida o backup. So o codigo 2 (erro de verdade) aborta.
-set +e
-tar -czf "$tmp" --warning=no-file-changed -C / -T "$lista"
-rc=$?
-set -e
-[ "$rc" -le 1 ] || { echo "tar falhou (codigo $rc)" >&2; exit 5; }
-[ "$rc" -eq 1 ] && echo "aviso: algum arquivo mudou durante a copia (servidor ligado) - o backup vale, mas parar o servidor da uma copia mais fiel"
-
-mv -- "$tmp" "$alvo"
-echo "backup pronto: $alvo ($(stat -Lc %s -- "$alvo") bytes)"
-
-# Retencao: mantem as N copias mais novas DESTE servidor e apaga o resto.
-if [ "$manter" -gt 0 ]; then
-  ls -1t -- "$dir/$nome-"*.tar.gz 2>/dev/null | tail -n +$((manter + 1)) | while IFS= read -r velho; do
-    rm -f -- "$velho" && echo "retencao: apagado $(basename -- "$velho")"
-  done
-fi
-"""
-
-# $1 = pasta dos backups, $2 = prefixo do servidor.
-BACKUP_LIST_SCRIPT = r"""
-set -e
-dir=$1
-nome=$2
-[ -d "$dir" ] || exit 0
-# Nome primeiro: como ele comeca com a data, o sort reverso ja poe o mais novo em cima.
-find "$dir" -maxdepth 1 -type f -name "$nome-*.tar.gz" \
-  -printf '%f\t%s\t%TY-%Tm-%Td %TH:%TM\n' 2>/dev/null | LC_ALL=C sort -r | head -n "$3"
-"""
-
-# $1 = pasta dos backups, $2 = nome do arquivo, $3 = unidade systemd do jogo.
-RESTORE_SCRIPT = r"""
-set -e
-dir=$1
-arq=$2
-unit=$3
-# O nome vem da tela: barra aqui deixaria escolher qualquer .tar.gz do container.
-case "$arq" in
-  ''|*/*|*..*) echo "nome de backup invalido" >&2; exit 3 ;;
-esac
-f="$dir/$arq"
-[ -f "$f" ] || { echo "backup nao encontrado: $arq" >&2; exit 3; }
-# Confere ANTES de parar o servidor: descobrir que o arquivo esta corrompido com o jogo
-# ja parado e a pior hora possivel.
-gzip -t -- "$f" 2>/dev/null || { echo "arquivo corrompido (gzip nao le): $arq" >&2; exit 4; }
-tar -tzf "$f" >/dev/null 2>&1 || { echo "arquivo corrompido (tar nao le): $arq" >&2; exit 4; }
-
-estava=$(systemctl is-active "$unit" 2>/dev/null || true)
-if [ "$estava" = active ]; then
-  systemctl stop "$unit"
-  echo "servidor parado para a restauracao"
-fi
-
-tar -xzf "$f" -C /
-echo "restaurado: $arq"
-
-# Servidor que ja estava parado continua parado: restaurar nao e ligar.
-if [ "$estava" = active ]; then
-  systemctl start "$unit"
-  echo "servidor religado"
-fi
-"""
-
-# $1 = pasta dos backups, $2 = nome do arquivo.
-BACKUP_DELETE_SCRIPT = r"""
-set -e
-dir=$1
-arq=$2
-case "$arq" in
-  ''|*/*|*..*) echo "nome de backup invalido" >&2; exit 3 ;;
-esac
-f="$dir/$arq"
-[ -f "$f" ] || { echo "backup nao encontrado: $arq" >&2; exit 3; }
-sz=$(stat -Lc %s -- "$f")
-rm -f -- "$f"
-echo "backup apagado: $arq ($sz bytes)"
-"""
+RESTORE_SCRIPT = backups_rt.RESTORE_SCRIPT
 
 # $1 = destino final. O conteudo vem CRU pela entrada padrao (sem base64: o arquivo pode
 # ter gigabytes, e codificar inflaria 33% a toa).
@@ -4384,63 +4261,23 @@ def files_upload(sid: int):
 
 
 def backup_paths(server: Servidor) -> list[str]:
-    """O que entra no backup deste servidor.
-
-    Sem nada cadastrado vale a pasta de configuracao, que e onde o save costuma morar —
-    e o padrao que evita cadastrar servidor nenhum so para ter backup.
-    """
-    escolhidos = [ln.strip() for ln in (server["backup_paths"] or "").splitlines() if ln.strip()]
-    if escolhidos:
-        return escolhidos[:BACKUP_PATHS_MAX]
-    padrao = (server["config_path"] or "").strip()
-    return [padrao] if padrao else []
+    return backups_rt.backup_paths(server, BACKUP_PATHS_MAX)
 
 
 def backup_prefix(server: Servidor) -> str:
-    """Prefixo dos arquivos deste servidor: e ele que separa (e limita) as copias.
-
-    Sai do nome da unidade systemd, que ja e unica por container. O saneamento importa
-    porque o prefixo entra num glob de shell la do outro lado.
-    """
-    bruto = (server["service"] or "jogo").rsplit(".service", 1)[0]
-    limpo = re.sub(r"[^A-Za-z0-9_-]", "-", bruto).strip("-")
-    return limpo or "jogo"
-
-
-BACKUP_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}\.tar\.gz$")
+    return backups_rt.backup_prefix(server)
 
 
 def _backup_ou_400(nome: str) -> str:
     """Confere o nome que voltou da tela antes de ele entrar num comando remoto."""
-    nome = (nome or "").strip()
-    if not BACKUP_NAME_RE.match(nome) or ".." in nome:
-        abort(400, "nome de backup invalido")
-    return nome
+    try:
+        return backups_rt.validate_backup_name(nome)
+    except ValueError as exc:
+        abort(400, str(exc))
 
 
 def list_backups(server: Servidor) -> list[dict]:
-    proc = ssh_run(
-        server,
-        q("bash", "-lc", BACKUP_LIST_SCRIPT, "gp", BACKUP_DIR, backup_prefix(server),
-          str(BACKUP_LIST_MAX)),
-        timeout=40,
-    )
-    if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao listar os backups")
-    copias: list[dict] = []
-    for linha in proc.stdout.splitlines():
-        partes = linha.split("\t", 2)
-        if len(partes) != 3:
-            continue
-        copias.append({
-            "name": partes[0],
-            "size": int(partes[1]) if partes[1].isdigit() else 0,
-            "mtime": partes[2],
-            # A copia que o proprio painel tira antes de restaurar: some no meio das
-            # outras se nao for marcada, e e justamente a que salva quem restaurou errado.
-            "seguranca": partes[0].endswith("-antes-de-restaurar.tar.gz"),
-        })
-    return copias
+    return backups_rt.list_backups(ssh_run, server, BACKUP_DIR, BACKUP_LIST_MAX)
 
 
 @app.get("/servers/<int:sid>/backups")
@@ -4460,9 +4297,11 @@ def backups(sid: int):
 
 
 def comando_de_backup(server: Servidor, caminhos: list[str], sufixo: str = "") -> str:
-    """Monta o comando remoto do backup. Usado pela tela, pelo restore e pelo agendador."""
-    return q("bash", "-lc", BACKUP_SCRIPT, "gp", BACKUP_DIR,
-             backup_prefix(server), str(BACKUP_KEEP), sufixo, *caminhos)
+    return backups_rt.comando_de_backup(server, BACKUP_DIR, BACKUP_KEEP, caminhos, sufixo)
+
+
+def delete_backup(server: Servidor, nome: str) -> str:
+    return backups_rt.delete_backup(ssh_run, server, BACKUP_DIR, nome)
 
 
 @app.post("/servers/<int:sid>/backups/criar")
@@ -4516,9 +4355,7 @@ def backup_delete(sid: int):
     server = _server_or_404(sid)
     nome = _backup_ou_400(request.form.get("nome", ""))
     try:
-        saida = ssh_output(
-            server, q("bash", "-lc", BACKUP_DELETE_SCRIPT, "gp", BACKUP_DIR, nome), timeout=40
-        )
+        saida = delete_backup(server, nome)
     except RemoteError as exc:
         log_job("delete-backup", server, session.get("username", "?"),
                 command=nome, output=str(exc), status="error")
