@@ -74,12 +74,12 @@ class _ServidorFalso:
     ("", ""),
 ])
 def test_mascara_mostra_o_canal_e_esconde_o_token(url, esperado):
-    assert wc.mascara_url(url) == esperado
+    assert wc.mask_url(url) == esperado
 
 
 def test_mascara_nao_deixa_o_token_aparecer():
     """A URL e uma credencial: um screenshot da tela nao pode dar escrita no canal."""
-    mascarada = wc.mascara_url("https://discord.com/api/webhooks/123456/token-secreto")
+    mascarada = wc.mask_url("https://discord.com/api/webhooks/123456/token-secreto")
     assert "token-secreto" not in mascarada
 
 
@@ -87,19 +87,19 @@ def test_mascara_nao_deixa_o_token_aparecer():
 
 @pytest.mark.parametrize("url", ["", "nao-e-url", "file:///etc/passwd", "ftp://x/y"])
 def test_url_invalida_e_recusada_antes_de_qualquer_socket(url):
-    assert wc.envia(url, "oi", 1, UA).startswith("URL invalida")
+    assert wc.send(url, "oi", 1, UA).startswith("URL invalida")
 
 
 def test_envio_que_da_certo_devolve_string_vazia():
     with _ServidorFalso() as srv:
-        assert wc.envia(srv.url, "o servidor caiu", 5, UA) == ""
+        assert wc.send(srv.url, "o servidor caiu", 5, UA) == ""
         assert len(srv.recebidos) == 1
 
 
 def test_o_corpo_agrada_discord_e_slack_ao_mesmo_tempo():
     """'content' e o campo do Discord, 'text' o do Slack; cada um ignora o outro."""
     with _ServidorFalso() as srv:
-        wc.envia(srv.url, "**Palworld**\ncaiu", 5, UA)
+        wc.send(srv.url, "**Palworld**\ncaiu", 5, UA)
     corpo = srv.recebidos[0]["corpo"]
     assert corpo["content"] == "**Palworld**\ncaiu"
     assert corpo["text"] == corpo["content"]
@@ -108,7 +108,7 @@ def test_o_corpo_agrada_discord_e_slack_ao_mesmo_tempo():
 
 def test_manda_o_user_agent_configurado():
     with _ServidorFalso() as srv:
-        wc.envia(srv.url, "oi", 5, UA)
+        wc.send(srv.url, "oi", 5, UA)
     assert srv.recebidos[0]["user_agent"] == UA
 
 
@@ -116,28 +116,28 @@ def test_recusa_do_destino_chega_com_codigo_e_motivo():
     """Sem o corpo da resposta, um 400 por payload torto e um 403 por bloqueio ficam iguais."""
     corpo = json.dumps({"message": "Invalid Webhook Token"}).encode()
     with _ServidorFalso(status=401, corpo=corpo) as srv:
-        erro = wc.envia(srv.url, "oi", 5, UA)
+        erro = wc.send(srv.url, "oi", 5, UA)
     assert "HTTP 401" in erro
     assert "Invalid Webhook Token" in erro
 
 
 def test_recusa_sem_corpo_fica_so_no_codigo():
     with _ServidorFalso(status=403) as srv:
-        erro = wc.envia(srv.url, "oi", 5, UA)
+        erro = wc.send(srv.url, "oi", 5, UA)
     assert erro == "o webhook respondeu HTTP 403"
 
 
 def test_motivo_longo_demais_e_cortado():
     corpo = b'{"message": "' + b"x" * 5000 + b'"}'
     with _ServidorFalso(status=400, corpo=corpo) as srv:
-        erro = wc.envia(srv.url, "oi", 5, UA)
-    assert len(erro) < wc.ERRO_MAX + 100
+        erro = wc.send(srv.url, "oi", 5, UA)
+    assert len(erro) < wc.ERROR_MAX + 100
 
 
 def test_destino_fora_do_ar_vira_motivo_e_nao_excecao():
     """Um webhook quebrado nao pode derrubar o monitor junto."""
     # Porta fechada em loopback: recusa na hora, sem esperar timeout.
-    erro = wc.envia("http://127.0.0.1:1/webhook", "oi", 1, UA)
+    erro = wc.send("http://127.0.0.1:1/webhook", "oi", 1, UA)
     assert erro.startswith("nao consegui chamar o webhook")
 
 
@@ -145,7 +145,7 @@ def test_destino_pendurado_respeita_o_prazo():
     """Sem prazo, um destino que nao responde seguraria a volta inteira do monitor."""
     with _ServidorFalso(espera=3) as srv:
         comeco = time.monotonic()
-        erro = wc.envia(srv.url, "oi", 0.3, UA)
+        erro = wc.send(srv.url, "oi", 0.3, UA)
         gasto = time.monotonic() - comeco
     assert erro.startswith("nao consegui chamar o webhook")
     assert gasto < 2

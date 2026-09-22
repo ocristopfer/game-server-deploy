@@ -19,12 +19,12 @@ def servidores(*ids: int) -> list[dict]:
 
 
 def test_junta_a_resposta_de_cada_um_pelo_id():
-    out = parallel.por_servidor(lambda s: {"n": int(s["id"]) * 2}, servidores(1, 2, 3), 5, RESERVA)
+    out = parallel.per_server(lambda s: {"n": int(s["id"]) * 2}, servidores(1, 2, 3), 5, RESERVA)
     assert out == {1: {"n": 2}, 2: {"n": 4}, 3: {"n": 6}}
 
 
 def test_lista_vazia_devolve_vazio():
-    assert parallel.por_servidor(lambda s: {}, [], 5, RESERVA) == {}
+    assert parallel.per_server(lambda s: {}, [], 5, RESERVA) == {}
 
 
 def test_quem_nao_volta_a_tempo_entra_com_a_reserva():
@@ -33,14 +33,14 @@ def test_quem_nao_volta_a_tempo_entra_com_a_reserva():
             time.sleep(0.5)
         return {"ok": True}
 
-    out = parallel.por_servidor(devagar, servidores(1, 2), 0.05, RESERVA)
+    out = parallel.per_server(devagar, servidores(1, 2), 0.05, RESERVA)
     assert out[1] == {"ok": True}
     assert out[2] == {"error": "tempo esgotado"}
 
 
 def test_a_reserva_e_uma_copia_por_servidor():
     """Escrever no resultado de um servidor nao pode aparecer no do outro."""
-    out = parallel.por_servidor(lambda s: time.sleep(0.5), servidores(1, 2), 0.05, RESERVA)
+    out = parallel.per_server(lambda s: time.sleep(0.5), servidores(1, 2), 0.05, RESERVA)
     out[1]["error"] = "mexido"
     assert out[2]["error"] == "tempo esgotado"
     # E nem no dicionario original de reserva.
@@ -54,6 +54,6 @@ def test_roda_de_verdade_em_paralelo():
         return {"ok": True}
 
     comeco = time.monotonic()
-    out = parallel.por_servidor(espera, servidores(1, 2, 3), 2, RESERVA)
+    out = parallel.per_server(espera, servidores(1, 2, 3), 2, RESERVA)
     assert all(v == {"ok": True} for v in out.values())
     assert time.monotonic() - comeco < 0.5

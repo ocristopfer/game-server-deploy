@@ -19,7 +19,7 @@ data = importlib.util.module_from_spec(_spec)
 sys.modules["sugestoes_de_jogos"] = data
 _spec.loader.exec_module(data)
 
-SUGESTOES = data.SUGESTOES
+SUGGESTIONS = data.SUGGESTIONS
 
 
 def _como_o_painel_envia(s: dict) -> dict:
@@ -38,27 +38,27 @@ def _como_o_painel_envia(s: dict) -> dict:
 
 
 def test_ha_sugestoes_suficientes_para_valer_a_busca():
-    assert len(SUGESTOES) >= 100
+    assert len(SUGGESTIONS) >= 100
 
 
-@pytest.mark.parametrize("s", SUGESTOES, ids=lambda s: s["chave"])
+@pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["chave"])
 def test_toda_sugestao_passa_no_validador_do_broker(s):
     assert validate_dynamic(_como_o_painel_envia(s)).key == s["chave"]
 
 
 def test_chaves_e_nomes_sao_unicos_para_a_busca_nao_ficar_ambigua():
-    assert len({s["chave"] for s in SUGESTOES}) == len(SUGESTOES)
-    assert len({s["nome"] for s in SUGESTOES}) == len(SUGESTOES)
+    assert len({s["chave"] for s in SUGGESTIONS}) == len(SUGGESTIONS)
+    assert len({s["nome"] for s in SUGGESTIONS}) == len(SUGGESTIONS)
 
 
-@pytest.mark.parametrize("s", SUGESTOES, ids=lambda s: s["chave"])
+@pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["chave"])
 def test_nenhum_argumento_carrega_segredo_nem_encadeia_comando(s):
     args = s["start_args"]
     for proibido in ("$", ";", "|", "&", "`", "CHANGE_ME", "password", "gslt", "token", "rcon_pass"):
         assert proibido not in args, (s["nome"], proibido)
 
 
-@pytest.mark.parametrize("s", SUGESTOES, ids=lambda s: s["chave"])
+@pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["chave"])
 def test_marcador_de_consulta_so_existe_com_porta_de_consulta(s):
     if "{QUERY_PORT}" in s["start_args"]:
         assert s["porta_query"], s["nome"]
@@ -66,20 +66,20 @@ def test_marcador_de_consulta_so_existe_com_porta_de_consulta(s):
         assert s.get("porta_extra"), s["nome"]
 
 
-@pytest.mark.parametrize("s", [s for s in SUGESTOES if s["deslocavel"]], ids=lambda s: s["chave"])
+@pytest.mark.parametrize("s", [s for s in SUGGESTIONS if s["deslocavel"]], ids=lambda s: s["chave"])
 def test_jogo_marcado_para_andar_de_porta_so_tem_as_duas_portas_avisaveis(s):
     numeros = {int(p.split("/")[0]) for p in s["portas"].split()}
     assert numeros <= {s["porta_jogo"], s["porta_query"], s.get("porta_extra", 0)}
 
 
 def test_satisfactory_traz_a_porta_confiavel_em_tcp():
-    s = next(s for s in SUGESTOES if s["appid"] == 1690800)
+    s = next(s for s in SUGGESTIONS if s["appid"] == 1690800)
     assert "8888/tcp" in s["portas"]
     assert "-ReliablePort=8888" in s["start_args"]
 
 
 def test_porta_de_administracao_nunca_e_exposta():
     """Rust guarda o RCON em 28016: vai no comando, nunca no firewall."""
-    rust = next(s for s in SUGESTOES if s["appid"] == 258550)
+    rust = next(s for s in SUGGESTIONS if s["appid"] == 258550)
     assert "28016" not in rust["portas"]
     assert "+rcon.port 28016" in rust["start_args"]

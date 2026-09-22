@@ -18,26 +18,26 @@ from dataclasses import dataclass, field
 # O projeto da Unreal e a pasta que aparece dentro de /opt/game depois da instalacao
 # (Pal, RSDragonwilds, FactoryGame). Nao ha como saber sem instalar; por isso o modelo
 # traz um nome de mentira bem visivel em vez de um chute silencioso.
-PROJETO = "NomeDoProjeto"
+PROJECT = "NomeDoProjeto"
 
 
 @dataclass(frozen=True)
-class Modelo:
-    chave: str
-    rotulo: str
-    descricao: str
-    valores: dict[str, str] = field(default_factory=dict)
+class Template:
+    key: str
+    label: str
+    description: str
+    values: dict[str, str] = field(default_factory=dict)
 
 
-UNREAL_LINUX = Modelo(
-    chave="unreal-linux",
-    rotulo="Unreal Engine (servidor nativo Linux)",
-    descricao=(
+UNREAL_LINUX = Template(
+    key="unreal-linux",
+    label="Unreal Engine (servidor nativo Linux)",
+    description=(
         "Vale para Palworld, Satisfactory, RuneScape Dragonwilds e a maioria dos jogos da "
-        f"Unreal. Depois de escolher, troque {PROJETO} pelo nome da pasta do projeto (a que "
+        f"Unreal. Depois de escolher, troque {PROJECT} pelo nome da pasta do projeto (a que "
         "aparece em /opt/game depois de instalar) e ponha o App ID do servidor dedicado."
     ),
-    valores={
+    values={
         # `-log` manda o log para o stdout (o journald guarda e o painel le); `-Port` e o
         # padrao da Unreal para a porta de jogo (UDP).
         "start_args": "-log -Port={PORT}",
@@ -49,12 +49,12 @@ UNREAL_LINUX = Modelo(
         "cores": "4",
         "disco_gb": "30",
         # Todo servidor Unreal guarda config e save sob <Projeto>/Saved.
-        "config_path": f"/opt/game/{PROJETO}/Saved/Config/LinuxServer",
+        "config_path": f"/opt/game/{PROJECT}/Saved/Config/LinuxServer",
         "config_files": (
-            f"/opt/game/{PROJETO}/Saved/Config/LinuxServer/Game.ini\n"
-            f"/opt/game/{PROJETO}/Saved/Config/LinuxServer/GameUserSettings.ini"
+            f"/opt/game/{PROJECT}/Saved/Config/LinuxServer/Game.ini\n"
+            f"/opt/game/{PROJECT}/Saved/Config/LinuxServer/GameUserSettings.ini"
         ),
-        "backup_paths": f"/opt/game/{PROJETO}/Saved/SaveGames",
+        "backup_paths": f"/opt/game/{PROJECT}/Saved/SaveGames",
         # As duas linhas abaixo saem do log real do Satisfactory. A de saida nao traz o
         # nome de quem saiu, entao a lista de jogadores fica aproximada (a contagem certa).
         "player_source": "log",
@@ -65,4 +65,4 @@ UNREAL_LINUX = Modelo(
     },
 )
 
-MODELOS = (UNREAL_LINUX,)
+TEMPLATES = (UNREAL_LINUX,)

@@ -47,42 +47,42 @@ def tarefa(**kw):
     ("intervalo nao tem ocorrencia fixa", tarefa(kind="intervalo"), quando(19, 10), None),
 ])
 def test_ocorrencia_anterior(rotulo, sched, agora, esperado):
-    assert panel.ocorrencia_anterior(sched, agora) == esperado, rotulo
+    assert panel.previous_occurrence(sched, agora) == esperado, rotulo
 
 
 # ------------------------------------------------------------- quando vence
 
 def test_diario_dispara_na_hora_e_nao_antes():
-    assert panel.venceu(tarefa(hour=5), quando(19, 5, 0))
-    assert not panel.venceu(tarefa(hour=6), quando(19, 5, 59))
+    assert panel.is_due(tarefa(hour=5), quando(19, 5, 0))
+    assert not panel.is_due(tarefa(hour=6), quando(19, 5, 59))
 
 
 def test_nao_repete_a_mesma_ocorrencia():
     """O relogio acorda a cada 30s e nao pode repetir um disparo ja feito."""
     ja_rodou = tarefa(hour=5, last_run=quando(19, 5, 0).isoformat())
-    assert not panel.venceu(ja_rodou, quando(19, 5, 30))
-    assert panel.venceu(ja_rodou, quando(20, 5, 1)), "no dia seguinte volta a valer"
+    assert not panel.is_due(ja_rodou, quando(19, 5, 30))
+    assert panel.is_due(ja_rodou, quando(20, 5, 1)), "no dia seguinte volta a valer"
 
 
 def test_atraso_alem_da_tolerancia_nao_dispara():
     """Painel fora do ar a noite inteira: as 14h ninguem quer o restart das 5h no meio
     da partida. A tolerancia e GRACE (1h por padrao)."""
-    assert not panel.venceu(tarefa(hour=5), quando(19, 14))
-    assert panel.venceu(tarefa(hour=5), quando(19, 5, 30)), "dentro da tolerancia ainda dispara"
+    assert not panel.is_due(tarefa(hour=5), quando(19, 14))
+    assert panel.is_due(tarefa(hour=5), quando(19, 5, 30)), "dentro da tolerancia ainda dispara"
 
 
 def test_intervalo_conta_a_partir_do_ultimo_disparo():
-    assert panel.venceu(tarefa(kind="intervalo"), quando(19, 5)), "sem last_run, dispara"
+    assert panel.is_due(tarefa(kind="intervalo"), quando(19, 5)), "sem last_run, dispara"
     nao_completou = tarefa(kind="intervalo", every_hours=6, last_run=quando(19, 2).isoformat())
-    assert not panel.venceu(nao_completou, quando(19, 5))
+    assert not panel.is_due(nao_completou, quando(19, 5))
     completou = tarefa(kind="intervalo", every_hours=6, last_run=quando(19, 2).isoformat())
-    assert panel.venceu(completou, quando(19, 8))
+    assert panel.is_due(completou, quando(19, 8))
 
 
 def test_last_run_ilegivel_nao_trava_a_tarefa():
     """Banco mexido a mao nao pode fazer uma tarefa nunca mais disparar."""
     torto = tarefa(hour=5, last_run="isto nao e uma data")
-    assert panel.venceu(torto, quando(19, 5))
+    assert panel.is_due(torto, quando(19, 5))
 
 
 # -------------------------------------------------------------------- rotulos
@@ -100,7 +100,7 @@ def test_last_run_ilegivel_nao_trava_a_tarefa():
     ("intervalo de uma hora", tarefa(kind="intervalo", every_hours=1), "a cada hora"),
 ])
 def test_rotulo_agendamento(rotulo, sched, esperado):
-    assert panel.rotulo_agendamento(sched) == esperado, rotulo
+    assert panel.schedule_label(sched) == esperado, rotulo
 
 
 # --------------------------------------------------------- retencao do historico

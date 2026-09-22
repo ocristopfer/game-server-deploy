@@ -312,8 +312,8 @@ def escrever(sugestoes: list[dict], saida: pathlib.Path) -> None:
         "Gerado por tools/importar-linuxgsm.py a partir do LinuxGSM (MIT). Para atualizar, rode\n"
         "o script e revise o diff: cada linha aqui e uma sugestao que o broker valida de novo.\n"
         '"""\n'
-        f'FONTE = "LinuxGSM (MIT), gerado em {datetime.date.today().isoformat()}"\n\n'
-        f"SUGESTOES = (\n{corpo})\n"
+        f'SOURCE = "LinuxGSM (MIT), gerado em {datetime.date.today().isoformat()}"\n\n'
+        f"SUGGESTIONS = (\n{corpo})\n"
     )
     saida.write_bytes(texto.encode("utf-8"))  # bytes: no Windows o modo texto trocaria \n por \r\n
 

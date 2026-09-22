@@ -163,7 +163,7 @@ def test_todos_desligados_nada_sai(banco, tres_destinos, webhooks):
 def test_mascara_url_esconde_o_token_mas_nao_o_canal():
     """A URL e uma credencial: quem le a tela por cima do ombro nao pode sair de la
     podendo escrever no canal."""
-    mascarada = panel.mascara_url(
+    mascarada = panel.mask_url(
         "https://discord.com/api/webhooks/1544786528700604457/segredo-que-nao-pode-vazar")
     assert "segredo-que-nao-pode-vazar" not in mascarada
     assert "1544786528700604457" in mascarada, "o id continua visivel para reconhecer o canal"
@@ -171,7 +171,7 @@ def test_mascara_url_esconde_o_token_mas_nao_o_canal():
 
 
 def test_mascara_url_vazia_nao_vira_mascara():
-    assert panel.mascara_url("") == ""
+    assert panel.mask_url("") == ""
 
 
 # ------------------------------------------------------ quando o painel decide avisar
@@ -601,8 +601,8 @@ def test_sem_alerta_de_jogador_20s_ainda_nao_e_hora(banco, alvo, monkeypatch):
 
 def test_erro_no_log_do_jogo(banco, alvo, webhooks, monkeypatch):
     liga(banco, ["erro-no-log"])
-    linhas = ["tudo bem por aqui", "Fatal error: world corrupted", "seguindo"]
-    monkeypatch.setattr(panel, "read_log_lines", lambda server, limite=0: linhas)
+    lines_of = ["tudo bem por aqui", "Fatal error: world corrupted", "seguindo"]
+    monkeypatch.setattr(panel, "read_log_lines", lambda server, limit=0: lines_of)
     com_regex = dict(alvo, error_re="Fatal error")
     memoria = {}
 
@@ -618,7 +618,7 @@ def test_erro_no_log_do_jogo(banco, alvo, webhooks, monkeypatch):
 
     # Cooldown: mesmo com linha nova, o canal nao leva uma enxurrada de uma expressao larga.
     monkeypatch.setattr(panel, "read_log_lines",
-                        lambda server, limite=0: ["Fatal error: outra coisa"])
+                        lambda server, limit=0: ["Fatal error: outra coisa"])
     webhooks.clear()
     panel._alerta_de_log(banco, com_regex, memoria)
     assert len(webhooks) == 0, "linha nova dentro da janela nao passa"
@@ -627,13 +627,13 @@ def test_erro_no_log_do_jogo(banco, alvo, webhooks, monkeypatch):
     # Passada a janela, um erro novo volta a avisar.
     memoria["erro_em"] = 0
     monkeypatch.setattr(panel, "read_log_lines",
-                        lambda server, limite=0: ["Fatal error: mais uma"])
+                        lambda server, limit=0: ["Fatal error: mais uma"])
     webhooks.clear()
     panel._alerta_de_log(banco, com_regex, memoria)
     assert len(webhooks) == 1, "passado o cooldown, avisa de novo"
 
     monkeypatch.setattr(panel, "read_log_lines",
-                        lambda server, limite=0: ["nada de mais aqui"])
+                        lambda server, limit=0: ["nada de mais aqui"])
     webhooks.clear()
     panel._alerta_de_log(banco, com_regex, memoria)
     assert len(webhooks) == 0, "log limpo nao avisa"

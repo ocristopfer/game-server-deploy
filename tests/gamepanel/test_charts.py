@@ -28,7 +28,7 @@ def amostras(valores, passo_min=5, inicio=None):
 
 
 def grafico(dados, series=None, teto=100):
-    return panel.monta_grafico(dados, series or SERIE_CPU, teto, INICIO, FIM, "%H:%M")
+    return panel.build_chart(dados, series or SERIE_CPU, teto, INICIO, FIM, "%H:%M")
 
 
 def ys_de(g):
@@ -46,7 +46,7 @@ def ys_de(g):
     (5000, 5001),  # acima do maior degrau conhecido, sem quebrar
 ])
 def test_teto_do_eixo(pico, teto):
-    assert panel._teto_limpo(pico) == teto
+    assert panel._clean_ceiling(pico) == teto
 
 
 # ------------------------------------------------------------ coordenadas

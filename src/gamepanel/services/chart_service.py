@@ -17,7 +17,7 @@ CHART_L, CHART_R, CHART_T, CHART_B = 44, 64, 12, 28
 CHART_GAP = 2.5
 CHART_TICKS = 5
 # Distancia minima entre dois rotulos de ponta para os dois continuarem legiveis.
-PONTA_MIN = 16
+TIP_MIN = 16
 
 CHART_RANGES = ((6, "6 horas"), (24, "24 horas"), (168, "7 dias"))
 
@@ -28,19 +28,19 @@ CHART_CPU = "#3987e5"
 CHART_MEM = "#d95926"
 
 # Tetos "limpos" para o eixo de jogadores: 3 jogadores nao merecem um eixo ate 3.
-TETOS = (1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 64, 80, 100,
+CEILINGS = (1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 64, 80, 100,
          150, 200, 300, 500, 750, 1000)
 
 
-def teto_limpo(pico: float) -> int:
-    for teto in TETOS:
-        if pico <= teto:
-            return teto
-    return int(pico) + 1
+def clean_ceiling(peak: float) -> int:
+    for ceiling in CEILINGS:
+        if peak <= ceiling:
+            return ceiling
+    return int(peak) + 1
 
 
-def _segmentos_da_serie(amostras, chave: str, px, py,
-                        passo_da_amostra: float) -> tuple[list[list[str]], dict | None]:
+def _series_segments(samples, key: str, px, py,
+                        sample_step: float) -> tuple[list[list[str]], dict | None]:
     """Uma serie vira uma lista de SEGMENTOS de coordenadas, mais a ponta.
 
     Segmentos, e nao uma linha so, porque o grafico tem buracos de dois tipos: amostra
@@ -59,13 +59,13 @@ def _segmentos_da_serie(amostras, chave: str, px, py,
             segmentos.append(atual)
         atual = []
 
-    for quando, valores in amostras:
-        valor = valores.get(chave)
+    for quando, values in samples:
+        valor = values.get(key)
         if valor is None:
             fecha()
             anterior = None
             continue
-        if anterior is not None and (quando - anterior).total_seconds() > passo_da_amostra * CHART_GAP:
+        if anterior is not None and (quando - anterior).total_seconds() > sample_step * CHART_GAP:
             fecha()
         atual.append(f"{px(quando)},{py(valor)}")
         ponta = {"x": px(quando), "y": py(valor), "valor": valor}
@@ -75,31 +75,31 @@ def _segmentos_da_serie(amostras, chave: str, px, py,
     return segmentos, ponta
 
 
-def monta_grafico(amostras, series, teto: float, inicio, fim, formato_tempo: str,
-                  passo_da_amostra: float) -> dict:
+def build_chart(samples, series, ceiling: float, start, end, time_format: str,
+                  sample_step: float) -> dict:
     """Transforma as amostras em coordenadas prontas para o SVG.
 
     `series` diz quais colunas desenhar; cada uma vira uma lista de SEGMENTOS, porque o
     grafico pode ter buracos (ver CHART_GAP).
     """
-    span = max(1.0, (fim - inicio).total_seconds())
+    span = max(1.0, (end - start).total_seconds())
     largura = CHART_W - CHART_L - CHART_R
     alto = CHART_H - CHART_T - CHART_B
 
     def px(quando) -> float:
-        return round(CHART_L + largura * ((quando - inicio).total_seconds() / span), 1)
+        return round(CHART_L + largura * ((quando - start).total_seconds() / span), 1)
 
     def py(valor) -> float:
-        fatia = 0.0 if teto <= 0 else min(1.0, max(0.0, valor / teto))
+        fatia = 0.0 if ceiling <= 0 else min(1.0, max(0.0, valor / ceiling))
         return round(CHART_T + alto * (1 - fatia), 1)
 
-    linhas = []
+    lines_of = []
     for serie in series:
-        segmentos, ponta = _segmentos_da_serie(
-            amostras, serie["chave"], px, py, passo_da_amostra)
+        segmentos, ponta = _series_segments(
+            samples, serie["chave"], px, py, sample_step)
         if not segmentos:
             continue
-        linhas.append({
+        lines_of.append({
             "chave": serie["chave"],
             "rotulo": serie["rotulo"],
             "cor": serie["cor"],
@@ -115,15 +115,15 @@ def monta_grafico(amostras, series, teto: float, inicio, fim, formato_tempo: str
     # convergem no canto direito, empurrar um rotulo para cima do outro os desgruda das
     # linhas e vira ruido — melhor deixar a legenda, a mira e a tabela carregarem, que e
     # o que elas ja fazem.
-    pontas = [linha["ponta"]["y"] for linha in linhas if linha["ponta"]]
+    pontas = [linha["ponta"]["y"] for linha in lines_of if linha["ponta"]]
     rotula_ponta = all(
-        abs(a - b) >= PONTA_MIN
+        abs(a - b) >= TIP_MIN
         for i, a in enumerate(pontas) for b in pontas[i + 1:]
     )
 
     grade = []
     for fatia in (0.0, 0.5, 1.0):
-        valor = teto * fatia
+        valor = ceiling * fatia
         grade.append({
             "y": py(valor),
             "rotulo": f"{valor:g}" + (series[0].get("sufixo", "") if series else ""),
@@ -131,21 +131,21 @@ def monta_grafico(amostras, series, teto: float, inicio, fim, formato_tempo: str
 
     tempos = []
     for i in range(CHART_TICKS):
-        quando = inicio + timedelta(seconds=span * i / (CHART_TICKS - 1))
-        tempos.append({"x": px(quando), "rotulo": quando.astimezone().strftime(formato_tempo)})
+        quando = start + timedelta(seconds=span * i / (CHART_TICKS - 1))
+        tempos.append({"x": px(quando), "rotulo": quando.astimezone().strftime(time_format)})
 
     return {
-        "linhas": linhas,
+        "linhas": lines_of,
         "grade": grade,
         "tempos": tempos,
-        "vazio": not linhas,
+        "vazio": not lines_of,
         "rotula_ponta": rotula_ponta,
         "w": CHART_W, "h": CHART_H,
         "l": CHART_L, "r": CHART_W - CHART_R, "t": CHART_T, "b": CHART_H - CHART_B,
         # O que a mira precisa para converter uma coordenada de volta em valor e em hora,
         # sem o painel ter de mandar os dados duas vezes (o SVG ja os carrega).
-        "teto": teto,
-        "inicio_ms": int(inicio.timestamp() * 1000),
+        "teto": ceiling,
+        "inicio_ms": int(start.timestamp() * 1000),
         "span_s": span,
     }
 

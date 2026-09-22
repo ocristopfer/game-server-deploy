@@ -14,38 +14,38 @@ import unicodedata
 
 from gamepanel.games.catalog import suggestions as sugestoes_de_jogos
 
-FONTE = sugestoes_de_jogos.FONTE
-LIMITE_PADRAO = 8
-CONSULTA_MAX = 60
+SOURCE = sugestoes_de_jogos.SOURCE
+DEFAULT_LIMIT = 8
+QUERY_MAX = 60
 
 
-def _normaliza(texto: str) -> str:
+def _normalize(text: str) -> str:
     """Sem acento, minusculo, so letras e numeros: 'Counter-Strike' casa 'counter strike'."""
-    sem_acento = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    sem_acento = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", " ", sem_acento.lower()).strip()
 
 
-_INDICE = tuple((s, _normaliza(f"{s['nome']} {s['chave']}")) for s in sugestoes_de_jogos.SUGESTOES)
+_INDEX = tuple((s, _normalize(f"{s['nome']} {s['chave']}")) for s in sugestoes_de_jogos.SUGGESTIONS)
 
 
-def buscar(consulta: str | None, limite: int = LIMITE_PADRAO) -> list[dict]:
+def search(query: str | None, limit: int = DEFAULT_LIMIT) -> list[dict]:
     """Numero puro = App ID exato. Texto = todas as palavras aparecem no nome; quem COMECA
     pela primeira palavra vem antes ('pal' acha Palworld antes de 'Space Pals')."""
-    q = (consulta or "").strip()[:CONSULTA_MAX]
+    q = (query or "").strip()[:QUERY_MAX]
     if not q:
         return []
     if q.isdigit():
-        return [s for s in sugestoes_de_jogos.SUGESTOES if str(s["appid"]) == q][:limite]
-    termos = _normaliza(q).split()
+        return [s for s in sugestoes_de_jogos.SUGGESTIONS if str(s["appid"]) == q][:limit]
+    termos = _normalize(q).split()
     if not termos:
         return []
-    achados = [(s, texto) for s, texto in _INDICE if all(t in texto for t in termos)]
-    achados.sort(key=lambda par: (not _normaliza(par[0]["nome"]).startswith(termos[0]),
+    achados = [(s, text) for s, text in _INDEX if all(t in text for t in termos)]
+    achados.sort(key=lambda par: (not _normalize(par[0]["nome"]).startswith(termos[0]),
                                   par[0]["nome"].lower()))
-    return [s for s, _ in achados[:limite]]
+    return [s for s, _ in achados[:limit]]
 
 
-def para_o_formulario(s: dict) -> dict[str, str]:
+def to_form(s: dict) -> dict[str, str]:
     """Os valores nas chaves que sao os `name=` dos campos. TODAS as chaves sempre, mesmo
     vazias: escolher outro jogo tem de limpar o que o anterior deixou (script, portas)."""
     return {
@@ -57,6 +57,6 @@ def para_o_formulario(s: dict) -> dict[str, str]:
     }
 
 
-def resultado(s: dict) -> dict:
-    return {"appid": s["appid"], "nome": s["nome"], "valores": para_o_formulario(s),
+def result(s: dict) -> dict:
+    return {"appid": s["appid"], "nome": s["nome"], "valores": to_form(s),
             "avisos": list(s["avisos"])}

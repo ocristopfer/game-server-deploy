@@ -19,7 +19,7 @@ from typing import Any
 Tarefa = tuple[str, Callable[[], Any]]
 
 
-def tick(tarefas: Iterable[Tarefa], ao_falhar: Callable[[str], None]) -> None:
+def tick(tasks: Iterable[Tarefa], on_failure: Callable[[str], None]) -> None:
     """Uma volta do relogio.
 
     Cada tarefa vai no SEU try. Dividindo um try so, uma agenda quebrada levava junto o
@@ -28,21 +28,21 @@ def tick(tarefas: Iterable[Tarefa], ao_falhar: Callable[[str], None]) -> None:
     fora o painel parecia inteiro, e o botao de testar webhook (que nao passa por aqui)
     continuava funcionando e afastando a suspeita do lugar certo.
     """
-    for nome, tarefa in tarefas:
+    for name, tarefa in tasks:
         try:
             tarefa()
         # Uma tarefa nao derruba as outras.
         except Exception:  # noqa: BLE001
-            ao_falhar(nome)
+            on_failure(name)
 
 
-class Relogio:
+class Clock:
     """A thread em si. `start()` e idempotente: duas chamadas nao dao duas threads."""
 
-    def __init__(self, intervalo: float, uma_volta: Callable[[], None],
+    def __init__(self, interval: float, one_round: Callable[[], None],
                  logger: logging.Logger) -> None:
-        self._intervalo = intervalo
-        self._uma_volta = uma_volta
+        self._intervalo = interval
+        self._uma_volta = one_round
         self._logger = logger
         self._comecou = False
         self._lock = threading.Lock()
@@ -65,7 +65,7 @@ class Relogio:
             self._comecou = True
         threading.Thread(target=self._loop, daemon=True).start()
 
-    def parar(self) -> None:
+    def stop(self) -> None:
         """Encerra a thread. O painel nao usa (o processo inteiro morre junto); existe
         para o teste nao deixar relogio batendo pelo resto da suite."""
         self._parar.set()

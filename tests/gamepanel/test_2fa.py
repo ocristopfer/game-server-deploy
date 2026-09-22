@@ -16,8 +16,7 @@ from pathlib import Path
 import pytest
 
 from gamepanel import app as panel
-from gamepanel.security import qr
-from gamepanel.security import totp
+from gamepanel.security import qr, totp
 
 ADMIN = Path(__file__).resolve().parent
 RAIZ = ADMIN.parent.parent
@@ -28,7 +27,7 @@ ENV_COM_SRC = os.environ | {"PYTHONPATH": str(RAIZ / "src")}
 RE_CODIGO = re.compile(r"\b[0-9a-f]{5}-[0-9a-f]{5}\b")
 
 
-class Relogio:
+class Clock:
     def __init__(self) -> None:
         self.agora = time.time()
 
@@ -39,16 +38,16 @@ class Relogio:
 @pytest.fixture
 def hora(monkeypatch):
     """Relogio controlado: o TOTP depende do instante, e o teste precisa andar de 30 em 30 s."""
-    relogio = Relogio()
+    relogio = Clock()
     monkeypatch.setattr(panel.time, "time", lambda: relogio.agora)
     return relogio
 
 
-def _codigo(segredo: str, relogio: Relogio) -> str:
+def _codigo(segredo: str, relogio: Clock) -> str:
     return totp.code(segredo, totp.step_of(relogio.agora))
 
 
-def _ativar(cli, postar, relogio: Relogio) -> tuple[str, list[str]]:
+def _ativar(cli, postar, relogio: Clock) -> tuple[str, list[str]]:
     """Ativa o 2FA da conta logada em `cli`. Devolve (segredo, codigos de recuperacao)."""
     assert cli.get("/account/2fa").status_code == 200
     with cli.session_transaction() as sess:

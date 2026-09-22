@@ -45,7 +45,7 @@ def test_a_falha_e_anunciada_com_o_nome_da_tarefa():
 def test_start_duas_vezes_nao_vira_duas_threads():
     """Duas threads fariam cada tarefa agendada disparar em dobro."""
     voltas = threading.Semaphore(0)
-    relogio = scheduler.Relogio(0.01, voltas.release, logging.getLogger("teste"))
+    relogio = scheduler.Clock(0.01, voltas.release, logging.getLogger("teste"))
     antes = threading.active_count()
     try:
         relogio.start()
@@ -54,7 +54,7 @@ def test_start_duas_vezes_nao_vira_duas_threads():
         assert voltas.acquire(timeout=2), "o relogio nem chegou a bater"
         assert threading.active_count() - antes == 1
     finally:
-        relogio.parar()
+        relogio.stop()
 
 
 def test_a_thread_sobrevive_a_um_tique_que_explode():
@@ -65,7 +65,7 @@ def test_a_thread_sobrevive_a_um_tique_que_explode():
         batidas.append(1)
         raise RuntimeError("tique ruim")
 
-    relogio = scheduler.Relogio(0.01, volta, logging.getLogger("teste"))
+    relogio = scheduler.Clock(0.01, volta, logging.getLogger("teste"))
     relogio.start()
     try:
         fim = time.monotonic() + 2
@@ -73,18 +73,18 @@ def test_a_thread_sobrevive_a_um_tique_que_explode():
             time.sleep(0.01)
         assert len(batidas) >= 3, "a thread parou no primeiro erro"
     finally:
-        relogio.parar()
+        relogio.stop()
 
 
 def test_parar_encerra_a_batida():
     batidas: list[int] = []
-    relogio = scheduler.Relogio(0.01, lambda: batidas.append(1), logging.getLogger("teste"))
+    relogio = scheduler.Clock(0.01, lambda: batidas.append(1), logging.getLogger("teste"))
     relogio.start()
     fim = time.monotonic() + 2
     while not batidas and time.monotonic() < fim:
         time.sleep(0.01)
     assert batidas, "o relogio nem comecou"
-    relogio.parar()
+    relogio.stop()
     time.sleep(0.05)
     quantas = len(batidas)
     time.sleep(0.1)

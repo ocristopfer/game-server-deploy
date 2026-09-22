@@ -89,14 +89,14 @@ def test_validate_backup_name_rejeita_vazio():
 # ------------------------------------------------------------ comando
 
 def test_comando_de_backup_inclui_prefixo_limite_e_caminhos():
-    cmd = backupsmod.comando_de_backup(SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 5, ["/opt/game/save"])
+    cmd = backupsmod.backup_command(SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 5, ["/opt/game/save"])
     assert "jogo1" in cmd
     assert "/var/backups/gamepanel" in cmd
     assert "/opt/game/save" in cmd
 
 
 def test_comando_de_backup_leva_o_sufixo_quando_passado():
-    cmd = backupsmod.comando_de_backup(
+    cmd = backupsmod.backup_command(
         SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 5, ["/opt/game/save"], "-antes-de-restaurar",
     )
     assert "antes-de-restaurar" in cmd

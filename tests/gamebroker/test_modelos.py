@@ -21,60 +21,60 @@ sys.modules["modelos_de_jogo"] = modelos
 _spec.loader.exec_module(modelos)
 
 
-def _como_o_painel_monta(valores: dict[str, str]) -> dict:
+def _como_o_painel_monta(values: dict[str, str]) -> dict:
     """Espelha `_jogo_do_form` do painel: so converte tipos, sem validar nada."""
     data: dict = {}
     for campo in ("start_args", "config_path", "join_re", "leave_re", "player_source"):
-        if valores.get(campo):
-            data[campo] = valores[campo]
+        if values.get(campo):
+            data[campo] = values[campo]
     for campo in ("porta_jogo", "porta_query", "memoria_mb", "cores", "disco_gb"):
-        if valores.get(campo):
-            data[campo] = int(valores[campo])
-    data["portas"] = [p for p in re.split(r"[\s,]+", valores.get("portas", "").strip()) if p]
+        if values.get(campo):
+            data[campo] = int(values[campo])
+    data["portas"] = [p for p in re.split(r"[\s,]+", values.get("portas", "").strip()) if p]
     for campo in ("config_files", "backup_paths"):
-        data[campo] = [p.strip() for p in valores.get(campo, "").replace(",", "\n").splitlines() if p.strip()]
+        data[campo] = [p.strip() for p in values.get(campo, "").replace(",", "\n").splitlines() if p.strip()]
     data["receitas"] = []
-    data["deslocavel"] = valores.get("deslocavel") == "1"
+    data["deslocavel"] = values.get("deslocavel") == "1"
     return data
 
 
 def _completo(modelo) -> dict:
     """O que a pessoa acrescenta a mao: identidade e app id (o resto vem do modelo)."""
-    data = _como_o_painel_monta(modelo.valores)
+    data = _como_o_painel_monta(modelo.values)
     data.update(chave="meujogo", nome="Meu Jogo", app_id=123456)
     return data
 
 
-@pytest.mark.parametrize("modelo", modelos.MODELOS, ids=lambda m: m.chave)
+@pytest.mark.parametrize("modelo", modelos.TEMPLATES, ids=lambda m: m.key)
 def test_modelo_passa_no_validador_do_broker(modelo):
     game = validate_dynamic(_completo(modelo))
     assert game.key == "meujogo"
 
 
-@pytest.mark.parametrize("modelo", modelos.MODELOS, ids=lambda m: m.chave)
+@pytest.mark.parametrize("modelo", modelos.TEMPLATES, ids=lambda m: m.key)
 def test_modelo_que_anda_de_porta_tem_os_marcadores(modelo):
-    if modelo.valores.get("deslocavel") == "1":
-        assert "{PORT}" in modelo.valores["start_args"]
+    if modelo.values.get("deslocavel") == "1":
+        assert "{PORT}" in modelo.values["start_args"]
 
 
 def test_unreal_traz_o_padrao_de_log_dos_servidores_unreal():
-    valores = modelos.UNREAL_LINUX.valores
-    juncao = re.search(valores["join_re"], "LogNet: Join succeeded: Zeca")
+    values = modelos.UNREAL_LINUX.values
+    juncao = re.search(values["join_re"], "LogNet: Join succeeded: Zeca")
     assert juncao is not None
     assert juncao.group("name") == "Zeca"
-    assert re.search(valores["leave_re"], "LogNet: UNetConnection::Close: [UNetConnection] ...")
+    assert re.search(values["leave_re"], "LogNet: UNetConnection::Close: [UNetConnection] ...")
 
 
 def test_unreal_deixa_o_nome_do_projeto_bem_visivel():
     """Um chute silencioso (uma pasta que parece certa) esconderia o erro; um nome de mentira
     obvio pede para ser trocado."""
-    valores = modelos.UNREAL_LINUX.valores
-    assert modelos.PROJETO in valores["config_path"]
-    assert modelos.PROJETO in valores["backup_paths"]
+    values = modelos.UNREAL_LINUX.values
+    assert modelos.PROJECT in values["config_path"]
+    assert modelos.PROJECT in values["backup_paths"]
 
 
 def test_chaves_do_modelo_sao_campos_do_formulario_do_catalogo():
     html = (RAIZ / "src" / "gamepanel" / "templates" / "catalogo.html").read_text(encoding="utf-8")
     campos = set(re.findall(r'name="([a-z_]+)"', html))
-    for modelo in modelos.MODELOS:
-        assert set(modelo.valores) <= campos, set(modelo.valores) - campos
+    for modelo in modelos.TEMPLATES:
+        assert set(modelo.values) <= campos, set(modelo.values) - campos

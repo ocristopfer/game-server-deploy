@@ -213,8 +213,8 @@ def test_read_file_erro_vira_remote_error():
 def test_write_file_manda_base64_por_stdin_e_devolve_confirmacao():
     capturado: list = []
     ssh_run = _ssh_run_de("gravado: 9 bytes", capturar=capturado)
-    resultado = filesmod.write_file(ssh_run, SERVIDOR, "/opt/game/x.cfg", b"ola mundo")
-    assert resultado == "gravado: 9 bytes"
+    result = filesmod.write_file(ssh_run, SERVIDOR, "/opt/game/x.cfg", b"ola mundo")
+    assert result == "gravado: 9 bytes"
     assert base64.b64decode(capturado[0]["stdin_data"]) == b"ola mundo"
 
 
@@ -225,8 +225,8 @@ def test_write_file_erro_vira_remote_error():
 
 
 def test_delete_file_devolve_confirmacao():
-    resultado = filesmod.delete_file(_ssh_run_de("apagado: /x (10 bytes)"), SERVIDOR, "/x")
-    assert "apagado" in resultado
+    result = filesmod.delete_file(_ssh_run_de("apagado: /x (10 bytes)"), SERVIDOR, "/x")
+    assert "apagado" in result
 
 
 def test_delete_file_erro_vira_remote_error():

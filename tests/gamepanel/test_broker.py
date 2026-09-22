@@ -15,8 +15,9 @@ import time
 import pytest
 
 from gamepanel import app as panel
-from gamepanel.security import totp
 from gamepanel import navigation as ui
+from gamepanel.security import totp
+
 
 # `broker_required` agora exige o segundo fator DA PESSOA, sempre (ver app.py) - nao so
 # quando GAMEPANEL_REQUIRE_2FA esta ligado. Quase todo teste deste arquivo precisa chegar

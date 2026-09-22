@@ -27,7 +27,7 @@ def invalidate(server_id: int) -> None:
         _status_cache.pop(int(server_id), None)
 
 
-def _campos_do_systemctl(ssh_output: SshOutput, server: ServerLike) -> dict[str, str]:
+def _systemctl_fields(ssh_output: SshOutput, server: ServerLike) -> dict[str, str]:
     # Ele sai com 0 mesmo para unidade que nao existe, entao nao precisa de '|| true'.
     raw = ssh_output(server, quote_command(
         "systemctl", "show", server["service"],
@@ -35,8 +35,8 @@ def _campos_do_systemctl(ssh_output: SshOutput, server: ServerLike) -> dict[str,
     ))
     campos = {}
     for linha in raw.splitlines():
-        chave, _, valor = linha.partition("=")
-        campos[chave.strip()] = valor.strip()
+        key, _, valor = linha.partition("=")
+        campos[key.strip()] = valor.strip()
     return campos
 
 
@@ -53,7 +53,7 @@ def server_status(ssh_output: SshOutput, server: ServerLike, ttl: float,
     state = {"reachable": False, "service": "desconhecido", "error": "",
              "sub": "", "restarts": 0, "result": ""}
     try:
-        campos = _campos_do_systemctl(ssh_output, server)
+        campos = _systemctl_fields(ssh_output, server)
         state["reachable"] = True
         state["service"] = campos.get("ActiveState") or "inactive"
         state["sub"] = campos.get("SubState", "")

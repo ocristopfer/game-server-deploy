@@ -3,9 +3,9 @@
 Gerado por tools/importar-linuxgsm.py a partir do LinuxGSM (MIT). Para atualizar, rode
 o script e revise o diff: cada linha aqui e uma sugestao que o broker valida de novo.
 """
-FONTE = "LinuxGSM (MIT), gerado em 2026-09-21"
+SOURCE = "LinuxGSM (MIT), gerado em 2026-09-21"
 
-SUGESTOES = (
+SUGGESTIONS = (
     {'appid': 294420,
      'nome': '7 Days to Die',
      'chave': 'g-7-days-to-die',

@@ -16,10 +16,10 @@ from gamepanel.security import qr
 
 def _avalia(poly: list[int], x: int) -> int:
     """Horner em GF(256): poly[0] e o coeficiente de maior grau (mesma ordem de `_correcao`)."""
-    resultado = 0
+    result = 0
     for coef in poly:
-        resultado = qr._mul(resultado, x) ^ coef
-    return resultado
+        result = qr._mul(result, x) ^ coef
+    return result
 
 
 # ---------------------------------------------------------------- Reed-Solomon (GF(256))
@@ -98,9 +98,9 @@ def test_capacidade_cresce_a_cada_versao():
 
 
 def test_texto_no_limite_da_versao_1_nao_precisa_da_versao_2():
-    limite = qr.capacity(1)
-    assert len(qr.matrix("a" * limite)) == 21          # versao 1: 17 + 4*1
-    assert len(qr.matrix("a" * (limite + 1))) == 25     # um byte a mais: versao 2
+    limit = qr.capacity(1)
+    assert len(qr.matrix("a" * limit)) == 21          # versao 1: 17 + 4*1
+    assert len(qr.matrix("a" * (limit + 1))) == 25     # um byte a mais: versao 2
 
 
 def test_213_bytes_cabe_e_214_estoura():

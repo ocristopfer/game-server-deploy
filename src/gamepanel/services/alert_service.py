@@ -216,7 +216,7 @@ def alerta_de_log(deps: AlertDeps, conn: Any, server: ServerLike, anterior: dict
     if regex is None:
         return  # padrao so de espacos: nao ha o que procurar
     try:
-        linhas = deps.read_log_lines(server, deps.log_err_lines)
+        lines_of = deps.read_log_lines(server, deps.log_err_lines)
     except (RemoteError, QueryError) as exc:
         # Log ilegivel nao e erro DO JOGO. Se o servidor sumiu, quem avisa e o
         # 'inacessivel'; inventar um alerta de log aqui seria contar a mesma coisa duas
@@ -224,7 +224,7 @@ def alerta_de_log(deps: AlertDeps, conn: Any, server: ServerLike, anterior: dict
         deps.logger.info("nao consegui ler o log de '%s' para procurar erro: %s", nome, exc)
         return
 
-    achados = [linha.strip() for linha in linhas if regex.search(linha)]
+    achados = [linha.strip() for linha in lines_of if regex.search(linha)]
     if not achados:
         # A linha saiu do rabo do log: se o erro voltar, e um erro novo e avisa de novo.
         anterior["ultimo_erro"] = ""

@@ -59,8 +59,8 @@
       <select data-modelo-jogo>
         <option value="">{{ _('catalog.blank') }}</option>
         {% for m in modelos %}
-        <option value="{{ m.chave }}" data-descricao="{{ m.descricao }}"
-                data-valores='{{ m.valores | tojson }}'>{{ m.rotulo }}</option>
+        <option value="{{ m.key }}" data-descricao="{{ m.description }}"
+                data-valores='{{ m.values | tojson }}'>{{ m.label }}</option>
         {% endfor %}
       </select>
       <small data-modelo-descricao>{{ _('catalog.template_hint') }}</small>

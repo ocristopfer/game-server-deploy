@@ -84,12 +84,12 @@ def _remote_script(script: str, *args: str) -> str:
     return " ".join(shlex.quote(p) for p in ("bash", "-lc", script, "gp", *args))
 
 
-def _portas_do_texto(text: str) -> list[int]:
+def _ports_from_text(text: str) -> list[int]:
     """Tira numeros de porta do campo livre 'Portas do jogo' (ex.: '8211/udp 27015/udp')."""
     return [int(n) for n in re.findall(r"\d{2,5}", text or "") if 1 <= int(n) <= MAX_TCP_PORT]
 
 
-def _sem_repetir(ports: list[int]) -> list[int]:
+def _without_repeats(ports: list[int]) -> list[int]:
     out: list[int] = []
     for port in ports:
         if 1 <= port <= MAX_TCP_PORT and port not in out and port not in IGNORED_PORTS:
@@ -97,7 +97,7 @@ def _sem_repetir(ports: list[int]) -> list[int]:
     return out
 
 
-def _le_portas_abertas(raw: str, listening: dict[str, list[int]], owners: dict[tuple[str, int], dict]) -> None:
+def _read_open_ports(raw: str, listening: dict[str, list[int]], owners: dict[tuple[str, int], dict]) -> None:
     """Preenche `listening` e `owners` com o que o LISTEN_PORTS_SCRIPT devolveu.
 
     Cada linha e "<proto> <porta> <pid> <nome do processo>". Linha que nao tiver essa
@@ -134,7 +134,7 @@ def candidate_ports(
     warning = ""
     try:
         raw = ssh_output(server, _remote_script(LISTEN_PORTS_SCRIPT), 60)
-        _le_portas_abertas(raw, listening, owners)
+        _read_open_ports(raw, listening, owners)
     except (RemoteError, ValueError) as exc:
         warning = f"nao consegui listar as portas abertas do container: {exc}"
 
@@ -152,13 +152,13 @@ def candidate_ports(
     def useful_first(proto: str) -> list[int]:
         return sorted(listening[proto], key=lambda p: (priority(proto, p), p))
 
-    declared = _portas_do_texto(game_port_field)
-    udp = _sem_repetir(useful_first("udp") + declared + list(QUERY_PORT_GUESSES))
-    tcp = _sem_repetir(useful_first("tcp") + declared + list(API_PORT_GUESSES))
+    declared = _ports_from_text(game_port_field)
+    udp = _without_repeats(useful_first("udp") + declared + list(QUERY_PORT_GUESSES))
+    tcp = _without_repeats(useful_first("tcp") + declared + list(API_PORT_GUESSES))
     return udp, tcp, owners, warning
 
 
-def _com_dono(items: list[dict], owners: dict[tuple[str, int], dict], proto: str) -> list[dict]:
+def _with_owner(items: list[dict], owners: dict[tuple[str, int], dict], proto: str) -> list[dict]:
     """Anexa o processo dono a cada porta sondada, para a tela poder mostrar.
 
     Tres estados diferentes, e a tela precisa saber qual e qual:
@@ -291,7 +291,7 @@ def probe_http_ports(
             "url": f"{scheme}://127.0.0.1:{port}{path}",
         })
 
-    found = _resume_genericos(found)
+    found = _summarize_generic(found)
     # JSON primeiro, depois quem pediu senha (401/403 = "existe API aqui").
     found.sort(key=lambda a: (
         0 if "json" in a["content_type"] else 1,
@@ -302,7 +302,7 @@ def probe_http_ports(
     return found, silent, ""
 
 
-def _resume_genericos(found: list[dict]) -> list[dict]:
+def _summarize_generic(found: list[dict]) -> list[dict]:
     """Porta que respondeu 404 em tudo vira UMA linha, nao sete.
 
     Um processo qualquer subindo um HTTP numa porta alta (o cliente da Steam faz isso)

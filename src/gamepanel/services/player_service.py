@@ -203,11 +203,11 @@ def players_from_log(deps: PlayerDeps, server: ServerLike) -> dict:
         raise QueryError(Mensagem("api.need_join_pattern"))
     sair = log_probe.compile_pattern(server["leave_re"], "pattern.leave")
     try:
-        linhas = deps.read_log_lines(server)
+        lines_of = deps.read_log_lines(server)
     except RemoteError as exc:
         raise QueryError(str(exc)) from exc
 
-    resultado = log_probe.apply_log_events(linhas, entrar, sair)
+    resultado = log_probe.apply_log_events(lines_of, entrar, sair)
     resultado.update({"error": "", "max_players": None, "server_name": "", "map": ""})
     return resultado
 
@@ -324,7 +324,7 @@ def all_players(conta_um: Callable[[ServerLike], dict], servers: Sequence[Server
     chama e `app.py`, e la esse nome pode estar trocado por um falso no teste — montar
     a chamada aqui dentro passaria por cima da troca, em silencio.
     """
-    return parallel.por_servidor(
+    return parallel.per_server(
         conta_um, servers, join_timeout,
         {"configured": True, "error": msg_timeout, "players": None, "list": [], "source": ""},
     )

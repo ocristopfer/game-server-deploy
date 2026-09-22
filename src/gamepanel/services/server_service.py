@@ -21,7 +21,7 @@ from typing import Any, NamedTuple
 from gamepanel.i18n import Mensagem
 from gamepanel.runtime.a2s import QueryError
 from gamepanel.runtime.http_probe import URL_RE
-from gamepanel.runtime.log_probe import compile_pattern, log_path_valido
+from gamepanel.runtime.log_probe import compile_pattern, valid_log_path
 
 UNIT_RE = re.compile(r"^[A-Za-z0-9@._-]{1,80}\.service$")
 HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
@@ -210,7 +210,7 @@ def _campos_http(form: Form, limites: FormLimits, errors: list[str]) -> dict:
 
 def _caminho_log(valor: str | None, errors: list[str]) -> str:
     try:
-        return log_path_valido(valor)
+        return valid_log_path(valor)
     except ValueError as exc:
         errors.append(str(exc).capitalize())
         return ""

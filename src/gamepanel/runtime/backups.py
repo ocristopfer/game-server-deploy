@@ -148,10 +148,10 @@ BACKUP_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}\.tar\.gz$")
 
 def validate_backup_name(raw: str) -> str:
     """Confere o nome que voltou da tela antes de ele entrar num comando remoto."""
-    nome = (raw or "").strip()
-    if not BACKUP_NAME_RE.match(nome) or ".." in nome:
+    name = (raw or "").strip()
+    if not BACKUP_NAME_RE.match(name) or ".." in name:
         raise ValueError(Mensagem("backup.bad_name"))
-    return nome
+    return name
 
 
 def backup_paths(server: ServerLike, max_paths: int) -> list[str]:
@@ -178,12 +178,12 @@ def backup_prefix(server: ServerLike) -> str:
     return limpo or "jogo"
 
 
-def comando_de_backup(
-    server: ServerLike, backup_dir: str, keep: int, caminhos: list[str], sufixo: str = "",
+def backup_command(
+    server: ServerLike, backup_dir: str, keep: int, paths: list[str], suffix: str = "",
 ) -> str:
     """Monta o comando remoto do backup. Usado pela tela, pelo restore e pelo agendador."""
     return quote_command(
-        "bash", "-lc", BACKUP_SCRIPT, "gp", backup_dir, backup_prefix(server), str(keep), sufixo, *caminhos,
+        "bash", "-lc", BACKUP_SCRIPT, "gp", backup_dir, backup_prefix(server), str(keep), suffix, *paths,
     )
 
 
@@ -214,8 +214,8 @@ def list_backups(ssh_run: SshRun, server: ServerLike, backup_dir: str, limit: in
     return copias
 
 
-def delete_backup(ssh_run: SshRun, server: ServerLike, backup_dir: str, nome: str) -> str:
-    proc = ssh_run(server, quote_command("bash", "-lc", BACKUP_DELETE_SCRIPT, "gp", backup_dir, nome), timeout=40)
+def delete_backup(ssh_run: SshRun, server: ServerLike, backup_dir: str, name: str) -> str:
+    proc = ssh_run(server, quote_command("bash", "-lc", BACKUP_DELETE_SCRIPT, "gp", backup_dir, name), timeout=40)
     if proc.returncode != 0:
         raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao apagar o backup")
     return proc.stdout.strip()

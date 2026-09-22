@@ -22,8 +22,8 @@ posix_apenas = pytest.mark.skipif(
     os.name != "posix", reason="permissao de pasta e /proc sao POSIX; valem no container")
 
 
-def nomes(resultado):
-    return [p["name"] for p in resultado["list"]]
+def nomes(result):
+    return [p["name"] for p in result["list"]]
 
 
 def servidor(url, origem="http"):
@@ -228,11 +228,11 @@ def test_url_re(url, aceita):
 # ------------------------------------------------------------- descoberta de portas
 
 def test_portas_do_texto_livre():
-    assert panel._portas_do_texto("8211/udp 27015/udp") == [8211, 27015]
+    assert panel._ports_from_text("8211/udp 27015/udp") == [8211, 27015]
 
 
 def test_sem_repetir_e_sem_a_porta_do_ssh():
-    assert panel._sem_repetir([8211, 22, 8211, 27015, 99999]) == [8211, 27015]
+    assert panel._without_repeats([8211, 22, 8211, 27015, 99999]) == [8211, 27015]
 
 
 # Os tres estados que a tela precisa diferenciar, vindos do mapa porta -> dono.
@@ -244,7 +244,7 @@ DONOS = {
 
 
 def test_com_dono_classifica_cada_porta():
-    itens = panel._com_dono(
+    itens = panel._with_owner(
         [{"port": 8212}, {"port": 22}, {"port": 33039}, {"port": 7777}], DONOS, "tcp")
     assert (itens[0]["origem"], itens[0]["proc"], itens[0]["pid"]) == (
         "detectada", "PalServer-Linu", 40)
@@ -266,7 +266,7 @@ def test_resume_genericos_agrupa_porta_404_em_tudo():
         {"port": 8212, "path": "/status", "status": 404,
          "content_type": "application/json", "scheme": "http", "url": "x"},
     ]
-    resumo = panel._resume_genericos(brutos)
+    resumo = panel._summarize_generic(brutos)
     assert [(i["port"], i["path"], i.get("generico", False))
             for i in resumo if i["port"] == 33039] == [(33039, "/", True)]
     assert [(i["port"], i["path"]) for i in resumo if i["port"] == 8212] == [
@@ -277,7 +277,7 @@ def test_resume_genericos_agrupa_porta_404_em_tudo():
 
 def test_dayz_adm_nome_nos_dois_lados_da_lista_exata():
     """Nome nos DOIS lados (DayZ pelo .ADM): da para dizer exatamente quem ficou."""
-    linhas = [
+    lines_of = [
         '16:21:58 | Player "Cristopfer" is connected (id=QnVIrhpDQ=)',
         '16:22:04 | Player "Guilherme" is connected (id=AbCdEfGh=)',
         '16:23:10 | Player "Cristopfer"(id=QnVIrhpDQ=) has been disconnected',
@@ -286,21 +286,21 @@ def test_dayz_adm_nome_nos_dois_lados_da_lista_exata():
     entra = panel.compile_pattern(r'Player "(?P<name>[^"]+)" is connected', "entrada")
     sai = panel.compile_pattern(
         r'Player "(?P<name>[^"]+)"\(id=[^)]*\) has been disconnected', "saida")
-    r = panel._apply_log_events(linhas, entra, sai)
+    r = panel._apply_log_events(lines_of, entra, sai)
     assert [p["name"] for p in r["list"]] == ["Guilherme", "Ana"]
     assert r["players"] == 2
     assert not r.get("aproximado")
 
 
 def test_enshrouded_journalctl_nome_nos_dois_lados():
-    linhas = [
+    lines_of = [
         "Sep 03 13:46:31 enshrouded start-enshrouded.sh[83856]: [server] Player 'Cristopfer' logged in with Permissions:",
         "Sep 03 13:46:35 enshrouded start-enshrouded.sh[83856]: [server] Player 'Amigo' logged in with Permissions:",
         "Sep 03 13:47:36 enshrouded start-enshrouded.sh[83856]: [server] Remove Player 'Cristopfer'",
     ]
     entra = panel.compile_pattern(r"\[server\] Player '(?P<name>[^']+)' logged in", "entrada")
     sai = panel.compile_pattern(r"\[server\] Remove Player '(?P<name>[^']+)'", "saida")
-    r = panel._apply_log_events(linhas, entra, sai)
+    r = panel._apply_log_events(lines_of, entra, sai)
     assert [p["name"] for p in r["list"]] == ["Amigo"]
     assert r["players"] == 1
     assert not r.get("aproximado")
@@ -308,7 +308,7 @@ def test_enshrouded_journalctl_nome_nos_dois_lados():
 
 def test_satisfactory_nome_so_na_entrada_e_aproximado():
     """O log avisa que alguem saiu, sem dizer quem."""
-    linhas = [
+    lines_of = [
         "LogNet: Join succeeded: Cristopfer",
         "LogNet: Join succeeded: Guilherme",
         "LogNet: UNetConnection::Close: [UNetConnection] ...",
@@ -316,7 +316,7 @@ def test_satisfactory_nome_so_na_entrada_e_aproximado():
     ]
     entra = panel.compile_pattern(r"LogNet: Join succeeded: (?P<name>.+)", "entrada")
     sai = panel.compile_pattern(r"LogNet: UNetConnection::Close:", "saida")
-    r = panel._apply_log_events(linhas, entra, sai)
+    r = panel._apply_log_events(lines_of, entra, sai)
     # A contagem continua sendo entradas menos saidas, igual a de antes desta melhoria.
     assert r["players"] == 2
     assert [p["name"] for p in r["list"]] == ["Guilherme", "Ana"], "mostra os ultimos a entrar"
@@ -351,16 +351,16 @@ def test_mais_saidas_que_entradas_nao_fica_negativo():
 
 def test_log_path_vazio_continua_vazio():
     """Vazio significa "usa o journalctl"."""
-    assert panel.log_path_valido("") == ""
+    assert panel.valid_log_path("") == ""
 
 
 def test_log_path_simples_passa():
-    assert panel.log_path_valido("/opt/game/game.log") == "/opt/game/game.log"
+    assert panel.valid_log_path("/opt/game/game.log") == "/opt/game/game.log"
 
 
 def test_log_path_com_asterisco_passa():
     """O DayZ abre um .ADM por sessao; o '*' pega sempre o mais novo."""
-    assert panel.log_path_valido("/opt/game/profiles/*.ADM") == "/opt/game/profiles/*.ADM"
+    assert panel.valid_log_path("/opt/game/profiles/*.ADM") == "/opt/game/profiles/*.ADM"
 
 
 @pytest.mark.parametrize("ruim", [
@@ -372,7 +372,7 @@ def test_log_path_torto_e_recusado(ruim):
     """O caminho entra SEM aspas no comando remoto (para o shell expandir o '*'), entao
     tudo que o shell interpretaria de outro jeito tem de morrer aqui."""
     with pytest.raises(ValueError):
-        panel.log_path_valido(ruim)
+        panel.valid_log_path(ruim)
 
 
 # --------------------------------------------------------------- acoes sobre jogadores

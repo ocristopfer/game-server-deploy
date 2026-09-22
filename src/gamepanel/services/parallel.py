@@ -13,8 +13,8 @@ from collections.abc import Callable, Sequence
 from gamepanel.runtime.ssh import ServerLike
 
 
-def por_servidor(
-    consulta: Callable[[ServerLike], dict],
+def per_server(
+    query: Callable[[ServerLike], dict],
     servers: Sequence[ServerLike],
     timeout: float,
     fallback: dict,
@@ -29,7 +29,7 @@ def por_servidor(
     lock = threading.Lock()
 
     def work(srv: ServerLike) -> None:
-        data = consulta(srv)
+        data = query(srv)
         with lock:
             results[int(srv["id"])] = data
 

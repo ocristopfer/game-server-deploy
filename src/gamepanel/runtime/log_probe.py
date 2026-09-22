@@ -179,7 +179,7 @@ def apply_log_events(lines: list[str], enter: re.Pattern[str], leave: re.Pattern
     return _events_half_named(lines, enter, leave)
 
 
-def log_path_valido(raw: str | None) -> str:
+def valid_log_path(raw: str | None) -> str:
     """Confere o caminho do log antes de ele entrar num comando remoto."""
     path = (raw or "").strip()
     if not path:
@@ -205,7 +205,7 @@ def read_log_lines(
     varredura de erro so quer o rabo do log, de minuto em minuto.
     """
     try:
-        target = log_path_valido(log_path)
+        target = valid_log_path(log_path)
     except ValueError as exc:
         raise QueryError(str(exc)) from exc
     remote_cmd = " ".join(shlex.quote(p) for p in (

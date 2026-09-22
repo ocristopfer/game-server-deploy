@@ -27,7 +27,7 @@ from gamepanel.runtime.log_probe import (
     LOG_FOLLOW_SCRIPT,
     LOG_LINE_MAX,
     compile_pattern,
-    log_path_valido,
+    valid_log_path,
 )
 from gamepanel.runtime.ssh import ServerLike, quote_command
 
@@ -96,7 +96,7 @@ class LogStream:
         self.sid = int(server["id"])
         self.assinatura = assinatura
         self.proc: subprocess.Popen | None = None
-        self.parar = threading.Event()
+        self._stop_signal = threading.Event()
         self.ultimo_disparo = 0.0
         self.erro = ""
         # Erro de configuracao (regex que nao compila, caminho de log invalido) nao se
@@ -109,7 +109,7 @@ class LogStream:
         self.thread.start()
 
     def stop(self) -> None:
-        self.parar.set()
+        self._stop_signal.set()
         proc = self.proc
         if proc and proc.poll() is None:
             with contextlib.suppress(OSError):
@@ -119,7 +119,7 @@ class LogStream:
         return self.thread.is_alive()
 
     def _roda(self) -> None:
-        while not self.parar.is_set():
+        while not self._stop_signal.is_set():
             try:
                 self._acompanha()
             # A thread nao morre por um tropeco.
@@ -128,20 +128,20 @@ class LogStream:
                 self.deps.logger.exception("o acompanhamento de log de '%s' caiu",
                                            self.dados.get("name"))
             # Servidor desligado nao pode virar um laco de SSH por segundo.
-            if self.parar.wait(self.deps.retry):
+            if self._stop_signal.wait(self.deps.retry):
                 return
 
     def _desiste(self, motivo: str) -> None:
         self.erro = motivo
         self.desistiu = True
-        self.parar.set()
+        self._stop_signal.set()
 
     def _acompanha(self) -> None:
         # Cadastro torto para aqui: nao adianta reconectar contra um regex que nao compila.
         try:
             entrar = compile_pattern(self.dados.get("join_re"), "pattern.join")
             sair = compile_pattern(self.dados.get("leave_re"), "pattern.leave")
-            alvo = log_path_valido(self.dados.get("log_path") or "")
+            alvo = valid_log_path(self.dados.get("log_path") or "")
         except (QueryError, ValueError) as exc:
             return self._desiste(str(exc))
         if not entrar:
@@ -167,7 +167,7 @@ class LogStream:
         self.erro = ""
         try:
             for linha in saida:
-                if self.parar.is_set():
+                if self._stop_signal.is_set():
                     break
                 if linha_de_jogador(linha, entrar, sair):
                     self._confere()

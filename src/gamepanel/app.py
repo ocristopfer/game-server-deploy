@@ -45,18 +45,16 @@ if __package__ in (None, ""):  # pragma: no cover - so vale fora do import norma
 # dependencia nova. E o mesmo escape que o autoescape do template usa.
 from markupsafe import Markup, escape
 
-from gamepanel import cli
-from gamepanel import i18n
+from gamepanel import cli, i18n
 from gamepanel import navigation as ui
 from gamepanel.games import config_format as gameconf
 from gamepanel.games import gamefields
 from gamepanel.games.catalog import search as busca_de_jogos
-from gamepanel.games.catalog.templates import MODELOS as MODELOS_DE_JOGO
+from gamepanel.games.catalog.templates import TEMPLATES as MODELOS_DE_JOGO
 from gamepanel.integrations import broker_client, webhook_client
-from gamepanel.runtime import a2s, http_probe
-from gamepanel.runtime import log_probe
-from gamepanel.runtime import port_probe
-from gamepanel.runtime import ssh as ssh_transport
+from gamepanel.persistence import schema
+from gamepanel.runtime import a2s, http_probe, log_probe, port_probe
+
 # Apelido: ha uma rota `terminal()` neste mesmo modulo (a tela /servers/<id>/terminal),
 # e o nome `terminal` sem apelido acabaria REBATIZADO por ela — o import ficaria valendo
 # so ate a definicao da rota, silenciosamente (mypy pegou isso: "Name already defined").
@@ -64,8 +62,8 @@ from gamepanel.runtime import ssh as ssh_transport
 # `backups()` (`/servers/<id>/backups`) neste modulo.
 from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
+from gamepanel.runtime import ssh as ssh_transport
 from gamepanel.runtime import terminal as term_runtime
-from gamepanel.persistence import schema
 from gamepanel.security import qr, totp
 from gamepanel.services import (
     alert_service,
@@ -920,7 +918,7 @@ LOG_FOLLOW_SCRIPT = log_probe.LOG_FOLLOW_SCRIPT
 LOG_PATH_RE = log_probe.LOG_PATH_RE
 compile_pattern = log_probe.compile_pattern
 _apply_log_events = log_probe.apply_log_events
-log_path_valido = log_probe.log_path_valido
+valid_log_path = log_probe.valid_log_path
 
 
 # ------------------------------------------- descobrir como contar jogadores
@@ -933,10 +931,10 @@ QUERY_PORT_GUESSES = port_probe.QUERY_PORT_GUESSES
 API_PORT_GUESSES = port_probe.API_PORT_GUESSES
 HTTP_PROBE_TIMEOUT = float(os.environ.get("GAMEPANEL_PROBE_TIMEOUT", "2"))
 HTTP_PROBE_PORTS_MAX = port_probe.HTTP_PROBE_PORTS_MAX
-_portas_do_texto = port_probe._portas_do_texto
-_sem_repetir = port_probe._sem_repetir
-_com_dono = port_probe._com_dono
-_resume_genericos = port_probe._resume_genericos
+_ports_from_text = port_probe._ports_from_text
+_without_repeats = port_probe._without_repeats
+_with_owner = port_probe._with_owner
+_summarize_generic = port_probe._summarize_generic
 
 
 def candidate_ports(server: Servidor) -> tuple[list[int], list[int], dict, str]:
@@ -951,9 +949,9 @@ def probe_ports(host: str, portas: list[int]) -> list[dict]:
     return port_probe.probe_ports(host, portas, QUERY_TIMEOUT)
 
 
-def read_log_lines(server: Servidor, limite: int = LOG_SCAN_MAX) -> list[str]:
+def read_log_lines(server: Servidor, limit: int = LOG_SCAN_MAX) -> list[str]:
     return log_probe.read_log_lines(
-        ssh_output, server, server["service"], _valor_guardado(server, "log_path"), limite,
+        ssh_output, server, server["service"], _valor_guardado(server, "log_path"), limit,
     )
 
 
@@ -1000,7 +998,7 @@ def server_metrics(server: Servidor, force: bool = False) -> dict:
 def all_metrics(servers) -> dict[int, dict]:
     # `server_metrics` entra por lambda para o nome ser resolvido neste modulo a cada
     # chamada — e o que mantem a troca por um falso valendo dentro do paralelo.
-    return parallel.por_servidor(
+    return parallel.per_server(
         lambda srv: server_metrics(srv), servers, 35, {"error": MSG_TIMEOUT})
 
 
@@ -1015,7 +1013,7 @@ def server_status(server: Servidor, force: bool = False) -> dict:
 
 
 def all_status(servers) -> dict[int, dict]:
-    return parallel.por_servidor(
+    return parallel.per_server(
         lambda srv: server_status(srv), servers, QUICK_TIMEOUT + 5,
         {"reachable": False, "service": "desconhecido", "error": MSG_TIMEOUT},
     )
@@ -1106,12 +1104,12 @@ def filtro_de_papel() -> tuple[str, tuple]:
     return f" AND action NOT IN ({marcadores})", escondidas
 
 
-def jobs_do_servidor(conn: sqlite3.Connection, sid: int, limite: int) -> list:
+def jobs_do_servidor(conn: sqlite3.Connection, sid: int, limit: int) -> list:
     """Historico do servidor ja filtrado pelo papel de quem esta olhando."""
     corte, valores = filtro_de_papel()
     return conn.execute(
         f"SELECT * FROM jobs WHERE server_id = ?{corte} ORDER BY id DESC LIMIT ?",
-        (sid, *valores, limite),
+        (sid, *valores, limit),
     ).fetchall()
 
 
@@ -1296,7 +1294,7 @@ def limpa_eventos(bruto: str) -> set:
 
 def webhooks_lista(conn: sqlite3.Connection) -> list:
     """Todos os destinos, na ordem de cadastro, com os eventos ja como conjunto."""
-    linhas = conn.execute(
+    lines_of = conn.execute(
         "SELECT id, nome, url, eventos, ativo FROM webhooks ORDER BY id"
     ).fetchall()
     return [
@@ -1304,11 +1302,11 @@ def webhooks_lista(conn: sqlite3.Connection) -> list:
             "id": r["id"],
             "nome": r["nome"] or "Sem nome",
             "url": r["url"],
-            "url_curta": mascara_url(r["url"]),
+            "url_curta": mask_url(r["url"]),
             "eventos": limpa_eventos(r["eventos"]),
             "ativo": bool(r["ativo"]),
         }
-        for r in linhas
+        for r in lines_of
     ]
 
 
@@ -1345,14 +1343,14 @@ def webhook_config(conn: sqlite3.Connection) -> dict:
     }
 
 
-mascara_url = webhook_client.mascara_url
+mask_url = webhook_client.mask_url
 
 
 def envia_webhook(url: str, texto: str) -> str:
     # Nome proprio (e nao `webhook_client.envia` direto nas chamadas) porque a fixture
     # `webhooks` do conftest troca ESTE nome por um capturador — todo teste de alerta
     # depende disso para ver o que sairia por HTTP sem nada sair de verdade.
-    return webhook_client.envia(url, texto, WEBHOOK_TIMEOUT, WEBHOOK_UA)
+    return webhook_client.send(url, texto, WEBHOOK_TIMEOUT, WEBHOOK_UA)
 
 
 def notifica(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str = "") -> bool:
@@ -1406,12 +1404,12 @@ def _registra_alerta(conn: sqlite3.Connection, evento: str, titulo: str, detalhe
         app.logger.exception("nao consegui gravar no diario de alertas")
 
 
-def alertas_recentes(conn: sqlite3.Connection, limite: int = 60) -> list[dict]:
+def alertas_recentes(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:
     """As ultimas linhas do diario, da mais nova para a mais velha."""
-    linhas = conn.execute(
-        "SELECT * FROM alert_log ORDER BY id DESC LIMIT ?", (limite,)
+    lines_of = conn.execute(
+        "SELECT * FROM alert_log ORDER BY id DESC LIMIT ?", (limit,)
     ).fetchall()
-    return [dict(l) for l in linhas]
+    return [dict(l) for l in lines_of]
 
 
 def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
@@ -1746,7 +1744,7 @@ def coleta_amostras(forcar: bool = False) -> int:
 
     conn = db()
     carimbo = now_iso()
-    linhas = []
+    lines_of = []
     for server in conn.execute(SQL_ALL_SERVERS).fetchall():
         dados = server_metrics(server)
         if dados.get("error"):
@@ -1760,18 +1758,18 @@ def coleta_amostras(forcar: bool = False) -> int:
                 contagem = None if jogando.get("error") else jogando.get("players")
             except (QueryError, RemoteError):
                 contagem = None
-        linhas.append((
+        lines_of.append((
             int(server["id"]), carimbo, dados.get("cpu_pct"),
             (dados.get("mem") or {}).get("pct"), contagem,
         ))
 
-    if linhas:
+    if lines_of:
         with conn:
             conn.executemany(
                 "INSERT INTO samples (server_id, taken_at, cpu_pct, mem_pct, players)"
-                " VALUES (?,?,?,?,?)", linhas,
+                " VALUES (?,?,?,?,?)", lines_of,
             )
-    return len(linhas)
+    return len(lines_of)
 
 
 # ------------------------------------------------------------- agendamento
@@ -1788,18 +1786,18 @@ def coleta_amostras(forcar: bool = False) -> int:
 # as rotas de agendamento, os templates e os testes chamam por eles.
 SCHEDULE_KINDS = schedule_service.SCHEDULE_KINDS
 SCHEDULE_ACTIONS = schedule_service.SCHEDULE_ACTIONS
-DIAS_SEMANA = schedule_service.DIAS_SEMANA
-ARTIGO_DIA = schedule_service.ARTIGO_DIA
+WEEKDAYS = schedule_service.WEEKDAYS
+DAY_ARTICLE = schedule_service.DAY_ARTICLE
 EVERY_HOURS_MAX = schedule_service.EVERY_HOURS_MAX
-agora_local = schedule_service.agora_local
-rotulo_agendamento = schedule_service.rotulo_agendamento
-ocorrencia_anterior = schedule_service.ocorrencia_anterior
+local_now = schedule_service.local_now
+schedule_label = schedule_service.schedule_label
+previous_occurrence = schedule_service.previous_occurrence
 # Usado tambem pelas rotas de agendamento e pelo grafico, fora desta secao.
 _parse_dt = schedule_service._parse_dt
 
 
-def venceu(sched, agora: datetime) -> bool:
-    return schedule_service.venceu(sched, agora, SCHEDULE_GRACE)
+def is_due(sched, agora: datetime) -> bool:
+    return schedule_service.is_due(sched, agora, SCHEDULE_GRACE)
 
 
 def dispara_agendamento(conn: sqlite3.Connection, sched) -> int:
@@ -1811,12 +1809,12 @@ def dispara_agendamento(conn: sqlite3.Connection, sched) -> int:
         caminhos = backup_paths(server)
         if not caminhos:
             return 0  # sem o que guardar: nao adianta acordar o container
-        remoto, limite = comando_de_backup(server, caminhos), BACKUP_TIMEOUT
+        remoto, limit = backup_command(server, caminhos), BACKUP_TIMEOUT
     else:
-        remoto, limite = ACTIONS[sched["action"]][1](server), JOB_TIMEOUT
+        remoto, limit = ACTIONS[sched["action"]][1](server), JOB_TIMEOUT
     job_id = start_job(
         sched["action"], server, SCHEDULE_USER, remote_cmd=remoto,
-        command=f"agendado: {rotulo_agendamento(sched)}", timeout=limite,
+        command=f"agendado: {schedule_label(sched)}", timeout=limit,
     )
     invalidate_status(int(server["id"]))
     return job_id
@@ -1824,11 +1822,11 @@ def dispara_agendamento(conn: sqlite3.Connection, sched) -> int:
 
 def roda_agendamentos() -> int:
     """Uma passada do relogio. Devolve quantas tarefas disparou."""
-    agora = agora_local()
+    agora = local_now()
     conn = db()
     disparadas = 0
     for sched in conn.execute("SELECT * FROM schedules WHERE enabled = 1").fetchall():
-        if sched["action"] not in SCHEDULE_ACTIONS or not venceu(sched, agora):
+        if sched["action"] not in SCHEDULE_ACTIONS or not is_due(sched, agora):
             continue
         # Marca ANTES de disparar: se o job demorar (um update leva quase uma hora), a
         # proxima volta do relogio nao pode achar que a tarefa ainda esta vencida.
@@ -1919,7 +1917,7 @@ def _com_contexto() -> None:
         _scheduler_tick()
 
 
-_relogio = scheduler.Relogio(SCHEDULE_TICK, _com_contexto, app.logger)
+_relogio = scheduler.Clock(SCHEDULE_TICK, _com_contexto, app.logger)
 
 
 def start_scheduler() -> None:
@@ -2105,7 +2103,7 @@ def api_server_players(sid: int):
 def _aba_porta(server: Servidor) -> dict:
     """Aba 1: dispara A2S em cada porta UDP que o container esta escutando."""
     candidatas, _tcp, donos, aviso = candidate_ports(server)
-    portas = _com_dono(probe_ports(server["host"], candidatas[:12]), donos, "udp")
+    portas = _with_owner(probe_ports(server["host"], candidatas[:12]), donos, "udp")
     # Porta aberta pelo processo do jogo e que nao respondeu A2S e uma conclusao, nao um
     # erro: o jogo simplesmente nao publica consulta. Sem essa contagem a tela so diria
     # "sem resposta" e deixaria a duvida entre "porta errada" e "nao existe consulta".
@@ -2122,8 +2120,8 @@ def _aba_http(server: Servidor, http: dict, testar: bool) -> dict:
     """Aba 2: quais portas TCP falam HTTP, e o teste da URL escolhida."""
     _udp, candidatas, donos, aviso = candidate_ports(server)
     achados, mudas, erro_probe = probe_http_ports(server, candidatas)
-    _com_dono(achados, donos, "tcp")
-    mudas = _com_dono([{"port": p} for p in mudas], donos, "tcp")
+    _with_owner(achados, donos, "tcp")
+    mudas = _with_owner([{"port": p} for p in mudas], donos, "tcp")
     saida = {"achados": achados, "mudas": mudas, "aviso": aviso or erro_probe,
              # Achado que vale um clique: porta que respondeu numa rota conhecida. Sem
              # nenhum, a tela explica que a API costuma vir desligada de fabrica.
@@ -2160,9 +2158,9 @@ def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
         # arquivo novo (o .ADM do DayZ, por exemplo) antes de salvar.
         provisorio = dict(server)
         provisorio["log_path"] = log_path
-        linhas = read_log_lines(provisorio)
+        lines_of = read_log_lines(provisorio)
         chaves = re.compile("|".join(LOG_HINT_WORDS), re.I)
-        amostras = [ln for ln in linhas if chaves.search(ln)][-120:]
+        amostras = [ln for ln in lines_of if chaves.search(ln)][-120:]
         saida["amostras"] = amostras
         if not testar:
             return saida
@@ -2170,7 +2168,7 @@ def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
         if not entrar:
             raise QueryError("informe o padrao da linha de entrada")
         sair = compile_pattern(leave_re, "pattern.leave")
-        teste = _apply_log_events(linhas, entrar, sair)
+        teste = _apply_log_events(lines_of, entrar, sair)
         teste["casaram"] = [
             ln for ln in amostras
             if entrar.search(ln[:LOG_LINE_MAX]) or (sair and sair.search(ln[:LOG_LINE_MAX]))
@@ -3197,8 +3195,8 @@ def backups(sid: int):
     )
 
 
-def comando_de_backup(server: Servidor, caminhos: list[str], sufixo: str = "") -> str:
-    return backups_rt.comando_de_backup(server, BACKUP_DIR, BACKUP_KEEP, caminhos, sufixo)
+def backup_command(server: Servidor, caminhos: list[str], sufixo: str = "") -> str:
+    return backups_rt.backup_command(server, BACKUP_DIR, BACKUP_KEEP, caminhos, sufixo)
 
 
 def delete_backup(server: Servidor, nome: str) -> str:
@@ -3216,7 +3214,7 @@ def backup_create(sid: int):
         return redirect(url_for("backups", sid=sid))
     job_id = start_job(
         "backup", server, session.get("username", "?"),
-        remote_cmd=comando_de_backup(server, caminhos),
+        remote_cmd=backup_command(server, caminhos),
         command=", ".join(caminhos),
         timeout=BACKUP_TIMEOUT,
     )
@@ -3236,7 +3234,7 @@ def backup_restore(sid: int):
     # comandos vao num job so — se o backup falhar, o '&&' impede a restauracao.
     passos = []
     if caminhos:
-        passos.append(comando_de_backup(server, caminhos, "-antes-de-restaurar"))
+        passos.append(backup_command(server, caminhos, "-antes-de-restaurar"))
     passos.append(q("bash", "-lc", RESTORE_SCRIPT, "gp", BACKUP_DIR, nome, server["service"]))
 
     job_id = start_job(
@@ -3627,7 +3625,7 @@ def api_job(jid: int):
 
 # Formulario de jogo novo em gamepanel.services.broker_service; acompanhamento da
 # operacao em gamepanel.tasks.broker_jobs.
-BROKER_RECEITAS = broker_service.BROKER_RECEITAS
+BROKER_RECIPES = broker_service.BROKER_RECIPES
 
 
 def broker_required(view):
@@ -3752,7 +3750,7 @@ def _ator() -> str:
     return session.get("username", "")
 
 
-_jogo_do_form = broker_service.jogo_do_form
+_game_from_form = broker_service.game_from_form
 
 
 @app.route("/catalogo", methods=["GET"])
@@ -3764,7 +3762,7 @@ def catalog():
     except broker_client.BrokerError as erro:
         flash(traduzir("flash.broker_error", motivo=erro.mensagem), "error")
         jogos = []
-    return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECEITAS, form={},
+    return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECIPES, form={},
                            modelos=MODELOS_DE_JOGO)
 
 
@@ -3774,16 +3772,16 @@ def catalog():
 def api_catalog_suggestions():
     """Busca por nome ou App ID numa lista FIXA (gerada do LinuxGSM, no repositorio): nada aqui
     vai a internet, e a consulta so seleciona entre entradas conhecidas."""
-    achados = busca_de_jogos.buscar(request.args.get("q", ""))
-    return jsonify({"resultados": [busca_de_jogos.resultado(s) for s in achados],
-                    "fonte": busca_de_jogos.FONTE})
+    achados = busca_de_jogos.search(request.args.get("q", ""))
+    return jsonify({"resultados": [busca_de_jogos.result(s) for s in achados],
+                    "fonte": busca_de_jogos.SOURCE})
 
 
 @app.post("/catalogo/novo")
 @admin_required
 @broker_required
 def catalog_new():
-    dados, erros = _jogo_do_form(request.form)
+    dados, erros = _game_from_form(request.form)
     if not erros:
         try:
             broker_client.adicionar_jogo(dados, _ator())
@@ -3796,7 +3794,7 @@ def catalog_new():
             jogos = broker_client.catalogo()
         except broker_client.BrokerError:
             jogos = []
-        return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECEITAS,
+        return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECIPES,
                                form=request.form, modelos=MODELOS_DE_JOGO), 400
     _registra_acao_do_broker("broker-jogo", _ator(), dados.get("chave", ""), "Jogo adicionado ao catalogo.")
     flash(traduzir("flash.game_added",
@@ -3936,7 +3934,7 @@ def _proxima_ocorrencia(sched, agora: datetime) -> datetime:
         ultimo = _parse_dt(sched["last_run"]) or agora
         return ultimo + timedelta(hours=int(sched["every_hours"]))
 
-    anterior = ocorrencia_anterior(sched, agora) or agora
+    anterior = previous_occurrence(sched, agora) or agora
     return anterior + timedelta(days=7 if sched["kind"] == "semanal" else 1)
 
 
@@ -3948,7 +3946,7 @@ def schedules(sid: int):
     tarefas = conn.execute(
         "SELECT * FROM schedules WHERE server_id = ? ORDER BY id", (sid,)
     ).fetchall()
-    agora = agora_local()
+    agora = local_now()
     # A tela mostra a proxima vez que cada tarefa roda: sem isso "todo dia as 5h" nao
     # deixa claro se ela ja rodou hoje ou se ainda vai rodar.
     proximas = {}
@@ -3956,8 +3954,8 @@ def schedules(sid: int):
         proximas[t["id"]] = _proxima_ocorrencia(t, agora).strftime(FORMATO_DATA_CURTA)
     return render_template(
         "schedules.html", server=server, tarefas=tarefas, proximas=proximas,
-        acoes=SCHEDULE_ACTIONS, job_labels=rotulos_de(JOB_LABELS), dias=DIAS_SEMANA,
-        rotulo=rotulo_agendamento, agora=agora, max_horas=EVERY_HOURS_MAX,
+        acoes=SCHEDULE_ACTIONS, job_labels=rotulos_de(JOB_LABELS), dias=WEEKDAYS,
+        rotulo=schedule_label, agora=agora, max_horas=EVERY_HOURS_MAX,
     )
 
 
@@ -3974,7 +3972,7 @@ def schedule_new(sid: int):
 
     # 'intervalo' comeca a contar de agora: sem isto, "a cada 6h" dispararia no instante
     # em que fosse salvo, o que ninguem espera de um agendamento.
-    inicio = agora_local().isoformat() if dados["kind"] == "intervalo" else ""
+    inicio = local_now().isoformat() if dados["kind"] == "intervalo" else ""
     conn = db()
     with conn:
         conn.execute(
@@ -4036,13 +4034,13 @@ CHART_TICKS = chart_service.CHART_TICKS
 CHART_RANGES = chart_service.CHART_RANGES
 CHART_CPU = chart_service.CHART_CPU
 CHART_MEM = chart_service.CHART_MEM
-_teto_limpo = chart_service.teto_limpo
+_clean_ceiling = chart_service.clean_ceiling
 
 
-def monta_grafico(amostras, series, teto: float, inicio, fim, formato_tempo: str) -> dict:
+def build_chart(amostras, series, teto: float, inicio, fim, formato_tempo: str) -> dict:
     # `SAMPLE_EVERY` entra aqui porque e configuracao do painel: e ele que diz a partir
     # de que buraco entre duas amostras a linha do grafico deve ser cortada.
-    return chart_service.monta_grafico(
+    return chart_service.build_chart(
         amostras, series, teto, inicio, fim, formato_tempo, SAMPLE_EVERY)
 
 
@@ -4065,31 +4063,31 @@ def charts(sid: int):
 
     fim = datetime.now(timezone.utc)
     inicio = fim - timedelta(hours=horas)
-    linhas = db().execute(
+    lines_of = db().execute(
         "SELECT taken_at, cpu_pct, mem_pct, players FROM samples"
         " WHERE server_id = ? AND taken_at >= ? ORDER BY taken_at",
         (sid, inicio.isoformat()),
     ).fetchall()
 
     amostras = []
-    for linha in linhas:
+    for linha in lines_of:
         quando = _parse_dt(linha["taken_at"])
         if quando:
             amostras.append((quando, {"cpu": linha["cpu_pct"], "mem": linha["mem_pct"],
                                       "players": linha["players"]}))
 
     formato = "%d/%m" if horas > 48 else "%H:%M"
-    uso = monta_grafico(
+    uso = build_chart(
         amostras,
         [{"chave": "cpu", "rotulo": "CPU", "cor": CHART_CPU, "sufixo": "%"},
          {"chave": "mem", "rotulo": "Memoria", "cor": CHART_MEM, "sufixo": "%"}],
         100, inicio, fim, formato,
     )
     pico = max((v["players"] for _, v in amostras if v["players"] is not None), default=0)
-    jogadores = monta_grafico(
+    jogadores = build_chart(
         amostras,
         [{"chave": "players", "rotulo": "Jogadores", "cor": CHART_CPU}],
-        _teto_limpo(pico), inicio, fim, formato,
+        _clean_ceiling(pico), inicio, fim, formato,
     )
 
     # A tabela e o par acessivel do grafico: mesmos numeros, sem depender de cor nem de
@@ -4147,12 +4145,12 @@ def history():
 
     # Pede um a mais que o tamanho da pagina: e como se sabe se existe proxima sem contar
     # a tabela inteira.
-    linhas = conn.execute(
+    lines_of = conn.execute(
         f"SELECT * FROM jobs WHERE {sql_onde} ORDER BY id DESC LIMIT ? OFFSET ?",
         (*valores, HISTORY_PAGE + 1, pagina * HISTORY_PAGE),
     ).fetchall()
-    tem_mais = len(linhas) > HISTORY_PAGE
-    jobs = linhas[:HISTORY_PAGE]
+    tem_mais = len(lines_of) > HISTORY_PAGE
+    jobs = lines_of[:HISTORY_PAGE]
 
     usuarios = [r[0] for r in conn.execute(
         f"SELECT DISTINCT username FROM jobs WHERE username <> '' {corte} ORDER BY username",

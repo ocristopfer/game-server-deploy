@@ -16,68 +16,68 @@ from typing import Any
 
 SCHEDULE_KINDS = ("diario", "semanal", "intervalo")
 SCHEDULE_ACTIONS = ("restart", "stop", "start", "update", "backup")
-DIAS_SEMANA = ("segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo")
+WEEKDAYS = ("segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo")
 # "toda segunda" mas "todo sabado": os dias de semana vem de "segunda-feira" (feminino),
 # sabado e domingo sao masculinos.
-ARTIGO_DIA = ("toda", "toda", "toda", "toda", "toda", "todo", "todo")
+DAY_ARTICLE = ("toda", "toda", "toda", "toda", "toda", "todo", "todo")
 EVERY_HOURS_MAX = 168  # uma semana
-DIAS_NA_SEMANA = 7
+DAYS_IN_WEEK = 7
 
 
-def agora_local() -> datetime:
+def local_now() -> datetime:
     """Hora local do painel, com fuso. E o relogio que o agendamento enxerga."""
     return datetime.now().astimezone().replace(microsecond=0)
 
 
-def _parse_dt(texto: str) -> datetime | None:
+def _parse_dt(text: str) -> datetime | None:
     try:
-        return datetime.fromisoformat(texto)
+        return datetime.fromisoformat(text)
     except (TypeError, ValueError):
         return None
 
 
-def rotulo_agendamento(sched: Any) -> str:
+def schedule_label(sched: Any) -> str:
     """Como a tarefa e descrita na tela e no historico."""
     hora = f"{int(sched['hour']):02d}:{int(sched['minute']):02d}"
     if sched["kind"] == "intervalo":
         horas = int(sched["every_hours"])
         return f"a cada {horas}h" if horas != 1 else "a cada hora"
     if sched["kind"] == "semanal":
-        indice = int(sched["weekday"]) % DIAS_NA_SEMANA
-        return f"{ARTIGO_DIA[indice]} {DIAS_SEMANA[indice]} as {hora}"
+        indice = int(sched["weekday"]) % DAYS_IN_WEEK
+        return f"{DAY_ARTICLE[indice]} {WEEKDAYS[indice]} as {hora}"
     return f"todo dia as {hora}"
 
 
-def ocorrencia_anterior(sched: Any, agora: datetime) -> datetime | None:
+def previous_occurrence(sched: Any, now: datetime) -> datetime | None:
     """Ultimo horario em que esta tarefa deveria ter rodado ('intervalo' nao tem)."""
     if sched["kind"] == "intervalo":
         return None
-    alvo = agora.replace(hour=int(sched["hour"]), minute=int(sched["minute"]),
+    alvo = now.replace(hour=int(sched["hour"]), minute=int(sched["minute"]),
                          second=0, microsecond=0)
     if sched["kind"] == "semanal":
-        atras = (agora.weekday() - int(sched["weekday"])) % DIAS_NA_SEMANA
+        atras = (now.weekday() - int(sched["weekday"])) % DAYS_IN_WEEK
         alvo -= timedelta(days=atras)
-        if alvo > agora:
-            alvo -= timedelta(days=DIAS_NA_SEMANA)
+        if alvo > now:
+            alvo -= timedelta(days=DAYS_IN_WEEK)
         return alvo
-    if alvo > agora:
+    if alvo > now:
         alvo -= timedelta(days=1)
     return alvo
 
 
-def venceu(sched: Any, agora: datetime, tolerancia_s: float) -> bool:
+def is_due(sched: Any, now: datetime, tolerance_s: float) -> bool:
     """A tarefa deveria disparar agora?"""
     ultimo = _parse_dt(sched["last_run"])
     if sched["kind"] == "intervalo":
         if ultimo is None:
             return True
-        return (agora - ultimo) >= timedelta(hours=max(1, int(sched["every_hours"])))
+        return (now - ultimo) >= timedelta(hours=max(1, int(sched["every_hours"])))
 
-    alvo = ocorrencia_anterior(sched, agora)
+    alvo = previous_occurrence(sched, now)
     if alvo is None:
         return False  # so 'intervalo' nao tem ocorrencia, e ele ja saiu acima
     if ultimo is not None and ultimo >= alvo:
         return False  # esta ocorrencia ja rodou
     # Atrasada demais: o painel estava fora do ar quando a hora passou. Nao dispara e nao
     # anota nada — na proxima ocorrencia a conta acima volta a fechar sozinha.
-    return (agora - alvo).total_seconds() <= tolerancia_s
+    return (now - alvo).total_seconds() <= tolerance_s
