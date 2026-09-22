@@ -999,4 +999,49 @@ MENSAGENS: dict[str, str] = {
     "pattern.join": "entrada",
     "pattern.leave": "saida",
     "pattern.error": "erro",
+
+    # -------------------------------------------------- consulta A2S
+    "a2s.truncated": "resposta do servidor terminou antes do esperado",
+    "a2s.unterminated_text": "texto sem terminador na resposta",
+    "a2s.split_incomplete": "resposta dividida veio incompleta",
+    "a2s.split_unknown": "resposta dividida em formato desconhecido (compactada?)",
+    "a2s.unexpected_reply": "resposta inesperada do servidor (tipo {tipo})",
+    "a2s.no_reply": "sem resposta em {segundos}s na porta {porta}/udp",
+    "a2s.query_failed": "falha ao consultar {host}:{porta} - {motivo}",
+
+    # -------------------------------- caminho e arquivo no container
+    "path.outside_roots": "fora das pastas permitidas ({pastas})",
+    "path.not_absolute": "use um caminho absoluto (comecando com /)",
+    "path.bad_character": "caractere invalido no caminho",
+    "path.too_long": "caminho longo demais",
+    "file.unexpected_reply": "resposta inesperada do container ao ler o arquivo",
+    "file.corrupted": "conteudo do arquivo chegou corrompido",
+    "backup.bad_name": "nome de backup invalido",
+
+    # ----------------------------------------------------------- ssh
+    "ssh.failed_to_run": "falha ao executar ssh: {motivo}",
+    "ssh.no_stdin": "nao consegui abrir a entrada do ssh",
+    "ssh.no_stdout": "nao consegui abrir a saida do ssh",
+    "ssh.upload_timeout": "tempo esgotado ({segundos}s) enviando para {host}",
+
+    # ---------------------------------------------- api http do jogo
+    "http.bad_url": "URL invalida (ex.: http://127.0.0.1:8212/v1/api/players)",
+    "http.auth_failed": "a API respondeu {status} - confira o usuario/senha de admin",
+    "http.bad_status": "a API respondeu HTTP {status}",
+    "http.reply_too_big": "resposta da API grande demais para ser lida aqui",
+    "http.not_json": "a resposta nao e JSON: {amostra}",
+    "api.login_incomplete": "login automatico incompleto (falta URL de login ou caminho do token)",
+    "api.no_token_at": "o login respondeu, mas nao achei um token em '{caminho}'",
+    "api.need_url": "informe a URL da API do jogo",
+    "api.need_join_pattern": "informe o padrao da linha de entrada de jogador",
+    "api.need_query_port": "informe a porta de consulta (query Steam) do servidor",
+    "api.action_not_published": "este servidor nao publica essa acao",
+    "api.write_the_notice": "escreva o aviso",
+    "api.no_player_id": "nao sei quem expulsar: a API nao publicou o identificador deste jogador",
+
+    # ---------------------------------------- padrao de log e broker
+    "pattern.too_long": "padrao de {rotulo} longo demais (limite de {n} caracteres)",
+    "pattern.invalid": "padrao de {rotulo} invalido: {motivo}",
+    "broker.bad_host_or_service": "o broker devolveu host ou servico com formato invalido",
+    "broker.server_not_saved": "o servidor nao foi gravado",
 }

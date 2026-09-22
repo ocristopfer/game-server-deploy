@@ -14,6 +14,7 @@ import subprocess
 from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
+from gamepanel.i18n import Mensagem
 from gamepanel.runtime.ssh import RemoteError, ServerLike, quote_command
 
 SshRun = Callable[..., subprocess.CompletedProcess]
@@ -44,18 +45,18 @@ def _check_roots(path: str, roots: tuple[str, ...]) -> None:
     # rstrip + "/" para /opt/game nao liberar /opt/gamex sem querer.
     if any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots):
         return
-    raise ValueError(f"fora das pastas permitidas ({', '.join(roots)})")
+    raise ValueError(Mensagem("path.outside_roots", pastas=", ".join(roots)))
 
 
 def clean_path(raw: str, roots: tuple[str, ...]) -> str:
     """Normaliza um caminho absoluto vindo da tela (resolve '..' de forma lexica)."""
     path = (raw or "").strip()
     if not path.startswith("/"):
-        raise ValueError("use um caminho absoluto (comecando com /)")
+        raise ValueError(Mensagem("path.not_absolute"))
     if "\x00" in path or "\n" in path or "\r" in path:
-        raise ValueError("caractere invalido no caminho")
+        raise ValueError(Mensagem("path.bad_character"))
     if len(path) > FILE_PATH_MAX:
-        raise ValueError("caminho longo demais")
+        raise ValueError(Mensagem("path.too_long"))
     cleaned = _resolve_segments(path)
     _check_roots(cleaned, roots)
     return cleaned
@@ -235,7 +236,7 @@ def find_config_files(ssh_run: SshRun, server: ServerLike, root: str, globs: Ite
 def _parse_meta(head: str, campos: int) -> list[str]:
     meta = head.split("|")
     if meta[0] != "META" or len(meta) < campos:
-        raise RemoteError("resposta inesperada do container ao ler o arquivo")
+        raise RemoteError(Mensagem("file.unexpected_reply"))
     return meta
 
 
@@ -275,7 +276,7 @@ def read_file(
     try:
         raw = base64.b64decode(payload.strip() or "", validate=True)
     except ValueError as exc:  # binascii.Error e uma subclasse de ValueError
-        raise RemoteError("conteudo do arquivo chegou corrompido") from exc
+        raise RemoteError(Mensagem("file.corrupted")) from exc
     binary = b"\x00" in raw
     truncated = meta[6] == "tail"
     text = "" if binary else raw.decode("utf-8", "replace")
@@ -333,14 +334,14 @@ def ssh_stream_in(
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
     except OSError as exc:
-        raise RemoteError(f"falha ao executar ssh: {exc}") from exc
+        raise RemoteError(Mensagem("ssh.failed_to_run", motivo=exc)) from exc
 
     # Numa variavel local porque `Popen.stdin` e Optional no tipo (Popen sem PIPE nao
     # tem entrada) e porque ela e zerada no `finally` la embaixo - o `close()` de la
     # precisa falar do MESMO objeto que o laco usou.
     entrada = proc.stdin
     if entrada is None:
-        raise RemoteError("nao consegui abrir a entrada do ssh")
+        raise RemoteError(Mensagem("ssh.no_stdin"))
 
     try:
         while True:
@@ -366,7 +367,8 @@ def ssh_stream_in(
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
-        raise RemoteError(f"tempo esgotado ({timeout}s) enviando para {server['host']}") from None
+        raise RemoteError(Mensagem("ssh.upload_timeout", segundos=timeout,
+                                   host=server["host"])) from None
     if proc.returncode != 0:
         detalhe = (erro or saida or b"").decode("utf-8", "replace").strip()
         raise RemoteError(detalhe or f"falha ao enviar (exit {proc.returncode})")
@@ -386,7 +388,7 @@ def stream_remote_file(
     # `Popen.stdout` e Optional no tipo; aqui ele existe porque o PIPE foi pedido acima.
     saida = proc.stdout
     if saida is None:
-        raise RemoteError("nao consegui abrir a saida do ssh")
+        raise RemoteError(Mensagem("ssh.no_stdout"))
 
     def gerar() -> Iterator[bytes]:
         try:

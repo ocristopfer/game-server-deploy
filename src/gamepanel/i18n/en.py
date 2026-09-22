@@ -995,4 +995,49 @@ MENSAGENS: dict[str, str] = {
     "pattern.join": "join",
     "pattern.leave": "leave",
     "pattern.error": "error",
+
+    # -------------------------------------------------- consulta A2S
+    "a2s.truncated": "the server's answer ended sooner than expected",
+    "a2s.unterminated_text": "unterminated text in the answer",
+    "a2s.split_incomplete": "the split answer arrived incomplete",
+    "a2s.split_unknown": "split answer in an unknown format (compressed?)",
+    "a2s.unexpected_reply": "unexpected answer from the server (type {tipo})",
+    "a2s.no_reply": "no answer within {segundos}s on port {porta}/udp",
+    "a2s.query_failed": "could not query {host}:{porta} - {motivo}",
+
+    # -------------------------------- caminho e arquivo no container
+    "path.outside_roots": "outside the allowed folders ({pastas})",
+    "path.not_absolute": "use an absolute path (starting with /)",
+    "path.bad_character": "invalid character in the path",
+    "path.too_long": "path too long",
+    "file.unexpected_reply": "unexpected answer from the container while reading the file",
+    "file.corrupted": "the file's contents arrived corrupted",
+    "backup.bad_name": "invalid backup name",
+
+    # ----------------------------------------------------------- ssh
+    "ssh.failed_to_run": "could not run ssh: {motivo}",
+    "ssh.no_stdin": "I could not open ssh's input",
+    "ssh.no_stdout": "I could not open ssh's output",
+    "ssh.upload_timeout": "timed out ({segundos}s) uploading to {host}",
+
+    # ---------------------------------------------- api http do jogo
+    "http.bad_url": "invalid URL (e.g. http://127.0.0.1:8212/v1/api/players)",
+    "http.auth_failed": "the API answered {status} - check the admin user and password",
+    "http.bad_status": "the API answered HTTP {status}",
+    "http.reply_too_big": "the API's answer is too big to be read here",
+    "http.not_json": "the answer is not JSON: {amostra}",
+    "api.login_incomplete": "incomplete automatic login (the login URL or the token path is missing)",
+    "api.no_token_at": "the login answered, but I found no token at '{caminho}'",
+    "api.need_url": "enter the game's API URL",
+    "api.need_join_pattern": "enter the pattern of the player join line",
+    "api.need_query_port": "enter the server's query port (Steam query)",
+    "api.action_not_published": "this server does not publish that action",
+    "api.write_the_notice": "write the notice",
+    "api.no_player_id": "I do not know whom to kick: the API published no identifier for this player",
+
+    # ---------------------------------------- padrao de log e broker
+    "pattern.too_long": "the {rotulo} pattern is too long (the limit is {n} characters)",
+    "pattern.invalid": "invalid {rotulo} pattern: {motivo}",
+    "broker.bad_host_or_service": "the broker returned a host or service in an invalid format",
+    "broker.server_not_saved": "the server was not saved",
 }

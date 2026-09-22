@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable
 from typing import Any, NamedTuple
 
+from gamepanel.i18n import Mensagem
 from gamepanel.integrations import broker_client
 from gamepanel.services.server_service import HOST_RE, UNIT_RE
 
@@ -49,7 +50,7 @@ def cadastra_servidor(deps: BrokerJobDeps, r: dict) -> int:
     host = str(r["host"])
     servico = str(r["service"])
     if not HOST_RE.match(host) or not UNIT_RE.match(servico):
-        raise ValueError("o broker devolveu host ou servico com formato invalido")
+        raise ValueError(Mensagem("broker.bad_host_or_service"))
     deps.ensure_server(deps.servidor_do_deploy(
         name=str(r["name"])[:80], host=host, service=servico,
         game_port=" ".join(str(p) for p in r.get("ports") or []),
@@ -68,7 +69,7 @@ def cadastra_servidor(deps: BrokerJobDeps, r: dict) -> int:
     finally:
         conn.close()
     if linha is None:
-        raise ValueError("o servidor nao foi gravado")
+        raise ValueError(Mensagem("broker.server_not_saved"))
     return int(linha["id"])
 
 

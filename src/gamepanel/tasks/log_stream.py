@@ -139,8 +139,8 @@ class LogStream:
     def _acompanha(self) -> None:
         # Cadastro torto para aqui: nao adianta reconectar contra um regex que nao compila.
         try:
-            entrar = compile_pattern(self.dados.get("join_re"), "entrada")
-            sair = compile_pattern(self.dados.get("leave_re"), "saida")
+            entrar = compile_pattern(self.dados.get("join_re"), "pattern.join")
+            sair = compile_pattern(self.dados.get("leave_re"), "pattern.leave")
             alvo = log_path_valido(self.dados.get("log_path") or "")
         except (QueryError, ValueError) as exc:
             return self._desiste(str(exc))

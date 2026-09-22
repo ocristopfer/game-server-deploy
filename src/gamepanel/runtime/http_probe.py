@@ -18,6 +18,7 @@ import shlex
 from collections.abc import Callable
 from typing import Any
 
+from gamepanel.i18n import Mensagem
 from gamepanel.runtime.a2s import AuthError, QueryError
 from gamepanel.runtime.ssh import RemoteError, ServerLike
 
@@ -155,7 +156,7 @@ def http_json(
     """
     url = (url or "").strip()
     if len(url) > HTTP_URL_MAX or not URL_RE.match(url):
-        raise QueryError("URL invalida (ex.: http://127.0.0.1:8212/v1/api/players)")
+        raise QueryError(Mensagem("http.bad_url"))
     remote_cmd = " ".join(shlex.quote(p) for p in (
         "bash", "-lc", HTTP_FETCH_SCRIPT, "gp", url,
         auth_header(auth), (body or "").strip(), f"{timeout:g}",
@@ -169,18 +170,18 @@ def http_json(
     if status in (401, 403):
         # AuthError e uma QueryError especializada: quem tem login configurado usa
         # isso como gatilho para renovar o token em vez de so reportar o erro.
-        raise AuthError(f"a API respondeu {status} - confira o usuario/senha de admin")
+        raise AuthError(Mensagem("http.auth_failed", status=status))
     if status >= HTTP_ERROR_STATUS:
-        raise QueryError(f"a API respondeu HTTP {status}")
+        raise QueryError(Mensagem("http.bad_status", status=status))
     if len(text) > HTTP_MAX_BYTES:
-        raise QueryError("resposta da API grande demais para ser lida aqui")
+        raise QueryError(Mensagem("http.reply_too_big"))
     try:
         return json.loads(text)
     except ValueError:
         if not require_json:
             return {}
         sample = text.strip()[:120] or "(vazia)"
-        raise QueryError(f"a resposta nao e JSON: {sample}") from None
+        raise QueryError(Mensagem("http.not_json", amostra=sample)) from None
 
 
 # Chaves que os jogos costumam usar. Comparadas sem maiusculas nem separadores, entao

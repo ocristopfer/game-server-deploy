@@ -202,7 +202,7 @@ def alerta_de_log(deps: AlertDeps, conn: Any, server: ServerLike, anterior: dict
         return
     nome = server["name"]
     try:
-        regex = compile_pattern(padrao, "erro")
+        regex = compile_pattern(padrao, "pattern.error")
     except QueryError as exc:
         deps.logger.warning("expressao de erro de '%s' invalida: %s", nome, exc)
         return

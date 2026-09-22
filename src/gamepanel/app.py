@@ -2166,10 +2166,10 @@ def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
         saida["amostras"] = amostras
         if not testar:
             return saida
-        entrar = compile_pattern(join_re, "entrada")
+        entrar = compile_pattern(join_re, "pattern.join")
         if not entrar:
             raise QueryError("informe o padrao da linha de entrada")
-        sair = compile_pattern(leave_re, "saida")
+        sair = compile_pattern(leave_re, "pattern.leave")
         teste = _apply_log_events(linhas, entrar, sair)
         teste["casaram"] = [
             ln for ln in amostras
