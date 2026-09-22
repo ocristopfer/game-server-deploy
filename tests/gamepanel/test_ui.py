@@ -5,7 +5,7 @@ from gamepanel import navigation as ui
 
 
 def _chaves(itens):
-    return [i.chave for i in itens]
+    return [i.key for i in itens]
 
 
 def test_admin_com_broker_ve_tudo_na_barra_larga():
@@ -27,28 +27,28 @@ def test_operador_so_ve_o_que_pode_abrir():
 
 def test_toda_chave_da_barra_larga_existe_nas_listas_de_itens():
     """Uma chave digitada errada em NAV_DESKTOP_* explodiria so em runtime, na primeira pagina."""
-    for chave in ui.NAV_DESKTOP_BARRA + ui.NAV_DESKTOP_CONTA:
-        assert chave in ui._TODOS_OS_ITENS
+    for key in ui.NAV_DESKTOP_BAR + ui.NAV_DESKTOP_ACCOUNT:
+        assert key in ui._ALL_ITEMS
 
 
 def test_no_desktop_cada_destino_acende_o_proprio_item():
-    assert ui.nav_ativa_desktop_de("instances_list") == "instancias"
-    assert ui.nav_ativa_desktop_de("catalog_new") == "catalogo"
-    assert ui.nav_ativa_desktop_de("users_list") == "usuarios"
-    assert ui.nav_ativa_desktop_de("ssh_key") == "ssh"
-    assert ui.nav_ativa_desktop_de("account") == "conta"
+    assert ui.active_desktop_nav_for("instances_list") == "instancias"
+    assert ui.active_desktop_nav_for("catalog_new") == "catalogo"
+    assert ui.active_desktop_nav_for("users_list") == "usuarios"
+    assert ui.active_desktop_nav_for("ssh_key") == "ssh"
+    assert ui.active_desktop_nav_for("account") == "conta"
 
 
 def test_no_celular_a_aba_de_cima_continua_acesa():
     """So ha quatro abas embaixo: 'Instancias' acende 'Servidores' e 'Usuarios' acende 'Conta'."""
-    assert ui.nav_ativa_de("instances_list") == "servidores"
-    assert ui.nav_ativa_de("users_list") == "conta"
+    assert ui.active_nav_for("instances_list") == "servidores"
+    assert ui.active_nav_for("users_list") == "conta"
 
 
 def test_tela_de_servidor_acende_servidores_nos_dois():
-    assert ui.nav_ativa_desktop_de("server_detail") == "servidores"
-    assert ui.nav_ativa_desktop_de("history") == "historico"
-    assert ui.nav_ativa_desktop_de("rota_que_nao_existe") == ""
+    assert ui.active_desktop_nav_for("server_detail") == "servidores"
+    assert ui.active_desktop_nav_for("history") == "historico"
+    assert ui.active_desktop_nav_for("rota_que_nao_existe") == ""
 
 
 def test_barra_larga_usa_rotulo_curto_quando_ha(chefe, monkeypatch):

@@ -19,11 +19,11 @@
    sabe desenhar o que vier — e por isso uma tela nova aparece aqui sozinha. #}
 {% macro abas(server, ativa) %}
 <nav class="tabs" aria-label="{{ _('server.sections_of_this_server') }}">
-  {% for s in secoes_do_servidor %}
-    <a class="tabs__item" href="{{ url_for(endpoint_da_secao(s), sid=server.id) }}"
-       title="{{ _(s.ajuda) }}"
-       {% if s.chave == ativa %}aria-current="page"{% endif %}>
-      <span class="icone" aria-hidden="true">{{ s.icone }}</span>{{ _(s.rotulo) }}
+  {% for s in server_sections %}
+    <a class="tabs__item" href="{{ url_for(section_endpoint(s), sid=server.id) }}"
+       title="{{ _(s.help) }}"
+       {% if s.key == ativa %}aria-current="page"{% endif %}>
+      <span class="icone" aria-hidden="true">{{ s.icon }}</span>{{ _(s.label) }}
     </a>
   {% endfor %}
 </nav>
@@ -33,15 +33,15 @@
 {# ---------------------------------------------------------------- acoes
    Os botoes de ligar/desligar. `compacto` e a versao do cartao do painel: rotulo
    curto e botao esticado, porque ali eles dividem uma linha de celular. #}
-{% macro energia(server, acoes, compacto=false) %}
+{% macro power(server, actions, compacto=false) %}
 <div class="cluster energia">
-  {% for a in acoes %}
+  {% for a in actions %}
     {{ ui.acao(
-         url_for('server_action', sid=server.id, action=a.chave),
-         _(a.curto) if compacto else _(a.rotulo),
-         variante=a.variante,
-         icone=a.icone,
-         confirmar=(_(a.rotulo) ~ ' — ' ~ server.name ~ '?') if a.confirma else '',
+         url_for('server_action', sid=server.id, action=a.key),
+         _(a.short) if compacto else _(a.label),
+         variante=a.variant,
+         icone=a.icon,
+         confirmar=(_(a.label) ~ ' — ' ~ server.name ~ '?') if a.confirm else '',
          bloco=compacto) }}
   {% endfor %}
 </div>
@@ -53,13 +53,13 @@
    peso. Quem so queria reiniciar nao tropeca num update de 30 GB. #}
 {% macro manutencao(server, acoes) %}
 <div class="cluster">
-  {% for a in acoes %}
+  {% for a in actions %}
     {{ ui.acao(
-         url_for('server_action', sid=server.id, action=a.chave),
-         _(a.rotulo),
-         variante=a.variante,
-         icone=a.icone,
-         confirmar=(_(a.rotulo) ~ ' — ' ~ server.name ~ '?') if a.confirma else '') }}
+         url_for('server_action', sid=server.id, action=a.key),
+         _(a.label),
+         variante=a.variant,
+         icone=a.icon,
+         confirmar=(_(a.label) ~ ' — ' ~ server.name ~ '?') if a.confirm else '') }}
   {% endfor %}
 </div>
 {% endmacro %}
@@ -90,21 +90,21 @@
   </div>
 
   <div class="server__acoes">
-    {{ energia(server, energia_do_cartao(status.service), compacto=true) }}
+    {{ power(server, card_power(status.service), compacto=true) }}
     {% call ui.menu('', icone='⋯', titulo='Mais acoes em ' ~ server.name) %}
       <span class="menu__titulo">{{ server.name }}</span>
-      {% for s in secoes_do_servidor %}
-        <a class="menu__item" role="menuitem" href="{{ url_for(endpoint_da_secao(s), sid=server.id) }}">
-          <span class="icone" aria-hidden="true">{{ s.icone }}</span>{{ _(s.rotulo) }}
+      {% for s in server_sections %}
+        <a class="menu__item" role="menuitem" href="{{ url_for(section_endpoint(s), sid=server.id) }}">
+          <span class="icone" aria-hidden="true">{{ s.icon }}</span>{{ _(s.label) }}
         </a>
       {% endfor %}
       <hr class="menu__sep">
       <span class="menu__titulo">{{ _('server.server') }}</span>
-      {% for a in energia_restante(status.service) + acoes_de_manutencao %}
+      {% for a in remaining_power(status.service) + maintenance_actions %}
         {{ ui.menu_acao(
-             url_for('server_action', sid=server.id, action=a.chave),
-             _(a.rotulo), icone=a.icone,
-             confirmar=(_(a.rotulo) ~ ' — ' ~ server.name ~ '?') if a.confirma else '') }}
+             url_for('server_action', sid=server.id, action=a.key),
+             _(a.label), icone=a.icon,
+             confirmar=(_(a.label) ~ ' — ' ~ server.name ~ '?') if a.confirm else '') }}
       {% endfor %}
     {% endcall %}
   </div>

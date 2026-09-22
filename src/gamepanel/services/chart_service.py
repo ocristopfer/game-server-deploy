@@ -96,14 +96,14 @@ def build_chart(samples, series, ceiling: float, start, end, time_format: str,
     lines_of = []
     for serie in series:
         segmentos, ponta = _series_segments(
-            samples, serie["chave"], px, py, sample_step)
+            samples, serie["key"], px, py, sample_step)
         if not segmentos:
             continue
         lines_of.append({
-            "chave": serie["chave"],
-            "rotulo": serie["rotulo"],
-            "cor": serie["cor"],
-            "sufixo": serie.get("sufixo", ""),
+            "key": serie["key"],
+            "label": serie["label"],
+            "color": serie["color"],
+            "suffix": serie.get("suffix", ""),
             # Um segmento de um ponto so nao vira polyline (nao teria comprimento): vira
             # um ponto desenhado, senao a amostra solta sumiria da tela.
             "tracos": [" ".join(s) for s in segmentos if len(s) > 1],
@@ -126,13 +126,13 @@ def build_chart(samples, series, ceiling: float, start, end, time_format: str,
         valor = ceiling * fatia
         grade.append({
             "y": py(valor),
-            "rotulo": f"{valor:g}" + (series[0].get("sufixo", "") if series else ""),
+            "label": f"{valor:g}" + (series[0].get("suffix", "") if series else ""),
         })
 
     tempos = []
     for i in range(CHART_TICKS):
         quando = start + timedelta(seconds=span * i / (CHART_TICKS - 1))
-        tempos.append({"x": px(quando), "rotulo": quando.astimezone().strftime(time_format)})
+        tempos.append({"x": px(quando), "label": quando.astimezone().strftime(time_format)})
 
     return {
         "linhas": lines_of,

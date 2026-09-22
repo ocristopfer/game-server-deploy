@@ -61,9 +61,9 @@
      icone de proposito: seis rotulos com icone nao cabem na coluna do conteudo e o
      texto sozinho ja diz onde cada um leva. #}
   <nav class="appbar__nav" aria-label="{{ _('nav.main') }}">
-    {% for item in nav_desktop_barra %}
+    {% for item in nav_desktop_bar %}
       <a href="{{ url_for(item.endpoint) }}"
-         {% if item.chave == nav_ativa_desktop %}aria-current="page"{% endif %}>{{ _(item.curto or item.rotulo) }}</a>
+         {% if item.key == nav_active_desktop %}aria-current="page"{% endif %}>{{ _(item.short or item.label) }}</a>
     {% endfor %}
   </nav>
 
@@ -75,9 +75,9 @@
   {# Celular: o "⋯" com o que nao coube nas abas de baixo. #}
   {% call ui.menu('', icone='⋯', titulo=_('nav.more'), classe='menu--movel') %}
     <span class="menu__titulo">{{ current_user }} &middot; {{ role_label }}</span>
-    {% for item in nav_secundaria %}
+    {% for item in nav_secondary %}
       <a class="menu__item" role="menuitem" href="{{ url_for(item.endpoint) }}">
-        <span class="icone" aria-hidden="true">{{ item.icone }}</span>{{ _(item.rotulo) }}
+        <span class="icone" aria-hidden="true">{{ item.icon }}</span>{{ _(item.label) }}
       </a>
     {% endfor %}
     <hr class="menu__sep">
@@ -88,10 +88,10 @@
      e, sem abrir nada). Os dois menus existem na pagina; o CSS mostra um por vez. #}
   {% call ui.menu(current_user, icone='👤', titulo='Conta de ' ~ current_user, classe='menu--conta') %}
     <span class="menu__titulo">{{ role_label }}</span>
-    {% for item in nav_desktop_conta %}
+    {% for item in nav_desktop_account %}
       <a class="menu__item" role="menuitem" href="{{ url_for(item.endpoint) }}"
-         {% if item.chave == nav_ativa_desktop %}aria-current="page"{% endif %}>
-        <span class="icone" aria-hidden="true">{{ item.icone }}</span>{{ _(item.rotulo) }}
+         {% if item.key == nav_active_desktop %}aria-current="page"{% endif %}>
+        <span class="icone" aria-hidden="true">{{ item.icon }}</span>{{ _(item.label) }}
       </a>
     {% endfor %}
     <hr class="menu__sep">
@@ -121,11 +121,11 @@
 
 {% if current_user %}
 <nav class="tabbar" aria-label="{{ _('nav.main') }}">
-  {% for item in nav_principal %}
+  {% for item in nav_main %}
     <a class="tabbar__item" href="{{ url_for(item.endpoint) }}"
-       {% if item.chave == nav_ativa %}aria-current="page"{% endif %}>
-      <span class="icone" aria-hidden="true">{{ item.icone }}</span>
-      <span>{{ _(item.rotulo) }}</span>
+       {% if item.key == nav_active %}aria-current="page"{% endif %}>
+      <span class="icone" aria-hidden="true">{{ item.icon }}</span>
+      <span>{{ _(item.label) }}</span>
     </a>
   {% endfor %}
 </nav>

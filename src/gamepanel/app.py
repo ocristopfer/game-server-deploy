@@ -627,10 +627,10 @@ def current_language() -> str:
     return escolhido
 
 
-def translate(chave: str, **campos: object) -> str:
+def translate(key: str, **campos: object) -> str:
     """O `_()` das telas e das mensagens: a frase daquela chave, no idioma
     deste pedido."""
-    return i18n.translate(chave, current_language(), **campos)
+    return i18n.translate(key, current_language(), **campos)
 
 
 
@@ -645,7 +645,7 @@ def error_text(exc: BaseException) -> str:
         return exc.args[0]
     return str(exc)
 
-def label_for_db(chave: str) -> str:
+def label_for_db(key: str) -> str:
     """A frase daquela chave no idioma do DEPLOY, nao no de quem esta com a tela aberta.
 
     Para texto que vai ser GRAVADO (a coluna `command` de um job, por exemplo). O
@@ -653,10 +653,10 @@ def label_for_db(chave: str) -> str:
     saisse no idioma de quem clicou, a mesma acao apareceria escrita de tres jeitos na
     mesma lista, e filtrar por ela deixaria de funcionar.
     """
-    return i18n.translate(chave, DEFAULT_LANG)
+    return i18n.translate(key, DEFAULT_LANG)
 
 
-def translate_html(chave: str, **campos: object) -> Markup:
+def translate_html(key: str, **campos: object) -> Markup:
     """O `_h()` das telas: frase que TRAZ marcacao (`<strong>`, `<code>`).
 
     Existe porque paragrafo de ajuda nao se parte: quebrar o texto em cada `<strong>`
@@ -671,7 +671,7 @@ def translate_html(chave: str, **campos: object) -> Markup:
     # A frase vem de `i18n`, que e codigo deste repositorio, e todo campo passou por
     # `escape` na linha de baixo: nao ha entrada de usuario chegando crua aqui.
     return Markup(i18n.translate(  # noqa: S704
-        chave, current_language(), **{nome: escape(valor) for nome, valor in campos.items()}
+        key, current_language(), **{nome: escape(valor) for nome, valor in campos.items()}
     ))
 
 
@@ -682,7 +682,7 @@ def labels_of(tabela: dict[str, str]) -> dict[str, str]:
     catalogo e nao a frase: a chave e o que vai para o banco e para o `<option value=>`,
     e ela nao pode mudar so porque alguem corrigiu uma virgula no texto.
     """
-    return {chave: translate(rotulo) for chave, rotulo in tabela.items()}
+    return {key: translate(label) for key, label in tabela.items()}
 
 @app.context_processor
 def _inject():
@@ -725,22 +725,22 @@ def _navigation_context() -> dict:
     "Graficos" existia numa tela e nao na outra.
     """
     admin = is_admin()
-    secoes = ui.secoes_visiveis(admin=admin, arquivos=ALLOW_FILES, shell=ALLOW_SHELL)
+    secoes = ui.visible_sections(admin=admin, arquivos=ALLOW_FILES, shell=ALLOW_SHELL)
     tem_pty = ALLOW_SHELL and HAVE_PTY
     barra, conta = ui.nav_desktop(admin=admin, broker=ALLOW_BROKER)
     return {
-        "nav_principal": ui.itens_visiveis(ui.NAV_PRINCIPAL, admin=admin, broker=ALLOW_BROKER),
-        "nav_secundaria": ui.itens_visiveis(ui.NAV_SECUNDARIA, admin=admin, broker=ALLOW_BROKER),
-        "nav_ativa": ui.nav_ativa_de(request.endpoint),
-        "nav_desktop_barra": barra,
-        "nav_desktop_conta": conta,
-        "nav_ativa_desktop": ui.nav_ativa_desktop_de(request.endpoint),
-        "secoes_do_servidor": secoes,
-        "endpoint_da_secao": lambda secao: ui.endpoint_da_secao(secao, tem_pty=tem_pty),
-        "acoes_de_energia": ui.acoes_do_grupo(ui.GRUPO_ENERGIA),
-        "acoes_de_manutencao": ui.acoes_do_grupo(ui.GRUPO_MANUTENCAO),
-        "energia_do_cartao": ui.energia_do_cartao,
-        "energia_restante": ui.energia_restante,
+        "nav_main": ui.visible_items(ui.NAV_MAIN, admin=admin, broker=ALLOW_BROKER),
+        "nav_secondary": ui.visible_items(ui.NAV_SECONDARY, admin=admin, broker=ALLOW_BROKER),
+        "nav_active": ui.active_nav_for(request.endpoint),
+        "nav_desktop_bar": barra,
+        "nav_desktop_account": conta,
+        "nav_active_desktop": ui.active_desktop_nav_for(request.endpoint),
+        "server_sections": secoes,
+        "section_endpoint": lambda secao: ui.section_endpoint(secao, tem_pty=tem_pty),
+        "power_actions": ui.actions_in_group(ui.GROUP_POWER),
+        "maintenance_actions": ui.actions_in_group(ui.GROUP_MAINTENANCE),
+        "card_power": ui.card_power,
+        "remaining_power": ui.remaining_power,
     }
 
 
@@ -1034,13 +1034,13 @@ COMANDOS = {
 
 # As duas listas nao podem divergir em silencio: uma acao com botao e sem comando da
 # 500 no clique, e uma com comando e sem botao e codigo morto que ninguem percebe.
-assert set(COMANDOS) == set(ui.POR_CHAVE), "ui.ACOES e COMANDOS fora de sincronia"
+assert set(COMANDOS) == set(ui.BY_KEY), "ui.ACOES e COMANDOS fora de sincronia"
 
 # Forma antiga, montada a partir das duas: chave -> (rotulo, comando, confirma).
 # Continua sendo o que `start_job` e o historico consomem.
 ACTIONS = {
-    chave: (ui.POR_CHAVE[chave].rotulo, comando, ui.POR_CHAVE[chave].confirma)
-    for chave, comando in COMANDOS.items()
+    key: (ui.BY_KEY[key].label, comando, ui.BY_KEY[key].confirm)
+    for key, comando in COMANDOS.items()
 }
 
 JOB_LABELS = {key: label for key, (label, _cmd, _c) in ACTIONS.items()}
@@ -1273,17 +1273,17 @@ LOG_ERR_LINES = 200
 LOG_ERR_COOLDOWN = float(os.environ.get("GAMEPANEL_LOG_ERR_COOLDOWN", "600"))
 
 
-def config_get(conn: sqlite3.Connection, chave: str, padrao: str = "") -> str:
-    row = conn.execute("SELECT value FROM settings WHERE key = ?", (chave,)).fetchone()
+def config_get(conn: sqlite3.Connection, key: str, padrao: str = "") -> str:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
     return row["value"] if row else padrao
 
 
-def config_set(conn: sqlite3.Connection, chave: str, valor: str) -> None:
+def config_set(conn: sqlite3.Connection, key: str, valor: str) -> None:
     with conn:
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?, ?)"
             " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (chave, valor),
+            (key, valor),
         )
 
 
@@ -2031,15 +2031,15 @@ def login_2fa():
         flash(translate("flash.verification_expired"), "error")
         return redirect(url_for("login"))
     if request.method == "POST":
-        chave = f"2fa|{row['username'].lower()}"
-        restante = _lockout_remaining(chave, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA)
+        key = f"2fa|{row['username'].lower()}"
+        restante = _lockout_remaining(key, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA)
         if restante:
             flash(translate("flash.too_many_tries", n=restante), "error")
             return render_template("login_2fa.html"), 429
         if _confere_segundo_fator(row, request.form.get("codigo", "")):
-            _clear_fails(chave)
+            _clear_fails(key)
             return _abre_sessao(row, pendente.get("proximo", ""))
-        _record_fail(chave)
+        _record_fail(key)
         flash(translate("flash.code_invalid_or_used"), "error")
         return render_template("login_2fa.html"), 401
     return render_template("login_2fa.html")
@@ -2318,7 +2318,7 @@ def player_action(sid: int):
     voltar = url_for("server_detail", sid=sid)
 
     try:
-        rotulo = translate(run_player_action(server, acao, jogador, message))
+        label = translate(run_player_action(server, acao, jogador, message))
     except (QueryError, RemoteError) as exc:
         log_job("player-action", server, session.get("username", "?"),
                 command=registro, output=str(exc), status="error")
@@ -2329,7 +2329,7 @@ def player_action(sid: int):
             command=registro, output="a API aceitou o pedido")
     # A contagem fica alguns segundos em cache e ainda tem quem acabou de sair.
     invalidate_players(sid)
-    flash(translate("flash.player_action_done", label=rotulo, who=quem)
+    flash(translate("flash.player_action_done", label=label, who=quem)
           if acao != "announce"
           else translate("flash.notice_sent", message=message), "ok")
     return redirect(voltar)
@@ -2372,8 +2372,8 @@ def _form_server(form) -> tuple[dict, list[str]]:
 _log_path = server_service._log_path
 
 
-def _pattern(valor: str | None, rotulo: str, errors: list[str]) -> str:
-    return server_service._pattern(valor, rotulo, RE_MAX_LEN, errors)
+def _pattern(valor: str | None, label: str, errors: list[str]) -> str:
+    return server_service._pattern(valor, label, RE_MAX_LEN, errors)
 
 
 def _http_fields(form, errors: list[str]) -> dict:
@@ -3486,8 +3486,8 @@ def _edit_from_row(form, i: int, nome_arquivo: str, erros: list[str]) -> gamecon
     recusou. Os tres estao aqui juntos porque sao a mesma pergunta: "esta linha tem algo
     para gravar?".
     """
-    chave = (form.get(f"key.{i}", "") or "").strip()
-    if not chave:
+    key = (form.get(f"key.{i}", "") or "").strip()
+    if not key:
         return None
 
     valor = (form.get(f"val.{i}", "") or "").replace("\r", "")
@@ -3495,18 +3495,18 @@ def _edit_from_row(form, i: int, nome_arquivo: str, erros: list[str]) -> gamecon
     if ident and valor == (form.get(f"orig.{i}", "") or "").replace("\r", ""):
         return None  # campo intocado: nao reescreve a linha
 
-    spec = gamefields.describe(nome_arquivo, chave) if nome_arquivo else None
+    spec = gamefields.describe(nome_arquivo, key) if nome_arquivo else None
     if spec:
         problema = spec.validate(valor)
         if problema:
-            erros.append(f"{spec.label or chave}: {problema}")
+            erros.append(f"{spec.label or key}: {problema}")
             return None
         valor = spec.from_display(valor)
 
     return gameconf.Edit(
         id=ident,
         section=urllib.parse.unquote(form.get(f"sec.{i}", "") or ""),
-        key=chave,
+        key=key,
         value=valor,
     )
 
@@ -3857,10 +3857,10 @@ def instance_deactivate(iid: int):
 @admin_required
 @broker_required
 def instance_remove(iid: int):
-    confirma = (request.form.get("confirma") or "").strip()
+    confirm = (request.form.get("confirma") or "").strip()
     somente_banco = request.form.get("somente_banco") == "1"
     try:
-        broker_client.remove(iid, confirma, _ator(), somente_banco)
+        broker_client.remove(iid, confirm, _ator(), somente_banco)
     except broker_client.BrokerError as erro:
         _log_broker_action("broker-remover", _ator(), f"instancia {iid}", erro.message, "error")
         flash(translate("flash.broker_error", reason=erro.message), "error")
@@ -3955,7 +3955,7 @@ def schedules(sid: int):
         "schedules.html", server=server, tarefas=tarefas, proximas=proximas,
         acoes=SCHEDULE_ACTIONS, job_labels=labels_of(JOB_LABELS),
         dias=[translate(d) for d in WEEKDAYS],
-        rotulo=schedule_label, agora=agora, max_horas=EVERY_HOURS_MAX,
+        label=schedule_label, agora=agora, max_horas=EVERY_HOURS_MAX,
     )
 
 
@@ -4079,14 +4079,14 @@ def charts(sid: int):
     formato = "%d/%m" if horas > 48 else "%H:%M"
     uso = build_chart(
         amostras,
-        [{"chave": "cpu", "rotulo": "CPU", "cor": CHART_CPU, "sufixo": "%"},
-         {"chave": "mem", "rotulo": "Memoria", "cor": CHART_MEM, "sufixo": "%"}],
+        [{"key": "cpu", "label": "CPU", "color": CHART_CPU, "suffix": "%"},
+         {"key": "mem", "label": "Memoria", "color": CHART_MEM, "suffix": "%"}],
         100, inicio, fim, formato,
     )
     pico = max((v["players"] for _, v in amostras if v["players"] is not None), default=0)
     jogadores = build_chart(
         amostras,
-        [{"chave": "players", "rotulo": "Jogadores", "cor": CHART_CPU}],
+        [{"key": "players", "label": "Jogadores", "color": CHART_CPU}],
         _clean_ceiling(pico), inicio, fim, formato,
     )
 
@@ -4245,16 +4245,16 @@ def _password_and_code_ok(uid: int) -> tuple[sqlite3.Row | None, str]:
     """Para desligar o 2FA ou pedir codigos novos: a senha E um codigo. Quem esta logado ja
     provou os dois no login, mas uma sessao esquecida aberta nao pode desligar a protecao."""
     row = db().execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
-    chave = f"2fa|{row['username'].lower()}"
-    if _lockout_remaining(chave, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA):
+    key = f"2fa|{row['username'].lower()}"
+    if _lockout_remaining(key, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA):
         return None, "Muitas tentativas. Espere alguns minutos."
     if not verify_password(request.form.get("senha", ""), row["password_hash"]):
-        _record_fail(chave)
+        _record_fail(key)
         return None, "Senha incorreta."
     if not _confere_segundo_fator(row, request.form.get("codigo", "")):
-        _record_fail(chave)
+        _record_fail(key)
         return None, "Codigo invalido ou ja usado."
-    _clear_fails(chave)
+    _clear_fails(key)
     return row, ""
 
 
@@ -4383,7 +4383,7 @@ def alerts_save():
     """So o que vale para todos os destinos: hoje, os limites de disco, memoria e CPU."""
     conn = db()
     novos = []
-    for campo, chave, nome in LIMITES_ALERTA:
+    for campo, key, nome in LIMITES_ALERTA:
         # Campo que nem veio no formulario fica como esta. Tratar ausencia como erro
         # faria um formulario sem o campo derrubar um limite que ja estava certo.
         if campo not in request.form:
@@ -4392,11 +4392,11 @@ def alerts_save():
         if not valor.isdigit() or not 50 <= int(valor) <= 100:
             flash(translate("flash.threshold_range", name=nome), "error")
             return redirect(url_for("alerts"))
-        novos.append((chave, valor))
+        novos.append((key, valor))
     # So grava depois de validar todos: meio salvo e pior que nada salvo, porque a tela
     # volta dizendo "recusado" enquanto um dos limites ja mudou por baixo.
-    for chave, valor in novos:
-        config_set(conn, chave, valor)
+    for key, valor in novos:
+        config_set(conn, key, valor)
     _reset_baseline()
     flash(translate("flash.preferences_saved"), "ok")
     return redirect(url_for("alerts"))
@@ -4515,11 +4515,11 @@ def alerts_hook_test(hid: int):
 # ------------------------------------------------------------------ usuarios
 
 
-def validate_password(nova: str, confirma: str) -> str:
+def validate_password(nova: str, confirm: str) -> str:
     """Devolve a mensagem de erro; string vazia quando a senha serve."""
     if len(nova) < PASSWORD_MIN:
         return f"A senha precisa ter ao menos {PASSWORD_MIN} caracteres."
-    if nova != confirma:
+    if nova != confirm:
         return "A confirmacao nao confere."
     return ""
 

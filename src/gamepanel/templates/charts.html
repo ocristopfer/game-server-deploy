@@ -33,29 +33,29 @@
        data-inicio="{{ g.inicio_ms }}" data-span="{{ g.span_s }}">
     {% for linha in g.grade %}
       <line class="grade" x1="{{ g.l }}" y1="{{ linha.y }}" x2="{{ g.r }}" y2="{{ linha.y }}"/>
-      <text class="tick" x="{{ g.l - 8 }}" y="{{ linha.y + 4 }}" text-anchor="end">{{ linha.rotulo }}</text>
+      <text class="tick" x="{{ g.l - 8 }}" y="{{ linha.y + 4 }}" text-anchor="end">{{ linha.label }}</text>
     {% endfor %}
     {% for t in g.tempos %}
-      <text class="tick" x="{{ t.x }}" y="{{ g.h - 8 }}" text-anchor="middle">{{ t.rotulo }}</text>
+      <text class="tick" x="{{ t.x }}" y="{{ g.h - 8 }}" text-anchor="middle">{{ t.label }}</text>
     {% endfor %}
     <line class="eixo" x1="{{ g.l }}" y1="{{ g.b }}" x2="{{ g.r }}" y2="{{ g.b }}"/>
     <line class="mira" x1="0" y1="{{ g.t }}" x2="0" y2="{{ g.b }}"/>
 
     {% for s in g.linhas %}
       {% for traco in s.tracos %}
-        <polyline class="serie" points="{{ traco }}" stroke="{{ s.cor }}"
-                  data-serie="{{ s.rotulo }}" data-sufixo="{{ s.sufixo }}"/>
+        <polyline class="serie" points="{{ traco }}" stroke="{{ s.color }}"
+                  data-serie="{{ s.label }}" data-sufixo="{{ s.suffix }}"/>
       {% endfor %}
       {% for ponto in s.pontos %}
-        <circle class="solto" cx="{{ ponto.split(',')[0] }}" cy="{{ ponto.split(',')[1] }}" r="2.5" fill="{{ s.cor }}"/>
+        <circle class="solto" cx="{{ ponto.split(',')[0] }}" cy="{{ ponto.split(',')[1] }}" r="2.5" fill="{{ s.color }}"/>
       {% endfor %}
       {% if s.ponta %}
         {# Rotulo direto na ponta: e o que faz o valor nao depender do balaozinho.
            Some quando as duas pontas se encostam (ver rotula_ponta) — ali a legenda,
            a mira e a tabela e que carregam o numero. #}
-        <circle cx="{{ s.ponta.x }}" cy="{{ s.ponta.y }}" r="4" fill="{{ s.cor }}"/>
+        <circle cx="{{ s.ponta.x }}" cy="{{ s.ponta.y }}" r="4" fill="{{ s.color }}"/>
         {% if g.rotula_ponta %}
-        <text class="ponta" x="{{ s.ponta.x + 9 }}" y="{{ s.ponta.y + 4 }}">{{ '%g' % s.ponta.valor }}{{ s.sufixo }}</text>
+        <text class="ponta" x="{{ s.ponta.x + 9 }}" y="{{ s.ponta.y + 4 }}">{{ '%g' % s.ponta.valor }}{{ s.suffix }}</text>
         {% endif %}
       {% endif %}
     {% endfor %}

@@ -107,8 +107,8 @@ class BrokerFalso:
         self._chama("deactivate", instancia_id, ator)
         return {"id": instancia_id, "estado": "desativada"}
 
-    def remove(self, instancia_id, confirma, ator, somente_banco=False):
-        self._chama("remove", instancia_id, confirma, ator, somente_banco)
+    def remove(self, instancia_id, confirm, ator, somente_banco=False):
+        self._chama("remove", instancia_id, confirm, ator, somente_banco)
         return {"id": instancia_id, "removida": True}
 
     def chamou(self, nome: str) -> list[tuple]:
@@ -259,7 +259,7 @@ def test_operador_leva_403_antes_mesmo_de_chegar_no_guarda_do_2fa(peao, broker):
 
 def test_itens_visiveis_filtra_por_recurso_e_papel():
     def chaves(**kw):
-        return {i.chave for i in ui.itens_visiveis(ui.NAV_SECUNDARIA, **kw)}
+        return {i.key for i in ui.visible_items(ui.NAV_SECONDARY, **kw)}
 
     assert {"instancias", "catalogo"} <= chaves(admin=True, broker=True)
     assert not {"instancias", "catalogo"} & chaves(admin=True, broker=False)

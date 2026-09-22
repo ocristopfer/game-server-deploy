@@ -7,6 +7,7 @@ A parte que erra num grafico nao e o desenho, e a conta: um buraco virando linha
 o grafico MENTIR (diz que o servidor rodou liso enquanto estava fora do ar), e um valor
 fora da moldura vaza por cima do resto da tela. E isso que esta testado aqui.
 """
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -15,9 +16,9 @@ from gamepanel import app as panel
 
 INICIO = datetime(2026, 8, 18, 0, 0, tzinfo=timezone.utc)
 FIM = INICIO + timedelta(hours=24)
-SERIE_CPU = [{"chave": "cpu", "rotulo": "CPU", "cor": "#3987e5", "sufixo": "%"}]
+SERIE_CPU = [{"key": "cpu", "label": "CPU", "color": "#3987e5", "suffix": "%"}]
 DUAS_SERIES = SERIE_CPU + [
-    {"chave": "mem", "rotulo": "Memoria", "cor": "#d95926", "sufixo": "%"}]
+    {"key": "mem", "label": "Memoria", "color": "#d95926", "suffix": "%"}]
 
 
 def amostras(valores, passo_min=5, inicio=None):
@@ -130,14 +131,14 @@ def test_pontas_coladas_perdem_o_rotulo_mas_nao_o_ponto():
 
 def test_grade_leva_o_sufixo_da_serie():
     g = grafico(amostras([10, 20]))
-    assert [l["rotulo"] for l in g["grade"]] == ["0%", "50%", "100%"]
+    assert [l["label"] for l in g["grade"]] == ["0%", "50%", "100%"]
     assert len(g["tempos"]) == panel.CHART_TICKS
 
 
 def test_grade_sem_sufixo_quando_a_serie_nao_tem():
-    sem_sufixo = [dict(SERIE_CPU[0], sufixo="")]
+    sem_sufixo = [dict(SERIE_CPU[0], suffix="")]
     g = grafico(amostras([1, 2]), sem_sufixo, teto=12)
-    assert [l["rotulo"] for l in g["grade"]] == ["0", "6", "12"]
+    assert [l["label"] for l in g["grade"]] == ["0", "6", "12"]
 
 
 # ------------------------------------------------------- coleta e retencao
@@ -222,3 +223,28 @@ def test_faixa_de_tempo_nunca_quebra_a_tela(banco, chefe, faixa):
 
 def test_servidor_que_nao_existe_da_404(chefe):
     assert chefe.get("/servers/9999/graficos").status_code == 404
+
+
+def test_o_svg_desenhado_traz_os_rotulos_dos_eixos(banco, chefe):
+    """Renderiza a TELA, e nao so o dicionario que a alimenta.
+
+    Havia teste de sobra para `build_chart` e nenhum para o `charts.html`, e foi por ali
+    que passou um defeito de verdade: renomear a chave `rotulo` do dicionario sem mexer
+    no template deixou todo `<text class="tick">` VAZIO. A pagina continuou respondendo
+    200, o SVG continuou no lugar, e nenhum teste piscou -- o eixo e que ficou sem
+    numero. E o caso que o CLAUDE.md descreve: template quebrado nao aparece em teste.
+    """
+    sid = register_server(banco, "alvo3", "outro3.invalid")
+    agora = datetime.now(timezone.utc)
+    for i in range(5):
+        banco.execute(
+            "INSERT INTO samples (server_id, taken_at, cpu_pct, mem_pct, players)"
+            " VALUES (?,?,?,?,?)",
+            (sid, (agora - timedelta(minutes=i * 5)).isoformat(),
+             20.0 + i, 40.0 + i, 0))
+    banco.commit()
+
+    html = chefe.get(f"/servers/{sid}/graficos").get_data(as_text=True)
+    ticks = re.findall(r'<text class="tick"[^>]*>([^<]*)</text>', html)
+    assert ticks, "o SVG nao trouxe nenhum rotulo de eixo"
+    assert all(t.strip() for t in ticks), f"rotulo de eixo vazio: {ticks}"
