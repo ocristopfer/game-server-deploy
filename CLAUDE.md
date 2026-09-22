@@ -149,6 +149,14 @@ dessas tabelas.
   Como consequencia **nao existe Python instalado nesta maquina de desenvolvimento**: o
   `Import "flask" could not be resolved` do Pylance e esperado e nao se conserta no
   codigo. Quem tem Flask e o container — e por isso que os testes rodam la dentro.
+- **QR code e codigo proprio, so stdlib** (`qr.py`: modo byte, correcao M, versoes 1-10 da ISO
+  18004). Existe pela mesma razao do TOTP: sem pip, nao ha biblioteca de QR. A suite
+  (`test_qr.py`) prova a matematica sem precisar de um leitor de verdade — Reed-Solomon com
+  resto zero nas raizes do gerador, e a distancia minima 7 do BCH(15,5) dos bits de formato —
+  porque `opencv-python-headless` (o decodificador de verdade) passa de 60 MB e nao entra no
+  `.venv` nem no painel. **Depois de mexer em `qr.py`, rode `tools/verificar-qr.py`** numa venv
+  DESCARTAVEL com `opencv-python-headless` e `segno` (nunca no `admin/requirements-dev.txt`):
+  ele desenha o QR e confere que a camera (via OpenCV) le de volta o texto certo.
 - **Segundo fator (2FA) e TOTP proprio, so stdlib** (`totp.py`, testado contra os vetores do RFC
   6238). Regras que os testes de `test_2fa.py` guardam: senha certa com 2FA NAO abre sessao (so grava
   `pre2fa`, sem `uid`, por 5 min); codigo usado nao vale de novo (`totp_last_step`, e o `UPDATE ... WHERE
@@ -157,8 +165,18 @@ dessas tabelas.
   8 codigos de uso unico, so o hash no banco. `GAMEPANEL_REQUIRE_2FA=1` (`ADMIN_REQUIRE_2FA` no `.env`)
   tranca quem nao ativou na tela de ativacao: so ligue DEPOIS de todo admin ter ativado. Saida de
   emergencia: `python3 /opt/gamepanel/app.py --reset-2fa USUARIO` no CT do painel, ou "Desligar 2FA"
-  em Usuarios. Nao ha QR code (nao ha biblioteca e o painel nao baixa nada): a tela mostra a chave
-  para digitar e um link `otpauth://` que abre o aplicativo no celular.
+  em Usuarios. A tela de ativacao mostra um QR code (`qr.py`, ver acima) para escanear, a chave em
+  texto para digitar a mao e um link `otpauth://` que abre o aplicativo no proprio celular.
+- **`broker_required` (app.py) tambem exige o 2FA DA PESSOA, sempre** — independente de
+  `GAMEPANEL_REQUIRE_2FA` (que e sobre o painel inteiro). O broker cria/apaga CT e abre porta no
+  OPNsense; e a unica barreira que sobra se uma sessao de admin for roubada. GET normal sem 2FA
+  redireciona para `/account/2fa`; POST idem (nada e executado); `/api/...` responde 403 em JSON.
+  A ordem importa: `GAMEPANEL_ALLOW_BROKER=0` ainda vence e mostra a mensagem dele, mesmo para
+  quem nao tem 2FA (`test_allow_broker_desligado_vence_mesmo_para_quem_nao_tem_2fa`). Por isso,
+  **em `test_broker.py` (so nele) a fixture `chefe` ja vem com 2FA ativo** (override local que
+  usa `chefe_2fa` do `conftest.py`) — sem isso quase todo teste do arquivo cairia na tela de
+  ativacao em vez de exercitar o que quer testar; `sem_2fa` e o admin sem 2FA, para provar a
+  exigencia em si.
 - **`provision-admin-lxc.sh` reescreve o `panel.env` INTEIRO**; as linhas `GAMEPANEL_BROKER_*` e
   `GAMEPANEL_ALLOW_BROKER` que o `deploy-broker.ps1 -ConfigurarPainel` grava sao preservadas de
   proposito (antes um `-Full` do painel desligava o broker em silencio). Opcao nova de painel =
