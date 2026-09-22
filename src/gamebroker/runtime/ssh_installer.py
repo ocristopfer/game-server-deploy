@@ -43,7 +43,7 @@ CAUDA_DE_ERRO = 6
 _BLOB_RE = re.compile(r"[A-Za-z0-9+/=]{20,}", re.ASCII)
 
 
-class ErroDeInstalacao(RuntimeError):
+class InstallError(RuntimeError):
     """A instalacao (ou a limpeza da chave) falhou. A mensagem vai para o log da operacao."""
 
 
@@ -62,7 +62,7 @@ class ExecutorReal:
                                     stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                                     errors="replace", bufsize=1)
         except OSError as erro:
-            raise ErroDeInstalacao(f"nao consegui executar {argv[0]}: {erro.strerror}") from None
+            raise InstallError(f"nao consegui executar {argv[0]}: {erro.strerror}") from None
         # A leitura de linhas bloqueia; quem impoe o prazo e um timer que mata o processo.
         clock = threading.Timer(timeout, proc.kill)
         clock.start()
@@ -82,7 +82,7 @@ class ExecutorReal:
 class ConfigSsh:
     chave_privada: Path
     chave_publica: str          # linha completa da chave do broker, a que foi injetada no CT
-    pasta_lib: Path             # onde estao ct-install.sh e ct-fases.sh
+    lib_dir: Path             # onde estao ct-install.sh e ct-fases.sh
     usuario: str = "root"
     espera_ssh: float = 180.0
     intervalo: float = 3.0
@@ -105,7 +105,7 @@ def build_env(jogo: Game, ports: Sequence[AllocatedPort]) -> str:
     """O `install.env` do CT. Cada valor entre aspas: e DADO, nunca comando."""
     runtimes = [r for r in jogo.recipes if r in RECIPES_WINDOWS]
     if len(runtimes) > 1:
-        raise ErroDeInstalacao("escolha 'wine' OU 'proton', nao os dois")
+        raise InstallError("escolha 'wine' OU 'proton', nao os dois")
     # Porta interna == externa (ver services/allocator.py): o jogo e avisado das portas JA alocadas.
     game_port = port_with_role(ports, ROLE_GAME) or jogo.game_port
     query_port = (port_with_role(ports, ROLE_QUERY) or jogo.query_port) if jogo.query_port else 0
@@ -161,9 +161,9 @@ class InstaladorSsh:
         self._exec = executor or ExecutorReal()
         self._dormir = dormir
         self._agora = now
-        faltando = [a for a in ARQUIVOS_DA_LIB if not (config.pasta_lib / a).is_file()]
+        faltando = [a for a in ARQUIVOS_DA_LIB if not (config.lib_dir / a).is_file()]
         if faltando:
-            raise ValueError(f"faltam em {config.pasta_lib}: {', '.join(faltando)}")
+            raise ValueError(f"faltam em {config.lib_dir}: {', '.join(faltando)}")
 
     # --- comandos ------------------------------------------------------------------------
 
@@ -205,7 +205,7 @@ class InstaladorSsh:
             if self._exec.rodar(self._ssh(target, "true"), None, 20) == 0:
                 return
             if self._agora() >= limit:
-                raise ErroDeInstalacao(f"o SSH de {ip} nao respondeu em {int(self._cfg.espera_ssh)} s")
+                raise InstallError(f"o SSH de {ip} nao respondeu em {int(self._cfg.espera_ssh)} s")
             self._dormir(self._cfg.intervalo)
 
     def _enviar(self, target: str, env: str) -> None:
@@ -214,14 +214,14 @@ class InstaladorSsh:
         with tempfile.TemporaryDirectory(prefix="broker-install-") as tmp:
             arquivo_env = Path(tmp) / "install.env"
             arquivo_env.write_text(env, encoding="utf-8", newline="\n")
-            fontes = [str(self._cfg.pasta_lib / a) for a in ARQUIVOS_DA_LIB] + [str(arquivo_env)]
+            fontes = [str(self._cfg.lib_dir / a) for a in ARQUIVOS_DA_LIB] + [str(arquivo_env)]
             self._comando(["scp", *self._opcoes(), *fontes, f"{target}:{DESTINO_REMOTO}/"],
                           "enviar o instalador ao CT")
 
     def _comando(self, argv: Sequence[str], acao: str) -> None:
         codigo = self._exec.rodar(argv, None, self._cfg.timeout_comando)
         if codigo != 0:
-            raise ErroDeInstalacao(f"falhou ao {acao} (codigo {codigo})")
+            raise InstallError(f"falhou ao {acao} (codigo {codigo})")
 
     def _install(self, target: str, log: Callable[[str], None]) -> None:
         lote = _Lote(log, self._agora)
@@ -230,9 +230,9 @@ class InstaladorSsh:
         lote.descarrega()
         if codigo != 0:
             resumo = " | ".join(lote.cauda)
-            raise ErroDeInstalacao(f"a instalacao falhou (codigo {codigo}): {resumo}")
+            raise InstallError(f"a instalacao falhou (codigo {codigo}): {resumo}")
         if not lote.concluida:
-            raise ErroDeInstalacao("o instalador terminou sem confirmar a conclusao")
+            raise InstallError("o instalador terminou sem confirmar a conclusao")
 
     def _limpar(self, target: str, log: Callable[[str], None], falha: Exception | None) -> None:
         """Apaga o que foi enviado e tira a chave do broker. Roda SEMPRE."""
@@ -248,6 +248,6 @@ class InstaladorSsh:
             return
         mensagem = f"nao consegui remover a chave do broker do container (codigo {codigo})"
         if falha is None:
-            raise ErroDeInstalacao(mensagem)
+            raise InstallError(mensagem)
         # Ja ha um erro mais importante a reportar; a limpeza falha so e registrada.
         log(f"AVISO: {mensagem}")

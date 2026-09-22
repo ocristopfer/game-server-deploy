@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 import gamebroker.services.allocator as alocador
-from gamebroker.domain.exceptions import SemRecurso
+from gamebroker.domain.exceptions import OutOfResources
 from gamebroker.services.catalog import validate_dynamic
 
 
@@ -18,7 +18,7 @@ def test_ctid_pula_os_usados():
 
 
 def test_ctid_esgotado():
-    with pytest.raises(SemRecurso, match="CTID"):
+    with pytest.raises(OutOfResources, match="CTID"):
         alocador.pick_ctid(range(300, 302), {300, 301})
 
 
@@ -29,7 +29,7 @@ def test_ip_pula_usados_e_quem_responde_na_rede():
 
 
 def test_ip_esgotado():
-    with pytest.raises(SemRecurso, match="IP"):
+    with pytest.raises(OutOfResources, match="IP"):
         alocador.pick_ip(("10.0.0.30",), set(), lambda _ip: True)
 
 
@@ -64,7 +64,7 @@ def test_ip_e_ctid_pulam_ip_usado_e_quem_responde():
 
 
 def test_ip_e_ctid_esgotados():
-    with pytest.raises(SemRecurso, match="IP/CTID"):
+    with pytest.raises(OutOfResources, match="IP/CTID"):
         alocador.pick_ip_and_ctid(("10.0.0.102",), 200, {302}, set(), lambda _ip: False)
 
 
@@ -76,7 +76,7 @@ def test_jogo_fixo_usa_as_portas_padrao_e_ganha_papel(dados_de_jogo):
 
 def test_jogo_fixo_com_porta_ocupada_e_recusado(dados_de_jogo):
     jogo = _jogo(dados_de_jogo, deslocavel=False)
-    with pytest.raises(SemRecurso, match="27016/udp.*nao aceita mudar"):
+    with pytest.raises(OutOfResources, match="27016/udp.*nao aceita mudar"):
         alocador.allocate_ports(jogo, {(27016, "udp")}, FAIXA)
 
 
@@ -102,14 +102,14 @@ def test_mesma_porta_em_udp_e_tcp_fica_com_o_mesmo_numero(dados_de_jogo):
 
 def test_faixa_cheia_e_recusada_com_a_faixa_na_mensagem(dados_de_jogo):
     ocupadas = {(n, "udp") for n in FAIXA}
-    with pytest.raises(SemRecurso, match="31000-31009.*cheia"):
+    with pytest.raises(OutOfResources, match="31000-31009.*cheia"):
         alocador.allocate_ports(_jogo(dados_de_jogo, deslocavel=True), ocupadas, FAIXA)
 
 
 def test_bloco_nao_atravessa_o_fim_da_faixa(dados_de_jogo):
     # So sobra a ultima porta da faixa: um bloco de duas portas nao cabe.
     ocupadas = {(n, "udp") for n in range(31000, 31009)}
-    with pytest.raises(SemRecurso, match="cheia"):
+    with pytest.raises(OutOfResources, match="cheia"):
         alocador.allocate_ports(_jogo(dados_de_jogo, deslocavel=True), ocupadas, FAIXA)
 
 

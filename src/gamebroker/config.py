@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from gamebroker.integrations.http_client import normalizar_impressao
+from gamebroker.integrations.http_client import normalize_fingerprint
 from gamebroker.runtime.proxmox import ConfigProxmox
 from gamebroker.runtime.ssh_installer import ARQUIVOS_DA_LIB, ConfigSsh
 from gamebroker.services.allocator import ips_in_range
@@ -25,183 +25,183 @@ from gamebroker.services.allocator import ips_in_range
 TOKEN_MINIMO = 32
 
 
-class ErroDeConfig(ValueError):
+class ConfigError(ValueError):
     """Configuracao invalida. `problemas` traz uma linha por variavel, sem nenhum valor secreto."""
 
-    def __init__(self, problemas: list[str]):
-        super().__init__("configuracao do broker invalida:\n  - " + "\n  - ".join(problemas))
-        self.problemas = problemas
+    def __init__(self, problems: list[str]):
+        super().__init__("configuracao do broker invalida:\n  - " + "\n  - ".join(problems))
+        self.problems = problems
 
 
 @dataclass(frozen=True)
 class ConfigBroker:
     token: str
-    ips_permitidos: tuple[str, ...]
-    estado: Path
-    pasta_games: Path
-    pasta_lib: Path
+    allowed_ips: tuple[str, ...]
+    state_dir: Path
+    games_dir: Path
+    lib_dir: Path
     proxmox_url: str
     proxmox_token: str
-    proxmox_impressao: str
+    proxmox_fingerprint: str
     proxmox: ConfigProxmox
     opnsense_url: str
     opnsense_key: str
     opnsense_secret: str
-    opnsense_impressao: str
+    opnsense_fingerprint: str
     opnsense_wan: str
     ctids: range
     ctid_base: int
     ips: tuple[str, ...]
-    portas: range
+    ports: range
     max_instances: int
     max_creations_per_hour: int
     ssh: ConfigSsh
 
 
-class _Leitor:
+class _Reader:
     """Le variaveis acumulando problemas em vez de parar no primeiro."""
 
     def __init__(self, env: Mapping[str, str]):
         self._env = env
-        self.problemas: list[str] = []
+        self.problems: list[str] = []
 
-    def texto(self, nome: str, padrao: str | None = None) -> str:
+    def text(self, nome: str, default: str | None = None) -> str:
         valor = (self._env.get(nome) or "").strip()
-        if not valor and padrao is None:
-            self.problemas.append(f"{nome}: obrigatoria e nao foi definida")
+        if not valor and default is None:
+            self.problems.append(f"{nome}: obrigatoria e nao foi definida")
             return ""
-        return valor or (padrao or "")
+        return valor or (default or "")
 
-    def inteiro(self, nome: str, padrao: int, minimo: int, maximo: int) -> int:
+    def integer(self, nome: str, default: int, minimum: int, maximum: int) -> int:
         bruto = (self._env.get(nome) or "").strip()
         if not bruto:
-            return padrao
-        if not re.fullmatch(r"\d{1,9}", bruto, re.ASCII) or not minimo <= int(bruto) <= maximo:
-            self.problemas.append(f"{nome}: deve ser um inteiro entre {minimo} e {maximo}")
-            return padrao
+            return default
+        if not re.fullmatch(r"\d{1,9}", bruto, re.ASCII) or not minimum <= int(bruto) <= maximum:
+            self.problems.append(f"{nome}: deve ser um inteiro entre {minimum} e {maximum}")
+            return default
         return int(bruto)
 
-    def impressao(self, nome: str, obrigatoria: bool) -> str:
+    def fingerprint(self, nome: str, required: bool) -> str:
         bruto = (self._env.get(nome) or "").strip()
         if not bruto:
-            if obrigatoria:
-                self.problemas.append(f"{nome}: obrigatoria com https (impressao SHA-256 do certificado)")
+            if required:
+                self.problems.append(f"{nome}: obrigatoria com https (impressao SHA-256 do certificado)")
             return ""
         try:
-            return normalizar_impressao(bruto)
+            return normalize_fingerprint(bruto)
         except ValueError:
-            self.problemas.append(f"{nome}: impressao SHA-256 invalida (64 digitos hexadecimais)")
+            self.problems.append(f"{nome}: impressao SHA-256 invalida (64 digitos hexadecimais)")
             return ""
 
-    def tentar(self, descricao: str, funcao):
+    def attempt(self, description: str, func):
         try:
-            return funcao()
+            return func()
         except (ValueError, OSError) as erro:
-            self.problemas.append(f"{descricao}: {erro}")
+            self.problems.append(f"{description}: {erro}")
             return None
 
 
-def _ips_permitidos(leitor: _Leitor) -> tuple[str, ...]:
-    bruto = leitor.texto("BROKER_ALLOW_IPS", "")
+def _read_allowed_ips(reader: _Reader) -> tuple[str, ...]:
+    bruto = reader.text("BROKER_ALLOW_IPS", "")
     ips: list[str] = []
     for item in filter(None, (p.strip() for p in bruto.split(","))):
         try:
             ips.append(str(ipaddress.IPv4Address(item)))
         except ValueError:
-            leitor.problemas.append(f"BROKER_ALLOW_IPS: '{item}' nao e um IPv4")
+            reader.problems.append(f"BROKER_ALLOW_IPS: '{item}' nao e um IPv4")
     return tuple(ips)
 
 
-def _faixas(leitor: _Leitor) -> tuple[range, int, tuple[str, ...]]:
-    ctid_ini = leitor.inteiro("BROKER_CTID_INICIO", 300, 100, 999_999_999)
-    ctid_fim = leitor.inteiro("BROKER_CTID_FIM", 399, 100, 999_999_999)
+def _ranges(reader: _Reader) -> tuple[range, int, tuple[str, ...]]:
+    ctid_ini = reader.integer("BROKER_CTID_INICIO", 300, 100, 999_999_999)
+    ctid_fim = reader.integer("BROKER_CTID_FIM", 399, 100, 999_999_999)
     if ctid_fim < ctid_ini:
-        leitor.problemas.append("BROKER_CTID_FIM: menor que BROKER_CTID_INICIO")
+        reader.problems.append("BROKER_CTID_FIM: menor que BROKER_CTID_INICIO")
     # 0 = CTID escolhido a parte, na faixa acima; senao o CTID e a base + o ultimo numero do IP.
-    ctid_base = leitor.inteiro("BROKER_CTID_BASE", 0, 0, 999_999_000)
-    prefixo = leitor.texto("BROKER_IP_PREFIX")
-    ini = leitor.inteiro("BROKER_IP_INICIO", 30, 1, 254)
-    fim = leitor.inteiro("BROKER_IP_FIM", 99, 1, 254)
+    ctid_base = reader.integer("BROKER_CTID_BASE", 0, 0, 999_999_000)
+    prefixo = reader.text("BROKER_IP_PREFIX")
+    ini = reader.integer("BROKER_IP_INICIO", 30, 1, 254)
+    fim = reader.integer("BROKER_IP_FIM", 99, 1, 254)
     if ctid_base and ctid_base + ini < 100:
-        leitor.problemas.append("BROKER_CTID_BASE: com o primeiro IP da faixa o CTID ficaria abaixo de 100")
-    ips = leitor.tentar("BROKER_IP_PREFIX/INICIO/FIM", lambda: ips_in_range(prefixo, ini, fim)) if prefixo else None
+        reader.problems.append("BROKER_CTID_BASE: com o primeiro IP da faixa o CTID ficaria abaixo de 100")
+    ips = reader.attempt("BROKER_IP_PREFIX/INICIO/FIM", lambda: ips_in_range(prefixo, ini, fim)) if prefixo else None
     return range(ctid_ini, ctid_fim + 1), ctid_base, ips or ()
 
 
-def _faixa_de_portas(leitor: _Leitor) -> range:
+def _port_range(reader: _Reader) -> range:
     """Faixa so do broker para jogos que andam de porta. Fica fora das portas padrao dos jogos
     e abaixo das efemeras do Linux (32768+), que o proprio firewall usa em conexoes de saida."""
-    ini = leitor.inteiro("BROKER_PORT_INICIO", 31000, 1024, 65535)
-    fim = leitor.inteiro("BROKER_PORT_FIM", 31999, 1024, 65535)
+    ini = reader.integer("BROKER_PORT_INICIO", 31000, 1024, 65535)
+    fim = reader.integer("BROKER_PORT_FIM", 31999, 1024, 65535)
     if fim < ini:
-        leitor.problemas.append("BROKER_PORT_FIM: menor que BROKER_PORT_INICIO")
+        reader.problems.append("BROKER_PORT_FIM: menor que BROKER_PORT_INICIO")
         return range(0)
     return range(ini, fim + 1)
 
 
-def _confere_url(leitor: _Leitor, nome: str, url: str) -> None:
+def _check_url(reader: _Reader, nome: str, url: str) -> None:
     """https sempre; http so em loopback (testes). Token em texto puro pela rede nao existe aqui."""
     partes = urlsplit(url)
     if not url:
         return
     if partes.scheme not in ("http", "https") or not partes.hostname:
-        leitor.problemas.append(f"{nome}: deve ser http(s)://host[:porta]")
+        reader.problems.append(f"{nome}: deve ser http(s)://host[:porta]")
     elif partes.scheme == "http" and partes.hostname not in ("127.0.0.1", "localhost", "::1"):
-        leitor.problemas.append(f"{nome}: sem TLS so em loopback; use https://")
+        reader.problems.append(f"{nome}: sem TLS so em loopback; use https://")
 
 
-def carregar(env: Mapping[str, str]) -> ConfigBroker:
+def load(env: Mapping[str, str]) -> ConfigBroker:
     """Le e valida o ambiente. Levanta `ErroDeConfig` com todos os problemas."""
-    leitor = _Leitor(env)
-    token = leitor.texto("BROKER_TOKEN")
+    reader = _Reader(env)
+    token = reader.text("BROKER_TOKEN")
     if token and len(token) < TOKEN_MINIMO:
-        leitor.problemas.append(f"BROKER_TOKEN: precisa ter ao menos {TOKEN_MINIMO} caracteres")
+        reader.problems.append(f"BROKER_TOKEN: precisa ter ao menos {TOKEN_MINIMO} caracteres")
 
-    px_url = leitor.texto("PROXMOX_URL")
-    op_url = leitor.texto("OPNSENSE_URL")
+    px_url = reader.text("PROXMOX_URL")
+    op_url = reader.text("OPNSENSE_URL")
     px_https, op_https = px_url.startswith("https://"), op_url.startswith("https://")
-    _confere_url(leitor, "PROXMOX_URL", px_url)
-    _confere_url(leitor, "OPNSENSE_URL", op_url)
-    estado = Path(leitor.texto("BROKER_STATE_DIR", "/var/lib/gamebroker"))
-    chave_ssh = Path(leitor.texto("BROKER_SSH_KEY", "/etc/gamebroker/ssh/id_ed25519"))
-    pasta_lib = Path(leitor.texto("BROKER_LIB_DIR", "/opt/gamebroker/lib"))
-    chave_painel = leitor.texto("BROKER_PANEL_PUBKEY")
-    chave_broker = leitor.tentar("BROKER_SSH_KEY.pub", lambda: Path(f"{chave_ssh}.pub").read_text(encoding="utf-8").strip()) or ""
+    _check_url(reader, "PROXMOX_URL", px_url)
+    _check_url(reader, "OPNSENSE_URL", op_url)
+    state_dir = Path(reader.text("BROKER_STATE_DIR", "/var/lib/gamebroker"))
+    chave_ssh = Path(reader.text("BROKER_SSH_KEY", "/etc/gamebroker/ssh/id_ed25519"))
+    lib_dir = Path(reader.text("BROKER_LIB_DIR", "/opt/gamebroker/lib"))
+    chave_painel = reader.text("BROKER_PANEL_PUBKEY")
+    chave_broker = reader.attempt("BROKER_SSH_KEY.pub", lambda: Path(f"{chave_ssh}.pub").read_text(encoding="utf-8").strip()) or ""
 
-    ctids, ctid_base, ips = _faixas(leitor)
-    portas = _faixa_de_portas(leitor)
-    gateway = leitor.texto("BROKER_GATEWAY")
-    prefixo_rede = leitor.inteiro("BROKER_PREFIXO_REDE", 24, 8, 30)
+    ctids, ctid_base, ips = _ranges(reader)
+    ports = _port_range(reader)
+    gateway = reader.text("BROKER_GATEWAY")
+    prefixo_rede = reader.integer("BROKER_PREFIXO_REDE", 24, 8, 30)
     # Le TODAS as variaveis antes; so constroi o objeto se elas vieram completas. Senao a mesma
     # falta apareceria duas vezes (a da variavel e a do construtor reclamando de texto vazio).
-    antes = len(leitor.problemas)
-    px = {"node": leitor.texto("PROXMOX_NODE"), "pool": leitor.texto("PROXMOX_POOL", "games"),
-          "storage": leitor.texto("PROXMOX_STORAGE"), "template": leitor.texto("PROXMOX_TEMPLATE"),
-          "bridge": leitor.texto("PROXMOX_BRIDGE")}
+    antes = len(reader.problems)
+    px = {"node": reader.text("PROXMOX_NODE"), "pool": reader.text("PROXMOX_POOL", "games"),
+          "storage": reader.text("PROXMOX_STORAGE"), "template": reader.text("PROXMOX_TEMPLATE"),
+          "bridge": reader.text("PROXMOX_BRIDGE")}
     proxmox = None
-    if len(leitor.problemas) == antes and gateway and chave_broker and chave_painel:
-        proxmox = leitor.tentar("PROXMOX_*", lambda: ConfigProxmox(
+    if len(reader.problems) == antes and gateway and chave_broker and chave_painel:
+        proxmox = reader.attempt("PROXMOX_*", lambda: ConfigProxmox(
             **px, gateway=gateway, prefixo=prefixo_rede, chaves_ssh=(chave_broker, chave_painel)))
-    faltando = [a for a in ARQUIVOS_DA_LIB if not (pasta_lib / a).is_file()]
+    faltando = [a for a in ARQUIVOS_DA_LIB if not (lib_dir / a).is_file()]
     if faltando:
-        leitor.problemas.append(f"BROKER_LIB_DIR: faltam {', '.join(faltando)} em {pasta_lib}")
+        reader.problems.append(f"BROKER_LIB_DIR: faltam {', '.join(faltando)} em {lib_dir}")
     ssh = None
     if chave_broker:
-        ssh = leitor.tentar("BROKER_SSH_*", lambda: ConfigSsh(
-            chave_privada=chave_ssh, chave_publica=chave_broker, pasta_lib=pasta_lib))
+        ssh = reader.attempt("BROKER_SSH_*", lambda: ConfigSsh(
+            chave_privada=chave_ssh, chave_publica=chave_broker, lib_dir=lib_dir))
 
     cfg_parcial = {
-        "proxmox_impressao": leitor.impressao("PROXMOX_CERT_SHA256", px_https),
-        "opnsense_impressao": leitor.impressao("OPNSENSE_CERT_SHA256", op_https),
-        "proxmox_token": leitor.texto("PROXMOX_TOKEN"), "opnsense_key": leitor.texto("OPNSENSE_KEY"),
-        "opnsense_secret": leitor.texto("OPNSENSE_SECRET"), "opnsense_wan": leitor.texto("OPNSENSE_WAN", "wan"),
-        "max_instances": leitor.inteiro("BROKER_MAX_INSTANCIAS", 8, 1, 100),
-        "max_creations_per_hour": leitor.inteiro("BROKER_MAX_CRIACOES_HORA", 4, 1, 100),
-        "ips_permitidos": _ips_permitidos(leitor),
+        "proxmox_fingerprint": reader.fingerprint("PROXMOX_CERT_SHA256", px_https),
+        "opnsense_fingerprint": reader.fingerprint("OPNSENSE_CERT_SHA256", op_https),
+        "proxmox_token": reader.text("PROXMOX_TOKEN"), "opnsense_key": reader.text("OPNSENSE_KEY"),
+        "opnsense_secret": reader.text("OPNSENSE_SECRET"), "opnsense_wan": reader.text("OPNSENSE_WAN", "wan"),
+        "max_instances": reader.integer("BROKER_MAX_INSTANCIAS", 8, 1, 100),
+        "max_creations_per_hour": reader.integer("BROKER_MAX_CRIACOES_HORA", 4, 1, 100),
+        "allowed_ips": _read_allowed_ips(reader),
     }
-    if leitor.problemas or proxmox is None or ssh is None:
-        raise ErroDeConfig(leitor.problemas or ["configuracao incompleta"])
+    if reader.problems or proxmox is None or ssh is None:
+        raise ConfigError(reader.problems or ["configuracao incompleta"])
     return ConfigBroker(
-        token=token, estado=estado, pasta_games=Path(leitor.texto("BROKER_GAMES_DIR", "/opt/gamebroker/games")),
-        pasta_lib=pasta_lib, proxmox_url=px_url, proxmox=proxmox, opnsense_url=op_url,
-        ctids=ctids, ctid_base=ctid_base, ips=ips, portas=portas, ssh=ssh, **cfg_parcial)
+        token=token, state_dir=state_dir, games_dir=Path(reader.text("BROKER_GAMES_DIR", "/opt/gamebroker/games")),
+        lib_dir=lib_dir, proxmox_url=px_url, proxmox=proxmox, opnsense_url=op_url,
+        ctids=ctids, ctid_base=ctid_base, ips=ips, ports=ports, ssh=ssh, **cfg_parcial)

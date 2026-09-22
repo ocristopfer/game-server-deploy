@@ -22,7 +22,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from gamebroker.domain.exceptions import Conflito, ErroDeValidacao, NaoEncontrado
+from gamebroker.domain.exceptions import Conflict, NotFound, ValidationError
 
 SOURCE_CURATED = "curado"
 SOURCE_DYNAMIC = "dinamico"
@@ -310,14 +310,14 @@ _REQUIRED_FIELDS = ("chave", "nome", "app_id", "portas", "porta_jogo")
 def _int_field(data: dict, field: str, minimum: int, maximum: int, default: int | None = None) -> int:
     if field not in data:
         if default is None:
-            raise ErroDeValidacao(field, "obrigatorio")
+            raise ValidationError(field, "obrigatorio")
         return default
     value = data[field]
     # bool e subclasse de int em Python: `true` nao pode passar por 1.
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ErroDeValidacao(field, "deve ser um numero inteiro")
+        raise ValidationError(field, "deve ser um numero inteiro")
     if not minimum <= value <= maximum:
-        raise ErroDeValidacao(field, f"deve estar entre {minimum} e {maximum}")
+        raise ValidationError(field, f"deve estar entre {minimum} e {maximum}")
     return value
 
 
@@ -325,25 +325,25 @@ def _text_field(data: dict, field: str, regex: re.Pattern[str], default: str = "
            required: bool = False) -> str:
     value = data.get(field, default)
     if not isinstance(value, str):
-        raise ErroDeValidacao(field, "deve ser texto")
+        raise ValidationError(field, "deve ser texto")
     # Vazio so vale para campo opcional: chave/nome vazios passariam por "ausente".
     if (value or required) and not regex.fullmatch(value):
-        raise ErroDeValidacao(field, "formato invalido")
+        raise ValidationError(field, "formato invalido")
     return value
 
 
 def _text_list(data: dict, field: str, maximum: int) -> list[str]:
     value = data.get(field, [])
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-        raise ErroDeValidacao(field, "deve ser uma lista de textos")
+        raise ValidationError(field, "deve ser uma lista de textos")
     if len(value) > maximum:
-        raise ErroDeValidacao(field, f"no maximo {maximum} itens")
+        raise ValidationError(field, f"no maximo {maximum} itens")
     return value
 
 
 def _no_dot_dot(path: str, field: str) -> str:
     if ".." in path.split("/"):
-        raise ErroDeValidacao(field, "'..' nao e permitido")
+        raise ValidationError(field, "'..' nao e permitido")
     return path
 
 
@@ -351,7 +351,7 @@ def _path_list(data: dict, field: str, maximum: int) -> tuple[str, ...]:
     items = _text_list(data, field, maximum)
     for item in items:
         if not _PATH_RE.fullmatch(item):
-            raise ErroDeValidacao(field, "so caminhos absolutos sob /opt/game ou /home/steam")
+            raise ValidationError(field, "so caminhos absolutos sob /opt/game ou /home/steam")
         _no_dot_dot(item, field)
     return tuple(items)
 
@@ -363,31 +363,31 @@ def _ports_field(data: dict) -> tuple[Port, ...]:
         try:
             port = _port(item)
         except ValueError as error:
-            raise ErroDeValidacao("portas", str(error)) from None
+            raise ValidationError("portas", str(error)) from None
         if port.number < 1024:
-            raise ErroDeValidacao("portas", f"{port}: portas abaixo de 1024 nao sao permitidas")
+            raise ValidationError("portas", f"{port}: portas abaixo de 1024 nao sao permitidas")
         if port.number in FORBIDDEN_PORTS:
-            raise ErroDeValidacao("portas", f"{port}: porta reservada (painel, Proxmox, REST ou RCON)")
+            raise ValidationError("portas", f"{port}: porta reservada (painel, Proxmox, REST ou RCON)")
         ports.append(port)
     if not ports or len(set(ports)) != len(ports):
-        raise ErroDeValidacao("portas", "informe ao menos uma porta, sem repetir")
+        raise ValidationError("portas", "informe ao menos uma porta, sem repetir")
     return tuple(ports)
 
 
 def _log_regex(data: dict, field: str) -> str:
     default = data.get(field, "")
     if not isinstance(default, str):
-        raise ErroDeValidacao(field, "deve ser texto")
+        raise ValidationError(field, "deve ser texto")
     if not default:
         return ""
     if len(default) > _REGEX_MAX_LEN:
-        raise ErroDeValidacao(field, f"no maximo {_REGEX_MAX_LEN} caracteres")
+        raise ValidationError(field, f"no maximo {_REGEX_MAX_LEN} caracteres")
     if _NESTED_REPETITION.search(default):
-        raise ErroDeValidacao(field, "repeticao dentro de repeticao (risco de travar o painel)")
+        raise ValidationError(field, "repeticao dentro de repeticao (risco de travar o painel)")
     try:
         re.compile(default)
     except re.error as error:
-        raise ErroDeValidacao(field, f"regex invalida: {error}") from None
+        raise ValidationError(field, f"regex invalida: {error}") from None
     return default
 
 
@@ -397,7 +397,7 @@ def _start_args_field(data: dict) -> str:
     for placeholder in _PLACEHOLDERS:
         leftover = leftover.replace(placeholder, "")
     if "{" in leftover or "}" in leftover:
-        raise ErroDeValidacao("start_args", "so {PORT}, {QUERY_PORT} e {EXTRA_PORT} sao marcadores validos")
+        raise ValidationError("start_args", "so {PORT}, {QUERY_PORT} e {EXTRA_PORT} sao marcadores validos")
     return args
 
 
@@ -410,51 +410,51 @@ def _recipes_field(data: dict, platform: str) -> tuple[str, ...]:
     items = _text_list(data, "receitas", len(RECIPES))
     unknown = next((r for r in items if r not in RECIPES), None)
     if unknown is not None:
-        raise ErroDeValidacao("receitas", f"receita desconhecida: {unknown!r}")
+        raise ValidationError("receitas", f"receita desconhecida: {unknown!r}")
     if platform == "windows" and not set(items) & set(RECIPES_WINDOWS):
-        raise ErroDeValidacao("receitas", "jogo de Windows precisa da receita 'wine' ou 'proton'")
+        raise ValidationError("receitas", "jogo de Windows precisa da receita 'wine' ou 'proton'")
     return tuple(dict.fromkeys(items))
 
 
 def validate_dynamic(data: object) -> Game:
     """Valida um jogo vindo da API. Qualquer duvida e recusa: aqui nada vira comando."""
     if not isinstance(data, dict):
-        raise ErroDeValidacao("corpo", "esperado um objeto JSON")
+        raise ValidationError("corpo", "esperado um objeto JSON")
     unknown_field = sorted(set(data) - _DYNAMIC_FIELDS)
     if unknown_field:
-        raise ErroDeValidacao(unknown_field[0], "campo desconhecido (a API so aceita dados, nunca comandos)")
+        raise ValidationError(unknown_field[0], "campo desconhecido (a API so aceita dados, nunca comandos)")
     missing = [c for c in _REQUIRED_FIELDS if c not in data]
     if missing:
-        raise ErroDeValidacao(missing[0], "obrigatorio")
+        raise ValidationError(missing[0], "obrigatorio")
 
     ports = _ports_field(data)
     game_port = _int_field(data, "porta_jogo", 1024, 65535)
     if game_port not in {p.number for p in ports}:
-        raise ErroDeValidacao("porta_jogo", "deve estar entre as portas expostas")
+        raise ValidationError("porta_jogo", "deve estar entre as portas expostas")
     query_port = _int_field(data, "porta_query", 0, 65535, default=0)
     if query_port and query_port not in {p.number for p in ports}:
-        raise ErroDeValidacao("porta_query", "deve estar entre as portas expostas (ou 0)")
+        raise ValidationError("porta_query", "deve estar entre as portas expostas (ou 0)")
     extra_port = _int_field(data, "porta_extra", 0, 65535, default=0)
     if extra_port and extra_port not in {p.number for p in ports}:
-        raise ErroDeValidacao("porta_extra", "deve estar entre as portas expostas (ou 0)")
+        raise ValidationError("porta_extra", "deve estar entre as portas expostas (ou 0)")
     if extra_port and extra_port in (game_port, query_port):
-        raise ErroDeValidacao("porta_extra", "deve ser diferente da porta do jogo e da de consulta")
+        raise ValidationError("porta_extra", "deve ser diferente da porta do jogo e da de consulta")
 
     platform = _text_field(data, "plataforma", re.compile(r"linux|windows"))
     player_source_raw = data.get("player_source", "log")
     if player_source_raw not in PLAYER_SOURCES_DYNAMIC:
-        raise ErroDeValidacao("player_source", f"use {' ou '.join(PLAYER_SOURCES_DYNAMIC)}")
+        raise ValidationError("player_source", f"use {' ou '.join(PLAYER_SOURCES_DYNAMIC)}")
     shiftable = data.get("deslocavel", False)
     if not isinstance(shiftable, bool):
-        raise ErroDeValidacao("deslocavel", "deve ser verdadeiro ou falso")
+        raise ValidationError("deslocavel", "deve ser verdadeiro ou falso")
     start_args = _start_args_field(data)
     problem = extra_port_problem(start_args, extra_port)
     if problem:
-        raise ErroDeValidacao("start_args", problem)
+        raise ValidationError("start_args", problem)
     if shiftable:
         problem = shiftable_problem(ports, game_port, query_port, start_args, extra_port)
         if problem:
-            raise ErroDeValidacao("deslocavel", problem)
+            raise ValidationError("deslocavel", problem)
 
     return Game(
         key=_text_field(data, "chave", KEY_RE, required=True),
@@ -502,7 +502,7 @@ class Catalog:
             try:
                 # Revalida ao ler: arquivo adulterado em disco nao vira jogo criavel.
                 game = validate_dynamic(json.loads(file.read_text(encoding="utf-8")))
-            except (ValueError, OSError, ErroDeValidacao) as error:
+            except (ValueError, OSError, ValidationError) as error:
                 errors.append(f"{file.name}: {error}")
                 continue
             if game.key in games or file.stem != game.key:
@@ -520,14 +520,14 @@ class Catalog:
         with self._lock:
             game = self._games.get(key)
         if game is None:
-            raise NaoEncontrado(f"jogo desconhecido: {key!r}")
+            raise NotFound(f"jogo desconhecido: {key!r}")
         return game
 
     def add_dynamic(self, data: object) -> Game:
         game = validate_dynamic(data)
         with self._lock:
             if game.key in self._games:
-                raise Conflito(f"ja existe um jogo com a chave {game.key!r}")
+                raise Conflict(f"ja existe um jogo com a chave {game.key!r}")
             self._store(game)
             self._games[game.key] = game
         return game

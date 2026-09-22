@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import gamebroker.services.allocator as alocador
-from gamebroker.domain.exceptions import Conflito, CotaExcedida, ErroDeValidacao, NaoEncontrado
+from gamebroker.domain.exceptions import Conflict, NotFound, QuotaExceeded, ValidationError
 from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK, Db
 from gamebroker.runtime.base import CtSpec, Installer, Network, Opnsense, Proxmox
 from gamebroker.services.allocator import AllocatedPort
@@ -78,7 +78,7 @@ class Service:
     def operation(self, op_id: str) -> dict:
         op = self.db.operation(op_id)
         if op is None:
-            raise NaoEncontrado("operacao desconhecida")
+            raise NotFound("operacao desconhecida")
         return op
 
     def add_game(self, dados: object, actor: str) -> dict:
@@ -93,7 +93,7 @@ class Service:
         name = self._valid_name(name)
         jogo = self.catalog.get(game_key)
         if not jogo.creatable:
-            raise Conflito(f"{jogo.name} nao pode ser criado pela API: {jogo.reason}")
+            raise Conflict(f"{jogo.name} nao pode ser criado pela API: {jogo.reason}")
         with self._trava:
             self._check_quotas()
             instance_id, ports = self._reserve(jogo, name, actor)
@@ -105,17 +105,17 @@ class Service:
     @staticmethod
     def _valid_name(name: object) -> str:
         if not isinstance(name, str) or not NAME_RE.fullmatch(name):
-            raise ErroDeValidacao("nome", "use letras, numeros, espaco, ponto, hifen ou sublinhado (ate 40)")
+            raise ValidationError("nome", "use letras, numeros, espaco, ponto, hifen ou sublinhado (ate 40)")
         return name
 
     def _check_quotas(self) -> None:
         if self.db.operation_in_progress():
-            raise CotaExcedida("ja ha uma operacao em andamento; aguarde ela terminar")
+            raise QuotaExceeded("ja ha uma operacao em andamento; aguarde ela terminar")
         if self.db.count_instances() >= self.config.max_instances:
-            raise CotaExcedida(f"limite de {self.config.max_instances} instancias atingido")
+            raise QuotaExceeded(f"limite de {self.config.max_instances} instancias atingido")
         desde = (self._agora() - timedelta(hours=1)).isoformat(timespec="seconds")
         if self.db.creations_since(desde) >= self.config.max_creations_per_hour:
-            raise CotaExcedida(f"limite de {self.config.max_creations_per_hour} criacoes por hora atingido")
+            raise QuotaExceeded(f"limite de {self.config.max_creations_per_hour} criacoes por hora atingido")
 
     def _reserve(self, jogo: Game, name: str, actor: str) -> tuple[int, list[AllocatedPort]]:
         # Snapshot de fora (Proxmox, OPNsense) + o que o banco ja reservou: o CT pode ter
@@ -187,7 +187,7 @@ class Service:
         actor = _actor_of(actor)
         inst = self._instance(instance_id)
         if inst["estado"] != ESTADO_ATIVA:
-            raise Conflito("so uma instancia ativa pode ser desativada")
+            raise Conflict("so uma instancia ativa pode ser desativada")
         self._require_from_broker(inst["ctid"])
         self.opnsense.close_ports(inst["ctid"])
         self.proxmox.stop(inst["ctid"])
@@ -200,9 +200,9 @@ class Service:
         actor = _actor_of(actor)
         inst = self._instance(instance_id)
         if inst["estado"] not in (ESTADO_DESATIVADA, ESTADO_FALHOU):
-            raise Conflito("desative a instancia antes de remover")
+            raise Conflict("desative a instancia antes de remover")
         if confirmation != inst["nome"]:
-            raise ErroDeValidacao("confirma", "digite o nome exato da instancia para confirmar")
+            raise ValidationError("confirma", "digite o nome exato da instancia para confirmar")
         self.opnsense.close_ports(inst["ctid"])
         if not db_only:
             self._destroy_ct(inst)
@@ -220,21 +220,21 @@ class Service:
         # "Nao esta no pool" pode ser CT apagado a mao OU CT movido/de outro dono, e o token
         # so enxerga o pool: os dois casos sao indistinguiveis (ambos dao 403). Liberar o
         # CTID/IP nesse caso poderia soltar um CT que ainda existe; entao so com pedido explicito.
-        raise Conflito(
+        raise Conflict(
             f"o CT {ctid} nao pertence ao broker (nao esta no pool); nada foi alterado. Se ele nao "
             "existe mais no Proxmox, remova de novo com somente_banco para limpar so o registro")
 
     def _instance(self, instance_id: int) -> dict:
         inst = self.db.instance(instance_id)
         if inst is None:
-            raise NaoEncontrado("instancia desconhecida")
+            raise NotFound("instancia desconhecida")
         return inst
 
     def _require_from_broker(self, ctid: int) -> None:
         # O token do Proxmox enxerga o pool inteiro; a tag e a linha no banco sao o que
         # impede o broker de mexer num CT que nao e dele.
         if not self.proxmox.belongs_to_broker(ctid):
-            raise Conflito(f"o CT {ctid} nao pertence ao broker; nada foi alterado")
+            raise Conflict(f"o CT {ctid} nao pertence ao broker; nada foi alterado")
 
 
 def record_for_the_panel(inst: dict, jogo: Game, ports: list[AllocatedPort]) -> dict:

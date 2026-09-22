@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from gamebroker.domain.exceptions import Conflito
+from gamebroker.domain.exceptions import Conflict
 from gamebroker.services.allocator import AllocatedPort
 
 ESTADO_RESERVADA = "reservada"
@@ -132,7 +132,7 @@ class Db:
                     "INSERT INTO portas (instancia_id, base, numero, proto, papel) VALUES (?, ?, ?, ?, ?)",
                     [(instance_id, p.base, p.number, p.proto, p.role) for p in ports])
         except sqlite3.IntegrityError as erro:
-            raise Conflito(f"reserva recusada pelo banco (nome, CTID, IP ou porta ja em uso): {erro}") from None
+            raise Conflict(f"reserva recusada pelo banco (nome, CTID, IP ou porta ja em uso): {erro}") from None
         return instance_id
 
     # --- instancias -------------------------------------------------------
@@ -154,10 +154,10 @@ class Db:
             (linha["id"],))]
         return dados
 
-    def set_state(self, instance_id: int, estado: str, detail: str = "") -> None:
+    def set_state(self, instance_id: int, state_dir: str, detail: str = "") -> None:
         with self._transaction() as conn:
             conn.execute("UPDATE instancias SET estado = ?, detalhe = ? WHERE id = ?",
-                         (estado, detail[:300], instance_id))
+                         (state_dir, detail[:300], instance_id))
 
     def delete_instance(self, instance_id: int) -> None:
         with self._transaction() as conn:
@@ -186,10 +186,10 @@ class Db:
             novo = (atual["log"] + linha.rstrip("\n") + "\n")[-LOG_MAX:]
             conn.execute("UPDATE operacoes SET log = ? WHERE id = ?", (novo, op_id))
 
-    def finish_operation(self, op_id: str, estado: str, result: dict | None = None) -> None:
+    def finish_operation(self, op_id: str, state_dir: str, result: dict | None = None) -> None:
         with self._transaction() as conn:
             conn.execute("UPDATE operacoes SET estado = ?, resultado = ?, terminada_em = ? WHERE id = ?",
-                         (estado, json.dumps(result or {}, ensure_ascii=True), self._relogio(), op_id))
+                         (state_dir, json.dumps(result or {}, ensure_ascii=True), self._relogio(), op_id))
 
     def operation(self, op_id: str) -> dict | None:
         with self._connection() as conn:

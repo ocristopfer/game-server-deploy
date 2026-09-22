@@ -12,7 +12,7 @@ import re
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 
-from gamebroker.domain.exceptions import ErroDeValidacao, Recusa
+from gamebroker.domain.exceptions import Refusal, ValidationError
 from gamebroker.services.instance_service import Service
 
 TOKEN_MINIMO = 32
@@ -23,91 +23,91 @@ CABECALHO_ATOR = "X-Ator"
 log = logging.getLogger("broker")
 
 
-def criar_app(servico: Service, token: str, ips_permitidos: tuple[str, ...] = ()) -> Flask:
+def create_app(service: Service, token: str, allowed_ips: tuple[str, ...] = ()) -> Flask:
     if len(token) < TOKEN_MINIMO:
         raise ValueError(f"o token do broker precisa ter ao menos {TOKEN_MINIMO} caracteres")
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = CORPO_MAX
 
     @app.before_request
-    def autenticar():
-        if ips_permitidos and request.remote_addr not in ips_permitidos:
-            return _erro("origem nao permitida", "origem", 403)
+    def authenticate():
+        if allowed_ips and request.remote_addr not in allowed_ips:
+            return _error("origem nao permitida", "origem", 403)
         enviado = request.headers.get("Authorization", "")
         esperado = f"Bearer {token}"
         # compare_digest: tempo constante, para o token nao ser descoberto byte a byte.
         if not hmac.compare_digest(enviado.encode(), esperado.encode()):
-            return _erro("token ausente ou invalido", "nao-autenticado", 401)
+            return _error("token ausente ou invalido", "nao-autenticado", 401)
         return None
 
-    @app.errorhandler(Recusa)
-    def recusa(erro: Recusa):
-        return _erro(erro.mensagem, erro.codigo, erro.http)
+    @app.errorhandler(Refusal)
+    def on_refusal(erro: Refusal):
+        return _error(erro.message, erro.code, erro.http)
 
     @app.errorhandler(HTTPException)
-    def erro_http(erro: HTTPException):
+    def on_http_error(erro: HTTPException):
         # 404, 405, 413...: sao do Flask, nao do broker. Sem este handler o catch-all
         # abaixo os transformaria em 500 e esconderia rota errada como "erro interno".
-        return _erro(erro.name.lower(), "http", erro.code or 500)
+        return _error(erro.name.lower(), "http", erro.code or 500)
 
     @app.errorhandler(Exception)
-    def inesperado(erro: Exception):
+    def on_unexpected(erro: Exception):
         # Detalhe so no log do broker: a mensagem do erro pode citar caminho ou endereco interno.
         log.exception("erro interno", exc_info=erro)
-        return _erro("erro interno do broker", "interno", 500)
+        return _error("erro interno do broker", "interno", 500)
 
     def actor() -> str:
         return request.headers.get(CABECALHO_ATOR, "")
 
     @app.get("/v1/saude")
     def health():
-        return jsonify(servico.health())
+        return jsonify(service.health())
 
     @app.get("/v1/catalogo")
     def catalog():
-        return jsonify([j.as_public() for j in servico.catalog.list_all()])
+        return jsonify([j.as_public() for j in service.catalog.list_all()])
 
     @app.post("/v1/catalogo")
-    def catalogo_adicionar():
-        return jsonify(servico.add_game(_corpo(), actor())), 201
+    def catalog_add():
+        return jsonify(service.add_game(_body(), actor())), 201
 
     @app.get("/v1/instancias")
     def instances():
-        return jsonify(servico.instances())
+        return jsonify(service.instances())
 
     @app.post("/v1/instancias")
-    def instancias_criar():
-        corpo = _corpo()
-        resposta = servico.create(str(corpo.get("jogo", "")), corpo.get("nome", ""), actor())
+    def instances_create():
+        body = _body()
+        resposta = service.create(str(body.get("jogo", "")), body.get("nome", ""), actor())
         return jsonify(resposta), 202
 
     @app.get("/v1/operacoes/<op_id>")
     def operation(op_id: str):
         if not _OPERACAO_RE.fullmatch(op_id):
-            raise ErroDeValidacao("operacao", "identificador invalido")
-        return jsonify(servico.operation(op_id))
+            raise ValidationError("operacao", "identificador invalido")
+        return jsonify(service.operation(op_id))
 
     @app.post("/v1/instancias/<int:instance_id>/desativar")
-    def instancias_desativar(instance_id: int):
-        return jsonify(servico.deactivate(instance_id, actor()))
+    def instances_deactivate(instance_id: int):
+        return jsonify(service.deactivate(instance_id, actor()))
 
     @app.delete("/v1/instancias/<int:instance_id>")
-    def instancias_remover(instance_id: int):
-        corpo = _corpo()
-        db_only = corpo.get("somente_banco", False)
+    def instances_remove(instance_id: int):
+        body = _body()
+        db_only = body.get("somente_banco", False)
         if not isinstance(db_only, bool):
-            raise ErroDeValidacao("somente_banco", "deve ser verdadeiro ou falso")
-        return jsonify(servico.remove(instance_id, corpo.get("confirma"), actor(), db_only))
+            raise ValidationError("somente_banco", "deve ser verdadeiro ou falso")
+        return jsonify(service.remove(instance_id, body.get("confirma"), actor(), db_only))
 
     return app
 
 
-def _corpo() -> dict:
+def _body() -> dict:
     dados = request.get_json(silent=True)
     if not isinstance(dados, dict):
-        raise ErroDeValidacao("corpo", "esperado um objeto JSON")
+        raise ValidationError("corpo", "esperado um objeto JSON")
     return dados
 
 
-def _erro(mensagem: str, codigo: str, http: int):
-    return jsonify({"erro": mensagem, "codigo": codigo}), http
+def _error(message: str, code: str, http: int):
+    return jsonify({"erro": message, "codigo": code}), http

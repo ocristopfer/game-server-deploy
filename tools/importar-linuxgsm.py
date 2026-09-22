@@ -41,7 +41,7 @@ import urllib.request
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "src"))
 
-from gamebroker.domain.exceptions import ErroDeValidacao  # noqa: E402
+from gamebroker.domain.exceptions import ValidationError  # noqa: E402
 from gamebroker.services.catalog import KEY_RE, NAME_RE, validate_dynamic  # noqa: E402
 
 FONTE_URL = "https://raw.githubusercontent.com/GameServerManagers/LinuxGSM/master/"
@@ -246,7 +246,7 @@ def _passar_pelo_broker(s: dict) -> dict | None:
         try:
             validate_dynamic(_como_dados_do_painel(s))
             return s
-        except ErroDeValidacao as erro:
+        except ValidationError as erro:
             campo = getattr(erro, "campo", "")
             if campo in ("start_script", "start_args"):
                 s = {**s, campo: "", "deslocavel": False,

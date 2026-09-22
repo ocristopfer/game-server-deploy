@@ -4,9 +4,9 @@ from __future__ import annotations
 import pytest
 from http_falso import ServidorFalso
 
-from gamebroker.integrations.http_client import Cliente
+from gamebroker.integrations.http_client import Client
 from gamebroker.runtime.base import CtSpec
-from gamebroker.runtime.proxmox import ConfigProxmox, ErroDoProxmox, Proxmox
+from gamebroker.runtime.proxmox import ConfigProxmox, Proxmox, ProxmoxError
 
 ESPEC = CtSpec(ctid=300, hostname="alfa-300", ip="10.0.0.30", jogo="alfa",
                           memory_mb=4096, cores=2, disk_gb=20)
@@ -52,21 +52,21 @@ def test_espera_a_tarefa_terminar(pve):
 
 def test_tarefa_que_nunca_termina_estoura_o_tempo(pve):
     pve.falso.rodadas_ate_parar = 10_000
-    with pytest.raises(ErroDoProxmox, match="excedeu o tempo"):
+    with pytest.raises(ProxmoxError, match="excedeu o tempo"):
         pve.backend.create_ct(ESPEC)
 
 
 def test_tarefa_que_falha_traz_a_causa_e_o_fim_do_log(pve):
     pve.falso.saida_da_criacao = "unable to create CT 300 - storage full"
-    with pytest.raises(ErroDoProxmox) as erro:
+    with pytest.raises(ProxmoxError) as erro:
         pve.backend.create_ct(ESPEC)
     assert "storage full" in str(erro.value)
     assert "Systemd 257" in str(erro.value)
 
 
 def test_erro_de_autenticacao_mostra_o_status_e_nao_o_token(pve):
-    pve.backend._c = Cliente(pve.servidor.url, {"Authorization": "PVEAPIToken=errado"})
-    with pytest.raises(ErroDoProxmox) as erro:
+    pve.backend._c = Client(pve.servidor.url, {"Authorization": "PVEAPIToken=errado"})
+    with pytest.raises(ProxmoxError) as erro:
         pve.backend.create_ct(ESPEC)
     assert "HTTP 401" in str(erro.value)
     assert "errado" not in str(erro.value)
@@ -74,7 +74,7 @@ def test_erro_de_autenticacao_mostra_o_status_e_nao_o_token(pve):
 
 def test_ct_ja_existente_nao_e_sobrescrito(pve):
     pve.falso.externo(300)
-    with pytest.raises(ErroDoProxmox, match="already exists"):
+    with pytest.raises(ProxmoxError, match="already exists"):
         pve.backend.create_ct(ESPEC)
     assert pve.falso.cts[300]["hostname"] == "de-fora"
 
@@ -103,7 +103,7 @@ def test_destruir_ct_parado(pve):
 def test_nao_mexe_em_ct_fora_do_pool(pve):
     pve.falso.externo(210, net0="name=eth0,ip=192.168.2.20/24")
     for acao in (pve.backend.destroy, pve.backend.stop):
-        with pytest.raises(ErroDoProxmox, match="nao esta no pool"):
+        with pytest.raises(ProxmoxError, match="nao esta no pool"):
             acao(210)
     assert 210 in pve.falso.cts
     assert not any(m == "DELETE" for m, _, _ in pve.servidor.requisicoes)
@@ -168,9 +168,9 @@ def test_backend_sem_servidor_e_erro_de_conexao_nao_excecao_solta():
     servidor = ServidorFalso(lambda *_a: (200, {}))
     url = servidor.url
     servidor.stop()
-    backend = Proxmox(Cliente(url, {}), ConfigProxmox(**BASE), dormir=lambda _s: None)
-    from gamebroker.integrations.http_client import ErroDeConexao
-    with pytest.raises(ErroDeConexao):
+    backend = Proxmox(Client(url, {}), ConfigProxmox(**BASE), dormir=lambda _s: None)
+    from gamebroker.integrations.http_client import ConnectionFailed
+    with pytest.raises(ConnectionFailed):
         backend.ctids_and_ips()
 
 
@@ -183,7 +183,7 @@ def test_sonda_de_saude_nao_espera_o_prazo_inteiro(monkeypatch):
     monkeypatch.setattr(modulo, "SONDA_TIMEOUT", 0.3)
     servidor = ServidorFalso(lambda *_a: (time.sleep(1.5), (200, {}))[1])
     try:
-        backend = Proxmox(Cliente(servidor.url, {}, timeout=30), ConfigProxmox(**BASE), dormir=lambda _s: None)
+        backend = Proxmox(Client(servidor.url, {}, timeout=30), ConfigProxmox(**BASE), dormir=lambda _s: None)
         inicio = time.monotonic()
         assert backend.reachable() is False
         assert time.monotonic() - inicio < 1.2

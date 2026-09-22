@@ -4,36 +4,36 @@ from __future__ import annotations
 import pytest
 
 from conftest import TOKEN
-from gamebroker.app import criar_app
+from gamebroker.app import create_app
 
 AUTH = {"Authorization": f"Bearer {TOKEN}", "X-Ator": "admin"}
 
 
 @pytest.fixture
 def http(ambiente):
-    app = criar_app(ambiente.servico, TOKEN)
+    app = create_app(ambiente.servico, TOKEN)
     app.config["TESTING"] = False  # queremos o handler de 500, nao a excecao propagada
     return app.test_client()
 
 
 def test_token_curto_nao_sobe():
     with pytest.raises(ValueError, match="32 caracteres"):
-        criar_app(None, "curto")  # type: ignore[arg-type]
+        create_app(None, "curto")  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("cabecalhos", [{}, {"Authorization": "Bearer errado"}, {"Authorization": TOKEN},
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer errado"}, {"Authorization": TOKEN},
                                         {"Authorization": f"Basic {TOKEN}"}, {"Authorization": "Bearer "}])
 @pytest.mark.parametrize(("metodo", "url"), [("get", "/v1/saude"), ("get", "/v1/catalogo"),
                                              ("get", "/v1/instancias"), ("post", "/v1/instancias"),
                                              ("post", "/v1/catalogo")])
-def test_sem_token_valido_nada_responde(http, metodo, url, cabecalhos):
-    resposta = getattr(http, metodo)(url, headers=cabecalhos, json={})
+def test_sem_token_valido_nada_responde(http, metodo, url, headers):
+    resposta = getattr(http, metodo)(url, headers=headers, json={})
     assert resposta.status_code == 401
     assert resposta.get_json()["codigo"] == "nao-autenticado"
 
 
 def test_ip_fora_da_lista_e_barrado_mesmo_com_token(ambiente):
-    app = criar_app(ambiente.servico, TOKEN, ips_permitidos=("10.9.9.9",))
+    app = create_app(ambiente.servico, TOKEN, allowed_ips=("10.9.9.9",))
     resposta = app.test_client().get("/v1/saude", headers=AUTH)
     assert resposta.status_code == 403
 

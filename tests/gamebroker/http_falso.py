@@ -38,11 +38,11 @@ class ServidorFalso:
                     corpo = json.loads(bruto)
                 else:
                     corpo = {k: v[0] for k, v in parse_qs(bruto).items()}
-                cabecalhos = {k.lower(): v for k, v in self.headers.items()}
+                headers = {k.lower(): v for k, v in self.headers.items()}
                 servidor.requisicoes.append((self.command, unquote(partes.path), corpo))
                 servidor.ultimo_corpo = corpo
                 query = {k: v[0] for k, v in parse_qs(partes.query).items()}
-                status, resposta, *resto = tratador(self.command, unquote(partes.path), query, corpo, cabecalhos)
+                status, resposta, *resto = tratador(self.command, unquote(partes.path), query, corpo, headers)
                 reason = resto[0] if resto else None
                 dados = resposta if isinstance(resposta, str) else json.dumps(resposta)
                 self.send_response(status, reason)
@@ -104,8 +104,8 @@ class PveFalso:
         self.tarefas[upid] = {"saida": saida, "rodadas": self.rodadas_ate_parar, "log": list(log)}
         return upid
 
-    def tratar(self, metodo: str, caminho: str, _query: dict, corpo: dict, cabecalhos: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
-        if self.autenticar and cabecalhos.get("authorization") != f"PVEAPIToken={TOKEN_PVE}":
+    def tratar(self, metodo: str, caminho: str, _query: dict, corpo: dict, headers: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
+        if self.autenticar and headers.get("authorization") != f"PVEAPIToken={TOKEN_PVE}":
             return 401, "", "No ticket"
         rota = caminho.removeprefix("/api2/json")
         node = f"/nodes/{self.node}"
@@ -222,9 +222,9 @@ class OpnsenseHttpFalso:
         self.regras[uuid] = linha
         return uuid
 
-    def tratar(self, _metodo: str, caminho: str, _query: dict, corpo: dict, cabecalhos: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
+    def tratar(self, _metodo: str, caminho: str, _query: dict, corpo: dict, headers: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
         esperado = "Basic " + base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
-        if cabecalhos.get("authorization") != esperado:
+        if headers.get("authorization") != esperado:
             return 401, {"status": 401, "message": "Authentication Failed"}, "Unauthorized"
         rota = caminho.removeprefix("/api/firewall")
         if rota == "/d_nat/search_rule":

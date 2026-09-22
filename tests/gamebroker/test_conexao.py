@@ -12,14 +12,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 from http_falso import ServidorFalso
 
-from gamebroker.integrations.http_client import RESPOSTA_MAX, Cliente, ErroDeConexao, normalizar_impressao
+from gamebroker.integrations.http_client import RESPOSTA_MAX, Client, ConnectionFailed, normalize_fingerprint
 
 TOKEN = "segredo-que-nunca-pode-vazar"
 
 
-def _eco(metodo, caminho, query, corpo, cabecalhos):
+def _eco(metodo, caminho, query, corpo, headers):
     return 200, {"metodo": metodo, "caminho": caminho, "query": query, "corpo": corpo,
-                 "auth": cabecalhos.get("authorization"), "tipo": cabecalhos.get("content-type", "")}
+                 "auth": headers.get("authorization"), "tipo": headers.get("content-type", "")}
 
 
 @pytest.fixture
@@ -31,30 +31,30 @@ def eco():
 
 def test_impressao_aceita_o_formato_do_script_de_verificacao():
     dois_pontos = ":".join(["9F"] * 32)
-    assert normalizar_impressao(dois_pontos) == "9f" * 32
-    assert normalizar_impressao("9F" * 32) == "9f" * 32
-    assert normalizar_impressao("") == ""
+    assert normalize_fingerprint(dois_pontos) == "9f" * 32
+    assert normalize_fingerprint("9F" * 32) == "9f" * 32
+    assert normalize_fingerprint("") == ""
 
 
 @pytest.mark.parametrize("ruim", ["9F:92", "zz" * 32, "9F" * 33])
 def test_impressao_invalida(ruim):
     with pytest.raises(ValueError, match="64 digitos"):
-        normalizar_impressao(ruim)
+        normalize_fingerprint(ruim)
 
 
 @pytest.mark.parametrize("url", ["http://192.168.1.254:8006", "http://proxmox.local", "ftp://x", "sem-esquema", "https://"])
 def test_url_insegura_ou_invalida_e_recusada(url):
     with pytest.raises(ValueError):
-        Cliente(url, {})
+        Client(url, {})
 
 
 def test_form_e_json_saem_no_formato_certo(eco):
-    cliente = Cliente(eco.url, {"Authorization": f"Bearer {TOKEN}"})
-    a = cliente.requisitar("POST", "/x?y=1", form={"a": "b c", "d": 2}).json
+    cliente = Client(eco.url, {"Authorization": f"Bearer {TOKEN}"})
+    a = cliente.request("POST", "/x?y=1", form={"a": "b c", "d": 2}).json
     assert a["corpo"] == {"a": "b c", "d": "2"}
     assert a["tipo"] == "application/x-www-form-urlencoded"
     assert a["query"] == {"y": "1"}
-    b = cliente.requisitar("POST", "/x", json_corpo={"k": [1, 2]}).json
+    b = cliente.request("POST", "/x", json_corpo={"k": [1, 2]}).json
     assert b["corpo"] == {"k": [1, 2]}
     assert b["tipo"] == "application/json"
     assert b["auth"] == f"Bearer {TOKEN}"
@@ -63,20 +63,20 @@ def test_form_e_json_saem_no_formato_certo(eco):
 def test_erro_sem_corpo_devolve_o_motivo_da_linha_de_status():
     servidor = ServidorFalso(lambda *_a: (403, "", "Permission check failed (/vms/399, VM.Allocate)"))
     try:
-        resposta = Cliente(servidor.url, {}).requisitar("GET", "/x")
+        resposta = Client(servidor.url, {}).request("GET", "/x")
     finally:
         servidor.stop()
     assert resposta.status == 403
     assert not resposta.ok
-    assert "VM.Allocate" in resposta.texto
+    assert "VM.Allocate" in resposta.text
 
 
 def test_conexao_recusada_nao_vaza_o_token(eco):
     porta_morta = eco.url
     eco.stop()
-    cliente = Cliente(porta_morta, {"Authorization": f"Bearer {TOKEN}"})
-    with pytest.raises(ErroDeConexao) as erro:
-        cliente.requisitar("GET", "/x")
+    cliente = Client(porta_morta, {"Authorization": f"Bearer {TOKEN}"})
+    with pytest.raises(ConnectionFailed) as erro:
+        cliente.request("GET", "/x")
     assert TOKEN not in str(erro.value)
     assert TOKEN not in repr(cliente)
 
@@ -84,8 +84,8 @@ def test_conexao_recusada_nao_vaza_o_token(eco):
 def test_resposta_gigante_e_recusada():
     servidor = ServidorFalso(lambda *_a: (200, "x" * (RESPOSTA_MAX + 10)))
     try:
-        with pytest.raises(ErroDeConexao, match="grande demais"):
-            Cliente(servidor.url, {}).requisitar("GET", "/x")
+        with pytest.raises(ConnectionFailed, match="grande demais"):
+            Client(servidor.url, {}).request("GET", "/x")
     finally:
         servidor.stop()
 
@@ -93,11 +93,11 @@ def test_resposta_gigante_e_recusada():
 def test_resposta_que_nao_e_json_vira_texto():
     servidor = ServidorFalso(lambda *_a: (200, "oi, sou texto"))
     try:
-        resposta = Cliente(servidor.url, {}).requisitar("GET", "/x")
+        resposta = Client(servidor.url, {}).request("GET", "/x")
     finally:
         servidor.stop()
     assert resposta.json is None
-    assert resposta.texto == "oi, sou texto"
+    assert resposta.text == "oi, sou texto"
 
 
 # --- TLS fixado (precisa do binario openssl para gerar um certificado de teste) ----------
@@ -135,26 +135,26 @@ def servidor_tls(tmp_path):
 
 def test_tls_com_a_impressao_certa_conecta(servidor_tls):
     url, impressao = servidor_tls
-    assert Cliente(url, {}, impressao_sha256=impressao).requisitar("GET", "/").texto == "ok"
+    assert Client(url, {}, fingerprint_sha256=impressao).request("GET", "/").text == "ok"
 
 
 def test_tls_aceita_a_impressao_com_dois_pontos(servidor_tls):
     url, impressao = servidor_tls
     formatada = ":".join(impressao[i:i + 2] for i in range(0, 64, 2)).upper()
-    assert Cliente(url, {}, impressao_sha256=formatada).requisitar("GET", "/").ok
+    assert Client(url, {}, fingerprint_sha256=formatada).request("GET", "/").ok
 
 
 def test_tls_com_impressao_errada_e_recusado(servidor_tls):
     url, _ = servidor_tls
-    with pytest.raises(ErroDeConexao, match="nao confere"):
-        Cliente(url, {}, impressao_sha256="00" * 32).requisitar("GET", "/")
+    with pytest.raises(ConnectionFailed, match="nao confere"):
+        Client(url, {}, fingerprint_sha256="00" * 32).request("GET", "/")
 
 
 def test_tls_autoassinado_sem_impressao_nao_e_aceito(servidor_tls):
     """Sem impressao vale a validacao normal: certificado autoassinado NAO passa."""
     url, _ = servidor_tls
-    with pytest.raises(ErroDeConexao):
-        Cliente(url, {}).requisitar("GET", "/")
+    with pytest.raises(ConnectionFailed):
+        Client(url, {}).request("GET", "/")
 
 
 # --- prazo por chamada -----------------------------------------------------------------------------
@@ -169,9 +169,9 @@ def _lento(segundos: float):
 def test_prazo_da_chamada_vale_so_para_ela():
     servidor = ServidorFalso(_lento(0.8))
     try:
-        cliente = Cliente(servidor.url, {}, timeout=30)
-        with pytest.raises(ErroDeConexao, match="TimeoutError"):
-            cliente.requisitar("GET", "/x", timeout=0.2)
-        assert cliente.requisitar("GET", "/x").ok, "o prazo padrao do cliente nao foi alterado"
+        cliente = Client(servidor.url, {}, timeout=30)
+        with pytest.raises(ConnectionFailed, match="TimeoutError"):
+            cliente.request("GET", "/x", timeout=0.2)
+        assert cliente.request("GET", "/x").ok, "o prazo padrao do cliente nao foi alterado"
     finally:
         servidor.stop()

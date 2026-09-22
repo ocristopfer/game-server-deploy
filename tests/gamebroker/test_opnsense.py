@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 from http_falso import ServidorFalso, resumo_de_alias
 
-from gamebroker.integrations.http_client import Cliente
-from gamebroker.runtime.opnsense import ErroDeLeitura, ErroDoOpnsense, Opnsense, busy_ports, instance_description
+from gamebroker.integrations.http_client import Client
+from gamebroker.runtime.opnsense import Opnsense, OpnsenseError, ReadError, busy_ports, instance_description
 from gamebroker.services.allocator import AllocatedPort
 
 PORTAS = [AllocatedPort(7001, 7001, "udp", "jogo"), AllocatedPort(7002, 7002, "udp", "query")]
@@ -71,7 +71,7 @@ def test_regra_sem_porta_de_destino_e_ignorada():
 
 @pytest.mark.parametrize("porta", ["0", "65536", "99999", "8000-7000", "1-999999", "a-b"])
 def test_porta_fora_do_intervalo_e_erro_e_nao_livre(porta):
-    with pytest.raises(ErroDeLeitura):
+    with pytest.raises(ReadError):
         busy_ports([_linha(**{"destination.port": porta})], "wan")
 
 
@@ -82,17 +82,17 @@ def test_porta_fora_do_intervalo_e_erro_e_nao_livre(porta):
 def test_alias_que_nao_entendo_faz_o_broker_recusar(meta):
     """Falha FECHADA: na duvida o broker nao abre porta nova (nunca supoe que esta livre)."""
     regra = _linha(**{"destination.port": "ALIAS_ESTRANHO", "alias_meta_destination.port": meta})
-    with pytest.raises(ErroDeLeitura, match="regra"):
+    with pytest.raises(ReadError, match="regra"):
         busy_ports([regra], "wan")
 
 
 def test_resposta_sem_lista_de_regras():
-    with pytest.raises(ErroDeLeitura):
+    with pytest.raises(ReadError):
         busy_ports({"rows": []}, "wan")
 
 
 def test_faixa_gigante_e_erro():
-    with pytest.raises(ErroDeLeitura):
+    with pytest.raises(ReadError):
         busy_ports([_linha(**{"destination.port": "1000-60000"})], "wan")
 
 
@@ -146,14 +146,14 @@ def test_fechar_nao_confunde_ctid_que_e_prefixo_de_outro(opn):
 
 def test_falha_no_meio_desfaz_o_que_ja_criou(opn):
     opn.falso.falhar_no_add_numero = 2
-    with pytest.raises(ErroDoOpnsense, match="rule.target"):
+    with pytest.raises(OpnsenseError, match="rule.target"):
         opn.backend.open_ports(300, "10.0.0.30", PORTAS)
     assert opn.falso.regras == {}
 
 
 def test_apply_sem_privilegio_desfaz_e_avisa(opn):
     opn.falso.apply_permitido = False
-    with pytest.raises(ErroDoOpnsense, match="HTTP 403"):
+    with pytest.raises(OpnsenseError, match="HTTP 403"):
         opn.backend.open_ports(300, "10.0.0.30", PORTAS)
     assert opn.falso.regras == {}
 
@@ -168,14 +168,14 @@ def test_ip_invalido_nunca_chega_ao_opnsense(opn, ip):
 @pytest.mark.parametrize("porta", [AllocatedPort(1, 0, "udp", "x"), AllocatedPort(1, 70000, "udp", "x"),
                                    AllocatedPort(1, 80, "icmp", "x")])
 def test_porta_invalida_e_recusada(opn, porta):
-    with pytest.raises(ErroDoOpnsense, match="porta invalida"):
+    with pytest.raises(OpnsenseError, match="porta invalida"):
         opn.backend.open_ports(300, "10.0.0.30", [porta])
     assert opn.falso.regras == {}
 
 
 def test_credencial_errada_e_erro_sem_segredo(opn):
-    opn.backend._c = Cliente(opn.servidor.url, {"Authorization": "Basic segredo-errado"})
-    with pytest.raises(ErroDoOpnsense) as erro:
+    opn.backend._c = Client(opn.servidor.url, {"Authorization": "Basic segredo-errado"})
+    with pytest.raises(OpnsenseError) as erro:
         opn.backend.external_ports()
     assert "HTTP 401" in str(erro.value)
     assert "segredo-errado" not in str(erro.value)
@@ -189,7 +189,7 @@ def test_acessivel(opn):
 
 def test_interface_invalida():
     with pytest.raises(ValueError):
-        Opnsense(Cliente("http://127.0.0.1:1", {}), "wan; rm")
+        Opnsense(Client("http://127.0.0.1:1", {}), "wan; rm")
 
 
 def test_descricao_usa_so_inteiro():
@@ -210,8 +210,8 @@ def test_servidor_que_responde_lixo_no_apply():
 
     servidor = ServidorFalso(tratador)
     try:
-        backend = Opnsense(Cliente(servidor.url, {}), "wan")
-        with pytest.raises(ErroDoOpnsense, match="nao confirmou"):
+        backend = Opnsense(Client(servidor.url, {}), "wan")
+        with pytest.raises(OpnsenseError, match="nao confirmou"):
             backend.open_ports(300, "10.0.0.30", PORTAS)
     finally:
         servidor.stop()
@@ -224,7 +224,7 @@ def test_sonda_de_saude_nao_espera_o_prazo_inteiro(monkeypatch):
     monkeypatch.setattr(modulo, "SONDA_TIMEOUT", 0.3)
     servidor = ServidorFalso(lambda *_a: (time.sleep(1.5), (200, {"rows": []}))[1])
     try:
-        backend = Opnsense(Cliente(servidor.url, {}, timeout=30), "wan")
+        backend = Opnsense(Client(servidor.url, {}, timeout=30), "wan")
         inicio = time.monotonic()
         assert backend.reachable() is False
         assert time.monotonic() - inicio < 1.2

@@ -18,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import quote
 
-from gamebroker.integrations.http_client import Cliente, Resposta
+from gamebroker.integrations.http_client import Client, Response
 from gamebroker.runtime.base import CtSpec
 
 TAG_DO_BROKER = "gamepanel-broker"
@@ -30,7 +30,7 @@ ERRO_MAX = 200
 SONDA_TIMEOUT = 5.0
 
 
-class ErroDoProxmox(RuntimeError):
+class ProxmoxError(RuntimeError):
     """Falha ao falar com o Proxmox. A mensagem nao carrega token nem cabecalho."""
 
 
@@ -58,7 +58,7 @@ class ConfigProxmox:
 
 
 class Proxmox:
-    def __init__(self, cliente: Cliente, config: ConfigProxmox,
+    def __init__(self, cliente: Client, config: ConfigProxmox,
                  dormir: Callable[[float], None] = time.sleep):
         self._c = cliente
         self._cfg = config
@@ -66,34 +66,34 @@ class Proxmox:
 
     # --- chamadas -----------------------------------------------------------
 
-    def _api(self, metodo: str, path: str, acao: str, *, form: dict | None = None) -> Resposta:
-        resposta = self._c.requisitar(metodo, "/api2/json" + path, form=form)
+    def _api(self, metodo: str, path: str, acao: str, *, form: dict | None = None) -> Response:
+        resposta = self._c.request(metodo, "/api2/json" + path, form=form)
         if not resposta.ok:
-            raise ErroDoProxmox(f"{acao}: HTTP {resposta.status} {_curto(resposta.texto)}")
+            raise ProxmoxError(f"{acao}: HTTP {resposta.status} {_curto(resposta.text)}")
         return resposta
 
     @staticmethod
-    def _payload(resposta: Resposta) -> object:
+    def _payload(resposta: Response) -> object:
         return resposta.json.get("data") if isinstance(resposta.json, dict) else None
 
-    def _task(self, resposta: Resposta, acao: str) -> None:
+    def _task(self, resposta: Response, acao: str) -> None:
         upid = self._payload(resposta)
         if not isinstance(upid, str):
-            raise ErroDoProxmox(f"{acao}: o Proxmox nao devolveu o identificador da tarefa")
+            raise ProxmoxError(f"{acao}: o Proxmox nao devolveu o identificador da tarefa")
         codificado = quote(upid, safe="")
         for _ in range(self._cfg.tentativas):
-            estado = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/tasks/{codificado}/status",
+            state_dir = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/tasks/{codificado}/status",
                                            f"{acao} (estado da tarefa)"))
-            if isinstance(estado, dict) and estado.get("status") == "stopped":
-                saida = str(estado.get("exitstatus", ""))
+            if isinstance(state_dir, dict) and state_dir.get("status") == "stopped":
+                saida = str(state_dir.get("exitstatus", ""))
                 if saida == "OK" or saida.startswith("WARNINGS"):
                     return
-                raise ErroDoProxmox(f"{acao}: a tarefa terminou com '{_curto(saida)}'{self._log_tail(codificado)}")
+                raise ProxmoxError(f"{acao}: a tarefa terminou com '{_curto(saida)}'{self._log_tail(codificado)}")
             self._dormir(self._cfg.intervalo)
-        raise ErroDoProxmox(f"{acao}: a tarefa excedeu o tempo")
+        raise ProxmoxError(f"{acao}: a tarefa excedeu o tempo")
 
     def _log_tail(self, upid_codificado: str) -> str:
-        resposta = self._c.requisitar(
+        resposta = self._c.request(
             "GET", f"/api2/json/nodes/{self._cfg.node}/tasks/{upid_codificado}/log?limit=20")
         linhas = self._payload(resposta) if resposta.ok else None
         if not isinstance(linhas, list) or not linhas:
@@ -118,7 +118,7 @@ class Proxmox:
         return ctids, ips
 
     def _ct_ips(self, ctid: int) -> set[str]:
-        resposta = self._c.requisitar("GET", f"/api2/json/nodes/{self._cfg.node}/lxc/{ctid}/config")
+        resposta = self._c.request("GET", f"/api2/json/nodes/{self._cfg.node}/lxc/{ctid}/config")
         config = self._payload(resposta) if resposta.ok else None
         if not isinstance(config, dict):
             return set()
@@ -130,13 +130,13 @@ class Proxmox:
 
     def belongs_to_broker(self, ctid: int) -> bool:
         """Identidade = ser membro do pool do broker. Nao depende da tag."""
-        dados = self._payload(self._c.requisitar("GET", f"/api2/json/pools/{self._cfg.pool}"))
+        dados = self._payload(self._c.request("GET", f"/api2/json/pools/{self._cfg.pool}"))
         membros = dados.get("members", []) if isinstance(dados, dict) else []
         return any(isinstance(m, dict) and m.get("vmid") == ctid and m.get("type") == "lxc" for m in membros)
 
     def reachable(self) -> bool:
         try:
-            return self._c.requisitar("GET", "/api2/json/version", timeout=SONDA_TIMEOUT).ok
+            return self._c.request("GET", "/api2/json/version", timeout=SONDA_TIMEOUT).ok
         except Exception:  # noqa: BLE001
             return False
 
@@ -157,7 +157,7 @@ class Proxmox:
         try:
             self._api("PUT", f"/nodes/{cfg.node}/lxc/{spec.ctid}/config", "gravar a tag",
                       form={"tags": TAG_DO_BROKER})
-        except ErroDoProxmox:
+        except ProxmoxError:
             # Tag e conforto (aparece na tela do Proxmox); a identidade e o pool.
             pass
 
@@ -172,9 +172,9 @@ class Proxmox:
 
     def destroy(self, ctid: int) -> None:
         self._require_in_pool(ctid)
-        estado = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/current",
+        state_dir = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/current",
                                        "ler estado do CT"))
-        if isinstance(estado, dict) and estado.get("status") == "running":
+        if isinstance(state_dir, dict) and state_dir.get("status") == "running":
             self.stop(ctid)
         self._task(self._api(
             "DELETE", f"/nodes/{self._cfg.node}/lxc/{ctid}?purge=1&destroy-unreferenced-disks=1",
@@ -184,9 +184,9 @@ class Proxmox:
         # O token so tem permissao no pool, mas a checagem aqui vale por conta propria: se
         # alguem alargar a role um dia, o broker continua so mexendo no que e dele.
         if not self.belongs_to_broker(ctid):
-            raise ErroDoProxmox(f"o CT {ctid} nao esta no pool '{self._cfg.pool}'; nada foi alterado")
+            raise ProxmoxError(f"o CT {ctid} nao esta no pool '{self._cfg.pool}'; nada foi alterado")
 
 
-def _curto(texto: str) -> str:
-    limpo = " ".join(str(texto).split())
+def _curto(text: str) -> str:
+    limpo = " ".join(str(text).split())
     return limpo if len(limpo) <= ERRO_MAX else limpo[:ERRO_MAX] + "..."

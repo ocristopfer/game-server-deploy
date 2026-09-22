@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from gamebroker.domain.exceptions import Conflito, CotaExcedida, ErroDeValidacao, NaoEncontrado, SemRecurso
+from gamebroker.domain.exceptions import Conflict, NotFound, OutOfResources, QuotaExceeded, ValidationError
 from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK
 from gamebroker.services.allocator import ips_in_range
 
@@ -116,20 +116,20 @@ def test_pula_ip_que_responde_na_rede(ambiente):
 
 def test_conflito_de_porta_entre_jogos_diferentes(ambiente):
     _criar(ambiente, "alfa", "um")
-    with pytest.raises(SemRecurso, match="7002/udp"):
+    with pytest.raises(OutOfResources, match="7002/udp"):
         _criar(ambiente, "delta", "dois")
     assert ambiente.db.count_instances() == 1, "recusa nao deixa reserva para tras"
 
 
 def test_porta_ja_redirecionada_no_opnsense_bloqueia(ambiente):
     ambiente.opnsense.externas = {(7001, "udp")}
-    with pytest.raises(SemRecurso, match="7001/udp"):
+    with pytest.raises(OutOfResources, match="7001/udp"):
         _criar(ambiente, "alfa")
 
 
 def test_sem_ip_livre(ambiente):
     ambiente.network.ocupados = set(ambiente.config.ips)
-    with pytest.raises(SemRecurso, match="IP"):
+    with pytest.raises(OutOfResources, match="IP"):
         _criar(ambiente)
 
 
@@ -137,23 +137,23 @@ def test_sem_ip_livre(ambiente):
 
 @pytest.mark.parametrize("name", ["", "a;b", "$(id)", "x" * 41, None, 7, "../x"])
 def test_nome_invalido(ambiente, name):
-    with pytest.raises(ErroDeValidacao):
+    with pytest.raises(ValidationError):
         ambiente.servico.create("alfa", name, "admin")
 
 
 def test_jogo_inexistente(ambiente):
-    with pytest.raises(NaoEncontrado):
+    with pytest.raises(NotFound):
         _criar(ambiente, "nao-existe")
 
 
 def test_jogo_que_exige_conta_steam_nao_e_criavel_pela_api(ambiente):
-    with pytest.raises(Conflito, match="conta Steam"):
+    with pytest.raises(Conflict, match="conta Steam"):
         _criar(ambiente, "conta")
 
 
 def test_nome_repetido_e_conflito(ambiente):
     _criar(ambiente, "beta", "igual")
-    with pytest.raises(Conflito):
+    with pytest.raises(Conflict):
         _criar(ambiente, "beta", "igual")
 
 
@@ -162,7 +162,7 @@ def test_nome_repetido_e_conflito(ambiente):
 def test_limite_de_instancias(ambiente):
     ambiente.com_config(max_instances=1)
     _criar(ambiente, "beta", "um")
-    with pytest.raises(CotaExcedida, match="1 instancias"):
+    with pytest.raises(QuotaExceeded, match="1 instancias"):
         _criar(ambiente, "beta", "dois")
 
 
@@ -170,7 +170,7 @@ def test_limite_por_hora_libera_depois_de_uma_hora(ambiente):
     ambiente.com_config(max_creations_per_hour=2)
     _criar(ambiente, "beta", "um")
     _criar(ambiente, "beta", "dois")
-    with pytest.raises(CotaExcedida, match="por hora"):
+    with pytest.raises(QuotaExceeded, match="por hora"):
         _criar(ambiente, "beta", "tres")
     ambiente.clock.avancar(61)
     _criar(ambiente, "beta", "tres")
@@ -179,7 +179,7 @@ def test_limite_por_hora_libera_depois_de_uma_hora(ambiente):
 def test_so_uma_criacao_por_vez(ambiente):
     ambiente.adiar = True
     _criar(ambiente, "beta", "um")
-    with pytest.raises(CotaExcedida, match="em andamento"):
+    with pytest.raises(QuotaExceeded, match="em andamento"):
         _criar(ambiente, "beta", "dois")
     ambiente.pendentes.pop()()
     _criar(ambiente, "beta", "dois")
@@ -187,7 +187,7 @@ def test_so_uma_criacao_por_vez(ambiente):
 
 def test_falha_de_validacao_nao_gasta_cota(ambiente):
     ambiente.com_config(max_creations_per_hour=1)
-    with pytest.raises(ErroDeValidacao):
+    with pytest.raises(ValidationError):
         ambiente.servico.create("alfa", "a;b", "admin")
     _criar(ambiente, "beta", "ok")
 
@@ -252,20 +252,20 @@ def test_desativar_fecha_o_firewall_e_para_o_ct(ambiente):
 def test_desativar_duas_vezes_e_conflito(ambiente):
     resposta = _criar(ambiente)
     ambiente.servico.deactivate(resposta["instancia_id"], "admin")
-    with pytest.raises(Conflito):
+    with pytest.raises(Conflict):
         ambiente.servico.deactivate(resposta["instancia_id"], "admin")
 
 
 def test_remover_exige_desativar_antes(ambiente):
     resposta = _criar(ambiente)
-    with pytest.raises(Conflito, match="desative"):
+    with pytest.raises(Conflict, match="desative"):
         ambiente.servico.remove(resposta["instancia_id"], "Meu servidor", "admin")
 
 
 def test_remover_exige_o_nome_exato(ambiente):
     resposta = _criar(ambiente)
     ambiente.servico.deactivate(resposta["instancia_id"], "admin")
-    with pytest.raises(ErroDeValidacao, match="nome exato"):
+    with pytest.raises(ValidationError, match="nome exato"):
         ambiente.servico.remove(resposta["instancia_id"], "meu servidor", "admin")
     assert ambiente.proxmox.cts, "nada foi destruido"
 
@@ -283,7 +283,7 @@ def test_remover_recusa_ct_que_nao_e_do_broker(ambiente):
     resposta = _criar(ambiente)
     ambiente.servico.deactivate(resposta["instancia_id"], "admin")
     ambiente.proxmox.belongs_to_broker = lambda _ctid: False
-    with pytest.raises(Conflito, match="nao pertence ao broker"):
+    with pytest.raises(Conflict, match="nao pertence ao broker"):
         ambiente.servico.remove(resposta["instancia_id"], "Meu servidor", "admin")
     assert ambiente.proxmox.cts, "o CT de outro dono nao foi tocado"
 
@@ -293,7 +293,7 @@ def test_ct_que_sumiu_do_pool_nao_e_esquecido_sem_pedido_explicito(ambiente):
     resposta = _criar(ambiente)
     ambiente.servico.deactivate(resposta["instancia_id"], "admin")
     ambiente.proxmox.cts.clear()
-    with pytest.raises(Conflito, match="somente_banco"):
+    with pytest.raises(Conflict, match="somente_banco"):
         ambiente.servico.remove(resposta["instancia_id"], "Meu servidor", "admin")
     assert ambiente.db.instance(resposta["instancia_id"]) is not None
 
@@ -311,10 +311,10 @@ def test_somente_banco_limpa_o_registro_sem_tocar_no_proxmox(ambiente):
 
 def test_somente_banco_tambem_exige_desativar_e_o_nome(ambiente):
     resposta = _criar(ambiente)
-    with pytest.raises(Conflito, match="desative"):
+    with pytest.raises(Conflict, match="desative"):
         ambiente.servico.remove(resposta["instancia_id"], "Meu servidor", "admin", db_only=True)
     ambiente.servico.deactivate(resposta["instancia_id"], "admin")
-    with pytest.raises(ErroDeValidacao):
+    with pytest.raises(ValidationError):
         ambiente.servico.remove(resposta["instancia_id"], "errado", "admin", db_only=True)
 
 
@@ -328,9 +328,9 @@ def test_remover_instancia_que_falhou_nao_exige_desativar(ambiente):
 
 
 def test_instancia_desconhecida(ambiente):
-    with pytest.raises(NaoEncontrado):
+    with pytest.raises(NotFound):
         ambiente.servico.deactivate(999, "admin")
-    with pytest.raises(NaoEncontrado):
+    with pytest.raises(NotFound):
         ambiente.servico.remove(999, "x", "admin")
 
 
@@ -362,5 +362,5 @@ def test_auditoria_e_append_only(ambiente):
 def test_banco_recusa_reserva_duplicada_mesmo_sem_a_trava(ambiente):
     """UNIQUE e a segunda linha de defesa: dois processos poderiam ignorar a trava."""
     _criar(ambiente, "beta", "um")
-    with pytest.raises(Conflito):
+    with pytest.raises(Conflict):
         ambiente.db.reserve(300, "10.0.0.99", "beta", "outro", "beta-300", "x", [])

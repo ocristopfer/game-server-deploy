@@ -14,7 +14,7 @@ import ipaddress
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from gamebroker.domain.exceptions import SemRecurso
+from gamebroker.domain.exceptions import OutOfResources
 from gamebroker.services.catalog import Game
 
 ROLE_GAME = "jogo"
@@ -48,7 +48,7 @@ def pick_ctid(span: Iterable[int], taken: set[int]) -> int:
     for ctid in span:
         if ctid not in taken:
             return ctid
-    raise SemRecurso("nao ha CTID livre na faixa do broker")
+    raise OutOfResources("nao ha CTID livre na faixa do broker")
 
 
 def pick_ip(candidates: Iterable[str], taken: set[str], answers: Callable[[str], bool]) -> str:
@@ -59,7 +59,7 @@ def pick_ip(candidates: Iterable[str], taken: set[str], answers: Callable[[str],
     for ip in candidates:
         if ip not in taken and not answers(ip):
             return ip
-    raise SemRecurso("nao ha IP livre na faixa do broker")
+    raise OutOfResources("nao ha IP livre na faixa do broker")
 
 
 def pick_ip_and_ctid(candidates: Iterable[str], ctid_base: int, ctids_taken: set[int],
@@ -74,7 +74,7 @@ def pick_ip_and_ctid(candidates: Iterable[str], ctid_base: int, ctids_taken: set
         ctid = ctid_base + int(ip.rsplit(".", 1)[1])
         if ip not in ips_taken and ctid not in ctids_taken and not answers(ip):
             return ip, ctid
-    raise SemRecurso("nao ha IP/CTID livre na faixa do broker")
+    raise OutOfResources("nao ha IP/CTID livre na faixa do broker")
 
 
 def _role_of(jogo: Game, base: int) -> str:
@@ -101,14 +101,14 @@ def allocate_ports(jogo: Game, busy: set[tuple[int, str]], span: range) -> list[
         candidatas = [AllocatedPort(p.number, p.number, p.proto, _role_of(jogo, p.number)) for p in jogo.ports]
         conflitos = [c for c in candidatas if c.key in busy]
         if conflitos:
-            raise SemRecurso(f"porta {conflitos[0]} ja esta em uso: este jogo nao aceita mudar de porta")
+            raise OutOfResources(f"porta {conflitos[0]} ja esta em uso: este jogo nao aceita mudar de porta")
         return candidatas
     tamanho = len({p.number for p in jogo.ports})
     for inicio in range(span.start, span.stop - tamanho + 1):
         candidatas = _as_block(jogo, inicio)
         if not any(c.key in busy for c in candidatas):
             return candidatas
-    raise SemRecurso(f"a faixa de portas do broker ({span.start}-{span.stop - 1}) esta cheia")
+    raise OutOfResources(f"a faixa de portas do broker ({span.start}-{span.stop - 1}) esta cheia")
 
 
 def port_with_role(ports: Iterable[AllocatedPort], role: str) -> int:

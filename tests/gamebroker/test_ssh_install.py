@@ -12,9 +12,9 @@ import pytest
 from gamebroker.runtime.ssh_installer import (
     DESTINO_REMOTO,
     ConfigSsh,
-    ErroDeInstalacao,
     ExecutorReal,
     InstaladorSsh,
+    InstallError,
     build_env,
 )
 from gamebroker.services.allocator import AllocatedPort
@@ -57,7 +57,7 @@ class ExecutorFalso:
 
 
 @pytest.fixture
-def pasta_lib(tmp_path: Path) -> Path:
+def lib_dir(tmp_path: Path) -> Path:
     pasta = tmp_path / "lib"
     pasta.mkdir()
     for name in ("ct-install.sh", "ct-fases.sh"):
@@ -66,8 +66,8 @@ def pasta_lib(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def config(tmp_path: Path, pasta_lib: Path) -> ConfigSsh:
-    return ConfigSsh(chave_privada=tmp_path / "id_broker", chave_publica=CHAVE_PUBLICA, pasta_lib=pasta_lib)
+def config(tmp_path: Path, lib_dir: Path) -> ConfigSsh:
+    return ConfigSsh(chave_privada=tmp_path / "id_broker", chave_publica=CHAVE_PUBLICA, lib_dir=lib_dir)
 
 
 @pytest.fixture
@@ -151,7 +151,7 @@ def test_runtime_de_windows_vira_windows_runtime_e_nao_receita(dados_de_jogo, po
 
 def test_wine_e_proton_juntos_sao_recusados(dados_de_jogo, ports):
     dados_de_jogo.update(plataforma="windows", receitas=["wine", "proton"])
-    with pytest.raises(ErroDeInstalacao, match="OU"):
+    with pytest.raises(InstallError, match="OU"):
         build_env(validate_dynamic(dados_de_jogo), ports)
 
 
@@ -232,7 +232,7 @@ def test_timeouts_sao_repassados(installer, jogo, ports, config):
 def test_instalador_que_falha_traz_a_cauda_e_ainda_limpa_a_chave(installer, jogo, ports):
     inst, executor = installer
     executor.saidas["bash ct-install.sh"] = (1, ["baixando", "ERROR: SteamCMD nao conseguiu instalar o app"])
-    with pytest.raises(ErroDeInstalacao, match=r"codigo 1.*SteamCMD nao conseguiu"):
+    with pytest.raises(InstallError, match=r"codigo 1.*SteamCMD nao conseguiu"):
         inst.install("10.0.0.30", jogo, ports, lambda _l: None)
     assert "rm -rf" in executor.comandos()[-1], "a chave do broker sai mesmo com a instalacao falha"
 
@@ -240,7 +240,7 @@ def test_instalador_que_falha_traz_a_cauda_e_ainda_limpa_a_chave(installer, jogo
 def test_exit_zero_sem_a_marca_de_conclusao_nao_vale(installer, jogo, ports):
     inst, executor = installer
     executor.saidas["bash ct-install.sh"] = (0, ["so isto"])
-    with pytest.raises(ErroDeInstalacao, match="sem confirmar"):
+    with pytest.raises(InstallError, match="sem confirmar"):
         inst.install("10.0.0.30", jogo, ports, lambda _l: None)
     assert "rm -rf" in executor.comandos()[-1]
 
@@ -248,7 +248,7 @@ def test_exit_zero_sem_a_marca_de_conclusao_nao_vale(installer, jogo, ports):
 def test_falha_no_envio_tambem_limpa(installer, jogo, ports):
     inst, executor = installer
     executor.saidas["scp"] = (1, [])
-    with pytest.raises(ErroDeInstalacao, match="enviar o instalador"):
+    with pytest.raises(InstallError, match="enviar o instalador"):
         inst.install("10.0.0.30", jogo, ports, lambda _l: None)
     assert "rm -rf" in executor.comandos()[-1]
 
@@ -257,7 +257,7 @@ def test_chave_que_nao_sai_faz_a_criacao_falhar(installer, jogo, ports):
     """Um CT novo nao pode nascer com acesso permanente do broker."""
     inst, executor = installer
     executor.saidas["grep -vF"] = (1, [])
-    with pytest.raises(ErroDeInstalacao, match="remover a chave do broker"):
+    with pytest.raises(InstallError, match="remover a chave do broker"):
         inst.install("10.0.0.30", jogo, ports, lambda _l: None)
 
 
@@ -266,7 +266,7 @@ def test_limpeza_que_falha_nao_esconde_o_erro_da_instalacao(installer, jogo, por
     executor.saidas["bash ct-install.sh"] = (1, ["deu ruim"])
     executor.saidas["grep -vF"] = (1, [])
     linhas: list[str] = []
-    with pytest.raises(ErroDeInstalacao, match="a instalacao falhou"):
+    with pytest.raises(InstallError, match="a instalacao falhou"):
         inst.install("10.0.0.30", jogo, ports, linhas.append)
     assert any("AVISO" in linha and "remover a chave" in linha for linha in linhas)
 
@@ -283,7 +283,7 @@ def test_ssh_que_nunca_sobe_e_erro_e_nao_tenta_limpar(config, jogo, ports):
     executor = ExecutorFalso()
     executor.falhas_no_ssh_inicial = 10**6
     inst = InstaladorSsh(config, executor, dormir=lambda _s: None, now=lambda: float(next(clock)))
-    with pytest.raises(ErroDeInstalacao, match="nao respondeu"):
+    with pytest.raises(InstallError, match="nao respondeu"):
         inst.install("10.0.0.30", jogo, ports, lambda _l: None)
     assert set(executor.comandos()) == {"true"}, "nunca entrou: nada a enviar nem a limpar"
 
@@ -312,19 +312,19 @@ def test_saida_volumosa_vira_poucas_gravacoes_e_linhas_longas_sao_cortadas(insta
 # --- configuracao --------------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("key", ["", "ssh-ed25519", "ssh-ed25519 curta", "ssh-ed25519 " + "A" * 30 + "; rm -rf /"])
-def test_chave_publica_invalida(tmp_path, pasta_lib, key):
+def test_chave_publica_invalida(tmp_path, lib_dir, key):
     with pytest.raises(ValueError, match="chave_publica"):
-        ConfigSsh(chave_privada=tmp_path / "k", chave_publica=key, pasta_lib=pasta_lib)
+        ConfigSsh(chave_privada=tmp_path / "k", chave_publica=key, lib_dir=lib_dir)
 
 
-def test_usuario_invalido(tmp_path, pasta_lib):
+def test_usuario_invalido(tmp_path, lib_dir):
     with pytest.raises(ValueError, match="usuario"):
-        ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, pasta_lib=pasta_lib, usuario="root; ls")
+        ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, lib_dir=lib_dir, usuario="root; ls")
 
 
 def test_lib_incompleta_e_recusada(tmp_path):
     (tmp_path / "ct-install.sh").write_text("x")
-    cfg = ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, pasta_lib=tmp_path)
+    cfg = ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, lib_dir=tmp_path)
     with pytest.raises(ValueError, match="ct-fases.sh"):
         InstaladorSsh(cfg, ExecutorFalso())
 
@@ -344,7 +344,7 @@ def test_executor_real_mata_o_que_passa_do_prazo():
 
 
 def test_executor_real_binario_inexistente_e_erro_claro():
-    with pytest.raises(ErroDeInstalacao, match="nao consegui executar"):
+    with pytest.raises(InstallError, match="nao consegui executar"):
         ExecutorReal().rodar(["/nao/existe/ssh"], None, 5)
 
 

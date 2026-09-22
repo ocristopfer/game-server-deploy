@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from gamebroker.domain.exceptions import SemRecurso
+from gamebroker.domain.exceptions import OutOfResources
 from gamebroker.persistence.db import ESTADO_ATIVA, OP_ERRO, OP_OK
 from gamebroker.runtime.fakes import InstaladorFalso, RedeFalsa
 from gamebroker.services.allocator import ips_in_range
@@ -53,7 +53,7 @@ def test_falha_na_instalacao_desfaz_no_proxmox_e_no_opnsense(real):
 def test_porta_ocupada_por_alias_do_usuario_barra_a_criacao(real):
     """A regra 'palworld' do usuario usa alias e esta DESATIVADA - ainda assim ocupa a porta."""
     real.opn.falso.regra_existente("palworld", "JOGO_PALWORLD", alias=["7001", "27015"], desativada=True)
-    with pytest.raises(SemRecurso, match="7001/udp"):
+    with pytest.raises(OutOfResources, match="7001/udp"):
         real.servico_real.create("alfa", "x", "zeca")
     assert real.pve.falso.cts == {}, "nada foi criado no Proxmox"
 
@@ -79,7 +79,7 @@ def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
     for name in ("ct-install.sh", "ct-fases.sh"):
         (lib / name).write_text("#!/bin/bash\n")
     executor = ExecutorFalso()
-    ssh = InstaladorSsh(ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, pasta_lib=lib),
+    ssh = InstaladorSsh(ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, lib_dir=lib),
                         executor, dormir=lambda _s: None)
     servico = Service(real.db, real.catalog, real.pve.backend, real.opn.backend, ssh, RedeFalsa(),
                       Config(ctids=range(300, 310), ips=ips_in_range("10.0.0", 30, 40)),

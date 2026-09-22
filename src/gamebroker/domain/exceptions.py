@@ -2,41 +2,41 @@
 from __future__ import annotations
 
 
-class Recusa(Exception):
+class Refusal(Exception):
     """Pedido que o broker entendeu e nao vai atender. A mensagem e para o usuario."""
 
     http = 400
-    codigo = "pedido-invalido"
+    code = "pedido-invalido"
 
-    def __init__(self, mensagem: str):
-        super().__init__(mensagem)
-        self.mensagem = mensagem
-
-
-class ErroDeValidacao(Recusa):
-    codigo = "validacao"
-
-    def __init__(self, campo: str, mensagem: str):
-        super().__init__(f"{campo}: {mensagem}")
-        self.campo = campo
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
 
 
-class NaoEncontrado(Recusa):
+class ValidationError(Refusal):
+    code = "validacao"
+
+    def __init__(self, field: str, message: str):
+        super().__init__(f"{field}: {message}")
+        self.field = field
+
+
+class NotFound(Refusal):
     http = 404
-    codigo = "nao-encontrado"
+    code = "nao-encontrado"
 
 
-class Conflito(Recusa):
+class Conflict(Refusal):
     http = 409
-    codigo = "conflito"
+    code = "conflito"
 
 
-class SemRecurso(Conflito):
+class OutOfResources(Conflict):
     """Faixa de CTID/IP esgotada ou porta ocupada."""
 
-    codigo = "sem-recurso"
+    code = "sem-recurso"
 
 
-class CotaExcedida(Recusa):
+class QuotaExceeded(Refusal):
     http = 429
-    codigo = "cota"
+    code = "cota"

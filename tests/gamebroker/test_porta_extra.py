@@ -9,7 +9,7 @@ import pytest
 
 import gamebroker.services.allocator as alocador
 import gamebroker.services.catalog as cat
-from gamebroker.domain.exceptions import ErroDeValidacao
+from gamebroker.domain.exceptions import ValidationError
 from gamebroker.runtime.ssh_installer import build_env
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
@@ -94,7 +94,7 @@ def test_publico_mostra_a_porta_extra(com_extra):
 ])
 def test_porta_extra_invalida_e_recusada(com_extra, mudancas, campo):
     com_extra.update(mudancas)
-    with pytest.raises(ErroDeValidacao) as erro:
+    with pytest.raises(ValidationError) as erro:
         cat.validate_dynamic(com_extra)
     assert campo in str(erro.value)
 
@@ -102,13 +102,13 @@ def test_porta_extra_invalida_e_recusada(com_extra, mudancas, campo):
 def test_marcador_extra_sem_porta_extra_e_recusado(dados_de_jogo):
     """Sem porta extra o marcador viraria "0" na linha de comando do jogo."""
     dados_de_jogo["start_args"] = "-port={PORT} -queryport={QUERY_PORT} -x={EXTRA_PORT}"
-    with pytest.raises(ErroDeValidacao, match="EXTRA_PORT"):
+    with pytest.raises(ValidationError, match="EXTRA_PORT"):
         cat.validate_dynamic(dados_de_jogo)
 
 
 def test_quarta_porta_continua_recusada_para_jogo_que_anda_de_porta(com_extra):
     com_extra["portas"] = ["7777/udp", "27016/udp", "8888/tcp", "9999/udp"]
-    with pytest.raises(ErroDeValidacao, match="mais portas"):
+    with pytest.raises(ValidationError, match="mais portas"):
         cat.validate_dynamic(com_extra)
 
 

@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 from http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE, OpnsenseHttpFalso, PveFalso, ServidorFalso
 
-from gamebroker.integrations.http_client import Cliente
+from gamebroker.integrations.http_client import Client
 from gamebroker.persistence.db import Db
 from gamebroker.runtime.fakes import InstaladorFalso, OpnsenseFalso, ProxmoxFalso, RedeFalsa
 from gamebroker.runtime.opnsense import Opnsense
@@ -144,7 +144,7 @@ def pve():
         node="pve", pool="games", storage="vm-pool", bridge="vmbr1", gateway="192.168.2.1",
         template="vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
         chaves_ssh=("ssh-ed25519 AAAAC3Nza-chave-de-teste broker@teste",))
-    cliente = Cliente(servidor.url, {"Authorization": f"PVEAPIToken={TOKEN_PVE}"})
+    cliente = Client(servidor.url, {"Authorization": f"PVEAPIToken={TOKEN_PVE}"})
     yield SimpleNamespace(falso=falso, servidor=servidor, config=config, esperas=esperas,
                           backend=Proxmox(cliente, config, dormir=esperas.append))
     servidor.stop()
@@ -156,6 +156,6 @@ def opn():
     falso = OpnsenseHttpFalso()
     servidor = ServidorFalso(falso.tratar)
     basico = base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
-    cliente = Cliente(servidor.url, {"Authorization": f"Basic {basico}"})
+    cliente = Client(servidor.url, {"Authorization": f"Basic {basico}"})
     yield SimpleNamespace(falso=falso, servidor=servidor, backend=Opnsense(cliente, "wan"))
     servidor.stop()

@@ -18,7 +18,7 @@ import ipaddress
 import re
 from collections.abc import Sequence
 
-from gamebroker.integrations.http_client import Cliente, Resposta
+from gamebroker.integrations.http_client import Client, Response
 from gamebroker.services.allocator import AllocatedPort
 
 PREFIXO_DA_DESCRICAO = "gamepanel:"
@@ -32,11 +32,11 @@ _QUEBRA_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _BUSCA = {"current": 1, "rowCount": -1}
 
 
-class ErroDoOpnsense(RuntimeError):
+class OpnsenseError(RuntimeError):
     """Falha ao falar com o OPNsense. A mensagem nao carrega chave nem segredo."""
 
 
-class ErroDeLeitura(ErroDoOpnsense):
+class ReadError(OpnsenseError):
     """Regra existente que o broker nao soube interpretar: nao abre porta nova."""
 
 
@@ -66,17 +66,17 @@ def _expandir(item: str, regra: str) -> set[int]:
                 return set(range(inicio, fim + 1))
     except ValueError:
         pass
-    raise ErroDeLeitura(f"regra '{regra}': nao entendi a porta {item!r}")
+    raise ReadError(f"regra '{regra}': nao entendi a porta {item!r}")
 
 
 def _ports_of_alias(meta: object, regra: str) -> set[int]:
     if not isinstance(meta, list) or not meta:
-        raise ErroDeLeitura(f"regra '{regra}': o alias de porta nao veio no resultado")
+        raise ReadError(f"regra '{regra}': o alias de porta nao veio no resultado")
     ports: set[int] = set()
     for alias in meta:
         summary = alias.get("summary") if isinstance(alias, dict) else None
         if not isinstance(summary, str):
-            raise ErroDeLeitura(f"regra '{regra}': alias sem conteudo legivel")
+            raise ReadError(f"regra '{regra}': alias sem conteudo legivel")
         lidas = 0
         for pedaco in _QUEBRA_RE.split(summary):
             pedaco = pedaco.strip()
@@ -86,7 +86,7 @@ def _ports_of_alias(meta: object, regra: str) -> set[int]:
             ports |= _expandir(pedaco, regra)
             lidas += 1
         if lidas == 0:
-            raise ErroDeLeitura(f"regra '{regra}': o alias nao lista nenhuma porta que eu entenda")
+            raise ReadError(f"regra '{regra}': o alias nao lista nenhuma porta que eu entenda")
     return ports
 
 
@@ -99,7 +99,7 @@ def _protocolos(protocolo: str) -> tuple[str, ...]:
 def busy_ports(linhas: object, interface: str) -> set[tuple[int, str]]:
     ocupadas: set[tuple[int, str]] = set()
     if not isinstance(linhas, list):
-        raise ErroDeLeitura("resposta de search_rule sem a lista de regras")
+        raise ReadError("resposta de search_rule sem a lista de regras")
     for regra in linhas:
         if not isinstance(regra, dict) or str(regra.get("interface", "")).lower() != interface.lower():
             continue
@@ -119,23 +119,23 @@ def busy_ports(linhas: object, interface: str) -> set[tuple[int, str]]:
 # --- backend ----------------------------------------------------------------------------
 
 class Opnsense:
-    def __init__(self, cliente: Cliente, interface: str = "wan"):
+    def __init__(self, cliente: Client, interface: str = "wan"):
         if not re.fullmatch(r"[A-Za-z0-9_]{1,32}", interface):
             raise ValueError("nome de interface invalido")
         self._c = cliente
         self._interface = interface
 
-    def _api(self, metodo: str, path: str, acao: str, corpo: object = None) -> Resposta:
-        resposta = self._c.requisitar(metodo, "/api/firewall" + path, json_corpo=corpo)
+    def _api(self, metodo: str, path: str, acao: str, corpo: object = None) -> Response:
+        resposta = self._c.request(metodo, "/api/firewall" + path, json_corpo=corpo)
         if not resposta.ok:
-            raise ErroDoOpnsense(f"{acao}: HTTP {resposta.status}")
+            raise OpnsenseError(f"{acao}: HTTP {resposta.status}")
         return resposta
 
     def _regras(self) -> list:
         resposta = self._api("POST", "/d_nat/search_rule", "ler regras", _BUSCA)
         linhas = resposta.json.get("rows") if isinstance(resposta.json, dict) else None
         if not isinstance(linhas, list):
-            raise ErroDeLeitura("resposta de search_rule sem a lista de regras")
+            raise ReadError("resposta de search_rule sem a lista de regras")
         return linhas
 
     def external_ports(self) -> set[tuple[int, str]]:
@@ -165,7 +165,7 @@ class Opnsense:
 
     def _create_rule(self, ctid: int, target: str, porta: AllocatedPort) -> str:
         if porta.proto not in ("tcp", "udp") or not 1 <= porta.number <= 65535:
-            raise ErroDoOpnsense(f"porta invalida: {porta}")
+            raise OpnsenseError(f"porta invalida: {porta}")
         regra = {"rule": {
             "disabled": "0", "interface": self._interface, "protocol": porta.proto,
             "ipprotocol": "inet", "destination": {"network": "wanip", "port": str(porta.number)},
@@ -176,7 +176,7 @@ class Opnsense:
         dados = resposta.json if isinstance(resposta.json, dict) else {}
         uuid = str(dados.get("uuid", ""))
         if dados.get("result") != "saved" or not _UUID_RE.fullmatch(uuid):
-            raise ErroDoOpnsense(f"criar regra {porta}: o OPNsense recusou ({_validacoes(dados)})")
+            raise OpnsenseError(f"criar regra {porta}: o OPNsense recusou ({_validacoes(dados)})")
         return uuid
 
     def close_ports(self, ctid: int) -> None:
@@ -191,20 +191,20 @@ class Opnsense:
         for uuid in uuids:
             try:
                 self._api("POST", f"/d_nat/del_rule/{uuid}", "apagar regra", {})
-            except ErroDoOpnsense:
+            except OpnsenseError:
                 errors += 1
         if errors:
-            raise ErroDoOpnsense(f"nao consegui apagar {errors} regra(s); confira no OPNsense")
+            raise OpnsenseError(f"nao consegui apagar {errors} regra(s); confira no OPNsense")
 
     def _aplicar(self) -> None:
         resposta = self._api("POST", "/filter/apply", "aplicar", {})
-        estado = resposta.json.get("status", "") if isinstance(resposta.json, dict) else ""
-        if not str(estado).strip().upper().startswith("OK"):
-            raise ErroDoOpnsense("aplicar: o OPNsense nao confirmou")
+        state_dir = resposta.json.get("status", "") if isinstance(resposta.json, dict) else ""
+        if not str(state_dir).strip().upper().startswith("OK"):
+            raise OpnsenseError("aplicar: o OPNsense nao confirmou")
 
     def reachable(self) -> bool:
         try:
-            return self._c.requisitar("POST", "/api/firewall/d_nat/search_rule",
+            return self._c.request("POST", "/api/firewall/d_nat/search_rule",
                                       json_corpo={"current": 1, "rowCount": 1},
                                       timeout=SONDA_TIMEOUT).ok
         except Exception:  # noqa: BLE001
