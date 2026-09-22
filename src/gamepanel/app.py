@@ -41,7 +41,6 @@ from gamepanel.games.catalog.templates import MODELOS as MODELOS_DE_JOGO
 from gamepanel.integrations import broker_client
 from gamepanel.runtime import a2s, http_probe
 from gamepanel.runtime import log_probe
-from gamepanel.runtime import metrics_probe
 from gamepanel.runtime import port_probe
 from gamepanel.runtime import ssh as ssh_transport
 # Apelido: ha uma rota `terminal()` neste mesmo modulo (a tela /servers/<id>/terminal),
@@ -53,7 +52,7 @@ from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import terminal as term_runtime
 from gamepanel.security import qr, totp
-from gamepanel.services import player_service
+from gamepanel.services import metrics_service, parallel, player_service, status_service
 
 # O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
 # resto do painel continua funcionando e a tela do terminal responde 503.
@@ -1101,138 +1100,41 @@ def all_players(servers) -> dict[int, dict]:
 
 # ------------------------------------------------------------------ recursos
 #
-# Implementacao real em gamepanel.runtime.metrics_probe (Fase 4). `_parse_metrics` e o
-# unico nome usado fora desta secao (server_metrics, logo abaixo).
-METRICS_SCRIPT = metrics_probe.METRICS_SCRIPT
-_parse_metrics = metrics_probe.parse_metrics
-
-
-_metrics_cache: dict[int, tuple[float, dict]] = {}
-_metrics_lock = threading.Lock()
+# Script e leitura dos numeros em gamepanel.runtime.metrics_probe; cache e decisao em
+# gamepanel.services.metrics_service. `server_metrics` segue aqui porque o resto de
+# app.py — e o monkeypatch dos testes de alerta e de grafico — chama por ele.
+#
+# O MESMO dicionario do service: a fixture `banco` limpa o cache por este nome.
+_metrics_cache = metrics_service._metrics_cache
 
 
 def server_metrics(server: Servidor, force: bool = False) -> dict:
-    """Uso de CPU, memoria, disco e rede do container. Cache curto para varias abas
-    abertas na mesma tela nao virarem varias sessoes de SSH por segundo."""
-    key = int(server["id"])
-    agora = time.monotonic()
-    if not force:
-        with _metrics_lock:
-            cached = _metrics_cache.get(key)
-        if cached and agora - cached[0] < METRICS_TTL:
-            return cached[1]
-
-    alvo = server["config_path"] or FILE_DEFAULT_PATH
-    try:
-        raw = ssh_output(
-            server, q("bash", "-lc", METRICS_SCRIPT, "gp", server["service"], alvo), timeout=30
-        )
-        data = _parse_metrics(raw)
-        data["error"] = ""
-    except RemoteError as exc:
-        data = {"error": str(exc)}
-
-    with _metrics_lock:
-        _metrics_cache[key] = (agora, data)
-    return data
+    return metrics_service.server_metrics(
+        ssh_output, server, FILE_DEFAULT_PATH, METRICS_TTL, force)
 
 
 def all_metrics(servers) -> dict[int, dict]:
-    """Igual ao all_status: em serie, cinco servidores custariam cinco vezes mais."""
-    results: dict[int, dict] = {}
-    lock = threading.Lock()
-
-    def work(srv):
-        data = server_metrics(srv)
-        with lock:
-            results[int(srv["id"])] = data
-
-    threads = [threading.Thread(target=work, args=(s,), daemon=True) for s in servers]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=35)
-    for srv in servers:
-        results.setdefault(int(srv["id"]), {"error": MSG_TIMEOUT})
-    return results
+    # `server_metrics` entra por lambda para o nome ser resolvido neste modulo a cada
+    # chamada — e o que mantem a troca por um falso valendo dentro do paralelo.
+    return parallel.por_servidor(
+        lambda srv: server_metrics(srv), servers, 35, {"error": MSG_TIMEOUT})
 
 
 # --------------------------------------------------------------- status cache
 
-_status_cache: dict[int, tuple[float, dict]] = {}
-_status_lock = threading.Lock()
+_status_cache = status_service._status_cache
+invalidate_status = status_service.invalidate
 
 
 def server_status(server: Servidor, force: bool = False) -> dict:
-    key = int(server["id"])
-    now = time.monotonic()
-    if not force:
-        with _status_lock:
-            cached = _status_cache.get(key)
-        if cached and now - cached[0] < STATUS_TTL:
-            return cached[1]
-
-    state = {"reachable": False, "service": "desconhecido", "error": "",
-             "sub": "", "restarts": 0, "result": ""}
-    try:
-        # `systemctl show` no lugar de `is-active`: mesma ida de SSH, mas traz junto o que
-        # distingue "eu parei" de "quebrou" (Result) e o contador de restarts automaticos
-        # (NRestarts), que e o unico jeito de enxergar um loop de crash — entre uma queda
-        # e a proxima o `is-active` responde 'active' e o painel nunca via nada.
-        # Ele sai com 0 mesmo para unidade que nao existe, entao nao precisa de '|| true'.
-        raw = ssh_output(server, q(
-            "systemctl", "show", server["service"],
-            "-p", "ActiveState", "-p", "SubState", "-p", "NRestarts", "-p", "Result",
-        ))
-        campos = {}
-        for linha in raw.splitlines():
-            chave, _, valor = linha.partition("=")
-            campos[chave.strip()] = valor.strip()
-        state["reachable"] = True
-        state["service"] = campos.get("ActiveState") or "inactive"
-        state["sub"] = campos.get("SubState", "")
-        state["result"] = campos.get("Result", "")
-        # NRestarts so existe no systemd >= 235; sem ele o loop de restart nao e
-        # detectavel e o painel simplesmente nao avisa desse evento nesse servidor.
-        try:
-            state["restarts"] = int(campos.get("NRestarts", "0") or 0)
-        except ValueError:
-            state["restarts"] = 0
-    except RemoteError as exc:
-        state["error"] = str(exc)
-        state["service"] = "inacessivel"
-
-    with _status_lock:
-        _status_cache[key] = (now, state)
-    return state
-
-
-def invalidate_status(server_id: int) -> None:
-    with _status_lock:
-        _status_cache.pop(int(server_id), None)
+    return status_service.server_status(ssh_output, server, STATUS_TTL, force)
 
 
 def all_status(servers) -> dict[int, dict]:
-    """Consulta em paralelo — com 5 servidores o serial levaria ~10s por pageload."""
-    results: dict[int, dict] = {}
-    lock = threading.Lock()
-
-    def work(srv):
-        state = server_status(srv)
-        with lock:
-            results[int(srv["id"])] = state
-
-    threads = [threading.Thread(target=work, args=(s,), daemon=True) for s in servers]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=QUICK_TIMEOUT + 5)
-    for srv in servers:
-        results.setdefault(
-            int(srv["id"]),
-            {"reachable": False, "service": "desconhecido", "error": MSG_TIMEOUT},
-        )
-    return results
+    return parallel.por_servidor(
+        lambda srv: server_status(srv), servers, QUICK_TIMEOUT + 5,
+        {"reachable": False, "service": "desconhecido", "error": MSG_TIMEOUT},
+    )
 
 
 # ------------------------------------------------------------------- jobs

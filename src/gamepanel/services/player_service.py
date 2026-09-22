@@ -26,6 +26,7 @@ from typing import Any, NamedTuple, TypedDict
 from gamepanel.runtime import http_probe, log_probe
 from gamepanel.runtime.a2s import AuthError, QueryError
 from gamepanel.runtime.ssh import RemoteError, ServerLike
+from gamepanel.services import parallel
 
 # De onde a contagem de jogadores pode sair. 'none' e o desligado explicito — diferente
 # do vazio, que significa "cadastro antigo, deduza pela porta de consulta".
@@ -322,20 +323,7 @@ def all_players(conta_um: Callable[[ServerLike], dict], servers: Sequence[Server
     chama e `app.py`, e la esse nome pode estar trocado por um falso no teste — montar
     a chamada aqui dentro passaria por cima da troca, em silencio.
     """
-    results: dict[int, dict] = {}
-    lock = threading.Lock()
-
-    def work(srv: ServerLike) -> None:
-        data = conta_um(srv)
-        with lock:
-            results[int(srv["id"])] = data
-
-    threads = [threading.Thread(target=work, args=(s,), daemon=True) for s in servers]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=join_timeout)
-    for srv in servers:
-        results.setdefault(int(srv["id"]), {"configured": True, "error": msg_timeout,
-                                            "players": None, "list": [], "source": ""})
-    return results
+    return parallel.por_servidor(
+        conta_um, servers, join_timeout,
+        {"configured": True, "error": msg_timeout, "players": None, "list": [], "source": ""},
+    )
