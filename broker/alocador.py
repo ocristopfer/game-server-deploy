@@ -113,3 +113,8 @@ def alocar_portas(jogo: Jogo, ocupadas: set[tuple[int, str]], faixa: range) -> l
 
 def porta_do_papel(portas: Iterable[PortaAlocada], papel: str) -> int:
     return next((p.numero for p in portas if p.papel == papel), 0)
+
+
+def porta_da_base(portas: Iterable[PortaAlocada], base: int) -> int:
+    """O numero alocado para a porta que o jogo chama de `base` (0 se nao houver)."""
+    return next((p.numero for p in portas if p.base == base), 0)

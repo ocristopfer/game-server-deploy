@@ -7,6 +7,8 @@
   {{ ui.botao('Instancias', href=url_for('instances_list'), variante='ghost', icone='🧩') }}
 {% endcall %}
 
+{# Lista a esquerda, formulario a direita no desktop; uma coluna no celular. #}
+<div class="grid-cartoes">
 <div class="card">
   <div class="table-wrap"><table class="jobs">
     {# UMA coluna, um bloco por jogo. Com duas ou tres, a de "criavel" (que e a resposta
@@ -39,7 +41,7 @@
   </p>
 </div>
 
-<div class="card card--form">
+<div class="card">
   <h2>Adicionar jogo</h2>
   <p class="muted small">
     So dados: o broker <strong>nao aceita comandos</strong>. O que precisa de instalacao
@@ -47,6 +49,30 @@
   </p>
   <form method="post" action="{{ url_for('catalog_new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    {# Busca por nome ou App ID (features/busca-de-jogo.js). Sem `name`: nao vai no envio. #}
+    <div class="mb-4" data-busca-de-jogo data-url="{{ url_for('api_catalog_suggestions') }}" hidden>
+      <label>Buscar jogo <span class="muted">(nome ou App ID)</span>
+        <input type="search" data-busca-campo maxlength="60" autocomplete="off" spellcheck="false"
+               placeholder="Palworld, Valheim, 2394010...">
+        <small>Preenche App ID, portas e comando de start a partir do catalogo do LinuxGSM. E so
+          sugestao: confira antes de enviar.</small>
+      </label>
+      <div class="stack stack--sm" data-busca-resultados aria-live="polite"></div>
+    </div>
+    {# Sem `name`: nao vai no envio, so preenche os campos abaixo (features/modelo-jogo.js).
+       Nasce escondido porque sem JavaScript ele nao faria nada. #}
+    {% if modelos %}
+    <label hidden>Comecar de um modelo
+      <select data-modelo-jogo>
+        <option value="">Em branco</option>
+        {% for m in modelos %}
+        <option value="{{ m.chave }}" data-descricao="{{ m.descricao }}"
+                data-valores='{{ m.valores | tojson }}'>{{ m.rotulo }}</option>
+        {% endfor %}
+      </select>
+      <small data-modelo-descricao>Preenche portas, caminhos, argumentos e o padrao do log de uma vez.</small>
+    </label>
+    {% endif %}
     <div class="row">
       <label>Chave
         <input name="chave" value="{{ form.get('chave', '') }}" required maxlength="24" spellcheck="false"
@@ -72,6 +98,9 @@
       <label>Porta de consulta <span class="muted">(opcional)</span>
         <input name="porta_query" value="{{ form.get('porta_query', '') }}" inputmode="numeric" placeholder="27015">
       </label>
+      <label>Porta extra <span class="muted">(opcional)</span>
+        <input name="porta_extra" value="{{ form.get('porta_extra', '') }}" inputmode="numeric" placeholder="8888">
+      </label>
     </div>
     <div class="row">
       <label>Script de start <span class="muted">(opcional)</span>
@@ -79,7 +108,7 @@
       </label>
       <label>Argumentos <span class="muted">(opcional)</span>
         <input name="start_args" value="{{ form.get('start_args', '') }}" spellcheck="false" placeholder="-port={PORT}">
-        <small>Use <code>{PORT}</code> e <code>{QUERY_PORT}</code>. Nada de <code>; | &amp; $</code>.</small>
+        <small>Use <code>{PORT}</code>, <code>{QUERY_PORT}</code> e <code>{EXTRA_PORT}</code>. Nada de <code>; | &amp; $</code>.</small>
       </label>
     </div>
     <div class="row">
@@ -123,20 +152,21 @@
     <label>Log: linha de saida <span class="muted">(opcional)</span>
       <input name="leave_re" value="{{ form.get('leave_re', '') }}" spellcheck="false" placeholder="(?P&lt;name&gt;.+) left">
     </label>
-    <fieldset>
+    <fieldset class="grupo">
       <legend>Receitas de instalacao</legend>
       {% for r in receitas %}
-        <label class="check"><input type="checkbox" name="receitas" value="{{ r }}"> {{ r }}</label>
+        <label class="checkbox"><input type="checkbox" name="receitas" value="{{ r }}"> {{ r }}</label>
       {% endfor %}
     </fieldset>
-    <label class="check">
+    <label class="checkbox">
       <input type="checkbox" name="deslocavel" value="1" {{ 'checked' if form.get('deslocavel') == '1' }}>
       O broker sorteia as portas (varias instancias do mesmo jogo)
     </label>
-    <small>So marque se o jogo aceita as portas pelos argumentos: os argumentos de start precisam ter {PORT} (e {QUERY_PORT}, se houver porta de consulta) e o jogo so pode ter essas duas portas.</small>
+    <p class="muted small">So marque se o jogo aceita as portas pelos argumentos: os argumentos de start precisam ter {PORT} (e {QUERY_PORT} e {EXTRA_PORT}, se houver porta de consulta e porta extra) e o jogo so pode ter essas tres portas.</p>
     <div class="form-actions">
       {{ ui.botao('Adicionar ao catalogo', variante='primary', bloco=true) }}
     </div>
   </form>
+</div>
 </div>
 {% endblock %}

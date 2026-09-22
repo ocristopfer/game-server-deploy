@@ -61,8 +61,8 @@
      {% call ui.menu('Mais', alinhar='dir') %}
        ancora com class="menu__item" para cada destino
      {% endcall %} #}
-{% macro menu(rotulo, icone='⋯', alinhar='dir', titulo='') -%}
-<details class="menu">
+{% macro menu(rotulo, icone='⋯', alinhar='dir', titulo='', classe='') -%}
+<details class="menu{{ ' ' ~ classe if classe }}">
   <summary title="{{ titulo or rotulo }}" aria-label="{{ titulo or rotulo }}">
     {%- if icone %}<span class="icone" aria-hidden="true">{{ icone }}</span>{% endif %}
     {%- if rotulo %}<span>{{ rotulo }}</span>{% endif %}

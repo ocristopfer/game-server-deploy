@@ -29,6 +29,10 @@ cp provision-game-lxc.sh "$work/novo/"
 cp lib/ct-fases.sh "$work/novo/ct-fases.sh"
 cp lib/ct-install.sh lib/ct-fases.sh "$work/inst/"
 cp games/*.env "$work/games/"
+# O script da referencia (antes desta mudanca) nao conhece {EXTRA_PORT}: com o games/satisfactory.env
+# de hoje ele deixaria o marcador literal no ExecStart. Para o guarda "antes x depois" continuar
+# provando que o RESTO do instalador nao mudou, o Satisfactory legado roda sem o marcador.
+sed -e 's/ -ReliablePort={EXTRA_PORT}//' -e '/^EXTRA_PORT=/d' games/satisfactory.env > "$work/games/satisfactory-legado.env"
 # Wine puro: nenhum jogo do repo usa, mas o caminho existe no instalador.
 { cat games/dragonwilds.env; echo 'WINDOWS_RUNTIME=wine'; } > "$work/games/sintetico-wine.env"
 # Receita nomeada + porta de consulta deslocada: o que um jogo cadastrado pelo broker usa.
@@ -54,10 +58,11 @@ from broker.ssh_install import montar_env
 
 jogo = validar_dinamico({
     "chave": "gerado", "nome": "Gerado pelo broker", "app_id": 999002,
-    "portas": ["7777/udp", "27016/udp"], "porta_jogo": 7777, "porta_query": 27016,
-    "start_script": "Server.sh", "start_args": "-port={PORT} -queryport={QUERY_PORT}",
+    "portas": ["7777/udp", "27016/udp", "8888/tcp"], "porta_jogo": 7777, "porta_query": 27016, "porta_extra": 8888,
+    "start_script": "Server.sh", "start_args": "-port={PORT} -queryport={QUERY_PORT} -reliable={EXTRA_PORT}",
     "receitas": ["steamclient-sdk64"], "deslocavel": True})
-portas = [PortaAlocada(7777, 31000, "udp", "jogo"), PortaAlocada(27016, 31001, "udp", "query")]
+portas = [PortaAlocada(7777, 31000, "udp", "jogo"), PortaAlocada(27016, 31001, "udp", "query"),
+          PortaAlocada(8888, 31002, "tcp", "extra")]
 # Bytes, nao print(): no Windows o stdout em modo texto troca \n por \r\n, e o bash do CT leria
 # cada valor com um \r no fim (o instalador de verdade grava com newline="\n").
 import sys
@@ -108,7 +113,7 @@ DAYZ_CONTA=$'STEAM_USER=fulano\nSTEAM_PASS=segredo\nSTEAM_GUARD_CODE=ABCDE'
 PAL_ARQ="DefaultPalWorldSettings.ini"
 caso palworld        palworld.env         ""             "$PAL_ARQ"
 caso dragonwilds     dragonwilds.env
-caso satisfactory    satisfactory.env
+caso satisfactory-legado satisfactory-legado.env
 caso enshrouded      enshrouded.env
 caso icarus          icarus.env
 caso dayz-conta      dayz.env             "$DAYZ_CONTA"
@@ -125,6 +130,14 @@ caso_broker wine          sintetico-wine.env
 caso_broker receita       sintetico-receita.env
 
 # Recursos NOVOS (o script da referencia nao os conhece, entao nao ha "antes" para comparar):
+# {EXTRA_PORT} no Satisfactory de hoje: o instalador troca pelo padrao do jogo (a confiavel, 8888).
+s="$work/out/satisfactory-novo"
+if grep -q -- 'ExecStart=/opt/game/FactoryServer.sh -Port=7787 -ReliablePort=8888 -log -unattended' "$s/conteudo.txt"; then
+  printf 'OK        recursos novos  %-20s ({EXTRA_PORT} -> -ReliablePort=8888)\n' satisfactory
+else
+  printf 'FALHOU    recursos novos  %-20s (veja %s)\n' satisfactory "$s"; falhas=$((falhas + 1))
+fi
+
 # confere direto o resultado esperado da receita e do marcador {QUERY_PORT}.
 r="$work/out/receita-inst"
 esperado=1
@@ -137,18 +150,18 @@ else
   printf 'FALHOU    recursos novos  %-20s (veja %s)\n' receita "$r"; falhas=$((falhas + 1))
 fi
 
-# Costura Python -> ct-install.sh: o install.env gerado pelo broker, com portas 31000/31001.
+# Costura Python -> ct-install.sh: o install.env gerado pelo broker, com portas 31000/31001/31002.
 rodar gerado-inst inst gerado-pelo-broker.env "" "" install
 g="$work/out/gerado-inst"
 esperado=1
 [ "$(cat "$g/exit" 2>/dev/null)" = 0 ] || esperado=0
 grep -q "INSTALACAO CONCLUIDA: Gerado pelo broker" "$g/saida.log" || esperado=0
-grep -q -- 'ExecStart=/opt/game/Server.sh -port=31000 -queryport=31001' "$g/conteudo.txt" || esperado=0
+grep -q -- 'ExecStart=/opt/game/Server.sh -port=31000 -queryport=31001 -reliable=31002' "$g/conteudo.txt" || esperado=0
 grep -q "app_update 999002 validate" "$g/steamcmd.log" || esperado=0
 grep -q "login anonymous" "$g/steamcmd.log" || esperado=0
 grep -q 'sdk64/steamclient.so' "$g/arquivos.txt" || esperado=0
 if [ "$esperado" = 1 ]; then
-  printf 'OK        costura         %-20s (install.env do broker -> ct-install.sh, portas 31000/31001)\n' gerado
+  printf 'OK        costura         %-20s (install.env do broker -> ct-install.sh, portas 31000/31001/31002)\n' gerado
 else
   printf 'FALHOU    costura         %-20s (veja %s)\n' gerado "$g"; falhas=$((falhas + 1))
 fi

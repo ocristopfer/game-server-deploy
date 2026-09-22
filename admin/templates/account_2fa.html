@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% block title %}Verificacao em duas etapas — Painel de Jogos{% endblock %}
+
+{% block content %}
+{{ ui.cabecalho('Verificacao em duas etapas') }}
+
+<div class="card card--form">
+  <h2>1. Cadastre o painel no aplicativo</h2>
+  <p class="muted small">
+    Use um aplicativo autenticador (Google Authenticator, Authy, Microsoft Authenticator,
+    1Password, Bitwarden...). No aplicativo escolha <strong>adicionar conta</strong> e
+    <strong>inserir chave manualmente</strong>, com esta chave:
+  </p>
+  <p><code id="segredo-2fa" class="segredo">{{ segredo }}</code></p>
+  <div class="cluster">
+    <button type="button" class="btn btn--ghost btn--sm" data-copiar="#segredo-2fa" hidden>Copiar chave</button>
+    {# No celular, tocar aqui abre o aplicativo ja com a conta pronta. #}
+    {{ ui.botao('Abrir no aplicativo', href=endereco, variante='ghost', tamanho='sm', icone='📲') }}
+  </div>
+  <p class="muted small mt-4">
+    Tipo <strong>baseado em tempo</strong>, 6 digitos, 30 segundos. Guarde esta chave apenas
+    ate confirmar abaixo: depois de ativar ela nao aparece mais.
+  </p>
+</div>
+
+<div class="card card--form">
+  <h2>2. Confirme com um codigo</h2>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>Codigo de 6 digitos
+      <input name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="7"
+             spellcheck="false" autofocus required>
+      <small>Confira tambem se a hora do celular esta no automatico: e o que faz o codigo bater.</small>
+    </label>
+    <div class="form-actions">
+      {{ ui.botao('Ativar', variante='primary', bloco=true) }}
+      {{ ui.botao('Cancelar', href=url_for('account'), variante='ghost', bloco=true) }}
+    </div>
+  </form>
+</div>
+{% endblock %}

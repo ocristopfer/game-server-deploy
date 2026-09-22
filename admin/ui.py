@@ -47,6 +47,8 @@ class Item:
     # Descricao curta para o menu suspenso — onde o rotulo sozinho nao basta para
     # separar duas telas parecidas (e o caso de Configuracao x Arquivos).
     ajuda: str = ""
+    # Rotulo da barra larga, onde seis destinos dividem uma linha so.
+    curto: str = ""
 
 
 # ------------------------------------------------------- navegacao principal
@@ -65,9 +67,9 @@ NAV_SECUNDARIA = (
     Item("novo", "Adicionar servidor", "➕", "server_new", admin=True),
     # Os dois do broker so existem no deploy que ligou GAMEPANEL_ALLOW_BROKER.
     Item("instancias", "Instancias de jogo", "🧩", "instances_list", admin=True,
-         recurso=RECURSO_BROKER),
+         recurso=RECURSO_BROKER, curto="Instancias"),
     Item("catalogo", "Catalogo de jogos", "📚", "catalog", admin=True,
-         recurso=RECURSO_BROKER),
+         recurso=RECURSO_BROKER, curto="Catalogo"),
     Item("usuarios", "Usuarios", "👥", "users_list", admin=True),
     Item("ssh", "Acesso SSH", "🔑", "ssh_key"),
 )
@@ -90,8 +92,9 @@ _ATIVA_EXTRA = {
     ),
     "alertas": ("alerts", "alerts_save", "alerts_hook_new", "alerts_hook_save",
                 "alerts_hook_del", "alerts_hook_test"),
-    "conta": ("account", "ssh_key", "users_list", "user_new", "user_role",
-              "user_password", "user_delete"),
+    "conta": ("account", "account_2fa", "account_2fa_off", "account_2fa_codes", "ssh_key",
+              "users_list", "user_new", "user_role", "user_password", "user_delete",
+              "user_2fa_off"),
     "historico": ("history",),
 }
 
@@ -110,6 +113,47 @@ def nav_ativa_de(endpoint: str | None) -> str:
     delas esquecem.
     """
     return _POR_ENDPOINT.get(endpoint or "", "")
+
+
+# ------------------------------------------------------- navegacao no desktop
+# A partir de 900px cabe tudo numa barra so, entao nada precisa se esconder atras do
+# "⋯": os destinos de uso diario ficam na barra e os da pessoa (conta, chave SSH)
+# no menu do nome dela. Sao CHAVES dos itens acima, nao copias deles: o rotulo, o
+# icone, a regra de admin e o recurso continuam definidos num lugar so.
+NAV_DESKTOP_BARRA = ("servidores", "instancias", "catalogo", "historico", "alertas", "usuarios")
+NAV_DESKTOP_CONTA = ("conta", "ssh")
+
+_TODOS_OS_ITENS = {i.chave: i for i in NAV_PRINCIPAL + NAV_SECUNDARIA}
+
+# No celular "Instancias" e "Usuarios" acendem a aba de cima delas ("Servidores",
+# "Conta"), porque so ha quatro abas. Na barra larga cada destino e o seu proprio
+# item, entao a rota acende ele mesmo — senao "Instancias" apareceria como "Servidores".
+_ATIVA_NO_DESKTOP = {
+    "instancias": ("instances_list", "instance_new", "instance_deactivate", "instance_remove"),
+    "catalogo": ("catalog", "catalog_new"),
+    "usuarios": ("users_list", "user_new", "user_role", "user_password", "user_delete",
+                 "user_2fa_off"),
+    "ssh": ("ssh_key",),
+    "conta": ("account", "account_2fa", "account_2fa_off", "account_2fa_codes"),
+}
+_POR_ENDPOINT_NO_DESKTOP = {
+    endpoint: chave
+    for chave, endpoints in _ATIVA_NO_DESKTOP.items()
+    for endpoint in endpoints
+}
+
+
+def nav_desktop(*, admin: bool, broker: bool) -> tuple[tuple[Item, ...], tuple[Item, ...]]:
+    """(itens da barra, itens do menu da conta) que esta pessoa pode abrir no desktop."""
+    def resolve(chaves: tuple[str, ...]) -> tuple[Item, ...]:
+        return itens_visiveis(tuple(_TODOS_OS_ITENS[c] for c in chaves), admin=admin, broker=broker)
+
+    return resolve(NAV_DESKTOP_BARRA), resolve(NAV_DESKTOP_CONTA)
+
+
+def nav_ativa_desktop_de(endpoint: str | None) -> str:
+    """Item aceso na barra larga: o proprio destino quando ele existe, senao o do celular."""
+    return _POR_ENDPOINT_NO_DESKTOP.get(endpoint or "") or nav_ativa_de(endpoint)
 
 
 # ------------------------------------------------------- telas de um servidor

@@ -24,3 +24,14 @@ export function repor(alvo, filhos) {
   alvo.replaceChildren(...filhos);
   return alvo;
 }
+
+/* Preenche campos de um formulario a partir de { nome: valor }. Caixa de marcar liga com
+ * '1' e desliga com qualquer outra coisa; nome que o formulario nao tem e ignorado. */
+export function preencherFormulario(formulario, valores) {
+  Object.entries(valores).forEach(([nome, valor]) => {
+    const campo = formulario.elements[nome];
+    if (!campo) return;
+    if (campo.type === 'checkbox') campo.checked = valor === '1';
+    else campo.value = valor;
+  });
+}

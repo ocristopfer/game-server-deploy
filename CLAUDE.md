@@ -101,6 +101,11 @@ admin/
   ui.py                mapa da interface: navegacao e acoes   (puro, sem Flask)
   gameconf.py          leitor/gravador de .ini/.json/.cfg do jogo
   gamefields.py        catalogo: o que cada chave de config significa
+  modelos_de_jogo.py   modelos do formulario "Adicionar jogo" (Unreal Linux); puro, so dado.
+                       `broker/test_modelos.py` confere que passam no validador do broker
+  busca_de_jogos.py    busca por nome/App ID sobre `sugestoes_de_jogos.py` (GERADO, nao edite)
+tools/
+  importar-linuxgsm.py gera `admin/sugestoes_de_jogos.py` a partir do LinuxGSM (precisa de internet)
   conftest.py          fixtures pytest compartilhadas: banco, webhooks, chefe, peao...
   broker_client.py     cliente do broker (so stdlib, TLS fixado por impressao); ver "Broker"
   test_*.py            as 9 suites (436 testes) - ver a secao de testes, no topo
@@ -144,6 +149,21 @@ dessas tabelas.
   Como consequencia **nao existe Python instalado nesta maquina de desenvolvimento**: o
   `Import "flask" could not be resolved` do Pylance e esperado e nao se conserta no
   codigo. Quem tem Flask e o container — e por isso que os testes rodam la dentro.
+- **Segundo fator (2FA) e TOTP proprio, so stdlib** (`totp.py`, testado contra os vetores do RFC
+  6238). Regras que os testes de `test_2fa.py` guardam: senha certa com 2FA NAO abre sessao (so grava
+  `pre2fa`, sem `uid`, por 5 min); codigo usado nao vale de novo (`totp_last_step`, e o `UPDATE ... WHERE
+  totp_last_step < ?` e o portao contra dois pedidos simultaneos); a trava do codigo e por USUARIO
+  (5 em 15 min), nao por IP; desativar ou pedir codigos novos exige senha E codigo; recuperacao =
+  8 codigos de uso unico, so o hash no banco. `GAMEPANEL_REQUIRE_2FA=1` (`ADMIN_REQUIRE_2FA` no `.env`)
+  tranca quem nao ativou na tela de ativacao: so ligue DEPOIS de todo admin ter ativado. Saida de
+  emergencia: `python3 /opt/gamepanel/app.py --reset-2fa USUARIO` no CT do painel, ou "Desligar 2FA"
+  em Usuarios. Nao ha QR code (nao ha biblioteca e o painel nao baixa nada): a tela mostra a chave
+  para digitar e um link `otpauth://` que abre o aplicativo no celular.
+- **`provision-admin-lxc.sh` reescreve o `panel.env` INTEIRO**; as linhas `GAMEPANEL_BROKER_*` e
+  `GAMEPANEL_ALLOW_BROKER` que o `deploy-broker.ps1 -ConfigurarPainel` grava sao preservadas de
+  proposito (antes um `-Full` do painel desligava o broker em silencio). Opcao nova de painel =
+  variavel `ADMIN_*` no `.env`, uma linha no `render_panel_config` e o nome em `$adminKeys` do
+  `deploy-admin.ps1`.
 - **CSRF e do painel, nao do Flask-WTF.** `csrf_token()` gera, `_check_csrf`
   (`before_request`) barra todo metodo que muda estado. Analisador estatico marca isso
   como "CSRF desabilitado" — e falso positivo, e ha um comentario no `Flask(__name__)`
@@ -275,6 +295,18 @@ Cinco camadas, e cada uma **so pode depender das anteriores**:
   (pointer: fine) and (min-width: 900px)`. Navegador de celular que se declara
   `hover: hover` existe, e ali nao ha como revelar o que se escondeu.
 - **`--safe-*` (notch/barra de gestos)** em tudo que encosta na borda da tela.
+- **Cabecalho e corpo dividem a mesma coluna.** O fundo da barra vai de ponta a ponta, mas o
+  conteudo (`.appbar__miolo`) tem a `--largura-max` e o recuo do `.wrap`: sem isso a marca
+  fica no canto da janela e o conteudo no meio, sem alinhar com nada. A partir de 900px a barra
+  mostra TODOS os destinos (`ui.NAV_DESKTOP_BARRA`, sem icone e com rotulo `curto` onde ha, para
+  caberem seis) e o menu do NOME da pessoa leva conta, chave SSH e sair (`NAV_DESKTOP_CONTA`).
+  No celular nada mudou: abas embaixo e o "⋯". Item aceso: `nav_ativa_desktop_de` (cada destino
+  acende o proprio) x `nav_ativa_de` (as quatro abas do celular).
+- **Cartoes lado a lado usam `.grid-cartoes`** (uma coluna no celular, duas a partir de 900px;
+  `.grid-cartoes__largo` ocupa a linha inteira). Bloco comprido (log, tabela) vai no `__largo`,
+  senao empurra o vizinho.
+- **A classe da caixa de marcar e `.checkbox`**, nao `.check` (que nao existe e deixava a caixa
+  em cima do texto). Grupo de campos com titulo: `fieldset.grupo`.
 
 ---
 
@@ -311,6 +343,11 @@ Modulos ES, sem build, sem dependencia externa.
   medidor em cache mente sobre um servidor de verdade.
 - **O worker nao assume sozinho** (sem `skipWaiting()` no install): pode haver uma sessao
   de terminal aberta no meio de uma edicao. Quem troca e o botao "Atualizar agora".
+- **Conferir layout por captura de tela? Ignore o service worker.** Ele serve o CSS/JS antigo do
+  cache ate alguem clicar em "Atualizar agora": a foto sai com o estilo da versao anterior e
+  parece que a mudanca "nao pegou" (o banner "Ha uma versao nova" aparecendo na foto e o sinal).
+  Na captura via DevTools use `Network.setBypassServiceWorker` + `Network.setCacheDisabled`, e
+  reinicie o servidor local depois de mexer no `app.py` (o `app.run` nao recarrega codigo Python).
 - **Nao batize rota de aplicacao com nome de telemetria.** `/api/metrics` e regra
   corriqueira de bloqueador (uBlock, AdGuard, DNS filtrado): o navegador devolve um pixel
   com status 499 e o pedido nem chega ao servidor. A rota daqui e `/api/recursos`. Ao
@@ -404,10 +441,15 @@ broker de brinquedo (`broker/dev.py`, backends falsos): `docker compose up --bui
   nas portas padrao e sao recusados se estiverem ocupadas. Isso e ir para a faixa mesmo com a
   porta padrao livre: mistura de "servidor antigo na porta padrao" com "servidor do broker na
   faixa" e o que impede um dia colidir. O jogo so e `deslocavel` se o broker consegue AVISA-LO de
-  todas as portas: `START_ARGS` com `{PORT}` (e `{QUERY_PORT}` se ha query) e nenhuma porta extra
-  alem de jogo e query (`catalogo.problema_de_deslocavel`, validado no carregamento). Hoje:
-  Dragonwilds, Satisfactory, Palworld e Icarus. Enshrouded (portas no JSON) e DayZ (2303/2304
-  derivadas) nao. Ver `alocador.py`.
+  todas as portas: `START_ARGS` com `{PORT}` (e `{QUERY_PORT}` se ha query, `{EXTRA_PORT}` se ha
+  porta extra) e nenhuma porta alem dessas tres (`catalogo.problema_de_deslocavel`, validado no
+  carregamento). A porta extra (`EXTRA_PORT=`/`porta_extra`) existe por causa do Satisfactory: alem
+  da principal (UDP+TCP) ele abre a 8888/TCP de mensagens confiaveis, que sem `-ReliablePort=` fica
+  fixa e impede uma segunda instancia. O `ct-fases.sh` troca `{EXTRA_PORT}` como os outros dois; o
+  marcador sem porta extra e recusado (viraria `0`). Hoje: Dragonwilds, Satisfactory, Palworld e
+  Icarus. Enshrouded (portas no JSON) e DayZ (2303/2304 derivadas) nao. Ver `alocador.py`.
+  No `comparar.sh` o Satisfactory "antes x depois" roda sem o marcador (`satisfactory-legado.env`):
+  o instalador de referencia nao o conhece e deixaria `{EXTRA_PORT}` literal no ExecStart.
 - **Enderecos: o IP diz o CTID.** Painel `.100` (CT 300), broker `.101` (CT 301), jogos do
   broker `.102-.199` (CT 302-399): `CTID = BROKER_CTID_BASE (200) + ultimo numero do IP`, ou
   seja "3" + os dois ultimos digitos do IP (`alocador.escolher_ip_e_ctid`; um IP so serve se o
@@ -416,6 +458,18 @@ broker de brinquedo (`broker/dev.py`, backends falsos): `docker compose up --bui
   `BROKER_CTID_BASE=0` o CTID volta a ser escolhido a parte, na faixa `BROKER_CTID_INICIO/FIM`.
   **O DHCP do OPNsense nao pode cobrir `.100-.199`**: a checagem por ping nao pega um aparelho
   que ainda vai chegar.
+- **Sugestoes de jogo (formulario "Adicionar jogo")** vem do LinuxGSM (MIT), convertidas por
+  `python tools/importar-linuxgsm.py` e commitadas em `admin/sugestoes_de_jogos.py` (110 jogos): o
+  painel em producao NAO vai a internet (a API oficial da loja Steam nem serve: servidor dedicado e
+  app do tipo "Tool" e volta `success:false`). Regras do conversor, cada uma com teste em
+  `broker/test_importar_linuxgsm.py` e `broker/test_sugestoes.py`: so sai o que o
+  `validar_dinamico` aceita; porta de RCON/telnet/HTTP vai so no argumento e NUNCA no NAT; variavel
+  de senha/nome/IP/token nunca e resolvida (o argumento sai, com aviso); tudo depois de `; | & \`
+  `$(` e cortado; variavel vazia derruba a opcao junto (senao ela engole a proxima). Protocolo e
+  presumido UDP (so `reliableport`/`httpport` sao TCP): o aviso da sugestao diz isso. ~30 jogos
+  guardam a porta no config do proprio jogo e saem como sugestao PARCIAL (App ID sem porta).
+  Enshrouded, Icarus e Dragonwilds nao estao no LinuxGSM: continuam manuais. E a busca e SEMPRE
+  sugestao: quem valida e o broker no envio.
 - **Desfazer nao pode mentir**: se a limpeza falha, a reserva vira `falhou` e continua
   bloqueando IP/CTID/portas ate alguem remover (`servico._desfazer`).
 - **TLS e por IMPRESSAO, nunca `verify=False`.** Proxmox e OPNsense sao autoassinados;

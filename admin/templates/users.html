@@ -14,6 +14,7 @@
         <td>
           {{ u.username }}
           {% if u.id == meu_id %}<span class="badge cold">voce</span>{% endif %}
+          {% if u.totp_enabled %}<span class="badge on" title="Verificacao em duas etapas ativada">2FA</span>{% endif %}
         </td>
         <td>
           {% if u.id == meu_id %}
@@ -44,6 +45,11 @@
               {{ ui.botao('Salvar', tamanho='sm') }}
             </form>
           </details>
+          {% if u.totp_enabled and u.id != meu_id %}
+            {{ ui.acao(url_for('user_2fa_off', uid=u.id), 'Desligar 2FA',
+                       variante='ghost', tamanho='sm',
+                       confirmar='Desligar a verificacao em duas etapas de ' ~ u.username ~ '? Ele entra so com a senha ate ativar de novo.') }}
+          {% endif %}
           {% if u.id != meu_id %}
             {{ ui.acao(url_for('user_delete', uid=u.id), 'Remover',
                        variante='danger', tamanho='sm',

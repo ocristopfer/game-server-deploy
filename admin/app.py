@@ -49,9 +49,12 @@ except ImportError:  # pragma: no cover - Windows
     HAVE_PTY = False
 
 import broker_client
+import busca_de_jogos
 import gameconf
 import gamefields
+import totp
 import ui
+from modelos_de_jogo import MODELOS as MODELOS_DE_JOGO
 from flask import (
     Flask,
     abort,
@@ -145,6 +148,9 @@ ALLOW_BROKER = _configura_broker()
 
 # Editor de arquivos: le/grava arquivos de configuracao do jogo pelo mesmo SSH.
 ALLOW_FILES = os.environ.get("GAMEPANEL_ALLOW_FILES", "1") == "1"
+# 1 = quem nao ativou o segundo fator so alcanca a tela de ativacao. Desligado por padrao: ligar
+# ANTES de cada admin ter o aplicativo no celular tranca todo mundo fora do painel.
+REQUIRE_2FA = os.environ.get("GAMEPANEL_REQUIRE_2FA", "0") == "1"
 # Limite para EDITAR (o arquivo inteiro vai para um textarea e volta num POST).
 FILE_MAX_BYTES = int(os.environ.get("GAMEPANEL_FILE_MAX", str(4 * 1024 * 1024)))
 # Acima do limite de edicao o painel ainda mostra o fim do arquivo, so para leitura.
@@ -560,6 +566,13 @@ MIGRATIONS = (
     # jeito. Vazia (o padrao) desliga a checagem — inclusive a ida de SSH dela.
     ("servers", "error_re", "ALTER TABLE servers ADD COLUMN error_re TEXT NOT NULL DEFAULT ''"),
     ("servers", "broker_id", "ALTER TABLE servers ADD COLUMN broker_id INTEGER NOT NULL DEFAULT 0"),
+    # Segundo fator (TOTP). O segredo fica em texto porque o servidor precisa dele para conferir
+    # o codigo; quem protege e o arquivo do banco (0600, dentro do CT). Os codigos de
+    # recuperacao ficam so como hash (JSON com a lista). `totp_last_step` e o anti-repeticao.
+    ("users", "totp_secret", "ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''"),
+    ("users", "totp_enabled", "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0"),
+    ("users", "totp_last_step", "ALTER TABLE users ADD COLUMN totp_last_step INTEGER NOT NULL DEFAULT 0"),
+    ("users", "totp_recovery", "ALTER TABLE users ADD COLUMN totp_recovery TEXT NOT NULL DEFAULT ''"),
     ("jobs", "broker_op", "ALTER TABLE jobs ADD COLUMN broker_op TEXT NOT NULL DEFAULT ''"),
 )
 
@@ -650,13 +663,13 @@ LOCKOUT_TRIES = 5
 LOCKOUT_WINDOW = 300.0
 
 
-def _lockout_remaining(key: str) -> int:
+def _lockout_remaining(key: str, tries: int = LOCKOUT_TRIES, window: float = LOCKOUT_WINDOW) -> int:
     with _login_lock:
-        fails = [t for t in _login_fails.get(key, []) if time.time() - t < LOCKOUT_WINDOW]
+        fails = [t for t in _login_fails.get(key, []) if time.time() - t < window]
         _login_fails[key] = fails
-        if len(fails) < LOCKOUT_TRIES:
+        if len(fails) < tries:
             return 0
-        return int(LOCKOUT_WINDOW - (time.time() - fails[0])) + 1
+        return int(window - (time.time() - fails[0])) + 1
 
 
 def _record_fail(key: str) -> None:
@@ -684,7 +697,7 @@ def usuario_logado() -> sqlite3.Row | None:
     row = None
     if uid:
         row = db().execute(
-            "SELECT id, username, role, created_at FROM users WHERE id = ?", (uid,)
+            "SELECT id, username, role, created_at, totp_enabled FROM users WHERE id = ?", (uid,)
         ).fetchone()
     g._user = row
     return row
@@ -756,6 +769,26 @@ def _check_csrf():
     return None
 
 
+# Com GAMEPANEL_REQUIRE_2FA=1 quem ainda nao ativou o segundo fator so alcanca isto.
+ENDPOINTS_SEM_2FA = frozenset({
+    "login", "login_2fa", "logout", "account_2fa", "health", "static",
+    "manifest", "service_worker", "offline",
+})
+
+
+@app.before_request
+def _exige_segundo_fator():
+    if not REQUIRE_2FA or request.endpoint in ENDPOINTS_SEM_2FA or request.endpoint is None:
+        return None
+    usuario = usuario_logado()
+    if usuario is None or usuario["totp_enabled"]:
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "ative a verificacao em duas etapas em Conta"}), 403
+    flash("Este painel exige a verificacao em duas etapas: ative-a para continuar.", "error")
+    return redirect(url_for("account_2fa"))
+
+
 def static_url(nome: str) -> str:
     """URL de um arquivo estatico com a marca do mtime.
 
@@ -810,10 +843,14 @@ def _contexto_de_navegacao() -> dict:
     admin = is_admin()
     secoes = ui.secoes_visiveis(admin=admin, arquivos=ALLOW_FILES, shell=ALLOW_SHELL)
     tem_pty = ALLOW_SHELL and HAVE_PTY
+    barra, conta = ui.nav_desktop(admin=admin, broker=ALLOW_BROKER)
     return {
         "nav_principal": ui.itens_visiveis(ui.NAV_PRINCIPAL, admin=admin, broker=ALLOW_BROKER),
         "nav_secundaria": ui.itens_visiveis(ui.NAV_SECUNDARIA, admin=admin, broker=ALLOW_BROKER),
         "nav_ativa": ui.nav_ativa_de(request.endpoint),
+        "nav_desktop_barra": barra,
+        "nav_desktop_conta": conta,
+        "nav_ativa_desktop": ui.nav_ativa_desktop_de(request.endpoint),
         "secoes_do_servidor": secoes,
         "endpoint_da_secao": lambda secao: ui.endpoint_da_secao(secao, tem_pty=tem_pty),
         "acoes_de_energia": ui.acoes_do_grupo(ui.GRUPO_ENERGIA),
@@ -4088,16 +4125,92 @@ def login():
         ).fetchone()
         if row and verify_password(password, row["password_hash"]):
             _clear_fails(key)
-            session.clear()
-            session["uid"] = row["id"]
-            session["username"] = row["username"]
-            session.permanent = True
-            csrf_token()
-            return redirect(destino_seguro(request.args.get("next", "")) or url_for("dashboard"))
+            proximo = destino_seguro(request.args.get("next", ""))
+            if row["totp_enabled"]:
+                # Senha certa NAO abre a sessao: so guarda "esta pessoa passou da senha, falta o
+                # codigo". Sem `uid` na sessao, nenhuma rota do painel a reconhece como logada.
+                session.clear()
+                session["pre2fa"] = {"uid": row["id"], "ate": time.time() + PRE_2FA_SEGUNDOS,
+                                     "proximo": proximo}
+                csrf_token()
+                return redirect(url_for("login_2fa"))
+            return _abre_sessao(row, proximo)
         _record_fail(key)
         flash("Usuario ou senha invalidos.", "error")
         return render_template(TPL_LOGIN), 401
     return render_template(TPL_LOGIN)
+
+
+# Tempo para digitar o codigo depois de acertar a senha.
+PRE_2FA_SEGUNDOS = 300
+# O chute de 6 digitos tem 3 numeros validos em 10^6: por isso a trava do codigo e por USUARIO
+# (nao por IP, que um atacante troca) e mais longa que a da senha.
+LOCKOUT_2FA_TENTATIVAS = 5
+LOCKOUT_2FA_JANELA = 900.0
+
+
+def _abre_sessao(row: sqlite3.Row, proximo: str = ""):
+    session.clear()
+    session["uid"] = row["id"]
+    session["username"] = row["username"]
+    session.permanent = True
+    csrf_token()
+    return redirect(proximo or url_for("dashboard"))
+
+
+def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
+    """Codigo do aplicativo OU um codigo de recuperacao (que se gasta). Vale so uma vez."""
+    conn = db()
+    passo = totp.verificar(row["totp_secret"], digitado, time.time(), row["totp_last_step"])
+    if passo is not None:
+        with conn:
+            # O `WHERE` faz do UPDATE o portao: dois pedidos com o mesmo codigo ao mesmo tempo
+            # nao passam os dois (o segundo nao encontra a linha com passo menor).
+            gasto = conn.execute(
+                "UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?",
+                (passo, row["id"], passo),
+            ).rowcount
+        return gasto == 1
+    try:
+        guardados = json.loads(row["totp_recovery"] or "[]")
+    except ValueError:
+        guardados = []
+    sobra = totp.consumir(digitado, guardados)
+    if sobra is None:
+        return False
+    with conn:
+        gasto = conn.execute(
+            "UPDATE users SET totp_recovery = ? WHERE id = ? AND totp_recovery = ?",
+            (json.dumps(sobra), row["id"], row["totp_recovery"]),
+        ).rowcount
+    return gasto == 1
+
+
+@app.route("/login/2fa", methods=["GET", "POST"])
+def login_2fa():
+    if session.get("uid"):
+        return redirect(url_for("dashboard"))
+    pendente = session.get("pre2fa") or {}
+    row = None
+    if pendente and pendente.get("ate", 0) > time.time():
+        row = db().execute("SELECT * FROM users WHERE id = ?", (pendente.get("uid"),)).fetchone()
+    if row is None or not row["totp_enabled"]:
+        session.clear()
+        flash("A verificacao expirou. Entre de novo.", "error")
+        return redirect(url_for("login"))
+    if request.method == "POST":
+        chave = f"2fa|{row['username'].lower()}"
+        restante = _lockout_remaining(chave, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA)
+        if restante:
+            flash(f"Muitas tentativas. Tente de novo em {restante}s.", "error")
+            return render_template("login_2fa.html"), 429
+        if _confere_segundo_fator(row, request.form.get("codigo", "")):
+            _clear_fails(chave)
+            return _abre_sessao(row, pendente.get("proximo", ""))
+        _record_fail(chave)
+        flash("Codigo invalido ou ja usado.", "error")
+        return render_template("login_2fa.html"), 401
+    return render_template("login_2fa.html")
 
 
 @app.post("/logout")
@@ -6668,7 +6781,8 @@ def _jogo_do_form(form) -> tuple[dict, list[str]]:
         if valor:
             dados[campo] = valor
     for campo, rotulo in (("app_id", "App ID"), ("porta_jogo", "Porta do jogo"),
-                          ("porta_query", "Porta de consulta"), ("memoria_mb", "Memoria"),
+                          ("porta_query", "Porta de consulta"), ("porta_extra", "Porta extra"),
+                          ("memoria_mb", "Memoria"),
                           ("cores", "CPUs"), ("disco_gb", "Disco")):
         bruto = (form.get(campo) or "").strip()
         if not bruto:
@@ -6694,7 +6808,19 @@ def catalog():
     except broker_client.BrokerError as erro:
         flash(f"Broker: {erro.mensagem}", "error")
         jogos = []
-    return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECEITAS, form={})
+    return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECEITAS, form={},
+                           modelos=MODELOS_DE_JOGO)
+
+
+@app.get("/api/catalogo/sugestoes")
+@admin_required
+@broker_required
+def api_catalog_suggestions():
+    """Busca por nome ou App ID numa lista FIXA (gerada do LinuxGSM, no repositorio): nada aqui
+    vai a internet, e a consulta so seleciona entre entradas conhecidas."""
+    achados = busca_de_jogos.buscar(request.args.get("q", ""))
+    return jsonify({"resultados": [busca_de_jogos.resultado(s) for s in achados],
+                    "fonte": busca_de_jogos.FONTE})
 
 
 @app.post("/catalogo/novo")
@@ -6715,7 +6841,7 @@ def catalog_new():
         except broker_client.BrokerError:
             jogos = []
         return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECEITAS,
-                               form=request.form), 400
+                               form=request.form, modelos=MODELOS_DE_JOGO), 400
     _registra_acao_do_broker("broker-jogo", _ator(), dados.get("chave", ""), "Jogo adicionado ao catalogo.")
     flash(f"Jogo {dados.get('nome', dados.get('chave', ''))} adicionado ao catalogo.", "ok")
     return redirect(url_for("catalog"))
@@ -7233,7 +7359,114 @@ def account():
                 conn.execute(SQL_SET_PASSWORD, (hash_password(new), session["uid"]))
             flash("Senha alterada.", "ok")
             return redirect(url_for("dashboard"))
-    return render_template("account.html")
+    return render_template("account.html", segundo_fator=_estado_do_2fa(),
+                           exige_2fa=REQUIRE_2FA, broker_ligado=ALLOW_BROKER)
+
+
+def _estado_do_2fa() -> dict:
+    row = db().execute(
+        "SELECT totp_enabled, totp_recovery FROM users WHERE id = ?", (session["uid"],)
+    ).fetchone()
+    try:
+        restantes = len(json.loads(row["totp_recovery"] or "[]"))
+    except ValueError:
+        restantes = 0
+    return {"ativo": bool(row["totp_enabled"]), "codigos_restantes": restantes}
+
+
+def _guarda_o_segundo_fator(uid: int, segredo: str, passo: int) -> list[str]:
+    """Liga o 2FA e devolve os codigos de recuperacao EM TEXTO, a unica vez em que existem."""
+    codigos = totp.novos_codigos()
+    conn = db()
+    with conn:
+        conn.execute(
+            "UPDATE users SET totp_secret = ?, totp_enabled = 1, totp_last_step = ?,"
+            " totp_recovery = ? WHERE id = ?",
+            (segredo, passo, json.dumps([totp.hash_do_codigo(c) for c in codigos]), uid),
+        )
+    return codigos
+
+
+def _senha_e_codigo_conferem(uid: int) -> tuple[sqlite3.Row | None, str]:
+    """Para desligar o 2FA ou pedir codigos novos: a senha E um codigo. Quem esta logado ja
+    provou os dois no login, mas uma sessao esquecida aberta nao pode desligar a protecao."""
+    row = db().execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+    chave = f"2fa|{row['username'].lower()}"
+    if _lockout_remaining(chave, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA):
+        return None, "Muitas tentativas. Espere alguns minutos."
+    if not verify_password(request.form.get("senha", ""), row["password_hash"]):
+        _record_fail(chave)
+        return None, "Senha incorreta."
+    if not _confere_segundo_fator(row, request.form.get("codigo", "")):
+        _record_fail(chave)
+        return None, "Codigo invalido ou ja usado."
+    _clear_fails(chave)
+    return row, ""
+
+
+@app.route("/account/2fa", methods=["GET", "POST"])
+@login_required
+def account_2fa():
+    """Ativar o segundo fator: mostra o segredo, confere UM codigo do aplicativo e so entao liga."""
+    if _estado_do_2fa()["ativo"]:
+        return redirect(url_for("account"))
+    if request.method == "POST":
+        segredo = session.get("totp_pendente", "")
+        passo = totp.verificar(segredo, request.form.get("codigo", ""), time.time()) if segredo else None
+        if passo is None:
+            flash("Codigo incorreto. Confira o horario do celular e tente de novo.", "error")
+        else:
+            codigos = _guarda_o_segundo_fator(session["uid"], segredo, passo)
+            session.pop("totp_pendente", None)
+            flash("Verificacao em duas etapas ativada.", "ok")
+            return render_template("account_2fa_codigos.html", codigos=codigos)
+    # O segredo fica na SESSAO (cookie assinado) ate ser confirmado; recarregar a pagina mostra
+    # o mesmo, e abandonar a tela nao deixa nada meio ligado no banco.
+    segredo = session.get("totp_pendente") or totp.novo_segredo()
+    session["totp_pendente"] = segredo
+    return render_template(
+        "account_2fa.html", segredo=totp.agrupar(segredo),
+        endereco=totp.uri(segredo, session.get("username", ""), "Painel de Jogos"))
+
+
+@app.post("/account/2fa/desativar")
+@login_required
+def account_2fa_off():
+    if REQUIRE_2FA:
+        flash("Este painel exige o segundo fator: nao da para desativar.", "error")
+        return redirect(url_for("account"))
+    row, erro = _senha_e_codigo_conferem(session["uid"])
+    if erro:
+        flash(erro, "error")
+        return redirect(url_for("account"))
+    _apaga_o_segundo_fator(row["id"])
+    flash("Verificacao em duas etapas desativada.", "ok")
+    return redirect(url_for("account"))
+
+
+@app.post("/account/2fa/codigos")
+@login_required
+def account_2fa_codes():
+    """Codigos de recuperacao novos: os antigos deixam de valer."""
+    row, erro = _senha_e_codigo_conferem(session["uid"])
+    if erro:
+        flash(erro, "error")
+        return redirect(url_for("account"))
+    codigos = totp.novos_codigos()
+    conn = db()
+    with conn:
+        conn.execute("UPDATE users SET totp_recovery = ? WHERE id = ?",
+                     (json.dumps([totp.hash_do_codigo(c) for c in codigos]), row["id"]))
+    flash("Codigos novos gerados: os antigos deixaram de valer.", "ok")
+    return render_template("account_2fa_codigos.html", codigos=codigos)
+
+
+def _apaga_o_segundo_fator(uid: int) -> None:
+    conn = db()
+    with conn:
+        conn.execute(
+            "UPDATE users SET totp_secret = '', totp_enabled = 0, totp_last_step = 0,"
+            " totp_recovery = '' WHERE id = ?", (uid,))
 
 
 # ------------------------------------------------------------------ alertas
@@ -7455,7 +7688,7 @@ def _usuario_ou_404(uid: int) -> sqlite3.Row:
 @admin_required
 def users_list():
     rows = db().execute(
-        "SELECT id, username, role, created_at FROM users ORDER BY role, username"
+        "SELECT id, username, role, created_at, totp_enabled FROM users ORDER BY role, username"
     ).fetchall()
     return render_template(
         "users.html", users=rows, roles=ROLES, role_labels=ROLE_LABELS,
@@ -7534,6 +7767,20 @@ def user_password(uid: int):
     with conn:
         conn.execute(SQL_SET_PASSWORD, (hash_password(request.form.get("new", "")), uid))
     flash(f"Senha de '{alvo['username']}' redefinida.", "ok")
+    return redirect(url_for("users_list"))
+
+
+@app.post("/usuarios/<int:uid>/2fa/desligar")
+@admin_required
+def user_2fa_off(uid: int):
+    """Celular perdido e codigos de recuperacao perdidos: o admin desliga o 2FA da pessoa, que
+    entra so com a senha e ativa de novo. Nao vale para si mesmo (use a tela Conta)."""
+    alvo = _usuario_ou_404(uid)
+    if uid == session.get("uid"):
+        flash("Para desligar o seu proprio 2FA use a tela Conta.", "error")
+    else:
+        _apaga_o_segundo_fator(uid)
+        flash(f"Verificacao em duas etapas de '{alvo['username']}' desligada.", "ok")
     return redirect(url_for("users_list"))
 
 
@@ -7838,6 +8085,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Painel de servidores de jogos")
     parser.add_argument("--create-user", metavar="USUARIO")
+    # Saida de emergencia: o unico admin perdeu o celular E os codigos de recuperacao.
+    parser.add_argument("--reset-2fa", metavar="USUARIO",
+                        help="desliga o segundo fator de um usuario (roda no CT do painel)")
     parser.add_argument("--password", metavar="SENHA")
     parser.add_argument("--role", default="", choices=("", *ROLES),
                         help="papel do usuario (padrao: admin ao criar; manter ao redefinir)")
@@ -7861,7 +8111,18 @@ if __name__ == "__main__":
     parser.add_argument("--notes", default="")
     opts = parser.parse_args()
 
-    if opts.create_user:
+    if opts.reset_2fa:
+        init_db()
+        conn = _connect()
+        with conn:
+            alvo = conn.execute("SELECT id FROM users WHERE username = ?", (opts.reset_2fa,)).fetchone()
+            if not alvo:
+                raise SystemExit(f"usuario '{opts.reset_2fa}' nao existe")
+            conn.execute(
+                "UPDATE users SET totp_secret = '', totp_enabled = 0, totp_last_step = 0,"
+                " totp_recovery = '' WHERE id = ?", (alvo["id"],))
+        print(f"Segundo fator de '{opts.reset_2fa}' desligado.")
+    elif opts.create_user:
         if not opts.password:
             raise SystemExit("--create-user exige --password")
         ensure_admin_user(opts.create_user, opts.password, opts.role)

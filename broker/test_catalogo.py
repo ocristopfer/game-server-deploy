@@ -130,7 +130,7 @@ def test_campo_invalido_e_recusado(dados_de_jogo, campo, valor):
 
 
 @pytest.mark.parametrize(("mudancas", "trecho"), [
-    ({"portas": ["7777/udp", "27016/udp", "2303/udp"]}, "portas extras"),
+    ({"portas": ["7777/udp", "27016/udp", "2303/udp", "2304/udp"]}, "mais portas"),
     ({"start_args": "-log"}, "{PORT}"),
     ({"start_args": "-port={PORT}"}, "{QUERY_PORT}"),
 ])

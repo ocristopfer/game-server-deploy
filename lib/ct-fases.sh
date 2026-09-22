@@ -29,6 +29,7 @@ resolve_game_variables() {
   GAME_PORT="${GAME_PORT:-}"
   GAME_PORTS="${GAME_PORTS:-}"
   QUERY_PORT="${QUERY_PORT:-0}"
+  EXTRA_PORT="${EXTRA_PORT:-0}"
   # Receitas nomeadas (lista FECHADA em apply_recipes) - o jeito de um jogo cadastrado pela
   # API pedir uma instalacao especial sem escrever shell. Vazio para os games/*.env de sempre.
   RECIPES="${RECIPES:-}"
@@ -548,6 +549,9 @@ render_systemd_unit() {
   # {QUERY_PORT}: um jogo que anda de porta (varias instancias) precisa avisar as DUAS ao
   # servidor. Nenhum games/*.env usa o marcador, entao o deploy antigo nao muda.
   rendered_args="${rendered_args//\{QUERY_PORT\}/${QUERY_PORT}}"
+  # {EXTRA_PORT}: a terceira porta que o jogo aceita por argumento (a "confiavel" do
+  # Satisfactory, -ReliablePort). Sem porta extra o marcador nao existe no START_ARGS.
+  rendered_args="${rendered_args//\{EXTRA_PORT\}/${EXTRA_PORT}}"
   # esync/fsync do Proton criam um descritor por objeto de sincronizacao; com o
   # limite padrao (1024) o servidor cai com "failed to create eventfd" sob carga.
   local extra_limites=""

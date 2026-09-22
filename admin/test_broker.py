@@ -130,7 +130,7 @@ def servidores(banco) -> list:
 
 # --------------------------------------------------------------------------- quem abre
 
-ROTAS_GET = ["/catalogo", "/instancias"]
+ROTAS_GET = ["/catalogo", "/instancias", "/api/catalogo/sugestoes?q=palworld"]
 ROTAS_POST = ["/catalogo/novo", "/instancias/nova", "/instancias/7/desativar", "/instancias/7/remover"]
 
 
@@ -194,6 +194,44 @@ def test_itens_visiveis_filtra_por_recurso_e_papel():
 
 
 # ------------------------------------------------------------------------- catalogo
+
+def test_busca_de_jogo_devolve_a_sugestao_com_o_que_o_broker_precisa(chefe, broker):
+    resposta = chefe.get("/api/catalogo/sugestoes?q=satisfactory")
+    assert resposta.status_code == 200
+    dados = resposta.get_json()
+    achado = dados["resultados"][0]
+    assert achado["valores"]["app_id"] == "1690800"
+    assert "8888/tcp" in achado["valores"]["portas"]
+    assert "-ReliablePort=8888" in achado["valores"]["start_args"]
+    assert achado["avisos"]
+    assert "LinuxGSM" in dados["fonte"]
+
+
+def test_busca_de_jogo_sem_consulta_devolve_lista_vazia(chefe, broker):
+    assert chefe.get("/api/catalogo/sugestoes").get_json()["resultados"] == []
+    assert chefe.get("/api/catalogo/sugestoes?q=%25%25%25").get_json()["resultados"] == []
+
+
+def test_busca_nao_chama_o_broker(chefe, broker):
+    """E uma lista fixa do repositorio: nada de rede, nem para o broker."""
+    chefe.get("/api/catalogo/sugestoes?q=palworld")
+    assert broker.chamadas == []
+
+
+def test_catalogo_traz_o_campo_de_busca(chefe, broker):
+    html = chefe.get("/catalogo").get_data(as_text=True)
+    assert "data-busca-de-jogo" in html
+    assert "/api/catalogo/sugestoes" in html
+
+
+def test_catalogo_oferece_o_modelo_de_unreal_com_os_valores_na_marcacao(chefe, broker):
+    """O seletor nasce escondido e sem `name` (nao vai no envio); o JS le data-valores."""
+    html = chefe.get("/catalogo").get_data(as_text=True)
+    assert "data-modelo-jogo" in html
+    assert "Unreal Engine" in html
+    assert "LogNet: Join succeeded" in html
+    assert "-log -Port={PORT}" in html
+
 
 def test_catalogo_lista_os_jogos_e_o_motivo_de_nao_criar(chefe, broker):
     html = chefe.get("/catalogo").get_data(as_text=True)

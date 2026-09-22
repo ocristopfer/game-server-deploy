@@ -39,6 +39,61 @@
   </form>
 </div>
 
+<div class="card card--form">
+  <h2>Verificacao em duas etapas</h2>
+  {% if segundo_fator.ativo %}
+    <p><span class="badge on">ativada</span>
+       <span class="muted small">{{ segundo_fator.codigos_restantes }} codigo(s) de recuperacao restante(s)</span></p>
+    <p class="muted small">Alem da senha, o login pede o codigo do aplicativo autenticador.</p>
+    <details class="stack--sm">
+      <summary class="btn btn--ghost btn--sm">Gerar codigos de recuperacao novos</summary>
+      <form method="post" action="{{ url_for('account_2fa_codes') }}" class="mt-4">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <label>Senha
+          <input name="senha" type="password" autocomplete="current-password" required>
+        </label>
+        <label>Codigo do aplicativo
+          <input name="codigo" inputmode="numeric" autocomplete="one-time-code" required>
+          <small>Os codigos antigos deixam de valer.</small>
+        </label>
+        {{ ui.botao('Gerar', tamanho='sm') }}
+      </form>
+    </details>
+    {% if not exige_2fa %}
+    <details class="stack--sm mt-4">
+      <summary class="btn btn--danger btn--sm">Desativar</summary>
+      <form method="post" action="{{ url_for('account_2fa_off') }}" class="mt-4">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <label>Senha
+          <input name="senha" type="password" autocomplete="current-password" required>
+        </label>
+        <label>Codigo do aplicativo (ou de recuperacao)
+          <input name="codigo" autocomplete="one-time-code" required>
+        </label>
+        {{ ui.botao('Desativar', variante='danger', tamanho='sm',
+                    confirmar='Desativar a verificacao em duas etapas? O login volta a pedir so a senha.') }}
+      </form>
+    </details>
+    {% else %}
+    <p class="muted small mt-4">Este painel exige o segundo fator: nao da para desativar.</p>
+    {% endif %}
+  {% else %}
+    <p><span class="badge cold">desativada</span></p>
+    <p class="muted small">
+      Com ela, saber a senha nao basta para entrar: o painel tambem pede um codigo de 6 digitos
+      do seu celular.
+      {% if is_admin and broker_ligado %}
+        <strong>Este painel cria e apaga containers pelo broker: ative.</strong>
+      {% elif is_admin %}
+        Este painel da poder de root nos containers de jogo: ative.
+      {% endif %}
+    </p>
+    <div class="form-actions">
+      {{ ui.botao('Ativar', href=url_for('account_2fa'), variante='primary', bloco=true, icone='🔐') }}
+    </div>
+  {% endif %}
+</div>
+
 {# O "sair" vivia so no canto da barra de cima. No celular, com a barra reduzida ao
    menu, a Conta e onde as pessoas procuram por ele. #}
 <div class="card card--perigo card--form">

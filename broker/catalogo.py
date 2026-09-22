@@ -44,7 +44,7 @@ _CAMINHO_RE = re.compile(r"/(opt/game|home/steam)(/[A-Za-z0-9._-]+)*", re.ASCII)
 # dentro do CT. {PORT} e {QUERY_PORT} sao os unicos marcadores: as chaves entram no
 # charset, e `_args_de_start` recusa qualquer chave que sobre depois de tirar os dois.
 _ARGS_RE = re.compile(r"[A-Za-z0-9 ._=:,/+@?{}-]{0,300}", re.ASCII)
-_MARCADORES = ("{PORT}", "{QUERY_PORT}")
+_MARCADORES = ("{PORT}", "{QUERY_PORT}", "{EXTRA_PORT}")
 _REGEX_TAMANHO_MAX = 200
 # (a+)+ , (.*)* , (a|b*)+ : repeticao dentro de grupo que repete. O `re` do Python nao tem
 # timeout, entao esse formato e recusado antes de existir. A busca so roda em texto de ate
@@ -94,6 +94,9 @@ class Jogo:
     # Shell revisado por voce (so o catalogo curado tem). Nunca sai pela API.
     pre_install: str = ""
     post_install: str = ""
+    # Terceira porta que o jogo aceita pelos argumentos ({EXTRA_PORT}): a "confiavel" do
+    # Satisfactory (-ReliablePort), por exemplo. 0 = o jogo nao tem.
+    porta_extra: int = 0
 
     @property
     def tem_hooks(self) -> bool:
@@ -104,7 +107,8 @@ class Jogo:
         return {
             "chave": self.chave, "nome": self.nome, "app_id": self.app_id,
             "portas": [str(p) for p in self.portas], "porta_jogo": self.porta_jogo,
-            "porta_query": self.porta_query, "memoria_mb": self.memoria_mb,
+            "porta_query": self.porta_query, "porta_extra": self.porta_extra,
+            "memoria_mb": self.memoria_mb,
             "cores": self.cores, "disco_gb": self.disco_gb,
             "receitas": list(self.receitas), "deslocavel": self.deslocavel,
             "origem": self.origem, "criavel": self.criavel, "motivo": self.motivo,
@@ -117,6 +121,7 @@ class Jogo:
             "plataforma": self.plataforma, "start_script": self.start_script,
             "start_args": self.start_args, "portas": [str(p) for p in self.portas],
             "porta_jogo": self.porta_jogo, "porta_query": self.porta_query,
+            "porta_extra": self.porta_extra,
             "memoria_mb": self.memoria_mb, "cores": self.cores, "disco_gb": self.disco_gb,
             "config_path": self.config_path, "config_files": list(self.config_files),
             "backup_paths": list(self.backup_paths), "player_source": self.player_source,
@@ -192,19 +197,30 @@ def _inteiro_env(dados: dict[str, str], chave: str, padrao: int) -> int:
 
 
 def problema_de_deslocavel(portas: tuple[Porta, ...], porta_jogo: int, porta_query: int,
-                           start_args: str) -> str:
+                           start_args: str, porta_extra: int = 0) -> str:
     """Um jogo so anda de porta se o broker consegue AVISAR o jogo de todas elas.
 
-    O broker entrega ao jogo duas portas ({PORT} e {QUERY_PORT}). Uma terceira (DayZ tem
-    2303/2304) ficaria aberta no firewall num numero que o jogo nao escuta, e o cliente
-    conectaria em vazio. Sem o marcador no START_ARGS o jogo ignora o numero sorteado.
+    O broker entrega ao jogo ate tres portas ({PORT}, {QUERY_PORT} e {EXTRA_PORT}). Uma
+    quarta (DayZ tem 2303/2304) ficaria aberta no firewall num numero que o jogo nao escuta, e
+    o cliente conectaria em vazio. Sem o marcador no START_ARGS o jogo ignora o numero sorteado.
     """
-    if any(p.numero not in (porta_jogo, porta_query) for p in portas):
-        return "so aceita as portas do jogo e da query (o broker nao avisa portas extras ao jogo)"
+    avisaveis = {porta_jogo, porta_query, porta_extra} - {0}
+    if any(p.numero not in avisaveis for p in portas):
+        return ("so aceita as portas do jogo, da query e uma extra "
+                "(o broker nao avisa mais portas ao jogo)")
     if "{PORT}" not in start_args:
         return "start_args precisa de {PORT}: e por ele que o jogo recebe a porta sorteada"
     if porta_query and "{QUERY_PORT}" not in start_args:
         return "start_args precisa de {QUERY_PORT}: e por ele que o jogo recebe a porta de consulta"
+    if porta_extra and "{EXTRA_PORT}" not in start_args:
+        return "start_args precisa de {EXTRA_PORT}: e por ele que o jogo recebe a porta extra"
+    return ""
+
+
+def problema_de_extra(start_args: str, porta_extra: int) -> str:
+    """{EXTRA_PORT} sem porta extra viraria "0" na linha de comando do jogo."""
+    if "{EXTRA_PORT}" in start_args and not porta_extra:
+        return "start_args usa {EXTRA_PORT}, mas o jogo nao tem porta extra (EXTRA_PORT / porta_extra)"
     return ""
 
 
@@ -229,16 +245,21 @@ def jogo_de_env(nome_do_arquivo: str, dados: dict[str, str]) -> Jogo:
     runtime = dados.get("WINDOWS_RUNTIME", "")
     motivo = _motivo_de_nao_criar(dados, app_id, portas)
     deslocavel = dados.get("PORTS_SHIFTABLE", "0") == "1"
+    porta_extra = _inteiro_env(dados, "EXTRA_PORT", 0)
+    problema = problema_de_extra(dados.get("START_ARGS", ""), porta_extra)
+    if problema:
+        raise ValueError(problema)
     if deslocavel:
         problema = problema_de_deslocavel(portas, _inteiro_env(dados, "GAME_PORT", 0),
-                                          _inteiro_env(dados, "QUERY_PORT", 0), dados.get("START_ARGS", ""))
+                                          _inteiro_env(dados, "QUERY_PORT", 0), dados.get("START_ARGS", ""),
+                                          porta_extra)
         if problema:
             raise ValueError(f"PORTS_SHIFTABLE=1 invalido: {problema}")
     return Jogo(
         chave=chave, nome=dados.get("GAME_DISPLAY_NAME", chave), app_id=app_id,
         plataforma=dados.get("STEAM_PLATFORM", ""), portas=portas,
         porta_jogo=_inteiro_env(dados, "GAME_PORT", 0),
-        porta_query=_inteiro_env(dados, "QUERY_PORT", 0),
+        porta_query=_inteiro_env(dados, "QUERY_PORT", 0), porta_extra=porta_extra,
         memoria_mb=_inteiro_env(dados, "RECOMMENDED_MEMORY", 4096),
         cores=_inteiro_env(dados, "RECOMMENDED_CORES", 2),
         disco_gb=_inteiro_env(dados, "RECOMMENDED_DISK_GB", 20),
@@ -279,7 +300,7 @@ def carregar_curado(diretorio: Path) -> tuple[dict[str, Jogo], list[str]]:
 
 _CAMPOS_DINAMICOS = frozenset({
     "chave", "nome", "app_id", "plataforma", "start_script", "start_args", "portas",
-    "porta_jogo", "porta_query", "memoria_mb", "cores", "disco_gb", "config_path",
+    "porta_jogo", "porta_query", "porta_extra", "memoria_mb", "cores", "disco_gb", "config_path",
     "config_files", "backup_paths", "player_source", "join_re", "leave_re", "log_path",
     "receitas", "deslocavel",
 })
@@ -376,7 +397,7 @@ def _args_de_start(dados: dict) -> str:
     for marcador in _MARCADORES:
         sobra = sobra.replace(marcador, "")
     if "{" in sobra or "}" in sobra:
-        raise ErroDeValidacao("start_args", "so {PORT} e {QUERY_PORT} sao marcadores validos")
+        raise ErroDeValidacao("start_args", "so {PORT}, {QUERY_PORT} e {EXTRA_PORT} sao marcadores validos")
     return args
 
 
@@ -413,6 +434,11 @@ def validar_dinamico(dados: object) -> Jogo:
     porta_query = _inteiro(dados, "porta_query", 0, 65535, padrao=0)
     if porta_query and porta_query not in {p.numero for p in portas}:
         raise ErroDeValidacao("porta_query", "deve estar entre as portas expostas (ou 0)")
+    porta_extra = _inteiro(dados, "porta_extra", 0, 65535, padrao=0)
+    if porta_extra and porta_extra not in {p.numero for p in portas}:
+        raise ErroDeValidacao("porta_extra", "deve estar entre as portas expostas (ou 0)")
+    if porta_extra and porta_extra in (porta_jogo, porta_query):
+        raise ErroDeValidacao("porta_extra", "deve ser diferente da porta do jogo e da de consulta")
 
     plataforma = _texto(dados, "plataforma", re.compile(r"linux|windows"))
     fonte = dados.get("player_source", "log")
@@ -422,8 +448,11 @@ def validar_dinamico(dados: object) -> Jogo:
     if not isinstance(deslocavel, bool):
         raise ErroDeValidacao("deslocavel", "deve ser verdadeiro ou falso")
     start_args = _args_de_start(dados)
+    problema = problema_de_extra(start_args, porta_extra)
+    if problema:
+        raise ErroDeValidacao("start_args", problema)
     if deslocavel:
-        problema = problema_de_deslocavel(portas, porta_jogo, porta_query, start_args)
+        problema = problema_de_deslocavel(portas, porta_jogo, porta_query, start_args, porta_extra)
         if problema:
             raise ErroDeValidacao("deslocavel", problema)
 
@@ -432,6 +461,7 @@ def validar_dinamico(dados: object) -> Jogo:
         nome=_texto(dados, "nome", NOME_RE, obrigatorio=True),
         app_id=_inteiro(dados, "app_id", 1, 2**31 - 1),
         plataforma=plataforma, portas=portas, porta_jogo=porta_jogo, porta_query=porta_query,
+        porta_extra=porta_extra,
         memoria_mb=_inteiro(dados, "memoria_mb", 512, 65536, padrao=4096),
         cores=_inteiro(dados, "cores", 1, 16, padrao=2),
         disco_gb=_inteiro(dados, "disco_gb", 4, 500, padrao=20),

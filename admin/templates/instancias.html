@@ -7,7 +7,9 @@
   {{ ui.botao('Catalogo', href=url_for('catalog'), variante='ghost', icone='📚') }}
 {% endcall %}
 
-<div class="card card--form">
+{# Formulario a esquerda, instancias a direita no desktop; uma coluna no celular. #}
+<div class="grid-cartoes">
+<div class="card">
   <h2>Nova instancia</h2>
   {% if jogos %}
   <form method="post" action="{{ url_for('instance_new') }}">
@@ -70,7 +72,7 @@
                 <label>Digite o nome para confirmar
                   <input name="confirma" placeholder="{{ i.nome }}" autocomplete="off" spellcheck="false" required>
                 </label>
-                <label class="check">
+                <label class="checkbox">
                   <input type="checkbox" name="somente_banco" value="1">
                   Esquecer so o registro (o container ja nao existe mais no Proxmox)
                 </label>
@@ -86,5 +88,6 @@
       {% endfor %}
     </tbody>
   </table></div>
+</div>
 </div>
 {% endblock %}

@@ -10,6 +10,11 @@
 
 {% if status.error %}<div class="flash error">{{ status.error }}</div>{% endif %}
 
+{# Duas colunas a partir de 900px (informacoes ao lado de jogadores, recursos ao lado das
+   acoes recentes) e o log, que e comprido, na largura toda. No celular e uma coluna so,
+   na mesma ordem. As acoes recentes vem ANTES do log: o log e o bloco que cresce, e
+   empurrava o historico para o fim da tela. #}
+<div class="grid-cartoes">
 <div class="card">
   <dl class="meta wide">
     <div><dt>Host</dt><dd>{{ server.ssh_user }}@{{ server.host }}</dd></div>
@@ -217,7 +222,29 @@
   {% endif %}
 </div>
 
-<div class="card" {% if not log_error %}data-log-feed{% endif %}>
+<div class="card">
+  <h2>Acoes recentes</h2>
+  {% if jobs %}
+  <div class="table-wrap"><table class="jobs">
+    <thead><tr><th>Quando</th><th>Acao</th><th>Por</th><th>Resultado</th><th></th></tr></thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr>
+        <td class="muted small nowrap">{{ j.created_at.replace('T', ' ')[:19] }}</td>
+        <td>{{ job_label(j.action) }}{% if j.command %} <code class="trunc">{{ j.command }}</code>{% endif %}</td>
+        <td class="muted">{{ j.username }}</td>
+        <td><span class="badge {{ {'ok':'on','error':'off','running':'cold'}[j.status] }}">{{ j.status }}</span></td>
+        <td><a href="{{ url_for('job_detail', jid=j.id) }}">saida</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+    <p class="muted">Nenhuma acao executada por aqui ainda.</p>
+  {% endif %}
+</div>
+
+<div class="card grid-cartoes__largo" {% if not log_error %}data-log-feed{% endif %}>
   <div class="card__head">
     <h2>Log do servico</h2>
     <div class="cluster">
@@ -242,26 +269,5 @@
     <pre class="log" id="log-box">{{ logs or '(sem linhas de log)' }}</pre>
   {% endif %}
 </div>
-
-<div class="card">
-  <h2>Acoes recentes</h2>
-  {% if jobs %}
-  <div class="table-wrap"><table class="jobs">
-    <thead><tr><th>Quando</th><th>Acao</th><th>Por</th><th>Resultado</th><th></th></tr></thead>
-    <tbody>
-      {% for j in jobs %}
-      <tr>
-        <td class="muted small nowrap">{{ j.created_at.replace('T', ' ')[:19] }}</td>
-        <td>{{ job_label(j.action) }}{% if j.command %} <code class="trunc">{{ j.command }}</code>{% endif %}</td>
-        <td class="muted">{{ j.username }}</td>
-        <td><span class="badge {{ {'ok':'on','error':'off','running':'cold'}[j.status] }}">{{ j.status }}</span></td>
-        <td><a href="{{ url_for('job_detail', jid=j.id) }}">saida</a></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table></div>
-  {% else %}
-    <p class="muted">Nenhuma acao executada por aqui ainda.</p>
-  {% endif %}
 </div>
 {% endblock %}

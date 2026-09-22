@@ -28,6 +28,8 @@ import { filtroDeConfig, maisLinhasDeConfig, configSuja } from './features/confi
 import { caixaDeComando } from './features/console.js';
 import { grafico } from './features/charts.js';
 import { botaoInstalar, servicoOffline } from './features/pwa.js';
+import { modeloDeJogo } from './features/modelo-jogo.js';
+import { buscaDeJogo } from './features/busca-de-jogo.js';
 
 const FEATURES = [
   // estrutura
@@ -36,7 +38,7 @@ const FEATURES = [
   barrasIniciais, medidoresDoPainel, medidoresDoServidor,
   jogadoresDoPainel, jogadoresDoServidor, seguirLog, acompanharJob,
   // formularios
-  editorDeArquivo, filtroDeConfig, maisLinhasDeConfig, configSuja, caixaDeComando,
+  editorDeArquivo, filtroDeConfig, maisLinhasDeConfig, configSuja, caixaDeComando, modeloDeJogo, buscaDeJogo,
   // visualizacao
   grafico,
 ];

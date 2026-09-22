@@ -210,7 +210,18 @@ form.acao-bloco { display: block; flex: 1; min-width: 0; }
 }
 .menu__item:hover { background: var(--panel-3); text-decoration: none; }
 .menu__item--danger { color: var(--err-texto); }
+.menu__item[aria-current="page"] { background: var(--panel-3); color: var(--accent); }
 .menu__sep { height: 1px; margin: var(--sp-1) 0; background: var(--line); border: none; }
+
+/* Dois menus no mesmo cabecalho: o "⋯" do celular e o da conta, no desktop. Cada um so
+   existe na largura em que faz sentido (o `display: none` tira o outro da ordem de
+   tabulacao tambem). */
+.menu--conta { display: none; }
+.menu--conta > summary::after { content: "▾"; color: var(--muted); font-size: var(--fs-xs); }
+@media (min-width: 900px) {
+  .menu--movel { display: none; }
+  .menu--conta { display: block; }
+}
 .menu__titulo {
   padding: var(--sp-2) var(--sp-3) var(--sp-1);
   color: var(--muted); font-size: var(--fs-xs);
@@ -231,6 +242,19 @@ dl.meta dt {
   text-transform: uppercase; letter-spacing: .04em;
 }
 dl.meta dd { margin: 0; overflow-wrap: anywhere; }
+
+/* A chave do segundo fator: grande, em fonte de largura fixa e selecionavel com um toque. */
+.segredo {
+  display: inline-block;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--preto);
+  font: var(--fs-lg) var(--mono);
+  letter-spacing: .08em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
 
 .notes { white-space: pre-wrap; color: var(--muted); border-left: 2px solid var(--line); padding-left: var(--sp-3); }
 .intro { max-width: 70ch; margin: 0 0 var(--sp-4); font-size: var(--fs-md); }
@@ -264,6 +288,21 @@ label.inline-label input { margin-top: 0; }
 }
 .checkbox input { flex: none; margin: 0; }
 .checkbox span { color: var(--text); }
+
+/* Grupo de campos com titulo (as receitas de instalacao): a moldura do navegador, sem
+   estilo, sai branca e grossa num painel escuro. */
+fieldset.grupo {
+  min-width: 0;
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+fieldset.grupo legend {
+  padding: 0 var(--sp-2);
+  color: var(--muted); font-size: var(--fs-xs);
+  text-transform: uppercase; letter-spacing: .04em;
+}
 
 .opcoes {
   display: grid;

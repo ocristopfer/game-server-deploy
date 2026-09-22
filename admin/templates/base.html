@@ -46,18 +46,24 @@
 <body class="{{ 'tem-tabbar' if current_user }}" data-sw="{{ url_for('service_worker') }}">
 
 {% if current_user %}
+{# O conteudo da barra vive num miolo com a MESMA largura e o MESMO recuo do corpo da pagina: em
+   tela larga a marca fica alinhada com o titulo da pagina, e nao presa no canto da janela
+   enquanto o resto da tela e uma coluna no meio. #}
 <header class="appbar">
+ <div class="appbar__miolo">
   <a class="appbar__marca" href="{{ url_for('dashboard') }}">
     <span class="logo" aria-hidden="true">🎮</span>
     <span class="appbar__nome">Painel de Jogos</span>
   </a>
 
-  {# Em tela larga a navegacao principal sobe para ca; no celular ela vive na barra
-     de baixo e este bloco esta escondido por CSS. #}
+  {# Em tela larga TODOS os destinos de uso diario sobem para ca (a lista vem do ui.py);
+     no celular eles vivem na barra de baixo e este bloco esta escondido por CSS. Sem
+     icone de proposito: seis rotulos com icone nao cabem na coluna do conteudo e o
+     texto sozinho ja diz onde cada um leva. #}
   <nav class="appbar__nav" aria-label="Navegacao principal">
-    {% for item in nav_principal %}
+    {% for item in nav_desktop_barra %}
       <a href="{{ url_for(item.endpoint) }}"
-         {% if item.chave == nav_ativa %}aria-current="page"{% endif %}>{{ item.rotulo }}</a>
+         {% if item.chave == nav_ativa_desktop %}aria-current="page"{% endif %}>{{ item.curto or item.rotulo }}</a>
     {% endfor %}
   </nav>
 
@@ -66,7 +72,8 @@
   {{ ui.botao('Instalar', icone='⬇', tamanho='sm', tipo='button',
               extra='data-instalar hidden') }}
 
-  {% call ui.menu('', icone='⋯', titulo='Mais') %}
+  {# Celular: o "⋯" com o que nao coube nas abas de baixo. #}
+  {% call ui.menu('', icone='⋯', titulo='Mais', classe='menu--movel') %}
     <span class="menu__titulo">{{ current_user }} &middot; {{ role_label }}</span>
     {% for item in nav_secundaria %}
       <a class="menu__item" role="menuitem" href="{{ url_for(item.endpoint) }}">
@@ -76,6 +83,21 @@
     <hr class="menu__sep">
     {{ ui.menu_acao(url_for('logout'), 'Sair', icone='🚪') }}
   {% endcall %}
+
+  {# Desktop: o menu da pessoa, com o nome no botao (quem esta logado e o que ela
+     e, sem abrir nada). Os dois menus existem na pagina; o CSS mostra um por vez. #}
+  {% call ui.menu(current_user, icone='👤', titulo='Conta de ' ~ current_user, classe='menu--conta') %}
+    <span class="menu__titulo">{{ role_label }}</span>
+    {% for item in nav_desktop_conta %}
+      <a class="menu__item" role="menuitem" href="{{ url_for(item.endpoint) }}"
+         {% if item.chave == nav_ativa_desktop %}aria-current="page"{% endif %}>
+        <span class="icone" aria-hidden="true">{{ item.icone }}</span>{{ item.rotulo }}
+      </a>
+    {% endfor %}
+    <hr class="menu__sep">
+    {{ ui.menu_acao(url_for('logout'), 'Sair', icone='🚪') }}
+  {% endcall %}
+ </div>
 </header>
 {% endif %}
 
