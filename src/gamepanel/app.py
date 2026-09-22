@@ -53,6 +53,7 @@ from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import terminal as term_runtime
 from gamepanel.security import qr, totp
+from gamepanel.services import player_service
 
 # O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
 # resto do painel continua funcionando e a tela do terminal responde 503.
@@ -930,9 +931,7 @@ def em_paralelo(tarefas: dict, timeout: float = 40.0) -> dict:
 QUERY_TIMEOUT = float(os.environ.get("GAMEPANEL_QUERY_TIMEOUT", "3"))
 PLAYERS_TTL = float(os.environ.get("GAMEPANEL_PLAYERS_TTL", "5"))
 
-# De onde a contagem de jogadores pode sair. 'none' e o desligado explicito — diferente
-# do vazio, que significa "cadastro antigo, deduza pela porta de consulta".
-PLAYER_SOURCES = ("a2s", "http", "log", "none")
+PLAYER_SOURCES = player_service.PLAYER_SOURCES
 
 QueryError = a2s.QueryError
 AuthError = a2s.AuthError
@@ -947,16 +946,13 @@ def query_players(host: str, port: int) -> dict:
 # ------------------------------------------- jogadores (API HTTP do proprio jogo)
 #
 # A parte pura (montar o pedido HTTP, interpretar a resposta, achar lista/contagem no
-# JSON) mora em gamepanel.runtime.http_probe (Fase 4). O que fica aqui - http_login,
-# chama_api_do_jogo, players_from_http - depende do banco (guardar o token renovado) e
-# ainda nao tem pra onde se mudar sem um services/ de verdade; muda de lugar junto do
-# resto quando essa camada existir.
+# JSON) mora em gamepanel.runtime.http_probe; a que depende do banco (guardar o token
+# renovado) mora em gamepanel.services.player_service. Os nomes abaixo continuam aqui
+# porque o resto de app.py — e os testes — chamam por eles.
 HTTP_TIMEOUT = float(os.environ.get("GAMEPANEL_HTTP_TIMEOUT", "6"))
 HTTP_BODY_MAX = 2000
 HTTP_PATH_MAX = 120
-# Colunas que descrevem a chamada; viajam juntas entre formulario, assistente e banco.
-HTTP_FIELDS = ("http_url", "http_auth", "http_body", "http_list_path", "http_count_path",
-               "http_login_url", "http_login_body", "http_token_path")
+HTTP_FIELDS = player_service.HTTP_FIELDS
 
 auth_header = http_probe.auth_header
 read_players_json = http_probe.read_players_json
@@ -965,22 +961,13 @@ HTTP_URL_MAX = http_probe.HTTP_URL_MAX
 _split_status = http_probe._split_status
 _json_walk = http_probe._json_walk
 _id_do_item = http_probe._id_of
+_tem_login = player_service._tem_login
 
 
 def http_json(server: Servidor, url: str, auth: str, corpo: str, exigir_json: bool = True):
     # HTTP_TIMEOUT lido na hora da chamada, nao congelado - mesmo cuidado do SshClient
     # (runtime/ssh.py) e do query_players (runtime/a2s.py).
     return http_probe.http_json(ssh_output, server, url, auth, corpo, HTTP_TIMEOUT, exigir_json)
-
-
-def _tem_login(server: Servidor) -> bool:
-    """True quando o servidor esta configurado para obter o token sozinho."""
-    try:
-        return bool((server["http_login_url"] or "").strip()
-                    and (server["http_token_path"] or "").strip())
-    except (IndexError, KeyError):
-        # Linha vinda de um SELECT sem as colunas novas (ou banco antes da migracao).
-        return False
 
 
 def _valor_guardado(server: Servidor, coluna: str) -> str:
@@ -990,154 +977,50 @@ def _valor_guardado(server: Servidor, coluna: str) -> str:
         return ""
 
 
-def http_login(server: Servidor) -> str:
-    """Troca a credencial por um token e guarda no banco. Devolve o token."""
-    url = _valor_guardado(server, "http_login_url")
-    caminho = _valor_guardado(server, "http_token_path")
-    if not url or not caminho:
-        raise QueryError("login automatico incompleto (falta URL de login ou caminho do token)")
+def _player_deps() -> player_service.PlayerDeps:
+    """As pecas que a contagem pede, montadas na hora da chamada.
 
-    # O login vai SEM Authorization: e ele quem produz a credencial.
-    dados = http_json(server, url, "", _valor_guardado(server, "http_login_body"))
-    token = _json_walk(dados, caminho)
-    if not isinstance(token, str) or not token.strip():
-        raise QueryError(
-            f"o login respondeu, mas nao achei um token em '{caminho}'"
-        )
-    token = token.strip()
-    # Conexao propria, e nao db(): db() vive no 'g' do Flask e a contagem tambem roda
-    # fora de request (cache/pollagem em thread). Aqui a escrita e uma linha so.
-    con = _connect()
-    try:
-        with con:
-            con.execute("UPDATE servers SET http_token = ? WHERE id = ?",
-                        (token, int(server["id"])))
-    finally:
-        con.close()
-    return token
+    Na hora, e nao no import: `http_json`, `read_log_lines` e `query_players` sao nomes
+    deste modulo que um teste pode trocar por falsos, e um bundle congelado no import
+    passaria por cima da troca sem ninguem perceber.
+    """
+    return player_service.PlayerDeps(
+        http_json=http_json, connect=_connect, read_log_lines=read_log_lines,
+        query_players=query_players, players_ttl=PLAYERS_TTL,
+    )
+
+
+def http_login(server: Servidor) -> str:
+    return player_service.http_login(_player_deps(), server)
 
 
 def chama_api_do_jogo(server: Servidor, url: str, corpo: str = "",
                       exigir_json: bool = True):
-    """Chama a API do jogo com a credencial cadastrada, renovando o token se ele venceu.
-
-    Mora aqui, e nao dentro do players_from_http, porque a contagem deixou de ser a unica
-    coisa que fala com essa API: expulsar, banir e avisar usam a mesma porta, a mesma
-    senha e o mesmo token com prazo.
-    """
-    com_login = _tem_login(server)
-    if com_login:
-        token = _valor_guardado(server, "http_token")
-        # Sem token guardado (primeira vez, ou depois de trocar a senha) ja entra
-        # pelo login em vez de gastar uma chamada que vai falhar.
-        auth = f"bearer:{token}" if token else f"bearer:{http_login(server)}"
-    else:
-        auth = server["http_auth"]
-
-    try:
-        return http_json(server, url, auth, corpo, exigir_json)
-    except AuthError:
-        if not com_login:
-            raise
-        # Token expirado ou revogado: renova uma vez e repete. Se falhar de novo,
-        # o erro sobe - ai o problema e a credencial, nao o prazo do token.
-        return http_json(server, url, f"bearer:{http_login(server)}", corpo, exigir_json)
+    return player_service.chama_api_do_jogo(_player_deps(), server, url, corpo, exigir_json)
 
 
 def players_from_http(server: Servidor) -> dict:
-    if not (server["http_url"] or "").strip():
-        raise QueryError("informe a URL da API do jogo")
-    dados = chama_api_do_jogo(server, server["http_url"], server["http_body"])
-    return read_players_json(dados, server["http_list_path"], server["http_count_path"])
+    return player_service.players_from_http(_player_deps(), server)
 
 
 # ------------------------------------------- acoes sobre quem esta jogando
 #
-# Expulsar, banir e avisar saem pela MESMA API que ja conta os jogadores — outra rota,
-# mesma credencial. Nao ha padrao entre os jogos, entao vai um catalogo, reconhecido pela
-# URL de contagem que o servidor ja tem cadastrada.
-#
-# Dos jogos que este repo instala, so o Palworld publica essas acoes (o Satisfactory nao
-# tem kick na API). Jogo novo entra como mais uma entrada aqui, sem tocar no resto.
+# Catalogo e regra em gamepanel.services.player_service; aqui ficam so os nomes que a
+# tela, as rotas e os testes ja usam.
 
-PLAYER_MSG_MAX = 200
-PLAYER_ACTION_LABELS = {
-    "announce": "Avisar todo mundo",
-    "kick": "Expulsar",
-    "ban": "Banir",
-}
-
-# Os marcadores do catalogo, como constantes: sao a interface entre a tabela abaixo e
-# o `_preenche`, e escreve-los a mao em cada linha e como um deles vira "{mensagen}"
-# num jogo so, sem ninguem notar ate alguem tentar expulsar alguem.
-MARCA_BASE = "{base}"
-MARCA_JOGADOR = "{jogador}"
-MARCA_MENSAGEM = "{mensagem}"
-
-API_ACOES = (
-    {
-        "nome": "Palworld (REST)",
-        "url": re.compile(r"^(?P<base>https?://[^/\s]+/v1/api)/players/?$", re.I),
-        # acao -> (rota, corpo).
-        "acoes": {
-            "announce": (f"{MARCA_BASE}/announce", {"message": MARCA_MENSAGEM}),
-            "kick": (f"{MARCA_BASE}/kick",
-                     {"userid": MARCA_JOGADOR, "message": MARCA_MENSAGEM}),
-            "ban": (f"{MARCA_BASE}/ban",
-                    {"userid": MARCA_JOGADOR, "message": MARCA_MENSAGEM}),
-        },
-    },
-)
-
-
-def api_de_acoes(server: Servidor) -> dict | None:
-    """A API deste servidor aceita acoes? Devolve a entrada do catalogo, ou None."""
-    if player_source(server) != "http":
-        return None
-    url = (server["http_url"] or "").strip()
-    for entrada in API_ACOES:
-        casa = entrada["url"].match(url)
-        if casa:
-            return {**entrada, "base": casa.group("base")}
-    return None
-
-
-def acoes_de_jogador(server: Servidor) -> list[str]:
-    """Quais acoes a tela pode oferecer neste servidor."""
-    api = api_de_acoes(server)
-    return sorted(api["acoes"]) if api else []
-
-
-def _preenche(molde: str, base: str, jogador: str, mensagem: str) -> str:
-    """Troca os marcadores do catalogo.
-
-    De proposito NAO usa str.format: a mensagem vem de quem esta digitando, e uma chave
-    solta ('{') estouraria o format — ou pior, viraria um caminho para dentro do objeto.
-    """
-    return (molde.replace(MARCA_BASE, base)
-                 .replace(MARCA_JOGADOR, jogador)
-                 .replace(MARCA_MENSAGEM, mensagem))
+PLAYER_MSG_MAX = player_service.PLAYER_MSG_MAX
+PLAYER_ACTION_LABELS = player_service.PLAYER_ACTION_LABELS
+MARCA_BASE = player_service.MARCA_BASE
+MARCA_JOGADOR = player_service.MARCA_JOGADOR
+MARCA_MENSAGEM = player_service.MARCA_MENSAGEM
+API_ACOES = player_service.API_ACOES
+api_de_acoes = player_service.api_de_acoes
+acoes_de_jogador = player_service.acoes_de_jogador
+_preenche = player_service._preenche
 
 
 def acao_de_jogador(server: Servidor, acao: str, jogador: str, mensagem: str) -> str:
-    """Executa a acao na API do jogo. Devolve a frase que vai para a tela."""
-    api = api_de_acoes(server)
-    if not api or acao not in api["acoes"]:
-        raise QueryError("este servidor nao publica essa acao")
-    if acao == "announce":
-        if not mensagem:
-            raise QueryError("escreva o aviso")
-    elif not jogador:
-        raise QueryError("nao sei quem expulsar: a API nao publicou o identificador"
-                         " deste jogador")
-
-    rota, molde = api["acoes"][acao]
-    corpo = {chave: _preenche(valor, api["base"], jogador, mensagem)
-             for chave, valor in molde.items()}
-    # exigir_json=False: estas rotas respondem 200 com o corpo vazio.
-    chama_api_do_jogo(server, _preenche(rota, api["base"], jogador, mensagem),
-                      json.dumps(corpo), exigir_json=False)
-    return PLAYER_ACTION_LABELS.get(acao, acao)
+    return player_service.acao_de_jogador(_player_deps(), server, acao, jogador, mensagem)
 
 
 # ------------------------------------------------------ jogadores (pelo log)
@@ -1192,85 +1075,28 @@ def read_log_lines(server: Servidor, limite: int = LOG_SCAN_MAX) -> list[str]:
 
 
 def players_from_log(server: Servidor) -> dict:
-    entrar = compile_pattern(server["join_re"], "entrada")
-    if not entrar:
-        raise QueryError("informe o padrao da linha de entrada de jogador")
-    sair = compile_pattern(server["leave_re"], "saida")
-    try:
-        linhas = read_log_lines(server)
-    except RemoteError as exc:
-        raise QueryError(str(exc)) from exc
-
-    resultado = _apply_log_events(linhas, entrar, sair)
-    resultado.update({"error": "", "max_players": None, "server_name": "", "map": ""})
-    return resultado
+    return player_service.players_from_log(_player_deps(), server)
 
 
-_players_cache: dict[int, tuple[float, dict]] = {}
-_players_lock = threading.Lock()
-
-
-def player_source(server: Servidor) -> str:
-    """Como contar os jogadores deste servidor: 'a2s', 'http', 'log' ou '' (desligado)."""
-    escolhido = (server["player_source"] or "").strip()
-    if escolhido in PLAYER_SOURCES:
-        return "" if escolhido == "none" else escolhido
-    # Cadastro antigo, anterior ao campo: porta de consulta preenchida = A2S.
-    return "a2s" if int(server["query_port"] or 0) else ""
+# O MESMO objeto do service (nao uma copia): a fixture `banco` dos testes limpa a
+# contagem guardada por este nome, e um dicionario diferente aqui deixaria o cache de
+# verdade intacto entre os casos.
+_players_cache = player_service._players_cache
+invalidate_players = player_service.invalidate
+player_source = player_service.player_source
 
 
 def server_players(server: Servidor, force: bool = False) -> dict:
-    origem = player_source(server)
-    if not origem:
-        return {"configured": False, "error": "", "players": None, "list": [], "source": ""}
-
-    key = int(server["id"])
-    agora = time.monotonic()
-    if not force:
-        with _players_lock:
-            cached = _players_cache.get(key)
-        if cached and agora - cached[0] < PLAYERS_TTL:
-            return cached[1]
-
-    try:
-        if origem == "log":
-            data = players_from_log(server)
-        elif origem == "http":
-            data = players_from_http(server)
-        else:
-            porta = int(server["query_port"] or 0)
-            if not porta:
-                raise QueryError("informe a porta de consulta (query Steam) do servidor")
-            data = query_players(server["host"], porta)
-        data["configured"] = True
-    except QueryError as exc:
-        data = {"configured": True, "error": str(exc), "players": None, "list": []}
-    data["source"] = origem
-
-    with _players_lock:
-        _players_cache[key] = (agora, data)
-    return data
+    return player_service.server_players(_player_deps(), server, force)
 
 
 def all_players(servers) -> dict[int, dict]:
-    """Consulta todos em paralelo: sao 3s de espera cada quando um esta fora do ar."""
-    results: dict[int, dict] = {}
-    lock = threading.Lock()
-
-    def work(srv):
-        data = server_players(srv)
-        with lock:
-            results[int(srv["id"])] = data
-
-    threads = [threading.Thread(target=work, args=(s,), daemon=True) for s in servers]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=QUERY_TIMEOUT * 3 + 2)
-    for srv in servers:
-        results.setdefault(int(srv["id"]), {"configured": True, "error": MSG_TIMEOUT,
-                                            "players": None, "list": [], "source": ""})
-    return results
+    # `server_players` vai por dentro de um lambda, e nao direto: assim o nome e
+    # resolvido neste modulo a cada chamada, e a troca por um falso (monkeypatch nos
+    # testes de alerta e de grafico) continua valendo dentro do paralelo.
+    return player_service.all_players(
+        lambda srv: server_players(srv), servers, QUERY_TIMEOUT * 3 + 2, MSG_TIMEOUT,
+    )
 
 
 # ------------------------------------------------------------------ recursos
@@ -2373,8 +2199,7 @@ class _LogStream:
         if anterior is None:
             return                     # sem linha de base ainda: a volta do monitor faz
         # O cache guarda o numero de ANTES da linha que acabou de chegar.
-        with _players_lock:
-            _players_cache.pop(self.sid, None)
+        invalidate_players(self.sid)
         conn = _connect()              # esta thread vive fora do contexto do request
         try:
             cfg = webhook_config(conn)
@@ -3208,8 +3033,7 @@ def players_use(sid: int):
     if recusa is not None:
         return recusa
 
-    with _players_lock:
-        _players_cache.pop(sid, None)
+    invalidate_players(sid)
     return redirect(url_for("server_detail", sid=sid))
 
 
@@ -3243,8 +3067,7 @@ def player_action(sid: int):
     log_job("player-action", server, session.get("username", "?"),
             command=registro, output="a API aceitou o pedido")
     # A contagem fica alguns segundos em cache e ainda tem quem acabou de sair.
-    with _players_lock:
-        _players_cache.pop(sid, None)
+    invalidate_players(sid)
     flash(f"{rotulo}: {quem}." if acao != "announce" else f"Aviso enviado: {mensagem}", "ok")
     return redirect(voltar)
 
@@ -3538,8 +3361,7 @@ def server_edit(sid: int):
                 invalidate_status(sid)
                 # A contagem fica em cache por alguns segundos: trocar a fonte pelo
                 # formulario tem que valer na hora, como vale pelo assistente.
-                with _players_lock:
-                    _players_cache.pop(sid, None)
+                invalidate_players(sid)
                 flash("Servidor atualizado.", "ok")
                 return redirect(url_for("server_detail", sid=sid))
             except sqlite3.IntegrityError:
