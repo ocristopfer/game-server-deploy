@@ -37,23 +37,42 @@ requirements-dev.txt pytest` descrito no `CLAUDE.md` hoje.
   a peça mais simples de configurar lá: `uv sync --locked` é uma linha,
   determinística, sem cache de pip para gerenciar.
 
-**Desenho proposto**: um `pyproject.toml` **na raiz do repo**, como
-*workspace* `uv` (não publicável — não vai para PyPI, ninguém roda `pip
-install gamepanel`; existe só para dependências de dev, lint/type-check e
-imports editáveis), com dois membros:
+**Desenho proposto (ajustado na execução, ver nota abaixo)**: um único
+`pyproject.toml` **na raiz do repo** (não publicável — não vai para PyPI,
+ninguém roda `pip install gamepanel`; existe só para dependências de dev,
+lint/type-check e imports editáveis), empacotando os dois pacotes via
+`hatchling`:
 
 ```toml
-[tool.uv.workspace]
-members = ["src/gamepanel", "src/gamebroker"]
+[project]
+name = "games-workspace"
+dependencies = ["flask>=3.1,<3.2"]   # mesma faixa que o apt do Debian 13 traz
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gamepanel", "src/gamebroker"]
 
 [dependency-groups]
 dev = ["pytest>=9", "ruff>=0.16", "mypy>=1.14"]
 ```
 
-Cada pacote (`src/gamepanel/pyproject.toml`, `src/gamebroker/pyproject.toml`)
-declara só `flask` como dependência (a mesma versão que o `apt` do Debian 13
-traz — continua sendo a fonte de verdade, o `CLAUDE.md` já é explícito sobre
-isso). `uv.lock` fica versionado; `.venv` continua fora do git como hoje.
+`uv.lock` fica versionado; `.venv` continua fora do git como hoje.
+
+> **Nota de execução**: a ideia original desta seção era um *workspace* `uv`
+> de dois membros, cada um com seu próprio `pyproject.toml` (padrão
+> `src/gamepanel/pyproject.toml` + `src/gamepanel/src/gamepanel/...`, `src/`
+> duplicado). Na hora de criar o esqueleto (Fase 3, etapa 1), simplifiquei
+> para um único `pyproject.toml` empacotando os dois via `packages = [...]`
+> do hatchling — o benefício de um workspace de verdade (versionar/publicar
+> cada pacote de forma independente) não se aplica aqui, já que nenhum dos
+> dois é publicado nem instalado via pip em produção; a única coisa que
+> importa é `import gamepanel`/`import gamebroker` resolverem em dev. Isso
+> também deixa a árvore mais perto do pedido original ("`src/<pacote>/`"
+> literal, sem aninhar `src/` dentro de `src/`). Não muda nada do resto da
+> proposta (mapeamento, riscos, ordem de migração).
 
 Comandos do dia a dia passam a ser `uv sync` (no lugar de criar venv + pip
 install), `uv run pytest`, `uv run ruff check`, `uv run mypy` — mais curtos
@@ -125,8 +144,6 @@ uv.lock
 
 src/
   gamepanel/
-    pyproject.toml                # depende só de flask (== versão do apt)
-    src/gamepanel/
       __init__.py
       app.py                      # create_app() — application factory
       wsgi.py                     # entry point do gunicorn: gamepanel.wsgi:app

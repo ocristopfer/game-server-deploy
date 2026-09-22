@@ -1,0 +1,25 @@
+[project]
+name = "games-workspace"
+version = "0.0.0"
+description = "Ferramenta de desenvolvimento local (pytest/ruff/mypy + imports editaveis). Nao e publicada nem instalada em producao - ver CLAUDE.md."
+requires-python = ">=3.13"
+dependencies = [
+    "flask>=3.1,<3.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gamepanel", "src/gamebroker"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9",
+    "ruff>=0.16",
+    "mypy>=1.14",
+]
+
+[tool.mypy]
+platform = "linux"
