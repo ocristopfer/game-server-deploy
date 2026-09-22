@@ -706,4 +706,139 @@ MENSAGENS: dict[str, str] = {
         "de novo.",
     "users.remove_confirm": "Remover o usuario {usuario}?",
     "users.create": "Criar",
+
+    # ---------------------------------------- contagem de jogadores
+    "players_setup.intro":
+        "Tres formas de saber quantos estao jogando, da melhor para a ultima: a <strong>API do "
+        "jogo</strong> (da os nomes), a <strong>consulta direta</strong> que o navegador de "
+        "servidores usa (da a contagem) e, quando o jogo nao publica nada na rede, o <strong>log "
+        "do servidor</strong>.",
+    "players_setup.how_to_count": "Como contar",
+    "players_setup.tab_udp": "1. Consulta direta (UDP)",
+    "players_setup.tab_http": "2. API HTTP (TCP)",
+    "players_setup.tab_log": "3. Pelo log",
+    "players_setup.ports_tested": "Portas testadas",
+    "players_setup.ports_tested_hint":
+        "O painel leu de <code>/proc</code> quais portas UDP estao abertas dentro do container e "
+        "<strong>qual processo abriu cada uma</strong>, e mandou um <code>A2S_INFO</code> em "
+        "todas. As detectadas vem primeiro; as marcadas como <em>chute</em> nao estavam abertas e "
+        "so servem para quando o servidor esta parado.",
+    "players_setup.port": "Porta",
+    "players_setup.opened_by": "Aberta por",
+    "players_setup.answer": "Resposta",
+    "players_setup.server": "Servidor",
+    "players_setup.address": "Endereco",
+    "players_setup.status": "Status",
+    "players_setup.kind": "Tipo",
+    "players_setup.infra_not_the_game": "infra, nao e o jogo",
+    "players_setup.open_no_owner": "aberta, sem processo dono neste container",
+    "players_setup.was_not_open": "nao estava aberta (chute)",
+    "players_setup.no_answer": "sem resposta",
+    "players_setup.use_this": "Usar esta",
+    "players_setup.no_port_to_test": "Nenhuma porta para testar.",
+    "players_setup.no_udp_query_one":
+        "<strong>Este jogo nao publica consulta UDP.</strong> O processo do servidor abriu {n} "
+        "porta UDP e ela nao respondeu ao <code>A2S_INFO</code> &mdash; nao e porta errada nem "
+        "firewall: e porta do proprio jogo, e ela nao fala o protocolo. A contagem que aparece no "
+        "navegador do jogo, quando existe, vem do servico da Steam/Epic e nao do servidor. Confira "
+        "a aba <a href=\"{url_http}\">API HTTP</a> (varios jogos trocaram a query UDP por uma API "
+        "em TCP) e, se ali tambem nao houver nada, a contagem so pode sair do <a "
+        "href=\"{url_log}\">log</a>.",
+    "players_setup.no_udp_query_many":
+        "<strong>Este jogo nao publica consulta UDP.</strong> O processo do servidor abriu {n} "
+        "portas UDP e nenhuma respondeu ao <code>A2S_INFO</code> &mdash; nao e porta errada nem "
+        "firewall: sao as portas do proprio jogo, e elas nao falam o protocolo. A contagem que "
+        "aparece no navegador do jogo, quando existe, vem do servico da Steam/Epic e nao do "
+        "servidor. Confira a aba <a href=\"{url_http}\">API HTTP</a> (varios jogos trocaram a "
+        "query UDP por uma API em TCP) e, se ali tambem nao houver nada, a contagem so pode sair "
+        "do <a href=\"{url_log}\">log</a>.",
+    "players_setup.none_answered":
+        "Nenhuma respondeu? Veja a aba <a href=\"{url}\">API HTTP</a> &mdash; varios jogos "
+        "trocaram a query UDP por uma API de administracao em TCP.",
+    "players_setup.tcp_answered_http": "Portas TCP que responderam HTTP",
+    "players_setup.tcp_hint":
+        "O painel leu de <code>/proc</code> as portas TCP em <code>LISTEN</code> dentro do "
+        "container e <strong>qual processo abriu cada uma</strong>, e bateu nelas por HTTP "
+        "<strong>de dentro do proprio container</strong> &mdash; essas APIs costumam escutar so em "
+        "<code>127.0.0.1</code>, e e assim que elas devem continuar. Um <code>401</code> tambem e "
+        "um bom sinal: existe API ali, ela so quer senha. Confira a coluna &quot;Aberta por&quot;: "
+        "se nao for o processo do jogo, nao e a API dele.",
+    "players_setup.same_on_everything": "{status} em tudo",
+    "players_setup.asks_for_password": "{status} pede senha",
+    "players_setup.http_but_not_a_game_api": "fala HTTP, mas nao e API de jogo",
+    "players_setup.use_this_url": "Usar esta URL",
+    "players_setup.no_tcp_answered_http": "Nenhuma porta TCP respondeu HTTP.",
+    "players_setup.no_http_answer_on": "Sem resposta HTTP em:",
+    "players_setup.no_game_api":
+        "<strong>Nenhuma API de jogo respondeu.</strong> Quase sempre e porque ela vem "
+        "<em>desligada</em> de fabrica e precisa ser ligada na configuracao do servidor &mdash; a "
+        "porta so passa a existir depois disso. No <strong>Palworld</strong>, no "
+        "<code>PalWorldSettings.ini</code> (dentro de <code>OptionSettings=(...)</code>): "
+        "<code>RESTAPIEnabled=True</code>, <code>RESTAPIPort=8212</code> e uma "
+        "<code>AdminPassword</code> forte. Pare o servidor, edite, suba de novo e recarregue esta "
+        "pagina. Se o jogo simplesmente nao tem API (RuneScape Dragonwilds nao tem), use a aba <a "
+        "href=\"{url}\">Pelo log</a>.",
+    "players_setup.test_the_call": "Testar a chamada",
+    "players_setup.url": "URL",
+    "players_setup.url_hint":
+        "Sempre <code>127.0.0.1</code>: a chamada sai de dentro do container, pelo mesmo SSH do "
+        "resto do painel. Nao precisa abrir nada no roteador.",
+    "players_setup.auth": "Autenticacao",
+    "players_setup.auth_hint":
+        "<code>basic:usuario:senha</code>, <code>bearer:token</code> ou um cabecalho "
+        "<code>Authorization</code> pronto. Palworld: <code>basic:admin:</code> + a "
+        "<code>AdminPassword</code> do <code>PalWorldSettings.ini</code>. Para API que autentica "
+        "por outro cabecalho, use <code>header:Nome: valor</code> &mdash; o TeamSpeak pede "
+        "<code>header:x-api-key: SUA-CHAVE</code>.",
+    "players_setup.json_body": "Corpo JSON",
+    "players_setup.json_body_hint": "Preenchido, a chamada vira <code>POST</code>. Vazio, e um <code>GET</code>.",
+    "players_setup.list_path": "Caminho da lista",
+    "players_setup.count_path": "Caminho da contagem",
+    "players_setup.auto_login": "Login automatico",
+    "players_setup.auto_login_hint":
+        "Para APIs cujo token <strong>expira</strong> — a do Satisfactory e assim. Preenchendo "
+        "estes tres campos, o painel troca a senha por um token sozinho, guarda, e quando a API "
+        "responder <code>401</code> ele refaz o login e repete a consulta. Deixe a "
+        "<em>Autenticacao</em> acima vazia: quem manda o cabecalho passa a ser o token obtido "
+        "aqui.",
+    "players_setup.login_url": "URL de login",
+    "players_setup.token_path": "Caminho do token",
+    "players_setup.login_json_body": "Corpo JSON do login",
+    "players_setup.login_json_body_hint":
+        "Satisfactory: a senha e a de <strong>admin</strong> definida no cliente ao reivindicar o "
+        "servidor. O corpo vai para a mesma API, sem cabecalho de autenticacao.",
+    "players_setup.leave_paths_empty":
+        "Deixe os dois caminhos vazios primeiro: o painel procura sozinho uma lista de jogadores "
+        "e, se nao achar, um numero em chaves conhecidas (<code>currentplayernum</code>, "
+        "<code>numPlayers</code>, ...). So preencha se ele errar &mdash; a resposta crua aparece "
+        "abaixo para voce ver o nome certo do campo.",
+    "players_setup.test": "Testar",
+    "players_setup.result": "Resultado:",
+    "players_setup.players_count": "jogador(es)",
+    "players_setup.players_online_now": "jogador(es) online agora",
+    "players_setup.raw_api_answer": "Resposta crua da API",
+    "players_setup.use_this_api": "Usar esta API",
+    "players_setup.password_in_plain_text":
+        "A senha da API fica guardada no banco do painel em texto puro (e ela precisa ir no "
+        "cabecalho de cada chamada). Trate <code>panel.db</code> como segredo.",
+    "players_setup.log_lines_that_look_like": "Linhas do log que parecem de entrada/saida",
+    "players_setup.find_the_lines":
+        "Ache a linha que aparece quando alguem entra e a que aparece quando alguem sai, e escreva "
+        "os padroes abaixo. Use <code>(?P&lt;name&gt;.+)</code> onde estiver o nome do jogador "
+        "&mdash; com o nome nos dois padroes o painel lista quem esta online; sem ele, mostra so a "
+        "contagem.",
+    "players_setup.no_join_leave_lines": "Nenhuma linha com palavras de entrada/saida no log desta execucao.",
+    "players_setup.test_the_pattern": "Testar o padrao",
+    "players_setup.log_file": "Arquivo de log",
+    "players_setup.log_file_hint":
+        "Em branco, o painel le a saida do servico (<code>journalctl</code>) &mdash; e onde a "
+        "maioria dos jogos anuncia. Alguns so escrevem o <strong>nome</strong> de quem entra num "
+        "arquivo proprio: o <strong>DayZ</strong> e assim (<code>/opt/game/profiles/*.ADM</code>, "
+        "ja ligado pelo <code>-adminlog</code> do nosso deploy). O <code>*</code> vale, e o painel "
+        "pega sempre o arquivo mais novo.",
+    "players_setup.join_line": "Linha de entrada",
+    "players_setup.leave_line": "Linha de saida",
+    "players_setup.last_matching_lines": "Ultimas linhas que casaram com os padroes:",
+    "players_setup.no_line_matched": "Nenhuma linha casou com os padroes — confira a grafia.",
+    "players_setup.use_these_patterns": "Usar estes padroes",
 }

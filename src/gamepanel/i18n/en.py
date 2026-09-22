@@ -704,4 +704,139 @@ MENSAGENS: dict[str, str] = {
         "they turn it back on.",
     "users.remove_confirm": "Remove the user {usuario}?",
     "users.create": "Create",
+
+    # ---------------------------------------- contagem de jogadores
+    "players_setup.intro":
+        "Three ways to know how many are playing, from the best to the last resort: the "
+        "<strong>game's API</strong> (gives the names), the <strong>direct query</strong> the "
+        "server browser uses (gives the count) and, when the game publishes nothing on the "
+        "network, the <strong>server log</strong>.",
+    "players_setup.how_to_count": "How to count",
+    "players_setup.tab_udp": "1. Direct query (UDP)",
+    "players_setup.tab_http": "2. HTTP API (TCP)",
+    "players_setup.tab_log": "3. From the log",
+    "players_setup.ports_tested": "Ports tested",
+    "players_setup.ports_tested_hint":
+        "The panel read from <code>/proc</code> which UDP ports are open inside the container and "
+        "<strong>which process opened each one</strong>, then sent an <code>A2S_INFO</code> to all "
+        "of them. The detected ones come first; those marked as a <em>guess</em> were not open and "
+        "only help while the server is stopped.",
+    "players_setup.port": "Port",
+    "players_setup.opened_by": "Opened by",
+    "players_setup.answer": "Answer",
+    "players_setup.server": "Server",
+    "players_setup.address": "Address",
+    "players_setup.status": "Status",
+    "players_setup.kind": "Kind",
+    "players_setup.infra_not_the_game": "infrastructure, not the game",
+    "players_setup.open_no_owner": "open, with no owning process in this container",
+    "players_setup.was_not_open": "was not open (a guess)",
+    "players_setup.no_answer": "no answer",
+    "players_setup.use_this": "Use this one",
+    "players_setup.no_port_to_test": "No port to test.",
+    "players_setup.no_udp_query_one":
+        "<strong>This game publishes no UDP query.</strong> The server process opened {n} UDP port "
+        "and it did not answer the <code>A2S_INFO</code> &mdash; this is not a wrong port nor a "
+        "firewall: it is the game's own port, and it does not speak the protocol. The count shown "
+        "in the game's browser, when there is one, comes from the Steam/Epic service and not from "
+        "the server. Check the <a href=\"{url_http}\">HTTP API</a> tab (several games traded the "
+        "UDP query for a TCP API) and, if there is nothing there either, the count can only come "
+        "from the <a href=\"{url_log}\">log</a>.",
+    "players_setup.no_udp_query_many":
+        "<strong>This game publishes no UDP query.</strong> The server process opened {n} UDP "
+        "ports and none answered the <code>A2S_INFO</code> &mdash; this is not a wrong port nor a "
+        "firewall: they are the game's own ports, and they do not speak the protocol. The count "
+        "shown in the game's browser, when there is one, comes from the Steam/Epic service and not "
+        "from the server. Check the <a href=\"{url_http}\">HTTP API</a> tab (several games traded "
+        "the UDP query for a TCP API) and, if there is nothing there either, the count can only "
+        "come from the <a href=\"{url_log}\">log</a>.",
+    "players_setup.none_answered":
+        "None answered? Check the <a href=\"{url}\">HTTP API</a> tab &mdash; several games traded "
+        "the UDP query for a TCP administration API.",
+    "players_setup.tcp_answered_http": "TCP ports that answered HTTP",
+    "players_setup.tcp_hint":
+        "The panel read from <code>/proc</code> the TCP ports in <code>LISTEN</code> inside the "
+        "container and <strong>which process opened each one</strong>, then knocked on them over "
+        "HTTP <strong>from inside the container itself</strong> &mdash; these APIs usually listen "
+        "on <code>127.0.0.1</code> only, and that is how they should stay. A <code>401</code> is a "
+        "good sign too: there is an API there, it just wants a password. Check the &quot;Opened "
+        "by&quot; column: if it is not the game's process, it is not the game's API.",
+    "players_setup.same_on_everything": "{status} on everything",
+    "players_setup.asks_for_password": "{status} asks for a password",
+    "players_setup.http_but_not_a_game_api": "speaks HTTP, but is not a game API",
+    "players_setup.use_this_url": "Use this URL",
+    "players_setup.no_tcp_answered_http": "No TCP port answered HTTP.",
+    "players_setup.no_http_answer_on": "No HTTP answer on:",
+    "players_setup.no_game_api":
+        "<strong>No game API answered.</strong> Almost always this is because it ships "
+        "<em>off</em> and has to be turned on in the server configuration &mdash; the port only "
+        "comes into being after that. On <strong>Palworld</strong>, in "
+        "<code>PalWorldSettings.ini</code> (inside <code>OptionSettings=(...)</code>): "
+        "<code>RESTAPIEnabled=True</code>, <code>RESTAPIPort=8212</code> and a strong "
+        "<code>AdminPassword</code>. Stop the server, edit, bring it back up and reload this page. "
+        "If the game simply has no API (RuneScape Dragonwilds has none), use the <a "
+        "href=\"{url}\">From the log</a> tab.",
+    "players_setup.test_the_call": "Test the call",
+    "players_setup.url": "URL",
+    "players_setup.url_hint":
+        "Always <code>127.0.0.1</code>: the call goes out from inside the container, over the same "
+        "SSH as the rest of the panel. Nothing needs opening on the router.",
+    "players_setup.auth": "Authentication",
+    "players_setup.auth_hint":
+        "<code>basic:user:password</code>, <code>bearer:token</code> or a ready-made "
+        "<code>Authorization</code> header. Palworld: <code>basic:admin:</code> + the "
+        "<code>AdminPassword</code> from <code>PalWorldSettings.ini</code>. For an API that "
+        "authenticates through another header, use <code>header:Name: value</code> &mdash; "
+        "TeamSpeak wants <code>header:x-api-key: YOUR-KEY</code>.",
+    "players_setup.json_body": "JSON body",
+    "players_setup.json_body_hint": "Filled in, the call becomes a <code>POST</code>. Empty, it is a <code>GET</code>.",
+    "players_setup.list_path": "Path to the list",
+    "players_setup.count_path": "Path to the count",
+    "players_setup.auto_login": "Automatic login",
+    "players_setup.auto_login_hint":
+        "For APIs whose token <strong>expires</strong> — Satisfactory's is like that. Fill in "
+        "these three fields and the panel trades the password for a token on its own, keeps it, "
+        "and when the API answers <code>401</code> it logs in again and repeats the query. Leave "
+        "<em>Authentication</em> above empty: the header is then sent with the token obtained "
+        "here.",
+    "players_setup.login_url": "Login URL",
+    "players_setup.token_path": "Path to the token",
+    "players_setup.login_json_body": "Login JSON body",
+    "players_setup.login_json_body_hint":
+        "Satisfactory: the password is the <strong>admin</strong> one set in the client when "
+        "claiming the server. The body goes to the same API, with no authentication header.",
+    "players_setup.leave_paths_empty":
+        "Leave both paths empty first: the panel looks for a player list on its own and, failing "
+        "that, for a number under known keys (<code>currentplayernum</code>, "
+        "<code>numPlayers</code>, ...). Only fill them in if it gets it wrong &mdash; the raw "
+        "answer shows up below so you can see the right field name.",
+    "players_setup.test": "Test",
+    "players_setup.result": "Result:",
+    "players_setup.players_count": "player(s)",
+    "players_setup.players_online_now": "player(s) online right now",
+    "players_setup.raw_api_answer": "Raw API answer",
+    "players_setup.use_this_api": "Use this API",
+    "players_setup.password_in_plain_text":
+        "The API password is kept in the panel's database in plain text (it has to go in the "
+        "header of every call). Treat <code>panel.db</code> as a secret.",
+    "players_setup.log_lines_that_look_like": "Log lines that look like joins and leaves",
+    "players_setup.find_the_lines":
+        "Find the line that shows up when somebody joins and the one that shows up when somebody "
+        "leaves, and write the patterns below. Use <code>(?P&lt;name&gt;.+)</code> where the "
+        "player's name is &mdash; with the name in both patterns the panel lists who is online; "
+        "without it, it only shows the count.",
+    "players_setup.no_join_leave_lines": "No line with join or leave words in the log of this run.",
+    "players_setup.test_the_pattern": "Test the pattern",
+    "players_setup.log_file": "Log file",
+    "players_setup.log_file_hint":
+        "Blank, the panel reads the service output (<code>journalctl</code>) &mdash; which is "
+        "where most games announce. Some only write the <strong>name</strong> of whoever joins to "
+        "a file of their own: <strong>DayZ</strong> is like that "
+        "(<code>/opt/game/profiles/*.ADM</code>, already turned on by the <code>-adminlog</code> "
+        "in our deploy). The <code>*</code> works, and the panel always picks the newest file.",
+    "players_setup.join_line": "Join line",
+    "players_setup.leave_line": "Leave line",
+    "players_setup.last_matching_lines": "Last lines that matched the patterns:",
+    "players_setup.no_line_matched": "No line matched the patterns — check the spelling.",
+    "players_setup.use_these_patterns": "Use these patterns",
 }
