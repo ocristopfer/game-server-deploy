@@ -42,7 +42,7 @@ services:
     secrets:
       - broker-token
     volumes:
-      - ./admin:/opt/gamepanel:ro     # o codigo vem do repo: edite e recarregue a pagina
+      - ./src/gamepanel:/opt/gamepanel/gamepanel:ro   # o codigo vem do repo: edite e recarregue a pagina
       - panel-keys:/keys
       - panel-conf:/etc/gamepanel
       - panel-data:/var/lib/gamepanel

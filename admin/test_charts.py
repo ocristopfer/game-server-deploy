@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import app as panel
+from gamepanel import app as panel
 
 INICIO = datetime(2026, 8, 18, 0, 0, tzinfo=timezone.utc)
 FIM = INICIO + timedelta(hours=24)

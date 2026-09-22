@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-import app as panel
+from gamepanel import app as panel
 from gamepanel.security import qr
 from gamepanel.security import totp
 
@@ -334,7 +334,7 @@ def test_admin_nao_desliga_o_proprio_2fa_por_la(chefe, postar, hora):
 
 def test_linha_de_comando_desliga_o_2fa(chefe, postar, hora):
     _com_2fa(chefe, postar, hora)
-    saida = subprocess.run([sys.executable, str(ADMIN / "app.py"), "--reset-2fa", "chefe"],
+    saida = subprocess.run([sys.executable, "-m", "gamepanel.app", "--reset-2fa", "chefe"],
                            env=os.environ, capture_output=True, text=True, cwd=ADMIN, timeout=60)
     assert saida.returncode == 0, saida.stderr
     assert "desligado" in saida.stdout
@@ -342,7 +342,7 @@ def test_linha_de_comando_desliga_o_2fa(chefe, postar, hora):
 
 
 def test_linha_de_comando_recusa_usuario_que_nao_existe(banco):
-    saida = subprocess.run([sys.executable, str(ADMIN / "app.py"), "--reset-2fa", "ninguem"],
+    saida = subprocess.run([sys.executable, "-m", "gamepanel.app", "--reset-2fa", "ninguem"],
                            env=os.environ, capture_output=True, text=True, cwd=ADMIN, timeout=60)
     assert saida.returncode != 0
     assert "nao existe" in saida.stderr

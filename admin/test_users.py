@@ -10,7 +10,7 @@ nenhum administrador.
 """
 import pytest
 
-import app as panel
+from gamepanel import app as panel
 
 
 def papel(banco, username: str) -> str:

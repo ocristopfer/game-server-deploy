@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import app as panel
+from gamepanel import app as panel
 
 FUSO = timezone.utc
 

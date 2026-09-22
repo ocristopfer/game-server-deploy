@@ -17,7 +17,7 @@ cp -f "${GAMEPANEL_SSH_KEY}.pub" /keys/panel.pub
 touch "$GAMEPANEL_KNOWN_HOSTS"
 
 echo "==> garantindo o usuario ${PANEL_USER:-admin}"
-python3 /opt/gamepanel/app.py --create-user "${PANEL_USER:-admin}" \
+python3 -m gamepanel.app --create-user "${PANEL_USER:-admin}" \
   --password "${PANEL_PASSWORD:-admin12345}"
 
 if [ "${PANEL_SEED_DEMO:-0}" = "1" ]; then
@@ -26,7 +26,7 @@ if [ "${PANEL_SEED_DEMO:-0}" = "1" ]; then
 import sys
 
 sys.path.insert(0, "/opt/gamepanel")
-import app as panel  # noqa: E402  (o import ja cria/migra o banco)
+from gamepanel import app as panel  # noqa: E402  (o import ja cria/migra o banco)
 
 SEEDS = [
     # Sem player_source: o painel deduz a2s pela porta de consulta. A API REST falsa
@@ -53,7 +53,7 @@ fi
 echo "==> painel em http://localhost:${GAMEPANEL_PORT} (usuario ${PANEL_USER:-admin})"
 if [ "${GAMEPANEL_DEV:-0}" = "1" ]; then
   exec gunicorn --workers 1 --threads 16 --timeout 120 --reload \
-    --bind "0.0.0.0:${GAMEPANEL_PORT}" --access-logfile - app:app
+    --bind "0.0.0.0:${GAMEPANEL_PORT}" --access-logfile - gamepanel.wsgi:app
 fi
 exec gunicorn --workers 1 --threads 16 --timeout 120 \
-  --bind "0.0.0.0:${GAMEPANEL_PORT}" --access-logfile - app:app
+  --bind "0.0.0.0:${GAMEPANEL_PORT}" --access-logfile - gamepanel.wsgi:app

@@ -5,7 +5,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ADMIN_ENV_FILE="${ADMIN_ENV_FILE:-$SCRIPT_DIR/admin.env}"
-APP_SRC_DIR="${APP_SRC_DIR:-$SCRIPT_DIR/admin}"
+APP_SRC_DIR="${APP_SRC_DIR:-$SCRIPT_DIR/gamepanel}"
 
 APP_DIR=/opt/gamepanel
 CONF_DIR=/etc/gamepanel
@@ -90,7 +90,7 @@ validate_host_requirements() {
   [[ -d "$APP_SRC_DIR" ]] || die "Diretorio da aplicacao nao encontrado: $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/app.py" ]] || die "app.py nao encontrado em $APP_SRC_DIR"
   # O app importa este modulo no topo: sem ele o painel nem inicia.
-  [[ -f "$APP_SRC_DIR/gameconf.py" ]] || die "gameconf.py nao encontrado em $APP_SRC_DIR"
+  [[ -f "$APP_SRC_DIR/games/config_format.py" ]] || die "games/config_format.py nao encontrado em $APP_SRC_DIR"
   # Sem estes o painel sobe e so quebra no navegador com 'TemplateNotFound'.
   [[ -f "$APP_SRC_DIR/templates/login.html" ]] || die "templates/ ausente ou incompleto em $APP_SRC_DIR"
   [[ -f "$APP_SRC_DIR/templates/base.html" ]] || die "templates/base.html nao encontrado em $APP_SRC_DIR"
@@ -210,36 +210,36 @@ push_tree() {
       run_ct "install -d '${destino}/${rel%/*}'"
     fi
     pct push "$CTID" "$src" "${destino}/${rel}" --perms 0644
-  done < <(find "$origem" -type f | sort)
+  done < <(find "$origem" -type f ! -name '*.pyc' ! -path '*__pycache__*' | sort)
 }
 
 push_application() {
   msg "Publicando a aplicacao em ${APP_DIR}"
-  run_ct "rm -rf ${APP_DIR}/templates ${APP_DIR}/static"
-  run_ct "install -d ${APP_DIR}/templates ${APP_DIR}/static"
+  # O pacote inteiro vai para ${APP_DIR}/gamepanel (templates/ e static/ moram DENTRO
+  # dele agora - Flask(__name__) resolve os dois a partir do pacote, nao do CWD). Isso e
+  # o que faz `import gamepanel` funcionar sem PYTHONPATH: CWD e ${APP_DIR}, que contem a
+  # pasta gamepanel/ - mesmo mecanismo que ja fazia `app:app` funcionar antes da
+  # reorganizacao em src/ (ver docs/architecture-proposal.md).
+  run_ct "rm -rf ${APP_DIR}/gamepanel"
+  run_ct "install -d ${APP_DIR}/gamepanel"
 
   # pct push copia arquivo a arquivo. E mais lento que mandar um tar.gz pelo stdin do
   # 'pct exec', mas deterministico: aquele stream binario podia nao ser entregue, o tar
   # do outro lado extraia zero arquivos e ainda assim saia com 0 — o deploy passava e o
   # painel so quebrava em runtime com 'TemplateNotFound'.
-  # Todos os .py, nao so o app.py: o painel ja e mais de um modulo (gameconf.py, o
-  # leitor/gravador da tela Config) e um faltando derruba o import do app inteiro.
-  local src
-  for src in "$APP_SRC_DIR"/*.py; do
-    [[ -f "$src" ]] || continue
-    pct push "$CTID" "$src" "${APP_DIR}/$(basename "$src")" --perms 0644
-  done
-  # Percorre em PROFUNDIDADE: templates/ tem components/ e static/ tem css/, js/core,
-  # js/features e icons/. O laco antigo era raso e so pegava o primeiro nivel - com a
-  # arvore de hoje, o painel subiria sem os componentes, sem CSS e sem JS nenhum.
-  push_tree "$APP_SRC_DIR/templates" "${APP_DIR}/templates"
-  push_tree "$APP_SRC_DIR/static" "${APP_DIR}/static"
+  # Percorre em PROFUNDIDADE: alem de templates/ (com components/) e static/ (com css/,
+  # js/core, js/features e icons/), o pacote agora tem subpastas proprias (games/,
+  # security/, integrations/) - um push raso deixaria o import do app inteiro quebrado.
+  push_tree "$APP_SRC_DIR" "${APP_DIR}/gamepanel"
   run_ct "chown -R root:root ${APP_DIR}"
 
   # Falhar aqui e melhor do que descobrir pela tela de erro do navegador.
-  run_ct "test -f ${APP_DIR}/app.py && test -f ${APP_DIR}/gameconf.py && test -f ${APP_DIR}/templates/base.html && test -f ${APP_DIR}/templates/login.html && test -f ${APP_DIR}/templates/components/ui.html && test -f ${APP_DIR}/templates/sw.js.jinja && test -f ${APP_DIR}/static/css/tokens.css && test -f ${APP_DIR}/static/js/app.js && test -f ${APP_DIR}/static/js/terminal.js" \
+  run_ct "test -f ${APP_DIR}/gamepanel/app.py && test -f ${APP_DIR}/gamepanel/games/config_format.py && test -f ${APP_DIR}/gamepanel/templates/base.html && test -f ${APP_DIR}/gamepanel/templates/login.html && test -f ${APP_DIR}/gamepanel/templates/components/ui.html && test -f ${APP_DIR}/gamepanel/templates/sw.js.jinja && test -f ${APP_DIR}/gamepanel/static/css/tokens.css && test -f ${APP_DIR}/gamepanel/static/js/app.js && test -f ${APP_DIR}/gamepanel/static/js/terminal.js" \
     || die "Arquivos da aplicacao nao chegaram em ${APP_DIR} (veja a saida do pct push acima)"
-  msg "Publicados: $(run_ct "ls ${APP_DIR}/templates | wc -l" | tr -d '\r') templates"
+  # Falhar aqui e melhor do que o servico cair no start com ModuleNotFoundError.
+  run_ct "cd ${APP_DIR} && python3 -c 'import gamepanel.app'" \
+    || die "O pacote do painel nao importa no CT (falta algum arquivo no bundle?)"
+  msg "Publicados: $(run_ct "ls ${APP_DIR}/gamepanel/templates | wc -l" | tr -d '\r') templates"
 }
 
 ensure_ssh_key() {
@@ -323,7 +323,7 @@ bootstrap_admin_user() {
     python3 -c "
 import os, sys
 sys.path.insert(0, '${APP_DIR}')
-import app as panel
+from gamepanel import app as panel
 panel.ensure_admin_user('${PANEL_USER}', sys.stdin.read())
 "
   run_ct "chown -R ${APP_USER}:${APP_USER} ${DATA_DIR} && chown ${APP_USER}:${APP_USER} ${CONF_DIR}/secret_key && chmod 0600 ${CONF_DIR}/secret_key"
@@ -349,7 +349,7 @@ EnvironmentFile=${CONF_DIR}/panel.env
 # workers metade dos pedidos cairia no processo que nao tem a sessao. As threads
 # sustentam os long-polls do terminal (um por aba aberta) alem das telas normais.
 ExecStart=/usr/bin/gunicorn --workers 1 --threads 16 --timeout 120 \\
-  --bind 0.0.0.0:${PANEL_PORT} --access-logfile - app:app
+  --bind 0.0.0.0:${PANEL_PORT} --access-logfile - gamepanel.wsgi:app
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

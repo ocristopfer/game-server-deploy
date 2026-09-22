@@ -38,7 +38,7 @@ import time  # noqa: E402
 
 import pytest  # noqa: E402
 
-import app as panel  # noqa: E402
+from gamepanel import app as panel  # noqa: E402
 from gamepanel.security import totp  # noqa: E402
 
 # Toda tabela do SCHEMA. Esvaziar e melhor que recriar: `init_db()` tambem roda as

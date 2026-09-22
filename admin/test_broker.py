@@ -14,7 +14,7 @@ import time
 
 import pytest
 
-import app as panel
+from gamepanel import app as panel
 from gamepanel.security import totp
 from gamepanel import navigation as ui
 

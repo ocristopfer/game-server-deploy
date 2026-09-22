@@ -3,6 +3,10 @@
 #
 # O contexto de build e a RAIZ do repositorio, porque o codigo do painel entra na imagem:
 #   docker build -f docker/panel/Dockerfile.prod -t gamepanel .
+#
+# O pacote fica em /opt/gamepanel/gamepanel (WORKDIR e o pai dele) para que
+# `import gamepanel` resolva sem PYTHONPATH: e o mesmo mecanismo que ja fazia
+# `app:app` funcionar antes da reorganizacao em src/ (ver docs/architecture-proposal.md).
 FROM debian:13-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -18,7 +22,7 @@ ENV GAMEPANEL_DB=/var/lib/gamepanel/panel.db \
     GAMEPANEL_PORT=8080
 
 COPY docker/panel/entrypoint.sh /usr/local/bin/panel-entrypoint
-COPY admin /opt/gamepanel
+COPY src/gamepanel /opt/gamepanel/gamepanel
 RUN chmod 0755 /usr/local/bin/panel-entrypoint
 
 # A chave SSH e o banco ficam em volumes: recriar o container nao pode invalidar o

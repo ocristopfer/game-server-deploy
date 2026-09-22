@@ -74,7 +74,7 @@ def test_unreal_deixa_o_nome_do_projeto_bem_visivel():
 
 
 def test_chaves_do_modelo_sao_campos_do_formulario_do_catalogo():
-    html = (RAIZ / "admin" / "templates" / "catalogo.html").read_text(encoding="utf-8")
+    html = (RAIZ / "src" / "gamepanel" / "templates" / "catalogo.html").read_text(encoding="utf-8")
     campos = set(re.findall(r'name="([a-z_]+)"', html))
     for modelo in modelos.MODELOS:
         assert set(modelo.valores) <= campos, set(modelo.valores) - campos

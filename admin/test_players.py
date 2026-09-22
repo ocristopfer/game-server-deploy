@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-import app as panel
+from gamepanel import app as panel
 
 # Permissao de pasta (0o700) e "todo caminho fora de /proc e gravavel" sao POSIX puro:
 # o Windows nao aplica bit de dono/grupo/outros do jeito que `os.stat().st_mode`

@@ -52,7 +52,7 @@ def test_tela_de_servidor_acende_servidores_nos_dois():
 
 
 def test_barra_larga_usa_rotulo_curto_quando_ha(chefe, monkeypatch):
-    import app as panel
+    from gamepanel import app as panel
     monkeypatch.setattr(panel, "ALLOW_BROKER", True)
     html = chefe.get("/").get_data(as_text=True)
     inicio = html.index('class="appbar__nav"')

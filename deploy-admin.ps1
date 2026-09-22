@@ -211,7 +211,7 @@ function Test-PanelReachable([string]$Target) {
     try {
         # BatchMode: sem chave autorizada, falha na hora em vez de pedir senha.
         ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new `
-            "root@$Target" "test -f /opt/gamepanel/app.py" 2>$null | Out-Null
+            "root@$Target" "test -f /opt/gamepanel/gamepanel/app.py" 2>$null | Out-Null
         return ($LASTEXITCODE -eq 0)
     } catch {
         return $false
@@ -234,29 +234,22 @@ function Invoke-DirectDeploy([string]$Target, [string]$SrcDir, [string]$Port) {
     $remoteTmp = "/tmp/gamepanel-deploy"
     Write-Host "`nCT do painel encontrado em $Target - enviando o codigo direto (sem Proxmox)." -ForegroundColor Cyan
 
-    Invoke-Ssh $Target "rm -rf '$remoteTmp' && mkdir -p '$remoteTmp/templates' '$remoteTmp/static'"
+    Invoke-Ssh $Target "rm -rf '$remoteTmp' && mkdir -p '$remoteTmp'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $remoteTmp em root@$Target" }
 
-    # Todos os .py, nao so o app.py: o painel ja tem mais de um modulo (gameconf.py, o
-    # leitor/gravador da tela Config) e um faltando derruba o import do app inteiro.
-    Invoke-Scp @((Join-Path $SrcDir "*.py")) "root@${Target}:$remoteTmp/"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o codigo do painel (*.py)" }
-    # -Recurse e glob aberto (nao "*.html"): templates/ tem subpasta (components/, os
-    # macros de interface) e dois templates que nao sao .html - o sw.js e o
-    # manifest.webmanifest do aplicativo instalavel, que saem do Flask com url_for
-    # dentro. Com o filtro antigo o painel subia sem os componentes e sem o PWA, e o
-    # erro so aparecia na primeira tela aberta.
-    Invoke-Scp @((Join-Path $SrcDir "templates\*")) "root@${Target}:$remoteTmp/templates/" -Recurse
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os templates" }
-    # -Recurse: static/ pode ter subpasta, e sem isso ela ficaria de fora do envio.
-    Invoke-Scp @((Join-Path $SrcDir "static\*")) "root@${Target}:$remoteTmp/static/" -Recurse
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os estaticos" }
+    # A arvore inteira de uma vez: alem de app.py/wsgi.py/__init__.py e templates/+static/
+    # (que tem subpasta - components/, css/, js/core, js/features, icons/), o pacote agora
+    # tem tres subpastas proprias (games/, security/, integrations/). Um envio raso deixaria
+    # o import do painel inteiro quebrado.
+    Invoke-Scp @((Join-Path $SrcDir "*")) "root@${Target}:$remoteTmp/" -Recurse
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o codigo do painel" }
 
     # Troca o conteudo e reinicia.
     #
-    # templates/ e apagada INTEIRA antes da copia: tudo ali vem do repo, entao um
-    # template renomeado (ou um componente que saiu de components/) nao pode continuar
-    # vivo no container.
+    # templates/, games/, security/ e integrations/ sao apagadas INTEIRAS antes da copia:
+    # tudo ali vem do repo, entao um arquivo renomeado (ou um componente que saiu de
+    # components/) nao pode continuar vivo no container. app.py/wsgi.py/__init__.py, no
+    # topo, sao so sobrescritos pela copia - nao tem subpasta pra sobrar lixo.
     #
     # static/ nao pode levar o mesmo tratamento: `maps/` e criada no proprio container
     # e nao existe aqui para ser reenviada. A limpeza e por arquivo no topo e pelas
@@ -266,17 +259,15 @@ function Invoke-DirectDeploy([string]$Target, [string]$SrcDir, [string]$Port) {
     # causa do `set -e`.
     $install = @'
 set -e
-install -d /opt/gamepanel/templates /opt/gamepanel/static
-rm -rf /opt/gamepanel/templates
-install -d /opt/gamepanel/templates
-find /opt/gamepanel/static -maxdepth 1 -type f -delete
-rm -rf /opt/gamepanel/static/css /opt/gamepanel/static/js /opt/gamepanel/static/icons
-install -m 0644 /tmp/gamepanel-deploy/*.py /opt/gamepanel/
-cp -r /tmp/gamepanel-deploy/templates/. /opt/gamepanel/templates/
-cp -r /tmp/gamepanel-deploy/static/. /opt/gamepanel/static/
-chmod -R a+rX /opt/gamepanel/static /opt/gamepanel/templates
+install -d /opt/gamepanel/gamepanel/templates /opt/gamepanel/gamepanel/static
+rm -rf /opt/gamepanel/gamepanel/templates /opt/gamepanel/gamepanel/games /opt/gamepanel/gamepanel/security /opt/gamepanel/gamepanel/integrations
+install -d /opt/gamepanel/gamepanel/templates
+find /opt/gamepanel/gamepanel/static -maxdepth 1 -type f -delete
+rm -rf /opt/gamepanel/gamepanel/static/css /opt/gamepanel/gamepanel/static/js /opt/gamepanel/gamepanel/static/icons
+cp -r /tmp/gamepanel-deploy/. /opt/gamepanel/gamepanel/
+chmod -R a+rX /opt/gamepanel/gamepanel/static /opt/gamepanel/gamepanel/templates
 # Bytecode da versao anterior: um .pyc de modulo que sumiu ainda seria importavel.
-rm -rf /opt/gamepanel/__pycache__
+find /opt/gamepanel/gamepanel -name '__pycache__' -type d -prune -exec rm -rf {} +
 chown -R root:root /opt/gamepanel
 rm -rf /tmp/gamepanel-deploy
 systemctl restart gamepanel.service
@@ -293,9 +284,9 @@ systemctl is-active --quiet gamepanel.service
     # Zero template e um painel que nao serve nenhuma tela: o install nao chegou a
     # copiar nada. Sem esta conferencia o deploy anuncia sucesso em cima de um container
     # que foi deixado pela metade.
-    $count = (Invoke-Ssh $Target "ls /opt/gamepanel/templates | wc -l").Trim()
+    $count = (Invoke-Ssh $Target "ls /opt/gamepanel/gamepanel/templates | wc -l").Trim()
     if ($count -eq "0") {
-        throw "O envio terminou com /opt/gamepanel/templates vazio - o install nao rodou"
+        throw "O envio terminou com /opt/gamepanel/gamepanel/templates vazio - o install nao rodou"
     }
     Write-Host "`nPainel atualizado em http://${Target}:$Port ($count templates)." -ForegroundColor Green
     Write-Host "Config (ADMIN_*), recursos do CT e usuario so mudam no modo completo: .\deploy-admin.ps1 -Full" -ForegroundColor DarkGray
@@ -341,20 +332,20 @@ New-Item -ItemType Directory -Path $BundleDir | Out-Null
 
 Copy-AsLf (Join-Path $ScriptDir "provision-admin-lxc.sh") (Join-Path $BundleDir "provision-admin-lxc.sh")
 
-$AdminSrc = Join-Path $ScriptDir "admin"
-if (-not (Test-Path $AdminSrc)) { throw "Diretorio 'admin' nao encontrado em $ScriptDir" }
+$AdminSrc = Join-Path (Join-Path $ScriptDir "src") "gamepanel"
+if (-not (Test-Path $AdminSrc)) { throw "Diretorio 'src/gamepanel' nao encontrado em $ScriptDir" }
 foreach ($file in Get-ChildItem -Path $AdminSrc -File -Recurse) {
     $relative = $file.FullName.Substring($AdminSrc.Length).TrimStart('\', '/')
     # __pycache__ nao serve para nada no destino - so peso extra no envio.
     if ($relative -like "__pycache__*" -or $relative -like "*\__pycache__\*") { continue }
-    Copy-ArquivoDoAdmin $file.FullName (Join-Path (Join-Path $BundleDir "admin") $relative)
+    Copy-ArquivoDoAdmin $file.FullName (Join-Path (Join-Path $BundleDir "gamepanel") $relative)
 }
 
 # ----- Atalho: CT ja existe e responde? Manda o codigo direto para ele -----
 if (-not $Interactive -and -not $Full) {
     $TargetPanel = Resolve-PanelHost $cfg $PanelHost
     if (Test-PanelReachable $TargetPanel) {
-        Invoke-DirectDeploy $TargetPanel (Join-Path $BundleDir "admin") (Get-Cfg $cfg "ADMIN_PORT" "8080")
+        Invoke-DirectDeploy $TargetPanel (Join-Path $BundleDir "gamepanel") (Get-Cfg $cfg "ADMIN_PORT" "8080")
         return
     }
     if ($TargetPanel -ne "") {
@@ -420,7 +411,7 @@ try {
     Invoke-Scp $topLevel "root@${ProxmoxHost}:$RemoteBundleDir/"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para root@$ProxmoxHost" }
 
-    Invoke-Scp @((Join-Path $BundleDir "admin")) "root@${ProxmoxHost}:$RemoteBundleDir/" -Recurse
+    Invoke-Scp @((Join-Path $BundleDir "gamepanel")) "root@${ProxmoxHost}:$RemoteBundleDir/" -Recurse
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar a aplicacao para root@$ProxmoxHost" }
 
     Write-Host "Provisionando o painel no Proxmox...`n" -ForegroundColor Cyan
