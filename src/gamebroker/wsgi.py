@@ -20,8 +20,8 @@ from flask import Flask
 from gamebroker.app import criar_app
 from gamebroker.config import ConfigBroker, ErroDeConfig, carregar
 from gamebroker.integrations.http_client import Cliente
-from gamebroker.persistence.db import Banco
-from gamebroker.runtime.base import Rede
+from gamebroker.persistence.db import Db
+from gamebroker.runtime.base import Network
 from gamebroker.runtime.network import RedeReal
 from gamebroker.runtime.opnsense import Opnsense
 from gamebroker.runtime.proxmox import Proxmox
@@ -30,7 +30,7 @@ from gamebroker.services.catalog import Catalog
 from gamebroker.services.instance_service import Config, Service
 
 
-def montar_servico(cfg: ConfigBroker, executor: Executor | None = None, network: Rede | None = None,
+def montar_servico(cfg: ConfigBroker, executor: Executor | None = None, network: Network | None = None,
                    run: Callable[[Callable[[], None]], None] | None = None) -> Service:
     cfg.estado.mkdir(parents=True, exist_ok=True)
     proxmox = Proxmox(Cliente(cfg.proxmox_url, {"Authorization": f"PVEAPIToken={cfg.proxmox_token}"},
@@ -40,7 +40,7 @@ def montar_servico(cfg: ConfigBroker, executor: Executor | None = None, network:
                                 cfg.opnsense_impressao), cfg.opnsense_wan)
     argumentos = {} if run is None else {"run": run}
     return Service(
-        Banco(str(cfg.estado / "broker.db")), Catalog(cfg.pasta_games, cfg.estado / "dinamico"),
+        Db(str(cfg.estado / "broker.db")), Catalog(cfg.pasta_games, cfg.estado / "dinamico"),
         proxmox, opnsense, InstaladorSsh(cfg.ssh, executor), network or RedeReal(),
         Config(ctids=cfg.ctids, ctid_base=cfg.ctid_base, ips=cfg.ips, ports=cfg.portas,
                max_instances=cfg.max_instances, max_creations_per_hour=cfg.max_creations_per_hour),

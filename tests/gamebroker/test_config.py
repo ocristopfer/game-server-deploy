@@ -267,25 +267,25 @@ def _ping(monkeypatch, retorno=None, erro=None):
 
 def test_ping_que_responde_significa_ip_em_uso(monkeypatch):
     chamadas = _ping(monkeypatch, retorno=0)
-    assert RedeReal().responde("192.168.2.30") is True
+    assert RedeReal().answers("192.168.2.30") is True
     assert chamadas[0][:4] == ["ping", "-c", "1", "-W"]
     assert chamadas[0][-1] == "192.168.2.30"
 
 
 def test_ping_sem_resposta_significa_livre(monkeypatch):
     _ping(monkeypatch, retorno=1)
-    assert RedeReal().responde("192.168.2.30") is False
+    assert RedeReal().answers("192.168.2.30") is False
 
 
 @pytest.mark.parametrize("erro", [OSError("sem ping"), subprocess.TimeoutExpired("ping", 4)])
 def test_ping_que_nao_roda_nao_derruba_a_criacao(monkeypatch, erro):
     _ping(monkeypatch, erro=erro)
-    assert RedeReal().responde("192.168.2.30") is False
+    assert RedeReal().answers("192.168.2.30") is False
 
 
 @pytest.mark.parametrize("ip", ["10.0.0.300", "nao-e-ip", "10.0.0.30; rm -rf /", "-f", ""])
 def test_ip_estranho_nunca_chega_ao_ping(monkeypatch, ip):
     chamadas = _ping(monkeypatch, retorno=0)
     with pytest.raises(ValueError):
-        RedeReal().responde(ip)
+        RedeReal().answers(ip)
     assert chamadas == []

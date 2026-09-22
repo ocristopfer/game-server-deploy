@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from gamebroker.runtime.base import EspecificacaoDeCt
+from gamebroker.runtime.base import CtSpec
 from gamebroker.services.allocator import AllocatedPort
 from gamebroker.services.catalog import Game
 
@@ -12,7 +12,7 @@ class ProxmoxFalso:
     def __init__(self, ctids: set[int] | None = None, ips: set[str] | None = None):
         self.externos_ctids = set(ctids or ())
         self.externos_ips = set(ips or ())
-        self.cts: dict[int, EspecificacaoDeCt] = {}
+        self.cts: dict[int, CtSpec] = {}
         self.parados: set[int] = set()
         self.chamadas: list[tuple[str, int]] = []
         self.falha_em: str | None = None
@@ -22,34 +22,34 @@ class ProxmoxFalso:
         if self.falha_em == etapa:
             raise RuntimeError(f"proxmox falso: {etapa} falhou")
 
-    def ctids_e_ips(self) -> tuple[set[int], set[str]]:
+    def ctids_and_ips(self) -> tuple[set[int], set[str]]:
         return (self.externos_ctids | set(self.cts),
                 self.externos_ips | {c.ip for c in self.cts.values()})
 
-    def criar_ct(self, especificacao: EspecificacaoDeCt) -> None:
+    def create_ct(self, spec: CtSpec) -> None:
         self._falhar("criar_ct")
-        self.chamadas.append(("criar_ct", especificacao.ctid))
-        self.cts[especificacao.ctid] = especificacao
+        self.chamadas.append(("criar_ct", spec.ctid))
+        self.cts[spec.ctid] = spec
 
-    def iniciar(self, ctid: int) -> None:
+    def start(self, ctid: int) -> None:
         self._falhar("iniciar")
         self.chamadas.append(("iniciar", ctid))
         self.parados.discard(ctid)
 
-    def parar(self, ctid: int) -> None:
+    def stop(self, ctid: int) -> None:
         self._falhar("parar")
         self.chamadas.append(("parar", ctid))
         self.parados.add(ctid)
 
-    def destruir(self, ctid: int) -> None:
+    def destroy(self, ctid: int) -> None:
         self._falhar("destruir")
         self.chamadas.append(("destruir", ctid))
         self.cts.pop(ctid, None)
 
-    def pertence_ao_broker(self, ctid: int) -> bool:
+    def belongs_to_broker(self, ctid: int) -> bool:
         return ctid in self.cts
 
-    def acessivel(self) -> bool:
+    def reachable(self) -> bool:
         return self.online
 
 
@@ -61,21 +61,21 @@ class OpnsenseFalso:
         self.falha_em: str | None = None
         self.online = True
 
-    def portas_externas(self) -> set[tuple[int, str]]:
+    def external_ports(self) -> set[tuple[int, str]]:
         abertas = {(n, p) for regras in self.regras.values() for (_, n, p) in regras}
         return self.externas | abertas
 
-    def abrir(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
+    def open_ports(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
         if self.falha_em == "abrir":
             raise RuntimeError("opnsense falso: abrir falhou")
         self.chamadas.append(("abrir", ctid))
         self.regras[ctid] = [(ip, p.number, p.proto) for p in ports]
 
-    def fechar(self, ctid: int) -> None:
+    def close_ports(self, ctid: int) -> None:
         self.chamadas.append(("fechar", ctid))
         self.regras.pop(ctid, None)
 
-    def acessivel(self) -> bool:
+    def reachable(self) -> bool:
         return self.online
 
 
@@ -84,7 +84,7 @@ class InstaladorFalso:
         self.instalados: list[tuple[str, str]] = []
         self.falha = False
 
-    def instalar(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
+    def install(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
         log(f"instalando {jogo.name} em {ip}")
         if self.falha:
@@ -97,5 +97,5 @@ class RedeFalsa:
     def __init__(self, ocupados: set[str] | None = None):
         self.ocupados = set(ocupados or ())
 
-    def responde(self, ip: str) -> bool:
+    def answers(self, ip: str) -> bool:
         return ip in self.ocupados

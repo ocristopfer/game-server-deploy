@@ -15,7 +15,7 @@ import pytest
 from http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE, OpnsenseHttpFalso, PveFalso, ServidorFalso
 
 from gamebroker.integrations.http_client import Cliente
-from gamebroker.persistence.db import Banco
+from gamebroker.persistence.db import Db
 from gamebroker.runtime.fakes import InstaladorFalso, OpnsenseFalso, ProxmoxFalso, RedeFalsa
 from gamebroker.runtime.opnsense import Opnsense
 from gamebroker.runtime.proxmox import ConfigProxmox, Proxmox
@@ -109,7 +109,7 @@ def clock() -> Relogio:
 def ambiente(tmp_path: Path, catalog: Catalog, clock: Relogio):
     """Servico completo com backends falsos e execucao SINCRONA (a criacao termina dentro
     de `criar`). `ambiente.pendentes` guarda as tarefas quando `adiar` esta ligado."""
-    db = Banco(str(tmp_path / "broker.db"), clock=lambda: clock().isoformat(timespec="seconds"))
+    db = Db(str(tmp_path / "broker.db"), clock=lambda: clock().isoformat(timespec="seconds"))
     amb = SimpleNamespace(
         db=db, catalog=catalog, clock=clock, adiar=False, pendentes=[],
         proxmox=ProxmoxFalso(), opnsense=OpnsenseFalso(), installer=InstaladorFalso(), network=RedeFalsa(),
@@ -147,7 +147,7 @@ def pve():
     cliente = Cliente(servidor.url, {"Authorization": f"PVEAPIToken={TOKEN_PVE}"})
     yield SimpleNamespace(falso=falso, servidor=servidor, config=config, esperas=esperas,
                           backend=Proxmox(cliente, config, dormir=esperas.append))
-    servidor.parar()
+    servidor.stop()
 
 
 @pytest.fixture
@@ -158,4 +158,4 @@ def opn():
     basico = base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
     cliente = Cliente(servidor.url, {"Authorization": f"Basic {basico}"})
     yield SimpleNamespace(falso=falso, servidor=servidor, backend=Opnsense(cliente, "wan"))
-    servidor.parar()
+    servidor.stop()

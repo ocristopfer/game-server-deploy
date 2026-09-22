@@ -101,7 +101,7 @@ class ConfigSsh:
         return self.chave_publica.split()[1]
 
 
-def montar_env(jogo: Game, ports: Sequence[AllocatedPort]) -> str:
+def build_env(jogo: Game, ports: Sequence[AllocatedPort]) -> str:
     """O `install.env` do CT. Cada valor entre aspas: e DADO, nunca comando."""
     runtimes = [r for r in jogo.recipes if r in RECIPES_WINDOWS]
     if len(runtimes) > 1:
@@ -128,10 +128,10 @@ class _Lote:
     """Junta linhas para gravar no log em blocos: o SteamCMD despeja milhares e cada gravacao
     e uma transacao no banco."""
 
-    def __init__(self, log: Callable[[str], None], agora: Callable[[], float]):
-        self._log, self._agora = log, agora
+    def __init__(self, log: Callable[[str], None], now: Callable[[], float]):
+        self._log, self._agora = log, now
         self._linhas: list[str] = []
-        self._ultimo = agora()
+        self._ultimo = now()
         self.cauda: list[str] = []
         self.concluida = False
 
@@ -156,11 +156,11 @@ class _Lote:
 class InstaladorSsh:
     def __init__(self, config: ConfigSsh, executor: Executor | None = None,
                  dormir: Callable[[float], None] = time.sleep,
-                 agora: Callable[[], float] = time.monotonic):
+                 now: Callable[[], float] = time.monotonic):
         self._cfg = config
         self._exec = executor or ExecutorReal()
         self._dormir = dormir
-        self._agora = agora
+        self._agora = now
         faltando = [a for a in ARQUIVOS_DA_LIB if not (config.pasta_lib / a).is_file()]
         if faltando:
             raise ValueError(f"faltam em {config.pasta_lib}: {', '.join(faltando)}")
@@ -174,48 +174,48 @@ class InstaladorSsh:
                 "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
                 "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=10"]
 
-    def _ssh(self, alvo: str, comando: str) -> list[str]:
-        return ["ssh", *self._opcoes(), alvo, comando]
+    def _ssh(self, target: str, comando: str) -> list[str]:
+        return ["ssh", *self._opcoes(), target, comando]
 
     def _alvo(self, ip: str) -> str:
         return f"{self._cfg.usuario}@{ip}"
 
     # --- fluxo ----------------------------------------------------------------------------------
 
-    def instalar(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
+    def install(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
         ip = str(ipaddress.IPv4Address(ip))
-        alvo = self._alvo(ip)
-        env = montar_env(jogo, ports)
-        self._esperar_ssh(alvo, ip, log)
+        target = self._alvo(ip)
+        env = build_env(jogo, ports)
+        self._esperar_ssh(target, ip, log)
         falha: Exception | None = None
         try:
-            self._enviar(alvo, env)
-            self._instalar(alvo, log)
+            self._enviar(target, env)
+            self._install(target, log)
         except Exception as erro:  # noqa: BLE001
             falha = erro
             raise
         finally:
-            self._limpar(alvo, log, falha)
+            self._limpar(target, log, falha)
 
-    def _esperar_ssh(self, alvo: str, ip: str, log: Callable[[str], None]) -> None:
+    def _esperar_ssh(self, target: str, ip: str, log: Callable[[str], None]) -> None:
         log(f"aguardando o SSH de {ip}")
-        limite = self._agora() + self._cfg.espera_ssh
+        limit = self._agora() + self._cfg.espera_ssh
         while True:
-            if self._exec.rodar(self._ssh(alvo, "true"), None, 20) == 0:
+            if self._exec.rodar(self._ssh(target, "true"), None, 20) == 0:
                 return
-            if self._agora() >= limite:
+            if self._agora() >= limit:
                 raise ErroDeInstalacao(f"o SSH de {ip} nao respondeu em {int(self._cfg.espera_ssh)} s")
             self._dormir(self._cfg.intervalo)
 
-    def _enviar(self, alvo: str, env: str) -> None:
+    def _enviar(self, target: str, env: str) -> None:
         pasta = shlex.quote(DESTINO_REMOTO)
-        self._comando(self._ssh(alvo, f"install -d -m 700 {pasta}"), "criar a pasta no CT")
+        self._comando(self._ssh(target, f"install -d -m 700 {pasta}"), "criar a pasta no CT")
         with tempfile.TemporaryDirectory(prefix="broker-install-") as tmp:
             arquivo_env = Path(tmp) / "install.env"
             arquivo_env.write_text(env, encoding="utf-8", newline="\n")
             fontes = [str(self._cfg.pasta_lib / a) for a in ARQUIVOS_DA_LIB] + [str(arquivo_env)]
-            self._comando(["scp", *self._opcoes(), *fontes, f"{alvo}:{DESTINO_REMOTO}/"],
+            self._comando(["scp", *self._opcoes(), *fontes, f"{target}:{DESTINO_REMOTO}/"],
                           "enviar o instalador ao CT")
 
     def _comando(self, argv: Sequence[str], acao: str) -> None:
@@ -223,10 +223,10 @@ class InstaladorSsh:
         if codigo != 0:
             raise ErroDeInstalacao(f"falhou ao {acao} (codigo {codigo})")
 
-    def _instalar(self, alvo: str, log: Callable[[str], None]) -> None:
+    def _install(self, target: str, log: Callable[[str], None]) -> None:
         lote = _Lote(log, self._agora)
         comando = f"cd {shlex.quote(DESTINO_REMOTO)} && bash ct-install.sh install.env"
-        codigo = self._exec.rodar(self._ssh(alvo, comando), lote.linha, self._cfg.timeout_instalacao)
+        codigo = self._exec.rodar(self._ssh(target, comando), lote.linha, self._cfg.timeout_instalacao)
         lote.descarrega()
         if codigo != 0:
             resumo = " | ".join(lote.cauda)
@@ -234,7 +234,7 @@ class InstaladorSsh:
         if not lote.concluida:
             raise ErroDeInstalacao("o instalador terminou sem confirmar a conclusao")
 
-    def _limpar(self, alvo: str, log: Callable[[str], None], falha: Exception | None) -> None:
+    def _limpar(self, target: str, log: Callable[[str], None], falha: Exception | None) -> None:
         """Apaga o que foi enviado e tira a chave do broker. Roda SEMPRE."""
         blob = self._cfg.blob
         arquivo = "/root/.ssh/authorized_keys"
@@ -242,7 +242,7 @@ class InstaladorSsh:
                    f"grep -vF -- {shlex.quote(blob)} {arquivo} > {arquivo}.tmp; "
                    f"cat {arquivo}.tmp > {arquivo}; rm -f {arquivo}.tmp; "
                    f"! grep -qF -- {shlex.quote(blob)} {arquivo}")
-        codigo = self._exec.rodar(self._ssh(alvo, comando), None, self._cfg.timeout_comando)
+        codigo = self._exec.rodar(self._ssh(target, comando), None, self._cfg.timeout_comando)
         if codigo == 0:
             log("chave do broker removida do container")
             return

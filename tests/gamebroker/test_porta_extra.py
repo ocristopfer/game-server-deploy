@@ -10,7 +10,7 @@ import pytest
 import gamebroker.services.allocator as alocador
 import gamebroker.services.catalog as cat
 from gamebroker.domain.exceptions import ErroDeValidacao
-from gamebroker.runtime.ssh_installer import montar_env
+from gamebroker.runtime.ssh_installer import build_env
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 FAIXA = range(31000, 31100)
@@ -54,7 +54,7 @@ def test_duas_instancias_do_satisfactory_nao_dividem_a_confiavel(satisfactory):
 
 def test_install_env_leva_a_porta_sorteada_e_o_jogo_recebe_o_argumento(satisfactory):
     ports = alocador.allocate_ports(satisfactory, set(), FAIXA)
-    v = _valores(montar_env(satisfactory, ports))
+    v = _valores(build_env(satisfactory, ports))
     assert v["GAME_PORT"] == "31000"
     assert v["EXTRA_PORT"] == "31001"
     assert "{EXTRA_PORT}" in v["START_ARGS"], "quem troca o marcador e o ct-fases.sh, dentro do CT"
@@ -63,7 +63,7 @@ def test_install_env_leva_a_porta_sorteada_e_o_jogo_recebe_o_argumento(satisfact
 def test_jogo_sem_porta_extra_recebe_extra_zero(dados_de_jogo):
     jogo = cat.validate_dynamic(dados_de_jogo)
     ports = alocador.allocate_ports(jogo, set(), FAIXA)
-    assert _valores(montar_env(jogo, ports))["EXTRA_PORT"] == "0"
+    assert _valores(build_env(jogo, ports))["EXTRA_PORT"] == "0"
 
 
 # --- jogo cadastrado pela API ---------------------------------------------------------------------

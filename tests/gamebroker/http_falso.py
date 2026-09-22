@@ -70,7 +70,7 @@ class ServidorFalso:
     def url(self) -> str:
         return f"http://127.0.0.1:{self._http.server_address[1]}"
 
-    def parar(self) -> None:
+    def stop(self) -> None:
         self._http.shutdown()
         self._http.server_close()
 
@@ -120,7 +120,7 @@ class PveFalso:
         if rota == f"{node}/lxc" and metodo == "POST":
             return self._criar(corpo)
         if rota.startswith(f"{node}/tasks/"):
-            return self._tarefa(rota.removeprefix(f"{node}/tasks/"))
+            return self._task(rota.removeprefix(f"{node}/tasks/"))
         achado = re.fullmatch(rf"{re.escape(node)}/lxc/(\d+)(/.*)?", rota)
         if achado:
             return self._ct(metodo, int(achado.group(1)), achado.group(2) or "", corpo)
@@ -145,7 +145,7 @@ class PveFalso:
         return 200, {"data": self._upid("vzcreate", vmid, self.saida_da_criacao,
                                         ("Creating SSH host key", "WARN: Systemd 257 detected"))}
 
-    def _tarefa(self, resto: str) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
+    def _task(self, resto: str) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
         upid, _, acao = resto.rpartition("/")
         tarefa = self.tarefas.get(upid)
         if tarefa is None:

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from urllib.parse import quote
 
 from gamebroker.integrations.http_client import Cliente, Resposta
-from gamebroker.runtime.base import EspecificacaoDeCt
+from gamebroker.runtime.base import CtSpec
 
 TAG_DO_BROKER = "gamepanel-broker"
 _NOME_RE = re.compile(r"[A-Za-z0-9._-]{1,64}", re.ASCII)
@@ -66,36 +66,36 @@ class Proxmox:
 
     # --- chamadas -----------------------------------------------------------
 
-    def _api(self, metodo: str, caminho: str, acao: str, *, form: dict | None = None) -> Resposta:
-        resposta = self._c.requisitar(metodo, "/api2/json" + caminho, form=form)
+    def _api(self, metodo: str, path: str, acao: str, *, form: dict | None = None) -> Resposta:
+        resposta = self._c.requisitar(metodo, "/api2/json" + path, form=form)
         if not resposta.ok:
             raise ErroDoProxmox(f"{acao}: HTTP {resposta.status} {_curto(resposta.texto)}")
         return resposta
 
     @staticmethod
-    def _dados(resposta: Resposta) -> object:
+    def _payload(resposta: Resposta) -> object:
         return resposta.json.get("data") if isinstance(resposta.json, dict) else None
 
-    def _tarefa(self, resposta: Resposta, acao: str) -> None:
-        upid = self._dados(resposta)
+    def _task(self, resposta: Resposta, acao: str) -> None:
+        upid = self._payload(resposta)
         if not isinstance(upid, str):
             raise ErroDoProxmox(f"{acao}: o Proxmox nao devolveu o identificador da tarefa")
         codificado = quote(upid, safe="")
         for _ in range(self._cfg.tentativas):
-            estado = self._dados(self._api("GET", f"/nodes/{self._cfg.node}/tasks/{codificado}/status",
+            estado = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/tasks/{codificado}/status",
                                            f"{acao} (estado da tarefa)"))
             if isinstance(estado, dict) and estado.get("status") == "stopped":
                 saida = str(estado.get("exitstatus", ""))
                 if saida == "OK" or saida.startswith("WARNINGS"):
                     return
-                raise ErroDoProxmox(f"{acao}: a tarefa terminou com '{_curto(saida)}'{self._fim_do_log(codificado)}")
+                raise ErroDoProxmox(f"{acao}: a tarefa terminou com '{_curto(saida)}'{self._log_tail(codificado)}")
             self._dormir(self._cfg.intervalo)
         raise ErroDoProxmox(f"{acao}: a tarefa excedeu o tempo")
 
-    def _fim_do_log(self, upid_codificado: str) -> str:
+    def _log_tail(self, upid_codificado: str) -> str:
         resposta = self._c.requisitar(
             "GET", f"/api2/json/nodes/{self._cfg.node}/tasks/{upid_codificado}/log?limit=20")
-        linhas = self._dados(resposta) if resposta.ok else None
+        linhas = self._payload(resposta) if resposta.ok else None
         if not isinstance(linhas, list) or not linhas:
             return ""
         ultimas = " | ".join(str(item.get("t", "")) for item in linhas[-3:] if isinstance(item, dict))
@@ -103,10 +103,10 @@ class Proxmox:
 
     # --- leitura ---------------------------------------------------------------
 
-    def ctids_e_ips(self) -> tuple[set[int], set[str]]:
+    def ctids_and_ips(self) -> tuple[set[int], set[str]]:
         """CTIDs e IPs que o token enxerga. Com a role so no pool isso e SO o pool; para
         ver os CTs de fora, o token precisa de VM.Audit em /vms (opcional)."""
-        itens = self._dados(self._api("GET", "/cluster/resources?type=vm", "listar CTs"))
+        itens = self._payload(self._api("GET", "/cluster/resources?type=vm", "listar CTs"))
         ctids: set[int] = set()
         ips: set[str] = set()
         for item in itens if isinstance(itens, list) else []:
@@ -114,12 +114,12 @@ class Proxmox:
                 continue
             ctids.add(item["vmid"])
             if item.get("type") == "lxc":
-                ips |= self._ips_do_ct(item["vmid"])
+                ips |= self._ct_ips(item["vmid"])
         return ctids, ips
 
-    def _ips_do_ct(self, ctid: int) -> set[str]:
+    def _ct_ips(self, ctid: int) -> set[str]:
         resposta = self._c.requisitar("GET", f"/api2/json/nodes/{self._cfg.node}/lxc/{ctid}/config")
-        config = self._dados(resposta) if resposta.ok else None
+        config = self._payload(resposta) if resposta.ok else None
         if not isinstance(config, dict):
             return set()
         achados: set[str] = set()
@@ -128,13 +128,13 @@ class Proxmox:
                 achados.update(_IP_DE_REDE_RE.findall(valor))
         return achados
 
-    def pertence_ao_broker(self, ctid: int) -> bool:
+    def belongs_to_broker(self, ctid: int) -> bool:
         """Identidade = ser membro do pool do broker. Nao depende da tag."""
-        dados = self._dados(self._c.requisitar("GET", f"/api2/json/pools/{self._cfg.pool}"))
+        dados = self._payload(self._c.requisitar("GET", f"/api2/json/pools/{self._cfg.pool}"))
         membros = dados.get("members", []) if isinstance(dados, dict) else []
         return any(isinstance(m, dict) and m.get("vmid") == ctid and m.get("type") == "lxc" for m in membros)
 
-    def acessivel(self) -> bool:
+    def reachable(self) -> bool:
         try:
             return self._c.requisitar("GET", "/api2/json/version", timeout=SONDA_TIMEOUT).ok
         except Exception:  # noqa: BLE001
@@ -142,48 +142,48 @@ class Proxmox:
 
     # --- escrita ------------------------------------------------------------------
 
-    def criar_ct(self, especificacao: EspecificacaoDeCt) -> None:
+    def create_ct(self, spec: CtSpec) -> None:
         cfg = self._cfg
         corpo = {
-            "vmid": especificacao.ctid, "hostname": especificacao.hostname,
-            "ostemplate": cfg.template, "rootfs": f"{cfg.storage}:{especificacao.disk_gb}",
-            "memory": especificacao.memory_mb, "swap": 0, "cores": especificacao.cores,
+            "vmid": spec.ctid, "hostname": spec.hostname,
+            "ostemplate": cfg.template, "rootfs": f"{cfg.storage}:{spec.disk_gb}",
+            "memory": spec.memory_mb, "swap": 0, "cores": spec.cores,
             "unprivileged": 1, "features": "nesting=1", "pool": cfg.pool, "start": 0, "onboot": 1,
-            "net0": (f"name=eth0,bridge={cfg.bridge},ip={especificacao.ip}/{cfg.prefixo},"
+            "net0": (f"name=eth0,bridge={cfg.bridge},ip={spec.ip}/{cfg.prefixo},"
                      f"gw={cfg.gateway},type=veth"),
             "ssh-public-keys": "\n".join(cfg.chaves_ssh),
         }
-        self._tarefa(self._api("POST", f"/nodes/{cfg.node}/lxc", "criar CT", form=corpo), "criar CT")
+        self._task(self._api("POST", f"/nodes/{cfg.node}/lxc", "criar CT", form=corpo), "criar CT")
         try:
-            self._api("PUT", f"/nodes/{cfg.node}/lxc/{especificacao.ctid}/config", "gravar a tag",
+            self._api("PUT", f"/nodes/{cfg.node}/lxc/{spec.ctid}/config", "gravar a tag",
                       form={"tags": TAG_DO_BROKER})
         except ErroDoProxmox:
             # Tag e conforto (aparece na tela do Proxmox); a identidade e o pool.
             pass
 
-    def iniciar(self, ctid: int) -> None:
-        self._tarefa(self._api("POST", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/start",
+    def start(self, ctid: int) -> None:
+        self._task(self._api("POST", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/start",
                                "iniciar CT"), "iniciar CT")
 
-    def parar(self, ctid: int) -> None:
-        self._exigir_no_pool(ctid)
-        self._tarefa(self._api("POST", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/shutdown",
+    def stop(self, ctid: int) -> None:
+        self._require_in_pool(ctid)
+        self._task(self._api("POST", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/shutdown",
                                "parar CT", form={"forceStop": 1, "timeout": 30}), "parar CT")
 
-    def destruir(self, ctid: int) -> None:
-        self._exigir_no_pool(ctid)
-        estado = self._dados(self._api("GET", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/current",
+    def destroy(self, ctid: int) -> None:
+        self._require_in_pool(ctid)
+        estado = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/current",
                                        "ler estado do CT"))
         if isinstance(estado, dict) and estado.get("status") == "running":
-            self.parar(ctid)
-        self._tarefa(self._api(
+            self.stop(ctid)
+        self._task(self._api(
             "DELETE", f"/nodes/{self._cfg.node}/lxc/{ctid}?purge=1&destroy-unreferenced-disks=1",
             "destruir CT"), "destruir CT")
 
-    def _exigir_no_pool(self, ctid: int) -> None:
+    def _require_in_pool(self, ctid: int) -> None:
         # O token so tem permissao no pool, mas a checagem aqui vale por conta propria: se
         # alguem alargar a role um dia, o broker continua so mexendo no que e dele.
-        if not self.pertence_ao_broker(ctid):
+        if not self.belongs_to_broker(ctid):
             raise ErroDoProxmox(f"o CT {ctid} nao esta no pool '{self._cfg.pool}'; nada foi alterado")
 
 

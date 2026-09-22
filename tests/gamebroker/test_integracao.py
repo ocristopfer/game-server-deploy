@@ -29,7 +29,7 @@ def test_criar_de_ponta_a_ponta(real):
     resposta = real.servico_real.create("alfa", "Servidor do Zeca", "zeca")
     operation = real.servico_real.operation(resposta["operacao_id"])
     assert operation["estado"] == OP_OK
-    assert real.db.instancia(resposta["instancia_id"])["estado"] == ESTADO_ATIVA
+    assert real.db.instance(resposta["instancia_id"])["estado"] == ESTADO_ATIVA
 
     ct = real.pve.falso.cts[300]
     assert ct["pool"] == "games"
@@ -47,7 +47,7 @@ def test_falha_na_instalacao_desfaz_no_proxmox_e_no_opnsense(real):
     assert real.servico_real.operation(resposta["operacao_id"])["estado"] == OP_ERRO
     assert real.pve.falso.cts == {}, "o CT criado foi destruido"
     assert real.opn.falso.regras == {}
-    assert real.db.contar_instancias() == 0
+    assert real.db.count_instances() == 0
 
 
 def test_porta_ocupada_por_alias_do_usuario_barra_a_criacao(real):
@@ -64,7 +64,7 @@ def test_regra_que_o_broker_nao_entende_impede_criar(real):
     with pytest.raises(Exception, match="misteriosa"):
         real.servico_real.create("alfa", "x", "zeca")
     assert real.pve.falso.cts == {}
-    assert real.db.contar_instancias() == 0
+    assert real.db.count_instances() == 0
 
 
 def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
@@ -101,7 +101,7 @@ def test_desativar_e_remover_de_ponta_a_ponta(real):
     assert real.pve.falso.cts[300]["status"] == "stopped"
     real.servico_real.remove(criada["instancia_id"], "Um", "zeca")
     assert real.pve.falso.cts == {}
-    assert real.db.usados() == (set(), set(), set())
+    assert real.db.taken() == (set(), set(), set())
 
 
 def test_ct_de_fora_do_pool_nunca_e_destruido_pelo_remover(real):

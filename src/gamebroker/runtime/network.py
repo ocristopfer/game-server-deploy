@@ -13,13 +13,13 @@ class RedeReal:
     def __init__(self, timeout: float = 1.0):
         self._timeout = max(1, int(timeout))
 
-    def responde(self, ip: str) -> bool:
-        alvo = str(ipaddress.IPv4Address(ip))
+    def answers(self, ip: str) -> bool:
+        target = str(ipaddress.IPv4Address(ip))
         try:
-            resultado = subprocess.run(
-                ["ping", "-c", "1", "-W", str(self._timeout), alvo],
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", str(self._timeout), target],
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 timeout=self._timeout + 3, check=False)
         except (OSError, subprocess.TimeoutExpired):
             return False
-        return resultado.returncode == 0
+        return result.returncode == 0

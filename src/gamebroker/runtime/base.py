@@ -18,7 +18,7 @@ from gamebroker.services.catalog import Game
 
 
 @dataclass(frozen=True)
-class EspecificacaoDeCt:
+class CtSpec:
     ctid: int
     hostname: str
     ip: str
@@ -29,43 +29,43 @@ class EspecificacaoDeCt:
 
 
 class Proxmox(Protocol):
-    def ctids_e_ips(self) -> tuple[set[int], set[str]]:
+    def ctids_and_ips(self) -> tuple[set[int], set[str]]:
         """CTIDs e IPs que o Proxmox ja usa (de qualquer dono, nao so do broker)."""
 
-    def criar_ct(self, especificacao: EspecificacaoDeCt) -> None:
+    def create_ct(self, spec: CtSpec) -> None:
         """Cria o CT no pool do broker, com a tag do broker, a partir do template dourado."""
 
-    def iniciar(self, ctid: int) -> None: ...
+    def start(self, ctid: int) -> None: ...
 
-    def parar(self, ctid: int) -> None: ...
+    def stop(self, ctid: int) -> None: ...
 
-    def destruir(self, ctid: int) -> None: ...
+    def destroy(self, ctid: int) -> None: ...
 
-    def pertence_ao_broker(self, ctid: int) -> bool:
+    def belongs_to_broker(self, ctid: int) -> bool:
         """So `True` para CT no pool do broker E com a tag do broker."""
 
-    def acessivel(self) -> bool: ...
+    def reachable(self) -> bool: ...
 
 
 class Opnsense(Protocol):
-    def portas_externas(self) -> set[tuple[int, str]]:
+    def external_ports(self) -> set[tuple[int, str]]:
         """Portas ja redirecionadas no WAN, por qualquer regra (nao so as do broker)."""
 
-    def abrir(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
+    def open_ports(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
         """Cria as regras `gamepanel:<ctid>` (destino = ip) e aplica. Idempotente."""
 
-    def fechar(self, ctid: int) -> None:
+    def close_ports(self, ctid: int) -> None:
         """Apaga SO as regras `gamepanel:<ctid>` e aplica. Idempotente."""
 
-    def acessivel(self) -> bool: ...
+    def reachable(self) -> bool: ...
 
 
-class Instalador(Protocol):
-    def instalar(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
+class Installer(Protocol):
+    def install(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
         """Instala o jogo dentro do CT por SSH e remove a chave do broker ao terminar."""
 
 
-class Rede(Protocol):
-    def responde(self, ip: str) -> bool:
+class Network(Protocol):
+    def answers(self, ip: str) -> bool:
         """Alguem na LAN usa esse IP? (ping/ARP)"""

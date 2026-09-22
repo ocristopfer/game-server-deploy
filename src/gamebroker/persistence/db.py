@@ -76,19 +76,19 @@ BEGIN SELECT RAISE(ABORT, 'auditoria e append-only'); END;
 """
 
 
-def agora() -> str:
+def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-class Banco:
-    def __init__(self, caminho: str, clock: Callable[[], str] = agora):
-        self._caminho = caminho
+class Db:
+    def __init__(self, path: str, clock: Callable[[], str] = now):
+        self._caminho = path
         self._relogio = clock
-        with self._conexao() as conn:
+        with self._connection() as conn:
             conn.executescript(SCHEMA)
 
     @contextmanager
-    def _conexao(self) -> Iterator[sqlite3.Connection]:
+    def _connection(self) -> Iterator[sqlite3.Connection]:
         # isolation_level=None: as transacoes sao explicitas (BEGIN IMMEDIATE), nao as
         # que o modulo abre por conta propria antes de cada INSERT.
         conn = sqlite3.connect(self._caminho, timeout=10, isolation_level=None)
@@ -100,8 +100,8 @@ class Banco:
             conn.close()
 
     @contextmanager
-    def _transacao(self) -> Iterator[sqlite3.Connection]:
-        with self._conexao() as conn:
+    def _transaction(self) -> Iterator[sqlite3.Connection]:
+        with self._connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 yield conn
@@ -112,17 +112,17 @@ class Banco:
 
     # --- ocupacao ---------------------------------------------------------
 
-    def usados(self) -> tuple[set[int], set[str], set[tuple[int, str]]]:
-        with self._conexao() as conn:
+    def taken(self) -> tuple[set[int], set[str], set[tuple[int, str]]]:
+        with self._connection() as conn:
             ctids = {r["ctid"] for r in conn.execute("SELECT ctid FROM instancias")}
             ips = {r["ip"] for r in conn.execute("SELECT ip FROM instancias")}
             ports = {(r["numero"], r["proto"]) for r in conn.execute("SELECT numero, proto FROM portas")}
         return ctids, ips, ports
 
-    def reservar(self, ctid: int, ip: str, jogo: str, name: str, hostname: str, actor: str,
+    def reserve(self, ctid: int, ip: str, jogo: str, name: str, hostname: str, actor: str,
                  ports: Sequence[AllocatedPort]) -> int:
         try:
-            with self._transacao() as conn:
+            with self._transaction() as conn:
                 cur = conn.execute(
                     "INSERT INTO instancias (ctid, ip, jogo, nome, hostname, estado, criado_por, criado_em)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -137,48 +137,48 @@ class Banco:
 
     # --- instancias -------------------------------------------------------
 
-    def instancia(self, instance_id: int) -> dict | None:
-        with self._conexao() as conn:
+    def instance(self, instance_id: int) -> dict | None:
+        with self._connection() as conn:
             linha = conn.execute("SELECT * FROM instancias WHERE id = ?", (instance_id,)).fetchone()
-            return self._com_portas(conn, linha) if linha else None
+            return self._with_ports(conn, linha) if linha else None
 
     def instances(self) -> list[dict]:
-        with self._conexao() as conn:
-            return [self._com_portas(conn, r) for r in conn.execute("SELECT * FROM instancias ORDER BY id")]
+        with self._connection() as conn:
+            return [self._with_ports(conn, r) for r in conn.execute("SELECT * FROM instancias ORDER BY id")]
 
     @staticmethod
-    def _com_portas(conn: sqlite3.Connection, linha: sqlite3.Row) -> dict:
+    def _with_ports(conn: sqlite3.Connection, linha: sqlite3.Row) -> dict:
         dados = dict(linha)
         dados["portas"] = [dict(p) for p in conn.execute(
             "SELECT base, numero, proto, papel FROM portas WHERE instancia_id = ? ORDER BY numero, proto",
             (linha["id"],))]
         return dados
 
-    def mudar_estado(self, instance_id: int, estado: str, detalhe: str = "") -> None:
-        with self._transacao() as conn:
+    def set_state(self, instance_id: int, estado: str, detail: str = "") -> None:
+        with self._transaction() as conn:
             conn.execute("UPDATE instancias SET estado = ?, detalhe = ? WHERE id = ?",
-                         (estado, detalhe[:300], instance_id))
+                         (estado, detail[:300], instance_id))
 
-    def apagar_instancia(self, instance_id: int) -> None:
-        with self._transacao() as conn:
+    def delete_instance(self, instance_id: int) -> None:
+        with self._transaction() as conn:
             conn.execute("DELETE FROM instancias WHERE id = ?", (instance_id,))
 
-    def contar_instancias(self) -> int:
-        with self._conexao() as conn:
+    def count_instances(self) -> int:
+        with self._connection() as conn:
             return int(conn.execute("SELECT COUNT(*) FROM instancias").fetchone()[0])
 
     # --- operacoes --------------------------------------------------------
 
-    def criar_operacao(self, instance_id: int | None, tipo: str) -> str:
+    def create_operation(self, instance_id: int | None, kind: str) -> str:
         op_id = uuid.uuid4().hex
-        with self._transacao() as conn:
+        with self._transaction() as conn:
             conn.execute(
                 "INSERT INTO operacoes (id, instancia_id, tipo, estado, iniciada_em) VALUES (?, ?, ?, ?, ?)",
-                (op_id, instance_id, tipo, OP_EXECUTANDO, self._relogio()))
+                (op_id, instance_id, kind, OP_EXECUTANDO, self._relogio()))
         return op_id
 
-    def anexar_log(self, op_id: str, linha: str) -> None:
-        with self._transacao() as conn:
+    def append_log(self, op_id: str, linha: str) -> None:
+        with self._transaction() as conn:
             atual = conn.execute("SELECT log FROM operacoes WHERE id = ?", (op_id,)).fetchone()
             if atual is None:
                 return
@@ -186,13 +186,13 @@ class Banco:
             novo = (atual["log"] + linha.rstrip("\n") + "\n")[-LOG_MAX:]
             conn.execute("UPDATE operacoes SET log = ? WHERE id = ?", (novo, op_id))
 
-    def terminar_operacao(self, op_id: str, estado: str, resultado: dict | None = None) -> None:
-        with self._transacao() as conn:
+    def finish_operation(self, op_id: str, estado: str, result: dict | None = None) -> None:
+        with self._transaction() as conn:
             conn.execute("UPDATE operacoes SET estado = ?, resultado = ?, terminada_em = ? WHERE id = ?",
-                         (estado, json.dumps(resultado or {}, ensure_ascii=True), self._relogio(), op_id))
+                         (estado, json.dumps(result or {}, ensure_ascii=True), self._relogio(), op_id))
 
     def operation(self, op_id: str) -> dict | None:
-        with self._conexao() as conn:
+        with self._connection() as conn:
             linha = conn.execute("SELECT * FROM operacoes WHERE id = ?", (op_id,)).fetchone()
         if linha is None:
             return None
@@ -200,24 +200,24 @@ class Banco:
         dados["resultado"] = json.loads(dados["resultado"] or "{}")
         return dados
 
-    def operacao_em_andamento(self) -> bool:
-        with self._conexao() as conn:
+    def operation_in_progress(self) -> bool:
+        with self._connection() as conn:
             return conn.execute("SELECT 1 FROM operacoes WHERE estado = ? LIMIT 1",
                                 (OP_EXECUTANDO,)).fetchone() is not None
 
-    def criacoes_desde(self, desde: str) -> int:
-        with self._conexao() as conn:
+    def creations_since(self, since: str) -> int:
+        with self._connection() as conn:
             return int(conn.execute("SELECT COUNT(*) FROM operacoes WHERE tipo = 'criar' AND iniciada_em >= ?",
-                                    (desde,)).fetchone()[0])
+                                    (since,)).fetchone()[0])
 
     # --- auditoria --------------------------------------------------------
 
-    def auditar(self, actor: str, verbo: str, alvo: str, resultado: str, detalhe: str = "") -> None:
-        with self._transacao() as conn:
+    def audit(self, actor: str, verb: str, target: str, result: str, detail: str = "") -> None:
+        with self._transaction() as conn:
             conn.execute(
                 "INSERT INTO auditoria (quando, ator, verbo, alvo, resultado, detalhe) VALUES (?, ?, ?, ?, ?, ?)",
-                (self._relogio(), actor, verbo, alvo, resultado, detalhe[:300]))
+                (self._relogio(), actor, verb, target, result, detail[:300]))
 
-    def auditoria(self, limite: int = 100) -> list[dict]:
-        with self._conexao() as conn:
-            return [dict(r) for r in conn.execute("SELECT * FROM auditoria ORDER BY id DESC LIMIT ?", (limite,))]
+    def audit_trail(self, limit: int = 100) -> list[dict]:
+        with self._connection() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM auditoria ORDER BY id DESC LIMIT ?", (limit,))]

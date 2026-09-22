@@ -40,13 +40,13 @@ class ErroDeLeitura(ErroDoOpnsense):
     """Regra existente que o broker nao soube interpretar: nao abre porta nova."""
 
 
-def descricao_da_instancia(ctid: int) -> str:
+def instance_description(ctid: int) -> str:
     return f"{PREFIXO_DA_DESCRICAO}{int(ctid)}"
 
 
 # --- leitura das portas ocupadas ---------------------------------------------------
 
-def _numero(texto: str) -> int:
+def _number_of(texto: str) -> int:
     valor = int(texto)
     if not 1 <= valor <= 65535:
         raise ValueError
@@ -58,10 +58,10 @@ def _expandir(item: str, regra: str) -> set[int]:
     item = item.strip()
     try:
         if _PORTA_RE.fullmatch(item):
-            return {_numero(item)}
+            return {_number_of(item)}
         faixa = _FAIXA_RE.fullmatch(item)
         if faixa:
-            inicio, fim = _numero(faixa.group(1)), _numero(faixa.group(2))
+            inicio, fim = _number_of(faixa.group(1)), _number_of(faixa.group(2))
             if inicio <= fim and fim - inicio < LIMITE_DE_FAIXA:
                 return set(range(inicio, fim + 1))
     except ValueError:
@@ -69,7 +69,7 @@ def _expandir(item: str, regra: str) -> set[int]:
     raise ErroDeLeitura(f"regra '{regra}': nao entendi a porta {item!r}")
 
 
-def _portas_do_alias(meta: object, regra: str) -> set[int]:
+def _ports_of_alias(meta: object, regra: str) -> set[int]:
     if not isinstance(meta, list) or not meta:
         raise ErroDeLeitura(f"regra '{regra}': o alias de porta nao veio no resultado")
     ports: set[int] = set()
@@ -96,7 +96,7 @@ def _protocolos(protocolo: str) -> tuple[str, ...]:
     return (protocolo,) if protocolo in ("tcp", "udp") else ("tcp", "udp")
 
 
-def portas_ocupadas(linhas: object, interface: str) -> set[tuple[int, str]]:
+def busy_ports(linhas: object, interface: str) -> set[tuple[int, str]]:
     ocupadas: set[tuple[int, str]] = set()
     if not isinstance(linhas, list):
         raise ErroDeLeitura("resposta de search_rule sem a lista de regras")
@@ -110,7 +110,7 @@ def portas_ocupadas(linhas: object, interface: str) -> set[tuple[int, str]]:
         if _PORTA_RE.fullmatch(destino) or _FAIXA_RE.fullmatch(destino):
             ports = _expandir(destino, name)
         else:
-            ports = _portas_do_alias(regra.get("alias_meta_destination.port"), name)
+            ports = _ports_of_alias(regra.get("alias_meta_destination.port"), name)
         for proto in _protocolos(str(regra.get("protocol", ""))):
             ocupadas |= {(p, proto) for p in ports}
     return ocupadas
@@ -125,8 +125,8 @@ class Opnsense:
         self._c = cliente
         self._interface = interface
 
-    def _api(self, metodo: str, caminho: str, acao: str, corpo: object = None) -> Resposta:
-        resposta = self._c.requisitar(metodo, "/api/firewall" + caminho, json_corpo=corpo)
+    def _api(self, metodo: str, path: str, acao: str, corpo: object = None) -> Resposta:
+        resposta = self._c.requisitar(metodo, "/api/firewall" + path, json_corpo=corpo)
         if not resposta.ok:
             raise ErroDoOpnsense(f"{acao}: HTTP {resposta.status}")
         return resposta
@@ -138,11 +138,11 @@ class Opnsense:
             raise ErroDeLeitura("resposta de search_rule sem a lista de regras")
         return linhas
 
-    def portas_externas(self) -> set[tuple[int, str]]:
-        return portas_ocupadas(self._regras(), self._interface)
+    def external_ports(self) -> set[tuple[int, str]]:
+        return busy_ports(self._regras(), self._interface)
 
-    def _uuids_da_instancia(self, ctid: int) -> list[str]:
-        descricao = descricao_da_instancia(ctid)
+    def _uuids_of_instance(self, ctid: int) -> list[str]:
+        descricao = instance_description(ctid)
         achados = []
         for regra in self._regras():
             if isinstance(regra, dict) and regra.get("descr") == descricao:
@@ -151,26 +151,26 @@ class Opnsense:
                     achados.append(uuid)
         return achados
 
-    def abrir(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
-        alvo = str(ipaddress.IPv4Address(ip))
-        self.fechar(ctid)  # idempotente: recomecar nao deixa regra duplicada
+    def open_ports(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
+        target = str(ipaddress.IPv4Address(ip))
+        self.close_ports(ctid)  # idempotente: recomecar nao deixa regra duplicada
         criadas: list[str] = []
         try:
             for porta in ports:
-                criadas.append(self._criar_regra(ctid, alvo, porta))
+                criadas.append(self._create_rule(ctid, target, porta))
             self._aplicar()
         except Exception:
-            self._apagar(criadas)
+            self._delete(criadas)
             raise
 
-    def _criar_regra(self, ctid: int, alvo: str, porta: AllocatedPort) -> str:
+    def _create_rule(self, ctid: int, target: str, porta: AllocatedPort) -> str:
         if porta.proto not in ("tcp", "udp") or not 1 <= porta.number <= 65535:
             raise ErroDoOpnsense(f"porta invalida: {porta}")
         regra = {"rule": {
             "disabled": "0", "interface": self._interface, "protocol": porta.proto,
             "ipprotocol": "inet", "destination": {"network": "wanip", "port": str(porta.number)},
-            "target": alvo, "local-port": str(porta.number),
-            "descr": descricao_da_instancia(ctid), "pass": "pass",
+            "target": target, "local-port": str(porta.number),
+            "descr": instance_description(ctid), "pass": "pass",
         }}
         resposta = self._api("POST", "/d_nat/add_rule", f"criar regra {porta}", regra)
         dados = resposta.json if isinstance(resposta.json, dict) else {}
@@ -179,14 +179,14 @@ class Opnsense:
             raise ErroDoOpnsense(f"criar regra {porta}: o OPNsense recusou ({_validacoes(dados)})")
         return uuid
 
-    def fechar(self, ctid: int) -> None:
-        uuids = self._uuids_da_instancia(ctid)
+    def close_ports(self, ctid: int) -> None:
+        uuids = self._uuids_of_instance(ctid)
         if not uuids:
             return
-        self._apagar(uuids)
+        self._delete(uuids)
         self._aplicar()
 
-    def _apagar(self, uuids: Sequence[str]) -> None:
+    def _delete(self, uuids: Sequence[str]) -> None:
         errors = 0
         for uuid in uuids:
             try:
@@ -202,7 +202,7 @@ class Opnsense:
         if not str(estado).strip().upper().startswith("OK"):
             raise ErroDoOpnsense("aplicar: o OPNsense nao confirmou")
 
-    def acessivel(self) -> bool:
+    def reachable(self) -> bool:
         try:
             return self._c.requisitar("POST", "/api/firewall/d_nat/search_rule",
                                       json_corpo={"current": 1, "rowCount": 1},

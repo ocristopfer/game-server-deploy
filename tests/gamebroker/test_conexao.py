@@ -26,7 +26,7 @@ def _eco(metodo, caminho, query, corpo, cabecalhos):
 def eco():
     servidor = ServidorFalso(_eco)
     yield servidor
-    servidor.parar()
+    servidor.stop()
 
 
 def test_impressao_aceita_o_formato_do_script_de_verificacao():
@@ -65,7 +65,7 @@ def test_erro_sem_corpo_devolve_o_motivo_da_linha_de_status():
     try:
         resposta = Cliente(servidor.url, {}).requisitar("GET", "/x")
     finally:
-        servidor.parar()
+        servidor.stop()
     assert resposta.status == 403
     assert not resposta.ok
     assert "VM.Allocate" in resposta.texto
@@ -73,7 +73,7 @@ def test_erro_sem_corpo_devolve_o_motivo_da_linha_de_status():
 
 def test_conexao_recusada_nao_vaza_o_token(eco):
     porta_morta = eco.url
-    eco.parar()
+    eco.stop()
     cliente = Cliente(porta_morta, {"Authorization": f"Bearer {TOKEN}"})
     with pytest.raises(ErroDeConexao) as erro:
         cliente.requisitar("GET", "/x")
@@ -87,7 +87,7 @@ def test_resposta_gigante_e_recusada():
         with pytest.raises(ErroDeConexao, match="grande demais"):
             Cliente(servidor.url, {}).requisitar("GET", "/x")
     finally:
-        servidor.parar()
+        servidor.stop()
 
 
 def test_resposta_que_nao_e_json_vira_texto():
@@ -95,7 +95,7 @@ def test_resposta_que_nao_e_json_vira_texto():
     try:
         resposta = Cliente(servidor.url, {}).requisitar("GET", "/x")
     finally:
-        servidor.parar()
+        servidor.stop()
     assert resposta.json is None
     assert resposta.texto == "oi, sou texto"
 
@@ -174,4 +174,4 @@ def test_prazo_da_chamada_vale_so_para_ela():
             cliente.requisitar("GET", "/x", timeout=0.2)
         assert cliente.requisitar("GET", "/x").ok, "o prazo padrao do cliente nao foi alterado"
     finally:
-        servidor.parar()
+        servidor.stop()
