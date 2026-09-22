@@ -14,12 +14,19 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
+from gamepanel.i18n import Message
+
 SCHEDULE_KINDS = ("diario", "semanal", "intervalo")
 SCHEDULE_ACTIONS = ("restart", "stop", "start", "update", "backup")
-WEEKDAYS = ("segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo")
-# "toda segunda" mas "todo sabado": os dias de semana vem de "segunda-feira" (feminino),
-# sabado e domingo sao masculinos.
-DAY_ARTICLE = ("toda", "toda", "toda", "toda", "toda", "todo", "todo")
+# Chaves, nao texto: o `<select>` da tela mostra o nome do dia no idioma de quem olha.
+WEEKDAYS = ("weekday.monday", "weekday.tuesday", "weekday.wednesday", "weekday.thursday",
+            "weekday.friday", "weekday.saturday", "weekday.sunday")
+# A mesma coisa com o artigo colado: "toda segunda" mas "todo sabado" (os dias vem de
+# "segunda-feira", feminino; sabado e domingo sao masculinos). O ingles nao tem artigo
+# nenhum aqui, entao a diferenca mora no catalogo e nao no codigo.
+WEEKDAY_WITH_ARTICLE = ("weekday.on_monday", "weekday.on_tuesday", "weekday.on_wednesday",
+                        "weekday.on_thursday", "weekday.on_friday", "weekday.on_saturday",
+                        "weekday.on_sunday")
 EVERY_HOURS_MAX = 168  # uma semana
 DAYS_IN_WEEK = 7
 
@@ -36,16 +43,28 @@ def _parse_dt(text: str) -> datetime | None:
         return None
 
 
-def schedule_label(sched: Any) -> str:
-    """Como a tarefa e descrita na tela e no historico."""
-    hora = f"{int(sched['hour']):02d}:{int(sched['minute']):02d}"
+def schedule_label(sched: Any) -> Message:
+    """Como a tarefa e descrita na tela e no historico.
+
+    Devolve `Message`, e nao texto pronto, porque este rotulo cai em DOIS lugares com
+    regras diferentes: a tela, que segue o idioma de quem olha, e a coluna `command` do
+    job, que e gravada e segue o idioma do deploy. Sendo `Message` (que e `str`), o
+    segundo caso continua funcionando sem ninguem mudar nada.
+    """
+    time = f"{int(sched['hour']):02d}:{int(sched['minute']):02d}"
     if sched["kind"] == "intervalo":
-        horas = int(sched["every_hours"])
-        return f"a cada {horas}h" if horas != 1 else "a cada hora"
+        hours = int(sched["every_hours"])
+        if hours == 1:
+            return Message("schedule.every_hour")
+        return Message("schedule.every_n_hours", n=hours)
     if sched["kind"] == "semanal":
-        indice = int(sched["weekday"]) % DAYS_IN_WEEK
-        return f"{DAY_ARTICLE[indice]} {WEEKDAYS[indice]} as {hora}"
-    return f"todo dia as {hora}"
+        index = int(sched["weekday"]) % DAYS_IN_WEEK
+        # O dia ja vem com o artigo ("toda segunda", "todo sabado"): em portugues ele
+        # muda com o genero da palavra, e em ingles nem existe. Tentar montar
+        # "{artigo} {dia}" na frase obrigaria o ingles a carregar um campo vazio.
+        return Message("schedule.weekly", weekday=Message(WEEKDAY_WITH_ARTICLE[index]),
+                       time=time)
+    return Message("schedule.daily", time=time)
 
 
 def previous_occurrence(sched: Any, now: datetime) -> datetime | None:

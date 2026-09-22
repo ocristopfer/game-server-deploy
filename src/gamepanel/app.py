@@ -1787,7 +1787,6 @@ def collect_samples(forcar: bool = False) -> int:
 SCHEDULE_KINDS = schedule_service.SCHEDULE_KINDS
 SCHEDULE_ACTIONS = schedule_service.SCHEDULE_ACTIONS
 WEEKDAYS = schedule_service.WEEKDAYS
-DAY_ARTICLE = schedule_service.DAY_ARTICLE
 EVERY_HOURS_MAX = schedule_service.EVERY_HOURS_MAX
 local_now = schedule_service.local_now
 schedule_label = schedule_service.schedule_label
@@ -3954,7 +3953,8 @@ def schedules(sid: int):
         proximas[t["id"]] = _next_occurrence(t, agora).strftime(FORMATO_DATA_CURTA)
     return render_template(
         "schedules.html", server=server, tarefas=tarefas, proximas=proximas,
-        acoes=SCHEDULE_ACTIONS, job_labels=labels_of(JOB_LABELS), dias=WEEKDAYS,
+        acoes=SCHEDULE_ACTIONS, job_labels=labels_of(JOB_LABELS),
+        dias=[translate(d) for d in WEEKDAYS],
         rotulo=schedule_label, agora=agora, max_horas=EVERY_HOURS_MAX,
     )
 

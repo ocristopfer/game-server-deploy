@@ -100,8 +100,15 @@ def translate(key: str, language: str, **fields: object) -> str:
     phrase = wanted.get(key, CATALOGS[DEFAULT].get(key, key))
     if not fields:
         return phrase
+    # Campo que TAMBEM e uma `Message` vai para o mesmo idioma da frase que o recebe.
+    # Sem isto ele entraria pelo `str`, que e sempre o idioma do deploy, e a frase sairia
+    # metade traduzida: "todo sabado at 03:00" foi exatamente o que apareceu na tela.
+    prontos = {
+        nome: translate(valor, language) if isinstance(valor, Message) else valor
+        for nome, valor in fields.items()
+    }
     try:
-        return phrase.format(**fields)
+        return phrase.format(**prontos)
     except (KeyError, IndexError, ValueError):
         return phrase
 

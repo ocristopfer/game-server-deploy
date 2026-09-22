@@ -16,7 +16,7 @@
       {% for t in tarefas %}
       <tr{% if not t.enabled %} class="muted"{% endif %}>
         <td>{{ job_labels.get(t.action, t.action) }}</td>
-        <td>{{ rotulo(t) }}</td>
+        <td>{{ _(rotulo(t)) }}</td>
         <td class="muted">{% if t.enabled %}{{ proximas[t.id] }}{% else %}<span class="badge">{{ _('schedules.off') }}</span>{% endif %}</td>
         <td class="muted small nowrap">{{ t.last_run[:16] | replace('T', ' ') or _('schedules.never') }}</td>
         <td class="acoes">
@@ -27,7 +27,7 @@
                        _('schedules.turn_on') if not t.enabled else _('schedules.turn_off'), tamanho='sm') }}
             {{ ui.acao(url_for('schedule_delete', aid=t.id), _('schedules.delete'), variante='danger',
                        tamanho='sm',
-                       confirmar=_('schedules.delete_confirm', task=job_labels.get(t.action, t.action) ~ ' ' ~ rotulo(t))) }}
+                       confirmar=_('schedules.delete_confirm', task=job_labels.get(t.action, t.action) ~ ' ' ~ _(rotulo(t)))) }}
           {% else %}
           <span class="muted small">{{ _('schedules.admin_only') }}</span>
           {% endif %}

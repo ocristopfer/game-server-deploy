@@ -248,3 +248,18 @@ def test_os_dois_idiomas_usam_os_mesmos_marcadores():
         if de_pt != de_en:
             fora.append(f"{chave}: pt={sorted(de_pt)} en={sorted(de_en)}")
     assert fora == [], "marcadores diferentes entre os idiomas:\n" + "\n".join(fora)
+
+
+def test_campo_que_e_mensagem_vai_para_o_mesmo_idioma_da_frase(monkeypatch):
+    """Frase montada de pedacos traduziveis nao pode sair metade em cada lingua.
+
+    Aconteceu no rotulo do agendamento: a tela em ingles mostrava "todo sabado at
+    03:00", porque o dia entrava pelo `str` da Message (sempre o idioma do deploy).
+    """
+    monkeypatch.setitem(i18n.CATALOGS["pt"], "t.quando", "{dia} as {hora}")
+    monkeypatch.setitem(i18n.CATALOGS["en"], "t.quando", "{dia} at {hora}")
+    monkeypatch.setitem(i18n.CATALOGS["pt"], "t.sabado", "todo sabado")
+    monkeypatch.setitem(i18n.CATALOGS["en"], "t.sabado", "every Saturday")
+    montada = i18n.Message("t.quando", dia=i18n.Message("t.sabado"), hora="03:00")
+    assert str(montada) == "todo sabado as 03:00"
+    assert i18n.translate(montada, "en") == "every Saturday at 03:00"
