@@ -8,16 +8,16 @@
 {{ srv.abas(server, 'schedules') }}
 
 <div class="card">
-  <h2>Tarefas deste servidor</h2>
+  <h2>{{ _('schedules.tasks_here') }}</h2>
   {% if tarefas %}
   <div class="table-wrap"><table class="jobs">
-    <thead><tr><th>Tarefa</th><th>Quando</th><th>Proxima</th><th>Ultima vez</th><th></th></tr></thead>
+    <thead><tr><th>{{ _('schedules.task') }}</th><th>{{ _('schedules.when') }}</th><th>{{ _('schedules.next_run') }}</th><th>{{ _('schedules.last_run') }}</th><th></th></tr></thead>
     <tbody>
       {% for t in tarefas %}
       <tr{% if not t.enabled %} class="muted"{% endif %}>
         <td>{{ job_labels.get(t.action, t.action) }}</td>
         <td>{{ rotulo(t) }}</td>
-        <td class="muted">{% if t.enabled %}{{ proximas[t.id] }}{% else %}<span class="badge">desligada</span>{% endif %}</td>
+        <td class="muted">{% if t.enabled %}{{ proximas[t.id] }}{% else %}<span class="badge">{{ _('schedules.off') }}</span>{% endif %}</td>
         <td class="muted small nowrap">{{ t.last_run[:16] | replace('T', ' ') or 'nunca' }}</td>
         <td class="acoes">
           {% if is_admin %}
@@ -29,7 +29,7 @@
                        tamanho='sm',
                        confirmar='Remover: ' ~ job_labels.get(t.action, t.action) ~ ' ' ~ rotulo(t) ~ '?') }}
           {% else %}
-          <span class="muted small">so administrador altera</span>
+          <span class="muted small">{{ _('schedules.admin_only') }}</span>
           {% endif %}
         </td>
       </tr>
@@ -37,58 +37,58 @@
     </tbody>
   </table></div>
   {% else %}
-    <p class="muted">Nada agendado para este servidor.</p>
+    <p class="muted">{{ _('schedules.none_here') }}</p>
   {% endif %}
   <p class="muted small mt-4">
-    O relogio e o do <strong>painel</strong> &mdash; agora sao
+    {{ _('schedules.clock_is') }} <strong>{{ _('schedules.panel') }}</strong> &mdash; agora sao
     <strong>{{ agora.strftime('%d/%m %H:%M') }}</strong> ({{ agora.strftime('%Z') or 'sem fuso definido' }}).
     Se nao bater com a sua hora, ajuste o <code>TZ</code> do container do painel.
-    Tarefa que venceu enquanto o painel estava fora do ar <strong>nao dispara atrasada</strong>:
+    Tarefa que venceu enquanto o painel estava fora do ar <strong>{{ _('schedules.no_late_fire') }}</strong>:
     ela espera a proxima ocorrencia.
   </p>
 </div>
 
 {% if is_admin %}
 <div class="card">
-  <h2>Agendar uma tarefa</h2>
+  <h2>{{ _('schedules.new_task') }}</h2>
   <form method="post" action="{{ url_for('schedule_new', sid=server.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <div class="row">
-      <label>O que fazer
+      <label>{{ _('schedules.what_to_do') }}
         <select name="action">
           {% for a in acoes %}<option value="{{ a }}">{{ job_labels.get(a, a) }}</option>{% endfor %}
         </select>
         <small>
-          <strong>Backup</strong> usa os caminhos do cadastro, com a mesma retencao da tela
-          Backups. <strong>Atualizar</strong> roda o SteamCMD &mdash; o servidor fica fora
+          <strong>{{ _('schedules.backup') }}</strong> usa os caminhos do cadastro, com a mesma retencao da tela
+          Backups. <strong>{{ _('schedules.update') }}</strong> roda o SteamCMD &mdash; o servidor fica fora
           do ar durante a atualizacao.
         </small>
       </label>
-      <label>Quando
+      <label>{{ _('schedules.when') }}
         <select name="kind">
-          <option value="diario">Todo dia, numa hora fixa</option>
-          <option value="semanal">Uma vez por semana</option>
-          <option value="intervalo">A cada N horas</option>
+          <option value="diario">{{ _('schedules.daily') }}</option>
+          <option value="semanal">{{ _('schedules.weekly') }}</option>
+          <option value="intervalo">{{ _('schedules.every_n_hours') }}</option>
         </select>
       </label>
     </div>
     <div class="row">
-      <label>Hora <span class="muted">(diario e semanal)</span>
+      <label>{{ _('schedules.hour') }} <span class="muted">(diario e semanal)</span>
         <input name="hour" type="number" min="0" max="23" value="5" inputmode="numeric">
       </label>
-      <label>Minuto
+      <label>{{ _('schedules.minute') }}
         <input name="minute" type="number" min="0" max="59" value="0" inputmode="numeric">
       </label>
     </div>
     <div class="row">
-      <label>Dia da semana <span class="muted">(semanal)</span>
+      <label>{{ _('schedules.weekday') }} <span class="muted">(semanal)</span>
         <select name="weekday">
           {% for d in dias %}<option value="{{ loop.index0 }}">{{ d }}</option>{% endfor %}
         </select>
       </label>
-      <label>A cada <span class="muted">(intervalo)</span>
+      <label>{{ _('schedules.every') }} <span class="muted">(intervalo)</span>
         <input name="every_hours" type="number" min="1" max="{{ max_horas }}" value="6" inputmode="numeric">
-        <small>horas, contadas a partir de agora</small>
+        <small>{{ _('schedules.hours_from_now') }}</small>
       </label>
     </div>
     <div class="form-actions">
@@ -96,7 +96,7 @@
     </div>
   </form>
   <p class="muted small mt-4">
-    Cada disparo aparece no <a href="{{ url_for('history') }}">historico</a> como qualquer
+    {{ _('schedules.runs_show_in') }} <a href="{{ url_for('history') }}">{{ _('schedules.history') }}</a> como qualquer
     outra acao, com <code>agendador</code> no lugar do usuario.
   </p>
 </div>

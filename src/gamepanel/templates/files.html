@@ -13,7 +13,7 @@
   <div class="filebar">
     <form method="get" action="{{ url_for('files', sid=server.id) }}" class="path-form">
       <input name="path" value="{{ current }}" spellcheck="false" autocapitalize="none"
-             aria-label="caminho">
+             aria-label="{{ _('files.path_lower') }}">
       {{ ui.botao('Ir') }}
     </form>
   </div>
@@ -23,7 +23,7 @@
         enctype="multipart/form-data" class="filebar upload-form">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="path" value="{{ current }}">
-    <input type="file" name="arquivo" required aria-label="arquivo para enviar">
+    <input type="file" name="arquivo" required aria-label="{{ _('files.file_to_upload') }}">
     {{ ui.botao('Enviar para esta pasta', icone='⬆') }}
   </form>
   <p class="muted small">
@@ -31,7 +31,7 @@
     de varios GB. Se ja existir um com o mesmo nome, ele e substituido e uma copia
     <code>.bak</code> fica ao lado.
   </p>
-  <nav class="crumbs" aria-label="Caminho">
+  <nav class="crumbs" aria-label="{{ _('files.path') }}">
     {% for c in crumbs %}<a href="{{ url_for('files', sid=server.id, path=c.path) }}">{{ c.name }}</a>{% if not loop.last %}<span class="sep">/</span>{% endif %}{% endfor %}
   </nav>
 </div>
@@ -54,7 +54,7 @@
           <span class="nowrap">{{ '-' if e.dir else e.size | tamanho }} &middot; {{ e.mtime }}</span>
           {% if not e.dir %}
             <a class="dl" title="Baixar {{ e.name }}"
-               href="{{ url_for('files_download', sid=server.id, path=e.path) }}">baixar</a>
+               href="{{ url_for('files_download', sid=server.id, path=e.path) }}">{{ _('files.download') }}</a>
           {% endif %}
           {# O nome vem do container: ele viaja por data-confirmar (escapado como
              HTML) e nunca dentro de codigo JavaScript. #}
@@ -64,15 +64,15 @@
             <input type="hidden" name="path" value="{{ e.path }}">
             <button class="btn-link btn-link--danger" type="submit"
                     data-confirmar="Apagar {{ e.path }}?&#10;&#10;Isto nao tem volta."
-                    title="Apagar {{ e.name }}{{ ' (so se estiver vazia)' if e.dir else '' }}">apagar</button>
+                    title="Apagar {{ e.name }}{{ ' (so se estiver vazia)' if e.dir else '' }}">{{ _('files.delete') }}</button>
           </form>
         </span>
       </li>
       {% else %}
-      <li class="muted">pasta vazia</li>
+      <li class="muted">{{ _('files.empty_folder') }}</li>
       {% endfor %}
     </ul>
-    {% if truncated %}<p class="muted small">Listagem cortada nos primeiros itens desta pasta.</p>{% endif %}
+    {% if truncated %}<p class="muted small">{{ _('files.listing_truncated') }}</p>{% endif %}
   </div>
 
   <div class="card editor">
@@ -84,7 +84,7 @@
 
       {% if opened.binary %}
         <div class="flash">
-          <strong>Arquivo binario.</strong> O painel nao edita isso para nao corromper o
+          <strong>{{ _('files.binary') }}</strong> O painel nao edita isso para nao corromper o
           jogo &mdash; mas da para baixar o arquivo inteiro.
         </div>
         <div class="form-actions">
@@ -94,7 +94,7 @@
         </div>
       {% elif opened.truncated %}
         <div class="flash">
-          <strong>Somente leitura:</strong> o arquivo tem {{ opened.size | tamanho }} e passa do
+          <strong>{{ _('files.read_only') }}</strong> o arquivo tem {{ opened.size | tamanho }} e passa do
           limite de edicao ({{ max_kb }} KB). Abaixo estao os ultimos
           {{ opened.shown | tamanho }} &mdash; baixe o arquivo para trabalhar nele inteiro.
         </div>
@@ -129,7 +129,7 @@
         {{ ui.acao(url_for('config_files_edit', sid=server.id), 'Editar campo a campo',
                    variante='ghost', tamanho='sm', icone='⚙️', campos={'path': opened.path}) }}
         <span class="muted small">
-          abre este arquivo como formulario e o fixa na tela <strong>Configuracao</strong>
+          {{ _('files.opens_as_form') }} <strong>{{ _('files.configuration') }}</strong>
         </span>
       </div>
       {% endif %}
@@ -146,18 +146,18 @@
         </span>
       </div>
     {% else %}
-      <h2>Editor</h2>
+      <h2>{{ _('files.editor') }}</h2>
       <p class="muted">
         Escolha um arquivo na lista ao lado para editar &mdash; ate {{ max_kb }} KB.
         Acima disso o painel mostra os ultimos {{ preview_kb }} KB so para leitura.
       </p>
       <p class="muted small">
-        Qualquer arquivo pode ser baixado pelo link <em>baixar</em> da lista, inclusive
+        {{ _('files.any_file_downloadable') }} <em>{{ _('files.download') }}</em> da lista, inclusive
         binarios (saves, .so, .pak) e arquivos grandes demais para o editor.
       </p>
       <p class="muted small">
         Procurando o arquivo de configuracao do jogo? A busca por candidatos fica em
-        <a href="{{ url_for('config_quick', sid=server.id, descobrir=1) }}">Configuracao</a>
+        <a href="{{ url_for('config_quick', sid=server.id, descobrir=1) }}">{{ _('files.configuration') }}</a>
         &mdash; e la que o resultado dela serve para alguma coisa (fixar o arquivo e
         edita-lo campo a campo).
       </p>
@@ -165,8 +165,8 @@
         <p class="muted small">Pasta de config deste servidor: <code>{{ server.config_path }}</code></p>
       {% else %}
         <p class="muted small">
-          Dica: preencha a "Pasta de configuracao" em
-          <a href="{{ url_for('server_edit', sid=server.id) }}">Editar servidor</a> para
+          {{ _('files.config_folder_hint') }}
+          <a href="{{ url_for('server_edit', sid=server.id) }}">{{ _('files.edit_server') }}</a> para
           esta tela ja abrir no lugar certo.
         </p>
       {% endif %}

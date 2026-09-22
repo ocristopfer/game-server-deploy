@@ -8,7 +8,7 @@
 {{ srv.abas(server, 'backups') }}
 
 <div class="card">
-  <h2>O que entra na copia</h2>
+  <h2>{{ _('backups.what_is_saved') }}</h2>
   {% if caminhos %}
     <ul class="filelist">
       {% for c in caminhos %}<li><code>{{ c }}</code></li>{% endfor %}
@@ -20,7 +20,7 @@
       antigas saem sozinhas.{% else %}Nenhuma copia e apagada automaticamente.{% endif %}
       {% if is_admin %}
         Para mudar o que entra, edite os
-        <a href="{{ url_for('server_edit', sid=server.id) }}">caminhos de backup</a> do cadastro.
+        <a href="{{ url_for('server_edit', sid=server.id) }}">{{ _('backups.backup_paths') }}</a> do cadastro.
       {% endif %}
     </p>
     <div class="form-actions">
@@ -34,26 +34,26 @@
     </p>
   {% else %}
     <p class="flash error">
-      Este servidor nao tem o que guardar. Preencha a <strong>pasta de configuracao</strong>
-      ou os <strong>caminhos de backup</strong>
-      {% if is_admin %}<a href="{{ url_for('server_edit', sid=server.id) }}">no cadastro</a>{% else %}
+      {{ _('backups.nothing_to_save') }} <strong>{{ _('backups.config_folder') }}</strong>
+      {{ _('backups.or_the') }} <strong>{{ _('backups.backup_paths') }}</strong>
+      {% if is_admin %}<a href="{{ url_for('server_edit', sid=server.id) }}">{{ _('backups.in_settings') }}</a>{% else %}
       (peca a um administrador){% endif %}.
     </p>
   {% endif %}
 </div>
 
 <div class="card">
-  <h2>Copias guardadas</h2>
+  <h2>{{ _('backups.stored_copies') }}</h2>
   {% if erro %}<p class="flash error">{{ erro }}</p>{% endif %}
   {% if copias %}
   <div class="table-wrap"><table class="jobs">
-    <thead><tr><th>Arquivo</th><th>Quando</th><th>Tamanho</th><th></th></tr></thead>
+    <thead><tr><th>{{ _('backups.file') }}</th><th>{{ _('backups.when') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
     <tbody>
       {% for c in copias %}
       <tr>
         <td>
           <code>{{ c.name }}</code>
-          {% if c.seguranca %}<span class="badge" title="Tirada pelo painel logo antes de uma restauracao">antes de restaurar</span>{% endif %}
+          {% if c.seguranca %}<span class="badge" title="{{ _('backups.pre_restore_copy') }}">{{ _('backups.before_restore') }}</span>{% endif %}
         </td>
         <td class="muted small nowrap">{{ c.mtime }}</td>
         <td class="muted nowrap">{{ c.size | tamanho }}</td>
@@ -68,7 +68,7 @@
                        tamanho='sm', campos={'nome': c.name},
                        confirmar='Apagar ' ~ c.name ~ '? Nao tem volta.') }}
           {% else %}
-          <span class="muted small">baixar, restaurar e apagar sao de administrador</span>
+          <span class="muted small">{{ _('backups.admin_only') }}</span>
           {% endif %}
         </td>
       </tr>
@@ -76,7 +76,7 @@
     </tbody>
   </table></div>
   {% elif not erro %}
-    <p class="muted">Nenhuma copia ainda.</p>
+    <p class="muted">{{ _('backups.none_yet') }}</p>
   {% endif %}
 </div>
 {% endblock %}

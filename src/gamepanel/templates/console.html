@@ -12,20 +12,20 @@
    quatro telas diferentes, com nomes ("Terminal", "Console", "Comando unico",
    "Terminal interativo") que ninguem conseguia distinguir de fora. #}
 {% if allow_term %}
-<nav class="tabs" aria-label="Modo do terminal">
+<nav class="tabs" aria-label="{{ _('console.terminal_mode') }}">
   <a class="tabs__item" href="{{ url_for('terminal', sid=server.id) }}">
-    <span class="icone" aria-hidden="true">⌨️</span>Sessao interativa</a>
+    <span class="icone" aria-hidden="true">⌨️</span>{{ _('console.interactive') }}</a>
   <span class="tabs__item" aria-current="page">
-    <span class="icone" aria-hidden="true">▶</span>Comando unico</span>
+    <span class="icone" aria-hidden="true">▶</span>{{ _('console.single_command') }}</span>
 </nav>
 {% endif %}
 
 <div class="flash">
-  Os comandos rodam como <strong>{{ server.ssh_user }}</strong> dentro do container
+  {{ _('console.commands_run_as') }} <strong>{{ server.ssh_user }}</strong> dentro do container
   <code>{{ server.host }}</code>, via SSH. Cada execucao tem limite de
   {{ shell_timeout }}s e fica registrada no historico abaixo.
   {% if allow_term %}Para algo interativo (nano, htop, prompts de confirmacao) use a
-  <a href="{{ url_for('terminal', sid=server.id) }}">sessao interativa</a>.{% endif %}
+  <a href="{{ url_for('terminal', sid=server.id) }}">{{ _('console.interactive_lower') }}</a>.{% endif %}
 </div>
 
 <div class="card">
@@ -43,7 +43,7 @@
     </label>
     <div class="form-actions">
       {{ ui.botao('Executar', variante='primary', icone='▶') }}
-      <span class="muted small">Historico: &uarr; e &darr; percorrem os comandos anteriores.</span>
+      <span class="muted small">{{ _('console.history_hint') }}</span>
     </div>
   </form>
 </div>
@@ -53,7 +53,7 @@
      {% if job.status == 'running' %}data-job-url="{{ url_for('api_job', jid=job.id) }}"
      data-job-rodando="(executando...)" data-job-fim="exit code {codigo}"{% endif %}>
   <div class="card__head">
-    <h2>Saida</h2>
+    <h2>{{ _('console.output') }}</h2>
     <span class="badge {{ {'ok':'on','error':'off','running':'cold'}[job.status] }}" data-job-selo>{{ job.status }}</span>
   </div>
   <pre class="log cmd">$ {{ job.command }}</pre>
@@ -66,10 +66,10 @@
 {% endif %}
 
 <div class="card">
-  <h2>Comandos anteriores</h2>
+  <h2>{{ _('console.previous_commands') }}</h2>
   {% if history %}
   <div class="table-wrap"><table class="jobs">
-    <thead><tr><th>Quando</th><th>Comando</th><th>Por</th><th>Resultado</th><th></th></tr></thead>
+    <thead><tr><th>{{ _('console.when') }}</th><th>{{ _('console.command') }}</th><th>{{ _('console.by') }}</th><th>{{ _('console.result') }}</th><th></th></tr></thead>
     <tbody>
       {% for j in history %}
       <tr>
@@ -77,13 +77,13 @@
         <td><code class="trunc">{{ j.command }}</code></td>
         <td class="muted">{{ j.username }}</td>
         <td><span class="badge {{ {'ok':'on','error':'off','running':'cold'}[j.status] }}">{{ j.status }}</span></td>
-        <td><a href="{{ url_for('console', sid=server.id, job=j.id) }}">ver</a></td>
+        <td><a href="{{ url_for('console', sid=server.id, job=j.id) }}">{{ _('console.view') }}</a></td>
       </tr>
       {% endfor %}
     </tbody>
   </table></div>
   {% else %}
-    <p class="muted">Nenhum comando executado neste servidor ainda.</p>
+    <p class="muted">{{ _('console.none_yet') }}</p>
   {% endif %}
 </div>
 {% endblock %}

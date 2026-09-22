@@ -10,19 +10,19 @@
 {# Formulario a esquerda, instancias a direita no desktop; uma coluna no celular. #}
 <div class="grid-cartoes">
 <div class="card">
-  <h2>Nova instancia</h2>
+  <h2>{{ _('instances.new') }}</h2>
   {% if jogos %}
   <form method="post" action="{{ url_for('instance_new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label>Jogo
+    <label>{{ _('instances.game') }}
       <select name="jogo" required>
         {% for j in jogos %}
           <option value="{{ j.chave }}">{{ j.nome }} — portas {{ j.portas | join(', ') }}</option>
         {% endfor %}
       </select>
-      <small>So aparecem os jogos que o broker sabe instalar sozinho.</small>
+      <small>{{ _('instances.only_installable') }}</small>
     </label>
-    <label>Nome
+    <label>{{ _('instances.name') }}
       <input name="nome" maxlength="40" required autocomplete="off" spellcheck="false"
              pattern="[A-Za-z0-9][A-Za-z0-9 ._\-]{0,39}">
       <small>Como a instancia aparece no painel. Letras, numeros, espaco, ponto, hifen e sublinhado.</small>
@@ -37,7 +37,7 @@
     abre o firewall. Voce acompanha o progresso na tela da acao.
   </p>
   {% else %}
-    <p class="muted">Nenhum jogo criavel no catalogo (ou o broker nao respondeu).</p>
+    <p class="muted">{{ _('instances.none_creatable') }}</p>
   {% endif %}
 </div>
 
@@ -45,7 +45,7 @@
   <div class="table-wrap"><table class="jobs">
     {# UMA coluna, um bloco por instancia: com estado e acoes em colunas proprias, as ACOES
        (Desativar, Remover) saiam da tela do celular, atras de uma rolagem lateral. #}
-    <thead><tr><th>Instancia</th></tr></thead>
+    <thead><tr><th>{{ _('instances.instance') }}</th></tr></thead>
     <tbody>
       {% for i in instancias %}
       <tr>
@@ -66,15 +66,15 @@
                        confirmar='Desativar ' ~ i.nome ~ '? O servidor sera PARADO e as portas fecham no firewall.') }}
           {% elif i.estado in ('desativada', 'falhou') %}
             <details>
-              <summary class="btn btn--danger btn--sm">Remover</summary>
+              <summary class="btn btn--danger btn--sm">{{ _('instances.remove') }}</summary>
               <form method="post" action="{{ url_for('instance_remove', iid=i.id) }}">
                 <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-                <label>Digite o nome para confirmar
+                <label>{{ _('instances.type_name_to_confirm') }}
                   <input name="confirma" placeholder="{{ i.nome }}" autocomplete="off" spellcheck="false" required>
                 </label>
                 <label class="checkbox">
                   <input type="checkbox" name="somente_banco" value="1">
-                  Esquecer so o registro (o container ja nao existe mais no Proxmox)
+                  {{ _('instances.forget_record_only') }}
                 </label>
                 {{ ui.botao('Remover', variante='danger', tamanho='sm',
                             confirmar='Remover ' ~ i.nome ~ '? O container e o jogo serao APAGADOS.') }}
@@ -84,7 +84,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td class="muted">Nenhuma instancia criada pelo broker ainda.</td></tr>
+      <tr><td class="muted">{{ _('instances.none_yet') }}</td></tr>
       {% endfor %}
     </tbody>
   </table></div>

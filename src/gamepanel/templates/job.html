@@ -16,10 +16,10 @@
      data-intervalo="2000" data-job-rodando="(aguardando saida...)"
      data-job-fim="Concluido com exit code {codigo}."{% endif %}>
   <dl class="meta wide">
-    <div><dt>Destino</dt><dd>{{ job.target }}</dd></div>
-    <div><dt>Iniciado</dt><dd>{{ job.created_at.replace('T', ' ')[:19] }} UTC</dd></div>
-    <div><dt>Por</dt><dd>{{ job.username }}</dd></div>
-    <div><dt>Resultado</dt><dd>
+    <div><dt>{{ _('job.target') }}</dt><dd>{{ job.target }}</dd></div>
+    <div><dt>{{ _('job.started') }}</dt><dd>{{ job.created_at.replace('T', ' ')[:19] }} UTC</dd></div>
+    <div><dt>{{ _('job.by') }}</dt><dd>{{ job.username }}</dd></div>
+    <div><dt>{{ _('job.result') }}</dt><dd>
       <span class="badge {{ {'ok':'on','error':'off','running':'cold'}[job.status] }}" data-job-selo>{{ job.status }}</span>
     </dd></div>
   </dl>

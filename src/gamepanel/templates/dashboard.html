@@ -12,17 +12,17 @@
 
 {% if not servers %}
   <div class="card card--vazio">
-    <p>Nenhum servidor cadastrado ainda.</p>
+    <p>{{ _('dashboard.no_servers') }}</p>
     {% if is_admin %}
       <p class="muted">Cadastre o IP de um container de jogo para controlar start, stop,
         update e rodar comandos por aqui.</p>
       <p class="muted small">O painel acessa cada container por SSH &mdash; antes autorize a
-        chave dele no container em <a href="{{ url_for('ssh_key') }}">Acesso SSH</a>.</p>
+        chave dele no container em <a href="{{ url_for('ssh_key') }}">{{ _('dashboard.ssh_access') }}</a>.</p>
       <div class="form-actions">
         {{ ui.botao('Adicionar o primeiro', href=url_for('server_new'), variante='primary') }}
       </div>
     {% else %}
-      <p class="muted">Peca a um administrador do painel para cadastrar o servidor.</p>
+      <p class="muted">{{ _('dashboard.ask_an_admin') }}</p>
     {% endif %}
   </div>
 {% endif %}

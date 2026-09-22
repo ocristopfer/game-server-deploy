@@ -9,20 +9,20 @@
   <h2>1. Cadastre o painel no aplicativo</h2>
   <p class="muted small">
     Use um aplicativo autenticador (Google Authenticator, Authy, Microsoft Authenticator,
-    1Password, Bitwarden...). No celular, escolha <strong>adicionar conta</strong> e
-    <strong>escanear codigo QR</strong> — ou, sem camera, <strong>inserir chave
-    manualmente</strong> com o texto abaixo do codigo.
+    1Password, Bitwarden...). No celular, escolha <strong>{{ _('account_2fa.add_account') }}</strong> e
+    <strong>{{ _('account_2fa.scan_qr') }}</strong> — ou, sem camera, <strong>inserir chave
+    manualmente</strong> {{ _('account_2fa.with_text_below') }}
   </p>
   <div class="qr-2fa">{{ qr_svg | safe }}</div>
   <p><code id="segredo-2fa" class="segredo">{{ segredo }}</code></p>
   <div class="cluster">
-    <button type="button" class="btn btn--ghost btn--sm" data-copiar="#segredo-2fa" hidden>Copiar chave</button>
+    <button type="button" class="btn btn--ghost btn--sm" data-copiar="#segredo-2fa" hidden>{{ _('account_2fa.copy_key') }}</button>
     {# No celular sem camera a mao (ou testando no proprio aparelho), tocar aqui abre o
        aplicativo ja com a conta pronta. #}
     {{ ui.botao('Abrir no aplicativo', href=endereco, variante='ghost', tamanho='sm', icone='📲') }}
   </div>
   <p class="muted small mt-4">
-    Tipo <strong>baseado em tempo</strong>, 6 digitos, 30 segundos. Guarde esta chave e este
+    {{ _('account_2fa.type') }} <strong>{{ _('account_2fa.time_based') }}</strong>, 6 digitos, 30 segundos. Guarde esta chave e este
     codigo apenas ate confirmar abaixo: depois de ativar eles nao aparecem mais.
   </p>
 </div>
@@ -31,7 +31,7 @@
   <h2>2. Confirme com um codigo</h2>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label>Codigo de 6 digitos
+    <label>{{ _('account_2fa.six_digit_code') }}
       <input name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="7"
              spellcheck="false" autofocus required>
       <small>Confira tambem se a hora do celular esta no automatico: e o que faz o codigo bater.</small>

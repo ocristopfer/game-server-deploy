@@ -7,14 +7,14 @@
 
 <div class="card card--form">
   <p class="flash pendencia">
-    <strong>Guarde estes codigos agora.</strong> Eles aparecem so esta vez. Cada um entra
+    <strong>{{ _('account_2fa_codes.save_them_now') }}</strong> Eles aparecem so esta vez. Cada um entra
     no lugar do codigo do aplicativo uma unica vez — e a saida se voce perder o celular.
     Guarde num gerenciador de senhas ou impresso, nunca no mesmo celular do aplicativo.
   </p>
   <pre class="log" id="codigos-2fa">{% for c in codigos %}{{ c }}
 {% endfor %}</pre>
   <div class="form-actions">
-    <button type="button" class="btn btn--sm" data-copiar="#codigos-2fa" hidden>Copiar codigos</button>
+    <button type="button" class="btn btn--sm" data-copiar="#codigos-2fa" hidden>{{ _('account_2fa_codes.copy_codes') }}</button>
     {{ ui.botao('Ja guardei', href=url_for('account'), variante='primary', bloco=true) }}
   </div>
 </div>

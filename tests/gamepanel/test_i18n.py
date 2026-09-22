@@ -10,7 +10,6 @@ import pytest
 
 from gamepanel import i18n
 
-
 # ------------------------------------------------------------ catalogos
 
 def test_os_dois_catalogos_tem_as_mesmas_chaves():

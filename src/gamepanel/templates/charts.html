@@ -68,7 +68,7 @@
 
 {# Um filtro so, acima de tudo o que ele governa: os dois graficos e a tabela mostram
    sempre a mesma fatia de tempo, entao os numeros nunca se contradizem. #}
-<nav class="tabs" aria-label="Periodo">
+<nav class="tabs" aria-label="{{ _('charts.period') }}">
   {% for h, rotulo in faixas %}
     <a class="tabs__item" href="{{ url_for('charts', sid=server.id, h=h) }}"
        {% if h == horas %}aria-current="page"{% endif %}>{{ rotulo }}</a>
@@ -80,7 +80,7 @@
 
 {% if uso.vazio and jogadores.vazio %}
 <div class="card card--vazio">
-  <p>Ainda nao ha amostras deste periodo.</p>
+  <p>{{ _('charts.no_samples') }}</p>
   <p class="muted">O painel guarda uma leitura a cada {{ a_cada }} minutos enquanto esta no ar
     &mdash; volte daqui a pouco, ou escolha um periodo maior.</p>
 </div>
@@ -88,7 +88,7 @@
 
 <div class="card" data-grafico="uso">
   <div class="card__head">
-    <h2>CPU e memoria</h2>
+    <h2>{{ _('charts.cpu_memory') }}</h2>
     {# Duas series: legenda sempre presente, e a identidade vem do traco colorido ao
        lado do texto (o texto em si nunca veste a cor da serie).
 
@@ -102,7 +102,7 @@
     </div>
   </div>
   {{ grafico(uso, 'CPU e memoria') }}
-  {% if uso.vazio %}<p class="muted">Sem leitura de medidores neste periodo.</p>{% endif %}
+  {% if uso.vazio %}<p class="muted">{{ _('charts.no_readings') }}</p>{% endif %}
 </div>
 
 {# Grafico separado, e nao um segundo eixo no de cima: "por cento" e "quantidade de
@@ -110,10 +110,10 @@
    nao tem. #}
 <div class="card" data-grafico="jogadores">
   <div class="card__head">
-    <h2>Jogadores</h2>
+    <h2>{{ _('charts.players') }}</h2>
     {# Uma serie so: o titulo ja a nomeia, entao nao ha legenda. O espaco vai para o
        numero que se procura num grafico de jogadores. #}
-    <span class="muted small">pico de <strong>{{ pico }}</strong> no periodo</span>
+    <span class="muted small">{{ _('charts.peak_of') }} <strong>{{ pico }}</strong> {{ _('charts.in_period') }}</span>
   </div>
   {{ grafico(jogadores, 'Jogadores') }}
   {% if jogadores.vazio %}
@@ -124,13 +124,13 @@
 
 <div class="card">
   <details>
-    <summary>Ver os numeros em tabela</summary>
+    <summary>{{ _('charts.as_table') }}</summary>
     <p class="muted small">
       Os mesmos valores do grafico, sem depender de cor nem de passar o dedo por cima.
       Do mais recente para o mais antigo.
     </p>
     <div class="table-wrap"><table class="jobs numerica">
-      <thead><tr><th>Quando</th><th>CPU</th><th>Memoria</th><th>Jogadores</th></tr></thead>
+      <thead><tr><th>{{ _('charts.when') }}</th><th>{{ _('charts.cpu') }}</th><th>{{ _('charts.memory') }}</th><th>{{ _('charts.players') }}</th></tr></thead>
       <tbody>
         {% for l in tabela %}
         <tr>
