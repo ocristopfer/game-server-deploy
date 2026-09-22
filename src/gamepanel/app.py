@@ -54,6 +54,7 @@ from gamepanel.games import gamefields
 from gamepanel.games.catalog import search as busca_de_jogos
 from gamepanel.games.catalog.templates import MODELOS as MODELOS_DE_JOGO
 from gamepanel.integrations import broker_client
+from gamepanel.runtime import ssh as ssh_transport
 from gamepanel.security import qr, totp
 from flask import (
     Flask,
@@ -861,106 +862,29 @@ def _contexto_de_navegacao() -> dict:
 
 
 # ------------------------------------------------------------------- ssh
+#
+# Implementacao real em gamepanel.runtime.ssh (extraida na Fase 4 - so a camada de
+# transporte, testada indiretamente pelas dezenas de testes que ja exercitam
+# server_status/server_players/etc.). Os nomes abaixo continuam existindo neste modulo
+# de proposito: e o que `monkeypatch.setattr(panel, "ssh_run", ...)` e chamadas diretas
+# como `panel.ssh_argv(...)` (ver test_players.py) esperam encontrar.
+
+def _ssh_config() -> ssh_transport.SshConfig:
+    # Funcao, nao valor: monkeypatch.setattr(panel, "SSH_KEY", ...) (e as demais
+    # variaveis abaixo) so tem efeito se isto reler os globais do modulo a cada chamada.
+    return ssh_transport.SshConfig(
+        key=SSH_KEY, known_hosts=KNOWN_HOSTS, control_dir=SSH_CONTROL_DIR,
+        control_persist=SSH_CONTROL_PERSIST, quick_timeout=QUICK_TIMEOUT,
+    )
 
 
-class RemoteError(RuntimeError):
-    pass
-
-
-def _mux_argv() -> list[str]:
-    """Opcoes que fazem varias chamadas dividirem UMA conexao TCP.
-
-    Sem isto cada leitura do monitor paga TCP + troca de chaves + autenticacao + um
-    processo novo — uns 100ms na LAN para depois rodar um `systemctl show` de 5ms. Com a
-    conexao mestre de pe, a segunda chamada em diante custa quase nada.
-
-    %C e o hash de (host, porta, usuario): nome curto e unico por destino, que importa
-    porque socket de unix tem limite baixo de caminho.
-    """
-    try:
-        os.makedirs(SSH_CONTROL_DIR, mode=0o700, exist_ok=True)
-    except OSError:
-        # Sem onde por o socket, seguir sem reaproveitar e melhor do que nao falar SSH.
-        return []
-    return ["-o", "ControlMaster=auto",
-            "-o", f"ControlPath={os.path.join(SSH_CONTROL_DIR, '%C')}",
-            "-o", f"ControlPersist={SSH_CONTROL_PERSIST}"]
-
-
-def ssh_argv(server, connect_timeout: int = 10, extra: tuple[str, ...] = (),
-             multiplex: bool = False) -> list[str]:
-    """Argumentos comuns do cliente ssh (usados pelos comandos e pelo terminal).
-
-    `multiplex` so para as chamadas CURTAS e frequentes do monitor. Fica desligado por
-    padrao porque as outras tres nao querem dividir conexao: o terminal segura a sessao
-    por horas, e subir/baixar arquivo de varios GB entupiria o TCP compartilhado e
-    travaria toda leitura do monitor atras da transferencia.
-    """
-    return [
-        "ssh",
-        "-i", SSH_KEY,
-        "-p", str(server["ssh_port"]),
-        "-o", "BatchMode=yes",
-        "-o", f"UserKnownHostsFile={KNOWN_HOSTS}",
-        # accept-new: aprende a host key no primeiro acesso, mas alerta se ela mudar.
-        "-o", "StrictHostKeyChecking=accept-new",
-        "-o", f"ConnectTimeout={connect_timeout}",
-        *(_mux_argv() if multiplex else ()),
-        *extra,
-        f"{server['ssh_user']}@{server['host']}",
-    ]
-
-
-def ssh_run(
-    server: Servidor,
-    remote_cmd: str,
-    timeout: int = QUICK_TIMEOUT,
-    stdin_data: bytes | None = None,
-    multiplex: bool = True,
-) -> subprocess.CompletedProcess:
-    """Executa um comando no container de jogo via SSH.
-
-    `remote_cmd` ja vem montado com shlex.quote pelos helpers abaixo; o SSH o entrega
-    inteiro para o shell do destino, entao nada aqui pode vir cru de um formulario.
-    `stdin_data` alimenta a entrada do comando remoto (usado para gravar arquivos).
-
-    `multiplex=False` para o que demora: um update de uma hora seguraria a conexao mestre
-    o tempo todo, e qualquer soluco nele derrubaria junto as leituras do monitor que
-    estivessem pegando carona.
-    """
-    cmd = ssh_argv(server, connect_timeout=min(timeout, 10),
-                   multiplex=multiplex) + [remote_cmd]
-    try:
-        if stdin_data is not None:
-            proc = subprocess.run(
-                cmd, input=stdin_data, capture_output=True, timeout=timeout, check=False
-            )
-            # Binario na entrada, texto na saida: as mensagens de erro sao sempre texto.
-            return subprocess.CompletedProcess(
-                proc.args,
-                proc.returncode,
-                proc.stdout.decode("utf-8", "replace"),
-                proc.stderr.decode("utf-8", "replace"),
-            )
-        return subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout, check=False
-        )
-    except subprocess.TimeoutExpired:
-        raise RemoteError(f"tempo esgotado ({timeout}s) executando no host {server['host']}")
-    except OSError as exc:
-        raise RemoteError(f"falha ao executar ssh: {exc}")
-
-
-def ssh_output(server: Servidor, remote_cmd: str, timeout: int = QUICK_TIMEOUT) -> str:
-    proc = ssh_run(server, remote_cmd, timeout=timeout)
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()
-        raise RemoteError(detail or f"comando falhou (exit {proc.returncode})")
-    return proc.stdout.strip()
-
-
-def q(*parts: str) -> str:
-    return " ".join(shlex.quote(p) for p in parts)
+_ssh = ssh_transport.SshClient(_ssh_config)
+RemoteError = ssh_transport.RemoteError
+ssh_argv = _ssh.argv
+ssh_run = _ssh.run
+ssh_output = _ssh.output
+public_key = _ssh.public_key
+q = ssh_transport.quote_command
 
 
 def em_paralelo(tarefas: dict, timeout: float = 40.0) -> dict:
@@ -993,14 +917,6 @@ def em_paralelo(tarefas: dict, timeout: float = 40.0) -> dict:
     for nome in tarefas:
         saida.setdefault(nome, (None, MSG_TIMEOUT))
     return saida
-
-
-def public_key() -> str:
-    try:
-        with open(f"{SSH_KEY}.pub", "r", encoding="utf-8") as fh:
-            return fh.read().strip()
-    except OSError:
-        return ""
 
 
 # ------------------------------------------------------------- jogadores (A2S)
