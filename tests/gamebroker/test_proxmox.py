@@ -5,7 +5,7 @@ import pytest
 
 from gamebroker.backends import EspecificacaoDeCt
 from gamebroker.conexao import Cliente
-from gamebroker.http_falso import ServidorFalso
+from http_falso import ServidorFalso
 from gamebroker.proxmox import ConfigProxmox, ErroDoProxmox, Proxmox
 
 ESPEC = EspecificacaoDeCt(ctid=300, hostname="alfa-300", ip="10.0.0.30", jogo="alfa",

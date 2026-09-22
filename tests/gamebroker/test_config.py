@@ -9,7 +9,7 @@ import pytest
 from gamebroker import prod
 from gamebroker.config import ErroDeConfig, carregar
 from gamebroker.fakes import RedeFalsa
-from gamebroker.http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE
+from http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE
 from gamebroker.rede import RedeReal
 from test_ssh_install import BLOB, CHAVE_PUBLICA, ExecutorFalso
 

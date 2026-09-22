@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from gamebroker.conexao import Cliente, ErroDeConexao, RESPOSTA_MAX, normalizar_impressao
-from gamebroker.http_falso import ServidorFalso
+from http_falso import ServidorFalso
 
 TOKEN = "segredo-que-nunca-pode-vazar"
 

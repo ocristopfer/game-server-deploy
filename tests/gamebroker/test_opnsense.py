@@ -5,7 +5,7 @@ import pytest
 
 from gamebroker.alocador import PortaAlocada
 from gamebroker.conexao import Cliente
-from gamebroker.http_falso import ServidorFalso, resumo_de_alias
+from http_falso import ServidorFalso, resumo_de_alias
 from gamebroker.opnsense import (ErroDeLeitura, ErroDoOpnsense, Opnsense, descricao_da_instancia,
                              portas_ocupadas)
 

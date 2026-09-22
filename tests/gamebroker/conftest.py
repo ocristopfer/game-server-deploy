@@ -18,7 +18,7 @@ from gamebroker.banco import Banco
 from gamebroker.catalogo import Catalogo
 from gamebroker.conexao import Cliente
 from gamebroker.fakes import InstaladorFalso, OpnsenseFalso, ProxmoxFalso, RedeFalsa
-from gamebroker.http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE, OpnsenseHttpFalso, PveFalso, ServidorFalso
+from http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE, OpnsenseHttpFalso, PveFalso, ServidorFalso
 from gamebroker.opnsense import Opnsense
 from gamebroker.proxmox import ConfigProxmox, Proxmox
 from gamebroker.servico import Config, Servico
