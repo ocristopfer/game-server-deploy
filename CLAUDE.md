@@ -6,16 +6,11 @@ faz, e como usar, esta no [README.md](README.md) — nao duplique conteudo entre
 
 > **Reorganizacao de arquitetura em andamento** (ver `docs/architecture-analysis.md` e
 > `docs/architecture-proposal.md`): o codigo saiu de `admin/`/`broker/` para
-> `src/gamepanel/`/`src/gamebroker/` (Fase 3, estrutural, sem mudar comportamento). As
-> notas abaixo ja refletem esses caminhos. A divisao de `app.py` em `services/`/
-> `blueprints/`/`runtime/` (Fase 4) esta em andamento, e a traducao dos identificadores
-> pra ingles comecou pelo `gamebroker` (`services/catalog.py` e as portas ja falam
-> ingles). O `app.py` do painel continua um arquivo so, com nomes em portugues.
->
-> Ao traduzir um identificador, cuidado com as duas armadilhas que ja morderam aqui: o
-> nome de campo que tambem e CHAVE DE DADO (`dados["chave"]`, `d.update(porta_extra=...)`
-> — formato da API e do disco, nao pode mudar sozinho) e o `@pytest.mark.parametrize`,
-> onde o nome do argumento e uma STRING que nao acompanha o parametro renomeado.
+> `src/gamepanel/`/`src/gamebroker/` (Fase 3) e os identificadores ja estao **em ingles**
+> nos dois pacotes. Falta a divisao de `app.py` em `blueprints/` (ele continua um arquivo
+> so, com `services/`/`runtime/`/`tasks/` ja extraidos) e os dois grupos de mudanca de
+> contrato: nome de COLUNA do banco (grupo A, pede migration) e as rotas `/v1/*` mais as
+> chaves do payload do broker (grupo B, pede o painel junto).
 
 O painel roda com poder de **root nos containers de jogo**. Isso muda o peso de tudo:
 um botao errado para um servidor de verdade, um cache errado mostra um servidor caido
@@ -35,8 +30,9 @@ docker compose restart panel          # depois de mexer em app.py/navigation.py
 
 As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_gameconf.py`,
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
-`test_alerts.py`, `test_broker.py`, `test_broker_client.py` e mais cinco) sao **pytest**
-— 436 testes ao todo (mais 415 do pacote `gamebroker`, em `tests/gamebroker/`), com
+`test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
+`test_contrato_template.py` e mais uma duzia) sao **pytest** — 843 testes ao todo (mais
+895 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`banco`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
 `chefe`/`peao`: um admin e um operador ja logados; `entrar`/`postar`: login e POST com
@@ -349,6 +345,41 @@ chave que ninguem cadastrou aparece na tela como `nav.servers` em vez de sumir c
   depois, por outra pessoa, e a mesma acao escrita de tres jeitos quebraria o filtro.
 - Conferir uma tela nos dois idiomas: `POST /account/idioma` com `lang=pt|en`. Sem
   sessao (tela de login) vale o `Accept-Language` do navegador.
+
+---
+
+## Renomear identificador aqui: o que nao esta em nenhum linter
+
+Traduzir os dois pacotes para ingles derrubou codigo seis vezes, sempre pelo mesmo
+motivo: **o nome existe tambem como TEXTO em algum lugar**, e nenhuma ferramenta liga
+os dois. Renomeie por `tokenize` (so token NAME) e nunca por `re` — `portas` aparece
+dentro de frase em prosa e como chave de dicionario. Depois, procure cada um destes:
+
+- **Chave de dado que parece identificador.** `d.update(porta_extra=8888)` e kwarg na
+  sintaxe e campo do JSON na pratica; `ConfigBroker(**cfg_parcial)` e `CliDeps(**base)`
+  recebem o nome do campo por texto. Formato de API, de disco e de banco nao muda junto
+  com o codigo.
+- **`@pytest.mark.parametrize("nome", ...)`.** O argname e uma string; o pytest so
+  reclama na COLETA, depois que o rename ja passou por tudo.
+- **`monkeypatch.setattr(panel, "nome")`.** Pior que o anterior: se o nome nao existir
+  mais, o teste pode PASSAR sem testar nada.
+- **Captura de rota do Flask.** `<int:instancia_id>` casa com o parametro do handler pelo
+  nome — renomear so o parametro da 500 em toda chamada. O nome da captura nao aparece
+  na URL, entao ele pode acompanhar; o da ROTA nao, que o `url_for` dos templates usa.
+- **Colisao com nome que ja existe.** `LogStream` ja tinha `stop()` e o Event `parar`
+  caiu em cima; `acao_de_jogador` virou `player_action` e passou a chamar a rota de mesmo
+  nome, recursivamente. Foi o mesmo motivo do apelido `term_runtime`, no topo do `app.py`.
+- **Marcador de frase do i18n.** O catalogo diz `{name}` e o chamador passa `name=`: sao
+  a mesma coisa. Renomear um so quebra a substituicao, e `translate` engole o `KeyError`
+  de proposito — o defeito sai CALADO. `test_i18n.py` cobra isso lendo o AST de cada
+  `_()`/`_h()`/`Message()`.
+
+E o que nenhum teste pegava antes: **kwarg de `render_template`**. Trocar
+`instancias=` por `instances=` deixa a tela VAZIA — 200, sem erro, sem log, porque o
+Jinja trata variavel ausente como indefinida. Agora `tests/gamepanel/test_contrato_template.py`
+confere cada kwarg contra o que os templates de fato leem. Ainda assim, **passe pelas
+telas a mao** (a varredura de `curl` abaixo): foi so ali que apareceram o eixo de
+grafico sem numero e a macro `energia` chamada pelo nome velho.
 
 ---
 
