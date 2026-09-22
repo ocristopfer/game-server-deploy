@@ -274,7 +274,7 @@ def test_sem_login_configurado_usa_a_credencial_do_cadastro():
         vistos.append(auth)
         return {}
 
-    ps.chama_api_do_jogo(deps(http_json=falso), servidor(http_auth="basic:a:b"), "http://x/p")
+    ps.call_game_api(deps(http_json=falso), servidor(http_auth="basic:a:b"), "http://x/p")
     assert vistos == ["basic:a:b"]
 
 
@@ -287,7 +287,7 @@ def test_com_login_e_sem_token_guardado_faz_login_antes(banco_de_servidores):
 
     d = deps(http_json=falso, connect=banco_de_servidores)
     alvo = servidor(http_login_url="http://x/login", http_token_path="token")
-    ps.chama_api_do_jogo(d, alvo, "http://x/players")
+    ps.call_game_api(d, alvo, "http://x/players")
     assert vistos[0] == ("http://x/login", "")
     assert vistos[1] == ("http://x/players", "bearer:novo")
 
@@ -306,7 +306,7 @@ def test_token_vencido_renova_uma_vez_e_repete(banco_de_servidores):
     d = deps(http_json=falso, connect=banco_de_servidores)
     alvo = servidor(http_login_url="http://x/login", http_token_path="token",
                     http_token="velho")
-    assert ps.chama_api_do_jogo(d, alvo, "http://x/players") == {"ok": True}
+    assert ps.call_game_api(d, alvo, "http://x/players") == {"ok": True}
     assert [a for _, a in vistos] == ["bearer:velho", "", "bearer:novo"]
 
 
@@ -316,7 +316,7 @@ def test_sem_login_configurado_o_401_sobe():
         raise AuthError("401")
 
     with pytest.raises(AuthError):
-        ps.chama_api_do_jogo(deps(http_json=falso), servidor(http_auth="x"), "http://x/p")
+        ps.call_game_api(deps(http_json=falso), servidor(http_auth="x"), "http://x/p")
 
 
 def test_players_from_http_sem_url_recusa():
@@ -357,20 +357,20 @@ def test_falha_de_ssh_no_log_vira_erro_de_consulta():
 def test_acao_desconhecida_e_recusada():
     alvo = servidor(player_source="http", http_url="http://127.0.0.1:8212/v1/api/players")
     with pytest.raises(QueryError, match="nao publica essa acao"):
-        ps.acao_de_jogador(deps(), alvo, "explodir", "id", "")
+        ps.player_action(deps(), alvo, "explodir", "id", "")
 
 
 def test_expulsar_sem_identificador_e_recusado():
     """Kick pelo nome nao serve: nome muda e repete, id nao."""
     alvo = servidor(player_source="http", http_url="http://127.0.0.1:8212/v1/api/players")
     with pytest.raises(QueryError, match="nao sei quem expulsar"):
-        ps.acao_de_jogador(deps(), alvo, "kick", "", "tchau")
+        ps.player_action(deps(), alvo, "kick", "", "tchau")
 
 
 def test_avisar_sem_mensagem_e_recusado():
     alvo = servidor(player_source="http", http_url="http://127.0.0.1:8212/v1/api/players")
     with pytest.raises(QueryError, match="escreva o aviso"):
-        ps.acao_de_jogador(deps(), alvo, "announce", "", "")
+        ps.player_action(deps(), alvo, "announce", "", "")
 
 
 def test_kick_monta_rota_e_corpo_do_catalogo():
@@ -381,7 +381,7 @@ def test_kick_monta_rota_e_corpo_do_catalogo():
         return {}
 
     alvo = servidor(player_source="http", http_url="http://127.0.0.1:8212/v1/api/players")
-    rotulo = ps.acao_de_jogador(deps(http_json=falso), alvo, "kick", "steam_1", "tchau")
+    rotulo = ps.player_action(deps(http_json=falso), alvo, "kick", "steam_1", "tchau")
     url, corpo, exigir_json = vistos[0]
     assert url == "http://127.0.0.1:8212/v1/api/kick"
     assert '"userid": "steam_1"' in corpo

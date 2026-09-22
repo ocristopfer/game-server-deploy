@@ -63,10 +63,10 @@
                         variante='ghost', tamanho='sm', icone='⬇') }}
             {{ ui.acao(url_for('backup_restore', sid=server.id), _('backups.restore'), tamanho='sm',
                        campos={'nome': c.name},
-                       confirmar=_('backups.restore_confirm', arquivo=c.name, servidor=server.name)) }}
+                       confirmar=_('backups.restore_confirm', file=c.name, server=server.name)) }}
             {{ ui.acao(url_for('backup_delete', sid=server.id), _('files.delete'), variante='danger',
                        tamanho='sm', campos={'nome': c.name},
-                       confirmar=_('backups.delete_confirm', arquivo=c.name)) }}
+                       confirmar=_('backups.delete_confirm', file=c.name)) }}
           {% else %}
           <span class="muted small">{{ _('backups.admin_only') }}</span>
           {% endif %}

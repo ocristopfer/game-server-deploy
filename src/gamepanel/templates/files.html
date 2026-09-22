@@ -139,7 +139,7 @@
       <div class="form-actions">
         {{ ui.acao(url_for('files_delete', sid=server.id), _('files.delete_file'),
                    variante='danger', tamanho='sm', campos={'path': opened.path},
-                   confirmar=_('files.delete_confirm', caminho=opened.path)) }}
+                   confirmar=_('files.delete_confirm', path=opened.path)) }}
         <span class="muted small">
           tira <code>{{ opened.name }}</code> do container na hora &mdash; aqui nao ha
           copia <code>.bak</code> nem como desfazer

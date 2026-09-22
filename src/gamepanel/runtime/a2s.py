@@ -101,7 +101,7 @@ def _ask(sock: socket.socket, addr: tuple[str, int], request: bytes, response_ty
             sock.sendto(request[:5] + challenge, addr)
         data = _udp_receive(sock)
     if data[4:5] != response_type:
-        raise QueryError(Mensagem("a2s.unexpected_reply", tipo=repr(data[4:5])))
+        raise QueryError(Mensagem("a2s.unexpected_reply", kind=repr(data[4:5])))
     buf = _Buffer(data)
     buf.pos = 5
     return buf
@@ -128,11 +128,11 @@ def query_players(host: str, port: int, timeout: float = 3.0) -> dict[str, Any]:
             info["max_players"] = buf.byte()
             info["bots"] = buf.byte()
         except TimeoutError:
-            raise QueryError(Mensagem("a2s.no_reply", segundos=f"{timeout:g}",
-                                      porta=port)) from None
+            raise QueryError(Mensagem("a2s.no_reply", seconds=f"{timeout:g}",
+                                      port=port)) from None
         except (OSError, struct.error) as exc:
-            raise QueryError(Mensagem("a2s.query_failed", host=host, porta=port,
-                                      motivo=exc)) from exc
+            raise QueryError(Mensagem("a2s.query_failed", host=host, port=port,
+                                      reason=exc)) from exc
 
         # A lista de nomes e opcional: varios servidores Unreal so respondem a contagem.
         players: list[dict[str, Any]] = []

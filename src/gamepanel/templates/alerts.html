@@ -41,7 +41,7 @@
       {{ _h('alerts.pending_intro') }}
       <ul>
         {% for chave, falta in pendencias.items() %}
-        <li>{{ _h('alerts.pending_item', evento=eventos[chave], falta=falta) }}</li>
+        <li>{{ _h('alerts.pending_item', event=eventos[chave], missing=falta) }}</li>
         {% endfor %}
       </ul>
       {{ _h('alerts.pending_fix', url=url_for('dashboard')) }}
@@ -87,7 +87,7 @@
       {{ ui.botao(_('alerts.test'), extra='formaction="' ~ url_for('alerts_hook_test', hid=h.id) ~ '" formnovalidate') }}
       <span class="spacer"></span>
       {{ ui.botao(_('alerts.remove'), variante='danger',
-                  confirmar=_('alerts.remove_confirm', nome=h.nome),
+                  confirmar=_('alerts.remove_confirm', name=h.nome),
                   extra='formaction="' ~ url_for('alerts_hook_del', hid=h.id) ~ '" formnovalidate') }}
     </div>
   </form>
@@ -201,10 +201,10 @@
 <div class="card">
   <h2>{{ _('alerts.how_it_works') }}</h2>
   <ul class="regras">
-    <li>{{ _h('alerts.rule_rhythm', monitor=monitor, medidor=disco_a_cada) }}</li>
+    <li>{{ _h('alerts.rule_rhythm', monitor=monitor, meter=disco_a_cada) }}</li>
     <li>{{ _h('alerts.rule_joining', n=jogadores_a_cada) }}</li>
     <li>{{ _h('alerts.rule_log_listen', monitor=monitor,
-              ouvindo=_h('alerts.streams_now', n=streams) if streams else _h('alerts.streams_none')) }}</li>
+              listening=_h('alerts.streams_now', n=streams) if streams else _h('alerts.streams_none')) }}</li>
     <li>{{ _h('alerts.rule_on_change') }}</li>
     <li>{{ _h('alerts.rule_all_destinations') }}</li>
     <li>{{ _h('alerts.rule_service_up_is_not_game_up') }}

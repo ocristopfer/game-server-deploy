@@ -396,14 +396,14 @@ def test_id_entra_na_lista_normalizada_ao_lado_do_nome():
 
 
 def test_api_de_acoes_reconhece_o_palworld():
-    api = panel.api_de_acoes(servidor("http://127.0.0.1:8212/v1/api/players"))
+    api = panel.actions_api(servidor("http://127.0.0.1:8212/v1/api/players"))
     assert api is not None
     assert api["base"] == "http://127.0.0.1:8212/v1/api"
-    assert sorted(api["acoes"]) == ["announce", "ban", "kick"]
+    assert sorted(api["actions"]) == ["announce", "ban", "kick"]
 
 
 def test_api_de_acoes_aceita_barra_no_fim():
-    api = panel.api_de_acoes(servidor("http://127.0.0.1:8212/v1/api/players/"))
+    api = panel.actions_api(servidor("http://127.0.0.1:8212/v1/api/players/"))
     assert api is not None
     assert api["base"] == "http://127.0.0.1:8212/v1/api"
 
@@ -414,21 +414,21 @@ def test_api_de_acoes_aceita_barra_no_fim():
 ])
 def test_acoes_de_jogador_nao_inventa_para_url_desconhecida(url):
     """A tela so mostra o que existe do outro lado."""
-    assert panel.acoes_de_jogador(servidor(url)) == []
+    assert panel.player_actions(servidor(url)) == []
 
 
 def test_contagem_pelo_log_nao_tem_acao():
-    assert panel.acoes_de_jogador(
+    assert panel.player_actions(
         servidor("http://127.0.0.1:8212/v1/api/players", "log")) == []
 
 
 def test_preenche_nao_quebra_com_chave_solta_na_mensagem():
     """A mensagem vem de quem digita: uma chave solta nao pode estourar a montagem."""
-    assert panel._preenche("{mensagem}", "b", "j", "olha o {isso} ai") == "olha o {isso} ai"
+    assert panel._fill("{mensagem}", "b", "j", "olha o {isso} ai") == "olha o {isso} ai"
 
 
 def test_preenche_troca_os_tres_marcadores():
-    assert panel._preenche("{base}/x/{jogador}/{mensagem}", "http://a/v1", "id7", "oi") == \
+    assert panel._fill("{base}/x/{jogador}/{mensagem}", "http://a/v1", "id7", "oi") == \
         "http://a/v1/x/id7/oi"
 
 

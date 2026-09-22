@@ -52,23 +52,23 @@ class FormLimits(NamedTuple):
     player_sources: tuple[str, ...]
 
 
-def _campo(form: Form, nome: str, teto: int) -> str:
+def _field(form: Form, name: str, cap: int) -> str:
     """Um campo de texto do formulario: sem espacos nas pontas e com teto de tamanho."""
-    return (form.get(nome, "") or "").strip()[:teto]
+    return (form.get(name, "") or "").strip()[:cap]
 
 
-def _porta(valor: str | None, padrao: int, minimo: int, erro: Mensagem,
+def _port_field(value: str | None, default: int, minimum: int, error: Mensagem,
            errors: list[str]) -> int:
     """Le uma porta do formulario; `minimo` 0 permite desligar o recurso."""
-    bruto = (valor or "").strip() or str(padrao)
-    if bruto.isdigit() and minimo <= int(bruto) <= PORTA_MAX:
-        return int(bruto)
-    errors.append(erro)
-    return padrao
+    raw = (value or "").strip() or str(default)
+    if raw.isdigit() and minimum <= int(raw) <= PORTA_MAX:
+        return int(raw)
+    errors.append(error)
+    return default
 
 
-def _servico(valor: str | None, errors: list[str]) -> str:
-    service = (valor or "").strip()
+def _service_field(value: str | None, errors: list[str]) -> str:
+    service = (value or "").strip()
     if service and not service.endswith(".service"):
         service = f"{service}.service"  # o sufixo e o de sempre: nao vale incomodar
     if not UNIT_RE.match(service):
@@ -76,39 +76,39 @@ def _servico(valor: str | None, errors: list[str]) -> str:
     return service
 
 
-def _pasta_config(valor: str | None, clean_path: CleanPath, errors: list[str]) -> str:
-    caminho = (valor or "").strip()[:CONFIG_PATH_MAX]
-    if not caminho:
+def _config_folder(value: str | None, clean_path: CleanPath, errors: list[str]) -> str:
+    path = (value or "").strip()[:CONFIG_PATH_MAX]
+    if not path:
         return ""
     try:
-        return clean_path(caminho)
+        return clean_path(path)
     except ValueError as exc:
-        errors.append(Mensagem("form.bad_config_folder", motivo=exc))
+        errors.append(Mensagem("form.bad_config_folder", reason=exc))
         return ""
 
 
-def _arquivos_config(valor: str | None, clean_path: CleanPath, maximo: int,
+def _config_files(value: str | None, clean_path: CleanPath, maximum: int,
                      errors: list[str]) -> str:
     """Le a lista de arquivos de configuracao (um caminho absoluto por linha)."""
     caminhos: list[str] = []
-    for linha in (valor or "").replace(",", "\n").splitlines():
-        bruto = linha.strip()
-        if not bruto:
+    for linha in (value or "").replace(",", "\n").splitlines():
+        raw = linha.strip()
+        if not raw:
             continue
         try:
-            limpo = clean_path(bruto)
+            limpo = clean_path(raw)
         except ValueError as exc:
-            errors.append(Mensagem("form.bad_config_file", caminho=bruto, motivo=exc))
+            errors.append(Mensagem("form.bad_config_file", path=raw, reason=exc))
             continue
         if limpo not in caminhos:
             caminhos.append(limpo)
-    if len(caminhos) > maximo:
-        errors.append(Mensagem("form.too_many_config_files", n=maximo))
-        caminhos = caminhos[:maximo]
+    if len(caminhos) > maximum:
+        errors.append(Mensagem("form.too_many_config_files", n=maximum))
+        caminhos = caminhos[:maximum]
     return "\n".join(caminhos)
 
 
-def _caminhos_backup(valor: str | None, clean_path: CleanPath, maximo: int,
+def _backup_paths(value: str | None, clean_path: CleanPath, maximum: int,
                      errors: list[str]) -> str:
     """Le a lista do que entra no backup (um caminho absoluto por linha).
 
@@ -116,80 +116,80 @@ def _caminhos_backup(valor: str | None, clean_path: CleanPath, maximo: int,
     pasta de configuracao do servidor, que e onde o save costuma morar.
     """
     caminhos: list[str] = []
-    for linha in (valor or "").replace(",", "\n").splitlines():
-        bruto = linha.strip()
-        if not bruto:
+    for linha in (value or "").replace(",", "\n").splitlines():
+        raw = linha.strip()
+        if not raw:
             continue
         try:
-            limpo = clean_path(bruto)
+            limpo = clean_path(raw)
         except ValueError as exc:
-            errors.append(Mensagem("form.bad_backup_path", caminho=bruto, motivo=exc))
+            errors.append(Mensagem("form.bad_backup_path", path=raw, reason=exc))
             continue
         if limpo == "/":
             errors.append(Mensagem("form.no_root_backup"))
             continue
         if limpo not in caminhos:
             caminhos.append(limpo)
-    if len(caminhos) > maximo:
-        errors.append(Mensagem("form.too_many_backup_paths", n=maximo))
-        caminhos = caminhos[:maximo]
+    if len(caminhos) > maximum:
+        errors.append(Mensagem("form.too_many_backup_paths", n=maximum))
+        caminhos = caminhos[:maximum]
     return "\n".join(caminhos)
 
 
-def _url_ou_erro(bruto: str, erro: Mensagem, errors: list[str]) -> str:
+def _url_or_error(raw: str, error: Mensagem, errors: list[str]) -> str:
     """URL valida, ou string vazia com o erro anotado. Vazio nao e erro: e "nao usa"."""
-    if bruto and not URL_RE.match(bruto):
-        errors.append(erro)
+    if raw and not URL_RE.match(raw):
+        errors.append(error)
         return ""
-    return bruto
+    return raw
 
 
-def _json_ou_erro(bruto: str, rotulo: str, errors: list[str]) -> str:
+def _json_or_error(raw: str, label: str, errors: list[str]) -> str:
     """Corpo JSON valido, ou string vazia com o erro anotado."""
-    if not bruto:
+    if not raw:
         return ""
     try:
-        json.loads(bruto)
+        json.loads(raw)
     except ValueError as exc:
-        errors.append(Mensagem("form.bad_json", rotulo=rotulo, motivo=exc))
+        errors.append(Mensagem("form.bad_json", label=label, reason=exc))
         return ""
-    return bruto
+    return raw
 
 
-def _caminhos_json(form: Form, teto: int, errors: list[str]) -> dict:
+def _json_paths(form: Form, cap: int, errors: list[str]) -> dict:
     """Os tres caminhos de navegacao na resposta (lista, contagem, token)."""
     caminhos = {}
-    for campo, rotulo in (("http_list_path", "form.path_list"),
+    for campo, label in (("http_list_path", "form.path_list"),
                           ("http_count_path", "form.path_count"),
                           ("http_token_path", "form.path_token")):
-        texto = _campo(form, campo, teto)
+        texto = _field(form, campo, cap)
         if texto and not CAMINHO_JSON_RE.match(texto):
-            errors.append(Mensagem("form.bad_json_path", rotulo=Mensagem(rotulo)))
+            errors.append(Mensagem("form.bad_json_path", label=Mensagem(label)))
             texto = ""
         caminhos[campo] = texto
     return caminhos
 
 
-def _campos_http(form: Form, limites: FormLimits, errors: list[str]) -> dict:
+def _http_fields(form: Form, limits: FormLimits, errors: list[str]) -> dict:
     """Le e confere os campos da chamada HTTP (URL, autenticacao, corpo, caminhos)."""
-    url = _url_ou_erro(
-        _campo(form, "http_url", limites.http_url_max),
+    url = _url_or_error(
+        _field(form, "http_url", limits.http_url_max),
         Mensagem("form.bad_api_url"), errors,
     )
-    corpo = _json_ou_erro(
-        _campo(form, "http_body", limites.http_body_max),
+    body = _json_or_error(
+        _field(form, "http_body", limits.http_body_max),
         Mensagem("form.request_body"), errors,
     )
-    caminhos = _caminhos_json(form, limites.http_path_max, errors)
+    caminhos = _json_paths(form, limits.http_path_max, errors)
 
     # Login automatico: os tres campos andam juntos. Preencher so parte deles quase
     # sempre e engano, e falhar aqui e melhor do que descobrir na hora da consulta.
-    login_url = _url_ou_erro(
-        _campo(form, "http_login_url", limites.http_url_max),
+    login_url = _url_or_error(
+        _field(form, "http_login_url", limits.http_url_max),
         Mensagem("form.bad_login_url"), errors,
     )
-    login_body = _json_ou_erro(
-        _campo(form, "http_login_body", limites.http_body_max),
+    login_body = _json_or_error(
+        _field(form, "http_login_body", limits.http_body_max),
         Mensagem("form.login_body"), errors,
     )
     if (login_url or login_body) and not caminhos["http_token_path"]:
@@ -202,27 +202,27 @@ def _campos_http(form: Form, limites: FormLimits, errors: list[str]) -> dict:
         # Guarda a senha da API como ela precisa ser mandada. O banco do painel ja da
         # acesso de root aos containers, entao isso nao amplia o estrago de um vazamento
         # — mas trate o arquivo panel.db como segredo.
-        "http_auth": _campo(form, "http_auth", HTTP_AUTH_MAX),
-        "http_body": corpo,
+        "http_auth": _field(form, "http_auth", HTTP_AUTH_MAX),
+        "http_body": body,
         **caminhos,
     }
 
 
-def _caminho_log(valor: str | None, errors: list[str]) -> str:
+def _log_path(value: str | None, errors: list[str]) -> str:
     try:
-        return valid_log_path(valor)
+        return valid_log_path(value)
     except ValueError as exc:
         errors.append(str(exc).capitalize())
         return ""
 
 
-def _padrao(valor: str | None, rotulo: str, teto: int, errors: list[str]) -> str:
+def _pattern(value: str | None, label: str, cap: int, errors: list[str]) -> str:
     """Guarda o regex so depois de conferir que ele compila."""
-    texto = (valor or "").strip()[:teto]
+    texto = (value or "").strip()[:cap]
     if not texto:
         return ""
     try:
-        compile_pattern(texto, rotulo)
+        compile_pattern(texto, label)
     except QueryError as exc:
         errors.append(str(exc))
         return ""
@@ -230,15 +230,15 @@ def _padrao(valor: str | None, rotulo: str, teto: int, errors: list[str]) -> str
 
 
 def form_server(form: Form, clean_path: CleanPath,
-                limites: FormLimits) -> tuple[dict, list[str]]:
+                limits: FormLimits) -> tuple[dict, list[str]]:
     errors: list[str] = []
     name = form.get("name", "").strip()
     host = form.get("host", "").strip()
     ssh_user = form.get("ssh_user", "").strip() or "root"
-    origem = (form.get("player_source", "") or "").strip()
-    if origem and origem not in limites.player_sources:
+    source = (form.get("player_source", "") or "").strip()
+    if source and source not in limits.player_sources:
         errors.append(Mensagem("form.bad_player_source"))
-        origem = ""
+        source = ""
 
     if not name:
         errors.append(Mensagem("form.need_name"))
@@ -252,25 +252,25 @@ def form_server(form: Form, clean_path: CleanPath,
             "name": name,
             "host": host,
             "ssh_user": ssh_user,
-            "ssh_port": _porta(form.get("ssh_port"), 22, 1, Mensagem("form.bad_ssh_port"), errors),
-            "service": _servico(form.get("service"), errors),
+            "ssh_port": _port_field(form.get("ssh_port"), 22, 1, Mensagem("form.bad_ssh_port"), errors),
+            "service": _service_field(form.get("service"), errors),
             "game_port": form.get("game_port", "").strip()[:GAME_PORT_MAX],
             "notes": form.get("notes", "").strip()[:NOTES_MAX],
-            "config_path": _pasta_config(form.get("config_path"), clean_path, errors),
-            "config_files": _arquivos_config(
-                form.get("config_files"), clean_path, limites.config_files_max, errors),
-            "backup_paths": _caminhos_backup(
-                form.get("backup_paths"), clean_path, limites.backup_paths_max, errors),
-            "log_path": _caminho_log(form.get("log_path"), errors),
-            "query_port": _porta(
+            "config_path": _config_folder(form.get("config_path"), clean_path, errors),
+            "config_files": _config_files(
+                form.get("config_files"), clean_path, limits.config_files_max, errors),
+            "backup_paths": _backup_paths(
+                form.get("backup_paths"), clean_path, limits.backup_paths_max, errors),
+            "log_path": _log_path(form.get("log_path"), errors),
+            "query_port": _port_field(
                 form.get("query_port"), 0, 0,
                 Mensagem("form.bad_query_port"), errors,
             ),
-            "player_source": origem,
-            "join_re": _padrao(form.get("join_re"), "pattern.join", limites.re_max_len, errors),
-            "leave_re": _padrao(form.get("leave_re"), "pattern.leave", limites.re_max_len, errors),
-            "error_re": _padrao(form.get("error_re"), "pattern.error", limites.re_max_len, errors),
-            **_campos_http(form, limites, errors),
+            "player_source": source,
+            "join_re": _pattern(form.get("join_re"), "pattern.join", limits.re_max_len, errors),
+            "leave_re": _pattern(form.get("leave_re"), "pattern.leave", limits.re_max_len, errors),
+            "error_re": _pattern(form.get("error_re"), "pattern.error", limits.re_max_len, errors),
+            **_http_fields(form, limits, errors),
         },
         errors,
     )

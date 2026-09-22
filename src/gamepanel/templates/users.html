@@ -48,12 +48,12 @@
           {% if u.totp_enabled and u.id != meu_id %}
             {{ ui.acao(url_for('user_2fa_off', uid=u.id), _('users.two_factor_off'),
                        variante='ghost', tamanho='sm',
-                       confirmar=_('users.two_factor_off_confirm', usuario=u.username)) }}
+                       confirmar=_('users.two_factor_off_confirm', user=u.username)) }}
           {% endif %}
           {% if u.id != meu_id %}
             {{ ui.acao(url_for('user_delete', uid=u.id), _('instances.remove'),
                        variante='danger', tamanho='sm',
-                       confirmar=_('users.remove_confirm', usuario=u.username)) }}
+                       confirmar=_('users.remove_confirm', user=u.username)) }}
           {% endif %}
         </td>
       </tr>

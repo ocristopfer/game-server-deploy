@@ -181,7 +181,7 @@ def http_json(
         if not require_json:
             return {}
         sample = text.strip()[:120] or "(vazia)"
-        raise QueryError(Mensagem("http.not_json", amostra=sample)) from None
+        raise QueryError(Mensagem("http.not_json", sample=sample)) from None
 
 
 # Chaves que os jogos costumam usar. Comparadas sem maiusculas nem separadores, entao

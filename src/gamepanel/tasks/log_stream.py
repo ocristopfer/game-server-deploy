@@ -44,12 +44,12 @@ class LogStreamDeps(NamedTuple):
 
     ssh_argv: Callable[..., list[str]]
     # O MESMO dicionario do monitor: os dois anotam no estado do mesmo servidor.
-    estado_monitor: dict[int, dict]
+    monitor_state: dict[int, dict]
     invalidate_players: Callable[[int], None]
     connect: Callable[[], sqlite3.Connection]
     webhook_config: Callable[[Any], dict]
     lock_de_jogadores: Callable[[int], threading.Lock]
-    alerta_de_jogadores: Callable[..., None]
+    players_alert: Callable[..., None]
     logger: logging.Logger
     debounce: float
     retry: float
@@ -65,25 +65,25 @@ def linha_de_jogador(linha: str, entrar: re.Pattern[str] | None,
 
 
 def assinatura_de_stream(server: ServerLike,
-                         valor_guardado: Callable[[ServerLike, str], str]) -> tuple:
+                         stored_value: Callable[[ServerLike, str], str]) -> tuple:
     """O que, mudando, obriga a refazer a conexao (regex nova, log em outro lugar...)."""
     return (
         server["host"], int(server["ssh_port"] or 22), server["ssh_user"],
-        server["service"], valor_guardado(server, "log_path"),
-        valor_guardado(server, "join_re"), valor_guardado(server, "leave_re"),
+        server["service"], stored_value(server, "log_path"),
+        stored_value(server, "join_re"), stored_value(server, "leave_re"),
     )
 
 
 def streams_desejados(servidores: Iterable[ServerLike], cfg: dict, ligado: bool,
                       player_source: Callable[[ServerLike], str],
-                      valor_guardado: Callable[[ServerLike, str], str]) -> dict[int, tuple]:
+                      stored_value: Callable[[ServerLike, str], str]) -> dict[int, tuple]:
     """Quais servidores merecem uma conexao de log aberta, e com que assinatura."""
     if not (ligado and cfg["eventos"] & EVENTOS_DE_JOGADOR):
         return {}
     # So quem conta por log: A2S e HTTP ja respondem de graca na volta curta, e abrir uma
     # conexao permanente para eles seria pagar por nada.
-    return {int(s["id"]): assinatura_de_stream(s, valor_guardado) for s in servidores
-            if player_source(s) == "log" and valor_guardado(s, "join_re")}
+    return {int(s["id"]): assinatura_de_stream(s, stored_value) for s in servidores
+            if player_source(s) == "log" and stored_value(s, "join_re")}
 
 
 class LogStream:
@@ -197,7 +197,7 @@ class LogStream:
         if agora - self.ultimo_disparo < self.deps.debounce:
             return                     # um grupo entrando junto e UMA conferida
         self.ultimo_disparo = agora
-        anterior = self.deps.estado_monitor.get(self.sid)
+        anterior = self.deps.monitor_state.get(self.sid)
         if anterior is None:
             return                     # sem linha de base ainda: a volta do monitor faz
         # O cache guarda o numero de ANTES da linha que acabou de chegar.
@@ -206,7 +206,7 @@ class LogStream:
         try:
             cfg = self.deps.webhook_config(conn)
             with self.deps.lock_de_jogadores(self.sid):
-                self.deps.alerta_de_jogadores(conn, self.dados,
+                self.deps.players_alert(conn, self.dados,
                                               anterior.get("service", ""), anterior, cfg)
         finally:
             conn.close()

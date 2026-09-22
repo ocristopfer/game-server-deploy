@@ -116,7 +116,7 @@ def tres_destinos(banco):
 
 
 def test_evento_pedido_pelos_dois_sai_duas_vezes(banco, tres_destinos, webhooks):
-    enviou = panel.notifica(banco, "caiu", "caiu")
+    enviou = panel.notify(banco, "caiu", "caiu")
     assert (enviou, len(webhooks)) == (True, 2)
     assert sorted(u for u, _ in webhooks) == [
         "http://equipe.invalid/hook", "http://geral.invalid/hook"]
@@ -124,12 +124,12 @@ def test_evento_pedido_pelos_dois_sai_duas_vezes(banco, tres_destinos, webhooks)
 
 
 def test_evento_de_um_so_sai_uma_vez(banco, tres_destinos, webhooks):
-    panel.notifica(banco, "voltou", "voltou")
+    panel.notify(banco, "voltou", "voltou")
     assert [u for u, _ in webhooks] == ["http://equipe.invalid/hook"]
 
 
 def test_evento_que_ninguem_pediu_nao_sai(banco, tres_destinos, webhooks):
-    enviou = panel.notifica(banco, "disco-cheio", "disco")
+    enviou = panel.notify(banco, "disco-cheio", "disco")
     assert (enviou, len(webhooks)) == (False, 0)
 
 
@@ -147,14 +147,14 @@ def test_destino_quebrado_nao_impede_os_outros(banco, tres_destinos, webhooks, m
         return "recusou a conexao"
 
     monkeypatch.setattr(panel, "envia_webhook", parcial)
-    enviou = panel.notifica(banco, "caiu", "caiu")
+    enviou = panel.notify(banco, "caiu", "caiu")
     assert (enviou, len(webhooks)) == (True, 1)
 
 
 def test_todos_desligados_nada_sai(banco, tres_destinos, webhooks):
     with banco:
         banco.execute("UPDATE webhooks SET ativo = 0")
-    enviou = panel.notifica(banco, "caiu", "caiu")
+    enviou = panel.notify(banco, "caiu", "caiu")
     assert (enviou, len(webhooks)) == (False, 0)
 
 
@@ -233,7 +233,7 @@ def test_evento_desligado_na_tela_nao_sai(banco, webhooks):
 def test_sem_destino_nao_sai_nada(banco):
     with banco:
         banco.execute("DELETE FROM webhooks")
-    assert panel.notifica(banco, "caiu", "titulo", "detalhe") is False
+    assert panel.notify(banco, "caiu", "titulo", "detalhe") is False
 
 
 # -------------------------------------------------------- acao do painel nao vira susto
@@ -993,7 +993,7 @@ def test_o_envio_vira_uma_linha_no_diario(banco, webhooks):
     """O diario e a resposta para "nao chega nada no Discord": sem ele, alerta que nao
     aconteceu e alerta que nao saiu sao a mesma tela vazia."""
     liga(banco, ["caiu"])
-    panel.notifica(banco, "caiu", "Palworld: parou", "detalhe")
+    panel.notify(banco, "caiu", "Palworld: parou", "detalhe")
     diario = panel.alertas_recentes(banco)
     assert len(diario) == 1
     assert (diario[0]["evento"], diario[0]["status"]) == ("caiu", "enviado")
@@ -1003,7 +1003,7 @@ def test_evento_sem_ninguem_escutando_e_registrado(banco, webhooks):
     """E o caso mais comum de canal mudo, e precisa ficar registrado com essa cara —
     senao a pessoa procura defeito onde nao ha."""
     liga(banco, ["caiu"])
-    panel.notifica(banco, "cpu-alta", "Palworld: CPU alta", "99%")
+    panel.notify(banco, "cpu-alta", "Palworld: CPU alta", "99%")
     diario = panel.alertas_recentes(banco)
     assert diario[0]["status"] == "sem-destino"
     assert diario[0]["evento"] == "cpu-alta"
@@ -1013,7 +1013,7 @@ def test_envio_que_falhou_fica_marcado_com_o_motivo(banco, monkeypatch):
     liga(banco, ["caiu"])
     monkeypatch.setattr(panel, "envia_webhook",
                         lambda url, texto: "500 Internal Server Error")
-    panel.notifica(banco, "caiu", "Palworld: parou de novo", "")
+    panel.notify(banco, "caiu", "Palworld: parou de novo", "")
     diario = panel.alertas_recentes(banco)
     assert diario[0]["status"] == "falhou"
     assert "500" in diario[0]["erro"]
@@ -1024,7 +1024,7 @@ def test_limpeza_do_diario_segura_o_tamanho_e_guarda_os_novos(banco, webhooks, m
     liga(banco, ["caiu"])
     monkeypatch.setattr(panel, "ALERT_LOG_KEEP", 3)
     for i in range(6):
-        panel.notifica(banco, "caiu", f"alerta {i}", "")
+        panel.notify(banco, "caiu", f"alerta {i}", "")
     with panel.app.app_context():
         panel.limpa_historico(forcar=True)
     diario = panel.alertas_recentes(banco)

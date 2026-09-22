@@ -45,7 +45,7 @@ def _check_roots(path: str, roots: tuple[str, ...]) -> None:
     # rstrip + "/" para /opt/game nao liberar /opt/gamex sem querer.
     if any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots):
         return
-    raise ValueError(Mensagem("path.outside_roots", pastas=", ".join(roots)))
+    raise ValueError(Mensagem("path.outside_roots", folders=", ".join(roots)))
 
 
 def clean_path(raw: str, roots: tuple[str, ...]) -> str:
@@ -334,7 +334,7 @@ def ssh_stream_in(
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
     except OSError as exc:
-        raise RemoteError(Mensagem("ssh.failed_to_run", motivo=exc)) from exc
+        raise RemoteError(Mensagem("ssh.failed_to_run", reason=exc)) from exc
 
     # Numa variavel local porque `Popen.stdin` e Optional no tipo (Popen sem PIPE nao
     # tem entrada) e porque ela e zerada no `finally` la embaixo - o `close()` de la
@@ -367,7 +367,7 @@ def ssh_stream_in(
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
-        raise RemoteError(Mensagem("ssh.upload_timeout", segundos=timeout,
+        raise RemoteError(Mensagem("ssh.upload_timeout", seconds=timeout,
                                    host=server["host"])) from None
     if proc.returncode != 0:
         detalhe = (erro or saida or b"").decode("utf-8", "replace").strip()

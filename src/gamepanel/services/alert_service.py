@@ -44,75 +44,75 @@ class AlertDeps(NamedTuple):
     por falsos nos testes (`server_players`, `server_metrics`, `notifica`).
     """
 
-    notifica: Notifica
-    job_recente: JobRecente
+    notify: Notifica
+    recent_job: JobRecente
     player_source: Callable[[ServerLike], str]
     server_players: Callable[..., dict]
     server_metrics: Callable[..., dict]
     read_log_lines: Callable[..., list[str]]
-    valor_guardado: Callable[[ServerLike, str], str]
-    tamanho_legivel: Callable[..., str]
+    stored_value: Callable[[ServerLike, str], str]
+    human_size: Callable[..., str]
     # O MESMO dicionario de `app.py`: o monitor, o stream de log e os alertas de recurso
     # anotam no estado do mesmo servidor.
-    estado_monitor: dict[int, dict]
+    monitor_state: dict[int, dict]
     logger: logging.Logger
     mute_rounds: int
     log_err_lines: int
     log_err_cooldown: float
 
 
-def _alvo(server: ServerLike) -> str:
+def _target(server: ServerLike) -> str:
     return f"{server['ssh_user']}@{server['host']}"
 
 
 # ------------------------------------------------------- contato e servico
 
-def alerta_de_estado(deps: AlertDeps, conn: Any, server: ServerLike, estado: dict,
-                     anterior: dict) -> None:
+def state_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
+                     previous: dict) -> None:
     """Contato com o container e estado do servico.
 
     NAO recebe a configuracao dos alertas: quem decide se um evento sai e o `notifica`,
     que a le por conta propria. Um parametro que ninguem usa vira ruido na assinatura e
     mentira na leitura ("ah, entao aqui olha a config").
     """
-    sid, nome = int(server["id"]), server["name"]
-    alvo = _alvo(server)
+    sid, name = int(server["id"]), server["name"]
+    alvo = _target(server)
 
-    if estado["reachable"] != anterior["reachable"]:
-        if estado["reachable"]:
-            deps.notifica(conn, "acessivel", Mensagem("alert.contact_back", nome=nome), alvo)
+    if state["reachable"] != previous["reachable"]:
+        if state["reachable"]:
+            deps.notify(conn, "acessivel", Mensagem("alert.contact_back", name=name), alvo)
         else:
-            deps.notifica(conn, "inacessivel", Mensagem("alert.lost_contact", nome=nome),
-                          f"{alvo}\n{estado.get('error') or Mensagem('alert.no_detail')}")
+            deps.notify(conn, "inacessivel", Mensagem("alert.lost_contact", name=name),
+                          f"{alvo}\n{state.get('error') or Mensagem('alert.no_detail')}")
         return  # sem contato nao da para falar do servico com honestidade
 
-    if not estado["reachable"]:
+    if not state["reachable"]:
         return
-    if estado["service"] == anterior["service"]:
+    if state["service"] == previous["service"]:
         return
-    if estado["service"] == "active":
-        deps.notifica(conn, "voltou", Mensagem("alert.server_back", nome=nome), alvo)
+    if state["service"] == "active":
+        deps.notify(conn, "voltou", Mensagem("alert.server_back", name=name), alvo)
         return
-    if anterior["service"] != "active":
+    if previous["service"] != "active":
         return
 
     # 'failed' e o systemd dizendo que o jogo quebrou (saiu com erro, estourou o limite de
     # restarts, foi morto pelo OOM). Nao passa pela janela de silencio: se alguem mandou
     # reiniciar e o resultado foi 'failed', isso e exatamente o que a pessoa precisa saber.
-    if estado["service"] == "failed":
-        deps.notifica(conn, "quebrou", Mensagem("alert.game_failed", nome=nome),
+    if state["service"] == "failed":
+        deps.notify(conn, "quebrou", Mensagem("alert.game_failed", name=name),
                       f"{alvo}\n"
-                      + Mensagem("alert.service_is_failed", servico=server["service"])
-                      + (f" (Result={estado['result']})" if estado.get("result") else ""))
-    elif not deps.job_recente(conn, sid):
-        deps.notifica(conn, "caiu", Mensagem("alert.server_stopped", nome=nome),
+                      + Mensagem("alert.service_is_failed", service=server["service"])
+                      + (f" (Result={state['result']})" if state.get("result") else ""))
+    elif not deps.recent_job(conn, sid):
+        deps.notify(conn, "caiu", Mensagem("alert.server_stopped", name=name),
                       f"{alvo}\n" + Mensagem("alert.service_is",
-                                              servico=server["service"],
-                                              estado=estado["service"]))
+                                              service=server["service"],
+                                              state=state["service"]))
 
 
-def alerta_de_restart(deps: AlertDeps, conn: Any, server: ServerLike, estado: dict,
-                      anterior: dict) -> None:
+def restart_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
+                      previous: dict) -> None:
     """Loop de crash: o systemd ressuscitando o jogo sem parar.
 
     E o buraco que o alerta de queda nao cobre. Com `Restart=always` o jogo pode morrer a
@@ -120,98 +120,98 @@ def alerta_de_restart(deps: AlertDeps, conn: Any, server: ServerLike, estado: di
     'acontece' aos olhos do painel, e o canal fica em silencio enquanto ninguem consegue
     jogar. Quem denuncia e o NRestarts, que so sobe.
     """
-    sid, nome = int(server["id"]), server["name"]
-    agora = int(estado.get("restarts") or 0)
-    antes = int(anterior.get("restarts") or 0)
+    sid, name = int(server["id"]), server["name"]
+    agora = int(state.get("restarts") or 0)
+    antes = int(previous.get("restarts") or 0)
 
     # O contador zera quando alguem reinicia a unidade na mao (e ao recarregar o daemon).
     # Isso nao e um loop: e so uma linha de base nova.
     if agora < antes:
-        anterior["restarts"] = agora
-        anterior["loop_avisado"] = False
+        previous["restarts"] = agora
+        previous["loop_avisado"] = False
         return
     if agora == antes:
         # Uma volta inteira sem nenhum restart novo: o loop passou, e o proximo pode
         # voltar a avisar.
-        anterior["loop_avisado"] = False
+        previous["loop_avisado"] = False
         return
 
     quantos = agora - antes
-    anterior["restarts"] = agora
+    previous["restarts"] = agora
     # Enquanto o contador sobe volta apos volta, o alerta sai UMA vez. Repetir a cada
     # minuto seria o mesmo spam que a regra da mudanca existe para evitar.
-    if anterior.get("loop_avisado") or deps.job_recente(conn, sid):
+    if previous.get("loop_avisado") or deps.recent_job(conn, sid):
         return
-    anterior["loop_avisado"] = True
-    deps.notifica(
-        conn, "reiniciando", Mensagem("alert.restart_loop", nome=nome),
-        f"{_alvo(server)}\n"
-        + Mensagem("alert.systemd_restarted", servico=server["service"],
-                   quantos=quantos)
+    previous["loop_avisado"] = True
+    deps.notify(
+        conn, "reiniciando", Mensagem("alert.restart_loop", name=name),
+        f"{_target(server)}\n"
+        + Mensagem("alert.systemd_restarted", service=server["service"],
+                   times=quantos)
         + Mensagem("alert.restarts_total", n=agora),
     )
 
 
-def alerta_de_mudez(deps: AlertDeps, conn: Any, server: ServerLike, estado: dict,
-                    anterior: dict) -> None:
+def mute_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
+                    previous: dict) -> None:
     """Servico de pe, jogo mudo: nao responde mais a consulta do proprio jogo.
 
     E o caso que mais engana. O processo continua vivo, o systemd continua feliz, o
     dashboard continua verde — e ninguem consegue entrar.
     """
-    sid, nome = int(server["id"]), server["name"]
+    sid, name = int(server["id"]), server["name"]
     if deps.player_source(server) not in FONTES_QUE_RESPONDEM:
         return
 
     # Jogo que acabou de subir ainda esta carregando mapa e nao responde: contar essas
     # voltas transformaria toda partida do zero num alerta. O mesmo para a janela de
     # silencio depois de uma acao pelo painel.
-    if estado["service"] != "active" or deps.job_recente(conn, sid):
-        anterior["mudo"] = 0
+    if state["service"] != "active" or deps.recent_job(conn, sid):
+        previous["mudo"] = 0
         return
 
-    dados = deps.server_players(server)
-    if not dados.get("configured"):
+    data = deps.server_players(server)
+    if not data.get("configured"):
         return
 
-    if not dados.get("error"):
-        anterior["mudo"] = 0
-        if anterior.get("mudo_avisado"):
-            anterior["mudo_avisado"] = False
-            deps.notifica(conn, "respondeu", Mensagem("alert.game_answering", nome=nome),
+    if not data.get("error"):
+        previous["mudo"] = 0
+        if previous.get("mudo_avisado"):
+            previous["mudo_avisado"] = False
+            deps.notify(conn, "respondeu", Mensagem("alert.game_answering", name=name),
                           Mensagem("alert.players_online_rough",
-                                   n=dados.get("players")))
+                                   n=data.get("players")))
         return
 
-    anterior["mudo"] = int(anterior.get("mudo") or 0) + 1
-    if anterior["mudo"] < deps.mute_rounds or anterior.get("mudo_avisado"):
+    previous["mudo"] = int(previous.get("mudo") or 0) + 1
+    if previous["mudo"] < deps.mute_rounds or previous.get("mudo_avisado"):
         return
-    anterior["mudo_avisado"] = True
-    deps.notifica(
-        conn, "travou", Mensagem("alert.game_mute", nome=nome),
-        f"{_alvo(server)}\n"
-        + Mensagem("alert.service_up_game_mute", servico=server["service"])
-        + Mensagem("alert.mute_rounds", n=anterior["mudo"])
-        + f"\n{dados['error']}",
+    previous["mudo_avisado"] = True
+    deps.notify(
+        conn, "travou", Mensagem("alert.game_mute", name=name),
+        f"{_target(server)}\n"
+        + Mensagem("alert.service_up_game_mute", service=server["service"])
+        + Mensagem("alert.mute_rounds", n=previous["mudo"])
+        + f"\n{data['error']}",
     )
 
 
 # ----------------------------------------------------------- erro no log
 
-def alerta_de_log(deps: AlertDeps, conn: Any, server: ServerLike, anterior: dict) -> None:
+def log_alert(deps: AlertDeps, conn: Any, server: ServerLike, previous: dict) -> None:
     """Procura a expressao de erro do servidor no rabo do log do jogo.
 
     E o unico alerta que depende de configuracao: cada jogo grita de um jeito, entao a
     expressao vem do cadastro. Sem ela, nem a ida de SSH acontece.
     """
-    padrao = deps.valor_guardado(server, "error_re")
-    if not padrao:
+    default = deps.stored_value(server, "error_re")
+    if not default:
         return
-    nome = server["name"]
+    name = server["name"]
     try:
-        regex = compile_pattern(padrao, "pattern.error")
+        regex = compile_pattern(default, "pattern.error")
     except QueryError as exc:
-        deps.logger.warning("expressao de erro de '%s' invalida: %s", nome, exc)
+        deps.logger.warning("expressao de erro de '%s' invalida: %s", name, exc)
         return
     if regex is None:
         return  # padrao so de espacos: nao ha o que procurar
@@ -221,108 +221,108 @@ def alerta_de_log(deps: AlertDeps, conn: Any, server: ServerLike, anterior: dict
         # Log ilegivel nao e erro DO JOGO. Se o servidor sumiu, quem avisa e o
         # 'inacessivel'; inventar um alerta de log aqui seria contar a mesma coisa duas
         # vezes, com o nome errado.
-        deps.logger.info("nao consegui ler o log de '%s' para procurar erro: %s", nome, exc)
+        deps.logger.info("nao consegui ler o log de '%s' para procurar erro: %s", name, exc)
         return
 
     achados = [linha.strip() for linha in lines_of if regex.search(linha)]
     if not achados:
         # A linha saiu do rabo do log: se o erro voltar, e um erro novo e avisa de novo.
-        anterior["ultimo_erro"] = ""
+        previous["ultimo_erro"] = ""
         return
 
     ultima = achados[-1][:DETALHE_MAX]
     # Mesma linha da volta passada: um jogo que repete o erro a cada segundo renderia um
     # alerta por minuto ate alguem desligar o webhook.
-    if ultima == anterior.get("ultimo_erro"):
+    if ultima == previous.get("ultimo_erro"):
         return
     # Trava de seguranca para expressao larga demais (um `.` casa tudo): mesmo com linhas
     # sempre diferentes, o canal nao leva mais de um alerta destes por janela.
     agora = time.monotonic()
-    ultimo_envio = float(anterior.get("erro_em") or 0)
+    ultimo_envio = float(previous.get("erro_em") or 0)
     if ultimo_envio and agora - ultimo_envio < deps.log_err_cooldown:
-        anterior["ultimo_erro"] = ultima
+        previous["ultimo_erro"] = ultima
         return
-    anterior["ultimo_erro"] = ultima
-    anterior["erro_em"] = agora
+    previous["ultimo_erro"] = ultima
+    previous["erro_em"] = agora
     quantas = f" ({len(achados)} linhas casaram)" if len(achados) > 1 else ""
-    deps.notifica(conn, "erro-no-log", Mensagem("alert.log_error", nome=nome),
-                  f"{_alvo(server)}{quantas}\n{ultima}")
+    deps.notify(conn, "erro-no-log", Mensagem("alert.log_error", name=name),
+                  f"{_target(server)}{quantas}\n{ultima}")
 
 
 # -------------------------------------------------------------- recursos
 
-def alerta_de_disco(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> None:
+def disk_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> None:
     sid = int(server["id"])
-    dados = deps.server_metrics(server)
-    if dados.get("error"):
+    data = deps.server_metrics(server)
+    if data.get("error"):
         return
-    pior = max((d for d in dados.get("disks", []) if d.get("pct") is not None),
+    pior = max((d for d in data.get("disks", []) if d.get("pct") is not None),
                key=lambda d: d["pct"], default=None)
     if not pior:
         return
     cheio = pior["pct"] >= cfg["disco"]
-    marca = deps.estado_monitor.setdefault(sid, {})
+    marca = deps.monitor_state.setdefault(sid, {})
     # So avisa na VIRADA: um disco a 95% continua a 95% na volta seguinte, e ninguem
     # merece o mesmo alerta a cada minuto ate arrumar.
     if cheio and not marca.get("disco_cheio"):
-        deps.notifica(conn, "disco-cheio",
-                      Mensagem("alert.disk_almost_full", nome=server["name"]),
-                      Mensagem("alert.disk_detail", ponto=pior["mount"],
+        deps.notify(conn, "disco-cheio",
+                      Mensagem("alert.disk_almost_full", name=server["name"]),
+                      Mensagem("alert.disk_detail", mount=pior["mount"],
                                pct=pior["pct"],
-                               usado=deps.tamanho_legivel(pior["used"]),
-                               total=deps.tamanho_legivel(pior["total"])))
+                               used=deps.human_size(pior["used"]),
+                               total=deps.human_size(pior["total"])))
     marca["disco_cheio"] = cheio
 
 
-def alerta_de_memoria(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> None:
+def memory_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> None:
     sid = int(server["id"])
-    dados = deps.server_metrics(server)
-    if dados.get("error"):
+    data = deps.server_metrics(server)
+    if data.get("error"):
         return
-    mem = dados.get("mem")
+    mem = data.get("mem")
     if not mem or mem.get("pct") is None:
         return
     cheio = mem["pct"] >= cfg["memoria"]
-    marca = deps.estado_monitor.setdefault(sid, {})
+    marca = deps.monitor_state.setdefault(sid, {})
     # So avisa na virada
     if cheio and not marca.get("memoria_alta"):
-        deps.notifica(
+        deps.notify(
             conn, "memoria-alta",
-            Mensagem("alert.memory_almost_full", nome=server["name"]),
+            Mensagem("alert.memory_almost_full", name=server["name"]),
             Mensagem("alert.memory_detail", pct=mem["pct"],
-                     usado=deps.tamanho_legivel(mem["used"]),
-                     total=deps.tamanho_legivel(mem["total"])))
+                     used=deps.human_size(mem["used"]),
+                     total=deps.human_size(mem["total"])))
     marca["memoria_alta"] = cheio
 
 
-def alerta_de_cpu(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> None:
+def cpu_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> None:
     sid = int(server["id"])
-    dados = deps.server_metrics(server)
-    if dados.get("error"):
+    data = deps.server_metrics(server)
+    if data.get("error"):
         return
-    cpu = dados.get("cpu_pct")
+    cpu = data.get("cpu_pct")
     if cpu is None:
         return
     alto = cpu >= cfg["cpu"]
-    marca = deps.estado_monitor.setdefault(sid, {})
+    marca = deps.monitor_state.setdefault(sid, {})
     # So avisa na virada
     if alto and not marca.get("cpu_alta"):
-        cores = dados.get("cores", 1)
-        proc = dados.get("proc", {})
+        cores = data.get("cores", 1)
+        proc = data.get("proc", {})
         proc_cpu = proc.get("cpu_pct")
         detalhe = str(Mensagem("alert.cpu_detail_one" if cores == 1
                                else "alert.cpu_detail_many", pct=cpu, cores=cores))
         if proc_cpu is not None:
             detalhe += str(Mensagem("alert.cpu_game_part", pct=proc_cpu))
-        deps.notifica(conn, "cpu-alta",
-                      Mensagem("alert.cpu_high", nome=server["name"]), detalhe)
+        deps.notify(conn, "cpu-alta",
+                      Mensagem("alert.cpu_high", name=server["name"]), detalhe)
     marca["cpu_alta"] = alto
 
 
 # ------------------------------------------------------------- jogadores
 
-def alerta_de_jogadores(deps: AlertDeps, conn: Any, server: ServerLike, servico: str,
-                        anterior: dict, cfg: dict) -> None:
+def players_alert(deps: AlertDeps, conn: Any, server: ServerLike, service: str,
+                        previous: dict, cfg: dict) -> None:
     """Avisa quando jogadores entram ou saem do servidor.
 
     Compara a lista de jogadores atual com a da verificacao anterior. Se o jogo
@@ -333,99 +333,99 @@ def alerta_de_jogadores(deps: AlertDeps, conn: Any, server: ServerLike, servico:
     monitor nao consulta o systemd, e passa aqui o ultimo estado ja conhecido. Pedir o
     dicionario obrigaria a pagar um SSH so para preencher um campo que ja se sabe.
     """
-    sid, nome = int(server["id"]), server["name"]
+    sid, name = int(server["id"]), server["name"]
     if not deps.player_source(server):
         return
 
     # Se o servico nao estiver ativo ou tiver job recente (restart, update),
     # reseta o estado para nao disparar alertas falsos de desconexao.
-    if servico != "active" or deps.job_recente(conn, sid):
-        anterior["jogadores_nomes"] = None
-        anterior["jogadores_count"] = None
+    if service != "active" or deps.recent_job(conn, sid):
+        previous["jogadores_nomes"] = None
+        previous["jogadores_count"] = None
         return
 
-    dados = deps.server_players(server)
-    if not dados.get("configured") or dados.get("error"):
+    data = deps.server_players(server)
+    if not data.get("configured") or data.get("error"):
         return
 
-    nomes_atuais, contagem_atual = leitura_de_jogadores(dados)
+    nomes_atuais, contagem_atual = players_reading(data)
 
     # Primeira olhada deste servidor: so estabelece a linha de base
-    if anterior.get("jogadores_nomes") is None and anterior.get("jogadores_count") is None:
-        anterior["jogadores_nomes"] = nomes_atuais
-        anterior["jogadores_count"] = contagem_atual
+    if previous.get("jogadores_nomes") is None and previous.get("jogadores_count") is None:
+        previous["jogadores_nomes"] = nomes_atuais
+        previous["jogadores_count"] = contagem_atual
         return
 
-    nomes_anteriores = anterior.get("jogadores_nomes") or set()
-    contagem_anterior = int(anterior.get("jogadores_count") or 0)
+    nomes_anteriores = previous.get("jogadores_nomes") or set()
+    contagem_anterior = int(previous.get("jogadores_count") or 0)
 
     if nomes_atuais or nomes_anteriores:
         # O jogo da os nomes (exatos ou aproximados): o aviso cita quem foi.
-        _avisa_por_nome(deps, conn, nome, cfg, nomes_atuais, nomes_anteriores, contagem_atual)
+        _warn_by_name(deps, conn, name, cfg, nomes_atuais, nomes_anteriores, contagem_atual)
     else:
         # So a contagem: o aviso fala da variacao.
-        _avisa_por_contagem(deps, conn, nome, cfg, contagem_atual, contagem_anterior)
+        _warn_by_count(deps, conn, name, cfg, contagem_atual, contagem_anterior)
 
-    anterior["jogadores_nomes"] = nomes_atuais
-    anterior["jogadores_count"] = contagem_atual
+    previous["jogadores_nomes"] = nomes_atuais
+    previous["jogadores_count"] = contagem_atual
 
 
-def leitura_de_jogadores(dados: dict) -> tuple[set, int]:
+def players_reading(data: dict) -> tuple[set, int]:
     """Normaliza a resposta da consulta em (nomes, contagem).
 
     Jogo que so devolve numero vem com a lista vazia; jogo que so devolve nomes vem
     sem contagem. Os dois casos saem daqui com a mesma forma, e e isso que permite ao
     resto da funcao nao repetir `or 0` e `or []` a cada linha.
     """
-    lista = dados.get("list") or []
+    lista = data.get("list") or []
     nomes = {p["name"].strip() for p in lista if p.get("name") and p["name"].strip()}
-    contagem = dados.get("players")
-    if contagem is None and nomes:
-        contagem = len(nomes)
-    return nomes, max(0, int(contagem or 0))
+    count = data.get("players")
+    if count is None and nomes:
+        count = len(nomes)
+    return nomes, max(0, int(count or 0))
 
 
-def texto_de_online(contagem: int) -> str:
+def online_text(count: int) -> str:
     """"3 jogadores online", "1 jogador online", "nenhum jogador online".
 
     Existia em quatro lugares desta tela, com uma diferenca sutil entre eles: um dos
     quatro nao tratava o zero e podia dizer "0 jogadores online". Um lugar so.
     """
-    if contagem == 0:
+    if count == 0:
         return Mensagem("alert.nobody_online")
-    return Mensagem("alert.players_online_one" if contagem == 1
-                    else "alert.players_online_many", n=contagem)
+    return Mensagem("alert.players_online_one" if count == 1
+                    else "alert.players_online_many", n=count)
 
 
-def _avisa_por_nome(deps: AlertDeps, conn: Any, nome: str, cfg: dict, atuais: set,
-                    anteriores: set, contagem: int) -> None:
+def _warn_by_name(deps: AlertDeps, conn: Any, name: str, cfg: dict, current_names: set,
+                    previous_names: set, count: int) -> None:
     """Um aviso por pessoa que entrou ou saiu."""
-    detalhe = texto_de_online(contagem)
+    detalhe = online_text(count)
     if "jogador-entrou" in cfg["eventos"]:
-        for jogador in sorted(atuais - anteriores):
-            deps.notifica(conn, "jogador-entrou",
-                          Mensagem("alert.player_joined", nome=nome,
-                                   jogador=jogador), detalhe)
+        for player in sorted(current_names - previous_names):
+            deps.notify(conn, "jogador-entrou",
+                          Mensagem("alert.player_joined", name=name,
+                                   player=player), detalhe)
     if "jogador-saiu" in cfg["eventos"]:
-        for jogador in sorted(anteriores - atuais):
-            deps.notifica(conn, "jogador-saiu",
-                          Mensagem("alert.player_left", nome=nome,
-                                   jogador=jogador), detalhe)
+        for player in sorted(previous_names - current_names):
+            deps.notify(conn, "jogador-saiu",
+                          Mensagem("alert.player_left", name=name,
+                                   player=player), detalhe)
 
 
-def _avisa_por_contagem(deps: AlertDeps, conn: Any, nome: str, cfg: dict, atual: int,
-                        anterior: int) -> None:
+def _warn_by_count(deps: AlertDeps, conn: Any, name: str, cfg: dict, current: int,
+                        previous: int) -> None:
     """Um aviso por variacao, para o jogo que nao publica nomes."""
-    if atual == anterior:
+    if current == previous:
         return
-    detalhe = texto_de_online(atual)
-    if atual > anterior and "jogador-entrou" in cfg["eventos"]:
-        dif = atual - anterior
-        deps.notifica(conn, "jogador-entrou",
+    detalhe = online_text(current)
+    if current > previous and "jogador-entrou" in cfg["eventos"]:
+        dif = current - previous
+        deps.notify(conn, "jogador-entrou",
                       Mensagem("alert.joined_one" if dif == 1 else "alert.joined_many",
-                               nome=nome, n=dif), detalhe)
-    elif atual < anterior and "jogador-saiu" in cfg["eventos"]:
-        dif = anterior - atual
-        deps.notifica(conn, "jogador-saiu",
+                               name=name, n=dif), detalhe)
+    elif current < previous and "jogador-saiu" in cfg["eventos"]:
+        dif = previous - current
+        deps.notify(conn, "jogador-saiu",
                       Mensagem("alert.left_one" if dif == 1 else "alert.left_many",
-                               nome=nome, n=dif), detalhe)
+                               name=name, n=dif), detalhe)

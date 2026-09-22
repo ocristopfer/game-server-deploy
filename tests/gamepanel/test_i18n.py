@@ -6,6 +6,10 @@ catalogos nao podem sair de sincronia sem alguem perceber.
 """
 from __future__ import annotations
 
+import ast
+import re
+from pathlib import Path
+
 import pytest
 
 from gamepanel import app as panel
@@ -188,3 +192,59 @@ def test_repr_da_mensagem_mostra_a_chave(monkeypatch):
     """Num assert que falha, ver a chave vale mais do que ver a frase."""
     monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.erro", "porta {n} invalida")
     assert repr(i18n.Mensagem("t.erro", n=1)) == "Mensagem('t.erro', {'n': 1})"
+
+
+# ------------------------------------- o campo passado casa com o marcador da frase
+
+def _chamadas_de_traducao(arvore: ast.AST) -> list[tuple[int, str, set[str]]]:
+    """(linha, chave, campos) de cada `_('x', a=1)` / `Mensagem('x', a=1)` do modulo."""
+    achadas = []
+    for no in ast.walk(arvore):
+        if not isinstance(no, ast.Call):
+            continue
+        alvo = no.func.id if isinstance(no.func, ast.Name) else getattr(no.func, "attr", "")
+        if alvo not in {"_", "_h", "traduzir", "traduzir_html", "Mensagem",
+                        "rotulo_para_o_banco"} or not no.args:
+            continue
+        chave = no.args[0]
+        if isinstance(chave, ast.Constant) and isinstance(chave.value, str):
+            achadas.append((no.lineno, chave.value,
+                            {k.arg for k in no.keywords if k.arg}))
+    return achadas
+
+
+def test_todo_campo_passado_existe_como_marcador_na_frase():
+    """O marcador e o kwarg tem de ter o mesmo nome, e nada avisa quando nao tem.
+
+    `traduzir` engole o `KeyError` de proposito (frase e campo vem de lugares diferentes,
+    e derrubar a tela por causa disso e caro demais) — o preco e que um campo com nome
+    errado some em silencio, deixando `{name}` cru na tela. Este teste e quem cobra.
+    Ja aconteceu tres vezes durante a traducao dos identificadores para ingles.
+    """
+    problemas = []
+    for arquivo in sorted(Path(panel.__file__).parent.rglob("*.py")):
+        if arquivo.parent.name == "i18n":
+            continue
+        arvore = ast.parse(arquivo.read_text(encoding="utf-8"))
+        for linha, chave, campos in _chamadas_de_traducao(arvore):
+            frase = i18n.CATALOGOS["pt"].get(chave)
+            if frase is None:
+                continue  # chave montada em tempo de execucao; outro teste cobre
+            marcadores = set(re.findall(r"\{([a-z_]+)\}", frase))
+            sobrando = campos - marcadores
+            if sobrando:
+                problemas.append(
+                    f"{arquivo.name}:{linha} {chave}: passa {sorted(sobrando)}, "
+                    f"a frase usa {sorted(marcadores)}")
+    assert problemas == [], "campo sem marcador correspondente:\n" + "\n".join(problemas)
+
+
+def test_os_dois_idiomas_usam_os_mesmos_marcadores():
+    """Traducao que troca `{n}` por `{numero}` quebra so naquele idioma."""
+    fora = []
+    for chave, frase in i18n.CATALOGOS["pt"].items():
+        de_pt = set(re.findall(r"\{([a-z_]+)\}", frase))
+        de_en = set(re.findall(r"\{([a-z_]+)\}", i18n.CATALOGOS["en"][chave]))
+        if de_pt != de_en:
+            fora.append(f"{chave}: pt={sorted(de_pt)} en={sorted(de_en)}")
+    assert fora == [], "marcadores diferentes entre os idiomas:\n" + "\n".join(fora)

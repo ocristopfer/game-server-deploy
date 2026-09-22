@@ -364,7 +364,7 @@ MENSAGENS: dict[str, str] = {
     "alerts.pending_intro":
         "<strong>Ligado, mas sem onde olhar.</strong> Estes eventos nunca vao disparar do jeito "
         "que o painel esta hoje &mdash; e canal em silencio parece \"esta tudo bem\":",
-    "alerts.pending_item": "<em>{evento}</em>: nenhum servidor tem {falta}.",
+    "alerts.pending_item": "<em>{event}</em>: nenhum servidor tem {missing}.",
     "alerts.pending_fix": "Ajuste no <a href=\"{url}\">cadastro de cada servidor</a>.",
     "alerts.destination_name": "Nome do destino",
     "alerts.team_channel": "Canal da equipe",
@@ -377,7 +377,7 @@ MENSAGENS: dict[str, str] = {
     "alerts.no_event_checked": "Sem nenhum evento marcado este destino nunca recebe nada.",
     "alerts.test": "Testar",
     "alerts.remove": "Remover",
-    "alerts.remove_confirm": "Remover o destino {nome}?",
+    "alerts.remove_confirm": "Remover o destino {name}?",
     "alerts.limit_reached": "Limite de {n} destinos atingido — remova um para cadastrar outro.",
     "alerts.add_destination": "Adicionar destino",
     "alerts.name": "Nome",
@@ -429,7 +429,7 @@ MENSAGENS: dict[str, str] = {
     "alerts.how_it_works": "Como funciona",
     "alerts.rule_rhythm":
         "O painel confere o estado de cada servidor a cada <strong>{monitor}s</strong> e disco, "
-        "memoria e CPU a cada <strong>{medidor} min</strong> (o medidor custa bem mais caro que o "
+        "memoria e CPU a cada <strong>{meter} min</strong> (o medidor custa bem mais caro que o "
         "status, e as tres leituras saem de uma vez so).",
     "alerts.rule_joining":
         "<strong>Jogador entrando e a excecao:</strong> esse o painel confere a cada "
@@ -440,7 +440,7 @@ MENSAGENS: dict[str, str] = {
     "alerts.streams_none": "nenhuma no momento",
     "alerts.rule_log_listen":
         "Quem conta por <strong>log</strong> nao e perguntado: o painel deixa uma conexao aberta "
-        "<em>ouvindo</em> o log ({ouvindo}) e reage a linha no segundo em que ela sai. Perguntar "
+        "<em>ouvindo</em> o log ({listening}) e reage a linha no segundo em que ela sai. Perguntar "
         "de 15 em 15 segundos custaria uma leitura do log inteiro a cada vez; assim so se le "
         "quando alguem de fato entrou ou saiu. Se a conexao cair, o aviso volta a sair pela volta "
         "de {monitor}s ate ela se restabelecer.",
@@ -659,9 +659,9 @@ MENSAGENS: dict[str, str] = {
     "backups.back_up_now": "Fazer backup agora",
     "backups.restore": "restaurar",
     "backups.restore_confirm":
-        "Restaurar {arquivo} em {servidor}?\n\nO servidor sera PARADO, os arquivos de agora serao "
+        "Restaurar {file} em {server}?\n\nO servidor sera PARADO, os arquivos de agora serao "
         "substituidos e ele volta a subir. Uma copia do estado atual e guardada antes.",
-    "backups.delete_confirm": "Apagar {arquivo}? Nao tem volta.",
+    "backups.delete_confirm": "Apagar {file}? Nao tem volta.",
     "config.use_this_file": "Usar este arquivo",
     "config.search_container": "Procurar no container",
     "config.another_line": "outra linha",
@@ -674,7 +674,7 @@ MENSAGENS: dict[str, str] = {
     "files.download_title": "Baixar",
     "files.edit_field_by_field": "Editar campo a campo",
     "files.delete_file": "Apagar arquivo",
-    "files.delete_confirm": "Apagar {caminho}? Isto nao tem volta.",
+    "files.delete_confirm": "Apagar {path}? Isto nao tem volta.",
     "history.filter": "Filtrar",
     "history.clear": "limpar",
     "history.newer": "mais recentes",
@@ -683,8 +683,8 @@ MENSAGENS: dict[str, str] = {
     "instances.create_confirm":
         "Criar o container, instalar o jogo e abrir as portas no firewall? Isso pode levar varios "
         "minutos.",
-    "instances.deactivate_confirm": "Desativar {nome}? O servidor sera PARADO e as portas fecham no firewall.",
-    "instances.remove_confirm": "Remover {nome}? O container e o jogo serao APAGADOS.",
+    "instances.deactivate_confirm": "Desativar {name}? O servidor sera PARADO e as portas fecham no firewall.",
+    "instances.remove_confirm": "Remover {name}? O container e o jogo serao APAGADOS.",
     "login_2fa.confirm": "Confirmar",
     "login_2fa.back": "Voltar",
     "schedules.run_now": "rodar agora",
@@ -692,7 +692,7 @@ MENSAGENS: dict[str, str] = {
     "schedules.turn_on": "ligar",
     "schedules.turn_off": "desligar",
     "schedules.delete": "remover",
-    "schedules.delete_confirm": "Remover: {tarefa}?",
+    "schedules.delete_confirm": "Remover: {task}?",
     "schedules.schedule_it": "Agendar",
     "schedules.never": "nunca",
     "server_detail.configure": "Configurar",
@@ -702,9 +702,9 @@ MENSAGENS: dict[str, str] = {
     "users.change": "Trocar",
     "users.two_factor_off": "Desligar 2FA",
     "users.two_factor_off_confirm":
-        "Desligar a verificacao em duas etapas de {usuario}? Ele entra so com a senha ate ativar "
+        "Desligar a verificacao em duas etapas de {user}? Ele entra so com a senha ate ativar "
         "de novo.",
-    "users.remove_confirm": "Remover o usuario {usuario}?",
+    "users.remove_confirm": "Remover o usuario {user}?",
     "users.create": "Criar",
 
     # ---------------------------------------- contagem de jogadores
@@ -885,55 +885,55 @@ MENSAGENS: dict[str, str] = {
     "flash.verification_expired": "A verificacao expirou. Entre de novo.",
     "flash.code_invalid_or_used": "Codigo invalido ou ja usado.",
     "flash.bad_port": "Porta invalida.",
-    "flash.count_on_by_query": "Contagem de jogadores ligada pela consulta na porta {porta}/udp.",
+    "flash.count_on_by_query": "Contagem de jogadores ligada pela consulta na porta {port}/udp.",
     "flash.need_api_url": "Informe a URL da API.",
     "flash.count_on_by_api_login": "Contagem ligada pela API, com login automatico (o token renova sozinho).",
     "flash.count_on_by_api": "Contagem de jogadores ligada pela API HTTP do servidor.",
     "flash.need_join_pattern": "Informe o padrao da linha de entrada.",
     "flash.count_on_by_log": "Contagem de jogadores ligada pelo log do servidor.",
     "flash.bad_choice": "Escolha invalida.",
-    "flash.could_not": "Nao consegui: {motivo}",
-    "flash.player_action_done": "{rotulo}: {quem}.",
-    "flash.notice_sent": "Aviso enviado: {mensagem}",
-    "flash.server_added": "Servidor {nome} cadastrado.",
+    "flash.could_not": "Nao consegui: {reason}",
+    "flash.player_action_done": "{label}: {who}.",
+    "flash.notice_sent": "Aviso enviado: {message}",
+    "flash.server_added": "Servidor {name} cadastrado.",
     "flash.server_updated": "Servidor atualizado.",
     "flash.server_removed": "Servidor removido do painel (o container nao foi tocado).",
     "flash.type_a_command": "Digite um comando.",
     "flash.command_too_long": "Comando muito longo (limite de {n} caracteres).",
     "flash.file_too_big": "Arquivo grande demais para salvar (limite de {kb} KB).",
     "flash.file_over_edit_limit":
-        "{caminho} tem {tem} KB e passou do limite de edicao ({kb} KB). Nada foi gravado — baixe o "
+        "{path} tem {size} KB e passou do limite de edicao ({kb} KB). Nada foi gravado — baixe o "
         "arquivo para mexer nele.",
-    "flash.file_saved": "{caminho} salvo ({bytes} bytes). Uma copia .bak foi guardada ao lado.",
-    "flash.is_a_root_folder": "{caminho} e uma pasta raiz do editor — nao da para apagar por aqui.",
-    "flash.deleted_no_bak": "{saida} (sem copia .bak — apagar nao tem volta).",
-    "flash.also_left_config": "{caminho} tambem saiu dos arquivos da tela Config.",
-    "flash.could_not_delete": "Nao consegui apagar: {motivo}",
+    "flash.file_saved": "{path} salvo ({bytes} bytes). Uma copia .bak foi guardada ao lado.",
+    "flash.is_a_root_folder": "{path} e uma pasta raiz do editor — nao da para apagar por aqui.",
+    "flash.deleted_no_bak": "{output} (sem copia .bak — apagar nao tem volta).",
+    "flash.also_left_config": "{path} tambem saiu dos arquivos da tela Config.",
+    "flash.could_not_delete": "Nao consegui apagar: {reason}",
     "flash.pick_a_file": "Escolha um arquivo para enviar.",
     "flash.bad_file_name": "Nome de arquivo invalido.",
-    "flash.could_not_upload": "Nao consegui enviar: {motivo}",
-    "flash.uploaded": "{saida}. Se o arquivo ja existia, uma copia .bak ficou ao lado.",
+    "flash.could_not_upload": "Nao consegui enviar: {reason}",
+    "flash.uploaded": "{output}. Se o arquivo ja existia, uma copia .bak ficou ao lado.",
     "flash.nothing_to_back_up":
         "Este servidor nao tem o que guardar: preencha a pasta de configuracao ou os caminhos de "
         "backup no cadastro.",
-    "flash.left_config_screen": "{caminho} saiu da tela de configuracao (o arquivo nao foi tocado).",
+    "flash.left_config_screen": "{path} saiu da tela de configuracao (o arquivo nao foi tocado).",
     "flash.config_files_limit": "Limite de {n} arquivos por servidor.",
-    "flash.now_opens_in_config": "{caminho} agora abre direto na tela Config.",
-    "flash.value_out_of_range": "Nao salvei nada porque ha valor fora do limite - {erros}",
+    "flash.now_opens_in_config": "{path} agora abre direto na tela Config.",
+    "flash.value_out_of_range": "Nao salvei nada porque ha valor fora do limite - {errors}",
     "flash.no_field_changed": "Nenhum campo foi alterado.",
-    "flash.could_not_save": "Nao consegui salvar: {motivo}",
+    "flash.could_not_save": "Nao consegui salvar: {reason}",
     "flash.settings_saved":
-        "{n} configuracao(oes) salva(s) em {caminho}: {chaves}. Uma copia .bak foi guardada ao "
+        "{n} configuracao(oes) salva(s) em {path}: {keys}. Uma copia .bak foi guardada ao "
         "lado.",
     "flash.broker_needs_two_factor":
         "O broker so pode ser usado por quem tem a verificacao em duas etapas ativa: ative-a em "
         "Conta.",
-    "flash.broker_error": "Broker: {motivo}",
-    "flash.game_added": "Jogo {nome} adicionado ao catalogo.",
+    "flash.broker_error": "Broker: {reason}",
+    "flash.game_added": "Jogo {name} adicionado ao catalogo.",
     "flash.broker_no_operation_id": "Broker: resposta sem identificador de operacao.",
     "flash.instance_deactivated": "Instancia desativada: portas fechadas e container parado.",
     "flash.instance_removed": "Instancia removida.",
-    "flash.task_scheduled": "{tarefa} agendado.",
+    "flash.task_scheduled": "{task} agendado.",
     "flash.task_off": "Tarefa desligada.",
     "flash.task_on": "Tarefa ligada.",
     "flash.task_removed": "Tarefa removida.",
@@ -944,7 +944,7 @@ MENSAGENS: dict[str, str] = {
     "flash.two_factor_on": "Verificacao em duas etapas ativada.",
     "flash.two_factor_off": "Verificacao em duas etapas desativada.",
     "flash.new_codes": "Codigos novos gerados: os antigos deixaram de valer.",
-    "flash.threshold_range": "O aviso de {nome} vale de 50% a 100%.",
+    "flash.threshold_range": "O aviso de {name} vale de 50% a 100%.",
     "flash.preferences_saved": "Preferencias salvas.",
     "flash.destination_limit": "Limite de {n} destinos atingido.",
     "flash.need_webhook_url": "Informe a URL do webhook.",
@@ -953,22 +953,22 @@ MENSAGENS: dict[str, str] = {
     "flash.destination_saved": "Destino salvo.",
     "flash.destination_removed": "Destino removido.",
     "flash.bad_url": "URL invalida (comece com http:// ou https://).",
-    "flash.destination_test_failed": "{nome}: {motivo}",
-    "flash.destination_test_sent": "Mensagem enviada para {nome} - confira o canal.",
-    "flash.user_exists": "Ja existe um usuario chamado '{usuario}'.",
+    "flash.destination_test_failed": "{name}: {reason}",
+    "flash.destination_test_sent": "Mensagem enviada para {name} - confira o canal.",
+    "flash.user_exists": "Ja existe um usuario chamado '{user}'.",
     "flash.user_created":
-        "Usuario '{usuario}' criado como {papel}. Passe a senha para ele e peca para troca-la na "
+        "Usuario '{user}' criado como {role}. Passe a senha para ele e peca para troca-la na "
         "tela Conta.",
     "flash.cannot_change_own_role": "Voce nao pode mudar o proprio papel — peca a outro administrador.",
-    "flash.user_already_is": "'{usuario}' ja e {papel}.",
+    "flash.user_already_is": "'{user}' ja e {role}.",
     "flash.only_admin_demote": "Este e o unico administrador: promova outra pessoa antes de rebaixa-lo.",
-    "flash.user_now_is": "'{usuario}' agora e {papel}.",
-    "flash.password_reset": "Senha de '{usuario}' redefinida.",
+    "flash.user_now_is": "'{user}' agora e {role}.",
+    "flash.password_reset": "Senha de '{user}' redefinida.",
     "flash.own_two_factor_in_account": "Para desligar o seu proprio 2FA use a tela Conta.",
-    "flash.user_two_factor_off": "Verificacao em duas etapas de '{usuario}' desligada.",
+    "flash.user_two_factor_off": "Verificacao em duas etapas de '{user}' desligada.",
     "flash.cannot_remove_self": "Voce nao pode remover a propria conta.",
     "flash.cannot_remove_only_admin": "Nao da para remover o unico administrador do painel.",
-    "flash.user_removed": "Usuario '{usuario}' removido.",
+    "flash.user_removed": "Usuario '{user}' removido.",
 
     # --------------------------------- erros do cadastro de servidor
     "form.need_name": "Informe um nome.",
@@ -978,21 +978,21 @@ MENSAGENS: dict[str, str] = {
     "form.bad_query_port": "Porta de consulta invalida (use 0 para desligar).",
     "form.bad_service": "Servico invalido (ex.: dragonwilds.service).",
     "form.bad_player_source": "Forma de contar jogadores invalida.",
-    "form.bad_config_folder": "Pasta de configuracao invalida: {motivo}",
-    "form.bad_config_file": "Arquivo de configuracao invalido ({caminho}): {motivo}",
+    "form.bad_config_folder": "Pasta de configuracao invalida: {reason}",
+    "form.bad_config_file": "Arquivo de configuracao invalido ({path}): {reason}",
     "form.too_many_config_files": "No maximo {n} arquivos de configuracao por servidor.",
-    "form.bad_backup_path": "Caminho de backup invalido ({caminho}): {motivo}",
+    "form.bad_backup_path": "Caminho de backup invalido ({path}): {reason}",
     "form.no_root_backup": "Backup da raiz nao: aponte a pasta do save ou da configuracao.",
     "form.too_many_backup_paths": "No maximo {n} caminhos de backup por servidor.",
     "form.bad_api_url": "URL da API invalida (ex.: http://127.0.0.1:8212/v1/api/players).",
     "form.bad_login_url": "URL de login invalida (ex.: https://127.0.0.1:7787/api/v1).",
-    "form.bad_json": "{rotulo} nao e JSON valido: {motivo}.",
+    "form.bad_json": "{label} nao e JSON valido: {reason}.",
     "form.request_body": "Corpo da requisicao",
     "form.login_body": "Corpo do login",
     "form.path_list": "lista",
     "form.path_count": "contagem",
     "form.path_token": "token",
-    "form.bad_json_path": "Caminho da {rotulo} invalido (use algo como 'data.players').",
+    "form.bad_json_path": "Caminho da {label} invalido (use algo como 'data.players').",
     "form.login_needs_token_path":
         "Para o login automatico, informe tambem o caminho do token (ex.: "
         "data.authenticationToken).",
@@ -1005,12 +1005,12 @@ MENSAGENS: dict[str, str] = {
     "a2s.unterminated_text": "texto sem terminador na resposta",
     "a2s.split_incomplete": "resposta dividida veio incompleta",
     "a2s.split_unknown": "resposta dividida em formato desconhecido (compactada?)",
-    "a2s.unexpected_reply": "resposta inesperada do servidor (tipo {tipo})",
-    "a2s.no_reply": "sem resposta em {segundos}s na porta {porta}/udp",
-    "a2s.query_failed": "falha ao consultar {host}:{porta} - {motivo}",
+    "a2s.unexpected_reply": "resposta inesperada do servidor (tipo {kind})",
+    "a2s.no_reply": "sem resposta em {seconds}s na porta {port}/udp",
+    "a2s.query_failed": "falha ao consultar {host}:{port} - {reason}",
 
     # -------------------------------- caminho e arquivo no container
-    "path.outside_roots": "fora das pastas permitidas ({pastas})",
+    "path.outside_roots": "fora das pastas permitidas ({folders})",
     "path.not_absolute": "use um caminho absoluto (comecando com /)",
     "path.bad_character": "caractere invalido no caminho",
     "path.too_long": "caminho longo demais",
@@ -1019,19 +1019,19 @@ MENSAGENS: dict[str, str] = {
     "backup.bad_name": "nome de backup invalido",
 
     # ----------------------------------------------------------- ssh
-    "ssh.failed_to_run": "falha ao executar ssh: {motivo}",
+    "ssh.failed_to_run": "falha ao executar ssh: {reason}",
     "ssh.no_stdin": "nao consegui abrir a entrada do ssh",
     "ssh.no_stdout": "nao consegui abrir a saida do ssh",
-    "ssh.upload_timeout": "tempo esgotado ({segundos}s) enviando para {host}",
+    "ssh.upload_timeout": "tempo esgotado ({seconds}s) enviando para {host}",
 
     # ---------------------------------------------- api http do jogo
     "http.bad_url": "URL invalida (ex.: http://127.0.0.1:8212/v1/api/players)",
     "http.auth_failed": "a API respondeu {status} - confira o usuario/senha de admin",
     "http.bad_status": "a API respondeu HTTP {status}",
     "http.reply_too_big": "resposta da API grande demais para ser lida aqui",
-    "http.not_json": "a resposta nao e JSON: {amostra}",
+    "http.not_json": "a resposta nao e JSON: {sample}",
     "api.login_incomplete": "login automatico incompleto (falta URL de login ou caminho do token)",
-    "api.no_token_at": "o login respondeu, mas nao achei um token em '{caminho}'",
+    "api.no_token_at": "o login respondeu, mas nao achei um token em '{path}'",
     "api.need_url": "informe a URL da API do jogo",
     "api.need_join_pattern": "informe o padrao da linha de entrada de jogador",
     "api.need_query_port": "informe a porta de consulta (query Steam) do servidor",
@@ -1040,31 +1040,31 @@ MENSAGENS: dict[str, str] = {
     "api.no_player_id": "nao sei quem expulsar: a API nao publicou o identificador deste jogador",
 
     # ---------------------------------------- padrao de log e broker
-    "pattern.too_long": "padrao de {rotulo} longo demais (limite de {n} caracteres)",
-    "pattern.invalid": "padrao de {rotulo} invalido: {motivo}",
+    "pattern.too_long": "padrao de {label} longo demais (limite de {n} caracteres)",
+    "pattern.invalid": "padrao de {label} invalido: {reason}",
     "broker.bad_host_or_service": "o broker devolveu host ou servico com formato invalido",
     "broker.server_not_saved": "o servidor nao foi gravado",
 
     # -------------------------- texto dos alertas (vai para o canal)
-    "alert.contact_back": "{nome}: contato restabelecido",
-    "alert.lost_contact": "{nome}: painel perdeu contato",
+    "alert.contact_back": "{name}: contato restabelecido",
+    "alert.lost_contact": "{name}: painel perdeu contato",
     "alert.no_detail": "sem detalhe",
-    "alert.server_back": "{nome}: servidor voltou a rodar",
-    "alert.server_stopped": "{nome}: servidor parou de rodar",
-    "alert.game_failed": "{nome}: o jogo quebrou",
-    "alert.service_is_failed": "servico {servico} esta 'failed'",
-    "alert.service_is": "servico {servico} esta '{estado}'",
-    "alert.restart_loop": "{nome}: o jogo esta caindo em loop",
-    "alert.systemd_restarted": "o systemd reiniciou {servico} {quantos}x desde a ultima olhada",
-    "alert.game_answering": "{nome}: o jogo voltou a responder",
-    "alert.game_mute": "{nome}: o jogo nao responde",
-    "alert.service_up_game_mute": "o servico {servico} esta rodando, mas o jogo nao responde ha",
-    "alert.log_error": "{nome}: erro no log do jogo",
-    "alert.disk_almost_full": "{nome}: disco quase cheio",
-    "alert.disk_detail": "{ponto} em {pct}% ({usado} de {total})",
-    "alert.memory_almost_full": "{nome}: memoria quase cheia",
-    "alert.memory_detail": "{pct}% ({usado} de {total})",
-    "alert.cpu_high": "{nome}: uso de CPU alto",
+    "alert.server_back": "{name}: servidor voltou a rodar",
+    "alert.server_stopped": "{name}: servidor parou de rodar",
+    "alert.game_failed": "{name}: o jogo quebrou",
+    "alert.service_is_failed": "servico {service} esta 'failed'",
+    "alert.service_is": "servico {service} esta '{state}'",
+    "alert.restart_loop": "{name}: o jogo esta caindo em loop",
+    "alert.systemd_restarted": "o systemd reiniciou {service} {times}x desde a ultima olhada",
+    "alert.game_answering": "{name}: o jogo voltou a responder",
+    "alert.game_mute": "{name}: o jogo nao responde",
+    "alert.service_up_game_mute": "o servico {service} esta rodando, mas o jogo nao responde ha",
+    "alert.log_error": "{name}: erro no log do jogo",
+    "alert.disk_almost_full": "{name}: disco quase cheio",
+    "alert.disk_detail": "{mount} em {pct}% ({used} de {total})",
+    "alert.memory_almost_full": "{name}: memoria quase cheia",
+    "alert.memory_detail": "{pct}% ({used} de {total})",
+    "alert.cpu_high": "{name}: uso de CPU alto",
     "alert.cpu_detail_one": "{pct}% em {cores} nucleo",
     "alert.cpu_detail_many": "{pct}% em {cores} nucleos",
     "alert.cpu_game_part": " (jogo: {pct}%)",
@@ -1072,12 +1072,12 @@ MENSAGENS: dict[str, str] = {
     "alert.players_online_one": "{n} jogador online",
     "alert.players_online_many": "{n} jogadores online",
     "alert.players_online_rough": "{n} jogador(es) online",
-    "alert.player_joined": "{nome}: {jogador} entrou no jogo",
-    "alert.player_left": "{nome}: {jogador} saiu do jogo",
-    "alert.joined_one": "{nome}: um jogador conectou",
-    "alert.joined_many": "{nome}: {n} jogadores conectaram",
-    "alert.left_one": "{nome}: um jogador saiu",
-    "alert.left_many": "{nome}: {n} jogadores sairam",
+    "alert.player_joined": "{name}: {player} entrou no jogo",
+    "alert.player_left": "{name}: {player} saiu do jogo",
+    "alert.joined_one": "{name}: um jogador conectou",
+    "alert.joined_many": "{name}: {n} jogadores conectaram",
+    "alert.left_one": "{name}: um jogador saiu",
+    "alert.left_many": "{name}: {n} jogadores sairam",
     "alert.restarts_total": " ({n} no total desta subida)",
     "alert.mute_rounds": " {n} verificacoes",
 }

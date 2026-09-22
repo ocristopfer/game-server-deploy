@@ -85,13 +85,13 @@ def compile_pattern(raw: str | None, label: str) -> re.Pattern[str] | None:
     if not text:
         return None
     if len(text) > RE_MAX_LEN:
-        raise QueryError(Mensagem("pattern.too_long", rotulo=Mensagem(label),
+        raise QueryError(Mensagem("pattern.too_long", label=Mensagem(label),
                                       n=RE_MAX_LEN))
     try:
         return re.compile(text)
     except re.error as exc:
-        raise QueryError(Mensagem("pattern.invalid", rotulo=Mensagem(label),
-                                      motivo=exc)) from exc
+        raise QueryError(Mensagem("pattern.invalid", label=Mensagem(label),
+                                      reason=exc)) from exc
 
 
 def _log_timestamp(line: str) -> str:
