@@ -4,15 +4,15 @@ from __future__ import annotations
 import hashlib
 import shutil
 import ssl
-import time
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-
-from gamebroker.conexao import Cliente, ErroDeConexao, RESPOSTA_MAX, normalizar_impressao
 from http_falso import ServidorFalso
+
+from gamebroker.integrations.http_client import RESPOSTA_MAX, Cliente, ErroDeConexao, normalizar_impressao
 
 TOKEN = "segredo-que-nunca-pode-vazar"
 

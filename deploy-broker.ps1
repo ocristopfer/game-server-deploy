@@ -192,8 +192,13 @@ New-Item -ItemType Directory -Path $BundleDir | Out-Null
 
 Copy-AsLf (Join-Path $ScriptDir "provision-broker-lxc.sh") (Join-Path $BundleDir "provision-broker-lxc.sh")
 $gamebrokerSrc = Join-Path (Join-Path $ScriptDir "src") "gamebroker"
-foreach ($f in (Get-ChildItem $gamebrokerSrc -Filter "*.py" -File)) {
-    Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "gamebroker") $f.Name)
+# -Recurse e o caminho RELATIVO: o pacote tem subpastas (services/, runtime/,
+# persistence/, integrations/, domain/). Copiando so o primeiro nivel, o bundle sai sem
+# elas e o broker so quebra la no CT, no start, com ModuleNotFoundError.
+foreach ($f in (Get-ChildItem $gamebrokerSrc -Filter "*.py" -File -Recurse)) {
+    if ($f.FullName -like "*__pycache__*") { continue }
+    $rel = $f.FullName.Substring($gamebrokerSrc.Length + 1)
+    Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "gamebroker") $rel)
 }
 foreach ($f in (Get-ChildItem (Join-Path $ScriptDir "lib") -Filter "*.sh" -File)) {
     Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "lib") $f.Name)

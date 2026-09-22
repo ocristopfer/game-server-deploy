@@ -17,17 +17,17 @@ from collections.abc import Callable, Mapping
 
 from flask import Flask
 
-from .api import criar_app
-from .backends import Rede
-from .banco import Banco
-from .catalogo import Catalogo
-from .config import ConfigBroker, ErroDeConfig, carregar
-from .conexao import Cliente
-from .opnsense import Opnsense
-from .proxmox import Proxmox
-from .rede import RedeReal
-from .servico import Config, Servico
-from .ssh_install import Executor, InstaladorSsh
+from gamebroker.app import criar_app
+from gamebroker.config import ConfigBroker, ErroDeConfig, carregar
+from gamebroker.integrations.http_client import Cliente
+from gamebroker.persistence.db import Banco
+from gamebroker.runtime.base import Rede
+from gamebroker.runtime.network import RedeReal
+from gamebroker.runtime.opnsense import Opnsense
+from gamebroker.runtime.proxmox import Proxmox
+from gamebroker.runtime.ssh_installer import Executor, InstaladorSsh
+from gamebroker.services.catalog import Catalogo
+from gamebroker.services.instance_service import Config, Servico
 
 
 def montar_servico(cfg: ConfigBroker, executor: Executor | None = None, rede: Rede | None = None,

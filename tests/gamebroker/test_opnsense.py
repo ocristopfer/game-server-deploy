@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import pytest
-
-from gamebroker.alocador import PortaAlocada
-from gamebroker.conexao import Cliente
 from http_falso import ServidorFalso, resumo_de_alias
-from gamebroker.opnsense import (ErroDeLeitura, ErroDoOpnsense, Opnsense, descricao_da_instancia,
-                             portas_ocupadas)
+
+from gamebroker.integrations.http_client import Cliente
+from gamebroker.runtime.opnsense import ErroDeLeitura, ErroDoOpnsense, Opnsense, descricao_da_instancia, portas_ocupadas
+from gamebroker.services.allocator import PortaAlocada
 
 PORTAS = [PortaAlocada(7001, 7001, "udp", "jogo"), PortaAlocada(7002, 7002, "udp", "query")]
 
@@ -220,7 +219,8 @@ def test_servidor_que_responde_lixo_no_apply():
 
 def test_sonda_de_saude_nao_espera_o_prazo_inteiro(monkeypatch):
     import time
-    from gamebroker import opnsense as modulo
+
+    import gamebroker.runtime.opnsense as modulo
     monkeypatch.setattr(modulo, "SONDA_TIMEOUT", 0.3)
     servidor = ServidorFalso(lambda *_a: (time.sleep(1.5), (200, {"rows": []}))[1])
     try:

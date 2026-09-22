@@ -17,10 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .alocador import ips_da_faixa
-from .conexao import normalizar_impressao
-from .proxmox import ConfigProxmox
-from .ssh_install import ARQUIVOS_DA_LIB, ConfigSsh
+from gamebroker.integrations.http_client import normalizar_impressao
+from gamebroker.runtime.proxmox import ConfigProxmox
+from gamebroker.runtime.ssh_installer import ARQUIVOS_DA_LIB, ConfigSsh
+from gamebroker.services.allocator import ips_da_faixa
 
 TOKEN_MINIMO = 32
 

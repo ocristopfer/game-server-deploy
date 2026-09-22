@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from gamebroker import alocador
-from gamebroker.catalogo import validar_dinamico
-from gamebroker.erros import SemRecurso
+import gamebroker.services.allocator as alocador
+from gamebroker.domain.exceptions import SemRecurso
+from gamebroker.services.catalog import validar_dinamico
 
 
 def _jogo(dados_de_jogo, **mudancas):

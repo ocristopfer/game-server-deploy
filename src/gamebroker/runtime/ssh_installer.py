@@ -30,8 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .alocador import PAPEL_JOGO, PAPEL_QUERY, PortaAlocada, porta_da_base, porta_do_papel
-from .catalogo import RECEITAS_WINDOWS, Jogo
+from gamebroker.services.allocator import PAPEL_JOGO, PAPEL_QUERY, PortaAlocada, porta_da_base, porta_do_papel
+from gamebroker.services.catalog import RECEITAS_WINDOWS, Jogo
 
 DESTINO_REMOTO = "/root/gamepanel-install"
 MARCA_DE_SUCESSO = "INSTALACAO CONCLUIDA"

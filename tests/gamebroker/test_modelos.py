@@ -4,13 +4,13 @@ broker recusa e pior que nenhum, porque a pessoa acha que o erro foi dela."""
 from __future__ import annotations
 
 import importlib.util
-import sys
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
-from gamebroker.catalogo import validar_dinamico
+from gamebroker.services.catalog import validar_dinamico
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 _spec = importlib.util.spec_from_file_location(

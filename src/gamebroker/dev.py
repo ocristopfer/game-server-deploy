@@ -14,12 +14,12 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from .alocador import PortaAlocada, ips_da_faixa
-from .api import criar_app
-from .banco import Banco
-from .catalogo import Catalogo, Jogo
-from .fakes import OpnsenseFalso, ProxmoxFalso, RedeFalsa
-from .servico import Config, Servico
+from gamebroker.app import criar_app
+from gamebroker.persistence.db import Banco
+from gamebroker.runtime.fakes import OpnsenseFalso, ProxmoxFalso, RedeFalsa
+from gamebroker.services.allocator import PortaAlocada, ips_da_faixa
+from gamebroker.services.catalog import Catalogo, Jogo
+from gamebroker.services.instance_service import Config, Servico
 
 
 class InstaladorLento:

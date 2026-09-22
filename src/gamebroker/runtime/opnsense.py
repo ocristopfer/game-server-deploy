@@ -18,8 +18,8 @@ import ipaddress
 import re
 from collections.abc import Sequence
 
-from .alocador import PortaAlocada
-from .conexao import Cliente, Resposta
+from gamebroker.integrations.http_client import Cliente, Resposta
+from gamebroker.services.allocator import PortaAlocada
 
 PREFIXO_DA_DESCRICAO = "gamepanel:"
 LIMITE_DE_FAIXA = 5000

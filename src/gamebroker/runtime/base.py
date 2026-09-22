@@ -13,8 +13,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from .alocador import PortaAlocada
-from .catalogo import Jogo
+from gamebroker.services.allocator import PortaAlocada
+from gamebroker.services.catalog import Jogo
 
 
 @dataclass(frozen=True)

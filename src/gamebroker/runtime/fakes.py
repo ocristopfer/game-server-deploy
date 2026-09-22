@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from .alocador import PortaAlocada
-from .backends import EspecificacaoDeCt
-from .catalogo import Jogo
+from gamebroker.runtime.base import EspecificacaoDeCt
+from gamebroker.services.allocator import PortaAlocada
+from gamebroker.services.catalog import Jogo
 
 
 class ProxmoxFalso:

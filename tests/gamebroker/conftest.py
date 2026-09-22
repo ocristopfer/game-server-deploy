@@ -12,16 +12,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-from gamebroker.alocador import ips_da_faixa
-from gamebroker.banco import Banco
-from gamebroker.catalogo import Catalogo
-from gamebroker.conexao import Cliente
-from gamebroker.fakes import InstaladorFalso, OpnsenseFalso, ProxmoxFalso, RedeFalsa
 from http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE, OpnsenseHttpFalso, PveFalso, ServidorFalso
-from gamebroker.opnsense import Opnsense
-from gamebroker.proxmox import ConfigProxmox, Proxmox
-from gamebroker.servico import Config, Servico
+
+from gamebroker.integrations.http_client import Cliente
+from gamebroker.persistence.db import Banco
+from gamebroker.runtime.fakes import InstaladorFalso, OpnsenseFalso, ProxmoxFalso, RedeFalsa
+from gamebroker.runtime.opnsense import Opnsense
+from gamebroker.runtime.proxmox import ConfigProxmox, Proxmox
+from gamebroker.services.allocator import ips_da_faixa
+from gamebroker.services.catalog import Catalogo
+from gamebroker.services.instance_service import Config, Servico
 
 TOKEN = "t" * 40
 

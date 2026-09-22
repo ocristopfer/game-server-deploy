@@ -14,8 +14,8 @@ import ipaddress
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from .catalogo import Jogo
-from .erros import SemRecurso
+from gamebroker.domain.exceptions import SemRecurso
+from gamebroker.services.catalog import Jogo
 
 PAPEL_JOGO = "jogo"
 PAPEL_QUERY = "query"

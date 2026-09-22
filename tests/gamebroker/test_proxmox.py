@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import pytest
-
-from gamebroker.backends import EspecificacaoDeCt
-from gamebroker.conexao import Cliente
 from http_falso import ServidorFalso
-from gamebroker.proxmox import ConfigProxmox, ErroDoProxmox, Proxmox
+
+from gamebroker.integrations.http_client import Cliente
+from gamebroker.runtime.base import EspecificacaoDeCt
+from gamebroker.runtime.proxmox import ConfigProxmox, ErroDoProxmox, Proxmox
 
 ESPEC = EspecificacaoDeCt(ctid=300, hostname="alfa-300", ip="10.0.0.30", jogo="alfa",
                           memoria_mb=4096, cores=2, disco_gb=20)
@@ -169,7 +169,7 @@ def test_backend_sem_servidor_e_erro_de_conexao_nao_excecao_solta():
     url = servidor.url
     servidor.parar()
     backend = Proxmox(Cliente(url, {}), ConfigProxmox(**BASE), dormir=lambda _s: None)
-    from gamebroker.conexao import ErroDeConexao
+    from gamebroker.integrations.http_client import ErroDeConexao
     with pytest.raises(ErroDeConexao):
         backend.ctids_e_ips()
 
@@ -178,7 +178,8 @@ def test_sonda_de_saude_nao_espera_o_prazo_inteiro(monkeypatch):
     """Firewall que descarta o pacote deixaria a sonda esperando 30 s: a saude responderia lenta
     justo quando esta quebrada."""
     import time
-    from gamebroker import proxmox as modulo
+
+    import gamebroker.runtime.proxmox as modulo
     monkeypatch.setattr(modulo, "SONDA_TIMEOUT", 0.3)
     servidor = ServidorFalso(lambda *_a: (time.sleep(1.5), (200, {}))[1])
     try:

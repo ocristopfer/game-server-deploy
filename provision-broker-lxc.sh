@@ -101,7 +101,13 @@ validate_bundle() {
   need_cmd pveam
   need_cmd openssl
   local f
-  for f in api.py servico.py prod.py config.py proxmox.py opnsense.py ssh_install.py; do
+  # Caminhos, e nao so nomes: o pacote tem subpastas, e um bundle sem elas so quebraria
+  # la no start do servico, com ModuleNotFoundError.
+  local obrigatorios=(app.py wsgi.py config.py services/instance_service.py
+                      services/catalog.py services/allocator.py persistence/db.py
+                      runtime/proxmox.py runtime/opnsense.py runtime/ssh_installer.py
+                      integrations/http_client.py domain/exceptions.py)
+  for f in "${obrigatorios[@]}"; do
     [[ -f "$SCRIPT_DIR/gamebroker/$f" ]] || die "gamebroker/$f nao encontrado no bundle"
   done
   [[ -f "$SCRIPT_DIR/lib/ct-install.sh" && -f "$SCRIPT_DIR/lib/ct-fases.sh" ]] || die "lib/ct-install.sh e lib/ct-fases.sh sao obrigatorios no bundle"
@@ -236,7 +242,7 @@ push_application() {
   push_tree "$SCRIPT_DIR/games" "${APP_DIR}/games"
   run_ct "chown -R root:root ${APP_DIR}"
   # Falhar aqui e melhor do que o servico cair no start com ModuleNotFoundError.
-  run_ct "cd ${APP_DIR} && python3 -c 'import gamebroker.prod'" \
+  run_ct "cd ${APP_DIR} && python3 -c 'import gamebroker.wsgi'" \
     || die "O pacote do broker nao importa no CT (falta algum arquivo no bundle?)"
 }
 
@@ -386,7 +392,7 @@ EnvironmentFile=${CONF_DIR}/broker.env
 # memoria do processo. As threads atendem o polling do painel enquanto uma criacao roda.
 ExecStart=/usr/bin/gunicorn --workers 1 --threads 8 --timeout 120 \\
   --certfile ${CONF_DIR}/tls/cert.pem --keyfile ${CONF_DIR}/tls/key.pem \\
-  --bind 0.0.0.0:${BROKER_PORT} --access-logfile - 'gamebroker.prod:criar_app_de_ambiente()'
+  --bind 0.0.0.0:${BROKER_PORT} --access-logfile - 'gamebroker.wsgi:criar_app_de_ambiente()'
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

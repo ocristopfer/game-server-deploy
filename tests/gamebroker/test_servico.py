@@ -5,9 +5,9 @@ import sqlite3
 
 import pytest
 
-from gamebroker.alocador import ips_da_faixa
-from gamebroker.banco import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK
-from gamebroker.erros import Conflito, CotaExcedida, ErroDeValidacao, NaoEncontrado, SemRecurso
+from gamebroker.domain.exceptions import Conflito, CotaExcedida, ErroDeValidacao, NaoEncontrado, SemRecurso
+from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK
+from gamebroker.services.allocator import ips_da_faixa
 
 
 def _criar(amb, jogo="alfa", nome="Meu servidor", ator="admin"):

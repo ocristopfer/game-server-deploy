@@ -12,8 +12,8 @@ import re
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 
-from .erros import ErroDeValidacao, Recusa
-from .servico import Servico
+from gamebroker.domain.exceptions import ErroDeValidacao, Recusa
+from gamebroker.services.instance_service import Servico
 
 TOKEN_MINIMO = 32
 CORPO_MAX = 64 * 1024

@@ -5,13 +5,13 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-from gamebroker import prod
-from gamebroker.config import ErroDeConfig, carregar
-from gamebroker.fakes import RedeFalsa
 from http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE
-from gamebroker.rede import RedeReal
 from test_ssh_install import BLOB, CHAVE_PUBLICA, ExecutorFalso
+
+import gamebroker.wsgi as prod
+from gamebroker.config import ErroDeConfig, carregar
+from gamebroker.runtime.fakes import RedeFalsa
+from gamebroker.runtime.network import RedeReal
 
 TOKEN_BROKER = "b" * 48
 CHAVE_DO_PAINEL = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainelPainelPainelPainelPainel painel@gp"

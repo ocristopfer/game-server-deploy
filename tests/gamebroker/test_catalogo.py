@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from gamebroker import catalogo as cat
-from gamebroker.erros import Conflito, ErroDeValidacao, NaoEncontrado
+import gamebroker.services.catalog as cat
+from gamebroker.domain.exceptions import Conflito, ErroDeValidacao, NaoEncontrado
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 

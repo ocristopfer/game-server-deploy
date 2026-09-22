@@ -15,7 +15,9 @@ confere() { # descricao, esperado, atual
 # ----- bundle igual ao que o deploy-broker.ps1 monta -----
 work=$(mktemp -d)
 mkdir -p "$work/gamebroker" "$work/lib" "$work/games"
-cp "$REPO"/src/gamebroker/*.py "$work/gamebroker/"
+# -r: o pacote tem subpastas (services/, runtime/, persistence/...).
+cp -r "$REPO"/src/gamebroker/. "$work/gamebroker/"
+find "$work/gamebroker" -name __pycache__ -type d -prune -exec rm -rf {} +
 cp "$REPO"/lib/*.sh "$work/lib/"
 cp "$REPO"/games/*.env "$work/games/"
 cp "$REPO/provision-broker-lxc.sh" "$work/"
@@ -71,7 +73,7 @@ confere "broker.env: modo/dono"           "640 root:gamebroker"        "$(stat -
 confere "token: modo/dono"                "600 root:root"              "$(stat -c '%a %U:%G' /etc/gamebroker/token)"
 confere "chave ssh do broker: modo/dono"  "600 gamebroker:gamebroker"  "$(stat -c '%a %U:%G' /etc/gamebroker/ssh/id_ed25519)"
 confere "chave privada TLS: modo/dono"    "600 gamebroker:gamebroker"  "$(stat -c '%a %U:%G' /etc/gamebroker/tls/key.pem)"
-confere "codigo do broker e de root"      "root:root"                  "$(stat -c '%U:%G' /opt/gamebroker/gamebroker/prod.py)"
+confere "codigo do broker e de root"      "root:root"                  "$(stat -c '%U:%G' /opt/gamebroker/gamebroker/wsgi.py)"
 [ "${#T1}" -ge 32 ] && ok "token com ${#T1} caracteres" || nok "token curto: ${#T1}"
 openssl x509 -in /etc/gamebroker/tls/cert.pem -noout -ext subjectAltName | grep -q '192.168.2.18' \
   && ok "SAN = 192.168.2.18" || nok "SAN sem o IP do broker"
@@ -135,7 +137,7 @@ U=/etc/systemd/system/gamebroker.service
 grep -q "^User=gamebroker" $U && ok "roda como gamebroker, nao root" || nok "unit roda como root?"
 grep -q -- "--workers 1" $U && ok "UM worker (a trava de IP vive na memoria)" || nok "workers != 1"
 grep -q -- "--certfile /etc/gamebroker/tls/cert.pem" $U && grep -q -- "--keyfile /etc/gamebroker/tls/key.pem" $U && ok "gunicorn com TLS" || nok "sem TLS na unit"
-grep -q "gamebroker.prod:criar_app_de_ambiente()" $U && ok "entrada gamebroker.prod" || nok "entrada errada"
+grep -q "gamebroker.wsgi:criar_app_de_ambiente()" $U && ok "entrada gamebroker.wsgi" || nok "entrada errada"
 grep -q "^EnvironmentFile=/etc/gamebroker/broker.env" $U && ok "segredos vem do EnvironmentFile (nao da unit)" || nok "EnvironmentFile ausente"
 grep -q "ProtectSystem=strict" $U && grep -q "NoNewPrivileges=true" $U && ok "endurecimento do systemd" || nok "sem endurecimento"
 ! grep -q "segredo-do-proxmox" $U && ok "nenhum segredo dentro da unit" || nok "SEGREDO NA UNIT"

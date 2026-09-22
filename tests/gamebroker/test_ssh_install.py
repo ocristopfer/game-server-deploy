@@ -9,10 +9,16 @@ from pathlib import Path
 
 import pytest
 
-from gamebroker.alocador import PortaAlocada
-from gamebroker.catalogo import validar_dinamico
-from gamebroker.ssh_install import (DESTINO_REMOTO, ConfigSsh, ErroDeInstalacao, ExecutorReal,
-                                InstaladorSsh, montar_env)
+from gamebroker.runtime.ssh_installer import (
+    DESTINO_REMOTO,
+    ConfigSsh,
+    ErroDeInstalacao,
+    ExecutorReal,
+    InstaladorSsh,
+    montar_env,
+)
+from gamebroker.services.allocator import PortaAlocada
+from gamebroker.services.catalog import validar_dinamico
 
 BLOB = "AAAAC3NzaC1lZDI1NTE5AAAAIExemploExemploExemploExemplo"
 CHAVE_PUBLICA = f"ssh-ed25519 {BLOB} broker@teste"

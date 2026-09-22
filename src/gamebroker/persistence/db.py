@@ -13,8 +13,8 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from .alocador import PortaAlocada
-from .erros import Conflito
+from gamebroker.domain.exceptions import Conflito
+from gamebroker.services.allocator import PortaAlocada
 
 ESTADO_RESERVADA = "reservada"
 ESTADO_ATIVA = "ativa"

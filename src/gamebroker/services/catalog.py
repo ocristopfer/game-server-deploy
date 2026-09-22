@@ -22,7 +22,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from .erros import Conflito, ErroDeValidacao, NaoEncontrado
+from gamebroker.domain.exceptions import Conflito, ErroDeValidacao, NaoEncontrado
 
 ORIGEM_CURADO = "curado"
 ORIGEM_DINAMICO = "dinamico"

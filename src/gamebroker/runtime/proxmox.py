@@ -18,8 +18,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import quote
 
-from .backends import EspecificacaoDeCt
-from .conexao import Cliente, Resposta
+from gamebroker.integrations.http_client import Cliente, Resposta
+from gamebroker.runtime.base import EspecificacaoDeCt
 
 TAG_DO_BROKER = "gamepanel-broker"
 _NOME_RE = re.compile(r"[A-Za-z0-9._-]{1,64}", re.ASCII)

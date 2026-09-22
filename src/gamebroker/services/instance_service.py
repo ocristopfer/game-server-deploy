@@ -11,12 +11,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from . import alocador
-from .alocador import PortaAlocada
-from .backends import EspecificacaoDeCt, Instalador, Opnsense, Proxmox, Rede
-from .banco import (ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK, Banco)
-from .catalogo import NOME_RE, Catalogo, Jogo
-from .erros import Conflito, CotaExcedida, ErroDeValidacao, NaoEncontrado
+import gamebroker.services.allocator as alocador
+from gamebroker.domain.exceptions import Conflito, CotaExcedida, ErroDeValidacao, NaoEncontrado
+from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK, Banco
+from gamebroker.runtime.base import EspecificacaoDeCt, Instalador, Opnsense, Proxmox, Rede
+from gamebroker.services.allocator import PortaAlocada
+from gamebroker.services.catalog import NOME_RE, Catalogo, Jogo
 
 _ATOR_RE = re.compile(r"[A-Za-z0-9._-]{1,32}", re.ASCII)
 ATOR_DESCONHECIDO = "desconhecido"

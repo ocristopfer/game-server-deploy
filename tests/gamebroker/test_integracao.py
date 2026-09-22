@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import pytest
 
-from gamebroker.banco import ESTADO_ATIVA, OP_ERRO, OP_OK
-from gamebroker.erros import SemRecurso
-from gamebroker.fakes import InstaladorFalso, RedeFalsa
-from gamebroker.servico import Config, Servico
-from gamebroker.alocador import ips_da_faixa
+from gamebroker.domain.exceptions import SemRecurso
+from gamebroker.persistence.db import ESTADO_ATIVA, OP_ERRO, OP_OK
+from gamebroker.runtime.fakes import InstaladorFalso, RedeFalsa
+from gamebroker.services.allocator import ips_da_faixa
+from gamebroker.services.instance_service import Config, Servico
 
 
 @pytest.fixture
@@ -70,8 +70,9 @@ def test_regra_que_o_broker_nao_entende_impede_criar(real):
 def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
     """Proxmox e OPNsense reais (contra falsos HTTP) + InstaladorSsh real (com executor que
     grava os comandos): e o caminho de criacao inteiro, exceto o SSH em si."""
-    from gamebroker.ssh_install import ConfigSsh, InstaladorSsh
     from test_ssh_install import CHAVE_PUBLICA, ExecutorFalso
+
+    from gamebroker.runtime.ssh_installer import ConfigSsh, InstaladorSsh
 
     lib = tmp_path / "lib"
     lib.mkdir()
