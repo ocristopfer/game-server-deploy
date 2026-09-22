@@ -20,7 +20,6 @@ import os
 import re
 import secrets
 import sqlite3
-import subprocess
 import sys
 import threading
 import time
@@ -62,7 +61,7 @@ from gamepanel.services import (
     server_service,
     status_service,
 )
-from gamepanel.tasks import broker_jobs, scheduler
+from gamepanel.tasks import broker_jobs, log_stream, scheduler
 
 # O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
 # resto do painel continua funcionando e a tela do terminal responde 503.
@@ -1636,8 +1635,6 @@ _texto_de_online = alert_service.texto_de_online
 # estados do log seria um segundo lugar para errar — e pior, um que divergiria em silencio
 # do numero que a tela mostra.
 
-_streams: dict[int, "_LogStream"] = {}
-_streams_lock = threading.Lock()
 # Um alerta de jogador por servidor de cada vez: o stream e a volta do monitor mexem no
 # MESMO _estado_monitor[sid], e sem isto os dois poderiam avisar a mesma entrada.
 _jogadores_locks: dict[int, threading.Lock] = {}
@@ -1649,196 +1646,57 @@ def lock_de_jogadores(sid: int) -> threading.Lock:
         return _jogadores_locks.setdefault(sid, threading.Lock())
 
 
-def _linha_de_jogador(linha: str, entrar, sair) -> bool:
-    """Esta linha do log e uma entrada ou saida de jogador?"""
-    curta = linha[:LOG_LINE_MAX]
-    if entrar and entrar.search(curta):
-        return True
-    return bool(sair and sair.search(curta))
-
-
-def _assinatura_de_stream(server) -> tuple:
-    """O que, mudando, obriga a refazer a conexao (regex nova, log em outro lugar...)."""
-    return (
-        server["host"], int(server["ssh_port"] or 22), server["ssh_user"],
-        server["service"], _valor_guardado(server, "log_path"),
-        _valor_guardado(server, "join_re"), _valor_guardado(server, "leave_re"),
+def _log_stream_deps() -> log_stream.LogStreamDeps:
+    return log_stream.LogStreamDeps(
+        ssh_argv=ssh_argv, estado_monitor=_estado_monitor,
+        invalidate_players=invalidate_players, connect=_connect,
+        webhook_config=webhook_config, lock_de_jogadores=lock_de_jogadores,
+        alerta_de_jogadores=_alerta_de_jogadores, logger=app.logger,
+        debounce=LOG_STREAM_DEBOUNCE, retry=LOG_STREAM_RETRY,
     )
 
 
-def streams_desejados(servidores, cfg) -> dict[int, tuple]:
-    """Quais servidores merecem uma conexao de log aberta, e com que assinatura."""
-    if not (LOG_STREAM and cfg["eventos"] & {"jogador-entrou", "jogador-saiu"}):
-        return {}
-    # So quem conta por log: A2S e HTTP ja respondem de graca na volta curta, e abrir uma
-    # conexao permanente para eles seria pagar por nada.
-    return {int(s["id"]): _assinatura_de_stream(s) for s in servidores
-            if player_source(s) == "log" and _valor_guardado(s, "join_re")}
+class _LogStream(log_stream.LogStream):
+    """A conexao de log com as pecas do painel ja ligadas.
 
-
-class _LogStream:
-    """Uma conexao SSH longa ouvindo o log de UM servidor."""
+    Subclasse (e nao `functools.partial`) para continuar sendo uma CLASSE de dois
+    argumentos: o supervisor a troca por um dublê nos testes, e ha teste que a constroi
+    direto para conferir que um regex torto faz a thread desistir.
+    """
 
     def __init__(self, server, assinatura):
-        # Row nao atravessa thread (ela pertence a conexao do request): copia.
-        self.dados = dict(server)
-        self.sid = int(server["id"])
-        self.assinatura = assinatura
-        self.proc: subprocess.Popen | None = None
-        self.parar = threading.Event()
-        self.ultimo_disparo = 0.0
-        self.erro = ""
-        # Erro de configuracao (regex que nao compila, caminho de log invalido) nao se
-        # resolve tentando de novo. Sem esta marca o supervisor recriaria a thread a cada
-        # volta, para ela morrer igual — um laco que so enche o log de erro.
-        self.desistiu = False
-        self.thread = threading.Thread(target=self._roda, daemon=True)
+        super().__init__(_log_stream_deps(), server, assinatura)
 
-    def start(self) -> None:
-        self.thread.start()
 
-    def stop(self) -> None:
-        self.parar.set()
-        proc = self.proc
-        if proc and proc.poll() is None:
-            try:
-                proc.terminate()
-            except OSError:
-                pass
+def _linha_de_jogador(linha: str, entrar, sair) -> bool:
+    return log_stream.linha_de_jogador(linha, entrar, sair)
 
-    def vivo(self) -> bool:
-        return self.thread.is_alive()
 
-    def _roda(self) -> None:
-        while not self.parar.is_set():
-            try:
-                self._acompanha()
-            # A thread nao morre por um tropeco.
-            except Exception as exc:  # noqa: BLE001
-                self.erro = str(exc)
-                app.logger.exception("o acompanhamento de log de '%s' caiu",
-                                     self.dados.get("name"))
-            # Servidor desligado nao pode virar um laco de SSH por segundo.
-            if self.parar.wait(LOG_STREAM_RETRY):
-                return
+def _assinatura_de_stream(server) -> tuple:
+    return log_stream.assinatura_de_stream(server, _valor_guardado)
 
-    def _desiste(self, motivo: str) -> None:
-        self.erro = motivo
-        self.desistiu = True
-        self.parar.set()
 
-    def _acompanha(self) -> None:
-        # Cadastro torto para aqui: nao adianta reconectar contra um regex que nao compila.
-        try:
-            entrar = compile_pattern(self.dados.get("join_re"), "entrada")
-            sair = compile_pattern(self.dados.get("leave_re"), "saida")
-            alvo = log_path_valido(self.dados.get("log_path") or "")
-        except (QueryError, ValueError) as exc:
-            return self._desiste(str(exc))
-        if not entrar:
-            return self._desiste("sem padrao de entrada, nao ha o que ouvir")
-        # Sem multiplexar: esta conexao fica de pe por horas, e a mestre compartilhada
-        # existe justamente para as chamadas curtas do monitor.
-        argv = ssh_argv(
-            self.dados, connect_timeout=10,
-            extra=("-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"),
-        ) + [q("bash", "-lc", LOG_FOLLOW_SCRIPT, "gp", self.dados["service"], alvo)]
-        self.proc = subprocess.Popen(
-            argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, errors="replace", bufsize=1,
-        )
-        # Guardado numa variavel local: `self.proc.stdout` e Optional (Popen sem PIPE
-        # nao tem saida), e e daqui que sai o laco que fica horas lendo.
-        saida = self.proc.stdout
-        if saida is None:
-            return self._desiste("nao consegui abrir a saida do ssh")
-        self.erro = ""
-        try:
-            for linha in saida:
-                if self.parar.is_set():
-                    break
-                if _linha_de_jogador(linha, entrar, sair):
-                    self._confere()
-        finally:
-            self.stop_proc()
+def streams_desejados(servidores, cfg) -> dict[int, tuple]:
+    return log_stream.streams_desejados(
+        servidores, cfg, LOG_STREAM, player_source, _valor_guardado)
 
-    def stop_proc(self) -> None:
-        proc, self.proc = self.proc, None
-        if not proc:
-            return
-        for fluxo in (proc.stdout, proc.stderr):
-            try:
-                if fluxo:
-                    fluxo.close()
-            except OSError:
-                pass
-        if proc.poll() is None:
-            try:
-                proc.terminate()
-            except OSError:
-                pass
-        try:
-            proc.wait(timeout=5)      # sem isto sobra zumbi a cada reconexao
-        except subprocess.TimeoutExpired:
-            proc.kill()
 
-    def _confere(self) -> None:
-        """A linha chegou: refaz a contagem pelo caminho normal e avisa se mudou."""
-        agora = time.monotonic()
-        if agora - self.ultimo_disparo < LOG_STREAM_DEBOUNCE:
-            return                     # um grupo entrando junto e UMA conferida
-        self.ultimo_disparo = agora
-        anterior = _estado_monitor.get(self.sid)
-        if anterior is None:
-            return                     # sem linha de base ainda: a volta do monitor faz
-        # O cache guarda o numero de ANTES da linha que acabou de chegar.
-        invalidate_players(self.sid)
-        conn = _connect()              # esta thread vive fora do contexto do request
-        try:
-            cfg = webhook_config(conn)
-            with lock_de_jogadores(self.sid):
-                _alerta_de_jogadores(conn, self.dados, anterior.get("service", ""),
-                                     anterior, cfg)
-        finally:
-            conn.close()
+# `_LogStream` vai por lambda: o nome e resolvido neste modulo a cada abertura, que e o
+# que deixa o teste do supervisor troca-lo por um dublê sem SSH.
+_supervisor = log_stream.Supervisor(lambda server, assinatura: _LogStream(server, assinatura))
+# O MESMO dicionario do supervisor: a fixture do teste o limpa por este nome.
+_streams = _supervisor.abertos
 
 
 def streams_vivos() -> int:
-    """Quantas conexoes de log estao mesmo ouvindo agora (para a tela nao mentir)."""
-    with _streams_lock:
-        return sum(1 for s in _streams.values() if s.vivo())
+    return _supervisor.vivos()
 
 
 def supervisiona_streams() -> int:
     """Liga, desliga e ressuscita as conexoes de log. Devolve quantas ficaram registradas."""
     conn = db()
     servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
-    desejados = streams_desejados(servidores, webhook_config(conn))
-    por_id = {int(s["id"]): s for s in servidores}
-
-    with _streams_lock:
-        atuais = list(_streams.items())
-    for sid, stream in atuais:
-        # Sai quem deixou de ser desejado e quem mudou de configuracao (regex nova, log em
-        # outro caminho). Thread morta tambem sai, para o passo abaixo levantar de novo —
-        # menos quando ela desistiu por cadastro invalido, que recriar nao conserta: essa
-        # fica de lapide ate alguem arrumar o cadastro e a assinatura mudar.
-        trocou = sid not in desejados or desejados[sid] != stream.assinatura
-        if trocou or (not stream.vivo() and not stream.desistiu):
-            stream.stop()
-            with _streams_lock:
-                _streams.pop(sid, None)
-
-    for sid, assinatura in desejados.items():
-        with _streams_lock:
-            if sid in _streams:
-                continue
-            novo = _LogStream(por_id[sid], assinatura)
-            _streams[sid] = novo
-        novo.start()
-
-    with _streams_lock:
-        return len(_streams)
+    return _supervisor.sincroniza(servidores, streams_desejados(servidores, webhook_config(conn)))
 
 
 class _Ritmo(NamedTuple):
