@@ -21,9 +21,9 @@
 <nav class="tabs" aria-label="Telas deste servidor">
   {% for s in secoes_do_servidor %}
     <a class="tabs__item" href="{{ url_for(endpoint_da_secao(s), sid=server.id) }}"
-       title="{{ s.ajuda }}"
+       title="{{ _(s.ajuda) }}"
        {% if s.chave == ativa %}aria-current="page"{% endif %}>
-      <span class="icone" aria-hidden="true">{{ s.icone }}</span>{{ s.rotulo }}
+      <span class="icone" aria-hidden="true">{{ s.icone }}</span>{{ _(s.rotulo) }}
     </a>
   {% endfor %}
 </nav>
@@ -38,10 +38,10 @@
   {% for a in acoes %}
     {{ ui.acao(
          url_for('server_action', sid=server.id, action=a.chave),
-         a.curto if compacto else a.rotulo,
+         _(a.curto) if compacto else _(a.rotulo),
          variante=a.variante,
          icone=a.icone,
-         confirmar=(a.rotulo ~ ' — ' ~ server.name ~ '?') if a.confirma else '',
+         confirmar=(_(a.rotulo) ~ ' — ' ~ server.name ~ '?') if a.confirma else '',
          bloco=compacto) }}
   {% endfor %}
 </div>
@@ -56,10 +56,10 @@
   {% for a in acoes %}
     {{ ui.acao(
          url_for('server_action', sid=server.id, action=a.chave),
-         a.rotulo,
+         _(a.rotulo),
          variante=a.variante,
          icone=a.icone,
-         confirmar=(a.rotulo ~ ' — ' ~ server.name ~ '?') if a.confirma else '') }}
+         confirmar=(_(a.rotulo) ~ ' — ' ~ server.name ~ '?') if a.confirma else '') }}
   {% endfor %}
 </div>
 {% endmacro %}
@@ -95,7 +95,7 @@
       <span class="menu__titulo">{{ server.name }}</span>
       {% for s in secoes_do_servidor %}
         <a class="menu__item" role="menuitem" href="{{ url_for(endpoint_da_secao(s), sid=server.id) }}">
-          <span class="icone" aria-hidden="true">{{ s.icone }}</span>{{ s.rotulo }}
+          <span class="icone" aria-hidden="true">{{ s.icone }}</span>{{ _(s.rotulo) }}
         </a>
       {% endfor %}
       <hr class="menu__sep">
@@ -103,8 +103,8 @@
       {% for a in energia_restante(status.service) + acoes_de_manutencao %}
         {{ ui.menu_acao(
              url_for('server_action', sid=server.id, action=a.chave),
-             a.rotulo, icone=a.icone,
-             confirmar=(a.rotulo ~ ' — ' ~ server.name ~ '?') if a.confirma else '') }}
+             _(a.rotulo), icone=a.icone,
+             confirmar=(_(a.rotulo) ~ ' — ' ~ server.name ~ '?') if a.confirma else '') }}
       {% endfor %}
     {% endcall %}
   </div>

@@ -42,6 +42,7 @@ if __package__ in (None, ""):  # pragma: no cover - so vale fora do import norma
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from gamepanel import cli
+from gamepanel import i18n
 from gamepanel import navigation as ui
 from gamepanel.games import config_format as gameconf
 from gamepanel.games import gamefields
@@ -478,7 +479,8 @@ def usuario_logado() -> sqlite3.Row | None:
     row = None
     if uid:
         row = db().execute(
-            "SELECT id, username, role, created_at, totp_enabled FROM users WHERE id = ?", (uid,)
+            "SELECT id, username, role, created_at, totp_enabled, lang"
+            " FROM users WHERE id = ?", (uid,)
         ).fetchone()
     g._user = row
     return row
@@ -587,11 +589,46 @@ def static_url(nome: str) -> str:
     return url_for("static", filename=nome, v=marca)
 
 
+IDIOMA_PADRAO = i18n.idioma_valido(os.environ.get("GAMEPANEL_LANG"))
+
+
+def idioma_atual() -> str:
+    """O idioma DESTE pedido, decidido uma vez e guardado no `g`.
+
+    A ordem e de preferencia: o que a pessoa escolheu na Conta vence tudo; sem escolha
+    (ou sem ninguem logado, como na tela de login) vale o que o navegador pede; e o
+    ultimo recurso e o padrao do deploy.
+    """
+    escolhido = getattr(g, "_idioma", None)
+    if escolhido is not None:
+        return escolhido
+    usuario = usuario_logado()
+    do_usuario = _valor_guardado(usuario, "lang") if usuario else ""
+    if do_usuario:
+        escolhido = i18n.idioma_valido(do_usuario)
+    elif request:
+        escolhido = i18n.do_cabecalho(request.headers.get("Accept-Language"))
+    else:
+        escolhido = IDIOMA_PADRAO
+    g._idioma = escolhido
+    return escolhido
+
+
+def traduzir(chave: str) -> str:
+    """O `_()` das telas e das mensagens: a frase daquela chave, no idioma
+    deste pedido."""
+    return i18n.traduzir(chave, idioma_atual())
+
+
 @app.context_processor
 def _inject():
     usuario = usuario_logado()
     return {
         "csrf_token": csrf_token,
+        # `_` e o nome de sempre para traduzir numa tela.
+        "_": traduzir,
+        "idioma_atual": idioma_atual(),
+        "idiomas": i18n.IDIOMAS,
         "static_url": static_url,
         "current_user": usuario["username"] if usuario else None,
         # As telas escondem o que o operador nao pode abrir. Quem manda e o
@@ -4066,6 +4103,24 @@ def history():
 @login_required
 def ssh_key():
     return render_template("ssh_key.html", pubkey=public_key())
+
+
+@app.post("/account/idioma")
+@login_required
+def account_language():
+    """Guarda o idioma da tela para ESTA pessoa.
+
+    Por usuario, e nao por sessao: quem trabalha em ingles nao quer reescolher a cada
+    login, e duas pessoas no mesmo painel podem preferir idiomas diferentes.
+    """
+    escolhido = i18n.idioma_valido(request.form.get("lang"))
+    with db() as conn:
+        conn.execute("UPDATE users SET lang = ? WHERE id = ?", (escolhido, session["uid"]))
+    # O `g` desta requisicao ja guardou o idioma antigo, e o flash abaixo e lido na
+    # PROXIMA (depois do redirect) — entao ele ja sai no idioma novo.
+    g._idioma = escolhido
+    flash(traduzir("account.language.changed"), "ok")
+    return redirect(url_for("account"))
 
 
 @app.route("/account", methods=["GET", "POST"])

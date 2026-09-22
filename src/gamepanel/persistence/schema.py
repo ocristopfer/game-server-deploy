@@ -209,6 +209,9 @@ MIGRATIONS = (
     ("users", "totp_last_step", "ALTER TABLE users ADD COLUMN totp_last_step INTEGER NOT NULL DEFAULT 0"),
     ("users", "totp_recovery", "ALTER TABLE users ADD COLUMN totp_recovery TEXT NOT NULL DEFAULT ''"),
     ("jobs", "broker_op", "ALTER TABLE jobs ADD COLUMN broker_op TEXT NOT NULL DEFAULT ''"),
+    # Idioma da tela, por pessoa. Vazio de proposito: quem nunca escolheu segue o que o
+    # navegador pede, e nao uma escolha que o painel fez por ela.
+    ("users", "lang", "ALTER TABLE users ADD COLUMN lang TEXT NOT NULL DEFAULT ''"),
 )
 
 

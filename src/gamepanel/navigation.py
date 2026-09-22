@@ -56,22 +56,22 @@ class Item:
 # de abas; por isso "Adicionar servidor", "Usuarios" e "Acesso SSH" ficam no menu da
 # barra de cima — sao coisas que se faz uma vez, nao todo dia.
 NAV_PRINCIPAL = (
-    Item("servidores", "Servidores", "🎮", "dashboard"),
-    Item("historico", "Historico", "🕘", "history"),
-    Item("alertas", "Alertas", "🔔", "alerts", admin=True),
-    Item("conta", "Conta", "👤", "account"),
+    Item("servidores", "nav.servers", "🎮", "dashboard"),
+    Item("historico", "nav.history", "🕘", "history"),
+    Item("alertas", "nav.alerts", "🔔", "alerts", admin=True),
+    Item("conta", "nav.account", "👤", "account"),
 )
 
 # Menu do canto da barra de cima: o resto.
 NAV_SECUNDARIA = (
-    Item("novo", "Adicionar servidor", "➕", "server_new", admin=True),
+    Item("novo", "nav.add_server", "➕", "server_new", admin=True),
     # Os dois do broker so existem no deploy que ligou GAMEPANEL_ALLOW_BROKER.
-    Item("instancias", "Instancias de jogo", "🧩", "instances_list", admin=True,
-         recurso=RECURSO_BROKER, curto="Instancias"),
-    Item("catalogo", "Catalogo de jogos", "📚", "catalog", admin=True,
-         recurso=RECURSO_BROKER, curto="Catalogo"),
-    Item("usuarios", "Usuarios", "👥", "users_list", admin=True),
-    Item("ssh", "Acesso SSH", "🔑", "ssh_key"),
+    Item("instancias", "nav.instances.help", "🧩", "instances_list", admin=True,
+         recurso=RECURSO_BROKER, curto="nav.instances"),
+    Item("catalogo", "nav.catalog.help", "📚", "catalog", admin=True,
+         recurso=RECURSO_BROKER, curto="nav.catalog"),
+    Item("usuarios", "nav.users", "👥", "users_list", admin=True),
+    Item("ssh", "nav.ssh_key", "🔑", "ssh_key"),
 )
 
 
@@ -160,27 +160,27 @@ def nav_ativa_desktop_de(endpoint: str | None) -> str:
 # A ordem aqui e a ordem na tela, e ela segue a frequencia de uso real: o que se
 # olha todo dia primeiro, o que se mexe uma vez por mes no fim.
 SECOES_DO_SERVIDOR = (
-    Item("visao", "Visao geral", "📊", "server_detail",
-         ajuda="Estado, jogadores, recursos e log"),
-    Item("config", "Configuracao", "⚙️", "config_quick", recurso=RECURSO_ARQUIVOS,
-         ajuda="As chaves do jogo, campo a campo"),
-    Item("charts", "Graficos", "📈", "charts",
-         ajuda="CPU, memoria e jogadores ao longo do tempo"),
-    Item("backups", "Backups", "💾", "backups",
-         ajuda="Copias do save, e como restaurar"),
-    Item("schedules", "Agendamentos", "⏰", "schedules",
-         ajuda="Reinicio e backup na hora marcada"),
+    Item("visao", "server.overview", "📊", "server_detail",
+         ajuda="server.overview.help"),
+    Item("config", "server.config", "⚙️", "config_quick", recurso=RECURSO_ARQUIVOS,
+         ajuda="server.config.help"),
+    Item("charts", "server.charts", "📈", "charts",
+         ajuda="server.charts.help"),
+    Item("backups", "server.backups", "💾", "backups",
+         ajuda="server.backups.help"),
+    Item("schedules", "server.schedules", "⏰", "schedules",
+         ajuda="server.schedules.help"),
     # "Arquivos" e o irmao bruto de "Configuracao": mesma pasta, sem formulario.
     # Os dois so aparecem juntos para quem pode navegar pelo container.
-    Item("files", "Arquivos", "📁", "files", admin=True, recurso=RECURSO_ARQUIVOS,
-         ajuda="Navegar, editar como texto, enviar e baixar"),
+    Item("files", "server.files", "📁", "files", admin=True, recurso=RECURSO_ARQUIVOS,
+         ajuda="server.files.help"),
     # UM destino de linha de comando, nao dois. Qual das duas telas ele abre e
     # detalhe de implementacao (ver `endpoint_do_terminal`): para quem usa, "Terminal"
     # e um lugar so, e la dentro se escolhe entre sessao interativa e comando unico.
-    Item("terminal", "Terminal", "⌨️", "terminal", admin=True, recurso=RECURSO_SHELL,
-         ajuda="Linha de comando dentro do container"),
-    Item("editar", "Editar", "✏️", "server_edit", admin=True,
-         ajuda="Host, servico, portas e caminhos"),
+    Item("terminal", "server.terminal", "⌨️", "terminal", admin=True, recurso=RECURSO_SHELL,
+         ajuda="server.terminal.help"),
+    Item("editar", "server.edit", "✏️", "server_edit", admin=True,
+         ajuda="server.edit.help"),
 )
 
 
@@ -249,12 +249,12 @@ class Acao:
 
 
 ACOES = (
-    Acao("start", "Iniciar servidor", "Iniciar", "▶", GRUPO_ENERGIA, "primary"),
-    Acao("restart", "Reiniciar servidor", "Reiniciar", "🔄", GRUPO_ENERGIA, confirma=True),
-    Acao("stop", "Parar servidor", "Parar", "⏹", GRUPO_ENERGIA, "danger", confirma=True),
-    Acao("update", "Atualizar jogo (SteamCMD)", "Atualizar", "⬇", GRUPO_MANUTENCAO,
+    Acao("start", "action.start.confirm", "action.start", "▶", GRUPO_ENERGIA, "primary"),
+    Acao("restart", "action.restart.confirm", "action.restart", "🔄", GRUPO_ENERGIA, confirma=True),
+    Acao("stop", "action.stop.confirm", "action.stop", "⏹", GRUPO_ENERGIA, "danger", confirma=True),
+    Acao("update", "action.update.confirm", "action.update", "⬇", GRUPO_MANUTENCAO,
          confirma=True),
-    Acao("check-update", "Checar update", "Checar update", "🔍", GRUPO_MANUTENCAO),
+    Acao("check-update", "action.check_update", "action.check_update", "🔍", GRUPO_MANUTENCAO),
 )
 
 POR_CHAVE = {a.chave: a for a in ACOES}

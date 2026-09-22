@@ -15,7 +15,7 @@
   {# viewport-fit=cover entrega a tela inteira no aparelho com recorte; quem devolve
      o espaco seguro sao as variaveis --safe-* dos tokens. #}
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>{% block title %}Painel de Jogos{% endblock %}</title>
+  <title>{% block title %}{{ _('app.name') }}{% endblock %}</title>
 
   <meta name="theme-color" content="#171c22">
   <meta name="color-scheme" content="dark">
@@ -53,35 +53,35 @@
  <div class="appbar__miolo">
   <a class="appbar__marca" href="{{ url_for('dashboard') }}">
     <span class="logo" aria-hidden="true">🎮</span>
-    <span class="appbar__nome">Painel de Jogos</span>
+    <span class="appbar__nome">{{ _('app.name') }}</span>
   </a>
 
   {# Em tela larga TODOS os destinos de uso diario sobem para ca (a lista vem do ui.py);
      no celular eles vivem na barra de baixo e este bloco esta escondido por CSS. Sem
      icone de proposito: seis rotulos com icone nao cabem na coluna do conteudo e o
      texto sozinho ja diz onde cada um leva. #}
-  <nav class="appbar__nav" aria-label="Navegacao principal">
+  <nav class="appbar__nav" aria-label="{{ _('nav.main') }}">
     {% for item in nav_desktop_barra %}
       <a href="{{ url_for(item.endpoint) }}"
-         {% if item.chave == nav_ativa_desktop %}aria-current="page"{% endif %}>{{ item.curto or item.rotulo }}</a>
+         {% if item.chave == nav_ativa_desktop %}aria-current="page"{% endif %}>{{ _(item.curto or item.rotulo) }}</a>
     {% endfor %}
   </nav>
 
   <span class="appbar__espaco"></span>
 
-  {{ ui.botao('Instalar', icone='⬇', tamanho='sm', tipo='button',
+  {{ ui.botao(_('app.install'), icone='⬇', tamanho='sm', tipo='button',
               extra='data-instalar hidden') }}
 
   {# Celular: o "⋯" com o que nao coube nas abas de baixo. #}
-  {% call ui.menu('', icone='⋯', titulo='Mais', classe='menu--movel') %}
+  {% call ui.menu('', icone='⋯', titulo=_('nav.more'), classe='menu--movel') %}
     <span class="menu__titulo">{{ current_user }} &middot; {{ role_label }}</span>
     {% for item in nav_secundaria %}
       <a class="menu__item" role="menuitem" href="{{ url_for(item.endpoint) }}">
-        <span class="icone" aria-hidden="true">{{ item.icone }}</span>{{ item.rotulo }}
+        <span class="icone" aria-hidden="true">{{ item.icone }}</span>{{ _(item.rotulo) }}
       </a>
     {% endfor %}
     <hr class="menu__sep">
-    {{ ui.menu_acao(url_for('logout'), 'Sair', icone='🚪') }}
+    {{ ui.menu_acao(url_for('logout'), _('nav.logout'), icone='🚪') }}
   {% endcall %}
 
   {# Desktop: o menu da pessoa, com o nome no botao (quem esta logado e o que ela
@@ -91,11 +91,11 @@
     {% for item in nav_desktop_conta %}
       <a class="menu__item" role="menuitem" href="{{ url_for(item.endpoint) }}"
          {% if item.chave == nav_ativa_desktop %}aria-current="page"{% endif %}>
-        <span class="icone" aria-hidden="true">{{ item.icone }}</span>{{ item.rotulo }}
+        <span class="icone" aria-hidden="true">{{ item.icone }}</span>{{ _(item.rotulo) }}
       </a>
     {% endfor %}
     <hr class="menu__sep">
-    {{ ui.menu_acao(url_for('logout'), 'Sair', icone='🚪') }}
+    {{ ui.menu_acao(url_for('logout'), _('nav.logout'), icone='🚪') }}
   {% endcall %}
  </div>
 </header>
@@ -106,9 +106,9 @@
      Fica DENTRO do main, junto dos outros avisos — como um bloco proprio antes dele,
      o espaco reservado para a barra de abas abria um vao no meio da tela. #}
   <div class="flash cluster" data-versao-nova hidden>
-    <span>Ha uma versao nova do painel.</span>
+    <span>{{ _('app.new_version') }}</span>
     <span class="cluster__espaco"></span>
-    <button class="btn btn--sm btn--primary" type="button">Atualizar agora</button>
+    <button class="btn btn--sm btn--primary" type="button">{{ _('app.update_now') }}</button>
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -120,12 +120,12 @@
 </main>
 
 {% if current_user %}
-<nav class="tabbar" aria-label="Navegacao principal">
+<nav class="tabbar" aria-label="{{ _('nav.main') }}">
   {% for item in nav_principal %}
     <a class="tabbar__item" href="{{ url_for(item.endpoint) }}"
        {% if item.chave == nav_ativa %}aria-current="page"{% endif %}>
       <span class="icone" aria-hidden="true">{{ item.icone }}</span>
-      <span>{{ item.rotulo }}</span>
+      <span>{{ _(item.rotulo) }}</span>
     </a>
   {% endfor %}
 </nav>

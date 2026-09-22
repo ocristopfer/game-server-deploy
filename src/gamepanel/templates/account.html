@@ -19,6 +19,22 @@
 </div>
 
 <div class="card card--form">
+  <h2>{{ _('account.language.title') }}</h2>
+  <form method="post" action="{{ url_for('account_language') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label for="lang">{{ _('account.language') }}</label>
+    <select id="lang" name="lang">
+      {% for codigo, rotulo in idiomas %}
+      <option value="{{ codigo }}" {% if codigo == idioma_atual %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+    <div class="form-actions">
+      <button class="btn btn--primary" type="submit">{{ _('action.save') }}</button>
+    </div>
+  </form>
+</div>
+
+<div class="card card--form">
   <h2>Trocar senha</h2>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
