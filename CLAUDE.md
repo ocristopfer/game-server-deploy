@@ -131,6 +131,10 @@ src/
                            (era modelos_de_jogo.py; `tests/gamebroker/test_modelos.py` confere
                            que passam no validador do broker)
         suggestions.py      GERADO por tools/importar-linuxgsm.py, nao edite (era sugestoes_de_jogos.py)
+    i18n/
+      __init__.py         cascata idioma->pt->chave, campos na frase, `Mensagem`; ver a secao propria
+      pt.py               catalogo em portugues (o padrao)
+      en.py               catalogo em ingles, MESMAS chaves (test_i18n.py cobra a paridade)
     security/
       totp.py             2FA, so stdlib
       qr.py               gerador de QR, so stdlib
@@ -301,6 +305,45 @@ volumes sao regenerados por `PANEL_SEED_DEMO=1`).
 heredoc Python) — um `grep` so nos `.py` nao acha. Procure no repositorio inteiro, e
 lembre que **`entrypoint.sh` esta dentro da imagem**: exige
 `docker compose up -d --build panel`, nao um `restart`.
+
+---
+
+## Idioma da tela (`src/gamepanel/i18n/`)
+
+O painel fala portugues e ingles. Dicionario Python, sem Babel e sem `.mo`: **este repo
+nao tem passo de build** — producao so recebe arquivos e sobe (mesma razao do TOTP e do
+QR serem codigo proprio). `pt.py` e `en.py` tem as MESMAS chaves, e `test_i18n.py`
+cobra a paridade; a busca cai em cascata `idioma pedido -> pt -> a propria chave`, entao
+chave que ninguem cadastrou aparece na tela como `nav.servers` em vez de sumir calada.
+
+- **Texto novo de tela = uma linha em `pt.py` e uma em `en.py`.** A chave e
+  `area.assunto`, **em ingles** (e identificador de codigo, nao texto de tela), e nunca
+  o portugues transformado em slug: amarrar o nome da chave ao texto de UMA lingua faz
+  corrigir uma virgula virar renomear em tres arquivos.
+- **Frase com numero ou nome no meio nao se parte**: `_('flash.too_many_tries', n=30)`.
+  Partir parece obvio e quebra na hora em que a outra lingua muda a ordem das palavras.
+- **Frase com marcacao (`<strong>`, `<code>`) usa `_h()`**, nao `_()`. Um paragrafo de
+  ajuda quebrado em uma chave por `<strong>` aparece metade em portugues na tela em
+  ingles — o comeco da frase, que nao esta entre tags, nao entra em chave nenhuma. A
+  frase vem do catalogo (codigo daqui, confiavel); os CAMPOS e que sao escapados.
+- **Plural leva duas chaves** (`alert.players_online_one` / `_many`). Colar um `s` no
+  fim funciona em portugues e ja falhava aqui.
+- **Rotulo em tabela (`ALERT_EVENTS`, `JOB_LABELS`, `ROLE_LABELS`) guarda CHAVE**, nunca
+  o texto: a chave do dicionario (`caiu`, `edit-config`) vai para o banco e para o
+  `<option value=>`, e nao pode mudar porque alguem mexeu na redacao. Quem traduz e o
+  `rotulos_de()` na hora de renderizar.
+- **Texto que nasce em `services/`/`runtime/` usa `i18n.Mensagem`**, que e uma `str` de
+  proposito: carrega a chave e os campos, mas `str(exc)`, `f"{erro}"`, `"pedaco" in
+  erro` e o `logging` continuam funcionando sem mudanca. Quem quer o idioma da pessoa
+  chama `traduzir`; esquecer cai no idioma do deploy, que era o comportamento antigo.
+- **Fora de pedido vale `GAMEPANEL_LANG`, nao a pessoa.** Monitor e agendador rodam em
+  thread propria, sem `g` nem `request` — `idioma_atual()` tem um portao para isso, e
+  sem ele traduzir um alerta derruba a volta inteira do monitor com "Working outside of
+  application context". Pelo mesmo motivo o alerta que vai para o canal e o texto
+  GRAVADO num job usam o idioma do deploy (`rotulo_para_o_banco`): o historico e lido
+  depois, por outra pessoa, e a mesma acao escrita de tres jeitos quebraria o filtro.
+- Conferir uma tela nos dois idiomas: `POST /account/idioma` com `lang=pt|en`. Sem
+  sessao (tela de login) vale o `Accept-Language` do navegador.
 
 ---
 

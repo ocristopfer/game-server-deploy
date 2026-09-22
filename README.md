@@ -1381,6 +1381,29 @@ cd /opt/gamepanel && python3 -m gamepanel.cli --create-user chefe --password nov
 O caminho antigo (`python3 /opt/gamepanel/gamepanel/app.py --create-user ...`) continua
 valendo; os dois chamam o mesmo `gamepanel/cli.py`.
 
+### Idioma da tela
+
+O painel fala **portugues** e **ingles**. Cada pessoa escolhe o seu em **Conta** — a
+escolha fica no cadastro dela, entao vale em qualquer aparelho em que ela entrar, e nao
+muda o de mais ninguem.
+
+Quem ainda nao escolheu ve o idioma que o **navegador** pede (o `Accept-Language`), o
+que vale tambem para a tela de login, onde ainda nao ha ninguem logado. Se o navegador
+pedir um idioma que o painel nao fala, vale o padrao do deploy — `ADMIN_LANG` no `.env`
+(`GAMEPANEL_LANG` dentro do container), que e `pt` quando nao se diz nada.
+
+Duas coisas seguem **sempre** o padrao do deploy, de proposito:
+
+- **O aviso que vai para o webhook** (Discord, Slack). O canal e um so e e lido por
+  varias pessoas; mensagem que trocasse de lingua conforme quem clicou seria pior do que
+  uma so.
+- **O texto gravado no Historico.** Ele e lido depois, por outra pessoa: se cada linha
+  saisse no idioma de quem apertou o botao, a mesma acao apareceria escrita de tres
+  jeitos na mesma lista, e o filtro por acao deixaria de fazer sentido.
+
+Traduzir o painel para outra lingua e acrescentar um arquivo em
+`src/gamepanel/i18n/` — nao ha passo de compilacao, nem dependencia nova.
+
 ### Testando o painel localmente (docker compose)
 
 Para mexer no painel sem depender do Proxmox:

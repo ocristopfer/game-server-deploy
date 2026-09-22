@@ -64,6 +64,9 @@ resolve_variables() {
   # 1 = todo usuario precisa ter o segundo fator (2FA) para usar o painel. Ligue DEPOIS de cada
   # admin ativar o dele em Conta: ligar antes tranca todo mundo fora.
   REQUIRE_2FA="${ADMIN_REQUIRE_2FA:-0}"
+  # Idioma da tela para quem ainda nao escolheu na Conta E para o que sai pelo webhook
+  # (o canal e um so: a mensagem nao pode trocar de lingua conforme quem clicou).
+  LANG_PADRAO="${ADMIN_LANG:-pt}"
   FILE_MAX_KB="${ADMIN_FILE_MAX_KB:-4096}"
   FILE_PREVIEW_KB="${ADMIN_FILE_PREVIEW_KB:-256}"
   FILE_DOWNLOAD_MAX_MB="${ADMIN_FILE_DOWNLOAD_MAX_MB:-2048}"
@@ -302,6 +305,7 @@ GAMEPANEL_FILE_DOWNLOAD_MAX=$((FILE_DOWNLOAD_MAX_MB * 1024 * 1024))
 GAMEPANEL_FILE_ROOTS=${FILE_ROOTS}
 GAMEPANEL_FILE_DEFAULT=${FILE_DEFAULT}
 GAMEPANEL_REQUIRE_2FA=${REQUIRE_2FA}
+GAMEPANEL_LANG=${LANG_PADRAO}
 EOF
   [[ -z "$preservadas" ]] || printf '%s\n' "$preservadas" >> "$tmp_file"
   push_file_to_ct "$tmp_file" "${CONF_DIR}/panel.env" 0640
