@@ -635,6 +635,18 @@ def traduzir(chave: str, **campos: object) -> str:
     return i18n.traduzir(chave, idioma_atual(), **campos)
 
 
+
+def texto_do_erro(exc: BaseException) -> str:
+    """O que a excecao tem a dizer, preservando a CHAVE quando ela veio de uma.
+
+    `str(exc)` colapsaria uma `i18n.Mensagem` em texto solto, e com ela a chance de
+    mostrar a frase no idioma de quem esta olhando. Um `except` pega qualquer excecao,
+    inclusive as que nascem fora daqui (`OSError`, `json`), e essas seguem por `str`.
+    """
+    if exc.args and isinstance(exc.args[0], i18n.Mensagem):
+        return exc.args[0]
+    return str(exc)
+
 def rotulo_para_o_banco(chave: str) -> str:
     """A frase daquela chave no idioma do DEPLOY, nao no de quem esta com a tela aberta.
 
@@ -2224,7 +2236,7 @@ def _liga_contagem_http(conn, sid: int):
     errors: list[str] = []
     campos = _campos_http(request.form, errors)
     if errors or not campos["http_url"]:
-        flash(errors[0] if errors else traduzir("flash.need_api_url"), "error")
+        flash(traduzir(errors[0]) if errors else traduzir("flash.need_api_url"), "error")
         return redirect(url_for("players_setup", sid=sid, aba="http"))
     with conn:
         conn.execute(
@@ -2250,7 +2262,7 @@ def _liga_contagem_log(conn, sid: int):
     saida = _padrao(request.form.get("leave_re"), "saida", errors)
     caminho = _caminho_log(request.form.get("log_path"), errors)
     if errors or not entrada:
-        flash(errors[0] if errors else traduzir("flash.need_join_pattern"), "error")
+        flash(traduzir(errors[0]) if errors else traduzir("flash.need_join_pattern"), "error")
         return redirect(url_for("players_setup", sid=sid, aba="log"))
     with conn:
         conn.execute(
@@ -2408,7 +2420,7 @@ def server_new():
             except sqlite3.IntegrityError:
                 errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
         for err in errors:
-            flash(err, "error")
+            flash(traduzir(err), "error")
     return render_template("server_form.html", data=data, mode="new")
 
 
@@ -2437,7 +2449,7 @@ def server_edit(sid: int):
             except sqlite3.IntegrityError:
                 errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
         for err in errors:
-            flash(err, "error")
+            flash(traduzir(err), "error")
     # `server` (a linha do banco, nao o formulario) vai junto: e dele que a barra de
     # navegacao do servidor tira o id e o nome. Sem isso esta tela seria a unica do
     # servidor sem a barra — e era exatamente assim que a navegacao ia divergindo.
@@ -2972,7 +2984,7 @@ def files_save(sid: int):
     try:
         path = clean_path(raw_path)
     except ValueError as exc:
-        flash(str(exc), "error")
+        flash(traduzir(texto_do_erro(exc)), "error")
         return redirect(url_for("files", sid=sid))
 
     # O navegador manda \r\n; so devolvemos assim se o arquivo original ja usava CRLF.
@@ -3021,7 +3033,7 @@ def files_delete(sid: int):
     try:
         path = clean_path(request.form.get("path", ""))
     except ValueError as exc:
-        flash(str(exc), "error")
+        flash(traduzir(texto_do_erro(exc)), "error")
         return redirect(url_for("files", sid=sid))
 
     # Raiz permitida nao se apaga: sem isso um clique errado poderia levar /opt/game
@@ -3122,7 +3134,7 @@ def files_upload(sid: int):
         pasta = clean_path(destino_dir)
         alvo = clean_path(f"{pasta.rstrip('/')}/{nome}")
     except ValueError as exc:
-        flash(str(exc), "error")
+        flash(traduzir(texto_do_erro(exc)), "error")
         return redirect(voltar)
 
     try:
@@ -3406,7 +3418,7 @@ def config_files_edit(sid: int):
     try:
         path = clean_path(request.form.get("path", ""))
     except ValueError as exc:
-        flash(str(exc), "error")
+        flash(traduzir(texto_do_erro(exc)), "error")
         return redirect(url_for("config_quick", sid=sid))
 
     caminhos = config_paths(server)
@@ -3510,7 +3522,7 @@ def config_save(sid: int):
     try:
         path = clean_path(request.form.get("path", ""))
     except ValueError as exc:
-        flash(str(exc), "error")
+        flash(traduzir(texto_do_erro(exc)), "error")
         return redirect(url_for("config_quick", sid=sid))
     # Mesma trava do config_quick, agora na escrita: o caminho chega pelo formulario.
     if path not in config_paths(server) and not is_admin():
@@ -3522,7 +3534,7 @@ def config_save(sid: int):
         # unidade o valor foi digitado.
         edits, erros_validacao = _edits_do_formulario(request.form, path.rsplit("/", 1)[-1])
     except gameconf.ConfigError as exc:
-        flash(str(exc), "error")
+        flash(traduzir(texto_do_erro(exc)), "error")
         return redirect(voltar)
     if erros_validacao:
         # Nada e gravado quando ha erro: salvar metade das alteracoes deixaria o arquivo
@@ -3779,7 +3791,7 @@ def catalog_new():
             erros.append(f"Broker: {erro.mensagem}")
     if erros:
         for erro in erros:
-            flash(erro, "error")
+            flash(traduzir(erro), "error")
         try:
             jogos = broker_client.catalogo()
         except broker_client.BrokerError:
@@ -3957,7 +3969,7 @@ def schedule_new(sid: int):
     dados = _form_agendamento(request.form, errors)
     if errors:
         for err in errors:
-            flash(err, "error")
+            flash(traduzir(err), "error")
         return redirect(url_for("schedules", sid=sid))
 
     # 'intervalo' comeca a contar de agora: sem isto, "a cada 6h" dispararia no instante
@@ -4196,7 +4208,7 @@ def account():
         if not row or not verify_password(current, row["password_hash"]):
             flash(traduzir("flash.wrong_current_password"), "error")
         elif erro:
-            flash(erro, "error")
+            flash(traduzir(erro), "error")
         else:
             conn = db()
             with conn:
@@ -4282,7 +4294,7 @@ def account_2fa_off():
         return redirect(url_for("account"))
     row, erro = _senha_e_codigo_conferem(session["uid"])
     if erro:
-        flash(erro, "error")
+        flash(traduzir(erro), "error")
         return redirect(url_for("account"))
     _apaga_o_segundo_fator(row["id"])
     flash(traduzir("flash.two_factor_off"), "ok")
@@ -4295,7 +4307,7 @@ def account_2fa_codes():
     """Codigos de recuperacao novos: os antigos deixam de valer."""
     row, erro = _senha_e_codigo_conferem(session["uid"])
     if erro:
-        flash(erro, "error")
+        flash(traduzir(erro), "error")
         return redirect(url_for("account"))
     codigos = totp.new_recovery_codes()
     conn = db()
@@ -4422,7 +4434,7 @@ def alerts_hook_new():
         return redirect(url_for("alerts"))
     dados, erro = _le_form_webhook()
     if erro or not dados["url"]:
-        flash(erro or traduzir("flash.need_webhook_url"), "error")
+        flash(traduzir(erro) if erro else traduzir("flash.need_webhook_url"), "error")
         return redirect(url_for("alerts"))
     with conn:
         conn.execute(
@@ -4446,7 +4458,7 @@ def alerts_hook_save(hid: int):
         return redirect(url_for("alerts"))
     dados, erro = _le_form_webhook()
     if erro:
-        flash(erro, "error")
+        flash(traduzir(erro), "error")
         return redirect(url_for("alerts"))
     # Campo de URL em branco quer dizer "mantem a que ja esta la". A tela mostra a URL
     # mascarada, entao nao ha o que reenviar: so quem digitar uma nova a troca.
@@ -4556,7 +4568,7 @@ def user_new():
     else:
         erro = valida_senha(senha, request.form.get("confirm", ""))
     if erro:
-        flash(erro, "error")
+        flash(traduzir(erro), "error")
         return redirect(url_for("users_list"))
 
     conn = db()
@@ -4608,7 +4620,7 @@ def user_password(uid: int):
     alvo = _usuario_ou_404(uid)
     erro = valida_senha(request.form.get("new", ""), request.form.get("confirm", ""))
     if erro:
-        flash(erro, "error")
+        flash(traduzir(erro), "error")
         return redirect(url_for("users_list"))
     conn = db()
     with conn:

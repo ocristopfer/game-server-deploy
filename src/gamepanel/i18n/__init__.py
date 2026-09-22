@@ -51,6 +51,35 @@ def idioma_valido(bruto: str | None) -> str:
     return escolhido if escolhido in CATALOGOS else PADRAO
 
 
+class Mensagem(str):
+    """Uma frase que lembra de QUE CHAVE ela veio.
+
+    Existe para o texto que nasce longe da tela: o erro de validacao de
+    `services/server_service.py`, o `QueryError` de `runtime/a2s.py`. Esse texto acaba em
+    tres lugares com regras diferentes — a tela de quem clicou (idioma da pessoa), a
+    coluna de saida de um job (gravada, idioma do deploy) e o log do processo — e um
+    servico nao tem como saber em qual vai cair.
+
+    E `str` de proposito, e nao um objeto a parte. Assim `str(exc)`, `f"{erro}"`,
+    `"pedaco" in erro` e o `logging` continuam funcionando exatamente como antes, sem
+    tocar em nenhum desses pontos; o que muda e que `traduzir` reconhece a classe e
+    refaz a frase no idioma certo quando alguem pede. Esquecer de traduzir nao quebra
+    nada: cai no idioma do deploy, que era o comportamento anterior.
+    """
+
+    chave: str
+    campos: dict[str, object]
+
+    def __new__(cls, chave: str, **campos: object) -> Mensagem:
+        obj = super().__new__(cls, traduzir(chave, PADRAO, **campos))
+        obj.chave = chave
+        obj.campos = campos
+        return obj
+
+    def __repr__(self) -> str:
+        return f"Mensagem({self.chave!r}, {self.campos!r})"
+
+
 def traduzir(chave: str, idioma: str, **campos: object) -> str:
     """A frase daquela chave, com queda para o portugues e depois para a chave.
 
@@ -59,6 +88,11 @@ def traduzir(chave: str, idioma: str, **campos: object) -> str:
     derrubar a tela inteira por causa de um `{n}` que alguem esqueceu de passar e caro
     demais para o estrago: a frase truncada ja denuncia o defeito.
     """
+    # Uma `Mensagem` ja traz consigo a chave e os campos de origem; traduzi-la de novo e
+    # so refazer a frase no idioma pedido. Sem isto, o texto dela (que ja e str) seria
+    # tratado como chave desconhecida e voltaria como esta, no idioma do deploy.
+    if isinstance(chave, Mensagem):
+        return traduzir(chave.chave, idioma, **{**chave.campos, **campos})
     # `get(chave, padrao)` e nao `get(chave) or padrao`: frase traduzida como texto
     # VAZIO e uma escolha (um rotulo que so existe em portugues, por exemplo) e tem de
     # vencer o portugues, em vez de cair nele por parecer ausente.

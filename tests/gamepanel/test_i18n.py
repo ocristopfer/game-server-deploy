@@ -158,3 +158,33 @@ def test_traduzir_fora_de_pedido_usa_o_padrao_do_deploy():
 def test_idioma_padrao_vem_da_variavel_de_ambiente(monkeypatch):
     monkeypatch.setattr(panel, "IDIOMA_PADRAO", "en")
     assert panel.traduzir("nav.servers") == "Servers"
+
+
+# ---------------------------------------------- Mensagem (texto que sabe a chave)
+
+def test_mensagem_e_uma_str_comum_no_idioma_do_deploy(monkeypatch):
+    """Todo consumidor de hoje (log, str(exc), f-string, `in`) tem de seguir valendo."""
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.erro", "porta {n} invalida")
+    m = i18n.Mensagem("t.erro", n=70000)
+    assert isinstance(m, str)
+    assert str(m) == "porta 70000 invalida"
+    assert "invalida" in m
+    assert f"deu ruim: {m}" == "deu ruim: porta 70000 invalida"
+
+
+def test_mensagem_traduzida_refaz_a_frase_no_idioma_pedido(monkeypatch):
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.erro", "porta {n} invalida")
+    monkeypatch.setitem(i18n.CATALOGOS["en"], "t.erro", "port {n} is invalid")
+    assert i18n.traduzir(i18n.Mensagem("t.erro", n=70000), "en") == "port 70000 is invalid"
+
+
+def test_str_solta_nao_vira_frase_traduzida(monkeypatch):
+    """Texto que nao veio de uma chave passa inteiro, em vez de sumir na cascata."""
+    monkeypatch.setitem(i18n.CATALOGOS["en"], "t.erro", "port is invalid")
+    assert i18n.traduzir("porta 70000 invalida", "en") == "porta 70000 invalida"
+
+
+def test_repr_da_mensagem_mostra_a_chave(monkeypatch):
+    """Num assert que falha, ver a chave vale mais do que ver a frase."""
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.erro", "porta {n} invalida")
+    assert repr(i18n.Mensagem("t.erro", n=1)) == "Mensagem('t.erro', {'n': 1})"
