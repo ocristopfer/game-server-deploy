@@ -19,7 +19,6 @@ import json
 import os
 import re
 import secrets
-import shlex
 import sqlite3
 import subprocess
 import sys
@@ -48,6 +47,9 @@ from gamepanel.runtime import ssh as ssh_transport
 # Apelido: ha uma rota `terminal()` neste mesmo modulo (a tela /servers/<id>/terminal),
 # e o nome `terminal` sem apelido acabaria REBATIZADO por ela — o import ficaria valendo
 # so ate a definicao da rota, silenciosamente (mypy pegou isso: "Name already defined").
+# Apelido pelo mesmo motivo do `term_runtime` acima: ha uma rota `files()`
+# (`/servers/<id>/files`) neste modulo.
+from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import terminal as term_runtime
 from gamepanel.security import qr, totp
 
@@ -3901,45 +3903,12 @@ def api_term_close(tid: str):
 # ------------------------------------------------- editor de configuracoes
 
 
-def _resolve_segments(path: str) -> str:
-    """Resolve '..' e '.' sem tocar no destino (nao segue link nem consulta o disco)."""
-    parts: list[str] = []
-    for seg in path.split("/"):
-        if seg in ("", "."):
-            continue
-        if seg == "..":
-            if parts:
-                parts.pop()
-            continue
-        parts.append(seg)
-    return "/" + "/".join(parts)
-
-
-def _check_roots(path: str) -> None:
-    if not FILE_ROOTS or "/" in FILE_ROOTS:  # "/" configurado = sem restricao
-        return
-    # rstrip + "/" para /opt/game nao liberar /opt/gamex sem querer.
-    if any(path == r or path.startswith(r.rstrip("/") + "/") for r in FILE_ROOTS):
-        return
-    raise ValueError(f"fora das pastas permitidas ({', '.join(FILE_ROOTS)})")
-
-
 def clean_path(raw: str) -> str:
-    """Normaliza um caminho absoluto vindo da tela (resolve '..' de forma lexica)."""
-    path = (raw or "").strip()
-    if not path.startswith("/"):
-        raise ValueError("use um caminho absoluto (comecando com /)")
-    if "\x00" in path or "\n" in path or "\r" in path:
-        raise ValueError("caractere invalido no caminho")
-    if len(path) > 400:
-        raise ValueError("caminho longo demais")
-    cleaned = _resolve_segments(path)
-    _check_roots(cleaned)
-    return cleaned
+    return files_rt.clean_path(raw, FILE_ROOTS)
 
 
 def parent_of(path: str) -> str:
-    return path.rsplit("/", 1)[0] or "/"
+    return files_rt.parent_of(path)
 
 
 @app.template_filter("nivel")
@@ -3983,85 +3952,6 @@ def _human_size(num: int | None) -> str:
     return f"{valor:.1f} GB"
 
 
-LIST_SCRIPT = r"""
-set -e
-d=$1
-[ -d "$d" ] || { echo "pasta nao encontrada: $d" >&2; exit 3; }
-find "$d" -maxdepth 1 -mindepth 1 -printf '%y\t%Y\t%s\t%TY-%Tm-%Td %TH:%TM\t%M\t%f\n' \
-  2>/dev/null | head -n "$2"
-"""
-
-# $2 = limite de edicao, $3 = quanto trazer do fim quando o arquivo passa do limite.
-# Arquivo grande nao e mais um erro: vem so o fim dele, marcado como 'tail'.
-READ_SCRIPT = r"""
-set -e
-f=$1
-[ -e "$f" ] || { echo "arquivo nao encontrado" >&2; exit 3; }
-[ -f "$f" ] || { echo "nao e um arquivo comum" >&2; exit 4; }
-sz=$(stat -Lc %s -- "$f")
-if [ "$sz" -le "$2" ]; then kind=full; else kind=tail; fi
-stat -Lc "META|%s|%y|%a|%U|%G|$kind" -- "$f"
-if [ "$kind" = full ]; then
-  base64 -w0 -- "$f"
-else
-  tail -c "$3" -- "$f" | base64 -w0
-fi
-"""
-
-# Usado antes do download: confere que da para baixar e quanto tem para vir.
-STAT_SCRIPT = r"""
-set -e
-f=$1
-[ -e "$f" ] || { echo "arquivo nao encontrado" >&2; exit 3; }
-[ -f "$f" ] || { echo "nao e um arquivo comum (pastas nao sao baixaveis)" >&2; exit 4; }
-[ -r "$f" ] || { echo "sem permissao de leitura" >&2; exit 5; }
-stat -Lc 'META|%s|%y|%a|%U|%G' -- "$f"
-"""
-
-# Grava por cima do arquivo existente (cat >) em vez de trocar o inode: assim dono,
-# grupo e permissao continuam os do jogo — o servidor roda como 'steam', nao root.
-WRITE_SCRIPT = r"""
-set -e
-f=$1
-d=$(dirname "$f")
-[ -d "$d" ] || { echo "pasta nao existe: $d" >&2; exit 3; }
-t=$(mktemp "$d/.gamepanel-XXXXXX")
-trap 'rm -f "$t"' EXIT
-base64 -d > "$t"
-if [ -e "$f" ]; then
-  [ -f "$f" ] || { echo "nao e um arquivo comum" >&2; exit 4; }
-  cp -a -- "$f" "$f.$(date +%Y%m%d-%H%M%S).bak"
-  cat "$t" > "$f"
-else
-  cat "$t" > "$f"
-  chmod 0644 "$f"
-  # Arquivo novo herda o dono da pasta: o jogo roda como 'steam' e precisa continuar
-  # conseguindo reescrever o proprio config.
-  chown --reference="$d" "$f" 2>/dev/null || true
-fi
-echo "gravado: $(stat -Lc %s -- "$f") bytes"
-"""
-
-# Apagar nao tem .bak: um save de varios GB nao cabe numa copia de seguranca, e quem
-# manda apagar quer o espaco de volta. Por isso o escopo e estreito: arquivo comum,
-# link, ou pasta VAZIA (rmdir) — nada de remocao recursiva a partir da tela.
-DELETE_SCRIPT = r"""
-set -e
-f=$1
-[ -e "$f" ] || [ -L "$f" ] || { echo "arquivo nao encontrado" >&2; exit 3; }
-if [ -d "$f" ] && [ ! -L "$f" ]; then
-  rmdir -- "$f" 2>/dev/null || { echo "a pasta nao esta vazia (esvazie antes de apagar)" >&2; exit 4; }
-  echo "pasta apagada: $f"
-else
-  sz=$(stat -Lc %s -- "$f" 2>/dev/null || echo 0)
-  # -f para o rm nunca parar perguntando por arquivo sem permissao de escrita; o erro
-  # que importa (pasta somente leitura) continua vindo.
-  rm -f -- "$f"
-  echo "apagado: $f ($sz bytes)"
-fi
-"""
-
-
 def _files_guard():
     if not ALLOW_FILES:
         abort(403, "O editor de arquivos esta desabilitado (GAMEPANEL_ALLOW_FILES=0).")
@@ -4075,90 +3965,15 @@ def _server_or_404(sid: int) -> sqlite3.Row:
 
 
 def list_dir(server: Servidor, path: str) -> tuple[list[dict], bool]:
-    proc = ssh_run(server, q("bash", "-lc", LIST_SCRIPT, "gp", path, str(FILE_LIST_MAX)), timeout=40)
-    if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao listar a pasta")
-    entries: list[dict] = []
-    for line in proc.stdout.splitlines():
-        parts = line.split("\t", 5)
-        if len(parts) != 6:
-            continue
-        kind, target_kind, size, mtime, mode, name = parts
-        real = target_kind if kind == "l" else kind
-        entries.append({
-            "name": name,
-            "dir": real == "d",
-            "link": kind == "l",
-            "size": int(size) if size.isdigit() else 0,
-            "mtime": mtime,
-            "mode": mode,
-            "path": (path.rstrip("/") + "/" + name) if path != "/" else "/" + name,
-        })
-    entries.sort(key=lambda e: (not e["dir"], e["name"].lower()))
-    return entries, len(entries) >= FILE_LIST_MAX
-
-
-def _parse_meta(head: str, campos: int) -> list[str]:
-    meta = head.split("|")
-    if meta[0] != "META" or len(meta) < campos:
-        raise RemoteError("resposta inesperada do container ao ler o arquivo")
-    return meta
+    return files_rt.list_dir(ssh_run, server, path, FILE_LIST_MAX)
 
 
 def stat_file(server: Servidor, path: str) -> dict:
-    """Metadados sem trazer o conteudo — usado antes de comecar um download."""
-    proc = ssh_run(server, q("bash", "-lc", STAT_SCRIPT, "gp", path), timeout=40)
-    if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao ler o arquivo")
-    meta = _parse_meta(proc.stdout.strip(), 6)
-    return {
-        "path": path,
-        "name": path.rsplit("/", 1)[-1] or "arquivo",
-        "size": int(meta[1]) if meta[1].isdigit() else 0,
-        "mtime": meta[2][:19],
-        "mode": meta[3],
-        "owner": f"{meta[4]}:{meta[5]}",
-    }
+    return files_rt.stat_file(ssh_run, server, path)
 
 
 def read_file(server: Servidor, path: str) -> dict:
-    """Le o arquivo para o editor.
-
-    Arquivo dentro do limite vem inteiro e editavel. Acima do limite vem so o fim
-    (somente leitura) — quem precisa do arquivo completo usa o download.
-    """
-    proc = ssh_run(
-        server,
-        q("bash", "-lc", READ_SCRIPT, "gp", path, str(FILE_MAX_BYTES), str(FILE_PREVIEW_BYTES)),
-        timeout=180,
-    )
-    if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao ler o arquivo")
-    head, _, payload = proc.stdout.partition("\n")
-    meta = _parse_meta(head, 7)
-    try:
-        raw = base64.b64decode(payload.strip() or "", validate=True)
-    except ValueError:  # binascii.Error e uma subclasse de ValueError
-        raise RemoteError("conteudo do arquivo chegou corrompido")
-    binary = b"\x00" in raw
-    truncated = meta[6] == "tail"
-    text = "" if binary else raw.decode("utf-8", "replace")
-    return {
-        "path": path,
-        "name": path.rsplit("/", 1)[-1] or "arquivo",
-        "size": int(meta[1]) if meta[1].isdigit() else len(raw),
-        "mtime": meta[2][:19],
-        "mode": meta[3],
-        "owner": f"{meta[4]}:{meta[5]}",
-        "binary": binary,
-        # Fim do arquivo apenas: editar e salvar daqui apagaria todo o resto.
-        "truncated": truncated,
-        "shown": len(raw),
-        "editable": not binary and not truncated,
-        "text": text,
-        # \r\n vira \n no textarea; guardamos para devolver o arquivo como estava.
-        "crlf": b"\r\n" in raw,
-    }
+    return files_rt.read_file(ssh_run, server, path, FILE_MAX_BYTES, FILE_PREVIEW_BYTES)
 
 
 # $1 = pasta dos backups, $2 = prefixo do servidor, $3 = quantas copias manter,
@@ -4289,83 +4104,11 @@ echo "backup apagado: $arq ($sz bytes)"
 
 # $1 = destino final. O conteudo vem CRU pela entrada padrao (sem base64: o arquivo pode
 # ter gigabytes, e codificar inflaria 33% a toa).
-UPLOAD_SCRIPT = r"""
-set -e
-f=$1
-d=$(dirname -- "$f")
-[ -d "$d" ] || { echo "pasta nao existe: $d" >&2; exit 3; }
-[ -d "$f" ] && { echo "ja existe uma PASTA com esse nome" >&2; exit 4; }
-t=$(mktemp "$d/.gamepanel-XXXXXX")
-trap 'rm -f "$t"' EXIT
-cat > "$t"
-if [ -e "$f" ]; then
-  [ -f "$f" ] || { echo "o destino nao e um arquivo comum" >&2; exit 4; }
-  cp -a -- "$f" "$f.$(date +%Y%m%d-%H%M%S).bak"
-  # cat > por cima em vez de mv: preserva dono e permissao do arquivo que ja estava la.
-  cat "$t" > "$f"
-else
-  cat "$t" > "$f"
-  chmod 0644 -- "$f"
-  # Arquivo novo herda o dono da pasta: o jogo roda como 'steam' e precisa poder ler.
-  chown --reference="$d" -- "$f" 2>/dev/null || true
-fi
-echo "enviado: $f ($(stat -Lc %s -- "$f") bytes)"
-"""
+UPLOAD_SCRIPT = files_rt.UPLOAD_SCRIPT
 
 
 def ssh_stream_in(server, remote_cmd: str, origem, timeout: int) -> str:
-    """Executa um comando remoto alimentando a entrada dele a partir de `origem`.
-
-    Diferente do `ssh_run(stdin_data=...)`, que precisa do conteudo inteiro na memoria:
-    aqui os bytes passam em pedacos, do arquivo que o navegador enviou direto para o
-    `cat` do outro lado. E o que permite subir um mod ou um save de varios GB.
-    """
-    argv = ssh_argv(server, connect_timeout=10) + [remote_cmd]
-    try:
-        proc = subprocess.Popen(
-            argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-    except OSError as exc:
-        raise RemoteError(f"falha ao executar ssh: {exc}")
-
-    # Numa variavel local porque `Popen.stdin` e Optional no tipo (Popen sem PIPE nao
-    # tem entrada) e porque ela e zerada no `finally` la embaixo - o `close()` de la
-    # precisa falar do MESMO objeto que o laco usou.
-    entrada = proc.stdin
-    if entrada is None:
-        raise RemoteError("nao consegui abrir a entrada do ssh")
-
-    try:
-        while True:
-            chunk = origem.read(UPLOAD_CHUNK)
-            if not chunk:
-                break
-            entrada.write(chunk)
-    except OSError:
-        # O outro lado desistiu (sem espaco, sem permissao): o motivo esta no stderr,
-        # entao nao adianta reclamar do cano quebrado aqui. BrokenPipeError - o caso
-        # tipico - ja e um OSError, entao listar os dois nao pegava nada a mais.
-        pass
-    finally:
-        # Fechar a entrada e o que faz o `cat` remoto terminar. A referencia tem de ir
-        # junto: o communicate() abaixo daria flush num arquivo ja fechado e estouraria
-        # ValueError com o arquivo JA gravado do outro lado — erro na tela, upload feito.
-        try:
-            entrada.close()
-        except OSError:
-            pass
-        proc.stdin = None
-
-    try:
-        saida, erro = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.communicate()
-        raise RemoteError(f"tempo esgotado ({timeout}s) enviando para {server['host']}")
-    if proc.returncode != 0:
-        detalhe = (erro or saida or b"").decode("utf-8", "replace").strip()
-        raise RemoteError(detalhe or f"falha ao enviar (exit {proc.returncode})")
-    return saida.decode("utf-8", "replace").strip()
+    return files_rt.ssh_stream_in(ssh_argv, server, remote_cmd, origem, timeout, UPLOAD_CHUNK)
 
 
 @app.get("/servers/<int:sid>/files")
@@ -4416,49 +4159,15 @@ def files(sid: int):
 
 
 def find_config_files(server: Servidor, root: str) -> list[dict]:
-    """Varre a pasta do jogo atras dos arquivos de configuracao mais provaveis."""
-    names = " -o ".join(f"-name {shlex.quote(g)}" for g in CONFIG_GLOBS)
-    script = (
-        "set -e\n"
-        'd=$1\n'
-        '[ -d "$d" ] || { echo "pasta nao encontrada: $d" >&2; exit 3; }\n'
-        f'find "$d" -maxdepth 5 -type f \\( {names} \\) '
-        r"-printf '%s\t%TY-%Tm-%Td %TH:%TM\t%p\n' 2>/dev/null | LC_ALL=C sort -k3 | head -n 300"
-        "\n"
-    )
-    proc = ssh_run(server, q("bash", "-lc", script, "gp", root), timeout=90)
-    if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha na busca")
-    achados: list[dict] = []
-    for line in proc.stdout.splitlines():
-        parts = line.split("\t", 2)
-        if len(parts) != 3:
-            continue
-        achados.append({
-            "size": int(parts[0]) if parts[0].isdigit() else 0,
-            "mtime": parts[1],
-            "path": parts[2],
-        })
-    return achados
+    return files_rt.find_config_files(ssh_run, server, root, CONFIG_GLOBS)
 
 
 def write_file(server: Servidor, path: str, data: bytes) -> str:
-    """Grava o arquivo no container (com .bak, dono e permissao preservados)."""
-    proc = ssh_run(
-        server, q("bash", "-lc", WRITE_SCRIPT, "gp", path), timeout=120,
-        stdin_data=base64.b64encode(data),
-    )
-    if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao gravar")
-    return proc.stdout.strip()
+    return files_rt.write_file(ssh_run, server, path, data)
 
 
 def delete_file(server: Servidor, path: str) -> str:
-    """Apaga um arquivo (ou pasta vazia) no container. Nao tem volta."""
-    proc = ssh_run(server, q("bash", "-lc", DELETE_SCRIPT, "gp", path), timeout=60)
-    if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao apagar")
-    return proc.stdout.strip()
+    return files_rt.delete_file(ssh_run, server, path)
 
 
 @app.get("/servers/<int:sid>/files/search")
@@ -4585,35 +4294,7 @@ def _attachment_header(name: str) -> str:
 
 
 def stream_remote_file(server: Servidor, path: str):
-    """Joga o arquivo do container direto para o navegador, sem passar por disco.
-
-    E `cat` na outra ponta lido em pedacos: um save de varios GB desce sem o painel
-    guardar nada em memoria.
-    """
-    argv = ssh_argv(server) + [q("cat", "--", path)]
-    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # `Popen.stdout` e Optional no tipo; aqui ele existe porque o PIPE foi pedido acima.
-    saida = proc.stdout
-    if saida is None:
-        raise RemoteError("nao consegui abrir a saida do ssh")
-
-    def gerar():
-        try:
-            while True:
-                chunk = saida.read(DOWNLOAD_CHUNK)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            # Navegador que cancela no meio nao pode deixar um ssh orfao segurando fd.
-            if proc.poll() is None:
-                proc.kill()
-            for pipe in (proc.stdout, proc.stderr):
-                if pipe:
-                    pipe.close()
-            proc.wait()
-
-    return gerar()
+    return files_rt.stream_remote_file(ssh_argv, server, path, DOWNLOAD_CHUNK)
 
 
 @app.get("/servers/<int:sid>/files/download")

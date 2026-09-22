@@ -1,0 +1,286 @@
+"""Editor de arquivos e upload/download (gamepanel.runtime.files): scripts SSH + parsing.
+
+Nao existia suite dedicada antes da Fase 4 (mesmo achado dos modulos anteriores: so
+exercitado indiretamente, pelo sweep de rotas em test_users.py, que nunca chega a
+chamar `list_dir`/`read_file`/etc. de verdade). `ssh_run`/`ssh_argv` entram por
+injecao, como em todo modulo de runtime/: a maioria dos testes aqui usa uma saida
+FABRICADA (sem SSH nenhum); os dois que streamam de um PROCESSO de verdade
+(`ssh_stream_in`/`stream_remote_file`) usam `cat`/`sh` locais no lugar do ssh - por
+isso so rodam em POSIX, mesmo motivo do test_terminal.py.
+"""
+from __future__ import annotations
+
+import base64
+import os
+import subprocess
+from io import BytesIO
+
+import pytest
+
+from gamepanel.runtime import files as filesmod
+from gamepanel.runtime.ssh import RemoteError
+
+SERVIDOR = {"id": 1, "host": "10.0.0.1", "ssh_port": 22, "ssh_user": "root"}
+
+
+def _proc(returncode: int = 0, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def _ssh_run_de(stdout: str = "", returncode: int = 0, stderr: str = "", capturar: list | None = None):
+    def ssh_run(server, remote_cmd, timeout=None, stdin_data=None, multiplex=True):
+        if capturar is not None:
+            capturar.append({"remote_cmd": remote_cmd, "stdin_data": stdin_data})
+        return _proc(returncode, stdout, stderr)
+    return ssh_run
+
+
+# ------------------------------------------------------------ caminho
+
+def test_clean_path_resolve_pontos():
+    assert filesmod.clean_path("/a/b/../c", ()) == "/a/c"
+
+
+def test_clean_path_exige_absoluto():
+    with pytest.raises(ValueError, match="absoluto"):
+        filesmod.clean_path("relativo", ())
+
+
+def test_clean_path_rejeita_caractere_de_controle():
+    with pytest.raises(ValueError, match="invalido"):
+        filesmod.clean_path("/a\nb", ())
+
+
+def test_clean_path_rejeita_caminho_longo_demais():
+    with pytest.raises(ValueError, match="longo demais"):
+        filesmod.clean_path("/" + "a" * 500, ())
+
+
+def test_clean_path_barra_configurada_libera_tudo():
+    assert filesmod.clean_path("/qualquer/coisa", ("/",)) == "/qualquer/coisa"
+
+
+def test_clean_path_fora_das_raizes_e_recusado():
+    with pytest.raises(ValueError, match="fora das pastas"):
+        filesmod.clean_path("/outra/pasta", ("/opt/game",))
+
+
+def test_clean_path_prefixo_parecido_nao_engana_a_raiz():
+    # /opt/gamex nao pode passar so porque comeca com o texto "/opt/game".
+    with pytest.raises(ValueError, match="fora das pastas"):
+        filesmod.clean_path("/opt/gamex/save", ("/opt/game",))
+
+
+def test_parent_of():
+    assert filesmod.parent_of("/a/b/c") == "/a/b"
+    assert filesmod.parent_of("/a") == "/"
+
+
+# ------------------------------------------------------------- listar
+
+def test_list_dir_parseia_entradas_e_ordena_pastas_primeiro():
+    saida = (
+        "f\t?\t120\t2024-01-01 10:00\t644\tzeta.txt\n"
+        "d\t?\t0\t2024-01-01 09:00\t755\talfa\n"
+    )
+    entries, mais = filesmod.list_dir(_ssh_run_de(saida), SERVIDOR, "/opt/game", 800)
+    assert [e["name"] for e in entries] == ["alfa", "zeta.txt"]
+    assert entries[0]["dir"] is True
+    assert entries[1]["size"] == 120
+    assert mais is False
+
+
+def test_list_dir_link_usa_o_tipo_do_alvo():
+    saida = "l\td\t0\t2024-01-01 09:00\t777\tatalho\n"
+    entries, _mais = filesmod.list_dir(_ssh_run_de(saida), SERVIDOR, "/opt/game", 800)
+    assert entries[0]["link"] is True
+    assert entries[0]["dir"] is True
+
+
+def test_list_dir_linha_malformada_e_ignorada():
+    saida = "so\tum\tcampo\n" + "f\t?\t10\t2024-01-01 09:00\t644\tok.txt\n"
+    entries, _mais = filesmod.list_dir(_ssh_run_de(saida), SERVIDOR, "/opt/game", 800)
+    assert len(entries) == 1
+
+
+def test_list_dir_no_limite_avisa_que_ha_mais():
+    saida = "f\t?\t1\t2024-01-01 09:00\t644\tum.txt\n"
+    _entries, mais = filesmod.list_dir(_ssh_run_de(saida), SERVIDOR, "/opt/game", 1)
+    assert mais is True
+
+
+def test_list_dir_retorno_diferente_de_zero_vira_remote_error():
+    ssh_run = _ssh_run_de(returncode=3, stderr="pasta nao encontrada: /x")
+    with pytest.raises(RemoteError, match="pasta nao encontrada"):
+        filesmod.list_dir(ssh_run, SERVIDOR, "/x", 10)
+
+
+# -------------------------------------------------- busca de config
+
+def test_find_config_files_parseia_linhas():
+    saida = "120\t2024-01-01 10:00\t/opt/game/server.cfg\n"
+    achados = filesmod.find_config_files(_ssh_run_de(saida), SERVIDOR, "/opt/game", ("*.cfg",))
+    assert achados == [{"size": 120, "mtime": "2024-01-01 10:00", "path": "/opt/game/server.cfg"}]
+
+
+def test_find_config_files_linha_malformada_e_ignorada():
+    # Menos de duas tabs - falta pelo menos o caminho.
+    saida = "so isso\n"
+    achados = filesmod.find_config_files(_ssh_run_de(saida), SERVIDOR, "/opt/game", ("*.cfg",))
+    assert achados == []
+
+
+def test_find_config_files_erro_vira_remote_error():
+    ssh_run = _ssh_run_de(returncode=3, stderr="pasta nao encontrada")
+    with pytest.raises(RemoteError):
+        filesmod.find_config_files(ssh_run, SERVIDOR, "/x", ("*.cfg",))
+
+
+# ----------------------------------------------------------- metadados
+
+def test_stat_file_le_metadados():
+    saida = "META|4096|2024-01-01 10:00:00.123456|644|steam|steam\n"
+    meta = filesmod.stat_file(_ssh_run_de(saida), SERVIDOR, "/opt/game/x.cfg")
+    assert meta["size"] == 4096
+    assert meta["mtime"] == "2024-01-01 10:00:00"
+    assert meta["mode"] == "644"
+    assert meta["owner"] == "steam:steam"
+    assert meta["name"] == "x.cfg"
+
+
+def test_stat_file_erro_vira_remote_error():
+    ssh_run = _ssh_run_de(returncode=5, stderr="sem permissao de leitura")
+    with pytest.raises(RemoteError):
+        filesmod.stat_file(ssh_run, SERVIDOR, "/x")
+
+
+def test_stat_file_meta_mal_formada_vira_remote_error():
+    with pytest.raises(RemoteError, match="inesperada"):
+        filesmod.stat_file(_ssh_run_de("nao-e-meta\n"), SERVIDOR, "/x")
+
+
+# --------------------------------------------------------- ler arquivo
+
+def test_read_file_texto_simples():
+    payload = base64.b64encode(b"ola mundo").decode()
+    saida = f"META|9|2024-01-01 10:00:00|644|steam|steam|full\n{payload}"
+    doc = filesmod.read_file(_ssh_run_de(saida), SERVIDOR, "/opt/game/x.txt", 1000, 100)
+    assert doc["text"] == "ola mundo"
+    assert doc["binary"] is False
+    assert doc["truncated"] is False
+    assert doc["editable"] is True
+    assert doc["crlf"] is False
+
+
+def test_read_file_binario_nao_vira_texto():
+    payload = base64.b64encode(b"\x00\x01\x02").decode()
+    saida = f"META|3|2024-01-01 10:00:00|644|steam|steam|full\n{payload}"
+    doc = filesmod.read_file(_ssh_run_de(saida), SERVIDOR, "/x.bin", 1000, 100)
+    assert doc["binary"] is True
+    assert doc["text"] == ""
+    assert doc["editable"] is False
+
+
+def test_read_file_truncado_nao_e_editavel():
+    payload = base64.b64encode(b"fim").decode()
+    saida = f"META|999999|2024-01-01 10:00:00|644|steam|steam|tail\n{payload}"
+    doc = filesmod.read_file(_ssh_run_de(saida), SERVIDOR, "/grande.log", 10, 100)
+    assert doc["truncated"] is True
+    assert doc["editable"] is False
+
+
+def test_read_file_crlf_detectado():
+    payload = base64.b64encode(b"linha1\r\nlinha2").decode()
+    saida = f"META|14|2024-01-01 10:00:00|644|steam|steam|full\n{payload}"
+    doc = filesmod.read_file(_ssh_run_de(saida), SERVIDOR, "/x.ini", 1000, 100)
+    assert doc["crlf"] is True
+
+
+def test_read_file_base64_corrompido_vira_remote_error():
+    saida = "META|3|2024-01-01 10:00:00|644|steam|steam|full\nnao-e-base64!!"
+    with pytest.raises(RemoteError, match="corrompido"):
+        filesmod.read_file(_ssh_run_de(saida), SERVIDOR, "/x", 1000, 100)
+
+
+def test_read_file_erro_vira_remote_error():
+    ssh_run = _ssh_run_de(returncode=3, stderr="arquivo nao encontrado")
+    with pytest.raises(RemoteError):
+        filesmod.read_file(ssh_run, SERVIDOR, "/x", 1000, 100)
+
+
+# -------------------------------------------------- gravar e apagar
+
+def test_write_file_manda_base64_por_stdin_e_devolve_confirmacao():
+    capturado: list = []
+    ssh_run = _ssh_run_de("gravado: 9 bytes", capturar=capturado)
+    resultado = filesmod.write_file(ssh_run, SERVIDOR, "/opt/game/x.cfg", b"ola mundo")
+    assert resultado == "gravado: 9 bytes"
+    assert base64.b64decode(capturado[0]["stdin_data"]) == b"ola mundo"
+
+
+def test_write_file_erro_vira_remote_error():
+    ssh_run = _ssh_run_de(returncode=4, stderr="nao e um arquivo comum")
+    with pytest.raises(RemoteError):
+        filesmod.write_file(ssh_run, SERVIDOR, "/x", b"a")
+
+
+def test_delete_file_devolve_confirmacao():
+    resultado = filesmod.delete_file(_ssh_run_de("apagado: /x (10 bytes)"), SERVIDOR, "/x")
+    assert "apagado" in resultado
+
+
+def test_delete_file_erro_vira_remote_error():
+    ssh_run = _ssh_run_de(returncode=3, stderr="arquivo nao encontrado")
+    with pytest.raises(RemoteError):
+        filesmod.delete_file(ssh_run, SERVIDOR, "/x")
+
+
+# ------------------------------------------------------- streaming
+
+posix_apenas = pytest.mark.skipif(
+    os.name != "posix", reason="exercita um processo local (cat/sh); so roda no container")
+
+
+def _argv_vazio():
+    def ssh_argv(server, connect_timeout=10, **_ignora):
+        return []
+    return ssh_argv
+
+
+def _argv_sh_c(script: str):
+    def ssh_argv(server, **_ignora):
+        return ["sh", "-c", script]
+    return ssh_argv
+
+
+@posix_apenas
+def test_ssh_stream_in_envia_a_entrada_para_o_processo():
+    origem = BytesIO(b"conteudo do arquivo")
+    saida = filesmod.ssh_stream_in(_argv_vazio(), SERVIDOR, "cat", origem, timeout=5, chunk_size=4)
+    assert saida == "conteudo do arquivo"
+
+
+@posix_apenas
+def test_ssh_stream_in_processo_que_falha_vira_remote_error():
+    origem = BytesIO(b"x" * 100)
+    with pytest.raises(RemoteError):
+        filesmod.ssh_stream_in(_argv_vazio(), SERVIDOR, "false", origem, timeout=5, chunk_size=4)
+
+
+@posix_apenas
+def test_stream_remote_file_le_a_saida_em_pedacos():
+    gerador = filesmod.stream_remote_file(_argv_sh_c("printf abcdef"), SERVIDOR, "/qualquer", chunk_size=2)
+    pedacos = list(gerador)
+    assert b"".join(pedacos) == b"abcdef"
+
+
+@posix_apenas
+def test_stream_remote_file_cancelado_no_meio_nao_trava():
+    # Simula o navegador desistindo no meio do download: o generator so precisa
+    # fechar sem travar, sem deixar o processo remoto orfao.
+    gerador = filesmod.stream_remote_file(
+        _argv_sh_c("printf abcdefghij; sleep 5"), SERVIDOR, "/qualquer", chunk_size=2,
+    )
+    primeiro = next(gerador)
+    assert primeiro == b"ab"
+    gerador.close()
