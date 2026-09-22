@@ -32,6 +32,16 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Any, NamedTuple
 
+# Rodando como SCRIPT (`python3 /opt/gamepanel/gamepanel/app.py --reset-2fa ...`), quem
+# entra no sys.path e a pasta do proprio pacote, e `import gamepanel` nao resolve. Isto
+# poe o pai dela na frente. Nao e detalhe: a saida de emergencia do segundo fator e o
+# cadastro de servidor do deploy-game.ps1 chamam o arquivo por caminho, e desde que o
+# codigo foi para src/ os dois quebravam com ModuleNotFoundError - o do deploy em
+# silencio, porque ele so avisa "painel nao encontrado" e segue.
+if __package__ in (None, ""):  # pragma: no cover - so vale fora do import normal
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from gamepanel import cli
 from gamepanel import navigation as ui
 from gamepanel.games import config_format as gameconf
 from gamepanel.games import gamefields
@@ -4920,79 +4930,12 @@ if __name__ != "__main__":
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Painel de servidores de jogos")
-    parser.add_argument("--create-user", metavar="USUARIO")
-    # Saida de emergencia: o unico admin perdeu o celular E os codigos de recuperacao.
-    parser.add_argument("--reset-2fa", metavar="USUARIO",
-                        help="desliga o segundo fator de um usuario (roda no CT do painel)")
-    parser.add_argument("--password", metavar="SENHA")
-    parser.add_argument("--role", default="", choices=("", *ROLES),
-                        help="papel do usuario (padrao: admin ao criar; manter ao redefinir)")
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("GAMEPANEL_PORT", "8080")))
-    # Usado pelo deploy (deploy-docker.ps1) para deixar o servidor ja cadastrado.
-    parser.add_argument("--register-server", metavar="NOME")
-    parser.add_argument("--server-host", default="")
-    parser.add_argument("--service", default="")
-    parser.add_argument("--ssh-port", type=int, default=22)
-    parser.add_argument("--ssh-user", default="root")
-    parser.add_argument("--game-port", default="")
-    parser.add_argument("--query-port", type=int, default=0)
-    parser.add_argument("--config-path", default="")
-    parser.add_argument("--config-files", default="")
-    parser.add_argument("--backup-paths", default="")
-    parser.add_argument("--join-re", default="")
-    parser.add_argument("--leave-re", default="")
-    parser.add_argument("--log-path", default="")
-    parser.add_argument("--player-source", default="")
-    parser.add_argument("--notes", default="")
-    opts = parser.parse_args()
-
-    if opts.reset_2fa:
-        init_db()
-        conn = _connect()
-        with conn:
-            alvo = conn.execute("SELECT id FROM users WHERE username = ?", (opts.reset_2fa,)).fetchone()
-            if not alvo:
-                raise SystemExit(f"usuario '{opts.reset_2fa}' nao existe")
-            conn.execute(
-                "UPDATE users SET totp_secret = '', totp_enabled = 0, totp_last_step = 0,"
-                " totp_recovery = '' WHERE id = ?", (alvo["id"],))
-        print(f"Segundo fator de '{opts.reset_2fa}' desligado.")
-    elif opts.create_user:
-        if not opts.password:
-            raise SystemExit("--create-user exige --password")
-        ensure_admin_user(opts.create_user, opts.password, opts.role)
-    elif opts.register_server:
-        if not opts.server_host or not opts.service:
-            raise SystemExit("--register-server exige --server-host e --service")
-        # A linha de comando nao aceita quebra de linha com conforto: aqui as listas
-        # (arquivos de config, caminhos de backup) vem separadas por virgula.
-        def por_virgula(bruto: str) -> str:
-            return "\n".join(p.strip() for p in bruto.split(",") if p.strip())
-
-        criado = ensure_server(ServidorDoDeploy(
-            name=opts.register_server,
-            host=opts.server_host,
-            service=opts.service,
-            ssh_port=opts.ssh_port,
-            ssh_user=opts.ssh_user,
-            game_port=opts.game_port,
-            notes=opts.notes,
-            config_path=opts.config_path,
-            config_files=por_virgula(opts.config_files),
-            backup_paths=por_virgula(opts.backup_paths),
-            join_re=opts.join_re,
-            leave_re=opts.leave_re,
-            log_path=opts.log_path,
-            query_port=opts.query_port,
-            player_source=opts.player_source,
-        ))
-        print(f"servidor '{opts.register_server}' {'cadastrado' if criado else 'atualizado'}"
-              f" ({opts.server_host})")
-    else:
-        start_scheduler()
-        retoma_jobs_do_broker()
-        app.run(host=opts.host, port=opts.port)
+    # A linha de comando mora em gamepanel/cli.py; o rodape aqui continua existindo
+    # porque o README e o CLAUDE.md documentam `python3 .../app.py --reset-2fa USUARIO`,
+    # e quem precisa desse comando esta trancado do lado de fora do painel.
+    cli.main(cli.CliDeps(
+        init_db=init_db, connect=_connect, ensure_admin_user=ensure_admin_user,
+        ensure_server=ensure_server, servidor_do_deploy=ServidorDoDeploy,
+        start_scheduler=start_scheduler, retoma_jobs_do_broker=retoma_jobs_do_broker,
+        app=app, papeis=ROLES,
+    ))

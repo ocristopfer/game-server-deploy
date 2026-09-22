@@ -1,0 +1,156 @@
+"""Linha de comando do painel: subir o servidor, criar usuario, destravar o 2FA e
+cadastrar servidor pelo deploy.
+
+Mora fora de `app.py` mas continua acessivel pelo caminho de sempre: o rodape de
+`app.py` chama o `main()` daqui. Isso importa porque a saida de emergencia do segundo
+fator esta escrita no README e no CLAUDE.md como
+
+    python3 /opt/gamepanel/app.py --reset-2fa USUARIO
+
+e quem precisa dela esta, por definicao, trancado do lado de fora do painel — nao e
+hora de descobrir que o comando mudou de nome. `python3 -m gamepanel.cli` faz o mesmo.
+
+As funcoes de cadastro (`ensure_admin_user`, `ensure_server`) NAO vieram junto: elas
+tambem sao chamadas de dentro do painel e do `docker/panel/entrypoint.sh`, entao
+continuam em `app.py` e chegam aqui por parametro.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sqlite3
+from collections.abc import Callable, Sequence
+from typing import Any, NamedTuple
+
+# A linha de comando nao aceita quebra de linha com conforto: as listas (arquivos de
+# config, caminhos de backup) vem separadas por virgula e viram uma por linha.
+SEPARADOR_DE_LISTA = ","
+
+
+class CliDeps(NamedTuple):
+    """O painel, como a linha de comando precisa dele."""
+
+    init_db: Callable[[], None]
+    connect: Callable[[], sqlite3.Connection]
+    ensure_admin_user: Callable[..., None]
+    ensure_server: Callable[[Any], Any]
+    servidor_do_deploy: Callable[..., Any]
+    start_scheduler: Callable[[], None]
+    retoma_jobs_do_broker: Callable[[], Any]
+    app: Any
+    papeis: Sequence[str]
+
+
+def por_virgula(bruto: str) -> str:
+    return "\n".join(p.strip() for p in bruto.split(SEPARADOR_DE_LISTA) if p.strip())
+
+
+def construir_parser(papeis: Sequence[str]) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Painel de servidores de jogos")
+    parser.add_argument("--create-user", metavar="USUARIO")
+    # Saida de emergencia: o unico admin perdeu o celular E os codigos de recuperacao.
+    parser.add_argument("--reset-2fa", metavar="USUARIO",
+                        help="desliga o segundo fator de um usuario (roda no CT do painel)")
+    parser.add_argument("--password", metavar="SENHA")
+    parser.add_argument("--role", default="", choices=("", *papeis),
+                        help="papel do usuario (padrao: admin ao criar; manter ao redefinir)")
+    parser.add_argument("--host", default="0.0.0.0")  # noqa: S104  # NOSONAR - o painel serve a LAN
+    parser.add_argument("--port", type=int, default=int(os.environ.get("GAMEPANEL_PORT", "8080")))
+    # Usado pelo deploy (deploy-docker.ps1) para deixar o servidor ja cadastrado.
+    parser.add_argument("--register-server", metavar="NOME")
+    parser.add_argument("--server-host", default="")
+    parser.add_argument("--service", default="")
+    parser.add_argument("--ssh-port", type=int, default=22)
+    parser.add_argument("--ssh-user", default="root")
+    parser.add_argument("--game-port", default="")
+    parser.add_argument("--query-port", type=int, default=0)
+    parser.add_argument("--config-path", default="")
+    parser.add_argument("--config-files", default="")
+    parser.add_argument("--backup-paths", default="")
+    parser.add_argument("--join-re", default="")
+    parser.add_argument("--leave-re", default="")
+    parser.add_argument("--log-path", default="")
+    parser.add_argument("--player-source", default="")
+    parser.add_argument("--notes", default="")
+    return parser
+
+
+def reset_2fa(deps: CliDeps, usuario: str) -> None:
+    """Desliga o segundo fator de um usuario. Levanta SystemExit se ele nao existe."""
+    deps.init_db()
+    conn = deps.connect()
+    with conn:
+        alvo = conn.execute(
+            "SELECT id FROM users WHERE username = ?", (usuario,)).fetchone()
+        if not alvo:
+            raise SystemExit(f"usuario '{usuario}' nao existe")
+        conn.execute(
+            "UPDATE users SET totp_secret = '', totp_enabled = 0, totp_last_step = 0,"
+            " totp_recovery = '' WHERE id = ?", (alvo["id"],))
+    print(f"Segundo fator de '{usuario}' desligado.")
+
+
+def registrar_servidor(deps: CliDeps, opts: argparse.Namespace) -> None:
+    if not opts.server_host or not opts.service:
+        raise SystemExit("--register-server exige --server-host e --service")
+    criado = deps.ensure_server(deps.servidor_do_deploy(
+        name=opts.register_server,
+        host=opts.server_host,
+        service=opts.service,
+        ssh_port=opts.ssh_port,
+        ssh_user=opts.ssh_user,
+        game_port=opts.game_port,
+        notes=opts.notes,
+        config_path=opts.config_path,
+        config_files=por_virgula(opts.config_files),
+        backup_paths=por_virgula(opts.backup_paths),
+        join_re=opts.join_re,
+        leave_re=opts.leave_re,
+        log_path=opts.log_path,
+        query_port=opts.query_port,
+        player_source=opts.player_source,
+    ))
+    print(f"servidor '{opts.register_server}' {'cadastrado' if criado else 'atualizado'}"
+          f" ({opts.server_host})")
+
+
+def main(deps: CliDeps, argv: Sequence[str] | None = None) -> None:
+    opts = construir_parser(deps.papeis).parse_args(argv)
+
+    if opts.reset_2fa:
+        reset_2fa(deps, opts.reset_2fa)
+    elif opts.create_user:
+        if not opts.password:
+            raise SystemExit("--create-user exige --password")
+        deps.ensure_admin_user(opts.create_user, opts.password, opts.role)
+    elif opts.register_server:
+        registrar_servidor(deps, opts)
+    else:
+        # So o servidor de verdade sobe o relogio: pela linha de comando (cadastrar
+        # usuario, cadastrar servidor) ele nao pode comecar a mexer nos containers.
+        deps.start_scheduler()
+        deps.retoma_jobs_do_broker()
+        deps.app.run(host=opts.host, port=opts.port)
+
+
+def deps_do_painel() -> CliDeps:
+    """Monta as dependencias a partir do painel.
+
+    O import mora aqui dentro, e nao no topo: `app.py` importa ESTE modulo, e o
+    contrario no nivel do arquivo fecharia o circulo. Rodando por `-m gamepanel.cli`,
+    este modulo ja esta inteiro quando a linha abaixo executa.
+    """
+    from gamepanel import app as painel
+
+    return CliDeps(
+        init_db=painel.init_db, connect=painel._connect,
+        ensure_admin_user=painel.ensure_admin_user, ensure_server=painel.ensure_server,
+        servidor_do_deploy=painel.ServidorDoDeploy,
+        start_scheduler=painel.start_scheduler,
+        retoma_jobs_do_broker=painel.retoma_jobs_do_broker,
+        app=painel.app, papeis=painel.ROLES,
+    )
+
+
+if __name__ == "__main__":
+    main(deps_do_painel())

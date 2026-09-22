@@ -398,7 +398,8 @@ $registrado = $false
 if (-not $NoRegister) {
     if (Test-Container $PanelContainer) {
         $cmdArgs = @(
-            "exec", $PanelContainer, "python3", "/opt/gamepanel/app.py",
+            # /opt/gamepanel/gamepanel: e para la que o Dockerfile.prod copia o pacote.
+            "exec", $PanelContainer, "python3", "/opt/gamepanel/gamepanel/app.py",
             "--register-server", $Display,
             "--server-host", $Container,
             "--service", "$GameKey.service",

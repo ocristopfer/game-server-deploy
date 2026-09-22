@@ -442,7 +442,10 @@ Write-Host ("Alvo: CT $($cfg['CTID']) ($GameKey) em $($cfg['IP_CIDR'])") -Foregr
 # Caminhos fixos do CT do painel (provision-admin-lxc.sh). O cadastro roda como o
 # usuario do painel, nao como root: o sqlite cria os arquivos -wal/-shm ao lado do
 # banco, e criados por root o painel (que roda como gamepanel) perderia a escrita.
-$PanelApp = "/opt/gamepanel/app.py"
+# O pacote mora em /opt/gamepanel/gamepanel (ver provision-admin-lxc.sh). O caminho
+# sem a segunda pasta existiu ate o codigo ir para src/, e o `test -f` abaixo passou a
+# falhar CALADO: o deploy so dizia "painel nao encontrado" e seguia sem cadastrar.
+$PanelApp = "/opt/gamepanel/gamepanel/app.py"
 $PanelUser = "gamepanel"
 $PanelPubKeyPath = "/etc/gamepanel/id_ed25519.pub"
 $AdminCtid = Get-Cfg $cfg "ADMIN_CTID"

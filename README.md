@@ -1375,8 +1375,11 @@ Esqueceu a senha de todo mundo, ou perdeu o acesso de administrador? A linha de 
 continua sendo a saida de emergencia (roda dentro do CT do painel):
 
 ```bash
-python3 /opt/gamepanel/app.py --create-user chefe --password nova-senha --role admin
+cd /opt/gamepanel && python3 -m gamepanel.cli --create-user chefe --password nova-senha --role admin
 ```
+
+O caminho antigo (`python3 /opt/gamepanel/gamepanel/app.py --create-user ...`) continua
+valendo; os dois chamam o mesmo `gamepanel/cli.py`.
 
 ### Testando o painel localmente (docker compose)
 
