@@ -92,8 +92,8 @@ def webhooks(banco, monkeypatch):
     """
     enviadas: list[tuple[str, str]] = []
 
-    def captura(url, texto):
-        enviadas.append((url, texto))
+    def captura(url, text):
+        enviadas.append((url, text))
         return ""      # string vazia = enviado com sucesso
 
     monkeypatch.setattr(panel, "send_webhook", captura)

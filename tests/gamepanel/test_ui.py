@@ -55,8 +55,8 @@ def test_barra_larga_usa_rotulo_curto_quando_ha(chefe, monkeypatch):
     from gamepanel import app as panel
     monkeypatch.setattr(panel, "ALLOW_BROKER", True)
     html = chefe.get("/").get_data(as_text=True)
-    inicio = html.index('class="appbar__nav"')
-    barra = html[inicio:html.index("</nav>", inicio)]
+    start = html.index('class="appbar__nav"')
+    barra = html[start:html.index("</nav>", start)]
     assert ">Instancias</a>" in barra
     assert ">Catalogo</a>" in barra
     assert "Instancias de jogo" not in barra

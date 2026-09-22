@@ -60,15 +60,15 @@ def _series_segments(samples, key: str, px, py,
         atual = []
 
     for quando, values in samples:
-        valor = values.get(key)
-        if valor is None:
+        value = values.get(key)
+        if value is None:
             fecha()
             anterior = None
             continue
         if anterior is not None and (quando - anterior).total_seconds() > sample_step * CHART_GAP:
             fecha()
-        atual.append(f"{px(quando)},{py(valor)}")
-        ponta = {"x": px(quando), "y": py(valor), "valor": valor}
+        atual.append(f"{px(quando)},{py(value)}")
+        ponta = {"x": px(quando), "y": py(value), "valor": value}
         anterior = quando
 
     fecha()
@@ -89,8 +89,8 @@ def build_chart(samples, series, ceiling: float, start, end, time_format: str,
     def px(quando) -> float:
         return round(CHART_L + largura * ((quando - start).total_seconds() / span), 1)
 
-    def py(valor) -> float:
-        fatia = 0.0 if ceiling <= 0 else min(1.0, max(0.0, valor / ceiling))
+    def py(value) -> float:
+        fatia = 0.0 if ceiling <= 0 else min(1.0, max(0.0, value / ceiling))
         return round(CHART_T + alto * (1 - fatia), 1)
 
     lines_of = []
@@ -115,7 +115,7 @@ def build_chart(samples, series, ceiling: float, start, end, time_format: str,
     # convergem no canto direito, empurrar um rotulo para cima do outro os desgruda das
     # linhas e vira ruido — melhor deixar a legenda, a mira e a tabela carregarem, que e
     # o que elas ja fazem.
-    pontas = [linha["ponta"]["y"] for linha in lines_of if linha["ponta"]]
+    pontas = [line["ponta"]["y"] for line in lines_of if line["ponta"]]
     rotula_ponta = all(
         abs(a - b) >= TIP_MIN
         for i, a in enumerate(pontas) for b in pontas[i + 1:]
@@ -123,10 +123,10 @@ def build_chart(samples, series, ceiling: float, start, end, time_format: str,
 
     grade = []
     for fatia in (0.0, 0.5, 1.0):
-        valor = ceiling * fatia
+        value = ceiling * fatia
         grade.append({
-            "y": py(valor),
-            "label": f"{valor:g}" + (series[0].get("suffix", "") if series else ""),
+            "y": py(value),
+            "label": f"{value:g}" + (series[0].get("suffix", "") if series else ""),
         })
 
     tempos = []

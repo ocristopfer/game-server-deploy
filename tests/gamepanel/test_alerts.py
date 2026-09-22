@@ -18,13 +18,13 @@ from gamepanel import app as panel
 URL = "http://exemplo.invalid/hook"
 
 
-def destino(banco, url, eventos, nome="Teste", ativo=1) -> int:
+def target(banco, url, eventos, name="Teste", ativo=1) -> int:
     """Cadastra um destino e devolve o id."""
     with banco:
         cur = banco.execute(
             "INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
             " VALUES (?, ?, ?, ?, ?)",
-            (nome, url, ",".join(eventos), ativo, panel.now_iso()))
+            (name, url, ",".join(eventos), ativo, panel.now_iso()))
     return cur.lastrowid
 
 
@@ -32,7 +32,7 @@ def liga(banco, eventos, disco=90, memoria=90, cpu=90):
     """Deixa UM destino cadastrado, com estes eventos. O padrao da maioria dos testes."""
     with banco:
         banco.execute("DELETE FROM webhooks")
-    destino(banco, URL, eventos)
+    target(banco, URL, eventos)
     panel.config_set(banco, "webhook_disk_pct", str(disco))
     panel.config_set(banco, "webhook_mem_pct", str(memoria))
     panel.config_set(banco, "webhook_cpu_pct", str(cpu))
@@ -48,7 +48,7 @@ def relogios_vencidos():
     panel._last_monitor = panel._last_state = time.monotonic() - 3600
 
 
-def estado(reachable=True, service="active", error="", restarts=0, result="", sub=""):
+def state(reachable=True, service="active", error="", restarts=0, result="", sub=""):
     return {"reachable": reachable, "service": service, "error": error,
             "restarts": restarts, "result": result, "sub": sub}
 
@@ -109,9 +109,9 @@ def tres_destinos(banco):
     """O ponto do recurso: dois canais ativos com listas diferentes, mais um desligado."""
     with banco:
         banco.execute("DELETE FROM webhooks")
-    equipe = destino(banco, "http://equipe.invalid/hook", ["caiu", "voltou"], "Equipe")
-    geral = destino(banco, "http://geral.invalid/hook", ["caiu"], "Geral")
-    mudo = destino(banco, "http://mudo.invalid/hook", ["caiu"], "Desligado", ativo=0)
+    equipe = target(banco, "http://equipe.invalid/hook", ["caiu", "voltou"], "Equipe")
+    geral = target(banco, "http://geral.invalid/hook", ["caiu"], "Geral")
+    mudo = target(banco, "http://mudo.invalid/hook", ["caiu"], "Desligado", ativo=0)
     return {"equipe": equipe, "geral": geral, "mudo": mudo}
 
 
@@ -140,9 +140,9 @@ def test_uniao_dos_destinos_ligados_e_o_que_o_monitor_observa(banco, tres_destin
 def test_destino_quebrado_nao_impede_os_outros(banco, tres_destinos, webhooks, monkeypatch):
     """Um destino fora do ar nao pode calar os outros: o Discord de pe continua
     recebendo mesmo com o Slack recusando a conexao."""
-    def parcial(url, texto):
+    def parcial(url, text):
         if "equipe" in url:
-            webhooks.append((url, texto))
+            webhooks.append((url, text))
             return ""
         return "recusou a conexao"
 
@@ -178,8 +178,8 @@ def test_mascara_url_vazia_nao_vira_mascara():
 
 def test_queda_avisa(banco, webhooks):
     liga(banco, ["caiu", "voltou", "inacessivel", "acessivel"])
-    panel._state_alert(banco, SERVIDOR, estado(service="inactive"),
-                            estado(service="active"))
+    panel._state_alert(banco, SERVIDOR, state(service="inactive"),
+                            state(service="active"))
     assert len(webhooks) == 1
     assert "Palworld" in webhooks[0][1]
     assert "palworld.service" in webhooks[0][1]
@@ -187,22 +187,22 @@ def test_queda_avisa(banco, webhooks):
 
 def test_volta_avisa(banco, webhooks):
     liga(banco, ["caiu", "voltou"])
-    panel._state_alert(banco, SERVIDOR, estado(service="active"),
-                            estado(service="inactive"))
+    panel._state_alert(banco, SERVIDOR, state(service="active"),
+                            state(service="inactive"))
     assert len(webhooks) == 1
 
 
 def test_nada_mudou_nada_sai(banco, webhooks):
     liga(banco, ["caiu", "voltou"])
-    panel._state_alert(banco, SERVIDOR, estado(service="active"), estado(service="active"))
+    panel._state_alert(banco, SERVIDOR, state(service="active"), state(service="active"))
     assert len(webhooks) == 0
 
 
 def test_perder_contato_avisa_com_o_motivo(banco, webhooks):
     liga(banco, ["caiu", "voltou", "inacessivel", "acessivel"])
     panel._state_alert(banco, SERVIDOR,
-                            estado(reachable=False, service="inacessivel", error="timeout"),
-                            estado(service="active"))
+                            state(reachable=False, service="inacessivel", error="timeout"),
+                            state(service="active"))
     assert len(webhooks) == 1
     assert "timeout" in webhooks[0][1]
 
@@ -211,22 +211,22 @@ def test_sem_contato_nao_acumula_alerta_de_servico(banco, webhooks):
     """O painel nao sabe o que o servico esta fazendo sem contato: avisar 'caiu' junto
     seria inventar. Sai UMA mensagem, a do contato."""
     liga(banco, ["caiu", "voltou", "inacessivel", "acessivel"])
-    panel._state_alert(banco, SERVIDOR, estado(reachable=False, service="inacessivel"),
-                            estado(reachable=True, service="active"))
+    panel._state_alert(banco, SERVIDOR, state(reachable=False, service="inacessivel"),
+                            state(reachable=True, service="active"))
     assert len(webhooks) == 1
 
 
 def test_continua_sem_contato_nao_repete(banco, webhooks):
     liga(banco, ["caiu", "voltou", "inacessivel", "acessivel"])
-    panel._state_alert(banco, SERVIDOR, estado(reachable=False, service="inacessivel"),
-                            estado(reachable=False, service="inacessivel"))
+    panel._state_alert(banco, SERVIDOR, state(reachable=False, service="inacessivel"),
+                            state(reachable=False, service="inacessivel"))
     assert len(webhooks) == 0
 
 
 def test_evento_desligado_na_tela_nao_sai(banco, webhooks):
     liga(banco, ["voltou"])
-    panel._state_alert(banco, SERVIDOR, estado(service="inactive"),
-                            estado(service="active"))
+    panel._state_alert(banco, SERVIDOR, state(service="inactive"),
+                            state(service="active"))
     assert len(webhooks) == 0
 
 
@@ -258,7 +258,7 @@ def test_reiniciar_pelo_botao_nao_vira_alerta(banco, alvo, webhooks):
             "INSERT INTO jobs (server_id, target, action, status, username, created_at)"
             " VALUES (?,?,?,?,?,?)",
             (alvo["id"], "root@10.0.0.9", "restart", "ok", "admin", panel.now_iso()))
-    panel._state_alert(banco, alvo, estado(service="inactive"), estado(service="active"))
+    panel._state_alert(banco, alvo, state(service="inactive"), state(service="active"))
     assert len(webhooks) == 0
 
 
@@ -271,7 +271,7 @@ def test_job_velho_nao_segura_o_alerta_para_sempre(banco, alvo, webhooks):
             " VALUES (?,?,?,?,?,?)",
             (alvo["id"], "root@10.0.0.9", "restart", "ok", "admin", antigo))
     assert not panel._job_recente(banco, alvo["id"])
-    panel._state_alert(banco, alvo, estado(service="inactive"), estado(service="active"))
+    panel._state_alert(banco, alvo, state(service="inactive"), state(service="active"))
     assert len(webhooks) == 1, "passada a janela, a queda avisa"
 
 
@@ -282,8 +282,8 @@ def test_job_velho_nao_segura_o_alerta_para_sempre(banco, alvo, webhooks):
 
 def test_servico_em_failed_avisa_que_quebrou(banco, alvo, webhooks):
     liga(banco, ["caiu", "quebrou"])
-    panel._state_alert(banco, alvo, estado(service="failed", result="exit-code"),
-                            estado(service="active"))
+    panel._state_alert(banco, alvo, state(service="failed", result="exit-code"),
+                            state(service="active"))
     assert len(webhooks) == 1
     assert "quebrou" in webhooks[0][1], "a mensagem diz que QUEBROU, nao que pararam"
     assert "exit-code" in webhooks[0][1]
@@ -299,9 +299,9 @@ def test_quebrar_logo_apos_a_acao_do_painel_ainda_avisa(banco, alvo, webhooks):
             "INSERT INTO jobs (server_id, target, action, status, username, created_at)"
             " VALUES (?,?,?,?,?,?)",
             (alvo["id"], "root@10.0.0.9", "restart", "ok", "admin", panel.now_iso()))
-    panel._state_alert(banco, alvo, estado(service="inactive"), estado(service="active"))
+    panel._state_alert(banco, alvo, state(service="inactive"), state(service="active"))
     assert len(webhooks) == 0, "parar pelo painel continua silencioso"
-    panel._state_alert(banco, alvo, estado(service="failed"), estado(service="active"))
+    panel._state_alert(banco, alvo, state(service="failed"), state(service="active"))
     assert len(webhooks) == 1, "mas quebrar logo apos a acao avisa"
 
 
@@ -309,26 +309,26 @@ def test_loop_de_restart(banco, alvo, webhooks):
     liga(banco, ["reiniciando"])
     anterior = {"reachable": True, "service": "active", "restarts": 2}
 
-    panel._restart_alert(banco, alvo, estado(restarts=5), anterior)
+    panel._restart_alert(banco, alvo, state(restarts=5), anterior)
     assert len(webhooks) == 1
     assert "3x" in webhooks[0][1], "a mensagem diz quantas vezes"
 
     # Enquanto o contador continua subindo e o MESMO episodio: avisar a cada volta
     # seria o spam que a regra da mudanca existe para evitar.
     webhooks.clear()
-    panel._restart_alert(banco, alvo, estado(restarts=8), anterior)
+    panel._restart_alert(banco, alvo, state(restarts=8), anterior)
     assert len(webhooks) == 0, "continua subindo, nao repete"
 
     # Uma volta inteira sem restart novo fecha o episodio.
-    panel._restart_alert(banco, alvo, estado(restarts=8), anterior)
+    panel._restart_alert(banco, alvo, state(restarts=8), anterior)
     assert not anterior["loop_avisado"], "volta sem restart destrava o alerta"
     webhooks.clear()
-    panel._restart_alert(banco, alvo, estado(restarts=11), anterior)
+    panel._restart_alert(banco, alvo, state(restarts=11), anterior)
     assert len(webhooks) == 1, "um loop novo volta a avisar"
 
     # `systemctl restart` na mao zera o NRestarts. Isso e linha de base nova, nao um loop.
     webhooks.clear()
-    panel._restart_alert(banco, alvo, estado(restarts=0), anterior)
+    panel._restart_alert(banco, alvo, state(restarts=0), anterior)
     assert len(webhooks) == 0, "contador zerado nao vira alerta"
     assert anterior["restarts"] == 0, "e a linha de base acompanha"
 
@@ -342,14 +342,14 @@ def test_jogo_de_pe_mas_mudo(banco, alvo, webhooks, monkeypatch):
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: resposta)
 
     for _ in range(panel.MUTE_ROUNDS - 1):
-        panel._mute_alert(banco, sondado, estado(), mudez)
+        panel._mute_alert(banco, sondado, state(), mudez)
     assert len(webhooks) == 0, "nao avisa no primeiro silencio (UDP perde pacote)"
-    panel._mute_alert(banco, sondado, estado(), mudez)
+    panel._mute_alert(banco, sondado, state(), mudez)
     assert len(webhooks) == 1, f"avisa na volta {panel.MUTE_ROUNDS}"
     assert "nao responde" in webhooks[0][1], "a mensagem separa 'rodando' de 'respondendo'"
 
     webhooks.clear()
-    panel._mute_alert(banco, sondado, estado(), mudez)
+    panel._mute_alert(banco, sondado, state(), mudez)
     assert len(webhooks) == 0, "continua mudo, nao repete"
 
 
@@ -360,14 +360,14 @@ def test_voltar_a_responder_avisa_uma_vez(banco, alvo, webhooks, monkeypatch):
     resposta = {"configured": True, "error": "tempo esgotado", "players": None, "list": []}
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: resposta)
     for _ in range(panel.MUTE_ROUNDS):
-        panel._mute_alert(banco, sondado, estado(), mudez)
+        panel._mute_alert(banco, sondado, state(), mudez)
 
     webhooks.clear()
     resposta_ok = {"configured": True, "error": "", "players": 4, "list": []}
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: resposta_ok)
-    panel._mute_alert(banco, sondado, estado(), mudez)
+    panel._mute_alert(banco, sondado, state(), mudez)
     assert len(webhooks) == 1, "voltou a responder, avisa uma vez"
-    panel._mute_alert(banco, sondado, estado(), mudez)
+    panel._mute_alert(banco, sondado, state(), mudez)
     assert len(webhooks) == 1, "e nao fica repetindo o alivio"
 
 
@@ -380,7 +380,7 @@ def test_servico_subindo_nao_conta_como_mudez(banco, alvo, webhooks, monkeypatch
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: resposta)
     mudez = {"reachable": True, "service": "active", "restarts": 0, "mudo": 0}
     for _ in range(panel.MUTE_ROUNDS + 2):
-        panel._mute_alert(banco, sondado, estado(service="activating"), mudez)
+        panel._mute_alert(banco, sondado, state(service="activating"), mudez)
     assert len(webhooks) == 0
 
 
@@ -389,7 +389,7 @@ def test_contagem_por_log_nao_gera_alerta_de_mudez(banco, alvo, webhooks):
     liga(banco, ["travou", "respondeu"])
     por_log = dict(alvo, player_source="log", query_port=0)
     for _ in range(panel.MUTE_ROUNDS + 2):
-        panel._mute_alert(banco, por_log, estado(), {"service": "active"})
+        panel._mute_alert(banco, por_log, state(), {"service": "active"})
     assert len(webhooks) == 0
 
 
@@ -507,7 +507,7 @@ def monitor_a2s(banco, alvo, monkeypatch):
 
     def status_contado(server, force=False):
         idas_de_ssh.append(int(server["id"]))
-        return estado()
+        return state()
 
     monkeypatch.setattr(panel, "server_status", status_contado)
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {"disks": []})
@@ -555,7 +555,7 @@ def test_contagem_por_log_nao_entra_na_volta_curta(banco, alvo, webhooks, monkey
     liga(banco, ["jogador-entrou", "jogador-saiu", "caiu"])
     with banco:
         banco.execute("UPDATE servers SET player_source = 'log', query_port = 0")
-    monkeypatch.setattr(panel, "server_status", lambda server, force=False: estado())
+    monkeypatch.setattr(panel, "server_status", lambda server, force=False: state())
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {"disks": []})
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: {
         "configured": True, "error": "", "players": 0, "list": []})
@@ -588,7 +588,7 @@ def test_sem_alerta_de_jogador_20s_ainda_nao_e_hora(banco, alvo, monkeypatch):
     """O passo curto so existe por causa do evento de jogador. Sem ele os mesmos 20s
     nao bastam, e o monitor continua no ritmo de antes — ninguem paga SSH a mais de graca."""
     liga(banco, ["caiu"])
-    monkeypatch.setattr(panel, "server_status", lambda server, force=False: estado())
+    monkeypatch.setattr(panel, "server_status", lambda server, force=False: state())
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {"disks": []})
     recuo = time.monotonic() - 20
     monkeypatch.setattr(panel, "_last_monitor", recuo)
@@ -802,31 +802,31 @@ def medidor_apertado(alvo, monkeypatch):
                 "mem": {"pct": 99.0, "used": 99, "total": 100},
                 "cpu_pct": 99.0, "cores": 2, "proc": {}}
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: apertado)
-    monkeypatch.setattr(panel, "server_status", lambda server, force=False: estado())
+    monkeypatch.setattr(panel, "server_status", lambda server, force=False: state())
     return apertado
 
 
 def test_a_volta_do_monitor_dispara_os_tres(banco, medidor_apertado, webhooks):
     liga(banco, ["disco-cheio", "memoria-alta", "cpu-alta"])
     with panel.app.app_context():
-        panel.monitor_servers(forcar=True)   # a primeira volta so anota
-        panel.monitor_servers(forcar=True)
-    texto = "\n".join(t for _, t in webhooks)
-    assert "disco quase cheio" in texto
-    assert "memoria quase cheia" in texto
-    assert "uso de CPU alto" in texto
+        panel.monitor_servers(force=True)   # a primeira volta so anota
+        panel.monitor_servers(force=True)
+    text = "\n".join(t for _, t in webhooks)
+    assert "disco quase cheio" in text
+    assert "memoria quase cheia" in text
+    assert "uso de CPU alto" in text
 
 
 def test_evento_desmarcado_nao_sai_de_carona(banco, medidor_apertado, webhooks):
     """O contrario: evento desmarcado na tela nao pode sair de carona nos outros."""
     liga(banco, ["disco-cheio"])
     with panel.app.app_context():
-        panel.monitor_servers(forcar=True)
-        panel.monitor_servers(forcar=True)
-    texto = "\n".join(t for _, t in webhooks)
-    assert "disco quase cheio" in texto
-    assert "memoria quase cheia" not in texto
-    assert "uso de CPU alto" not in texto
+        panel.monitor_servers(force=True)
+        panel.monitor_servers(force=True)
+    text = "\n".join(t for _, t in webhooks)
+    assert "disco quase cheio" in text
+    assert "memoria quase cheia" not in text
+    assert "uso de CPU alto" not in text
 
 
 # ------------------------------------------------------------------ log em tempo real
@@ -1012,7 +1012,7 @@ def test_evento_sem_ninguem_escutando_e_registrado(banco, webhooks):
 def test_envio_que_falhou_fica_marcado_com_o_motivo(banco, monkeypatch):
     liga(banco, ["caiu"])
     monkeypatch.setattr(panel, "send_webhook",
-                        lambda url, texto: "500 Internal Server Error")
+                        lambda url, text: "500 Internal Server Error")
     panel.notify(banco, "caiu", "Palworld: parou de novo", "")
     diario = panel.recent_alerts(banco)
     assert diario[0]["status"] == "falhou"
@@ -1026,7 +1026,7 @@ def test_limpeza_do_diario_segura_o_tamanho_e_guarda_os_novos(banco, webhooks, m
     for i in range(6):
         panel.notify(banco, "caiu", f"alerta {i}", "")
     with panel.app.app_context():
-        panel.clean_history(forcar=True)
+        panel.clean_history(force=True)
     diario = panel.recent_alerts(banco)
     assert len(diario) == 3
     assert "alerta 5" in diario[0]["titulo"], "guarda os mais NOVOS"
@@ -1045,7 +1045,7 @@ def test_tarefa_quebrada_nao_cala_o_monitor(banco, alvo, webhooks, monkeypatch):
 
     monkeypatch.setattr(panel, "run_schedules", explode)
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {"disks": []})
-    monkeypatch.setattr(panel, "server_status", lambda server, force=False: estado())
+    monkeypatch.setattr(panel, "server_status", lambda server, force=False: state())
 
     # Relogios vencidos: cada tique vale uma volta COMPLETA, com consulta de estado.
     relogios_vencidos()
@@ -1053,13 +1053,13 @@ def test_tarefa_quebrada_nao_cala_o_monitor(banco, alvo, webhooks, monkeypatch):
         panel._scheduler_tick()   # linha de base
 
     monkeypatch.setattr(panel, "server_status",
-                        lambda server, force=False: estado(service="inactive"))
+                        lambda server, force=False: state(service="inactive"))
     relogios_vencidos()
     with panel.app.app_context():
         panel._scheduler_tick()
 
-    texto = "\n".join(t for _, t in webhooks)
-    assert "parou de rodar" in texto, "o monitor roda mesmo com a agenda quebrada"
+    text = "\n".join(t for _, t in webhooks)
+    assert "parou de rodar" in text, "o monitor roda mesmo com a agenda quebrada"
     falhas_no_diario = [a for a in panel.recent_alerts(banco) if a["status"] == "erro-interno"]
     assert falhas_no_diario, "a quebra fica visivel no diario"
     assert "agendamentos" in falhas_no_diario[0]["titulo"], "dizendo qual tarefa caiu"
@@ -1073,7 +1073,7 @@ def test_primeira_olhada_do_monitor_so_anota(banco, alvo, webhooks, monkeypatch)
     monkeypatch.setattr(panel, "server_status", lambda server, force=False: {
         "reachable": True, "service": "inactive", "error": ""})
     with panel.app.app_context():
-        panel.monitor_servers(forcar=True)
+        panel.monitor_servers(force=True)
     assert len(webhooks) == 0
     assert panel._estado_monitor[alvo["id"]]["service"] == "inactive"
 
@@ -1084,12 +1084,12 @@ def test_apos_a_linha_de_base_a_mudanca_avisa(banco, alvo, webhooks, monkeypatch
     monkeypatch.setattr(panel, "server_status", lambda server, force=False: {
         "reachable": True, "service": "inactive", "error": ""})
     with panel.app.app_context():
-        panel.monitor_servers(forcar=True)
+        panel.monitor_servers(force=True)
 
     monkeypatch.setattr(panel, "server_status", lambda server, force=False: {
         "reachable": False, "service": "inacessivel", "error": "x"})
     with panel.app.app_context():
-        panel.monitor_servers(forcar=True)
+        panel.monitor_servers(force=True)
     assert len(webhooks) == 1
 
 
@@ -1099,12 +1099,12 @@ def test_servidor_removido_sai_da_memoria_do_monitor(banco, alvo, monkeypatch):
     monkeypatch.setattr(panel, "server_status", lambda server, force=False: {
         "reachable": True, "service": "inactive", "error": ""})
     with panel.app.app_context():
-        panel.monitor_servers(forcar=True)
+        panel.monitor_servers(force=True)
 
     with banco:
         banco.execute("DELETE FROM servers WHERE id = ?", (alvo["id"],))
     with panel.app.app_context():
-        panel.monitor_servers(forcar=True)
+        panel.monitor_servers(force=True)
     assert alvo["id"] not in panel._estado_monitor
 
 

@@ -55,10 +55,10 @@ class LogStreamDeps(NamedTuple):
     retry: float
 
 
-def player_line(linha: str, enter: re.Pattern[str] | None,
+def player_line(line: str, enter: re.Pattern[str] | None,
                      leave: re.Pattern[str] | None) -> bool:
     """Esta linha do log e uma entrada ou saida de jogador?"""
-    curta = linha[:LOG_LINE_MAX]
+    curta = line[:LOG_LINE_MAX]
     if enter and enter.search(curta):
         return True
     return bool(leave and leave.search(curta))
@@ -161,15 +161,15 @@ class LogStream:
         )
         # Guardado numa variavel local: `self.proc.stdout` e Optional (Popen sem PIPE
         # nao tem saida), e e daqui que sai o laco que fica horas lendo.
-        saida = self.proc.stdout
-        if saida is None:
+        output = self.proc.stdout
+        if output is None:
             return self._give_up("nao consegui abrir a saida do ssh")
         self.error = ""
         try:
-            for linha in saida:
+            for line in output:
                 if self._stop_signal.is_set():
                     break
-                if player_line(linha, enter, leave):
+                if player_line(line, enter, leave):
                     self._check()
         finally:
             self.stop_proc()

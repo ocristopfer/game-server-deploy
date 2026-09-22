@@ -424,11 +424,11 @@ def test_contagem_pelo_log_nao_tem_acao():
 
 def test_preenche_nao_quebra_com_chave_solta_na_mensagem():
     """A mensagem vem de quem digita: uma chave solta nao pode estourar a montagem."""
-    assert panel._fill("{mensagem}", "b", "j", "olha o {isso} ai") == "olha o {isso} ai"
+    assert panel._fill("{message}", "b", "j", "olha o {isso} ai") == "olha o {isso} ai"
 
 
 def test_preenche_troca_os_tres_marcadores():
-    assert panel._fill("{base}/x/{jogador}/{mensagem}", "http://a/v1", "id7", "oi") == \
+    assert panel._fill("{base}/x/{player}/{message}", "http://a/v1", "id7", "oi") == \
         "http://a/v1/x/id7/oi"
 
 

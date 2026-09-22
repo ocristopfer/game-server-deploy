@@ -61,16 +61,16 @@ def test_enum_so_aceita_valor_que_o_jogo_entende():
     assert len(tumba.options) == 3
 
 
-@pytest.mark.parametrize("valor, aceita", [
+@pytest.mark.parametrize("value, aceita", [
     ("1", True),
     ("4", True),
     ("5", False),       # acima do teto
     ("0", False),       # abaixo do piso
     ("muito", False),   # nem numero e
 ])
-def test_fator_e_multiplicador_com_limite(valor, aceita):
+def test_fator_e_multiplicador_com_limite(value, aceita):
     vida = campo("enshrouded_server.json", "playerHealthFactor")
-    assert (vida.validate(valor) == "") is aceita
+    assert (vida.validate(value) == "") is aceita
 
 
 def test_fator_nao_converte_unidade():
@@ -78,10 +78,10 @@ def test_fator_nao_converte_unidade():
     assert campo("enshrouded_server.json", "playerHealthFactor").from_display("1.5") == "1.5"
 
 
-@pytest.mark.parametrize("valor, aceita", [("0.5", True), ("1", True), ("2", False)])
-def test_reciclagem_de_perk_vai_de_zero_a_um(valor, aceita):
+@pytest.mark.parametrize("value, aceita", [("0.5", True), ("1", True), ("2", False)])
+def test_reciclagem_de_perk_vai_de_zero_a_um(value, aceita):
     rec = campo("enshrouded_server.json", "perkUpgradeRecyclingFactor")
-    assert (rec.validate(valor) == "") is aceita
+    assert (rec.validate(value) == "") is aceita
 
 
 def test_outros_jogos_tem_catalogo_proprio():

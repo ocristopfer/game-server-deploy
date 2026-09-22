@@ -79,11 +79,11 @@ def test_parent_of():
 # ------------------------------------------------------------- listar
 
 def test_list_dir_parseia_entradas_e_ordena_pastas_primeiro():
-    saida = (
+    output = (
         "f\t?\t120\t2024-01-01 10:00\t644\tzeta.txt\n"
         "d\t?\t0\t2024-01-01 09:00\t755\talfa\n"
     )
-    entries, mais = filesmod.list_dir(_ssh_run_de(saida), SERVIDOR, "/opt/game", 800)
+    entries, mais = filesmod.list_dir(_ssh_run_de(output), SERVIDOR, "/opt/game", 800)
     assert [e["name"] for e in entries] == ["alfa", "zeta.txt"]
     assert entries[0]["dir"] is True
     assert entries[1]["size"] == 120
@@ -91,21 +91,21 @@ def test_list_dir_parseia_entradas_e_ordena_pastas_primeiro():
 
 
 def test_list_dir_link_usa_o_tipo_do_alvo():
-    saida = "l\td\t0\t2024-01-01 09:00\t777\tatalho\n"
-    entries, _mais = filesmod.list_dir(_ssh_run_de(saida), SERVIDOR, "/opt/game", 800)
+    output = "l\td\t0\t2024-01-01 09:00\t777\tatalho\n"
+    entries, _mais = filesmod.list_dir(_ssh_run_de(output), SERVIDOR, "/opt/game", 800)
     assert entries[0]["link"] is True
     assert entries[0]["dir"] is True
 
 
 def test_list_dir_linha_malformada_e_ignorada():
-    saida = "so\tum\tcampo\n" + "f\t?\t10\t2024-01-01 09:00\t644\tok.txt\n"
-    entries, _mais = filesmod.list_dir(_ssh_run_de(saida), SERVIDOR, "/opt/game", 800)
+    output = "so\tum\tcampo\n" + "f\t?\t10\t2024-01-01 09:00\t644\tok.txt\n"
+    entries, _mais = filesmod.list_dir(_ssh_run_de(output), SERVIDOR, "/opt/game", 800)
     assert len(entries) == 1
 
 
 def test_list_dir_no_limite_avisa_que_ha_mais():
-    saida = "f\t?\t1\t2024-01-01 09:00\t644\tum.txt\n"
-    _entries, mais = filesmod.list_dir(_ssh_run_de(saida), SERVIDOR, "/opt/game", 1)
+    output = "f\t?\t1\t2024-01-01 09:00\t644\tum.txt\n"
+    _entries, mais = filesmod.list_dir(_ssh_run_de(output), SERVIDOR, "/opt/game", 1)
     assert mais is True
 
 
@@ -118,15 +118,15 @@ def test_list_dir_retorno_diferente_de_zero_vira_remote_error():
 # -------------------------------------------------- busca de config
 
 def test_find_config_files_parseia_linhas():
-    saida = "120\t2024-01-01 10:00\t/opt/game/server.cfg\n"
-    achados = filesmod.find_config_files(_ssh_run_de(saida), SERVIDOR, "/opt/game", ("*.cfg",))
+    output = "120\t2024-01-01 10:00\t/opt/game/server.cfg\n"
+    achados = filesmod.find_config_files(_ssh_run_de(output), SERVIDOR, "/opt/game", ("*.cfg",))
     assert achados == [{"size": 120, "mtime": "2024-01-01 10:00", "path": "/opt/game/server.cfg"}]
 
 
 def test_find_config_files_linha_malformada_e_ignorada():
     # Menos de duas tabs - falta pelo menos o caminho.
-    saida = "so isso\n"
-    achados = filesmod.find_config_files(_ssh_run_de(saida), SERVIDOR, "/opt/game", ("*.cfg",))
+    output = "so isso\n"
+    achados = filesmod.find_config_files(_ssh_run_de(output), SERVIDOR, "/opt/game", ("*.cfg",))
     assert achados == []
 
 
@@ -139,8 +139,8 @@ def test_find_config_files_erro_vira_remote_error():
 # ----------------------------------------------------------- metadados
 
 def test_stat_file_le_metadados():
-    saida = "META|4096|2024-01-01 10:00:00.123456|644|steam|steam\n"
-    meta = filesmod.stat_file(_ssh_run_de(saida), SERVIDOR, "/opt/game/x.cfg")
+    output = "META|4096|2024-01-01 10:00:00.123456|644|steam|steam\n"
+    meta = filesmod.stat_file(_ssh_run_de(output), SERVIDOR, "/opt/game/x.cfg")
     assert meta["size"] == 4096
     assert meta["mtime"] == "2024-01-01 10:00:00"
     assert meta["mode"] == "644"
@@ -163,8 +163,8 @@ def test_stat_file_meta_mal_formada_vira_remote_error():
 
 def test_read_file_texto_simples():
     payload = base64.b64encode(b"ola mundo").decode()
-    saida = f"META|9|2024-01-01 10:00:00|644|steam|steam|full\n{payload}"
-    doc = filesmod.read_file(_ssh_run_de(saida), SERVIDOR, "/opt/game/x.txt", 1000, 100)
+    output = f"META|9|2024-01-01 10:00:00|644|steam|steam|full\n{payload}"
+    doc = filesmod.read_file(_ssh_run_de(output), SERVIDOR, "/opt/game/x.txt", 1000, 100)
     assert doc["text"] == "ola mundo"
     assert doc["binary"] is False
     assert doc["truncated"] is False
@@ -174,8 +174,8 @@ def test_read_file_texto_simples():
 
 def test_read_file_binario_nao_vira_texto():
     payload = base64.b64encode(b"\x00\x01\x02").decode()
-    saida = f"META|3|2024-01-01 10:00:00|644|steam|steam|full\n{payload}"
-    doc = filesmod.read_file(_ssh_run_de(saida), SERVIDOR, "/x.bin", 1000, 100)
+    output = f"META|3|2024-01-01 10:00:00|644|steam|steam|full\n{payload}"
+    doc = filesmod.read_file(_ssh_run_de(output), SERVIDOR, "/x.bin", 1000, 100)
     assert doc["binary"] is True
     assert doc["text"] == ""
     assert doc["editable"] is False
@@ -183,23 +183,23 @@ def test_read_file_binario_nao_vira_texto():
 
 def test_read_file_truncado_nao_e_editavel():
     payload = base64.b64encode(b"fim").decode()
-    saida = f"META|999999|2024-01-01 10:00:00|644|steam|steam|tail\n{payload}"
-    doc = filesmod.read_file(_ssh_run_de(saida), SERVIDOR, "/grande.log", 10, 100)
+    output = f"META|999999|2024-01-01 10:00:00|644|steam|steam|tail\n{payload}"
+    doc = filesmod.read_file(_ssh_run_de(output), SERVIDOR, "/grande.log", 10, 100)
     assert doc["truncated"] is True
     assert doc["editable"] is False
 
 
 def test_read_file_crlf_detectado():
     payload = base64.b64encode(b"linha1\r\nlinha2").decode()
-    saida = f"META|14|2024-01-01 10:00:00|644|steam|steam|full\n{payload}"
-    doc = filesmod.read_file(_ssh_run_de(saida), SERVIDOR, "/x.ini", 1000, 100)
+    output = f"META|14|2024-01-01 10:00:00|644|steam|steam|full\n{payload}"
+    doc = filesmod.read_file(_ssh_run_de(output), SERVIDOR, "/x.ini", 1000, 100)
     assert doc["crlf"] is True
 
 
 def test_read_file_base64_corrompido_vira_remote_error():
-    saida = "META|3|2024-01-01 10:00:00|644|steam|steam|full\nnao-e-base64!!"
+    output = "META|3|2024-01-01 10:00:00|644|steam|steam|full\nnao-e-base64!!"
     with pytest.raises(RemoteError, match="corrompido"):
-        filesmod.read_file(_ssh_run_de(saida), SERVIDOR, "/x", 1000, 100)
+        filesmod.read_file(_ssh_run_de(output), SERVIDOR, "/x", 1000, 100)
 
 
 def test_read_file_erro_vira_remote_error():
@@ -256,8 +256,8 @@ def _argv_sh_c(script: str):
 @posix_apenas
 def test_ssh_stream_in_envia_a_entrada_para_o_processo():
     origem = BytesIO(b"conteudo do arquivo")
-    saida = filesmod.ssh_stream_in(_argv_vazio(), SERVIDOR, "cat", origem, timeout=5, chunk_size=4)
-    assert saida == "conteudo do arquivo"
+    output = filesmod.ssh_stream_in(_argv_vazio(), SERVIDOR, "cat", origem, timeout=5, chunk_size=4)
+    assert output == "conteudo do arquivo"
 
 
 @posix_apenas

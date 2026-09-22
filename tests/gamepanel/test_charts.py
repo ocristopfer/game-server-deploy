@@ -21,9 +21,9 @@ DUAS_SERIES = SERIE_CPU + [
     {"key": "mem", "label": "Memoria", "color": "#d95926", "suffix": "%"}]
 
 
-def amostras(valores, passo_min=5, inicio=None):
+def amostras(valores, passo_min=5, start=None):
     """Lista de (quando, {cpu: v}) espacada de `passo_min`; None vira buraco."""
-    base = inicio or INICIO
+    base = start or INICIO
     return [(base + timedelta(minutes=passo_min * i), {"cpu": v})
             for i, v in enumerate(valores)]
 
@@ -143,13 +143,13 @@ def test_grade_sem_sufixo_quando_a_serie_nao_tem():
 
 # ------------------------------------------------------- coleta e retencao
 
-def register_server(conn, nome="alvo", host="nao-existe.invalid") -> int:
+def register_server(conn, name="alvo", host="nao-existe.invalid") -> int:
     with conn:
         conn.execute(
             "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"
             " VALUES (?, ?, 22, 'root', 'jogo.service', ?)",
-            (nome, host, panel.now_iso()))
-    return conn.execute("SELECT id FROM servers WHERE name = ?", (nome,)).fetchone()["id"]
+            (name, host, panel.now_iso()))
+    return conn.execute("SELECT id FROM servers WHERE name = ?", (name,)).fetchone()["id"]
 
 
 def test_medidor_com_erro_nao_grava_amostra(banco, monkeypatch):
@@ -158,7 +158,7 @@ def test_medidor_com_erro_nao_grava_amostra(banco, monkeypatch):
     monkeypatch.setattr(panel, "server_metrics", lambda *a, **k: {"error": "tempo esgotado"})
     monkeypatch.setattr(panel, "server_players", lambda *a, **k: {"error": "", "players": 3})
     with panel.app.app_context():
-        assert panel.collect_samples(forcar=True) == 0
+        assert panel.collect_samples(force=True) == 0
 
 
 def test_medidor_bom_grava_os_numeros_lidos(banco, monkeypatch):
@@ -167,11 +167,11 @@ def test_medidor_bom_grava_os_numeros_lidos(banco, monkeypatch):
         "error": "", "cpu_pct": 41.5, "mem": {"pct": 62.0}, "disks": []})
     monkeypatch.setattr(panel, "server_players", lambda *a, **k: {"error": "", "players": 3})
     with panel.app.app_context():
-        assert panel.collect_samples(forcar=True) == 1
+        assert panel.collect_samples(force=True) == 1
 
-    linha = banco.execute("SELECT * FROM samples").fetchone()
-    assert (linha["cpu_pct"], linha["mem_pct"]) == (41.5, 62.0)
-    assert linha["players"] is None, "sem contagem ligada no cadastro, fica vazio"
+    line = banco.execute("SELECT * FROM samples").fetchone()
+    assert (line["cpu_pct"], line["mem_pct"]) == (41.5, 62.0)
+    assert line["players"] is None, "sem contagem ligada no cadastro, fica vazio"
 
 
 def test_amostra_velha_sai_na_limpeza(banco, monkeypatch):
@@ -180,7 +180,7 @@ def test_amostra_velha_sai_na_limpeza(banco, monkeypatch):
         "error": "", "cpu_pct": 41.5, "mem": {"pct": 62.0}, "disks": []})
     monkeypatch.setattr(panel, "server_players", lambda *a, **k: {"error": "", "players": 3})
     with panel.app.app_context():
-        panel.collect_samples(forcar=True)
+        panel.collect_samples(force=True)
 
     velha = (datetime.now(timezone.utc)
              - timedelta(days=panel.SAMPLES_KEEP_DAYS + 2)).isoformat()
@@ -192,7 +192,7 @@ def test_amostra_velha_sai_na_limpeza(banco, monkeypatch):
     assert banco.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 6
 
     with panel.app.app_context():
-        panel.clean_history(forcar=True)
+        panel.clean_history(force=True)
     assert banco.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 1
 
 

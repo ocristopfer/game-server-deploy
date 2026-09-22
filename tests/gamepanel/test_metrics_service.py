@@ -23,11 +23,11 @@ def cache_limpo():
     ms._metrics_cache.clear()
 
 
-def ssh_que_responde(texto: str = SAIDA_MINIMA, registro: list | None = None):
+def ssh_que_responde(text: str = SAIDA_MINIMA, registro: list | None = None):
     def ssh_output(server, comando, timeout=None):
         if registro is not None:
             registro.append(comando)
-        return texto
+        return text
     return ssh_output
 
 

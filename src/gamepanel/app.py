@@ -576,7 +576,7 @@ def _exige_segundo_fator():
     return redirect(url_for("account_2fa"))
 
 
-def static_url(nome: str) -> str:
+def static_url(name: str) -> str:
     """URL de um arquivo estatico com a marca do mtime.
 
     Sem isto, um deploy que muda o css/components.css ou o js/terminal.js continua
@@ -587,10 +587,10 @@ def static_url(nome: str) -> str:
     em css/, js/ e icons/.
     """
     try:
-        marca = int(os.path.getmtime(os.path.join(app.static_folder or "", nome)))
+        marca = int(os.path.getmtime(os.path.join(app.static_folder or "", name)))
     except OSError:
         marca = 0
-    return url_for("static", filename=nome, v=marca)
+    return url_for("static", filename=name, v=marca)
 
 
 DEFAULT_LANG = i18n.valid_language(os.environ.get("GAMEPANEL_LANG"))
@@ -671,7 +671,7 @@ def translate_html(key: str, **campos: object) -> Markup:
     # A frase vem de `i18n`, que e codigo deste repositorio, e todo campo passou por
     # `escape` na linha de baixo: nao ha entrada de usuario chegando crua aqui.
     return Markup(i18n.translate(  # noqa: S704
-        key, current_language(), **{nome: escape(valor) for nome, valor in campos.items()}
+        key, current_language(), **{name: escape(value) for name, value in campos.items()}
     ))
 
 
@@ -780,16 +780,16 @@ def em_paralelo(tarefas: dict, timeout: float = 40.0) -> dict:
     As funcoes usadas na tela de detalhe ou nao falam com o banco, ou abrem conexao
     propria — o `http_login` da contagem por API e o caso, e ele ja faz assim.
     """
-    saida: dict = {}
+    output: dict = {}
     lock = threading.Lock()
 
-    def work(nome, funcao):
+    def work(name, funcao):
         try:
-            valor, erro = funcao(), ""
+            value, erro = funcao(), ""
         except (RemoteError, QueryError) as exc:
-            valor, erro = None, str(exc)
+            value, erro = None, str(exc)
         with lock:
-            saida[nome] = (valor, erro)
+            output[name] = (value, erro)
 
     threads = [threading.Thread(target=work, args=(n, f), daemon=True)
                for n, f in tarefas.items()]
@@ -797,9 +797,9 @@ def em_paralelo(tarefas: dict, timeout: float = 40.0) -> dict:
         t.start()
     for t in threads:
         t.join(timeout=timeout)
-    for nome in tarefas:
-        saida.setdefault(nome, (None, MSG_TIMEOUT))
-    return saida
+    for name in tarefas:
+        output.setdefault(name, (None, MSG_TIMEOUT))
+    return output
 
 
 # ------------------------------------------------------------- jogadores (A2S)
@@ -891,17 +891,17 @@ def players_from_http(server: Servidor) -> dict:
 
 PLAYER_MSG_MAX = player_service.PLAYER_MSG_MAX
 PLAYER_ACTION_LABELS = player_service.PLAYER_ACTION_LABELS
-MARCA_BASE = player_service.MARCA_BASE
-MARCA_JOGADOR = player_service.MARCA_JOGADOR
-MARCA_MENSAGEM = player_service.MARCA_MENSAGEM
+BASE_MARK = player_service.BASE_MARK
+PLAYER_MARK = player_service.PLAYER_MARK
+MESSAGE_MARK = player_service.MESSAGE_MARK
 API_ACOES = player_service.API_ACOES
 actions_api = player_service.actions_api
 player_actions = player_service.player_actions
 _fill = player_service._fill
 
 
-def run_player_action(server: Servidor, acao: str, jogador: str, message: str) -> str:
-    return player_service.player_action(_player_deps(), server, acao, jogador, message)
+def run_player_action(server: Servidor, action: str, player: str, message: str) -> str:
+    return player_service.player_action(_player_deps(), server, action, player, message)
 
 
 # ------------------------------------------------------ jogadores (pelo log)
@@ -1278,12 +1278,12 @@ def config_get(conn: sqlite3.Connection, key: str, padrao: str = "") -> str:
     return row["value"] if row else padrao
 
 
-def config_set(conn: sqlite3.Connection, key: str, valor: str) -> None:
+def config_set(conn: sqlite3.Connection, key: str, value: str) -> None:
     with conn:
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?, ?)"
             " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (key, valor),
+            (key, value),
         )
 
 
@@ -1346,14 +1346,14 @@ def webhook_config(conn: sqlite3.Connection) -> dict:
 mask_url = webhook_client.mask_url
 
 
-def send_webhook(url: str, texto: str) -> str:
+def send_webhook(url: str, text: str) -> str:
     # Nome proprio (e nao `webhook_client.envia` direto nas chamadas) porque a fixture
     # `webhooks` do conftest troca ESTE nome por um capturador — todo teste de alerta
     # depende disso para ver o que sairia por HTTP sem nada sair de verdade.
-    return webhook_client.send(url, texto, WEBHOOK_TIMEOUT, WEBHOOK_UA)
+    return webhook_client.send(url, text, WEBHOOK_TIMEOUT, WEBHOOK_UA)
 
 
-def notify(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str = "") -> bool:
+def notify(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str = "") -> bool:
     """Manda o alerta para cada destino que pediu esse evento.
 
     Devolve se saiu para ALGUEM. Um destino fora do ar (Discord de pe, Slack caido) nao
@@ -1361,33 +1361,33 @@ def notify(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str = ""
     entao da para saber qual deles esta quebrado sem adivinhar.
     """
     alvos = [d for d in webhook_list(conn)
-             if d["ativo"] and d["url"] and evento in d["eventos"]]
+             if d["ativo"] and d["url"] and event in d["eventos"]]
     if not alvos:
         # Registrado de proposito: "o alerta disparou e ninguem pediu por ele" e a causa
         # mais comum de canal mudo, e e indistinguivel de "nao aconteceu nada" para quem
         # so olha o Discord. No diario as duas viram coisas diferentes.
-        _record_alert(conn, evento, titulo, detalhe, "", "sem-destino")
+        _record_alert(conn, event, titulo, detalhe, "", "sem-destino")
         return False
-    texto = f"**{titulo}**"
+    text = f"**{titulo}**"
     if detalhe:
-        texto += f"\n{detalhe}"
+        text += f"\n{detalhe}"
     saiu = False
-    for destino in alvos:
-        erro = send_webhook(destino["url"], texto)
+    for target in alvos:
+        erro = send_webhook(target["url"], text)
         if erro:
             app.logger.warning(
-                "alerta '%s' nao saiu para '%s': %s", evento, destino["nome"], erro
+                "alerta '%s' nao saiu para '%s': %s", event, target["nome"], erro
             )
-            _record_alert(conn, evento, titulo, detalhe, destino["nome"],
+            _record_alert(conn, event, titulo, detalhe, target["nome"],
                              "falhou", erro)
         else:
             saiu = True
-            _record_alert(conn, evento, titulo, detalhe, destino["nome"], "enviado")
+            _record_alert(conn, event, titulo, detalhe, target["nome"], "enviado")
     return saiu
 
 
-def _record_alert(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str,
-                     destino: str, status: str, erro: str = "") -> None:
+def _record_alert(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str,
+                     target: str, status: str, erro: str = "") -> None:
     """Grava uma linha do diario.
 
     Engole o proprio erro de proposito: o diario existe para explicar o alerta, e seria
@@ -1398,7 +1398,7 @@ def _record_alert(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: s
             conn.execute(
                 "INSERT INTO alert_log (criado_em, evento, titulo, detalhe, destino,"
                 " status, erro) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (now_iso(), evento, titulo[:200], detalhe[:500], destino[:80],
+                (now_iso(), event, titulo[:200], detalhe[:500], target[:80],
                  status, erro[:300]))
     except sqlite3.Error:
         app.logger.exception("nao consegui gravar no diario de alertas")
@@ -1452,16 +1452,16 @@ def _alert_deps() -> alert_service.AlertDeps:
     )
 
 
-def _state_alert(conn, server, estado, anterior) -> None:
-    alert_service.state_alert(_alert_deps(), conn, server, estado, anterior)
+def _state_alert(conn, server, state, anterior) -> None:
+    alert_service.state_alert(_alert_deps(), conn, server, state, anterior)
 
 
-def _restart_alert(conn, server, estado, anterior) -> None:
-    alert_service.restart_alert(_alert_deps(), conn, server, estado, anterior)
+def _restart_alert(conn, server, state, anterior) -> None:
+    alert_service.restart_alert(_alert_deps(), conn, server, state, anterior)
 
 
-def _mute_alert(conn, server, estado, anterior) -> None:
-    alert_service.mute_alert(_alert_deps(), conn, server, estado, anterior)
+def _mute_alert(conn, server, state, anterior) -> None:
+    alert_service.mute_alert(_alert_deps(), conn, server, state, anterior)
 
 
 def _log_alert(conn, server, anterior) -> None:
@@ -1493,8 +1493,8 @@ ALERTAS_DE_RECURSO = {
 }
 
 
-def _players_alert(conn, server, servico, anterior, cfg) -> None:
-    alert_service.players_alert(_alert_deps(), conn, server, servico, anterior, cfg)
+def _players_alert(conn, server, service, anterior, cfg) -> None:
+    alert_service.players_alert(_alert_deps(), conn, server, service, anterior, cfg)
 
 
 _players_reading = alert_service.players_reading
@@ -1542,12 +1542,12 @@ class _LogStream(log_stream.LogStream):
     direto para conferir que um regex torto faz a thread desistir.
     """
 
-    def __init__(self, server, assinatura):
-        super().__init__(_log_stream_deps(), server, assinatura)
+    def __init__(self, server, signature):
+        super().__init__(_log_stream_deps(), server, signature)
 
 
-def _player_line(linha: str, entrar, sair) -> bool:
-    return log_stream.player_line(linha, entrar, sair)
+def _player_line(line: str, entrar, sair) -> bool:
+    return log_stream.player_line(line, entrar, sair)
 
 
 def _stream_signature(server) -> tuple:
@@ -1561,7 +1561,7 @@ def wanted_streams(servidores, cfg) -> dict[int, tuple]:
 
 # `_LogStream` vai por lambda: o nome e resolvido neste modulo a cada abertura, que e o
 # que deixa o teste do supervisor troca-lo por um dublê sem SSH.
-_supervisor = log_stream.Supervisor(lambda server, assinatura: _LogStream(server, assinatura))
+_supervisor = log_stream.Supervisor(lambda server, signature: _LogStream(server, signature))
 # O MESMO dicionario do supervisor: a fixture do teste o limpa por este nome.
 _streams = _supervisor.abertos
 
@@ -1593,7 +1593,7 @@ class _Rhythm(NamedTuple):
     ver_log: bool
 
 
-def _monitor_rhythm(cfg: dict, agora: float, forcar: bool) -> _Rhythm | None:
+def _monitor_rhythm(cfg: dict, agora: float, force: bool) -> _Rhythm | None:
     """Decide o que vence nesta volta e adianta os relogios. None = ainda nao e hora."""
     global _last_monitor, _last_state, _last_disk, _last_log
 
@@ -1601,27 +1601,27 @@ def _monitor_rhythm(cfg: dict, agora: float, forcar: bool) -> _Rhythm | None:
     # ligados a volta fica curta; sem eles nada muda em relacao a antes.
     quer_jogadores = bool(cfg["eventos"] & {"jogador-entrou", "jogador-saiu"})
     passo = min(MONITOR_EVERY, PLAYER_CHECK_EVERY) if quer_jogadores else MONITOR_EVERY
-    if not forcar and agora - _last_monitor < passo:
+    if not force and agora - _last_monitor < passo:
         return None
     _last_monitor = agora
 
     # ...mas so a contagem de jogadores anda nesse passo curto. Estado do servico, mudez
     # e restart continuam no ritmo antigo: cada um deles custa SSH por servidor, e
     # acelerar tudo junto multiplicaria essa conta por quatro sem necessidade.
-    ver_estado = forcar or agora - _last_state >= MONITOR_EVERY
+    ver_estado = force or agora - _last_state >= MONITOR_EVERY
     if ver_estado:
         _last_state = agora
 
     # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
     # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
-    vence_recurso = forcar or agora - _last_disk >= DISK_CHECK_EVERY
+    vence_recurso = force or agora - _last_disk >= DISK_CHECK_EVERY
     recursos = cfg["eventos"] & RECURSO_EVENTOS if vence_recurso else set()
     if recursos:
         _last_disk = agora
 
     # O log e o unico que custa uma ida de SSH so dele, entao anda no seu proprio ritmo.
     ver_log = "erro-no-log" in cfg["eventos"] and (
-        forcar or agora - _last_log >= LOG_CHECK_EVERY
+        force or agora - _last_log >= LOG_CHECK_EVERY
     )
     if ver_log:
         _last_log = agora
@@ -1629,7 +1629,7 @@ def _monitor_rhythm(cfg: dict, agora: float, forcar: bool) -> _Rhythm | None:
     return _Rhythm(ver_estado, quer_jogadores, recursos, ver_log)
 
 
-def _short_round(conn, server, anterior, cfg, ritmo: _Rhythm) -> None:
+def _short_round(conn, server, anterior, cfg, rhythm: _Rhythm) -> None:
     """A volta de 15s: so jogadores, e sem tocar no SSH.
 
     O servico que interessa aqui e "estava de pe na ultima olhada de verdade", e isso
@@ -1641,7 +1641,7 @@ def _short_round(conn, server, anterior, cfg, ritmo: _Rhythm) -> None:
     o mesmo log inteiro nao se sustenta. Esses servidores continuam avisando no ritmo
     da volta completa.
     """
-    if not ritmo.quer_jogadores or anterior is None:
+    if not rhythm.quer_jogadores or anterior is None:
         return
     if player_source(server) not in PLAYER_FAST_SOURCES:
         return
@@ -1649,37 +1649,37 @@ def _short_round(conn, server, anterior, cfg, ritmo: _Rhythm) -> None:
         _players_alert(conn, server, anterior.get("service", ""), anterior, cfg)
 
 
-def _server_alerts(conn, server, estado, anterior, cfg, ritmo: _Rhythm) -> None:
+def _server_alerts(conn, server, state, anterior, cfg, rhythm: _Rhythm) -> None:
     """Os alertas que so fazem sentido com o container ALCANCAVEL."""
     if "reiniciando" in cfg["eventos"]:
-        _restart_alert(conn, server, estado, anterior)
+        _restart_alert(conn, server, state, anterior)
     else:
         # Sem o evento ligado o contador ainda precisa acompanhar, senao ligar o alerta
         # no meio do dia renderia um "loop" falso com tudo o que se acumulou enquanto
         # ele estava desligado.
-        anterior["restarts"] = int(estado.get("restarts") or 0)
+        anterior["restarts"] = int(state.get("restarts") or 0)
 
     # Este custa uma sondagem no jogo (UDP ou HTTP) — nao vale a pena pagar por ela com
     # o evento desligado.
     if cfg["eventos"] & {"travou", "respondeu"}:
-        _mute_alert(conn, server, estado, anterior)
+        _mute_alert(conn, server, state, anterior)
 
-    if ritmo.quer_jogadores:
+    if rhythm.quer_jogadores:
         # Com stream de log ligado esta chamada vira rede de seguranca: se ele tiver
         # caido, ninguem fica sem aviso — so mais devagar. O lock e o que impede os dois
         # de avisarem a mesma entrada.
         with players_lock(int(server["id"])):
-            _players_alert(conn, server, estado["service"], anterior, cfg)
+            _players_alert(conn, server, state["service"], anterior, cfg)
 
-    if ritmo.ver_log:
+    if rhythm.ver_log:
         _log_alert(conn, server, anterior)
 
-    for evento, checa in ALERTAS_DE_RECURSO.items():
-        if evento in ritmo.recursos:
+    for event, checa in ALERTAS_DE_RECURSO.items():
+        if event in rhythm.recursos:
             checa(conn, server, cfg)
 
 
-def monitor_servers(forcar: bool = False) -> int:
+def monitor_servers(force: bool = False) -> int:
     """Confere o estado de todo mundo e dispara o que mudou. Devolve quantos olhou."""
     conn = db()
     cfg = webhook_config(conn)
@@ -1688,8 +1688,8 @@ def monitor_servers(forcar: bool = False) -> int:
     if not cfg["eventos"]:
         return 0
 
-    ritmo = _monitor_rhythm(cfg, time.monotonic(), forcar)
-    if ritmo is None:
+    rhythm = _monitor_rhythm(cfg, time.monotonic(), force)
+    if rhythm is None:
         return 0
 
     servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
@@ -1697,26 +1697,26 @@ def monitor_servers(forcar: bool = False) -> int:
         sid = int(server["id"])
         anterior = _estado_monitor.get(sid)
 
-        if not ritmo.ver_estado:
-            _short_round(conn, server, anterior, cfg, ritmo)
+        if not rhythm.ver_estado:
+            _short_round(conn, server, anterior, cfg, rhythm)
             continue
 
-        estado = server_status(server)
+        state = server_status(server)
         if anterior is None:
             # Primeira olhada: so anota. Alertar aqui encheria o canal de "esta parado"
             # toda vez que o painel reiniciasse. Vale para o contador de restarts do
             # mesmo jeito: o que interessa e quanto ele sobe DAQUI para a frente.
-            _estado_monitor[sid] = {"reachable": estado["reachable"],
-                                    "service": estado["service"],
-                                    "restarts": int(estado.get("restarts") or 0)}
+            _estado_monitor[sid] = {"reachable": state["reachable"],
+                                    "service": state["service"],
+                                    "restarts": int(state.get("restarts") or 0)}
             continue
 
-        _state_alert(conn, server, estado, anterior)
-        if estado["reachable"]:
-            _server_alerts(conn, server, estado, anterior, cfg, ritmo)
+        _state_alert(conn, server, state, anterior)
+        if state["reachable"]:
+            _server_alerts(conn, server, state, anterior, cfg, rhythm)
         # Depois dos alertas: eles precisam comparar com o estado ANTERIOR, e atualizar
         # antes faria toda mudanca desaparecer no meio do caminho.
-        anterior.update(reachable=estado["reachable"], service=estado["service"])
+        anterior.update(reachable=state["reachable"], service=state["service"])
 
     _forget_removed_servers(servidores)
     return len(servidores)
@@ -1734,11 +1734,11 @@ def _forget_removed_servers(servidores) -> None:
 _last_sample = 0.0
 
 
-def collect_samples(forcar: bool = False) -> int:
+def collect_samples(force: bool = False) -> int:
     """Guarda uma linha de CPU/memoria/jogadores por servidor. Devolve quantas gravou."""
     global _last_sample
     agora = time.monotonic()
-    if not forcar and agora - _last_sample < SAMPLE_EVERY:
+    if not force and agora - _last_sample < SAMPLE_EVERY:
         return 0
     _last_sample = agora
 
@@ -1746,8 +1746,8 @@ def collect_samples(forcar: bool = False) -> int:
     carimbo = now_iso()
     lines_of = []
     for server in conn.execute(SQL_ALL_SERVERS).fetchall():
-        dados = server_metrics(server)
-        if dados.get("error"):
+        data = server_metrics(server)
+        if data.get("error"):
             # Container fora do ar nao vira linha: um buraco no grafico e a informacao
             # certa, e zero seria mentira (nao foi "usou 0% de CPU").
             continue
@@ -1759,8 +1759,8 @@ def collect_samples(forcar: bool = False) -> int:
             except (QueryError, RemoteError):
                 contagem = None
         lines_of.append((
-            int(server["id"]), carimbo, dados.get("cpu_pct"),
-            (dados.get("mem") or {}).get("pct"), contagem,
+            int(server["id"]), carimbo, data.get("cpu_pct"),
+            (data.get("mem") or {}).get("pct"), contagem,
         ))
 
     if lines_of:
@@ -1840,7 +1840,7 @@ def run_schedules() -> int:
 _last_cleanup = 0.0
 
 
-def clean_history(forcar: bool = False) -> int:
+def clean_history(force: bool = False) -> int:
     """Apaga o que envelheceu — jobs e amostras. Devolve quantos JOBS sairam.
 
     As duas limpezas andam juntas porque tem a mesma razao de existir (o banco do painel
@@ -1849,7 +1849,7 @@ def clean_history(forcar: bool = False) -> int:
     """
     global _last_cleanup
     agora = time.monotonic()
-    if not forcar and agora - _last_cleanup < JOBS_PURGE_EVERY:
+    if not force and agora - _last_cleanup < JOBS_PURGE_EVERY:
         return 0
     _last_cleanup = agora
     conn = db()
@@ -1877,16 +1877,16 @@ def clean_history(forcar: bool = False) -> int:
     return cur.rowcount or 0
 
 
-def _clock_failure(nome: str) -> None:
+def _clock_failure(name: str) -> None:
     """Anota no log do processo E no diario de alertas.
 
     O diario e o que a pessoa consegue ver: o traceback no stderr do gunicorn so aparece
     para quem sabe procurar, e a queixa que traz alguem ate aqui e sempre a mesma — "nao
     chega nada no Discord".
     """
-    app.logger.exception("falha na tarefa '%s' do relogio", nome)
+    app.logger.exception("falha na tarefa '%s' do relogio", name)
     try:
-        _record_alert(db(), "", f"a tarefa '{nome}' do relogio falhou",
+        _record_alert(db(), "", f"a tarefa '{name}' do relogio falhou",
                          traceback.format_exc(limit=4)[-500:], "", "erro-interno")
     # Registrar a falha nao pode virar outra falha.
     except Exception:  # noqa: BLE001
@@ -1932,12 +1932,12 @@ def safe_target(raw: str) -> str:
     Comecar com "/" nao basta: para o navegador "//evil.com" e "/\evil.com" sao enderecos
     ABSOLUTOS, e mandariam quem acabou de digitar a senha para fora do painel.
     """
-    destino = (raw or "").strip()
-    if not destino.startswith("/") or destino[:2] in ("//", "/\\"):
+    target = (raw or "").strip()
+    if not target.startswith("/") or target[:2] in ("//", "/\\"):
         return ""
-    if any(c in destino for c in "\r\n\t"):
+    if any(c in target for c in "\r\n\t"):
         return ""
-    return destino
+    return target
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -2121,13 +2121,13 @@ def _aba_http(server: Servidor, http: dict, testar: bool) -> dict:
     achados, mudas, erro_probe = probe_http_ports(server, candidatas)
     _with_owner(achados, donos, "tcp")
     mudas = _with_owner([{"port": p} for p in mudas], donos, "tcp")
-    saida = {"achados": achados, "mudas": mudas, "aviso": aviso or erro_probe,
+    output = {"achados": achados, "mudas": mudas, "aviso": aviso or erro_probe,
              # Achado que vale um clique: porta que respondeu numa rota conhecida. Sem
              # nenhum, a tela explica que a API costuma vir desligada de fabrica.
              "tem_api": any(not a.get("generico") for a in achados),
              "teste_http": None, "erro_http": ""}
     if not testar:
-        return saida
+        return output
     try:
         # O teste usa os valores do FORMULARIO, nao os do banco: e o unico jeito de
         # conferir o login antes de salvar. Por isso monta-se uma linha temporaria.
@@ -2138,20 +2138,20 @@ def _aba_http(server: Servidor, http: dict, testar: bool) -> dict:
             auth = f"bearer:{token}"
         else:
             auth = http["http_auth"]
-        dados = http_json(server, http["http_url"], auth, http["http_body"])
-        teste = read_players_json(dados, http["http_list_path"], http["http_count_path"])
+        data = http_json(server, http["http_url"], auth, http["http_body"])
+        teste = read_players_json(data, http["http_list_path"], http["http_count_path"])
         # A resposta crua ajuda a preencher os caminhos quando a busca automatica erra.
-        teste["amostra"] = json.dumps(dados, indent=2, ensure_ascii=False)[:4000]
-        saida["teste_http"] = teste
+        teste["amostra"] = json.dumps(data, indent=2, ensure_ascii=False)[:4000]
+        output["teste_http"] = teste
     except QueryError as exc:
-        saida["erro_http"] = str(exc)
-    return saida
+        output["erro_http"] = str(exc)
+    return output
 
 
 def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
              testar: bool) -> dict:
     """Aba 3: linhas do log com cara de entrada/saida e o teste dos padroes."""
-    saida = {"amostras": [], "teste": None, "erro_log": ""}
+    output = {"amostras": [], "teste": None, "erro_log": ""}
     try:
         # O caminho vem do FORMULARIO, nao do banco: e o unico jeito de conferir um
         # arquivo novo (o .ADM do DayZ, por exemplo) antes de salvar.
@@ -2160,9 +2160,9 @@ def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
         lines_of = read_log_lines(provisorio)
         chaves = re.compile("|".join(LOG_HINT_WORDS), re.I)
         amostras = [ln for ln in lines_of if chaves.search(ln)][-120:]
-        saida["amostras"] = amostras
+        output["amostras"] = amostras
         if not testar:
-            return saida
+            return output
         entrar = compile_pattern(join_re, "pattern.join")
         if not entrar:
             raise QueryError("informe o padrao da linha de entrada")
@@ -2172,10 +2172,10 @@ def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
             ln for ln in amostras
             if entrar.search(ln[:LOG_LINE_MAX]) or (sair and sair.search(ln[:LOG_LINE_MAX]))
         ][-20:]
-        saida["teste"] = teste
+        output["teste"] = teste
     except (RemoteError, QueryError) as exc:
-        saida["erro_log"] = str(exc)
-    return saida
+        output["erro_log"] = str(exc)
+    return output
 
 
 @app.route("/servers/<int:sid>/players/descobrir", methods=["GET", "POST"])
@@ -2197,19 +2197,19 @@ def players_setup(sid: int):
     leave_re = origem.get("leave_re", server["leave_re"])
     log_path = origem.get("log_path", server["log_path"])
 
-    dados = {"portas": [], "aviso": "", "achados": [], "mudas": [], "amostras": [],
+    data = {"portas": [], "aviso": "", "achados": [], "mudas": [], "amostras": [],
              "tem_api": False, "udp_do_jogo": 0, "udp_mudas": False,
              "teste": None, "teste_http": None, "erro_log": "", "erro_http": ""}
     if aba == "http":
-        dados.update(_aba_http(server, http, testar))
+        data.update(_aba_http(server, http, testar))
     elif aba == "log":
-        dados.update(_aba_log(server, join_re, leave_re, log_path, testar))
+        data.update(_aba_log(server, join_re, leave_re, log_path, testar))
     else:
-        dados.update(_port_tab(server))
+        data.update(_port_tab(server))
 
     return render_template(
         "players_setup.html", server=server, aba=aba,
-        http=http, join_re=join_re, leave_re=leave_re, log_path=log_path, **dados,
+        http=http, join_re=join_re, leave_re=leave_re, log_path=log_path, **data,
     )
 
 
@@ -2256,7 +2256,7 @@ def _enable_log_count(conn, sid: int):
     """Ultimo recurso: as linhas de entrada e saida no log do servidor."""
     errors: list[str] = []
     entrada = _pattern(request.form.get("join_re"), "entrada", errors)
-    saida = _pattern(request.form.get("leave_re"), "saida", errors)
+    output = _pattern(request.form.get("leave_re"), "saida", errors)
     caminho = _log_path(request.form.get("log_path"), errors)
     if errors or not entrada:
         flash(translate(errors[0]) if errors else translate("flash.need_join_pattern"), "error")
@@ -2265,7 +2265,7 @@ def _enable_log_count(conn, sid: int):
         conn.execute(
             "UPDATE servers SET join_re = ?, leave_re = ?, log_path = ?,"
             " player_source = 'log' WHERE id = ?",
-            (entrada, saida, caminho, sid),
+            (entrada, output, caminho, sid),
         )
     flash(translate("flash.count_on_by_log"), "ok")
     return None
@@ -2307,18 +2307,18 @@ def player_action(sid: int):
     entao o operador pode — do mesmo jeito que ele ja reinicia o servidor.
     """
     server = _server_or_404(sid)
-    acao = (request.form.get("acao", "") or "").strip()
-    jogador = (request.form.get("jogador", "") or "").strip()[:200]
-    nome = (request.form.get("nome", "") or "").strip()[:100]
+    action = (request.form.get("acao", "") or "").strip()
+    player = (request.form.get("jogador", "") or "").strip()[:200]
+    name = (request.form.get("nome", "") or "").strip()[:100]
     message = (request.form.get("mensagem", "") or "").strip()[:PLAYER_MSG_MAX]
-    quem = nome or jogador or "todos"
-    registro = f"{label_for_db(PLAYER_ACTION_LABELS.get(acao, acao))}: {quem}"
+    quem = name or player or "todos"
+    registro = f"{label_for_db(PLAYER_ACTION_LABELS.get(action, action))}: {quem}"
     if message:
         registro += f" ({message})"
     voltar = url_for("server_detail", sid=sid)
 
     try:
-        label = translate(run_player_action(server, acao, jogador, message))
+        label = translate(run_player_action(server, action, player, message))
     except (QueryError, RemoteError) as exc:
         log_job("player-action", server, session.get("username", "?"),
                 command=registro, output=str(exc), status="error")
@@ -2330,7 +2330,7 @@ def player_action(sid: int):
     # A contagem fica alguns segundos em cache e ainda tem quem acabou de sair.
     invalidate_players(sid)
     flash(translate("flash.player_action_done", label=label, who=quem)
-          if acao != "announce"
+          if action != "announce"
           else translate("flash.notice_sent", message=message), "ok")
     return redirect(voltar)
 
@@ -2372,8 +2372,8 @@ def _form_server(form) -> tuple[dict, list[str]]:
 _log_path = server_service._log_path
 
 
-def _pattern(valor: str | None, label: str, errors: list[str]) -> str:
-    return server_service._pattern(valor, label, RE_MAX_LEN, errors)
+def _pattern(value: str | None, label: str, errors: list[str]) -> str:
+    return server_service._pattern(value, label, RE_MAX_LEN, errors)
 
 
 def _http_fields(form, errors: list[str]) -> dict:
@@ -2844,14 +2844,14 @@ def _human_uptime(segundos: float | None) -> str:
 @app.template_filter("tamanho")
 def _human_size(num: int | None) -> str:
     """1536 -> '1.5 KB'. Um save de jogo em bytes crus nao diz nada para ninguem."""
-    valor = float(num or 0)
+    value = float(num or 0)
     for unidade in ("B", "KB", "MB", "GB"):
-        if valor < 1024 or unidade == "GB":
+        if value < 1024 or unidade == "GB":
             if unidade == "B":
-                return f"{int(valor)} B"
-            return f"{valor:.1f} {unidade}"
-        valor /= 1024
-    return f"{valor:.1f} GB"
+                return f"{int(value)} B"
+            return f"{value:.1f} {unidade}"
+        value /= 1024
+    return f"{value:.1f} GB"
 
 
 def _files_guard():
@@ -3005,10 +3005,10 @@ def files_save(sid: int):
         pass  # arquivo novo, ou stat falhou: o proprio gravar reporta o erro
 
     try:
-        saida = write_file(server, path, data)
+        output = write_file(server, path, data)
         log_job(
             "edit-file", server, session.get("username", "?"),
-            command=path, output=saida,
+            command=path, output=output,
         )
         flash(translate("flash.file_saved", path=path, bytes=len(data)), "ok")
     except RemoteError as exc:
@@ -3042,9 +3042,9 @@ def files_delete(sid: int):
 
     volta = parent_of(path)
     try:
-        saida = delete_file(server, path)
-        log_job("delete-file", server, session.get("username", "?"), command=path, output=saida)
-        flash(translate("flash.deleted_no_bak", output=saida), "ok")
+        output = delete_file(server, path)
+        log_job("delete-file", server, session.get("username", "?"), command=path, output=output)
+        flash(translate("flash.deleted_no_bak", output=output), "ok")
         # Arquivo fixado na tela Config que deixou de existir: tirar do cadastro evita
         # que a tela abra sempre num erro de leitura.
         registrados = config_paths(server)
@@ -3122,20 +3122,20 @@ def files_upload(sid: int):
 
     # O navegador manda o nome como o disco de origem o tinha: fica so a ultima parte,
     # para "../../etc/passwd" nao virar caminho.
-    nome = enviado.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
-    if not nome or nome in (".", ".."):
+    name = enviado.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not name or name in (".", ".."):
         flash(translate("flash.bad_file_name"), "error")
         return redirect(voltar)
 
     try:
         pasta = clean_path(destino_dir)
-        alvo = clean_path(f"{pasta.rstrip('/')}/{nome}")
+        alvo = clean_path(f"{pasta.rstrip('/')}/{name}")
     except ValueError as exc:
         flash(translate(error_text(exc)), "error")
         return redirect(voltar)
 
     try:
-        saida = ssh_stream_in(
+        output = ssh_stream_in(
             server, q("bash", "-lc", UPLOAD_SCRIPT, "gp", alvo),
             enviado.stream, timeout=JOB_TIMEOUT,
         )
@@ -3145,8 +3145,8 @@ def files_upload(sid: int):
         flash(translate("flash.could_not_upload", reason=exc), "error")
         return redirect(voltar)
 
-    log_job("upload-file", server, session.get("username", "?"), command=alvo, output=saida)
-    flash(translate("flash.uploaded", output=saida), "ok")
+    log_job("upload-file", server, session.get("username", "?"), command=alvo, output=output)
+    flash(translate("flash.uploaded", output=output), "ok")
     return redirect(url_for("files", sid=sid, path=pasta))
 
 
@@ -3166,10 +3166,10 @@ def backup_prefix(server: Servidor) -> str:
     return backups_rt.backup_prefix(server)
 
 
-def _backup_or_400(nome: str) -> str:
+def _backup_or_400(name: str) -> str:
     """Confere o nome que voltou da tela antes de ele entrar num comando remoto."""
     try:
-        return backups_rt.validate_backup_name(nome)
+        return backups_rt.validate_backup_name(name)
     except ValueError as exc:
         abort(400, str(exc))
 
@@ -3198,8 +3198,8 @@ def backup_command(server: Servidor, caminhos: list[str], sufixo: str = "") -> s
     return backups_rt.backup_command(server, BACKUP_DIR, BACKUP_KEEP, caminhos, sufixo)
 
 
-def delete_backup(server: Servidor, nome: str) -> str:
-    return backups_rt.delete_backup(ssh_run, server, BACKUP_DIR, nome)
+def delete_backup(server: Servidor, name: str) -> str:
+    return backups_rt.delete_backup(ssh_run, server, BACKUP_DIR, name)
 
 
 @app.post("/servers/<int:sid>/backups/criar")
@@ -3225,7 +3225,7 @@ def backup_create(sid: int):
 def backup_restore(sid: int):
     """Volta o servidor para uma copia. Para o jogo, extrai e religa."""
     server = _server_or_404(sid)
-    nome = _backup_or_400(request.form.get("nome", ""))
+    name = _backup_or_400(request.form.get("nome", ""))
     caminhos = backup_paths(server)
 
     # Copia de seguranca ANTES de extrair: restaurar e a operacao mais destrutiva do
@@ -3234,12 +3234,12 @@ def backup_restore(sid: int):
     passos = []
     if caminhos:
         passos.append(backup_command(server, caminhos, "-antes-de-restaurar"))
-    passos.append(q("bash", "-lc", RESTORE_SCRIPT, "gp", BACKUP_DIR, nome, server["service"]))
+    passos.append(q("bash", "-lc", RESTORE_SCRIPT, "gp", BACKUP_DIR, name, server["service"]))
 
     job_id = start_job(
         "restore-backup", server, session.get("username", "?"),
         remote_cmd=" && ".join(passos),
-        command=nome,
+        command=name,
         timeout=BACKUP_TIMEOUT,
     )
     invalidate_status(sid)
@@ -3250,16 +3250,16 @@ def backup_restore(sid: int):
 @admin_required
 def backup_delete(sid: int):
     server = _server_or_404(sid)
-    nome = _backup_or_400(request.form.get("nome", ""))
+    name = _backup_or_400(request.form.get("nome", ""))
     try:
-        saida = delete_backup(server, nome)
+        output = delete_backup(server, name)
     except RemoteError as exc:
         log_job("delete-backup", server, session.get("username", "?"),
-                command=nome, output=str(exc), status="error")
+                command=name, output=str(exc), status="error")
         flash(translate("flash.could_not_delete", reason=exc), "error")
         return redirect(url_for("backups", sid=sid))
-    log_job("delete-backup", server, session.get("username", "?"), command=nome, output=saida)
-    flash(saida, "ok")
+    log_job("delete-backup", server, session.get("username", "?"), command=name, output=output)
+    flash(output, "ok")
     return redirect(url_for("backups", sid=sid))
 
 
@@ -3268,8 +3268,8 @@ def backup_delete(sid: int):
 def backup_download(sid: int):
     """Tira a copia do container. Mesmo streaming do download de arquivo."""
     server = _server_or_404(sid)
-    nome = _backup_or_400(request.args.get("nome", ""))
-    caminho = f"{BACKUP_DIR.rstrip('/')}/{nome}"
+    name = _backup_or_400(request.args.get("nome", ""))
+    caminho = f"{BACKUP_DIR.rstrip('/')}/{name}"
     try:
         info = stat_file(server, caminho)
     except RemoteError as exc:
@@ -3297,7 +3297,7 @@ def backup_download(sid: int):
 
 def config_paths(server: Servidor) -> list[str]:
     """Arquivos de configuracao registrados no cadastro do servidor."""
-    return [linha.strip() for linha in (server["config_files"] or "").splitlines() if linha.strip()]
+    return [line.strip() for line in (server["config_files"] or "").splitlines() if line.strip()]
 
 
 def load_config_doc(server: Servidor, path: str) -> tuple[gameconf.ConfigFile, dict]:
@@ -3446,7 +3446,7 @@ def _ident(value: str) -> str:
     return urllib.parse.quote(value or "", safe="")
 
 
-def enriquece_settings(doc: gameconf.ConfigFile, nome_arquivo: str) -> None:
+def enriquece_settings(doc: gameconf.ConfigFile, file_name: str) -> None:
     """Anexa a descricao do catalogo a cada campo lido do arquivo.
 
     Campo sem entrada no catalogo fica exatamente como antes (texto livre): o objetivo
@@ -3454,12 +3454,12 @@ def enriquece_settings(doc: gameconf.ConfigFile, nome_arquivo: str) -> None:
     """
     for secao in doc.sections:
         for s in secao.settings:
-            spec = gamefields.describe(nome_arquivo, s.key)
+            spec = gamefields.describe(file_name, s.key)
             s.spec = spec
             s.display_value = spec.to_display(s.value) if spec else s.value
 
 
-def _edits_from_form(form, nome_arquivo: str = "") -> tuple[list[gameconf.Edit], list[str]]:
+def _edits_from_form(form, file_name: str = "") -> tuple[list[gameconf.Edit], list[str]]:
     """Monta a lista de alteracoes: so o que o usuario realmente mexeu.
 
     Devolve tambem os erros de validacao. O valor chega na unidade da TELA (minutos,
@@ -3472,13 +3472,13 @@ def _edits_from_form(form, nome_arquivo: str = "") -> tuple[list[gameconf.Edit],
     edits: list[gameconf.Edit] = []
     erros: list[str] = []
     for i in range(min(total, 4000)):
-        edit = _edit_from_row(form, i, nome_arquivo, erros)
+        edit = _edit_from_row(form, i, file_name, erros)
         if edit is not None:
             edits.append(edit)
     return edits, erros
 
 
-def _edit_from_row(form, i: int, nome_arquivo: str, erros: list[str]) -> gameconf.Edit | None:
+def _edit_from_row(form, i: int, file_name: str, erros: list[str]) -> gameconf.Edit | None:
     """Uma linha do formulario vira uma alteracao — ou nada.
 
     Nada acontece em tres casos: linha de "adicionar configuracao" deixada em branco,
@@ -3490,24 +3490,24 @@ def _edit_from_row(form, i: int, nome_arquivo: str, erros: list[str]) -> gamecon
     if not key:
         return None
 
-    valor = (form.get(f"val.{i}", "") or "").replace("\r", "")
+    value = (form.get(f"val.{i}", "") or "").replace("\r", "")
     ident = urllib.parse.unquote((form.get(f"id.{i}", "") or "").strip())
-    if ident and valor == (form.get(f"orig.{i}", "") or "").replace("\r", ""):
+    if ident and value == (form.get(f"orig.{i}", "") or "").replace("\r", ""):
         return None  # campo intocado: nao reescreve a linha
 
-    spec = gamefields.describe(nome_arquivo, key) if nome_arquivo else None
+    spec = gamefields.describe(file_name, key) if file_name else None
     if spec:
-        problema = spec.validate(valor)
+        problema = spec.validate(value)
         if problema:
             erros.append(f"{spec.label or key}: {problema}")
             return None
-        valor = spec.from_display(valor)
+        value = spec.from_display(value)
 
     return gameconf.Edit(
         id=ident,
         section=urllib.parse.unquote(form.get(f"sec.{i}", "") or ""),
         key=key,
-        value=valor,
+        value=value,
     )
 
 
@@ -3547,21 +3547,21 @@ def config_save(sid: int):
     # alteracoes sao aplicadas por chave — nao por numero de linha.
     try:
         doc, info = load_config_doc(server, path)
-        texto = doc.apply(edits)
+        text = doc.apply(edits)
     except (RemoteError, gameconf.ConfigError) as exc:
         flash(translate("flash.could_not_save", reason=exc), "error")
         return redirect(voltar)
 
     if info["crlf"]:
-        texto = texto.replace("\n", "\r\n")
-    data = texto.encode("utf-8")
+        text = text.replace("\n", "\r\n")
+    data = text.encode("utf-8")
     if len(data) > FILE_MAX_BYTES:
         flash(translate("flash.file_too_big", kb=FILE_MAX_BYTES // 1024), "error")
         return redirect(voltar)
 
     mexidas = ", ".join(dict.fromkeys(e.key for e in edits))
     try:
-        saida = write_file(server, path, data)
+        output = write_file(server, path, data)
     except RemoteError as exc:
         log_job("edit-config", server, session.get("username", "?"),
                 command=f"{path}: {mexidas}", output=str(exc), status="error")
@@ -3569,7 +3569,7 @@ def config_save(sid: int):
         return redirect(voltar)
 
     log_job("edit-config", server, session.get("username", "?"),
-            command=f"{path}: {mexidas}", output=f"{saida}\nalterado: {mexidas}")
+            command=f"{path}: {mexidas}", output=f"{output}\nalterado: {mexidas}")
     flash(translate("flash.settings_saved", n=len(edits), path=path,
                        keys=mexidas), "ok")
 
@@ -3654,9 +3654,9 @@ def broker_required(view):
     return wrapper
 
 
-def _fire(tarefa) -> None:
+def _fire(task) -> None:
     """Roda `tarefa` numa thread. Existe para os testes trocarem por uma execucao direta."""
-    threading.Thread(target=tarefa, daemon=True).start()
+    threading.Thread(target=task, daemon=True).start()
 
 
 def _atualiza_job(job_id: int, **campos) -> None:
@@ -3673,9 +3673,9 @@ def _atualiza_job(job_id: int, **campos) -> None:
         conn.close()
 
 
-def _fecha_job(job_id: int, status: str, saida: str, codigo: int | None = None,
+def _fecha_job(job_id: int, status: str, output: str, codigo: int | None = None,
                server_id: int | None = None) -> None:
-    campos: dict = {"status": status, "exit_code": codigo, "output": saida.strip()[-200000:],
+    campos: dict = {"status": status, "exit_code": codigo, "output": output.strip()[-200000:],
                     "finished_at": now_iso()}
     if server_id is not None:
         campos["server_id"] = server_id
@@ -3731,7 +3731,7 @@ def resume_broker_jobs() -> int:
     return len(pendentes)
 
 
-def _log_broker_action(action: str, username: str, comando: str, saida: str,
+def _log_broker_action(action: str, username: str, comando: str, output: str,
                              status: str = "ok") -> int:
     """Deixa no historico uma acao curta do broker (desativar, remover, jogo novo)."""
     conn = db()
@@ -3739,7 +3739,7 @@ def _log_broker_action(action: str, username: str, comando: str, saida: str,
         cur = conn.execute(
             "INSERT INTO jobs (server_id, target, action, status, exit_code, output, command,"
             " username, created_at, finished_at) VALUES (NULL, 'broker', ?, ?, ?, ?, ?, ?, ?, ?)",
-            (action, status, 0 if status == "ok" else 1, saida[-200000:], comando,
+            (action, status, 0 if status == "ok" else 1, output[-200000:], comando,
              username, now_iso(), now_iso()),
         )
     return _id_inserido(cur)
@@ -3780,10 +3780,10 @@ def api_catalog_suggestions():
 @admin_required
 @broker_required
 def catalog_new():
-    dados, erros = _game_from_form(request.form)
+    data, erros = _game_from_form(request.form)
     if not erros:
         try:
-            broker_client.add_game(dados, _ator())
+            broker_client.add_game(data, _ator())
         except broker_client.BrokerError as erro:
             erros.append(f"Broker: {erro.message}")
     if erros:
@@ -3795,9 +3795,9 @@ def catalog_new():
             jogos = []
         return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECIPES,
                                form=request.form, modelos=MODELOS_DE_JOGO), 400
-    _log_broker_action("broker-jogo", _ator(), dados.get("chave", ""), "Jogo adicionado ao catalogo.")
+    _log_broker_action("broker-jogo", _ator(), data.get("chave", ""), "Jogo adicionado ao catalogo.")
     flash(translate("flash.game_added",
-                       name=dados.get("nome", dados.get("chave", ""))), "ok")
+                       name=data.get("nome", data.get("chave", ""))), "ok")
     return redirect(url_for("catalog"))
 
 
@@ -3823,9 +3823,9 @@ def instances_list():
 @broker_required
 def instance_new():
     jogo = (request.form.get("jogo") or "").strip()
-    nome = (request.form.get("nome") or "").strip()
+    name = (request.form.get("nome") or "").strip()
     try:
-        resposta = broker_client.create(jogo, nome, _ator())
+        resposta = broker_client.create(jogo, name, _ator())
     except broker_client.BrokerError as erro:
         flash(translate("flash.broker_error", reason=erro.message), "error")
         return redirect(url_for("instances_list"))
@@ -3833,7 +3833,7 @@ def instance_new():
     if not op_id:
         flash(translate("flash.broker_no_operation_id"), "error")
         return redirect(url_for("instances_list"))
-    job_id = start_broker_job("broker-criar", _ator(), op_id, f"{jogo}: {nome}")
+    job_id = start_broker_job("broker-criar", _ator(), op_id, f"{jogo}: {name}")
     return redirect(url_for("job_detail", jid=job_id))
 
 
@@ -3879,18 +3879,18 @@ def instance_remove(iid: int):
 # ------------------------------------------------------------- agendamentos
 
 
-def _inteiro(valor, minimo: int, maximo: int, padrao: int) -> int:
-    raw = (valor or "").strip()
+def _inteiro(value, minimo: int, maximo: int, padrao: int) -> int:
+    raw = (value or "").strip()
     if raw.lstrip("-").isdigit() and minimo <= int(raw) <= maximo:
         return int(raw)
     return padrao
 
 
 def _schedule_form(form, errors: list[str]) -> dict:
-    acao = (form.get("action", "") or "").strip()
-    if acao not in SCHEDULE_ACTIONS:
+    action = (form.get("action", "") or "").strip()
+    if action not in SCHEDULE_ACTIONS:
         errors.append("Escolha o que a tarefa deve fazer.")
-        acao = "restart"
+        action = "restart"
     kind = (form.get("kind", "") or "").strip()
     if kind not in SCHEDULE_KINDS:
         errors.append("Escolha quando a tarefa deve rodar.")
@@ -3905,7 +3905,7 @@ def _schedule_form(form, errors: list[str]) -> dict:
         errors.append(f"Intervalo invalido (de 1 a {EVERY_HOURS_MAX} horas).")
 
     return {
-        "action": acao,
+        "action": action,
         "kind": kind,
         "hour": max(0, hora),
         "minute": max(0, minuto),
@@ -3964,7 +3964,7 @@ def schedules(sid: int):
 def schedule_new(sid: int):
     _server_or_404(sid)
     errors: list[str] = []
-    dados = _schedule_form(request.form, errors)
+    data = _schedule_form(request.form, errors)
     if errors:
         for err in errors:
             flash(translate(err), "error")
@@ -3972,16 +3972,16 @@ def schedule_new(sid: int):
 
     # 'intervalo' comeca a contar de agora: sem isto, "a cada 6h" dispararia no instante
     # em que fosse salvo, o que ninguem espera de um agendamento.
-    inicio = local_now().isoformat() if dados["kind"] == "intervalo" else ""
+    start = local_now().isoformat() if data["kind"] == "intervalo" else ""
     conn = db()
     with conn:
         conn.execute(
             "INSERT INTO schedules (server_id, action, kind, hour, minute, weekday,"
             " every_hours, enabled, last_run, created_at) VALUES (?,?,?,?,?,?,?,1,?,?)",
-            (sid, dados["action"], dados["kind"], dados["hour"], dados["minute"],
-             dados["weekday"], dados["every_hours"], inicio, now_iso()),
+            (sid, data["action"], data["kind"], data["hour"], data["minute"],
+             data["weekday"], data["every_hours"], start, now_iso()),
         )
-    flash(translate("flash.task_scheduled", task=job_label(dados["action"])), "ok")
+    flash(translate("flash.task_scheduled", task=job_label(data["action"])), "ok")
     return redirect(url_for("schedules", sid=sid))
 
 
@@ -4037,11 +4037,11 @@ CHART_MEM = chart_service.CHART_MEM
 _clean_ceiling = chart_service.clean_ceiling
 
 
-def build_chart(amostras, series, teto: float, inicio, fim, formato_tempo: str) -> dict:
+def build_chart(amostras, series, teto: float, start, fim, formato_tempo: str) -> dict:
     # `SAMPLE_EVERY` entra aqui porque e configuracao do painel: e ele que diz a partir
     # de que buraco entre duas amostras a linha do grafico deve ser cortada.
     return chart_service.build_chart(
-        amostras, series, teto, inicio, fim, formato_tempo, SAMPLE_EVERY)
+        amostras, series, teto, start, fim, formato_tempo, SAMPLE_EVERY)
 
 
 @app.get("/servers/<int:sid>/graficos")
@@ -4062,32 +4062,32 @@ def charts(sid: int):
         horas = 24
 
     fim = datetime.now(timezone.utc)
-    inicio = fim - timedelta(hours=horas)
+    start = fim - timedelta(hours=horas)
     lines_of = db().execute(
         "SELECT taken_at, cpu_pct, mem_pct, players FROM samples"
         " WHERE server_id = ? AND taken_at >= ? ORDER BY taken_at",
-        (sid, inicio.isoformat()),
+        (sid, start.isoformat()),
     ).fetchall()
 
     amostras = []
-    for linha in lines_of:
-        quando = _parse_dt(linha["taken_at"])
+    for line in lines_of:
+        quando = _parse_dt(line["taken_at"])
         if quando:
-            amostras.append((quando, {"cpu": linha["cpu_pct"], "mem": linha["mem_pct"],
-                                      "players": linha["players"]}))
+            amostras.append((quando, {"cpu": line["cpu_pct"], "mem": line["mem_pct"],
+                                      "players": line["players"]}))
 
     formato = "%d/%m" if horas > 48 else "%H:%M"
     uso = build_chart(
         amostras,
         [{"key": "cpu", "label": "CPU", "color": CHART_CPU, "suffix": "%"},
          {"key": "mem", "label": "Memoria", "color": CHART_MEM, "suffix": "%"}],
-        100, inicio, fim, formato,
+        100, start, fim, formato,
     )
     pico = max((v["players"] for _, v in amostras if v["players"] is not None), default=0)
     jogadores = build_chart(
         amostras,
         [{"key": "players", "label": "Jogadores", "color": CHART_CPU}],
-        _clean_ceiling(pico), inicio, fim, formato,
+        _clean_ceiling(pico), start, fim, formato,
     )
 
     # A tabela e o par acessivel do grafico: mesmos numeros, sem depender de cor nem de
@@ -4383,20 +4383,20 @@ def alerts_save():
     """So o que vale para todos os destinos: hoje, os limites de disco, memoria e CPU."""
     conn = db()
     novos = []
-    for campo, key, nome in LIMITES_ALERTA:
+    for campo, key, name in LIMITES_ALERTA:
         # Campo que nem veio no formulario fica como esta. Tratar ausencia como erro
         # faria um formulario sem o campo derrubar um limite que ja estava certo.
         if campo not in request.form:
             continue
-        valor = (request.form.get(campo, "") or "").strip()
-        if not valor.isdigit() or not 50 <= int(valor) <= 100:
-            flash(translate("flash.threshold_range", name=nome), "error")
+        value = (request.form.get(campo, "") or "").strip()
+        if not value.isdigit() or not 50 <= int(value) <= 100:
+            flash(translate("flash.threshold_range", name=name), "error")
             return redirect(url_for("alerts"))
-        novos.append((key, valor))
+        novos.append((key, value))
     # So grava depois de validar todos: meio salvo e pior que nada salvo, porque a tela
     # volta dizendo "recusado" enquanto um dos limites ja mudou por baixo.
-    for key, valor in novos:
-        config_set(conn, key, valor)
+    for key, value in novos:
+        config_set(conn, key, value)
     _reset_baseline()
     flash(translate("flash.preferences_saved"), "ok")
     return redirect(url_for("alerts"))
@@ -4413,13 +4413,13 @@ def _reset_baseline() -> None:
 
 def _le_form_webhook() -> tuple:
     """Valida o formulario de um destino. Devolve (dados, erro)."""
-    nome = (request.form.get("nome", "") or "").strip()[:60]
+    name = (request.form.get("nome", "") or "").strip()[:60]
     url = (request.form.get("url", "") or "").strip()[:400]
     eventos = [e for e in request.form.getlist("eventos") if e in ALERT_EVENTS]
     ativo = 1 if request.form.get("ativo") else 0
     if url and not URL_RE.match(url):
         return None, "URL invalida (comece com http:// ou https://)."
-    return {"nome": nome, "url": url, "eventos": ",".join(eventos), "ativo": ativo}, ""
+    return {"nome": name, "url": url, "eventos": ",".join(eventos), "ativo": ativo}, ""
 
 
 @app.post("/alertas/destinos")
@@ -4430,16 +4430,16 @@ def alerts_hook_new():
     if quantos >= WEBHOOK_MAX:
         flash(translate("flash.destination_limit", n=WEBHOOK_MAX), "error")
         return redirect(url_for("alerts"))
-    dados, erro = _le_form_webhook()
-    if erro or not dados["url"]:
+    data, erro = _le_form_webhook()
+    if erro or not data["url"]:
         flash(translate(erro) if erro else translate("flash.need_webhook_url"), "error")
         return redirect(url_for("alerts"))
     with conn:
         conn.execute(
             "INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
             " VALUES (?, ?, ?, ?, ?)",
-            (dados["nome"] or "Destino", dados["url"], dados["eventos"],
-             dados["ativo"], now_iso()),
+            (data["nome"] or "Destino", data["url"], data["eventos"],
+             data["ativo"], now_iso()),
         )
     _reset_baseline()
     flash(translate("flash.destination_added"), "ok")
@@ -4454,17 +4454,17 @@ def alerts_hook_save(hid: int):
     if not atual:
         flash(translate("flash.destination_not_found"), "error")
         return redirect(url_for("alerts"))
-    dados, erro = _le_form_webhook()
+    data, erro = _le_form_webhook()
     if erro:
         flash(translate(erro), "error")
         return redirect(url_for("alerts"))
     # Campo de URL em branco quer dizer "mantem a que ja esta la". A tela mostra a URL
     # mascarada, entao nao ha o que reenviar: so quem digitar uma nova a troca.
-    url = dados["url"] or atual["url"]
+    url = data["url"] or atual["url"]
     with conn:
         conn.execute(
             "UPDATE webhooks SET nome = ?, url = ?, eventos = ?, ativo = ? WHERE id = ?",
-            (dados["nome"] or "Destino", url, dados["eventos"], dados["ativo"], hid),
+            (data["nome"] or "Destino", url, data["eventos"], data["ativo"], hid),
         )
     _reset_baseline()
     flash(translate("flash.destination_saved"), "ok")
@@ -4503,10 +4503,10 @@ def alerts_hook_test(hid: int):
         f"**Teste do painel de jogos**\nSe voce esta lendo isto, os alertas funcionam."
         f" ({session.get('username', '?')})",
     )
-    nome = row["nome"] or "destino"
+    name = row["nome"] or "destino"
     flash(
-        translate("flash.destination_test_failed", name=nome, reason=erro) if erro
-        else translate("flash.destination_test_sent", name=nome),
+        translate("flash.destination_test_failed", name=name, reason=erro) if erro
+        else translate("flash.destination_test_sent", name=name),
         "error" if erro else "ok",
     )
     return redirect(url_for("alerts"))
@@ -4697,8 +4697,8 @@ def _shell_files() -> tuple[list[str], int]:
     for pasta in CASCO_PASTAS:
         raiz = os.path.join(app.static_folder or "", pasta)
         for base, _dirs, arquivos in os.walk(raiz):
-            for nome in sorted(arquivos):
-                caminho = os.path.join(base, nome)
+            for name in sorted(arquivos):
+                caminho = os.path.join(base, name)
                 relativo = os.path.relpath(caminho, app.static_folder).replace(os.sep, "/")
                 urls.append(static_url(relativo))
                 marca = max(marca, int(os.path.getmtime(caminho)))
@@ -4853,16 +4853,16 @@ class ServidorDoDeploy(NamedTuple):
     broker_id: int = 0
 
 
-def _insert_server(conn: sqlite3.Connection, dados: ServidorDoDeploy) -> None:
+def _insert_server(conn: sqlite3.Connection, data: ServidorDoDeploy) -> None:
     conn.execute(
         "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
         " game_port, notes, config_path, config_files, backup_paths,"
         " query_port, player_source, join_re, leave_re, log_path, broker_id, created_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (dados.name, dados.host, dados.ssh_port, dados.ssh_user, dados.service,
-         dados.game_port, dados.notes, dados.config_path, dados.config_files,
-         dados.backup_paths, dados.query_port, dados.player_source,
-         dados.join_re, dados.leave_re, dados.log_path, dados.broker_id, now_iso()),
+        (data.name, data.host, data.ssh_port, data.ssh_user, data.service,
+         data.game_port, data.notes, data.config_path, data.config_files,
+         data.backup_paths, data.query_port, data.player_source,
+         data.join_re, data.leave_re, data.log_path, data.broker_id, now_iso()),
     )
 
 
@@ -4875,7 +4875,7 @@ def _merge_config_files(guardados: str, novos: str) -> str:
     return "\n".join(lista[:CONFIG_FILES_MAX])
 
 
-def _update_server(conn: sqlite3.Connection, atual, dados: ServidorDoDeploy) -> None:
+def _update_server(conn: sqlite3.Connection, atual, data: ServidorDoDeploy) -> None:
     """Redeploy: o container manda no que e dele, o painel manda no que e escolha.
 
     Nome, servico, portas e caminho de config vem do deploy — sao fatos do container.
@@ -4888,22 +4888,22 @@ def _update_server(conn: sqlite3.Connection, atual, dados: ServidorDoDeploy) -> 
         " query_port=?, player_source=?, join_re=?, leave_re=?, log_path=?"
         " WHERE id=?",
         (
-            dados.name, dados.ssh_user, dados.service, dados.game_port,
-            dados.notes or atual["notes"],
-            dados.config_path or atual["config_path"],
-            _merge_config_files(atual["config_files"], dados.config_files),
-            atual["backup_paths"] or dados.backup_paths,
-            dados.query_port,
-            atual["player_source"] or dados.player_source,
-            atual["join_re"] or dados.join_re,
-            atual["leave_re"] or dados.leave_re,
-            atual["log_path"] or dados.log_path,
+            data.name, data.ssh_user, data.service, data.game_port,
+            data.notes or atual["notes"],
+            data.config_path or atual["config_path"],
+            _merge_config_files(atual["config_files"], data.config_files),
+            atual["backup_paths"] or data.backup_paths,
+            data.query_port,
+            atual["player_source"] or data.player_source,
+            atual["join_re"] or data.join_re,
+            atual["leave_re"] or data.leave_re,
+            atual["log_path"] or data.log_path,
             atual["id"],
         ),
     )
 
 
-def ensure_server(dados: ServidorDoDeploy) -> bool:
+def ensure_server(data: ServidorDoDeploy) -> bool:
     """Cadastra (ou atualiza) um servidor sem passar pela tela. Devolve True se criou.
 
     E por aqui que o deploy registra o container recem-criado no painel — inclusive o
@@ -4915,12 +4915,12 @@ def ensure_server(dados: ServidorDoDeploy) -> bool:
         with conn:
             atual = conn.execute(
                 "SELECT * FROM servers WHERE host = ? AND ssh_port = ?",
-                (dados.host, dados.ssh_port),
+                (data.host, data.ssh_port),
             ).fetchone()
             if atual is None:
-                _insert_server(conn, dados)
+                _insert_server(conn, data)
                 return True
-            _update_server(conn, atual, dados)
+            _update_server(conn, atual, data)
             return False
     finally:
         conn.close()

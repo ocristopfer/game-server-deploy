@@ -209,24 +209,24 @@ def servidor_com_jobs(banco, chefe):
 
     jobs = {}
     with banco:
-        for acao in ("shell", "terminal", "edit-file", "delete-file", "download-file",
+        for action in ("shell", "terminal", "edit-file", "delete-file", "download-file",
                      "start", "edit-config"):
-            marca = SEGREDO if acao in panel.JOB_ACTIONS_ADMIN else ROTINA
+            marca = SEGREDO if action in panel.JOB_ACTIONS_ADMIN else ROTINA
             cur = banco.execute(
                 "INSERT INTO jobs (server_id, target, action, status, exit_code, output,"
                 " command, username, created_at, finished_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (sid, "root@alvo", acao, "ok", 0, marca, marca, "chefe",
+                (sid, "root@alvo", action, "ok", 0, marca, marca, "chefe",
                  panel.now_iso(), panel.now_iso()))
-            jobs[acao] = cur.lastrowid
+            jobs[action] = cur.lastrowid
     return sid, jobs
 
 
-@pytest.mark.parametrize("acao", ["shell", "terminal", "edit-file", "delete-file",
+@pytest.mark.parametrize("action", ["shell", "terminal", "edit-file", "delete-file",
                                   "download-file", "start", "edit-config"])
-def test_apenas_admin_le_jobs_de_acao_restrita(servidor_com_jobs, chefe, peao, acao):
+def test_apenas_admin_le_jobs_de_acao_restrita(servidor_com_jobs, chefe, peao, action):
     _sid, jobs = servidor_com_jobs
-    jid = jobs[acao]
-    esperado = 403 if acao in panel.JOB_ACTIONS_ADMIN else 200
+    jid = jobs[action]
+    esperado = 403 if action in panel.JOB_ACTIONS_ADMIN else 200
     assert peao.get(f"/jobs/{jid}").status_code == esperado
     assert peao.get(f"/api/jobs/{jid}").status_code == esperado
     assert chefe.get(f"/jobs/{jid}").status_code == 200
@@ -287,9 +287,9 @@ def test_operador_ve_backups_e_dispara_mas_nao_gerencia(servidor_alvo, peao, pos
     assert peao.get(f"/servers/{servidor_alvo}/backups").status_code == 200
     assert postar(peao, f"/servers/{servidor_alvo}/backups/criar").status_code == 302
 
-    nome = {"nome": "jogo-20260101-000000.tar.gz"}
-    assert postar(peao, f"/servers/{servidor_alvo}/backups/restaurar", nome).status_code == 403
-    assert postar(peao, f"/servers/{servidor_alvo}/backups/remover", nome).status_code == 403
+    name = {"nome": "jogo-20260101-000000.tar.gz"}
+    assert postar(peao, f"/servers/{servidor_alvo}/backups/restaurar", name).status_code == 403
+    assert postar(peao, f"/servers/{servidor_alvo}/backups/remover", name).status_code == 403
     assert peao.get(
         f"/servers/{servidor_alvo}/backups/baixar?nome=jogo-20260101-000000.tar.gz"
     ).status_code == 403

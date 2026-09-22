@@ -27,23 +27,23 @@ def saida_de(**campos) -> str:
     return "\n".join(f"{k}={v}" for k, v in campos.items())
 
 
-def ssh_que_responde(texto: str, registro: list | None = None):
+def ssh_que_responde(text: str, registro: list | None = None):
     def ssh_output(server, comando, timeout=None):
         if registro is not None:
             registro.append(comando)
-        return texto
+        return text
     return ssh_output
 
 
 def test_le_os_quatro_campos_do_systemctl():
-    texto = saida_de(ActiveState="active", SubState="running", NRestarts="2", Result="success")
-    estado = ss.server_status(ssh_que_responde(texto), SERVIDOR, 5)
-    assert estado["reachable"] is True
-    assert estado["service"] == "active"
-    assert estado["sub"] == "running"
-    assert estado["restarts"] == 2
-    assert estado["result"] == "success"
-    assert estado["error"] == ""
+    text = saida_de(ActiveState="active", SubState="running", NRestarts="2", Result="success")
+    state = ss.server_status(ssh_que_responde(text), SERVIDOR, 5)
+    assert state["reachable"] is True
+    assert state["service"] == "active"
+    assert state["sub"] == "running"
+    assert state["restarts"] == 2
+    assert state["result"] == "success"
+    assert state["error"] == ""
 
 
 def test_pergunta_pelos_campos_que_distinguem_parada_de_queda():
@@ -58,20 +58,20 @@ def test_pergunta_pelos_campos_que_distinguem_parada_de_queda():
 
 def test_unidade_inexistente_vira_inactive():
     """`systemctl show` sai com 0 e ActiveState vazio para unidade que nao existe."""
-    estado = ss.server_status(ssh_que_responde(saida_de(ActiveState="")), SERVIDOR, 5)
-    assert estado["reachable"] is True
-    assert estado["service"] == "inactive"
+    state = ss.server_status(ssh_que_responde(saida_de(ActiveState="")), SERVIDOR, 5)
+    assert state["reachable"] is True
+    assert state["service"] == "inactive"
 
 
 def test_systemd_antigo_sem_nrestarts_nao_quebra():
     """NRestarts so existe no systemd >= 235; sem ele o painel so nao avisa desse evento."""
-    estado = ss.server_status(ssh_que_responde(saida_de(ActiveState="active")), SERVIDOR, 5)
-    assert estado["restarts"] == 0
+    state = ss.server_status(ssh_que_responde(saida_de(ActiveState="active")), SERVIDOR, 5)
+    assert state["restarts"] == 0
 
 
 def test_nrestarts_que_nao_e_numero_vira_zero():
-    texto = saida_de(ActiveState="active", NRestarts="[not set]")
-    assert ss.server_status(ssh_que_responde(texto), SERVIDOR, 5)["restarts"] == 0
+    text = saida_de(ActiveState="active", NRestarts="[not set]")
+    assert ss.server_status(ssh_que_responde(text), SERVIDOR, 5)["restarts"] == 0
 
 
 def test_container_inalcancavel_vira_estado_e_nao_excecao():
@@ -79,10 +79,10 @@ def test_container_inalcancavel_vira_estado_e_nao_excecao():
     def explode(server, comando, timeout=None):
         raise RemoteError("tempo esgotado (20s) executando no host 10.0.0.1")
 
-    estado = ss.server_status(explode, SERVIDOR, 5)
-    assert estado["reachable"] is False
-    assert estado["service"] == "inacessivel"
-    assert "tempo esgotado" in estado["error"]
+    state = ss.server_status(explode, SERVIDOR, 5)
+    assert state["reachable"] is False
+    assert state["service"] == "inacessivel"
+    assert "tempo esgotado" in state["error"]
 
 
 def test_segunda_pergunta_dentro_do_prazo_vem_do_cache():
@@ -128,6 +128,6 @@ def test_erro_tambem_fica_em_cache():
         raise RemoteError("sem rota")
 
     ss.server_status(explode, SERVIDOR, 5)
-    estado = ss.server_status(explode, SERVIDOR, 5)
-    assert estado["service"] == "inacessivel"
+    state = ss.server_status(explode, SERVIDOR, 5)
+    assert state["service"] == "inacessivel"
     assert len(chamadas) == 1

@@ -49,19 +49,19 @@ def test_palworld_abre_a_tupla_da_unreal_como_campos():
     assert len([s.key for s in doc.settings]) == 8
     assert any("OptionSettings" in s.label for s in doc.sections)
 
-    nome = campo(doc, doc.settings[0].section, "ServerName")
-    assert nome.value == "Servidor antigo", "o valor chega a tela sem as aspas"
-    assert campo(doc, nome.section, "bIsPvP").kind == "bool"
-    assert campo(doc, nome.section, "PublicPort").kind == "number"
+    name = campo(doc, doc.settings[0].section, "ServerName")
+    assert name.value == "Servidor antigo", "o valor chega a tela sem as aspas"
+    assert campo(doc, name.section, "bIsPvP").kind == "bool"
+    assert campo(doc, name.section, "PublicPort").kind == "number"
 
 
 def test_palworld_grava_sem_estragar_a_linha():
     doc = gc.load("PalWorldSettings.ini", PALWORLD)
-    nome = campo(doc, doc.settings[0].section, "ServerName")
+    name = campo(doc, doc.settings[0].section, "ServerName")
     novo = doc.apply([
-        gc.Edit(id=nome.id, section=nome.section, key="ServerName", value="Servidor do Cris"),
-        gc.Edit(id="", section=nome.section, key="ServerPlayerMaxNum", value="16"),
-        gc.Edit(id="", section=nome.section, key="ServerDescription", value="mundo novo"),
+        gc.Edit(id=name.id, section=name.section, key="ServerName", value="Servidor do Cris"),
+        gc.Edit(id="", section=name.section, key="ServerPlayerMaxNum", value="16"),
+        gc.Edit(id="", section=name.section, key="ServerDescription", value="mundo novo"),
     ])
     assert novo.count("\n") == PALWORLD.count("\n"), "continua com 2 linhas"
     assert 'ServerName="Servidor do Cris"' in novo, "string reganha as aspas"
@@ -227,7 +227,7 @@ def test_dayz_grava_dentro_da_class_sem_estragar_a_estrutura():
 
 # -------------------------------------------------------------------- limites
 
-@pytest.mark.parametrize("rotulo, chave, valor, trecho", [
+@pytest.mark.parametrize("rotulo, chave, value, trecho", [
     ("chave vazia", "", "1", "invalido"),
     ("chave com = no nome", "x=y", "1", "invalido"),
     # O nome da chave vai para dentro do arquivo do jogo, gravado por SSH: ele e ASCII e
@@ -238,9 +238,9 @@ def test_dayz_grava_dentro_da_class_sem_estragar_a_estrutura():
     ("chave comecando com ponto", ".x", "1", "invalido"),
     ("quebra de linha no valor", "x", "a\nb", "quebra de linha"),
 ])
-def test_entrada_torta_e_recusada(rotulo, chave, valor, trecho):
+def test_entrada_torta_e_recusada(rotulo, chave, value, trecho):
     doc = gc.load("a.ini", "[s]\nk=1\n")
-    error = erro_ao_aplicar(doc, gc.Edit(id="", section="s", key=chave, value=valor))
+    error = erro_ao_aplicar(doc, gc.Edit(id="", section="s", key=chave, value=value))
     assert trecho in error, f"{rotulo}: erro={error!r}"
 
 
@@ -259,23 +259,23 @@ def test_aspas_no_meio_do_valor_sao_recusadas():
     assert "aspas" in error, error
 
 
-@pytest.mark.parametrize("nome, texto", [
+@pytest.mark.parametrize("name, text", [
     ("a.ini", INI),
     ("P.ini", PALWORLD),
     ("serverDZ.cfg", DAYZ),
     ("x.json", ENSHROUDED),
 ])
-def test_sem_edicao_o_arquivo_volta_igual(nome, texto):
+def test_sem_edicao_o_arquivo_volta_igual(name, text):
     """Abrir a tela e salvar sem mexer em nada nao pode reformatar o arquivo do jogo."""
-    assert gc.load(nome, texto).apply([]) == texto
+    assert gc.load(name, text).apply([]) == text
 
 
-@pytest.mark.parametrize("nome, texto, formato", [
+@pytest.mark.parametrize("name, text, formato", [
     ("x.json", "{}", "json"),
     ("config", '{"a": 1}', "json"),        # pelo conteudo, sem extensao
     ("serverDZ.cfg", DAYZ, "dayz"),        # pelo `class`
     ("s.cfg", 'a = "b";\n', "dayz"),       # cfg simples tambem e dayz
     ("qualquer.txt", "a=1\n", "ini"),      # ini e o padrao
 ])
-def test_deteccao_de_formato(nome, texto, formato):
-    assert gc.load(nome, texto).format_id == formato
+def test_deteccao_de_formato(name, text, formato):
+    assert gc.load(name, text).format_id == formato

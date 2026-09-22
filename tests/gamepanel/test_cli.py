@@ -68,11 +68,11 @@ class _AppFalso:
 def test_reset_2fa_limpa_as_quatro_colunas(banco_cli, capsys):
     """Meia limpeza deixaria o usuario trancado do mesmo jeito."""
     cli.main(deps(connect=banco_cli), ["--reset-2fa", "chefe"])
-    linha = dict(banco_cli().execute("SELECT * FROM users").fetchone())
-    assert linha["totp_secret"] == ""
-    assert linha["totp_enabled"] == 0
-    assert linha["totp_last_step"] == 0
-    assert linha["totp_recovery"] == ""
+    line = dict(banco_cli().execute("SELECT * FROM users").fetchone())
+    assert line["totp_secret"] == ""
+    assert line["totp_enabled"] == 0
+    assert line["totp_last_step"] == 0
+    assert line["totp_recovery"] == ""
     assert "desligado" in capsys.readouterr().out
 
 

@@ -105,22 +105,22 @@ def test_comando_de_backup_leva_o_sufixo_quando_passado():
 # ------------------------------------------------------------- listar
 
 def test_list_backups_parseia_linhas():
-    saida = "jogo1-20240101-1200.tar.gz\t1024\t2024-01-01 12:00\n"
-    copias = backupsmod.list_backups(_ssh_run_de(saida), SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 100)
+    output = "jogo1-20240101-1200.tar.gz\t1024\t2024-01-01 12:00\n"
+    copias = backupsmod.list_backups(_ssh_run_de(output), SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 100)
     assert copias == [{
         "name": "jogo1-20240101-1200.tar.gz", "size": 1024, "mtime": "2024-01-01 12:00", "seguranca": False,
     }]
 
 
 def test_list_backups_marca_a_copia_de_seguranca():
-    saida = "jogo1-20240101-1200-antes-de-restaurar.tar.gz\t512\t2024-01-01 12:00\n"
-    copias = backupsmod.list_backups(_ssh_run_de(saida), SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 100)
+    output = "jogo1-20240101-1200-antes-de-restaurar.tar.gz\t512\t2024-01-01 12:00\n"
+    copias = backupsmod.list_backups(_ssh_run_de(output), SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 100)
     assert copias[0]["seguranca"] is True
 
 
 def test_list_backups_linha_malformada_e_ignorada():
-    saida = "so um campo sem tab\n"
-    copias = backupsmod.list_backups(_ssh_run_de(saida), SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 100)
+    output = "so um campo sem tab\n"
+    copias = backupsmod.list_backups(_ssh_run_de(output), SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 100)
     assert copias == []
 
 
@@ -133,11 +133,11 @@ def test_list_backups_erro_vira_remote_error():
 # -------------------------------------------------------------- apagar
 
 def test_delete_backup_devolve_confirmacao():
-    saida = backupsmod.delete_backup(
+    output = backupsmod.delete_backup(
         _ssh_run_de("backup apagado: jogo1-x.tar.gz (10 bytes)"),
         SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", "jogo1-x.tar.gz",
     )
-    assert "apagado" in saida
+    assert "apagado" in output
 
 
 def test_delete_backup_erro_vira_remote_error():

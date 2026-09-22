@@ -135,10 +135,10 @@ def test_frase_com_marcacao_chega_inteira_na_tela(monkeypatch):
 
 def test_campo_que_vem_de_fora_e_escapado(monkeypatch):
     """O campo NAO e do catalogo; sem escape, um nome de servidor viraria marcacao."""
-    monkeypatch.setitem(i18n.CATALOGS["pt"], "t.rico", "servidor <strong>{nome}</strong>")
+    monkeypatch.setitem(i18n.CATALOGS["pt"], "t.rico", "servidor <strong>{name}</strong>")
     with panel.app.test_request_context("/"):
-        saida = str(panel.translate_html("t.rico", nome="<script>x</script>"))
-    assert saida == "servidor <strong>&lt;script&gt;x&lt;/script&gt;</strong>"
+        output = str(panel.translate_html("t.rico", name="<script>x</script>"))
+    assert output == "servidor <strong>&lt;script&gt;x&lt;/script&gt;</strong>"
 
 
 def test_frase_encaixada_noutra_passa_inteira(monkeypatch):
@@ -226,7 +226,7 @@ def test_todo_campo_passado_existe_como_marcador_na_frase():
         if arquivo.parent.name == "i18n":
             continue
         arvore = ast.parse(arquivo.read_text(encoding="utf-8"))
-        for linha, chave, campos in _chamadas_de_traducao(arvore):
+        for line, chave, campos in _chamadas_de_traducao(arvore):
             frase = i18n.CATALOGS["pt"].get(chave)
             if frase is None:
                 continue  # chave montada em tempo de execucao; outro teste cobre
@@ -234,7 +234,7 @@ def test_todo_campo_passado_existe_como_marcador_na_frase():
             sobrando = campos - marcadores
             if sobrando:
                 problemas.append(
-                    f"{arquivo.name}:{linha} {chave}: passa {sorted(sobrando)}, "
+                    f"{arquivo.name}:{line} {chave}: passa {sorted(sobrando)}, "
                     f"a frase usa {sorted(marcadores)}")
     assert problemas == [], "campo sem marcador correspondente:\n" + "\n".join(problemas)
 

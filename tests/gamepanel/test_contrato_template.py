@@ -32,8 +32,8 @@ def _lidos_pelos_templates() -> dict[str, str]:
     raiz = Path(panel.__file__).parent / panel.app.template_folder
     for arquivo in sorted(raiz.rglob("*.html")):
         fonte = arquivo.read_text(encoding="utf-8")
-        for nome in meta.find_undeclared_variables(panel.app.jinja_env.parse(fonte)):
-            lidos.setdefault(nome, arquivo.name)
+        for name in meta.find_undeclared_variables(panel.app.jinja_env.parse(fonte)):
+            lidos.setdefault(name, arquivo.name)
     return lidos
 
 
@@ -56,20 +56,20 @@ def _passados_pelo_app() -> list[tuple[str, str, int]]:
 def test_todo_kwarg_de_render_template_tem_quem_o_leia():
     lidos = _lidos_pelos_templates()
     orfaos = [
-        f"app.py:{linha} {template} passa '{nome}', que nenhum template le"
-        for template, nome, linha in _passados_pelo_app()
+        f"app.py:{line} {template} passa '{name}', que nenhum template le"
+        for template, name, line in _passados_pelo_app()
         # O `.jinja` (service worker, manifest) nao entra na varredura de `*.html`.
-        if nome not in lidos and not template.endswith(".jinja")
+        if name not in lidos and not template.endswith(".jinja")
     ]
     assert orfaos == [], "kwarg sem leitor (a tela fica vazia, sem erro):\n" + "\n".join(orfaos)
 
 
-@pytest.mark.parametrize("nome", ["csrf_token", "_", "_h", "url_for", "is_admin"])
-def test_o_contexto_global_cobre_o_que_todo_template_usa(nome):
+@pytest.mark.parametrize("name", ["csrf_token", "_", "_h", "url_for", "is_admin"])
+def test_o_contexto_global_cobre_o_que_todo_template_usa(name):
     """Estes vem do `context_processor`, nao de um `render_template` — e a falta de um
     deles nao aparece numa tela so: aparece em todas."""
     with panel.app.test_request_context("/"):
-        assert nome in panel.app.jinja_env.globals or nome in _contexto()
+        assert name in panel.app.jinja_env.globals or name in _contexto()
 
 
 def _contexto() -> dict:

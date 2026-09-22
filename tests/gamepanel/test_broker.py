@@ -78,8 +78,8 @@ class BrokerFalso:
         self.operacoes: list[dict] = [{"estado": "ok", "log": "tudo certo\n", "resultado": RESULTADO}]
         self.tarefas: list = []
 
-    def _chama(self, nome: str, *args) -> None:
-        self.chamadas.append((nome, *args))
+    def _chama(self, name: str, *args) -> None:
+        self.chamadas.append((name, *args))
         if self.error is not None:
             raise self.error
 
@@ -95,8 +95,8 @@ class BrokerFalso:
         self._chama("instances")
         return self.lista
 
-    def create(self, jogo, nome, ator):
-        self._chama("create", jogo, nome, ator)
+    def create(self, jogo, name, ator):
+        self._chama("create", jogo, name, ator)
         return {"operacao_id": OP, "instancia_id": 7}
 
     def operation(self, op_id):
@@ -111,8 +111,8 @@ class BrokerFalso:
         self._chama("remove", instancia_id, confirm, ator, somente_banco)
         return {"id": instancia_id, "removida": True}
 
-    def chamou(self, nome: str) -> list[tuple]:
-        return [c for c in self.chamadas if c[0] == nome]
+    def chamou(self, name: str) -> list[tuple]:
+        return [c for c in self.chamadas if c[0] == name]
 
 
 @pytest.fixture
@@ -123,9 +123,9 @@ def broker(monkeypatch, banco):
     monkeypatch.setattr(panel, "ALLOW_BROKER", True)
     monkeypatch.setattr(panel, "BROKER_POLL", 0)
     monkeypatch.setattr(panel, "_fire", falso.tarefas.append)
-    for nome in ("catalog", "add_game", "instances", "create", "operation",
+    for name in ("catalog", "add_game", "instances", "create", "operation",
                  "deactivate", "remove"):
-        monkeypatch.setattr(panel.broker_client, nome, getattr(falso, nome))
+        monkeypatch.setattr(panel.broker_client, name, getattr(falso, name))
     return falso
 
 
@@ -357,9 +357,9 @@ def test_novo_jogo_nunca_envia_campo_de_comando(chefe, broker, postar):
 
 def test_novo_jogo_deixa_rastro_no_historico(chefe, broker, postar, banco):
     postar(chefe, "/catalogo/novo", FORM_JOGO)
-    (linha,) = jobs(banco)
-    assert (linha["action"], linha["username"], linha["status"]) == ("broker-jogo", "chefe", "ok")
-    assert linha["server_id"] is None
+    (line,) = jobs(banco)
+    assert (line["action"], line["username"], line["status"]) == ("broker-jogo", "chefe", "ok")
+    assert line["server_id"] is None
 
 
 @pytest.mark.parametrize("campo", ["app_id", "porta_jogo", "memoria_mb", "cores", "disco_gb"])
@@ -407,12 +407,12 @@ def test_instancias_com_broker_fora_do_ar(chefe, broker):
 
 def test_criar_abre_um_job_sem_servidor_e_redireciona_para_ele(chefe, broker, postar, banco):
     resposta = postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "Servidor do Zeca"})
-    (linha,) = jobs(banco)
-    assert resposta.headers["Location"].endswith(f"/jobs/{linha['id']}")
+    (line,) = jobs(banco)
+    assert resposta.headers["Location"].endswith(f"/jobs/{line['id']}")
     assert broker.chamou("create") == [("create", "alfa", "Servidor do Zeca", "chefe")]
-    assert (linha["action"], linha["status"], linha["broker_op"]) == ("broker-criar", "running", OP)
-    assert linha["server_id"] is None
-    assert linha["command"] == "alfa: Servidor do Zeca"
+    assert (line["action"], line["status"], line["broker_op"]) == ("broker-criar", "running", OP)
+    assert line["server_id"] is None
+    assert line["command"] == "alfa: Servidor do Zeca"
     assert len(broker.tarefas) == 1, "o acompanhamento foi disparado uma vez"
 
 
@@ -433,19 +433,19 @@ def test_criar_sem_id_de_operacao_nao_deixa_job(chefe, broker, postar, banco, mo
 
 def test_tela_do_job_abre_e_tem_o_rotulo(chefe, broker, postar, banco):
     postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "x"})
-    (linha,) = jobs(banco)
-    html = chefe.get(f"/jobs/{linha['id']}").get_data(as_text=True)
+    (line,) = jobs(banco)
+    html = chefe.get(f"/jobs/{line['id']}").get_data(as_text=True)
     assert "Instancia criada (broker)" in html
-    assert chefe.get(f"/api/jobs/{linha['id']}").get_json()["status"] == "running"
+    assert chefe.get(f"/api/jobs/{line['id']}").get_json()["status"] == "running"
 
 
 def test_saida_do_job_do_broker_e_so_de_admin(chefe, peao, broker, postar, banco):
     """A saida cita IP, CTID e portas da infraestrutura: operador nem abre nem lista."""
     postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "x"})
-    (linha,) = jobs(banco)
-    assert peao.get(f"/jobs/{linha['id']}").status_code == 403
-    assert peao.get(f"/api/jobs/{linha['id']}").status_code == 403
-    link = f"/jobs/{linha['id']}"
+    (line,) = jobs(banco)
+    assert peao.get(f"/jobs/{line['id']}").status_code == 403
+    assert peao.get(f"/api/jobs/{line['id']}").status_code == 403
+    link = f"/jobs/{line['id']}"
     assert link in chefe.get("/historico").get_data(as_text=True), "o admin ve o job na lista"
     assert link not in peao.get("/historico").get_data(as_text=True)
 
@@ -551,8 +551,8 @@ def test_tempo_esgotado(broker, banco, monkeypatch):
 def test_tarefa_disparada_pela_rota_faz_o_caminho_inteiro(chefe, broker, postar, banco):
     postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "Servidor do Zeca"})
     broker.tarefas[0]()
-    (linha,) = jobs(banco)
-    assert linha["status"] == "ok"
+    (line,) = jobs(banco)
+    assert line["status"] == "ok"
     assert servidores(banco)[0]["broker_id"] == 7
 
 
@@ -585,8 +585,8 @@ def test_desativar_pede_ao_broker_e_deixa_rastro(chefe, broker, postar, banco):
     resposta = postar(chefe, "/instancias/7/desativar")
     assert resposta.status_code == 302
     assert broker.chamou("deactivate") == [("deactivate", 7, "chefe")]
-    (linha,) = jobs(banco)
-    assert (linha["action"], linha["status"]) == ("broker-desativar", "ok")
+    (line,) = jobs(banco)
+    assert (line["action"], line["status"]) == ("broker-desativar", "ok")
 
 
 def test_desativar_recusado_mostra_o_motivo(chefe, broker, postar, banco):

@@ -48,9 +48,9 @@ PLAYER_ACTION_LABELS = {
 # Os marcadores do catalogo, como constantes: sao a interface entre a tabela abaixo e
 # o `_preenche`, e escreve-los a mao em cada linha e como um deles vira "{mensagen}"
 # num jogo so, sem ninguem notar ate alguem tentar expulsar alguem.
-MARCA_BASE = "{base}"
-MARCA_JOGADOR = "{jogador}"
-MARCA_MENSAGEM = "{mensagem}"
+BASE_MARK = "{base}"
+PLAYER_MARK = "{player}"
+MESSAGE_MARK = "{message}"
 
 class ActionEntry(TypedDict):
     """Uma linha do catalogo de acoes.
@@ -77,11 +77,11 @@ API_ACOES: tuple[ActionEntry, ...] = (
         "url": re.compile(r"^(?P<base>https?://[^/\s]+/v1/api)/players/?$", re.I),
         # acao -> (rota, corpo).
         "actions": {
-            "announce": (f"{MARCA_BASE}/announce", {"message": MARCA_MENSAGEM}),
-            "kick": (f"{MARCA_BASE}/kick",
-                     {"userid": MARCA_JOGADOR, "message": MARCA_MENSAGEM}),
-            "ban": (f"{MARCA_BASE}/ban",
-                    {"userid": MARCA_JOGADOR, "message": MARCA_MENSAGEM}),
+            "announce": (f"{BASE_MARK}/announce", {"message": MESSAGE_MARK}),
+            "kick": (f"{BASE_MARK}/kick",
+                     {"userid": PLAYER_MARK, "message": MESSAGE_MARK}),
+            "ban": (f"{BASE_MARK}/ban",
+                    {"userid": PLAYER_MARK, "message": MESSAGE_MARK}),
         },
     },
 )
@@ -239,9 +239,9 @@ def _fill(mold: str, base: str, player: str, message: str) -> str:
     De proposito NAO usa str.format: a mensagem vem de quem esta digitando, e uma chave
     solta ('{') estouraria o format — ou pior, viraria um caminho para dentro do objeto.
     """
-    return (mold.replace(MARCA_BASE, base)
-                 .replace(MARCA_JOGADOR, player)
-                 .replace(MARCA_MENSAGEM, message))
+    return (mold.replace(BASE_MARK, base)
+                 .replace(PLAYER_MARK, player)
+                 .replace(MESSAGE_MARK, message))
 
 
 def player_action(deps: PlayerDeps, server: ServerLike, action: str, player: str,

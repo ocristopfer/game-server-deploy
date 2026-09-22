@@ -77,9 +77,9 @@ def test_servico_sem_sufixo_ganha_o_sufixo():
     assert data["service"] == "dragonwilds.service"
 
 
-@pytest.mark.parametrize("servico", ["", "com espaco.service", "/etc/passwd"])
-def test_servico_invalido_e_recusado(servico):
-    _dados, errors = valida(service=servico)
+@pytest.mark.parametrize("service", ["", "com espaco.service", "/etc/passwd"])
+def test_servico_invalido_e_recusado(service):
+    _dados, errors = valida(service=service)
     assert any("Servico invalido" in e for e in errors)
 
 

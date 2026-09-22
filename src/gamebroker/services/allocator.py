@@ -37,11 +37,11 @@ class AllocatedPort:
         return f"{self.number}/{self.proto}"
 
 
-def ips_in_range(prefix: str, inicio: int, fim: int) -> tuple[str, ...]:
+def ips_in_range(prefix: str, start: int, fim: int) -> tuple[str, ...]:
     """`ips_da_faixa("192.168.2", 30, 99)`: os enderecos candidatos, validados como IPv4."""
-    if not 1 <= inicio <= fim <= 254:
+    if not 1 <= start <= fim <= 254:
         raise ValueError("faixa de IP invalida")
-    return tuple(str(ipaddress.IPv4Address(f"{prefix}.{n}")) for n in range(inicio, fim + 1))
+    return tuple(str(ipaddress.IPv4Address(f"{prefix}.{n}")) for n in range(start, fim + 1))
 
 
 def pick_ctid(span: Iterable[int], taken: set[int]) -> int:
@@ -85,12 +85,12 @@ def _role_of(game: Game, base: int) -> str:
     return ROLE_EXTRA
 
 
-def _as_block(game: Game, inicio: int) -> list[AllocatedPort]:
+def _as_block(game: Game, start: int) -> list[AllocatedPort]:
     """Cada porta-base distinta do jogo vira um numero do bloco; a mesma base em UDP e TCP
     (Satisfactory) fica com o mesmo numero nos dois protocolos."""
     numero_de: dict[int, int] = {}
     for port in game.ports:
-        numero_de.setdefault(port.number, inicio + len(numero_de))
+        numero_de.setdefault(port.number, start + len(numero_de))
     return [AllocatedPort(p.number, numero_de[p.number], p.proto, _role_of(game, p.number))
             for p in game.ports]
 
@@ -104,8 +104,8 @@ def allocate_ports(game: Game, busy: set[tuple[int, str]], span: range) -> list[
             raise OutOfResources(f"porta {conflitos[0]} ja esta em uso: este jogo nao aceita mudar de porta")
         return candidatas
     tamanho = len({p.number for p in game.ports})
-    for inicio in range(span.start, span.stop - tamanho + 1):
-        candidatas = _as_block(game, inicio)
+    for start in range(span.start, span.stop - tamanho + 1):
+        candidatas = _as_block(game, start)
         if not any(c.key in busy for c in candidatas):
             return candidatas
     raise OutOfResources(f"a faixa de portas do broker ({span.start}-{span.stop - 1}) esta cheia")

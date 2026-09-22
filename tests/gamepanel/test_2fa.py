@@ -122,14 +122,14 @@ def test_codigo_errado_nao_liga_o_2fa(chefe, postar, hora):
 def test_codigo_certo_liga_e_mostra_os_codigos_de_recuperacao_uma_vez(chefe, postar, hora):
     segredo, codigos = _ativar(chefe, postar, hora)
     assert len(codigos) == totp.RECOVERY_CODES
-    linha = panel._connect().execute("SELECT * FROM users WHERE username = 'chefe'").fetchone()
-    assert linha["totp_enabled"] == 1
-    assert linha["totp_secret"] == segredo
+    line = panel._connect().execute("SELECT * FROM users WHERE username = 'chefe'").fetchone()
+    assert line["totp_enabled"] == 1
+    assert line["totp_secret"] == segredo
     with chefe.session_transaction() as sess:
         assert "totp_pendente" not in sess
     # Nada em texto no banco: so os hashes.
-    assert not any(c.replace("-", "") in linha["totp_recovery"] for c in codigos)
-    assert len(json.loads(linha["totp_recovery"])) == totp.RECOVERY_CODES
+    assert not any(c.replace("-", "") in line["totp_recovery"] for c in codigos)
+    assert len(json.loads(line["totp_recovery"])) == totp.RECOVERY_CODES
     # E a tela de conta nunca mais mostra a chave nem os codigos.
     conta = chefe.get("/account").get_data(as_text=True)
     assert segredo not in conta
@@ -268,8 +268,8 @@ def test_desativar_pede_senha_e_codigo(chefe, postar, hora):
     postar(chefe, "/account/2fa/desativar", {"senha": "senha-do-chefe", "codigo": "000000"})
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 1
     postar(chefe, "/account/2fa/desativar", {"senha": "senha-do-chefe", "codigo": _codigo(segredo, hora)})
-    linha = panel._connect().execute("SELECT * FROM users WHERE username = 'chefe'").fetchone()
-    assert (linha["totp_enabled"], linha["totp_secret"], linha["totp_recovery"]) == (0, "", "")
+    line = panel._connect().execute("SELECT * FROM users WHERE username = 'chefe'").fetchone()
+    assert (line["totp_enabled"], line["totp_secret"], line["totp_recovery"]) == (0, "", "")
 
 
 def test_desativar_aceita_um_codigo_de_recuperacao(chefe, postar, hora):
@@ -292,9 +292,9 @@ def test_codigos_novos_invalidam_os_antigos(chefe, postar, hora, cliente):
 def test_codigos_novos_pedem_senha(chefe, postar, hora):
     segredo, antigos = _com_2fa(chefe, postar, hora)
     postar(chefe, "/account/2fa/codigos", {"senha": "errada", "codigo": _codigo(segredo, hora)})
-    linha = panel._connect().execute("SELECT totp_recovery FROM users").fetchone()
-    assert len(json.loads(linha[0])) == totp.RECOVERY_CODES
-    assert totp.hash_recovery_code(antigos[0]) in json.loads(linha[0])
+    line = panel._connect().execute("SELECT totp_recovery FROM users").fetchone()
+    assert len(json.loads(line[0])) == totp.RECOVERY_CODES
+    assert totp.hash_recovery_code(antigos[0]) in json.loads(line[0])
 
 
 # --- admin e linha de comando -------------------------------------------------------------------------
@@ -316,8 +316,8 @@ def test_admin_desliga_o_2fa_de_outra_pessoa(cliente, postar, hora):
     admin, uid = _dois_usuarios(postar, hora)
     assert "2FA" in admin.get("/usuarios").get_data(as_text=True)
     assert postar(admin, f"/usuarios/{uid}/2fa/desligar").status_code == 302
-    linha = panel._connect().execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
-    assert (linha["totp_enabled"], linha["totp_secret"]) == (0, "")
+    line = panel._connect().execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+    assert (line["totp_enabled"], line["totp_secret"]) == (0, "")
 
 
 def test_operador_nao_desliga_o_2fa_de_ninguem(cliente, postar, hora):
@@ -338,18 +338,18 @@ def test_admin_nao_desliga_o_proprio_2fa_por_la(chefe, postar, hora):
 
 def test_linha_de_comando_desliga_o_2fa(chefe, postar, hora):
     _com_2fa(chefe, postar, hora)
-    saida = subprocess.run([sys.executable, "-m", "gamepanel.app", "--reset-2fa", "chefe"],
+    output = subprocess.run([sys.executable, "-m", "gamepanel.app", "--reset-2fa", "chefe"],
                            env=ENV_COM_SRC, capture_output=True, text=True, cwd=ADMIN, timeout=60)
-    assert saida.returncode == 0, saida.stderr
-    assert "desligado" in saida.stdout
+    assert output.returncode == 0, output.stderr
+    assert "desligado" in output.stdout
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 0
 
 
 def test_linha_de_comando_recusa_usuario_que_nao_existe(banco):
-    saida = subprocess.run([sys.executable, "-m", "gamepanel.app", "--reset-2fa", "ninguem"],
+    output = subprocess.run([sys.executable, "-m", "gamepanel.app", "--reset-2fa", "ninguem"],
                            env=ENV_COM_SRC, capture_output=True, text=True, cwd=ADMIN, timeout=60)
-    assert saida.returncode != 0
-    assert "nao existe" in saida.stderr
+    assert output.returncode != 0
+    assert "nao existe" in output.stderr
 
 
 # --- exigir para todos ---------------------------------------------------------------------------------

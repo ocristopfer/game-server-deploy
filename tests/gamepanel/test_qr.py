@@ -70,9 +70,9 @@ def _distancia(a: int, b: int, bits: int = 15) -> int:
 
 def test_bits_de_formato_tem_15_bits_e_e_deterministico():
     for m in range(8):
-        valor = qr.format_bits(m)
-        assert 0 <= valor < (1 << 15)
-        assert qr.format_bits(m) == valor
+        value = qr.format_bits(m)
+        assert 0 <= value < (1 << 15)
+        assert qr.format_bits(m) == value
 
 
 def test_bits_de_formato_distingue_as_8_mascaras():
@@ -116,8 +116,8 @@ def test_texto_vazio_produz_a_menor_matriz():
 
 def test_unicode_conta_em_bytes_utf8_nao_em_caracteres():
     """'ç' sao 2 bytes em UTF-8: 1 caractere acentuado pode custar 2 do limite de 213."""
-    texto = "ç" * 106       # 212 bytes: cabe
-    qr.matrix(texto)
+    text = "ç" * 106       # 212 bytes: cabe
+    qr.matrix(text)
     with pytest.raises(qr.TextTooLarge):
         qr.matrix("ç" * 107)  # 214 bytes: estoura
 
@@ -126,14 +126,14 @@ def test_unicode_conta_em_bytes_utf8_nao_em_caracteres():
 
 @pytest.mark.parametrize("versao", range(1, 11))
 def test_tamanho_da_matriz_segue_a_formula_da_iso(versao):
-    texto = "a" * qr.capacity(versao) if versao == 1 else "a" * (qr.capacity(versao - 1) + 1)
-    assert len(qr.matrix(texto)) == 17 + 4 * versao
+    text = "a" * qr.capacity(versao) if versao == 1 else "a" * (qr.capacity(versao - 1) + 1)
+    assert len(qr.matrix(text)) == 17 + 4 * versao
 
 
 def test_localizador_do_canto_superior_esquerdo_tem_o_desenho_do_padrao():
     """O 7x7 documentado na ISO 18004: borda preta, anel branco, miolo 3x3 solido preto."""
     m = qr.matrix("teste")
-    quadro = [linha[0:7] for linha in m[0:7]]
+    quadro = [line[0:7] for line in m[0:7]]
     padrao_iso = [
         [1, 1, 1, 1, 1, 1, 1],
         [1, 0, 0, 0, 0, 0, 1],
@@ -143,13 +143,13 @@ def test_localizador_do_canto_superior_esquerdo_tem_o_desenho_do_padrao():
         [1, 0, 0, 0, 0, 0, 1],
         [1, 1, 1, 1, 1, 1, 1],
     ]
-    assert [[int(c) for c in linha] for linha in quadro] == padrao_iso
+    assert [[int(c) for c in line] for line in quadro] == padrao_iso
 
 
 def test_padrao_de_temporizacao_alterna():
     m = qr.matrix("teste")
-    linha = [m[6][x] for x in range(8, len(m) - 8)]
-    assert linha == [i % 2 == 0 for i in range(len(linha))]
+    line = [m[6][x] for x in range(8, len(m) - 8)]
+    assert line == [i % 2 == 0 for i in range(len(line))]
 
 
 def test_matriz_e_deterministica_para_o_mesmo_texto():
@@ -168,17 +168,17 @@ def test_textos_diferentes_dao_matrizes_diferentes():
 
 def test_svg_tem_viewbox_do_tamanho_da_matriz_mais_a_borda():
     m = qr.matrix("abc")
-    saida = qr.svg("abc", border=4)
-    assert f'viewBox="0 0 {len(m) + 8} {len(m) + 8}"' in saida
+    output = qr.svg("abc", border=4)
+    assert f'viewBox="0 0 {len(m) + 8} {len(m) + 8}"' in output
 
 
 def test_svg_so_tem_caracteres_de_path_no_traco():
-    saida = qr.svg("abc")
-    trecho = saida.split('d="')[1].split('"')[0]
+    output = qr.svg("abc")
+    trecho = output.split('d="')[1].split('"')[0]
     assert set(trecho) <= set("Mhvz0123456789.,-")
 
 
 def test_svg_escapa_o_rotulo():
-    saida = qr.svg("abc", label='"><script>alert(1)</script>')
-    assert "<script>" not in saida
-    assert ' aria-label="' in saida
+    output = qr.svg("abc", label='"><script>alert(1)</script>')
+    assert "<script>" not in output
+    assert ' aria-label="' in output
