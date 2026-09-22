@@ -57,8 +57,10 @@ from gamepanel.services import (
     metrics_service,
     parallel,
     player_service,
+    schedule_service,
     status_service,
 )
+from gamepanel.tasks import scheduler
 
 # O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
 # resto do painel continua funcionando e a tela do terminal responde 503.
@@ -2042,72 +2044,22 @@ def coleta_amostras(forcar: bool = False) -> int:
 # veja o provision-admin-lxc.sh): com dois processos, cada um teria a sua thread e a
 # mesma tarefa dispararia em dobro.
 
-SCHEDULE_KINDS = ("diario", "semanal", "intervalo")
-SCHEDULE_ACTIONS = ("restart", "stop", "start", "update", "backup")
-DIAS_SEMANA = ("segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo")
-# "toda segunda" mas "todo sabado": os dias de semana vem de "segunda-feira" (feminino),
-# sabado e domingo sao masculinos.
-ARTIGO_DIA = ("toda", "toda", "toda", "toda", "toda", "todo", "todo")
-EVERY_HOURS_MAX = 168  # uma semana
-
-
-def agora_local() -> datetime:
-    """Hora local do painel, com fuso. E o relogio que o agendamento enxerga."""
-    return datetime.now().astimezone().replace(microsecond=0)
-
-
-def _parse_dt(texto: str) -> datetime | None:
-    try:
-        return datetime.fromisoformat(texto)
-    except (TypeError, ValueError):
-        return None
-
-
-def rotulo_agendamento(sched) -> str:
-    """Como a tarefa e descrita na tela e no historico."""
-    hora = f"{int(sched['hour']):02d}:{int(sched['minute']):02d}"
-    if sched["kind"] == "intervalo":
-        horas = int(sched["every_hours"])
-        return f"a cada {horas}h" if horas != 1 else "a cada hora"
-    if sched["kind"] == "semanal":
-        indice = int(sched["weekday"]) % 7
-        return f"{ARTIGO_DIA[indice]} {DIAS_SEMANA[indice]} as {hora}"
-    return f"todo dia as {hora}"
-
-
-def ocorrencia_anterior(sched, agora: datetime) -> datetime | None:
-    """Ultimo horario em que esta tarefa deveria ter rodado ('intervalo' nao tem)."""
-    if sched["kind"] == "intervalo":
-        return None
-    alvo = agora.replace(hour=int(sched["hour"]), minute=int(sched["minute"]),
-                         second=0, microsecond=0)
-    if sched["kind"] == "semanal":
-        atras = (agora.weekday() - int(sched["weekday"])) % 7
-        alvo -= timedelta(days=atras)
-        if alvo > agora:
-            alvo -= timedelta(days=7)
-        return alvo
-    if alvo > agora:
-        alvo -= timedelta(days=1)
-    return alvo
+# Conta do relogio em gamepanel.services.schedule_service; os nomes seguem aqui porque
+# as rotas de agendamento, os templates e os testes chamam por eles.
+SCHEDULE_KINDS = schedule_service.SCHEDULE_KINDS
+SCHEDULE_ACTIONS = schedule_service.SCHEDULE_ACTIONS
+DIAS_SEMANA = schedule_service.DIAS_SEMANA
+ARTIGO_DIA = schedule_service.ARTIGO_DIA
+EVERY_HOURS_MAX = schedule_service.EVERY_HOURS_MAX
+agora_local = schedule_service.agora_local
+rotulo_agendamento = schedule_service.rotulo_agendamento
+ocorrencia_anterior = schedule_service.ocorrencia_anterior
+# Usado tambem pelas rotas de agendamento e pelo grafico, fora desta secao.
+_parse_dt = schedule_service._parse_dt
 
 
 def venceu(sched, agora: datetime) -> bool:
-    """A tarefa deveria disparar agora?"""
-    ultimo = _parse_dt(sched["last_run"])
-    if sched["kind"] == "intervalo":
-        if ultimo is None:
-            return True
-        return (agora - ultimo) >= timedelta(hours=max(1, int(sched["every_hours"])))
-
-    alvo = ocorrencia_anterior(sched, agora)
-    if alvo is None:
-        return False  # so 'intervalo' nao tem ocorrencia, e ele ja saiu acima
-    if ultimo is not None and ultimo >= alvo:
-        return False  # esta ocorrencia ja rodou
-    # Atrasada demais: o painel estava fora do ar quando a hora passou. Nao dispara e nao
-    # anota nada — na proxima ocorrencia a conta acima volta a fechar sozinha.
-    return (agora - alvo).total_seconds() <= SCHEDULE_GRACE
+    return schedule_service.venceu(sched, agora, SCHEDULE_GRACE)
 
 
 def dispara_agendamento(conn: sqlite3.Connection, sched) -> int:
@@ -2188,10 +2140,6 @@ def limpa_historico(forcar: bool = False) -> int:
     return cur.rowcount or 0
 
 
-_scheduler_started = False
-_scheduler_lock = threading.Lock()
-
-
 def _falha_do_relogio(nome: str) -> None:
     """Anota no log do processo E no diario de alertas.
 
@@ -2211,44 +2159,31 @@ def _falha_do_relogio(nome: str) -> None:
 def _scheduler_tick() -> None:
     """Uma volta do relogio. Precisa de contexto de aplicacao por causa do db().
 
-    Cada tarefa vai no SEU try. Dividindo um try so, uma agenda quebrada levava junto o
-    monitor e as amostras: a excecao subia na primeira tarefa e as outras tres nunca
-    rodavam — para sempre, porque a tarefa quebrada quebrava de novo a cada volta. Por
-    fora o painel parecia inteiro, e o botao de testar webhook (que nao passa por aqui)
-    continuava funcionando e afastando a suspeita do lugar certo.
+    A lista e montada a cada volta, e nao guardada: cada nome e resolvido neste modulo
+    na hora, que e o que deixa o teste trocar uma tarefa por uma que explode.
     """
-    for nome, tarefa in (("agendamentos", roda_agendamentos),
-                         ("monitor", monitora_servidores),
-                         ("log-em-tempo-real", supervisiona_streams),
-                         ("amostras", coleta_amostras),
-                         ("limpeza", limpa_historico)):
-        try:
-            tarefa()
-        # Uma tarefa nao derruba as outras.
-        except Exception:  # noqa: BLE001
-            _falha_do_relogio(nome)
+    scheduler.tick(
+        (("agendamentos", roda_agendamentos),
+         ("monitor", monitora_servidores),
+         ("log-em-tempo-real", supervisiona_streams),
+         ("amostras", coleta_amostras),
+         ("limpeza", limpa_historico)),
+        _falha_do_relogio,
+    )
 
 
-def _scheduler_loop() -> None:
-    while True:
-        time.sleep(SCHEDULE_TICK)
-        try:
-            # Contexto de aplicacao: e o que faz o db() desta thread funcionar como o das
-            # rotas (conexao propria, fechada no fim pelo teardown).
-            with app.app_context():
-                _scheduler_tick()
-        # A thread nao pode morrer por causa de um tick.
-        except Exception:  # noqa: BLE001
-            app.logger.exception("falha no agendador")
+def _com_contexto() -> None:
+    # Contexto de aplicacao: e o que faz o db() desta thread funcionar como o das rotas
+    # (conexao propria, fechada no fim pelo teardown).
+    with app.app_context():
+        _scheduler_tick()
+
+
+_relogio = scheduler.Relogio(SCHEDULE_TICK, _com_contexto, app.logger)
 
 
 def start_scheduler() -> None:
-    global _scheduler_started
-    with _scheduler_lock:
-        if _scheduler_started:
-            return
-        _scheduler_started = True
-    threading.Thread(target=_scheduler_loop, daemon=True).start()
+    _relogio.start()
 
 
 # ------------------------------------------------------------------- rotas
