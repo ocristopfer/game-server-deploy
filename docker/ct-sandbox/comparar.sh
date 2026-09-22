@@ -48,7 +48,7 @@ GAME_PORTS="7778/udp 27017/udp"
 RECIPES="steamclient-sdk64"
 ENV
 
-# O install.env que o BROKER gera (broker/ssh_install.py:montar_env), com portas da faixa do broker e uma
+# O install.env que o BROKER gera (src/gamebroker/ssh_install.py:montar_env), com portas da faixa do broker e uma
 # receita: prova a costura entre o Python e o ct-install.sh de verdade.
 PYBIN="$raiz/.venv/Scripts/python.exe"; [ -x "$PYBIN" ] || PYBIN=python3
 "$PYBIN" - > "$work/games/gerado-pelo-broker.env" <<'PY'

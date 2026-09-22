@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from broker import prod
-from broker.config import ErroDeConfig, carregar
-from broker.fakes import RedeFalsa
-from broker.http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE
-from broker.rede import RedeReal
-from broker.test_ssh_install import BLOB, CHAVE_PUBLICA, ExecutorFalso
+from gamebroker import prod
+from gamebroker.config import ErroDeConfig, carregar
+from gamebroker.fakes import RedeFalsa
+from gamebroker.http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE
+from gamebroker.rede import RedeReal
+from test_ssh_install import BLOB, CHAVE_PUBLICA, ExecutorFalso
 
 TOKEN_BROKER = "b" * 48
 CHAVE_DO_PAINEL = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainelPainelPainelPainelPainel painel@gp"

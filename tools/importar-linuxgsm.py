@@ -39,10 +39,10 @@ import unicodedata
 import urllib.request
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "src"))
 
-from broker.catalogo import CHAVE_RE, NOME_RE, validar_dinamico  # noqa: E402
-from broker.erros import ErroDeValidacao  # noqa: E402
+from gamebroker.catalogo import CHAVE_RE, NOME_RE, validar_dinamico  # noqa: E402
+from gamebroker.erros import ErroDeValidacao  # noqa: E402
 
 FONTE_URL = "https://raw.githubusercontent.com/GameServerManagers/LinuxGSM/master/"
 PASTA_DO_JOGO = "/opt/game"

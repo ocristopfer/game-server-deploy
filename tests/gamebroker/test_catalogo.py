@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from broker import catalogo as cat
-from broker.erros import Conflito, ErroDeValidacao, NaoEncontrado
+from gamebroker import catalogo as cat
+from gamebroker.erros import Conflito, ErroDeValidacao, NaoEncontrado
 
-RAIZ = Path(__file__).resolve().parent.parent
+RAIZ = Path(__file__).resolve().parent.parent.parent
 
 
 # --- parser do .env -------------------------------------------------------

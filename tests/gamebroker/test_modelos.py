@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from broker.catalogo import validar_dinamico
+from gamebroker.catalogo import validar_dinamico
 
-RAIZ = Path(__file__).resolve().parent.parent
+RAIZ = Path(__file__).resolve().parent.parent.parent
 _spec = importlib.util.spec_from_file_location("modelos_de_jogo", RAIZ / "admin" / "modelos_de_jogo.py")
 modelos = importlib.util.module_from_spec(_spec)
 sys.modules["modelos_de_jogo"] = modelos

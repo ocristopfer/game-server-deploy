@@ -191,8 +191,9 @@ if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 New-Item -ItemType Directory -Path $BundleDir | Out-Null
 
 Copy-AsLf (Join-Path $ScriptDir "provision-broker-lxc.sh") (Join-Path $BundleDir "provision-broker-lxc.sh")
-foreach ($f in (Get-ChildItem (Join-Path $ScriptDir "broker") -Filter "*.py" -File)) {
-    Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "broker") $f.Name)
+$gamebrokerSrc = Join-Path (Join-Path $ScriptDir "src") "gamebroker"
+foreach ($f in (Get-ChildItem $gamebrokerSrc -Filter "*.py" -File)) {
+    Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "gamebroker") $f.Name)
 }
 foreach ($f in (Get-ChildItem (Join-Path $ScriptDir "lib") -Filter "*.sh" -File)) {
     Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "lib") $f.Name)
@@ -245,7 +246,7 @@ try {
     Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
 
-    # scp -r: broker/, lib/ e games/ sao pastas; os arquivos soltos vao junto.
+    # scp -r: gamebroker/, lib/ e games/ sao pastas; os arquivos soltos vao junto.
     $itens = @(Get-ChildItem -Path $BundleDir | ForEach-Object { $_.FullName })
     Invoke-Scp $itens "root@${ProxmoxHost}:$RemoteBundleDir/" -Recurse
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o bundle para root@$ProxmoxHost" }

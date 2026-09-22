@@ -5,7 +5,7 @@
 # Bundle (pasta sem subpastas de config, so o que o scp leva):
 #   broker.conf.env      configuracao NAO secreta (CT, rede, faixas, cotas)
 #   broker.secrets.env   Proxmox e OPNsense (token, chave, segredo)  -> 0600, apagado no fim
-#   broker/  lib/  games/   o codigo, os instaladores e o catalogo curado
+#   gamebroker/  lib/  games/   o codigo, os instaladores e o catalogo curado
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -102,7 +102,7 @@ validate_bundle() {
   need_cmd openssl
   local f
   for f in api.py servico.py prod.py config.py proxmox.py opnsense.py ssh_install.py; do
-    [[ -f "$SCRIPT_DIR/broker/$f" ]] || die "broker/$f nao encontrado no bundle"
+    [[ -f "$SCRIPT_DIR/gamebroker/$f" ]] || die "gamebroker/$f nao encontrado no bundle"
   done
   [[ -f "$SCRIPT_DIR/lib/ct-install.sh" && -f "$SCRIPT_DIR/lib/ct-fases.sh" ]] || die "lib/ct-install.sh e lib/ct-fases.sh sao obrigatorios no bundle"
   compgen -G "$SCRIPT_DIR/games/*.env" >/dev/null || die "games/*.env nao encontrado no bundle"
@@ -229,14 +229,14 @@ push_tree() {
 
 push_application() {
   msg "Publicando o broker em ${APP_DIR}"
-  run_ct "rm -rf ${APP_DIR}/broker ${APP_DIR}/lib ${APP_DIR}/games"
-  run_ct "install -d ${APP_DIR}/broker ${APP_DIR}/lib ${APP_DIR}/games"
-  push_tree "$SCRIPT_DIR/broker" "${APP_DIR}/broker"
+  run_ct "rm -rf ${APP_DIR}/gamebroker ${APP_DIR}/lib ${APP_DIR}/games"
+  run_ct "install -d ${APP_DIR}/gamebroker ${APP_DIR}/lib ${APP_DIR}/games"
+  push_tree "$SCRIPT_DIR/gamebroker" "${APP_DIR}/gamebroker"
   push_tree "$SCRIPT_DIR/lib" "${APP_DIR}/lib"
   push_tree "$SCRIPT_DIR/games" "${APP_DIR}/games"
   run_ct "chown -R root:root ${APP_DIR}"
   # Falhar aqui e melhor do que o servico cair no start com ModuleNotFoundError.
-  run_ct "cd ${APP_DIR} && python3 -c 'import broker.prod'" \
+  run_ct "cd ${APP_DIR} && python3 -c 'import gamebroker.prod'" \
     || die "O pacote do broker nao importa no CT (falta algum arquivo no bundle?)"
 }
 
@@ -386,7 +386,7 @@ EnvironmentFile=${CONF_DIR}/broker.env
 # memoria do processo. As threads atendem o polling do painel enquanto uma criacao roda.
 ExecStart=/usr/bin/gunicorn --workers 1 --threads 8 --timeout 120 \\
   --certfile ${CONF_DIR}/tls/cert.pem --keyfile ${CONF_DIR}/tls/key.pem \\
-  --bind 0.0.0.0:${BROKER_PORT} --access-logfile - 'broker.prod:criar_app_de_ambiente()'
+  --bind 0.0.0.0:${BROKER_PORT} --access-logfile - 'gamebroker.prod:criar_app_de_ambiente()'
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

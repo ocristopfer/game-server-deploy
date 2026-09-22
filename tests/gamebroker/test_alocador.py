@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from broker import alocador
-from broker.catalogo import validar_dinamico
-from broker.erros import SemRecurso
+from gamebroker import alocador
+from gamebroker.catalogo import validar_dinamico
+from gamebroker.erros import SemRecurso
 
 
 def _jogo(dados_de_jogo, **mudancas):

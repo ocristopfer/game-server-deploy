@@ -2,7 +2,7 @@
 
 O systemd sobe assim (ver provision-broker-lxc.sh):
 
-    gunicorn --workers 1 --threads 8 --certfile ... --keyfile ... 'broker.prod:criar_app_de_ambiente()'
+    gunicorn --workers 1 --threads 8 --certfile ... --keyfile ... 'gamebroker.prod:criar_app_de_ambiente()'
 
 UM worker de proposito: a trava que impede duas criacoes escolherem o mesmo IP vive na memoria
 do processo (o banco tem UNIQUE como segunda defesa, mas a experiencia do usuario e melhor sem

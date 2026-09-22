@@ -65,7 +65,7 @@ services:
     secrets:
       - broker-token
     volumes:
-      - ./broker:/opt/gamebroker/broker:ro
+      - ./src/gamebroker:/opt/gamebroker/gamebroker:ro
       - ./games:/opt/gamebroker/games:ro
 
   game-palworld:

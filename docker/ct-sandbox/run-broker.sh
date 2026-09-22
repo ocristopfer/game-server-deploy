@@ -14,8 +14,8 @@ confere() { # descricao, esperado, atual
 
 # ----- bundle igual ao que o deploy-broker.ps1 monta -----
 work=$(mktemp -d)
-mkdir -p "$work/broker" "$work/lib" "$work/games"
-cp "$REPO"/broker/*.py "$work/broker/"
+mkdir -p "$work/gamebroker" "$work/lib" "$work/games"
+cp "$REPO"/src/gamebroker/*.py "$work/gamebroker/"
 cp "$REPO"/lib/*.sh "$work/lib/"
 cp "$REPO"/games/*.env "$work/games/"
 cp "$REPO/provision-broker-lxc.sh" "$work/"
@@ -71,13 +71,13 @@ confere "broker.env: modo/dono"           "640 root:gamebroker"        "$(stat -
 confere "token: modo/dono"                "600 root:root"              "$(stat -c '%a %U:%G' /etc/gamebroker/token)"
 confere "chave ssh do broker: modo/dono"  "600 gamebroker:gamebroker"  "$(stat -c '%a %U:%G' /etc/gamebroker/ssh/id_ed25519)"
 confere "chave privada TLS: modo/dono"    "600 gamebroker:gamebroker"  "$(stat -c '%a %U:%G' /etc/gamebroker/tls/key.pem)"
-confere "codigo do broker e de root"      "root:root"                  "$(stat -c '%U:%G' /opt/gamebroker/broker/prod.py)"
+confere "codigo do broker e de root"      "root:root"                  "$(stat -c '%U:%G' /opt/gamebroker/gamebroker/prod.py)"
 [ "${#T1}" -ge 32 ] && ok "token com ${#T1} caracteres" || nok "token curto: ${#T1}"
 openssl x509 -in /etc/gamebroker/tls/cert.pem -noout -ext subjectAltName | grep -q '192.168.2.18' \
   && ok "SAN = 192.168.2.18" || nok "SAN sem o IP do broker"
 
 # O que vai para producao NAO leva dobles de teste nem o broker de brinquedo.
-enviados="$(ls /opt/gamebroker/broker)"
+enviados="$(ls /opt/gamebroker/gamebroker)"
 if echo "$enviados" | grep -Eq '^(test_|conftest|fakes|http_falso|dev\.py)'; then nok "dobles de teste foram para o CT: $(echo "$enviados" | tr '\n' ' ')"; else ok "sem dobles de teste no CT ($(echo "$enviados" | wc -l) modulos)"; fi
 [ -f /opt/gamebroker/lib/ct-install.sh ] && [ -f /opt/gamebroker/lib/ct-fases.sh ] && ok "lib/ enviada" || nok "lib/ ausente"
 [ "$(ls /opt/gamebroker/games/*.env | wc -l)" -ge 8 ] && ok "games/*.env enviados" || nok "games/ incompleto"
@@ -107,7 +107,7 @@ for linha in open('/etc/gamebroker/broker.env', encoding='utf-8'):
     m = re.fullmatch(r'([A-Z_0-9]+)=(".*)\n?', linha)
     if m:
         env[m.group(1)] = valor_systemd(m.group(2))
-from broker.config import carregar
+from gamebroker.config import carregar
 cfg = carregar(env)
 print('token_ok', cfg.token == open('/etc/gamebroker/token').read().strip())
 print('segredo', cfg.opnsense_secret == 'a"b\\c$d`e f')
@@ -135,7 +135,7 @@ U=/etc/systemd/system/gamebroker.service
 grep -q "^User=gamebroker" $U && ok "roda como gamebroker, nao root" || nok "unit roda como root?"
 grep -q -- "--workers 1" $U && ok "UM worker (a trava de IP vive na memoria)" || nok "workers != 1"
 grep -q -- "--certfile /etc/gamebroker/tls/cert.pem" $U && grep -q -- "--keyfile /etc/gamebroker/tls/key.pem" $U && ok "gunicorn com TLS" || nok "sem TLS na unit"
-grep -q "broker.prod:criar_app_de_ambiente()" $U && ok "entrada broker.prod" || nok "entrada errada"
+grep -q "gamebroker.prod:criar_app_de_ambiente()" $U && ok "entrada gamebroker.prod" || nok "entrada errada"
 grep -q "^EnvironmentFile=/etc/gamebroker/broker.env" $U && ok "segredos vem do EnvironmentFile (nao da unit)" || nok "EnvironmentFile ausente"
 grep -q "ProtectSystem=strict" $U && grep -q "NoNewPrivileges=true" $U && ok "endurecimento do systemd" || nok "sem endurecimento"
 ! grep -q "segredo-do-proxmox" $U && ok "nenhum segredo dentro da unit" || nok "SEGREDO NA UNIT"

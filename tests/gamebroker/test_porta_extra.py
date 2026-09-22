@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from broker import alocador
-from broker import catalogo as cat
-from broker.erros import ErroDeValidacao
-from broker.ssh_install import montar_env
+from gamebroker import alocador
+from gamebroker import catalogo as cat
+from gamebroker.erros import ErroDeValidacao
+from gamebroker.ssh_install import montar_env
 
-RAIZ = Path(__file__).resolve().parent.parent
+RAIZ = Path(__file__).resolve().parent.parent.parent
 FAIXA = range(31000, 31100)
 
 

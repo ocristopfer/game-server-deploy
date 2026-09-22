@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from broker.alocador import PortaAlocada
-from broker.catalogo import validar_dinamico
-from broker.ssh_install import (DESTINO_REMOTO, ConfigSsh, ErroDeInstalacao, ExecutorReal,
+from gamebroker.alocador import PortaAlocada
+from gamebroker.catalogo import validar_dinamico
+from gamebroker.ssh_install import (DESTINO_REMOTO, ConfigSsh, ErroDeInstalacao, ExecutorReal,
                                 InstaladorSsh, montar_env)
 
 BLOB = "AAAAC3NzaC1lZDI1NTE5AAAAIExemploExemploExemploExemplo"

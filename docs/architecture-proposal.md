@@ -623,8 +623,20 @@ rodar testes → commit. Não mistura mudança de comportamento (isso é Fase 4)
    resolve o import sem `PYTHONPATH` extra. `src/gamepanel/app.py` e
    `wsgi.py` ficam como estão (viram a semente da etapa 5, não são
    descartáveis).
-3. **Mover `gamebroker`** inteiro (mapeamento 1:1 da seção 3.2) — menor,
-   mais simples, valida o padrão de migração pro time antes do módulo grande.
+3. **Mover `gamebroker`** — mas em duas passadas, não uma, pra manter cada
+   commit de baixo risco: **(3a, Fase 3, esta etapa)** relocar `broker/` →
+   `src/gamebroker/` **de forma plana**, mesmos nomes de arquivo, mesmos
+   identificadores (`servico.py` continua `servico.py`, `Servico` continua
+   `Servico`) — só o caminho do pacote muda (`broker.X` → `gamebroker.X`
+   nos imports absolutos dos testes e nos scripts de deploy). Zero mudança
+   de comportamento, zero tradução ainda. **(3b, Fase 4)** a reorganização
+   em subpastas (`services/`, `runtime/`, `persistence/`, `domain/`,
+   `integrations/` — mapeamento da seção 3.2) acontece **junto** da tradução
+   pra inglês (grupos A/B aprovados), módulo por módulo — já que mover um
+   arquivo pra dentro de uma subpasta obriga a tocar em todo import mesmo,
+   faz mais sentido fazer as duas mudanças (caminho + nome) na mesma
+   passada por módulo, em vez de duas passadas mecânicas separadas tocando
+   os mesmos arquivos duas vezes.
    Atualizar `docker/broker/Dockerfile`, `provision-broker-lxc.sh`,
    `deploy-broker.ps1`, `docker-compose.yml`. Rodar as ~415 suítes do broker.
 4. **Mover os módulos puros de `admin/`** (`totp.py`→`security/totp.py`,

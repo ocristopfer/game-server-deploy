@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from broker.api import criar_app
-from broker.conftest import TOKEN
+from gamebroker.api import criar_app
+from conftest import TOKEN
 
 AUTH = {"Authorization": f"Bearer {TOKEN}", "X-Ator": "admin"}
 

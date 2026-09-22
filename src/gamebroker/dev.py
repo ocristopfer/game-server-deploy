@@ -5,7 +5,7 @@ aqui toca Proxmox, OPNsense ou SSH. O instalador so finge demorar, para a tela d
 progresso para mostrar. O estado mora em /tmp de proposito: some junto com o container, e
 assim o Proxmox falso (em memoria) e o banco nunca ficam desencontrados.
 
-    python3 -m broker.dev
+    python3 -m gamebroker.dev
 """
 from __future__ import annotations
 

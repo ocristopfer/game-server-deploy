@@ -13,15 +13,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from broker.alocador import ips_da_faixa
-from broker.banco import Banco
-from broker.catalogo import Catalogo
-from broker.conexao import Cliente
-from broker.fakes import InstaladorFalso, OpnsenseFalso, ProxmoxFalso, RedeFalsa
-from broker.http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE, OpnsenseHttpFalso, PveFalso, ServidorFalso
-from broker.opnsense import Opnsense
-from broker.proxmox import ConfigProxmox, Proxmox
-from broker.servico import Config, Servico
+from gamebroker.alocador import ips_da_faixa
+from gamebroker.banco import Banco
+from gamebroker.catalogo import Catalogo
+from gamebroker.conexao import Cliente
+from gamebroker.fakes import InstaladorFalso, OpnsenseFalso, ProxmoxFalso, RedeFalsa
+from gamebroker.http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE, OpnsenseHttpFalso, PveFalso, ServidorFalso
+from gamebroker.opnsense import Opnsense
+from gamebroker.proxmox import ConfigProxmox, Proxmox
+from gamebroker.servico import Config, Servico
 
 TOKEN = "t" * 40
 
@@ -136,7 +136,7 @@ def ambiente(tmp_path: Path, catalogo: Catalogo, relogio: Relogio):
 
 @pytest.fixture
 def pve():
-    """Proxmox falso em 127.0.0.1 e o backend REAL `broker.proxmox.Proxmox` falando com ele."""
+    """Proxmox falso em 127.0.0.1 e o backend REAL `gamebroker.proxmox.Proxmox` falando com ele."""
     falso = PveFalso()
     servidor = ServidorFalso(falso.tratar)
     esperas: list[float] = []
@@ -152,7 +152,7 @@ def pve():
 
 @pytest.fixture
 def opn():
-    """OPNsense falso em 127.0.0.1 e o backend REAL `broker.opnsense.Opnsense`."""
+    """OPNsense falso em 127.0.0.1 e o backend REAL `gamebroker.opnsense.Opnsense`."""
     falso = OpnsenseHttpFalso()
     servidor = ServidorFalso(falso.tratar)
     basico = base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
