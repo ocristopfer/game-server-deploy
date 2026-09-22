@@ -552,14 +552,18 @@ seco vs. redirect temporário). Vou perguntar isso já a seguir nesta mensagem.
 - **Produção não usa `pip install` — o `src/` layout muda como o Python
   resolve `import gamepanel`.** Hoje `gunicorn ... app:app` funciona porque
   o processo roda com `cwd=/opt/gamepanel` e os arquivos estão soltos ali
-  (sem pacote). Com `src/gamepanel/`, ou (a) o deploy passa a copiar a árvore
-  como `/opt/gamepanel/src/gamepanel/...` e a unit systemd ganha
-  `Environment=PYTHONPATH=/opt/gamepanel/src`, ou (b) o deploy achata a
-  árvore de novo no destino. Recomendo (a) — mais simples de manter e mais
-  parecido com o `src/` real. **Isso precisa ser validado cedo** (proponho
-  como primeiro passo da Fase 3, no `docker-compose.yml` de dev, antes de
-  tocar em `provision-admin-lxc.sh`) — não estou 100% seguro do comportamento
-  exato do gunicorn com `--chdir` sem testar de verdade.
+  (sem pacote). **Validado na Fase 3, etapa 2**, contra a imagem real
+  (`debian:13-slim` + `apt-get install python3-flask gunicorn`, sem pip,
+  sem editable install — exatamente a restrição de produção): `gunicorn
+  --chdir /opt/gamepanel/src gamepanel.wsgi:app` resolve `import gamepanel`
+  sem precisar de `PYTHONPATH` nenhum (gunicorn insere o `cwd` resolvido pelo
+  `--chdir` em `sys.path`, o mesmo mecanismo que já faz `app:app` funcionar
+  hoje). Decisão: o deploy passa a copiar a árvore como
+  `/opt/gamepanel/src/gamepanel/...` e a unit systemd/`Dockerfile` ganham
+  `--chdir /opt/gamepanel/src` na linha do gunicorn — um parâmetro a mais,
+  nada de variável de ambiente nova. Isso entra na etapa 5 (mover `app.py`
+  de verdade), junto da atualização de `provision-admin-lxc.sh::render_service`,
+  `docker/panel/entrypoint.sh` e `docker/panel/Dockerfile*`.
 - **`provision-admin-lxc.sh`/`deploy-admin.ps1` e os equivalentes do broker
   fazem `push_tree`/scp por caminho fixo** (`admin/*.py`, `templates/`,
   `static/`) — todos os caminhos mudam e os dois scripts (mais
@@ -611,12 +615,14 @@ rodar testes → commit. Não mistura mudança de comportamento (isso é Fase 4)
    `uv.lock`, pastas vazias `src/gamepanel/`, `src/gamebroker/`,
    `tests/gamepanel/`, `tests/gamebroker/`. Validar `uv sync` funciona e
    `pyrightconfig.json` resolve os pacotes.
-2. **Validar a hipótese de risco do `src/` layout em produção** (seção 6,
-   primeiro item) **isoladamente, no `docker-compose.yml` de dev**, com um
-   `gamepanel` "oco" (só `app.py` com uma rota `/health`) — antes de mover
-   8.175 linhas de verdade. Se `PYTHONPATH`/`--chdir` não resolver do jeito
-   esperado, descobrir aqui é barato; descobrir depois do `git mv` grande,
-   não.
+2. ✅ **Feito.** Validar a hipótese de risco do `src/` layout em produção
+   (seção 6, primeiro item), isoladamente, contra a imagem real do painel
+   (`debian:13-slim` + apt, sem pip), com um `gamepanel` "oco" (`app.py` +
+   `wsgi.py`, só rota `/health`) — antes de mover 8.175 linhas de verdade.
+   Confirmado: `gunicorn --chdir /opt/gamepanel/src gamepanel.wsgi:app`
+   resolve o import sem `PYTHONPATH` extra. `src/gamepanel/app.py` e
+   `wsgi.py` ficam como estão (viram a semente da etapa 5, não são
+   descartáveis).
 3. **Mover `gamebroker`** inteiro (mapeamento 1:1 da seção 3.2) — menor,
    mais simples, valida o padrão de migração pro time antes do módulo grande.
    Atualizar `docker/broker/Dockerfile`, `provision-broker-lxc.sh`,
