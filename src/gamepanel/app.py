@@ -163,8 +163,8 @@ def _configure_broker() -> bool:
     try:
         with open(BROKER_TOKEN_FILE, encoding="utf-8") as arquivo:
             token = arquivo.read().strip()
-        broker_client.configurar(BROKER_URL, token, BROKER_CERT_SHA256,
-                                 permitir_http=os.environ.get("GAMEPANEL_DEV", "") == "1")
+        broker_client.configure(BROKER_URL, token, BROKER_CERT_SHA256,
+                                 allow_http=os.environ.get("GAMEPANEL_DEV", "") == "1")
     except (OSError, ValueError) as erro:
         print(f"[painel] broker DESLIGADO: {erro}", file=sys.stderr)
         return False
@@ -900,8 +900,8 @@ player_actions = player_service.player_actions
 _fill = player_service._fill
 
 
-def run_player_action(server: Servidor, acao: str, jogador: str, mensagem: str) -> str:
-    return player_service.player_action(_player_deps(), server, acao, jogador, mensagem)
+def run_player_action(server: Servidor, acao: str, jogador: str, message: str) -> str:
+    return player_service.player_action(_player_deps(), server, acao, jogador, message)
 
 
 # ------------------------------------------------------ jogadores (pelo log)
@@ -2057,7 +2057,7 @@ def logout():
 def dashboard():
     servers = db().execute(SQL_ALL_SERVERS).fetchall()
     return render_template(
-        "dashboard.html", servers=servers, status=all_status(servers), actions=ACTIONS
+        "dashboard.html", servers=servers, status=all_status(servers)
     )
 
 
@@ -2310,15 +2310,15 @@ def player_action(sid: int):
     acao = (request.form.get("acao", "") or "").strip()
     jogador = (request.form.get("jogador", "") or "").strip()[:200]
     nome = (request.form.get("nome", "") or "").strip()[:100]
-    mensagem = (request.form.get("mensagem", "") or "").strip()[:PLAYER_MSG_MAX]
+    message = (request.form.get("mensagem", "") or "").strip()[:PLAYER_MSG_MAX]
     quem = nome or jogador or "todos"
     registro = f"{label_for_db(PLAYER_ACTION_LABELS.get(acao, acao))}: {quem}"
-    if mensagem:
-        registro += f" ({mensagem})"
+    if message:
+        registro += f" ({message})"
     voltar = url_for("server_detail", sid=sid)
 
     try:
-        rotulo = translate(run_player_action(server, acao, jogador, mensagem))
+        rotulo = translate(run_player_action(server, acao, jogador, message))
     except (QueryError, RemoteError) as exc:
         log_job("player-action", server, session.get("username", "?"),
                 command=registro, output=str(exc), status="error")
@@ -2331,7 +2331,7 @@ def player_action(sid: int):
     invalidate_players(sid)
     flash(translate("flash.player_action_done", label=rotulo, who=quem)
           if acao != "announce"
-          else translate("flash.notice_sent", message=mensagem), "ok")
+          else translate("flash.notice_sent", message=message), "ok")
     return redirect(voltar)
 
 
@@ -2503,7 +2503,7 @@ def server_detail(sid: int):
         log_cursor=log_cursor,
         log_error=log_error,
         lines=lines,
-        actions=ACTIONS,
+        acoes=ACTIONS,
     )
 
 
@@ -3757,9 +3757,9 @@ _game_from_form = broker_service.game_from_form
 @broker_required
 def catalog():
     try:
-        jogos = broker_client.catalogo()
+        jogos = broker_client.catalog()
     except broker_client.BrokerError as erro:
-        flash(translate("flash.broker_error", reason=erro.mensagem), "error")
+        flash(translate("flash.broker_error", reason=erro.message), "error")
         jogos = []
     return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECIPES, form={},
                            modelos=MODELOS_DE_JOGO)
@@ -3783,14 +3783,14 @@ def catalog_new():
     dados, erros = _game_from_form(request.form)
     if not erros:
         try:
-            broker_client.adicionar_jogo(dados, _ator())
+            broker_client.add_game(dados, _ator())
         except broker_client.BrokerError as erro:
-            erros.append(f"Broker: {erro.mensagem}")
+            erros.append(f"Broker: {erro.message}")
     if erros:
         for erro in erros:
             flash(translate(erro), "error")
         try:
-            jogos = broker_client.catalogo()
+            jogos = broker_client.catalog()
         except broker_client.BrokerError:
             jogos = []
         return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECIPES,
@@ -3806,16 +3806,16 @@ def catalog_new():
 @broker_required
 def instances_list():
     try:
-        instancias = broker_client.instancias()
-        jogos = [j for j in broker_client.catalogo() if j.get("criavel")]
+        instances = broker_client.instances()
+        jogos = [j for j in broker_client.catalog() if j.get("criavel")]
     except broker_client.BrokerError as erro:
-        flash(translate("flash.broker_error", reason=erro.mensagem), "error")
-        instancias, jogos = [], []
+        flash(translate("flash.broker_error", reason=erro.message), "error")
+        instances, jogos = [], []
     ligados = {
         r["broker_id"]: r
         for r in db().execute("SELECT id, name, broker_id FROM servers WHERE broker_id > 0")
     }
-    return render_template("instancias.html", instancias=instancias, jogos=jogos, servidores=ligados)
+    return render_template("instancias.html", instancias=instances, jogos=jogos, servidores=ligados)
 
 
 @app.post("/instancias/nova")
@@ -3825,9 +3825,9 @@ def instance_new():
     jogo = (request.form.get("jogo") or "").strip()
     nome = (request.form.get("nome") or "").strip()
     try:
-        resposta = broker_client.criar(jogo, nome, _ator())
+        resposta = broker_client.create(jogo, nome, _ator())
     except broker_client.BrokerError as erro:
-        flash(translate("flash.broker_error", reason=erro.mensagem), "error")
+        flash(translate("flash.broker_error", reason=erro.message), "error")
         return redirect(url_for("instances_list"))
     op_id = str(resposta.get("operacao_id", ""))
     if not op_id:
@@ -3842,10 +3842,10 @@ def instance_new():
 @broker_required
 def instance_deactivate(iid: int):
     try:
-        broker_client.desativar(iid, _ator())
+        broker_client.deactivate(iid, _ator())
     except broker_client.BrokerError as erro:
-        _log_broker_action("broker-desativar", _ator(), f"instancia {iid}", erro.mensagem, "error")
-        flash(translate("flash.broker_error", reason=erro.mensagem), "error")
+        _log_broker_action("broker-desativar", _ator(), f"instancia {iid}", erro.message, "error")
+        flash(translate("flash.broker_error", reason=erro.message), "error")
     else:
         _log_broker_action("broker-desativar", _ator(), f"instancia {iid}",
                                  "Portas fechadas no firewall e container parado.")
@@ -3860,10 +3860,10 @@ def instance_remove(iid: int):
     confirma = (request.form.get("confirma") or "").strip()
     somente_banco = request.form.get("somente_banco") == "1"
     try:
-        broker_client.remover(iid, confirma, _ator(), somente_banco)
+        broker_client.remove(iid, confirma, _ator(), somente_banco)
     except broker_client.BrokerError as erro:
-        _log_broker_action("broker-remover", _ator(), f"instancia {iid}", erro.mensagem, "error")
-        flash(translate("flash.broker_error", reason=erro.mensagem), "error")
+        _log_broker_action("broker-remover", _ator(), f"instancia {iid}", erro.message, "error")
+        flash(translate("flash.broker_error", reason=erro.message), "error")
         return redirect(url_for("instances_list"))
     conn = db()
     with conn:

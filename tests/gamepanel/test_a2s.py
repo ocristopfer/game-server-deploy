@@ -82,15 +82,15 @@ class _FakeA2sServer:
 
 @pytest.fixture
 def servidor_a2s():
-    instancias = []
+    instances = []
 
     def _cria(roteiro):
         servidor = _FakeA2sServer(roteiro)
-        instancias.append(servidor)
+        instances.append(servidor)
         return servidor
 
     yield _cria
-    for servidor in instancias:
+    for servidor in instances:
         servidor.fechar()
 
 

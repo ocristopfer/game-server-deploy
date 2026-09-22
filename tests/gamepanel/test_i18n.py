@@ -29,8 +29,8 @@ def test_nenhuma_chave_sobrando_no_ingles():
 
 
 def test_nenhum_valor_vazio():
-    for idioma, catalogo in i18n.CATALOGS.items():
-        vazias = sorted(c for c, v in catalogo.items() if not v.strip())
+    for idioma, catalog in i18n.CATALOGS.items():
+        vazias = sorted(c for c, v in catalog.items() if not v.strip())
         assert vazias == [], f"{idioma}: chave sem texto {vazias}"
 
 

@@ -98,7 +98,7 @@ def follow_operation(deps: BrokerJobDeps, job_id: int, op_id: str,
     log = ""
     while time.monotonic() < limite:
         try:
-            op = broker_client.operacao(op_id)
+            op = broker_client.operation(op_id)
         except broker_client.BrokerError as erro:
             falhas += 1
             if falhas >= deps.max_failures:

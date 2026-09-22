@@ -11,7 +11,7 @@ Duas regras de seguranca, iguais as do lado do broker (broker/conexao.py):
   `permitir_http` (o compose de desenvolvimento).
 - **Nenhuma mensagem de erro carrega o token ou o corpo enviado.**
 
-As funcoes publicas sao chamadas SEMPRE pelo modulo (`broker_client.criar(...)`), nunca
+As funcoes publicas sao chamadas SEMPRE pelo modulo (`broker_client.create(...)`), nunca
 importadas por nome: e assim que os testes as trocam por falsas com `monkeypatch`.
 """
 from __future__ import annotations
@@ -34,9 +34,9 @@ TOKEN_MINIMO = 32
 class BrokerError(Exception):
     """O broker recusou o pedido (mensagem explicavel) ou nao foi possivel falar com ele."""
 
-    def __init__(self, mensagem: str, status: int = 0, codigo: str = ""):
-        super().__init__(mensagem)
-        self.mensagem = mensagem
+    def __init__(self, message: str, status: int = 0, codigo: str = ""):
+        super().__init__(message)
+        self.message = message
         self.status = status
         self.codigo = codigo
 
@@ -44,10 +44,10 @@ class BrokerError(Exception):
 _config: dict = {}
 
 
-def normalizar_impressao(texto: str) -> str:
-    if not texto.strip():
+def normalize_fingerprint(text: str) -> str:
+    if not text.strip():
         return ""
-    limpo = re.sub(r"[^0-9a-fA-F]", "", texto).lower()
+    limpo = re.sub(r"[^0-9a-fA-F]", "", text).lower()
     # Texto nao vazio que nao vira 64 digitos e erro de digitacao: aceitar como "sem
     # impressao" desligaria o pin em silencio.
     if not _IMPRESSAO_RE.fullmatch(limpo):
@@ -55,11 +55,11 @@ def normalizar_impressao(texto: str) -> str:
     return limpo
 
 
-def configurar(url: str, token: str, impressao_sha256: str = "", permitir_http: bool = False) -> None:
+def configure(url: str, token: str, fingerprint_sha256: str = "", allow_http: bool = False) -> None:
     partes = urlsplit(url)
     if partes.scheme not in ("http", "https") or not partes.hostname:
         raise ValueError("GAMEPANEL_BROKER_URL deve ser http(s)://host[:porta]")
-    if partes.scheme == "http" and partes.hostname not in _LOOPBACK and not permitir_http:
+    if partes.scheme == "http" and partes.hostname not in _LOOPBACK and not allow_http:
         raise ValueError("sem TLS so em loopback: use https:// e GAMEPANEL_BROKER_CERT_SHA256")
     if len(token) < TOKEN_MINIMO:
         raise ValueError(f"o token do broker precisa ter ao menos {TOKEN_MINIMO} caracteres")
@@ -68,18 +68,18 @@ def configurar(url: str, token: str, impressao_sha256: str = "", permitir_http: 
         https=partes.scheme == "https", host=partes.hostname,
         porta=partes.port or (443 if partes.scheme == "https" else 80),
         prefixo=partes.path.rstrip("/"), token=token,
-        impressao=normalizar_impressao(impressao_sha256),
+        fingerprint=normalize_fingerprint(fingerprint_sha256),
     )
 
 
-def configurado() -> bool:
+def is_configured() -> bool:
     return bool(_config)
 
 
-class _ConexaoFixada(http.client.HTTPSConnection):
-    def __init__(self, *args, impressao: str, **kwargs):
+class _PinnedConnection(http.client.HTTPSConnection):
+    def __init__(self, *args, fingerprint: str, **kwargs):
         super().__init__(*args, **kwargs)
-        self._impressao = impressao
+        self._impressao = fingerprint
 
     def connect(self) -> None:
         super().connect()
@@ -90,11 +90,11 @@ class _ConexaoFixada(http.client.HTTPSConnection):
             raise BrokerError("o certificado do broker nao confere com a impressao fixada")
 
 
-def _conexao() -> http.client.HTTPConnection:
+def _connection() -> http.client.HTTPConnection:
     c = _config
     if not c["https"]:
         return http.client.HTTPConnection(c["host"], c["porta"], timeout=TIMEOUT)
-    if not c["impressao"]:
+    if not c["fingerprint"]:
         return http.client.HTTPSConnection(c["host"], c["porta"], timeout=TIMEOUT,
                                            context=ssl.create_default_context())
     # A cadeia nao e validada porque o certificado do broker e autoassinado; quem o autentica
@@ -104,23 +104,23 @@ def _conexao() -> http.client.HTTPConnection:
     contexto.minimum_version = ssl.TLSVersion.TLSv1_2
     contexto.check_hostname = False  # NOSONAR - identidade por impressao fixada
     contexto.verify_mode = ssl.CERT_NONE  # NOSONAR - identidade por impressao fixada
-    return _ConexaoFixada(c["host"], c["porta"], timeout=TIMEOUT, context=contexto,
-                          impressao=c["impressao"])
+    return _PinnedConnection(c["host"], c["porta"], timeout=TIMEOUT, context=contexto,
+                          fingerprint=c["fingerprint"])
 
 
-def _requisitar(metodo: str, caminho: str, corpo: object = None, ator: str = ""):
-    if not configurado():
+def _request(method: str, path: str, body: object = None, actor: str = ""):
+    if not is_configured():
         raise BrokerError("o broker nao esta configurado neste painel")
     cabecalhos = {"Authorization": f"Bearer {_config['token']}", "Accept": "application/json"}
-    if ator:
-        cabecalhos["X-Ator"] = ator
-    dados = None
-    if corpo is not None:
-        dados = json.dumps(corpo).encode()
+    if actor:
+        cabecalhos["X-Ator"] = actor
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
         cabecalhos["Content-Type"] = "application/json"
-    conexao = _conexao()
+    conexao = _connection()
     try:
-        conexao.request(metodo, _config["prefixo"] + caminho, body=dados, headers=cabecalhos)
+        conexao.request(method, _config["prefixo"] + path, body=data, headers=cabecalhos)
         resposta = conexao.getresponse()
         bruto = resposta.read(RESPOSTA_MAX + 1)
         status = resposta.status
@@ -138,54 +138,54 @@ def _requisitar(metodo: str, caminho: str, corpo: object = None, ator: str = "")
     except ValueError:
         json_resposta = None
     if status >= 400:
-        mensagem = json_resposta.get("erro") if isinstance(json_resposta, dict) else None
+        message = json_resposta.get("erro") if isinstance(json_resposta, dict) else None
         codigo = json_resposta.get("codigo", "") if isinstance(json_resposta, dict) else ""
-        raise BrokerError(str(mensagem or f"o broker respondeu HTTP {status}")[:300], status, str(codigo))
+        raise BrokerError(str(message or f"o broker respondeu HTTP {status}")[:300], status, str(codigo))
     return json_resposta
 
 
-def _lista(dados: object) -> list:
-    if not isinstance(dados, list):
+def _as_list(data: object) -> list:
+    if not isinstance(data, list):
         raise BrokerError("resposta inesperada do broker")
-    return dados
+    return data
 
 
-def _objeto(dados: object) -> dict:
-    if not isinstance(dados, dict):
+def _as_object(data: object) -> dict:
+    if not isinstance(data, dict):
         raise BrokerError("resposta inesperada do broker")
-    return dados
+    return data
 
 
 # --- verbos (o broker nao tem nenhum outro) ---------------------------------------------
 
-def saude() -> dict:
-    return _objeto(_requisitar("GET", "/v1/saude"))
+def health() -> dict:
+    return _as_object(_request("GET", "/v1/saude"))
 
 
-def catalogo() -> list:
-    return _lista(_requisitar("GET", "/v1/catalogo"))
+def catalog() -> list:
+    return _as_list(_request("GET", "/v1/catalogo"))
 
 
-def adicionar_jogo(dados: dict, ator: str) -> dict:
-    return _objeto(_requisitar("POST", "/v1/catalogo", dados, ator))
+def add_game(data: dict, actor: str) -> dict:
+    return _as_object(_request("POST", "/v1/catalogo", data, actor))
 
 
-def instancias() -> list:
-    return _lista(_requisitar("GET", "/v1/instancias"))
+def instances() -> list:
+    return _as_list(_request("GET", "/v1/instancias"))
 
 
-def criar(jogo: str, nome: str, ator: str) -> dict:
-    return _objeto(_requisitar("POST", "/v1/instancias", {"jogo": jogo, "nome": nome}, ator))
+def create(game: str, name: str, actor: str) -> dict:
+    return _as_object(_request("POST", "/v1/instancias", {"jogo": game, "nome": name}, actor))
 
 
-def operacao(op_id: str) -> dict:
-    return _objeto(_requisitar("GET", f"/v1/operacoes/{quote(op_id, safe='')}"))
+def operation(op_id: str) -> dict:
+    return _as_object(_request("GET", f"/v1/operacoes/{quote(op_id, safe='')}"))
 
 
-def desativar(instancia_id: int, ator: str) -> dict:
-    return _objeto(_requisitar("POST", f"/v1/instancias/{int(instancia_id)}/desativar", {}, ator))
+def deactivate(instance_id: int, actor: str) -> dict:
+    return _as_object(_request("POST", f"/v1/instancias/{int(instance_id)}/desativar", {}, actor))
 
 
-def remover(instancia_id: int, confirma: str, ator: str, somente_banco: bool = False) -> dict:
-    corpo = {"confirma": confirma, "somente_banco": bool(somente_banco)}
-    return _objeto(_requisitar("DELETE", f"/v1/instancias/{int(instancia_id)}", corpo, ator))
+def remove(instance_id: int, confirmation: str, actor: str, db_only: bool = False) -> dict:
+    body = {"confirma": confirmation, "somente_banco": bool(db_only)}
+    return _as_object(_request("DELETE", f"/v1/instancias/{int(instance_id)}", body, actor))
