@@ -388,4 +388,6 @@ def test_kick_monta_rota_e_corpo_do_catalogo():
     assert '"message": "tchau"' in corpo
     # As rotas de acao respondem 200 com corpo vazio.
     assert exigir_json is False
-    assert rotulo == "Expulsar"
+    # CHAVE de catalogo, nao a frase: o servico nao sabe em que idioma a tela esta
+    # aberta, e quem traduz e o `app.py`, que tem o pedido em maos.
+    assert rotulo == "player_action.kick"

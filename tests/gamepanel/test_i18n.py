@@ -144,3 +144,17 @@ def test_frase_encaixada_noutra_passa_inteira(monkeypatch):
     with panel.app.test_request_context("/"):
         dentro = panel.traduzir_html("t.dentro", n=3)
         assert str(panel.traduzir_html("t.fora", dentro=dentro)) == "ouvindo (<strong>3</strong> agora)"
+
+
+# ---------------------------------------------- fora de pedido (monitor, relogio)
+
+def test_traduzir_fora_de_pedido_usa_o_padrao_do_deploy():
+    """O monitor roda em thread propria: sem este caminho, um alerta traduzido
+    derrubaria a volta inteira com "Working outside of application context"."""
+    assert panel.idioma_atual() == panel.IDIOMA_PADRAO
+    assert panel.traduzir("nav.servers") == i18n.CATALOGOS[panel.IDIOMA_PADRAO]["nav.servers"]
+
+
+def test_idioma_padrao_vem_da_variavel_de_ambiente(monkeypatch):
+    monkeypatch.setattr(panel, "IDIOMA_PADRAO", "en")
+    assert panel.traduzir("nav.servers") == "Servers"

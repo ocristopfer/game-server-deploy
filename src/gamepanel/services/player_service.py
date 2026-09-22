@@ -37,10 +37,11 @@ HTTP_FIELDS = ("http_url", "http_auth", "http_body", "http_list_path", "http_cou
                "http_login_url", "http_login_body", "http_token_path")
 
 PLAYER_MSG_MAX = 200
+# O valor e chave de catalogo (`gamepanel.i18n`), nao o texto da tela.
 PLAYER_ACTION_LABELS = {
-    "announce": "Avisar todo mundo",
-    "kick": "Expulsar",
-    "ban": "Banir",
+    "announce": "player_action.announce",
+    "kick": "player_action.kick",
+    "ban": "player_action.ban",
 }
 
 # Os marcadores do catalogo, como constantes: sao a interface entre a tabela abaixo e

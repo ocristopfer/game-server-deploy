@@ -88,6 +88,7 @@ from flask import (
     abort,
     flash,
     g,
+    has_app_context,
     jsonify,
     redirect,
     render_template,
@@ -314,9 +315,10 @@ USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 ROLE_ADMIN = "admin"
 ROLE_OPERADOR = "operador"
 ROLES = (ROLE_ADMIN, ROLE_OPERADOR)
+# Chave de catalogo, nao o texto: quem le a tela escolhe o idioma (`i18n`).
 ROLE_LABELS = {
-    ROLE_ADMIN: "Administrador",
-    ROLE_OPERADOR: "Operador",
+    ROLE_ADMIN: "role.admin",
+    ROLE_OPERADOR: "role.operator",
 }
 PASSWORD_MIN = 8
 
@@ -602,7 +604,16 @@ def idioma_atual() -> str:
     A ordem e de preferencia: o que a pessoa escolheu na Conta vence tudo; sem escolha
     (ou sem ninguem logado, como na tela de login) vale o que o navegador pede; e o
     ultimo recurso e o padrao do deploy.
+
+    FORA de pedido nao ha pessoa nem navegador, e o `g` nem existe: o monitor e o
+    agendador rodam em thread propria, e o alerta que sai dali e escrito para o canal da
+    equipe, nao para quem esta com a tela aberta. Ali vale o padrao do deploy. Sem este
+    portao, traduzir uma mensagem de alerta derrubaria a volta inteira do monitor com
+    "Working outside of application context" — e alerta que quebra e servidor caido que
+    ninguem fica sabendo.
     """
+    if not has_app_context():
+        return IDIOMA_PADRAO
     escolhido = getattr(g, "_idioma", None)
     if escolhido is not None:
         return escolhido
@@ -624,6 +635,17 @@ def traduzir(chave: str, **campos: object) -> str:
     return i18n.traduzir(chave, idioma_atual(), **campos)
 
 
+def rotulo_para_o_banco(chave: str) -> str:
+    """A frase daquela chave no idioma do DEPLOY, nao no de quem esta com a tela aberta.
+
+    Para texto que vai ser GRAVADO (a coluna `command` de um job, por exemplo). O
+    historico e lido depois, por outra pessoa, talvez noutro idioma: se cada registro
+    saisse no idioma de quem clicou, a mesma acao apareceria escrita de tres jeitos na
+    mesma lista, e filtrar por ela deixaria de funcionar.
+    """
+    return i18n.traduzir(chave, IDIOMA_PADRAO)
+
+
 def traduzir_html(chave: str, **campos: object) -> Markup:
     """O `_h()` das telas: frase que TRAZ marcacao (`<strong>`, `<code>`).
 
@@ -643,6 +665,15 @@ def traduzir_html(chave: str, **campos: object) -> Markup:
     ))
 
 
+def rotulos_de(tabela: dict[str, str]) -> dict[str, str]:
+    """Traduz uma tabela de rotulos de uma vez, para a tela receber texto pronto.
+
+    As tabelas (`ALERT_EVENTS`, `JOB_LABELS`, `ROLE_LABELS`, ...) guardam a CHAVE do
+    catalogo e nao a frase: a chave e o que vai para o banco e para o `<option value=>`,
+    e ela nao pode mudar so porque alguem corrigiu uma virgula no texto.
+    """
+    return {chave: traduzir(rotulo) for chave, rotulo in tabela.items()}
+
 @app.context_processor
 def _inject():
     usuario = usuario_logado()
@@ -659,7 +690,7 @@ def _inject():
         # As telas escondem o que o operador nao pode abrir. Quem manda e o
         # @admin_required na rota; isto aqui e so para nao mostrar botao que da 403.
         "is_admin": bool(usuario) and usuario["role"] == ROLE_ADMIN,
-        "role_label": ROLE_LABELS.get(usuario["role"], usuario["role"]) if usuario else "",
+        "role_label": traduzir(ROLE_LABELS[usuario["role"]]) if usuario else "",
         "job_label": job_label,
         "allow_shell": ALLOW_SHELL,
         "allow_term": ALLOW_SHELL and HAVE_PTY,
@@ -670,7 +701,7 @@ def _inject():
         "player_source": player_source,
         # Quais acoes a API daquele servidor aceita (vazio na maioria dos jogos).
         "acoes_de_jogador": acoes_de_jogador,
-        "rotulo_de_acao": PLAYER_ACTION_LABELS,
+        "rotulo_de_acao": rotulos_de(PLAYER_ACTION_LABELS),
         **_contexto_de_navegacao(),
     }
 
@@ -1003,21 +1034,21 @@ ACTIONS = {
 }
 
 JOB_LABELS = {key: label for key, (label, _cmd, _c) in ACTIONS.items()}
-JOB_LABELS["shell"] = "Comando no container"
-JOB_LABELS["terminal"] = "Terminal interativo"
-JOB_LABELS["edit-file"] = "Arquivo salvo"
-JOB_LABELS["delete-file"] = "Arquivo apagado"
-JOB_LABELS["edit-config"] = "Configuracao alterada"
-JOB_LABELS["download-file"] = "Arquivo baixado"
-JOB_LABELS["upload-file"] = "Arquivo enviado"
-JOB_LABELS["backup"] = "Backup"
-JOB_LABELS["restore-backup"] = "Backup restaurado"
-JOB_LABELS["delete-backup"] = "Backup apagado"
+JOB_LABELS["shell"] = "job.shell"
+JOB_LABELS["terminal"] = "job.terminal"
+JOB_LABELS["edit-file"] = "job.file_saved"
+JOB_LABELS["delete-file"] = "job.file_deleted"
+JOB_LABELS["edit-config"] = "job.config_changed"
+JOB_LABELS["download-file"] = "job.file_downloaded"
+JOB_LABELS["upload-file"] = "job.file_uploaded"
+JOB_LABELS["backup"] = "job.backup"
+JOB_LABELS["restore-backup"] = "job.backup_restored"
+JOB_LABELS["delete-backup"] = "job.backup_deleted"
 # Moderacao nao da root em container nenhum: e operacao, e fica visivel para o operador.
-JOB_LABELS["player-action"] = "Acao sobre jogador"
-JOB_LABELS["broker-criar"] = "Instancia criada (broker)"
-JOB_LABELS["broker-desativar"] = "Instancia desativada (broker)"
-JOB_LABELS["broker-remover"] = "Instancia removida (broker)"
+JOB_LABELS["player-action"] = "job.player_action"
+JOB_LABELS["broker-criar"] = "job.instance_created"
+JOB_LABELS["broker-desativar"] = "job.instance_deactivated"
+JOB_LABELS["broker-remover"] = "job.instance_removed"
 JOB_LABELS["broker-jogo"] = "Jogo adicionado ao catalogo"
 
 # O historico guarda a saida INTEIRA do que rodou. Estas acoes so um admin consegue
@@ -1038,7 +1069,10 @@ JOB_ACTIONS_ADMIN = frozenset({
 
 
 def job_label(action: str) -> str:
-    return JOB_LABELS.get(action, action)
+    """O nome da acao na tela. `JOB_LABELS` guarda CHAVE, nunca texto pronto:
+    o historico e uma tela como as outras e segue o idioma de quem a abriu.
+    """
+    return traduzir(JOB_LABELS.get(action, action))
 
 
 def job_ou_403(job: sqlite3.Row) -> None:
@@ -1173,22 +1207,24 @@ def start_job(
 # tempo inteiro). O que faltava era ele CONTAR para alguem sem ninguem estar olhando: um
 # POST de JSON para a URL que o Discord ou o Slack dao de graca.
 
+# O VALOR e chave de catalogo; a CHAVE e o que vai para o banco e para o webhook.
+# Trocar o texto de um evento nao pode mexer no que ja esta gravado em `alertas`.
 ALERT_EVENTS = {
-    "caiu": "Servidor parou de rodar",
-    "voltou": "Servidor voltou a rodar",
-    "quebrou": "Jogo quebrou (servico em 'failed')",
-    "reiniciando": "Jogo caindo em loop de restart",
-    "travou": "Jogo nao responde (de pe, mas mudo)",
-    "respondeu": "Jogo voltou a responder",
-    "jogador-entrou": "Jogador conectou",
-    "jogador-saiu": "Jogador desconectou",
-    "erro-no-log": "Erro no log do jogo",
-    "inacessivel": "Painel perdeu contato (SSH)",
-    "acessivel": "Contato restabelecido",
-    "job-falhou": "Tarefa agendada falhou",
-    "disco-cheio": "Disco quase cheio",
-    "memoria-alta": "Memoria quase cheia",
-    "cpu-alta": "Uso de CPU alto",
+    "caiu": "event.server_stopped",
+    "voltou": "event.server_back",
+    "quebrou": "event.game_failed",
+    "reiniciando": "event.restart_loop",
+    "travou": "event.game_mute",
+    "respondeu": "event.game_answering",
+    "jogador-entrou": "event.player_joined",
+    "jogador-saiu": "event.player_left",
+    "erro-no-log": "event.log_error",
+    "inacessivel": "event.lost_contact",
+    "acessivel": "event.contact_back",
+    "job-falhou": "event.scheduled_task_failed",
+    "disco-cheio": "event.disk_almost_full",
+    "memoria-alta": "event.memory_almost_full",
+    "cpu-alta": "event.cpu_high",
 }
 # Precisam de configuracao no cadastro do servidor para fazer alguma coisa. A tela avisa
 # quem esta marcado sem ter onde olhar — senao o alerta fica ligado e mudo, e a pessoa
@@ -2267,13 +2303,13 @@ def player_action(sid: int):
     nome = (request.form.get("nome", "") or "").strip()[:100]
     mensagem = (request.form.get("mensagem", "") or "").strip()[:PLAYER_MSG_MAX]
     quem = nome or jogador or "todos"
-    registro = f"{PLAYER_ACTION_LABELS.get(acao, acao)}: {quem}"
+    registro = f"{rotulo_para_o_banco(PLAYER_ACTION_LABELS.get(acao, acao))}: {quem}"
     if mensagem:
         registro += f" ({mensagem})"
     voltar = url_for("server_detail", sid=sid)
 
     try:
-        rotulo = acao_de_jogador(server, acao, jogador, mensagem)
+        rotulo = traduzir(acao_de_jogador(server, acao, jogador, mensagem))
     except (QueryError, RemoteError) as exc:
         log_job("player-action", server, session.get("username", "?"),
                 command=registro, output=str(exc), status="error")
@@ -3910,7 +3946,7 @@ def schedules(sid: int):
         proximas[t["id"]] = _proxima_ocorrencia(t, agora).strftime(FORMATO_DATA_CURTA)
     return render_template(
         "schedules.html", server=server, tarefas=tarefas, proximas=proximas,
-        acoes=SCHEDULE_ACTIONS, job_labels=JOB_LABELS, dias=DIAS_SEMANA,
+        acoes=SCHEDULE_ACTIONS, job_labels=rotulos_de(JOB_LABELS), dias=DIAS_SEMANA,
         rotulo=rotulo_agendamento, agora=agora, max_horas=EVERY_HOURS_MAX,
     )
 
@@ -4288,7 +4324,7 @@ def _apaga_o_segundo_fator(uid: int) -> None:
 def alerts():
     conn = db()
     return render_template(
-        "alerts.html", cfg=webhook_config(conn), eventos=ALERT_EVENTS,
+        "alerts.html", cfg=webhook_config(conn), eventos=rotulos_de(ALERT_EVENTS),
         padrao=limpa_eventos(ALERT_DEFAULT), do_env=bool(WEBHOOK_URL_PADRAO),
         monitor=int(MONITOR_EVERY), disco_a_cada=int(DISK_CHECK_EVERY / 60),
         # O piso do relogio conta: o alerta nao pode chegar mais rapido que a volta dele.
@@ -4502,7 +4538,7 @@ def users_list():
         "SELECT id, username, role, created_at, totp_enabled FROM users ORDER BY role, username"
     ).fetchall()
     return render_template(
-        "users.html", users=rows, roles=ROLES, role_labels=ROLE_LABELS,
+        "users.html", users=rows, roles=ROLES, role_labels=rotulos_de(ROLE_LABELS),
         meu_id=session.get("uid"), min_len=PASSWORD_MIN,
     )
 
