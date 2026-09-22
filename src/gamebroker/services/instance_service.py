@@ -81,25 +81,25 @@ class Service:
             raise NotFound("operacao desconhecida")
         return op
 
-    def add_game(self, dados: object, actor: str) -> dict:
-        jogo = self.catalog.add_dynamic(dados)
-        self.db.audit(_actor_of(actor), "catalogo-adicionar", jogo.key, "ok")
-        return jogo.as_public()
+    def add_game(self, data: object, actor: str) -> dict:
+        game = self.catalog.add_dynamic(data)
+        self.db.audit(_actor_of(actor), "catalogo-adicionar", game.key, "ok")
+        return game.as_public()
 
     # --- criar ------------------------------------------------------------
 
     def create(self, game_key: str, name: str, actor: str) -> dict:
         actor = _actor_of(actor)
         name = self._valid_name(name)
-        jogo = self.catalog.get(game_key)
-        if not jogo.creatable:
-            raise Conflict(f"{jogo.name} nao pode ser criado pela API: {jogo.reason}")
+        game = self.catalog.get(game_key)
+        if not game.creatable:
+            raise Conflict(f"{game.name} nao pode ser criado pela API: {game.reason}")
         with self._trava:
             self._check_quotas()
-            instance_id, ports = self._reserve(jogo, name, actor)
+            instance_id, ports = self._reserve(game, name, actor)
             op_id = self.db.create_operation(instance_id, "criar")
-        self.db.audit(actor, "criar", f"{jogo.key}:{name}", "aceito", f"instancia {instance_id}")
-        self._executar(lambda: self._build(op_id, instance_id, jogo, ports, actor))
+        self.db.audit(actor, "criar", f"{game.key}:{name}", "aceito", f"instancia {instance_id}")
+        self._executar(lambda: self._build(op_id, instance_id, game, ports, actor))
         return {"operacao_id": op_id, "instancia_id": instance_id}
 
     @staticmethod
@@ -117,7 +117,7 @@ class Service:
         if self.db.creations_since(desde) >= self.config.max_creations_per_hour:
             raise QuotaExceeded(f"limite de {self.config.max_creations_per_hour} criacoes por hora atingido")
 
-    def _reserve(self, jogo: Game, name: str, actor: str) -> tuple[int, list[AllocatedPort]]:
+    def _reserve(self, game: Game, name: str, actor: str) -> tuple[int, list[AllocatedPort]]:
         # Snapshot de fora (Proxmox, OPNsense) + o que o banco ja reservou: o CT pode ter
         # sido criado na mao, e a regra de NAT tambem.
         ctids_px, ips_px = self.proxmox.ctids_and_ips()
@@ -128,11 +128,11 @@ class Service:
         else:
             ctid = alocador.pick_ctid(self.config.ctids, ctids_px | ctids_db)
             ip = alocador.pick_ip(self.config.ips, ips_px | ips_db, self.network.answers)
-        ports = alocador.allocate_ports(jogo, self.opnsense.external_ports() | portas_db, self.config.ports)
-        instance_id = self.db.reserve(ctid, ip, jogo.key, name, f"{jogo.key}-{ctid}", actor, ports)
+        ports = alocador.allocate_ports(game, self.opnsense.external_ports() | portas_db, self.config.ports)
+        instance_id = self.db.reserve(ctid, ip, game.key, name, f"{game.key}-{ctid}", actor, ports)
         return instance_id, ports
 
-    def _build(self, op_id: str, instance_id: int, jogo: Game, ports: list[AllocatedPort],
+    def _build(self, op_id: str, instance_id: int, game: Game, ports: list[AllocatedPort],
                    actor: str) -> None:
         inst = self.db.instance(instance_id)
         if inst is None:
@@ -142,43 +142,43 @@ class Service:
         try:
             log(f"criando o container {inst['ctid']} ({inst['ip']})")
             self.proxmox.create_ct(CtSpec(
-                ctid=inst["ctid"], hostname=inst["hostname"], ip=inst["ip"], jogo=jogo.key,
-                memory_mb=jogo.memory_mb, cores=jogo.cores, disk_gb=jogo.disk_gb))
+                ctid=inst["ctid"], hostname=inst["hostname"], ip=inst["ip"], game=game.key,
+                memory_mb=game.memory_mb, cores=game.cores, disk_gb=game.disk_gb))
             created = True
             self.proxmox.start(inst["ctid"])
-            self.installer.install(inst["ip"], jogo, ports, log)
+            self.installer.install(inst["ip"], game, ports, log)
             # O firewall abre por ultimo: o jogo nao fica exposto enquanto ainda instala.
             log("abrindo as portas no firewall")
             self.opnsense.open_ports(inst["ctid"], inst["ip"], ports)
-        except Exception as erro:  # noqa: BLE001
-            self._undo(op_id, inst, created, str(erro))
-            self.db.audit(actor, "criar", inst["nome"], "falhou", str(erro))
+        except Exception as error:  # noqa: BLE001
+            self._undo(op_id, inst, created, str(error))
+            self.db.audit(actor, "criar", inst["nome"], "falhou", str(error))
             return
         self.db.set_state(instance_id, ESTADO_ATIVA)
-        self.db.finish_operation(op_id, OP_OK, record_for_the_panel(inst, jogo, ports))
+        self.db.finish_operation(op_id, OP_OK, record_for_the_panel(inst, game, ports))
         self.db.audit(actor, "criar", inst["nome"], "ok", f"ctid {inst['ctid']}")
 
     def _logger(self, op_id: str) -> Callable[[str], None]:
-        return lambda linha: self.db.append_log(op_id, linha)
+        return lambda line: self.db.append_log(op_id, line)
 
-    def _undo(self, op_id: str, inst: dict, created: bool, erro: str) -> None:
+    def _undo(self, op_id: str, inst: dict, created: bool, error: str) -> None:
         """Volta ao estado anterior. Se nem o desfazer der certo, a reserva fica marcada
         como `falhou` (nao some): IP e portas continuam bloqueados ate alguem remover."""
         log = self._logger(op_id)
-        log(f"ERRO: {erro[:ERROR_MAX]}")
+        log(f"ERRO: {error[:ERROR_MAX]}")
         limpou = True
         try:
             self.opnsense.close_ports(inst["ctid"])
             if created:
                 self.proxmox.destroy(inst["ctid"])
-        except Exception as falha:  # noqa: BLE001
+        except Exception as failure:  # noqa: BLE001
             limpou = False
-            log(f"nao consegui desfazer tudo: {str(falha)[:ERROR_MAX]}")
+            log(f"nao consegui desfazer tudo: {str(failure)[:ERROR_MAX]}")
         if limpou:
             self.db.delete_instance(inst["id"])
             log("reserva liberada")
         else:
-            self.db.set_state(inst["id"], ESTADO_FALHOU, erro)
+            self.db.set_state(inst["id"], ESTADO_FALHOU, error)
         self.db.finish_operation(op_id, OP_ERRO)
 
     # --- desativar / remover ---------------------------------------------
@@ -237,16 +237,16 @@ class Service:
             raise Conflict(f"o CT {ctid} nao pertence ao broker; nada foi alterado")
 
 
-def record_for_the_panel(inst: dict, jogo: Game, ports: list[AllocatedPort]) -> dict:
+def record_for_the_panel(inst: dict, game: Game, ports: list[AllocatedPort]) -> dict:
     """Os campos de `ServidorDoDeploy` do painel: com isso ele chama `ensure_server`."""
     return {
         "broker_id": inst["id"], "name": inst["nome"], "host": inst["ip"],
-        "service": f"{jogo.key}.service",
+        "service": f"{game.key}.service",
         "game_port": alocador.port_with_role(ports, alocador.ROLE_GAME),
         "query_port": alocador.port_with_role(ports, alocador.ROLE_QUERY),
         "ports": [str(p) for p in ports],
-        "config_path": jogo.config_path, "config_files": list(jogo.config_files),
-        "backup_paths": list(jogo.backup_paths), "player_source": jogo.player_source,
-        "join_re": jogo.join_re, "leave_re": jogo.leave_re, "log_path": jogo.log_path,
+        "config_path": game.config_path, "config_files": list(game.config_files),
+        "backup_paths": list(game.backup_paths), "player_source": game.player_source,
+        "join_re": game.join_re, "leave_re": game.leave_re, "log_path": game.log_path,
         "notes": f"Criado pelo broker (CT {inst['ctid']})",
     }

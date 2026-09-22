@@ -42,7 +42,7 @@ def test_criar_de_ponta_a_ponta(real):
 
 
 def test_falha_na_instalacao_desfaz_no_proxmox_e_no_opnsense(real):
-    real.instalador_real.falha = True
+    real.instalador_real.failure = True
     resposta = real.servico_real.create("alfa", "x", "zeca")
     assert real.servico_real.operation(resposta["operacao_id"])["estado"] == OP_ERRO
     assert real.pve.falso.cts == {}, "o CT criado foi destruido"
@@ -80,7 +80,7 @@ def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
         (lib / name).write_text("#!/bin/bash\n")
     executor = ExecutorFalso()
     ssh = InstaladorSsh(ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, lib_dir=lib),
-                        executor, dormir=lambda _s: None)
+                        executor, sleep=lambda _s: None)
     servico = Service(real.db, real.catalog, real.pve.backend, real.opn.backend, ssh, RedeFalsa(),
                       Config(ctids=range(300, 310), ips=ips_in_range("10.0.0", 30, 40)),
                       run=lambda tarefa: tarefa(), clock=real.clock)

@@ -65,39 +65,39 @@ class _Reader:
         self._env = env
         self.problems: list[str] = []
 
-    def text(self, nome: str, default: str | None = None) -> str:
-        valor = (self._env.get(nome) or "").strip()
-        if not valor and default is None:
-            self.problems.append(f"{nome}: obrigatoria e nao foi definida")
+    def text(self, name: str, default: str | None = None) -> str:
+        value = (self._env.get(name) or "").strip()
+        if not value and default is None:
+            self.problems.append(f"{name}: obrigatoria e nao foi definida")
             return ""
-        return valor or (default or "")
+        return value or (default or "")
 
-    def integer(self, nome: str, default: int, minimum: int, maximum: int) -> int:
-        bruto = (self._env.get(nome) or "").strip()
+    def integer(self, name: str, default: int, minimum: int, maximum: int) -> int:
+        bruto = (self._env.get(name) or "").strip()
         if not bruto:
             return default
         if not re.fullmatch(r"\d{1,9}", bruto, re.ASCII) or not minimum <= int(bruto) <= maximum:
-            self.problems.append(f"{nome}: deve ser um inteiro entre {minimum} e {maximum}")
+            self.problems.append(f"{name}: deve ser um inteiro entre {minimum} e {maximum}")
             return default
         return int(bruto)
 
-    def fingerprint(self, nome: str, required: bool) -> str:
-        bruto = (self._env.get(nome) or "").strip()
+    def fingerprint(self, name: str, required: bool) -> str:
+        bruto = (self._env.get(name) or "").strip()
         if not bruto:
             if required:
-                self.problems.append(f"{nome}: obrigatoria com https (impressao SHA-256 do certificado)")
+                self.problems.append(f"{name}: obrigatoria com https (impressao SHA-256 do certificado)")
             return ""
         try:
             return normalize_fingerprint(bruto)
         except ValueError:
-            self.problems.append(f"{nome}: impressao SHA-256 invalida (64 digitos hexadecimais)")
+            self.problems.append(f"{name}: impressao SHA-256 invalida (64 digitos hexadecimais)")
             return ""
 
     def attempt(self, description: str, func):
         try:
             return func()
-        except (ValueError, OSError) as erro:
-            self.problems.append(f"{description}: {erro}")
+        except (ValueError, OSError) as error:
+            self.problems.append(f"{description}: {error}")
             return None
 
 
@@ -139,15 +139,15 @@ def _port_range(reader: _Reader) -> range:
     return range(ini, fim + 1)
 
 
-def _check_url(reader: _Reader, nome: str, url: str) -> None:
+def _check_url(reader: _Reader, name: str, url: str) -> None:
     """https sempre; http so em loopback (testes). Token em texto puro pela rede nao existe aqui."""
     partes = urlsplit(url)
     if not url:
         return
     if partes.scheme not in ("http", "https") or not partes.hostname:
-        reader.problems.append(f"{nome}: deve ser http(s)://host[:porta]")
+        reader.problems.append(f"{name}: deve ser http(s)://host[:porta]")
     elif partes.scheme == "http" and partes.hostname not in ("127.0.0.1", "localhost", "::1"):
-        reader.problems.append(f"{nome}: sem TLS so em loopback; use https://")
+        reader.problems.append(f"{name}: sem TLS so em loopback; use https://")
 
 
 def load(env: Mapping[str, str]) -> ConfigBroker:

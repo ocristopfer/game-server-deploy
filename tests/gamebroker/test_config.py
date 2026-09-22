@@ -113,17 +113,17 @@ OBRIGATORIAS = ["BROKER_TOKEN", "BROKER_PANEL_PUBKEY", "BROKER_GATEWAY", "BROKER
 @pytest.mark.parametrize("nome", OBRIGATORIAS)
 def test_variavel_obrigatoria_ausente_e_nomeada(env, nome):
     del env[nome]
-    with pytest.raises(ConfigError) as erro:
+    with pytest.raises(ConfigError) as error:
         load(env)
-    assert any(p.startswith(f"{nome}:") for p in erro.value.problems)
+    assert any(p.startswith(f"{nome}:") for p in error.value.problems)
 
 
 def test_todos_os_problemas_de_uma_vez_sem_duplicar(env):
     for nome in ("PROXMOX_NODE", "BROKER_GATEWAY", "OPNSENSE_KEY", "BROKER_TOKEN"):
         del env[nome]
-    with pytest.raises(ConfigError) as erro:
+    with pytest.raises(ConfigError) as error:
         load(env)
-    nomes = [p.split(":")[0] for p in erro.value.problems]
+    nomes = [p.split(":")[0] for p in error.value.problems]
     assert sorted(nomes) == ["BROKER_GATEWAY", "BROKER_TOKEN", "OPNSENSE_KEY", "PROXMOX_NODE"], "cada falta aparece UMA vez"
 
 
@@ -153,9 +153,9 @@ def test_valor_invalido(env, nome, valor, trecho):
 
 def test_faixas_invertidas(env):
     env.update(BROKER_IP_INICIO="50", BROKER_IP_FIM="40", BROKER_CTID_INICIO="400", BROKER_CTID_FIM="300")
-    with pytest.raises(ConfigError) as erro:
+    with pytest.raises(ConfigError) as error:
         load(env)
-    texto = str(erro.value)
+    texto = str(error.value)
     assert "BROKER_CTID_FIM" in texto
     assert "BROKER_IP_PREFIX/INICIO/FIM" in texto
 
@@ -191,10 +191,10 @@ def test_nenhuma_mensagem_de_erro_carrega_segredo(env, nome):
     env[nome] = "curto"
     env["BROKER_IP_INICIO"] = "abc"
     env["PROXMOX_CERT_SHA256"] = "lixo"
-    with pytest.raises(ConfigError) as erro:
+    with pytest.raises(ConfigError) as error:
         load(env)
     for segredo in SEGREDOS:
-        assert segredo not in str(erro.value)
+        assert segredo not in str(error.value)
 
 
 # --- montagem do servico real (contra os falsos HTTP) ---------------------------------------------
@@ -242,23 +242,23 @@ def test_ambiente_ruim_derruba_o_start_com_a_lista_e_sem_segredo(env, capsys):
     with pytest.raises(SystemExit) as saida:
         prod.create_app_from_env(env)
     assert saida.value.code == 2
-    erro = capsys.readouterr().err
-    assert "NAO SUBIU" in erro
-    assert "PROXMOX_NODE" in erro
-    assert "BROKER_IP_INICIO" in erro
+    error = capsys.readouterr().err
+    assert "NAO SUBIU" in error
+    assert "PROXMOX_NODE" in error
+    assert "BROKER_IP_INICIO" in error
     for segredo in SEGREDOS:
-        assert segredo not in erro
+        assert segredo not in error
 
 
 # --- ping -----------------------------------------------------------------------------------------------
 
-def _ping(monkeypatch, retorno=None, erro=None):
+def _ping(monkeypatch, retorno=None, error=None):
     chamadas: list[list[str]] = []
 
     def falso(argv, **_kw):
         chamadas.append(argv)
-        if erro is not None:
-            raise erro
+        if error is not None:
+            raise error
         return subprocess.CompletedProcess(argv, retorno)
 
     monkeypatch.setattr(subprocess, "run", falso)
@@ -277,9 +277,9 @@ def test_ping_sem_resposta_significa_livre(monkeypatch):
     assert RedeReal().answers("192.168.2.30") is False
 
 
-@pytest.mark.parametrize("erro", [OSError("sem ping"), subprocess.TimeoutExpired("ping", 4)])
-def test_ping_que_nao_roda_nao_derruba_a_criacao(monkeypatch, erro):
-    _ping(monkeypatch, erro=erro)
+@pytest.mark.parametrize("error", [OSError("sem ping"), subprocess.TimeoutExpired("ping", 4)])
+def test_ping_que_nao_roda_nao_derruba_a_criacao(monkeypatch, error):
+    _ping(monkeypatch, error=error)
     assert RedeReal().answers("192.168.2.30") is False
 
 

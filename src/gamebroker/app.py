@@ -41,19 +41,19 @@ def create_app(service: Service, token: str, allowed_ips: tuple[str, ...] = ()) 
         return None
 
     @app.errorhandler(Refusal)
-    def on_refusal(erro: Refusal):
-        return _error(erro.message, erro.code, erro.http)
+    def on_refusal(error: Refusal):
+        return _error(error.message, error.code, error.http)
 
     @app.errorhandler(HTTPException)
-    def on_http_error(erro: HTTPException):
+    def on_http_error(error: HTTPException):
         # 404, 405, 413...: sao do Flask, nao do broker. Sem este handler o catch-all
         # abaixo os transformaria em 500 e esconderia rota errada como "erro interno".
-        return _error(erro.name.lower(), "http", erro.code or 500)
+        return _error(error.name.lower(), "http", error.code or 500)
 
     @app.errorhandler(Exception)
-    def on_unexpected(erro: Exception):
+    def on_unexpected(error: Exception):
         # Detalhe so no log do broker: a mensagem do erro pode citar caminho ou endereco interno.
-        log.exception("erro interno", exc_info=erro)
+        log.exception("erro interno", exc_info=error)
         return _error("erro interno do broker", "interno", 500)
 
     def actor() -> str:
@@ -103,10 +103,10 @@ def create_app(service: Service, token: str, allowed_ips: tuple[str, ...] = ()) 
 
 
 def _body() -> dict:
-    dados = request.get_json(silent=True)
-    if not isinstance(dados, dict):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
         raise ValidationError("corpo", "esperado um objeto JSON")
-    return dados
+    return data
 
 
 def _error(message: str, code: str, http: int):

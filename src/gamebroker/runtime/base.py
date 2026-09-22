@@ -22,7 +22,7 @@ class CtSpec:
     ctid: int
     hostname: str
     ip: str
-    jogo: str
+    game: str
     memory_mb: int
     cores: int
     disk_gb: int
@@ -61,7 +61,7 @@ class Opnsense(Protocol):
 
 
 class Installer(Protocol):
-    def install(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
+    def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
         """Instala o jogo dentro do CT por SSH e remove a chave do broker ao terminar."""
 

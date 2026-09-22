@@ -119,40 +119,40 @@ class Db:
             ports = {(r["numero"], r["proto"]) for r in conn.execute("SELECT numero, proto FROM portas")}
         return ctids, ips, ports
 
-    def reserve(self, ctid: int, ip: str, jogo: str, name: str, hostname: str, actor: str,
+    def reserve(self, ctid: int, ip: str, game: str, name: str, hostname: str, actor: str,
                  ports: Sequence[AllocatedPort]) -> int:
         try:
             with self._transaction() as conn:
                 cur = conn.execute(
                     "INSERT INTO instancias (ctid, ip, jogo, nome, hostname, estado, criado_por, criado_em)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (ctid, ip, jogo, name, hostname, ESTADO_RESERVADA, actor, self._relogio()))
+                    (ctid, ip, game, name, hostname, ESTADO_RESERVADA, actor, self._relogio()))
                 instance_id = int(cur.lastrowid or 0)
                 conn.executemany(
                     "INSERT INTO portas (instancia_id, base, numero, proto, papel) VALUES (?, ?, ?, ?, ?)",
                     [(instance_id, p.base, p.number, p.proto, p.role) for p in ports])
-        except sqlite3.IntegrityError as erro:
-            raise Conflict(f"reserva recusada pelo banco (nome, CTID, IP ou porta ja em uso): {erro}") from None
+        except sqlite3.IntegrityError as error:
+            raise Conflict(f"reserva recusada pelo banco (nome, CTID, IP ou porta ja em uso): {error}") from None
         return instance_id
 
     # --- instancias -------------------------------------------------------
 
     def instance(self, instance_id: int) -> dict | None:
         with self._connection() as conn:
-            linha = conn.execute("SELECT * FROM instancias WHERE id = ?", (instance_id,)).fetchone()
-            return self._with_ports(conn, linha) if linha else None
+            row = conn.execute("SELECT * FROM instancias WHERE id = ?", (instance_id,)).fetchone()
+            return self._with_ports(conn, row) if row else None
 
     def instances(self) -> list[dict]:
         with self._connection() as conn:
             return [self._with_ports(conn, r) for r in conn.execute("SELECT * FROM instancias ORDER BY id")]
 
     @staticmethod
-    def _with_ports(conn: sqlite3.Connection, linha: sqlite3.Row) -> dict:
-        dados = dict(linha)
-        dados["portas"] = [dict(p) for p in conn.execute(
+    def _with_ports(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["portas"] = [dict(p) for p in conn.execute(
             "SELECT base, numero, proto, papel FROM portas WHERE instancia_id = ? ORDER BY numero, proto",
-            (linha["id"],))]
-        return dados
+            (row["id"],))]
+        return data
 
     def set_state(self, instance_id: int, state_dir: str, detail: str = "") -> None:
         with self._transaction() as conn:
@@ -177,13 +177,13 @@ class Db:
                 (op_id, instance_id, kind, OP_EXECUTANDO, self._relogio()))
         return op_id
 
-    def append_log(self, op_id: str, linha: str) -> None:
+    def append_log(self, op_id: str, row: str) -> None:
         with self._transaction() as conn:
             atual = conn.execute("SELECT log FROM operacoes WHERE id = ?", (op_id,)).fetchone()
             if atual is None:
                 return
             # Cauda: instalacao de jogo pode gerar MB de saida, e o painel so precisa do fim.
-            novo = (atual["log"] + linha.rstrip("\n") + "\n")[-LOG_MAX:]
+            novo = (atual["log"] + row.rstrip("\n") + "\n")[-LOG_MAX:]
             conn.execute("UPDATE operacoes SET log = ? WHERE id = ?", (novo, op_id))
 
     def finish_operation(self, op_id: str, state_dir: str, result: dict | None = None) -> None:
@@ -193,12 +193,12 @@ class Db:
 
     def operation(self, op_id: str) -> dict | None:
         with self._connection() as conn:
-            linha = conn.execute("SELECT * FROM operacoes WHERE id = ?", (op_id,)).fetchone()
-        if linha is None:
+            row = conn.execute("SELECT * FROM operacoes WHERE id = ?", (op_id,)).fetchone()
+        if row is None:
             return None
-        dados = dict(linha)
-        dados["resultado"] = json.loads(dados["resultado"] or "{}")
-        return dados
+        data = dict(row)
+        data["resultado"] = json.loads(data["resultado"] or "{}")
+        return data
 
     def operation_in_progress(self) -> bool:
         with self._connection() as conn:

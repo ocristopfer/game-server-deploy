@@ -48,29 +48,29 @@ class InstallError(RuntimeError):
 
 
 class Executor(Protocol):
-    def rodar(self, argv: Sequence[str], on_linha: Callable[[str], None] | None,
+    def run(self, argv: Sequence[str], on_line: Callable[[str], None] | None,
               timeout: float) -> int:
         """Roda `argv` (sem shell), repassa cada linha de saida e devolve o codigo de saida.
         Passou de `timeout` segundos: mata o processo e devolve um codigo negativo."""
 
 
 class ExecutorReal:
-    def rodar(self, argv: Sequence[str], on_linha: Callable[[str], None] | None,
+    def run(self, argv: Sequence[str], on_line: Callable[[str], None] | None,
               timeout: float) -> int:
         try:
             proc = subprocess.Popen(list(argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                                     errors="replace", bufsize=1)
-        except OSError as erro:
-            raise InstallError(f"nao consegui executar {argv[0]}: {erro.strerror}") from None
+        except OSError as error:
+            raise InstallError(f"nao consegui executar {argv[0]}: {error.strerror}") from None
         # A leitura de linhas bloqueia; quem impoe o prazo e um timer que mata o processo.
         clock = threading.Timer(timeout, proc.kill)
         clock.start()
         try:
             assert proc.stdout is not None
-            for linha in proc.stdout:
-                if on_linha is not None:
-                    on_linha(linha.rstrip("\r\n"))
+            for line in proc.stdout:
+                if on_line is not None:
+                    on_line(line.rstrip("\r\n"))
             return proc.wait()
         finally:
             clock.cancel()
@@ -101,27 +101,27 @@ class ConfigSsh:
         return self.chave_publica.split()[1]
 
 
-def build_env(jogo: Game, ports: Sequence[AllocatedPort]) -> str:
+def build_env(game: Game, ports: Sequence[AllocatedPort]) -> str:
     """O `install.env` do CT. Cada valor entre aspas: e DADO, nunca comando."""
-    runtimes = [r for r in jogo.recipes if r in RECIPES_WINDOWS]
+    runtimes = [r for r in game.recipes if r in RECIPES_WINDOWS]
     if len(runtimes) > 1:
         raise InstallError("escolha 'wine' OU 'proton', nao os dois")
     # Porta interna == externa (ver services/allocator.py): o jogo e avisado das portas JA alocadas.
-    game_port = port_with_role(ports, ROLE_GAME) or jogo.game_port
-    query_port = (port_with_role(ports, ROLE_QUERY) or jogo.query_port) if jogo.query_port else 0
-    extra_port = (port_from_base(ports, jogo.extra_port) or jogo.extra_port) if jogo.extra_port else 0
+    game_port = port_with_role(ports, ROLE_GAME) or game.game_port
+    query_port = (port_with_role(ports, ROLE_QUERY) or game.query_port) if game.query_port else 0
+    extra_port = (port_from_base(ports, game.extra_port) or game.extra_port) if game.extra_port else 0
     variaveis = {
-        "GAME_KEY": jogo.key, "GAME_DISPLAY_NAME": jogo.name, "STEAM_APP_ID": str(jogo.app_id),
-        "STEAM_PLATFORM": jogo.platform, "STEAM_ANONYMOUS": "1",
-        "START_SCRIPT": jogo.start_script, "START_ARGS": jogo.start_args,
+        "GAME_KEY": game.key, "GAME_DISPLAY_NAME": game.name, "STEAM_APP_ID": str(game.app_id),
+        "STEAM_PLATFORM": game.platform, "STEAM_ANONYMOUS": "1",
+        "START_SCRIPT": game.start_script, "START_ARGS": game.start_args,
         "GAME_PORT": str(game_port), "QUERY_PORT": str(query_port), "EXTRA_PORT": str(extra_port),
         "GAME_PORTS": " ".join(str(p) for p in ports),
         "WINDOWS_RUNTIME": runtimes[0] if runtimes else "",
-        "RECIPES": " ".join(r for r in jogo.recipes if r not in RECIPES_WINDOWS),
+        "RECIPES": " ".join(r for r in game.recipes if r not in RECIPES_WINDOWS),
         # Shell so existe no catalogo curado, revisado no git; jogo cadastrado pela API vem vazio.
-        "PRE_INSTALL_CMD": jogo.pre_install, "POST_INSTALL_CMD": jogo.post_install,
+        "PRE_INSTALL_CMD": game.pre_install, "POST_INSTALL_CMD": game.post_install,
     }
-    return "".join(f"{name}={shlex.quote(valor)}\n" for name, valor in variaveis.items())
+    return "".join(f"{name}={shlex.quote(value)}\n" for name, value in variaveis.items())
 
 
 class _Lote:
@@ -135,14 +135,14 @@ class _Lote:
         self.cauda: list[str] = []
         self.concluida = False
 
-    def linha(self, texto: str) -> None:
-        texto = texto.strip()[:LINHA_MAX]
-        if not texto:
+    def line(self, text: str) -> None:
+        text = text.strip()[:LINHA_MAX]
+        if not text:
             return
-        if MARCA_DE_SUCESSO in texto:
+        if MARCA_DE_SUCESSO in text:
             self.concluida = True
-        self.cauda = (self.cauda + [texto])[-CAUDA_DE_ERRO:]
-        self._linhas.append(texto)
+        self.cauda = (self.cauda + [text])[-CAUDA_DE_ERRO:]
+        self._linhas.append(text)
         if len(self._linhas) >= LOTE_LINHAS or self._agora() - self._ultimo >= LOTE_SEGUNDOS:
             self.descarrega()
 
@@ -155,11 +155,11 @@ class _Lote:
 
 class InstaladorSsh:
     def __init__(self, config: ConfigSsh, executor: Executor | None = None,
-                 dormir: Callable[[float], None] = time.sleep,
+                 sleep: Callable[[float], None] = time.sleep,
                  now: Callable[[], float] = time.monotonic):
         self._cfg = config
         self._exec = executor or ExecutorReal()
-        self._dormir = dormir
+        self._dormir = sleep
         self._agora = now
         faltando = [a for a in ARQUIVOS_DA_LIB if not (config.lib_dir / a).is_file()]
         if faltando:
@@ -182,27 +182,27 @@ class InstaladorSsh:
 
     # --- fluxo ----------------------------------------------------------------------------------
 
-    def install(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
+    def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
         ip = str(ipaddress.IPv4Address(ip))
         target = self._alvo(ip)
-        env = build_env(jogo, ports)
+        env = build_env(game, ports)
         self._esperar_ssh(target, ip, log)
-        falha: Exception | None = None
+        failure: Exception | None = None
         try:
             self._enviar(target, env)
             self._install(target, log)
-        except Exception as erro:  # noqa: BLE001
-            falha = erro
+        except Exception as error:  # noqa: BLE001
+            failure = error
             raise
         finally:
-            self._limpar(target, log, falha)
+            self._limpar(target, log, failure)
 
     def _esperar_ssh(self, target: str, ip: str, log: Callable[[str], None]) -> None:
         log(f"aguardando o SSH de {ip}")
         limit = self._agora() + self._cfg.espera_ssh
         while True:
-            if self._exec.rodar(self._ssh(target, "true"), None, 20) == 0:
+            if self._exec.run(self._ssh(target, "true"), None, 20) == 0:
                 return
             if self._agora() >= limit:
                 raise InstallError(f"o SSH de {ip} nao respondeu em {int(self._cfg.espera_ssh)} s")
@@ -218,15 +218,15 @@ class InstaladorSsh:
             self._comando(["scp", *self._opcoes(), *fontes, f"{target}:{DESTINO_REMOTO}/"],
                           "enviar o instalador ao CT")
 
-    def _comando(self, argv: Sequence[str], acao: str) -> None:
-        codigo = self._exec.rodar(argv, None, self._cfg.timeout_comando)
+    def _comando(self, argv: Sequence[str], action: str) -> None:
+        codigo = self._exec.run(argv, None, self._cfg.timeout_comando)
         if codigo != 0:
-            raise InstallError(f"falhou ao {acao} (codigo {codigo})")
+            raise InstallError(f"falhou ao {action} (codigo {codigo})")
 
     def _install(self, target: str, log: Callable[[str], None]) -> None:
         lote = _Lote(log, self._agora)
         comando = f"cd {shlex.quote(DESTINO_REMOTO)} && bash ct-install.sh install.env"
-        codigo = self._exec.rodar(self._ssh(target, comando), lote.linha, self._cfg.timeout_instalacao)
+        codigo = self._exec.run(self._ssh(target, comando), lote.line, self._cfg.timeout_instalacao)
         lote.descarrega()
         if codigo != 0:
             resumo = " | ".join(lote.cauda)
@@ -234,20 +234,20 @@ class InstaladorSsh:
         if not lote.concluida:
             raise InstallError("o instalador terminou sem confirmar a conclusao")
 
-    def _limpar(self, target: str, log: Callable[[str], None], falha: Exception | None) -> None:
+    def _limpar(self, target: str, log: Callable[[str], None], failure: Exception | None) -> None:
         """Apaga o que foi enviado e tira a chave do broker. Roda SEMPRE."""
         blob = self._cfg.blob
-        arquivo = "/root/.ssh/authorized_keys"
+        file = "/root/.ssh/authorized_keys"
         comando = (f"rm -rf {shlex.quote(DESTINO_REMOTO)}; "
-                   f"grep -vF -- {shlex.quote(blob)} {arquivo} > {arquivo}.tmp; "
-                   f"cat {arquivo}.tmp > {arquivo}; rm -f {arquivo}.tmp; "
-                   f"! grep -qF -- {shlex.quote(blob)} {arquivo}")
-        codigo = self._exec.rodar(self._ssh(target, comando), None, self._cfg.timeout_comando)
+                   f"grep -vF -- {shlex.quote(blob)} {file} > {file}.tmp; "
+                   f"cat {file}.tmp > {file}; rm -f {file}.tmp; "
+                   f"! grep -qF -- {shlex.quote(blob)} {file}")
+        codigo = self._exec.run(self._ssh(target, comando), None, self._cfg.timeout_comando)
         if codigo == 0:
             log("chave do broker removida do container")
             return
         mensagem = f"nao consegui remover a chave do broker do container (codigo {codigo})"
-        if falha is None:
+        if failure is None:
             raise InstallError(mensagem)
         # Ja ha um erro mais importante a reportar; a limpeza falha so e registrada.
         log(f"AVISO: {mensagem}")

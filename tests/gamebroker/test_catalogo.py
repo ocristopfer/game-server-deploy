@@ -15,20 +15,20 @@ RAIZ = Path(__file__).resolve().parent.parent.parent
 # --- parser do .env -------------------------------------------------------
 
 def test_env_le_valores_simples_e_ignora_comentarios():
-    dados = cat.read_env('# cabecalho\nA=1\nB="dois palavras"  # nota\nC=tres # nota\n\nD=\n')
-    assert dados == {"A": "1", "B": "dois palavras", "C": "tres", "D": ""}
+    data = cat.read_env('# cabecalho\nA=1\nB="dois palavras"  # nota\nC=tres # nota\n\nD=\n')
+    assert data == {"A": "1", "B": "dois palavras", "C": "tres", "D": ""}
 
 
 def test_env_nao_expande_nada():
-    dados = cat.read_env('X="-a $(id) `whoami` $HOME"\n')
-    assert dados["X"] == "-a $(id) `whoami` $HOME"
+    data = cat.read_env('X="-a $(id) `whoami` $HOME"\n')
+    assert data["X"] == "-a $(id) `whoami` $HOME"
 
 
 def test_env_aspas_simples_multilinha_e_apostrofo_escapado():
     texto = "PRE='\necho \"oi\"\necho it'\\''s ok\n'\nDEPOIS=1\n"
-    dados = cat.read_env(texto)
-    assert "echo it's ok" in dados["PRE"]
-    assert dados["DEPOIS"] == "1", "a linha depois do bloco multilinha continua sendo lida"
+    data = cat.read_env(texto)
+    assert "echo it's ok" in data["PRE"]
+    assert data["DEPOIS"] == "1", "a linha depois do bloco multilinha continua sendo lida"
 
 
 def test_env_aspas_duplas_com_escape():
@@ -79,16 +79,16 @@ def test_arquivo_ruim_vira_erro_e_nao_derruba_o_resto(tmp_path):
 # --- validacao do jogo dinamico --------------------------------------------
 
 def test_jogo_dinamico_valido(dados_de_jogo):
-    jogo = cat.validate_dynamic(dados_de_jogo)
-    assert jogo.creatable
-    assert jogo.source == cat.SOURCE_DYNAMIC
-    assert not jogo.has_hooks
-    assert jogo.ports == (cat.Port(7777, "udp"), cat.Port(27016, "udp"))
+    game = cat.validate_dynamic(dados_de_jogo)
+    assert game.creatable
+    assert game.source == cat.SOURCE_DYNAMIC
+    assert not game.has_hooks
+    assert game.ports == (cat.Port(7777, "udp"), cat.Port(27016, "udp"))
 
 
 def test_ida_e_volta_pelo_formato_gravado(dados_de_jogo):
-    jogo = cat.validate_dynamic(dados_de_jogo)
-    assert cat.validate_dynamic(jogo.as_stored()) == jogo
+    game = cat.validate_dynamic(dados_de_jogo)
+    assert cat.validate_dynamic(game.as_stored()) == game
 
 
 CASOS_INVALIDOS = [
@@ -124,9 +124,9 @@ CASOS_INVALIDOS = [
 @pytest.mark.parametrize(("campo", "valor"), CASOS_INVALIDOS, ids=lambda v: repr(v)[:30])
 def test_campo_invalido_e_recusado(dados_de_jogo, campo, valor):
     dados_de_jogo[campo] = valor
-    with pytest.raises(ValidationError) as erro:
+    with pytest.raises(ValidationError) as error:
         cat.validate_dynamic(dados_de_jogo)
-    assert campo in str(erro.value)
+    assert campo in str(error.value)
 
 
 @pytest.mark.parametrize(("mudancas", "trecho"), [
@@ -137,9 +137,9 @@ def test_campo_invalido_e_recusado(dados_de_jogo, campo, valor):
 def test_deslocavel_exige_que_o_jogo_receba_todas_as_portas(dados_de_jogo, mudancas, trecho):
     """Sem isso o firewall abriria uma porta que o jogo nao escuta (ou uma que ele ignora)."""
     dados_de_jogo.update(mudancas)
-    with pytest.raises(ValidationError, match="deslocavel") as erro:
+    with pytest.raises(ValidationError, match="deslocavel") as error:
         cat.validate_dynamic(dados_de_jogo)
-    assert trecho in str(erro.value)
+    assert trecho in str(error.value)
 
 
 def test_jogo_fixo_pode_ter_portas_extras_e_nenhum_marcador(dados_de_jogo):
@@ -187,9 +187,9 @@ def test_jogo_de_windows_exige_receita_de_windows(dados_de_jogo):
 
 def test_so_o_minimo_basta(dados_de_jogo):
     minimo = {k: dados_de_jogo[k] for k in ("chave", "nome", "app_id", "portas", "porta_jogo")}
-    jogo = cat.validate_dynamic(minimo)
-    assert (jogo.memory_mb, jogo.cores, jogo.disk_gb) == (4096, 2, 20)
-    assert jogo.player_source == "log"
+    game = cat.validate_dynamic(minimo)
+    assert (game.memory_mb, game.cores, game.disk_gb) == (4096, 2, 20)
+    assert game.player_source == "log"
 
 
 # --- Catalogo (curado + dinamico) -------------------------------------------

@@ -26,27 +26,27 @@ def test_alias_do_jeito_que_o_opnsense_de_verdade_devolve():
     """Formato copiado do d_nat/search_rule real (regra 'palworld')."""
     resumo = ("<strong>UDP -> 192.168.2.21 (CT 211). 8211 jogo, 27015 query A2S (mapear 1:1). "
               "NAO inclua a REST 8212/tcp nem o RCON 25575/tcp.</strong><br/>8211<br/>27015")
-    regra = _linha(**{"destination.port": "JOGO_PALWORLD",
+    rule = _linha(**{"destination.port": "JOGO_PALWORLD",
                       "alias_meta_destination.port": [{"value": "JOGO_PALWORLD", "isAlias": True, "summary": resumo}]})
-    assert busy_ports([regra], "wan") == {(8211, "udp"), (27015, "udp")}
+    assert busy_ports([rule], "wan") == {(8211, "udp"), (27015, "udp")}
 
 
 def test_descricao_do_alias_com_numeros_nao_vira_porta():
     """A descricao cita 8212/tcp e 25575/tcp so como aviso: nao sao portas do alias."""
     resumo = resumo_de_alias("nao inclua 8212 nem 25575", ["8211"])
-    regra = _linha(**{"destination.port": "A", "alias_meta_destination.port": [{"summary": resumo}]})
-    assert busy_ports([regra], "wan") == {(8211, "udp")}
+    rule = _linha(**{"destination.port": "A", "alias_meta_destination.port": [{"summary": resumo}]})
+    assert busy_ports([rule], "wan") == {(8211, "udp")}
 
 
 def test_alias_com_varias_portas_e_faixa():
     resumo = resumo_de_alias("dayz", ["2302", "2303", "2304", "27016", "30000-30002"])
-    regra = _linha(**{"destination.port": "JOGO_DayZ", "alias_meta_destination.port": [{"summary": resumo}]})
-    assert {p for p, _ in busy_ports([regra], "wan")} == {2302, 2303, 2304, 27016, 30000, 30001, 30002}
+    rule = _linha(**{"destination.port": "JOGO_DayZ", "alias_meta_destination.port": [{"summary": resumo}]})
+    assert {p for p, _ in busy_ports([rule], "wan")} == {2302, 2303, 2304, 27016, 30000, 30001, 30002}
 
 
 def test_alias_sem_descricao():
-    regra = _linha(**{"destination.port": "A", "alias_meta_destination.port": [{"summary": "8211<br/>27015"}]})
-    assert {p for p, _ in busy_ports([regra], "wan")} == {8211, 27015}
+    rule = _linha(**{"destination.port": "A", "alias_meta_destination.port": [{"summary": "8211<br/>27015"}]})
+    assert {p for p, _ in busy_ports([rule], "wan")} == {8211, 27015}
 
 
 @pytest.mark.parametrize("protocolo", ["tcp/udp", "TCP/UDP", "any", "", "icmp"])
@@ -81,9 +81,9 @@ def test_porta_fora_do_intervalo_e_erro_e_nao_livre(porta):
                                   [{"summary": resumo_de_alias("x", ["8211", "rm -rf"])}]])
 def test_alias_que_nao_entendo_faz_o_broker_recusar(meta):
     """Falha FECHADA: na duvida o broker nao abre porta nova (nunca supoe que esta livre)."""
-    regra = _linha(**{"destination.port": "ALIAS_ESTRANHO", "alias_meta_destination.port": meta})
+    rule = _linha(**{"destination.port": "ALIAS_ESTRANHO", "alias_meta_destination.port": meta})
     with pytest.raises(ReadError, match="regra"):
-        busy_ports([regra], "wan")
+        busy_ports([rule], "wan")
 
 
 def test_resposta_sem_lista_de_regras():
@@ -175,10 +175,10 @@ def test_porta_invalida_e_recusada(opn, porta):
 
 def test_credencial_errada_e_erro_sem_segredo(opn):
     opn.backend._c = Client(opn.servidor.url, {"Authorization": "Basic segredo-errado"})
-    with pytest.raises(OpnsenseError) as erro:
+    with pytest.raises(OpnsenseError) as error:
         opn.backend.external_ports()
-    assert "HTTP 401" in str(erro.value)
-    assert "segredo-errado" not in str(erro.value)
+    assert "HTTP 401" in str(error.value)
+    assert "segredo-errado" not in str(error.value)
 
 
 def test_acessivel(opn):

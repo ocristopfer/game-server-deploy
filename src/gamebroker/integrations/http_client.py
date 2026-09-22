@@ -89,7 +89,7 @@ class Client:
     def __repr__(self) -> str:
         return f"Cliente({self._host}:{self._porta})"
 
-    def _conexao(self, timeout: float) -> http.client.HTTPConnection:
+    def _connection(self, timeout: float) -> http.client.HTTPConnection:
         if not self._https:
             return http.client.HTTPConnection(self._host, self._porta, timeout=timeout)
         if not self._impressao:
@@ -117,7 +117,7 @@ class Client:
         elif json_corpo is not None:
             body = json.dumps(json_corpo).encode()
             headers["Content-Type"] = "application/json"
-        conexao = self._conexao(self._timeout if timeout is None else timeout)
+        conexao = self._connection(self._timeout if timeout is None else timeout)
         try:
             conexao.request(method, self._prefixo + path, body=body, headers=headers)
             resposta = conexao.getresponse()
@@ -126,9 +126,9 @@ class Client:
             status = resposta.status
         except ConnectionFailed:
             raise
-        except (OSError, http.client.HTTPException) as erro:
+        except (OSError, http.client.HTTPException) as error:
             # So o tipo e a mensagem do erro de rede: nunca cabecalho nem corpo enviado.
-            raise ConnectionFailed(f"{type(erro).__name__} ao falar com {self._host}:{self._porta}") from None
+            raise ConnectionFailed(f"{type(error).__name__} ao falar com {self._host}:{self._porta}") from None
         finally:
             conexao.close()
         if len(bruto) > RESPOSTA_MAX:
@@ -138,7 +138,7 @@ class Client:
         if not text.strip() and status >= 400:
             text = motivo
         try:
-            dados = json.loads(text) if text.strip() else None
+            data = json.loads(text) if text.strip() else None
         except ValueError:
-            dados = None
-        return Response(status, dados, text)
+            data = None
+        return Response(status, data, text)

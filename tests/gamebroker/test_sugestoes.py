@@ -15,11 +15,11 @@ RAIZ = Path(__file__).resolve().parent.parent.parent
 _spec = importlib.util.spec_from_file_location(
     "sugestoes_de_jogos", RAIZ / "src" / "gamepanel" / "games" / "catalog" / "suggestions.py"
 )
-dados = importlib.util.module_from_spec(_spec)
-sys.modules["sugestoes_de_jogos"] = dados
-_spec.loader.exec_module(dados)
+data = importlib.util.module_from_spec(_spec)
+sys.modules["sugestoes_de_jogos"] = data
+_spec.loader.exec_module(data)
 
-SUGESTOES = dados.SUGESTOES
+SUGESTOES = data.SUGESTOES
 
 
 def _como_o_painel_envia(s: dict) -> dict:

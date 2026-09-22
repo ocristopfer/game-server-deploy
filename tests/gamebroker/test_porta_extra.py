@@ -61,9 +61,9 @@ def test_install_env_leva_a_porta_sorteada_e_o_jogo_recebe_o_argumento(satisfact
 
 
 def test_jogo_sem_porta_extra_recebe_extra_zero(dados_de_jogo):
-    jogo = cat.validate_dynamic(dados_de_jogo)
-    ports = alocador.allocate_ports(jogo, set(), FAIXA)
-    assert _valores(build_env(jogo, ports))["EXTRA_PORT"] == "0"
+    game = cat.validate_dynamic(dados_de_jogo)
+    ports = alocador.allocate_ports(game, set(), FAIXA)
+    assert _valores(build_env(game, ports))["EXTRA_PORT"] == "0"
 
 
 # --- jogo cadastrado pela API ---------------------------------------------------------------------
@@ -76,9 +76,9 @@ def com_extra(dados_de_jogo):
 
 
 def test_jogo_com_porta_extra_e_aceito_e_volta_pelo_formato_gravado(com_extra):
-    jogo = cat.validate_dynamic(com_extra)
-    assert jogo.extra_port == 8888
-    assert cat.validate_dynamic(jogo.as_stored()) == jogo
+    game = cat.validate_dynamic(com_extra)
+    assert game.extra_port == 8888
+    assert cat.validate_dynamic(game.as_stored()) == game
 
 
 def test_publico_mostra_a_porta_extra(com_extra):
@@ -94,9 +94,9 @@ def test_publico_mostra_a_porta_extra(com_extra):
 ])
 def test_porta_extra_invalida_e_recusada(com_extra, mudancas, campo):
     com_extra.update(mudancas)
-    with pytest.raises(ValidationError) as erro:
+    with pytest.raises(ValidationError) as error:
         cat.validate_dynamic(com_extra)
-    assert campo in str(erro.value)
+    assert campo in str(error.value)
 
 
 def test_marcador_extra_sem_porta_extra_e_recusado(dados_de_jogo):

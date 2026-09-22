@@ -75,9 +75,9 @@ def test_conexao_recusada_nao_vaza_o_token(eco):
     porta_morta = eco.url
     eco.stop()
     cliente = Client(porta_morta, {"Authorization": f"Bearer {TOKEN}"})
-    with pytest.raises(ConnectionFailed) as erro:
+    with pytest.raises(ConnectionFailed) as error:
         cliente.request("GET", "/x")
-    assert TOKEN not in str(erro.value)
+    assert TOKEN not in str(error.value)
     assert TOKEN not in repr(cliente)
 
 

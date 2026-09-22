@@ -59,38 +59,38 @@ class ConfigProxmox:
 
 class Proxmox:
     def __init__(self, cliente: Client, config: ConfigProxmox,
-                 dormir: Callable[[float], None] = time.sleep):
+                 sleep: Callable[[float], None] = time.sleep):
         self._c = cliente
         self._cfg = config
-        self._dormir = dormir
+        self._dormir = sleep
 
     # --- chamadas -----------------------------------------------------------
 
-    def _api(self, metodo: str, path: str, acao: str, *, form: dict | None = None) -> Response:
+    def _api(self, metodo: str, path: str, action: str, *, form: dict | None = None) -> Response:
         resposta = self._c.request(metodo, "/api2/json" + path, form=form)
         if not resposta.ok:
-            raise ProxmoxError(f"{acao}: HTTP {resposta.status} {_curto(resposta.text)}")
+            raise ProxmoxError(f"{action}: HTTP {resposta.status} {_curto(resposta.text)}")
         return resposta
 
     @staticmethod
     def _payload(resposta: Response) -> object:
         return resposta.json.get("data") if isinstance(resposta.json, dict) else None
 
-    def _task(self, resposta: Response, acao: str) -> None:
+    def _task(self, resposta: Response, action: str) -> None:
         upid = self._payload(resposta)
         if not isinstance(upid, str):
-            raise ProxmoxError(f"{acao}: o Proxmox nao devolveu o identificador da tarefa")
+            raise ProxmoxError(f"{action}: o Proxmox nao devolveu o identificador da tarefa")
         codificado = quote(upid, safe="")
         for _ in range(self._cfg.tentativas):
             state_dir = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/tasks/{codificado}/status",
-                                           f"{acao} (estado da tarefa)"))
+                                           f"{action} (estado da tarefa)"))
             if isinstance(state_dir, dict) and state_dir.get("status") == "stopped":
-                saida = str(state_dir.get("exitstatus", ""))
-                if saida == "OK" or saida.startswith("WARNINGS"):
+                output = str(state_dir.get("exitstatus", ""))
+                if output == "OK" or output.startswith("WARNINGS"):
                     return
-                raise ProxmoxError(f"{acao}: a tarefa terminou com '{_curto(saida)}'{self._log_tail(codificado)}")
+                raise ProxmoxError(f"{action}: a tarefa terminou com '{_curto(output)}'{self._log_tail(codificado)}")
             self._dormir(self._cfg.intervalo)
-        raise ProxmoxError(f"{acao}: a tarefa excedeu o tempo")
+        raise ProxmoxError(f"{action}: a tarefa excedeu o tempo")
 
     def _log_tail(self, upid_codificado: str) -> str:
         resposta = self._c.request(
@@ -123,15 +123,15 @@ class Proxmox:
         if not isinstance(config, dict):
             return set()
         achados: set[str] = set()
-        for key, valor in config.items():
-            if re.fullmatch(r"net\d+", str(key)) and isinstance(valor, str):
-                achados.update(_IP_DE_REDE_RE.findall(valor))
+        for key, value in config.items():
+            if re.fullmatch(r"net\d+", str(key)) and isinstance(value, str):
+                achados.update(_IP_DE_REDE_RE.findall(value))
         return achados
 
     def belongs_to_broker(self, ctid: int) -> bool:
         """Identidade = ser membro do pool do broker. Nao depende da tag."""
-        dados = self._payload(self._c.request("GET", f"/api2/json/pools/{self._cfg.pool}"))
-        membros = dados.get("members", []) if isinstance(dados, dict) else []
+        data = self._payload(self._c.request("GET", f"/api2/json/pools/{self._cfg.pool}"))
+        membros = data.get("members", []) if isinstance(data, dict) else []
         return any(isinstance(m, dict) and m.get("vmid") == ctid and m.get("type") == "lxc" for m in membros)
 
     def reachable(self) -> bool:

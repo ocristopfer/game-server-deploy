@@ -46,14 +46,14 @@ def instance_description(ctid: int) -> str:
 
 # --- leitura das portas ocupadas ---------------------------------------------------
 
-def _number_of(texto: str) -> int:
-    valor = int(texto)
-    if not 1 <= valor <= 65535:
+def _number_of(text: str) -> int:
+    value = int(text)
+    if not 1 <= value <= 65535:
         raise ValueError
-    return valor
+    return value
 
 
-def _expandir(item: str, regra: str) -> set[int]:
+def _expandir(item: str, rule: str) -> set[int]:
     """`7660` ou `8000-8010` (ou `8000:8010`) -> conjunto de portas."""
     item = item.strip()
     try:
@@ -66,27 +66,27 @@ def _expandir(item: str, regra: str) -> set[int]:
                 return set(range(inicio, fim + 1))
     except ValueError:
         pass
-    raise ReadError(f"regra '{regra}': nao entendi a porta {item!r}")
+    raise ReadError(f"regra '{rule}': nao entendi a porta {item!r}")
 
 
-def _ports_of_alias(meta: object, regra: str) -> set[int]:
+def _ports_of_alias(meta: object, rule: str) -> set[int]:
     if not isinstance(meta, list) or not meta:
-        raise ReadError(f"regra '{regra}': o alias de porta nao veio no resultado")
+        raise ReadError(f"regra '{rule}': o alias de porta nao veio no resultado")
     ports: set[int] = set()
     for alias in meta:
         summary = alias.get("summary") if isinstance(alias, dict) else None
         if not isinstance(summary, str):
-            raise ReadError(f"regra '{regra}': alias sem conteudo legivel")
+            raise ReadError(f"regra '{rule}': alias sem conteudo legivel")
         lidas = 0
         for pedaco in _QUEBRA_RE.split(summary):
             pedaco = pedaco.strip()
             # O primeiro pedaco costuma ser a descricao do alias, em HTML: nao e porta.
             if not pedaco or "<" in pedaco or ">" in pedaco:
                 continue
-            ports |= _expandir(pedaco, regra)
+            ports |= _expandir(pedaco, rule)
             lidas += 1
         if lidas == 0:
-            raise ReadError(f"regra '{regra}': o alias nao lista nenhuma porta que eu entenda")
+            raise ReadError(f"regra '{rule}': o alias nao lista nenhuma porta que eu entenda")
     return ports
 
 
@@ -100,18 +100,18 @@ def busy_ports(linhas: object, interface: str) -> set[tuple[int, str]]:
     ocupadas: set[tuple[int, str]] = set()
     if not isinstance(linhas, list):
         raise ReadError("resposta de search_rule sem a lista de regras")
-    for regra in linhas:
-        if not isinstance(regra, dict) or str(regra.get("interface", "")).lower() != interface.lower():
+    for rule in linhas:
+        if not isinstance(rule, dict) or str(rule.get("interface", "")).lower() != interface.lower():
             continue
-        destino = str(regra.get("destination.port", "")).strip()
-        if not destino:
+        target = str(rule.get("destination.port", "")).strip()
+        if not target:
             continue
-        name = str(regra.get("descr", "")) or str(regra.get("uuid", "?"))
-        if _PORTA_RE.fullmatch(destino) or _FAIXA_RE.fullmatch(destino):
-            ports = _expandir(destino, name)
+        name = str(rule.get("descr", "")) or str(rule.get("uuid", "?"))
+        if _PORTA_RE.fullmatch(target) or _FAIXA_RE.fullmatch(target):
+            ports = _expandir(target, name)
         else:
-            ports = _ports_of_alias(regra.get("alias_meta_destination.port"), name)
-        for proto in _protocolos(str(regra.get("protocol", ""))):
+            ports = _ports_of_alias(rule.get("alias_meta_destination.port"), name)
+        for proto in _protocolos(str(rule.get("protocol", ""))):
             ocupadas |= {(p, proto) for p in ports}
     return ocupadas
 
@@ -125,10 +125,10 @@ class Opnsense:
         self._c = cliente
         self._interface = interface
 
-    def _api(self, metodo: str, path: str, acao: str, corpo: object = None) -> Response:
+    def _api(self, metodo: str, path: str, action: str, corpo: object = None) -> Response:
         resposta = self._c.request(metodo, "/api/firewall" + path, json_corpo=corpo)
         if not resposta.ok:
-            raise OpnsenseError(f"{acao}: HTTP {resposta.status}")
+            raise OpnsenseError(f"{action}: HTTP {resposta.status}")
         return resposta
 
     def _regras(self) -> list:
@@ -144,9 +144,9 @@ class Opnsense:
     def _uuids_of_instance(self, ctid: int) -> list[str]:
         descricao = instance_description(ctid)
         achados = []
-        for regra in self._regras():
-            if isinstance(regra, dict) and regra.get("descr") == descricao:
-                uuid = str(regra.get("uuid", ""))
+        for rule in self._regras():
+            if isinstance(rule, dict) and rule.get("descr") == descricao:
+                uuid = str(rule.get("uuid", ""))
                 if _UUID_RE.fullmatch(uuid):
                     achados.append(uuid)
         return achados
@@ -156,27 +156,27 @@ class Opnsense:
         self.close_ports(ctid)  # idempotente: recomecar nao deixa regra duplicada
         criadas: list[str] = []
         try:
-            for porta in ports:
-                criadas.append(self._create_rule(ctid, target, porta))
+            for port in ports:
+                criadas.append(self._create_rule(ctid, target, port))
             self._aplicar()
         except Exception:
             self._delete(criadas)
             raise
 
-    def _create_rule(self, ctid: int, target: str, porta: AllocatedPort) -> str:
-        if porta.proto not in ("tcp", "udp") or not 1 <= porta.number <= 65535:
-            raise OpnsenseError(f"porta invalida: {porta}")
-        regra = {"rule": {
-            "disabled": "0", "interface": self._interface, "protocol": porta.proto,
-            "ipprotocol": "inet", "destination": {"network": "wanip", "port": str(porta.number)},
-            "target": target, "local-port": str(porta.number),
+    def _create_rule(self, ctid: int, target: str, port: AllocatedPort) -> str:
+        if port.proto not in ("tcp", "udp") or not 1 <= port.number <= 65535:
+            raise OpnsenseError(f"porta invalida: {port}")
+        rule = {"rule": {
+            "disabled": "0", "interface": self._interface, "protocol": port.proto,
+            "ipprotocol": "inet", "destination": {"network": "wanip", "port": str(port.number)},
+            "target": target, "local-port": str(port.number),
             "descr": instance_description(ctid), "pass": "pass",
         }}
-        resposta = self._api("POST", "/d_nat/add_rule", f"criar regra {porta}", regra)
-        dados = resposta.json if isinstance(resposta.json, dict) else {}
-        uuid = str(dados.get("uuid", ""))
-        if dados.get("result") != "saved" or not _UUID_RE.fullmatch(uuid):
-            raise OpnsenseError(f"criar regra {porta}: o OPNsense recusou ({_validacoes(dados)})")
+        resposta = self._api("POST", "/d_nat/add_rule", f"criar regra {port}", rule)
+        data = resposta.json if isinstance(resposta.json, dict) else {}
+        uuid = str(data.get("uuid", ""))
+        if data.get("result") != "saved" or not _UUID_RE.fullmatch(uuid):
+            raise OpnsenseError(f"criar regra {port}: o OPNsense recusou ({_validacoes(data)})")
         return uuid
 
     def close_ports(self, ctid: int) -> None:
@@ -211,8 +211,8 @@ class Opnsense:
             return False
 
 
-def _validacoes(dados: dict) -> str:
-    validacoes = dados.get("validations")
+def _validacoes(data: dict) -> str:
+    validacoes = data.get("validations")
     if isinstance(validacoes, dict) and validacoes:
-        return "; ".join(f"{campo}: {texto}" for campo, texto in list(validacoes.items())[:3])
-    return str(dados.get("result", "sem detalhe"))[:100]
+        return "; ".join(f"{campo}: {text}" for campo, text in list(validacoes.items())[:3])
+    return str(data.get("result", "sem detalhe"))[:100]

@@ -82,14 +82,14 @@ class OpnsenseFalso:
 class InstaladorFalso:
     def __init__(self) -> None:
         self.instalados: list[tuple[str, str]] = []
-        self.falha = False
+        self.failure = False
 
-    def install(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
+    def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
-        log(f"instalando {jogo.name} em {ip}")
-        if self.falha:
+        log(f"instalando {game.name} em {ip}")
+        if self.failure:
             raise RuntimeError("instalador falso: steamcmd falhou")
-        self.instalados.append((ip, jogo.key))
+        self.instalados.append((ip, game.key))
         log("instalacao concluida")
 
 

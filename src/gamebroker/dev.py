@@ -28,11 +28,11 @@ class SlowInstaller:
     def __init__(self, step: float):
         self._passo = step
 
-    def install(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
+    def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
         etapas = (
             f"aguardando o SSH de {ip}", "instalando os pacotes base", "baixando o SteamCMD",
-            f"baixando {jogo.name} (app {jogo.app_id})", "criando o servico systemd",
+            f"baixando {game.name} (app {game.app_id})", "criando o servico systemd",
             "removendo a chave do broker do container",
         )
         for etapa in etapas:

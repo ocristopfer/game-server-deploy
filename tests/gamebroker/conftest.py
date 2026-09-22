@@ -146,7 +146,7 @@ def pve():
         chaves_ssh=("ssh-ed25519 AAAAC3Nza-chave-de-teste broker@teste",))
     cliente = Client(servidor.url, {"Authorization": f"PVEAPIToken={TOKEN_PVE}"})
     yield SimpleNamespace(falso=falso, servidor=servidor, config=config, esperas=esperas,
-                          backend=Proxmox(cliente, config, dormir=esperas.append))
+                          backend=Proxmox(cliente, config, sleep=esperas.append))
     servidor.stop()
 
 

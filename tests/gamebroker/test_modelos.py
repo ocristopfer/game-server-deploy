@@ -23,32 +23,32 @@ _spec.loader.exec_module(modelos)
 
 def _como_o_painel_monta(valores: dict[str, str]) -> dict:
     """Espelha `_jogo_do_form` do painel: so converte tipos, sem validar nada."""
-    dados: dict = {}
+    data: dict = {}
     for campo in ("start_args", "config_path", "join_re", "leave_re", "player_source"):
         if valores.get(campo):
-            dados[campo] = valores[campo]
+            data[campo] = valores[campo]
     for campo in ("porta_jogo", "porta_query", "memoria_mb", "cores", "disco_gb"):
         if valores.get(campo):
-            dados[campo] = int(valores[campo])
-    dados["portas"] = [p for p in re.split(r"[\s,]+", valores.get("portas", "").strip()) if p]
+            data[campo] = int(valores[campo])
+    data["portas"] = [p for p in re.split(r"[\s,]+", valores.get("portas", "").strip()) if p]
     for campo in ("config_files", "backup_paths"):
-        dados[campo] = [p.strip() for p in valores.get(campo, "").replace(",", "\n").splitlines() if p.strip()]
-    dados["receitas"] = []
-    dados["deslocavel"] = valores.get("deslocavel") == "1"
-    return dados
+        data[campo] = [p.strip() for p in valores.get(campo, "").replace(",", "\n").splitlines() if p.strip()]
+    data["receitas"] = []
+    data["deslocavel"] = valores.get("deslocavel") == "1"
+    return data
 
 
 def _completo(modelo) -> dict:
     """O que a pessoa acrescenta a mao: identidade e app id (o resto vem do modelo)."""
-    dados = _como_o_painel_monta(modelo.valores)
-    dados.update(chave="meujogo", nome="Meu Jogo", app_id=123456)
-    return dados
+    data = _como_o_painel_monta(modelo.valores)
+    data.update(chave="meujogo", nome="Meu Jogo", app_id=123456)
+    return data
 
 
 @pytest.mark.parametrize("modelo", modelos.MODELOS, ids=lambda m: m.chave)
 def test_modelo_passa_no_validador_do_broker(modelo):
-    jogo = validate_dynamic(_completo(modelo))
-    assert jogo.key == "meujogo"
+    game = validate_dynamic(_completo(modelo))
+    assert game.key == "meujogo"
 
 
 @pytest.mark.parametrize("modelo", modelos.MODELOS, ids=lambda m: m.chave)

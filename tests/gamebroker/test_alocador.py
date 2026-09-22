@@ -75,9 +75,9 @@ def test_jogo_fixo_usa_as_portas_padrao_e_ganha_papel(dados_de_jogo):
 
 
 def test_jogo_fixo_com_porta_ocupada_e_recusado(dados_de_jogo):
-    jogo = _jogo(dados_de_jogo, deslocavel=False)
+    game = _jogo(dados_de_jogo, deslocavel=False)
     with pytest.raises(OutOfResources, match="27016/udp.*nao aceita mudar"):
-        alocador.allocate_ports(jogo, {(27016, "udp")}, FAIXA)
+        alocador.allocate_ports(game, {(27016, "udp")}, FAIXA)
 
 
 def test_jogo_deslocavel_ignora_as_portas_padrao_e_usa_a_faixa(dados_de_jogo):
@@ -94,9 +94,9 @@ def test_jogo_deslocavel_pega_o_primeiro_bloco_inteiro_livre(dados_de_jogo):
 
 
 def test_mesma_porta_em_udp_e_tcp_fica_com_o_mesmo_numero(dados_de_jogo):
-    jogo = _jogo(dados_de_jogo, portas=["7777/udp", "7777/tcp"], porta_query=0, deslocavel=True,
+    game = _jogo(dados_de_jogo, portas=["7777/udp", "7777/tcp"], porta_query=0, deslocavel=True,
                  start_args="-port={PORT}")
-    ports = alocador.allocate_ports(jogo, set(), FAIXA)
+    ports = alocador.allocate_ports(game, set(), FAIXA)
     assert [(p.number, p.proto) for p in ports] == [(31000, "udp"), (31000, "tcp")]
 
 

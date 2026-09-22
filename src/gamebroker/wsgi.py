@@ -54,7 +54,7 @@ def create_app_from_config(cfg: ConfigBroker, **kwargs) -> Flask:
 def create_app_from_env(env: Mapping[str, str] | None = None) -> Flask:
     try:
         cfg = load(os.environ if env is None else env)
-    except ConfigError as erro:
-        print(f"[broker] NAO SUBIU: {erro}", file=sys.stderr)
+    except ConfigError as error:
+        print(f"[broker] NAO SUBIU: {error}", file=sys.stderr)
         raise SystemExit(2) from None
     return create_app_from_config(cfg)

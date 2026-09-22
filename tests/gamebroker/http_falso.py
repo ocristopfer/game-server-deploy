@@ -44,12 +44,12 @@ class ServidorFalso:
                 query = {k: v[0] for k, v in parse_qs(partes.query).items()}
                 status, resposta, *resto = tratador(self.command, unquote(partes.path), query, corpo, headers)
                 reason = resto[0] if resto else None
-                dados = resposta if isinstance(resposta, str) else json.dumps(resposta)
+                data = resposta if isinstance(resposta, str) else json.dumps(resposta)
                 self.send_response(status, reason)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(dados.encode())))
+                self.send_header("Content-Length", str(len(data.encode())))
                 self.end_headers()
-                self.wfile.write(dados.encode())
+                self.wfile.write(data.encode())
 
             do_GET = do_POST = do_PUT = do_DELETE = _tratar
 
@@ -146,11 +146,11 @@ class PveFalso:
                                         ("Creating SSH host key", "WARN: Systemd 257 detected"))}
 
     def _task(self, resto: str) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
-        upid, _, acao = resto.rpartition("/")
+        upid, _, action = resto.rpartition("/")
         tarefa = self.tarefas.get(upid)
         if tarefa is None:
             return 500, "", "no such task"
-        if acao == "log":
+        if action == "log":
             return 200, {"data": [{"n": i, "t": t} for i, t in enumerate(tarefa["log"])]}
         if tarefa["rodadas"] > 0:
             tarefa["rodadas"] -= 1
@@ -249,11 +249,11 @@ class OpnsenseHttpFalso:
         self._adds += 1
         if self.falhar_no_add_numero == self._adds:
             return 200, {"result": "failed", "validations": {"rule.target": "Invalid target"}}
-        regra = corpo.get("rule", {})
+        rule = corpo.get("rule", {})
         uuid = str(uuidlib.uuid4())
         self.regras[uuid] = {
-            "uuid": uuid, "descr": regra.get("descr", ""), "interface": regra.get("interface", ""),
-            "protocol": regra.get("protocol", ""), "destination.port": regra.get("destination", {}).get("port", ""),
-            "target": regra.get("target", ""), "local-port": regra.get("local-port", ""),
-            "disabled": regra.get("disabled", "0"), "pass": regra.get("pass", ""), "associated-rule-id": ""}
+            "uuid": uuid, "descr": rule.get("descr", ""), "interface": rule.get("interface", ""),
+            "protocol": rule.get("protocol", ""), "destination.port": rule.get("destination", {}).get("port", ""),
+            "target": rule.get("target", ""), "local-port": rule.get("local-port", ""),
+            "disabled": rule.get("disabled", "0"), "pass": rule.get("pass", ""), "associated-rule-id": ""}
         return 200, {"result": "saved", "uuid": uuid}

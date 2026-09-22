@@ -10,8 +10,8 @@ from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FA
 from gamebroker.services.allocator import ips_in_range
 
 
-def _criar(amb, jogo="alfa", name="Meu servidor", actor="admin"):
-    return amb.servico.create(jogo, name, actor)
+def _criar(amb, game="alfa", name="Meu servidor", actor="admin"):
+    return amb.servico.create(game, name, actor)
 
 
 # --- caminho feliz ----------------------------------------------------------
@@ -195,7 +195,7 @@ def test_falha_de_validacao_nao_gasta_cota(ambiente):
 # --- desfazer em caso de falha ---------------------------------------------------
 
 def test_falha_na_instalacao_destroi_o_ct_e_libera_a_reserva(ambiente):
-    ambiente.installer.falha = True
+    ambiente.installer.failure = True
     resposta = _criar(ambiente)
     op = ambiente.servico.operation(resposta["operacao_id"])
     assert op["estado"] == OP_ERRO
@@ -222,7 +222,7 @@ def test_falha_no_firewall_desfaz_tudo(ambiente):
 
 
 def test_se_nem_o_desfazer_funciona_a_reserva_fica_como_falhou(ambiente):
-    ambiente.installer.falha = True
+    ambiente.installer.failure = True
     ambiente.proxmox.falha_em = None
 
     def destruir_quebrado(_ctid):
@@ -319,7 +319,7 @@ def test_somente_banco_tambem_exige_desativar_e_o_nome(ambiente):
 
 
 def test_remover_instancia_que_falhou_nao_exige_desativar(ambiente):
-    ambiente.installer.falha = True
+    ambiente.installer.failure = True
     ambiente.proxmox.destroy = lambda _ctid: (_ for _ in ()).throw(RuntimeError("fora"))
     resposta = _criar(ambiente)
     del ambiente.proxmox.destroy
