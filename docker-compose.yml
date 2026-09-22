@@ -43,6 +43,10 @@ services:
       - broker-token
     volumes:
       - ./src/gamepanel:/opt/gamepanel/gamepanel:ro   # o codigo vem do repo: edite e recarregue a pagina
+      # Repo inteiro, so para `docker compose exec -w /workspace panel python3 -m pytest -q`
+      # (ver CLAUDE.md) - pytest.ini, tests/ e src/ precisam estar juntos pro pytest achar
+      # a config e os dois pacotes; o mount de cima e so o que o processo do painel serve.
+      - .:/workspace:ro
       - panel-keys:/keys
       - panel-conf:/etc/gamepanel
       - panel-data:/var/lib/gamepanel

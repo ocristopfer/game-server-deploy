@@ -20,6 +20,11 @@ from gamepanel.security import qr
 from gamepanel.security import totp
 
 ADMIN = Path(__file__).resolve().parent
+RAIZ = ADMIN.parent.parent
+# O subprocesso e um Python novo, sem o sys.path.insert do conftest.py da raiz nem a
+# instalacao editavel do `uv sync` necessariamente presente (o container de dev do painel
+# so tem python3-pytest do apt) - precisa do PYTHONPATH explicito pra achar `gamepanel`.
+ENV_COM_SRC = os.environ | {"PYTHONPATH": str(RAIZ / "src")}
 RE_CODIGO = re.compile(r"\b[0-9a-f]{5}-[0-9a-f]{5}\b")
 
 
@@ -335,7 +340,7 @@ def test_admin_nao_desliga_o_proprio_2fa_por_la(chefe, postar, hora):
 def test_linha_de_comando_desliga_o_2fa(chefe, postar, hora):
     _com_2fa(chefe, postar, hora)
     saida = subprocess.run([sys.executable, "-m", "gamepanel.app", "--reset-2fa", "chefe"],
-                           env=os.environ, capture_output=True, text=True, cwd=ADMIN, timeout=60)
+                           env=ENV_COM_SRC, capture_output=True, text=True, cwd=ADMIN, timeout=60)
     assert saida.returncode == 0, saida.stderr
     assert "desligado" in saida.stdout
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 0
@@ -343,7 +348,7 @@ def test_linha_de_comando_desliga_o_2fa(chefe, postar, hora):
 
 def test_linha_de_comando_recusa_usuario_que_nao_existe(banco):
     saida = subprocess.run([sys.executable, "-m", "gamepanel.app", "--reset-2fa", "ninguem"],
-                           env=os.environ, capture_output=True, text=True, cwd=ADMIN, timeout=60)
+                           env=ENV_COM_SRC, capture_output=True, text=True, cwd=ADMIN, timeout=60)
     assert saida.returncode != 0
     assert "nao existe" in saida.stderr
 
