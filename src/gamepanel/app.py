@@ -54,6 +54,7 @@ from gamepanel.games.catalog import search as busca_de_jogos
 from gamepanel.games.catalog.templates import MODELOS as MODELOS_DE_JOGO
 from gamepanel.integrations import broker_client
 from gamepanel.runtime import a2s, http_probe
+from gamepanel.runtime import log_probe
 from gamepanel.runtime import ssh as ssh_transport
 from gamepanel.security import qr, totp
 from flask import (
@@ -1140,170 +1141,20 @@ def acao_de_jogador(server: Servidor, acao: str, jogador: str, mensagem: str) ->
 
 
 # ------------------------------------------------------ jogadores (pelo log)
-
-# Nem todo jogo publica consulta A2S (o RuneScape Dragonwilds, por exemplo, nao publica).
-# Quando o servidor anuncia entradas e saidas no log, da para contar por ali: o painel
-# reproduz os eventos desde o ultimo start do servico e ve quem sobrou.
-LOG_SCAN_MAX = 20000
-RE_MAX_LEN = 300
-# Palavras que costumam aparecer na linha de entrada/saida — usadas so pelo assistente
-# que ajuda a descobrir o padrao do jogo.
-LOG_HINT_WORDS = (
-    "join", "joined", "left", "leave", "connect", "disconnect", "login", "logout",
-    "player", "jogador", "entrou", "saiu",
-)
-TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})")
-
-# Le do start do servico para ca: eventos de execucoes anteriores contariam jogador
-# que ja foi embora ha muito tempo.
-# $3 = caminho do arquivo de log (pode ter *). Vazio cai no journalctl do servico.
-# Acompanha o log e vai cuspindo linha nova enquanto o SSH estiver de pe. `-n 0`/`tail -n
-# 0` de proposito: o passado nao interessa aqui: quem sabe dizer quem esta online agora e
-# a contagem normal, e este script so avisa que ACONTECEU alguma coisa. Assim o painel nao
-# precisa reproduzir a maquina de estados do log em dois lugares diferentes.
-LOG_FOLLOW_SCRIPT = r"""
-set -u
-unit=$1
-alvo=${2:-}
-
-if [ -n "$alvo" ]; then
-  # Sem aspas para o shell expandir o '*' — o LOG_PATH_RE do painel e quem garante que
-  # nao ha espaco, aspas, $ ou ';' aqui dentro.
-  arq=$(ls -1t $alvo 2>/dev/null | head -n 1)
-  [ -n "$arq" ] || { echo "nenhum arquivo de log casa com $alvo" >&2; exit 3; }
-  # -F (e nao -f) para sobreviver a rotacao do arquivo.
-  exec tail -n 0 -F -- "$arq"
-fi
-
-exec journalctl -u "$unit" -n 0 -f -o short-iso --no-pager
-"""
-
-LOG_PLAYERS_SCRIPT = r"""
-set -u
-unit=$1
-max=$2
-alvo=${3:-}
-
-if [ -n "$alvo" ]; then
-  # $alvo vai SEM aspas de proposito, para o shell do container expandir o '*'. Quem
-  # garante que isso e seguro e o LOG_PATH_RE do painel, que so deixa passar caminho
-  # absoluto com letras, numeros, . _ - / * ? — nada de espaco, aspas, $ ou ;.
-  arq=$(ls -1t $alvo 2>/dev/null | head -n 1)
-  [ -n "$arq" ] || { echo "nenhum arquivo de log casa com $alvo" >&2; exit 3; }
-  [ -r "$arq" ] || { echo "sem permissao de leitura em $arq" >&2; exit 4; }
-  tail -n "$max" -- "$arq"
-  exit 0
-fi
-
-inicio=$(systemctl show -p ActiveEnterTimestamp --value "$unit" 2>/dev/null || true)
-if [ -n "$inicio" ]; then
-  journalctl -u "$unit" --since "$inicio" --no-pager -o short-iso 2>/dev/null | tail -n "$max"
-else
-  journalctl -u "$unit" --no-pager -o short-iso -n "$max" 2>/dev/null
-fi
-"""
-
-
-def compile_pattern(raw: str | None, rotulo: str):
-    """Compila um padrao vindo da tela; devolve None quando esta vazio."""
-    texto = (raw or "").strip()
-    if not texto:
-        return None
-    if len(texto) > RE_MAX_LEN:
-        raise QueryError(f"padrao de {rotulo} longo demais (limite de {RE_MAX_LEN} caracteres)")
-    try:
-        return re.compile(texto)
-    except re.error as exc:
-        raise QueryError(f"padrao de {rotulo} invalido: {exc}")
-
-
-def _log_timestamp(line: str) -> str:
-    m = TS_RE.match(line)
-    return f"{m.group(1)} {m.group(2)}" if m else ""
-
-
-# Linha gigante (stack trace) nao pode custar caro no regex.
-LOG_LINE_MAX = 500
-
-
-def _events_by_name(linhas, entrar, sair) -> dict:
-    """Os dois padroes capturam (?P<name>...): da para dizer QUEM esta online."""
-    online: dict[str, str] = {}
-    for line in linhas:
-        curta = line[:LOG_LINE_MAX]
-        entrou = entrar.search(curta)
-        if entrou:
-            nome = (entrou.groupdict().get("name") or "").strip()
-            if nome:
-                online[nome] = _log_timestamp(line)
-            continue
-        saiu = sair.search(curta) if sair else None
-        if saiu:
-            online.pop((saiu.groupdict().get("name") or "").strip(), None)
-    return {
-        "players": len(online),
-        "list": [{"name": n, "since": t, "score": 0, "seconds": 0} for n, t in online.items()],
-    }
-
-
-def _events_by_count(linhas, entrar, sair) -> dict:
-    """Sem nome na saida (varios servidores Unreal so avisam que alguem saiu):
-    sobra somar as entradas e subtrair as saidas."""
-    total = 0
-    for line in linhas:
-        curta = line[:LOG_LINE_MAX]
-        if entrar.search(curta):
-            total += 1
-        elif sair and sair.search(curta):
-            total = max(0, total - 1)
-    return {"players": total, "list": []}
-
-
-def _events_meio_nome(linhas, entrar, sair) -> dict:
-    """Entrada com nome, saida sem — o caso do Satisfactory.
-
-    O log diz que alguem saiu, mas nao diz quem. A CONTAGEM continua sendo a mesma de
-    antes (entradas menos saidas, exata); a lista passa a mostrar os ultimos a entrar,
-    tantos quantos a conta disser. E um palpite, e a tela avisa que e — mas jogar os
-    nomes fora, que era o que o painel fazia, nao ajudava ninguem.
-    """
-    total = 0
-    ordem: list[tuple[str, str]] = []
-    for line in linhas:
-        curta = line[:LOG_LINE_MAX]
-        entrou = entrar.search(curta)
-        if entrou:
-            total += 1
-            nome = (entrou.groupdict().get("name") or "").strip()
-            if nome:
-                # Reconexao volta para o fim da fila em vez de duplicar.
-                ordem = [p for p in ordem if p[0] != nome]
-                ordem.append((nome, _log_timestamp(line)))
-            continue
-        if sair and sair.search(curta):
-            total = max(0, total - 1)
-            if ordem:
-                ordem.pop(0)  # sai quem esta ha mais tempo: o chute menos ruim
-    lista = ordem[-total:] if total else []
-    return {
-        "players": total,
-        "list": [{"name": n, "since": t, "score": 0, "seconds": 0} for n, t in lista],
-        "aproximado": True,
-    }
-
-
-def _apply_log_events(linhas, entrar, sair) -> dict:
-    """Reproduz os eventos do log em ordem e devolve quem ficou.
-
-    Tres casos, do melhor para o pior: nome nos dois lados (sabe-se quem esta online),
-    nome so na entrada (sabe-se quantos, e quem provavelmente), nome em lugar nenhum
-    (so a contagem).
-    """
-    if not entrar.groupindex.get("name"):
-        return _events_by_count(linhas, entrar, sair)
-    if not sair or sair.groupindex.get("name"):
-        return _events_by_name(linhas, entrar, sair)
-    return _events_meio_nome(linhas, entrar, sair)
+#
+# Implementacao real em gamepanel.runtime.log_probe (Fase 4). Nomes preservados aqui
+# pelos mesmos dois motivos de sempre: teste direto por nome (`panel.compile_pattern`,
+# `panel._apply_log_events`) e uso pelo resto de app.py ainda nao extraido (LOG_FOLLOW_SCRIPT
+# alimenta o streaming de log em tempo real, mais adiante no arquivo).
+LOG_SCAN_MAX = log_probe.LOG_SCAN_MAX
+RE_MAX_LEN = log_probe.RE_MAX_LEN
+LOG_HINT_WORDS = log_probe.LOG_HINT_WORDS
+LOG_LINE_MAX = log_probe.LOG_LINE_MAX
+LOG_FOLLOW_SCRIPT = log_probe.LOG_FOLLOW_SCRIPT
+LOG_PATH_RE = log_probe.LOG_PATH_RE
+compile_pattern = log_probe.compile_pattern
+_apply_log_events = log_probe.apply_log_events
+log_path_valido = log_probe.log_path_valido
 
 
 # ------------------------------------------- descobrir como contar jogadores
@@ -1640,41 +1491,10 @@ def probe_ports(host: str, portas: list[int]) -> list[dict]:
     return [resultados.get(p, {"port": p, "ok": False, "error": MSG_TIMEOUT}) for p in portas]
 
 
-# Caminho do arquivo de log. O '*' e permitido (o DayZ abre um .ADM por sessao), mas
-# nada que o shell do container interprete como outra coisa: sem espaco, aspas, $, ; ou &.
-LOG_PATH_RE = re.compile(r"^/[A-Za-z0-9._*?/-]{1,200}$")
-
-
-def log_path_valido(bruto: str | None) -> str:
-    """Confere o caminho do log antes de ele entrar num comando remoto."""
-    caminho = (bruto or "").strip()
-    if not caminho:
-        return ""
-    if not LOG_PATH_RE.match(caminho) or ".." in caminho:
-        raise ValueError(
-            "caminho de log invalido - use um caminho absoluto, sem espacos"
-            " (o '*' e permitido, ex.: /opt/game/profiles/*.ADM)"
-        )
-    return caminho
-
-
 def read_log_lines(server: Servidor, limite: int = LOG_SCAN_MAX) -> list[str]:
-    """Linhas do log: de um arquivo, quando o servidor tem um; senao do journalctl.
-
-    O limite e parametro porque os dois usos pedem tamanhos bem diferentes: a contagem de
-    jogadores precisa do historico inteiro da subida (quem entrou e nao saiu), e a
-    varredura de erro so quer o rabo do log, de minuto em minuto.
-    """
-    try:
-        alvo = log_path_valido(_valor_guardado(server, "log_path"))
-    except ValueError as exc:
-        raise QueryError(str(exc))
-    raw = ssh_output(
-        server,
-        q("bash", "-lc", LOG_PLAYERS_SCRIPT, "gp", server["service"], str(limite), alvo),
-        timeout=60,
+    return log_probe.read_log_lines(
+        ssh_output, server, server["service"], _valor_guardado(server, "log_path"), limite,
     )
-    return raw.splitlines()
 
 
 def players_from_log(server: Servidor) -> dict:
@@ -1685,7 +1505,7 @@ def players_from_log(server: Servidor) -> dict:
     try:
         linhas = read_log_lines(server)
     except RemoteError as exc:
-        raise QueryError(str(exc))
+        raise QueryError(str(exc)) from exc
 
     resultado = _apply_log_events(linhas, entrar, sair)
     resultado.update({"error": "", "max_players": None, "server_name": "", "map": ""})
