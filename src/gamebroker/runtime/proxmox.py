@@ -123,8 +123,8 @@ class Proxmox:
         if not isinstance(config, dict):
             return set()
         achados: set[str] = set()
-        for chave, valor in config.items():
-            if re.fullmatch(r"net\d+", str(chave)) and isinstance(valor, str):
+        for key, valor in config.items():
+            if re.fullmatch(r"net\d+", str(key)) and isinstance(valor, str):
                 achados.update(_IP_DE_REDE_RE.findall(valor))
         return achados
 
@@ -146,8 +146,8 @@ class Proxmox:
         cfg = self._cfg
         corpo = {
             "vmid": especificacao.ctid, "hostname": especificacao.hostname,
-            "ostemplate": cfg.template, "rootfs": f"{cfg.storage}:{especificacao.disco_gb}",
-            "memory": especificacao.memoria_mb, "swap": 0, "cores": especificacao.cores,
+            "ostemplate": cfg.template, "rootfs": f"{cfg.storage}:{especificacao.disk_gb}",
+            "memory": especificacao.memory_mb, "swap": 0, "cores": especificacao.cores,
             "unprivileged": 1, "features": "nesting=1", "pool": cfg.pool, "start": 0, "onboot": 1,
             "net0": (f"name=eth0,bridge={cfg.bridge},ip={especificacao.ip}/{cfg.prefixo},"
                      f"gw={cfg.gateway},type=veth"),

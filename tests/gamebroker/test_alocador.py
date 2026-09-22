@@ -5,12 +5,12 @@ import pytest
 
 import gamebroker.services.allocator as alocador
 from gamebroker.domain.exceptions import SemRecurso
-from gamebroker.services.catalog import validar_dinamico
+from gamebroker.services.catalog import validate_dynamic
 
 
 def _jogo(dados_de_jogo, **mudancas):
     dados_de_jogo.update(mudancas)
-    return validar_dinamico(dados_de_jogo)
+    return validate_dynamic(dados_de_jogo)
 
 
 def test_ctid_pula_os_usados():
@@ -69,8 +69,8 @@ def test_ip_e_ctid_esgotados():
 
 
 def test_jogo_fixo_usa_as_portas_padrao_e_ganha_papel(dados_de_jogo):
-    portas = alocador.alocar_portas(_jogo(dados_de_jogo, deslocavel=False), set(), FAIXA)
-    assert [(p.numero, p.proto, p.papel) for p in portas] == [
+    ports = alocador.alocar_portas(_jogo(dados_de_jogo, deslocavel=False), set(), FAIXA)
+    assert [(p.number, p.proto, p.role) for p in ports] == [
         (7777, "udp", "jogo"), (27016, "udp", "query")]
 
 
@@ -82,22 +82,22 @@ def test_jogo_fixo_com_porta_ocupada_e_recusado(dados_de_jogo):
 
 def test_jogo_deslocavel_ignora_as_portas_padrao_e_usa_a_faixa(dados_de_jogo):
     # As portas padrao nem estao ocupadas: mesmo assim o jogo anda para a faixa do broker.
-    portas = alocador.alocar_portas(_jogo(dados_de_jogo, deslocavel=True), set(), FAIXA)
-    assert [(p.numero, p.papel) for p in portas] == [(31000, "jogo"), (31001, "query")]
-    assert [p.base for p in portas] == [7777, 27016]
+    ports = alocador.alocar_portas(_jogo(dados_de_jogo, deslocavel=True), set(), FAIXA)
+    assert [(p.number, p.role) for p in ports] == [(31000, "jogo"), (31001, "query")]
+    assert [p.base for p in ports] == [7777, 27016]
 
 
 def test_jogo_deslocavel_pega_o_primeiro_bloco_inteiro_livre(dados_de_jogo):
     ocupadas = {(31000, "udp"), (31003, "udp")}
-    portas = alocador.alocar_portas(_jogo(dados_de_jogo, deslocavel=True), ocupadas, FAIXA)
-    assert [p.numero for p in portas] == [31001, 31002]
+    ports = alocador.alocar_portas(_jogo(dados_de_jogo, deslocavel=True), ocupadas, FAIXA)
+    assert [p.number for p in ports] == [31001, 31002]
 
 
 def test_mesma_porta_em_udp_e_tcp_fica_com_o_mesmo_numero(dados_de_jogo):
     jogo = _jogo(dados_de_jogo, portas=["7777/udp", "7777/tcp"], porta_query=0, deslocavel=True,
                  start_args="-port={PORT}")
-    portas = alocador.alocar_portas(jogo, set(), FAIXA)
-    assert [(p.numero, p.proto) for p in portas] == [(31000, "udp"), (31000, "tcp")]
+    ports = alocador.alocar_portas(jogo, set(), FAIXA)
+    assert [(p.number, p.proto) for p in ports] == [(31000, "udp"), (31000, "tcp")]
 
 
 def test_faixa_cheia_e_recusada_com_a_faixa_na_mensagem(dados_de_jogo):
@@ -114,12 +114,12 @@ def test_bloco_nao_atravessa_o_fim_da_faixa(dados_de_jogo):
 
 
 def test_protocolo_diferente_nao_conflita(dados_de_jogo):
-    portas = alocador.alocar_portas(_jogo(dados_de_jogo, deslocavel=False), {(7777, "tcp")}, FAIXA)
-    assert portas[0].numero == 7777
+    ports = alocador.alocar_portas(_jogo(dados_de_jogo, deslocavel=False), {(7777, "tcp")}, FAIXA)
+    assert ports[0].number == 7777
 
 
 def test_porta_do_papel(dados_de_jogo):
-    portas = alocador.alocar_portas(_jogo(dados_de_jogo), set(), FAIXA)
-    assert alocador.porta_do_papel(portas, alocador.PAPEL_JOGO) == 31000
-    assert alocador.porta_do_papel(portas, alocador.PAPEL_QUERY) == 31001
-    assert alocador.porta_do_papel(portas, "inexistente") == 0
+    ports = alocador.alocar_portas(_jogo(dados_de_jogo), set(), FAIXA)
+    assert alocador.porta_do_papel(ports, alocador.PAPEL_JOGO) == 31000
+    assert alocador.porta_do_papel(ports, alocador.PAPEL_QUERY) == 31001
+    assert alocador.porta_do_papel(ports, "inexistente") == 0

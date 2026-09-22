@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from gamebroker.services.catalog import CHAVE_RE, NOME_RE
+from gamebroker.services.catalog import KEY_RE, NAME_RE
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 _spec = importlib.util.spec_from_file_location("importar_linuxgsm", RAIZ / "tools" / "importar-linuxgsm.py")
@@ -140,11 +140,11 @@ def test_executavel_fora_de_opt_game_e_descartado():
     assert s["start_script"] == ""
 
 
-@pytest.mark.parametrize("nome", ["Counter-Strike: Global Offensive", "Sven Co-op", "Ark: Survival Évolved",
+@pytest.mark.parametrize("name", ["Counter-Strike: Global Offensive", "Sven Co-op", "Ark: Survival Évolved",
                                   "7 Days to Die", "Killing Floor 2 (Beta)"])
-def test_nome_e_chave_saem_no_formato_do_broker(nome):
-    assert NOME_RE.fullmatch(imp.nome_de_exibicao(nome))
-    assert CHAVE_RE.fullmatch(imp.chave_do_jogo(nome))
+def test_nome_e_chave_saem_no_formato_do_broker(name):
+    assert NAME_RE.fullmatch(imp.nome_de_exibicao(name))
+    assert KEY_RE.fullmatch(imp.chave_do_jogo(name))
 
 
 def test_ler_atribuicoes_ignora_comentario_e_usa_a_ultima_atribuicao():

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from gamebroker.services.catalog import validar_dinamico
+from gamebroker.services.catalog import validate_dynamic
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 _spec = importlib.util.spec_from_file_location(
@@ -43,7 +43,7 @@ def test_ha_sugestoes_suficientes_para_valer_a_busca():
 
 @pytest.mark.parametrize("s", SUGESTOES, ids=lambda s: s["chave"])
 def test_toda_sugestao_passa_no_validador_do_broker(s):
-    assert validar_dinamico(_como_o_painel_envia(s)).chave == s["chave"]
+    assert validate_dynamic(_como_o_painel_envia(s)).key == s["chave"]
 
 
 def test_chaves_e_nomes_sao_unicos_para_a_busca_nao_ficar_ambigua():

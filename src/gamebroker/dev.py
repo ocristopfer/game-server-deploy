@@ -17,8 +17,8 @@ from pathlib import Path
 from gamebroker.app import criar_app
 from gamebroker.persistence.db import Banco
 from gamebroker.runtime.fakes import OpnsenseFalso, ProxmoxFalso, RedeFalsa
-from gamebroker.services.allocator import PortaAlocada, ips_da_faixa
-from gamebroker.services.catalog import Catalogo, Jogo
+from gamebroker.services.allocator import AllocatedPort, ips_da_faixa
+from gamebroker.services.catalog import Catalog, Game
 from gamebroker.services.instance_service import Config, Servico
 
 
@@ -28,11 +28,11 @@ class InstaladorLento:
     def __init__(self, passo: float):
         self._passo = passo
 
-    def instalar(self, ip: str, jogo: Jogo, portas: Sequence[PortaAlocada],
+    def instalar(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
         etapas = (
             f"aguardando o SSH de {ip}", "instalando os pacotes base", "baixando o SteamCMD",
-            f"baixando {jogo.nome} (app {jogo.app_id})", "criando o servico systemd",
+            f"baixando {jogo.name} (app {jogo.app_id})", "criando o servico systemd",
             "removendo a chave do broker do container",
         )
         for etapa in etapas:
@@ -44,7 +44,7 @@ def main() -> None:
     token = Path(os.environ["BROKER_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
     estado = Path(os.environ.get("BROKER_DEV_ESTADO", "/tmp/broker-dev"))
     estado.mkdir(parents=True, exist_ok=True)
-    catalogo = Catalogo(Path(os.environ.get("BROKER_GAMES_DIR", "games")), estado / "dinamico")
+    catalogo = Catalog(Path(os.environ.get("BROKER_GAMES_DIR", "games")), estado / "dinamico")
     servico = Servico(
         Banco(str(estado / "broker.db")), catalogo, ProxmoxFalso(), OpnsenseFalso(),
         InstaladorLento(float(os.environ.get("BROKER_DEV_PASSO", "1.5"))), RedeFalsa(),

@@ -9,7 +9,7 @@ from gamebroker.runtime.base import EspecificacaoDeCt
 from gamebroker.runtime.proxmox import ConfigProxmox, ErroDoProxmox, Proxmox
 
 ESPEC = EspecificacaoDeCt(ctid=300, hostname="alfa-300", ip="10.0.0.30", jogo="alfa",
-                          memoria_mb=4096, cores=2, disco_gb=20)
+                          memory_mb=4096, cores=2, disk_gb=20)
 
 
 def test_criar_envia_o_que_o_proxmox_aceita(pve):

@@ -17,8 +17,8 @@ from gamebroker.runtime.ssh_installer import (
     InstaladorSsh,
     montar_env,
 )
-from gamebroker.services.allocator import PortaAlocada
-from gamebroker.services.catalog import validar_dinamico
+from gamebroker.services.allocator import AllocatedPort
+from gamebroker.services.catalog import validate_dynamic
 
 BLOB = "AAAAC3NzaC1lZDI1NTE5AAAAIExemploExemploExemploExemplo"
 CHAVE_PUBLICA = f"ssh-ed25519 {BLOB} broker@teste"
@@ -60,8 +60,8 @@ class ExecutorFalso:
 def pasta_lib(tmp_path: Path) -> Path:
     pasta = tmp_path / "lib"
     pasta.mkdir()
-    for nome in ("ct-install.sh", "ct-fases.sh"):
-        (pasta / nome).write_text("#!/bin/bash\n", encoding="utf-8")
+    for name in ("ct-install.sh", "ct-fases.sh"):
+        (pasta / name).write_text("#!/bin/bash\n", encoding="utf-8")
     return pasta
 
 
@@ -72,12 +72,12 @@ def config(tmp_path: Path, pasta_lib: Path) -> ConfigSsh:
 
 @pytest.fixture
 def jogo(dados_de_jogo):
-    return validar_dinamico(dados_de_jogo)
+    return validate_dynamic(dados_de_jogo)
 
 
 @pytest.fixture
-def portas():
-    return [PortaAlocada(7777, 7777, "udp", "jogo"), PortaAlocada(27016, 27016, "udp", "query")]
+def ports():
+    return [AllocatedPort(7777, 7777, "udp", "jogo"), AllocatedPort(27016, 27016, "udp", "query")]
 
 
 @pytest.fixture
@@ -86,10 +86,10 @@ def instalador(config):
     return InstaladorSsh(config, executor, dormir=lambda _s: None), executor
 
 
-def _instalar(instalador, jogo, portas, log=None):
+def _instalar(instalador, jogo, ports, log=None):
     inst, executor = instalador
     linhas: list[str] = []
-    inst.instalar("10.0.0.30", jogo, portas, log or linhas.append)
+    inst.instalar("10.0.0.30", jogo, ports, log or linhas.append)
     return executor, linhas
 
 
@@ -108,8 +108,8 @@ def _valores(env: str) -> dict[str, str]:
     return dict(zip(saida[0::2], saida[1::2]))
 
 
-def test_env_completo_de_um_jogo_dinamico(jogo, portas):
-    valores = _valores(montar_env(jogo, portas))
+def test_env_completo_de_um_jogo_dinamico(jogo, ports):
+    valores = _valores(montar_env(jogo, ports))
     assert valores["GAME_KEY"] == "meujogo"
     assert valores["STEAM_APP_ID"] == "123456"
     assert valores["GAME_PORT"] == "7777"
@@ -121,38 +121,38 @@ def test_env_completo_de_um_jogo_dinamico(jogo, portas):
     assert valores["PRE_INSTALL_CMD"] == valores["POST_INSTALL_CMD"] == ""
 
 
-def test_credencial_de_conta_steam_nunca_entra(jogo, portas):
-    env = montar_env(jogo, portas)
+def test_credencial_de_conta_steam_nunca_entra(jogo, ports):
+    env = montar_env(jogo, ports)
     assert "STEAM_ANONYMOUS=1" in env
     assert "STEAM_USER" not in env
     assert "STEAM_PASS" not in env
 
 
-def test_portas_deslocadas_chegam_ao_jogo(jogo, portas):
-    deslocadas = [PortaAlocada(7777, 7779, "udp", "jogo"), PortaAlocada(27016, 27018, "udp", "query")]
+def test_portas_deslocadas_chegam_ao_jogo(jogo, ports):
+    deslocadas = [AllocatedPort(7777, 7779, "udp", "jogo"), AllocatedPort(27016, 27018, "udp", "query")]
     valores = _valores(montar_env(jogo, deslocadas))
     assert (valores["GAME_PORT"], valores["QUERY_PORT"]) == ("7779", "27018")
     assert valores["GAME_PORTS"] == "7779/udp 27018/udp"
 
 
-def test_jogo_sem_porta_de_consulta(dados_de_jogo, portas):
+def test_jogo_sem_porta_de_consulta(dados_de_jogo, ports):
     dados_de_jogo.update(porta_query=0, portas=["7777/udp"])
-    jogo = validar_dinamico(dados_de_jogo)
-    assert _valores(montar_env(jogo, portas[:1]))["QUERY_PORT"] == "0"
+    jogo = validate_dynamic(dados_de_jogo)
+    assert _valores(montar_env(jogo, ports[:1]))["QUERY_PORT"] == "0"
 
 
-def test_runtime_de_windows_vira_windows_runtime_e_nao_receita(dados_de_jogo, portas):
+def test_runtime_de_windows_vira_windows_runtime_e_nao_receita(dados_de_jogo, ports):
     dados_de_jogo.update(plataforma="windows", receitas=["wine", "steamclient-sdk64"])
-    valores = _valores(montar_env(validar_dinamico(dados_de_jogo), portas))
+    valores = _valores(montar_env(validate_dynamic(dados_de_jogo), ports))
     assert valores["WINDOWS_RUNTIME"] == "wine"
     assert valores["RECIPES"] == "steamclient-sdk64"
     assert valores["STEAM_PLATFORM"] == "windows"
 
 
-def test_wine_e_proton_juntos_sao_recusados(dados_de_jogo, portas):
+def test_wine_e_proton_juntos_sao_recusados(dados_de_jogo, ports):
     dados_de_jogo.update(plataforma="windows", receitas=["wine", "proton"])
     with pytest.raises(ErroDeInstalacao, match="OU"):
-        montar_env(validar_dinamico(dados_de_jogo), portas)
+        montar_env(validate_dynamic(dados_de_jogo), ports)
 
 
 # Texto que, se o quoting falhasse, executaria algo ou quebraria o `source`.
@@ -161,10 +161,10 @@ NOCIVOS = ["'; touch /tmp/pwned; '", "$(touch /tmp/pwned)", "`touch /tmp/pwned`"
 
 
 @pytest.mark.parametrize("texto", NOCIVOS)
-def test_nenhum_valor_e_interpretado_como_shell(jogo, portas, texto, tmp_path):
+def test_nenhum_valor_e_interpretado_como_shell(jogo, ports, texto, tmp_path):
     """Hooks do catalogo curado podem ter QUALQUER texto: o que chega ao CT e exatamente ele."""
-    curado = replace(jogo, pre_install=texto, post_install=texto[::-1], origem="curado")
-    valores = _valores(montar_env(curado, portas))
+    curado = replace(jogo, pre_install=texto, post_install=texto[::-1], source="curado")
+    valores = _valores(montar_env(curado, ports))
     assert valores["PRE_INSTALL_CMD"] == texto
     assert valores["POST_INSTALL_CMD"] == texto[::-1]
     assert not Path("/tmp/pwned").exists()
@@ -172,8 +172,8 @@ def test_nenhum_valor_e_interpretado_como_shell(jogo, portas, texto, tmp_path):
 
 # --- fluxo -------------------------------------------------------------------------------------
 
-def test_ordem_dos_comandos(instalador, jogo, portas):
-    executor, _ = _instalar(instalador, jogo, portas)
+def test_ordem_dos_comandos(instalador, jogo, ports):
+    executor, _ = _instalar(instalador, jogo, ports)
     assert executor.comandos() == [
         "true",
         f"install -d -m 700 {DESTINO_REMOTO}",
@@ -184,8 +184,8 @@ def test_ordem_dos_comandos(instalador, jogo, portas):
     assert f"rm -rf {DESTINO_REMOTO}" in executor.comandos()[-1]
 
 
-def test_scp_leva_a_lib_e_o_env_e_o_env_existe_na_hora(instalador, jogo, portas):
-    executor, _ = _instalar(instalador, jogo, portas)
+def test_scp_leva_a_lib_e_o_env_e_o_env_existe_na_hora(instalador, jogo, ports):
+    executor, _ = _instalar(instalador, jogo, ports)
     scp = next(a for a, _ in executor.chamadas if a[0] == "scp")
     assert [Path(f).name for f in scp[-4:-1]] == ["ct-install.sh", "ct-fases.sh", "install.env"]
     assert scp[-1] == f"root@10.0.0.30:{DESTINO_REMOTO}/"
@@ -193,8 +193,8 @@ def test_scp_leva_a_lib_e_o_env_e_o_env_existe_na_hora(instalador, jogo, portas)
     assert not Path(scp[-2]).exists(), "o env temporario nao fica no disco do broker"
 
 
-def test_todo_comando_e_lista_sem_shell_e_com_as_opcoes_de_seguranca(instalador, jogo, portas):
-    executor, _ = _instalar(instalador, jogo, portas)
+def test_todo_comando_e_lista_sem_shell_e_com_as_opcoes_de_seguranca(instalador, jogo, ports):
+    executor, _ = _instalar(instalador, jogo, ports)
     for argv, _ in executor.chamadas:
         assert isinstance(argv, list)
         assert argv[0] in ("ssh", "scp")
@@ -205,105 +205,105 @@ def test_todo_comando_e_lista_sem_shell_e_com_as_opcoes_de_seguranca(instalador,
     assert ssh[ssh.index("-i") + 1].endswith("id_broker")
 
 
-def test_o_log_recebe_o_progresso_e_a_chave_removida(instalador, jogo, portas):
-    _, linhas = _instalar(instalador, jogo, portas)
+def test_o_log_recebe_o_progresso_e_a_chave_removida(instalador, jogo, ports):
+    _, linhas = _instalar(instalador, jogo, ports)
     texto = "\n".join(linhas)
     assert "aguardando o SSH de 10.0.0.30" in texto
     assert "INSTALACAO CONCLUIDA" in texto
     assert linhas[-1] == "chave do broker removida do container"
 
 
-def test_limpeza_remove_a_chave_do_broker_e_confere(instalador, jogo, portas):
-    executor, _ = _instalar(instalador, jogo, portas)
+def test_limpeza_remove_a_chave_do_broker_e_confere(instalador, jogo, ports):
+    executor, _ = _instalar(instalador, jogo, ports)
     limpeza = executor.comandos()[-1]
     assert f"grep -vF -- {BLOB}" in limpeza
     assert limpeza.rstrip().endswith(f"! grep -qF -- {BLOB} /root/.ssh/authorized_keys"), \
         "o proprio comando falha se a chave continuar la"
 
 
-def test_timeouts_sao_repassados(instalador, jogo, portas, config):
-    executor, _ = _instalar(instalador, jogo, portas)
+def test_timeouts_sao_repassados(instalador, jogo, ports, config):
+    executor, _ = _instalar(instalador, jogo, ports)
     instalacao = next(t for a, t in executor.chamadas if a[-1].endswith("bash ct-install.sh install.env"))
     assert instalacao == config.timeout_instalacao
 
 
 # --- falhas ------------------------------------------------------------------------------------------
 
-def test_instalador_que_falha_traz_a_cauda_e_ainda_limpa_a_chave(instalador, jogo, portas):
+def test_instalador_que_falha_traz_a_cauda_e_ainda_limpa_a_chave(instalador, jogo, ports):
     inst, executor = instalador
     executor.saidas["bash ct-install.sh"] = (1, ["baixando", "ERROR: SteamCMD nao conseguiu instalar o app"])
     with pytest.raises(ErroDeInstalacao, match=r"codigo 1.*SteamCMD nao conseguiu"):
-        inst.instalar("10.0.0.30", jogo, portas, lambda _l: None)
+        inst.instalar("10.0.0.30", jogo, ports, lambda _l: None)
     assert "rm -rf" in executor.comandos()[-1], "a chave do broker sai mesmo com a instalacao falha"
 
 
-def test_exit_zero_sem_a_marca_de_conclusao_nao_vale(instalador, jogo, portas):
+def test_exit_zero_sem_a_marca_de_conclusao_nao_vale(instalador, jogo, ports):
     inst, executor = instalador
     executor.saidas["bash ct-install.sh"] = (0, ["so isto"])
     with pytest.raises(ErroDeInstalacao, match="sem confirmar"):
-        inst.instalar("10.0.0.30", jogo, portas, lambda _l: None)
+        inst.instalar("10.0.0.30", jogo, ports, lambda _l: None)
     assert "rm -rf" in executor.comandos()[-1]
 
 
-def test_falha_no_envio_tambem_limpa(instalador, jogo, portas):
+def test_falha_no_envio_tambem_limpa(instalador, jogo, ports):
     inst, executor = instalador
     executor.saidas["scp"] = (1, [])
     with pytest.raises(ErroDeInstalacao, match="enviar o instalador"):
-        inst.instalar("10.0.0.30", jogo, portas, lambda _l: None)
+        inst.instalar("10.0.0.30", jogo, ports, lambda _l: None)
     assert "rm -rf" in executor.comandos()[-1]
 
 
-def test_chave_que_nao_sai_faz_a_criacao_falhar(instalador, jogo, portas):
+def test_chave_que_nao_sai_faz_a_criacao_falhar(instalador, jogo, ports):
     """Um CT novo nao pode nascer com acesso permanente do broker."""
     inst, executor = instalador
     executor.saidas["grep -vF"] = (1, [])
     with pytest.raises(ErroDeInstalacao, match="remover a chave do broker"):
-        inst.instalar("10.0.0.30", jogo, portas, lambda _l: None)
+        inst.instalar("10.0.0.30", jogo, ports, lambda _l: None)
 
 
-def test_limpeza_que_falha_nao_esconde_o_erro_da_instalacao(instalador, jogo, portas):
+def test_limpeza_que_falha_nao_esconde_o_erro_da_instalacao(instalador, jogo, ports):
     inst, executor = instalador
     executor.saidas["bash ct-install.sh"] = (1, ["deu ruim"])
     executor.saidas["grep -vF"] = (1, [])
     linhas: list[str] = []
     with pytest.raises(ErroDeInstalacao, match="a instalacao falhou"):
-        inst.instalar("10.0.0.30", jogo, portas, linhas.append)
+        inst.instalar("10.0.0.30", jogo, ports, linhas.append)
     assert any("AVISO" in linha and "remover a chave" in linha for linha in linhas)
 
 
-def test_espera_o_ssh_subir(instalador, jogo, portas):
+def test_espera_o_ssh_subir(instalador, jogo, ports):
     inst, executor = instalador
     executor.falhas_no_ssh_inicial = 3
-    _instalar((inst, executor), jogo, portas)
+    _instalar((inst, executor), jogo, ports)
     assert executor.comandos().count("true") == 4
 
 
-def test_ssh_que_nunca_sobe_e_erro_e_nao_tenta_limpar(config, jogo, portas):
+def test_ssh_que_nunca_sobe_e_erro_e_nao_tenta_limpar(config, jogo, ports):
     relogio = iter(range(0, 10_000, 100))
     executor = ExecutorFalso()
     executor.falhas_no_ssh_inicial = 10**6
     inst = InstaladorSsh(config, executor, dormir=lambda _s: None, agora=lambda: float(next(relogio)))
     with pytest.raises(ErroDeInstalacao, match="nao respondeu"):
-        inst.instalar("10.0.0.30", jogo, portas, lambda _l: None)
+        inst.instalar("10.0.0.30", jogo, ports, lambda _l: None)
     assert set(executor.comandos()) == {"true"}, "nunca entrou: nada a enviar nem a limpar"
 
 
 @pytest.mark.parametrize("ip", ["10.0.0.300", "nao-e-ip", "10.0.0.30; rm -rf /", "", "::1"])
-def test_ip_invalido_nao_gera_comando(instalador, jogo, portas, ip):
+def test_ip_invalido_nao_gera_comando(instalador, jogo, ports, ip):
     inst, executor = instalador
     with pytest.raises(ValueError):
-        inst.instalar(ip, jogo, portas, lambda _l: None)
+        inst.instalar(ip, jogo, ports, lambda _l: None)
     assert executor.chamadas == []
 
 
 # --- saida em lote ----------------------------------------------------------------------------------------
 
-def test_saida_volumosa_vira_poucas_gravacoes_e_linhas_longas_sao_cortadas(instalador, jogo, portas):
+def test_saida_volumosa_vira_poucas_gravacoes_e_linhas_longas_sao_cortadas(instalador, jogo, ports):
     inst, executor = instalador
     executor.saidas["bash ct-install.sh"] = (
         0, [f"progresso {i}%" for i in range(100)] + ["", "x" * 5000, "INSTALACAO CONCLUIDA: ok"])
     gravacoes: list[str] = []
-    inst.instalar("10.0.0.30", jogo, portas, gravacoes.append)
+    inst.instalar("10.0.0.30", jogo, ports, gravacoes.append)
     assert len(gravacoes) < 20, "100+ linhas nao sao 100+ transacoes no banco"
     assert max(len(g) for g in "\n".join(gravacoes).split("\n")) <= 400
     assert "progresso 99%" in "\n".join(gravacoes)
@@ -311,10 +311,10 @@ def test_saida_volumosa_vira_poucas_gravacoes_e_linhas_longas_sao_cortadas(insta
 
 # --- configuracao --------------------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("chave", ["", "ssh-ed25519", "ssh-ed25519 curta", "ssh-ed25519 " + "A" * 30 + "; rm -rf /"])
-def test_chave_publica_invalida(tmp_path, pasta_lib, chave):
+@pytest.mark.parametrize("key", ["", "ssh-ed25519", "ssh-ed25519 curta", "ssh-ed25519 " + "A" * 30 + "; rm -rf /"])
+def test_chave_publica_invalida(tmp_path, pasta_lib, key):
     with pytest.raises(ValueError, match="chave_publica"):
-        ConfigSsh(chave_privada=tmp_path / "k", chave_publica=chave, pasta_lib=pasta_lib)
+        ConfigSsh(chave_privada=tmp_path / "k", chave_publica=key, pasta_lib=pasta_lib)
 
 
 def test_usuario_invalido(tmp_path, pasta_lib):

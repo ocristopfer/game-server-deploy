@@ -43,9 +43,9 @@ class ServidorFalso:
                 servidor.ultimo_corpo = corpo
                 query = {k: v[0] for k, v in parse_qs(partes.query).items()}
                 status, resposta, *resto = tratador(self.command, unquote(partes.path), query, corpo, cabecalhos)
-                motivo = resto[0] if resto else None
+                reason = resto[0] if resto else None
                 dados = resposta if isinstance(resposta, str) else json.dumps(resposta)
-                self.send_response(status, motivo)
+                self.send_response(status, reason)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(dados.encode())))
                 self.end_headers()
@@ -94,9 +94,9 @@ class PveFalso:
         self.falha_na_tag = False
         self.autenticar = True
 
-    def externo(self, vmid: int, net0: str = "", nome: str = "de-fora") -> None:
+    def externo(self, vmid: int, net0: str = "", name: str = "de-fora") -> None:
         """CT que existe no Proxmox mas NAO esta no pool do broker."""
-        self.cts[vmid] = {"hostname": nome, "net0": net0, "features": "", "tags": "",
+        self.cts[vmid] = {"hostname": name, "net0": net0, "features": "", "tags": "",
                           "status": "stopped", "pool": None}
 
     def _upid(self, tipo: str, vmid: int, saida: str = "OK", log: tuple[str, ...] = ()) -> str:
@@ -193,9 +193,9 @@ KEY_OPN = "chave-de-teste"
 SECRET_OPN = "segredo-de-teste"
 
 
-def resumo_de_alias(descricao: str, portas: list[str]) -> str:
+def resumo_de_alias(descricao: str, ports: list[str]) -> str:
     """O texto HTML que o d_nat/search_rule real devolve em alias_meta_destination.port."""
-    return f"<strong>{descricao}</strong><br/>" + "<br/>".join(portas)
+    return f"<strong>{descricao}</strong><br/>" + "<br/>".join(ports)
 
 
 class OpnsenseHttpFalso:

@@ -10,8 +10,8 @@ from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FA
 from gamebroker.services.allocator import ips_da_faixa
 
 
-def _criar(amb, jogo="alfa", nome="Meu servidor", ator="admin"):
-    return amb.servico.criar(jogo, nome, ator)
+def _criar(amb, jogo="alfa", name="Meu servidor", ator="admin"):
+    return amb.servico.criar(jogo, name, ator)
 
 
 # --- caminho feliz ----------------------------------------------------------
@@ -31,7 +31,7 @@ def test_criar_percorre_o_fluxo_inteiro(ambiente):
 
 
 def test_resultado_traz_o_que_o_painel_precisa_para_cadastrar(ambiente):
-    resposta = _criar(ambiente, nome="Servidor do Zeca")
+    resposta = _criar(ambiente, name="Servidor do Zeca")
     resultado = ambiente.servico.operacao(resposta["operacao_id"])["resultado"]
     assert resultado["name"] == "Servidor do Zeca"
     assert resultado["host"] == "10.0.0.30"
@@ -58,8 +58,8 @@ def test_segunda_instancia_pega_outro_ctid_e_ip(ambiente):
 
 def test_jogo_deslocavel_recebe_portas_da_faixa_do_broker(ambiente):
     resposta = _criar(ambiente, "beta", "um")
-    portas = ambiente.banco.instancia(resposta["instancia_id"])["portas"]
-    assert [p["numero"] for p in portas] == [9000, 9001], "faixa propria, nao as portas padrao 8001/8002"
+    ports = ambiente.banco.instancia(resposta["instancia_id"])["portas"]
+    assert [p["numero"] for p in ports] == [9000, 9001], "faixa propria, nao as portas padrao 8001/8002"
     resultado = ambiente.servico.operacao(resposta["operacao_id"])["resultado"]
     assert (resultado["game_port"], resultado["query_port"]) == (9000, 9001)
 
@@ -67,14 +67,14 @@ def test_jogo_deslocavel_recebe_portas_da_faixa_do_broker(ambiente):
 def test_mesmo_jogo_deslocavel_duas_vezes_pega_o_proximo_bloco(ambiente):
     _criar(ambiente, "beta", "um")
     resposta = _criar(ambiente, "beta", "dois")
-    portas = ambiente.banco.instancia(resposta["instancia_id"])["portas"]
-    assert [p["numero"] for p in portas] == [9002, 9003]
+    ports = ambiente.banco.instancia(resposta["instancia_id"])["portas"]
+    assert [p["numero"] for p in ports] == [9002, 9003]
 
 
 def test_faixa_do_broker_pula_porta_que_o_opnsense_ja_redireciona(ambiente):
     ambiente.opnsense.externas = {(9000, "udp")}
-    portas = ambiente.banco.instancia(_criar(ambiente, "beta")["instancia_id"])["portas"]
-    assert [p["numero"] for p in portas] == [9001, 9002]
+    ports = ambiente.banco.instancia(_criar(ambiente, "beta")["instancia_id"])["portas"]
+    assert [p["numero"] for p in ports] == [9001, 9002]
 
 
 # --- CTID que acompanha o IP ---------------------------------------------------
@@ -135,10 +135,10 @@ def test_sem_ip_livre(ambiente):
 
 # --- validacao do pedido ------------------------------------------------------
 
-@pytest.mark.parametrize("nome", ["", "a;b", "$(id)", "x" * 41, None, 7, "../x"])
-def test_nome_invalido(ambiente, nome):
+@pytest.mark.parametrize("name", ["", "a;b", "$(id)", "x" * 41, None, 7, "../x"])
+def test_nome_invalido(ambiente, name):
     with pytest.raises(ErroDeValidacao):
-        ambiente.servico.criar("alfa", nome, "admin")
+        ambiente.servico.criar("alfa", name, "admin")
 
 
 def test_jogo_inexistente(ambiente):

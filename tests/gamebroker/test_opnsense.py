@@ -6,9 +6,9 @@ from http_falso import ServidorFalso, resumo_de_alias
 
 from gamebroker.integrations.http_client import Cliente
 from gamebroker.runtime.opnsense import ErroDeLeitura, ErroDoOpnsense, Opnsense, descricao_da_instancia, portas_ocupadas
-from gamebroker.services.allocator import PortaAlocada
+from gamebroker.services.allocator import AllocatedPort
 
-PORTAS = [PortaAlocada(7001, 7001, "udp", "jogo"), PortaAlocada(7002, 7002, "udp", "query")]
+PORTAS = [AllocatedPort(7001, 7001, "udp", "jogo"), AllocatedPort(7002, 7002, "udp", "query")]
 
 
 def _linha(**campos):
@@ -126,7 +126,7 @@ def test_fechar_apaga_so_as_regras_da_instancia(opn):
     opn.falso.regra_existente("team-speak", "9987")
     opn.falso.regra_existente("", "2222", protocolo="tcp")
     opn.backend.abrir(300, "10.0.0.30", PORTAS)
-    opn.backend.abrir(301, "10.0.0.31", [PortaAlocada(8001, 8001, "udp", "jogo")])
+    opn.backend.abrir(301, "10.0.0.31", [AllocatedPort(8001, 8001, "udp", "jogo")])
     opn.backend.fechar(300)
     restantes = sorted(r["descr"] for r in opn.falso.regras.values())
     assert restantes == ["", "gamepanel:301", "team-speak"]
@@ -138,8 +138,8 @@ def test_fechar_sem_regras_nao_aplica_nada(opn):
 
 
 def test_fechar_nao_confunde_ctid_que_e_prefixo_de_outro(opn):
-    opn.backend.abrir(30, "10.0.0.30", [PortaAlocada(7001, 7001, "udp", "jogo")])
-    opn.backend.abrir(300, "10.0.0.31", [PortaAlocada(8001, 8001, "udp", "jogo")])
+    opn.backend.abrir(30, "10.0.0.30", [AllocatedPort(7001, 7001, "udp", "jogo")])
+    opn.backend.abrir(300, "10.0.0.31", [AllocatedPort(8001, 8001, "udp", "jogo")])
     opn.backend.fechar(30)
     assert [r["descr"] for r in opn.falso.regras.values()] == ["gamepanel:300"]
 
@@ -165,8 +165,8 @@ def test_ip_invalido_nunca_chega_ao_opnsense(opn, ip):
     assert opn.servidor.requisicoes == []
 
 
-@pytest.mark.parametrize("porta", [PortaAlocada(1, 0, "udp", "x"), PortaAlocada(1, 70000, "udp", "x"),
-                                   PortaAlocada(1, 80, "icmp", "x")])
+@pytest.mark.parametrize("porta", [AllocatedPort(1, 0, "udp", "x"), AllocatedPort(1, 70000, "udp", "x"),
+                                   AllocatedPort(1, 80, "icmp", "x")])
 def test_porta_invalida_e_recusada(opn, porta):
     with pytest.raises(ErroDoOpnsense, match="porta invalida"):
         opn.backend.abrir(300, "10.0.0.30", [porta])

@@ -20,7 +20,7 @@ from gamebroker.runtime.fakes import InstaladorFalso, OpnsenseFalso, ProxmoxFals
 from gamebroker.runtime.opnsense import Opnsense
 from gamebroker.runtime.proxmox import ConfigProxmox, Proxmox
 from gamebroker.services.allocator import ips_da_faixa
-from gamebroker.services.catalog import Catalogo
+from gamebroker.services.catalog import Catalog
 from gamebroker.services.instance_service import Config, Servico
 
 TOKEN = "t" * 40
@@ -89,15 +89,15 @@ def dados_de_jogo() -> dict:
 def pasta_de_jogos(tmp_path: Path) -> Path:
     pasta = tmp_path / "games"
     pasta.mkdir()
-    for nome, texto in (("alfa", ENV_ALFA), ("beta", ENV_BETA), ("delta", ENV_DELTA), ("conta", ENV_CONTA)):
-        (pasta / f"{nome}.env").write_text(texto, encoding="utf-8")
+    for name, texto in (("alfa", ENV_ALFA), ("beta", ENV_BETA), ("delta", ENV_DELTA), ("conta", ENV_CONTA)):
+        (pasta / f"{name}.env").write_text(texto, encoding="utf-8")
     (pasta / "_template.env").write_text("GAME_KEY=modelo\n", encoding="utf-8")
     return pasta
 
 
 @pytest.fixture
-def catalogo(tmp_path: Path, pasta_de_jogos: Path) -> Catalogo:
-    return Catalogo(pasta_de_jogos, tmp_path / "dinamico")
+def catalogo(tmp_path: Path, pasta_de_jogos: Path) -> Catalog:
+    return Catalog(pasta_de_jogos, tmp_path / "dinamico")
 
 
 @pytest.fixture
@@ -106,7 +106,7 @@ def relogio() -> Relogio:
 
 
 @pytest.fixture
-def ambiente(tmp_path: Path, catalogo: Catalogo, relogio: Relogio):
+def ambiente(tmp_path: Path, catalogo: Catalog, relogio: Relogio):
     """Servico completo com backends falsos e execucao SINCRONA (a criacao termina dentro
     de `criar`). `ambiente.pendentes` guarda as tarefas quando `adiar` esta ligado."""
     banco = Banco(str(tmp_path / "broker.db"), relogio=lambda: relogio().isoformat(timespec="seconds"))
@@ -114,7 +114,7 @@ def ambiente(tmp_path: Path, catalogo: Catalogo, relogio: Relogio):
         banco=banco, catalogo=catalogo, relogio=relogio, adiar=False, pendentes=[],
         proxmox=ProxmoxFalso(), opnsense=OpnsenseFalso(), instalador=InstaladorFalso(), rede=RedeFalsa(),
         config=Config(ctids=range(300, 310), ips=ips_da_faixa("10.0.0", 30, 40),
-                      portas=range(9000, 9020), max_instancias=5, max_criacoes_por_hora=10),
+                      ports=range(9000, 9020), max_instancias=5, max_criacoes_por_hora=10),
     )
 
     def executar(tarefa):

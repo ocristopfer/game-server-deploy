@@ -8,9 +8,14 @@ faz, e como usar, esta no [README.md](README.md) — nao duplique conteudo entre
 > `docs/architecture-proposal.md`): o codigo saiu de `admin/`/`broker/` para
 > `src/gamepanel/`/`src/gamebroker/` (Fase 3, estrutural, sem mudar comportamento). As
 > notas abaixo ja refletem esses caminhos. A divisao de `app.py` em `services/`/
-> `blueprints/`/`runtime/` (Fase 4) e a traducao dos identificadores pra ingles ainda nao
-> aconteceram — `app.py` continua um arquivo so, com nomes em portugues, so que morando
-> em `src/gamepanel/` em vez de `admin/`.
+> `blueprints/`/`runtime/` (Fase 4) esta em andamento, e a traducao dos identificadores
+> pra ingles comecou pelo `gamebroker` (`services/catalog.py` e as portas ja falam
+> ingles). O `app.py` do painel continua um arquivo so, com nomes em portugues.
+>
+> Ao traduzir um identificador, cuidado com as duas armadilhas que ja morderam aqui: o
+> nome de campo que tambem e CHAVE DE DADO (`dados["chave"]`, `d.update(porta_extra=...)`
+> — formato da API e do disco, nao pode mudar sozinho) e o `@pytest.mark.parametrize`,
+> onde o nome do argumento e uma STRING que nao acompanha o parametro renomeado.
 
 O painel roda com poder de **root nos containers de jogo**. Isso muda o peso de tudo:
 um botao errado para um servidor de verdade, um cache errado mostra um servidor caido
@@ -537,10 +542,10 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
 - **`servico.py` so conhece as interfaces de `backends.py`.** Proxmox, OPNsense, SSH e rede
   reais entram depois sem mexer nele; os testes usam `fakes.py`.
 - **Catalogo em dois niveis**: `games/*.env` (curado, pode ter `PRE/POST_INSTALL_CMD`) e
-  jogos cadastrados pela API (**so dado**). O `.env` e lido por `catalogo.ler_env`, nunca por
+  jogos cadastrados pela API (**so dado**). O `.env` e lido por `catalog.read_env`, nunca por
   `source`, e campo que o broker nao conhece e RECUSADO — e assim que `pre_install_cmd`
   deixa de entrar de contrabando. Campo novo em jogo dinamico = regex propria em
-  `catalogo.py` e um caso em `CASOS_INVALIDOS` do teste.
+  `services/catalog.py` e um caso em `CASOS_INVALIDOS` do teste.
 - **Porta interna == externa, sempre.** Jogo `deslocavel` (`PORTS_SHIFTABLE=1`) recebe um bloco
   de portas seguidas da FAIXA do broker (`BROKER_PORT_INICIO/FIM`, padrao 31000-31999, abaixo das
   efemeras 32768+ e longe das portas padrao dos jogos), nunca as portas padrao; os demais ficam
@@ -548,12 +553,12 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   porta padrao livre: mistura de "servidor antigo na porta padrao" com "servidor do broker na
   faixa" e o que impede um dia colidir. O jogo so e `deslocavel` se o broker consegue AVISA-LO de
   todas as portas: `START_ARGS` com `{PORT}` (e `{QUERY_PORT}` se ha query, `{EXTRA_PORT}` se ha
-  porta extra) e nenhuma porta alem dessas tres (`catalogo.problema_de_deslocavel`, validado no
+  porta extra) e nenhuma porta alem dessas tres (`catalog.shiftable_problem`, validado no
   carregamento). A porta extra (`EXTRA_PORT=`/`porta_extra`) existe por causa do Satisfactory: alem
   da principal (UDP+TCP) ele abre a 8888/TCP de mensagens confiaveis, que sem `-ReliablePort=` fica
   fixa e impede uma segunda instancia. O `ct-fases.sh` troca `{EXTRA_PORT}` como os outros dois; o
   marcador sem porta extra e recusado (viraria `0`). Hoje: Dragonwilds, Satisfactory, Palworld e
-  Icarus. Enshrouded (portas no JSON) e DayZ (2303/2304 derivadas) nao. Ver `alocador.py`.
+  Icarus. Enshrouded (portas no JSON) e DayZ (2303/2304 derivadas) nao. Ver `services/allocator.py`.
   No `comparar.sh` o Satisfactory "antes x depois" roda sem o marcador (`satisfactory-legado.env`):
   o instalador de referencia nao o conhece e deixaria `{EXTRA_PORT}` literal no ExecStart.
 - **Enderecos: o IP diz o CTID.** Painel `.100` (CT 300), broker `.101` (CT 301), jogos do
@@ -570,7 +575,7 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   a internet (a API oficial da loja Steam nem serve: servidor dedicado e app do tipo
   "Tool" e volta `success:false`). Regras do conversor, cada uma com teste em
   `tests/gamebroker/test_importar_linuxgsm.py` e `tests/gamebroker/test_sugestoes.py`: so sai o que o
-  `validar_dinamico` aceita; porta de RCON/telnet/HTTP vai so no argumento e NUNCA no NAT; variavel
+  `validate_dynamic` aceita; porta de RCON/telnet/HTTP vai so no argumento e NUNCA no NAT; variavel
   de senha/nome/IP/token nunca e resolvida (o argumento sai, com aviso); tudo depois de `; | & \`
   `$(` e cortado; variavel vazia derruba a opcao junto (senao ela engole a proxima). Protocolo e
   presumido UDP (so `reliableport`/`httpport` sao TCP): o aviso da sugestao diz isso. ~30 jogos

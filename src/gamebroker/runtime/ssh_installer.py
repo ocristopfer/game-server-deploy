@@ -30,8 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from gamebroker.services.allocator import PAPEL_JOGO, PAPEL_QUERY, PortaAlocada, porta_da_base, porta_do_papel
-from gamebroker.services.catalog import RECEITAS_WINDOWS, Jogo
+from gamebroker.services.allocator import PAPEL_JOGO, PAPEL_QUERY, AllocatedPort, porta_da_base, porta_do_papel
+from gamebroker.services.catalog import RECIPES_WINDOWS, Game
 
 DESTINO_REMOTO = "/root/gamepanel-install"
 MARCA_DE_SUCESSO = "INSTALACAO CONCLUIDA"
@@ -101,27 +101,27 @@ class ConfigSsh:
         return self.chave_publica.split()[1]
 
 
-def montar_env(jogo: Jogo, portas: Sequence[PortaAlocada]) -> str:
+def montar_env(jogo: Game, ports: Sequence[AllocatedPort]) -> str:
     """O `install.env` do CT. Cada valor entre aspas: e DADO, nunca comando."""
-    runtimes = [r for r in jogo.receitas if r in RECEITAS_WINDOWS]
+    runtimes = [r for r in jogo.recipes if r in RECIPES_WINDOWS]
     if len(runtimes) > 1:
         raise ErroDeInstalacao("escolha 'wine' OU 'proton', nao os dois")
-    # Porta interna == externa (ver alocador.py): o jogo e avisado das portas JA alocadas.
-    porta_jogo = porta_do_papel(portas, PAPEL_JOGO) or jogo.porta_jogo
-    porta_query = (porta_do_papel(portas, PAPEL_QUERY) or jogo.porta_query) if jogo.porta_query else 0
-    porta_extra = (porta_da_base(portas, jogo.porta_extra) or jogo.porta_extra) if jogo.porta_extra else 0
+    # Porta interna == externa (ver services/allocator.py): o jogo e avisado das portas JA alocadas.
+    game_port = porta_do_papel(ports, PAPEL_JOGO) or jogo.game_port
+    query_port = (porta_do_papel(ports, PAPEL_QUERY) or jogo.query_port) if jogo.query_port else 0
+    extra_port = (porta_da_base(ports, jogo.extra_port) or jogo.extra_port) if jogo.extra_port else 0
     variaveis = {
-        "GAME_KEY": jogo.chave, "GAME_DISPLAY_NAME": jogo.nome, "STEAM_APP_ID": str(jogo.app_id),
-        "STEAM_PLATFORM": jogo.plataforma, "STEAM_ANONYMOUS": "1",
+        "GAME_KEY": jogo.key, "GAME_DISPLAY_NAME": jogo.name, "STEAM_APP_ID": str(jogo.app_id),
+        "STEAM_PLATFORM": jogo.platform, "STEAM_ANONYMOUS": "1",
         "START_SCRIPT": jogo.start_script, "START_ARGS": jogo.start_args,
-        "GAME_PORT": str(porta_jogo), "QUERY_PORT": str(porta_query), "EXTRA_PORT": str(porta_extra),
-        "GAME_PORTS": " ".join(str(p) for p in portas),
+        "GAME_PORT": str(game_port), "QUERY_PORT": str(query_port), "EXTRA_PORT": str(extra_port),
+        "GAME_PORTS": " ".join(str(p) for p in ports),
         "WINDOWS_RUNTIME": runtimes[0] if runtimes else "",
-        "RECIPES": " ".join(r for r in jogo.receitas if r not in RECEITAS_WINDOWS),
+        "RECIPES": " ".join(r for r in jogo.recipes if r not in RECIPES_WINDOWS),
         # Shell so existe no catalogo curado, revisado no git; jogo cadastrado pela API vem vazio.
         "PRE_INSTALL_CMD": jogo.pre_install, "POST_INSTALL_CMD": jogo.post_install,
     }
-    return "".join(f"{nome}={shlex.quote(valor)}\n" for nome, valor in variaveis.items())
+    return "".join(f"{name}={shlex.quote(valor)}\n" for name, valor in variaveis.items())
 
 
 class _Lote:
@@ -182,11 +182,11 @@ class InstaladorSsh:
 
     # --- fluxo ----------------------------------------------------------------------------------
 
-    def instalar(self, ip: str, jogo: Jogo, portas: Sequence[PortaAlocada],
+    def instalar(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
         ip = str(ipaddress.IPv4Address(ip))
         alvo = self._alvo(ip)
-        env = montar_env(jogo, portas)
+        env = montar_env(jogo, ports)
         self._esperar_ssh(alvo, ip, log)
         falha: Exception | None = None
         try:

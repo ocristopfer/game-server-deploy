@@ -14,7 +14,7 @@ le o arquivo gerado, que vai no repositorio.
 
 Regras de seguranca (cada uma tem teste em broker/test_importar_linuxgsm.py):
 
-- So sai sugestao que o broker aceitaria: o filtro final e o proprio `validar_dinamico`.
+- So sai sugestao que o broker aceitaria: o filtro final e o proprio `validate_dynamic`.
 - Porta de RCON, telnet, HTTP e SourceTV NUNCA vira porta exposta: o valor padrao vai so nos
   argumentos, para o jogo subir, e ela continua atras do firewall.
 - Variavel de senha, nome do servidor, IP e token NUNCA e resolvida: o argumento que a usa e
@@ -42,7 +42,7 @@ RAIZ = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "src"))
 
 from gamebroker.domain.exceptions import ErroDeValidacao  # noqa: E402
-from gamebroker.services.catalog import CHAVE_RE, NOME_RE, validar_dinamico  # noqa: E402
+from gamebroker.services.catalog import KEY_RE, NAME_RE, validate_dynamic  # noqa: E402
 
 FONTE_URL = "https://raw.githubusercontent.com/GameServerManagers/LinuxGSM/master/"
 PASTA_DO_JOGO = "/opt/game"
@@ -70,8 +70,8 @@ def ler_atribuicoes(texto: str) -> dict[str, str]:
     return valores
 
 
-def _e_segredo(nome: str) -> bool:
-    return any(trecho in nome for trecho in SEGREDOS)
+def _e_segredo(name: str) -> bool:
+    return any(trecho in name for trecho in SEGREDOS)
 
 
 def resolver(valor: str, variaveis: dict[str, str], extras: dict[str, str] | None = None,
@@ -83,13 +83,13 @@ def resolver(valor: str, variaveis: dict[str, str], extras: dict[str, str] | Non
     extras = extras or {}
     for _ in range(fundo):
         def troca(m: re.Match) -> str:
-            nome = m.group(1)
-            if nome in extras:
-                return extras[nome]
-            if nome in variaveis and not _e_segredo(nome):
+            name = m.group(1)
+            if name in extras:
+                return extras[name]
+            if name in variaveis and not _e_segredo(name):
                 # Valor vazio ("+server.seed ${seed}" com seed="") deixaria a opcao sem valor, e
                 # ela engoliria a proxima da linha. Fica marcado como nao resolvido: sai junto.
-                return variaveis[nome] or "${vazio}"
+                return variaveis[name] or "${vazio}"
             return m.group(0)
         novo = _VARIAVEL.sub(troca, valor)
         if novo == valor:
@@ -179,19 +179,19 @@ def sugerir(gamename: str, texto_do_cfg: str) -> dict | None:
     if var_extra:
         trocas[var_extra] = "{EXTRA_PORT}"
     # Toda outra porta vira o NUMERO padrao: o jogo sobe com ela, e so as expostas vao ao NAT.
-    for nome in PORTAS_EXPOSTAS + PORTAS_INTERNAS + ("queryport", "steamport", "clientport"):
-        if nome not in trocas and _numero(v.get(nome, "")):
-            trocas[nome] = v[nome]
+    for name in PORTAS_EXPOSTAS + PORTAS_INTERNAS + ("queryport", "steamport", "clientport"):
+        if name not in trocas and _numero(v.get(name, "")):
+            trocas[name] = v[name]
     argumentos, removidos = _limpar_argumentos(resolver(args_brutos, v, trocas))
     if removidos:
         avisos.append("Removi do comando o que o painel nao passa (" + ", ".join(dict.fromkeys(removidos))
                       + "): nome do servidor, senha, IP e caminhos de config. Acrescente o que faltar.")
 
-    portas = [f"{porta}/udp"] if porta else []
+    ports = [f"{porta}/udp"] if porta else []
     if var_query:
-        portas.append(f"{_numero(v[var_query])}/udp")
-    portas += [f"{_numero(v[n])}/{PROTOCOLO_DA_VARIAVEL.get(n, 'udp')}" for n in extras_da_rede]
-    portas = list(dict.fromkeys(portas))
+        ports.append(f"{_numero(v[var_query])}/udp")
+    ports += [f"{_numero(v[n])}/{PROTOCOLO_DA_VARIAVEL.get(n, 'udp')}" for n in extras_da_rede]
+    ports = list(dict.fromkeys(ports))
     escondidas = [n for n in PORTAS_INTERNAS if _numero(v.get(n, "")) and f"${{{n}}}" in args_brutos]
     if escondidas:
         avisos.append("Portas de administracao (" + ", ".join(escondidas)
@@ -209,16 +209,16 @@ def sugerir(gamename: str, texto_do_cfg: str) -> dict | None:
     elif executavel:
         avisos.append("Nao consegui deduzir o executavel: preencha o script de start.")
 
-    deslocavel = (porta and len(extras_da_rede) <= 1 and "{PORT}" in argumentos
+    shiftable = (porta and len(extras_da_rede) <= 1 and "{PORT}" in argumentos
                   and (not var_query or "{QUERY_PORT}" in argumentos)
                   and (not var_extra or "{EXTRA_PORT}" in argumentos))
     sugestao = {
         "appid": appid, "nome": nome_de_exibicao(gamename), "chave": chave_do_jogo(gamename),
-        "portas": " ".join(portas), "porta_jogo": porta,
+        "portas": " ".join(ports), "porta_jogo": porta,
         "porta_query": _numero(v[var_query]) if var_query else 0,
         "porta_extra": _numero(v[var_extra]) if var_extra else 0,
         "start_script": script, "start_args": argumentos,
-        "deslocavel": bool(deslocavel), "avisos": avisos,
+        "deslocavel": bool(shiftable), "avisos": avisos,
     }
     return _passar_pelo_broker(sugestao)
 
@@ -244,7 +244,7 @@ def _passar_pelo_broker(s: dict) -> dict | None:
     identidade ou porta recusada derruba a sugestao inteira."""
     for _ in range(4):
         try:
-            validar_dinamico(_como_dados_do_painel(s))
+            validate_dynamic(_como_dados_do_painel(s))
             return s
         except ErroDeValidacao as erro:
             campo = getattr(erro, "campo", "")
@@ -279,15 +279,15 @@ def _ler_da_pasta(pasta: pathlib.Path, servidor: str) -> str | None:
 def coletar(pasta_local: pathlib.Path | None) -> tuple[list[dict], list[str]]:
     if pasta_local:
         lista = (pasta_local / "serverlist.csv").read_text(encoding="utf-8")
-        obter = lambda n: _ler_da_pasta(pasta_local, n)  # noqa: E731
+        get = lambda n: _ler_da_pasta(pasta_local, n)  # noqa: E731
     else:
         lista = _baixar(FONTE_URL + "lgsm/data/serverlist.csv") or ""
-        obter = lambda n: _baixar(FONTE_URL + f"lgsm/config-default/config-lgsm/{n}/_default.cfg")  # noqa: E731
+        get = lambda n: _baixar(FONTE_URL + f"lgsm/config-default/config-lgsm/{n}/_default.cfg")  # noqa: E731
     jogos = list(csv.DictReader(io.StringIO(lista)))
     if not jogos:
         raise SystemExit("serverlist.csv vazio ou inacessivel")
     with concurrent.futures.ThreadPoolExecutor(6) as pool:
-        textos = list(pool.map(lambda j: obter(j["gameservername"]), jogos))
+        textos = list(pool.map(lambda j: get(j["gameservername"]), jogos))
     sugestoes, pulados = [], []
     for j, texto in zip(jogos, textos):
         s = sugerir(j["gamename"], texto) if texto else None

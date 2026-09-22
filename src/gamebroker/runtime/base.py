@@ -13,8 +13,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from gamebroker.services.allocator import PortaAlocada
-from gamebroker.services.catalog import Jogo
+from gamebroker.services.allocator import AllocatedPort
+from gamebroker.services.catalog import Game
 
 
 @dataclass(frozen=True)
@@ -23,9 +23,9 @@ class EspecificacaoDeCt:
     hostname: str
     ip: str
     jogo: str
-    memoria_mb: int
+    memory_mb: int
     cores: int
-    disco_gb: int
+    disk_gb: int
 
 
 class Proxmox(Protocol):
@@ -51,7 +51,7 @@ class Opnsense(Protocol):
     def portas_externas(self) -> set[tuple[int, str]]:
         """Portas ja redirecionadas no WAN, por qualquer regra (nao so as do broker)."""
 
-    def abrir(self, ctid: int, ip: str, portas: Sequence[PortaAlocada]) -> None:
+    def abrir(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
         """Cria as regras `gamepanel:<ctid>` (destino = ip) e aplica. Idempotente."""
 
     def fechar(self, ctid: int) -> None:
@@ -61,7 +61,7 @@ class Opnsense(Protocol):
 
 
 class Instalador(Protocol):
-    def instalar(self, ip: str, jogo: Jogo, portas: Sequence[PortaAlocada],
+    def instalar(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
         """Instala o jogo dentro do CT por SSH e remove a chave do broker ao terminar."""
 

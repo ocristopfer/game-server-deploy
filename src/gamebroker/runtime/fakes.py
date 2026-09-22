@@ -4,8 +4,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from gamebroker.runtime.base import EspecificacaoDeCt
-from gamebroker.services.allocator import PortaAlocada
-from gamebroker.services.catalog import Jogo
+from gamebroker.services.allocator import AllocatedPort
+from gamebroker.services.catalog import Game
 
 
 class ProxmoxFalso:
@@ -65,11 +65,11 @@ class OpnsenseFalso:
         abertas = {(n, p) for regras in self.regras.values() for (_, n, p) in regras}
         return self.externas | abertas
 
-    def abrir(self, ctid: int, ip: str, portas: Sequence[PortaAlocada]) -> None:
+    def abrir(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
         if self.falha_em == "abrir":
             raise RuntimeError("opnsense falso: abrir falhou")
         self.chamadas.append(("abrir", ctid))
-        self.regras[ctid] = [(ip, p.numero, p.proto) for p in portas]
+        self.regras[ctid] = [(ip, p.number, p.proto) for p in ports]
 
     def fechar(self, ctid: int) -> None:
         self.chamadas.append(("fechar", ctid))
@@ -84,12 +84,12 @@ class InstaladorFalso:
         self.instalados: list[tuple[str, str]] = []
         self.falha = False
 
-    def instalar(self, ip: str, jogo: Jogo, portas: Sequence[PortaAlocada],
+    def instalar(self, ip: str, jogo: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
-        log(f"instalando {jogo.nome} em {ip}")
+        log(f"instalando {jogo.name} em {ip}")
         if self.falha:
             raise RuntimeError("instalador falso: steamcmd falhou")
-        self.instalados.append((ip, jogo.chave))
+        self.instalados.append((ip, jogo.key))
         log("instalacao concluida")
 
 

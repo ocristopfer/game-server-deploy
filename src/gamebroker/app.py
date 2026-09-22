@@ -65,7 +65,7 @@ def criar_app(servico: Servico, token: str, ips_permitidos: tuple[str, ...] = ()
 
     @app.get("/v1/catalogo")
     def catalogo():
-        return jsonify([j.publico() for j in servico.catalogo.listar()])
+        return jsonify([j.as_public() for j in servico.catalogo.list_all()])
 
     @app.post("/v1/catalogo")
     def catalogo_adicionar():

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from gamebroker.services.catalog import validar_dinamico
+from gamebroker.services.catalog import validate_dynamic
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 _spec = importlib.util.spec_from_file_location(
@@ -47,8 +47,8 @@ def _completo(modelo) -> dict:
 
 @pytest.mark.parametrize("modelo", modelos.MODELOS, ids=lambda m: m.chave)
 def test_modelo_passa_no_validador_do_broker(modelo):
-    jogo = validar_dinamico(_completo(modelo))
-    assert jogo.chave == "meujogo"
+    jogo = validate_dynamic(_completo(modelo))
+    assert jogo.key == "meujogo"
 
 
 @pytest.mark.parametrize("modelo", modelos.MODELOS, ids=lambda m: m.chave)

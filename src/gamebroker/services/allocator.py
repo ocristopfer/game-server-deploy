@@ -1,7 +1,7 @@
 """Escolha de CTID, IP e portas. Funcoes puras: quem sabe o que esta ocupado (banco,
 Proxmox, OPNsense, rede) monta os conjuntos e entrega aqui.
 
-A porta interna e a externa sao SEMPRE iguais. Jogo `deslocavel` recebe um bloco de portas
+A porta interna e a externa sao SEMPRE iguais. Jogo `shiftable` recebe um bloco de portas
 seguidas de uma FAIXA PROPRIA do broker (longe das portas padrao dos jogos, que os seus
 servidores antigos ja usam) e o instalador avisa o jogo (GAME_PORT/QUERY_PORT); jogo que nao
 desloca fica com as portas padrao e e recusado se houver conflito. Mapear porta externa
@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from gamebroker.domain.exceptions import SemRecurso
-from gamebroker.services.catalog import Jogo
+from gamebroker.services.catalog import Game
 
 PAPEL_JOGO = "jogo"
 PAPEL_QUERY = "query"
@@ -23,18 +23,18 @@ PAPEL_EXTRA = "extra"
 
 
 @dataclass(frozen=True)
-class PortaAlocada:
+class AllocatedPort:
     base: int
-    numero: int
+    number: int
     proto: str
-    papel: str
+    role: str
 
     @property
-    def chave(self) -> tuple[int, str]:
-        return (self.numero, self.proto)
+    def key(self) -> tuple[int, str]:
+        return (self.number, self.proto)
 
     def __str__(self) -> str:
-        return f"{self.numero}/{self.proto}"
+        return f"{self.number}/{self.proto}"
 
 
 def ips_da_faixa(prefixo: str, inicio: int, fim: int) -> tuple[str, ...]:
@@ -77,44 +77,44 @@ def escolher_ip_e_ctid(candidatos: Iterable[str], ctid_base: int, ctids_usados: 
     raise SemRecurso("nao ha IP/CTID livre na faixa do broker")
 
 
-def _papel(jogo: Jogo, base: int) -> str:
-    if base == jogo.porta_jogo:
+def _papel(jogo: Game, base: int) -> str:
+    if base == jogo.game_port:
         return PAPEL_JOGO
-    if jogo.porta_query and base == jogo.porta_query:
+    if jogo.query_port and base == jogo.query_port:
         return PAPEL_QUERY
     return PAPEL_EXTRA
 
 
-def _em_bloco(jogo: Jogo, inicio: int) -> list[PortaAlocada]:
+def _em_bloco(jogo: Game, inicio: int) -> list[AllocatedPort]:
     """Cada porta-base distinta do jogo vira um numero do bloco; a mesma base em UDP e TCP
     (Satisfactory) fica com o mesmo numero nos dois protocolos."""
     numero_de: dict[int, int] = {}
-    for porta in jogo.portas:
-        numero_de.setdefault(porta.numero, inicio + len(numero_de))
-    return [PortaAlocada(p.numero, numero_de[p.numero], p.proto, _papel(jogo, p.numero))
-            for p in jogo.portas]
+    for porta in jogo.ports:
+        numero_de.setdefault(porta.number, inicio + len(numero_de))
+    return [AllocatedPort(p.number, numero_de[p.number], p.proto, _papel(jogo, p.number))
+            for p in jogo.ports]
 
 
-def alocar_portas(jogo: Jogo, ocupadas: set[tuple[int, str]], faixa: range) -> list[PortaAlocada]:
-    """Jogo fixo: as portas padrao. Jogo `deslocavel`: o primeiro bloco livre da `faixa`."""
-    if not jogo.deslocavel:
-        candidatas = [PortaAlocada(p.numero, p.numero, p.proto, _papel(jogo, p.numero)) for p in jogo.portas]
-        conflitos = [c for c in candidatas if c.chave in ocupadas]
+def alocar_portas(jogo: Game, ocupadas: set[tuple[int, str]], faixa: range) -> list[AllocatedPort]:
+    """Jogo fixo: as portas padrao. Jogo `shiftable`: o primeiro bloco livre da `faixa`."""
+    if not jogo.shiftable:
+        candidatas = [AllocatedPort(p.number, p.number, p.proto, _papel(jogo, p.number)) for p in jogo.ports]
+        conflitos = [c for c in candidatas if c.key in ocupadas]
         if conflitos:
             raise SemRecurso(f"porta {conflitos[0]} ja esta em uso: este jogo nao aceita mudar de porta")
         return candidatas
-    tamanho = len({p.numero for p in jogo.portas})
+    tamanho = len({p.number for p in jogo.ports})
     for inicio in range(faixa.start, faixa.stop - tamanho + 1):
         candidatas = _em_bloco(jogo, inicio)
-        if not any(c.chave in ocupadas for c in candidatas):
+        if not any(c.key in ocupadas for c in candidatas):
             return candidatas
     raise SemRecurso(f"a faixa de portas do broker ({faixa.start}-{faixa.stop - 1}) esta cheia")
 
 
-def porta_do_papel(portas: Iterable[PortaAlocada], papel: str) -> int:
-    return next((p.numero for p in portas if p.papel == papel), 0)
+def porta_do_papel(ports: Iterable[AllocatedPort], role: str) -> int:
+    return next((p.number for p in ports if p.role == role), 0)
 
 
-def porta_da_base(portas: Iterable[PortaAlocada], base: int) -> int:
+def porta_da_base(ports: Iterable[AllocatedPort], base: int) -> int:
     """O numero alocado para a porta que o jogo chama de `base` (0 se nao houver)."""
-    return next((p.numero for p in portas if p.base == base), 0)
+    return next((p.number for p in ports if p.base == base), 0)

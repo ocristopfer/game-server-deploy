@@ -76,8 +76,8 @@ def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
 
     lib = tmp_path / "lib"
     lib.mkdir()
-    for nome in ("ct-install.sh", "ct-fases.sh"):
-        (lib / nome).write_text("#!/bin/bash\n")
+    for name in ("ct-install.sh", "ct-fases.sh"):
+        (lib / name).write_text("#!/bin/bash\n")
     executor = ExecutorFalso()
     ssh = InstaladorSsh(ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, pasta_lib=lib),
                         executor, dormir=lambda _s: None)

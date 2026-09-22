@@ -15,8 +15,8 @@ import gamebroker.services.allocator as alocador
 from gamebroker.domain.exceptions import Conflito, CotaExcedida, ErroDeValidacao, NaoEncontrado
 from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK, Banco
 from gamebroker.runtime.base import EspecificacaoDeCt, Instalador, Opnsense, Proxmox, Rede
-from gamebroker.services.allocator import PortaAlocada
-from gamebroker.services.catalog import NOME_RE, Catalogo, Jogo
+from gamebroker.services.allocator import AllocatedPort
+from gamebroker.services.catalog import NAME_RE, Catalog, Game
 
 _ATOR_RE = re.compile(r"[A-Za-z0-9._-]{1,32}", re.ASCII)
 ATOR_DESCONHECIDO = "desconhecido"
@@ -29,8 +29,8 @@ class Config:
     ips: tuple[str, ...] = ()
     # Diferente de 0: o CTID sai do IP (`ctid_base` + ultimo numero) e `ctids` nao e usado.
     ctid_base: int = 0
-    # Faixa so do broker para jogos `deslocavel`; nao pode cruzar com as portas dos servidores antigos.
-    portas: range = range(31000, 32000)
+    # Faixa so do broker para jogos `shiftable`; nao pode cruzar com as portas dos servidores antigos.
+    ports: range = range(31000, 32000)
     max_instancias: int = 8
     max_criacoes_por_hora: int = 4
 
@@ -49,7 +49,7 @@ def _ator(bruto: str) -> str:
 
 
 class Servico:
-    def __init__(self, banco: Banco, catalogo: Catalogo, proxmox: Proxmox, opnsense: Opnsense,
+    def __init__(self, banco: Banco, catalogo: Catalog, proxmox: Proxmox, opnsense: Opnsense,
                  instalador: Instalador, rede: Rede, config: Config,
                  executar: Callable[[Callable[[], None]], None] = _em_thread,
                  relogio: Callable[[], datetime] = _agora_utc):
@@ -70,7 +70,7 @@ class Servico:
     def saude(self) -> dict:
         return {"broker": True, "proxmox": self.proxmox.acessivel(),
                 "opnsense": self.opnsense.acessivel(),
-                "catalogo_erros": list(self.catalogo.erros)}
+                "catalogo_erros": list(self.catalogo.errors)}
 
     def instancias(self) -> list[dict]:
         return self.banco.instancias()
@@ -82,31 +82,31 @@ class Servico:
         return op
 
     def adicionar_jogo(self, dados: object, ator: str) -> dict:
-        jogo = self.catalogo.adicionar_dinamico(dados)
-        self.banco.auditar(_ator(ator), "catalogo-adicionar", jogo.chave, "ok")
-        return jogo.publico()
+        jogo = self.catalogo.add_dynamic(dados)
+        self.banco.auditar(_ator(ator), "catalogo-adicionar", jogo.key, "ok")
+        return jogo.as_public()
 
     # --- criar ------------------------------------------------------------
 
-    def criar(self, chave_do_jogo: str, nome: str, ator: str) -> dict:
+    def criar(self, chave_do_jogo: str, name: str, ator: str) -> dict:
         ator = _ator(ator)
-        nome = self._nome_valido(nome)
-        jogo = self.catalogo.obter(chave_do_jogo)
-        if not jogo.criavel:
-            raise Conflito(f"{jogo.nome} nao pode ser criado pela API: {jogo.motivo}")
+        name = self._nome_valido(name)
+        jogo = self.catalogo.get(chave_do_jogo)
+        if not jogo.creatable:
+            raise Conflito(f"{jogo.name} nao pode ser criado pela API: {jogo.reason}")
         with self._trava:
             self._checar_cotas()
-            instancia_id, portas = self._reservar(jogo, nome, ator)
+            instancia_id, ports = self._reservar(jogo, name, ator)
             op_id = self.banco.criar_operacao(instancia_id, "criar")
-        self.banco.auditar(ator, "criar", f"{jogo.chave}:{nome}", "aceito", f"instancia {instancia_id}")
-        self._executar(lambda: self._construir(op_id, instancia_id, jogo, portas, ator))
+        self.banco.auditar(ator, "criar", f"{jogo.key}:{name}", "aceito", f"instancia {instancia_id}")
+        self._executar(lambda: self._construir(op_id, instancia_id, jogo, ports, ator))
         return {"operacao_id": op_id, "instancia_id": instancia_id}
 
     @staticmethod
-    def _nome_valido(nome: object) -> str:
-        if not isinstance(nome, str) or not NOME_RE.fullmatch(nome):
+    def _nome_valido(name: object) -> str:
+        if not isinstance(name, str) or not NAME_RE.fullmatch(name):
             raise ErroDeValidacao("nome", "use letras, numeros, espaco, ponto, hifen ou sublinhado (ate 40)")
-        return nome
+        return name
 
     def _checar_cotas(self) -> None:
         if self.banco.operacao_em_andamento():
@@ -117,7 +117,7 @@ class Servico:
         if self.banco.criacoes_desde(desde) >= self.config.max_criacoes_por_hora:
             raise CotaExcedida(f"limite de {self.config.max_criacoes_por_hora} criacoes por hora atingido")
 
-    def _reservar(self, jogo: Jogo, nome: str, ator: str) -> tuple[int, list[PortaAlocada]]:
+    def _reservar(self, jogo: Game, name: str, ator: str) -> tuple[int, list[AllocatedPort]]:
         # Snapshot de fora (Proxmox, OPNsense) + o que o banco ja reservou: o CT pode ter
         # sido criado na mao, e a regra de NAT tambem.
         ctids_px, ips_px = self.proxmox.ctids_e_ips()
@@ -128,11 +128,11 @@ class Servico:
         else:
             ctid = alocador.escolher_ctid(self.config.ctids, ctids_px | ctids_db)
             ip = alocador.escolher_ip(self.config.ips, ips_px | ips_db, self.rede.responde)
-        portas = alocador.alocar_portas(jogo, self.opnsense.portas_externas() | portas_db, self.config.portas)
-        instancia_id = self.banco.reservar(ctid, ip, jogo.chave, nome, f"{jogo.chave}-{ctid}", ator, portas)
-        return instancia_id, portas
+        ports = alocador.alocar_portas(jogo, self.opnsense.portas_externas() | portas_db, self.config.ports)
+        instancia_id = self.banco.reservar(ctid, ip, jogo.key, name, f"{jogo.key}-{ctid}", ator, ports)
+        return instancia_id, ports
 
-    def _construir(self, op_id: str, instancia_id: int, jogo: Jogo, portas: list[PortaAlocada],
+    def _construir(self, op_id: str, instancia_id: int, jogo: Game, ports: list[AllocatedPort],
                    ator: str) -> None:
         inst = self.banco.instancia(instancia_id)
         if inst is None:
@@ -142,20 +142,20 @@ class Servico:
         try:
             log(f"criando o container {inst['ctid']} ({inst['ip']})")
             self.proxmox.criar_ct(EspecificacaoDeCt(
-                ctid=inst["ctid"], hostname=inst["hostname"], ip=inst["ip"], jogo=jogo.chave,
-                memoria_mb=jogo.memoria_mb, cores=jogo.cores, disco_gb=jogo.disco_gb))
+                ctid=inst["ctid"], hostname=inst["hostname"], ip=inst["ip"], jogo=jogo.key,
+                memory_mb=jogo.memory_mb, cores=jogo.cores, disk_gb=jogo.disk_gb))
             criado = True
             self.proxmox.iniciar(inst["ctid"])
-            self.instalador.instalar(inst["ip"], jogo, portas, log)
+            self.instalador.instalar(inst["ip"], jogo, ports, log)
             # O firewall abre por ultimo: o jogo nao fica exposto enquanto ainda instala.
             log("abrindo as portas no firewall")
-            self.opnsense.abrir(inst["ctid"], inst["ip"], portas)
+            self.opnsense.abrir(inst["ctid"], inst["ip"], ports)
         except Exception as erro:  # noqa: BLE001
             self._desfazer(op_id, inst, criado, str(erro))
             self.banco.auditar(ator, "criar", inst["nome"], "falhou", str(erro))
             return
         self.banco.mudar_estado(instancia_id, ESTADO_ATIVA)
-        self.banco.terminar_operacao(op_id, OP_OK, registro_para_o_painel(inst, jogo, portas))
+        self.banco.terminar_operacao(op_id, OP_OK, registro_para_o_painel(inst, jogo, ports))
         self.banco.auditar(ator, "criar", inst["nome"], "ok", f"ctid {inst['ctid']}")
 
     def _logger(self, op_id: str) -> Callable[[str], None]:
@@ -237,14 +237,14 @@ class Servico:
             raise Conflito(f"o CT {ctid} nao pertence ao broker; nada foi alterado")
 
 
-def registro_para_o_painel(inst: dict, jogo: Jogo, portas: list[PortaAlocada]) -> dict:
+def registro_para_o_painel(inst: dict, jogo: Game, ports: list[AllocatedPort]) -> dict:
     """Os campos de `ServidorDoDeploy` do painel: com isso ele chama `ensure_server`."""
     return {
         "broker_id": inst["id"], "name": inst["nome"], "host": inst["ip"],
-        "service": f"{jogo.chave}.service",
-        "game_port": alocador.porta_do_papel(portas, alocador.PAPEL_JOGO),
-        "query_port": alocador.porta_do_papel(portas, alocador.PAPEL_QUERY),
-        "ports": [str(p) for p in portas],
+        "service": f"{jogo.key}.service",
+        "game_port": alocador.porta_do_papel(ports, alocador.PAPEL_JOGO),
+        "query_port": alocador.porta_do_papel(ports, alocador.PAPEL_QUERY),
+        "ports": [str(p) for p in ports],
         "config_path": jogo.config_path, "config_files": list(jogo.config_files),
         "backup_paths": list(jogo.backup_paths), "player_source": jogo.player_source,
         "join_re": jogo.join_re, "leave_re": jogo.leave_re, "log_path": jogo.log_path,

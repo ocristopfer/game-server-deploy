@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from gamebroker.domain.exceptions import Conflito
-from gamebroker.services.allocator import PortaAlocada
+from gamebroker.services.allocator import AllocatedPort
 
 ESTADO_RESERVADA = "reservada"
 ESTADO_ATIVA = "ativa"
@@ -116,21 +116,21 @@ class Banco:
         with self._conexao() as conn:
             ctids = {r["ctid"] for r in conn.execute("SELECT ctid FROM instancias")}
             ips = {r["ip"] for r in conn.execute("SELECT ip FROM instancias")}
-            portas = {(r["numero"], r["proto"]) for r in conn.execute("SELECT numero, proto FROM portas")}
-        return ctids, ips, portas
+            ports = {(r["numero"], r["proto"]) for r in conn.execute("SELECT numero, proto FROM portas")}
+        return ctids, ips, ports
 
-    def reservar(self, ctid: int, ip: str, jogo: str, nome: str, hostname: str, ator: str,
-                 portas: Sequence[PortaAlocada]) -> int:
+    def reservar(self, ctid: int, ip: str, jogo: str, name: str, hostname: str, ator: str,
+                 ports: Sequence[AllocatedPort]) -> int:
         try:
             with self._transacao() as conn:
                 cur = conn.execute(
                     "INSERT INTO instancias (ctid, ip, jogo, nome, hostname, estado, criado_por, criado_em)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (ctid, ip, jogo, nome, hostname, ESTADO_RESERVADA, ator, self._relogio()))
+                    (ctid, ip, jogo, name, hostname, ESTADO_RESERVADA, ator, self._relogio()))
                 instancia_id = int(cur.lastrowid or 0)
                 conn.executemany(
                     "INSERT INTO portas (instancia_id, base, numero, proto, papel) VALUES (?, ?, ?, ?, ?)",
-                    [(instancia_id, p.base, p.numero, p.proto, p.papel) for p in portas])
+                    [(instancia_id, p.base, p.number, p.proto, p.role) for p in ports])
         except sqlite3.IntegrityError as erro:
             raise Conflito(f"reserva recusada pelo banco (nome, CTID, IP ou porta ja em uso): {erro}") from None
         return instancia_id

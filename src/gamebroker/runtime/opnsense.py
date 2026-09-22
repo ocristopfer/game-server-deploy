@@ -19,7 +19,7 @@ import re
 from collections.abc import Sequence
 
 from gamebroker.integrations.http_client import Cliente, Resposta
-from gamebroker.services.allocator import PortaAlocada
+from gamebroker.services.allocator import AllocatedPort
 
 PREFIXO_DA_DESCRICAO = "gamepanel:"
 LIMITE_DE_FAIXA = 5000
@@ -72,7 +72,7 @@ def _expandir(item: str, regra: str) -> set[int]:
 def _portas_do_alias(meta: object, regra: str) -> set[int]:
     if not isinstance(meta, list) or not meta:
         raise ErroDeLeitura(f"regra '{regra}': o alias de porta nao veio no resultado")
-    portas: set[int] = set()
+    ports: set[int] = set()
     for alias in meta:
         summary = alias.get("summary") if isinstance(alias, dict) else None
         if not isinstance(summary, str):
@@ -83,11 +83,11 @@ def _portas_do_alias(meta: object, regra: str) -> set[int]:
             # O primeiro pedaco costuma ser a descricao do alias, em HTML: nao e porta.
             if not pedaco or "<" in pedaco or ">" in pedaco:
                 continue
-            portas |= _expandir(pedaco, regra)
+            ports |= _expandir(pedaco, regra)
             lidas += 1
         if lidas == 0:
             raise ErroDeLeitura(f"regra '{regra}': o alias nao lista nenhuma porta que eu entenda")
-    return portas
+    return ports
 
 
 def _protocolos(protocolo: str) -> tuple[str, ...]:
@@ -106,13 +106,13 @@ def portas_ocupadas(linhas: object, interface: str) -> set[tuple[int, str]]:
         destino = str(regra.get("destination.port", "")).strip()
         if not destino:
             continue
-        nome = str(regra.get("descr", "")) or str(regra.get("uuid", "?"))
+        name = str(regra.get("descr", "")) or str(regra.get("uuid", "?"))
         if _PORTA_RE.fullmatch(destino) or _FAIXA_RE.fullmatch(destino):
-            portas = _expandir(destino, nome)
+            ports = _expandir(destino, name)
         else:
-            portas = _portas_do_alias(regra.get("alias_meta_destination.port"), nome)
+            ports = _portas_do_alias(regra.get("alias_meta_destination.port"), name)
         for proto in _protocolos(str(regra.get("protocol", ""))):
-            ocupadas |= {(p, proto) for p in portas}
+            ocupadas |= {(p, proto) for p in ports}
     return ocupadas
 
 
@@ -151,25 +151,25 @@ class Opnsense:
                     achados.append(uuid)
         return achados
 
-    def abrir(self, ctid: int, ip: str, portas: Sequence[PortaAlocada]) -> None:
+    def abrir(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
         alvo = str(ipaddress.IPv4Address(ip))
         self.fechar(ctid)  # idempotente: recomecar nao deixa regra duplicada
         criadas: list[str] = []
         try:
-            for porta in portas:
+            for porta in ports:
                 criadas.append(self._criar_regra(ctid, alvo, porta))
             self._aplicar()
         except Exception:
             self._apagar(criadas)
             raise
 
-    def _criar_regra(self, ctid: int, alvo: str, porta: PortaAlocada) -> str:
-        if porta.proto not in ("tcp", "udp") or not 1 <= porta.numero <= 65535:
+    def _criar_regra(self, ctid: int, alvo: str, porta: AllocatedPort) -> str:
+        if porta.proto not in ("tcp", "udp") or not 1 <= porta.number <= 65535:
             raise ErroDoOpnsense(f"porta invalida: {porta}")
         regra = {"rule": {
             "disabled": "0", "interface": self._interface, "protocol": porta.proto,
-            "ipprotocol": "inet", "destination": {"network": "wanip", "port": str(porta.numero)},
-            "target": alvo, "local-port": str(porta.numero),
+            "ipprotocol": "inet", "destination": {"network": "wanip", "port": str(porta.number)},
+            "target": alvo, "local-port": str(porta.number),
             "descr": descricao_da_instancia(ctid), "pass": "pass",
         }}
         resposta = self._api("POST", "/d_nat/add_rule", f"criar regra {porta}", regra)
@@ -187,14 +187,14 @@ class Opnsense:
         self._aplicar()
 
     def _apagar(self, uuids: Sequence[str]) -> None:
-        erros = 0
+        errors = 0
         for uuid in uuids:
             try:
                 self._api("POST", f"/d_nat/del_rule/{uuid}", "apagar regra", {})
             except ErroDoOpnsense:
-                erros += 1
-        if erros:
-            raise ErroDoOpnsense(f"nao consegui apagar {erros} regra(s); confira no OPNsense")
+                errors += 1
+        if errors:
+            raise ErroDoOpnsense(f"nao consegui apagar {errors} regra(s); confira no OPNsense")
 
     def _aplicar(self) -> None:
         resposta = self._api("POST", "/filter/apply", "aplicar", {})
