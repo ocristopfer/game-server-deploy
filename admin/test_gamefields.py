@@ -10,7 +10,7 @@ silenciosamente uma noite de 1 segundo - foi exatamente o que motivou o recurso.
 """
 import pytest
 
-import gamefields
+from gamepanel.games import gamefields
 
 
 def campo(arquivo: str, chave: str) -> gamefields.FieldSpec:

@@ -1,8 +1,8 @@
 """Busca de jogo por nome ou App ID (busca_de_jogos.py) sobre a lista gerada do LinuxGSM."""
 from __future__ import annotations
 
-import busca_de_jogos as busca
-import sugestoes_de_jogos
+from gamepanel.games.catalog import search as busca
+from gamepanel.games.catalog import suggestions as sugestoes_de_jogos
 
 
 def _nomes(achados):

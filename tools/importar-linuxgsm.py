@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gera `admin/sugestoes_de_jogos.py` a partir do catalogo do LinuxGSM.
+"""Gera `src/gamepanel/games/catalog/suggestions.py` a partir do catalogo do LinuxGSM.
 
 O LinuxGSM (MIT, https://github.com/GameServerManagers/LinuxGSM) mantem, para ~140 jogos, o
 App ID do servidor dedicado, as portas padrao, o executavel e os parametros de start. O painel
@@ -321,7 +321,11 @@ def escrever(sugestoes: list[dict], saida: pathlib.Path) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--de", type=pathlib.Path, help="pasta local com serverlist.csv e <servidor>.cfg")
-    ap.add_argument("--saida", type=pathlib.Path, default=RAIZ / "admin" / "sugestoes_de_jogos.py")
+    ap.add_argument(
+        "--saida",
+        type=pathlib.Path,
+        default=RAIZ / "src" / "gamepanel" / "games" / "catalog" / "suggestions.py",
+    )
     opts = ap.parse_args()
     sugestoes, pulados = coletar(opts.de)
     escrever(sugestoes, opts.saida)

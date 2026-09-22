@@ -13,7 +13,9 @@ import pytest
 from gamebroker.catalogo import validar_dinamico
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
-_spec = importlib.util.spec_from_file_location("modelos_de_jogo", RAIZ / "admin" / "modelos_de_jogo.py")
+_spec = importlib.util.spec_from_file_location(
+    "modelos_de_jogo", RAIZ / "src" / "gamepanel" / "games" / "catalog" / "templates.py"
+)
 modelos = importlib.util.module_from_spec(_spec)
 sys.modules["modelos_de_jogo"] = modelos
 _spec.loader.exec_module(modelos)

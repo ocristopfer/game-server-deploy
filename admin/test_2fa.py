@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 
 import app as panel
-import qr
-import totp
+from gamepanel.security import qr
+from gamepanel.security import totp
 
 ADMIN = Path(__file__).resolve().parent
 RE_CODIGO = re.compile(r"\b[0-9a-f]{5}-[0-9a-f]{5}\b")

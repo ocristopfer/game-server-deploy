@@ -5,7 +5,7 @@ import base64
 
 import pytest
 
-import totp
+from gamepanel.security import totp
 
 # Apendice B do RFC 6238: o segredo ASCII "12345678901234567890" e os codigos de 8 digitos para
 # SHA-1; os de 6 digitos sao os 6 ultimos (o resto da divisao por 10^6).

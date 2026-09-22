@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-import sugestoes_de_jogos
+from gamepanel.games.catalog import suggestions as sugestoes_de_jogos
 
 FONTE = sugestoes_de_jogos.FONTE
 LIMITE_PADRAO = 8

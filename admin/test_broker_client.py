@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-import broker_client as bc
+from gamepanel.integrations import broker_client as bc
 
 TOKEN = "t" * 40
 

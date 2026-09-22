@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verificacao MANUAL do codificador QR (admin/qr.py) contra um leitor de verdade.
+"""Verificacao MANUAL do codificador QR (src/gamepanel/security/qr.py) contra um leitor de verdade.
 
 Nao roda no pytest: opencv-python-headless e segno juntos passam de 60 MB, e o painel (e o
 .venv de desenvolvimento) ficam so com Flask, de proposito (ver CLAUDE.md). Rode isto a mao
@@ -21,8 +21,8 @@ import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(RAIZ / "admin"))
-import qr  # noqa: E402
+sys.path.insert(0, str(RAIZ / "src"))
+from gamepanel.security import qr  # noqa: E402
 
 try:
     import cv2

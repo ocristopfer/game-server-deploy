@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-import gameconf as gc
+from gamepanel.games import config_format as gc
 
 
 def campo(doc: gc.ConfigFile, secao: str, chave: str) -> gc.Setting:

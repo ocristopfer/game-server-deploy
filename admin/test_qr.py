@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-import qr
+from gamepanel.security import qr
 
 
 def _avalia(poly: list[int], x: int) -> int:

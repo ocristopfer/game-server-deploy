@@ -1,7 +1,7 @@
 """Mapa da interface (ui.py): quem ve o que na barra larga, e o que acende em cada rota."""
 from __future__ import annotations
 
-import ui
+from gamepanel import navigation as ui
 
 
 def _chaves(itens):

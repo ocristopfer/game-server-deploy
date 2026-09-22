@@ -48,14 +48,13 @@ try:
 except ImportError:  # pragma: no cover - Windows
     HAVE_PTY = False
 
-import broker_client
-import busca_de_jogos
-import gameconf
-import gamefields
-import qr
-import totp
-import ui
-from modelos_de_jogo import MODELOS as MODELOS_DE_JOGO
+from gamepanel import navigation as ui
+from gamepanel.games import config_format as gameconf
+from gamepanel.games import gamefields
+from gamepanel.games.catalog import search as busca_de_jogos
+from gamepanel.games.catalog.templates import MODELOS as MODELOS_DE_JOGO
+from gamepanel.integrations import broker_client
+from gamepanel.security import qr, totp
 from flask import (
     Flask,
     abort,
