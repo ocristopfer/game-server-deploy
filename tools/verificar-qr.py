@@ -9,7 +9,7 @@ sempre que mexer em `qr.py`, numa venv descartavel:
     /tmp/verifica-qr/Scripts/pip install opencv-python-headless segno   # so aqui, nunca no .venv do repo
     /tmp/verifica-qr/Scripts/python tools/verificar-qr.py
 
-O que confere: o SVG desenhado por `qr.matriz()` decodifica de volta ao texto original pelo
+O que confere: o SVG desenhado por `qr.matrix()` decodifica de volta ao texto original pelo
 `cv2.QRCodeDetector` (o mesmo motor de uma camera de celular) em textos curtos, longos, com
 acento e no limite de cada versao; e que a versao escolhida bate com a do `segno` (referencia)
 para texto que nao e so digito (o `qr.py` so faz modo byte, entao numero puro usa uma versao
@@ -59,7 +59,7 @@ def main() -> None:
     detector = cv2.QRCodeDetector()
     falhas = 0
     for texto in CASOS:
-        matriz = qr.matriz(texto)
+        matriz = qr.matrix(texto)
         lido, _pontos, _ = detector.detectAndDecode(_rasteriza(matriz))
         ok = lido == texto
         print(("OK   " if ok else "FALHA"), f"bytes={len(texto.encode()):3d} modulos={len(matriz):3d}",
@@ -67,17 +67,17 @@ def main() -> None:
         falhas += not ok
 
     try:
-        qr.matriz("x" * 214)
+        qr.matrix("x" * 214)
         print("FALHA capacidade maxima nao recusou 214 bytes")
         falhas += 1
-    except qr.TextoGrandeDemais:
+    except qr.TextTooLarge:
         print("OK   capacidade maxima recusa 214 bytes")
 
     print("\n--- versao escolhida x segno (texto nao numerico, mesma correcao M) ---")
     for texto in ("HELLO WORLD", CASOS[0], "x" * 100):
         referencia = segno.make(texto, error="m", boost_error=False, micro=False)
         esperado = 4 * int(referencia.version) + 17
-        obtido = len(qr.matriz(texto))
+        obtido = len(qr.matrix(texto))
         bate = esperado == obtido
         print(("OK   " if bate else "DIFERE"), texto[:30], "segno=", esperado, "qr.py=", obtido)
         falhas += not bate

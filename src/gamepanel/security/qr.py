@@ -5,18 +5,20 @@ Existe para a tela de ativacao do segundo fator: o painel nao baixa nada e nao t
 nao ha biblioteca de QR. O `otpauth://` de um usuario tem uns 130 bytes, o que cabe na versao 8
 (correcao M leva ate 213 bytes na versao 10 — de sobra para o que o painel gera).
 
-Puro (sem Flask), como `ui.py` e `totp.py`. A saida e um SVG proprio, so de numeros: pode entrar
-na pagina sem escape. Preto sobre branco com a zona de silencio de 4 modulos, mesmo no tema
-escuro: e o contraste que o leitor da camera espera.
+Puro (sem Flask), como `navigation.py` e `totp.py`. A saida e um SVG proprio, so de numeros:
+pode entrar na pagina sem escape. Preto sobre branco com a zona de silencio de 4 modulos,
+mesmo no tema escuro: e o contraste que o leitor da camera espera.
 
 Foi conferido contra um leitor de verdade (OpenCV) e contra a biblioteca `segno` — ver
 `test_qr.py` para o que fica travado no repositorio.
 """
 from __future__ import annotations
 
+import itertools
+
 # versao -> (bytes de correcao por bloco, [(quantidade de blocos, bytes de dados por bloco), ...])
 # Nivel M (~15% de perda tolerada). Tabela da ISO 18004, secao 7.5.1.
-_BLOCOS_M = {
+_BLOCKS_M = {
     1: (10, [(1, 16)]),
     2: (16, [(1, 28)]),
     3: (26, [(1, 44)]),
@@ -28,32 +30,35 @@ _BLOCOS_M = {
     9: (22, [(3, 36), (2, 37)]),
     10: (26, [(4, 43), (1, 44)]),
 }
-_ALINHAMENTO = {
+_ALIGNMENT = {
     1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34],
     7: [6, 22, 38], 8: [6, 24, 42], 9: [6, 26, 46], 10: [6, 28, 50],
 }
-_BITS_DE_FORMATO_M = 0b00           # nivel de correcao M
+_FORMAT_BITS_M = 0b00           # nivel de correcao M
 _PAD = (0xEC, 0x11)
+_LARGE_VERSION = 10             # a partir daqui a contagem de caracteres usa 16 bits, nao 8
+_VERSIONED_FORMAT = 7           # a partir daqui o QR carrega os proprios bits de versao
+_TIMING_COLUMN = 6              # coluna/linha reservada ao padrao de temporizacao
 
 
-class TextoGrandeDemais(ValueError):
+class TextTooLarge(ValueError):
     """Nao cabe na versao 10 com correcao M (213 bytes)."""
 
 
-def capacidade(versao: int) -> int:
+def capacity(version: int) -> int:
     """Bytes de texto que a versao comporta em modo byte."""
-    dados = sum(n * d for n, d in _BLOCOS_M[versao][1])
-    return dados - (2 if versao < 10 else 3)   # 4 bits de modo + 8 ou 16 de contagem
+    data = sum(n * d for n, d in _BLOCKS_M[version][1])
+    return data - (2 if version < _LARGE_VERSION else 3)   # 4 bits de modo + 8 ou 16 de contagem
 
 
-def _versao_para(tamanho: int) -> int:
-    for versao in _BLOCOS_M:
-        if tamanho <= capacidade(versao):
-            return versao
-    raise TextoGrandeDemais(f"{tamanho} bytes: o maximo e {capacidade(10)}")
+def _version_for(size: int) -> int:
+    for version in _BLOCKS_M:
+        if size <= capacity(version):
+            return version
+    raise TextTooLarge(f"{size} bytes: o maximo e {capacity(10)}")
 
 
-# --------------------------------------------------------------------- Reed-Solomon (GF(256))
+# --------------------------------------------------------------------- Reed-Solomon no campo de Galois de 256 elementos
 
 _EXP = [0] * 512
 _LOG = [0] * 256
@@ -72,167 +77,199 @@ def _mul(a: int, b: int) -> int:
     return 0 if a == 0 or b == 0 else _EXP[_LOG[a] + _LOG[b]]
 
 
-def _gerador(grau: int) -> list[int]:
+def _generator(degree: int) -> list[int]:
     poly = [1]
-    for i in range(grau):
-        proximo = [0] * (len(poly) + 1)
+    for i in range(degree):
+        next_poly = [0] * (len(poly) + 1)
         for j, coef in enumerate(poly):
-            proximo[j] ^= coef
-            proximo[j + 1] ^= _mul(coef, _EXP[i])
-        poly = proximo
+            next_poly[j] ^= coef
+            next_poly[j + 1] ^= _mul(coef, _EXP[i])
+        poly = next_poly
     return poly
 
 
-def _correcao(dados: list[int], quantidade: int) -> list[int]:
-    gerador = _gerador(quantidade)
-    resto = list(dados) + [0] * quantidade
-    for i in range(len(dados)):
-        fator = resto[i]
-        if fator:
-            for j, coef in enumerate(gerador):
-                resto[i + j] ^= _mul(coef, fator)
-    return resto[len(dados):]
+def _correction(data: list[int], count: int) -> list[int]:
+    generator = _generator(count)
+    remainder = list(data) + [0] * count
+    for i in range(len(data)):
+        factor = remainder[i]
+        if factor:
+            for j, coef in enumerate(generator):
+                remainder[i + j] ^= _mul(coef, factor)
+    return remainder[len(data):]
 
 
 # ------------------------------------------------------------------- dados -> palavras-codigo
 
-def _palavras(dados: bytes, versao: int) -> list[int]:
+def _codewords(data: bytes, version: int) -> list[int]:
     bits: list[int] = []
 
-    def escreve(valor: int, quantos: int) -> None:
-        bits.extend((valor >> i) & 1 for i in range(quantos - 1, -1, -1))
+    def write(value: int, how_many: int) -> None:
+        bits.extend((value >> i) & 1 for i in range(how_many - 1, -1, -1))
 
-    escreve(0b0100, 4)                                    # modo byte
-    escreve(len(dados), 8 if versao < 10 else 16)
-    for byte in dados:
-        escreve(byte, 8)
-    total_de_bits = sum(n * d for n, d in _BLOCOS_M[versao][1]) * 8
-    bits.extend([0] * min(4, total_de_bits - len(bits)))  # terminador
+    write(0b0100, 4)                                    # modo byte
+    write(len(data), 8 if version < _LARGE_VERSION else 16)
+    for byte in data:
+        write(byte, 8)
+    total_bits = sum(n * d for n, d in _BLOCKS_M[version][1]) * 8
+    bits.extend([0] * min(4, total_bits - len(bits)))  # terminador
     bits.extend([0] * (-len(bits) % 8))
-    palavras = [int("".join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
+    words = [int("".join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
     i = 0
-    while len(palavras) < total_de_bits // 8:
-        palavras.append(_PAD[i % 2])
+    while len(words) < total_bits // 8:
+        words.append(_PAD[i % 2])
         i += 1
-    return palavras
+    return words
 
 
-def _intercala(palavras: list[int], versao: int) -> list[int]:
-    ec_por_bloco, grupos = _BLOCOS_M[versao]
-    blocos: list[list[int]] = []
-    inicio = 0
-    for quantidade, tamanho in grupos:
-        for _ in range(quantidade):
-            blocos.append(palavras[inicio:inicio + tamanho])
-            inicio += tamanho
-    correcoes = [_correcao(b, ec_por_bloco) for b in blocos]
-    saida: list[int] = []
-    for i in range(max(len(b) for b in blocos)):
-        saida.extend(b[i] for b in blocos if i < len(b))
-    for i in range(ec_por_bloco):
-        saida.extend(c[i] for c in correcoes)
-    return saida
+def _interleave(codewords: list[int], version: int) -> list[int]:
+    ec_per_block, groups = _BLOCKS_M[version]
+    blocks: list[list[int]] = []
+    start = 0
+    for count, size in groups:
+        for _ in range(count):
+            blocks.append(codewords[start:start + size])
+            start += size
+    corrections = [_correction(b, ec_per_block) for b in blocks]
+    output: list[int] = []
+    for i in range(max(len(b) for b in blocks)):
+        output.extend(b[i] for b in blocks if i < len(b))
+    for i in range(ec_per_block):
+        output.extend(c[i] for c in corrections)
+    return output
 
 
 # ----------------------------------------------------------------------------- matriz
 
-def _bch(dados: int, gerador: int, bits_de_correcao: int) -> int:
-    resto = dados
-    for _ in range(bits_de_correcao):
-        resto = (resto << 1) ^ ((resto >> (bits_de_correcao - 1)) * gerador)
-    return resto
+def _bch(data: int, generator: int, correction_bits: int) -> int:
+    remainder = data
+    for _ in range(correction_bits):
+        remainder = (remainder << 1) ^ ((remainder >> (correction_bits - 1)) * generator)
+    return remainder
 
 
-def bits_de_formato(mascara: int) -> int:
-    dados = (_BITS_DE_FORMATO_M << 3) | mascara
-    return ((dados << 10) | _bch(dados, 0x537, 10)) ^ 0x5412
+def format_bits(mask: int) -> int:
+    data = (_FORMAT_BITS_M << 3) | mask
+    return ((data << 10) | _bch(data, 0x537, 10)) ^ 0x5412
 
 
-def _bits_de_versao(versao: int) -> int:
-    return (versao << 12) | _bch(versao, 0x1F25, 12)
+def _version_bits(version: int) -> int:
+    return (version << 12) | _bch(version, 0x1F25, 12)
 
 
-class _Matriz:
-    def __init__(self, versao: int):
-        self.versao = versao
-        self.n = 17 + 4 * versao
+class _Matrix:
+    def __init__(self, version: int):
+        self.version = version
+        self.n = 17 + 4 * version
         self.m = [[False] * self.n for _ in range(self.n)]
-        self.fixo = [[False] * self.n for _ in range(self.n)]
-        self._desenha_padroes()
+        self.fixed = [[False] * self.n for _ in range(self.n)]
+        self._draw_patterns()
 
-    def _define(self, x: int, y: int, escuro: bool) -> None:      # x = coluna, y = linha
-        self.m[y][x] = escuro
-        self.fixo[y][x] = True
+    def _set(self, x: int, y: int, dark: bool) -> None:      # x e a coluna; y, a linha
+        self.m[y][x] = dark
+        self.fixed[y][x] = True
 
-    def _desenha_padroes(self) -> None:
+    def _draw_patterns(self) -> None:
+        self._draw_timing_pattern()
+        self._draw_finder_patterns()
+        self._draw_alignment_patterns()
+        self._format(0)                                            # reserva a area (o valor vem depois)
+        self._draw_version_info()
+
+    def _draw_timing_pattern(self) -> None:
+        for i in range(self.n):
+            self._set(_TIMING_COLUMN, i, i % 2 == 0)
+            self._set(i, _TIMING_COLUMN, i % 2 == 0)
+
+    def _draw_finder_patterns(self) -> None:
         n = self.n
-        for i in range(n):                                          # temporizacao
-            self._define(6, i, i % 2 == 0)
-            self._define(i, 6, i % 2 == 0)
         for cx, cy in ((3, 3), (n - 4, 3), (3, n - 4)):             # tres localizadores + separadores
             for dy in range(-4, 5):
                 for dx in range(-4, 5):
                     x, y = cx + dx, cy + dy
                     if 0 <= x < n and 0 <= y < n:
-                        distancia = max(abs(dx), abs(dy))
-                        self._define(x, y, distancia not in (2, 4))
-        posicoes = _ALINHAMENTO[self.versao]
-        for i, cy in enumerate(posicoes):
-            for j, cx in enumerate(posicoes):
-                if (i == 0 and j == 0) or (i == 0 and j == len(posicoes) - 1) \
-                        or (i == len(posicoes) - 1 and j == 0):
+                        distance = max(abs(dx), abs(dy))
+                        self._set(x, y, distance not in (2, 4))
+
+    def _draw_alignment_patterns(self) -> None:
+        positions = _ALIGNMENT[self.version]
+        for i, cy in enumerate(positions):
+            for j, cx in enumerate(positions):
+                if self._overlaps_finder_pattern(i, j, len(positions)):
                     continue                                        # cai em cima de um localizador
-                for dy in range(-2, 3):
-                    for dx in range(-2, 3):
-                        self._define(cx + dx, cy + dy, max(abs(dx), abs(dy)) != 1)
-        self._formato(0)                                            # reserva a area (o valor vem depois)
-        if self.versao >= 7:
-            bits = _bits_de_versao(self.versao)
-            for i in range(18):
-                escuro = bool((bits >> i) & 1)
-                a, b = n - 11 + i % 3, i // 3
-                self._define(a, b, escuro)
-                self._define(b, a, escuro)
+                self._draw_one_alignment_pattern(cx, cy)
 
-    def _formato(self, mascara: int) -> None:
-        bits, n = bits_de_formato(mascara), self.n
-        bit = lambda i: bool((bits >> i) & 1)  # noqa: E731
+    @staticmethod
+    def _overlaps_finder_pattern(i: int, j: int, count: int) -> bool:
+        return (i == 0 and j == 0) or (i == 0 and j == count - 1) or (i == count - 1 and j == 0)
+
+    def _draw_one_alignment_pattern(self, cx: int, cy: int) -> None:
+        for dy in range(-2, 3):
+            for dx in range(-2, 3):
+                self._set(cx + dx, cy + dy, max(abs(dx), abs(dy)) != 1)
+
+    def _draw_version_info(self) -> None:
+        if self.version < _VERSIONED_FORMAT:
+            return
+        n = self.n
+        bits = _version_bits(self.version)
+        for i in range(18):
+            dark = bool((bits >> i) & 1)
+            a, b = n - 11 + i % 3, i // 3
+            self._set(a, b, dark)
+            self._set(b, a, dark)
+
+    def _format(self, mask: int) -> None:
+        bits, n = format_bits(mask), self.n
+
+        def bit(i: int) -> bool:
+            return bool((bits >> i) & 1)
+
         for i in range(0, 6):
-            self._define(8, i, bit(i))
-        self._define(8, 7, bit(6))
-        self._define(8, 8, bit(7))
-        self._define(7, 8, bit(8))
+            self._set(8, i, bit(i))
+        self._set(8, 7, bit(6))
+        self._set(8, 8, bit(7))
+        self._set(7, 8, bit(8))
         for i in range(9, 15):
-            self._define(14 - i, 8, bit(i))
+            self._set(14 - i, 8, bit(i))
         for i in range(0, 8):
-            self._define(n - 1 - i, 8, bit(i))
+            self._set(n - 1 - i, 8, bit(i))
         for i in range(8, 15):
-            self._define(8, n - 15 + i, bit(i))
-        self._define(8, n - 8, True)                                # o modulo escuro fixo
+            self._set(8, n - 15 + i, bit(i))
+        self._set(8, n - 8, True)                                # o modulo escuro fixo
 
-    def coloca(self, palavras: list[int]) -> None:
-        bits = [(p >> i) & 1 for p in palavras for i in range(7, -1, -1)]
-        k, n = 0, self.n
-        for direita in range(n - 1, 0, -2):
-            if direita == 6:
-                direita = 5                                          # a coluna 6 e so temporizacao
+    def place(self, codewords: list[int]) -> None:
+        bits = [(p >> i) & 1 for p in codewords for i in range(7, -1, -1)]
+        for k, (x, y) in enumerate(self._free_positions_zigzag()):
+            self.m[y][x] = bool(bits[k]) if k < len(bits) else False
+
+    def _free_positions_zigzag(self):
+        """As posicoes ainda livres (nao fixas), na ordem de ziguezague do QR.
+
+        Sobe e desce em pares de colunas, da direita para a esquerda, pulando a
+        coluna de temporizacao (6) - e assim que o padrao preenche a matriz inteira
+        sem se sobrepor aos padroes ja fixos.
+        """
+        n = self.n
+        for right in range(n - 1, 0, -2):
+            if right == _TIMING_COLUMN:
+                right = _TIMING_COLUMN - 1
+            going_up = ((right + 1) & 2) == 0
             for vertical in range(n):
+                y = n - 1 - vertical if going_up else vertical
                 for j in (0, 1):
-                    x = direita - j
-                    subindo = ((direita + 1) & 2) == 0
-                    y = n - 1 - vertical if subindo else vertical
-                    if not self.fixo[y][x]:
-                        self.m[y][x] = bool(bits[k]) if k < len(bits) else False
-                        k += 1
+                    x = right - j
+                    if not self.fixed[y][x]:
+                        yield x, y
 
-    def mascara(self, numero: int) -> None:
+    def apply_mask(self, number: int) -> None:
         for y in range(self.n):
             for x in range(self.n):
-                if not self.fixo[y][x] and _MASCARAS[numero](y, x):
+                if not self.fixed[y][x] and _MASKS[number](y, x):
                     self.m[y][x] = not self.m[y][x]
 
 
-_MASCARAS = (
+_MASKS = (
     lambda i, j: (i + j) % 2 == 0,
     lambda i, j: i % 2 == 0,
     lambda i, j: j % 3 == 0,
@@ -244,58 +281,85 @@ _MASCARAS = (
 )
 
 
-def _penalidade(m: list[list[bool]]) -> int:
-    n = len(m)
+_RUN_PENALTY_LENGTH = 5
+_FINDER_LIKE_PATTERNS = ("10111010000", "00001011101")
+
+
+def _run_penalty(line: list[bool]) -> int:
+    """N1: sequencias de 5+ modulos da mesma cor em seguida."""
     total = 0
-    linhas = [[c for c in linha] for linha in m]
-    colunas = [[m[y][x] for y in range(n)] for x in range(n)]
-    for grupo in (linhas, colunas):                                  # N1 e N3
-        for linha in grupo:
-            corrida = 1
-            for a, b in zip(linha, linha[1:]):
-                corrida = corrida + 1 if a == b else 1
-                if a == b and corrida == 5:
-                    total += 3
-                elif a == b and corrida > 5:
-                    total += 1
-            texto = "".join("1" if c else "0" for c in linha)
-            for padrao in ("10111010000", "00001011101"):
-                total += 40 * sum(texto.startswith(padrao, i) for i in range(len(texto) - 10))
-    for y in range(n - 1):                                           # N2: blocos 2x2 da mesma cor
-        for x in range(n - 1):
-            if m[y][x] == m[y][x + 1] == m[y + 1][x] == m[y + 1][x + 1]:
-                total += 3
-    escuros = sum(map(sum, m))                                       # N4: equilibrio de escuros
-    total += 10 * (((abs(escuros * 20 - n * n * 10) + n * n - 1) // (n * n)) - 1)
+    run = 1
+    for a, b in itertools.pairwise(line):
+        run = run + 1 if a == b else 1
+        if a == b and run == _RUN_PENALTY_LENGTH:
+            total += 3
+        elif a == b and run > _RUN_PENALTY_LENGTH:
+            total += 1
     return total
 
 
-def matriz(texto: str) -> list[list[bool]]:
+def _finder_like_penalty(line: list[bool]) -> int:
+    """N3: trecho parecido demais com o padrao localizador (falso positivo pro leitor)."""
+    text = "".join("1" if c else "0" for c in line)
+    return sum(
+        40 * sum(text.startswith(pattern, i) for i in range(len(text) - 10))
+        for pattern in _FINDER_LIKE_PATTERNS
+    )
+
+
+def _block_penalty(m: list[list[bool]]) -> int:
+    """N2: blocos 2x2 da mesma cor."""
+    n = len(m)
+    total = 0
+    for y in range(n - 1):
+        for x in range(n - 1):
+            if m[y][x] == m[y][x + 1] == m[y + 1][x] == m[y + 1][x + 1]:
+                total += 3
+    return total
+
+
+def _balance_penalty(m: list[list[bool]]) -> int:
+    """N4: equilibrio entre modulos claros e escuros (quanto mais longe de 50%, pior)."""
+    n = len(m)
+    dark_count = sum(map(sum, m))
+    return 10 * (((abs(dark_count * 20 - n * n * 10) + n * n - 1) // (n * n)) - 1)
+
+
+def _penalty(m: list[list[bool]]) -> int:
+    n = len(m)
+    rows = [list(row) for row in m]
+    columns = [[m[y][x] for y in range(n)] for x in range(n)]
+    line_penalty = sum(_run_penalty(line) + _finder_like_penalty(line) for line in rows + columns)
+    return line_penalty + _block_penalty(m) + _balance_penalty(m)
+
+
+def matrix(text: str) -> list[list[bool]]:
     """A matriz de modulos (True = escuro), sem a zona de silencio."""
-    dados = texto.encode("utf-8")
-    versao = _versao_para(len(dados))
-    palavras = _intercala(_palavras(dados, versao), versao)
-    melhor: list[list[bool]] | None = None
-    menor = -1
-    for numero in range(8):
-        candidata = _Matriz(versao)
-        candidata.coloca(palavras)
-        candidata.mascara(numero)
-        candidata._formato(numero)
-        pontos = _penalidade(candidata.m)
-        if melhor is None or pontos < menor:
-            melhor, menor = candidata.m, pontos
-    assert melhor is not None
-    return melhor
+    data = text.encode("utf-8")
+    version = _version_for(len(data))
+    codewords = _interleave(_codewords(data, version), version)
+    best: list[list[bool]] | None = None
+    lowest = -1
+    for number in range(8):
+        candidate = _Matrix(version)
+        candidate.place(codewords)
+        candidate.apply_mask(number)
+        candidate._format(number)
+        points = _penalty(candidate.m)
+        if best is None or points < lowest:
+            best, lowest = candidate.m, points
+    if best is None:
+        raise AssertionError("nenhuma mascara candidata foi avaliada")
+    return best
 
 
-def svg(texto: str, rotulo: str = "QR code", borda: int = 4) -> str:
+def svg(text: str, label: str = "QR code", border: int = 4) -> str:
     """O QR como SVG inline. So digitos e letras fixas: seguro para `|safe` no template."""
-    m = matriz(texto)
-    lado = len(m) + 2 * borda
-    tracos = "".join(f"M{x + borda},{y + borda}h1v1h-1z"
-                     for y, linha in enumerate(m) for x, escuro in enumerate(linha) if escuro)
-    seguro = "".join(c for c in rotulo if c.isalnum() or c in " -_.,")
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {lado} {lado}" role="img" '
-            f'aria-label="{seguro}" shape-rendering="crispEdges">'
-            f'<rect width="{lado}" height="{lado}" fill="#fff"/><path d="{tracos}" fill="#000"/></svg>')
+    m = matrix(text)
+    side = len(m) + 2 * border
+    path = "".join(f"M{x + border},{y + border}h1v1h-1z"
+                   for y, row in enumerate(m) for x, dark in enumerate(row) if dark)
+    safe_label = "".join(c for c in label if c.isalnum() or c in " -_.,")
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {side} {side}" role="img" '
+            f'aria-label="{safe_label}" shape-rendering="crispEdges">'
+            f'<rect width="{side}" height="{side}" fill="#fff"/><path d="{path}" fill="#000"/></svg>')

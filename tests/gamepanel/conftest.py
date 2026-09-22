@@ -175,6 +175,6 @@ def chefe_2fa(chefe):
     chefe.get("/account/2fa")
     with chefe.session_transaction() as sess:
         segredo = sess["totp_pendente"]
-    resposta = _postar(chefe, "/account/2fa", {"codigo": totp.codigo(segredo, totp.passo_de(time.time()))})
+    resposta = _postar(chefe, "/account/2fa", {"codigo": totp.code(segredo, totp.step_of(time.time()))})
     assert resposta.status_code == 200, "nao consegui ativar o 2FA de 'chefe' para o teste"
     return chefe

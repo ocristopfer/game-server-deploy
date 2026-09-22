@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Segundo fator do login: TOTP (RFC 6238) e codigos de recuperacao, so com a stdlib.
 
-Puro de proposito (sem Flask, sem banco), como `ui.py`: o `app.py` guarda o segredo e decide
-quando pedir o codigo; aqui so existe a conta. Compativel com Google Authenticator, Authy,
-Microsoft Authenticator, 1Password, Bitwarden e afins (SHA-1, 6 digitos, 30 s).
+Puro de proposito (sem Flask, sem banco), como `navigation.py`: o `app.py` guarda o
+segredo e decide quando pedir o codigo; aqui so existe a conta. Compativel com Google
+Authenticator, Authy, Microsoft Authenticator, 1Password, Bitwarden e afins (SHA-1, 6
+digitos, 30 s).
 
 Duas decisoes que valem um comentario:
 
-- **Codigo usado nao vale de novo.** `verificar` so aceita um passo MAIOR que o ultimo ja
+- **Codigo usado nao vale de novo.** `verify` so aceita um passo MAIOR que o ultimo ja
   usado: quem espiou o codigo por cima do ombro (ou no rastro de um proxy) nao entra com ele
   nos 30 s seguintes.
 - **Janela de +-1 passo** (90 s no total) para relogio de celular levemente fora de hora. E o
@@ -23,100 +24,102 @@ import secrets
 import struct
 from urllib.parse import quote
 
-PASSO_SEGUNDOS = 30
-DIGITOS = 6
-JANELA = 1
-BYTES_DO_SEGREDO = 20          # 160 bits, o tamanho do SHA-1 (RFC 4226)
-CODIGOS_DE_RECUPERACAO = 8
+STEP_SECONDS = 30
+DIGITS = 6
+WINDOW = 1
+SECRET_BYTES = 20          # 160 bits, o tamanho do SHA-1 (RFC 4226)
+RECOVERY_CODES = 8
 
-_SEIS_DIGITOS = re.compile(r"\d{6}")
-_RECUPERACAO = re.compile(r"[0-9a-f]{10}")
+_SIX_DIGITS = re.compile(r"\d{6}")
+_RECOVERY_CODE = re.compile(r"[0-9a-f]{10}")
 
 
-def novo_segredo() -> str:
+def new_secret() -> str:
     """Segredo novo em base32 sem preenchimento (32 caracteres): o que o aplicativo digita."""
-    return base64.b32encode(secrets.token_bytes(BYTES_DO_SEGREDO)).decode().rstrip("=")
+    return base64.b32encode(secrets.token_bytes(SECRET_BYTES)).decode().rstrip("=")
 
 
-def _bytes_do_segredo(segredo: str) -> bytes:
-    limpo = re.sub(r"[\s-]", "", segredo).upper()
-    return base64.b32decode(limpo + "=" * (-len(limpo) % 8))
+def _secret_bytes(secret: str) -> bytes:
+    clean = re.sub(r"[\s-]", "", secret).upper()
+    return base64.b32decode(clean + "=" * (-len(clean) % 8))
 
 
-def codigo(segredo: str, passo: int) -> str:
+def code(secret: str, step: int) -> str:
     """O codigo de 6 digitos de um passo de 30 s (HOTP de RFC 4226 com o passo como contador)."""
-    mac = hmac.new(_bytes_do_segredo(segredo), struct.pack(">Q", passo), hashlib.sha1).digest()
-    desvio = mac[-1] & 0x0F
-    numero = struct.unpack(">I", mac[desvio:desvio + 4])[0] & 0x7FFFFFFF
-    return str(numero % 10**DIGITOS).zfill(DIGITOS)
+    # SHA-1 e exigido pelo RFC 6238/4226 (HOTP/TOTP), nao escolha nossa - trocar o hash
+    # quebraria compatibilidade com todo aplicativo autenticador que existe.
+    mac = hmac.new(_secret_bytes(secret), struct.pack(">Q", step), hashlib.sha1).digest()  # NOSONAR
+    offset = mac[-1] & 0x0F
+    number = struct.unpack(">I", mac[offset:offset + 4])[0] & 0x7FFFFFFF
+    return str(number % 10**DIGITS).zfill(DIGITS)
 
 
-def passo_de(agora: float) -> int:
-    return int(agora // PASSO_SEGUNDOS)
+def step_of(now: float) -> int:
+    return int(now // STEP_SECONDS)
 
 
-def verificar(segredo: str, digitado: str, agora: float, ultimo_passo: int = 0) -> int | None:
-    """O passo que `digitado` confirma, ou None. Nunca devolve um passo <= `ultimo_passo`."""
-    limpo = re.sub(r"[\s-]", "", digitado or "")
-    if not _SEIS_DIGITOS.fullmatch(limpo):
+def verify(secret: str, entered: str, now: float, last_step: int = 0) -> int | None:
+    """O passo que `entered` confirma, ou None. Nunca devolve um passo <= `last_step`."""
+    clean = re.sub(r"[\s-]", "", entered or "")
+    if not _SIX_DIGITS.fullmatch(clean):
         return None
-    atual = passo_de(agora)
-    achado: int | None = None
+    current = step_of(now)
+    found: int | None = None
     # Testa os tres passos SEM parar no primeiro acerto: o tempo gasto nao conta qual foi.
-    for passo in range(atual - JANELA, atual + JANELA + 1):
-        confere = hmac.compare_digest(codigo(segredo, passo), limpo)
-        if confere and passo > ultimo_passo and achado is None:
-            achado = passo
-    return achado
+    for step in range(current - WINDOW, current + WINDOW + 1):
+        matches = hmac.compare_digest(code(secret, step), clean)
+        if matches and step > last_step and found is None:
+            found = step
+    return found
 
 
-def uri(segredo: str, usuario: str, emissor: str = "Painel de Jogos") -> str:
+def uri(secret: str, username: str, issuer: str = "Painel de Jogos") -> str:
     """O endereco otpauth:// que o aplicativo abre (no celular, tocar nele ja cadastra)."""
-    rotulo = quote(f"{emissor}:{usuario}", safe="")
-    return (f"otpauth://totp/{rotulo}?secret={segredo}&issuer={quote(emissor, safe='')}"
-            f"&algorithm=SHA1&digits={DIGITOS}&period={PASSO_SEGUNDOS}")
+    label = quote(f"{issuer}:{username}", safe="")
+    return (f"otpauth://totp/{label}?secret={secret}&issuer={quote(issuer, safe='')}"
+            f"&algorithm=SHA1&digits={DIGITS}&period={STEP_SECONDS}")
 
 
-def agrupar(segredo: str, tamanho: int = 4) -> str:
+def group(secret: str, size: int = 4) -> str:
     """`ABCD EFGH ...`: mais facil de ler e de digitar. O aplicativo ignora os espacos."""
-    return " ".join(segredo[i:i + tamanho] for i in range(0, len(segredo), tamanho))
+    return " ".join(secret[i:i + size] for i in range(0, len(secret), size))
 
 
 # ------------------------------------------------------------ codigos de recuperacao
 
-def _normaliza(texto: str) -> str:
-    return re.sub(r"[\s-]", "", texto or "").lower()
+def _normalize(text: str) -> str:
+    return re.sub(r"[\s-]", "", text or "").lower()
 
 
-def parece_codigo_de_recuperacao(digitado: str) -> bool:
-    return bool(_RECUPERACAO.fullmatch(_normaliza(digitado)))
+def looks_like_recovery_code(entered: str) -> bool:
+    return bool(_RECOVERY_CODE.fullmatch(_normalize(entered)))
 
 
-def novos_codigos(quantidade: int = CODIGOS_DE_RECUPERACAO) -> list[str]:
+def new_recovery_codes(count: int = RECOVERY_CODES) -> list[str]:
     """`abcde-12345`: 40 bits cada. Servem uma vez, para quem perdeu o celular."""
-    codigos = []
-    while len(codigos) < quantidade:
-        bruto = secrets.token_hex(5)
-        codigos.append(f"{bruto[:5]}-{bruto[5:]}")
-    return codigos
+    codes: list[str] = []
+    while len(codes) < count:
+        raw = secrets.token_hex(5)
+        codes.append(f"{raw[:5]}-{raw[5:]}")
+    return codes
 
 
-def hash_do_codigo(codigo_de_recuperacao: str) -> str:
+def hash_recovery_code(recovery_code: str) -> str:
     """So o hash vai para o banco: quem ler o arquivo nao sai com codigos utilizaveis."""
-    return hashlib.sha256(_normaliza(codigo_de_recuperacao).encode()).hexdigest()
+    return hashlib.sha256(_normalize(recovery_code).encode()).hexdigest()
 
 
-def consumir(digitado: str, hashes: list[str]) -> list[str] | None:
-    """Os hashes que sobram depois de gastar `digitado`, ou None se ele nao serve."""
-    if not parece_codigo_de_recuperacao(digitado):
+def consume(entered: str, hashes: list[str]) -> list[str] | None:
+    """Os hashes que sobram depois de gastar `entered`, ou None se ele nao serve."""
+    if not looks_like_recovery_code(entered):
         return None
-    alvo = hash_do_codigo(digitado)
-    achado = None
+    target = hash_recovery_code(entered)
+    found = None
     for h in hashes:
-        if hmac.compare_digest(h, alvo):
-            achado = h
-    if achado is None:
+        if hmac.compare_digest(h, target):
+            found = h
+    if found is None:
         return None
-    sobra = list(hashes)
-    sobra.remove(achado)
-    return sobra
+    remaining = list(hashes)
+    remaining.remove(found)
+    return remaining

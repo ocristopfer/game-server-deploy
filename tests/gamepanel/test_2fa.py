@@ -45,7 +45,7 @@ def hora(monkeypatch):
 
 
 def _codigo(segredo: str, relogio: Relogio) -> str:
-    return totp.codigo(segredo, totp.passo_de(relogio.agora))
+    return totp.code(segredo, totp.step_of(relogio.agora))
 
 
 def _ativar(cli, postar, relogio: Relogio) -> tuple[str, list[str]]:
@@ -77,7 +77,7 @@ def test_tela_de_ativacao_mostra_a_chave_e_o_endereco_para_o_aplicativo(chefe, h
     html = chefe.get("/account/2fa").get_data(as_text=True)
     with chefe.session_transaction() as sess:
         segredo = sess["totp_pendente"]
-    assert totp.agrupar(segredo) in html
+    assert totp.group(segredo) in html
     assert "otpauth://totp/" in html
     assert "secret=" + segredo in html
 
@@ -91,7 +91,7 @@ def test_tela_de_ativacao_tem_o_qr_code_do_mesmo_endereco_mostrado(chefe, hora):
     with chefe.session_transaction() as sess:
         segredo = sess["totp_pendente"]
     endereco = totp.uri(segredo, "chefe", "Painel de Jogos")
-    assert qr.svg(endereco, rotulo="QR code da verificacao em duas etapas") in html
+    assert qr.svg(endereco, label="QR code da verificacao em duas etapas") in html
 
 
 def test_usuario_no_limite_de_32_caracteres_nao_quebra_a_tela(postar, hora):
@@ -122,7 +122,7 @@ def test_codigo_errado_nao_liga_o_2fa(chefe, postar, hora):
 
 def test_codigo_certo_liga_e_mostra_os_codigos_de_recuperacao_uma_vez(chefe, postar, hora):
     segredo, codigos = _ativar(chefe, postar, hora)
-    assert len(codigos) == totp.CODIGOS_DE_RECUPERACAO
+    assert len(codigos) == totp.RECOVERY_CODES
     linha = panel._connect().execute("SELECT * FROM users WHERE username = 'chefe'").fetchone()
     assert linha["totp_enabled"] == 1
     assert linha["totp_secret"] == segredo
@@ -130,7 +130,7 @@ def test_codigo_certo_liga_e_mostra_os_codigos_de_recuperacao_uma_vez(chefe, pos
         assert "totp_pendente" not in sess
     # Nada em texto no banco: so os hashes.
     assert not any(c.replace("-", "") in linha["totp_recovery"] for c in codigos)
-    assert len(json.loads(linha["totp_recovery"])) == totp.CODIGOS_DE_RECUPERACAO
+    assert len(json.loads(linha["totp_recovery"])) == totp.RECOVERY_CODES
     # E a tela de conta nunca mais mostra a chave nem os codigos.
     conta = chefe.get("/account").get_data(as_text=True)
     assert segredo not in conta
@@ -283,7 +283,7 @@ def test_codigos_novos_invalidam_os_antigos(chefe, postar, hora, cliente):
     segredo, antigos = _com_2fa(chefe, postar, hora)
     resposta = postar(chefe, "/account/2fa/codigos", {"senha": "senha-do-chefe", "codigo": _codigo(segredo, hora)})
     novos = RE_CODIGO.findall(resposta.get_data(as_text=True))
-    assert len(novos) == totp.CODIGOS_DE_RECUPERACAO
+    assert len(novos) == totp.RECOVERY_CODES
     assert not set(novos) & set(antigos)
     _senha(cliente, postar)
     assert postar(cliente, "/login/2fa", {"codigo": antigos[0]}).status_code == 401
@@ -294,8 +294,8 @@ def test_codigos_novos_pedem_senha(chefe, postar, hora):
     segredo, antigos = _com_2fa(chefe, postar, hora)
     postar(chefe, "/account/2fa/codigos", {"senha": "errada", "codigo": _codigo(segredo, hora)})
     linha = panel._connect().execute("SELECT totp_recovery FROM users").fetchone()
-    assert len(json.loads(linha[0])) == totp.CODIGOS_DE_RECUPERACAO
-    assert totp.hash_do_codigo(antigos[0]) in json.loads(linha[0])
+    assert len(json.loads(linha[0])) == totp.RECOVERY_CODES
+    assert totp.hash_recovery_code(antigos[0]) in json.loads(linha[0])
 
 
 # --- admin e linha de comando -------------------------------------------------------------------------

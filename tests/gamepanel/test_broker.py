@@ -242,7 +242,7 @@ def test_ativar_o_segundo_fator_libera_as_rotas_do_broker(sem_2fa, broker, posta
     sem_2fa.get("/account/2fa")
     with sem_2fa.session_transaction() as sess:
         segredo = sess["totp_pendente"]
-    ativado = postar(sem_2fa, "/account/2fa", {"codigo": totp.codigo(segredo, totp.passo_de(time.time()))})
+    ativado = postar(sem_2fa, "/account/2fa", {"codigo": totp.code(segredo, totp.step_of(time.time()))})
     assert ativado.status_code == 200
     assert sem_2fa.get("/catalogo").status_code == 200
 

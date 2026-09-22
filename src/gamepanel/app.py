@@ -4161,7 +4161,7 @@ def _abre_sessao(row: sqlite3.Row, proximo: str = ""):
 def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
     """Codigo do aplicativo OU um codigo de recuperacao (que se gasta). Vale so uma vez."""
     conn = db()
-    passo = totp.verificar(row["totp_secret"], digitado, time.time(), row["totp_last_step"])
+    passo = totp.verify(row["totp_secret"], digitado, time.time(), row["totp_last_step"])
     if passo is not None:
         with conn:
             # O `WHERE` faz do UPDATE o portao: dois pedidos com o mesmo codigo ao mesmo tempo
@@ -4175,7 +4175,7 @@ def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
         guardados = json.loads(row["totp_recovery"] or "[]")
     except ValueError:
         guardados = []
-    sobra = totp.consumir(digitado, guardados)
+    sobra = totp.consume(digitado, guardados)
     if sobra is None:
         return False
     with conn:
@@ -7390,13 +7390,13 @@ def _estado_do_2fa() -> dict:
 
 def _guarda_o_segundo_fator(uid: int, segredo: str, passo: int) -> list[str]:
     """Liga o 2FA e devolve os codigos de recuperacao EM TEXTO, a unica vez em que existem."""
-    codigos = totp.novos_codigos()
+    codigos = totp.new_recovery_codes()
     conn = db()
     with conn:
         conn.execute(
             "UPDATE users SET totp_secret = ?, totp_enabled = 1, totp_last_step = ?,"
             " totp_recovery = ? WHERE id = ?",
-            (segredo, passo, json.dumps([totp.hash_do_codigo(c) for c in codigos]), uid),
+            (segredo, passo, json.dumps([totp.hash_recovery_code(c) for c in codigos]), uid),
         )
     return codigos
 
@@ -7426,7 +7426,7 @@ def account_2fa():
         return redirect(url_for("account"))
     if request.method == "POST":
         segredo = session.get("totp_pendente", "")
-        passo = totp.verificar(segredo, request.form.get("codigo", ""), time.time()) if segredo else None
+        passo = totp.verify(segredo, request.form.get("codigo", ""), time.time()) if segredo else None
         if passo is None:
             flash("Codigo incorreto. Confira o horario do celular e tente de novo.", "error")
         else:
@@ -7436,12 +7436,12 @@ def account_2fa():
             return render_template("account_2fa_codigos.html", codigos=codigos)
     # O segredo fica na SESSAO (cookie assinado) ate ser confirmado; recarregar a pagina mostra
     # o mesmo, e abandonar a tela nao deixa nada meio ligado no banco.
-    segredo = session.get("totp_pendente") or totp.novo_segredo()
+    segredo = session.get("totp_pendente") or totp.new_secret()
     session["totp_pendente"] = segredo
     endereco = totp.uri(segredo, session.get("username", ""), "Painel de Jogos")
     return render_template(
-        "account_2fa.html", segredo=totp.agrupar(segredo), endereco=endereco,
-        qr_svg=qr.svg(endereco, rotulo="QR code da verificacao em duas etapas"))
+        "account_2fa.html", segredo=totp.group(segredo), endereco=endereco,
+        qr_svg=qr.svg(endereco, label="QR code da verificacao em duas etapas"))
 
 
 @app.post("/account/2fa/desativar")
@@ -7467,11 +7467,11 @@ def account_2fa_codes():
     if erro:
         flash(erro, "error")
         return redirect(url_for("account"))
-    codigos = totp.novos_codigos()
+    codigos = totp.new_recovery_codes()
     conn = db()
     with conn:
         conn.execute("UPDATE users SET totp_recovery = ? WHERE id = ?",
-                     (json.dumps([totp.hash_do_codigo(c) for c in codigos]), row["id"]))
+                     (json.dumps([totp.hash_recovery_code(c) for c in codigos]), row["id"]))
     flash("Codigos novos gerados: os antigos deixaram de valer.", "ok")
     return render_template("account_2fa_codigos.html", codigos=codigos)
 
