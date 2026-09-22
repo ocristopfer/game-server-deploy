@@ -24,7 +24,8 @@ def _lidos_pelos_templates() -> dict[str, str]:
     """Nome -> primeiro template que o le. Usa o ambiente DE VERDADE do painel.
 
     Um `Environment()` cru nem parseia estes arquivos: eles usam os filtros proprios
-    (`tamanho`, `duracao`, `ident`), e o Jinja falha na compilacao ao nao reconhece-los.
+    (`filesize`, `duration`, `level`, `ident`), e o Jinja falha na compilacao ao nao
+    reconhece-los.
     """
     lidos: dict[str, str] = {}
     # `app.template_folder` e relativo ("templates"): resolvido a partir do diretorio

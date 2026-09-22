@@ -530,6 +530,12 @@ Retomando a lista completa da Fase 1 (§7.3), organizada em **grupos de
 decisão** (mudar um item do grupo normalmente significa mudar o grupo
 inteiro, então faz mais sentido aprovar por grupo do que item a item):
 
+> **Estado (atualizado na execucao):** **A**, **B** e **D** foram feitos — a API do
+> broker fala ingles com uma camada de fio propria (`gamebroker/domain/wire.py`), e os
+> dois bancos tem migration de rename com teste que monta o esquema antigo a mao
+> (`tests/gamebroker/test_migracao.py`, `tests/gamepanel/test_schema.py`). Faltam **C**
+> (rotas do painel, que ainda depende da preferencia sobre redirect), **E** e **F**.
+
 | # | Grupo | O que muda | Quem consome | Risco | Minha recomendação |
 |---|---|---|---|---|---|
 | **A** | Rotas + payload JSON do broker (`/v1/saude`, `/v1/catalogo`, `/v1/instancias`, `/v1/operacoes`, chaves `jogo`/`instancia_id`/`porta_jogo`/etc., códigos de erro `nao-encontrado`/`sem-recurso`/etc.) | Traduzir tudo pra inglês | **Só** `gamepanel/integrations/broker_client.py`, no mesmo repo, no mesmo deploy | Baixo — API 100% interna, sem consumidor externo, os dois lados mudam juntos no mesmo commit | **Traduzir agora** (Fase 4), é o breaking change mais barato da lista |

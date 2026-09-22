@@ -114,7 +114,7 @@
         {% for p in players.list %}
         <tr>
           <td>{{ p.name }}</td>
-          <td class="muted">{{ p.seconds | duracao }}</td>
+          <td class="muted">{{ p.seconds | duration }}</td>
           <td class="muted">{{ p.score }}</td>
           {% if acoes %}
           <td class="acoes">
@@ -184,37 +184,37 @@
   <div class="meters" id="meters">
     <div class="meter" data-key="cpu">
       <div class="meter-head"><span>{{ _('charts.cpu') }}</span><span class="val">{{ '%.1f'|format(metrics.cpu_pct) if metrics.cpu_pct is not none else '-' }}%</span></div>
-      <div class="bar{{ metrics.cpu_pct | nivel }}"><i data-pct="{{ metrics.cpu_pct or 0 }}"></i></div>
+      <div class="bar{{ metrics.cpu_pct | level }}"><i data-pct="{{ metrics.cpu_pct or 0 }}"></i></div>
       <div class="meter-foot">{{ metrics.cores }} nucleo(s) &middot; load {{ metrics.load or '-' }}</div>
     </div>
     <div class="meter" data-key="mem">
       <div class="meter-head"><span>{{ _('charts.memory') }}</span><span class="val">{{ '%.1f'|format(metrics.mem.pct) if metrics.mem.pct is not none else '-' }}%</span></div>
-      <div class="bar{{ metrics.mem.pct | nivel }}"><i data-pct="{{ metrics.mem.pct or 0 }}"></i></div>
-      <div class="meter-foot">{{ metrics.mem.used | tamanho }} de {{ metrics.mem.total | tamanho }}</div>
+      <div class="bar{{ metrics.mem.pct | level }}"><i data-pct="{{ metrics.mem.pct or 0 }}"></i></div>
+      <div class="meter-foot">{{ metrics.mem.used | filesize }} de {{ metrics.mem.total | filesize }}</div>
     </div>
     {% if metrics.swap.total %}
     <div class="meter" data-key="swap">
       <div class="meter-head"><span>{{ _('server_detail.swap') }}</span><span class="val">{{ '%.1f'|format(metrics.swap.pct) if metrics.swap.pct is not none else '-' }}%</span></div>
-      <div class="bar{{ metrics.swap.pct | nivel }}"><i data-pct="{{ metrics.swap.pct or 0 }}"></i></div>
-      <div class="meter-foot">{{ metrics.swap.used | tamanho }} de {{ metrics.swap.total | tamanho }}</div>
+      <div class="bar{{ metrics.swap.pct | level }}"><i data-pct="{{ metrics.swap.pct or 0 }}"></i></div>
+      <div class="meter-foot">{{ metrics.swap.used | filesize }} de {{ metrics.swap.total | filesize }}</div>
     </div>
     {% endif %}
     {% for d in metrics.disks %}
     <div class="meter" data-key="disk:{{ d.mount }}">
       <div class="meter-head"><span>Disco {{ d.mount }}</span><span class="val">{{ '%.1f'|format(d.pct) if d.pct is not none else '-' }}%</span></div>
-      <div class="bar{{ d.pct | nivel }}"><i data-pct="{{ d.pct or 0 }}"></i></div>
-      <div class="meter-foot">{{ d.used | tamanho }} de {{ d.total | tamanho }}</div>
+      <div class="bar{{ d.pct | level }}"><i data-pct="{{ d.pct or 0 }}"></i></div>
+      <div class="meter-foot">{{ d.used | filesize }} de {{ d.total | filesize }}</div>
     </div>
     {% endfor %}
   </div>
   <dl class="meta wide" id="recursos-extra">
     <div><dt>{{ _('server_detail.network') }}</dt><dd data-key="net">
-      {{ metrics.net_rx | tamanho }}/s rx &middot; {{ metrics.net_tx | tamanho }}/s tx
+      {{ metrics.net_rx | filesize }}/s rx &middot; {{ metrics.net_tx | filesize }}/s tx
     </dd></div>
-    <div><dt>{{ _('server_detail.uptime') }}</dt><dd data-key="uptime">{{ metrics.uptime | duracao }}</dd></div>
+    <div><dt>{{ _('server_detail.uptime') }}</dt><dd data-key="uptime">{{ metrics.uptime | duration }}</dd></div>
     <div><dt>{{ _('server_detail.game_process') }}</dt><dd data-key="proc">
       {% if metrics.proc.pid %}
-        PID {{ metrics.proc.pid }} &middot; {{ metrics.proc.rss | tamanho }} RAM
+        PID {{ metrics.proc.pid }} &middot; {{ metrics.proc.rss | filesize }} RAM
         {%- if metrics.proc.cpu_pct is not none %} &middot; {{ '%.1f'|format(metrics.proc.cpu_pct) }}% CPU{% endif %}
       {% else %}parado{% endif %}
     </dd></div>

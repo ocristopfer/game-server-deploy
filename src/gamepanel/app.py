@@ -2813,7 +2813,7 @@ def parent_of(path: str) -> str:
     return files_rt.parent_of(path)
 
 
-@app.template_filter("nivel")
+@app.template_filter("level")
 def _bar_level(pct: float | None) -> str:
     """Classe da barra: perto do teto ela muda de cor (mesma regra do metrics.js)."""
     if pct is None:
@@ -2825,7 +2825,7 @@ def _bar_level(pct: float | None) -> str:
     return ""
 
 
-@app.template_filter("duracao")
+@app.template_filter("duration")
 def _human_uptime(segundos: float | None) -> str:
     total = int(segundos or 0)
     dias, resto = divmod(total, 86400)
@@ -2841,7 +2841,7 @@ def _human_uptime(segundos: float | None) -> str:
     return f"{total}s"
 
 
-@app.template_filter("tamanho")
+@app.template_filter("filesize")
 def _human_size(num: int | None) -> str:
     """1536 -> '1.5 KB'. Um save de jogo em bytes crus nao diz nada para ninguem."""
     value = float(num or 0)

@@ -51,7 +51,7 @@
           <a href="{{ url_for('files', sid=server.id, file=e.path) }}">{{ e.name }}</a>
         {% endif %}
         <span class="muted small">
-          <span class="nowrap">{{ '-' if e.dir else e.size | tamanho }} &middot; {{ e.mtime }}</span>
+          <span class="nowrap">{{ '-' if e.dir else e.size | filesize }} &middot; {{ e.mtime }}</span>
           {% if not e.dir %}
             <a class="dl" title="Baixar {{ e.name }}"
                href="{{ url_for('files_download', sid=server.id, path=e.path) }}">{{ _('files.download') }}</a>
@@ -79,7 +79,7 @@
     {% if opened %}
       <div class="card__head">
         <h2 class="filename" id="nome-do-arquivo">{{ opened.path }}</h2>
-        <span class="muted small">{{ opened.size | tamanho }} &middot; {{ opened.mode }} &middot; {{ opened.owner }} &middot; {{ opened.mtime }}</span>
+        <span class="muted small">{{ opened.size | filesize }} &middot; {{ opened.mode }} &middot; {{ opened.owner }} &middot; {{ opened.mtime }}</span>
       </div>
 
       {% if opened.binary %}
@@ -88,18 +88,18 @@
           jogo &mdash; mas da para baixar o arquivo inteiro.
         </div>
         <div class="form-actions">
-          {{ ui.botao('Baixar (' ~ opened.size | tamanho ~ ')',
+          {{ ui.botao('Baixar (' ~ opened.size | filesize ~ ')',
                       href=url_for('files_download', sid=server.id, path=opened.path),
                       variante='primary', icone='⬇', bloco=true) }}
         </div>
       {% elif opened.truncated %}
         <div class="flash">
-          <strong>{{ _('files.read_only') }}</strong> o arquivo tem {{ opened.size | tamanho }} e passa do
+          <strong>{{ _('files.read_only') }}</strong> o arquivo tem {{ opened.size | filesize }} e passa do
           limite de edicao ({{ max_kb }} KB). Abaixo estao os ultimos
-          {{ opened.shown | tamanho }} &mdash; baixe o arquivo para trabalhar nele inteiro.
+          {{ opened.shown | filesize }} &mdash; baixe o arquivo para trabalhar nele inteiro.
         </div>
         <div class="form-actions">
-          {{ ui.botao('Baixar (' ~ opened.size | tamanho ~ ')',
+          {{ ui.botao('Baixar (' ~ opened.size | filesize ~ ')',
                       href=url_for('files_download', sid=server.id, path=opened.path),
                       variante='primary', icone='⬇', bloco=true) }}
         </div>

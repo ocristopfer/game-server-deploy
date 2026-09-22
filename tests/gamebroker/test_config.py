@@ -61,7 +61,7 @@ def test_ambiente_completo_carrega(env):
 
 def test_valores_opcionais_sobrescrevem_os_padroes(env):
     env.update(BROKER_CTID_INICIO="500", BROKER_CTID_FIM="510", BROKER_MAX_INSTANCIAS="3",
-               BROKER_MAX_CRIACOES_HORA="1", OPNSENSE_WAN="opt1")
+               BROKER_MAX_CREATIONS_PER_HOUR="1", OPNSENSE_WAN="opt1")
     cfg = load(env)
     assert (cfg.ctids.start, cfg.ctids.stop - 1, cfg.max_instances, cfg.max_creations_per_hour) == (500, 510, 3, 1)
     assert cfg.opnsense_wan == "opt1"

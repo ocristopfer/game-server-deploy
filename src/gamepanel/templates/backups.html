@@ -56,7 +56,7 @@
           {% if c.seguranca %}<span class="badge" title="{{ _('backups.pre_restore_copy') }}">{{ _('backups.before_restore') }}</span>{% endif %}
         </td>
         <td class="muted small nowrap">{{ c.mtime }}</td>
-        <td class="muted nowrap">{{ c.size | tamanho }}</td>
+        <td class="muted nowrap">{{ c.size | filesize }}</td>
         <td class="acoes">
           {% if is_admin %}
             {{ ui.botao(_('files.download'), href=url_for('backup_download', sid=server.id, nome=c.name),
