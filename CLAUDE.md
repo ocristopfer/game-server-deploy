@@ -1,8 +1,16 @@
 # CLAUDE.md — como mexer neste repositorio
 
 Deploy de servidores dedicados de jogos (Proxmox LXC ou Docker) mais um **painel web**
-em `admin/`. Este arquivo e sobre **como escrever codigo aqui**. O que o projeto faz,
-e como usar, esta no [README.md](README.md) — nao duplique conteudo entre os dois.
+em `src/gamepanel/`. Este arquivo e sobre **como escrever codigo aqui**. O que o projeto
+faz, e como usar, esta no [README.md](README.md) — nao duplique conteudo entre os dois.
+
+> **Reorganizacao de arquitetura em andamento** (ver `docs/architecture-analysis.md` e
+> `docs/architecture-proposal.md`): o codigo saiu de `admin/`/`broker/` para
+> `src/gamepanel/`/`src/gamebroker/` (Fase 3, estrutural, sem mudar comportamento). As
+> notas abaixo ja refletem esses caminhos. A divisao de `app.py` em `services/`/
+> `blueprints/`/`runtime/` (Fase 4) e a traducao dos identificadores pra ingles ainda nao
+> aconteceram — `app.py` continua um arquivo so, com nomes em portugues, so que morando
+> em `src/gamepanel/` em vez de `admin/`.
 
 O painel roda com poder de **root nos containers de jogo**. Isso muda o peso de tudo:
 um botao errado para um servidor de verdade, um cache errado mostra um servidor caido
@@ -17,14 +25,14 @@ de jogo falsos (com sshd, `systemctl` de mentira, query A2S, API REST e log).
 
 ```bash
 docker compose up --build -d          # painel em http://localhost:8080 (admin/admin12345)
-docker compose restart panel          # depois de mexer em app.py/ui.py
+docker compose restart panel          # depois de mexer em app.py/navigation.py
 ```
 
-As nove suites do painel (`test_gamefields.py`, `test_gameconf.py`, `test_charts.py`,
-`test_schedules.py`, `test_users.py`, `test_players.py`, `test_alerts.py`,
-`test_broker.py`, `test_broker_client.py`) sao **pytest** — 436 testes ao todo (mais 415 do
-pacote `broker/`, que roda so pelo `.venv`, da raiz), com fixtures compartilhadas em
-`admin/conftest.py`
+As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_gameconf.py`,
+`test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
+`test_alerts.py`, `test_broker.py`, `test_broker_client.py` e mais cinco) sao **pytest**
+— 436 testes ao todo (mais 415 do pacote `gamebroker`, em `tests/gamebroker/`), com
+fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`banco`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
 `chefe`/`peao`: um admin e um operador ja logados; `entrar`/`postar`: login e POST com
 CSRF). **Rode a suite inteira** depois de mexer em `app.py` — elas cobrem exatamente as
@@ -35,30 +43,39 @@ que, o que conta como jogador). Os arquivos ja NAO rodam como script solto
 **Rapido, na maquina** (segundos, e o ciclo normal enquanto se edita):
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\pip install -r admin\requirements-dev.txt pytest
-.\.venv\Scripts\python.exe -m pytest          # a suite inteira, da raiz do repo
-.\.venv\Scripts\python.exe -m pytest admin\test_alerts.py -k test_loop_de_restart
+uv sync                          # cria .venv e instala gamepanel/gamebroker editaveis + dev (pytest/ruff/mypy)
+uv run pytest                    # a suite inteira, da raiz do repo
+uv run pytest tests\gamepanel\test_alerts.py -k test_loop_de_restart
 ```
 
-`pytest.ini`, na raiz, e quem diz onde procurar os testes (`admin/`) e desliga o cache
-em disco (ver o comentario nele — o motivo e o mount read-only do container, nao o
-venv). O `.venv` e ferramenta de desenvolvimento, nao dependencia do painel (ver
-`admin/requirements-dev.txt`); ele tambem e o que faz o editor resolver `import flask`,
-via `pyrightconfig.json`.
+`uv` (https://docs.astral.sh/uv/) gerencia SO o `.venv` de desenvolvimento —
+`pyproject.toml`, na raiz, declara `flask` (versao que acompanha o apt do Debian 13) mais
+o grupo `dev` (pytest/ruff/mypy), e `uv.lock` fixa as versoes exatas. Isso e ferramenta
+de desenvolvimento, nunca dependencia do painel em producao (ver abaixo). `pytest.ini`,
+na raiz, e quem diz onde procurar os testes (`tests/`) e desliga o cache em disco (ver o
+comentario nele — o motivo e o mount read-only do container, nao o venv). O `.venv` tambem
+e o que faz o editor resolver `import flask`/`import gamepanel`/`import gamebroker`, via
+`pyrightconfig.json`.
 
 **No container, que e a verdade** (mais lento; rode antes de publicar):
 
 ```bash
-MSYS_NO_PATHCONV=1 docker compose exec -T -w /opt/gamepanel panel python3 -m pytest -q
+MSYS_NO_PATHCONV=1 docker compose exec -T -w /workspace panel python3 -m pytest -q
 ```
 
-O container so ve `/opt/gamepanel` (bind mount de `admin/` sozinho — o `pytest.ini` da
-raiz do repo nao existe ali dentro), entao **rode com `-p no:cacheprovider`** se quiser
-o mesmo silencio do venv; sem a flag os testes passam igual, só com um aviso de cache
-que nao escreve (sistema de arquivos read-only). O apt (`python3-pytest`) e quem
-fornece o pytest do container — ver `docker/panel/Dockerfile`; **rebuild a imagem**
-(`docker compose build panel`) se `pytest` não for encontrado ali dentro.
+O servico `panel` do compose tem DOIS bind mounts: `src/gamepanel` -> `/opt/gamepanel/gamepanel`
+(o codigo que o gunicorn de fato serve, mimetizando o layout de producao) e o repositorio
+inteiro -> `/workspace` (so para achar `pytest.ini`, `tests/` e `src/` juntos e rodar a
+suite completa). Sem pip nem uv ali dentro (so `python3-pytest` do apt — ver
+`docker/panel/Dockerfile`), o `conftest.py` da raiz insere `src/` no `sys.path` na mao
+para que `import gamepanel`/`import gamebroker` resolvam sem instalacao. **Rode com
+`-p no:cacheprovider`** se quiser o mesmo silencio do venv; sem a flag os testes passam
+igual, só com um aviso de cache que nao escreve (sistema de arquivos read-only).
+**Rebuild a imagem** (`docker compose build panel`) se `pytest` não for encontrado ali
+dentro. Um teste sensivel a `GAMEPANEL_DEV=1` (que o servico `panel` sempre sobe com) —
+`test_broker.py::test_config_ruim_desliga_o_recurso_sem_derrubar_o_painel[http-fora-do-loopback]`
+— so falha rodando desse jeito, contra o container AO VIVO; no `.venv` (sem essa
+variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
@@ -66,8 +83,8 @@ SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windo
 resultado so vale no container. Os outros 321 passam iguais nos dois lugares.
 
 Templates e estaticos entram por bind mount: recarregar a pagina basta. `app.py` e
-`ui.py` sao recarregados pelo `--reload` do gunicorn, mas **rota nova ou mudanca de
-decorador exige `docker compose restart panel`**.
+`navigation.py` sao recarregados pelo `--reload` do gunicorn, mas **rota nova ou mudanca
+de decorador exige `docker compose restart panel`**.
 
 Depois de mexer em template ou rota, passe por todas as telas:
 
@@ -93,35 +110,56 @@ mudam, e e ali que mora o 403 que ninguem tinha visto.
 ## Onde cada coisa mora
 
 ```
-pytest.ini             onde o pytest procura os testes (admin/ e broker/) e config de cache
-broker/                servico que cria instancias de jogo (Proxmox) e abre portas (OPNsense);
-                       pacote Python, ver a secao "Broker" abaixo
-admin/
-  app.py               rotas, SSH, banco, alertas, agendador  (arquivo grande; ver abaixo)
-  ui.py                mapa da interface: navegacao e acoes   (puro, sem Flask)
-  gameconf.py          leitor/gravador de .ini/.json/.cfg do jogo
-  gamefields.py        catalogo: o que cada chave de config significa
-  modelos_de_jogo.py   modelos do formulario "Adicionar jogo" (Unreal Linux); puro, so dado.
-                       `broker/test_modelos.py` confere que passam no validador do broker
-  busca_de_jogos.py    busca por nome/App ID sobre `sugestoes_de_jogos.py` (GERADO, nao edite)
+pyproject.toml          workspace uv: dependencias de dev (pytest/ruff/mypy), so gamepanel/gamebroker editaveis
+pytest.ini               onde o pytest procura os testes (tests/) e config de cache
+conftest.py              insere src/ no sys.path antes de qualquer teste (funciona sem `uv sync`)
+games/                   catalogo curado de jogos (um *.env por jogo), lido pelo gamebroker E pelos
+                        scripts de provisionamento em bash - por isso fica na raiz, fora de src/
+lib/                     fases de instalacao de jogo (bash), compartilhadas entre o host Proxmox e o CT do broker
+src/
+  gamepanel/             o painel (era admin/)
+    app.py               rotas, SSH, banco, alertas, agendador  (arquivo grande; ver abaixo)
+    wsgi.py              entry point do gunicorn (`gamepanel.wsgi:app`)
+    cli.py               (ainda nao existe - o bootstrap `--create-user`/`--reset-2fa` continua no fim de app.py)
+    navigation.py        mapa da interface: navegacao e acoes   (puro, sem Flask; era ui.py)
+    games/
+      config_format.py   leitor/gravador de .ini/.json/.cfg do jogo (era gameconf.py)
+      gamefields.py       catalogo: o que cada chave de config significa
+      catalog/
+        search.py          busca por nome/App ID sobre suggestions.py (era busca_de_jogos.py)
+        templates.py        modelos do formulario "Adicionar jogo" (Unreal Linux); puro, so dado
+                           (era modelos_de_jogo.py; `tests/gamebroker/test_modelos.py` confere
+                           que passam no validador do broker)
+        suggestions.py      GERADO por tools/importar-linuxgsm.py, nao edite (era sugestoes_de_jogos.py)
+    security/
+      totp.py             2FA, so stdlib
+      qr.py               gerador de QR, so stdlib
+    integrations/
+      broker_client.py    cliente do broker (so stdlib, TLS fixado por impressao); ver "Broker"
+    templates/
+      components/         macros: ui.html (generico) e servidor.html (dominio)
+      *.html              uma tela cada
+      sw.js.jinja         service worker    (template, nao estatico: tem versao dentro)
+      manifest.webmanifest.jinja
+    static/
+      css/                tokens -> base -> layout -> components -> pages
+      js/core/            format, http, poll, dom, dirty   (sem DOM de tela, reutilizavel)
+      js/features/        um modulo por comportamento
+      js/app.js           liga features aos elementos da pagina
+      icons/
+  gamebroker/             servico que cria instancias de jogo (Proxmox) e abre portas (OPNsense);
+                         pacote Python, ver a secao "Broker" abaixo (era broker/)
+tests/
+  gamepanel/              as suites do painel (era admin/test_*.py + admin/conftest.py)
+  gamebroker/             as suites do broker, mais os dobres de teste http_falso.py (era broker/test_*.py)
 tools/
-  importar-linuxgsm.py gera `admin/sugestoes_de_jogos.py` a partir do LinuxGSM (precisa de internet)
-  conftest.py          fixtures pytest compartilhadas: banco, webhooks, chefe, peao...
-  broker_client.py     cliente do broker (so stdlib, TLS fixado por impressao); ver "Broker"
-  test_*.py            as 9 suites (436 testes) - ver a secao de testes, no topo
-  requirements-dev.txt Flask para o .venv local (so ferramenta, nao dependencia do painel)
-  templates/
-    components/        macros: ui.html (generico) e servidor.html (dominio)
-    *.html             uma tela cada
-    sw.js.jinja        service worker    (template, nao estatico: tem versao dentro)
-    manifest.webmanifest.jinja
-  static/
-    css/               tokens -> base -> layout -> components -> pages
-    js/core/           format, http, poll, dom, dirty   (sem DOM de tela, reutilizavel)
-    js/features/       um modulo por comportamento
-    js/app.js          liga features aos elementos da pagina
-    icons/
+  importar-linuxgsm.py   gera src/gamepanel/games/catalog/suggestions.py a partir do LinuxGSM (precisa de internet)
+  verificar-qr.py        verificacao manual do QR contra um leitor de verdade (venv descartavel)
 ```
+
+`src/gamepanel/games/gamefields.py` ainda e um arquivo so (nao dividido em adapter por
+jogo) e `app.py` ainda nao tem `services/`/`blueprints/`/`runtime/` — essa divisao e Fase
+4, ainda nao feita (ver `docs/architecture-proposal.md`).
 
 ### A regra que sustenta o resto: uma lista, um lugar
 
@@ -142,21 +180,24 @@ dessas tabelas.
 
 ---
 
-## Python (`app.py`, `ui.py`)
+## Python (`app.py`, `navigation.py`)
 
-- **Dependencias: so a stdlib mais o `python3-flask` do apt.** O container do painel nao
-  baixa pacote de lugar nenhum. Nada de `pip install`, nada de CDN.
-  Como consequencia **nao existe Python instalado nesta maquina de desenvolvimento**: o
-  `Import "flask" could not be resolved` do Pylance e esperado e nao se conserta no
-  codigo. Quem tem Flask e o container — e por isso que os testes rodam la dentro.
-- **QR code e codigo proprio, so stdlib** (`qr.py`: modo byte, correcao M, versoes 1-10 da ISO
-  18004). Existe pela mesma razao do TOTP: sem pip, nao ha biblioteca de QR. A suite
-  (`test_qr.py`) prova a matematica sem precisar de um leitor de verdade — Reed-Solomon com
-  resto zero nas raizes do gerador, e a distancia minima 7 do BCH(15,5) dos bits de formato —
-  porque `opencv-python-headless` (o decodificador de verdade) passa de 60 MB e nao entra no
-  `.venv` nem no painel. **Depois de mexer em `qr.py`, rode `tools/verificar-qr.py`** numa venv
-  DESCARTAVEL com `opencv-python-headless` e `segno` (nunca no `admin/requirements-dev.txt`):
-  ele desenha o QR e confere que a camera (via OpenCV) le de volta o texto certo.
+- **Dependencias do PAINEL EM PRODUCAO: so a stdlib mais o `python3-flask` do apt.** O
+  container nao baixa pacote de lugar nenhum. Nada de `pip install`, nada de CDN. Isso
+  nao muda com o `uv` — `uv` so gerencia o `.venv` de desenvolvimento (`pyroject.toml`
+  na raiz), nunca entra em Dockerfile de producao nem em `provision-*-lxc.sh`. Se
+  `import gamepanel`/`import flask` nao resolve no editor, rode `uv sync` (cria o
+  `.venv` e instala os dois pacotes do repo como editaveis, mais o Flask que a
+  producao usa e as ferramentas de dev — ver a secao de testes, no topo).
+- **QR code e codigo proprio, so stdlib** (`security/qr.py`: modo byte, correcao M, versoes
+  1-10 da ISO 18004). Existe pela mesma razao do TOTP: sem pip em producao, nao ha
+  biblioteca de QR ali. A suite (`test_qr.py`) prova a matematica sem precisar de um
+  leitor de verdade — Reed-Solomon com resto zero nas raizes do gerador, e a distancia
+  minima 7 do BCH(15,5) dos bits de formato — porque `opencv-python-headless` (o
+  decodificador de verdade) passa de 60 MB e nao entra no `.venv` de dev nem no painel.
+  **Depois de mexer em `qr.py`, rode `tools/verificar-qr.py`** numa venv DESCARTAVEL
+  com `opencv-python-headless` e `segno` (nunca no `pyproject.toml` do repo): ele
+  desenha o QR e confere que a camera (via OpenCV) le de volta o texto certo.
 - **Segundo fator (2FA) e TOTP proprio, so stdlib** (`totp.py`, testado contra os vetores do RFC
   6238). Regras que os testes de `test_2fa.py` guardam: senha certa com 2FA NAO abre sessao (so grava
   `pre2fa`, sem `uid`, por 5 min); codigo usado nao vale de novo (`totp_last_step`, e o `UPDATE ... WHERE
@@ -233,7 +274,7 @@ teste — antes disso era uma atribuicao direta (`panel.server_status = ...`) se
 nenhum, e a suite so nao vazava estado porque cada arquivo era um processo Python
 separado. Hoje as suites dividem um processo (pytest as importa todas juntas), e
 sao o `monkeypatch` e a fixture `banco` (tabelas limpas a cada teste, em
-`admin/conftest.py`) que garantem o isolamento.
+`tests/gamepanel/conftest.py`) que garantem o isolamento.
 
 Essa troca **so funciona porque tudo mora em `app.py`**. Se um dia esse arquivo for
 dividido em pacote, as funcoes precisam ser chamadas pelo modulo
@@ -374,7 +415,7 @@ Modulos ES, sem build, sem dependencia externa.
 
 ---
 
-## Broker (`broker/`)
+## Broker (`src/gamebroker/`)
 
 O painel nao guarda credencial de Proxmox nem de OPNsense: quem guarda e o broker, que
 expoe verbos fixos (criar/desativar/remover instancia, catalogo). Pronto: nucleo,
@@ -387,10 +428,10 @@ teste e de deploy ficam em `broker.secrets.env` (fora do git);
 `verificar-broker-acesso.ps1` confere so leitura e `spike-broker-escrita.ps1` cria e
 apaga um CT/regra de teste.
 
-**Lado do painel** (`admin/`): telas `/catalogo` e `/instancias`, flag
+**Lado do painel** (`src/gamepanel/`): telas `/catalogo` e `/instancias`, flag
 `GAMEPANEL_ALLOW_BROKER` (desligada por padrao; config ruim DESLIGA o recurso em vez de
 derrubar o painel), `servers.broker_id` e `jobs.broker_op`. No compose de dev sobe um
-broker de brinquedo (`broker/dev.py`, backends falsos): `docker compose up --build`.
+broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up --build`.
 
 - **Um instalador de jogo, dois transportes.** As fases que rodam DENTRO do CT (SteamCMD,
   Wine/Proton, systemd) moram em `lib/ct-fases.sh`, lido por `provision-game-lxc.sh` (host:
@@ -435,7 +476,7 @@ broker de brinquedo (`broker/dev.py`, backends falsos): `docker compose up --bui
   prazo curto (`SONDA_TIMEOUT`): um firewall que descarta pacote nao pode fazer a saude demorar 30 s.
 - **A API do Proxmox e a do OPNsense precisam de regra de firewall do CT do broker** (o resumo do
   deploy lista). Sem elas o broker sobe, mas a saude mostra "NAO RESPONDE" e nada e criado.
-- **`broker/config.py` valida TUDO e lista TODOS os problemas de uma vez**, so pelo NOME da
+- **`gamebroker/config.py` valida TUDO e lista TODOS os problemas de uma vez**, so pelo NOME da
   variavel (nunca o valor). Config ruim derruba o START (`SystemExit(2)`), nunca um pedido.
   https exige impressao SHA-256; http so em loopback.
 - **Valor no `EnvironmentFile` do systemd:** `NOME="valor"` com `\` e `"` escapados (`$` nao
@@ -443,9 +484,12 @@ broker de brinquedo (`broker/dev.py`, backends falsos): `docker compose up --bui
   escape e esconde o defeito.
 - **Impressao dos certificados do Proxmox/OPNsense e lida do servidor no deploy (TOFU) e
   IMPRESSA para voce conferir.** Se ja souber a impressao, ponha em `*_CERT_SHA256`.
-- **E um pacote** (`broker/__init__.py`), nao arquivos soltos como `admin/`: os dois teriam
-  `app.py` e `conftest.py` e colidiriam no mesmo processo do pytest. Rode da raiz:
-  `.\.venv\Scripts\python.exe -m pytest broker`.
+- **`gamebroker` e `gamepanel` sao os dois pacotes do workspace uv** (`src/gamebroker/`,
+  `src/gamepanel/`), instalados editaveis no `.venv` por `uv sync` — e por isso que
+  `import gamebroker.X` funciona em qualquer lugar do repo sem manipular `sys.path`.
+  As suites de cada um vivem em `tests/gamebroker/`/`tests/gamepanel/`, testando o
+  pacote instalado, nao um caminho relativo. Rode so o broker da raiz:
+  `uv run pytest tests/gamebroker`.
 - **`servico.py` so conhece as interfaces de `backends.py`.** Proxmox, OPNsense, SSH e rede
   reais entram depois sem mexer nele; os testes usam `fakes.py`.
 - **Catalogo em dois niveis**: `games/*.env` (curado, pode ter `PRE/POST_INSTALL_CMD`) e
@@ -477,10 +521,11 @@ broker de brinquedo (`broker/dev.py`, backends falsos): `docker compose up --bui
   **O DHCP do OPNsense nao pode cobrir `.100-.199`**: a checagem por ping nao pega um aparelho
   que ainda vai chegar.
 - **Sugestoes de jogo (formulario "Adicionar jogo")** vem do LinuxGSM (MIT), convertidas por
-  `python tools/importar-linuxgsm.py` e commitadas em `admin/sugestoes_de_jogos.py` (110 jogos): o
-  painel em producao NAO vai a internet (a API oficial da loja Steam nem serve: servidor dedicado e
-  app do tipo "Tool" e volta `success:false`). Regras do conversor, cada uma com teste em
-  `broker/test_importar_linuxgsm.py` e `broker/test_sugestoes.py`: so sai o que o
+  `python tools/importar-linuxgsm.py` e commitadas em
+  `src/gamepanel/games/catalog/suggestions.py` (110 jogos): o painel em producao NAO vai
+  a internet (a API oficial da loja Steam nem serve: servidor dedicado e app do tipo
+  "Tool" e volta `success:false`). Regras do conversor, cada uma com teste em
+  `tests/gamebroker/test_importar_linuxgsm.py` e `tests/gamebroker/test_sugestoes.py`: so sai o que o
   `validar_dinamico` aceita; porta de RCON/telnet/HTTP vai so no argumento e NUNCA no NAT; variavel
   de senha/nome/IP/token nunca e resolvida (o argumento sai, com aviso); tudo depois de `; | & \`
   `$(` e cortado; variavel vazia derruba a opcao junto (senao ela engole a proxima). Protocolo e

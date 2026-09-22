@@ -1017,7 +1017,7 @@ e de 5 minutos e nao de um — 288 pontos por dia ja sao mais do que o grafico m
 A aba **Terminal** abre uma sessao SSH de verdade dentro do container, com TTY: `htop`,
 `nano`, `vi`, `tail -f` e prompts de confirmacao funcionam como num terminal local.
 
-- Emulador proprio (`admin/static/js/terminal.js`), sem dependencia externa: cores 16/256/RGB,
+- Emulador proprio (`src/gamepanel/static/js/terminal.js`), sem dependencia externa: cores 16/256/RGB,
   tela alternativa, regiao de rolagem e as teclas especiais (setas, F1-F12, Ctrl+letra).
 - Transporte por HTTP (long-poll para a saida, POST para as teclas) — o painel roda em
   gunicorn sync, que nao suporta WebSocket.
@@ -1061,11 +1061,11 @@ de salvar — comentarios, ordem, formatacao e chaves desconhecidas ficam como e
 no editor de texto, sai um `.bak` antes de qualquer gravacao e o dono/permissao do arquivo
 sao preservados. Se o formato nao for reconhecido, a tela manda voce para o editor de texto.
 
-O motor fica em `admin/gameconf.py`, isolado do resto do painel (nao fala SSH nem HTTP),
+O motor fica em `src/gamepanel/games/config_format.py`, isolado do resto do painel (nao fala SSH nem HTTP),
 com testes proprios:
 
 ```bash
-docker compose exec panel python3 -m pytest /opt/gamepanel/test_gameconf.py -q
+docker compose exec -w /workspace panel python3 -m pytest tests/gamepanel/test_gameconf.py -q
 ```
 
 ### Editor de configuracoes
@@ -1390,7 +1390,7 @@ Sobem tres containers: o painel e dois "servidores de jogo" falsos (Debian com `
 `systemctl`/`journalctl` simulados e os `.ini` que o jogo teria). Os dois ja vem
 cadastrados no painel — com o `.ini` apontado, entao a tela **Config** tambem da para
 testar de ponta a ponta, junto com start/stop/update, terminal e editor. O codigo entra
-por bind mount com `--reload`: editar `admin/app.py` ou os templates e recarregar a
+por bind mount com `--reload`: editar `src/gamepanel/app.py` ou os templates e recarregar a
 pagina basta.
 
 Nao confunda com o deploy de verdade: aqui os containers se chamam `game-palworld-dev` e
@@ -1456,10 +1456,10 @@ Os **backups nao ficam aqui**: cada `.tar.gz` mora no container do jogo, em
 
 ### Como a interface e montada
 
-Tres decisoes explicam a organizacao do `admin/`, e as tres nasceram do mesmo problema:
-a mesma coisa escrita em varios lugares acaba virando coisas diferentes.
+Tres decisoes explicam a organizacao do `src/gamepanel/`, e as tres nasceram do mesmo
+problema: a mesma coisa escrita em varios lugares acaba virando coisas diferentes.
 
-**`ui.py` &mdash; o mapa da interface.** Quais telas um servidor tem, em que ordem, com
+**`navigation.py` &mdash; o mapa da interface.** Quais telas um servidor tem, em que ordem, com
 que icone, e quem pode abrir cada uma. A lista de telas ja esteve escrita a mao em seis
 templates, cada um com um subconjunto proprio: era por isso que &quot;Graficos&quot;
 aparecia numa tela e nao na outra. Hoje **tela nova = uma linha nessa tupla**, e ela
