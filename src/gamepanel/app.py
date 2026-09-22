@@ -38,7 +38,7 @@ from gamepanel.games import config_format as gameconf
 from gamepanel.games import gamefields
 from gamepanel.games.catalog import search as busca_de_jogos
 from gamepanel.games.catalog.templates import MODELOS as MODELOS_DE_JOGO
-from gamepanel.integrations import broker_client
+from gamepanel.integrations import broker_client, webhook_client
 from gamepanel.runtime import a2s, http_probe
 from gamepanel.runtime import log_probe
 from gamepanel.runtime import port_probe
@@ -52,7 +52,13 @@ from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import terminal as term_runtime
 from gamepanel.security import qr, totp
-from gamepanel.services import metrics_service, parallel, player_service, status_service
+from gamepanel.services import (
+    alert_service,
+    metrics_service,
+    parallel,
+    player_service,
+    status_service,
+)
 
 # O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
 # resto do painel continua funcionando e a tela do terminal responde 503.
@@ -1456,57 +1462,14 @@ def webhook_config(conn: sqlite3.Connection) -> dict:
     }
 
 
-def mascara_url(url: str) -> str:
-    """Deixa so o bastante para reconhecer o destino, sem expor o token.
-
-    A URL de webhook e uma credencial: quem le a tela por cima do ombro (ou num
-    screenshot colado num chat) nao deveria sair de la podendo escrever no canal.
-    """
-    if not url:
-        return ""
-    corte = url.split("://", 1)[-1]
-    host, _, resto = corte.partition("/")
-    if not resto:
-        return host
-    partes = [p for p in resto.split("/") if p]
-    if len(partes) >= 2:
-        # Discord: .../webhooks/<id>/<token>. O id identifica, o token e que e segredo.
-        return f"{host}/.../{partes[-2]}/{'*' * 8}"
-    return f"{host}/.../{'*' * 8}"
+mascara_url = webhook_client.mascara_url
 
 
 def envia_webhook(url: str, texto: str) -> str:
-    """Faz o POST. Devolve "" quando deu certo, ou o motivo da falha.
-
-    O corpo leva 'content' E 'text': o primeiro e o campo do Discord, o segundo o do
-    Slack. Cada um le o seu e ignora o outro, entao a mesma chamada serve para os dois
-    (e para qualquer coisa que aceite JSON).
-    """
-    if not URL_RE.match(url or ""):
-        return "URL invalida (use http:// ou https://)"
-    corpo = json.dumps({"content": texto, "text": texto}).encode("utf-8")
-    pedido = urllib.request.Request(
-        url,
-        data=corpo,
-        headers={"Content-Type": "application/json", "User-Agent": WEBHOOK_UA},
-    )
-    try:
-        with urllib.request.urlopen(pedido, timeout=WEBHOOK_TIMEOUT) as resp:
-            resp.read(2048)
-        return ""
-    except urllib.error.HTTPError as exc:
-        # O corpo da resposta e onde o destino diz o que nao gostou (o Discord manda um
-        # JSON com 'message'). Sem ele, um 400 por payload torto e um 403 por bloqueio
-        # do Cloudflare ficam com a mesma cara na tela.
-        try:
-            motivo = exc.read(300).decode("utf-8", "replace").strip().replace("\n", " ")
-        # Resposta ja consumida/fechada.
-        except Exception:  # noqa: BLE001
-            motivo = ""
-        return f"o webhook respondeu HTTP {exc.code}" + (f": {motivo}" if motivo else "")
-    # Rede: DNS, TLS, timeout, recusa...
-    except Exception as exc:  # noqa: BLE001
-        return f"nao consegui chamar o webhook: {exc}"
+    # Nome proprio (e nao `webhook_client.envia` direto nas chamadas) porque a fixture
+    # `webhooks` do conftest troca ESTE nome por um capturador — todo teste de alerta
+    # depende disso para ver o que sairia por HTTP sem nada sair de verdade.
+    return webhook_client.envia(url, texto, WEBHOOK_TIMEOUT, WEBHOOK_UA)
 
 
 def notifica(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str = "") -> bool:
@@ -1591,241 +1554,57 @@ _ultimo_disco = 0.0
 _ultimo_log = 0.0
 
 
-def _alerta_de_estado(conn, server, estado, anterior) -> None:
-    """Contato com o container e estado do servico.
+def _alert_deps() -> alert_service.AlertDeps:
+    """As pecas que as regras de alerta pedem, montadas na hora da chamada.
 
-    NAO recebe `cfg`: quem decide se um evento sai e o `notifica`, que le a
-    configuracao por conta propria. Um parametro que ninguem usa vira ruido na
-    assinatura e mentira na leitura ("ah, entao aqui olha a config").
+    Na hora, e nao no import: `server_players`, `server_metrics` e `notifica` sao nomes
+    deste modulo, e os testes de alerta trocam os dois primeiros por falsos a cada caso
+    — um bundle congelado no import passaria por cima da troca em silencio.
     """
-    sid, nome = int(server["id"]), server["name"]
-    alvo = f"{server['ssh_user']}@{server['host']}"
+    return alert_service.AlertDeps(
+        notifica=notifica, job_recente=_job_recente, player_source=player_source,
+        server_players=server_players, server_metrics=server_metrics,
+        read_log_lines=read_log_lines, valor_guardado=_valor_guardado,
+        tamanho_legivel=_human_size, estado_monitor=_estado_monitor,
+        logger=app.logger, mute_rounds=MUTE_ROUNDS, log_err_lines=LOG_ERR_LINES,
+        log_err_cooldown=LOG_ERR_COOLDOWN,
+    )
 
-    if estado["reachable"] != anterior["reachable"]:
-        if estado["reachable"]:
-            notifica(conn, "acessivel", f"{nome}: contato restabelecido", alvo)
-        else:
-            notifica(conn, "inacessivel", f"{nome}: painel perdeu contato",
-                     f"{alvo}\n{estado.get('error') or 'sem detalhe'}")
-        return  # sem contato nao da para falar do servico com honestidade
 
-    if not estado["reachable"]:
-        return
-    if estado["service"] == anterior["service"]:
-        return
-    if estado["service"] == "active":
-        notifica(conn, "voltou", f"{nome}: servidor voltou a rodar", alvo)
-        return
-    if anterior["service"] != "active":
-        return
-
-    # 'failed' e o systemd dizendo que o jogo quebrou (saiu com erro, estourou o limite de
-    # restarts, foi morto pelo OOM). Nao passa pela janela de silencio: se alguem mandou
-    # reiniciar e o resultado foi 'failed', isso e exatamente o que a pessoa precisa saber.
-    if estado["service"] == "failed":
-        notifica(conn, "quebrou", f"{nome}: o jogo quebrou",
-                 f"{alvo}\nservico {server['service']} esta 'failed'"
-                 + (f" (Result={estado['result']})" if estado.get("result") else ""))
-    elif not _job_recente(conn, sid):
-        notifica(conn, "caiu", f"{nome}: servidor parou de rodar",
-                 f"{alvo}\nservico {server['service']} esta '{estado['service']}'")
+def _alerta_de_estado(conn, server, estado, anterior) -> None:
+    alert_service.alerta_de_estado(_alert_deps(), conn, server, estado, anterior)
 
 
 def _alerta_de_restart(conn, server, estado, anterior) -> None:
-    """Loop de crash: o systemd ressuscitando o jogo sem parar.
-
-    E o buraco que o alerta de queda nao cobre. Com `Restart=always` o jogo pode morrer a
-    cada 20 segundos que o `ActiveState` responde 'active' quase sempre — a queda nunca
-    'acontece' aos olhos do painel, e o canal fica em silencio enquanto ninguem consegue
-    jogar. Quem denuncia e o NRestarts, que so sobe.
-    """
-    sid, nome = int(server["id"]), server["name"]
-    agora = int(estado.get("restarts") or 0)
-    antes = int(anterior.get("restarts") or 0)
-
-    # O contador zera quando alguem reinicia a unidade na mao (e ao recarregar o daemon).
-    # Isso nao e um loop: e so uma linha de base nova.
-    if agora < antes:
-        anterior["restarts"] = agora
-        anterior["loop_avisado"] = False
-        return
-    if agora == antes:
-        # Uma volta inteira sem nenhum restart novo: o loop passou, e o proximo pode
-        # voltar a avisar.
-        anterior["loop_avisado"] = False
-        return
-
-    quantos = agora - antes
-    anterior["restarts"] = agora
-    # Enquanto o contador sobe volta apos volta, o alerta sai UMA vez. Repetir a cada
-    # minuto seria o mesmo spam que a regra da mudanca existe para evitar.
-    if anterior.get("loop_avisado") or _job_recente(conn, sid):
-        return
-    anterior["loop_avisado"] = True
-    notifica(
-        conn, "reiniciando", f"{nome}: o jogo esta caindo em loop",
-        f"{server['ssh_user']}@{server['host']}\n"
-        f"o systemd reiniciou {server['service']} {quantos}x desde a ultima olhada"
-        f" ({agora} no total desta subida)",
-    )
+    alert_service.alerta_de_restart(_alert_deps(), conn, server, estado, anterior)
 
 
 def _alerta_de_mudez(conn, server, estado, anterior) -> None:
-    """Servico de pe, jogo mudo: nao responde mais a consulta do proprio jogo.
-
-    E o caso que mais engana. O processo continua vivo, o systemd continua feliz, o
-    dashboard continua verde — e ninguem consegue entrar. So vale para quem responde a
-    uma sondagem de verdade (A2S ou API HTTP); contagem por log nao pergunta nada ao
-    jogo, entao nao tem o que ficar mudo.
-    """
-    sid, nome = int(server["id"]), server["name"]
-    if player_source(server) not in ("a2s", "http"):
-        return
-
-    # Jogo que acabou de subir ainda esta carregando mapa e nao responde: contar essas
-    # voltas transformaria toda partida do zero num alerta. O mesmo para a janela de
-    # silencio depois de uma acao pelo painel.
-    if estado["service"] != "active" or _job_recente(conn, sid):
-        anterior["mudo"] = 0
-        return
-
-    dados = server_players(server)
-    if not dados.get("configured"):
-        return
-
-    if not dados.get("error"):
-        anterior["mudo"] = 0
-        if anterior.get("mudo_avisado"):
-            anterior["mudo_avisado"] = False
-            notifica(conn, "respondeu", f"{nome}: o jogo voltou a responder",
-                     f"{dados.get('players')} jogador(es) online")
-        return
-
-    anterior["mudo"] = int(anterior.get("mudo") or 0) + 1
-    if anterior["mudo"] < MUTE_ROUNDS or anterior.get("mudo_avisado"):
-        return
-    anterior["mudo_avisado"] = True
-    notifica(
-        conn, "travou", f"{nome}: o jogo nao responde",
-        f"{server['ssh_user']}@{server['host']}\n"
-        f"o servico {server['service']} esta rodando, mas o jogo nao responde ha"
-        f" {anterior['mudo']} verificacoes\n{dados['error']}",
-    )
+    alert_service.alerta_de_mudez(_alert_deps(), conn, server, estado, anterior)
 
 
 def _alerta_de_log(conn, server, anterior) -> None:
-    """Procura a expressao de erro do servidor no rabo do log do jogo.
-
-    E o unico alerta que depende de configuracao: cada jogo grita de um jeito, entao a
-    expressao vem do cadastro. Sem ela, nem a ida de SSH acontece.
-    """
-    padrao = _valor_guardado(server, "error_re")
-    if not padrao:
-        return
-    nome = server["name"]
-    try:
-        regex = compile_pattern(padrao, "erro")
-    except QueryError as exc:
-        app.logger.warning("expressao de erro de '%s' invalida: %s", nome, exc)
-        return
-    if regex is None:
-        return  # padrao so de espacos: nao ha o que procurar
-    try:
-        linhas = read_log_lines(server, LOG_ERR_LINES)
-    except (RemoteError, QueryError) as exc:
-        # Log ilegivel nao e erro DO JOGO. Se o servidor sumiu, quem avisa e o
-        # 'inacessivel'; inventar um alerta de log aqui seria contar a mesma coisa duas
-        # vezes, com o nome errado.
-        app.logger.info("nao consegui ler o log de '%s' para procurar erro: %s", nome, exc)
-        return
-
-    achados = [l.strip() for l in linhas if regex.search(l)]
-    if not achados:
-        # A linha saiu do rabo do log: se o erro voltar, e um erro novo e avisa de novo.
-        anterior["ultimo_erro"] = ""
-        return
-
-    ultima = achados[-1][:300]
-    # Mesma linha da volta passada: um jogo que repete o erro a cada segundo renderia um
-    # alerta por minuto ate alguem desligar o webhook.
-    if ultima == anterior.get("ultimo_erro"):
-        return
-    # Trava de seguranca para expressao larga demais (um `.` casa tudo): mesmo com linhas
-    # sempre diferentes, o canal nao leva mais de um alerta destes por janela.
-    agora = time.monotonic()
-    ultimo_envio = float(anterior.get("erro_em") or 0)
-    if ultimo_envio and agora - ultimo_envio < LOG_ERR_COOLDOWN:
-        anterior["ultimo_erro"] = ultima
-        return
-    anterior["ultimo_erro"] = ultima
-    anterior["erro_em"] = agora
-    quantas = f" ({len(achados)} linhas casaram)" if len(achados) > 1 else ""
-    notifica(conn, "erro-no-log", f"{nome}: erro no log do jogo",
-             f"{server['ssh_user']}@{server['host']}{quantas}\n{ultima}")
+    alert_service.alerta_de_log(_alert_deps(), conn, server, anterior)
 
 
 def _alerta_de_disco(conn, server, cfg) -> None:
-    sid = int(server["id"])
-    dados = server_metrics(server)
-    if dados.get("error"):
-        return
-    pior = max((d for d in dados.get("disks", []) if d.get("pct") is not None),
-               key=lambda d: d["pct"], default=None)
-    if not pior:
-        return
-    cheio = pior["pct"] >= cfg["disco"]
-    marca = _estado_monitor.setdefault(sid, {})
-    # So avisa na VIRADA: um disco a 95%% continua a 95%% na volta seguinte, e ninguem
-    # merece o mesmo alerta a cada minuto ate arrumar.
-    if cheio and not marca.get("disco_cheio"):
-        notifica(conn, "disco-cheio", f"{server['name']}: disco quase cheio",
-                 f"{pior['mount']} em {pior['pct']}% "
-                 f"({_human_size(pior['used'])} de {_human_size(pior['total'])})")
-    marca["disco_cheio"] = cheio
+    alert_service.alerta_de_disco(_alert_deps(), conn, server, cfg)
 
 
 def _alerta_de_memoria(conn, server, cfg) -> None:
-    sid = int(server["id"])
-    dados = server_metrics(server)
-    if dados.get("error"):
-        return
-    mem = dados.get("mem")
-    if not mem or mem.get("pct") is None:
-        return
-    cheio = mem["pct"] >= cfg["memoria"]
-    marca = _estado_monitor.setdefault(sid, {})
-    # So avisa na virada
-    if cheio and not marca.get("memoria_alta"):
-        notifica(conn, "memoria-alta", f"{server['name']}: memoria quase cheia",
-                 f"{mem['pct']}% ({_human_size(mem['used'])} de {_human_size(mem['total'])})")
-    marca["memoria_alta"] = cheio
+    alert_service.alerta_de_memoria(_alert_deps(), conn, server, cfg)
 
 
 def _alerta_de_cpu(conn, server, cfg) -> None:
-    sid = int(server["id"])
-    dados = server_metrics(server)
-    if dados.get("error"):
-        return
-    cpu = dados.get("cpu_pct")
-    if cpu is None:
-        return
-    alto = cpu >= cfg["cpu"]
-    marca = _estado_monitor.setdefault(sid, {})
-    # So avisa na virada
-    if alto and not marca.get("cpu_alta"):
-        cores = dados.get("cores", 1)
-        proc = dados.get("proc", {})
-        proc_cpu = proc.get("cpu_pct")
-        detalhe = f"{cpu}% em {cores} nucleo{'s' if cores != 1 else ''}"
-        if proc_cpu is not None:
-            detalhe += f" (jogo: {proc_cpu}%)"
-        notifica(conn, "cpu-alta", f"{server['name']}: uso de CPU alto", detalhe)
-    marca["cpu_alta"] = alto
+    alert_service.alerta_de_cpu(_alert_deps(), conn, server, cfg)
 
 
 # Evento de recurso -> quem confere. Os tres leem o MESMO medidor e andam no mesmo
 # relogio; como tabela, ligar um quarto (rede, por exemplo) e acrescentar uma linha,
 # nao mais um `if` dentro do laco do monitor.
+#
+# Aponta para as funcoes DESTE modulo, nao para as do service: a tabela captura o
+# objeto no import, e e por estes nomes que os testes chamam.
 ALERTAS_DE_RECURSO = {
     "disco-cheio": _alerta_de_disco,
     "memoria-alta": _alerta_de_memoria,
@@ -1834,103 +1613,11 @@ ALERTAS_DE_RECURSO = {
 
 
 def _alerta_de_jogadores(conn, server, servico, anterior, cfg) -> None:
-    """Avisa quando jogadores entram ou saem do servidor.
-
-    Compara a lista de jogadores atual com a da verificacao anterior. Se o jogo
-    tiver nomes (pelo log com (?P<name>...), API HTTP ou A2S), cita o nome de quem
-    entrou ou saiu. Se o jogo so devolver a contagem, avisa a variacao numerica.
-
-    Recebe o `servico` (string) em vez do estado inteiro de proposito: a volta rapida do
-    monitor nao consulta o systemd, e passa aqui o ultimo estado ja conhecido. Pedir o
-    dicionario obrigaria a pagar um SSH so para preencher um campo que ja se sabe.
-    """
-    sid, nome = int(server["id"]), server["name"]
-    if not player_source(server):
-        return
-
-    # Se o servico nao estiver ativo ou tiver job recente (restart, update),
-    # reseta o estado para nao disparar alertas falsos de desconexao.
-    if servico != "active" or _job_recente(conn, sid):
-        anterior["jogadores_nomes"] = None
-        anterior["jogadores_count"] = None
-        return
-
-    dados = server_players(server)
-    if not dados.get("configured") or dados.get("error"):
-        return
-
-    nomes_atuais, contagem_atual = _leitura_de_jogadores(dados)
-
-    # Primeira olhada deste servidor: so estabelece a linha de base
-    if anterior.get("jogadores_nomes") is None and anterior.get("jogadores_count") is None:
-        anterior["jogadores_nomes"] = nomes_atuais
-        anterior["jogadores_count"] = contagem_atual
-        return
-
-    nomes_anteriores = anterior.get("jogadores_nomes") or set()
-    contagem_anterior = int(anterior.get("jogadores_count") or 0)
-
-    if nomes_atuais or nomes_anteriores:
-        # O jogo da os nomes (exatos ou aproximados): o aviso cita quem foi.
-        _avisa_por_nome(conn, nome, cfg, nomes_atuais, nomes_anteriores, contagem_atual)
-    else:
-        # So a contagem: o aviso fala da variacao.
-        _avisa_por_contagem(conn, nome, cfg, contagem_atual, contagem_anterior)
-
-    anterior["jogadores_nomes"] = nomes_atuais
-    anterior["jogadores_count"] = contagem_atual
+    alert_service.alerta_de_jogadores(_alert_deps(), conn, server, servico, anterior, cfg)
 
 
-def _leitura_de_jogadores(dados: dict) -> tuple[set, int]:
-    """Normaliza a resposta da consulta em (nomes, contagem).
-
-    Jogo que so devolve numero vem com a lista vazia; jogo que so devolve nomes vem
-    sem contagem. Os dois casos saem daqui com a mesma forma, e e isso que permite ao
-    resto da funcao nao repetir `or 0` e `or []` a cada linha.
-    """
-    lista = dados.get("list") or []
-    nomes = {p["name"].strip() for p in lista if p.get("name") and p["name"].strip()}
-    contagem = dados.get("players")
-    if contagem is None and nomes:
-        contagem = len(nomes)
-    return nomes, max(0, int(contagem or 0))
-
-
-def _texto_de_online(contagem: int) -> str:
-    """"3 jogadores online", "1 jogador online", "nenhum jogador online".
-
-    Existia em quatro lugares desta tela, com uma diferenca sutil entre eles: um dos
-    quatro nao tratava o zero e podia dizer "0 jogadores online". Um lugar so.
-    """
-    if contagem == 0:
-        return "nenhum jogador online"
-    return f"{contagem} jogador{'es' if contagem != 1 else ''} online"
-
-
-def _avisa_por_nome(conn, nome, cfg, atuais: set, anteriores: set, contagem: int) -> None:
-    """Um aviso por pessoa que entrou ou saiu."""
-    detalhe = _texto_de_online(contagem)
-    if "jogador-entrou" in cfg["eventos"]:
-        for jogador in sorted(atuais - anteriores):
-            notifica(conn, "jogador-entrou", f"{nome}: {jogador} entrou no jogo", detalhe)
-    if "jogador-saiu" in cfg["eventos"]:
-        for jogador in sorted(anteriores - atuais):
-            notifica(conn, "jogador-saiu", f"{nome}: {jogador} saiu do jogo", detalhe)
-
-
-def _avisa_por_contagem(conn, nome, cfg, atual: int, anterior: int) -> None:
-    """Um aviso por variacao, para o jogo que nao publica nomes."""
-    if atual == anterior:
-        return
-    detalhe = _texto_de_online(atual)
-    if atual > anterior and "jogador-entrou" in cfg["eventos"]:
-        dif = atual - anterior
-        texto = "um jogador conectou" if dif == 1 else f"{dif} jogadores conectaram"
-        notifica(conn, "jogador-entrou", f"{nome}: {texto}", detalhe)
-    elif atual < anterior and "jogador-saiu" in cfg["eventos"]:
-        dif = anterior - atual
-        texto = "um jogador saiu" if dif == 1 else f"{dif} jogadores saíram"
-        notifica(conn, "jogador-saiu", f"{nome}: {texto}", detalhe)
+_leitura_de_jogadores = alert_service.leitura_de_jogadores
+_texto_de_online = alert_service.texto_de_online
 
 
 # ------------------------------------------------- log em tempo real
