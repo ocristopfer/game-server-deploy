@@ -8,7 +8,7 @@
   <div class="opcoes">
     {% for chave, rotulo in eventos.items() %}
     <label class="checkbox" for="{{ prefixo }}-{{ chave }}">
-      <input type="checkbox" id="{{ prefixo }}-{{ chave }}" name="eventos"
+      <input type="checkbox" id="{{ prefixo }}-{{ chave }}" name="events"
              value="{{ chave }}" {% if chave in marcados %}checked{% endif %}>
       <span>{{ rotulo }}</span>
     </label>
@@ -18,10 +18,10 @@
 
 {% block content %}
 {% call ui.cabecalho(_('nav.alerts')) %}
-  {% if cfg.ativos %}
+  {% if cfg.active %}
     {# Plural e por idioma, entao sao duas chaves e nao um 's' colado no fim. #}
-    {{ ui.selo(_('alerts.destinations_on_one' if cfg.ativos | length == 1
-                 else 'alerts.destinations_on_many', n=cfg.ativos | length), 'on') }}
+    {{ ui.selo(_('alerts.destinations_on_one' if cfg.active | length == 1
+                 else 'alerts.destinations_on_many', n=cfg.active | length), 'on') }}
   {% else %}
     {{ ui.selo(_('alerts.no_destination_on'), 'cold') }}
   {% endif %}
@@ -32,7 +32,7 @@
 <div class="card">
   <h2>{{ _('alerts.destinations') }}</h2>
 
-  {% if not cfg.destinos %}
+  {% if not cfg.targets %}
     <p class="muted small vazio">{{ _('alerts.no_destination_yet') }}</p>
   {% endif %}
 
@@ -48,20 +48,20 @@
     </div>
   {% endif %}
 
-  {% for h in cfg.destinos %}
-  <form class="hook{% if not h.ativo %} desligado{% endif %}" method="post"
+  {% for h in cfg.targets %}
+  <form class="hook{% if not h.enabled %} desligado{% endif %}" method="post"
         action="{{ url_for('alerts_hook_save', hid=h.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
 
     <div class="hook-head">
       <label class="hook-nome">
         <span class="sr-only">{{ _('alerts.destination_name') }}</span>
-        <input name="nome" value="{{ h.nome }}" maxlength="60"
+        <input name="name" value="{{ h.name }}" maxlength="60"
                placeholder="{{ _('alerts.team_channel') }}">
       </label>
       <label class="checkbox hook-liga">
-        <input type="checkbox" name="ativo" value="1" {% if h.ativo %}checked{% endif %}>
-        <span>{{ _('alerts.on') if h.ativo else _('alerts.off') }}</span>
+        <input type="checkbox" name="enabled" value="1" {% if h.enabled %}checked{% endif %}>
+        <span>{{ _('alerts.on') if h.enabled else _('alerts.off') }}</span>
       </label>
     </div>
 
@@ -76,8 +76,8 @@
 
     <div class="hook-eventos">
       <span class="rotulo">{{ _('alerts.notify_about') }}</span>
-      {{ caixas('h%d' % h.id, h.eventos) }}
-      {% if not h.eventos %}
+      {{ caixas('h%d' % h.id, h.events) }}
+      {% if not h.events %}
         <p class="muted small aviso">{{ _('alerts.no_event_checked') }}</p>
       {% endif %}
     </div>
@@ -87,23 +87,23 @@
       {{ ui.botao(_('alerts.test'), extra='formaction="' ~ url_for('alerts_hook_test', hid=h.id) ~ '" formnovalidate') }}
       <span class="spacer"></span>
       {{ ui.botao(_('alerts.remove'), variante='danger',
-                  confirmar=_('alerts.remove_confirm', name=h.nome),
+                  confirmar=_('alerts.remove_confirm', name=h.name),
                   extra='formaction="' ~ url_for('alerts_hook_del', hid=h.id) ~ '" formnovalidate') }}
     </div>
   </form>
   {% endfor %}
 
-  {% if cfg.destinos | length >= limite_hooks %}
+  {% if cfg.targets | length >= limite_hooks %}
     <p class="muted small">{{ _('alerts.limit_reached', n=limite_hooks) }}</p>
   {% else %}
-  <details class="hook-novo"{% if not cfg.destinos %} open{% endif %}>
+  <details class="hook-novo"{% if not cfg.targets %} open{% endif %}>
     <summary>+ {{ _('alerts.add_destination') }}</summary>
     <form method="post" action="{{ url_for('alerts_hook_new') }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <input type="hidden" name="ativo" value="1">
+      <input type="hidden" name="enabled" value="1">
       <div class="row">
         <label>{{ _('alerts.name') }}
-          <input name="nome" maxlength="60" placeholder="{{ _('alerts.team_channel') }}">
+          <input name="name" maxlength="60" placeholder="{{ _('alerts.team_channel') }}">
           <small>{{ _('alerts.name_hint') }}</small>
         </label>
         <label>{{ _('alerts.webhook_url') }}
@@ -132,14 +132,14 @@
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label class="curto">{{ _('alerts.warn_disk_over') }}
       <span class="com-unidade">
-        <input name="disk_pct" type="number" min="50" max="100" value="{{ cfg.disco }}" inputmode="numeric">
+        <input name="disk_pct" type="number" min="50" max="100" value="{{ cfg.disk }}" inputmode="numeric">
         <span class="unidade">%</span>
       </span>
       <small>{{ _('alerts.disk_hint') }}</small>
     </label>
     <label class="curto">{{ _('alerts.warn_memory_over') }}
       <span class="com-unidade">
-        <input name="mem_pct" type="number" min="50" max="100" value="{{ cfg.memoria }}" inputmode="numeric">
+        <input name="mem_pct" type="number" min="50" max="100" value="{{ cfg.memory }}" inputmode="numeric">
         <span class="unidade">%</span>
       </span>
       <small>{{ _('alerts.memory_hint') }}</small>
@@ -171,23 +171,23 @@
       <tbody>
         {% for a in diario %}
           <tr>
-            <td class="muted small nowrap">{{ a.criado_em[:19] | replace('T', ' ') }}</td>
-            <td class="small">{{ eventos.get(a.evento) or a.evento or '—' }}</td>
-            <td class="small">{{ a.titulo }}
-              {% if a.detalhe %}<br><span class="muted">{{ a.detalhe }}</span>{% endif %}
+            <td class="muted small nowrap">{{ a.created_at[:19] | replace('T', ' ') }}</td>
+            <td class="small">{{ eventos.get(a.event) or a.event or '—' }}</td>
+            <td class="small">{{ a.title }}
+              {% if a.detail %}<br><span class="muted">{{ a.detail }}</span>{% endif %}
             </td>
-            <td class="small">{{ a.destino or '—' }}</td>
+            <td class="small">{{ a.target or '—' }}</td>
             <td class="small">
               {% if a.status == 'enviado' %}
                 <span class="badge on">{{ _('alerts.sent') }}</span>
               {% elif a.status == 'falhou' %}
                 <span class="badge off">{{ _('alerts.failed') }}</span>
-                <br><span class="muted">{{ a.erro }}</span>
+                <br><span class="muted">{{ a.error }}</span>
               {% elif a.status == 'sem-destino' %}
                 <span class="badge cold">{{ _('alerts.no_destination') }}</span>
               {% else %}
                 <span class="badge off">{{ _('alerts.internal_error') }}</span>
-                <br><span class="muted">{{ a.erro }}</span>
+                <br><span class="muted">{{ a.error }}</span>
               {% endif %}
             </td>
           </tr>

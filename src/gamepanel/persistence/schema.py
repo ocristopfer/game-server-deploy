@@ -138,11 +138,11 @@ CREATE TABLE IF NOT EXISTS settings (
 -- 'servidor caiu' para o canal geral, sem os dois receberem a mesma coisa.
 CREATE TABLE IF NOT EXISTS webhooks (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  nome       TEXT NOT NULL DEFAULT '',
+  name       TEXT NOT NULL DEFAULT '',
   url        TEXT NOT NULL,
-  eventos    TEXT NOT NULL DEFAULT '',
-  ativo      INTEGER NOT NULL DEFAULT 1,
-  criado_em  TEXT NOT NULL DEFAULT ''
+  events     TEXT NOT NULL DEFAULT '',
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT ''
 );
 
 -- Diario de alertas: uma linha por TENTATIVA de envio, e tambem uma por alerta que
@@ -151,14 +151,14 @@ CREATE TABLE IF NOT EXISTS webhooks (
 -- unica saida e adivinhar.
 CREATE TABLE IF NOT EXISTS alert_log (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  criado_em  TEXT NOT NULL,
-  evento     TEXT NOT NULL DEFAULT '',
-  titulo     TEXT NOT NULL DEFAULT '',
-  detalhe    TEXT NOT NULL DEFAULT '',
-  destino    TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  event      TEXT NOT NULL DEFAULT '',
+  title      TEXT NOT NULL DEFAULT '',
+  detail     TEXT NOT NULL DEFAULT '',
+  target     TEXT NOT NULL DEFAULT '',
   -- 'enviado', 'falhou', 'sem-destino' ou 'erro-interno'
   status     TEXT NOT NULL DEFAULT '',
-  erro       TEXT NOT NULL DEFAULT ''
+  error      TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_alert_log_id ON alert_log (id DESC);
 """
@@ -215,6 +215,26 @@ MIGRATIONS = (
 )
 
 
+# Colunas que mudaram de NOME. Separadas de `MIGRATIONS` porque a pergunta e outra: ali
+# e "a coluna existe?", aqui e "ela ainda tem o nome velho?". Um banco novo nasce com o
+# nome novo pelo SCHEMA e nao entra em nenhum dos dois.
+#
+# `RENAME COLUMN` do SQLite (3.25+) reescreve o indice e as referencias sozinho, e
+# preserva os dados — nada de tabela nova mais copia, que e onde se perde linha.
+RENAMES = (
+    ("webhooks", "nome", "name"),
+    ("webhooks", "eventos", "events"),
+    ("webhooks", "ativo", "enabled"),
+    ("webhooks", "criado_em", "created_at"),
+    ("alert_log", "criado_em", "created_at"),
+    ("alert_log", "evento", "event"),
+    ("alert_log", "titulo", "title"),
+    ("alert_log", "detalhe", "detail"),
+    ("alert_log", "destino", "target"),
+    ("alert_log", "erro", "error"),
+)
+
+
 def connect(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=15)
     conn.row_factory = sqlite3.Row
@@ -236,6 +256,12 @@ def init_db(db_path: str, webhook_padrao: str, eventos_padrao: str,
             if column not in cols:
                 for comando in (ddl if isinstance(ddl, tuple) else (ddl,)):
                     conn.execute(comando)
+        for table, old, new in RENAMES:
+            cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            # Os dois testes juntos: so renomeia se o velho esta la E o novo nao. Assim
+            # rodar de novo nao faz nada, e um banco novo (que ja nasce certo) nem entra.
+            if old in cols and new not in cols:
+                conn.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
         _migra_webhook_unico(conn, webhook_padrao, eventos_padrao, agora)
     conn.close()
 
@@ -268,7 +294,7 @@ def _migra_webhook_unico(conn: sqlite3.Connection, webhook_padrao: str,
         "SELECT value FROM settings WHERE key = 'webhook_events'"
     ).fetchone()
     conn.execute(
-        "INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
+        "INSERT INTO webhooks (name, url, events, enabled, created_at)"
         " VALUES (?, ?, ?, 1, ?)",
         ("Webhook", url, (ev["value"] if ev else eventos_padrao), agora()),
     )

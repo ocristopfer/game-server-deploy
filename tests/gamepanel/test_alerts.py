@@ -22,7 +22,7 @@ def target(banco, url, eventos, name="Teste", ativo=1) -> int:
     """Cadastra um destino e devolve o id."""
     with banco:
         cur = banco.execute(
-            "INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
+            "INSERT INTO webhooks (name, url, events, enabled, created_at)"
             " VALUES (?, ?, ?, ?, ?)",
             (name, url, ",".join(eventos), ativo, panel.now_iso()))
     return cur.lastrowid
@@ -78,26 +78,26 @@ def alvo(banco):
 def test_configuracao_le_destino_e_evento_do_banco(banco):
     liga(banco, ["caiu"])
     cfg = panel.webhook_config(banco)
-    assert [d["url"] for d in cfg["ativos"]] == [URL]
-    assert cfg["eventos"] == {"caiu"}
+    assert [d["url"] for d in cfg["active"]] == [URL]
+    assert cfg["events"] == {"caiu"}
 
 
 def test_evento_desconhecido_no_banco_e_descartado(banco):
     """Banco mexido a mao (ou versao antiga) nao pode virar chave desconhecida."""
     liga(banco, ["caiu"])
     with banco:
-        banco.execute("UPDATE webhooks SET eventos = 'caiu,formatar-o-disco'")
-    assert panel.webhook_config(banco)["eventos"] == {"caiu"}
+        banco.execute("UPDATE webhooks SET events = 'caiu,formatar-o-disco'")
+    assert panel.webhook_config(banco)["events"] == {"caiu"}
 
 
 def test_limites_tem_piso_e_padrao_para_valor_ilegivel(banco):
     liga(banco, ["caiu"])
     panel.config_set(banco, "webhook_disk_pct", "5")
-    assert panel.webhook_config(banco)["disco"] == 50, "limite de disco tem piso"
+    assert panel.webhook_config(banco)["disk"] == 50, "limite de disco tem piso"
     panel.config_set(banco, "webhook_disk_pct", "nao e numero")
-    assert panel.webhook_config(banco)["disco"] == panel.DISK_PCT_DEFAULT
+    assert panel.webhook_config(banco)["disk"] == panel.DISK_PCT_DEFAULT
     panel.config_set(banco, "webhook_mem_pct", "5")
-    assert panel.webhook_config(banco)["memoria"] == 50, "limite de memoria tem piso"
+    assert panel.webhook_config(banco)["memory"] == 50, "limite de memoria tem piso"
     panel.config_set(banco, "webhook_cpu_pct", "vazio")
     assert panel.webhook_config(banco)["cpu"] == panel.CPU_PCT_DEFAULT
 
@@ -134,7 +134,7 @@ def test_evento_que_ninguem_pediu_nao_sai(banco, tres_destinos, webhooks):
 
 
 def test_uniao_dos_destinos_ligados_e_o_que_o_monitor_observa(banco, tres_destinos):
-    assert panel.webhook_config(banco)["eventos"] == {"caiu", "voltou"}
+    assert panel.webhook_config(banco)["events"] == {"caiu", "voltou"}
 
 
 def test_destino_quebrado_nao_impede_os_outros(banco, tres_destinos, webhooks, monkeypatch):
@@ -153,7 +153,7 @@ def test_destino_quebrado_nao_impede_os_outros(banco, tres_destinos, webhooks, m
 
 def test_todos_desligados_nada_sai(banco, tres_destinos, webhooks):
     with banco:
-        banco.execute("UPDATE webhooks SET ativo = 0")
+        banco.execute("UPDATE webhooks SET enabled = 0")
     enviou = panel.notify(banco, "caiu", "caiu")
     assert (enviou, len(webhooks)) == (False, 0)
 
@@ -860,7 +860,7 @@ def _srv(sid, **campos):
     return {**base, **campos}
 
 
-CFG_STREAM = {"eventos": {"jogador-entrou", "jogador-saiu"}}
+CFG_STREAM = {"events": {"jogador-entrou", "jogador-saiu"}}
 
 
 def test_streams_desejados_so_para_quem_conta_por_log():
@@ -871,7 +871,7 @@ def test_streams_desejados_so_para_quem_conta_por_log():
         [_srv(1, player_source="a2s", query_port=27015)], CFG_STREAM) == {}
     assert panel.wanted_streams([_srv(1, join_re="")], CFG_STREAM) == {}, \
         "sem padrao de entrada nao ha o que ouvir"
-    assert panel.wanted_streams([_srv(1)], {"eventos": {"caiu"}}) == {}
+    assert panel.wanted_streams([_srv(1)], {"events": {"caiu"}}) == {}
 
 
 def test_assinatura_de_stream_muda_com_o_cadastro():
@@ -996,7 +996,7 @@ def test_o_envio_vira_uma_linha_no_diario(banco, webhooks):
     panel.notify(banco, "caiu", "Palworld: parou", "detalhe")
     diario = panel.recent_alerts(banco)
     assert len(diario) == 1
-    assert (diario[0]["evento"], diario[0]["status"]) == ("caiu", "enviado")
+    assert (diario[0]["event"], diario[0]["status"]) == ("caiu", "enviado")
 
 
 def test_evento_sem_ninguem_escutando_e_registrado(banco, webhooks):
@@ -1006,7 +1006,7 @@ def test_evento_sem_ninguem_escutando_e_registrado(banco, webhooks):
     panel.notify(banco, "cpu-alta", "Palworld: CPU alta", "99%")
     diario = panel.recent_alerts(banco)
     assert diario[0]["status"] == "sem-destino"
-    assert diario[0]["evento"] == "cpu-alta"
+    assert diario[0]["event"] == "cpu-alta"
 
 
 def test_envio_que_falhou_fica_marcado_com_o_motivo(banco, monkeypatch):
@@ -1016,7 +1016,7 @@ def test_envio_que_falhou_fica_marcado_com_o_motivo(banco, monkeypatch):
     panel.notify(banco, "caiu", "Palworld: parou de novo", "")
     diario = panel.recent_alerts(banco)
     assert diario[0]["status"] == "falhou"
-    assert "500" in diario[0]["erro"]
+    assert "500" in diario[0]["error"]
 
 
 def test_limpeza_do_diario_segura_o_tamanho_e_guarda_os_novos(banco, webhooks, monkeypatch):
@@ -1029,7 +1029,7 @@ def test_limpeza_do_diario_segura_o_tamanho_e_guarda_os_novos(banco, webhooks, m
         panel.clean_history(force=True)
     diario = panel.recent_alerts(banco)
     assert len(diario) == 3
-    assert "alerta 5" in diario[0]["titulo"], "guarda os mais NOVOS"
+    assert "alerta 5" in diario[0]["title"], "guarda os mais NOVOS"
 
 
 # ------------------------------------------------------- uma tarefa quebrada nao cala as outras
@@ -1062,7 +1062,7 @@ def test_tarefa_quebrada_nao_cala_o_monitor(banco, alvo, webhooks, monkeypatch):
     assert "parou de rodar" in text, "o monitor roda mesmo com a agenda quebrada"
     falhas_no_diario = [a for a in panel.recent_alerts(banco) if a["status"] == "erro-interno"]
     assert falhas_no_diario, "a quebra fica visivel no diario"
-    assert "agendamentos" in falhas_no_diario[0]["titulo"], "dizendo qual tarefa caiu"
+    assert "agendamentos" in falhas_no_diario[0]["title"], "dizendo qual tarefa caiu"
 
 
 # ---------------------------------------------------------- linha de base ao subir o painel
@@ -1159,15 +1159,15 @@ SEGREDO_URL = "https://discord.com/api/webhooks/123/tok-que-nao-pode-vazar"
 def destino_cadastrado(banco, tela_de_alertas):
     """Um destino "Equipe" cadastrado pela tela, com a URL secreta acima."""
     _cli, postar, _tela = tela_de_alertas
-    resp = postar("/alertas/destinos", {"nome": "Equipe", "ativo": "1", "url": SEGREDO_URL,
-                                        "eventos": ["caiu", "disco-cheio"]})
+    resp = postar("/alertas/destinos", {"name": "Equipe", "enabled": "1", "url": SEGREDO_URL,
+                                        "events": ["caiu", "disco-cheio"]})
     assert resp.status_code == 302
     return panel.webhook_list(banco)[0]["id"]
 
 
 def test_url_torta_nao_vira_destino(banco, tela_de_alertas, destino_cadastrado):
     _cli, postar, _tela = tela_de_alertas
-    postar("/alertas/destinos", {"nome": "Torto", "url": "nao-e-url"})
+    postar("/alertas/destinos", {"name": "Torto", "url": "nao-e-url"})
     assert len(panel.webhook_list(banco)) == 1
 
 
@@ -1184,28 +1184,27 @@ def test_salvar_com_url_vazia_mantem_a_url_e_muda_eventos(banco, tela_de_alertas
     hid = destino_cadastrado
     # O caminho normal e mexer so nos eventos: a URL fica mascarada e o campo de troca
     # vem vazio, entao um POST sem URL NAO pode limpar a que esta salva.
-    postar(f"/alertas/destinos/{hid}", {"nome": "Equipe", "url": "", "ativo": "1",
-                                        "eventos": ["caiu"]})
+    postar(f"/alertas/destinos/{hid}", {"name": "Equipe", "url": "", "enabled": "1",
+                                        "events": ["caiu"]})
     atual = panel.webhook_list(banco)[0]
     assert atual["url"] == SEGREDO_URL
-    assert atual["eventos"] == {"caiu"}
+    assert atual["events"] == {"caiu"}
 
 
 def test_sem_a_caixa_ativo_o_destino_desliga(banco, tela_de_alertas, destino_cadastrado):
     _cli, postar, _tela = tela_de_alertas
     hid = destino_cadastrado
-    postar(f"/alertas/destinos/{hid}", {"nome": "Equipe", "url": "", "eventos": ["caiu"]})
-    assert panel.webhook_list(banco)[0]["ativo"] is False
+    postar(f"/alertas/destinos/{hid}", {"name": "Equipe", "url": "", "events": ["caiu"]})
+    assert panel.webhook_list(banco)[0]["enabled"] is False
 
 
 def test_dois_destinos_tem_grupos_de_caixas_separados(banco, tela_de_alertas, destino_cadastrado):
     _cli, postar, tela = tela_de_alertas
     hid = destino_cadastrado
-    postar(f"/alertas/destinos/{hid}",
-           {"nome": "Equipe", "url": "", "ativo": "1", "eventos": ["caiu"]})
-    postar("/alertas/destinos", {"nome": "Geral", "ativo": "1",
+    postar(f"/alertas/destinos/{hid}", {"name": "Equipe", "url": "", "enabled": "1", "events": ["caiu"]})
+    postar("/alertas/destinos", {"name": "Geral", "enabled": "1",
                                  "url": "https://discord.com/api/webhooks/999/outro",
-                                 "eventos": ["caiu"]})
+                                 "events": ["caiu"]})
     html = tela()
     assert "Equipe" in html
     assert "Geral" in html
@@ -1233,20 +1232,20 @@ def test_testar_usa_a_url_digitada_ou_a_salva(tela_de_alertas, destino_cadastrad
 def test_limites_de_recurso_pela_tela(banco, tela_de_alertas):
     _cli, postar, tela = tela_de_alertas
     postar("/alertas", {"disk_pct": "80"})
-    assert panel.webhook_config(banco)["disco"] == 80
+    assert panel.webhook_config(banco)["disk"] == 80
 
     postar("/alertas", {"disk_pct": "10"})
-    assert panel.webhook_config(banco)["disco"] == 80, "fora da faixa e recusado, o anterior fica"
+    assert panel.webhook_config(banco)["disk"] == 80, "fora da faixa e recusado, o anterior fica"
 
     postar("/alertas", {"disk_pct": "80", "mem_pct": "85", "cpu_pct": "70"})
-    assert panel.webhook_config(banco)["memoria"] == 85
+    assert panel.webhook_config(banco)["memory"] == 85
     assert panel.webhook_config(banco)["cpu"] == 70
 
     # Um limite recusado nao pode deixar os outros dois ja gravados: a tela volta
     # dizendo "recusado" e o operador nao teria como saber que metade da mudanca passou.
     postar("/alertas", {"disk_pct": "75", "mem_pct": "10", "cpu_pct": "95"})
-    assert panel.webhook_config(banco)["memoria"] == 85, "fora da faixa, nada muda junto"
-    assert panel.webhook_config(banco)["disco"] == 80
+    assert panel.webhook_config(banco)["memory"] == 85, "fora da faixa, nada muda junto"
+    assert panel.webhook_config(banco)["disk"] == 80
     assert panel.webhook_config(banco)["cpu"] == 70
 
     html = tela()
@@ -1274,7 +1273,7 @@ def test_alerta_ligado_sem_onde_olhar_avisa_na_tela(banco, tela_de_alertas):
             "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"
             " VALUES ('Sem consulta', '10.0.0.7', 22, 'root', 'x.service', ?)",
             (panel.now_iso(),))
-        banco.execute("INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
+        banco.execute("INSERT INTO webhooks (name, url, events, enabled, created_at)"
                      " VALUES ('x', 'http://x.invalid', 'travou,erro-no-log', 1, ?)",
                      (panel.now_iso(),))
     faltando = panel.alerts_without_baseline(banco)
@@ -1289,7 +1288,7 @@ def test_configurar_o_que_faltava_tira_o_aviso(banco, tela_de_alertas):
             "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"
             " VALUES ('Sem consulta', '10.0.0.7', 22, 'root', 'x.service', ?)",
             (panel.now_iso(),))
-        banco.execute("INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
+        banco.execute("INSERT INTO webhooks (name, url, events, enabled, created_at)"
                      " VALUES ('x', 'http://x.invalid', 'travou,erro-no-log', 1, ?)",
                      (panel.now_iso(),))
         banco.execute("UPDATE servers SET player_source = 'a2s', query_port = 27015,"

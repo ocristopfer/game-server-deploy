@@ -1295,16 +1295,16 @@ def clean_events(raw: str) -> set:
 def webhook_list(conn: sqlite3.Connection) -> list:
     """Todos os destinos, na ordem de cadastro, com os eventos ja como conjunto."""
     lines_of = conn.execute(
-        "SELECT id, nome, url, eventos, ativo FROM webhooks ORDER BY id"
+        "SELECT id, name, url, events, enabled FROM webhooks ORDER BY id"
     ).fetchall()
     return [
         {
             "id": r["id"],
-            "nome": r["nome"] or "Sem nome",
+            "name": r["name"] or "Sem nome",
             "url": r["url"],
             "url_curta": mask_url(r["url"]),
-            "eventos": clean_events(r["eventos"]),
-            "ativo": bool(r["ativo"]),
+            "events": clean_events(r["events"]),
+            "enabled": bool(r["enabled"]),
         }
         for r in lines_of
     ]
@@ -1331,14 +1331,14 @@ def webhook_config(conn: sqlite3.Connection) -> dict:
     destinos = webhook_list(conn)
     cobertos = set()
     for d in destinos:
-        if d["ativo"] and d["url"]:
-            cobertos |= d["eventos"]
+        if d["enabled"] and d["url"]:
+            cobertos |= d["events"]
     return {
-        "destinos": destinos,
-        "ativos": [d for d in destinos if d["ativo"] and d["url"]],
-        "eventos": cobertos,
-        "disco": min(100, max(50, disco)),
-        "memoria": min(100, max(50, memoria)),
+        "targets": destinos,
+        "active": [d for d in destinos if d["enabled"] and d["url"]],
+        "events": cobertos,
+        "disk": min(100, max(50, disco)),
+        "memory": min(100, max(50, memoria)),
         "cpu": min(100, max(50, cpu)),
     }
 
@@ -1361,7 +1361,7 @@ def notify(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str = "")
     entao da para saber qual deles esta quebrado sem adivinhar.
     """
     alvos = [d for d in webhook_list(conn)
-             if d["ativo"] and d["url"] and event in d["eventos"]]
+             if d["enabled"] and d["url"] and event in d["events"]]
     if not alvos:
         # Registrado de proposito: "o alerta disparou e ninguem pediu por ele" e a causa
         # mais comum de canal mudo, e e indistinguivel de "nao aconteceu nada" para quem
@@ -1376,13 +1376,13 @@ def notify(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str = "")
         erro = send_webhook(target["url"], text)
         if erro:
             app.logger.warning(
-                "alerta '%s' nao saiu para '%s': %s", event, target["nome"], erro
+                "alerta '%s' nao saiu para '%s': %s", event, target["name"], erro
             )
-            _record_alert(conn, event, titulo, detalhe, target["nome"],
+            _record_alert(conn, event, titulo, detalhe, target["name"],
                              "falhou", erro)
         else:
             saiu = True
-            _record_alert(conn, event, titulo, detalhe, target["nome"], "enviado")
+            _record_alert(conn, event, titulo, detalhe, target["name"], "enviado")
     return saiu
 
 
@@ -1396,8 +1396,8 @@ def _record_alert(conn: sqlite3.Connection, event: str, titulo: str, detalhe: st
     try:
         with conn:
             conn.execute(
-                "INSERT INTO alert_log (criado_em, evento, titulo, detalhe, destino,"
-                " status, erro) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO alert_log (created_at, event, title, detail, target,"
+                " status, error) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (now_iso(), event, titulo[:200], detalhe[:500], target[:80],
                  status, erro[:300]))
     except sqlite3.Error:
@@ -1599,7 +1599,7 @@ def _monitor_rhythm(cfg: dict, agora: float, force: bool) -> _Rhythm | None:
 
     # O passo do monitor e o do alerta mais apressado que esteja LIGADO. Com jogadores
     # ligados a volta fica curta; sem eles nada muda em relacao a antes.
-    quer_jogadores = bool(cfg["eventos"] & {"jogador-entrou", "jogador-saiu"})
+    quer_jogadores = bool(cfg["events"] & {"jogador-entrou", "jogador-saiu"})
     passo = min(MONITOR_EVERY, PLAYER_CHECK_EVERY) if quer_jogadores else MONITOR_EVERY
     if not force and agora - _last_monitor < passo:
         return None
@@ -1615,12 +1615,12 @@ def _monitor_rhythm(cfg: dict, agora: float, force: bool) -> _Rhythm | None:
     # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
     # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
     vence_recurso = force or agora - _last_disk >= DISK_CHECK_EVERY
-    recursos = cfg["eventos"] & RECURSO_EVENTOS if vence_recurso else set()
+    recursos = cfg["events"] & RECURSO_EVENTOS if vence_recurso else set()
     if recursos:
         _last_disk = agora
 
     # O log e o unico que custa uma ida de SSH so dele, entao anda no seu proprio ritmo.
-    ver_log = "erro-no-log" in cfg["eventos"] and (
+    ver_log = "erro-no-log" in cfg["events"] and (
         force or agora - _last_log >= LOG_CHECK_EVERY
     )
     if ver_log:
@@ -1651,7 +1651,7 @@ def _short_round(conn, server, anterior, cfg, rhythm: _Rhythm) -> None:
 
 def _server_alerts(conn, server, state, anterior, cfg, rhythm: _Rhythm) -> None:
     """Os alertas que so fazem sentido com o container ALCANCAVEL."""
-    if "reiniciando" in cfg["eventos"]:
+    if "reiniciando" in cfg["events"]:
         _restart_alert(conn, server, state, anterior)
     else:
         # Sem o evento ligado o contador ainda precisa acompanhar, senao ligar o alerta
@@ -1661,7 +1661,7 @@ def _server_alerts(conn, server, state, anterior, cfg, rhythm: _Rhythm) -> None:
 
     # Este custa uma sondagem no jogo (UDP ou HTTP) — nao vale a pena pagar por ela com
     # o evento desligado.
-    if cfg["eventos"] & {"travou", "respondeu"}:
+    if cfg["events"] & {"travou", "respondeu"}:
         _mute_alert(conn, server, state, anterior)
 
     if rhythm.quer_jogadores:
@@ -1685,7 +1685,7 @@ def monitor_servers(force: bool = False) -> int:
     cfg = webhook_config(conn)
     # Sem nenhum destino ligado pedindo algum evento, a volta inteira seria SSH gasto
     # para produzir um alerta que ninguem receberia.
-    if not cfg["eventos"]:
+    if not cfg["events"]:
         return 0
 
     rhythm = _monitor_rhythm(cfg, time.monotonic(), force)
@@ -4351,7 +4351,7 @@ def alerts_without_baseline(conn: sqlite3.Connection) -> dict:
     responde', nenhum servidor tem consulta configurada, e o silencio do canal passa a
     ser lido como "esta tudo bem".
     """
-    ligados = webhook_config(conn)["eventos"]
+    ligados = webhook_config(conn)["events"]
     if not ligados & set(ALERT_PRECISA_CONFIG):
         return {}
     servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
@@ -4413,13 +4413,13 @@ def _reset_baseline() -> None:
 
 def _le_form_webhook() -> tuple:
     """Valida o formulario de um destino. Devolve (dados, erro)."""
-    name = (request.form.get("nome", "") or "").strip()[:60]
+    name = (request.form.get("name", "") or "").strip()[:60]
     url = (request.form.get("url", "") or "").strip()[:400]
-    eventos = [e for e in request.form.getlist("eventos") if e in ALERT_EVENTS]
-    ativo = 1 if request.form.get("ativo") else 0
+    events = [e for e in request.form.getlist("events") if e in ALERT_EVENTS]
+    enabled = 1 if request.form.get("enabled") else 0
     if url and not URL_RE.match(url):
         return None, "URL invalida (comece com http:// ou https://)."
-    return {"nome": name, "url": url, "eventos": ",".join(eventos), "ativo": ativo}, ""
+    return {"name": name, "url": url, "events": ",".join(events), "enabled": enabled}, ""
 
 
 @app.post("/alertas/destinos")
@@ -4436,10 +4436,10 @@ def alerts_hook_new():
         return redirect(url_for("alerts"))
     with conn:
         conn.execute(
-            "INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
+            "INSERT INTO webhooks (name, url, events, enabled, created_at)"
             " VALUES (?, ?, ?, ?, ?)",
-            (data["nome"] or "Destino", data["url"], data["eventos"],
-             data["ativo"], now_iso()),
+            (data["name"] or "Destino", data["url"], data["events"],
+             data["enabled"], now_iso()),
         )
     _reset_baseline()
     flash(translate("flash.destination_added"), "ok")
@@ -4463,8 +4463,8 @@ def alerts_hook_save(hid: int):
     url = data["url"] or atual["url"]
     with conn:
         conn.execute(
-            "UPDATE webhooks SET nome = ?, url = ?, eventos = ?, ativo = ? WHERE id = ?",
-            (data["nome"] or "Destino", url, data["eventos"], data["ativo"], hid),
+            "UPDATE webhooks SET name = ?, url = ?, events = ?, enabled = ? WHERE id = ?",
+            (data["name"] or "Destino", url, data["events"], data["enabled"], hid),
         )
     _reset_baseline()
     flash(translate("flash.destination_saved"), "ok")
@@ -4487,7 +4487,7 @@ def alerts_hook_test(hid: int):
     """Manda uma mensagem agora para UM destino, para conferir se a URL esta certa."""
     conn = db()
     row = conn.execute(
-        "SELECT nome, url FROM webhooks WHERE id = ?", (hid,)
+        "SELECT name, url FROM webhooks WHERE id = ?", (hid,)
     ).fetchone()
     if not row or not row["url"]:
         flash(translate("flash.destination_not_found"), "error")
@@ -4503,7 +4503,7 @@ def alerts_hook_test(hid: int):
         f"**Teste do painel de jogos**\nSe voce esta lendo isto, os alertas funcionam."
         f" ({session.get('username', '?')})",
     )
-    name = row["nome"] or "destino"
+    name = row["name"] or "destino"
     flash(
         translate("flash.destination_test_failed", name=name, reason=erro) if erro
         else translate("flash.destination_test_sent", name=name),

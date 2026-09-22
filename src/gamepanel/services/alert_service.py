@@ -260,7 +260,7 @@ def disk_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> Non
                key=lambda d: d["pct"], default=None)
     if not pior:
         return
-    cheio = pior["pct"] >= cfg["disco"]
+    cheio = pior["pct"] >= cfg["disk"]
     marca = deps.monitor_state.setdefault(sid, {})
     # So avisa na VIRADA: um disco a 95% continua a 95% na volta seguinte, e ninguem
     # merece o mesmo alerta a cada minuto ate arrumar.
@@ -282,7 +282,7 @@ def memory_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> N
     mem = data.get("mem")
     if not mem or mem.get("pct") is None:
         return
-    cheio = mem["pct"] >= cfg["memoria"]
+    cheio = mem["pct"] >= cfg["memory"]
     marca = deps.monitor_state.setdefault(sid, {})
     # So avisa na virada
     if cheio and not marca.get("memoria_alta"):
@@ -401,12 +401,12 @@ def _warn_by_name(deps: AlertDeps, conn: Any, name: str, cfg: dict, current_name
                     previous_names: set, count: int) -> None:
     """Um aviso por pessoa que entrou ou saiu."""
     detalhe = online_text(count)
-    if "jogador-entrou" in cfg["eventos"]:
+    if "jogador-entrou" in cfg["events"]:
         for player in sorted(current_names - previous_names):
             deps.notify(conn, "jogador-entrou",
                           Message("alert.player_joined", name=name,
                                    player=player), detalhe)
-    if "jogador-saiu" in cfg["eventos"]:
+    if "jogador-saiu" in cfg["events"]:
         for player in sorted(previous_names - current_names):
             deps.notify(conn, "jogador-saiu",
                           Message("alert.player_left", name=name,
@@ -419,12 +419,12 @@ def _warn_by_count(deps: AlertDeps, conn: Any, name: str, cfg: dict, current: in
     if current == previous:
         return
     detalhe = online_text(current)
-    if current > previous and "jogador-entrou" in cfg["eventos"]:
+    if current > previous and "jogador-entrou" in cfg["events"]:
         dif = current - previous
         deps.notify(conn, "jogador-entrou",
                       Message("alert.joined_one" if dif == 1 else "alert.joined_many",
                                name=name, n=dif), detalhe)
-    elif current < previous and "jogador-saiu" in cfg["eventos"]:
+    elif current < previous and "jogador-saiu" in cfg["events"]:
         dif = previous - current
         deps.notify(conn, "jogador-saiu",
                       Message("alert.left_one" if dif == 1 else "alert.left_many",
