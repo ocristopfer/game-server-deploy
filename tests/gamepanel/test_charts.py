@@ -211,18 +211,18 @@ def test_apagar_o_servidor_leva_as_amostras_dele(banco):
 
 def test_a_tela_abre_sem_amostra_nenhuma(banco, chefe):
     sid = register_server(banco, "alvo2", "outro.invalid")
-    assert chefe.get(f"/servers/{sid}/graficos").status_code == 200
+    assert chefe.get(f"/servers/{sid}/charts").status_code == 200
 
 
 @pytest.mark.parametrize("faixa", ["6", "24", "168", "999", "abc"])
 def test_faixa_de_tempo_nunca_quebra_a_tela(banco, chefe, faixa):
     """Faixa inventada cai na de 24h em vez de estourar."""
     sid = register_server(banco, "alvo2", "outro.invalid")
-    assert chefe.get(f"/servers/{sid}/graficos?h={faixa}").status_code == 200
+    assert chefe.get(f"/servers/{sid}/charts?h={faixa}").status_code == 200
 
 
 def test_servidor_que_nao_existe_da_404(chefe):
-    assert chefe.get("/servers/9999/graficos").status_code == 404
+    assert chefe.get("/servers/9999/charts").status_code == 404
 
 
 def test_o_svg_desenhado_traz_os_rotulos_dos_eixos(banco, chefe):
@@ -244,7 +244,7 @@ def test_o_svg_desenhado_traz_os_rotulos_dos_eixos(banco, chefe):
              20.0 + i, 40.0 + i, 0))
     banco.commit()
 
-    html = chefe.get(f"/servers/{sid}/graficos").get_data(as_text=True)
+    html = chefe.get(f"/servers/{sid}/charts").get_data(as_text=True)
     ticks = re.findall(r'<text class="tick"[^>]*>([^<]*)</text>', html)
     assert ticks, "o SVG nao trouxe nenhum rotulo de eixo"
     assert all(t.strip() for t in ticks), f"rotulo de eixo vazio: {ticks}"

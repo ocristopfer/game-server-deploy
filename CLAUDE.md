@@ -93,10 +93,10 @@ Depois de mexer em template ou rota, passe por todas as telas:
 J=/tmp/p.jar; rm -f $J
 TOK=$(curl -s -c $J localhost:8080/login | grep -o 'value="[^"]*"' | head -1 | cut -d'"' -f2)
 curl -s -b $J -c $J -o /dev/null -d "csrf=$TOK&username=admin&password=admin12345" localhost:8080/login
-for p in / /servers/1 /servers/1/config /servers/1/files /servers/1/graficos \
-         /servers/1/backups /servers/1/agendamentos /servers/1/terminal \
-         /servers/1/console /servers/1/edit /servers/1/players/descobrir \
-         /historico /alertas /usuarios /account /ssh-key /servers/new \
+for p in / /servers/1 /servers/1/config /servers/1/files /servers/1/charts \
+         /servers/1/backups /servers/1/schedules /servers/1/terminal \
+         /servers/1/console /servers/1/edit /servers/1/players/discover \
+         /history /alerts /users /account /ssh-key /servers/new \
          /manifest.webmanifest /sw.js /offline; do
   printf "%s %s\n" "$(curl -s -b $J -o /dev/null -w '%{http_code}' localhost:8080$p)" "$p"
 done
@@ -508,7 +508,7 @@ teste e de deploy ficam em `broker.secrets.env` (fora do git);
 `verificar-broker-acesso.ps1` confere so leitura e `spike-broker-escrita.ps1` cria e
 apaga um CT/regra de teste.
 
-**Lado do painel** (`src/gamepanel/`): telas `/catalogo` e `/instancias`, flag
+**Lado do painel** (`src/gamepanel/`): telas `/catalog` e `/instances`, flag
 `GAMEPANEL_ALLOW_BROKER` (desligada por padrao; config ruim DESLIGA o recurso em vez de
 derrubar o painel), `servers.broker_id` e `jobs.broker_op`. No compose de dev sobe um
 broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up --build`.

@@ -1141,14 +1141,14 @@ def tela_de_alertas(banco, webhooks):
         return cli.post(url, data=d, follow_redirects=False)
 
     def tela():
-        return cli.get("/alertas").get_data(as_text=True)
+        return cli.get("/alerts").get_data(as_text=True)
 
     return cli, postar, tela
 
 
 def test_tela_sem_destino_nenhum(tela_de_alertas):
     cli, _postar, tela = tela_de_alertas
-    assert cli.get("/alertas").status_code == 200
+    assert cli.get("/alerts").status_code == 200
     assert "nenhum destino ligado" in tela()
 
 
@@ -1159,7 +1159,7 @@ SEGREDO_URL = "https://discord.com/api/webhooks/123/tok-que-nao-pode-vazar"
 def destino_cadastrado(banco, tela_de_alertas):
     """Um destino "Equipe" cadastrado pela tela, com a URL secreta acima."""
     _cli, postar, _tela = tela_de_alertas
-    resp = postar("/alertas/destinos", {"name": "Equipe", "enabled": "1", "url": SEGREDO_URL,
+    resp = postar("/alerts/targets", {"name": "Equipe", "enabled": "1", "url": SEGREDO_URL,
                                         "events": ["caiu", "disco-cheio"]})
     assert resp.status_code == 302
     return panel.webhook_list(banco)[0]["id"]
@@ -1167,7 +1167,7 @@ def destino_cadastrado(banco, tela_de_alertas):
 
 def test_url_torta_nao_vira_destino(banco, tela_de_alertas, destino_cadastrado):
     _cli, postar, _tela = tela_de_alertas
-    postar("/alertas/destinos", {"name": "Torto", "url": "nao-e-url"})
+    postar("/alerts/targets", {"name": "Torto", "url": "nao-e-url"})
     assert len(panel.webhook_list(banco)) == 1
 
 
@@ -1184,7 +1184,7 @@ def test_salvar_com_url_vazia_mantem_a_url_e_muda_eventos(banco, tela_de_alertas
     hid = destino_cadastrado
     # O caminho normal e mexer so nos eventos: a URL fica mascarada e o campo de troca
     # vem vazio, entao um POST sem URL NAO pode limpar a que esta salva.
-    postar(f"/alertas/destinos/{hid}", {"name": "Equipe", "url": "", "enabled": "1",
+    postar(f"/alerts/targets/{hid}", {"name": "Equipe", "url": "", "enabled": "1",
                                         "events": ["caiu"]})
     atual = panel.webhook_list(banco)[0]
     assert atual["url"] == SEGREDO_URL
@@ -1194,15 +1194,15 @@ def test_salvar_com_url_vazia_mantem_a_url_e_muda_eventos(banco, tela_de_alertas
 def test_sem_a_caixa_ativo_o_destino_desliga(banco, tela_de_alertas, destino_cadastrado):
     _cli, postar, _tela = tela_de_alertas
     hid = destino_cadastrado
-    postar(f"/alertas/destinos/{hid}", {"name": "Equipe", "url": "", "events": ["caiu"]})
+    postar(f"/alerts/targets/{hid}", {"name": "Equipe", "url": "", "events": ["caiu"]})
     assert panel.webhook_list(banco)[0]["enabled"] is False
 
 
 def test_dois_destinos_tem_grupos_de_caixas_separados(banco, tela_de_alertas, destino_cadastrado):
     _cli, postar, tela = tela_de_alertas
     hid = destino_cadastrado
-    postar(f"/alertas/destinos/{hid}", {"name": "Equipe", "url": "", "enabled": "1", "events": ["caiu"]})
-    postar("/alertas/destinos", {"name": "Geral", "enabled": "1",
+    postar(f"/alerts/targets/{hid}", {"name": "Equipe", "url": "", "enabled": "1", "events": ["caiu"]})
+    postar("/alerts/targets", {"name": "Geral", "enabled": "1",
                                  "url": "https://discord.com/api/webhooks/999/outro",
                                  "events": ["caiu"]})
     html = tela()
@@ -1221,29 +1221,29 @@ def test_testar_usa_a_url_digitada_ou_a_salva(tela_de_alertas, destino_cadastrad
     hid = destino_cadastrado
 
     webhooks.clear()
-    postar(f"/alertas/destinos/{hid}/testar", {"url": "https://novo.invalid/hook"})
+    postar(f"/alerts/targets/{hid}/test", {"url": "https://novo.invalid/hook"})
     assert [u for u, _ in webhooks] == ["https://novo.invalid/hook"]
 
     webhooks.clear()
-    postar(f"/alertas/destinos/{hid}/testar", {"url": ""})
+    postar(f"/alerts/targets/{hid}/test", {"url": ""})
     assert [u for u, _ in webhooks] == [SEGREDO_URL]
 
 
 def test_limites_de_recurso_pela_tela(banco, tela_de_alertas):
     _cli, postar, tela = tela_de_alertas
-    postar("/alertas", {"disk_pct": "80"})
+    postar("/alerts", {"disk_pct": "80"})
     assert panel.webhook_config(banco)["disk"] == 80
 
-    postar("/alertas", {"disk_pct": "10"})
+    postar("/alerts", {"disk_pct": "10"})
     assert panel.webhook_config(banco)["disk"] == 80, "fora da faixa e recusado, o anterior fica"
 
-    postar("/alertas", {"disk_pct": "80", "mem_pct": "85", "cpu_pct": "70"})
+    postar("/alerts", {"disk_pct": "80", "mem_pct": "85", "cpu_pct": "70"})
     assert panel.webhook_config(banco)["memory"] == 85
     assert panel.webhook_config(banco)["cpu"] == 70
 
     # Um limite recusado nao pode deixar os outros dois ja gravados: a tela volta
     # dizendo "recusado" e o operador nao teria como saber que metade da mudanca passou.
-    postar("/alertas", {"disk_pct": "75", "mem_pct": "10", "cpu_pct": "95"})
+    postar("/alerts", {"disk_pct": "75", "mem_pct": "10", "cpu_pct": "95"})
     assert panel.webhook_config(banco)["memory"] == 85, "fora da faixa, nada muda junto"
     assert panel.webhook_config(banco)["disk"] == 80
     assert panel.webhook_config(banco)["cpu"] == 70
@@ -1259,7 +1259,7 @@ def test_limites_de_recurso_pela_tela(banco, tela_de_alertas):
 
 def test_remover_tira_da_lista(banco, tela_de_alertas, destino_cadastrado):
     _cli, postar, _tela = tela_de_alertas
-    postar(f"/alertas/destinos/{destino_cadastrado}/remover")
+    postar(f"/alerts/targets/{destino_cadastrado}/delete")
     assert len(panel.webhook_list(banco)) == 0
 
 
@@ -1333,4 +1333,4 @@ def test_operador_nao_chega_em_alertas(banco, tela_de_alertas):
     with outro.session_transaction() as sess:
         e2 = sess.get("csrf", "")
     outro.post("/login", data={"username": "peao", "password": "senha-do-peao", "csrf": e2})
-    assert outro.get("/alertas").status_code in (302, 403)
+    assert outro.get("/alerts").status_code in (302, 403)

@@ -55,8 +55,8 @@ def test_operador_abre_as_telas_proprias(peao):
 
 
 @pytest.mark.parametrize("rota", [
-    "/usuarios", "/servers/new", "/servers/1/edit", "/servers/1/terminal",
-    "/servers/1/console", "/servers/1/files", "/servers/1/players/descobrir",
+    "/users", "/servers/new", "/servers/1/edit", "/servers/1/terminal",
+    "/servers/1/console", "/servers/1/files", "/servers/1/players/discover",
 ])
 def test_operador_leva_403_no_que_da_root(peao, rota):
     """`admin_required` barra pelo papel ANTES de olhar se o servidor existe -
@@ -65,7 +65,7 @@ def test_operador_leva_403_no_que_da_root(peao, rota):
 
 
 def test_operador_nao_cria_usuario_nem_remove_servidor(peao, banco, postar):
-    resp = postar(peao, "/usuarios", {"username": "invasor", "new": "senha12345",
+    resp = postar(peao, "/users", {"username": "invasor", "new": "senha12345",
                                       "confirm": "senha12345", "role": "admin"})
     assert resp.status_code == 403
     assert not existe(banco, "invasor")
@@ -75,37 +75,37 @@ def test_operador_nao_cria_usuario_nem_remove_servidor(peao, banco, postar):
 # ------------------------------------------------------- admin gerencia usuarios
 
 def test_admin_abre_a_tela_de_usuarios(chefe):
-    assert chefe.get("/usuarios").status_code == 200
+    assert chefe.get("/users").status_code == 200
 
 
 def test_admin_cria_usuario_pela_tela(chefe, banco, postar):
-    postar(chefe, "/usuarios", {"username": "ana", "new": "senha12345",
+    postar(chefe, "/users", {"username": "ana", "new": "senha12345",
                                 "confirm": "senha12345", "role": "operador"})
     assert papel(banco, "ana") == panel.ROLE_OPERADOR
 
 
 def test_senha_curta_nao_cria_usuario(chefe, banco, postar):
-    postar(chefe, "/usuarios", {"username": "bob", "new": "curta",
+    postar(chefe, "/users", {"username": "bob", "new": "curta",
                                 "confirm": "curta", "role": "operador"})
     assert not existe(banco, "bob")
 
 
 def test_confirmacao_errada_nao_cria_usuario(chefe, banco, postar):
-    postar(chefe, "/usuarios", {"username": "bob", "new": "senha12345",
+    postar(chefe, "/users", {"username": "bob", "new": "senha12345",
                                 "confirm": "outra12345", "role": "operador"})
     assert not existe(banco, "bob")
 
 
 def test_nome_invalido_nao_cria_usuario(chefe, banco, postar):
-    postar(chefe, "/usuarios", {"username": "Bob Silva", "new": "senha12345",
+    postar(chefe, "/users", {"username": "Bob Silva", "new": "senha12345",
                                 "confirm": "senha12345", "role": "operador"})
     assert not existe(banco, "Bob Silva")
 
 
 def test_nome_repetido_nao_sobrescreve_o_papel_de_quem_ja_existe(chefe, banco, postar):
-    postar(chefe, "/usuarios", {"username": "ana", "new": "senha12345",
+    postar(chefe, "/users", {"username": "ana", "new": "senha12345",
                                 "confirm": "senha12345", "role": "operador"})
-    postar(chefe, "/usuarios", {"username": "ana", "new": "senha12345",
+    postar(chefe, "/users", {"username": "ana", "new": "senha12345",
                                 "confirm": "senha12345", "role": "admin"})
     assert papel(banco, "ana") == panel.ROLE_OPERADOR
 
@@ -113,36 +113,36 @@ def test_nome_repetido_nao_sobrescreve_o_papel_de_quem_ja_existe(chefe, banco, p
 @pytest.fixture
 def ana(chefe, banco, postar) -> int:
     """Uma operadora cadastrada pela tela. Devolve o id dela."""
-    postar(chefe, "/usuarios", {"username": "ana", "new": "senha12345",
+    postar(chefe, "/users", {"username": "ana", "new": "senha12345",
                                 "confirm": "senha12345", "role": "operador"})
     return id_de(banco, "ana")
 
 
 def test_promover_funciona(ana, chefe, banco, postar):
-    postar(chefe, f"/usuarios/{ana}/papel", {"role": "admin"})
+    postar(chefe, f"/users/{ana}/role", {"role": "admin"})
     assert papel(banco, "ana") == panel.ROLE_ADMIN
 
 
 def test_ninguem_rebaixa_a_si_mesmo(chefe, banco, postar):
     chefe_id = id_de(banco, "chefe")
-    postar(chefe, f"/usuarios/{chefe_id}/papel", {"role": "operador"})
+    postar(chefe, f"/users/{chefe_id}/role", {"role": "operador"})
     assert papel(banco, "chefe") == panel.ROLE_ADMIN
 
 
 def test_rebaixar_outro_admin_funciona_quando_sobra_admin(ana, chefe, banco, postar):
-    postar(chefe, f"/usuarios/{ana}/papel", {"role": "admin"})
-    postar(chefe, f"/usuarios/{ana}/papel", {"role": "operador"})
+    postar(chefe, f"/users/{ana}/role", {"role": "admin"})
+    postar(chefe, f"/users/{ana}/role", {"role": "operador"})
     assert papel(banco, "ana") == panel.ROLE_OPERADOR
 
 
 def test_ninguem_remove_a_propria_conta(chefe, banco, postar):
     chefe_id = id_de(banco, "chefe")
-    postar(chefe, f"/usuarios/{chefe_id}/remover")
+    postar(chefe, f"/users/{chefe_id}/delete")
     assert existe(banco, "chefe")
 
 
 def test_reset_de_senha_pelo_admin_funciona(ana, chefe, postar, entrar):
-    postar(chefe, f"/usuarios/{ana}/senha", {"new": "senha-nova-1", "confirm": "senha-nova-1"})
+    postar(chefe, f"/users/{ana}/password", {"new": "senha-nova-1", "confirm": "senha-nova-1"})
     entrar("ana", "senha-nova-1")  # levanta AssertionError se a senha nao tiver valido
 
 
@@ -154,19 +154,19 @@ def test_ultimo_administrador_nao_pode_ser_rebaixado(chefe, peao, banco, postar,
     peao_id = id_de(banco, "peao")
 
     # Promove o operador para poder testar "admin rebaixa admin colega".
-    postar(chefe, f"/usuarios/{peao_id}/papel", {"role": "admin"})
+    postar(chefe, f"/users/{peao_id}/role", {"role": "admin"})
     assert papel(banco, "peao") == panel.ROLE_ADMIN
-    postar(chefe, f"/usuarios/{peao_id}/papel", {"role": "operador"})
+    postar(chefe, f"/users/{peao_id}/role", {"role": "operador"})
     assert papel(banco, "peao") == panel.ROLE_OPERADOR  # ainda sobra o chefe, entao vale
 
     # Agora promove de novo e SOBE so ele: com dois admins, nenhum comando further deve
     # deixar o painel com zero. Confere que o piso e sempre respeitado por baixo.
-    postar(chefe, f"/usuarios/{peao_id}/papel", {"role": "admin"})
+    postar(chefe, f"/users/{peao_id}/role", {"role": "admin"})
     peao_admin = entrar("peao", "senha-do-peao")
     chefe_id = id_de(banco, "chefe")
-    postar(peao_admin, f"/usuarios/{peao_id}/papel", {"role": "operador"})
-    postar(peao_admin, f"/usuarios/{chefe_id}/papel", {"role": "operador"})
-    assert peao_admin.get("/usuarios").status_code == 200
+    postar(peao_admin, f"/users/{peao_id}/role", {"role": "operador"})
+    postar(peao_admin, f"/users/{chefe_id}/role", {"role": "operador"})
+    assert peao_admin.get("/users").status_code == 200
 
     sobraram = banco.execute(
         "SELECT COUNT(*) FROM users WHERE role = ?", (panel.ROLE_ADMIN,)).fetchone()[0]
@@ -179,7 +179,7 @@ def test_sessao_morre_junto_com_a_conta(ana, chefe, banco, postar, entrar):
     descartavel = entrar("ana", "senha12345")
     assert descartavel.get("/").status_code == 200, "logada, ve o painel"
 
-    postar(chefe, f"/usuarios/{ana}/remover")
+    postar(chefe, f"/users/{ana}/delete")
     assert not existe(banco, "ana")
     assert descartavel.get("/").status_code == 302, "a sessao dela cai no proximo clique"
 
@@ -285,13 +285,13 @@ def test_operador_ve_backups_e_dispara_mas_nao_gerencia(servidor_alvo, peao, pos
     """Criar copia e operacao (o operador pode). Restaurar, apagar e baixar destroem
     dado ou tiram o save do container - sao de administrador, como console e editor."""
     assert peao.get(f"/servers/{servidor_alvo}/backups").status_code == 200
-    assert postar(peao, f"/servers/{servidor_alvo}/backups/criar").status_code == 302
+    assert postar(peao, f"/servers/{servidor_alvo}/backups/create").status_code == 302
 
     name = {"nome": "jogo-20260101-000000.tar.gz"}
-    assert postar(peao, f"/servers/{servidor_alvo}/backups/restaurar", name).status_code == 403
-    assert postar(peao, f"/servers/{servidor_alvo}/backups/remover", name).status_code == 403
+    assert postar(peao, f"/servers/{servidor_alvo}/backups/restore", name).status_code == 403
+    assert postar(peao, f"/servers/{servidor_alvo}/backups/delete", name).status_code == 403
     assert peao.get(
-        f"/servers/{servidor_alvo}/backups/baixar?nome=jogo-20260101-000000.tar.gz"
+        f"/servers/{servidor_alvo}/backups/download?nome=jogo-20260101-000000.tar.gz"
     ).status_code == 403
     assert postar(peao, f"/servers/{servidor_alvo}/files/upload").status_code == 403
 
@@ -303,7 +303,7 @@ def test_operador_ve_backups_e_dispara_mas_nao_gerencia(servidor_alvo, peao, pos
 def test_nome_de_backup_torto_e_recusado_mesmo_para_admin(servidor_alvo, chefe, postar, ruim):
     """O nome volta da tela e entra num comando remoto: o que nao casar com
     "<algo>.tar.gz" tem de morrer no painel, antes de chegar no shell do container."""
-    resp = postar(chefe, f"/servers/{servidor_alvo}/backups/remover", {"nome": ruim})
+    resp = postar(chefe, f"/servers/{servidor_alvo}/backups/delete", {"nome": ruim})
     assert resp.status_code == 400
 
 
@@ -313,13 +313,13 @@ def test_operador_modera_jogador_sem_precisar_de_admin(servidor_alvo, peao, post
     """Expulsar/banir nao dao acesso ao container: quem ja pode reiniciar o servidor
     pode moderar quem esta nele. 302 (e nao 403) prova que o operador passou do papel -
     o que sobrar de erro daqui em diante e da validacao da acao, nao da permissao."""
-    resp = postar(peao, f"/servers/{servidor_alvo}/players/acao",
+    resp = postar(peao, f"/servers/{servidor_alvo}/players/action",
                   {"acao": "kick", "jogador": "x"})
     assert resp.status_code == 302
 
 
 def test_admin_tambem_modera_jogador(servidor_alvo, chefe, postar):
-    resp = postar(chefe, f"/servers/{servidor_alvo}/players/acao",
+    resp = postar(chefe, f"/servers/{servidor_alvo}/players/action",
                   {"acao": "announce", "mensagem": "oi"})
     assert resp.status_code == 302
 
@@ -336,6 +336,6 @@ def test_destino_de_login_recusa_endereco_de_fora(raw):
     assert panel.safe_target(raw) == ""
 
 
-@pytest.mark.parametrize("raw", ["/servers/1/config", "/usuarios", "/"])
+@pytest.mark.parametrize("raw", ["/servers/1/config", "/users", "/"])
 def test_destino_de_login_aceita_caminho_interno(raw):
     assert panel.safe_target(raw) == raw

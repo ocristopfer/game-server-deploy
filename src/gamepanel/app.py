@@ -2068,12 +2068,12 @@ def api_status():
     return jsonify({str(sid): state for sid, state in all_status(servers).items()})
 
 
-@app.get("/api/recursos")
+@app.get("/api/resources")
 @login_required
 def api_metrics():
     """Medidores de todos os servidores — alimenta os mini-graficos do painel.
 
-    O caminho e "/api/recursos", e nao "/api/metrics", de proposito: "/api/metrics" e
+    O caminho e "/api/resources", e nao "/api/metrics", de proposito: "/api/metrics" e
     uma regra corriqueira das listas de filtro de rastreadores (uBlock Origin, AdGuard,
     DNS filtrado). Com uma delas ligada, o navegador nem chega a mandar o pedido — ele
     devolve um pixel transparente com status 499 — e o painel ficava eternamente em
@@ -2178,7 +2178,7 @@ def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
     return output
 
 
-@app.route("/servers/<int:sid>/players/descobrir", methods=["GET", "POST"])
+@app.route("/servers/<int:sid>/players/discover", methods=["GET", "POST"])
 @admin_required
 def players_setup(sid: int):
     """Assistente: acha a porta/API que responde e ajuda a achar o padrao no log."""
@@ -2280,7 +2280,7 @@ FONTES_DE_CONTAGEM = {
 }
 
 
-@app.post("/servers/<int:sid>/players/usar")
+@app.post("/servers/<int:sid>/players/use")
 @admin_required
 def players_use(sid: int):
     """Grava a forma de contagem escolhida no assistente."""
@@ -2298,7 +2298,7 @@ def players_use(sid: int):
     return redirect(url_for("server_detail", sid=sid))
 
 
-@app.post("/servers/<int:sid>/players/acao")
+@app.post("/servers/<int:sid>/players/action")
 @login_required
 def player_action(sid: int):
     """Expulsa, bane ou avisa, pela API do proprio jogo.
@@ -2335,7 +2335,7 @@ def player_action(sid: int):
     return redirect(voltar)
 
 
-@app.get("/api/servers/<int:sid>/recursos")
+@app.get("/api/servers/<int:sid>/resources")
 @login_required
 def api_server_metrics(sid: int):
     server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
@@ -3202,7 +3202,7 @@ def delete_backup(server: Servidor, name: str) -> str:
     return backups_rt.delete_backup(ssh_run, server, BACKUP_DIR, name)
 
 
-@app.post("/servers/<int:sid>/backups/criar")
+@app.post("/servers/<int:sid>/backups/create")
 @login_required
 def backup_create(sid: int):
     """Dispara o backup. E operacao, nao administracao: o operador pode tirar copia."""
@@ -3220,7 +3220,7 @@ def backup_create(sid: int):
     return redirect(url_for("job_detail", jid=job_id))
 
 
-@app.post("/servers/<int:sid>/backups/restaurar")
+@app.post("/servers/<int:sid>/backups/restore")
 @admin_required
 def backup_restore(sid: int):
     """Volta o servidor para uma copia. Para o jogo, extrai e religa."""
@@ -3246,7 +3246,7 @@ def backup_restore(sid: int):
     return redirect(url_for("job_detail", jid=job_id))
 
 
-@app.post("/servers/<int:sid>/backups/remover")
+@app.post("/servers/<int:sid>/backups/delete")
 @admin_required
 def backup_delete(sid: int):
     server = _server_or_404(sid)
@@ -3263,7 +3263,7 @@ def backup_delete(sid: int):
     return redirect(url_for("backups", sid=sid))
 
 
-@app.get("/servers/<int:sid>/backups/baixar")
+@app.get("/servers/<int:sid>/backups/download")
 @admin_required
 def backup_download(sid: int):
     """Tira a copia do container. Mesmo streaming do download de arquivo."""
@@ -3752,7 +3752,7 @@ def _ator() -> str:
 _game_from_form = broker_service.game_from_form
 
 
-@app.route("/catalogo", methods=["GET"])
+@app.route("/catalog", methods=["GET"])
 @admin_required
 @broker_required
 def catalog():
@@ -3765,7 +3765,7 @@ def catalog():
                            modelos=MODELOS_DE_JOGO)
 
 
-@app.get("/api/catalogo/sugestoes")
+@app.get("/api/catalog/suggestions")
 @admin_required
 @broker_required
 def api_catalog_suggestions():
@@ -3776,7 +3776,7 @@ def api_catalog_suggestions():
                     "fonte": busca_de_jogos.SOURCE})
 
 
-@app.post("/catalogo/novo")
+@app.post("/catalog/new")
 @admin_required
 @broker_required
 def catalog_new():
@@ -3801,7 +3801,7 @@ def catalog_new():
     return redirect(url_for("catalog"))
 
 
-@app.get("/instancias")
+@app.get("/instances")
 @admin_required
 @broker_required
 def instances_list():
@@ -3818,7 +3818,7 @@ def instances_list():
     return render_template("instancias.html", instancias=instances, jogos=jogos, servidores=ligados)
 
 
-@app.post("/instancias/nova")
+@app.post("/instances/new")
 @admin_required
 @broker_required
 def instance_new():
@@ -3837,7 +3837,7 @@ def instance_new():
     return redirect(url_for("job_detail", jid=job_id))
 
 
-@app.post("/instancias/<int:iid>/desativar")
+@app.post("/instances/<int:iid>/deactivate")
 @admin_required
 @broker_required
 def instance_deactivate(iid: int):
@@ -3853,7 +3853,7 @@ def instance_deactivate(iid: int):
     return redirect(url_for("instances_list"))
 
 
-@app.post("/instancias/<int:iid>/remover")
+@app.post("/instances/<int:iid>/delete")
 @admin_required
 @broker_required
 def instance_remove(iid: int):
@@ -3937,7 +3937,7 @@ def _next_occurrence(sched, agora: datetime) -> datetime:
     return anterior + timedelta(days=7 if sched["kind"] == "semanal" else 1)
 
 
-@app.get("/servers/<int:sid>/agendamentos")
+@app.get("/servers/<int:sid>/schedules")
 @login_required
 def schedules(sid: int):
     server = _server_or_404(sid)
@@ -3959,7 +3959,7 @@ def schedules(sid: int):
     )
 
 
-@app.post("/servers/<int:sid>/agendamentos")
+@app.post("/servers/<int:sid>/schedules")
 @admin_required
 def schedule_new(sid: int):
     _server_or_404(sid)
@@ -3985,7 +3985,7 @@ def schedule_new(sid: int):
     return redirect(url_for("schedules", sid=sid))
 
 
-@app.post("/agendamentos/<int:aid>/alternar")
+@app.post("/schedules/<int:aid>/toggle")
 @admin_required
 def schedule_toggle(aid: int):
     sched = _schedule_or_404(aid)
@@ -3997,7 +3997,7 @@ def schedule_toggle(aid: int):
     return redirect(url_for("schedules", sid=sched["server_id"]))
 
 
-@app.post("/agendamentos/<int:aid>/remover")
+@app.post("/schedules/<int:aid>/delete")
 @admin_required
 def schedule_delete(aid: int):
     sched = _schedule_or_404(aid)
@@ -4008,7 +4008,7 @@ def schedule_delete(aid: int):
     return redirect(url_for("schedules", sid=sched["server_id"]))
 
 
-@app.post("/agendamentos/<int:aid>/rodar")
+@app.post("/schedules/<int:aid>/run")
 @admin_required
 def schedule_run(aid: int):
     """Roda a tarefa agora, sem esperar a hora — e como se confere se ela funciona."""
@@ -4044,7 +4044,7 @@ def build_chart(amostras, series, teto: float, start, fim, formato_tempo: str) -
         amostras, series, teto, start, fim, formato_tempo, SAMPLE_EVERY)
 
 
-@app.get("/servers/<int:sid>/graficos")
+@app.get("/servers/<int:sid>/charts")
 @login_required
 def charts(sid: int):
     """CPU, memoria e jogadores ao longo do tempo.
@@ -4108,7 +4108,7 @@ def charts(sid: int):
 # --------------------------------------------------------------- historico
 
 
-@app.get("/historico")
+@app.get("/history")
 @login_required
 def history():
     """Tudo o que aconteceu no painel, de todos os servidores.
@@ -4174,7 +4174,7 @@ def ssh_key():
     return render_template("ssh_key.html", pubkey=public_key())
 
 
-@app.post("/account/idioma")
+@app.post("/account/language")
 @login_required
 def account_language():
     """Guarda o idioma da tela para ESTA pessoa.
@@ -4284,7 +4284,7 @@ def account_2fa():
         qr_svg=qr.svg(endereco, label="QR code da verificacao em duas etapas"))
 
 
-@app.post("/account/2fa/desativar")
+@app.post("/account/2fa/off")
 @login_required
 def account_2fa_off():
     if REQUIRE_2FA:
@@ -4299,7 +4299,7 @@ def account_2fa_off():
     return redirect(url_for("account"))
 
 
-@app.post("/account/2fa/codigos")
+@app.post("/account/2fa/codes")
 @login_required
 def account_2fa_codes():
     """Codigos de recuperacao novos: os antigos deixam de valer."""
@@ -4327,7 +4327,7 @@ def _apaga_o_segundo_fator(uid: int) -> None:
 # ------------------------------------------------------------------ alertas
 
 
-@app.get("/alertas")
+@app.get("/alerts")
 @admin_required
 def alerts():
     conn = db()
@@ -4377,7 +4377,7 @@ LIMITES_ALERTA = (
 )
 
 
-@app.post("/alertas")
+@app.post("/alerts")
 @admin_required
 def alerts_save():
     """So o que vale para todos os destinos: hoje, os limites de disco, memoria e CPU."""
@@ -4422,7 +4422,7 @@ def _le_form_webhook() -> tuple:
     return {"name": name, "url": url, "events": ",".join(events), "enabled": enabled}, ""
 
 
-@app.post("/alertas/destinos")
+@app.post("/alerts/targets")
 @admin_required
 def alerts_hook_new():
     conn = db()
@@ -4446,7 +4446,7 @@ def alerts_hook_new():
     return redirect(url_for("alerts"))
 
 
-@app.post("/alertas/destinos/<int:hid>")
+@app.post("/alerts/targets/<int:hid>")
 @admin_required
 def alerts_hook_save(hid: int):
     conn = db()
@@ -4471,7 +4471,7 @@ def alerts_hook_save(hid: int):
     return redirect(url_for("alerts"))
 
 
-@app.post("/alertas/destinos/<int:hid>/remover")
+@app.post("/alerts/targets/<int:hid>/delete")
 @admin_required
 def alerts_hook_del(hid: int):
     conn = db()
@@ -4481,7 +4481,7 @@ def alerts_hook_del(hid: int):
     return redirect(url_for("alerts"))
 
 
-@app.post("/alertas/destinos/<int:hid>/testar")
+@app.post("/alerts/targets/<int:hid>/test")
 @admin_required
 def alerts_hook_test(hid: int):
     """Manda uma mensagem agora para UM destino, para conferir se a URL esta certa."""
@@ -4540,7 +4540,7 @@ def _user_or_404(uid: int) -> sqlite3.Row:
     return row
 
 
-@app.get("/usuarios")
+@app.get("/users")
 @admin_required
 def users_list():
     rows = db().execute(
@@ -4552,7 +4552,7 @@ def users_list():
     )
 
 
-@app.post("/usuarios")
+@app.post("/users")
 @admin_required
 def user_new():
     username = request.form.get("username", "").strip().lower()
@@ -4587,7 +4587,7 @@ def user_new():
     return redirect(url_for("users_list"))
 
 
-@app.post("/usuarios/<int:uid>/papel")
+@app.post("/users/<int:uid>/role")
 @admin_required
 def user_role(uid: int):
     alvo = _user_or_404(uid)
@@ -4611,7 +4611,7 @@ def user_role(uid: int):
     return redirect(url_for("users_list"))
 
 
-@app.post("/usuarios/<int:uid>/senha")
+@app.post("/users/<int:uid>/password")
 @admin_required
 def user_password(uid: int):
     """Reset feito pelo admin — sem a senha atual, que e justamente a esquecida."""
@@ -4627,7 +4627,7 @@ def user_password(uid: int):
     return redirect(url_for("users_list"))
 
 
-@app.post("/usuarios/<int:uid>/2fa/desligar")
+@app.post("/users/<int:uid>/2fa/off")
 @admin_required
 def user_2fa_off(uid: int):
     """Celular perdido e codigos de recuperacao perdidos: o admin desliga o 2FA da pessoa, que
@@ -4641,7 +4641,7 @@ def user_2fa_off(uid: int):
     return redirect(url_for("users_list"))
 
 
-@app.post("/usuarios/<int:uid>/remover")
+@app.post("/users/<int:uid>/delete")
 @admin_required
 def user_delete(uid: int):
     alvo = _user_or_404(uid)

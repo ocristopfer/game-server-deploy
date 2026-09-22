@@ -141,14 +141,14 @@ def servidor(banco) -> int:
 
 
 def test_operador_ve_a_tela_mas_nao_agenda(servidor, chefe, peao, postar):
-    assert peao.get(f"/servers/{servidor}/agendamentos").status_code == 200
-    resp = postar(peao, f"/servers/{servidor}/agendamentos",
+    assert peao.get(f"/servers/{servidor}/schedules").status_code == 200
+    resp = postar(peao, f"/servers/{servidor}/schedules",
                   {"action": "restart", "kind": "diario", "hour": "5", "minute": "0"})
     assert resp.status_code == 403
 
 
 def test_admin_agenda_uma_tarefa_diaria(servidor, chefe, banco, postar):
-    resp = postar(chefe, f"/servers/{servidor}/agendamentos",
+    resp = postar(chefe, f"/servers/{servidor}/schedules",
                   {"action": "restart", "kind": "diario", "hour": "5", "minute": "0"})
     assert resp.status_code == 302
 
@@ -159,7 +159,7 @@ def test_admin_agenda_uma_tarefa_diaria(servidor, chefe, banco, postar):
 
 def test_intervalo_nasce_com_o_relogio_zerado(servidor, chefe, banco, postar):
     """Sem isto 'a cada 6h' dispararia no instante em que fosse salvo."""
-    postar(chefe, f"/servers/{servidor}/agendamentos",
+    postar(chefe, f"/servers/{servidor}/schedules",
            {"action": "backup", "kind": "intervalo", "every_hours": "6"})
     inter = banco.execute("SELECT * FROM schedules WHERE kind = 'intervalo'").fetchone()
     assert inter["last_run"] != ""
@@ -174,7 +174,7 @@ def test_intervalo_nasce_com_o_relogio_zerado(servidor, chefe, banco, postar):
     {"action": "backup", "kind": "intervalo", "every_hours": "99999"},
 ])
 def test_valores_fora_da_faixa_nao_entram_no_banco(servidor, chefe, banco, postar, ruim):
-    postar(chefe, f"/servers/{servidor}/agendamentos", ruim)
+    postar(chefe, f"/servers/{servidor}/schedules", ruim)
     assert banco.execute(
         "SELECT COUNT(*) FROM schedules WHERE server_id = ?", (servidor,)
     ).fetchone()[0] == 0
@@ -183,20 +183,20 @@ def test_valores_fora_da_faixa_nao_entram_no_banco(servidor, chefe, banco, posta
 @pytest.fixture
 def tarefa_agendada(servidor, chefe, banco, postar) -> int:
     """Uma tarefa diaria ja salva, para os testes de alternar/rodar/remover."""
-    postar(chefe, f"/servers/{servidor}/agendamentos",
+    postar(chefe, f"/servers/{servidor}/schedules",
            {"action": "restart", "kind": "diario", "hour": "5", "minute": "0"})
     return banco.execute(
         "SELECT id FROM schedules WHERE server_id = ?", (servidor,)).fetchone()["id"]
 
 
 def test_operador_nao_altera_agendamento_alheio(tarefa_agendada, peao, postar):
-    assert postar(peao, f"/agendamentos/{tarefa_agendada}/alternar").status_code == 403
-    assert postar(peao, f"/agendamentos/{tarefa_agendada}/remover").status_code == 403
-    assert postar(peao, f"/agendamentos/{tarefa_agendada}/rodar").status_code == 403
+    assert postar(peao, f"/schedules/{tarefa_agendada}/toggle").status_code == 403
+    assert postar(peao, f"/schedules/{tarefa_agendada}/delete").status_code == 403
+    assert postar(peao, f"/schedules/{tarefa_agendada}/run").status_code == 403
 
 
 def test_admin_desliga_e_ela_some_do_laco_do_relogio(tarefa_agendada, chefe, banco, postar):
-    postar(chefe, f"/agendamentos/{tarefa_agendada}/alternar")
+    postar(chefe, f"/schedules/{tarefa_agendada}/toggle")
     assert banco.execute(
         "SELECT enabled FROM schedules WHERE id = ?", (tarefa_agendada,)
     ).fetchone()[0] == 0
@@ -209,7 +209,7 @@ def test_admin_desliga_e_ela_some_do_laco_do_relogio(tarefa_agendada, chefe, ban
 
 
 def test_admin_remove_a_tarefa(tarefa_agendada, chefe, banco, postar):
-    postar(chefe, f"/agendamentos/{tarefa_agendada}/remover")
+    postar(chefe, f"/schedules/{tarefa_agendada}/delete")
     assert banco.execute(
         "SELECT COUNT(*) FROM schedules WHERE id = ?", (tarefa_agendada,)
     ).fetchone()[0] == 0
@@ -229,7 +229,7 @@ def test_apagar_o_servidor_leva_as_tarefas_dele(servidor, tarefa_agendada, banco
 @pytest.mark.parametrize("qs", ["", "?usuario=chefe", "?acao=start", "?servidor=abc",
                                 "?p=-5", "?acao=formatar"])
 def test_historico_global_nunca_quebra(chefe, qs):
-    assert chefe.get(f"/historico{qs}").status_code == 200
+    assert chefe.get(f"/history{qs}").status_code == 200
 
 
 def test_console_nao_aparece_no_historico_global_para_operador(banco, chefe, peao):
@@ -247,5 +247,5 @@ def test_console_nao_aparece_no_historico_global_para_operador(banco, chefe, pea
             (sid2, "root@outro", "shell", "ok", "SEGREDO-NO-GLOBAL", "SEGREDO-NO-GLOBAL",
              "chefe", panel.now_iso()))
 
-    assert "SEGREDO-NO-GLOBAL" not in peao.get("/historico").get_data(as_text=True)
-    assert "SEGREDO-NO-GLOBAL" in chefe.get("/historico").get_data(as_text=True)
+    assert "SEGREDO-NO-GLOBAL" not in peao.get("/history").get_data(as_text=True)
+    assert "SEGREDO-NO-GLOBAL" in chefe.get("/history").get_data(as_text=True)

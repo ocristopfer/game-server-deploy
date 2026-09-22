@@ -193,9 +193,9 @@ def test_codigo_da_ativacao_tambem_nao_serve_no_primeiro_login(chefe, postar, ho
 
 def test_o_destino_pedido_antes_do_login_sobrevive_ao_segundo_passo(chefe, postar, hora, cliente):
     segredo, _ = _com_2fa(chefe, postar, hora)
-    _senha(cliente, postar, proximo="/historico")
+    _senha(cliente, postar, proximo="/history")
     resposta = postar(cliente, "/login/2fa", {"codigo": _codigo(segredo, hora)})
-    assert resposta.headers["Location"].endswith("/historico")
+    assert resposta.headers["Location"].endswith("/history")
 
 
 def test_destino_de_fora_do_painel_continua_recusado_no_segundo_passo(chefe, postar, hora, cliente):
@@ -264,23 +264,23 @@ def test_codigo_de_recuperacao_entra_uma_vez_so(chefe, postar, hora, cliente):
 
 def test_desativar_pede_senha_e_codigo(chefe, postar, hora):
     segredo, _ = _com_2fa(chefe, postar, hora)
-    postar(chefe, "/account/2fa/desativar", {"senha": "errada", "codigo": _codigo(segredo, hora)})
-    postar(chefe, "/account/2fa/desativar", {"senha": "senha-do-chefe", "codigo": "000000"})
+    postar(chefe, "/account/2fa/off", {"senha": "errada", "codigo": _codigo(segredo, hora)})
+    postar(chefe, "/account/2fa/off", {"senha": "senha-do-chefe", "codigo": "000000"})
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 1
-    postar(chefe, "/account/2fa/desativar", {"senha": "senha-do-chefe", "codigo": _codigo(segredo, hora)})
+    postar(chefe, "/account/2fa/off", {"senha": "senha-do-chefe", "codigo": _codigo(segredo, hora)})
     line = panel._connect().execute("SELECT * FROM users WHERE username = 'chefe'").fetchone()
     assert (line["totp_enabled"], line["totp_secret"], line["totp_recovery"]) == (0, "", "")
 
 
 def test_desativar_aceita_um_codigo_de_recuperacao(chefe, postar, hora):
     _, codigos = _com_2fa(chefe, postar, hora)
-    postar(chefe, "/account/2fa/desativar", {"senha": "senha-do-chefe", "codigo": codigos[0]})
+    postar(chefe, "/account/2fa/off", {"senha": "senha-do-chefe", "codigo": codigos[0]})
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 0
 
 
 def test_codigos_novos_invalidam_os_antigos(chefe, postar, hora, cliente):
     segredo, antigos = _com_2fa(chefe, postar, hora)
-    resposta = postar(chefe, "/account/2fa/codigos", {"senha": "senha-do-chefe", "codigo": _codigo(segredo, hora)})
+    resposta = postar(chefe, "/account/2fa/codes", {"senha": "senha-do-chefe", "codigo": _codigo(segredo, hora)})
     novos = RE_CODIGO.findall(resposta.get_data(as_text=True))
     assert len(novos) == totp.RECOVERY_CODES
     assert not set(novos) & set(antigos)
@@ -291,7 +291,7 @@ def test_codigos_novos_invalidam_os_antigos(chefe, postar, hora, cliente):
 
 def test_codigos_novos_pedem_senha(chefe, postar, hora):
     segredo, antigos = _com_2fa(chefe, postar, hora)
-    postar(chefe, "/account/2fa/codigos", {"senha": "errada", "codigo": _codigo(segredo, hora)})
+    postar(chefe, "/account/2fa/codes", {"senha": "errada", "codigo": _codigo(segredo, hora)})
     line = panel._connect().execute("SELECT totp_recovery FROM users").fetchone()
     assert len(json.loads(line[0])) == totp.RECOVERY_CODES
     assert totp.hash_recovery_code(antigos[0]) in json.loads(line[0])
@@ -314,8 +314,8 @@ def _dois_usuarios(postar, hora):
 
 def test_admin_desliga_o_2fa_de_outra_pessoa(cliente, postar, hora):
     admin, uid = _dois_usuarios(postar, hora)
-    assert "2FA" in admin.get("/usuarios").get_data(as_text=True)
-    assert postar(admin, f"/usuarios/{uid}/2fa/desligar").status_code == 302
+    assert "2FA" in admin.get("/users").get_data(as_text=True)
+    assert postar(admin, f"/users/{uid}/2fa/off").status_code == 302
     line = panel._connect().execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
     assert (line["totp_enabled"], line["totp_secret"]) == (0, "")
 
@@ -325,14 +325,14 @@ def test_operador_nao_desliga_o_2fa_de_ninguem(cliente, postar, hora):
     panel.ensure_admin_user("beto", "senha-do-beto", panel.ROLE_OPERADOR)
     beto = panel.app.test_client()
     _senha(beto, postar, "beto", "senha-do-beto")
-    assert postar(beto, f"/usuarios/{uid}/2fa/desligar").status_code == 403
+    assert postar(beto, f"/users/{uid}/2fa/off").status_code == 403
     assert panel._connect().execute("SELECT totp_enabled FROM users WHERE id = ?", (uid,)).fetchone()[0] == 1
 
 
 def test_admin_nao_desliga_o_proprio_2fa_por_la(chefe, postar, hora):
     _com_2fa(chefe, postar, hora)
     uid = panel._connect().execute("SELECT id FROM users WHERE username = 'chefe'").fetchone()[0]
-    postar(chefe, f"/usuarios/{uid}/2fa/desligar")
+    postar(chefe, f"/users/{uid}/2fa/off")
     assert panel._connect().execute("SELECT totp_enabled FROM users WHERE id = ?", (uid,)).fetchone()[0] == 1
 
 
@@ -380,7 +380,7 @@ def test_com_2fa_obrigatorio_ativar_libera_o_painel(chefe, postar, hora, monkeyp
 def test_com_2fa_obrigatorio_nao_da_para_desativar(chefe, postar, hora, monkeypatch):
     segredo, _ = _com_2fa(chefe, postar, hora)
     monkeypatch.setattr(panel, "REQUIRE_2FA", True)
-    postar(chefe, "/account/2fa/desativar", {"senha": "senha-do-chefe", "codigo": _codigo(segredo, hora)})
+    postar(chefe, "/account/2fa/off", {"senha": "senha-do-chefe", "codigo": _codigo(segredo, hora)})
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 1
     assert "exige" in chefe.get("/account").get_data(as_text=True)
 
