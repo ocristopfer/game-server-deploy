@@ -55,7 +55,7 @@ def test_ambiente_completo_carrega(env):
     assert cfg.proxmox_impressao == "9f" * 32, "normalizada (sem dois-pontos, minuscula)"
     assert cfg.proxmox.chaves_ssh == (CHAVE_PUBLICA, CHAVE_DO_PAINEL), "as DUAS chaves entram no CT novo"
     assert cfg.ssh.blob == BLOB
-    assert (cfg.max_instancias, cfg.max_criacoes_por_hora) == (8, 4)
+    assert (cfg.max_instances, cfg.max_creations_per_hour) == (8, 4)
     assert cfg.opnsense_wan == "wan"
 
 
@@ -63,7 +63,7 @@ def test_valores_opcionais_sobrescrevem_os_padroes(env):
     env.update(BROKER_CTID_INICIO="500", BROKER_CTID_FIM="510", BROKER_MAX_INSTANCIAS="3",
                BROKER_MAX_CRIACOES_HORA="1", OPNSENSE_WAN="opt1")
     cfg = carregar(env)
-    assert (cfg.ctids.start, cfg.ctids.stop - 1, cfg.max_instancias, cfg.max_criacoes_por_hora) == (500, 510, 3, 1)
+    assert (cfg.ctids.start, cfg.ctids.stop - 1, cfg.max_instances, cfg.max_creations_per_hour) == (500, 510, 3, 1)
     assert cfg.opnsense_wan == "opt1"
 
 
@@ -210,16 +210,16 @@ def env_local(env, pve, opn):
 
 def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
     executor = ExecutorFalso()
-    app = prod.criar_app_de_config(carregar(env_local), executor=executor, rede=RedeFalsa(),
-                                   executar=lambda tarefa: tarefa())
+    app = prod.criar_app_de_config(carregar(env_local), executor=executor, network=RedeFalsa(),
+                                   run=lambda tarefa: tarefa())
     http = app.test_client()
     auth = {"Authorization": f"Bearer {TOKEN_BROKER}", "X-Ator": "zeca"}
 
     resposta = http.post("/v1/instancias", headers=auth, json={"jogo": "alfa", "nome": "Um"})
 
     assert resposta.status_code == 202
-    operacao = http.get(f"/v1/operacoes/{resposta.get_json()['operacao_id']}", headers=auth).get_json()
-    assert operacao["estado"] == "ok"
+    operation = http.get(f"/v1/operacoes/{resposta.get_json()['operacao_id']}", headers=auth).get_json()
+    assert operation["estado"] == "ok"
     ct = pve.falso.cts[300]
     assert CHAVE_PUBLICA in ct["chaves"], "chave do broker: para instalar"
     assert CHAVE_DO_PAINEL in ct["chaves"], "chave do painel: para operar depois"
@@ -231,7 +231,7 @@ def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
 
 def test_a_api_de_producao_recusa_quem_nao_esta_na_lista_de_ips(env_local):
     env_local["BROKER_ALLOW_IPS"] = "10.9.9.9"
-    app = prod.criar_app_de_config(carregar(env_local), executor=ExecutorFalso(), rede=RedeFalsa())
+    app = prod.criar_app_de_config(carregar(env_local), executor=ExecutorFalso(), network=RedeFalsa())
     resposta = app.test_client().get("/v1/saude", headers={"Authorization": f"Bearer {TOKEN_BROKER}"})
     assert resposta.status_code == 403
 

@@ -27,23 +27,23 @@ from gamebroker.runtime.opnsense import Opnsense
 from gamebroker.runtime.proxmox import Proxmox
 from gamebroker.runtime.ssh_installer import Executor, InstaladorSsh
 from gamebroker.services.catalog import Catalog
-from gamebroker.services.instance_service import Config, Servico
+from gamebroker.services.instance_service import Config, Service
 
 
-def montar_servico(cfg: ConfigBroker, executor: Executor | None = None, rede: Rede | None = None,
-                   executar: Callable[[Callable[[], None]], None] | None = None) -> Servico:
+def montar_servico(cfg: ConfigBroker, executor: Executor | None = None, network: Rede | None = None,
+                   run: Callable[[Callable[[], None]], None] | None = None) -> Service:
     cfg.estado.mkdir(parents=True, exist_ok=True)
     proxmox = Proxmox(Cliente(cfg.proxmox_url, {"Authorization": f"PVEAPIToken={cfg.proxmox_token}"},
                               cfg.proxmox_impressao), cfg.proxmox)
     basico = base64.b64encode(f"{cfg.opnsense_key}:{cfg.opnsense_secret}".encode()).decode()
     opnsense = Opnsense(Cliente(cfg.opnsense_url, {"Authorization": f"Basic {basico}"},
                                 cfg.opnsense_impressao), cfg.opnsense_wan)
-    argumentos = {} if executar is None else {"executar": executar}
-    return Servico(
+    argumentos = {} if run is None else {"run": run}
+    return Service(
         Banco(str(cfg.estado / "broker.db")), Catalog(cfg.pasta_games, cfg.estado / "dinamico"),
-        proxmox, opnsense, InstaladorSsh(cfg.ssh, executor), rede or RedeReal(),
+        proxmox, opnsense, InstaladorSsh(cfg.ssh, executor), network or RedeReal(),
         Config(ctids=cfg.ctids, ctid_base=cfg.ctid_base, ips=cfg.ips, ports=cfg.portas,
-               max_instancias=cfg.max_instancias, max_criacoes_por_hora=cfg.max_criacoes_por_hora),
+               max_instances=cfg.max_instances, max_creations_per_hour=cfg.max_creations_per_hour),
         **argumentos)
 
 

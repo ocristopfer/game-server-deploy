@@ -38,22 +38,22 @@ def test_satisfactory_declara_a_porta_confiavel_e_pode_andar_de_porta(satisfacto
 
 
 def test_satisfactory_recebe_tres_numeros_seguidos_da_faixa_com_o_protocolo_certo(satisfactory):
-    ports = alocador.alocar_portas(satisfactory, set(), FAIXA)
+    ports = alocador.allocate_ports(satisfactory, set(), FAIXA)
     assert [(p.number, p.proto) for p in ports] == [(31000, "udp"), (31000, "tcp"), (31001, "tcp")]
-    assert alocador.porta_da_base(ports, 8888) == 31001
-    assert alocador.porta_do_papel(ports, alocador.PAPEL_JOGO) == 31000
+    assert alocador.port_from_base(ports, 8888) == 31001
+    assert alocador.port_with_role(ports, alocador.ROLE_GAME) == 31000
 
 
 def test_duas_instancias_do_satisfactory_nao_dividem_a_confiavel(satisfactory):
-    primeira = alocador.alocar_portas(satisfactory, set(), FAIXA)
+    primeira = alocador.allocate_ports(satisfactory, set(), FAIXA)
     ocupadas = {p.key for p in primeira}
-    segunda = alocador.alocar_portas(satisfactory, ocupadas, FAIXA)
-    assert alocador.porta_da_base(segunda, 8888) == 31003
+    segunda = alocador.allocate_ports(satisfactory, ocupadas, FAIXA)
+    assert alocador.port_from_base(segunda, 8888) == 31003
     assert {p.key for p in primeira}.isdisjoint({p.key for p in segunda})
 
 
 def test_install_env_leva_a_porta_sorteada_e_o_jogo_recebe_o_argumento(satisfactory):
-    ports = alocador.alocar_portas(satisfactory, set(), FAIXA)
+    ports = alocador.allocate_ports(satisfactory, set(), FAIXA)
     v = _valores(montar_env(satisfactory, ports))
     assert v["GAME_PORT"] == "31000"
     assert v["EXTRA_PORT"] == "31001"
@@ -62,7 +62,7 @@ def test_install_env_leva_a_porta_sorteada_e_o_jogo_recebe_o_argumento(satisfact
 
 def test_jogo_sem_porta_extra_recebe_extra_zero(dados_de_jogo):
     jogo = cat.validate_dynamic(dados_de_jogo)
-    ports = alocador.alocar_portas(jogo, set(), FAIXA)
+    ports = alocador.allocate_ports(jogo, set(), FAIXA)
     assert _valores(montar_env(jogo, ports))["EXTRA_PORT"] == "0"
 
 
@@ -114,7 +114,7 @@ def test_quarta_porta_continua_recusada_para_jogo_que_anda_de_porta(com_extra):
 
 def test_jogo_fixo_pode_ter_porta_extra_sem_andar_de_porta(com_extra):
     com_extra["deslocavel"] = False
-    ports = alocador.alocar_portas(cat.validate_dynamic(com_extra), set(), FAIXA)
+    ports = alocador.allocate_ports(cat.validate_dynamic(com_extra), set(), FAIXA)
     assert [p.number for p in ports] == [7777, 27016, 8888]
 
 

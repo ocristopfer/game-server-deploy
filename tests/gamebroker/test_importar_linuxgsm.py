@@ -144,7 +144,7 @@ def test_executavel_fora_de_opt_game_e_descartado():
                                   "7 Days to Die", "Killing Floor 2 (Beta)"])
 def test_nome_e_chave_saem_no_formato_do_broker(name):
     assert NAME_RE.fullmatch(imp.nome_de_exibicao(name))
-    assert KEY_RE.fullmatch(imp.chave_do_jogo(name))
+    assert KEY_RE.fullmatch(imp.game_key(name))
 
 
 def test_ler_atribuicoes_ignora_comentario_e_usa_a_ultima_atribuicao():

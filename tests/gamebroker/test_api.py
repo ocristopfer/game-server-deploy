@@ -96,7 +96,7 @@ def test_corpo_gigante_e_recusado(http):
 
 
 def test_cota_vira_429(http, ambiente):
-    ambiente.com_config(max_instancias=0)
+    ambiente.com_config(max_instances=0)
     resposta = http.post("/v1/instancias", headers=AUTH, json={"jogo": "beta", "nome": "x"})
     assert (resposta.status_code, resposta.get_json()["codigo"]) == (429, "cota")
 
@@ -144,7 +144,7 @@ def test_erro_interno_nao_vaza_detalhe(http, ambiente):
     def quebra(*_a, **_k):
         raise RuntimeError("senha=segredo caminho=/etc/interno")
 
-    ambiente.servico.saude = quebra
+    ambiente.servico.health = quebra
     resposta = http.get("/v1/saude", headers=AUTH)
     assert resposta.status_code == 500
     assert "segredo" not in resposta.get_data(as_text=True)
@@ -153,4 +153,4 @@ def test_erro_interno_nao_vaza_detalhe(http, ambiente):
 
 def test_ator_da_auditoria_vem_do_cabecalho(http, ambiente):
     http.post("/v1/instancias", headers={**AUTH, "X-Ator": "zeca"}, json={"jogo": "beta", "nome": "Um"})
-    assert "zeca" in {a["ator"] for a in ambiente.banco.auditoria()}
+    assert "zeca" in {a["ator"] for a in ambiente.db.auditoria()}

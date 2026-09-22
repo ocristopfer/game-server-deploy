@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from gamebroker.services.allocator import PAPEL_JOGO, PAPEL_QUERY, AllocatedPort, porta_da_base, porta_do_papel
+from gamebroker.services.allocator import ROLE_GAME, ROLE_QUERY, AllocatedPort, port_from_base, port_with_role
 from gamebroker.services.catalog import RECIPES_WINDOWS, Game
 
 DESTINO_REMOTO = "/root/gamepanel-install"
@@ -64,8 +64,8 @@ class ExecutorReal:
         except OSError as erro:
             raise ErroDeInstalacao(f"nao consegui executar {argv[0]}: {erro.strerror}") from None
         # A leitura de linhas bloqueia; quem impoe o prazo e um timer que mata o processo.
-        relogio = threading.Timer(timeout, proc.kill)
-        relogio.start()
+        clock = threading.Timer(timeout, proc.kill)
+        clock.start()
         try:
             assert proc.stdout is not None
             for linha in proc.stdout:
@@ -73,7 +73,7 @@ class ExecutorReal:
                     on_linha(linha.rstrip("\r\n"))
             return proc.wait()
         finally:
-            relogio.cancel()
+            clock.cancel()
             if proc.poll() is None:
                 proc.kill()
 
@@ -107,9 +107,9 @@ def montar_env(jogo: Game, ports: Sequence[AllocatedPort]) -> str:
     if len(runtimes) > 1:
         raise ErroDeInstalacao("escolha 'wine' OU 'proton', nao os dois")
     # Porta interna == externa (ver services/allocator.py): o jogo e avisado das portas JA alocadas.
-    game_port = porta_do_papel(ports, PAPEL_JOGO) or jogo.game_port
-    query_port = (porta_do_papel(ports, PAPEL_QUERY) or jogo.query_port) if jogo.query_port else 0
-    extra_port = (porta_da_base(ports, jogo.extra_port) or jogo.extra_port) if jogo.extra_port else 0
+    game_port = port_with_role(ports, ROLE_GAME) or jogo.game_port
+    query_port = (port_with_role(ports, ROLE_QUERY) or jogo.query_port) if jogo.query_port else 0
+    extra_port = (port_from_base(ports, jogo.extra_port) or jogo.extra_port) if jogo.extra_port else 0
     variaveis = {
         "GAME_KEY": jogo.key, "GAME_DISPLAY_NAME": jogo.name, "STEAM_APP_ID": str(jogo.app_id),
         "STEAM_PLATFORM": jogo.platform, "STEAM_ANONYMOUS": "1",

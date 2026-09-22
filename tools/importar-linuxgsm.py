@@ -112,7 +112,7 @@ def nome_de_exibicao(gamename: str) -> str:
     return limpo[:40].rstrip(" .-_")
 
 
-def chave_do_jogo(gamename: str) -> str:
+def game_key(gamename: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", _ascii(gamename).lower()).strip("-")
     if not slug or not slug[0].isalpha():
         slug = f"g-{slug}"
@@ -213,7 +213,7 @@ def sugerir(gamename: str, texto_do_cfg: str) -> dict | None:
                   and (not var_query or "{QUERY_PORT}" in argumentos)
                   and (not var_extra or "{EXTRA_PORT}" in argumentos))
     sugestao = {
-        "appid": appid, "nome": nome_de_exibicao(gamename), "chave": chave_do_jogo(gamename),
+        "appid": appid, "nome": nome_de_exibicao(gamename), "chave": game_key(gamename),
         "portas": " ".join(ports), "porta_jogo": porta,
         "porta_query": _numero(v[var_query]) if var_query else 0,
         "porta_extra": _numero(v[var_extra]) if var_extra else 0,

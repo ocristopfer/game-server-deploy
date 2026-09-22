@@ -19,9 +19,9 @@ from gamebroker.persistence.db import Banco
 from gamebroker.runtime.fakes import InstaladorFalso, OpnsenseFalso, ProxmoxFalso, RedeFalsa
 from gamebroker.runtime.opnsense import Opnsense
 from gamebroker.runtime.proxmox import ConfigProxmox, Proxmox
-from gamebroker.services.allocator import ips_da_faixa
+from gamebroker.services.allocator import ips_in_range
 from gamebroker.services.catalog import Catalog
-from gamebroker.services.instance_service import Config, Servico
+from gamebroker.services.instance_service import Config, Service
 
 TOKEN = "t" * 40
 
@@ -96,28 +96,28 @@ def pasta_de_jogos(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def catalogo(tmp_path: Path, pasta_de_jogos: Path) -> Catalog:
+def catalog(tmp_path: Path, pasta_de_jogos: Path) -> Catalog:
     return Catalog(pasta_de_jogos, tmp_path / "dinamico")
 
 
 @pytest.fixture
-def relogio() -> Relogio:
+def clock() -> Relogio:
     return Relogio()
 
 
 @pytest.fixture
-def ambiente(tmp_path: Path, catalogo: Catalog, relogio: Relogio):
+def ambiente(tmp_path: Path, catalog: Catalog, clock: Relogio):
     """Servico completo com backends falsos e execucao SINCRONA (a criacao termina dentro
     de `criar`). `ambiente.pendentes` guarda as tarefas quando `adiar` esta ligado."""
-    banco = Banco(str(tmp_path / "broker.db"), relogio=lambda: relogio().isoformat(timespec="seconds"))
+    db = Banco(str(tmp_path / "broker.db"), clock=lambda: clock().isoformat(timespec="seconds"))
     amb = SimpleNamespace(
-        banco=banco, catalogo=catalogo, relogio=relogio, adiar=False, pendentes=[],
-        proxmox=ProxmoxFalso(), opnsense=OpnsenseFalso(), instalador=InstaladorFalso(), rede=RedeFalsa(),
-        config=Config(ctids=range(300, 310), ips=ips_da_faixa("10.0.0", 30, 40),
-                      ports=range(9000, 9020), max_instancias=5, max_criacoes_por_hora=10),
+        db=db, catalog=catalog, clock=clock, adiar=False, pendentes=[],
+        proxmox=ProxmoxFalso(), opnsense=OpnsenseFalso(), installer=InstaladorFalso(), network=RedeFalsa(),
+        config=Config(ctids=range(300, 310), ips=ips_in_range("10.0.0", 30, 40),
+                      ports=range(9000, 9020), max_instances=5, max_creations_per_hour=10),
     )
 
-    def executar(tarefa):
+    def run(tarefa):
         if amb.adiar:
             amb.pendentes.append(tarefa)
         else:
@@ -126,8 +126,8 @@ def ambiente(tmp_path: Path, catalogo: Catalog, relogio: Relogio):
     def com_config(**campos) -> None:
         amb.servico.config = replace(amb.config, **campos)
 
-    amb.servico = Servico(banco, catalogo, amb.proxmox, amb.opnsense, amb.instalador, amb.rede,
-                          amb.config, executar=executar, relogio=relogio)
+    amb.servico = Service(db, catalog, amb.proxmox, amb.opnsense, amb.installer, amb.network,
+                          amb.config, run=run, clock=clock)
     amb.com_config = com_config
     return amb
 

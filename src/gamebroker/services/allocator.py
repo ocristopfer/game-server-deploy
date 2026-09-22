@@ -17,9 +17,9 @@ from dataclasses import dataclass
 from gamebroker.domain.exceptions import SemRecurso
 from gamebroker.services.catalog import Game
 
-PAPEL_JOGO = "jogo"
-PAPEL_QUERY = "query"
-PAPEL_EXTRA = "extra"
+ROLE_GAME = "jogo"
+ROLE_QUERY = "query"
+ROLE_EXTRA = "extra"
 
 
 @dataclass(frozen=True)
@@ -37,84 +37,84 @@ class AllocatedPort:
         return f"{self.number}/{self.proto}"
 
 
-def ips_da_faixa(prefixo: str, inicio: int, fim: int) -> tuple[str, ...]:
+def ips_in_range(prefix: str, inicio: int, fim: int) -> tuple[str, ...]:
     """`ips_da_faixa("192.168.2", 30, 99)`: os enderecos candidatos, validados como IPv4."""
     if not 1 <= inicio <= fim <= 254:
         raise ValueError("faixa de IP invalida")
-    return tuple(str(ipaddress.IPv4Address(f"{prefixo}.{n}")) for n in range(inicio, fim + 1))
+    return tuple(str(ipaddress.IPv4Address(f"{prefix}.{n}")) for n in range(inicio, fim + 1))
 
 
-def escolher_ctid(faixa: Iterable[int], usados: set[int]) -> int:
-    for ctid in faixa:
-        if ctid not in usados:
+def pick_ctid(span: Iterable[int], taken: set[int]) -> int:
+    for ctid in span:
+        if ctid not in taken:
             return ctid
     raise SemRecurso("nao ha CTID livre na faixa do broker")
 
 
-def escolher_ip(candidatos: Iterable[str], usados: set[str], responde: Callable[[str], bool]) -> str:
+def pick_ip(candidates: Iterable[str], taken: set[str], answers: Callable[[str], bool]) -> str:
     """Primeiro IP fora do banco/Proxmox e que ninguem na rede responde.
 
     O ultimo teste pega o aparelho que tem IP fixo na mao e o Proxmox nunca soube.
     """
-    for ip in candidatos:
-        if ip not in usados and not responde(ip):
+    for ip in candidates:
+        if ip not in taken and not answers(ip):
             return ip
     raise SemRecurso("nao ha IP livre na faixa do broker")
 
 
-def escolher_ip_e_ctid(candidatos: Iterable[str], ctid_base: int, ctids_usados: set[int],
-                       ips_usados: set[str], responde: Callable[[str], bool]) -> tuple[str, int]:
+def pick_ip_and_ctid(candidates: Iterable[str], ctid_base: int, ctids_taken: set[int],
+                       ips_taken: set[str], answers: Callable[[str], bool]) -> tuple[str, int]:
     """IP e CTID juntos: o CTID e `ctid_base` + o ultimo numero do IP (.102 -> 302).
 
     Escolher os dois separados deixaria o CTID e o IP andarem em ritmos diferentes assim que
     um container fosse apagado na mao, e a regra de cabeca (ver o IP, saber o CTID) deixaria
     de valer. Aqui um IP so serve se o CTID dele tambem estiver livre.
     """
-    for ip in candidatos:
+    for ip in candidates:
         ctid = ctid_base + int(ip.rsplit(".", 1)[1])
-        if ip not in ips_usados and ctid not in ctids_usados and not responde(ip):
+        if ip not in ips_taken and ctid not in ctids_taken and not answers(ip):
             return ip, ctid
     raise SemRecurso("nao ha IP/CTID livre na faixa do broker")
 
 
-def _papel(jogo: Game, base: int) -> str:
+def _role_of(jogo: Game, base: int) -> str:
     if base == jogo.game_port:
-        return PAPEL_JOGO
+        return ROLE_GAME
     if jogo.query_port and base == jogo.query_port:
-        return PAPEL_QUERY
-    return PAPEL_EXTRA
+        return ROLE_QUERY
+    return ROLE_EXTRA
 
 
-def _em_bloco(jogo: Game, inicio: int) -> list[AllocatedPort]:
+def _as_block(jogo: Game, inicio: int) -> list[AllocatedPort]:
     """Cada porta-base distinta do jogo vira um numero do bloco; a mesma base em UDP e TCP
     (Satisfactory) fica com o mesmo numero nos dois protocolos."""
     numero_de: dict[int, int] = {}
     for porta in jogo.ports:
         numero_de.setdefault(porta.number, inicio + len(numero_de))
-    return [AllocatedPort(p.number, numero_de[p.number], p.proto, _papel(jogo, p.number))
+    return [AllocatedPort(p.number, numero_de[p.number], p.proto, _role_of(jogo, p.number))
             for p in jogo.ports]
 
 
-def alocar_portas(jogo: Game, ocupadas: set[tuple[int, str]], faixa: range) -> list[AllocatedPort]:
+def allocate_ports(jogo: Game, busy: set[tuple[int, str]], span: range) -> list[AllocatedPort]:
     """Jogo fixo: as portas padrao. Jogo `shiftable`: o primeiro bloco livre da `faixa`."""
     if not jogo.shiftable:
-        candidatas = [AllocatedPort(p.number, p.number, p.proto, _papel(jogo, p.number)) for p in jogo.ports]
-        conflitos = [c for c in candidatas if c.key in ocupadas]
+        candidatas = [AllocatedPort(p.number, p.number, p.proto, _role_of(jogo, p.number)) for p in jogo.ports]
+        conflitos = [c for c in candidatas if c.key in busy]
         if conflitos:
             raise SemRecurso(f"porta {conflitos[0]} ja esta em uso: este jogo nao aceita mudar de porta")
         return candidatas
     tamanho = len({p.number for p in jogo.ports})
-    for inicio in range(faixa.start, faixa.stop - tamanho + 1):
-        candidatas = _em_bloco(jogo, inicio)
-        if not any(c.key in ocupadas for c in candidatas):
+    for inicio in range(span.start, span.stop - tamanho + 1):
+        candidatas = _as_block(jogo, inicio)
+        if not any(c.key in busy for c in candidatas):
             return candidatas
-    raise SemRecurso(f"a faixa de portas do broker ({faixa.start}-{faixa.stop - 1}) esta cheia")
+    raise SemRecurso(f"a faixa de portas do broker ({span.start}-{span.stop - 1}) esta cheia")
 
 
-def porta_do_papel(ports: Iterable[AllocatedPort], role: str) -> int:
+def port_with_role(ports: Iterable[AllocatedPort], role: str) -> int:
     return next((p.number for p in ports if p.role == role), 0)
 
 
-def porta_da_base(ports: Iterable[AllocatedPort], base: int) -> int:
+def port_from_base(ports: Iterable[AllocatedPort], base: int) -> int:
     """O numero alocado para a porta que o jogo chama de `base` (0 se nao houver)."""
     return next((p.number for p in ports if p.base == base), 0)

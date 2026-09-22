@@ -17,9 +17,9 @@ from pathlib import Path
 from gamebroker.app import criar_app
 from gamebroker.persistence.db import Banco
 from gamebroker.runtime.fakes import OpnsenseFalso, ProxmoxFalso, RedeFalsa
-from gamebroker.services.allocator import AllocatedPort, ips_da_faixa
+from gamebroker.services.allocator import AllocatedPort, ips_in_range
 from gamebroker.services.catalog import Catalog, Game
-from gamebroker.services.instance_service import Config, Servico
+from gamebroker.services.instance_service import Config, Service
 
 
 class InstaladorLento:
@@ -44,11 +44,11 @@ def main() -> None:
     token = Path(os.environ["BROKER_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
     estado = Path(os.environ.get("BROKER_DEV_ESTADO", "/tmp/broker-dev"))
     estado.mkdir(parents=True, exist_ok=True)
-    catalogo = Catalog(Path(os.environ.get("BROKER_GAMES_DIR", "games")), estado / "dinamico")
-    servico = Servico(
-        Banco(str(estado / "broker.db")), catalogo, ProxmoxFalso(), OpnsenseFalso(),
+    catalog = Catalog(Path(os.environ.get("BROKER_GAMES_DIR", "games")), estado / "dinamico")
+    servico = Service(
+        Banco(str(estado / "broker.db")), catalog, ProxmoxFalso(), OpnsenseFalso(),
         InstaladorLento(float(os.environ.get("BROKER_DEV_PASSO", "1.5"))), RedeFalsa(),
-        Config(ctid_base=200, ips=ips_da_faixa("10.77.0", 102, 199)))
+        Config(ctid_base=200, ips=ips_in_range("10.77.0", 102, 199)))
     app = criar_app(servico, token)
     app.run(host="0.0.0.0", port=int(os.environ.get("BROKER_PORT", "8090")), threaded=True)  # NOSONAR - so no compose de dev
 

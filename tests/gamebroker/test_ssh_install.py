@@ -81,13 +81,13 @@ def ports():
 
 
 @pytest.fixture
-def instalador(config):
+def installer(config):
     executor = ExecutorFalso()
     return InstaladorSsh(config, executor, dormir=lambda _s: None), executor
 
 
-def _instalar(instalador, jogo, ports, log=None):
-    inst, executor = instalador
+def _instalar(installer, jogo, ports, log=None):
+    inst, executor = installer
     linhas: list[str] = []
     inst.instalar("10.0.0.30", jogo, ports, log or linhas.append)
     return executor, linhas
@@ -172,8 +172,8 @@ def test_nenhum_valor_e_interpretado_como_shell(jogo, ports, texto, tmp_path):
 
 # --- fluxo -------------------------------------------------------------------------------------
 
-def test_ordem_dos_comandos(instalador, jogo, ports):
-    executor, _ = _instalar(instalador, jogo, ports)
+def test_ordem_dos_comandos(installer, jogo, ports):
+    executor, _ = _instalar(installer, jogo, ports)
     assert executor.comandos() == [
         "true",
         f"install -d -m 700 {DESTINO_REMOTO}",
@@ -184,8 +184,8 @@ def test_ordem_dos_comandos(instalador, jogo, ports):
     assert f"rm -rf {DESTINO_REMOTO}" in executor.comandos()[-1]
 
 
-def test_scp_leva_a_lib_e_o_env_e_o_env_existe_na_hora(instalador, jogo, ports):
-    executor, _ = _instalar(instalador, jogo, ports)
+def test_scp_leva_a_lib_e_o_env_e_o_env_existe_na_hora(installer, jogo, ports):
+    executor, _ = _instalar(installer, jogo, ports)
     scp = next(a for a, _ in executor.chamadas if a[0] == "scp")
     assert [Path(f).name for f in scp[-4:-1]] == ["ct-install.sh", "ct-fases.sh", "install.env"]
     assert scp[-1] == f"root@10.0.0.30:{DESTINO_REMOTO}/"
@@ -193,8 +193,8 @@ def test_scp_leva_a_lib_e_o_env_e_o_env_existe_na_hora(instalador, jogo, ports):
     assert not Path(scp[-2]).exists(), "o env temporario nao fica no disco do broker"
 
 
-def test_todo_comando_e_lista_sem_shell_e_com_as_opcoes_de_seguranca(instalador, jogo, ports):
-    executor, _ = _instalar(instalador, jogo, ports)
+def test_todo_comando_e_lista_sem_shell_e_com_as_opcoes_de_seguranca(installer, jogo, ports):
+    executor, _ = _instalar(installer, jogo, ports)
     for argv, _ in executor.chamadas:
         assert isinstance(argv, list)
         assert argv[0] in ("ssh", "scp")
@@ -205,64 +205,64 @@ def test_todo_comando_e_lista_sem_shell_e_com_as_opcoes_de_seguranca(instalador,
     assert ssh[ssh.index("-i") + 1].endswith("id_broker")
 
 
-def test_o_log_recebe_o_progresso_e_a_chave_removida(instalador, jogo, ports):
-    _, linhas = _instalar(instalador, jogo, ports)
+def test_o_log_recebe_o_progresso_e_a_chave_removida(installer, jogo, ports):
+    _, linhas = _instalar(installer, jogo, ports)
     texto = "\n".join(linhas)
     assert "aguardando o SSH de 10.0.0.30" in texto
     assert "INSTALACAO CONCLUIDA" in texto
     assert linhas[-1] == "chave do broker removida do container"
 
 
-def test_limpeza_remove_a_chave_do_broker_e_confere(instalador, jogo, ports):
-    executor, _ = _instalar(instalador, jogo, ports)
+def test_limpeza_remove_a_chave_do_broker_e_confere(installer, jogo, ports):
+    executor, _ = _instalar(installer, jogo, ports)
     limpeza = executor.comandos()[-1]
     assert f"grep -vF -- {BLOB}" in limpeza
     assert limpeza.rstrip().endswith(f"! grep -qF -- {BLOB} /root/.ssh/authorized_keys"), \
         "o proprio comando falha se a chave continuar la"
 
 
-def test_timeouts_sao_repassados(instalador, jogo, ports, config):
-    executor, _ = _instalar(instalador, jogo, ports)
+def test_timeouts_sao_repassados(installer, jogo, ports, config):
+    executor, _ = _instalar(installer, jogo, ports)
     instalacao = next(t for a, t in executor.chamadas if a[-1].endswith("bash ct-install.sh install.env"))
     assert instalacao == config.timeout_instalacao
 
 
 # --- falhas ------------------------------------------------------------------------------------------
 
-def test_instalador_que_falha_traz_a_cauda_e_ainda_limpa_a_chave(instalador, jogo, ports):
-    inst, executor = instalador
+def test_instalador_que_falha_traz_a_cauda_e_ainda_limpa_a_chave(installer, jogo, ports):
+    inst, executor = installer
     executor.saidas["bash ct-install.sh"] = (1, ["baixando", "ERROR: SteamCMD nao conseguiu instalar o app"])
     with pytest.raises(ErroDeInstalacao, match=r"codigo 1.*SteamCMD nao conseguiu"):
         inst.instalar("10.0.0.30", jogo, ports, lambda _l: None)
     assert "rm -rf" in executor.comandos()[-1], "a chave do broker sai mesmo com a instalacao falha"
 
 
-def test_exit_zero_sem_a_marca_de_conclusao_nao_vale(instalador, jogo, ports):
-    inst, executor = instalador
+def test_exit_zero_sem_a_marca_de_conclusao_nao_vale(installer, jogo, ports):
+    inst, executor = installer
     executor.saidas["bash ct-install.sh"] = (0, ["so isto"])
     with pytest.raises(ErroDeInstalacao, match="sem confirmar"):
         inst.instalar("10.0.0.30", jogo, ports, lambda _l: None)
     assert "rm -rf" in executor.comandos()[-1]
 
 
-def test_falha_no_envio_tambem_limpa(instalador, jogo, ports):
-    inst, executor = instalador
+def test_falha_no_envio_tambem_limpa(installer, jogo, ports):
+    inst, executor = installer
     executor.saidas["scp"] = (1, [])
     with pytest.raises(ErroDeInstalacao, match="enviar o instalador"):
         inst.instalar("10.0.0.30", jogo, ports, lambda _l: None)
     assert "rm -rf" in executor.comandos()[-1]
 
 
-def test_chave_que_nao_sai_faz_a_criacao_falhar(instalador, jogo, ports):
+def test_chave_que_nao_sai_faz_a_criacao_falhar(installer, jogo, ports):
     """Um CT novo nao pode nascer com acesso permanente do broker."""
-    inst, executor = instalador
+    inst, executor = installer
     executor.saidas["grep -vF"] = (1, [])
     with pytest.raises(ErroDeInstalacao, match="remover a chave do broker"):
         inst.instalar("10.0.0.30", jogo, ports, lambda _l: None)
 
 
-def test_limpeza_que_falha_nao_esconde_o_erro_da_instalacao(instalador, jogo, ports):
-    inst, executor = instalador
+def test_limpeza_que_falha_nao_esconde_o_erro_da_instalacao(installer, jogo, ports):
+    inst, executor = installer
     executor.saidas["bash ct-install.sh"] = (1, ["deu ruim"])
     executor.saidas["grep -vF"] = (1, [])
     linhas: list[str] = []
@@ -271,26 +271,26 @@ def test_limpeza_que_falha_nao_esconde_o_erro_da_instalacao(instalador, jogo, po
     assert any("AVISO" in linha and "remover a chave" in linha for linha in linhas)
 
 
-def test_espera_o_ssh_subir(instalador, jogo, ports):
-    inst, executor = instalador
+def test_espera_o_ssh_subir(installer, jogo, ports):
+    inst, executor = installer
     executor.falhas_no_ssh_inicial = 3
     _instalar((inst, executor), jogo, ports)
     assert executor.comandos().count("true") == 4
 
 
 def test_ssh_que_nunca_sobe_e_erro_e_nao_tenta_limpar(config, jogo, ports):
-    relogio = iter(range(0, 10_000, 100))
+    clock = iter(range(0, 10_000, 100))
     executor = ExecutorFalso()
     executor.falhas_no_ssh_inicial = 10**6
-    inst = InstaladorSsh(config, executor, dormir=lambda _s: None, agora=lambda: float(next(relogio)))
+    inst = InstaladorSsh(config, executor, dormir=lambda _s: None, agora=lambda: float(next(clock)))
     with pytest.raises(ErroDeInstalacao, match="nao respondeu"):
         inst.instalar("10.0.0.30", jogo, ports, lambda _l: None)
     assert set(executor.comandos()) == {"true"}, "nunca entrou: nada a enviar nem a limpar"
 
 
 @pytest.mark.parametrize("ip", ["10.0.0.300", "nao-e-ip", "10.0.0.30; rm -rf /", "", "::1"])
-def test_ip_invalido_nao_gera_comando(instalador, jogo, ports, ip):
-    inst, executor = instalador
+def test_ip_invalido_nao_gera_comando(installer, jogo, ports, ip):
+    inst, executor = installer
     with pytest.raises(ValueError):
         inst.instalar(ip, jogo, ports, lambda _l: None)
     assert executor.chamadas == []
@@ -298,8 +298,8 @@ def test_ip_invalido_nao_gera_comando(instalador, jogo, ports, ip):
 
 # --- saida em lote ----------------------------------------------------------------------------------------
 
-def test_saida_volumosa_vira_poucas_gravacoes_e_linhas_longas_sao_cortadas(instalador, jogo, ports):
-    inst, executor = instalador
+def test_saida_volumosa_vira_poucas_gravacoes_e_linhas_longas_sao_cortadas(installer, jogo, ports):
+    inst, executor = installer
     executor.saidas["bash ct-install.sh"] = (
         0, [f"progresso {i}%" for i in range(100)] + ["", "x" * 5000, "INSTALACAO CONCLUIDA: ok"])
     gravacoes: list[str] = []

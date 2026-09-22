@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 from gamebroker.integrations.http_client import normalizar_impressao
 from gamebroker.runtime.proxmox import ConfigProxmox
 from gamebroker.runtime.ssh_installer import ARQUIVOS_DA_LIB, ConfigSsh
-from gamebroker.services.allocator import ips_da_faixa
+from gamebroker.services.allocator import ips_in_range
 
 TOKEN_MINIMO = 32
 
@@ -53,8 +53,8 @@ class ConfigBroker:
     ctid_base: int
     ips: tuple[str, ...]
     portas: range
-    max_instancias: int
-    max_criacoes_por_hora: int
+    max_instances: int
+    max_creations_per_hour: int
     ssh: ConfigSsh
 
 
@@ -124,7 +124,7 @@ def _faixas(leitor: _Leitor) -> tuple[range, int, tuple[str, ...]]:
     fim = leitor.inteiro("BROKER_IP_FIM", 99, 1, 254)
     if ctid_base and ctid_base + ini < 100:
         leitor.problemas.append("BROKER_CTID_BASE: com o primeiro IP da faixa o CTID ficaria abaixo de 100")
-    ips = leitor.tentar("BROKER_IP_PREFIX/INICIO/FIM", lambda: ips_da_faixa(prefixo, ini, fim)) if prefixo else None
+    ips = leitor.tentar("BROKER_IP_PREFIX/INICIO/FIM", lambda: ips_in_range(prefixo, ini, fim)) if prefixo else None
     return range(ctid_ini, ctid_fim + 1), ctid_base, ips or ()
 
 
@@ -195,8 +195,8 @@ def carregar(env: Mapping[str, str]) -> ConfigBroker:
         "opnsense_impressao": leitor.impressao("OPNSENSE_CERT_SHA256", op_https),
         "proxmox_token": leitor.texto("PROXMOX_TOKEN"), "opnsense_key": leitor.texto("OPNSENSE_KEY"),
         "opnsense_secret": leitor.texto("OPNSENSE_SECRET"), "opnsense_wan": leitor.texto("OPNSENSE_WAN", "wan"),
-        "max_instancias": leitor.inteiro("BROKER_MAX_INSTANCIAS", 8, 1, 100),
-        "max_criacoes_por_hora": leitor.inteiro("BROKER_MAX_CRIACOES_HORA", 4, 1, 100),
+        "max_instances": leitor.inteiro("BROKER_MAX_INSTANCIAS", 8, 1, 100),
+        "max_creations_per_hour": leitor.inteiro("BROKER_MAX_CRIACOES_HORA", 4, 1, 100),
         "ips_permitidos": _ips_permitidos(leitor),
     }
     if leitor.problemas or proxmox is None or ssh is None:
