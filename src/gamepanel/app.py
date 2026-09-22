@@ -574,7 +574,7 @@ def _exige_segundo_fator():
         return None
     if request.path.startswith("/api/"):
         return jsonify({"error": "ative a verificacao em duas etapas em Conta"}), 403
-    flash("Este painel exige a verificacao em duas etapas: ative-a para continuar.", "error")
+    flash(traduzir("flash.two_factor_required_here"), "error")
     return redirect(url_for("account_2fa"))
 
 
@@ -1941,7 +1941,7 @@ def login():
         key = f"{request.remote_addr}|{username.lower()}"
         remaining = _lockout_remaining(key)
         if remaining:
-            flash(f"Muitas tentativas. Tente de novo em {remaining}s.", "error")
+            flash(traduzir("flash.too_many_tries", n=remaining), "error")
             return render_template(TPL_LOGIN), 429
         row = db().execute(
             "SELECT * FROM users WHERE username = ?", (username,)
@@ -1959,7 +1959,7 @@ def login():
                 return redirect(url_for("login_2fa"))
             return _abre_sessao(row, proximo)
         _record_fail(key)
-        flash("Usuario ou senha invalidos.", "error")
+        flash(traduzir("flash.bad_credentials"), "error")
         return render_template(TPL_LOGIN), 401
     return render_template(TPL_LOGIN)
 
@@ -2019,19 +2019,19 @@ def login_2fa():
         row = db().execute("SELECT * FROM users WHERE id = ?", (pendente.get("uid"),)).fetchone()
     if row is None or not row["totp_enabled"]:
         session.clear()
-        flash("A verificacao expirou. Entre de novo.", "error")
+        flash(traduzir("flash.verification_expired"), "error")
         return redirect(url_for("login"))
     if request.method == "POST":
         chave = f"2fa|{row['username'].lower()}"
         restante = _lockout_remaining(chave, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA)
         if restante:
-            flash(f"Muitas tentativas. Tente de novo em {restante}s.", "error")
+            flash(traduzir("flash.too_many_tries", n=restante), "error")
             return render_template("login_2fa.html"), 429
         if _confere_segundo_fator(row, request.form.get("codigo", "")):
             _clear_fails(chave)
             return _abre_sessao(row, pendente.get("proximo", ""))
         _record_fail(chave)
-        flash("Codigo invalido ou ja usado.", "error")
+        flash(traduzir("flash.code_invalid_or_used"), "error")
         return render_template("login_2fa.html"), 401
     return render_template("login_2fa.html")
 
@@ -2208,14 +2208,14 @@ def _liga_contagem_a2s(conn, sid: int):
     """Consulta UDP direta (A2S). Devolve um redirect quando o formulario esta errado."""
     porta = request.form.get("query_port", "0")
     if not porta.isdigit() or not 1 <= int(porta) <= 65535:
-        flash("Porta invalida.", "error")
+        flash(traduzir("flash.bad_port"), "error")
         return redirect(url_for("players_setup", sid=sid))
     with conn:
         conn.execute(
             "UPDATE servers SET query_port = ?, player_source = 'a2s' WHERE id = ?",
             (int(porta), sid),
         )
-    flash(f"Contagem de jogadores ligada pela consulta na porta {porta}/udp.", "ok")
+    flash(traduzir("flash.count_on_by_query", porta=porta), "ok")
     return None
 
 
@@ -2224,7 +2224,7 @@ def _liga_contagem_http(conn, sid: int):
     errors: list[str] = []
     campos = _campos_http(request.form, errors)
     if errors or not campos["http_url"]:
-        flash(errors[0] if errors else "Informe a URL da API.", "error")
+        flash(errors[0] if errors else traduzir("flash.need_api_url"), "error")
         return redirect(url_for("players_setup", sid=sid, aba="http"))
     with conn:
         conn.execute(
@@ -2237,9 +2237,9 @@ def _liga_contagem_http(conn, sid: int):
             (*[campos[c] for c in HTTP_FIELDS], sid),
         )
     if campos["http_login_url"]:
-        flash("Contagem ligada pela API, com login automatico (o token renova sozinho).", "ok")
+        flash(traduzir("flash.count_on_by_api_login"), "ok")
     else:
-        flash("Contagem de jogadores ligada pela API HTTP do servidor.", "ok")
+        flash(traduzir("flash.count_on_by_api"), "ok")
     return None
 
 
@@ -2250,7 +2250,7 @@ def _liga_contagem_log(conn, sid: int):
     saida = _padrao(request.form.get("leave_re"), "saida", errors)
     caminho = _caminho_log(request.form.get("log_path"), errors)
     if errors or not entrada:
-        flash(errors[0] if errors else "Informe o padrao da linha de entrada.", "error")
+        flash(errors[0] if errors else traduzir("flash.need_join_pattern"), "error")
         return redirect(url_for("players_setup", sid=sid, aba="log"))
     with conn:
         conn.execute(
@@ -2258,7 +2258,7 @@ def _liga_contagem_log(conn, sid: int):
             " player_source = 'log' WHERE id = ?",
             (entrada, saida, caminho, sid),
         )
-    flash("Contagem de jogadores ligada pelo log do servidor.", "ok")
+    flash(traduzir("flash.count_on_by_log"), "ok")
     return None
 
 
@@ -2278,7 +2278,7 @@ def players_use(sid: int):
     _server_or_404(sid)  # so pelo 404: daqui para baixo os UPDATE usam o proprio sid
     liga = FONTES_DE_CONTAGEM.get(request.form.get("player_source", ""))
     if liga is None:
-        flash("Escolha invalida.", "error")
+        flash(traduzir("flash.bad_choice"), "error")
         return redirect(url_for("players_setup", sid=sid))
 
     recusa = liga(db(), sid)
@@ -2313,14 +2313,16 @@ def player_action(sid: int):
     except (QueryError, RemoteError) as exc:
         log_job("player-action", server, session.get("username", "?"),
                 command=registro, output=str(exc), status="error")
-        flash(f"Nao consegui: {exc}", "error")
+        flash(traduzir("flash.could_not", motivo=exc), "error")
         return redirect(voltar)
 
     log_job("player-action", server, session.get("username", "?"),
             command=registro, output="a API aceitou o pedido")
     # A contagem fica alguns segundos em cache e ainda tem quem acabou de sair.
     invalidate_players(sid)
-    flash(f"{rotulo}: {quem}." if acao != "announce" else f"Aviso enviado: {mensagem}", "ok")
+    flash(traduzir("flash.player_action_done", rotulo=rotulo, quem=quem)
+          if acao != "announce"
+          else traduzir("flash.notice_sent", mensagem=mensagem), "ok")
     return redirect(voltar)
 
 
@@ -2401,7 +2403,7 @@ def server_new():
                         SQL_INSERT_SERVER,
                         (*[data[c] for c in SERVER_FIELDS], now_iso()),
                     )
-                flash(f"Servidor {data['name']} cadastrado.", "ok")
+                flash(traduzir("flash.server_added", nome=data["name"]), "ok")
                 return redirect(url_for("dashboard"))
             except sqlite3.IntegrityError:
                 errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
@@ -2430,7 +2432,7 @@ def server_edit(sid: int):
                 # A contagem fica em cache por alguns segundos: trocar a fonte pelo
                 # formulario tem que valer na hora, como vale pelo assistente.
                 invalidate_players(sid)
-                flash("Servidor atualizado.", "ok")
+                flash(traduzir("flash.server_updated"), "ok")
                 return redirect(url_for("server_detail", sid=sid))
             except sqlite3.IntegrityError:
                 errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
@@ -2450,7 +2452,7 @@ def server_delete(sid: int):
     with conn:
         conn.execute("DELETE FROM servers WHERE id = ?", (sid,))
     invalidate_status(sid)
-    flash("Servidor removido do painel (o container nao foi tocado).", "ok")
+    flash(traduzir("flash.server_removed"), "ok")
     return redirect(url_for("dashboard"))
 
 
@@ -2589,9 +2591,9 @@ def console(sid: int):
     if request.method == "POST":
         command = request.form.get("command", "").strip()
         if not command:
-            flash("Digite um comando.", "error")
+            flash(traduzir("flash.type_a_command"), "error")
         elif len(command) > SHELL_MAX_LEN:
-            flash(f"Comando muito longo (limite de {SHELL_MAX_LEN} caracteres).", "error")
+            flash(traduzir("flash.command_too_long", n=SHELL_MAX_LEN), "error")
         else:
             # O comando inteiro vira UM argumento de 'bash -lc' no destino — o shell
             # local do ssh nunca o interpreta, entao pipes e aspas chegam intactos.
@@ -2979,7 +2981,7 @@ def files_save(sid: int):
         text = text.replace("\n", "\r\n")
     data = text.encode("utf-8")
     if len(data) > FILE_MAX_BYTES:
-        flash(f"Arquivo grande demais para salvar (limite de {FILE_MAX_BYTES // 1024} KB).", "error")
+        flash(traduzir("flash.file_too_big", kb=FILE_MAX_BYTES // 1024), "error")
         return redirect(url_for("files", sid=sid, file=path))
 
     # O arquivo pode ter crescido desde que a tela abriu (log, save do jogo). Gravar o
@@ -2987,11 +2989,8 @@ def files_save(sid: int):
     try:
         atual = stat_file(server, path)
         if atual["size"] > FILE_MAX_BYTES:
-            flash(
-                f"{path} tem {atual['size'] // 1024} KB e passou do limite de edicao"
-                f" ({FILE_MAX_BYTES // 1024} KB). Nada foi gravado — baixe o arquivo para mexer nele.",
-                "error",
-            )
+            flash(traduzir("flash.file_over_edit_limit", caminho=path,
+                              tem=atual["size"] // 1024, kb=FILE_MAX_BYTES // 1024), "error")
             return redirect(url_for("files", sid=sid, file=path))
     except RemoteError:
         pass  # arquivo novo, ou stat falhou: o proprio gravar reporta o erro
@@ -3002,13 +3001,13 @@ def files_save(sid: int):
             "edit-file", server, session.get("username", "?"),
             command=path, output=saida,
         )
-        flash(f"{path} salvo ({len(data)} bytes). Uma copia .bak foi guardada ao lado.", "ok")
+        flash(traduzir("flash.file_saved", caminho=path, bytes=len(data)), "ok")
     except RemoteError as exc:
         log_job(
             "edit-file", server, session.get("username", "?"),
             command=path, output=str(exc), status="error",
         )
-        flash(f"Nao consegui salvar: {exc}", "error")
+        flash(traduzir("flash.could_not_save", motivo=exc), "error")
 
     return redirect(url_for("files", sid=sid, file=path))
 
@@ -3029,26 +3028,26 @@ def files_delete(sid: int):
     # inteiro (a pasta so cai vazia, mas nem esse caso vale a pena permitir).
     raizes = {"/"} | {r.rstrip("/") or "/" for r in FILE_ROOTS}
     if path in raizes:
-        flash(f"{path} e uma pasta raiz do editor — nao da para apagar por aqui.", "error")
+        flash(traduzir("flash.is_a_root_folder", caminho=path), "error")
         return redirect(url_for("files", sid=sid, path=path))
 
     volta = parent_of(path)
     try:
         saida = delete_file(server, path)
         log_job("delete-file", server, session.get("username", "?"), command=path, output=saida)
-        flash(f"{saida} (sem copia .bak — apagar nao tem volta).", "ok")
+        flash(traduzir("flash.deleted_no_bak", saida=saida), "ok")
         # Arquivo fixado na tela Config que deixou de existir: tirar do cadastro evita
         # que a tela abra sempre num erro de leitura.
         registrados = config_paths(server)
         if path in registrados:
             _save_config_files(sid, [p for p in registrados if p != path])
-            flash(f"{path} tambem saiu dos arquivos da tela Config.", "ok")
+            flash(traduzir("flash.also_left_config", caminho=path), "ok")
     except RemoteError as exc:
         log_job(
             "delete-file", server, session.get("username", "?"),
             command=path, output=str(exc), status="error",
         )
-        flash(f"Nao consegui apagar: {exc}", "error")
+        flash(traduzir("flash.could_not_delete", motivo=exc), "error")
 
     return redirect(url_for("files", sid=sid, path=volta))
 
@@ -3109,14 +3108,14 @@ def files_upload(sid: int):
     voltar = url_for("files", sid=sid, path=destino_dir)
     enviado = request.files.get("arquivo")
     if not enviado or not enviado.filename:
-        flash("Escolha um arquivo para enviar.", "error")
+        flash(traduzir("flash.pick_a_file"), "error")
         return redirect(voltar)
 
     # O navegador manda o nome como o disco de origem o tinha: fica so a ultima parte,
     # para "../../etc/passwd" nao virar caminho.
     nome = enviado.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not nome or nome in (".", ".."):
-        flash("Nome de arquivo invalido.", "error")
+        flash(traduzir("flash.bad_file_name"), "error")
         return redirect(voltar)
 
     try:
@@ -3134,11 +3133,11 @@ def files_upload(sid: int):
     except RemoteError as exc:
         log_job("upload-file", server, session.get("username", "?"),
                 command=alvo, output=str(exc), status="error")
-        flash(f"Nao consegui enviar: {exc}", "error")
+        flash(traduzir("flash.could_not_upload", motivo=exc), "error")
         return redirect(voltar)
 
     log_job("upload-file", server, session.get("username", "?"), command=alvo, output=saida)
-    flash(f"{saida}. Se o arquivo ja existia, uma copia .bak ficou ao lado.", "ok")
+    flash(traduzir("flash.uploaded", saida=saida), "ok")
     return redirect(url_for("files", sid=sid, path=pasta))
 
 
@@ -3201,8 +3200,7 @@ def backup_create(sid: int):
     server = _server_or_404(sid)
     caminhos = backup_paths(server)
     if not caminhos:
-        flash("Este servidor nao tem o que guardar: preencha a pasta de configuracao"
-              " ou os caminhos de backup no cadastro.", "error")
+        flash(traduzir("flash.nothing_to_back_up"), "error")
         return redirect(url_for("backups", sid=sid))
     job_id = start_job(
         "backup", server, session.get("username", "?"),
@@ -3249,7 +3247,7 @@ def backup_delete(sid: int):
     except RemoteError as exc:
         log_job("delete-backup", server, session.get("username", "?"),
                 command=nome, output=str(exc), status="error")
-        flash(f"Nao consegui apagar: {exc}", "error")
+        flash(traduzir("flash.could_not_delete", motivo=exc), "error")
         return redirect(url_for("backups", sid=sid))
     log_job("delete-backup", server, session.get("username", "?"), command=nome, output=saida)
     flash(saida, "ok")
@@ -3415,17 +3413,17 @@ def config_files_edit(sid: int):
     if request.form.get("acao") == "remover":
         caminhos = [p for p in caminhos if p != path]
         _save_config_files(sid, caminhos)
-        flash(f"{path} saiu da tela de configuracao (o arquivo nao foi tocado).", "ok")
+        flash(traduzir("flash.left_config_screen", caminho=path), "ok")
         return redirect(url_for("config_quick", sid=sid))
 
     if path in caminhos:
         return redirect(url_for("config_quick", sid=sid, file=path))
     if len(caminhos) >= CONFIG_FILES_MAX:
-        flash(f"Limite de {CONFIG_FILES_MAX} arquivos por servidor.", "error")
+        flash(traduzir("flash.config_files_limit", n=CONFIG_FILES_MAX), "error")
         return redirect(url_for("config_quick", sid=sid))
     caminhos.append(path)
     _save_config_files(sid, caminhos)
-    flash(f"{path} agora abre direto na tela Config.", "ok")
+    flash(traduzir("flash.now_opens_in_config", caminho=path), "ok")
     return redirect(url_for("config_quick", sid=sid, file=path))
 
 
@@ -3529,11 +3527,11 @@ def config_save(sid: int):
     if erros_validacao:
         # Nada e gravado quando ha erro: salvar metade das alteracoes deixaria o arquivo
         # num estado que a pessoa nao pediu e nao sabe qual e.
-        flash("Nao salvei nada porque ha valor fora do limite - " + "; ".join(erros_validacao[:3]),
-              "error")
+        flash(traduzir("flash.value_out_of_range",
+                       erros="; ".join(erros_validacao[:3])), "error")
         return redirect(voltar)
     if not edits:
-        flash("Nenhum campo foi alterado.", "ok")
+        flash(traduzir("flash.no_field_changed"), "ok")
         return redirect(voltar)
 
     # O arquivo e relido AGORA: o jogo pode te-lo reescrito desde que a tela abriu, e as
@@ -3542,14 +3540,14 @@ def config_save(sid: int):
         doc, info = load_config_doc(server, path)
         texto = doc.apply(edits)
     except (RemoteError, gameconf.ConfigError) as exc:
-        flash(f"Nao consegui salvar: {exc}", "error")
+        flash(traduzir("flash.could_not_save", motivo=exc), "error")
         return redirect(voltar)
 
     if info["crlf"]:
         texto = texto.replace("\n", "\r\n")
     data = texto.encode("utf-8")
     if len(data) > FILE_MAX_BYTES:
-        flash(f"Arquivo grande demais para salvar (limite de {FILE_MAX_BYTES // 1024} KB).", "error")
+        flash(traduzir("flash.file_too_big", kb=FILE_MAX_BYTES // 1024), "error")
         return redirect(voltar)
 
     mexidas = ", ".join(dict.fromkeys(e.key for e in edits))
@@ -3558,13 +3556,13 @@ def config_save(sid: int):
     except RemoteError as exc:
         log_job("edit-config", server, session.get("username", "?"),
                 command=f"{path}: {mexidas}", output=str(exc), status="error")
-        flash(f"Nao consegui salvar: {exc}", "error")
+        flash(traduzir("flash.could_not_save", motivo=exc), "error")
         return redirect(voltar)
 
     log_job("edit-config", server, session.get("username", "?"),
             command=f"{path}: {mexidas}", output=f"{saida}\nalterado: {mexidas}")
-    flash(f"{len(edits)} configuracao(oes) salva(s) em {path}: {mexidas}."
-          " Uma copia .bak foi guardada ao lado.", "ok")
+    flash(traduzir("flash.settings_saved", n=len(edits), caminho=path,
+                       chaves=mexidas), "ok")
 
     # Quase todo jogo so le a configuracao no start — por isso o reiniciar mora aqui.
     if request.form.get("restart") == "1":
@@ -3640,8 +3638,7 @@ def broker_required(view):
             if request.path.startswith("/api/"):
                 return jsonify({"error": "ative a verificacao em duas etapas em Conta para "
                                          "usar o broker"}), 403
-            flash("O broker so pode ser usado por quem tem a verificacao em duas etapas "
-                  "ativa: ative-a em Conta.", "error")
+            flash(traduzir("flash.broker_needs_two_factor"), "error")
             return redirect(url_for("account_2fa"))
         return view(*args, **kwargs)
 
@@ -3753,7 +3750,7 @@ def catalog():
     try:
         jogos = broker_client.catalogo()
     except broker_client.BrokerError as erro:
-        flash(f"Broker: {erro.mensagem}", "error")
+        flash(traduzir("flash.broker_error", motivo=erro.mensagem), "error")
         jogos = []
     return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECEITAS, form={},
                            modelos=MODELOS_DE_JOGO)
@@ -3790,7 +3787,8 @@ def catalog_new():
         return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECEITAS,
                                form=request.form, modelos=MODELOS_DE_JOGO), 400
     _registra_acao_do_broker("broker-jogo", _ator(), dados.get("chave", ""), "Jogo adicionado ao catalogo.")
-    flash(f"Jogo {dados.get('nome', dados.get('chave', ''))} adicionado ao catalogo.", "ok")
+    flash(traduzir("flash.game_added",
+                       nome=dados.get("nome", dados.get("chave", ""))), "ok")
     return redirect(url_for("catalog"))
 
 
@@ -3802,7 +3800,7 @@ def instances_list():
         instancias = broker_client.instancias()
         jogos = [j for j in broker_client.catalogo() if j.get("criavel")]
     except broker_client.BrokerError as erro:
-        flash(f"Broker: {erro.mensagem}", "error")
+        flash(traduzir("flash.broker_error", motivo=erro.mensagem), "error")
         instancias, jogos = [], []
     ligados = {
         r["broker_id"]: r
@@ -3820,11 +3818,11 @@ def instance_new():
     try:
         resposta = broker_client.criar(jogo, nome, _ator())
     except broker_client.BrokerError as erro:
-        flash(f"Broker: {erro.mensagem}", "error")
+        flash(traduzir("flash.broker_error", motivo=erro.mensagem), "error")
         return redirect(url_for("instances_list"))
     op_id = str(resposta.get("operacao_id", ""))
     if not op_id:
-        flash("Broker: resposta sem identificador de operacao.", "error")
+        flash(traduzir("flash.broker_no_operation_id"), "error")
         return redirect(url_for("instances_list"))
     job_id = start_broker_job("broker-criar", _ator(), op_id, f"{jogo}: {nome}")
     return redirect(url_for("job_detail", jid=job_id))
@@ -3838,11 +3836,11 @@ def instance_deactivate(iid: int):
         broker_client.desativar(iid, _ator())
     except broker_client.BrokerError as erro:
         _registra_acao_do_broker("broker-desativar", _ator(), f"instancia {iid}", erro.mensagem, "error")
-        flash(f"Broker: {erro.mensagem}", "error")
+        flash(traduzir("flash.broker_error", motivo=erro.mensagem), "error")
     else:
         _registra_acao_do_broker("broker-desativar", _ator(), f"instancia {iid}",
                                  "Portas fechadas no firewall e container parado.")
-        flash("Instancia desativada: portas fechadas e container parado.", "ok")
+        flash(traduzir("flash.instance_deactivated"), "ok")
     return redirect(url_for("instances_list"))
 
 
@@ -3856,7 +3854,7 @@ def instance_remove(iid: int):
         broker_client.remover(iid, confirma, _ator(), somente_banco)
     except broker_client.BrokerError as erro:
         _registra_acao_do_broker("broker-remover", _ator(), f"instancia {iid}", erro.mensagem, "error")
-        flash(f"Broker: {erro.mensagem}", "error")
+        flash(traduzir("flash.broker_error", motivo=erro.mensagem), "error")
         return redirect(url_for("instances_list"))
     conn = db()
     with conn:
@@ -3865,7 +3863,7 @@ def instance_remove(iid: int):
     _registra_acao_do_broker(
         "broker-remover", _ator(), f"instancia {iid}",
         "So o registro foi esquecido." if somente_banco else "Container destruido e servidor removido do painel.")
-    flash("Instancia removida.", "ok")
+    flash(traduzir("flash.instance_removed"), "ok")
     return redirect(url_for("instances_list"))
 
 
@@ -3973,7 +3971,7 @@ def schedule_new(sid: int):
             (sid, dados["action"], dados["kind"], dados["hour"], dados["minute"],
              dados["weekday"], dados["every_hours"], inicio, now_iso()),
         )
-    flash(f"{job_label(dados['action'])} agendado.", "ok")
+    flash(traduzir("flash.task_scheduled", tarefa=job_label(dados["action"])), "ok")
     return redirect(url_for("schedules", sid=sid))
 
 
@@ -3985,7 +3983,7 @@ def schedule_toggle(aid: int):
     with conn:
         conn.execute("UPDATE schedules SET enabled = ? WHERE id = ?",
                      (0 if sched["enabled"] else 1, aid))
-    flash("Tarefa desligada." if sched["enabled"] else "Tarefa ligada.", "ok")
+    flash(traduzir("flash.task_off" if sched["enabled"] else "flash.task_on"), "ok")
     return redirect(url_for("schedules", sid=sched["server_id"]))
 
 
@@ -3996,7 +3994,7 @@ def schedule_delete(aid: int):
     conn = db()
     with conn:
         conn.execute("DELETE FROM schedules WHERE id = ?", (aid,))
-    flash("Tarefa removida.", "ok")
+    flash(traduzir("flash.task_removed"), "ok")
     return redirect(url_for("schedules", sid=sched["server_id"]))
 
 
@@ -4007,7 +4005,7 @@ def schedule_run(aid: int):
     sched = _agendamento_ou_404(aid)
     job_id = dispara_agendamento(db(), sched)
     if not job_id:
-        flash("Nao consegui disparar (servidor sem caminhos de backup?).", "error")
+        flash(traduzir("flash.could_not_trigger"), "error")
         return redirect(url_for("schedules", sid=sched["server_id"]))
     return redirect(url_for("job_detail", jid=job_id))
 
@@ -4196,14 +4194,14 @@ def account():
         ).fetchone()
         erro = valida_senha(new, confirm)
         if not row or not verify_password(current, row["password_hash"]):
-            flash("Senha atual incorreta.", "error")
+            flash(traduzir("flash.wrong_current_password"), "error")
         elif erro:
             flash(erro, "error")
         else:
             conn = db()
             with conn:
                 conn.execute(SQL_SET_PASSWORD, (hash_password(new), session["uid"]))
-            flash("Senha alterada.", "ok")
+            flash(traduzir("flash.password_changed"), "ok")
             return redirect(url_for("dashboard"))
     return render_template("account.html", segundo_fator=_estado_do_2fa(),
                            exige_2fa=REQUIRE_2FA, broker_ligado=ALLOW_BROKER)
@@ -4260,11 +4258,11 @@ def account_2fa():
         segredo = session.get("totp_pendente", "")
         passo = totp.verify(segredo, request.form.get("codigo", ""), time.time()) if segredo else None
         if passo is None:
-            flash("Codigo incorreto. Confira o horario do celular e tente de novo.", "error")
+            flash(traduzir("flash.wrong_code"), "error")
         else:
             codigos = _guarda_o_segundo_fator(session["uid"], segredo, passo)
             session.pop("totp_pendente", None)
-            flash("Verificacao em duas etapas ativada.", "ok")
+            flash(traduzir("flash.two_factor_on"), "ok")
             return render_template("account_2fa_codigos.html", codigos=codigos)
     # O segredo fica na SESSAO (cookie assinado) ate ser confirmado; recarregar a pagina mostra
     # o mesmo, e abandonar a tela nao deixa nada meio ligado no banco.
@@ -4280,14 +4278,14 @@ def account_2fa():
 @login_required
 def account_2fa_off():
     if REQUIRE_2FA:
-        flash("Este painel exige o segundo fator: nao da para desativar.", "error")
+        flash(traduzir("account.two_factor_required"), "error")
         return redirect(url_for("account"))
     row, erro = _senha_e_codigo_conferem(session["uid"])
     if erro:
         flash(erro, "error")
         return redirect(url_for("account"))
     _apaga_o_segundo_fator(row["id"])
-    flash("Verificacao em duas etapas desativada.", "ok")
+    flash(traduzir("flash.two_factor_off"), "ok")
     return redirect(url_for("account"))
 
 
@@ -4304,7 +4302,7 @@ def account_2fa_codes():
     with conn:
         conn.execute("UPDATE users SET totp_recovery = ? WHERE id = ?",
                      (json.dumps([totp.hash_recovery_code(c) for c in codigos]), row["id"]))
-    flash("Codigos novos gerados: os antigos deixaram de valer.", "ok")
+    flash(traduzir("flash.new_codes"), "ok")
     return render_template("account_2fa_codigos.html", codigos=codigos)
 
 
@@ -4382,7 +4380,7 @@ def alerts_save():
             continue
         valor = (request.form.get(campo, "") or "").strip()
         if not valor.isdigit() or not 50 <= int(valor) <= 100:
-            flash(f"O aviso de {nome} vale de 50% a 100%.", "error")
+            flash(traduzir("flash.threshold_range", nome=nome), "error")
             return redirect(url_for("alerts"))
         novos.append((chave, valor))
     # So grava depois de validar todos: meio salvo e pior que nada salvo, porque a tela
@@ -4390,7 +4388,7 @@ def alerts_save():
     for chave, valor in novos:
         config_set(conn, chave, valor)
     _zera_linha_de_base()
-    flash("Preferencias salvas.", "ok")
+    flash(traduzir("flash.preferences_saved"), "ok")
     return redirect(url_for("alerts"))
 
 
@@ -4420,11 +4418,11 @@ def alerts_hook_new():
     conn = db()
     quantos = conn.execute("SELECT COUNT(*) AS n FROM webhooks").fetchone()["n"]
     if quantos >= WEBHOOK_MAX:
-        flash(f"Limite de {WEBHOOK_MAX} destinos atingido.", "error")
+        flash(traduzir("flash.destination_limit", n=WEBHOOK_MAX), "error")
         return redirect(url_for("alerts"))
     dados, erro = _le_form_webhook()
     if erro or not dados["url"]:
-        flash(erro or "Informe a URL do webhook.", "error")
+        flash(erro or traduzir("flash.need_webhook_url"), "error")
         return redirect(url_for("alerts"))
     with conn:
         conn.execute(
@@ -4434,7 +4432,7 @@ def alerts_hook_new():
              dados["ativo"], now_iso()),
         )
     _zera_linha_de_base()
-    flash("Destino adicionado.", "ok")
+    flash(traduzir("flash.destination_added"), "ok")
     return redirect(url_for("alerts"))
 
 
@@ -4444,7 +4442,7 @@ def alerts_hook_save(hid: int):
     conn = db()
     atual = conn.execute("SELECT url FROM webhooks WHERE id = ?", (hid,)).fetchone()
     if not atual:
-        flash("Destino nao encontrado.", "error")
+        flash(traduzir("flash.destination_not_found"), "error")
         return redirect(url_for("alerts"))
     dados, erro = _le_form_webhook()
     if erro:
@@ -4459,7 +4457,7 @@ def alerts_hook_save(hid: int):
             (dados["nome"] or "Destino", url, dados["eventos"], dados["ativo"], hid),
         )
     _zera_linha_de_base()
-    flash("Destino salvo.", "ok")
+    flash(traduzir("flash.destination_saved"), "ok")
     return redirect(url_for("alerts"))
 
 
@@ -4469,7 +4467,7 @@ def alerts_hook_del(hid: int):
     conn = db()
     with conn:
         conn.execute("DELETE FROM webhooks WHERE id = ?", (hid,))
-    flash("Destino removido.", "ok")
+    flash(traduzir("flash.destination_removed"), "ok")
     return redirect(url_for("alerts"))
 
 
@@ -4482,13 +4480,13 @@ def alerts_hook_test(hid: int):
         "SELECT nome, url FROM webhooks WHERE id = ?", (hid,)
     ).fetchone()
     if not row or not row["url"]:
-        flash("Destino nao encontrado.", "error")
+        flash(traduzir("flash.destination_not_found"), "error")
         return redirect(url_for("alerts"))
     # Se ha uma URL digitada no formulario, testa ELA: o ponto do botao e conferir a URL
     # nova antes de gravar, e nao repetir o teste da que ja estava salva.
     digitada = (request.form.get("url", "") or "").strip()[:400]
     if digitada and not URL_RE.match(digitada):
-        flash("URL invalida (comece com http:// ou https://).", "error")
+        flash(traduzir("flash.bad_url"), "error")
         return redirect(url_for("alerts"))
     erro = envia_webhook(
         digitada or row["url"],
@@ -4497,7 +4495,8 @@ def alerts_hook_test(hid: int):
     )
     nome = row["nome"] or "destino"
     flash(
-        f"{nome}: {erro}" if erro else f"Mensagem enviada para {nome} - confira o canal.",
+        traduzir("flash.destination_test_failed", nome=nome, motivo=erro) if erro
+        else traduzir("flash.destination_test_sent", nome=nome),
         "error" if erro else "ok",
     )
     return redirect(url_for("alerts"))
@@ -4571,10 +4570,10 @@ def user_new():
     except sqlite3.IntegrityError:
         # username e UNIQUE: e o unico jeito de dois admins criarem o mesmo nome ao
         # mesmo tempo sem um sobrescrever o outro.
-        flash(f"Ja existe um usuario chamado '{username}'.", "error")
+        flash(traduzir("flash.user_exists", usuario=username), "error")
         return redirect(url_for("users_list"))
-    flash(f"Usuario '{username}' criado como {ROLE_LABELS[role].lower()}."
-          " Passe a senha para ele e peca para troca-la na tela Conta.", "ok")
+    flash(traduzir("flash.user_created", usuario=username,
+                       papel=traduzir(ROLE_LABELS[role]).lower()), "ok")
     return redirect(url_for("users_list"))
 
 
@@ -4587,17 +4586,18 @@ def user_role(uid: int):
         abort(400, "Papel invalido.")
     if uid == session.get("uid"):
         # Rebaixar a si mesmo tranca a pessoa fora desta tela no mesmo clique.
-        flash("Voce nao pode mudar o proprio papel — peca a outro administrador.", "error")
+        flash(traduzir("flash.cannot_change_own_role"), "error")
     elif role == alvo["role"]:
-        flash(f"'{alvo['username']}' ja e {ROLE_LABELS[role].lower()}.", "ok")
+        flash(traduzir("flash.user_already_is", usuario=alvo["username"],
+                       papel=traduzir(ROLE_LABELS[role]).lower()), "ok")
     elif alvo["role"] == ROLE_ADMIN and conta_admins(excluindo=uid) == 0:
-        flash("Este e o unico administrador: promova outra pessoa antes de rebaixa-lo.",
-              "error")
+        flash(traduzir("flash.only_admin_demote"), "error")
     else:
         conn = db()
         with conn:
             conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, uid))
-        flash(f"'{alvo['username']}' agora e {ROLE_LABELS[role].lower()}.", "ok")
+        flash(traduzir("flash.user_now_is", usuario=alvo["username"],
+                       papel=traduzir(ROLE_LABELS[role]).lower()), "ok")
     return redirect(url_for("users_list"))
 
 
@@ -4613,7 +4613,7 @@ def user_password(uid: int):
     conn = db()
     with conn:
         conn.execute(SQL_SET_PASSWORD, (hash_password(request.form.get("new", "")), uid))
-    flash(f"Senha de '{alvo['username']}' redefinida.", "ok")
+    flash(traduzir("flash.password_reset", usuario=alvo["username"]), "ok")
     return redirect(url_for("users_list"))
 
 
@@ -4624,10 +4624,10 @@ def user_2fa_off(uid: int):
     entra so com a senha e ativa de novo. Nao vale para si mesmo (use a tela Conta)."""
     alvo = _usuario_ou_404(uid)
     if uid == session.get("uid"):
-        flash("Para desligar o seu proprio 2FA use a tela Conta.", "error")
+        flash(traduzir("flash.own_two_factor_in_account"), "error")
     else:
         _apaga_o_segundo_fator(uid)
-        flash(f"Verificacao em duas etapas de '{alvo['username']}' desligada.", "ok")
+        flash(traduzir("flash.user_two_factor_off", usuario=alvo["username"]), "ok")
     return redirect(url_for("users_list"))
 
 
@@ -4636,15 +4636,15 @@ def user_2fa_off(uid: int):
 def user_delete(uid: int):
     alvo = _usuario_ou_404(uid)
     if uid == session.get("uid"):
-        flash("Voce nao pode remover a propria conta.", "error")
+        flash(traduzir("flash.cannot_remove_self"), "error")
     elif alvo["role"] == ROLE_ADMIN and conta_admins(excluindo=uid) == 0:
-        flash("Nao da para remover o unico administrador do painel.", "error")
+        flash(traduzir("flash.cannot_remove_only_admin"), "error")
     else:
         conn = db()
         with conn:
             conn.execute("DELETE FROM users WHERE id = ?", (uid,))
         # A sessao dele morre no proximo clique: o login_required confere o banco.
-        flash(f"Usuario '{alvo['username']}' removido.", "ok")
+        flash(traduzir("flash.user_removed", usuario=alvo["username"]), "ok")
     return redirect(url_for("users_list"))
 
 
