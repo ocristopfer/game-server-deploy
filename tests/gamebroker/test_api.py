@@ -153,4 +153,4 @@ def test_erro_interno_nao_vaza_detalhe(http, ambiente):
 
 def test_ator_da_auditoria_vem_do_cabecalho(http, ambiente):
     http.post("/v1/instances", headers={**AUTH, "X-Actor": "zeca"}, json={"game": "beta", "name": "Um"})
-    assert "zeca" in {a["ator"] for a in ambiente.db.audit_trail()}
+    assert "zeca" in {a["actor"] for a in ambiente.db.audit_trail()}

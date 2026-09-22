@@ -153,11 +153,11 @@ class Service:
             self.opnsense.open_ports(inst["ctid"], inst["ip"], ports)
         except Exception as error:  # noqa: BLE001
             self._undo(op_id, inst, created, str(error))
-            self.db.audit(actor, "criar", inst["nome"], "falhou", str(error))
+            self.db.audit(actor, "criar", inst["name"], "falhou", str(error))
             return
         self.db.set_state(instance_id, ESTADO_ATIVA)
         self.db.finish_operation(op_id, OP_OK, record_for_the_panel(inst, game, ports))
-        self.db.audit(actor, "criar", inst["nome"], "ok", f"ctid {inst['ctid']}")
+        self.db.audit(actor, "criar", inst["name"], "ok", f"ctid {inst['ctid']}")
 
     def _logger(self, op_id: str) -> Callable[[str], None]:
         return lambda line: self.db.append_log(op_id, line)
@@ -187,28 +187,28 @@ class Service:
     def deactivate(self, instance_id: int, actor: str) -> dict:
         actor = _actor_of(actor)
         inst = self._instance(instance_id)
-        if inst["estado"] != ESTADO_ATIVA:
+        if inst["state"] != ESTADO_ATIVA:
             raise Conflict("so uma instancia ativa pode ser desativada")
         self._require_from_broker(inst["ctid"])
         self.opnsense.close_ports(inst["ctid"])
         self.proxmox.stop(inst["ctid"])
         self.db.set_state(instance_id, ESTADO_DESATIVADA)
-        self.db.audit(actor, "desativar", inst["nome"], "ok")
+        self.db.audit(actor, "desativar", inst["name"], "ok")
         return {"id": instance_id, "state": ESTADO_DESATIVADA}
 
     def remove(self, instance_id: int, confirmation: object, actor: str,
                 db_only: bool = False) -> dict:
         actor = _actor_of(actor)
         inst = self._instance(instance_id)
-        if inst["estado"] not in (ESTADO_DESATIVADA, ESTADO_FALHOU):
+        if inst["state"] not in (ESTADO_DESATIVADA, ESTADO_FALHOU):
             raise Conflict("desative a instancia antes de remover")
-        if confirmation != inst["nome"]:
+        if confirmation != inst["name"]:
             raise ValidationError("confirma", "digite o nome exato da instancia para confirmar")
         self.opnsense.close_ports(inst["ctid"])
         if not db_only:
             self._destroy_ct(inst)
         self.db.delete_instance(instance_id)
-        self.db.audit(actor, "esquecer" if db_only else "remover", inst["nome"], "ok")
+        self.db.audit(actor, "esquecer" if db_only else "remover", inst["name"], "ok")
         return {"id": instance_id, "removed": True, "db_only": db_only}
 
     def _destroy_ct(self, inst: dict) -> None:
@@ -216,7 +216,7 @@ class Service:
         if self.proxmox.belongs_to_broker(ctid):
             self.proxmox.destroy(ctid)
             return
-        if inst["estado"] == ESTADO_FALHOU:
+        if inst["state"] == ESTADO_FALHOU:
             return  # a criacao nem chegou a existir no pool: nao ha CT nosso para destruir
         # "Nao esta no pool" pode ser CT apagado a mao OU CT movido/de outro dono, e o token
         # so enxerga o pool: os dois casos sao indistinguiveis (ambos dao 403). Liberar o
@@ -241,7 +241,7 @@ class Service:
 def record_for_the_panel(inst: dict, game: Game, ports: list[AllocatedPort]) -> dict:
     """Os campos de `ServidorDoDeploy` do painel: com isso ele chama `ensure_server`."""
     return {
-        "broker_id": inst["id"], "name": inst["nome"], "host": inst["ip"],
+        "broker_id": inst["id"], "name": inst["name"], "host": inst["ip"],
         "service": f"{game.key}.service",
         "game_port": alocador.port_with_role(ports, alocador.ROLE_GAME),
         "query_port": alocador.port_with_role(ports, alocador.ROLE_QUERY),

@@ -22,7 +22,7 @@ def test_criar_percorre_o_fluxo_inteiro(ambiente):
     assert op["state"] == OP_OK
     assert "abrindo as portas" in op["log"]
     inst = ambiente.db.instance(resposta["instance_id"])
-    assert inst["estado"] == ESTADO_ATIVA
+    assert inst["state"] == ESTADO_ATIVA
     assert (inst["ctid"], inst["ip"]) == (300, "10.0.0.30")
     assert inst["hostname"] == "alfa-300"
     assert ambiente.proxmox.chamadas == [("criar_ct", 300), ("iniciar", 300)]
@@ -58,8 +58,8 @@ def test_segunda_instancia_pega_outro_ctid_e_ip(ambiente):
 
 def test_jogo_deslocavel_recebe_portas_da_faixa_do_broker(ambiente):
     resposta = _criar(ambiente, "beta", "um")
-    ports = ambiente.db.instance(resposta["instance_id"])["portas"]
-    assert [p["numero"] for p in ports] == [9000, 9001], "faixa propria, nao as portas padrao 8001/8002"
+    ports = ambiente.db.instance(resposta["instance_id"])["ports"]
+    assert [p["number"] for p in ports] == [9000, 9001], "faixa propria, nao as portas padrao 8001/8002"
     resultado = ambiente.servico.operation(resposta["operation_id"])["result"]
     assert (resultado["game_port"], resultado["query_port"]) == (9000, 9001)
 
@@ -67,14 +67,14 @@ def test_jogo_deslocavel_recebe_portas_da_faixa_do_broker(ambiente):
 def test_mesmo_jogo_deslocavel_duas_vezes_pega_o_proximo_bloco(ambiente):
     _criar(ambiente, "beta", "um")
     resposta = _criar(ambiente, "beta", "dois")
-    ports = ambiente.db.instance(resposta["instance_id"])["portas"]
-    assert [p["numero"] for p in ports] == [9002, 9003]
+    ports = ambiente.db.instance(resposta["instance_id"])["ports"]
+    assert [p["number"] for p in ports] == [9002, 9003]
 
 
 def test_faixa_do_broker_pula_porta_que_o_opnsense_ja_redireciona(ambiente):
     ambiente.opnsense.externas = {(9000, "udp")}
-    ports = ambiente.db.instance(_criar(ambiente, "beta")["instance_id"])["portas"]
-    assert [p["numero"] for p in ports] == [9001, 9002]
+    ports = ambiente.db.instance(_criar(ambiente, "beta")["instance_id"])["ports"]
+    assert [p["number"] for p in ports] == [9001, 9002]
 
 
 # --- CTID que acompanha o IP ---------------------------------------------------
@@ -231,7 +231,7 @@ def test_se_nem_o_desfazer_funciona_a_reserva_fica_como_falhou(ambiente):
     ambiente.proxmox.destroy = destruir_quebrado
     resposta = _criar(ambiente)
     inst = ambiente.db.instance(resposta["instance_id"])
-    assert inst["estado"] == ESTADO_FALHOU
+    assert inst["state"] == ESTADO_FALHOU
     assert "nao consegui desfazer" in ambiente.servico.operation(resposta["operation_id"])["log"]
     # IP e portas continuam bloqueados: um novo pedido nao pode pisar em cima.
     ambiente.network.ocupados = set()
@@ -246,7 +246,7 @@ def test_desativar_fecha_o_firewall_e_para_o_ct(ambiente):
     ambiente.servico.deactivate(resposta["instance_id"], "admin")
     assert ambiente.opnsense.regras == {}
     assert 300 in ambiente.proxmox.parados
-    assert ambiente.db.instance(resposta["instance_id"])["estado"] == ESTADO_DESATIVADA
+    assert ambiente.db.instance(resposta["instance_id"])["state"] == ESTADO_DESATIVADA
 
 
 def test_desativar_duas_vezes_e_conflito(ambiente):
@@ -306,7 +306,7 @@ def test_somente_banco_limpa_o_registro_sem_tocar_no_proxmox(ambiente):
     assert ambiente.db.instance(resposta["instance_id"]) is None
     assert ambiente.proxmox.chamadas == []
     assert ambiente.proxmox.cts, "o CT continua la: so o registro foi esquecido"
-    assert "esquecer" in {a["verbo"] for a in ambiente.db.audit_trail()}
+    assert "esquecer" in {a["verb"] for a in ambiente.db.audit_trail()}
 
 
 def test_somente_banco_tambem_exige_desativar_e_o_nome(ambiente):
@@ -339,7 +339,7 @@ def test_instancia_desconhecida(ambiente):
 def test_auditoria_registra_quem_fez_o_que(ambiente):
     resposta = _criar(ambiente, actor="zeca")
     ambiente.servico.deactivate(resposta["instance_id"], "zeca")
-    verbos = [(a["ator"], a["verbo"], a["resultado"]) for a in ambiente.db.audit_trail()]
+    verbos = [(a["actor"], a["verb"], a["result"]) for a in ambiente.db.audit_trail()]
     assert ("zeca", "criar", "aceito") in verbos
     assert ("zeca", "criar", "ok") in verbos
     assert ("zeca", "desativar", "ok") in verbos
@@ -347,16 +347,16 @@ def test_auditoria_registra_quem_fez_o_que(ambiente):
 
 def test_ator_estranho_vira_desconhecido(ambiente):
     _criar(ambiente, actor="a b; DROP TABLE")
-    assert {a["ator"] for a in ambiente.db.audit_trail()} == {"desconhecido"}
+    assert {a["actor"] for a in ambiente.db.audit_trail()} == {"desconhecido"}
 
 
 def test_auditoria_e_append_only(ambiente):
     _criar(ambiente)
     with sqlite3.connect(ambiente.db._caminho) as conn:
         with pytest.raises(sqlite3.DatabaseError, match="append-only"):
-            conn.execute("UPDATE auditoria SET resultado = 'adulterado'")
+            conn.execute("UPDATE audit SET result = 'adulterado'")
         with pytest.raises(sqlite3.DatabaseError, match="append-only"):
-            conn.execute("DELETE FROM auditoria")
+            conn.execute("DELETE FROM audit")
 
 
 def test_banco_recusa_reserva_duplicada_mesmo_sem_a_trava(ambiente):

@@ -19,30 +19,33 @@ def port(row: Any) -> dict:
     """Uma porta alocada, como a API a mostra."""
     return {
         "base": row["base"],
-        "number": row["numero"],
+        "number": row["number"],
         "proto": row["proto"],
-        "role": row["papel"],
+        "role": row["role"],
     }
 
 
 def instance(row: Any) -> dict:
     """Uma instancia de jogo, como a API a mostra.
 
-    `detalhe` sai como `detail` e pode conter a mensagem de um erro de criacao — ele e
-    para a pessoa ler no painel, nao para o painel decidir nada com ele.
+    Hoje os nomes batem com os da coluna, porque o banco foi traduzido logo depois desta
+    camada nascer. O valor dela nao e a traducao: e a LISTA ser fixa. Um `SELECT *` leva
+    para o JSON qualquer coluna nova no dia em que ela for criada, e ai ela e contrato
+    sem ninguem ter decidido — foi assim que o formato de fio e o esquema do banco
+    ficaram amarrados um no outro da primeira vez.
     """
     return {
         "id": row["id"],
         "ctid": row["ctid"],
         "ip": row["ip"],
-        "game": row["jogo"],
-        "name": row["nome"],
+        "game": row["game"],
+        "name": row["name"],
         "hostname": row["hostname"],
-        "state": row["estado"],
-        "created_by": row["criado_por"],
-        "created_at": row["criado_em"],
-        "detail": row["detalhe"],
-        "ports": [port(p) for p in row.get("portas", ())],
+        "state": row["state"],
+        "created_by": row["created_by"],
+        "created_at": row["created_at"],
+        "detail": row["detail"],
+        "ports": [port(p) for p in row.get("ports", ())],
     }
 
 
@@ -54,11 +57,11 @@ def operation(row: Any) -> dict:
     """
     return {
         "id": row["id"],
-        "instance_id": row["instancia_id"],
-        "kind": row["tipo"],
-        "state": row["estado"],
+        "instance_id": row["instance_id"],
+        "kind": row["kind"],
+        "state": row["state"],
         "log": row["log"],
-        "result": row["resultado"],
-        "started_at": row["iniciada_em"],
-        "finished_at": row["terminada_em"],
+        "result": row["result"],
+        "started_at": row["started_at"],
+        "finished_at": row["finished_at"],
     }

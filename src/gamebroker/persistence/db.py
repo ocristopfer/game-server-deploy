@@ -28,52 +28,113 @@ OP_ERRO = "erro"
 LOG_MAX = 20000
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS instancias (
+CREATE TABLE IF NOT EXISTS instances (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ctid INTEGER NOT NULL UNIQUE,
   ip TEXT NOT NULL UNIQUE,
-  jogo TEXT NOT NULL,
-  nome TEXT NOT NULL,
+  game TEXT NOT NULL,
+  name TEXT NOT NULL,
   hostname TEXT NOT NULL,
-  estado TEXT NOT NULL,
-  criado_por TEXT NOT NULL,
-  criado_em TEXT NOT NULL,
-  detalhe TEXT NOT NULL DEFAULT ''
+  state TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT ''
 );
-CREATE UNIQUE INDEX IF NOT EXISTS instancias_nome ON instancias(nome);
-CREATE TABLE IF NOT EXISTS portas (
-  instancia_id INTEGER NOT NULL REFERENCES instancias(id) ON DELETE CASCADE,
+CREATE UNIQUE INDEX IF NOT EXISTS instances_name ON instances(name);
+CREATE TABLE IF NOT EXISTS ports (
+  instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
   base INTEGER NOT NULL,
-  numero INTEGER NOT NULL,
+  number INTEGER NOT NULL,
   proto TEXT NOT NULL,
-  papel TEXT NOT NULL,
-  PRIMARY KEY (instancia_id, numero, proto)
+  role TEXT NOT NULL,
+  PRIMARY KEY (instance_id, number, proto)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS portas_externas ON portas(numero, proto);
-CREATE TABLE IF NOT EXISTS operacoes (
+CREATE UNIQUE INDEX IF NOT EXISTS ports_external ON ports(number, proto);
+CREATE TABLE IF NOT EXISTS operations (
   id TEXT PRIMARY KEY,
-  instancia_id INTEGER,
-  tipo TEXT NOT NULL,
-  estado TEXT NOT NULL,
+  instance_id INTEGER,
+  kind TEXT NOT NULL,
+  state TEXT NOT NULL,
   log TEXT NOT NULL DEFAULT '',
-  resultado TEXT NOT NULL DEFAULT '',
-  iniciada_em TEXT NOT NULL,
-  terminada_em TEXT NOT NULL DEFAULT ''
+  result TEXT NOT NULL DEFAULT '',
+  started_at TEXT NOT NULL,
+  finished_at TEXT NOT NULL DEFAULT ''
 );
-CREATE TABLE IF NOT EXISTS auditoria (
+CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  quando TEXT NOT NULL,
-  ator TEXT NOT NULL,
-  verbo TEXT NOT NULL,
-  alvo TEXT NOT NULL,
-  resultado TEXT NOT NULL,
-  detalhe TEXT NOT NULL DEFAULT ''
+  at TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  verb TEXT NOT NULL,
+  target TEXT NOT NULL,
+  result TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT ''
 );
-CREATE TRIGGER IF NOT EXISTS auditoria_sem_update BEFORE UPDATE ON auditoria
-BEGIN SELECT RAISE(ABORT, 'auditoria e append-only'); END;
-CREATE TRIGGER IF NOT EXISTS auditoria_sem_delete BEFORE DELETE ON auditoria
-BEGIN SELECT RAISE(ABORT, 'auditoria e append-only'); END;
+CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit
+BEGIN SELECT RAISE(ABORT, 'a auditoria e append-only'); END;
+CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit
+BEGIN SELECT RAISE(ABORT, 'a auditoria e append-only'); END;
 """
+
+# O banco do broker ANTES de falar ingles. A migration corre no start, uma vez.
+#
+# Aqui as TABELAS tambem mudam de nome. A ordem NAO importa: o `RENAME TO` do SQLite
+# reescreve a `REFERENCES` de quem aponta para a tabela renomeada, venha antes ou depois
+# (conferido nos dois sentidos, e ha teste para a chave estrangeira continuar valendo).
+# Isso so e verdade com `legacy_alter_table` desligado, que e o padrao desde o 3.25.
+_RENAME_TABLES = (
+    ("instancias", "instances"),
+    ("portas", "ports"),
+    ("operacoes", "operations"),
+    ("auditoria", "audit"),
+)
+_RENAME_COLUMNS = (
+    ("instances", "jogo", "game"),
+    ("instances", "nome", "name"),
+    ("instances", "estado", "state"),
+    ("instances", "criado_por", "created_by"),
+    ("instances", "criado_em", "created_at"),
+    ("instances", "detalhe", "detail"),
+    ("ports", "instancia_id", "instance_id"),
+    ("ports", "numero", "number"),
+    ("ports", "papel", "role"),
+    ("operations", "instancia_id", "instance_id"),
+    ("operations", "tipo", "kind"),
+    ("operations", "estado", "state"),
+    ("operations", "resultado", "result"),
+    ("operations", "iniciada_em", "started_at"),
+    ("operations", "terminada_em", "finished_at"),
+    ("audit", "quando", "at"),
+    ("audit", "ator", "actor"),
+    ("audit", "verbo", "verb"),
+    ("audit", "alvo", "target"),
+    ("audit", "resultado", "result"),
+    ("audit", "detalhe", "detail"),
+)
+# Indices e triggers carregam o nome velho no corpo: renomear a tabela nao os reescreve
+# por inteiro, e deixar os dois lados vivos daria indice duplicado.
+_DROP_OLD = (
+    "DROP INDEX IF EXISTS instancias_nome",
+    "DROP INDEX IF EXISTS portas_externas",
+    "DROP TRIGGER IF EXISTS auditoria_sem_update",
+    "DROP TRIGGER IF EXISTS auditoria_sem_delete",
+)
+
+
+def _migrate_names(conn: sqlite3.Connection) -> None:
+    """Leva um banco antigo para os nomes em ingles. Nao faz nada num banco novo."""
+    tabelas = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if not tabelas & {velho for velho, _ in _RENAME_TABLES}:
+        return
+    for comando in _DROP_OLD:
+        conn.execute(comando)
+    for velho, novo in _RENAME_TABLES:
+        if velho in tabelas and novo not in tabelas:
+            conn.execute(f"ALTER TABLE {velho} RENAME TO {novo}")
+    for tabela, velho, novo in _RENAME_COLUMNS:
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tabela})")}
+        if velho in cols and novo not in cols:
+            conn.execute(f"ALTER TABLE {tabela} RENAME COLUMN {velho} TO {novo}")
 
 
 def now() -> str:
@@ -85,6 +146,10 @@ class Db:
         self._caminho = path
         self._relogio = clock
         with self._connection() as conn:
+            # A migration vem ANTES do SCHEMA: com as tabelas velhas ainda de pe, o
+            # `CREATE TABLE IF NOT EXISTS` criaria as novas VAZIAS ao lado, e o rename
+            # depois nao teria para onde ir.
+            _migrate_names(conn)
             conn.executescript(SCHEMA)
 
     @contextmanager
@@ -114,9 +179,9 @@ class Db:
 
     def taken(self) -> tuple[set[int], set[str], set[tuple[int, str]]]:
         with self._connection() as conn:
-            ctids = {r["ctid"] for r in conn.execute("SELECT ctid FROM instancias")}
-            ips = {r["ip"] for r in conn.execute("SELECT ip FROM instancias")}
-            ports = {(r["numero"], r["proto"]) for r in conn.execute("SELECT numero, proto FROM portas")}
+            ctids = {r["ctid"] for r in conn.execute("SELECT ctid FROM instances")}
+            ips = {r["ip"] for r in conn.execute("SELECT ip FROM instances")}
+            ports = {(r["number"], r["proto"]) for r in conn.execute("SELECT number, proto FROM ports")}
         return ctids, ips, ports
 
     def reserve(self, ctid: int, ip: str, game: str, name: str, hostname: str, actor: str,
@@ -124,12 +189,12 @@ class Db:
         try:
             with self._transaction() as conn:
                 cur = conn.execute(
-                    "INSERT INTO instancias (ctid, ip, jogo, nome, hostname, estado, criado_por, criado_em)"
+                    "INSERT INTO instances (ctid, ip, game, name, hostname, state, created_by, created_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (ctid, ip, game, name, hostname, ESTADO_RESERVADA, actor, self._relogio()))
                 instance_id = int(cur.lastrowid or 0)
                 conn.executemany(
-                    "INSERT INTO portas (instancia_id, base, numero, proto, papel) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO ports (instance_id, base, number, proto, role) VALUES (?, ?, ?, ?, ?)",
                     [(instance_id, p.base, p.number, p.proto, p.role) for p in ports])
         except sqlite3.IntegrityError as error:
             raise Conflict(f"reserva recusada pelo banco (nome, CTID, IP ou porta ja em uso): {error}") from None
@@ -139,33 +204,33 @@ class Db:
 
     def instance(self, instance_id: int) -> dict | None:
         with self._connection() as conn:
-            row = conn.execute("SELECT * FROM instancias WHERE id = ?", (instance_id,)).fetchone()
+            row = conn.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
             return self._with_ports(conn, row) if row else None
 
     def instances(self) -> list[dict]:
         with self._connection() as conn:
-            return [self._with_ports(conn, r) for r in conn.execute("SELECT * FROM instancias ORDER BY id")]
+            return [self._with_ports(conn, r) for r in conn.execute("SELECT * FROM instances ORDER BY id")]
 
     @staticmethod
     def _with_ports(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
         data = dict(row)
-        data["portas"] = [dict(p) for p in conn.execute(
-            "SELECT base, numero, proto, papel FROM portas WHERE instancia_id = ? ORDER BY numero, proto",
+        data["ports"] = [dict(p) for p in conn.execute(
+            "SELECT base, number, proto, role FROM ports WHERE instance_id = ? ORDER BY number, proto",
             (row["id"],))]
         return data
 
     def set_state(self, instance_id: int, state_dir: str, detail: str = "") -> None:
         with self._transaction() as conn:
-            conn.execute("UPDATE instancias SET estado = ?, detalhe = ? WHERE id = ?",
+            conn.execute("UPDATE instances SET state = ?, detail = ? WHERE id = ?",
                          (state_dir, detail[:300], instance_id))
 
     def delete_instance(self, instance_id: int) -> None:
         with self._transaction() as conn:
-            conn.execute("DELETE FROM instancias WHERE id = ?", (instance_id,))
+            conn.execute("DELETE FROM instances WHERE id = ?", (instance_id,))
 
     def count_instances(self) -> int:
         with self._connection() as conn:
-            return int(conn.execute("SELECT COUNT(*) FROM instancias").fetchone()[0])
+            return int(conn.execute("SELECT COUNT(*) FROM instances").fetchone()[0])
 
     # --- operacoes --------------------------------------------------------
 
@@ -173,41 +238,41 @@ class Db:
         op_id = uuid.uuid4().hex
         with self._transaction() as conn:
             conn.execute(
-                "INSERT INTO operacoes (id, instancia_id, tipo, estado, iniciada_em) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO operations (id, instance_id, kind, state, started_at) VALUES (?, ?, ?, ?, ?)",
                 (op_id, instance_id, kind, OP_EXECUTANDO, self._relogio()))
         return op_id
 
     def append_log(self, op_id: str, row: str) -> None:
         with self._transaction() as conn:
-            atual = conn.execute("SELECT log FROM operacoes WHERE id = ?", (op_id,)).fetchone()
+            atual = conn.execute("SELECT log FROM operations WHERE id = ?", (op_id,)).fetchone()
             if atual is None:
                 return
             # Cauda: instalacao de jogo pode gerar MB de saida, e o painel so precisa do fim.
             novo = (atual["log"] + row.rstrip("\n") + "\n")[-LOG_MAX:]
-            conn.execute("UPDATE operacoes SET log = ? WHERE id = ?", (novo, op_id))
+            conn.execute("UPDATE operations SET log = ? WHERE id = ?", (novo, op_id))
 
     def finish_operation(self, op_id: str, state_dir: str, result: dict | None = None) -> None:
         with self._transaction() as conn:
-            conn.execute("UPDATE operacoes SET estado = ?, resultado = ?, terminada_em = ? WHERE id = ?",
+            conn.execute("UPDATE operations SET state = ?, result = ?, finished_at = ? WHERE id = ?",
                          (state_dir, json.dumps(result or {}, ensure_ascii=True), self._relogio(), op_id))
 
     def operation(self, op_id: str) -> dict | None:
         with self._connection() as conn:
-            row = conn.execute("SELECT * FROM operacoes WHERE id = ?", (op_id,)).fetchone()
+            row = conn.execute("SELECT * FROM operations WHERE id = ?", (op_id,)).fetchone()
         if row is None:
             return None
         data = dict(row)
-        data["resultado"] = json.loads(data["resultado"] or "{}")
+        data["result"] = json.loads(data["result"] or "{}")
         return data
 
     def operation_in_progress(self) -> bool:
         with self._connection() as conn:
-            return conn.execute("SELECT 1 FROM operacoes WHERE estado = ? LIMIT 1",
+            return conn.execute("SELECT 1 FROM operations WHERE state = ? LIMIT 1",
                                 (OP_EXECUTANDO,)).fetchone() is not None
 
     def creations_since(self, since: str) -> int:
         with self._connection() as conn:
-            return int(conn.execute("SELECT COUNT(*) FROM operacoes WHERE tipo = 'criar' AND iniciada_em >= ?",
+            return int(conn.execute("SELECT COUNT(*) FROM operations WHERE kind = 'criar' AND started_at >= ?",
                                     (since,)).fetchone()[0])
 
     # --- auditoria --------------------------------------------------------
@@ -215,9 +280,9 @@ class Db:
     def audit(self, actor: str, verb: str, target: str, result: str, detail: str = "") -> None:
         with self._transaction() as conn:
             conn.execute(
-                "INSERT INTO auditoria (quando, ator, verbo, alvo, resultado, detalhe) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO audit (at, actor, verb, target, result, detail) VALUES (?, ?, ?, ?, ?, ?)",
                 (self._relogio(), actor, verb, target, result, detail[:300]))
 
     def audit_trail(self, limit: int = 100) -> list[dict]:
         with self._connection() as conn:
-            return [dict(r) for r in conn.execute("SELECT * FROM auditoria ORDER BY id DESC LIMIT ?", (limit,))]
+            return [dict(r) for r in conn.execute("SELECT * FROM audit ORDER BY id DESC LIMIT ?", (limit,))]

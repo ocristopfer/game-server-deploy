@@ -29,7 +29,7 @@ def test_criar_de_ponta_a_ponta(real):
     resposta = real.servico_real.create("alfa", "Servidor do Zeca", "zeca")
     operation = real.servico_real.operation(resposta["operation_id"])
     assert operation["state"] == OP_OK
-    assert real.db.instance(resposta["instance_id"])["estado"] == ESTADO_ATIVA
+    assert real.db.instance(resposta["instance_id"])["state"] == ESTADO_ATIVA
 
     ct = real.pve.falso.cts[300]
     assert ct["pool"] == "games"
