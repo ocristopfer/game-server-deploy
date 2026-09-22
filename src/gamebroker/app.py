@@ -18,7 +18,7 @@ from gamebroker.services.instance_service import Service
 TOKEN_MINIMO = 32
 CORPO_MAX = 64 * 1024
 _OPERACAO_RE = re.compile(r"[0-9a-f]{32}", re.ASCII)
-CABECALHO_ATOR = "X-Ator"
+ACTOR_HEADER = "X-Actor"
 
 log = logging.getLogger("broker")
 
@@ -57,47 +57,47 @@ def create_app(service: Service, token: str, allowed_ips: tuple[str, ...] = ()) 
         return _error("erro interno do broker", "interno", 500)
 
     def actor() -> str:
-        return request.headers.get(CABECALHO_ATOR, "")
+        return request.headers.get(ACTOR_HEADER, "")
 
-    @app.get("/v1/saude")
+    @app.get("/v1/health")
     def health():
         return jsonify(service.health())
 
-    @app.get("/v1/catalogo")
+    @app.get("/v1/catalog")
     def catalog():
         return jsonify([j.as_public() for j in service.catalog.list_all()])
 
-    @app.post("/v1/catalogo")
+    @app.post("/v1/catalog")
     def catalog_add():
         return jsonify(service.add_game(_body(), actor())), 201
 
-    @app.get("/v1/instancias")
+    @app.get("/v1/instances")
     def instances():
         return jsonify(service.instances())
 
-    @app.post("/v1/instancias")
+    @app.post("/v1/instances")
     def instances_create():
         body = _body()
-        resposta = service.create(str(body.get("jogo", "")), body.get("nome", ""), actor())
+        resposta = service.create(str(body.get("game", "")), body.get("name", ""), actor())
         return jsonify(resposta), 202
 
-    @app.get("/v1/operacoes/<op_id>")
+    @app.get("/v1/operations/<op_id>")
     def operation(op_id: str):
         if not _OPERACAO_RE.fullmatch(op_id):
             raise ValidationError("operacao", "identificador invalido")
         return jsonify(service.operation(op_id))
 
-    @app.post("/v1/instancias/<int:instance_id>/desativar")
+    @app.post("/v1/instances/<int:instance_id>/deactivate")
     def instances_deactivate(instance_id: int):
         return jsonify(service.deactivate(instance_id, actor()))
 
-    @app.delete("/v1/instancias/<int:instance_id>")
+    @app.delete("/v1/instances/<int:instance_id>")
     def instances_remove(instance_id: int):
         body = _body()
-        db_only = body.get("somente_banco", False)
+        db_only = body.get("db_only", False)
         if not isinstance(db_only, bool):
-            raise ValidationError("somente_banco", "deve ser verdadeiro ou falso")
-        return jsonify(service.remove(instance_id, body.get("confirma"), actor(), db_only))
+            raise ValidationError("db_only", "deve ser verdadeiro ou falso")
+        return jsonify(service.remove(instance_id, body.get("confirmation"), actor(), db_only))
 
     return app
 

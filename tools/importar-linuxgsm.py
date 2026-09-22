@@ -213,29 +213,29 @@ def sugerir(gamename: str, texto_do_cfg: str) -> dict | None:
                   and (not var_query or "{QUERY_PORT}" in argumentos)
                   and (not var_extra or "{EXTRA_PORT}" in argumentos))
     sugestao = {
-        "appid": appid, "nome": nome_de_exibicao(gamename), "chave": game_key(gamename),
-        "portas": " ".join(ports), "porta_jogo": porta,
-        "porta_query": _numero(v[var_query]) if var_query else 0,
-        "porta_extra": _numero(v[var_extra]) if var_extra else 0,
+        "appid": appid, "name": nome_de_exibicao(gamename), "key": game_key(gamename),
+        "ports": " ".join(ports), "game_port": porta,
+        "query_port": _numero(v[var_query]) if var_query else 0,
+        "extra_port": _numero(v[var_extra]) if var_extra else 0,
         "start_script": script, "start_args": argumentos,
-        "deslocavel": bool(shiftable), "avisos": avisos,
+        "shiftable": bool(shiftable), "warnings": avisos,
     }
     return _passar_pelo_broker(sugestao)
 
 
 def _como_dados_do_painel(s: dict) -> dict:
     # Sem porta (sugestao parcial) o validador recebe uma qualquer: o que se confere aqui e o resto.
-    dados: dict = {"chave": s["chave"], "nome": s["nome"], "app_id": s["appid"],
-                   "portas": s["portas"].split() or ["27015/udp"], "porta_jogo": s["porta_jogo"] or 27015,
+    dados: dict = {"key": s["key"], "name": s["name"], "app_id": s["appid"],
+                   "ports": s["ports"].split() or ["27015/udp"], "game_port": s["game_port"] or 27015,
                    "receitas": [], "config_files": [], "backup_paths": [],
-                   "deslocavel": s["deslocavel"]}
+                   "shiftable": s["shiftable"]}
     for campo in ("start_script", "start_args"):
         if s[campo]:
             dados[campo] = s[campo]
-    if s["porta_query"]:
-        dados["porta_query"] = s["porta_query"]
-    if s.get("porta_extra"):
-        dados["porta_extra"] = s["porta_extra"]
+    if s["query_port"]:
+        dados["query_port"] = s["query_port"]
+    if s.get("extra_port"):
+        dados["extra_port"] = s["extra_port"]
     return dados
 
 
@@ -249,10 +249,10 @@ def _passar_pelo_broker(s: dict) -> dict | None:
         except ValidationError as erro:
             campo = getattr(erro, "campo", "")
             if campo in ("start_script", "start_args"):
-                s = {**s, campo: "", "deslocavel": False,
-                     "avisos": s["avisos"] + [f"O broker recusaria {campo}; deixei em branco."]}
-            elif campo == "deslocavel":
-                s = {**s, "deslocavel": False}
+                s = {**s, campo: "", "shiftable": False,
+                     "warnings": s["warnings"] + [f"O broker recusaria {campo}; deixei em branco."]}
+            elif campo == "shiftable":
+                s = {**s, "shiftable": False}
             else:
                 return None
     return None
@@ -295,11 +295,11 @@ def coletar(pasta_local: pathlib.Path | None) -> tuple[list[dict], list[str]]:
     # Dois jogos com o mesmo nome (ou chave) tornariam a busca ambigua: fica o primeiro.
     vistos: set[str] = set()
     unicas = []
-    for s in sorted(sugestoes, key=lambda s: s["nome"].lower()):
-        if s["chave"] in vistos:
-            pulados.append(s["nome"])
+    for s in sorted(sugestoes, key=lambda s: s["name"].lower()):
+        if s["key"] in vistos:
+            pulados.append(s["name"])
             continue
-        vistos.add(s["chave"])
+        vistos.add(s["key"])
         unicas.append(s)
     return unicas, pulados
 

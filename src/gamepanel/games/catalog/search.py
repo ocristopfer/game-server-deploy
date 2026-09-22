@@ -25,7 +25,7 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", sem_acento.lower()).strip()
 
 
-_INDEX = tuple((s, _normalize(f"{s['nome']} {s['chave']}")) for s in sugestoes_de_jogos.SUGGESTIONS)
+_INDEX = tuple((s, _normalize(f"{s['name']} {s['key']}")) for s in sugestoes_de_jogos.SUGGESTIONS)
 
 
 def search(query: str | None, limit: int = DEFAULT_LIMIT) -> list[dict]:
@@ -40,8 +40,8 @@ def search(query: str | None, limit: int = DEFAULT_LIMIT) -> list[dict]:
     if not termos:
         return []
     achados = [(s, text) for s, text in _INDEX if all(t in text for t in termos)]
-    achados.sort(key=lambda par: (not _normalize(par[0]["nome"]).startswith(termos[0]),
-                                  par[0]["nome"].lower()))
+    achados.sort(key=lambda par: (not _normalize(par[0]["name"]).startswith(termos[0]),
+                                  par[0]["name"].lower()))
     return [s for s, _ in achados[:limit]]
 
 
@@ -49,14 +49,14 @@ def to_form(s: dict) -> dict[str, str]:
     """Os valores nas chaves que sao os `name=` dos campos. TODAS as chaves sempre, mesmo
     vazias: escolher outro jogo tem de limpar o que o anterior deixou (script, portas)."""
     return {
-        "chave": s["chave"], "nome": s["nome"], "app_id": str(s["appid"]),
-        "portas": s["portas"], "porta_jogo": str(s["porta_jogo"] or ""),
-        "porta_query": str(s["porta_query"] or ""), "porta_extra": str(s.get("porta_extra") or ""),
+        "key": s["key"], "name": s["name"], "app_id": str(s["appid"]),
+        "ports": s["ports"], "game_port": str(s["game_port"] or ""),
+        "query_port": str(s["query_port"] or ""), "extra_port": str(s.get("extra_port") or ""),
         "start_script": s["start_script"], "start_args": s["start_args"],
-        "deslocavel": "1" if s["deslocavel"] else "",
+        "shiftable": "1" if s["shiftable"] else "",
     }
 
 
 def result(s: dict) -> dict:
-    return {"appid": s["appid"], "nome": s["nome"], "valores": to_form(s),
-            "avisos": list(s["avisos"])}
+    return {"appid": s["appid"], "name": s["name"], "values": to_form(s),
+            "warnings": list(s["warnings"])}

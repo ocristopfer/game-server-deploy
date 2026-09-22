@@ -422,13 +422,13 @@ start_broker() {
     die "gamebroker.service nao subiu (a lista de problemas de configuracao esta no log acima)"
   fi
   [[ "${BROKER_SKIP_HEALTHCHECK:-0}" != "1" ]] || return 0
-  # Pede /v1/saude de dentro do CT: prova o TLS, o token e que Proxmox e OPNsense respondem.
+  # Pede /v1/health de dentro do CT: prova o TLS, o token e que Proxmox e OPNsense respondem.
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<PY
 import json, ssl, sys, urllib.error, urllib.request
 token = open('${CONF_DIR}/token').read().strip()
-req = urllib.request.Request('https://127.0.0.1:${BROKER_PORT}/v1/saude', headers={'Authorization': 'Bearer ' + token})
+req = urllib.request.Request('https://127.0.0.1:${BROKER_PORT}/v1/health', headers={'Authorization': 'Bearer ' + token})
 try:
     dados = json.loads(urllib.request.urlopen(req, context=ssl._create_unverified_context(), timeout=40).read())
 except urllib.error.HTTPError as erro:

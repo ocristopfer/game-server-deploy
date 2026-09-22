@@ -75,13 +75,13 @@ class Relogio:
 def dados_de_jogo() -> dict:
     """Um jogo dinamico valido. Cada teste recebe uma copia nova para estragar a vontade."""
     return {
-        "chave": "meujogo", "nome": "Meu Jogo", "app_id": 123456,
-        "portas": ["7777/udp", "27016/udp"], "porta_jogo": 7777, "porta_query": 27016,
+        "key": "meujogo", "name": "Meu Jogo", "app_id": 123456,
+        "ports": ["7777/udp", "27016/udp"], "game_port": 7777, "query_port": 27016,
         "start_script": "Server.sh", "start_args": "-port={PORT} -queryport={QUERY_PORT}",
         "config_path": "/opt/game/Config", "config_files": ["/opt/game/Config/a.ini"],
         "backup_paths": ["/opt/game/Saves"], "player_source": "log",
         "join_re": r"(?P<name>.+?) joined", "leave_re": r"(?P<name>.+?) left",
-        "receitas": ["steamclient-sdk64"], "deslocavel": True,
+        "recipes": ["steamclient-sdk64"], "shiftable": True,
     }
 
 

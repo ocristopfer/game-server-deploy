@@ -39,19 +39,19 @@ def sem_2fa(entrar):
 OP = "a" * 32
 
 JOGOS = [
-    {"chave": "alfa", "nome": "Alfa", "app_id": 1001, "portas": ["7001/udp", "7002/udp"],
-     "porta_jogo": 7001, "porta_query": 7002, "memoria_mb": 4096, "cores": 2, "disco_gb": 20,
-     "receitas": [], "deslocavel": False, "origem": "curado", "criavel": True, "motivo": ""},
-    {"chave": "conta", "nome": "Jogo com Conta", "app_id": 1004, "portas": ["7200/udp"],
-     "porta_jogo": 7200, "porta_query": 0, "memoria_mb": 4096, "cores": 2, "disco_gb": 20,
-     "receitas": [], "deslocavel": False, "origem": "curado", "criavel": False,
-     "motivo": "exige conta Steam; use o deploy-game.ps1"},
+    {"key": "alfa", "name": "Alfa", "app_id": 1001, "ports": ["7001/udp", "7002/udp"],
+     "game_port": 7001, "query_port": 7002, "memory_mb": 4096, "cores": 2, "disk_gb": 20,
+     "recipes": [], "shiftable": False, "source": "curado", "creatable": True, "reason": ""},
+    {"key": "conta", "name": "Jogo com Conta", "app_id": 1004, "ports": ["7200/udp"],
+     "game_port": 7200, "query_port": 0, "memory_mb": 4096, "cores": 2, "disk_gb": 20,
+     "recipes": [], "shiftable": False, "source": "curado", "creatable": False,
+     "reason": "exige conta Steam; use o deploy-game.ps1"},
 ]
 
 INSTANCIA = {
-    "id": 7, "ctid": 300, "ip": "10.0.0.30", "jogo": "alfa", "nome": "Servidor do Zeca",
-    "hostname": "alfa-300", "estado": "ativa", "detalhe": "",
-    "portas": [{"base": 7001, "numero": 7001, "proto": "udp", "papel": "jogo"},
+    "id": 7, "ctid": 300, "ip": "10.0.0.30", "game": "alfa", "name": "Servidor do Zeca",
+    "hostname": "alfa-300", "state": "ativa", "detail": "",
+    "ports": [{"base": 7001, "numero": 7001, "proto": "udp", "papel": "game"},
                {"base": 7002, "numero": 7002, "proto": "udp", "papel": "query"}],
 }
 
@@ -75,7 +75,7 @@ class BrokerFalso:
         self.lista = [dict(INSTANCIA)]
         self.chamadas: list[tuple] = []
         self.error: Exception | None = None
-        self.operacoes: list[dict] = [{"estado": "ok", "log": "tudo certo\n", "resultado": RESULTADO}]
+        self.operacoes: list[dict] = [{"state": "ok", "log": "tudo certo\n", "result": RESULTADO}]
         self.tarefas: list = []
 
     def _chama(self, name: str, *args) -> None:
@@ -89,7 +89,7 @@ class BrokerFalso:
 
     def add_game(self, data, ator):
         self._chama("add_game", data, ator)
-        return {"chave": data.get("chave")}
+        return {"key": data.get("key")}
 
     def instances(self):
         self._chama("instances")
@@ -97,7 +97,7 @@ class BrokerFalso:
 
     def create(self, jogo, name, ator):
         self._chama("create", jogo, name, ator)
-        return {"operacao_id": OP, "instancia_id": 7}
+        return {"operation_id": OP, "instance_id": 7}
 
     def operation(self, op_id):
         self._chama("operation", op_id)
@@ -105,11 +105,11 @@ class BrokerFalso:
 
     def deactivate(self, instancia_id, ator):
         self._chama("deactivate", instancia_id, ator)
-        return {"id": instancia_id, "estado": "desativada"}
+        return {"id": instancia_id, "state": "desativada"}
 
-    def remove(self, instancia_id, confirm, ator, somente_banco=False):
-        self._chama("remove", instancia_id, confirm, ator, somente_banco)
-        return {"id": instancia_id, "removida": True}
+    def remove(self, instancia_id, confirm, ator, db_only=False):
+        self._chama("remove", instancia_id, confirm, ator, db_only)
+        return {"id": instancia_id, "removed": True}
 
     def chamou(self, name: str) -> list[tuple]:
         return [c for c in self.chamadas if c[0] == name]
@@ -163,7 +163,7 @@ def test_operador_leva_403_nas_telas_do_broker(peao, broker, rota):
 
 @pytest.mark.parametrize("rota", ROTAS_POST)
 def test_operador_nao_dispara_nada_no_broker(peao, broker, postar, rota):
-    assert postar(peao, rota, {"jogo": "alfa", "nome": "x"}).status_code == 403
+    assert postar(peao, rota, {"game": "alfa", "name": "x"}).status_code == 403
     assert broker.chamadas == []
 
 
@@ -185,12 +185,12 @@ def test_broker_desligado_admin_leva_403(chefe, monkeypatch, rota):
 @pytest.mark.parametrize("rota", ROTAS_POST)
 def test_broker_desligado_nao_aceita_post(chefe, postar, monkeypatch, rota):
     monkeypatch.setattr(panel, "ALLOW_BROKER", False)
-    assert postar(chefe, rota, {"jogo": "alfa", "nome": "x"}).status_code == 403
+    assert postar(chefe, rota, {"game": "alfa", "name": "x"}).status_code == 403
 
 
 @pytest.mark.parametrize("rota", ROTAS_POST)
 def test_post_sem_csrf_e_barrado(chefe, broker, rota):
-    resposta = chefe.post(rota, data={"jogo": "alfa", "nome": "x"})
+    resposta = chefe.post(rota, data={"game": "alfa", "name": "x"})
     assert resposta.status_code == 400
     assert broker.chamadas == []
 
@@ -217,7 +217,7 @@ def test_sem_2fa_a_tela_manda_para_a_ativacao(sem_2fa, broker, rota):
 
 @pytest.mark.parametrize("rota", ROTAS_POST)
 def test_sem_2fa_o_post_e_redirecionado_para_a_ativacao_e_nao_chama_o_broker(sem_2fa, broker, postar, rota):
-    resposta = postar(sem_2fa, rota, {"jogo": "alfa", "nome": "x"})
+    resposta = postar(sem_2fa, rota, {"game": "alfa", "name": "x"})
     assert resposta.status_code == 302
     assert resposta.headers["Location"].endswith("/account/2fa")
     assert broker.chamadas == []
@@ -274,10 +274,10 @@ def test_busca_de_jogo_devolve_a_sugestao_com_o_que_o_broker_precisa(chefe, brok
     assert resposta.status_code == 200
     data = resposta.get_json()
     achado = data["resultados"][0]
-    assert achado["valores"]["app_id"] == "1690800"
-    assert "8888/tcp" in achado["valores"]["portas"]
-    assert "-ReliablePort=8888" in achado["valores"]["start_args"]
-    assert achado["avisos"]
+    assert achado["values"]["app_id"] == "1690800"
+    assert "8888/tcp" in achado["values"]["ports"]
+    assert "-ReliablePort=8888" in achado["values"]["start_args"]
+    assert achado["warnings"]
     assert "LinuxGSM" in data["fonte"]
 
 
@@ -322,28 +322,28 @@ def test_catalogo_com_broker_fora_do_ar_nao_e_500(chefe, broker):
 
 
 FORM_JOGO = {
-    "chave": "meujogo", "nome": "Meu Jogo", "app_id": "123456", "portas": "7777/udp, 27016/udp",
-    "porta_jogo": "7777", "porta_query": "27016", "start_script": "Server.sh",
-    "start_args": "-port={PORT}", "memoria_mb": "8192", "cores": "4", "disco_gb": "40",
+    "key": "meujogo", "name": "Meu Jogo", "app_id": "123456", "ports": "7777/udp, 27016/udp",
+    "game_port": "7777", "query_port": "27016", "start_script": "Server.sh",
+    "start_args": "-port={PORT}", "memory_mb": "8192", "cores": "4", "disk_gb": "40",
     "config_path": "/opt/game/Config", "config_files": "/opt/game/Config/a.ini\n/opt/game/Config/b.ini",
-    "backup_paths": "/opt/game/Saves", "player_source": "log", "plataforma": "windows",
-    "join_re": "(?P<name>.+) joined", "deslocavel": "1",
+    "backup_paths": "/opt/game/Saves", "player_source": "log", "platform": "windows",
+    "join_re": "(?P<name>.+) joined", "shiftable": "1",
 }
 
 
 def test_novo_jogo_manda_ao_broker_so_dados_ja_convertidos(chefe, broker, postar):
-    data = {**FORM_JOGO, "receitas": ["wine", "rm -rf /"]}
+    data = {**FORM_JOGO, "recipes": ["wine", "rm -rf /"]}
     resposta = postar(chefe, "/catalogo/novo", data)
     assert resposta.status_code == 302
     (_, enviado, ator), = broker.chamou("add_game")
     assert ator == "chefe"
     assert enviado["app_id"] == 123456
-    assert enviado["porta_jogo"] == 7777
-    assert enviado["portas"] == ["7777/udp", "27016/udp"]
+    assert enviado["game_port"] == 7777
+    assert enviado["ports"] == ["7777/udp", "27016/udp"]
     assert enviado["config_files"] == ["/opt/game/Config/a.ini", "/opt/game/Config/b.ini"]
-    assert enviado["deslocavel"] is True
-    assert enviado["receitas"] == ["wine"], "receita fora da lista nem e enviada"
-    assert enviado["plataforma"] == "windows"
+    assert enviado["shiftable"] is True
+    assert enviado["recipes"] == ["wine"], "receita fora da lista nem e enviada"
+    assert enviado["platform"] == "windows"
 
 
 def test_novo_jogo_nunca_envia_campo_de_comando(chefe, broker, postar):
@@ -362,7 +362,7 @@ def test_novo_jogo_deixa_rastro_no_historico(chefe, broker, postar, banco):
     assert line["server_id"] is None
 
 
-@pytest.mark.parametrize("campo", ["app_id", "porta_jogo", "memoria_mb", "cores", "disco_gb"])
+@pytest.mark.parametrize("campo", ["app_id", "game_port", "memory_mb", "cores", "disk_gb"])
 @pytest.mark.parametrize("lixo", ["abc", "12.5", "-1", "²", "1 2"])
 def test_numero_invalido_nem_chega_ao_broker(chefe, broker, postar, campo, lixo):
     resposta = postar(chefe, "/catalogo/novo", {**FORM_JOGO, campo: lixo})
@@ -406,7 +406,7 @@ def test_instancias_com_broker_fora_do_ar(chefe, broker):
 
 
 def test_criar_abre_um_job_sem_servidor_e_redireciona_para_ele(chefe, broker, postar, banco):
-    resposta = postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "Servidor do Zeca"})
+    resposta = postar(chefe, "/instancias/nova", {"game": "alfa", "name": "Servidor do Zeca"})
     (line,) = jobs(banco)
     assert resposta.headers["Location"].endswith(f"/jobs/{line['id']}")
     assert broker.chamou("create") == [("create", "alfa", "Servidor do Zeca", "chefe")]
@@ -418,7 +418,7 @@ def test_criar_abre_um_job_sem_servidor_e_redireciona_para_ele(chefe, broker, po
 
 def test_criar_recusado_pelo_broker_nao_deixa_job(chefe, broker, postar, banco):
     broker.error = recusa("limite de 8 instancias atingido", 429)
-    resposta = postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "x"})
+    resposta = postar(chefe, "/instancias/nova", {"game": "alfa", "name": "x"})
     assert resposta.status_code == 302
     assert "limite de 8 instancias" in chefe.get("/instancias").get_data(as_text=True)
     assert jobs(banco) == []
@@ -427,12 +427,12 @@ def test_criar_recusado_pelo_broker_nao_deixa_job(chefe, broker, postar, banco):
 
 def test_criar_sem_id_de_operacao_nao_deixa_job(chefe, broker, postar, banco, monkeypatch):
     monkeypatch.setattr(panel.broker_client, "create", lambda *a: {})
-    postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "x"})
+    postar(chefe, "/instancias/nova", {"game": "alfa", "name": "x"})
     assert jobs(banco) == []
 
 
 def test_tela_do_job_abre_e_tem_o_rotulo(chefe, broker, postar, banco):
-    postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "x"})
+    postar(chefe, "/instancias/nova", {"game": "alfa", "name": "x"})
     (line,) = jobs(banco)
     html = chefe.get(f"/jobs/{line['id']}").get_data(as_text=True)
     assert "Instancia criada (broker)" in html
@@ -441,7 +441,7 @@ def test_tela_do_job_abre_e_tem_o_rotulo(chefe, broker, postar, banco):
 
 def test_saida_do_job_do_broker_e_so_de_admin(chefe, peao, broker, postar, banco):
     """A saida cita IP, CTID e portas da infraestrutura: operador nem abre nem lista."""
-    postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "x"})
+    postar(chefe, "/instancias/nova", {"game": "alfa", "name": "x"})
     (line,) = jobs(banco)
     assert peao.get(f"/jobs/{line['id']}").status_code == 403
     assert peao.get(f"/api/jobs/{line['id']}").status_code == 403
@@ -454,9 +454,9 @@ def test_saida_do_job_do_broker_e_so_de_admin(chefe, peao, broker, postar, banco
 
 def test_o_log_aparece_no_job_enquanto_a_operacao_ainda_roda(broker, banco):
     broker.operacoes = [
-        {"estado": "executando", "log": "criando o container 300\n"},
-        {"estado": "executando", "log": "criando o container 300\ninstalando o jogo\n"},
-        {"estado": "ok", "log": "criando o container 300\ninstalando o jogo\npronto\n", "resultado": RESULTADO},
+        {"state": "executando", "log": "criando o container 300\n"},
+        {"state": "executando", "log": "criando o container 300\ninstalando o jogo\n"},
+        {"state": "ok", "log": "criando o container 300\ninstalando o jogo\npronto\n", "result": RESULTADO},
     ]
     job_id = novo_job(banco)
     vistos: list[str] = []
@@ -484,7 +484,7 @@ def test_operacao_ok_cadastra_o_servidor_e_liga_o_job_a_ele(broker, banco):
 
 
 def test_operacao_com_erro_fecha_o_job_com_o_log_e_nao_cadastra(broker, banco):
-    broker.operacoes = [{"estado": "erro", "log": "instalando\nERRO: steamcmd falhou\nreserva liberada\n"}]
+    broker.operacoes = [{"state": "erro", "log": "instalando\nERRO: steamcmd falhou\nreserva liberada\n"}]
     job_id = novo_job(banco)
     panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     final = job(banco, job_id)
@@ -496,7 +496,7 @@ def test_operacao_com_erro_fecha_o_job_com_o_log_e_nao_cadastra(broker, banco):
 @pytest.mark.parametrize("campo", ["host", "service"])
 def test_resultado_estranho_do_broker_nao_vira_servidor_e_avisa_que_o_ct_existe(broker, banco, campo):
     ruim = {**RESULTADO, campo: "10.0.0.30; rm -rf /" if campo == "host" else "a b.service"}
-    broker.operacoes = [{"estado": "ok", "log": "feito\n", "resultado": ruim}]
+    broker.operacoes = [{"state": "ok", "log": "feito\n", "result": ruim}]
     job_id = novo_job(banco)
     panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     final = job(banco, job_id)
@@ -506,7 +506,7 @@ def test_resultado_estranho_do_broker_nao_vira_servidor_e_avisa_que_o_ct_existe(
 
 
 def test_resultado_incompleto_tambem_avisa(broker, banco):
-    broker.operacoes = [{"estado": "ok", "log": "feito\n", "resultado": {"name": "x"}}]
+    broker.operacoes = [{"state": "ok", "log": "feito\n", "result": {"name": "x"}}]
     job_id = novo_job(banco)
     panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     assert "A instancia foi criada" in job(banco, job_id)["output"]
@@ -531,7 +531,7 @@ def test_falha_isolada_de_contato_nao_derruba_o_acompanhamento(broker, banco, mo
         primeira = next(respostas)
         if primeira is not None:
             raise primeira
-        return {"estado": "ok", "log": "feito\n", "resultado": RESULTADO}
+        return {"state": "ok", "log": "feito\n", "result": RESULTADO}
 
     monkeypatch.setattr(panel.broker_client, "operation", operation)
     job_id = novo_job(banco)
@@ -549,7 +549,7 @@ def test_tempo_esgotado(broker, banco, monkeypatch):
 
 
 def test_tarefa_disparada_pela_rota_faz_o_caminho_inteiro(chefe, broker, postar, banco):
-    postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "Servidor do Zeca"})
+    postar(chefe, "/instancias/nova", {"game": "alfa", "name": "Servidor do Zeca"})
     broker.tarefas[0]()
     (line,) = jobs(banco)
     assert line["status"] == "ok"
@@ -600,7 +600,7 @@ def test_remover_apaga_tambem_o_servidor_do_painel(chefe, broker, postar, banco)
     panel.ensure_server(panel.ServidorDoDeploy(
         name="Servidor do Zeca", host="10.0.0.30", service="alfa.service", broker_id=7))
     panel.ensure_server(panel.ServidorDoDeploy(name="Outro", host="10.0.0.99", service="x.service"))
-    postar(chefe, "/instancias/7/remover", {"confirma": "Servidor do Zeca"})
+    postar(chefe, "/instancias/7/remover", {"confirmation": "Servidor do Zeca"})
     assert broker.chamou("remove") == [("remove", 7, "Servidor do Zeca", "chefe", False)]
     assert [s["name"] for s in servidores(banco)] == ["Outro"], "so o da instancia removida some"
 
@@ -609,18 +609,18 @@ def test_remover_recusado_nao_apaga_o_servidor(chefe, broker, postar, banco):
     panel.ensure_server(panel.ServidorDoDeploy(
         name="Servidor do Zeca", host="10.0.0.30", service="alfa.service", broker_id=7))
     broker.error = recusa("digite o nome exato da instancia para confirmar", 400)
-    postar(chefe, "/instancias/7/remover", {"confirma": "errado"})
+    postar(chefe, "/instancias/7/remover", {"confirmation": "errado"})
     assert len(servidores(banco)) == 1
     assert "nome exato" in chefe.get("/instancias").get_data(as_text=True)
 
 
 def test_somente_banco_e_repassado(chefe, broker, postar):
-    postar(chefe, "/instancias/7/remover", {"confirma": "x", "somente_banco": "1"})
+    postar(chefe, "/instancias/7/remover", {"confirmation": "x", "db_only": "1"})
     assert broker.chamou("remove")[0][4] is True
 
 
 def test_remover_sem_marcar_somente_banco_manda_falso(chefe, broker, postar):
-    postar(chefe, "/instancias/7/remover", {"confirma": "x"})
+    postar(chefe, "/instancias/7/remover", {"confirmation": "x"})
     assert broker.chamou("remove")[0][4] is False
 
 

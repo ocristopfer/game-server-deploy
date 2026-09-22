@@ -41,13 +41,13 @@ UNREAL_LINUX = Template(
         # `-log` manda o log para o stdout (o journald guarda e o painel le); `-Port` e o
         # padrao da Unreal para a porta de jogo (UDP).
         "start_args": "-log -Port={PORT}",
-        "portas": "7777/udp",
-        "porta_jogo": "7777",
-        "porta_query": "",
-        "porta_extra": "",
-        "memoria_mb": "8192",
+        "ports": "7777/udp",
+        "game_port": "7777",
+        "query_port": "",
+        "extra_port": "",
+        "memory_mb": "8192",
         "cores": "4",
-        "disco_gb": "30",
+        "disk_gb": "30",
         # Todo servidor Unreal guarda config e save sob <Projeto>/Saved.
         "config_path": f"/opt/game/{PROJECT}/Saved/Config/LinuxServer",
         "config_files": (
@@ -61,7 +61,7 @@ UNREAL_LINUX = Template(
         "join_re": "LogNet: Join succeeded: (?P<name>.+)",
         "leave_re": "LogNet: UNetConnection::Close:",
         # Os argumentos acima recebem {PORT}: o broker pode sortear a porta.
-        "deslocavel": "1",
+        "shiftable": "1",
     },
 )
 

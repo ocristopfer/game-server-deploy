@@ -113,7 +113,7 @@ def _request(method: str, path: str, body: object = None, actor: str = ""):
         raise BrokerError("o broker nao esta configurado neste painel")
     cabecalhos = {"Authorization": f"Bearer {_config['token']}", "Accept": "application/json"}
     if actor:
-        cabecalhos["X-Ator"] = actor
+        cabecalhos["X-Actor"] = actor
     data = None
     if body is not None:
         data = json.dumps(body).encode()
@@ -159,33 +159,33 @@ def _as_object(data: object) -> dict:
 # --- verbos (o broker nao tem nenhum outro) ---------------------------------------------
 
 def health() -> dict:
-    return _as_object(_request("GET", "/v1/saude"))
+    return _as_object(_request("GET", "/v1/health"))
 
 
 def catalog() -> list:
-    return _as_list(_request("GET", "/v1/catalogo"))
+    return _as_list(_request("GET", "/v1/catalog"))
 
 
 def add_game(data: dict, actor: str) -> dict:
-    return _as_object(_request("POST", "/v1/catalogo", data, actor))
+    return _as_object(_request("POST", "/v1/catalog", data, actor))
 
 
 def instances() -> list:
-    return _as_list(_request("GET", "/v1/instancias"))
+    return _as_list(_request("GET", "/v1/instances"))
 
 
 def create(game: str, name: str, actor: str) -> dict:
-    return _as_object(_request("POST", "/v1/instancias", {"jogo": game, "nome": name}, actor))
+    return _as_object(_request("POST", "/v1/instances", {"game": game, "name": name}, actor))
 
 
 def operation(op_id: str) -> dict:
-    return _as_object(_request("GET", f"/v1/operacoes/{quote(op_id, safe='')}"))
+    return _as_object(_request("GET", f"/v1/operations/{quote(op_id, safe='')}"))
 
 
 def deactivate(instance_id: int, actor: str) -> dict:
-    return _as_object(_request("POST", f"/v1/instancias/{int(instance_id)}/desativar", {}, actor))
+    return _as_object(_request("POST", f"/v1/instances/{int(instance_id)}/deactivate", {}, actor))
 
 
 def remove(instance_id: int, confirmation: str, actor: str, db_only: bool = False) -> dict:
-    body = {"confirma": confirmation, "somente_banco": bool(db_only)}
-    return _as_object(_request("DELETE", f"/v1/instancias/{int(instance_id)}", body, actor))
+    body = {"confirmation": confirmation, "db_only": bool(db_only)}
+    return _as_object(_request("DELETE", f"/v1/instances/{int(instance_id)}", body, actor))

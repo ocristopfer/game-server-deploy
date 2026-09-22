@@ -80,34 +80,34 @@ def test_todo_pedido_leva_o_token_e_o_ator(servidor):
     bc.create("alfa", "Um", "chefe")
     pedido = servidor.pedidos[0]
     assert pedido["cabecalhos"]["authorization"] == f"Bearer {TOKEN}"
-    assert pedido["cabecalhos"]["x-ator"] == "chefe"
-    assert (pedido["metodo"], pedido["caminho"]) == ("POST", "/v1/instancias")
-    assert pedido["corpo"] == {"jogo": "alfa", "nome": "Um"}
+    assert pedido["cabecalhos"]["x-actor"] == "chefe"
+    assert (pedido["metodo"], pedido["caminho"]) == ("POST", "/v1/instances")
+    assert pedido["corpo"] == {"game": "alfa", "name": "Um"}
 
 
 def test_consultas_nao_mandam_ator_nem_corpo(servidor):
     servidor.resposta = (200, [])
     bc.catalog()
     bc.instances()
-    assert [p["caminho"] for p in servidor.pedidos] == ["/v1/catalogo", "/v1/instancias"]
-    assert all(p["corpo"] is None and "x-ator" not in p["cabecalhos"] for p in servidor.pedidos)
+    assert [p["caminho"] for p in servidor.pedidos] == ["/v1/catalog", "/v1/instances"]
+    assert all(p["corpo"] is None and "x-actor" not in p["cabecalhos"] for p in servidor.pedidos)
 
 
 def test_verbos_e_caminhos(servidor):
     bc.deactivate(7, "chefe")
     bc.remove(7, "Um", "chefe", db_only=True)
-    bc.add_game({"chave": "x"}, "chefe")
+    bc.add_game({"key": "x"}, "chefe")
     bc.operation("a" * 32)
     bc.health()
     assert [(p["metodo"], p["caminho"]) for p in servidor.pedidos] == [
-        ("POST", "/v1/instancias/7/desativar"), ("DELETE", "/v1/instancias/7"),
-        ("POST", "/v1/catalogo"), ("GET", f"/v1/operacoes/{'a' * 32}"), ("GET", "/v1/saude")]
-    assert servidor.pedidos[1]["corpo"] == {"confirma": "Um", "somente_banco": True}
+        ("POST", "/v1/instances/7/deactivate"), ("DELETE", "/v1/instances/7"),
+        ("POST", "/v1/catalog"), ("GET", f"/v1/operations/{'a' * 32}"), ("GET", "/v1/health")]
+    assert servidor.pedidos[1]["corpo"] == {"confirmation": "Um", "db_only": True}
 
 
 def test_id_de_operacao_e_codificado_no_caminho(servidor):
     bc.operation("../../etc/passwd")
-    assert servidor.pedidos[0]["caminho"] == "/v1/operacoes/..%2F..%2Fetc%2Fpasswd"
+    assert servidor.pedidos[0]["caminho"] == "/v1/operations/..%2F..%2Fetc%2Fpasswd"
 
 
 def test_id_de_instancia_precisa_ser_inteiro(servidor):
@@ -123,7 +123,7 @@ def test_prefixo_da_url_e_respeitado(monkeypatch):
         bc.configure(falso.url + "/broker/", TOKEN)
         falso.resposta = (200, {})
         bc.health()
-        assert falso.pedidos[0]["caminho"] == "/broker/v1/saude"
+        assert falso.pedidos[0]["caminho"] == "/broker/v1/health"
     finally:
         falso.parar()
 

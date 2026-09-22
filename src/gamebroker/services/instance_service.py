@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import gamebroker.services.allocator as alocador
+from gamebroker.domain import wire
 from gamebroker.domain.exceptions import Conflict, NotFound, QuotaExceeded, ValidationError
 from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK, Db
 from gamebroker.runtime.base import CtSpec, Installer, Network, Opnsense, Proxmox
@@ -70,16 +71,16 @@ class Service:
     def health(self) -> dict:
         return {"broker": True, "proxmox": self.proxmox.reachable(),
                 "opnsense": self.opnsense.reachable(),
-                "catalogo_erros": list(self.catalog.errors)}
+                "catalog_errors": list(self.catalog.errors)}
 
     def instances(self) -> list[dict]:
-        return self.db.instances()
+        return [wire.instance(r) for r in self.db.instances()]
 
     def operation(self, op_id: str) -> dict:
         op = self.db.operation(op_id)
         if op is None:
             raise NotFound("operacao desconhecida")
-        return op
+        return wire.operation(op)
 
     def add_game(self, data: object, actor: str) -> dict:
         game = self.catalog.add_dynamic(data)
@@ -100,7 +101,7 @@ class Service:
             op_id = self.db.create_operation(instance_id, "criar")
         self.db.audit(actor, "criar", f"{game.key}:{name}", "aceito", f"instancia {instance_id}")
         self._executar(lambda: self._build(op_id, instance_id, game, ports, actor))
-        return {"operacao_id": op_id, "instancia_id": instance_id}
+        return {"operation_id": op_id, "instance_id": instance_id}
 
     @staticmethod
     def _valid_name(name: object) -> str:
@@ -193,7 +194,7 @@ class Service:
         self.proxmox.stop(inst["ctid"])
         self.db.set_state(instance_id, ESTADO_DESATIVADA)
         self.db.audit(actor, "desativar", inst["nome"], "ok")
-        return {"id": instance_id, "estado": ESTADO_DESATIVADA}
+        return {"id": instance_id, "state": ESTADO_DESATIVADA}
 
     def remove(self, instance_id: int, confirmation: object, actor: str,
                 db_only: bool = False) -> dict:
@@ -208,7 +209,7 @@ class Service:
             self._destroy_ct(inst)
         self.db.delete_instance(instance_id)
         self.db.audit(actor, "esquecer" if db_only else "remover", inst["nome"], "ok")
-        return {"id": instance_id, "removida": True, "somente_banco": db_only}
+        return {"id": instance_id, "removed": True, "db_only": db_only}
 
     def _destroy_ct(self, inst: dict) -> None:
         ctid = inst["ctid"]
@@ -222,7 +223,7 @@ class Service:
         # CTID/IP nesse caso poderia soltar um CT que ainda existe; entao so com pedido explicito.
         raise Conflict(
             f"o CT {ctid} nao pertence ao broker (nao esta no pool); nada foi alterado. Se ele nao "
-            "existe mais no Proxmox, remova de novo com somente_banco para limpar so o registro")
+            "existe mais no Proxmox, remova de novo com db_only para limpar so o registro")
 
     def _instance(self, instance_id: int) -> dict:
         inst = self.db.instance(instance_id)

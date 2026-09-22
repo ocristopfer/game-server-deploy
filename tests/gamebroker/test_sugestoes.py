@@ -23,17 +23,17 @@ SUGGESTIONS = data.SUGGESTIONS
 
 
 def _como_o_painel_envia(s: dict) -> dict:
-    envio = {"chave": s["chave"], "nome": s["nome"], "app_id": s["appid"],
-             "portas": s["portas"].split() or ["27015/udp"],   # parcial: a pessoa preenche depois
-             "porta_jogo": s["porta_jogo"] or 27015, "receitas": [], "config_files": [],
-             "backup_paths": [], "deslocavel": s["deslocavel"]}
+    envio = {"key": s["key"], "name": s["name"], "app_id": s["appid"],
+             "ports": s["ports"].split() or ["27015/udp"],   # parcial: a pessoa preenche depois
+             "game_port": s["game_port"] or 27015, "recipes": [], "config_files": [],
+             "backup_paths": [], "shiftable": s["shiftable"]}
     for campo in ("start_script", "start_args"):
         if s[campo]:
             envio[campo] = s[campo]
-    if s["porta_query"]:
-        envio["porta_query"] = s["porta_query"]
-    if s.get("porta_extra"):
-        envio["porta_extra"] = s["porta_extra"]
+    if s["query_port"]:
+        envio["query_port"] = s["query_port"]
+    if s.get("extra_port"):
+        envio["extra_port"] = s["extra_port"]
     return envio
 
 
@@ -41,45 +41,45 @@ def test_ha_sugestoes_suficientes_para_valer_a_busca():
     assert len(SUGGESTIONS) >= 100
 
 
-@pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["chave"])
+@pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["key"])
 def test_toda_sugestao_passa_no_validador_do_broker(s):
-    assert validate_dynamic(_como_o_painel_envia(s)).key == s["chave"]
+    assert validate_dynamic(_como_o_painel_envia(s)).key == s["key"]
 
 
 def test_chaves_e_nomes_sao_unicos_para_a_busca_nao_ficar_ambigua():
-    assert len({s["chave"] for s in SUGGESTIONS}) == len(SUGGESTIONS)
-    assert len({s["nome"] for s in SUGGESTIONS}) == len(SUGGESTIONS)
+    assert len({s["key"] for s in SUGGESTIONS}) == len(SUGGESTIONS)
+    assert len({s["name"] for s in SUGGESTIONS}) == len(SUGGESTIONS)
 
 
-@pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["chave"])
+@pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["key"])
 def test_nenhum_argumento_carrega_segredo_nem_encadeia_comando(s):
     args = s["start_args"]
     for proibido in ("$", ";", "|", "&", "`", "CHANGE_ME", "password", "gslt", "token", "rcon_pass"):
-        assert proibido not in args, (s["nome"], proibido)
+        assert proibido not in args, (s["name"], proibido)
 
 
-@pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["chave"])
+@pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["key"])
 def test_marcador_de_consulta_so_existe_com_porta_de_consulta(s):
     if "{QUERY_PORT}" in s["start_args"]:
-        assert s["porta_query"], s["nome"]
+        assert s["query_port"], s["name"]
     if "{EXTRA_PORT}" in s["start_args"]:
-        assert s.get("porta_extra"), s["nome"]
+        assert s.get("extra_port"), s["name"]
 
 
-@pytest.mark.parametrize("s", [s for s in SUGGESTIONS if s["deslocavel"]], ids=lambda s: s["chave"])
+@pytest.mark.parametrize("s", [s for s in SUGGESTIONS if s["shiftable"]], ids=lambda s: s["key"])
 def test_jogo_marcado_para_andar_de_porta_so_tem_as_duas_portas_avisaveis(s):
-    numeros = {int(p.split("/")[0]) for p in s["portas"].split()}
-    assert numeros <= {s["porta_jogo"], s["porta_query"], s.get("porta_extra", 0)}
+    numeros = {int(p.split("/")[0]) for p in s["ports"].split()}
+    assert numeros <= {s["game_port"], s["query_port"], s.get("extra_port", 0)}
 
 
 def test_satisfactory_traz_a_porta_confiavel_em_tcp():
     s = next(s for s in SUGGESTIONS if s["appid"] == 1690800)
-    assert "8888/tcp" in s["portas"]
+    assert "8888/tcp" in s["ports"]
     assert "-ReliablePort=8888" in s["start_args"]
 
 
 def test_porta_de_administracao_nunca_e_exposta():
     """Rust guarda o RCON em 28016: vai no comando, nunca no firewall."""
     rust = next(s for s in SUGGESTIONS if s["appid"] == 258550)
-    assert "28016" not in rust["portas"]
+    assert "28016" not in rust["ports"]
     assert "+rcon.port 28016" in rust["start_args"]

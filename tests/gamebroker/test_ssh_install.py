@@ -136,13 +136,13 @@ def test_portas_deslocadas_chegam_ao_jogo(game, ports):
 
 
 def test_jogo_sem_porta_de_consulta(dados_de_jogo, ports):
-    dados_de_jogo.update(porta_query=0, portas=["7777/udp"])
+    dados_de_jogo.update(query_port=0, ports=["7777/udp"])
     game = validate_dynamic(dados_de_jogo)
     assert _valores(build_env(game, ports[:1]))["QUERY_PORT"] == "0"
 
 
 def test_runtime_de_windows_vira_windows_runtime_e_nao_receita(dados_de_jogo, ports):
-    dados_de_jogo.update(plataforma="windows", receitas=["wine", "steamclient-sdk64"])
+    dados_de_jogo.update(platform="windows", recipes=["wine", "steamclient-sdk64"])
     valores = _valores(build_env(validate_dynamic(dados_de_jogo), ports))
     assert valores["WINDOWS_RUNTIME"] == "wine"
     assert valores["RECIPES"] == "steamclient-sdk64"
@@ -150,7 +150,7 @@ def test_runtime_de_windows_vira_windows_runtime_e_nao_receita(dados_de_jogo, po
 
 
 def test_wine_e_proton_juntos_sao_recusados(dados_de_jogo, ports):
-    dados_de_jogo.update(plataforma="windows", receitas=["wine", "proton"])
+    dados_de_jogo.update(platform="windows", recipes=["wine", "proton"])
     with pytest.raises(InstallError, match="OU"):
         build_env(validate_dynamic(dados_de_jogo), ports)
 

@@ -102,19 +102,19 @@ CASOS_INVALIDOS = [
     ("config_files", ["/etc/passwd"]), ("config_files", "nao-e-lista"),
     ("backup_paths", ["/opt/game/.."]), ("log_path", "/var/log/x"),
     # identidade
-    ("chave", "Bad_Key"), ("chave", "a"), ("chave", "x" * 30), ("chave", "a;b"),
-    ("nome", "x;y"), ("nome", ""), ("nome", "n" * 41),
+    ("key", "Bad_Key"), ("key", "a"), ("key", "x" * 30), ("key", "a;b"),
+    ("name", "x;y"), ("name", ""), ("name", "n" * 41),
     # numeros
     ("app_id", "123"), ("app_id", True), ("app_id", 0), ("app_id", 2**31),
-    ("memoria_mb", 10**9), ("cores", True), ("disco_gb", 1),
+    ("memory_mb", 10**9), ("cores", True), ("disk_gb", 1),
     # portas
-    ("portas", []), ("portas", ["80/tcp"]), ("portas", ["1023/udp"]), ("portas", ["8080/tcp"]),
-    ("portas", ["8006/tcp"]), ("portas", ["25575/tcp"]), ("portas", ["99999/udp"]),
-    ("portas", ["7777/udp", "7777/udp"]), ("portas", ["7777"]), ("portas", ["7777/icmp"]),
-    ("porta_jogo", 9999), ("porta_query", 1234),
+    ("ports", []), ("ports", ["80/tcp"]), ("ports", ["1023/udp"]), ("ports", ["8080/tcp"]),
+    ("ports", ["8006/tcp"]), ("ports", ["25575/tcp"]), ("ports", ["99999/udp"]),
+    ("ports", ["7777/udp", "7777/udp"]), ("ports", ["7777"]), ("ports", ["7777/icmp"]),
+    ("game_port", 9999), ("query_port", 1234),
     # enums
-    ("plataforma", "freebsd"), ("player_source", "http"), ("receitas", ["rm -rf /"]),
-    ("deslocavel", "sim"),
+    ("platform", "freebsd"), ("player_source", "http"), ("recipes", ["rm -rf /"]),
+    ("shiftable", "sim"),
     # regex do log
     ("join_re", "(a+)+$"), ("join_re", "(.*)*x"), ("join_re", "(a|b*)+"), ("join_re", "x" * 201),
     ("join_re", "("),
@@ -130,20 +130,20 @@ def test_campo_invalido_e_recusado(dados_de_jogo, campo, valor):
 
 
 @pytest.mark.parametrize(("mudancas", "trecho"), [
-    ({"portas": ["7777/udp", "27016/udp", "2303/udp", "2304/udp"]}, "mais portas"),
+    ({"ports": ["7777/udp", "27016/udp", "2303/udp", "2304/udp"]}, "mais portas"),
     ({"start_args": "-log"}, "{PORT}"),
     ({"start_args": "-port={PORT}"}, "{QUERY_PORT}"),
 ])
 def test_deslocavel_exige_que_o_jogo_receba_todas_as_portas(dados_de_jogo, mudancas, trecho):
     """Sem isso o firewall abriria uma porta que o jogo nao escuta (ou uma que ele ignora)."""
     dados_de_jogo.update(mudancas)
-    with pytest.raises(ValidationError, match="deslocavel") as error:
+    with pytest.raises(ValidationError, match="shiftable") as error:
         cat.validate_dynamic(dados_de_jogo)
     assert trecho in str(error.value)
 
 
 def test_jogo_fixo_pode_ter_portas_extras_e_nenhum_marcador(dados_de_jogo):
-    dados_de_jogo.update(portas=["7777/udp", "27016/udp", "2303/udp"], start_args="-log", deslocavel=False)
+    dados_de_jogo.update(ports=["7777/udp", "27016/udp", "2303/udp"], start_args="-log", shiftable=False)
     assert cat.validate_dynamic(dados_de_jogo).shiftable is False
 
 
@@ -169,7 +169,7 @@ def test_corpo_que_nao_e_objeto_e_recusado(corpo):
         cat.validate_dynamic(corpo)
 
 
-@pytest.mark.parametrize("campo", ["chave", "nome", "app_id", "portas", "porta_jogo"])
+@pytest.mark.parametrize("campo", ["key", "name", "app_id", "ports", "game_port"])
 def test_campo_obrigatorio_ausente(dados_de_jogo, campo):
     del dados_de_jogo[campo]
     with pytest.raises(ValidationError, match="obrigatorio"):
@@ -177,16 +177,16 @@ def test_campo_obrigatorio_ausente(dados_de_jogo, campo):
 
 
 def test_jogo_de_windows_exige_receita_de_windows(dados_de_jogo):
-    dados_de_jogo["plataforma"] = "windows"
-    dados_de_jogo["receitas"] = []
+    dados_de_jogo["platform"] = "windows"
+    dados_de_jogo["recipes"] = []
     with pytest.raises(ValidationError, match="wine"):
         cat.validate_dynamic(dados_de_jogo)
-    dados_de_jogo["receitas"] = ["wine"]
+    dados_de_jogo["recipes"] = ["wine"]
     assert cat.validate_dynamic(dados_de_jogo).recipes == ("wine",)
 
 
 def test_so_o_minimo_basta(dados_de_jogo):
-    minimo = {k: dados_de_jogo[k] for k in ("chave", "nome", "app_id", "portas", "porta_jogo")}
+    minimo = {k: dados_de_jogo[k] for k in ("key", "name", "app_id", "ports", "game_port")}
     game = cat.validate_dynamic(minimo)
     assert (game.memory_mb, game.cores, game.disk_gb) == (4096, 2, 20)
     assert game.player_source == "log"
@@ -206,7 +206,7 @@ def test_adicionar_persiste_e_sobrevive_a_recarga(catalog, dados_de_jogo, tmp_pa
 
 
 def test_adicionar_chave_de_jogo_curado_e_conflito(catalog, dados_de_jogo):
-    dados_de_jogo["chave"] = "alfa"
+    dados_de_jogo["key"] = "alfa"
     with pytest.raises(Conflict):
         catalog.add_dynamic(dados_de_jogo)
 

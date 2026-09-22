@@ -75,11 +75,11 @@ def register_server(deps: BrokerJobDeps, r: dict) -> int:
 
 def finish_operation(deps: BrokerJobDeps, job_id: int, op: dict) -> None:
     log = str(op.get("log", ""))
-    if op.get("estado") != "ok":
+    if op.get("state") != "ok":
         deps.close_job(job_id, "error", log, codigo=1)
         return
     try:
-        sid = register_server(deps, op.get("resultado") or {})
+        sid = register_server(deps, op.get("result") or {})
     except (KeyError, TypeError, ValueError, sqlite3.Error) as erro:
         # A instancia EXISTE no Proxmox: o texto precisa dizer isso, senao parece que
         # nada foi feito.
@@ -109,7 +109,7 @@ def follow_operation(deps: BrokerJobDeps, job_id: int, op_id: str,
         falhas = 0
         log = str(op.get("log", ""))[-LOG_MAX:]
         deps.update_job(job_id, output=log)
-        if op.get("estado") != "executando":
+        if op.get("state") != "executando":
             finish_operation(deps, job_id, op)
             return
         sleep(deps.poll)

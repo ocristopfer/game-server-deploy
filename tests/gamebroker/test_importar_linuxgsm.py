@@ -43,9 +43,9 @@ startparameters="-publiclobby -useperfthreads -servername='${servername}' -port=
 
 def test_satisfactory_reproduz_as_portas_e_o_protocolo_de_cada_uma():
     s = imp.sugerir("Satisfactory", SATISFACTORY)
-    assert s["portas"] == "7777/udp 15777/udp 15000/udp 8888/tcp", "a porta confiavel e TCP"
-    assert s["porta_jogo"] == 7777
-    assert s["porta_query"] == 15777
+    assert s["ports"] == "7777/udp 15777/udp 15000/udp 8888/tcp", "a porta confiavel e TCP"
+    assert s["game_port"] == 7777
+    assert s["query_port"] == 15777
     assert s["start_args"] == ("FactoryGame -Port={PORT} -ServerQueryPort={QUERY_PORT} "
                                "-BeaconPort=15000 -ReliablePort=8888 -log")
     assert s["start_script"] == "Engine/Binaries/Linux/FactoryServer-Linux-Shipping"
@@ -54,8 +54,8 @@ def test_satisfactory_reproduz_as_portas_e_o_protocolo_de_cada_uma():
 def test_jogo_com_duas_portas_extras_nao_anda_de_porta():
     """O broker avisa ao jogo UMA porta extra. Com beacon E confiavel elas ficam fixas."""
     s = imp.sugerir("Satisfactory", SATISFACTORY)
-    assert s["deslocavel"] is False
-    assert s["porta_extra"] == 0
+    assert s["shiftable"] is False
+    assert s["extra_port"] == 0
 
 
 UMA_EXTRA = '''
@@ -69,17 +69,17 @@ startparameters="-Port=${port} -ReliablePort=${reliableport} -log"
 def test_uma_porta_extra_vira_o_marcador_e_o_jogo_pode_andar_de_porta():
     s = imp.sugerir("Um Jogo", UMA_EXTRA)
     assert s["start_args"] == "-Port={PORT} -ReliablePort={EXTRA_PORT} -log"
-    assert s["porta_extra"] == 8888
-    assert s["portas"] == "7777/udp 8888/tcp"
-    assert s["deslocavel"] is True
+    assert s["extra_port"] == 8888
+    assert s["ports"] == "7777/udp 8888/tcp"
+    assert s["shiftable"] is True
 
 
 def test_palworld_anda_de_porta_e_perde_so_o_nome_do_servidor():
     s = imp.sugerir("Palworld", PALWORLD)
     assert s["start_args"] == "-publiclobby -useperfthreads -port={PORT} -queryport={QUERY_PORT}"
-    assert s["deslocavel"] is True
+    assert s["shiftable"] is True
     assert s["start_script"] == "Pal/Binaries/Linux/PalServer-Linux-Shipping"
-    assert any("servername" in aviso for aviso in s["avisos"])
+    assert any("servername" in aviso for aviso in s["warnings"])
 
 
 HOSTIL = '''
@@ -97,7 +97,7 @@ startparameters="-port ${port} +password ${serverpassword} +rcon_password ${rcon
 
 def test_segredo_nunca_e_resolvido_nem_vai_para_a_sugestao():
     s = imp.sugerir("Hostil", HOSTIL)
-    texto = s["start_args"] + " " + s["portas"]
+    texto = s["start_args"] + " " + s["ports"]
     for proibido in ("CHANGE_ME", "TOKEN-SECRETO", "password", "gslt"):
         assert proibido not in texto
 
@@ -111,9 +111,9 @@ def test_o_que_nao_cabe_no_charset_e_removido_nao_escapado():
 def test_porta_de_administracao_fica_so_no_argumento_e_nunca_no_firewall():
     s = imp.sugerir("Hostil", HOSTIL)
     assert "+rcon.port 27020" in s["start_args"], "o jogo precisa dela para subir"
-    assert "27020" not in s["portas"]
-    assert "27021" not in s["portas"]
-    assert any("administracao" in aviso for aviso in s["avisos"])
+    assert "27020" not in s["ports"]
+    assert "27021" not in s["ports"]
+    assert any("administracao" in aviso for aviso in s["warnings"])
 
 
 def test_variavel_vazia_nao_deixa_opcao_solta_engolindo_a_proxima():
@@ -129,10 +129,10 @@ def test_sem_appid_nao_ha_sugestao():
 def test_sem_porta_no_cfg_a_sugestao_sai_parcial_com_aviso():
     s = imp.sugerir("Barotrauma", 'appid="1026340"\nexecutable="./DedicatedServer"\nexecutabledir="${serverfiles}"')
     assert s["appid"] == 1026340
-    assert s["portas"] == ""
-    assert s["porta_jogo"] == 0
-    assert s["deslocavel"] is False
-    assert any("portas" in aviso for aviso in s["avisos"])
+    assert s["ports"] == ""
+    assert s["game_port"] == 0
+    assert s["shiftable"] is False
+    assert any("portas" in aviso for aviso in s["warnings"])
 
 
 def test_executavel_fora_de_opt_game_e_descartado():

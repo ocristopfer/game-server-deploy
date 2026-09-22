@@ -70,7 +70,7 @@ def test_jogo_sem_porta_extra_recebe_extra_zero(dados_de_jogo):
 
 @pytest.fixture
 def com_extra(dados_de_jogo):
-    dados_de_jogo.update(portas=["7777/udp", "27016/udp", "8888/tcp"], porta_extra=8888,
+    dados_de_jogo.update(ports=["7777/udp", "27016/udp", "8888/tcp"], extra_port=8888,
                          start_args="-port={PORT} -queryport={QUERY_PORT} -reliable={EXTRA_PORT}")
     return dados_de_jogo
 
@@ -82,15 +82,15 @@ def test_jogo_com_porta_extra_e_aceito_e_volta_pelo_formato_gravado(com_extra):
 
 
 def test_publico_mostra_a_porta_extra(com_extra):
-    assert cat.validate_dynamic(com_extra).as_public()["porta_extra"] == 8888
+    assert cat.validate_dynamic(com_extra).as_public()["extra_port"] == 8888
 
 
 @pytest.mark.parametrize(("mudancas", "campo"), [
-    ({"porta_extra": 9999}, "porta_extra"),               # nao esta entre as portas expostas
-    ({"porta_extra": 7777}, "porta_extra"),               # igual a porta do jogo
-    ({"porta_extra": 27016}, "porta_extra"),              # igual a de consulta
-    ({"porta_extra": "8888"}, "porta_extra"),             # tem de ser numero
-    ({"start_args": "-port={PORT} -queryport={QUERY_PORT}"}, "deslocavel"),   # falta o marcador
+    ({"extra_port": 9999}, "extra_port"),               # nao esta entre as portas expostas
+    ({"extra_port": 7777}, "extra_port"),               # igual a porta do jogo
+    ({"extra_port": 27016}, "extra_port"),              # igual a de consulta
+    ({"extra_port": "8888"}, "extra_port"),             # tem de ser numero
+    ({"start_args": "-port={PORT} -queryport={QUERY_PORT}"}, "shiftable"),   # falta o marcador
 ])
 def test_porta_extra_invalida_e_recusada(com_extra, mudancas, campo):
     com_extra.update(mudancas)
@@ -107,13 +107,13 @@ def test_marcador_extra_sem_porta_extra_e_recusado(dados_de_jogo):
 
 
 def test_quarta_porta_continua_recusada_para_jogo_que_anda_de_porta(com_extra):
-    com_extra["portas"] = ["7777/udp", "27016/udp", "8888/tcp", "9999/udp"]
+    com_extra["ports"] = ["7777/udp", "27016/udp", "8888/tcp", "9999/udp"]
     with pytest.raises(ValidationError, match="mais portas"):
         cat.validate_dynamic(com_extra)
 
 
 def test_jogo_fixo_pode_ter_porta_extra_sem_andar_de_porta(com_extra):
-    com_extra["deslocavel"] = False
+    com_extra["shiftable"] = False
     ports = alocador.allocate_ports(cat.validate_dynamic(com_extra), set(), FAIXA)
     assert [p.number for p in ports] == [7777, 27016, 8888]
 

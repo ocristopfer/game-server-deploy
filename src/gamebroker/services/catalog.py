@@ -105,28 +105,28 @@ class Game:
     def as_public(self) -> dict:
         """O que a API mostra: nada de comando, nada de caminho de instalador."""
         return {
-            "chave": self.key, "nome": self.name, "app_id": self.app_id,
-            "portas": [str(p) for p in self.ports], "porta_jogo": self.game_port,
-            "porta_query": self.query_port, "porta_extra": self.extra_port,
-            "memoria_mb": self.memory_mb,
-            "cores": self.cores, "disco_gb": self.disk_gb,
-            "receitas": list(self.recipes), "deslocavel": self.shiftable,
-            "origem": self.source, "criavel": self.creatable, "motivo": self.reason,
+            "key": self.key, "name": self.name, "app_id": self.app_id,
+            "ports": [str(p) for p in self.ports], "game_port": self.game_port,
+            "query_port": self.query_port, "extra_port": self.extra_port,
+            "memory_mb": self.memory_mb,
+            "cores": self.cores, "disk_gb": self.disk_gb,
+            "recipes": list(self.recipes), "shiftable": self.shiftable,
+            "source": self.source, "creatable": self.creatable, "reason": self.reason,
         }
 
     def as_stored(self) -> dict:
         """Forma gravada em disco; `validate_dynamic` a aceita de volta."""
         return {
-            "chave": self.key, "nome": self.name, "app_id": self.app_id,
-            "plataforma": self.platform, "start_script": self.start_script,
-            "start_args": self.start_args, "portas": [str(p) for p in self.ports],
-            "porta_jogo": self.game_port, "porta_query": self.query_port,
-            "porta_extra": self.extra_port,
-            "memoria_mb": self.memory_mb, "cores": self.cores, "disco_gb": self.disk_gb,
+            "key": self.key, "name": self.name, "app_id": self.app_id,
+            "platform": self.platform, "start_script": self.start_script,
+            "start_args": self.start_args, "ports": [str(p) for p in self.ports],
+            "game_port": self.game_port, "query_port": self.query_port,
+            "extra_port": self.extra_port,
+            "memory_mb": self.memory_mb, "cores": self.cores, "disk_gb": self.disk_gb,
             "config_path": self.config_path, "config_files": list(self.config_files),
             "backup_paths": list(self.backup_paths), "player_source": self.player_source,
             "join_re": self.join_re, "leave_re": self.leave_re, "log_path": self.log_path,
-            "receitas": list(self.recipes), "deslocavel": self.shiftable,
+            "recipes": list(self.recipes), "shiftable": self.shiftable,
         }
 
 
@@ -299,12 +299,12 @@ def load_curated(directory: Path) -> tuple[dict[str, Game], list[str]]:
 # ----------------------------------------------------------------------------
 
 _DYNAMIC_FIELDS = frozenset({
-    "chave", "nome", "app_id", "plataforma", "start_script", "start_args", "portas",
-    "porta_jogo", "porta_query", "porta_extra", "memoria_mb", "cores", "disco_gb", "config_path",
+    "key", "name", "app_id", "platform", "start_script", "start_args", "ports",
+    "game_port", "query_port", "extra_port", "memory_mb", "cores", "disk_gb", "config_path",
     "config_files", "backup_paths", "player_source", "join_re", "leave_re", "log_path",
-    "receitas", "deslocavel",
+    "recipes", "shiftable",
 })
-_REQUIRED_FIELDS = ("chave", "nome", "app_id", "portas", "porta_jogo")
+_REQUIRED_FIELDS = ("key", "name", "app_id", "ports", "game_port")
 
 
 def _int_field(data: dict, field: str, minimum: int, maximum: int, default: int | None = None) -> int:
@@ -357,20 +357,20 @@ def _path_list(data: dict, field: str, maximum: int) -> tuple[str, ...]:
 
 
 def _ports_field(data: dict) -> tuple[Port, ...]:
-    items = _text_list(data, "portas", 8)
+    items = _text_list(data, "ports", 8)
     ports: list[Port] = []
     for item in items:
         try:
             port = _port(item)
         except ValueError as error:
-            raise ValidationError("portas", str(error)) from None
+            raise ValidationError("ports", str(error)) from None
         if port.number < 1024:
-            raise ValidationError("portas", f"{port}: portas abaixo de 1024 nao sao permitidas")
+            raise ValidationError("ports", f"{port}: portas abaixo de 1024 nao sao permitidas")
         if port.number in FORBIDDEN_PORTS:
-            raise ValidationError("portas", f"{port}: porta reservada (painel, Proxmox, REST ou RCON)")
+            raise ValidationError("ports", f"{port}: porta reservada (painel, Proxmox, REST ou RCON)")
         ports.append(port)
     if not ports or len(set(ports)) != len(ports):
-        raise ValidationError("portas", "informe ao menos uma porta, sem repetir")
+        raise ValidationError("ports", "informe ao menos uma porta, sem repetir")
     return tuple(ports)
 
 
@@ -407,19 +407,41 @@ def _start_script_field(data: dict) -> str:
 
 
 def _recipes_field(data: dict, platform: str) -> tuple[str, ...]:
-    items = _text_list(data, "receitas", len(RECIPES))
+    items = _text_list(data, "recipes", len(RECIPES))
     unknown = next((r for r in items if r not in RECIPES), None)
     if unknown is not None:
-        raise ValidationError("receitas", f"receita desconhecida: {unknown!r}")
+        raise ValidationError("recipes", f"receita desconhecida: {unknown!r}")
     if platform == "windows" and not set(items) & set(RECIPES_WINDOWS):
-        raise ValidationError("receitas", "jogo de Windows precisa da receita 'wine' ou 'proton'")
+        raise ValidationError("recipes", "jogo de Windows precisa da receita 'wine' ou 'proton'")
     return tuple(dict.fromkeys(items))
+
+
+# Os nomes de campo que esta API usava antes de falar ingles. Existe so para o jogo que
+# ja estava GRAVADO em `<estado>/dinamico/*.json` quando o broker foi atualizado: sem
+# isto ele viraria "campo desconhecido" na primeira releitura e sumiria do catalogo,
+# levando junto a instancia que dependia dele. O arquivo e reescrito no formato novo na
+# proxima gravacao; a tabela e fechada, entao campo de contrabando continua sendo recusado.
+_LEGACY_FIELDS = {
+    "chave": "key", "nome": "name", "plataforma": "platform", "portas": "ports",
+    "porta_jogo": "game_port", "porta_query": "query_port", "porta_extra": "extra_port",
+    "memoria_mb": "memory_mb", "disco_gb": "disk_gb", "receitas": "recipes",
+    "deslocavel": "shiftable",
+}
+
+
+def _without_legacy_names(data: dict) -> dict:
+    """Traduz os nomes antigos; um campo dado NOS DOIS jeitos e recusado."""
+    repetido = sorted(v for k, v in _LEGACY_FIELDS.items() if k in data and v in data)
+    if repetido:
+        raise ValidationError(repetido[0], "informado duas vezes (nome antigo e novo)")
+    return {_LEGACY_FIELDS.get(k, k): v for k, v in data.items()}
 
 
 def validate_dynamic(data: object) -> Game:
     """Valida um jogo vindo da API. Qualquer duvida e recusa: aqui nada vira comando."""
     if not isinstance(data, dict):
         raise ValidationError("corpo", "esperado um objeto JSON")
+    data = _without_legacy_names(data)
     unknown_field = sorted(set(data) - _DYNAMIC_FIELDS)
     if unknown_field:
         raise ValidationError(unknown_field[0], "campo desconhecido (a API so aceita dados, nunca comandos)")
@@ -428,25 +450,25 @@ def validate_dynamic(data: object) -> Game:
         raise ValidationError(missing[0], "obrigatorio")
 
     ports = _ports_field(data)
-    game_port = _int_field(data, "porta_jogo", 1024, 65535)
+    game_port = _int_field(data, "game_port", 1024, 65535)
     if game_port not in {p.number for p in ports}:
-        raise ValidationError("porta_jogo", "deve estar entre as portas expostas")
-    query_port = _int_field(data, "porta_query", 0, 65535, default=0)
+        raise ValidationError("game_port", "deve estar entre as portas expostas")
+    query_port = _int_field(data, "query_port", 0, 65535, default=0)
     if query_port and query_port not in {p.number for p in ports}:
-        raise ValidationError("porta_query", "deve estar entre as portas expostas (ou 0)")
-    extra_port = _int_field(data, "porta_extra", 0, 65535, default=0)
+        raise ValidationError("query_port", "deve estar entre as portas expostas (ou 0)")
+    extra_port = _int_field(data, "extra_port", 0, 65535, default=0)
     if extra_port and extra_port not in {p.number for p in ports}:
-        raise ValidationError("porta_extra", "deve estar entre as portas expostas (ou 0)")
+        raise ValidationError("extra_port", "deve estar entre as portas expostas (ou 0)")
     if extra_port and extra_port in (game_port, query_port):
-        raise ValidationError("porta_extra", "deve ser diferente da porta do jogo e da de consulta")
+        raise ValidationError("extra_port", "deve ser diferente da porta do jogo e da de consulta")
 
-    platform = _text_field(data, "plataforma", re.compile(r"linux|windows"))
+    platform = _text_field(data, "platform", re.compile(r"linux|windows"))
     player_source_raw = data.get("player_source", "log")
     if player_source_raw not in PLAYER_SOURCES_DYNAMIC:
         raise ValidationError("player_source", f"use {' ou '.join(PLAYER_SOURCES_DYNAMIC)}")
-    shiftable = data.get("deslocavel", False)
+    shiftable = data.get("shiftable", False)
     if not isinstance(shiftable, bool):
-        raise ValidationError("deslocavel", "deve ser verdadeiro ou falso")
+        raise ValidationError("shiftable", "deve ser verdadeiro ou falso")
     start_args = _start_args_field(data)
     problem = extra_port_problem(start_args, extra_port)
     if problem:
@@ -454,17 +476,17 @@ def validate_dynamic(data: object) -> Game:
     if shiftable:
         problem = shiftable_problem(ports, game_port, query_port, start_args, extra_port)
         if problem:
-            raise ValidationError("deslocavel", problem)
+            raise ValidationError("shiftable", problem)
 
     return Game(
-        key=_text_field(data, "chave", KEY_RE, required=True),
-        name=_text_field(data, "nome", NAME_RE, required=True),
+        key=_text_field(data, "key", KEY_RE, required=True),
+        name=_text_field(data, "name", NAME_RE, required=True),
         app_id=_int_field(data, "app_id", 1, 2**31 - 1),
         platform=platform, ports=ports, game_port=game_port, query_port=query_port,
         extra_port=extra_port,
-        memory_mb=_int_field(data, "memoria_mb", 512, 65536, default=4096),
+        memory_mb=_int_field(data, "memory_mb", 512, 65536, default=4096),
         cores=_int_field(data, "cores", 1, 16, default=2),
-        disk_gb=_int_field(data, "disco_gb", 4, 500, default=20),
+        disk_gb=_int_field(data, "disk_gb", 4, 500, default=20),
         start_script=_start_script_field(data), start_args=start_args,
         config_path=_single_path(data, "config_path"),
         config_files=_path_list(data, "config_files", 8),

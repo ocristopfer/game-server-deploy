@@ -27,9 +27,9 @@ def real(ambiente, pve, opn):
 
 def test_criar_de_ponta_a_ponta(real):
     resposta = real.servico_real.create("alfa", "Servidor do Zeca", "zeca")
-    operation = real.servico_real.operation(resposta["operacao_id"])
-    assert operation["estado"] == OP_OK
-    assert real.db.instance(resposta["instancia_id"])["estado"] == ESTADO_ATIVA
+    operation = real.servico_real.operation(resposta["operation_id"])
+    assert operation["state"] == OP_OK
+    assert real.db.instance(resposta["instance_id"])["estado"] == ESTADO_ATIVA
 
     ct = real.pve.falso.cts[300]
     assert ct["pool"] == "games"
@@ -38,13 +38,13 @@ def test_criar_de_ponta_a_ponta(real):
     assert sorted(r["destination.port"] for r in regras) == ["7001", "7002"]
     assert {r["target"] for r in regras} == {"10.0.0.30"}
     assert real.opn.falso.aplicacoes == 1
-    assert operation["resultado"]["host"] == "10.0.0.30"
+    assert operation["result"]["host"] == "10.0.0.30"
 
 
 def test_falha_na_instalacao_desfaz_no_proxmox_e_no_opnsense(real):
     real.instalador_real.failure = True
     resposta = real.servico_real.create("alfa", "x", "zeca")
-    assert real.servico_real.operation(resposta["operacao_id"])["estado"] == OP_ERRO
+    assert real.servico_real.operation(resposta["operation_id"])["state"] == OP_ERRO
     assert real.pve.falso.cts == {}, "o CT criado foi destruido"
     assert real.opn.falso.regras == {}
     assert real.db.count_instances() == 0
@@ -87,7 +87,7 @@ def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
 
     resposta = servico.create("alfa", "Um", "zeca")
 
-    assert servico.operation(resposta["operacao_id"])["estado"] == OP_OK
+    assert servico.operation(resposta["operation_id"])["state"] == OP_OK
     assert "GAME_PORT=7001" in executor.env_visto
     assert executor.comandos()[-1].startswith("rm -rf /root/gamepanel-install"), "a chave do broker saiu por ultimo"
     assert real.opn.falso.aplicacoes == 1, "o firewall abriu DEPOIS da instalacao"
@@ -96,19 +96,19 @@ def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
 
 def test_desativar_e_remover_de_ponta_a_ponta(real):
     criada = real.servico_real.create("alfa", "Um", "zeca")
-    real.servico_real.deactivate(criada["instancia_id"], "zeca")
+    real.servico_real.deactivate(criada["instance_id"], "zeca")
     assert real.opn.falso.regras == {}
     assert real.pve.falso.cts[300]["status"] == "stopped"
-    real.servico_real.remove(criada["instancia_id"], "Um", "zeca")
+    real.servico_real.remove(criada["instance_id"], "Um", "zeca")
     assert real.pve.falso.cts == {}
     assert real.db.taken() == (set(), set(), set())
 
 
 def test_ct_de_fora_do_pool_nunca_e_destruido_pelo_remover(real):
     criada = real.servico_real.create("alfa", "Um", "zeca")
-    real.servico_real.deactivate(criada["instancia_id"], "zeca")
+    real.servico_real.deactivate(criada["instance_id"], "zeca")
     # Alguem move o CT para fora do pool do broker (ou o id passa a ser de outro dono).
     real.pve.falso.cts[300]["pool"] = None
     with pytest.raises(Exception, match="nao pertence ao broker"):
-        real.servico_real.remove(criada["instancia_id"], "Um", "zeca")
+        real.servico_real.remove(criada["instance_id"], "Um", "zeca")
     assert 300 in real.pve.falso.cts

@@ -30,7 +30,7 @@ def env(tmp_path: Path, pasta_de_jogos: Path) -> dict[str, str]:
         (lib / nome).write_text("#!/bin/bash\n")
     return {
         "BROKER_TOKEN": TOKEN_BROKER, "BROKER_ALLOW_IPS": "192.168.2.19",
-        "BROKER_STATE_DIR": str(tmp_path / "estado"), "BROKER_GAMES_DIR": str(pasta_de_jogos),
+        "BROKER_STATE_DIR": str(tmp_path / "state"), "BROKER_GAMES_DIR": str(pasta_de_jogos),
         "BROKER_LIB_DIR": str(lib), "BROKER_SSH_KEY": str(ssh / "id_ed25519"),
         "BROKER_PANEL_PUBKEY": CHAVE_DO_PAINEL, "BROKER_GATEWAY": "192.168.2.1",
         "BROKER_IP_PREFIX": "192.168.2", "BROKER_IP_INICIO": "30", "BROKER_IP_FIM": "40",
@@ -213,13 +213,13 @@ def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
     app = prod.create_app_from_config(load(env_local), executor=executor, network=RedeFalsa(),
                                    run=lambda tarefa: tarefa())
     http = app.test_client()
-    auth = {"Authorization": f"Bearer {TOKEN_BROKER}", "X-Ator": "zeca"}
+    auth = {"Authorization": f"Bearer {TOKEN_BROKER}", "X-Actor": "zeca"}
 
-    resposta = http.post("/v1/instancias", headers=auth, json={"jogo": "alfa", "nome": "Um"})
+    resposta = http.post("/v1/instances", headers=auth, json={"game": "alfa", "name": "Um"})
 
     assert resposta.status_code == 202
-    operation = http.get(f"/v1/operacoes/{resposta.get_json()['operacao_id']}", headers=auth).get_json()
-    assert operation["estado"] == "ok"
+    operation = http.get(f"/v1/operations/{resposta.get_json()['operation_id']}", headers=auth).get_json()
+    assert operation["state"] == "ok"
     ct = pve.falso.cts[300]
     assert CHAVE_PUBLICA in ct["chaves"], "chave do broker: para instalar"
     assert CHAVE_DO_PAINEL in ct["chaves"], "chave do painel: para operar depois"
@@ -232,7 +232,7 @@ def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
 def test_a_api_de_producao_recusa_quem_nao_esta_na_lista_de_ips(env_local):
     env_local["BROKER_ALLOW_IPS"] = "10.9.9.9"
     app = prod.create_app_from_config(load(env_local), executor=ExecutorFalso(), network=RedeFalsa())
-    resposta = app.test_client().get("/v1/saude", headers={"Authorization": f"Bearer {TOKEN_BROKER}"})
+    resposta = app.test_client().get("/v1/health", headers={"Authorization": f"Bearer {TOKEN_BROKER}"})
     assert resposta.status_code == 403
 
 

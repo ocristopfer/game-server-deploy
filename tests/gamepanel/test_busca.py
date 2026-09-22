@@ -6,7 +6,7 @@ from gamepanel.games.catalog import suggestions as sugestoes_de_jogos
 
 
 def _nomes(achados):
-    return [s["nome"] for s in achados]
+    return [s["name"] for s in achados]
 
 
 def test_app_id_exato():
@@ -29,7 +29,7 @@ def test_palavras_soltas_em_qualquer_ordem():
 def test_quem_comeca_pela_consulta_vem_primeiro():
     achados = busca.search("pal")
     assert achados
-    assert achados[0]["nome"].lower().startswith("pal")
+    assert achados[0]["name"].lower().startswith("pal")
 
 
 def test_limite():
@@ -51,8 +51,8 @@ def test_consulta_gigante_e_cortada():
 
 
 def test_valores_do_formulario_sempre_trazem_todas_as_chaves():
-    chaves = {"chave", "nome", "app_id", "portas", "porta_jogo", "porta_query", "porta_extra",
-              "start_script", "start_args", "deslocavel"}
+    chaves = {"key", "name", "app_id", "ports", "game_port", "query_port", "extra_port",
+              "start_script", "start_args", "shiftable"}
     for s in sugestoes_de_jogos.SUGGESTIONS:
         assert set(busca.to_form(s)) == chaves
         assert all(isinstance(v, str) for v in busca.to_form(s).values())
@@ -60,15 +60,15 @@ def test_valores_do_formulario_sempre_trazem_todas_as_chaves():
 
 def test_sugestao_sem_porta_limpa_os_campos_de_porta_do_jogo_anterior():
     """Escolher um jogo sem porta depois de um com porta nao pode deixar a porta velha no campo."""
-    parcial = next(s for s in sugestoes_de_jogos.SUGGESTIONS if not s["portas"])
+    parcial = next(s for s in sugestoes_de_jogos.SUGGESTIONS if not s["ports"])
     valores = busca.to_form(parcial)
-    assert valores["portas"] == ""
-    assert valores["porta_jogo"] == ""
-    assert valores["porta_query"] == ""
+    assert valores["ports"] == ""
+    assert valores["game_port"] == ""
+    assert valores["query_port"] == ""
 
 
 def test_deslocavel_vira_um_ou_vazio():
     palworld = busca.search("2394010")[0]
-    assert busca.to_form(palworld)["deslocavel"] == "1"
+    assert busca.to_form(palworld)["shiftable"] == "1"
     satisfactory = busca.search("1690800")[0]
-    assert busca.to_form(satisfactory)["deslocavel"] == ""
+    assert busca.to_form(satisfactory)["shiftable"] == ""

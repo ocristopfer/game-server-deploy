@@ -18,16 +18,16 @@
       {% for j in jogos %}
       <tr>
         <td>
-          <strong>{{ j.nome }}</strong> <span class="muted small">{{ j.chave }}</span>
-          {% if j.criavel %}<span class="badge on">{{ _('catalog.creatable') }}</span>
+          <strong>{{ j.name }}</strong> <span class="muted small">{{ j.key }}</span>
+          {% if j.creatable %}<span class="badge on">{{ _('catalog.creatable') }}</span>
           {% else %}<span class="badge cold">{{ _('catalog.manual') }}</span>{% endif %}
           <div class="muted small">
-            app {{ j.app_id or '—' }} · {{ j.memoria_mb }} MB · {{ j.cores }} CPU · {{ j.disco_gb }} GB · {{ j.origem }}
+            app {{ j.app_id or '—' }} · {{ j.memory_mb }} MB · {{ j.cores }} CPU · {{ j.disk_gb }} GB · {{ j.source }}
           </div>
           <div class="small">
-            {{ _('catalog.ports') }}: {{ j.portas | join(', ') }}{% if j.deslocavel %} <span class="badge cold" title="{{ _('catalog.shifted_port_help') }}">{{ _('catalog.shifted_port') }}</span>{% endif %}
+            {{ _('catalog.ports') }}: {{ j.ports | join(', ') }}{% if j.shiftable %} <span class="badge cold" title="{{ _('catalog.shifted_port_help') }}">{{ _('catalog.shifted_port') }}</span>{% endif %}
           </div>
-          {% if not j.criavel %}<div class="muted small">{{ j.motivo }}</div>{% endif %}
+          {% if not j.creatable %}<div class="muted small">{{ j.reason }}</div>{% endif %}
         </td>
       </tr>
       {% else %}
@@ -68,12 +68,12 @@
     {% endif %}
     <div class="row">
       <label>{{ _('catalog.key') }}
-        <input name="chave" value="{{ form.get('chave', '') }}" required maxlength="24" spellcheck="false"
+        <input name="key" value="{{ form.get('key', '') }}" required maxlength="24" spellcheck="false"
                autocapitalize="none" pattern="[a-z][a-z0-9\-]{1,23}" placeholder="{{ _('catalog.key_example') }}">
         <small>{{ _('catalog.key_hint') }}</small>
       </label>
       <label>{{ _('catalog.name') }}
-        <input name="nome" value="{{ form.get('nome', '') }}" required maxlength="40"
+        <input name="name" value="{{ form.get('name', '') }}" required maxlength="40"
                placeholder="{{ _('catalog.name_example') }}">
       </label>
     </div>
@@ -83,17 +83,17 @@
     </label>
     <div class="row">
       <label>{{ _('catalog.ports') }}
-        <input name="portas" value="{{ form.get('portas', '') }}" required spellcheck="false" placeholder="7777/udp 27015/udp">
+        <input name="ports" value="{{ form.get('ports', '') }}" required spellcheck="false" placeholder="7777/udp 27015/udp">
         <small>{{ _('catalog.ports_hint') }}</small>
       </label>
       <label>{{ _('catalog.game_port') }}
-        <input name="porta_jogo" value="{{ form.get('porta_jogo', '') }}" required inputmode="numeric" placeholder="7777">
+        <input name="game_port" value="{{ form.get('game_port', '') }}" required inputmode="numeric" placeholder="7777">
       </label>
       <label>{{ _('catalog.query_port') }} <span class="muted">{{ _('catalog.optional') }}</span>
-        <input name="porta_query" value="{{ form.get('porta_query', '') }}" inputmode="numeric" placeholder="27015">
+        <input name="query_port" value="{{ form.get('query_port', '') }}" inputmode="numeric" placeholder="27015">
       </label>
       <label>{{ _('catalog.extra_port') }} <span class="muted">{{ _('catalog.optional') }}</span>
-        <input name="porta_extra" value="{{ form.get('porta_extra', '') }}" inputmode="numeric" placeholder="8888">
+        <input name="extra_port" value="{{ form.get('extra_port', '') }}" inputmode="numeric" placeholder="8888">
       </label>
     </div>
     <div class="row">
@@ -107,13 +107,13 @@
     </div>
     <div class="row">
       <label>{{ _('catalog.memory_mb') }}
-        <input name="memoria_mb" value="{{ form.get('memoria_mb', '') }}" inputmode="numeric" placeholder="4096">
+        <input name="memory_mb" value="{{ form.get('memory_mb', '') }}" inputmode="numeric" placeholder="4096">
       </label>
       <label>{{ _('catalog.cpus') }}
         <input name="cores" value="{{ form.get('cores', '') }}" inputmode="numeric" placeholder="2">
       </label>
       <label>{{ _('catalog.disk_gb') }}
-        <input name="disco_gb" value="{{ form.get('disco_gb', '') }}" inputmode="numeric" placeholder="20">
+        <input name="disk_gb" value="{{ form.get('disk_gb', '') }}" inputmode="numeric" placeholder="20">
       </label>
     </div>
     <label>{{ _('catalog.config_folder') }} <span class="muted">{{ _('catalog.optional') }}</span>
@@ -134,9 +134,9 @@
         </select>
       </label>
       <label>{{ _('catalog.platform') }}
-        <select name="plataforma">
+        <select name="platform">
           <option value="">{{ _('catalog.linux_default') }}</option>
-          <option value="windows" {{ 'selected' if form.get('plataforma') == 'windows' }}>{{ _('catalog.windows_needs_wine') }}</option>
+          <option value="windows" {{ 'selected' if form.get('platform') == 'windows' }}>{{ _('catalog.windows_needs_wine') }}</option>
         </select>
       </label>
     </div>
@@ -149,11 +149,11 @@
     <fieldset class="grupo">
       <legend>{{ _('catalog.install_recipes') }}</legend>
       {% for r in receitas %}
-        <label class="checkbox"><input type="checkbox" name="receitas" value="{{ r }}"> {{ r }}</label>
+        <label class="checkbox"><input type="checkbox" name="recipes" value="{{ r }}"> {{ r }}</label>
       {% endfor %}
     </fieldset>
     <label class="checkbox">
-      <input type="checkbox" name="deslocavel" value="1" {{ 'checked' if form.get('deslocavel') == '1' }}>
+      <input type="checkbox" name="shiftable" value="1" {{ 'checked' if form.get('shiftable') == '1' }}>
       {{ _('catalog.broker_picks_ports') }}
     </label>
     <p class="muted small">{{ _('catalog.broker_picks_ports_hint') }}</p>

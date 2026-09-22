@@ -27,21 +27,21 @@ def _como_o_painel_monta(values: dict[str, str]) -> dict:
     for campo in ("start_args", "config_path", "join_re", "leave_re", "player_source"):
         if values.get(campo):
             data[campo] = values[campo]
-    for campo in ("porta_jogo", "porta_query", "memoria_mb", "cores", "disco_gb"):
+    for campo in ("game_port", "query_port", "memory_mb", "cores", "disk_gb"):
         if values.get(campo):
             data[campo] = int(values[campo])
-    data["portas"] = [p for p in re.split(r"[\s,]+", values.get("portas", "").strip()) if p]
+    data["ports"] = [p for p in re.split(r"[\s,]+", values.get("ports", "").strip()) if p]
     for campo in ("config_files", "backup_paths"):
         data[campo] = [p.strip() for p in values.get(campo, "").replace(",", "\n").splitlines() if p.strip()]
-    data["receitas"] = []
-    data["deslocavel"] = values.get("deslocavel") == "1"
+    data["recipes"] = []
+    data["shiftable"] = values.get("shiftable") == "1"
     return data
 
 
 def _completo(modelo) -> dict:
     """O que a pessoa acrescenta a mao: identidade e app id (o resto vem do modelo)."""
     data = _como_o_painel_monta(modelo.values)
-    data.update(chave="meujogo", nome="Meu Jogo", app_id=123456)
+    data.update(key="meujogo", name="Meu Jogo", app_id=123456)
     return data
 
 
@@ -53,7 +53,7 @@ def test_modelo_passa_no_validador_do_broker(modelo):
 
 @pytest.mark.parametrize("modelo", modelos.TEMPLATES, ids=lambda m: m.key)
 def test_modelo_que_anda_de_porta_tem_os_marcadores(modelo):
-    if modelo.values.get("deslocavel") == "1":
+    if modelo.values.get("shiftable") == "1":
         assert "{PORT}" in modelo.values["start_args"]
 
 

@@ -14,13 +14,13 @@ BROKER_RECIPES = ("wine", "proton", "steamclient-sdk64")
 NUMBER_RE = re.compile(r"[0-9]{1,10}", re.ASCII)
 
 # Campos que entram como texto, se vierem preenchidos.
-TEXT_FIELDS = ("chave", "nome", "plataforma", "start_script", "start_args",
-                   "config_path", "log_path", "join_re", "leave_re", "player_source")
+TEXT_FIELDS = ("key", "name", "platform", "start_script", "start_args",
+               "config_path", "log_path", "join_re", "leave_re", "player_source")
 # Campos numericos, com o rotulo que aparece no erro.
 NUMERIC_FIELDS = (
-    ("app_id", "App ID"), ("porta_jogo", "Porta do jogo"),
-    ("porta_query", "Porta de consulta"), ("porta_extra", "Porta extra"),
-    ("memoria_mb", "Memoria"), ("cores", "CPUs"), ("disco_gb", "Disco"),
+    ("app_id", "App ID"), ("game_port", "Porta do jogo"),
+    ("query_port", "Porta de consulta"), ("extra_port", "Porta extra"),
+    ("memory_mb", "Memoria"), ("cores", "CPUs"), ("disk_gb", "Disco"),
 )
 
 
@@ -45,9 +45,9 @@ def game_from_form(form: Any) -> tuple[dict, list[str]]:
             dados[campo] = int(bruto)
         else:
             erros.append(f"{label} deve ser um numero.")
-    dados["portas"] = [p for p in re.split(r"[\s,]+", (form.get("portas") or "").strip()) if p]
+    dados["ports"] = [p for p in re.split(r"[\s,]+", (form.get("ports") or "").strip()) if p]
     dados["config_files"] = lines_of(form.get("config_files", ""))
     dados["backup_paths"] = lines_of(form.get("backup_paths", ""))
-    dados["receitas"] = [r for r in form.getlist("receitas") if r in BROKER_RECIPES]
-    dados["deslocavel"] = form.get("deslocavel") == "1"
+    dados["recipes"] = [r for r in form.getlist("recipes") if r in BROKER_RECIPES]
+    dados["shiftable"] = form.get("shiftable") == "1"
     return dados, erros

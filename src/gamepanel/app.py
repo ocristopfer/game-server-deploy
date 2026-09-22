@@ -3807,7 +3807,7 @@ def catalog_new():
 def instances_list():
     try:
         instances = broker_client.instances()
-        jogos = [j for j in broker_client.catalog() if j.get("criavel")]
+        jogos = [j for j in broker_client.catalog() if j.get("creatable")]
     except broker_client.BrokerError as erro:
         flash(translate("flash.broker_error", reason=erro.message), "error")
         instances, jogos = [], []
@@ -3822,18 +3822,18 @@ def instances_list():
 @admin_required
 @broker_required
 def instance_new():
-    jogo = (request.form.get("jogo") or "").strip()
-    name = (request.form.get("nome") or "").strip()
+    game = (request.form.get("game") or "").strip()
+    name = (request.form.get("name") or "").strip()
     try:
-        resposta = broker_client.create(jogo, name, _ator())
+        resposta = broker_client.create(game, name, _ator())
     except broker_client.BrokerError as erro:
         flash(translate("flash.broker_error", reason=erro.message), "error")
         return redirect(url_for("instances_list"))
-    op_id = str(resposta.get("operacao_id", ""))
+    op_id = str(resposta.get("operation_id", ""))
     if not op_id:
         flash(translate("flash.broker_no_operation_id"), "error")
         return redirect(url_for("instances_list"))
-    job_id = start_broker_job("broker-criar", _ator(), op_id, f"{jogo}: {name}")
+    job_id = start_broker_job("broker-criar", _ator(), op_id, f"{game}: {name}")
     return redirect(url_for("job_detail", jid=job_id))
 
 
@@ -3857,10 +3857,10 @@ def instance_deactivate(iid: int):
 @admin_required
 @broker_required
 def instance_remove(iid: int):
-    confirm = (request.form.get("confirma") or "").strip()
-    somente_banco = request.form.get("somente_banco") == "1"
+    confirm = (request.form.get("confirmation") or "").strip()
+    db_only = request.form.get("db_only") == "1"
     try:
-        broker_client.remove(iid, confirm, _ator(), somente_banco)
+        broker_client.remove(iid, confirm, _ator(), db_only)
     except broker_client.BrokerError as erro:
         _log_broker_action("broker-remover", _ator(), f"instancia {iid}", erro.message, "error")
         flash(translate("flash.broker_error", reason=erro.message), "error")
@@ -3871,7 +3871,7 @@ def instance_remove(iid: int):
         conn.execute("DELETE FROM servers WHERE broker_id = ?", (iid,))
     _log_broker_action(
         "broker-remover", _ator(), f"instancia {iid}",
-        "So o registro foi esquecido." if somente_banco else "Container destruido e servidor removido do painel.")
+        "So o registro foi esquecido." if db_only else "Container destruido e servidor removido do painel.")
     flash(translate("flash.instance_removed"), "ok")
     return redirect(url_for("instances_list"))
 
