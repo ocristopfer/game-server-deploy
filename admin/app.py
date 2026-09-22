@@ -52,6 +52,7 @@ import broker_client
 import busca_de_jogos
 import gameconf
 import gamefields
+import qr
 import totp
 import ui
 from modelos_de_jogo import MODELOS as MODELOS_DE_JOGO
@@ -6604,12 +6605,26 @@ _NUMERO_RE = re.compile(r"[0-9]{1,10}", re.ASCII)
 def broker_required(view):
     """Rota que so existe quando o deploy ligou o broker. Empilha DEPOIS de
     `admin_required`: o operador leva o 403 de administrador, e so o admin descobre que o
-    recurso esta desligado."""
+    recurso esta desligado.
+
+    Exige tambem o segundo fator DA PESSOA, sempre — independente de `GAMEPANEL_REQUIRE_2FA`
+    (que e sobre o painel inteiro). O broker cria e apaga container no Proxmox e abre porta
+    no OPNsense; se a sessao de um admin for roubada (XSS, proxy malicioso, celular
+    destravado), o 2FA e a unica coisa que ainda separa "ver a tela" de "destruir
+    infraestrutura". Sem ele o pedido nem chega a `broker_client`."""
 
     @wraps(view)
     def wrapper(*args, **kwargs):
         if not ALLOW_BROKER:
             abort(403, "O broker esta desligado neste painel (GAMEPANEL_ALLOW_BROKER=0).")
+        usuario = usuario_logado()
+        if not usuario or not usuario["totp_enabled"]:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "ative a verificacao em duas etapas em Conta para "
+                                         "usar o broker"}), 403
+            flash("O broker so pode ser usado por quem tem a verificacao em duas etapas "
+                  "ativa: ative-a em Conta.", "error")
+            return redirect(url_for("account_2fa"))
         return view(*args, **kwargs)
 
     return wrapper
@@ -7424,9 +7439,10 @@ def account_2fa():
     # o mesmo, e abandonar a tela nao deixa nada meio ligado no banco.
     segredo = session.get("totp_pendente") or totp.novo_segredo()
     session["totp_pendente"] = segredo
+    endereco = totp.uri(segredo, session.get("username", ""), "Painel de Jogos")
     return render_template(
-        "account_2fa.html", segredo=totp.agrupar(segredo),
-        endereco=totp.uri(segredo, session.get("username", ""), "Painel de Jogos"))
+        "account_2fa.html", segredo=totp.agrupar(segredo), endereco=endereco,
+        qr_svg=qr.svg(endereco, rotulo="QR code da verificacao em duas etapas"))
 
 
 @app.post("/account/2fa/desativar")

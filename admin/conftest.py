@@ -34,9 +34,12 @@ os.environ["GAMEPANEL_DB"] = os.path.join(tempfile.mkdtemp(), "teste.db")
 os.environ["GAMEPANEL_WEBHOOK_URL"] = ""
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import time  # noqa: E402
+
 import pytest  # noqa: E402
 
 import app as panel  # noqa: E402
+import totp  # noqa: E402
 
 # Toda tabela do SCHEMA. Esvaziar e melhor que recriar: `init_db()` tambem roda as
 # migracoes, e repeti-las a cada teste mediria o tempo delas, nao o do teste.
@@ -157,3 +160,21 @@ def peao(entrar):
     """Um operador cadastrado e logado, para os testes de permissao."""
     panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERADOR)
     return entrar("peao", "senha-do-peao")
+
+
+@pytest.fixture
+def chefe_2fa(chefe):
+    """O mesmo `chefe`, com o segundo fator ATIVO.
+
+    `broker_required` exige 2FA da PESSOA sempre, nao so quando `GAMEPANEL_REQUIRE_2FA`
+    esta ligado — sem esta fixture, todo teste de rota do broker cairia na tela de
+    ativacao em vez do que quer exercitar. Ativar 2FA na sessao ja logada nao a
+    derruba (`_guarda_o_segundo_fator` nao mexe na sessao), entao o mesmo cliente
+    continua servindo depois.
+    """
+    chefe.get("/account/2fa")
+    with chefe.session_transaction() as sess:
+        segredo = sess["totp_pendente"]
+    resposta = _postar(chefe, "/account/2fa", {"codigo": totp.codigo(segredo, totp.passo_de(time.time()))})
+    assert resposta.status_code == 200, "nao consegui ativar o 2FA de 'chefe' para o teste"
+    return chefe

@@ -243,6 +243,20 @@ dl.meta dt {
 }
 dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 
+/* O QR code de ativacao do 2FA: fundo branco fixo (o SVG ja nasce assim) porque e o que a
+   camera do celular espera, mesmo com o resto da tela no tema escuro. Tamanho fixo e nao
+   "100%" - um QR esticado pela largura do celular vira grande demais e sai da tela. */
+.qr-2fa {
+  display: inline-block;
+  width: 220px;
+  max-width: 100%;
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  background: #fff;
+  border-radius: var(--r-sm);
+}
+.qr-2fa svg { display: block; width: 100%; height: auto; }
+
 /* A chave do segundo fator: grande, em fonte de largura fixa e selecionavel com um toque. */
 .segredo {
   display: inline-block;

@@ -10,10 +10,30 @@ cadastra no fim - inclusive quando o fim e ruim.
 """
 from __future__ import annotations
 
+import time
+
 import pytest
 
 import app as panel
+import totp
 import ui
+
+# `broker_required` agora exige o segundo fator DA PESSOA, sempre (ver app.py) - nao so
+# quando GAMEPANEL_REQUIRE_2FA esta ligado. Quase todo teste deste arquivo precisa chegar
+# ATE a view para testar o que quer testar, entao "chefe" AQUI (e so aqui, por causa deste
+# override de fixture) ja vem com o 2FA ativo. Quem quer provar a exigencia em si pede
+# `sem_2fa`, mais abaixo.
+@pytest.fixture
+def chefe(chefe_2fa):
+    return chefe_2fa
+
+
+@pytest.fixture
+def sem_2fa(entrar):
+    """Um admin comum, sem o segundo fator - o caso que a exigencia do broker barra."""
+    panel.ensure_admin_user("sem-2fa", "senha-sem-2fa")
+    return entrar("sem-2fa", "senha-sem-2fa")
+
 
 OP = "a" * 32
 
@@ -181,6 +201,58 @@ def test_menu_so_mostra_o_broker_quando_ligado(chefe, broker, monkeypatch):
     desligado = chefe.get("/").get_data(as_text=True)
     assert 'href="/instancias"' not in desligado
     assert 'href="/catalogo"' not in desligado
+
+
+# --------------------------------------------------- 2FA obrigatorio para falar com o broker
+
+@pytest.mark.parametrize("rota", ["/catalogo", "/instancias"])
+def test_sem_2fa_a_tela_manda_para_a_ativacao(sem_2fa, broker, rota):
+    resposta = sem_2fa.get(rota)
+    assert resposta.status_code == 302
+    assert resposta.headers["Location"].endswith("/account/2fa")
+    assert broker.chamadas == []
+
+
+@pytest.mark.parametrize("rota", ROTAS_POST)
+def test_sem_2fa_o_post_e_redirecionado_para_a_ativacao_e_nao_chama_o_broker(sem_2fa, broker, postar, rota):
+    resposta = postar(sem_2fa, rota, {"jogo": "alfa", "nome": "x"})
+    assert resposta.status_code == 302
+    assert resposta.headers["Location"].endswith("/account/2fa")
+    assert broker.chamadas == []
+
+
+def test_sem_2fa_a_api_json_responde_403_em_vez_de_redirecionar(sem_2fa, broker):
+    resposta = sem_2fa.get("/api/catalogo/sugestoes?q=palworld")
+    assert resposta.status_code == 403
+    assert "duas etapas" in resposta.get_json()["error"]
+    assert broker.chamadas == []
+
+
+def test_allow_broker_desligado_vence_mesmo_para_quem_nao_tem_2fa(sem_2fa, monkeypatch):
+    """A ordem dos dois "guardas" de `broker_required` importa: com o recurso inteiro
+    desligado, a mensagem tem de ser sobre isso, nao sobre o 2FA de quem pediu."""
+    monkeypatch.setattr(panel, "ALLOW_BROKER", False)
+    resposta = sem_2fa.get("/catalogo")
+    assert resposta.status_code == 403
+    assert "GAMEPANEL_ALLOW_BROKER" in resposta.get_data(as_text=True)
+
+
+def test_ativar_o_segundo_fator_libera_as_rotas_do_broker(sem_2fa, broker, postar):
+    assert sem_2fa.get("/catalogo").status_code == 302
+    sem_2fa.get("/account/2fa")
+    with sem_2fa.session_transaction() as sess:
+        segredo = sess["totp_pendente"]
+    ativado = postar(sem_2fa, "/account/2fa", {"codigo": totp.codigo(segredo, totp.passo_de(time.time()))})
+    assert ativado.status_code == 200
+    assert sem_2fa.get("/catalogo").status_code == 200
+
+
+def test_operador_leva_403_antes_mesmo_de_chegar_no_guarda_do_2fa(peao, broker):
+    """Admin sem 2FA e barrado; operador (com ou sem 2FA) nem chega la: admin_required
+    empilha por fora, entao a mensagem dele e sobre o papel, nao sobre o 2FA."""
+    resposta = peao.get("/catalogo")
+    assert resposta.status_code == 403
+    assert "administradores" in resposta.get_data(as_text=True)
 
 
 def test_itens_visiveis_filtra_por_recurso_e_papel():

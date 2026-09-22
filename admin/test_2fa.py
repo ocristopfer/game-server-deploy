@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 import app as panel
+import qr
 import totp
 
 ADMIN = Path(__file__).resolve().parent
@@ -74,6 +75,27 @@ def test_tela_de_ativacao_mostra_a_chave_e_o_endereco_para_o_aplicativo(chefe, h
     assert totp.agrupar(segredo) in html
     assert "otpauth://totp/" in html
     assert "secret=" + segredo in html
+
+
+def test_tela_de_ativacao_tem_o_qr_code_do_mesmo_endereco_mostrado(chefe, hora):
+    """Nao testa a matematica do QR (isso e `test_qr.py` + `tools/verificar-qr.py`, contra um
+    leitor de verdade): so que a ROTA liga o SVG ao mesmo `otpauth://` que a chave e o link
+    representam - um bug aqui deixaria a camera cadastrar uma conta diferente da que a
+    pessoa confirma logo abaixo."""
+    html = chefe.get("/account/2fa").get_data(as_text=True)
+    with chefe.session_transaction() as sess:
+        segredo = sess["totp_pendente"]
+    endereco = totp.uri(segredo, "chefe", "Painel de Jogos")
+    assert qr.svg(endereco, rotulo="QR code da verificacao em duas etapas") in html
+
+
+def test_usuario_no_limite_de_32_caracteres_nao_quebra_a_tela(postar, hora):
+    panel.ensure_admin_user("a" * 32, "senha-bem-grande-123")
+    cli = panel.app.test_client()
+    _senha(cli, postar, "a" * 32, "senha-bem-grande-123")
+    resposta = cli.get("/account/2fa")
+    assert resposta.status_code == 200
+    assert "<svg" in resposta.get_data(as_text=True)
 
 
 def test_recarregar_a_tela_de_ativacao_mostra_a_mesma_chave(chefe, hora):
