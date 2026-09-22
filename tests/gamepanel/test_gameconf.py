@@ -45,7 +45,7 @@ OptionSettings=(Difficulty=None,DayTimeSpeedRate=1.000000,bIsPvP=False,DeathPena
 def test_palworld_abre_a_tupla_da_unreal_como_campos():
     """`OptionSettings=(...)` nao e um valor: e a configuracao inteira numa linha."""
     doc = gc.load("PalWorldSettings.ini", PALWORLD)
-    assert doc.formato == "ini"
+    assert doc.format_id == "ini"
     assert len([s.key for s in doc.settings]) == 8
     assert any("OptionSettings" in s.label for s in doc.sections)
 
@@ -146,7 +146,7 @@ ENSHROUDED = """{
 
 def test_json_le_objeto_aninhado_como_secao():
     doc = gc.load("enshrouded_server.json", ENSHROUDED)
-    assert doc.formato == "json"
+    assert doc.format_id == "json"
     assert por_id(doc, "userGroups.0.password").key == "password"
     assert por_id(doc, "enableVoiceChat").kind == "bool"
     assert por_id(doc, "slotCount").kind == "number"
@@ -198,7 +198,7 @@ ID_TEMPLATE = f"Missions.DayZ{gc.SEP}template"
 
 def test_dayz_le_class_como_secao_e_comentario_como_ajuda():
     doc = gc.load("serverDZ.cfg", DAYZ)
-    assert doc.formato == "dayz"
+    assert doc.format_id == "dayz"
     assert por_id(doc, ID_TEMPLATE).value == "dayzOffline.chernarusplus"
     assert "navegador" in campo(doc, "", "hostname").comment
 
@@ -278,4 +278,4 @@ def test_sem_edicao_o_arquivo_volta_igual(nome, texto):
     ("qualquer.txt", "a=1\n", "ini"),      # ini e o padrao
 ])
 def test_deteccao_de_formato(nome, texto, formato):
-    assert gc.load(nome, texto).formato == formato
+    assert gc.load(nome, texto).format_id == formato

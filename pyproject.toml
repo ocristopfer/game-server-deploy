@@ -21,5 +21,42 @@ dev = [
     "mypy>=1.14",
 ]
 
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+# Gerado por tools/importar-linuxgsm.py a partir de dado de terceiros (LinuxGSM) - nao e
+# escrito a mao, e as strings de aviso em varias linhas disparam ISC004 sem ser bug real.
+extend-exclude = ["src/gamepanel/games/catalog/suggestions.py"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "I", "UP", "B",     # pyflakes/pycodestyle/imports/pyupgrade/bugbear
+    "BLE",                          # except Exception generico (o CLAUDE.md ja assume isso pros # noqa: BLE001)
+    "S",                             # bandit: subprocess inseguro, senha/token hardcoded, except-pass...
+    "SIM", "RUF",                     # simplificacoes e regras proprias do ruff
+    "C90",                              # complexidade (mccabe) - proxy de cognitiva
+    "PLR",                                # pylint refactor: too-many-arguments, too-many-branches...
+    "ERA",                                  # codigo comentado
+]
+# Os `# noqa` que ja existem no codigo (ex.: `except Exception:  # noqa: BLE001` em
+# gamebroker/ssh_install.py) so silenciam BLE001 com essa selecao - sem ela, RUF100 os
+# marcaria como "unused noqa" (achado da Fase 1, ja corrigido no codigo, mas dependia
+# desta config existir).
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+max-args = 8
+# Dispatcher por tipo (bool/int/float/str/fallback) e um padrao legitimo com varios
+# returns; 6 (o padrao) marcava codigo assim como "complexo" sem ganho de leitura.
+max-returns = 8
+
+[tool.ruff.lint.per-file-ignores]
+# Teste usa asserts, dado sintetico, nomes de fixture com "senha"/"token", e as vezes
+# uma funcao com mais de 8 parametros ou mais complexa so pra montar cenario - regras de
+# bandit e de contagem de parametro sao para codigo de producao, nao para teste.
+"tests/**/*.py" = ["S", "PLR0913", "PLR0915"]
+
 [tool.mypy]
 platform = "linux"

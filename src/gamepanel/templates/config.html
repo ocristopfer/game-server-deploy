@@ -44,7 +44,7 @@
     <p class="muted small conf-path">
       <code>{{ alvo }}</code>
       {% if info %} &middot; {{ info.size | tamanho }} &middot; {{ info.owner }} &middot; {{ info.mtime }}{% endif %}
-      {% if doc %} &middot; formato {{ doc.rotulo }}{% endif %}
+      {% if doc %} &middot; formato {{ doc.label }}{% endif %}
       {% if is_admin %}
       &middot; <a href="{{ url_for('files', sid=server.id, file=alvo) }}">editar como texto</a>
       {% endif %}

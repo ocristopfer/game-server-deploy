@@ -31,9 +31,10 @@ NS = 1_000_000_000
 # pessoa procura na tela, nao - e e justamente por isso que ele precisa sair igual nos
 # quatro. Escritos a mao, um deles viraria "Nome de servidor" numa atualizacao e a
 # busca por nome deixaria de achar aquele campo naquele jogo.
-ROTULO_NOME = "Nome do servidor"
-ROTULO_SENHA_ENTRADA = "Senha de entrada"
-ROTULO_SENHA_ADMIN = "Senha de admin"
+LABEL_NAME = "Nome do servidor"
+# Rotulo de campo na tela, nao segredo - o analisador confunde por causa do nome da constante.
+LABEL_JOIN_PASSWORD = "Senha de entrada"  # noqa: S105  # NOSONAR
+LABEL_ADMIN_PASSWORD = "Senha de admin"  # noqa: S105  # NOSONAR
 
 
 @dataclass
@@ -43,33 +44,33 @@ class FieldSpec:
     label: str = ""
     help: str = ""
     kind: str = "text"          # text | bool | number | factor | duration | enum | password
-    options: dict = field(default_factory=dict)   # valor gravado -> rotulo na tela
+    options: dict[str, str] = field(default_factory=dict)   # valor gravado -> rotulo na tela
     minimum: float | None = None
     maximum: float | None = None
     step: float | None = None
     unit: str = ""              # sufixo mostrado ao lado do campo
     # Para kind="duration": o arquivo guarda nanossegundos, a tela mostra minutos.
-    escala: int = 1
+    scale: int = 1
 
-    def to_display(self, bruto: str) -> str:
+    def to_display(self, raw: str) -> str:
         """Valor do arquivo -> valor mostrado na tela."""
-        texto = (bruto or "").strip()
-        if self.kind != "duration" or not texto:
-            return texto
+        text = (raw or "").strip()
+        if self.kind != "duration" or not text:
+            return text
         try:
-            minutos = float(texto) / self.escala
+            minutes = float(text) / self.scale
         except ValueError:
-            return texto
-        return f"{minutos:g}"
+            return text
+        return f"{minutes:g}"
 
-    def from_display(self, texto: str) -> str:
+    def from_display(self, text: str) -> str:
         """Valor digitado na tela -> valor gravado no arquivo."""
-        texto = (texto or "").strip()
-        if self.kind != "duration" or not texto:
-            return texto
-        return str(int(round(float(texto) * self.escala)))
+        text = (text or "").strip()
+        if self.kind != "duration" or not text:
+            return text
+        return str(round(float(text) * self.scale))
 
-    def validate(self, texto: str) -> str:
+    def validate(self, text: str) -> str:
         """Devolve mensagem de erro, ou string vazia quando o valor serve.
 
         A conferencia e feita na unidade da TELA (minutos, multiplicador), que e onde
@@ -78,59 +79,59 @@ class FieldSpec:
         Campo vazio nunca e erro: o jogo tem um padrao para a chave ausente, e apagar
         o valor e uma forma legitima de voltar para ele.
         """
-        texto = (texto or "").strip()
-        if not texto:
+        text = (text or "").strip()
+        if not text:
             return ""
         if self.kind == "enum" and self.options:
-            return self._valida_enum(texto)
+            return self._validate_enum(text)
         if self.kind in ("number", "factor", "duration"):
-            return self._valida_numero(texto)
+            return self._validate_number(text)
         return ""
 
-    def _valida_enum(self, texto: str) -> str:
-        if texto in self.options:
+    def _validate_enum(self, text: str) -> str:
+        if text in self.options:
             return ""
         return f"valor invalido; use um de: {', '.join(sorted(self.options))}"
 
-    def _valida_numero(self, texto: str) -> str:
+    def _validate_number(self, text: str) -> str:
         try:
-            valor = float(texto)
+            value = float(text)
         except ValueError:
             return "precisa ser um numero"
-        if self.minimum is not None and valor < self.minimum:
-            return f"minimo {self._com_unidade(self.minimum)}"
-        if self.maximum is not None and valor > self.maximum:
-            return f"maximo {self._com_unidade(self.maximum)}"
+        if self.minimum is not None and value < self.minimum:
+            return f"minimo {self._with_unit(self.minimum)}"
+        if self.maximum is not None and value > self.maximum:
+            return f"maximo {self._with_unit(self.maximum)}"
         return ""
 
-    def _com_unidade(self, valor: float) -> str:
+    def _with_unit(self, value: float) -> str:
         """"2 min", "0.25 x", ou so "16" quando o campo nao tem unidade."""
-        return f"{valor:g}{self.unit and ' ' + self.unit}"
+        return f"{value:g}{self.unit and ' ' + self.unit}"
 
 
-def _fator(label: str, ajuda: str, minimo=0.25, maximo=4.0) -> FieldSpec:
+def _factor(label: str, help_text: str, minimum: float = 0.25, maximum: float = 4.0) -> FieldSpec:
     """Multiplicador: 1 = padrao do jogo, 0,5 = metade, 2 = dobro."""
-    return FieldSpec(label=label, help=ajuda, kind="factor", minimum=minimo,
-                     maximum=maximo, step=0.05, unit="x")
+    return FieldSpec(label=label, help=help_text, kind="factor", minimum=minimum,
+                     maximum=maximum, step=0.05, unit="x")
 
 
-def _duracao(label: str, ajuda: str, min_min: float, max_min: float) -> FieldSpec:
+def _duration(label: str, help_text: str, min_minutes: float, max_minutes: float) -> FieldSpec:
     """Duracao gravada em nanossegundos, editada em minutos."""
-    return FieldSpec(label=label, help=ajuda, kind="duration", escala=60 * NS,
-                     minimum=min_min, maximum=max_min, step=1, unit="min")
+    return FieldSpec(label=label, help=help_text, kind="duration", scale=60 * NS,
+                     minimum=min_minutes, maximum=max_minutes, step=1, unit="min")
 
 
-def _enum(label: str, ajuda: str, opcoes: dict) -> FieldSpec:
-    return FieldSpec(label=label, help=ajuda, kind="enum", options=opcoes)
+def _enum(label: str, help_text: str, options: dict[str, str]) -> FieldSpec:
+    return FieldSpec(label=label, help=help_text, kind="enum", options=options)
 
 
-def _bool(label: str, ajuda: str) -> FieldSpec:
-    return FieldSpec(label=label, help=ajuda, kind="bool")
+def _bool(label: str, help_text: str) -> FieldSpec:
+    return FieldSpec(label=label, help=help_text, kind="bool")
 
 
 # ------------------------------------------- Enshrouded (le enshrouded_server.json)
 ENSHROUDED = {
-    "name": FieldSpec(ROTULO_NOME, "Como ele aparece na lista de servidores do jogo."),
+    "name": FieldSpec(LABEL_NAME, "Como ele aparece na lista de servidores do jogo."),
     "slotCount": FieldSpec("Vagas", "Quantos jogadores podem estar conectados ao mesmo tempo.",
                            kind="number", minimum=1, maximum=16, step=1),
     "queryPort": FieldSpec("Porta", "Porta que o jogador digita para entrar. Mudar aqui exige "
@@ -152,23 +153,23 @@ ENSHROUDED = {
          "Custom": "Custom (usa os ajustes abaixo)"}),
 
     # --- jogador
-    "playerHealthFactor": _fator("Vida do jogador", "Multiplica a vida maxima. 2 = o dobro de vida."),
-    "playerManaFactor": _fator("Mana do jogador", "Multiplica a mana maxima."),
-    "playerStaminaFactor": _fator("Stamina do jogador", "Multiplica a stamina maxima."),
-    "playerBodyHeatFactor": _fator("Calor corporal",
+    "playerHealthFactor": _factor("Vida do jogador", "Multiplica a vida maxima. 2 = o dobro de vida."),
+    "playerManaFactor": _factor("Mana do jogador", "Multiplica a mana maxima."),
+    "playerStaminaFactor": _factor("Stamina do jogador", "Multiplica a stamina maxima."),
+    "playerBodyHeatFactor": _factor("Calor corporal",
                                    "Multiplica a resistencia ao frio. Maior = aguenta mais tempo "
                                    "em regiao gelada."),
-    "playerDivingTimeFactor": _fator("Folego", "Multiplica o tempo que da para ficar submerso."),
+    "playerDivingTimeFactor": _factor("Folego", "Multiplica o tempo que da para ficar submerso."),
     "enableDurability": _bool("Durabilidade",
                               "Desligado, equipamento nunca quebra e nao precisa de reparo."),
     "enableStarvingDebuff": _bool("Penalidade de fome",
                                   "Ligado, ficar sem comer aplica penalidade (nao so remove os buffs)."),
-    "foodBuffDurationFactor": _fator("Duracao do buff de comida",
+    "foodBuffDurationFactor": _factor("Duracao do buff de comida",
                                      "Multiplica quanto tempo o efeito da comida dura."),
-    "fromHungerToStarving": _duracao(
+    "fromHungerToStarving": _duration(
         "Da fome ate passar fome",
         "Tempo entre ficar com fome e comecar a sofrer a penalidade.", 5, 20),
-    "shroudTimeFactor": _fator("Tempo dentro da Bruma",
+    "shroudTimeFactor": _factor("Tempo dentro da Bruma",
                                "Multiplica quanto tempo da para ficar na Bruma antes de morrer."),
     "tombstoneMode": _enum(
         "Ao morrer",
@@ -180,11 +181,11 @@ ENSHROUDED = {
                                      "Desligado, o planador voa estavel, sem correntes de ar."),
 
     # --- mundo
-    "dayTimeDuration": _duracao(
+    "dayTimeDuration": _duration(
         "Duracao do dia",
         "Quanto tempo REAL dura o dia no jogo. O arquivo guarda em nanossegundos; "
         "aqui voce edita em minutos.", 2, 60),
-    "nightTimeDuration": _duracao(
+    "nightTimeDuration": _duration(
         "Duracao da noite",
         "Quanto tempo REAL dura a noite. Minimo de 2 minutos - valor menor que isso o "
         "jogo descarta.", 2, 60),
@@ -210,38 +211,38 @@ ENSHROUDED = {
                               "Many": "Muitos", "Extreme": "Extremo"}),
 
     # --- coleta e producao
-    "miningDamageFactor": _fator("Dano de mineracao",
+    "miningDamageFactor": _factor("Dano de mineracao",
                                  "Multiplica o quanto a picareta quebra por golpe. Maior = mina mais rapido.",
                                  0.25, 2.0),
-    "plantGrowthSpeedFactor": _fator("Velocidade das plantacoes",
+    "plantGrowthSpeedFactor": _factor("Velocidade das plantacoes",
                                      "Multiplica a velocidade de crescimento das plantas.", 0.25, 2.0),
-    "resourceDropStackAmountFactor": _fator("Recursos por coleta",
+    "resourceDropStackAmountFactor": _factor("Recursos por coleta",
                                             "Multiplica a quantidade que cai ao coletar.", 0.25, 2.0),
-    "factoryProductionSpeedFactor": _fator("Velocidade de producao",
+    "factoryProductionSpeedFactor": _factor("Velocidade de producao",
                                            "Multiplica a velocidade das bancadas e fornalhas.", 0.25, 2.0),
     "perkUpgradeRecyclingFactor": FieldSpec(
         "Retorno ao reciclar perk", "Fracao do material devolvida ao desfazer um upgrade de arma. "
                                     "0,5 = devolve metade; 1 = devolve tudo.",
         kind="factor", minimum=0, maximum=1.0, step=0.05, unit="x"),
-    "perkCostFactor": _fator("Custo dos perks", "Multiplica o material necessario para melhorar armas.",
+    "perkCostFactor": _factor("Custo dos perks", "Multiplica o material necessario para melhorar armas.",
                              0.25, 2.0),
 
     # --- progressao
-    "experienceCombatFactor": _fator("XP de combate", "Multiplica a experiencia ganha lutando."),
-    "experienceMiningFactor": _fator("XP de mineracao", "Multiplica a experiencia ganha minerando."),
-    "experienceExplorationQuestsFactor": _fator(
+    "experienceCombatFactor": _factor("XP de combate", "Multiplica a experiencia ganha lutando."),
+    "experienceMiningFactor": _factor("XP de mineracao", "Multiplica a experiencia ganha minerando."),
+    "experienceExplorationQuestsFactor": _factor(
         "XP de exploracao e missoes", "Multiplica a experiencia de explorar e completar missoes."),
 
     # --- inimigos
-    "enemyDamageFactor": _fator("Dano dos inimigos", "Multiplica o dano que os inimigos causam.", 0.25, 5.0),
-    "enemyHealthFactor": _fator("Vida dos inimigos", "Multiplica a vida dos inimigos.", 0.25, 5.0),
-    "enemyStaminaFactor": _fator("Stamina dos inimigos",
+    "enemyDamageFactor": _factor("Dano dos inimigos", "Multiplica o dano que os inimigos causam.", 0.25, 5.0),
+    "enemyHealthFactor": _factor("Vida dos inimigos", "Multiplica a vida dos inimigos.", 0.25, 5.0),
+    "enemyStaminaFactor": _factor("Stamina dos inimigos",
                                  "Multiplica a stamina deles (quanto conseguem atacar seguido).", 0.25, 5.0),
-    "enemyPerceptionRangeFactor": _fator("Alcance de percepcao",
+    "enemyPerceptionRangeFactor": _factor("Alcance de percepcao",
                                          "Multiplica a distancia em que os inimigos notam voce.", 0.25, 5.0),
-    "bossDamageFactor": _fator("Dano dos chefes", "Multiplica o dano dos chefes.", 0.2, 5.0),
-    "bossHealthFactor": _fator("Vida dos chefes", "Multiplica a vida dos chefes.", 0.2, 5.0),
-    "threatBonus": _fator("Agressividade", "Multiplica a facilidade com que os inimigos se irritam.", 0.25, 5.0),
+    "bossDamageFactor": _factor("Dano dos chefes", "Multiplica o dano dos chefes.", 0.2, 5.0),
+    "bossHealthFactor": _factor("Vida dos chefes", "Multiplica a vida dos chefes.", 0.2, 5.0),
+    "threatBonus": _factor("Agressividade", "Multiplica a facilidade com que os inimigos se irritam.", 0.25, 5.0),
     "pacifyAllEnemies": _bool("Inimigos pacificos",
                               "Ligado, nenhum inimigo ataca - modo construcao/exploracao."),
     "tamingStartleRepercussion": _enum(
@@ -270,9 +271,9 @@ ENSHROUDED = {
 # ------------------------------------------- Palworld (le PalWorldSettings.ini, tudo
 # dentro de OptionSettings=(...))
 PALWORLD = {
-    "ServerName": FieldSpec(ROTULO_NOME, "Como ele aparece na lista da comunidade."),
-    "ServerPassword": FieldSpec(ROTULO_SENHA_ENTRADA, "Vazio = servidor aberto.", kind="password"),
-    "AdminPassword": FieldSpec(ROTULO_SENHA_ADMIN,
+    "ServerName": FieldSpec(LABEL_NAME, "Como ele aparece na lista da comunidade."),
+    "ServerPassword": FieldSpec(LABEL_JOIN_PASSWORD, "Vazio = servidor aberto.", kind="password"),
+    "AdminPassword": FieldSpec(LABEL_ADMIN_PASSWORD,
                                "Usada nos comandos administrativos e na API REST.", kind="password"),
     "ServerPlayerMaxNum": FieldSpec("Vagas", "Maximo de jogadores simultaneos (limite de 32).",
                                     kind="number", minimum=1, maximum=32, step=1),
@@ -287,16 +288,16 @@ PALWORLD = {
                           {"None": "Nada", "Item": "Itens (sem equipamento)",
                            "ItemAndEquipment": "Itens e equipamento",
                            "All": "Tudo (inclui Pals)"}),
-    "DayTimeSpeedRate": _fator("Velocidade do dia", "Maior = dia passa mais rapido.", 0.1, 5.0),
-    "NightTimeSpeedRate": _fator("Velocidade da noite", "Maior = noite passa mais rapido.", 0.1, 5.0),
-    "ExpRate": _fator("Ganho de XP", "Multiplica toda a experiencia recebida.", 0.1, 20.0),
-    "PalCaptureRate": _fator("Taxa de captura", "Multiplica a chance de capturar Pals.", 0.5, 2.0),
-    "PalSpawnNumRate": _fator("Quantidade de Pals", "Multiplica quantos Pals aparecem no mundo.", 0.5, 3.0),
-    "PalDamageRateAttack": _fator("Dano dos Pals", "Multiplica o dano causado pelos Pals.", 0.1, 5.0),
-    "PalDamageRateDefense": _fator("Defesa dos Pals", "Multiplica a resistencia dos Pals.", 0.1, 5.0),
-    "PlayerDamageRateAttack": _fator("Dano do jogador", "Multiplica o dano que voce causa.", 0.1, 5.0),
-    "PlayerDamageRateDefense": _fator("Defesa do jogador", "Multiplica sua resistencia.", 0.1, 5.0),
-    "CollectionDropRate": _fator("Recursos coletados", "Multiplica o que cai ao coletar.", 0.5, 3.0),
+    "DayTimeSpeedRate": _factor("Velocidade do dia", "Maior = dia passa mais rapido.", 0.1, 5.0),
+    "NightTimeSpeedRate": _factor("Velocidade da noite", "Maior = noite passa mais rapido.", 0.1, 5.0),
+    "ExpRate": _factor("Ganho de XP", "Multiplica toda a experiencia recebida.", 0.1, 20.0),
+    "PalCaptureRate": _factor("Taxa de captura", "Multiplica a chance de capturar Pals.", 0.5, 2.0),
+    "PalSpawnNumRate": _factor("Quantidade de Pals", "Multiplica quantos Pals aparecem no mundo.", 0.5, 3.0),
+    "PalDamageRateAttack": _factor("Dano dos Pals", "Multiplica o dano causado pelos Pals.", 0.1, 5.0),
+    "PalDamageRateDefense": _factor("Defesa dos Pals", "Multiplica a resistencia dos Pals.", 0.1, 5.0),
+    "PlayerDamageRateAttack": _factor("Dano do jogador", "Multiplica o dano que voce causa.", 0.1, 5.0),
+    "PlayerDamageRateDefense": _factor("Defesa do jogador", "Multiplica sua resistencia.", 0.1, 5.0),
+    "CollectionDropRate": _factor("Recursos coletados", "Multiplica o que cai ao coletar.", 0.5, 3.0),
     "EnablePlayerToPlayerDamage": _bool("PvP", "Permite jogadores se atacarem."),
     "bEnableDefenseOtherGuild": _bool("Defesa de outras guildas",
                                       "Permite que sua base seja atacada por outras guildas."),
@@ -305,9 +306,9 @@ PALWORLD = {
 
 # ----------------------------------------------- Icarus (le ServerSettings.ini)
 ICARUS = {
-    "SessionName": FieldSpec(ROTULO_NOME, "Como ele aparece no navegador de servidores."),
-    "JoinPassword": FieldSpec(ROTULO_SENHA_ENTRADA, "Vazio = qualquer um entra.", kind="password"),
-    "AdminPassword": FieldSpec(ROTULO_SENHA_ADMIN, "Da acesso aos comandos de administrador no jogo.",
+    "SessionName": FieldSpec(LABEL_NAME, "Como ele aparece no navegador de servidores."),
+    "JoinPassword": FieldSpec(LABEL_JOIN_PASSWORD, "Vazio = qualquer um entra.", kind="password"),
+    "AdminPassword": FieldSpec(LABEL_ADMIN_PASSWORD, "Da acesso aos comandos de administrador no jogo.",
                                kind="password"),
     "MaxPlayers": FieldSpec("Vagas", "Maximo de jogadores simultaneos.",
                             kind="number", minimum=1, maximum=64, step=1),
@@ -334,9 +335,9 @@ ICARUS = {
 
 # --------------------------------------------------- DayZ (le serverDZ.cfg)
 DAYZ = {
-    "hostname": FieldSpec(ROTULO_NOME, "Como aparece no navegador de servidores."),
-    "password": FieldSpec(ROTULO_SENHA_ENTRADA, "Vazio = servidor aberto.", kind="password"),
-    "passwordAdmin": FieldSpec(ROTULO_SENHA_ADMIN, "Acesso ao console remoto. TROQUE antes de expor.",
+    "hostname": FieldSpec(LABEL_NAME, "Como aparece no navegador de servidores."),
+    "password": FieldSpec(LABEL_JOIN_PASSWORD, "Vazio = servidor aberto.", kind="password"),
+    "passwordAdmin": FieldSpec(LABEL_ADMIN_PASSWORD, "Acesso ao console remoto. TROQUE antes de expor.",
                                kind="password"),
     "maxPlayers": FieldSpec("Vagas", "Maximo de jogadores simultaneos.",
                             kind="number", minimum=1, maximum=127, step=1),
@@ -369,15 +370,15 @@ DRAGONWILDS = {
     "OwnerId": FieldSpec("ID do dono",
                          "Seu Player ID, no rodape do menu de Configuracoes do jogo (nao e "
                          "o Steam ID de 17 digitos). Sem ele o servidor NAO sobe."),
-    "ServerName": FieldSpec(ROTULO_NOME, "Como ele aparece para quem entra."),
+    "ServerName": FieldSpec(LABEL_NAME, "Como ele aparece para quem entra."),
     "DefaultWorldName": FieldSpec("Nome do mundo padrao",
                                   "Nome do mundo criado no primeiro start. "
                                   "Trocar depois nao renomeia um mundo que ja existe."),
-    "AdminPassword": FieldSpec(ROTULO_SENHA_ADMIN,
+    "AdminPassword": FieldSpec(LABEL_ADMIN_PASSWORD,
                                "Quem souber esta senha abre a aba Server Management no menu "
                                "do jogo e vira admin. TROQUE antes de expor o servidor.",
                                kind="password"),
-    "WorldPassword": FieldSpec(ROTULO_SENHA_ENTRADA, "Vazio = qualquer um entra.",
+    "WorldPassword": FieldSpec(LABEL_JOIN_PASSWORD, "Vazio = qualquer um entra.",
                                kind="password"),
     "ServerGuid": FieldSpec("GUID do servidor", "Gerado pelo proprio jogo. Nao edite a mao."),
     "KnownPlayerList": FieldSpec("Jogadores conhecidos",
@@ -388,7 +389,7 @@ DRAGONWILDS = {
 
 # Qual catalogo vale para qual arquivo. A comparacao e pelo NOME do arquivo, que e o
 # que o painel ja usa para escolher o parser.
-CATALOGOS = (
+CATALOGS = (
     (re.compile(r"^DedicatedServer\.ini$", re.I), DRAGONWILDS),
     (re.compile(r"^enshrouded_server\.json$", re.I), ENSHROUDED),
     (re.compile(r"^PalWorldSettings\.ini$", re.I), PALWORLD),
@@ -397,23 +398,23 @@ CATALOGOS = (
 )
 
 
-def catalogo_de(nome_arquivo: str) -> dict:
+def catalog_for(filename: str) -> dict[str, FieldSpec]:
     """Catalogo do arquivo, ou vazio quando o jogo ainda nao foi mapeado."""
-    nome = (nome_arquivo or "").strip().rsplit("/", 1)[-1]
-    for padrao, catalogo in CATALOGOS:
-        if padrao.match(nome):
-            return catalogo
+    name = (filename or "").strip().rsplit("/", 1)[-1]
+    for pattern, catalog in CATALOGS:
+        if pattern.match(name):
+            return catalog
     return {}
 
 
-def describe(nome_arquivo: str, chave: str) -> FieldSpec | None:
+def describe(filename: str, key: str) -> FieldSpec | None:
     """Descricao de um campo, ou None quando ele nao esta mapeado.
 
     A busca e so pelo nome da chave: o mesmo campo aparece em secoes diferentes
     (userGroups[0].password e userGroups[1].password, por exemplo) e a descricao vale
     para os dois.
     """
-    catalogo = catalogo_de(nome_arquivo)
-    if not catalogo:
+    catalog = catalog_for(filename)
+    if not catalog:
         return None
-    return catalogo.get((chave or "").strip())
+    return catalog.get((key or "").strip())
