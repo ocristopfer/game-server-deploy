@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Acao #{{ job.id }} — Painel de Jogos{% endblock %}
+{% block title %}{{ _('job.title', id=job.id) }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
 {# O estado NAO vai no titulo: ele muda sozinho enquanto a acao roda, e o selo vivo

@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Instancias de jogo — Painel de Jogos{% endblock %}
+{% block title %}{{ _('nav.instances.help') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{% call ui.cabecalho('Instancias de jogo') %}
-  {{ ui.botao('Catalogo', href=url_for('catalog'), variante='ghost', icone='📚') }}
+{% call ui.cabecalho(_('nav.instances.help')) %}
+  {{ ui.botao(_('nav.catalog'), href=url_for('catalog'), variante='ghost', icone='📚') }}
 {% endcall %}
 
 {# Formulario a esquerda, instancias a direita no desktop; uma coluna no celular. #}
@@ -28,8 +28,8 @@
       <small>Como a instancia aparece no painel. Letras, numeros, espaco, ponto, hifen e sublinhado.</small>
     </label>
     <div class="form-actions">
-      {{ ui.botao('Criar instancia', variante='primary', bloco=true,
-                  confirmar='Criar o container, instalar o jogo e abrir as portas no firewall? Isso pode levar varios minutos.') }}
+      {{ ui.botao(_('instances.create'), variante='primary', bloco=true,
+                  confirmar=_('instances.create_confirm')) }}
     </div>
   </form>
   <p class="muted small mt-4">
@@ -62,8 +62,8 @@
           </div>
           {% if i.detalhe %}<div class="muted small">{{ i.detalhe }}</div>{% endif %}
           {% if i.estado == 'ativa' %}
-            {{ ui.acao(url_for('instance_deactivate', iid=i.id), 'Desativar', tamanho='sm',
-                       confirmar='Desativar ' ~ i.nome ~ '? O servidor sera PARADO e as portas fecham no firewall.') }}
+            {{ ui.acao(url_for('instance_deactivate', iid=i.id), _('account.disable'), tamanho='sm',
+                       confirmar=_('instances.deactivate_confirm', nome=i.nome)) }}
           {% elif i.estado in ('desativada', 'falhou') %}
             <details>
               <summary class="btn btn--danger btn--sm">{{ _('instances.remove') }}</summary>
@@ -76,8 +76,8 @@
                   <input type="checkbox" name="somente_banco" value="1">
                   {{ _('instances.forget_record_only') }}
                 </label>
-                {{ ui.botao('Remover', variante='danger', tamanho='sm',
-                            confirmar='Remover ' ~ i.nome ~ '? O container e o jogo serao APAGADOS.') }}
+                {{ ui.botao(_('instances.remove'), variante='danger', tamanho='sm',
+                            confirmar=_('instances.remove_confirm', nome=i.nome)) }}
               </form>
             </details>
           {% endif %}

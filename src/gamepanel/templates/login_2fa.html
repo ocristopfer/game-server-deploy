@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Verificacao — Painel de Jogos{% endblock %}
+{% block title %}{{ _('login_2fa.title') }} &mdash; {{ _('app.name') }}{% endblock %}
 {% block content %}
 <div class="card card--login">
   <h1><span aria-hidden="true">🔐</span> {{ _('login_2fa.title') }}</h1>
@@ -16,8 +16,8 @@
         cada um serve uma vez.</small>
     </label>
     <div class="form-actions">
-      {{ ui.botao('Confirmar', variante='primary', bloco=true) }}
-      {{ ui.botao('Voltar', href=url_for('login'), variante='ghost', bloco=true) }}
+      {{ ui.botao(_('login_2fa.confirm'), variante='primary', bloco=true) }}
+      {{ ui.botao(_('login_2fa.back'), href=url_for('login'), variante='ghost', bloco=true) }}
     </div>
   </form>
 </div>

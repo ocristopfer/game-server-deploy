@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Conta — Painel de Jogos{% endblock %}
+{% block title %}{{ _('nav.account') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho('Conta') }}
+{{ ui.cabecalho(_('nav.account')) }}
 
 <div class="card">
   <dl class="meta wide">
@@ -49,8 +49,8 @@
       <input name="confirm" type="password" autocomplete="new-password" minlength="8" required>
     </label>
     <div class="form-actions">
-      {{ ui.botao('Salvar', variante='primary', bloco=true) }}
-      {{ ui.botao('Cancelar', href=url_for('dashboard'), variante='ghost', bloco=true) }}
+      {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
+      {{ ui.botao(_('server_form.cancel'), href=url_for('dashboard'), variante='ghost', bloco=true) }}
     </div>
   </form>
 </div>
@@ -72,7 +72,7 @@
           <input name="codigo" inputmode="numeric" autocomplete="one-time-code" required>
           <small>{{ _('account.old_codes_expire') }}</small>
         </label>
-        {{ ui.botao('Gerar', tamanho='sm') }}
+        {{ ui.botao(_('account.generate'), tamanho='sm') }}
       </form>
     </details>
     {% if not exige_2fa %}
@@ -86,8 +86,8 @@
         <label>{{ _('account.app_or_recovery_code') }}
           <input name="codigo" autocomplete="one-time-code" required>
         </label>
-        {{ ui.botao('Desativar', variante='danger', tamanho='sm',
-                    confirmar='Desativar a verificacao em duas etapas? O login volta a pedir so a senha.') }}
+        {{ ui.botao(_('account.disable'), variante='danger', tamanho='sm',
+                    confirmar=_('account.disable_confirm')) }}
       </form>
     </details>
     {% else %}
@@ -105,7 +105,7 @@
       {% endif %}
     </p>
     <div class="form-actions">
-      {{ ui.botao('Ativar', href=url_for('account_2fa'), variante='primary', bloco=true, icone='🔐') }}
+      {{ ui.botao(_('account.enable'), href=url_for('account_2fa'), variante='primary', bloco=true, icone='🔐') }}
     </div>
   {% endif %}
 </div>
@@ -116,7 +116,7 @@
   <h2>{{ _('account.sign_out') }}</h2>
   <p class="muted small">{{ _('account.sign_out_hint') }}</p>
   <div class="form-actions">
-    {{ ui.acao(url_for('logout'), 'Sair do painel', variante='danger', icone='🚪', bloco=true) }}
+    {{ ui.acao(url_for('logout'), _('account.sign_out_of_panel'), variante='danger', icone='🚪', bloco=true) }}
   </div>
 </div>
 {% endblock %}

@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
 {% import "components/servidor.html" as srv with context %}
-{% block title %}Terminal — {{ server.name }}{% endblock %}
+{% block title %}{{ _('server.terminal') }} &mdash; {{ server.name }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho('Terminal — ' ~ server.name) }}
+{{ ui.cabecalho(_('server.terminal') ~ ' — ' ~ server.name) }}
 {{ srv.abas(server, 'terminal') }}
 
 {# Interativo e comando unico sao dois MODOS da mesma coisa, nao duas telas
@@ -42,7 +42,7 @@
       </small>
     </label>
     <div class="form-actions">
-      {{ ui.botao('Executar', variante='primary', icone='▶') }}
+      {{ ui.botao(_('console.run'), variante='primary', icone='▶') }}
       <span class="muted small">{{ _('console.history_hint') }}</span>
     </div>
   </form>

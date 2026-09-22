@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Entrar — Painel de Jogos{% endblock %}
+{% block title %}{{ _('login.title') }} &mdash; {{ _('app.name') }}{% endblock %}
 {% block content %}
 <div class="card card--login">
   <h1><span aria-hidden="true">🎮</span> {{ _('app.name') }}</h1>
@@ -15,7 +15,7 @@
       <input name="password" type="password" autocomplete="current-password" required>
     </label>
     <div class="form-actions">
-      {{ ui.botao('Entrar', variante='primary', bloco=true) }}
+      {{ ui.botao(_('login.title'), variante='primary', bloco=true) }}
     </div>
   </form>
 </div>

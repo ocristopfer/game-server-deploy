@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Acesso SSH — Painel de Jogos{% endblock %}
+{% block title %}{{ _('nav.ssh_key') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho('Acesso SSH') }}
+{{ ui.cabecalho(_('nav.ssh_key')) }}
 
 <div class="card">
   <p>O painel controla cada servidor por SSH, usando a chave abaixo. Para um container
@@ -14,7 +14,7 @@
   {% if pubkey %}
     <pre class="log" id="pubkey">{{ pubkey }}</pre>
     <div class="form-actions">
-      {{ ui.botao('Copiar chave', tipo='button', icone='📋',
+      {{ ui.botao(_('account_2fa.copy_key'), tipo='button', icone='📋',
                   extra='data-copiar="#pubkey" hidden') }}
     </div>
   {% else %}

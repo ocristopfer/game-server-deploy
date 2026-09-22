@@ -41,6 +41,10 @@ from typing import Any, NamedTuple
 if __package__ in (None, ""):  # pragma: no cover - so vale fora do import normal
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# markupsafe vem junto com o Jinja, que vem junto com o python3-flask do apt: nao e
+# dependencia nova. E o mesmo escape que o autoescape do template usa.
+from markupsafe import Markup, escape
+
 from gamepanel import cli
 from gamepanel import i18n
 from gamepanel import navigation as ui
@@ -614,10 +618,29 @@ def idioma_atual() -> str:
     return escolhido
 
 
-def traduzir(chave: str) -> str:
+def traduzir(chave: str, **campos: object) -> str:
     """O `_()` das telas e das mensagens: a frase daquela chave, no idioma
     deste pedido."""
-    return i18n.traduzir(chave, idioma_atual())
+    return i18n.traduzir(chave, idioma_atual(), **campos)
+
+
+def traduzir_html(chave: str, **campos: object) -> Markup:
+    """O `_h()` das telas: frase que TRAZ marcacao (`<strong>`, `<code>`).
+
+    Existe porque paragrafo de ajuda nao se parte: quebrar o texto em cada `<strong>`
+    deixaria metade do paragrafo em portugues na tela em ingles. A frase vem do catalogo,
+    que e codigo deste repositorio, entao ela pode conter marcacao; o que chega de fora
+    sao os CAMPOS, e cada um e escapado antes de entrar.
+
+    `escape` e nao `escape(str(...))` de proposito: assim um campo que JA e marcacao
+    (o `_h` de outra frase, encaixado nesta) passa inteiro em vez de aparecer na tela
+    com os sinais de maior e menor a mostra.
+    """
+    # A frase vem de `i18n`, que e codigo deste repositorio, e todo campo passou por
+    # `escape` na linha de baixo: nao ha entrada de usuario chegando crua aqui.
+    return Markup(i18n.traduzir(  # noqa: S704
+        chave, idioma_atual(), **{nome: escape(valor) for nome, valor in campos.items()}
+    ))
 
 
 @app.context_processor
@@ -625,8 +648,10 @@ def _inject():
     usuario = usuario_logado()
     return {
         "csrf_token": csrf_token,
-        # `_` e o nome de sempre para traduzir numa tela.
+        # `_` e o nome de sempre para traduzir numa tela; `_h` e o irmao para a frase
+        # que traz marcacao (ver `traduzir_html`).
         "_": traduzir,
+        "_h": traduzir_html,
         "idioma_atual": idioma_atual(),
         "idiomas": i18n.IDIOMAS,
         "static_url": static_url,

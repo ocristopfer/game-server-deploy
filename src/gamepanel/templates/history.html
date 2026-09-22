@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Historico &mdash; Painel de Jogos{% endblock %}
+{% block title %}{{ _('nav.history') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho('Historico') }}
+{{ ui.cabecalho(_('nav.history')) }}
 
 <div class="card">
   <form method="get" action="{{ url_for('history') }}" class="cluster">
@@ -32,8 +32,8 @@
       </select>
     </label>
     <div class="cluster">
-      {{ ui.botao('Filtrar', icone='🔎') }}
-      {{ ui.botao('limpar', href=url_for('history'), variante='ghost', tamanho='sm') }}
+      {{ ui.botao(_('history.filter'), icone='🔎') }}
+      {{ ui.botao(_('history.clear'), href=url_for('history'), variante='ghost', tamanho='sm') }}
     </div>
   </form>
 </div>
@@ -66,11 +66,11 @@
   </table></div>
   <div class="cluster mt-4">
     {% if pagina > 0 %}
-      {{ ui.botao('mais recentes', variante='ghost', icone='←',
+      {{ ui.botao(_('history.newer'), variante='ghost', icone='←',
                   href=url_for('history', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina - 1)) }}
     {% endif %}
     {% if tem_mais %}
-      {{ ui.botao('mais antigas →', variante='ghost',
+      {{ ui.botao(_('history.older') ~ ' →', variante='ghost',
                   href=url_for('history', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina + 1)) }}
     {% endif %}
   </div>

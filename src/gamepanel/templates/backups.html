@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
 {% import "components/servidor.html" as srv with context %}
-{% block title %}Backups &mdash; {{ server.name }}{% endblock %}
+{% block title %}{{ _('server.backups') }} &mdash; {{ server.name }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho('Backups — ' ~ server.name) }}
+{{ ui.cabecalho(_('server.backups') ~ ' — ' ~ server.name) }}
 {{ srv.abas(server, 'backups') }}
 
 <div class="card">
@@ -24,7 +24,7 @@
       {% endif %}
     </p>
     <div class="form-actions">
-      {{ ui.acao(url_for('backup_create', sid=server.id), 'Fazer backup agora',
+      {{ ui.acao(url_for('backup_create', sid=server.id), _('backups.back_up_now'),
                  variante='primary', icone='💾', bloco=true) }}
     </div>
     <p class="muted small mt-4">
@@ -59,14 +59,14 @@
         <td class="muted nowrap">{{ c.size | tamanho }}</td>
         <td class="acoes">
           {% if is_admin %}
-            {{ ui.botao('baixar', href=url_for('backup_download', sid=server.id, nome=c.name),
+            {{ ui.botao(_('files.download'), href=url_for('backup_download', sid=server.id, nome=c.name),
                         variante='ghost', tamanho='sm', icone='⬇') }}
-            {{ ui.acao(url_for('backup_restore', sid=server.id), 'restaurar', tamanho='sm',
+            {{ ui.acao(url_for('backup_restore', sid=server.id), _('backups.restore'), tamanho='sm',
                        campos={'nome': c.name},
-                       confirmar='Restaurar ' ~ c.name ~ ' em ' ~ server.name ~ '?\n\nO servidor sera PARADO, os arquivos de agora serao substituidos e ele volta a subir. Uma copia do estado atual e guardada antes.') }}
-            {{ ui.acao(url_for('backup_delete', sid=server.id), 'apagar', variante='danger',
+                       confirmar=_('backups.restore_confirm', arquivo=c.name, servidor=server.name)) }}
+            {{ ui.acao(url_for('backup_delete', sid=server.id), _('files.delete'), variante='danger',
                        tamanho='sm', campos={'nome': c.name},
-                       confirmar='Apagar ' ~ c.name ~ '? Nao tem volta.') }}
+                       confirmar=_('backups.delete_confirm', arquivo=c.name)) }}
           {% else %}
           <span class="muted small">{{ _('backups.admin_only') }}</span>
           {% endif %}

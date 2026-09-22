@@ -1,171 +1,157 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
 {% import "components/servidor.html" as srv with context %}
-{% block title %}{{ 'Adicionar' if mode == 'new' else 'Editar' }} servidor{% endblock %}
+{% block title %}{{ _('server_form.title_new') if mode == 'new' else _('server_form.title_edit') }}{% endblock %}
 {% block content %}
-{{ ui.cabecalho("Adicionar servidor" if mode == "new" else "Editar servidor") }}
+{{ ui.cabecalho(_('server_form.title_new') if mode == 'new' else _('server_form.title_edit')) }}
 {% if mode == "edit" %}{{ srv.abas(server, "editar") }}{% endif %}
 
 <div class="card card--form">
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label>Nome
+    <label>{{ _('server_form.name') }}
       <input name="name" value="{{ data.name }}" required autofocus>
-      <small>Como o servidor aparece no painel. Ex.: <code>Dragonwilds</code></small>
+      <small>{{ _h('server_form.name_hint') }}</small>
     </label>
-    <label>Host
+    <label>{{ _('server_form.host') }}
       <input name="host" value="{{ data.host }}" placeholder="192.168.2.20" required>
-      <small>IP ou hostname do container do jogo. O painel se conecta nele por SSH.</small>
+      <small>{{ _('server_form.host_hint') }}</small>
     </label>
     <div class="row">
-      <label>Usuario SSH
+      <label>{{ _('server_form.ssh_user') }}
         <input name="ssh_user" value="{{ data.ssh_user }}" placeholder="root" required>
       </label>
-      <label>Porta SSH
+      <label>{{ _('server_form.ssh_port') }}
         <input name="ssh_port" value="{{ data.ssh_port }}" inputmode="numeric" required>
       </label>
     </div>
-    <label>Servico systemd
+    <label>{{ _('server_form.systemd_service') }}
       <input name="service" value="{{ data.service }}" placeholder="dragonwilds.service" required>
-      <small>Normalmente <code>&lt;nome-do-jogo&gt;.service</code>. O <code>.service</code> e adicionado se faltar.</small>
+      <small>{{ _h('server_form.service_hint') }}</small>
     </label>
     <div class="row">
-      <label>Portas do jogo <span class="muted">(opcional)</span>
+      <label>{{ _('server_form.game_ports') }} <span class="muted">{{ _('server_form.optional') }}</span>
         <input name="game_port" value="{{ data.game_port }}" placeholder="7777/udp">
-        <small>Apenas informativo, para lembrar o que redirecionar no roteador.</small>
+        <small>{{ _('server_form.game_ports_hint') }}</small>
       </label>
-      <label>Porta de consulta <span class="muted">(opcional)</span>
+      <label>{{ _('server_form.query_port') }} <span class="muted">{{ _('server_form.optional') }}</span>
         <input name="query_port" value="{{ data.query_port or '' }}" placeholder="27015" inputmode="numeric">
-        <small>Porta de query Steam (A2S). Palworld: <code>27015</code>.</small>
+        <small>{{ _h('server_form.query_port_hint') }}</small>
       </label>
     </div>
 
-    <label>Contagem de jogadores
+    <label>{{ _('server_form.player_count') }}
       <select name="player_source">
-        <option value="none" {{ 'selected' if data.player_source in ('', 'none') and not data.query_port }}>Desligada</option>
-        <option value="a2s" {{ 'selected' if data.player_source == 'a2s' or (not data.player_source and data.query_port) }}>Consulta Steam (A2S) na porta acima</option>
-        <option value="http" {{ 'selected' if data.player_source == 'http' }}>API HTTP do jogo (da os nomes)</option>
-        <option value="log" {{ 'selected' if data.player_source == 'log' }}>Pelo log do servidor</option>
+        <option value="none" {{ 'selected' if data.player_source in ('', 'none') and not data.query_port }}>{{ _('server_form.count_off') }}</option>
+        <option value="a2s" {{ 'selected' if data.player_source == 'a2s' or (not data.player_source and data.query_port) }}>{{ _('server_form.count_a2s') }}</option>
+        <option value="http" {{ 'selected' if data.player_source == 'http' }}>{{ _('server_form.count_http') }}</option>
+        <option value="log" {{ 'selected' if data.player_source == 'log' }}>{{ _('server_form.count_log') }}</option>
       </select>
       <small>
-        Jogo que nao publica nada na rede (RuneScape Dragonwilds, por exemplo) so da
-        para contar pelo log. {% if mode == 'edit' %}O
-        <a href="{{ url_for('players_setup', sid=sid) }}">assistente</a> testa as portas
-        UDP e TCP, monta a chamada da API e acha os padroes do log para voce.{% endif %}
+        {{ _('server_form.player_count_hint') }}
+        {%- if mode == 'edit' %} {{ _h('server_form.player_count_wizard',
+            url=url_for('players_setup', sid=sid)) }}{% endif %}
       </small>
     </label>
     <div class="row">
-      <label>Log: linha de entrada
+      <label>{{ _('server_form.log_join') }}
         <input name="join_re" value="{{ data.join_re }}" spellcheck="false"
                placeholder="Join succeeded: (?P&lt;name&gt;.+)">
       </label>
-      <label>Log: linha de saida
+      <label>{{ _('server_form.log_leave') }}
         <input name="leave_re" value="{{ data.leave_re }}" spellcheck="false"
                placeholder="UNetConnection::Close">
       </label>
-      <label>Log: arquivo <span class="muted">(opcional)</span>
+      <label>{{ _('server_form.log_file') }} <span class="muted">{{ _('server_form.optional') }}</span>
         <input name="log_path" value="{{ data.log_path }}" spellcheck="false"
                placeholder="/opt/game/profiles/*.ADM">
         <small>
-          Em branco le a saida do servico. Preenchido, le esse arquivo &mdash; e como se
-          alcanca o nome do jogador em jogos que so o escrevem em log proprio (DayZ).
+          {{ _h('server_form.log_file_hint') }}
         </small>
       </label>
     </div>
 
-    <label>Log: linha de erro <span class="muted">(opcional)</span>
+    <label>{{ _('server_form.log_error') }} <span class="muted">{{ _('server_form.optional') }}</span>
       <input name="error_re" value="{{ data.error_re }}" spellcheck="false"
              placeholder="Fatal error|Out of memory|Assertion failed">
       <small>
-        Liga o alerta <strong>Erro no log do jogo</strong> em
-        <a href="{{ url_for('alerts') }}">Alertas</a>: o painel procura esta expressao no
-        fim do log e avisa quando ela aparece. Em branco, nem a leitura acontece.
-        Comece estreito &mdash; um padrao largo demais transforma o canal em copia do log.
+        {{ _h('server_form.log_error_hint', url=url_for('alerts')) }}
       </small>
     </label>
 
     <div class="row">
-      <label>API: URL
+      <label>{{ _('server_form.api_url') }}
         <input name="http_url" value="{{ data.http_url }}" spellcheck="false"
                placeholder="http://127.0.0.1:8212/v1/api/players">
-        <small>Chamada de dentro do container, por SSH. Palworld: porta <code>8212</code>.</small>
+        <small>{{ _h('server_form.api_url_hint') }}</small>
       </label>
-      <label>API: autenticacao
+      <label>{{ _('server_form.api_auth') }}
         <input name="http_auth" value="{{ data.http_auth }}" spellcheck="false"
                placeholder="basic:admin:senha-de-admin">
-        <small><code>basic:usuario:senha</code>, <code>bearer:token</code> ou
-          <code>header:Nome: valor</code> (TeamSpeak:
-          <code>header:x-api-key: SUA-CHAVE</code>). Fica em texto puro no banco.</small>
+        <small>{{ _h('server_form.api_auth_hint') }}</small>
       </label>
     </div>
     <div class="row">
-      <label>API: corpo JSON <span class="muted">(opcional)</span>
+      <label>{{ _('server_form.api_body') }} <span class="muted">{{ _('server_form.optional') }}</span>
         <input name="http_body" value="{{ data.http_body }}" spellcheck="false"
                placeholder='{"function":"QueryServerState"}'>
-        <small>Preenchido vira <code>POST</code>; vazio e <code>GET</code>.</small>
+        <small>{{ _h('server_form.api_body_hint') }}</small>
       </label>
-      <label>API: caminho da lista / da contagem <span class="muted">(opcional)</span>
+      <label>{{ _('server_form.api_paths') }} <span class="muted">{{ _('server_form.optional') }}</span>
         <div class="row">
           <input name="http_list_path" value="{{ data.http_list_path }}" spellcheck="false"
                  placeholder="players">
           <input name="http_count_path" value="{{ data.http_count_path }}" spellcheck="false"
                  placeholder="data.numConnectedPlayers">
         </div>
-        <small>Vazios: o painel procura sozinho na resposta.</small>
+        <small>{{ _('server_form.api_paths_hint') }}</small>
       </label>
     </div>
-    <label>Pasta de configuracao <span class="muted">(opcional)</span>
+    <label>{{ _('server_form.config_folder') }} <span class="muted">{{ _('server_form.optional') }}</span>
       <input name="config_path" value="{{ data.config_path }}" placeholder="/opt/game" spellcheck="false">
       <small>
-        Onde a tela <strong>Arquivos</strong> abre por padrao. Ex.:
-        <code>/opt/game/Pal/Saved/Config/LinuxServer</code>
+        {{ _h('server_form.config_folder_hint') }}
       </small>
     </label>
-    <label>Arquivos de configuracao <span class="muted">(um por linha)</span>
+    <label>{{ _('server_form.config_files') }} <span class="muted">{{ _('server_form.one_per_line') }}</span>
       <textarea name="config_files" rows="3" spellcheck="false"
                 placeholder="/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini">{{ data.config_files }}</textarea>
       <small>
-        Informe aqui o arquivo que voce edita de verdade: a tela
-        {% if mode == 'edit' %}<a href="{{ url_for('config_quick', sid=sid) }}"><strong>Config</strong></a>
-        {% else %}<strong>Config</strong>{% endif %}
-        abre ele direto como formulario (um campo por chave, com botao para acrescentar
-        chave nova) &mdash; sem navegar por pastas. Em branco, a propria tela ajuda a
-        procurar os candidatos no container.
+        {% if mode == 'edit' %}{{ _h('server_form.config_files_hint_link',
+             url=url_for('config_quick', sid=sid)) }}
+        {% else %}{{ _h('server_form.config_files_hint') }}{% endif %}
       </small>
     </label>
-    <label>Caminhos de backup <span class="muted">(um por linha, opcional)</span>
+    <label>{{ _('server_form.backup_paths') }} <span class="muted">{{ _('server_form.one_per_line_optional') }}</span>
       <textarea name="backup_paths" rows="3" spellcheck="false"
                 placeholder="/opt/game/Pal/Saved/SaveGames">{{ data.backup_paths }}</textarea>
       <small>
-        O que a tela {% if mode == 'edit' %}<a href="{{ url_for('backups', sid=sid) }}"><strong>Backups</strong></a>
-        {% else %}<strong>Backups</strong>{% endif %} guarda no <code>.tar.gz</code>.
-        Em branco vale a <strong>pasta de configuracao</strong> acima. Aponte a pasta do
-        <strong>save</strong>, nao a raiz do jogo: <code>/opt/game</code> inteiro leva
-        dezenas de GB de binario que o SteamCMD rebaixa de graca.
+        {% if mode == 'edit' %}{{ _h('server_form.backup_paths_hint_link',
+             url=url_for('backups', sid=sid)) }}
+        {% else %}{{ _h('server_form.backup_paths_hint') }}{% endif %}
       </small>
     </label>
-    <label>Notas <span class="muted">(opcional)</span>
+    <label>{{ _('server_form.notes') }} <span class="muted">{{ _('server_form.optional') }}</span>
       <textarea name="notes" rows="4">{{ data.notes }}</textarea>
     </label>
     <div class="form-actions">
-      {{ ui.botao("Salvar", variante="primary", bloco=true) }}
-      {{ ui.botao("Cancelar", href=url_for("dashboard"), variante="ghost", bloco=true) }}
+      {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
+      {{ ui.botao(_('server_form.cancel'), href=url_for('dashboard'), variante='ghost', bloco=true) }}
     </div>
   </form>
   <p class="muted small">
-    O container precisa ter <code>sshd</code> rodando e a chave do painel autorizada —
-    veja <a href="{{ url_for('ssh_key') }}">Acesso SSH</a>.
+    {{ _h('server_form.sshd_note', url=url_for('ssh_key')) }}
   </p>
 </div>
 
 {% if mode == 'edit' %}
 <div class="card card--perigo card--form">
-  <h2>Remover do painel</h2>
-  <p class="muted">Apaga apenas o cadastro. O container e os arquivos do jogo nao sao tocados.</p>
+  <h2>{{ _('server_form.remove') }}</h2>
+  <p class="muted">{{ _('server_form.remove_hint') }}</p>
   <div class="form-actions">
-    {{ ui.acao(url_for("server_delete", sid=sid), "Remover do painel", variante="danger",
-               icone="🗑", bloco=true,
-               confirmar="Remover este servidor do painel?") }}
+    {{ ui.acao(url_for('server_delete', sid=sid), _('server_form.remove'), variante='danger',
+               icone='🗑', bloco=true,
+               confirmar=_('server_form.remove_confirm')) }}
   </div>
 </div>
 {% endif %}

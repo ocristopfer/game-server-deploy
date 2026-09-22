@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
 {% import "components/servidor.html" as srv with context %}
-{% block title %}Agendamentos &mdash; {{ server.name }}{% endblock %}
+{% block title %}{{ _('server.schedules') }} &mdash; {{ server.name }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho('Agendamentos — ' ~ server.name) }}
+{{ ui.cabecalho(_('server.schedules') ~ ' — ' ~ server.name) }}
 {{ srv.abas(server, 'schedules') }}
 
 <div class="card">
@@ -18,16 +18,16 @@
         <td>{{ job_labels.get(t.action, t.action) }}</td>
         <td>{{ rotulo(t) }}</td>
         <td class="muted">{% if t.enabled %}{{ proximas[t.id] }}{% else %}<span class="badge">{{ _('schedules.off') }}</span>{% endif %}</td>
-        <td class="muted small nowrap">{{ t.last_run[:16] | replace('T', ' ') or 'nunca' }}</td>
+        <td class="muted small nowrap">{{ t.last_run[:16] | replace('T', ' ') or _('schedules.never') }}</td>
         <td class="acoes">
           {% if is_admin %}
-            {{ ui.acao(url_for('schedule_run', aid=t.id), 'rodar agora', variante='ghost',
-                       tamanho='sm', titulo='Roda agora, sem esperar a hora') }}
+            {{ ui.acao(url_for('schedule_run', aid=t.id), _('schedules.run_now'), variante='ghost',
+                       tamanho='sm', titulo=_('schedules.run_now_help')) }}
             {{ ui.acao(url_for('schedule_toggle', aid=t.id),
-                       'ligar' if not t.enabled else 'desligar', tamanho='sm') }}
-            {{ ui.acao(url_for('schedule_delete', aid=t.id), 'remover', variante='danger',
+                       _('schedules.turn_on') if not t.enabled else _('schedules.turn_off'), tamanho='sm') }}
+            {{ ui.acao(url_for('schedule_delete', aid=t.id), _('schedules.delete'), variante='danger',
                        tamanho='sm',
-                       confirmar='Remover: ' ~ job_labels.get(t.action, t.action) ~ ' ' ~ rotulo(t) ~ '?') }}
+                       confirmar=_('schedules.delete_confirm', tarefa=job_labels.get(t.action, t.action) ~ ' ' ~ rotulo(t))) }}
           {% else %}
           <span class="muted small">{{ _('schedules.admin_only') }}</span>
           {% endif %}
@@ -92,7 +92,7 @@
       </label>
     </div>
     <div class="form-actions">
-      {{ ui.botao('Agendar', variante='primary', icone='⏰', bloco=true) }}
+      {{ ui.botao(_('schedules.schedule_it'), variante='primary', icone='⏰', bloco=true) }}
     </div>
   </form>
   <p class="muted small mt-4">

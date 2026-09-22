@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from gamepanel import app as panel
 from gamepanel import i18n
 
 # ------------------------------------------------------------ catalogos
@@ -88,3 +89,58 @@ def test_idioma_valido_passa(bruto):
 ])
 def test_le_a_preferencia_do_navegador(cabecalho, esperado):
     assert i18n.do_cabecalho(cabecalho) == esperado
+
+
+# ---------------------------------------------------------- campos na frase
+
+def test_campo_entra_no_lugar_do_marcador(monkeypatch):
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.ritmo", "a cada {n}s")
+    assert i18n.traduzir("t.ritmo", "pt", n=15) == "a cada 15s"
+
+
+def test_campo_a_mais_e_ignorado(monkeypatch):
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.simples", "sem marcador")
+    assert i18n.traduzir("t.simples", "pt", n=15) == "sem marcador"
+
+
+@pytest.mark.parametrize("frase", [
+    "faltou o {outro}",      # marcador sem campo: KeyError
+    "chave {} solta",        # posicional sem argumento: IndexError
+    "chave { torta",         # marcador mal formado: ValueError
+])
+def test_marcador_que_nao_casa_nao_derruba_a_tela(monkeypatch, frase):
+    """Frase e campo vem de lugares diferentes; a tela inteira nao pode cair por isso."""
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.torta", frase)
+    assert i18n.traduzir("t.torta", "pt", n=15) == frase
+
+
+def test_a_frase_do_idioma_pedido_e_que_recebe_o_campo(monkeypatch):
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.ritmo", "a cada {n}s")
+    monkeypatch.setitem(i18n.CATALOGOS["en"], "t.ritmo", "every {n}s")
+    assert i18n.traduzir("t.ritmo", "en", n=15) == "every 15s"
+
+
+# ------------------------------------------------- frase com marcacao (_h)
+
+def test_frase_com_marcacao_chega_inteira_na_tela(monkeypatch):
+    """A frase vem do catalogo, que e codigo daqui: a marcacao dela e para valer."""
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.rico", "avisa na <strong>mudanca</strong>")
+    with panel.app.test_request_context("/"):
+        assert str(panel.traduzir_html("t.rico")) == "avisa na <strong>mudanca</strong>"
+
+
+def test_campo_que_vem_de_fora_e_escapado(monkeypatch):
+    """O campo NAO e do catalogo; sem escape, um nome de servidor viraria marcacao."""
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.rico", "servidor <strong>{nome}</strong>")
+    with panel.app.test_request_context("/"):
+        saida = str(panel.traduzir_html("t.rico", nome="<script>x</script>"))
+    assert saida == "servidor <strong>&lt;script&gt;x&lt;/script&gt;</strong>"
+
+
+def test_frase_encaixada_noutra_passa_inteira(monkeypatch):
+    """Paragrafo que embute outro (`_h` dentro de `_h`) nao pode escapar duas vezes."""
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.fora", "ouvindo ({dentro})")
+    monkeypatch.setitem(i18n.CATALOGOS["pt"], "t.dentro", "<strong>{n}</strong> agora")
+    with panel.app.test_request_context("/"):
+        dentro = panel.traduzir_html("t.dentro", n=3)
+        assert str(panel.traduzir_html("t.fora", dentro=dentro)) == "ouvindo (<strong>3</strong> agora)"

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Alertas &mdash; Painel de Jogos{% endblock %}
+{% block title %}{{ _('nav.alerts') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% macro caixas(prefixo, marcados) %}
   {# A lista de eventos e a mesma nos destinos e no formulario de cadastro; o prefixo so
@@ -17,44 +17,34 @@
 {% endmacro %}
 
 {% block content %}
-{% call ui.cabecalho('Alertas') %}
+{% call ui.cabecalho(_('nav.alerts')) %}
   {% if cfg.ativos %}
-    {{ ui.selo(cfg.ativos | length ~ ' destino' ~ ('s' if cfg.ativos | length != 1 else '') ~ ' ligado' ~ ('s' if cfg.ativos | length != 1 else ''), 'on') }}
+    {# Plural e por idioma, entao sao duas chaves e nao um 's' colado no fim. #}
+    {{ ui.selo(_('alerts.destinations_on_one' if cfg.ativos | length == 1
+                 else 'alerts.destinations_on_many', n=cfg.ativos | length), 'on') }}
   {% else %}
-    {{ ui.selo('nenhum destino ligado', 'cold') }}
+    {{ ui.selo(_('alerts.no_destination_on'), 'cold') }}
   {% endif %}
 {% endcall %}
 
-<p class="muted intro">
-  O painel avisa por <strong>webhook</strong> quando algo acontece sem ninguem estar
-  olhando. Cada destino tem a sua propria lista de eventos &mdash; da para mandar tudo
-  para o canal da equipe e so as quedas para o canal geral. Serve para
-  <strong>Discord</strong> (Editar canal &rarr; Integracoes &rarr; Webhooks &rarr; Copiar
-  URL), <strong>Slack</strong> (Incoming Webhook) ou qualquer endereco que aceite um
-  <code>POST</code> de JSON &mdash; a chamada leva os campos <code>content</code> e
-  <code>text</code>, entao cada um le o seu.
-</p>
+<p class="muted intro">{{ _h('alerts.intro') }}</p>
 
 <div class="card">
-  <h2>Destinos</h2>
+  <h2>{{ _('alerts.destinations') }}</h2>
 
   {% if not cfg.destinos %}
-    <p class="muted small vazio">
-      Nenhum destino cadastrado &mdash; os alertas estao desligados. Adicione o primeiro
-      abaixo.
-    </p>
+    <p class="muted small vazio">{{ _('alerts.no_destination_yet') }}</p>
   {% endif %}
 
   {% if pendencias %}
     <div class="flash pendencia">
-      <strong>Ligado, mas sem onde olhar.</strong> Estes eventos nunca vao disparar do
-      jeito que o painel esta hoje &mdash; e canal em silencio parece "esta tudo bem":
+      {{ _h('alerts.pending_intro') }}
       <ul>
         {% for chave, falta in pendencias.items() %}
-        <li><em>{{ eventos[chave] }}</em>: nenhum servidor tem {{ falta }}.</li>
+        <li>{{ _h('alerts.pending_item', evento=eventos[chave], falta=falta) }}</li>
         {% endfor %}
       </ul>
-      Ajuste no <a href="{{ url_for('dashboard') }}">cadastro de cada servidor</a>.
+      {{ _h('alerts.pending_fix', url=url_for('dashboard')) }}
     </div>
   {% endif %}
 
@@ -65,131 +55,118 @@
 
     <div class="hook-head">
       <label class="hook-nome">
-        <span class="sr-only">Nome do destino</span>
-        <input name="nome" value="{{ h.nome }}" maxlength="60" placeholder="Canal da equipe">
+        <span class="sr-only">{{ _('alerts.destination_name') }}</span>
+        <input name="nome" value="{{ h.nome }}" maxlength="60"
+               placeholder="{{ _('alerts.team_channel') }}">
       </label>
       <label class="checkbox hook-liga">
         <input type="checkbox" name="ativo" value="1" {% if h.ativo %}checked{% endif %}>
-        <span>{{ 'Ligado' if h.ativo else 'Desligado' }}</span>
+        <span>{{ _('alerts.on') if h.ativo else _('alerts.off') }}</span>
       </label>
     </div>
 
-    <p class="hook-url" title="A URL fica escondida: e uma credencial">
+    <p class="hook-url" title="{{ _('alerts.url_is_a_secret') }}">
       <code class="trunc">{{ h.url_curta }}</code>
     </p>
     <label class="hook-troca">
-      <span class="rotulo">Trocar a URL</span>
+      <span class="rotulo">{{ _('alerts.change_url') }}</span>
       <input name="url" value="" spellcheck="false" autocomplete="off" autocapitalize="none"
-             placeholder="deixe em branco para manter a atual">
+             placeholder="{{ _('alerts.leave_blank_to_keep') }}">
     </label>
 
     <div class="hook-eventos">
-      <span class="rotulo">Avisar sobre</span>
+      <span class="rotulo">{{ _('alerts.notify_about') }}</span>
       {{ caixas('h%d' % h.id, h.eventos) }}
       {% if not h.eventos %}
-        <p class="muted small aviso">Sem nenhum evento marcado este destino nunca recebe nada.</p>
+        <p class="muted small aviso">{{ _('alerts.no_event_checked') }}</p>
       {% endif %}
     </div>
 
     <div class="form-actions hook-acoes">
-      {{ ui.botao('Salvar', variante='primary') }}
-      {{ ui.botao('Testar', extra='formaction="' ~ url_for('alerts_hook_test', hid=h.id) ~ '" formnovalidate') }}
+      {{ ui.botao(_('action.save'), variante='primary') }}
+      {{ ui.botao(_('alerts.test'), extra='formaction="' ~ url_for('alerts_hook_test', hid=h.id) ~ '" formnovalidate') }}
       <span class="spacer"></span>
-      {{ ui.botao('Remover', variante='danger',
-                  confirmar='Remover o destino ' ~ h.nome ~ '?',
+      {{ ui.botao(_('alerts.remove'), variante='danger',
+                  confirmar=_('alerts.remove_confirm', nome=h.nome),
                   extra='formaction="' ~ url_for('alerts_hook_del', hid=h.id) ~ '" formnovalidate') }}
     </div>
   </form>
   {% endfor %}
 
   {% if cfg.destinos | length >= limite_hooks %}
-    <p class="muted small">
-      Limite de {{ limite_hooks }} destinos atingido &mdash; remova um para cadastrar outro.
-    </p>
+    <p class="muted small">{{ _('alerts.limit_reached', n=limite_hooks) }}</p>
   {% else %}
   <details class="hook-novo"{% if not cfg.destinos %} open{% endif %}>
-    <summary>+ Adicionar destino</summary>
+    <summary>+ {{ _('alerts.add_destination') }}</summary>
     <form method="post" action="{{ url_for('alerts_hook_new') }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="ativo" value="1">
       <div class="row">
-        <label>Nome
-          <input name="nome" maxlength="60" placeholder="Canal da equipe">
-          <small>So para voce se achar nesta lista.</small>
+        <label>{{ _('alerts.name') }}
+          <input name="nome" maxlength="60" placeholder="{{ _('alerts.team_channel') }}">
+          <small>{{ _('alerts.name_hint') }}</small>
         </label>
-        <label>URL do webhook
+        <label>{{ _('alerts.webhook_url') }}
           <input name="url" spellcheck="false" autocomplete="off" autocapitalize="none" required
                  placeholder="https://discord.com/api/webhooks/...">
-          <small>E um segredo: quem a tiver escreve no seu canal.</small>
+          <small>{{ _('alerts.webhook_url_hint') }}</small>
         </label>
       </div>
-      <span class="rotulo">Avisar sobre</span>
+      <span class="rotulo">{{ _('alerts.notify_about') }}</span>
       {{ caixas('novo', padrao) }}
       <div class="form-actions">
-        {{ ui.botao('Adicionar', variante='primary', bloco=true) }}
+        {{ ui.botao(_('alerts.add'), variante='primary', bloco=true) }}
       </div>
     </form>
   </details>
   {% endif %}
 
   {% if do_env %}
-    <p class="muted small">
-      O deploy trouxe uma URL em <code>GAMEPANEL_WEBHOOK_URL</code>; ela virou o primeiro
-      destino desta lista e a partir daqui so vale o que estiver cadastrado.
-    </p>
+    <p class="muted small">{{ _h('alerts.came_from_env') }}</p>
   {% endif %}
 </div>
 
 <div class="card">
-  <h2>Preferencias</h2>
+  <h2>{{ _('alerts.preferences') }}</h2>
   <form method="post" action="{{ url_for('alerts_save') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label class="curto">Avisar quando o disco passar de
+    <label class="curto">{{ _('alerts.warn_disk_over') }}
       <span class="com-unidade">
         <input name="disk_pct" type="number" min="50" max="100" value="{{ cfg.disco }}" inputmode="numeric">
         <span class="unidade">%</span>
       </span>
-      <small>
-        No disco mais cheio do container. Avisa uma vez, na virada: um disco a 95%
-        continua a 95% na volta seguinte e ninguem merece o mesmo alerta a cada minuto.
-      </small>
+      <small>{{ _('alerts.disk_hint') }}</small>
     </label>
-    <label class="curto">Avisar quando a memoria passar de
+    <label class="curto">{{ _('alerts.warn_memory_over') }}
       <span class="com-unidade">
         <input name="mem_pct" type="number" min="50" max="100" value="{{ cfg.memoria }}" inputmode="numeric">
         <span class="unidade">%</span>
       </span>
-      <small>
-        Memoria do container, contra o limite dele (nao o da maquina inteira). Avisa uma
-        vez, na virada, do mesmo jeito que o disco.
-      </small>
+      <small>{{ _('alerts.memory_hint') }}</small>
     </label>
-    <label class="curto">Avisar quando a CPU passar de
+    <label class="curto">{{ _('alerts.warn_cpu_over') }}
       <span class="com-unidade">
         <input name="cpu_pct" type="number" min="50" max="100" value="{{ cfg.cpu }}" inputmode="numeric">
         <span class="unidade">%</span>
       </span>
-      <small>
-        Uso do container sobre os nucleos que ele tem, medido junto com o disco (a cada
-        {{ disco_a_cada }} min). Como e uma amostra curta de vez em quando, serve para
-        pegar CPU presa no teto, nao pico de um segundo.
-      </small>
+      <small>{{ _('alerts.cpu_hint', n=disco_a_cada) }}</small>
     </label>
     <div class="form-actions">
-      {{ ui.botao('Salvar', variante='primary', bloco=true) }}
+      {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
     </div>
   </form>
 </div>
 
 <div class="card">
-  <h2>Diario de alertas</h2>
+  <h2>{{ _('alerts.journal') }}</h2>
   {% if not diario %}
-    <p class="muted">Nada registrado ainda. Cada alerta que o painel decidir mandar
-      aparece aqui &mdash; inclusive os que <strong>nao</strong> sairam.</p>
+    <p class="muted">{{ _h('alerts.journal_empty') }}</p>
   {% else %}
     <div class="table-wrap"><table class="jobs">
       <thead>
-        <tr><th>Quando (UTC)</th><th>Evento</th><th>O que</th><th>Destino</th><th>Saida</th></tr>
+        <tr><th>{{ _('alerts.when_utc') }}</th><th>{{ _('alerts.event') }}</th>
+            <th>{{ _('alerts.what') }}</th><th>{{ _('alerts.destination') }}</th>
+            <th>{{ _('alerts.outcome') }}</th></tr>
       </thead>
       <tbody>
         {% for a in diario %}
@@ -202,14 +179,14 @@
             <td class="small">{{ a.destino or '—' }}</td>
             <td class="small">
               {% if a.status == 'enviado' %}
-                <span class="badge on">enviado</span>
+                <span class="badge on">{{ _('alerts.sent') }}</span>
               {% elif a.status == 'falhou' %}
-                <span class="badge off">falhou</span>
+                <span class="badge off">{{ _('alerts.failed') }}</span>
                 <br><span class="muted">{{ a.erro }}</span>
               {% elif a.status == 'sem-destino' %}
-                <span class="badge cold">sem destino</span>
+                <span class="badge cold">{{ _('alerts.no_destination') }}</span>
               {% else %}
-                <span class="badge off">erro interno</span>
+                <span class="badge off">{{ _('alerts.internal_error') }}</span>
                 <br><span class="muted">{{ a.erro }}</span>
               {% endif %}
             </td>
@@ -217,63 +194,31 @@
         {% endfor %}
       </tbody>
     </table></div>
-    <p class="muted small mt-4">
-      <strong>sem destino</strong> quer dizer que o alerta aconteceu de verdade e nenhum
-      destino ativo tinha esse evento marcado &mdash; o canal fica mudo por escolha, nao
-      por defeito. <strong>erro interno</strong> e uma tarefa do relogio que quebrou:
-      enquanto ela aparecer aqui, os alertas dela nao estao sendo checados.
-    </p>
+    <p class="muted small mt-4">{{ _h('alerts.journal_legend') }}</p>
   {% endif %}
 </div>
 
 <div class="card">
-  <h2>Como funciona</h2>
+  <h2>{{ _('alerts.how_it_works') }}</h2>
   <ul class="regras">
-    <li>O painel confere o estado de cada servidor a cada <strong>{{ monitor }}s</strong>
-      e disco, memoria e CPU a cada <strong>{{ disco_a_cada }} min</strong> (o medidor
-      custa bem mais caro que o status, e as tres leituras saem de uma vez so).</li>
-    <li><strong>Jogador entrando e a excecao:</strong> esse o painel confere a cada
-      <strong>{{ jogadores_a_cada }}s</strong>, porque quem recebe o aviso costuma querer
-      entrar junto e um minuto depois ja e tarde. Essa volta curta pergunta direto ao
-      jogo, sem SSH &mdash; por isso ela cabe sem encarecer o resto. Vale para quem conta
-      por <strong>A2S ou API HTTP</strong>.</li>
-    <li>Quem conta por <strong>log</strong> nao e perguntado: o painel deixa uma conexao
-      aberta <em>ouvindo</em> o log ({% if streams %}<strong>{{ streams }}</strong> agora
-      {% else %}nenhuma no momento{% endif %}) e reage a linha no segundo em que ela sai.
-      Perguntar de 15 em 15 segundos custaria uma leitura do log inteiro a cada vez; assim
-      so se le quando alguem de fato entrou ou saiu. Se a conexao cair, o aviso volta a
-      sair pela volta de {{ monitor }}s ate ela se restabelecer.</li>
-    <li>Ele avisa na <strong>mudanca</strong>, nunca em repeticao: o alerta sai quando o
-      servidor cai, nao a cada volta enquanto ele estiver caido.</li>
-    <li>Cada evento vai para <strong>todos os destinos</strong> que o marcaram. Um
-      destino fora do ar nao impede os outros de receber.</li>
-    <li><strong>Servico de pe nao quer dizer jogo de pe.</strong> Alem da queda, o painel
-      olha tres coisas que passariam batido:
+    <li>{{ _h('alerts.rule_rhythm', monitor=monitor, medidor=disco_a_cada) }}</li>
+    <li>{{ _h('alerts.rule_joining', n=jogadores_a_cada) }}</li>
+    <li>{{ _h('alerts.rule_log_listen', monitor=monitor,
+              ouvindo=_h('alerts.streams_now', n=streams) if streams else _h('alerts.streams_none')) }}</li>
+    <li>{{ _h('alerts.rule_on_change') }}</li>
+    <li>{{ _h('alerts.rule_all_destinations') }}</li>
+    <li>{{ _h('alerts.rule_service_up_is_not_game_up') }}
       <ul>
-        <li><em>Jogo quebrou</em> &mdash; o systemd marcou o servico como
-          <code>failed</code>. E diferente de "parou": alguem parar pelo painel nao
-          gera este alerta, e este aqui sai mesmo dentro da janela de silencio.</li>
-        <li><em>Loop de restart</em> &mdash; o jogo morre e o systemd levanta de novo,
-          sem parar. Entre uma queda e outra o servico responde <code>active</code>, e o
-          alerta de queda nunca dispara. Sai uma vez por episodio.</li>
-        <li><em>Jogo nao responde</em> &mdash; o processo esta vivo mas mudo na consulta
-          do proprio jogo, por {{ mudo_voltas }} verificacoes seguidas. So vale para quem
-          conta jogadores por <strong>A2S ou API HTTP</strong>: contagem por log nao
-          pergunta nada ao jogo.</li>
+        <li>{{ _h('alerts.rule_game_failed') }}</li>
+        <li>{{ _h('alerts.rule_restart_loop') }}</li>
+        <li>{{ _h('alerts.rule_game_mute', n=mudo_voltas) }}</li>
       </ul>
     </li>
-    <li><em>Erro no log do jogo</em> le o fim do log a cada
-      <strong>{{ log_a_cada }}s</strong> e procura a expressao cadastrada em cada
-      servidor. Sem expressao, nem a leitura acontece. A mesma linha nao avisa duas
-      vezes.</li>
-    <li>Parar, reiniciar, atualizar ou restaurar <strong>pelo painel</strong> nao vira
-      alerta &mdash; nos {{ quieto }}s seguintes a uma dessas acoes a queda e esperada.</li>
-    <li>Ao subir, o painel so <strong>anota</strong> o estado de todo mundo. Reiniciar o
-      painel nao dispara um alerta por servidor que ja estava parado.</li>
-    <li>De tarefa que falha, so a <strong>agendada</strong> vira alerta: quem clicou o
-      botao ja esta com o erro na tela.</li>
-    <li>Mexer nesta tela zera a linha de base do monitor, para a volta seguinte nao
-      avisar sobre o que ja estava assim antes da mudanca.</li>
+    <li>{{ _h('alerts.rule_log_error', n=log_a_cada) }}</li>
+    <li>{{ _h('alerts.rule_quiet_window', n=quieto) }}</li>
+    <li>{{ _h('alerts.rule_on_boot') }}</li>
+    <li>{{ _h('alerts.rule_scheduled_only') }}</li>
+    <li>{{ _h('alerts.rule_editing_resets') }}</li>
   </ul>
 </div>
 {% endblock %}

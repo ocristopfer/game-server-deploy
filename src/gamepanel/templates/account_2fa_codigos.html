@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Codigos de recuperacao — Painel de Jogos{% endblock %}
+{% block title %}{{ _('account_2fa_codes.title') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho('Codigos de recuperacao') }}
+{{ ui.cabecalho(_('account_2fa_codes.title')) }}
 
 <div class="card card--form">
   <p class="flash pendencia">
@@ -15,7 +15,7 @@
 {% endfor %}</pre>
   <div class="form-actions">
     <button type="button" class="btn btn--sm" data-copiar="#codigos-2fa" hidden>{{ _('account_2fa_codes.copy_codes') }}</button>
-    {{ ui.botao('Ja guardei', href=url_for('account'), variante='primary', bloco=true) }}
+    {{ ui.botao(_('account_2fa_codes.saved_them'), href=url_for('account'), variante='primary', bloco=true) }}
   </div>
 </div>
 {% endblock %}

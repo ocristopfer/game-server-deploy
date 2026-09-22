@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Catalogo de jogos — Painel de Jogos{% endblock %}
+{% block title %}{{ _('catalog.title') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{% call ui.cabecalho('Catalogo de jogos') %}
-  {{ ui.botao('Instancias', href=url_for('instances_list'), variante='ghost', icone='🧩') }}
+{% call ui.cabecalho(_('catalog.title')) %}
+  {{ ui.botao(_('nav.instances'), href=url_for('instances_list'), variante='ghost', icone='🧩') }}
 {% endcall %}
 
 {# Lista a esquerda, formulario a direita no desktop; uma coluna no celular. #}
@@ -13,158 +13,152 @@
   <div class="table-wrap"><table class="jobs">
     {# UMA coluna, um bloco por jogo. Com duas ou tres, a de "criavel" (que e a resposta
        desta tela) ficava atras de uma rolagem lateral no celular. #}
-    <thead><tr><th>Jogo</th></tr></thead>
+    <thead><tr><th>{{ _('catalog.game') }}</th></tr></thead>
     <tbody>
       {% for j in jogos %}
       <tr>
         <td>
           <strong>{{ j.nome }}</strong> <span class="muted small">{{ j.chave }}</span>
-          {% if j.criavel %}<span class="badge on">criavel</span>{% else %}<span class="badge cold">manual</span>{% endif %}
+          {% if j.criavel %}<span class="badge on">{{ _('catalog.creatable') }}</span>
+          {% else %}<span class="badge cold">{{ _('catalog.manual') }}</span>{% endif %}
           <div class="muted small">
             app {{ j.app_id or '—' }} · {{ j.memoria_mb }} MB · {{ j.cores }} CPU · {{ j.disco_gb }} GB · {{ j.origem }}
           </div>
           <div class="small">
-            Portas: {{ j.portas | join(', ') }}{% if j.deslocavel %} <span class="badge cold" title="O broker sorteia as portas numa faixa propria dele; as listadas aqui sao so as padrao do jogo">porta sorteada</span>{% endif %}
+            {{ _('catalog.ports') }}: {{ j.portas | join(', ') }}{% if j.deslocavel %} <span class="badge cold" title="{{ _('catalog.shifted_port_help') }}">{{ _('catalog.shifted_port') }}</span>{% endif %}
           </div>
           {% if not j.criavel %}<div class="muted small">{{ j.motivo }}</div>{% endif %}
         </td>
       </tr>
       {% else %}
-      <tr><td class="muted">Catalogo vazio (ou o broker nao respondeu).</td></tr>
+      <tr><td class="muted">{{ _('catalog.empty') }}</td></tr>
       {% endfor %}
     </tbody>
   </table></div>
-  <p class="muted small mt-4">
-    <strong>curado</strong>: vem dos arquivos <code>games/*.env</code> do repositorio.
-    <strong>dinamico</strong>: adicionado por aqui. Jogo que exige conta Steam ou instalador
-    proprio (TeamSpeak) continua sendo criado pelo <code>deploy-game.ps1</code>.
-  </p>
+  <p class="muted small mt-4">{{ _h('catalog.curated_vs_dynamic') }}</p>
 </div>
 
 <div class="card">
-  <h2>Adicionar jogo</h2>
-  <p class="muted small">
-    So dados: o broker <strong>nao aceita comandos</strong>. O que precisa de instalacao
-    especial (Wine, Proton, symlink do Steam) entra pelas receitas abaixo.
-  </p>
+  <h2>{{ _('catalog.add_game') }}</h2>
+  <p class="muted small">{{ _h('catalog.data_only') }}</p>
   <form method="post" action="{{ url_for('catalog_new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     {# Busca por nome ou App ID (features/busca-de-jogo.js). Sem `name`: nao vai no envio. #}
     <div class="mb-4" data-busca-de-jogo data-url="{{ url_for('api_catalog_suggestions') }}" hidden>
-      <label>Buscar jogo <span class="muted">(nome ou App ID)</span>
+      <label>{{ _('catalog.search_game') }} <span class="muted">{{ _('catalog.by_name_or_app_id') }}</span>
         <input type="search" data-busca-campo maxlength="60" autocomplete="off" spellcheck="false"
                placeholder="Palworld, Valheim, 2394010...">
-        <small>Preenche App ID, portas e comando de start a partir do catalogo do LinuxGSM. E so
-          sugestao: confira antes de enviar.</small>
+        <small>{{ _('catalog.search_hint') }}</small>
       </label>
       <div class="stack stack--sm" data-busca-resultados aria-live="polite"></div>
     </div>
     {# Sem `name`: nao vai no envio, so preenche os campos abaixo (features/modelo-jogo.js).
        Nasce escondido porque sem JavaScript ele nao faria nada. #}
     {% if modelos %}
-    <label hidden>Comecar de um modelo
+    <label hidden>{{ _('catalog.start_from_template') }}
       <select data-modelo-jogo>
-        <option value="">Em branco</option>
+        <option value="">{{ _('catalog.blank') }}</option>
         {% for m in modelos %}
         <option value="{{ m.chave }}" data-descricao="{{ m.descricao }}"
                 data-valores='{{ m.valores | tojson }}'>{{ m.rotulo }}</option>
         {% endfor %}
       </select>
-      <small data-modelo-descricao>Preenche portas, caminhos, argumentos e o padrao do log de uma vez.</small>
+      <small data-modelo-descricao>{{ _('catalog.template_hint') }}</small>
     </label>
     {% endif %}
     <div class="row">
-      <label>Chave
+      <label>{{ _('catalog.key') }}
         <input name="chave" value="{{ form.get('chave', '') }}" required maxlength="24" spellcheck="false"
-               autocapitalize="none" pattern="[a-z][a-z0-9\-]{1,23}" placeholder="meujogo">
-        <small>Minusculas, numeros e hifen. Vira o nome do container e do servico.</small>
+               autocapitalize="none" pattern="[a-z][a-z0-9\-]{1,23}" placeholder="{{ _('catalog.key_example') }}">
+        <small>{{ _('catalog.key_hint') }}</small>
       </label>
-      <label>Nome
-        <input name="nome" value="{{ form.get('nome', '') }}" required maxlength="40" placeholder="Meu Jogo">
+      <label>{{ _('catalog.name') }}
+        <input name="nome" value="{{ form.get('nome', '') }}" required maxlength="40"
+               placeholder="{{ _('catalog.name_example') }}">
       </label>
     </div>
-    <label>App ID do servidor dedicado (Steam)
+    <label>{{ _('catalog.app_id') }}
       <input name="app_id" value="{{ form.get('app_id', '') }}" required inputmode="numeric" placeholder="2394010">
-      <small>O do <strong>servidor dedicado</strong>, nao o do jogo. Consulte o SteamDB.</small>
+      <small>{{ _h('catalog.app_id_hint') }}</small>
     </label>
     <div class="row">
-      <label>Portas
+      <label>{{ _('catalog.ports') }}
         <input name="portas" value="{{ form.get('portas', '') }}" required spellcheck="false" placeholder="7777/udp 27015/udp">
-        <small>Porta/protocolo, separadas por espaco. Abaixo de 1024 nao e permitido.</small>
+        <small>{{ _('catalog.ports_hint') }}</small>
       </label>
-      <label>Porta do jogo
+      <label>{{ _('catalog.game_port') }}
         <input name="porta_jogo" value="{{ form.get('porta_jogo', '') }}" required inputmode="numeric" placeholder="7777">
       </label>
-      <label>Porta de consulta <span class="muted">(opcional)</span>
+      <label>{{ _('catalog.query_port') }} <span class="muted">{{ _('catalog.optional') }}</span>
         <input name="porta_query" value="{{ form.get('porta_query', '') }}" inputmode="numeric" placeholder="27015">
       </label>
-      <label>Porta extra <span class="muted">(opcional)</span>
+      <label>{{ _('catalog.extra_port') }} <span class="muted">{{ _('catalog.optional') }}</span>
         <input name="porta_extra" value="{{ form.get('porta_extra', '') }}" inputmode="numeric" placeholder="8888">
       </label>
     </div>
     <div class="row">
-      <label>Script de start <span class="muted">(opcional)</span>
+      <label>{{ _('catalog.start_script') }} <span class="muted">{{ _('catalog.optional') }}</span>
         <input name="start_script" value="{{ form.get('start_script', '') }}" spellcheck="false" placeholder="PalServer.sh">
       </label>
-      <label>Argumentos <span class="muted">(opcional)</span>
+      <label>{{ _('catalog.start_args') }} <span class="muted">{{ _('catalog.optional') }}</span>
         <input name="start_args" value="{{ form.get('start_args', '') }}" spellcheck="false" placeholder="-port={PORT}">
-        <small>Use <code>{PORT}</code>, <code>{QUERY_PORT}</code> e <code>{EXTRA_PORT}</code>. Nada de <code>; | &amp; $</code>.</small>
+        <small>{{ _h('catalog.start_args_hint') }}</small>
       </label>
     </div>
     <div class="row">
-      <label>Memoria (MB)
+      <label>{{ _('catalog.memory_mb') }}
         <input name="memoria_mb" value="{{ form.get('memoria_mb', '') }}" inputmode="numeric" placeholder="4096">
       </label>
-      <label>CPUs
+      <label>{{ _('catalog.cpus') }}
         <input name="cores" value="{{ form.get('cores', '') }}" inputmode="numeric" placeholder="2">
       </label>
-      <label>Disco (GB)
+      <label>{{ _('catalog.disk_gb') }}
         <input name="disco_gb" value="{{ form.get('disco_gb', '') }}" inputmode="numeric" placeholder="20">
       </label>
     </div>
-    <label>Pasta de configuracao <span class="muted">(opcional)</span>
+    <label>{{ _('catalog.config_folder') }} <span class="muted">{{ _('catalog.optional') }}</span>
       <input name="config_path" value="{{ form.get('config_path', '') }}" spellcheck="false" placeholder="/opt/game/Config">
-      <small>Caminho absoluto sob <code>/opt/game</code> ou <code>/home/steam</code>.</small>
+      <small>{{ _h('catalog.config_folder_hint') }}</small>
     </label>
-    <label>Arquivos de configuracao <span class="muted">(um por linha)</span>
+    <label>{{ _('catalog.config_files') }} <span class="muted">{{ _('catalog.one_per_line') }}</span>
       <textarea name="config_files" rows="2" spellcheck="false">{{ form.get('config_files', '') }}</textarea>
     </label>
-    <label>Pastas de backup <span class="muted">(uma por linha)</span>
+    <label>{{ _('catalog.backup_paths') }} <span class="muted">{{ _('catalog.one_per_line_f') }}</span>
       <textarea name="backup_paths" rows="2" spellcheck="false">{{ form.get('backup_paths', '') }}</textarea>
     </label>
     <div class="row">
-      <label>Contagem de jogadores
+      <label>{{ _('catalog.player_count') }}
         <select name="player_source">
-          <option value="log" {{ 'selected' if form.get('player_source', 'log') == 'log' }}>Pelo log do servidor</option>
-          <option value="a2s" {{ 'selected' if form.get('player_source') == 'a2s' }}>Consulta Steam (A2S)</option>
+          <option value="log" {{ 'selected' if form.get('player_source', 'log') == 'log' }}>{{ _('catalog.by_server_log') }}</option>
+          <option value="a2s" {{ 'selected' if form.get('player_source') == 'a2s' }}>{{ _('catalog.by_steam_query') }}</option>
         </select>
       </label>
-      <label>Plataforma
+      <label>{{ _('catalog.platform') }}
         <select name="plataforma">
-          <option value="">Linux (padrao)</option>
-          <option value="windows" {{ 'selected' if form.get('plataforma') == 'windows' }}>Windows (exige Wine ou Proton)</option>
+          <option value="">{{ _('catalog.linux_default') }}</option>
+          <option value="windows" {{ 'selected' if form.get('plataforma') == 'windows' }}>{{ _('catalog.windows_needs_wine') }}</option>
         </select>
       </label>
     </div>
-    <label>Log: linha de entrada <span class="muted">(opcional)</span>
+    <label>{{ _('catalog.log_join_line') }} <span class="muted">{{ _('catalog.optional') }}</span>
       <input name="join_re" value="{{ form.get('join_re', '') }}" spellcheck="false" placeholder="(?P&lt;name&gt;.+) joined">
     </label>
-    <label>Log: linha de saida <span class="muted">(opcional)</span>
+    <label>{{ _('catalog.log_leave_line') }} <span class="muted">{{ _('catalog.optional') }}</span>
       <input name="leave_re" value="{{ form.get('leave_re', '') }}" spellcheck="false" placeholder="(?P&lt;name&gt;.+) left">
     </label>
     <fieldset class="grupo">
-      <legend>Receitas de instalacao</legend>
+      <legend>{{ _('catalog.install_recipes') }}</legend>
       {% for r in receitas %}
         <label class="checkbox"><input type="checkbox" name="receitas" value="{{ r }}"> {{ r }}</label>
       {% endfor %}
     </fieldset>
     <label class="checkbox">
       <input type="checkbox" name="deslocavel" value="1" {{ 'checked' if form.get('deslocavel') == '1' }}>
-      O broker sorteia as portas (varias instancias do mesmo jogo)
+      {{ _('catalog.broker_picks_ports') }}
     </label>
-    <p class="muted small">So marque se o jogo aceita as portas pelos argumentos: os argumentos de start precisam ter {PORT} (e {QUERY_PORT} e {EXTRA_PORT}, se houver porta de consulta e porta extra) e o jogo so pode ter essas tres portas.</p>
+    <p class="muted small">{{ _('catalog.broker_picks_ports_hint') }}</p>
     <div class="form-actions">
-      {{ ui.botao('Adicionar ao catalogo', variante='primary', bloco=true) }}
+      {{ ui.botao(_('catalog.add_to_catalog'), variante='primary', bloco=true) }}
     </div>
   </form>
 </div>

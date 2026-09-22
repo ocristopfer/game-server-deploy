@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
 {% import "components/servidor.html" as srv with context %}
-{% block title %}Configuracao &mdash; {{ server.name }}{% endblock %}
+{% block title %}{{ _('server.config') }} &mdash; {{ server.name }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho('Configuracao — ' ~ server.name) }}
+{{ ui.cabecalho(_('server.config') ~ ' — ' ~ server.name) }}
 {{ srv.abas(server, 'config') }}
 
 {% for err in errors %}<div class="flash error">{{ err }}</div>{% endfor %}
@@ -30,12 +30,12 @@
     <span class="path-form">
       <input name="path" placeholder="/opt/game/.../ServerSettings.ini" spellcheck="false"
              autocapitalize="none" aria-label="{{ _('config.file_path') }}">
-      {{ ui.botao('Usar este arquivo') }}
+      {{ ui.botao(_('config.use_this_file')) }}
     </span>
     {# Procurar candidatos existe SO aqui. Antes havia um segundo botao "Procurar
        arquivos de config" na tela de Arquivos, rodando a mesma varredura e devolvendo
        a mesma lista — so que la o resultado nao dava para fixar em lugar nenhum. #}
-    {{ ui.botao('Procurar no container', variante='ghost', tamanho='sm', icone='🔎',
+    {{ ui.botao(_('config.search_container'), variante='ghost', tamanho='sm', icone='🔎',
                 href=url_for('config_quick', sid=server.id, descobrir=1, file=alvo)) }}
   </form>
   {% endif %}
@@ -213,7 +213,7 @@
     {# Nasce escondido: sem JavaScript ele nao faria nada, e as duas linhas acima
        continuam funcionando. #}
     <div class="form-actions">
-      {{ ui.botao('+ outra linha', variante='ghost', tamanho='sm', tipo='button',
+      {{ ui.botao('+ ' ~ _('config.another_line'), variante='ghost', tamanho='sm', tipo='button',
                   extra='data-config-mais hidden') }}
     </div>
   </div>
@@ -221,7 +221,7 @@
   <div class="card">
     <input type="hidden" name="n" value="{{ ns.i }}">
     <div class="form-actions">
-      {{ ui.botao('Salvar', variante='primary', bloco=true) }}
+      {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
       <label class="checkbox">
         <input type="checkbox" name="restart" value="1">
         <span>{{ _('config.restart_after_save') }}</span>

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Erro {{ code }}{% endblock %}
+{% block title %}{{ _('error.title', code=code) }}{% endblock %}
 {% block content %}
 <div class="card card--vazio card--login">
   <h1>{{ code }}</h1>
   <p class="muted">{{ message }}</p>
   <div class="form-actions">
-    {{ ui.botao('Voltar ao painel', href=url_for('dashboard'), variante='primary', bloco=true) }}
+    {{ ui.botao(_('error.back_to_panel'), href=url_for('dashboard'), variante='primary', bloco=true) }}
   </div>
 </div>
 {% endblock %}

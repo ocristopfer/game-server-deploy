@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
 {% import "components/servidor.html" as srv with context %}
-{% block title %}Contagem de jogadores &mdash; {{ server.name }}{% endblock %}
+{% block title %}{{ _('players_setup.title') }} &mdash; {{ server.name }}{% endblock %}
 {% block content %}
 {{ ui.cabecalho("Contagem de jogadores — " ~ server.name) }}
 {{ srv.abas(server, "visao") }}

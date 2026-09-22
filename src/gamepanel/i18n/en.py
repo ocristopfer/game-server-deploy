@@ -343,4 +343,365 @@ MENSAGENS: dict[str, str] = {
     "server_detail.lines": "lines",
     "server_detail.broadcast": "Notice to everyone on the server",
     "server_detail.broadcast_message": "notice message",
+
+    # --------------------------------------------- alertas: destinos
+    "alerts.destinations_on_one": "{n} destination on",
+    "alerts.destinations_on_many": "{n} destinations on",
+    "alerts.no_destination_on": "no destination on",
+    "alerts.intro":
+        "The panel warns you through a <strong>webhook</strong> when something happens with nobody "
+        "watching. Each destination has its own list of events &mdash; you can send everything to "
+        "the team channel and only the outages to the general one. It works with "
+        "<strong>Discord</strong> (Edit channel &rarr; Integrations &rarr; Webhooks &rarr; Copy "
+        "URL), <strong>Slack</strong> (Incoming Webhook) or any address that accepts a JSON "
+        "<code>POST</code> &mdash; the call carries both a <code>content</code> and a "
+        "<code>text</code> field, so each one reads its own.",
+    "alerts.destinations": "Destinations",
+    "alerts.no_destination_yet": "No destination registered — alerts are off. Add the first one below.",
+    "alerts.pending_intro":
+        "<strong>On, but with nowhere to look.</strong> These events will never fire the way the "
+        "panel is set up today &mdash; and a silent channel looks like \"all is well\":",
+    "alerts.pending_item": "<em>{evento}</em>: no server has {falta}.",
+    "alerts.pending_fix": "Fix it in <a href=\"{url}\">each server's settings</a>.",
+    "alerts.destination_name": "Destination name",
+    "alerts.team_channel": "Team channel",
+    "alerts.on": "On",
+    "alerts.off": "Off",
+    "alerts.url_is_a_secret": "The URL stays hidden: it is a credential",
+    "alerts.change_url": "Change the URL",
+    "alerts.leave_blank_to_keep": "leave blank to keep the current one",
+    "alerts.notify_about": "Notify about",
+    "alerts.no_event_checked": "With no event checked this destination never receives anything.",
+    "alerts.test": "Test",
+    "alerts.remove": "Remove",
+    "alerts.remove_confirm": "Remove the destination {nome}?",
+    "alerts.limit_reached": "Limit of {n} destinations reached — remove one to add another.",
+    "alerts.add_destination": "Add destination",
+    "alerts.name": "Name",
+    "alerts.name_hint": "Only so you can find your way around this list.",
+    "alerts.webhook_url": "Webhook URL",
+    "alerts.webhook_url_hint": "It is a secret: whoever has it writes in your channel.",
+    "alerts.add": "Add",
+    "alerts.came_from_env":
+        "The deploy brought a URL in <code>GAMEPANEL_WEBHOOK_URL</code>; it became the first "
+        "destination in this list, and from here on only what is registered counts.",
+
+    # ----------------------------------------- alertas: preferencias
+    "alerts.preferences": "Preferences",
+    "alerts.warn_disk_over": "Warn when the disk goes over",
+    "alerts.disk_hint":
+        "On the fullest disk in the container. It warns once, at the crossing: a disk at 95% is "
+        "still at 95% next round, and nobody deserves the same alert every minute.",
+    "alerts.warn_memory_over": "Warn when memory goes over",
+    "alerts.memory_hint":
+        "Container memory, against the container's own limit (not the whole machine's). It warns "
+        "once, at the crossing, just like the disk.",
+    "alerts.warn_cpu_over": "Warn when the CPU goes over",
+    "alerts.cpu_hint":
+        "Container usage over the cores it has, measured together with the disk (every {n} min). "
+        "Since it is a short sample now and then, it catches a CPU stuck at the ceiling, not a "
+        "one-second spike.",
+
+    # ----------------------------------------------- alertas: diario
+    "alerts.journal": "Alert journal",
+    "alerts.journal_empty":
+        "Nothing recorded yet. Every alert the panel decides to send shows up here &mdash; "
+        "including the ones that did <strong>not</strong> go out.",
+    "alerts.when_utc": "When (UTC)",
+    "alerts.event": "Event",
+    "alerts.what": "What",
+    "alerts.destination": "Destination",
+    "alerts.outcome": "Outcome",
+    "alerts.sent": "sent",
+    "alerts.failed": "failed",
+    "alerts.no_destination": "no destination",
+    "alerts.internal_error": "internal error",
+    "alerts.journal_legend":
+        "<strong>no destination</strong> means the alert really happened and no active destination "
+        "had that event checked &mdash; the channel is quiet by choice, not by defect. "
+        "<strong>internal error</strong> is a scheduler task that broke: while it shows up here, "
+        "its alerts are not being checked at all.",
+
+    # ---------------------------------------- alertas: como funciona
+    "alerts.how_it_works": "How it works",
+    "alerts.rule_rhythm":
+        "The panel checks each server's state every <strong>{monitor}s</strong>, and disk, memory "
+        "and CPU every <strong>{medidor} min</strong> (the meter costs far more than the status, "
+        "and the three readings come out in one go).",
+    "alerts.rule_joining":
+        "<strong>A player joining is the exception:</strong> that one the panel checks every "
+        "<strong>{n}s</strong>, because whoever gets the notice usually wants to join too, and a "
+        "minute later is already late. This short round asks the game directly, without SSH "
+        "&mdash; which is why it fits without making the rest more expensive. It applies to "
+        "whoever counts by <strong>A2S or HTTP API</strong>.",
+    "alerts.streams_now": "<strong>{n}</strong> right now",
+    "alerts.streams_none": "none at the moment",
+    "alerts.rule_log_listen":
+        "Whoever counts by <strong>log</strong> is never asked: the panel keeps a connection open "
+        "<em>listening</em> to the log ({ouvindo}) and reacts to the line the second it appears. "
+        "Asking every 15 seconds would cost a read of the whole log each time; this way it only "
+        "reads when somebody actually joined or left. If the connection drops, the notice goes "
+        "back to the {monitor}s round until it comes back.",
+    "alerts.rule_on_change":
+        "It warns on the <strong>change</strong>, never on repeat: the alert goes out when the "
+        "server falls, not on every round while it stays down.",
+    "alerts.rule_all_destinations":
+        "Each event goes to <strong>every destination</strong> that checked it. One destination "
+        "being down does not stop the others from receiving.",
+    "alerts.rule_service_up_is_not_game_up":
+        "<strong>A service being up does not mean the game is up.</strong> Besides the outage, the "
+        "panel watches three things that would otherwise slip by:",
+    "alerts.rule_game_failed":
+        "<em>Game crashed</em> &mdash; systemd marked the service as <code>failed</code>. This is "
+        "different from \"stopped\": somebody stopping it from the panel does not raise this "
+        "alert, and this one goes out even inside the quiet window.",
+    "alerts.rule_restart_loop":
+        "<em>Restart loop</em> &mdash; the game dies and systemd brings it back, over and over. "
+        "Between one crash and the next the service answers <code>active</code>, so the outage "
+        "alert never fires. This one goes out once per episode.",
+    "alerts.rule_game_mute":
+        "<em>Game not answering</em> &mdash; the process is alive but silent on the game's own "
+        "query, for {n} checks in a row. It only applies to whoever counts players by <strong>A2S "
+        "or HTTP API</strong>: counting by log asks the game nothing.",
+    "alerts.rule_log_error":
+        "<em>Error in the game log</em> reads the end of the log every <strong>{n}s</strong> and "
+        "looks for the expression registered on each server. With no expression, not even the read "
+        "happens. The same line never warns twice.",
+    "alerts.rule_quiet_window":
+        "Stopping, restarting, updating or restoring <strong>from the panel</strong> does not "
+        "become an alert &mdash; in the {n}s after one of those actions the outage is expected.",
+    "alerts.rule_on_boot":
+        "On start-up the panel merely <strong>writes down</strong> everyone's state. Restarting "
+        "the panel does not fire one alert per server that was already down.",
+    "alerts.rule_scheduled_only":
+        "Of the tasks that fail, only the <strong>scheduled</strong> one becomes an alert: whoever "
+        "clicked the button already has the error on screen.",
+    "alerts.rule_editing_resets":
+        "Touching this screen resets the monitor's baseline, so the next round does not warn about "
+        "what was already that way before the change.",
+
+    # --------------------------------------------- catalogo de jogos
+    "catalog.title": "Game catalog",
+    "catalog.game": "Game",
+    "catalog.creatable": "creatable",
+    "catalog.manual": "manual",
+    "catalog.ports": "Ports",
+    "catalog.shifted_port": "assigned port",
+    "catalog.shifted_port_help":
+        "The broker assigns ports from a range of its own; the ones listed here are just the "
+        "game's defaults",
+    "catalog.empty": "Empty catalog (or the broker did not answer).",
+    "catalog.curated_vs_dynamic":
+        "<strong>curated</strong>: comes from the <code>games/*.env</code> files in the "
+        "repository. <strong>dynamic</strong>: added from here. A game that needs a Steam account "
+        "or its own installer (TeamSpeak) is still created by <code>deploy-game.ps1</code>.",
+    "catalog.add_game": "Add game",
+    "catalog.data_only":
+        "Data only: the broker <strong>accepts no commands</strong>. Anything needing a special "
+        "install (Wine, Proton, a Steam symlink) goes in through the recipes below.",
+    "catalog.search_game": "Search for a game",
+    "catalog.by_name_or_app_id": "(name or App ID)",
+    "catalog.search_hint":
+        "Fills in App ID, ports and start command from the LinuxGSM catalog. It is only a "
+        "suggestion: check it before submitting.",
+    "catalog.start_from_template": "Start from a template",
+    "catalog.blank": "Blank",
+    "catalog.template_hint": "Fills in ports, paths, arguments and the log pattern in one go.",
+    "catalog.key": "Key",
+    "catalog.key_example": "mygame",
+    "catalog.key_hint": "Lowercase, digits and hyphen. It becomes the container and service name.",
+    "catalog.name": "Name",
+    "catalog.name_example": "My Game",
+    "catalog.app_id": "Dedicated server App ID (Steam)",
+    "catalog.app_id_hint": "The <strong>dedicated server</strong> one, not the game's. Check SteamDB.",
+    "catalog.ports_hint": "Port/protocol, separated by a space. Below 1024 is not allowed.",
+    "catalog.game_port": "Game port",
+    "catalog.query_port": "Query port",
+    "catalog.extra_port": "Extra port",
+    "catalog.optional": "(optional)",
+    "catalog.start_script": "Start script",
+    "catalog.start_args": "Arguments",
+    "catalog.start_args_hint":
+        "Use <code>{PORT}</code>, <code>{QUERY_PORT}</code> and <code>{EXTRA_PORT}</code>. No "
+        "<code>; | &amp; $</code>.",
+    "catalog.memory_mb": "Memory (MB)",
+    "catalog.cpus": "CPUs",
+    "catalog.disk_gb": "Disk (GB)",
+    "catalog.config_folder": "Configuration folder",
+    "catalog.config_folder_hint": "Absolute path under <code>/opt/game</code> or <code>/home/steam</code>.",
+    "catalog.config_files": "Configuration files",
+    "catalog.one_per_line": "(one per line)",
+    "catalog.one_per_line_f": "(one per line)",
+    "catalog.backup_paths": "Backup folders",
+    "catalog.player_count": "Player count",
+    "catalog.by_server_log": "From the server log",
+    "catalog.by_steam_query": "Steam query (A2S)",
+    "catalog.platform": "Platform",
+    "catalog.linux_default": "Linux (default)",
+    "catalog.windows_needs_wine": "Windows (needs Wine or Proton)",
+    "catalog.log_join_line": "Log: join line",
+    "catalog.log_leave_line": "Log: leave line",
+    "catalog.install_recipes": "Install recipes",
+    "catalog.broker_picks_ports": "The broker assigns the ports (several instances of the same game)",
+    "catalog.broker_picks_ports_hint":
+        "Only check this if the game takes its ports from the arguments: the start arguments must "
+        "contain {PORT} (plus {QUERY_PORT} and {EXTRA_PORT}, if there is a query port and an extra "
+        "port) and the game may have only those three ports.",
+    "catalog.add_to_catalog": "Add to the catalog",
+
+    # ------------------------------------------ cadastro de servidor
+    "server_form.title_new": "Add server",
+    "server_form.title_edit": "Edit server",
+    "server_form.optional": "(optional)",
+    "server_form.one_per_line": "(one per line)",
+    "server_form.one_per_line_optional": "(one per line, optional)",
+    "server_form.name": "Name",
+    "server_form.name_hint": "How the server shows up in the panel. E.g.: <code>Dragonwilds</code>",
+    "server_form.host": "Host",
+    "server_form.host_hint": "IP or hostname of the game container. The panel connects to it over SSH.",
+    "server_form.ssh_user": "SSH user",
+    "server_form.ssh_port": "SSH port",
+    "server_form.systemd_service": "systemd service",
+    "server_form.service_hint":
+        "Usually <code>&lt;game-name&gt;.service</code>. The <code>.service</code> suffix is added "
+        "if missing.",
+    "server_form.game_ports": "Game ports",
+    "server_form.game_ports_hint": "For reference only, to remember what to forward on the router.",
+    "server_form.query_port": "Query port",
+    "server_form.query_port_hint": "Steam query port (A2S). Palworld: <code>27015</code>.",
+    "server_form.player_count": "Player count",
+    "server_form.count_off": "Off",
+    "server_form.count_a2s": "Steam query (A2S) on the port above",
+    "server_form.count_http": "The game's HTTP API (gives the names)",
+    "server_form.count_log": "From the server log",
+    "server_form.player_count_hint":
+        "A game that publishes nothing on the network (RuneScape Dragonwilds, for instance) can "
+        "only be counted from the log.",
+    "server_form.player_count_wizard":
+        "The <a href=\"{url}\">wizard</a> tests the UDP and TCP ports, builds the API call and "
+        "finds the log patterns for you.",
+    "server_form.log_join": "Log: join line",
+    "server_form.log_leave": "Log: leave line",
+    "server_form.log_file": "Log: file",
+    "server_form.log_file_hint":
+        "Blank reads the service output. Filled in, it reads that file &mdash; which is how you "
+        "reach the player's name in games that only write it to a log of their own (DayZ).",
+    "server_form.log_error": "Log: error line",
+    "server_form.log_error_hint":
+        "Turns on the <strong>Error in the game log</strong> alert under <a "
+        "href=\"{url}\">Alerts</a>: the panel looks for this expression at the end of the log and "
+        "warns when it shows up. Blank, and not even the read happens. Start narrow &mdash; too "
+        "wide a pattern turns the channel into a copy of the log.",
+    "server_form.api_url": "API: URL",
+    "server_form.api_url_hint": "Called from inside the container, over SSH. Palworld: port <code>8212</code>.",
+    "server_form.api_auth": "API: authentication",
+    "server_form.api_auth_hint":
+        "<code>basic:user:password</code>, <code>bearer:token</code> or <code>header:Name: "
+        "value</code> (TeamSpeak: <code>header:x-api-key: YOUR-KEY</code>). It is stored in plain "
+        "text.",
+    "server_form.api_body": "API: JSON body",
+    "server_form.api_body_hint": "Filled in it becomes a <code>POST</code>; empty it is a <code>GET</code>.",
+    "server_form.api_paths": "API: path to the list / to the count",
+    "server_form.api_paths_hint": "Left empty, the panel searches the response on its own.",
+    "server_form.config_folder": "Configuration folder",
+    "server_form.config_folder_hint":
+        "Where the <strong>Files</strong> screen opens by default. E.g.: "
+        "<code>/opt/game/Pal/Saved/Config/LinuxServer</code>",
+    "server_form.config_files": "Configuration files",
+    "server_form.config_files_hint":
+        "Put here the file you actually edit: the <strong>Config</strong> screen opens it straight "
+        "as a form (one field per key, with a button to add a new one) &mdash; no folder browsing. "
+        "Left blank, that screen helps you look for the candidates in the container.",
+    "server_form.config_files_hint_link":
+        "Put here the file you actually edit: the <a href=\"{url}\"><strong>Config</strong></a> "
+        "screen opens it straight as a form (one field per key, with a button to add a new one) "
+        "&mdash; no folder browsing. Left blank, that screen helps you look for the candidates in "
+        "the container.",
+    "server_form.backup_paths": "Backup paths",
+    "server_form.backup_paths_hint":
+        "What the <strong>Backups</strong> screen puts in the <code>.tar.gz</code>. Left blank, "
+        "the <strong>configuration folder</strong> above applies. Point at the "
+        "<strong>save</strong> folder, not the game root: all of <code>/opt/game</code> carries "
+        "tens of GB of binaries that SteamCMD downloads again for free.",
+    "server_form.backup_paths_hint_link":
+        "What the <a href=\"{url}\"><strong>Backups</strong></a> screen puts in the "
+        "<code>.tar.gz</code>. Left blank, the <strong>configuration folder</strong> above "
+        "applies. Point at the <strong>save</strong> folder, not the game root: all of "
+        "<code>/opt/game</code> carries tens of GB of binaries that SteamCMD downloads again for "
+        "free.",
+    "server_form.notes": "Notes",
+    "server_form.cancel": "Cancel",
+    "server_form.sshd_note":
+        "The container needs <code>sshd</code> running and the panel's key authorized — see <a "
+        "href=\"{url}\">SSH access</a>.",
+    "server_form.remove": "Remove from the panel",
+    "server_form.remove_hint": "Deletes only the record. The container and the game files are left untouched.",
+    "server_form.remove_confirm": "Remove this server from the panel?",
+
+    # ------------------------------------------ titulos e componente
+    "error.title": "Error {code}",
+    "job.title": "Action #{id}",
+    "account_2fa_codes.title": "Recovery codes",
+    "players_setup.title": "Player count",
+    "server.sections_of_this_server": "Sections of this server",
+    "server.measuring": "measuring resources...",
+    "server.server": "Server",
+
+    # -------------------------------- rotulos de botao e confirmacao
+    "account.generate": "Generate",
+    "account.enable": "Turn on",
+    "account.disable_confirm": "Turn off two-step verification? Signing in will ask for the password only.",
+    "account.sign_out_of_panel": "Sign out of the panel",
+    "account_2fa.open_in_app": "Open in the app",
+    "account_2fa_codes.saved_them": "I saved them",
+    "backups.back_up_now": "Back up now",
+    "backups.restore": "restore",
+    "backups.restore_confirm":
+        "Restore {arquivo} on {servidor}?\n\nThe server will be STOPPED, the current files will be "
+        "replaced and it comes back up. A copy of the current state is saved first.",
+    "backups.delete_confirm": "Delete {arquivo}? There is no undo.",
+    "config.use_this_file": "Use this file",
+    "config.search_container": "Search the container",
+    "config.another_line": "another line",
+    "console.run": "Run",
+    "dashboard.add_the_first": "Add the first one",
+    "error.back_to_panel": "Back to the panel",
+    "files.go": "Go",
+    "files.upload_here": "Upload to this folder",
+    "files.discard": "Discard",
+    "files.download_title": "Download",
+    "files.edit_field_by_field": "Edit field by field",
+    "files.delete_file": "Delete file",
+    "files.delete_confirm": "Delete {caminho}? There is no undo.",
+    "history.filter": "Filter",
+    "history.clear": "clear",
+    "history.newer": "newer",
+    "history.older": "older",
+    "instances.create": "Create instance",
+    "instances.create_confirm":
+        "Create the container, install the game and open the ports on the firewall? This can take "
+        "several minutes.",
+    "instances.deactivate_confirm": "Turn off {nome}? The server will be STOPPED and the ports close on the firewall.",
+    "instances.remove_confirm": "Remove {nome}? The container and the game will be DELETED.",
+    "login_2fa.confirm": "Confirm",
+    "login_2fa.back": "Back",
+    "schedules.run_now": "run now",
+    "schedules.run_now_help": "Runs now, without waiting for the set time",
+    "schedules.turn_on": "turn on",
+    "schedules.turn_off": "turn off",
+    "schedules.delete": "remove",
+    "schedules.delete_confirm": "Remove: {tarefa}?",
+    "schedules.schedule_it": "Schedule",
+    "schedules.never": "never",
+    "server_detail.configure": "Set up",
+    "server_detail.how_counting_works": "How the panel counts the players on this server",
+    "server_detail.announce": "Announce",
+    "server_detail.reload": "Reload",
+    "users.change": "Change",
+    "users.two_factor_off": "Turn 2FA off",
+    "users.two_factor_off_confirm":
+        "Turn off two-step verification for {usuario}? They sign in with the password alone until "
+        "they turn it back on.",
+    "users.remove_confirm": "Remove the user {usuario}?",
+    "users.create": "Create",
 }

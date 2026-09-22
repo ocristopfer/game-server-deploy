@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
 {% import "components/servidor.html" as srv with context %}
-{% block title %}{{ server.name }} — Painel de Jogos{% endblock %}
+{% block title %}{{ server.name }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
 {{ ui.cabecalho(server.name, selo_texto=status.service,
@@ -68,9 +68,9 @@
         {%- endif -%}
       </span>
       {% if is_admin %}
-        {{ ui.botao('Configurar', href=url_for('players_setup', sid=server.id),
+        {{ ui.botao(_('server_detail.configure'), href=url_for('players_setup', sid=server.id),
                     variante='ghost', tamanho='sm', icone='🎚',
-                    titulo='Como o painel conta os jogadores deste servidor') }}
+                    titulo=_('server_detail.how_counting_works')) }}
       {% endif %}
     </div>
   </div>
@@ -160,7 +160,7 @@
       <span class="path-form">
         <input name="mensagem" maxlength="200" required
                placeholder="{{ _('server_detail.broadcast') }}" aria-label="{{ _('server_detail.broadcast_message') }}">
-        {{ ui.botao('Avisar', icone='📣') }}
+        {{ ui.botao(_('server_detail.announce'), icone='📣') }}
       </span>
     </form>
     <p class="muted small">
@@ -259,7 +259,7 @@
         <label class="inline-label small">{{ _('server_detail.lines') }}
           <input name="lines" value="{{ lines }}" size="4" inputmode="numeric" class="campo-curto">
         </label>
-        {{ ui.botao('Recarregar', variante='ghost', tamanho='sm') }}
+        {{ ui.botao(_('server_detail.reload'), variante='ghost', tamanho='sm') }}
       </form>
     </div>
   </div>

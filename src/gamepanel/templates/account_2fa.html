@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% block title %}Verificacao em duas etapas — Painel de Jogos{% endblock %}
+{% block title %}{{ _('account.two_factor') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho('Verificacao em duas etapas') }}
+{{ ui.cabecalho(_('account.two_factor')) }}
 
 <div class="card card--form">
   <h2>1. Cadastre o painel no aplicativo</h2>
@@ -19,7 +19,7 @@
     <button type="button" class="btn btn--ghost btn--sm" data-copiar="#segredo-2fa" hidden>{{ _('account_2fa.copy_key') }}</button>
     {# No celular sem camera a mao (ou testando no proprio aparelho), tocar aqui abre o
        aplicativo ja com a conta pronta. #}
-    {{ ui.botao('Abrir no aplicativo', href=endereco, variante='ghost', tamanho='sm', icone='📲') }}
+    {{ ui.botao(_('account_2fa.open_in_app'), href=endereco, variante='ghost', tamanho='sm', icone='📲') }}
   </div>
   <p class="muted small mt-4">
     {{ _('account_2fa.type') }} <strong>{{ _('account_2fa.time_based') }}</strong>, 6 digitos, 30 segundos. Guarde esta chave e este
@@ -37,8 +37,8 @@
       <small>Confira tambem se a hora do celular esta no automatico: e o que faz o codigo bater.</small>
     </label>
     <div class="form-actions">
-      {{ ui.botao('Ativar', variante='primary', bloco=true) }}
-      {{ ui.botao('Cancelar', href=url_for('account'), variante='ghost', bloco=true) }}
+      {{ ui.botao(_('account.enable'), variante='primary', bloco=true) }}
+      {{ ui.botao(_('server_form.cancel'), href=url_for('account'), variante='ghost', bloco=true) }}
     </div>
   </form>
 </div>

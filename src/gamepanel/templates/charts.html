@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
 {% import "components/servidor.html" as srv with context %}
-{% block title %}Graficos &mdash; {{ server.name }}{% endblock %}
+{% block title %}{{ _('server.charts') }} &mdash; {{ server.name }}{% endblock %}
 
 {% macro chave_da_legenda(cor, rotulo) -%}
 <span class="chave">
@@ -63,7 +63,7 @@
 {% endmacro %}
 
 {% block content %}
-{{ ui.cabecalho('Graficos — ' ~ server.name) }}
+{{ ui.cabecalho(_('server.charts') ~ ' — ' ~ server.name) }}
 {{ srv.abas(server, 'charts') }}
 
 {# Um filtro so, acima de tudo o que ele governa: os dois graficos e a tabela mostram
