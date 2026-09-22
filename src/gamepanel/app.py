@@ -54,6 +54,7 @@ from gamepanel.games import gamefields
 from gamepanel.games.catalog import search as busca_de_jogos
 from gamepanel.games.catalog.templates import MODELOS as MODELOS_DE_JOGO
 from gamepanel.integrations import broker_client
+from gamepanel.runtime import a2s
 from gamepanel.runtime import ssh as ssh_transport
 from gamepanel.security import qr, totp
 from flask import (
@@ -920,10 +921,12 @@ def em_paralelo(tarefas: dict, timeout: float = 40.0) -> dict:
 
 
 # ------------------------------------------------------------- jogadores (A2S)
-
-# Consulta o servidor pelo protocolo A2S da Steam — o mesmo que a lista de servidores
-# do cliente usa. Vai por UDP direto do painel para a porta de query do jogo: nao passa
-# por SSH, nao precisa de senha e nao exige nada instalado no container.
+#
+# Implementacao real em gamepanel.runtime.a2s (extraida na Fase 4). Os nomes abaixo
+# continuam existindo neste modulo de proposito - QueryError em particular e usado por
+# `raise`/`except` em todo o resto de app.py (HTTP, log, acoes de jogador), e
+# `pytest.raises(panel.QueryError)` em test_players.py precisa continuar achando a
+# MESMA classe.
 QUERY_TIMEOUT = float(os.environ.get("GAMEPANEL_QUERY_TIMEOUT", "3"))
 PLAYERS_TTL = float(os.environ.get("GAMEPANEL_PLAYERS_TTL", "5"))
 
@@ -931,144 +934,14 @@ PLAYERS_TTL = float(os.environ.get("GAMEPANEL_PLAYERS_TTL", "5"))
 # do vazio, que significa "cadastro antigo, deduza pela porta de consulta".
 PLAYER_SOURCES = ("a2s", "http", "log", "none")
 
-A2S_HEADER = b"\xff\xff\xff\xff"
-A2S_SPLIT = b"\xff\xff\xff\xfe"
-A2S_INFO_REQ = A2S_HEADER + b"TSource Engine Query\x00"
-
-
-class QueryError(RuntimeError):
-    pass
-
-
-class AuthError(QueryError):
-    """A API recusou a credencial (401/403).
-
-    Separada de QueryError para o caminho HTTP saber quando vale a pena refazer o
-    login: token expirado e o caso comum em API de jogo (a do Satisfactory emite
-    token com prazo), e ai o certo e renovar sozinho em vez de exigir que alguem
-    cole um token novo na mao.
-    """
-
-
-class _Buffer:
-    """Leitor sequencial do corpo da resposta (tudo little-endian)."""
-
-    def __init__(self, data: bytes):
-        self.data = data
-        self.pos = 0
-
-    def _take(self, n: int) -> bytes:
-        if self.pos + n > len(self.data):
-            raise QueryError("resposta do servidor terminou antes do esperado")
-        out = self.data[self.pos:self.pos + n]
-        self.pos += n
-        return out
-
-    def byte(self) -> int:
-        return self._take(1)[0]
-
-    def short(self) -> int:
-        return struct.unpack("<h", self._take(2))[0]
-
-    def long(self) -> int:
-        return struct.unpack("<l", self._take(4))[0]
-
-    def float(self) -> float:
-        return struct.unpack("<f", self._take(4))[0]
-
-    def string(self) -> str:
-        fim = self.data.find(b"\x00", self.pos)
-        if fim < 0:
-            raise QueryError("texto sem terminador na resposta")
-        out = self.data[self.pos:fim]
-        self.pos = fim + 1
-        # Nome de servidor costuma vir com emoji e cor; nada disso pode derrubar a tela.
-        return out.decode("utf-8", "replace")
-
-
-def _udp_receive(sock: socket.socket) -> bytes:
-    """Le uma resposta, remontando quando o servidor divide em varios pacotes."""
-    data, _ = sock.recvfrom(8192)
-    if data[:4] != A2S_SPLIT:
-        return data
-
-    partes: dict[int, bytes] = {}
-    total = 1
-    while True:
-        _pid, total, numero, _tam = struct.unpack_from("<lBBh", data, 4)
-        partes[numero] = data[12:]
-        if len(partes) >= total:
-            break
-        data, _ = sock.recvfrom(8192)
-        if data[:4] != A2S_SPLIT:
-            raise QueryError("resposta dividida veio incompleta")
-    inteiro = b"".join(partes[i] for i in sorted(partes))
-    if inteiro[:4] == A2S_HEADER:
-        return inteiro
-    raise QueryError("resposta dividida em formato desconhecido (compactada?)")
-
-
-def _a2s_ask(sock: socket.socket, addr, pedido: bytes, resposta: bytes) -> _Buffer:
-    """Manda o pedido e trata o desafio (challenge) que o servidor pode exigir."""
-    sock.sendto(pedido, addr)
-    data = _udp_receive(sock)
-    if data[4:5] == b"A":  # S2C_CHALLENGE: repete o pedido carregando o desafio
-        desafio = data[5:9]
-        if pedido == A2S_INFO_REQ:
-            sock.sendto(pedido + desafio, addr)
-        else:
-            sock.sendto(pedido[:5] + desafio, addr)
-        data = _udp_receive(sock)
-    if data[4:5] != resposta:
-        raise QueryError(f"resposta inesperada do servidor (tipo {data[4:5]!r})")
-    buf = _Buffer(data)
-    buf.pos = 5
-    return buf
+QueryError = a2s.QueryError
+AuthError = a2s.AuthError
 
 
 def query_players(host: str, port: int) -> dict:
-    """Numero de jogadores (A2S_INFO) e, quando o jogo publica, a lista (A2S_PLAYER)."""
-    addr = (host, port)
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.settimeout(QUERY_TIMEOUT)
-        try:
-            buf = _a2s_ask(sock, addr, A2S_INFO_REQ, b"I")
-            buf.byte()  # versao do protocolo
-            # `dict` sem parametro de proposito: a resposta A2S mistura texto (nome do
-            # servidor, mapa) e numero (jogadores, teto) na mesma ficha.
-            info: dict = {
-                "server_name": buf.string(),
-                "map": buf.string(),
-                "folder": buf.string(),
-                "game": buf.string(),
-            }
-            buf.short()  # steam appid
-            info["players"] = buf.byte()
-            info["max_players"] = buf.byte()
-            info["bots"] = buf.byte()
-        except socket.timeout:
-            raise QueryError(f"sem resposta em {QUERY_TIMEOUT:g}s na porta {port}/udp")
-        except (OSError, struct.error) as exc:
-            raise QueryError(f"falha ao consultar {host}:{port} - {exc}")
-
-        # A lista de nomes e opcional: varios servidores Unreal so respondem a contagem.
-        lista: list[dict] = []
-        try:
-            buf = _a2s_ask(sock, addr, A2S_HEADER + b"U" + b"\xff\xff\xff\xff", b"D")
-            quantos = buf.byte()
-            for _ in range(min(quantos, 128)):
-                buf.byte()  # indice, que os servidores costumam zerar
-                lista.append({
-                    "name": buf.string(),
-                    "score": buf.long(),
-                    "seconds": max(0.0, buf.float()),
-                })
-        except (QueryError, OSError, struct.error):  # socket.timeout ja e um OSError
-            lista = []
-
-    info["list"] = [p for p in lista if p["name"]]
-    info["error"] = ""
-    return info
+    # Le QUERY_TIMEOUT na hora da chamada (nao um valor congelado no import): mesmo
+    # motivo do SshClient em runtime/ssh.py.
+    return a2s.query_players(host, port, timeout=QUERY_TIMEOUT)
 
 
 # ------------------------------------------- jogadores (API HTTP do proprio jogo)

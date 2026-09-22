@@ -56,7 +56,7 @@ max-returns = 8
 # Teste usa asserts, dado sintetico, nomes de fixture com "senha"/"token", e as vezes
 # uma funcao com mais de 8 parametros ou mais complexa so pra montar cenario - regras de
 # bandit e de contagem de parametro sao para codigo de producao, nao para teste.
-"tests/**/*.py" = ["S", "PLR0913", "PLR0915"]
+"tests/**/*.py" = ["S", "PLR0913", "PLR0915", "PLR2004"]
 
 [tool.mypy]
 platform = "linux"
