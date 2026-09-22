@@ -20,7 +20,6 @@ import os
 import re
 import secrets
 import shlex
-import socket
 import sqlite3
 import struct
 import subprocess
@@ -54,7 +53,7 @@ from gamepanel.games import gamefields
 from gamepanel.games.catalog import search as busca_de_jogos
 from gamepanel.games.catalog.templates import MODELOS as MODELOS_DE_JOGO
 from gamepanel.integrations import broker_client
-from gamepanel.runtime import a2s
+from gamepanel.runtime import a2s, http_probe
 from gamepanel.runtime import ssh as ssh_transport
 from gamepanel.security import qr, totp
 from flask import (
@@ -945,371 +944,32 @@ def query_players(host: str, port: int) -> dict:
 
 
 # ------------------------------------------- jogadores (API HTTP do proprio jogo)
-
-# Cada vez mais jogo publica uma API HTTP de administracao em vez de (ou alem de) uma
-# query UDP: Palworld (REST em 8212/tcp), Satisfactory (HTTPS em 7777/tcp), Minecraft
-# com plugin, Factorio... E a melhor fonte de todas, porque devolve os NOMES e nao so
-# a contagem. Nada aqui e especifico de um jogo: o painel busca uma URL, le o JSON e
-# acha a lista/contagem sozinho — ou pelo caminho que voce apontar.
 #
-# A chamada sai de DENTRO do container, por SSH, e nao do painel: essas APIs sao feitas
-# para escutar em localhost (a documentacao do Palworld pede explicitamente para NAO
-# expor a porta na internet) e assim continuam fechadas para fora.
+# A parte pura (montar o pedido HTTP, interpretar a resposta, achar lista/contagem no
+# JSON) mora em gamepanel.runtime.http_probe (Fase 4). O que fica aqui - http_login,
+# chama_api_do_jogo, players_from_http - depende do banco (guardar o token renovado) e
+# ainda nao tem pra onde se mudar sem um services/ de verdade; muda de lugar junto do
+# resto quando essa camada existir.
 HTTP_TIMEOUT = float(os.environ.get("GAMEPANEL_HTTP_TIMEOUT", "6"))
-HTTP_MAX_BYTES = 256 * 1024
-HTTP_URL_MAX = 400
 HTTP_BODY_MAX = 2000
 HTTP_PATH_MAX = 120
 # Colunas que descrevem a chamada; viajam juntas entre formulario, assistente e banco.
 HTTP_FIELDS = ("http_url", "http_auth", "http_body", "http_list_path", "http_count_path",
                "http_login_url", "http_login_body", "http_token_path")
-URL_RE = re.compile(r"^https?://[A-Za-z0-9._\-]{1,253}(:\d{1,5})?(/[^\s]*)?$")
-STATUS_MARK = "__HTTP_STATUS__"
 
-# curl e a primeira opcao; python3 cobre os containers que so tem o interpretador
-# (a nossa imagem de teste, por exemplo, nao traz curl).
-HTTP_FETCH_SCRIPT = r"""
-set -u
-url=$1
-auth=$2
-corpo=$3
-tmo=$4
-
-if command -v curl >/dev/null 2>&1; then
-  # -k: essas APIs usam certificado autoassinado (o Satisfactory, por exemplo).
-  if [ -n "$corpo" ] && [ -n "$auth" ]; then
-    curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" \
-      -H "$auth" -H 'Content-Type: application/json' \
-      --data-binary "$corpo" "$url"
-  elif [ -n "$corpo" ]; then
-    curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" \
-      -H 'Content-Type: application/json' --data-binary "$corpo" "$url"
-  elif [ -n "$auth" ]; then
-    curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" \
-      -H "$auth" "$url"
-  else
-    curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" "$url"
-  fi
-  exit $?
-fi
-
-if command -v python3 >/dev/null 2>&1; then
-  python3 - "$url" "$auth" "$corpo" "$tmo" <<'PY'
-import sys
-import urllib.error
-import urllib.request
-
-url, auth, corpo, tmo = sys.argv[1:5]
-req = urllib.request.Request(url, data=corpo.encode() if corpo else None)
-if corpo:
-    req.add_header("Content-Type", "application/json")
-if auth:
-    # Vem 'Nome: valor' pronto (nem toda API autentica por Authorization).
-    nome, _, valor = auth.partition(":")
-    req.add_header(nome.strip(), valor.strip())
-ctx = None
-if url.startswith("https"):
-    import ssl
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-try:
-    resp = urllib.request.urlopen(req, timeout=float(tmo), context=ctx)
-    dados, codigo = resp.read(), resp.getcode()
-except urllib.error.HTTPError as exc:
-    # 401/404/500 sao respostas, nao falhas: o painel quer ver o codigo.
-    dados, codigo = exc.read(), exc.code
-except Exception as exc:
-    # Porta fechada, DNS, timeout: uma linha para o painel mostrar, nao um traceback.
-    sys.stderr.write("nao consegui chamar %s: %s\n" % (url, exc))
-    raise SystemExit(1)
-sys.stdout.write(dados.decode("utf-8", "replace"))
-sys.stdout.write("\n__HTTP_STATUS__%d" % codigo)
-PY
-  exit $?
-fi
-
-echo "o container nao tem curl nem python3 para falar HTTP" >&2
-exit 127
-"""
-
-
-def auth_header(guardado: str) -> str:
-    """Transforma o que esta no banco no cabecalho HTTP INTEIRO ('Nome: valor').
-
-    Formatos: 'basic:usuario:senha', 'bearer:token', 'header:Nome: valor' e o valor solto.
-
-    Devolve o cabecalho com nome e tudo, e nao so o valor, por causa das APIs que nao
-    autenticam por Authorization — o WebQuery do TeamSpeak quer 'x-api-key'. Com so o
-    valor na mao, o unico nome possivel seria o fixo no script remoto.
-
-    O valor solto (cadastro antigo, de quando isto devolvia so o valor) continua saindo
-    como Authorization: mudar isso calaria a contagem de quem ja tinha um token gravado.
-    """
-    texto = (guardado or "").strip()
-    if not texto:
-        return ""
-    tipo, _, resto = texto.partition(":")
-    if tipo.lower() == "basic":
-        return "Authorization: Basic " + base64.b64encode(resto.encode()).decode()
-    if tipo.lower() == "bearer":
-        return "Authorization: Bearer " + resto
-    # 'header:' e a saida para o resto do mundo. O que vem depois vai cru, com nome e
-    # tudo, porque so quem cadastrou sabe como a API dela chama esse cabecalho.
-    if tipo.lower() == "header" and ":" in resto:
-        return resto.strip()
-    return "Authorization: " + texto
-
-
-def _split_status(bruto: str) -> tuple[str, int]:
-    """Separa o corpo do marcador de status que o script anexa no fim."""
-    pos = bruto.rfind(STATUS_MARK)
-    if pos < 0:
-        return bruto, 0
-    try:
-        status = int(bruto[pos + len(STATUS_MARK):].strip() or 0)
-    except ValueError:
-        status = 0
-    return bruto[:pos].rstrip("\n"), status
+auth_header = http_probe.auth_header
+read_players_json = http_probe.read_players_json
+URL_RE = http_probe.URL_RE
+HTTP_URL_MAX = http_probe.HTTP_URL_MAX
+_split_status = http_probe._split_status
+_json_walk = http_probe._json_walk
+_id_do_item = http_probe._id_of
 
 
 def http_json(server: Servidor, url: str, auth: str, corpo: str, exigir_json: bool = True):
-    """Chama a URL de dentro do container e devolve o JSON ja interpretado.
-
-    `exigir_json=False` para quem so quer saber se deu certo: expulsar, banir e avisar
-    respondem 200 com o corpo VAZIO, e ai "a resposta nao e JSON" seria um erro inventado
-    em cima de uma acao que funcionou.
-    """
-    url = (url or "").strip()
-    if len(url) > HTTP_URL_MAX or not URL_RE.match(url):
-        raise QueryError("URL invalida (ex.: http://127.0.0.1:8212/v1/api/players)")
-    try:
-        bruto = ssh_output(
-            server,
-            q("bash", "-lc", HTTP_FETCH_SCRIPT, "gp", url,
-              auth_header(auth), (corpo or "").strip(), f"{HTTP_TIMEOUT:g}"),
-            timeout=int(HTTP_TIMEOUT) + 15,
-        )
-    except RemoteError as exc:
-        raise QueryError(str(exc))
-
-    texto, status = _split_status(bruto)
-    if status in (401, 403):
-        # AuthError e uma QueryError especializada: quem tem login configurado usa
-        # isso como gatilho para renovar o token em vez de so reportar o erro.
-        raise AuthError(f"a API respondeu {status} - confira o usuario/senha de admin")
-    if status >= 400:
-        raise QueryError(f"a API respondeu HTTP {status}")
-    if len(texto) > HTTP_MAX_BYTES:
-        raise QueryError("resposta da API grande demais para ser lida aqui")
-    try:
-        return json.loads(texto)
-    except ValueError:
-        if not exigir_json:
-            return {}
-        amostra = texto.strip()[:120] or "(vazia)"
-        raise QueryError(f"a resposta nao e JSON: {amostra}")
-
-
-# Chaves que os jogos costumam usar. Comparadas sem maiusculas nem separadores, entao
-# 'numConnectedPlayers', 'num_connected_players' e 'NUMCONNECTEDPLAYERS' sao a mesma.
-LIST_KEYS = {"players", "playerlist", "onlineplayers", "connectedplayers", "clients"}
-NAME_KEYS = ("name", "playername", "accountname", "username", "displayname", "nick", "clientnickname")
-COUNT_KEYS = {"players", "playercount", "numplayers", "onlineplayers", "currentplayernum",
-              "numconnectedplayers", "playersonline", "online"}
-MAX_KEYS = {"maxplayers", "maxplayernum", "maxplayercount", "serverplayermaxnum",
-            "playerlimit", "slots"}
-SERVER_NAME_KEYS = {"servername", "hostname"}
-JSON_MAX_DEPTH = 5
-PATH_RE = re.compile(r"[^.\[\]]+|\[\d+\]")
-
-
-def _slug(chave: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(chave).lower())
-
-
-def _json_walk(dados, caminho: str):
-    """Anda um caminho estilo 'a.b[0].c'. Caminho vazio devolve o objeto inteiro."""
-    atual = dados
-    for parte in PATH_RE.findall(caminho or ""):
-        if parte.startswith("["):
-            indice = int(parte[1:-1])
-            if not isinstance(atual, list) or indice >= len(atual):
-                raise QueryError(f"'{caminho}' nao existe na resposta")
-            atual = atual[indice]
-        elif isinstance(atual, dict) and parte in atual:
-            atual = atual[parte]
-        else:
-            raise QueryError(f"'{caminho}' nao existe na resposta")
-    return atual
-
-
-def _nome_do_item(item) -> str:
-    if not isinstance(item, dict):
-        return str(item).strip() if isinstance(item, str) else ""
-    por_slug = {_slug(k): v for k, v in item.items()}
-    for chave in NAME_KEYS:
-        valor = por_slug.get(chave)
-        if isinstance(valor, str) and valor.strip():
-            return valor.strip()
-    return ""
-
-
-def _e_cliente_de_consulta(item) -> bool:
-    """Conexao de ServerQuery, nao gente no canal.
-
-    O TeamSpeak devolve na MESMA lista quem esta no voz (client_type 0) e as conexoes de
-    consulta (client_type 1) — e uma delas e a do proprio painel, que acabou de perguntar.
-    Sem tirar essas, o painel se contaria como usuario online e mandaria "entrou no jogo"
-    sobre si mesmo a cada volta. Jogo que nao publica client_type nao e afetado.
-    """
-    if not isinstance(item, dict):
-        return False
-    tipo = {_slug(k): v for k, v in item.items()}.get("clienttype")
-    if tipo is None:
-        return False
-    try:
-        # O WebQuery manda tudo como string ("client_type": "1").
-        return int(tipo) != 0
-    except (TypeError, ValueError):
-        return False
-
-
-# Kick e ban pedem um identificador, nunca o nome: nome muda, repete e nao e chave.
-ID_KEYS = ("userid", "playeruid", "playerid", "steamid", "accountid", "uid")
-
-
-def _id_do_item(item) -> str:
-    """Identificador do jogador, quando a API publica um. Vazio quando nao publica."""
-    if not isinstance(item, dict):
-        return ""
-    por_slug = {_slug(k): v for k, v in item.items()}
-    for chave in ID_KEYS:
-        valor = por_slug.get(chave)
-        if isinstance(valor, bool) or not isinstance(valor, (str, int)):
-            continue
-        if str(valor).strip():
-            return str(valor).strip()
-    return ""
-
-
-def _lista_de_jogadores(item) -> bool:
-    """Uma lista so vale se for de objetos — e, se tiver alguem, com cara de jogador."""
-    if not isinstance(item, list) or not all(isinstance(i, dict) for i in item):
-        return False
-    return not item or bool(_nome_do_item(item[0]))
-
-
-def _acha_lista(dados, profundidade: int = 0):
-    """Primeira lista de jogadores da resposta, procurando pelo nome da chave e pela forma."""
-    if _lista_de_jogadores(dados):
-        return dados
-    if not isinstance(dados, dict) or profundidade >= JSON_MAX_DEPTH:
-        return None
-    # A chave manda: {"players": []} com ninguem online e resposta valida, e pela
-    # forma (lista vazia) nao daria para reconhecer.
-    for chave, valor in dados.items():
-        if _slug(chave) in LIST_KEYS and isinstance(valor, list):
-            return valor if all(isinstance(i, dict) for i in valor) else None
-    for valor in dados.values():
-        achou = _acha_lista(valor, profundidade + 1)
-        if achou is not None:
-            return achou
-    return None
-
-
-def _acha_valor(dados, chaves: set, tipos: tuple, profundidade: int = 0):
-    """Primeiro valor do tipo pedido guardado em uma das chaves conhecidas."""
-    if not isinstance(dados, dict) or profundidade >= JSON_MAX_DEPTH:
-        return None
-    for chave, valor in dados.items():
-        if _slug(chave) in chaves and isinstance(valor, tipos) and not isinstance(valor, bool):
-            return valor
-    for valor in dados.values():
-        achou = _acha_valor(valor, chaves, tipos, profundidade + 1)
-        if achou is not None:
-            return achou
-    return None
-
-
-def _lista_do_json(dados, caminho_lista: str, caminho_contagem: str) -> list | None:
-    """A lista de jogadores da resposta, ou None quando a API nao publica uma.
-
-    Com o caminho da contagem preenchido e sem o da lista, nem se procura: quem
-    informou onde esta o numero esta dizendo que lista nao ha.
-    """
-    if caminho_lista:
-        lista = _json_walk(dados, caminho_lista)
-        if not isinstance(lista, list):
-            raise QueryError(f"'{caminho_lista}' nao aponta para uma lista")
-    elif caminho_contagem:
-        return None
-    else:
-        lista = _acha_lista(dados)
-
-    if not isinstance(lista, list):
-        return None
-    # Antes de contar e de tirar nomes: o que sai daqui nao e jogador, e contaria como um.
-    return [item for item in lista if not _e_cliente_de_consulta(item)]
-
-
-def _contagem_do_json(dados, caminho_contagem: str, lista: list | None) -> int | None:
-    """Quantos estao online, pelo caminho informado ou por chave conhecida.
-
-    Devolve None quando ha lista: nesse caso quem conta e o tamanho dela.
-    """
-    if caminho_contagem:
-        bruto = _json_walk(dados, caminho_contagem)
-        if isinstance(bruto, list):
-            return len(bruto)
-        if isinstance(bruto, (int, float)) and not isinstance(bruto, bool):
-            return int(bruto)
-        raise QueryError(f"'{caminho_contagem}' nao e um numero nem uma lista")
-    if lista is not None:
-        return None
-    achou = _acha_valor(dados, COUNT_KEYS, (int, float))
-    return int(achou) if achou is not None else None
-
-
-def _nomes_do_json(lista: list | None) -> list[dict]:
-    """A lista no formato que as telas do painel esperam. Teto de 128 por resposta."""
-    if lista is None:
-        return []
-    saida = []
-    for item in lista[:128]:
-        nome = _nome_do_item(item)
-        if nome:
-            saida.append({"name": nome, "id": _id_do_item(item), "since": "",
-                          "score": 0, "seconds": 0})
-    return saida
-
-
-def read_players_json(dados, caminho_lista: str = "", caminho_contagem: str = "") -> dict:
-    """Tira jogadores de um JSON qualquer.
-
-    Sem caminhos preenchidos o painel procura sozinho uma lista de jogadores e, se nao
-    houver, um numero em alguma chave conhecida (currentplayernum, numplayers, ...).
-    """
-    lista = _lista_do_json(dados, caminho_lista, caminho_contagem)
-    quantos = _contagem_do_json(dados, caminho_contagem, lista)
-    nomes = _nomes_do_json(lista)
-    if quantos is None and lista is not None:
-        quantos = len(lista)
-
-    if quantos is None:
-        raise QueryError(
-            "nao achei jogadores na resposta - preencha o caminho da lista ou da contagem"
-        )
-
-    maximo = _acha_valor(dados, MAX_KEYS, (int, float))
-    return {
-        "players": quantos,
-        "list": nomes,
-        "max_players": int(maximo) if maximo is not None else None,
-        "server_name": _acha_valor(dados, SERVER_NAME_KEYS, (str,)) or "",
-        "map": "",
-        "error": "",
-    }
+    # HTTP_TIMEOUT lido na hora da chamada, nao congelado - mesmo cuidado do SshClient
+    # (runtime/ssh.py) e do query_players (runtime/a2s.py).
+    return http_probe.http_json(ssh_output, server, url, auth, corpo, HTTP_TIMEOUT, exigir_json)
 
 
 def _tem_login(server: Servidor) -> bool:
