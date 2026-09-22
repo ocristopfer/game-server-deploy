@@ -55,6 +55,7 @@ from gamepanel.games.catalog.templates import MODELOS as MODELOS_DE_JOGO
 from gamepanel.integrations import broker_client
 from gamepanel.runtime import a2s, http_probe
 from gamepanel.runtime import log_probe
+from gamepanel.runtime import port_probe
 from gamepanel.runtime import ssh as ssh_transport
 from gamepanel.security import qr, totp
 from flask import (
@@ -1158,337 +1159,31 @@ log_path_valido = log_probe.log_path_valido
 
 
 # ------------------------------------------- descobrir como contar jogadores
-
-# O jogo abre os sockets dele dentro do container: em vez de chutar a porta de consulta,
-# pergunta ao proprio container quais portas estao escutando, QUEM as abriu, e testa uma
-# a uma. UDP vira consulta A2S; TCP vira sondagem HTTP (e onde moram as APIs de
-# administracao).
 #
-# Tudo sai de /proc: 'ss', 'netstat' e 'lsof' nao vem instalados em todo container.
-# O caminho e o mesmo que o `ss -p` faz: /proc/net/* da porta + inode do socket, e os
-# descritores abertos de cada processo (/proc/PID/fd) dizem de quem e aquele inode.
-# Saber o dono e o que separa a porta do jogo do ruido (sshd, DNS do Docker, um HTTP
-# qualquer numa porta alta).
-LISTEN_PORTS_SCRIPT = r"""
-set -u
-
-# inode do socket -> pid. Como o painel entra como root, enxerga todos os processos.
-donos() {
-  for dir in /proc/[0-9]*; do
-    [ -d "$dir/fd" ] || continue
-    ls -l "$dir/fd" 2>/dev/null | awk -v pid="${dir#/proc/}" '
-      match($0, /socket:\[[0-9]+\]/) {
-        print substr($0, RSTART + 8, RLENGTH - 9), pid
-      }'
-  done
-}
-
-# Coluna 2 = endereco local (IP:PORTA em hex), 4 = estado, 10 = inode. Em TCP so
-# interessa 0A (LISTEN); em UDP o socket ligado ja e a porta aberta.
-sockets() {
-  arquivo=$1 proto=$2 estado=$3
-  [ -r "$arquivo" ] || return 0
-  awk -v p="$proto" -v e="$estado" \
-    'NR > 1 && (e == "" || $4 == e) { split($2, a, ":"); print p, a[2], $10 }' "$arquivo"
-}
-
-mapa=$(donos)
-{
-  sockets /proc/net/udp  udp ""
-  sockets /proc/net/udp6 udp ""
-  sockets /proc/net/tcp  tcp 0A
-  sockets /proc/net/tcp6 tcp 0A
-} | sort -u | while read -r proto hex inode; do
-  porta=$(printf '%d' "0x$hex" 2>/dev/null) || continue
-  pid=$(printf '%s\n' "$mapa" | awk -v i="$inode" '$1 == i { print $2; exit }')
-  nome='?'
-  if [ -n "$pid" ] && [ -r "/proc/$pid/comm" ]; then
-    nome=$(cat "/proc/$pid/comm" 2>/dev/null) || nome='?'
-  fi
-  printf '%s %s %s %s\n' "$proto" "$porta" "${pid:-0}" "${nome:-?}"
-done
-"""
-
-# Portas de consulta que a maioria dos jogos Steam usa quando nao ha nada declarado.
-QUERY_PORT_GUESSES = (27015, 27016, 27005)
-# Portas de API de administracao mais comuns: 8212 (REST do Palworld), 7777 (HTTPS do
-# Satisfactory), 8080 (padrao de quem escreve um painelzinho proprio).
-API_PORT_GUESSES = (8212, 7777, 8080)
-# O sshd e o proprio painel entrando no container: sondar essa porta so gera ruido.
-PORTAS_IGNORADAS = (22,)
-
-
-def _portas_do_texto(texto: str) -> list[int]:
-    """Tira numeros de porta do campo livre 'Portas do jogo' (ex.: '8211/udp 27015/udp')."""
-    return [int(n) for n in re.findall(r"\d{2,5}", texto or "") if 1 <= int(n) <= 65535]
-
-
-def _sem_repetir(portas) -> list[int]:
-    saida: list[int] = []
-    for porta in portas:
-        if 1 <= porta <= 65535 and porta not in saida and porta not in PORTAS_IGNORADAS:
-            saida.append(porta)
-    return saida
-
-
-# Processos que sempre abrem porta num container e nunca sao o jogo: marca-los deixa a
-# lista legivel sem esconder nada de quem esta procurando.
-PROCESSOS_DE_INFRA = frozenset({
-    "sshd", "sshd-session", "systemd", "systemd-resolve", "systemd-resolved", "dockerd",
-    "containerd", "dnsmasq", "cron", "rsyslogd", "chronyd", "ntpd",
-})
-
-
-def _le_portas_abertas(raw: str, escutando: dict, donos: dict) -> None:
-    """Preenche `escutando` e `donos` com o que o LISTEN_PORTS_SCRIPT devolveu.
-
-    Cada linha e "<proto> <porta> <pid> <nome do processo>". Linha que nao tiver essa
-    forma e ignorada sem reclamar: o script le /proc a unha, e um container estranho
-    pode devolver algo que nao casa - deixar de listar uma porta e melhor do que
-    derrubar o assistente inteiro.
-    """
-    for linha in raw.splitlines():
-        campos = linha.split(None, 3)
-        if len(campos) != 4 or campos[0] not in escutando or not campos[1].isdigit():
-            continue
-        proto, porta, pid, nome = campos[0], int(campos[1]), campos[2], campos[3]
-        escutando[proto].append(porta)
-        # Mesma porta em IPv4 e IPv6: fica a primeira que soube dizer o dono.
-        if donos.get((proto, porta), {}).get("proc", "?") == "?":
-            donos[(proto, porta)] = {
-                "pid": int(pid) if pid.isdigit() else 0,
-                "proc": nome.strip() or "?",
-                "infra": nome.strip() in PROCESSOS_DE_INFRA,
-            }
+# Implementacao real em gamepanel.runtime.port_probe (Fase 4). Nomes preservados aqui
+# pelos mesmos dois motivos de sempre: teste direto por nome (`panel._portas_do_texto`,
+# `panel._sem_repetir`, `panel._com_dono`, `panel._resume_genericos`) e uso por rotas
+# que ainda nao foram extraidas.
+QUERY_PORT_GUESSES = port_probe.QUERY_PORT_GUESSES
+API_PORT_GUESSES = port_probe.API_PORT_GUESSES
+HTTP_PROBE_TIMEOUT = float(os.environ.get("GAMEPANEL_PROBE_TIMEOUT", "2"))
+HTTP_PROBE_PORTS_MAX = port_probe.HTTP_PROBE_PORTS_MAX
+_portas_do_texto = port_probe._portas_do_texto
+_sem_repetir = port_probe._sem_repetir
+_com_dono = port_probe._com_dono
+_resume_genericos = port_probe._resume_genericos
 
 
 def candidate_ports(server: Servidor) -> tuple[list[int], list[int], dict, str]:
-    """Portas a testar (UDP, TCP), quem abriu cada uma, e o aviso se a leitura falhou.
-
-    A lista vem do container (portas realmente abertas, com o processo dono) e so entao
-    recebe as portas declaradas no cadastro e os chutes conhecidos, como rede de seguranca
-    para quando o servidor esta parado — nessa hora nao ha socket nenhum para detectar.
-    """
-    escutando: dict[str, list[int]] = {"udp": [], "tcp": []}
-    donos: dict[tuple[str, int], dict] = {}
-    aviso = ""
-    try:
-        raw = ssh_output(server, q("bash", "-lc", LISTEN_PORTS_SCRIPT, "gp"), timeout=60)
-        _le_portas_abertas(raw, escutando, donos)
-    except (RemoteError, ValueError) as exc:
-        aviso = f"nao consegui listar as portas abertas do container: {exc}"
-
-    def prioridade(proto: str, porta: int) -> int:
-        """Porta com processo dono de verdade primeiro; infra por ultimo.
-
-        No meio ficam as sem dono: existe socket, mas nenhum processo DESTE container o
-        abriu (o resolvedor DNS do Docker, por exemplo, que vive fora do namespace).
-        """
-        dono = donos.get((proto, porta))
-        if dono is None or dono["proc"] == "?":
-            return 1
-        return 2 if dono["infra"] else 0
-
-    def util_primeiro(proto: str) -> list[int]:
-        return sorted(escutando[proto], key=lambda p: (prioridade(proto, p), p))
-
-    declaradas = _portas_do_texto(server["game_port"])
-    udp = _sem_repetir(util_primeiro("udp") + declaradas + list(QUERY_PORT_GUESSES))
-    tcp = _sem_repetir(util_primeiro("tcp") + declaradas + list(API_PORT_GUESSES))
-    return udp, tcp, donos, aviso
-
-
-def _com_dono(itens: list[dict], donos: dict, proto: str) -> list[dict]:
-    """Anexa o processo dono a cada porta sondada, para a tela poder mostrar.
-
-    Tres estados diferentes, e a tela precisa saber qual e qual:
-    'detectada'  - o socket existe e o processo dono foi identificado;
-    'sem-dono'   - o socket existe, mas nenhum processo deste container o abriu;
-    'nao-vista'  - a porta nem estava aberta (veio do cadastro ou da lista de chutes).
-    """
-    for item in itens:
-        dono = donos.get((proto, item["port"]))
-        if dono is None:
-            item.update({"origem": "nao-vista", "proc": "", "pid": 0, "infra": False})
-        elif dono["proc"] == "?":
-            item.update({"origem": "sem-dono", "proc": "", "pid": 0, "infra": False})
-        else:
-            item.update({"origem": "detectada", "proc": dono["proc"],
-                         "pid": dono["pid"], "infra": dono["infra"]})
-    return itens
-
-
-# Sondagem HTTP das portas TCP. Roda dentro do container (uma unica ida de SSH para
-# todas as portas) porque API de administracao costuma escutar so em 127.0.0.1 — de
-# fora do container ela pareceria fechada.
-#
-# Duas etapas por porta: primeiro um GET em "/" so para saber se ali fala HTTP; so
-# quem responde alguma coisa leva os caminhos conhecidos. Assim uma porta que nao e
-# HTTP custa uma tentativa, nao seis.
-HTTP_PROBE_TIMEOUT = float(os.environ.get("GAMEPANEL_PROBE_TIMEOUT", "2"))
-HTTP_PROBE_PORTS_MAX = 12
-HTTP_PROBE_SCRIPT = r"""
-set -u
-tmo=$1
-shift
-caminhos='/v1/api/info /v1/api/metrics /v1/api/players /api/v1 /status /api/info'
-
-sonda=""
-if command -v curl >/dev/null 2>&1; then
-  pega() { curl -sS -k -m "$tmo" -o /dev/null -w '%{http_code} %{content_type}' "$1" 2>/dev/null || echo "000 -"; }
-elif command -v python3 >/dev/null 2>&1; then
-  sonda=$(mktemp 2>/dev/null) || sonda=/tmp/gamepanel-sonda.py
-  cat >"$sonda" <<'PY'
-import sys
-import urllib.error
-import urllib.request
-
-url, tmo = sys.argv[1], float(sys.argv[2])
-try:
-    if url.startswith("https"):
-        import ssl
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-    else:
-        ctx = None
-    resp = urllib.request.urlopen(url, timeout=tmo, context=ctx)
-    print(resp.getcode(), resp.headers.get("Content-Type", "-") or "-")
-except urllib.error.HTTPError as exc:
-    print(exc.code, exc.headers.get("Content-Type", "-") or "-")
-except Exception:
-    print("000 -")
-PY
-  pega() { python3 "$sonda" "$1" "$tmo" 2>/dev/null || echo "000 -"; }
-else
-  echo "o container nao tem curl nem python3 para sondar as portas" >&2
-  exit 127
-fi
-
-for porta in "$@"; do
-  esquema=http
-  raiz=$(pega "http://127.0.0.1:${porta}/")
-  case "$raiz" in
-    000*)
-      # Nada em HTTP: pode ser uma API que so aceita TLS (o Satisfactory e assim).
-      raiz=$(pega "https://127.0.0.1:${porta}/")
-      esquema=https
-      ;;
-  esac
-  printf '%s|%s|/|%s\n' "$porta" "$esquema" "$raiz"
-  case "$raiz" in
-    000*) continue ;;
-  esac
-  for caminho in $caminhos; do
-    printf '%s|%s|%s|%s\n' "$porta" "$esquema" "$caminho" \
-      "$(pega "${esquema}://127.0.0.1:${porta}${caminho}")"
-  done
-done
-
-[ -n "$sonda" ] && rm -f "$sonda"
-exit 0
-"""
+    return port_probe.candidate_ports(ssh_output, server, server["game_port"])
 
 
 def probe_http_ports(server: Servidor, portas: list[int]) -> tuple[list[dict], list[int], str]:
-    """Sonda as portas TCP com HTTP. Devolve (o que respondeu, portas mudas, aviso)."""
-    portas = portas[:HTTP_PROBE_PORTS_MAX]
-    if not portas:
-        return [], [], ""
-    # Pior caso: 2 tentativas na raiz + 6 caminhos, por porta.
-    limite = int(HTTP_PROBE_TIMEOUT * 8 * len(portas)) + 20
-    try:
-        raw = ssh_output(
-            server,
-            q("bash", "-lc", HTTP_PROBE_SCRIPT, "gp", f"{HTTP_PROBE_TIMEOUT:g}",
-              *[str(p) for p in portas]),
-            timeout=limite,
-        )
-    except RemoteError as exc:
-        return [], portas, f"nao consegui sondar as portas TCP: {exc}"
-
-    achados: list[dict] = []
-    responderam: set[int] = set()
-    for linha in raw.splitlines():
-        campos = linha.split("|")
-        if len(campos) != 4 or not campos[0].isdigit():
-            continue
-        porta, esquema, caminho, resultado = campos
-        status, _, tipo = resultado.strip().partition(" ")
-        if not status.isdigit() or int(status) == 0:
-            continue
-        responderam.add(int(porta))
-        achados.append({
-            "port": int(porta),
-            "scheme": esquema,
-            "path": caminho,
-            "status": int(status),
-            "content_type": (tipo or "-").split(";")[0].strip(),
-            "url": f"{esquema}://127.0.0.1:{porta}{caminho}",
-        })
-
-    achados = _resume_genericos(achados)
-    # JSON primeiro, depois quem pediu senha (401/403 = "existe API aqui").
-    achados.sort(key=lambda a: (
-        0 if "json" in a["content_type"] else 1,
-        0 if a["status"] in (200, 401, 403) else 1,
-        a["port"], a["path"],
-    ))
-    mudas = [p for p in portas if p not in responderam]
-    return achados, mudas, ""
-
-
-# Status que indicam "achei alguma coisa": 200 e resposta, 401/403 e "existe API aqui,
-# ela so quer senha". Qualquer outra coisa e um servidor HTTP que nao conhece a rota.
-STATUS_UTEIS = (200, 401, 403)
-
-
-def _resume_genericos(achados: list[dict]) -> list[dict]:
-    """Porta que respondeu 404 em tudo vira UMA linha, nao sete.
-
-    Um processo qualquer subindo um HTTP numa porta alta (o cliente da Steam faz isso)
-    enche a tela de linhas inuteis e some com o achado de verdade. Aqui ele fica como
-    uma nota so, marcada para a tela nao oferecer "usar esta URL".
-    """
-    por_porta: dict[int, list[dict]] = {}
-    for item in achados:
-        por_porta.setdefault(item["port"], []).append(item)
-
-    saida: list[dict] = []
-    for itens in por_porta.values():
-        if any(i["status"] in STATUS_UTEIS for i in itens):
-            saida.extend(i for i in itens if i["status"] in STATUS_UTEIS)
-            continue
-        raiz = next((i for i in itens if i["path"] == "/"), itens[0])
-        saida.append({**raiz, "generico": True})
-    return saida
+    return port_probe.probe_http_ports(ssh_output, server, portas, HTTP_PROBE_TIMEOUT)
 
 
 def probe_ports(host: str, portas: list[int]) -> list[dict]:
-    """Dispara um A2S_INFO em cada porta candidata, todas ao mesmo tempo."""
-    resultados: dict[int, dict] = {}
-    lock = threading.Lock()
-
-    def testa(porta: int):
-        item = {"port": porta, "ok": False, "players": None, "max_players": None,
-                "server_name": "", "error": ""}
-        try:
-            info = query_players(host, porta)
-            item.update({
-                "ok": True, "players": info["players"], "max_players": info["max_players"],
-                "server_name": info["server_name"],
-            })
-        except QueryError as exc:
-            item["error"] = str(exc)
-        with lock:
-            resultados[porta] = item
-
-    threads = [threading.Thread(target=testa, args=(p,), daemon=True) for p in portas]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=QUERY_TIMEOUT * 2 + 2)
-    return [resultados.get(p, {"port": p, "ok": False, "error": MSG_TIMEOUT}) for p in portas]
+    return port_probe.probe_ports(host, portas, QUERY_TIMEOUT)
 
 
 def read_log_lines(server: Servidor, limite: int = LOG_SCAN_MAX) -> list[str]:
