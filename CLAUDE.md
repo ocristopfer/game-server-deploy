@@ -6,11 +6,11 @@ faz, e como usar, esta no [README.md](README.md) — nao duplique conteudo entre
 
 > **Reorganizacao de arquitetura em andamento** (ver `docs/architecture-analysis.md` e
 > `docs/architecture-proposal.md`): o codigo saiu de `admin/`/`broker/` para
-> `src/gamepanel/`/`src/gamebroker/` (Fase 3) e os identificadores ja estao **em ingles**
-> nos dois pacotes. Falta a divisao de `app.py` em `blueprints/` (ele continua um arquivo
-> so, com `services/`/`runtime/`/`tasks/` ja extraidos) e os dois grupos de mudanca de
-> contrato: nome de COLUNA do banco (grupo A, pede migration) e as rotas `/v1/*` mais as
-> chaves do payload do broker (grupo B, pede o painel junto).
+> `src/gamepanel/`/`src/gamebroker/` (Fase 3), os identificadores estao **em ingles** nos
+> dois pacotes, e os dois grupos de mudanca de contrato ja foram: a API do broker (rotas,
+> corpo, resposta, cabecalho) e as colunas do banco, cada um com a sua migration. Falta a
+> divisao de `app.py` em `blueprints/` — ele continua um arquivo so, com
+> `services/`/`runtime/`/`tasks/` ja extraidos.
 
 O painel roda com poder de **root nos containers de jogo**. Isso muda o peso de tudo:
 um botao errado para um servidor de verdade, um cache errado mostra um servidor caido
@@ -31,8 +31,8 @@ docker compose restart panel          # depois de mexer em app.py/navigation.py
 As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_gameconf.py`,
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
-`test_contrato_template.py` e mais uma duzia) sao **pytest** — 843 testes ao todo (mais
-895 do pacote `gamebroker`, em `tests/gamebroker/`), com
+`test_contrato_template.py`, `test_schema.py` e mais uma duzia) sao **pytest** — 847
+testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`banco`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
 `chefe`/`peao`: um admin e um operador ja logados; `entrar`/`postar`: login e POST com
@@ -642,6 +642,23 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   recarrega template com `GAMEPANEL_DEV=1`: sem ele voce testa o template ANTIGO.
 - **Handler `Exception` do Flask engole 404/405** se nao houver um de `HTTPException` antes
   (ja aconteceu aqui: rota errada virava "erro interno").
+- **O formato de FIO da API mora em `domain/wire.py`, e nao no `SELECT`.** Antes,
+  `/v1/instancias` devolvia `SELECT * FROM instancias`: o nome de cada coluna era, sem
+  ninguem ter decidido, o nome de cada campo do JSON — renomear coluna quebrava o painel,
+  e renomear campo pedia migration. Hoje ha uma funcao por recurso, com a lista de campos
+  FIXA. O valor nao e traduzir nome (eles ate coincidem agora): e um `SELECT *` nao levar
+  a proxima coluna para o contrato no dia em que ela nascer.
+- **Coluna que muda de NOME tem mecanismo proprio.** No painel e `schema.RENAMES`
+  (a pergunta do `MIGRATIONS` e "a coluna existe?"; aqui e "ela ainda tem o nome
+  velho?"); no broker e `_migrate_names`, que renomeia tabela tambem. As duas usam
+  `ALTER TABLE ... RENAME`, que preserva os dados — tabela nova mais copia e onde se
+  perde linha. Renomear TABELA pede duas coisas a mais: a migration corre ANTES do
+  `CREATE TABLE IF NOT EXISTS` (senao ele cria as novas vazias ao lado) e os indices e
+  triggers velhos sao derrubados, porque carregam o nome antigo no corpo — um trigger
+  de append-only apontando para tabela que nao existe mais e o mesmo que nao existir.
+  Migration so roda no banco de quem JA tinha o sistema, e os outros testes vivem num
+  banco novo: quem a exercita sao `tests/gamepanel/test_schema.py` e
+  `tests/gamebroker/test_migracao.py`, que montam o esquema antigo a mao.
 
 ---
 
