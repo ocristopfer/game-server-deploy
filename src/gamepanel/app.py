@@ -58,6 +58,7 @@ from gamepanel.services import (
     parallel,
     player_service,
     schedule_service,
+    server_service,
     status_service,
 )
 from gamepanel.tasks import scheduler
@@ -2606,223 +2607,39 @@ def api_server_metrics(sid: int):
     return jsonify(data), (502 if data.get("error") else 200)
 
 
-def _porta(valor: str, padrao: int, minimo: int, erro: str, errors: list[str]) -> int:
-    """Le uma porta do formulario; `minimo` 0 permite desligar o recurso."""
-    bruto = (valor or "").strip() or str(padrao)
-    if bruto.isdigit() and minimo <= int(bruto) <= 65535:
-        return int(bruto)
-    errors.append(erro)
-    return padrao
+# Validacao do formulario em gamepanel.services.server_service. Os limites ficam aqui
+# (sao configuracao do painel) e viajam num bundle; `clean_path` vai junto porque ja
+# carrega as raizes permitidas (GAMEPANEL_FILE_ROOTS).
+UNIT_RE = server_service.UNIT_RE
+HOST_RE = server_service.HOST_RE
+USER_RE = server_service.USER_RE
+CAMINHO_JSON_RE = server_service.CAMINHO_JSON_RE
 
 
-def _servico(valor: str, errors: list[str]) -> str:
-    service = (valor or "").strip()
-    if service and not service.endswith(".service"):
-        service = f"{service}.service"  # o sufixo e o de sempre: nao vale incomodar
-    if not UNIT_RE.match(service):
-        errors.append("Servico invalido (ex.: dragonwilds.service).")
-    return service
-
-
-def _pasta_config(valor: str, errors: list[str]) -> str:
-    caminho = (valor or "").strip()[:400]
-    if not caminho:
-        return ""
-    try:
-        return clean_path(caminho)
-    except ValueError as exc:
-        errors.append(f"Pasta de configuracao invalida: {exc}")
-        return ""
-
-
-def _arquivos_config(valor: str, errors: list[str]) -> str:
-    """Le a lista de arquivos de configuracao (um caminho absoluto por linha)."""
-    caminhos: list[str] = []
-    for linha in (valor or "").replace(",", "\n").splitlines():
-        bruto = linha.strip()
-        if not bruto:
-            continue
-        try:
-            limpo = clean_path(bruto)
-        except ValueError as exc:
-            errors.append(f"Arquivo de configuracao invalido ({bruto}): {exc}")
-            continue
-        if limpo not in caminhos:
-            caminhos.append(limpo)
-    if len(caminhos) > CONFIG_FILES_MAX:
-        errors.append(f"No maximo {CONFIG_FILES_MAX} arquivos de configuracao por servidor.")
-        caminhos = caminhos[:CONFIG_FILES_MAX]
-    return "\n".join(caminhos)
-
-
-def _caminhos_backup(valor: str, errors: list[str]) -> str:
-    """Le a lista do que entra no backup (um caminho absoluto por linha).
-
-    Vazio e a resposta certa para a maioria dos cadastros: sem nada aqui o backup leva a
-    pasta de configuracao do servidor, que e onde o save costuma morar.
-    """
-    caminhos: list[str] = []
-    for linha in (valor or "").replace(",", "\n").splitlines():
-        bruto = linha.strip()
-        if not bruto:
-            continue
-        try:
-            limpo = clean_path(bruto)
-        except ValueError as exc:
-            errors.append(f"Caminho de backup invalido ({bruto}): {exc}")
-            continue
-        if limpo == "/":
-            errors.append("Backup da raiz nao: aponte a pasta do save ou da configuracao.")
-            continue
-        if limpo not in caminhos:
-            caminhos.append(limpo)
-    if len(caminhos) > BACKUP_PATHS_MAX:
-        errors.append(f"No maximo {BACKUP_PATHS_MAX} caminhos de backup por servidor.")
-        caminhos = caminhos[:BACKUP_PATHS_MAX]
-    return "\n".join(caminhos)
-
-
-CAMINHO_JSON_RE = re.compile(r"^[A-Za-z0-9_.\[\]-]{0,120}$")
-
-
-def _campo(form, nome: str, teto: int) -> str:
-    """Um campo de texto do formulario: sem espacos nas pontas e com teto de tamanho."""
-    return (form.get(nome, "") or "").strip()[:teto]
-
-
-def _url_ou_erro(bruto: str, erro: str, errors: list[str]) -> str:
-    """URL valida, ou string vazia com o erro anotado. Vazio nao e erro: e "nao usa"."""
-    if bruto and not URL_RE.match(bruto):
-        errors.append(erro)
-        return ""
-    return bruto
-
-
-def _json_ou_erro(bruto: str, rotulo: str, errors: list[str]) -> str:
-    """Corpo JSON valido, ou string vazia com o erro anotado."""
-    if not bruto:
-        return ""
-    try:
-        json.loads(bruto)
-    except ValueError as exc:
-        errors.append(f"{rotulo} nao e JSON valido: {exc}.")
-        return ""
-    return bruto
-
-
-def _caminhos_json(form, errors: list[str]) -> dict:
-    """Os tres caminhos de navegacao na resposta (lista, contagem, token)."""
-    caminhos = {}
-    for campo, rotulo in (("http_list_path", "lista"), ("http_count_path", "contagem"),
-                          ("http_token_path", "token")):
-        texto = _campo(form, campo, HTTP_PATH_MAX)
-        if texto and not CAMINHO_JSON_RE.match(texto):
-            errors.append(f"Caminho da {rotulo} invalido (use algo como 'data.players').")
-            texto = ""
-        caminhos[campo] = texto
-    return caminhos
-
-
-def _campos_http(form, errors: list[str]) -> dict:
-    """Le e confere os campos da chamada HTTP (URL, autenticacao, corpo, caminhos)."""
-    url = _url_ou_erro(
-        _campo(form, "http_url", HTTP_URL_MAX),
-        "URL da API invalida (ex.: http://127.0.0.1:8212/v1/api/players).", errors,
+def _limites_do_formulario() -> server_service.FormLimits:
+    return server_service.FormLimits(
+        config_files_max=CONFIG_FILES_MAX, backup_paths_max=BACKUP_PATHS_MAX,
+        http_url_max=HTTP_URL_MAX, http_body_max=HTTP_BODY_MAX,
+        http_path_max=HTTP_PATH_MAX, re_max_len=RE_MAX_LEN,
+        player_sources=PLAYER_SOURCES,
     )
-    corpo = _json_ou_erro(
-        _campo(form, "http_body", HTTP_BODY_MAX), "Corpo da requisicao", errors,
-    )
-    caminhos = _caminhos_json(form, errors)
-
-    # Login automatico: os tres campos andam juntos. Preencher so parte deles quase
-    # sempre e engano, e falhar aqui e melhor do que descobrir na hora da consulta.
-    login_url = _url_ou_erro(
-        _campo(form, "http_login_url", HTTP_URL_MAX),
-        "URL de login invalida (ex.: https://127.0.0.1:7787/api/v1).", errors,
-    )
-    login_body = _json_ou_erro(
-        _campo(form, "http_login_body", HTTP_BODY_MAX), "Corpo do login", errors,
-    )
-    if (login_url or login_body) and not caminhos["http_token_path"]:
-        errors.append("Para o login automatico, informe tambem o caminho do token "
-                      "(ex.: data.authenticationToken).")
-
-    return {
-        "http_url": url,
-        "http_login_url": login_url,
-        "http_login_body": login_body,
-        # Guarda a senha da API como ela precisa ser mandada. O banco do painel ja da
-        # acesso de root aos containers, entao isso nao amplia o estrago de um vazamento
-        # — mas trate o arquivo panel.db como segredo.
-        "http_auth": _campo(form, "http_auth", 300),
-        "http_body": corpo,
-        **caminhos,
-    }
-
-
-def _caminho_log(valor: str | None, errors: list[str]) -> str:
-    try:
-        return log_path_valido(valor)
-    except ValueError as exc:
-        errors.append(str(exc).capitalize())
-        return ""
-
-
-def _padrao(valor: str | None, rotulo: str, errors: list[str]) -> str:
-    """Guarda o regex so depois de conferir que ele compila."""
-    texto = (valor or "").strip()[:RE_MAX_LEN]
-    if not texto:
-        return ""
-    try:
-        compile_pattern(texto, rotulo)
-    except QueryError as exc:
-        errors.append(str(exc))
-        return ""
-    return texto
 
 
 def _form_server(form) -> tuple[dict, list[str]]:
-    errors: list[str] = []
-    name = form.get("name", "").strip()
-    host = form.get("host", "").strip()
-    ssh_user = form.get("ssh_user", "").strip() or "root"
-    origem = (form.get("player_source", "") or "").strip()
-    if origem and origem not in PLAYER_SOURCES:
-        errors.append("Forma de contar jogadores invalida.")
-        origem = ""
+    return server_service.form_server(form, clean_path, _limites_do_formulario())
 
-    if not name:
-        errors.append("Informe um nome.")
-    if not HOST_RE.match(host):
-        errors.append("Host invalido (use o IP ou hostname do container).")
-    if not USER_RE.match(ssh_user):
-        errors.append("Usuario SSH invalido.")
 
-    return (
-        {
-            "name": name,
-            "host": host,
-            "ssh_user": ssh_user,
-            "ssh_port": _porta(form.get("ssh_port"), 22, 1, "Porta SSH invalida.", errors),
-            "service": _servico(form.get("service"), errors),
-            "game_port": form.get("game_port", "").strip()[:120],
-            "notes": form.get("notes", "").strip()[:2000],
-            "config_path": _pasta_config(form.get("config_path"), errors),
-            "config_files": _arquivos_config(form.get("config_files"), errors),
-            "backup_paths": _caminhos_backup(form.get("backup_paths"), errors),
-            "log_path": _caminho_log(form.get("log_path"), errors),
-            "query_port": _porta(
-                form.get("query_port"), 0, 0,
-                "Porta de consulta invalida (use 0 para desligar).", errors,
-            ),
-            "player_source": origem,
-            "join_re": _padrao(form.get("join_re"), "entrada", errors),
-            "leave_re": _padrao(form.get("leave_re"), "saida", errors),
-            "error_re": _padrao(form.get("error_re"), "erro", errors),
-            **_campos_http(form, errors),
-        },
-        errors,
-    )
+# Os tres tambem sao usados pelo assistente de contagem (abas HTTP e log), fora do
+# formulario de cadastro.
+_caminho_log = server_service._caminho_log
+
+
+def _padrao(valor: str | None, rotulo: str, errors: list[str]) -> str:
+    return server_service._padrao(valor, rotulo, RE_MAX_LEN, errors)
+
+
+def _campos_http(form, errors: list[str]) -> dict:
+    return server_service._campos_http(form, _limites_do_formulario(), errors)
 
 
 # Colunas que o formulario preenche, na mesma ordem do INSERT/UPDATE abaixo. Manter a
