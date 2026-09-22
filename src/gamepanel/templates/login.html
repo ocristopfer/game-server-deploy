@@ -3,15 +3,15 @@
 {% block title %}Entrar — Painel de Jogos{% endblock %}
 {% block content %}
 <div class="card card--login">
-  <h1><span aria-hidden="true">🎮</span> Painel de Jogos</h1>
+  <h1><span aria-hidden="true">🎮</span> {{ _('app.name') }}</h1>
   <p class="muted centro">{{ _('login.subtitle') }}</p>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label>Usuario
+    <label>{{ _('login.username') }}
       <input name="username" autocomplete="username" autocapitalize="none"
              spellcheck="false" autofocus required>
     </label>
-    <label>Senha
+    <label>{{ _('login.password') }}
       <input name="password" type="password" autocomplete="current-password" required>
     </label>
     <div class="form-actions">

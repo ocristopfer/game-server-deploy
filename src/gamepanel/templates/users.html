@@ -7,14 +7,14 @@
 
 <div class="card">
   <div class="table-wrap"><table class="jobs">
-    <thead><tr><th>Usuario</th><th>Papel</th><th>Criado em</th><th></th></tr></thead>
+    <thead><tr><th>{{ _('users.user') }}</th><th>{{ _('users.role') }}</th><th>{{ _('users.created_at') }}</th><th></th></tr></thead>
     <tbody>
       {% for u in users %}
       <tr>
         <td>
           {{ u.username }}
-          {% if u.id == meu_id %}<span class="badge cold">voce</span>{% endif %}
-          {% if u.totp_enabled %}<span class="badge on" title="Verificacao em duas etapas ativada">2FA</span>{% endif %}
+          {% if u.id == meu_id %}<span class="badge cold">{{ _('users.you') }}</span>{% endif %}
+          {% if u.totp_enabled %}<span class="badge on" title="{{ _('users.two_factor_on') }}">2FA</span>{% endif %}
         </td>
         <td>
           {% if u.id == meu_id %}
@@ -35,13 +35,13 @@
         <td class="muted small nowrap">{{ u.created_at.replace('T', ' ')[:19] }}</td>
         <td class="acoes">
           <details class="users-reset">
-            <summary class="btn btn--ghost btn--sm">Redefinir senha</summary>
+            <summary class="btn btn--ghost btn--sm">{{ _('users.reset_password') }}</summary>
             <form method="post" action="{{ url_for('user_password', uid=u.id) }}" class="users-form">
               <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-              <input name="new" type="password" autocomplete="new-password" aria-label="nova senha"
-                     minlength="{{ min_len }}" placeholder="nova senha" required>
-              <input name="confirm" type="password" autocomplete="new-password" aria-label="confirmar"
-                     minlength="{{ min_len }}" placeholder="confirmar" required>
+              <input name="new" type="password" autocomplete="new-password" aria-label="{{ _('users.new_password_lower') }}"
+                     minlength="{{ min_len }}" placeholder="{{ _('users.new_password_lower') }}" required>
+              <input name="confirm" type="password" autocomplete="new-password" aria-label="{{ _('users.confirm_lower') }}"
+                     minlength="{{ min_len }}" placeholder="{{ _('users.confirm_lower') }}" required>
               {{ ui.botao('Salvar', tamanho='sm') }}
             </form>
           </details>
@@ -63,32 +63,32 @@
 </div>
 
 <div class="card card--form">
-  <h2>Novo usuario</h2>
+  <h2>{{ _('users.new_user') }}</h2>
   <form method="post" action="{{ url_for('user_new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label>Usuario
+    <label>{{ _('users.user') }}
       <input name="username" pattern="[a-z_][a-z0-9_-]{0,31}" required autofocus
              spellcheck="false" autocomplete="off" autocapitalize="none">
       <small>Letras minusculas, numeros, <code>-</code> e <code>_</code>. Ex.: <code>joao</code></small>
     </label>
-    <label>Papel
+    <label>{{ _('users.role') }}
       <select name="role">
-        <option value="operador" selected>Operador</option>
-        <option value="admin">Administrador</option>
+        <option value="operador" selected>{{ _('role.operator') }}</option>
+        <option value="admin">{{ _('role.admin') }}</option>
       </select>
       <small>
-        <strong>Operador</strong>: liga, desliga, atualiza, edita a configuracao ja
+        <strong>{{ _('role.operator') }}</strong>: liga, desliga, atualiza, edita a configuracao ja
         registrada, ve log e jogadores.
-        <strong>Administrador</strong>: tudo isso mais cadastrar servidor, terminal,
+        <strong>{{ _('role.admin') }}</strong>: tudo isso mais cadastrar servidor, terminal,
         navegador de arquivos e esta tela.
       </small>
     </label>
     <div class="row">
-      <label>Senha inicial
+      <label>{{ _('users.initial_password') }}
         <input name="new" type="password" autocomplete="new-password"
                minlength="{{ min_len }}" required>
       </label>
-      <label>Confirmar senha
+      <label>{{ _('users.confirm_password') }}
         <input name="confirm" type="password" autocomplete="new-password"
                minlength="{{ min_len }}" required>
       </label>
@@ -98,24 +98,24 @@
     </div>
   </form>
   <p class="muted small mt-4">
-    Voce define a senha e passa para a pessoa; ela troca depois em
-    <a href="{{ url_for('account') }}">Conta</a>. O painel nao envia e-mail.
+    {{ _('users.password_handoff') }}
+    <a href="{{ url_for('account') }}">{{ _('nav.account') }}</a>. O painel nao envia e-mail.
   </p>
 </div>
 
 <div class="card">
-  <h2>O que cada papel abre</h2>
+  <h2>{{ _('users.what_each_role_opens') }}</h2>
   <div class="table-wrap"><table class="jobs">
-    <thead><tr><th>Tela</th><th>Operador</th><th>Administrador</th></tr></thead>
+    <thead><tr><th>{{ _('users.screen') }}</th><th>{{ _('role.operator') }}</th><th>{{ _('role.admin') }}</th></tr></thead>
     <tbody>
-      <tr><td>Servidores, status, jogadores, log</td><td>sim</td><td>sim</td></tr>
-      <tr><td>Start / stop / restart / update</td><td>sim</td><td>sim</td></tr>
-      <tr><td>Configuracao (arquivos ja registrados)</td><td>sim</td><td>sim</td></tr>
-      <tr><td>Graficos, backups e agendamentos</td><td>sim</td><td>sim</td></tr>
-      <tr><td>Cadastrar / editar / remover servidor</td><td class="muted">nao</td><td>sim</td></tr>
-      <tr><td>Registrar novo arquivo de config</td><td class="muted">nao</td><td>sim</td></tr>
-      <tr><td>Terminal e navegador de arquivos</td><td class="muted">nao</td><td>sim</td></tr>
-      <tr><td>Usuarios</td><td class="muted">nao</td><td>sim</td></tr>
+      <tr><td>{{ _('users.perm_overview') }}</td><td>{{ _('users.yes') }}</td><td>{{ _('users.yes') }}</td></tr>
+      <tr><td>{{ _('users.perm_actions') }}</td><td>{{ _('users.yes') }}</td><td>{{ _('users.yes') }}</td></tr>
+      <tr><td>{{ _('users.perm_config') }}</td><td>{{ _('users.yes') }}</td><td>{{ _('users.yes') }}</td></tr>
+      <tr><td>{{ _('users.perm_charts') }}</td><td>{{ _('users.yes') }}</td><td>{{ _('users.yes') }}</td></tr>
+      <tr><td>{{ _('users.perm_manage_servers') }}</td><td class="muted">{{ _('users.no') }}</td><td>{{ _('users.yes') }}</td></tr>
+      <tr><td>{{ _('users.perm_register_config') }}</td><td class="muted">{{ _('users.no') }}</td><td>{{ _('users.yes') }}</td></tr>
+      <tr><td>{{ _('users.perm_terminal') }}</td><td class="muted">{{ _('users.no') }}</td><td>{{ _('users.yes') }}</td></tr>
+      <tr><td>{{ _('nav.users') }}</td><td class="muted">{{ _('users.no') }}</td><td>{{ _('users.yes') }}</td></tr>
     </tbody>
   </table></div>
   <p class="muted small mt-4">

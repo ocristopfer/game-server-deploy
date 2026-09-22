@@ -29,7 +29,7 @@
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <span class="path-form">
       <input name="path" placeholder="/opt/game/.../ServerSettings.ini" spellcheck="false"
-             autocapitalize="none" aria-label="caminho do arquivo de configuracao">
+             autocapitalize="none" aria-label="{{ _('config.file_path') }}">
       {{ ui.botao('Usar este arquivo') }}
     </span>
     {# Procurar candidatos existe SO aqui. Antes havia um segundo botao "Procurar
@@ -46,7 +46,7 @@
       {% if info %} &middot; {{ info.size | tamanho }} &middot; {{ info.owner }} &middot; {{ info.mtime }}{% endif %}
       {% if doc %} &middot; formato {{ doc.label }}{% endif %}
       {% if is_admin %}
-      &middot; <a href="{{ url_for('files', sid=server.id, file=alvo) }}">editar como texto</a>
+      &middot; <a href="{{ url_for('files', sid=server.id, file=alvo) }}">{{ _('config.edit_as_text') }}</a>
       {% endif %}
       {% if registrado and is_admin %}
       &middot;
@@ -54,7 +54,7 @@
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="path" value="{{ alvo }}">
         <input type="hidden" name="acao" value="remover">
-        <button class="btn-link" type="submit">tirar da lista</button>
+        <button class="btn-link" type="submit">{{ _('config.unpin') }}</button>
       </form>
       {% endif %}
     </p>
@@ -63,7 +63,7 @@
 
 {% if sugestoes is not none %}
 <div class="card">
-  <h2>Arquivos de configuracao encontrados no container</h2>
+  <h2>{{ _('config.found_in_container') }}</h2>
   {% if sugestoes %}
   <ul class="filelist">
     {% for s in sugestoes %}
@@ -74,7 +74,7 @@
         <form method="post" action="{{ url_for('config_files_edit', sid=server.id) }}" class="inline">
           <input type="hidden" name="csrf" value="{{ csrf_token() }}">
           <input type="hidden" name="path" value="{{ s.path }}">
-          <button class="btn-link" type="submit">fixar aqui</button>
+          <button class="btn-link" type="submit">{{ _('config.pin_here') }}</button>
         </form>
       </span>
     </li>
@@ -88,7 +88,7 @@
   <p class="muted">
     Nada encontrado em <code>{{ request.args.get('pasta') or server.config_path or '/opt/game' }}</code>.
     Ajuste a &quot;Pasta de configuracao&quot; em
-    <a href="{{ url_for('server_edit', sid=server.id) }}">Editar servidor</a> ou informe o
+    <a href="{{ url_for('server_edit', sid=server.id) }}">{{ _('files.edit_server') }}</a> ou informe o
     caminho completo do arquivo na barra acima.
   </p>
   {% endif %}
@@ -104,8 +104,8 @@
   <div class="card">
     <div class="card__head">
       <h2>Configuracoes ({{ doc.settings | length }})</h2>
-      <input class="conf-busca" placeholder="filtrar por nome..." data-filtro-config
-             spellcheck="false" autocomplete="off" aria-label="filtrar configuracoes">
+      <input class="conf-busca" placeholder="{{ _('config.filter_placeholder') }}" data-filtro-config
+             spellcheck="false" autocomplete="off" aria-label="{{ _('config.filter_label') }}">
     </div>
 
     {% for sec in doc.sections %}
@@ -179,16 +179,16 @@
         </label>
         {% set ns.i = ns.i + 1 %}
         {% else %}
-        <p class="muted">Bloco vazio &mdash; use &quot;adicionar configuracao&quot; abaixo.</p>
+        <p class="muted">{{ _('config.empty_block') }}</p>
         {% endfor %}
       </div>
     </fieldset>
     {% endfor %}
-    <p class="muted small" id="conf-vazio" hidden>Nenhuma configuracao com esse nome.</p>
+    <p class="muted small" id="conf-vazio" hidden>{{ _('config.no_match') }}</p>
   </div>
 
   <div class="card">
-    <h2>Adicionar configuracao</h2>
+    <h2>{{ _('config.add_setting') }}</h2>
     <p class="muted small">
       Para chave que ainda nao existe no arquivo. Ela entra no fim do bloco escolhido,
       sem mexer no resto.
@@ -196,16 +196,16 @@
     <div id="conf-novas">
       {% for extra in range(2) %}
       <div class="conf-nova">
-        <label class="sr-only" for="sec-{{ ns.i }}">Bloco da configuracao nova</label>
+        <label class="sr-only" for="sec-{{ ns.i }}">{{ _('config.new_setting_block') }}</label>
         <select name="sec.{{ ns.i }}" id="sec-{{ ns.i }}">
           {% for sec in doc.sections %}
           <option value="{{ sec.id | ident }}">{{ sec.label }}</option>
           {% endfor %}
         </select>
-        <input name="key.{{ ns.i }}" placeholder="Nome (ex.: ServerPassword)"
-               spellcheck="false" autocapitalize="none" aria-label="nome da configuracao nova">
-        <input name="val.{{ ns.i }}" placeholder="Valor" spellcheck="false"
-               autocapitalize="none" aria-label="valor da configuracao nova">
+        <input name="key.{{ ns.i }}" placeholder="{{ _('config.name_example') }}"
+               spellcheck="false" autocapitalize="none" aria-label="{{ _('config.new_setting_name') }}">
+        <input name="val.{{ ns.i }}" placeholder="{{ _('config.value') }}" spellcheck="false"
+               autocapitalize="none" aria-label="{{ _('config.new_setting_value') }}">
       </div>
       {% set ns.i = ns.i + 1 %}
       {% endfor %}
@@ -224,7 +224,7 @@
       {{ ui.botao('Salvar', variante='primary', bloco=true) }}
       <label class="checkbox">
         <input type="checkbox" name="restart" value="1">
-        <span>reiniciar o servidor depois de salvar</span>
+        <span>{{ _('config.restart_after_save') }}</span>
       </label>
       <span class="muted small" id="conf-mudou"></span>
     </div>
@@ -240,7 +240,7 @@
   <p class="muted">
     Nao consegui abrir <code>{{ alvo }}</code> como formulario.
     {% if is_admin %}
-      <a href="{{ url_for('files', sid=server.id, file=alvo) }}">Edite como texto</a>.
+      <a href="{{ url_for('files', sid=server.id, file=alvo) }}">{{ _('config.edit_as_text_title') }}</a>.
     {% else %}
       Avise um administrador do painel &mdash; a edicao como texto e restrita a ele.
     {% endif %}
