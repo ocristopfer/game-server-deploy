@@ -326,16 +326,16 @@ def test_admin_tambem_modera_jogador(servidor_alvo, chefe, postar):
 
 # -------------------------------------------- volta do login aceita so destino interno
 
-@pytest.mark.parametrize("bruto", [
+@pytest.mark.parametrize("raw", [
     "//evil.example.com/x", "/\\evil.example.com", "https://evil.example.com",
     "http://evil.example.com", "evil", "", "/conta\r\nSet-Cookie: x=1",
 ])
-def test_destino_de_login_recusa_endereco_de_fora(bruto):
+def test_destino_de_login_recusa_endereco_de_fora(raw):
     """"/" no comeco nao basta: para o navegador "//host" e "/\\host" sao enderecos
     absolutos, e mandariam quem acabou de logar para outro site."""
-    assert panel.destino_seguro(bruto) == ""
+    assert panel.safe_target(raw) == ""
 
 
-@pytest.mark.parametrize("bruto", ["/servers/1/config", "/usuarios", "/"])
-def test_destino_de_login_aceita_caminho_interno(bruto):
-    assert panel.destino_seguro(bruto) == bruto
+@pytest.mark.parametrize("raw", ["/servers/1/config", "/usuarios", "/"])
+def test_destino_de_login_aceita_caminho_interno(raw):
+    assert panel.safe_target(raw) == raw

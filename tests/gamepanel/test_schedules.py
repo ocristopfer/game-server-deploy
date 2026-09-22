@@ -123,7 +123,7 @@ def test_jobs_antigos_saem_na_limpeza(banco):
                     (sid, "root@alvo", "start", "ok", "", "chefe", carimbo))
 
     with panel.app.app_context():
-        apagados = panel.limpa_historico(forcar=True)
+        apagados = panel.clean_history(forcar=True)
     assert apagados == 4
     assert banco.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 3
 

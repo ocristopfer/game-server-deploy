@@ -74,22 +74,22 @@ class BrokerFalso:
         self.jogos = list(JOGOS)
         self.lista = [dict(INSTANCIA)]
         self.chamadas: list[tuple] = []
-        self.erro: Exception | None = None
+        self.error: Exception | None = None
         self.operacoes: list[dict] = [{"estado": "ok", "log": "tudo certo\n", "resultado": RESULTADO}]
         self.tarefas: list = []
 
     def _chama(self, nome: str, *args) -> None:
         self.chamadas.append((nome, *args))
-        if self.erro is not None:
-            raise self.erro
+        if self.error is not None:
+            raise self.error
 
     def catalogo(self):
         self._chama("catalogo")
         return self.jogos
 
-    def adicionar_jogo(self, dados, ator):
-        self._chama("adicionar_jogo", dados, ator)
-        return {"chave": dados.get("chave")}
+    def adicionar_jogo(self, data, ator):
+        self._chama("adicionar_jogo", data, ator)
+        return {"chave": data.get("chave")}
 
     def instancias(self):
         self._chama("instancias")
@@ -122,7 +122,7 @@ def broker(monkeypatch, banco):
     falso = BrokerFalso()
     monkeypatch.setattr(panel, "ALLOW_BROKER", True)
     monkeypatch.setattr(panel, "BROKER_POLL", 0)
-    monkeypatch.setattr(panel, "_dispara", falso.tarefas.append)
+    monkeypatch.setattr(panel, "_fire", falso.tarefas.append)
     for nome in ("catalogo", "adicionar_jogo", "instancias", "criar", "operacao", "desativar", "remover"):
         monkeypatch.setattr(panel.broker_client, nome, getattr(falso, nome))
     return falso
@@ -271,13 +271,13 @@ def test_itens_visiveis_filtra_por_recurso_e_papel():
 def test_busca_de_jogo_devolve_a_sugestao_com_o_que_o_broker_precisa(chefe, broker):
     resposta = chefe.get("/api/catalogo/sugestoes?q=satisfactory")
     assert resposta.status_code == 200
-    dados = resposta.get_json()
-    achado = dados["resultados"][0]
+    data = resposta.get_json()
+    achado = data["resultados"][0]
     assert achado["valores"]["app_id"] == "1690800"
     assert "8888/tcp" in achado["valores"]["portas"]
     assert "-ReliablePort=8888" in achado["valores"]["start_args"]
     assert achado["avisos"]
-    assert "LinuxGSM" in dados["fonte"]
+    assert "LinuxGSM" in data["fonte"]
 
 
 def test_busca_de_jogo_sem_consulta_devolve_lista_vazia(chefe, broker):
@@ -314,7 +314,7 @@ def test_catalogo_lista_os_jogos_e_o_motivo_de_nao_criar(chefe, broker):
 
 
 def test_catalogo_com_broker_fora_do_ar_nao_e_500(chefe, broker):
-    broker.erro = recusa("nao consegui falar com o broker (ConnectionRefusedError)", 0)
+    broker.error = recusa("nao consegui falar com o broker (ConnectionRefusedError)", 0)
     resposta = chefe.get("/catalogo")
     assert resposta.status_code == 200
     assert "nao consegui falar com o broker" in resposta.get_data(as_text=True)
@@ -331,8 +331,8 @@ FORM_JOGO = {
 
 
 def test_novo_jogo_manda_ao_broker_so_dados_ja_convertidos(chefe, broker, postar):
-    dados = {**FORM_JOGO, "receitas": ["wine", "rm -rf /"]}
-    resposta = postar(chefe, "/catalogo/novo", dados)
+    data = {**FORM_JOGO, "receitas": ["wine", "rm -rf /"]}
+    resposta = postar(chefe, "/catalogo/novo", data)
     assert resposta.status_code == 302
     (_, enviado, ator), = broker.chamou("adicionar_jogo")
     assert ator == "chefe"
@@ -371,7 +371,7 @@ def test_numero_invalido_nem_chega_ao_broker(chefe, broker, postar, campo, lixo)
 
 
 def test_recusa_do_broker_volta_ao_formulario_com_o_que_foi_digitado(chefe, broker, postar):
-    broker.erro = recusa("start_args: formato invalido", 400)
+    broker.error = recusa("start_args: formato invalido", 400)
     resposta = postar(chefe, "/catalogo/novo", {**FORM_JOGO, "start_args": "; reboot"})
     html = resposta.get_data(as_text=True)
     assert resposta.status_code == 400
@@ -398,7 +398,7 @@ def test_instancia_ligada_a_um_servidor_vira_link(chefe, broker, banco):
 
 
 def test_instancias_com_broker_fora_do_ar(chefe, broker):
-    broker.erro = recusa("nao consegui falar com o broker (TimeoutError)", 0)
+    broker.error = recusa("nao consegui falar com o broker (TimeoutError)", 0)
     resposta = chefe.get("/instancias")
     assert resposta.status_code == 200
     assert "nao consegui falar com o broker" in resposta.get_data(as_text=True)
@@ -416,7 +416,7 @@ def test_criar_abre_um_job_sem_servidor_e_redireciona_para_ele(chefe, broker, po
 
 
 def test_criar_recusado_pelo_broker_nao_deixa_job(chefe, broker, postar, banco):
-    broker.erro = recusa("limite de 8 instancias atingido", 429)
+    broker.error = recusa("limite de 8 instancias atingido", 429)
     resposta = postar(chefe, "/instancias/nova", {"jogo": "alfa", "nome": "x"})
     assert resposta.status_code == 302
     assert "limite de 8 instancias" in chefe.get("/instancias").get_data(as_text=True)
@@ -459,7 +459,7 @@ def test_o_log_aparece_no_job_enquanto_a_operacao_ainda_roda(broker, banco):
     ]
     job_id = novo_job(banco)
     vistos: list[str] = []
-    panel.acompanha_operacao(job_id, OP, dormir=lambda _s: vistos.append(job(banco, job_id)["output"]))
+    panel.follow_operation(job_id, OP, sleep=lambda _s: vistos.append(job(banco, job_id)["output"]))
     assert vistos[0] == "criando o container 300\n"
     assert vistos[1].endswith("instalando o jogo\n"), "o progresso apareceu ANTES de terminar"
     assert job(banco, job_id)["status"] == "ok"
@@ -467,7 +467,7 @@ def test_o_log_aparece_no_job_enquanto_a_operacao_ainda_roda(broker, banco):
 
 def test_operacao_ok_cadastra_o_servidor_e_liga_o_job_a_ele(broker, banco):
     job_id = novo_job(banco)
-    panel.acompanha_operacao(job_id, OP, dormir=lambda _s: None)
+    panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     (servidor,) = servidores(banco)
     assert (servidor["name"], servidor["host"], servidor["service"]) == ("Servidor do Zeca", "10.0.0.30", "alfa.service")
     assert servidor["broker_id"] == 7
@@ -485,7 +485,7 @@ def test_operacao_ok_cadastra_o_servidor_e_liga_o_job_a_ele(broker, banco):
 def test_operacao_com_erro_fecha_o_job_com_o_log_e_nao_cadastra(broker, banco):
     broker.operacoes = [{"estado": "erro", "log": "instalando\nERRO: steamcmd falhou\nreserva liberada\n"}]
     job_id = novo_job(banco)
-    panel.acompanha_operacao(job_id, OP, dormir=lambda _s: None)
+    panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     final = job(banco, job_id)
     assert (final["status"], final["exit_code"]) == ("error", 1)
     assert "steamcmd falhou" in final["output"]
@@ -497,7 +497,7 @@ def test_resultado_estranho_do_broker_nao_vira_servidor_e_avisa_que_o_ct_existe(
     ruim = {**RESULTADO, campo: "10.0.0.30; rm -rf /" if campo == "host" else "a b.service"}
     broker.operacoes = [{"estado": "ok", "log": "feito\n", "resultado": ruim}]
     job_id = novo_job(banco)
-    panel.acompanha_operacao(job_id, OP, dormir=lambda _s: None)
+    panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     final = job(banco, job_id)
     assert final["status"] == "error"
     assert "A instancia foi criada, mas nao consegui cadastra-la" in final["output"]
@@ -507,16 +507,16 @@ def test_resultado_estranho_do_broker_nao_vira_servidor_e_avisa_que_o_ct_existe(
 def test_resultado_incompleto_tambem_avisa(broker, banco):
     broker.operacoes = [{"estado": "ok", "log": "feito\n", "resultado": {"name": "x"}}]
     job_id = novo_job(banco)
-    panel.acompanha_operacao(job_id, OP, dormir=lambda _s: None)
+    panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     assert "A instancia foi criada" in job(banco, job_id)["output"]
 
 
 def test_perder_o_contato_com_o_broker_da_o_job_por_falho(broker, banco, monkeypatch):
     monkeypatch.setattr(panel, "BROKER_FALHAS_MAX", 3)
-    broker.erro = recusa("nao consegui falar com o broker (TimeoutError)", 0)
+    broker.error = recusa("nao consegui falar com o broker (TimeoutError)", 0)
     job_id = novo_job(banco)
     esperas: list[float] = []
-    panel.acompanha_operacao(job_id, OP, dormir=esperas.append)
+    panel.follow_operation(job_id, OP, sleep=esperas.append)
     final = job(banco, job_id)
     assert final["status"] == "error"
     assert "Perdi o contato com o broker" in final["output"]
@@ -534,14 +534,14 @@ def test_falha_isolada_de_contato_nao_derruba_o_acompanhamento(broker, banco, mo
 
     monkeypatch.setattr(panel.broker_client, "operacao", operacao)
     job_id = novo_job(banco)
-    panel.acompanha_operacao(job_id, OP, dormir=lambda _s: None)
+    panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     assert job(banco, job_id)["status"] == "ok"
 
 
 def test_tempo_esgotado(broker, banco, monkeypatch):
     monkeypatch.setattr(panel, "JOB_TIMEOUT", -1)
     job_id = novo_job(banco)
-    panel.acompanha_operacao(job_id, OP, dormir=lambda _s: None)
+    panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     final = job(banco, job_id)
     assert final["status"] == "error"
     assert "Tempo esgotado" in final["output"]
@@ -564,7 +564,7 @@ def test_restart_retoma_o_que_ainda_estava_rodando(broker, banco):
         banco.execute("UPDATE jobs SET status = 'ok' WHERE id = ?", (concluido,))
         banco.execute("INSERT INTO jobs (target, action, status, username, created_at)"
                       " VALUES ('x', 'restart', 'running', 'u', ?)", (panel.now_iso(),))
-    assert panel.retoma_jobs_do_broker() == 1
+    assert panel.resume_broker_jobs() == 1
     assert len(broker.tarefas) == 1
     broker.tarefas[0]()
     assert job(banco, rodando)["status"] == "ok"
@@ -574,7 +574,7 @@ def test_restart_retoma_o_que_ainda_estava_rodando(broker, banco):
 def test_broker_desligado_nao_retoma_nada(broker, banco, monkeypatch):
     novo_job(banco)
     monkeypatch.setattr(panel, "ALLOW_BROKER", False)
-    assert panel.retoma_jobs_do_broker() == 0
+    assert panel.resume_broker_jobs() == 0
     assert broker.tarefas == []
 
 
@@ -589,7 +589,7 @@ def test_desativar_pede_ao_broker_e_deixa_rastro(chefe, broker, postar, banco):
 
 
 def test_desativar_recusado_mostra_o_motivo(chefe, broker, postar, banco):
-    broker.erro = recusa("so uma instancia ativa pode ser desativada")
+    broker.error = recusa("so uma instancia ativa pode ser desativada")
     postar(chefe, "/instancias/7/desativar")
     assert "so uma instancia ativa" in chefe.get("/instancias").get_data(as_text=True)
     assert jobs(banco)[0]["status"] == "error"
@@ -607,7 +607,7 @@ def test_remover_apaga_tambem_o_servidor_do_painel(chefe, broker, postar, banco)
 def test_remover_recusado_nao_apaga_o_servidor(chefe, broker, postar, banco):
     panel.ensure_server(panel.ServidorDoDeploy(
         name="Servidor do Zeca", host="10.0.0.30", service="alfa.service", broker_id=7))
-    broker.erro = recusa("digite o nome exato da instancia para confirmar", 400)
+    broker.error = recusa("digite o nome exato da instancia para confirmar", 400)
     postar(chefe, "/instancias/7/remover", {"confirma": "errado"})
     assert len(servidores(banco)) == 1
     assert "nome exato" in chefe.get("/instancias").get_data(as_text=True)
@@ -637,9 +637,9 @@ def test_servidor_cadastrado_a_mao_tem_broker_id_zero(banco):
 
 
 def test_redeploy_nao_perde_a_ligacao_com_a_instancia(banco):
-    dados = panel.ServidorDoDeploy(name="Z", host="10.0.0.30", service="a.service", broker_id=7)
-    panel.ensure_server(dados)
-    panel.ensure_server(dados._replace(name="Z2"))
+    data = panel.ServidorDoDeploy(name="Z", host="10.0.0.30", service="a.service", broker_id=7)
+    panel.ensure_server(data)
+    panel.ensure_server(data._replace(name="Z2"))
     (servidor,) = servidores(banco)
     assert (servidor["name"], servidor["broker_id"]) == ("Z2", 7)
 
@@ -657,13 +657,13 @@ def ambiente_do_broker(monkeypatch, tmp_path):
 
 
 def test_config_liga_o_broker_com_token_de_arquivo(ambiente_do_broker):
-    assert panel._configura_broker() is True
+    assert panel._configure_broker() is True
     assert panel.broker_client.configurado()
 
 
 def test_config_desligada_por_padrao(ambiente_do_broker, monkeypatch):
     monkeypatch.delenv("GAMEPANEL_ALLOW_BROKER")
-    assert panel._configura_broker() is False
+    assert panel._configure_broker() is False
     assert not panel.broker_client.configurado()
 
 
@@ -677,4 +677,4 @@ def test_config_ruim_desliga_o_recurso_sem_derrubar_o_painel(ambiente_do_broker,
         monkeypatch.setattr(panel, "BROKER_URL", "http://broker.exemplo:8443")
     else:
         monkeypatch.setattr(panel, "BROKER_CERT_SHA256", "isto-nao-e-hex")
-    assert panel._configura_broker() is False
+    assert panel._configure_broker() is False

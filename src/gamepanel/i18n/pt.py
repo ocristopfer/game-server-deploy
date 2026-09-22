@@ -9,7 +9,7 @@ codigo, nao texto de tela).
 """
 from __future__ import annotations
 
-MENSAGENS: dict[str, str] = {
+MESSAGES: dict[str, str] = {
     # -------------------------------------------------------- navegacao
     "nav.servers": "Servidores",
     "nav.history": "Historico",

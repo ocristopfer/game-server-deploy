@@ -74,12 +74,12 @@ def _zera_estado_do_modulo() -> None:
     panel._metrics_cache.clear()
     panel._players_cache.clear()
     panel._login_fails.clear()
-    panel._ultimo_monitor = 0.0
-    panel._ultimo_estado = 0.0
-    panel._ultimo_disco = 0.0
-    panel._ultimo_log = 0.0
-    panel._ultima_amostra = 0.0
-    panel._ultima_limpeza = 0.0
+    panel._last_monitor = 0.0
+    panel._last_state = 0.0
+    panel._last_disk = 0.0
+    panel._last_log = 0.0
+    panel._last_sample = 0.0
+    panel._last_cleanup = 0.0
 
 
 @pytest.fixture
@@ -96,7 +96,7 @@ def webhooks(banco, monkeypatch):
         enviadas.append((url, texto))
         return ""      # string vazia = enviado com sucesso
 
-    monkeypatch.setattr(panel, "envia_webhook", captura)
+    monkeypatch.setattr(panel, "send_webhook", captura)
     return enviadas
 
 
@@ -122,12 +122,12 @@ def _entrar(cli, username: str, senha: str):
     return cli
 
 
-def _postar(cli, url, dados=None):
+def _postar(cli, url, data=None):
     """POST com o CSRF da sessao ja preenchido - e o que todo POST do painel exige."""
-    dados = dict(dados or {})
+    data = dict(data or {})
     with cli.session_transaction() as sess:
-        dados["csrf"] = sess.get("csrf", "")
-    return cli.post(url, data=dados, follow_redirects=False)
+        data["csrf"] = sess.get("csrf", "")
+    return cli.post(url, data=data, follow_redirects=False)
 
 
 @pytest.fixture

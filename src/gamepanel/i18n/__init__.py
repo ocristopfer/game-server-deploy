@@ -31,27 +31,27 @@ from __future__ import annotations
 
 from gamepanel.i18n import en, pt
 
-PADRAO = "pt"
+DEFAULT = "pt"
 
-CATALOGOS: dict[str, dict[str, str]] = {
-    "pt": pt.MENSAGENS,
-    "en": en.MENSAGENS,
+CATALOGS: dict[str, dict[str, str]] = {
+    "pt": pt.MESSAGES,
+    "en": en.MESSAGES,
 }
 
 # O que a tela oferece, na ordem em que aparece no seletor.
-IDIOMAS: tuple[tuple[str, str], ...] = (
+LANGUAGES: tuple[tuple[str, str], ...] = (
     ("pt", "Portugues (Brasil)"),
     ("en", "English"),
 )
 
 
-def idioma_valido(bruto: str | None) -> str:
+def valid_language(raw: str | None) -> str:
     """Devolve um idioma que existe; qualquer outra coisa vira o padrao."""
-    escolhido = (bruto or "").strip()
-    return escolhido if escolhido in CATALOGOS else PADRAO
+    chosen = (raw or "").strip()
+    return chosen if chosen in CATALOGS else DEFAULT
 
 
-class Mensagem(str):
+class Message(str):
     """Uma frase que lembra de QUE CHAVE ela veio.
 
     Existe para o texto que nasce longe da tela: o erro de validacao de
@@ -67,20 +67,20 @@ class Mensagem(str):
     nada: cai no idioma do deploy, que era o comportamento anterior.
     """
 
-    chave: str
-    campos: dict[str, object]
+    key: str
+    fields: dict[str, object]
 
-    def __new__(cls, chave: str, **campos: object) -> Mensagem:
-        obj = super().__new__(cls, traduzir(chave, PADRAO, **campos))
-        obj.chave = chave
-        obj.campos = campos
+    def __new__(cls, key: str, **fields: object) -> Message:
+        obj = super().__new__(cls, translate(key, DEFAULT, **fields))
+        obj.key = key
+        obj.fields = fields
         return obj
 
     def __repr__(self) -> str:
-        return f"Mensagem({self.chave!r}, {self.campos!r})"
+        return f"Mensagem({self.key!r}, {self.fields!r})"
 
 
-def traduzir(chave: str, idioma: str, **campos: object) -> str:
+def translate(key: str, language: str, **fields: object) -> str:
     """A frase daquela chave, com queda para o portugues e depois para a chave.
 
     Campo que a frase nao usa e ignorado, e `{marcador}` sem campo correspondente fica
@@ -91,38 +91,38 @@ def traduzir(chave: str, idioma: str, **campos: object) -> str:
     # Uma `Mensagem` ja traz consigo a chave e os campos de origem; traduzi-la de novo e
     # so refazer a frase no idioma pedido. Sem isto, o texto dela (que ja e str) seria
     # tratado como chave desconhecida e voltaria como esta, no idioma do deploy.
-    if isinstance(chave, Mensagem):
-        return traduzir(chave.chave, idioma, **{**chave.campos, **campos})
+    if isinstance(key, Message):
+        return translate(key.key, language, **{**key.fields, **fields})
     # `get(chave, padrao)` e nao `get(chave) or padrao`: frase traduzida como texto
     # VAZIO e uma escolha (um rotulo que so existe em portugues, por exemplo) e tem de
     # vencer o portugues, em vez de cair nele por parecer ausente.
-    pedido = CATALOGOS.get(idioma) or {}
-    frase = pedido.get(chave, CATALOGOS[PADRAO].get(chave, chave))
-    if not campos:
-        return frase
+    wanted = CATALOGS.get(language) or {}
+    phrase = wanted.get(key, CATALOGS[DEFAULT].get(key, key))
+    if not fields:
+        return phrase
     try:
-        return frase.format(**campos)
+        return phrase.format(**fields)
     except (KeyError, IndexError, ValueError):
-        return frase
+        return phrase
 
 
-def do_cabecalho(accept_language: str | None) -> str:
+def from_header(accept_language: str | None) -> str:
     """Le o Accept-Language do navegador. So para quem ainda nao escolheu nada.
 
     Implementacao curta de proposito: interessa saber se o navegador prefere um idioma
     que o painel FALA, e nao ordenar a lista inteira com peso. `pt-BR` conta como
     portugues; `en-US` conta como ingles.
     """
-    for parte in (accept_language or "").split(","):
-        etiqueta = parte.split(";")[0].strip().lower()
-        if not etiqueta:
+    for part in (accept_language or "").split(","):
+        tag = part.split(";")[0].strip().lower()
+        if not tag:
             continue
-        base = etiqueta.split("-")[0]
-        if base in CATALOGOS:
+        base = tag.split("-")[0]
+        if base in CATALOGS:
             return base
-    return PADRAO
+    return DEFAULT
 
 
-def chaves_faltando(idioma: str) -> list[str]:
+def missing_keys(language: str) -> list[str]:
     """Chaves que o portugues tem e este idioma nao. Usado pelo teste."""
-    return sorted(set(CATALOGOS[PADRAO]) - set(CATALOGOS.get(idioma, {})))
+    return sorted(set(CATALOGS[DEFAULT]) - set(CATALOGS.get(language, {})))

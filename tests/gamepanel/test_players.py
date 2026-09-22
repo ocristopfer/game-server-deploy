@@ -186,7 +186,7 @@ def test_client_type_ilegivel_nao_derruba_o_jogador():
 
 # --------------------------------------------------------- autenticacao e status
 
-@pytest.mark.parametrize("bruto, esperado", [
+@pytest.mark.parametrize("raw, esperado", [
     ("basic:admin:troque-me", "Authorization: Basic YWRtaW46dHJvcXVlLW1l"),
     ("basic:admin:a:b", "Authorization: Basic YWRtaW46YTpi"),  # ':' na senha
     ("bearer:abc123", "Authorization: Bearer abc123"),
@@ -198,10 +198,10 @@ def test_client_type_ilegivel_nao_derruba_o_jogador():
     # 'header:' sem os dois pontos do nome nao e cabecalho nenhum; cai na regra antiga.
     ("header:coisa", "Authorization: header:coisa"),
 ])
-def test_auth_header(bruto, esperado):
+def test_auth_header(raw, esperado):
     """auth_header devolve o cabecalho INTEIRO ('Nome: valor'), nao so o valor: ha API
     que nao autentica por Authorization, e com so o valor o nome seria sempre o mesmo."""
-    assert panel.auth_header(bruto) == esperado
+    assert panel.auth_header(raw) == esperado
 
 
 def test_split_status_separa_do_corpo():

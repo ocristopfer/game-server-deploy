@@ -32,10 +32,10 @@ def ssh_que_responde(texto: str = SAIDA_MINIMA, registro: list | None = None):
 
 
 def test_le_os_numeros_do_container():
-    dados = ms.server_metrics(ssh_que_responde(), SERVIDOR, "/opt/padrao", 5)
-    assert dados["cores"] == 2
-    assert dados["load"] == "0.10 0.20 0.15"
-    assert dados["error"] == ""
+    data = ms.server_metrics(ssh_que_responde(), SERVIDOR, "/opt/padrao", 5)
+    assert data["cores"] == 2
+    assert data["load"] == "0.10 0.20 0.15"
+    assert data["error"] == ""
 
 
 def test_mede_o_disco_da_pasta_do_cadastro():
@@ -55,10 +55,10 @@ def test_container_fora_do_ar_vira_erro_e_nao_excecao():
     def explode(server, comando, timeout=None):
         raise RemoteError("tempo esgotado (30s)")
 
-    dados = ms.server_metrics(explode, SERVIDOR, "/opt/padrao", 5)
-    assert "tempo esgotado" in dados["error"]
+    data = ms.server_metrics(explode, SERVIDOR, "/opt/padrao", 5)
+    assert "tempo esgotado" in data["error"]
     # Sem os medidores: a tela mostra o erro no lugar das barras, e nao barras zeradas.
-    assert "cpu_pct" not in dados
+    assert "cpu_pct" not in data
 
 
 def test_segunda_leitura_dentro_do_prazo_vem_do_cache():

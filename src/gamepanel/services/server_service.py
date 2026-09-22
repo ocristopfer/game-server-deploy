@@ -18,7 +18,7 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any, NamedTuple
 
-from gamepanel.i18n import Mensagem
+from gamepanel.i18n import Message
 from gamepanel.runtime.a2s import QueryError
 from gamepanel.runtime.http_probe import URL_RE
 from gamepanel.runtime.log_probe import compile_pattern, valid_log_path
@@ -57,7 +57,7 @@ def _field(form: Form, name: str, cap: int) -> str:
     return (form.get(name, "") or "").strip()[:cap]
 
 
-def _port_field(value: str | None, default: int, minimum: int, error: Mensagem,
+def _port_field(value: str | None, default: int, minimum: int, error: Message,
            errors: list[str]) -> int:
     """Le uma porta do formulario; `minimo` 0 permite desligar o recurso."""
     raw = (value or "").strip() or str(default)
@@ -72,7 +72,7 @@ def _service_field(value: str | None, errors: list[str]) -> str:
     if service and not service.endswith(".service"):
         service = f"{service}.service"  # o sufixo e o de sempre: nao vale incomodar
     if not UNIT_RE.match(service):
-        errors.append(Mensagem("form.bad_service"))
+        errors.append(Message("form.bad_service"))
     return service
 
 
@@ -83,7 +83,7 @@ def _config_folder(value: str | None, clean_path: CleanPath, errors: list[str]) 
     try:
         return clean_path(path)
     except ValueError as exc:
-        errors.append(Mensagem("form.bad_config_folder", reason=exc))
+        errors.append(Message("form.bad_config_folder", reason=exc))
         return ""
 
 
@@ -98,12 +98,12 @@ def _config_files(value: str | None, clean_path: CleanPath, maximum: int,
         try:
             limpo = clean_path(raw)
         except ValueError as exc:
-            errors.append(Mensagem("form.bad_config_file", path=raw, reason=exc))
+            errors.append(Message("form.bad_config_file", path=raw, reason=exc))
             continue
         if limpo not in caminhos:
             caminhos.append(limpo)
     if len(caminhos) > maximum:
-        errors.append(Mensagem("form.too_many_config_files", n=maximum))
+        errors.append(Message("form.too_many_config_files", n=maximum))
         caminhos = caminhos[:maximum]
     return "\n".join(caminhos)
 
@@ -123,20 +123,20 @@ def _backup_paths(value: str | None, clean_path: CleanPath, maximum: int,
         try:
             limpo = clean_path(raw)
         except ValueError as exc:
-            errors.append(Mensagem("form.bad_backup_path", path=raw, reason=exc))
+            errors.append(Message("form.bad_backup_path", path=raw, reason=exc))
             continue
         if limpo == "/":
-            errors.append(Mensagem("form.no_root_backup"))
+            errors.append(Message("form.no_root_backup"))
             continue
         if limpo not in caminhos:
             caminhos.append(limpo)
     if len(caminhos) > maximum:
-        errors.append(Mensagem("form.too_many_backup_paths", n=maximum))
+        errors.append(Message("form.too_many_backup_paths", n=maximum))
         caminhos = caminhos[:maximum]
     return "\n".join(caminhos)
 
 
-def _url_or_error(raw: str, error: Mensagem, errors: list[str]) -> str:
+def _url_or_error(raw: str, error: Message, errors: list[str]) -> str:
     """URL valida, ou string vazia com o erro anotado. Vazio nao e erro: e "nao usa"."""
     if raw and not URL_RE.match(raw):
         errors.append(error)
@@ -151,7 +151,7 @@ def _json_or_error(raw: str, label: str, errors: list[str]) -> str:
     try:
         json.loads(raw)
     except ValueError as exc:
-        errors.append(Mensagem("form.bad_json", label=label, reason=exc))
+        errors.append(Message("form.bad_json", label=label, reason=exc))
         return ""
     return raw
 
@@ -164,7 +164,7 @@ def _json_paths(form: Form, cap: int, errors: list[str]) -> dict:
                           ("http_token_path", "form.path_token")):
         texto = _field(form, campo, cap)
         if texto and not CAMINHO_JSON_RE.match(texto):
-            errors.append(Mensagem("form.bad_json_path", label=Mensagem(label)))
+            errors.append(Message("form.bad_json_path", label=Message(label)))
             texto = ""
         caminhos[campo] = texto
     return caminhos
@@ -174,11 +174,11 @@ def _http_fields(form: Form, limits: FormLimits, errors: list[str]) -> dict:
     """Le e confere os campos da chamada HTTP (URL, autenticacao, corpo, caminhos)."""
     url = _url_or_error(
         _field(form, "http_url", limits.http_url_max),
-        Mensagem("form.bad_api_url"), errors,
+        Message("form.bad_api_url"), errors,
     )
     body = _json_or_error(
         _field(form, "http_body", limits.http_body_max),
-        Mensagem("form.request_body"), errors,
+        Message("form.request_body"), errors,
     )
     caminhos = _json_paths(form, limits.http_path_max, errors)
 
@@ -186,14 +186,14 @@ def _http_fields(form: Form, limits: FormLimits, errors: list[str]) -> dict:
     # sempre e engano, e falhar aqui e melhor do que descobrir na hora da consulta.
     login_url = _url_or_error(
         _field(form, "http_login_url", limits.http_url_max),
-        Mensagem("form.bad_login_url"), errors,
+        Message("form.bad_login_url"), errors,
     )
     login_body = _json_or_error(
         _field(form, "http_login_body", limits.http_body_max),
-        Mensagem("form.login_body"), errors,
+        Message("form.login_body"), errors,
     )
     if (login_url or login_body) and not caminhos["http_token_path"]:
-        errors.append(Mensagem("form.login_needs_token_path"))
+        errors.append(Message("form.login_needs_token_path"))
 
     return {
         "http_url": url,
@@ -237,22 +237,22 @@ def form_server(form: Form, clean_path: CleanPath,
     ssh_user = form.get("ssh_user", "").strip() or "root"
     source = (form.get("player_source", "") or "").strip()
     if source and source not in limits.player_sources:
-        errors.append(Mensagem("form.bad_player_source"))
+        errors.append(Message("form.bad_player_source"))
         source = ""
 
     if not name:
-        errors.append(Mensagem("form.need_name"))
+        errors.append(Message("form.need_name"))
     if not HOST_RE.match(host):
-        errors.append(Mensagem("form.bad_host"))
+        errors.append(Message("form.bad_host"))
     if not USER_RE.match(ssh_user):
-        errors.append(Mensagem("form.bad_ssh_user"))
+        errors.append(Message("form.bad_ssh_user"))
 
     return (
         {
             "name": name,
             "host": host,
             "ssh_user": ssh_user,
-            "ssh_port": _port_field(form.get("ssh_port"), 22, 1, Mensagem("form.bad_ssh_port"), errors),
+            "ssh_port": _port_field(form.get("ssh_port"), 22, 1, Message("form.bad_ssh_port"), errors),
             "service": _service_field(form.get("service"), errors),
             "game_port": form.get("game_port", "").strip()[:GAME_PORT_MAX],
             "notes": form.get("notes", "").strip()[:NOTES_MAX],
@@ -264,7 +264,7 @@ def form_server(form: Form, clean_path: CleanPath,
             "log_path": _log_path(form.get("log_path"), errors),
             "query_port": _port_field(
                 form.get("query_port"), 0, 0,
-                Mensagem("form.bad_query_port"), errors,
+                Message("form.bad_query_port"), errors,
             ),
             "player_source": source,
             "join_re": _pattern(form.get("join_re"), "pattern.join", limits.re_max_len, errors),

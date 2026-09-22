@@ -12,7 +12,7 @@ import re
 import subprocess
 from collections.abc import Callable
 
-from gamepanel.i18n import Mensagem
+from gamepanel.i18n import Message
 from gamepanel.runtime.ssh import RemoteError, ServerLike, quote_command
 
 SshRun = Callable[..., subprocess.CompletedProcess]
@@ -150,7 +150,7 @@ def validate_backup_name(raw: str) -> str:
     """Confere o nome que voltou da tela antes de ele entrar num comando remoto."""
     name = (raw or "").strip()
     if not BACKUP_NAME_RE.match(name) or ".." in name:
-        raise ValueError(Mensagem("backup.bad_name"))
+        raise ValueError(Message("backup.bad_name"))
     return name
 
 

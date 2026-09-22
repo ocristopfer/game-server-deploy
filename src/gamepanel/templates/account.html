@@ -25,7 +25,7 @@
     <label for="lang">{{ _('account.language') }}</label>
     <select id="lang" name="lang">
       {% for codigo, rotulo in idiomas %}
-      <option value="{{ codigo }}" {% if codigo == idioma_atual %}selected{% endif %}>{{ rotulo }}</option>
+      <option value="{{ codigo }}" {% if codigo == current_language %}selected{% endif %}>{{ rotulo }}</option>
       {% endfor %}
     </select>
     <div class="form-actions">

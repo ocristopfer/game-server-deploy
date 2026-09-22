@@ -27,8 +27,8 @@ def amostras(valores, passo_min=5, inicio=None):
             for i, v in enumerate(valores)]
 
 
-def grafico(dados, series=None, teto=100):
-    return panel.build_chart(dados, series or SERIE_CPU, teto, INICIO, FIM, "%H:%M")
+def grafico(data, series=None, teto=100):
+    return panel.build_chart(data, series or SERIE_CPU, teto, INICIO, FIM, "%H:%M")
 
 
 def ys_de(g):
@@ -142,7 +142,7 @@ def test_grade_sem_sufixo_quando_a_serie_nao_tem():
 
 # ------------------------------------------------------- coleta e retencao
 
-def cadastra_servidor(conn, nome="alvo", host="nao-existe.invalid") -> int:
+def register_server(conn, nome="alvo", host="nao-existe.invalid") -> int:
     with conn:
         conn.execute(
             "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"
@@ -153,20 +153,20 @@ def cadastra_servidor(conn, nome="alvo", host="nao-existe.invalid") -> int:
 
 def test_medidor_com_erro_nao_grava_amostra(banco, monkeypatch):
     """Zero seria mentira ("usou 0% de CPU"); o buraco e a informacao certa."""
-    cadastra_servidor(banco)
+    register_server(banco)
     monkeypatch.setattr(panel, "server_metrics", lambda *a, **k: {"error": "tempo esgotado"})
     monkeypatch.setattr(panel, "server_players", lambda *a, **k: {"error": "", "players": 3})
     with panel.app.app_context():
-        assert panel.coleta_amostras(forcar=True) == 0
+        assert panel.collect_samples(forcar=True) == 0
 
 
 def test_medidor_bom_grava_os_numeros_lidos(banco, monkeypatch):
-    cadastra_servidor(banco)
+    register_server(banco)
     monkeypatch.setattr(panel, "server_metrics", lambda *a, **k: {
         "error": "", "cpu_pct": 41.5, "mem": {"pct": 62.0}, "disks": []})
     monkeypatch.setattr(panel, "server_players", lambda *a, **k: {"error": "", "players": 3})
     with panel.app.app_context():
-        assert panel.coleta_amostras(forcar=True) == 1
+        assert panel.collect_samples(forcar=True) == 1
 
     linha = banco.execute("SELECT * FROM samples").fetchone()
     assert (linha["cpu_pct"], linha["mem_pct"]) == (41.5, 62.0)
@@ -174,12 +174,12 @@ def test_medidor_bom_grava_os_numeros_lidos(banco, monkeypatch):
 
 
 def test_amostra_velha_sai_na_limpeza(banco, monkeypatch):
-    sid = cadastra_servidor(banco)
+    sid = register_server(banco)
     monkeypatch.setattr(panel, "server_metrics", lambda *a, **k: {
         "error": "", "cpu_pct": 41.5, "mem": {"pct": 62.0}, "disks": []})
     monkeypatch.setattr(panel, "server_players", lambda *a, **k: {"error": "", "players": 3})
     with panel.app.app_context():
-        panel.coleta_amostras(forcar=True)
+        panel.collect_samples(forcar=True)
 
     velha = (datetime.now(timezone.utc)
              - timedelta(days=panel.SAMPLES_KEEP_DAYS + 2)).isoformat()
@@ -191,13 +191,13 @@ def test_amostra_velha_sai_na_limpeza(banco, monkeypatch):
     assert banco.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 6
 
     with panel.app.app_context():
-        panel.limpa_historico(forcar=True)
+        panel.clean_history(forcar=True)
     assert banco.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 1
 
 
 def test_apagar_o_servidor_leva_as_amostras_dele(banco):
     """CASCADE: sem isso o banco acumularia amostra de servidor que nao existe mais."""
-    sid = cadastra_servidor(banco)
+    sid = register_server(banco)
     with banco:
         banco.execute("INSERT INTO samples (server_id, taken_at, cpu_pct, mem_pct, players)"
                       " VALUES (?,?,?,?,?)", (sid, panel.now_iso(), 1.0, 2.0, 0))
@@ -209,14 +209,14 @@ def test_apagar_o_servidor_leva_as_amostras_dele(banco):
 # (a fixture `chefe` - administrador cadastrado e logado - vem do conftest.py)
 
 def test_a_tela_abre_sem_amostra_nenhuma(banco, chefe):
-    sid = cadastra_servidor(banco, "alvo2", "outro.invalid")
+    sid = register_server(banco, "alvo2", "outro.invalid")
     assert chefe.get(f"/servers/{sid}/graficos").status_code == 200
 
 
 @pytest.mark.parametrize("faixa", ["6", "24", "168", "999", "abc"])
 def test_faixa_de_tempo_nunca_quebra_a_tela(banco, chefe, faixa):
     """Faixa inventada cai na de 24h em vez de estourar."""
-    sid = cadastra_servidor(banco, "alvo2", "outro.invalid")
+    sid = register_server(banco, "alvo2", "outro.invalid")
     assert chefe.get(f"/servers/{sid}/graficos?h={faixa}").status_code == 200
 
 

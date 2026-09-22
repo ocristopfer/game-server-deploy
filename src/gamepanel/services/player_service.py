@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple, TypedDict
 
-from gamepanel.i18n import Mensagem
+from gamepanel.i18n import Message
 from gamepanel.runtime import http_probe, log_probe
 from gamepanel.runtime.a2s import AuthError, QueryError
 from gamepanel.runtime.ssh import RemoteError, ServerLike
@@ -141,13 +141,13 @@ def http_login(deps: PlayerDeps, server: ServerLike) -> str:
     url = _stored_value(server, "http_login_url")
     path = _stored_value(server, "http_token_path")
     if not url or not path:
-        raise QueryError(Mensagem("api.login_incomplete"))
+        raise QueryError(Message("api.login_incomplete"))
 
     # O login vai SEM Authorization: e ele quem produz a credencial.
     data = deps.http_json(server, url, "", _stored_value(server, "http_login_body"))
     token = http_probe._json_walk(data, path)
     if not isinstance(token, str) or not token.strip():
-        raise QueryError(Mensagem("api.no_token_at", path=path))
+        raise QueryError(Message("api.no_token_at", path=path))
     token = token.strip()
     # Conexao propria, e nao a do Flask: a contagem tambem roda fora de request
     # (cache/pollagem em thread). Aqui a escrita e uma linha so.
@@ -190,7 +190,7 @@ def call_game_api(deps: PlayerDeps, server: ServerLike, url: str, body: str = ""
 
 def players_from_http(deps: PlayerDeps, server: ServerLike) -> dict:
     if not (server["http_url"] or "").strip():
-        raise QueryError(Mensagem("api.need_url"))
+        raise QueryError(Message("api.need_url"))
     data = call_game_api(deps, server, server["http_url"], server["http_body"])
     return http_probe.read_players_json(data, server["http_list_path"], server["http_count_path"])
 
@@ -200,7 +200,7 @@ def players_from_http(deps: PlayerDeps, server: ServerLike) -> dict:
 def players_from_log(deps: PlayerDeps, server: ServerLike) -> dict:
     entrar = log_probe.compile_pattern(server["join_re"], "pattern.join")
     if not entrar:
-        raise QueryError(Mensagem("api.need_join_pattern"))
+        raise QueryError(Message("api.need_join_pattern"))
     sair = log_probe.compile_pattern(server["leave_re"], "pattern.leave")
     try:
         lines_of = deps.read_log_lines(server)
@@ -249,12 +249,12 @@ def player_action(deps: PlayerDeps, server: ServerLike, action: str, player: str
     """Executa a acao na API do jogo. Devolve a frase que vai para a tela."""
     api = actions_api(server)
     if not api or action not in api["actions"]:
-        raise QueryError(Mensagem("api.action_not_published"))
+        raise QueryError(Message("api.action_not_published"))
     if action == "announce":
         if not message:
-            raise QueryError(Mensagem("api.write_the_notice"))
+            raise QueryError(Message("api.write_the_notice"))
     elif not player:
-        raise QueryError(Mensagem("api.no_player_id"))
+        raise QueryError(Message("api.no_player_id"))
 
     rota, mold = api["actions"][action]
     body = {chave: _fill(value, api["base"], player, message)
@@ -287,7 +287,7 @@ def _count_now(deps: PlayerDeps, server: ServerLike, source: str) -> dict:
         return players_from_http(deps, server)
     porta = int(server["query_port"] or 0)
     if not porta:
-        raise QueryError(Mensagem("api.need_query_port"))
+        raise QueryError(Message("api.need_query_port"))
     return deps.query_players(server["host"], porta)
 
 

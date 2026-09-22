@@ -23,9 +23,9 @@ LIMITES = ss.FormLimits(
 MINIMO = {"name": "Palworld", "host": "10.0.0.1", "service": "palworld.service"}
 
 
-def clean_path(bruto: str) -> str:
+def clean_path(raw: str) -> str:
     """O `clean_path` de verdade, sem restricao de pasta."""
-    return files.clean_path(bruto, ("/",))
+    return files.clean_path(raw, ("/",))
 
 
 def valida(**campos) -> tuple[dict, list[str]]:
@@ -35,20 +35,20 @@ def valida(**campos) -> tuple[dict, list[str]]:
 # ------------------------------------------------------------- caso feliz
 
 def test_cadastro_minimo_passa_e_assume_os_padroes():
-    dados, errors = valida()
+    data, errors = valida()
     assert errors == []
-    assert dados["name"] == "Palworld"
-    assert dados["ssh_user"] == "root", "sem usuario informado, root"
-    assert dados["ssh_port"] == 22
-    assert dados["query_port"] == 0, "0 e o desligado da consulta"
-    assert dados["player_source"] == ""
+    assert data["name"] == "Palworld"
+    assert data["ssh_user"] == "root", "sem usuario informado, root"
+    assert data["ssh_port"] == 22
+    assert data["query_port"] == 0, "0 e o desligado da consulta"
+    assert data["player_source"] == ""
 
 
 def test_espacos_nas_pontas_somem():
-    dados, errors = valida(name="  Palworld  ", host=" 10.0.0.1 ")
+    data, errors = valida(name="  Palworld  ", host=" 10.0.0.1 ")
     assert errors == []
-    assert dados["name"] == "Palworld"
-    assert dados["host"] == "10.0.0.1"
+    assert data["name"] == "Palworld"
+    assert data["host"] == "10.0.0.1"
 
 
 # ------------------------------------------------------ identificacao
@@ -64,17 +64,17 @@ def test_host_invalido_e_recusado(host):
     assert any("Host invalido" in e for e in errors)
 
 
-@pytest.mark.parametrize("usuario", ["Root", "1nome", "com espaco", "x" * 40])
-def test_usuario_ssh_invalido_e_recusado(usuario):
-    _dados, errors = valida(ssh_user=usuario)
+@pytest.mark.parametrize("user", ["Root", "1nome", "com espaco", "x" * 40])
+def test_usuario_ssh_invalido_e_recusado(user):
+    _dados, errors = valida(ssh_user=user)
     assert any("Usuario SSH" in e for e in errors)
 
 
 def test_servico_sem_sufixo_ganha_o_sufixo():
     """Ninguem deveria ser incomodado por esquecer '.service'."""
-    dados, errors = valida(service="dragonwilds")
+    data, errors = valida(service="dragonwilds")
     assert errors == []
-    assert dados["service"] == "dragonwilds.service"
+    assert data["service"] == "dragonwilds.service"
 
 
 @pytest.mark.parametrize("servico", ["", "com espaco.service", "/etc/passwd"])
@@ -92,9 +92,9 @@ def test_porta_ssh_fora_da_faixa_e_recusada(porta):
 
 
 def test_porta_de_consulta_aceita_zero_para_desligar():
-    dados, errors = valida(query_port="0")
+    data, errors = valida(query_port="0")
     assert errors == []
-    assert dados["query_port"] == 0
+    assert data["query_port"] == 0
 
 
 def test_porta_de_consulta_fora_da_faixa_e_recusada():
@@ -105,15 +105,15 @@ def test_porta_de_consulta_fora_da_faixa_e_recusada():
 # --------------------------------------------------------- caminhos
 
 def test_arquivos_de_config_aceitam_virgula_e_quebra_de_linha():
-    dados, errors = valida(config_files="/opt/a.ini,/opt/b.ini\n/opt/c.ini")
+    data, errors = valida(config_files="/opt/a.ini,/opt/b.ini\n/opt/c.ini")
     assert errors == []
-    assert dados["config_files"].splitlines() == ["/opt/a.ini", "/opt/b.ini", "/opt/c.ini"]
+    assert data["config_files"].splitlines() == ["/opt/a.ini", "/opt/b.ini", "/opt/c.ini"]
 
 
 def test_arquivo_de_config_repetido_entra_uma_vez_so():
-    dados, errors = valida(config_files="/opt/a.ini\n/opt/./a.ini")
+    data, errors = valida(config_files="/opt/a.ini\n/opt/./a.ini")
     assert errors == []
-    assert dados["config_files"] == "/opt/a.ini"
+    assert data["config_files"] == "/opt/a.ini"
 
 
 def test_arquivo_de_config_relativo_e_recusado():
@@ -123,9 +123,9 @@ def test_arquivo_de_config_relativo_e_recusado():
 
 def test_passar_do_limite_de_arquivos_corta_e_avisa():
     demais = "\n".join(f"/opt/{i}.ini" for i in range(12))
-    dados, errors = valida(config_files=demais)
+    data, errors = valida(config_files=demais)
     assert any("No maximo 8 arquivos" in e for e in errors)
-    assert len(dados["config_files"].splitlines()) == 8
+    assert len(data["config_files"].splitlines()) == 8
 
 
 def test_backup_da_raiz_e_recusado():
@@ -136,9 +136,9 @@ def test_backup_da_raiz_e_recusado():
 
 def test_passar_do_limite_de_caminhos_de_backup_corta_e_avisa():
     demais = "\n".join(f"/opt/save{i}" for i in range(12))
-    dados, errors = valida(backup_paths=demais)
+    data, errors = valida(backup_paths=demais)
     assert any("No maximo 8 caminhos" in e for e in errors)
-    assert len(dados["backup_paths"].splitlines()) == 8
+    assert len(data["backup_paths"].splitlines()) == 8
 
 
 def test_pasta_de_config_relativa_e_recusada():
@@ -153,9 +153,9 @@ def test_caminho_de_log_com_espaco_e_recusado():
 
 
 def test_caminho_de_log_com_glob_passa():
-    dados, errors = valida(log_path="/opt/game/profiles/*.ADM")
+    data, errors = valida(log_path="/opt/game/profiles/*.ADM")
     assert errors == []
-    assert dados["log_path"] == "/opt/game/profiles/*.ADM"
+    assert data["log_path"] == "/opt/game/profiles/*.ADM"
 
 
 # -------------------------------------------------------------- regex
@@ -167,9 +167,9 @@ def test_regex_que_nao_compila_e_recusado():
 
 
 def test_regex_valido_passa_inteiro():
-    dados, errors = valida(join_re=r"Join succeeded: (?P<name>.+)")
+    data, errors = valida(join_re=r"Join succeeded: (?P<name>.+)")
     assert errors == []
-    assert dados["join_re"] == r"Join succeeded: (?P<name>.+)"
+    assert data["join_re"] == r"Join succeeded: (?P<name>.+)"
 
 
 # --------------------------------------------------------------- HTTP
@@ -196,28 +196,28 @@ def test_login_sem_caminho_do_token_e_recusado():
 
 
 def test_login_completo_passa():
-    dados, errors = valida(
+    data, errors = valida(
         http_login_url="http://127.0.0.1:8212/login",
         http_login_body='{"user":"admin"}',
         http_token_path="data.token",
     )
     assert errors == []
-    assert dados["http_token_path"] == "data.token"
+    assert data["http_token_path"] == "data.token"
 
 
 # ----------------------------------------------------- fonte da contagem
 
 def test_fonte_de_contagem_desconhecida_e_recusada():
-    dados, errors = valida(player_source="rcon")
+    data, errors = valida(player_source="rcon")
     assert any("Forma de contar" in e for e in errors)
-    assert dados["player_source"] == ""
+    assert data["player_source"] == ""
 
 
 @pytest.mark.parametrize("fonte", ["a2s", "http", "log", "none"])
 def test_fontes_conhecidas_passam(fonte):
-    dados, errors = valida(player_source=fonte)
+    data, errors = valida(player_source=fonte)
     assert errors == []
-    assert dados["player_source"] == fonte
+    assert data["player_source"] == fonte
 
 
 # ------------------------------------------------------------- juntos

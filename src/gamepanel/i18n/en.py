@@ -6,7 +6,7 @@ uma decisao e nao um esquecimento.
 """
 from __future__ import annotations
 
-MENSAGENS: dict[str, str] = {
+MESSAGES: dict[str, str] = {
     # -------------------------------------------------------- navegacao
     "nav.servers": "Servers",
     "nav.history": "History",

@@ -155,26 +155,26 @@ def test_json_le_objeto_aninhado_como_secao():
 def test_json_preserva_o_tipo_de_cada_valor():
     """O arquivo e reescrito inteiro pelo dumps: o que nao pode mudar e o TIPO."""
     doc = gc.load("enshrouded_server.json", ENSHROUDED)
-    dados = json.loads(doc.apply([
+    data = json.loads(doc.apply([
         gc.Edit(id="name", section="", key="name", value="Servidor do Cris"),
         gc.Edit(id="slotCount", section="", key="slotCount", value="8"),
         gc.Edit(id="enableVoiceChat", section="", key="enableVoiceChat", value="true"),
         gc.Edit(id="userGroups.0.password", section="userGroups.0", key="password", value="s3nh4"),
         gc.Edit(id="", section="", key="gamePort", value="15636"),
     ]))
-    assert dados["name"] == "Servidor do Cris"
-    assert dados["slotCount"] == 8, "numero continua numero"
-    assert dados["enableVoiceChat"] is True, "bool continua bool"
-    assert dados["userGroups"][0]["password"] == "s3nh4"
-    assert dados["gamePort"] == 15636, "chave nova e tipada pelo texto"
-    assert dados["userGroups"][0]["canKickBan"] is True, "nao mexeu no vizinho"
+    assert data["name"] == "Servidor do Cris"
+    assert data["slotCount"] == 8, "numero continua numero"
+    assert data["enableVoiceChat"] is True, "bool continua bool"
+    assert data["userGroups"][0]["password"] == "s3nh4"
+    assert data["gamePort"] == 15636, "chave nova e tipada pelo texto"
+    assert data["userGroups"][0]["canKickBan"] is True, "nao mexeu no vizinho"
 
 
 def test_json_recusa_texto_onde_o_arquivo_tem_numero():
     doc = gc.load("enshrouded_server.json", ENSHROUDED)
-    erro = erro_ao_aplicar(
+    error = erro_ao_aplicar(
         doc, gc.Edit(id="slotCount", section="", key="slotCount", value="dezesseis"))
-    assert "numero" in erro, erro
+    assert "numero" in error, error
 
 
 # ---------------------------------------------------------------------- dayz
@@ -240,8 +240,8 @@ def test_dayz_grava_dentro_da_class_sem_estragar_a_estrutura():
 ])
 def test_entrada_torta_e_recusada(rotulo, chave, valor, trecho):
     doc = gc.load("a.ini", "[s]\nk=1\n")
-    erro = erro_ao_aplicar(doc, gc.Edit(id="", section="s", key=chave, value=valor))
-    assert trecho in erro, f"{rotulo}: erro={erro!r}"
+    error = erro_ao_aplicar(doc, gc.Edit(id="", section="s", key=chave, value=valor))
+    assert trecho in error, f"{rotulo}: erro={error!r}"
 
 
 def test_chave_e_valor_sao_aparados():
@@ -254,9 +254,9 @@ def test_aspas_no_meio_do_valor_sao_recusadas():
     """No formato da Unreal a aspa fecha o valor: deixar passar corromperia a linha."""
     doc = gc.load("PalWorldSettings.ini", PALWORLD)
     alvo = campo(doc, doc.settings[0].section, "ServerName")
-    erro = erro_ao_aplicar(
+    error = erro_ao_aplicar(
         doc, gc.Edit(id=alvo.id, section=alvo.section, key="ServerName", value='a"b'))
-    assert "aspas" in erro, erro
+    assert "aspas" in error, error
 
 
 @pytest.mark.parametrize("nome, texto", [

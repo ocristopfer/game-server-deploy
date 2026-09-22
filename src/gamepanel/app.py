@@ -155,7 +155,7 @@ BROKER_POLL = float(os.environ.get("GAMEPANEL_BROKER_POLL", "2"))
 BROKER_FALHAS_MAX = 15
 
 
-def _configura_broker() -> bool:
+def _configure_broker() -> bool:
     """Liga o cliente do broker. Qualquer configuracao ruim DESLIGA o recurso (e loga o
     motivo) em vez de derrubar o painel: o resto dele nao depende disto."""
     if os.environ.get("GAMEPANEL_ALLOW_BROKER", "0") != "1":
@@ -171,7 +171,7 @@ def _configura_broker() -> bool:
     return True
 
 
-ALLOW_BROKER = _configura_broker()
+ALLOW_BROKER = _configure_broker()
 
 # Editor de arquivos: le/grava arquivos de configuracao do jogo pelo mesmo SSH.
 ALLOW_FILES = os.environ.get("GAMEPANEL_ALLOW_FILES", "1") == "1"
@@ -468,7 +468,7 @@ def _clear_fails(key: str) -> None:
         _login_fails.pop(key, None)
 
 
-def usuario_logado() -> sqlite3.Row | None:
+def logged_user() -> sqlite3.Row | None:
     """Linha do usuario da sessao, lida do banco uma vez por request.
 
     O papel NAO fica no cookie: tirar o admin de alguem tem de valer no proximo clique,
@@ -491,14 +491,14 @@ def usuario_logado() -> sqlite3.Row | None:
 
 
 def is_admin() -> bool:
-    row = usuario_logado()
+    row = logged_user()
     return bool(row) and row["role"] == ROLE_ADMIN
 
 
 def login_required(view):
     @wraps(view)
     def wrapper(*args, **kwargs):
-        if usuario_logado() is None:
+        if logged_user() is None:
             # Conta apagada com a sessao ainda aberta: o cookie continua assinado e
             # valido, entao sem conferir o banco ela seguiria funcionando ate expirar.
             session.clear()
@@ -539,7 +539,7 @@ BIG_BODY_ENDPOINTS = {"files_upload"}
 
 
 @app.before_request
-def _teto_do_corpo():
+def _body_cap():
     if request.endpoint in BIG_BODY_ENDPOINTS:
         request.max_content_length = (FILE_UPLOAD_MAX + UPLOAD_CHUNK) if FILE_UPLOAD_MAX else None
 
@@ -567,12 +567,12 @@ ENDPOINTS_SEM_2FA = frozenset({
 def _exige_segundo_fator():
     if not REQUIRE_2FA or request.endpoint in ENDPOINTS_SEM_2FA or request.endpoint is None:
         return None
-    usuario = usuario_logado()
-    if usuario is None or usuario["totp_enabled"]:
+    user = logged_user()
+    if user is None or user["totp_enabled"]:
         return None
     if request.path.startswith("/api/"):
         return jsonify({"error": "ative a verificacao em duas etapas em Conta"}), 403
-    flash(traduzir("flash.two_factor_required_here"), "error")
+    flash(translate("flash.two_factor_required_here"), "error")
     return redirect(url_for("account_2fa"))
 
 
@@ -593,10 +593,10 @@ def static_url(nome: str) -> str:
     return url_for("static", filename=nome, v=marca)
 
 
-IDIOMA_PADRAO = i18n.idioma_valido(os.environ.get("GAMEPANEL_LANG"))
+DEFAULT_LANG = i18n.valid_language(os.environ.get("GAMEPANEL_LANG"))
 
 
-def idioma_atual() -> str:
+def current_language() -> str:
     """O idioma DESTE pedido, decidido uma vez e guardado no `g`.
 
     A ordem e de preferencia: o que a pessoa escolheu na Conta vence tudo; sem escolha
@@ -611,41 +611,41 @@ def idioma_atual() -> str:
     ninguem fica sabendo.
     """
     if not has_app_context():
-        return IDIOMA_PADRAO
+        return DEFAULT_LANG
     escolhido = getattr(g, "_idioma", None)
     if escolhido is not None:
         return escolhido
-    usuario = usuario_logado()
-    do_usuario = _stored_value(usuario, "lang") if usuario else ""
+    user = logged_user()
+    do_usuario = _stored_value(user, "lang") if user else ""
     if do_usuario:
-        escolhido = i18n.idioma_valido(do_usuario)
+        escolhido = i18n.valid_language(do_usuario)
     elif request:
-        escolhido = i18n.do_cabecalho(request.headers.get("Accept-Language"))
+        escolhido = i18n.from_header(request.headers.get("Accept-Language"))
     else:
-        escolhido = IDIOMA_PADRAO
+        escolhido = DEFAULT_LANG
     g._idioma = escolhido
     return escolhido
 
 
-def traduzir(chave: str, **campos: object) -> str:
+def translate(chave: str, **campos: object) -> str:
     """O `_()` das telas e das mensagens: a frase daquela chave, no idioma
     deste pedido."""
-    return i18n.traduzir(chave, idioma_atual(), **campos)
+    return i18n.translate(chave, current_language(), **campos)
 
 
 
-def texto_do_erro(exc: BaseException) -> str:
+def error_text(exc: BaseException) -> str:
     """O que a excecao tem a dizer, preservando a CHAVE quando ela veio de uma.
 
     `str(exc)` colapsaria uma `i18n.Mensagem` em texto solto, e com ela a chance de
     mostrar a frase no idioma de quem esta olhando. Um `except` pega qualquer excecao,
     inclusive as que nascem fora daqui (`OSError`, `json`), e essas seguem por `str`.
     """
-    if exc.args and isinstance(exc.args[0], i18n.Mensagem):
+    if exc.args and isinstance(exc.args[0], i18n.Message):
         return exc.args[0]
     return str(exc)
 
-def rotulo_para_o_banco(chave: str) -> str:
+def label_for_db(chave: str) -> str:
     """A frase daquela chave no idioma do DEPLOY, nao no de quem esta com a tela aberta.
 
     Para texto que vai ser GRAVADO (a coluna `command` de um job, por exemplo). O
@@ -653,10 +653,10 @@ def rotulo_para_o_banco(chave: str) -> str:
     saisse no idioma de quem clicou, a mesma acao apareceria escrita de tres jeitos na
     mesma lista, e filtrar por ela deixaria de funcionar.
     """
-    return i18n.traduzir(chave, IDIOMA_PADRAO)
+    return i18n.translate(chave, DEFAULT_LANG)
 
 
-def traduzir_html(chave: str, **campos: object) -> Markup:
+def translate_html(chave: str, **campos: object) -> Markup:
     """O `_h()` das telas: frase que TRAZ marcacao (`<strong>`, `<code>`).
 
     Existe porque paragrafo de ajuda nao se parte: quebrar o texto em cada `<strong>`
@@ -670,37 +670,37 @@ def traduzir_html(chave: str, **campos: object) -> Markup:
     """
     # A frase vem de `i18n`, que e codigo deste repositorio, e todo campo passou por
     # `escape` na linha de baixo: nao ha entrada de usuario chegando crua aqui.
-    return Markup(i18n.traduzir(  # noqa: S704
-        chave, idioma_atual(), **{nome: escape(valor) for nome, valor in campos.items()}
+    return Markup(i18n.translate(  # noqa: S704
+        chave, current_language(), **{nome: escape(valor) for nome, valor in campos.items()}
     ))
 
 
-def rotulos_de(tabela: dict[str, str]) -> dict[str, str]:
+def labels_of(tabela: dict[str, str]) -> dict[str, str]:
     """Traduz uma tabela de rotulos de uma vez, para a tela receber texto pronto.
 
     As tabelas (`ALERT_EVENTS`, `JOB_LABELS`, `ROLE_LABELS`, ...) guardam a CHAVE do
     catalogo e nao a frase: a chave e o que vai para o banco e para o `<option value=>`,
     e ela nao pode mudar so porque alguem corrigiu uma virgula no texto.
     """
-    return {chave: traduzir(rotulo) for chave, rotulo in tabela.items()}
+    return {chave: translate(rotulo) for chave, rotulo in tabela.items()}
 
 @app.context_processor
 def _inject():
-    usuario = usuario_logado()
+    user = logged_user()
     return {
         "csrf_token": csrf_token,
         # `_` e o nome de sempre para traduzir numa tela; `_h` e o irmao para a frase
         # que traz marcacao (ver `traduzir_html`).
-        "_": traduzir,
-        "_h": traduzir_html,
-        "idioma_atual": idioma_atual(),
-        "idiomas": i18n.IDIOMAS,
+        "_": translate,
+        "_h": translate_html,
+        "current_language": current_language(),
+        "idiomas": i18n.LANGUAGES,
         "static_url": static_url,
-        "current_user": usuario["username"] if usuario else None,
+        "current_user": user["username"] if user else None,
         # As telas escondem o que o operador nao pode abrir. Quem manda e o
         # @admin_required na rota; isto aqui e so para nao mostrar botao que da 403.
-        "is_admin": bool(usuario) and usuario["role"] == ROLE_ADMIN,
-        "role_label": traduzir(ROLE_LABELS[usuario["role"]]) if usuario else "",
+        "is_admin": bool(user) and user["role"] == ROLE_ADMIN,
+        "role_label": translate(ROLE_LABELS[user["role"]]) if user else "",
         "job_label": job_label,
         "allow_shell": ALLOW_SHELL,
         "allow_term": ALLOW_SHELL and HAVE_PTY,
@@ -711,12 +711,12 @@ def _inject():
         "player_source": player_source,
         # Quais acoes a API daquele servidor aceita (vazio na maioria dos jogos).
         "acoes_de_jogador": player_actions,
-        "rotulo_de_acao": rotulos_de(PLAYER_ACTION_LABELS),
-        **_contexto_de_navegacao(),
+        "rotulo_de_acao": labels_of(PLAYER_ACTION_LABELS),
+        **_navigation_context(),
     }
 
 
-def _contexto_de_navegacao() -> dict:
+def _navigation_context() -> dict:
     """O mapa da interface, ja filtrado para quem esta logado e para este deploy.
 
     Os templates nao decidem mais o que existe no menu: eles desenham o que vier
@@ -1082,16 +1082,16 @@ def job_label(action: str) -> str:
     """O nome da acao na tela. `JOB_LABELS` guarda CHAVE, nunca texto pronto:
     o historico e uma tela como as outras e segue o idioma de quem a abriu.
     """
-    return traduzir(JOB_LABELS.get(action, action))
+    return translate(JOB_LABELS.get(action, action))
 
 
-def job_ou_403(job: sqlite3.Row) -> None:
+def job_or_403(job: sqlite3.Row) -> None:
     """Barra o operador na saida de um job que ele nao teria permissao de disparar."""
     if job["action"] in JOB_ACTIONS_ADMIN and not is_admin():
         abort(403, "Este registro e de uma acao restrita a administradores do painel.")
 
 
-def filtro_de_papel() -> tuple[str, tuple]:
+def role_filter() -> tuple[str, tuple]:
     """Pedaco de WHERE que esconde do operador os jobs das acoes restritas.
 
     Sai daqui e nao de cada consulta porque sao duas telas (o historico do servidor e o
@@ -1104,9 +1104,9 @@ def filtro_de_papel() -> tuple[str, tuple]:
     return f" AND action NOT IN ({marcadores})", escondidas
 
 
-def jobs_do_servidor(conn: sqlite3.Connection, sid: int, limit: int) -> list:
+def server_jobs(conn: sqlite3.Connection, sid: int, limit: int) -> list:
     """Historico do servidor ja filtrado pelo papel de quem esta olhando."""
-    corte, valores = filtro_de_papel()
+    corte, valores = role_filter()
     return conn.execute(
         f"SELECT * FROM jobs WHERE server_id = ?{corte} ORDER BY id DESC LIMIT ?",
         (sid, *valores, limit),
@@ -1287,12 +1287,12 @@ def config_set(conn: sqlite3.Connection, chave: str, valor: str) -> None:
         )
 
 
-def limpa_eventos(bruto: str) -> set:
+def clean_events(raw: str) -> set:
     """Filtra pela lista conhecida: evento que saiu do codigo nao volta pelo banco."""
-    return {e for e in (bruto or "").split(",") if e in ALERT_EVENTS}
+    return {e for e in (raw or "").split(",") if e in ALERT_EVENTS}
 
 
-def webhooks_lista(conn: sqlite3.Connection) -> list:
+def webhook_list(conn: sqlite3.Connection) -> list:
     """Todos os destinos, na ordem de cadastro, com os eventos ja como conjunto."""
     lines_of = conn.execute(
         "SELECT id, nome, url, eventos, ativo FROM webhooks ORDER BY id"
@@ -1303,7 +1303,7 @@ def webhooks_lista(conn: sqlite3.Connection) -> list:
             "nome": r["nome"] or "Sem nome",
             "url": r["url"],
             "url_curta": mask_url(r["url"]),
-            "eventos": limpa_eventos(r["eventos"]),
+            "eventos": clean_events(r["eventos"]),
             "ativo": bool(r["ativo"]),
         }
         for r in lines_of
@@ -1328,7 +1328,7 @@ def webhook_config(conn: sqlite3.Connection) -> dict:
         cpu = int(config_get(conn, "webhook_cpu_pct", str(CPU_PCT_DEFAULT)))
     except ValueError:
         cpu = CPU_PCT_DEFAULT
-    destinos = webhooks_lista(conn)
+    destinos = webhook_list(conn)
     cobertos = set()
     for d in destinos:
         if d["ativo"] and d["url"]:
@@ -1346,7 +1346,7 @@ def webhook_config(conn: sqlite3.Connection) -> dict:
 mask_url = webhook_client.mask_url
 
 
-def envia_webhook(url: str, texto: str) -> str:
+def send_webhook(url: str, texto: str) -> str:
     # Nome proprio (e nao `webhook_client.envia` direto nas chamadas) porque a fixture
     # `webhooks` do conftest troca ESTE nome por um capturador — todo teste de alerta
     # depende disso para ver o que sairia por HTTP sem nada sair de verdade.
@@ -1360,33 +1360,33 @@ def notify(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str = ""
     cala os outros: cada um e tentado e cada falha vai para o log com o nome do destino,
     entao da para saber qual deles esta quebrado sem adivinhar.
     """
-    alvos = [d for d in webhooks_lista(conn)
+    alvos = [d for d in webhook_list(conn)
              if d["ativo"] and d["url"] and evento in d["eventos"]]
     if not alvos:
         # Registrado de proposito: "o alerta disparou e ninguem pediu por ele" e a causa
         # mais comum de canal mudo, e e indistinguivel de "nao aconteceu nada" para quem
         # so olha o Discord. No diario as duas viram coisas diferentes.
-        _registra_alerta(conn, evento, titulo, detalhe, "", "sem-destino")
+        _record_alert(conn, evento, titulo, detalhe, "", "sem-destino")
         return False
     texto = f"**{titulo}**"
     if detalhe:
         texto += f"\n{detalhe}"
     saiu = False
     for destino in alvos:
-        erro = envia_webhook(destino["url"], texto)
+        erro = send_webhook(destino["url"], texto)
         if erro:
             app.logger.warning(
                 "alerta '%s' nao saiu para '%s': %s", evento, destino["nome"], erro
             )
-            _registra_alerta(conn, evento, titulo, detalhe, destino["nome"],
+            _record_alert(conn, evento, titulo, detalhe, destino["nome"],
                              "falhou", erro)
         else:
             saiu = True
-            _registra_alerta(conn, evento, titulo, detalhe, destino["nome"], "enviado")
+            _record_alert(conn, evento, titulo, detalhe, destino["nome"], "enviado")
     return saiu
 
 
-def _registra_alerta(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str,
+def _record_alert(conn: sqlite3.Connection, evento: str, titulo: str, detalhe: str,
                      destino: str, status: str, erro: str = "") -> None:
     """Grava uma linha do diario.
 
@@ -1404,7 +1404,7 @@ def _registra_alerta(conn: sqlite3.Connection, evento: str, titulo: str, detalhe
         app.logger.exception("nao consegui gravar no diario de alertas")
 
 
-def alertas_recentes(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:
+def recent_alerts(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:
     """As ultimas linhas do diario, da mais nova para a mais velha."""
     lines_of = conn.execute(
         "SELECT * FROM alert_log ORDER BY id DESC LIMIT ?", (limit,)
@@ -1429,10 +1429,10 @@ def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
 # server_id -> ultimo estado visto. Fica so na memoria de proposito: reiniciar o painel
 # refaz a linha de base, e ninguem recebe um alerta de algo que ja estava assim.
 _estado_monitor: dict[int, dict] = {}
-_ultimo_monitor = 0.0
-_ultimo_estado = 0.0
-_ultimo_disco = 0.0
-_ultimo_log = 0.0
+_last_monitor = 0.0
+_last_state = 0.0
+_last_disk = 0.0
+_last_log = 0.0
 
 
 def _alert_deps() -> alert_service.AlertDeps:
@@ -1452,31 +1452,31 @@ def _alert_deps() -> alert_service.AlertDeps:
     )
 
 
-def _alerta_de_estado(conn, server, estado, anterior) -> None:
+def _state_alert(conn, server, estado, anterior) -> None:
     alert_service.state_alert(_alert_deps(), conn, server, estado, anterior)
 
 
-def _alerta_de_restart(conn, server, estado, anterior) -> None:
+def _restart_alert(conn, server, estado, anterior) -> None:
     alert_service.restart_alert(_alert_deps(), conn, server, estado, anterior)
 
 
-def _alerta_de_mudez(conn, server, estado, anterior) -> None:
+def _mute_alert(conn, server, estado, anterior) -> None:
     alert_service.mute_alert(_alert_deps(), conn, server, estado, anterior)
 
 
-def _alerta_de_log(conn, server, anterior) -> None:
+def _log_alert(conn, server, anterior) -> None:
     alert_service.log_alert(_alert_deps(), conn, server, anterior)
 
 
-def _alerta_de_disco(conn, server, cfg) -> None:
+def _disk_alert(conn, server, cfg) -> None:
     alert_service.disk_alert(_alert_deps(), conn, server, cfg)
 
 
-def _alerta_de_memoria(conn, server, cfg) -> None:
+def _memory_alert(conn, server, cfg) -> None:
     alert_service.memory_alert(_alert_deps(), conn, server, cfg)
 
 
-def _alerta_de_cpu(conn, server, cfg) -> None:
+def _cpu_alert(conn, server, cfg) -> None:
     alert_service.cpu_alert(_alert_deps(), conn, server, cfg)
 
 
@@ -1487,18 +1487,18 @@ def _alerta_de_cpu(conn, server, cfg) -> None:
 # Aponta para as funcoes DESTE modulo, nao para as do service: a tabela captura o
 # objeto no import, e e por estes nomes que os testes chamam.
 ALERTAS_DE_RECURSO = {
-    "disco-cheio": _alerta_de_disco,
-    "memoria-alta": _alerta_de_memoria,
-    "cpu-alta": _alerta_de_cpu,
+    "disco-cheio": _disk_alert,
+    "memoria-alta": _memory_alert,
+    "cpu-alta": _cpu_alert,
 }
 
 
-def _alerta_de_jogadores(conn, server, servico, anterior, cfg) -> None:
+def _players_alert(conn, server, servico, anterior, cfg) -> None:
     alert_service.players_alert(_alert_deps(), conn, server, servico, anterior, cfg)
 
 
-_leitura_de_jogadores = alert_service.players_reading
-_texto_de_online = alert_service.online_text
+_players_reading = alert_service.players_reading
+_online_text = alert_service.online_text
 
 
 # ------------------------------------------------- log em tempo real
@@ -1519,7 +1519,7 @@ _jogadores_locks: dict[int, threading.Lock] = {}
 _jogadores_meta = threading.Lock()
 
 
-def lock_de_jogadores(sid: int) -> threading.Lock:
+def players_lock(sid: int) -> threading.Lock:
     with _jogadores_meta:
         return _jogadores_locks.setdefault(sid, threading.Lock())
 
@@ -1528,8 +1528,8 @@ def _log_stream_deps() -> log_stream.LogStreamDeps:
     return log_stream.LogStreamDeps(
         ssh_argv=ssh_argv, monitor_state=_estado_monitor,
         invalidate_players=invalidate_players, connect=_connect,
-        webhook_config=webhook_config, lock_de_jogadores=lock_de_jogadores,
-        players_alert=_alerta_de_jogadores, logger=app.logger,
+        webhook_config=webhook_config, players_lock=players_lock,
+        players_alert=_players_alert, logger=app.logger,
         debounce=LOG_STREAM_DEBOUNCE, retry=LOG_STREAM_RETRY,
     )
 
@@ -1546,16 +1546,16 @@ class _LogStream(log_stream.LogStream):
         super().__init__(_log_stream_deps(), server, assinatura)
 
 
-def _linha_de_jogador(linha: str, entrar, sair) -> bool:
-    return log_stream.linha_de_jogador(linha, entrar, sair)
+def _player_line(linha: str, entrar, sair) -> bool:
+    return log_stream.player_line(linha, entrar, sair)
 
 
-def _assinatura_de_stream(server) -> tuple:
-    return log_stream.assinatura_de_stream(server, _stored_value)
+def _stream_signature(server) -> tuple:
+    return log_stream.stream_signature(server, _stored_value)
 
 
-def streams_desejados(servidores, cfg) -> dict[int, tuple]:
-    return log_stream.streams_desejados(
+def wanted_streams(servidores, cfg) -> dict[int, tuple]:
+    return log_stream.wanted_streams(
         servidores, cfg, LOG_STREAM, player_source, _stored_value)
 
 
@@ -1566,18 +1566,18 @@ _supervisor = log_stream.Supervisor(lambda server, assinatura: _LogStream(server
 _streams = _supervisor.abertos
 
 
-def streams_vivos() -> int:
-    return _supervisor.vivos()
+def live_streams() -> int:
+    return _supervisor.alive_ids()
 
 
-def supervisiona_streams() -> int:
+def supervise_streams() -> int:
     """Liga, desliga e ressuscita as conexoes de log. Devolve quantas ficaram registradas."""
     conn = db()
     servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
-    return _supervisor.sincroniza(servidores, streams_desejados(servidores, webhook_config(conn)))
+    return _supervisor.sync(servidores, wanted_streams(servidores, webhook_config(conn)))
 
 
-class _Ritmo(NamedTuple):
+class _Rhythm(NamedTuple):
     """O que ESTA volta do monitor vai conferir.
 
     Nem tudo anda no mesmo passo, e a razao e custo: a contagem de jogadores pergunta
@@ -1593,43 +1593,43 @@ class _Ritmo(NamedTuple):
     ver_log: bool
 
 
-def _ritmo_do_monitor(cfg: dict, agora: float, forcar: bool) -> _Ritmo | None:
+def _monitor_rhythm(cfg: dict, agora: float, forcar: bool) -> _Rhythm | None:
     """Decide o que vence nesta volta e adianta os relogios. None = ainda nao e hora."""
-    global _ultimo_monitor, _ultimo_estado, _ultimo_disco, _ultimo_log
+    global _last_monitor, _last_state, _last_disk, _last_log
 
     # O passo do monitor e o do alerta mais apressado que esteja LIGADO. Com jogadores
     # ligados a volta fica curta; sem eles nada muda em relacao a antes.
     quer_jogadores = bool(cfg["eventos"] & {"jogador-entrou", "jogador-saiu"})
     passo = min(MONITOR_EVERY, PLAYER_CHECK_EVERY) if quer_jogadores else MONITOR_EVERY
-    if not forcar and agora - _ultimo_monitor < passo:
+    if not forcar and agora - _last_monitor < passo:
         return None
-    _ultimo_monitor = agora
+    _last_monitor = agora
 
     # ...mas so a contagem de jogadores anda nesse passo curto. Estado do servico, mudez
     # e restart continuam no ritmo antigo: cada um deles custa SSH por servidor, e
     # acelerar tudo junto multiplicaria essa conta por quatro sem necessidade.
-    ver_estado = forcar or agora - _ultimo_estado >= MONITOR_EVERY
+    ver_estado = forcar or agora - _last_state >= MONITOR_EVERY
     if ver_estado:
-        _ultimo_estado = agora
+        _last_state = agora
 
     # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
     # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
-    vence_recurso = forcar or agora - _ultimo_disco >= DISK_CHECK_EVERY
+    vence_recurso = forcar or agora - _last_disk >= DISK_CHECK_EVERY
     recursos = cfg["eventos"] & RECURSO_EVENTOS if vence_recurso else set()
     if recursos:
-        _ultimo_disco = agora
+        _last_disk = agora
 
     # O log e o unico que custa uma ida de SSH so dele, entao anda no seu proprio ritmo.
     ver_log = "erro-no-log" in cfg["eventos"] and (
-        forcar or agora - _ultimo_log >= LOG_CHECK_EVERY
+        forcar or agora - _last_log >= LOG_CHECK_EVERY
     )
     if ver_log:
-        _ultimo_log = agora
+        _last_log = agora
 
-    return _Ritmo(ver_estado, quer_jogadores, recursos, ver_log)
+    return _Rhythm(ver_estado, quer_jogadores, recursos, ver_log)
 
 
-def _volta_curta(conn, server, anterior, cfg, ritmo: _Ritmo) -> None:
+def _short_round(conn, server, anterior, cfg, ritmo: _Rhythm) -> None:
     """A volta de 15s: so jogadores, e sem tocar no SSH.
 
     O servico que interessa aqui e "estava de pe na ultima olhada de verdade", e isso
@@ -1645,14 +1645,14 @@ def _volta_curta(conn, server, anterior, cfg, ritmo: _Ritmo) -> None:
         return
     if player_source(server) not in PLAYER_FAST_SOURCES:
         return
-    with lock_de_jogadores(int(server["id"])):
-        _alerta_de_jogadores(conn, server, anterior.get("service", ""), anterior, cfg)
+    with players_lock(int(server["id"])):
+        _players_alert(conn, server, anterior.get("service", ""), anterior, cfg)
 
 
-def _alertas_do_servidor(conn, server, estado, anterior, cfg, ritmo: _Ritmo) -> None:
+def _server_alerts(conn, server, estado, anterior, cfg, ritmo: _Rhythm) -> None:
     """Os alertas que so fazem sentido com o container ALCANCAVEL."""
     if "reiniciando" in cfg["eventos"]:
-        _alerta_de_restart(conn, server, estado, anterior)
+        _restart_alert(conn, server, estado, anterior)
     else:
         # Sem o evento ligado o contador ainda precisa acompanhar, senao ligar o alerta
         # no meio do dia renderia um "loop" falso com tudo o que se acumulou enquanto
@@ -1662,24 +1662,24 @@ def _alertas_do_servidor(conn, server, estado, anterior, cfg, ritmo: _Ritmo) -> 
     # Este custa uma sondagem no jogo (UDP ou HTTP) — nao vale a pena pagar por ela com
     # o evento desligado.
     if cfg["eventos"] & {"travou", "respondeu"}:
-        _alerta_de_mudez(conn, server, estado, anterior)
+        _mute_alert(conn, server, estado, anterior)
 
     if ritmo.quer_jogadores:
         # Com stream de log ligado esta chamada vira rede de seguranca: se ele tiver
         # caido, ninguem fica sem aviso — so mais devagar. O lock e o que impede os dois
         # de avisarem a mesma entrada.
-        with lock_de_jogadores(int(server["id"])):
-            _alerta_de_jogadores(conn, server, estado["service"], anterior, cfg)
+        with players_lock(int(server["id"])):
+            _players_alert(conn, server, estado["service"], anterior, cfg)
 
     if ritmo.ver_log:
-        _alerta_de_log(conn, server, anterior)
+        _log_alert(conn, server, anterior)
 
     for evento, checa in ALERTAS_DE_RECURSO.items():
         if evento in ritmo.recursos:
             checa(conn, server, cfg)
 
 
-def monitora_servidores(forcar: bool = False) -> int:
+def monitor_servers(forcar: bool = False) -> int:
     """Confere o estado de todo mundo e dispara o que mudou. Devolve quantos olhou."""
     conn = db()
     cfg = webhook_config(conn)
@@ -1688,7 +1688,7 @@ def monitora_servidores(forcar: bool = False) -> int:
     if not cfg["eventos"]:
         return 0
 
-    ritmo = _ritmo_do_monitor(cfg, time.monotonic(), forcar)
+    ritmo = _monitor_rhythm(cfg, time.monotonic(), forcar)
     if ritmo is None:
         return 0
 
@@ -1698,7 +1698,7 @@ def monitora_servidores(forcar: bool = False) -> int:
         anterior = _estado_monitor.get(sid)
 
         if not ritmo.ver_estado:
-            _volta_curta(conn, server, anterior, cfg, ritmo)
+            _short_round(conn, server, anterior, cfg, ritmo)
             continue
 
         estado = server_status(server)
@@ -1711,36 +1711,36 @@ def monitora_servidores(forcar: bool = False) -> int:
                                     "restarts": int(estado.get("restarts") or 0)}
             continue
 
-        _alerta_de_estado(conn, server, estado, anterior)
+        _state_alert(conn, server, estado, anterior)
         if estado["reachable"]:
-            _alertas_do_servidor(conn, server, estado, anterior, cfg, ritmo)
+            _server_alerts(conn, server, estado, anterior, cfg, ritmo)
         # Depois dos alertas: eles precisam comparar com o estado ANTERIOR, e atualizar
         # antes faria toda mudanca desaparecer no meio do caminho.
         anterior.update(reachable=estado["reachable"], service=estado["service"])
 
-    _esquece_servidores_removidos(servidores)
+    _forget_removed_servers(servidores)
     return len(servidores)
 
 
-def _esquece_servidores_removidos(servidores) -> None:
+def _forget_removed_servers(servidores) -> None:
     """Servidor removido do painel nao pode ficar guardando estado para sempre."""
-    vivos = {int(s["id"]) for s in servidores}
-    for morto in [k for k in _estado_monitor if k not in vivos]:
+    alive_ids = {int(s["id"]) for s in servidores}
+    for morto in [k for k in _estado_monitor if k not in alive_ids]:
         _estado_monitor.pop(morto, None)
 
 
 # -------------------------------------------------------- amostras de uso
 
-_ultima_amostra = 0.0
+_last_sample = 0.0
 
 
-def coleta_amostras(forcar: bool = False) -> int:
+def collect_samples(forcar: bool = False) -> int:
     """Guarda uma linha de CPU/memoria/jogadores por servidor. Devolve quantas gravou."""
-    global _ultima_amostra
+    global _last_sample
     agora = time.monotonic()
-    if not forcar and agora - _ultima_amostra < SAMPLE_EVERY:
+    if not forcar and agora - _last_sample < SAMPLE_EVERY:
         return 0
-    _ultima_amostra = agora
+    _last_sample = agora
 
     conn = db()
     carimbo = now_iso()
@@ -1800,7 +1800,7 @@ def is_due(sched, agora: datetime) -> bool:
     return schedule_service.is_due(sched, agora, SCHEDULE_GRACE)
 
 
-def dispara_agendamento(conn: sqlite3.Connection, sched) -> int:
+def fire_schedule(conn: sqlite3.Connection, sched) -> int:
     """Coloca a tarefa para rodar. Devolve o id do job (0 quando nao deu para disparar)."""
     server = conn.execute(SQL_SERVER_BY_ID, (sched["server_id"],)).fetchone()
     if not server:
@@ -1820,7 +1820,7 @@ def dispara_agendamento(conn: sqlite3.Connection, sched) -> int:
     return job_id
 
 
-def roda_agendamentos() -> int:
+def run_schedules() -> int:
     """Uma passada do relogio. Devolve quantas tarefas disparou."""
     agora = local_now()
     conn = db()
@@ -1833,26 +1833,26 @@ def roda_agendamentos() -> int:
         with conn:
             conn.execute("UPDATE schedules SET last_run = ? WHERE id = ?",
                          (agora.isoformat(), sched["id"]))
-        if dispara_agendamento(conn, sched):
+        if fire_schedule(conn, sched):
             disparadas += 1
     return disparadas
 
 
-_ultima_limpeza = 0.0
+_last_cleanup = 0.0
 
 
-def limpa_historico(forcar: bool = False) -> int:
+def clean_history(forcar: bool = False) -> int:
     """Apaga o que envelheceu — jobs e amostras. Devolve quantos JOBS sairam.
 
     As duas limpezas andam juntas porque tem a mesma razao de existir (o banco do painel
     nao pode crescer para sempre) e o mesmo relogio de hora em hora; so os prazos mudam,
     porque uma amostra e minuscula perto da saida de um job.
     """
-    global _ultima_limpeza
+    global _last_cleanup
     agora = time.monotonic()
-    if not forcar and agora - _ultima_limpeza < JOBS_PURGE_EVERY:
+    if not forcar and agora - _last_cleanup < JOBS_PURGE_EVERY:
         return 0
-    _ultima_limpeza = agora
+    _last_cleanup = agora
     conn = db()
 
     if SAMPLES_KEEP_DAYS:
@@ -1878,7 +1878,7 @@ def limpa_historico(forcar: bool = False) -> int:
     return cur.rowcount or 0
 
 
-def _falha_do_relogio(nome: str) -> None:
+def _clock_failure(nome: str) -> None:
     """Anota no log do processo E no diario de alertas.
 
     O diario e o que a pessoa consegue ver: o traceback no stderr do gunicorn so aparece
@@ -1887,7 +1887,7 @@ def _falha_do_relogio(nome: str) -> None:
     """
     app.logger.exception("falha na tarefa '%s' do relogio", nome)
     try:
-        _registra_alerta(db(), "", f"a tarefa '{nome}' do relogio falhou",
+        _record_alert(db(), "", f"a tarefa '{nome}' do relogio falhou",
                          traceback.format_exc(limit=4)[-500:], "", "erro-interno")
     # Registrar a falha nao pode virar outra falha.
     except Exception:  # noqa: BLE001
@@ -1901,23 +1901,23 @@ def _scheduler_tick() -> None:
     na hora, que e o que deixa o teste trocar uma tarefa por uma que explode.
     """
     scheduler.tick(
-        (("agendamentos", roda_agendamentos),
-         ("monitor", monitora_servidores),
-         ("log-em-tempo-real", supervisiona_streams),
-         ("amostras", coleta_amostras),
-         ("limpeza", limpa_historico)),
-        _falha_do_relogio,
+        (("agendamentos", run_schedules),
+         ("monitor", monitor_servers),
+         ("log-em-tempo-real", supervise_streams),
+         ("amostras", collect_samples),
+         ("limpeza", clean_history)),
+        _clock_failure,
     )
 
 
-def _com_contexto() -> None:
+def _with_context() -> None:
     # Contexto de aplicacao: e o que faz o db() desta thread funcionar como o das rotas
     # (conexao propria, fechada no fim pelo teardown).
     with app.app_context():
         _scheduler_tick()
 
 
-_relogio = scheduler.Clock(SCHEDULE_TICK, _com_contexto, app.logger)
+_relogio = scheduler.Clock(SCHEDULE_TICK, _with_context, app.logger)
 
 
 def start_scheduler() -> None:
@@ -1927,13 +1927,13 @@ def start_scheduler() -> None:
 # ------------------------------------------------------------------- rotas
 
 
-def destino_seguro(bruto: str) -> str:
+def safe_target(raw: str) -> str:
     r"""Para onde voltar depois do login. Vazio quando o destino nao e do painel.
 
     Comecar com "/" nao basta: para o navegador "//evil.com" e "/\evil.com" sao enderecos
     ABSOLUTOS, e mandariam quem acabou de digitar a senha para fora do painel.
     """
-    destino = (bruto or "").strip()
+    destino = (raw or "").strip()
     if not destino.startswith("/") or destino[:2] in ("//", "/\\"):
         return ""
     if any(c in destino for c in "\r\n\t"):
@@ -1951,14 +1951,14 @@ def login():
         key = f"{request.remote_addr}|{username.lower()}"
         remaining = _lockout_remaining(key)
         if remaining:
-            flash(traduzir("flash.too_many_tries", n=remaining), "error")
+            flash(translate("flash.too_many_tries", n=remaining), "error")
             return render_template(TPL_LOGIN), 429
         row = db().execute(
             "SELECT * FROM users WHERE username = ?", (username,)
         ).fetchone()
         if row and verify_password(password, row["password_hash"]):
             _clear_fails(key)
-            proximo = destino_seguro(request.args.get("next", ""))
+            proximo = safe_target(request.args.get("next", ""))
             if row["totp_enabled"]:
                 # Senha certa NAO abre a sessao: so guarda "esta pessoa passou da senha, falta o
                 # codigo". Sem `uid` na sessao, nenhuma rota do painel a reconhece como logada.
@@ -1969,7 +1969,7 @@ def login():
                 return redirect(url_for("login_2fa"))
             return _abre_sessao(row, proximo)
         _record_fail(key)
-        flash(traduzir("flash.bad_credentials"), "error")
+        flash(translate("flash.bad_credentials"), "error")
         return render_template(TPL_LOGIN), 401
     return render_template(TPL_LOGIN)
 
@@ -2029,19 +2029,19 @@ def login_2fa():
         row = db().execute("SELECT * FROM users WHERE id = ?", (pendente.get("uid"),)).fetchone()
     if row is None or not row["totp_enabled"]:
         session.clear()
-        flash(traduzir("flash.verification_expired"), "error")
+        flash(translate("flash.verification_expired"), "error")
         return redirect(url_for("login"))
     if request.method == "POST":
         chave = f"2fa|{row['username'].lower()}"
         restante = _lockout_remaining(chave, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA)
         if restante:
-            flash(traduzir("flash.too_many_tries", n=restante), "error")
+            flash(translate("flash.too_many_tries", n=restante), "error")
             return render_template("login_2fa.html"), 429
         if _confere_segundo_fator(row, request.form.get("codigo", "")):
             _clear_fails(chave)
             return _abre_sessao(row, pendente.get("proximo", ""))
         _record_fail(chave)
-        flash(traduzir("flash.code_invalid_or_used"), "error")
+        flash(translate("flash.code_invalid_or_used"), "error")
         return render_template("login_2fa.html"), 401
     return render_template("login_2fa.html")
 
@@ -2100,7 +2100,7 @@ def api_server_players(sid: int):
     return jsonify(server_players(server))
 
 
-def _aba_porta(server: Servidor) -> dict:
+def _port_tab(server: Servidor) -> dict:
     """Aba 1: dispara A2S em cada porta UDP que o container esta escutando."""
     candidatas, _tcp, donos, aviso = candidate_ports(server)
     portas = _with_owner(probe_ports(server["host"], candidatas[:12]), donos, "udp")
@@ -2206,7 +2206,7 @@ def players_setup(sid: int):
     elif aba == "log":
         dados.update(_aba_log(server, join_re, leave_re, log_path, testar))
     else:
-        dados.update(_aba_porta(server))
+        dados.update(_port_tab(server))
 
     return render_template(
         "players_setup.html", server=server, aba=aba,
@@ -2214,27 +2214,27 @@ def players_setup(sid: int):
     )
 
 
-def _liga_contagem_a2s(conn, sid: int):
+def _enable_a2s_count(conn, sid: int):
     """Consulta UDP direta (A2S). Devolve um redirect quando o formulario esta errado."""
     porta = request.form.get("query_port", "0")
     if not porta.isdigit() or not 1 <= int(porta) <= 65535:
-        flash(traduzir("flash.bad_port"), "error")
+        flash(translate("flash.bad_port"), "error")
         return redirect(url_for("players_setup", sid=sid))
     with conn:
         conn.execute(
             "UPDATE servers SET query_port = ?, player_source = 'a2s' WHERE id = ?",
             (int(porta), sid),
         )
-    flash(traduzir("flash.count_on_by_query", port=porta), "ok")
+    flash(translate("flash.count_on_by_query", port=porta), "ok")
     return None
 
 
-def _liga_contagem_http(conn, sid: int):
+def _enable_http_count(conn, sid: int):
     """API HTTP do proprio jogo."""
     errors: list[str] = []
     campos = _http_fields(request.form, errors)
     if errors or not campos["http_url"]:
-        flash(traduzir(errors[0]) if errors else traduzir("flash.need_api_url"), "error")
+        flash(translate(errors[0]) if errors else translate("flash.need_api_url"), "error")
         return redirect(url_for("players_setup", sid=sid, aba="http"))
     with conn:
         conn.execute(
@@ -2247,20 +2247,20 @@ def _liga_contagem_http(conn, sid: int):
             (*[campos[c] for c in HTTP_FIELDS], sid),
         )
     if campos["http_login_url"]:
-        flash(traduzir("flash.count_on_by_api_login"), "ok")
+        flash(translate("flash.count_on_by_api_login"), "ok")
     else:
-        flash(traduzir("flash.count_on_by_api"), "ok")
+        flash(translate("flash.count_on_by_api"), "ok")
     return None
 
 
-def _liga_contagem_log(conn, sid: int):
+def _enable_log_count(conn, sid: int):
     """Ultimo recurso: as linhas de entrada e saida no log do servidor."""
     errors: list[str] = []
     entrada = _pattern(request.form.get("join_re"), "entrada", errors)
     saida = _pattern(request.form.get("leave_re"), "saida", errors)
     caminho = _log_path(request.form.get("log_path"), errors)
     if errors or not entrada:
-        flash(traduzir(errors[0]) if errors else traduzir("flash.need_join_pattern"), "error")
+        flash(translate(errors[0]) if errors else translate("flash.need_join_pattern"), "error")
         return redirect(url_for("players_setup", sid=sid, aba="log"))
     with conn:
         conn.execute(
@@ -2268,16 +2268,16 @@ def _liga_contagem_log(conn, sid: int):
             " player_source = 'log' WHERE id = ?",
             (entrada, saida, caminho, sid),
         )
-    flash(traduzir("flash.count_on_by_log"), "ok")
+    flash(translate("flash.count_on_by_log"), "ok")
     return None
 
 
 # Fonte de contagem -> quem grava a escolha. Uma fonte nova (RCON, por exemplo) e uma
 # funcao e uma linha aqui; a rota abaixo nao muda.
 FONTES_DE_CONTAGEM = {
-    "a2s": _liga_contagem_a2s,
-    "http": _liga_contagem_http,
-    "log": _liga_contagem_log,
+    "a2s": _enable_a2s_count,
+    "http": _enable_http_count,
+    "log": _enable_log_count,
 }
 
 
@@ -2288,7 +2288,7 @@ def players_use(sid: int):
     _server_or_404(sid)  # so pelo 404: daqui para baixo os UPDATE usam o proprio sid
     liga = FONTES_DE_CONTAGEM.get(request.form.get("player_source", ""))
     if liga is None:
-        flash(traduzir("flash.bad_choice"), "error")
+        flash(translate("flash.bad_choice"), "error")
         return redirect(url_for("players_setup", sid=sid))
 
     recusa = liga(db(), sid)
@@ -2313,26 +2313,26 @@ def player_action(sid: int):
     nome = (request.form.get("nome", "") or "").strip()[:100]
     mensagem = (request.form.get("mensagem", "") or "").strip()[:PLAYER_MSG_MAX]
     quem = nome or jogador or "todos"
-    registro = f"{rotulo_para_o_banco(PLAYER_ACTION_LABELS.get(acao, acao))}: {quem}"
+    registro = f"{label_for_db(PLAYER_ACTION_LABELS.get(acao, acao))}: {quem}"
     if mensagem:
         registro += f" ({mensagem})"
     voltar = url_for("server_detail", sid=sid)
 
     try:
-        rotulo = traduzir(run_player_action(server, acao, jogador, mensagem))
+        rotulo = translate(run_player_action(server, acao, jogador, mensagem))
     except (QueryError, RemoteError) as exc:
         log_job("player-action", server, session.get("username", "?"),
                 command=registro, output=str(exc), status="error")
-        flash(traduzir("flash.could_not", reason=exc), "error")
+        flash(translate("flash.could_not", reason=exc), "error")
         return redirect(voltar)
 
     log_job("player-action", server, session.get("username", "?"),
             command=registro, output="a API aceitou o pedido")
     # A contagem fica alguns segundos em cache e ainda tem quem acabou de sair.
     invalidate_players(sid)
-    flash(traduzir("flash.player_action_done", label=rotulo, who=quem)
+    flash(translate("flash.player_action_done", label=rotulo, who=quem)
           if acao != "announce"
-          else traduzir("flash.notice_sent", message=mensagem), "ok")
+          else translate("flash.notice_sent", message=mensagem), "ok")
     return redirect(voltar)
 
 
@@ -2355,7 +2355,7 @@ USER_RE = server_service.USER_RE
 CAMINHO_JSON_RE = server_service.CAMINHO_JSON_RE
 
 
-def _limites_do_formulario() -> server_service.FormLimits:
+def _form_limits() -> server_service.FormLimits:
     return server_service.FormLimits(
         config_files_max=CONFIG_FILES_MAX, backup_paths_max=BACKUP_PATHS_MAX,
         http_url_max=HTTP_URL_MAX, http_body_max=HTTP_BODY_MAX,
@@ -2365,7 +2365,7 @@ def _limites_do_formulario() -> server_service.FormLimits:
 
 
 def _form_server(form) -> tuple[dict, list[str]]:
-    return server_service.form_server(form, clean_path, _limites_do_formulario())
+    return server_service.form_server(form, clean_path, _form_limits())
 
 
 # Os tres tambem sao usados pelo assistente de contagem (abas HTTP e log), fora do
@@ -2378,7 +2378,7 @@ def _pattern(valor: str | None, rotulo: str, errors: list[str]) -> str:
 
 
 def _http_fields(form, errors: list[str]) -> dict:
-    return server_service._http_fields(form, _limites_do_formulario(), errors)
+    return server_service._http_fields(form, _form_limits(), errors)
 
 
 # Colunas que o formulario preenche, na mesma ordem do INSERT/UPDATE abaixo. Manter a
@@ -2413,12 +2413,12 @@ def server_new():
                         SQL_INSERT_SERVER,
                         (*[data[c] for c in SERVER_FIELDS], now_iso()),
                     )
-                flash(traduzir("flash.server_added", name=data["name"]), "ok")
+                flash(translate("flash.server_added", name=data["name"]), "ok")
                 return redirect(url_for("dashboard"))
             except sqlite3.IntegrityError:
                 errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
         for err in errors:
-            flash(traduzir(err), "error")
+            flash(translate(err), "error")
     return render_template("server_form.html", data=data, mode="new")
 
 
@@ -2442,12 +2442,12 @@ def server_edit(sid: int):
                 # A contagem fica em cache por alguns segundos: trocar a fonte pelo
                 # formulario tem que valer na hora, como vale pelo assistente.
                 invalidate_players(sid)
-                flash(traduzir("flash.server_updated"), "ok")
+                flash(translate("flash.server_updated"), "ok")
                 return redirect(url_for("server_detail", sid=sid))
             except sqlite3.IntegrityError:
                 errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
         for err in errors:
-            flash(traduzir(err), "error")
+            flash(translate(err), "error")
     # `server` (a linha do banco, nao o formulario) vai junto: e dele que a barra de
     # navegacao do servidor tira o id e o nome. Sem isso esta tela seria a unica do
     # servidor sem a barra — e era exatamente assim que a navegacao ia divergindo.
@@ -2462,7 +2462,7 @@ def server_delete(sid: int):
     with conn:
         conn.execute("DELETE FROM servers WHERE id = ?", (sid,))
     invalidate_status(sid)
-    flash(traduzir("flash.server_removed"), "ok")
+    flash(translate("flash.server_removed"), "ok")
     return redirect(url_for("dashboard"))
 
 
@@ -2473,7 +2473,7 @@ def server_detail(sid: int):
     server = conn.execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
     if not server:
         abort(404)
-    jobs = jobs_do_servidor(conn, sid, 15)
+    jobs = server_jobs(conn, sid, 15)
     lines = _log_lines_arg(request.args.get("lines"))
 
     # Status, medidores, jogadores e log sao quatro idas de SSH independentes. Em serie a
@@ -2601,9 +2601,9 @@ def console(sid: int):
     if request.method == "POST":
         command = request.form.get("command", "").strip()
         if not command:
-            flash(traduzir("flash.type_a_command"), "error")
+            flash(translate("flash.type_a_command"), "error")
         elif len(command) > SHELL_MAX_LEN:
-            flash(traduzir("flash.command_too_long", n=SHELL_MAX_LEN), "error")
+            flash(translate("flash.command_too_long", n=SHELL_MAX_LEN), "error")
         else:
             # O comando inteiro vira UM argumento de 'bash -lc' no destino — o shell
             # local do ssh nunca o interpreta, entao pipes e aspas chegam intactos.
@@ -2982,7 +2982,7 @@ def files_save(sid: int):
     try:
         path = clean_path(raw_path)
     except ValueError as exc:
-        flash(traduzir(texto_do_erro(exc)), "error")
+        flash(translate(error_text(exc)), "error")
         return redirect(url_for("files", sid=sid))
 
     # O navegador manda \r\n; so devolvemos assim se o arquivo original ja usava CRLF.
@@ -2991,7 +2991,7 @@ def files_save(sid: int):
         text = text.replace("\n", "\r\n")
     data = text.encode("utf-8")
     if len(data) > FILE_MAX_BYTES:
-        flash(traduzir("flash.file_too_big", kb=FILE_MAX_BYTES // 1024), "error")
+        flash(translate("flash.file_too_big", kb=FILE_MAX_BYTES // 1024), "error")
         return redirect(url_for("files", sid=sid, file=path))
 
     # O arquivo pode ter crescido desde que a tela abriu (log, save do jogo). Gravar o
@@ -2999,7 +2999,7 @@ def files_save(sid: int):
     try:
         atual = stat_file(server, path)
         if atual["size"] > FILE_MAX_BYTES:
-            flash(traduzir("flash.file_over_edit_limit", path=path,
+            flash(translate("flash.file_over_edit_limit", path=path,
                               size=atual["size"] // 1024, kb=FILE_MAX_BYTES // 1024), "error")
             return redirect(url_for("files", sid=sid, file=path))
     except RemoteError:
@@ -3011,13 +3011,13 @@ def files_save(sid: int):
             "edit-file", server, session.get("username", "?"),
             command=path, output=saida,
         )
-        flash(traduzir("flash.file_saved", path=path, bytes=len(data)), "ok")
+        flash(translate("flash.file_saved", path=path, bytes=len(data)), "ok")
     except RemoteError as exc:
         log_job(
             "edit-file", server, session.get("username", "?"),
             command=path, output=str(exc), status="error",
         )
-        flash(traduzir("flash.could_not_save", reason=exc), "error")
+        flash(translate("flash.could_not_save", reason=exc), "error")
 
     return redirect(url_for("files", sid=sid, file=path))
 
@@ -3031,33 +3031,33 @@ def files_delete(sid: int):
     try:
         path = clean_path(request.form.get("path", ""))
     except ValueError as exc:
-        flash(traduzir(texto_do_erro(exc)), "error")
+        flash(translate(error_text(exc)), "error")
         return redirect(url_for("files", sid=sid))
 
     # Raiz permitida nao se apaga: sem isso um clique errado poderia levar /opt/game
     # inteiro (a pasta so cai vazia, mas nem esse caso vale a pena permitir).
     raizes = {"/"} | {r.rstrip("/") or "/" for r in FILE_ROOTS}
     if path in raizes:
-        flash(traduzir("flash.is_a_root_folder", path=path), "error")
+        flash(translate("flash.is_a_root_folder", path=path), "error")
         return redirect(url_for("files", sid=sid, path=path))
 
     volta = parent_of(path)
     try:
         saida = delete_file(server, path)
         log_job("delete-file", server, session.get("username", "?"), command=path, output=saida)
-        flash(traduzir("flash.deleted_no_bak", output=saida), "ok")
+        flash(translate("flash.deleted_no_bak", output=saida), "ok")
         # Arquivo fixado na tela Config que deixou de existir: tirar do cadastro evita
         # que a tela abra sempre num erro de leitura.
         registrados = config_paths(server)
         if path in registrados:
             _save_config_files(sid, [p for p in registrados if p != path])
-            flash(traduzir("flash.also_left_config", path=path), "ok")
+            flash(translate("flash.also_left_config", path=path), "ok")
     except RemoteError as exc:
         log_job(
             "delete-file", server, session.get("username", "?"),
             command=path, output=str(exc), status="error",
         )
-        flash(traduzir("flash.could_not_delete", reason=exc), "error")
+        flash(translate("flash.could_not_delete", reason=exc), "error")
 
     return redirect(url_for("files", sid=sid, path=volta))
 
@@ -3118,21 +3118,21 @@ def files_upload(sid: int):
     voltar = url_for("files", sid=sid, path=destino_dir)
     enviado = request.files.get("arquivo")
     if not enviado or not enviado.filename:
-        flash(traduzir("flash.pick_a_file"), "error")
+        flash(translate("flash.pick_a_file"), "error")
         return redirect(voltar)
 
     # O navegador manda o nome como o disco de origem o tinha: fica so a ultima parte,
     # para "../../etc/passwd" nao virar caminho.
     nome = enviado.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not nome or nome in (".", ".."):
-        flash(traduzir("flash.bad_file_name"), "error")
+        flash(translate("flash.bad_file_name"), "error")
         return redirect(voltar)
 
     try:
         pasta = clean_path(destino_dir)
         alvo = clean_path(f"{pasta.rstrip('/')}/{nome}")
     except ValueError as exc:
-        flash(traduzir(texto_do_erro(exc)), "error")
+        flash(translate(error_text(exc)), "error")
         return redirect(voltar)
 
     try:
@@ -3143,11 +3143,11 @@ def files_upload(sid: int):
     except RemoteError as exc:
         log_job("upload-file", server, session.get("username", "?"),
                 command=alvo, output=str(exc), status="error")
-        flash(traduzir("flash.could_not_upload", reason=exc), "error")
+        flash(translate("flash.could_not_upload", reason=exc), "error")
         return redirect(voltar)
 
     log_job("upload-file", server, session.get("username", "?"), command=alvo, output=saida)
-    flash(traduzir("flash.uploaded", output=saida), "ok")
+    flash(translate("flash.uploaded", output=saida), "ok")
     return redirect(url_for("files", sid=sid, path=pasta))
 
 
@@ -3167,7 +3167,7 @@ def backup_prefix(server: Servidor) -> str:
     return backups_rt.backup_prefix(server)
 
 
-def _backup_ou_400(nome: str) -> str:
+def _backup_or_400(nome: str) -> str:
     """Confere o nome que voltou da tela antes de ele entrar num comando remoto."""
     try:
         return backups_rt.validate_backup_name(nome)
@@ -3210,7 +3210,7 @@ def backup_create(sid: int):
     server = _server_or_404(sid)
     caminhos = backup_paths(server)
     if not caminhos:
-        flash(traduzir("flash.nothing_to_back_up"), "error")
+        flash(translate("flash.nothing_to_back_up"), "error")
         return redirect(url_for("backups", sid=sid))
     job_id = start_job(
         "backup", server, session.get("username", "?"),
@@ -3226,7 +3226,7 @@ def backup_create(sid: int):
 def backup_restore(sid: int):
     """Volta o servidor para uma copia. Para o jogo, extrai e religa."""
     server = _server_or_404(sid)
-    nome = _backup_ou_400(request.form.get("nome", ""))
+    nome = _backup_or_400(request.form.get("nome", ""))
     caminhos = backup_paths(server)
 
     # Copia de seguranca ANTES de extrair: restaurar e a operacao mais destrutiva do
@@ -3251,13 +3251,13 @@ def backup_restore(sid: int):
 @admin_required
 def backup_delete(sid: int):
     server = _server_or_404(sid)
-    nome = _backup_ou_400(request.form.get("nome", ""))
+    nome = _backup_or_400(request.form.get("nome", ""))
     try:
         saida = delete_backup(server, nome)
     except RemoteError as exc:
         log_job("delete-backup", server, session.get("username", "?"),
                 command=nome, output=str(exc), status="error")
-        flash(traduzir("flash.could_not_delete", reason=exc), "error")
+        flash(translate("flash.could_not_delete", reason=exc), "error")
         return redirect(url_for("backups", sid=sid))
     log_job("delete-backup", server, session.get("username", "?"), command=nome, output=saida)
     flash(saida, "ok")
@@ -3269,7 +3269,7 @@ def backup_delete(sid: int):
 def backup_download(sid: int):
     """Tira a copia do container. Mesmo streaming do download de arquivo."""
     server = _server_or_404(sid)
-    nome = _backup_ou_400(request.args.get("nome", ""))
+    nome = _backup_or_400(request.args.get("nome", ""))
     caminho = f"{BACKUP_DIR.rstrip('/')}/{nome}"
     try:
         info = stat_file(server, caminho)
@@ -3416,24 +3416,24 @@ def config_files_edit(sid: int):
     try:
         path = clean_path(request.form.get("path", ""))
     except ValueError as exc:
-        flash(traduzir(texto_do_erro(exc)), "error")
+        flash(translate(error_text(exc)), "error")
         return redirect(url_for("config_quick", sid=sid))
 
     caminhos = config_paths(server)
     if request.form.get("acao") == "remover":
         caminhos = [p for p in caminhos if p != path]
         _save_config_files(sid, caminhos)
-        flash(traduzir("flash.left_config_screen", path=path), "ok")
+        flash(translate("flash.left_config_screen", path=path), "ok")
         return redirect(url_for("config_quick", sid=sid))
 
     if path in caminhos:
         return redirect(url_for("config_quick", sid=sid, file=path))
     if len(caminhos) >= CONFIG_FILES_MAX:
-        flash(traduzir("flash.config_files_limit", n=CONFIG_FILES_MAX), "error")
+        flash(translate("flash.config_files_limit", n=CONFIG_FILES_MAX), "error")
         return redirect(url_for("config_quick", sid=sid))
     caminhos.append(path)
     _save_config_files(sid, caminhos)
-    flash(traduzir("flash.now_opens_in_config", path=path), "ok")
+    flash(translate("flash.now_opens_in_config", path=path), "ok")
     return redirect(url_for("config_quick", sid=sid, file=path))
 
 
@@ -3460,7 +3460,7 @@ def enriquece_settings(doc: gameconf.ConfigFile, nome_arquivo: str) -> None:
             s.display_value = spec.to_display(s.value) if spec else s.value
 
 
-def _edits_do_formulario(form, nome_arquivo: str = "") -> tuple[list[gameconf.Edit], list[str]]:
+def _edits_from_form(form, nome_arquivo: str = "") -> tuple[list[gameconf.Edit], list[str]]:
     """Monta a lista de alteracoes: so o que o usuario realmente mexeu.
 
     Devolve tambem os erros de validacao. O valor chega na unidade da TELA (minutos,
@@ -3473,13 +3473,13 @@ def _edits_do_formulario(form, nome_arquivo: str = "") -> tuple[list[gameconf.Ed
     edits: list[gameconf.Edit] = []
     erros: list[str] = []
     for i in range(min(total, 4000)):
-        edit = _edit_da_linha(form, i, nome_arquivo, erros)
+        edit = _edit_from_row(form, i, nome_arquivo, erros)
         if edit is not None:
             edits.append(edit)
     return edits, erros
 
 
-def _edit_da_linha(form, i: int, nome_arquivo: str, erros: list[str]) -> gameconf.Edit | None:
+def _edit_from_row(form, i: int, nome_arquivo: str, erros: list[str]) -> gameconf.Edit | None:
     """Uma linha do formulario vira uma alteracao — ou nada.
 
     Nada acontece em tres casos: linha de "adicionar configuracao" deixada em branco,
@@ -3520,7 +3520,7 @@ def config_save(sid: int):
     try:
         path = clean_path(request.form.get("path", ""))
     except ValueError as exc:
-        flash(traduzir(texto_do_erro(exc)), "error")
+        flash(translate(error_text(exc)), "error")
         return redirect(url_for("config_quick", sid=sid))
     # Mesma trava do config_quick, agora na escrita: o caminho chega pelo formulario.
     if path not in config_paths(server) and not is_admin():
@@ -3530,18 +3530,18 @@ def config_save(sid: int):
     try:
         # O nome do arquivo escolhe o catalogo: e ele que diz o que validar e em que
         # unidade o valor foi digitado.
-        edits, erros_validacao = _edits_do_formulario(request.form, path.rsplit("/", 1)[-1])
+        edits, erros_validacao = _edits_from_form(request.form, path.rsplit("/", 1)[-1])
     except gameconf.ConfigError as exc:
-        flash(traduzir(texto_do_erro(exc)), "error")
+        flash(translate(error_text(exc)), "error")
         return redirect(voltar)
     if erros_validacao:
         # Nada e gravado quando ha erro: salvar metade das alteracoes deixaria o arquivo
         # num estado que a pessoa nao pediu e nao sabe qual e.
-        flash(traduzir("flash.value_out_of_range",
+        flash(translate("flash.value_out_of_range",
                        errors="; ".join(erros_validacao[:3])), "error")
         return redirect(voltar)
     if not edits:
-        flash(traduzir("flash.no_field_changed"), "ok")
+        flash(translate("flash.no_field_changed"), "ok")
         return redirect(voltar)
 
     # O arquivo e relido AGORA: o jogo pode te-lo reescrito desde que a tela abriu, e as
@@ -3550,14 +3550,14 @@ def config_save(sid: int):
         doc, info = load_config_doc(server, path)
         texto = doc.apply(edits)
     except (RemoteError, gameconf.ConfigError) as exc:
-        flash(traduzir("flash.could_not_save", reason=exc), "error")
+        flash(translate("flash.could_not_save", reason=exc), "error")
         return redirect(voltar)
 
     if info["crlf"]:
         texto = texto.replace("\n", "\r\n")
     data = texto.encode("utf-8")
     if len(data) > FILE_MAX_BYTES:
-        flash(traduzir("flash.file_too_big", kb=FILE_MAX_BYTES // 1024), "error")
+        flash(translate("flash.file_too_big", kb=FILE_MAX_BYTES // 1024), "error")
         return redirect(voltar)
 
     mexidas = ", ".join(dict.fromkeys(e.key for e in edits))
@@ -3566,12 +3566,12 @@ def config_save(sid: int):
     except RemoteError as exc:
         log_job("edit-config", server, session.get("username", "?"),
                 command=f"{path}: {mexidas}", output=str(exc), status="error")
-        flash(traduzir("flash.could_not_save", reason=exc), "error")
+        flash(translate("flash.could_not_save", reason=exc), "error")
         return redirect(voltar)
 
     log_job("edit-config", server, session.get("username", "?"),
             command=f"{path}: {mexidas}", output=f"{saida}\nalterado: {mexidas}")
-    flash(traduzir("flash.settings_saved", n=len(edits), path=path,
+    flash(translate("flash.settings_saved", n=len(edits), path=path,
                        keys=mexidas), "ok")
 
     # Quase todo jogo so le a configuracao no start — por isso o reiniciar mora aqui.
@@ -3592,7 +3592,7 @@ def job_detail(jid: int):
     job = conn.execute("SELECT * FROM jobs WHERE id = ?", (jid,)).fetchone()
     if not job:
         abort(404)
-    job_ou_403(job)
+    job_or_403(job)
     server = None
     if job["server_id"]:
         server = conn.execute(
@@ -3607,7 +3607,7 @@ def api_job(jid: int):
     job = db().execute("SELECT * FROM jobs WHERE id = ?", (jid,)).fetchone()
     if not job:
         abort(404)
-    job_ou_403(job)
+    job_or_403(job)
     return jsonify(
         {
             "status": job["status"],
@@ -3643,19 +3643,19 @@ def broker_required(view):
     def wrapper(*args, **kwargs):
         if not ALLOW_BROKER:
             abort(403, "O broker esta desligado neste painel (GAMEPANEL_ALLOW_BROKER=0).")
-        usuario = usuario_logado()
-        if not usuario or not usuario["totp_enabled"]:
+        user = logged_user()
+        if not user or not user["totp_enabled"]:
             if request.path.startswith("/api/"):
                 return jsonify({"error": "ative a verificacao em duas etapas em Conta para "
                                          "usar o broker"}), 403
-            flash(traduzir("flash.broker_needs_two_factor"), "error")
+            flash(translate("flash.broker_needs_two_factor"), "error")
             return redirect(url_for("account_2fa"))
         return view(*args, **kwargs)
 
     return wrapper
 
 
-def _dispara(tarefa) -> None:
+def _fire(tarefa) -> None:
     """Roda `tarefa` numa thread. Existe para os testes trocarem por uma execucao direta."""
     threading.Thread(target=tarefa, daemon=True).start()
 
@@ -3687,18 +3687,18 @@ def _broker_job_deps() -> broker_jobs.BrokerJobDeps:
     """Montado na chamada: `BROKER_POLL` e `BROKER_FALHAS_MAX` sao trocados pelos testes
     antes de acompanhar a operacao, e um bundle congelado no import nao veria a troca."""
     return broker_jobs.BrokerJobDeps(
-        atualiza_job=_atualiza_job, fecha_job=_fecha_job, ensure_server=ensure_server,
-        servidor_do_deploy=ServidorDoDeploy, connect=_connect, poll=BROKER_POLL,
-        falhas_max=BROKER_FALHAS_MAX, timeout=JOB_TIMEOUT,
+        update_job=_atualiza_job, close_job=_fecha_job, ensure_server=ensure_server,
+        deploy_server=ServidorDoDeploy, connect=_connect, poll=BROKER_POLL,
+        max_failures=BROKER_FALHAS_MAX, timeout=JOB_TIMEOUT,
     )
 
 
-def _cadastra_servidor_do_broker(r: dict) -> int:
-    return broker_jobs.cadastra_servidor(_broker_job_deps(), r)
+def _register_broker_server(r: dict) -> int:
+    return broker_jobs.register_server(_broker_job_deps(), r)
 
 
-def acompanha_operacao(job_id: int, op_id: str, dormir=time.sleep) -> None:
-    broker_jobs.acompanha_operacao(_broker_job_deps(), job_id, op_id, dormir)
+def follow_operation(job_id: int, op_id: str, sleep=time.sleep) -> None:
+    broker_jobs.follow_operation(_broker_job_deps(), job_id, op_id, sleep)
 
 
 def start_broker_job(action: str, username: str, op_id: str, comando: str) -> int:
@@ -3710,11 +3710,11 @@ def start_broker_job(action: str, username: str, op_id: str, comando: str) -> in
             (action, comando, username, now_iso(), op_id),
         )
     job_id = _id_inserido(cur)
-    _dispara(lambda: acompanha_operacao(job_id, op_id))
+    _fire(lambda: follow_operation(job_id, op_id))
     return job_id
 
 
-def retoma_jobs_do_broker() -> int:
+def resume_broker_jobs() -> int:
     """Depois de um restart do painel, volta a acompanhar as operacoes que ainda estavam
     rodando no broker. Sem isto o job ficaria 'running' para sempre, e o servidor recem
     criado nunca seria cadastrado."""
@@ -3728,11 +3728,11 @@ def retoma_jobs_do_broker() -> int:
     finally:
         conn.close()
     for job in pendentes:
-        _dispara(lambda jid=job["id"], op=job["broker_op"]: acompanha_operacao(jid, op))
+        _fire(lambda jid=job["id"], op=job["broker_op"]: follow_operation(jid, op))
     return len(pendentes)
 
 
-def _registra_acao_do_broker(action: str, username: str, comando: str, saida: str,
+def _log_broker_action(action: str, username: str, comando: str, saida: str,
                              status: str = "ok") -> int:
     """Deixa no historico uma acao curta do broker (desativar, remover, jogo novo)."""
     conn = db()
@@ -3760,7 +3760,7 @@ def catalog():
     try:
         jogos = broker_client.catalogo()
     except broker_client.BrokerError as erro:
-        flash(traduzir("flash.broker_error", reason=erro.mensagem), "error")
+        flash(translate("flash.broker_error", reason=erro.mensagem), "error")
         jogos = []
     return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECIPES, form={},
                            modelos=MODELOS_DE_JOGO)
@@ -3789,15 +3789,15 @@ def catalog_new():
             erros.append(f"Broker: {erro.mensagem}")
     if erros:
         for erro in erros:
-            flash(traduzir(erro), "error")
+            flash(translate(erro), "error")
         try:
             jogos = broker_client.catalogo()
         except broker_client.BrokerError:
             jogos = []
         return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECIPES,
                                form=request.form, modelos=MODELOS_DE_JOGO), 400
-    _registra_acao_do_broker("broker-jogo", _ator(), dados.get("chave", ""), "Jogo adicionado ao catalogo.")
-    flash(traduzir("flash.game_added",
+    _log_broker_action("broker-jogo", _ator(), dados.get("chave", ""), "Jogo adicionado ao catalogo.")
+    flash(translate("flash.game_added",
                        name=dados.get("nome", dados.get("chave", ""))), "ok")
     return redirect(url_for("catalog"))
 
@@ -3810,7 +3810,7 @@ def instances_list():
         instancias = broker_client.instancias()
         jogos = [j for j in broker_client.catalogo() if j.get("criavel")]
     except broker_client.BrokerError as erro:
-        flash(traduzir("flash.broker_error", reason=erro.mensagem), "error")
+        flash(translate("flash.broker_error", reason=erro.mensagem), "error")
         instancias, jogos = [], []
     ligados = {
         r["broker_id"]: r
@@ -3828,11 +3828,11 @@ def instance_new():
     try:
         resposta = broker_client.criar(jogo, nome, _ator())
     except broker_client.BrokerError as erro:
-        flash(traduzir("flash.broker_error", reason=erro.mensagem), "error")
+        flash(translate("flash.broker_error", reason=erro.mensagem), "error")
         return redirect(url_for("instances_list"))
     op_id = str(resposta.get("operacao_id", ""))
     if not op_id:
-        flash(traduzir("flash.broker_no_operation_id"), "error")
+        flash(translate("flash.broker_no_operation_id"), "error")
         return redirect(url_for("instances_list"))
     job_id = start_broker_job("broker-criar", _ator(), op_id, f"{jogo}: {nome}")
     return redirect(url_for("job_detail", jid=job_id))
@@ -3845,12 +3845,12 @@ def instance_deactivate(iid: int):
     try:
         broker_client.desativar(iid, _ator())
     except broker_client.BrokerError as erro:
-        _registra_acao_do_broker("broker-desativar", _ator(), f"instancia {iid}", erro.mensagem, "error")
-        flash(traduzir("flash.broker_error", reason=erro.mensagem), "error")
+        _log_broker_action("broker-desativar", _ator(), f"instancia {iid}", erro.mensagem, "error")
+        flash(translate("flash.broker_error", reason=erro.mensagem), "error")
     else:
-        _registra_acao_do_broker("broker-desativar", _ator(), f"instancia {iid}",
+        _log_broker_action("broker-desativar", _ator(), f"instancia {iid}",
                                  "Portas fechadas no firewall e container parado.")
-        flash(traduzir("flash.instance_deactivated"), "ok")
+        flash(translate("flash.instance_deactivated"), "ok")
     return redirect(url_for("instances_list"))
 
 
@@ -3863,17 +3863,17 @@ def instance_remove(iid: int):
     try:
         broker_client.remover(iid, confirma, _ator(), somente_banco)
     except broker_client.BrokerError as erro:
-        _registra_acao_do_broker("broker-remover", _ator(), f"instancia {iid}", erro.mensagem, "error")
-        flash(traduzir("flash.broker_error", reason=erro.mensagem), "error")
+        _log_broker_action("broker-remover", _ator(), f"instancia {iid}", erro.mensagem, "error")
+        flash(translate("flash.broker_error", reason=erro.mensagem), "error")
         return redirect(url_for("instances_list"))
     conn = db()
     with conn:
         # O servidor do painel aponta para um container que deixou de existir.
         conn.execute("DELETE FROM servers WHERE broker_id = ?", (iid,))
-    _registra_acao_do_broker(
+    _log_broker_action(
         "broker-remover", _ator(), f"instancia {iid}",
         "So o registro foi esquecido." if somente_banco else "Container destruido e servidor removido do painel.")
-    flash(traduzir("flash.instance_removed"), "ok")
+    flash(translate("flash.instance_removed"), "ok")
     return redirect(url_for("instances_list"))
 
 
@@ -3881,13 +3881,13 @@ def instance_remove(iid: int):
 
 
 def _inteiro(valor, minimo: int, maximo: int, padrao: int) -> int:
-    bruto = (valor or "").strip()
-    if bruto.lstrip("-").isdigit() and minimo <= int(bruto) <= maximo:
-        return int(bruto)
+    raw = (valor or "").strip()
+    if raw.lstrip("-").isdigit() and minimo <= int(raw) <= maximo:
+        return int(raw)
     return padrao
 
 
-def _form_agendamento(form, errors: list[str]) -> dict:
+def _schedule_form(form, errors: list[str]) -> dict:
     acao = (form.get("action", "") or "").strip()
     if acao not in SCHEDULE_ACTIONS:
         errors.append("Escolha o que a tarefa deve fazer.")
@@ -3915,14 +3915,14 @@ def _form_agendamento(form, errors: list[str]) -> dict:
     }
 
 
-def _agendamento_ou_404(aid: int) -> sqlite3.Row:
+def _schedule_or_404(aid: int) -> sqlite3.Row:
     sched = db().execute("SELECT * FROM schedules WHERE id = ?", (aid,)).fetchone()
     if not sched:
         abort(404)
     return sched
 
 
-def _proxima_ocorrencia(sched, agora: datetime) -> datetime:
+def _next_occurrence(sched, agora: datetime) -> datetime:
     """Quando esta tarefa roda da proxima vez.
 
     'intervalo' conta a partir da ultima execucao; diario e semanal somam um passo a
@@ -3951,10 +3951,10 @@ def schedules(sid: int):
     # deixa claro se ela ja rodou hoje ou se ainda vai rodar.
     proximas = {}
     for t in tarefas:
-        proximas[t["id"]] = _proxima_ocorrencia(t, agora).strftime(FORMATO_DATA_CURTA)
+        proximas[t["id"]] = _next_occurrence(t, agora).strftime(FORMATO_DATA_CURTA)
     return render_template(
         "schedules.html", server=server, tarefas=tarefas, proximas=proximas,
-        acoes=SCHEDULE_ACTIONS, job_labels=rotulos_de(JOB_LABELS), dias=WEEKDAYS,
+        acoes=SCHEDULE_ACTIONS, job_labels=labels_of(JOB_LABELS), dias=WEEKDAYS,
         rotulo=schedule_label, agora=agora, max_horas=EVERY_HOURS_MAX,
     )
 
@@ -3964,10 +3964,10 @@ def schedules(sid: int):
 def schedule_new(sid: int):
     _server_or_404(sid)
     errors: list[str] = []
-    dados = _form_agendamento(request.form, errors)
+    dados = _schedule_form(request.form, errors)
     if errors:
         for err in errors:
-            flash(traduzir(err), "error")
+            flash(translate(err), "error")
         return redirect(url_for("schedules", sid=sid))
 
     # 'intervalo' comeca a contar de agora: sem isto, "a cada 6h" dispararia no instante
@@ -3981,30 +3981,30 @@ def schedule_new(sid: int):
             (sid, dados["action"], dados["kind"], dados["hour"], dados["minute"],
              dados["weekday"], dados["every_hours"], inicio, now_iso()),
         )
-    flash(traduzir("flash.task_scheduled", task=job_label(dados["action"])), "ok")
+    flash(translate("flash.task_scheduled", task=job_label(dados["action"])), "ok")
     return redirect(url_for("schedules", sid=sid))
 
 
 @app.post("/agendamentos/<int:aid>/alternar")
 @admin_required
 def schedule_toggle(aid: int):
-    sched = _agendamento_ou_404(aid)
+    sched = _schedule_or_404(aid)
     conn = db()
     with conn:
         conn.execute("UPDATE schedules SET enabled = ? WHERE id = ?",
                      (0 if sched["enabled"] else 1, aid))
-    flash(traduzir("flash.task_off" if sched["enabled"] else "flash.task_on"), "ok")
+    flash(translate("flash.task_off" if sched["enabled"] else "flash.task_on"), "ok")
     return redirect(url_for("schedules", sid=sched["server_id"]))
 
 
 @app.post("/agendamentos/<int:aid>/remover")
 @admin_required
 def schedule_delete(aid: int):
-    sched = _agendamento_ou_404(aid)
+    sched = _schedule_or_404(aid)
     conn = db()
     with conn:
         conn.execute("DELETE FROM schedules WHERE id = ?", (aid,))
-    flash(traduzir("flash.task_removed"), "ok")
+    flash(translate("flash.task_removed"), "ok")
     return redirect(url_for("schedules", sid=sched["server_id"]))
 
 
@@ -4012,10 +4012,10 @@ def schedule_delete(aid: int):
 @admin_required
 def schedule_run(aid: int):
     """Roda a tarefa agora, sem esperar a hora — e como se confere se ela funciona."""
-    sched = _agendamento_ou_404(aid)
-    job_id = dispara_agendamento(db(), sched)
+    sched = _schedule_or_404(aid)
+    job_id = fire_schedule(db(), sched)
     if not job_id:
-        flash(traduzir("flash.could_not_trigger"), "error")
+        flash(translate("flash.could_not_trigger"), "error")
         return redirect(url_for("schedules", sid=sched["server_id"]))
     return redirect(url_for("job_detail", jid=job_id))
 
@@ -4139,7 +4139,7 @@ def history():
         onde.append("username = ?")
         valores.append(filtro_user)
 
-    corte, escondidas = filtro_de_papel()
+    corte, escondidas = role_filter()
     sql_onde = " AND ".join(onde) + corte
     valores.extend(escondidas)
 
@@ -4182,13 +4182,13 @@ def account_language():
     Por usuario, e nao por sessao: quem trabalha em ingles nao quer reescolher a cada
     login, e duas pessoas no mesmo painel podem preferir idiomas diferentes.
     """
-    escolhido = i18n.idioma_valido(request.form.get("lang"))
+    escolhido = i18n.valid_language(request.form.get("lang"))
     with db() as conn:
         conn.execute("UPDATE users SET lang = ? WHERE id = ?", (escolhido, session["uid"]))
     # O `g` desta requisicao ja guardou o idioma antigo, e o flash abaixo e lido na
     # PROXIMA (depois do redirect) — entao ele ja sai no idioma novo.
     g._idioma = escolhido
-    flash(traduzir("account.language.changed"), "ok")
+    flash(translate("account.language.changed"), "ok")
     return redirect(url_for("account"))
 
 
@@ -4202,22 +4202,22 @@ def account():
         row = db().execute(
             "SELECT * FROM users WHERE id = ?", (session["uid"],)
         ).fetchone()
-        erro = valida_senha(new, confirm)
+        erro = validate_password(new, confirm)
         if not row or not verify_password(current, row["password_hash"]):
-            flash(traduzir("flash.wrong_current_password"), "error")
+            flash(translate("flash.wrong_current_password"), "error")
         elif erro:
-            flash(traduzir(erro), "error")
+            flash(translate(erro), "error")
         else:
             conn = db()
             with conn:
                 conn.execute(SQL_SET_PASSWORD, (hash_password(new), session["uid"]))
-            flash(traduzir("flash.password_changed"), "ok")
+            flash(translate("flash.password_changed"), "ok")
             return redirect(url_for("dashboard"))
-    return render_template("account.html", segundo_fator=_estado_do_2fa(),
+    return render_template("account.html", segundo_fator=_two_factor_state(),
                            exige_2fa=REQUIRE_2FA, broker_ligado=ALLOW_BROKER)
 
 
-def _estado_do_2fa() -> dict:
+def _two_factor_state() -> dict:
     row = db().execute(
         "SELECT totp_enabled, totp_recovery FROM users WHERE id = ?", (session["uid"],)
     ).fetchone()
@@ -4241,7 +4241,7 @@ def _guarda_o_segundo_fator(uid: int, segredo: str, passo: int) -> list[str]:
     return codigos
 
 
-def _senha_e_codigo_conferem(uid: int) -> tuple[sqlite3.Row | None, str]:
+def _password_and_code_ok(uid: int) -> tuple[sqlite3.Row | None, str]:
     """Para desligar o 2FA ou pedir codigos novos: a senha E um codigo. Quem esta logado ja
     provou os dois no login, mas uma sessao esquecida aberta nao pode desligar a protecao."""
     row = db().execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
@@ -4262,17 +4262,17 @@ def _senha_e_codigo_conferem(uid: int) -> tuple[sqlite3.Row | None, str]:
 @login_required
 def account_2fa():
     """Ativar o segundo fator: mostra o segredo, confere UM codigo do aplicativo e so entao liga."""
-    if _estado_do_2fa()["ativo"]:
+    if _two_factor_state()["ativo"]:
         return redirect(url_for("account"))
     if request.method == "POST":
         segredo = session.get("totp_pendente", "")
         passo = totp.verify(segredo, request.form.get("codigo", ""), time.time()) if segredo else None
         if passo is None:
-            flash(traduzir("flash.wrong_code"), "error")
+            flash(translate("flash.wrong_code"), "error")
         else:
             codigos = _guarda_o_segundo_fator(session["uid"], segredo, passo)
             session.pop("totp_pendente", None)
-            flash(traduzir("flash.two_factor_on"), "ok")
+            flash(translate("flash.two_factor_on"), "ok")
             return render_template("account_2fa_codigos.html", codigos=codigos)
     # O segredo fica na SESSAO (cookie assinado) ate ser confirmado; recarregar a pagina mostra
     # o mesmo, e abandonar a tela nao deixa nada meio ligado no banco.
@@ -4288,14 +4288,14 @@ def account_2fa():
 @login_required
 def account_2fa_off():
     if REQUIRE_2FA:
-        flash(traduzir("account.two_factor_required"), "error")
+        flash(translate("account.two_factor_required"), "error")
         return redirect(url_for("account"))
-    row, erro = _senha_e_codigo_conferem(session["uid"])
+    row, erro = _password_and_code_ok(session["uid"])
     if erro:
-        flash(traduzir(erro), "error")
+        flash(translate(erro), "error")
         return redirect(url_for("account"))
     _apaga_o_segundo_fator(row["id"])
-    flash(traduzir("flash.two_factor_off"), "ok")
+    flash(translate("flash.two_factor_off"), "ok")
     return redirect(url_for("account"))
 
 
@@ -4303,16 +4303,16 @@ def account_2fa_off():
 @login_required
 def account_2fa_codes():
     """Codigos de recuperacao novos: os antigos deixam de valer."""
-    row, erro = _senha_e_codigo_conferem(session["uid"])
+    row, erro = _password_and_code_ok(session["uid"])
     if erro:
-        flash(traduzir(erro), "error")
+        flash(translate(erro), "error")
         return redirect(url_for("account"))
     codigos = totp.new_recovery_codes()
     conn = db()
     with conn:
         conn.execute("UPDATE users SET totp_recovery = ? WHERE id = ?",
                      (json.dumps([totp.hash_recovery_code(c) for c in codigos]), row["id"]))
-    flash(traduzir("flash.new_codes"), "ok")
+    flash(translate("flash.new_codes"), "ok")
     return render_template("account_2fa_codigos.html", codigos=codigos)
 
 
@@ -4332,19 +4332,19 @@ def _apaga_o_segundo_fator(uid: int) -> None:
 def alerts():
     conn = db()
     return render_template(
-        "alerts.html", cfg=webhook_config(conn), eventos=rotulos_de(ALERT_EVENTS),
-        padrao=limpa_eventos(ALERT_DEFAULT), do_env=bool(WEBHOOK_URL_PADRAO),
+        "alerts.html", cfg=webhook_config(conn), eventos=labels_of(ALERT_EVENTS),
+        padrao=clean_events(ALERT_DEFAULT), do_env=bool(WEBHOOK_URL_PADRAO),
         monitor=int(MONITOR_EVERY), disco_a_cada=int(DISK_CHECK_EVERY / 60),
         # O piso do relogio conta: o alerta nao pode chegar mais rapido que a volta dele.
         jogadores_a_cada=int(max(PLAYER_CHECK_EVERY, SCHEDULE_TICK)),
         quieto=int(ALERT_QUIET), limite_hooks=WEBHOOK_MAX,
         mudo_voltas=MUTE_ROUNDS, log_a_cada=int(LOG_CHECK_EVERY),
-        pendencias=alertas_sem_base(conn), diario=alertas_recentes(conn),
-        streams=streams_vivos(),
+        pendencias=alerts_without_baseline(conn), diario=recent_alerts(conn),
+        streams=live_streams(),
     )
 
 
-def alertas_sem_base(conn: sqlite3.Connection) -> dict:
+def alerts_without_baseline(conn: sqlite3.Connection) -> dict:
     """Eventos ligados que nao tem em quais servidores olhar.
 
     Alerta ligado e mudo e pior do que alerta desligado: a pessoa marca 'jogo nao
@@ -4390,19 +4390,19 @@ def alerts_save():
             continue
         valor = (request.form.get(campo, "") or "").strip()
         if not valor.isdigit() or not 50 <= int(valor) <= 100:
-            flash(traduzir("flash.threshold_range", name=nome), "error")
+            flash(translate("flash.threshold_range", name=nome), "error")
             return redirect(url_for("alerts"))
         novos.append((chave, valor))
     # So grava depois de validar todos: meio salvo e pior que nada salvo, porque a tela
     # volta dizendo "recusado" enquanto um dos limites ja mudou por baixo.
     for chave, valor in novos:
         config_set(conn, chave, valor)
-    _zera_linha_de_base()
-    flash(traduzir("flash.preferences_saved"), "ok")
+    _reset_baseline()
+    flash(translate("flash.preferences_saved"), "ok")
     return redirect(url_for("alerts"))
 
 
-def _zera_linha_de_base() -> None:
+def _reset_baseline() -> None:
     """A memoria do monitor fica velha quando a configuracao muda.
 
     Zerando, a proxima volta so ANOTA o estado atual em vez de disparar um alerta sobre
@@ -4428,11 +4428,11 @@ def alerts_hook_new():
     conn = db()
     quantos = conn.execute("SELECT COUNT(*) AS n FROM webhooks").fetchone()["n"]
     if quantos >= WEBHOOK_MAX:
-        flash(traduzir("flash.destination_limit", n=WEBHOOK_MAX), "error")
+        flash(translate("flash.destination_limit", n=WEBHOOK_MAX), "error")
         return redirect(url_for("alerts"))
     dados, erro = _le_form_webhook()
     if erro or not dados["url"]:
-        flash(traduzir(erro) if erro else traduzir("flash.need_webhook_url"), "error")
+        flash(translate(erro) if erro else translate("flash.need_webhook_url"), "error")
         return redirect(url_for("alerts"))
     with conn:
         conn.execute(
@@ -4441,8 +4441,8 @@ def alerts_hook_new():
             (dados["nome"] or "Destino", dados["url"], dados["eventos"],
              dados["ativo"], now_iso()),
         )
-    _zera_linha_de_base()
-    flash(traduzir("flash.destination_added"), "ok")
+    _reset_baseline()
+    flash(translate("flash.destination_added"), "ok")
     return redirect(url_for("alerts"))
 
 
@@ -4452,11 +4452,11 @@ def alerts_hook_save(hid: int):
     conn = db()
     atual = conn.execute("SELECT url FROM webhooks WHERE id = ?", (hid,)).fetchone()
     if not atual:
-        flash(traduzir("flash.destination_not_found"), "error")
+        flash(translate("flash.destination_not_found"), "error")
         return redirect(url_for("alerts"))
     dados, erro = _le_form_webhook()
     if erro:
-        flash(traduzir(erro), "error")
+        flash(translate(erro), "error")
         return redirect(url_for("alerts"))
     # Campo de URL em branco quer dizer "mantem a que ja esta la". A tela mostra a URL
     # mascarada, entao nao ha o que reenviar: so quem digitar uma nova a troca.
@@ -4466,8 +4466,8 @@ def alerts_hook_save(hid: int):
             "UPDATE webhooks SET nome = ?, url = ?, eventos = ?, ativo = ? WHERE id = ?",
             (dados["nome"] or "Destino", url, dados["eventos"], dados["ativo"], hid),
         )
-    _zera_linha_de_base()
-    flash(traduzir("flash.destination_saved"), "ok")
+    _reset_baseline()
+    flash(translate("flash.destination_saved"), "ok")
     return redirect(url_for("alerts"))
 
 
@@ -4477,7 +4477,7 @@ def alerts_hook_del(hid: int):
     conn = db()
     with conn:
         conn.execute("DELETE FROM webhooks WHERE id = ?", (hid,))
-    flash(traduzir("flash.destination_removed"), "ok")
+    flash(translate("flash.destination_removed"), "ok")
     return redirect(url_for("alerts"))
 
 
@@ -4490,23 +4490,23 @@ def alerts_hook_test(hid: int):
         "SELECT nome, url FROM webhooks WHERE id = ?", (hid,)
     ).fetchone()
     if not row or not row["url"]:
-        flash(traduzir("flash.destination_not_found"), "error")
+        flash(translate("flash.destination_not_found"), "error")
         return redirect(url_for("alerts"))
     # Se ha uma URL digitada no formulario, testa ELA: o ponto do botao e conferir a URL
     # nova antes de gravar, e nao repetir o teste da que ja estava salva.
     digitada = (request.form.get("url", "") or "").strip()[:400]
     if digitada and not URL_RE.match(digitada):
-        flash(traduzir("flash.bad_url"), "error")
+        flash(translate("flash.bad_url"), "error")
         return redirect(url_for("alerts"))
-    erro = envia_webhook(
+    erro = send_webhook(
         digitada or row["url"],
         f"**Teste do painel de jogos**\nSe voce esta lendo isto, os alertas funcionam."
         f" ({session.get('username', '?')})",
     )
     nome = row["nome"] or "destino"
     flash(
-        traduzir("flash.destination_test_failed", name=nome, reason=erro) if erro
-        else traduzir("flash.destination_test_sent", name=nome),
+        translate("flash.destination_test_failed", name=nome, reason=erro) if erro
+        else translate("flash.destination_test_sent", name=nome),
         "error" if erro else "ok",
     )
     return redirect(url_for("alerts"))
@@ -4515,7 +4515,7 @@ def alerts_hook_test(hid: int):
 # ------------------------------------------------------------------ usuarios
 
 
-def valida_senha(nova: str, confirma: str) -> str:
+def validate_password(nova: str, confirma: str) -> str:
     """Devolve a mensagem de erro; string vazia quando a senha serve."""
     if len(nova) < PASSWORD_MIN:
         return f"A senha precisa ter ao menos {PASSWORD_MIN} caracteres."
@@ -4524,14 +4524,14 @@ def valida_senha(nova: str, confirma: str) -> str:
     return ""
 
 
-def conta_admins(excluindo: int = 0) -> int:
+def count_admins(excluindo: int = 0) -> int:
     """Quantos administradores sobrariam sem o usuario `excluindo`."""
     return db().execute(
         "SELECT COUNT(*) FROM users WHERE role = ? AND id <> ?", (ROLE_ADMIN, excluindo)
     ).fetchone()[0]
 
 
-def _usuario_ou_404(uid: int) -> sqlite3.Row:
+def _user_or_404(uid: int) -> sqlite3.Row:
     row = db().execute(
         "SELECT id, username, role FROM users WHERE id = ?", (uid,)
     ).fetchone()
@@ -4547,7 +4547,7 @@ def users_list():
         "SELECT id, username, role, created_at, totp_enabled FROM users ORDER BY role, username"
     ).fetchall()
     return render_template(
-        "users.html", users=rows, roles=ROLES, role_labels=rotulos_de(ROLE_LABELS),
+        "users.html", users=rows, roles=ROLES, role_labels=labels_of(ROLE_LABELS),
         meu_id=session.get("uid"), min_len=PASSWORD_MIN,
     )
 
@@ -4564,9 +4564,9 @@ def user_new():
     elif role not in ROLES:
         erro = "Papel invalido."
     else:
-        erro = valida_senha(senha, request.form.get("confirm", ""))
+        erro = validate_password(senha, request.form.get("confirm", ""))
     if erro:
-        flash(traduzir(erro), "error")
+        flash(translate(erro), "error")
         return redirect(url_for("users_list"))
 
     conn = db()
@@ -4580,34 +4580,34 @@ def user_new():
     except sqlite3.IntegrityError:
         # username e UNIQUE: e o unico jeito de dois admins criarem o mesmo nome ao
         # mesmo tempo sem um sobrescrever o outro.
-        flash(traduzir("flash.user_exists", user=username), "error")
+        flash(translate("flash.user_exists", user=username), "error")
         return redirect(url_for("users_list"))
-    flash(traduzir("flash.user_created", user=username,
-                       role=traduzir(ROLE_LABELS[role]).lower()), "ok")
+    flash(translate("flash.user_created", user=username,
+                       role=translate(ROLE_LABELS[role]).lower()), "ok")
     return redirect(url_for("users_list"))
 
 
 @app.post("/usuarios/<int:uid>/papel")
 @admin_required
 def user_role(uid: int):
-    alvo = _usuario_ou_404(uid)
+    alvo = _user_or_404(uid)
     role = request.form.get("role", "")
     if role not in ROLES:
         abort(400, "Papel invalido.")
     if uid == session.get("uid"):
         # Rebaixar a si mesmo tranca a pessoa fora desta tela no mesmo clique.
-        flash(traduzir("flash.cannot_change_own_role"), "error")
+        flash(translate("flash.cannot_change_own_role"), "error")
     elif role == alvo["role"]:
-        flash(traduzir("flash.user_already_is", user=alvo["username"],
-                       role=traduzir(ROLE_LABELS[role]).lower()), "ok")
-    elif alvo["role"] == ROLE_ADMIN and conta_admins(excluindo=uid) == 0:
-        flash(traduzir("flash.only_admin_demote"), "error")
+        flash(translate("flash.user_already_is", user=alvo["username"],
+                       role=translate(ROLE_LABELS[role]).lower()), "ok")
+    elif alvo["role"] == ROLE_ADMIN and count_admins(excluindo=uid) == 0:
+        flash(translate("flash.only_admin_demote"), "error")
     else:
         conn = db()
         with conn:
             conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, uid))
-        flash(traduzir("flash.user_now_is", user=alvo["username"],
-                       role=traduzir(ROLE_LABELS[role]).lower()), "ok")
+        flash(translate("flash.user_now_is", user=alvo["username"],
+                       role=translate(ROLE_LABELS[role]).lower()), "ok")
     return redirect(url_for("users_list"))
 
 
@@ -4615,15 +4615,15 @@ def user_role(uid: int):
 @admin_required
 def user_password(uid: int):
     """Reset feito pelo admin — sem a senha atual, que e justamente a esquecida."""
-    alvo = _usuario_ou_404(uid)
-    erro = valida_senha(request.form.get("new", ""), request.form.get("confirm", ""))
+    alvo = _user_or_404(uid)
+    erro = validate_password(request.form.get("new", ""), request.form.get("confirm", ""))
     if erro:
-        flash(traduzir(erro), "error")
+        flash(translate(erro), "error")
         return redirect(url_for("users_list"))
     conn = db()
     with conn:
         conn.execute(SQL_SET_PASSWORD, (hash_password(request.form.get("new", "")), uid))
-    flash(traduzir("flash.password_reset", user=alvo["username"]), "ok")
+    flash(translate("flash.password_reset", user=alvo["username"]), "ok")
     return redirect(url_for("users_list"))
 
 
@@ -4632,34 +4632,34 @@ def user_password(uid: int):
 def user_2fa_off(uid: int):
     """Celular perdido e codigos de recuperacao perdidos: o admin desliga o 2FA da pessoa, que
     entra so com a senha e ativa de novo. Nao vale para si mesmo (use a tela Conta)."""
-    alvo = _usuario_ou_404(uid)
+    alvo = _user_or_404(uid)
     if uid == session.get("uid"):
-        flash(traduzir("flash.own_two_factor_in_account"), "error")
+        flash(translate("flash.own_two_factor_in_account"), "error")
     else:
         _apaga_o_segundo_fator(uid)
-        flash(traduzir("flash.user_two_factor_off", user=alvo["username"]), "ok")
+        flash(translate("flash.user_two_factor_off", user=alvo["username"]), "ok")
     return redirect(url_for("users_list"))
 
 
 @app.post("/usuarios/<int:uid>/remover")
 @admin_required
 def user_delete(uid: int):
-    alvo = _usuario_ou_404(uid)
+    alvo = _user_or_404(uid)
     if uid == session.get("uid"):
-        flash(traduzir("flash.cannot_remove_self"), "error")
-    elif alvo["role"] == ROLE_ADMIN and conta_admins(excluindo=uid) == 0:
-        flash(traduzir("flash.cannot_remove_only_admin"), "error")
+        flash(translate("flash.cannot_remove_self"), "error")
+    elif alvo["role"] == ROLE_ADMIN and count_admins(excluindo=uid) == 0:
+        flash(translate("flash.cannot_remove_only_admin"), "error")
     else:
         conn = db()
         with conn:
             conn.execute("DELETE FROM users WHERE id = ?", (uid,))
         # A sessao dele morre no proximo clique: o login_required confere o banco.
-        flash(traduzir("flash.user_removed", user=alvo["username"]), "ok")
+        flash(translate("flash.user_removed", user=alvo["username"]), "ok")
     return redirect(url_for("users_list"))
 
 
 @app.after_request
-def _cabecalhos_de_seguranca(resp):
+def _security_headers(resp):
     """O painel da poder de root nos containers: nao pode ser embutido em outra pagina.
 
     Sem X-Frame-Options um site qualquer poe o painel num iframe invisivel e captura os
@@ -4684,7 +4684,7 @@ def health():
 CASCO_PASTAS = ("css", "js", "icons")
 
 
-def _arquivos_do_casco() -> tuple[list[str], int]:
+def _shell_files() -> tuple[list[str], int]:
     """URLs do casco do aplicativo e a marca de versao dele.
 
     A versao e o mtime mais recente entre esses arquivos. E o que faz um deploy
@@ -4728,7 +4728,7 @@ def service_worker():
     enxergaria /static/ e nao veria a navegacao do painel. Por isso ele nao e um
     arquivo estatico — e uma rota.
     """
-    precache, versao = _arquivos_do_casco()
+    precache, versao = _shell_files()
     resp = app.response_class(
         render_template("sw.js.jinja", versao=versao, precache=precache),
         mimetype="text/javascript",
@@ -4853,7 +4853,7 @@ class ServidorDoDeploy(NamedTuple):
     broker_id: int = 0
 
 
-def _insere_servidor(conn: sqlite3.Connection, dados: ServidorDoDeploy) -> None:
+def _insert_server(conn: sqlite3.Connection, dados: ServidorDoDeploy) -> None:
     conn.execute(
         "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
         " game_port, notes, config_path, config_files, backup_paths,"
@@ -4866,7 +4866,7 @@ def _insere_servidor(conn: sqlite3.Connection, dados: ServidorDoDeploy) -> None:
     )
 
 
-def _junta_arquivos_de_config(guardados: str, novos: str) -> str:
+def _merge_config_files(guardados: str, novos: str) -> str:
     """Os arquivos ja cadastrados mais os do deploy, sem repetir e sem perder nenhum."""
     lista = [p for p in (guardados or "").splitlines() if p.strip()]
     for novo in novos.splitlines():
@@ -4875,7 +4875,7 @@ def _junta_arquivos_de_config(guardados: str, novos: str) -> str:
     return "\n".join(lista[:CONFIG_FILES_MAX])
 
 
-def _atualiza_servidor(conn: sqlite3.Connection, atual, dados: ServidorDoDeploy) -> None:
+def _update_server(conn: sqlite3.Connection, atual, dados: ServidorDoDeploy) -> None:
     """Redeploy: o container manda no que e dele, o painel manda no que e escolha.
 
     Nome, servico, portas e caminho de config vem do deploy — sao fatos do container.
@@ -4891,7 +4891,7 @@ def _atualiza_servidor(conn: sqlite3.Connection, atual, dados: ServidorDoDeploy)
             dados.name, dados.ssh_user, dados.service, dados.game_port,
             dados.notes or atual["notes"],
             dados.config_path or atual["config_path"],
-            _junta_arquivos_de_config(atual["config_files"], dados.config_files),
+            _merge_config_files(atual["config_files"], dados.config_files),
             atual["backup_paths"] or dados.backup_paths,
             dados.query_port,
             atual["player_source"] or dados.player_source,
@@ -4918,9 +4918,9 @@ def ensure_server(dados: ServidorDoDeploy) -> bool:
                 (dados.host, dados.ssh_port),
             ).fetchone()
             if atual is None:
-                _insere_servidor(conn, dados)
+                _insert_server(conn, dados)
                 return True
-            _atualiza_servidor(conn, atual, dados)
+            _update_server(conn, atual, dados)
             return False
     finally:
         conn.close()
@@ -4934,7 +4934,7 @@ init_db()
 # deixando o job pendurado em 'running').
 if __name__ != "__main__":
     start_scheduler()
-    retoma_jobs_do_broker()
+    resume_broker_jobs()
 
 
 if __name__ == "__main__":
@@ -4943,7 +4943,7 @@ if __name__ == "__main__":
     # e quem precisa desse comando esta trancado do lado de fora do painel.
     cli.main(cli.CliDeps(
         init_db=init_db, connect=_connect, ensure_admin_user=ensure_admin_user,
-        ensure_server=ensure_server, servidor_do_deploy=ServidorDoDeploy,
-        start_scheduler=start_scheduler, retoma_jobs_do_broker=retoma_jobs_do_broker,
-        app=app, papeis=ROLES,
+        ensure_server=ensure_server, deploy_server=ServidorDoDeploy,
+        start_scheduler=start_scheduler, resume_broker_jobs=resume_broker_jobs,
+        app=app, roles=ROLES,
     ))

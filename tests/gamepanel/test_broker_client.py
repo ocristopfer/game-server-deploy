@@ -41,12 +41,12 @@ class Servidor:
                     "cabecalhos": {k.lower(): v for k, v in self.headers.items()},
                     "corpo": json.loads(corpo) if corpo else None,
                 })
-                status, dados = servidor.resposta
-                bruto = (dados if isinstance(dados, str) else json.dumps(dados)).encode()
+                status, data = servidor.resposta
+                raw = (data if isinstance(data, str) else json.dumps(data)).encode()
                 self.send_response(status)
-                self.send_header("Content-Length", str(len(bruto)))
+                self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
-                self.wfile.write(bruto)
+                self.wfile.write(raw)
 
             do_GET = do_POST = do_DELETE = _tratar
 
@@ -132,10 +132,10 @@ def test_prefixo_da_url_e_respeitado(monkeypatch):
 
 def test_recusa_do_broker_vira_erro_com_mensagem_status_e_codigo(servidor):
     servidor.resposta = (429, {"erro": "limite de 8 instancias atingido", "codigo": "cota"})
-    with pytest.raises(bc.BrokerError) as erro:
+    with pytest.raises(bc.BrokerError) as error:
         bc.criar("alfa", "x", "chefe")
-    assert erro.value.mensagem == "limite de 8 instancias atingido"
-    assert (erro.value.status, erro.value.codigo) == (429, "cota")
+    assert error.value.mensagem == "limite de 8 instancias atingido"
+    assert (error.value.status, error.value.codigo) == (429, "cota")
 
 
 def test_erro_sem_corpo_conhecido_tem_mensagem_generica(servidor):
@@ -146,17 +146,17 @@ def test_erro_sem_corpo_conhecido_tem_mensagem_generica(servidor):
 
 def test_mensagem_de_erro_e_limitada(servidor):
     servidor.resposta = (400, {"erro": "x" * 5000, "codigo": "validacao"})
-    with pytest.raises(bc.BrokerError) as erro:
+    with pytest.raises(bc.BrokerError) as error:
         bc.saude()
-    assert len(erro.value.mensagem) <= 300
+    assert len(error.value.mensagem) <= 300
 
 
 def test_conexao_recusada_nao_vaza_o_token(servidor):
     servidor.parar()
-    with pytest.raises(bc.BrokerError) as erro:
+    with pytest.raises(bc.BrokerError) as error:
         bc.saude()
-    assert TOKEN not in str(erro.value)
-    assert "nao consegui falar com o broker" in str(erro.value)
+    assert TOKEN not in str(error.value)
+    assert "nao consegui falar com o broker" in str(error.value)
 
 
 @pytest.mark.parametrize("funcao", [bc.catalogo, bc.instancias])

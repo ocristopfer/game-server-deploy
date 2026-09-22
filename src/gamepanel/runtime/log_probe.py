@@ -9,7 +9,7 @@ import shlex
 from collections.abc import Callable
 from typing import Any
 
-from gamepanel.i18n import Mensagem
+from gamepanel.i18n import Message
 from gamepanel.runtime.a2s import QueryError
 from gamepanel.runtime.ssh import ServerLike
 
@@ -85,12 +85,12 @@ def compile_pattern(raw: str | None, label: str) -> re.Pattern[str] | None:
     if not text:
         return None
     if len(text) > RE_MAX_LEN:
-        raise QueryError(Mensagem("pattern.too_long", label=Mensagem(label),
+        raise QueryError(Message("pattern.too_long", label=Message(label),
                                       n=RE_MAX_LEN))
     try:
         return re.compile(text)
     except re.error as exc:
-        raise QueryError(Mensagem("pattern.invalid", label=Mensagem(label),
+        raise QueryError(Message("pattern.invalid", label=Message(label),
                                       reason=exc)) from exc
 
 

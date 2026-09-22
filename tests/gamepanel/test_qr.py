@@ -50,10 +50,10 @@ def test_correcao_faz_o_resto_da_divisao_pelo_gerador_ser_zero(tamanho, correcao
     """A prova de que _correcao devolve um resto de verdade: dados+resto, como POLINOMIO, e
     multiplo do gerador — ou seja, se avalia a zero em toda raiz dele. E exatamente a
     propriedade que faz o decodificador (fora deste arquivo) saber corrigir erros."""
-    dados = [(37 * i + 5) % 256 for i in range(tamanho)]
-    resto = qr._correction(dados, correcao)
+    data = [(37 * i + 5) % 256 for i in range(tamanho)]
+    resto = qr._correction(data, correcao)
     assert len(resto) == correcao
-    codigo = dados + resto
+    codigo = data + resto
     for i in range(correcao):
         assert _avalia(codigo, qr._EXP[i]) == 0
 

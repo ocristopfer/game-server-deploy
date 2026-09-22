@@ -34,25 +34,25 @@ class CliDeps(NamedTuple):
     connect: Callable[[], sqlite3.Connection]
     ensure_admin_user: Callable[..., None]
     ensure_server: Callable[[Any], Any]
-    servidor_do_deploy: Callable[..., Any]
+    deploy_server: Callable[..., Any]
     start_scheduler: Callable[[], None]
-    retoma_jobs_do_broker: Callable[[], Any]
+    resume_broker_jobs: Callable[[], Any]
     app: Any
-    papeis: Sequence[str]
+    roles: Sequence[str]
 
 
-def por_virgula(bruto: str) -> str:
-    return "\n".join(p.strip() for p in bruto.split(SEPARADOR_DE_LISTA) if p.strip())
+def by_comma(raw: str) -> str:
+    return "\n".join(p.strip() for p in raw.split(SEPARADOR_DE_LISTA) if p.strip())
 
 
-def construir_parser(papeis: Sequence[str]) -> argparse.ArgumentParser:
+def build_parser(roles: Sequence[str]) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Painel de servidores de jogos")
     parser.add_argument("--create-user", metavar="USUARIO")
     # Saida de emergencia: o unico admin perdeu o celular E os codigos de recuperacao.
     parser.add_argument("--reset-2fa", metavar="USUARIO",
                         help="desliga o segundo fator de um usuario (roda no CT do painel)")
     parser.add_argument("--password", metavar="SENHA")
-    parser.add_argument("--role", default="", choices=("", *papeis),
+    parser.add_argument("--role", default="", choices=("", *roles),
                         help="papel do usuario (padrao: admin ao criar; manter ao redefinir)")
     parser.add_argument("--host", default="0.0.0.0")  # noqa: S104  # NOSONAR - o painel serve a LAN
     parser.add_argument("--port", type=int, default=int(os.environ.get("GAMEPANEL_PORT", "8080")))
@@ -75,25 +75,25 @@ def construir_parser(papeis: Sequence[str]) -> argparse.ArgumentParser:
     return parser
 
 
-def reset_2fa(deps: CliDeps, usuario: str) -> None:
+def reset_2fa(deps: CliDeps, user: str) -> None:
     """Desliga o segundo fator de um usuario. Levanta SystemExit se ele nao existe."""
     deps.init_db()
     conn = deps.connect()
     with conn:
         alvo = conn.execute(
-            "SELECT id FROM users WHERE username = ?", (usuario,)).fetchone()
+            "SELECT id FROM users WHERE username = ?", (user,)).fetchone()
         if not alvo:
-            raise SystemExit(f"usuario '{usuario}' nao existe")
+            raise SystemExit(f"usuario '{user}' nao existe")
         conn.execute(
             "UPDATE users SET totp_secret = '', totp_enabled = 0, totp_last_step = 0,"
             " totp_recovery = '' WHERE id = ?", (alvo["id"],))
-    print(f"Segundo fator de '{usuario}' desligado.")
+    print(f"Segundo fator de '{user}' desligado.")
 
 
-def registrar_servidor(deps: CliDeps, opts: argparse.Namespace) -> None:
+def register_server(deps: CliDeps, opts: argparse.Namespace) -> None:
     if not opts.server_host or not opts.service:
         raise SystemExit("--register-server exige --server-host e --service")
-    criado = deps.ensure_server(deps.servidor_do_deploy(
+    criado = deps.ensure_server(deps.deploy_server(
         name=opts.register_server,
         host=opts.server_host,
         service=opts.service,
@@ -102,8 +102,8 @@ def registrar_servidor(deps: CliDeps, opts: argparse.Namespace) -> None:
         game_port=opts.game_port,
         notes=opts.notes,
         config_path=opts.config_path,
-        config_files=por_virgula(opts.config_files),
-        backup_paths=por_virgula(opts.backup_paths),
+        config_files=by_comma(opts.config_files),
+        backup_paths=by_comma(opts.backup_paths),
         join_re=opts.join_re,
         leave_re=opts.leave_re,
         log_path=opts.log_path,
@@ -115,7 +115,7 @@ def registrar_servidor(deps: CliDeps, opts: argparse.Namespace) -> None:
 
 
 def main(deps: CliDeps, argv: Sequence[str] | None = None) -> None:
-    opts = construir_parser(deps.papeis).parse_args(argv)
+    opts = build_parser(deps.roles).parse_args(argv)
 
     if opts.reset_2fa:
         reset_2fa(deps, opts.reset_2fa)
@@ -124,16 +124,16 @@ def main(deps: CliDeps, argv: Sequence[str] | None = None) -> None:
             raise SystemExit("--create-user exige --password")
         deps.ensure_admin_user(opts.create_user, opts.password, opts.role)
     elif opts.register_server:
-        registrar_servidor(deps, opts)
+        register_server(deps, opts)
     else:
         # So o servidor de verdade sobe o relogio: pela linha de comando (cadastrar
         # usuario, cadastrar servidor) ele nao pode comecar a mexer nos containers.
         deps.start_scheduler()
-        deps.retoma_jobs_do_broker()
+        deps.resume_broker_jobs()
         deps.app.run(host=opts.host, port=opts.port)
 
 
-def deps_do_painel() -> CliDeps:
+def panel_deps() -> CliDeps:
     """Monta as dependencias a partir do painel.
 
     O import mora aqui dentro, e nao no topo: `app.py` importa ESTE modulo, e o
@@ -145,12 +145,12 @@ def deps_do_painel() -> CliDeps:
     return CliDeps(
         init_db=painel.init_db, connect=painel._connect,
         ensure_admin_user=painel.ensure_admin_user, ensure_server=painel.ensure_server,
-        servidor_do_deploy=painel.ServidorDoDeploy,
+        deploy_server=painel.ServidorDoDeploy,
         start_scheduler=painel.start_scheduler,
-        retoma_jobs_do_broker=painel.retoma_jobs_do_broker,
-        app=painel.app, papeis=painel.ROLES,
+        resume_broker_jobs=painel.resume_broker_jobs,
+        app=painel.app, roles=painel.ROLES,
     )
 
 
 if __name__ == "__main__":
-    main(deps_do_painel())
+    main(panel_deps())

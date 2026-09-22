@@ -34,9 +34,9 @@ class _ServidorFalso:
             # Nome em maiusculas porque e o que o BaseHTTPRequestHandler procura.
             def do_POST(self):
                 tamanho = int(self.headers.get("Content-Length", "0"))
-                bruto = self.rfile.read(tamanho)
+                raw = self.rfile.read(tamanho)
                 servidor.recebidos.append({
-                    "corpo": json.loads(bruto.decode("utf-8")),
+                    "corpo": json.loads(raw.decode("utf-8")),
                     "content_type": self.headers.get("Content-Type", ""),
                     "user_agent": self.headers.get("User-Agent", ""),
                 })
@@ -116,36 +116,36 @@ def test_recusa_do_destino_chega_com_codigo_e_motivo():
     """Sem o corpo da resposta, um 400 por payload torto e um 403 por bloqueio ficam iguais."""
     corpo = json.dumps({"message": "Invalid Webhook Token"}).encode()
     with _ServidorFalso(status=401, corpo=corpo) as srv:
-        erro = wc.send(srv.url, "oi", 5, UA)
-    assert "HTTP 401" in erro
-    assert "Invalid Webhook Token" in erro
+        error = wc.send(srv.url, "oi", 5, UA)
+    assert "HTTP 401" in error
+    assert "Invalid Webhook Token" in error
 
 
 def test_recusa_sem_corpo_fica_so_no_codigo():
     with _ServidorFalso(status=403) as srv:
-        erro = wc.send(srv.url, "oi", 5, UA)
-    assert erro == "o webhook respondeu HTTP 403"
+        error = wc.send(srv.url, "oi", 5, UA)
+    assert error == "o webhook respondeu HTTP 403"
 
 
 def test_motivo_longo_demais_e_cortado():
     corpo = b'{"message": "' + b"x" * 5000 + b'"}'
     with _ServidorFalso(status=400, corpo=corpo) as srv:
-        erro = wc.send(srv.url, "oi", 5, UA)
-    assert len(erro) < wc.ERROR_MAX + 100
+        error = wc.send(srv.url, "oi", 5, UA)
+    assert len(error) < wc.ERROR_MAX + 100
 
 
 def test_destino_fora_do_ar_vira_motivo_e_nao_excecao():
     """Um webhook quebrado nao pode derrubar o monitor junto."""
     # Porta fechada em loopback: recusa na hora, sem esperar timeout.
-    erro = wc.send("http://127.0.0.1:1/webhook", "oi", 1, UA)
-    assert erro.startswith("nao consegui chamar o webhook")
+    error = wc.send("http://127.0.0.1:1/webhook", "oi", 1, UA)
+    assert error.startswith("nao consegui chamar o webhook")
 
 
 def test_destino_pendurado_respeita_o_prazo():
     """Sem prazo, um destino que nao responde seguraria a volta inteira do monitor."""
     with _ServidorFalso(espera=3) as srv:
         comeco = time.monotonic()
-        erro = wc.send(srv.url, "oi", 0.3, UA)
+        error = wc.send(srv.url, "oi", 0.3, UA)
         gasto = time.monotonic() - comeco
-    assert erro.startswith("nao consegui chamar o webhook")
+    assert error.startswith("nao consegui chamar o webhook")
     assert gasto < 2

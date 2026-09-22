@@ -46,11 +46,11 @@ def deps(connect=None, **trocas) -> cli.CliDeps:
         "connect": connect or (lambda: sqlite3.connect(":memory:")),
         "ensure_admin_user": lambda *a: chamadas.__setitem__("usuario", a),
         "ensure_server": lambda d: chamadas.__setitem__("servidor", d) or True,
-        "servidor_do_deploy": dict,
+        "deploy_server": dict,
         "start_scheduler": lambda: chamadas.__setitem__("relogio", True),
-        "retoma_jobs_do_broker": lambda: chamadas.__setitem__("broker", True),
+        "resume_broker_jobs": lambda: chamadas.__setitem__("broker", True),
         "app": _AppFalso(chamadas),
-        "papeis": ("admin", "operador"),
+        "roles": ("admin", "operador"),
     }
     return cli.CliDeps(**{**padrao, **trocas})
 
@@ -129,31 +129,31 @@ def test_register_server_exige_host_e_servico():
 
 def test_register_server_monta_o_cadastro():
     vistos: list = []
-    d = deps(ensure_server=lambda dados: vistos.append(dados) or True)
+    d = deps(ensure_server=lambda data: vistos.append(data) or True)
     cli.main(d, ["--register-server", "Palworld", "--server-host", "10.0.0.5",
                  "--service", "palworld.service", "--query-port", "27015"])
-    dados = vistos[0]
-    assert dados["name"] == "Palworld"
-    assert dados["host"] == "10.0.0.5"
-    assert dados["query_port"] == 27015
-    assert dados["ssh_port"] == 22, "o padrao continua 22"
+    data = vistos[0]
+    assert data["name"] == "Palworld"
+    assert data["host"] == "10.0.0.5"
+    assert data["query_port"] == 27015
+    assert data["ssh_port"] == 22, "o padrao continua 22"
 
 
 def test_listas_vem_por_virgula_e_saem_uma_por_linha():
     """A linha de comando nao aceita quebra de linha com conforto."""
     vistos: list = []
-    d = deps(ensure_server=lambda dados: vistos.append(dados) or True)
+    d = deps(ensure_server=lambda data: vistos.append(data) or True)
     cli.main(d, ["--register-server", "X", "--server-host", "h", "--service", "s",
                  "--config-files", "/opt/a.ini, /opt/b.ini", "--backup-paths", "/save"])
     assert vistos[0]["config_files"] == "/opt/a.ini\n/opt/b.ini"
     assert vistos[0]["backup_paths"] == "/save"
 
 
-@pytest.mark.parametrize(("bruto", "esperado"), [
+@pytest.mark.parametrize(("raw", "esperado"), [
     ("", ""), ("  ", ""), ("/a", "/a"), ("/a,,/b", "/a\n/b"), (" /a , /b ", "/a\n/b"),
 ])
-def test_por_virgula(bruto, esperado):
-    assert cli.por_virgula(bruto) == esperado
+def test_por_virgula(raw, esperado):
+    assert cli.by_comma(raw) == esperado
 
 
 # ----------------------------------------------------------- servidor web
@@ -161,7 +161,7 @@ def test_por_virgula(bruto, esperado):
 def test_sem_argumentos_sobe_o_painel_com_o_relogio():
     chamadas: dict = {}
     d = deps(_chamadas=chamadas, start_scheduler=lambda: chamadas.__setitem__("relogio", True),
-             retoma_jobs_do_broker=lambda: chamadas.__setitem__("broker", True),
+             resume_broker_jobs=lambda: chamadas.__setitem__("broker", True),
              app=_AppFalso(chamadas))
     cli.main(d, [])
     assert chamadas["relogio"] is True

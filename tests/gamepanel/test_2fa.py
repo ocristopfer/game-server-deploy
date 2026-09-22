@@ -57,10 +57,10 @@ def _ativar(cli, postar, relogio: Clock) -> tuple[str, list[str]]:
     return segredo, RE_CODIGO.findall(resposta.get_data(as_text=True))
 
 
-def _senha(cli, postar, usuario="chefe", senha="senha-do-chefe", proximo=""):
+def _senha(cli, postar, user="chefe", senha="senha-do-chefe", proximo=""):
     cli.get("/login")
     url = "/login" + (f"?next={proximo}" if proximo else "")
-    return postar(cli, url, {"username": usuario, "password": senha})
+    return postar(cli, url, {"username": user, "password": senha})
 
 
 def _com_2fa(chefe, postar, hora):

@@ -16,7 +16,7 @@ import time
 from collections.abc import Callable
 from typing import Any, NamedTuple
 
-from gamepanel.i18n import Mensagem
+from gamepanel.i18n import Message
 from gamepanel.integrations import broker_client
 from gamepanel.services.server_service import HOST_RE, UNIT_RE
 
@@ -31,18 +31,18 @@ class BrokerJobDeps(NamedTuple):
     montado na chamada.
     """
 
-    atualiza_job: Callable[..., None]
-    fecha_job: Callable[..., None]
+    update_job: Callable[..., None]
+    close_job: Callable[..., None]
     # Devolve se criou (o acompanhamento nao usa: o que importa e a linha no banco).
     ensure_server: Callable[[Any], Any]
-    servidor_do_deploy: Callable[..., Any]
+    deploy_server: Callable[..., Any]
     connect: Callable[[], sqlite3.Connection]
     poll: float
-    falhas_max: int
+    max_failures: int
     timeout: float
 
 
-def cadastra_servidor(deps: BrokerJobDeps, r: dict) -> int:
+def register_server(deps: BrokerJobDeps, r: dict) -> int:
     """Registra no painel a instancia que o broker acabou de criar. Devolve o id do servidor.
 
     Passa pelo mesmo `ensure_server` do deploy, entao a tela de configuracao ja abre pronta.
@@ -50,8 +50,8 @@ def cadastra_servidor(deps: BrokerJobDeps, r: dict) -> int:
     host = str(r["host"])
     servico = str(r["service"])
     if not HOST_RE.match(host) or not UNIT_RE.match(servico):
-        raise ValueError(Mensagem("broker.bad_host_or_service"))
-    deps.ensure_server(deps.servidor_do_deploy(
+        raise ValueError(Message("broker.bad_host_or_service"))
+    deps.ensure_server(deps.deploy_server(
         name=str(r["name"])[:80], host=host, service=servico,
         game_port=" ".join(str(p) for p in r.get("ports") or []),
         notes=str(r.get("notes", "")),
@@ -69,29 +69,29 @@ def cadastra_servidor(deps: BrokerJobDeps, r: dict) -> int:
     finally:
         conn.close()
     if linha is None:
-        raise ValueError(Mensagem("broker.server_not_saved"))
+        raise ValueError(Message("broker.server_not_saved"))
     return int(linha["id"])
 
 
-def conclui_operacao(deps: BrokerJobDeps, job_id: int, op: dict) -> None:
+def finish_operation(deps: BrokerJobDeps, job_id: int, op: dict) -> None:
     log = str(op.get("log", ""))
     if op.get("estado") != "ok":
-        deps.fecha_job(job_id, "error", log, codigo=1)
+        deps.close_job(job_id, "error", log, codigo=1)
         return
     try:
-        sid = cadastra_servidor(deps, op.get("resultado") or {})
+        sid = register_server(deps, op.get("resultado") or {})
     except (KeyError, TypeError, ValueError, sqlite3.Error) as erro:
         # A instancia EXISTE no Proxmox: o texto precisa dizer isso, senao parece que
         # nada foi feito.
-        deps.fecha_job(job_id, "error", f"{log}\nA instancia foi criada, mas nao consegui "
+        deps.close_job(job_id, "error", f"{log}\nA instancia foi criada, mas nao consegui "
                        f"cadastra-la no painel: {erro}", codigo=1)
         return
-    deps.fecha_job(job_id, "ok", f"{log}\nServidor cadastrado no painel (id {sid}).",
+    deps.close_job(job_id, "ok", f"{log}\nServidor cadastrado no painel (id {sid}).",
                    codigo=0, server_id=sid)
 
 
-def acompanha_operacao(deps: BrokerJobDeps, job_id: int, op_id: str,
-                       dormir: Callable[[float], Any] = time.sleep) -> None:
+def follow_operation(deps: BrokerJobDeps, job_id: int, op_id: str,
+                       sleep: Callable[[float], Any] = time.sleep) -> None:
     """Le a operacao do broker ate ela terminar, gravando o log no job a cada volta."""
     limite = time.monotonic() + deps.timeout
     falhas = 0
@@ -101,16 +101,16 @@ def acompanha_operacao(deps: BrokerJobDeps, job_id: int, op_id: str,
             op = broker_client.operacao(op_id)
         except broker_client.BrokerError as erro:
             falhas += 1
-            if falhas >= deps.falhas_max:
-                deps.fecha_job(job_id, "error", f"{log}\nPerdi o contato com o broker: {erro}")
+            if falhas >= deps.max_failures:
+                deps.close_job(job_id, "error", f"{log}\nPerdi o contato com o broker: {erro}")
                 return
-            dormir(deps.poll)
+            sleep(deps.poll)
             continue
         falhas = 0
         log = str(op.get("log", ""))[-LOG_MAX:]
-        deps.atualiza_job(job_id, output=log)
+        deps.update_job(job_id, output=log)
         if op.get("estado") != "executando":
-            conclui_operacao(deps, job_id, op)
+            finish_operation(deps, job_id, op)
             return
-        dormir(deps.poll)
-    deps.fecha_job(job_id, "error", f"{log}\nTempo esgotado esperando o broker.")
+        sleep(deps.poll)
+    deps.close_job(job_id, "error", f"{log}\nTempo esgotado esperando o broker.")

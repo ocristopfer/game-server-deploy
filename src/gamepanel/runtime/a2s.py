@@ -8,7 +8,7 @@ import socket
 import struct
 from typing import Any
 
-from gamepanel.i18n import Mensagem
+from gamepanel.i18n import Message
 
 A2S_HEADER = b"\xff\xff\xff\xff"
 A2S_SPLIT = b"\xff\xff\xff\xfe"
@@ -40,7 +40,7 @@ class _Buffer:
 
     def _take(self, n: int) -> bytes:
         if self.pos + n > len(self.data):
-            raise QueryError(Mensagem("a2s.truncated"))
+            raise QueryError(Message("a2s.truncated"))
         out = self.data[self.pos:self.pos + n]
         self.pos += n
         return out
@@ -60,7 +60,7 @@ class _Buffer:
     def string(self) -> str:
         end = self.data.find(b"\x00", self.pos)
         if end < 0:
-            raise QueryError(Mensagem("a2s.unterminated_text"))
+            raise QueryError(Message("a2s.unterminated_text"))
         out = self.data[self.pos:end]
         self.pos = end + 1
         # Nome de servidor costuma vir com emoji e cor; nada disso pode derrubar a tela.
@@ -82,11 +82,11 @@ def _udp_receive(sock: socket.socket) -> bytes:
             break
         data, _ = sock.recvfrom(8192)
         if data[:4] != A2S_SPLIT:
-            raise QueryError(Mensagem("a2s.split_incomplete"))
+            raise QueryError(Message("a2s.split_incomplete"))
     whole = b"".join(parts[i] for i in sorted(parts))
     if whole[:4] == A2S_HEADER:
         return whole
-    raise QueryError(Mensagem("a2s.split_unknown"))
+    raise QueryError(Message("a2s.split_unknown"))
 
 
 def _ask(sock: socket.socket, addr: tuple[str, int], request: bytes, response_type: bytes) -> _Buffer:
@@ -101,7 +101,7 @@ def _ask(sock: socket.socket, addr: tuple[str, int], request: bytes, response_ty
             sock.sendto(request[:5] + challenge, addr)
         data = _udp_receive(sock)
     if data[4:5] != response_type:
-        raise QueryError(Mensagem("a2s.unexpected_reply", kind=repr(data[4:5])))
+        raise QueryError(Message("a2s.unexpected_reply", kind=repr(data[4:5])))
     buf = _Buffer(data)
     buf.pos = 5
     return buf
@@ -128,10 +128,10 @@ def query_players(host: str, port: int, timeout: float = 3.0) -> dict[str, Any]:
             info["max_players"] = buf.byte()
             info["bots"] = buf.byte()
         except TimeoutError:
-            raise QueryError(Mensagem("a2s.no_reply", seconds=f"{timeout:g}",
+            raise QueryError(Message("a2s.no_reply", seconds=f"{timeout:g}",
                                       port=port)) from None
         except (OSError, struct.error) as exc:
-            raise QueryError(Mensagem("a2s.query_failed", host=host, port=port,
+            raise QueryError(Message("a2s.query_failed", host=host, port=port,
                                       reason=exc)) from exc
 
         # A lista de nomes e opcional: varios servidores Unreal so respondem a contagem.
