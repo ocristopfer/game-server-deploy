@@ -54,6 +54,7 @@ from gamepanel.runtime import terminal as term_runtime
 from gamepanel.security import qr, totp
 from gamepanel.services import (
     alert_service,
+    broker_service,
     metrics_service,
     parallel,
     player_service,
@@ -61,7 +62,7 @@ from gamepanel.services import (
     server_service,
     status_service,
 )
-from gamepanel.tasks import scheduler
+from gamepanel.tasks import broker_jobs, scheduler
 
 # O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
 # resto do painel continua funcionando e a tela do terminal responde 503.
@@ -3888,10 +3889,9 @@ def api_job(jid: int):
 # Criar instancia de jogo e abrir porta no firewall. Quem tem as credenciais de Proxmox e
 # OPNsense e o broker (broker/); aqui o painel so PEDE, acompanha e cadastra o resultado.
 
-# Espelho do broker/catalogo.RECEITAS: so para desenhar as caixas do formulario. Quem
-# decide o que vale e o broker, que recusa receita que nao conhece.
-BROKER_RECEITAS = ("wine", "proton", "steamclient-sdk64")
-_NUMERO_RE = re.compile(r"[0-9]{1,10}", re.ASCII)
+# Formulario de jogo novo em gamepanel.services.broker_service; acompanhamento da
+# operacao em gamepanel.tasks.broker_jobs.
+BROKER_RECEITAS = broker_service.BROKER_RECEITAS
 
 
 def broker_required(view):
@@ -3950,78 +3950,22 @@ def _fecha_job(job_id: int, status: str, saida: str, codigo: int | None = None,
     _atualiza_job(job_id, **campos)
 
 
+def _broker_job_deps() -> broker_jobs.BrokerJobDeps:
+    """Montado na chamada: `BROKER_POLL` e `BROKER_FALHAS_MAX` sao trocados pelos testes
+    antes de acompanhar a operacao, e um bundle congelado no import nao veria a troca."""
+    return broker_jobs.BrokerJobDeps(
+        atualiza_job=_atualiza_job, fecha_job=_fecha_job, ensure_server=ensure_server,
+        servidor_do_deploy=ServidorDoDeploy, connect=_connect, poll=BROKER_POLL,
+        falhas_max=BROKER_FALHAS_MAX, timeout=JOB_TIMEOUT,
+    )
+
+
 def _cadastra_servidor_do_broker(r: dict) -> int:
-    """Registra no painel a instancia que o broker acabou de criar. Devolve o id do servidor.
-
-    Passa pelo mesmo `ensure_server` do deploy, entao a tela de configuracao ja abre pronta.
-    """
-    host = str(r["host"])
-    servico = str(r["service"])
-    if not HOST_RE.match(host) or not UNIT_RE.match(servico):
-        raise ValueError("o broker devolveu host ou servico com formato invalido")
-    ensure_server(ServidorDoDeploy(
-        name=str(r["name"])[:80], host=host, service=servico,
-        game_port=" ".join(str(p) for p in r.get("ports") or []),
-        notes=str(r.get("notes", "")),
-        config_path=str(r.get("config_path", "")),
-        config_files="\n".join(r.get("config_files") or []),
-        backup_paths="\n".join(r.get("backup_paths") or []),
-        join_re=str(r.get("join_re", "")), leave_re=str(r.get("leave_re", "")),
-        log_path=str(r.get("log_path", "")), query_port=int(r.get("query_port") or 0),
-        player_source=str(r.get("player_source", "")), broker_id=int(r.get("broker_id") or 0),
-    ))
-    conn = _connect()
-    try:
-        linha = conn.execute("SELECT id FROM servers WHERE host = ? AND ssh_port = 22", (host,)).fetchone()
-    finally:
-        conn.close()
-    if linha is None:
-        raise ValueError("o servidor nao foi gravado")
-    return int(linha["id"])
-
-
-def _conclui_operacao_do_broker(job_id: int, op: dict) -> None:
-    log = str(op.get("log", ""))
-    if op.get("estado") != "ok":
-        _fecha_job(job_id, "error", log, codigo=1)
-        return
-    try:
-        sid = _cadastra_servidor_do_broker(op.get("resultado") or {})
-    except (KeyError, TypeError, ValueError, sqlite3.Error) as erro:
-        # A instancia EXISTE no Proxmox: o texto precisa dizer isso, senao parece que nada foi feito.
-        _fecha_job(job_id, "error", f"{log}\nA instancia foi criada, mas nao consegui cadastra-la "
-                   f"no painel: {erro}", codigo=1)
-        return
-    _fecha_job(job_id, "ok", f"{log}\nServidor cadastrado no painel (id {sid}).", codigo=0, server_id=sid)
+    return broker_jobs.cadastra_servidor(_broker_job_deps(), r)
 
 
 def acompanha_operacao(job_id: int, op_id: str, dormir=time.sleep) -> None:
-    """Le a operacao do broker ate ela terminar, gravando o log no job a cada volta.
-
-    E isso que faz a tela do job mostrar o progresso ao vivo: o `start_job` comum so grava
-    a saida no fim, e uma criacao de servidor leva minutos de download.
-    """
-    limite = time.monotonic() + JOB_TIMEOUT
-    falhas = 0
-    log = ""
-    while time.monotonic() < limite:
-        try:
-            op = broker_client.operacao(op_id)
-        except broker_client.BrokerError as erro:
-            falhas += 1
-            if falhas >= BROKER_FALHAS_MAX:
-                _fecha_job(job_id, "error", f"{log}\nPerdi o contato com o broker: {erro}")
-                return
-            dormir(BROKER_POLL)
-            continue
-        falhas = 0
-        log = str(op.get("log", ""))[-200000:]
-        _atualiza_job(job_id, output=log)
-        if op.get("estado") != "executando":
-            _conclui_operacao_do_broker(job_id, op)
-            return
-        dormir(BROKER_POLL)
-    _fecha_job(job_id, "error", f"{log}\nTempo esgotado esperando o broker.")
+    broker_jobs.acompanha_operacao(_broker_job_deps(), job_id, op_id, dormir)
 
 
 def start_broker_job(action: str, username: str, op_id: str, comando: str) -> int:
@@ -4073,37 +4017,7 @@ def _ator() -> str:
     return session.get("username", "")
 
 
-def _linhas(texto: str) -> list[str]:
-    return [p.strip() for p in (texto or "").replace(",", "\n").splitlines() if p.strip()]
-
-
-def _jogo_do_form(form) -> tuple[dict, list[str]]:
-    """Le o formulario de jogo novo. So converte tipos: quem valida de verdade e o broker
-    (ele recusa campo desconhecido, caminho fora de /opt/game, comando escondido...)."""
-    erros: list[str] = []
-    dados: dict = {}
-    for campo in ("chave", "nome", "plataforma", "start_script", "start_args", "config_path",
-                  "log_path", "join_re", "leave_re", "player_source"):
-        valor = (form.get(campo) or "").strip()
-        if valor:
-            dados[campo] = valor
-    for campo, rotulo in (("app_id", "App ID"), ("porta_jogo", "Porta do jogo"),
-                          ("porta_query", "Porta de consulta"), ("porta_extra", "Porta extra"),
-                          ("memoria_mb", "Memoria"),
-                          ("cores", "CPUs"), ("disco_gb", "Disco")):
-        bruto = (form.get(campo) or "").strip()
-        if not bruto:
-            continue
-        if _NUMERO_RE.fullmatch(bruto):
-            dados[campo] = int(bruto)
-        else:
-            erros.append(f"{rotulo} deve ser um numero.")
-    dados["portas"] = [p for p in re.split(r"[\s,]+", (form.get("portas") or "").strip()) if p]
-    dados["config_files"] = _linhas(form.get("config_files", ""))
-    dados["backup_paths"] = _linhas(form.get("backup_paths", ""))
-    dados["receitas"] = [r for r in form.getlist("receitas") if r in BROKER_RECEITAS]
-    dados["deslocavel"] = form.get("deslocavel") == "1"
-    return dados, erros
+_jogo_do_form = broker_service.jogo_do_form
 
 
 @app.route("/catalogo", methods=["GET"])
