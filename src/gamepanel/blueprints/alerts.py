@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import alerts as alerts_repo
 
 bp = Blueprint("alerts", __name__)
 
@@ -54,7 +55,7 @@ def save():
 @panel.admin_required
 def hook_new():
     conn = panel.db()
-    how_many = conn.execute("SELECT COUNT(*) AS n FROM webhooks").fetchone()["n"]
+    how_many = alerts_repo.count_webhooks(conn)
     if how_many >= panel.WEBHOOK_MAX:
         flash(panel.translate("flash.destination_limit", n=panel.WEBHOOK_MAX), "error")
         return redirect(url_for("alerts.index"))
@@ -63,12 +64,7 @@ def hook_new():
         flash(panel.translate(failure) if failure else panel.translate("flash.need_webhook_url"), "error")
         return redirect(url_for("alerts.index"))
     with conn:
-        conn.execute(
-            "INSERT INTO webhooks (name, url, events, enabled, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (data["name"] or "Destino", data["url"], data["events"],
-             data["enabled"], panel.now_iso()),
-        )
+        alerts_repo.insert_webhook(conn, data, panel.now_iso())
     panel._reset_baseline()
     flash(panel.translate("flash.destination_added"), "ok")
     return redirect(url_for("alerts.index"))
@@ -78,7 +74,7 @@ def hook_new():
 @panel.admin_required
 def hook_save(hid: int):
     conn = panel.db()
-    current_one = conn.execute("SELECT url FROM webhooks WHERE id = ?", (hid,)).fetchone()
+    current_one = alerts_repo.webhook_by_id(conn, hid)
     if not current_one:
         flash(panel.translate("flash.destination_not_found"), "error")
         return redirect(url_for("alerts.index"))
@@ -90,10 +86,8 @@ def hook_save(hid: int):
     # mascarada, entao nao ha o que reenviar: so quem digitar uma nova a troca.
     url = data["url"] or current_one["url"]
     with conn:
-        conn.execute(
-            "UPDATE webhooks SET name = ?, url = ?, events = ?, enabled = ? WHERE id = ?",
-            (data["name"] or "Destino", url, data["events"], data["enabled"], hid),
-        )
+        alerts_repo.update_webhook(conn, hid, data["name"], url, data["events"],
+                                   data["enabled"])
     panel._reset_baseline()
     flash(panel.translate("flash.destination_saved"), "ok")
     return redirect(url_for("alerts.index"))
@@ -104,7 +98,7 @@ def hook_save(hid: int):
 def hook_delete(hid: int):
     conn = panel.db()
     with conn:
-        conn.execute("DELETE FROM webhooks WHERE id = ?", (hid,))
+        alerts_repo.delete_webhook(conn, hid)
     flash(panel.translate("flash.destination_removed"), "ok")
     return redirect(url_for("alerts.index"))
 
@@ -114,9 +108,7 @@ def hook_delete(hid: int):
 def hook_test(hid: int):
     """Manda uma mensagem agora para UM destino, para conferir se a URL esta certa."""
     conn = panel.db()
-    row = conn.execute(
-        "SELECT name, url FROM webhooks WHERE id = ?", (hid,)
-    ).fetchone()
+    row = alerts_repo.webhook_by_id(conn, hid)
     if not row or not row["url"]:
         flash(panel.translate("flash.destination_not_found"), "error")
         return redirect(url_for("alerts.index"))

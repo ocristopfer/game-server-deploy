@@ -61,6 +61,12 @@ from gamepanel.games import config_format as gameconf
 from gamepanel.games import gamefields
 from gamepanel.integrations import broker_client, webhook_client
 from gamepanel.persistence import schema
+from gamepanel.persistence.repositories import alerts as alerts_repo
+from gamepanel.persistence.repositories import jobs as jobs_repo
+from gamepanel.persistence.repositories import samples as samples_repo
+from gamepanel.persistence.repositories import settings as settings_repo
+from gamepanel.persistence.repositories import users as users_repo
+from gamepanel.persistence.repositories import schedules as schedules_repo
 from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.runtime import a2s, http_probe, log_probe, port_probe
 
@@ -300,7 +306,6 @@ CONFIG_FILES_MAX = 8
 # nao e configuracao (um log casa com "chave=valor" em varias linhas).
 CONFIG_SETTINGS_MAX = 600
 
-SQL_SET_PASSWORD = "UPDATE users SET password_hash = ? WHERE id = ?"
 # Formato de data curto do painel ("17/09 05:00"). Estava escrito a mao em tres
 # telas; uma delas com um espaco a mais bastaria para a lista parecer desalinhada.
 SHORT_DATE_FORMAT = "%d/%m %H:%M"
@@ -488,17 +493,14 @@ def logged_user() -> sqlite3.Row | None:
     uid = session.get("uid")
     row = None
     if uid:
-        row = db().execute(
-            "SELECT id, username, role, created_at, totp_enabled, lang"
-            " FROM users WHERE id = ?", (uid,)
-        ).fetchone()
+        row = users_repo.for_session(db(), uid)
     g._user = row
     return row
 
 
 def is_admin() -> bool:
     row = logged_user()
-    return bool(row) and row["role"] == ROLE_ADMIN
+    return row is not None and row["role"] == ROLE_ADMIN
 
 
 def login_required(view):
@@ -1117,10 +1119,7 @@ def role_filter() -> tuple[str, tuple]:
 def server_jobs(conn: sqlite3.Connection, sid: int, limit: int) -> list:
     """Historico do servidor ja filtrado pelo papel de quem esta olhando."""
     cut, values = role_filter()
-    return conn.execute(
-        f"SELECT * FROM jobs WHERE server_id = ?{cut} ORDER BY id DESC LIMIT ?",
-        (sid, *values, limit),
-    ).fetchall()
+    return jobs_repo.of_server(conn, sid, limit, cut, values)
 
 
 def _id_inserido(cur: sqlite3.Cursor) -> int:
@@ -1147,16 +1146,8 @@ def log_job(
     terminal). Diferente de start_job, nao dispara nada — so deixa o rastro."""
     conn = db()
     with conn:
-        cur = conn.execute(
-            "INSERT INTO jobs (server_id, target, action, status, exit_code, output,"
-            " command, username, created_at, finished_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (
-                server["id"], f"{server['ssh_user']}@{server['host']}", action, status,
-                0 if status == "ok" else None, output[-200000:], command, username,
-                now_iso(), now_iso(),
-            ),
-        )
-    return _id_inserido(cur)
+        return jobs_repo.record(conn, server, action, status, output, command,
+                                username, now_iso())
 
 
 def start_job(
@@ -1172,15 +1163,7 @@ def start_job(
     remote_command: str = remote_cmd if remote_cmd is not None else ACTIONS[action][1](server)
     conn = db()
     with conn:
-        cur = conn.execute(
-            "INSERT INTO jobs (server_id, target, action, status, command, username,"
-            " created_at) VALUES (?,?,?,?,?,?,?)",
-            (
-                server["id"], f"{server['ssh_user']}@{server['host']}", action,
-                "running", command, username, now_iso(),
-            ),
-        )
-    job_id = _id_inserido(cur)
+        job_id = jobs_repo.start(conn, server, action, command, username, now_iso())
     server_id = int(server["id"])
     # A thread nao pode usar a Row ligada a conexao do request: copia o que precisa.
     target = dict(server)
@@ -1199,11 +1182,7 @@ def start_job(
         # Conexao propria: esta thread vive fora do contexto do request.
         conn2 = _connect()
         with conn2:
-            conn2.execute(
-                "UPDATE jobs SET status=?, exit_code=?, output=?, finished_at=?"
-                " WHERE id=?",
-                (status, code, output.strip()[-200000:], now_iso(), job_id),
-            )
+            jobs_repo.finish(conn2, job_id, status, code, output, now_iso())
         # Falha de tarefa AGENDADA vira alerta: e a unica que ninguem esta olhando. Quem
         # clicou o botao ja esta com o resultado na tela.
         if status == "error" and username == SCHEDULE_USER:
@@ -1284,17 +1263,12 @@ LOG_ERR_COOLDOWN = float(os.environ.get("GAMEPANEL_LOG_ERR_COOLDOWN", "600"))
 
 
 def config_get(conn: sqlite3.Connection, key: str, padrao: str = "") -> str:
-    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
-    return row["value"] if row else padrao
+    return settings_repo.get(conn, key, padrao)
 
 
 def config_set(conn: sqlite3.Connection, key: str, value: str) -> None:
     with conn:
-        conn.execute(
-            "INSERT INTO settings (key, value) VALUES (?, ?)"
-            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (key, value),
-        )
+        settings_repo.set_value(conn, key, value)
 
 
 def clean_events(raw: str) -> set:
@@ -1304,9 +1278,7 @@ def clean_events(raw: str) -> set:
 
 def webhook_list(conn: sqlite3.Connection) -> list:
     """Todos os destinos, na ordem de cadastro, com os eventos ja como conjunto."""
-    lines_of = conn.execute(
-        "SELECT id, name, url, events, enabled FROM webhooks ORDER BY id"
-    ).fetchall()
+    lines_of = alerts_repo.all_webhooks(conn)
     return [
         {
             "id": r["id"],
@@ -1405,21 +1377,14 @@ def _record_alert(conn: sqlite3.Connection, event: str, titulo: str, detalhe: st
     """
     try:
         with conn:
-            conn.execute(
-                "INSERT INTO alert_log (created_at, event, title, detail, target,"
-                " status, error) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (now_iso(), event, titulo[:200], detalhe[:500], target[:80],
-                 status, erro[:300]))
+            alerts_repo.log(conn, now_iso(), event, titulo, detalhe, target, status, erro)
     except sqlite3.Error:
         app.logger.exception("nao consegui gravar no diario de alertas")
 
 
 def recent_alerts(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:
     """As ultimas linhas do diario, da mais nova para a mais velha."""
-    lines_of = conn.execute(
-        "SELECT * FROM alert_log ORDER BY id DESC LIMIT ?", (limit,)
-    ).fetchall()
-    return [dict(l) for l in lines_of]
+    return [dict(l) for l in alerts_repo.recent(conn, limit)]
 
 
 def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
@@ -1429,11 +1394,7 @@ def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
     Sem esta janela, todo restart e todo update viraria alerta.
     """
     cut = (datetime.now(timezone.utc) - timedelta(seconds=ALERT_QUIET)).isoformat()
-    return conn.execute(
-        "SELECT 1 FROM jobs WHERE server_id = ? AND created_at >= ?"
-        " AND action IN ('start','stop','restart','update','restore-backup') LIMIT 1",
-        (sid, cut),
-    ).fetchone() is not None
+    return jobs_repo.acted_since(conn, sid, cut)
 
 
 # server_id -> ultimo estado visto. Fica so na memoria de proposito: reiniciar o painel
@@ -1775,10 +1736,7 @@ def collect_samples(force: bool = False) -> int:
 
     if lines_of:
         with conn:
-            conn.executemany(
-                "INSERT INTO samples (server_id, taken_at, cpu_pct, mem_pct, players)"
-                " VALUES (?,?,?,?,?)", lines_of,
-            )
+            samples_repo.insert_many(conn, lines_of)
     return len(lines_of)
 
 
@@ -1834,14 +1792,13 @@ def run_schedules() -> int:
     now_ts = local_now()
     conn = db()
     fired = 0
-    for sched in conn.execute("SELECT * FROM schedules WHERE enabled = 1").fetchall():
+    for sched in schedules_repo.enabled(conn):
         if sched["action"] not in SCHEDULE_ACTIONS or not is_due(sched, now_ts):
             continue
         # Marca ANTES de disparar: se o job demorar (um update leva quase uma hora), a
         # proxima volta do relogio nao pode achar que a tarefa ainda esta vencida.
         with conn:
-            conn.execute("UPDATE schedules SET last_run = ? WHERE id = ?",
-                         (now_ts.isoformat(), sched["id"]))
+            schedules_repo.mark_run(conn, sched["id"], now_ts.isoformat())
         if fire_schedule(conn, sched):
             fired += 1
     return fired
@@ -1868,23 +1825,19 @@ def clean_history(force: bool = False) -> int:
         old_ones = (datetime.now(timezone.utc)
                   - timedelta(days=SAMPLES_KEEP_DAYS)).isoformat()
         with conn:
-            conn.execute("DELETE FROM samples WHERE taken_at < ?", (old_ones,))
+            samples_repo.delete_older_than(conn, old_ones)
 
     # O diario se mede em linhas, nao em dias: o que se quer dele e "as ultimas N", e um
     # prazo em dias deixaria a tela vazia justo num painel quieto, que e quando a duvida
     # "sera que isso ainda funciona?" aparece.
     with conn:
-        conn.execute(
-            "DELETE FROM alert_log WHERE id <= "
-            "(SELECT MIN(id) FROM (SELECT id FROM alert_log ORDER BY id DESC LIMIT ?)) - 1",
-            (ALERT_LOG_KEEP,))
+        alerts_repo.trim_log(conn, ALERT_LOG_KEEP)
 
     if not JOBS_KEEP_DAYS:
         return 0
     cut = (datetime.now(timezone.utc) - timedelta(days=JOBS_KEEP_DAYS)).isoformat()
     with conn:
-        cur = conn.execute("DELETE FROM jobs WHERE created_at < ?", (cut,))
-    return cur.rowcount or 0
+        return jobs_repo.delete_older_than(conn, cut)
 
 
 def _clock_failure(name: str) -> None:
@@ -1975,11 +1928,7 @@ def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
         with conn:
             # O `WHERE` faz do UPDATE o portao: dois pedidos com o mesmo codigo ao mesmo tempo
             # nao passam os dois (o segundo nao encontra a linha com passo menor).
-            spent = conn.execute(
-                "UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?",
-                (step, row["id"], step),
-            ).rowcount
-        return spent == 1
+            return users_repo.spend_step(conn, row["id"], step)
     try:
         stored = json.loads(row["totp_recovery"] or "[]")
     except ValueError:
@@ -1988,11 +1937,8 @@ def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
     if leftover is None:
         return False
     with conn:
-        spent = conn.execute(
-            "UPDATE users SET totp_recovery = ? WHERE id = ? AND totp_recovery = ?",
-            (json.dumps(leftover), row["id"], row["totp_recovery"]),
-        ).rowcount
-    return spent == 1
+        return users_repo.spend_recovery(
+            conn, row["id"], json.dumps(leftover), row["totp_recovery"])
 
 
 def _port_tab(server: ServerRow) -> dict:
@@ -2642,10 +2588,7 @@ def _update_job(job_id: int, **campos) -> None:
     conn = _connect()
     try:
         with conn:
-            conn.execute(
-                f"UPDATE jobs SET {', '.join(c + '=?' for c in campos)} WHERE id=?",
-                (*campos.values(), job_id),
-            )
+            jobs_repo.set_fields(conn, job_id, campos)
     finally:
         conn.close()
 
@@ -2680,12 +2623,7 @@ def follow_operation(job_id: int, op_id: str, sleep=time.sleep) -> None:
 def start_broker_job(action: str, username: str, op_id: str, comando: str) -> int:
     conn = db()
     with conn:
-        cur = conn.execute(
-            "INSERT INTO jobs (server_id, target, action, status, command, username,"
-            " created_at, broker_op) VALUES (NULL, 'broker', ?, 'running', ?, ?, ?, ?)",
-            (action, comando, username, now_iso(), op_id),
-        )
-    job_id = _id_inserido(cur)
+        job_id = jobs_repo.start_broker(conn, action, comando, username, now_iso(), op_id)
     _fire(lambda: follow_operation(job_id, op_id))
     return job_id
 
@@ -2698,9 +2636,7 @@ def resume_broker_jobs() -> int:
         return 0
     conn = _connect()
     try:
-        pending_ones = conn.execute(
-            "SELECT id, broker_op FROM jobs WHERE status = 'running' AND broker_op != ''"
-        ).fetchall()
+        pending_ones = jobs_repo.running_broker_ops(conn)
     finally:
         conn.close()
     for job in pending_ones:
@@ -2713,13 +2649,8 @@ def _log_broker_action(action: str, username: str, comando: str, output: str,
     """Deixa no historico uma acao curta do broker (desativar, remover, jogo novo)."""
     conn = db()
     with conn:
-        cur = conn.execute(
-            "INSERT INTO jobs (server_id, target, action, status, exit_code, output, command,"
-            " username, created_at, finished_at) VALUES (NULL, 'broker', ?, ?, ?, ?, ?, ?, ?, ?)",
-            (action, status, 0 if status == "ok" else 1, output[-200000:], comando,
-             username, now_iso(), now_iso()),
-        )
-    return _id_inserido(cur)
+        return jobs_repo.record_broker(
+            conn, action, status, output, comando, username, now_iso())
 
 
 def _ator() -> str:
@@ -2768,7 +2699,7 @@ def _schedule_form(form, errors: list[str]) -> dict:
 
 
 def _schedule_or_404(aid: int) -> sqlite3.Row:
-    sched = db().execute("SELECT * FROM schedules WHERE id = ?", (aid,)).fetchone()
+    sched = schedules_repo.by_id(db(), aid)
     if not sched:
         abort(404)
     return sched
@@ -2821,9 +2752,12 @@ def build_chart(amostras, series, teto: float, start, fim, formato_tempo: str) -
 
 
 def _two_factor_state() -> dict:
-    row = db().execute(
-        "SELECT totp_enabled, totp_recovery FROM users WHERE id = ?", (session["uid"],)
-    ).fetchone()
+    row = users_repo.two_factor_state(db(), session["uid"])
+    # Sessao de um usuario que foi APAGADO enquanto ela estava aberta. Dizer "desligado"
+    # e o certo: nao ha o que desligar, e o `login_required` manda a pessoa para o login
+    # na proxima volta. Antes daqui a linha estourava com TypeError.
+    if row is None:
+        return {"ativo": False, "codigos_restantes": 0}
     try:
         remaining_ones = len(json.loads(row["totp_recovery"] or "[]"))
     except ValueError:
@@ -2836,18 +2770,19 @@ def _guarda_o_segundo_fator(uid: int, segredo: str, passo: int) -> list[str]:
     codes = totp.new_recovery_codes()
     conn = db()
     with conn:
-        conn.execute(
-            "UPDATE users SET totp_secret = ?, totp_enabled = 1, totp_last_step = ?,"
-            " totp_recovery = ? WHERE id = ?",
-            (segredo, passo, json.dumps([totp.hash_recovery_code(c) for c in codes]), uid),
-        )
+        users_repo.enable_two_factor(
+            conn, uid, segredo, passo,
+            json.dumps([totp.hash_recovery_code(c) for c in codes]))
     return codes
 
 
 def _password_and_code_ok(uid: int) -> tuple[sqlite3.Row | None, str]:
     """Para desligar o 2FA ou pedir codigos novos: a senha E um codigo. Quem esta logado ja
     provou os dois no login, mas uma sessao esquecida aberta nao pode desligar a protecao."""
-    row = db().execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+    row = users_repo.by_id(db(), uid)
+    if row is None:
+        # Mesma sessao orfa do `_two_factor_state`: sem usuario nao ha senha a conferir.
+        return None, "Senha incorreta."
     key = f"2fa|{row['username'].lower()}"
     if _lockout_remaining(key, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA):
         return None, "Muitas tentativas. Espere alguns minutos."
@@ -2864,9 +2799,7 @@ def _password_and_code_ok(uid: int) -> tuple[sqlite3.Row | None, str]:
 def _apaga_o_segundo_fator(uid: int) -> None:
     conn = db()
     with conn:
-        conn.execute(
-            "UPDATE users SET totp_secret = '', totp_enabled = 0, totp_last_step = 0,"
-            " totp_recovery = '' WHERE id = ?", (uid,))
+        users_repo.disable_two_factor(conn, uid)
 
 
 # ------------------------------------------------------------------ alertas
@@ -2939,15 +2872,11 @@ def validate_password(nova: str, confirm: str) -> str:
 
 def count_admins(excluindo: int = 0) -> int:
     """Quantos administradores sobrariam sem o usuario `excluindo`."""
-    return db().execute(
-        "SELECT COUNT(*) FROM users WHERE role = ? AND id <> ?", (ROLE_ADMIN, excluindo)
-    ).fetchone()[0]
+    return users_repo.count_admins_besides(db(), ROLE_ADMIN, excluindo)
 
 
 def _user_or_404(uid: int) -> sqlite3.Row:
-    row = db().execute(
-        "SELECT id, username, role FROM users WHERE id = ?", (uid,)
-    ).fetchone()
+    row = users_repo.identity(db(), uid)
     if not row:
         abort(404)
     return row
@@ -3050,27 +2979,18 @@ def ensure_admin_user(username: str, password: str, role: str = "") -> None:
     init_db()
     conn = _connect()
     with conn:
-        row = conn.execute(
-            "SELECT id FROM users WHERE username = ?", (username,)
-        ).fetchone()
+        row = users_repo.id_by_username(conn, username)
         if row and role:
-            conn.execute(
-                "UPDATE users SET password_hash = ?, role = ? WHERE id = ?",
-                (hash_password(password), role, row["id"]),
-            )
+            users_repo.set_password_and_role(conn, row["id"], hash_password(password), role)
             print(f"Senha do usuario '{username}' redefinida; papel: {role}.")
         elif row:
-            conn.execute(SQL_SET_PASSWORD, (hash_password(password), row["id"]))
+            users_repo.set_password(conn, row["id"], hash_password(password))
             print(f"Senha do usuario '{username}' redefinida.")
         else:
             # Usuario criado pela linha de comando e admin por padrao: e o do deploy,
             # que precisa cadastrar servidor e criar os demais na tela.
             papel = role or ROLE_ADMIN
-            conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at)"
-                " VALUES (?,?,?,?)",
-                (username, hash_password(password), papel, now_iso()),
-            )
+            users_repo.insert(conn, username, hash_password(password), papel, now_iso())
             print(f"Usuario '{username}' criado ({papel}).")
     conn.close()
 

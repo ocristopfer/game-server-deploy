@@ -7,6 +7,7 @@ import time
 from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import users as users_repo
 from gamepanel.security import qr
 
 bp = Blueprint("account", __name__)
@@ -28,7 +29,7 @@ def language():
     """
     chosen_one = panel.i18n.valid_language(request.form.get("lang"))
     with panel.db() as conn:
-        conn.execute("UPDATE users SET lang = ? WHERE id = ?", (chosen_one, session["uid"]))
+        users_repo.set_language(conn, session["uid"], chosen_one)
     # O `g` desta requisicao ja guardou o idioma antigo, e o flash abaixo e lido na
     # PROXIMA (depois do redirect) — entao ele ja sai no idioma novo.
     g._idioma = chosen_one
@@ -43,9 +44,7 @@ def index():
         current = request.form.get("current", "")
         new = request.form.get("new", "")
         confirm = request.form.get("confirm", "")
-        row = panel.db().execute(
-            "SELECT * FROM users WHERE id = ?", (session["uid"],)
-        ).fetchone()
+        row = users_repo.by_id(panel.db(), session["uid"])
         failure = panel.validate_password(new, confirm)
         if not row or not panel.verify_password(current, row["password_hash"]):
             flash(panel.translate("flash.wrong_current_password"), "error")
@@ -54,7 +53,7 @@ def index():
         else:
             conn = panel.db()
             with conn:
-                conn.execute(panel.SQL_SET_PASSWORD, (panel.hash_password(new), session["uid"]))
+                users_repo.set_password(conn, session["uid"], panel.hash_password(new))
             flash(panel.translate("flash.password_changed"), "ok")
             return redirect(url_for("dashboard.index"))
     return render_template("account.html", two_factor=panel._two_factor_state(),
@@ -113,7 +112,8 @@ def two_factor_codes():
     codes = panel.totp.new_recovery_codes()
     conn = panel.db()
     with conn:
-        conn.execute("UPDATE users SET totp_recovery = ? WHERE id = ?",
-                     (json.dumps([panel.totp.hash_recovery_code(c) for c in codes]), row["id"]))
+        users_repo.set_recovery(
+            conn, row["id"],
+            json.dumps([panel.totp.hash_recovery_code(c) for c in codes]))
     flash(panel.translate("flash.new_codes"), "ok")
     return render_template("account_2fa_codes.html", codes=codes)

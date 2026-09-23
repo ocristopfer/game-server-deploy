@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import schedules as schedules_repo
 
 bp = Blueprint("schedules", __name__)
 
@@ -13,9 +14,7 @@ bp = Blueprint("schedules", __name__)
 def index(sid: int):
     server = panel._server_or_404(sid)
     conn = panel.db()
-    tasks = conn.execute(
-        "SELECT * FROM schedules WHERE server_id = ? ORDER BY id", (sid,)
-    ).fetchall()
+    tasks = schedules_repo.of_server(conn, sid)
     now_ts = panel.local_now()
     # A tela mostra a proxima vez que cada tarefa roda: sem isso "todo dia as 5h" nao
     # deixa claro se ela ja rodou hoje ou se ainda vai rodar.
@@ -46,12 +45,7 @@ def new(sid: int):
     start = panel.local_now().isoformat() if data["kind"] == "intervalo" else ""
     conn = panel.db()
     with conn:
-        conn.execute(
-            "INSERT INTO schedules (server_id, action, kind, hour, minute, weekday,"
-            " every_hours, enabled, last_run, created_at) VALUES (?,?,?,?,?,?,?,1,?,?)",
-            (sid, data["action"], data["kind"], data["hour"], data["minute"],
-             data["weekday"], data["every_hours"], start, panel.now_iso()),
-        )
+        schedules_repo.insert(conn, sid, data, start, panel.now_iso())
     flash(panel.translate("flash.task_scheduled", task=panel.job_label(data["action"])), "ok")
     return redirect(url_for("schedules.index", sid=sid))
 
@@ -62,8 +56,7 @@ def toggle(aid: int):
     sched = panel._schedule_or_404(aid)
     conn = panel.db()
     with conn:
-        conn.execute("UPDATE schedules SET enabled = ? WHERE id = ?",
-                     (0 if sched["enabled"] else 1, aid))
+        schedules_repo.set_enabled(conn, aid, not sched["enabled"])
     flash(panel.translate("flash.task_off" if sched["enabled"] else "flash.task_on"), "ok")
     return redirect(url_for("schedules.index", sid=sched["server_id"]))
 
@@ -74,7 +67,7 @@ def delete(aid: int):
     sched = panel._schedule_or_404(aid)
     conn = panel.db()
     with conn:
-        conn.execute("DELETE FROM schedules WHERE id = ?", (aid,))
+        schedules_repo.delete(conn, aid)
     flash(panel.translate("flash.task_removed"), "ok")
     return redirect(url_for("schedules.index", sid=sched["server_id"]))
 

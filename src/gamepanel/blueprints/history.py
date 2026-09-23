@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, render_template, request
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import jobs as jobs_repo
 from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("history", __name__)
@@ -46,17 +47,12 @@ def index():
 
     # Pede um a mais que o tamanho da pagina: e como se sabe se existe proxima sem contar
     # a tabela inteira.
-    lines_of = conn.execute(
-        f"SELECT * FROM jobs WHERE {sql_where} ORDER BY id DESC LIMIT ? OFFSET ?",
-        (*values, panel.HISTORY_PAGE + 1, page * panel.HISTORY_PAGE),
-    ).fetchall()
+    lines_of = jobs_repo.page(conn, sql_where, values,
+                              panel.HISTORY_PAGE + 1, page * panel.HISTORY_PAGE)
     has_more = len(lines_of) > panel.HISTORY_PAGE
     jobs = lines_of[:panel.HISTORY_PAGE]
 
-    users = [r[0] for r in conn.execute(
-        f"SELECT DISTINCT username FROM jobs WHERE username <> '' {cut} ORDER BY username",
-        hidden_ones,
-    ).fetchall()]
+    users = jobs_repo.usernames(conn, cut, hidden_ones)
 
     return render_template(
         "history.html", jobs=jobs, servers=servers, names=names, users=users,

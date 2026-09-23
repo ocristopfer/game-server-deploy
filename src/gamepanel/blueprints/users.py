@@ -6,6 +6,7 @@ import sqlite3
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import users as users_repo
 
 bp = Blueprint("users", __name__)
 
@@ -13,9 +14,7 @@ bp = Blueprint("users", __name__)
 @bp.get("/users")
 @panel.admin_required
 def index():
-    rows = panel.db().execute(
-        "SELECT id, username, role, created_at, totp_enabled FROM users ORDER BY role, username"
-    ).fetchall()
+    rows = users_repo.all_ordered(panel.db())
     return render_template(
         "users.html", users=rows, roles=panel.ROLES, role_labels=panel.labels_of(panel.ROLE_LABELS),
         my_id=session.get("uid"), min_len=panel.PASSWORD_MIN,
@@ -42,11 +41,8 @@ def new():
     conn = panel.db()
     try:
         with conn:
-            conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at)"
-                " VALUES (?,?,?,?)",
-                (username, panel.hash_password(new_password), role, panel.now_iso()),
-            )
+            users_repo.insert(conn, username, panel.hash_password(new_password),
+                              role, panel.now_iso())
     except sqlite3.IntegrityError:
         # username e UNIQUE: e o unico jeito de dois admins criarem o mesmo nome ao
         # mesmo tempo sem um sobrescrever o outro.
@@ -75,7 +71,7 @@ def role(uid: int):
     else:
         conn = panel.db()
         with conn:
-            conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, uid))
+            users_repo.set_role(conn, uid, role)
         flash(panel.translate("flash.user_now_is", user=target["username"],
                        role=panel.translate(panel.ROLE_LABELS[role]).lower()), "ok")
     return redirect(url_for("users.index"))
@@ -92,7 +88,7 @@ def password(uid: int):
         return redirect(url_for("users.index"))
     conn = panel.db()
     with conn:
-        conn.execute(panel.SQL_SET_PASSWORD, (panel.hash_password(request.form.get("new", "")), uid))
+        users_repo.set_password(conn, uid, panel.hash_password(request.form.get("new", "")))
     flash(panel.translate("flash.password_reset", user=target["username"]), "ok")
     return redirect(url_for("users.index"))
 
@@ -122,7 +118,7 @@ def delete(uid: int):
     else:
         conn = panel.db()
         with conn:
-            conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+            users_repo.delete(conn, uid)
         # A sessao dele morre no proximo clique: o login_required confere o banco.
         flash(panel.translate("flash.user_removed", user=target["username"]), "ok")
     return redirect(url_for("users.index"))

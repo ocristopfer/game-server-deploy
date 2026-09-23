@@ -6,9 +6,10 @@ quebra ao renomear uma coluna — quebra na PRIMEIRA VISITA a tela que usa a cop
 ficou para tras, em runtime, sem lint nem teste acusando. Foi por isso que as migrations
 de rename precisaram ser escritas com tanto cuidado.
 
-A regra e por TABELA, e nao "nenhum SQL fora de persistence": as tabelas que ainda nao
-ganharam repositorio continuam com SQL onde estao, e entram aqui quando forem extraidas.
-Uma lista que comeca completa e mentira; esta cresce junto com o trabalho.
+A regra e por TABELA, e nao "nenhum SQL fora de persistence": uma tabela nova que ainda
+nao ganhou repositorio segue com SQL onde esta, e entra aqui quando for extraida. Uma
+lista que comeca completa e mentira; esta cresce junto com o trabalho — hoje ela cobre
+as sete tabelas do painel.
 """
 from __future__ import annotations
 
@@ -26,7 +27,16 @@ PANEL = Path(panel.__file__).parent
 REPOSITORIES = PANEL / "persistence" / "repositories"
 
 # Tabela -> modulo que passa a ser o unico lugar com SQL dela.
-OWNED = {"servers": "servers.py"}
+OWNED = {
+    "servers": "servers.py",
+    "jobs": "jobs.py",
+    "schedules": "schedules.py",
+    "webhooks": "alerts.py",
+    "alert_log": "alerts.py",
+    "samples": "samples.py",
+    "settings": "settings.py",
+    "users": "users.py",
+}
 
 STATEMENT = re.compile(
     r"\b(?:FROM|JOIN|INTO|UPDATE)\s+(\w+)|DELETE\s+FROM\s+(\w+)", re.IGNORECASE)

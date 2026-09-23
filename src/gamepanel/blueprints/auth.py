@@ -6,6 +6,7 @@ import time
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import users as users_repo
 
 bp = Blueprint("auth", __name__)
 
@@ -22,9 +23,7 @@ def login():
         if remaining:
             flash(panel.translate("flash.too_many_tries", n=remaining), "error")
             return render_template(panel.TPL_LOGIN), 429
-        row = panel.db().execute(
-            "SELECT * FROM users WHERE username = ?", (username,)
-        ).fetchone()
+        row = users_repo.by_username(panel.db(), username)
         if row and panel.verify_password(password, row["password_hash"]):
             panel._clear_fails(key)
             next_one = panel.safe_target(request.args.get("next", ""))
@@ -50,7 +49,7 @@ def login_2fa():
     pending_one = session.get("pre2fa") or {}
     row = None
     if pending_one and pending_one.get("ate", 0) > time.time():
-        row = panel.db().execute("SELECT * FROM users WHERE id = ?", (pending_one.get("uid"),)).fetchone()
+        row = users_repo.by_id(panel.db(), pending_one.get("uid"))
     if row is None or not row["totp_enabled"]:
         session.clear()
         flash(panel.translate("flash.verification_expired"), "error")

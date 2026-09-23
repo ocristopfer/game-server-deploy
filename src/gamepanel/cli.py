@@ -22,6 +22,8 @@ import sqlite3
 from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple
 
+from gamepanel.persistence.repositories import users as users_repo
+
 # A linha de comando nao aceita quebra de linha com conforto: as listas (arquivos de
 # config, caminhos de backup) vem separadas por virgula e viram uma por linha.
 LIST_SEPARATOR = ","
@@ -80,13 +82,10 @@ def reset_2fa(deps: CliDeps, user: str) -> None:
     deps.init_db()
     conn = deps.connect()
     with conn:
-        target = conn.execute(
-            "SELECT id FROM users WHERE username = ?", (user,)).fetchone()
+        target = users_repo.id_by_username(conn, user)
         if not target:
             raise SystemExit(f"usuario '{user}' nao existe")
-        conn.execute(
-            "UPDATE users SET totp_secret = '', totp_enabled = 0, totp_last_step = 0,"
-            " totp_recovery = '' WHERE id = ?", (target["id"],))
+        users_repo.disable_two_factor(conn, target["id"])
     print(f"Segundo fator de '{user}' desligado.")
 
 

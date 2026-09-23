@@ -4,7 +4,11 @@ from __future__ import annotations
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import jobs as jobs_repo
 from gamepanel.persistence.repositories import servers as servers_repo
+
+# Quantas sessoes de comando avulso a tela mostra.
+CONSOLE_HISTORY = 20
 
 bp = Blueprint("console", __name__)
 
@@ -41,14 +45,8 @@ def index(sid: int):
     job = None
     job_arg = request.args.get("job", "")
     if job_arg.isdigit():
-        job = conn.execute(
-            "SELECT * FROM jobs WHERE id = ? AND server_id = ?", (int(job_arg), sid)
-        ).fetchone()
-    history = conn.execute(
-        "SELECT * FROM jobs WHERE server_id = ? AND action = 'shell'"
-        " ORDER BY id DESC LIMIT 20",
-        (sid,),
-    ).fetchall()
+        job = jobs_repo.by_id_and_server(conn, int(job_arg), sid)
+    history = jobs_repo.shell_history(conn, sid, CONSOLE_HISTORY)
     return render_template(
         "console.html", server=server, job=job, history=history,
         shell_timeout=panel.SHELL_TIMEOUT,

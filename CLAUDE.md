@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_config_f
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 924
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 931
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 922 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 929 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -150,7 +150,8 @@ src/
     blueprints/          a camada HTTP, um arquivo por grupo de tela (ver a secao propria)
     persistence/
       schema.py          esquema, MIGRATIONS e RENAMES
-      repositories/      uma funcao por consulta; SQL de uma tabela so mora aqui
+      repositories/      uma funcao por consulta; TODO o SQL do painel mora aqui
+                         (servers, jobs, schedules, alerts, samples, settings, users)
     wsgi.py              entry point do gunicorn (`gamepanel.wsgi:app`)
     cli.py               bootstrap: --create-user, --reset-2fa, --register-server (o rodape de app.py chama o main() daqui)
     navigation.py        mapa da interface: navegacao e acoes   (puro, sem Flask; era ui.py)
@@ -243,8 +244,12 @@ runtime, sem lint nem teste acusando.
 - **Quem liga uma fonte de contagem grava os campos dela E o `player_source` na MESMA
   instrucao** (`use_query_port`, `use_http`, `use_log`). Separar deixaria um servidor
   apontando para uma fonte sem os campos dela preenchidos.
-- Hoje so `servers` foi extraida. Faltam `jobs`, `schedules`, `samples`, `webhooks`,
-  `alert_log`, `users` e `settings` (ver `docs/architecture-proposal.md`).
+- **As sete tabelas estao extraidas**, e `.execute(` so aparece em `persistence/`. O
+  guard cobre todas; tabela nova entra na lista `OWNED` ao ser criada.
+- **O tipo honesto do repositorio encontra o que o SQL cru escondia.** `fetchone()`
+  devolve `Any`, entao `row["x"]` com `row` nulo nao era erro para ninguem; uma funcao
+  que declara `-> Row | None` faz o mypy apontar. Foram tres, todas com o mesmo desenho:
+  sessao de um usuario APAGADO enquanto ela estava aberta.
 
 ### A regra que sustenta o resto: uma lista, um lugar
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, jsonify, render_template
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import jobs as jobs_repo
 from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("jobs", __name__)
@@ -13,7 +14,7 @@ bp = Blueprint("jobs", __name__)
 @panel.login_required
 def detail(jid: int):
     conn = panel.db()
-    job = conn.execute("SELECT * FROM jobs WHERE id = ?", (jid,)).fetchone()
+    job = jobs_repo.by_id(conn, jid)
     if not job:
         abort(404)
     panel.job_or_403(job)
@@ -26,7 +27,7 @@ def detail(jid: int):
 @bp.get("/api/v1/jobs/<int:jid>")
 @panel.login_required
 def api_detail(jid: int):
-    job = panel.db().execute("SELECT * FROM jobs WHERE id = ?", (jid,)).fetchone()
+    job = jobs_repo.by_id(panel.db(), jid)
     if not job:
         abort(404)
     panel.job_or_403(job)

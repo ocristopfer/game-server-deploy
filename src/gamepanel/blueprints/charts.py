@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from flask import Blueprint, render_template, request
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import samples as samples_repo
 
 bp = Blueprint("charts", __name__)
 
@@ -29,11 +30,7 @@ def index(sid: int):
 
     end_at = datetime.now(UTC)
     start = end_at - timedelta(hours=hours)
-    lines_of = panel.db().execute(
-        "SELECT taken_at, cpu_pct, mem_pct, players FROM samples"
-        " WHERE server_id = ? AND taken_at >= ? ORDER BY taken_at",
-        (sid, start.isoformat()),
-    ).fetchall()
+    lines_of = samples_repo.of_server_since(panel.db(), sid, start.isoformat())
 
     samples = []
     for line in lines_of:
