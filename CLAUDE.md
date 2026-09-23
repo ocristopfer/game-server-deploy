@@ -98,10 +98,13 @@ dentro. Um teste sensivel a `GAMEPANEL_DEV=1` (que o servico `panel` sempre sobe
 — so falha rodando desse jeito, contra o container AO VIVO; no `.venv` (sem essa
 variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 
-Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
-Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
-SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 995 passam iguais nos dois lugares.
+**O que cada lado pula e diferente, e e por isso que os dois valem.** No `.venv` do
+Windows: 14 pulados, sendo **2 de `test_players.py`** (`@posix_apenas`, no proprio
+arquivo) — os que conferem que a pasta do socket SSH so e visivel pelo dono (`0700`). E
+permissao POSIX pura: nao existe no Windows, e o resultado so vale no container. No
+container: **23 pulados, todos de `test_javascript.py`** (nao ha node na imagem), e os 2
+de POSIX finalmente RODAM. Numeros de hoje: 1898 passam no `.venv`, 1888 no container
+mais o 1 conhecido do `GAMEPANEL_DEV` acima — o total coletado e o mesmo (1912) nos dois.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
