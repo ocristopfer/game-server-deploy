@@ -121,9 +121,9 @@ def _stored_value(server: ServerLike, column: str) -> str:
 
 def player_source(server: ServerLike) -> str:
     """Como contar os jogadores deste servidor: 'a2s', 'http', 'log' ou '' (desligado)."""
-    escolhido = (server["player_source"] or "").strip()
-    if escolhido in PLAYER_SOURCES:
-        return "" if escolhido == "none" else escolhido
+    chosen_one = (server["player_source"] or "").strip()
+    if chosen_one in PLAYER_SOURCES:
+        return "" if chosen_one == "none" else chosen_one
     # Cadastro antigo, anterior ao campo: porta de consulta preenchida = A2S.
     return "a2s" if int(server["query_port"] or 0) else ""
 
@@ -169,8 +169,8 @@ def call_game_api(deps: PlayerDeps, server: ServerLike, url: str, body: str = ""
     coisa que fala com essa API: expulsar, banir e avisar usam a mesma porta, a mesma
     senha e o mesmo token com prazo.
     """
-    com_login = _has_login(server)
-    if com_login:
+    with_login = _has_login(server)
+    if with_login:
         token = _stored_value(server, "http_token")
         # Sem token guardado (primeira vez, ou depois de trocar a senha) ja entra
         # pelo login em vez de gastar uma chamada que vai falhar.
@@ -181,7 +181,7 @@ def call_game_api(deps: PlayerDeps, server: ServerLike, url: str, body: str = ""
     try:
         return deps.http_json(server, url, auth, body, require_json)
     except AuthError:
-        if not com_login:
+        if not with_login:
             raise
         # Token expirado ou revogado: renova uma vez e repete. Se falhar de novo,
         # o erro sobe - ai o problema e a credencial, nao o prazo do token.
@@ -198,18 +198,18 @@ def players_from_http(deps: PlayerDeps, server: ServerLike) -> dict:
 # ----------------------------------------------------- contagem pelo log
 
 def players_from_log(deps: PlayerDeps, server: ServerLike) -> dict:
-    entrar = log_probe.compile_pattern(server["join_re"], "pattern.join")
-    if not entrar:
+    join_pattern = log_probe.compile_pattern(server["join_re"], "pattern.join")
+    if not join_pattern:
         raise QueryError(Message("api.need_join_pattern"))
-    sair = log_probe.compile_pattern(server["leave_re"], "pattern.leave")
+    leave_pattern = log_probe.compile_pattern(server["leave_re"], "pattern.leave")
     try:
         lines_of = deps.read_log_lines(server)
     except RemoteError as exc:
         raise QueryError(str(exc)) from exc
 
-    resultado = log_probe.apply_log_events(lines_of, entrar, sair)
-    resultado.update({"error": "", "max_players": None, "server_name": "", "map": ""})
-    return resultado
+    result = log_probe.apply_log_events(lines_of, join_pattern, leave_pattern)
+    result.update({"error": "", "max_players": None, "server_name": "", "map": ""})
+    return result
 
 
 # ------------------------------------------- acoes sobre quem esta jogando
@@ -219,11 +219,11 @@ def actions_api(server: ServerLike) -> dict[str, Any] | None:
     if player_source(server) != "http":
         return None
     url = (server["http_url"] or "").strip()
-    for entrada in API_ACOES:
-        casa = entrada["url"].match(url)
-        if casa:
-            achado: dict[str, Any] = {**entrada, "base": casa.group("base")}
-            return achado
+    for entry in API_ACOES:
+        matches_it = entry["url"].match(url)
+        if matches_it:
+            found: dict[str, Any] = {**entry, "base": matches_it.group("base")}
+            return found
     return None
 
 
@@ -256,11 +256,11 @@ def player_action(deps: PlayerDeps, server: ServerLike, action: str, player: str
     elif not player:
         raise QueryError(Message("api.no_player_id"))
 
-    rota, mold = api["actions"][action]
-    body = {chave: _fill(value, api["base"], player, message)
-             for chave, value in mold.items()}
+    route, mold = api["actions"][action]
+    body = {key: _fill(value, api["base"], player, message)
+             for key, value in mold.items()}
     # exigir_json=False: estas rotas respondem 200 com o corpo vazio.
-    call_game_api(deps, server, _fill(rota, api["base"], player, message),
+    call_game_api(deps, server, _fill(route, api["base"], player, message),
                       json.dumps(body), require_json=False)
     return PLAYER_ACTION_LABELS.get(action, action)
 
@@ -285,10 +285,10 @@ def _count_now(deps: PlayerDeps, server: ServerLike, source: str) -> dict:
         return players_from_log(deps, server)
     if source == "http":
         return players_from_http(deps, server)
-    porta = int(server["query_port"] or 0)
-    if not porta:
+    port = int(server["query_port"] or 0)
+    if not port:
         raise QueryError(Message("api.need_query_port"))
-    return deps.query_players(server["host"], porta)
+    return deps.query_players(server["host"], port)
 
 
 def server_players(deps: PlayerDeps, server: ServerLike, force: bool = False) -> dict:
@@ -297,11 +297,11 @@ def server_players(deps: PlayerDeps, server: ServerLike, force: bool = False) ->
         return {"configured": False, "error": "", "players": None, "list": [], "source": ""}
 
     key = int(server["id"])
-    agora = time.monotonic()
+    now_ts = time.monotonic()
     if not force:
         with _players_lock:
             cached = _players_cache.get(key)
-        if cached and agora - cached[0] < deps.players_ttl:
+        if cached and now_ts - cached[0] < deps.players_ttl:
             return cached[1]
 
     try:
@@ -312,7 +312,7 @@ def server_players(deps: PlayerDeps, server: ServerLike, force: bool = False) ->
     data["source"] = source
 
     with _players_lock:
-        _players_cache[key] = (agora, data)
+        _players_cache[key] = (now_ts, data)
     return data
 
 

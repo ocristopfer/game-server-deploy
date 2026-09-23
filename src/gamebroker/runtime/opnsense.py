@@ -59,11 +59,11 @@ def _expandir(item: str, rule: str) -> set[int]:
     try:
         if _PORTA_RE.fullmatch(item):
             return {_number_of(item)}
-        faixa = _FAIXA_RE.fullmatch(item)
-        if faixa:
-            inicio, fim = _number_of(faixa.group(1)), _number_of(faixa.group(2))
-            if inicio <= fim and fim - inicio < LIMITE_DE_FAIXA:
-                return set(range(inicio, fim + 1))
+        span_range = _FAIXA_RE.fullmatch(item)
+        if span_range:
+            start_at, end_at = _number_of(span_range.group(1)), _number_of(span_range.group(2))
+            if start_at <= end_at and end_at - start_at < LIMITE_DE_FAIXA:
+                return set(range(start_at, end_at + 1))
     except ValueError:
         pass
     raise ReadError(f"regra '{rule}': nao entendi a porta {item!r}")
@@ -77,15 +77,15 @@ def _ports_of_alias(meta: object, rule: str) -> set[int]:
         summary = alias.get("summary") if isinstance(alias, dict) else None
         if not isinstance(summary, str):
             raise ReadError(f"regra '{rule}': alias sem conteudo legivel")
-        lidas = 0
-        for pedaco in _QUEBRA_RE.split(summary):
-            pedaco = pedaco.strip()
+        read_lines = 0
+        for chunk_of in _QUEBRA_RE.split(summary):
+            chunk_of = chunk_of.strip()
             # O primeiro pedaco costuma ser a descricao do alias, em HTML: nao e porta.
-            if not pedaco or "<" in pedaco or ">" in pedaco:
+            if not chunk_of or "<" in chunk_of or ">" in chunk_of:
                 continue
-            ports |= _expandir(pedaco, rule)
-            lidas += 1
-        if lidas == 0:
+            ports |= _expandir(chunk_of, rule)
+            read_lines += 1
+        if read_lines == 0:
             raise ReadError(f"regra '{rule}': o alias nao lista nenhuma porta que eu entenda")
     return ports
 
@@ -97,7 +97,7 @@ def _protocolos(protocolo: str) -> tuple[str, ...]:
 
 
 def busy_ports(linhas: object, interface: str) -> set[tuple[int, str]]:
-    ocupadas: set[tuple[int, str]] = set()
+    taken: set[tuple[int, str]] = set()
     if not isinstance(linhas, list):
         raise ReadError("resposta de search_rule sem a lista de regras")
     for rule in linhas:
@@ -112,8 +112,8 @@ def busy_ports(linhas: object, interface: str) -> set[tuple[int, str]]:
         else:
             ports = _ports_of_alias(rule.get("alias_meta_destination.port"), name)
         for proto in _protocolos(str(rule.get("protocol", ""))):
-            ocupadas |= {(p, proto) for p in ports}
-    return ocupadas
+            taken |= {(p, proto) for p in ports}
+    return taken
 
 
 # --- backend ----------------------------------------------------------------------------
@@ -126,41 +126,41 @@ class Opnsense:
         self._interface = interface
 
     def _api(self, metodo: str, path: str, action: str, corpo: object = None) -> Response:
-        resposta = self._c.request(metodo, "/api/firewall" + path, json_corpo=corpo)
-        if not resposta.ok:
-            raise OpnsenseError(f"{action}: HTTP {resposta.status}")
-        return resposta
+        response = self._c.request(metodo, "/api/firewall" + path, json_corpo=corpo)
+        if not response.ok:
+            raise OpnsenseError(f"{action}: HTTP {response.status}")
+        return response
 
     def _regras(self) -> list:
-        resposta = self._api("POST", "/d_nat/search_rule", "ler regras", _BUSCA)
-        linhas = resposta.json.get("rows") if isinstance(resposta.json, dict) else None
-        if not isinstance(linhas, list):
+        response = self._api("POST", "/d_nat/search_rule", "ler regras", _BUSCA)
+        lines = response.json.get("rows") if isinstance(response.json, dict) else None
+        if not isinstance(lines, list):
             raise ReadError("resposta de search_rule sem a lista de regras")
-        return linhas
+        return lines
 
     def external_ports(self) -> set[tuple[int, str]]:
         return busy_ports(self._regras(), self._interface)
 
     def _uuids_of_instance(self, ctid: int) -> list[str]:
-        descricao = instance_description(ctid)
-        achados = []
+        description = instance_description(ctid)
+        found = []
         for rule in self._regras():
-            if isinstance(rule, dict) and rule.get("descr") == descricao:
+            if isinstance(rule, dict) and rule.get("descr") == description:
                 uuid = str(rule.get("uuid", ""))
                 if _UUID_RE.fullmatch(uuid):
-                    achados.append(uuid)
-        return achados
+                    found.append(uuid)
+        return found
 
     def open_ports(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
         target = str(ipaddress.IPv4Address(ip))
         self.close_ports(ctid)  # idempotente: recomecar nao deixa regra duplicada
-        criadas: list[str] = []
+        created_ones: list[str] = []
         try:
             for port in ports:
-                criadas.append(self._create_rule(ctid, target, port))
+                created_ones.append(self._create_rule(ctid, target, port))
             self._aplicar()
         except Exception:
-            self._delete(criadas)
+            self._delete(created_ones)
             raise
 
     def _create_rule(self, ctid: int, target: str, port: AllocatedPort) -> str:
@@ -172,8 +172,8 @@ class Opnsense:
             "target": target, "local-port": str(port.number),
             "descr": instance_description(ctid), "pass": "pass",
         }}
-        resposta = self._api("POST", "/d_nat/add_rule", f"criar regra {port}", rule)
-        data = resposta.json if isinstance(resposta.json, dict) else {}
+        response = self._api("POST", "/d_nat/add_rule", f"criar regra {port}", rule)
+        data = response.json if isinstance(response.json, dict) else {}
         uuid = str(data.get("uuid", ""))
         if data.get("result") != "saved" or not _UUID_RE.fullmatch(uuid):
             raise OpnsenseError(f"criar regra {port}: o OPNsense recusou ({_validacoes(data)})")
@@ -197,8 +197,8 @@ class Opnsense:
             raise OpnsenseError(f"nao consegui apagar {errors} regra(s); confira no OPNsense")
 
     def _aplicar(self) -> None:
-        resposta = self._api("POST", "/filter/apply", "aplicar", {})
-        state_dir = resposta.json.get("status", "") if isinstance(resposta.json, dict) else ""
+        response = self._api("POST", "/filter/apply", "aplicar", {})
+        state_dir = response.json.get("status", "") if isinstance(response.json, dict) else ""
         if not str(state_dir).strip().upper().startswith("OK"):
             raise OpnsenseError("aplicar: o OPNsense nao confirmou")
 
@@ -212,7 +212,7 @@ class Opnsense:
 
 
 def _validacoes(data: dict) -> str:
-    validacoes = data.get("validations")
-    if isinstance(validacoes, dict) and validacoes:
-        return "; ".join(f"{campo}: {text}" for campo, text in list(validacoes.items())[:3])
+    checks = data.get("validations")
+    if isinstance(checks, dict) and checks:
+        return "; ".join(f"{field}: {text}" for field, text in list(checks.items())[:3])
     return str(data.get("result", "sem detalhe"))[:100]

@@ -122,19 +122,19 @@ _DROP_OLD = (
 
 def _migrate_names(conn: sqlite3.Connection) -> None:
     """Leva um banco antigo para os nomes em ingles. Nao faz nada num banco novo."""
-    tabelas = {r[0] for r in conn.execute(
+    tables = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'")}
-    if not tabelas & {velho for velho, _ in _RENAME_TABLES}:
+    if not tables & {old_one for old_one, _ in _RENAME_TABLES}:
         return
-    for comando in _DROP_OLD:
-        conn.execute(comando)
-    for velho, novo in _RENAME_TABLES:
-        if velho in tabelas and novo not in tabelas:
-            conn.execute(f"ALTER TABLE {velho} RENAME TO {novo}")
-    for tabela, velho, novo in _RENAME_COLUMNS:
-        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tabela})")}
-        if velho in cols and novo not in cols:
-            conn.execute(f"ALTER TABLE {tabela} RENAME COLUMN {velho} TO {novo}")
+    for command in _DROP_OLD:
+        conn.execute(command)
+    for old_one, fresh in _RENAME_TABLES:
+        if old_one in tables and fresh not in tables:
+            conn.execute(f"ALTER TABLE {old_one} RENAME TO {fresh}")
+    for table, old_one, fresh in _RENAME_COLUMNS:
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if old_one in cols and fresh not in cols:
+            conn.execute(f"ALTER TABLE {table} RENAME COLUMN {old_one} TO {fresh}")
 
 
 def now() -> str:
@@ -244,12 +244,12 @@ class Db:
 
     def append_log(self, op_id: str, row: str) -> None:
         with self._transaction() as conn:
-            atual = conn.execute("SELECT log FROM operations WHERE id = ?", (op_id,)).fetchone()
-            if atual is None:
+            current_one = conn.execute("SELECT log FROM operations WHERE id = ?", (op_id,)).fetchone()
+            if current_one is None:
                 return
             # Cauda: instalacao de jogo pode gerar MB de saida, e o painel so precisa do fim.
-            novo = (atual["log"] + row.rstrip("\n") + "\n")[-LOG_MAX:]
-            conn.execute("UPDATE operations SET log = ? WHERE id = ?", (novo, op_id))
+            fresh = (current_one["log"] + row.rstrip("\n") + "\n")[-LOG_MAX:]
+            conn.execute("UPDATE operations SET log = ? WHERE id = ?", (fresh, op_id))
 
     def finish_operation(self, op_id: str, state_dir: str, result: dict | None = None) -> None:
         with self._transaction() as conn:

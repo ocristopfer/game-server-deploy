@@ -30,20 +30,20 @@ def index():
 def save():
     """So o que vale para todos os destinos: hoje, os limites de disco, memoria e CPU."""
     conn = panel.db()
-    novos = []
-    for campo, key, name in panel.LIMITES_ALERTA:
+    fresh_ones = []
+    for field, key, name in panel.LIMITES_ALERTA:
         # Campo que nem veio no formulario fica como esta. Tratar ausencia como erro
         # faria um formulario sem o campo derrubar um limite que ja estava certo.
-        if campo not in request.form:
+        if field not in request.form:
             continue
-        value = (request.form.get(campo, "") or "").strip()
+        value = (request.form.get(field, "") or "").strip()
         if not value.isdigit() or not 50 <= int(value) <= 100:
             flash(panel.translate("flash.threshold_range", name=name), "error")
             return redirect(url_for("alerts.index"))
-        novos.append((key, value))
+        fresh_ones.append((key, value))
     # So grava depois de validar todos: meio salvo e pior que nada salvo, porque a tela
     # volta dizendo "recusado" enquanto um dos limites ja mudou por baixo.
-    for key, value in novos:
+    for key, value in fresh_ones:
         panel.config_set(conn, key, value)
     panel._reset_baseline()
     flash(panel.translate("flash.preferences_saved"), "ok")
@@ -54,13 +54,13 @@ def save():
 @panel.admin_required
 def hook_new():
     conn = panel.db()
-    quantos = conn.execute("SELECT COUNT(*) AS n FROM webhooks").fetchone()["n"]
-    if quantos >= panel.WEBHOOK_MAX:
+    how_many = conn.execute("SELECT COUNT(*) AS n FROM webhooks").fetchone()["n"]
+    if how_many >= panel.WEBHOOK_MAX:
         flash(panel.translate("flash.destination_limit", n=panel.WEBHOOK_MAX), "error")
         return redirect(url_for("alerts.index"))
-    data, erro = panel._le_form_webhook()
-    if erro or not data["url"]:
-        flash(panel.translate(erro) if erro else panel.translate("flash.need_webhook_url"), "error")
+    data, failure = panel._le_form_webhook()
+    if failure or not data["url"]:
+        flash(panel.translate(failure) if failure else panel.translate("flash.need_webhook_url"), "error")
         return redirect(url_for("alerts.index"))
     with conn:
         conn.execute(
@@ -78,17 +78,17 @@ def hook_new():
 @panel.admin_required
 def hook_save(hid: int):
     conn = panel.db()
-    atual = conn.execute("SELECT url FROM webhooks WHERE id = ?", (hid,)).fetchone()
-    if not atual:
+    current_one = conn.execute("SELECT url FROM webhooks WHERE id = ?", (hid,)).fetchone()
+    if not current_one:
         flash(panel.translate("flash.destination_not_found"), "error")
         return redirect(url_for("alerts.index"))
-    data, erro = panel._le_form_webhook()
-    if erro:
-        flash(panel.translate(erro), "error")
+    data, failure = panel._le_form_webhook()
+    if failure:
+        flash(panel.translate(failure), "error")
         return redirect(url_for("alerts.index"))
     # Campo de URL em branco quer dizer "mantem a que ja esta la". A tela mostra a URL
     # mascarada, entao nao ha o que reenviar: so quem digitar uma nova a troca.
-    url = data["url"] or atual["url"]
+    url = data["url"] or current_one["url"]
     with conn:
         conn.execute(
             "UPDATE webhooks SET name = ?, url = ?, events = ?, enabled = ? WHERE id = ?",
@@ -122,19 +122,19 @@ def hook_test(hid: int):
         return redirect(url_for("alerts.index"))
     # Se ha uma URL digitada no formulario, testa ELA: o ponto do botao e conferir a URL
     # nova antes de gravar, e nao repetir o teste da que ja estava salva.
-    digitada = (request.form.get("url", "") or "").strip()[:400]
-    if digitada and not panel.URL_RE.match(digitada):
+    typed = (request.form.get("url", "") or "").strip()[:400]
+    if typed and not panel.URL_RE.match(typed):
         flash(panel.translate("flash.bad_url"), "error")
         return redirect(url_for("alerts.index"))
-    erro = panel.send_webhook(
-        digitada or row["url"],
+    failure = panel.send_webhook(
+        typed or row["url"],
         f"**Teste do painel de jogos**\nSe voce esta lendo isto, os alertas funcionam."
         f" ({session.get('username', '?')})",
     )
     name = row["name"] or "destino"
     flash(
-        panel.translate("flash.destination_test_failed", name=name, reason=erro) if erro
+        panel.translate("flash.destination_test_failed", name=name, reason=failure) if failure
         else panel.translate("flash.destination_test_sent", name=name),
-        "error" if erro else "ok",
+        "error" if failure else "ok",
     )
     return redirect(url_for("alerts.index"))

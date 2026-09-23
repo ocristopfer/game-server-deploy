@@ -114,22 +114,22 @@ class Service:
             raise QuotaExceeded("ja ha uma operacao em andamento; aguarde ela terminar")
         if self.db.count_instances() >= self.config.max_instances:
             raise QuotaExceeded(f"limite de {self.config.max_instances} instancias atingido")
-        desde = (self._agora() - timedelta(hours=1)).isoformat(timespec="seconds")
-        if self.db.creations_since(desde) >= self.config.max_creations_per_hour:
+        since = (self._agora() - timedelta(hours=1)).isoformat(timespec="seconds")
+        if self.db.creations_since(since) >= self.config.max_creations_per_hour:
             raise QuotaExceeded(f"limite de {self.config.max_creations_per_hour} criacoes por hora atingido")
 
     def _reserve(self, game: Game, name: str, actor: str) -> tuple[int, list[AllocatedPort]]:
         # Snapshot de fora (Proxmox, OPNsense) + o que o banco ja reservou: o CT pode ter
         # sido criado na mao, e a regra de NAT tambem.
         ctids_px, ips_px = self.proxmox.ctids_and_ips()
-        ctids_db, ips_db, portas_db = self.db.taken()
+        ctids_db, ips_db, ports_db = self.db.taken()
         if self.config.ctid_base:
             ip, ctid = alocador.pick_ip_and_ctid(self.config.ips, self.config.ctid_base,
                                                    ctids_px | ctids_db, ips_px | ips_db, self.network.answers)
         else:
             ctid = alocador.pick_ctid(self.config.ctids, ctids_px | ctids_db)
             ip = alocador.pick_ip(self.config.ips, ips_px | ips_db, self.network.answers)
-        ports = alocador.allocate_ports(game, self.opnsense.external_ports() | portas_db, self.config.ports)
+        ports = alocador.allocate_ports(game, self.opnsense.external_ports() | ports_db, self.config.ports)
         instance_id = self.db.reserve(ctid, ip, game.key, name, f"{game.key}-{ctid}", actor, ports)
         return instance_id, ports
 
@@ -167,15 +167,15 @@ class Service:
         como `falhou` (nao some): IP e portas continuam bloqueados ate alguem remover."""
         log = self._logger(op_id)
         log(f"ERRO: {error[:ERROR_MAX]}")
-        limpou = True
+        cleaned = True
         try:
             self.opnsense.close_ports(inst["ctid"])
             if created:
                 self.proxmox.destroy(inst["ctid"])
         except Exception as failure:  # noqa: BLE001
-            limpou = False
+            cleaned = False
             log(f"nao consegui desfazer tudo: {str(failure)[:ERROR_MAX]}")
-        if limpou:
+        if cleaned:
             self.db.delete_instance(inst["id"])
             log("reserva liberada")
         else:

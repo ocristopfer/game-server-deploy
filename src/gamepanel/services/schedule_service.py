@@ -71,32 +71,32 @@ def previous_occurrence(sched: Any, now: datetime) -> datetime | None:
     """Ultimo horario em que esta tarefa deveria ter rodado ('intervalo' nao tem)."""
     if sched["kind"] == "intervalo":
         return None
-    alvo = now.replace(hour=int(sched["hour"]), minute=int(sched["minute"]),
+    target = now.replace(hour=int(sched["hour"]), minute=int(sched["minute"]),
                          second=0, microsecond=0)
     if sched["kind"] == "semanal":
-        atras = (now.weekday() - int(sched["weekday"])) % DAYS_IN_WEEK
-        alvo -= timedelta(days=atras)
-        if alvo > now:
-            alvo -= timedelta(days=DAYS_IN_WEEK)
-        return alvo
-    if alvo > now:
-        alvo -= timedelta(days=1)
-    return alvo
+        back = (now.weekday() - int(sched["weekday"])) % DAYS_IN_WEEK
+        target -= timedelta(days=back)
+        if target > now:
+            target -= timedelta(days=DAYS_IN_WEEK)
+        return target
+    if target > now:
+        target -= timedelta(days=1)
+    return target
 
 
 def is_due(sched: Any, now: datetime, tolerance_s: float) -> bool:
     """A tarefa deveria disparar agora?"""
-    ultimo = _parse_dt(sched["last_run"])
+    last_one = _parse_dt(sched["last_run"])
     if sched["kind"] == "intervalo":
-        if ultimo is None:
+        if last_one is None:
             return True
-        return (now - ultimo) >= timedelta(hours=max(1, int(sched["every_hours"])))
+        return (now - last_one) >= timedelta(hours=max(1, int(sched["every_hours"])))
 
-    alvo = previous_occurrence(sched, now)
-    if alvo is None:
+    target = previous_occurrence(sched, now)
+    if target is None:
         return False  # so 'intervalo' nao tem ocorrencia, e ele ja saiu acima
-    if ultimo is not None and ultimo >= alvo:
+    if last_one is not None and last_one >= target:
         return False  # esta ocorrencia ja rodou
     # Atrasada demais: o painel estava fora do ar quando a hora passou. Nao dispara e nao
     # anota nada — na proxima ocorrencia a conta acima volta a fechar sozinha.
-    return (now - alvo).total_seconds() <= tolerance_s
+    return (now - target).total_seconds() <= tolerance_s

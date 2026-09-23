@@ -88,26 +88,26 @@ def _role_of(game: Game, base: int) -> str:
 def _as_block(game: Game, start: int) -> list[AllocatedPort]:
     """Cada porta-base distinta do jogo vira um numero do bloco; a mesma base em UDP e TCP
     (Satisfactory) fica com o mesmo numero nos dois protocolos."""
-    numero_de: dict[int, int] = {}
+    number_of: dict[int, int] = {}
     for port in game.ports:
-        numero_de.setdefault(port.number, start + len(numero_de))
-    return [AllocatedPort(p.number, numero_de[p.number], p.proto, _role_of(game, p.number))
+        number_of.setdefault(port.number, start + len(number_of))
+    return [AllocatedPort(p.number, number_of[p.number], p.proto, _role_of(game, p.number))
             for p in game.ports]
 
 
 def allocate_ports(game: Game, busy: set[tuple[int, str]], span: range) -> list[AllocatedPort]:
     """Jogo fixo: as portas padrao. Jogo `shiftable`: o primeiro bloco livre da `faixa`."""
     if not game.shiftable:
-        candidatas = [AllocatedPort(p.number, p.number, p.proto, _role_of(game, p.number)) for p in game.ports]
-        conflitos = [c for c in candidatas if c.key in busy]
-        if conflitos:
-            raise OutOfResources(f"porta {conflitos[0]} ja esta em uso: este jogo nao aceita mudar de porta")
-        return candidatas
-    tamanho = len({p.number for p in game.ports})
-    for start in range(span.start, span.stop - tamanho + 1):
-        candidatas = _as_block(game, start)
-        if not any(c.key in busy for c in candidatas):
-            return candidatas
+        candidates = [AllocatedPort(p.number, p.number, p.proto, _role_of(game, p.number)) for p in game.ports]
+        conflicts = [c for c in candidates if c.key in busy]
+        if conflicts:
+            raise OutOfResources(f"porta {conflicts[0]} ja esta em uso: este jogo nao aceita mudar de porta")
+        return candidates
+    size = len({p.number for p in game.ports})
+    for start in range(span.start, span.stop - size + 1):
+        candidates = _as_block(game, start)
+        if not any(c.key in busy for c in candidates):
+            return candidates
     raise OutOfResources(f"a faixa de portas do broker ({span.start}-{span.stop - 1}) esta cheia")
 
 

@@ -206,9 +206,9 @@ cp "$work/secrets.modelo" "$work/broker.secrets.env"
 # A linha trocada por `false` tem de EXISTIR no script: se ela mudar de texto, o sed
 # nao casa, nada quebra e o teste passa sem ter testado nada. Por isso a conferencia
 # abaixo, antes de rodar.
-alvo='^  run_ct "chown -R root:root ${APP_DIR}/lib ${APP_DIR}/games"$'
-grep -q "$alvo" "$work/provision-broker-lxc.sh"   || nok "a linha que este teste derruba de proposito sumiu do provision-broker-lxc.sh"
-sed "s#${alvo}#  false#" "$work/provision-broker-lxc.sh" > "$work/quebrado.sh"
+target_line='^  run_ct "chown -R root:root ${APP_DIR}/lib ${APP_DIR}/games"$'
+grep -q "$target_line" "$work/provision-broker-lxc.sh"   || nok "a linha que este teste derruba de proposito sumiu do provision-broker-lxc.sh"
+sed "s#${target_line}#  false#" "$work/provision-broker-lxc.sh" > "$work/quebrado.sh"
 ( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./quebrado.sh ) > /tmp/deploy8.log 2>&1
 rc=$?
 if [ $rc -ne 0 ] && grep -q "falhou na linha .* executando: false" /tmp/deploy8.log && ! grep -qF "segredo-do-proxmox" /tmp/deploy8.log; then

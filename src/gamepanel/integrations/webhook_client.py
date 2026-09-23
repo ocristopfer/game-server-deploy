@@ -28,14 +28,14 @@ def mask_url(url: str) -> str:
     """
     if not url:
         return ""
-    corte = url.split("://", 1)[-1]
-    host, _, resto = corte.partition("/")
-    if not resto:
+    cut = url.split("://", 1)[-1]
+    host, _, rest = cut.partition("/")
+    if not rest:
         return host
-    partes = [p for p in resto.split("/") if p]
-    if len(partes) >= PARTS_WITH_ID_AND_TOKEN:
+    parts = [p for p in rest.split("/") if p]
+    if len(parts) >= PARTS_WITH_ID_AND_TOKEN:
         # Discord: .../webhooks/<id>/<token>. O id identifica, o token e que e segredo.
-        return f"{host}/.../{partes[-2]}/{'*' * 8}"
+        return f"{host}/.../{parts[-2]}/{'*' * 8}"
     return f"{host}/.../{'*' * 8}"
 
 
@@ -48,14 +48,14 @@ def send(url: str, text: str, timeout: float, user_agent: str) -> str:
     """
     if not URL_RE.match(url or ""):
         return "URL invalida (use http:// ou https://)"
-    corpo = json.dumps({"content": text, "text": text}).encode("utf-8")
-    pedido = urllib.request.Request(  # noqa: S310  # NOSONAR - URL_RE ja recusou o que nao for http(s)
+    body = json.dumps({"content": text, "text": text}).encode("utf-8")
+    request_body = urllib.request.Request(  # noqa: S310  # NOSONAR - URL_RE ja recusou o que nao for http(s)
         url,
-        data=corpo,
+        data=body,
         headers={"Content-Type": "application/json", "User-Agent": user_agent},
     )
     try:
-        with urllib.request.urlopen(pedido, timeout=timeout) as resp:  # noqa: S310  # NOSONAR
+        with urllib.request.urlopen(request_body, timeout=timeout) as resp:  # noqa: S310  # NOSONAR
             resp.read(RESPONSE_MAX)
         return ""
     except urllib.error.HTTPError as exc:
@@ -63,11 +63,11 @@ def send(url: str, text: str, timeout: float, user_agent: str) -> str:
         # JSON com 'message'). Sem ele, um 400 por payload torto e um 403 por bloqueio
         # do Cloudflare ficam com a mesma cara na tela.
         try:
-            motivo = exc.read(ERROR_MAX).decode("utf-8", "replace").strip().replace("\n", " ")
+            reason = exc.read(ERROR_MAX).decode("utf-8", "replace").strip().replace("\n", " ")
         # Resposta ja consumida/fechada.
         except Exception:  # noqa: BLE001
-            motivo = ""
-        return f"o webhook respondeu HTTP {exc.code}" + (f": {motivo}" if motivo else "")
+            reason = ""
+        return f"o webhook respondeu HTTP {exc.code}" + (f": {reason}" if reason else "")
     # Rede: DNS, TLS, timeout, recusa...
     except Exception as exc:  # noqa: BLE001
         return f"nao consegui chamar o webhook: {exc}"

@@ -254,8 +254,8 @@ def init_db(db_path: str, webhook_padrao: str, eventos_padrao: str,
         for table, column, ddl in MIGRATIONS:
             cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
             if column not in cols:
-                for comando in (ddl if isinstance(ddl, tuple) else (ddl,)):
-                    conn.execute(comando)
+                for command in (ddl if isinstance(ddl, tuple) else (ddl,)):
+                    conn.execute(command)
         for table, old, new in RENAMES:
             cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
             # Os dois testes juntos: so renomeia se o velho esta la E o novo nao. Assim
@@ -273,21 +273,21 @@ def _migra_webhook_unico(conn: sqlite3.Connection, webhook_padrao: str,
     A marca 'webhooks_migrado' e o que impede a volta: sem ela, quem apagasse o unico
     destino veria o antigo renascer no restart seguinte.
     """
-    ja = conn.execute(
+    already = conn.execute(
         "SELECT 1 FROM settings WHERE key = 'webhooks_migrado'"
     ).fetchone()
-    if ja:
+    if already:
         return
     conn.execute(
         "INSERT INTO settings (key, value) VALUES ('webhooks_migrado', '1')"
         " ON CONFLICT(key) DO NOTHING"
     )
-    antigo = conn.execute(
+    old_one = conn.execute(
         "SELECT value FROM settings WHERE key = 'webhook_url'"
     ).fetchone()
     # Sem nada no banco vale o do deploy: GAMEPANEL_WEBHOOK_URL era o valor inicial da
     # URL unica e continua sendo o do primeiro destino.
-    url = (antigo["value"] if antigo else "").strip() or webhook_padrao.strip()
+    url = (old_one["value"] if old_one else "").strip() or webhook_padrao.strip()
     if not url:
         return
     ev = conn.execute(

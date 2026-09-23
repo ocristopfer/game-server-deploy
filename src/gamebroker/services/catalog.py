@@ -431,9 +431,9 @@ _LEGACY_FIELDS = {
 
 def _without_legacy_names(data: dict) -> dict:
     """Traduz os nomes antigos; um campo dado NOS DOIS jeitos e recusado."""
-    repetido = sorted(v for k, v in _LEGACY_FIELDS.items() if k in data and v in data)
-    if repetido:
-        raise ValidationError(repetido[0], "informado duas vezes (nome antigo e novo)")
+    repeated = sorted(v for k, v in _LEGACY_FIELDS.items() if k in data and v in data)
+    if repeated:
+        raise ValidationError(repeated[0], "informado duas vezes (nome antigo e novo)")
     return {_LEGACY_FIELDS.get(k, k): v for k, v in data.items()}
 
 

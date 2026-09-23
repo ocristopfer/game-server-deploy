@@ -31,9 +31,9 @@ def service_worker():
     enxergaria /static/ e nao veria a navegacao do painel. Por isso ele nao e um
     arquivo estatico — e uma rota.
     """
-    precache, versao = panel._shell_files()
+    precache, version_mark = panel._shell_files()
     resp = panel.app.response_class(
-        render_template("sw.js.jinja", versao=versao, precache=precache),
+        render_template("sw.js.jinja", versao=version_mark, precache=precache),
         mimetype="text/javascript",
     )
     # Sem isto o proprio arquivo do worker ficaria em cache e o painel nunca

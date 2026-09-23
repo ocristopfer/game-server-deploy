@@ -33,18 +33,18 @@ def server_metrics(ssh_output: SshOutput, server: ServerLike, dir_padrao: str, t
                    force: bool = False) -> dict:
     """Uso de CPU, memoria, disco e rede do container."""
     key = int(server["id"])
-    agora = time.monotonic()
+    now_ts = time.monotonic()
     if not force:
         with _metrics_lock:
             cached = _metrics_cache.get(key)
-        if cached and agora - cached[0] < ttl:
+        if cached and now_ts - cached[0] < ttl:
             return cached[1]
 
-    alvo = server["config_path"] or dir_padrao
+    target = server["config_path"] or dir_padrao
     try:
         raw = ssh_output(
             server,
-            quote_command("bash", "-lc", metrics_probe.METRICS_SCRIPT, "gp", server["service"], alvo),
+            quote_command("bash", "-lc", metrics_probe.METRICS_SCRIPT, "gp", server["service"], target),
             timeout=30,
         )
         data = metrics_probe.parse_metrics(raw)
@@ -53,5 +53,5 @@ def server_metrics(ssh_output: SshOutput, server: ServerLike, dir_padrao: str, t
         data = {"error": str(exc)}
 
     with _metrics_lock:
-        _metrics_cache[key] = (agora, data)
+        _metrics_cache[key] = (now_ts, data)
     return data

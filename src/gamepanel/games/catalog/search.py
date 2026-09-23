@@ -21,8 +21,8 @@ QUERY_MAX = 60
 
 def _normalize(text: str) -> str:
     """Sem acento, minusculo, so letras e numeros: 'Counter-Strike' casa 'counter strike'."""
-    sem_acento = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-    return re.sub(r"[^a-z0-9]+", " ", sem_acento.lower()).strip()
+    without_accents = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", " ", without_accents.lower()).strip()
 
 
 _INDEX = tuple((s, _normalize(f"{s['name']} {s['key']}")) for s in sugestoes_de_jogos.SUGGESTIONS)
@@ -36,13 +36,13 @@ def search(query: str | None, limit: int = DEFAULT_LIMIT) -> list[dict]:
         return []
     if q.isdigit():
         return [s for s in sugestoes_de_jogos.SUGGESTIONS if str(s["appid"]) == q][:limit]
-    termos = _normalize(q).split()
-    if not termos:
+    terms = _normalize(q).split()
+    if not terms:
         return []
-    achados = [(s, text) for s, text in _INDEX if all(t in text for t in termos)]
-    achados.sort(key=lambda par: (not _normalize(par[0]["name"]).startswith(termos[0]),
+    found = [(s, text) for s, text in _INDEX if all(t in text for t in terms)]
+    found.sort(key=lambda par: (not _normalize(par[0]["name"]).startswith(terms[0]),
                                   par[0]["name"].lower()))
-    return [s for s, _ in achados[:limit]]
+    return [s for s, _ in found[:limit]]
 
 
 def to_form(s: dict) -> dict[str, str]:

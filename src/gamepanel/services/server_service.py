@@ -90,22 +90,22 @@ def _config_folder(value: str | None, clean_path: CleanPath, errors: list[str]) 
 def _config_files(value: str | None, clean_path: CleanPath, maximum: int,
                      errors: list[str]) -> str:
     """Le a lista de arquivos de configuracao (um caminho absoluto por linha)."""
-    caminhos: list[str] = []
-    for linha in (value or "").replace(",", "\n").splitlines():
-        raw = linha.strip()
+    paths: list[str] = []
+    for line in (value or "").replace(",", "\n").splitlines():
+        raw = line.strip()
         if not raw:
             continue
         try:
-            limpo = clean_path(raw)
+            clean = clean_path(raw)
         except ValueError as exc:
             errors.append(Message("form.bad_config_file", path=raw, reason=exc))
             continue
-        if limpo not in caminhos:
-            caminhos.append(limpo)
-    if len(caminhos) > maximum:
+        if clean not in paths:
+            paths.append(clean)
+    if len(paths) > maximum:
         errors.append(Message("form.too_many_config_files", n=maximum))
-        caminhos = caminhos[:maximum]
-    return "\n".join(caminhos)
+        paths = paths[:maximum]
+    return "\n".join(paths)
 
 
 def _backup_paths(value: str | None, clean_path: CleanPath, maximum: int,
@@ -115,25 +115,25 @@ def _backup_paths(value: str | None, clean_path: CleanPath, maximum: int,
     Vazio e a resposta certa para a maioria dos cadastros: sem nada aqui o backup leva a
     pasta de configuracao do servidor, que e onde o save costuma morar.
     """
-    caminhos: list[str] = []
-    for linha in (value or "").replace(",", "\n").splitlines():
-        raw = linha.strip()
+    paths: list[str] = []
+    for line in (value or "").replace(",", "\n").splitlines():
+        raw = line.strip()
         if not raw:
             continue
         try:
-            limpo = clean_path(raw)
+            clean = clean_path(raw)
         except ValueError as exc:
             errors.append(Message("form.bad_backup_path", path=raw, reason=exc))
             continue
-        if limpo == "/":
+        if clean == "/":
             errors.append(Message("form.no_root_backup"))
             continue
-        if limpo not in caminhos:
-            caminhos.append(limpo)
-    if len(caminhos) > maximum:
+        if clean not in paths:
+            paths.append(clean)
+    if len(paths) > maximum:
         errors.append(Message("form.too_many_backup_paths", n=maximum))
-        caminhos = caminhos[:maximum]
-    return "\n".join(caminhos)
+        paths = paths[:maximum]
+    return "\n".join(paths)
 
 
 def _url_or_error(raw: str, error: Message, errors: list[str]) -> str:
@@ -158,16 +158,16 @@ def _json_or_error(raw: str, label: str, errors: list[str]) -> str:
 
 def _json_paths(form: Form, cap: int, errors: list[str]) -> dict:
     """Os tres caminhos de navegacao na resposta (lista, contagem, token)."""
-    caminhos = {}
-    for campo, label in (("http_list_path", "form.path_list"),
+    paths = {}
+    for field, label in (("http_list_path", "form.path_list"),
                           ("http_count_path", "form.path_count"),
                           ("http_token_path", "form.path_token")):
-        texto = _field(form, campo, cap)
-        if texto and not CAMINHO_JSON_RE.match(texto):
+        text = _field(form, field, cap)
+        if text and not CAMINHO_JSON_RE.match(text):
             errors.append(Message("form.bad_json_path", label=Message(label)))
-            texto = ""
-        caminhos[campo] = texto
-    return caminhos
+            text = ""
+        paths[field] = text
+    return paths
 
 
 def _http_fields(form: Form, limits: FormLimits, errors: list[str]) -> dict:
@@ -180,7 +180,7 @@ def _http_fields(form: Form, limits: FormLimits, errors: list[str]) -> dict:
         _field(form, "http_body", limits.http_body_max),
         Message("form.request_body"), errors,
     )
-    caminhos = _json_paths(form, limits.http_path_max, errors)
+    paths = _json_paths(form, limits.http_path_max, errors)
 
     # Login automatico: os tres campos andam juntos. Preencher so parte deles quase
     # sempre e engano, e falhar aqui e melhor do que descobrir na hora da consulta.
@@ -192,7 +192,7 @@ def _http_fields(form: Form, limits: FormLimits, errors: list[str]) -> dict:
         _field(form, "http_login_body", limits.http_body_max),
         Message("form.login_body"), errors,
     )
-    if (login_url or login_body) and not caminhos["http_token_path"]:
+    if (login_url or login_body) and not paths["http_token_path"]:
         errors.append(Message("form.login_needs_token_path"))
 
     return {
@@ -204,7 +204,7 @@ def _http_fields(form: Form, limits: FormLimits, errors: list[str]) -> dict:
         # — mas trate o arquivo panel.db como segredo.
         "http_auth": _field(form, "http_auth", HTTP_AUTH_MAX),
         "http_body": body,
-        **caminhos,
+        **paths,
     }
 
 
@@ -218,15 +218,15 @@ def _log_path(value: str | None, errors: list[str]) -> str:
 
 def _pattern(value: str | None, label: str, cap: int, errors: list[str]) -> str:
     """Guarda o regex so depois de conferir que ele compila."""
-    texto = (value or "").strip()[:cap]
-    if not texto:
+    text = (value or "").strip()[:cap]
+    if not text:
         return ""
     try:
-        compile_pattern(texto, label)
+        compile_pattern(text, label)
     except QueryError as exc:
         errors.append(str(exc))
         return ""
-    return texto
+    return text
 
 
 def form_server(form: Form, clean_path: CleanPath,

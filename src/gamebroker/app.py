@@ -34,10 +34,10 @@ def create_app(service: Service, token: str, allowed_ips: tuple[str, ...] = ()) 
     def authenticate():
         if allowed_ips and request.remote_addr not in allowed_ips:
             return _error("origem nao permitida", "origem", 403)
-        enviado = request.headers.get("Authorization", "")
-        esperado = f"Bearer {token}"
+        sent_value = request.headers.get("Authorization", "")
+        expected = f"Bearer {token}"
         # compare_digest: tempo constante, para o token nao ser descoberto byte a byte.
-        if not hmac.compare_digest(enviado.encode(), esperado.encode()):
+        if not hmac.compare_digest(sent_value.encode(), expected.encode()):
             return _error("token ausente ou invalido", "nao-autenticado", 401)
         return None
 
@@ -82,8 +82,8 @@ def create_app(service: Service, token: str, allowed_ips: tuple[str, ...] = ()) 
     @app.post("/v1/instances")
     def instances_create():
         body = _body()
-        resposta = service.create(str(body.get("game", "")), body.get("name", ""), actor())
-        return jsonify(resposta), 202
+        response = service.create(str(body.get("game", "")), body.get("name", ""), actor())
+        return jsonify(response), 202
 
     @app.get("/v1/operations/<op_id>")
     def operation(op_id: str):

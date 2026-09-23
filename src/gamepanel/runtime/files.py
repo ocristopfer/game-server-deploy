@@ -218,17 +218,17 @@ def find_config_files(ssh_run: SshRun, server: ServerLike, root: str, globs: Ite
     proc = ssh_run(server, quote_command("bash", "-lc", script, "gp", root), timeout=90)
     if proc.returncode != 0:
         raise RemoteError((proc.stderr or proc.stdout).strip() or "falha na busca")
-    achados: list[dict] = []
+    found: list[dict] = []
     for line in proc.stdout.splitlines():
         parts = line.split("\t", 2)
         if len(parts) != _FIND_LINE_FIELDS:
             continue
-        achados.append({
+        found.append({
             "size": int(parts[0]) if parts[0].isdigit() else 0,
             "mtime": parts[1],
             "path": parts[2],
         })
-    return achados
+    return found
 
 
 # ----------------------------------------------------------- ler/gravar
@@ -339,8 +339,8 @@ def ssh_stream_in(
     # Numa variavel local porque `Popen.stdin` e Optional no tipo (Popen sem PIPE nao
     # tem entrada) e porque ela e zerada no `finally` la embaixo - o `close()` de la
     # precisa falar do MESMO objeto que o laco usou.
-    entrada = proc.stdin
-    if entrada is None:
+    entry = proc.stdin
+    if entry is None:
         raise RemoteError(Message("ssh.no_stdin"))
 
     try:
@@ -348,7 +348,7 @@ def ssh_stream_in(
             chunk = origem.read(chunk_size)
             if not chunk:
                 break
-            entrada.write(chunk)
+            entry.write(chunk)
     except OSError:
         # O outro lado desistiu (sem espaco, sem permissao): o motivo esta no stderr,
         # entao nao adianta reclamar do cano quebrado aqui. BrokenPipeError - o caso
@@ -359,20 +359,20 @@ def ssh_stream_in(
         # junto: o communicate() abaixo daria flush num arquivo ja fechado e estouraria
         # ValueError com o arquivo JA gravado do outro lado — erro na tela, upload feito.
         with contextlib.suppress(OSError):
-            entrada.close()
+            entry.close()
         proc.stdin = None
 
     try:
-        saida, erro = proc.communicate(timeout=timeout)
+        out_text, failure = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
         raise RemoteError(Message("ssh.upload_timeout", seconds=timeout,
                                    host=server["host"])) from None
     if proc.returncode != 0:
-        detalhe = (erro or saida or b"").decode("utf-8", "replace").strip()
-        raise RemoteError(detalhe or f"falha ao enviar (exit {proc.returncode})")
-    return saida.decode("utf-8", "replace").strip()
+        detail = (failure or out_text or b"").decode("utf-8", "replace").strip()
+        raise RemoteError(detail or f"falha ao enviar (exit {proc.returncode})")
+    return out_text.decode("utf-8", "replace").strip()
 
 
 def stream_remote_file(
@@ -386,14 +386,14 @@ def stream_remote_file(
     argv = [*ssh_argv(server), quote_command("cat", "--", path)]
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # noqa: S603  # NOSONAR - argv vem do SshClient
     # `Popen.stdout` e Optional no tipo; aqui ele existe porque o PIPE foi pedido acima.
-    saida = proc.stdout
-    if saida is None:
+    out_text = proc.stdout
+    if out_text is None:
         raise RemoteError(Message("ssh.no_stdout"))
 
     def gerar() -> Iterator[bytes]:
         try:
             while True:
-                chunk = saida.read(chunk_size)
+                chunk = out_text.read(chunk_size)
                 if not chunk:
                     break
                 yield chunk

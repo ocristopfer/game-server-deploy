@@ -15,11 +15,11 @@ bp = Blueprint("broker", __name__)
 @panel.broker_required
 def catalog():
     try:
-        jogos = panel.broker_client.catalog()
-    except panel.broker_client.BrokerError as erro:
-        flash(panel.translate("flash.broker_error", reason=erro.message), "error")
-        jogos = []
-    return render_template("catalogo.html", jogos=jogos, receitas=panel.BROKER_RECIPES, form={},
+        games = panel.broker_client.catalog()
+    except panel.broker_client.BrokerError as failure:
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
+        games = []
+    return render_template("catalogo.html", jogos=games, receitas=panel.BROKER_RECIPES, form={},
                            modelos=GAME_TEMPLATES)
 
 
@@ -29,8 +29,8 @@ def catalog():
 def api_suggestions():
     """Busca por nome ou App ID numa lista FIXA (gerada do LinuxGSM, no repositorio): nada aqui
     vai a internet, e a consulta so seleciona entre entradas conhecidas."""
-    achados = catalog_search.search(request.args.get("q", ""))
-    return jsonify({"resultados": [catalog_search.result(s) for s in achados],
+    found = catalog_search.search(request.args.get("q", ""))
+    return jsonify({"resultados": [catalog_search.result(s) for s in found],
                     "fonte": catalog_search.SOURCE})
 
 
@@ -38,20 +38,20 @@ def api_suggestions():
 @panel.admin_required
 @panel.broker_required
 def catalog_new():
-    data, erros = panel._game_from_form(request.form)
-    if not erros:
+    data, failures = panel._game_from_form(request.form)
+    if not failures:
         try:
             panel.broker_client.add_game(data, panel._ator())
         except panel.broker_client.BrokerError as exc:
-            erros.append(f"Broker: {exc.message}")
-    if erros:
-        for erro in erros:
-            flash(panel.translate(erro), "error")
+            failures.append(f"Broker: {exc.message}")
+    if failures:
+        for failure in failures:
+            flash(panel.translate(failure), "error")
         try:
-            jogos = panel.broker_client.catalog()
+            games = panel.broker_client.catalog()
         except panel.broker_client.BrokerError:
-            jogos = []
-        return render_template("catalogo.html", jogos=jogos, receitas=panel.BROKER_RECIPES,
+            games = []
+        return render_template("catalogo.html", jogos=games, receitas=panel.BROKER_RECIPES,
                                form=request.form, modelos=GAME_TEMPLATES), 400
     panel._log_broker_action("broker-jogo", panel._ator(), data.get("chave", ""), "Jogo adicionado ao catalogo.")
     flash(panel.translate("flash.game_added",
@@ -65,15 +65,15 @@ def catalog_new():
 def instances():
     try:
         instances = panel.broker_client.instances()
-        jogos = [j for j in panel.broker_client.catalog() if j.get("creatable")]
-    except panel.broker_client.BrokerError as erro:
-        flash(panel.translate("flash.broker_error", reason=erro.message), "error")
-        instances, jogos = [], []
-    ligados = {
+        games = [j for j in panel.broker_client.catalog() if j.get("creatable")]
+    except panel.broker_client.BrokerError as failure:
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
+        instances, games = [], []
+    bound = {
         r["broker_id"]: r
         for r in panel.db().execute("SELECT id, name, broker_id FROM servers WHERE broker_id > 0")
     }
-    return render_template("instancias.html", instancias=instances, jogos=jogos, servidores=ligados)
+    return render_template("instancias.html", instancias=instances, jogos=games, servidores=bound)
 
 
 @bp.post("/instances/new")
@@ -83,11 +83,11 @@ def instance_new():
     game = (request.form.get("game") or "").strip()
     name = (request.form.get("name") or "").strip()
     try:
-        resposta = panel.broker_client.create(game, name, panel._ator())
-    except panel.broker_client.BrokerError as erro:
-        flash(panel.translate("flash.broker_error", reason=erro.message), "error")
+        response = panel.broker_client.create(game, name, panel._ator())
+    except panel.broker_client.BrokerError as failure:
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
         return redirect(url_for("broker.instances"))
-    op_id = str(resposta.get("operation_id", ""))
+    op_id = str(response.get("operation_id", ""))
     if not op_id:
         flash(panel.translate("flash.broker_no_operation_id"), "error")
         return redirect(url_for("broker.instances"))
@@ -101,9 +101,9 @@ def instance_new():
 def instance_deactivate(iid: int):
     try:
         panel.broker_client.deactivate(iid, panel._ator())
-    except panel.broker_client.BrokerError as erro:
-        panel._log_broker_action("broker-desativar", panel._ator(), f"instancia {iid}", erro.message, "error")
-        flash(panel.translate("flash.broker_error", reason=erro.message), "error")
+    except panel.broker_client.BrokerError as failure:
+        panel._log_broker_action("broker-desativar", panel._ator(), f"instancia {iid}", failure.message, "error")
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
     else:
         panel._log_broker_action("broker-desativar", panel._ator(), f"instancia {iid}",
                                  "Portas fechadas no firewall e container parado.")
@@ -119,9 +119,9 @@ def instance_remove(iid: int):
     db_only = request.form.get("db_only") == "1"
     try:
         panel.broker_client.remove(iid, confirm, panel._ator(), db_only)
-    except panel.broker_client.BrokerError as erro:
-        panel._log_broker_action("broker-remover", panel._ator(), f"instancia {iid}", erro.message, "error")
-        flash(panel.translate("flash.broker_error", reason=erro.message), "error")
+    except panel.broker_client.BrokerError as failure:
+        panel._log_broker_action("broker-remover", panel._ator(), f"instancia {iid}", failure.message, "error")
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
         return redirect(url_for("broker.instances"))
     conn = panel.db()
     with conn:

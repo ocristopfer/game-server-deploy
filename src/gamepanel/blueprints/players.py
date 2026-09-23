@@ -27,27 +27,27 @@ def setup(sid: int):
     # na URL a senha ficaria no historico do navegador, no cabecalho Referer e no log de
     # qualquer proxy na frente do painel. O GET continua servindo a navegacao entre abas,
     # que so carrega o nome da aba.
-    origem = request.form if request.method == "POST" else request.args
-    aba = origem.get("aba", "porta")
-    testar = bool(origem.get("testar"))
+    source_dir = request.form if request.method == "POST" else request.args
+    tab = source_dir.get("aba", "porta")
+    should_test = bool(source_dir.get("testar"))
 
-    http = {campo: origem.get(campo, server[campo]) for campo in panel.HTTP_FIELDS}
-    join_re = origem.get("join_re", server["join_re"])
-    leave_re = origem.get("leave_re", server["leave_re"])
-    log_path = origem.get("log_path", server["log_path"])
+    http = {field: source_dir.get(field, server[field]) for field in panel.HTTP_FIELDS}
+    join_re = source_dir.get("join_re", server["join_re"])
+    leave_re = source_dir.get("leave_re", server["leave_re"])
+    log_path = source_dir.get("log_path", server["log_path"])
 
     data = {"portas": [], "aviso": "", "achados": [], "mudas": [], "amostras": [],
              "tem_api": False, "udp_do_jogo": 0, "udp_mudas": False,
              "teste": None, "teste_http": None, "erro_log": "", "erro_http": ""}
-    if aba == "http":
-        data.update(panel._aba_http(server, http, testar))
-    elif aba == "log":
-        data.update(panel._aba_log(server, join_re, leave_re, log_path, testar))
+    if tab == "http":
+        data.update(panel._aba_http(server, http, should_test))
+    elif tab == "log":
+        data.update(panel._aba_log(server, join_re, leave_re, log_path, should_test))
     else:
         data.update(panel._port_tab(server))
 
     return render_template(
-        "players_setup.html", server=server, aba=aba,
+        "players_setup.html", server=server, aba=tab,
         http=http, join_re=join_re, leave_re=leave_re, log_path=log_path, **data,
     )
 
@@ -57,14 +57,14 @@ def setup(sid: int):
 def use(sid: int):
     """Grava a forma de contagem escolhida no assistente."""
     panel._server_or_404(sid)  # so pelo 404: daqui para baixo os UPDATE usam o proprio sid
-    liga = panel.FONTES_DE_CONTAGEM.get(request.form.get("player_source", ""))
-    if liga is None:
+    links_to = panel.FONTES_DE_CONTAGEM.get(request.form.get("player_source", ""))
+    if links_to is None:
         flash(panel.translate("flash.bad_choice"), "error")
         return redirect(url_for("players.setup", sid=sid))
 
-    recusa = liga(panel.db(), sid)
-    if recusa is not None:
-        return recusa
+    refusal = links_to(panel.db(), sid)
+    if refusal is not None:
+        return refusal
 
     panel.invalidate_players(sid)
     return redirect(url_for("servers.detail", sid=sid))
@@ -83,25 +83,25 @@ def action(sid: int):
     player = (request.form.get("jogador", "") or "").strip()[:200]
     name = (request.form.get("nome", "") or "").strip()[:100]
     message = (request.form.get("mensagem", "") or "").strip()[:panel.PLAYER_MSG_MAX]
-    quem = name or player or "todos"
-    registro = f"{panel.label_for_db(panel.PLAYER_ACTION_LABELS.get(action, action))}: {quem}"
+    who = name or player or "todos"
+    record = f"{panel.label_for_db(panel.PLAYER_ACTION_LABELS.get(action, action))}: {who}"
     if message:
-        registro += f" ({message})"
-    voltar = url_for("servers.detail", sid=sid)
+        record += f" ({message})"
+    go_back = url_for("servers.detail", sid=sid)
 
     try:
         label = panel.translate(panel.run_player_action(server, action, player, message))
     except (panel.QueryError, panel.RemoteError) as exc:
         panel.log_job("player-action", server, session.get("username", "?"),
-                command=registro, output=str(exc), status="error")
+                command=record, output=str(exc), status="error")
         flash(panel.translate("flash.could_not", reason=exc), "error")
-        return redirect(voltar)
+        return redirect(go_back)
 
     panel.log_job("player-action", server, session.get("username", "?"),
-            command=registro, output="a API aceitou o pedido")
+            command=record, output="a API aceitou o pedido")
     # A contagem fica alguns segundos em cache e ainda tem quem acabou de sair.
     panel.invalidate_players(sid)
-    flash(panel.translate("flash.player_action_done", label=label, who=quem)
+    flash(panel.translate("flash.player_action_done", label=label, who=who)
           if action != "announce"
           else panel.translate("flash.notice_sent", message=message), "ok")
-    return redirect(voltar)
+    return redirect(go_back)

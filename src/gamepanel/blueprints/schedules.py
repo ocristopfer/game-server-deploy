@@ -13,20 +13,20 @@ bp = Blueprint("schedules", __name__)
 def index(sid: int):
     server = panel._server_or_404(sid)
     conn = panel.db()
-    tarefas = conn.execute(
+    tasks = conn.execute(
         "SELECT * FROM schedules WHERE server_id = ? ORDER BY id", (sid,)
     ).fetchall()
-    agora = panel.local_now()
+    now_ts = panel.local_now()
     # A tela mostra a proxima vez que cada tarefa roda: sem isso "todo dia as 5h" nao
     # deixa claro se ela ja rodou hoje ou se ainda vai rodar.
-    proximas = {}
-    for t in tarefas:
-        proximas[t["id"]] = panel._next_occurrence(t, agora).strftime(panel.FORMATO_DATA_CURTA)
+    next_ones = {}
+    for t in tasks:
+        next_ones[t["id"]] = panel._next_occurrence(t, now_ts).strftime(panel.FORMATO_DATA_CURTA)
     return render_template(
-        "schedules.html", server=server, tarefas=tarefas, proximas=proximas,
+        "schedules.html", server=server, tarefas=tasks, proximas=next_ones,
         acoes=panel.SCHEDULE_ACTIONS, job_labels=panel.labels_of(panel.JOB_LABELS),
         dias=[panel.translate(d) for d in panel.WEEKDAYS],
-        label=panel.schedule_label, agora=agora, max_horas=panel.EVERY_HOURS_MAX,
+        label=panel.schedule_label, agora=now_ts, max_horas=panel.EVERY_HOURS_MAX,
     )
 
 

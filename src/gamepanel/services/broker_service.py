@@ -31,23 +31,23 @@ def lines_of(text: str) -> list[str]:
 
 def game_from_form(form: Any) -> tuple[dict, list[str]]:
     """Le o formulario de jogo novo: devolve o que mandar ao broker, e os erros de tipo."""
-    erros: list[str] = []
-    dados: dict = {}
-    for campo in TEXT_FIELDS:
-        valor = (form.get(campo) or "").strip()
-        if valor:
-            dados[campo] = valor
-    for campo, label in NUMERIC_FIELDS:
-        bruto = (form.get(campo) or "").strip()
-        if not bruto:
+    failures: list[str] = []
+    payload: dict = {}
+    for field in TEXT_FIELDS:
+        value = (form.get(field) or "").strip()
+        if value:
+            payload[field] = value
+    for field, label in NUMERIC_FIELDS:
+        raw_text = (form.get(field) or "").strip()
+        if not raw_text:
             continue
-        if NUMBER_RE.fullmatch(bruto):
-            dados[campo] = int(bruto)
+        if NUMBER_RE.fullmatch(raw_text):
+            payload[field] = int(raw_text)
         else:
-            erros.append(f"{label} deve ser um numero.")
-    dados["ports"] = [p for p in re.split(r"[\s,]+", (form.get("ports") or "").strip()) if p]
-    dados["config_files"] = lines_of(form.get("config_files", ""))
-    dados["backup_paths"] = lines_of(form.get("backup_paths", ""))
-    dados["recipes"] = [r for r in form.getlist("recipes") if r in BROKER_RECIPES]
-    dados["shiftable"] = form.get("shiftable") == "1"
-    return dados, erros
+            failures.append(f"{label} deve ser um numero.")
+    payload["ports"] = [p for p in re.split(r"[\s,]+", (form.get("ports") or "").strip()) if p]
+    payload["config_files"] = lines_of(form.get("config_files", ""))
+    payload["backup_paths"] = lines_of(form.get("backup_paths", ""))
+    payload["recipes"] = [r for r in form.getlist("recipes") if r in BROKER_RECIPES]
+    payload["shiftable"] = form.get("shiftable") == "1"
+    return payload, failures

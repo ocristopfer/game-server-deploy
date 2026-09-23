@@ -33,11 +33,11 @@ def _systemctl_fields(ssh_output: SshOutput, server: ServerLike) -> dict[str, st
         "systemctl", "show", server["service"],
         "-p", "ActiveState", "-p", "SubState", "-p", "NRestarts", "-p", "Result",
     ))
-    campos = {}
-    for linha in raw.splitlines():
-        key, _, valor = linha.partition("=")
-        campos[key.strip()] = valor.strip()
-    return campos
+    fields = {}
+    for line in raw.splitlines():
+        key, _, value = line.partition("=")
+        fields[key.strip()] = value.strip()
+    return fields
 
 
 def server_status(ssh_output: SshOutput, server: ServerLike, ttl: float,
@@ -53,15 +53,15 @@ def server_status(ssh_output: SshOutput, server: ServerLike, ttl: float,
     state = {"reachable": False, "service": "desconhecido", "error": "",
              "sub": "", "restarts": 0, "result": ""}
     try:
-        campos = _systemctl_fields(ssh_output, server)
+        fields = _systemctl_fields(ssh_output, server)
         state["reachable"] = True
-        state["service"] = campos.get("ActiveState") or "inactive"
-        state["sub"] = campos.get("SubState", "")
-        state["result"] = campos.get("Result", "")
+        state["service"] = fields.get("ActiveState") or "inactive"
+        state["sub"] = fields.get("SubState", "")
+        state["result"] = fields.get("Result", "")
         # NRestarts so existe no systemd >= 235; sem ele o loop de restart nao e
         # detectavel e o painel simplesmente nao avisa desse evento nesse servidor.
         try:
-            state["restarts"] = int(campos.get("NRestarts", "0") or 0)
+            state["restarts"] = int(fields.get("NRestarts", "0") or 0)
         except ValueError:
             state["restarts"] = 0
     except RemoteError as exc:

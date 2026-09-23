@@ -28,9 +28,9 @@ def tick(tasks: Iterable[Tarefa], on_failure: Callable[[str], None]) -> None:
     fora o painel parecia inteiro, e o botao de testar webhook (que nao passa por aqui)
     continuava funcionando e afastando a suspeita do lugar certo.
     """
-    for name, tarefa in tasks:
+    for name, task in tasks:
         try:
-            tarefa()
+            task()
         # Uma tarefa nao derruba as outras.
         except Exception:  # noqa: BLE001
             on_failure(name)

@@ -47,27 +47,27 @@ _config: dict = {}
 def normalize_fingerprint(text: str) -> str:
     if not text.strip():
         return ""
-    limpo = re.sub(r"[^0-9a-fA-F]", "", text).lower()
+    clean = re.sub(r"[^0-9a-fA-F]", "", text).lower()
     # Texto nao vazio que nao vira 64 digitos e erro de digitacao: aceitar como "sem
     # impressao" desligaria o pin em silencio.
-    if not _IMPRESSAO_RE.fullmatch(limpo):
+    if not _IMPRESSAO_RE.fullmatch(clean):
         raise ValueError("impressao SHA-256 invalida: esperados 64 digitos hexadecimais")
-    return limpo
+    return clean
 
 
 def configure(url: str, token: str, fingerprint_sha256: str = "", allow_http: bool = False) -> None:
-    partes = urlsplit(url)
-    if partes.scheme not in ("http", "https") or not partes.hostname:
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
         raise ValueError("GAMEPANEL_BROKER_URL deve ser http(s)://host[:porta]")
-    if partes.scheme == "http" and partes.hostname not in _LOOPBACK and not allow_http:
+    if parts.scheme == "http" and parts.hostname not in _LOOPBACK and not allow_http:
         raise ValueError("sem TLS so em loopback: use https:// e GAMEPANEL_BROKER_CERT_SHA256")
     if len(token) < TOKEN_MINIMO:
         raise ValueError(f"o token do broker precisa ter ao menos {TOKEN_MINIMO} caracteres")
     _config.clear()
     _config.update(
-        https=partes.scheme == "https", host=partes.hostname,
-        porta=partes.port or (443 if partes.scheme == "https" else 80),
-        prefixo=partes.path.rstrip("/"), token=token,
+        https=parts.scheme == "https", host=parts.hostname,
+        porta=parts.port or (443 if parts.scheme == "https" else 80),
+        prefixo=parts.path.rstrip("/"), token=token,
         fingerprint=normalize_fingerprint(fingerprint_sha256),
     )
 
@@ -100,47 +100,47 @@ def _connection() -> http.client.HTTPConnection:
     # A cadeia nao e validada porque o certificado do broker e autoassinado; quem o autentica
     # e a comparacao da impressao em _ConexaoFixada.connect. Os avisos abaixo sao falsos
     # positivos revisados (o teste com pin errado e sem pin prova).
-    contexto = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)  # NOSONAR - TLS >= 1.2 na linha seguinte
-    contexto.minimum_version = ssl.TLSVersion.TLSv1_2
-    contexto.check_hostname = False  # NOSONAR - identidade por impressao fixada
-    contexto.verify_mode = ssl.CERT_NONE  # NOSONAR - identidade por impressao fixada
-    return _PinnedConnection(c["host"], c["porta"], timeout=TIMEOUT, context=contexto,
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)  # NOSONAR - TLS >= 1.2 na linha seguinte
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.check_hostname = False  # NOSONAR - identidade por impressao fixada
+    context.verify_mode = ssl.CERT_NONE  # NOSONAR - identidade por impressao fixada
+    return _PinnedConnection(c["host"], c["porta"], timeout=TIMEOUT, context=context,
                           fingerprint=c["fingerprint"])
 
 
 def _request(method: str, path: str, body: object = None, actor: str = ""):
     if not is_configured():
         raise BrokerError("o broker nao esta configurado neste painel")
-    cabecalhos = {"Authorization": f"Bearer {_config['token']}", "Accept": "application/json"}
+    headers = {"Authorization": f"Bearer {_config['token']}", "Accept": "application/json"}
     if actor:
-        cabecalhos["X-Actor"] = actor
+        headers["X-Actor"] = actor
     data = None
     if body is not None:
         data = json.dumps(body).encode()
-        cabecalhos["Content-Type"] = "application/json"
-    conexao = _connection()
+        headers["Content-Type"] = "application/json"
+    connection = _connection()
     try:
-        conexao.request(method, _config["prefixo"] + path, body=data, headers=cabecalhos)
-        resposta = conexao.getresponse()
-        bruto = resposta.read(RESPOSTA_MAX + 1)
-        status = resposta.status
+        connection.request(method, _config["prefixo"] + path, body=data, headers=headers)
+        response = connection.getresponse()
+        raw_text = response.read(RESPOSTA_MAX + 1)
+        status = response.status
     except BrokerError:
         raise
-    except (OSError, http.client.HTTPException) as erro:
+    except (OSError, http.client.HTTPException) as failure:
         # So o tipo do erro: nunca cabecalho (token) nem corpo enviado.
-        raise BrokerError(f"nao consegui falar com o broker ({type(erro).__name__})") from None
+        raise BrokerError(f"nao consegui falar com o broker ({type(failure).__name__})") from None
     finally:
-        conexao.close()
-    if len(bruto) > RESPOSTA_MAX:
+        connection.close()
+    if len(raw_text) > RESPOSTA_MAX:
         raise BrokerError("resposta grande demais do broker")
     try:
-        json_resposta = json.loads(bruto.decode("utf-8", errors="replace")) if bruto.strip() else None
+        json_resposta = json.loads(raw_text.decode("utf-8", errors="replace")) if raw_text.strip() else None
     except ValueError:
         json_resposta = None
     if status >= 400:
         message = json_resposta.get("erro") if isinstance(json_resposta, dict) else None
-        codigo = json_resposta.get("codigo", "") if isinstance(json_resposta, dict) else ""
-        raise BrokerError(str(message or f"o broker respondeu HTTP {status}")[:300], status, str(codigo))
+        code = json_resposta.get("codigo", "") if isinstance(json_resposta, dict) else ""
+        raise BrokerError(str(message or f"o broker respondeu HTTP {status}")[:300], status, str(code))
     return json_resposta
 
 

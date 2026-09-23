@@ -168,12 +168,12 @@ def _configure_broker() -> bool:
     if os.environ.get("GAMEPANEL_ALLOW_BROKER", "0") != "1":
         return False
     try:
-        with open(BROKER_TOKEN_FILE, encoding="utf-8") as arquivo:
-            token = arquivo.read().strip()
+        with open(BROKER_TOKEN_FILE, encoding="utf-8") as file_path:
+            token = file_path.read().strip()
         broker_client.configure(BROKER_URL, token, BROKER_CERT_SHA256,
                                  allow_http=os.environ.get("GAMEPANEL_DEV", "") == "1")
-    except (OSError, ValueError) as erro:
-        print(f"[painel] broker DESLIGADO: {erro}", file=sys.stderr)
+    except (OSError, ValueError) as failure:
+        print(f"[painel] broker DESLIGADO: {failure}", file=sys.stderr)
         return False
     return True
 
@@ -432,8 +432,8 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, stored: str) -> bool:
     try:
-        algo, n, r, p, salt_hex, digest_hex = stored.split("$")
-        if algo != "scrypt":
+        anything, n, r, p, salt_hex, digest_hex = stored.split("$")
+        if anything != "scrypt":
             return False
         digest = hashlib.scrypt(
             password.encode(),
@@ -595,10 +595,10 @@ def static_url(name: str) -> str:
     em css/, js/ e icons/.
     """
     try:
-        marca = int(os.path.getmtime(os.path.join(app.static_folder or "", name)))
+        mark = int(os.path.getmtime(os.path.join(app.static_folder or "", name)))
     except OSError:
-        marca = 0
-    return url_for("static", filename=name, v=marca)
+        mark = 0
+    return url_for("static", filename=name, v=mark)
 
 
 DEFAULT_LANG = i18n.valid_language(os.environ.get("GAMEPANEL_LANG"))
@@ -620,19 +620,19 @@ def current_language() -> str:
     """
     if not has_app_context():
         return DEFAULT_LANG
-    escolhido = getattr(g, "_idioma", None)
-    if escolhido is not None:
-        return escolhido
+    chosen_one = getattr(g, "_idioma", None)
+    if chosen_one is not None:
+        return chosen_one
     user = logged_user()
-    do_usuario = _stored_value(user, "lang") if user else ""
-    if do_usuario:
-        escolhido = i18n.valid_language(do_usuario)
+    from_user = _stored_value(user, "lang") if user else ""
+    if from_user:
+        chosen_one = i18n.valid_language(from_user)
     elif request:
-        escolhido = i18n.from_header(request.headers.get("Accept-Language"))
+        chosen_one = i18n.from_header(request.headers.get("Accept-Language"))
     else:
-        escolhido = DEFAULT_LANG
-    g._idioma = escolhido
-    return escolhido
+        chosen_one = DEFAULT_LANG
+    g._idioma = chosen_one
+    return chosen_one
 
 
 def translate(key: str, **campos: object) -> str:
@@ -736,18 +736,18 @@ def _navigation_context() -> dict:
     "Graficos" existia numa tela e nao na outra.
     """
     admin = is_admin()
-    secoes = ui.visible_sections(admin=admin, arquivos=ALLOW_FILES, shell=ALLOW_SHELL)
-    tem_pty = ALLOW_SHELL and HAVE_PTY
-    barra, conta = ui.nav_desktop(admin=admin, broker=ALLOW_BROKER)
+    sections = ui.visible_sections(admin=admin, arquivos=ALLOW_FILES, shell=ALLOW_SHELL)
+    has_pty = ALLOW_SHELL and HAVE_PTY
+    slash, account = ui.nav_desktop(admin=admin, broker=ALLOW_BROKER)
     return {
         "nav_main": ui.visible_items(ui.NAV_MAIN, admin=admin, broker=ALLOW_BROKER),
         "nav_secondary": ui.visible_items(ui.NAV_SECONDARY, admin=admin, broker=ALLOW_BROKER),
         "nav_active": ui.active_nav_for(request.endpoint),
-        "nav_desktop_bar": barra,
-        "nav_desktop_account": conta,
+        "nav_desktop_bar": slash,
+        "nav_desktop_account": account,
         "nav_active_desktop": ui.active_desktop_nav_for(request.endpoint),
-        "server_sections": secoes,
-        "section_endpoint": lambda secao: ui.section_endpoint(secao, tem_pty=tem_pty),
+        "server_sections": sections,
+        "section_endpoint": lambda secao: ui.section_endpoint(secao, tem_pty=has_pty),
         "power_actions": ui.actions_in_group(ui.GROUP_POWER),
         "maintenance_actions": ui.actions_in_group(ui.GROUP_MAINTENANCE),
         "card_power": ui.card_power,
@@ -796,11 +796,11 @@ def em_paralelo(tarefas: dict, timeout: float = 40.0) -> dict:
 
     def work(name, funcao):
         try:
-            value, erro = funcao(), ""
+            value, failure = funcao(), ""
         except (RemoteError, QueryError) as exc:
-            value, erro = None, str(exc)
+            value, failure = None, str(exc)
         with lock:
-            output[name] = (value, erro)
+            output[name] = (value, failure)
 
     threads = [threading.Thread(target=work, args=(n, f), daemon=True)
                for n, f in tarefas.items()]
@@ -1110,17 +1110,17 @@ def role_filter() -> tuple[str, tuple]:
     """
     if is_admin():
         return "", ()
-    escondidas = tuple(sorted(JOB_ACTIONS_ADMIN))
-    marcadores = ",".join("?" * len(escondidas))
-    return f" AND action NOT IN ({marcadores})", escondidas
+    hidden_ones = tuple(sorted(JOB_ACTIONS_ADMIN))
+    markers = ",".join("?" * len(hidden_ones))
+    return f" AND action NOT IN ({markers})", hidden_ones
 
 
 def server_jobs(conn: sqlite3.Connection, sid: int, limit: int) -> list:
     """Historico do servidor ja filtrado pelo papel de quem esta olhando."""
-    corte, valores = role_filter()
+    cut, values = role_filter()
     return conn.execute(
-        f"SELECT * FROM jobs WHERE server_id = ?{corte} ORDER BY id DESC LIMIT ?",
-        (sid, *valores, limit),
+        f"SELECT * FROM jobs WHERE server_id = ?{cut} ORDER BY id DESC LIMIT ?",
+        (sid, *values, limit),
     ).fetchall()
 
 
@@ -1170,7 +1170,7 @@ def start_job(
 ) -> int:
     # Resolvido AQUI, e nao dentro do `run()` la embaixo: o que a thread executa nao
     # pode depender de um parametro opcional que alguem mude no meio do caminho.
-    comando_remoto: str = remote_cmd if remote_cmd is not None else ACTIONS[action][1](server)
+    remote_command: str = remote_cmd if remote_cmd is not None else ACTIONS[action][1](server)
     conn = db()
     with conn:
         cur = conn.execute(
@@ -1191,7 +1191,7 @@ def start_job(
             # Conexao propria: um update leva quase uma hora, e a mestre compartilhada
             # ficaria presa a ele — com o monitor inteiro dependendo de um comando que
             # pode cair no meio.
-            proc = ssh_run(target, comando_remoto, timeout=timeout, multiplex=False)
+            proc = ssh_run(target, remote_command, timeout=timeout, multiplex=False)
             output = (proc.stdout or "") + (proc.stderr or "")
             status = "ok" if proc.returncode == 0 else "error"
             code = proc.returncode
@@ -1328,28 +1328,28 @@ def webhook_config(conn: sqlite3.Connection) -> dict:
     a pena olhar alguma coisa. Quem recebe o que se resolve depois, destino a destino.
     """
     try:
-        disco = int(config_get(conn, "webhook_disk_pct", str(DISK_PCT_DEFAULT)))
+        disk = int(config_get(conn, "webhook_disk_pct", str(DISK_PCT_DEFAULT)))
     except ValueError:
-        disco = DISK_PCT_DEFAULT
+        disk = DISK_PCT_DEFAULT
     try:
-        memoria = int(config_get(conn, "webhook_mem_pct", str(MEM_PCT_DEFAULT)))
+        memory = int(config_get(conn, "webhook_mem_pct", str(MEM_PCT_DEFAULT)))
     except ValueError:
-        memoria = MEM_PCT_DEFAULT
+        memory = MEM_PCT_DEFAULT
     try:
         cpu = int(config_get(conn, "webhook_cpu_pct", str(CPU_PCT_DEFAULT)))
     except ValueError:
         cpu = CPU_PCT_DEFAULT
-    destinos = webhook_list(conn)
-    cobertos = set()
-    for d in destinos:
+    targets = webhook_list(conn)
+    covered = set()
+    for d in targets:
         if d["enabled"] and d["url"]:
-            cobertos |= d["events"]
+            covered |= d["events"]
     return {
-        "targets": destinos,
-        "active": [d for d in destinos if d["enabled"] and d["url"]],
-        "events": cobertos,
-        "disk": min(100, max(50, disco)),
-        "memory": min(100, max(50, memoria)),
+        "targets": targets,
+        "active": [d for d in targets if d["enabled"] and d["url"]],
+        "events": covered,
+        "disk": min(100, max(50, disk)),
+        "memory": min(100, max(50, memory)),
         "cpu": min(100, max(50, cpu)),
     }
 
@@ -1371,9 +1371,9 @@ def notify(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str = "")
     cala os outros: cada um e tentado e cada falha vai para o log com o nome do destino,
     entao da para saber qual deles esta quebrado sem adivinhar.
     """
-    alvos = [d for d in webhook_list(conn)
+    targets = [d for d in webhook_list(conn)
              if d["enabled"] and d["url"] and event in d["events"]]
-    if not alvos:
+    if not targets:
         # Registrado de proposito: "o alerta disparou e ninguem pediu por ele" e a causa
         # mais comum de canal mudo, e e indistinguivel de "nao aconteceu nada" para quem
         # so olha o Discord. No diario as duas viram coisas diferentes.
@@ -1382,19 +1382,19 @@ def notify(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str = "")
     text = f"**{titulo}**"
     if detalhe:
         text += f"\n{detalhe}"
-    saiu = False
-    for target in alvos:
-        erro = send_webhook(target["url"], text)
-        if erro:
+    left = False
+    for target in targets:
+        failure = send_webhook(target["url"], text)
+        if failure:
             app.logger.warning(
-                "alerta '%s' nao saiu para '%s': %s", event, target["name"], erro
+                "alerta '%s' nao saiu para '%s': %s", event, target["name"], failure
             )
             _record_alert(conn, event, titulo, detalhe, target["name"],
-                             "falhou", erro)
+                             "falhou", failure)
         else:
-            saiu = True
+            left = True
             _record_alert(conn, event, titulo, detalhe, target["name"], "enviado")
-    return saiu
+    return left
 
 
 def _record_alert(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str,
@@ -1429,11 +1429,11 @@ def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
     Reiniciar pelo botao derruba o servico por alguns segundos, e isso NAO e uma queda.
     Sem esta janela, todo restart e todo update viraria alerta.
     """
-    corte = (datetime.now(timezone.utc) - timedelta(seconds=ALERT_QUIET)).isoformat()
+    cut = (datetime.now(timezone.utc) - timedelta(seconds=ALERT_QUIET)).isoformat()
     return conn.execute(
         "SELECT 1 FROM jobs WHERE server_id = ? AND created_at >= ?"
         " AND action IN ('start','stop','restart','update','restore-backup') LIMIT 1",
-        (sid, corte),
+        (sid, cut),
     ).fetchone() is not None
 
 
@@ -1584,8 +1584,8 @@ def live_streams() -> int:
 def supervise_streams() -> int:
     """Liga, desliga e ressuscita as conexoes de log. Devolve quantas ficaram registradas."""
     conn = db()
-    servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
-    return _supervisor.sync(servidores, wanted_streams(servidores, webhook_config(conn)))
+    servers = conn.execute(SQL_ALL_SERVERS).fetchall()
+    return _supervisor.sync(servers, wanted_streams(servers, webhook_config(conn)))
 
 
 class _Rhythm(NamedTuple):
@@ -1610,34 +1610,34 @@ def _monitor_rhythm(cfg: dict, agora: float, force: bool) -> _Rhythm | None:
 
     # O passo do monitor e o do alerta mais apressado que esteja LIGADO. Com jogadores
     # ligados a volta fica curta; sem eles nada muda em relacao a antes.
-    quer_jogadores = bool(cfg["events"] & {"jogador-entrou", "jogador-saiu"})
-    passo = min(MONITOR_EVERY, PLAYER_CHECK_EVERY) if quer_jogadores else MONITOR_EVERY
-    if not force and agora - _last_monitor < passo:
+    wants_players = bool(cfg["events"] & {"jogador-entrou", "jogador-saiu"})
+    step = min(MONITOR_EVERY, PLAYER_CHECK_EVERY) if wants_players else MONITOR_EVERY
+    if not force and agora - _last_monitor < step:
         return None
     _last_monitor = agora
 
     # ...mas so a contagem de jogadores anda nesse passo curto. Estado do servico, mudez
     # e restart continuam no ritmo antigo: cada um deles custa SSH por servidor, e
     # acelerar tudo junto multiplicaria essa conta por quatro sem necessidade.
-    ver_estado = force or agora - _last_state >= MONITOR_EVERY
-    if ver_estado:
+    see_state = force or agora - _last_state >= MONITOR_EVERY
+    if see_state:
         _last_state = agora
 
     # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
     # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
-    vence_recurso = force or agora - _last_disk >= DISK_CHECK_EVERY
-    recursos = cfg["events"] & RECURSO_EVENTOS if vence_recurso else set()
-    if recursos:
+    resource_wins = force or agora - _last_disk >= DISK_CHECK_EVERY
+    resources = cfg["events"] & RECURSO_EVENTOS if resource_wins else set()
+    if resources:
         _last_disk = agora
 
     # O log e o unico que custa uma ida de SSH so dele, entao anda no seu proprio ritmo.
-    ver_log = "erro-no-log" in cfg["events"] and (
+    see_log = "erro-no-log" in cfg["events"] and (
         force or agora - _last_log >= LOG_CHECK_EVERY
     )
-    if ver_log:
+    if see_log:
         _last_log = agora
 
-    return _Rhythm(ver_estado, quer_jogadores, recursos, ver_log)
+    return _Rhythm(see_state, wants_players, resources, see_log)
 
 
 def _short_round(conn, server, anterior, cfg, rhythm: _Rhythm) -> None:
@@ -1685,9 +1685,9 @@ def _server_alerts(conn, server, state, anterior, cfg, rhythm: _Rhythm) -> None:
     if rhythm.ver_log:
         _log_alert(conn, server, anterior)
 
-    for event, checa in ALERTAS_DE_RECURSO.items():
+    for event, check_it in ALERTAS_DE_RECURSO.items():
         if event in rhythm.recursos:
-            checa(conn, server, cfg)
+            check_it(conn, server, cfg)
 
 
 def monitor_servers(force: bool = False) -> int:
@@ -1703,17 +1703,17 @@ def monitor_servers(force: bool = False) -> int:
     if rhythm is None:
         return 0
 
-    servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
-    for server in servidores:
+    servers = conn.execute(SQL_ALL_SERVERS).fetchall()
+    for server in servers:
         sid = int(server["id"])
-        anterior = _estado_monitor.get(sid)
+        previous = _estado_monitor.get(sid)
 
         if not rhythm.ver_estado:
-            _short_round(conn, server, anterior, cfg, rhythm)
+            _short_round(conn, server, previous, cfg, rhythm)
             continue
 
         state = server_status(server)
-        if anterior is None:
+        if previous is None:
             # Primeira olhada: so anota. Alertar aqui encheria o canal de "esta parado"
             # toda vez que o painel reiniciasse. Vale para o contador de restarts do
             # mesmo jeito: o que interessa e quanto ele sobe DAQUI para a frente.
@@ -1722,22 +1722,22 @@ def monitor_servers(force: bool = False) -> int:
                                     "restarts": int(state.get("restarts") or 0)}
             continue
 
-        _state_alert(conn, server, state, anterior)
+        _state_alert(conn, server, state, previous)
         if state["reachable"]:
-            _server_alerts(conn, server, state, anterior, cfg, rhythm)
+            _server_alerts(conn, server, state, previous, cfg, rhythm)
         # Depois dos alertas: eles precisam comparar com o estado ANTERIOR, e atualizar
         # antes faria toda mudanca desaparecer no meio do caminho.
-        anterior.update(reachable=state["reachable"], service=state["service"])
+        previous.update(reachable=state["reachable"], service=state["service"])
 
-    _forget_removed_servers(servidores)
-    return len(servidores)
+    _forget_removed_servers(servers)
+    return len(servers)
 
 
 def _forget_removed_servers(servidores) -> None:
     """Servidor removido do painel nao pode ficar guardando estado para sempre."""
     alive_ids = {int(s["id"]) for s in servidores}
-    for morto in [k for k in _estado_monitor if k not in alive_ids]:
-        _estado_monitor.pop(morto, None)
+    for dead_one in [k for k in _estado_monitor if k not in alive_ids]:
+        _estado_monitor.pop(dead_one, None)
 
 
 # -------------------------------------------------------- amostras de uso
@@ -1748,13 +1748,13 @@ _last_sample = 0.0
 def collect_samples(force: bool = False) -> int:
     """Guarda uma linha de CPU/memoria/jogadores por servidor. Devolve quantas gravou."""
     global _last_sample
-    agora = time.monotonic()
-    if not force and agora - _last_sample < SAMPLE_EVERY:
+    now_ts = time.monotonic()
+    if not force and now_ts - _last_sample < SAMPLE_EVERY:
         return 0
-    _last_sample = agora
+    _last_sample = now_ts
 
     conn = db()
-    carimbo = now_iso()
+    stamp = now_iso()
     lines_of = []
     for server in conn.execute(SQL_ALL_SERVERS).fetchall():
         data = server_metrics(server)
@@ -1762,16 +1762,16 @@ def collect_samples(force: bool = False) -> int:
             # Container fora do ar nao vira linha: um buraco no grafico e a informacao
             # certa, e zero seria mentira (nao foi "usou 0% de CPU").
             continue
-        contagem = None
+        count = None
         if player_source(server):
             try:
-                jogando = server_players(server)
-                contagem = None if jogando.get("error") else jogando.get("players")
+                playing = server_players(server)
+                count = None if playing.get("error") else playing.get("players")
             except (QueryError, RemoteError):
-                contagem = None
+                count = None
         lines_of.append((
-            int(server["id"]), carimbo, data.get("cpu_pct"),
-            (data.get("mem") or {}).get("pct"), contagem,
+            int(server["id"]), stamp, data.get("cpu_pct"),
+            (data.get("mem") or {}).get("pct"), count,
         ))
 
     if lines_of:
@@ -1816,14 +1816,14 @@ def fire_schedule(conn: sqlite3.Connection, sched) -> int:
     if not server:
         return 0
     if sched["action"] == "backup":
-        caminhos = backup_paths(server)
-        if not caminhos:
+        paths = backup_paths(server)
+        if not paths:
             return 0  # sem o que guardar: nao adianta acordar o container
-        remoto, limit = backup_command(server, caminhos), BACKUP_TIMEOUT
+        remote, limit = backup_command(server, paths), BACKUP_TIMEOUT
     else:
-        remoto, limit = ACTIONS[sched["action"]][1](server), JOB_TIMEOUT
+        remote, limit = ACTIONS[sched["action"]][1](server), JOB_TIMEOUT
     job_id = start_job(
-        sched["action"], server, SCHEDULE_USER, remote_cmd=remoto,
+        sched["action"], server, SCHEDULE_USER, remote_cmd=remote,
         command=f"agendado: {schedule_label(sched)}", timeout=limit,
     )
     invalidate_status(int(server["id"]))
@@ -1832,20 +1832,20 @@ def fire_schedule(conn: sqlite3.Connection, sched) -> int:
 
 def run_schedules() -> int:
     """Uma passada do relogio. Devolve quantas tarefas disparou."""
-    agora = local_now()
+    now_ts = local_now()
     conn = db()
-    disparadas = 0
+    fired = 0
     for sched in conn.execute("SELECT * FROM schedules WHERE enabled = 1").fetchall():
-        if sched["action"] not in SCHEDULE_ACTIONS or not is_due(sched, agora):
+        if sched["action"] not in SCHEDULE_ACTIONS or not is_due(sched, now_ts):
             continue
         # Marca ANTES de disparar: se o job demorar (um update leva quase uma hora), a
         # proxima volta do relogio nao pode achar que a tarefa ainda esta vencida.
         with conn:
             conn.execute("UPDATE schedules SET last_run = ? WHERE id = ?",
-                         (agora.isoformat(), sched["id"]))
+                         (now_ts.isoformat(), sched["id"]))
         if fire_schedule(conn, sched):
-            disparadas += 1
-    return disparadas
+            fired += 1
+    return fired
 
 
 _last_cleanup = 0.0
@@ -1859,17 +1859,17 @@ def clean_history(force: bool = False) -> int:
     porque uma amostra e minuscula perto da saida de um job.
     """
     global _last_cleanup
-    agora = time.monotonic()
-    if not force and agora - _last_cleanup < JOBS_PURGE_EVERY:
+    now_ts = time.monotonic()
+    if not force and now_ts - _last_cleanup < JOBS_PURGE_EVERY:
         return 0
-    _last_cleanup = agora
+    _last_cleanup = now_ts
     conn = db()
 
     if SAMPLES_KEEP_DAYS:
-        velhas = (datetime.now(timezone.utc)
+        old_ones = (datetime.now(timezone.utc)
                   - timedelta(days=SAMPLES_KEEP_DAYS)).isoformat()
         with conn:
-            conn.execute("DELETE FROM samples WHERE taken_at < ?", (velhas,))
+            conn.execute("DELETE FROM samples WHERE taken_at < ?", (old_ones,))
 
     # O diario se mede em linhas, nao em dias: o que se quer dele e "as ultimas N", e um
     # prazo em dias deixaria a tela vazia justo num painel quieto, que e quando a duvida
@@ -1882,9 +1882,9 @@ def clean_history(force: bool = False) -> int:
 
     if not JOBS_KEEP_DAYS:
         return 0
-    corte = (datetime.now(timezone.utc) - timedelta(days=JOBS_KEEP_DAYS)).isoformat()
+    cut = (datetime.now(timezone.utc) - timedelta(days=JOBS_KEEP_DAYS)).isoformat()
     with conn:
-        cur = conn.execute("DELETE FROM jobs WHERE created_at < ?", (corte,))
+        cur = conn.execute("DELETE FROM jobs WHERE created_at < ?", (cut,))
     return cur.rowcount or 0
 
 
@@ -1971,75 +1971,75 @@ def _abre_sessao(row: sqlite3.Row, proximo: str = ""):
 def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
     """Codigo do aplicativo OU um codigo de recuperacao (que se gasta). Vale so uma vez."""
     conn = db()
-    passo = totp.verify(row["totp_secret"], digitado, time.time(), row["totp_last_step"])
-    if passo is not None:
+    step = totp.verify(row["totp_secret"], digitado, time.time(), row["totp_last_step"])
+    if step is not None:
         with conn:
             # O `WHERE` faz do UPDATE o portao: dois pedidos com o mesmo codigo ao mesmo tempo
             # nao passam os dois (o segundo nao encontra a linha com passo menor).
-            gasto = conn.execute(
+            spent = conn.execute(
                 "UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?",
-                (passo, row["id"], passo),
+                (step, row["id"], step),
             ).rowcount
-        return gasto == 1
+        return spent == 1
     try:
-        guardados = json.loads(row["totp_recovery"] or "[]")
+        stored = json.loads(row["totp_recovery"] or "[]")
     except ValueError:
-        guardados = []
-    sobra = totp.consume(digitado, guardados)
-    if sobra is None:
+        stored = []
+    leftover = totp.consume(digitado, stored)
+    if leftover is None:
         return False
     with conn:
-        gasto = conn.execute(
+        spent = conn.execute(
             "UPDATE users SET totp_recovery = ? WHERE id = ? AND totp_recovery = ?",
-            (json.dumps(sobra), row["id"], row["totp_recovery"]),
+            (json.dumps(leftover), row["id"], row["totp_recovery"]),
         ).rowcount
-    return gasto == 1
+    return spent == 1
 
 
 def _port_tab(server: Servidor) -> dict:
     """Aba 1: dispara A2S em cada porta UDP que o container esta escutando."""
-    candidatas, _tcp, donos, aviso = candidate_ports(server)
-    portas = _with_owner(probe_ports(server["host"], candidatas[:12]), donos, "udp")
+    candidates, _tcp, owners, warning_text = candidate_ports(server)
+    ports = _with_owner(probe_ports(server["host"], candidates[:12]), owners, "udp")
     # Porta aberta pelo processo do jogo e que nao respondeu A2S e uma conclusao, nao um
     # erro: o jogo simplesmente nao publica consulta. Sem essa contagem a tela so diria
     # "sem resposta" e deixaria a duvida entre "porta errada" e "nao existe consulta".
-    do_jogo = [p for p in portas if p["origem"] == "detectada" and not p["infra"]]
+    from_game = [p for p in ports if p["origem"] == "detectada" and not p["infra"]]
     return {
-        "portas": portas,
-        "aviso": aviso,
-        "udp_do_jogo": len(do_jogo),
-        "udp_mudas": bool(do_jogo) and not any(p["ok"] for p in do_jogo),
+        "portas": ports,
+        "aviso": warning_text,
+        "udp_do_jogo": len(from_game),
+        "udp_mudas": bool(from_game) and not any(p["ok"] for p in from_game),
     }
 
 
 def _aba_http(server: Servidor, http: dict, testar: bool) -> dict:
     """Aba 2: quais portas TCP falam HTTP, e o teste da URL escolhida."""
-    _udp, candidatas, donos, aviso = candidate_ports(server)
-    achados, mudas, erro_probe = probe_http_ports(server, candidatas)
-    _with_owner(achados, donos, "tcp")
-    mudas = _with_owner([{"port": p} for p in mudas], donos, "tcp")
-    output = {"achados": achados, "mudas": mudas, "aviso": aviso or erro_probe,
+    _udp, candidates, owners, warning_text = candidate_ports(server)
+    found, silent_ones, probe_failure = probe_http_ports(server, candidates)
+    _with_owner(found, owners, "tcp")
+    silent_ones = _with_owner([{"port": p} for p in silent_ones], owners, "tcp")
+    output = {"achados": found, "mudas": silent_ones, "aviso": warning_text or probe_failure,
              # Achado que vale um clique: porta que respondeu numa rota conhecida. Sem
              # nenhum, a tela explica que a API costuma vir desligada de fabrica.
-             "tem_api": any(not a.get("generico") for a in achados),
+             "tem_api": any(not a.get("generico") for a in found),
              "teste_http": None, "erro_http": ""}
     if not testar:
         return output
     try:
         # O teste usa os valores do FORMULARIO, nao os do banco: e o unico jeito de
         # conferir o login antes de salvar. Por isso monta-se uma linha temporaria.
-        provisorio = dict(server)
-        provisorio.update(http)
+        temporary_path = dict(server)
+        temporary_path.update(http)
         if (http.get("http_login_url") or "").strip() and (http.get("http_token_path") or "").strip():
-            token = http_login(provisorio)
+            token = http_login(temporary_path)
             auth = f"bearer:{token}"
         else:
             auth = http["http_auth"]
         data = http_json(server, http["http_url"], auth, http["http_body"])
-        teste = read_players_json(data, http["http_list_path"], http["http_count_path"])
+        test_value = read_players_json(data, http["http_list_path"], http["http_count_path"])
         # A resposta crua ajuda a preencher os caminhos quando a busca automatica erra.
-        teste["amostra"] = json.dumps(data, indent=2, ensure_ascii=False)[:4000]
-        output["teste_http"] = teste
+        test_value["amostra"] = json.dumps(data, indent=2, ensure_ascii=False)[:4000]
+        output["teste_http"] = test_value
     except QueryError as exc:
         output["erro_http"] = str(exc)
     return output
@@ -2052,24 +2052,24 @@ def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
     try:
         # O caminho vem do FORMULARIO, nao do banco: e o unico jeito de conferir um
         # arquivo novo (o .ADM do DayZ, por exemplo) antes de salvar.
-        provisorio = dict(server)
-        provisorio["log_path"] = log_path
-        lines_of = read_log_lines(provisorio)
-        chaves = re.compile("|".join(LOG_HINT_WORDS), re.I)
-        amostras = [ln for ln in lines_of if chaves.search(ln)][-120:]
-        output["amostras"] = amostras
+        temporary_path = dict(server)
+        temporary_path["log_path"] = log_path
+        lines_of = read_log_lines(temporary_path)
+        keys = re.compile("|".join(LOG_HINT_WORDS), re.I)
+        samples = [ln for ln in lines_of if keys.search(ln)][-120:]
+        output["amostras"] = samples
         if not testar:
             return output
-        entrar = compile_pattern(join_re, "pattern.join")
-        if not entrar:
+        join_pattern = compile_pattern(join_re, "pattern.join")
+        if not join_pattern:
             raise QueryError("informe o padrao da linha de entrada")
-        sair = compile_pattern(leave_re, "pattern.leave")
-        teste = _apply_log_events(lines_of, entrar, sair)
-        teste["casaram"] = [
-            ln for ln in amostras
-            if entrar.search(ln[:LOG_LINE_MAX]) or (sair and sair.search(ln[:LOG_LINE_MAX]))
+        leave_pattern = compile_pattern(leave_re, "pattern.leave")
+        test_value = _apply_log_events(lines_of, join_pattern, leave_pattern)
+        test_value["casaram"] = [
+            ln for ln in samples
+            if join_pattern.search(ln[:LOG_LINE_MAX]) or (leave_pattern and leave_pattern.search(ln[:LOG_LINE_MAX]))
         ][-20:]
-        output["teste"] = teste
+        output["teste"] = test_value
     except (RemoteError, QueryError) as exc:
         output["erro_log"] = str(exc)
     return output
@@ -2077,24 +2077,24 @@ def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
 
 def _enable_a2s_count(conn, sid: int):
     """Consulta UDP direta (A2S). Devolve um redirect quando o formulario esta errado."""
-    porta = request.form.get("query_port", "0")
-    if not porta.isdigit() or not 1 <= int(porta) <= 65535:
+    port = request.form.get("query_port", "0")
+    if not port.isdigit() or not 1 <= int(port) <= 65535:
         flash(translate("flash.bad_port"), "error")
         return redirect(url_for("players.setup", sid=sid))
     with conn:
         conn.execute(
             "UPDATE servers SET query_port = ?, player_source = 'a2s' WHERE id = ?",
-            (int(porta), sid),
+            (int(port), sid),
         )
-    flash(translate("flash.count_on_by_query", port=porta), "ok")
+    flash(translate("flash.count_on_by_query", port=port), "ok")
     return None
 
 
 def _enable_http_count(conn, sid: int):
     """API HTTP do proprio jogo."""
     errors: list[str] = []
-    campos = _http_fields(request.form, errors)
-    if errors or not campos["http_url"]:
+    fields = _http_fields(request.form, errors)
+    if errors or not fields["http_url"]:
         flash(translate(errors[0]) if errors else translate("flash.need_api_url"), "error")
         return redirect(url_for("players.setup", sid=sid, aba="http"))
     with conn:
@@ -2105,9 +2105,9 @@ def _enable_http_count(conn, sid: int):
             # Token guardado zera ao salvar: se a URL/credencial mudou, o antigo
             # nao vale mais, e a proxima consulta ja faz login com o que ficou.
             " http_token='', player_source='http' WHERE id=?",
-            (*[campos[c] for c in HTTP_FIELDS], sid),
+            (*[fields[c] for c in HTTP_FIELDS], sid),
         )
-    if campos["http_login_url"]:
+    if fields["http_login_url"]:
         flash(translate("flash.count_on_by_api_login"), "ok")
     else:
         flash(translate("flash.count_on_by_api"), "ok")
@@ -2117,17 +2117,17 @@ def _enable_http_count(conn, sid: int):
 def _enable_log_count(conn, sid: int):
     """Ultimo recurso: as linhas de entrada e saida no log do servidor."""
     errors: list[str] = []
-    entrada = _pattern(request.form.get("join_re"), "entrada", errors)
+    entry = _pattern(request.form.get("join_re"), "entrada", errors)
     output = _pattern(request.form.get("leave_re"), "saida", errors)
-    caminho = _log_path(request.form.get("log_path"), errors)
-    if errors or not entrada:
+    path = _log_path(request.form.get("log_path"), errors)
+    if errors or not entry:
         flash(translate(errors[0]) if errors else translate("flash.need_join_pattern"), "error")
         return redirect(url_for("players.setup", sid=sid, aba="log"))
     with conn:
         conn.execute(
             "UPDATE servers SET join_re = ?, leave_re = ?, log_path = ?,"
             " player_source = 'log' WHERE id = ?",
-            (entrada, output, caminho, sid),
+            (entry, output, path, sid),
         )
     flash(translate("flash.count_on_by_log"), "ok")
     return None
@@ -2263,8 +2263,8 @@ def _reap_terms() -> None:
         # Copia sob o lock: o laco remove sessoes do dicionario, e uma aba abrindo
         # outra sessao ao mesmo tempo mudaria o dicionario no meio da iteracao.
         with _terms_lock:
-            abertas = tuple(_terms.values())
-        for term in abertas:
+            open_ones = tuple(_terms.values())
+        for term in open_ones:
             idle = now - term.last_seen
             # Sessao encerrada fica um pouco no ar para o navegador ler a saida final.
             if idle > TERM_IDLE_TIMEOUT or (not term.alive and idle > 60):
@@ -2332,15 +2332,15 @@ def _bar_level(pct: float | None) -> str:
 @app.template_filter("duration")
 def _human_uptime(segundos: float | None) -> str:
     total = int(segundos or 0)
-    dias, resto = divmod(total, 86400)
-    horas, resto = divmod(resto, 3600)
-    minutos = resto // 60
-    if dias:
-        return f"{dias}d {horas}h"
-    if horas:
-        return f"{horas}h {minutos}min"
-    if minutos:
-        return f"{minutos}min"
+    days, rest = divmod(total, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes = rest // 60
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}min"
+    if minutes:
+        return f"{minutes}min"
     # Jogador que acabou de entrar: "0min" nao diz nada.
     return f"{total}s"
 
@@ -2349,11 +2349,11 @@ def _human_uptime(segundos: float | None) -> str:
 def _human_size(num: int | None) -> str:
     """1536 -> '1.5 KB'. Um save de jogo em bytes crus nao diz nada para ninguem."""
     value = float(num or 0)
-    for unidade in ("B", "KB", "MB", "GB"):
-        if value < 1024 or unidade == "GB":
-            if unidade == "B":
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            if unit == "B":
                 return f"{int(value)} B"
-            return f"{value:.1f} {unidade}"
+            return f"{value:.1f} {unit}"
         value /= 1024
     return f"{value:.1f} GB"
 
@@ -2500,20 +2500,20 @@ def _save_config_files(sid: int, caminhos: list[str]) -> None:
 
 def _config_alvo(arquivos: list[str], errors: list[str]) -> str:
     """Qual arquivo a tela Config abre: o pedido na URL, ou o primeiro registrado."""
-    pedido = (request.args.get("file") or "").strip()
-    if not pedido:
+    request_body = (request.args.get("file") or "").strip()
+    if not request_body:
         return arquivos[0] if arquivos else ""
     try:
-        alvo = clean_path(pedido)
+        target = clean_path(request_body)
     except ValueError as exc:
         errors.append(str(exc))
         return arquivos[0] if arquivos else ""
     # O caminho vem da URL: sem esta trava a tela Config seria um leitor de arquivo
     # qualquer do container (como root), justo o que o operador nao tem permissao de
     # abrir. Para ele valem so os arquivos que um admin ja registrou no servidor.
-    if alvo not in arquivos and not is_admin():
+    if target not in arquivos and not is_admin():
         abort(403, "Operador so abre os arquivos de configuracao ja registrados neste servidor.")
-    return alvo
+    return target
 
 
 def _config_sugestoes(server: Servidor, arquivos: list[str], alvo: str,
@@ -2531,14 +2531,14 @@ def _config_sugestoes(server: Servidor, arquivos: list[str], alvo: str,
     # `pasta` deixa procurar noutro lugar que nao a pasta de config do cadastro. E o
     # que a tela de Arquivos oferecia com um botao proprio; agora e um parametro
     # desta busca, que e a unica que existe.
-    padrao = server["config_path"] or FILE_DEFAULT_PATH
+    fallback = server["config_path"] or FILE_DEFAULT_PATH
     try:
-        raiz = clean_path(request.args.get("pasta", "") or padrao)
+        root = clean_path(request.args.get("pasta", "") or fallback)
     except ValueError as exc:
         errors.append(str(exc))
-        raiz = padrao
+        root = fallback
     try:
-        return find_config_files(server, raiz)
+        return find_config_files(server, root)
     except RemoteError as exc:
         errors.append(str(exc))
         return []
@@ -2560,8 +2560,8 @@ def enriquece_settings(doc: gameconf.ConfigFile, file_name: str) -> None:
     Campo sem entrada no catalogo fica exatamente como antes (texto livre): o objetivo
     e melhorar o que da para melhorar, nunca esconder chave que o jogo passou a usar.
     """
-    for secao in doc.sections:
-        for s in secao.settings:
+    for section in doc.sections:
+        for s in section.settings:
             spec = gamefields.describe(file_name, s.key)
             s.spec = spec
             s.display_value = spec.to_display(s.value) if spec else s.value
@@ -2578,12 +2578,12 @@ def _edits_from_form(form, file_name: str = "") -> tuple[list[gameconf.Edit], li
     total = form.get("n", "0")
     total = int(total) if total.isdigit() else 0
     edits: list[gameconf.Edit] = []
-    erros: list[str] = []
+    failures: list[str] = []
     for i in range(min(total, 4000)):
-        edit = _edit_from_row(form, i, file_name, erros)
+        edit = _edit_from_row(form, i, file_name, failures)
         if edit is not None:
             edits.append(edit)
-    return edits, erros
+    return edits, failures
 
 
 def _edit_from_row(form, i: int, file_name: str, erros: list[str]) -> gameconf.Edit | None:
@@ -2605,9 +2605,9 @@ def _edit_from_row(form, i: int, file_name: str, erros: list[str]) -> gameconf.E
 
     spec = gamefields.describe(file_name, key) if file_name else None
     if spec:
-        problema = spec.validate(value)
-        if problema:
-            erros.append(f"{spec.label or key}: {problema}")
+        problem = spec.validate(value)
+        if problem:
+            erros.append(f"{spec.label or key}: {problem}")
             return None
         value = spec.from_display(value)
 
@@ -2680,11 +2680,11 @@ def _atualiza_job(job_id: int, **campos) -> None:
 
 def _fecha_job(job_id: int, status: str, output: str, codigo: int | None = None,
                server_id: int | None = None) -> None:
-    campos: dict = {"status": status, "exit_code": codigo, "output": output.strip()[-200000:],
+    fields: dict = {"status": status, "exit_code": codigo, "output": output.strip()[-200000:],
                     "finished_at": now_iso()}
     if server_id is not None:
-        campos["server_id"] = server_id
-    _atualiza_job(job_id, **campos)
+        fields["server_id"] = server_id
+    _atualiza_job(job_id, **fields)
 
 
 def _broker_job_deps() -> broker_jobs.BrokerJobDeps:
@@ -2726,14 +2726,14 @@ def resume_broker_jobs() -> int:
         return 0
     conn = _connect()
     try:
-        pendentes = conn.execute(
+        pending_ones = conn.execute(
             "SELECT id, broker_op FROM jobs WHERE status = 'running' AND broker_op != ''"
         ).fetchall()
     finally:
         conn.close()
-    for job in pendentes:
+    for job in pending_ones:
         _fire(lambda jid=job["id"], op=job["broker_op"]: follow_operation(jid, op))
-    return len(pendentes)
+    return len(pending_ones)
 
 
 def _log_broker_action(action: str, username: str, comando: str, output: str,
@@ -2777,21 +2777,21 @@ def _schedule_form(form, errors: list[str]) -> dict:
         errors.append("Escolha quando a tarefa deve rodar.")
         kind = "diario"
 
-    hora = _inteiro(form.get("hour"), 0, 23, -1)
-    minuto = _inteiro(form.get("minute"), 0, 59, -1)
-    if kind != "intervalo" and (hora < 0 or minuto < 0):
+    hour = _inteiro(form.get("hour"), 0, 23, -1)
+    minute = _inteiro(form.get("minute"), 0, 59, -1)
+    if kind != "intervalo" and (hour < 0 or minute < 0):
         errors.append("Horario invalido (use hora 0-23 e minuto 0-59).")
-    horas = _inteiro(form.get("every_hours"), 1, EVERY_HOURS_MAX, -1)
-    if kind == "intervalo" and horas < 0:
+    hours = _inteiro(form.get("every_hours"), 1, EVERY_HOURS_MAX, -1)
+    if kind == "intervalo" and hours < 0:
         errors.append(f"Intervalo invalido (de 1 a {EVERY_HOURS_MAX} horas).")
 
     return {
         "action": action,
         "kind": kind,
-        "hour": max(0, hora),
-        "minute": max(0, minuto),
+        "hour": max(0, hour),
+        "minute": max(0, minute),
         "weekday": _inteiro(form.get("weekday"), 0, 6, 0),
-        "every_hours": max(1, horas),
+        "every_hours": max(1, hours),
     }
 
 
@@ -2811,11 +2811,11 @@ def _next_occurrence(sched, agora: datetime) -> datetime:
     e um `TypeError` numa tela que so quebra para quem tem agendamento cadastrado.
     """
     if sched["kind"] == "intervalo":
-        ultimo = _parse_dt(sched["last_run"]) or agora
-        return ultimo + timedelta(hours=int(sched["every_hours"]))
+        last_one = _parse_dt(sched["last_run"]) or agora
+        return last_one + timedelta(hours=int(sched["every_hours"]))
 
-    anterior = previous_occurrence(sched, agora) or agora
-    return anterior + timedelta(days=7 if sched["kind"] == "semanal" else 1)
+    previous = previous_occurrence(sched, agora) or agora
+    return previous + timedelta(days=7 if sched["kind"] == "semanal" else 1)
 
 
 # ---------------------------------------------------------- graficos de uso
@@ -2853,23 +2853,23 @@ def _two_factor_state() -> dict:
         "SELECT totp_enabled, totp_recovery FROM users WHERE id = ?", (session["uid"],)
     ).fetchone()
     try:
-        restantes = len(json.loads(row["totp_recovery"] or "[]"))
+        remaining_ones = len(json.loads(row["totp_recovery"] or "[]"))
     except ValueError:
-        restantes = 0
-    return {"ativo": bool(row["totp_enabled"]), "codigos_restantes": restantes}
+        remaining_ones = 0
+    return {"ativo": bool(row["totp_enabled"]), "codigos_restantes": remaining_ones}
 
 
 def _guarda_o_segundo_fator(uid: int, segredo: str, passo: int) -> list[str]:
     """Liga o 2FA e devolve os codigos de recuperacao EM TEXTO, a unica vez em que existem."""
-    codigos = totp.new_recovery_codes()
+    codes = totp.new_recovery_codes()
     conn = db()
     with conn:
         conn.execute(
             "UPDATE users SET totp_secret = ?, totp_enabled = 1, totp_last_step = ?,"
             " totp_recovery = ? WHERE id = ?",
-            (segredo, passo, json.dumps([totp.hash_recovery_code(c) for c in codigos]), uid),
+            (segredo, passo, json.dumps([totp.hash_recovery_code(c) for c in codes]), uid),
         )
-    return codigos
+    return codes
 
 
 def _password_and_code_ok(uid: int) -> tuple[sqlite3.Row | None, str]:
@@ -2907,21 +2907,21 @@ def alerts_without_baseline(conn: sqlite3.Connection) -> dict:
     responde', nenhum servidor tem consulta configurada, e o silencio do canal passa a
     ser lido como "esta tudo bem".
     """
-    ligados = webhook_config(conn)["events"]
-    if not ligados & set(ALERT_PRECISA_CONFIG):
+    bound = webhook_config(conn)["events"]
+    if not bound & set(ALERT_PRECISA_CONFIG):
         return {}
-    servidores = conn.execute(SQL_ALL_SERVERS).fetchall()
-    com_consulta = sum(1 for s in servidores if player_source(s) in ("a2s", "http"))
-    com_jogadores = sum(1 for s in servidores if player_source(s))
-    com_regex = sum(1 for s in servidores if _stored_value(s, "error_re"))
-    faltando = {}
-    if ("travou" in ligados or "respondeu" in ligados) and not com_consulta:
-        faltando["travou"] = ALERT_PRECISA_CONFIG["travou"]
-    if ("jogador-entrou" in ligados or "jogador-saiu" in ligados) and not com_jogadores:
-        faltando["jogador-entrou"] = ALERT_PRECISA_CONFIG["jogador-entrou"]
-    if "erro-no-log" in ligados and not com_regex:
-        faltando["erro-no-log"] = ALERT_PRECISA_CONFIG["erro-no-log"]
-    return faltando
+    servers = conn.execute(SQL_ALL_SERVERS).fetchall()
+    with_query = sum(1 for s in servers if player_source(s) in ("a2s", "http"))
+    with_players = sum(1 for s in servers if player_source(s))
+    with_regex = sum(1 for s in servers if _stored_value(s, "error_re"))
+    missing_ones = {}
+    if ("travou" in bound or "respondeu" in bound) and not with_query:
+        missing_ones["travou"] = ALERT_PRECISA_CONFIG["travou"]
+    if ("jogador-entrou" in bound or "jogador-saiu" in bound) and not with_players:
+        missing_ones["jogador-entrou"] = ALERT_PRECISA_CONFIG["jogador-entrou"]
+    if "erro-no-log" in bound and not with_regex:
+        missing_ones["erro-no-log"] = ALERT_PRECISA_CONFIG["erro-no-log"]
+    return missing_ones
 
 
 # Os limites em porcentagem da tela de Alertas: campo do formulario, chave no banco e
@@ -3146,11 +3146,11 @@ def _insert_server(conn: sqlite3.Connection, data: ServidorDoDeploy) -> None:
 
 def _merge_config_files(guardados: str, novos: str) -> str:
     """Os arquivos ja cadastrados mais os do deploy, sem repetir e sem perder nenhum."""
-    lista = [p for p in (guardados or "").splitlines() if p.strip()]
-    for novo in novos.splitlines():
-        if novo.strip() and novo.strip() not in lista:
-            lista.append(novo.strip())
-    return "\n".join(lista[:CONFIG_FILES_MAX])
+    listing = [p for p in (guardados or "").splitlines() if p.strip()]
+    for fresh in novos.splitlines():
+        if fresh.strip() and fresh.strip() not in listing:
+            listing.append(fresh.strip())
+    return "\n".join(listing[:CONFIG_FILES_MAX])
 
 
 def _update_server(conn: sqlite3.Connection, atual, data: ServidorDoDeploy) -> None:
@@ -3191,14 +3191,14 @@ def ensure_server(data: ServidorDoDeploy) -> bool:
     conn = _connect()
     try:
         with conn:
-            atual = conn.execute(
+            current_one = conn.execute(
                 "SELECT * FROM servers WHERE host = ? AND ssh_port = ?",
                 (data.host, data.ssh_port),
             ).fetchone()
-            if atual is None:
+            if current_one is None:
                 _insert_server(conn, data)
                 return True
-            _update_server(conn, atual, data)
+            _update_server(conn, current_one, data)
             return False
     finally:
         conn.close()

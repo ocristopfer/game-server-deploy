@@ -103,10 +103,10 @@ def save(sid: int):
     # O arquivo pode ter crescido desde que a tela abriu (log, save do jogo). Gravar o
     # que esta no textarea agora apagaria tudo o que nao coube nele.
     try:
-        atual = panel.stat_file(server, path)
-        if atual["size"] > panel.FILE_MAX_BYTES:
+        current_one = panel.stat_file(server, path)
+        if current_one["size"] > panel.FILE_MAX_BYTES:
             flash(panel.translate("flash.file_over_edit_limit", path=path,
-                              size=atual["size"] // 1024, kb=panel.FILE_MAX_BYTES // 1024), "error")
+                              size=current_one["size"] // 1024, kb=panel.FILE_MAX_BYTES // 1024), "error")
             return redirect(url_for("files.index", sid=sid, file=path))
     except panel.RemoteError:
         pass  # arquivo novo, ou stat falhou: o proprio gravar reporta o erro
@@ -142,21 +142,21 @@ def delete(sid: int):
 
     # Raiz permitida nao se apaga: sem isso um clique errado poderia levar /opt/game
     # inteiro (a pasta so cai vazia, mas nem esse caso vale a pena permitir).
-    raizes = {"/"} | {r.rstrip("/") or "/" for r in panel.FILE_ROOTS}
-    if path in raizes:
+    roots = {"/"} | {r.rstrip("/") or "/" for r in panel.FILE_ROOTS}
+    if path in roots:
         flash(panel.translate("flash.is_a_root_folder", path=path), "error")
         return redirect(url_for("files.index", sid=sid, path=path))
 
-    volta = panel.parent_of(path)
+    round_trip = panel.parent_of(path)
     try:
         output = panel.delete_file(server, path)
         panel.log_job("delete-file", server, session.get("username", "?"), command=path, output=output)
         flash(panel.translate("flash.deleted_no_bak", output=output), "ok")
         # Arquivo fixado na tela Config que deixou de existir: tirar do cadastro evita
         # que a tela abra sempre num erro de leitura.
-        registrados = panel.config_paths(server)
-        if path in registrados:
-            panel._save_config_files(sid, [p for p in registrados if p != path])
+        registered = panel.config_paths(server)
+        if path in registered:
+            panel._save_config_files(sid, [p for p in registered if p != path])
             flash(panel.translate("flash.also_left_config", path=path), "ok")
     except panel.RemoteError as exc:
         panel.log_job(
@@ -165,7 +165,7 @@ def delete(sid: int):
         )
         flash(panel.translate("flash.could_not_delete", reason=exc), "error")
 
-    return redirect(url_for("files.index", sid=sid, path=volta))
+    return redirect(url_for("files.index", sid=sid, path=round_trip))
 
 
 @bp.get("/servers/<int:sid>/files/download")
@@ -206,38 +206,38 @@ def upload(sid: int):
     panel._files_guard()
     server = panel._server_or_404(sid)
     # O teto deste request ja foi levantado no _teto_do_corpo (BIG_BODY_ENDPOINTS).
-    destino_dir = request.form.get("path", "") or panel.FILE_DEFAULT_PATH
-    voltar = url_for("files.index", sid=sid, path=destino_dir)
-    enviado = request.files.get("arquivo")
-    if not enviado or not enviado.filename:
+    target_dir = request.form.get("path", "") or panel.FILE_DEFAULT_PATH
+    go_back = url_for("files.index", sid=sid, path=target_dir)
+    sent_value = request.files.get("arquivo")
+    if not sent_value or not sent_value.filename:
         flash(panel.translate("flash.pick_a_file"), "error")
-        return redirect(voltar)
+        return redirect(go_back)
 
     # O navegador manda o nome como o disco de origem o tinha: fica so a ultima parte,
     # para "../../etc/passwd" nao virar caminho.
-    name = enviado.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    name = sent_value.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not name or name in (".", ".."):
         flash(panel.translate("flash.bad_file_name"), "error")
-        return redirect(voltar)
+        return redirect(go_back)
 
     try:
-        pasta = panel.clean_path(destino_dir)
-        alvo = panel.clean_path(f"{pasta.rstrip('/')}/{name}")
+        folder = panel.clean_path(target_dir)
+        target = panel.clean_path(f"{folder.rstrip('/')}/{name}")
     except ValueError as exc:
         flash(panel.translate(panel.error_text(exc)), "error")
-        return redirect(voltar)
+        return redirect(go_back)
 
     try:
         output = panel.ssh_stream_in(
-            server, panel.q("bash", "-lc", panel.UPLOAD_SCRIPT, "gp", alvo),
-            enviado.stream, timeout=panel.JOB_TIMEOUT,
+            server, panel.q("bash", "-lc", panel.UPLOAD_SCRIPT, "gp", target),
+            sent_value.stream, timeout=panel.JOB_TIMEOUT,
         )
     except panel.RemoteError as exc:
         panel.log_job("upload-file", server, session.get("username", "?"),
-                command=alvo, output=str(exc), status="error")
+                command=target, output=str(exc), status="error")
         flash(panel.translate("flash.could_not_upload", reason=exc), "error")
-        return redirect(voltar)
+        return redirect(go_back)
 
-    panel.log_job("upload-file", server, session.get("username", "?"), command=alvo, output=output)
+    panel.log_job("upload-file", server, session.get("username", "?"), command=target, output=output)
     flash(panel.translate("flash.uploaded", output=output), "ok")
-    return redirect(url_for("files.index", sid=sid, path=pasta))
+    return redirect(url_for("files.index", sid=sid, path=folder))

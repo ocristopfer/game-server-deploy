@@ -91,25 +91,25 @@ def detail(sid: int):
     # Status, medidores, jogadores e log sao quatro idas de SSH independentes. Em serie a
     # tela custava a soma das quatro — e com o container fora do ar, a soma dos quatro
     # timeouts antes de mostrar "inacessivel".
-    lido = panel.em_paralelo({
+    read_value = panel.em_paralelo({
         "status": lambda: panel.server_status(server),
         "metrics": lambda: panel.server_metrics(server),
         "players": lambda: panel.server_players(server),
         "logs": lambda: panel.read_logs(server, lines),
     })
     # read_logs devolve (texto, cursor) — o par inteiro vem no lugar do "valor".
-    par_log, log_error = lido["logs"]
-    logs, log_cursor = par_log if par_log else ("", "")
+    log_pair, log_error = read_value["logs"]
+    logs, log_cursor = log_pair if log_pair else ("", "")
 
     return render_template(
         "server_detail.html",
         server=server,
-        status=lido["status"][0] or {"reachable": False, "service": "desconhecido",
-                                     "error": lido["status"][1]},
-        metrics=lido["metrics"][0] or {"error": lido["metrics"][1]},
+        status=read_value["status"][0] or {"reachable": False, "service": "desconhecido",
+                                     "error": read_value["status"][1]},
+        metrics=read_value["metrics"][0] or {"error": read_value["metrics"][1]},
         # Mesma forma que o server_players devolve, para a tela nao precisar saber que
         # houve erro na leitura em vez de erro na contagem.
-        players=lido["players"][0] or {"configured": True, "error": lido["players"][1],
+        players=read_value["players"][0] or {"configured": True, "error": read_value["players"][1],
                                        "players": None, "list": [], "source": ""},
         jobs=jobs,
         logs=logs,

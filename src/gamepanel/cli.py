@@ -80,20 +80,20 @@ def reset_2fa(deps: CliDeps, user: str) -> None:
     deps.init_db()
     conn = deps.connect()
     with conn:
-        alvo = conn.execute(
+        target = conn.execute(
             "SELECT id FROM users WHERE username = ?", (user,)).fetchone()
-        if not alvo:
+        if not target:
             raise SystemExit(f"usuario '{user}' nao existe")
         conn.execute(
             "UPDATE users SET totp_secret = '', totp_enabled = 0, totp_last_step = 0,"
-            " totp_recovery = '' WHERE id = ?", (alvo["id"],))
+            " totp_recovery = '' WHERE id = ?", (target["id"],))
     print(f"Segundo fator de '{user}' desligado.")
 
 
 def register_server(deps: CliDeps, opts: argparse.Namespace) -> None:
     if not opts.server_host or not opts.service:
         raise SystemExit("--register-server exige --server-host e --service")
-    criado = deps.ensure_server(deps.deploy_server(
+    created_at = deps.ensure_server(deps.deploy_server(
         name=opts.register_server,
         host=opts.server_host,
         service=opts.service,
@@ -110,7 +110,7 @@ def register_server(deps: CliDeps, opts: argparse.Namespace) -> None:
         query_port=opts.query_port,
         player_source=opts.player_source,
     ))
-    print(f"servidor '{opts.register_server}' {'cadastrado' if criado else 'atualizado'}"
+    print(f"servidor '{opts.register_server}' {'cadastrado' if created_at else 'atualizado'}"
           f" ({opts.server_host})")
 
 

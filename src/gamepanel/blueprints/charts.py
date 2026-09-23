@@ -19,53 +19,53 @@ def index(sid: int):
     e forcar as duas escalas num plot so inventa uma relacao que nao existe nos dados.
     """
     server = panel._server_or_404(sid)
-    validas = [h for h, _ in panel.CHART_RANGES]
+    valid_ones = [h for h, _ in panel.CHART_RANGES]
     try:
-        horas = int(request.args.get("h", "24"))
+        hours = int(request.args.get("h", "24"))
     except ValueError:
-        horas = 24
-    if horas not in validas:
-        horas = 24
+        hours = 24
+    if hours not in valid_ones:
+        hours = 24
 
-    fim = datetime.now(UTC)
-    start = fim - timedelta(hours=horas)
+    end_at = datetime.now(UTC)
+    start = end_at - timedelta(hours=hours)
     lines_of = panel.db().execute(
         "SELECT taken_at, cpu_pct, mem_pct, players FROM samples"
         " WHERE server_id = ? AND taken_at >= ? ORDER BY taken_at",
         (sid, start.isoformat()),
     ).fetchall()
 
-    amostras = []
+    samples = []
     for line in lines_of:
-        quando = panel._parse_dt(line["taken_at"])
-        if quando:
-            amostras.append((quando, {"cpu": line["cpu_pct"], "mem": line["mem_pct"],
+        when_at = panel._parse_dt(line["taken_at"])
+        if when_at:
+            samples.append((when_at, {"cpu": line["cpu_pct"], "mem": line["mem_pct"],
                                       "players": line["players"]}))
 
-    formato = "%d/%m" if horas > 48 else "%H:%M"
-    uso = panel.build_chart(
-        amostras,
+    shape = "%d/%m" if hours > 48 else "%H:%M"
+    usage = panel.build_chart(
+        samples,
         [{"key": "cpu", "label": "CPU", "color": panel.CHART_CPU, "suffix": "%"},
          {"key": "mem", "label": "Memoria", "color": panel.CHART_MEM, "suffix": "%"}],
-        100, start, fim, formato,
+        100, start, end_at, shape,
     )
-    pico = max((v["players"] for _, v in amostras if v["players"] is not None), default=0)
-    jogadores = panel.build_chart(
-        amostras,
+    peak = max((v["players"] for _, v in samples if v["players"] is not None), default=0)
+    players = panel.build_chart(
+        samples,
         [{"key": "players", "label": "Jogadores", "color": panel.CHART_CPU}],
-        panel._clean_ceiling(pico), start, fim, formato,
+        panel._clean_ceiling(peak), start, end_at, shape,
     )
 
     # A tabela e o par acessivel do grafico: mesmos numeros, sem depender de cor nem de
     # passar o mouse. Do mais novo para o mais velho, que e como se procura um pico.
-    tabela = [
+    table = [
         {"quando": q.astimezone().strftime(panel.FORMATO_DATA_CURTA), **v}
-        for q, v in reversed(amostras)
+        for q, v in reversed(samples)
     ][:200]
 
     return render_template(
-        "charts.html", server=server, uso=uso, jogadores=jogadores, tabela=tabela,
-        horas=horas, faixas=panel.CHART_RANGES, total=len(amostras), pico=pico,
+        "charts.html", server=server, uso=usage, jogadores=players, tabela=table,
+        horas=hours, faixas=panel.CHART_RANGES, total=len(samples), pico=peak,
         a_cada=int(panel.SAMPLE_EVERY / 60), guarda_dias=panel.SAMPLES_KEEP_DAYS,
         cores={"cpu": panel.CHART_CPU, "mem": panel.CHART_MEM},
     )

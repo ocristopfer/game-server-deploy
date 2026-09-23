@@ -90,8 +90,8 @@ class ConfigSsh:
     timeout_comando: float = 120.0
 
     def __post_init__(self) -> None:
-        partes = self.chave_publica.split()
-        if len(partes) < 2 or not _BLOB_RE.fullmatch(partes[1]):
+        parts = self.chave_publica.split()
+        if len(parts) < 2 or not _BLOB_RE.fullmatch(parts[1]):
             raise ValueError("chave_publica: esperada uma linha de chave publica OpenSSH")
         if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", self.usuario):
             raise ValueError("usuario invalido")
@@ -110,7 +110,7 @@ def build_env(game: Game, ports: Sequence[AllocatedPort]) -> str:
     game_port = port_with_role(ports, ROLE_GAME) or game.game_port
     query_port = (port_with_role(ports, ROLE_QUERY) or game.query_port) if game.query_port else 0
     extra_port = (port_from_base(ports, game.extra_port) or game.extra_port) if game.extra_port else 0
-    variaveis = {
+    variables = {
         "GAME_KEY": game.key, "GAME_DISPLAY_NAME": game.name, "STEAM_APP_ID": str(game.app_id),
         "STEAM_PLATFORM": game.platform, "STEAM_ANONYMOUS": "1",
         "START_SCRIPT": game.start_script, "START_ARGS": game.start_args,
@@ -121,7 +121,7 @@ def build_env(game: Game, ports: Sequence[AllocatedPort]) -> str:
         # Shell so existe no catalogo curado, revisado no git; jogo cadastrado pela API vem vazio.
         "PRE_INSTALL_CMD": game.pre_install, "POST_INSTALL_CMD": game.post_install,
     }
-    return "".join(f"{name}={shlex.quote(value)}\n" for name, value in variaveis.items())
+    return "".join(f"{name}={shlex.quote(value)}\n" for name, value in variables.items())
 
 
 class _Lote:
@@ -161,9 +161,9 @@ class InstaladorSsh:
         self._exec = executor or ExecutorReal()
         self._dormir = sleep
         self._agora = now
-        faltando = [a for a in ARQUIVOS_DA_LIB if not (config.lib_dir / a).is_file()]
-        if faltando:
-            raise ValueError(f"faltam em {config.lib_dir}: {', '.join(faltando)}")
+        missing_ones = [a for a in ARQUIVOS_DA_LIB if not (config.lib_dir / a).is_file()]
+        if missing_ones:
+            raise ValueError(f"faltam em {config.lib_dir}: {', '.join(missing_ones)}")
 
     # --- comandos ------------------------------------------------------------------------
 
@@ -209,45 +209,45 @@ class InstaladorSsh:
             self._dormir(self._cfg.intervalo)
 
     def _enviar(self, target: str, env: str) -> None:
-        pasta = shlex.quote(DESTINO_REMOTO)
-        self._comando(self._ssh(target, f"install -d -m 700 {pasta}"), "criar a pasta no CT")
+        folder = shlex.quote(DESTINO_REMOTO)
+        self._comando(self._ssh(target, f"install -d -m 700 {folder}"), "criar a pasta no CT")
         with tempfile.TemporaryDirectory(prefix="broker-install-") as tmp:
-            arquivo_env = Path(tmp) / "install.env"
-            arquivo_env.write_text(env, encoding="utf-8", newline="\n")
-            fontes = [str(self._cfg.lib_dir / a) for a in ARQUIVOS_DA_LIB] + [str(arquivo_env)]
-            self._comando(["scp", *self._opcoes(), *fontes, f"{target}:{DESTINO_REMOTO}/"],
+            env_file = Path(tmp) / "install.env"
+            env_file.write_text(env, encoding="utf-8", newline="\n")
+            sources = [str(self._cfg.lib_dir / a) for a in ARQUIVOS_DA_LIB] + [str(env_file)]
+            self._comando(["scp", *self._opcoes(), *sources, f"{target}:{DESTINO_REMOTO}/"],
                           "enviar o instalador ao CT")
 
     def _comando(self, argv: Sequence[str], action: str) -> None:
-        codigo = self._exec.run(argv, None, self._cfg.timeout_comando)
-        if codigo != 0:
-            raise InstallError(f"falhou ao {action} (codigo {codigo})")
+        code = self._exec.run(argv, None, self._cfg.timeout_comando)
+        if code != 0:
+            raise InstallError(f"falhou ao {action} (codigo {code})")
 
     def _install(self, target: str, log: Callable[[str], None]) -> None:
-        lote = _Lote(log, self._agora)
-        comando = f"cd {shlex.quote(DESTINO_REMOTO)} && bash ct-install.sh install.env"
-        codigo = self._exec.run(self._ssh(target, comando), lote.line, self._cfg.timeout_instalacao)
-        lote.descarrega()
-        if codigo != 0:
-            resumo = " | ".join(lote.cauda)
-            raise InstallError(f"a instalacao falhou (codigo {codigo}): {resumo}")
-        if not lote.concluida:
+        batch = _Lote(log, self._agora)
+        command = f"cd {shlex.quote(DESTINO_REMOTO)} && bash ct-install.sh install.env"
+        code = self._exec.run(self._ssh(target, command), batch.line, self._cfg.timeout_instalacao)
+        batch.descarrega()
+        if code != 0:
+            summary = " | ".join(batch.cauda)
+            raise InstallError(f"a instalacao falhou (codigo {code}): {summary}")
+        if not batch.concluida:
             raise InstallError("o instalador terminou sem confirmar a conclusao")
 
     def _limpar(self, target: str, log: Callable[[str], None], failure: Exception | None) -> None:
         """Apaga o que foi enviado e tira a chave do broker. Roda SEMPRE."""
         blob = self._cfg.blob
         file = "/root/.ssh/authorized_keys"
-        comando = (f"rm -rf {shlex.quote(DESTINO_REMOTO)}; "
+        command = (f"rm -rf {shlex.quote(DESTINO_REMOTO)}; "
                    f"grep -vF -- {shlex.quote(blob)} {file} > {file}.tmp; "
                    f"cat {file}.tmp > {file}; rm -f {file}.tmp; "
                    f"! grep -qF -- {shlex.quote(blob)} {file}")
-        codigo = self._exec.run(self._ssh(target, comando), None, self._cfg.timeout_comando)
-        if codigo == 0:
+        code = self._exec.run(self._ssh(target, command), None, self._cfg.timeout_comando)
+        if code == 0:
             log("chave do broker removida do container")
             return
-        mensagem = f"nao consegui remover a chave do broker do container (codigo {codigo})"
+        message = f"nao consegui remover a chave do broker do container (codigo {code})"
         if failure is None:
-            raise InstallError(mensagem)
+            raise InstallError(message)
         # Ja ha um erro mais importante a reportar; a limpeza falha so e registrada.
-        log(f"AVISO: {mensagem}")
+        log(f"AVISO: {message}")

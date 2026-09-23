@@ -62,8 +62,8 @@ class OpnsenseFalso:
         self.online = True
 
     def external_ports(self) -> set[tuple[int, str]]:
-        abertas = {(n, p) for regras in self.regras.values() for (_, n, p) in regras}
-        return self.externas | abertas
+        open_ones = {(n, p) for rules in self.regras.values() for (_, n, p) in rules}
+        return self.externas | open_ones
 
     def open_ports(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
         if self.falha_em == "abrir":

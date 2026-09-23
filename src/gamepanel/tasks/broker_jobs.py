@@ -48,11 +48,11 @@ def register_server(deps: BrokerJobDeps, r: dict) -> int:
     Passa pelo mesmo `ensure_server` do deploy, entao a tela de configuracao ja abre pronta.
     """
     host = str(r["host"])
-    servico = str(r["service"])
-    if not HOST_RE.match(host) or not UNIT_RE.match(servico):
+    service = str(r["service"])
+    if not HOST_RE.match(host) or not UNIT_RE.match(service):
         raise ValueError(Message("broker.bad_host_or_service"))
     deps.ensure_server(deps.deploy_server(
-        name=str(r["name"])[:80], host=host, service=servico,
+        name=str(r["name"])[:80], host=host, service=service,
         game_port=" ".join(str(p) for p in r.get("ports") or []),
         notes=str(r.get("notes", "")),
         config_path=str(r.get("config_path", "")),
@@ -64,13 +64,13 @@ def register_server(deps: BrokerJobDeps, r: dict) -> int:
     ))
     conn = deps.connect()
     try:
-        linha = conn.execute(
+        line = conn.execute(
             "SELECT id FROM servers WHERE host = ? AND ssh_port = 22", (host,)).fetchone()
     finally:
         conn.close()
-    if linha is None:
+    if line is None:
         raise ValueError(Message("broker.server_not_saved"))
-    return int(linha["id"])
+    return int(line["id"])
 
 
 def finish_operation(deps: BrokerJobDeps, job_id: int, op: dict) -> None:
@@ -80,11 +80,11 @@ def finish_operation(deps: BrokerJobDeps, job_id: int, op: dict) -> None:
         return
     try:
         sid = register_server(deps, op.get("result") or {})
-    except (KeyError, TypeError, ValueError, sqlite3.Error) as erro:
+    except (KeyError, TypeError, ValueError, sqlite3.Error) as failure:
         # A instancia EXISTE no Proxmox: o texto precisa dizer isso, senao parece que
         # nada foi feito.
         deps.close_job(job_id, "error", f"{log}\nA instancia foi criada, mas nao consegui "
-                       f"cadastra-la no painel: {erro}", codigo=1)
+                       f"cadastra-la no painel: {failure}", codigo=1)
         return
     deps.close_job(job_id, "ok", f"{log}\nServidor cadastrado no painel (id {sid}).",
                    codigo=0, server_id=sid)
@@ -93,20 +93,20 @@ def finish_operation(deps: BrokerJobDeps, job_id: int, op: dict) -> None:
 def follow_operation(deps: BrokerJobDeps, job_id: int, op_id: str,
                        sleep: Callable[[float], Any] = time.sleep) -> None:
     """Le a operacao do broker ate ela terminar, gravando o log no job a cada volta."""
-    limite = time.monotonic() + deps.timeout
-    falhas = 0
+    limit = time.monotonic() + deps.timeout
+    failures = 0
     log = ""
-    while time.monotonic() < limite:
+    while time.monotonic() < limit:
         try:
             op = broker_client.operation(op_id)
-        except broker_client.BrokerError as erro:
-            falhas += 1
-            if falhas >= deps.max_failures:
-                deps.close_job(job_id, "error", f"{log}\nPerdi o contato com o broker: {erro}")
+        except broker_client.BrokerError as failure:
+            failures += 1
+            if failures >= deps.max_failures:
+                deps.close_job(job_id, "error", f"{log}\nPerdi o contato com o broker: {failure}")
                 return
             sleep(deps.poll)
             continue
-        falhas = 0
+        failures = 0
         log = str(op.get("log", ""))[-LOG_MAX:]
         deps.update_job(job_id, output=log)
         if op.get("state") != "executando":

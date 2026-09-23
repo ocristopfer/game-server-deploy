@@ -35,8 +35,8 @@ def build_service(cfg: ConfigBroker, executor: Executor | None = None, network: 
     cfg.state_dir.mkdir(parents=True, exist_ok=True)
     proxmox = Proxmox(Client(cfg.proxmox_url, {"Authorization": f"PVEAPIToken={cfg.proxmox_token}"},
                               cfg.proxmox_fingerprint), cfg.proxmox)
-    basico = base64.b64encode(f"{cfg.opnsense_key}:{cfg.opnsense_secret}".encode()).decode()
-    opnsense = Opnsense(Client(cfg.opnsense_url, {"Authorization": f"Basic {basico}"},
+    basic = base64.b64encode(f"{cfg.opnsense_key}:{cfg.opnsense_secret}".encode()).decode()
+    opnsense = Opnsense(Client(cfg.opnsense_url, {"Authorization": f"Basic {basic}"},
                                 cfg.opnsense_fingerprint), cfg.opnsense_wan)
     extra = {} if run is None else {"run": run}
     return Service(

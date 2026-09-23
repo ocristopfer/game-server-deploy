@@ -190,10 +190,10 @@ def visible_items(items: tuple[Item, ...], *, admin: bool, broker: bool) -> tupl
 
     Um item com `recurso` desligado some do menu: nada de link que leva a 403.
     """
-    permitidos = {FEATURE_BROKER: broker, "": True}
+    allowed = {FEATURE_BROKER: broker, "": True}
     return tuple(
         i for i in items
-        if (not i.admin or admin) and permitidos.get(i.feature, True)
+        if (not i.admin or admin) and allowed.get(i.feature, True)
     )
 
 
@@ -203,10 +203,10 @@ def visible_sections(*, admin: bool, arquivos: bool, shell: bool) -> tuple[Item,
     Quem barra de verdade e o decorador da rota; isto existe para nao desenhar botao
     que leva a 403 — um menu que mente e pior que um menu curto.
     """
-    permitidos = {FEATURE_FILES: arquivos, FEATURE_SHELL: shell, "": True}
+    allowed = {FEATURE_FILES: arquivos, FEATURE_SHELL: shell, "": True}
     return tuple(
         s for s in SERVER_SECTIONS
-        if (not s.admin or admin) and permitidos[s.feature]
+        if (not s.admin or admin) and allowed[s.feature]
     )
 
 
@@ -289,5 +289,5 @@ def remaining_power(service: str) -> list[Action]:
     acontecer e a MESMA acao aparecer nos dois lugares, e e esta funcao que garante
     isso a partir de `energia_do_cartao`, em vez de uma segunda lista escrita a mao.
     """
-    na_frente = {a.key for a in card_power(service)}
-    return [a for a in actions_in_group(GROUP_POWER) if a.key not in na_frente]
+    ahead = {a.key for a in card_power(service)}
+    return [a for a in actions_in_group(GROUP_POWER) if a.key not in ahead]

@@ -26,12 +26,12 @@ def language():
     Por usuario, e nao por sessao: quem trabalha em ingles nao quer reescolher a cada
     login, e duas pessoas no mesmo painel podem preferir idiomas diferentes.
     """
-    escolhido = panel.i18n.valid_language(request.form.get("lang"))
+    chosen_one = panel.i18n.valid_language(request.form.get("lang"))
     with panel.db() as conn:
-        conn.execute("UPDATE users SET lang = ? WHERE id = ?", (escolhido, session["uid"]))
+        conn.execute("UPDATE users SET lang = ? WHERE id = ?", (chosen_one, session["uid"]))
     # O `g` desta requisicao ja guardou o idioma antigo, e o flash abaixo e lido na
     # PROXIMA (depois do redirect) — entao ele ja sai no idioma novo.
-    g._idioma = escolhido
+    g._idioma = chosen_one
     flash(panel.translate("account.language.changed"), "ok")
     return redirect(url_for("account.index"))
 
@@ -46,11 +46,11 @@ def index():
         row = panel.db().execute(
             "SELECT * FROM users WHERE id = ?", (session["uid"],)
         ).fetchone()
-        erro = panel.validate_password(new, confirm)
+        failure = panel.validate_password(new, confirm)
         if not row or not panel.verify_password(current, row["password_hash"]):
             flash(panel.translate("flash.wrong_current_password"), "error")
-        elif erro:
-            flash(panel.translate(erro), "error")
+        elif failure:
+            flash(panel.translate(failure), "error")
         else:
             conn = panel.db()
             with conn:
@@ -68,23 +68,23 @@ def two_factor():
     if panel._two_factor_state()["ativo"]:
         return redirect(url_for("account.index"))
     if request.method == "POST":
-        segredo = session.get("totp_pendente", "")
-        passo = panel.totp.verify(segredo, request.form.get("codigo", ""), time.time()) if segredo else None
-        if passo is None:
+        secret = session.get("totp_pendente", "")
+        step = panel.totp.verify(secret, request.form.get("codigo", ""), time.time()) if secret else None
+        if step is None:
             flash(panel.translate("flash.wrong_code"), "error")
         else:
-            codigos = panel._guarda_o_segundo_fator(session["uid"], segredo, passo)
+            codes = panel._guarda_o_segundo_fator(session["uid"], secret, step)
             session.pop("totp_pendente", None)
             flash(panel.translate("flash.two_factor_on"), "ok")
-            return render_template("account_2fa_codigos.html", codigos=codigos)
+            return render_template("account_2fa_codigos.html", codigos=codes)
     # O segredo fica na SESSAO (cookie assinado) ate ser confirmado; recarregar a pagina mostra
     # o mesmo, e abandonar a tela nao deixa nada meio ligado no banco.
-    segredo = session.get("totp_pendente") or panel.totp.new_secret()
-    session["totp_pendente"] = segredo
-    endereco = panel.totp.uri(segredo, session.get("username", ""), "Painel de Jogos")
+    secret = session.get("totp_pendente") or panel.totp.new_secret()
+    session["totp_pendente"] = secret
+    address = panel.totp.uri(secret, session.get("username", ""), "Painel de Jogos")
     return render_template(
-        "account_2fa.html", segredo=panel.totp.group(segredo), endereco=endereco,
-        qr_svg=qr.svg(endereco, label="QR code da verificacao em duas etapas"))
+        "account_2fa.html", segredo=panel.totp.group(secret), endereco=address,
+        qr_svg=qr.svg(address, label="QR code da verificacao em duas etapas"))
 
 
 @bp.post("/account/2fa/off")
@@ -93,9 +93,9 @@ def two_factor_off():
     if panel.REQUIRE_2FA:
         flash(panel.translate("account.two_factor_required"), "error")
         return redirect(url_for("account.index"))
-    row, erro = panel._password_and_code_ok(session["uid"])
-    if erro:
-        flash(panel.translate(erro), "error")
+    row, failure = panel._password_and_code_ok(session["uid"])
+    if failure:
+        flash(panel.translate(failure), "error")
         return redirect(url_for("account.index"))
     panel._apaga_o_segundo_fator(row["id"])
     flash(panel.translate("flash.two_factor_off"), "ok")
@@ -106,14 +106,14 @@ def two_factor_off():
 @panel.login_required
 def two_factor_codes():
     """Codigos de recuperacao novos: os antigos deixam de valer."""
-    row, erro = panel._password_and_code_ok(session["uid"])
-    if erro:
-        flash(panel.translate(erro), "error")
+    row, failure = panel._password_and_code_ok(session["uid"])
+    if failure:
+        flash(panel.translate(failure), "error")
         return redirect(url_for("account.index"))
-    codigos = panel.totp.new_recovery_codes()
+    codes = panel.totp.new_recovery_codes()
     conn = panel.db()
     with conn:
         conn.execute("UPDATE users SET totp_recovery = ? WHERE id = ?",
-                     (json.dumps([panel.totp.hash_recovery_code(c) for c in codigos]), row["id"]))
+                     (json.dumps([panel.totp.hash_recovery_code(c) for c in codes]), row["id"]))
     flash(panel.translate("flash.new_codes"), "ok")
-    return render_template("account_2fa_codigos.html", codigos=codigos)
+    return render_template("account_2fa_codigos.html", codigos=codes)

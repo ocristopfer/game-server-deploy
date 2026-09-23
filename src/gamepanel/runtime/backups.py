@@ -160,11 +160,11 @@ def backup_paths(server: ServerLike, max_paths: int) -> list[str]:
     Sem nada cadastrado vale a pasta de configuracao, que e onde o save costuma morar —
     e o padrao que evita cadastrar servidor nenhum so para ter backup.
     """
-    escolhidos = [ln.strip() for ln in (server["backup_paths"] or "").splitlines() if ln.strip()]
-    if escolhidos:
-        return escolhidos[:max_paths]
-    padrao = (server["config_path"] or "").strip()
-    return [padrao] if padrao else []
+    chosen_ones = [ln.strip() for ln in (server["backup_paths"] or "").splitlines() if ln.strip()]
+    if chosen_ones:
+        return chosen_ones[:max_paths]
+    fallback = (server["config_path"] or "").strip()
+    return [fallback] if fallback else []
 
 
 def backup_prefix(server: ServerLike) -> str:
@@ -173,9 +173,9 @@ def backup_prefix(server: ServerLike) -> str:
     Sai do nome da unidade systemd, que ja e unica por container. O saneamento importa
     porque o prefixo entra num glob de shell la do outro lado.
     """
-    bruto = (server["service"] or "jogo").rsplit(".service", 1)[0]
-    limpo = re.sub(r"[^A-Za-z0-9_-]", "-", bruto).strip("-")
-    return limpo or "jogo"
+    raw_text = (server["service"] or "jogo").rsplit(".service", 1)[0]
+    clean = re.sub(r"[^A-Za-z0-9_-]", "-", raw_text).strip("-")
+    return clean or "jogo"
 
 
 def backup_command(
@@ -198,20 +198,20 @@ def list_backups(ssh_run: SshRun, server: ServerLike, backup_dir: str, limit: in
     )
     if proc.returncode != 0:
         raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao listar os backups")
-    copias: list[dict] = []
-    for linha in proc.stdout.splitlines():
-        partes = linha.split("\t", 2)
-        if len(partes) != _LIST_LINE_FIELDS:
+    copies: list[dict] = []
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) != _LIST_LINE_FIELDS:
             continue
-        copias.append({
-            "name": partes[0],
-            "size": int(partes[1]) if partes[1].isdigit() else 0,
-            "mtime": partes[2],
+        copies.append({
+            "name": parts[0],
+            "size": int(parts[1]) if parts[1].isdigit() else 0,
+            "mtime": parts[2],
             # A copia que o proprio painel tira antes de restaurar: some no meio das
             # outras se nao for marcada, e e justamente a que salva quem restaurou errado.
-            "seguranca": partes[0].endswith("-antes-de-restaurar.tar.gz"),
+            "seguranca": parts[0].endswith("-antes-de-restaurar.tar.gz"),
         })
-    return copias
+    return copies
 
 
 def delete_backup(ssh_run: SshRun, server: ServerLike, backup_dir: str, name: str) -> str:

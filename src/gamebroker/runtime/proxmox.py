@@ -48,9 +48,9 @@ class ConfigProxmox:
     tentativas: int = 150
 
     def __post_init__(self) -> None:
-        for campo in (self.node, self.pool, self.storage, self.bridge):
-            if not _NOME_RE.fullmatch(campo):
-                raise ValueError(f"nome invalido na config do Proxmox: {campo!r}")
+        for field in (self.node, self.pool, self.storage, self.bridge):
+            if not _NOME_RE.fullmatch(field):
+                raise ValueError(f"nome invalido na config do Proxmox: {field!r}")
         if not _VOLID_RE.fullmatch(self.template):
             raise ValueError("template deve ser <storage>:vztmpl/<arquivo>")
         if not self.chaves_ssh or not all(k.startswith("ssh-") and "\n" not in k for k in self.chaves_ssh):
@@ -67,10 +67,10 @@ class Proxmox:
     # --- chamadas -----------------------------------------------------------
 
     def _api(self, metodo: str, path: str, action: str, *, form: dict | None = None) -> Response:
-        resposta = self._c.request(metodo, "/api2/json" + path, form=form)
-        if not resposta.ok:
-            raise ProxmoxError(f"{action}: HTTP {resposta.status} {_curto(resposta.text)}")
-        return resposta
+        response = self._c.request(metodo, "/api2/json" + path, form=form)
+        if not response.ok:
+            raise ProxmoxError(f"{action}: HTTP {response.status} {_curto(response.text)}")
+        return response
 
     @staticmethod
     def _payload(resposta: Response) -> object:
@@ -80,36 +80,36 @@ class Proxmox:
         upid = self._payload(resposta)
         if not isinstance(upid, str):
             raise ProxmoxError(f"{action}: o Proxmox nao devolveu o identificador da tarefa")
-        codificado = quote(upid, safe="")
+        encoded = quote(upid, safe="")
         for _ in range(self._cfg.tentativas):
-            state_dir = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/tasks/{codificado}/status",
+            state_dir = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/tasks/{encoded}/status",
                                            f"{action} (estado da tarefa)"))
             if isinstance(state_dir, dict) and state_dir.get("status") == "stopped":
                 output = str(state_dir.get("exitstatus", ""))
                 if output == "OK" or output.startswith("WARNINGS"):
                     return
-                raise ProxmoxError(f"{action}: a tarefa terminou com '{_curto(output)}'{self._log_tail(codificado)}")
+                raise ProxmoxError(f"{action}: a tarefa terminou com '{_curto(output)}'{self._log_tail(encoded)}")
             self._dormir(self._cfg.intervalo)
         raise ProxmoxError(f"{action}: a tarefa excedeu o tempo")
 
     def _log_tail(self, upid_codificado: str) -> str:
-        resposta = self._c.request(
+        response = self._c.request(
             "GET", f"/api2/json/nodes/{self._cfg.node}/tasks/{upid_codificado}/log?limit=20")
-        linhas = self._payload(resposta) if resposta.ok else None
-        if not isinstance(linhas, list) or not linhas:
+        lines = self._payload(response) if response.ok else None
+        if not isinstance(lines, list) or not lines:
             return ""
-        ultimas = " | ".join(str(item.get("t", "")) for item in linhas[-3:] if isinstance(item, dict))
-        return f" ({_curto(ultimas)})"
+        last_ones = " | ".join(str(item.get("t", "")) for item in lines[-3:] if isinstance(item, dict))
+        return f" ({_curto(last_ones)})"
 
     # --- leitura ---------------------------------------------------------------
 
     def ctids_and_ips(self) -> tuple[set[int], set[str]]:
         """CTIDs e IPs que o token enxerga. Com a role so no pool isso e SO o pool; para
         ver os CTs de fora, o token precisa de VM.Audit em /vms (opcional)."""
-        itens = self._payload(self._api("GET", "/cluster/resources?type=vm", "listar CTs"))
+        entries = self._payload(self._api("GET", "/cluster/resources?type=vm", "listar CTs"))
         ctids: set[int] = set()
         ips: set[str] = set()
-        for item in itens if isinstance(itens, list) else []:
+        for item in entries if isinstance(entries, list) else []:
             if not isinstance(item, dict) or not isinstance(item.get("vmid"), int):
                 continue
             ctids.add(item["vmid"])
@@ -118,21 +118,21 @@ class Proxmox:
         return ctids, ips
 
     def _ct_ips(self, ctid: int) -> set[str]:
-        resposta = self._c.request("GET", f"/api2/json/nodes/{self._cfg.node}/lxc/{ctid}/config")
-        config = self._payload(resposta) if resposta.ok else None
+        response = self._c.request("GET", f"/api2/json/nodes/{self._cfg.node}/lxc/{ctid}/config")
+        config = self._payload(response) if response.ok else None
         if not isinstance(config, dict):
             return set()
-        achados: set[str] = set()
+        found: set[str] = set()
         for key, value in config.items():
             if re.fullmatch(r"net\d+", str(key)) and isinstance(value, str):
-                achados.update(_IP_DE_REDE_RE.findall(value))
-        return achados
+                found.update(_IP_DE_REDE_RE.findall(value))
+        return found
 
     def belongs_to_broker(self, ctid: int) -> bool:
         """Identidade = ser membro do pool do broker. Nao depende da tag."""
         data = self._payload(self._c.request("GET", f"/api2/json/pools/{self._cfg.pool}"))
-        membros = data.get("members", []) if isinstance(data, dict) else []
-        return any(isinstance(m, dict) and m.get("vmid") == ctid and m.get("type") == "lxc" for m in membros)
+        members = data.get("members", []) if isinstance(data, dict) else []
+        return any(isinstance(m, dict) and m.get("vmid") == ctid and m.get("type") == "lxc" for m in members)
 
     def reachable(self) -> bool:
         try:
@@ -144,7 +144,7 @@ class Proxmox:
 
     def create_ct(self, spec: CtSpec) -> None:
         cfg = self._cfg
-        corpo = {
+        body = {
             "vmid": spec.ctid, "hostname": spec.hostname,
             "ostemplate": cfg.template, "rootfs": f"{cfg.storage}:{spec.disk_gb}",
             "memory": spec.memory_mb, "swap": 0, "cores": spec.cores,
@@ -153,7 +153,7 @@ class Proxmox:
                      f"gw={cfg.gateway},type=veth"),
             "ssh-public-keys": "\n".join(cfg.chaves_ssh),
         }
-        self._task(self._api("POST", f"/nodes/{cfg.node}/lxc", "criar CT", form=corpo), "criar CT")
+        self._task(self._api("POST", f"/nodes/{cfg.node}/lxc", "criar CT", form=body), "criar CT")
         try:
             self._api("PUT", f"/nodes/{cfg.node}/lxc/{spec.ctid}/config", "gravar a tag",
                       form={"tags": TAG_DO_BROKER})
@@ -188,5 +188,5 @@ class Proxmox:
 
 
 def _curto(text: str) -> str:
-    limpo = " ".join(str(text).split())
-    return limpo if len(limpo) <= ERRO_MAX else limpo[:ERRO_MAX] + "..."
+    clean = " ".join(str(text).split())
+    return clean if len(clean) <= ERRO_MAX else clean[:ERRO_MAX] + "..."

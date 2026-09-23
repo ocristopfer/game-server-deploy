@@ -12,14 +12,14 @@ bp = Blueprint("backups", __name__)
 @panel.login_required
 def index(sid: int):
     server = panel._server_or_404(sid)
-    caminhos = panel.backup_paths(server)
-    copias, erro = [], ""
+    paths = panel.backup_paths(server)
+    copies, failure = [], ""
     try:
-        copias = panel.list_backups(server)
+        copies = panel.list_backups(server)
     except panel.RemoteError as exc:
-        erro = str(exc)
+        failure = str(exc)
     return render_template(
-        "backups.html", server=server, copias=copias, erro=erro, caminhos=caminhos,
+        "backups.html", server=server, copias=copies, erro=failure, caminhos=paths,
         backup_dir=panel.BACKUP_DIR, manter=panel.BACKUP_KEEP,
     )
 
@@ -29,14 +29,14 @@ def index(sid: int):
 def create(sid: int):
     """Dispara o backup. E operacao, nao administracao: o operador pode tirar copia."""
     server = panel._server_or_404(sid)
-    caminhos = panel.backup_paths(server)
-    if not caminhos:
+    paths = panel.backup_paths(server)
+    if not paths:
         flash(panel.translate("flash.nothing_to_back_up"), "error")
         return redirect(url_for("backups.index", sid=sid))
     job_id = panel.start_job(
         "backup", server, session.get("username", "?"),
-        remote_cmd=panel.backup_command(server, caminhos),
-        command=", ".join(caminhos),
+        remote_cmd=panel.backup_command(server, paths),
+        command=", ".join(paths),
         timeout=panel.BACKUP_TIMEOUT,
     )
     return redirect(url_for("jobs.detail", jid=job_id))
@@ -48,19 +48,19 @@ def restore(sid: int):
     """Volta o servidor para uma copia. Para o jogo, extrai e religa."""
     server = panel._server_or_404(sid)
     name = panel._backup_or_400(request.form.get("nome", ""))
-    caminhos = panel.backup_paths(server)
+    paths = panel.backup_paths(server)
 
     # Copia de seguranca ANTES de extrair: restaurar e a operacao mais destrutiva do
     # painel, e sem isto quem escolhe o backup errado nao tem para onde voltar. Os dois
     # comandos vao num job so — se o backup falhar, o '&&' impede a restauracao.
-    passos = []
-    if caminhos:
-        passos.append(panel.backup_command(server, caminhos, "-antes-de-restaurar"))
-    passos.append(panel.q("bash", "-lc", panel.RESTORE_SCRIPT, "gp", panel.BACKUP_DIR, name, server["service"]))
+    steps = []
+    if paths:
+        steps.append(panel.backup_command(server, paths, "-antes-de-restaurar"))
+    steps.append(panel.q("bash", "-lc", panel.RESTORE_SCRIPT, "gp", panel.BACKUP_DIR, name, server["service"]))
 
     job_id = panel.start_job(
         "restore-backup", server, session.get("username", "?"),
-        remote_cmd=" && ".join(passos),
+        remote_cmd=" && ".join(steps),
         command=name,
         timeout=panel.BACKUP_TIMEOUT,
     )
@@ -91,16 +91,16 @@ def download(sid: int):
     """Tira a copia do container. Mesmo streaming do download de arquivo."""
     server = panel._server_or_404(sid)
     name = panel._backup_or_400(request.args.get("nome", ""))
-    caminho = f"{panel.BACKUP_DIR.rstrip('/')}/{name}"
+    path = f"{panel.BACKUP_DIR.rstrip('/')}/{name}"
     try:
-        info = panel.stat_file(server, caminho)
+        info = panel.stat_file(server, path)
     except panel.RemoteError as exc:
         abort(400, str(exc))
 
     panel.log_job("download-file", server, session.get("username", "?"),
-            command=caminho, output=f"{info['size']} bytes")
+            command=path, output=f"{info['size']} bytes")
     return panel.app.response_class(
-        stream_with_context(panel.stream_remote_file(server, caminho)),
+        stream_with_context(panel.stream_remote_file(server, path)),
         mimetype="application/gzip",
         headers={
             "Content-Disposition": panel._attachment_header(info["name"]),

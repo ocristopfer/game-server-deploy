@@ -4,6 +4,24 @@ Deploy de servidores dedicados de jogos (Proxmox LXC ou Docker) mais um **painel
 em `src/gamepanel/`. Este arquivo e sobre **como escrever codigo aqui**. O que o projeto
 faz, e como usar, esta no [README.md](README.md) — nao duplique conteudo entre os dois.
 
+## Regra numero um: TODO identificador e TODO nome de arquivo em INGLES
+
+Vale para o repositorio inteiro e para toda linguagem daqui — Python, bash, PowerShell,
+JavaScript, CSS, Jinja, YAML. Funcao, variavel (inclusive local e de laco), classe,
+constante, parametro, campo, nome de arquivo e de pasta: **ingles**. Nao existe "e so um
+script de apoio" nem "e so uma variavel temporaria"; um arquivo novo em portugues nasce
+como divida que alguem vai ter de renomear depois, com o teste e o deploy no meio.
+
+O que **nao** e identificador continua em **portugues sem acento**:
+
+- comentario e docstring — e o padrao daqui explicar POR QUE a linha e assim, de
+  preferencia com a consequencia de fazer diferente (ver a secao "Escrita", no fim);
+- texto de tela, que vive no catalogo de `i18n/` (portugues e ingles, mesmas chaves);
+- nome de TESTE (`def test_a_versao_aparece_no_rodape...`) e a saida dos sandboxes: sao
+  frases descritivas, lidas como relatorio, nao nomes chamados de outro lugar;
+- chave que ja esta gravada em banco, em disco ou numa API (`"chave"`, `"jogos"`,
+  `GAMES_DIR`): mudar ali e mudar DADO, e exige migration — ver os grupos de contrato.
+
 > **Reorganizacao de arquitetura em andamento** (ver `docs/architecture-analysis.md` e
 > `docs/architecture-proposal.md`): o codigo saiu de `admin/`/`broker/` para
 > `src/gamepanel/`/`src/gamebroker/` (Fase 3), os identificadores estao **em ingles** nos

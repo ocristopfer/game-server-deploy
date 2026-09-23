@@ -48,31 +48,31 @@ def _series_segments(samples, key: str, px, py,
     que ficou fora do ar entre duas amostras (ver CHART_GAP). Emendar por cima dos dois
     desenharia uma reta que afirma algo que ninguem mediu.
     """
-    segmentos: list[list[str]] = []
+    segments: list[list[str]] = []
     atual: list[str] = []
-    anterior = None
-    ponta = None
+    previous = None
+    edge = None
 
     def fecha():
         nonlocal atual
         if atual:
-            segmentos.append(atual)
+            segments.append(atual)
         atual = []
 
-    for quando, values in samples:
+    for when_at, values in samples:
         value = values.get(key)
         if value is None:
             fecha()
-            anterior = None
+            previous = None
             continue
-        if anterior is not None and (quando - anterior).total_seconds() > sample_step * CHART_GAP:
+        if previous is not None and (when_at - previous).total_seconds() > sample_step * CHART_GAP:
             fecha()
-        atual.append(f"{px(quando)},{py(value)}")
-        ponta = {"x": px(quando), "y": py(value), "valor": value}
-        anterior = quando
+        atual.append(f"{px(when_at)},{py(value)}")
+        edge = {"x": px(when_at), "y": py(value), "valor": value}
+        previous = when_at
 
     fecha()
-    return segmentos, ponta
+    return segments, edge
 
 
 def build_chart(samples, series, ceiling: float, start, end, time_format: str,
@@ -83,63 +83,63 @@ def build_chart(samples, series, ceiling: float, start, end, time_format: str,
     grafico pode ter buracos (ver CHART_GAP).
     """
     span = max(1.0, (end - start).total_seconds())
-    largura = CHART_W - CHART_L - CHART_R
-    alto = CHART_H - CHART_T - CHART_B
+    width = CHART_W - CHART_L - CHART_R
+    tall = CHART_H - CHART_T - CHART_B
 
     def px(quando) -> float:
-        return round(CHART_L + largura * ((quando - start).total_seconds() / span), 1)
+        return round(CHART_L + width * ((quando - start).total_seconds() / span), 1)
 
     def py(value) -> float:
-        fatia = 0.0 if ceiling <= 0 else min(1.0, max(0.0, value / ceiling))
-        return round(CHART_T + alto * (1 - fatia), 1)
+        slice_of = 0.0 if ceiling <= 0 else min(1.0, max(0.0, value / ceiling))
+        return round(CHART_T + tall * (1 - slice_of), 1)
 
     lines_of = []
-    for serie in series:
-        segmentos, ponta = _series_segments(
-            samples, serie["key"], px, py, sample_step)
-        if not segmentos:
+    for one_series in series:
+        segments, edge = _series_segments(
+            samples, one_series["key"], px, py, sample_step)
+        if not segments:
             continue
         lines_of.append({
-            "key": serie["key"],
-            "label": serie["label"],
-            "color": serie["color"],
-            "suffix": serie.get("suffix", ""),
+            "key": one_series["key"],
+            "label": one_series["label"],
+            "color": one_series["color"],
+            "suffix": one_series.get("suffix", ""),
             # Um segmento de um ponto so nao vira polyline (nao teria comprimento): vira
             # um ponto desenhado, senao a amostra solta sumiria da tela.
-            "tracos": [" ".join(s) for s in segmentos if len(s) > 1],
-            "pontos": [s[0] for s in segmentos if len(s) == 1],
-            "ponta": ponta,
+            "tracos": [" ".join(s) for s in segments if len(s) > 1],
+            "pontos": [s[0] for s in segments if len(s) == 1],
+            "ponta": edge,
         })
 
     # Rotulo direto so vale enquanto as pontas nao se encostam. Quando as linhas
     # convergem no canto direito, empurrar um rotulo para cima do outro os desgruda das
     # linhas e vira ruido — melhor deixar a legenda, a mira e a tabela carregarem, que e
     # o que elas ja fazem.
-    pontas = [line["ponta"]["y"] for line in lines_of if line["ponta"]]
-    rotula_ponta = all(
+    edges = [line["ponta"]["y"] for line in lines_of if line["ponta"]]
+    label_edge = all(
         abs(a - b) >= TIP_MIN
-        for i, a in enumerate(pontas) for b in pontas[i + 1:]
+        for i, a in enumerate(edges) for b in edges[i + 1:]
     )
 
     grade = []
-    for fatia in (0.0, 0.5, 1.0):
-        value = ceiling * fatia
+    for slice_of in (0.0, 0.5, 1.0):
+        value = ceiling * slice_of
         grade.append({
             "y": py(value),
             "label": f"{value:g}" + (series[0].get("suffix", "") if series else ""),
         })
 
-    tempos = []
+    times = []
     for i in range(CHART_TICKS):
-        quando = start + timedelta(seconds=span * i / (CHART_TICKS - 1))
-        tempos.append({"x": px(quando), "label": quando.astimezone().strftime(time_format)})
+        when_at = start + timedelta(seconds=span * i / (CHART_TICKS - 1))
+        times.append({"x": px(when_at), "label": when_at.astimezone().strftime(time_format)})
 
     return {
         "linhas": lines_of,
         "grade": grade,
-        "tempos": tempos,
+        "tempos": times,
         "vazio": not lines_of,
-        "rotula_ponta": rotula_ponta,
+        "rotula_ponta": label_edge,
         "w": CHART_W, "h": CHART_H,
         "l": CHART_L, "r": CHART_W - CHART_R, "t": CHART_T, "b": CHART_H - CHART_B,
         # O que a mira precisa para converter uma coordenada de volta em valor e em hora,

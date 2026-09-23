@@ -136,7 +136,7 @@ function Disable-PasswordAuth {
 
 function Test-KeyAuth([string]$Target) {
     # "Nao entrou" e resposta esperada aqui; ver o comentario em Test-PanelReachable.
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
         ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new `
@@ -145,7 +145,7 @@ function Test-KeyAuth([string]$Target) {
     } catch {
         return $false
     } finally {
-        $ErrorActionPreference = $anterior
+        $ErrorActionPreference = $previous
     }
 }
 
@@ -196,7 +196,7 @@ function Test-PanelReachable([string]$Target) {
     # "Nao respondeu" e uma resposta valida aqui, nao um erro do deploy. No PowerShell
     # 5.1 o stderr do ssh redirecionado vira excecao quando ErrorActionPreference e
     # 'Stop', entao o modo estrito fica suspenso so nesta checagem.
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
         # BatchMode: sem chave autorizada, falha na hora em vez de pedir senha.
@@ -206,7 +206,7 @@ function Test-PanelReachable([string]$Target) {
     } catch {
         return $false
     } finally {
-        $ErrorActionPreference = $anterior
+        $ErrorActionPreference = $previous
     }
 }
 
@@ -223,14 +223,14 @@ function Get-LocalPubKey([string]$Configured) {
 # Executavel nativo cujo stderr NAO e erro. O empacotador escreve o aviso de arvore suja
 # no stderr, e com ErrorActionPreference='Stop' isso viraria excecao em cima de um
 # sucesso. Quem decide aqui e o codigo de saida.
-function Invoke-Native([scriptblock]$Bloco, [string]$Oque) {
-    $anterior = $ErrorActionPreference
+function Invoke-Native([scriptblock]$Command, [string]$What) {
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        & $Bloco
-        if ($LASTEXITCODE -ne 0) { throw "Falha ao $Oque (codigo $LASTEXITCODE)" }
+        & $Command
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao $What (codigo $LASTEXITCODE)" }
     } finally {
-        $ErrorActionPreference = $anterior
+        $ErrorActionPreference = $previous
     }
 }
 
@@ -272,11 +272,11 @@ function Invoke-DirectDeploy([string]$Target, [string]$Port) {
     # instalador devolve o symlink para a versao anterior e sai com erro. A limpeza vem
     # DEPOIS, num comando separado, para o codigo de saida que chega aqui ser o do
     # instalador e nao o do 'rm'.
-    $saude = "curl -fsS http://127.0.0.1:$Port/health"
-    Invoke-Ssh $Target "bash '$remoteTmp/install-release.sh' gamepanel '$remoteTmp/$($release.Name)' '$($release.Sha)' /opt/gamepanel gamepanel.service '$saude'"
-    $instalou = ($LASTEXITCODE -eq 0)
+    $healthCmd = "curl -fsS http://127.0.0.1:$Port/health"
+    Invoke-Ssh $Target "bash '$remoteTmp/install-release.sh' gamepanel '$remoteTmp/$($release.Name)' '$($release.Sha)' /opt/gamepanel gamepanel.service '$healthCmd'"
+    $installed = ($LASTEXITCODE -eq 0)
     Invoke-Ssh $Target "rm -rf '$remoteTmp'"
-    if (-not $instalou) {
+    if (-not $installed) {
         Write-Host "`nO painel nao voltou. Ultimas linhas do log:" -ForegroundColor Yellow
         Invoke-Ssh $Target "journalctl -u gamepanel.service --no-pager -n 30"
         throw "gamepanel.service nao ficou ativo apos o envio direto"
@@ -285,9 +285,9 @@ function Invoke-DirectDeploy([string]$Target, [string]$Port) {
     # Confirma pelo /health que o processo NO AR e o que acabou de ser publicado. Um
     # "systemctl is-active" satisfeito e compativel com "o systemd reiniciou a versao
     # velha": os dois dao verde, e so a versao separa os dois casos.
-    $noAr = (Invoke-Ssh $Target "curl -fsS http://127.0.0.1:$Port/health").Trim()
+    $live = (Invoke-Ssh $Target "curl -fsS http://127.0.0.1:$Port/health").Trim()
     Write-Host "`nPainel atualizado em http://${Target}:$Port" -ForegroundColor Green
-    Write-Host "  /health: $noAr" -ForegroundColor DarkGray
+    Write-Host "  /health: $live" -ForegroundColor DarkGray
     Write-Host "Config (ADMIN_*), recursos do CT e usuario so mudam no modo completo: .\deploy-admin.ps1 -Full" -ForegroundColor DarkGray
 }
 

@@ -18,48 +18,48 @@ def index():
     """
     conn = panel.db()
     servers = conn.execute(panel.SQL_ALL_SERVERS).fetchall()
-    nomes = {int(s["id"]): s["name"] for s in servers}
+    names = {int(s["id"]): s["name"] for s in servers}
 
-    filtro_srv = (request.args.get("servidor", "") or "").strip()
-    filtro_acao = (request.args.get("acao", "") or "").strip()
-    filtro_user = (request.args.get("usuario", "") or "").strip()[:80]
+    server_filter = (request.args.get("servidor", "") or "").strip()
+    action_filter = (request.args.get("acao", "") or "").strip()
+    user_filter = (request.args.get("usuario", "") or "").strip()[:80]
     try:
-        pagina = max(0, int(request.args.get("p", "0")))
+        page = max(0, int(request.args.get("p", "0")))
     except ValueError:
-        pagina = 0
+        page = 0
 
-    onde, valores = ["1 = 1"], []
-    if filtro_srv.isdigit():
-        onde.append("server_id = ?")
-        valores.append(int(filtro_srv))
-    if filtro_acao in panel.JOB_LABELS:
-        onde.append("action = ?")
-        valores.append(filtro_acao)
-    if filtro_user:
-        onde.append("username = ?")
-        valores.append(filtro_user)
+    where_clause, values = ["1 = 1"], []
+    if server_filter.isdigit():
+        where_clause.append("server_id = ?")
+        values.append(int(server_filter))
+    if action_filter in panel.JOB_LABELS:
+        where_clause.append("action = ?")
+        values.append(action_filter)
+    if user_filter:
+        where_clause.append("username = ?")
+        values.append(user_filter)
 
-    corte, escondidas = panel.role_filter()
-    sql_onde = " AND ".join(onde) + corte
-    valores.extend(escondidas)
+    cut, hidden_ones = panel.role_filter()
+    sql_where = " AND ".join(where_clause) + cut
+    values.extend(hidden_ones)
 
     # Pede um a mais que o tamanho da pagina: e como se sabe se existe proxima sem contar
     # a tabela inteira.
     lines_of = conn.execute(
-        f"SELECT * FROM jobs WHERE {sql_onde} ORDER BY id DESC LIMIT ? OFFSET ?",
-        (*valores, panel.HISTORY_PAGE + 1, pagina * panel.HISTORY_PAGE),
+        f"SELECT * FROM jobs WHERE {sql_where} ORDER BY id DESC LIMIT ? OFFSET ?",
+        (*values, panel.HISTORY_PAGE + 1, page * panel.HISTORY_PAGE),
     ).fetchall()
-    tem_mais = len(lines_of) > panel.HISTORY_PAGE
+    has_more = len(lines_of) > panel.HISTORY_PAGE
     jobs = lines_of[:panel.HISTORY_PAGE]
 
-    usuarios = [r[0] for r in conn.execute(
-        f"SELECT DISTINCT username FROM jobs WHERE username <> '' {corte} ORDER BY username",
-        escondidas,
+    users = [r[0] for r in conn.execute(
+        f"SELECT DISTINCT username FROM jobs WHERE username <> '' {cut} ORDER BY username",
+        hidden_ones,
     ).fetchall()]
 
     return render_template(
-        "history.html", jobs=jobs, servers=servers, nomes=nomes, usuarios=usuarios,
-        acoes=sorted(panel.JOB_LABELS), filtro_srv=filtro_srv, filtro_acao=filtro_acao,
-        filtro_user=filtro_user, pagina=pagina, tem_mais=tem_mais,
+        "history.html", jobs=jobs, servers=servers, nomes=names, usuarios=users,
+        acoes=sorted(panel.JOB_LABELS), filtro_srv=server_filter, filtro_acao=action_filter,
+        filtro_user=user_filter, pagina=page, tem_mais=has_more,
         manter_dias=panel.JOBS_KEEP_DAYS,
     )

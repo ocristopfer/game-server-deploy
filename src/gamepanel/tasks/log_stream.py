@@ -58,10 +58,10 @@ class LogStreamDeps(NamedTuple):
 def player_line(line: str, enter: re.Pattern[str] | None,
                      leave: re.Pattern[str] | None) -> bool:
     """Esta linha do log e uma entrada ou saida de jogador?"""
-    curta = line[:LOG_LINE_MAX]
-    if enter and enter.search(curta):
+    short_label = line[:LOG_LINE_MAX]
+    if enter and enter.search(short_label):
         return True
-    return bool(leave and leave.search(curta))
+    return bool(leave and leave.search(short_label))
 
 
 def stream_signature(server: ServerLike,
@@ -141,7 +141,7 @@ class LogStream:
         try:
             enter = compile_pattern(self.data.get("join_re"), "pattern.join")
             leave = compile_pattern(self.data.get("leave_re"), "pattern.leave")
-            alvo = valid_log_path(self.data.get("log_path") or "")
+            target = valid_log_path(self.data.get("log_path") or "")
         except (QueryError, ValueError) as exc:
             return self._give_up(str(exc))
         if not enter:
@@ -153,7 +153,7 @@ class LogStream:
                 self.data, connect_timeout=10,
                 extra=("-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"),
             ),
-            quote_command("bash", "-lc", LOG_FOLLOW_SCRIPT, "gp", self.data["service"], alvo),
+            quote_command("bash", "-lc", LOG_FOLLOW_SCRIPT, "gp", self.data["service"], target),
         ]
         self.proc = subprocess.Popen(  # noqa: S603  # NOSONAR - argv vem do SshClient
             argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -179,10 +179,10 @@ class LogStream:
         proc, self.proc = self.proc, None
         if not proc:
             return
-        for fluxo in (proc.stdout, proc.stderr):
-            if fluxo:
+        for stream_of in (proc.stdout, proc.stderr):
+            if stream_of:
                 with contextlib.suppress(OSError):
-                    fluxo.close()
+                    stream_of.close()
         if proc.poll() is None:
             with contextlib.suppress(OSError):
                 proc.terminate()
@@ -193,12 +193,12 @@ class LogStream:
 
     def _check(self) -> None:
         """A linha chegou: refaz a contagem pelo caminho normal e avisa se mudou."""
-        agora = time.monotonic()
-        if agora - self.last_fire < self.deps.debounce:
+        now_ts = time.monotonic()
+        if now_ts - self.last_fire < self.deps.debounce:
             return                     # um grupo entrando junto e UMA conferida
-        self.last_fire = agora
-        anterior = self.deps.monitor_state.get(self.sid)
-        if anterior is None:
+        self.last_fire = now_ts
+        previous = self.deps.monitor_state.get(self.sid)
+        if previous is None:
             return                     # sem linha de base ainda: a volta do monitor faz
         # O cache guarda o numero de ANTES da linha que acabou de chegar.
         self.deps.invalidate_players(self.sid)
@@ -207,7 +207,7 @@ class LogStream:
             cfg = self.deps.webhook_config(conn)
             with self.deps.players_lock(self.sid):
                 self.deps.players_alert(conn, self.data,
-                                              anterior.get("service", ""), anterior, cfg)
+                                              previous.get("service", ""), previous, cfg)
         finally:
             conn.close()
 
@@ -232,18 +232,18 @@ class Supervisor:
     def sync(self, servers: Sequence[ServerLike],
                    desejados: dict[int, tuple]) -> int:
         """Deixa o que esta aberto igual ao `desejados`. Devolve quantos ficaram."""
-        por_id = {int(s["id"]): s for s in servers}
+        by_id = {int(s["id"]): s for s in servers}
 
         with self._lock:
-            atuais = list(self.abertos.items())
-        for sid, stream in atuais:
+            current_ones = list(self.abertos.items())
+        for sid, stream in current_ones:
             # Sai quem deixou de ser desejado e quem mudou de configuracao (regex nova,
             # log em outro caminho). Thread morta tambem sai, para o passo abaixo
             # levantar de novo — menos quando ela desistiu por cadastro invalido, que
             # recriar nao conserta: essa fica de lapide ate alguem arrumar o cadastro e
             # a assinatura mudar.
-            trocou = sid not in desejados or desejados[sid] != stream.signature
-            if trocou or (not stream.alive() and not stream.gave_up):
+            swapped = sid not in desejados or desejados[sid] != stream.signature
+            if swapped or (not stream.alive() and not stream.gave_up):
                 stream.stop()
                 with self._lock:
                     self.abertos.pop(sid, None)
@@ -252,9 +252,9 @@ class Supervisor:
             with self._lock:
                 if sid in self.abertos:
                     continue
-                novo = self._criar(por_id[sid], signature)
-                self.abertos[sid] = novo
-            novo.start()
+                fresh = self._criar(by_id[sid], signature)
+                self.abertos[sid] = fresh
+            fresh.start()
 
         with self._lock:
             return len(self.abertos)

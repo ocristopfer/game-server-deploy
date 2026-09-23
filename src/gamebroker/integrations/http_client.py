@@ -47,12 +47,12 @@ def normalize_fingerprint(text: str) -> str:
     """Aceita `9F:92:...` (como o verificar-broker-acesso.ps1 imprime) ou hex corrido."""
     if not text.strip():
         return ""
-    limpo = re.sub(r"[^0-9a-fA-F]", "", text).lower()
+    clean = re.sub(r"[^0-9a-fA-F]", "", text).lower()
     # Texto nao vazio que nao vira 64 digitos e erro de digitacao: aceitar como "sem
     # impressao" desligaria o pin em silencio.
-    if not _IMPRESSAO_RE.fullmatch(limpo):
+    if not _IMPRESSAO_RE.fullmatch(clean):
         raise ValueError("impressao SHA-256 invalida: esperados 64 digitos hexadecimais")
-    return limpo
+    return clean
 
 
 class _PinnedConnection(http.client.HTTPSConnection):
@@ -63,9 +63,9 @@ class _PinnedConnection(http.client.HTTPSConnection):
     def connect(self) -> None:
         super().connect()
         der = self.sock.getpeercert(binary_form=True) or b""  # type: ignore[union-attr]
-        atual = hashlib.sha256(der).hexdigest()
+        current_one = hashlib.sha256(der).hexdigest()
         # compare_digest: tempo constante, como para qualquer comparacao de segredo.
-        if not hmac.compare_digest(atual, self._impressao):
+        if not hmac.compare_digest(current_one, self._impressao):
             self.close()
             raise ConnectionFailed("o certificado do servidor nao confere com a impressao fixada")
 
@@ -73,15 +73,15 @@ class _PinnedConnection(http.client.HTTPSConnection):
 class Client:
     def __init__(self, base_url: str, headers: dict[str, str], fingerprint_sha256: str = "",
                  timeout: float = 30.0):
-        partes = urlsplit(base_url)
-        if partes.scheme not in ("http", "https") or not partes.hostname:
+        parts = urlsplit(base_url)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
             raise ValueError("base_url deve ser http(s)://host[:porta]")
-        if partes.scheme == "http" and partes.hostname not in _LOOPBACK:
+        if parts.scheme == "http" and parts.hostname not in _LOOPBACK:
             raise ValueError("sem TLS so em loopback: use https:// (e a impressao do certificado)")
-        self._https = partes.scheme == "https"
-        self._host = partes.hostname
-        self._porta = partes.port or (443 if self._https else 80)
-        self._prefixo = partes.path.rstrip("/")
+        self._https = parts.scheme == "https"
+        self._host = parts.hostname
+        self._porta = parts.port or (443 if self._https else 80)
+        self._prefixo = parts.path.rstrip("/")
         self._cabecalhos = dict(headers)
         self._impressao = normalize_fingerprint(fingerprint_sha256)
         self._timeout = timeout
@@ -98,11 +98,11 @@ class Client:
         # A cadeia nao e validada porque o certificado e autoassinado; quem autentica o
         # servidor e a comparacao da impressao em _ConexaoFixada.connect. Por isso os tres
         # avisos abaixo sao falsos positivos revisados (teste com pin errado e sem pin).
-        contexto = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)  # NOSONAR - TLS >= 1.2 na linha seguinte
-        contexto.minimum_version = ssl.TLSVersion.TLSv1_2
-        contexto.check_hostname = False  # NOSONAR - identidade por impressao fixada
-        contexto.verify_mode = ssl.CERT_NONE  # NOSONAR - identidade por impressao fixada
-        return _PinnedConnection(self._host, self._porta, timeout=timeout, context=contexto,
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)  # NOSONAR - TLS >= 1.2 na linha seguinte
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.check_hostname = False  # NOSONAR - identidade por impressao fixada
+        context.verify_mode = ssl.CERT_NONE  # NOSONAR - identidade por impressao fixada
+        return _PinnedConnection(self._host, self._porta, timeout=timeout, context=context,
                               fingerprint=self._impressao)
 
     def request(self, method: str, path: str, *, form: dict | None = None,
@@ -117,26 +117,26 @@ class Client:
         elif json_corpo is not None:
             body = json.dumps(json_corpo).encode()
             headers["Content-Type"] = "application/json"
-        conexao = self._connection(self._timeout if timeout is None else timeout)
+        connection = self._connection(self._timeout if timeout is None else timeout)
         try:
-            conexao.request(method, self._prefixo + path, body=body, headers=headers)
-            resposta = conexao.getresponse()
-            bruto = resposta.read(RESPOSTA_MAX + 1)
-            motivo = resposta.reason or ""
-            status = resposta.status
+            connection.request(method, self._prefixo + path, body=body, headers=headers)
+            response = connection.getresponse()
+            raw_text = response.read(RESPOSTA_MAX + 1)
+            reason = response.reason or ""
+            status = response.status
         except ConnectionFailed:
             raise
         except (OSError, http.client.HTTPException) as error:
             # So o tipo e a mensagem do erro de rede: nunca cabecalho nem corpo enviado.
             raise ConnectionFailed(f"{type(error).__name__} ao falar com {self._host}:{self._porta}") from None
         finally:
-            conexao.close()
-        if len(bruto) > RESPOSTA_MAX:
+            connection.close()
+        if len(raw_text) > RESPOSTA_MAX:
             raise ConnectionFailed("resposta grande demais")
-        text = bruto.decode("utf-8", errors="replace")
+        text = raw_text.decode("utf-8", errors="replace")
         # O Proxmox explica o 403/500 na linha de status, nao no corpo.
         if not text.strip() and status >= 400:
-            text = motivo
+            text = reason
         try:
             data = json.loads(text) if text.strip() else None
         except ValueError:
