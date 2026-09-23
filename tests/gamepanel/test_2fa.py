@@ -82,7 +82,7 @@ def test_tela_de_ativacao_mostra_a_chave_e_o_endereco_para_o_aplicativo(chefe, h
 
 
 def test_tela_de_ativacao_tem_o_qr_code_do_mesmo_endereco_mostrado(chefe, hora):
-    """Nao testa a matematica do QR (isso e `test_qr.py` + `tools/verificar-qr.py`, contra um
+    """Nao testa a matematica do QR (isso e `test_qr.py` + `tools/verify-qr.py`, contra um
     leitor de verdade): so que a ROTA liga o SVG ao mesmo `otpauth://` que a chave e o link
     representam - um bug aqui deixaria a camera cadastrar uma conta diferente da que a
     pessoa confirma logo abaixo."""

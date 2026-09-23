@@ -10,7 +10,7 @@ Tudo que cria e apagado no fim (try/finally), e SO apaga o que ele mesmo criou,
 conferindo o nome/descricao antes. O CT nunca e iniciado; a regra nasce DESATIVADA.
 Le broker.secrets.env e nunca imprime segredo.
 
-Uso:  .\spike-broker-escrita.ps1 [-SoProxmox] [-SoOpnsense]
+Uso:  .\spike-broker-write.ps1 [-SoProxmox] [-SoOpnsense]
 #>
 param(
     [string]$EnvFile = (Join-Path $PSScriptRoot "broker.secrets.env"),
@@ -55,7 +55,7 @@ function Read-Secrets([string]$Path) {
     return $cfg
 }
 
-# ----- TLS (certificado autoassinado aceito SO neste teste; ver verificar-broker-acesso.ps1) -----
+# ----- TLS (certificado autoassinado aceito SO neste teste; ver check-broker-access.ps1) -----
 if (-not ("GuardaCert" -as [type])) {
     Add-Type @"
 using System.Collections.Generic;

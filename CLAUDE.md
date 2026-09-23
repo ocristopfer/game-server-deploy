@@ -47,10 +47,10 @@ docker compose up --build -d          # painel em http://localhost:8080 (admin/a
 docker compose restart panel          # depois de mexer em app.py/navigation.py
 ```
 
-As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_gameconf.py`,
+As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_config_format.py`,
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
-`test_contrato_template.py`, `test_contrato_frontend.py`, `test_javascript.py`,
+`test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
 `test_schema.py`, `test_javascript.py` e mais uma duzia) sao **pytest** — 909
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
@@ -157,9 +157,9 @@ src/
       catalog/
         search.py          busca por nome/App ID sobre suggestions.py (era busca_de_jogos.py)
         templates.py        modelos do formulario "Adicionar jogo" (Unreal Linux); puro, so dado
-                           (era modelos_de_jogo.py; `tests/gamebroker/test_modelos.py` confere
+                           (era modelos_de_jogo.py; `tests/gamebroker/test_templates.py` confere
                            que passam no validador do broker)
-        suggestions.py      GERADO por tools/importar-linuxgsm.py, nao edite (era sugestoes_de_jogos.py)
+        suggestions.py      GERADO por tools/import-linuxgsm.py, nao edite (era sugestoes_de_jogos.py)
     i18n/
       __init__.py         cascata idioma->pt->chave, campos na frase, `Mensagem`; ver a secao propria
       pt.py               catalogo em portugues (o padrao)
@@ -184,11 +184,11 @@ src/
                          pacote Python, ver a secao "Broker" abaixo (era broker/)
 tests/
   gamepanel/              as suites do painel (era admin/test_*.py + admin/conftest.py)
-  gamebroker/             as suites do broker, mais os dobres de teste http_falso.py (era broker/test_*.py)
+  gamebroker/             as suites do broker, mais os dobres de teste fake_http.py (era broker/test_*.py)
 tools/
   build-release.py       empacota um release: dist/<pacote>-<versao>.tar.gz + .sha256 (so stdlib, determinista)
-  importar-linuxgsm.py   gera src/gamepanel/games/catalog/suggestions.py a partir do LinuxGSM (precisa de internet)
-  verificar-qr.py        verificacao manual do QR contra um leitor de verdade (venv descartavel)
+  import-linuxgsm.py   gera src/gamepanel/games/catalog/suggestions.py a partir do LinuxGSM (precisa de internet)
+  verify-qr.py        verificacao manual do QR contra um leitor de verdade (venv descartavel)
 ```
 
 `src/gamepanel/games/gamefields.py` ainda e um arquivo so (nao dividido em adapter por
@@ -250,7 +250,7 @@ dessas tabelas.
   leitor de verdade — Reed-Solomon com resto zero nas raizes do gerador, e a distancia
   minima 7 do BCH(15,5) dos bits de formato — porque `opencv-python-headless` (o
   decodificador de verdade) passa de 60 MB e nao entra no `.venv` de dev nem no painel.
-  **Depois de mexer em `qr.py`, rode `tools/verificar-qr.py`** numa venv DESCARTAVEL
+  **Depois de mexer em `qr.py`, rode `tools/verify-qr.py`** numa venv DESCARTAVEL
   com `opencv-python-headless` e `segno` (nunca no `pyproject.toml` do repo): ele
   desenha o QR e confere que a camera (via OpenCV) le de volta o texto certo.
 - **Segundo fator (2FA) e TOTP proprio, so stdlib** (`totp.py`, testado contra os vetores do RFC
@@ -426,7 +426,7 @@ dentro de frase em prosa e como chave de dicionario. Depois, procure cada um des
 
 E o que nenhum teste pegava antes: **kwarg de `render_template`**. Trocar
 `instancias=` por `instances=` deixa a tela VAZIA — 200, sem erro, sem log, porque o
-Jinja trata variavel ausente como indefinida. Agora `tests/gamepanel/test_contrato_template.py`
+Jinja trata variavel ausente como indefinida. Agora `tests/gamepanel/test_template_contract.py`
 confere cada kwarg contra o que os templates de fato leem. Ainda assim, **passe pelas
 telas a mao** (a varredura de `curl` abaixo): foi so ali que apareceram o eixo de
 grafico sem numero e a macro `energia` chamada pelo nome velho.
@@ -444,7 +444,7 @@ respondendo 200.
 - `data-*` so no template = comportamento que nao monta, sem nada no console;
 - `data-*` so no JavaScript = feature que nunca encontra elemento nenhum.
 
-`tests/gamepanel/test_contrato_frontend.py` cobra os quatro, mais o contrato de LEITURA
+`tests/gamepanel/test_frontend_contract.py` cobra os quatro, mais o contrato de LEITURA
 do medidor (`metrics.X` no `server_detail.html` contra o que o `parse_metrics` entrega —
 a lista sai do proprio codigo, nao de uma copia escrita a mao). Achados reais dele, na
 primeira execucao: tres classes sem regra e sete regras mortas.
@@ -499,8 +499,8 @@ deixou de casar.
 - **`$(funcao)` dentro de aspas duplas e CODIGO.** Pular toda a aspa deixou `$(qual)`
   chamando uma funcao que ja tinha virado `host_path`.
 - **`$(( ))` usa o nome SEM cifrao**: `falhas=$((falhas + 1))` precisa dos dois lados.
-- **Prove com os quatro sandboxes**: `comparar.sh` (instalador de jogo, byte a byte),
-  `broker.sh`, `release.sh` e a suite. Foi o `comparar.sh` que pegou a unit systemd que
+- **Prove com os quatro sandboxes**: `compare.sh` (instalador de jogo, byte a byte),
+  `broker.sh`, `release.sh` e a suite. Foi o `compare.sh` que pegou a unit systemd que
   deixou de ser escrita.
 
 ### Renomear no front: cada nome no SEU escopo
@@ -637,12 +637,12 @@ Modulos ES, sem build, sem dependencia externa.
 O painel nao guarda credencial de Proxmox nem de OPNsense: quem guarda e o broker, que
 expoe verbos fixos (criar/desativar/remover instancia, catalogo). Pronto: nucleo,
 backends REAIS de Proxmox (`proxmox.py`) e OPNsense (`opnsense.py`) e o cliente HTTP
-(`conexao.py`), todos testados contra servidores falsos (`http_falso.py`), o instalador por
+(`conexao.py`), todos testados contra servidores falsos (`fake_http.py`), o instalador por
 SSH (`ssh_install.py` + `lib/ct-install.sh`), a tela no painel e o DEPLOY do broker
 (`config.py`, `prod.py`, `provision-broker-lxc.sh`, `deploy-broker.ps1`). Falta so uma criacao
 REAL de ponta a ponta (nada disto rodou contra o seu Proxmox/OPNsense ainda). Segredos de
 teste e de deploy ficam em `broker.secrets.env` (fora do git);
-`verificar-broker-acesso.ps1` confere so leitura e `spike-broker-escrita.ps1` cria e
+`check-broker-access.ps1` confere so leitura e `spike-broker-write.ps1` cria e
 apaga um CT/regra de teste.
 
 **Lado do painel** (`src/gamepanel/`): telas `/catalog` e `/instances`, flag
@@ -651,10 +651,10 @@ derrubar o painel), `servers.broker_id` e `jobs.broker_op`. No compose de dev so
 broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up --build`.
 
 - **Um instalador de jogo, dois transportes.** As fases que rodam DENTRO do CT (SteamCMD,
-  Wine/Proton, systemd) moram em `lib/ct-fases.sh`, lido por `provision-game-lxc.sh` (host:
+  Wine/Proton, systemd) moram em `lib/ct-phases.sh`, lido por `provision-game-lxc.sh` (host:
   `pct exec`) e por `lib/ct-install.sh` (dentro do CT, o que o broker roda por SSH). O
-  bundle do `deploy-game.ps1` e uma pasta SEM subpastas: a lib viaja como `ct-fases.sh` ao
-  lado do script. **Mexeu numa fase? Rode `bash docker/ct-sandbox/comparar.sh`** (precisa do
+  bundle do `deploy-game.ps1` e uma pasta SEM subpastas: a lib viaja como `ct-phases.sh` ao
+  lado do script. **Mexeu numa fase? Rode `bash docker/ct-sandbox/compare.sh`** (precisa do
   Docker): roda o instalador ANTES e DEPOIS para 8 jogos com `pct`, `systemctl`, `apt-get` e
   SteamCMD falsos e faz diff de arquivos, conteudo e linhas de comando; tambem compara host x
   broker e confere o `install.env` que o Python gera. Sem isso a refatoracao e no escuro: nao
@@ -724,10 +724,10 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   porta extra) e nenhuma porta alem dessas tres (`catalog.shiftable_problem`, validado no
   carregamento). A porta extra (`EXTRA_PORT=`/`porta_extra`) existe por causa do Satisfactory: alem
   da principal (UDP+TCP) ele abre a 8888/TCP de mensagens confiaveis, que sem `-ReliablePort=` fica
-  fixa e impede uma segunda instancia. O `ct-fases.sh` troca `{EXTRA_PORT}` como os outros dois; o
+  fixa e impede uma segunda instancia. O `ct-phases.sh` troca `{EXTRA_PORT}` como os outros dois; o
   marcador sem porta extra e recusado (viraria `0`). Hoje: Dragonwilds, Satisfactory, Palworld e
   Icarus. Enshrouded (portas no JSON) e DayZ (2303/2304 derivadas) nao. Ver `services/allocator.py`.
-  No `comparar.sh` o Satisfactory "antes x depois" roda sem o marcador (`satisfactory-legado.env`):
+  No `compare.sh` o Satisfactory "antes x depois" roda sem o marcador (`satisfactory-legado.env`):
   o instalador de referencia nao o conhece e deixaria `{EXTRA_PORT}` literal no ExecStart.
 - **Enderecos: o IP diz o CTID.** Painel `.100` (CT 300), broker `.101` (CT 301), jogos do
   broker `.102-.199` (CT 302-399): `CTID = BROKER_CTID_BASE (200) + ultimo numero do IP`, ou
@@ -738,11 +738,11 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   **O DHCP do OPNsense nao pode cobrir `.100-.199`**: a checagem por ping nao pega um aparelho
   que ainda vai chegar.
 - **Sugestoes de jogo (formulario "Adicionar jogo")** vem do LinuxGSM (MIT), convertidas por
-  `python tools/importar-linuxgsm.py` e commitadas em
+  `python tools/import-linuxgsm.py` e commitadas em
   `src/gamepanel/games/catalog/suggestions.py` (110 jogos): o painel em producao NAO vai
   a internet (a API oficial da loja Steam nem serve: servidor dedicado e app do tipo
   "Tool" e volta `success:false`). Regras do conversor, cada uma com teste em
-  `tests/gamebroker/test_importar_linuxgsm.py` e `tests/gamebroker/test_sugestoes.py`: so sai o que o
+  `tests/gamebroker/test_import_linuxgsm.py` e `tests/gamebroker/test_suggestions.py`: so sai o que o
   `validate_dynamic` aceita; porta de RCON/telnet/HTTP vai so no argumento e NUNCA no NAT; variavel
   de senha/nome/IP/token nunca e resolvida (o argumento sai, com aviso); tudo depois de `; | & \`
   `$(` e cortado; variavel vazia derruba a opcao junto (senao ela engole a proxima). Protocolo e
@@ -754,7 +754,7 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   bloqueando IP/CTID/portas ate alguem remover (`servico._desfazer`).
 - **TLS e por IMPRESSAO, nunca `verify=False`.** Proxmox e OPNsense sao autoassinados;
   `conexao.Cliente` aceita so o certificado cuja SHA-256 e a configurada (o
-  `verificar-broker-acesso.ps1` a imprime), e recusa `http://` fora de loopback. Impressao
+  `check-broker-access.ps1` a imprime), e recusa `http://` fora de loopback. Impressao
   digitada errada e ERRO, nao "sem pin" (ja foi um bug: lixo virava string vazia).
 - **Regras que o Proxmox real impoe** (o `PveFalso` as repete, entao regredir quebra teste):
   tag na criacao e `keyctl` sao 403 para o token; tarefa `WARNINGS: n` e sucesso; a tag e
@@ -795,7 +795,7 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   de append-only apontando para tabela que nao existe mais e o mesmo que nao existir.
   Migration so roda no banco de quem JA tinha o sistema, e os outros testes vivem num
   banco novo: quem a exercita sao `tests/gamepanel/test_schema.py` e
-  `tests/gamebroker/test_migracao.py`, que montam o esquema antigo a mao.
+  `tests/gamebroker/test_migration.py`, que montam o esquema antigo a mao.
 
 ---
 
@@ -822,7 +822,7 @@ python tools/build-release.py gamebroker
 - **Arvore suja sai marcada `.dirty`** no nome do arquivo e na tela. Um release que nao
   corresponde a commit nenhum nao pode se parecer com um que corresponde.
 - **Modulo que nao vai para producao sai por `SKIPPED_NAMES`/`SKIPPED_PREFIXES`**
-  (`dev.py`, `conftest.py`, `fakes.py`, `http_falso.py`, `test_*`). O caso que importa e o
+  (`dev.py`, `conftest.py`, `fakes.py`, `fake_http.py`, `test_*`). O caso que importa e o
   `gamebroker/dev.py`: ele cria instancia contra backends falsos, e no CT de verdade seria
   um jeito de o broker mentir sobre o que existe.
 - **A versao aparece em tres lugares**: o rodape de toda tela (`app.version`), o `/health`

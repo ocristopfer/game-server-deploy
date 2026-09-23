@@ -46,7 +46,7 @@ SKIPPED_SUFFIXES = (".pyc", ".pyo")
 # O que NAO vai para producao: dobres de teste e o broker de brinquedo que o docker
 # compose sobe. `dev.py` e o caso que importa — ele cria instancia contra backends falsos,
 # e no CT de verdade seria um jeito de fazer o broker mentir sobre o que existe.
-SKIPPED_NAMES = ("dev.py", "conftest.py", "fakes.py", "http_falso.py")
+SKIPPED_NAMES = ("dev.py", "conftest.py", "fakes.py", "fake_http.py")
 SKIPPED_PREFIXES = ("test_",)
 FILE_MODE = 0o644
 READ_BLOCK = 1 << 20

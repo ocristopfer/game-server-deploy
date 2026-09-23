@@ -3,7 +3,7 @@
 Fluxo (tudo com `ssh`/`scp` do sistema, nunca por shell):
 
   1. espera o sshd do CT responder (o template do Debian ja traz sshd);
-  2. envia `ct-install.sh`, `ct-fases.sh` e um `install.env` para o CT;
+  2. envia `ct-install.sh`, `ct-phases.sh` e um `install.env` para o CT;
   3. roda `bash ct-install.sh install.env` DENTRO do CT, repassando o log linha a linha;
   4. SEMPRE (deu certo ou nao) apaga o que enviou e **remove a chave do broker** do
      authorized_keys. Se a chave nao sair, a criacao FALHA: um CT novo nao pode nascer com
@@ -13,8 +13,8 @@ O `install.env` tem aspas em todo valor (`shlex.quote`): nada do catalogo e conc
 linha de comando ou interpretado como shell pelo `source` do CT. Credencial de conta Steam
 nunca entra (`STEAM_ANONYMOUS` e sempre 1: jogos que exigem conta nao sao criaveis por API).
 
-As mesmas fases rodam no deploy manual (lib/ct-fases.sh via provision-game-lxc.sh); o sandbox
-`docker/ct-sandbox/comparar.sh` prova que os dois caminhos geram exatamente o mesmo CT.
+As mesmas fases rodam no deploy manual (lib/ct-phases.sh via provision-game-lxc.sh); o sandbox
+`docker/ct-sandbox/compare.sh` prova que os dois caminhos geram exatamente o mesmo CT.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ from gamebroker.services.catalog import RECIPES_WINDOWS, Game
 
 DESTINO_REMOTO = "/root/gamepanel-install"
 MARCA_DE_SUCESSO = "INSTALACAO CONCLUIDA"
-ARQUIVOS_DA_LIB = ("ct-install.sh", "ct-fases.sh")
+ARQUIVOS_DA_LIB = ("ct-install.sh", "ct-phases.sh")
 LINHA_MAX = 400
 LOTE_LINHAS = 20
 LOTE_SEGUNDOS = 1.5
@@ -82,7 +82,7 @@ class ExecutorReal:
 class ConfigSsh:
     chave_privada: Path
     chave_publica: str          # linha completa da chave do broker, a que foi injetada no CT
-    lib_dir: Path             # onde estao ct-install.sh e ct-fases.sh
+    lib_dir: Path             # onde estao ct-install.sh e ct-phases.sh
     usuario: str = "root"
     espera_ssh: float = 180.0
     intervalo: float = 3.0

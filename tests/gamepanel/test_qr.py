@@ -1,7 +1,7 @@
 """Codificador QR (qr.py): propriedades matematicas que nao precisam de um leitor de verdade.
 
 O leitor de verdade (camera de celular via OpenCV) e uma verificacao MANUAL, separada
-(`tools/verificar-qr.py`), porque a biblioteca pesa dezenas de MB e o painel/`.venv` ficam
+(`tools/verify-qr.py`), porque a biblioteca pesa dezenas de MB e o painel/`.venv` ficam
 so com Flask de proposito. Esta suite prova a matematica por baixo: Reed-Solomon tem resto
 zero nas raizes do gerador (a definicao de "codigo corrigivel"), e o codigo de formato tem a
 distancia minima de 7 que o BCH(15,5) da ISO 18004 exige. As duas seguram um bug real de

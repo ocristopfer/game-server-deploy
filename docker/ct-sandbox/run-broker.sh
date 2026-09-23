@@ -86,10 +86,10 @@ openssl x509 -in /etc/gamebroker/tls/cert.pem -noout -ext subjectAltName | grep 
 
 # O que vai para producao NAO leva dobles de teste nem o broker de brinquedo.
 enviados="$(ls /opt/gamebroker/current/gamebroker)"
-if echo "$enviados" | grep -Eq '^(test_|conftest|fakes|http_falso|dev\.py)'; then fail "dobles de teste foram para o CT: $(echo "$enviados" | tr '\n' ' ')"; else ok "sem dobles de teste no CT ($(echo "$enviados" | wc -l) modulos)"; fi
+if echo "$enviados" | grep -Eq '^(test_|conftest|fakes|fake_http|dev\.py)'; then fail "dobles de teste foram para o CT: $(echo "$enviados" | tr '\n' ' ')"; else ok "sem dobles de teste no CT ($(echo "$enviados" | wc -l) modulos)"; fi
 [ -L /opt/gamebroker/current ] && ok "current e um symlink" || fail "current nao e symlink"
 [ -f /opt/gamebroker/current/gamebroker/_build.py ] && ok "o carimbo de versao chegou"   || fail "_build.py ausente no CT"
-[ -f /opt/gamebroker/lib/ct-install.sh ] && [ -f /opt/gamebroker/lib/ct-fases.sh ] && ok "lib/ enviada" || fail "lib/ ausente"
+[ -f /opt/gamebroker/lib/ct-install.sh ] && [ -f /opt/gamebroker/lib/ct-phases.sh ] && ok "lib/ enviada" || fail "lib/ ausente"
 [ "$(ls /opt/gamebroker/games/*.env | wc -l)" -ge 8 ] && ok "games/*.env enviados" || fail "games/ incompleto"
 
 echo "== o broker.env gerado e ACEITO pelo carregador de configuracao real =="

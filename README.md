@@ -1065,7 +1065,7 @@ O motor fica em `src/gamepanel/games/config_format.py`, isolado do resto do pain
 com testes proprios:
 
 ```bash
-docker compose exec -w /workspace panel python3 -m pytest tests/gamepanel/test_gameconf.py -q
+docker compose exec -w /workspace panel python3 -m pytest tests/gamepanel/test_config_format.py -q
 ```
 
 ### Editor de configuracoes
@@ -1438,7 +1438,7 @@ docker compose exec game-palworld sh -c 'echo 7 > /run/fake-players' # fixa a co
 docker compose down -v            # zera banco, chaves e arquivos de teste
 ```
 
-As suites (`test_gameconf.py` o parser, `test_gamefields.py` o catalogo,
+As suites (`test_config_format.py` o parser, `test_gamefields.py` o catalogo,
 `test_players.py` a contagem, `test_users.py` papeis/backup/upload, `test_schedules.py`
 agendamento e historico, `test_alerts.py` alertas por webhook, `test_charts.py` os
 graficos) sao pytest — nao rodam mais como script solto. Veja o

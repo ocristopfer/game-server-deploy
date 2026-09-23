@@ -24,7 +24,7 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py313"
-# Gerado por tools/importar-linuxgsm.py a partir de dado de terceiros (LinuxGSM) - nao e
+# Gerado por tools/import-linuxgsm.py a partir de dado de terceiros (LinuxGSM) - nao e
 # escrito a mao, e as strings de aviso em varias linhas disparam ISC004 sem ser bug real.
 extend-exclude = ["src/gamepanel/games/catalog/suggestions.py"]
 

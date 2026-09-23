@@ -13,7 +13,7 @@ Formatos (detectados pelo nome + conteudo):
   dayz  - serverDZ.cfg: 'chave = valor;' e blocos 'class X { ... };'
 
 Este modulo nao fala SSH nem HTTP: recebe texto, devolve texto. E o que permite testa-lo
-sozinho (test_gameconf.py).
+sozinho (test_config_format.py).
 """
 from __future__ import annotations
 

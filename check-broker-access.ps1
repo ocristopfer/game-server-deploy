@@ -3,7 +3,7 @@ Confere, SO COM LEITURA, se o token do Proxmox e a chave do OPNsense do broker
 funcionam e tem as permissoes esperadas. Nao cria, altera nem apaga nada.
 
 Le broker.secrets.env (fora do git) e nunca imprime segredo.
-Uso:  .\verificar-broker-acesso.ps1
+Uso:  .\check-broker-access.ps1
 #>
 param(
     [string]$EnvFile = (Join-Path $PSScriptRoot "broker.secrets.env")

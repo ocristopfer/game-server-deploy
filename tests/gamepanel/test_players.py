@@ -445,7 +445,7 @@ def diretorio_de_controle(tmp_path, monkeypatch):
 ALVO_SSH = {"ssh_port": 22, "ssh_user": "root", "host": "10.0.0.9"}
 
 
-def test_conexao_curta_reaproveita_via_control_master(diretorio_de_controle):
+def test_http_client_curta_reaproveita_via_control_master(diretorio_de_controle):
     """Sem reaproveitar, cada leitura do monitor paga TCP + troca de chaves +
     autenticacao para depois rodar um comando de milissegundos. Com varias leituras
     por minuto por servidor, o aperto de mao vira o grosso do custo."""

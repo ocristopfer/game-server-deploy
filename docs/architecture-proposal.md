@@ -115,7 +115,7 @@ Por isso, proponho `runtime/` como **abstração de controle remoto por SSH**
 mesmo padrão que `broker/backends.py` já usa e que funciona bem), não como
 "Docker vs. processo local". SteamCMD nem entra aqui — SteamCMD só roda
 dentro do CT/container de jogo, nunca é chamado pelo painel nem pelo broker
-diretamente (é uma fase do instalador, `lib/ct-fases.sh`).
+diretamente (é uma fase do instalador, `lib/ct-phases.sh`).
 
 Os outros cinco princípios (src layout, camada HTTP fina, `services/`, adapter
 por jogo, `tasks/`, infra fora do código Python, `tests/` espelhado com
@@ -201,7 +201,7 @@ src/
           dayz.py
           dragonwilds.py
         catalog/                    # eixo diferente: sugestões p/ formulário "Adicionar jogo"
-          suggestions.py            # gerado por tools/importar-linuxgsm.py (era sugestoes_de_jogos.py)
+          suggestions.py            # gerado por tools/import-linuxgsm.py (era sugestoes_de_jogos.py)
           search.py                  # era busca_de_jogos.py
           templates.py                 # era modelos_de_jogo.py
 
@@ -300,11 +300,11 @@ tests/
   gamebroker/
     unit/
       services/
-      runtime/                           # usa runtime/fakes.py e http_falso (nome mantido — ver seção 4)
+      runtime/                           # usa runtime/fakes.py e fake_http (nome mantido — ver seção 4)
     integration/
   conftest.py                             # fixtures raiz compartilhadas (banco, webhooks, chefe/peao, entrar/postar)
 
-games/                                     # NÃO MOVE — catálogo curado, lido também por lib/ct-fases.sh (bash)
+games/                                     # NÃO MOVE — catálogo curado, lido também por lib/ct-phases.sh (bash)
 lib/                                        # NÃO MOVE — fases de instalação, bash puro
 tools/                                       # NÃO MOVE — scripts manuais de dev
 
@@ -315,8 +315,8 @@ deploy/                                       # NOVO — agrupa infra fora do c�
   broker/
     deploy-broker.ps1
     provision-broker-lxc.sh
-    verificar-broker-acesso.ps1            # ferramenta manual, mas do broker
-    spike-broker-escrita.ps1                # idem
+    check-broker-access.ps1            # ferramenta manual, mas do broker
+    spike-broker-write.ps1                # idem
   game/
     deploy-game.ps1
     deploy-docker.ps1
@@ -333,7 +333,7 @@ pyrightconfig.json                                # fica, só ajusta extraPaths/
 ### 2.1 Por que `games/` (dado), `lib/` e `tools/` não entram no `src/`
 
 Os três são lidos por **bash puro rodando fora de qualquer processo
-Python** (`provision-game-lxc.sh` no host Proxmox, `lib/ct-fases.sh` dentro do
+Python** (`provision-game-lxc.sh` no host Proxmox, `lib/ct-phases.sh` dentro do
 CT) ou são scripts de manutenção chamados manualmente, nunca importados por
 `gamepanel`/`gamebroker`. Colocá-los dentro de `src/` sugeriria que fazem
 parte do pacote Python, o que quebraria a expectativa de quem olha
@@ -345,7 +345,7 @@ configurado em `BROKER_GAMES_DIR` — isso não muda.
 
 - Já está isolado onde importa (processo próprio, HTTP-only, zero import
   cruzado — Fase 1, seção 2.3).
-- Os dois serviços **compartilham** `games/*.env`, `lib/ct-fases.sh` e os
+- Os dois serviços **compartilham** `games/*.env`, `lib/ct-phases.sh` e os
   scripts de deploy — versionar em repositórios separados criaria o problema
   clássico de "qual commit do broker combina com qual commit do painel",
   sem nenhum ganho de isolamento (o isolamento real já é o processo/CT, não
@@ -421,7 +421,7 @@ continuam sendo dois pontos de extensão, não um.
 | `admin/gamefields.py` | `gamepanel/games/base.py` + `gamepanel/games/adapters/*.py` | 5 dicts → 5 arquivos + 1 `Protocol` |
 | `admin/broker_client.py` | `gamepanel/integrations/broker_client.py` | puro/stdlib hoje, só muda de lugar |
 | `admin/totp.py`, `admin/qr.py` | `gamepanel/security/totp.py`, `gamepanel/security/qr.py` | puros hoje, só mudam de lugar |
-| `admin/busca_de_jogos.py`, `admin/modelos_de_jogo.py`, `admin/sugestoes_de_jogos.py` | `gamepanel/games/catalog/search.py`, `templates.py`, `suggestions.py` | `sugestoes_de_jogos.py` continua **gerado**, só muda o caminho de saída de `tools/importar-linuxgsm.py` |
+| `admin/busca_de_jogos.py`, `admin/modelos_de_jogo.py`, `admin/sugestoes_de_jogos.py` | `gamepanel/games/catalog/search.py`, `templates.py`, `suggestions.py` | `sugestoes_de_jogos.py` continua **gerado**, só muda o caminho de saída de `tools/import-linuxgsm.py` |
 | `admin/templates/`, `admin/static/` | `gamepanel/templates/`, `gamepanel/static/` (dentro de `src/gamepanel/`) | Flask resolve por padrão relativo ao pacote |
 | `admin/test_*.py` (14 arquivos) | `tests/gamepanel/{unit,integration}/...` | reorganização **em etapas** — ver seção 6, não é 1:1 imediato |
 | `admin/conftest.py` | `tests/conftest.py` (+ specializations em `tests/gamepanel/conftest.py` se necessário) | |
@@ -446,7 +446,7 @@ mudança de caminho + tradução de nome:
 | `broker/ssh_install.py` | `gamebroker/runtime/ssh_installer.py` |
 | `broker/rede.py` | `gamebroker/runtime/network.py` |
 | `broker/fakes.py` | `gamebroker/runtime/fakes.py` |
-| `broker/http_falso.py` | `gamebroker/runtime/http_fake_server.py` (só para teste) |
+| `broker/fake_http.py` | `gamebroker/runtime/http_fake_server.py` (só para teste) |
 | `broker/banco.py` | `gamebroker/persistence/db.py` |
 | `broker/conexao.py` | `gamebroker/integrations/http_client.py` |
 | `broker/config.py` | `gamebroker/config.py` |
@@ -533,7 +533,7 @@ inteiro, então faz mais sentido aprovar por grupo do que item a item):
 > **Estado (atualizado na execucao):** **A**, **B** e **D** foram feitos — a API do
 > broker fala ingles com uma camada de fio propria (`gamebroker/domain/wire.py`), e os
 > dois bancos tem migration de rename com teste que monta o esquema antigo a mao
-> (`tests/gamebroker/test_migracao.py`, `tests/gamepanel/test_schema.py`). Faltam **C**
+> (`tests/gamebroker/test_migration.py`, `tests/gamepanel/test_schema.py`). Faltam **C**
 > (rotas do painel, que ainda depende da preferencia sobre redirect), **E** e **F**.
 
 | # | Grupo | O que muda | Quem consome | Risco | Minha recomendação |
@@ -597,7 +597,7 @@ seco vs. redirect temporário). Vou perguntar isso já a seguir nesta mensagem.
   `app.ensure_server(...)` diretamente (achado do `CLAUDE.md`: "grep só nos
   `.py` não acha") — vira `gamepanel.cli.ensure_server`, e o heredoc precisa
   do import corrigido no mesmo commit que move `cli.py`.
-- **`lib/ct-fases.sh` e `provision-game-lxc.sh` leem `games/*.env` por
+- **`lib/ct-phases.sh` e `provision-game-lxc.sh` leem `games/*.env` por
   caminho relativo fixo** — como `games/` não move (seção 2.1), isso não
   quebra, mas vale confirmar que nenhum script novo tenta "arrumar" esse
   caminho por engano durante a Fase 3.
@@ -605,8 +605,8 @@ seco vs. redirect temporário). Vou perguntar isso já a seguir nesta mensagem.
   aprovado (seção 0), o `CLAUDE.md` precisa ser atualizado no mesmo commit
   que remove esse arquivo (ele mesmo pede pra manter `CLAUDE.md` como fonte
   de verdade dos comandos).
-- **`docker/ct-sandbox/comparar.sh`** compara o instalador antes/depois
-  lendo `provision-game-lxc.sh`/`lib/ct-fases.sh` por caminho fixo — como
+- **`docker/ct-sandbox/compare.sh`** compara o instalador antes/depois
+  lendo `provision-game-lxc.sh`/`lib/ct-phases.sh` por caminho fixo — como
   esses não movem, sem risco, mas é o primeiro lugar a rodar depois de
   qualquer mudança em `lib/` (o próprio `CLAUDE.md` já pede isso).
 
@@ -754,8 +754,8 @@ docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos san
   `runtime/`, `services/` e `tasks/` nunca entraram.
 - **API do painel versionada** (`/api/v1/...`), como a do broker.
 - **Quatro redes novas**, todas nascidas de defeito real encontrado durante a execução:
-  `test_contrato_template.py` (kwarg de `render_template` sem leitor),
-  `test_contrato_frontend.py` (classe x regra de CSS, `data-*` x leitor),
+  `test_template_contract.py` (kwarg de `render_template` sem leitor),
+  `test_frontend_contract.py` (classe x regra de CSS, `data-*` x leitor),
   `test_javascript.py` (o JS parseia, importa e MONTA) e `docker/ct-sandbox/release.sh`.
 
 ### O que sobra

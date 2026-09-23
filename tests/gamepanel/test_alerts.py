@@ -280,7 +280,7 @@ def test_job_velho_nao_segura_o_alerta_para_sempre(banco, alvo, webhooks):
 # jogo pode estar travado, caindo em loop ou cuspindo erro no log com o systemd achando
 # que esta tudo bem — e ate aqui nada disso virava alerta.
 
-def test_servico_em_failed_avisa_que_quebrou(banco, alvo, webhooks):
+def test_instance_service_em_failed_avisa_que_quebrou(banco, alvo, webhooks):
     liga(banco, ["caiu", "quebrou"])
     panel._state_alert(banco, alvo, state(service="failed", result="exit-code"),
                             state(service="active"))
@@ -371,7 +371,7 @@ def test_voltar_a_responder_avisa_uma_vez(banco, alvo, webhooks, monkeypatch):
     assert len(webhooks) == 1, "e nao fica repetindo o alivio"
 
 
-def test_servico_subindo_nao_conta_como_mudez(banco, alvo, webhooks, monkeypatch):
+def test_instance_service_subindo_nao_conta_como_mudez(banco, alvo, webhooks, monkeypatch):
     """Jogo carregando mapa nao responde e nao pode virar alerta: a contagem so comeca
     com o servico ativo e fora da janela de silencio."""
     liga(banco, ["travou", "respondeu"])
@@ -482,7 +482,7 @@ def test_contagem_numerica_sem_nomes_avisa_variacao(banco, srv_jogadores, webhoo
     assert "3 jogadores conectaram" in webhooks[0][1]
 
 
-def test_servico_parado_nao_dispara_alerta_de_saida_e_reseta(banco, srv_jogadores, webhooks):
+def test_instance_service_parado_nao_dispara_alerta_de_saida_e_reseta(banco, srv_jogadores, webhooks):
     cfg = _cfg(banco, ["jogador-entrou", "jogador-saiu"])
     memoria = {"reachable": True, "service": "active",
                "jogadores_nomes": {"Cristopfer"}, "jogadores_count": 1}
@@ -955,7 +955,7 @@ def test_regex_novo_derruba_a_conexao_antiga(banco, supervisor_falso):
     assert len(criados) == 2, "e abre outra no lugar"
 
 
-def test_conexao_morta_e_levantada_de_novo(banco, supervisor_falso):
+def test_http_client_morta_e_levantada_de_novo(banco, supervisor_falso):
     """Conexao que morreu sozinha (servidor reiniciou, rede caiu) volta na proxima volta."""
     criados = supervisor_falso
     with panel.app.app_context():

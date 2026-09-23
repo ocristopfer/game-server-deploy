@@ -151,7 +151,7 @@ def test_mensagem_de_erro_e_limitada(servidor):
     assert len(error.value.message) <= 300
 
 
-def test_conexao_recusada_nao_vaza_o_token(servidor):
+def test_http_client_recusada_nao_vaza_o_token(servidor):
     servidor.parar()
     with pytest.raises(bc.BrokerError) as error:
         bc.health()

@@ -10,7 +10,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from http_falso import ServidorFalso
+from fake_http import ServidorFalso
 
 from gamebroker.integrations.http_client import RESPOSTA_MAX, Client, ConnectionFailed, normalize_fingerprint
 
@@ -71,7 +71,7 @@ def test_erro_sem_corpo_devolve_o_motivo_da_linha_de_status():
     assert "VM.Allocate" in resposta.text
 
 
-def test_conexao_recusada_nao_vaza_o_token(eco):
+def test_http_client_recusada_nao_vaza_o_token(eco):
     porta_morta = eco.url
     eco.stop()
     cliente = Client(porta_morta, {"Authorization": f"Bearer {TOKEN}"})

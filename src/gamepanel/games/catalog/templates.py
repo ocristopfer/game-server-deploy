@@ -6,7 +6,7 @@ para a pessoa so completar o que muda (nome, app id, nome da pasta do projeto). 
 valida de verdade continua sendo o broker — o modelo nao da poder nenhum, so poupa
 digitacao e o erro de esquecer um marcador.
 
-Puro de proposito (sem Flask, sem banco), como `ui.py`: e dado, e o `broker/test_modelos.py`
+Puro de proposito (sem Flask, sem banco), como `ui.py`: e dado, e o `broker/test_templates.py`
 carrega este arquivo e confere que cada modelo passa no validador do broker.
 
 Os nomes das chaves de `valores` sao os `name=` dos campos do formulario.

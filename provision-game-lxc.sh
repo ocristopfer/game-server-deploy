@@ -67,14 +67,14 @@ install_helper() {
 }
 
 # Fases que rodam DENTRO do CT (pacotes, SteamCMD, Wine/Proton, jogo, systemd). Vivem em
-# lib/ct-fases.sh porque o broker roda as MESMAS fases por outro transporte (ver o topo
+# lib/ct-phases.sh porque o broker roda as MESMAS fases por outro transporte (ver o topo
 # daquele arquivo). Este script so define o transporte: `pct exec`.
 # O bundle do deploy-game.ps1 e uma pasta SEM subpastas (o scp leva so arquivos soltos),
 # entao la a lib vem ao lado do script; no repositorio ela mora em lib/.
-LIB_FASES="${SCRIPT_DIR}/ct-fases.sh"
-[[ -f "$LIB_FASES" ]] || LIB_FASES="${SCRIPT_DIR}/lib/ct-fases.sh"
-[[ -f "$LIB_FASES" ]] || die "ct-fases.sh nao encontrado ao lado do script nem em lib/ (o bundle do deploy precisa leva-lo)"
-# shellcheck source=lib/ct-fases.sh
+LIB_FASES="${SCRIPT_DIR}/ct-phases.sh"
+[[ -f "$LIB_FASES" ]] || LIB_FASES="${SCRIPT_DIR}/lib/ct-phases.sh"
+[[ -f "$LIB_FASES" ]] || die "ct-phases.sh nao encontrado ao lado do script nem em lib/ (o bundle do deploy precisa leva-lo)"
+# shellcheck source=lib/ct-phases.sh
 source "$LIB_FASES"
 
 resolve_variables() {

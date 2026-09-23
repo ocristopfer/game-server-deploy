@@ -1,6 +1,6 @@
 """Sugestoes de jogo para o formulario "Adicionar jogo" — GERADO, NAO EDITE.
 
-Gerado por tools/importar-linuxgsm.py a partir do LinuxGSM (MIT). Para atualizar, rode
+Gerado por tools/import-linuxgsm.py a partir do LinuxGSM (MIT). Para atualizar, rode
 o script e revise o diff: cada linha aqui e uma sugestao que o broker valida de novo.
 """
 SOURCE = "LinuxGSM (MIT), gerado em 2026-09-21"

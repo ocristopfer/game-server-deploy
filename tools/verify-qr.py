@@ -7,7 +7,7 @@ sempre que mexer em `qr.py`, numa venv descartavel:
 
     python -m venv /tmp/verifica-qr
     /tmp/verifica-qr/Scripts/pip install opencv-python-headless segno   # so aqui, nunca no .venv do repo
-    /tmp/verifica-qr/Scripts/python tools/verificar-qr.py
+    /tmp/verifica-qr/Scripts/python tools/verify-qr.py
 
 O que confere: o SVG desenhado por `qr.matrix()` decodifica de volta ao texto original pelo
 `cv2.QRCodeDetector` (o mesmo motor de uma camera de celular) em textos curtos, longos, com

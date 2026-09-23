@@ -70,7 +70,7 @@ def test_usuario_ssh_invalido_e_recusado(user):
     assert any("Usuario SSH" in e for e in errors)
 
 
-def test_servico_sem_sufixo_ganha_o_sufixo():
+def test_instance_service_sem_sufixo_ganha_o_sufixo():
     """Ninguem deveria ser incomodado por esquecer '.service'."""
     data, errors = valida(service="dragonwilds")
     assert errors == []
@@ -78,7 +78,7 @@ def test_servico_sem_sufixo_ganha_o_sufixo():
 
 
 @pytest.mark.parametrize("service", ["", "com espaco.service", "/etc/passwd"])
-def test_servico_invalido_e_recusado(service):
+def test_instance_service_invalido_e_recusado(service):
     _dados, errors = valida(service=service)
     assert any("Servico invalido" in e for e in errors)
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Instala um jogo DENTRO do proprio container (transporte local). E o que o broker roda por
-# SSH depois de criar o CT: ele envia este arquivo, o ct-fases.sh e um install.env, e executa
+# SSH depois de criar o CT: ele envia este arquivo, o ct-phases.sh e um install.env, e executa
 #
 #     bash ct-install.sh install.env
 #
-# As fases sao as MESMAS do deploy manual (lib/ct-fases.sh, lida tambem pelo
+# As fases sao as MESMAS do deploy manual (lib/ct-phases.sh, lida tambem pelo
 # provision-game-lxc.sh no host Proxmox); so o transporte muda: la e `pct exec`, aqui e um
 # `bash -lc` local. O install.env e gerado pelo broker com aspas em todo valor (nunca e
 # concatenado numa linha de comando), e nunca traz credencial de conta Steam.
@@ -51,14 +51,14 @@ install_helper() {
   run_ct "ln -sfn /usr/local/bin/${name} /usr/bin/${name}"
 }
 
-LIB_FASES="${SCRIPT_DIR}/ct-fases.sh"
-[[ -f "$LIB_FASES" ]] || die "ct-fases.sh nao encontrado ao lado de $0"
+LIB_FASES="${SCRIPT_DIR}/ct-phases.sh"
+[[ -f "$LIB_FASES" ]] || die "ct-phases.sh nao encontrado ao lado de $0"
 [[ -f "$INSTALL_ENV" ]] || die "Arquivo de ambiente nao encontrado: $INSTALL_ENV"
 set -a
 # shellcheck disable=SC1090
 source "$INSTALL_ENV"
 set +a
-# shellcheck source=lib/ct-fases.sh
+# shellcheck source=lib/ct-phases.sh
 source "$LIB_FASES"
 
 main() {

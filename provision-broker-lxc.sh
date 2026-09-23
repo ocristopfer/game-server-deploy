@@ -20,7 +20,7 @@ CONF_DIR=/etc/gamebroker
 DATA_DIR=/var/lib/gamebroker
 APP_USER=gamebroker
 # Modulos que ficam FORA do CT de producao: dobles de teste e o broker de brinquedo do compose.
-NAO_ENVIAR='^(test_.*|conftest|fakes|http_falso|dev)\.py$'
+NAO_ENVIAR='^(test_.*|conftest|fakes|fake_http|dev)\.py$'
 
 msg() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m[aviso]\033[0m %s\n' "$*"; }
@@ -113,7 +113,7 @@ validate_bundle() {
   [[ -n "${RELEASE_SHA256:-}" ]] || die "RELEASE_SHA256 vazio em $RELEASE_ENV_FILE"
   [[ -f "$SCRIPT_DIR/$RELEASE_TARBALL" ]] || die "release nao encontrado no bundle: $RELEASE_TARBALL"
   # lib/ e games/ continuam soltos no bundle: sao dados, nao o pacote Python.
-  [[ -f "$SCRIPT_DIR/lib/ct-install.sh" && -f "$SCRIPT_DIR/lib/ct-fases.sh" ]] || die "lib/ct-install.sh e lib/ct-fases.sh sao obrigatorios no bundle"
+  [[ -f "$SCRIPT_DIR/lib/ct-install.sh" && -f "$SCRIPT_DIR/lib/ct-phases.sh" ]] || die "lib/ct-install.sh e lib/ct-phases.sh sao obrigatorios no bundle"
   compgen -G "$SCRIPT_DIR/games/*.env" >/dev/null || die "games/*.env nao encontrado no bundle"
 }
 
@@ -315,7 +315,7 @@ resolve_panel_pubkey() {
 
 # Impressao SHA-256 do certificado de um servidor https, lida do host. TOFU: confia no que o
 # servidor apresenta AGORA e fixa. O resumo imprime as duas para voce conferir com o que o
-# navegador mostra (ou com o verificar-broker-acesso.ps1).
+# navegador mostra (ou com o check-broker-access.ps1).
 fingerprint_of() {
   local url="$1" hostport host port
   hostport="${url#*://}"; hostport="${hostport%%/*}"
@@ -332,12 +332,12 @@ resolve_upstream_fingerprints() {
   OPNSENSE_CERT_SHA256="${OPNSENSE_CERT_SHA256:-}"
   if [[ -z "$PROXMOX_CERT_SHA256" && "$PROXMOX_URL" == https://* ]]; then
     PROXMOX_CERT_SHA256="$(fingerprint_of "$PROXMOX_URL")"
-    [[ -n "$PROXMOX_CERT_SHA256" ]] || die "O host Proxmox nao conseguiu ler o certificado de $PROXMOX_URL (firewall?). Defina PROXMOX_CERT_SHA256 no broker.secrets.env: o verificar-broker-acesso.ps1 imprime a impressao a partir da sua maquina"
+    [[ -n "$PROXMOX_CERT_SHA256" ]] || die "O host Proxmox nao conseguiu ler o certificado de $PROXMOX_URL (firewall?). Defina PROXMOX_CERT_SHA256 no broker.secrets.env: o check-broker-access.ps1 imprime a impressao a partir da sua maquina"
     FIXOU_PROXMOX=1
   fi
   if [[ -z "$OPNSENSE_CERT_SHA256" && "$OPNSENSE_URL" == https://* ]]; then
     OPNSENSE_CERT_SHA256="$(fingerprint_of "$OPNSENSE_URL")"
-    [[ -n "$OPNSENSE_CERT_SHA256" ]] || die "O host Proxmox nao conseguiu ler o certificado de $OPNSENSE_URL (firewall?). Defina OPNSENSE_CERT_SHA256 no broker.secrets.env: o verificar-broker-acesso.ps1 imprime a impressao a partir da sua maquina"
+    [[ -n "$OPNSENSE_CERT_SHA256" ]] || die "O host Proxmox nao conseguiu ler o certificado de $OPNSENSE_URL (firewall?). Defina OPNSENSE_CERT_SHA256 no broker.secrets.env: o check-broker-access.ps1 imprime a impressao a partir da sua maquina"
     FIXOU_OPNSENSE=1
   fi
 }

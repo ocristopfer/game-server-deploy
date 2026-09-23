@@ -499,11 +499,11 @@ function Write-LfFile([string]$Path, [string]$Content) {
 # que nao depende da Steam). Sem a chave, comportamento identico ao de sempre.
 $ProvisionScript = Get-Cfg $game "PROVISION_SCRIPT" "provision-game-lxc.sh"
 Copy-Item (Join-Path $ScriptDir $ProvisionScript) (Join-Path $BundleDir $ProvisionScript)
-# As fases que rodam dentro do CT (SteamCMD, Wine/Proton, systemd) moram em lib/ct-fases.sh,
+# As fases que rodam dentro do CT (SteamCMD, Wine/Proton, systemd) moram em lib/ct-phases.sh,
 # que o provision-game-lxc.sh le com `source`. O bundle e uma pasta sem subpastas (o scp leva
 # so arquivos soltos), entao ela viaja ao lado do script. LF garantido: e lida pelo bash.
 if ($ProvisionScript -eq "provision-game-lxc.sh") {
-    Write-LfFile (Join-Path $BundleDir "ct-fases.sh") ([System.IO.File]::ReadAllText((Join-Path $ScriptDir "lib\ct-fases.sh")))
+    Write-LfFile (Join-Path $BundleDir "ct-phases.sh") ([System.IO.File]::ReadAllText((Join-Path $ScriptDir "lib\ct-phases.sh")))
 }
 Write-LfFile (Join-Path $BundleDir "game.env") $GameEnvContent
 

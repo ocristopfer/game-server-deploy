@@ -5,8 +5,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from http_falso import KEY_OPN, SECRET_OPN, TOKEN_PVE
-from test_ssh_install import BLOB, CHAVE_PUBLICA, ExecutorFalso
+from fake_http import KEY_OPN, SECRET_OPN, TOKEN_PVE
+from test_ssh_installer import BLOB, CHAVE_PUBLICA, ExecutorFalso
 
 import gamebroker.wsgi as prod
 from gamebroker.config import ConfigError, load
@@ -26,7 +26,7 @@ def env(tmp_path: Path, pasta_de_jogos: Path) -> dict[str, str]:
     (ssh / "id_ed25519.pub").write_text(CHAVE_PUBLICA + "\n", encoding="utf-8")
     lib = tmp_path / "lib"
     lib.mkdir()
-    for nome in ("ct-install.sh", "ct-fases.sh"):
+    for nome in ("ct-install.sh", "ct-phases.sh"):
         (lib / nome).write_text("#!/bin/bash\n")
     return {
         "BROKER_TOKEN": TOKEN_BROKER, "BROKER_ALLOW_IPS": "192.168.2.19",
@@ -180,8 +180,8 @@ def test_chave_publica_do_broker_ausente_e_problema(env):
 
 
 def test_pasta_lib_incompleta(env):
-    (Path(env["BROKER_LIB_DIR"]) / "ct-fases.sh").unlink()
-    with pytest.raises(ConfigError, match=r"BROKER_LIB_DIR: .*ct-fases\.sh"):
+    (Path(env["BROKER_LIB_DIR"]) / "ct-phases.sh").unlink()
+    with pytest.raises(ConfigError, match=r"BROKER_LIB_DIR: .*ct-phases.sh"):
         load(env)
 
 

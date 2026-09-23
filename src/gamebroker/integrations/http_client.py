@@ -44,7 +44,7 @@ class Response:
 
 
 def normalize_fingerprint(text: str) -> str:
-    """Aceita `9F:92:...` (como o verificar-broker-acesso.ps1 imprime) ou hex corrido."""
+    """Aceita `9F:92:...` (como o check-broker-access.ps1 imprime) ou hex corrido."""
     if not text.strip():
         return ""
     clean = re.sub(r"[^0-9a-fA-F]", "", text).lower()

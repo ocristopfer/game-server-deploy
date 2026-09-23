@@ -1,6 +1,6 @@
 """O contrato entre template, CSS e JavaScript: quem escreve e quem le.
 
-Mesma familia de defeito que o `test_contrato_template.py` guarda, e pelo mesmo motivo:
+Mesma familia de defeito que o `test_template_contract.py` guarda, e pelo mesmo motivo:
 o nome existe como TEXTO dos dois lados e nenhuma ferramenta liga os dois.
 
 - uma classe so no `class=` e estilo que nunca chega — a tela abre torta, com 200;

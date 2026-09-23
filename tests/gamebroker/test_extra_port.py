@@ -57,7 +57,7 @@ def test_install_env_leva_a_porta_sorteada_e_o_jogo_recebe_o_argumento(satisfact
     v = _valores(build_env(satisfactory, ports))
     assert v["GAME_PORT"] == "31000"
     assert v["EXTRA_PORT"] == "31001"
-    assert "{EXTRA_PORT}" in v["START_ARGS"], "quem troca o marcador e o ct-fases.sh, dentro do CT"
+    assert "{EXTRA_PORT}" in v["START_ARGS"], "quem troca o marcador e o ct-phases.sh, dentro do CT"
 
 
 def test_jogo_sem_porta_extra_recebe_extra_zero(dados_de_jogo):
@@ -92,7 +92,7 @@ def test_publico_mostra_a_porta_extra(com_extra):
     ({"extra_port": "8888"}, "extra_port"),             # tem de ser numero
     ({"start_args": "-port={PORT} -queryport={QUERY_PORT}"}, "shiftable"),   # falta o marcador
 ])
-def test_porta_extra_invalida_e_recusada(com_extra, mudancas, campo):
+def test_extra_port_invalida_e_recusada(com_extra, mudancas, campo):
     com_extra.update(mudancas)
     with pytest.raises(ValidationError) as error:
         cat.validate_dynamic(com_extra)

@@ -9,10 +9,10 @@ envia — quem decide o que e valido continua sendo o broker.
 Roda na maquina de desenvolvimento (precisa de internet); o painel em producao NAO baixa nada:
 le o arquivo gerado, que vai no repositorio.
 
-    python tools/importar-linuxgsm.py                    # baixa do GitHub
-    python tools/importar-linuxgsm.py --de PASTA         # usa uma copia local (serverlist.csv + <jogo>.cfg)
+    python tools/import-linuxgsm.py                    # baixa do GitHub
+    python tools/import-linuxgsm.py --de PASTA         # usa uma copia local (serverlist.csv + <jogo>.cfg)
 
-Regras de seguranca (cada uma tem teste em broker/test_importar_linuxgsm.py):
+Regras de seguranca (cada uma tem teste em broker/test_import_linuxgsm.py):
 
 - So sai sugestao que o broker aceitaria: o filtro final e o proprio `validate_dynamic`.
 - Porta de RCON, telnet, HTTP e SourceTV NUNCA vira porta exposta: o valor padrao vai so nos
@@ -309,7 +309,7 @@ def escrever(sugestoes: list[dict], saida: pathlib.Path) -> None:
                     for s in sugestoes)
     texto = (
         '"""Sugestoes de jogo para o formulario "Adicionar jogo" — GERADO, NAO EDITE.\n\n'
-        "Gerado por tools/importar-linuxgsm.py a partir do LinuxGSM (MIT). Para atualizar, rode\n"
+        "Gerado por tools/import-linuxgsm.py a partir do LinuxGSM (MIT). Para atualizar, rode\n"
         "o script e revise o diff: cada linha aqui e uma sugestao que o broker valida de novo.\n"
         '"""\n'
         f'SOURCE = "LinuxGSM (MIT), gerado em {datetime.date.today().isoformat()}"\n\n'

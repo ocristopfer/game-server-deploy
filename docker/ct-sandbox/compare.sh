@@ -8,8 +8,8 @@
 #     com o que o lib/ct-install.sh (transporte local, o do broker) gera. Sao as MESMAS fases;
 #     se divergirem, o deploy manual e o do broker deixaram de ser equivalentes.
 #
-#   docker/ct-sandbox/comparar.sh
-#   BASE_REF=main docker/ct-sandbox/comparar.sh
+#   docker/ct-sandbox/compare.sh
+#   BASE_REF=main docker/ct-sandbox/compare.sh
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo_root"
@@ -19,15 +19,23 @@ work="$repo_root/docker/ct-sandbox/.work"
 cd "$repo_root"; rm -rf "$work"; mkdir -p "$work/orig/lib" "$work/novo" "$work/inst" "$work/games" "$work/out"
 
 git show "$BASE_REF:provision-game-lxc.sh" > "$work/orig/provision-game-lxc.sh"
-# A referencia pode ser anterior a lib/ (o `>` criaria o arquivo vazio antes do git falhar).
-if git cat-file -e "$BASE_REF:lib/ct-fases.sh" 2>/dev/null; then
-  git show "$BASE_REF:lib/ct-fases.sh" > "$work/orig/ct-fases.sh"
-fi
+# A referencia pode ser anterior a lib/ (o `>` criaria o arquivo vazio antes do git
+# falhar) e, se for anterior a traducao dos nomes, a lib ainda se chamava `ct-fases.sh`.
+# O nome ANTIGO tambem e procurado: sem isso, comparar contra um commit de antes do
+# rename rodaria a referencia sem lib nenhuma e acusaria diferenca em todos os jogos.
+# E o arquivo e gravado com o nome que a REFERENCIA usa, nao com o de hoje: quem o le
+# la e o provision-game-lxc.sh daquele commit, e ele procura pelo nome que conhecia.
+for candidate in ct-phases.sh ct-fases.sh; do
+  if git cat-file -e "$BASE_REF:lib/${candidate}" 2>/dev/null; then
+    git show "$BASE_REF:lib/${candidate}" > "$work/orig/${candidate}"
+    break
+  fi
+done
 rmdir "$work/orig/lib"
 cp provision-game-lxc.sh "$work/novo/"
 # Layout REAL do bundle do deploy-game.ps1: sem subpastas, a lib solta ao lado do script.
-cp lib/ct-fases.sh "$work/novo/ct-fases.sh"
-cp lib/ct-install.sh lib/ct-fases.sh "$work/inst/"
+cp lib/ct-phases.sh "$work/novo/ct-phases.sh"
+cp lib/ct-install.sh lib/ct-phases.sh "$work/inst/"
 cp games/*.env "$work/games/"
 # O script da referencia (antes desta mudanca) nao conhece {EXTRA_PORT}: com o games/satisfactory.env
 # de hoje ele deixaria o marcador literal no ExecStart. Para o guarda "antes x depois" continuar

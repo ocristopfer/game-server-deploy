@@ -1,7 +1,7 @@
-# Sandbox para PROVAR que uma mudanca nos instaladores (provision-game-lxc.sh, lib/ct-fases.sh,
+# Sandbox para PROVAR que uma mudanca nos instaladores (provision-game-lxc.sh, lib/ct-phases.sh,
 # lib/ct-install.sh, provision-broker-lxc.sh) faz o que deveria. O "CT" e o proprio container;
 # pct, systemctl, apt-get, curl e o SteamCMD sao falsos e so registram o que receberam. Nada
-# sai para a rede. Uso: docker/ct-sandbox/comparar.sh  e  docker/ct-sandbox/broker.sh
+# sai para a rede. Uso: docker/ct-sandbox/compare.sh  e  docker/ct-sandbox/broker.sh
 FROM debian:13-slim
 # openssl/openssh-client/python3-flask: o provisionamento do broker gera certificado e chave de
 # verdade e importa o pacote `broker` de verdade (o import quebra se faltar arquivo no bundle).

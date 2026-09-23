@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Testes do leitor/gravador de configuracao (gameconf.py).
 
-    pytest admin/test_gameconf.py
+    pytest admin/test_config_format.py
 
 O que cada teste garante e o combinado da tela "Configuracao": mexer numa chave nao
 pode reescrever o arquivo inteiro, perder comentario nem estragar as chaves vizinhas.

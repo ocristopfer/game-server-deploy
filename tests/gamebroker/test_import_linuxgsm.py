@@ -1,4 +1,4 @@
-"""tools/importar-linuxgsm.py: o que sai dele vira sugestao no formulario, e o LinuxGSM e um
+"""tools/import-linuxgsm.py: o que sai dele vira sugestao no formulario, e o LinuxGSM e um
 arquivo de terceiros. Cada regra de seguranca do conversor tem um caso aqui."""
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 from gamebroker.services.catalog import KEY_RE, NAME_RE
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
-_spec = importlib.util.spec_from_file_location("importar_linuxgsm", RAIZ / "tools" / "importar-linuxgsm.py")
+_spec = importlib.util.spec_from_file_location("importar_linuxgsm", RAIZ / "tools" / "import-linuxgsm.py")
 imp = importlib.util.module_from_spec(_spec)
 sys.modules["importar_linuxgsm"] = imp
 _spec.loader.exec_module(imp)

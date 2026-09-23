@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Busca de jogo por nome ou App ID, para preencher o formulario "Adicionar jogo".
 
-Le `sugestoes_de_jogos.py` (gerado por tools/importar-linuxgsm.py, entra no repositorio): o
+Le `sugestoes_de_jogos.py` (gerado por tools/import-linuxgsm.py, entra no repositorio): o
 painel em producao nao consulta nada na internet, entao nao ha SSRF nem dependencia de terceiro
 em tempo de uso. Puro como `ui.py`: sem Flask, sem banco.
 

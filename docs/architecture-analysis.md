@@ -49,9 +49,9 @@
 | `broker/` | Serviço HTTP separado (pacote Python próprio, `__init__.py`). Cria/desativa/remove instâncias de jogo via API do Proxmox e abre/fecha portas via API do OPNsense. Guarda as credenciais que o painel nunca vê. |
 | `games/` | Catálogo **curado** de jogos: um `.env` declarativo por jogo (`dayz.env`, `palworld.env`, ...), lido por `broker/catalogo.py` com parser próprio (nunca `source`/shell). |
 | `docker/` | Seis subpastas, com papéis bem diferentes entre si (ver seção 3): ambiente de **dev** (`panel/`, `broker/`, `game/`), runtime de **produção alternativa** (`gameserver/`, usada por `deploy-docker.ps1`), e ambiente de **teste** (`ct-sandbox/`, compara o instalador antes/depois de mudanças). |
-| `lib/` | Duas fases de instalação de jogo (`ct-fases.sh`, `ct-install.sh`) compartilhadas entre o caminho Proxmox (host, via `pct exec`) e o caminho broker (dentro do CT, via SSH). |
-| `tools/` | Scripts manuais de desenvolvimento: `importar-linuxgsm.py` (gera `admin/sugestoes_de_jogos.py`) e `verificar-qr.py` (valida `admin/qr.py` contra um leitor real de QR). Nenhum dos dois roda em produção nem no pytest. |
-| `*.ps1` na raiz (`deploy-*.ps1`, `verificar-broker-acesso.ps1`, `spike-broker-escrita.ps1`) | Scripts de deploy (Proxmox e Docker) e duas ferramentas manuais de diagnóstico/prova de acesso — nenhuma delas chamada pelo deploy automatizado. |
+| `lib/` | Duas fases de instalação de jogo (`ct-phases.sh`, `ct-install.sh`) compartilhadas entre o caminho Proxmox (host, via `pct exec`) e o caminho broker (dentro do CT, via SSH). |
+| `tools/` | Scripts manuais de desenvolvimento: `import-linuxgsm.py` (gera `admin/sugestoes_de_jogos.py`) e `verify-qr.py` (valida `admin/qr.py` contra um leitor real de QR). Nenhum dos dois roda em produção nem no pytest. |
+| `*.ps1` na raiz (`deploy-*.ps1`, `check-broker-access.ps1`, `spike-broker-write.ps1`) | Scripts de deploy (Proxmox e Docker) e duas ferramentas manuais de diagnóstico/prova de acesso — nenhuma delas chamada pelo deploy automatizado. |
 | `*.sh` na raiz (`provision-*.sh`) | Scripts que rodam **no host Proxmox** (enviados por `pct push`/scp pelos `.ps1`) para provisionar CTs: painel, broker, jogo (via Steam) e TeamSpeak (caminho próprio, não vem da Steam). |
 | `pytest.ini`, `pyrightconfig.json` | Config de teste (raiz, cobre `admin/` e `broker/`) e config do editor (Pylance/Pyright) — não afetam o runtime. |
 | `.env` / `.env.example` (raiz) | Config de **deploy-time** (Proxmox/Docker) — não é o que o processo Python lê em produção (ver seção 3 e 7). |
@@ -73,7 +73,7 @@ local; não precisa entrar no mapeamento da Fase 2.
 | `qr.py` | 301 | Gerador de QR code (ISO 18004) implementado do zero, sem libs externas. |
 | `busca_de_jogos.py` | 62 | Busca por nome/App ID sobre o catálogo gerado. |
 | `modelos_de_jogo.py` | 68 | Modelo estático "Unreal Linux" para pré-preencher o formulário de catálogo. |
-| `sugestoes_de_jogos.py` | 1.811 | **Gerado** por `tools/importar-linuxgsm.py` — dado estático, não editar à mão. |
+| `sugestoes_de_jogos.py` | 1.811 | **Gerado** por `tools/import-linuxgsm.py` — dado estático, não editar à mão. |
 
 ### 1.2 `broker/` — arquivo por arquivo
 
@@ -88,7 +88,7 @@ local; não precisa entrar no mapeamento da Fase 2.
 | `ssh_install.py` | 253 | Implementação real de `Instalador`: `ssh`/`scp`, `install.env` sempre `shlex.quote`, remove a própria chave ao final. |
 | `rede.py` | 25 | Implementação real de `Rede` (ping). |
 | `fakes.py` | 101 | Os quatro backends falsos (testes e `dev.py`). |
-| `http_falso.py` | 259 | Servidores HTTP falsos que reproduzem regras reais do Proxmox/OPNsense descobertas em spike. |
+| `fake_http.py` | 259 | Servidores HTTP falsos que reproduzem regras reais do Proxmox/OPNsense descobertas em spike. |
 | `catalogo.py` | 546 | O maior arquivo do pacote. Parser de `.env` sem shell, catálogo curado + dinâmico, persistência JSON atômica. |
 | `alocador.py` | 120 | Funções puras: escolher CTID/IP, alocar portas. |
 | `conexao.py` | 144 | Cliente HTTP stdlib com TLS pinado por SHA-256 — usado por `proxmox.py` e `opnsense.py`. |
@@ -244,7 +244,7 @@ Isto é o achado mais relevante para o desenho da Fase 2:
    uma camada de abstração de "como controlar o processo do jogo" com duas
    implementações.
 
-As duas compartilham as fases de instalação via `lib/ct-fases.sh` /
+As duas compartilham as fases de instalação via `lib/ct-phases.sh` /
 `lib/ct-install.sh` (rodadas por `provision-game-lxc.sh` no host e por
 `ssh_install.py` do broker dentro do CT). TeamSpeak é o único jogo com
 provisionamento **totalmente à parte** (`provision-teamspeak-lxc.sh`, porque
@@ -300,9 +300,9 @@ próprio `CLAUDE.md` pede.
 | `admin/test_qr.py` | 21 | Propriedades matemáticas do QR (Reed-Solomon) |
 | `admin/test_charts.py` | 20 | Amostras/retenção/matemática do SVG |
 | `admin/test_schedules.py` | 18 | Agendamento e histórico |
-| `admin/test_gameconf.py` | 15 | Parser/gravador de config |
+| `admin/test_config_format.py` | 15 | Parser/gravador de config |
 | `admin/test_totp.py` | 15 | TOTP isolado |
-| `admin/test_busca.py` | 12 | Busca de jogo |
+| `admin/test_search.py` | 12 | Busca de jogo |
 | `admin/test_gamefields.py` | 11 | Catálogo de campos |
 | `admin/test_ui.py` | 8 | Mapa de navegação |
 | `broker/test_*.py` (12 arquivos) | ~415 | Alocação, config, catálogo, conexão, integração, Proxmox/OPNsense reais contra HTTP falso, importação do LinuxGSM, instalador SSH, modelos, porta extra, serviço, sugestões |
@@ -334,7 +334,7 @@ ao CRUD de servidor (`server_new`/`server_edit`/`server_delete`,
 **Nada que eu classificaria como "abandonado"** — o achado mais parecido com
 isso (`docker/gameserver/` vs `docker/game/`) na verdade **não é** duplicação
 morta; são dois runtimes ativos e documentados (ver seção 3.3). Da mesma
-forma, `verificar-broker-acesso.ps1` e `spike-broker-escrita.ps1` parecem à
+forma, `check-broker-access.ps1` e `spike-broker-write.ps1` parecem à
 primeira vista "scripts soltos", mas são **ferramentas manuais de diagnóstico
 intencionais**, referenciadas no texto de erro do `provision-broker-lxc.sh` e
 não chamadas pelo deploy automatizado — não são código morto, são scripts de
@@ -360,7 +360,7 @@ Achados reais de duplicação/pontos de atenção:
   unificar na Fase 2, justamente por ser isolamento de segurança deliberado.
 - **~150 linhas de boilerplate de CT duplicadas** entre
   `provision-game-lxc.sh` e `provision-teamspeak-lxc.sh` (também presente com
-  variações em `lib/ct-fases.sh`) — deliberado (isolamento de risco), mas é o
+  variações em `lib/ct-phases.sh`) — deliberado (isolamento de risco), mas é o
   maior bloco de duplicação real do repositório.
 - **Nenhum `TODO`/`FIXME`/`XXX`/`HACK`** encontrado em `admin/*.py` nem em
   `broker/*.py` (grep vazio nos dois). Nenhum bloco de código comentado
@@ -383,7 +383,7 @@ alterado.
 único arquivo GERADO**: `admin/sugestoes_de_jogos.py` — `ISC004`
 ("implicit string concatenation"), disparado pelas listas de avisos em
 múltiplas linhas do catálogo importado do LinuxGSM. Esse arquivo é gerado por
-`tools/importar-linuxgsm.py` e o próprio `CLAUDE.md` já diz "não edite" —
+`tools/import-linuxgsm.py` e o próprio `CLAUDE.md` já diz "não edite" —
 qualquer config de lint real precisa excluí-lo (ou excluir o gerador de rodar
 lint nele).
 
@@ -439,7 +439,7 @@ lugar nenhum ainda) se agrupam em:
   para a Fase 4: ao tipar esse código, vale considerar `TypedDict` ou
   validação explícita campo a campo em vez de `**dict[str, object]`.
   Mesmo padrão em `broker/prod.py:47`.
-- `test_sugestoes.py`/`test_modelos.py`/`test_importar_linuxgsm.py` — erros
+- `test_suggestions.py`/`test_templates.py`/`test_import_linuxgsm.py` — erros
   em torno de `importlib.util.module_from_spec(...)` sem checar `None`; é um
   idiom comum de teste (import dinâmico de módulo por path) e provavelmente
   fica melhor com um `# type: ignore` pontual do que reescrito.
@@ -514,7 +514,7 @@ quebra testes que usam `monkeypatch.setattr(panel, "nome", ...)` por string)
 
 **`broker/` inteiro** (a esmagadora maioria do pacote): módulos
 `alocador.py`, `servico.py`, `catalogo.py`, `conexao.py`, `rede.py`,
-`erros.py`, `fakes.py`, `http_falso.py`; classes `Servico`, `Catalogo`,
+`erros.py`, `fakes.py`, `fake_http.py`; classes `Servico`, `Catalogo`,
 `Jogo`, `Porta`, `PortaAlocada`, `EspecificacaoDeCt`, `ConfigBroker`,
 `ConfigProxmox`, `ConfigSsh`, `Banco`, `Cliente`, `RedeReal`/`Falsa`,
 `ProxmoxFalso`, `OpnsenseFalso`, `InstaladorFalso`/`Ssh`/`Lento`,
@@ -587,9 +587,9 @@ correspondente hoje.
 
 **Nomes de arquivo/módulo**: `admin/busca_de_jogos.py`,
 `admin/modelos_de_jogo.py`, `admin/sugestoes_de_jogos.py`,
-`tools/importar-linuxgsm.py`, `tools/verificar-qr.py`,
-`verificar-broker-acesso.ps1`, `spike-broker-escrita.ps1`,
-`broker.secrets.env`, `docker/ct-sandbox/comparar.sh`, e praticamente todo
+`tools/import-linuxgsm.py`, `tools/verify-qr.py`,
+`check-broker-access.ps1`, `spike-broker-write.ps1`,
+`broker.secrets.env`, `docker/ct-sandbox/compare.sh`, e praticamente todo
 módulo de `broker/` (seção 7.2). Renomear arquivo referenciado por scripts de
 deploy (`provision-*.sh` copiam por nome, `NAO_ENVIAR` filtra por regex de
 nome) exige atualizar os dois lados.

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from http_falso import ServidorFalso
+from fake_http import ServidorFalso
 
 from gamebroker.integrations.http_client import Client
 from gamebroker.runtime.base import CtSpec

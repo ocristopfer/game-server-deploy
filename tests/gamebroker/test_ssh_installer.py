@@ -60,7 +60,7 @@ class ExecutorFalso:
 def lib_dir(tmp_path: Path) -> Path:
     pasta = tmp_path / "lib"
     pasta.mkdir()
-    for name in ("ct-install.sh", "ct-fases.sh"):
+    for name in ("ct-install.sh", "ct-phases.sh"):
         (pasta / name).write_text("#!/bin/bash\n", encoding="utf-8")
     return pasta
 
@@ -187,7 +187,7 @@ def test_ordem_dos_comandos(installer, game, ports):
 def test_scp_leva_a_lib_e_o_env_e_o_env_existe_na_hora(installer, game, ports):
     executor, _ = _install(installer, game, ports)
     scp = next(a for a, _ in executor.chamadas if a[0] == "scp")
-    assert [Path(f).name for f in scp[-4:-1]] == ["ct-install.sh", "ct-fases.sh", "install.env"]
+    assert [Path(f).name for f in scp[-4:-1]] == ["ct-install.sh", "ct-phases.sh", "install.env"]
     assert scp[-1] == f"root@10.0.0.30:{DESTINO_REMOTO}/"
     assert "GAME_KEY=meujogo" in executor.env_visto
     assert not Path(scp[-2]).exists(), "o env temporario nao fica no disco do broker"
@@ -325,7 +325,7 @@ def test_usuario_invalido(tmp_path, lib_dir):
 def test_lib_incompleta_e_recusada(tmp_path):
     (tmp_path / "ct-install.sh").write_text("x")
     cfg = ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, lib_dir=tmp_path)
-    with pytest.raises(ValueError, match="ct-fases.sh"):
+    with pytest.raises(ValueError, match="ct-phases.sh"):
         InstaladorSsh(cfg, ExecutorFalso())
 
 

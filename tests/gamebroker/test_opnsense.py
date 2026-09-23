@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from http_falso import ServidorFalso, resumo_de_alias
+from fake_http import ServidorFalso, resumo_de_alias
 
 from gamebroker.integrations.http_client import Client
 from gamebroker.runtime.opnsense import Opnsense, OpnsenseError, ReadError, busy_ports, instance_description
