@@ -463,7 +463,9 @@ primeira execucao: tres classes sem regra e sete regras mortas.
 `tests/gamepanel/test_docs_contract.py` cobra que todo `modulo.nome` citado entre crases
 NESTE arquivo ainda exista no codigo. Doc que envelhece nao e doc faltando: e doc que
 MENTE, e manda a proxima pessoa procurar um nome que nao existe. Achou quatro de uma vez
-na primeira execucao (`opnsense.taken_ports`, `_limpar`, `somente_banco`, `ui.menu_acao`).
+na primeira execucao: a doc mandava procurar taken_ports no opnsense (o nome e
+`busy_ports`), _limpar no instalador por SSH (e `_cleanup`) e somente_banco no broker
+(e `db_only`), alem dos tres do `navigation.py` que ja estavam em ingles ha commits.
 
 O escopo e estreito porque tres coisas tem o MESMO formato e nao sao referencia a codigo:
 chave de i18n (`charts.players`), nome de arquivo (`compare.sh`) e modulo de fora

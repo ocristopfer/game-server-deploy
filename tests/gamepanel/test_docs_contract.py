@@ -3,8 +3,10 @@
 A doc deste repositorio e densa de nomes proprios: `app.COMMANDS`, `ui.ACTIONS`,
 `opnsense.busy_ports`. Cada renomeacao deixa alguns para tras, e o resultado e pior que
 doc faltando — e doc que MENTE, e manda a proxima pessoa procurar um nome que nao existe
-mais. Quatro casos assim foram encontrados de uma vez ao escrever isto
-(`opnsense.taken_ports`, `_limpar`, `somente_banco`, `ui.menu_acao`).
+mais. Quatro casos assim foram encontrados de uma vez ao escrever isto: a doc mandava
+procurar taken_ports no opnsense, _limpar no instalador por SSH, somente_banco no broker
+e menu_acao nos macros. Os nomes mortos ficam SEM crase aqui de proposito — com ela, a
+propria doc deste teste viraria uma citacao que o teste reprova.
 
 O escopo e estreito de proposito: so `modulo.nome` dentro de crase, onde `modulo` e de
 fato um modulo destes pacotes. Tres formas tem o MESMO formato e nao sao referencia a
