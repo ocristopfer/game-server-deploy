@@ -58,7 +58,7 @@ from gamepanel import cli, config, i18n, version
 from gamepanel import navigation as ui
 from gamepanel.blueprints import register_all
 from gamepanel.games import config_format as gameconf
-from gamepanel.games import gamefields
+from gamepanel.games import registry as game_fields
 from gamepanel.integrations import broker_client, webhook_client
 from gamepanel.persistence import schema
 from gamepanel.persistence.repositories import alerts as alerts_repo
@@ -2429,7 +2429,7 @@ def enriquece_settings(doc: gameconf.ConfigFile, file_name: str) -> None:
     """
     for section in doc.sections:
         for s in section.settings:
-            spec = gamefields.describe(file_name, s.key)
+            spec = game_fields.describe(file_name, s.key)
             s.spec = spec
             s.display_value = spec.to_display(s.value) if spec else s.value
 
@@ -2470,7 +2470,7 @@ def _edit_from_row(form, i: int, file_name: str, erros: list[str]) -> gameconf.E
     if ident and value == (form.get(f"orig.{i}", "") or "").replace("\r", ""):
         return None  # campo intocado: nao reescreve a linha
 
-    spec = gamefields.describe(file_name, key) if file_name else None
+    spec = game_fields.describe(file_name, key) if file_name else None
     if spec:
         problem = spec.validate(value)
         if problem:

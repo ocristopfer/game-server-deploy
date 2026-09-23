@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Testes do catalogo de campos por jogo.
 
-    pytest admin/test_gamefields.py
+    pytest tests/gamepanel/test_game_fields.py
 
 O que estes testes protegem e a promessa do recurso: o valor que a pessoa digita na
 tela (minutos, multiplicador) e o valor que vai para o arquivo (nanossegundos) sao
@@ -10,16 +10,16 @@ silenciosamente uma noite de 1 segundo - foi exatamente o que motivou o recurso.
 """
 import pytest
 
-from gamepanel.games import gamefields
+from gamepanel.games import registry as game_fields
 
 
-def field(arquivo: str, chave: str) -> gamefields.FieldSpec:
+def field(arquivo: str, chave: str) -> game_fields.FieldSpec:
     """O campo do catalogo, falhando alto se ele sumir.
 
     Sem isto, uma chave removida do catalogo faria os testes abaixo estourarem com
     `AttributeError: 'NoneType'` - erro que nao diz nada sobre o que se perdeu.
     """
-    spec = gamefields.describe(arquivo, chave)
+    spec = game_fields.describe(arquivo, chave)
     assert spec is not None, f"{chave} sumiu do catalogo de {arquivo}"
     return spec
 
@@ -99,11 +99,11 @@ def test_o_catalogo_e_achado_pelo_nome_do_arquivo_no_caminho_completo():
 
 def test_o_que_nao_esta_no_catalogo_nao_e_inventado():
     """Campo sem descricao continua editavel como texto livre - nunca some da tela."""
-    assert gamefields.describe("enshrouded_server.json", "campoQueNaoExiste") is None
-    assert gamefields.describe("qualquer.ini", "name") is None
+    assert game_fields.describe("enshrouded_server.json", "campoQueNaoExiste") is None
+    assert game_fields.describe("qualquer.ini", "name") is None
 
 
 def test_campo_sem_catalogo_nao_valida_nem_converte():
-    empty = gamefields.FieldSpec()
+    empty = game_fields.FieldSpec()
     assert empty.validate("qualquer coisa") == ""
     assert empty.from_display("123") == "123"

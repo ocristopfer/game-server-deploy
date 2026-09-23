@@ -59,9 +59,9 @@ class Setting:
     value: str
     kind: str = "text"      # text | bool | number
     comment: str = ""       # comentario vizinho no arquivo, vira ajuda na tela
-    # Preenchidos depois da leitura, pelo catalogo de campos (gamefields.py). Ficam
+    # Preenchidos depois da leitura, pelo catalogo de campos (`games/registry.py`). Ficam
     # aqui e nao no parser de proposito: o parser continua sem saber que jogo e esse.
-    spec: object = None     # gamefields.FieldSpec, quando o campo e conhecido
+    spec: object = None     # games.base.FieldSpec, quando o campo e conhecido
     display_value: str = ""  # valor na unidade da tela (minutos em vez de nanossegundos)
 
 

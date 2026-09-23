@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_config_f
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 964
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 974
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 962 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 972 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -157,8 +157,10 @@ src/
     cli.py               bootstrap: --create-user, --reset-2fa, --register-server (o rodape de app.py chama o main() daqui)
     navigation.py        mapa da interface: navegacao e acoes   (puro, sem Flask; era ui.py)
     games/
-      config_format.py   leitor/gravador de .ini/.json/.cfg do jogo (era gameconf.py)
-      gamefields.py       catalogo: o que cada chave de config significa
+      config_format.py   leitor/gravador de .ini/.json/.cfg do jogo (nao conhece jogo nenhum)
+      base.py             o que um campo E: tipo, limite, unidade, rotulo
+      registry.py          qual adapter vale para qual arquivo
+      adapters/            um arquivo por jogo com tela de edicao rapida
       catalog/
         search.py          busca por nome/App ID sobre suggestions.py (era busca_de_jogos.py)
         templates.py        modelos do formulario "Adicionar jogo" (Unreal Linux); puro, so dado
@@ -198,8 +200,22 @@ tools/
   verify-qr.py        verificacao manual do QR contra um leitor de verdade (venv descartavel)
 ```
 
-`src/gamepanel/games/gamefields.py` ainda e um arquivo so (nao dividido em adapter por
-jogo) — o que falta da Fase 4 (ver `docs/architecture-proposal.md`).
+### Jogo novo com tela propria = um arquivo e uma linha
+
+`games/adapters/<jogo>.py` declara `FILENAME` (que arquivo ele reconhece) e `FIELDS` (o
+que ele sabe sobre cada chave), e `registry.ADAPTERS` ganha uma linha. Nada de rota, de
+template nem dos outros jogos e tocado.
+
+- **Jogo sem adapter nao fica de fora**: ele cai no editor de arquivo generico, que nao
+  conhece jogo nenhum. E por isso que esquecer a linha no registro nao da erro — a tela
+  continua funcionando, so generica. `test_game_registry.py` cobra que nenhum modulo da
+  pasta fique fora, e que dois adapters nao disputem o mesmo arquivo (o primeiro da lista
+  venceria e o segundo viraria codigo morto silencioso).
+- **A lista e explicita, e nao uma varredura da pasta**: quem le sabe, sem rodar nada,
+  quais jogos tem tela propria. O teste e que garante que ela nao fique para tras.
+- **A escolha e pelo NOME do arquivo**, e nao pelo jogo cadastrado no servidor: e o
+  mesmo criterio que o painel ja usa para escolher o leitor, e funciona inclusive num
+  servidor cujo jogo ninguem declarou.
 
 ### As rotas moram em `blueprints/`, e chamam o `app.py` pelo MODULO
 

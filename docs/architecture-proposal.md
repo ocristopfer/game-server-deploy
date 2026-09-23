@@ -760,7 +760,9 @@ docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos san
 
 ### O que sobra
 
-- `games/gamefields.py` dividido em adapter por jogo (seção 2.3 do plano).
+- ~~`games/gamefields.py` dividido em adapter por jogo~~ — **feito**: `games/base.py`,
+  `games/registry.py` e `games/adapters/` (5 jogos), com `test_game_registry.py`
+  cobrando que nenhum adapter fique fora do registro.
 - ~~`repositories/`~~ — **feito**: as sete tabelas do painel (`servers`, `jobs`,
   `schedules`, `webhooks`+`alert_log`, `samples`, `settings`, `users`) têm repositório,
   e `.execute(` só aparece em `persistence/`. `test_sql_placement.py` guarda a regra
