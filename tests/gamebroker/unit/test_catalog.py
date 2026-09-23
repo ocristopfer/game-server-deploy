@@ -9,7 +9,7 @@ import pytest
 import gamebroker.services.catalog as cat
 from gamebroker.domain.exceptions import Conflict, NotFound, ValidationError
 
-RAIZ = Path(__file__).resolve().parent.parent.parent
+RAIZ = Path(__file__).resolve().parents[3]
 
 
 # --- parser do .env -------------------------------------------------------

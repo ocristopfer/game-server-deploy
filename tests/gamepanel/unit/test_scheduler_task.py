@@ -46,13 +46,24 @@ def test_start_duas_vezes_nao_vira_duas_threads():
     """Duas threads fariam cada tarefa agendada disparar em dobro."""
     rounds = threading.Semaphore(0)
     clock_of = scheduler.Clock(0.01, rounds.release, logging.getLogger("teste"))
-    before = threading.active_count()
+
+    def ours() -> int:
+        """So as threads DESTE relogio, pelo nome.
+
+        Era `threading.active_count()` antes e passava a maior parte das vezes: o numero e
+        do PROCESSO inteiro, e importar o `gamepanel.app` ja sobe uma thread de agendador
+        propria — qualquer thread alheia nascendo ou morrendo entre as duas leituras fazia
+        a conta fechar errado. Falhou 1 em 3 rodando este balde sozinho.
+        """
+        return sum(1 for t in threading.enumerate() if t.name == scheduler.Clock.THREAD_NAME)
+
+    before = ours()
     try:
         clock_of.start()
         clock_of.start()
         clock_of.start()
         assert rounds.acquire(timeout=2), "o relogio nem chegou a bater"
-        assert threading.active_count() - before == 1
+        assert ours() - before == 1
     finally:
         clock_of.stop()
 

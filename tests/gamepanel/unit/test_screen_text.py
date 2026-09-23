@@ -24,7 +24,7 @@ import pytest
 
 from gamepanel import i18n
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 SCREEN_FILES = [ROOT / "src/gamepanel/app.py",
                 *sorted((ROOT / "src/gamepanel/blueprints").glob("*.py"))]
 

@@ -34,7 +34,7 @@ from pathlib import Path
 
 from gamepanel import i18n
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 DOC = ROOT / "CLAUDE.md"
 PACKAGES = ("src/gamepanel", "src/gamebroker")
 

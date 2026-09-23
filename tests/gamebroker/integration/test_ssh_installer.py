@@ -20,41 +20,7 @@ from gamebroker.runtime.ssh_installer import (
 from gamebroker.services.allocator import AllocatedPort
 from gamebroker.services.catalog import validate_dynamic
 
-BLOB = "AAAAC3NzaC1lZDI1NTE5AAAAIExemploExemploExemploExemplo"
-PUBLIC_KEY = f"ssh-ed25519 {BLOB} broker@teste"
-
-
-class FakeRunner:
-    """Registra cada command. `saidas` mapeia um trecho do command remoto a (codigo, linhas)."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[list[str], float]] = []
-        self.outputs: dict[str, tuple[int, list[str]]] = {}
-        self.first_ssh_failures = 0
-        self.env_visto = ""
-
-    def run(self, argv, on_line, timeout):
-        self.calls.append((list(argv), timeout))
-        if argv[0] == "scp":
-            self.env_visto = Path(argv[-2]).read_text(encoding="utf-8")  # o arquivo existe AGORA
-        command = argv[-1] if argv[0] == "ssh" else " ".join(argv)
-        if argv[0] == "ssh" and command == "true" and self.first_ssh_failures > 0:
-            self.first_ssh_failures -= 1
-            return 255
-        for chunk_of, (code, lines) in self.outputs.items():
-            if chunk_of in command:
-                for line in lines:
-                    if on_line is not None:
-                        on_line(line)
-                return code
-        if on_line is not None and "ct-install.sh" in command:
-            for line in ("[10:00:00] instalando", "[10:00:09] INSTALACAO CONCLUIDA: Meu Jogo"):
-                on_line(line)
-        return 0
-
-    def commands(self) -> list[str]:
-        return [a[-1] if a[0] == "ssh" else "scp" for a, _ in self.calls]
-
+from fake_ssh import BLOB, PUBLIC_KEY, FakeRunner
 
 @pytest.fixture
 def lib_dir(tmp_path: Path) -> Path:

@@ -61,6 +61,34 @@ partes onde e facil quebrar algo sem perceber (quando o painel decide avisar, qu
 que, o que conta como jogador). Os arquivos ja NAO rodam como script solto
 (`python3 test_alerts.py` nao faz nada) — passam sempre por `pytest`.
 
+### Os dois baldes: `unit/` e `integration/`
+
+A divisao e por CRITERIO, nao por gosto: **integration = o teste atravessa uma fronteira**
+(cliente HTTP do Flask, servidor HTTP falso, sqlite em arquivo, `subprocess`); **unit = so
+chamada de funcao**. Medido: 991 testes de unit em 28 s contra 910 de integration em 126 s
+— e por isso que editar com `uv run pytest tests/gamepanel/unit` vale a pena, e a suite
+inteira fica para antes de publicar.
+
+- **Cada balde tem de RODAR SOZINHO, e isso e o que quebra em silencio.** Um arquivo de
+  `integration/` que importe por NOME um de `unit/` passa na suite inteira — o pytest poe
+  no `sys.path` a pasta de cada arquivo que coleta, e `unit/` foi coletado primeiro — e
+  estoura com `ModuleNotFoundError` na hora em que alguem roda so `integration/`, que e
+  justo para isso que a divisao existe. Medido num experimento a parte antes de mover
+  arquivo nenhum. `test_suite_layout.py` guarda a regra.
+- **Dobre compartilhado por mais de um arquivo mora ao lado do `conftest.py`**, que e a
+  unica pasta que o pytest sempre insere no `sys.path`. `FakeRunner` morava dentro de
+  `test_ssh_installer.py` e dois outros arquivos o importavam de la; saiu para `fake_ssh.py`,
+  ao lado do `fake_http.py`, que ja era esse padrao.
+- **Import por nome ATRAVESSA a subpasta**, isso sim funciona: com o `conftest.py` em
+  `tests/<pacote>/`, um teste em `unit/` continua fazendo `from fake_http import ...`.
+  Tambem medido — era o que eu achava que quebraria, e nao quebra.
+- **Contar thread do processo em teste e receita de intermitencia.** O teste do agendador
+  usava `threading.active_count()` e falhou 1 em 3 rodando o balde sozinho: importar o
+  `gamepanel.app` ja sobe uma thread de agendador, e qualquer thread alheia entre as duas
+  leituras fecha a conta errado. Hoje a thread do `Clock` tem NOME
+  (`Clock.THREAD_NAME`) e o teste conta so as dela — e o nome tambem serve a quem le um
+  dump de pilha, que antes via `Thread-1 (_loop)`.
+
 **Rapido, na maquina** (segundos, e o ciclo normal enquanto se edita):
 
 ```powershell
@@ -203,8 +231,12 @@ src/
   gamebroker/             servico que cria instancias de jogo (Proxmox) e abre portas (OPNsense);
                          pacote Python, ver a secao "Broker" abaixo (era broker/)
 tests/
-  gamepanel/              as suites do painel (era admin/test_*.py + admin/conftest.py)
-  gamebroker/             as suites do broker, mais os dobres de teste fake_http.py (era broker/test_*.py)
+  gamepanel/              conftest.py (fixtures) e os dois baldes
+    unit/                  so chamada de funcao — 28 s, e o ciclo de quem esta editando
+    integration/           atravessa fronteira (cliente Flask, sqlite em arquivo, subprocess) — 126 s
+  gamebroker/             conftest.py + os dobres compartilhados (fake_http.py, fake_ssh.py)
+    unit/                  3 s
+    integration/           servidor HTTP falso, servico montado, subprocess
 tools/
   build-release.py       empacota um release: dist/<pacote>-<versao>.tar.gz + .sha256 (so stdlib, determinista)
   import-linuxgsm.py   gera src/gamepanel/games/catalog/suggestions.py a partir do LinuxGSM (precisa de internet)

@@ -58,12 +58,18 @@ class Clock:
             except Exception:
                 self._logger.exception("falha no agendador")
 
+    # A thread tem NOME, e nao e enfeite: sem ele um dump de pilha (`faulthandler`,
+    # `py-spy`) mostra `Thread-1 (_loop)` e nao se sabe qual das threads de fundo do painel
+    # travou. E e o nome que deixa um teste contar as threads DESTE relogio em vez de
+    # `threading.active_count()`, que conta as alheias — importar o `app.py` ja sobe uma.
+    THREAD_NAME = "gamepanel-scheduler"
+
     def start(self) -> None:
         with self._lock:
             if self._started:
                 return
             self._started = True
-        threading.Thread(target=self._loop, daemon=True).start()
+        threading.Thread(target=self._loop, daemon=True, name=self.THREAD_NAME).start()
 
     def stop(self) -> None:
         """Encerra a thread. O painel nao usa (o processo inteiro morre junto); existe

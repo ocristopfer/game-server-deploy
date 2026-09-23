@@ -18,7 +18,7 @@ import pytest
 from gamepanel import app as panel
 from gamepanel.security import qr, totp
 
-ADMIN = Path(__file__).resolve().parent
+ADMIN = Path(__file__).resolve().parent.parent
 RAIZ = ADMIN.parent.parent
 # O subprocesso e um Python novo, sem o sys.path.insert do conftest.py da raiz nem a
 # instalacao editavel do `uv sync` necessariamente presente (o container de dev do painel

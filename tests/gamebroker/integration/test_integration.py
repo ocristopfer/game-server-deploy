@@ -70,7 +70,7 @@ def test_regra_que_o_broker_nao_entende_impede_criar(real):
 def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
     """Proxmox e OPNsense reais (contra falsos HTTP) + InstaladorSsh real (com executor que
     grava os comandos): e o caminho de criacao inteiro, exceto o SSH em si."""
-    from test_ssh_installer import PUBLIC_KEY, FakeRunner
+    from fake_ssh import PUBLIC_KEY, FakeRunner
 
     from gamebroker.runtime.ssh_installer import ConfigSsh, SshInstaller
 

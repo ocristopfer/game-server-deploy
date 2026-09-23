@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from fake_http import KEY_OPN, SECRET_OPN, TOKEN_PVE
-from test_ssh_installer import BLOB, PUBLIC_KEY, FakeRunner
+from fake_ssh import BLOB, PUBLIC_KEY, FakeRunner
 
 import gamebroker.wsgi as prod
 from gamebroker.config import ConfigError, load

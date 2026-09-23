@@ -12,7 +12,7 @@ import gamebroker.services.catalog as cat
 from gamebroker.domain.exceptions import ValidationError
 from gamebroker.runtime.ssh_installer import build_env
 
-RAIZ = Path(__file__).resolve().parent.parent.parent
+RAIZ = Path(__file__).resolve().parents[3]
 FAIXA = range(31000, 31100)
 
 

@@ -805,7 +805,25 @@ docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos san
   ninguém descobre. Virou o PREFIXO do pacote (`gamepanel`), que cobre qualquer módulo novo
   — inclusive um adapter — e não apodrece. Conferido com uma sonda nos dois sentidos: aviso
   atribuído a `gamepanel.*` vira erro, atribuído a `gamebroker.*` não.
-- **`tests/{unit,integration}/`** — o último da seção 2. Aberto.
+- ~~`tests/{unit,integration}/`~~ — **feito**, e a seção 2 tinha razão: 991 testes de unit
+  em **28 s** contra 910 de integration em **126 s**. Medi os dois buckets antes de mover
+  arquivo nenhum, justamente para não pagar o custo sem saber se o benefício existia.
+
+  O que a execução encontrou, medindo em vez de supondo:
+
+  1. **Import por nome ATRAVESSA a subpasta** — era o que eu achava que quebraria, e não
+     quebra: com o `conftest.py` em `tests/<pacote>/`, um teste em `unit/` continua fazendo
+     `from fake_http import ...`, porque carregar o conftest põe aquela pasta no `sys.path`.
+  2. **O que quebra é o import entre BALDES**, e só quando se usa a divisão para o que ela
+     serve: um arquivo de `integration/` importando de `unit/` passa na suíte inteira
+     (`unit/` foi coletado primeiro) e dá `ModuleNotFoundError` rodando só `integration/`.
+     Eram dois casos, os dois puxando `FakeRunner` de dentro de `test_ssh_installer.py`;
+     o dobre saiu para `fake_ssh.py`, ao lado do `fake_http.py`. `test_suite_layout.py`
+     guarda a regra, com os dois lados conferidos quebrando de propósito.
+  3. **Um teste intermitente, pré-existente**, que só apareceu porque rodar um balde sozinho
+     é rápido o bastante para repetir cinco vezes: o do agendador contava
+     `threading.active_count()`, e importar o `gamepanel.app` já sobe uma thread própria.
+     Falhava 1 em 3. A thread do `Clock` ganhou nome e o teste conta só as dela.
 - `extensions.py`, `services/user_service.py` e `runtime/base.py`+`runtime/fakes.py` do
   painel continuam abertos: são extração de orquestração, sem ganho de teste como os
   anteriores. O `extensions.py` chega a contradizer a descrição do próprio `app.py` no

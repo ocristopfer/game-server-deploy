@@ -12,7 +12,7 @@ import pytest
 
 from gamebroker.services.catalog import validate_dynamic
 
-RAIZ = Path(__file__).resolve().parent.parent.parent
+RAIZ = Path(__file__).resolve().parents[3]
 _spec = importlib.util.spec_from_file_location(
     "modelos_de_jogo", RAIZ / "src" / "gamepanel" / "games" / "catalog" / "templates.py"
 )

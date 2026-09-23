@@ -11,7 +11,7 @@ import pytest
 
 from gamebroker.services.catalog import KEY_RE, NAME_RE
 
-RAIZ = Path(__file__).resolve().parent.parent.parent
+RAIZ = Path(__file__).resolve().parents[3]
 _spec = importlib.util.spec_from_file_location("importar_linuxgsm", RAIZ / "tools" / "import-linuxgsm.py")
 imp = importlib.util.module_from_spec(_spec)
 sys.modules["importar_linuxgsm"] = imp
