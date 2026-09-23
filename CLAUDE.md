@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_config_f
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 950
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 964
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 948 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 962 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -172,6 +172,8 @@ src/
     security/
       totp.py             2FA, so stdlib
       qr.py               gerador de QR, so stdlib
+      passwords.py        scrypt (hash, conferencia e a regra de senha boa)
+      csrf.py             o token da sessao e a conferencia do POST
     integrations/
       broker_client.py    cliente do broker (so stdlib, TLS fixado por impressao); ver "Broker"
     templates/
@@ -220,6 +222,22 @@ arquivo, quando tudo o que eles chamam ja existe.
   tabelas de `navigation.py` o nome e sempre o completo, com ponto.
 - **Blueprint novo** = um arquivo aqui e um nome nas duas listas de `register_all`. Se a
   rota precisa pular o segundo fator, tambem uma linha em `app.ENDPOINTS_WITHOUT_2FA`.
+
+### Texto fixo devolvido por funcao nao traduz
+
+Uma funcao que devolve `"A senha precisa ter ao menos 8 caracteres."` passa pelo
+`translate` e sai IGUAL: a cascata nao acha a chave, entao devolve a propria string. A
+tela em ingles mostrava portugues, e nenhum teste reclamava — nem o `test_i18n.py`, que
+confere as CHAMADAS de `_()`, nao o valor de retorno de uma funcao qualquer.
+
+Foram tres, achadas ao extrair codigo do `app.py`: as duas de senha
+(`validate_password`) e o rotulo `broker-jogo` do historico, que era `"Jogo adicionado
+ao catalogo"` escrito a mao dentro do dicionario de rotulos.
+
+- **Erro que vai para a tela sai como `i18n.Message`**, e nao como texto. `Message` E
+  uma `str`, entao `str(exc)`, f-string e `in` continuam funcionando.
+- **`test_job_service.py` cobra que todo rotulo do historico seja chave de catalogo**,
+  e que os dois idiomas a tenham. Foi ele que teria pego o `broker-jogo`.
 
 ### Opcao do painel: uma leitura so, no `config.py`
 

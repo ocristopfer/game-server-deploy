@@ -79,11 +79,12 @@ from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import ssh as ssh_transport
 from gamepanel.runtime import terminal as term_runtime
-from gamepanel.security import totp
+from gamepanel.security import csrf, passwords, totp
 from gamepanel.services import (
     alert_service,
     broker_service,
     chart_service,
+    job_service,
     metrics_service,
     parallel,
     player_service,
@@ -337,7 +338,7 @@ ROLE_LABELS = {
     ROLE_ADMIN: "role.admin",
     ROLE_OPERADOR: "role.operator",
 }
-PASSWORD_MIN = 8
+PASSWORD_MIN = passwords.MIN_LENGTH
 
 # CSRF: o painel tem a propria protecao, e nao o Flask-WTF.
 #
@@ -436,28 +437,11 @@ def now_iso() -> str:
 # ------------------------------------------------------------------- senhas
 
 
-def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
-    return f"scrypt$16384$8$1${salt.hex()}${digest.hex()}"
-
-
-def verify_password(password: str, stored: str) -> bool:
-    try:
-        anything, n, r, p, salt_hex, digest_hex = stored.split("$")
-        if anything != "scrypt":
-            return False
-        digest = hashlib.scrypt(
-            password.encode(),
-            salt=bytes.fromhex(salt_hex),
-            n=int(n),
-            r=int(r),
-            p=int(p),
-            dklen=len(digest_hex) // 2,
-        )
-    except (ValueError, TypeError):
-        return False
-    return hmac.compare_digest(digest.hex(), digest_hex)
+# Apelidos: o algoritmo mora em `security/passwords.py`, mas os testes trocam
+# `panel.X` por falso e os templates chamam `csrf_token()` pelo nome — manter os dois
+# aqui e o que faz as duas coisas continuarem valendo.
+hash_password = passwords.hash_password
+verify_password = passwords.verify_password
 
 
 # ------------------------------------------------------- auth / csrf / brute force
@@ -537,11 +521,7 @@ def admin_required(view):
 
 
 def csrf_token() -> str:
-    token = session.get("csrf")
-    if not token:
-        token = secrets.token_urlsafe(32)
-        session["csrf"] = token
-    return token
+    return csrf.token(session)
 
 
 # Rotas que recebem corpo grande. O teto geral (MAX_CONTENT_LENGTH) e apertado porque o
@@ -564,10 +544,7 @@ def _body_cap():
 def _check_csrf():
     if request.method != "POST":
         return None
-    # O terminal e o editor postam JSON (sem formulario), entao mandam o mesmo token
-    # pelo cabecalho X-CSRF-Token.
-    sent = request.form.get("csrf", "") or request.headers.get("X-CSRF-Token", "")
-    if not sent or not hmac.compare_digest(sent, session.get("csrf", "")):
+    if not csrf.matches(session, request.form, request.headers):
         abort(400, "token CSRF invalido ou expirado - recarregue a pagina")
     return None
 
@@ -1063,39 +1040,11 @@ ACTIONS = {
     for key, comando in COMMANDS.items()
 }
 
-JOB_LABELS = {key: label for key, (label, _cmd, _c) in ACTIONS.items()}
-JOB_LABELS["shell"] = "job.shell"
-JOB_LABELS["terminal"] = "job.terminal"
-JOB_LABELS["edit-file"] = "job.file_saved"
-JOB_LABELS["delete-file"] = "job.file_deleted"
-JOB_LABELS["edit-config"] = "job.config_changed"
-JOB_LABELS["download-file"] = "job.file_downloaded"
-JOB_LABELS["upload-file"] = "job.file_uploaded"
-JOB_LABELS["backup"] = "job.backup"
-JOB_LABELS["restore-backup"] = "job.backup_restored"
-JOB_LABELS["delete-backup"] = "job.backup_deleted"
-# Moderacao nao da root em container nenhum: e operacao, e fica visivel para o operador.
-JOB_LABELS["player-action"] = "job.player_action"
-JOB_LABELS["broker-criar"] = "job.instance_created"
-JOB_LABELS["broker-desativar"] = "job.instance_deactivated"
-JOB_LABELS["broker-remover"] = "job.instance_removed"
-JOB_LABELS["broker-jogo"] = "Jogo adicionado ao catalogo"
-
-# O historico guarda a saida INTEIRA do que rodou. Estas acoes so um admin consegue
-# disparar (console, terminal, editor de arquivos), entao a saida delas — que carrega o
-# comando digitado, o conteudo do arquivo e o que mais tenha passado pela tela — tambem
-# so ele pode ler. Sem esta lista, o operador que leva 403 no console leria o resultado
-# do console abrindo o job pelo id. 'edit-config' fica de fora de proposito: mexer na
-# configuracao do jogo e coisa de operador, e a saida dela nao passa disso.
-JOB_ACTIONS_ADMIN = frozenset({
-    "shell", "terminal", "edit-file", "delete-file", "download-file",
-    # 'backup' fica de fora: criar copia e operacao, e o operador pode dispara-la. Ja
-    # restaurar e apagar destroem dado, e baixar tira o save do container — sao de admin,
-    # e o registro delas acompanha.
-    "upload-file", "restore-backup", "delete-backup",
-    # Tudo do broker e de admin: a saida cita IP, CTID e portas da infraestrutura.
-    "broker-criar", "broker-desativar", "broker-remover", "broker-jogo",
-})
+# Os rotulos das acoes de botao vem do `ui`; os das acoes que nascem de outras telas
+# (console, editor, broker) vem do `job_service`, junto da lista de quem pode le-las.
+JOB_LABELS = job_service.labels(
+    {key: label for key, (label, _cmd, _c) in ACTIONS.items()})
+JOB_ACTIONS_ADMIN = job_service.ADMIN_ONLY_ACTIONS
 
 
 def job_label(action: str) -> str:
@@ -1107,21 +1056,13 @@ def job_label(action: str) -> str:
 
 def job_or_403(job: sqlite3.Row) -> None:
     """Barra o operador na saida de um job que ele nao teria permissao de disparar."""
-    if job["action"] in JOB_ACTIONS_ADMIN and not is_admin():
+    if job_service.is_restricted(job["action"]) and not is_admin():
         abort(403, "Este registro e de uma acao restrita a administradores do painel.")
 
 
 def role_filter() -> tuple[str, tuple]:
-    """Pedaco de WHERE que esconde do operador os jobs das acoes restritas.
-
-    Sai daqui e nao de cada consulta porque sao duas telas (o historico do servidor e o
-    global) e uma rota de API: a lista de acoes tem de ser a mesma nos tres.
-    """
-    if is_admin():
-        return "", ()
-    hidden_ones = tuple(sorted(JOB_ACTIONS_ADMIN))
-    markers = ",".join("?" * len(hidden_ones))
-    return f" AND action NOT IN ({markers})", hidden_ones
+    """Pedaco de WHERE que esconde do operador os jobs das acoes restritas."""
+    return job_service.hidden_filter(is_admin())
 
 
 def server_jobs(conn: sqlite3.Connection, sid: int, limit: int) -> list:
@@ -2869,13 +2810,7 @@ def _le_form_webhook() -> tuple:
 # ------------------------------------------------------------------ usuarios
 
 
-def validate_password(nova: str, confirm: str) -> str:
-    """Devolve a mensagem de erro; string vazia quando a senha serve."""
-    if len(nova) < PASSWORD_MIN:
-        return f"A senha precisa ter ao menos {PASSWORD_MIN} caracteres."
-    if nova != confirm:
-        return "A confirmacao nao confere."
-    return ""
+validate_password = passwords.validate_password
 
 
 def count_admins(excluindo: int = 0) -> int:
