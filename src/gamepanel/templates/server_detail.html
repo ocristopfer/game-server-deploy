@@ -107,24 +107,24 @@
       <div><dt>{{ _('server_detail.online') }}</dt><dd>{{ players.players }}{% if players.max_players %} de {{ players.max_players }}{% endif %}</dd></div>
     </dl>
 
-    {% set acoes = acoes_de_jogador(server) %}
+    {% set actions = player_actions(server) %}
     <div class="table-wrap"><table class="jobs" id="jogadores-tabela">
-      <thead><tr><th>{{ _('server_detail.player') }}</th><th>{{ _('server_detail.connected_for') }}</th><th>{{ _('server_detail.score') }}</th>{% if acoes %}<th></th>{% endif %}</tr></thead>
+      <thead><tr><th>{{ _('server_detail.player') }}</th><th>{{ _('server_detail.connected_for') }}</th><th>{{ _('server_detail.score') }}</th>{% if actions %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for p in players.list %}
         <tr>
           <td>{{ p.name }}</td>
           <td class="muted">{{ p.seconds | duration }}</td>
           <td class="muted">{{ p.score }}</td>
-          {% if acoes %}
+          {% if actions %}
           <td class="acoes">
             {% if p.id %}
-              {% for a in acoes if a != 'announce' %}
+              {% for a in actions if a != 'announce' %}
                 {{ ui.acao(url_for('players.action', sid=server.id),
-                           rotulo_de_acao.get(a, a),
+                           action_label.get(a, a),
                            variante='danger' if a == 'ban' else 'ghost',
                            tamanho='sm',
-                           confirmar=rotulo_de_acao.get(a, a) ~ ' ' ~ p.name ~ ' de ' ~ server.name ~ '?',
+                           confirmar=action_label.get(a, a) ~ ' ' ~ p.name ~ ' de ' ~ server.name ~ '?',
                            campos={'acao': a, 'jogador': p.id, 'nome': p.name}) }}
               {% endfor %}
             {% else %}
@@ -134,7 +134,7 @@
           {% endif %}
         </tr>
         {% else %}
-        <tr><td colspan="{{ 4 if acoes else 3 }}" class="muted">
+        <tr><td colspan="{{ 4 if actions else 3 }}" class="muted">
           {% if players.players %}Este jogo nao publica a lista de nomes &mdash; so a contagem.
           {% else %}Ninguem conectado agora.{% endif %}
         </td></tr>
@@ -148,12 +148,12 @@
       o log deste jogo avisa que alguem saiu sem dizer quem, entao o painel mostra os
       ultimos a entrar. Se a linha de saida do seu servidor tiver o nome, ponha
       <code>(?P&lt;name&gt;...)</code> nela{% if is_admin %} no
-      <a href="{{ url_for('players.setup', sid=server.id, aba='log') }}">{{ _('server_detail.wizard') }}</a>{% endif %}
+      <a href="{{ url_for('players.setup', sid=server.id, tab='log') }}">{{ _('server_detail.wizard') }}</a>{% endif %}
       e a lista passa a ser exata.
     </p>
     {% endif %}
 
-    {% if 'announce' in acoes %}
+    {% if 'announce' in actions %}
     <form method="post" action="{{ url_for('players.action', sid=server.id) }}" class="filebar">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="acao" value="announce">
@@ -185,7 +185,7 @@
     <div class="meter" data-key="cpu">
       <div class="meter-head"><span>{{ _('charts.cpu') }}</span><span class="val">{{ '%.1f'|format(metrics.cpu_pct) if metrics.cpu_pct is not none else '-' }}%</span></div>
       <div class="bar{{ metrics.cpu_pct | level }}"><i data-pct="{{ metrics.cpu_pct or 0 }}"></i></div>
-      <div class="meter-foot">{{ metrics.cores }} nucleo(s) &middot; load {{ metrics.load or '-' }}</div>
+      <div class="meter-foot">{{ metrics.colors }} nucleo(s) &middot; load {{ metrics.load or '-' }}</div>
     </div>
     <div class="meter" data-key="mem">
       <div class="meter-head"><span>{{ _('charts.memory') }}</span><span class="val">{{ '%.1f'|format(metrics.mem.pct) if metrics.mem.pct is not none else '-' }}%</span></div>

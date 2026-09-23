@@ -13,11 +13,11 @@
       <tr>
         <td>
           {{ u.username }}
-          {% if u.id == meu_id %}<span class="badge cold">{{ _('users.you') }}</span>{% endif %}
+          {% if u.id == my_id %}<span class="badge cold">{{ _('users.you') }}</span>{% endif %}
           {% if u.totp_enabled %}<span class="badge on" title="{{ _('users.two_factor_on') }}">2FA</span>{% endif %}
         </td>
         <td>
-          {% if u.id == meu_id %}
+          {% if u.id == my_id %}
             {{ role_labels[u.role] }}
           {% else %}
           <form method="post" action="{{ url_for('users.role', uid=u.id) }}" class="users-papel">
@@ -45,12 +45,12 @@
               {{ ui.botao(_('action.save'), tamanho='sm') }}
             </form>
           </details>
-          {% if u.totp_enabled and u.id != meu_id %}
+          {% if u.totp_enabled and u.id != my_id %}
             {{ ui.acao(url_for('users.two_factor_off', uid=u.id), _('users.two_factor_off'),
                        variante='ghost', tamanho='sm',
                        confirmar=_('users.two_factor_off_confirm', user=u.username)) }}
           {% endif %}
-          {% if u.id != meu_id %}
+          {% if u.id != my_id %}
             {{ ui.acao(url_for('users.delete', uid=u.id), _('instances.remove'),
                        variante='danger', tamanho='sm',
                        confirmar=_('users.remove_confirm', user=u.username)) }}

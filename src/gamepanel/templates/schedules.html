@@ -9,15 +9,15 @@
 
 <div class="card">
   <h2>{{ _('schedules.tasks_here') }}</h2>
-  {% if tarefas %}
+  {% if tasks %}
   <div class="table-wrap"><table class="jobs">
     <thead><tr><th>{{ _('schedules.task') }}</th><th>{{ _('schedules.when') }}</th><th>{{ _('schedules.next_run') }}</th><th>{{ _('schedules.last_run') }}</th><th></th></tr></thead>
     <tbody>
-      {% for t in tarefas %}
+      {% for t in tasks %}
       <tr{% if not t.enabled %} class="muted"{% endif %}>
         <td>{{ job_labels.get(t.action, t.action) }}</td>
         <td>{{ _(label(t)) }}</td>
-        <td class="muted">{% if t.enabled %}{{ proximas[t.id] }}{% else %}<span class="badge">{{ _('schedules.off') }}</span>{% endif %}</td>
+        <td class="muted">{% if t.enabled %}{{ next_runs[t.id] }}{% else %}<span class="badge">{{ _('schedules.off') }}</span>{% endif %}</td>
         <td class="muted small nowrap">{{ t.last_run[:16] | replace('T', ' ') or _('schedules.never') }}</td>
         <td class="acoes">
           {% if is_admin %}
@@ -41,7 +41,7 @@
   {% endif %}
   <p class="muted small mt-4">
     {{ _('schedules.clock_is') }} <strong>{{ _('schedules.panel') }}</strong> &mdash; agora sao
-    <strong>{{ agora.strftime('%d/%m %H:%M') }}</strong> ({{ agora.strftime('%Z') or 'sem fuso definido' }}).
+    <strong>{{ now.strftime('%d/%m %H:%M') }}</strong> ({{ now.strftime('%Z') or 'sem fuso definido' }}).
     Se nao bater com a sua hora, ajuste o <code>TZ</code> do container do painel.
     Tarefa que venceu enquanto o painel estava fora do ar <strong>{{ _('schedules.no_late_fire') }}</strong>:
     ela espera a proxima ocorrencia.
@@ -56,7 +56,7 @@
     <div class="row">
       <label>{{ _('schedules.what_to_do') }}
         <select name="action">
-          {% for a in acoes %}<option value="{{ a }}">{{ job_labels.get(a, a) }}</option>{% endfor %}
+          {% for a in actions %}<option value="{{ a }}">{{ job_labels.get(a, a) }}</option>{% endfor %}
         </select>
         <small>
           <strong>{{ _('schedules.backup') }}</strong> usa os caminhos do cadastro, com a mesma retencao da tela
@@ -83,11 +83,11 @@
     <div class="row">
       <label>{{ _('schedules.weekday') }} <span class="muted">(semanal)</span>
         <select name="weekday">
-          {% for d in dias %}<option value="{{ loop.index0 }}">{{ d }}</option>{% endfor %}
+          {% for d in days %}<option value="{{ loop.index0 }}">{{ d }}</option>{% endfor %}
         </select>
       </label>
       <label>{{ _('schedules.every') }} <span class="muted">(intervalo)</span>
-        <input name="every_hours" type="number" min="1" max="{{ max_horas }}" value="6" inputmode="numeric">
+        <input name="every_hours" type="number" min="1" max="{{ max_hours }}" value="6" inputmode="numeric">
         <small>{{ _('schedules.hours_from_now') }}</small>
       </label>
     </div>

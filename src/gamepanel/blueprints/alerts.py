@@ -13,14 +13,14 @@ bp = Blueprint("alerts", __name__)
 def index():
     conn = panel.db()
     return render_template(
-        "alerts.html", cfg=panel.webhook_config(conn), eventos=panel.labels_of(panel.ALERT_EVENTS),
-        padrao=panel.clean_events(panel.ALERT_DEFAULT), do_env=bool(panel.WEBHOOK_URL_PADRAO),
-        monitor=int(panel.MONITOR_EVERY), disco_a_cada=int(panel.DISK_CHECK_EVERY / 60),
+        "alerts.html", cfg=panel.webhook_config(conn), events=panel.labels_of(panel.ALERT_EVENTS),
+        defaults=panel.clean_events(panel.ALERT_DEFAULT), from_env=bool(panel.WEBHOOK_URL_PADRAO),
+        monitor=int(panel.MONITOR_EVERY), disk_every=int(panel.DISK_CHECK_EVERY / 60),
         # O piso do relogio conta: o alerta nao pode chegar mais rapido que a volta dele.
-        jogadores_a_cada=int(max(panel.PLAYER_CHECK_EVERY, panel.SCHEDULE_TICK)),
-        quieto=int(panel.ALERT_QUIET), limite_hooks=panel.WEBHOOK_MAX,
-        mudo_voltas=panel.MUTE_ROUNDS, log_a_cada=int(panel.LOG_CHECK_EVERY),
-        pendencias=panel.alerts_without_baseline(conn), diario=panel.recent_alerts(conn),
+        players_every=int(max(panel.PLAYER_CHECK_EVERY, panel.SCHEDULE_TICK)),
+        quiet=int(panel.ALERT_QUIET), hook_limit=panel.WEBHOOK_MAX,
+        silent_rounds=panel.MUTE_ROUNDS, log_every=int(panel.LOG_CHECK_EVERY),
+        pending=panel.alerts_without_baseline(conn), journal=panel.recent_alerts(conn),
         streams=panel.live_streams(),
     )
 

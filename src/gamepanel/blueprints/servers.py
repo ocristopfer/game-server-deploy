@@ -116,7 +116,7 @@ def detail(sid: int):
         log_cursor=log_cursor,
         log_error=log_error,
         lines=lines,
-        acoes=panel.ACTIONS,
+        actions=panel.ACTIONS,
     )
 
 

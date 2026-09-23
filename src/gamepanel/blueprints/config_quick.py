@@ -31,8 +31,8 @@ def index(sid: int):
     suggestions = panel._config_sugestoes(server, file_names, target, errors)
 
     return render_template(
-        "config.html", server=server, arquivos=file_names, alvo=target, doc=doc, info=info,
-        sugestoes=suggestions, errors=errors, registrado=target in file_names,
+        "config.html", server=server, files=file_names, target=target, doc=doc, info=info,
+        suggestions=suggestions, errors=errors, registered=target in file_names,
         max_files=panel.CONFIG_FILES_MAX,
     )
 

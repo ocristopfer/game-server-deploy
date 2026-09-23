@@ -6,7 +6,7 @@
   {# A lista de eventos e a mesma nos destinos e no formulario de cadastro; o prefixo so
      serve para o `for` do rotulo nao apontar para o id de outro destino. #}
   <div class="opcoes">
-    {% for chave, rotulo in eventos.items() %}
+    {% for chave, rotulo in events.items() %}
     <label class="checkbox" for="{{ prefixo }}-{{ chave }}">
       <input type="checkbox" id="{{ prefixo }}-{{ chave }}" name="events"
              value="{{ chave }}" {% if chave in marcados %}checked{% endif %}>
@@ -36,12 +36,12 @@
     <p class="muted small vazio">{{ _('alerts.no_destination_yet') }}</p>
   {% endif %}
 
-  {% if pendencias %}
+  {% if pending %}
     <div class="flash pendencia">
       {{ _h('alerts.pending_intro') }}
       <ul>
-        {% for chave, falta in pendencias.items() %}
-        <li>{{ _h('alerts.pending_item', event=eventos[chave], missing=falta) }}</li>
+        {% for chave, falta in pending.items() %}
+        <li>{{ _h('alerts.pending_item', event=events[chave], missing=falta) }}</li>
         {% endfor %}
       </ul>
       {{ _h('alerts.pending_fix', url=url_for('dashboard.index')) }}
@@ -93,8 +93,8 @@
   </form>
   {% endfor %}
 
-  {% if cfg.targets | length >= limite_hooks %}
-    <p class="muted small">{{ _('alerts.limit_reached', n=limite_hooks) }}</p>
+  {% if cfg.targets | length >= hook_limit %}
+    <p class="muted small">{{ _('alerts.limit_reached', n=hook_limit) }}</p>
   {% else %}
   <details class="hook-novo"{% if not cfg.targets %} open{% endif %}>
     <summary>+ {{ _('alerts.add_destination') }}</summary>
@@ -113,7 +113,7 @@
         </label>
       </div>
       <span class="rotulo">{{ _('alerts.notify_about') }}</span>
-      {{ caixas('novo', padrao) }}
+      {{ caixas('novo', defaults) }}
       <div class="form-actions">
         {{ ui.botao(_('alerts.add'), variante='primary', bloco=true) }}
       </div>
@@ -121,7 +121,7 @@
   </details>
   {% endif %}
 
-  {% if do_env %}
+  {% if from_env %}
     <p class="muted small">{{ _h('alerts.came_from_env') }}</p>
   {% endif %}
 </div>
@@ -149,7 +149,7 @@
         <input name="cpu_pct" type="number" min="50" max="100" value="{{ cfg.cpu }}" inputmode="numeric">
         <span class="unidade">%</span>
       </span>
-      <small>{{ _('alerts.cpu_hint', n=disco_a_cada) }}</small>
+      <small>{{ _('alerts.cpu_hint', n=disk_every) }}</small>
     </label>
     <div class="form-actions">
       {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
@@ -159,7 +159,7 @@
 
 <div class="card">
   <h2>{{ _('alerts.journal') }}</h2>
-  {% if not diario %}
+  {% if not journal %}
     <p class="muted">{{ _h('alerts.journal_empty') }}</p>
   {% else %}
     <div class="table-wrap"><table class="jobs">
@@ -169,10 +169,10 @@
             <th>{{ _('alerts.outcome') }}</th></tr>
       </thead>
       <tbody>
-        {% for a in diario %}
+        {% for a in journal %}
           <tr>
             <td class="muted small nowrap">{{ a.created_at[:19] | replace('T', ' ') }}</td>
-            <td class="small">{{ eventos.get(a.event) or a.event or '—' }}</td>
+            <td class="small">{{ events.get(a.event) or a.event or '—' }}</td>
             <td class="small">{{ a.title }}
               {% if a.detail %}<br><span class="muted">{{ a.detail }}</span>{% endif %}
             </td>
@@ -201,8 +201,8 @@
 <div class="card">
   <h2>{{ _('alerts.how_it_works') }}</h2>
   <ul class="regras">
-    <li>{{ _h('alerts.rule_rhythm', monitor=monitor, meter=disco_a_cada) }}</li>
-    <li>{{ _h('alerts.rule_joining', n=jogadores_a_cada) }}</li>
+    <li>{{ _h('alerts.rule_rhythm', monitor=monitor, meter=disk_every) }}</li>
+    <li>{{ _h('alerts.rule_joining', n=players_every) }}</li>
     <li>{{ _h('alerts.rule_log_listen', monitor=monitor,
               listening=_h('alerts.streams_now', n=streams) if streams else _h('alerts.streams_none')) }}</li>
     <li>{{ _h('alerts.rule_on_change') }}</li>
@@ -211,11 +211,11 @@
       <ul>
         <li>{{ _h('alerts.rule_game_failed') }}</li>
         <li>{{ _h('alerts.rule_restart_loop') }}</li>
-        <li>{{ _h('alerts.rule_game_mute', n=mudo_voltas) }}</li>
+        <li>{{ _h('alerts.rule_game_mute', n=silent_rounds) }}</li>
       </ul>
     </li>
-    <li>{{ _h('alerts.rule_log_error', n=log_a_cada) }}</li>
-    <li>{{ _h('alerts.rule_quiet_window', n=quieto) }}</li>
+    <li>{{ _h('alerts.rule_log_error', n=log_every) }}</li>
+    <li>{{ _h('alerts.rule_quiet_window', n=quiet) }}</li>
     <li>{{ _h('alerts.rule_on_boot') }}</li>
     <li>{{ _h('alerts.rule_scheduled_only') }}</li>
     <li>{{ _h('alerts.rule_editing_resets') }}</li>

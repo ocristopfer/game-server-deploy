@@ -701,7 +701,7 @@ def _inject():
         "_": translate,
         "_h": translate_html,
         "current_language": current_language(),
-        "idiomas": i18n.LANGUAGES,
+        "languages": i18n.LANGUAGES,
         "static_url": static_url,
         "current_user": user["username"] if user else None,
         # As telas escondem o que o operador nao pode abrir. Quem manda e o
@@ -721,8 +721,8 @@ def _inject():
         # consulta OU do log — nao da para olhar so o query_port.
         "player_source": player_source,
         # Quais acoes a API daquele servidor aceita (vazio na maioria dos jogos).
-        "acoes_de_jogador": player_actions,
-        "rotulo_de_acao": labels_of(PLAYER_ACTION_LABELS),
+        "player_actions": player_actions,
+        "action_label": labels_of(PLAYER_ACTION_LABELS),
         **_navigation_context(),
     }
 

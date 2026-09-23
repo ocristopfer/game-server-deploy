@@ -11,23 +11,23 @@
       <select name="servidor">
         <option value="">{{ _('history.any_server') }}</option>
         {% for s in servers %}
-        <option value="{{ s.id }}" {% if filtro_srv == s.id|string %}selected{% endif %}>{{ s.name }}</option>
+        <option value="{{ s.id }}" {% if server_filter == s.id|string %}selected{% endif %}>{{ s.name }}</option>
         {% endfor %}
       </select>
     </label>
     <label class="inline-field">{{ _('history.action') }}
       <select name="acao">
         <option value="">{{ _('history.any_action') }}</option>
-        {% for a in acoes %}
-        <option value="{{ a }}" {% if filtro_acao == a %}selected{% endif %}>{{ job_label(a) }}</option>
+        {% for a in actions %}
+        <option value="{{ a }}" {% if action_filter == a %}selected{% endif %}>{{ job_label(a) }}</option>
         {% endfor %}
       </select>
     </label>
     <label class="inline-field">{{ _('history.who') }}
       <select name="usuario">
         <option value="">{{ _('history.anyone') }}</option>
-        {% for u in usuarios %}
-        <option value="{{ u }}" {% if filtro_user == u %}selected{% endif %}>{{ u }}</option>
+        {% for u in users %}
+        <option value="{{ u }}" {% if user_filter == u %}selected{% endif %}>{{ u }}</option>
         {% endfor %}
       </select>
     </label>
@@ -46,7 +46,7 @@
       {% for j in jobs %}
       <tr>
         <td class="muted small nowrap">{{ j.created_at[:16] | replace('T', ' ') }}</td>
-        <td>{{ nomes.get(j.server_id, '(removido)') }}</td>
+        <td>{{ names.get(j.server_id, '(removido)') }}</td>
         <td>
           <a href="{{ url_for('jobs.detail', jid=j.id) }}">{{ job_label(j.action) }}</a>
           {% if j.command %} <code class="trunc">{{ j.command }}</code>{% endif %}
@@ -65,21 +65,21 @@
     </tbody>
   </table></div>
   <div class="cluster mt-4">
-    {% if pagina > 0 %}
+    {% if page > 0 %}
       {{ ui.botao(_('history.newer'), variante='ghost', icone='←',
-                  href=url_for('history.index', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina - 1)) }}
+                  href=url_for('history.index', servidor=server_filter, acao=action_filter, usuario=user_filter, p=page - 1)) }}
     {% endif %}
-    {% if tem_mais %}
+    {% if has_more %}
       {{ ui.botao(_('history.older') ~ ' →', variante='ghost',
-                  href=url_for('history.index', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina + 1)) }}
+                  href=url_for('history.index', servidor=server_filter, acao=action_filter, usuario=user_filter, p=page + 1)) }}
     {% endif %}
   </div>
   {% else %}
     <p class="muted">{{ _('history.empty') }}</p>
   {% endif %}
   <p class="muted small mt-4">
-    {% if manter_dias %}
-      O painel guarda os ultimos <strong>{{ manter_dias }} dias</strong>
+    {% if keep_days %}
+      O painel guarda os ultimos <strong>{{ keep_days }} dias</strong>
       (<code>GAMEPANEL_JOBS_KEEP_DAYS</code>) &mdash; cada registro carrega a saida inteira
       do que rodou, e sem limpeza o banco so cresce.
     {% else %}

@@ -23,10 +23,10 @@ def index(sid: int):
     for t in tasks:
         next_ones[t["id"]] = panel._next_occurrence(t, now_ts).strftime(panel.FORMATO_DATA_CURTA)
     return render_template(
-        "schedules.html", server=server, tarefas=tasks, proximas=next_ones,
-        acoes=panel.SCHEDULE_ACTIONS, job_labels=panel.labels_of(panel.JOB_LABELS),
-        dias=[panel.translate(d) for d in panel.WEEKDAYS],
-        label=panel.schedule_label, agora=now_ts, max_horas=panel.EVERY_HOURS_MAX,
+        "schedules.html", server=server, tasks=tasks, next_runs=next_ones,
+        actions=panel.SCHEDULE_ACTIONS, job_labels=panel.labels_of(panel.JOB_LABELS),
+        days=[panel.translate(d) for d in panel.WEEKDAYS],
+        label=panel.schedule_label, now=now_ts, max_hours=panel.EVERY_HOURS_MAX,
     )
 
 

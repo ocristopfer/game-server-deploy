@@ -47,7 +47,7 @@ def setup(sid: int):
         data.update(panel._port_tab(server))
 
     return render_template(
-        "players_setup.html", server=server, aba=tab,
+        "players_setup.html", server=server, tab=tab,
         http=http, join_re=join_re, leave_re=leave_re, log_path=log_path, **data,
     )
 

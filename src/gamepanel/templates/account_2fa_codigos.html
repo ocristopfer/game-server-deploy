@@ -11,7 +11,7 @@
     no lugar do codigo do aplicativo uma unica vez — e a saida se voce perder o celular.
     Guarde num gerenciador de senhas ou impresso, nunca no mesmo celular do aplicativo.
   </p>
-  <pre class="log" id="codigos-2fa">{% for c in codigos %}{{ c }}
+  <pre class="log" id="codigos-2fa">{% for c in codes %}{{ c }}
 {% endfor %}</pre>
   <div class="form-actions">
     <button type="button" class="btn btn--sm" data-copiar="#codigos-2fa" hidden>{{ _('account_2fa_codes.copy_codes') }}</button>

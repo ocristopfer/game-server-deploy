@@ -19,8 +19,8 @@ def index(sid: int):
     except panel.RemoteError as exc:
         failure = str(exc)
     return render_template(
-        "backups.html", server=server, copias=copies, erro=failure, caminhos=paths,
-        backup_dir=panel.BACKUP_DIR, manter=panel.BACKUP_KEEP,
+        "backups.html", server=server, copies=copies, error=failure, paths=paths,
+        backup_dir=panel.BACKUP_DIR, keep=panel.BACKUP_KEEP,
     )
 
 

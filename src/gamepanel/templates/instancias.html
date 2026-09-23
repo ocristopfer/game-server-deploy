@@ -11,12 +11,12 @@
 <div class="grid-cartoes">
 <div class="card">
   <h2>{{ _('instances.new') }}</h2>
-  {% if jogos %}
+  {% if games %}
   <form method="post" action="{{ url_for('broker.instance_new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>{{ _('instances.game') }}
       <select name="game" required>
-        {% for j in jogos %}
+        {% for j in games %}
           <option value="{{ j.key }}">{{ j.name }} — portas {{ j.ports | join(', ') }}</option>
         {% endfor %}
       </select>
@@ -47,11 +47,11 @@
        (Desativar, Remover) saiam da tela do celular, atras de uma rolagem lateral. #}
     <thead><tr><th>{{ _('instances.instance') }}</th></tr></thead>
     <tbody>
-      {% for i in instancias %}
+      {% for i in instances %}
       <tr>
         <td>
-          {% if servidores.get(i.id) %}
-            <a href="{{ url_for('servers.detail', sid=servidores[i.id].id) }}"><strong>{{ i.name }}</strong></a>
+          {% if servers.get(i.id) %}
+            <a href="{{ url_for('servers.detail', sid=servers[i.id].id) }}"><strong>{{ i.name }}</strong></a>
           {% else %}
             <strong>{{ i.name }}</strong>
           {% endif %}

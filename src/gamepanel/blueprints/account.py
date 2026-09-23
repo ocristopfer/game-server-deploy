@@ -57,8 +57,8 @@ def index():
                 conn.execute(panel.SQL_SET_PASSWORD, (panel.hash_password(new), session["uid"]))
             flash(panel.translate("flash.password_changed"), "ok")
             return redirect(url_for("dashboard.index"))
-    return render_template("account.html", segundo_fator=panel._two_factor_state(),
-                           exige_2fa=panel.REQUIRE_2FA, broker_ligado=panel.ALLOW_BROKER)
+    return render_template("account.html", two_factor=panel._two_factor_state(),
+                           requires_2fa=panel.REQUIRE_2FA, broker_enabled=panel.ALLOW_BROKER)
 
 
 @bp.route("/account/2fa", methods=["GET", "POST"])
@@ -76,14 +76,14 @@ def two_factor():
             codes = panel._guarda_o_segundo_fator(session["uid"], secret, step)
             session.pop("totp_pendente", None)
             flash(panel.translate("flash.two_factor_on"), "ok")
-            return render_template("account_2fa_codigos.html", codigos=codes)
+            return render_template("account_2fa_codigos.html", codes=codes)
     # O segredo fica na SESSAO (cookie assinado) ate ser confirmado; recarregar a pagina mostra
     # o mesmo, e abandonar a tela nao deixa nada meio ligado no banco.
     secret = session.get("totp_pendente") or panel.totp.new_secret()
     session["totp_pendente"] = secret
     address = panel.totp.uri(secret, session.get("username", ""), "Painel de Jogos")
     return render_template(
-        "account_2fa.html", segredo=panel.totp.group(secret), endereco=address,
+        "account_2fa.html", secret=panel.totp.group(secret), address=address,
         qr_svg=qr.svg(address, label="QR code da verificacao em duas etapas"))
 
 
@@ -116,4 +116,4 @@ def two_factor_codes():
         conn.execute("UPDATE users SET totp_recovery = ? WHERE id = ?",
                      (json.dumps([panel.totp.hash_recovery_code(c) for c in codes]), row["id"]))
     flash(panel.translate("flash.new_codes"), "ok")
-    return render_template("account_2fa_codigos.html", codigos=codes)
+    return render_template("account_2fa_codigos.html", codes=codes)

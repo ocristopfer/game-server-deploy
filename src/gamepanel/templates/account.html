@@ -24,7 +24,7 @@
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label for="lang">{{ _('account.language') }}</label>
     <select id="lang" name="lang">
-      {% for codigo, rotulo in idiomas %}
+      {% for codigo, rotulo in languages %}
       <option value="{{ codigo }}" {% if codigo == current_language %}selected{% endif %}>{{ rotulo }}</option>
       {% endfor %}
     </select>
@@ -57,9 +57,9 @@
 
 <div class="card card--form">
   <h2>{{ _('account.two_factor') }}</h2>
-  {% if segundo_fator.ativo %}
+  {% if two_factor.ativo %}
     <p><span class="badge on">{{ _('account.on') }}</span>
-       <span class="muted small">{{ segundo_fator.codigos_restantes }} codigo(s) de recuperacao restante(s)</span></p>
+       <span class="muted small">{{ two_factor.codigos_restantes }} codigo(s) de recuperacao restante(s)</span></p>
     <p class="muted small">{{ _('account.two_factor_on_hint') }}</p>
     <details class="stack--sm">
       <summary class="btn btn--ghost btn--sm">{{ _('account.new_recovery_codes') }}</summary>
@@ -75,7 +75,7 @@
         {{ ui.botao(_('account.generate'), tamanho='sm') }}
       </form>
     </details>
-    {% if not exige_2fa %}
+    {% if not requires_2fa %}
     <details class="stack--sm mt-4">
       <summary class="btn btn--danger btn--sm">{{ _('account.disable') }}</summary>
       <form method="post" action="{{ url_for('account.two_factor_off') }}" class="mt-4">
@@ -98,7 +98,7 @@
     <p class="muted small">
       Com ela, saber a senha nao basta para entrar: o painel tambem pede um codigo de 6 digitos
       do seu celular.
-      {% if is_admin and broker_ligado %}
+      {% if is_admin and broker_enabled %}
         <strong>{{ _('account.two_factor_broker_hint') }}</strong>
       {% elif is_admin %}
         Este painel da poder de root nos containers de jogo: ative.

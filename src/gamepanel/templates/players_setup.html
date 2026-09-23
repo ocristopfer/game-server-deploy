@@ -9,15 +9,15 @@
 <div class="flash">{{ _h('players_setup.intro') }}</div>
 
 <nav class="tabs" aria-label="{{ _('players_setup.how_to_count') }}">
-  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, aba='porta') }}"
-     {% if aba == 'porta' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_udp') }}</a>
-  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, aba='http') }}"
-     {% if aba == 'http' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_http') }}</a>
-  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, aba='log') }}"
-     {% if aba == 'log' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_log') }}</a>
+  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, tab='porta') }}"
+     {% if tab == 'porta' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_udp') }}</a>
+  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, tab='http') }}"
+     {% if tab == 'http' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_http') }}</a>
+  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, tab='log') }}"
+     {% if tab == 'log' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_log') }}</a>
 </nav>
 
-{% if aba == 'porta' %}
+{% if tab == 'porta' %}
 <div class="card">
   <h2>{{ _('players_setup.ports_tested') }}</h2>
   <p class="muted small">{{ _h('players_setup.ports_tested_hint') }}</p>
@@ -63,15 +63,15 @@
   {# Plural e por idioma: duas chaves, e nao um 's' colado no fim do numero. #}
   <p class="flash">{{ _h('players_setup.no_udp_query_one' if udp_do_jogo == 1
                          else 'players_setup.no_udp_query_many', n=udp_do_jogo,
-                         url_http=url_for('players.setup', sid=server.id, aba='http'),
-                         url_log=url_for('players.setup', sid=server.id, aba='log')) }}</p>
+                         url_http=url_for('players.setup', sid=server.id, tab='http'),
+                         url_log=url_for('players.setup', sid=server.id, tab='log')) }}</p>
   {% else %}
   <p class="muted small">{{ _h('players_setup.none_answered',
-                               url=url_for('players.setup', sid=server.id, aba='http')) }}</p>
+                               url=url_for('players.setup', sid=server.id, tab='http')) }}</p>
   {% endif %}
 </div>
 
-{% elif aba == 'http' %}
+{% elif tab == 'http' %}
 <div class="card">
   <h2>{{ _('players_setup.tcp_answered_http') }}</h2>
   <p class="muted small">{{ _h('players_setup.tcp_hint') }}</p>
@@ -130,7 +130,7 @@
   {% endif %}
   {% if not tem_api %}
   <p class="flash">{{ _h('players_setup.no_game_api',
-                         url=url_for('players.setup', sid=server.id, aba='log')) }}</p>
+                         url=url_for('players.setup', sid=server.id, tab='log')) }}</p>
   {% endif %}
 </div>
 

@@ -11,8 +11,8 @@
 
 <div class="card">
   <div class="conf-files">
-    {% for arquivo in arquivos %}
-      <a class="chip{{ ' on' if arquivo == alvo }}"
+    {% for arquivo in files %}
+      <a class="chip{{ ' on' if arquivo == target }}"
          href="{{ url_for('config_quick.index', sid=server.id, file=arquivo) }}"
          title="{{ arquivo }}">{{ arquivo.rsplit('/', 1)[-1] }}</a>
     {% else %}
@@ -36,23 +36,23 @@
        arquivos de config" na tela de Arquivos, rodando a mesma varredura e devolvendo
        a mesma lista — so que la o resultado nao dava para fixar em lugar nenhum. #}
     {{ ui.botao(_('config.search_container'), variante='ghost', tamanho='sm', icone='🔎',
-                href=url_for('config_quick.index', sid=server.id, descobrir=1, file=alvo)) }}
+                href=url_for('config_quick.index', sid=server.id, descobrir=1, file=target)) }}
   </form>
   {% endif %}
 
-  {% if alvo %}
+  {% if target %}
     <p class="muted small conf-path">
-      <code>{{ alvo }}</code>
+      <code>{{ target }}</code>
       {% if info %} &middot; {{ info.size | filesize }} &middot; {{ info.owner }} &middot; {{ info.mtime }}{% endif %}
       {% if doc %} &middot; formato {{ doc.label }}{% endif %}
       {% if is_admin %}
-      &middot; <a href="{{ url_for('files.index', sid=server.id, file=alvo) }}">{{ _('config.edit_as_text') }}</a>
+      &middot; <a href="{{ url_for('files.index', sid=server.id, file=target) }}">{{ _('config.edit_as_text') }}</a>
       {% endif %}
-      {% if registrado and is_admin %}
+      {% if registered and is_admin %}
       &middot;
       <form method="post" action="{{ url_for('config_quick.register_file', sid=server.id) }}" class="inline">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-        <input type="hidden" name="path" value="{{ alvo }}">
+        <input type="hidden" name="path" value="{{ target }}">
         <input type="hidden" name="acao" value="remover">
         <button class="btn-link" type="submit">{{ _('config.unpin') }}</button>
       </form>
@@ -61,12 +61,12 @@
   {% endif %}
 </div>
 
-{% if sugestoes is not none %}
+{% if suggestions is not none %}
 <div class="card">
   <h2>{{ _('config.found_in_container') }}</h2>
-  {% if sugestoes %}
+  {% if suggestions %}
   <ul class="filelist">
-    {% for s in sugestoes %}
+    {% for s in suggestions %}
     <li>
       <a href="{{ url_for('config_quick.index', sid=server.id, file=s.path) }}">{{ s.path }}</a>
       <span class="muted small">
@@ -98,7 +98,7 @@
 {% if doc %}
 <form method="post" action="{{ url_for('config_quick.save', sid=server.id) }}" data-config-form>
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-  <input type="hidden" name="path" value="{{ alvo }}">
+  <input type="hidden" name="path" value="{{ target }}">
   {% set ns = namespace(i=0) %}
 
   <div class="card">
@@ -235,12 +235,12 @@
     </p>
   </div>
 </form>
-{% elif alvo and not errors %}
+{% elif target and not errors %}
 <div class="card">
   <p class="muted">
-    Nao consegui abrir <code>{{ alvo }}</code> como formulario.
+    Nao consegui abrir <code>{{ target }}</code> como formulario.
     {% if is_admin %}
-      <a href="{{ url_for('files.index', sid=server.id, file=alvo) }}">{{ _('config.edit_as_text_title') }}</a>.
+      <a href="{{ url_for('files.index', sid=server.id, file=target) }}">{{ _('config.edit_as_text_title') }}</a>.
     {% else %}
       Avise um administrador do painel &mdash; a edicao como texto e restrita a ele.
     {% endif %}

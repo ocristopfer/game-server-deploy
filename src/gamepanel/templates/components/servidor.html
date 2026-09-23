@@ -51,7 +51,7 @@
 {# Manutencao e um grupo a parte de proposito: "Atualizar" derruba o servidor por
    varios minutos e nao pode ficar encostado no "Reiniciar" como se fosse do mesmo
    peso. Quem so queria reiniciar nao tropeca num update de 30 GB. #}
-{% macro manutencao(server, acoes) %}
+{% macro manutencao(server, actions) %}
 <div class="cluster">
   {% for a in actions %}
     {{ ui.acao(

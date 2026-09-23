@@ -20,8 +20,8 @@
  *   - nao passa perto de download de arquivo nem de backup: sao respostas de varios
  *     GB em streaming, e atravessar o worker so as tornaria mais lentas.
  */
-const VERSAO = '{{ versao }}';
-const CACHE = `gamepanel-${VERSAO}`;
+const VERSION = '{{ version }}';
+const CACHE = `gamepanel-${VERSION}`;
 const OFFLINE = '{{ url_for("pwa.offline") }}';
 
 /* O casco do aplicativo: o que precisa estar no aparelho para a pagina de "sem

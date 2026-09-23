@@ -33,7 +33,7 @@ def service_worker():
     """
     precache, version_mark = panel._shell_files()
     resp = panel.app.response_class(
-        render_template("sw.js.jinja", versao=version_mark, precache=precache),
+        render_template("sw.js.jinja", version=version_mark, precache=precache),
         mimetype="text/javascript",
     )
     # Sem isto o proprio arquivo do worker ficaria em cache e o painel nunca

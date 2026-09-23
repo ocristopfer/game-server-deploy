@@ -69,19 +69,19 @@
 {# Um filtro so, acima de tudo o que ele governa: os dois graficos e a tabela mostram
    sempre a mesma fatia de tempo, entao os numeros nunca se contradizem. #}
 <nav class="tabs" aria-label="{{ _('charts.period') }}">
-  {% for h, rotulo in faixas %}
+  {% for h, rotulo in ranges %}
     <a class="tabs__item" href="{{ url_for('charts.index', sid=server.id, h=h) }}"
-       {% if h == horas %}aria-current="page"{% endif %}>{{ rotulo }}</a>
+       {% if h == hours %}aria-current="page"{% endif %}>{{ rotulo }}</a>
   {% endfor %}
 </nav>
 <p class="muted small">
-  {{ total }} amostra(s) &middot; uma a cada {{ a_cada }} min &middot; guardadas por {{ guarda_dias }} dias
+  {{ total }} amostra(s) &middot; uma a cada {{ every }} min &middot; guardadas por {{ keep_days }} dias
 </p>
 
-{% if uso.vazio and jogadores.vazio %}
+{% if usage.vazio and players.vazio %}
 <div class="card card--vazio">
   <p>{{ _('charts.no_samples') }}</p>
-  <p class="muted">O painel guarda uma leitura a cada {{ a_cada }} minutos enquanto esta no ar
+  <p class="muted">O painel guarda uma leitura a cada {{ every }} minutos enquanto esta no ar
     &mdash; volte daqui a pouco, ou escolha um periodo maior.</p>
 </div>
 {% else %}
@@ -97,12 +97,12 @@
        CSS valido para ferramenta nenhuma - o arquivo inteiro passa a acusar erro. Como
        atributo de SVG ela e so um atributo, igual ao `stroke` das linhas do grafico. #}
     <div class="legenda">
-      {{ chave_da_legenda(cores.cpu, 'CPU') }}
-      {{ chave_da_legenda(cores.mem, 'Memoria') }}
+      {{ chave_da_legenda(colors.cpu, 'CPU') }}
+      {{ chave_da_legenda(colors.mem, 'Memoria') }}
     </div>
   </div>
-  {{ grafico(uso, 'CPU e memoria') }}
-  {% if uso.vazio %}<p class="muted">{{ _('charts.no_readings') }}</p>{% endif %}
+  {{ grafico(usage, 'CPU e memoria') }}
+  {% if usage.vazio %}<p class="muted">{{ _('charts.no_readings') }}</p>{% endif %}
 </div>
 
 {# Grafico separado, e nao um segundo eixo no de cima: "por cento" e "quantidade de
@@ -113,10 +113,10 @@
     <h2>{{ _('charts.players') }}</h2>
     {# Uma serie so: o titulo ja a nomeia, entao nao ha legenda. O espaco vai para o
        numero que se procura num grafico de jogadores. #}
-    <span class="muted small">{{ _('charts.peak_of') }} <strong>{{ pico }}</strong> {{ _('charts.in_period') }}</span>
+    <span class="muted small">{{ _('charts.peak_of') }} <strong>{{ peak }}</strong> {{ _('charts.in_period') }}</span>
   </div>
-  {{ grafico(jogadores, 'Jogadores') }}
-  {% if jogadores.vazio %}
+  {{ grafico(players, 'Jogadores') }}
+  {% if players.vazio %}
     <p class="muted">Sem contagem de jogadores neste periodo
       (a contagem precisa estar ligada no cadastro do servidor).</p>
   {% endif %}
@@ -132,7 +132,7 @@
     <div class="table-wrap"><table class="jobs numerica">
       <thead><tr><th>{{ _('charts.when') }}</th><th>{{ _('charts.cpu') }}</th><th>{{ _('charts.memory') }}</th><th>{{ _('charts.players') }}</th></tr></thead>
       <tbody>
-        {% for l in tabela %}
+        {% for l in table %}
         <tr>
           <td class="muted small nowrap">{{ l.quando }}</td>
           <td>{{ '%.1f%%' % l.cpu if l.cpu is not none else '-' }}</td>

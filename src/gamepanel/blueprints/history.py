@@ -58,8 +58,8 @@ def index():
     ).fetchall()]
 
     return render_template(
-        "history.html", jobs=jobs, servers=servers, nomes=names, usuarios=users,
-        acoes=sorted(panel.JOB_LABELS), filtro_srv=server_filter, filtro_acao=action_filter,
-        filtro_user=user_filter, pagina=page, tem_mais=has_more,
-        manter_dias=panel.JOBS_KEEP_DAYS,
+        "history.html", jobs=jobs, servers=servers, names=names, users=users,
+        actions=sorted(panel.JOB_LABELS), server_filter=server_filter, action_filter=action_filter,
+        user_filter=user_filter, page=page, has_more=has_more,
+        keep_days=panel.JOBS_KEEP_DAYS,
     )

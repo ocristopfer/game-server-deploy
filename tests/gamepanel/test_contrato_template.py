@@ -38,27 +38,45 @@ def _lidos_pelos_templates() -> dict[str, str]:
     return lidos
 
 
-def _passados_pelo_app() -> list[tuple[str, str, int]]:
-    """(template, nome do kwarg, linha) de cada `render_template` do `app.py`."""
-    fonte = Path(panel.__file__).read_text(encoding="utf-8")
+def _arquivos_que_renderizam() -> list[Path]:
+    """`app.py` mais todo blueprint — e ali que os `render_template` moram hoje.
+
+    Varrer so o `app.py`, como este teste fazia, deixou de cobrir coisa alguma no dia em
+    que as rotas sairam dele: o teste continuava verde com zero chamadas encontradas.
+    Por isso a lista e derivada da PASTA, e nao escrita a mao.
+    """
+    raiz = Path(panel.__file__).parent
+    return [raiz / "app.py", *sorted((raiz / "blueprints").glob("*.py"))]
+
+
+def _passados_pelo_app() -> list[tuple[str, str, str]]:
+    """(template, nome do kwarg, onde) de cada `render_template` do painel."""
     passados = []
-    for no in ast.walk(ast.parse(fonte)):
-        if not (isinstance(no, ast.Call) and getattr(no.func, "id", "") == "render_template"
-                and no.args):
-            continue
-        alvo = no.args[0]
-        template = alvo.value if isinstance(alvo, ast.Constant) else "?"
-        for kw in no.keywords:
-            if kw.arg:
-                passados.append((template, kw.arg, no.lineno))
+    for arquivo in _arquivos_que_renderizam():
+        for no in ast.walk(ast.parse(arquivo.read_text(encoding="utf-8"))):
+            if not (isinstance(no, ast.Call) and getattr(no.func, "id", "") == "render_template"
+                    and no.args):
+                continue
+            alvo = no.args[0]
+            template = alvo.value if isinstance(alvo, ast.Constant) else "?"
+            for kw in no.keywords:
+                if kw.arg:
+                    passados.append((template, kw.arg, f"{arquivo.name}:{no.lineno}"))
     return passados
+
+
+def test_a_varredura_encontra_os_render_template_de_verdade():
+    """Guarda do proprio teste: zero chamadas e o jeito silencioso de ele parar de valer."""
+    passados = _passados_pelo_app()
+    assert len(passados) > 50, f"so {len(passados)} kwargs encontrados - a varredura quebrou?"
+    assert len({onde.split(":")[0] for _t, _n, onde in passados}) > 10
 
 
 def test_todo_kwarg_de_render_template_tem_quem_o_leia():
     lidos = _lidos_pelos_templates()
     orfaos = [
-        f"app.py:{line} {template} passa '{name}', que nenhum template le"
-        for template, name, line in _passados_pelo_app()
+        f"{onde} {template} passa '{name}', que nenhum template le"
+        for template, name, onde in _passados_pelo_app()
         # O `.jinja` (service worker, manifest) nao entra na varredura de `*.html`.
         if name not in lidos and not template.endswith(".jinja")
     ]

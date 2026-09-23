@@ -18,7 +18,7 @@ def index():
     ).fetchall()
     return render_template(
         "users.html", users=rows, roles=panel.ROLES, role_labels=panel.labels_of(panel.ROLE_LABELS),
-        meu_id=session.get("uid"), min_len=panel.PASSWORD_MIN,
+        my_id=session.get("uid"), min_len=panel.PASSWORD_MIN,
     )
 
 

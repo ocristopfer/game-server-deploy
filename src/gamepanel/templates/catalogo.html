@@ -15,14 +15,14 @@
        desta tela) ficava atras de uma rolagem lateral no celular. #}
     <thead><tr><th>{{ _('catalog.game') }}</th></tr></thead>
     <tbody>
-      {% for j in jogos %}
+      {% for j in games %}
       <tr>
         <td>
           <strong>{{ j.name }}</strong> <span class="muted small">{{ j.key }}</span>
           {% if j.creatable %}<span class="badge on">{{ _('catalog.creatable') }}</span>
           {% else %}<span class="badge cold">{{ _('catalog.manual') }}</span>{% endif %}
           <div class="muted small">
-            app {{ j.app_id or '—' }} · {{ j.memory_mb }} MB · {{ j.cores }} CPU · {{ j.disk_gb }} GB · {{ j.source }}
+            app {{ j.app_id or '—' }} · {{ j.memory_mb }} MB · {{ j.colors }} CPU · {{ j.disk_gb }} GB · {{ j.source }}
           </div>
           <div class="small">
             {{ _('catalog.ports') }}: {{ j.ports | join(', ') }}{% if j.shiftable %} <span class="badge cold" title="{{ _('catalog.shifted_port_help') }}">{{ _('catalog.shifted_port') }}</span>{% endif %}
@@ -54,11 +54,11 @@
     </div>
     {# Sem `name`: nao vai no envio, so preenche os campos abaixo (features/modelo-jogo.js).
        Nasce escondido porque sem JavaScript ele nao faria nada. #}
-    {% if modelos %}
+    {% if game_templates %}
     <label hidden>{{ _('catalog.start_from_template') }}
       <select data-modelo-jogo>
         <option value="">{{ _('catalog.blank') }}</option>
-        {% for m in modelos %}
+        {% for m in game_templates %}
         <option value="{{ m.key }}" data-descricao="{{ m.description }}"
                 data-valores='{{ m.values | tojson }}'>{{ m.label }}</option>
         {% endfor %}
@@ -148,7 +148,7 @@
     </label>
     <fieldset class="grupo">
       <legend>{{ _('catalog.install_recipes') }}</legend>
-      {% for r in receitas %}
+      {% for r in recipes %}
         <label class="checkbox"><input type="checkbox" name="recipes" value="{{ r }}"> {{ r }}</label>
       {% endfor %}
     </fieldset>

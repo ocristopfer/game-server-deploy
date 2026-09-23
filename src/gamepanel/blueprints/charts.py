@@ -64,8 +64,8 @@ def index(sid: int):
     ][:200]
 
     return render_template(
-        "charts.html", server=server, uso=usage, jogadores=players, tabela=table,
-        horas=hours, faixas=panel.CHART_RANGES, total=len(samples), pico=peak,
-        a_cada=int(panel.SAMPLE_EVERY / 60), guarda_dias=panel.SAMPLES_KEEP_DAYS,
-        cores={"cpu": panel.CHART_CPU, "mem": panel.CHART_MEM},
+        "charts.html", server=server, usage=usage, players=players, table=table,
+        hours=hours, ranges=panel.CHART_RANGES, total=len(samples), peak=peak,
+        every=int(panel.SAMPLE_EVERY / 60), keep_days=panel.SAMPLES_KEEP_DAYS,
+        colors={"cpu": panel.CHART_CPU, "mem": panel.CHART_MEM},
     )

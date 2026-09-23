@@ -9,14 +9,14 @@
 
 <div class="card">
   <h2>{{ _('backups.what_is_saved') }}</h2>
-  {% if caminhos %}
+  {% if paths %}
     <ul class="filelist">
-      {% for c in caminhos %}<li><code>{{ c }}</code></li>{% endfor %}
+      {% for c in paths %}<li><code>{{ c }}</code></li>{% endfor %}
     </ul>
     <p class="muted small">
       Guardado como <code>.tar.gz</code> em <code>{{ backup_dir }}</code>, dentro do
       proprio container.
-      {% if manter %}As <strong>{{ manter }}</strong> copias mais novas ficam; as
+      {% if keep %}As <strong>{{ keep }}</strong> copias mais novas ficam; as
       antigas saem sozinhas.{% else %}Nenhuma copia e apagada automaticamente.{% endif %}
       {% if is_admin %}
         Para mudar o que entra, edite os
@@ -44,12 +44,12 @@
 
 <div class="card">
   <h2>{{ _('backups.stored_copies') }}</h2>
-  {% if erro %}<p class="flash error">{{ erro }}</p>{% endif %}
-  {% if copias %}
+  {% if error %}<p class="flash error">{{ error }}</p>{% endif %}
+  {% if copies %}
   <div class="table-wrap"><table class="jobs">
     <thead><tr><th>{{ _('backups.file') }}</th><th>{{ _('backups.when') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
     <tbody>
-      {% for c in copias %}
+      {% for c in copies %}
       <tr>
         <td>
           <code>{{ c.name }}</code>
@@ -75,7 +75,7 @@
       {% endfor %}
     </tbody>
   </table></div>
-  {% elif not erro %}
+  {% elif not error %}
     <p class="muted">{{ _('backups.none_yet') }}</p>
   {% endif %}
 </div>
