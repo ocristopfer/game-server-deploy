@@ -9,7 +9,7 @@ import pytest
 
 from gamebroker.domain.exceptions import OutOfResources
 from gamebroker.persistence.db import ESTADO_ATIVA, OP_ERRO, OP_OK
-from gamebroker.runtime.fakes import InstaladorFalso, RedeFalsa
+from gamebroker.runtime.fakes import FakeInstaller, FakeNetwork
 from gamebroker.services.allocator import ips_in_range
 from gamebroker.services.instance_service import Config, Service
 
@@ -17,9 +17,9 @@ from gamebroker.services.instance_service import Config, Service
 @pytest.fixture
 def real(environment, pve, opn):
     """O `ambiente` (banco, catalogo, relogio) com Proxmox e OPNsense reais no lugar dos falsos."""
-    installer = InstaladorFalso()
+    installer = FakeInstaller()
     service = Service(environment.db, environment.catalog, pve.backend, opn.backend, installer,
-                      RedeFalsa(), Config(ctids=range(300, 310), ips=ips_in_range("10.0.0", 30, 40)),
+                      FakeNetwork(), Config(ctids=range(300, 310), ips=ips_in_range("10.0.0", 30, 40)),
                       run=lambda tarefa: tarefa(), clock=environment.clock)
     environment.pve, environment.opn, environment.instalador_real, environment.servico_real = pve, opn, installer, service
     return environment
@@ -70,18 +70,18 @@ def test_regra_que_o_broker_nao_entende_impede_criar(real):
 def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
     """Proxmox e OPNsense reais (contra falsos HTTP) + InstaladorSsh real (com executor que
     grava os comandos): e o caminho de criacao inteiro, exceto o SSH em si."""
-    from test_ssh_installer import CHAVE_PUBLICA, ExecutorFalso
+    from test_ssh_installer import CHAVE_PUBLICA, FakeRunner
 
-    from gamebroker.runtime.ssh_installer import ConfigSsh, InstaladorSsh
+    from gamebroker.runtime.ssh_installer import ConfigSsh, SshInstaller
 
     lib = tmp_path / "lib"
     lib.mkdir()
     for name in ("ct-install.sh", "ct-phases.sh"):
         (lib / name).write_text("#!/bin/bash\n")
-    executor = ExecutorFalso()
-    ssh = InstaladorSsh(ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, lib_dir=lib),
+    executor = FakeRunner()
+    ssh = SshInstaller(ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, lib_dir=lib),
                         executor, sleep=lambda _s: None)
-    service = Service(real.db, real.catalog, real.pve.backend, real.opn.backend, ssh, RedeFalsa(),
+    service = Service(real.db, real.catalog, real.pve.backend, real.opn.backend, ssh, FakeNetwork(),
                       Config(ctids=range(300, 310), ips=ips_in_range("10.0.0", 30, 40)),
                       run=lambda tarefa: tarefa(), clock=real.clock)
 

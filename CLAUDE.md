@@ -291,7 +291,7 @@ dessas tabelas.
   `_texto_de_online()` nasceram assim — e o ultimo corrigiu um bug de brinde: uma das
   quatro copias dizia "0 jogadores online".
 - **Mais de 13 parametros: passe um objeto.** `ensure_server` tinha 15; virou
-  `ServidorDoDeploy(NamedTuple)`. Quinze posicoes e onde um `join_re` vai parar no lugar
+  `DeployServer(NamedTuple)`. Quinze posicoes e onde um `join_re` vai parar no lugar
   do `leave_re` sem ninguem notar.
 - **Parametro que ninguem usa sai da assinatura**, mesmo que quebre a simetria com as
   funcoes irmas. Simetria falsa engana quem le.

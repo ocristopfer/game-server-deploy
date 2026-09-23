@@ -13,7 +13,7 @@ from gamebroker.runtime.ssh_installer import (
     DESTINO_REMOTO,
     ConfigSsh,
     ExecutorReal,
-    InstaladorSsh,
+    SshInstaller,
     InstallError,
     build_env,
 )
@@ -24,7 +24,7 @@ BLOB = "AAAAC3NzaC1lZDI1NTE5AAAAIExemploExemploExemploExemplo"
 CHAVE_PUBLICA = f"ssh-ed25519 {BLOB} broker@teste"
 
 
-class ExecutorFalso:
+class FakeRunner:
     """Registra cada comando. `saidas` mapeia um trecho do comando remoto a (codigo, linhas)."""
 
     def __init__(self) -> None:
@@ -82,8 +82,8 @@ def ports():
 
 @pytest.fixture
 def installer(config):
-    executor = ExecutorFalso()
-    return InstaladorSsh(config, executor, sleep=lambda _s: None), executor
+    executor = FakeRunner()
+    return SshInstaller(config, executor, sleep=lambda _s: None), executor
 
 
 def _install(installer, game, ports, log=None):
@@ -280,9 +280,9 @@ def test_espera_o_ssh_subir(installer, game, ports):
 
 def test_ssh_que_nunca_sobe_e_erro_e_nao_tenta_limpar(config, game, ports):
     clock = iter(range(0, 10_000, 100))
-    executor = ExecutorFalso()
+    executor = FakeRunner()
     executor.falhas_no_ssh_inicial = 10**6
-    inst = InstaladorSsh(config, executor, sleep=lambda _s: None, now=lambda: float(next(clock)))
+    inst = SshInstaller(config, executor, sleep=lambda _s: None, now=lambda: float(next(clock)))
     with pytest.raises(InstallError, match="nao respondeu"):
         inst.install("10.0.0.30", game, ports, lambda _l: None)
     assert set(executor.commands()) == {"true"}, "nunca entrou: nada a enviar nem a limpar"
@@ -326,7 +326,7 @@ def test_lib_incompleta_e_recusada(tmp_path):
     (tmp_path / "ct-install.sh").write_text("x")
     cfg = ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, lib_dir=tmp_path)
     with pytest.raises(ValueError, match="ct-phases.sh"):
-        InstaladorSsh(cfg, ExecutorFalso())
+        SshInstaller(cfg, FakeRunner())
 
 
 # --- executor real (com o proprio Python como "processo") ------------------------------------------------------

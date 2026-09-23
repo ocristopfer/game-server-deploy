@@ -239,7 +239,7 @@ class Service:
 
 
 def record_for_the_panel(inst: dict, game: Game, ports: list[AllocatedPort]) -> dict:
-    """Os campos de `ServidorDoDeploy` do painel: com isso ele chama `ensure_server`."""
+    """Os campos de `DeployServer` do painel: com isso ele chama `ensure_server`."""
     return {
         "broker_id": inst["id"], "name": inst["name"], "host": inst["ip"],
         "service": f"{game.key}.service",

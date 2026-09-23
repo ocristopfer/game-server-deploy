@@ -8,7 +8,7 @@ from gamebroker.services.allocator import AllocatedPort
 from gamebroker.services.catalog import Game
 
 
-class ProxmoxFalso:
+class FakeProxmox:
     def __init__(self, ctids: set[int] | None = None, ips: set[str] | None = None):
         self.externos_ctids = set(ctids or ())
         self.externos_ips = set(ips or ())
@@ -18,7 +18,7 @@ class ProxmoxFalso:
         self.falha_em: str | None = None
         self.online = True
 
-    def _falhar(self, etapa: str) -> None:
+    def _fail(self, etapa: str) -> None:
         if self.falha_em == etapa:
             raise RuntimeError(f"proxmox falso: {etapa} falhou")
 
@@ -27,22 +27,22 @@ class ProxmoxFalso:
                 self.externos_ips | {c.ip for c in self.cts.values()})
 
     def create_ct(self, spec: CtSpec) -> None:
-        self._falhar("criar_ct")
+        self._fail("criar_ct")
         self.chamadas.append(("criar_ct", spec.ctid))
         self.cts[spec.ctid] = spec
 
     def start(self, ctid: int) -> None:
-        self._falhar("iniciar")
+        self._fail("iniciar")
         self.chamadas.append(("iniciar", ctid))
         self.parados.discard(ctid)
 
     def stop(self, ctid: int) -> None:
-        self._falhar("parar")
+        self._fail("parar")
         self.chamadas.append(("parar", ctid))
         self.parados.add(ctid)
 
     def destroy(self, ctid: int) -> None:
-        self._falhar("destruir")
+        self._fail("destruir")
         self.chamadas.append(("destruir", ctid))
         self.cts.pop(ctid, None)
 
@@ -53,7 +53,7 @@ class ProxmoxFalso:
         return self.online
 
 
-class OpnsenseFalso:
+class FakeOpnsense:
     def __init__(self, ocupadas: set[tuple[int, str]] | None = None):
         self.externas = set(ocupadas or ())
         self.regras: dict[int, list[tuple[str, int, str]]] = {}
@@ -79,7 +79,7 @@ class OpnsenseFalso:
         return self.online
 
 
-class InstaladorFalso:
+class FakeInstaller:
     def __init__(self) -> None:
         self.instalados: list[tuple[str, str]] = []
         self.failure = False
@@ -93,7 +93,7 @@ class InstaladorFalso:
         log("instalacao concluida")
 
 
-class RedeFalsa:
+class FakeNetwork:
     def __init__(self, ocupados: set[str] | None = None):
         self.ocupados = set(ocupados or ())
 

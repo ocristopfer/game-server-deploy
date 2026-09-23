@@ -495,7 +495,7 @@ quebra testes que usam `monkeypatch.setattr(panel, "nome", ...)` por string)
 `job_ou_403`, `filtro_de_papel`, `jobs_do_servidor`. Tabelas de módulo:
 `COMANDOS`, `FONTES_DE_CONTAGEM`, `ALERTAS_DE_RECURSO`, `MARCA_BASE`/
 `_JOGADOR`/`_MENSAGEM`, `ROLE_LABELS`, `DIAS_SEMANA`. Classes: `_LogStream`,
-`_Ritmo`, `ServidorDoDeploy`.
+`_Ritmo`, `DeployServer`.
 
 **`admin/ui.py`**: `ACOES`, `POR_CHAVE`, `SECOES_DO_SERVIDOR`,
 `NAV_PRINCIPAL`/`_SECUNDARIA`/`_DESKTOP_BARRA`/`_DESKTOP_CONTA`,

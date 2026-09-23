@@ -10,7 +10,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from fake_http import ServidorFalso
+from fake_http import FakeServer
 
 from gamebroker.integrations.http_client import RESPOSTA_MAX, Client, ConnectionFailed, normalize_fingerprint
 
@@ -24,7 +24,7 @@ def _echo(metodo, caminho, query, corpo, headers):
 
 @pytest.fixture
 def echo_server():
-    server = ServidorFalso(_echo)
+    server = FakeServer(_echo)
     yield server
     server.stop()
 
@@ -61,7 +61,7 @@ def test_form_e_json_saem_no_formato_certo(echo_server):
 
 
 def test_erro_sem_corpo_devolve_o_motivo_da_linha_de_status():
-    server = ServidorFalso(lambda *_a: (403, "", "Permission check failed (/vms/399, VM.Allocate)"))
+    server = FakeServer(lambda *_a: (403, "", "Permission check failed (/vms/399, VM.Allocate)"))
     try:
         response = Client(server.url, {}).request("GET", "/x")
     finally:
@@ -82,7 +82,7 @@ def test_http_client_recusada_nao_vaza_o_token(echo_server):
 
 
 def test_resposta_gigante_e_recusada():
-    server = ServidorFalso(lambda *_a: (200, "x" * (RESPOSTA_MAX + 10)))
+    server = FakeServer(lambda *_a: (200, "x" * (RESPOSTA_MAX + 10)))
     try:
         with pytest.raises(ConnectionFailed, match="grande demais"):
             Client(server.url, {}).request("GET", "/x")
@@ -91,7 +91,7 @@ def test_resposta_gigante_e_recusada():
 
 
 def test_resposta_que_nao_e_json_vira_texto():
-    server = ServidorFalso(lambda *_a: (200, "oi, sou texto"))
+    server = FakeServer(lambda *_a: (200, "oi, sou texto"))
     try:
         response = Client(server.url, {}).request("GET", "/x")
     finally:
@@ -167,7 +167,7 @@ def _slow(segundos: float):
 
 
 def test_prazo_da_chamada_vale_so_para_ela():
-    server = ServidorFalso(_slow(0.8))
+    server = FakeServer(_slow(0.8))
     try:
         client = Client(server.url, {}, timeout=30)
         with pytest.raises(ConnectionFailed, match="TimeoutError"):

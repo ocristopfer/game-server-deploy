@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 Tratador = Callable[[str, str, dict, dict, dict], tuple]
 
 
-class ServidorFalso:
+class FakeServer:
     """Sobe em 127.0.0.1:<porta livre>. `tratador(metodo, caminho, query, corpo, cabecalhos)`
     devolve `(status, corpo, motivo)`; corpo dict/list vira JSON, texto vai como esta."""
 
@@ -83,7 +83,7 @@ NAO_ENCONTRADO = "Not Found"
 TOKEN_PVE = "broker@pve!broker=00000000-0000-0000-0000-000000000000"
 
 
-class PveFalso:
+class FakePve:
     def __init__(self, node: str = "pve", pool: str = "games"):
         self.node = node
         self.pool = pool
@@ -198,7 +198,7 @@ def alias_summary(descricao: str, ports: list[str]) -> str:
     return f"<strong>{descricao}</strong><br/>" + "<br/>".join(ports)
 
 
-class OpnsenseHttpFalso:
+class FakeOpnsenseHttp:
     def __init__(self):
         self.regras: dict[str, dict] = {}
         self.aplicacoes = 0

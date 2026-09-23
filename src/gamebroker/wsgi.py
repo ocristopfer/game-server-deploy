@@ -22,10 +22,10 @@ from gamebroker.config import ConfigBroker, ConfigError, load
 from gamebroker.integrations.http_client import Client
 from gamebroker.persistence.db import Db
 from gamebroker.runtime.base import Network
-from gamebroker.runtime.network import RedeReal
+from gamebroker.runtime.network import RealNetwork
 from gamebroker.runtime.opnsense import Opnsense
 from gamebroker.runtime.proxmox import Proxmox
-from gamebroker.runtime.ssh_installer import Executor, InstaladorSsh
+from gamebroker.runtime.ssh_installer import Executor, SshInstaller
 from gamebroker.services.catalog import Catalog
 from gamebroker.services.instance_service import Config, Service
 
@@ -41,7 +41,7 @@ def build_service(cfg: ConfigBroker, executor: Executor | None = None, network: 
     extra = {} if run is None else {"run": run}
     return Service(
         Db(str(cfg.state_dir / "broker.db")), Catalog(cfg.games_dir, cfg.state_dir / "dinamico"),
-        proxmox, opnsense, InstaladorSsh(cfg.ssh, executor), network or RedeReal(),
+        proxmox, opnsense, SshInstaller(cfg.ssh, executor), network or RealNetwork(),
         Config(ctids=cfg.ctids, ctid_base=cfg.ctid_base, ips=cfg.ips, ports=cfg.ports,
                max_instances=cfg.max_instances, max_creations_per_hour=cfg.max_creations_per_hour),
         **extra)

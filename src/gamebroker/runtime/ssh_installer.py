@@ -153,7 +153,7 @@ class _Lote:
         self._ultimo = self._agora()
 
 
-class InstaladorSsh:
+class SshInstaller:
     def __init__(self, config: ConfigSsh, executor: Executor | None = None,
                  sleep: Callable[[float], None] = time.sleep,
                  now: Callable[[], float] = time.monotonic):
@@ -177,7 +177,7 @@ class InstaladorSsh:
     def _ssh(self, target: str, comando: str) -> list[str]:
         return ["ssh", *self._opcoes(), target, comando]
 
-    def _alvo(self, ip: str) -> str:
+    def _target(self, ip: str) -> str:
         return f"{self._cfg.usuario}@{ip}"
 
     # --- fluxo ----------------------------------------------------------------------------------
@@ -185,7 +185,7 @@ class InstaladorSsh:
     def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
         ip = str(ipaddress.IPv4Address(ip))
-        target = self._alvo(ip)
+        target = self._target(ip)
         env = build_env(game, ports)
         self._esperar_ssh(target, ip, log)
         failure: Exception | None = None

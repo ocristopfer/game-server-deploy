@@ -131,7 +131,7 @@ class Opnsense:
             raise OpnsenseError(f"{action}: HTTP {response.status}")
         return response
 
-    def _regras(self) -> list:
+    def _rules(self) -> list:
         response = self._api("POST", "/d_nat/search_rule", "ler regras", _BUSCA)
         lines = response.json.get("rows") if isinstance(response.json, dict) else None
         if not isinstance(lines, list):
@@ -139,12 +139,12 @@ class Opnsense:
         return lines
 
     def external_ports(self) -> set[tuple[int, str]]:
-        return busy_ports(self._regras(), self._interface)
+        return busy_ports(self._rules(), self._interface)
 
     def _uuids_of_instance(self, ctid: int) -> list[str]:
         description = instance_description(ctid)
         found = []
-        for rule in self._regras():
+        for rule in self._rules():
             if isinstance(rule, dict) and rule.get("descr") == description:
                 uuid = str(rule.get("uuid", ""))
                 if _UUID_RE.fullmatch(uuid):
@@ -176,7 +176,7 @@ class Opnsense:
         data = response.json if isinstance(response.json, dict) else {}
         uuid = str(data.get("uuid", ""))
         if data.get("result") != "saved" or not _UUID_RE.fullmatch(uuid):
-            raise OpnsenseError(f"criar regra {port}: o OPNsense recusou ({_validacoes(data)})")
+            raise OpnsenseError(f"criar regra {port}: o OPNsense recusou ({_validations(data)})")
         return uuid
 
     def close_ports(self, ctid: int) -> None:
@@ -211,7 +211,7 @@ class Opnsense:
             return False
 
 
-def _validacoes(data: dict) -> str:
+def _validations(data: dict) -> str:
     checks = data.get("validations")
     if isinstance(checks, dict) and checks:
         return "; ".join(f"{field}: {text}" for field, text in list(checks.items())[:3])

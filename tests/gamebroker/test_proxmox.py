@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from fake_http import ServidorFalso
+from fake_http import FakeServer
 
 from gamebroker.integrations.http_client import Client
 from gamebroker.runtime.base import CtSpec
@@ -165,7 +165,7 @@ def test_config_recusa_chaves_ruins(chaves):
 
 
 def test_backend_sem_servidor_e_erro_de_conexao_nao_excecao_solta():
-    server = ServidorFalso(lambda *_a: (200, {}))
+    server = FakeServer(lambda *_a: (200, {}))
     url = server.url
     server.stop()
     backend = Proxmox(Client(url, {}), ConfigProxmox(**BASE), sleep=lambda _s: None)
@@ -181,7 +181,7 @@ def test_sonda_de_saude_nao_espera_o_prazo_inteiro(monkeypatch):
 
     import gamebroker.runtime.proxmox as modulo
     monkeypatch.setattr(modulo, "SONDA_TIMEOUT", 0.3)
-    server = ServidorFalso(lambda *_a: (time.sleep(1.5), (200, {}))[1])
+    server = FakeServer(lambda *_a: (time.sleep(1.5), (200, {}))[1])
     try:
         backend = Proxmox(Client(server.url, {}, timeout=30), ConfigProxmox(**BASE), sleep=lambda _s: None)
         start_at = time.monotonic()

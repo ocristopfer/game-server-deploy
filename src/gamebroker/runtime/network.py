@@ -5,7 +5,7 @@ import ipaddress
 import subprocess
 
 
-class RedeReal:
+class RealNetwork:
     """Um ping. E a ultima linha de defesa contra o aparelho com IP fixo que o Proxmox nunca
     viu (o banco do broker e o Proxmox so sabem dos CTs). Falha em pingar = livre; um aparelho
     que ignora ICMP passa, e por isso a faixa do broker fica longe dos IPs que voce usa a mao."""

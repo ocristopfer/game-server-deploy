@@ -45,7 +45,7 @@ SEEDS = [
 ]
 
 for seed in SEEDS:
-    criado = panel.ensure_server(panel.ServidorDoDeploy(**seed))
+    criado = panel.ensure_server(panel.DeployServer(**seed))
     print(f"servidor de teste {'cadastrado' if criado else 'ja existia'}: {seed['name']}")
 PY
 fi

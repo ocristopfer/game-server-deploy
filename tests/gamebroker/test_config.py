@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 from fake_http import KEY_OPN, SECRET_OPN, TOKEN_PVE
-from test_ssh_installer import BLOB, CHAVE_PUBLICA, ExecutorFalso
+from test_ssh_installer import BLOB, CHAVE_PUBLICA, FakeRunner
 
 import gamebroker.wsgi as prod
 from gamebroker.config import ConfigError, load
-from gamebroker.runtime.fakes import RedeFalsa
-from gamebroker.runtime.network import RedeReal
+from gamebroker.runtime.fakes import FakeNetwork
+from gamebroker.runtime.network import RealNetwork
 
 TOKEN_BROKER = "b" * 48
 CHAVE_DO_PAINEL = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainelPainelPainelPainelPainel painel@gp"
@@ -209,8 +209,8 @@ def env_local(env, pve, opn):
 
 
 def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
-    executor = ExecutorFalso()
-    app = prod.create_app_from_config(load(env_local), executor=executor, network=RedeFalsa(),
+    executor = FakeRunner()
+    app = prod.create_app_from_config(load(env_local), executor=executor, network=FakeNetwork(),
                                    run=lambda tarefa: tarefa())
     http = app.test_client()
     auth = {"Authorization": f"Bearer {TOKEN_BROKER}", "X-Actor": "zeca"}
@@ -231,7 +231,7 @@ def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
 
 def test_a_api_de_producao_recusa_quem_nao_esta_na_lista_de_ips(env_local):
     env_local["BROKER_ALLOW_IPS"] = "10.9.9.9"
-    app = prod.create_app_from_config(load(env_local), executor=ExecutorFalso(), network=RedeFalsa())
+    app = prod.create_app_from_config(load(env_local), executor=FakeRunner(), network=FakeNetwork())
     response = app.test_client().get("/v1/health", headers={"Authorization": f"Bearer {TOKEN_BROKER}"})
     assert response.status_code == 403
 
@@ -267,25 +267,25 @@ def _ping(monkeypatch, retorno=None, error=None):
 
 def test_ping_que_responde_significa_ip_em_uso(monkeypatch):
     calls = _ping(monkeypatch, retorno=0)
-    assert RedeReal().answers("192.168.2.30") is True
+    assert RealNetwork().answers("192.168.2.30") is True
     assert calls[0][:4] == ["ping", "-c", "1", "-W"]
     assert calls[0][-1] == "192.168.2.30"
 
 
 def test_ping_sem_resposta_significa_livre(monkeypatch):
     _ping(monkeypatch, retorno=1)
-    assert RedeReal().answers("192.168.2.30") is False
+    assert RealNetwork().answers("192.168.2.30") is False
 
 
 @pytest.mark.parametrize("error", [OSError("sem ping"), subprocess.TimeoutExpired("ping", 4)])
 def test_ping_que_nao_roda_nao_derruba_a_criacao(monkeypatch, error):
     _ping(monkeypatch, error=error)
-    assert RedeReal().answers("192.168.2.30") is False
+    assert RealNetwork().answers("192.168.2.30") is False
 
 
 @pytest.mark.parametrize("ip", ["10.0.0.300", "nao-e-ip", "10.0.0.30; rm -rf /", "-f", ""])
 def test_ip_estranho_nunca_chega_ao_ping(monkeypatch, ip):
     calls = _ping(monkeypatch, retorno=0)
     with pytest.raises(ValueError):
-        RedeReal().answers(ip)
+        RealNetwork().answers(ip)
     assert calls == []

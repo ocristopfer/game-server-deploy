@@ -145,7 +145,7 @@ def panel_deps() -> CliDeps:
     return CliDeps(
         init_db=painel.init_db, connect=painel._connect,
         ensure_admin_user=painel.ensure_admin_user, ensure_server=painel.ensure_server,
-        deploy_server=painel.ServidorDoDeploy,
+        deploy_server=painel.DeployServer,
         start_scheduler=painel.start_scheduler,
         resume_broker_jobs=painel.resume_broker_jobs,
         app=painel.app, roles=painel.ROLES,

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from fake_http import ServidorFalso, alias_summary
+from fake_http import FakeServer, alias_summary
 
 from gamebroker.integrations.http_client import Client
 from gamebroker.runtime.opnsense import Opnsense, OpnsenseError, ReadError, busy_ports, instance_description
@@ -208,7 +208,7 @@ def test_servidor_que_responde_lixo_no_apply():
             return 200, {"result": "deleted"}
         return 200, {"status": "ERRO interno"}
 
-    server = ServidorFalso(handler)
+    server = FakeServer(handler)
     try:
         backend = Opnsense(Client(server.url, {}), "wan")
         with pytest.raises(OpnsenseError, match="nao confirmou"):
@@ -222,7 +222,7 @@ def test_sonda_de_saude_nao_espera_o_prazo_inteiro(monkeypatch):
 
     import gamebroker.runtime.opnsense as modulo
     monkeypatch.setattr(modulo, "SONDA_TIMEOUT", 0.3)
-    server = ServidorFalso(lambda *_a: (time.sleep(1.5), (200, {"rows": []}))[1])
+    server = FakeServer(lambda *_a: (time.sleep(1.5), (200, {"rows": []}))[1])
     try:
         backend = Opnsense(Client(server.url, {}, timeout=30), "wan")
         start_at = time.monotonic()

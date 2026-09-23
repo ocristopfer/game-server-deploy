@@ -2498,7 +2498,7 @@ def _save_config_files(sid: int, caminhos: list[str]) -> None:
         )
 
 
-def _config_alvo(arquivos: list[str], errors: list[str]) -> str:
+def _target_config(arquivos: list[str], errors: list[str]) -> str:
     """Qual arquivo a tela Config abre: o pedido na URL, ou o primeiro registrado."""
     request_body = (request.args.get("file") or "").strip()
     if not request_body:
@@ -2664,7 +2664,7 @@ def _fire(task) -> None:
     threading.Thread(target=task, daemon=True).start()
 
 
-def _atualiza_job(job_id: int, **campos) -> None:
+def _update_job(job_id: int, **campos) -> None:
     # Conexao propria: quem chama esta vivo numa thread fora do contexto do request. Os
     # NOMES das colunas vem dos chamadores (fixos); so os valores viajam como parametro.
     conn = _connect()
@@ -2684,15 +2684,15 @@ def _fecha_job(job_id: int, status: str, output: str, codigo: int | None = None,
                     "finished_at": now_iso()}
     if server_id is not None:
         fields["server_id"] = server_id
-    _atualiza_job(job_id, **fields)
+    _update_job(job_id, **fields)
 
 
 def _broker_job_deps() -> broker_jobs.BrokerJobDeps:
     """Montado na chamada: `BROKER_POLL` e `BROKER_FALHAS_MAX` sao trocados pelos testes
     antes de acompanhar a operacao, e um bundle congelado no import nao veria a troca."""
     return broker_jobs.BrokerJobDeps(
-        update_job=_atualiza_job, close_job=_fecha_job, ensure_server=ensure_server,
-        deploy_server=ServidorDoDeploy, connect=_connect, poll=BROKER_POLL,
+        update_job=_update_job, close_job=_fecha_job, ensure_server=ensure_server,
+        deploy_server=DeployServer, connect=_connect, poll=BROKER_POLL,
         max_failures=BROKER_FALHAS_MAX, timeout=JOB_TIMEOUT,
     )
 
@@ -3103,7 +3103,7 @@ def ensure_admin_user(username: str, password: str, role: str = "") -> None:
     conn.close()
 
 
-class ServidorDoDeploy(NamedTuple):
+class DeployServer(NamedTuple):
     """Os dados de um servidor vindos do deploy, num objeto so.
 
     Eram quinze parametros soltos. Quinze posicoes e o tipo de assinatura em que um
@@ -3131,7 +3131,7 @@ class ServidorDoDeploy(NamedTuple):
     broker_id: int = 0
 
 
-def _insert_server(conn: sqlite3.Connection, data: ServidorDoDeploy) -> None:
+def _insert_server(conn: sqlite3.Connection, data: DeployServer) -> None:
     conn.execute(
         "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
         " game_port, notes, config_path, config_files, backup_paths,"
@@ -3153,7 +3153,7 @@ def _merge_config_files(guardados: str, novos: str) -> str:
     return "\n".join(listing[:CONFIG_FILES_MAX])
 
 
-def _update_server(conn: sqlite3.Connection, atual, data: ServidorDoDeploy) -> None:
+def _update_server(conn: sqlite3.Connection, atual, data: DeployServer) -> None:
     """Redeploy: o container manda no que e dele, o painel manda no que e escolha.
 
     Nome, servico, portas e caminho de config vem do deploy — sao fatos do container.
@@ -3181,7 +3181,7 @@ def _update_server(conn: sqlite3.Connection, atual, data: ServidorDoDeploy) -> N
     )
 
 
-def ensure_server(data: ServidorDoDeploy) -> bool:
+def ensure_server(data: DeployServer) -> bool:
     """Cadastra (ou atualiza) um servidor sem passar pela tela. Devolve True se criou.
 
     E por aqui que o deploy registra o container recem-criado no painel — inclusive o
@@ -3226,7 +3226,7 @@ if __name__ == "__main__":
     # e quem precisa desse comando esta trancado do lado de fora do painel.
     cli.main(cli.CliDeps(
         init_db=init_db, connect=_connect, ensure_admin_user=ensure_admin_user,
-        ensure_server=ensure_server, deploy_server=ServidorDoDeploy,
+        ensure_server=ensure_server, deploy_server=DeployServer,
         start_scheduler=start_scheduler, resume_broker_jobs=resume_broker_jobs,
         app=app, roles=ROLES,
     ))

@@ -416,7 +416,7 @@ continuam sendo dois pontos de extensão, não um.
 | `admin/app.py` (seção 33: config rápida) | `gamepanel/blueprints/config_quick.py` + `gamepanel/games/` | liga `gameconf.py`+`gamefields.py` (agora `games/config_format.py`+`games/adapters/`) ao formulário |
 | `admin/app.py` (seção 35: broker) | `gamepanel/services/broker_service.py` + `gamepanel/tasks/broker_jobs.py` + `gamepanel/blueprints/broker.py` | |
 | `admin/app.py` (seção 37: gráficos) | `gamepanel/services/chart_service.py` + `gamepanel/blueprints/charts.py` | |
-| `admin/app.py` (seção 44: bootstrap CLI) | `gamepanel/cli.py` | `ensure_admin_user`, `ServidorDoDeploy`, `ensure_server`, `argparse` |
+| `admin/app.py` (seção 44: bootstrap CLI) | `gamepanel/cli.py` | `ensure_admin_user`, `DeployServer`, `ensure_server`, `argparse` |
 | `admin/gameconf.py` | `gamepanel/games/config_format.py` | puro hoje, só muda de nome/lugar |
 | `admin/gamefields.py` | `gamepanel/games/base.py` + `gamepanel/games/adapters/*.py` | 5 dicts → 5 arquivos + 1 `Protocol` |
 | `admin/broker_client.py` | `gamepanel/integrations/broker_client.py` | puro/stdlib hoje, só muda de lugar |

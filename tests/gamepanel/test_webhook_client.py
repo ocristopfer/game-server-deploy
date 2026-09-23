@@ -23,7 +23,7 @@ from gamepanel.integrations import webhook_client as wc
 UA = "GamePanel/teste"
 
 
-class _ServidorFalso:
+class _FakeServer:
     """Guarda o que recebeu e responde o que o teste mandar responder."""
 
     def __init__(self, status: int = 204, corpo: bytes = b"", espera: float = 0.0):
@@ -91,14 +91,14 @@ def test_url_invalida_e_recusada_antes_de_qualquer_socket(url):
 
 
 def test_envio_que_da_certo_devolve_string_vazia():
-    with _ServidorFalso() as srv:
+    with _FakeServer() as srv:
         assert wc.send(srv.url, "o servidor caiu", 5, UA) == ""
         assert len(srv.recebidos) == 1
 
 
 def test_o_corpo_agrada_discord_e_slack_ao_mesmo_tempo():
     """'content' e o campo do Discord, 'text' o do Slack; cada um ignora o outro."""
-    with _ServidorFalso() as srv:
+    with _FakeServer() as srv:
         wc.send(srv.url, "**Palworld**\ncaiu", 5, UA)
     corpo = srv.recebidos[0]["corpo"]
     assert corpo["content"] == "**Palworld**\ncaiu"
@@ -107,7 +107,7 @@ def test_o_corpo_agrada_discord_e_slack_ao_mesmo_tempo():
 
 
 def test_manda_o_user_agent_configurado():
-    with _ServidorFalso() as srv:
+    with _FakeServer() as srv:
         wc.send(srv.url, "oi", 5, UA)
     assert srv.recebidos[0]["user_agent"] == UA
 
@@ -115,21 +115,21 @@ def test_manda_o_user_agent_configurado():
 def test_recusa_do_destino_chega_com_codigo_e_motivo():
     """Sem o corpo da resposta, um 400 por payload torto e um 403 por bloqueio ficam iguais."""
     corpo = json.dumps({"message": "Invalid Webhook Token"}).encode()
-    with _ServidorFalso(status=401, corpo=corpo) as srv:
+    with _FakeServer(status=401, corpo=corpo) as srv:
         error = wc.send(srv.url, "oi", 5, UA)
     assert "HTTP 401" in error
     assert "Invalid Webhook Token" in error
 
 
 def test_recusa_sem_corpo_fica_so_no_codigo():
-    with _ServidorFalso(status=403) as srv:
+    with _FakeServer(status=403) as srv:
         error = wc.send(srv.url, "oi", 5, UA)
     assert error == "o webhook respondeu HTTP 403"
 
 
 def test_motivo_longo_demais_e_cortado():
     corpo = b'{"message": "' + b"x" * 5000 + b'"}'
-    with _ServidorFalso(status=400, corpo=corpo) as srv:
+    with _FakeServer(status=400, corpo=corpo) as srv:
         error = wc.send(srv.url, "oi", 5, UA)
     assert len(error) < wc.ERROR_MAX + 100
 
@@ -143,7 +143,7 @@ def test_destino_fora_do_ar_vira_motivo_e_nao_excecao():
 
 def test_destino_pendurado_respeita_o_prazo():
     """Sem prazo, um destino que nao responde seguraria a volta inteira do monitor."""
-    with _ServidorFalso(espera=3) as srv:
+    with _FakeServer(espera=3) as srv:
         beginning = time.monotonic()
         error = wc.send(srv.url, "oi", 0.3, UA)
         spent = time.monotonic() - beginning

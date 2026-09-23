@@ -15,7 +15,7 @@ def index(sid: int):
     server = panel._server_or_404(sid)
     file_names = panel.config_paths(server)
     errors: list[str] = []
-    target = panel._config_alvo(file_names, errors)
+    target = panel._target_config(file_names, errors)
 
     doc = info = None
     if target:

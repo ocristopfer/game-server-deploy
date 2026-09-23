@@ -49,13 +49,13 @@ def deps(connect=None, **trocas) -> cli.CliDeps:
         "deploy_server": dict,
         "start_scheduler": lambda: calls.__setitem__("relogio", True),
         "resume_broker_jobs": lambda: calls.__setitem__("broker", True),
-        "app": _AppFalso(calls),
+        "app": _FakeApp(calls),
         "roles": ("admin", "operador"),
     }
     return cli.CliDeps(**{**fallback, **trocas})
 
 
-class _AppFalso:
+class _FakeApp:
     def __init__(self, chamadas: dict):
         self._chamadas = chamadas
 
@@ -162,7 +162,7 @@ def test_sem_argumentos_sobe_o_painel_com_o_relogio():
     calls: dict = {}
     d = deps(_chamadas=calls, start_scheduler=lambda: calls.__setitem__("relogio", True),
              resume_broker_jobs=lambda: calls.__setitem__("broker", True),
-             app=_AppFalso(calls))
+             app=_FakeApp(calls))
     cli.main(d, [])
     assert calls["relogio"] is True
     assert calls["broker"] is True, "os jobs do broker voltam a ser acompanhados"
@@ -174,7 +174,7 @@ def test_cadastrar_usuario_nao_sobe_o_relogio():
     calls: dict = {}
     d = deps(_chamadas=calls,
              start_scheduler=lambda: calls.__setitem__("relogio", True),
-             ensure_admin_user=lambda *a: None, app=_AppFalso(calls))
+             ensure_admin_user=lambda *a: None, app=_FakeApp(calls))
     cli.main(d, ["--create-user", "ana", "--password", "x"])
     assert "relogio" not in calls
     assert "run" not in calls
@@ -182,6 +182,6 @@ def test_cadastrar_usuario_nao_sobe_o_relogio():
 
 def test_host_e_porta_podem_ser_trocados():
     calls: dict = {}
-    d = deps(_chamadas=calls, app=_AppFalso(calls))
+    d = deps(_chamadas=calls, app=_FakeApp(calls))
     cli.main(d, ["--host", "127.0.0.1", "--port", "9999"])
     assert calls["run"] == ("127.0.0.1", 9999)

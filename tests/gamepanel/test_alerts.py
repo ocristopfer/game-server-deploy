@@ -901,7 +901,7 @@ def test_regex_que_nao_compila_faz_a_thread_desistir():
 # --------------------------------------------------------- supervisor das conexoes de log
 # Nenhum SSH de verdade aqui: o que se mede e a decisao de abrir, trocar e fechar.
 
-class _StreamFalso:
+class _FakeStream:
     def __init__(self, server, signature, registro):
         self.sid, self.signature = int(server["id"]), signature
         self.gave_up, self._vivo, self.parado = False, True, False
@@ -923,7 +923,7 @@ def fake_supervisor(database, target, monkeypatch):
     created_ones = []
     monkeypatch.setattr(
         panel, "_LogStream",
-        lambda server, signature: _StreamFalso(server, signature, created_ones))
+        lambda server, signature: _FakeStream(server, signature, created_ones))
     panel._streams.clear()
     enable(database, ["jogador-entrou", "jogador-saiu"])
     with database:

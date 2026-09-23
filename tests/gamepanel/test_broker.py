@@ -69,7 +69,7 @@ def refusal(message: str, status: int = 409) -> panel.broker_client.BrokerError:
     return panel.broker_client.BrokerError(message, status)
 
 
-class BrokerFalso:
+class FakeBroker:
     def __init__(self) -> None:
         self.jogos = list(JOGOS)
         self.lista = [dict(INSTANCIA)]
@@ -119,7 +119,7 @@ class BrokerFalso:
 def broker(monkeypatch, database):
     """Broker ligado no painel e trocado por um falso. As threads NAO sobem: `_dispara`
     guarda a tarefa em `broker.tarefas` para o teste rodar (ou nao) quando quiser."""
-    fake = BrokerFalso()
+    fake = FakeBroker()
     monkeypatch.setattr(panel, "ALLOW_BROKER", True)
     monkeypatch.setattr(panel, "BROKER_POLL", 0)
     monkeypatch.setattr(panel, "_fire", fake.tarefas.append)
@@ -392,7 +392,7 @@ def test_instancias_mostra_a_lista_e_so_jogos_criaveis_no_formulario(admin, brok
 
 
 def test_instancia_ligada_a_um_servidor_vira_link(admin, broker, database):
-    panel.ensure_server(panel.ServidorDoDeploy(
+    panel.ensure_server(panel.DeployServer(
         name="Servidor do Zeca", host="10.0.0.30", service="alfa.service", broker_id=7))
     sid = servers(database)[0]["id"]
     assert f'href="/servers/{sid}"' in admin.get("/instances").get_data(as_text=True)
@@ -597,16 +597,16 @@ def test_desativar_recusado_mostra_o_motivo(admin, broker, post, database):
 
 
 def test_remover_apaga_tambem_o_servidor_do_painel(admin, broker, post, database):
-    panel.ensure_server(panel.ServidorDoDeploy(
+    panel.ensure_server(panel.DeployServer(
         name="Servidor do Zeca", host="10.0.0.30", service="alfa.service", broker_id=7))
-    panel.ensure_server(panel.ServidorDoDeploy(name="Outro", host="10.0.0.99", service="x.service"))
+    panel.ensure_server(panel.DeployServer(name="Outro", host="10.0.0.99", service="x.service"))
     post(admin, "/instances/7/delete", {"confirmation": "Servidor do Zeca"})
     assert broker.called("remove") == [("remove", 7, "Servidor do Zeca", "chefe", False)]
     assert [s["name"] for s in servers(database)] == ["Outro"], "so o da instancia removida some"
 
 
 def test_remover_recusado_nao_apaga_o_servidor(admin, broker, post, database):
-    panel.ensure_server(panel.ServidorDoDeploy(
+    panel.ensure_server(panel.DeployServer(
         name="Servidor do Zeca", host="10.0.0.30", service="alfa.service", broker_id=7))
     broker.error = refusal("digite o nome exato da instancia para confirmar", 400)
     post(admin, "/instances/7/delete", {"confirmation": "errado"})
@@ -633,12 +633,12 @@ def test_colunas_novas_existem(database):
 
 
 def test_servidor_cadastrado_a_mao_tem_broker_id_zero(database):
-    panel.ensure_server(panel.ServidorDoDeploy(name="Manual", host="10.0.0.5", service="x.service"))
+    panel.ensure_server(panel.DeployServer(name="Manual", host="10.0.0.5", service="x.service"))
     assert servers(database)[0]["broker_id"] == 0
 
 
 def test_redeploy_nao_perde_a_ligacao_com_a_instancia(database):
-    data = panel.ServidorDoDeploy(name="Z", host="10.0.0.30", service="a.service", broker_id=7)
+    data = panel.DeployServer(name="Z", host="10.0.0.30", service="a.service", broker_id=7)
     panel.ensure_server(data)
     panel.ensure_server(data._replace(name="Z2"))
     (server,) = servers(database)
