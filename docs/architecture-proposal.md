@@ -795,8 +795,17 @@ docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos san
   O `compare.sh` ganhou o mesmo tratamento que já dava ao `ct-fases.sh`: procura o script
   no caminho de hoje e cai no antigo, para `BASE_REF` continuar apontando para commits
   anteriores à mudança.
-- **`tests/{unit,integration}/`** e **`pytest.ini` dentro do `pyproject.toml`** — os
-  outros dois da seção 2 que esta lista tinha esquecido. Abertos.
+- ~~`pytest.ini` dentro do `pyproject.toml`~~ — **feito**: a configuração virou
+  `[tool.pytest.ini_options]`, ao lado da de ruff e mypy, e a raiz perdeu mais um arquivo.
+  O pytest do apt no container (8.3) lê a seção; conferido rodando a suíte lá.
+
+  De brinde, o `filterwarnings` apontava para **três módulos escritos à mão e um deles não
+  existia mais** (`gamepanel.games.gamefields`, dividido em `games/base.py` + `registry.py`
+  + `adapters/` há commits). Filtro apontando para módulo inexistente não avisa nada e
+  ninguém descobre. Virou o PREFIXO do pacote (`gamepanel`), que cobre qualquer módulo novo
+  — inclusive um adapter — e não apodrece. Conferido com uma sonda nos dois sentidos: aviso
+  atribuído a `gamepanel.*` vira erro, atribuído a `gamebroker.*` não.
+- **`tests/{unit,integration}/`** — o último da seção 2. Aberto.
 - `extensions.py`, `services/user_service.py` e `runtime/base.py`+`runtime/fakes.py` do
   painel continuam abertos: são extração de orquestração, sem ganho de teste como os
   anteriores. O `extensions.py` chega a contradizer a descrição do próprio `app.py` no

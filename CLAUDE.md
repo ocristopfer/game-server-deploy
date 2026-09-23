@@ -72,9 +72,10 @@ uv run pytest tests\gamepanel\test_alerts.py -k test_loop_de_restart
 `uv` (https://docs.astral.sh/uv/) gerencia SO o `.venv` de desenvolvimento —
 `pyproject.toml`, na raiz, declara `flask` (versao que acompanha o apt do Debian 13) mais
 o grupo `dev` (pytest/ruff/mypy), e `uv.lock` fixa as versoes exatas. Isso e ferramenta
-de desenvolvimento, nunca dependencia do painel em producao (ver abaixo). `pytest.ini`,
-na raiz, e quem diz onde procurar os testes (`tests/`) e desliga o cache em disco (ver o
-comentario nele — o motivo e o mount read-only do container, nao o venv). O `.venv` tambem
+de desenvolvimento, nunca dependencia do painel em producao (ver abaixo). A configuracao
+do pytest mora no proprio `pyproject.toml`, em `[tool.pytest.ini_options]`: onde procurar
+os testes (`tests/`), o resumo de falhas e o cache em disco desligado (ver o comentario
+la — o motivo e o mount read-only do container, nao o venv). O `.venv` tambem
 e o que faz o editor resolver `import flask`/`import gamepanel`/`import gamebroker`, via
 `pyrightconfig.json`.
 
@@ -86,8 +87,8 @@ MSYS_NO_PATHCONV=1 docker compose exec -T -w /workspace panel python3 -m pytest 
 
 O servico `panel` do compose tem DOIS bind mounts: `src/gamepanel` -> `/opt/gamepanel/gamepanel`
 (o codigo que o gunicorn de fato serve, mimetizando o layout de producao) e o repositorio
-inteiro -> `/workspace` (so para achar `pytest.ini`, `tests/` e `src/` juntos e rodar a
-suite completa). Sem pip nem uv ali dentro (so `python3-pytest` do apt — ver
+inteiro -> `/workspace` (so para achar `pyproject.toml`, `tests/` e `src/` juntos e rodar
+a suite completa). Sem pip nem uv ali dentro (so `python3-pytest` do apt — ver
 `docker/panel/Dockerfile`), o `conftest.py` da raiz insere `src/` no `sys.path` na mao
 para que `import gamepanel`/`import gamebroker` resolvam sem instalacao. **Rode com
 `-p no:cacheprovider`** se quiser o mesmo silencio do venv; sem a flag os testes passam
@@ -140,8 +141,8 @@ mudam, e e ali que mora o 403 que ninguem tinha visto.
 
 ```
 VERSION                  a versao do repositorio (semver, a mao); tools/build-release.py a carimba no pacote
-pyproject.toml          workspace uv: dependencias de dev (pytest/ruff/mypy), so gamepanel/gamebroker editaveis
-pytest.ini               onde o pytest procura os testes (tests/) e config de cache
+pyproject.toml          workspace uv: dependencias de dev (pytest/ruff/mypy) e a config de pytest,
+                        ruff e mypy; so gamepanel/gamebroker editaveis
 conftest.py              insere src/ no sys.path antes de qualquer teste (funciona sem `uv sync`)
 games/                   catalogo curado de jogos (um *.env por jogo), lido pelo gamebroker E pelos
                         scripts de provisionamento em bash - por isso fica na raiz, fora de src/
