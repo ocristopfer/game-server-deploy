@@ -106,7 +106,7 @@ def _ascii(texto: str) -> str:
     return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
 
 
-def nome_de_exibicao(gamename: str) -> str:
+def display_name(gamename: str) -> str:
     limpo = re.sub(r"[^A-Za-z0-9 ._-]+", " ", _ascii(gamename))
     limpo = re.sub(r"\s+", " ", limpo).strip(" .-_")
     return limpo[:40].rstrip(" .-_")
@@ -126,7 +126,7 @@ def _dividir(args: str) -> list[str]:
         return args.split()
 
 
-def _limpar_argumentos(args: str) -> tuple[str, list[str]]:
+def _clean_arguments(args: str) -> tuple[str, list[str]]:
     """Fica so com o que o broker aceita. Devolve (argumentos, nomes do que foi removido)."""
     # `;`, `|`, `&`, crase, `$(` e redirecionamento encadeiam OUTRO comando no shell: o que vem
     # depois nao e argumento do jogo e nao entra, nem como palavras soltas.
@@ -182,7 +182,7 @@ def sugerir(gamename: str, texto_do_cfg: str) -> dict | None:
     for name in PORTAS_EXPOSTAS + PORTAS_INTERNAS + ("queryport", "steamport", "clientport"):
         if name not in trocas and _numero(v.get(name, "")):
             trocas[name] = v[name]
-    argumentos, removidos = _limpar_argumentos(resolver(args_brutos, v, trocas))
+    argumentos, removidos = _clean_arguments(resolver(args_brutos, v, trocas))
     if removidos:
         avisos.append("Removi do comando o que o painel nao passa (" + ", ".join(dict.fromkeys(removidos))
                       + "): nome do servidor, senha, IP e caminhos de config. Acrescente o que faltar.")
@@ -213,7 +213,7 @@ def sugerir(gamename: str, texto_do_cfg: str) -> dict | None:
                   and (not var_query or "{QUERY_PORT}" in argumentos)
                   and (not var_extra or "{EXTRA_PORT}" in argumentos))
     sugestao = {
-        "appid": appid, "name": nome_de_exibicao(gamename), "key": game_key(gamename),
+        "appid": appid, "name": display_name(gamename), "key": game_key(gamename),
         "ports": " ".join(ports), "game_port": porta,
         "query_port": _numero(v[var_query]) if var_query else 0,
         "extra_port": _numero(v[var_extra]) if var_extra else 0,
@@ -223,7 +223,7 @@ def sugerir(gamename: str, texto_do_cfg: str) -> dict | None:
     return _passar_pelo_broker(sugestao)
 
 
-def _como_dados_do_painel(s: dict) -> dict:
+def _as_panel_data(s: dict) -> dict:
     # Sem porta (sugestao parcial) o validador recebe uma qualquer: o que se confere aqui e o resto.
     dados: dict = {"key": s["key"], "name": s["name"], "app_id": s["appid"],
                    "ports": s["ports"].split() or ["27015/udp"], "game_port": s["game_port"] or 27015,
@@ -244,7 +244,7 @@ def _passar_pelo_broker(s: dict) -> dict | None:
     identidade ou porta recusada derruba a sugestao inteira."""
     for _ in range(4):
         try:
-            validate_dynamic(_como_dados_do_painel(s))
+            validate_dynamic(_as_panel_data(s))
             return s
         except ValidationError as erro:
             campo = getattr(erro, "campo", "")
@@ -271,7 +271,7 @@ def _baixar(url: str, tentativas: int = 3) -> str | None:
     return None
 
 
-def _ler_da_pasta(pasta: pathlib.Path, servidor: str) -> str | None:
+def _read_from_folder(pasta: pathlib.Path, servidor: str) -> str | None:
     arquivo = pasta / f"{servidor}.cfg"
     return arquivo.read_text(encoding="utf-8") if arquivo.exists() else None
 
@@ -279,7 +279,7 @@ def _ler_da_pasta(pasta: pathlib.Path, servidor: str) -> str | None:
 def coletar(pasta_local: pathlib.Path | None) -> tuple[list[dict], list[str]]:
     if pasta_local:
         lista = (pasta_local / "serverlist.csv").read_text(encoding="utf-8")
-        get = lambda n: _ler_da_pasta(pasta_local, n)  # noqa: E731
+        get = lambda n: _read_from_folder(pasta_local, n)  # noqa: E731
     else:
         lista = _baixar(FONTE_URL + "lgsm/data/serverlist.csv") or ""
         get = lambda n: _baixar(FONTE_URL + f"lgsm/config-default/config-lgsm/{n}/_default.cfg")  # noqa: E731

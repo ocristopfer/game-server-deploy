@@ -143,7 +143,7 @@ def test_executavel_fora_de_opt_game_e_descartado():
 @pytest.mark.parametrize("name", ["Counter-Strike: Global Offensive", "Sven Co-op", "Ark: Survival Évolved",
                                   "7 Days to Die", "Killing Floor 2 (Beta)"])
 def test_nome_e_chave_saem_no_formato_do_broker(name):
-    assert NAME_RE.fullmatch(imp.nome_de_exibicao(name))
+    assert NAME_RE.fullmatch(imp.display_name(name))
     assert KEY_RE.fullmatch(imp.game_key(name))
 
 

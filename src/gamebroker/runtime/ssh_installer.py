@@ -190,13 +190,13 @@ class SshInstaller:
         self._esperar_ssh(target, ip, log)
         failure: Exception | None = None
         try:
-            self._enviar(target, env)
+            self._send(target, env)
             self._install(target, log)
         except Exception as error:  # noqa: BLE001
             failure = error
             raise
         finally:
-            self._limpar(target, log, failure)
+            self._cleanup(target, log, failure)
 
     def _esperar_ssh(self, target: str, ip: str, log: Callable[[str], None]) -> None:
         log(f"aguardando o SSH de {ip}")
@@ -208,7 +208,7 @@ class SshInstaller:
                 raise InstallError(f"o SSH de {ip} nao respondeu em {int(self._cfg.espera_ssh)} s")
             self._dormir(self._cfg.intervalo)
 
-    def _enviar(self, target: str, env: str) -> None:
+    def _send(self, target: str, env: str) -> None:
         folder = shlex.quote(DESTINO_REMOTO)
         self._comando(self._ssh(target, f"install -d -m 700 {folder}"), "criar a pasta no CT")
         with tempfile.TemporaryDirectory(prefix="broker-install-") as tmp:
@@ -234,7 +234,7 @@ class SshInstaller:
         if not batch.concluida:
             raise InstallError("o instalador terminou sem confirmar a conclusao")
 
-    def _limpar(self, target: str, log: Callable[[str], None], failure: Exception | None) -> None:
+    def _cleanup(self, target: str, log: Callable[[str], None], failure: Exception | None) -> None:
         """Apaga o que foi enviado e tira a chave do broker. Roda SEMPRE."""
         blob = self._cfg.blob
         file = "/root/.ssh/authorized_keys"

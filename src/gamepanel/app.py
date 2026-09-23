@@ -110,7 +110,7 @@ from flask import (
 # SQLite nao atravessa thread. Toda tarefa longa (um update de jogo leva quase uma hora)
 # roda com `dict(server)` em vez da Row; ver `start_job`. As duas formas respondem a
 # `server["host"]`, que e tudo o que estas funcoes precisam.
-Servidor = sqlite3.Row | Mapping[str, Any]
+ServerRow = sqlite3.Row | Mapping[str, Any]
 
 
 # ---------------------------------------------------------------- configuracao
@@ -856,13 +856,13 @@ _id_do_item = http_probe._id_of
 _has_login = player_service._has_login
 
 
-def http_json(server: Servidor, url: str, auth: str, corpo: str, exigir_json: bool = True):
+def http_json(server: ServerRow, url: str, auth: str, corpo: str, exigir_json: bool = True):
     # HTTP_TIMEOUT lido na hora da chamada, nao congelado - mesmo cuidado do SshClient
     # (runtime/ssh.py) e do query_players (runtime/a2s.py).
     return http_probe.http_json(ssh_output, server, url, auth, corpo, HTTP_TIMEOUT, exigir_json)
 
 
-def _stored_value(server: Servidor, coluna: str) -> str:
+def _stored_value(server: ServerRow, coluna: str) -> str:
     try:
         return (server[coluna] or "").strip()
     except (IndexError, KeyError):
@@ -882,16 +882,16 @@ def _player_deps() -> player_service.PlayerDeps:
     )
 
 
-def http_login(server: Servidor) -> str:
+def http_login(server: ServerRow) -> str:
     return player_service.http_login(_player_deps(), server)
 
 
-def call_game_api(server: Servidor, url: str, corpo: str = "",
+def call_game_api(server: ServerRow, url: str, corpo: str = "",
                       exigir_json: bool = True):
     return player_service.call_game_api(_player_deps(), server, url, corpo, exigir_json)
 
 
-def players_from_http(server: Servidor) -> dict:
+def players_from_http(server: ServerRow) -> dict:
     return player_service.players_from_http(_player_deps(), server)
 
 
@@ -911,7 +911,7 @@ player_actions = player_service.player_actions
 _fill = player_service._fill
 
 
-def run_player_action(server: Servidor, action: str, player: str, message: str) -> str:
+def run_player_action(server: ServerRow, action: str, player: str, message: str) -> str:
     return player_service.player_action(_player_deps(), server, action, player, message)
 
 
@@ -948,11 +948,11 @@ _with_owner = port_probe._with_owner
 _summarize_generic = port_probe._summarize_generic
 
 
-def candidate_ports(server: Servidor) -> tuple[list[int], list[int], dict, str]:
+def candidate_ports(server: ServerRow) -> tuple[list[int], list[int], dict, str]:
     return port_probe.candidate_ports(ssh_output, server, server["game_port"])
 
 
-def probe_http_ports(server: Servidor, portas: list[int]) -> tuple[list[dict], list[int], str]:
+def probe_http_ports(server: ServerRow, portas: list[int]) -> tuple[list[dict], list[int], str]:
     return port_probe.probe_http_ports(ssh_output, server, portas, HTTP_PROBE_TIMEOUT)
 
 
@@ -960,13 +960,13 @@ def probe_ports(host: str, portas: list[int]) -> list[dict]:
     return port_probe.probe_ports(host, portas, QUERY_TIMEOUT)
 
 
-def read_log_lines(server: Servidor, limit: int = LOG_SCAN_MAX) -> list[str]:
+def read_log_lines(server: ServerRow, limit: int = LOG_SCAN_MAX) -> list[str]:
     return log_probe.read_log_lines(
         ssh_output, server, server["service"], _stored_value(server, "log_path"), limit,
     )
 
 
-def players_from_log(server: Servidor) -> dict:
+def players_from_log(server: ServerRow) -> dict:
     return player_service.players_from_log(_player_deps(), server)
 
 
@@ -978,7 +978,7 @@ invalidate_players = player_service.invalidate
 player_source = player_service.player_source
 
 
-def server_players(server: Servidor, force: bool = False) -> dict:
+def server_players(server: ServerRow, force: bool = False) -> dict:
     return player_service.server_players(_player_deps(), server, force)
 
 
@@ -1001,7 +1001,7 @@ def all_players(servers) -> dict[int, dict]:
 _metrics_cache = metrics_service._metrics_cache
 
 
-def server_metrics(server: Servidor, force: bool = False) -> dict:
+def server_metrics(server: ServerRow, force: bool = False) -> dict:
     return metrics_service.server_metrics(
         ssh_output, server, FILE_DEFAULT_PATH, METRICS_TTL, force)
 
@@ -1019,7 +1019,7 @@ _status_cache = status_service._status_cache
 invalidate_status = status_service.invalidate
 
 
-def server_status(server: Servidor, force: bool = False) -> dict:
+def server_status(server: ServerRow, force: bool = False) -> dict:
     return status_service.server_status(ssh_output, server, STATUS_TTL, force)
 
 
@@ -1138,7 +1138,7 @@ def _id_inserido(cur: sqlite3.Cursor) -> int:
 
 def log_job(
     action: str,
-    server: Servidor | dict,
+    server: ServerRow | dict,
     username: str,
     command: str = "",
     output: str = "",
@@ -1162,7 +1162,7 @@ def log_job(
 
 def start_job(
     action: str,
-    server: Servidor,
+    server: ServerRow,
     username: str,
     remote_cmd: str | None = None,
     command: str = "",
@@ -1996,7 +1996,7 @@ def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
     return spent == 1
 
 
-def _port_tab(server: Servidor) -> dict:
+def _port_tab(server: ServerRow) -> dict:
     """Aba 1: dispara A2S em cada porta UDP que o container esta escutando."""
     candidates, _tcp, owners, warning_text = candidate_ports(server)
     ports = _with_owner(probe_ports(server["host"], candidates[:12]), owners, "udp")
@@ -2012,7 +2012,7 @@ def _port_tab(server: Servidor) -> dict:
     }
 
 
-def _aba_http(server: Servidor, http: dict, testar: bool) -> dict:
+def _aba_http(server: ServerRow, http: dict, testar: bool) -> dict:
     """Aba 2: quais portas TCP falam HTTP, e o teste da URL escolhida."""
     _udp, candidates, owners, warning_text = candidate_ports(server)
     found, silent_ones, probe_failure = probe_http_ports(server, candidates)
@@ -2045,7 +2045,7 @@ def _aba_http(server: Servidor, http: dict, testar: bool) -> dict:
     return output
 
 
-def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
+def _aba_log(server: ServerRow, join_re: str, leave_re: str, log_path: str,
              testar: bool) -> dict:
     """Aba 3: linhas do log com cara de entrada/saida e o teste dos padroes."""
     output = {"amostras": [], "teste": None, "erro_log": ""}
@@ -2207,7 +2207,7 @@ def _log_lines_arg(raw: str | None, default: int = 80) -> int:
         return default
 
 
-def read_logs(server: Servidor, lines: int, cursor: str = "") -> tuple[str, str]:
+def read_logs(server: ServerRow, lines: int, cursor: str = "") -> tuple[str, str]:
     """Le o log do servico. Com cursor, traz so o que entrou depois dele.
 
     Devolve (texto, novo_cursor). O cursor vem vazio quando o journalctl do container
@@ -2370,15 +2370,15 @@ def _server_or_404(sid: int) -> sqlite3.Row:
     return server
 
 
-def list_dir(server: Servidor, path: str) -> tuple[list[dict], bool]:
+def list_dir(server: ServerRow, path: str) -> tuple[list[dict], bool]:
     return files_rt.list_dir(ssh_run, server, path, FILE_LIST_MAX)
 
 
-def stat_file(server: Servidor, path: str) -> dict:
+def stat_file(server: ServerRow, path: str) -> dict:
     return files_rt.stat_file(ssh_run, server, path)
 
 
-def read_file(server: Servidor, path: str) -> dict:
+def read_file(server: ServerRow, path: str) -> dict:
     return files_rt.read_file(ssh_run, server, path, FILE_MAX_BYTES, FILE_PREVIEW_BYTES)
 
 
@@ -2393,15 +2393,15 @@ def ssh_stream_in(server, remote_cmd: str, origem, timeout: int) -> str:
     return files_rt.ssh_stream_in(ssh_argv, server, remote_cmd, origem, timeout, UPLOAD_CHUNK)
 
 
-def find_config_files(server: Servidor, root: str) -> list[dict]:
+def find_config_files(server: ServerRow, root: str) -> list[dict]:
     return files_rt.find_config_files(ssh_run, server, root, CONFIG_GLOBS)
 
 
-def write_file(server: Servidor, path: str, data: bytes) -> str:
+def write_file(server: ServerRow, path: str, data: bytes) -> str:
     return files_rt.write_file(ssh_run, server, path, data)
 
 
-def delete_file(server: Servidor, path: str) -> str:
+def delete_file(server: ServerRow, path: str) -> str:
     return files_rt.delete_file(ssh_run, server, path)
 
 
@@ -2412,7 +2412,7 @@ def _attachment_header(name: str) -> str:
     return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"
 
 
-def stream_remote_file(server: Servidor, path: str):
+def stream_remote_file(server: ServerRow, path: str):
     return files_rt.stream_remote_file(ssh_argv, server, path, DOWNLOAD_CHUNK)
 
 
@@ -2427,11 +2427,11 @@ def stream_remote_file(server: Servidor, path: str):
 # trocado embaixo dele grava por cima do que acabou de voltar.
 
 
-def backup_paths(server: Servidor) -> list[str]:
+def backup_paths(server: ServerRow) -> list[str]:
     return backups_rt.backup_paths(server, BACKUP_PATHS_MAX)
 
 
-def backup_prefix(server: Servidor) -> str:
+def backup_prefix(server: ServerRow) -> str:
     return backups_rt.backup_prefix(server)
 
 
@@ -2443,15 +2443,15 @@ def _backup_or_400(name: str) -> str:
         abort(400, str(exc))
 
 
-def list_backups(server: Servidor) -> list[dict]:
+def list_backups(server: ServerRow) -> list[dict]:
     return backups_rt.list_backups(ssh_run, server, BACKUP_DIR, BACKUP_LIST_MAX)
 
 
-def backup_command(server: Servidor, caminhos: list[str], sufixo: str = "") -> str:
+def backup_command(server: ServerRow, caminhos: list[str], sufixo: str = "") -> str:
     return backups_rt.backup_command(server, BACKUP_DIR, BACKUP_KEEP, caminhos, sufixo)
 
 
-def delete_backup(server: Servidor, name: str) -> str:
+def delete_backup(server: ServerRow, name: str) -> str:
     return backups_rt.delete_backup(ssh_run, server, BACKUP_DIR, name)
 
 
@@ -2462,12 +2462,12 @@ def delete_backup(server: Servidor, name: str) -> str:
 # senha de admin, numero de jogadores) nao precisa achar o arquivo nem contar virgula.
 
 
-def config_paths(server: Servidor) -> list[str]:
+def config_paths(server: ServerRow) -> list[str]:
     """Arquivos de configuracao registrados no cadastro do servidor."""
     return [line.strip() for line in (server["config_files"] or "").splitlines() if line.strip()]
 
 
-def load_config_doc(server: Servidor, path: str) -> tuple[gameconf.ConfigFile, dict]:
+def load_config_doc(server: ServerRow, path: str) -> tuple[gameconf.ConfigFile, dict]:
     """Le o arquivo no container e o interpreta campo a campo."""
     info = read_file(server, path)
     if info["binary"]:
@@ -2516,7 +2516,7 @@ def _target_config(arquivos: list[str], errors: list[str]) -> str:
     return target
 
 
-def _config_sugestoes(server: Servidor, arquivos: list[str], alvo: str,
+def _suggestion_config(server: ServerRow, arquivos: list[str], alvo: str,
                       errors: list[str]) -> list | None:
     """Candidatos a arquivo de configuracao no container; None = nem vale procurar.
 

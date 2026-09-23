@@ -24,7 +24,7 @@ from gamepanel.integrations import broker_client as bc
 TOKEN = "t" * 40
 
 
-class Servidor:
+class FakeServer:
     """Servidor HTTP de teste: guarda cada pedido e responde o que o teste mandar."""
 
     def __init__(self) -> None:
@@ -68,7 +68,7 @@ class Servidor:
 @pytest.fixture
 def server(monkeypatch):
     monkeypatch.setattr(bc, "_config", {})
-    fake = Servidor()
+    fake = FakeServer()
     bc.configure(fake.url, TOKEN)
     yield fake
     fake.stop_it()
@@ -118,7 +118,7 @@ def test_id_de_instancia_precisa_ser_inteiro(server):
 
 def test_prefixo_da_url_e_respeitado(monkeypatch):
     monkeypatch.setattr(bc, "_config", {})
-    fake = Servidor()
+    fake = FakeServer()
     try:
         bc.configure(fake.url + "/broker/", TOKEN)
         fake.resposta = (200, {})

@@ -28,7 +28,7 @@ def index(sid: int):
         except (panel.RemoteError, panel.gameconf.ConfigError) as exc:
             errors.append(f"{target}: {exc}")
 
-    suggestions = panel._config_sugestoes(server, file_names, target, errors)
+    suggestions = panel._suggestion_config(server, file_names, target, errors)
 
     return render_template(
         "config.html", server=server, files=file_names, target=target, doc=doc, info=info,
