@@ -5,22 +5,22 @@
  */
 export const copyToClipboard = {
   selector: '[data-copy]',
-  mount(botao) {
-    const target = document.querySelector(botao.dataset.copy);
+  mount(button) {
+    const target = document.querySelector(button.dataset.copy);
     if (!target || !navigator.clipboard) return;
-    botao.hidden = false;
+    button.hidden = false;
 
-    const label = botao.textContent;
-    botao.addEventListener('click', async () => {
+    const label = button.textContent;
+    button.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(target.textContent.trim());
-        botao.textContent = 'Copiado!';
+        button.textContent = 'Copiado!';
       } catch {
         // Sem permissao (http sem TLS, por exemplo): o texto continua na tela para
         // ser selecionado a mao, entao isto e um aviso, nao um erro.
-        botao.textContent = 'Nao consegui copyToClipboard';
+        button.textContent = 'Nao consegui copyToClipboard';
       }
-      setTimeout(() => { botao.textContent = label; }, 2000);
+      setTimeout(() => { button.textContent = label; }, 2000);
     });
   },
 };

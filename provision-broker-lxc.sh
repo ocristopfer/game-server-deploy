@@ -135,11 +135,11 @@ ensure_debian_template() {
 # PROXMOX_TEMPLATE no secrets, pega o Debian 13 mais novo do storage.
 resolve_game_template() {
   [[ -z "${PROXMOX_TEMPLATE:-}" ]] || return 0
-  local nome
-  nome="$(pveam list "$PROXMOX_TEMPLATE_STORAGE" | awk '{print $1}' | sed 's#.*/##' \
+  local name
+  name="$(pveam list "$PROXMOX_TEMPLATE_STORAGE" | awk '{print $1}' | sed 's#.*/##' \
           | grep -E 'debian-13-standard_.*_amd64\.tar\.zst' | sort -V | tail -n1 || true)"
-  [[ -n "$nome" ]] || die "Nenhum template debian-13-standard em ${PROXMOX_TEMPLATE_STORAGE}; defina PROXMOX_TEMPLATE ou rode: pveam download ${PROXMOX_TEMPLATE_STORAGE} <template>"
-  PROXMOX_TEMPLATE="${PROXMOX_TEMPLATE_STORAGE}:vztmpl/${nome}"
+  [[ -n "$name" ]] || die "Nenhum template debian-13-standard em ${PROXMOX_TEMPLATE_STORAGE}; defina PROXMOX_TEMPLATE ou rode: pveam download ${PROXMOX_TEMPLATE_STORAGE} <template>"
+  PROXMOX_TEMPLATE="${PROXMOX_TEMPLATE_STORAGE}:vztmpl/${name}"
   msg "Template dos CTs de jogo: ${PROXMOX_TEMPLATE}"
 }
 
@@ -225,15 +225,15 @@ ensure_app_user() {
 
 # `pct push` nao cria diretorio e nao e recursivo: cria as pastas conforme aparecem.
 push_tree() {
-  local origem="$1" destino="$2" src rel
+  local source_dir="$1" destino="$2" src rel
   while IFS= read -r src; do
-    rel="${src#"$origem"/}"
+    rel="${src#"$source_dir"/}"
     [[ "$(basename "$src")" =~ $NAO_ENVIAR ]] && continue
     if [[ "$rel" == */* ]]; then
       run_ct "install -d '${destino}/${rel%/*}'"
     fi
     pct push "$CTID" "$src" "${destino}/${rel}" --perms 0644
-  done < <(find "$origem" -type f ! -name '*.pyc' ! -path '*__pycache__*' | sort)
+  done < <(find "$source_dir" -type f ! -name '*.pyc' ! -path '*__pycache__*' | sort)
 }
 
 publish_application() {
@@ -316,7 +316,7 @@ resolve_panel_pubkey() {
 # Impressao SHA-256 do certificado de um servidor https, lida do host. TOFU: confia no que o
 # servidor apresenta AGORA e fixa. O resumo imprime as duas para voce conferir com o que o
 # navegador mostra (ou com o verificar-broker-acesso.ps1).
-fingerprint_de() {
+fingerprint_of() {
   local url="$1" hostport host port
   hostport="${url#*://}"; hostport="${hostport%%/*}"
   host="${hostport%%:*}"; port="${hostport##*:}"
@@ -331,12 +331,12 @@ resolve_upstream_fingerprints() {
   PROXMOX_CERT_SHA256="${PROXMOX_CERT_SHA256:-}"
   OPNSENSE_CERT_SHA256="${OPNSENSE_CERT_SHA256:-}"
   if [[ -z "$PROXMOX_CERT_SHA256" && "$PROXMOX_URL" == https://* ]]; then
-    PROXMOX_CERT_SHA256="$(fingerprint_de "$PROXMOX_URL")"
+    PROXMOX_CERT_SHA256="$(fingerprint_of "$PROXMOX_URL")"
     [[ -n "$PROXMOX_CERT_SHA256" ]] || die "O host Proxmox nao conseguiu ler o certificado de $PROXMOX_URL (firewall?). Defina PROXMOX_CERT_SHA256 no broker.secrets.env: o verificar-broker-acesso.ps1 imprime a impressao a partir da sua maquina"
     FIXOU_PROXMOX=1
   fi
   if [[ -z "$OPNSENSE_CERT_SHA256" && "$OPNSENSE_URL" == https://* ]]; then
-    OPNSENSE_CERT_SHA256="$(fingerprint_de "$OPNSENSE_URL")"
+    OPNSENSE_CERT_SHA256="$(fingerprint_of "$OPNSENSE_URL")"
     [[ -n "$OPNSENSE_CERT_SHA256" ]] || die "O host Proxmox nao conseguiu ler o certificado de $OPNSENSE_URL (firewall?). Defina OPNSENSE_CERT_SHA256 no broker.secrets.env: o verificar-broker-acesso.ps1 imprime a impressao a partir da sua maquina"
     FIXOU_OPNSENSE=1
   fi

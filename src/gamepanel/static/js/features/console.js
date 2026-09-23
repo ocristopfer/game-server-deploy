@@ -14,9 +14,9 @@ export const commandBox = {
     if (!field) return;
 
     let historico = [];
-    const fonte = document.getElementById('historico-comandos');
-    if (fonte) {
-      try { historico = JSON.parse(fonte.textContent) || []; } catch { historico = []; }
+    const source = document.getElementById('historico-comandos');
+    if (source) {
+      try { historico = JSON.parse(source.textContent) || []; } catch { historico = []; }
     }
     let cursor = -1;
 

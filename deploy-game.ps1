@@ -83,9 +83,9 @@ function Get-IpOnly([string]$Cidr) {
 
 # Pergunta sem ecoar na tela (senha da conta Steam). Vazio = mantem o default.
 function AskSecret([string]$Label, [string]$Default) {
-    $marca = ""
-    if ($Default -ne "") { $marca = " [Enter mantem o valor do .env]" }
-    $sec = Read-Host "$Label$marca" -AsSecureString
+    $mark = ""
+    if ($Default -ne "") { $mark = " [Enter mantem o valor do .env]" }
+    $sec = Read-Host "$Label$mark" -AsSecureString
     if ($sec.Length -eq 0) { return $Default }
     $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
     try {
@@ -141,8 +141,8 @@ function Enable-PasswordAuth([string]$Password) {
 }
 
 function Disable-PasswordAuth {
-    foreach ($nome in @("GAMEDEPLOY_SSH_PASSWORD", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE")) {
-        Remove-Item "env:$nome" -ErrorAction SilentlyContinue
+    foreach ($name in @("GAMEDEPLOY_SSH_PASSWORD", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE")) {
+        Remove-Item "env:$name" -ErrorAction SilentlyContinue
     }
     if ($script:AskPassFile -ne "" -and (Test-Path $script:AskPassFile)) {
         Remove-Item $script:AskPassFile -Force -ErrorAction SilentlyContinue
@@ -152,7 +152,7 @@ function Disable-PasswordAuth {
 function Test-KeyAuth([string]$Target) {
     # "Nao entrou" e resposta esperada aqui, nao erro do deploy - por isso a preferencia
     # relaxada (ver o comentario do bloco de ssh auxiliar mais abaixo).
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
         ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new `
@@ -161,7 +161,7 @@ function Test-KeyAuth([string]$Target) {
     } catch {
         return $false
     } finally {
-        $ErrorActionPreference = $anterior
+        $ErrorActionPreference = $previous
     }
 }
 
@@ -215,28 +215,28 @@ function Install-KeyOnProxmox([string]$Target) {
 # com um \r no fim de cada linha. Quem le do outro lado e o bash, e para ele o \r faz
 # parte do argumento: 'sleep 3' vira "intervalo invalido" e um nome de servico ganha um
 # \x0d no fim. Toda entrada de comando remoto passa por aqui primeiro.
-function ConvertTo-Lf([string]$Texto) { return ($Texto -replace "`r", "") }
+function ConvertTo-Lf([string]$Text) { return ($Text -replace "`r", "") }
 
 # ssh/scp do fluxo principal: carregam o $script:SshOpts, que e onde vive a
 # autenticacao (chave ou senha via askpass).
 function Invoke-Ssh([string]$Target, [string]$Command) {
     $opcoes = Get-SshOptsFor $Target
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
         ssh @opcoes "root@$Target" (ConvertTo-Lf $Command)
     } finally {
-        $ErrorActionPreference = $anterior
+        $ErrorActionPreference = $previous
     }
 }
 
 function Invoke-Scp([string[]]$Sources, [string]$Destination) {
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
         scp @script:SshOpts @Sources $Destination
     } finally {
-        $ErrorActionPreference = $anterior
+        $ErrorActionPreference = $previous
     }
 }
 
@@ -245,26 +245,26 @@ function Invoke-Scp([string[]]$Sources, [string]$Destination) {
 function Invoke-SshQuery([string]$Target, [string]$Command, [switch]$Batch) {
     $opcoes = @(Get-SshOptsFor $Target) + @("-o", "ConnectTimeout=10")
     if ($Batch) { $opcoes += @("-o", "BatchMode=yes") }
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $saida = ssh @opcoes "root@$Target" (ConvertTo-Lf $Command) 2>$null
+        $output = ssh @opcoes "root@$Target" (ConvertTo-Lf $Command) 2>$null
     } finally {
-        $ErrorActionPreference = $anterior
+        $ErrorActionPreference = $previous
     }
-    return $saida
+    return $output
 }
 
 # Igual a de cima, mas com a saida indo para a tela (o cadastro no painel responde
 # "servidor 'X' cadastrado").
 function Invoke-SshLive([string]$Target, [string]$Command) {
     $opcoes = Get-SshOptsFor $Target
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
         ssh @opcoes "root@$Target" (ConvertTo-Lf $Command)
     } finally {
-        $ErrorActionPreference = $anterior
+        $ErrorActionPreference = $previous
     }
 }
 
@@ -314,10 +314,10 @@ $cfg = Read-EnvFile $EnvFile
 # generico do .env e o segundo jogo sobrescreveria o container do primeiro.
 # O mesmo texto que vai no bundle, ja como mapa: dele saem GAME_KEY e, no fim do
 # deploy, os dados do cadastro no painel (portas, config, contagem de jogadores).
-$jogo = Read-EnvText $GameEnvContent
-$GameKey = Get-Cfg $jogo "GAME_KEY" $Game
+$game = Read-EnvText $GameEnvContent
+$GameKey = Get-Cfg $game "GAME_KEY" $Game
 $GameSuffix = Get-GameSuffix $GameKey
-$Display = Get-Cfg $jogo "GAME_DISPLAY_NAME" $GameKey
+$Display = Get-Cfg $game "GAME_DISPLAY_NAME" $GameKey
 
 $OverridableKeys = @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMPLATE_PATTERN",
                      "BRIDGE","IP_CIDR","GATEWAY","CT_PASSWORD","TZ","MEMORY","CORES",
@@ -342,7 +342,7 @@ if ($ProxmoxHost -eq "") {
 
 # Jogos cujo depot do servidor exige conta Steam (STEAM_ANONYMOUS=0 no games/<jogo>.env).
 # As credenciais vivem no .env/prompt - nunca no games/*.env, que vai para o git.
-$SteamAnon = (Get-Cfg $jogo "STEAM_ANONYMOUS" "1") -ne "0"
+$SteamAnon = (Get-Cfg $game "STEAM_ANONYMOUS" "1") -ne "0"
 if ($SteamGuardCode -ne "") { $cfg["STEAM_GUARD_CODE"] = $SteamGuardCode }
 
 if ($Interactive) {
@@ -497,7 +497,7 @@ function Write-LfFile([string]$Path, [string]$Content) {
 # Qual .sh mandar pro Proxmox: provision-game-lxc.sh (SteamCMD) pra quase todo jogo, ou o
 # que o proprio games/<jogo>.env pedir (ex.: teamspeak.env usa provision-teamspeak-lxc.sh,
 # que nao depende da Steam). Sem a chave, comportamento identico ao de sempre.
-$ProvisionScript = Get-Cfg $jogo "PROVISION_SCRIPT" "provision-game-lxc.sh"
+$ProvisionScript = Get-Cfg $game "PROVISION_SCRIPT" "provision-game-lxc.sh"
 Copy-Item (Join-Path $ScriptDir $ProvisionScript) (Join-Path $BundleDir $ProvisionScript)
 # As fases que rodam dentro do CT (SteamCMD, Wine/Proton, systemd) moram em lib/ct-fases.sh,
 # que o provision-game-lxc.sh le com `source`. O bundle e uma pasta sem subpastas (o scp leva
@@ -549,9 +549,9 @@ function ConvertTo-ShQuoted([string]$Value) {
 # Endereco do CT do jogo: com IP fixo ja sabemos; com dhcp so o CT sabe.
 function Get-CtIp([string]$Cidr, [string]$Ctid) {
     if ($Cidr -ne "dhcp") { return (Get-IpOnly $Cidr) }
-    $saida = Get-FirstLine (Invoke-SshQuery $ProxmoxHost "pct exec $Ctid -- hostname -I")
-    if ($LASTEXITCODE -ne 0 -or $saida -eq "") { return "" }
-    return (($saida -split '\s+')[0])
+    $output = Get-FirstLine (Invoke-SshQuery $ProxmoxHost "pct exec $Ctid -- hostname -I")
+    if ($LASTEXITCODE -ne 0 -or $output -eq "") { return "" }
+    return (($output -split '\s+')[0])
 }
 
 $registrado = $false
@@ -565,23 +565,23 @@ if (-not $NoRegister) {
             "--register-server", $Display,
             "--server-host", $CtIp,
             "--service", "$GameKey.service",
-            "--game-port", (Get-Cfg $jogo "GAME_PORTS"),
-            "--query-port", (Get-Cfg $jogo "QUERY_PORT" "0"),
-            "--config-path", (Get-Cfg $jogo "CONFIG_PATH"),
-            "--config-files", (Get-Cfg $jogo "CONFIG_FILES"),
+            "--game-port", (Get-Cfg $game "GAME_PORTS"),
+            "--query-port", (Get-Cfg $game "QUERY_PORT" "0"),
+            "--config-path", (Get-Cfg $game "CONFIG_PATH"),
+            "--config-files", (Get-Cfg $game "CONFIG_FILES"),
             # Pastas de save que a tela Backups do painel guarda. Num redeploy o painel
             # mantem o que ja estava la: quem ajustou pela tela nao perde o ajuste.
-            "--backup-paths", (Get-Cfg $jogo "BACKUP_PATHS"),
-            "--player-source", (Get-Cfg $jogo "PLAYER_SOURCE"),
+            "--backup-paths", (Get-Cfg $game "BACKUP_PATHS"),
+            "--player-source", (Get-Cfg $game "PLAYER_SOURCE"),
             # Contagem pelo log: padroes e, quando o nome so existe em arquivo proprio
             # (o .ADM do DayZ), o caminho dele.
-            "--join-re", (Get-Cfg $jogo "JOIN_RE"),
-            "--leave-re", (Get-Cfg $jogo "LEAVE_RE"),
-            "--log-path", (Get-Cfg $jogo "LOG_PATH"),
+            "--join-re", (Get-Cfg $game "JOIN_RE"),
+            "--leave-re", (Get-Cfg $game "LEAVE_RE"),
+            "--log-path", (Get-Cfg $game "LOG_PATH"),
             "--notes", "CT $($cfg['CTID']) no Proxmox $ProxmoxHost (deploy-game.ps1)."
         )
         $partes = @("runuser", "-u", $PanelUser, "--", "python3", $PanelApp)
-        foreach ($valor in $cmdArgs) { $partes += (ConvertTo-ShQuoted $valor) }
+        foreach ($value in $cmdArgs) { $partes += (ConvertTo-ShQuoted $value) }
         $registerCmd = ($partes -join " ")
 
         # 1) Pelo proprio host Proxmox, que e o caminho que sempre existe num deploy LXC:

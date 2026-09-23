@@ -14,17 +14,17 @@ import { $ } from '../core/dom.js';
 /* Guarda o evento que o Chrome dispara quando a instalacao esta disponivel. Ele so
  * pode ser usado UMA vez e nao pode ser pedido do nada — por isso e capturado aqui,
  * no topo do modulo, antes de qualquer tela mount. */
-let convite = null;
+let invite = null;
 const ouvintes = new Set();
 
 window.addEventListener('beforeinstallprompt', (ev) => {
   ev.preventDefault();          // sem isto o Chrome mostra a propria barrinha
-  convite = ev;
+  invite = ev;
   ouvintes.forEach((f) => f(true));
 });
 
 window.addEventListener('appinstalled', () => {
-  convite = null;
+  invite = null;
   ouvintes.forEach((f) => f(false));
 });
 
@@ -33,19 +33,19 @@ const instalado = () => window.matchMedia('(display-mode: standalone)').matches 
 
 export const installButton = {
   selector: '[data-install]',
-  mount(botao) {
+  mount(button) {
     if (instalado()) return;
 
-    const refresh = (disponivel) => { botao.hidden = !disponivel; };
+    const refresh = (available) => { button.hidden = !available; };
     ouvintes.add(refresh);
-    refresh(Boolean(convite));
+    refresh(Boolean(invite));
 
-    botao.addEventListener('click', async () => {
-      if (!convite) return;
-      botao.hidden = true;
-      convite.prompt();
-      await convite.userChoice;
-      convite = null;      // o evento e de uso unico
+    button.addEventListener('click', async () => {
+      if (!invite) return;
+      button.hidden = true;
+      invite.prompt();
+      await invite.userChoice;
+      invite = null;      // o evento e de uso unico
     });
   },
 };

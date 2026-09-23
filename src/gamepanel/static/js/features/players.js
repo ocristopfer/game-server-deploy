@@ -18,31 +18,31 @@ function pinta(selo, data) {
 /* Painel de servidores: um selo por cartao, todos de uma leitura so. */
 export const panelPlayers = {
   selector: '[data-players-panel]',
-  mount(raiz) {
-    const url = raiz.dataset.playersPanel;
-    const selos = Array.from(raiz.querySelectorAll('[data-players]'));
+  mount(root) {
+    const url = root.dataset.playersPanel;
+    const selos = Array.from(root.querySelectorAll('[data-players]'));
     if (!url || !selos.length) return;
 
     new Poller(async () => {
-      const tudo = await readJSON(url);
+      const all = await readJSON(url);
       selos.forEach((selo) => {
-        const data = tudo[selo.dataset.players];
+        const data = all[selo.dataset.players];
         if (!data?.configured || data.error || data.players === null) return;
         pinta(selo, data);
         selo.textContent += ' jogadores';
         selo.hidden = false;
       });
-    }, { interval: Number(raiz.dataset.interval) || 10000 }).iniciar();
+    }, { interval: Number(root.dataset.interval) || 10000 }).start();
   },
 };
 
 /* Tela de um servidor: selo mais a tabela de quem esta online. */
 export const serverPlayers = {
   selector: '[data-players-server]',
-  mount(cartao) {
-    const url = cartao.dataset.playersServer;
-    const tabela = $('#jogadores-tabela', cartao);
-    const selo = $('#jogadores-badge', cartao);
+  mount(card) {
+    const url = card.dataset.playersServer;
+    const tabela = $('#jogadores-tabela', card);
+    const selo = $('#jogadores-badge', card);
     if (!url || !tabela) return;
 
     const body = tabela.querySelector('tbody');
@@ -51,7 +51,7 @@ export const serverPlayers = {
     function semNinguem(quantos) {
       const tr = createEl('tr');
       tr.append(createEl('td', {
-        classe: 'muted',
+        className: 'muted',
         text: quantos
           ? 'Este jogo nao publica a lista de nomes - so a contagem.'
           : 'Ninguem conectado agora.',
@@ -65,8 +65,8 @@ export const serverPlayers = {
       // Nome vem do jogo: entra por textContent, nunca como marcacao.
       tr.append(
         createEl('td', { text: p.name }),
-        createEl('td', { classe: 'muted', text: duration(p.seconds) }),
-        createEl('td', { classe: 'muted', text: String(Number(p.score) || 0) }),
+        createEl('td', { className: 'muted', text: duration(p.seconds) }),
+        createEl('td', { className: 'muted', text: String(Number(p.score) || 0) }),
       );
       // A coluna de acoes (expulsar/banir) e desenhada pelo servidor com CSRF; ao
       // repintar, ela fica vazia ate a proxima carga da pagina.
@@ -84,6 +84,6 @@ export const serverPlayers = {
       reset(body, (data.list?.length)
         ? data.list.map(line)
         : semNinguem(data.players));
-    }, { interval: Number(cartao.dataset.interval) || 10000 }).iniciar({ imediato: false });
+    }, { interval: Number(card.dataset.interval) || 10000 }).start({ immediate: false });
   },
 };

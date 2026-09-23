@@ -5,10 +5,10 @@
  * cache" ficam num lugar so, e trocar o transporte nao mexe em nenhuma tela.
  */
 
-export class ErroDeRede extends Error {
-  constructor(mensagem, status = 0) {
-    super(mensagem);
-    this.name = 'ErroDeRede';
+export class NetworkError extends Error {
+  constructor(message, status = 0) {
+    super(message);
+    this.name = 'NetworkError';
     this.status = status;
   }
 }
@@ -18,17 +18,17 @@ export class ErroDeRede extends Error {
  * `cache: 'no-store'` importa de verdade aqui: com o service worker instalado, uma
  * leitura de medidores servida do cache mostraria o servidor como estava ha uma hora
  * — pior do que nao mostrar nada. */
-export async function readJSON(url, opcoes = {}) {
+export async function readJSON(url, options = {}) {
   let resp;
   try {
     resp = await fetch(url, {
       headers: { Accept: 'application/json', ...options.headers },
       cache: 'no-store',
       credentials: 'same-origin',
-      signal: opcoes.signal,
+      signal: options.signal,
     });
   } catch (err) {
-    throw new ErroDeRede(err.message || 'sem conexao');
+    throw new NetworkError(err.message || 'sem conexao');
   }
 
   let data = null;
@@ -39,7 +39,7 @@ export async function readJSON(url, opcoes = {}) {
   }
 
   if (!resp.ok) {
-    throw new ErroDeRede(data?.error || `http ${resp.status}`, resp.status);
+    throw new NetworkError(data?.error || `http ${resp.status}`, resp.status);
   }
   return data;
 }

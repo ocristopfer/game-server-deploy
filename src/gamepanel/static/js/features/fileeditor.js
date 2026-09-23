@@ -14,7 +14,7 @@ export const fileEditor = {
     if (!area) return;
 
     const original = area.value;
-    const liberar = warnBeforeLeaving(() => area.value !== original);
+    const release = warnBeforeLeaving(() => area.value !== original);
 
     area.addEventListener('keydown', (ev) => {
       if (ev.key === 'Tab') {
@@ -28,15 +28,15 @@ export const fileEditor = {
 
     function mostrarPosicao() {
       if (!pos) return;
-      const ate = area.value.slice(0, area.selectionStart);
-      const line = ate.split('\n').length;
-      const coluna = ate.length - ate.lastIndexOf('\n');
-      pos.textContent = `linha ${linha}, coluna ${coluna}` +
+      const upTo = area.value.slice(0, area.selectionStart);
+      const line = upTo.split('\n').length;
+      const column = upTo.length - upTo.lastIndexOf('\n');
+      pos.textContent = `linha ${line}, coluna ${column}` +
         (area.value === original ? '' : ' - alterado');
     }
     ['keyup', 'click', 'input'].forEach((ev) => area.addEventListener(ev, mostrarPosicao));
     mostrarPosicao();
 
-    form.addEventListener('submit', liberar);
+    form.addEventListener('submit', release);
   },
 };

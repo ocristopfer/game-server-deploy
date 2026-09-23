@@ -14,14 +14,14 @@ const num = (el, name) => Number.parseFloat(el.getAttribute(name)) || 0;
 
 function pontosDe(poly) {
   return (poly.getAttribute('points') || '').trim().split(/\s+/)
-    .map((par) => {
-      const [x, y] = par.split(',');
+    .map((pair) => {
+      const [x, y] = pair.split(',');
       return { x: Number.parseFloat(x), y: Number.parseFloat(y) };
     })
     .filter((p) => !Number.isNaN(p.x) && !Number.isNaN(p.y));
 }
 
-function horaDe(svg, x) {
+function timeAt(svg, x) {
   const esq = num(svg, 'data-left');
   const dir = num(svg, 'data-dir');
   if (dir <= esq) return '';
@@ -45,7 +45,7 @@ export const chart = {
     const mira = svg.querySelector('.crosshair');
     const series = Array.from(svg.querySelectorAll('.series')).map((poly) => ({
       name: poly.dataset.series || '',
-      sufixo: poly.dataset.suffix || '',
+      suffix: poly.dataset.suffix || '',
       color: poly.getAttribute('stroke') || 'currentColor',
       points: pontosDe(poly),
     }));
@@ -53,11 +53,11 @@ export const chart = {
 
     // Um X so por instante, vindo de todas as series: o leitor mira numa hora, nunca
     // numa linha de 2px.
-    const xs = [...new Set(series.flatMap((s) => s.pontos.map((p) => p.x)))]
+    const xs = [...new Set(series.flatMap((s) => s.points.map((p) => p.x)))]
       .sort((a, b) => a - b);
     if (!xs.length) return;
 
-    const balao = createEl('div', { classe: 'bubble' });
+    const balao = createEl('div', { className: 'bubble' });
     balao.hidden = true;
     svg.parentNode.appendChild(balao);
 
@@ -69,7 +69,7 @@ export const chart = {
       index = -1;
     }
 
-    function mostra(i) {
+    function showAt(i) {
       index = Math.max(0, Math.min(xs.length - 1, i));
       const x = xs[index];
       mira.setAttribute('x1', x);
@@ -78,53 +78,53 @@ export const chart = {
 
       // Titulo e depois uma linha por serie. Tudo por textContent: o rotulo da serie
       // e dado, nao marcacao.
-      const lines = [createEl('div', { classe: 'bubble-time', text: horaDe(svg, x) })];
+      const lines = [createEl('div', { className: 'bubble-time', text: timeAt(svg, x) })];
       series.forEach((s) => {
-        const achado = s.pontos.find((p) => p.x === x);
-        if (!achado) return;
-        const line = createEl('div', { classe: 'bubble-line' });
+        const found = s.points.find((p) => p.x === x);
+        if (!found) return;
+        const line = createEl('div', { className: 'bubble-line' });
         const key = createEl('i');
-        key.style.background = s.cor;
+        key.style.background = s.color;
         line.append(
           key,
           // O valor lidera; o nome da serie e secundario.
           createEl('strong', {
-            text: valorDe(svg, achado.y).toFixed(s.sufixo === '%' ? 1 : 0) + s.sufixo,
+            text: valorDe(svg, found.y).toFixed(s.suffix === '%' ? 1 : 0) + s.suffix,
           }),
-          createEl('span', { text: s.nome }),
+          createEl('span', { text: s.name }),
         );
         lines.push(line);
       });
-      balao.replaceChildren(...linhas);
+      balao.replaceChildren(...lines);
 
       const box = svg.getBoundingClientRect();
       const scale = box.width / (svg.viewBox.baseVal.width || 1);
       balao.hidden = false;
       // Vira para o outro lado perto da borda direita, para nao sair do cartao.
       const solto = x * scale;
-      balao.style.left = `${solto > caixa.width * 0.6 ? solto - balao.offsetWidth - 12 : solto + 12}px`;
+      balao.style.left = `${solto > box.width * 0.6 ? solto - balao.offsetWidth - 12 : solto + 12}px`;
     }
 
     function daPosicao(evento) {
       const box = svg.getBoundingClientRect();
       if (!box.width) return;
       const x = (evento.clientX - box.left) / box.width * svg.viewBox.baseVal.width;
-      let melhor = 0;
+      let best = 0;
       for (let i = 1; i < xs.length; i++) {
-        if (Math.abs(xs[i] - x) < Math.abs(xs[melhor] - x)) melhor = i;
+        if (Math.abs(xs[i] - x) < Math.abs(xs[best] - x)) best = i;
       }
-      mostra(melhor);
+      showAt(best);
     }
 
     svg.addEventListener('pointermove', daPosicao);
     svg.addEventListener('pointerdown', daPosicao);   // no toque nao existe "passar por cima"
     svg.addEventListener('pointerleave', esconde);
     // Teclado ve o mesmo que o mouse: seta anda de amostra em amostra.
-    svg.addEventListener('focus', () => mostra(index < 0 ? xs.length - 1 : index));
+    svg.addEventListener('focus', () => showAt(index < 0 ? xs.length - 1 : index));
     svg.addEventListener('blur', esconde);
     svg.addEventListener('keydown', (ev) => {
-      if (ev.key === 'ArrowLeft') { mostra(index - 1); ev.preventDefault(); }
-      else if (ev.key === 'ArrowRight') { mostra(index + 1); ev.preventDefault(); }
+      if (ev.key === 'ArrowLeft') { showAt(index - 1); ev.preventDefault(); }
+      else if (ev.key === 'ArrowRight') { showAt(index + 1); ev.preventDefault(); }
       else if (ev.key === 'Escape') { esconde(); }
     });
   },

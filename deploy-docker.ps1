@@ -75,17 +75,17 @@ function Write-LfFile([string]$Path, [string]$Content) {
 # Nao devolve nada de proposito: a saida do docker vai direto para a tela (build e
 # download sao demorados) e quem chama confere o $LASTEXITCODE, que e global.
 function Invoke-DockerLive([string[]]$Argumentos) {
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    try { & docker @Argumentos } finally { $ErrorActionPreference = $anterior }
+    try { & docker @Argumentos } finally { $ErrorActionPreference = $previous }
 }
 
 # Consulta silenciosa (a saida volta como texto, o stderr e descartado).
 function Invoke-DockerQuery([string[]]$Argumentos) {
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    try { $saida = & docker @Argumentos 2>$null } finally { $ErrorActionPreference = $anterior }
-    return $saida
+    try { $output = & docker @Argumentos 2>$null } finally { $ErrorActionPreference = $previous }
+    return $output
 }
 
 function Assert-Docker {
@@ -94,22 +94,22 @@ function Assert-Docker {
     }
     Invoke-DockerQuery @("version", "--format", "{{.Server.Version}}") | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        $alvo = "daemon local"
-        if ($env:DOCKER_HOST) { $alvo = $env:DOCKER_HOST }
-        throw "Nao consegui falar com o Docker ($alvo). O Docker Desktop esta rodando?"
+        $target = "daemon local"
+        if ($env:DOCKER_HOST) { $target = $env:DOCKER_HOST }
+        throw "Nao consegui falar com o Docker ($target). O Docker Desktop esta rodando?"
     }
 }
 
 # As consultas de existencia usam 'ls --filter' em vez de 'inspect' porque um 'inspect'
 # que nao acha o objeto sai com erro - e aqui "nao existe" e resposta esperada.
-function Test-Network([string]$Nome) {
-    $achado = Invoke-DockerQuery @("network", "ls", "--filter", "name=^$Nome$", "--format", "{{.Name}}")
-    return ($achado -contains $Nome)
+function Test-Network([string]$Name) {
+    $achado = Invoke-DockerQuery @("network", "ls", "--filter", "name=^$Name$", "--format", "{{.Name}}")
+    return ($achado -contains $Name)
 }
 
-function Test-Container([string]$Nome) {
-    $achado = Invoke-DockerQuery @("ps", "-a", "--filter", "name=^$Nome$", "--format", "{{.Names}}")
-    return ($achado -contains $Nome)
+function Test-Container([string]$Name) {
+    $achado = Invoke-DockerQuery @("ps", "-a", "--filter", "name=^$Name$", "--format", "{{.Names}}")
+    return ($achado -contains $Name)
 }
 
 function Ensure-Network {
@@ -121,8 +121,8 @@ function Ensure-Network {
 }
 
 function Invoke-Compose([string]$File, [string]$Project, [string[]]$ComposeArgs) {
-    $todos = @("compose", "-f", $File, "-p", $Project) + $ComposeArgs
-    Invoke-DockerLive $todos
+    $all = @("compose", "-f", $File, "-p", $Project) + $ComposeArgs
+    Invoke-DockerLive $all
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose $($ComposeArgs -join ' ') falhou (veja a saida acima)"
     }
@@ -170,17 +170,17 @@ Ensure-Network
 # ------------------------------------------------------------------- painel
 
 if ($Panel) {
-    $porta = Get-Cfg $cfg "ADMIN_PORT" "8080"
-    $usuario = Get-Cfg $cfg "ADMIN_USER" "admin"
-    $senha = Get-Cfg $cfg "ADMIN_PASSWORD"
+    $port = Get-Cfg $cfg "ADMIN_PORT" "8080"
+    $user = Get-Cfg $cfg "ADMIN_USER" "admin"
+    $password = Get-Cfg $cfg "ADMIN_PASSWORD"
     $gerada = $false
-    if ($senha -eq "") {
-        $senha = -join ((48..57) + (97..122) + (65..90) | Get-Random -Count 16 | ForEach-Object { [char]$_ })
+    if ($password -eq "") {
+        $password = -join ((48..57) + (97..122) + (65..90) | Get-Random -Count 16 | ForEach-Object { [char]$_ })
         $gerada = $true
     }
 
-    $arquivo = Join-Path $StackDir "panel.yml"
-    Write-LfFile $arquivo @"
+    $file = Join-Path $StackDir "panel.yml"
+    Write-LfFile $file @"
 # Gerado por deploy-docker.ps1 - edite o .env e rode de novo em vez de mexer aqui.
 services:
   panel:
@@ -193,8 +193,8 @@ services:
     ports:
       - "${porta}:8080"
     environment:
-      PANEL_USER: "$usuario"
-      PANEL_PASSWORD: "$senha"
+      PANEL_USER: "$user"
+      PANEL_PASSWORD: "$password"
       TZ: "$(Get-Cfg $cfg 'TZ' 'America/Sao_Paulo')"
       GAMEPANEL_ALLOW_SHELL: "$(Get-Cfg $cfg 'ADMIN_ALLOW_SHELL' '1')"
       GAMEPANEL_ALLOW_FILES: "$(Get-Cfg $cfg 'ADMIN_ALLOW_FILES' '1')"
@@ -216,19 +216,19 @@ networks:
 "@
 
     if ($Down) {
-        Invoke-Compose $arquivo "gamepanel" @("down")
+        Invoke-Compose $file "gamepanel" @("down")
         Write-Host "Painel parado (os cadastros e a chave SSH ficam nos volumes)." -ForegroundColor Green
         if ($Game -eq "" -and $AppId -eq "") { exit 0 }
     } else {
-        if ($Recreate) { Invoke-Compose $arquivo "gamepanel" @("down") }
+        if ($Recreate) { Invoke-Compose $file "gamepanel" @("down") }
         Write-Host "`nSubindo o painel..." -ForegroundColor Cyan
-        Invoke-Compose $arquivo "gamepanel" @("up", "-d", "--build")
+        Invoke-Compose $file "gamepanel" @("up", "-d", "--build")
 
         Write-Host ""
-        Write-Host "Painel: http://localhost:$porta" -ForegroundColor Green
-        Write-Host "Usuario: $usuario"
+        Write-Host "Painel: http://localhost:$port" -ForegroundColor Green
+        Write-Host "Usuario: $user"
         if ($gerada) {
-            Write-Host "Senha gerada agora: $senha" -ForegroundColor Yellow
+            Write-Host "Senha gerada agora: $password" -ForegroundColor Yellow
             Write-Host "(preencha ADMIN_PASSWORD no .env para fixar uma senha sua)"
         }
         $pub = Get-PanelPubKey $cfg
@@ -265,31 +265,31 @@ GAME_PORTS=""
     }
 }
 
-$jogo = Read-EnvFile $GameEnvPath
-$GameKey = Get-Cfg $jogo "GAME_KEY" $Game
+$game = Read-EnvFile $GameEnvPath
+$GameKey = Get-Cfg $game "GAME_KEY" $Game
 $GameSuffix = Get-GameSuffix $GameKey
-$Display = Get-Cfg $jogo "GAME_DISPLAY_NAME" $GameKey
+$Display = Get-Cfg $game "GAME_DISPLAY_NAME" $GameKey
 $Container = "game-$GameKey"
 $Projeto = "game-$GameKey"
-$arquivo = Join-Path $StackDir "$GameKey.yml"
+$file = Join-Path $StackDir "$GameKey.yml"
 $segredos = Join-Path $StackDir "$GameKey.secret.env"
 
 if ($Down) {
-    if (Test-Path $arquivo) {
-        Invoke-Compose $arquivo $Projeto @("down")
+    if (Test-Path $file) {
+        Invoke-Compose $file $Projeto @("down")
         Write-Host "$Display parado. O mundo continua no volume ${Container}-data." -ForegroundColor Green
     } else {
-        Write-Host "Nao ha stack gerada para $GameKey ($arquivo)." -ForegroundColor Yellow
+        Write-Host "Nao ha stack gerada para $GameKey ($file)." -ForegroundColor Yellow
     }
     exit 0
 }
 
 # ----- portas -----
 $portas = @()
-$listaPortas = Get-Cfg $jogo "GAME_PORTS"
-foreach ($entrada in ($listaPortas -split '\s+')) {
-    if ($entrada -eq "") { continue }
-    $partes = $entrada -split '/'
+$listaPortas = Get-Cfg $game "GAME_PORTS"
+foreach ($entry in ($listaPortas -split '\s+')) {
+    if ($entry -eq "") { continue }
+    $partes = $entry -split '/'
     $numero = $partes[0]
     $proto = if ($partes.Count -gt 1) { $partes[1] } else { "tcp" }
     if ($numero -notmatch '^\d+$') { continue }
@@ -301,8 +301,8 @@ if ($sshPort -ne "") { $portas += "      - `"${sshPort}:22`"" }
 if ($portas.Count -eq 0) { $portas += "      []" }
 
 # ----- recursos e opcoes -----
-$memoria = Get-Scoped $cfg "MEMORY" $GameSuffix (Get-Cfg $jogo "RECOMMENDED_MEMORY" "4096")
-$cores = Get-Scoped $cfg "CORES" $GameSuffix (Get-Cfg $jogo "RECOMMENDED_CORES" "2")
+$memoria = Get-Scoped $cfg "MEMORY" $GameSuffix (Get-Cfg $game "RECOMMENDED_MEMORY" "4096")
+$cores = Get-Scoped $cfg "CORES" $GameSuffix (Get-Cfg $game "RECOMMENDED_CORES" "2")
 $tz = Get-Cfg $cfg "TZ" "America/Sao_Paulo"
 $autoUpdate = Get-Scoped $cfg "AUTO_UPDATE" $GameSuffix "1"
 $updateTime = Get-Cfg $cfg "UPDATE_TIME" "06:00"
@@ -319,7 +319,7 @@ if ($pub -eq "") {
 }
 
 # ----- conta Steam (jogos com STEAM_ANONYMOUS=0, hoje o dayz) -----
-$anon = (Get-Cfg $jogo "STEAM_ANONYMOUS" "1") -ne "0"
+$anon = (Get-Cfg $game "STEAM_ANONYMOUS" "1") -ne "0"
 $linhasSegredo = @()
 if (-not $anon) {
     $steamUser = Get-Cfg $cfg "STEAM_USER"
@@ -342,7 +342,7 @@ if (-not $anon) {
 Write-LfFile $segredos (($linhasSegredo -join "`n") + "`n")
 
 # ----- stack -----
-Write-LfFile $arquivo @"
+Write-LfFile $file @"
 # Gerado por deploy-docker.ps1 para $Display - edite o .env/games/$GameKey.env e rode de
 # novo em vez de mexer aqui.
 services:
@@ -385,10 +385,10 @@ networks:
     external: true
 "@
 
-if ($Recreate) { Invoke-Compose $arquivo $Projeto @("down") }
+if ($Recreate) { Invoke-Compose $file $Projeto @("down") }
 
 Write-Host "`nSubindo $Display (o primeiro deploy baixa o jogo inteiro, pode demorar)..." -ForegroundColor Cyan
-Invoke-Compose $arquivo $Projeto @("up", "-d", "--build")
+Invoke-Compose $file $Projeto @("up", "-d", "--build")
 
 Write-Host "`nAcompanhe a instalacao com:" -ForegroundColor DarkGray
 Write-Host "  docker logs -f $Container"
@@ -403,19 +403,19 @@ if (-not $NoRegister) {
             "--register-server", $Display,
             "--server-host", $Container,
             "--service", "$GameKey.service",
-            "--game-port", (Get-Cfg $jogo "GAME_PORTS"),
-            "--query-port", (Get-Cfg $jogo "QUERY_PORT" "0"),
-            "--config-path", (Get-Cfg $jogo "CONFIG_PATH"),
-            "--config-files", (Get-Cfg $jogo "CONFIG_FILES"),
+            "--game-port", (Get-Cfg $game "GAME_PORTS"),
+            "--query-port", (Get-Cfg $game "QUERY_PORT" "0"),
+            "--config-path", (Get-Cfg $game "CONFIG_PATH"),
+            "--config-files", (Get-Cfg $game "CONFIG_FILES"),
             # Pastas de save que a tela Backups do painel guarda. Num redeploy o painel
             # mantem o que ja estava la: quem ajustou pela tela nao perde o ajuste.
-            "--backup-paths", (Get-Cfg $jogo "BACKUP_PATHS"),
-            "--player-source", (Get-Cfg $jogo "PLAYER_SOURCE"),
+            "--backup-paths", (Get-Cfg $game "BACKUP_PATHS"),
+            "--player-source", (Get-Cfg $game "PLAYER_SOURCE"),
             # Contagem pelo log: padroes e, quando o nome so existe em arquivo proprio
             # (o .ADM do DayZ), o caminho dele.
-            "--join-re", (Get-Cfg $jogo "JOIN_RE"),
-            "--leave-re", (Get-Cfg $jogo "LEAVE_RE"),
-            "--log-path", (Get-Cfg $jogo "LOG_PATH"),
+            "--join-re", (Get-Cfg $game "JOIN_RE"),
+            "--leave-re", (Get-Cfg $game "LEAVE_RE"),
+            "--log-path", (Get-Cfg $game "LOG_PATH"),
             "--notes", "Container Docker $Container (deploy-docker.ps1)."
         )
         Invoke-DockerLive $cmdArgs
@@ -439,9 +439,9 @@ Write-Host ""
 Write-Host "Container : $Container (rede $Network, ${memoria}MB, $cores cpu)"
 Write-Host "Volumes   : ${Container}-data (jogo) e ${Container}-steam (conta/Steam)"
 Write-Host "Portas    : $portasTexto"
-$notas = Get-Cfg $jogo "PORT_NOTES"
+$notas = Get-Cfg $game "PORT_NOTES"
 if ($notas -ne "") { Write-Host "Nota      : $notas" }
-$hints = Get-Cfg $jogo "CONFIG_HINT"
+$hints = Get-Cfg $game "CONFIG_HINT"
 if ($hints -ne "") { Write-Host "Config    : $hints" }
 Write-Host ""
 if ($registrado) {

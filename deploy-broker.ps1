@@ -64,9 +64,9 @@ function Copy-AsLf([string]$Source, [string]$Dest) {
 
 # Valor para o `source` do bash: entre aspas simples, com ' escapado. Sem isto um segredo com
 # $, crase ou aspas seria interpretado, e o erro so apareceria como um token "invalido".
-function Quote-Bash([string]$Valor) {
-    if ($Valor -match "[\r\n]") { throw "Um valor de configuracao tem quebra de linha (nao suportado)." }
-    return "'" + ($Valor -replace "'", "'\''") + "'"
+function ConvertTo-BashQuoted([string]$Value) {
+    if ($Value -match "[\r\n]") { throw "Um valor de configuracao tem quebra de linha (nao suportado)." }
+    return "'" + ($Value -replace "'", "'\''") + "'"
 }
 
 # ----- Acesso ao Proxmox (mesmo padrao do deploy-admin.ps1) -----
@@ -75,16 +75,16 @@ $script:SshOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTime
 
 # O .gitattributes guarda todo .ps1 em CRLF: toda here-string nasce com \r no fim de cada
 # linha, e para o bash do outro lado o \r faz parte do argumento.
-function ConvertTo-Lf([string]$Texto) { return ($Texto -replace "`r", "") }
+function ConvertTo-Lf([string]$Text) { return ($Text -replace "`r", "") }
 
 # O ssh/scp escrevem no stderr mesmo quando dao certo (o `systemctl enable` do Proxmox, por
 # exemplo, imprime "Created symlink ..." la). No Windows PowerShell 5.1, com a saida redirecionada
 # e $ErrorActionPreference = "Stop", essa linha vira excecao e derruba o deploy em cima de um
 # sucesso. O que decide e o codigo de saida ($LASTEXITCODE), que os chamadores conferem.
 function Invoke-Native([scriptblock]$Comando) {
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    try { & $Comando } finally { $ErrorActionPreference = $anterior }
+    try { & $Comando } finally { $ErrorActionPreference = $previous }
 }
 
 function Invoke-Ssh([string]$Target, [string]$Command) {
@@ -109,8 +109,8 @@ function Enable-PasswordAuth([string]$Password) {
 }
 
 function Disable-PasswordAuth {
-    foreach ($nome in @("GAMEPANEL_SSH_PASSWORD", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE")) {
-        Remove-Item "env:$nome" -ErrorAction SilentlyContinue
+    foreach ($name in @("GAMEPANEL_SSH_PASSWORD", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE")) {
+        Remove-Item "env:$name" -ErrorAction SilentlyContinue
     }
     if ($script:AskPassFile -ne "" -and (Test-Path $script:AskPassFile)) {
         Remove-Item $script:AskPassFile -Force -ErrorAction SilentlyContinue
@@ -119,7 +119,7 @@ function Disable-PasswordAuth {
 
 function Test-KeyAuth([string]$Target) {
     # "Nao entrou" e resposta esperada aqui, nao erro do deploy.
-    $anterior = $ErrorActionPreference
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
         ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "root@$Target" "true" 2>$null | Out-Null
@@ -127,7 +127,7 @@ function Test-KeyAuth([string]$Target) {
     } catch {
         return $false
     } finally {
-        $ErrorActionPreference = $anterior
+        $ErrorActionPreference = $previous
     }
 }
 
@@ -251,19 +251,19 @@ $conf = [ordered]@{
     BROKER_CONFIGURE_PANEL = $(if ($ConfigurarPainel) { "1" } else { "0" })
     BROKER_ENABLE_IN_PANEL = $(if ($LigarNoPainel) { "1" } else { "0" })
 }
-$linhas = @()
-foreach ($k in $conf.Keys) { if ($conf[$k] -ne "") { $linhas += "$k=" + (Quote-Bash $conf[$k]) } }
-Write-LfFile (Join-Path $BundleDir "broker.conf.env") (($linhas -join "`n") + "`n")
+$lines = @()
+foreach ($k in $conf.Keys) { if ($conf[$k] -ne "") { $lines += "$k=" + (ConvertTo-BashQuoted $conf[$k]) } }
+Write-LfFile (Join-Path $BundleDir "broker.conf.env") (($lines -join "`n") + "`n")
 
 # Segredos: so as chaves que o provisionamento conhece (nada de lixo do arquivo vai junto).
-$linhas = @()
+$lines = @()
 foreach ($k in @("PROXMOX_URL", "PROXMOX_TOKEN", "PROXMOX_NODE", "PROXMOX_POOL", "PROXMOX_STORAGE",
                  "PROXMOX_TEMPLATE_STORAGE", "PROXMOX_TEMPLATE", "PROXMOX_BRIDGE", "PROXMOX_CERT_SHA256",
                  "OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET", "OPNSENSE_CERT_SHA256", "OPNSENSE_WAN")) {
     $v = Get-Cfg $sec $k
-    if ($v -ne "") { $linhas += "$k=" + (Quote-Bash $v) }
+    if ($v -ne "") { $lines += "$k=" + (ConvertTo-BashQuoted $v) }
 }
-Write-LfFile (Join-Path $BundleDir "broker.secrets.env") (($linhas -join "`n") + "`n")
+Write-LfFile (Join-Path $BundleDir "broker.secrets.env") (($lines -join "`n") + "`n")
 
 # ----- Envia e executa no Proxmox -----
 try {
@@ -273,8 +273,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
 
     # scp -r: gamebroker/, lib/ e games/ sao pastas; os arquivos soltos vao junto.
-    $itens = @(Get-ChildItem -Path $BundleDir | ForEach-Object { $_.FullName })
-    Invoke-Scp $itens "root@${ProxmoxHost}:$RemoteBundleDir/" -Recurse
+    $items = @(Get-ChildItem -Path $BundleDir | ForEach-Object { $_.FullName })
+    Invoke-Scp $items "root@${ProxmoxHost}:$RemoteBundleDir/" -Recurse
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o bundle para root@$ProxmoxHost" }
 
     # O bundle leva tokens do Proxmox e do OPNsense: so o root le, e o provisionamento apaga.

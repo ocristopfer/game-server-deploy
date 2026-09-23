@@ -257,12 +257,12 @@ enable_direct_deploy() {
 
 render_panel_config() {
   msg "Gravando configuracao do painel"
-  local tmp_file preservadas
+  local tmp_file preserved
   tmp_file="$(mktemp)"
   # O broker grava as linhas GAMEPANEL_*BROKER* neste arquivo (deploy-broker.ps1
   # -ConfigurarPainel), e este script reescreve o arquivo INTEIRO: sem guardar essas linhas antes,
   # cada deploy completo do painel desligava o broker em silencio.
-  preservadas="$(pct exec "$CTID" -- sh -c "grep -E '^GAMEPANEL_(BROKER_|ALLOW_BROKER)' ${CONF_DIR}/panel.env 2>/dev/null || true" | tr -d '\r')"
+  preserved="$(pct exec "$CTID" -- sh -c "grep -E '^GAMEPANEL_(BROKER_|ALLOW_BROKER)' ${CONF_DIR}/panel.env 2>/dev/null || true" | tr -d '\r')"
   cat > "$tmp_file" <<EOF
 GAMEPANEL_DB=${DATA_DIR}/panel.db
 GAMEPANEL_SECRET_FILE=${CONF_DIR}/secret_key
@@ -284,7 +284,7 @@ GAMEPANEL_FILE_DEFAULT=${FILE_DEFAULT}
 GAMEPANEL_REQUIRE_2FA=${REQUIRE_2FA}
 GAMEPANEL_LANG=${LANG_PADRAO}
 EOF
-  [[ -z "$preservadas" ]] || printf '%s\n' "$preservadas" >> "$tmp_file"
+  [[ -z "$preserved" ]] || printf '%s\n' "$preserved" >> "$tmp_file"
   push_file_to_ct "$tmp_file" "${CONF_DIR}/panel.env" 0640
   rm -f "$tmp_file"
   run_ct "chown root:${APP_USER} ${CONF_DIR}/panel.env"

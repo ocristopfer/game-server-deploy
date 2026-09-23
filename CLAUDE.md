@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_gameconf
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_contrato_template.py`, `test_contrato_frontend.py`, `test_javascript.py`,
-`test_schema.py` e mais uma duzia) sao **pytest** — 908
+`test_schema.py`, `test_javascript.py` e mais uma duzia) sao **pytest** — 909
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`banco`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 906 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 907 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -457,6 +457,51 @@ primeira execucao: tres classes sem regra e sete regras mortas.
 - **`cores` e a palavra que colide**: nucleo de CPU em ingles, cor em portugues. Uma
   renomeacao automatica ja trocou uma pela outra nos dois lados e o numero de nucleos
   sumiu da tela. Ha um teste so para ela.
+
+### O JavaScript tem rede agora
+
+`tests/gamepanel/test_javascript.py` (precisa do `node`; PULADO sem ele) faz tres
+perguntas: cada modulo parseia, cada modulo IMPORTA, e cada feature MONTA contra um DOM
+de mentira. Producao nao tem node e o painel nao depende dele para nada.
+
+O terceiro e o que importa. Tres defeitos reais nasceram de renomeacao e nenhum apareceu
+no servidor — 200 na pagina, HTML inteiro, e o erro no console de quem abriu a tela (o
+`app.js` ainda o engole de proposito, para uma feature quebrada nao levar as outras):
+
+- o `Poller` passou a expor `start()` e as features continuaram chamando `.iniciar()`;
+- `readJSON(url, opcoes)` ficou lendo `options.headers`;
+- `shortList` usava `rotulo` numa linha e `label` na seguinte.
+
+**`app.js` exporta `FEATURES` so para este teste.** Sem a lista exportada nao ha como
+montar cada feature sem um navegador.
+
+### Renomear JavaScript: `${...}` e codigo, e metodo mora depois do ponto
+
+- **Template literal nao e string inteira.** O trecho entre crases tem CODIGO dentro das
+  chaves. Um renomeador que pula a crase deixa de fora exatamente o identificador que so
+  aparece ali — foi assim que `rotulo` sobreviveu a tres passadas.
+- **Membro de objeto precisa da posicao APOS o ponto**, que e justamente a que se exclui
+  ao renomear variavel local. Meia-troca ali nao da erro de sintaxe nem de import.
+- **Regex de seletor nao pode atravessar aspas.** Um padrao para `'.classe'` que aceita
+  qualquer coisa ate a proxima aspa casou com `...opcoes.headers` no meio do codigo e o
+  reescreveu.
+
+### Renomear bash e PowerShell: comentario e mensagem ficam em portugues
+
+So IDENTIFICADOR muda. A primeira tentativa trocou a palavra solta no arquivo e entrou
+na prosa: `# e o caso de um release que quebra` virou `# e o run_case de...`, e o
+`die "sha256 nao confere"` virou `"nao check"` — texto que o sandbox procura, e que
+deixou de casar.
+
+- **Uma posicao, uma troca.** `local origem="$1"` casa como declaracao E como
+  atribuicao; aplicar as duas produziu `source_dir_dir` e `local extra_limits""` (sem o
+  `=`). Os dois passaram no `bash -n` e so quebraram rodando.
+- **`$(funcao)` dentro de aspas duplas e CODIGO.** Pular toda a aspa deixou `$(qual)`
+  chamando uma funcao que ja tinha virado `host_path`.
+- **`$(( ))` usa o nome SEM cifrao**: `falhas=$((falhas + 1))` precisa dos dois lados.
+- **Prove com os quatro sandboxes**: `comparar.sh` (instalador de jogo, byte a byte),
+  `broker.sh`, `release.sh` e a suite. Foi o `comparar.sh` que pegou a unit systemd que
+  deixou de ser escrita.
 
 ### Renomear no front: cada nome no SEU escopo
 

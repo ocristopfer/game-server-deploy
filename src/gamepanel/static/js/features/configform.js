@@ -12,8 +12,8 @@ export const configFilter = {
   selector: '[data-config-filter]',
   mount(busca) {
     const itens = $$('.conf-item');
-    const secoes = $$('.conf-section');
-    const vazio = $('#conf-vazio');
+    const sections = $$('.conf-section');
+    const empty = $('#conf-vazio');
     if (!itens.length) return;
 
     busca.addEventListener('input', () => {
@@ -22,12 +22,12 @@ export const configFilter = {
         el.hidden = termo !== '' && !el.dataset.key.includes(termo);
       });
       let visiveis = 0;
-      secoes.forEach((sec) => {
+      sections.forEach((sec) => {
         const tem = $$('.conf-item', sec).some((el) => !el.hidden);
         sec.hidden = !tem;
         if (tem) visiveis += 1;
       });
-      if (vazio) vazio.hidden = visiveis > 0;
+      if (empty) empty.hidden = visiveis > 0;
     });
   },
 };
@@ -35,13 +35,13 @@ export const configFilter = {
 /* "+ outra linha": clona a ultima linha de chave nova e renumera os campos. */
 export const moreConfigRows = {
   selector: '[data-config-more]',
-  mount(botao) {
+  mount(button) {
     const novas = $('#conf-novas');
     const total = $('input[name="n"]');
     if (!novas || !total) return;
-    botao.hidden = false;
+    button.hidden = false;
 
-    botao.addEventListener('click', () => {
+    button.addEventListener('click', () => {
       const modelo = novas.lastElementChild.cloneNode(true);
       const i = Number.parseInt(total.value, 10);
       modelo.querySelectorAll('[name]').forEach((field) => {
@@ -51,11 +51,11 @@ export const moreConfigRows = {
       // O id do bloco e o "for" do rotulo tem de andar junto com o indice: clonados
       // como estao, a linha nova repetiria o id da anterior e o rotulo apontaria
       // para o campo errado.
-      const bloco = modelo.querySelector('select');
+      const block = modelo.querySelector('select');
       const label = modelo.querySelector('label[for]');
-      if (bloco) {
-        bloco.id = `sec-${i}`;
-        if (label) label.htmlFor = bloco.id;
+      if (block) {
+        block.id = `sec-${i}`;
+        if (label) label.htmlFor = block.id;
       }
       novas.appendChild(modelo);
       total.value = String(i + 1);
@@ -68,13 +68,13 @@ export const dirtyConfig = {
   selector: '[data-config-form]',
   mount(form) {
     const marca = $('#conf-mudou', form);
-    let sujo = false;
-    const liberar = warnBeforeLeaving(() => sujo);
+    let dirty = false;
+    const release = warnBeforeLeaving(() => dirty);
 
     form.addEventListener('input', () => {
-      sujo = true;
+      dirty = true;
       if (marca) marca.textContent = 'ha alteracoes nao salvas';
     });
-    form.addEventListener('submit', liberar);
+    form.addEventListener('submit', release);
   },
 };

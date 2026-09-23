@@ -5,23 +5,23 @@
  * texto que veio do container.
  */
 
-export const $ = (selector, raiz = document) => raiz.querySelector(selector);
-export const $$ = (selector, raiz = document) => Array.from(raiz.querySelectorAll(selector));
+export const $ = (selector, root = document) => root.querySelector(selector);
+export const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
 /* Cria um elemento. `texto` entra sempre por textContent — nunca por innerHTML —
  * porque quase todo texto que o painel mostra (nome de jogador, caminho de arquivo,
  * linha de log) veio de fora e nao pode virar marcacao. */
-export function createEl(tag, { classe = '', text = '', attrs = {} } = {}) {
+export function createEl(tag, { className = '', text = '', attrs = {} } = {}) {
   const el = document.createElement(tag);
-  if (classe) el.className = classe;
+  if (className) el.className = className;
   if (text !== '') el.textContent = text;
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
   return el;
 }
 
 /* Troca o conteudo de um elemento por uma lista de filhos, de uma vez so. */
-export function reset(target, filhos) {
-  target.replaceChildren(...filhos);
+export function reset(target, children) {
+  target.replaceChildren(...children);
   return target;
 }
 

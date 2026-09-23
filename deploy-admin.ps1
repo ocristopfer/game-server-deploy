@@ -95,7 +95,7 @@ $script:SshOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTime
 # servico que nao existe e ate o 'set -e' do topo falha - o script segue adiante quebrado
 # e o deploy termina dizendo que deu certo. Some com ele aqui, uma vez, em vez de em cada
 # here-string.
-function ConvertTo-Lf([string]$Texto) { return ($Texto -replace "`r", "") }
+function ConvertTo-Lf([string]$Text) { return ($Text -replace "`r", "") }
 
 function Invoke-Ssh([string]$Target, [string]$Command) {
     ssh @script:SshOpts "root@$Target" (ConvertTo-Lf $Command)
@@ -126,8 +126,8 @@ function Enable-PasswordAuth([string]$Password) {
 }
 
 function Disable-PasswordAuth {
-    foreach ($nome in @("GAMEPANEL_SSH_PASSWORD", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE")) {
-        Remove-Item "env:$nome" -ErrorAction SilentlyContinue
+    foreach ($name in @("GAMEPANEL_SSH_PASSWORD", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE")) {
+        Remove-Item "env:$name" -ErrorAction SilentlyContinue
     }
     if ($script:AskPassFile -ne "" -and (Test-Path $script:AskPassFile)) {
         Remove-Item $script:AskPassFile -Force -ErrorAction SilentlyContinue

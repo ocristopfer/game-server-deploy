@@ -173,22 +173,22 @@ setup_windows_runtime() {
   [[ -n "$WINDOWS_RUNTIME" ]] || return 0
   msg "Preparando runtime de Windows: ${WINDOWS_RUNTIME}"
 
-  local pacotes="xz-utils"
-  [[ "$WINDOWS_RUNTIME" == "wine" ]] && pacotes="wine"
+  local packages="xz-utils"
+  [[ "$WINDOWS_RUNTIME" == "wine" ]] && packages="wine"
   # libvulkan1: o launcher do Proton importa vulkan.py, que faz CDLL('libvulkan.so.1')
   # na carga. Sem o loader ele nem comeca - morre em OSError antes de rodar o jogo,
   # mesmo em servidor headless que nunca vai renderizar nada.
-  [[ "$WINDOWS_RUNTIME" == "proton" ]] && pacotes="python3 xz-utils libvulkan1"
+  [[ "$WINDOWS_RUNTIME" == "proton" ]] && packages="python3 xz-utils libvulkan1"
   # xvfb-run precisa do xauth, que e apenas Recommends do xvfb: com
   # --no-install-recommends ele nao viria, e o start morreria com
   # "xvfb-run: error: xauth command not found".
-  [[ "$WINDOWS_RUNTIME_XVFB" == "1" ]] && pacotes="${pacotes} xvfb xauth"
+  [[ "$WINDOWS_RUNTIME_XVFB" == "1" ]] && packages="${packages} xvfb xauth"
 
   run_ct "
     set -e
     export DEBIAN_FRONTEND=noninteractive
     faltando=''
-    for p in ${pacotes}; do
+    for p in ${packages}; do
       dpkg -s \"\$p\" >/dev/null 2>&1 || faltando=\"\$faltando \$p\"
     done
     if [ -n \"\$faltando\" ]; then
@@ -406,9 +406,9 @@ run_post_install() {
 # receitas, nunca escreve shell (o PRE/POST_INSTALL_CMD so existe nos games/*.env revisados
 # no git). Receita desconhecida derruba a instalacao em vez de ser ignorada em silencio.
 apply_recipes() {
-  local receitas r
-  IFS=' ' read -ra receitas <<<"${RECIPES:-}"
-  for r in "${receitas[@]}"; do
+  local recipes r
+  IFS=' ' read -ra recipes <<<"${RECIPES:-}"
+  for r in "${recipes[@]}"; do
     case "$r" in
       steamclient-sdk64)
         msg "Receita steamclient-sdk64: ligando a steamclient.so do SteamCMD ao SDK do jogo"
@@ -554,8 +554,8 @@ render_systemd_unit() {
   rendered_args="${rendered_args//\{EXTRA_PORT\}/${EXTRA_PORT}}"
   # esync/fsync do Proton criam um descritor por objeto de sincronizacao; com o
   # limite padrao (1024) o servidor cai com "failed to create eventfd" sob carga.
-  local extra_limites=""
-  [[ -n "$WINDOWS_RUNTIME" ]] && extra_limites=$'LimitNOFILE=1048576\n'
+  local extra_limits=""
+  [[ -n "$WINDOWS_RUNTIME" ]] && extra_limits=$'LimitNOFILE=1048576\n'
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
@@ -572,7 +572,7 @@ WorkingDirectory=${GAME_DIR}
 ExecStart=${GAME_DIR}/${START_SCRIPT} ${rendered_args}
 Restart=on-failure
 RestartSec=10
-${extra_limites}
+${extra_limits}
 
 [Install]
 WantedBy=multi-user.target

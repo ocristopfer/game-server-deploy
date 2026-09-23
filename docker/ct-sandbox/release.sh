@@ -5,8 +5,8 @@
 #
 #   docker/ct-sandbox/release.sh
 set -euo pipefail
-raiz="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$raiz"
-qual() { pwd -W 2>/dev/null || pwd; }   # caminho que o Docker enxerga (Git Bash no Windows)
-docker build -q -t ct-sandbox "$raiz/docker/ct-sandbox" >/dev/null
-MSYS_NO_PATHCONV=1 docker run --rm -v "$(qual):/repo:ro" ct-sandbox bash /usr/local/lib/run-release.sh /repo
+repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$repo_root"
+host_path() { pwd -W 2>/dev/null || pwd; }   # caminho que o Docker enxerga (Git Bash no Windows)
+docker build -q -t ct-sandbox "$repo_root/docker/ct-sandbox" >/dev/null
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(host_path):/repo:ro" ct-sandbox bash /usr/local/lib/run-release.sh /repo

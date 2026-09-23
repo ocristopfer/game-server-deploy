@@ -41,17 +41,17 @@ function Read-Secrets([string]$Path) {
         if ($t -eq "" -or $t.StartsWith("#")) { continue }
         $i = $t.IndexOf("=")
         if ($i -lt 1) { continue }
-        $valor = $t.Substring($i + 1).Trim()
+        $value = $t.Substring($i + 1).Trim()
         # So corta comentario quando ha espaco antes do '#': um segredo pode conter '#'.
-        $c = $valor.IndexOf(" #")
-        if ($c -ge 0) { $valor = $valor.Substring(0, $c).Trim() }
-        $cfg[$t.Substring(0, $i).Trim()] = $valor.Trim('"').Trim("'")
+        $c = $value.IndexOf(" #")
+        if ($c -ge 0) { $value = $value.Substring(0, $c).Trim() }
+        $cfg[$t.Substring(0, $i).Trim()] = $value.Trim('"').Trim("'")
     }
     return $cfg
 }
 
-function Test-Preenchido([hashtable]$Cfg, [string[]]$Chaves) {
-    foreach ($k in $Chaves) {
+function Test-Filled([hashtable]$Cfg, [string[]]$Keys) {
+    foreach ($k in $Keys) {
         $v = $Cfg[$k]
         if ([string]::IsNullOrEmpty($v) -or $v -match "COLE_|IP_DO_") {
             Say "FALHA" "$k nao foi preenchido em $EnvFile"
@@ -113,7 +113,7 @@ function Get-Privs($Perms, [string]$Path) {
 # ----- Proxmox -----
 function Test-Proxmox([hashtable]$Cfg) {
     Write-Host "`n== Proxmox ==" -ForegroundColor Cyan
-    if (-not (Test-Preenchido $Cfg @("PROXMOX_URL", "PROXMOX_TOKEN"))) { return }
+    if (-not (Test-Filled $Cfg @("PROXMOX_URL", "PROXMOX_TOKEN"))) { return }
     $url = $Cfg["PROXMOX_URL"].TrimEnd("/")
     $h = @{ Authorization = "PVEAPIToken=" + $Cfg["PROXMOX_TOKEN"] }
     $pool = $Cfg["PROXMOX_POOL"]
@@ -126,7 +126,7 @@ function Test-Proxmox([hashtable]$Cfg) {
     $r = Invoke-Api "GET" "$url/api2/json/access/permissions" $h
     if ($r.Status -ne 200) { Say "FALHA" "GET /access/permissions: $(Explain-Status $r.Status)"; return }
     $perms = $r.Json.data
-    Test-ProxmoxPermissoes $perms $pool $storages
+    Test-ProxmoxPrivileges $perms $pool $storages
 
     $node = $Cfg["PROXMOX_NODE"]
     if ([string]::IsNullOrEmpty($node)) {
@@ -151,16 +151,16 @@ function Test-Proxmox([hashtable]$Cfg) {
     }
 }
 
-function Test-ProxmoxPermissoes($Perms, [string]$Pool, [string[]]$Storages) {
+function Test-ProxmoxPrivileges($Perms, [string]$Pool, [string[]]$Storages) {
     $exigidos = [ordered]@{ "/pool/$Pool" = @("VM.Allocate", "VM.Audit", "VM.PowerMgmt", "VM.Config.CPU",
             "VM.Config.Memory", "VM.Config.Disk", "VM.Config.Network", "VM.Config.Options") }
     foreach ($s in $Storages) { $exigidos["/storage/$s"] = @("Datastore.AllocateSpace", "Datastore.Audit") }
     $exigidos["/sdn/zones/localnetwork"] = @("SDN.Use")
 
-    foreach ($caminho in $exigidos.Keys) {
-        $tem = Get-Privs $Perms $caminho
-        $falta = @($exigidos[$caminho] | Where-Object { $tem -notcontains $_ })
-        if ($falta.Count -eq 0) { Say "OK" "permissoes completas em $caminho" }
+    foreach ($path in $exigidos.Keys) {
+        $tem = Get-Privs $Perms $path
+        $falta = @($exigidos[$path] | Where-Object { $tem -notcontains $_ })
+        if ($falta.Count -eq 0) { Say "OK" "permissoes completas em $path" }
         else { Say "FALHA" "faltam em ${caminho}: $($falta -join ', ')" }
     }
 
@@ -176,7 +176,7 @@ function Test-ProxmoxPermissoes($Perms, [string]$Pool, [string[]]$Storages) {
 # ----- OPNsense -----
 function Test-Opnsense([hashtable]$Cfg) {
     Write-Host "`n== OPNsense ==" -ForegroundColor Cyan
-    if (-not (Test-Preenchido $Cfg @("OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET"))) { return }
+    if (-not (Test-Filled $Cfg @("OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET"))) { return }
     $url = $Cfg["OPNSENSE_URL"].TrimEnd("/")
     $par = [Text.Encoding]::ASCII.GetBytes($Cfg["OPNSENSE_KEY"] + ":" + $Cfg["OPNSENSE_SECRET"])
     $h = @{ Authorization = "Basic " + [Convert]::ToBase64String($par) }
@@ -184,12 +184,12 @@ function Test-Opnsense([hashtable]$Cfg) {
     # search_rule e so consulta. A escrita (add/del/apply) fica para o proximo teste.
     $r = Invoke-Api "POST" "$url/api/firewall/d_nat/search_rule" $h '{"current":1,"rowCount":-1}'
     if ($r.Status -ne 200) { Say "FALHA" "d_nat/search_rule: $(Explain-Status $r.Status)"; return }
-    $linhas = @($r.Json.rows)
-    Say "OK" "chave aceita e d_nat legivel ($($linhas.Count) regras de redirect)"
-    $nossas = @($linhas | Where-Object { $_.descr -like "gamepanel:*" })
+    $lines = @($r.Json.rows)
+    Say "OK" "chave aceita e d_nat legivel ($($lines.Count) regras de redirect)"
+    $nossas = @($lines | Where-Object { $_.descr -like "gamepanel:*" })
     Say "INFO" "regras do broker (descricao 'gamepanel:...'): $($nossas.Count)"
-    if ($linhas.Count -gt 0) {
-        $campos = ($linhas[0].PSObject.Properties | ForEach-Object { $_.Name }) -join ", "
+    if ($lines.Count -gt 0) {
+        $campos = ($lines[0].PSObject.Properties | ForEach-Object { $_.Name }) -join ", "
         Say "INFO" "campos de uma regra: $campos"
     }
 }

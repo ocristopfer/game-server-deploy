@@ -15,17 +15,17 @@ import { fileSize, duration, percentText, level, escapeHtml } from '../core/form
 
 /* ------------------------------------------------------------ renderizadores */
 
-function medidor(key, titulo, pct, rodape) {
-  return `<div class="meter" data-key="${escapeHtml(chave)}">` +
-    `<div class="meter-head"><span>${escapeHtml(titulo)}</span>` +
+function medidor(key, title, pct, footer) {
+  return `<div class="meter" data-key="${escapeHtml(key)}">` +
+    `<div class="meter-head"><span>${escapeHtml(title)}</span>` +
     `<span class="val">${percentText(pct)}%</span></div>` +
     `<div class="bar${level(pct)}"><i style="width: ${Number(pct) || 0}%"></i></div>` +
-    `<div class="meter-foot">${escapeHtml(rodape)}</div></div>`;
+    `<div class="meter-foot">${escapeHtml(footer)}</div></div>`;
 }
 
 export function fullList(data) {
   let html = medidor('cpu', 'CPU', data.cpu_pct,
-    `${data.cores || 1} nucleo(s) - load ${data.load || '-'}`);
+    `${data.colors || 1} nucleo(s) - load ${data.load || '-'}`);
   html += medidor('mem', 'Memoria', data.mem && data.mem.pct,
     `${fileSize(data.mem && data.mem.used)} de ${fileSize(data.mem && data.mem.total)}`);
   if (data.swap && data.swap.total) {
@@ -49,7 +49,7 @@ export function shortList(data) {
     ['Disco', disco && disco.pct],
   ].map(([label, bruto]) => {
     const pct = (bruto === undefined) ? null : bruto;
-    return `<div class="mini"><span class="mini-label">${rotulo}</span>` +
+    return `<div class="mini"><span class="mini-label">${label}</span>` +
       `<span class="bar${level(pct)}"><i style="width: ${Number(pct) || 0}%"></i></span>` +
       `<span class="mini-val">${percentText(pct)}%</span></div>`;
   }).join('');
@@ -70,29 +70,29 @@ function textoProcesso(proc) {
  * Uma chamada por cartao multiplicaria o custo de SSH pelo numero de servidores. */
 export const panelMeters = {
   selector: '[data-meters-panel]',
-  mount(raiz) {
-    const url = raiz.dataset.metersPanel;
-    const caixas = $$('.mini-meters', raiz);
+  mount(root) {
+    const url = root.dataset.metersPanel;
+    const caixas = $$('.mini-meters', root);
     if (!url || !caixas.length) return;
 
     new Poller(async () => {
-      const tudo = await readJSON(url);
+      const all = await readJSON(url);
       caixas.forEach((box) => {
-        const data = tudo[box.dataset.server];
+        const data = all[box.dataset.server];
         if (data) box.innerHTML = shortList(data);
       });
-    }, { interval: Number(raiz.dataset.interval) || 10000 }).iniciar();
+    }, { interval: Number(root.dataset.interval) || 10000 }).start();
   },
 };
 
 /* Tela de um servidor: medidores fullList mais rede, uptime e processo. */
 export const serverMeters = {
   selector: '[data-meters-server]',
-  mount(cartao) {
-    const url = cartao.dataset.metersServer;
-    const grade = $('#meters', cartao);
-    const info = $('#recursos-info', cartao);
-    const extra = $('#recursos-extra', cartao);
+  mount(card) {
+    const url = card.dataset.metersServer;
+    const grade = $('#meters', card);
+    const info = $('#recursos-info', card);
+    const extra = $('#recursos-extra', card);
     if (!url || !grade) return;
 
     const poller = new Poller(async () => {
@@ -106,12 +106,12 @@ export const serverMeters = {
       }
       if (info) info.textContent = 'atualiza a cada 5s';
     }, {
-      interval: Number(cartao.dataset.interval) || 5000,
-      aoErro: () => { if (info) info.textContent = 'sem leitura no momento'; },
+      interval: Number(card.dataset.interval) || 5000,
+      onError: () => { if (info) info.textContent = 'sem leitura no momento'; },
     });
 
     // Sem `imediato`: a tela ja chegou do servidor com a primeira leitura pronta.
-    poller.iniciar({ imediato: false });
+    poller.start({ immediate: false });
   },
 };
 
@@ -119,7 +119,7 @@ export const serverMeters = {
  * no atributo style faria toda ferramenta de CSS tropecar na sintaxe do template. */
 export const initialBars = {
   selector: '.bar > i[data-pct]',
-  mount(barra) {
-    barra.style.width = `${barra.dataset.pct}%`;
+  mount(bar) {
+    bar.style.width = `${bar.dataset.pct}%`;
   },
 };

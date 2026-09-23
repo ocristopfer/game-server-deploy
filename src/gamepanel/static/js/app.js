@@ -31,7 +31,7 @@ import { installButton, offlineWorker } from './features/pwa.js';
 import { gameTemplate } from './features/game-template.js';
 import { gameSearch } from './features/game-search.js';
 
-const FEATURES = [
+export const FEATURES = [
   // estrutura
   dropdownMenu, confirmAction, copyToClipboard, offlineWorker, installButton,
   // leitura ao vivo
@@ -43,9 +43,9 @@ const FEATURES = [
   chart,
 ];
 
-export function mountAll(raiz = document) {
+export function mountAll(root = document) {
   FEATURES.forEach((feature) => {
-    $$(feature.selector, raiz).forEach((el) => {
+    $$(feature.selector, root).forEach((el) => {
       try {
         feature.mount(el);
       } catch (err) {

@@ -13,68 +13,68 @@ const ESPERA_MS = 250;
 
 export const gameSearch = {
   selector: '[data-game-search]',
-  mount(bloco) {
-    const field = bloco.querySelector('[data-search-field]');
-    const list = bloco.querySelector('[data-search-results]');
-    const form = bloco.closest('form');
+  mount(block) {
+    const field = block.querySelector('[data-search-field]');
+    const list = block.querySelector('[data-search-results]');
+    const form = block.closest('form');
     if (!field || !list || !form) return;
-    bloco.hidden = false;
+    block.hidden = false;
 
     let espera = null;
     let pedido = 0;
 
-    const show = (filhos) => reset(list, filhos);
+    const show = (children) => reset(list, children);
 
-    const escolher = (achado) => {
-      fillForm(form, achado.valores);
+    const choose = (found) => {
+      fillForm(form, found.values);
       const notice = createEl('p', {
-        classe: 'flash ok',
-        text: `${achado.nome}: campos preenchidos. Confira antes de enviar.`,
+        className: 'flash ok',
+        text: `${found.name}: campos preenchidos. Confira antes de enviar.`,
       });
-      const observacoes = achado.avisos.map((text) => createEl('p', { classe: 'muted small', text }));
-      show([notice, ...observacoes]);
+      const notes = found.avisos.map((text) => createEl('p', { className: 'muted small', text }));
+      show([notice, ...notes]);
     };
 
-    const buscar = async () => {
+    const search = async () => {
       const text = field.value.trim();
       if (!text) { show([]); return; }
       const este = ++pedido;
       try {
-        const data = await readJSON(`${bloco.dataset.url}?q=${encodeURIComponent(texto)}`);
+        const data = await readJSON(`${block.dataset.url}?q=${encodeURIComponent(text)}`);
         if (este !== pedido) return; // chegou depois de uma consulta mais nova: descarta
         if (!data.resultados.length) {
           show([createEl('p', {
-            classe: 'muted small',
+            className: 'muted small',
             text: 'Nada no catalogo do LinuxGSM. Preencha a mao (o App ID esta no SteamDB).',
           })]);
           return;
         }
-        show(data.resultados.map((achado) => {
-          const botao = createEl('button', {
-            classe: 'btn btn--ghost btn--sm',
-            text: `${achado.nome} · app ${achado.appid}`,
+        show(data.resultados.map((found) => {
+          const button = createEl('button', {
+            className: 'btn btn--ghost btn--sm',
+            text: `${found.name} · app ${found.appid}`,
             attrs: { type: 'button' },
           });
-          botao.addEventListener('click', () => escolher(achado));
-          return botao;
+          button.addEventListener('click', () => choose(found));
+          return button;
         }));
       } catch (failure) {
         if (este === pedido) {
-          show([createEl('p', { classe: 'muted small', text: `Nao consegui buscar: ${erro.message}` })]);
+          show([createEl('p', { className: 'muted small', text: `Nao consegui buscar: ${failure.message}` })]);
         }
       }
     };
 
     field.addEventListener('input', () => {
       clearTimeout(espera);
-      espera = setTimeout(buscar, ESPERA_MS);
+      espera = setTimeout(search, ESPERA_MS);
     });
     // Enter dentro do campo enviaria o formulario inteiro (e criaria um jogo pela metade).
     field.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Enter') return;
       ev.preventDefault();
       clearTimeout(espera);
-      buscar();
+      search();
     });
   },
 };

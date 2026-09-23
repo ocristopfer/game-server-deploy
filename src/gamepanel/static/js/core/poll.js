@@ -21,27 +21,27 @@ export class Poller {
    * @param {boolean}  opcoes.aoVoltar    puxar na hora quando a aba reaparece
    * @param {Function} opcoes.aoErro      chamado com o erro de cada volta que falhou
    */
-  constructor(tarefa, { interval = 10000, aoVoltar = true, aoErro = null } = {}) {
-    this.tarefa = tarefa;
-    this.intervalo = interval;
-    this.aoVoltar = aoVoltar;
-    this.aoErro = aoErro;
+  constructor(task, { interval = 10000, onReturn = true, onError = null } = {}) {
+    this.task = task;
+    this.interval = interval;
+    this.onReturn = onReturn;
+    this.onError = onError;
     this.timer = null;
-    this.rodando = false;   // trava de reentrada: volta lenta nao empilha sobre a proxima
-    this.falhas = 0;
-    this.puladas = 0;
-    this._aoMudarVisibilidade = () => {
-      if (!document.hidden && this.timer && this.aoVoltar) this.agora();
+    this.running = false;   // trava de reentrada: volta lenta nao empilha sobre a proxima
+    this.failures = 0;
+    this.skipped = 0;
+    this._onVisibilityChange = () => {
+      if (!document.hidden && this.timer && this.onReturn) this.now();
     };
   }
 
-  get ativo() { return this.timer !== null; }
+  get active() { return this.timer !== null; }
 
-  start({ imediato = true } = {}) {
+  start({ immediate = true } = {}) {
     if (this.timer) return this;
-    this.timer = setInterval(() => this.agora(), this.intervalo);
-    document.addEventListener('visibilitychange', this._aoMudarVisibilidade);
-    if (imediato) this.agora();
+    this.timer = setInterval(() => this.now(), this.interval);
+    document.addEventListener('visibilitychange', this._onVisibilityChange);
+    if (immediate) this.now();
     return this;
   }
 
@@ -49,35 +49,35 @@ export class Poller {
     if (!this.timer) return this;
     clearInterval(this.timer);
     this.timer = null;
-    document.removeEventListener('visibilitychange', this._aoMudarVisibilidade);
+    document.removeEventListener('visibilitychange', this._onVisibilityChange);
     return this;
   }
 
-  alternar() { return this.ativo ? this.parar() : this.iniciar(); }
+  toggle() { return this.active ? this.stop() : this.start(); }
 
   /* Roda a tarefa agora, se for a hora dela.
    *
    * Aba escondida nao gasta conexao SSH a toa. Depois de uma falha, as voltas
    * seguintes sao puladas em numero crescente: com o painel fora do ar, dez abas
    * abertas deixam de bater nele de tres em tres segundos cada uma. */
-  async agora() {
-    if (this.rodando || document.hidden) return;
-    if (this.falhas && this.puladas < Math.min(this.falhas, RECUO_MAX)) {
-      this.puladas += 1;
+  async now() {
+    if (this.running || document.hidden) return;
+    if (this.failures && this.skipped < Math.min(this.failures, RECUO_MAX)) {
+      this.skipped += 1;
       return;
     }
-    this.rodando = true;
+    this.running = true;
     try {
-      await this.tarefa();
-      this.falhas = 0;
-      this.puladas = 0;
+      await this.task();
+      this.failures = 0;
+      this.skipped = 0;
     } catch (err) {
-      this.falhas += 1;
-      this.puladas = 0;
-      if (this.aoErro) this.aoErro(err);
+      this.failures += 1;
+      this.skipped = 0;
+      if (this.onError) this.onError(err);
       else console.debug('volta falhou, tentando de novo', err);
     } finally {
-      this.rodando = false;
+      this.running = false;
     }
   }
 }
