@@ -32,7 +32,12 @@ LOG_MAX = 20000
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS instances (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  ctid INTEGER NOT NULL UNIQUE,
+  -- Opaco de proposito: no Proxmox e o CTID em texto ("307"), e um backend futuro pode
+  -- usar outra coisa. TEXT e nao INTEGER pelo mesmo motivo.
+  handle TEXT NOT NULL UNIQUE,
+  -- Quem criou esta instancia. Tem padrao para o banco de quem ja rodava continuar valido
+  -- sem adivinhacao: tudo que existia foi criado no Proxmox.
+  backend TEXT NOT NULL DEFAULT 'proxmox',
   ip TEXT NOT NULL UNIQUE,
   game TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -122,6 +127,34 @@ _DROP_OLD = (
 )
 
 
+# A segunda migration: `ctid` (numero do Proxmox) vira `handle` (texto opaco), e nasce a
+# coluna que diz QUEM criou a instancia. A pergunta do `_migrate_names` e "a tabela ainda
+# tem o nome velho?"; a daqui e "ainda existe a coluna `ctid`?".
+def _migrate_handle(conn: sqlite3.Connection) -> None:
+    """`instances.ctid` -> `instances.handle`, mais a coluna `backend`.
+
+    **`RENAME COLUMN` preserva a AFINIDADE, e isso morde.** A coluna continua declarada
+    `INTEGER`, entao num banco migrado o CTID antigo volta do SELECT como `int` e nao como
+    `str` — e um `CAST(... AS TEXT)` nao adianta, a afinidade converte de volta na hora de
+    gravar (conferido no sqlite3 desta maquina). Um handle nao-numerico, como
+    `palworld-1`, entra como texto normalmente: a afinidade so converte o que PARECE
+    numero. O resultado seria uma coluna de tipo misto, e `{"307"} | {307}` nao se
+    deduplica — a checagem de handle ocupado passaria quando nao devia.
+
+    Reconstruir a tabela corrigiria a declaracao e custa caro: `ports` tem
+    `REFERENCES instances(id) ON DELETE CASCADE`, entao derrubar `instances` leva as portas
+    junto. A saida e normalizar na LEITURA (ver `taken` e `instance`), que e uma linha e
+    nao perde dado. Banco novo ja nasce com a coluna `TEXT`.
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(instances)")}
+    if not cols:
+        return                      # banco novo: o SCHEMA cria tudo certo logo abaixo
+    if "ctid" in cols and "handle" not in cols:
+        conn.execute("ALTER TABLE instances RENAME COLUMN ctid TO handle")
+    if "backend" not in cols:
+        conn.execute("ALTER TABLE instances ADD COLUMN backend TEXT NOT NULL DEFAULT 'proxmox'")
+
+
 def _migrate_names(conn: sqlite3.Connection) -> None:
     """Leva um banco antigo para os nomes em ingles. Nao faz nada num banco novo."""
     tables = {r[0] for r in conn.execute(
@@ -152,6 +185,7 @@ class Db:
             # `CREATE TABLE IF NOT EXISTS` criaria as novas VAZIAS ao lado, e o rename
             # depois nao teria para onde ir.
             _migrate_names(conn)
+            _migrate_handle(conn)
             conn.executescript(SCHEMA)
 
     @contextmanager
@@ -179,21 +213,23 @@ class Db:
 
     # --- ocupacao ---------------------------------------------------------
 
-    def taken(self) -> tuple[set[int], set[str], set[tuple[int, str]]]:
+    def taken(self) -> tuple[set[str], set[str], set[tuple[int, str]]]:
         with self._connection() as conn:
-            ctids = {r["ctid"] for r in conn.execute("SELECT ctid FROM instances")}
+            # `str()` e nao o valor cru: num banco migrado a coluna ainda tem afinidade
+            # INTEGER e devolve o CTID antigo como numero (ver `_migrate_handle`).
+            handles = {str(r["handle"]) for r in conn.execute("SELECT handle FROM instances")}
             ips = {r["ip"] for r in conn.execute("SELECT ip FROM instances")}
             ports = {(r["number"], r["proto"]) for r in conn.execute("SELECT number, proto FROM ports")}
-        return ctids, ips, ports
+        return handles, ips, ports
 
-    def reserve(self, ctid: int, ip: str, game: str, name: str, hostname: str, actor: str,
-                 ports: Sequence[AllocatedPort]) -> int:
+    def reserve(self, handle: str, ip: str, game: str, name: str, hostname: str, actor: str,
+                 ports: Sequence[AllocatedPort], backend: str = "proxmox") -> int:
         try:
             with self._transaction() as conn:
                 cur = conn.execute(
-                    "INSERT INTO instances (ctid, ip, game, name, hostname, state, created_by, created_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (ctid, ip, game, name, hostname, STATE_RESERVED, actor, self._clock()))
+                    "INSERT INTO instances (handle, backend, ip, game, name, hostname, state,"
+                    " created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (handle, backend, ip, game, name, hostname, STATE_RESERVED, actor, self._clock()))
                 instance_id = int(cur.lastrowid or 0)
                 conn.executemany(
                     "INSERT INTO ports (instance_id, base, number, proto, role) VALUES (?, ?, ?, ?, ?)",

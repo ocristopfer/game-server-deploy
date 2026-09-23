@@ -49,7 +49,7 @@ GAMES = [
 ]
 
 INSTANCE = {
-    "id": 7, "ctid": 300, "ip": "10.0.0.30", "game": "alfa", "name": "Servidor do Zeca",
+    "id": 7, "handle": "300", "backend": "proxmox", "ip": "10.0.0.30", "game": "alfa", "name": "Servidor do Zeca",
     "hostname": "alfa-300", "state": "ativa", "detail": "",
     "ports": [{"base": 7001, "numero": 7001, "proto": "udp", "papel": "game"},
                {"base": 7002, "numero": 7002, "proto": "udp", "papel": "query"}],

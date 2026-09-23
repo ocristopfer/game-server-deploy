@@ -36,7 +36,11 @@ def instance(row: Any) -> dict:
     """
     return {
         "id": row["id"],
-        "ctid": row["ctid"],
+        # `str()` pelo mesmo motivo do `db.taken`: num banco migrado a coluna guarda o
+        # CTID antigo como numero, e o fio tem de ser texto sempre — o painel compara
+        # e concatena, e um tipo que oscila com a idade do banco e defeito esperando.
+        "handle": str(row["handle"]),
+        "backend": row["backend"],
         "ip": row["ip"],
         "game": row["game"],
         "name": row["name"],

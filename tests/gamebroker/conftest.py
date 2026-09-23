@@ -12,11 +12,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fake_http import KEY_OPN, SECRET_OPN, TOKEN_PVE, FakeOpnsenseHttp, FakePve, FakeServer
+from fake_http import KEY_OPN, SECRET_OPN, TOKEN_PVE, FakeIngressHttp, FakePve, FakeServer
 
 from gamebroker.integrations.http_client import Client
 from gamebroker.persistence.db import Db
-from gamebroker.runtime.fakes import FakeInstaller, FakeOpnsense, FakeProxmox, FakeNetwork
+from gamebroker.runtime.fakes import FakeInstaller, FakeIngress, FakeCompute, FakeNetwork
 from gamebroker.runtime.opnsense import Opnsense
 from gamebroker.runtime.proxmox import ConfigProxmox, Proxmox
 from gamebroker.services.allocator import ips_in_range
@@ -112,7 +112,7 @@ def environment(tmp_path: Path, catalog: Catalog, clock: Clock):
     db = Db(str(tmp_path / "broker.db"), clock=lambda: clock().isoformat(timespec="seconds"))
     env = SimpleNamespace(
         db=db, catalog=catalog, clock=clock, defer=False, pending=[],
-        proxmox=FakeProxmox(), opnsense=FakeOpnsense(), installer=FakeInstaller(), network=FakeNetwork(),
+        compute=FakeCompute(), ingress=FakeIngress(), installer=FakeInstaller(), network=FakeNetwork(),
         config=Config(ctids=range(300, 310), ips=ips_in_range("10.0.0", 30, 40),
                       ports=range(9000, 9020), max_instances=5, max_creations_per_hour=10),
     )
@@ -126,7 +126,7 @@ def environment(tmp_path: Path, catalog: Catalog, clock: Clock):
     def with_config(**fields) -> None:
         env.servico.config = replace(env.config, **fields)
 
-    env.servico = Service(db, catalog, env.proxmox, env.opnsense, env.installer, env.network,
+    env.servico = Service(db, catalog, env.compute, env.ingress, env.installer, env.network,
                           env.config, run=run, clock=clock)
     env.with_config = with_config
     return env
@@ -153,7 +153,7 @@ def pve():
 @pytest.fixture
 def opn():
     """OPNsense falso em 127.0.0.1 e o backend REAL `gamebroker.opnsense.Opnsense`."""
-    fake = FakeOpnsenseHttp()
+    fake = FakeIngressHttp()
     server = FakeServer(fake.handle)
     basic = base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
     client = Client(server.url, {"Authorization": f"Basic {basic}"})

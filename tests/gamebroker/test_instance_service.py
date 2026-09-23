@@ -23,11 +23,11 @@ def test_criar_percorre_o_fluxo_inteiro(environment):
     assert "abrindo as portas" in op["log"]
     inst = environment.db.instance(response["instance_id"])
     assert inst["state"] == STATE_ACTIVE
-    assert (inst["ctid"], inst["ip"]) == (300, "10.0.0.30")
+    assert (inst["handle"], inst["ip"]) == ("300", "10.0.0.30")
     assert inst["hostname"] == "alfa-300"
-    assert environment.proxmox.calls == [("criar_ct", 300), ("iniciar", 300)]
+    assert environment.compute.calls == [("create", "300"), ("start", "300")]
     assert environment.installer.installed == [("10.0.0.30", "alfa")]
-    assert environment.opnsense.rules[300] == [("10.0.0.30", 7001, "udp"), ("10.0.0.30", 7002, "udp")]
+    assert environment.ingress.rules["300"] == [("10.0.0.30", 7001, "udp"), ("10.0.0.30", 7002, "udp")]
 
 
 def test_resultado_traz_o_que_o_painel_precisa_para_cadastrar(environment):
@@ -42,18 +42,18 @@ def test_resultado_traz_o_que_o_painel_precisa_para_cadastrar(environment):
 
 def test_firewall_so_abre_depois_da_instalacao(environment):
     order = []
-    install, open_ports = environment.installer.install, environment.opnsense.open_ports
+    install, open_ports = environment.installer.install, environment.ingress.open_ports
     environment.installer.install = lambda *a, **k: (order.append("instalar"), install(*a, **k))
-    environment.opnsense.open_ports = lambda *a, **k: (order.append("abrir"), open_ports(*a, **k))
+    environment.ingress.open_ports = lambda *a, **k: (order.append("open"), open_ports(*a, **k))
     _create(environment)
-    assert order == ["instalar", "abrir"]
+    assert order == ["instalar", "open"]
 
 
 def test_segunda_instancia_pega_outro_ctid_e_ip(environment):
     _create(environment, "beta", "um")
     response = _create(environment, "beta", "dois")
     inst = environment.db.instance(response["instance_id"])
-    assert (inst["ctid"], inst["ip"]) == (301, "10.0.0.31")
+    assert (inst["handle"], inst["ip"]) == ("301", "10.0.0.31")
 
 
 def test_jogo_deslocavel_recebe_portas_da_faixa_do_broker(environment):
@@ -72,7 +72,7 @@ def test_mesmo_jogo_deslocavel_duas_vezes_pega_o_proximo_bloco(environment):
 
 
 def test_faixa_do_broker_pula_porta_que_o_opnsense_ja_redireciona(environment):
-    environment.opnsense.outside = {(9000, "udp")}
+    environment.ingress.outside = {(9000, "udp")}
     ports = environment.db.instance(_create(environment, "beta")["instance_id"])["ports"]
     assert [p["number"] for p in ports] == [9001, 9002]
 
@@ -82,31 +82,31 @@ def test_faixa_do_broker_pula_porta_que_o_opnsense_ja_redireciona(environment):
 def test_ctid_sai_do_ip_quando_ha_base(environment):
     environment.with_config(ctid_base=200, ips=ips_in_range("10.0.0", 102, 110))
     inst = environment.db.instance(_create(environment)["instance_id"])
-    assert (inst["ip"], inst["ctid"], inst["hostname"]) == ("10.0.0.102", 302, "alfa-302")
-    assert environment.proxmox.calls == [("criar_ct", 302), ("iniciar", 302)]
+    assert (inst["ip"], inst["handle"], inst["hostname"]) == ("10.0.0.102", "302", "alfa-302")
+    assert environment.compute.calls == [("create", "302"), ("start", "302")]
 
 
 def test_com_base_a_segunda_instancia_segue_o_ip(environment):
     environment.with_config(ctid_base=200, ips=ips_in_range("10.0.0", 102, 110))
     _create(environment, "beta", "um")
     inst = environment.db.instance(_create(environment, "beta", "dois")["instance_id"])
-    assert (inst["ip"], inst["ctid"]) == ("10.0.0.103", 303)
+    assert (inst["ip"], inst["handle"]) == ("10.0.0.103", "303")
 
 
 def test_com_base_ctid_ocupado_no_proxmox_pula_o_ip_inteiro(environment):
     environment.with_config(ctid_base=200, ips=ips_in_range("10.0.0", 102, 110))
-    environment.proxmox.outside_ctids = {302}
+    environment.compute.outside_handles = {"302"}
     inst = environment.db.instance(_create(environment)["instance_id"])
-    assert (inst["ip"], inst["ctid"]) == ("10.0.0.103", 303)
+    assert (inst["ip"], inst["handle"]) == ("10.0.0.103", "303")
 
 
 # --- ocupacao vinda de fora do broker ----------------------------------------
 
 def test_pula_ctid_e_ip_que_o_proxmox_ja_usa(environment):
-    environment.proxmox.outside_ctids = {300, 301}
-    environment.proxmox.outside_ips = {"10.0.0.30"}
+    environment.compute.outside_handles = {"300", "301"}
+    environment.compute.outside_ips = {"10.0.0.30"}
     inst = environment.db.instance(_create(environment)["instance_id"])
-    assert (inst["ctid"], inst["ip"]) == (302, "10.0.0.31")
+    assert (inst["handle"], inst["ip"]) == ("302", "10.0.0.31")
 
 
 def test_pula_ip_que_responde_na_rede(environment):
@@ -122,7 +122,7 @@ def test_conflito_de_porta_entre_jogos_diferentes(environment):
 
 
 def test_porta_ja_redirecionada_no_opnsense_bloqueia(environment):
-    environment.opnsense.outside = {(7001, "udp")}
+    environment.ingress.outside = {(7001, "udp")}
     with pytest.raises(OutOfResources, match="7001/udp"):
         _create(environment, "alfa")
 
@@ -201,34 +201,34 @@ def test_falha_na_instalacao_destroi_o_ct_e_libera_a_reserva(environment):
     assert op["state"] == OP_FAILED
     assert "steamcmd falhou" in op["log"]
     assert "reserva liberada" in op["log"]
-    assert environment.proxmox.cts == {}
-    assert environment.opnsense.rules == {}
+    assert environment.compute.cts == {}
+    assert environment.ingress.rules == {}
     assert environment.db.count_instances() == 0
     assert environment.db.taken() == (set(), set(), set()), "IP, CTID e portas voltam para o pool"
 
 
 def test_falha_ao_criar_o_ct_nao_tenta_destruir_o_que_nao_existe(environment):
-    environment.proxmox.fail_on = "criar_ct"
+    environment.compute.fail_on = "create"
     _create(environment)
-    assert ("destruir", 300) not in environment.proxmox.calls
+    assert ("destroy", "300") not in environment.compute.calls
     assert environment.db.count_instances() == 0
 
 
 def test_falha_no_firewall_desfaz_tudo(environment):
-    environment.opnsense.fail_on = "abrir"
+    environment.ingress.fail_on = "open"
     _create(environment)
-    assert environment.proxmox.cts == {}
+    assert environment.compute.cts == {}
     assert environment.db.count_instances() == 0
 
 
 def test_se_nem_o_desfazer_funciona_a_reserva_fica_como_falhou(environment):
     environment.installer.failure = True
-    environment.proxmox.fail_on = None
+    environment.compute.fail_on = None
 
-    def broken_destroy(_ctid):
+    def broken_destroy(_handle):
         raise RuntimeError("proxmox fora do ar")
 
-    environment.proxmox.destroy = broken_destroy
+    environment.compute.destroy = broken_destroy
     response = _create(environment)
     inst = environment.db.instance(response["instance_id"])
     assert inst["state"] == STATE_FAILED
@@ -244,8 +244,8 @@ def test_se_nem_o_desfazer_funciona_a_reserva_fica_como_falhou(environment):
 def test_desativar_fecha_o_firewall_e_para_o_ct(environment):
     response = _create(environment)
     environment.servico.deactivate(response["instance_id"], "admin")
-    assert environment.opnsense.rules == {}
-    assert 300 in environment.proxmox.stopped
+    assert environment.ingress.rules == {}
+    assert "300" in environment.compute.stopped
     assert environment.db.instance(response["instance_id"])["state"] == STATE_DEACTIVATED
 
 
@@ -267,14 +267,14 @@ def test_remover_exige_o_nome_exato(environment):
     environment.servico.deactivate(response["instance_id"], "admin")
     with pytest.raises(ValidationError, match="nome exato"):
         environment.servico.remove(response["instance_id"], "meu servidor", "admin")
-    assert environment.proxmox.cts, "nada foi destruido"
+    assert environment.compute.cts, "nada foi destruido"
 
 
 def test_remover_destroi_e_libera_ip_ctid_e_portas(environment):
     response = _create(environment)
     environment.servico.deactivate(response["instance_id"], "admin")
     environment.servico.remove(response["instance_id"], "Meu servidor", "admin")
-    assert environment.proxmox.cts == {}
+    assert environment.compute.cts == {}
     assert environment.db.taken() == (set(), set(), set())
     assert environment.db.instance(response["instance_id"]) is None
 
@@ -282,17 +282,17 @@ def test_remover_destroi_e_libera_ip_ctid_e_portas(environment):
 def test_remover_recusa_ct_que_nao_e_do_broker(environment):
     response = _create(environment)
     environment.servico.deactivate(response["instance_id"], "admin")
-    environment.proxmox.belongs_to_broker = lambda _ctid: False
+    environment.compute.belongs_to_broker = lambda _handle: False
     with pytest.raises(Conflict, match="nao pertence ao broker"):
         environment.servico.remove(response["instance_id"], "Meu servidor", "admin")
-    assert environment.proxmox.cts, "o CT de outro dono nao foi tocado"
+    assert environment.compute.cts, "o CT de outro dono nao foi tocado"
 
 
 def test_ct_que_sumiu_do_pool_nao_e_esquecido_sem_pedido_explicito(environment):
     """Sumido e movido de pool sao indistinguiveis para o token: nao libera CTID/IP sozinho."""
     response = _create(environment)
     environment.servico.deactivate(response["instance_id"], "admin")
-    environment.proxmox.cts.clear()
+    environment.compute.cts.clear()
     with pytest.raises(Conflict, match="db_only"):
         environment.servico.remove(response["instance_id"], "Meu servidor", "admin")
     assert environment.db.instance(response["instance_id"]) is not None
@@ -301,11 +301,11 @@ def test_ct_que_sumiu_do_pool_nao_e_esquecido_sem_pedido_explicito(environment):
 def test_somente_banco_limpa_o_registro_sem_tocar_no_proxmox(environment):
     response = _create(environment)
     environment.servico.deactivate(response["instance_id"], "admin")
-    environment.proxmox.calls.clear()
+    environment.compute.calls.clear()
     environment.servico.remove(response["instance_id"], "Meu servidor", "admin", db_only=True)
     assert environment.db.instance(response["instance_id"]) is None
-    assert environment.proxmox.calls == []
-    assert environment.proxmox.cts, "o CT continua la: so o registro foi esquecido"
+    assert environment.compute.calls == []
+    assert environment.compute.cts, "o CT continua la: so o registro foi esquecido"
     assert "esquecer" in {a["verb"] for a in environment.db.audit_trail()}
 
 
@@ -320,9 +320,9 @@ def test_somente_banco_tambem_exige_desativar_e_o_nome(environment):
 
 def test_remover_instancia_que_falhou_nao_exige_desativar(environment):
     environment.installer.failure = True
-    environment.proxmox.destroy = lambda _ctid: (_ for _ in ()).throw(RuntimeError("fora"))
+    environment.compute.destroy = lambda _handle: (_ for _ in ()).throw(RuntimeError("fora"))
     response = _create(environment)
-    del environment.proxmox.destroy
+    del environment.compute.destroy
     environment.servico.remove(response["instance_id"], "Meu servidor", "admin")
     assert environment.db.instance(response["instance_id"]) is None
 

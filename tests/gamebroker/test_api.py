@@ -44,7 +44,7 @@ def test_saude(http):
 
 
 def test_saude_mostra_proxmox_fora_do_ar(http, environment):
-    environment.proxmox.online = False
+    environment.compute.online = False
     assert http.get("/v1/health", headers=AUTH).get_json()["proxmox"] is False
 
 

@@ -15,7 +15,7 @@ import gamebroker.services.allocator as alocador
 from gamebroker.domain import wire
 from gamebroker.domain.exceptions import Conflict, NotFound, QuotaExceeded, ValidationError
 from gamebroker.persistence.db import OP_FAILED, OP_OK, STATE_ACTIVE, STATE_DEACTIVATED, STATE_FAILED, Db
-from gamebroker.runtime.base import CtSpec, Installer, Network, Opnsense, Proxmox
+from gamebroker.runtime.base import Compute, Ingress, Installer, InstanceSpec, Network
 from gamebroker.services.allocator import AllocatedPort
 from gamebroker.services.catalog import NAME_RE, Catalog, Game
 
@@ -50,14 +50,14 @@ def _actor_of(bruto: str) -> str:
 
 
 class Service:
-    def __init__(self, db: Db, catalog: Catalog, proxmox: Proxmox, opnsense: Opnsense,
+    def __init__(self, db: Db, catalog: Catalog, compute: Compute, ingress: Ingress,
                  installer: Installer, network: Network, config: Config,
                  run: Callable[[Callable[[], None]], None] = _in_thread,
                  clock: Callable[[], datetime] = _now_utc):
         self.db = db
         self.catalog = catalog
-        self.proxmox = proxmox
-        self.opnsense = opnsense
+        self.compute = compute
+        self.ingress = ingress
         self.installer = installer
         self.network = network
         self.config = config
@@ -69,8 +69,8 @@ class Service:
     # --- consultas --------------------------------------------------------
 
     def health(self) -> dict:
-        return {"broker": True, "proxmox": self.proxmox.reachable(),
-                "opnsense": self.opnsense.reachable(),
+        return {"broker": True, "proxmox": self.compute.reachable(),
+                "opnsense": self.ingress.reachable(),
                 "catalog_errors": list(self.catalog.errors)}
 
     def instances(self) -> list[dict]:
@@ -121,16 +121,25 @@ class Service:
     def _reserve(self, game: Game, name: str, actor: str) -> tuple[int, list[AllocatedPort]]:
         # Snapshot de fora (Proxmox, OPNsense) + o que o banco ja reservou: o CT pode ter
         # sido criado na mao, e a regra de NAT tambem.
-        ctids_px, ips_px = self.proxmox.ctids_and_ips()
-        ctids_db, ips_db, ports_db = self.db.taken()
+        handles_px, ips_px = self.compute.handles_and_ips()
+        handles_db, ips_db, ports_db = self.db.taken()
+        # A aritmetica do CTID e do Proxmox e continua aqui de proposito: leva-la para
+        # dentro do backend (secao 1.5 do plano do Docker) so paga quando houver um
+        # segundo backend, e a secao 0 do proprio plano diz que abstracao desenhada antes
+        # da primeira criacao real codifica palpite. O que sobe pelo servico ja e `handle`.
+        taken_handles = handles_px | handles_db
         if self.config.ctid_base:
             ip, ctid = alocador.pick_ip_and_ctid(self.config.ips, self.config.ctid_base,
-                                                   ctids_px | ctids_db, ips_px | ips_db, self.network.answers)
+                                                   {int(h) for h in taken_handles if h.isdigit()},
+                                                   ips_px | ips_db, self.network.answers)
         else:
-            ctid = alocador.pick_ctid(self.config.ctids, ctids_px | ctids_db)
+            ctid = alocador.pick_ctid(self.config.ctids,
+                                      {int(h) for h in taken_handles if h.isdigit()})
             ip = alocador.pick_ip(self.config.ips, ips_px | ips_db, self.network.answers)
-        ports = alocador.allocate_ports(game, self.opnsense.external_ports() | ports_db, self.config.ports)
-        instance_id = self.db.reserve(ctid, ip, game.key, name, f"{game.key}-{ctid}", actor, ports)
+        ports = alocador.allocate_ports(game, self.ingress.external_ports() | ports_db, self.config.ports)
+        handle = str(ctid)
+        instance_id = self.db.reserve(handle, ip, game.key, name, f"{game.key}-{handle}",
+                                      actor, ports)
         return instance_id, ports
 
     def _build(self, op_id: str, instance_id: int, game: Game, ports: list[AllocatedPort],
@@ -141,23 +150,23 @@ class Service:
         log = self._logger(op_id)
         created = False
         try:
-            log(f"criando o container {inst['ctid']} ({inst['ip']})")
-            self.proxmox.create_ct(CtSpec(
-                ctid=inst["ctid"], hostname=inst["hostname"], ip=inst["ip"], game=game.key,
+            log(f"criando o container {inst['handle']} ({inst['ip']})")
+            self.compute.create(InstanceSpec(
+                handle=str(inst["handle"]), hostname=inst["hostname"], ip=inst["ip"], game=game.key,
                 memory_mb=game.memory_mb, cores=game.cores, disk_gb=game.disk_gb))
             created = True
-            self.proxmox.start(inst["ctid"])
+            self.compute.start(str(inst["handle"]))
             self.installer.install(inst["ip"], game, ports, log)
             # O firewall abre por ultimo: o jogo nao fica exposto enquanto ainda instala.
             log("abrindo as portas no firewall")
-            self.opnsense.open_ports(inst["ctid"], inst["ip"], ports)
+            self.ingress.open_ports(str(inst["handle"]), inst["ip"], ports)
         except Exception as error:  # noqa: BLE001
             self._undo(op_id, inst, created, str(error))
             self.db.audit(actor, "criar", inst["name"], "falhou", str(error))
             return
         self.db.set_state(instance_id, STATE_ACTIVE)
         self.db.finish_operation(op_id, OP_OK, record_for_the_panel(inst, game, ports))
-        self.db.audit(actor, "criar", inst["name"], "ok", f"ctid {inst['ctid']}")
+        self.db.audit(actor, "criar", inst["name"], "ok", f"handle {inst['handle']}")
 
     def _logger(self, op_id: str) -> Callable[[str], None]:
         return lambda line: self.db.append_log(op_id, line)
@@ -169,9 +178,9 @@ class Service:
         log(f"ERRO: {error[:ERROR_MAX]}")
         cleaned = True
         try:
-            self.opnsense.close_ports(inst["ctid"])
+            self.ingress.close_ports(str(inst["handle"]))
             if created:
-                self.proxmox.destroy(inst["ctid"])
+                self.compute.destroy(str(inst["handle"]))
         except Exception as failure:  # noqa: BLE001
             cleaned = False
             log(f"nao consegui desfazer tudo: {str(failure)[:ERROR_MAX]}")
@@ -189,9 +198,9 @@ class Service:
         inst = self._instance(instance_id)
         if inst["state"] != STATE_ACTIVE:
             raise Conflict("so uma instancia ativa pode ser desativada")
-        self._require_from_broker(inst["ctid"])
-        self.opnsense.close_ports(inst["ctid"])
-        self.proxmox.stop(inst["ctid"])
+        self._require_from_broker(str(inst["handle"]))
+        self.ingress.close_ports(str(inst["handle"]))
+        self.compute.stop(str(inst["handle"]))
         self.db.set_state(instance_id, STATE_DEACTIVATED)
         self.db.audit(actor, "desativar", inst["name"], "ok")
         return {"id": instance_id, "state": STATE_DEACTIVATED}
@@ -204,7 +213,7 @@ class Service:
             raise Conflict("desative a instancia antes de remover")
         if confirmation != inst["name"]:
             raise ValidationError("confirma", "digite o nome exato da instancia para confirmar")
-        self.opnsense.close_ports(inst["ctid"])
+        self.ingress.close_ports(str(inst["handle"]))
         if not db_only:
             self._destroy_ct(inst)
         self.db.delete_instance(instance_id)
@@ -212,9 +221,9 @@ class Service:
         return {"id": instance_id, "removed": True, "db_only": db_only}
 
     def _destroy_ct(self, inst: dict) -> None:
-        ctid = inst["ctid"]
-        if self.proxmox.belongs_to_broker(ctid):
-            self.proxmox.destroy(ctid)
+        handle = str(inst["handle"])
+        if self.compute.belongs_to_broker(handle):
+            self.compute.destroy(handle)
             return
         if inst["state"] == STATE_FAILED:
             return  # a criacao nem chegou a existir no pool: nao ha CT nosso para destruir
@@ -222,7 +231,7 @@ class Service:
         # so enxerga o pool: os dois casos sao indistinguiveis (ambos dao 403). Liberar o
         # CTID/IP nesse caso poderia soltar um CT que ainda existe; entao so com pedido explicito.
         raise Conflict(
-            f"o CT {ctid} nao pertence ao broker (nao esta no pool); nada foi alterado. Se ele nao "
+            f"o CT {handle} nao pertence ao broker (nao esta no pool); nada foi alterado. Se ele nao "
             "existe mais no Proxmox, remova de novo com db_only para limpar so o registro")
 
     def _instance(self, instance_id: int) -> dict:
@@ -231,11 +240,11 @@ class Service:
             raise NotFound("instancia desconhecida")
         return inst
 
-    def _require_from_broker(self, ctid: int) -> None:
+    def _require_from_broker(self, handle: str) -> None:
         # O token do Proxmox enxerga o pool inteiro; a tag e a linha no banco sao o que
         # impede o broker de mexer num CT que nao e dele.
-        if not self.proxmox.belongs_to_broker(ctid):
-            raise Conflict(f"o CT {ctid} nao pertence ao broker; nada foi alterado")
+        if not self.compute.belongs_to_broker(handle):
+            raise Conflict(f"o CT {handle} nao pertence ao broker; nada foi alterado")
 
 
 def record_for_the_panel(inst: dict, game: Game, ports: list[AllocatedPort]) -> dict:
@@ -249,5 +258,5 @@ def record_for_the_panel(inst: dict, game: Game, ports: list[AllocatedPort]) -> 
         "config_path": game.config_path, "config_files": list(game.config_files),
         "backup_paths": list(game.backup_paths), "player_source": game.player_source,
         "join_re": game.join_re, "leave_re": game.leave_re, "log_path": game.log_path,
-        "notes": f"Criado pelo broker (CT {inst['ctid']})",
+        "notes": f"Criado pelo broker (CT {inst['handle']})",
     }

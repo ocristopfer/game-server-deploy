@@ -40,8 +40,25 @@ class ReadError(OpnsenseError):
     """Regra existente que o broker nao soube interpretar: nao abre porta nova."""
 
 
-def instance_description(ctid: int) -> str:
-    return f"{DESCRIPTION_PREFIX}{int(ctid)}"
+# O handle entrava aqui por `int()`, e era ISSO que recusava `"300; drop"`. Com o handle
+# opaco (texto) o `int()` saiu e a recusa teria saido com ele — o teste da descricao pegou.
+# A descricao vai para o campo `descr` da regra do OPNsense, e o `close_ports` a casa por
+# IGUALDADE: um handle com caractere estranho nao viraria injecao de shell, mas quebraria
+# o casamento e deixaria regra orfa no firewall, que e o jeito silencioso de uma porta
+# ficar aberta para um container que nao existe mais.
+HANDLE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,62}", re.ASCII)
+
+
+def instance_description(handle: str) -> str:
+    """`gamepanel:<handle>`, recusando handle que nao seja um token simples.
+
+    `re.ASCII` de proposito: sem a flag, o atalho de "palavra" casa acento e mais uns 900 caracteres
+    Unicode, e o que se quer aqui e o conjunto estreito que sobrevive a ida e volta pela
+    API do OPNsense.
+    """
+    if not HANDLE_RE.fullmatch(handle):
+        raise ValueError("handle invalido para descricao de regra")
+    return f"{DESCRIPTION_PREFIX}{handle}"
 
 
 # --- leitura das portas ocupadas ---------------------------------------------------
@@ -141,8 +158,8 @@ class Opnsense:
     def external_ports(self) -> set[tuple[int, str]]:
         return busy_ports(self._rules(), self._interface)
 
-    def _uuids_of_instance(self, ctid: int) -> list[str]:
-        description = instance_description(ctid)
+    def _uuids_of_instance(self, handle: str) -> list[str]:
+        description = instance_description(handle)
         found = []
         for rule in self._rules():
             if isinstance(rule, dict) and rule.get("descr") == description:
@@ -151,26 +168,26 @@ class Opnsense:
                     found.append(uuid)
         return found
 
-    def open_ports(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
+    def open_ports(self, handle: str, ip: str, ports: Sequence[AllocatedPort]) -> None:
         target = str(ipaddress.IPv4Address(ip))
-        self.close_ports(ctid)  # idempotente: recomecar nao deixa regra duplicada
+        self.close_ports(handle)  # idempotente: recomecar nao deixa regra duplicada
         created_ones: list[str] = []
         try:
             for port in ports:
-                created_ones.append(self._create_rule(ctid, target, port))
+                created_ones.append(self._create_rule(handle, target, port))
             self._apply()
         except Exception:
             self._delete(created_ones)
             raise
 
-    def _create_rule(self, ctid: int, target: str, port: AllocatedPort) -> str:
+    def _create_rule(self, handle: str, target: str, port: AllocatedPort) -> str:
         if port.proto not in ("tcp", "udp") or not 1 <= port.number <= 65535:
             raise OpnsenseError(f"porta invalida: {port}")
         rule = {"rule": {
             "disabled": "0", "interface": self._interface, "protocol": port.proto,
             "ipprotocol": "inet", "destination": {"network": "wanip", "port": str(port.number)},
             "target": target, "local-port": str(port.number),
-            "descr": instance_description(ctid), "pass": "pass",
+            "descr": instance_description(handle), "pass": "pass",
         }}
         response = self._api("POST", "/d_nat/add_rule", f"criar regra {port}", rule)
         data = response.json if isinstance(response.json, dict) else {}
@@ -179,8 +196,8 @@ class Opnsense:
             raise OpnsenseError(f"criar regra {port}: o OPNsense recusou ({_validations(data)})")
         return uuid
 
-    def close_ports(self, ctid: int) -> None:
-        uuids = self._uuids_of_instance(ctid)
+    def close_ports(self, handle: str) -> None:
+        uuids = self._uuids_of_instance(handle)
         if not uuids:
             return
         self._delete(uuids)

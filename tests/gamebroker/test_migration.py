@@ -99,11 +99,34 @@ def test_a_instancia_sobrevive_ao_rename_de_tabela_e_coluna(old_database):
     assert inst["name"] == "Servidor do Zeca"
     assert inst["game"] == "palworld"
     assert inst["state"] == "ativa"
-    assert (inst["ctid"], inst["ip"]) == (302, "10.0.0.30")
+    # `handle` e nao `ctid`, e o VALOR volta como numero: `RENAME COLUMN` preserva a
+    # afinidade INTEGER da coluna velha, entao num banco migrado o CTID antigo continua
+    # sendo int no SELECT. Quem normaliza sao `db.taken` e `wire.instance`, com `str()` —
+    # este teste olha para o cru de proposito, para a armadilha ficar registrada aqui.
+    assert (inst["handle"], inst["ip"]) == (302, "10.0.0.30")
+    assert inst["backend"] == "proxmox", "coluna nova nasce com padrao, sem adivinhacao"
     assert inst["created_by"] == "zeca"
     # As portas vem da OUTRA tabela, pela chave estrangeira que o rename teve de manter.
     assert [(p["number"], p["proto"], p["role"]) for p in inst["ports"]] == [
         (31000, "udp", "jogo"), (31001, "udp", "query")]
+
+
+def test_o_handle_novo_entra_como_TEXTO_no_banco_migrado(old_database):
+    """A afinidade INTEGER converte de volta o que PARECE numero, e so o que parece.
+
+    E o que permite um backend futuro usar `palworld-1` sem reconstruir a tabela: a
+    coluna aceita texto normalmente; so o handle numerico e que volta como int. Sem esta
+    distincao, `{"307"} | {307}` nao se deduplicaria e a checagem de handle ocupado
+    passaria quando nao devia.
+    """
+    import sqlite3
+    db = Db(str(old_database))
+    with sqlite3.connect(str(old_database)) as con:
+        con.execute("INSERT INTO instances (handle, backend, ip, game, name, hostname, state,"
+                    " created_by, created_at) VALUES ('palworld-1', 'docker', '10.0.0.31',"
+                    " 'palworld', 'Outro', 'palworld-1', 'ativa', 'zeca', '2026-01-01')")
+    handles, _ips, _ports = db.taken()
+    assert handles == {"302", "palworld-1"}, "o `str()` do `taken` uniformiza os dois"
 
 
 def test_a_operacao_e_a_auditoria_sobrevivem(old_database):

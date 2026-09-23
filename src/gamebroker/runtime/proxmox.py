@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from urllib.parse import quote
 
 from gamebroker.integrations.http_client import Client, Response
-from gamebroker.runtime.base import CtSpec
+from gamebroker.runtime.base import InstanceSpec
 
 BROKER_TAG = "gamepanel-broker"
 _NAME_RE = re.compile(r"[A-Za-z0-9._-]{1,64}", re.ASCII)
@@ -103,7 +103,7 @@ class Proxmox:
 
     # --- leitura ---------------------------------------------------------------
 
-    def ctids_and_ips(self) -> tuple[set[int], set[str]]:
+    def handles_and_ips(self) -> tuple[set[str], set[str]]:
         """CTIDs e IPs que o token enxerga. Com a role so no pool isso e SO o pool; para
         ver os CTs de fora, o token precisa de VM.Audit em /vms (opcional)."""
         entries = self._payload(self._api("GET", "/cluster/resources?type=vm", "listar CTs"))
@@ -115,7 +115,9 @@ class Proxmox:
             ctids.add(item["vmid"])
             if item.get("type") == "lxc":
                 ips |= self._ct_ips(item["vmid"])
-        return ctids, ips
+        # O handle do Proxmox e o CTID em TEXTO: a conversao mora aqui, na fronteira,
+        # e nao no servico — e a unica coisa que sabe que este backend numera instancias.
+        return {str(c) for c in ctids}, ips
 
     def _ct_ips(self, ctid: int) -> set[str]:
         response = self._c.request("GET", f"/api2/json/nodes/{self._cfg.node}/lxc/{ctid}/config")
@@ -128,8 +130,9 @@ class Proxmox:
                 found.update(_NETWORK_IP_RE.findall(value))
         return found
 
-    def belongs_to_broker(self, ctid: int) -> bool:
+    def belongs_to_broker(self, handle: str) -> bool:
         """Identidade = ser membro do pool do broker. Nao depende da tag."""
+        ctid = int(handle)
         data = self._payload(self._c.request("GET", f"/api2/json/pools/{self._cfg.pool}"))
         members = data.get("members", []) if isinstance(data, dict) else []
         return any(isinstance(m, dict) and m.get("vmid") == ctid and m.get("type") == "lxc" for m in members)
@@ -142,10 +145,10 @@ class Proxmox:
 
     # --- escrita ------------------------------------------------------------------
 
-    def create_ct(self, spec: CtSpec) -> None:
+    def create(self, spec: InstanceSpec) -> None:
         cfg = self._cfg
         body = {
-            "vmid": spec.ctid, "hostname": spec.hostname,
+            "vmid": int(spec.handle), "hostname": spec.hostname,
             "ostemplate": cfg.template, "rootfs": f"{cfg.storage}:{spec.disk_gb}",
             "memory": spec.memory_mb, "swap": 0, "cores": spec.cores,
             "unprivileged": 1, "features": "nesting=1", "pool": cfg.pool, "start": 0, "onboot": 1,
@@ -155,27 +158,30 @@ class Proxmox:
         }
         self._task(self._api("POST", f"/nodes/{cfg.node}/lxc", "criar CT", form=body), "criar CT")
         try:
-            self._api("PUT", f"/nodes/{cfg.node}/lxc/{spec.ctid}/config", "gravar a tag",
+            self._api("PUT", f"/nodes/{cfg.node}/lxc/{int(spec.handle)}/config", "gravar a tag",
                       form={"tags": BROKER_TAG})
         except ProxmoxError:
             # Tag e conforto (aparece na tela do Proxmox); a identidade e o pool.
             pass
 
-    def start(self, ctid: int) -> None:
+    def start(self, handle: str) -> None:
+        ctid = int(handle)
         self._task(self._api("POST", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/start",
                                "iniciar CT"), "iniciar CT")
 
-    def stop(self, ctid: int) -> None:
+    def stop(self, handle: str) -> None:
+        ctid = int(handle)
         self._require_in_pool(ctid)
         self._task(self._api("POST", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/shutdown",
                                "parar CT", form={"forceStop": 1, "timeout": 30}), "parar CT")
 
-    def destroy(self, ctid: int) -> None:
+    def destroy(self, handle: str) -> None:
+        ctid = int(handle)
         self._require_in_pool(ctid)
         state_dir = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/lxc/{ctid}/status/current",
                                        "ler estado do CT"))
         if isinstance(state_dir, dict) and state_dir.get("status") == "running":
-            self.stop(ctid)
+            self.stop(handle)
         self._task(self._api(
             "DELETE", f"/nodes/{self._cfg.node}/lxc/{ctid}?purge=1&destroy-unreferenced-disks=1",
             "destruir CT"), "destruir CT")
@@ -183,7 +189,7 @@ class Proxmox:
     def _require_in_pool(self, ctid: int) -> None:
         # O token so tem permissao no pool, mas a checagem aqui vale por conta propria: se
         # alguem alargar a role um dia, o broker continua so mexendo no que e dele.
-        if not self.belongs_to_broker(ctid):
+        if not self.belongs_to_broker(str(ctid)):
             raise ProxmoxError(f"o CT {ctid} nao esta no pool '{self._cfg.pool}'; nada foi alterado")
 
 

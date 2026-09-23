@@ -56,7 +56,7 @@
             <strong>{{ i.name }}</strong>
           {% endif %}
           <span class="badge {{ {'active':'on','desativada':'cold','reservada':'cold','falhou':'off'}.get(i.state, 'cold') }}">{{ i.state }}</span>
-          <div class="muted small">{{ i.game }} · {{ i.ip }} · CT {{ i.ctid }}</div>
+          <div class="muted small">{{ i.game }} · {{ i.ip }} · {{ i.backend }} {{ i.handle }}</div>
           <div class="muted small">
             Portas: {% for p in i.ports %}{{ p.number }}/{{ p.proto }}{% if not loop.last %}, {% endif %}{% endfor %}
           </div>

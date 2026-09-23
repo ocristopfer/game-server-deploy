@@ -5,15 +5,15 @@ import pytest
 from fake_http import FakeServer
 
 from gamebroker.integrations.http_client import Client
-from gamebroker.runtime.base import CtSpec
+from gamebroker.runtime.base import InstanceSpec
 from gamebroker.runtime.proxmox import ConfigProxmox, Proxmox, ProxmoxError
 
-ESPEC = CtSpec(ctid=300, hostname="alfa-300", ip="10.0.0.30", game="alfa",
+ESPEC = InstanceSpec(handle="300", hostname="alfa-300", ip="10.0.0.30", game="alfa",
                           memory_mb=4096, cores=2, disk_gb=20)
 
 
 def test_criar_envia_o_que_o_proxmox_aceita(pve):
-    pve.backend.create_ct(ESPEC)
+    pve.backend.create(ESPEC)
     ct = pve.fake.cts[300]
     assert ct["features"] == "nesting=1", "sem keyctl: so o root@pam pode"
     assert ct["pool"] == "games"
@@ -24,7 +24,7 @@ def test_criar_envia_o_que_o_proxmox_aceita(pve):
 
 
 def test_tag_e_gravada_depois_da_criacao_nao_na_criacao(pve):
-    pve.backend.create_ct(ESPEC)
+    pve.backend.create(ESPEC)
     assert pve.fake.cts[300]["tags"] == "gamepanel-broker"
     methods = [(m, c) for m, c, _ in pve.server.requests_seen if m in ("POST", "PUT")]
     assert methods[0][0] == "POST"
@@ -33,19 +33,19 @@ def test_tag_e_gravada_depois_da_criacao_nao_na_criacao(pve):
 
 def test_tag_que_falha_nao_derruba_a_criacao(pve):
     pve.fake.fail_on_tag = True
-    pve.backend.create_ct(ESPEC)
+    pve.backend.create(ESPEC)
     assert 300 in pve.fake.cts
     assert pve.backend.belongs_to_broker(300), "a identidade e o pool, nao a tag"
 
 
 def test_tarefa_com_warnings_e_sucesso(pve):
     pve.fake.creation_output = "WARNINGS: 1"
-    pve.backend.create_ct(ESPEC)
+    pve.backend.create(ESPEC)
 
 
 def test_espera_a_tarefa_terminar(pve):
     pve.fake.rounds_until_stop = 3
-    pve.backend.create_ct(ESPEC)
+    pve.backend.create(ESPEC)
     assert len(pve.waits) == 3
     assert set(pve.waits) == {2.0}
 
@@ -53,13 +53,13 @@ def test_espera_a_tarefa_terminar(pve):
 def test_tarefa_que_nunca_termina_estoura_o_tempo(pve):
     pve.fake.rounds_until_stop = 10_000
     with pytest.raises(ProxmoxError, match="excedeu o tempo"):
-        pve.backend.create_ct(ESPEC)
+        pve.backend.create(ESPEC)
 
 
 def test_tarefa_que_falha_traz_a_causa_e_o_fim_do_log(pve):
     pve.fake.creation_output = "unable to create CT 300 - storage full"
     with pytest.raises(ProxmoxError) as error:
-        pve.backend.create_ct(ESPEC)
+        pve.backend.create(ESPEC)
     assert "storage full" in str(error.value)
     assert "Systemd 257" in str(error.value)
 
@@ -67,7 +67,7 @@ def test_tarefa_que_falha_traz_a_causa_e_o_fim_do_log(pve):
 def test_erro_de_autenticacao_mostra_o_status_e_nao_o_token(pve):
     pve.backend._c = Client(pve.server.url, {"Authorization": "PVEAPIToken=errado"})
     with pytest.raises(ProxmoxError) as error:
-        pve.backend.create_ct(ESPEC)
+        pve.backend.create(ESPEC)
     assert "HTTP 401" in str(error.value)
     assert "errado" not in str(error.value)
 
@@ -75,12 +75,12 @@ def test_erro_de_autenticacao_mostra_o_status_e_nao_o_token(pve):
 def test_ct_ja_existente_nao_e_sobrescrito(pve):
     pve.fake.external(300)
     with pytest.raises(ProxmoxError, match="already exists"):
-        pve.backend.create_ct(ESPEC)
+        pve.backend.create(ESPEC)
     assert pve.fake.cts[300]["hostname"] == "de-fora"
 
 
 def test_iniciar_e_parar(pve):
-    pve.backend.create_ct(ESPEC)
+    pve.backend.create(ESPEC)
     pve.backend.start(300)
     assert pve.fake.cts[300]["status"] == "running"
     pve.backend.stop(300)
@@ -88,14 +88,14 @@ def test_iniciar_e_parar(pve):
 
 
 def test_destruir_ct_ligado_para_antes(pve):
-    pve.backend.create_ct(ESPEC)
+    pve.backend.create(ESPEC)
     pve.backend.start(300)
     pve.backend.destroy(300)
     assert 300 not in pve.fake.cts
 
 
 def test_destruir_ct_parado(pve):
-    pve.backend.create_ct(ESPEC)
+    pve.backend.create(ESPEC)
     pve.backend.destroy(300)
     assert 300 not in pve.fake.cts
 
@@ -110,18 +110,18 @@ def test_nao_mexe_em_ct_fora_do_pool(pve):
 
 
 def test_pertence_ao_broker(pve):
-    pve.backend.create_ct(ESPEC)
+    pve.backend.create(ESPEC)
     pve.fake.external(210)
     assert pve.backend.belongs_to_broker(300)
     assert not pve.backend.belongs_to_broker(210)
     assert not pve.backend.belongs_to_broker(999)
 
 
-def test_ctids_e_ips_do_que_o_token_enxerga(pve):
-    pve.backend.create_ct(ESPEC)
+def test_handles_e_ips_do_que_o_token_enxerga(pve):
+    pve.backend.create(ESPEC)
     pve.fake.external(210, net0="name=eth0,ip=192.168.2.20/24")
-    ctids, ips = pve.backend.ctids_and_ips()
-    assert ctids == {300}, "CT fora do pool nao aparece: o token nao o enxerga"
+    handles, ips = pve.backend.handles_and_ips()
+    assert handles == {"300"}, "CT fora do pool nao aparece: o token nao o enxerga"
     assert ips == {"10.0.0.30"}
 
 
@@ -132,7 +132,7 @@ def test_acessivel(pve):
 
 
 def test_espera_usa_o_upid_codificado(pve):
-    pve.backend.create_ct(ESPEC)
+    pve.backend.create(ESPEC)
     paths = [c for m, c, _ in pve.server.requests_seen if "/tasks/" in c]
     assert paths
     assert all(c.startswith("/api2/json/nodes/pve/tasks/UPID:pve:") for c in paths)
@@ -171,7 +171,7 @@ def test_backend_sem_servidor_e_erro_de_conexao_nao_excecao_solta():
     backend = Proxmox(Client(url, {}), ConfigProxmox(**BASE), sleep=lambda _s: None)
     from gamebroker.integrations.http_client import ConnectionFailed
     with pytest.raises(ConnectionFailed):
-        backend.ctids_and_ips()
+        backend.handles_and_ips()
 
 
 def test_sonda_de_saude_nao_espera_o_prazo_inteiro(monkeypatch):

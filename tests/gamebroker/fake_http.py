@@ -198,7 +198,7 @@ def alias_summary(descricao: str, ports: list[str]) -> str:
     return f"<strong>{descricao}</strong><br/>" + "<br/>".join(ports)
 
 
-class FakeOpnsenseHttp:
+class FakeIngressHttp:
     def __init__(self):
         self.rules: dict[str, dict] = {}
         self.applies = 0

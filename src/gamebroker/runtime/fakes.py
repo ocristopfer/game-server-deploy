@@ -1,63 +1,68 @@
-"""Backends falsos: testes do broker e o broker de brinquedo do compose de dev."""
+"""Backends falsos: testes do broker e o broker de brinquedo do compose de dev.
+
+Os nomes dos PASSOS (`create`, `start`, `open`, ...) sao o que um teste poe em `fail_on`
+para provocar a falha de uma etapa: sao contrato com `test_instance_service.py`, nao texto
+de tela.
+"""
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from gamebroker.runtime.base import CtSpec
+from gamebroker.runtime.base import InstanceSpec
 from gamebroker.services.allocator import AllocatedPort
 from gamebroker.services.catalog import Game
 
 
-class FakeProxmox:
-    def __init__(self, ctids: set[int] | None = None, ips: set[str] | None = None):
-        self.outside_ctids = set(ctids or ())
+class FakeCompute:
+    def __init__(self, handles: set[str] | None = None, ips: set[str] | None = None):
+        self.outside_handles = set(handles or ())
         self.outside_ips = set(ips or ())
-        self.cts: dict[int, CtSpec] = {}
-        self.stopped: set[int] = set()
-        self.calls: list[tuple[str, int]] = []
+        self.cts: dict[str, InstanceSpec] = {}
+        self.stopped: set[str] = set()
+        self.calls: list[tuple[str, str]] = []
         self.fail_on: str | None = None
         self.online = True
 
     def _fail(self, step: str) -> None:
         if self.fail_on == step:
-            raise RuntimeError(f"proxmox falso: {step} falhou")
+            raise RuntimeError(f"compute falso: {step} falhou")
 
-    def ctids_and_ips(self) -> tuple[set[int], set[str]]:
-        return (self.outside_ctids | set(self.cts),
+    def handles_and_ips(self) -> tuple[set[str], set[str]]:
+        return (self.outside_handles | set(self.cts),
                 self.outside_ips | {c.ip for c in self.cts.values()})
 
-    def create_ct(self, spec: CtSpec) -> None:
-        self._fail("criar_ct")
-        self.calls.append(("criar_ct", spec.ctid))
-        self.cts[spec.ctid] = spec
+    def create(self, spec: InstanceSpec) -> None:
+        self._fail("create")
+        self.calls.append(("create", spec.handle))
+        self.cts[spec.handle] = spec
 
-    def start(self, ctid: int) -> None:
-        self._fail("iniciar")
-        self.calls.append(("iniciar", ctid))
-        self.stopped.discard(ctid)
+    def start(self, handle: str) -> None:
+        self._fail("start")
+        self.calls.append(("start", handle))
+        self.stopped.discard(handle)
 
-    def stop(self, ctid: int) -> None:
-        self._fail("parar")
-        self.calls.append(("parar", ctid))
-        self.stopped.add(ctid)
+    def stop(self, handle: str) -> None:
+        self._fail("stop")
+        self.calls.append(("stop", handle))
+        self.stopped.add(handle)
 
-    def destroy(self, ctid: int) -> None:
-        self._fail("destruir")
-        self.calls.append(("destruir", ctid))
-        self.cts.pop(ctid, None)
+    def destroy(self, handle: str) -> None:
+        self._fail("destroy")
+        self.calls.append(("destroy", handle))
+        self.cts.pop(handle, None)
 
-    def belongs_to_broker(self, ctid: int) -> bool:
-        return ctid in self.cts
+    def belongs_to_broker(self, handle: str) -> bool:
+        return handle in self.cts
 
     def reachable(self) -> bool:
         return self.online
 
 
-class FakeOpnsense:
+class FakeIngress:
     def __init__(self, taken: set[tuple[int, str]] | None = None):
         self.outside = set(taken or ())
-        self.rules: dict[int, list[tuple[str, int, str]]] = {}
-        self.calls: list[tuple[str, int]] = []
+        self.rules: dict[str, list[tuple[str, int, str]]] = {}
+        self.calls: list[tuple[str, str]] = []
         self.fail_on: str | None = None
         self.online = True
 
@@ -65,15 +70,15 @@ class FakeOpnsense:
         open_ones = {(n, p) for rules in self.rules.values() for (_, n, p) in rules}
         return self.outside | open_ones
 
-    def open_ports(self, ctid: int, ip: str, ports: Sequence[AllocatedPort]) -> None:
-        if self.fail_on == "abrir":
-            raise RuntimeError("opnsense falso: abrir falhou")
-        self.calls.append(("abrir", ctid))
-        self.rules[ctid] = [(ip, p.number, p.proto) for p in ports]
+    def open_ports(self, handle: str, ip: str, ports: Sequence[AllocatedPort]) -> None:
+        if self.fail_on == "open":
+            raise RuntimeError("ingress falso: abrir falhou")
+        self.calls.append(("open", handle))
+        self.rules[handle] = [(ip, p.number, p.proto) for p in ports]
 
-    def close_ports(self, ctid: int) -> None:
-        self.calls.append(("fechar", ctid))
-        self.rules.pop(ctid, None)
+    def close_ports(self, handle: str) -> None:
+        self.calls.append(("close", handle))
+        self.rules.pop(handle, None)
 
     def reachable(self) -> bool:
         return self.online

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from gamebroker.app import create_app
 from gamebroker.persistence.db import Db
-from gamebroker.runtime.fakes import FakeOpnsense, FakeProxmox, FakeNetwork
+from gamebroker.runtime.fakes import FakeCompute, FakeIngress, FakeNetwork
 from gamebroker.services.allocator import AllocatedPort, ips_in_range
 from gamebroker.services.catalog import Catalog, Game
 from gamebroker.services.instance_service import Config, Service
@@ -46,7 +46,7 @@ def main() -> None:
     state_dir.mkdir(parents=True, exist_ok=True)
     catalog = Catalog(Path(os.environ.get("BROKER_GAMES_DIR", "games")), state_dir / "dinamico")
     service = Service(
-        Db(str(state_dir / "broker.db")), catalog, FakeProxmox(), FakeOpnsense(),
+        Db(str(state_dir / "broker.db")), catalog, FakeCompute(), FakeIngress(),
         SlowInstaller(float(os.environ.get("BROKER_DEV_PASSO", "1.5"))), FakeNetwork(),
         Config(ctid_base=200, ips=ips_in_range("10.77.0", 102, 199)))
     app = create_app(service, token)

@@ -115,6 +115,37 @@ destruir, dizer se um container é dele, e dizer o que já está ocupado.
 
 ## 3. Fase 1 — tirar o Proxmox do vocabulário (só broker)
 
+> **Estado: 1.1 a 1.4 feitos; 1.5 a 1.7 adiados, de propósito.** O corte não foi por
+> cansaço: 1.1–1.4 mudam **dado e contrato**, que é o que fica caro depois que houver
+> instância em produção. 1.5, 1.6 e 1.7 desenham interface para um backend que ainda não
+> existe — e a seção 0 deste documento diz, com razão, que abstração antes da primeira
+> criação real codifica palpite. `propose_handle`/`taken_handles` com uma implementação só
+> esconderia que o serviço continua sabendo de `ctid_base`; o `BROKER_BACKEND` seria uma
+> variável com um valor válido.
+>
+> **Duas coisas que o plano não previu e que a execução encontrou:**
+>
+> 1. **`ALTER TABLE ... RENAME COLUMN` preserva a AFINIDADE.** A coluna continua declarada
+>    `INTEGER`, então num banco migrado o CTID antigo volta do `SELECT` como `int`, e um
+>    `CAST(... AS TEXT)` não adianta — a afinidade converte de volta ao gravar (conferido
+>    no sqlite3 desta máquina). Um handle não-numérico, como `palworld-1`, entra como texto
+>    normalmente: a afinidade só converte o que *parece* número. Sem tratar isso a coluna
+>    fica de tipo misto e `{"307"} | {307}` não se deduplica — a checagem de handle ocupado
+>    passaria quando não devia. Reconstruir a tabela corrigiria a declaração e custa caro
+>    (`ports` tem `ON DELETE CASCADE` para `instances`), então a saída é normalizar na
+>    leitura, com `str()`, em `db.taken` e `wire.instance`. Há teste para os dois lados.
+> 2. **O `int(ctid)` do `instance_description` era um guard.** Era ele que recusava
+>    `"300; drop"`, e com o handle opaco ele sairia junto — o teste da descrição pegou.
+>    A descrição vai para o campo `descr` da regra e o `close_ports` a casa por IGUALDADE:
+>    um handle estranho não viraria injeção de shell, mas quebraria o casamento e deixaria
+>    **regra órfã no firewall**, que é o jeito silencioso de uma porta ficar aberta para um
+>    container que não existe mais. Hoje há `HANDLE_RE` (token simples, `re.ASCII`).
+>
+> Provado contra o broker de brinquedo do compose, ao vivo: uma instância criada com o
+> esquema antigo (`ctid=302`, INTEGER) sobrevive à migration e volta no fio como
+> `handle: "302"` **str**, ao lado de uma nova `"303"`; e a tela mostra `proxmox 303` no
+> lugar do antigo `CT 300`.
+
 A camada de portas já existe e está limpa: `base.py` define quatro Protocols e
 `instance_service.py` não conhece mais nada. O problema não é a interface, é o
 **substantivo**: `ctid` atravessou o serviço, o banco e o contrato da API.
