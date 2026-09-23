@@ -22,9 +22,9 @@ def index():
     servers = servers_repo.all_ordered(conn)
     names = {int(s["id"]): s["name"] for s in servers}
 
-    server_filter = (request.args.get("servidor", "") or "").strip()
-    action_filter = (request.args.get("acao", "") or "").strip()
-    user_filter = (request.args.get("usuario", "") or "").strip()[:80]
+    server_filter = (request.args.get("server", "") or "").strip()
+    action_filter = (request.args.get("action", "") or "").strip()
+    user_filter = (request.args.get("user", "") or "").strip()[:80]
     try:
         page = max(0, int(request.args.get("p", "0")))
     except ValueError:

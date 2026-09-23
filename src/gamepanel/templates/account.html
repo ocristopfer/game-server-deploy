@@ -66,10 +66,10 @@
       <form method="post" action="{{ url_for('account.two_factor_codes') }}" class="mt-4">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <label>{{ _('login.password') }}
-          <input name="senha" type="password" autocomplete="current-password" required>
+          <input name="password" type="password" autocomplete="current-password" required>
         </label>
         <label>{{ _('account.app_code') }}
-          <input name="codigo" inputmode="numeric" autocomplete="one-time-code" required>
+          <input name="code" inputmode="numeric" autocomplete="one-time-code" required>
           <small>{{ _('account.old_codes_expire') }}</small>
         </label>
         {{ ui.button(_('account.generate'), size='sm') }}
@@ -81,10 +81,10 @@
       <form method="post" action="{{ url_for('account.two_factor_off') }}" class="mt-4">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <label>{{ _('login.password') }}
-          <input name="senha" type="password" autocomplete="current-password" required>
+          <input name="password" type="password" autocomplete="current-password" required>
         </label>
         <label>{{ _('account.app_or_recovery_code') }}
-          <input name="codigo" autocomplete="one-time-code" required>
+          <input name="code" autocomplete="one-time-code" required>
         </label>
         {{ ui.button(_('account.disable'), variant='danger', size='sm',
                     confirm=_('account.disable_confirm')) }}

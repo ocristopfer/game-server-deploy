@@ -47,7 +47,7 @@ def create(sid: int):
 def restore(sid: int):
     """Volta o servidor para uma copia. Para o jogo, extrai e religa."""
     server = panel._server_or_404(sid)
-    name = panel._backup_or_400(request.form.get("nome", ""))
+    name = panel._backup_or_400(request.form.get("name", ""))
     paths = panel.backup_paths(server)
 
     # Copia de seguranca ANTES de extrair: restaurar e a operacao mais destrutiva do
@@ -72,7 +72,7 @@ def restore(sid: int):
 @panel.admin_required
 def delete(sid: int):
     server = panel._server_or_404(sid)
-    name = panel._backup_or_400(request.form.get("nome", ""))
+    name = panel._backup_or_400(request.form.get("name", ""))
     try:
         output = panel.delete_backup(server, name)
     except panel.RemoteError as exc:
@@ -90,7 +90,7 @@ def delete(sid: int):
 def download(sid: int):
     """Tira a copia do container. Mesmo streaming do download de arquivo."""
     server = panel._server_or_404(sid)
-    name = panel._backup_or_400(request.args.get("nome", ""))
+    name = panel._backup_or_400(request.args.get("name", ""))
     path = f"{panel.BACKUP_DIR.rstrip('/')}/{name}"
     try:
         info = panel.stat_file(server, path)

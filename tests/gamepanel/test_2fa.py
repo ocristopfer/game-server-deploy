@@ -52,7 +52,7 @@ def _enable_2fa(cli, post, clock: Clock) -> tuple[str, list[str]]:
     assert cli.get("/account/2fa").status_code == 200
     with cli.session_transaction() as sess:
         secret = sess["totp_pendente"]
-    response = post(cli, "/account/2fa", {"codigo": _code(secret, clock)})
+    response = post(cli, "/account/2fa", {"code": _code(secret, clock)})
     assert response.status_code == 200, response.get_data(as_text=True)[:300]
     return secret, CODE_RE.findall(response.get_data(as_text=True))
 
@@ -113,7 +113,7 @@ def test_recarregar_a_tela_de_ativacao_mostra_a_mesma_chave(admin, clock_at):
 
 def test_codigo_errado_nao_liga_o_2fa(admin, post, clock_at):
     admin.get("/account/2fa")
-    response = post(admin, "/account/2fa", {"codigo": "000000"})
+    response = post(admin, "/account/2fa", {"code": "000000"})
     assert response.status_code == 200
     assert "Codigo incorreto" in response.get_data(as_text=True)
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 0
@@ -159,7 +159,7 @@ def test_senha_certa_com_2fa_nao_abre_a_sessao(admin, post, clock_at, client):
 def test_codigo_certo_completa_o_login(admin, post, clock_at, client):
     secret, _ = _with_2fa(admin, post, clock_at)
     _password(client, post)
-    response = post(client, "/login/2fa", {"codigo": _code(secret, clock_at)})
+    response = post(client, "/login/2fa", {"code": _code(secret, clock_at)})
     assert response.status_code == 302
     assert client.get("/").status_code == 200
 
@@ -167,7 +167,7 @@ def test_codigo_certo_completa_o_login(admin, post, clock_at, client):
 def test_codigo_errado_nao_entra(admin, post, clock_at, client):
     _with_2fa(admin, post, clock_at)
     _password(client, post)
-    response = post(client, "/login/2fa", {"codigo": "123456"})
+    response = post(client, "/login/2fa", {"code": "123456"})
     assert response.status_code == 401
     assert client.get("/").status_code == 302
 
@@ -176,32 +176,32 @@ def test_codigo_usado_nao_serve_de_novo(admin, post, clock_at, client):
     secret, _ = _with_2fa(admin, post, clock_at)
     _password(client, post)
     code = _code(secret, clock_at)
-    assert post(client, "/login/2fa", {"codigo": code}).status_code == 302
+    assert post(client, "/login/2fa", {"code": code}).status_code == 302
     other = panel.app.test_client()
     _password(other, post)
-    assert post(other, "/login/2fa", {"codigo": code}).status_code == 401, "repeticao"
+    assert post(other, "/login/2fa", {"code": code}).status_code == 401, "repeticao"
     clock_at.advance(30)
-    assert post(other, "/login/2fa", {"codigo": _code(secret, clock_at)}).status_code == 302
+    assert post(other, "/login/2fa", {"code": _code(secret, clock_at)}).status_code == 302
 
 
 def test_codigo_da_ativacao_tambem_nao_serve_no_primeiro_login(admin, post, clock_at, client):
     """O codigo que ligou o 2FA foi visto na tela de ativacao: nao pode abrir a porta depois."""
     secret, _ = _enable_2fa(admin, post, clock_at)
     _password(client, post)
-    assert post(client, "/login/2fa", {"codigo": _code(secret, clock_at)}).status_code == 401
+    assert post(client, "/login/2fa", {"code": _code(secret, clock_at)}).status_code == 401
 
 
 def test_o_destino_pedido_antes_do_login_sobrevive_ao_segundo_passo(admin, post, clock_at, client):
     secret, _ = _with_2fa(admin, post, clock_at)
     _password(client, post, next_one="/history")
-    response = post(client, "/login/2fa", {"codigo": _code(secret, clock_at)})
+    response = post(client, "/login/2fa", {"code": _code(secret, clock_at)})
     assert response.headers["Location"].endswith("/history")
 
 
 def test_destino_de_fora_do_painel_continua_recusado_no_segundo_passo(admin, post, clock_at, client):
     secret, _ = _with_2fa(admin, post, clock_at)
     _password(client, post, next_one="//evil.com")
-    response = post(client, "/login/2fa", {"codigo": _code(secret, clock_at)})
+    response = post(client, "/login/2fa", {"code": _code(secret, clock_at)})
     assert "evil.com" not in response.headers["Location"]
 
 
@@ -215,7 +215,7 @@ def test_a_verificacao_expira(admin, post, clock_at, client):
     secret, _ = _with_2fa(admin, post, clock_at)
     _password(client, post)
     clock_at.advance(panel.PRE_2FA_SECONDS + 1)
-    response = post(client, "/login/2fa", {"codigo": _code(secret, clock_at)})
+    response = post(client, "/login/2fa", {"code": _code(secret, clock_at)})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/login")
     assert client.get("/").status_code == 302
@@ -225,14 +225,14 @@ def test_trava_por_usuario_bloqueia_ate_o_codigo_certo(admin, post, clock_at, cl
     secret, _ = _with_2fa(admin, post, clock_at)
     for _ in range(panel.LOCKOUT_2FA_TRIES):
         _password(client, post)
-        assert post(client, "/login/2fa", {"codigo": "000000"}).status_code == 401
+        assert post(client, "/login/2fa", {"code": "000000"}).status_code == 401
     _password(client, post)
-    blocked = post(client, "/login/2fa", {"codigo": _code(secret, clock_at)})
+    blocked = post(client, "/login/2fa", {"code": _code(secret, clock_at)})
     assert blocked.status_code == 429, "com a trava ligada nem o codigo certo passa"
     assert client.get("/").status_code == 302
     clock_at.advance(panel.LOCKOUT_2FA_WINDOW + 1)
     _password(client, post)
-    assert post(client, "/login/2fa", {"codigo": _code(secret, clock_at)}).status_code == 302
+    assert post(client, "/login/2fa", {"code": _code(secret, clock_at)}).status_code == 302
 
 
 def test_a_trava_e_do_usuario_e_nao_do_ip(admin, post, clock_at):
@@ -241,10 +241,10 @@ def test_a_trava_e_do_usuario_e_nao_do_ip(admin, post, clock_at):
     for _ in range(panel.LOCKOUT_2FA_TRIES):
         other = panel.app.test_client()
         _password(other, post)
-        post(other, "/login/2fa", {"codigo": "000000"})
+        post(other, "/login/2fa", {"code": "000000"})
     fresh = panel.app.test_client()
     _password(fresh, post)
-    assert post(fresh, "/login/2fa", {"codigo": "000000"}).status_code == 429
+    assert post(fresh, "/login/2fa", {"code": "000000"}).status_code == 429
 
 
 # --- recuperacao --------------------------------------------------------------------------------------
@@ -252,46 +252,46 @@ def test_a_trava_e_do_usuario_e_nao_do_ip(admin, post, clock_at):
 def test_codigo_de_recuperacao_entra_uma_vez_so(admin, post, clock_at, client):
     _, codes = _with_2fa(admin, post, clock_at)
     _password(client, post)
-    assert post(client, "/login/2fa", {"codigo": codes[0]}).status_code == 302
+    assert post(client, "/login/2fa", {"code": codes[0]}).status_code == 302
     assert client.get("/").status_code == 200
     other = panel.app.test_client()
     _password(other, post)
-    assert post(other, "/login/2fa", {"codigo": codes[0]}).status_code == 401
-    assert post(other, "/login/2fa", {"codigo": codes[1].upper().replace("-", " ")}).status_code == 302
+    assert post(other, "/login/2fa", {"code": codes[0]}).status_code == 401
+    assert post(other, "/login/2fa", {"code": codes[1].upper().replace("-", " ")}).status_code == 302
 
 
 # --- desativar e trocar codigos ---------------------------------------------------------------------
 
 def test_desativar_pede_senha_e_codigo(admin, post, clock_at):
     secret, _ = _with_2fa(admin, post, clock_at)
-    post(admin, "/account/2fa/off", {"senha": "errada", "codigo": _code(secret, clock_at)})
-    post(admin, "/account/2fa/off", {"senha": "senha-do-chefe", "codigo": "000000"})
+    post(admin, "/account/2fa/off", {"password": "errada", "code": _code(secret, clock_at)})
+    post(admin, "/account/2fa/off", {"password": "senha-do-chefe", "code": "000000"})
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 1
-    post(admin, "/account/2fa/off", {"senha": "senha-do-chefe", "codigo": _code(secret, clock_at)})
+    post(admin, "/account/2fa/off", {"password": "senha-do-chefe", "code": _code(secret, clock_at)})
     line = panel._connect().execute("SELECT * FROM users WHERE username = 'chefe'").fetchone()
     assert (line["totp_enabled"], line["totp_secret"], line["totp_recovery"]) == (0, "", "")
 
 
 def test_desativar_aceita_um_codigo_de_recuperacao(admin, post, clock_at):
     _, codes = _with_2fa(admin, post, clock_at)
-    post(admin, "/account/2fa/off", {"senha": "senha-do-chefe", "codigo": codes[0]})
+    post(admin, "/account/2fa/off", {"password": "senha-do-chefe", "code": codes[0]})
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 0
 
 
 def test_codigos_novos_invalidam_os_antigos(admin, post, clock_at, client):
     secret, old_ones = _with_2fa(admin, post, clock_at)
-    response = post(admin, "/account/2fa/codes", {"senha": "senha-do-chefe", "codigo": _code(secret, clock_at)})
+    response = post(admin, "/account/2fa/codes", {"password": "senha-do-chefe", "code": _code(secret, clock_at)})
     fresh_ones = CODE_RE.findall(response.get_data(as_text=True))
     assert len(fresh_ones) == totp.RECOVERY_CODES
     assert not set(fresh_ones) & set(old_ones)
     _password(client, post)
-    assert post(client, "/login/2fa", {"codigo": old_ones[0]}).status_code == 401
-    assert post(client, "/login/2fa", {"codigo": fresh_ones[0]}).status_code == 302
+    assert post(client, "/login/2fa", {"code": old_ones[0]}).status_code == 401
+    assert post(client, "/login/2fa", {"code": fresh_ones[0]}).status_code == 302
 
 
 def test_codigos_novos_pedem_senha(admin, post, clock_at):
     secret, old_ones = _with_2fa(admin, post, clock_at)
-    post(admin, "/account/2fa/codes", {"senha": "errada", "codigo": _code(secret, clock_at)})
+    post(admin, "/account/2fa/codes", {"password": "errada", "code": _code(secret, clock_at)})
     line = panel._connect().execute("SELECT totp_recovery FROM users").fetchone()
     assert len(json.loads(line[0])) == totp.RECOVERY_CODES
     assert totp.hash_recovery_code(old_ones[0]) in json.loads(line[0])
@@ -380,7 +380,7 @@ def test_com_2fa_obrigatorio_ativar_libera_o_painel(admin, post, clock_at, monke
 def test_com_2fa_obrigatorio_nao_da_para_desativar(admin, post, clock_at, monkeypatch):
     secret, _ = _with_2fa(admin, post, clock_at)
     monkeypatch.setattr(panel, "REQUIRE_2FA", True)
-    post(admin, "/account/2fa/off", {"senha": "senha-do-chefe", "codigo": _code(secret, clock_at)})
+    post(admin, "/account/2fa/off", {"password": "senha-do-chefe", "code": _code(secret, clock_at)})
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 1
     assert "exige" in admin.get("/account").get_data(as_text=True)
 

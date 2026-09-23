@@ -51,7 +51,7 @@ def register_file(sid: int):
         return redirect(url_for("config_quick.index", sid=sid))
 
     paths = panel.config_paths(server)
-    if request.form.get("acao") == "remover":
+    if request.form.get("action") == "remover":
         paths = [p for p in paths if p != path]
         panel._save_config_files(sid, paths)
         flash(panel.translate("flash.left_config_screen", path=path), "ok")

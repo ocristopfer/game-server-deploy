@@ -314,7 +314,7 @@ def test_operador_modera_jogador_sem_precisar_de_admin(target_server, operator, 
     pode moderar quem esta nele. 302 (e nao 403) prova que o operador passou do papel -
     o que sobrar de erro daqui em diante e da validacao da acao, nao da permissao."""
     resp = post(operator, f"/servers/{target_server}/players/action",
-                  {"acao": "kick", "jogador": "x"})
+                  {"action": "kick", "player": "x"})
     assert resp.status_code == 302
 
 

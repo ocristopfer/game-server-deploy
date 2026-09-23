@@ -68,7 +68,7 @@ def two_factor():
         return redirect(url_for("account.index"))
     if request.method == "POST":
         secret = session.get("totp_pendente", "")
-        step = panel.totp.verify(secret, request.form.get("codigo", ""), time.time()) if secret else None
+        step = panel.totp.verify(secret, request.form.get("code", ""), time.time()) if secret else None
         if step is None:
             flash(panel.translate("flash.wrong_code"), "error")
         else:

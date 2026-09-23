@@ -60,7 +60,7 @@ def login_2fa():
         if remaining:
             flash(panel.translate("flash.too_many_tries", n=remaining), "error")
             return render_template("login_2fa.html"), 429
-        if panel._check_second_factor(row, request.form.get("codigo", "")):
+        if panel._check_second_factor(row, request.form.get("code", "")):
             panel.totp_lockout.clear(key)
             return panel._open_session(row, pending_one.get("next", ""))
         panel.totp_lockout.record_failure(key)

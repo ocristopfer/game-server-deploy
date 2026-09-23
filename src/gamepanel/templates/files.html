@@ -23,7 +23,7 @@
         enctype="multipart/form-data" class="filebar upload-form">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="path" value="{{ current }}">
-    <input type="file" name="arquivo" required aria-label="{{ _('files.file_to_upload') }}">
+    <input type="file" name="file" required aria-label="{{ _('files.file_to_upload') }}">
     {{ ui.button(_('files.upload_here'), icon='⬆') }}
   </form>
   <p class="muted small">
@@ -157,7 +157,7 @@
       </p>
       <p class="muted small">
         Procurando o arquivo de configuracao do jogo? A busca por candidatos fica em
-        <a href="{{ url_for('config_quick.index', sid=server.id, descobrir=1) }}">{{ _('files.configuration') }}</a>
+        <a href="{{ url_for('config_quick.index', sid=server.id, discover=1) }}">{{ _('files.configuration') }}</a>
         &mdash; e la que o resultado dela serve para alguma coisa (fixar o arquivo e
         edita-lo campo a campo).
       </p>

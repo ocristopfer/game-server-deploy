@@ -8,7 +8,7 @@
 <div class="card">
   <form method="get" action="{{ url_for('history.index') }}" class="cluster">
     <label class="inline-field">{{ _('history.server') }}
-      <select name="servidor">
+      <select name="server">
         <option value="">{{ _('history.any_server') }}</option>
         {% for s in servers %}
         <option value="{{ s.id }}" {% if server_filter == s.id|string %}selected{% endif %}>{{ s.name }}</option>
@@ -16,7 +16,7 @@
       </select>
     </label>
     <label class="inline-field">{{ _('history.action') }}
-      <select name="acao">
+      <select name="action">
         <option value="">{{ _('history.any_action') }}</option>
         {% for a in actions %}
         <option value="{{ a }}" {% if action_filter == a %}selected{% endif %}>{{ job_label(a) }}</option>
@@ -24,7 +24,7 @@
       </select>
     </label>
     <label class="inline-field">{{ _('history.who') }}
-      <select name="usuario">
+      <select name="user">
         <option value="">{{ _('history.anyone') }}</option>
         {% for u in users %}
         <option value="{{ u }}" {% if user_filter == u %}selected{% endif %}>{{ u }}</option>
@@ -67,11 +67,11 @@
   <div class="cluster mt-4">
     {% if page > 0 %}
       {{ ui.button(_('history.newer'), variant='ghost', icon='←',
-                  href=url_for('history.index', servidor=server_filter, acao=action_filter, usuario=user_filter, p=page - 1)) }}
+                  href=url_for('history.index', server=server_filter, action=action_filter, user=user_filter, p=page - 1)) }}
     {% endif %}
     {% if has_more %}
       {{ ui.button(_('history.older') ~ ' →', variant='ghost',
-                  href=url_for('history.index', servidor=server_filter, acao=action_filter, usuario=user_filter, p=page + 1)) }}
+                  href=url_for('history.index', server=server_filter, action=action_filter, user=user_filter, p=page + 1)) }}
     {% endif %}
   </div>
   {% else %}

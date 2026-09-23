@@ -9,15 +9,15 @@
 <div class="flash">{{ _h('players_setup.intro') }}</div>
 
 <nav class="tabs" aria-label="{{ _('players_setup.how_to_count') }}">
-  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, tab='porta') }}"
-     {% if tab == 'porta' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_udp') }}</a>
+  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, tab='port') }}"
+     {% if tab == 'port' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_udp') }}</a>
   <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, tab='http') }}"
      {% if tab == 'http' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_http') }}</a>
   <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, tab='log') }}"
      {% if tab == 'log' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_log') }}</a>
 </nav>
 
-{% if tab == 'porta' %}
+{% if tab == 'port' %}
 <div class="card">
   <h2>{{ _('players_setup.ports_tested') }}</h2>
   <p class="muted small">{{ _h('players_setup.ports_tested_hint') }}</p>
@@ -105,7 +105,7 @@
                navegador e no log de qualquer proxy na frente do painel. #}
             <form method="post" action="{{ url_for('players.setup', sid=server.id) }}" class="inline">
               <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-              <input type="hidden" name="aba" value="http">
+              <input type="hidden" name="tab" value="http">
               <input type="hidden" name="http_url" value="{{ a.url }}">
               {% for campo, valor in http.items() if campo != 'http_url' %}
               <input type="hidden" name="{{ campo }}" value="{{ valor }}">
@@ -140,8 +140,8 @@
      Corpo JSON do login). Num GET ela iria na barra de enderecos. #}
   <form method="post" action="{{ url_for('players.setup', sid=server.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <input type="hidden" name="aba" value="http">
-    <input type="hidden" name="testar" value="1">
+    <input type="hidden" name="tab" value="http">
+    <input type="hidden" name="test" value="1">
     <label>{{ _('players_setup.url') }}
       <input name="http_url" value="{{ http.http_url }}" spellcheck="false"
              placeholder="http://127.0.0.1:8212/v1/api/players">
@@ -233,8 +233,8 @@
   <h2>{{ _('players_setup.test_the_pattern') }}</h2>
   <form method="post" action="{{ url_for('players.setup', sid=server.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <input type="hidden" name="aba" value="log">
-    <input type="hidden" name="testar" value="1">
+    <input type="hidden" name="tab" value="log">
+    <input type="hidden" name="test" value="1">
     <label>{{ _('players_setup.log_file') }} <span class="muted">{{ _('server_form.optional') }}</span>
       <input name="log_path" value="{{ log_path }}" spellcheck="false"
              placeholder="/opt/game/profiles/*.ADM">

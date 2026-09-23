@@ -29,8 +29,8 @@ def setup(sid: int):
     # qualquer proxy na frente do painel. O GET continua servindo a navegacao entre abas,
     # que so carrega o nome da aba.
     source_dir = request.form if request.method == "POST" else request.args
-    tab = source_dir.get("aba", "porta")
-    should_test = bool(source_dir.get("testar"))
+    tab = source_dir.get("tab", "port")
+    should_test = bool(source_dir.get("test"))
 
     http = {field: source_dir.get(field, server[field]) for field in panel.HTTP_FIELDS}
     join_re = source_dir.get("join_re", server["join_re"])
@@ -80,10 +80,10 @@ def action(sid: int):
     entao o operador pode — do mesmo jeito que ele ja reinicia o servidor.
     """
     server = panel._server_or_404(sid)
-    action = (request.form.get("acao", "") or "").strip()
-    player = (request.form.get("jogador", "") or "").strip()[:200]
-    name = (request.form.get("nome", "") or "").strip()[:100]
-    message = (request.form.get("mensagem", "") or "").strip()[:panel.PLAYER_MSG_MAX]
+    action = (request.form.get("action", "") or "").strip()
+    player = (request.form.get("player", "") or "").strip()[:200]
+    name = (request.form.get("name", "") or "").strip()[:100]
+    message = (request.form.get("message", "") or "").strip()[:panel.PLAYER_MSG_MAX]
     who = name or player or "todos"
     record = f"{panel.label_for_db(panel.PLAYER_ACTION_LABELS.get(action, action))}: {who}"
     if message:

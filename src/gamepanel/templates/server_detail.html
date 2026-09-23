@@ -125,7 +125,7 @@
                            variant='danger' if a == 'ban' else 'ghost',
                            size='sm',
                            confirm=action_label.get(a, a) ~ ' ' ~ p.name ~ ' de ' ~ server.name ~ '?',
-                           fields={'acao': a, 'jogador': p.id, 'nome': p.name}) }}
+                           fields={'action': a, 'player': p.id, 'name': p.name}) }}
               {% endfor %}
             {% else %}
               <span class="muted small">{{ _('server_detail.no_identifier') }}</span>
@@ -156,9 +156,9 @@
     {% if 'announce' in actions %}
     <form method="post" action="{{ url_for('players.action', sid=server.id) }}" class="filebar">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <input type="hidden" name="acao" value="announce">
+      <input type="hidden" name="action" value="announce">
       <span class="path-form">
-        <input name="mensagem" maxlength="200" required
+        <input name="message" maxlength="200" required
                placeholder="{{ _('server_detail.broadcast') }}" aria-label="{{ _('server_detail.broadcast_message') }}">
         {{ ui.button(_('server_detail.announce'), icon='📣') }}
       </span>

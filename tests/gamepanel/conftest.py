@@ -173,6 +173,6 @@ def admin_2fa(admin):
     admin.get("/account/2fa")
     with admin.session_transaction() as sess:
         secret = sess["totp_pendente"]
-    response = _post(admin, "/account/2fa", {"codigo": totp.code(secret, totp.step_of(time.time()))})
+    response = _post(admin, "/account/2fa", {"code": totp.code(secret, totp.step_of(time.time()))})
     assert response.status_code == 200, "nao consegui ativar o 2FA de 'chefe' para o teste"
     return admin

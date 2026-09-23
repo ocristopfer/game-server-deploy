@@ -476,3 +476,90 @@ def test_pasta_impossivel_nao_derruba_o_ssh(monkeypatch):
     """Sem poder criar a pasta, seguir sem reaproveitar e melhor do que nao falar SSH."""
     monkeypatch.setattr(panel, "SSH_CONTROL_DIR", "/proc/impossivel/ssh-control")
     assert [o for o in panel.ssh_argv(ALVO_SSH, multiplex=True) if "Control" in o] == []
+
+
+# ------------------------- o par formulario x rota da moderacao de jogador
+
+@pytest.fixture
+def moderated_server(database, admin) -> int:
+    """Um servidor qualquer: a rota so precisa que ele exista para nao dar 404."""
+    with database:
+        database.execute(
+            "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"
+            " VALUES ('alvo', 'nao-existe-de-proposito.invalid', 22, 'root',"
+            " 'jogo.service', ?)", (panel.now_iso(),))
+    return database.execute("SELECT id FROM servers WHERE name = 'alvo'").fetchone()["id"]
+
+
+def test_a_acao_do_formulario_chega_INTEIRA_a_rota(moderated_server, admin, post, monkeypatch):
+    """Os nomes de campo do formulario (`action`, `player`, `name`, `message`) sao um
+    contrato com a rota, e os dois lados vivem como TEXTO em arquivos diferentes.
+
+    Os dois testes de permissao que existiam so conferem o 302 — eles passariam com
+    qualquer nome de campo, e passaram: quando `acao` virou `action` na rota, o template
+    continuou mandando `acao` e expulsar/banir deixou de funcionar sem nenhum teste
+    reclamar. Este confere o que CHEGOU.
+    """
+    seen = {}
+
+    def spy(server, action, player, message):
+        seen.update(action=action, player=player, message=message)
+        return "action.kick"
+
+    monkeypatch.setattr(panel, "run_player_action", spy)
+    response = post(admin, f"/servers/{moderated_server}/players/action",
+                    {"action": "kick", "player": "76561198", "name": "Ana", "message": "tchau"})
+    assert response.status_code == 302
+    assert seen == {"action": "kick", "player": "76561198", "message": "tchau"}
+
+
+def test_o_template_manda_os_MESMOS_campos_que_a_rota_le():
+    """O `fields={...}` do macro e um dicionario literal no template: nenhum teste de HTTP
+    o enxerga, porque ele s'o aparece no HTML renderizado. Aqui a comparacao e direta."""
+    import ast
+    import re
+    from pathlib import Path
+
+    tpl = Path(panel.__file__).parent / "templates" / "server_detail.html"
+    text = tpl.read_text(encoding="utf-8")
+    sent = set()
+    for raw in re.findall(r"fields=\{([^}]*)\}", text):
+        sent |= set(re.findall(r"['\"]([\w]+)['\"]\s*:", raw))
+    route = Path(panel.__file__).parent / "blueprints" / "players.py"
+    read = set()
+    for node in ast.walk(ast.parse(route.read_text(encoding="utf-8"))):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get" and getattr(node.func.value, "attr", "") == "form"
+                and node.args and isinstance(node.args[0], ast.Constant)):
+            read.add(node.args[0].value)
+    assert sent, "nenhum `fields={...}` encontrado — a varredura parou de valer"
+    assert sent <= read, f"o template manda campo que a rota nao le: {sorted(sent - read)}"
+
+
+def test_o_nome_de_aba_que_a_rota_conhece_e_o_que_o_template_manda():
+    """O nome da aba e um VALOR, nao um identificador — e por isso escapou de tudo.
+
+    Trocar o padrao da rota de `porta` para `port` sem trocar o `{% if tab == 'porta' %}`
+    do template deixou a aba de portas sem conteudo e sem destaque em quem abre a tela
+    SEM query string, que e o caminho normal. Responde 200, o HTML sai inteiro, e nenhum
+    teste de rota nota: o que muda e uma comparacao de texto dentro do Jinja.
+    """
+    import re
+    from pathlib import Path
+
+    route = (Path(panel.__file__).parent / "blueprints" / "players.py").read_text(encoding="utf-8")
+    tpl = (Path(panel.__file__).parent / "templates" / "players_setup.html").read_text(encoding="utf-8")
+
+    # O padrao do `get("tab", X)` e os dois valores que a rota compara.
+    default = re.search(r"""get\(["']tab["'],\s*["'](\w+)["']\)""", route)
+    assert default, "a rota deixou de ler `tab` com um padrao explicito"
+    known = {default.group(1)} | set(re.findall(r"""tab == ["'](\w+)["']""", route))
+
+    from_template = set(re.findall(r"""tab\s*=\s*["'](\w+)["']""", tpl))
+    from_template |= set(re.findall(r"""tab == ["'](\w+)["']""", tpl))
+    from_template |= set(re.findall(r"""name="tab" value="(\w+)\"""", tpl))
+
+    assert from_template == known, (
+        "abas do template x abas que a rota conhece:\n"
+        f"  so no template: {sorted(from_template - known)}\n"
+        f"  so na rota:     {sorted(known - from_template)}")

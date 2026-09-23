@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_game_fields.py`, `test_config_
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 994
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 997
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 992 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 995 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -565,6 +565,17 @@ dentro de frase em prosa e como chave de dicionario. Depois, procure cada um des
   sintaxe e campo do JSON na pratica; `ConfigBroker(**cfg_parcial)` e `CliDeps(**base)`
   recebem o nome do campo por texto. Formato de API, de disco e de banco nao muda junto
   com o codigo.
+- **Campo de formulario e parametro de consulta sao um par com o template.** `request.
+  form.get("acao")` casa com `name="acao"` num `.html`, e o `fields={...}` dos macros
+  esconde a outra ponta num dicionario Jinja que nenhum teste de HTTP enxerga — ele so
+  aparece no HTML renderizado. Renomear a rota sem o template deixa o campo VAZIO: foi
+  assim que expulsar/banir parou, com os dois testes que existiam (so 302, de permissao)
+  passando do mesmo jeito. `test_players.py` compara os dois lados agora.
+- **VALOR comparado como texto no Jinja e pior**, porque nem parece identificador. O
+  padrao da rota (`get("tab", "port")`) e o `{% if tab == 'porta' %}` do template sao a
+  mesma decisao escrita duas vezes: trocar um deixou a aba de portas sem conteudo e sem
+  destaque para quem abre a tela SEM query string — 200, HTML inteiro, nada no log. Ha
+  teste comparando as abas que a rota conhece com as que o template manda.
 - **`@pytest.mark.parametrize("nome", ...)`.** O argname e uma string; o pytest so
   reclama na COLETA, depois que o rename ja passou por tudo.
 - **`monkeypatch.setattr(panel, "nome")`.** Pior que o anterior: se o nome nao existir

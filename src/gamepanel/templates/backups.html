@@ -59,7 +59,7 @@
         <td class="muted nowrap">{{ c.size | filesize }}</td>
         <td class="actions">
           {% if is_admin %}
-            {{ ui.button(_('files.download'), href=url_for('backups.download', sid=server.id, nome=c.name),
+            {{ ui.button(_('files.download'), href=url_for('backups.download', sid=server.id, name=c.name),
                         variant='ghost', size='sm', icon='⬇') }}
             {{ ui.action(url_for('backups.restore', sid=server.id), _('backups.restore'), size='sm',
                        fields={'nome': c.name},

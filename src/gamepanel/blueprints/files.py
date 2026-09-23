@@ -74,7 +74,7 @@ def search(sid: int):
     # `pasta` so entra na URL quando existe: `pasta=` vazio faria a busca procurar na
     # raiz do container em vez da pasta de config do cadastro.
     extras: dict[str, panel.Any] = {"pasta": request.args["path"]} if request.args.get("path") else {}
-    return redirect(url_for("config_quick.index", sid=sid, descobrir=1, **extras))
+    return redirect(url_for("config_quick.index", sid=sid, discover=1, **extras))
 
 
 @bp.post("/servers/<int:sid>/files/save")
@@ -209,7 +209,7 @@ def upload(sid: int):
     # O teto deste request ja foi levantado no _teto_do_corpo (BIG_BODY_ENDPOINTS).
     target_dir = request.form.get("path", "") or panel.FILE_DEFAULT_PATH
     go_back = url_for("files.index", sid=sid, path=target_dir)
-    sent_value = request.files.get("arquivo")
+    sent_value = request.files.get("file")
     if not sent_value or not sent_value.filename:
         flash(panel.translate("flash.pick_a_file"), "error")
         return redirect(go_back)

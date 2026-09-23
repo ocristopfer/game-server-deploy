@@ -36,7 +36,7 @@
        arquivos de config" na tela de Arquivos, rodando a mesma varredura e devolvendo
        a mesma lista — so que la o resultado nao dava para fixar em lugar nenhum. #}
     {{ ui.button(_('config.search_container'), variant='ghost', size='sm', icon='🔎',
-                href=url_for('config_quick.index', sid=server.id, descobrir=1, file=target)) }}
+                href=url_for('config_quick.index', sid=server.id, discover=1, file=target)) }}
   </form>
   {% endif %}
 
@@ -53,7 +53,7 @@
       <form method="post" action="{{ url_for('config_quick.register_file', sid=server.id) }}" class="inline">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="path" value="{{ target }}">
-        <input type="hidden" name="acao" value="remover">
+        <input type="hidden" name="action" value="remover">
         <button class="btn-link" type="submit">{{ _('config.unpin') }}</button>
       </form>
       {% endif %}
@@ -86,7 +86,7 @@
   </p>
   {% else %}
   <p class="muted">
-    Nada encontrado em <code>{{ request.args.get('pasta') or server.config_path or '/opt/game' }}</code>.
+    Nada encontrado em <code>{{ request.args.get('folder') or server.config_path or '/opt/game' }}</code>.
     Ajuste a &quot;Pasta de configuracao&quot; em
     <a href="{{ url_for('servers.edit', sid=server.id) }}">{{ _('files.edit_server') }}</a> ou informe o
     caminho completo do arquivo na barra acima.

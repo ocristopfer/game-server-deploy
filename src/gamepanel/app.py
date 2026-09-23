@@ -2379,14 +2379,14 @@ def _suggestion_config(server: ServerRow, arquivos: list[str], alvo: str,
     """
     if not is_admin():
         return None
-    if request.args.get("descobrir") != "1" and (arquivos or alvo):
+    if request.args.get("discover") != "1" and (arquivos or alvo):
         return None
     # `pasta` deixa procurar noutro lugar que nao a pasta de config do cadastro. E o
     # que a tela de Arquivos oferecia com um botao proprio; agora e um parametro
     # desta busca, que e a unica que existe.
     fallback = server["config_path"] or FILE_DEFAULT_PATH
     try:
-        root = clean_path(request.args.get("pasta", "") or fallback)
+        root = clean_path(request.args.get("folder", "") or fallback)
     except ValueError as exc:
         errors.append(str(exc))
         root = fallback
@@ -2721,10 +2721,10 @@ def _password_and_code_ok(uid: int) -> tuple[sqlite3.Row | None, str]:
     key = f"2fa|{row['username'].lower()}"
     if totp_lockout.remaining(key):
         return None, "Muitas tentativas. Espere alguns minutos."
-    if not verify_password(request.form.get("senha", ""), row["password_hash"]):
+    if not verify_password(request.form.get("password", ""), row["password_hash"]):
         totp_lockout.record_failure(key)
         return None, "Senha incorreta."
-    if not _check_second_factor(row, request.form.get("codigo", "")):
+    if not _check_second_factor(row, request.form.get("code", "")):
         totp_lockout.record_failure(key)
         return None, "Codigo invalido ou ja usado."
     totp_lockout.clear(key)
