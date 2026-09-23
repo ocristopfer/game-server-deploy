@@ -1,4 +1,4 @@
-"""Backend OPNsense: leitura de portas ocupadas (aliases!) e abrir/fechar redirects."""
+"""Backend OPNsense: leitura de portas taken (aliases!) e abrir/fechar redirects."""
 from __future__ import annotations
 
 import pytest
@@ -16,7 +16,7 @@ def _line(**campos):
     return {**base, **campos}
 
 
-# --- leitura de portas ocupadas (o parser que decide se uma porta esta livre) ------------------
+# --- leitura de portas taken (o parser que decide se uma porta esta livre) ------------------
 
 def test_porta_numerica_simples():
     assert busy_ports([_line(protocol="tcp", **{"destination.port": "7660"})], "wan") == {(7660, "tcp")}
@@ -106,7 +106,7 @@ def test_portas_externas_via_http_inclui_aliases_e_desativadas(opn):
 
 def test_abrir_cria_uma_regra_por_porta_e_aplica(opn):
     opn.backend.open_ports(300, "10.0.0.30", PORTAS)
-    rules = list(opn.fake.regras.values())
+    rules = list(opn.fake.rules.values())
     assert sorted((r["destination.port"], r["protocol"]) for r in rules) == [("7001", "udp"), ("7002", "udp")]
     assert {r["descr"] for r in rules} == {"gamepanel:300"}
     assert {r["target"] for r in rules} == {"10.0.0.30"}
@@ -119,7 +119,7 @@ def test_abrir_cria_uma_regra_por_porta_e_aplica(opn):
 def test_abrir_duas_vezes_nao_duplica(opn):
     opn.backend.open_ports(300, "10.0.0.30", PORTAS)
     opn.backend.open_ports(300, "10.0.0.30", PORTAS)
-    assert len(opn.fake.regras) == 2
+    assert len(opn.fake.rules) == 2
 
 
 def test_fechar_apaga_so_as_regras_da_instancia(opn):
@@ -128,7 +128,7 @@ def test_fechar_apaga_so_as_regras_da_instancia(opn):
     opn.backend.open_ports(300, "10.0.0.30", PORTAS)
     opn.backend.open_ports(301, "10.0.0.31", [AllocatedPort(8001, 8001, "udp", "jogo")])
     opn.backend.close_ports(300)
-    remaining = sorted(r["descr"] for r in opn.fake.regras.values())
+    remaining = sorted(r["descr"] for r in opn.fake.rules.values())
     assert remaining == ["", "gamepanel:301", "team-speak"]
 
 
@@ -141,21 +141,21 @@ def test_fechar_nao_confunde_ctid_que_e_prefixo_de_outro(opn):
     opn.backend.open_ports(30, "10.0.0.30", [AllocatedPort(7001, 7001, "udp", "jogo")])
     opn.backend.open_ports(300, "10.0.0.31", [AllocatedPort(8001, 8001, "udp", "jogo")])
     opn.backend.close_ports(30)
-    assert [r["descr"] for r in opn.fake.regras.values()] == ["gamepanel:300"]
+    assert [r["descr"] for r in opn.fake.rules.values()] == ["gamepanel:300"]
 
 
 def test_falha_no_meio_desfaz_o_que_ja_criou(opn):
     opn.fake.falhar_no_add_numero = 2
     with pytest.raises(OpnsenseError, match="rule.target"):
         opn.backend.open_ports(300, "10.0.0.30", PORTAS)
-    assert opn.fake.regras == {}
+    assert opn.fake.rules == {}
 
 
 def test_apply_sem_privilegio_desfaz_e_avisa(opn):
     opn.fake.apply_permitido = False
     with pytest.raises(OpnsenseError, match="HTTP 403"):
         opn.backend.open_ports(300, "10.0.0.30", PORTAS)
-    assert opn.fake.regras == {}
+    assert opn.fake.rules == {}
 
 
 @pytest.mark.parametrize("ip", ["10.0.0.300", "nao-e-ip", "10.0.0.30; drop", ""])
@@ -170,7 +170,7 @@ def test_ip_invalido_nunca_chega_ao_opnsense(opn, ip):
 def test_porta_invalida_e_recusada(opn, porta):
     with pytest.raises(OpnsenseError, match="porta invalida"):
         opn.backend.open_ports(300, "10.0.0.30", [porta])
-    assert opn.fake.regras == {}
+    assert opn.fake.rules == {}
 
 
 def test_credencial_errada_e_erro_sem_segredo(opn):

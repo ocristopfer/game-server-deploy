@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 import gamebroker.services.allocator as alocador
 from gamebroker.domain import wire
 from gamebroker.domain.exceptions import Conflict, NotFound, QuotaExceeded, ValidationError
-from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_FAILED, OP_OK, Db
+from gamebroker.persistence.db import OP_FAILED, OP_OK, STATE_ACTIVE, STATE_DEACTIVATED, STATE_FAILED, Db
 from gamebroker.runtime.base import CtSpec, Installer, Network, Opnsense, Proxmox
 from gamebroker.services.allocator import AllocatedPort
 from gamebroker.services.catalog import NAME_RE, Catalog, Game
@@ -62,7 +62,7 @@ class Service:
         self.network = network
         self.config = config
         self._executar = run
-        self._agora = clock
+        self._now = clock
         # Duas criacoes ao mesmo tempo escolheriam o mesmo IP antes de qualquer uma gravar.
         self._trava = threading.Lock()
 
@@ -114,7 +114,7 @@ class Service:
             raise QuotaExceeded("ja ha uma operacao em andamento; aguarde ela terminar")
         if self.db.count_instances() >= self.config.max_instances:
             raise QuotaExceeded(f"limite de {self.config.max_instances} instancias atingido")
-        since = (self._agora() - timedelta(hours=1)).isoformat(timespec="seconds")
+        since = (self._now() - timedelta(hours=1)).isoformat(timespec="seconds")
         if self.db.creations_since(since) >= self.config.max_creations_per_hour:
             raise QuotaExceeded(f"limite de {self.config.max_creations_per_hour} criacoes por hora atingido")
 
@@ -155,7 +155,7 @@ class Service:
             self._undo(op_id, inst, created, str(error))
             self.db.audit(actor, "criar", inst["name"], "falhou", str(error))
             return
-        self.db.set_state(instance_id, ESTADO_ATIVA)
+        self.db.set_state(instance_id, STATE_ACTIVE)
         self.db.finish_operation(op_id, OP_OK, record_for_the_panel(inst, game, ports))
         self.db.audit(actor, "criar", inst["name"], "ok", f"ctid {inst['ctid']}")
 
@@ -179,7 +179,7 @@ class Service:
             self.db.delete_instance(inst["id"])
             log("reserva liberada")
         else:
-            self.db.set_state(inst["id"], ESTADO_FALHOU, error)
+            self.db.set_state(inst["id"], STATE_FAILED, error)
         self.db.finish_operation(op_id, OP_FAILED)
 
     # --- desativar / remover ---------------------------------------------
@@ -187,20 +187,20 @@ class Service:
     def deactivate(self, instance_id: int, actor: str) -> dict:
         actor = _actor_of(actor)
         inst = self._instance(instance_id)
-        if inst["state"] != ESTADO_ATIVA:
+        if inst["state"] != STATE_ACTIVE:
             raise Conflict("so uma instancia ativa pode ser desativada")
         self._require_from_broker(inst["ctid"])
         self.opnsense.close_ports(inst["ctid"])
         self.proxmox.stop(inst["ctid"])
-        self.db.set_state(instance_id, ESTADO_DESATIVADA)
+        self.db.set_state(instance_id, STATE_DEACTIVATED)
         self.db.audit(actor, "desativar", inst["name"], "ok")
-        return {"id": instance_id, "state": ESTADO_DESATIVADA}
+        return {"id": instance_id, "state": STATE_DEACTIVATED}
 
     def remove(self, instance_id: int, confirmation: object, actor: str,
                 db_only: bool = False) -> dict:
         actor = _actor_of(actor)
         inst = self._instance(instance_id)
-        if inst["state"] not in (ESTADO_DESATIVADA, ESTADO_FALHOU):
+        if inst["state"] not in (STATE_DEACTIVATED, STATE_FAILED):
             raise Conflict("desative a instancia antes de remover")
         if confirmation != inst["name"]:
             raise ValidationError("confirma", "digite o nome exato da instancia para confirmar")
@@ -216,7 +216,7 @@ class Service:
         if self.proxmox.belongs_to_broker(ctid):
             self.proxmox.destroy(ctid)
             return
-        if inst["state"] == ESTADO_FALHOU:
+        if inst["state"] == STATE_FAILED:
             return  # a criacao nem chegou a existir no pool: nao ha CT nosso para destruir
         # "Nao esta no pool" pode ser CT apagado a mao OU CT movido/de outro dono, e o token
         # so enxerga o pool: os dois casos sao indistinguiveis (ambos dao 403). Liberar o

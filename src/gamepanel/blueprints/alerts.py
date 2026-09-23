@@ -59,7 +59,7 @@ def hook_new():
     if how_many >= panel.WEBHOOK_MAX:
         flash(panel.translate("flash.destination_limit", n=panel.WEBHOOK_MAX), "error")
         return redirect(url_for("alerts.index"))
-    data, failure = panel._le_form_webhook()
+    data, failure = panel._read_webhook_form()
     if failure or not data["url"]:
         flash(panel.translate(failure) if failure else panel.translate("flash.need_webhook_url"), "error")
         return redirect(url_for("alerts.index"))
@@ -78,7 +78,7 @@ def hook_save(hid: int):
     if not current_one:
         flash(panel.translate("flash.destination_not_found"), "error")
         return redirect(url_for("alerts.index"))
-    data, failure = panel._le_form_webhook()
+    data, failure = panel._read_webhook_form()
     if failure:
         flash(panel.translate(failure), "error")
         return redirect(url_for("alerts.index"))

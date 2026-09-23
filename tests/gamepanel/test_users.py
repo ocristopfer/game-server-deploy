@@ -42,8 +42,8 @@ def test_redefinir_senha_pela_cli_nao_mexe_no_papel(database):
 
 
 def test_papel_escolhido_na_cli_vale(database):
-    panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERADOR)
-    assert role_of(database, "peao") == panel.ROLE_OPERADOR
+    panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERATOR)
+    assert role_of(database, "peao") == panel.ROLE_OPERATOR
 
 
 # ---------------------------------------------- operador nao chega no que da root
@@ -81,7 +81,7 @@ def test_admin_abre_a_tela_de_usuarios(admin):
 def test_admin_cria_usuario_pela_tela(admin, database, post):
     post(admin, "/users", {"username": "ana", "new": "senha12345",
                                 "confirm": "senha12345", "role": "operador"})
-    assert role_of(database, "ana") == panel.ROLE_OPERADOR
+    assert role_of(database, "ana") == panel.ROLE_OPERATOR
 
 
 def test_senha_curta_nao_cria_usuario(admin, database, post):
@@ -107,7 +107,7 @@ def test_nome_repetido_nao_sobrescreve_o_papel_de_quem_ja_existe(admin, database
                                 "confirm": "senha12345", "role": "operador"})
     post(admin, "/users", {"username": "ana", "new": "senha12345",
                                 "confirm": "senha12345", "role": "admin"})
-    assert role_of(database, "ana") == panel.ROLE_OPERADOR
+    assert role_of(database, "ana") == panel.ROLE_OPERATOR
 
 
 @pytest.fixture
@@ -132,7 +132,7 @@ def test_ninguem_rebaixa_a_si_mesmo(admin, database, post):
 def test_rebaixar_outro_admin_funciona_quando_sobra_admin(ana, admin, database, post):
     post(admin, f"/users/{ana}/role", {"role": "admin"})
     post(admin, f"/users/{ana}/role", {"role": "operador"})
-    assert role_of(database, "ana") == panel.ROLE_OPERADOR
+    assert role_of(database, "ana") == panel.ROLE_OPERATOR
 
 
 def test_ninguem_remove_a_propria_conta(admin, database, post):
@@ -157,7 +157,7 @@ def test_ultimo_administrador_nao_pode_ser_rebaixado(admin, operator, database, 
     post(admin, f"/users/{peao_id}/role", {"role": "admin"})
     assert role_of(database, "peao") == panel.ROLE_ADMIN
     post(admin, f"/users/{peao_id}/role", {"role": "operador"})
-    assert role_of(database, "peao") == panel.ROLE_OPERADOR  # ainda sobra o chefe, entao vale
+    assert role_of(database, "peao") == panel.ROLE_OPERATOR  # ainda sobra o chefe, entao vale
 
     # Agora promove de novo e SOBE so ele: com dois admins, nenhum comando further deve
     # deixar o painel com zero. Confere que o piso e sempre respeitado por baixo.

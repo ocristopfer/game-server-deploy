@@ -214,7 +214,7 @@ def test_tela_do_codigo_sem_passar_pela_senha_volta_para_o_login(client):
 def test_a_verificacao_expira(admin, post, clock_at, client):
     secret, _ = _with_2fa(admin, post, clock_at)
     _password(client, post)
-    clock_at.advance(panel.PRE_2FA_SEGUNDOS + 1)
+    clock_at.advance(panel.PRE_2FA_SECONDS + 1)
     response = post(client, "/login/2fa", {"codigo": _code(secret, clock_at)})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/login")
@@ -223,14 +223,14 @@ def test_a_verificacao_expira(admin, post, clock_at, client):
 
 def test_trava_por_usuario_bloqueia_ate_o_codigo_certo(admin, post, clock_at, client):
     secret, _ = _with_2fa(admin, post, clock_at)
-    for _ in range(panel.LOCKOUT_2FA_TENTATIVAS):
+    for _ in range(panel.LOCKOUT_2FA_TRIES):
         _password(client, post)
         assert post(client, "/login/2fa", {"codigo": "000000"}).status_code == 401
     _password(client, post)
     blocked = post(client, "/login/2fa", {"codigo": _code(secret, clock_at)})
     assert blocked.status_code == 429, "com a trava ligada nem o codigo certo passa"
     assert client.get("/").status_code == 302
-    clock_at.advance(panel.LOCKOUT_2FA_JANELA + 1)
+    clock_at.advance(panel.LOCKOUT_2FA_WINDOW + 1)
     _password(client, post)
     assert post(client, "/login/2fa", {"codigo": _code(secret, clock_at)}).status_code == 302
 
@@ -238,7 +238,7 @@ def test_trava_por_usuario_bloqueia_ate_o_codigo_certo(admin, post, clock_at, cl
 def test_a_trava_e_do_usuario_e_nao_do_ip(admin, post, clock_at):
     """Trocar de IP nao devolve as tentativas: a chave e o nome do usuario."""
     _with_2fa(admin, post, clock_at)
-    for _ in range(panel.LOCKOUT_2FA_TENTATIVAS):
+    for _ in range(panel.LOCKOUT_2FA_TRIES):
         other = panel.app.test_client()
         _password(other, post)
         post(other, "/login/2fa", {"codigo": "000000"})
@@ -302,7 +302,7 @@ def test_codigos_novos_pedem_senha(admin, post, clock_at):
 def _two_users(post, clock_at):
     """Admin logado e uma operadora `ana` com 2FA ativo. Devolve (admin, id da ana)."""
     panel.ensure_admin_user("chefe", "senha-do-chefe")
-    panel.ensure_admin_user("ana", "senha-da-ana", panel.ROLE_OPERADOR)
+    panel.ensure_admin_user("ana", "senha-da-ana", panel.ROLE_OPERATOR)
     ana = panel.app.test_client()
     _password(ana, post, "ana", "senha-da-ana")
     _enable_2fa(ana, post, clock_at)
@@ -322,7 +322,7 @@ def test_admin_desliga_o_2fa_de_outra_pessoa(client, post, clock_at):
 
 def test_operador_nao_desliga_o_2fa_de_ninguem(client, post, clock_at):
     admin, uid = _two_users(post, clock_at)
-    panel.ensure_admin_user("beto", "senha-do-beto", panel.ROLE_OPERADOR)
+    panel.ensure_admin_user("beto", "senha-do-beto", panel.ROLE_OPERATOR)
     beto = panel.app.test_client()
     _password(beto, post, "beto", "senha-do-beto")
     assert post(beto, f"/users/{uid}/2fa/off").status_code == 403

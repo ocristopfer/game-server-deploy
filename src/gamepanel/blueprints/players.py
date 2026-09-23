@@ -41,9 +41,9 @@ def setup(sid: int):
              "tem_api": False, "udp_do_jogo": 0, "udp_mudas": False,
              "teste": None, "teste_http": None, "erro_log": "", "erro_http": ""}
     if tab == "http":
-        data.update(panel._aba_http(server, http, should_test))
+        data.update(panel._http_tab(server, http, should_test))
     elif tab == "log":
-        data.update(panel._aba_log(server, join_re, leave_re, log_path, should_test))
+        data.update(panel._log_tab(server, join_re, leave_re, log_path, should_test))
     else:
         data.update(panel._port_tab(server))
 

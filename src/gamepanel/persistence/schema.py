@@ -245,8 +245,8 @@ def connect(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def init_db(db_path: str, webhook_padrao: str, eventos_padrao: str,
-            agora: Callable[[], str]) -> None:
+def init_db(db_path: str, default_webhook: str, default_events: str,
+            now: Callable[[], str]) -> None:
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = connect(db_path)
     with conn:
@@ -262,12 +262,12 @@ def init_db(db_path: str, webhook_padrao: str, eventos_padrao: str,
             # rodar de novo nao faz nada, e um banco novo (que ja nasce certo) nem entra.
             if old in cols and new not in cols:
                 conn.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
-        _migra_webhook_unico(conn, webhook_padrao, eventos_padrao, agora)
+        _migrate_single_webhook(conn, default_webhook, default_events, now)
     conn.close()
 
 
-def _migra_webhook_unico(conn: sqlite3.Connection, webhook_padrao: str,
-                         eventos_padrao: str, agora: Callable[[], str]) -> None:
+def _migrate_single_webhook(conn: sqlite3.Connection, default_webhook: str,
+                            default_events: str, now: Callable[[], str]) -> None:
     """Leva o webhook antigo (settings.webhook_url) para a tabela de destinos.
 
     A marca 'webhooks_migrado' e o que impede a volta: sem ela, quem apagasse o unico
@@ -287,7 +287,7 @@ def _migra_webhook_unico(conn: sqlite3.Connection, webhook_padrao: str,
     ).fetchone()
     # Sem nada no banco vale o do deploy: GAMEPANEL_WEBHOOK_URL era o valor inicial da
     # URL unica e continua sendo o do primeiro destino.
-    url = (old_one["value"] if old_one else "").strip() or webhook_padrao.strip()
+    url = (old_one["value"] if old_one else "").strip() or default_webhook.strip()
     if not url:
         return
     ev = conn.execute(
@@ -296,7 +296,7 @@ def _migra_webhook_unico(conn: sqlite3.Connection, webhook_padrao: str,
     conn.execute(
         "INSERT INTO webhooks (name, url, events, enabled, created_at)"
         " VALUES (?, ?, ?, 1, ?)",
-        ("Webhook", url, (ev["value"] if ev else eventos_padrao), agora()),
+        ("Webhook", url, (ev["value"] if ev else default_events), now()),
     )
 
 

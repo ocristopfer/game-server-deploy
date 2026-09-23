@@ -143,7 +143,7 @@ def pve():
     config = ConfigProxmox(
         node="pve", pool="games", storage="vm-pool", bridge="vmbr1", gateway="192.168.2.1",
         template="vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
-        chaves_ssh=("ssh-ed25519 AAAAC3Nza-chave-de-teste broker@teste",))
+        ssh_keys=("ssh-ed25519 AAAAC3Nza-chave-de-teste broker@teste",))
     client = Client(server.url, {"Authorization": f"PVEAPIToken={TOKEN_PVE}"})
     yield SimpleNamespace(fake=fake, server=server, config=config, esperas=waits,
                           backend=Proxmox(client, config, sleep=waits.append))

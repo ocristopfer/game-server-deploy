@@ -26,7 +26,7 @@ from gamepanel.runtime.ssh import RemoteError, ServerLike
 # (conn, evento, titulo, detalhe) -> saiu para alguem?
 Notifica = Callable[..., bool]
 # (conn, server_id) -> houve acao do painel neste servidor ha pouco?
-JobRecente = Callable[..., bool]
+RecentJob = Callable[..., bool]
 
 # Quem responde a uma sondagem de verdade pode ficar MUDO; contagem por log nao
 # pergunta nada ao jogo, entao nao tem o que travar.
@@ -45,7 +45,7 @@ class AlertDeps(NamedTuple):
     """
 
     notify: Notifica
-    recent_job: JobRecente
+    recent_job: RecentJob
     player_source: Callable[[ServerLike], str]
     server_players: Callable[..., dict]
     server_metrics: Callable[..., dict]

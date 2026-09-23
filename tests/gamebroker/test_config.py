@@ -53,7 +53,7 @@ def test_ambiente_completo_carrega(env):
     assert cfg.ips[-1] == "192.168.2.40"
     assert (cfg.ctids.start, cfg.ctids.stop - 1) == (300, 399)
     assert cfg.proxmox_fingerprint == "9f" * 32, "normalizada (sem dois-pontos, minuscula)"
-    assert cfg.proxmox.chaves_ssh == (CHAVE_PUBLICA, CHAVE_DO_PAINEL), "as DUAS chaves entram no CT novo"
+    assert cfg.proxmox.ssh_keys == (CHAVE_PUBLICA, CHAVE_DO_PAINEL), "as DUAS chaves entram no CT novo"
     assert cfg.ssh.blob == BLOB
     assert (cfg.max_instances, cfg.max_creations_per_hour) == (8, 4)
     assert cfg.opnsense_wan == "wan"
@@ -224,7 +224,7 @@ def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
     assert CHAVE_PUBLICA in ct["chaves"], "chave do broker: para instalar"
     assert CHAVE_DO_PAINEL in ct["chaves"], "chave do painel: para operar depois"
     assert ct["net0"].endswith("ip=192.168.2.30/24,gw=192.168.2.1,type=veth")
-    assert sorted(r["destination.port"] for r in opn.fake.regras.values()) == ["7001", "7002"]
+    assert sorted(r["destination.port"] for r in opn.fake.rules.values()) == ["7001", "7002"]
     assert any("bash ct-install.sh" in c for c in executor.commands())
     assert (Path(env_local["BROKER_STATE_DIR"]) / "broker.db").exists()
 

@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_config_f
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 974
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 971
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -176,6 +176,8 @@ src/
       qr.py               gerador de QR, so stdlib
       passwords.py        scrypt (hash, conferencia e a regra de senha boa)
       csrf.py             o token da sessao e a conferencia do POST
+    services/            decisao pura (sem Flask, sem SQL): alerta, grafico, jogador,
+                         historico, trava de tentativas (auth_service), ...
     integrations/
       broker_client.py    cliente do broker (so stdlib, TLS fixado por impressao); ver "Broker"
     templates/
@@ -312,6 +314,29 @@ runtime, sem lint nem teste acusando.
   devolve `Any`, entao `row["x"]` com `row` nulo nao era erro para ninguem; uma funcao
   que declara `-> Row | None` faz o mypy apontar. Foram tres, todas com o mesmo desenho:
   sessao de um usuario APAGADO enquanto ela estava aberta.
+
+### Politica que guarda estado sai do `app.py` com relogio injetavel
+
+A trava de tentativas (senha e codigo) mora em `services/auth_service.py`, como a classe
+`Lockout`: limite, janela e um dicionario de chave -> horarios das falhas. O `app.py` so
+tem duas instancias (`login_lockout`, `totp_lockout`) e os blueprints chamam
+`panel.login_lockout.remaining(key)`.
+
+- **Sao DUAS instancias, nao uma com dois limites.** Errar a senha cinco vezes nao pode
+  gastar as tentativas de quem ja passou dela e esta digitando o codigo. As chaves ate
+  seriam distintas (`ip|usuario` x `2fa|usuario`), mas os limites diferem (5/5min contra
+  5/15min) e o `remaining()` de uma trava so sabe o limite dela.
+- **O relogio entra pelo construtor, e `clock=time.time` na assinatura seria um BUG.**
+  Valor padrao e avaliado uma vez, na definicao do metodo: ele guardaria a funcao
+  original, e o `monkeypatch.setattr(time, "time", ...)` de `test_2fa.py` passaria a nao
+  ter efeito nenhum — os testes de trava continuariam verdes sem exercitar a janela. Por
+  isso o padrao e `None` e `_now()` resolve o nome no modulo a cada chamada. Ha um teste
+  so para isso.
+- **`reset()` existe para o `conftest.py`**, que limpa as duas travas entre um teste e
+  outro: sem isso um teste que erra a senha cinco vezes trancaria o proximo.
+- O estado e de MEMORIA de proposito: o painel roda com um worker so, e gravar no banco
+  custaria uma escrita por tentativa errada — que e exatamente o que um ataque produz em
+  volume.
 
 ### A regra que sustenta o resto: uma lista, um lugar
 

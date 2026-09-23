@@ -18,7 +18,7 @@ from gamebroker.services.instance_service import Service
 
 TOKEN_MINIMO = 32
 MAX_BODY = 64 * 1024
-_OPERACAO_RE = re.compile(r"[0-9a-f]{32}", re.ASCII)
+_OPERATION_RE = re.compile(r"[0-9a-f]{32}", re.ASCII)
 ACTOR_HEADER = "X-Actor"
 
 log = logging.getLogger("broker")
@@ -87,7 +87,7 @@ def create_app(service: Service, token: str, allowed_ips: tuple[str, ...] = ()) 
 
     @app.get("/v1/operations/<op_id>")
     def operation(op_id: str):
-        if not _OPERACAO_RE.fullmatch(op_id):
+        if not _OPERATION_RE.fullmatch(op_id):
             raise ValidationError("operacao", "identificador invalido")
         return jsonify(service.operation(op_id))
 

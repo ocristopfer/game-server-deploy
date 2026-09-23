@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Painel administrativo dos servidores de jogos.
+"""Painel administrativo dos servers de jogos.
 
 Roda num container proprio e fala SSH *direto* com cada container de jogo — o host
 Proxmox nao entra no caminho, o painel nao tem acesso a ele nem conhece `pct`.
@@ -82,6 +82,7 @@ from gamepanel.runtime import terminal as term_runtime
 from gamepanel.security import csrf, passwords, totp
 from gamepanel.services import (
     alert_service,
+    auth_service,
     broker_service,
     chart_service,
     job_service,
@@ -172,7 +173,7 @@ BROKER_TOKEN_FILE = settings.broker_token_file
 BROKER_CERT_SHA256 = settings.broker_cert_sha256
 BROKER_POLL = settings.broker_poll
 # Voltas seguidas sem resposta do broker antes de dar o job por perdido.
-BROKER_FALHAS_MAX = 15
+BROKER_FAILURES_MAX = 15
 # Nomes de MODULO, e nao `settings.x` direto dentro de `_configure_broker`: os testes
 # trocam `panel.X` por falso para exercitar cada configuracao ruim, e uma leitura do
 # `settings` ali dentro ignoraria a troca.
@@ -331,12 +332,14 @@ USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 # de arquivos e cadastro de servidor sao de admin; operar quem ja esta cadastrado
 # (start/stop/update, configuracao do jogo, log, jogadores) e de operador.
 ROLE_ADMIN = "admin"
-ROLE_OPERADOR = "operador"
-ROLES = (ROLE_ADMIN, ROLE_OPERADOR)
+# O VALOR e a coluna `role` no banco: mudar "operador" para "operator" rebaixaria todo
+# operador ja cadastrado a "papel desconhecido". So o nome da constante e traduzido.
+ROLE_OPERATOR = "operador"
+ROLES = (ROLE_ADMIN, ROLE_OPERATOR)
 # Chave de catalogo, nao o texto: quem le a tela escolhe o idioma (`i18n`).
 ROLE_LABELS = {
     ROLE_ADMIN: "role.admin",
-    ROLE_OPERADOR: "role.operator",
+    ROLE_OPERATOR: "role.operator",
 }
 PASSWORD_MIN = passwords.MIN_LENGTH
 
@@ -446,29 +449,17 @@ verify_password = passwords.verify_password
 
 # ------------------------------------------------------- auth / csrf / brute force
 
-_login_fails: dict[str, list[float]] = {}
-_login_lock = threading.Lock()
 LOCKOUT_TRIES = 5
 LOCKOUT_WINDOW = 300.0
+# O chute de 6 digitos tem 3 numeros validos em 10^6: por isso a trava do codigo e por
+# USUARIO (nao por IP, que um atacante troca) e mais longa que a da senha.
+LOCKOUT_2FA_TRIES = 5
+LOCKOUT_2FA_WINDOW = 900.0
 
-
-def _lockout_remaining(key: str, tries: int = LOCKOUT_TRIES, window: float = LOCKOUT_WINDOW) -> int:
-    with _login_lock:
-        fails = [t for t in _login_fails.get(key, []) if time.time() - t < window]
-        _login_fails[key] = fails
-        if len(fails) < tries:
-            return 0
-        return int(window - (time.time() - fails[0])) + 1
-
-
-def _record_fail(key: str) -> None:
-    with _login_lock:
-        _login_fails.setdefault(key, []).append(time.time())
-
-
-def _clear_fails(key: str) -> None:
-    with _login_lock:
-        _login_fails.pop(key, None)
+# A chave da trava da senha e `ip|usuario` e a do codigo e `2fa|usuario`: instancias
+# separadas porque os limites diferem, e nao porque as chaves colidiriam.
+login_lockout = auth_service.Lockout(LOCKOUT_TRIES, LOCKOUT_WINDOW)
+totp_lockout = auth_service.Lockout(LOCKOUT_2FA_TRIES, LOCKOUT_2FA_WINDOW)
 
 
 def logged_user() -> sqlite3.Row | None:
@@ -558,7 +549,7 @@ ENDPOINTS_WITHOUT_2FA = frozenset({
 
 
 @app.before_request
-def _exige_segundo_fator():
+def _requires_second_factor():
     if not REQUIRE_2FA or request.endpoint in ENDPOINTS_WITHOUT_2FA or request.endpoint is None:
         return None
     user = logged_user()
@@ -606,7 +597,7 @@ def current_language() -> str:
     """
     if not has_app_context():
         return DEFAULT_LANG
-    chosen_one = getattr(g, "_idioma", None)
+    chosen_one = getattr(g, "_language", None)
     if chosen_one is not None:
         return chosen_one
     user = logged_user()
@@ -617,14 +608,14 @@ def current_language() -> str:
         chosen_one = i18n.from_header(request.headers.get("Accept-Language"))
     else:
         chosen_one = DEFAULT_LANG
-    g._idioma = chosen_one
+    g._language = chosen_one
     return chosen_one
 
 
-def translate(key: str, **campos: object) -> str:
+def translate(key: str, **fields: object) -> str:
     """O `_()` das telas e das mensagens: a frase daquela chave, no idioma
     deste pedido."""
-    return i18n.translate(key, current_language(), **campos)
+    return i18n.translate(key, current_language(), **fields)
 
 
 def error_text(exc: BaseException) -> str:
@@ -649,7 +640,7 @@ def label_for_db(key: str) -> str:
     return i18n.translate(key, DEFAULT_LANG)
 
 
-def translate_html(key: str, **campos: object) -> Markup:
+def translate_html(key: str, **fields: object) -> Markup:
     """O `_h()` das telas: frase que TRAZ marcacao (`<strong>`, `<code>`).
 
     Existe porque paragrafo de ajuda nao se parte: quebrar o texto em cada `<strong>`
@@ -664,7 +655,7 @@ def translate_html(key: str, **campos: object) -> Markup:
     # A frase vem de `i18n`, que e codigo deste repositorio, e todo campo passou por
     # `escape` na linha de baixo: nao ha entrada de usuario chegando crua aqui.
     return Markup(i18n.translate(  # noqa: S704
-        key, current_language(), **{name: escape(value) for name, value in campos.items()}
+        key, current_language(), **{name: escape(value) for name, value in fields.items()}
     ))
 
 
@@ -938,12 +929,12 @@ def candidate_ports(server: ServerRow) -> tuple[list[int], list[int], dict, str]
     return port_probe.candidate_ports(ssh_output, server, server["game_port"])
 
 
-def probe_http_ports(server: ServerRow, portas: list[int]) -> tuple[list[dict], list[int], str]:
-    return port_probe.probe_http_ports(ssh_output, server, portas, HTTP_PROBE_TIMEOUT)
+def probe_http_ports(server: ServerRow, ports: list[int]) -> tuple[list[dict], list[int], str]:
+    return port_probe.probe_http_ports(ssh_output, server, ports, HTTP_PROBE_TIMEOUT)
 
 
-def probe_ports(host: str, portas: list[int]) -> list[dict]:
-    return port_probe.probe_ports(host, portas, QUERY_TIMEOUT)
+def probe_ports(host: str, ports: list[int]) -> list[dict]:
+    return port_probe.probe_ports(host, ports, QUERY_TIMEOUT)
 
 
 def read_log_lines(server: ServerRow, limit: int = LOG_SCAN_MAX) -> list[str]:
@@ -1071,7 +1062,7 @@ def server_jobs(conn: sqlite3.Connection, sid: int, limit: int) -> list:
     return jobs_repo.of_server(conn, sid, limit, cut, values)
 
 
-def _id_inserido(cur: sqlite3.Cursor) -> int:
+def _inserted_id(cur: sqlite3.Cursor) -> int:
     """O id da linha recem-inserida.
 
     `lastrowid` e Optional no tipo porque um cursor pode nao ter inserido nada; depois
@@ -1284,7 +1275,7 @@ def send_webhook(url: str, text: str) -> str:
     return webhook_client.send(url, text, WEBHOOK_TIMEOUT, WEBHOOK_UA)
 
 
-def notify(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str = "") -> bool:
+def notify(conn: sqlite3.Connection, event: str, title: str, detail: str = "") -> bool:
     """Manda o alerta para cada destino que pediu esse evento.
 
     Devolve se saiu para ALGUEM. Um destino fora do ar (Discord de pe, Slack caido) nao
@@ -1297,11 +1288,11 @@ def notify(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str = "")
         # Registrado de proposito: "o alerta disparou e ninguem pediu por ele" e a causa
         # mais comum de canal mudo, e e indistinguivel de "nao aconteceu nada" para quem
         # so olha o Discord. No diario as duas viram coisas diferentes.
-        _record_alert(conn, event, titulo, detalhe, "", "sem-destino")
+        _record_alert(conn, event, title, detail, "", "sem-destino")
         return False
-    text = f"**{titulo}**"
-    if detalhe:
-        text += f"\n{detalhe}"
+    text = f"**{title}**"
+    if detail:
+        text += f"\n{detail}"
     left = False
     for target in targets:
         failure = send_webhook(target["url"], text)
@@ -1309,16 +1300,16 @@ def notify(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str = "")
             app.logger.warning(
                 "alerta '%s' nao saiu para '%s': %s", event, target["name"], failure
             )
-            _record_alert(conn, event, titulo, detalhe, target["name"],
+            _record_alert(conn, event, title, detail, target["name"],
                              "falhou", failure)
         else:
             left = True
-            _record_alert(conn, event, titulo, detalhe, target["name"], "enviado")
+            _record_alert(conn, event, title, detail, target["name"], "enviado")
     return left
 
 
-def _record_alert(conn: sqlite3.Connection, event: str, titulo: str, detalhe: str,
-                     target: str, status: str, erro: str = "") -> None:
+def _record_alert(conn: sqlite3.Connection, event: str, title: str, detail: str,
+                     target: str, status: str, error: str = "") -> None:
     """Grava uma linha do diario.
 
     Engole o proprio erro de proposito: o diario existe para explicar o alerta, e seria
@@ -1326,7 +1317,7 @@ def _record_alert(conn: sqlite3.Connection, event: str, titulo: str, detalhe: st
     """
     try:
         with conn:
-            alerts_repo.log(conn, now_iso(), event, titulo, detalhe, target, status, erro)
+            alerts_repo.log(conn, now_iso(), event, title, detail, target, status, error)
     except sqlite3.Error:
         app.logger.exception("nao consegui gravar no diario de alertas")
 
@@ -1336,7 +1327,7 @@ def recent_alerts(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:
     return [dict(l) for l in alerts_repo.recent(conn, limit)]
 
 
-def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
+def _recent_job(conn: sqlite3.Connection, sid: int) -> bool:
     """Teve acao do painel neste servidor ha pouco?
 
     Reiniciar pelo botao derruba o servico por alguns segundos, e isso NAO e uma queda.
@@ -1348,7 +1339,7 @@ def _job_recente(conn: sqlite3.Connection, sid: int) -> bool:
 
 # server_id -> ultimo estado visto. Fica so na memoria de proposito: reiniciar o painel
 # refaz a linha de base, e ninguem recebe um alerta de algo que ja estava assim.
-_estado_monitor: dict[int, dict] = {}
+_monitor_state: dict[int, dict] = {}
 _last_monitor = 0.0
 _last_state = 0.0
 _last_disk = 0.0
@@ -1363,10 +1354,10 @@ def _alert_deps() -> alert_service.AlertDeps:
     — um bundle congelado no import passaria por cima da troca em silencio.
     """
     return alert_service.AlertDeps(
-        notify=notify, recent_job=_job_recente, player_source=player_source,
+        notify=notify, recent_job=_recent_job, player_source=player_source,
         server_players=server_players, server_metrics=server_metrics,
         read_log_lines=read_log_lines, stored_value=_stored_value,
-        human_size=_human_size, monitor_state=_estado_monitor,
+        human_size=_human_size, monitor_state=_monitor_state,
         logger=app.logger, mute_rounds=MUTE_ROUNDS, log_err_lines=LOG_ERR_LINES,
         log_err_cooldown=LOG_ERR_COOLDOWN,
     )
@@ -1434,19 +1425,19 @@ _online_text = alert_service.online_text
 # do numero que a tela mostra.
 
 # Um alerta de jogador por servidor de cada vez: o stream e a volta do monitor mexem no
-# MESMO _estado_monitor[sid], e sem isto os dois poderiam avisar a mesma entrada.
-_jogadores_locks: dict[int, threading.Lock] = {}
-_jogadores_meta = threading.Lock()
+# MESMO _monitor_state[sid], e sem isto os dois poderiam avisar a mesma entrada.
+_players_locks: dict[int, threading.Lock] = {}
+_players_locks_lock = threading.Lock()
 
 
 def players_lock(sid: int) -> threading.Lock:
-    with _jogadores_meta:
-        return _jogadores_locks.setdefault(sid, threading.Lock())
+    with _players_locks_lock:
+        return _players_locks.setdefault(sid, threading.Lock())
 
 
 def _log_stream_deps() -> log_stream.LogStreamDeps:
     return log_stream.LogStreamDeps(
-        ssh_argv=ssh_argv, monitor_state=_estado_monitor,
+        ssh_argv=ssh_argv, monitor_state=_monitor_state,
         invalidate_players=invalidate_players, connect=_connect,
         webhook_config=webhook_config, players_lock=players_lock,
         players_alert=_players_alert, logger=app.logger,
@@ -1474,16 +1465,16 @@ def _stream_signature(server) -> tuple:
     return log_stream.stream_signature(server, _stored_value)
 
 
-def wanted_streams(servidores, cfg) -> dict[int, tuple]:
+def wanted_streams(servers, cfg) -> dict[int, tuple]:
     return log_stream.wanted_streams(
-        servidores, cfg, LOG_STREAM, player_source, _stored_value)
+        servers, cfg, LOG_STREAM, player_source, _stored_value)
 
 
 # `_LogStream` vai por lambda: o nome e resolvido neste modulo a cada abertura, que e o
 # que deixa o teste do supervisor troca-lo por um dublê sem SSH.
 _supervisor = log_stream.Supervisor(lambda server, signature: _LogStream(server, signature))
 # O MESMO dicionario do supervisor: a fixture do teste o limpa por este nome.
-_streams = _supervisor.abertos
+_streams = _supervisor.open_ones
 
 
 def live_streams() -> int:
@@ -1507,10 +1498,10 @@ class _Rhythm(NamedTuple):
     na cabeca: aqui e "o que vence agora", la e "o que fazer com cada servidor".
     """
 
-    ver_estado: bool
-    quer_jogadores: bool
-    recursos: set
-    ver_log: bool
+    see_state: bool
+    wants_players: bool
+    resources: set
+    see_log: bool
 
 
 def _monitor_rhythm(cfg: dict, agora: float, force: bool) -> _Rhythm | None:
@@ -1558,10 +1549,10 @@ def _short_round(conn, server, anterior, cfg, rhythm: _Rhythm) -> None:
     inventa alerta.
 
     Contagem por log fica de fora: ela custa SSH, e pagar isso a cada 15s so para reler
-    o mesmo log inteiro nao se sustenta. Esses servidores continuam avisando no ritmo
+    o mesmo log inteiro nao se sustenta. Esses servers continuam avisando no ritmo
     da volta completa.
     """
-    if not rhythm.quer_jogadores or anterior is None:
+    if not rhythm.wants_players or anterior is None:
         return
     if player_source(server) not in PLAYER_FAST_SOURCES:
         return
@@ -1584,18 +1575,18 @@ def _server_alerts(conn, server, state, anterior, cfg, rhythm: _Rhythm) -> None:
     if cfg["events"] & {"travou", "respondeu"}:
         _mute_alert(conn, server, state, anterior)
 
-    if rhythm.quer_jogadores:
+    if rhythm.wants_players:
         # Com stream de log ligado esta chamada vira rede de seguranca: se ele tiver
         # caido, ninguem fica sem aviso — so mais devagar. O lock e o que impede os dois
         # de avisarem a mesma entrada.
         with players_lock(int(server["id"])):
             _players_alert(conn, server, state["service"], anterior, cfg)
 
-    if rhythm.ver_log:
+    if rhythm.see_log:
         _log_alert(conn, server, anterior)
 
     for event, check_it in RESOURCE_ALERTS.items():
-        if event in rhythm.recursos:
+        if event in rhythm.resources:
             check_it(conn, server, cfg)
 
 
@@ -1615,9 +1606,9 @@ def monitor_servers(force: bool = False) -> int:
     servers = servers_repo.all_ordered(conn)
     for server in servers:
         sid = int(server["id"])
-        previous = _estado_monitor.get(sid)
+        previous = _monitor_state.get(sid)
 
-        if not rhythm.ver_estado:
+        if not rhythm.see_state:
             _short_round(conn, server, previous, cfg, rhythm)
             continue
 
@@ -1626,7 +1617,7 @@ def monitor_servers(force: bool = False) -> int:
             # Primeira olhada: so anota. Alertar aqui encheria o canal de "esta parado"
             # toda vez que o painel reiniciasse. Vale para o contador de restarts do
             # mesmo jeito: o que interessa e quanto ele sobe DAQUI para a frente.
-            _estado_monitor[sid] = {"reachable": state["reachable"],
+            _monitor_state[sid] = {"reachable": state["reachable"],
                                     "service": state["service"],
                                     "restarts": int(state.get("restarts") or 0)}
             continue
@@ -1642,11 +1633,11 @@ def monitor_servers(force: bool = False) -> int:
     return len(servers)
 
 
-def _forget_removed_servers(servidores) -> None:
+def _forget_removed_servers(servers) -> None:
     """Servidor removido do painel nao pode ficar guardando estado para sempre."""
-    alive_ids = {int(s["id"]) for s in servidores}
-    for dead_one in [k for k in _estado_monitor if k not in alive_ids]:
-        _estado_monitor.pop(dead_one, None)
+    alive_ids = {int(s["id"]) for s in servers}
+    for dead_one in [k for k in _monitor_state if k not in alive_ids]:
+        _monitor_state.pop(dead_one, None)
 
 
 # -------------------------------------------------------- amostras de uso
@@ -1853,26 +1844,22 @@ def safe_target(raw: str) -> str:
 
 
 # Tempo para digitar o codigo depois de acertar a senha.
-PRE_2FA_SEGUNDOS = 300
-# O chute de 6 digitos tem 3 numeros validos em 10^6: por isso a trava do codigo e por USUARIO
-# (nao por IP, que um atacante troca) e mais longa que a da senha.
-LOCKOUT_2FA_TENTATIVAS = 5
-LOCKOUT_2FA_JANELA = 900.0
+PRE_2FA_SECONDS = 300
 
 
-def _abre_sessao(row: sqlite3.Row, proximo: str = ""):
+def _open_session(row: sqlite3.Row, next_one: str = ""):
     session.clear()
     session["uid"] = row["id"]
     session["username"] = row["username"]
     session.permanent = True
     csrf_token()
-    return redirect(proximo or url_for("dashboard.index"))
+    return redirect(next_one or url_for("dashboard.index"))
 
 
-def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
+def _check_second_factor(row: sqlite3.Row, typed: str) -> bool:
     """Codigo do aplicativo OU um codigo de recuperacao (que se gasta). Vale so uma vez."""
     conn = db()
-    step = totp.verify(row["totp_secret"], digitado, time.time(), row["totp_last_step"])
+    step = totp.verify(row["totp_secret"], typed, time.time(), row["totp_last_step"])
     if step is not None:
         with conn:
             # O `WHERE` faz do UPDATE o portao: dois pedidos com o mesmo codigo ao mesmo tempo
@@ -1882,7 +1869,7 @@ def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
         stored = json.loads(row["totp_recovery"] or "[]")
     except ValueError:
         stored = []
-    leftover = totp.consume(digitado, stored)
+    leftover = totp.consume(typed, stored)
     if leftover is None:
         return False
     with conn:
@@ -1906,7 +1893,7 @@ def _port_tab(server: ServerRow) -> dict:
     }
 
 
-def _aba_http(server: ServerRow, http: dict, testar: bool) -> dict:
+def _http_tab(server: ServerRow, http: dict, should_test: bool) -> dict:
     """Aba 2: quais portas TCP falam HTTP, e o teste da URL escolhida."""
     _udp, candidates, owners, warning_text = candidate_ports(server)
     found, silent_ones, probe_failure = probe_http_ports(server, candidates)
@@ -1917,7 +1904,7 @@ def _aba_http(server: ServerRow, http: dict, testar: bool) -> dict:
              # nenhum, a tela explica que a API costuma vir desligada de fabrica.
              "tem_api": any(not a.get("generico") for a in found),
              "teste_http": None, "erro_http": ""}
-    if not testar:
+    if not should_test:
         return output
     try:
         # O teste usa os valores do FORMULARIO, nao os do banco: e o unico jeito de
@@ -1939,8 +1926,8 @@ def _aba_http(server: ServerRow, http: dict, testar: bool) -> dict:
     return output
 
 
-def _aba_log(server: ServerRow, join_re: str, leave_re: str, log_path: str,
-             testar: bool) -> dict:
+def _log_tab(server: ServerRow, join_re: str, leave_re: str, log_path: str,
+             should_test: bool) -> dict:
     """Aba 3: linhas do log com cara de entrada/saida e o teste dos padroes."""
     output = {"amostras": [], "teste": None, "erro_log": ""}
     try:
@@ -1952,7 +1939,7 @@ def _aba_log(server: ServerRow, join_re: str, leave_re: str, log_path: str,
         keys = re.compile("|".join(LOG_HINT_WORDS), re.I)
         samples = [ln for ln in lines_of if keys.search(ln)][-120:]
         output["amostras"] = samples
-        if not testar:
+        if not should_test:
             return output
         join_pattern = compile_pattern(join_re, "pattern.join")
         if not join_pattern:
@@ -2258,8 +2245,8 @@ RESTORE_SCRIPT = backups_rt.RESTORE_SCRIPT
 UPLOAD_SCRIPT = files_rt.UPLOAD_SCRIPT
 
 
-def ssh_stream_in(server, remote_cmd: str, origem, timeout: int) -> str:
-    return files_rt.ssh_stream_in(ssh_argv, server, remote_cmd, origem, timeout, UPLOAD_CHUNK)
+def ssh_stream_in(server, remote_cmd: str, source, timeout: int) -> str:
+    return files_rt.ssh_stream_in(ssh_argv, server, remote_cmd, source, timeout, UPLOAD_CHUNK)
 
 
 def find_config_files(server: ServerRow, root: str) -> list[dict]:
@@ -2421,7 +2408,7 @@ def _ident(value: str) -> str:
     return urllib.parse.quote(value or "", safe="")
 
 
-def enriquece_settings(doc: gameconf.ConfigFile, file_name: str) -> None:
+def enrich_settings(doc: gameconf.ConfigFile, file_name: str) -> None:
     """Anexa a descricao do catalogo a cada campo lido do arquivo.
 
     Campo sem entrada no catalogo fica exatamente como antes (texto livre): o objetivo
@@ -2453,7 +2440,7 @@ def _edits_from_form(form, file_name: str = "") -> tuple[list[gameconf.Edit], li
     return edits, failures
 
 
-def _edit_from_row(form, i: int, file_name: str, erros: list[str]) -> gameconf.Edit | None:
+def _edit_from_row(form, i: int, file_name: str, errors: list[str]) -> gameconf.Edit | None:
     """Uma linha do formulario vira uma alteracao — ou nada.
 
     Nada acontece em tres casos: linha de "adicionar configuracao" deixada em branco,
@@ -2474,7 +2461,7 @@ def _edit_from_row(form, i: int, file_name: str, erros: list[str]) -> gameconf.E
     if spec:
         problem = spec.validate(value)
         if problem:
-            erros.append(f"{spec.label or key}: {problem}")
+            errors.append(f"{spec.label or key}: {problem}")
             return None
         value = spec.from_display(value)
 
@@ -2531,20 +2518,20 @@ def _fire(task) -> None:
     threading.Thread(target=task, daemon=True).start()
 
 
-def _update_job(job_id: int, **campos) -> None:
+def _update_job(job_id: int, **fields) -> None:
     # Conexao propria: quem chama esta vivo numa thread fora do contexto do request. Os
     # NOMES das colunas vem dos chamadores (fixos); so os valores viajam como parametro.
     conn = _connect()
     try:
         with conn:
-            jobs_repo.set_fields(conn, job_id, campos)
+            jobs_repo.set_fields(conn, job_id, fields)
     finally:
         conn.close()
 
 
-def _fecha_job(job_id: int, status: str, output: str, codigo: int | None = None,
+def _finish_job(job_id: int, status: str, output: str, exit_code: int | None = None,
                server_id: int | None = None) -> None:
-    fields: dict = {"status": status, "exit_code": codigo, "output": output.strip()[-200000:],
+    fields: dict = {"status": status, "exit_code": exit_code, "output": output.strip()[-200000:],
                     "finished_at": now_iso()}
     if server_id is not None:
         fields["server_id"] = server_id
@@ -2552,12 +2539,12 @@ def _fecha_job(job_id: int, status: str, output: str, codigo: int | None = None,
 
 
 def _broker_job_deps() -> broker_jobs.BrokerJobDeps:
-    """Montado na chamada: `BROKER_POLL` e `BROKER_FALHAS_MAX` sao trocados pelos testes
+    """Montado na chamada: `BROKER_POLL` e `BROKER_FAILURES_MAX` sao trocados pelos testes
     antes de acompanhar a operacao, e um bundle congelado no import nao veria a troca."""
     return broker_jobs.BrokerJobDeps(
-        update_job=_update_job, close_job=_fecha_job, ensure_server=ensure_server,
+        update_job=_update_job, close_job=_finish_job, ensure_server=ensure_server,
         deploy_server=DeployServer, connect=_connect, poll=BROKER_POLL,
-        max_failures=BROKER_FALHAS_MAX, timeout=JOB_TIMEOUT,
+        max_failures=BROKER_FAILURES_MAX, timeout=JOB_TIMEOUT,
     )
 
 
@@ -2602,7 +2589,7 @@ def _log_broker_action(action: str, username: str, comando: str, output: str,
             conn, action, status, output, comando, username, now_iso())
 
 
-def _ator() -> str:
+def _actor() -> str:
     return session.get("username", "")
 
 
@@ -2612,11 +2599,11 @@ _game_from_form = broker_service.game_from_form
 # ------------------------------------------------------------- agendamentos
 
 
-def _inteiro(value, minimo: int, maximo: int, padrao: int) -> int:
+def _bounded_int(value, minimum: int, maximum: int, default: int) -> int:
     raw = (value or "").strip()
-    if raw.lstrip("-").isdigit() and minimo <= int(raw) <= maximo:
+    if raw.lstrip("-").isdigit() and minimum <= int(raw) <= maximum:
         return int(raw)
-    return padrao
+    return default
 
 
 def _schedule_form(form, errors: list[str]) -> dict:
@@ -2629,11 +2616,11 @@ def _schedule_form(form, errors: list[str]) -> dict:
         errors.append("Escolha quando a tarefa deve rodar.")
         kind = "diario"
 
-    hour = _inteiro(form.get("hour"), 0, 23, -1)
-    minute = _inteiro(form.get("minute"), 0, 59, -1)
+    hour = _bounded_int(form.get("hour"), 0, 23, -1)
+    minute = _bounded_int(form.get("minute"), 0, 59, -1)
     if kind != "intervalo" and (hour < 0 or minute < 0):
         errors.append("Horario invalido (use hora 0-23 e minuto 0-59).")
-    hours = _inteiro(form.get("every_hours"), 1, EVERY_HOURS_MAX, -1)
+    hours = _bounded_int(form.get("every_hours"), 1, EVERY_HOURS_MAX, -1)
     if kind == "intervalo" and hours < 0:
         errors.append(f"Intervalo invalido (de 1 a {EVERY_HOURS_MAX} horas).")
 
@@ -2642,7 +2629,7 @@ def _schedule_form(form, errors: list[str]) -> dict:
         "kind": kind,
         "hour": max(0, hour),
         "minute": max(0, minute),
-        "weekday": _inteiro(form.get("weekday"), 0, 6, 0),
+        "weekday": _bounded_int(form.get("weekday"), 0, 6, 0),
         "every_hours": max(1, hours),
     }
 
@@ -2714,13 +2701,13 @@ def _two_factor_state() -> dict:
     return {"ativo": bool(row["totp_enabled"]), "codigos_restantes": remaining_ones}
 
 
-def _guarda_o_segundo_fator(uid: int, segredo: str, passo: int) -> list[str]:
+def _store_second_factor(uid: int, secret: str, step: int) -> list[str]:
     """Liga o 2FA e devolve os codigos de recuperacao EM TEXTO, a unica vez em que existem."""
     codes = totp.new_recovery_codes()
     conn = db()
     with conn:
         users_repo.enable_two_factor(
-            conn, uid, segredo, passo,
+            conn, uid, secret, step,
             json.dumps([totp.hash_recovery_code(c) for c in codes]))
     return codes
 
@@ -2733,19 +2720,19 @@ def _password_and_code_ok(uid: int) -> tuple[sqlite3.Row | None, str]:
         # Mesma sessao orfa do `_two_factor_state`: sem usuario nao ha senha a conferir.
         return None, "Senha incorreta."
     key = f"2fa|{row['username'].lower()}"
-    if _lockout_remaining(key, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA):
+    if totp_lockout.remaining(key):
         return None, "Muitas tentativas. Espere alguns minutos."
     if not verify_password(request.form.get("senha", ""), row["password_hash"]):
-        _record_fail(key)
+        totp_lockout.record_failure(key)
         return None, "Senha incorreta."
-    if not _confere_segundo_fator(row, request.form.get("codigo", "")):
-        _record_fail(key)
+    if not _check_second_factor(row, request.form.get("codigo", "")):
+        totp_lockout.record_failure(key)
         return None, "Codigo invalido ou ja usado."
-    _clear_fails(key)
+    totp_lockout.clear(key)
     return row, ""
 
 
-def _apaga_o_segundo_fator(uid: int) -> None:
+def _delete_second_factor(uid: int) -> None:
     conn = db()
     with conn:
         users_repo.disable_two_factor(conn, uid)
@@ -2755,7 +2742,7 @@ def _apaga_o_segundo_fator(uid: int) -> None:
 
 
 def alerts_without_baseline(conn: sqlite3.Connection) -> dict:
-    """Eventos ligados que nao tem em quais servidores olhar.
+    """Eventos ligados que nao tem em quais servers olhar.
 
     Alerta ligado e mudo e pior do que alerta desligado: a pessoa marca 'jogo nao
     responde', nenhum servidor tem consulta configurada, e o silencio do canal passa a
@@ -2793,10 +2780,10 @@ def _reset_baseline() -> None:
     Zerando, a proxima volta so ANOTA o estado atual em vez de disparar um alerta sobre
     o que ja estava daquele jeito antes da mudanca.
     """
-    _estado_monitor.clear()
+    _monitor_state.clear()
 
 
-def _le_form_webhook() -> tuple:
+def _read_webhook_form() -> tuple:
     """Valida o formulario de um destino. Devolve (dados, erro)."""
     name = (request.form.get("name", "") or "").strip()[:60]
     url = (request.form.get("url", "") or "").strip()[:400]

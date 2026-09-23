@@ -215,19 +215,19 @@ class LogStream:
 class Supervisor:
     """O registro das conexoes abertas: liga, desliga e ressuscita.
 
-    `criar` vem de fora (e nao e `LogStream` direto) porque o teste do supervisor troca
+    `create` vem de fora (e nao e `LogStream` direto) porque o teste do supervisor troca
     a classe por um dublê que so anota abrir/fechar — sem SSH nenhum.
     """
 
-    def __init__(self, criar: Callable[[ServerLike, tuple], Any]) -> None:
-        self._criar = criar
-        self.abertos: dict[int, Any] = {}
+    def __init__(self, create: Callable[[ServerLike, tuple], Any]) -> None:
+        self._create = create
+        self.open_ones: dict[int, Any] = {}
         self._lock = threading.Lock()
 
     def alive_ids(self) -> int:
         """Quantas conexoes estao mesmo ouvindo agora (para a tela nao mentir)."""
         with self._lock:
-            return sum(1 for s in self.abertos.values() if s.alive())
+            return sum(1 for s in self.open_ones.values() if s.alive())
 
     def sync(self, servers: Sequence[ServerLike],
                    desejados: dict[int, tuple]) -> int:
@@ -235,7 +235,7 @@ class Supervisor:
         by_id = {int(s["id"]): s for s in servers}
 
         with self._lock:
-            current_ones = list(self.abertos.items())
+            current_ones = list(self.open_ones.items())
         for sid, stream in current_ones:
             # Sai quem deixou de ser desejado e quem mudou de configuracao (regex nova,
             # log em outro caminho). Thread morta tambem sai, para o passo abaixo
@@ -246,15 +246,15 @@ class Supervisor:
             if swapped or (not stream.alive() and not stream.gave_up):
                 stream.stop()
                 with self._lock:
-                    self.abertos.pop(sid, None)
+                    self.open_ones.pop(sid, None)
 
         for sid, signature in desejados.items():
             with self._lock:
-                if sid in self.abertos:
+                if sid in self.open_ones:
                     continue
-                fresh = self._criar(by_id[sid], signature)
-                self.abertos[sid] = fresh
+                fresh = self._create(by_id[sid], signature)
+                self.open_ones[sid] = fresh
             fresh.start()
 
         with self._lock:
-            return len(self.abertos)
+            return len(self.open_ones)

@@ -34,11 +34,11 @@ TOKEN_MINIMO = 32
 class BrokerError(Exception):
     """O broker recusou o pedido (mensagem explicavel) ou nao foi possivel falar com ele."""
 
-    def __init__(self, message: str, status: int = 0, codigo: str = ""):
+    def __init__(self, message: str, status: int = 0, code: str = ""):
         super().__init__(message)
         self.message = message
         self.status = status
-        self.codigo = codigo
+        self.code = code
 
 
 _config: dict = {}

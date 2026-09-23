@@ -52,7 +52,7 @@ def old_database(tmp_path):
     con.execute("INSERT INTO alert_log (criado_em, evento, titulo, detalhe, destino, status, erro)"
                 " VALUES ('2026-01-01T10:00:00', 'caiu', 'Servidor parou', 'o detalhe',"
                 " 'Canal da equipe', 'enviado', '')")
-    # Sem esta marca o `_migra_webhook_unico` criaria um destino extra e o teste passaria
+    # Sem esta marca o `_migrate_single_webhook` criaria um destino extra e o teste passaria
     # a falar de outra coisa.
     con.execute("INSERT INTO settings (key, value) VALUES ('webhooks_migrado', '1')")
     con.commit()

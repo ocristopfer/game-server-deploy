@@ -16,12 +16,14 @@ from datetime import datetime, timezone
 from gamebroker.domain.exceptions import Conflict
 from gamebroker.services.allocator import AllocatedPort
 
-ESTADO_RESERVADA = "reservada"
-ESTADO_ATIVA = "ativa"
-ESTADO_DESATIVADA = "desativada"
-ESTADO_FALHOU = "falhou"
+# Os VALORES sao o que esta gravado na coluna `state` e o que o painel recebe no JSON:
+# traduzi-los renomearia o estado de toda instancia ja criada. So os nomes sao ingleses.
+STATE_RESERVED = "reservada"
+STATE_ACTIVE = "ativa"
+STATE_DEACTIVATED = "desativada"
+STATE_FAILED = "falhou"
 
-OP_EXECUTANDO = "executando"
+OP_RUNNING = "executando"
 OP_OK = "ok"
 OP_FAILED = "erro"
 
@@ -191,7 +193,7 @@ class Db:
                 cur = conn.execute(
                     "INSERT INTO instances (ctid, ip, game, name, hostname, state, created_by, created_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (ctid, ip, game, name, hostname, ESTADO_RESERVADA, actor, self._relogio()))
+                    (ctid, ip, game, name, hostname, STATE_RESERVED, actor, self._relogio()))
                 instance_id = int(cur.lastrowid or 0)
                 conn.executemany(
                     "INSERT INTO ports (instance_id, base, number, proto, role) VALUES (?, ?, ?, ?, ?)",
@@ -239,7 +241,7 @@ class Db:
         with self._transaction() as conn:
             conn.execute(
                 "INSERT INTO operations (id, instance_id, kind, state, started_at) VALUES (?, ?, ?, ?, ?)",
-                (op_id, instance_id, kind, OP_EXECUTANDO, self._relogio()))
+                (op_id, instance_id, kind, OP_RUNNING, self._relogio()))
         return op_id
 
     def append_log(self, op_id: str, row: str) -> None:
@@ -268,7 +270,7 @@ class Db:
     def operation_in_progress(self) -> bool:
         with self._connection() as conn:
             return conn.execute("SELECT 1 FROM operations WHERE state = ? LIMIT 1",
-                                (OP_EXECUTANDO,)).fetchone() is not None
+                                (OP_RUNNING,)).fetchone() is not None
 
     def creations_since(self, since: str) -> int:
         with self._connection() as conn:

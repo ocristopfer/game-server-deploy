@@ -32,7 +32,7 @@ def language():
         users_repo.set_language(conn, session["uid"], chosen_one)
     # O `g` desta requisicao ja guardou o idioma antigo, e o flash abaixo e lido na
     # PROXIMA (depois do redirect) — entao ele ja sai no idioma novo.
-    g._idioma = chosen_one
+    g._language = chosen_one
     flash(panel.translate("account.language.changed"), "ok")
     return redirect(url_for("account.index"))
 
@@ -72,7 +72,7 @@ def two_factor():
         if step is None:
             flash(panel.translate("flash.wrong_code"), "error")
         else:
-            codes = panel._guarda_o_segundo_fator(session["uid"], secret, step)
+            codes = panel._store_second_factor(session["uid"], secret, step)
             session.pop("totp_pendente", None)
             flash(panel.translate("flash.two_factor_on"), "ok")
             return render_template("account_2fa_codes.html", codes=codes)
@@ -96,7 +96,7 @@ def two_factor_off():
     if failure:
         flash(panel.translate(failure), "error")
         return redirect(url_for("account.index"))
-    panel._apaga_o_segundo_fator(row["id"])
+    panel._delete_second_factor(row["id"])
     flash(panel.translate("flash.two_factor_off"), "ok")
     return redirect(url_for("account.index"))
 

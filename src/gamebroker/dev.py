@@ -26,7 +26,7 @@ class SlowInstaller:
     """Finge a instalacao: uma etapa a cada `passo` segundos, com log."""
 
     def __init__(self, step: float):
-        self._passo = step
+        self._step = step
 
     def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None]) -> None:
@@ -36,7 +36,7 @@ class SlowInstaller:
             "removendo a chave do broker do container",
         )
         for stage in stages:
-            time.sleep(self._passo)
+            time.sleep(self._step)
             log(stage)
 
 

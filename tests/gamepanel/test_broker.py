@@ -73,13 +73,13 @@ class FakeBroker:
     def __init__(self) -> None:
         self.jogos = list(JOGOS)
         self.lista = [dict(INSTANCIA)]
-        self.chamadas: list[tuple] = []
+        self.calls: list[tuple] = []
         self.error: Exception | None = None
         self.operacoes: list[dict] = [{"state": "ok", "log": "tudo certo\n", "result": RESULTADO}]
         self.tarefas: list = []
 
     def _call(self, name: str, *args) -> None:
-        self.chamadas.append((name, *args))
+        self.calls.append((name, *args))
         if self.error is not None:
             raise self.error
 
@@ -112,7 +112,7 @@ class FakeBroker:
         return {"id": instancia_id, "removed": True}
 
     def called(self, name: str) -> list[tuple]:
-        return [c for c in self.chamadas if c[0] == name]
+        return [c for c in self.calls if c[0] == name]
 
 
 @pytest.fixture
@@ -164,7 +164,7 @@ def test_operador_leva_403_nas_telas_do_broker(operator, broker, rota):
 @pytest.mark.parametrize("rota", ROTAS_POST)
 def test_operador_nao_dispara_nada_no_broker(operator, broker, post, rota):
     assert post(operator, rota, {"game": "alfa", "name": "x"}).status_code == 403
-    assert broker.chamadas == []
+    assert broker.calls == []
 
 
 @pytest.mark.parametrize("rota", ROTAS_GET)
@@ -192,7 +192,7 @@ def test_broker_desligado_nao_aceita_post(admin, post, monkeypatch, rota):
 def test_post_sem_csrf_e_barrado(admin, broker, rota):
     response = admin.post(rota, data={"game": "alfa", "name": "x"})
     assert response.status_code == 400
-    assert broker.chamadas == []
+    assert broker.calls == []
 
 
 def test_menu_so_mostra_o_broker_quando_ligado(admin, broker, monkeypatch):
@@ -212,7 +212,7 @@ def test_sem_2fa_a_tela_manda_para_a_ativacao(admin_without_2fa, broker, rota):
     response = admin_without_2fa.get(rota)
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/account/2fa")
-    assert broker.chamadas == []
+    assert broker.calls == []
 
 
 @pytest.mark.parametrize("rota", ROTAS_POST)
@@ -220,14 +220,14 @@ def test_sem_2fa_o_post_e_redirecionado_para_a_ativacao_e_nao_chama_o_broker(adm
     response = post(admin_without_2fa, rota, {"game": "alfa", "name": "x"})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/account/2fa")
-    assert broker.chamadas == []
+    assert broker.calls == []
 
 
 def test_sem_2fa_a_api_json_responde_403_em_vez_de_redirecionar(admin_without_2fa, broker):
     response = admin_without_2fa.get("/api/v1/catalog/suggestions?q=palworld")
     assert response.status_code == 403
     assert "duas etapas" in response.get_json()["error"]
-    assert broker.chamadas == []
+    assert broker.calls == []
 
 
 def test_allow_broker_desligado_vence_mesmo_para_quem_nao_tem_2fa(admin_without_2fa, monkeypatch):
@@ -289,7 +289,7 @@ def test_busca_de_jogo_sem_consulta_devolve_lista_vazia(admin, broker):
 def test_busca_nao_chama_o_broker(admin, broker):
     """E uma lista fixa do repositorio: nada de rede, nem para o broker."""
     admin.get("/api/v1/catalog/suggestions?q=palworld")
-    assert broker.chamadas == []
+    assert broker.calls == []
 
 
 def test_catalogo_traz_o_campo_de_busca(admin, broker):
@@ -513,7 +513,7 @@ def test_resultado_incompleto_tambem_avisa(broker, database):
 
 
 def test_perder_o_contato_com_o_broker_da_o_job_por_falho(broker, database, monkeypatch):
-    monkeypatch.setattr(panel, "BROKER_FALHAS_MAX", 3)
+    monkeypatch.setattr(panel, "BROKER_FAILURES_MAX", 3)
     broker.error = refusal("nao consegui falar com o broker (TimeoutError)", 0)
     job_id = new_job(database)
     waits: list[float] = []

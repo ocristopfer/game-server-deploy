@@ -28,7 +28,7 @@ class BrokerJobDeps(NamedTuple):
     """O que o acompanhamento precisa do painel.
 
     Os tres limites entram como valor porque sao lidos uma vez por operacao; os testes
-    trocam `BROKER_POLL`/`BROKER_FALHAS_MAX` em `app.py` ANTES de chamar, e o bundle e
+    trocam `BROKER_POLL`/`BROKER_FAILURES_MAX` em `app.py` ANTES de chamar, e o bundle e
     montado na chamada.
     """
 
@@ -76,7 +76,7 @@ def register_server(deps: BrokerJobDeps, r: dict) -> int:
 def finish_operation(deps: BrokerJobDeps, job_id: int, op: dict) -> None:
     log = str(op.get("log", ""))
     if op.get("state") != "ok":
-        deps.close_job(job_id, "error", log, codigo=1)
+        deps.close_job(job_id, "error", log, exit_code=1)
         return
     try:
         sid = register_server(deps, op.get("result") or {})
@@ -84,10 +84,10 @@ def finish_operation(deps: BrokerJobDeps, job_id: int, op: dict) -> None:
         # A instancia EXISTE no Proxmox: o texto precisa dizer isso, senao parece que
         # nada foi feito.
         deps.close_job(job_id, "error", f"{log}\nA instancia foi criada, mas nao consegui "
-                       f"cadastra-la no painel: {failure}", codigo=1)
+                       f"cadastra-la no painel: {failure}", exit_code=1)
         return
     deps.close_job(job_id, "ok", f"{log}\nServidor cadastrado no painel (id {sid}).",
-                   codigo=0, server_id=sid)
+                   exit_code=0, server_id=sid)
 
 
 def follow_operation(deps: BrokerJobDeps, job_id: int, op_id: str,

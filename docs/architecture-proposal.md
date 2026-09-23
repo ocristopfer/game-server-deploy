@@ -692,7 +692,7 @@ Fase 3 iniciada a seguir.
 
 ---
 
-## O que já foi executado (atualizado em 2026-09-22)
+## O que já foi executado (atualizado em 2026-09-23)
 
 Esta seção é o registro; o plano acima ficou como foi aprovado, inclusive onde a
 execução divergiu dele — está marcado.
@@ -767,4 +767,18 @@ docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos san
   `schedules`, `webhooks`+`alert_log`, `samples`, `settings`, `users`) têm repositório,
   e `.execute(` só aparece em `persistence/`. `test_sql_placement.py` guarda a regra
   por tabela.
+- ~~`services/auth_service.py`~~ — **feito**, e menor do que a seção 5 previa: hash e
+  conferência de senha já tinham saído para `security/passwords.py`, e o portão de 2FA é
+  um decorador que precisa de `session`/`request`, então continua no `app.py`. O que
+  sobrou de política pura era a **trava de tentativas**, hoje a classe `Lockout` (relógio
+  injetável, `login_lockout` e `totp_lockout` no `app.py`, `test_auth_service.py` com 11
+  casos que não precisam de HTTP nem de relógio global).
+- **`services/backup_service.py` e `services/file_service.py` não serão criados.** O que
+  o plano pedia neles já existe, sob outro nome: `runtime/backups.py` (`backup_command`,
+  `backup_paths`, `list_backups`, `delete_backup`, `validate_backup_name`) e
+  `runtime/files.py` (`clean_path`, `_check_roots`, com as raízes injetadas). Criar uma
+  camada por cima só para bater com o desenho do papel seria um repasse a mais para ler.
+- `extensions.py`, `services/user_service.py`, `tasks/monitor.py` e `runtime/base.py`
+  +`runtime/fakes.py` do painel continuam abertos: são extração de orquestração, sem
+  ganho de teste como os anteriores.
 - Uma criação REAL de instância de ponta a ponta pelo broker contra o Proxmox/OPNsense.

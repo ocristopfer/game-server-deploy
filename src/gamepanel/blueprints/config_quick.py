@@ -24,7 +24,7 @@ def index(sid: int):
             # Aqui o formulario deixa de ser "chave = texto" e passa a saber o que cada
             # campo significa: booleano vira caixa, enum vira lista, duracao aparece em
             # minutos em vez de nanossegundos.
-            panel.enriquece_settings(doc, info["name"])
+            panel.enrich_settings(doc, info["name"])
         except (panel.RemoteError, panel.gameconf.ConfigError) as exc:
             errors.append(f"{target}: {exc}")
 

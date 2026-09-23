@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from gamebroker.runtime.ssh_installer import (
-    DESTINO_REMOTO,
+    REMOTE_DEST,
     ConfigSsh,
     ExecutorReal,
     SshInstaller,
@@ -25,16 +25,16 @@ CHAVE_PUBLICA = f"ssh-ed25519 {BLOB} broker@teste"
 
 
 class FakeRunner:
-    """Registra cada comando. `saidas` mapeia um trecho do comando remoto a (codigo, linhas)."""
+    """Registra cada command. `saidas` mapeia um trecho do command remoto a (codigo, linhas)."""
 
     def __init__(self) -> None:
-        self.chamadas: list[tuple[list[str], float]] = []
+        self.calls: list[tuple[list[str], float]] = []
         self.saidas: dict[str, tuple[int, list[str]]] = {}
         self.falhas_no_ssh_inicial = 0
         self.env_visto = ""
 
     def run(self, argv, on_line, timeout):
-        self.chamadas.append((list(argv), timeout))
+        self.calls.append((list(argv), timeout))
         if argv[0] == "scp":
             self.env_visto = Path(argv[-2]).read_text(encoding="utf-8")  # o arquivo existe AGORA
         command = argv[-1] if argv[0] == "ssh" else " ".join(argv)
@@ -53,7 +53,7 @@ class FakeRunner:
         return 0
 
     def commands(self) -> list[str]:
-        return [a[-1] if a[0] == "ssh" else "scp" for a, _ in self.chamadas]
+        return [a[-1] if a[0] == "ssh" else "scp" for a, _ in self.calls]
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ def lib_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def config(tmp_path: Path, lib_dir: Path) -> ConfigSsh:
-    return ConfigSsh(chave_privada=tmp_path / "id_broker", chave_publica=CHAVE_PUBLICA, lib_dir=lib_dir)
+    return ConfigSsh(private_key=tmp_path / "id_broker", public_key=CHAVE_PUBLICA, lib_dir=lib_dir)
 
 
 @pytest.fixture
@@ -176,31 +176,31 @@ def test_ordem_dos_comandos(installer, game, ports):
     executor, _ = _install(installer, game, ports)
     assert executor.commands() == [
         "true",
-        f"install -d -m 700 {DESTINO_REMOTO}",
+        f"install -d -m 700 {REMOTE_DEST}",
         "scp",
-        f"cd {DESTINO_REMOTO} && bash ct-install.sh install.env",
+        f"cd {REMOTE_DEST} && bash ct-install.sh install.env",
         executor.commands()[-1],  # limpeza
     ]
-    assert f"rm -rf {DESTINO_REMOTO}" in executor.commands()[-1]
+    assert f"rm -rf {REMOTE_DEST}" in executor.commands()[-1]
 
 
 def test_scp_leva_a_lib_e_o_env_e_o_env_existe_na_hora(installer, game, ports):
     executor, _ = _install(installer, game, ports)
-    scp = next(a for a, _ in executor.chamadas if a[0] == "scp")
+    scp = next(a for a, _ in executor.calls if a[0] == "scp")
     assert [Path(f).name for f in scp[-4:-1]] == ["ct-install.sh", "ct-phases.sh", "install.env"]
-    assert scp[-1] == f"root@10.0.0.30:{DESTINO_REMOTO}/"
+    assert scp[-1] == f"root@10.0.0.30:{REMOTE_DEST}/"
     assert "GAME_KEY=meujogo" in executor.env_visto
     assert not Path(scp[-2]).exists(), "o env temporario nao fica no disco do broker"
 
 
 def test_todo_comando_e_lista_sem_shell_e_com_as_opcoes_de_seguranca(installer, game, ports):
     executor, _ = _install(installer, game, ports)
-    for argv, _ in executor.chamadas:
+    for argv, _ in executor.calls:
         assert isinstance(argv, list)
         assert argv[0] in ("ssh", "scp")
         assert "BatchMode=yes" in argv, "nunca pergunta senha"
         assert "IdentitiesOnly=yes" in argv
-    ssh = next(a for a, _ in executor.chamadas if a[0] == "ssh")
+    ssh = next(a for a, _ in executor.calls if a[0] == "ssh")
     assert "root@10.0.0.30" in ssh
     assert ssh[ssh.index("-i") + 1].endswith("id_broker")
 
@@ -218,13 +218,13 @@ def test_limpeza_remove_a_chave_do_broker_e_confere(installer, game, ports):
     cleanup = executor.commands()[-1]
     assert f"grep -vF -- {BLOB}" in cleanup
     assert cleanup.rstrip().endswith(f"! grep -qF -- {BLOB} /root/.ssh/authorized_keys"), \
-        "o proprio comando falha se a chave continuar la"
+        "o proprio command falha se a chave continuar la"
 
 
 def test_timeouts_sao_repassados(installer, game, ports, config):
     executor, _ = _install(installer, game, ports)
-    install_run = next(t for a, t in executor.chamadas if a[-1].endswith("bash ct-install.sh install.env"))
-    assert install_run == config.timeout_instalacao
+    install_run = next(t for a, t in executor.calls if a[-1].endswith("bash ct-install.sh install.env"))
+    assert install_run == config.install_timeout
 
 
 # --- falhas ------------------------------------------------------------------------------------------
@@ -293,7 +293,7 @@ def test_ip_invalido_nao_gera_comando(installer, game, ports, ip):
     inst, executor = installer
     with pytest.raises(ValueError):
         inst.install(ip, game, ports, lambda _l: None)
-    assert executor.chamadas == []
+    assert executor.calls == []
 
 
 # --- saida em lote ----------------------------------------------------------------------------------------
@@ -313,18 +313,18 @@ def test_saida_volumosa_vira_poucas_gravacoes_e_linhas_longas_sao_cortadas(insta
 
 @pytest.mark.parametrize("key", ["", "ssh-ed25519", "ssh-ed25519 curta", "ssh-ed25519 " + "A" * 30 + "; rm -rf /"])
 def test_chave_publica_invalida(tmp_path, lib_dir, key):
-    with pytest.raises(ValueError, match="chave_publica"):
-        ConfigSsh(chave_privada=tmp_path / "k", chave_publica=key, lib_dir=lib_dir)
+    with pytest.raises(ValueError, match="public_key"):
+        ConfigSsh(private_key=tmp_path / "k", public_key=key, lib_dir=lib_dir)
 
 
 def test_usuario_invalido(tmp_path, lib_dir):
-    with pytest.raises(ValueError, match="usuario"):
-        ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, lib_dir=lib_dir, usuario="root; ls")
+    with pytest.raises(ValueError, match="user"):
+        ConfigSsh(private_key=tmp_path / "k", public_key=CHAVE_PUBLICA, lib_dir=lib_dir, user="root; ls")
 
 
 def test_lib_incompleta_e_recusada(tmp_path):
     (tmp_path / "ct-install.sh").write_text("x")
-    cfg = ConfigSsh(chave_privada=tmp_path / "k", chave_publica=CHAVE_PUBLICA, lib_dir=tmp_path)
+    cfg = ConfigSsh(private_key=tmp_path / "k", public_key=CHAVE_PUBLICA, lib_dir=tmp_path)
     with pytest.raises(ValueError, match="ct-phases.sh"):
         SshInstaller(cfg, FakeRunner())
 

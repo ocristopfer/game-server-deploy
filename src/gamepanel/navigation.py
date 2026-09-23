@@ -146,8 +146,8 @@ _BY_ENDPOINT_ON_DESKTOP = {
 
 def nav_desktop(*, admin: bool, broker: bool) -> tuple[tuple[Item, ...], tuple[Item, ...]]:
     """(itens da barra, itens do menu da conta) que esta pessoa pode abrir no desktop."""
-    def resolve(chaves: tuple[str, ...]) -> tuple[Item, ...]:
-        return visible_items(tuple(_ALL_ITEMS[c] for c in chaves), admin=admin, broker=broker)
+    def resolve(keys: tuple[str, ...]) -> tuple[Item, ...]:
+        return visible_items(tuple(_ALL_ITEMS[c] for c in keys), admin=admin, broker=broker)
 
     return resolve(NAV_DESKTOP_BAR), resolve(NAV_DESKTOP_ACCOUNT)
 

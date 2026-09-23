@@ -239,7 +239,7 @@ def test_sem_destino_nao_sai_nada(database):
 # -------------------------------------------------------- acao do painel nao vira susto
 
 def test_sem_job_recente_a_queda_e_queda(database, target):
-    assert not panel._job_recente(database, target["id"])
+    assert not panel._recent_job(database, target["id"])
 
 
 def test_restart_pelo_painel_abre_a_janela_de_silencio(database, target):
@@ -248,7 +248,7 @@ def test_restart_pelo_painel_abre_a_janela_de_silencio(database, target):
             "INSERT INTO jobs (server_id, target, action, status, username, created_at)"
             " VALUES (?,?,?,?,?,?)",
             (target["id"], "root@10.0.0.9", "restart", "ok", "admin", panel.now_iso()))
-    assert panel._job_recente(database, target["id"])
+    assert panel._recent_job(database, target["id"])
 
 
 def test_reiniciar_pelo_botao_nao_vira_alerta(database, target, webhooks):
@@ -270,7 +270,7 @@ def test_job_velho_nao_segura_o_alerta_para_sempre(database, target, webhooks):
             "INSERT INTO jobs (server_id, target, action, status, username, created_at)"
             " VALUES (?,?,?,?,?,?)",
             (target["id"], "root@10.0.0.9", "restart", "ok", "admin", old_one))
-    assert not panel._job_recente(database, target["id"])
+    assert not panel._recent_job(database, target["id"])
     panel._state_alert(database, target, state(service="inactive"), state(service="active"))
     assert len(webhooks) == 1, "passada a janela, a queda avisa"
 
@@ -1075,7 +1075,7 @@ def test_primeira_olhada_do_monitor_so_anota(database, target, webhooks, monkeyp
     with panel.app.app_context():
         panel.monitor_servers(force=True)
     assert len(webhooks) == 0
-    assert panel._estado_monitor[target["id"]]["service"] == "inactive"
+    assert panel._monitor_state[target["id"]]["service"] == "inactive"
 
 
 def test_apos_a_linha_de_base_a_mudanca_avisa(database, target, webhooks, monkeypatch):
@@ -1105,7 +1105,7 @@ def test_servidor_removido_sai_da_memoria_do_monitor(database, target, monkeypat
         database.execute("DELETE FROM servers WHERE id = ?", (target["id"],))
     with panel.app.app_context():
         panel.monitor_servers(force=True)
-    assert target["id"] not in panel._estado_monitor
+    assert target["id"] not in panel._monitor_state
 
 
 # --------------------------------------------------------------- URL invalida nao sai
@@ -1327,7 +1327,7 @@ def test_cadastro_grava_e_valida_a_expressao_de_erro(database, alerts_screen):
 
 def test_operador_nao_chega_em_alertas(database, alerts_screen):
     """A tela mexe em credenciais: operador nao entra."""
-    panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERADOR)
+    panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERATOR)
     other = panel.app.test_client()
     other.get("/login")
     with other.session_transaction() as sess:

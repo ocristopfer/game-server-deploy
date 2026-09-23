@@ -49,29 +49,29 @@ def _series_segments(samples, key: str, px, py,
     desenharia uma reta que afirma algo que ninguem mediu.
     """
     segments: list[list[str]] = []
-    atual: list[str] = []
+    current: list[str] = []
     previous = None
     edge = None
 
-    def fecha():
-        nonlocal atual
-        if atual:
-            segments.append(atual)
-        atual = []
+    def close_segment():
+        nonlocal current
+        if current:
+            segments.append(current)
+        current = []
 
     for when_at, values in samples:
         value = values.get(key)
         if value is None:
-            fecha()
+            close_segment()
             previous = None
             continue
         if previous is not None and (when_at - previous).total_seconds() > sample_step * CHART_GAP:
-            fecha()
-        atual.append(f"{px(when_at)},{py(value)}")
+            close_segment()
+        current.append(f"{px(when_at)},{py(value)}")
         edge = {"x": px(when_at), "y": py(value), "valor": value}
         previous = when_at
 
-    fecha()
+    close_segment()
     return segments, edge
 
 

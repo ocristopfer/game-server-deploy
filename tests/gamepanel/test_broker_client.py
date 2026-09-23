@@ -135,7 +135,7 @@ def test_recusa_do_broker_vira_erro_com_mensagem_status_e_codigo(server):
     with pytest.raises(bc.BrokerError) as error:
         bc.create("alfa", "x", "chefe")
     assert error.value.message == "limite de 8 instancias atingido"
-    assert (error.value.status, error.value.codigo) == (429, "cota")
+    assert (error.value.status, error.value.code) == (429, "cota")
 
 
 def test_erro_sem_corpo_conhecido_tem_mensagem_generica(server):

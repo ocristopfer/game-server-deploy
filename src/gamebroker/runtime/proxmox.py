@@ -42,10 +42,10 @@ class ConfigProxmox:
     template: str
     bridge: str
     gateway: str
-    chaves_ssh: tuple[str, ...]
-    prefixo: int = 24
-    intervalo: float = 2.0
-    tentativas: int = 150
+    ssh_keys: tuple[str, ...]
+    prefix: int = 24
+    interval: float = 2.0
+    attempts: int = 150
 
     def __post_init__(self) -> None:
         for field in (self.node, self.pool, self.storage, self.bridge):
@@ -53,8 +53,8 @@ class ConfigProxmox:
                 raise ValueError(f"nome invalido na config do Proxmox: {field!r}")
         if not _VOLID_RE.fullmatch(self.template):
             raise ValueError("template deve ser <storage>:vztmpl/<arquivo>")
-        if not self.chaves_ssh or not all(k.startswith("ssh-") and "\n" not in k for k in self.chaves_ssh):
-            raise ValueError("chaves_ssh: informe ao menos uma chave publica (uma por item, sem quebra de linha)")
+        if not self.ssh_keys or not all(k.startswith("ssh-") and "\n" not in k for k in self.ssh_keys):
+            raise ValueError("ssh_keys: informe ao menos uma chave publica (uma por item, sem quebra de linha)")
 
 
 class Proxmox:
@@ -62,14 +62,14 @@ class Proxmox:
                  sleep: Callable[[float], None] = time.sleep):
         self._c = cliente
         self._cfg = config
-        self._dormir = sleep
+        self._sleep = sleep
 
     # --- chamadas -----------------------------------------------------------
 
     def _api(self, metodo: str, path: str, action: str, *, form: dict | None = None) -> Response:
         response = self._c.request(metodo, "/api2/json" + path, form=form)
         if not response.ok:
-            raise ProxmoxError(f"{action}: HTTP {response.status} {_curto(response.text)}")
+            raise ProxmoxError(f"{action}: HTTP {response.status} {_short(response.text)}")
         return response
 
     @staticmethod
@@ -81,15 +81,15 @@ class Proxmox:
         if not isinstance(upid, str):
             raise ProxmoxError(f"{action}: o Proxmox nao devolveu o identificador da tarefa")
         encoded = quote(upid, safe="")
-        for _ in range(self._cfg.tentativas):
+        for _ in range(self._cfg.attempts):
             state_dir = self._payload(self._api("GET", f"/nodes/{self._cfg.node}/tasks/{encoded}/status",
                                            f"{action} (estado da tarefa)"))
             if isinstance(state_dir, dict) and state_dir.get("status") == "stopped":
                 output = str(state_dir.get("exitstatus", ""))
                 if output == "OK" or output.startswith("WARNINGS"):
                     return
-                raise ProxmoxError(f"{action}: a tarefa terminou com '{_curto(output)}'{self._log_tail(encoded)}")
-            self._dormir(self._cfg.intervalo)
+                raise ProxmoxError(f"{action}: a tarefa terminou com '{_short(output)}'{self._log_tail(encoded)}")
+            self._sleep(self._cfg.interval)
         raise ProxmoxError(f"{action}: a tarefa excedeu o tempo")
 
     def _log_tail(self, upid_codificado: str) -> str:
@@ -99,7 +99,7 @@ class Proxmox:
         if not isinstance(lines, list) or not lines:
             return ""
         last_ones = " | ".join(str(item.get("t", "")) for item in lines[-3:] if isinstance(item, dict))
-        return f" ({_curto(last_ones)})"
+        return f" ({_short(last_ones)})"
 
     # --- leitura ---------------------------------------------------------------
 
@@ -149,9 +149,9 @@ class Proxmox:
             "ostemplate": cfg.template, "rootfs": f"{cfg.storage}:{spec.disk_gb}",
             "memory": spec.memory_mb, "swap": 0, "cores": spec.cores,
             "unprivileged": 1, "features": "nesting=1", "pool": cfg.pool, "start": 0, "onboot": 1,
-            "net0": (f"name=eth0,bridge={cfg.bridge},ip={spec.ip}/{cfg.prefixo},"
+            "net0": (f"name=eth0,bridge={cfg.bridge},ip={spec.ip}/{cfg.prefix},"
                      f"gw={cfg.gateway},type=veth"),
-            "ssh-public-keys": "\n".join(cfg.chaves_ssh),
+            "ssh-public-keys": "\n".join(cfg.ssh_keys),
         }
         self._task(self._api("POST", f"/nodes/{cfg.node}/lxc", "criar CT", form=body), "criar CT")
         try:
@@ -187,6 +187,6 @@ class Proxmox:
             raise ProxmoxError(f"o CT {ctid} nao esta no pool '{self._cfg.pool}'; nada foi alterado")
 
 
-def _curto(text: str) -> str:
+def _short(text: str) -> str:
     clean = " ".join(str(text).split())
     return clean if len(clean) <= MAX_ERRORS else clean[:MAX_ERRORS] + "..."

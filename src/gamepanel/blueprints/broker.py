@@ -42,7 +42,7 @@ def catalog_new():
     data, failures = panel._game_from_form(request.form)
     if not failures:
         try:
-            panel.broker_client.add_game(data, panel._ator())
+            panel.broker_client.add_game(data, panel._actor())
         except panel.broker_client.BrokerError as exc:
             failures.append(f"Broker: {exc.message}")
     if failures:
@@ -54,7 +54,7 @@ def catalog_new():
             games = []
         return render_template("catalog.html", games=games, recipes=panel.BROKER_RECIPES,
                                form=request.form, game_templates=GAME_TEMPLATES), 400
-    panel._log_broker_action("broker-jogo", panel._ator(), data.get("chave", ""), "Jogo adicionado ao catalogo.")
+    panel._log_broker_action("broker-jogo", panel._actor(), data.get("chave", ""), "Jogo adicionado ao catalogo.")
     flash(panel.translate("flash.game_added",
                        name=data.get("nome", data.get("chave", ""))), "ok")
     return redirect(url_for("broker.catalog"))
@@ -84,7 +84,7 @@ def instance_new():
     game = (request.form.get("game") or "").strip()
     name = (request.form.get("name") or "").strip()
     try:
-        response = panel.broker_client.create(game, name, panel._ator())
+        response = panel.broker_client.create(game, name, panel._actor())
     except panel.broker_client.BrokerError as failure:
         flash(panel.translate("flash.broker_error", reason=failure.message), "error")
         return redirect(url_for("broker.instances"))
@@ -92,7 +92,7 @@ def instance_new():
     if not op_id:
         flash(panel.translate("flash.broker_no_operation_id"), "error")
         return redirect(url_for("broker.instances"))
-    job_id = panel.start_broker_job("broker-criar", panel._ator(), op_id, f"{game}: {name}")
+    job_id = panel.start_broker_job("broker-criar", panel._actor(), op_id, f"{game}: {name}")
     return redirect(url_for("jobs.detail", jid=job_id))
 
 
@@ -101,12 +101,12 @@ def instance_new():
 @panel.broker_required
 def instance_deactivate(iid: int):
     try:
-        panel.broker_client.deactivate(iid, panel._ator())
+        panel.broker_client.deactivate(iid, panel._actor())
     except panel.broker_client.BrokerError as failure:
-        panel._log_broker_action("broker-desativar", panel._ator(), f"instancia {iid}", failure.message, "error")
+        panel._log_broker_action("broker-desativar", panel._actor(), f"instancia {iid}", failure.message, "error")
         flash(panel.translate("flash.broker_error", reason=failure.message), "error")
     else:
-        panel._log_broker_action("broker-desativar", panel._ator(), f"instancia {iid}",
+        panel._log_broker_action("broker-desativar", panel._actor(), f"instancia {iid}",
                                  "Portas fechadas no firewall e container parado.")
         flash(panel.translate("flash.instance_deactivated"), "ok")
     return redirect(url_for("broker.instances"))
@@ -119,9 +119,9 @@ def instance_remove(iid: int):
     confirm = (request.form.get("confirmation") or "").strip()
     db_only = request.form.get("db_only") == "1"
     try:
-        panel.broker_client.remove(iid, confirm, panel._ator(), db_only)
+        panel.broker_client.remove(iid, confirm, panel._actor(), db_only)
     except panel.broker_client.BrokerError as failure:
-        panel._log_broker_action("broker-remover", panel._ator(), f"instancia {iid}", failure.message, "error")
+        panel._log_broker_action("broker-remover", panel._actor(), f"instancia {iid}", failure.message, "error")
         flash(panel.translate("flash.broker_error", reason=failure.message), "error")
         return redirect(url_for("broker.instances"))
     conn = panel.db()
@@ -129,7 +129,7 @@ def instance_remove(iid: int):
         # O servidor do painel aponta para um container que deixou de existir.
         servers_repo.delete_by_broker_id(conn, iid)
     panel._log_broker_action(
-        "broker-remover", panel._ator(), f"instancia {iid}",
+        "broker-remover", panel._actor(), f"instancia {iid}",
         "So o registro foi esquecido." if db_only else "Container destruido e servidor removido do painel.")
     flash(panel.translate("flash.instance_removed"), "ok")
     return redirect(url_for("broker.instances"))

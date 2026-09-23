@@ -200,7 +200,7 @@ def alias_summary(descricao: str, ports: list[str]) -> str:
 
 class FakeOpnsenseHttp:
     def __init__(self):
-        self.regras: dict[str, dict] = {}
+        self.rules: dict[str, dict] = {}
         self.aplicacoes = 0
         self.apply_permitido = True
         self.falhar_no_add_numero: int | None = None
@@ -219,7 +219,7 @@ class FakeOpnsenseHttp:
             line["alias_meta_destination.port"] = [{
                 "value": porta, "isAlias": True,
                 "summary": resumo if resumo is not None else alias_summary(f"UDP -> {target}", alias or [])}]
-        self.regras[uuid] = line
+        self.rules[uuid] = line
         return uuid
 
     def handle(self, _metodo: str, caminho: str, _query: dict, corpo: dict, headers: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
@@ -228,15 +228,15 @@ class FakeOpnsenseHttp:
             return 401, {"status": 401, "message": "Authentication Failed"}, "Unauthorized"
         route = caminho.removeprefix("/api/firewall")
         if route == "/d_nat/search_rule":
-            lines = list(self.regras.values())
+            lines = list(self.rules.values())
             return 200, {"total": len(lines), "rowCount": len(lines), "current": 1, "rows": lines}
         if route == "/d_nat/add_rule":
             return self._add(corpo)
         if route.startswith("/d_nat/del_rule/"):
             uuid = route.rsplit("/", 1)[1]
-            if uuid not in self.regras:
+            if uuid not in self.rules:
                 return 200, {"result": "not found"}
-            del self.regras[uuid]
+            del self.rules[uuid]
             return 200, {"result": "deleted"}
         if route == "/filter/apply":
             if not self.apply_permitido:
@@ -251,7 +251,7 @@ class FakeOpnsenseHttp:
             return 200, {"result": "failed", "validations": {"rule.target": "Invalid target"}}
         rule = corpo.get("rule", {})
         uuid = str(uuidlib.uuid4())
-        self.regras[uuid] = {
+        self.rules[uuid] = {
             "uuid": uuid, "descr": rule.get("descr", ""), "interface": rule.get("interface", ""),
             "protocol": rule.get("protocol", ""), "destination.port": rule.get("destination", {}).get("port", ""),
             "target": rule.get("target", ""), "local-port": rule.get("local-port", ""),

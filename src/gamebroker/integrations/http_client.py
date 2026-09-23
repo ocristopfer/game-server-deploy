@@ -80,20 +80,20 @@ class Client:
             raise ValueError("sem TLS so em loopback: use https:// (e a impressao do certificado)")
         self._https = parts.scheme == "https"
         self._host = parts.hostname
-        self._porta = parts.port or (443 if self._https else 80)
-        self._prefixo = parts.path.rstrip("/")
+        self._port = parts.port or (443 if self._https else 80)
+        self._prefix = parts.path.rstrip("/")
         self._cabecalhos = dict(headers)
         self._impressao = normalize_fingerprint(fingerprint_sha256)
         self._timeout = timeout
 
     def __repr__(self) -> str:
-        return f"Cliente({self._host}:{self._porta})"
+        return f"Cliente({self._host}:{self._port})"
 
     def _connection(self, timeout: float) -> http.client.HTTPConnection:
         if not self._https:
-            return http.client.HTTPConnection(self._host, self._porta, timeout=timeout)
+            return http.client.HTTPConnection(self._host, self._port, timeout=timeout)
         if not self._impressao:
-            return http.client.HTTPSConnection(self._host, self._porta, timeout=timeout,
+            return http.client.HTTPSConnection(self._host, self._port, timeout=timeout,
                                                context=ssl.create_default_context())
         # A cadeia nao e validada porque o certificado e autoassinado; quem autentica o
         # servidor e a comparacao da impressao em _ConexaoFixada.connect. Por isso os tres
@@ -102,7 +102,7 @@ class Client:
         context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.check_hostname = False  # NOSONAR - identidade por impressao fixada
         context.verify_mode = ssl.CERT_NONE  # NOSONAR - identidade por impressao fixada
-        return _PinnedConnection(self._host, self._porta, timeout=timeout, context=context,
+        return _PinnedConnection(self._host, self._port, timeout=timeout, context=context,
                               fingerprint=self._impressao)
 
     def request(self, method: str, path: str, *, form: dict | None = None,
@@ -119,7 +119,7 @@ class Client:
             headers["Content-Type"] = "application/json"
         connection = self._connection(self._timeout if timeout is None else timeout)
         try:
-            connection.request(method, self._prefixo + path, body=body, headers=headers)
+            connection.request(method, self._prefix + path, body=body, headers=headers)
             response = connection.getresponse()
             raw_text = response.read(RESPOSTA_MAX + 1)
             reason = response.reason or ""
@@ -128,7 +128,7 @@ class Client:
             raise
         except (OSError, http.client.HTTPException) as error:
             # So o tipo e a mensagem do erro de rede: nunca cabecalho nem corpo enviado.
-            raise ConnectionFailed(f"{type(error).__name__} ao falar com {self._host}:{self._porta}") from None
+            raise ConnectionFailed(f"{type(error).__name__} ao falar com {self._host}:{self._port}") from None
         finally:
             connection.close()
         if len(raw_text) > RESPOSTA_MAX:

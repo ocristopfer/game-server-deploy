@@ -233,9 +233,9 @@ def find_config_files(ssh_run: SshRun, server: ServerLike, root: str, globs: Ite
 
 # ----------------------------------------------------------- ler/gravar
 
-def _parse_meta(head: str, campos: int) -> list[str]:
+def _parse_meta(head: str, fields: int) -> list[str]:
     meta = head.split("|")
-    if meta[0] != "META" or len(meta) < campos:
+    if meta[0] != "META" or len(meta) < fields:
         raise RemoteError(Message("file.unexpected_reply"))
     return meta
 
@@ -320,9 +320,9 @@ def delete_file(ssh_run: SshRun, server: ServerLike, path: str) -> str:
 # --------------------------------------------------------- streaming
 
 def ssh_stream_in(
-    ssh_argv: SshArgv, server: ServerLike, remote_cmd: str, origem: Any, timeout: int, chunk_size: int,
+    ssh_argv: SshArgv, server: ServerLike, remote_cmd: str, source: Any, timeout: int, chunk_size: int,
 ) -> str:
-    """Executa um comando remoto alimentando a entrada dele a partir de `origem`.
+    """Executa um comando remoto alimentando a entrada dele a partir de `source`.
 
     Diferente de rodar com o conteudo todo na memoria: aqui os bytes passam em
     pedacos, do arquivo que o navegador enviou direto para o `cat` do outro lado. E o
@@ -345,7 +345,7 @@ def ssh_stream_in(
 
     try:
         while True:
-            chunk = origem.read(chunk_size)
+            chunk = source.read(chunk_size)
             if not chunk:
                 break
             entry.write(chunk)
@@ -390,7 +390,7 @@ def stream_remote_file(
     if out_text is None:
         raise RemoteError(Message("ssh.no_stdout"))
 
-    def gerar() -> Iterator[bytes]:
+    def generate() -> Iterator[bytes]:
         try:
             while True:
                 chunk = out_text.read(chunk_size)
@@ -406,4 +406,4 @@ def stream_remote_file(
                     pipe.close()
             proc.wait()
 
-    return gerar()
+    return generate()

@@ -181,14 +181,14 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
     proxmox = None
     if len(reader.problems) == before and gateway and broker_key and panel_key:
         proxmox = reader.attempt("PROXMOX_*", lambda: ConfigProxmox(
-            **px, gateway=gateway, prefixo=network_prefix, chaves_ssh=(broker_key, panel_key)))
+            **px, gateway=gateway, prefix=network_prefix, ssh_keys=(broker_key, panel_key)))
     missing_ones = [a for a in LIB_FILES if not (lib_dir / a).is_file()]
     if missing_ones:
         reader.problems.append(f"BROKER_LIB_DIR: faltam {', '.join(missing_ones)} em {lib_dir}")
     ssh = None
     if broker_key:
         ssh = reader.attempt("BROKER_SSH_*", lambda: ConfigSsh(
-            chave_privada=ssh_key, chave_publica=broker_key, lib_dir=lib_dir))
+            private_key=ssh_key, public_key=broker_key, lib_dir=lib_dir))
 
     cfg_parcial = {
         "proxmox_fingerprint": reader.fingerprint("PROXMOX_CERT_SHA256", px_https),

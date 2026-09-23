@@ -25,7 +25,7 @@ def index():
 @panel.admin_required
 def new():
     username = request.form.get("username", "").strip().lower()
-    role = request.form.get("role", panel.ROLE_OPERADOR)
+    role = request.form.get("role", panel.ROLE_OPERATOR)
     new_password = request.form.get("new", "")
     if not panel.USER_RE.match(username):
         failure = ("Nome de usuario invalido: use de 1 a 32 caracteres entre letras"
@@ -102,7 +102,7 @@ def two_factor_off(uid: int):
     if uid == session.get("uid"):
         flash(panel.translate("flash.own_two_factor_in_account"), "error")
     else:
-        panel._apaga_o_segundo_fator(uid)
+        panel._delete_second_factor(uid)
         flash(panel.translate("flash.user_two_factor_off", user=target["username"]), "ok")
     return redirect(url_for("users.index"))
 

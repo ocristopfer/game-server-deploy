@@ -69,11 +69,12 @@ def _reset_module_state() -> None:
     volta do relogio acha que ainda nao e hora. Foi o motivo de cada suite ser um
     processo separado antes; agora e uma funcao.
     """
-    panel._estado_monitor.clear()
+    panel._monitor_state.clear()
     panel._status_cache.clear()
     panel._metrics_cache.clear()
     panel._players_cache.clear()
-    panel._login_fails.clear()
+    panel.login_lockout.reset()
+    panel.totp_lockout.reset()
     panel._last_monitor = 0.0
     panel._last_state = 0.0
     panel._last_disk = 0.0
@@ -158,7 +159,7 @@ def admin(login):
 @pytest.fixture
 def operator(login):
     """Um operador cadastrado e logado, para os testes de permissao."""
-    panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERADOR)
+    panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERATOR)
     return login("peao", "senha-do-peao")
 
 
@@ -169,7 +170,7 @@ def admin_2fa(admin):
     `broker_required` exige 2FA da PESSOA sempre, nao so quando `GAMEPANEL_REQUIRE_2FA`
     esta ligado — sem esta fixture, todo teste de rota do broker cairia na tela de
     ativacao em vez do que quer exercitar. Ativar 2FA na sessao ja logada nao a
-    derruba (`_guarda_o_segundo_fator` nao mexe na sessao), entao o mesmo cliente
+    derruba (`_store_second_factor` nao mexe na sessao), entao o mesmo cliente
     continua servindo depois.
     """
     admin.get("/account/2fa")

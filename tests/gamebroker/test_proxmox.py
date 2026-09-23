@@ -142,7 +142,7 @@ def test_espera_usa_o_upid_codificado(pve):
 
 BASE = dict(node="pve", pool="games", storage="vm-pool", bridge="vmbr1", gateway="192.168.2.1",
             template="vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
-            chaves_ssh=("ssh-ed25519 AAAA x",))
+            ssh_keys=("ssh-ed25519 AAAA x",))
 
 
 @pytest.mark.parametrize("campo", ["node", "pool", "storage", "bridge"])
@@ -160,8 +160,8 @@ def test_config_recusa_template_estranho(template):
 
 @pytest.mark.parametrize("chaves", [(), ("nao-e-chave",), ("ssh-ed25519 A\nssh-ed25519 B",)])
 def test_config_recusa_chaves_ruins(chaves):
-    with pytest.raises(ValueError, match="chaves_ssh"):
-        ConfigProxmox(**{**BASE, "chaves_ssh": chaves})
+    with pytest.raises(ValueError, match="ssh_keys"):
+        ConfigProxmox(**{**BASE, "ssh_keys": chaves})
 
 
 def test_backend_sem_servidor_e_erro_de_conexao_nao_excecao_solta():

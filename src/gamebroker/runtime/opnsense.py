@@ -28,8 +28,8 @@ SONDA_TIMEOUT = 5.0
 _UUID_RE = re.compile(r"[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 _PORT_RE = re.compile(r"\d{1,5}")
 _RANGE_RE = re.compile(r"(\d{1,5})[-:](\d{1,5})")
-_QUEBRA_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
-_BUSCA = {"current": 1, "rowCount": -1}
+_LINE_BREAK_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_SEARCH_ARGS = {"current": 1, "rowCount": -1}
 
 
 class OpnsenseError(RuntimeError):
@@ -53,7 +53,7 @@ def _number_of(text: str) -> int:
     return value
 
 
-def _expandir(item: str, rule: str) -> set[int]:
+def _expand_ports(item: str, rule: str) -> set[int]:
     """`7660` ou `8000-8010` (ou `8000:8010`) -> conjunto de portas."""
     item = item.strip()
     try:
@@ -78,29 +78,29 @@ def _ports_of_alias(meta: object, rule: str) -> set[int]:
         if not isinstance(summary, str):
             raise ReadError(f"regra '{rule}': alias sem conteudo legivel")
         read_lines = 0
-        for chunk_of in _QUEBRA_RE.split(summary):
+        for chunk_of in _LINE_BREAK_RE.split(summary):
             chunk_of = chunk_of.strip()
             # O primeiro pedaco costuma ser a descricao do alias, em HTML: nao e porta.
             if not chunk_of or "<" in chunk_of or ">" in chunk_of:
                 continue
-            ports |= _expandir(chunk_of, rule)
+            ports |= _expand_ports(chunk_of, rule)
             read_lines += 1
         if read_lines == 0:
             raise ReadError(f"regra '{rule}': o alias nao lista nenhuma porta que eu entenda")
     return ports
 
 
-def _protocolos(protocolo: str) -> tuple[str, ...]:
+def _protocols_of(protocol: str) -> tuple[str, ...]:
     # tcp/udp (ou qualquer coisa que nao seja so tcp ou so udp) ocupa os dois: errar por excesso.
-    protocolo = protocolo.strip().lower()
-    return (protocolo,) if protocolo in ("tcp", "udp") else ("tcp", "udp")
+    protocol = protocol.strip().lower()
+    return (protocol,) if protocol in ("tcp", "udp") else ("tcp", "udp")
 
 
-def busy_ports(linhas: object, interface: str) -> set[tuple[int, str]]:
+def busy_ports(rows: object, interface: str) -> set[tuple[int, str]]:
     taken: set[tuple[int, str]] = set()
-    if not isinstance(linhas, list):
+    if not isinstance(rows, list):
         raise ReadError("resposta de search_rule sem a lista de regras")
-    for rule in linhas:
+    for rule in rows:
         if not isinstance(rule, dict) or str(rule.get("interface", "")).lower() != interface.lower():
             continue
         target = str(rule.get("destination.port", "")).strip()
@@ -108,10 +108,10 @@ def busy_ports(linhas: object, interface: str) -> set[tuple[int, str]]:
             continue
         name = str(rule.get("descr", "")) or str(rule.get("uuid", "?"))
         if _PORT_RE.fullmatch(target) or _RANGE_RE.fullmatch(target):
-            ports = _expandir(target, name)
+            ports = _expand_ports(target, name)
         else:
             ports = _ports_of_alias(rule.get("alias_meta_destination.port"), name)
-        for proto in _protocolos(str(rule.get("protocol", ""))):
+        for proto in _protocols_of(str(rule.get("protocol", ""))):
             taken |= {(p, proto) for p in ports}
     return taken
 
@@ -132,7 +132,7 @@ class Opnsense:
         return response
 
     def _rules(self) -> list:
-        response = self._api("POST", "/d_nat/search_rule", "ler regras", _BUSCA)
+        response = self._api("POST", "/d_nat/search_rule", "ler regras", _SEARCH_ARGS)
         lines = response.json.get("rows") if isinstance(response.json, dict) else None
         if not isinstance(lines, list):
             raise ReadError("resposta de search_rule sem a lista de regras")
@@ -158,7 +158,7 @@ class Opnsense:
         try:
             for port in ports:
                 created_ones.append(self._create_rule(ctid, target, port))
-            self._aplicar()
+            self._apply()
         except Exception:
             self._delete(created_ones)
             raise
@@ -184,7 +184,7 @@ class Opnsense:
         if not uuids:
             return
         self._delete(uuids)
-        self._aplicar()
+        self._apply()
 
     def _delete(self, uuids: Sequence[str]) -> None:
         errors = 0
@@ -196,7 +196,7 @@ class Opnsense:
         if errors:
             raise OpnsenseError(f"nao consegui apagar {errors} regra(s); confira no OPNsense")
 
-    def _aplicar(self) -> None:
+    def _apply(self) -> None:
         response = self._api("POST", "/filter/apply", "aplicar", {})
         state_dir = response.json.get("status", "") if isinstance(response.json, dict) else ""
         if not str(state_dir).strip().upper().startswith("OK"):

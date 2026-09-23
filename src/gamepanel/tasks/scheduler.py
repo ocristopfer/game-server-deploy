@@ -41,31 +41,31 @@ class Clock:
 
     def __init__(self, interval: float, one_round: Callable[[], None],
                  logger: logging.Logger) -> None:
-        self._intervalo = interval
-        self._uma_volta = one_round
+        self._interval = interval
+        self._one_round = one_round
         self._logger = logger
-        self._comecou = False
+        self._started = False
         self._lock = threading.Lock()
-        self._parar = threading.Event()
+        self._stop_event = threading.Event()
 
     def _loop(self) -> None:
-        # Event.wait no lugar de sleep: assim o `parar()` corta a espera na hora em vez
+        # Event.wait no lugar de sleep: assim o `stop()` corta a espera na hora em vez
         # de deixar a thread pendurada ate o fim do intervalo.
-        while not self._parar.wait(self._intervalo):
+        while not self._stop_event.wait(self._interval):
             try:
-                self._uma_volta()
+                self._one_round()
             # A thread nao pode morrer por causa de um tick.
             except Exception:
                 self._logger.exception("falha no agendador")
 
     def start(self) -> None:
         with self._lock:
-            if self._comecou:
+            if self._started:
                 return
-            self._comecou = True
+            self._started = True
         threading.Thread(target=self._loop, daemon=True).start()
 
     def stop(self) -> None:
         """Encerra a thread. O painel nao usa (o processo inteiro morre junto); existe
         para o teste nao deixar relogio batendo pelo resto da suite."""
-        self._parar.set()
+        self._stop_event.set()

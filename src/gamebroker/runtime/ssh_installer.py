@@ -10,7 +10,7 @@ Fluxo (tudo com `ssh`/`scp` do sistema, nunca por shell):
      acesso permanente do broker.
 
 O `install.env` tem aspas em todo valor (`shlex.quote`): nada do catalogo e concatenado numa
-linha de comando ou interpretado como shell pelo `source` do CT. Credencial de conta Steam
+linha de command ou interpretado como shell pelo `source` do CT. Credencial de conta Steam
 nunca entra (`STEAM_ANONYMOUS` e sempre 1: jogos que exigem conta nao sao criaveis por API).
 
 As mesmas fases rodam no deploy manual (lib/ct-phases.sh via provision-game-lxc.sh); o sandbox
@@ -33,12 +33,12 @@ from typing import Protocol
 from gamebroker.services.allocator import ROLE_GAME, ROLE_QUERY, AllocatedPort, port_from_base, port_with_role
 from gamebroker.services.catalog import RECIPES_WINDOWS, Game
 
-DESTINO_REMOTO = "/root/gamepanel-install"
+REMOTE_DEST = "/root/gamepanel-install"
 SUCCESS_MARK = "INSTALACAO CONCLUIDA"
 LIB_FILES = ("ct-install.sh", "ct-phases.sh")
 MAX_LINE = 400
 LINE_BATCH = 20
-LOTE_SEGUNDOS = 1.5
+BATCH_SECONDS = 1.5
 ERROR_TAIL = 6
 _BLOB_RE = re.compile(r"[A-Za-z0-9+/=]{20,}", re.ASCII)
 
@@ -80,29 +80,29 @@ class ExecutorReal:
 
 @dataclass(frozen=True)
 class ConfigSsh:
-    chave_privada: Path
-    chave_publica: str          # linha completa da chave do broker, a que foi injetada no CT
+    private_key: Path
+    public_key: str          # linha completa da chave do broker, a que foi injetada no CT
     lib_dir: Path             # onde estao ct-install.sh e ct-phases.sh
-    usuario: str = "root"
-    espera_ssh: float = 180.0
-    intervalo: float = 3.0
-    timeout_instalacao: float = 7200.0
-    timeout_comando: float = 120.0
+    user: str = "root"
+    ssh_wait: float = 180.0
+    interval: float = 3.0
+    install_timeout: float = 7200.0
+    command_timeout: float = 120.0
 
     def __post_init__(self) -> None:
-        parts = self.chave_publica.split()
+        parts = self.public_key.split()
         if len(parts) < 2 or not _BLOB_RE.fullmatch(parts[1]):
-            raise ValueError("chave_publica: esperada uma linha de chave publica OpenSSH")
-        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", self.usuario):
-            raise ValueError("usuario invalido")
+            raise ValueError("public_key: esperada uma linha de chave publica OpenSSH")
+        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", self.user):
+            raise ValueError("user: nome de conta invalido")
 
     @property
     def blob(self) -> str:
-        return self.chave_publica.split()[1]
+        return self.public_key.split()[1]
 
 
 def build_env(game: Game, ports: Sequence[AllocatedPort]) -> str:
-    """O `install.env` do CT. Cada valor entre aspas: e DADO, nunca comando."""
+    """O `install.env` do CT. Cada valor entre aspas: e DADO, nunca command."""
     runtimes = [r for r in game.recipes if r in RECIPES_WINDOWS]
     if len(runtimes) > 1:
         raise InstallError("escolha 'wine' OU 'proton', nao os dois")
@@ -124,14 +124,14 @@ def build_env(game: Game, ports: Sequence[AllocatedPort]) -> str:
     return "".join(f"{name}={shlex.quote(value)}\n" for name, value in variables.items())
 
 
-class _Lote:
+class _Batch:
     """Junta linhas para gravar no log em blocos: o SteamCMD despeja milhares e cada gravacao
     e uma transacao no banco."""
 
     def __init__(self, log: Callable[[str], None], now: Callable[[], float]):
-        self._log, self._agora = log, now
-        self._linhas: list[str] = []
-        self._ultimo = now()
+        self._log, self._now = log, now
+        self._lines: list[str] = []
+        self._last_at = now()
         self.cauda: list[str] = []
         self.concluida = False
 
@@ -142,15 +142,15 @@ class _Lote:
         if SUCCESS_MARK in text:
             self.concluida = True
         self.cauda = (self.cauda + [text])[-ERROR_TAIL:]
-        self._linhas.append(text)
-        if len(self._linhas) >= LINE_BATCH or self._agora() - self._ultimo >= LOTE_SEGUNDOS:
-            self.descarrega()
+        self._lines.append(text)
+        if len(self._lines) >= LINE_BATCH or self._now() - self._last_at >= BATCH_SECONDS:
+            self.flush()
 
-    def descarrega(self) -> None:
-        if self._linhas:
-            self._log("\n".join(self._linhas))
-            self._linhas = []
-        self._ultimo = self._agora()
+    def flush(self) -> None:
+        if self._lines:
+            self._log("\n".join(self._lines))
+            self._lines = []
+        self._last_at = self._now()
 
 
 class SshInstaller:
@@ -159,26 +159,26 @@ class SshInstaller:
                  now: Callable[[], float] = time.monotonic):
         self._cfg = config
         self._exec = executor or ExecutorReal()
-        self._dormir = sleep
-        self._agora = now
+        self._sleep = sleep
+        self._now = now
         missing_ones = [a for a in LIB_FILES if not (config.lib_dir / a).is_file()]
         if missing_ones:
             raise ValueError(f"faltam em {config.lib_dir}: {', '.join(missing_ones)}")
 
     # --- comandos ------------------------------------------------------------------------
 
-    def _opcoes(self) -> list[str]:
+    def _options(self) -> list[str]:
         # Chave nova de CT recem-criado: nao ha host key conhecida, e o IP e reaproveitado
         # depois que a instancia e removida (um known_hosts fixo recusaria o CT seguinte).
-        return ["-i", str(self._cfg.chave_privada), "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+        return ["-i", str(self._cfg.private_key), "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
                 "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
                 "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=10"]
 
-    def _ssh(self, target: str, comando: str) -> list[str]:
-        return ["ssh", *self._opcoes(), target, comando]
+    def _ssh(self, target: str, command: str) -> list[str]:
+        return ["ssh", *self._options(), target, command]
 
     def _target(self, ip: str) -> str:
-        return f"{self._cfg.usuario}@{ip}"
+        return f"{self._cfg.user}@{ip}"
 
     # --- fluxo ----------------------------------------------------------------------------------
 
@@ -187,7 +187,7 @@ class SshInstaller:
         ip = str(ipaddress.IPv4Address(ip))
         target = self._target(ip)
         env = build_env(game, ports)
-        self._esperar_ssh(target, ip, log)
+        self._wait_for_ssh(target, ip, log)
         failure: Exception | None = None
         try:
             self._send(target, env)
@@ -198,36 +198,36 @@ class SshInstaller:
         finally:
             self._cleanup(target, log, failure)
 
-    def _esperar_ssh(self, target: str, ip: str, log: Callable[[str], None]) -> None:
+    def _wait_for_ssh(self, target: str, ip: str, log: Callable[[str], None]) -> None:
         log(f"aguardando o SSH de {ip}")
-        limit = self._agora() + self._cfg.espera_ssh
+        limit = self._now() + self._cfg.ssh_wait
         while True:
             if self._exec.run(self._ssh(target, "true"), None, 20) == 0:
                 return
-            if self._agora() >= limit:
-                raise InstallError(f"o SSH de {ip} nao respondeu em {int(self._cfg.espera_ssh)} s")
-            self._dormir(self._cfg.intervalo)
+            if self._now() >= limit:
+                raise InstallError(f"o SSH de {ip} nao respondeu em {int(self._cfg.ssh_wait)} s")
+            self._sleep(self._cfg.interval)
 
     def _send(self, target: str, env: str) -> None:
-        folder = shlex.quote(DESTINO_REMOTO)
-        self._comando(self._ssh(target, f"install -d -m 700 {folder}"), "criar a pasta no CT")
+        folder = shlex.quote(REMOTE_DEST)
+        self._command(self._ssh(target, f"install -d -m 700 {folder}"), "criar a pasta no CT")
         with tempfile.TemporaryDirectory(prefix="broker-install-") as tmp:
             env_file = Path(tmp) / "install.env"
             env_file.write_text(env, encoding="utf-8", newline="\n")
             sources = [str(self._cfg.lib_dir / a) for a in LIB_FILES] + [str(env_file)]
-            self._comando(["scp", *self._opcoes(), *sources, f"{target}:{DESTINO_REMOTO}/"],
+            self._command(["scp", *self._options(), *sources, f"{target}:{REMOTE_DEST}/"],
                           "enviar o instalador ao CT")
 
-    def _comando(self, argv: Sequence[str], action: str) -> None:
-        code = self._exec.run(argv, None, self._cfg.timeout_comando)
+    def _command(self, argv: Sequence[str], action: str) -> None:
+        code = self._exec.run(argv, None, self._cfg.command_timeout)
         if code != 0:
             raise InstallError(f"falhou ao {action} (codigo {code})")
 
     def _install(self, target: str, log: Callable[[str], None]) -> None:
-        batch = _Lote(log, self._agora)
-        command = f"cd {shlex.quote(DESTINO_REMOTO)} && bash ct-install.sh install.env"
-        code = self._exec.run(self._ssh(target, command), batch.line, self._cfg.timeout_instalacao)
-        batch.descarrega()
+        batch = _Batch(log, self._now)
+        command = f"cd {shlex.quote(REMOTE_DEST)} && bash ct-install.sh install.env"
+        code = self._exec.run(self._ssh(target, command), batch.line, self._cfg.install_timeout)
+        batch.flush()
         if code != 0:
             summary = " | ".join(batch.cauda)
             raise InstallError(f"a instalacao falhou (codigo {code}): {summary}")
@@ -238,11 +238,11 @@ class SshInstaller:
         """Apaga o que foi enviado e tira a chave do broker. Roda SEMPRE."""
         blob = self._cfg.blob
         file = "/root/.ssh/authorized_keys"
-        command = (f"rm -rf {shlex.quote(DESTINO_REMOTO)}; "
+        command = (f"rm -rf {shlex.quote(REMOTE_DEST)}; "
                    f"grep -vF -- {shlex.quote(blob)} {file} > {file}.tmp; "
                    f"cat {file}.tmp > {file}; rm -f {file}.tmp; "
                    f"! grep -qF -- {shlex.quote(blob)} {file}")
-        code = self._exec.run(self._ssh(target, command), None, self._cfg.timeout_comando)
+        code = self._exec.run(self._ssh(target, command), None, self._cfg.command_timeout)
         if code == 0:
             log("chave do broker removida do container")
             return
