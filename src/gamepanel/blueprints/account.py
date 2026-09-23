@@ -83,7 +83,7 @@ def two_factor():
     address = panel.totp.uri(secret, session.get("username", ""), "Painel de Jogos")
     return render_template(
         "account_2fa.html", secret=panel.totp.group(secret), address=address,
-        qr_svg=qr.svg(address, label="QR code da verificacao em duas etapas"))
+        qr_svg=qr.svg(address, label=panel.translate("account_2fa.qr_label")))
 
 
 @bp.post("/account/2fa/off")

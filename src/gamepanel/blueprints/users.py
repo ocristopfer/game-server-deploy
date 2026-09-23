@@ -6,6 +6,7 @@ import sqlite3
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel import i18n
 from gamepanel.persistence.repositories import users as users_repo
 
 bp = Blueprint("users", __name__)
@@ -28,10 +29,9 @@ def new():
     role = request.form.get("role", panel.ROLE_OPERATOR)
     new_password = request.form.get("new", "")
     if not panel.USER_RE.match(username):
-        failure = ("Nome de usuario invalido: use de 1 a 32 caracteres entre letras"
-                " minusculas, numeros, '-' e '_', comecando por letra ou '_'.")
+        failure = i18n.Message("flash.username_invalid")
     elif role not in panel.ROLES:
-        failure = "Papel invalido."
+        failure = i18n.Message("flash.role_invalid")
     else:
         failure = panel.validate_password(new_password, request.form.get("confirm", ""))
     if failure:
@@ -59,14 +59,14 @@ def role(uid: int):
     target = panel._user_or_404(uid)
     role = request.form.get("role", "")
     if role not in panel.ROLES:
-        abort(400, "Papel invalido.")
+        abort(400, i18n.Message("flash.role_invalid"))
     if uid == session.get("uid"):
         # Rebaixar a si mesmo tranca a pessoa fora desta tela no mesmo clique.
         flash(panel.translate("flash.cannot_change_own_role"), "error")
     elif role == target["role"]:
         flash(panel.translate("flash.user_already_is", user=target["username"],
                        role=panel.translate(panel.ROLE_LABELS[role]).lower()), "ok")
-    elif target["role"] == panel.ROLE_ADMIN and panel.count_admins(excluindo=uid) == 0:
+    elif target["role"] == panel.ROLE_ADMIN and panel.count_admins(excluding=uid) == 0:
         flash(panel.translate("flash.only_admin_demote"), "error")
     else:
         conn = panel.db()
@@ -113,7 +113,7 @@ def delete(uid: int):
     target = panel._user_or_404(uid)
     if uid == session.get("uid"):
         flash(panel.translate("flash.cannot_remove_self"), "error")
-    elif target["role"] == panel.ROLE_ADMIN and panel.count_admins(excluindo=uid) == 0:
+    elif target["role"] == panel.ROLE_ADMIN and panel.count_admins(excluding=uid) == 0:
         flash(panel.translate("flash.cannot_remove_only_admin"), "error")
     else:
         conn = panel.db()

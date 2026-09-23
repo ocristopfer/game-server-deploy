@@ -6,6 +6,7 @@ import sqlite3
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel import i18n
 from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("servers", __name__)
@@ -26,7 +27,7 @@ def new():
                 flash(panel.translate("flash.server_added", name=data["name"]), "ok")
                 return redirect(url_for("dashboard.index"))
             except sqlite3.IntegrityError:
-                errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
+                errors.append(i18n.Message("flash.server_duplicate", host=data["host"]))
         for err in errors:
             flash(panel.translate(err), "error")
     return render_template("server_form.html", data=data, mode="new")
@@ -53,7 +54,7 @@ def edit(sid: int):
                 flash(panel.translate("flash.server_updated"), "ok")
                 return redirect(url_for("servers.detail", sid=sid))
             except sqlite3.IntegrityError:
-                errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
+                errors.append(i18n.Message("flash.server_duplicate", host=data["host"]))
         for err in errors:
             flash(panel.translate(err), "error")
     # `server` (a linha do banco, nao o formulario) vai junto: e dele que a barra de

@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel import i18n
 
 bp = Blueprint("config_quick", __name__)
 
@@ -79,7 +80,7 @@ def save(sid: int):
         return redirect(url_for("config_quick.index", sid=sid))
     # Mesma trava do config_quick, agora na escrita: o caminho chega pelo formulario.
     if path not in panel.config_paths(server) and not panel.is_admin():
-        abort(403, "Operador so salva os arquivos de configuracao ja registrados neste servidor.")
+        abort(403, i18n.Message("error.operator_saves_registered_only"))
 
     go_back = url_for("config_quick.index", sid=sid, file=path)
     try:

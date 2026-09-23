@@ -6,6 +6,7 @@ import base64
 from flask import Blueprint, abort, jsonify, render_template, request, session
 
 from gamepanel import app as panel
+from gamepanel import i18n
 from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("terminal", __name__)
@@ -87,7 +88,7 @@ def api_keys(tid: str):
     body = request.get_json(silent=True) or {}
     data = body.get("data", "")
     if not isinstance(data, str) or len(data) > 64 * 1024:
-        abort(400, "entrada invalida")
+        abort(400, i18n.Message("error.terminal_bad_input"))
     try:
         term.write(data.encode("utf-8"))
     except panel.RemoteError as exc:
@@ -105,7 +106,7 @@ def api_resize(tid: str):
         cols = max(20, min(400, int(body.get("cols", 80))))
         rows = max(5, min(150, int(body.get("rows", 24))))
     except (TypeError, ValueError):
-        abort(400, "tamanho invalido")
+        abort(400, i18n.Message("error.terminal_bad_size"))
     term.resize(cols, rows)
     return jsonify({"ok": True})
 

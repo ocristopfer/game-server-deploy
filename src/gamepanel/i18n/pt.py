@@ -642,6 +642,46 @@ MESSAGES: dict[str, str] = {
     "server_form.remove_confirm": "Remover este servidor do painel?",
 
     # ------------------------------------------ titulos e componente
+    # ------------------------- pagina de erro e barreira de permissao
+    # Texto que ate aqui era literal dentro de `abort(...)` e de `errors.append(...)`:
+    # passava pelo `translate` e voltava igual, entao a tela em ingles mostrava
+    # portugues. Ver "Texto fixo devolvido por funcao nao traduz", no CLAUDE.md.
+    "error.csrf_invalid": "Token CSRF invalido ou expirado — recarregue a pagina.",
+    "error.terminal_session_gone": "Sessao de terminal expirada ou encerrada.",
+    "error.terminal_bad_input": "Entrada invalida.",
+    "error.terminal_bad_size": "Tamanho invalido.",
+    "error.download_too_large":
+        "Arquivo de {size} bytes acima do limite de download ({limit} bytes) — use scp para este.",
+    "error.not_found": "Pagina nao encontrada.",
+    "error.admin_only": "Esta tela e restrita a administradores do painel.",
+    "error.job_admin_only": "Este registro e de uma acao restrita a administradores do painel.",
+    "error.terminal_disabled": "O terminal esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).",
+    "error.terminal_no_pty": "Terminal indisponivel: este sistema nao tem PTY.",
+    "error.console_disabled": "O console esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).",
+    "error.files_disabled": "O editor de arquivos esta desabilitado (GAMEPANEL_ALLOW_FILES=0).",
+    "error.broker_disabled": "O broker esta desligado neste painel (GAMEPANEL_ALLOW_BROKER=0).",
+    "error.operator_reads_registered_only":
+        "Operador so abre os arquivos de configuracao ja registrados neste servidor.",
+    "error.operator_saves_registered_only":
+        "Operador so salva os arquivos de configuracao ja registrados neste servidor.",
+    "error.upload_too_large":
+        "Arquivo grande demais para o envio (limite de {limit}). Para mandar um maior, suba o "
+        "GAMEPANEL_UPLOAD_MAX do painel — conferindo antes se ha esse espaco livre no container "
+        "do painel.",
+    "error.content_too_large": "Conteudo grande demais (o editor aceita ate {kb} KB por arquivo).",
+
+    # ------------------------------------- validacao de formulario
+    "flash.server_duplicate": "Ja existe um servidor cadastrado em {host}.",
+    "flash.username_invalid":
+        "Nome de usuario invalido: use de 1 a 32 caracteres entre letras minusculas, numeros, "
+        "'-' e '_', comecando por letra ou '_'.",
+    "flash.role_invalid": "Papel invalido.",
+    "flash.schedule_pick_action": "Escolha o que a tarefa deve fazer.",
+    "flash.schedule_pick_kind": "Escolha quando a tarefa deve rodar.",
+    "flash.schedule_bad_time": "Horario invalido (use hora 0-23 e minuto 0-59).",
+    "flash.schedule_bad_interval": "Intervalo invalido (de 1 a {max} horas).",
+    "account_2fa.qr_label": "QR code da verificacao em duas etapas",
+
     "error.title": "Erro {code}",
     "job.title": "Acao #{id}",
     "account_2fa_codes.title": "Codigos de recuperacao",

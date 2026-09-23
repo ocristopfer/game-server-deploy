@@ -640,6 +640,43 @@ MESSAGES: dict[str, str] = {
     "server_form.remove_confirm": "Remove this server from the panel?",
 
     # ------------------------------------------ titulos e componente
+    # ------------------------- pagina de erro e barreira de permissao
+    "error.csrf_invalid": "Invalid or expired CSRF token — reload the page.",
+    "error.terminal_session_gone": "Terminal session expired or closed.",
+    "error.terminal_bad_input": "Invalid input.",
+    "error.terminal_bad_size": "Invalid size.",
+    "error.download_too_large":
+        "File of {size} bytes is over the download limit ({limit} bytes) — use scp for this one.",
+    "error.not_found": "Page not found.",
+    "error.admin_only": "This screen is for panel administrators only.",
+    "error.job_admin_only": "This record belongs to an action restricted to panel administrators.",
+    "error.terminal_disabled": "The terminal is turned off (GAMEPANEL_ALLOW_SHELL=0).",
+    "error.terminal_no_pty": "Terminal unavailable: this system has no PTY.",
+    "error.console_disabled": "The console is turned off (GAMEPANEL_ALLOW_SHELL=0).",
+    "error.files_disabled": "The file editor is turned off (GAMEPANEL_ALLOW_FILES=0).",
+    "error.broker_disabled": "The broker is turned off on this panel (GAMEPANEL_ALLOW_BROKER=0).",
+    "error.operator_reads_registered_only":
+        "An operator can only open the config files already registered on this server.",
+    "error.operator_saves_registered_only":
+        "An operator can only save the config files already registered on this server.",
+    "error.upload_too_large":
+        "File too large to upload (limit of {limit}). To send a bigger one, raise the panel's "
+        "GAMEPANEL_UPLOAD_MAX — after checking there is that much free space in the panel "
+        "container.",
+    "error.content_too_large": "Content too large (the editor takes up to {kb} KB per file).",
+
+    # ------------------------------------- validacao de formulario
+    "flash.server_duplicate": "There is already a server registered at {host}.",
+    "flash.username_invalid":
+        "Invalid username: use 1 to 32 characters among lowercase letters, digits, '-' and '_', "
+        "starting with a letter or '_'.",
+    "flash.role_invalid": "Invalid role.",
+    "flash.schedule_pick_action": "Pick what the task should do.",
+    "flash.schedule_pick_kind": "Pick when the task should run.",
+    "flash.schedule_bad_time": "Invalid time (use hour 0-23 and minute 0-59).",
+    "flash.schedule_bad_interval": "Invalid interval (from 1 to {max} hours).",
+    "account_2fa.qr_label": "Two-step verification QR code",
+
     "error.title": "Error {code}",
     "job.title": "Action #{id}",
     "account_2fa_codes.title": "Recovery codes",

@@ -505,7 +505,7 @@ def admin_required(view):
     @wraps(view)
     def wrapper(*args, **kwargs):
         if not is_admin():
-            abort(403, "Esta tela e restrita a administradores do painel.")
+            abort(403, i18n.Message("error.admin_only"))
         return view(*args, **kwargs)
 
     return login_required(wrapper)
@@ -536,7 +536,7 @@ def _check_csrf():
     if request.method != "POST":
         return None
     if not csrf.matches(session, request.form, request.headers):
-        abort(400, "token CSRF invalido ou expirado - recarregue a pagina")
+        abort(400, i18n.Message("error.csrf_invalid"))
     return None
 
 
@@ -1048,7 +1048,7 @@ def job_label(action: str) -> str:
 def job_or_403(job: sqlite3.Row) -> None:
     """Barra o operador na saida de um job que ele nao teria permissao de disparar."""
     if job_service.is_restricted(job["action"]) and not is_admin():
-        abort(403, "Este registro e de uma acao restrita a administradores do painel.")
+        abort(403, i18n.Message("error.job_admin_only"))
 
 
 def role_filter() -> tuple[str, tuple]:
@@ -2149,16 +2149,16 @@ def _term_of_user(tid: str) -> TermSession:
         term = _terms.get(tid)
     # Sessao de outro usuario e tratada como inexistente.
     if not term or term.uid != session.get("uid"):
-        abort(404, "sessao de terminal expirada ou encerrada")
+        abort(404, i18n.Message("error.terminal_session_gone"))
     term.last_seen = time.time()
     return term
 
 
 def _terminal_guard():
     if not ALLOW_SHELL:
-        abort(403, "O terminal esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).")
+        abort(403, i18n.Message("error.terminal_disabled"))
     if not HAVE_PTY:
-        abort(503, "Terminal indisponivel: este sistema nao tem PTY.")
+        abort(503, i18n.Message("error.terminal_no_pty"))
 
 
 # ------------------------------------------------- editor de configuracoes
@@ -2215,7 +2215,7 @@ def _human_size(num: int | None) -> str:
 
 def _files_guard():
     if not ALLOW_FILES:
-        abort(403, "O editor de arquivos esta desabilitado (GAMEPANEL_ALLOW_FILES=0).")
+        abort(403, i18n.Message("error.files_disabled"))
 
 
 def _server_or_404(sid: int) -> sqlite3.Row:
@@ -2365,7 +2365,7 @@ def _target_config(arquivos: list[str], errors: list[str]) -> str:
     # qualquer do container (como root), justo o que o operador nao tem permissao de
     # abrir. Para ele valem so os arquivos que um admin ja registrou no servidor.
     if target not in arquivos and not is_admin():
-        abort(403, "Operador so abre os arquivos de configuracao ja registrados neste servidor.")
+        abort(403, i18n.Message("error.operator_reads_registered_only"))
     return target
 
 
@@ -2499,7 +2499,7 @@ def broker_required(view):
     @wraps(view)
     def wrapper(*args, **kwargs):
         if not ALLOW_BROKER:
-            abort(403, "O broker esta desligado neste painel (GAMEPANEL_ALLOW_BROKER=0).")
+            abort(403, i18n.Message("error.broker_disabled"))
         user = logged_user()
         if not user or not user["totp_enabled"]:
             if request.path.startswith("/api/"):
@@ -2608,20 +2608,20 @@ def _bounded_int(value, minimum: int, maximum: int, default: int) -> int:
 def _schedule_form(form, errors: list[str]) -> dict:
     action = (form.get("action", "") or "").strip()
     if action not in SCHEDULE_ACTIONS:
-        errors.append("Escolha o que a tarefa deve fazer.")
+        errors.append(i18n.Message("flash.schedule_pick_action"))
         action = "restart"
     kind = (form.get("kind", "") or "").strip()
     if kind not in SCHEDULE_KINDS:
-        errors.append("Escolha quando a tarefa deve rodar.")
+        errors.append(i18n.Message("flash.schedule_pick_kind"))
         kind = "diario"
 
     hour = _bounded_int(form.get("hour"), 0, 23, -1)
     minute = _bounded_int(form.get("minute"), 0, 59, -1)
     if kind != "intervalo" and (hour < 0 or minute < 0):
-        errors.append("Horario invalido (use hora 0-23 e minuto 0-59).")
+        errors.append(i18n.Message("flash.schedule_bad_time"))
     hours = _bounded_int(form.get("every_hours"), 1, EVERY_HOURS_MAX, -1)
     if kind == "intervalo" and hours < 0:
-        errors.append(f"Intervalo invalido (de 1 a {EVERY_HOURS_MAX} horas).")
+        errors.append(i18n.Message("flash.schedule_bad_interval", max=EVERY_HOURS_MAX))
 
     return {
         "action": action,
@@ -2799,9 +2799,9 @@ def _read_webhook_form() -> tuple:
 validate_password = passwords.validate_password
 
 
-def count_admins(excluindo: int = 0) -> int:
-    """Quantos administradores sobrariam sem o usuario `excluindo`."""
-    return users_repo.count_admins_besides(db(), ROLE_ADMIN, excluindo)
+def count_admins(excluding: int = 0) -> int:
+    """Quantos administradores sobrariam sem o usuario `excluding`."""
+    return users_repo.count_admins_besides(db(), ROLE_ADMIN, excluding)
 
 
 def _user_or_404(uid: int) -> sqlite3.Row:
@@ -2858,19 +2858,30 @@ def _shell_files() -> tuple[list[str], str]:
     return urls, mark
 
 
+def _error_page(exc, code: int):
+    """A descricao do `abort(...)` no idioma de quem esta olhando.
+
+    `exc.description` e nao `str(exc)`: o segundo poe "403 Forbidden: " na frente (o
+    template ja mostra o codigo em cima) e colapsa a `i18n.Message` numa `str` comum,
+    que e o idioma do DEPLOY — a tela em ingles mostrava portugues.
+    """
+    return render_template(TPL_ERROR, code=code, message=translate(exc.description)), code
+
+
 @app.errorhandler(400)
 def _bad_request(exc):
-    return render_template(TPL_ERROR, code=400, message=str(exc)), 400
+    return _error_page(exc, 400)
 
 
 @app.errorhandler(403)
 def _forbidden(exc):
-    return render_template(TPL_ERROR, code=403, message=str(exc)), 403
+    return _error_page(exc, 403)
 
 
 @app.errorhandler(404)
 def _not_found(_exc):
-    return render_template(TPL_ERROR, code=404, message="Pagina nao encontrada."), 404
+    return render_template(
+        TPL_ERROR, code=404, message=translate("error.not_found")), 404
 
 
 @app.errorhandler(413)
@@ -2878,19 +2889,15 @@ def _too_large(_exc):
     # Os dois tetos sao bem diferentes, e cair no 413 sem saber em qual deles nao ajuda
     # ninguem: o editor carrega o arquivo inteiro num textarea, o upload nao.
     if request.endpoint in BIG_BODY_ENDPOINTS:
-        message = (
-            f"Arquivo grande demais para o envio (limite de {_human_size(FILE_UPLOAD_MAX)})."
-            " Para mandar um maior, suba o GAMEPANEL_UPLOAD_MAX do painel — conferindo"
-            " antes se ha esse espaco livre no container do painel."
-        )
+        message = translate("error.upload_too_large", limit=_human_size(FILE_UPLOAD_MAX))
     else:
-        message = f"Conteudo grande demais (o editor aceita ate {FILE_MAX_BYTES // 1024} KB por arquivo)."
+        message = translate("error.content_too_large", kb=FILE_MAX_BYTES // 1024)
     return render_template(TPL_ERROR, code=413, message=message), 413
 
 
 @app.errorhandler(503)
 def _unavailable(exc):
-    return render_template(TPL_ERROR, code=503, message=str(exc)), 503
+    return _error_page(exc, 503)
 
 
 # --------------------------------------------------------------- bootstrap CLI

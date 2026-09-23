@@ -778,7 +778,28 @@ docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos san
   `backup_paths`, `list_backups`, `delete_backup`, `validate_backup_name`) e
   `runtime/files.py` (`clean_path`, `_check_roots`, com as raízes injetadas). Criar uma
   camada por cima só para bater com o desenho do papel seria um repasse a mais para ler.
-- `extensions.py`, `services/user_service.py`, `tasks/monitor.py` e `runtime/base.py`
-  +`runtime/fakes.py` do painel continuam abertos: são extração de orquestração, sem
-  ganho de teste como os anteriores.
+- ~~`tasks/monitor.py`~~ — **feito na parte que importava**: os seis relógios de fundo
+  (`global _last_monitor` e companhia) viraram instâncias de `tasks.ticker.Ticker`, com
+  `due()`/`mark()` separados e 9 testes que não precisam de banco nem de dormir. O corpo
+  de `monitor_servers` fica no `app.py`: ele só orquestra, e já está dividido em
+  `_monitor_rhythm` + `_server_alerts` desde antes (era o exemplo "bom" que o plano cita).
+- `extensions.py`, `services/user_service.py` e `runtime/base.py`+`runtime/fakes.py` do
+  painel continuam abertos: são extração de orquestração, sem ganho de teste como os
+  anteriores. O `extensions.py` chega a contradizer a descrição do próprio `app.py` no
+  CLAUDE.md ("a montagem: banco, sessão, decoradores, tabelas"), que é exatamente o que
+  ele levaria embora.
+
+### Defeitos reais encontrados depois do plano
+
+- **Toda página de erro estava em português na tela em inglês.** `abort(403, "frase")` +
+  `str(exc)` no handler: a frase literal passa pelo `translate` e volta igual, e o
+  `str(exc)` de uma `HTTPException` colapsa a `i18n.Message` no idioma do deploy. Eram 22
+  frases (barreiras, erros de formulário e flashes de validação), provadas contra o
+  container ao vivo e agora guardadas por `test_screen_text.py`.
+- **A doc mandava abrir oito arquivos que não existiam mais** (`conexao.py`,
+  `ssh_install.py`, `servico.py`, `backends.py`, `test_gamefields.py`, `instancias.html`,
+  `catalogo.html`, `gameconf.py`), mais `ui.py`, `prod.py` e um `pyroject.toml` digitado
+  errado. Passavam porque a rede de doc descartava qualquer coisa com extensão — o filtro
+  que evitava o falso positivo era o buraco. `test_docs_contract.py` agora confere nome de
+  arquivo também.
 - Uma criação REAL de instância de ponta a ponta pelo broker contra o Proxmox/OPNsense.

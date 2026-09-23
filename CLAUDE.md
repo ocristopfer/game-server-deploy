@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_game_fields.py`, `test_config_
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 982
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 992
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 980 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 990 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -252,8 +252,23 @@ Foram tres, achadas ao extrair codigo do `app.py`: as duas de senha
 (`validate_password`) e o rotulo `broker-jogo` do historico, que era `"Jogo adicionado
 ao catalogo"` escrito a mao dentro do dicionario de rotulos.
 
+Depois foram mais dezesseis, achadas contra o container AO VIVO: com a tela em ingles, o
+403 de operador dizia "restrita" e a rota inexistente dizia "Pagina nao encontrada". Todas
+as barreiras (`abort`), os erros de formulario (`errors.append`) e os flashes de validacao
+eram literais. `tests/gamepanel/test_screen_text.py` guarda as tres portas por onde texto
+entra na tela — `abort`, `flash` e `errors.append` — e recusa literal com espaco: uma chave
+de catalogo (`error.admin_only`) nunca tem espaco, uma frase sempre tem.
+
 - **Erro que vai para a tela sai como `i18n.Message`**, e nao como texto. `Message` E
-  uma `str`, entao `str(exc)`, f-string e `in` continuam funcionando.
+  uma `str`, entao `str(exc)`, f-string e `in` continuam funcionando — e `translate`
+  reconhece a classe e refaz a frase no idioma de quem esta olhando.
+- **A pagina de erro le `exc.description`, nao `str(exc)`.** O segundo poe
+  "403 Forbidden: " na frente (o template ja mostra o codigo em cima) e, pior, colapsa a
+  `Message` numa `str` comum — que e o idioma do DEPLOY. Era so isso que fazia a tela em
+  ingles mostrar portugues em todo 400/403/404/413/503.
+- **Texto que vai para a SAIDA DE UM JOB continua literal, de proposito**
+  (`_log_broker_action`, `notify`): o historico e lido depois, por outra pessoa, e a mesma
+  acao escrita de tres jeitos quebraria o filtro. O guard nao olha para essas duas portas.
 - **`test_job_service.py` cobra que todo rotulo do historico seja chave de catalogo**,
   e que os dois idiomas a tenham. Foi ele que teria pego o `broker-jogo`.
 

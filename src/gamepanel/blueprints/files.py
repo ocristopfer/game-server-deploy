@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, stream_with_context, url_for
 
 from gamepanel import app as panel
+from gamepanel import i18n
 
 bp = Blueprint("files", __name__)
 
@@ -181,8 +182,8 @@ def download(sid: int):
         abort(400, str(exc))
 
     if panel.FILE_DOWNLOAD_MAX and info["size"] > panel.FILE_DOWNLOAD_MAX:
-        abort(400, f"arquivo de {info['size']} bytes acima do limite de download"
-                   f" ({panel.FILE_DOWNLOAD_MAX} bytes) — use scp para este")
+        abort(400, i18n.Message("error.download_too_large", size=info["size"],
+                                limit=panel.FILE_DOWNLOAD_MAX))
 
     panel.log_job(
         "download-file", server, session.get("username", "?"),
