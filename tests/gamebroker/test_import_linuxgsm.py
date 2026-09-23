@@ -79,7 +79,7 @@ def test_palworld_anda_de_porta_e_perde_so_o_nome_do_servidor():
     assert s["start_args"] == "-publiclobby -useperfthreads -port={PORT} -queryport={QUERY_PORT}"
     assert s["shiftable"] is True
     assert s["start_script"] == "Pal/Binaries/Linux/PalServer-Linux-Shipping"
-    assert any("servername" in aviso for aviso in s["warnings"])
+    assert any("servername" in warning for warning in s["warnings"])
 
 
 HOSTIL = '''
@@ -97,15 +97,15 @@ startparameters="-port ${port} +password ${serverpassword} +rcon_password ${rcon
 
 def test_segredo_nunca_e_resolvido_nem_vai_para_a_sugestao():
     s = imp.sugerir("Hostil", HOSTIL)
-    texto = s["start_args"] + " " + s["ports"]
-    for proibido in ("CHANGE_ME", "TOKEN-SECRETO", "password", "gslt"):
-        assert proibido not in texto
+    text = s["start_args"] + " " + s["ports"]
+    for forbidden_word in ("CHANGE_ME", "TOKEN-SECRETO", "password", "gslt"):
+        assert forbidden_word not in text
 
 
 def test_o_que_nao_cabe_no_charset_e_removido_nao_escapado():
     args = imp.sugerir("Hostil", HOSTIL)["start_args"]
-    for perigoso in ("$", ";", "`", "|", "(", ")", "'", '"', "rm -rf"):
-        assert perigoso not in args
+    for dangerous in ("$", ";", "`", "|", "(", ")", "'", '"', "rm -rf"):
+        assert dangerous not in args
 
 
 def test_porta_de_administracao_fica_so_no_argumento_e_nunca_no_firewall():
@@ -113,7 +113,7 @@ def test_porta_de_administracao_fica_so_no_argumento_e_nunca_no_firewall():
     assert "+rcon.port 27020" in s["start_args"], "o jogo precisa dela para subir"
     assert "27020" not in s["ports"]
     assert "27021" not in s["ports"]
-    assert any("administracao" in aviso for aviso in s["warnings"])
+    assert any("administracao" in warning for warning in s["warnings"])
 
 
 def test_variavel_vazia_nao_deixa_opcao_solta_engolindo_a_proxima():
@@ -132,7 +132,7 @@ def test_sem_porta_no_cfg_a_sugestao_sai_parcial_com_aviso():
     assert s["ports"] == ""
     assert s["game_port"] == 0
     assert s["shiftable"] is False
-    assert any("portas" in aviso for aviso in s["warnings"])
+    assert any("portas" in warning for warning in s["warnings"])
 
 
 def test_executavel_fora_de_opt_game_e_descartado():

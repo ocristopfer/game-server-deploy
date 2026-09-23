@@ -10,357 +10,357 @@ from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FA
 from gamebroker.services.allocator import ips_in_range
 
 
-def _criar(amb, game="alfa", name="Meu servidor", actor="admin"):
+def _create(amb, game="alfa", name="Meu servidor", actor="admin"):
     return amb.servico.create(game, name, actor)
 
 
 # --- caminho feliz ----------------------------------------------------------
 
-def test_criar_percorre_o_fluxo_inteiro(ambiente):
-    resposta = _criar(ambiente)
-    op = ambiente.servico.operation(resposta["operation_id"])
+def test_criar_percorre_o_fluxo_inteiro(environment):
+    response = _create(environment)
+    op = environment.servico.operation(response["operation_id"])
     assert op["state"] == OP_OK
     assert "abrindo as portas" in op["log"]
-    inst = ambiente.db.instance(resposta["instance_id"])
+    inst = environment.db.instance(response["instance_id"])
     assert inst["state"] == ESTADO_ATIVA
     assert (inst["ctid"], inst["ip"]) == (300, "10.0.0.30")
     assert inst["hostname"] == "alfa-300"
-    assert ambiente.proxmox.chamadas == [("criar_ct", 300), ("iniciar", 300)]
-    assert ambiente.installer.instalados == [("10.0.0.30", "alfa")]
-    assert ambiente.opnsense.regras[300] == [("10.0.0.30", 7001, "udp"), ("10.0.0.30", 7002, "udp")]
+    assert environment.proxmox.chamadas == [("criar_ct", 300), ("iniciar", 300)]
+    assert environment.installer.instalados == [("10.0.0.30", "alfa")]
+    assert environment.opnsense.regras[300] == [("10.0.0.30", 7001, "udp"), ("10.0.0.30", 7002, "udp")]
 
 
-def test_resultado_traz_o_que_o_painel_precisa_para_cadastrar(ambiente):
-    resposta = _criar(ambiente, name="Servidor do Zeca")
-    resultado = ambiente.servico.operation(resposta["operation_id"])["result"]
-    assert resultado["name"] == "Servidor do Zeca"
-    assert resultado["host"] == "10.0.0.30"
-    assert resultado["service"] == "alfa.service"
-    assert (resultado["game_port"], resultado["query_port"]) == (7001, 7002)
-    assert resultado["broker_id"] == resposta["instance_id"]
+def test_resultado_traz_o_que_o_painel_precisa_para_cadastrar(environment):
+    response = _create(environment, name="Servidor do Zeca")
+    result = environment.servico.operation(response["operation_id"])["result"]
+    assert result["name"] == "Servidor do Zeca"
+    assert result["host"] == "10.0.0.30"
+    assert result["service"] == "alfa.service"
+    assert (result["game_port"], result["query_port"]) == (7001, 7002)
+    assert result["broker_id"] == response["instance_id"]
 
 
-def test_firewall_so_abre_depois_da_instalacao(ambiente):
-    ordem = []
-    install, open_ports = ambiente.installer.install, ambiente.opnsense.open_ports
-    ambiente.installer.install = lambda *a, **k: (ordem.append("instalar"), install(*a, **k))
-    ambiente.opnsense.open_ports = lambda *a, **k: (ordem.append("abrir"), open_ports(*a, **k))
-    _criar(ambiente)
-    assert ordem == ["instalar", "abrir"]
+def test_firewall_so_abre_depois_da_instalacao(environment):
+    order = []
+    install, open_ports = environment.installer.install, environment.opnsense.open_ports
+    environment.installer.install = lambda *a, **k: (order.append("instalar"), install(*a, **k))
+    environment.opnsense.open_ports = lambda *a, **k: (order.append("abrir"), open_ports(*a, **k))
+    _create(environment)
+    assert order == ["instalar", "abrir"]
 
 
-def test_segunda_instancia_pega_outro_ctid_e_ip(ambiente):
-    _criar(ambiente, "beta", "um")
-    resposta = _criar(ambiente, "beta", "dois")
-    inst = ambiente.db.instance(resposta["instance_id"])
+def test_segunda_instancia_pega_outro_ctid_e_ip(environment):
+    _create(environment, "beta", "um")
+    response = _create(environment, "beta", "dois")
+    inst = environment.db.instance(response["instance_id"])
     assert (inst["ctid"], inst["ip"]) == (301, "10.0.0.31")
 
 
-def test_jogo_deslocavel_recebe_portas_da_faixa_do_broker(ambiente):
-    resposta = _criar(ambiente, "beta", "um")
-    ports = ambiente.db.instance(resposta["instance_id"])["ports"]
+def test_jogo_deslocavel_recebe_portas_da_faixa_do_broker(environment):
+    response = _create(environment, "beta", "um")
+    ports = environment.db.instance(response["instance_id"])["ports"]
     assert [p["number"] for p in ports] == [9000, 9001], "faixa propria, nao as portas padrao 8001/8002"
-    resultado = ambiente.servico.operation(resposta["operation_id"])["result"]
-    assert (resultado["game_port"], resultado["query_port"]) == (9000, 9001)
+    result = environment.servico.operation(response["operation_id"])["result"]
+    assert (result["game_port"], result["query_port"]) == (9000, 9001)
 
 
-def test_mesmo_jogo_deslocavel_duas_vezes_pega_o_proximo_bloco(ambiente):
-    _criar(ambiente, "beta", "um")
-    resposta = _criar(ambiente, "beta", "dois")
-    ports = ambiente.db.instance(resposta["instance_id"])["ports"]
+def test_mesmo_jogo_deslocavel_duas_vezes_pega_o_proximo_bloco(environment):
+    _create(environment, "beta", "um")
+    response = _create(environment, "beta", "dois")
+    ports = environment.db.instance(response["instance_id"])["ports"]
     assert [p["number"] for p in ports] == [9002, 9003]
 
 
-def test_faixa_do_broker_pula_porta_que_o_opnsense_ja_redireciona(ambiente):
-    ambiente.opnsense.externas = {(9000, "udp")}
-    ports = ambiente.db.instance(_criar(ambiente, "beta")["instance_id"])["ports"]
+def test_faixa_do_broker_pula_porta_que_o_opnsense_ja_redireciona(environment):
+    environment.opnsense.externas = {(9000, "udp")}
+    ports = environment.db.instance(_create(environment, "beta")["instance_id"])["ports"]
     assert [p["number"] for p in ports] == [9001, 9002]
 
 
 # --- CTID que acompanha o IP ---------------------------------------------------
 
-def test_ctid_sai_do_ip_quando_ha_base(ambiente):
-    ambiente.com_config(ctid_base=200, ips=ips_in_range("10.0.0", 102, 110))
-    inst = ambiente.db.instance(_criar(ambiente)["instance_id"])
+def test_ctid_sai_do_ip_quando_ha_base(environment):
+    environment.with_config(ctid_base=200, ips=ips_in_range("10.0.0", 102, 110))
+    inst = environment.db.instance(_create(environment)["instance_id"])
     assert (inst["ip"], inst["ctid"], inst["hostname"]) == ("10.0.0.102", 302, "alfa-302")
-    assert ambiente.proxmox.chamadas == [("criar_ct", 302), ("iniciar", 302)]
+    assert environment.proxmox.chamadas == [("criar_ct", 302), ("iniciar", 302)]
 
 
-def test_com_base_a_segunda_instancia_segue_o_ip(ambiente):
-    ambiente.com_config(ctid_base=200, ips=ips_in_range("10.0.0", 102, 110))
-    _criar(ambiente, "beta", "um")
-    inst = ambiente.db.instance(_criar(ambiente, "beta", "dois")["instance_id"])
+def test_com_base_a_segunda_instancia_segue_o_ip(environment):
+    environment.with_config(ctid_base=200, ips=ips_in_range("10.0.0", 102, 110))
+    _create(environment, "beta", "um")
+    inst = environment.db.instance(_create(environment, "beta", "dois")["instance_id"])
     assert (inst["ip"], inst["ctid"]) == ("10.0.0.103", 303)
 
 
-def test_com_base_ctid_ocupado_no_proxmox_pula_o_ip_inteiro(ambiente):
-    ambiente.com_config(ctid_base=200, ips=ips_in_range("10.0.0", 102, 110))
-    ambiente.proxmox.externos_ctids = {302}
-    inst = ambiente.db.instance(_criar(ambiente)["instance_id"])
+def test_com_base_ctid_ocupado_no_proxmox_pula_o_ip_inteiro(environment):
+    environment.with_config(ctid_base=200, ips=ips_in_range("10.0.0", 102, 110))
+    environment.proxmox.externos_ctids = {302}
+    inst = environment.db.instance(_create(environment)["instance_id"])
     assert (inst["ip"], inst["ctid"]) == ("10.0.0.103", 303)
 
 
 # --- ocupacao vinda de fora do broker ----------------------------------------
 
-def test_pula_ctid_e_ip_que_o_proxmox_ja_usa(ambiente):
-    ambiente.proxmox.externos_ctids = {300, 301}
-    ambiente.proxmox.externos_ips = {"10.0.0.30"}
-    inst = ambiente.db.instance(_criar(ambiente)["instance_id"])
+def test_pula_ctid_e_ip_que_o_proxmox_ja_usa(environment):
+    environment.proxmox.externos_ctids = {300, 301}
+    environment.proxmox.externos_ips = {"10.0.0.30"}
+    inst = environment.db.instance(_create(environment)["instance_id"])
     assert (inst["ctid"], inst["ip"]) == (302, "10.0.0.31")
 
 
-def test_pula_ip_que_responde_na_rede(ambiente):
-    ambiente.network.ocupados = {"10.0.0.30"}
-    assert ambiente.db.instance(_criar(ambiente)["instance_id"])["ip"] == "10.0.0.31"
+def test_pula_ip_que_responde_na_rede(environment):
+    environment.network.ocupados = {"10.0.0.30"}
+    assert environment.db.instance(_create(environment)["instance_id"])["ip"] == "10.0.0.31"
 
 
-def test_conflito_de_porta_entre_jogos_diferentes(ambiente):
-    _criar(ambiente, "alfa", "um")
+def test_conflito_de_porta_entre_jogos_diferentes(environment):
+    _create(environment, "alfa", "um")
     with pytest.raises(OutOfResources, match="7002/udp"):
-        _criar(ambiente, "delta", "dois")
-    assert ambiente.db.count_instances() == 1, "recusa nao deixa reserva para tras"
+        _create(environment, "delta", "dois")
+    assert environment.db.count_instances() == 1, "recusa nao deixa reserva para tras"
 
 
-def test_porta_ja_redirecionada_no_opnsense_bloqueia(ambiente):
-    ambiente.opnsense.externas = {(7001, "udp")}
+def test_porta_ja_redirecionada_no_opnsense_bloqueia(environment):
+    environment.opnsense.externas = {(7001, "udp")}
     with pytest.raises(OutOfResources, match="7001/udp"):
-        _criar(ambiente, "alfa")
+        _create(environment, "alfa")
 
 
-def test_sem_ip_livre(ambiente):
-    ambiente.network.ocupados = set(ambiente.config.ips)
+def test_sem_ip_livre(environment):
+    environment.network.ocupados = set(environment.config.ips)
     with pytest.raises(OutOfResources, match="IP"):
-        _criar(ambiente)
+        _create(environment)
 
 
 # --- validacao do pedido ------------------------------------------------------
 
 @pytest.mark.parametrize("name", ["", "a;b", "$(id)", "x" * 41, None, 7, "../x"])
-def test_nome_invalido(ambiente, name):
+def test_nome_invalido(environment, name):
     with pytest.raises(ValidationError):
-        ambiente.servico.create("alfa", name, "admin")
+        environment.servico.create("alfa", name, "admin")
 
 
-def test_jogo_inexistente(ambiente):
+def test_jogo_inexistente(environment):
     with pytest.raises(NotFound):
-        _criar(ambiente, "nao-existe")
+        _create(environment, "nao-existe")
 
 
-def test_jogo_que_exige_conta_steam_nao_e_criavel_pela_api(ambiente):
+def test_jogo_que_exige_conta_steam_nao_e_criavel_pela_api(environment):
     with pytest.raises(Conflict, match="conta Steam"):
-        _criar(ambiente, "conta")
+        _create(environment, "conta")
 
 
-def test_nome_repetido_e_conflito(ambiente):
-    _criar(ambiente, "beta", "igual")
+def test_nome_repetido_e_conflito(environment):
+    _create(environment, "beta", "igual")
     with pytest.raises(Conflict):
-        _criar(ambiente, "beta", "igual")
+        _create(environment, "beta", "igual")
 
 
 # --- cotas ----------------------------------------------------------------------
 
-def test_limite_de_instancias(ambiente):
-    ambiente.com_config(max_instances=1)
-    _criar(ambiente, "beta", "um")
+def test_limite_de_instancias(environment):
+    environment.with_config(max_instances=1)
+    _create(environment, "beta", "um")
     with pytest.raises(QuotaExceeded, match="1 instancias"):
-        _criar(ambiente, "beta", "dois")
+        _create(environment, "beta", "dois")
 
 
-def test_limite_por_hora_libera_depois_de_uma_hora(ambiente):
-    ambiente.com_config(max_creations_per_hour=2)
-    _criar(ambiente, "beta", "um")
-    _criar(ambiente, "beta", "dois")
+def test_limite_por_hora_libera_depois_de_uma_hora(environment):
+    environment.with_config(max_creations_per_hour=2)
+    _create(environment, "beta", "um")
+    _create(environment, "beta", "dois")
     with pytest.raises(QuotaExceeded, match="por hora"):
-        _criar(ambiente, "beta", "tres")
-    ambiente.clock.avancar(61)
-    _criar(ambiente, "beta", "tres")
+        _create(environment, "beta", "tres")
+    environment.clock.advance(61)
+    _create(environment, "beta", "tres")
 
 
-def test_so_uma_criacao_por_vez(ambiente):
-    ambiente.adiar = True
-    _criar(ambiente, "beta", "um")
+def test_so_uma_criacao_por_vez(environment):
+    environment.adiar = True
+    _create(environment, "beta", "um")
     with pytest.raises(QuotaExceeded, match="em andamento"):
-        _criar(ambiente, "beta", "dois")
-    ambiente.pendentes.pop()()
-    _criar(ambiente, "beta", "dois")
+        _create(environment, "beta", "dois")
+    environment.pendentes.pop()()
+    _create(environment, "beta", "dois")
 
 
-def test_falha_de_validacao_nao_gasta_cota(ambiente):
-    ambiente.com_config(max_creations_per_hour=1)
+def test_falha_de_validacao_nao_gasta_cota(environment):
+    environment.with_config(max_creations_per_hour=1)
     with pytest.raises(ValidationError):
-        ambiente.servico.create("alfa", "a;b", "admin")
-    _criar(ambiente, "beta", "ok")
+        environment.servico.create("alfa", "a;b", "admin")
+    _create(environment, "beta", "ok")
 
 
 # --- desfazer em caso de falha ---------------------------------------------------
 
-def test_falha_na_instalacao_destroi_o_ct_e_libera_a_reserva(ambiente):
-    ambiente.installer.failure = True
-    resposta = _criar(ambiente)
-    op = ambiente.servico.operation(resposta["operation_id"])
+def test_falha_na_instalacao_destroi_o_ct_e_libera_a_reserva(environment):
+    environment.installer.failure = True
+    response = _create(environment)
+    op = environment.servico.operation(response["operation_id"])
     assert op["state"] == OP_ERRO
     assert "steamcmd falhou" in op["log"]
     assert "reserva liberada" in op["log"]
-    assert ambiente.proxmox.cts == {}
-    assert ambiente.opnsense.regras == {}
-    assert ambiente.db.count_instances() == 0
-    assert ambiente.db.taken() == (set(), set(), set()), "IP, CTID e portas voltam para o pool"
+    assert environment.proxmox.cts == {}
+    assert environment.opnsense.regras == {}
+    assert environment.db.count_instances() == 0
+    assert environment.db.taken() == (set(), set(), set()), "IP, CTID e portas voltam para o pool"
 
 
-def test_falha_ao_criar_o_ct_nao_tenta_destruir_o_que_nao_existe(ambiente):
-    ambiente.proxmox.falha_em = "criar_ct"
-    _criar(ambiente)
-    assert ("destruir", 300) not in ambiente.proxmox.chamadas
-    assert ambiente.db.count_instances() == 0
+def test_falha_ao_criar_o_ct_nao_tenta_destruir_o_que_nao_existe(environment):
+    environment.proxmox.falha_em = "criar_ct"
+    _create(environment)
+    assert ("destruir", 300) not in environment.proxmox.chamadas
+    assert environment.db.count_instances() == 0
 
 
-def test_falha_no_firewall_desfaz_tudo(ambiente):
-    ambiente.opnsense.falha_em = "abrir"
-    _criar(ambiente)
-    assert ambiente.proxmox.cts == {}
-    assert ambiente.db.count_instances() == 0
+def test_falha_no_firewall_desfaz_tudo(environment):
+    environment.opnsense.falha_em = "abrir"
+    _create(environment)
+    assert environment.proxmox.cts == {}
+    assert environment.db.count_instances() == 0
 
 
-def test_se_nem_o_desfazer_funciona_a_reserva_fica_como_falhou(ambiente):
-    ambiente.installer.failure = True
-    ambiente.proxmox.falha_em = None
+def test_se_nem_o_desfazer_funciona_a_reserva_fica_como_falhou(environment):
+    environment.installer.failure = True
+    environment.proxmox.falha_em = None
 
-    def destruir_quebrado(_ctid):
+    def broken_destroy(_ctid):
         raise RuntimeError("proxmox fora do ar")
 
-    ambiente.proxmox.destroy = destruir_quebrado
-    resposta = _criar(ambiente)
-    inst = ambiente.db.instance(resposta["instance_id"])
+    environment.proxmox.destroy = broken_destroy
+    response = _create(environment)
+    inst = environment.db.instance(response["instance_id"])
     assert inst["state"] == ESTADO_FALHOU
-    assert "nao consegui desfazer" in ambiente.servico.operation(resposta["operation_id"])["log"]
+    assert "nao consegui desfazer" in environment.servico.operation(response["operation_id"])["log"]
     # IP e portas continuam bloqueados: um novo pedido nao pode pisar em cima.
-    ambiente.network.ocupados = set()
-    novo = ambiente.db.instance(_criar(ambiente, "beta", "outro")["instance_id"])
-    assert novo["ip"] != inst["ip"]
+    environment.network.ocupados = set()
+    fresh = environment.db.instance(_create(environment, "beta", "outro")["instance_id"])
+    assert fresh["ip"] != inst["ip"]
 
 
 # --- desativar e remover ------------------------------------------------------------
 
-def test_desativar_fecha_o_firewall_e_para_o_ct(ambiente):
-    resposta = _criar(ambiente)
-    ambiente.servico.deactivate(resposta["instance_id"], "admin")
-    assert ambiente.opnsense.regras == {}
-    assert 300 in ambiente.proxmox.parados
-    assert ambiente.db.instance(resposta["instance_id"])["state"] == ESTADO_DESATIVADA
+def test_desativar_fecha_o_firewall_e_para_o_ct(environment):
+    response = _create(environment)
+    environment.servico.deactivate(response["instance_id"], "admin")
+    assert environment.opnsense.regras == {}
+    assert 300 in environment.proxmox.parados
+    assert environment.db.instance(response["instance_id"])["state"] == ESTADO_DESATIVADA
 
 
-def test_desativar_duas_vezes_e_conflito(ambiente):
-    resposta = _criar(ambiente)
-    ambiente.servico.deactivate(resposta["instance_id"], "admin")
+def test_desativar_duas_vezes_e_conflito(environment):
+    response = _create(environment)
+    environment.servico.deactivate(response["instance_id"], "admin")
     with pytest.raises(Conflict):
-        ambiente.servico.deactivate(resposta["instance_id"], "admin")
+        environment.servico.deactivate(response["instance_id"], "admin")
 
 
-def test_remover_exige_desativar_antes(ambiente):
-    resposta = _criar(ambiente)
+def test_remover_exige_desativar_antes(environment):
+    response = _create(environment)
     with pytest.raises(Conflict, match="desative"):
-        ambiente.servico.remove(resposta["instance_id"], "Meu servidor", "admin")
+        environment.servico.remove(response["instance_id"], "Meu servidor", "admin")
 
 
-def test_remover_exige_o_nome_exato(ambiente):
-    resposta = _criar(ambiente)
-    ambiente.servico.deactivate(resposta["instance_id"], "admin")
+def test_remover_exige_o_nome_exato(environment):
+    response = _create(environment)
+    environment.servico.deactivate(response["instance_id"], "admin")
     with pytest.raises(ValidationError, match="nome exato"):
-        ambiente.servico.remove(resposta["instance_id"], "meu servidor", "admin")
-    assert ambiente.proxmox.cts, "nada foi destruido"
+        environment.servico.remove(response["instance_id"], "meu servidor", "admin")
+    assert environment.proxmox.cts, "nada foi destruido"
 
 
-def test_remover_destroi_e_libera_ip_ctid_e_portas(ambiente):
-    resposta = _criar(ambiente)
-    ambiente.servico.deactivate(resposta["instance_id"], "admin")
-    ambiente.servico.remove(resposta["instance_id"], "Meu servidor", "admin")
-    assert ambiente.proxmox.cts == {}
-    assert ambiente.db.taken() == (set(), set(), set())
-    assert ambiente.db.instance(resposta["instance_id"]) is None
+def test_remover_destroi_e_libera_ip_ctid_e_portas(environment):
+    response = _create(environment)
+    environment.servico.deactivate(response["instance_id"], "admin")
+    environment.servico.remove(response["instance_id"], "Meu servidor", "admin")
+    assert environment.proxmox.cts == {}
+    assert environment.db.taken() == (set(), set(), set())
+    assert environment.db.instance(response["instance_id"]) is None
 
 
-def test_remover_recusa_ct_que_nao_e_do_broker(ambiente):
-    resposta = _criar(ambiente)
-    ambiente.servico.deactivate(resposta["instance_id"], "admin")
-    ambiente.proxmox.belongs_to_broker = lambda _ctid: False
+def test_remover_recusa_ct_que_nao_e_do_broker(environment):
+    response = _create(environment)
+    environment.servico.deactivate(response["instance_id"], "admin")
+    environment.proxmox.belongs_to_broker = lambda _ctid: False
     with pytest.raises(Conflict, match="nao pertence ao broker"):
-        ambiente.servico.remove(resposta["instance_id"], "Meu servidor", "admin")
-    assert ambiente.proxmox.cts, "o CT de outro dono nao foi tocado"
+        environment.servico.remove(response["instance_id"], "Meu servidor", "admin")
+    assert environment.proxmox.cts, "o CT de outro dono nao foi tocado"
 
 
-def test_ct_que_sumiu_do_pool_nao_e_esquecido_sem_pedido_explicito(ambiente):
+def test_ct_que_sumiu_do_pool_nao_e_esquecido_sem_pedido_explicito(environment):
     """Sumido e movido de pool sao indistinguiveis para o token: nao libera CTID/IP sozinho."""
-    resposta = _criar(ambiente)
-    ambiente.servico.deactivate(resposta["instance_id"], "admin")
-    ambiente.proxmox.cts.clear()
+    response = _create(environment)
+    environment.servico.deactivate(response["instance_id"], "admin")
+    environment.proxmox.cts.clear()
     with pytest.raises(Conflict, match="db_only"):
-        ambiente.servico.remove(resposta["instance_id"], "Meu servidor", "admin")
-    assert ambiente.db.instance(resposta["instance_id"]) is not None
+        environment.servico.remove(response["instance_id"], "Meu servidor", "admin")
+    assert environment.db.instance(response["instance_id"]) is not None
 
 
-def test_somente_banco_limpa_o_registro_sem_tocar_no_proxmox(ambiente):
-    resposta = _criar(ambiente)
-    ambiente.servico.deactivate(resposta["instance_id"], "admin")
-    ambiente.proxmox.chamadas.clear()
-    ambiente.servico.remove(resposta["instance_id"], "Meu servidor", "admin", db_only=True)
-    assert ambiente.db.instance(resposta["instance_id"]) is None
-    assert ambiente.proxmox.chamadas == []
-    assert ambiente.proxmox.cts, "o CT continua la: so o registro foi esquecido"
-    assert "esquecer" in {a["verb"] for a in ambiente.db.audit_trail()}
+def test_somente_banco_limpa_o_registro_sem_tocar_no_proxmox(environment):
+    response = _create(environment)
+    environment.servico.deactivate(response["instance_id"], "admin")
+    environment.proxmox.chamadas.clear()
+    environment.servico.remove(response["instance_id"], "Meu servidor", "admin", db_only=True)
+    assert environment.db.instance(response["instance_id"]) is None
+    assert environment.proxmox.chamadas == []
+    assert environment.proxmox.cts, "o CT continua la: so o registro foi esquecido"
+    assert "esquecer" in {a["verb"] for a in environment.db.audit_trail()}
 
 
-def test_somente_banco_tambem_exige_desativar_e_o_nome(ambiente):
-    resposta = _criar(ambiente)
+def test_somente_banco_tambem_exige_desativar_e_o_nome(environment):
+    response = _create(environment)
     with pytest.raises(Conflict, match="desative"):
-        ambiente.servico.remove(resposta["instance_id"], "Meu servidor", "admin", db_only=True)
-    ambiente.servico.deactivate(resposta["instance_id"], "admin")
+        environment.servico.remove(response["instance_id"], "Meu servidor", "admin", db_only=True)
+    environment.servico.deactivate(response["instance_id"], "admin")
     with pytest.raises(ValidationError):
-        ambiente.servico.remove(resposta["instance_id"], "errado", "admin", db_only=True)
+        environment.servico.remove(response["instance_id"], "errado", "admin", db_only=True)
 
 
-def test_remover_instancia_que_falhou_nao_exige_desativar(ambiente):
-    ambiente.installer.failure = True
-    ambiente.proxmox.destroy = lambda _ctid: (_ for _ in ()).throw(RuntimeError("fora"))
-    resposta = _criar(ambiente)
-    del ambiente.proxmox.destroy
-    ambiente.servico.remove(resposta["instance_id"], "Meu servidor", "admin")
-    assert ambiente.db.instance(resposta["instance_id"]) is None
+def test_remover_instancia_que_falhou_nao_exige_desativar(environment):
+    environment.installer.failure = True
+    environment.proxmox.destroy = lambda _ctid: (_ for _ in ()).throw(RuntimeError("fora"))
+    response = _create(environment)
+    del environment.proxmox.destroy
+    environment.servico.remove(response["instance_id"], "Meu servidor", "admin")
+    assert environment.db.instance(response["instance_id"]) is None
 
 
-def test_instancia_desconhecida(ambiente):
+def test_instancia_desconhecida(environment):
     with pytest.raises(NotFound):
-        ambiente.servico.deactivate(999, "admin")
+        environment.servico.deactivate(999, "admin")
     with pytest.raises(NotFound):
-        ambiente.servico.remove(999, "x", "admin")
+        environment.servico.remove(999, "x", "admin")
 
 
 # --- auditoria ------------------------------------------------------------------------
 
-def test_auditoria_registra_quem_fez_o_que(ambiente):
-    resposta = _criar(ambiente, actor="zeca")
-    ambiente.servico.deactivate(resposta["instance_id"], "zeca")
-    verbos = [(a["actor"], a["verb"], a["result"]) for a in ambiente.db.audit_trail()]
-    assert ("zeca", "criar", "aceito") in verbos
-    assert ("zeca", "criar", "ok") in verbos
-    assert ("zeca", "desativar", "ok") in verbos
+def test_auditoria_registra_quem_fez_o_que(environment):
+    response = _create(environment, actor="zeca")
+    environment.servico.deactivate(response["instance_id"], "zeca")
+    verbs = [(a["actor"], a["verb"], a["result"]) for a in environment.db.audit_trail()]
+    assert ("zeca", "criar", "aceito") in verbs
+    assert ("zeca", "criar", "ok") in verbs
+    assert ("zeca", "desativar", "ok") in verbs
 
 
-def test_ator_estranho_vira_desconhecido(ambiente):
-    _criar(ambiente, actor="a b; DROP TABLE")
-    assert {a["actor"] for a in ambiente.db.audit_trail()} == {"desconhecido"}
+def test_ator_estranho_vira_desconhecido(environment):
+    _create(environment, actor="a b; DROP TABLE")
+    assert {a["actor"] for a in environment.db.audit_trail()} == {"desconhecido"}
 
 
-def test_auditoria_e_append_only(ambiente):
-    _criar(ambiente)
-    with sqlite3.connect(ambiente.db._caminho) as conn:
+def test_auditoria_e_append_only(environment):
+    _create(environment)
+    with sqlite3.connect(environment.db._caminho) as conn:
         with pytest.raises(sqlite3.DatabaseError, match="append-only"):
             conn.execute("UPDATE audit SET result = 'adulterado'")
         with pytest.raises(sqlite3.DatabaseError, match="append-only"):
             conn.execute("DELETE FROM audit")
 
 
-def test_banco_recusa_reserva_duplicada_mesmo_sem_a_trava(ambiente):
+def test_banco_recusa_reserva_duplicada_mesmo_sem_a_trava(environment):
     """UNIQUE e a segunda linha de defesa: dois processos poderiam ignorar a trava."""
-    _criar(ambiente, "beta", "um")
+    _create(environment, "beta", "um")
     with pytest.raises(Conflict):
-        ambiente.db.reserve(300, "10.0.0.99", "beta", "outro", "beta-300", "x", [])
+        environment.db.reserve(300, "10.0.0.99", "beta", "outro", "beta-300", "x", [])

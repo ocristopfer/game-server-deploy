@@ -25,27 +25,27 @@ if os.name == "posix":
     from gamepanel.runtime import terminal
 
 
-def _argv_de(*cmd: str):
+def _argv_of(*cmd: str):
     def ssh_argv(server, extra=()):
         return list(cmd)
     return ssh_argv
 
 
-def _abrir(cmd: list[str], buffer_bytes: int = 64 * 1024) -> terminal.TermSession:
+def _open_term(cmd: list[str], buffer_bytes: int = 64 * 1024) -> terminal.TermSession:
     return terminal.TermSession(
-        _argv_de(*cmd), {"id": 1}, uid=1, username="tester", cols=80, rows=24,
+        _argv_of(*cmd), {"id": 1}, uid=1, username="tester", cols=80, rows=24,
         known_hosts="/tmp/known_hosts_de_teste", buffer_bytes=buffer_bytes,
     )
 
 
-def _espera_morrer(term: terminal.TermSession, prazo: float = 3.0) -> None:
-    fim = time.monotonic() + prazo
-    while term.alive and time.monotonic() < fim:
+def _wait_for_death(term: terminal.TermSession, prazo: float = 3.0) -> None:
+    end_at = time.monotonic() + prazo
+    while term.alive and time.monotonic() < end_at:
         time.sleep(0.05)
 
 
 def test_le_a_saida_do_processo_e_avanca_o_offset():
-    term = _abrir(["sh", "-c", "printf hello"])
+    term = _open_term(["sh", "-c", "printf hello"])
     try:
         data, offset, lost = term.read(0, wait=2.0)
         assert data == b"hello"
@@ -56,7 +56,7 @@ def test_le_a_saida_do_processo_e_avanca_o_offset():
 
 
 def test_offset_ja_lido_nao_volta_na_proxima_leitura():
-    term = _abrir(["sh", "-c", "printf abc"])
+    term = _open_term(["sh", "-c", "printf abc"])
     try:
         _data, offset, _lost = term.read(0, wait=2.0)
         # Sem novidade depois do que ja foi lido: o long-poll espera e devolve vazio.
@@ -69,9 +69,9 @@ def test_offset_ja_lido_nao_volta_na_proxima_leitura():
 
 
 def test_fim_do_processo_marca_morto_com_o_exit_code():
-    term = _abrir(["sh", "-c", "exit 3"])
+    term = _open_term(["sh", "-c", "exit 3"])
     try:
-        _espera_morrer(term)
+        _wait_for_death(term)
         assert term.alive is False
         assert term.exit_code == 3
     finally:
@@ -82,9 +82,9 @@ def test_buffer_cheio_descarta_o_mais_antigo_e_avisa_perda():
     # 100 bytes de 'A' seguidos de 100 de 'B', com um buffer que so guarda 60: quem
     # pedir desde o offset 0 tem de saber que perdeu coisa, nao so receber menos dado.
     script = "printf 'A%.0s' $(seq 1 100); printf 'B%.0s' $(seq 1 100)"
-    term = _abrir(["sh", "-c", script], buffer_bytes=60)
+    term = _open_term(["sh", "-c", script], buffer_bytes=60)
     try:
-        _espera_morrer(term)
+        _wait_for_death(term)
         data, _, lost = term.read(0, wait=1.0)
         assert lost is True
         assert len(data) <= 60
@@ -96,7 +96,7 @@ def test_buffer_cheio_descarta_o_mais_antigo_e_avisa_perda():
 def test_write_chega_ate_o_processo():
     # 'cat' devolve cada linha; o eco do proprio PTY tambem aparece no buffer, entao a
     # prova e so que o texto escrito aparece na saida, nao a saida exata.
-    term = _abrir(["cat"])
+    term = _open_term(["cat"])
     try:
         term.write(b"ping\n")
         deadline = time.monotonic() + 2.0
@@ -110,7 +110,7 @@ def test_write_chega_ate_o_processo():
 
 
 def test_resize_nao_derruba_a_sessao():
-    term = _abrir(["sleep", "2"])
+    term = _open_term(["sleep", "2"])
     try:
         term.resize(120, 40)
         assert term.cols == 120
@@ -121,7 +121,7 @@ def test_resize_nao_derruba_a_sessao():
 
 
 def test_close_mata_o_processo():
-    term = _abrir(["sleep", "30"])
+    term = _open_term(["sleep", "30"])
     term.close()
     assert term.alive is False
     deadline = time.monotonic() + 3.0
@@ -132,4 +132,4 @@ def test_close_mata_o_processo():
 
 def test_comando_inexistente_vira_remote_error():
     with pytest.raises(RemoteError):
-        _abrir(["/nao/existe/binario-de-teste-xyz"])
+        _open_term(["/nao/existe/binario-de-teste-xyz"])

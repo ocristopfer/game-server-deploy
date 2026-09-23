@@ -31,22 +31,22 @@ def test_aceita_o_codigo_do_passo_atual_e_devolve_o_passo():
 
 
 def test_tolera_um_passo_para_cada_lado_e_nao_mais():
-    codigo = totp.code(SEGREDO_DO_RFC, 10)
-    assert totp.verify(SEGREDO_DO_RFC, codigo, now=9 * 30) == 10       # 1 passo antes
-    assert totp.verify(SEGREDO_DO_RFC, codigo, now=11 * 30) == 10      # 1 passo depois
-    assert totp.verify(SEGREDO_DO_RFC, codigo, now=13 * 30) is None    # 3 passos: fora
-    assert totp.verify(SEGREDO_DO_RFC, codigo, now=7 * 30) is None
+    code = totp.code(SEGREDO_DO_RFC, 10)
+    assert totp.verify(SEGREDO_DO_RFC, code, now=9 * 30) == 10       # 1 passo antes
+    assert totp.verify(SEGREDO_DO_RFC, code, now=11 * 30) == 10      # 1 passo depois
+    assert totp.verify(SEGREDO_DO_RFC, code, now=13 * 30) is None    # 3 passos: fora
+    assert totp.verify(SEGREDO_DO_RFC, code, now=7 * 30) is None
 
 
 def test_codigo_ja_usado_nao_vale_de_novo():
-    passo = totp.verify(SEGREDO_DO_RFC, "287082", now=59)
-    assert totp.verify(SEGREDO_DO_RFC, "287082", now=59, last_step=passo) is None
+    step = totp.verify(SEGREDO_DO_RFC, "287082", now=59)
+    assert totp.verify(SEGREDO_DO_RFC, "287082", now=59, last_step=step) is None
 
 
 def test_codigo_de_passo_mais_antigo_que_o_ultimo_usado_tambem_e_recusado():
     """Sem isto, usar o codigo NOVO e depois repetir o ANTIGO (ainda na janela) funcionaria."""
-    velho = totp.code(SEGREDO_DO_RFC, 9)
-    assert totp.verify(SEGREDO_DO_RFC, velho, now=10 * 30, last_step=10) is None
+    old_one = totp.code(SEGREDO_DO_RFC, 9)
+    assert totp.verify(SEGREDO_DO_RFC, old_one, now=10 * 30, last_step=10) is None
 
 
 @pytest.mark.parametrize("digitado", ["", "12345", "1234567", "abcdef", "12 34 5x", None, "000000"])
@@ -64,37 +64,37 @@ def test_segredo_agrupado_com_espacos_ainda_e_lido():
 
 
 def test_uri_carrega_o_que_o_aplicativo_precisa():
-    endereco = totp.uri("ABCDEFGH", "ze maria", "Painel de Jogos")
-    assert endereco.startswith("otpauth://totp/Painel%20de%20Jogos%3Aze%20maria?")
-    for trecho in ("secret=ABCDEFGH", "issuer=Painel%20de%20Jogos", "algorithm=SHA1",
+    address = totp.uri("ABCDEFGH", "ze maria", "Painel de Jogos")
+    assert address.startswith("otpauth://totp/Painel%20de%20Jogos%3Aze%20maria?")
+    for chunk_of in ("secret=ABCDEFGH", "issuer=Painel%20de%20Jogos", "algorithm=SHA1",
                    "digits=6", "period=30"):
-        assert trecho in endereco
+        assert chunk_of in address
 
 
 # --- recuperacao -------------------------------------------------------------------------------
 
 def test_codigos_de_recuperacao_tem_o_formato_e_sao_todos_diferentes():
-    codigos = totp.new_recovery_codes()
-    assert len(codigos) == totp.RECOVERY_CODES
-    assert len(set(codigos)) == len(codigos)
-    assert all(totp.looks_like_recovery_code(c) for c in codigos)
-    assert all(len(c) == 11 and c[5] == "-" for c in codigos)
+    codes = totp.new_recovery_codes()
+    assert len(codes) == totp.RECOVERY_CODES
+    assert len(set(codes)) == len(codes)
+    assert all(totp.looks_like_recovery_code(c) for c in codes)
+    assert all(len(c) == 11 and c[5] == "-" for c in codes)
 
 
 def test_recuperacao_serve_uma_vez_e_so_o_hash_fica_guardado():
-    codigos = totp.new_recovery_codes(3)
-    guardados = [totp.hash_recovery_code(c) for c in codigos]
-    assert not any(c.replace("-", "") in "".join(guardados) for c in codigos)
-    sobra = totp.consume(codigos[1], guardados)
-    assert sobra == [guardados[0], guardados[2]]
-    assert totp.consume(codigos[1], sobra) is None, "o mesmo codigo nao serve duas vezes"
+    codes = totp.new_recovery_codes(3)
+    stored = [totp.hash_recovery_code(c) for c in codes]
+    assert not any(c.replace("-", "") in "".join(stored) for c in codes)
+    leftover = totp.consume(codes[1], stored)
+    assert leftover == [stored[0], stored[2]]
+    assert totp.consume(codes[1], leftover) is None, "o mesmo codigo nao serve duas vezes"
 
 
 def test_recuperacao_ignora_hifen_espaco_e_caixa():
-    codigo = totp.new_recovery_codes(1)[0]
-    guardados = [totp.hash_recovery_code(codigo)]
-    assert totp.consume(codigo.replace("-", "").upper(), guardados) == []
-    assert totp.consume(" " + codigo + " ", guardados) == []
+    code = totp.new_recovery_codes(1)[0]
+    stored = [totp.hash_recovery_code(code)]
+    assert totp.consume(code.replace("-", "").upper(), stored) == []
+    assert totp.consume(" " + code + " ", stored) == []
 
 
 @pytest.mark.parametrize("digitado", ["", "123456", "zzzzz-zzzzz", "abc", None, "abcde-1234"])

@@ -22,19 +22,19 @@ _spec.loader.exec_module(data)
 SUGGESTIONS = data.SUGGESTIONS
 
 
-def _como_o_painel_envia(s: dict) -> dict:
-    envio = {"key": s["key"], "name": s["name"], "app_id": s["appid"],
+def _as_the_panel_sends(s: dict) -> dict:
+    sending = {"key": s["key"], "name": s["name"], "app_id": s["appid"],
              "ports": s["ports"].split() or ["27015/udp"],   # parcial: a pessoa preenche depois
              "game_port": s["game_port"] or 27015, "recipes": [], "config_files": [],
              "backup_paths": [], "shiftable": s["shiftable"]}
-    for campo in ("start_script", "start_args"):
-        if s[campo]:
-            envio[campo] = s[campo]
+    for field in ("start_script", "start_args"):
+        if s[field]:
+            sending[field] = s[field]
     if s["query_port"]:
-        envio["query_port"] = s["query_port"]
+        sending["query_port"] = s["query_port"]
     if s.get("extra_port"):
-        envio["extra_port"] = s["extra_port"]
-    return envio
+        sending["extra_port"] = s["extra_port"]
+    return sending
 
 
 def test_ha_sugestoes_suficientes_para_valer_a_busca():
@@ -43,7 +43,7 @@ def test_ha_sugestoes_suficientes_para_valer_a_busca():
 
 @pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["key"])
 def test_toda_sugestao_passa_no_validador_do_broker(s):
-    assert validate_dynamic(_como_o_painel_envia(s)).key == s["key"]
+    assert validate_dynamic(_as_the_panel_sends(s)).key == s["key"]
 
 
 def test_chaves_e_nomes_sao_unicos_para_a_busca_nao_ficar_ambigua():
@@ -54,8 +54,8 @@ def test_chaves_e_nomes_sao_unicos_para_a_busca_nao_ficar_ambigua():
 @pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["key"])
 def test_nenhum_argumento_carrega_segredo_nem_encadeia_comando(s):
     args = s["start_args"]
-    for proibido in ("$", ";", "|", "&", "`", "CHANGE_ME", "password", "gslt", "token", "rcon_pass"):
-        assert proibido not in args, (s["name"], proibido)
+    for forbidden_word in ("$", ";", "|", "&", "`", "CHANGE_ME", "password", "gslt", "token", "rcon_pass"):
+        assert forbidden_word not in args, (s["name"], forbidden_word)
 
 
 @pytest.mark.parametrize("s", SUGGESTIONS, ids=lambda s: s["key"])
@@ -68,8 +68,8 @@ def test_marcador_de_consulta_so_existe_com_porta_de_consulta(s):
 
 @pytest.mark.parametrize("s", [s for s in SUGGESTIONS if s["shiftable"]], ids=lambda s: s["key"])
 def test_jogo_marcado_para_andar_de_porta_so_tem_as_duas_portas_avisaveis(s):
-    numeros = {int(p.split("/")[0]) for p in s["ports"].split()}
-    assert numeros <= {s["game_port"], s["query_port"], s.get("extra_port", 0)}
+    numbers = {int(p.split("/")[0]) for p in s["ports"].split()}
+    assert numbers <= {s["game_port"], s["query_port"], s.get("extra_port", 0)}
 
 
 def test_satisfactory_traz_a_porta_confiavel_em_tcp():

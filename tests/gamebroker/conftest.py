@@ -67,12 +67,12 @@ class Relogio:
     def __call__(self) -> datetime:
         return self._agora
 
-    def avancar(self, minutos: int) -> None:
+    def advance(self, minutos: int) -> None:
         self._agora += timedelta(minutes=minutos)
 
 
 @pytest.fixture
-def dados_de_jogo() -> dict:
+def game_data() -> dict:
     """Um jogo dinamico valido. Cada teste recebe uma copia nova para estragar a vontade."""
     return {
         "key": "meujogo", "name": "Meu Jogo", "app_id": 123456,
@@ -86,18 +86,18 @@ def dados_de_jogo() -> dict:
 
 
 @pytest.fixture
-def pasta_de_jogos(tmp_path: Path) -> Path:
-    pasta = tmp_path / "games"
-    pasta.mkdir()
-    for name, texto in (("alfa", ENV_ALFA), ("beta", ENV_BETA), ("delta", ENV_DELTA), ("conta", ENV_CONTA)):
-        (pasta / f"{name}.env").write_text(texto, encoding="utf-8")
-    (pasta / "_template.env").write_text("GAME_KEY=modelo\n", encoding="utf-8")
-    return pasta
+def games_dir(tmp_path: Path) -> Path:
+    folder = tmp_path / "games"
+    folder.mkdir()
+    for name, text in (("alfa", ENV_ALFA), ("beta", ENV_BETA), ("delta", ENV_DELTA), ("conta", ENV_CONTA)):
+        (folder / f"{name}.env").write_text(text, encoding="utf-8")
+    (folder / "_template.env").write_text("GAME_KEY=modelo\n", encoding="utf-8")
+    return folder
 
 
 @pytest.fixture
-def catalog(tmp_path: Path, pasta_de_jogos: Path) -> Catalog:
-    return Catalog(pasta_de_jogos, tmp_path / "dinamico")
+def catalog(tmp_path: Path, games_dir: Path) -> Catalog:
+    return Catalog(games_dir, tmp_path / "dinamico")
 
 
 @pytest.fixture
@@ -106,11 +106,11 @@ def clock() -> Relogio:
 
 
 @pytest.fixture
-def ambiente(tmp_path: Path, catalog: Catalog, clock: Relogio):
+def environment(tmp_path: Path, catalog: Catalog, clock: Relogio):
     """Servico completo com backends falsos e execucao SINCRONA (a criacao termina dentro
     de `criar`). `ambiente.pendentes` guarda as tarefas quando `adiar` esta ligado."""
     db = Db(str(tmp_path / "broker.db"), clock=lambda: clock().isoformat(timespec="seconds"))
-    amb = SimpleNamespace(
+    env = SimpleNamespace(
         db=db, catalog=catalog, clock=clock, adiar=False, pendentes=[],
         proxmox=ProxmoxFalso(), opnsense=OpnsenseFalso(), installer=InstaladorFalso(), network=RedeFalsa(),
         config=Config(ctids=range(300, 310), ips=ips_in_range("10.0.0", 30, 40),
@@ -118,18 +118,18 @@ def ambiente(tmp_path: Path, catalog: Catalog, clock: Relogio):
     )
 
     def run(tarefa):
-        if amb.adiar:
-            amb.pendentes.append(tarefa)
+        if env.adiar:
+            env.pendentes.append(tarefa)
         else:
             tarefa()
 
-    def com_config(**campos) -> None:
-        amb.servico.config = replace(amb.config, **campos)
+    def with_config(**campos) -> None:
+        env.servico.config = replace(env.config, **campos)
 
-    amb.servico = Service(db, catalog, amb.proxmox, amb.opnsense, amb.installer, amb.network,
-                          amb.config, run=run, clock=clock)
-    amb.com_config = com_config
-    return amb
+    env.servico = Service(db, catalog, env.proxmox, env.opnsense, env.installer, env.network,
+                          env.config, run=run, clock=clock)
+    env.with_config = with_config
+    return env
 
 
 # --- servidores HTTP falsos + backends reais apontados para eles ----------------------
@@ -137,25 +137,25 @@ def ambiente(tmp_path: Path, catalog: Catalog, clock: Relogio):
 @pytest.fixture
 def pve():
     """Proxmox falso em 127.0.0.1 e o backend REAL `gamebroker.proxmox.Proxmox` falando com ele."""
-    falso = PveFalso()
-    servidor = ServidorFalso(falso.tratar)
-    esperas: list[float] = []
+    fake = PveFalso()
+    server = ServidorFalso(fake.handle)
+    waits: list[float] = []
     config = ConfigProxmox(
         node="pve", pool="games", storage="vm-pool", bridge="vmbr1", gateway="192.168.2.1",
         template="vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
         chaves_ssh=("ssh-ed25519 AAAAC3Nza-chave-de-teste broker@teste",))
-    cliente = Client(servidor.url, {"Authorization": f"PVEAPIToken={TOKEN_PVE}"})
-    yield SimpleNamespace(falso=falso, servidor=servidor, config=config, esperas=esperas,
-                          backend=Proxmox(cliente, config, sleep=esperas.append))
-    servidor.stop()
+    client = Client(server.url, {"Authorization": f"PVEAPIToken={TOKEN_PVE}"})
+    yield SimpleNamespace(fake=fake, server=server, config=config, esperas=waits,
+                          backend=Proxmox(client, config, sleep=waits.append))
+    server.stop()
 
 
 @pytest.fixture
 def opn():
     """OPNsense falso em 127.0.0.1 e o backend REAL `gamebroker.opnsense.Opnsense`."""
-    falso = OpnsenseHttpFalso()
-    servidor = ServidorFalso(falso.tratar)
-    basico = base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
-    cliente = Client(servidor.url, {"Authorization": f"Basic {basico}"})
-    yield SimpleNamespace(falso=falso, servidor=servidor, backend=Opnsense(cliente, "wan"))
-    servidor.stop()
+    fake = OpnsenseHttpFalso()
+    server = ServidorFalso(fake.handle)
+    basic = base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
+    client = Client(server.url, {"Authorization": f"Basic {basic}"})
+    yield SimpleNamespace(fake=fake, server=server, backend=Opnsense(client, "wan"))
+    server.stop()

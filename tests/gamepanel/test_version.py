@@ -42,27 +42,27 @@ def test_o_VERSION_da_raiz_e_o_que_o_pacote_le():
     assert version.version_from_repo(version.__file__) == (ROOT / "VERSION").read_text().strip()
 
 
-def test_health_diz_qual_codigo_respondeu(cliente):
+def test_health_diz_qual_codigo_respondeu(client):
     """O deploy pergunta aqui se subiu o que ele acabou de mandar.
 
     "O servico esta de pe" e compativel com "o systemd reiniciou a versao velha": os
     dois casos dao 200. Quem separa os dois e a versao no corpo.
     """
-    body = cliente.get("/health").get_json()
+    body = client.get("/health").get_json()
     assert body["status"] == "ok"
     assert body["version"] == version.BUILD.version
     assert set(body) == {"status", "version", "commit", "built_at"}
 
 
-def test_health_nao_vaza_nada_alem_de_identidade_de_codigo(cliente):
+def test_health_nao_vaza_nada_alem_de_identidade_de_codigo(client):
     """Rota sem sessao: caminho, endereco ou nome de usuario aqui seriam publicos."""
-    raw = cliente.get("/health").get_data(as_text=True)
+    raw = client.get("/health").get_data(as_text=True)
     for forbidden in ("/opt", "/var", "admin", "sqlite", "192.168"):
         assert forbidden not in raw
 
 
-def test_a_versao_aparece_no_rodape_de_toda_tela(chefe):
-    html = chefe.get("/").get_data(as_text=True)
+def test_a_versao_aparece_no_rodape_de_toda_tela(admin):
+    html = admin.get("/").get_data(as_text=True)
     assert version.BUILD.version in html
 
 

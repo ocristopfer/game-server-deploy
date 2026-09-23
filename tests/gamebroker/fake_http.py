@@ -25,33 +25,33 @@ class ServidorFalso:
 
     def __init__(self, tratador: Tratador):
         self.requisicoes: list[tuple[str, str, dict]] = []
-        servidor = self
+        server = self
         self.ultimo_corpo: dict = {}
 
         class Manipulador(BaseHTTPRequestHandler):
-            def _tratar(self) -> None:
-                partes = urlsplit(self.path)
-                tamanho = int(self.headers.get("Content-Length") or 0)
-                bruto = self.rfile.read(tamanho).decode() if tamanho else ""
-                tipo = self.headers.get("Content-Type", "")
-                if "json" in tipo and bruto:
-                    corpo = json.loads(bruto)
+            def _handle(self) -> None:
+                parts = urlsplit(self.path)
+                size = int(self.headers.get("Content-Length") or 0)
+                raw_text = self.rfile.read(size).decode() if size else ""
+                kind = self.headers.get("Content-Type", "")
+                if "json" in kind and raw_text:
+                    corpo = json.loads(raw_text)
                 else:
-                    corpo = {k: v[0] for k, v in parse_qs(bruto).items()}
+                    corpo = {k: v[0] for k, v in parse_qs(raw_text).items()}
                 headers = {k.lower(): v for k, v in self.headers.items()}
-                servidor.requisicoes.append((self.command, unquote(partes.path), corpo))
-                servidor.ultimo_corpo = corpo
-                query = {k: v[0] for k, v in parse_qs(partes.query).items()}
-                status, resposta, *resto = tratador(self.command, unquote(partes.path), query, corpo, headers)
-                reason = resto[0] if resto else None
-                data = resposta if isinstance(resposta, str) else json.dumps(resposta)
+                server.requisicoes.append((self.command, unquote(parts.path), corpo))
+                server.ultimo_corpo = corpo
+                query = {k: v[0] for k, v in parse_qs(parts.query).items()}
+                status, response, *rest = tratador(self.command, unquote(parts.path), query, corpo, headers)
+                reason = rest[0] if rest else None
+                data = response if isinstance(response, str) else json.dumps(response)
                 self.send_response(status, reason)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data.encode())))
                 self.end_headers()
                 self.wfile.write(data.encode())
 
-            do_GET = do_POST = do_PUT = do_DELETE = _tratar
+            do_GET = do_POST = do_PUT = do_DELETE = _handle
 
             def log_message(self, *_args) -> None:
                 pass
@@ -94,7 +94,7 @@ class PveFalso:
         self.falha_na_tag = False
         self.autenticar = True
 
-    def externo(self, vmid: int, net0: str = "", name: str = "de-fora") -> None:
+    def external(self, vmid: int, net0: str = "", name: str = "de-fora") -> None:
         """CT que existe no Proxmox mas NAO esta no pool do broker."""
         self.cts[vmid] = {"hostname": name, "net0": net0, "features": "", "tags": "",
                           "status": "stopped", "pool": None}
@@ -104,34 +104,34 @@ class PveFalso:
         self.tarefas[upid] = {"saida": saida, "rodadas": self.rodadas_ate_parar, "log": list(log)}
         return upid
 
-    def tratar(self, metodo: str, caminho: str, _query: dict, corpo: dict, headers: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
+    def handle(self, metodo: str, caminho: str, _query: dict, corpo: dict, headers: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
         if self.autenticar and headers.get("authorization") != f"PVEAPIToken={TOKEN_PVE}":
             return 401, "", "No ticket"
-        rota = caminho.removeprefix("/api2/json")
+        route = caminho.removeprefix("/api2/json")
         node = f"/nodes/{self.node}"
-        if rota == "/version":
+        if route == "/version":
             return 200, {"data": {"version": "9.2.20"}}
-        if rota == "/cluster/resources":
+        if route == "/cluster/resources":
             return 200, {"data": [{"vmid": v, "type": "lxc", "status": c["status"], "name": c["hostname"]}
                                   for v, c in self.cts.items() if c["pool"] == self.pool]}
-        if rota == f"/pools/{self.pool}":
+        if route == f"/pools/{self.pool}":
             return 200, {"data": {"members": [{"vmid": v, "type": "lxc", "id": f"lxc/{v}"}
                                               for v, c in self.cts.items() if c["pool"] == self.pool]}}
-        if rota == f"{node}/lxc" and metodo == "POST":
-            return self._criar(corpo)
-        if rota.startswith(f"{node}/tasks/"):
-            return self._task(rota.removeprefix(f"{node}/tasks/"))
-        achado = re.fullmatch(rf"{re.escape(node)}/lxc/(\d+)(/.*)?", rota)
-        if achado:
-            return self._ct(metodo, int(achado.group(1)), achado.group(2) or "", corpo)
+        if route == f"{node}/lxc" and metodo == "POST":
+            return self._create(corpo)
+        if route.startswith(f"{node}/tasks/"):
+            return self._task(route.removeprefix(f"{node}/tasks/"))
+        found = re.fullmatch(rf"{re.escape(node)}/lxc/(\d+)(/.*)?", route)
+        if found:
+            return self._ct(metodo, int(found.group(1)), found.group(2) or "", corpo)
         return 404, "", NAO_ENCONTRADO
 
-    def _criar(self, corpo: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
+    def _create(self, corpo: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
         vmid = int(corpo["vmid"])
         if "tags" in corpo:
             return 403, "", f"Permission check failed (/vms/{vmid}, VM.Config.Options)"
-        recursos = [p.split("=")[0] for p in corpo.get("features", "").split(",") if p]
-        if any(r != "nesting" for r in recursos):
+        resources = [p.split("=")[0] for p in corpo.get("features", "").split(",") if p]
+        if any(r != "nesting" for r in resources):
             return 403, "", "Permission check failed (changing feature flags (except nesting) is only allowed for root@pam)"
         if vmid in self.cts:
             return 500, "", f"CT {vmid} already exists"
@@ -147,15 +147,15 @@ class PveFalso:
 
     def _task(self, resto: str) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
         upid, _, action = resto.rpartition("/")
-        tarefa = self.tarefas.get(upid)
-        if tarefa is None:
+        task = self.tarefas.get(upid)
+        if task is None:
             return 500, "", "no such task"
         if action == "log":
-            return 200, {"data": [{"n": i, "t": t} for i, t in enumerate(tarefa["log"])]}
-        if tarefa["rodadas"] > 0:
-            tarefa["rodadas"] -= 1
+            return 200, {"data": [{"n": i, "t": t} for i, t in enumerate(task["log"])]}
+        if task["rodadas"] > 0:
+            task["rodadas"] -= 1
             return 200, {"data": {"status": "running"}}
-        return 200, {"data": {"status": "stopped", "exitstatus": tarefa["saida"]}}
+        return 200, {"data": {"status": "stopped", "exitstatus": task["saida"]}}
 
     def _ct(self, metodo: str, vmid: int, sufixo: str, corpo: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
         ct = self.cts.get(vmid)
@@ -193,7 +193,7 @@ KEY_OPN = "chave-de-teste"
 SECRET_OPN = "segredo-de-teste"
 
 
-def resumo_de_alias(descricao: str, ports: list[str]) -> str:
+def alias_summary(descricao: str, ports: list[str]) -> str:
     """O texto HTML que o d_nat/search_rule real devolve em alias_meta_destination.port."""
     return f"<strong>{descricao}</strong><br/>" + "<br/>".join(ports)
 
@@ -206,46 +206,46 @@ class OpnsenseHttpFalso:
         self.falhar_no_add_numero: int | None = None
         self._adds = 0
 
-    def regra_existente(self, descr: str, porta: str, protocolo: str = "udp", interface: str = "wan",
-                        alvo: str = "192.168.2.21",  # NOSONAR - IP de fixture
+    def existing_rule(self, descr: str, porta: str, protocolo: str = "udp", interface: str = "wan",
+                        target: str = "192.168.2.21",  # NOSONAR - IP de fixture
                         desativada: bool = False,
                         alias: list[str] | None = None, resumo: str | None = None) -> str:
         """Regra que o usuario ja tinha. `alias` = portas do alias quando `porta` e um nome."""
         uuid = str(uuidlib.uuid4())
-        linha = {"uuid": uuid, "descr": descr, "interface": interface, "protocol": protocolo,
-                 "destination.port": porta, "target": alvo, "local-port": porta,
+        line = {"uuid": uuid, "descr": descr, "interface": interface, "protocol": protocolo,
+                 "destination.port": porta, "target": target, "local-port": porta,
                  "disabled": "1" if desativada else "0", "pass": "pass", "associated-rule-id": ""}
         if alias is not None or resumo is not None:
-            linha["alias_meta_destination.port"] = [{
+            line["alias_meta_destination.port"] = [{
                 "value": porta, "isAlias": True,
-                "summary": resumo if resumo is not None else resumo_de_alias(f"UDP -> {alvo}", alias or [])}]
-        self.regras[uuid] = linha
+                "summary": resumo if resumo is not None else alias_summary(f"UDP -> {target}", alias or [])}]
+        self.regras[uuid] = line
         return uuid
 
-    def tratar(self, _metodo: str, caminho: str, _query: dict, corpo: dict, headers: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
-        esperado = "Basic " + base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
-        if headers.get("authorization") != esperado:
+    def handle(self, _metodo: str, caminho: str, _query: dict, corpo: dict, headers: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
+        expected = "Basic " + base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
+        if headers.get("authorization") != expected:
             return 401, {"status": 401, "message": "Authentication Failed"}, "Unauthorized"
-        rota = caminho.removeprefix("/api/firewall")
-        if rota == "/d_nat/search_rule":
-            linhas = list(self.regras.values())
-            return 200, {"total": len(linhas), "rowCount": len(linhas), "current": 1, "rows": linhas}
-        if rota == "/d_nat/add_rule":
-            return self._adicionar(corpo)
-        if rota.startswith("/d_nat/del_rule/"):
-            uuid = rota.rsplit("/", 1)[1]
+        route = caminho.removeprefix("/api/firewall")
+        if route == "/d_nat/search_rule":
+            lines = list(self.regras.values())
+            return 200, {"total": len(lines), "rowCount": len(lines), "current": 1, "rows": lines}
+        if route == "/d_nat/add_rule":
+            return self._add(corpo)
+        if route.startswith("/d_nat/del_rule/"):
+            uuid = route.rsplit("/", 1)[1]
             if uuid not in self.regras:
                 return 200, {"result": "not found"}
             del self.regras[uuid]
             return 200, {"result": "deleted"}
-        if rota == "/filter/apply":
+        if route == "/filter/apply":
             if not self.apply_permitido:
                 return 403, {"status": 403, "message": "Forbidden"}, "Forbidden"
             self.aplicacoes += 1
             return 200, {"status": "OK\n\n"}
         return 404, {"status": 404, "message": NAO_ENCONTRADO}, NAO_ENCONTRADO
 
-    def _adicionar(self, corpo: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
+    def _add(self, corpo: dict) -> tuple:  # NOSONAR - contrato do Tratador: (status, corpo[, motivo])
         self._adds += 1
         if self.falhar_no_add_numero == self._adds:
             return 200, {"result": "failed", "validations": {"rule.target": "Invalid target"}}

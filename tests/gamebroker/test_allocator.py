@@ -8,9 +8,9 @@ from gamebroker.domain.exceptions import OutOfResources
 from gamebroker.services.catalog import validate_dynamic
 
 
-def _jogo(dados_de_jogo, **mudancas):
-    dados_de_jogo.update(mudancas)
-    return validate_dynamic(dados_de_jogo)
+def _game(game_data, **mudancas):
+    game_data.update(mudancas)
+    return validate_dynamic(game_data)
 
 
 def test_ctid_pula_os_usados():
@@ -23,8 +23,8 @@ def test_ctid_esgotado():
 
 
 def test_ip_pula_usados_e_quem_responde_na_rede():
-    candidatos = ("10.0.0.30", "10.0.0.31", "10.0.0.32")
-    ip = alocador.pick_ip(candidatos, {"10.0.0.30"}, lambda ip: ip == "10.0.0.31")
+    candidates = ("10.0.0.30", "10.0.0.31", "10.0.0.32")
+    ip = alocador.pick_ip(candidates, {"10.0.0.30"}, lambda ip: ip == "10.0.0.31")
     assert ip == "10.0.0.32"
 
 
@@ -58,8 +58,8 @@ def test_ip_e_pulado_se_o_ctid_dele_esta_ocupado():
 
 
 def test_ip_e_ctid_pulam_ip_usado_e_quem_responde():
-    candidatos = ("10.0.0.102", "10.0.0.103", "10.0.0.104")
-    ip, ctid = alocador.pick_ip_and_ctid(candidatos, 200, set(), {"10.0.0.102"}, lambda ip: ip == "10.0.0.103")
+    candidates = ("10.0.0.102", "10.0.0.103", "10.0.0.104")
+    ip, ctid = alocador.pick_ip_and_ctid(candidates, 200, set(), {"10.0.0.102"}, lambda ip: ip == "10.0.0.103")
     assert (ip, ctid) == ("10.0.0.104", 304)
 
 
@@ -68,58 +68,58 @@ def test_ip_e_ctid_esgotados():
         alocador.pick_ip_and_ctid(("10.0.0.102",), 200, {302}, set(), lambda _ip: False)
 
 
-def test_jogo_fixo_usa_as_portas_padrao_e_ganha_papel(dados_de_jogo):
-    ports = alocador.allocate_ports(_jogo(dados_de_jogo, shiftable=False), set(), FAIXA)
+def test_jogo_fixo_usa_as_portas_padrao_e_ganha_papel(game_data):
+    ports = alocador.allocate_ports(_game(game_data, shiftable=False), set(), FAIXA)
     assert [(p.number, p.proto, p.role) for p in ports] == [
         (7777, "udp", "jogo"), (27016, "udp", "query")]
 
 
-def test_jogo_fixo_com_porta_ocupada_e_recusado(dados_de_jogo):
-    game = _jogo(dados_de_jogo, shiftable=False)
+def test_jogo_fixo_com_porta_ocupada_e_recusado(game_data):
+    game = _game(game_data, shiftable=False)
     with pytest.raises(OutOfResources, match="27016/udp.*nao aceita mudar"):
         alocador.allocate_ports(game, {(27016, "udp")}, FAIXA)
 
 
-def test_jogo_deslocavel_ignora_as_portas_padrao_e_usa_a_faixa(dados_de_jogo):
+def test_jogo_deslocavel_ignora_as_portas_padrao_e_usa_a_faixa(game_data):
     # As portas padrao nem estao ocupadas: mesmo assim o jogo anda para a faixa do broker.
-    ports = alocador.allocate_ports(_jogo(dados_de_jogo, shiftable=True), set(), FAIXA)
+    ports = alocador.allocate_ports(_game(game_data, shiftable=True), set(), FAIXA)
     assert [(p.number, p.role) for p in ports] == [(31000, "jogo"), (31001, "query")]
     assert [p.base for p in ports] == [7777, 27016]
 
 
-def test_jogo_deslocavel_pega_o_primeiro_bloco_inteiro_livre(dados_de_jogo):
-    ocupadas = {(31000, "udp"), (31003, "udp")}
-    ports = alocador.allocate_ports(_jogo(dados_de_jogo, shiftable=True), ocupadas, FAIXA)
+def test_jogo_deslocavel_pega_o_primeiro_bloco_inteiro_livre(game_data):
+    taken = {(31000, "udp"), (31003, "udp")}
+    ports = alocador.allocate_ports(_game(game_data, shiftable=True), taken, FAIXA)
     assert [p.number for p in ports] == [31001, 31002]
 
 
-def test_mesma_porta_em_udp_e_tcp_fica_com_o_mesmo_numero(dados_de_jogo):
-    game = _jogo(dados_de_jogo, ports=["7777/udp", "7777/tcp"], query_port=0, shiftable=True,
+def test_mesma_porta_em_udp_e_tcp_fica_com_o_mesmo_numero(game_data):
+    game = _game(game_data, ports=["7777/udp", "7777/tcp"], query_port=0, shiftable=True,
                  start_args="-port={PORT}")
     ports = alocador.allocate_ports(game, set(), FAIXA)
     assert [(p.number, p.proto) for p in ports] == [(31000, "udp"), (31000, "tcp")]
 
 
-def test_faixa_cheia_e_recusada_com_a_faixa_na_mensagem(dados_de_jogo):
-    ocupadas = {(n, "udp") for n in FAIXA}
+def test_faixa_cheia_e_recusada_com_a_faixa_na_mensagem(game_data):
+    taken = {(n, "udp") for n in FAIXA}
     with pytest.raises(OutOfResources, match="31000-31009.*cheia"):
-        alocador.allocate_ports(_jogo(dados_de_jogo, shiftable=True), ocupadas, FAIXA)
+        alocador.allocate_ports(_game(game_data, shiftable=True), taken, FAIXA)
 
 
-def test_bloco_nao_atravessa_o_fim_da_faixa(dados_de_jogo):
+def test_bloco_nao_atravessa_o_fim_da_faixa(game_data):
     # So sobra a ultima porta da faixa: um bloco de duas portas nao cabe.
-    ocupadas = {(n, "udp") for n in range(31000, 31009)}
+    taken = {(n, "udp") for n in range(31000, 31009)}
     with pytest.raises(OutOfResources, match="cheia"):
-        alocador.allocate_ports(_jogo(dados_de_jogo, shiftable=True), ocupadas, FAIXA)
+        alocador.allocate_ports(_game(game_data, shiftable=True), taken, FAIXA)
 
 
-def test_protocolo_diferente_nao_conflita(dados_de_jogo):
-    ports = alocador.allocate_ports(_jogo(dados_de_jogo, shiftable=False), {(7777, "tcp")}, FAIXA)
+def test_protocolo_diferente_nao_conflita(game_data):
+    ports = alocador.allocate_ports(_game(game_data, shiftable=False), {(7777, "tcp")}, FAIXA)
     assert ports[0].number == 7777
 
 
-def test_porta_do_papel(dados_de_jogo):
-    ports = alocador.allocate_ports(_jogo(dados_de_jogo), set(), FAIXA)
+def test_porta_do_papel(game_data):
+    ports = alocador.allocate_ports(_game(game_data), set(), FAIXA)
     assert alocador.port_with_role(ports, alocador.ROLE_GAME) == 31000
     assert alocador.port_with_role(ports, alocador.ROLE_QUERY) == 31001
     assert alocador.port_with_role(ports, "inexistente") == 0

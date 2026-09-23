@@ -14,7 +14,7 @@ import pytest
 from gamepanel.security import qr
 
 
-def _avalia(poly: list[int], x: int) -> int:
+def _evaluate(poly: list[int], x: int) -> int:
     """Horner em GF(256): poly[0] e o coeficiente de maior grau (mesma ordem de `_correcao`)."""
     result = 0
     for coef in poly:
@@ -39,10 +39,10 @@ def test_multiplicacao_por_zero_e_zero_e_por_um_e_identidade():
 def test_gerador_tem_raiz_em_cada_potencia_de_alpha_ate_o_grau(grau):
     """Definicao do polinomio gerador de Reed-Solomon: g(x) = produto (x - alfa^i), i=0..grau-1.
     Cada alfa^i tem de ser raiz — se a construcao errar um fator, uma dessas raizes falha."""
-    gerador = qr._generator(grau)
-    assert len(gerador) == grau + 1
+    generator = qr._generator(grau)
+    assert len(generator) == grau + 1
     for i in range(grau):
-        assert _avalia(gerador, qr._EXP[i]) == 0
+        assert _evaluate(generator, qr._EXP[i]) == 0
 
 
 @pytest.mark.parametrize(("tamanho", "correcao"), [(16, 10), (28, 16), (32, 18), (43, 24), (27, 16)])
@@ -51,11 +51,11 @@ def test_correcao_faz_o_resto_da_divisao_pelo_gerador_ser_zero(tamanho, correcao
     multiplo do gerador — ou seja, se avalia a zero em toda raiz dele. E exatamente a
     propriedade que faz o decodificador (fora deste arquivo) saber corrigir erros."""
     data = [(37 * i + 5) % 256 for i in range(tamanho)]
-    resto = qr._correction(data, correcao)
-    assert len(resto) == correcao
-    codigo = data + resto
+    rest = qr._correction(data, correcao)
+    assert len(rest) == correcao
+    code = data + rest
     for i in range(correcao):
-        assert _avalia(codigo, qr._EXP[i]) == 0
+        assert _evaluate(code, qr._EXP[i]) == 0
 
 
 def test_correcao_de_tudo_zero_e_zero():
@@ -64,7 +64,7 @@ def test_correcao_de_tudo_zero_e_zero():
 
 # ---------------------------------------------------------------------- bits de formato (BCH)
 
-def _distancia(a: int, b: int, bits: int = 15) -> int:
+def _distance(a: int, b: int, bits: int = 15) -> int:
     return bin((a ^ b) & ((1 << bits) - 1)).count("1")
 
 
@@ -76,25 +76,25 @@ def test_bits_de_formato_tem_15_bits_e_e_deterministico():
 
 
 def test_bits_de_formato_distingue_as_8_mascaras():
-    valores = [qr.format_bits(m) for m in range(8)]
-    assert len(set(valores)) == 8
+    values = [qr.format_bits(m) for m in range(8)]
+    assert len(set(values)) == 8
 
 
 def test_bits_de_formato_tem_a_distancia_minima_que_o_bch_da_iso_18004_promete():
     """BCH(15,5) com distancia minima 7: quaisquer dois codigos de formato validos diferem em
     pelo menos 7 bits. E o que deixa o leitor corrigir ate 3 bits de sujeira na imagem sem
     confundir uma mascara com outra."""
-    valores = [qr.format_bits(m) for m in range(8)]
-    menor = min(_distancia(a, b) for i, a in enumerate(valores) for b in valores[i + 1:])
-    assert menor >= 7
+    values = [qr.format_bits(m) for m in range(8)]
+    smaller = min(_distance(a, b) for i, a in enumerate(values) for b in values[i + 1:])
+    assert smaller >= 7
 
 
 # --------------------------------------------------------------------------- versao e capacidade
 
 def test_capacidade_cresce_a_cada_versao():
-    capacidades = [qr.capacity(v) for v in range(1, 11)]
-    assert capacidades == sorted(capacidades)
-    assert len(set(capacidades)) == len(capacidades)
+    capabilities = [qr.capacity(v) for v in range(1, 11)]
+    assert capabilities == sorted(capabilities)
+    assert len(set(capabilities)) == len(capabilities)
 
 
 def test_texto_no_limite_da_versao_1_nao_precisa_da_versao_2():
@@ -133,8 +133,8 @@ def test_tamanho_da_matriz_segue_a_formula_da_iso(versao):
 def test_localizador_do_canto_superior_esquerdo_tem_o_desenho_do_padrao():
     """O 7x7 documentado na ISO 18004: borda preta, anel branco, miolo 3x3 solido preto."""
     m = qr.matrix("teste")
-    quadro = [line[0:7] for line in m[0:7]]
-    padrao_iso = [
+    frame = [line[0:7] for line in m[0:7]]
+    iso_pattern = [
         [1, 1, 1, 1, 1, 1, 1],
         [1, 0, 0, 0, 0, 0, 1],
         [1, 0, 1, 1, 1, 0, 1],
@@ -143,7 +143,7 @@ def test_localizador_do_canto_superior_esquerdo_tem_o_desenho_do_padrao():
         [1, 0, 0, 0, 0, 0, 1],
         [1, 1, 1, 1, 1, 1, 1],
     ]
-    assert [[int(c) for c in line] for line in quadro] == padrao_iso
+    assert [[int(c) for c in line] for line in frame] == iso_pattern
 
 
 def test_padrao_de_temporizacao_alterna():
@@ -155,9 +155,9 @@ def test_padrao_de_temporizacao_alterna():
 def test_matriz_e_deterministica_para_o_mesmo_texto():
     # Duas CHAMADAS separadas, de proposito: prova que nao ha estado escondido entre elas
     # (cache, contador de mascara...) que faria a segunda gerar algo diferente da primeira.
-    primeira = qr.matrix("mesmo texto")
-    segunda = qr.matrix("mesmo texto")
-    assert primeira == segunda
+    first_one = qr.matrix("mesmo texto")
+    second_one = qr.matrix("mesmo texto")
+    assert first_one == second_one
 
 
 def test_textos_diferentes_dao_matrizes_diferentes():
@@ -174,8 +174,8 @@ def test_svg_tem_viewbox_do_tamanho_da_matriz_mais_a_borda():
 
 def test_svg_so_tem_caracteres_de_path_no_traco():
     output = qr.svg("abc")
-    trecho = output.split('d="')[1].split('"')[0]
-    assert set(trecho) <= set("Mhvz0123456789.,-")
+    chunk_of = output.split('d="')[1].split('"')[0]
+    assert set(chunk_of) <= set("Mhvz0123456789.,-")
 
 
 def test_svg_escapa_o_rotulo():

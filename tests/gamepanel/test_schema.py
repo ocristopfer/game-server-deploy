@@ -42,10 +42,10 @@ CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 
 @pytest.fixture
-def banco_antigo(tmp_path):
+def old_database(tmp_path):
     """Um painel como ele estava antes da traducao, com uma linha em cada tabela."""
-    caminho = tmp_path / "panel.db"
-    con = sqlite3.connect(caminho)
+    path = tmp_path / "panel.db"
+    con = sqlite3.connect(path)
     con.executescript(ESQUEMA_ANTIGO)
     con.execute("INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
                 " VALUES ('Canal da equipe', 'https://exemplo/x', 'caiu,voltou', 1, '2026-01-01')")
@@ -57,10 +57,10 @@ def banco_antigo(tmp_path):
     con.execute("INSERT INTO settings (key, value) VALUES ('webhooks_migrado', '1')")
     con.commit()
     con.close()
-    return caminho
+    return path
 
 
-def _linha(caminho, tabela: str) -> dict:
+def _line(caminho, tabela: str) -> dict:
     con = sqlite3.connect(caminho)
     con.row_factory = sqlite3.Row
     try:
@@ -69,51 +69,51 @@ def _linha(caminho, tabela: str) -> dict:
         con.close()
 
 
-def test_a_coluna_muda_de_nome_e_o_dado_fica(banco_antigo):
+def test_a_coluna_muda_de_nome_e_o_dado_fica(old_database):
     """`RENAME COLUMN` preserva o conteudo; recriar a tabela e copiar, nao."""
-    schema.init_db(str(banco_antigo), "", "", lambda: "2026-01-02")
+    schema.init_db(str(old_database), "", "", lambda: "2026-01-02")
 
-    hook = _linha(banco_antigo, "webhooks")
+    hook = _line(old_database, "webhooks")
     assert set(hook) == {"id", "name", "url", "events", "enabled", "created_at"}
     assert hook["name"] == "Canal da equipe"
     assert hook["events"] == "caiu,voltou"
     assert hook["enabled"] == 1
     assert hook["created_at"] == "2026-01-01"
 
-    alerta = _linha(banco_antigo, "alert_log")
-    assert set(alerta) == {"id", "created_at", "event", "title", "detail", "target",
+    alert = _line(old_database, "alert_log")
+    assert set(alert) == {"id", "created_at", "event", "title", "detail", "target",
                            "status", "error"}
-    assert (alerta["event"], alerta["title"], alerta["target"]) == (
+    assert (alert["event"], alert["title"], alert["target"]) == (
         "caiu", "Servidor parou", "Canal da equipe")
 
 
-def test_rodar_de_novo_nao_faz_nada(banco_antigo):
+def test_rodar_de_novo_nao_faz_nada(old_database):
     """O painel chama `init_db` em todo start: a segunda volta nao pode quebrar."""
-    schema.init_db(str(banco_antigo), "", "", lambda: "2026-01-02")
-    antes = _linha(banco_antigo, "webhooks")
-    schema.init_db(str(banco_antigo), "", "", lambda: "2026-01-03")
-    assert _linha(banco_antigo, "webhooks") == antes
+    schema.init_db(str(old_database), "", "", lambda: "2026-01-02")
+    before = _line(old_database, "webhooks")
+    schema.init_db(str(old_database), "", "", lambda: "2026-01-03")
+    assert _line(old_database, "webhooks") == before
 
 
 def test_banco_novo_ja_nasce_com_o_nome_novo(tmp_path):
     """Instalacao nova nao passa por migration nenhuma: o SCHEMA ja esta certo."""
-    caminho = tmp_path / "novo.db"
-    schema.init_db(str(caminho), "", "", lambda: "2026-01-02")
-    con = sqlite3.connect(caminho)
+    path = tmp_path / "novo.db"
+    schema.init_db(str(path), "", "", lambda: "2026-01-02")
+    con = sqlite3.connect(path)
     try:
-        for tabela, esperadas in (
+        for table, expected_ones in (
             ("webhooks", {"id", "name", "url", "events", "enabled", "created_at"}),
             ("alert_log", {"id", "created_at", "event", "title", "detail", "target",
                            "status", "error"}),
         ):
-            cols = {r[1] for r in con.execute(f"PRAGMA table_info({tabela})")}
-            assert cols == esperadas, tabela
+            cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+            assert cols == expected_ones, table
     finally:
         con.close()
 
 
 def test_toda_renomeacao_aponta_para_uma_coluna_que_o_schema_tem():
     """Nome novo com erro de digitacao viraria coluna orfa, e so apareceria em producao."""
-    for tabela, _velho, novo in schema.RENAMES:
-        assert f"  {novo} " in schema.SCHEMA or f"  {novo}\n" in schema.SCHEMA, \
-            f"{tabela}.{novo} nao existe no SCHEMA"
+    for table, _velho, fresh in schema.RENAMES:
+        assert f"  {fresh} " in schema.SCHEMA or f"  {fresh}\n" in schema.SCHEMA, \
+            f"{table}.{fresh} nao existe no SCHEMA"

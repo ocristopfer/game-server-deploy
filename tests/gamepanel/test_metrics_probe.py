@@ -17,13 +17,13 @@ def _sample(uptime: float, cpu_usec: str, stat: str, net: str, proc_ticks: int) 
     return f"sample|{uptime}|{cpu_usec}|{stat}|{net}|{proc_ticks}"
 
 
-def _linhas(*partes: str) -> str:
+def _lines(*partes: str) -> str:
     return "\n".join(partes) + "\n"
 
 
 def test_duas_amostras_calculam_cpu_pelo_cgroup():
     """cpu.stat existe (cgroup v2): a conta usa usage_usec, nao /proc/stat."""
-    raw = _linhas(
+    raw = _lines(
         _sample(100.0, "1000000", "0|0", "0|0", 0),  # 1s de CPU usada
         _sample(101.0, "1500000", "0|0", "0|0", 0),  # +0.5s num intervalo de 1s
         "cores|1",
@@ -34,7 +34,7 @@ def test_duas_amostras_calculam_cpu_pelo_cgroup():
 
 def test_cpu_cai_no_proc_stat_quando_cgroup_nao_tem_cpu_stat():
     """Sem cpu.stat (containers antigos, cgroup v1 sem o arquivo): usa /proc/stat."""
-    raw = _linhas(
+    raw = _lines(
         _sample(100.0, "-", "1000|200", "0|0", 0),
         _sample(101.0, "-", "1200|220", "0|0", 0),
         "cores|1",
@@ -45,13 +45,13 @@ def test_cpu_cai_no_proc_stat_quando_cgroup_nao_tem_cpu_stat():
 
 
 def test_cpu_pct_e_none_com_uma_amostra_so():
-    raw = _linhas(_sample(100.0, "1000000", "0|0", "0|0", 0), "cores|1")
+    raw = _lines(_sample(100.0, "1000000", "0|0", "0|0", 0), "cores|1")
     out = mp.parse_metrics(raw)
     assert out["cpu_pct"] is None
 
 
 def test_rede_e_a_diferenca_dividida_pelo_tempo():
-    raw = _linhas(
+    raw = _lines(
         _sample(100.0, "-", "0|0", "1000|2000", 0),
         _sample(102.0, "-", "0|0", "3000|2500", 0),
         "cores|1",
@@ -62,7 +62,7 @@ def test_rede_e_a_diferenca_dividida_pelo_tempo():
 
 
 def test_cpu_do_processo_usa_os_ticks_e_o_clk_tck():
-    raw = _linhas(
+    raw = _lines(
         _sample(100.0, "-", "0|0", "0|0", 100),
         _sample(101.0, "-", "0|0", "0|0", 150),
         "cores|1",
@@ -78,19 +78,19 @@ def test_cpu_do_processo_usa_os_ticks_e_o_clk_tck():
 
 def test_cpu_max_do_cgroup_dita_o_numero_de_cores_fracionario():
     """cpu.max = '150000 100000' -> 1.5 cores, nao o nproc inteiro."""
-    raw = _linhas("cores|4", "cpumax|150000 100000")
+    raw = _lines("cores|4", "cpumax|150000 100000")
     out = mp.parse_metrics(raw)
     assert out["cores"] == 1.5
 
 
 def test_cpu_max_max_nao_sobrescreve_cores():
-    raw = _linhas("cores|4", "cpumax|max 100000")
+    raw = _lines("cores|4", "cpumax|max 100000")
     out = mp.parse_metrics(raw)
     assert out["cores"] == 4
 
 
 def test_memoria_usa_meminfo_quando_nao_ha_cgroup():
-    raw = _linhas("meminfo|MemTotal:|8000000", "meminfo|MemAvailable:|2000000")
+    raw = _lines("meminfo|MemTotal:|8000000", "meminfo|MemAvailable:|2000000")
     out = mp.parse_metrics(raw)
     assert out["mem"]["total"] == 8000000 * 1024
     assert out["mem"]["used"] == 6000000 * 1024
@@ -99,7 +99,7 @@ def test_memoria_usa_meminfo_quando_nao_ha_cgroup():
 
 def test_memoria_do_cgroup_manda_quando_e_menor_que_a_da_maquina():
     """Container com limite de RAM: o cgroup mostra o teto real, nao a RAM do host."""
-    raw = _linhas(
+    raw = _lines(
         "meminfo|MemTotal:|16000000", "meminfo|MemAvailable:|10000000",
         "cgmem|1000000000|2000000000",
     )
@@ -110,7 +110,7 @@ def test_memoria_do_cgroup_manda_quando_e_menor_que_a_da_maquina():
 
 def test_memoria_do_cgroup_sem_limite_maximo_nao_e_usada():
     """cgmem com max=max (sem teto): quem manda continua sendo o /proc/meminfo."""
-    raw = _linhas(
+    raw = _lines(
         "meminfo|MemTotal:|16000000", "meminfo|MemAvailable:|10000000",
         "cgmem|500000000|max",
     )
@@ -119,7 +119,7 @@ def test_memoria_do_cgroup_sem_limite_maximo_nao_e_usada():
 
 
 def test_swap_e_calculado_como_total_menos_livre():
-    raw = _linhas("meminfo|SwapTotal:|1000000", "meminfo|SwapFree:|400000")
+    raw = _lines("meminfo|SwapTotal:|1000000", "meminfo|SwapFree:|400000")
     out = mp.parse_metrics(raw)
     assert out["swap"]["total"] == 1000000 * 1024
     assert out["swap"]["used"] == 600000 * 1024
@@ -127,32 +127,32 @@ def test_swap_e_calculado_como_total_menos_livre():
 
 
 def test_disco_ordena_por_ponto_de_montagem():
-    raw = _linhas(
+    raw = _lines(
         "disk|/opt/game|100000000|50000000",
         "disk|/|200000000|100000000",
     )
     out = mp.parse_metrics(raw)
-    montagens = [d["mount"] for d in out["disks"]]
-    assert montagens == ["/", "/opt/game"]
+    builds = [d["mount"] for d in out["disks"]]
+    assert builds == ["/", "/opt/game"]
     assert out["disks"][0]["pct"] == pytest.approx(50.0)
 
 
 def test_disco_cheio_nao_estoura_100_por_cento():
     """used > total (medida numa janela de corrida) nao pode virar 105%."""
-    raw = _linhas("disk|/|1000|1200")
+    raw = _lines("disk|/|1000|1200")
     out = mp.parse_metrics(raw)
     assert out["disks"][0]["pct"] == 100.0
 
 
 def test_linha_desconhecida_e_ignorada_sem_quebrar():
-    raw = _linhas("algumacoisaquenaoexiste|1|2|3", "cores|2")
+    raw = _lines("algumacoisaquenaoexiste|1|2|3", "cores|2")
     out = mp.parse_metrics(raw)
     assert out["cores"] == 2
 
 
 def test_linha_curta_demais_para_a_tag_e_ignorada():
     """'disk' precisa de 4 campos; com so 2 a linha e descartada, nao derruba o parser."""
-    raw = _linhas("disk|/", "cores|1")
+    raw = _lines("disk|/", "cores|1")
     out = mp.parse_metrics(raw)
     assert out["disks"] == []
     assert out["cores"] == 1
@@ -167,7 +167,7 @@ def test_saida_vazia_devolve_os_valores_padrao_sem_erro():
 
 
 def test_carga_e_uptime_saem_como_vieram():
-    raw = _linhas("load|0.10 0.20 0.15", "boot|123456.7")
+    raw = _lines("load|0.10 0.20 0.15", "boot|123456.7")
     out = mp.parse_metrics(raw)
     assert out["load"] == "0.10 0.20 0.15"
     assert out["uptime"] == pytest.approx(123456.7)

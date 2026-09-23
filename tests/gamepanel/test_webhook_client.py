@@ -28,14 +28,14 @@ class _ServidorFalso:
 
     def __init__(self, status: int = 204, corpo: bytes = b"", espera: float = 0.0):
         self.recebidos: list[dict] = []
-        servidor = self
+        server = self
 
         class Handler(BaseHTTPRequestHandler):
             # Nome em maiusculas porque e o que o BaseHTTPRequestHandler procura.
             def do_POST(self):
-                tamanho = int(self.headers.get("Content-Length", "0"))
-                raw = self.rfile.read(tamanho)
-                servidor.recebidos.append({
+                size = int(self.headers.get("Content-Length", "0"))
+                raw = self.rfile.read(size)
+                server.recebidos.append({
                     "corpo": json.loads(raw.decode("utf-8")),
                     "content_type": self.headers.get("Content-Type", ""),
                     "user_agent": self.headers.get("User-Agent", ""),
@@ -79,8 +79,8 @@ def test_mascara_mostra_o_canal_e_esconde_o_token(url, esperado):
 
 def test_mascara_nao_deixa_o_token_aparecer():
     """A URL e uma credencial: um screenshot da tela nao pode dar escrita no canal."""
-    mascarada = wc.mask_url("https://discord.com/api/webhooks/123456/token-secreto")
-    assert "token-secreto" not in mascarada
+    masked = wc.mask_url("https://discord.com/api/webhooks/123456/token-secreto")
+    assert "token-secreto" not in masked
 
 
 # ------------------------------------------------------------------ envio
@@ -144,8 +144,8 @@ def test_destino_fora_do_ar_vira_motivo_e_nao_excecao():
 def test_destino_pendurado_respeita_o_prazo():
     """Sem prazo, um destino que nao responde seguraria a volta inteira do monitor."""
     with _ServidorFalso(espera=3) as srv:
-        comeco = time.monotonic()
+        beginning = time.monotonic()
         error = wc.send(srv.url, "oi", 0.3, UA)
-        gasto = time.monotonic() - comeco
+        spent = time.monotonic() - beginning
     assert error.startswith("nao consegui chamar o webhook")
-    assert gasto < 2
+    assert spent < 2

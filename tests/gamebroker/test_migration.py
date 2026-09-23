@@ -67,10 +67,10 @@ BEGIN SELECT RAISE(ABORT, 'auditoria e append-only'); END;
 
 
 @pytest.fixture
-def banco_antigo(tmp_path):
+def old_database(tmp_path):
     """Um broker como ele estava antes da traducao, com uma instancia de verdade."""
-    caminho = tmp_path / "broker.db"
-    con = sqlite3.connect(caminho)
+    path = tmp_path / "broker.db"
+    con = sqlite3.connect(path)
     con.executescript(ESQUEMA_ANTIGO)
     con.execute("INSERT INTO instancias (ctid, ip, jogo, nome, hostname, estado,"
                 " criado_por, criado_em, detalhe) VALUES"
@@ -90,11 +90,11 @@ def banco_antigo(tmp_path):
                 " VALUES ('2026-01-01T10:00:00', 'zeca', 'criar', 'Servidor do Zeca', 'ok', '')")
     con.commit()
     con.close()
-    return caminho
+    return path
 
 
-def test_a_instancia_sobrevive_ao_rename_de_tabela_e_coluna(banco_antigo):
-    db = Db(str(banco_antigo))
+def test_a_instancia_sobrevive_ao_rename_de_tabela_e_coluna(old_database):
+    db = Db(str(old_database))
     inst = db.instances()[0]
     assert inst["name"] == "Servidor do Zeca"
     assert inst["game"] == "palworld"
@@ -106,33 +106,33 @@ def test_a_instancia_sobrevive_ao_rename_de_tabela_e_coluna(banco_antigo):
         (31000, "udp", "jogo"), (31001, "udp", "query")]
 
 
-def test_a_operacao_e_a_auditoria_sobrevivem(banco_antigo):
-    db = Db(str(banco_antigo))
+def test_a_operacao_e_a_auditoria_sobrevivem(old_database):
+    db = Db(str(old_database))
     op = db.operation("a" * 32)
     assert (op["kind"], op["state"]) == ("criar", "ok")
     assert op["log"] == "instalado\n"
-    linha = db.audit_trail()[0]
-    assert (linha["actor"], linha["verb"], linha["target"]) == ("zeca", "criar", "Servidor do Zeca")
+    line = db.audit_trail()[0]
+    assert (line["actor"], line["verb"], line["target"]) == ("zeca", "criar", "Servidor do Zeca")
 
 
-def test_a_chave_estrangeira_continua_valendo(banco_antigo):
+def test_a_chave_estrangeira_continua_valendo(old_database):
     """O `RENAME TO` reescreve a `REFERENCES` de quem aponta para a tabela renomeada.
     Se isso deixasse de valer, apagar a instancia deixaria porta orfa — e porta orfa no
     banco vira porta que o alocador acha ocupada para sempre."""
-    db = Db(str(banco_antigo))
+    db = Db(str(old_database))
     db.delete_instance(1)
-    con = sqlite3.connect(banco_antigo)
+    con = sqlite3.connect(old_database)
     try:
         assert con.execute("SELECT COUNT(*) FROM ports").fetchone()[0] == 0
     finally:
         con.close()
 
 
-def test_a_auditoria_continua_append_only(banco_antigo):
+def test_a_auditoria_continua_append_only(old_database):
     """O trigger tem o nome da tabela dentro: renomear a tabela sem recria-lo deixaria
     a auditoria editavel, que e o oposto do que ela existe para garantir."""
-    Db(str(banco_antigo))
-    con = sqlite3.connect(banco_antigo)
+    Db(str(old_database))
+    con = sqlite3.connect(old_database)
     try:
         with pytest.raises(sqlite3.DatabaseError, match="append-only"):
             con.execute("UPDATE audit SET result = 'adulterado'")
@@ -142,21 +142,21 @@ def test_a_auditoria_continua_append_only(banco_antigo):
         con.close()
 
 
-def test_rodar_de_novo_nao_faz_nada(banco_antigo):
+def test_rodar_de_novo_nao_faz_nada(old_database):
     """O broker instancia o `Db` em todo start."""
-    Db(str(banco_antigo))
-    antes = Db(str(banco_antigo)).instances()
-    assert Db(str(banco_antigo)).instances() == antes
+    Db(str(old_database))
+    before = Db(str(old_database)).instances()
+    assert Db(str(old_database)).instances() == before
 
 
 def test_banco_novo_nao_passa_por_migration(tmp_path):
     db = Db(str(tmp_path / "novo.db"))
     con = sqlite3.connect(tmp_path / "novo.db")
     try:
-        tabelas = {r[0] for r in con.execute(
+        tables = {r[0] for r in con.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'")}
-        assert {"instances", "ports", "operations", "audit"} <= tabelas
-        assert not tabelas & {"instancias", "portas", "operacoes", "auditoria"}
+        assert {"instances", "ports", "operations", "audit"} <= tables
+        assert not tables & {"instancias", "portas", "operacoes", "auditoria"}
     finally:
         con.close()
     assert db.instances() == []

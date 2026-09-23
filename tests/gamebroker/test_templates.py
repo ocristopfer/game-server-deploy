@@ -21,33 +21,33 @@ sys.modules["modelos_de_jogo"] = modelos
 _spec.loader.exec_module(modelos)
 
 
-def _como_o_painel_monta(values: dict[str, str]) -> dict:
+def _as_the_panel_builds(values: dict[str, str]) -> dict:
     """Espelha `_jogo_do_form` do painel: so converte tipos, sem validar nada."""
     data: dict = {}
-    for campo in ("start_args", "config_path", "join_re", "leave_re", "player_source"):
-        if values.get(campo):
-            data[campo] = values[campo]
-    for campo in ("game_port", "query_port", "memory_mb", "cores", "disk_gb"):
-        if values.get(campo):
-            data[campo] = int(values[campo])
+    for field in ("start_args", "config_path", "join_re", "leave_re", "player_source"):
+        if values.get(field):
+            data[field] = values[field]
+    for field in ("game_port", "query_port", "memory_mb", "cores", "disk_gb"):
+        if values.get(field):
+            data[field] = int(values[field])
     data["ports"] = [p for p in re.split(r"[\s,]+", values.get("ports", "").strip()) if p]
-    for campo in ("config_files", "backup_paths"):
-        data[campo] = [p.strip() for p in values.get(campo, "").replace(",", "\n").splitlines() if p.strip()]
+    for field in ("config_files", "backup_paths"):
+        data[field] = [p.strip() for p in values.get(field, "").replace(",", "\n").splitlines() if p.strip()]
     data["recipes"] = []
     data["shiftable"] = values.get("shiftable") == "1"
     return data
 
 
-def _completo(modelo) -> dict:
+def _complete(modelo) -> dict:
     """O que a pessoa acrescenta a mao: identidade e app id (o resto vem do modelo)."""
-    data = _como_o_painel_monta(modelo.values)
+    data = _as_the_panel_builds(modelo.values)
     data.update(key="meujogo", name="Meu Jogo", app_id=123456)
     return data
 
 
 @pytest.mark.parametrize("modelo", modelos.TEMPLATES, ids=lambda m: m.key)
 def test_modelo_passa_no_validador_do_broker(modelo):
-    game = validate_dynamic(_completo(modelo))
+    game = validate_dynamic(_complete(modelo))
     assert game.key == "meujogo"
 
 
@@ -59,9 +59,9 @@ def test_modelo_que_anda_de_porta_tem_os_marcadores(modelo):
 
 def test_unreal_traz_o_padrao_de_log_dos_servidores_unreal():
     values = modelos.UNREAL_LINUX.values
-    juncao = re.search(values["join_re"], "LogNet: Join succeeded: Zeca")
-    assert juncao is not None
-    assert juncao.group("name") == "Zeca"
+    joined = re.search(values["join_re"], "LogNet: Join succeeded: Zeca")
+    assert joined is not None
+    assert joined.group("name") == "Zeca"
     assert re.search(values["leave_re"], "LogNet: UNetConnection::Close: [UNetConnection] ...")
 
 
@@ -75,6 +75,6 @@ def test_unreal_deixa_o_nome_do_projeto_bem_visivel():
 
 def test_chaves_do_modelo_sao_campos_do_formulario_do_catalogo():
     html = (RAIZ / "src" / "gamepanel" / "templates" / "catalog.html").read_text(encoding="utf-8")
-    campos = set(re.findall(r'name="([a-z_]+)"', html))
-    for modelo in modelos.TEMPLATES:
-        assert set(modelo.values) <= campos, set(modelo.values) - campos
+    fields = set(re.findall(r'name="([a-z_]+)"', html))
+    for template_of in modelos.TEMPLATES:
+        assert set(template_of.values) <= fields, set(template_of.values) - fields

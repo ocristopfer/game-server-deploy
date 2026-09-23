@@ -4,25 +4,25 @@ from __future__ import annotations
 from gamepanel import navigation as ui
 
 
-def _chaves(itens):
+def _keys(itens):
     return [i.key for i in itens]
 
 
 def test_admin_com_broker_ve_tudo_na_barra_larga():
-    barra, conta = ui.nav_desktop(admin=True, broker=True)
-    assert _chaves(barra) == ["servidores", "instancias", "catalogo", "historico", "alertas", "usuarios"]
-    assert _chaves(conta) == ["conta", "ssh"]
+    slash, account = ui.nav_desktop(admin=True, broker=True)
+    assert _keys(slash) == ["servidores", "instancias", "catalogo", "historico", "alertas", "usuarios"]
+    assert _keys(account) == ["conta", "ssh"]
 
 
 def test_sem_broker_a_barra_nao_oferece_link_que_da_403():
-    barra, _ = ui.nav_desktop(admin=True, broker=False)
-    assert not {"instancias", "catalogo"} & set(_chaves(barra))
+    slash, _ = ui.nav_desktop(admin=True, broker=False)
+    assert not {"instancias", "catalogo"} & set(_keys(slash))
 
 
 def test_operador_so_ve_o_que_pode_abrir():
-    barra, conta = ui.nav_desktop(admin=False, broker=True)
-    assert _chaves(barra) == ["servidores", "historico"]
-    assert _chaves(conta) == ["conta", "ssh"]
+    slash, account = ui.nav_desktop(admin=False, broker=True)
+    assert _keys(slash) == ["servidores", "historico"]
+    assert _keys(account) == ["conta", "ssh"]
 
 
 def test_toda_chave_da_barra_larga_existe_nas_listas_de_itens():
@@ -51,12 +51,12 @@ def test_tela_de_servidor_acende_servidores_nos_dois():
     assert ui.active_desktop_nav_for("rota_que_nao_existe") == ""
 
 
-def test_barra_larga_usa_rotulo_curto_quando_ha(chefe, monkeypatch):
+def test_barra_larga_usa_rotulo_curto_quando_ha(admin, monkeypatch):
     from gamepanel import app as panel
     monkeypatch.setattr(panel, "ALLOW_BROKER", True)
-    html = chefe.get("/").get_data(as_text=True)
+    html = admin.get("/").get_data(as_text=True)
     start = html.index('class="appbar__nav"')
-    barra = html[start:html.index("</nav>", start)]
-    assert ">Instancias</a>" in barra
-    assert ">Catalogo</a>" in barra
-    assert "Instancias de jogo" not in barra
+    slash = html[start:html.index("</nav>", start)]
+    assert ">Instancias</a>" in slash
+    assert ">Catalogo</a>" in slash
+    assert "Instancias de jogo" not in slash

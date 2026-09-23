@@ -51,11 +51,11 @@ As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_config_f
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_javascript.py` e mais uma duzia) sao **pytest** — 909
+`test_schema.py` e mais uma duzia) sao **pytest** — 909
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
-(`banco`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
-`chefe`/`peao`: um admin e um operador ja logados; `entrar`/`postar`: login e POST com
+(`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
+`admin`/`operator`: um admin e um operador ja logados; `login`/`post`: entrar e POST com
 CSRF). **Rode a suite inteira** depois de mexer em `app.py` — elas cobrem exatamente as
 partes onde e facil quebrar algo sem perceber (quando o painel decide avisar, quem ve o
 que, o que conta como jogador). Os arquivos ja NAO rodam como script solto
@@ -270,9 +270,9 @@ dessas tabelas.
   redireciona para `/account/2fa`; POST idem (nada e executado); `/api/...` responde 403 em JSON.
   A ordem importa: `GAMEPANEL_ALLOW_BROKER=0` ainda vence e mostra a mensagem dele, mesmo para
   quem nao tem 2FA (`test_allow_broker_desligado_vence_mesmo_para_quem_nao_tem_2fa`). Por isso,
-  **em `test_broker.py` (so nele) a fixture `chefe` ja vem com 2FA ativo** (override local que
-  usa `chefe_2fa` do `conftest.py`) — sem isso quase todo teste do arquivo cairia na tela de
-  ativacao em vez de exercitar o que quer testar; `sem_2fa` e o admin sem 2FA, para provar a
+  **em `test_broker.py` (so nele) a fixture `admin` ja vem com 2FA ativo** (override local que
+  usa `admin_2fa` do `conftest.py`) — sem isso quase todo teste do arquivo cairia na tela de
+  ativacao em vez de exercitar o que quer testar; `admin_without_2fa` e o admin sem 2FA, para provar a
   exigencia em si.
 - **`provision-admin-lxc.sh` reescreve o `panel.env` INTEIRO**; as linhas `GAMEPANEL_BROKER_*` e
   `GAMEPANEL_ALLOW_BROKER` que o `deploy-broker.ps1 -ConfigurarPainel` grava sao preservadas de
@@ -329,7 +329,7 @@ dessas tabelas.
 teste — antes disso era uma atribuicao direta (`panel.server_status = ...`) sem `finally`
 nenhum, e a suite so nao vazava estado porque cada arquivo era um processo Python
 separado. Hoje as suites dividem um processo (pytest as importa todas juntas), e
-sao o `monkeypatch` e a fixture `banco` (tabelas limpas a cada teste, em
+sao o `monkeypatch` e a fixture `database` (tabelas limpas a cada teste, em
 `tests/gamepanel/conftest.py`) que garantem o isolamento.
 
 Essa troca **so alcanca quem chama pelo modulo**. E por isso que os blueprints fazem

@@ -19,18 +19,18 @@ SEGREDOS = (TOKEN_BROKER, TOKEN_PVE, SECRET_OPN)
 
 
 @pytest.fixture
-def env(tmp_path: Path, pasta_de_jogos: Path) -> dict[str, str]:
+def env(tmp_path: Path, games_dir: Path) -> dict[str, str]:
     """Um ambiente COMPLETO e valido (Proxmox/OPNsense em https com impressao)."""
     ssh = tmp_path / "ssh"
     ssh.mkdir()
     (ssh / "id_ed25519.pub").write_text(CHAVE_PUBLICA + "\n", encoding="utf-8")
     lib = tmp_path / "lib"
     lib.mkdir()
-    for nome in ("ct-install.sh", "ct-phases.sh"):
-        (lib / nome).write_text("#!/bin/bash\n")
+    for name in ("ct-install.sh", "ct-phases.sh"):
+        (lib / name).write_text("#!/bin/bash\n")
     return {
         "BROKER_TOKEN": TOKEN_BROKER, "BROKER_ALLOW_IPS": "192.168.2.19",
-        "BROKER_STATE_DIR": str(tmp_path / "state"), "BROKER_GAMES_DIR": str(pasta_de_jogos),
+        "BROKER_STATE_DIR": str(tmp_path / "state"), "BROKER_GAMES_DIR": str(games_dir),
         "BROKER_LIB_DIR": str(lib), "BROKER_SSH_KEY": str(ssh / "id_ed25519"),
         "BROKER_PANEL_PUBKEY": CHAVE_DO_PAINEL, "BROKER_GATEWAY": "192.168.2.1",
         "BROKER_IP_PREFIX": "192.168.2", "BROKER_IP_INICIO": "30", "BROKER_IP_FIM": "40",
@@ -119,12 +119,12 @@ def test_variavel_obrigatoria_ausente_e_nomeada(env, nome):
 
 
 def test_todos_os_problemas_de_uma_vez_sem_duplicar(env):
-    for nome in ("PROXMOX_NODE", "BROKER_GATEWAY", "OPNSENSE_KEY", "BROKER_TOKEN"):
-        del env[nome]
+    for name in ("PROXMOX_NODE", "BROKER_GATEWAY", "OPNSENSE_KEY", "BROKER_TOKEN"):
+        del env[name]
     with pytest.raises(ConfigError) as error:
         load(env)
-    nomes = [p.split(":")[0] for p in error.value.problems]
-    assert sorted(nomes) == ["BROKER_GATEWAY", "BROKER_TOKEN", "OPNSENSE_KEY", "PROXMOX_NODE"], "cada falta aparece UMA vez"
+    names = [p.split(":")[0] for p in error.value.problems]
+    assert sorted(names) == ["BROKER_GATEWAY", "BROKER_TOKEN", "OPNSENSE_KEY", "PROXMOX_NODE"], "cada falta aparece UMA vez"
 
 
 @pytest.mark.parametrize(("nome", "valor", "trecho"), [
@@ -155,9 +155,9 @@ def test_faixas_invertidas(env):
     env.update(BROKER_IP_INICIO="50", BROKER_IP_FIM="40", BROKER_CTID_INICIO="400", BROKER_CTID_FIM="300")
     with pytest.raises(ConfigError) as error:
         load(env)
-    texto = str(error.value)
-    assert "BROKER_CTID_FIM" in texto
-    assert "BROKER_IP_PREFIX/INICIO/FIM" in texto
+    text = str(error.value)
+    assert "BROKER_CTID_FIM" in text
+    assert "BROKER_IP_PREFIX/INICIO/FIM" in text
 
 
 @pytest.mark.parametrize("nome", ["PROXMOX_CERT_SHA256", "OPNSENSE_CERT_SHA256"])
@@ -193,8 +193,8 @@ def test_nenhuma_mensagem_de_erro_carrega_segredo(env, nome):
     env["PROXMOX_CERT_SHA256"] = "lixo"
     with pytest.raises(ConfigError) as error:
         load(env)
-    for segredo in SEGREDOS:
-        assert segredo not in str(error.value)
+    for secret in SEGREDOS:
+        assert secret not in str(error.value)
 
 
 # --- montagem do servico real (contra os falsos HTTP) ---------------------------------------------
@@ -202,7 +202,7 @@ def test_nenhuma_mensagem_de_erro_carrega_segredo(env, nome):
 @pytest.fixture
 def env_local(env, pve, opn):
     """O mesmo ambiente, mas com Proxmox e OPNsense apontando para os falsos em 127.0.0.1."""
-    env.update(PROXMOX_URL=pve.servidor.url, OPNSENSE_URL=opn.servidor.url,
+    env.update(PROXMOX_URL=pve.server.url, OPNSENSE_URL=opn.server.url,
                BROKER_ALLOW_IPS="127.0.0.1")  # o test_client do Flask chega de 127.0.0.1
     del env["PROXMOX_CERT_SHA256"], env["OPNSENSE_CERT_SHA256"]
     return env
@@ -215,61 +215,61 @@ def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
     http = app.test_client()
     auth = {"Authorization": f"Bearer {TOKEN_BROKER}", "X-Actor": "zeca"}
 
-    resposta = http.post("/v1/instances", headers=auth, json={"game": "alfa", "name": "Um"})
+    response = http.post("/v1/instances", headers=auth, json={"game": "alfa", "name": "Um"})
 
-    assert resposta.status_code == 202
-    operation = http.get(f"/v1/operations/{resposta.get_json()['operation_id']}", headers=auth).get_json()
+    assert response.status_code == 202
+    operation = http.get(f"/v1/operations/{response.get_json()['operation_id']}", headers=auth).get_json()
     assert operation["state"] == "ok"
-    ct = pve.falso.cts[300]
+    ct = pve.fake.cts[300]
     assert CHAVE_PUBLICA in ct["chaves"], "chave do broker: para instalar"
     assert CHAVE_DO_PAINEL in ct["chaves"], "chave do painel: para operar depois"
     assert ct["net0"].endswith("ip=192.168.2.30/24,gw=192.168.2.1,type=veth")
-    assert sorted(r["destination.port"] for r in opn.falso.regras.values()) == ["7001", "7002"]
-    assert any("bash ct-install.sh" in c for c in executor.comandos())
+    assert sorted(r["destination.port"] for r in opn.fake.regras.values()) == ["7001", "7002"]
+    assert any("bash ct-install.sh" in c for c in executor.commands())
     assert (Path(env_local["BROKER_STATE_DIR"]) / "broker.db").exists()
 
 
 def test_a_api_de_producao_recusa_quem_nao_esta_na_lista_de_ips(env_local):
     env_local["BROKER_ALLOW_IPS"] = "10.9.9.9"
     app = prod.create_app_from_config(load(env_local), executor=ExecutorFalso(), network=RedeFalsa())
-    resposta = app.test_client().get("/v1/health", headers={"Authorization": f"Bearer {TOKEN_BROKER}"})
-    assert resposta.status_code == 403
+    response = app.test_client().get("/v1/health", headers={"Authorization": f"Bearer {TOKEN_BROKER}"})
+    assert response.status_code == 403
 
 
 def test_ambiente_ruim_derruba_o_start_com_a_lista_e_sem_segredo(env, capsys):
     del env["PROXMOX_NODE"]
     env["BROKER_IP_INICIO"] = "abc"
-    with pytest.raises(SystemExit) as saida:
+    with pytest.raises(SystemExit) as output:
         prod.create_app_from_env(env)
-    assert saida.value.code == 2
+    assert output.value.code == 2
     error = capsys.readouterr().err
     assert "NAO SUBIU" in error
     assert "PROXMOX_NODE" in error
     assert "BROKER_IP_INICIO" in error
-    for segredo in SEGREDOS:
-        assert segredo not in error
+    for secret in SEGREDOS:
+        assert secret not in error
 
 
 # --- ping -----------------------------------------------------------------------------------------------
 
 def _ping(monkeypatch, retorno=None, error=None):
-    chamadas: list[list[str]] = []
+    calls: list[list[str]] = []
 
-    def falso(argv, **_kw):
-        chamadas.append(argv)
+    def fake(argv, **_kw):
+        calls.append(argv)
         if error is not None:
             raise error
         return subprocess.CompletedProcess(argv, retorno)
 
-    monkeypatch.setattr(subprocess, "run", falso)
-    return chamadas
+    monkeypatch.setattr(subprocess, "run", fake)
+    return calls
 
 
 def test_ping_que_responde_significa_ip_em_uso(monkeypatch):
-    chamadas = _ping(monkeypatch, retorno=0)
+    calls = _ping(monkeypatch, retorno=0)
     assert RedeReal().answers("192.168.2.30") is True
-    assert chamadas[0][:4] == ["ping", "-c", "1", "-W"]
-    assert chamadas[0][-1] == "192.168.2.30"
+    assert calls[0][:4] == ["ping", "-c", "1", "-W"]
+    assert calls[0][-1] == "192.168.2.30"
 
 
 def test_ping_sem_resposta_significa_livre(monkeypatch):
@@ -285,7 +285,7 @@ def test_ping_que_nao_roda_nao_derruba_a_criacao(monkeypatch, error):
 
 @pytest.mark.parametrize("ip", ["10.0.0.300", "nao-e-ip", "10.0.0.30; rm -rf /", "-f", ""])
 def test_ip_estranho_nunca_chega_ao_ping(monkeypatch, ip):
-    chamadas = _ping(monkeypatch, retorno=0)
+    calls = _ping(monkeypatch, retorno=0)
     with pytest.raises(ValueError):
         RedeReal().answers(ip)
-    assert chamadas == []
+    assert calls == []

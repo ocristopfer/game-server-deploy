@@ -17,13 +17,13 @@ SAIDA_MINIMA = "cores|2\nload|0.10 0.20 0.15\n"
 
 
 @pytest.fixture(autouse=True)
-def cache_limpo():
+def clean_cache():
     ms._metrics_cache.clear()
     yield
     ms._metrics_cache.clear()
 
 
-def ssh_que_responde(text: str = SAIDA_MINIMA, registro: list | None = None):
+def ssh_that_answers(text: str = SAIDA_MINIMA, registro: list | None = None):
     def ssh_output(server, comando, timeout=None):
         if registro is not None:
             registro.append(comando)
@@ -32,23 +32,23 @@ def ssh_que_responde(text: str = SAIDA_MINIMA, registro: list | None = None):
 
 
 def test_le_os_numeros_do_container():
-    data = ms.server_metrics(ssh_que_responde(), SERVIDOR, "/opt/padrao", 5)
+    data = ms.server_metrics(ssh_that_answers(), SERVIDOR, "/opt/padrao", 5)
     assert data["cores"] == 2
     assert data["load"] == "0.10 0.20 0.15"
     assert data["error"] == ""
 
 
 def test_mede_o_disco_da_pasta_do_cadastro():
-    registro: list = []
-    ms.server_metrics(ssh_que_responde(registro=registro), SERVIDOR, "/opt/padrao", 5)
-    assert "/opt/game" in registro[0]
+    record: list = []
+    ms.server_metrics(ssh_that_answers(registro=record), SERVIDOR, "/opt/padrao", 5)
+    assert "/opt/game" in record[0]
 
 
 def test_sem_pasta_no_cadastro_usa_a_padrao():
-    registro: list = []
-    servidor = {**SERVIDOR, "config_path": ""}
-    ms.server_metrics(ssh_que_responde(registro=registro), servidor, "/opt/padrao", 5)
-    assert "/opt/padrao" in registro[0]
+    record: list = []
+    server = {**SERVIDOR, "config_path": ""}
+    ms.server_metrics(ssh_that_answers(registro=record), server, "/opt/padrao", 5)
+    assert "/opt/padrao" in record[0]
 
 
 def test_container_fora_do_ar_vira_erro_e_nao_excecao():
@@ -62,33 +62,33 @@ def test_container_fora_do_ar_vira_erro_e_nao_excecao():
 
 
 def test_segunda_leitura_dentro_do_prazo_vem_do_cache():
-    chamadas: list = []
-    ssh = ssh_que_responde(registro=chamadas)
+    calls: list = []
+    ssh = ssh_that_answers(registro=calls)
     ms.server_metrics(ssh, SERVIDOR, "/opt/padrao", 5)
     ms.server_metrics(ssh, SERVIDOR, "/opt/padrao", 5)
-    assert len(chamadas) == 1
+    assert len(calls) == 1
 
 
 def test_force_le_de_novo():
-    chamadas: list = []
-    ssh = ssh_que_responde(registro=chamadas)
+    calls: list = []
+    ssh = ssh_that_answers(registro=calls)
     ms.server_metrics(ssh, SERVIDOR, "/opt/padrao", 5)
     ms.server_metrics(ssh, SERVIDOR, "/opt/padrao", 5, force=True)
-    assert len(chamadas) == 2
+    assert len(calls) == 2
 
 
 def test_invalidate_esquece_a_leitura():
-    chamadas: list = []
-    ssh = ssh_que_responde(registro=chamadas)
+    calls: list = []
+    ssh = ssh_that_answers(registro=calls)
     ms.server_metrics(ssh, SERVIDOR, "/opt/padrao", 5)
     ms.invalidate(1)
     ms.server_metrics(ssh, SERVIDOR, "/opt/padrao", 5)
-    assert len(chamadas) == 2
+    assert len(calls) == 2
 
 
 def test_cada_servidor_tem_o_seu_cache():
-    chamadas: list = []
-    ssh = ssh_que_responde(registro=chamadas)
+    calls: list = []
+    ssh = ssh_that_answers(registro=calls)
     ms.server_metrics(ssh, SERVIDOR, "/opt/padrao", 5)
     ms.server_metrics(ssh, {**SERVIDOR, "id": 2}, "/opt/padrao", 5)
-    assert len(chamadas) == 2
+    assert len(calls) == 2

@@ -53,8 +53,8 @@ def classes_in_templates() -> dict[str, str]:
     """
     found: dict[str, str] = {}
     for path in _templates():
-        limpo = JINJA_EXPR.sub(" ", path.read_text(encoding="utf-8"))
-        for attr in CLASS_ATTR.findall(limpo):
+        clean = JINJA_EXPR.sub(" ", path.read_text(encoding="utf-8"))
+        for attr in CLASS_ATTR.findall(clean):
             for name in attr.split():
                 found.setdefault(name, path.name)
     return found
@@ -187,7 +187,7 @@ proc|123|4096
 """
 
 
-def _campos_do_medidor() -> set[str]:
+def _meter_fields() -> set[str]:
     from gamepanel.runtime import metrics_probe
 
     return set(metrics_probe.parse_metrics(METRICS_SAMPLE))
@@ -195,13 +195,13 @@ def _campos_do_medidor() -> set[str]:
 
 def test_a_tela_de_servidor_le_so_campos_que_o_medidor_entrega():
     html = (TEMPLATES / "server_detail.html").read_text(encoding="utf-8")
-    lidos = set(re.findall(r"metrics\.([a-z_]+)", html))
+    read_ones = set(re.findall(r"metrics\.([a-z_]+)", html))
     # `error` nasce quando a leitura FALHA, entao nao esta na amostra boa.
-    faltando = sorted(lidos - _campos_do_medidor() - {"error"})
-    assert faltando == [], f"a tela le campo que o medidor nao entrega: {faltando}"
+    missing = sorted(read_ones - _meter_fields() - {"error"})
+    assert missing == [], f"a tela le campo que o medidor nao entrega: {missing}"
 
 
 def test_o_medidor_ainda_entrega_o_numero_de_nucleos():
     """`cores` e a palavra que colide: nucleos em ingles, cores em portugues. Uma
     renomeacao automatica ja trocou uma pela outra nos dois lados."""
-    assert "cores" in _campos_do_medidor()
+    assert "cores" in _meter_fields()

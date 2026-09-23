@@ -30,25 +30,25 @@ class Servidor:
     def __init__(self) -> None:
         self.pedidos: list[dict] = []
         self.resposta: tuple[int, object] = (200, {})
-        servidor = self
+        server = self
 
         class Manipulador(BaseHTTPRequestHandler):
-            def _tratar(self) -> None:
-                tamanho = int(self.headers.get("Content-Length") or 0)
-                body = self.rfile.read(tamanho).decode() if tamanho else ""
-                servidor.pedidos.append({
+            def _handle(self) -> None:
+                size = int(self.headers.get("Content-Length") or 0)
+                body = self.rfile.read(size).decode() if size else ""
+                server.pedidos.append({
                     "metodo": self.command, "caminho": self.path,
                     "cabecalhos": {k.lower(): v for k, v in self.headers.items()},
                     "corpo": json.loads(body) if body else None,
                 })
-                status, data = servidor.resposta
+                status, data = server.resposta
                 raw = (data if isinstance(data, str) else json.dumps(data)).encode()
                 self.send_response(status)
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
 
-            do_GET = do_POST = do_DELETE = _tratar
+            do_GET = do_POST = do_DELETE = _handle
 
             def log_message(self, *_a) -> None:
                 pass
@@ -60,99 +60,99 @@ class Servidor:
     def url(self) -> str:
         return f"http://127.0.0.1:{self.http.server_address[1]}"
 
-    def parar(self) -> None:
+    def stop_it(self) -> None:
         self.http.shutdown()
         self.http.server_close()
 
 
 @pytest.fixture
-def servidor(monkeypatch):
+def server(monkeypatch):
     monkeypatch.setattr(bc, "_config", {})
-    falso = Servidor()
-    bc.configure(falso.url, TOKEN)
-    yield falso
-    falso.parar()
+    fake = Servidor()
+    bc.configure(fake.url, TOKEN)
+    yield fake
+    fake.stop_it()
 
 
 # --- o que vai no fio -------------------------------------------------------------------------
 
-def test_todo_pedido_leva_o_token_e_o_ator(servidor):
+def test_todo_pedido_leva_o_token_e_o_ator(server):
     bc.create("alfa", "Um", "chefe")
-    pedido = servidor.pedidos[0]
-    assert pedido["cabecalhos"]["authorization"] == f"Bearer {TOKEN}"
-    assert pedido["cabecalhos"]["x-actor"] == "chefe"
-    assert (pedido["metodo"], pedido["caminho"]) == ("POST", "/v1/instances")
-    assert pedido["corpo"] == {"game": "alfa", "name": "Um"}
+    request_body = server.pedidos[0]
+    assert request_body["cabecalhos"]["authorization"] == f"Bearer {TOKEN}"
+    assert request_body["cabecalhos"]["x-actor"] == "chefe"
+    assert (request_body["metodo"], request_body["caminho"]) == ("POST", "/v1/instances")
+    assert request_body["corpo"] == {"game": "alfa", "name": "Um"}
 
 
-def test_consultas_nao_mandam_ator_nem_corpo(servidor):
-    servidor.resposta = (200, [])
+def test_consultas_nao_mandam_ator_nem_corpo(server):
+    server.resposta = (200, [])
     bc.catalog()
     bc.instances()
-    assert [p["caminho"] for p in servidor.pedidos] == ["/v1/catalog", "/v1/instances"]
-    assert all(p["corpo"] is None and "x-actor" not in p["cabecalhos"] for p in servidor.pedidos)
+    assert [p["caminho"] for p in server.pedidos] == ["/v1/catalog", "/v1/instances"]
+    assert all(p["corpo"] is None and "x-actor" not in p["cabecalhos"] for p in server.pedidos)
 
 
-def test_verbos_e_caminhos(servidor):
+def test_verbos_e_caminhos(server):
     bc.deactivate(7, "chefe")
     bc.remove(7, "Um", "chefe", db_only=True)
     bc.add_game({"key": "x"}, "chefe")
     bc.operation("a" * 32)
     bc.health()
-    assert [(p["metodo"], p["caminho"]) for p in servidor.pedidos] == [
+    assert [(p["metodo"], p["caminho"]) for p in server.pedidos] == [
         ("POST", "/v1/instances/7/deactivate"), ("DELETE", "/v1/instances/7"),
         ("POST", "/v1/catalog"), ("GET", f"/v1/operations/{'a' * 32}"), ("GET", "/v1/health")]
-    assert servidor.pedidos[1]["corpo"] == {"confirmation": "Um", "db_only": True}
+    assert server.pedidos[1]["corpo"] == {"confirmation": "Um", "db_only": True}
 
 
-def test_id_de_operacao_e_codificado_no_caminho(servidor):
+def test_id_de_operacao_e_codificado_no_caminho(server):
     bc.operation("../../etc/passwd")
-    assert servidor.pedidos[0]["caminho"] == "/v1/operations/..%2F..%2Fetc%2Fpasswd"
+    assert server.pedidos[0]["caminho"] == "/v1/operations/..%2F..%2Fetc%2Fpasswd"
 
 
-def test_id_de_instancia_precisa_ser_inteiro(servidor):
+def test_id_de_instancia_precisa_ser_inteiro(server):
     with pytest.raises(ValueError):
         bc.deactivate("7; drop", "chefe")  # type: ignore[arg-type]
-    assert servidor.pedidos == []
+    assert server.pedidos == []
 
 
 def test_prefixo_da_url_e_respeitado(monkeypatch):
     monkeypatch.setattr(bc, "_config", {})
-    falso = Servidor()
+    fake = Servidor()
     try:
-        bc.configure(falso.url + "/broker/", TOKEN)
-        falso.resposta = (200, {})
+        bc.configure(fake.url + "/broker/", TOKEN)
+        fake.resposta = (200, {})
         bc.health()
-        assert falso.pedidos[0]["caminho"] == "/broker/v1/health"
+        assert fake.pedidos[0]["caminho"] == "/broker/v1/health"
     finally:
-        falso.parar()
+        fake.stop_it()
 
 
 # --- erros ----------------------------------------------------------------------------------------
 
-def test_recusa_do_broker_vira_erro_com_mensagem_status_e_codigo(servidor):
-    servidor.resposta = (429, {"erro": "limite de 8 instancias atingido", "codigo": "cota"})
+def test_recusa_do_broker_vira_erro_com_mensagem_status_e_codigo(server):
+    server.resposta = (429, {"erro": "limite de 8 instancias atingido", "codigo": "cota"})
     with pytest.raises(bc.BrokerError) as error:
         bc.create("alfa", "x", "chefe")
     assert error.value.message == "limite de 8 instancias atingido"
     assert (error.value.status, error.value.codigo) == (429, "cota")
 
 
-def test_erro_sem_corpo_conhecido_tem_mensagem_generica(servidor):
-    servidor.resposta = (502, "<html>bad gateway</html>")
+def test_erro_sem_corpo_conhecido_tem_mensagem_generica(server):
+    server.resposta = (502, "<html>bad gateway</html>")
     with pytest.raises(bc.BrokerError, match="HTTP 502"):
         bc.health()
 
 
-def test_mensagem_de_erro_e_limitada(servidor):
-    servidor.resposta = (400, {"erro": "x" * 5000, "codigo": "validacao"})
+def test_mensagem_de_erro_e_limitada(server):
+    server.resposta = (400, {"erro": "x" * 5000, "codigo": "validacao"})
     with pytest.raises(bc.BrokerError) as error:
         bc.health()
     assert len(error.value.message) <= 300
 
 
-def test_http_client_recusada_nao_vaza_o_token(servidor):
-    servidor.parar()
+def test_http_client_recusada_nao_vaza_o_token(server):
+    server.stop_it()
     with pytest.raises(bc.BrokerError) as error:
         bc.health()
     assert TOKEN not in str(error.value)
@@ -160,14 +160,14 @@ def test_http_client_recusada_nao_vaza_o_token(servidor):
 
 
 @pytest.mark.parametrize("funcao", [bc.catalog, bc.instances])
-def test_lista_que_nao_e_lista_e_erro(servidor, funcao):
-    servidor.resposta = (200, {"nao": "e lista"})
+def test_lista_que_nao_e_lista_e_erro(server, funcao):
+    server.resposta = (200, {"nao": "e lista"})
     with pytest.raises(bc.BrokerError, match="inesperada"):
         funcao()
 
 
-def test_objeto_que_nao_e_objeto_e_erro(servidor):
-    servidor.resposta = (200, [1, 2])
+def test_objeto_que_nao_e_objeto_e_erro(server):
+    server.resposta = (200, [1, 2])
     with pytest.raises(bc.BrokerError, match="inesperada"):
         bc.health()
 
@@ -219,9 +219,9 @@ def broker_tls(tmp_path):
     openssl = shutil.which("openssl")
     if openssl is None:
         pytest.skip("openssl nao esta no PATH")
-    cert, chave = tmp_path / "c.pem", tmp_path / "k.pem"
+    cert, key = tmp_path / "c.pem", tmp_path / "k.pem"
     subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
-                    "-subj", "/CN=broker", "-keyout", str(chave), "-out", str(cert)],
+                    "-subj", "/CN=broker", "-keyout", str(key), "-out", str(cert)],
                    check=True, capture_output=True)
 
     class Manipulador(BaseHTTPRequestHandler):
@@ -236,20 +236,20 @@ def broker_tls(tmp_path):
             pass
 
     http = ThreadingHTTPServer(("127.0.0.1", 0), Manipulador)
-    contexto = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    contexto.load_cert_chain(cert, chave)
-    http.socket = contexto.wrap_socket(http.socket, server_side=True)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert, key)
+    http.socket = context.wrap_socket(http.socket, server_side=True)
     threading.Thread(target=http.serve_forever, daemon=True).start()
-    impressao = hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert.read_text())).hexdigest()
-    yield f"https://127.0.0.1:{http.server_address[1]}", impressao
+    fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert.read_text())).hexdigest()
+    yield f"https://127.0.0.1:{http.server_address[1]}", fingerprint
     http.shutdown()
     http.server_close()
 
 
 def test_tls_com_a_impressao_certa(monkeypatch, broker_tls):
     monkeypatch.setattr(bc, "_config", {})
-    url, impressao = broker_tls
-    bc.configure(url, TOKEN, impressao)
+    url, fingerprint = broker_tls
+    bc.configure(url, TOKEN, fingerprint)
     assert bc.health() == {"broker": True}
 
 

@@ -16,15 +16,15 @@ RAIZ = Path(__file__).resolve().parent.parent.parent
 FAIXA = range(31000, 31100)
 
 
-def _valores(env: str) -> dict[str, str]:
+def _values(env: str) -> dict[str, str]:
     return dict(re.findall(r"^([A-Z_]+)=(.*)$", env, re.M))
 
 
 @pytest.fixture
 def satisfactory():
-    jogos, errors = cat.load_curated(RAIZ / "games")
+    games, errors = cat.load_curated(RAIZ / "games")
     assert errors == []
-    return jogos["satisfactory"]
+    return games["satisfactory"]
 
 
 # --- o Satisfactory de verdade (games/satisfactory.env) ----------------------------------------
@@ -45,44 +45,44 @@ def test_satisfactory_recebe_tres_numeros_seguidos_da_faixa_com_o_protocolo_cert
 
 
 def test_duas_instancias_do_satisfactory_nao_dividem_a_confiavel(satisfactory):
-    primeira = alocador.allocate_ports(satisfactory, set(), FAIXA)
-    ocupadas = {p.key for p in primeira}
-    segunda = alocador.allocate_ports(satisfactory, ocupadas, FAIXA)
-    assert alocador.port_from_base(segunda, 8888) == 31003
-    assert {p.key for p in primeira}.isdisjoint({p.key for p in segunda})
+    first_one = alocador.allocate_ports(satisfactory, set(), FAIXA)
+    taken = {p.key for p in first_one}
+    second_one = alocador.allocate_ports(satisfactory, taken, FAIXA)
+    assert alocador.port_from_base(second_one, 8888) == 31003
+    assert {p.key for p in first_one}.isdisjoint({p.key for p in second_one})
 
 
 def test_install_env_leva_a_porta_sorteada_e_o_jogo_recebe_o_argumento(satisfactory):
     ports = alocador.allocate_ports(satisfactory, set(), FAIXA)
-    v = _valores(build_env(satisfactory, ports))
+    v = _values(build_env(satisfactory, ports))
     assert v["GAME_PORT"] == "31000"
     assert v["EXTRA_PORT"] == "31001"
     assert "{EXTRA_PORT}" in v["START_ARGS"], "quem troca o marcador e o ct-phases.sh, dentro do CT"
 
 
-def test_jogo_sem_porta_extra_recebe_extra_zero(dados_de_jogo):
-    game = cat.validate_dynamic(dados_de_jogo)
+def test_jogo_sem_porta_extra_recebe_extra_zero(game_data):
+    game = cat.validate_dynamic(game_data)
     ports = alocador.allocate_ports(game, set(), FAIXA)
-    assert _valores(build_env(game, ports))["EXTRA_PORT"] == "0"
+    assert _values(build_env(game, ports))["EXTRA_PORT"] == "0"
 
 
 # --- jogo cadastrado pela API ---------------------------------------------------------------------
 
 @pytest.fixture
-def com_extra(dados_de_jogo):
-    dados_de_jogo.update(ports=["7777/udp", "27016/udp", "8888/tcp"], extra_port=8888,
+def with_extra(game_data):
+    game_data.update(ports=["7777/udp", "27016/udp", "8888/tcp"], extra_port=8888,
                          start_args="-port={PORT} -queryport={QUERY_PORT} -reliable={EXTRA_PORT}")
-    return dados_de_jogo
+    return game_data
 
 
-def test_jogo_com_porta_extra_e_aceito_e_volta_pelo_formato_gravado(com_extra):
-    game = cat.validate_dynamic(com_extra)
+def test_jogo_com_porta_extra_e_aceito_e_volta_pelo_formato_gravado(with_extra):
+    game = cat.validate_dynamic(with_extra)
     assert game.extra_port == 8888
     assert cat.validate_dynamic(game.as_stored()) == game
 
 
-def test_publico_mostra_a_porta_extra(com_extra):
-    assert cat.validate_dynamic(com_extra).as_public()["extra_port"] == 8888
+def test_publico_mostra_a_porta_extra(with_extra):
+    assert cat.validate_dynamic(with_extra).as_public()["extra_port"] == 8888
 
 
 @pytest.mark.parametrize(("mudancas", "campo"), [
@@ -92,29 +92,29 @@ def test_publico_mostra_a_porta_extra(com_extra):
     ({"extra_port": "8888"}, "extra_port"),             # tem de ser numero
     ({"start_args": "-port={PORT} -queryport={QUERY_PORT}"}, "shiftable"),   # falta o marcador
 ])
-def test_extra_port_invalida_e_recusada(com_extra, mudancas, campo):
-    com_extra.update(mudancas)
+def test_extra_port_invalida_e_recusada(with_extra, mudancas, campo):
+    with_extra.update(mudancas)
     with pytest.raises(ValidationError) as error:
-        cat.validate_dynamic(com_extra)
+        cat.validate_dynamic(with_extra)
     assert campo in str(error.value)
 
 
-def test_marcador_extra_sem_porta_extra_e_recusado(dados_de_jogo):
+def test_marcador_extra_sem_porta_extra_e_recusado(game_data):
     """Sem porta extra o marcador viraria "0" na linha de comando do jogo."""
-    dados_de_jogo["start_args"] = "-port={PORT} -queryport={QUERY_PORT} -x={EXTRA_PORT}"
+    game_data["start_args"] = "-port={PORT} -queryport={QUERY_PORT} -x={EXTRA_PORT}"
     with pytest.raises(ValidationError, match="EXTRA_PORT"):
-        cat.validate_dynamic(dados_de_jogo)
+        cat.validate_dynamic(game_data)
 
 
-def test_quarta_porta_continua_recusada_para_jogo_que_anda_de_porta(com_extra):
-    com_extra["ports"] = ["7777/udp", "27016/udp", "8888/tcp", "9999/udp"]
+def test_quarta_porta_continua_recusada_para_jogo_que_anda_de_porta(with_extra):
+    with_extra["ports"] = ["7777/udp", "27016/udp", "8888/tcp", "9999/udp"]
     with pytest.raises(ValidationError, match="mais portas"):
-        cat.validate_dynamic(com_extra)
+        cat.validate_dynamic(with_extra)
 
 
-def test_jogo_fixo_pode_ter_porta_extra_sem_andar_de_porta(com_extra):
-    com_extra["shiftable"] = False
-    ports = alocador.allocate_ports(cat.validate_dynamic(com_extra), set(), FAIXA)
+def test_jogo_fixo_pode_ter_porta_extra_sem_andar_de_porta(with_extra):
+    with_extra["shiftable"] = False
+    ports = alocador.allocate_ports(cat.validate_dynamic(with_extra), set(), FAIXA)
     assert [p.number for p in ports] == [7777, 27016, 8888]
 
 
@@ -124,8 +124,8 @@ def test_env_curado_com_marcador_extra_e_sem_porta_extra_vira_erro_do_catalogo(t
     (tmp_path / "ruim.env").write_text(
         'GAME_KEY=ruim\nSTEAM_APP_ID=1\nGAME_PORT=7001\nGAME_PORTS="7001/udp"\nSTART_ARGS="-r {EXTRA_PORT}"\n',
         encoding="utf-8")
-    jogos, errors = cat.load_curated(tmp_path)
-    assert jogos == {}
+    games, errors = cat.load_curated(tmp_path)
+    assert games == {}
     assert "EXTRA_PORT" in errors[0]
 
 

@@ -48,20 +48,20 @@ TABELAS = ("alert_log", "jobs", "samples", "schedules", "servers", "settings",
 
 
 @pytest.fixture
-def banco():
+def database():
     """Conexao propria com o banco vazio. Fecha sozinha no fim do teste."""
     conn = panel._connect()
     with conn:
-        for tabela in TABELAS:
-            conn.execute(f"DELETE FROM {tabela}")
-    _zera_estado_do_modulo()
+        for table in TABELAS:
+            conn.execute(f"DELETE FROM {table}")
+    _reset_module_state()
     try:
         yield conn
     finally:
         conn.close()
 
 
-def _zera_estado_do_modulo() -> None:
+def _reset_module_state() -> None:
     """Limpa os caches e relogios que o `app.py` guarda em variaveis de modulo.
 
     Sem isto um teste herda a leitura do anterior: o monitor acha que ja viu aquele
@@ -83,31 +83,31 @@ def _zera_estado_do_modulo() -> None:
 
 
 @pytest.fixture
-def webhooks(banco, monkeypatch):
+def webhooks(database, monkeypatch):
     """Captura o que o painel MANDARIA, sem tocar na rede.
 
     Devolve a lista de `(url, texto)`. O que se testa nas suites de alerta e QUANDO o
     painel decide avisar - alerta a mais vira ruido e o canal deixa de ser lido; alerta
     a menos e um servidor caido as 3h que ninguem descobre.
     """
-    enviadas: list[tuple[str, str]] = []
+    sent_ones: list[tuple[str, str]] = []
 
-    def captura(url, text):
-        enviadas.append((url, text))
+    def capture(url, text):
+        sent_ones.append((url, text))
         return ""      # string vazia = enviado com sucesso
 
-    monkeypatch.setattr(panel, "send_webhook", captura)
-    return enviadas
+    monkeypatch.setattr(panel, "send_webhook", capture)
+    return sent_ones
 
 
 @pytest.fixture
-def cliente(banco):
+def client(database):
     """Cliente HTTP do Flask, sem ninguem logado."""
     panel.app.config["TESTING"] = True
     return panel.app.test_client()
 
 
-def _entrar(cli, username: str, senha: str):
+def _login(cli, username: str, senha: str):
     """Loga `username` no cliente de teste `cli`. Devolve o proprio `cli`, logado.
 
     Falhar alto (nao 302) e sempre um erro de FIXTURE, nao do teste que a usa - por
@@ -122,7 +122,7 @@ def _entrar(cli, username: str, senha: str):
     return cli
 
 
-def _postar(cli, url, data=None):
+def _post(cli, url, data=None):
     """POST com o CSRF da sessao ja preenchido - e o que todo POST do painel exige."""
     data = dict(data or {})
     with cli.session_transaction() as sess:
@@ -131,39 +131,39 @@ def _postar(cli, url, data=None):
 
 
 @pytest.fixture
-def postar():
+def post():
     """`postar(cli, url, dados)`: POST com CSRF, sem redirecionar."""
-    return _postar
+    return _post
 
 
 @pytest.fixture
-def entrar(banco):
+def login(database):
     """`entrar(username, senha)`: devolve um cliente NOVO, ja logado.
 
     Cada chamada cria seu proprio `test_client()` - dois logins na mesma suite (chefe e
     peao, por exemplo) nao podem compartilhar sessao.
     """
-    def _fazer(username: str, senha: str):
-        return _entrar(panel.app.test_client(), username, senha)
-    return _fazer
+    def _do(username: str, senha: str):
+        return _login(panel.app.test_client(), username, senha)
+    return _do
 
 
 @pytest.fixture
-def chefe(entrar):
+def admin(login):
     """Um administrador cadastrado e logado - o caso mais comum nas suites da web."""
     panel.ensure_admin_user("chefe", "senha-do-chefe")
-    return entrar("chefe", "senha-do-chefe")
+    return login("chefe", "senha-do-chefe")
 
 
 @pytest.fixture
-def peao(entrar):
+def operator(login):
     """Um operador cadastrado e logado, para os testes de permissao."""
     panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERADOR)
-    return entrar("peao", "senha-do-peao")
+    return login("peao", "senha-do-peao")
 
 
 @pytest.fixture
-def chefe_2fa(chefe):
+def admin_2fa(admin):
     """O mesmo `chefe`, com o segundo fator ATIVO.
 
     `broker_required` exige 2FA da PESSOA sempre, nao so quando `GAMEPANEL_REQUIRE_2FA`
@@ -172,9 +172,9 @@ def chefe_2fa(chefe):
     derruba (`_guarda_o_segundo_fator` nao mexe na sessao), entao o mesmo cliente
     continua servindo depois.
     """
-    chefe.get("/account/2fa")
-    with chefe.session_transaction() as sess:
-        segredo = sess["totp_pendente"]
-    resposta = _postar(chefe, "/account/2fa", {"codigo": totp.code(segredo, totp.step_of(time.time()))})
-    assert resposta.status_code == 200, "nao consegui ativar o 2FA de 'chefe' para o teste"
-    return chefe
+    admin.get("/account/2fa")
+    with admin.session_transaction() as sess:
+        secret = sess["totp_pendente"]
+    response = _post(admin, "/account/2fa", {"codigo": totp.code(secret, totp.step_of(time.time()))})
+    assert response.status_code == 200, "nao consegui ativar o 2FA de 'chefe' para o teste"
+    return admin

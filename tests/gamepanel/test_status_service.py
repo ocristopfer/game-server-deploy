@@ -17,17 +17,17 @@ SERVIDOR = {"id": 1, "service": "palworld.service"}
 
 
 @pytest.fixture(autouse=True)
-def cache_limpo():
+def clean_cache():
     ss._status_cache.clear()
     yield
     ss._status_cache.clear()
 
 
-def saida_de(**campos) -> str:
+def output_of(**campos) -> str:
     return "\n".join(f"{k}={v}" for k, v in campos.items())
 
 
-def ssh_que_responde(text: str, registro: list | None = None):
+def ssh_that_answers(text: str, registro: list | None = None):
     def ssh_output(server, comando, timeout=None):
         if registro is not None:
             registro.append(comando)
@@ -36,8 +36,8 @@ def ssh_que_responde(text: str, registro: list | None = None):
 
 
 def test_le_os_quatro_campos_do_systemctl():
-    text = saida_de(ActiveState="active", SubState="running", NRestarts="2", Result="success")
-    state = ss.server_status(ssh_que_responde(text), SERVIDOR, 5)
+    text = output_of(ActiveState="active", SubState="running", NRestarts="2", Result="success")
+    state = ss.server_status(ssh_that_answers(text), SERVIDOR, 5)
     assert state["reachable"] is True
     assert state["service"] == "active"
     assert state["sub"] == "running"
@@ -48,30 +48,30 @@ def test_le_os_quatro_campos_do_systemctl():
 
 def test_pergunta_pelos_campos_que_distinguem_parada_de_queda():
     """Sem Result e NRestarts nao da para separar 'eu parei' de 'quebrou em loop'."""
-    registro: list = []
-    ss.server_status(ssh_que_responde(saida_de(ActiveState="active"), registro), SERVIDOR, 5)
-    comando = registro[0]
-    assert "systemctl show palworld.service" in comando
-    for campo in ("ActiveState", "SubState", "NRestarts", "Result"):
-        assert campo in comando
+    record: list = []
+    ss.server_status(ssh_that_answers(output_of(ActiveState="active"), record), SERVIDOR, 5)
+    command = record[0]
+    assert "systemctl show palworld.service" in command
+    for field in ("ActiveState", "SubState", "NRestarts", "Result"):
+        assert field in command
 
 
 def test_unidade_inexistente_vira_inactive():
     """`systemctl show` sai com 0 e ActiveState vazio para unidade que nao existe."""
-    state = ss.server_status(ssh_que_responde(saida_de(ActiveState="")), SERVIDOR, 5)
+    state = ss.server_status(ssh_that_answers(output_of(ActiveState="")), SERVIDOR, 5)
     assert state["reachable"] is True
     assert state["service"] == "inactive"
 
 
 def test_systemd_antigo_sem_nrestarts_nao_quebra():
     """NRestarts so existe no systemd >= 235; sem ele o painel so nao avisa desse evento."""
-    state = ss.server_status(ssh_que_responde(saida_de(ActiveState="active")), SERVIDOR, 5)
+    state = ss.server_status(ssh_that_answers(output_of(ActiveState="active")), SERVIDOR, 5)
     assert state["restarts"] == 0
 
 
 def test_nrestarts_que_nao_e_numero_vira_zero():
-    text = saida_de(ActiveState="active", NRestarts="[not set]")
-    assert ss.server_status(ssh_que_responde(text), SERVIDOR, 5)["restarts"] == 0
+    text = output_of(ActiveState="active", NRestarts="[not set]")
+    assert ss.server_status(ssh_that_answers(text), SERVIDOR, 5)["restarts"] == 0
 
 
 def test_container_inalcancavel_vira_estado_e_nao_excecao():
@@ -86,48 +86,48 @@ def test_container_inalcancavel_vira_estado_e_nao_excecao():
 
 
 def test_segunda_pergunta_dentro_do_prazo_vem_do_cache():
-    chamadas: list = []
-    ssh = ssh_que_responde(saida_de(ActiveState="active"), chamadas)
+    calls: list = []
+    ssh = ssh_that_answers(output_of(ActiveState="active"), calls)
     ss.server_status(ssh, SERVIDOR, 5)
     ss.server_status(ssh, SERVIDOR, 5)
-    assert len(chamadas) == 1
+    assert len(calls) == 1
 
 
 def test_force_vai_ao_container_de_novo():
-    chamadas: list = []
-    ssh = ssh_que_responde(saida_de(ActiveState="active"), chamadas)
+    calls: list = []
+    ssh = ssh_that_answers(output_of(ActiveState="active"), calls)
     ss.server_status(ssh, SERVIDOR, 5)
     ss.server_status(ssh, SERVIDOR, 5, force=True)
-    assert len(chamadas) == 2
+    assert len(calls) == 2
 
 
 def test_prazo_zero_nao_aproveita_nada():
-    chamadas: list = []
-    ssh = ssh_que_responde(saida_de(ActiveState="active"), chamadas)
+    calls: list = []
+    ssh = ssh_that_answers(output_of(ActiveState="active"), calls)
     ss.server_status(ssh, SERVIDOR, 0)
     ss.server_status(ssh, SERVIDOR, 0)
-    assert len(chamadas) == 2
+    assert len(calls) == 2
 
 
 def test_invalidate_obriga_a_perguntar_de_novo():
     """Depois de um start/stop o estado guardado esta velho na hora."""
-    chamadas: list = []
-    ssh = ssh_que_responde(saida_de(ActiveState="active"), chamadas)
+    calls: list = []
+    ssh = ssh_that_answers(output_of(ActiveState="active"), calls)
     ss.server_status(ssh, SERVIDOR, 5)
     ss.invalidate(1)
     ss.server_status(ssh, SERVIDOR, 5)
-    assert len(chamadas) == 2
+    assert len(calls) == 2
 
 
 def test_erro_tambem_fica_em_cache():
     """Container fora do ar custa o timeout inteiro; repetir a cada tela nao se paga."""
-    chamadas: list = []
+    calls: list = []
 
     def explode(server, comando, timeout=None):
-        chamadas.append(comando)
+        calls.append(comando)
         raise RemoteError("sem rota")
 
     ss.server_status(explode, SERVIDOR, 5)
     state = ss.server_status(explode, SERVIDOR, 5)
     assert state["service"] == "inacessivel"
-    assert len(chamadas) == 1
+    assert len(calls) == 1

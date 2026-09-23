@@ -19,32 +19,32 @@ from gamepanel import i18n
 
 def test_os_dois_catalogos_tem_as_mesmas_chaves():
     """Chave so em portugues e uma tela meio traduzida esperando para acontecer."""
-    faltando = i18n.missing_keys("en")
-    assert faltando == [], f"sem traducao em ingles: {faltando}"
+    missing = i18n.missing_keys("en")
+    assert missing == [], f"sem traducao em ingles: {missing}"
 
 
 def test_nenhuma_chave_sobrando_no_ingles():
-    sobrando = sorted(set(i18n.CATALOGS["en"]) - set(i18n.CATALOGS["pt"]))
-    assert sobrando == [], f"chave que o portugues nao tem: {sobrando}"
+    left_over = sorted(set(i18n.CATALOGS["en"]) - set(i18n.CATALOGS["pt"]))
+    assert left_over == [], f"chave que o portugues nao tem: {left_over}"
 
 
 def test_nenhum_valor_vazio():
-    for idioma, catalog in i18n.CATALOGS.items():
-        vazias = sorted(c for c, v in catalog.items() if not v.strip())
-        assert vazias == [], f"{idioma}: chave sem texto {vazias}"
+    for language, catalog in i18n.CATALOGS.items():
+        empty_ones = sorted(c for c, v in catalog.items() if not v.strip())
+        assert empty_ones == [], f"{language}: chave sem texto {empty_ones}"
 
 
 def test_toda_chave_segue_a_convencao():
     """`area.assunto`, minusculo: a chave e identificador, nao texto de tela."""
-    fora = sorted(c for c in i18n.CATALOGS["pt"]
+    outside = sorted(c for c in i18n.CATALOGS["pt"]
                   if c != c.lower() or "." not in c or " " in c)
-    assert fora == [], f"chave fora da convencao: {fora}"
+    assert outside == [], f"chave fora da convencao: {outside}"
 
 
 def test_idiomas_oferecidos_tem_catalogo():
-    for codigo, rotulo in i18n.LANGUAGES:
-        assert codigo in i18n.CATALOGS, f"{codigo} aparece no seletor e nao tem catalogo"
-        assert rotulo.strip()
+    for code, label in i18n.LANGUAGES:
+        assert code in i18n.CATALOGS, f"{code} aparece no seletor e nao tem catalogo"
+        assert label.strip()
 
 
 # ------------------------------------------------------------- traduzir
@@ -146,8 +146,8 @@ def test_frase_encaixada_noutra_passa_inteira(monkeypatch):
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.fora", "ouvindo ({dentro})")
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.dentro", "<strong>{n}</strong> agora")
     with panel.app.test_request_context("/"):
-        dentro = panel.translate_html("t.dentro", n=3)
-        assert str(panel.translate_html("t.fora", dentro=dentro)) == "ouvindo (<strong>3</strong> agora)"
+        inside = panel.translate_html("t.dentro", n=3)
+        assert str(panel.translate_html("t.fora", dentro=inside)) == "ouvindo (<strong>3</strong> agora)"
 
 
 # ---------------------------------------------- fora de pedido (monitor, relogio)
@@ -196,21 +196,21 @@ def test_repr_da_mensagem_mostra_a_chave(monkeypatch):
 
 # ------------------------------------- o campo passado casa com o marcador da frase
 
-def _chamadas_de_traducao(arvore: ast.AST) -> list[tuple[int, str, set[str]]]:
+def _translation_calls(arvore: ast.AST) -> list[tuple[int, str, set[str]]]:
     """(linha, chave, campos) de cada `_('x', a=1)` / `Mensagem('x', a=1)` do modulo."""
-    achadas = []
+    found_ones = []
     for no in ast.walk(arvore):
         if not isinstance(no, ast.Call):
             continue
-        alvo = no.func.id if isinstance(no.func, ast.Name) else getattr(no.func, "attr", "")
-        if alvo not in {"_", "_h", "traduzir", "traduzir_html", "Mensagem",
+        target = no.func.id if isinstance(no.func, ast.Name) else getattr(no.func, "attr", "")
+        if target not in {"_", "_h", "traduzir", "traduzir_html", "Mensagem",
                         "rotulo_para_o_banco"} or not no.args:
             continue
-        chave = no.args[0]
-        if isinstance(chave, ast.Constant) and isinstance(chave.value, str):
-            achadas.append((no.lineno, chave.value,
+        key = no.args[0]
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            found_ones.append((no.lineno, key.value,
                             {k.arg for k in no.keywords if k.arg}))
-    return achadas
+    return found_ones
 
 
 def test_todo_campo_passado_existe_como_marcador_na_frase():
@@ -221,33 +221,33 @@ def test_todo_campo_passado_existe_como_marcador_na_frase():
     errado some em silencio, deixando `{name}` cru na tela. Este teste e quem cobra.
     Ja aconteceu tres vezes durante a traducao dos identificadores para ingles.
     """
-    problemas = []
-    for arquivo in sorted(Path(panel.__file__).parent.rglob("*.py")):
-        if arquivo.parent.name == "i18n":
+    problems = []
+    for file_path in sorted(Path(panel.__file__).parent.rglob("*.py")):
+        if file_path.parent.name == "i18n":
             continue
-        arvore = ast.parse(arquivo.read_text(encoding="utf-8"))
-        for line, chave, campos in _chamadas_de_traducao(arvore):
-            frase = i18n.CATALOGS["pt"].get(chave)
-            if frase is None:
+        tree = ast.parse(file_path.read_text(encoding="utf-8"))
+        for line, key, fields in _translation_calls(tree):
+            phrase = i18n.CATALOGS["pt"].get(key)
+            if phrase is None:
                 continue  # chave montada em tempo de execucao; outro teste cobre
-            marcadores = set(re.findall(r"\{([a-z_]+)\}", frase))
-            sobrando = campos - marcadores
-            if sobrando:
-                problemas.append(
-                    f"{arquivo.name}:{line} {chave}: passa {sorted(sobrando)}, "
-                    f"a frase usa {sorted(marcadores)}")
-    assert problemas == [], "campo sem marcador correspondente:\n" + "\n".join(problemas)
+            markers = set(re.findall(r"\{([a-z_]+)\}", phrase))
+            left_over = fields - markers
+            if left_over:
+                problems.append(
+                    f"{file_path.name}:{line} {key}: passa {sorted(left_over)}, "
+                    f"a frase usa {sorted(markers)}")
+    assert problems == [], "campo sem marcador correspondente:\n" + "\n".join(problems)
 
 
 def test_os_dois_idiomas_usam_os_mesmos_marcadores():
     """Traducao que troca `{n}` por `{numero}` quebra so naquele idioma."""
-    fora = []
-    for chave, frase in i18n.CATALOGS["pt"].items():
-        de_pt = set(re.findall(r"\{([a-z_]+)\}", frase))
-        de_en = set(re.findall(r"\{([a-z_]+)\}", i18n.CATALOGS["en"][chave]))
+    outside = []
+    for key, phrase in i18n.CATALOGS["pt"].items():
+        de_pt = set(re.findall(r"\{([a-z_]+)\}", phrase))
+        de_en = set(re.findall(r"\{([a-z_]+)\}", i18n.CATALOGS["en"][key]))
         if de_pt != de_en:
-            fora.append(f"{chave}: pt={sorted(de_pt)} en={sorted(de_en)}")
-    assert fora == [], "marcadores diferentes entre os idiomas:\n" + "\n".join(fora)
+            outside.append(f"{key}: pt={sorted(de_pt)} en={sorted(de_en)}")
+    assert outside == [], "marcadores diferentes entre os idiomas:\n" + "\n".join(outside)
 
 
 def test_campo_que_e_mensagem_vai_para_o_mesmo_idioma_da_frase(monkeypatch):
@@ -256,10 +256,12 @@ def test_campo_que_e_mensagem_vai_para_o_mesmo_idioma_da_frase(monkeypatch):
     Aconteceu no rotulo do agendamento: a tela em ingles mostrava "todo sabado at
     03:00", porque o dia entrava pelo `str` da Message (sempre o idioma do deploy).
     """
-    monkeypatch.setitem(i18n.CATALOGS["pt"], "t.quando", "{dia} as {hora}")
-    monkeypatch.setitem(i18n.CATALOGS["en"], "t.quando", "{dia} at {hora}")
-    monkeypatch.setitem(i18n.CATALOGS["pt"], "t.sabado", "todo sabado")
-    monkeypatch.setitem(i18n.CATALOGS["en"], "t.sabado", "every Saturday")
-    montada = i18n.Message("t.quando", dia=i18n.Message("t.sabado"), hora="03:00")
-    assert str(montada) == "todo sabado as 03:00"
-    assert i18n.translate(montada, "en") == "every Saturday at 03:00"
+    monkeypatch.setitem(i18n.CATALOGS["pt"], "t.when", "{day} as {time}")
+    monkeypatch.setitem(i18n.CATALOGS["en"], "t.when", "{day} at {time}")
+    monkeypatch.setitem(i18n.CATALOGS["pt"], "t.saturday", "todo sabado")
+    monkeypatch.setitem(i18n.CATALOGS["en"], "t.saturday", "every Saturday")
+    # O nome do kwarg E o marcador da frase: sao a mesma coisa vista dos dois lados, e
+    # renomear um so faz a substituicao falhar CALADA (o `translate` engole o KeyError).
+    built = i18n.Message("t.when", day=i18n.Message("t.saturday"), time="03:00")
+    assert str(built) == "todo sabado as 03:00"
+    assert i18n.translate(built, "en") == "every Saturday at 03:00"

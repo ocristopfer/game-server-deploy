@@ -13,7 +13,7 @@ import pytest
 from gamepanel.games import gamefields
 
 
-def campo(arquivo: str, chave: str) -> gamefields.FieldSpec:
+def field(arquivo: str, chave: str) -> gamefields.FieldSpec:
     """O campo do catalogo, falhando alto se ele sumir.
 
     Sem isto, uma chave removida do catalogo faria os testes abaixo estourarem com
@@ -25,10 +25,10 @@ def campo(arquivo: str, chave: str) -> gamefields.FieldSpec:
 
 
 def test_duracao_arquivo_em_ns_tela_em_minutos():
-    dia = campo("enshrouded_server.json", "dayTimeDuration")
-    assert dia.from_display("30") == "1800000000000"
-    assert dia.to_display("1800000000000") == "30"
-    assert dia.to_display(dia.from_display("2")) == "2", "ida e volta tem de preservar"
+    day = field("enshrouded_server.json", "dayTimeDuration")
+    assert day.from_display("30") == "1800000000000"
+    assert day.to_display("1800000000000") == "30"
+    assert day.to_display(day.from_display("2")) == "2", "ida e volta tem de preservar"
 
 
 @pytest.mark.parametrize("minutos, aceita", [
@@ -38,8 +38,8 @@ def test_duracao_arquivo_em_ns_tela_em_minutos():
     ("61", False),   # acima do maximo
 ])
 def test_duracao_respeita_os_limites_do_jogo(minutos, aceita):
-    dia = campo("enshrouded_server.json", "dayTimeDuration")
-    assert (dia.validate(minutos) == "") is aceita
+    day = field("enshrouded_server.json", "dayTimeDuration")
+    assert (day.validate(minutos) == "") is aceita
 
 
 def test_o_caso_real_noite_de_um_segundo_no_arquivo():
@@ -48,17 +48,17 @@ def test_o_caso_real_noite_de_um_segundo_no_arquivo():
     E o bug que originou o catalogo: quem digitava "1" achando que era um minuto
     gravava 1 nanossegundo, e o jogo passava a noite inteira num piscar de olhos.
     """
-    noite = campo("enshrouded_server.json", "nightTimeDuration")
-    assert noite.to_display("1000000000") == "0.0166667"
-    assert noite.validate("0.0166667") != "", "tem de ser recusado ao salvar"
+    night = field("enshrouded_server.json", "nightTimeDuration")
+    assert night.to_display("1000000000") == "0.0166667"
+    assert night.validate("0.0166667") != "", "tem de ser recusado ao salvar"
 
 
 def test_enum_so_aceita_valor_que_o_jogo_entende():
-    tumba = campo("enshrouded_server.json", "tombstoneMode")
-    assert tumba.validate("AddBackpackMaterials") == ""
-    assert tumba.validate("NoTombstone") == ""
-    assert tumba.validate("PerdeTudo") != ""
-    assert len(tumba.options) == 3
+    grave = field("enshrouded_server.json", "tombstoneMode")
+    assert grave.validate("AddBackpackMaterials") == ""
+    assert grave.validate("NoTombstone") == ""
+    assert grave.validate("PerdeTudo") != ""
+    assert len(grave.options) == 3
 
 
 @pytest.mark.parametrize("value, aceita", [
@@ -69,32 +69,32 @@ def test_enum_so_aceita_valor_que_o_jogo_entende():
     ("muito", False),   # nem numero e
 ])
 def test_fator_e_multiplicador_com_limite(value, aceita):
-    vida = campo("enshrouded_server.json", "playerHealthFactor")
-    assert (vida.validate(value) == "") is aceita
+    lifetime = field("enshrouded_server.json", "playerHealthFactor")
+    assert (lifetime.validate(value) == "") is aceita
 
 
 def test_fator_nao_converte_unidade():
     """O que se digita e o que vai para o arquivo - diferente da duracao."""
-    assert campo("enshrouded_server.json", "playerHealthFactor").from_display("1.5") == "1.5"
+    assert field("enshrouded_server.json", "playerHealthFactor").from_display("1.5") == "1.5"
 
 
 @pytest.mark.parametrize("value, aceita", [("0.5", True), ("1", True), ("2", False)])
 def test_reciclagem_de_perk_vai_de_zero_a_um(value, aceita):
-    rec = campo("enshrouded_server.json", "perkUpgradeRecyclingFactor")
+    rec = field("enshrouded_server.json", "perkUpgradeRecyclingFactor")
     assert (rec.validate(value) == "") is aceita
 
 
 def test_outros_jogos_tem_catalogo_proprio():
-    assert campo("PalWorldSettings.ini", "ServerPlayerMaxNum").kind == "number"
-    assert campo("ServerSettings.ini", "ShutdownIfEmptyFor").unit == "s"
-    assert campo("serverDZ.cfg", "steamQueryPort").kind == "number"
-    assert campo("DedicatedServer.ini", "WorldPassword").kind == "password"
-    assert campo("/opt/game/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini",
+    assert field("PalWorldSettings.ini", "ServerPlayerMaxNum").kind == "number"
+    assert field("ServerSettings.ini", "ShutdownIfEmptyFor").unit == "s"
+    assert field("serverDZ.cfg", "steamQueryPort").kind == "number"
+    assert field("DedicatedServer.ini", "WorldPassword").kind == "password"
+    assert field("/opt/game/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini",
                  "AdminPassword").kind == "password"
 
 
 def test_o_catalogo_e_achado_pelo_nome_do_arquivo_no_caminho_completo():
-    assert campo("/opt/game/enshrouded_server.json", "slotCount").kind == "number"
+    assert field("/opt/game/enshrouded_server.json", "slotCount").kind == "number"
 
 
 def test_o_que_nao_esta_no_catalogo_nao_e_inventado():
@@ -104,6 +104,6 @@ def test_o_que_nao_esta_no_catalogo_nao_e_inventado():
 
 
 def test_campo_sem_catalogo_nao_valida_nem_converte():
-    vazio = gamefields.FieldSpec()
-    assert vazio.validate("qualquer coisa") == ""
-    assert vazio.from_display("123") == "123"
+    empty = gamefields.FieldSpec()
+    assert empty.validate("qualquer coisa") == ""
+    assert empty.from_display("123") == "123"

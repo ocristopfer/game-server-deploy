@@ -13,20 +13,20 @@ import pytest
 from gamepanel.games import config_format as gc
 
 
-def campo(doc: gc.ConfigFile, secao: str, chave: str) -> gc.Setting:
+def field(doc: gc.ConfigFile, secao: str, chave: str) -> gc.Setting:
     """A chave pedida, falhando alto se o parser tiver deixado de enxerga-la."""
-    achado = doc.find(secao, chave)
-    assert achado is not None, f"{chave!r} nao foi lido da secao {secao!r}"
-    return achado
+    found = doc.find(secao, chave)
+    assert found is not None, f"{chave!r} nao foi lido da secao {secao!r}"
+    return found
 
 
-def por_id(doc: gc.ConfigFile, ident: str) -> gc.Setting:
-    achado = doc.get(ident)
-    assert achado is not None, f"nao achei o campo de id {ident!r}"
-    return achado
+def by_id(doc: gc.ConfigFile, ident: str) -> gc.Setting:
+    found = doc.get(ident)
+    assert found is not None, f"nao achei o campo de id {ident!r}"
+    return found
 
 
-def erro_ao_aplicar(doc: gc.ConfigFile, edit: gc.Edit) -> str:
+def apply_failure(doc: gc.ConfigFile, edit: gc.Edit) -> str:
     """A mensagem de recusa, ou string vazia se o gravador tiver aceitado."""
     try:
         doc.apply([edit])
@@ -49,31 +49,31 @@ def test_palworld_abre_a_tupla_da_unreal_como_campos():
     assert len([s.key for s in doc.settings]) == 8
     assert any("OptionSettings" in s.label for s in doc.sections)
 
-    name = campo(doc, doc.settings[0].section, "ServerName")
+    name = field(doc, doc.settings[0].section, "ServerName")
     assert name.value == "Servidor antigo", "o valor chega a tela sem as aspas"
-    assert campo(doc, name.section, "bIsPvP").kind == "bool"
-    assert campo(doc, name.section, "PublicPort").kind == "number"
+    assert field(doc, name.section, "bIsPvP").kind == "bool"
+    assert field(doc, name.section, "PublicPort").kind == "number"
 
 
 def test_palworld_grava_sem_estragar_a_linha():
     doc = gc.load("PalWorldSettings.ini", PALWORLD)
-    name = campo(doc, doc.settings[0].section, "ServerName")
-    novo = doc.apply([
+    name = field(doc, doc.settings[0].section, "ServerName")
+    fresh = doc.apply([
         gc.Edit(id=name.id, section=name.section, key="ServerName", value="Servidor do Cris"),
         gc.Edit(id="", section=name.section, key="ServerPlayerMaxNum", value="16"),
         gc.Edit(id="", section=name.section, key="ServerDescription", value="mundo novo"),
     ])
-    assert novo.count("\n") == PALWORLD.count("\n"), "continua com 2 linhas"
-    assert 'ServerName="Servidor do Cris"' in novo, "string reganha as aspas"
-    assert "ServerPlayerMaxNum=16," in novo, "numero sai sem aspas"
-    assert 'ServerDescription="mundo novo"' in novo, "chave nova ganha aspas por ter espaco"
-    assert "Difficulty=None,DayTimeSpeedRate=1.000000,bIsPvP=False" in novo, "vizinhos intactos"
-    assert 'AdminPassword="troque-me"' in novo, "senha preservada"
+    assert fresh.count("\n") == PALWORLD.count("\n"), "continua com 2 linhas"
+    assert 'ServerName="Servidor do Cris"' in fresh, "string reganha as aspas"
+    assert "ServerPlayerMaxNum=16," in fresh, "numero sai sem aspas"
+    assert 'ServerDescription="mundo novo"' in fresh, "chave nova ganha aspas por ter espaco"
+    assert "Difficulty=None,DayTimeSpeedRate=1.000000,bIsPvP=False" in fresh, "vizinhos intactos"
+    assert 'AdminPassword="troque-me"' in fresh, "senha preservada"
 
-    relido = gc.load("PalWorldSettings.ini", novo)
-    sec = relido.settings[0].section
-    assert campo(relido, sec, "ServerName").value == "Servidor do Cris"
-    assert campo(relido, sec, "ServerDescription").value == "mundo novo"
+    reread = gc.load("PalWorldSettings.ini", fresh)
+    sec = reread.settings[0].section
+    assert field(reread, sec, "ServerName").value == "Servidor do Cris"
+    assert field(reread, sec, "ServerDescription").value == "mundo novo"
 
 
 # ----------------------------------------------------------------------- ini
@@ -96,35 +96,35 @@ def test_ini_le_secoes_e_comentarios():
     doc = gc.load("DedicatedServer.ini", INI)
     assert [s.key for s in doc.settings] == [
         "ServerName", "AdminPassword", "MaxPlayers", "FrameRateLimit"]
-    assert campo(doc, SEC_DW, "AdminPassword").comment == "senha de quem administra"
+    assert field(doc, SEC_DW, "AdminPassword").comment == "senha de quem administra"
 
 
 def test_ini_grava_na_secao_certa():
     doc = gc.load("DedicatedServer.ini", INI)
-    novo = doc.apply([
-        gc.Edit(id=campo(doc, SEC_DW, "MaxPlayers").id, section=SEC_DW,
+    fresh = doc.apply([
+        gc.Edit(id=field(doc, SEC_DW, "MaxPlayers").id, section=SEC_DW,
                 key="MaxPlayers", value="12"),
         gc.Edit(id="", section=SEC_DW, key="WorldName", value="Gielinor"),
         gc.Edit(id="", section="/Script/Engine.GameUserSettings", key="bUseVSync", value="False"),
     ])
-    assert "; senha de quem administra" in novo, "comentarios preservados"
-    assert "MaxPlayers=12" in novo
-    assert novo.index("WorldName=Gielinor") < novo.index("[/Script/Engine.GameUserSettings]")
-    assert novo.index("bUseVSync=False") > novo.index("FrameRateLimit")
+    assert "; senha de quem administra" in fresh, "comentarios preservados"
+    assert "MaxPlayers=12" in fresh
+    assert fresh.index("WorldName=Gielinor") < fresh.index("[/Script/Engine.GameUserSettings]")
+    assert fresh.index("bUseVSync=False") > fresh.index("FrameRateLimit")
 
-    relido = gc.load("x.ini", novo)
-    assert len(relido.settings) == 6
-    assert campo(relido, SEC_DW, "MaxPlayers").value == "12"
+    reread = gc.load("x.ini", fresh)
+    assert len(reread.settings) == 6
+    assert field(reread, SEC_DW, "MaxPlayers").value == "12"
 
 
 def test_ini_sem_secao_e_um_properties():
     doc = gc.load("server.properties", "max-players=10\nmotd=Bem vindo\n")
     assert doc.settings[0].section == ""
-    novo = doc.apply([
+    fresh = doc.apply([
         gc.Edit(id=doc.settings[0].id, section="", key="max-players", value="20"),
         gc.Edit(id="", section="", key="pvp", value="true"),
     ])
-    assert novo == "max-players=20\nmotd=Bem vindo\npvp=true\n"
+    assert fresh == "max-players=20\nmotd=Bem vindo\npvp=true\n"
 
 
 # ---------------------------------------------------------------------- json
@@ -147,9 +147,9 @@ ENSHROUDED = """{
 def test_json_le_objeto_aninhado_como_secao():
     doc = gc.load("enshrouded_server.json", ENSHROUDED)
     assert doc.format_id == "json"
-    assert por_id(doc, "userGroups.0.password").key == "password"
-    assert por_id(doc, "enableVoiceChat").kind == "bool"
-    assert por_id(doc, "slotCount").kind == "number"
+    assert by_id(doc, "userGroups.0.password").key == "password"
+    assert by_id(doc, "enableVoiceChat").kind == "bool"
+    assert by_id(doc, "slotCount").kind == "number"
 
 
 def test_json_preserva_o_tipo_de_cada_valor():
@@ -172,7 +172,7 @@ def test_json_preserva_o_tipo_de_cada_valor():
 
 def test_json_recusa_texto_onde_o_arquivo_tem_numero():
     doc = gc.load("enshrouded_server.json", ENSHROUDED)
-    error = erro_ao_aplicar(
+    error = apply_failure(
         doc, gc.Edit(id="slotCount", section="", key="slotCount", value="dezesseis"))
     assert "numero" in error, error
 
@@ -199,30 +199,30 @@ ID_TEMPLATE = f"Missions.DayZ{gc.SEP}template"
 def test_dayz_le_class_como_secao_e_comentario_como_ajuda():
     doc = gc.load("serverDZ.cfg", DAYZ)
     assert doc.format_id == "dayz"
-    assert por_id(doc, ID_TEMPLATE).value == "dayzOffline.chernarusplus"
-    assert "navegador" in campo(doc, "", "hostname").comment
+    assert by_id(doc, ID_TEMPLATE).value == "dayzOffline.chernarusplus"
+    assert "navegador" in field(doc, "", "hostname").comment
 
 
 def test_dayz_grava_dentro_da_class_sem_estragar_a_estrutura():
     doc = gc.load("serverDZ.cfg", DAYZ)
-    novo = doc.apply([
-        gc.Edit(id=campo(doc, "", "hostname").id, section="", key="hostname", value="Cris DayZ"),
-        gc.Edit(id=campo(doc, "", "maxPlayers").id, section="", key="maxPlayers", value="40"),
+    fresh = doc.apply([
+        gc.Edit(id=field(doc, "", "hostname").id, section="", key="hostname", value="Cris DayZ"),
+        gc.Edit(id=field(doc, "", "maxPlayers").id, section="", key="maxPlayers", value="40"),
         gc.Edit(id=ID_TEMPLATE, section="Missions.DayZ",
                 key="template", value="dayzOffline.enoch"),
         gc.Edit(id="", section="", key="motd", value="Bem vindo"),
     ])
-    assert 'hostname = "Cris DayZ";' in novo, "string com aspas"
-    assert "// nome no navegador de servidores" in novo, "comentario da linha preservado"
-    assert "maxPlayers = 40;" in novo, "numero sem aspas"
-    assert 'template = "dayzOffline.enoch";' in novo, "dentro da class"
-    assert 'motd = "Bem vindo";' in novo, "chave nova no fim do bloco raiz"
-    assert novo.count("class ") == 2, "as duas class continuam la"
-    assert "};" in novo, "e o fechamento delas tambem"
+    assert 'hostname = "Cris DayZ";' in fresh, "string com aspas"
+    assert "// nome no navegador de servidores" in fresh, "comentario da linha preservado"
+    assert "maxPlayers = 40;" in fresh, "numero sem aspas"
+    assert 'template = "dayzOffline.enoch";' in fresh, "dentro da class"
+    assert 'motd = "Bem vindo";' in fresh, "chave nova no fim do bloco raiz"
+    assert fresh.count("class ") == 2, "as duas class continuam la"
+    assert "};" in fresh, "e o fechamento delas tambem"
 
-    relido = gc.load("serverDZ.cfg", novo)
-    assert campo(relido, "", "motd").value == "Bem vindo"
-    assert por_id(relido, ID_TEMPLATE).value == "dayzOffline.enoch"
+    reread = gc.load("serverDZ.cfg", fresh)
+    assert field(reread, "", "motd").value == "Bem vindo"
+    assert by_id(reread, ID_TEMPLATE).value == "dayzOffline.enoch"
 
 
 # -------------------------------------------------------------------- limites
@@ -240,22 +240,22 @@ def test_dayz_grava_dentro_da_class_sem_estragar_a_estrutura():
 ])
 def test_entrada_torta_e_recusada(rotulo, chave, value, trecho):
     doc = gc.load("a.ini", "[s]\nk=1\n")
-    error = erro_ao_aplicar(doc, gc.Edit(id="", section="s", key=chave, value=value))
+    error = apply_failure(doc, gc.Edit(id="", section="s", key=chave, value=value))
     assert trecho in error, f"{rotulo}: erro={error!r}"
 
 
 def test_chave_e_valor_sao_aparados():
-    novo = gc.load("a.ini", "[s]\nk=1\n").apply(
+    fresh = gc.load("a.ini", "[s]\nk=1\n").apply(
         [gc.Edit(id="", section="s", key="  x  ", value="  2  ")])
-    assert "x=2" in novo, novo
+    assert "x=2" in fresh, fresh
 
 
 def test_aspas_no_meio_do_valor_sao_recusadas():
     """No formato da Unreal a aspa fecha o valor: deixar passar corromperia a linha."""
     doc = gc.load("PalWorldSettings.ini", PALWORLD)
-    alvo = campo(doc, doc.settings[0].section, "ServerName")
-    error = erro_ao_aplicar(
-        doc, gc.Edit(id=alvo.id, section=alvo.section, key="ServerName", value='a"b'))
+    target = field(doc, doc.settings[0].section, "ServerName")
+    error = apply_failure(
+        doc, gc.Edit(id=target.id, section=target.section, key="ServerName", value='a"b'))
     assert "aspas" in error, error
 
 
