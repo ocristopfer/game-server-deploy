@@ -649,7 +649,7 @@ def test_redeploy_nao_perde_a_ligacao_com_a_instancia(database):
 def broker_environment(monkeypatch, tmp_path):
     token = tmp_path / "token"
     token.write_text("t" * 40 + "\n")
-    monkeypatch.setenv("GAMEPANEL_ALLOW_BROKER", "1")
+    monkeypatch.setattr(panel, "BROKER_REQUESTED", True)
     monkeypatch.setattr(panel, "BROKER_URL", "https://broker.exemplo:8443")
     monkeypatch.setattr(panel, "BROKER_TOKEN_FILE", str(token))
     monkeypatch.setattr(panel, "BROKER_CERT_SHA256", "ab" * 32)
@@ -663,7 +663,7 @@ def test_config_liga_o_broker_com_token_de_arquivo(broker_environment):
 
 
 def test_config_desligada_por_padrao(broker_environment, monkeypatch):
-    monkeypatch.delenv("GAMEPANEL_ALLOW_BROKER")
+    monkeypatch.setattr(panel, "BROKER_REQUESTED", False)
     assert panel._configure_broker() is False
     assert not panel.broker_client.is_configured()
 

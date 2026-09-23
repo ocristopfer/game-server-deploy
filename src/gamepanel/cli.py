@@ -17,11 +17,11 @@ continuam em `app.py` e chegam aqui por parametro.
 from __future__ import annotations
 
 import argparse
-import os
 import sqlite3
 from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple
 
+from gamepanel import config
 from gamepanel.persistence.repositories import users as users_repo
 
 # A linha de comando nao aceita quebra de linha com conforto: as listas (arquivos de
@@ -57,7 +57,7 @@ def build_parser(roles: Sequence[str]) -> argparse.ArgumentParser:
     parser.add_argument("--role", default="", choices=("", *roles),
                         help="papel do usuario (padrao: admin ao criar; manter ao redefinir)")
     parser.add_argument("--host", default="0.0.0.0")  # noqa: S104  # NOSONAR - o painel serve a LAN
-    parser.add_argument("--port", type=int, default=int(os.environ.get("GAMEPANEL_PORT", "8080")))
+    parser.add_argument("--port", type=int, default=config.load().port)
     # Usado pelo deploy (deploy-docker.ps1) para deixar o servidor ja cadastrado.
     parser.add_argument("--register-server", metavar="NOME")
     parser.add_argument("--server-host", default="")

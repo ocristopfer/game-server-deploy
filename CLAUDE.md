@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_config_f
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 931
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 950
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 929 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 948 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -146,6 +146,7 @@ lib/                     fases de instalacao de jogo (bash) + install-release.sh
 src/
   gamepanel/             o painel (era admin/)
     app.py               a montagem: banco, sessao, decoradores, tabelas, SSH, alertas, agendador
+    config.py            TODA variavel GAMEPANEL_*, lida e conferida num lugar so
     version.py           a versao que esta rodando (le o _build.py do release, ou cai no VERSION+dev)
     blueprints/          a camada HTTP, um arquivo por grupo de tela (ver a secao propria)
     persistence/
@@ -219,6 +220,33 @@ arquivo, quando tudo o que eles chamam ja existe.
   tabelas de `navigation.py` o nome e sempre o completo, com ponto.
 - **Blueprint novo** = um arquivo aqui e um nome nas duas listas de `register_all`. Se a
   rota precisa pular o segundo fator, tambem uma linha em `app.ENDPOINTS_WITHOUT_2FA`.
+
+### Opcao do painel: uma leitura so, no `config.py`
+
+Toda `GAMEPANEL_*` e lida por `config.load()`, no import, e o `app.py` guarda o resultado
+em `settings`. Antes eram ~45 `os.environ.get` espalhados, cada um com a sua conversao
+inline — e duas consequencias, as duas em producao:
+
+- **valor invalido derrubava o painel sem dizer qual era.** `int(os.environ.get(...))`
+  com lixo levanta `ValueError: invalid literal for int() with base 10: 'abc'`, e a
+  mensagem nao cita a variavel: quem lia o journal adivinhava entre 45;
+- **nao havia faixa.** `GAMEPANEL_MONITOR_EVERY=0` fazia o monitor girar sem parar.
+
+O desenho e o do broker: lista TODOS os problemas de uma vez, so pelo NOME da variavel —
+nunca o valor, porque isso vai para o journal e ha segredo entre elas.
+
+- **Opcao nova** = um campo em `Settings`, uma linha em `load()` e (se for do deploy) o
+  nome em `$adminKeys` do `deploy-admin.ps1` mais o `render_panel_config`.
+- **O `app.py` mantem os nomes de modulo** (`JOB_TIMEOUT = settings.job_timeout`). Nao e
+  redundancia: os testes trocam `panel.X` por falso, e ler `settings.x` direto faria a
+  troca deixar de valer em silencio. `BROKER_REQUESTED` e `DEV` existem pelo mesmo
+  motivo — sao lidos DENTRO de `_configure_broker`, que os testes reexecutam.
+- **`test_settings.py` cobra que ninguem leia o ambiente por fora**, varrendo o pacote
+  atras de `GAMEPANEL_` junto de `environ`. Uma leitura solta escapa da conferencia de
+  faixa e some do lugar onde alguem procuraria a lista de opcoes.
+- **Basename de teste e unico entre as duas suites.** Nao ha `__init__.py` em `tests/`,
+  entao dois `test_config.py` quebram a COLETA inteira com "import file mismatch" — e o
+  arquivo do painel virou `test_settings.py` por isso.
 
 ### SQL de uma tabela mora no repositorio dela
 

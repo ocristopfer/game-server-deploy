@@ -54,7 +54,7 @@ if __name__ == "__main__":  # pragma: no cover - so vale fora do import normal
 # dependencia nova. E o mesmo escape que o autoescape do template usa.
 from markupsafe import Markup, escape
 
-from gamepanel import cli, i18n, version
+from gamepanel import cli, config, i18n, version
 from gamepanel import navigation as ui
 from gamepanel.blueprints import register_all
 from gamepanel.games import config_format as gameconf
@@ -122,38 +122,43 @@ ServerRow = sqlite3.Row | Mapping[str, Any]
 
 # ---------------------------------------------------------------- configuracao
 
-DB_PATH = os.environ.get("GAMEPANEL_DB", "/var/lib/gamepanel/panel.db")
-SECRET_FILE = os.environ.get("GAMEPANEL_SECRET_FILE", "/etc/gamepanel/secret_key")
-SSH_KEY = os.environ.get("GAMEPANEL_SSH_KEY", "/etc/gamepanel/id_ed25519")
+# Uma leitura so, no import, com TODOS os problemas listados de uma vez (ver
+# `config.py`). Os nomes de modulo abaixo continuam existindo porque os testes
+# trocam `panel.X` por falso: ler `settings.x` direto neles faria a troca deixar
+# de valer em silencio.
+settings = config.load()
+
+DB_PATH = settings.db_path
+SECRET_FILE = settings.secret_file
+SSH_KEY = settings.ssh_key
 # Gravavel: as host keys dos containers sao aprendidas no primeiro acesso (accept-new).
-KNOWN_HOSTS = os.environ.get("GAMEPANEL_KNOWN_HOSTS", "/var/lib/gamepanel/known_hosts")
+KNOWN_HOSTS = settings.known_hosts
 # Onde ficam os sockets de conexao reaproveitada do SSH. Ao lado do known_hosts, e nao no
 # /tmp: o socket da acesso a uma sessao ja autenticada nos containers de jogo, e /tmp e
 # espaco compartilhado — pasta do proprio painel, com 0700, fecha essa porta.
-SSH_CONTROL_DIR = os.environ.get(
-    "GAMEPANEL_SSH_CONTROL_DIR", os.path.join(os.path.dirname(KNOWN_HOSTS), "ssh-control"))
+SSH_CONTROL_DIR = settings.ssh_control_dir
 # Quanto a conexao mestre fica de pe depois que o comando dela termina. E o que faz a
 # volta seguinte do monitor pegar carona em vez de pagar outro aperto de mao; 60s cobre
 # com folga o ritmo do monitor (15s a 60s) sem deixar conexao ociosa pendurada por horas.
-SSH_CONTROL_PERSIST = os.environ.get("GAMEPANEL_SSH_CONTROL_PERSIST", "60")
+SSH_CONTROL_PERSIST = settings.ssh_control_persist
 
 # Comandos rapidos (status, logs) x comandos longos (update baixa o jogo inteiro).
 QUICK_TIMEOUT = 20
-JOB_TIMEOUT = int(os.environ.get("GAMEPANEL_JOB_TIMEOUT", "5400"))
+JOB_TIMEOUT = settings.job_timeout
 STATUS_TTL = 8.0
 # Medidores de CPU/memoria/disco/rede: cada leitura custa uma ida de SSH de ~1s.
-METRICS_TTL = float(os.environ.get("GAMEPANEL_METRICS_TTL", "4"))
+METRICS_TTL = settings.metrics_ttl
 
 # Console web: executa comandos como root DENTRO do container de jogo escolhido.
 # E a funcionalidade mais poderosa do painel — desligue com GAMEPANEL_ALLOW_SHELL=0.
-ALLOW_SHELL = os.environ.get("GAMEPANEL_ALLOW_SHELL", "1") == "1"
-SHELL_TIMEOUT = int(os.environ.get("GAMEPANEL_SHELL_TIMEOUT", "600"))
+ALLOW_SHELL = settings.allow_shell
+SHELL_TIMEOUT = settings.shell_timeout
 SHELL_MAX_LEN = 4000
 
 # Terminal interativo: sessao SSH viva com PTY, teclado ligado no shell do container.
 # Herda o ALLOW_SHELL (e o mesmo poder do console, so que interativo).
-TERM_MAX_SESSIONS = int(os.environ.get("GAMEPANEL_TERM_MAX", "4"))
-TERM_IDLE_TIMEOUT = int(os.environ.get("GAMEPANEL_TERM_IDLE", "900"))
+TERM_MAX_SESSIONS = settings.term_max_sessions
+TERM_IDLE_TIMEOUT = settings.term_idle_timeout
 TERM_BUFFER_BYTES = 512 * 1024
 TERM_POLL_WAIT = 20.0  # long-poll: segura a resposta ate chegar saida nova
 
@@ -161,24 +166,29 @@ TERM_POLL_WAIT = 20.0  # long-poll: segura a resposta ate chegar saida nova
 # nao guarda credencial de Proxmox/OPNsense, so o token do broker. DESLIGADO por padrao: quem
 # liga (GAMEPANEL_ALLOW_BROKER=1) precisa apontar URL, arquivo do token e, em https, a
 # impressao SHA-256 do certificado. Sem isso o recurso nao aparece em lugar nenhum.
-BROKER_URL = os.environ.get("GAMEPANEL_BROKER_URL", "")
-BROKER_TOKEN_FILE = os.environ.get("GAMEPANEL_BROKER_TOKEN_FILE", "")
-BROKER_CERT_SHA256 = os.environ.get("GAMEPANEL_BROKER_CERT_SHA256", "")
-BROKER_POLL = float(os.environ.get("GAMEPANEL_BROKER_POLL", "2"))
+BROKER_URL = settings.broker_url
+BROKER_TOKEN_FILE = settings.broker_token_file
+BROKER_CERT_SHA256 = settings.broker_cert_sha256
+BROKER_POLL = settings.broker_poll
 # Voltas seguidas sem resposta do broker antes de dar o job por perdido.
 BROKER_FALHAS_MAX = 15
+# Nomes de MODULO, e nao `settings.x` direto dentro de `_configure_broker`: os testes
+# trocam `panel.X` por falso para exercitar cada configuracao ruim, e uma leitura do
+# `settings` ali dentro ignoraria a troca.
+BROKER_REQUESTED = settings.allow_broker
+DEV = settings.dev
 
 
 def _configure_broker() -> bool:
     """Liga o cliente do broker. Qualquer configuracao ruim DESLIGA o recurso (e loga o
     motivo) em vez de derrubar o painel: o resto dele nao depende disto."""
-    if os.environ.get("GAMEPANEL_ALLOW_BROKER", "0") != "1":
+    if not BROKER_REQUESTED:
         return False
     try:
         with open(BROKER_TOKEN_FILE, encoding="utf-8") as file_path:
             token = file_path.read().strip()
         broker_client.configure(BROKER_URL, token, BROKER_CERT_SHA256,
-                                 allow_http=os.environ.get("GAMEPANEL_DEV", "") == "1")
+                                 allow_http=DEV)
     except (OSError, ValueError) as failure:
         print(f"[painel] broker DESLIGADO: {failure}", file=sys.stderr)
         return False
@@ -188,25 +198,23 @@ def _configure_broker() -> bool:
 ALLOW_BROKER = _configure_broker()
 
 # Editor de arquivos: le/grava arquivos de configuracao do jogo pelo mesmo SSH.
-ALLOW_FILES = os.environ.get("GAMEPANEL_ALLOW_FILES", "1") == "1"
+ALLOW_FILES = settings.allow_files
 # 1 = quem nao ativou o segundo fator so alcanca a tela de ativacao. Desligado por padrao: ligar
 # ANTES de cada admin ter o aplicativo no celular tranca todo mundo fora do painel.
-REQUIRE_2FA = os.environ.get("GAMEPANEL_REQUIRE_2FA", "0") == "1"
+REQUIRE_2FA = settings.require_2fa
 # Limite para EDITAR (o arquivo inteiro vai para um textarea e volta num POST).
-FILE_MAX_BYTES = int(os.environ.get("GAMEPANEL_FILE_MAX", str(4 * 1024 * 1024)))
+FILE_MAX_BYTES = settings.file_max_bytes
 # Acima do limite de edicao o painel ainda mostra o fim do arquivo, so para leitura.
-FILE_PREVIEW_BYTES = int(os.environ.get("GAMEPANEL_FILE_PREVIEW", str(256 * 1024)))
+FILE_PREVIEW_BYTES = settings.file_preview_bytes
 # Download nao passa por memoria (vai em streaming), entao o teto e bem maior.
 # 0 = sem limite.
-FILE_DOWNLOAD_MAX = int(os.environ.get("GAMEPANEL_FILE_DOWNLOAD_MAX", str(2 * 1024 * 1024 * 1024)))
+FILE_DOWNLOAD_MAX = settings.file_download_max
 DOWNLOAD_CHUNK = 256 * 1024
 # Teto do corpo de um request: o arquivo editado sobe percent-encoded (ate 3x) + folga.
 REQUEST_LIMIT = max(4 * 1024 * 1024, FILE_MAX_BYTES * 4 + 65536)
 # Raizes onde o navegador de arquivos pode entrar. "/" = sem restricao.
-FILE_ROOTS = tuple(
-    p for p in os.environ.get("GAMEPANEL_FILE_ROOTS", "/").split(",") if p.strip()
-)
-FILE_DEFAULT_PATH = os.environ.get("GAMEPANEL_FILE_DEFAULT", "/opt/game")
+FILE_ROOTS = settings.file_roots
+FILE_DEFAULT_PATH = settings.file_default_path
 FILE_LIST_MAX = 800
 # Upload: o arquivo sobe em multipart e desce por SSH em streaming, sem passar inteiro
 # pela memoria do painel — por isso o teto aqui e bem maior que o do editor, que carrega
@@ -215,16 +223,16 @@ FILE_LIST_MAX = 800
 # Cuidado ao aumentar: o Werkzeug guarda o corpo do multipart num arquivo temporario do
 # CONTAINER DO PAINEL antes de a view ver um byte. Subir 2 GB exige 2 GB livres la — e o
 # CT do painel costuma ser pequeno. 512 MB cobre mod e save sem esse risco.
-FILE_UPLOAD_MAX = int(os.environ.get("GAMEPANEL_UPLOAD_MAX", str(512 * 1024 * 1024)))
+FILE_UPLOAD_MAX = settings.file_upload_max
 UPLOAD_CHUNK = 256 * 1024
 
 # Backup: tar.gz das pastas que valem a pena guardar (save + configuracao do jogo),
 # criado DENTRO do container e guardado la. O painel nao vira deposito de save — ele
 # dispara, lista, baixa e restaura.
-BACKUP_DIR = os.environ.get("GAMEPANEL_BACKUP_DIR", "/var/backups/gamepanel")
+BACKUP_DIR = settings.backup_dir
 # Quantas copias manter por servidor; as mais antigas saem sozinhas. 0 = nunca apagar.
-BACKUP_KEEP = int(os.environ.get("GAMEPANEL_BACKUP_KEEP", "5"))
-BACKUP_TIMEOUT = int(os.environ.get("GAMEPANEL_BACKUP_TIMEOUT", "3600"))
+BACKUP_KEEP = settings.backup_keep
+BACKUP_TIMEOUT = settings.backup_timeout
 BACKUP_PATHS_MAX = 8
 BACKUP_LIST_MAX = 100
 
@@ -235,45 +243,45 @@ BACKUP_LIST_MAX = 100
 # do relogio. Ele mesmo custa quase nada (as quatro tarefas tem cada uma o seu proprio
 # ritmo la dentro e saem na hora quando nao e a vez delas), entao 15s da folga para o
 # alerta de jogador sem multiplicar SSH de ninguem.
-SCHEDULE_TICK = float(os.environ.get("GAMEPANEL_SCHEDULE_TICK", "15"))
+SCHEDULE_TICK = settings.schedule_tick
 # Tarefa atrasada demais nao dispara. Se o painel passou a noite fora do ar, ninguem quer
 # o "reiniciar as 5h" caindo as 14h, no meio da partida: ela espera a proxima ocorrencia.
-SCHEDULE_GRACE = int(os.environ.get("GAMEPANEL_SCHEDULE_GRACE", "3600"))
+SCHEDULE_GRACE = settings.schedule_grace
 # Nome que aparece no historico no lugar do usuario, quando quem disparou foi o relogio.
 SCHEDULE_USER = "agendador"
 
 # Retencao do historico: cada job guarda ate 200 KB de saida, e um backup diario sozinho
 # ja poe 365 linhas por ano no banco. 0 desliga a limpeza.
-JOBS_KEEP_DAYS = int(os.environ.get("GAMEPANEL_JOBS_KEEP_DAYS", "60"))
+JOBS_KEEP_DAYS = settings.jobs_keep_days
 JOBS_PURGE_EVERY = 3600.0
 HISTORY_PAGE = 60
 
 # Amostras para os graficos de uso. Cada uma custa uma leitura de medidores — a chamada
 # mais cara do painel (o script remoto dorme 0,5s para tirar duas amostras de CPU) —,
 # entao o intervalo e generoso: 5 min dao 288 pontos por dia, de sobra para o grafico.
-SAMPLE_EVERY = float(os.environ.get("GAMEPANEL_SAMPLE_EVERY", "300"))
-SAMPLES_KEEP_DAYS = int(os.environ.get("GAMEPANEL_SAMPLES_KEEP_DAYS", "7"))
+SAMPLE_EVERY = settings.sample_every
+SAMPLES_KEEP_DAYS = settings.samples_keep_days
 
 # Alertas: o painel avisa por webhook (Discord, Slack, o que aceitar um POST de JSON)
 # quando um servidor cai, some do SSH, enche o disco ou quando uma tarefa agendada falha.
 # A URL fica no banco (tela "Alertas"); esta variavel so serve de valor inicial, para o
 # deploy poder deixar tudo pronto.
-DEFAULT_WEBHOOK_URL = os.environ.get("GAMEPANEL_WEBHOOK_URL", "")
-WEBHOOK_TIMEOUT = float(os.environ.get("GAMEPANEL_WEBHOOK_TIMEOUT", "6"))
+DEFAULT_WEBHOOK_URL = settings.webhook_url
+WEBHOOK_TIMEOUT = settings.webhook_timeout
 # O Cloudflare na frente do Discord devolve 403 (erro 1010) para o User-Agent padrao do
 # urllib ("Python-urllib/3.x"), antes mesmo do pedido chegar no webhook. Mandar um
 # User-Agent proprio resolve, e nenhum outro destino se incomoda com ele.
-WEBHOOK_UA = os.environ.get("GAMEPANEL_WEBHOOK_UA", "GamePanel/1.0 (alertas)")
+WEBHOOK_UA = settings.webhook_ua
 # Teto de destinos. Cada alerta vira um POST por destino, em serie, dentro da volta do
 # monitor — uma lista sem fim faria a volta esperar por todos eles.
-WEBHOOK_MAX = int(os.environ.get("GAMEPANEL_WEBHOOK_MAX", "10"))
+WEBHOOK_MAX = settings.webhook_max
 # De quanto em quanto tempo o painel confere o estado de cada servidor. Cada volta custa
 # uma ida de SSH por servidor — nao adianta descer muito.
-MONITOR_EVERY = float(os.environ.get("GAMEPANEL_MONITOR_EVERY", "60"))
+MONITOR_EVERY = settings.monitor_every
 # Jogador entrando e a unica coisa que alguem espera ver "agora" — quem recebe o aviso
 # costuma querer entrar junto, e um minuto depois ja e tarde. Por isso ele tem relogio
 # proprio, mais curto que o do estado.
-PLAYER_CHECK_EVERY = float(os.environ.get("GAMEPANEL_PLAYER_CHECK_EVERY", "15"))
+PLAYER_CHECK_EVERY = settings.player_check_every
 # ...mas so vale para quem responde de graca. A2S e HTTP saem de dentro do container sem
 # nada extra; a contagem por LOG e outra historia: cada consulta e uma ida de SSH que
 # arrasta ate LOG_SCAN_MAX linhas para o painel aplicar o regex. Nesse ritmo curto isso
@@ -283,20 +291,20 @@ PLAYER_FAST_SOURCES = {"a2s", "http"}
 # Quem conta por log ganha tempo real por outro caminho: uma conexao SSH longa rodando
 # `journalctl -f`. Em vez de perguntar "tem alguem novo?" de minuto em minuto, o painel
 # fica ouvindo e reage a linha no instante em que ela sai.
-LOG_STREAM = os.environ.get("GAMEPANEL_LOG_STREAM", "1") not in ("0", "false", "no")
+LOG_STREAM = settings.log_stream
 # Uma entrada e uma saida no mesmo segundo (alguem trocando de servidor, um grupo
 # entrando junto) nao podem virar uma releitura do log cada. A primeira linha dispara,
 # as seguintes dessa janela pegam carona na mesma conferida.
-LOG_STREAM_DEBOUNCE = float(os.environ.get("GAMEPANEL_LOG_STREAM_DEBOUNCE", "3"))
+LOG_STREAM_DEBOUNCE = settings.log_stream_debounce
 # Depois de a conexao cair, quanto esperar antes de tentar de novo. Servidor desligado
 # nao pode virar um laco de SSH a cada segundo.
-LOG_STREAM_RETRY = float(os.environ.get("GAMEPANEL_LOG_STREAM_RETRY", "30"))
+LOG_STREAM_RETRY = settings.log_stream_retry
 # O disco sai dos medidores, que custam bem mais caro (o script remoto dorme 0,5s para
 # tirar duas amostras). Ele nao enche em um minuto, entao a conferida e espacada.
-DISK_CHECK_EVERY = float(os.environ.get("GAMEPANEL_DISK_CHECK_EVERY", "600"))
+DISK_CHECK_EVERY = settings.disk_check_every
 # Uma acao do painel (parar, reiniciar, atualizar) derruba o servidor de proposito. Nesta
 # janela depois dela, queda nao vira alerta — senao todo restart pelo botao viraria susto.
-ALERT_QUIET = float(os.environ.get("GAMEPANEL_ALERT_QUIET", "180"))
+ALERT_QUIET = settings.alert_quiet
 
 # Padroes usados pelo botao "procurar arquivos de config".
 CONFIG_GLOBS = ("*.ini", "*.cfg", "*.conf", "*.json", "*.yaml", "*.yml", "*.properties", "*.txt")
@@ -383,7 +391,7 @@ app.config.update(
 )
 
 # Modo desenvolvimento (docker compose): recarrega os templates sem reiniciar.
-if os.environ.get("GAMEPANEL_DEV") == "1":
+if DEV:
     app.jinja_env.auto_reload = True
     app.config["TEMPLATES_AUTO_RELOAD"] = True
 
@@ -602,7 +610,7 @@ def static_url(name: str) -> str:
     return url_for("static", filename=name, v=mark)
 
 
-DEFAULT_LANG = i18n.valid_language(os.environ.get("GAMEPANEL_LANG"))
+DEFAULT_LANG = i18n.valid_language(settings.lang)
 
 
 def current_language() -> str:
@@ -821,8 +829,8 @@ def in_parallel(tasks: dict, timeout: float = 40.0) -> dict:
 # `raise`/`except` em todo o resto de app.py (HTTP, log, acoes de jogador), e
 # `pytest.raises(panel.QueryError)` em test_players.py precisa continuar achando a
 # MESMA classe.
-QUERY_TIMEOUT = float(os.environ.get("GAMEPANEL_QUERY_TIMEOUT", "3"))
-PLAYERS_TTL = float(os.environ.get("GAMEPANEL_PLAYERS_TTL", "5"))
+QUERY_TIMEOUT = settings.query_timeout
+PLAYERS_TTL = settings.players_ttl
 
 PLAYER_SOURCES = player_service.PLAYER_SOURCES
 
@@ -842,7 +850,7 @@ def query_players(host: str, port: int) -> dict:
 # JSON) mora em gamepanel.runtime.http_probe; a que depende do banco (guardar o token
 # renovado) mora em gamepanel.services.player_service. Os nomes abaixo continuam aqui
 # porque o resto de app.py — e os testes — chamam por eles.
-HTTP_TIMEOUT = float(os.environ.get("GAMEPANEL_HTTP_TIMEOUT", "6"))
+HTTP_TIMEOUT = settings.http_timeout
 HTTP_BODY_MAX = 2000
 HTTP_PATH_MAX = 120
 HTTP_FIELDS = player_service.HTTP_FIELDS
@@ -941,7 +949,7 @@ valid_log_path = log_probe.valid_log_path
 # que ainda nao foram extraidas.
 QUERY_PORT_GUESSES = port_probe.QUERY_PORT_GUESSES
 API_PORT_GUESSES = port_probe.API_PORT_GUESSES
-HTTP_PROBE_TIMEOUT = float(os.environ.get("GAMEPANEL_PROBE_TIMEOUT", "2"))
+HTTP_PROBE_TIMEOUT = settings.http_probe_timeout
 HTTP_PROBE_PORTS_MAX = port_probe.HTTP_PROBE_PORTS_MAX
 _ports_from_text = port_probe._ports_from_text
 _without_repeats = port_probe._without_repeats
@@ -1247,19 +1255,19 @@ CPU_PCT_DEFAULT = 90
 # os tres custa uma ida de SSH so, entao eles andam juntos no mesmo relogio.
 RESOURCE_EVENTS = {"disco-cheio", "memoria-alta", "cpu-alta"}
 # Quantas linhas do diario de alertas ficam guardadas.
-ALERT_LOG_KEEP = int(os.environ.get("GAMEPANEL_ALERT_LOG_KEEP", "500"))
+ALERT_LOG_KEEP = settings.alert_log_keep
 
 # Quantas voltas seguidas o jogo precisa ficar mudo antes do alerta. Uma consulta A2S e
 # UDP: um pacote perdido e rotina, e alertar no primeiro silencio encheria o canal de
 # susto falso.
-MUTE_ROUNDS = max(1, int(os.environ.get("GAMEPANEL_MUTE_ROUNDS", "3")))
+MUTE_ROUNDS = settings.mute_rounds
 # O log e o unico destes que custa uma ida de SSH propria, entao tem o seu intervalo.
-LOG_CHECK_EVERY = float(os.environ.get("GAMEPANEL_LOG_CHECK_EVERY", "120"))
+LOG_CHECK_EVERY = settings.log_check_every
 # Quantas linhas do fim do log olhar em cada passada.
 LOG_ERR_LINES = 200
 # Teto de um alerta de log por servidor nesta janela. A expressao vem da tela e um '.'
 # distraido casa com tudo — sem esta trava, um engano de digitacao vira uma enxurrada.
-LOG_ERR_COOLDOWN = float(os.environ.get("GAMEPANEL_LOG_ERR_COOLDOWN", "600"))
+LOG_ERR_COOLDOWN = settings.log_err_cooldown
 
 
 def config_get(conn: sqlite3.Connection, key: str, padrao: str = "") -> str:
