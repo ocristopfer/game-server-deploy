@@ -24,43 +24,43 @@ RAIZ = ADMIN.parent.parent
 # instalacao editavel do `uv sync` necessariamente presente (o container de dev do painel
 # so tem python3-pytest do apt) - precisa do PYTHONPATH explicito pra achar `gamepanel`.
 ENV_COM_SRC = os.environ | {"PYTHONPATH": str(RAIZ / "src")}
-RE_CODIGO = re.compile(r"\b[0-9a-f]{5}-[0-9a-f]{5}\b")
+CODE_RE = re.compile(r"\b[0-9a-f]{5}-[0-9a-f]{5}\b")
 
 
 class Clock:
     def __init__(self) -> None:
-        self.agora = time.time()
+        self.now = time.time()
 
-    def advance(self, segundos: float) -> None:
-        self.agora += segundos
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
 
 
 @pytest.fixture
 def clock_at(monkeypatch):
     """Relogio controlado: o TOTP depende do instante, e o teste precisa andar de 30 em 30 s."""
     clock_of = Clock()
-    monkeypatch.setattr(panel.time, "time", lambda: clock_of.agora)
+    monkeypatch.setattr(panel.time, "time", lambda: clock_of.now)
     return clock_of
 
 
-def _code(segredo: str, relogio: Clock) -> str:
-    return totp.code(segredo, totp.step_of(relogio.agora))
+def _code(secret: str, clock: Clock) -> str:
+    return totp.code(secret, totp.step_of(clock.now))
 
 
-def _enable_2fa(cli, post, relogio: Clock) -> tuple[str, list[str]]:
+def _enable_2fa(cli, post, clock: Clock) -> tuple[str, list[str]]:
     """Ativa o 2FA da conta logada em `cli`. Devolve (segredo, codigos de recuperacao)."""
     assert cli.get("/account/2fa").status_code == 200
     with cli.session_transaction() as sess:
         secret = sess["totp_pendente"]
-    response = post(cli, "/account/2fa", {"codigo": _code(secret, relogio)})
+    response = post(cli, "/account/2fa", {"codigo": _code(secret, clock)})
     assert response.status_code == 200, response.get_data(as_text=True)[:300]
-    return secret, RE_CODIGO.findall(response.get_data(as_text=True))
+    return secret, CODE_RE.findall(response.get_data(as_text=True))
 
 
-def _password(cli, post, user="chefe", senha="senha-do-chefe", proximo=""):
+def _password(cli, post, user="chefe", password="senha-do-chefe", next_one=""):
     cli.get("/login")
-    url = "/login" + (f"?next={proximo}" if proximo else "")
-    return post(cli, url, {"username": user, "password": senha})
+    url = "/login" + (f"?next={next_one}" if next_one else "")
+    return post(cli, url, {"username": user, "password": password})
 
 
 def _with_2fa(admin, post, clock_at):
@@ -133,7 +133,7 @@ def test_codigo_certo_liga_e_mostra_os_codigos_de_recuperacao_uma_vez(admin, pos
     # E a tela de conta nunca mais mostra a chave nem os codigos.
     account = admin.get("/account").get_data(as_text=True)
     assert secret not in account
-    assert not RE_CODIGO.search(account)
+    assert not CODE_RE.search(account)
     assert "ativada" in account
 
 
@@ -193,14 +193,14 @@ def test_codigo_da_ativacao_tambem_nao_serve_no_primeiro_login(admin, post, cloc
 
 def test_o_destino_pedido_antes_do_login_sobrevive_ao_segundo_passo(admin, post, clock_at, client):
     secret, _ = _with_2fa(admin, post, clock_at)
-    _password(client, post, proximo="/history")
+    _password(client, post, next_one="/history")
     response = post(client, "/login/2fa", {"codigo": _code(secret, clock_at)})
     assert response.headers["Location"].endswith("/history")
 
 
 def test_destino_de_fora_do_painel_continua_recusado_no_segundo_passo(admin, post, clock_at, client):
     secret, _ = _with_2fa(admin, post, clock_at)
-    _password(client, post, proximo="//evil.com")
+    _password(client, post, next_one="//evil.com")
     response = post(client, "/login/2fa", {"codigo": _code(secret, clock_at)})
     assert "evil.com" not in response.headers["Location"]
 
@@ -281,7 +281,7 @@ def test_desativar_aceita_um_codigo_de_recuperacao(admin, post, clock_at):
 def test_codigos_novos_invalidam_os_antigos(admin, post, clock_at, client):
     secret, old_ones = _with_2fa(admin, post, clock_at)
     response = post(admin, "/account/2fa/codes", {"senha": "senha-do-chefe", "codigo": _code(secret, clock_at)})
-    fresh_ones = RE_CODIGO.findall(response.get_data(as_text=True))
+    fresh_ones = CODE_RE.findall(response.get_data(as_text=True))
     assert len(fresh_ones) == totp.RECOVERY_CODES
     assert not set(fresh_ones) & set(old_ones)
     _password(client, post)

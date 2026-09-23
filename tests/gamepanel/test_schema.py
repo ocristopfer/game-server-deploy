@@ -18,7 +18,7 @@ from gamepanel.persistence import schema
 
 # O esquema das duas tabelas ANTES dos nomes em ingles. Escrito por extenso de
 # proposito: copiar do `SCHEMA` de hoje faria o teste concordar consigo mesmo.
-ESQUEMA_ANTIGO = """
+OLD_SCHEMA = """
 CREATE TABLE webhooks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nome TEXT NOT NULL DEFAULT '',
@@ -46,7 +46,7 @@ def old_database(tmp_path):
     """Um painel como ele estava antes da traducao, com uma linha em cada tabela."""
     path = tmp_path / "panel.db"
     con = sqlite3.connect(path)
-    con.executescript(ESQUEMA_ANTIGO)
+    con.executescript(OLD_SCHEMA)
     con.execute("INSERT INTO webhooks (nome, url, eventos, ativo, criado_em)"
                 " VALUES ('Canal da equipe', 'https://exemplo/x', 'caiu,voltou', 1, '2026-01-01')")
     con.execute("INSERT INTO alert_log (criado_em, evento, titulo, detalhe, destino, status, erro)"
@@ -60,11 +60,11 @@ def old_database(tmp_path):
     return path
 
 
-def _line(caminho, tabela: str) -> dict:
-    con = sqlite3.connect(caminho)
+def _line(path, table: str) -> dict:
+    con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     try:
-        return dict(con.execute(f"SELECT * FROM {tabela}").fetchone())
+        return dict(con.execute(f"SELECT * FROM {table}").fetchone())
     finally:
         con.close()
 
@@ -114,6 +114,6 @@ def test_banco_novo_ja_nasce_com_o_nome_novo(tmp_path):
 
 def test_toda_renomeacao_aponta_para_uma_coluna_que_o_schema_tem():
     """Nome novo com erro de digitacao viraria coluna orfa, e so apareceria em producao."""
-    for table, _velho, fresh in schema.RENAMES:
+    for table, _old, fresh in schema.RENAMES:
         assert f"  {fresh} " in schema.SCHEMA or f"  {fresh}\n" in schema.SCHEMA, \
             f"{table}.{fresh} nao existe no SCHEMA"

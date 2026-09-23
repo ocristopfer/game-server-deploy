@@ -66,8 +66,8 @@ class Proxmox:
 
     # --- chamadas -----------------------------------------------------------
 
-    def _api(self, metodo: str, path: str, action: str, *, form: dict | None = None) -> Response:
-        response = self._c.request(metodo, "/api2/json" + path, form=form)
+    def _api(self, method: str, path: str, action: str, *, form: dict | None = None) -> Response:
+        response = self._c.request(method, "/api2/json" + path, form=form)
         if not response.ok:
             raise ProxmoxError(f"{action}: HTTP {response.status} {_short(response.text)}")
         return response

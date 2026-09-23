@@ -8,8 +8,8 @@ from gamebroker.domain.exceptions import OutOfResources
 from gamebroker.services.catalog import validate_dynamic
 
 
-def _game(game_data, **mudancas):
-    game_data.update(mudancas)
+def _game(game_data, **changes):
+    game_data.update(changes)
     return validate_dynamic(game_data)
 
 
@@ -37,10 +37,10 @@ def test_faixa_de_ips_valida():
     assert alocador.ips_in_range("192.168.2", 30, 32) == ("192.168.2.30", "192.168.2.31", "192.168.2.32")
 
 
-@pytest.mark.parametrize(("prefixo", "ini", "fim"), [("192.168.2", 0, 5), ("192.168.2", 9, 3), ("192.168.2", 1, 255), ("nao-ip", 1, 5)])
-def test_faixa_de_ips_invalida(prefixo, ini, fim):
+@pytest.mark.parametrize(("prefix", "start", "end"), [("192.168.2", 0, 5), ("192.168.2", 9, 3), ("192.168.2", 1, 255), ("nao-ip", 1, 5)])
+def test_faixa_de_ips_invalida(prefix, start, end):
     with pytest.raises(ValueError):
-        alocador.ips_in_range(prefixo, ini, fim)
+        alocador.ips_in_range(prefix, start, end)
 
 
 FAIXA = range(31000, 31010)

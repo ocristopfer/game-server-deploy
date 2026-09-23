@@ -56,7 +56,7 @@ def state(reachable=True, service="active", error="", restarts=0, result="", sub
 # Servidor de exemplo SEM linha na tabela `servers`: as duas primeiras secoes so
 # exercitam `_alerta_de_estado`, que consulta `jobs` por `server_id` - uma tabela vazia
 # devolve "sem job recente" sem precisar de FK nenhuma satisfeita.
-SERVIDOR = {"id": 1, "name": "Palworld", "host": "10.0.0.9", "ssh_user": "root",
+SERVER = {"id": 1, "name": "Palworld", "host": "10.0.0.9", "ssh_user": "root",
             "service": "palworld.service"}
 
 
@@ -70,7 +70,7 @@ def target(database):
             " VALUES ('Palworld', '10.0.0.9', 22, 'root', 'palworld.service', ?)",
             (panel.now_iso(),))
     sid = database.execute("SELECT id FROM servers").fetchone()["id"]
-    return dict(SERVIDOR, id=sid)
+    return dict(SERVER, id=sid)
 
 
 # ------------------------------------------------------------------- configuracao
@@ -178,7 +178,7 @@ def test_mascara_url_vazia_nao_vira_mascara():
 
 def test_queda_avisa(database, webhooks):
     enable(database, ["caiu", "voltou", "inacessivel", "acessivel"])
-    panel._state_alert(database, SERVIDOR, state(service="inactive"),
+    panel._state_alert(database, SERVER, state(service="inactive"),
                             state(service="active"))
     assert len(webhooks) == 1
     assert "Palworld" in webhooks[0][1]
@@ -187,20 +187,20 @@ def test_queda_avisa(database, webhooks):
 
 def test_volta_avisa(database, webhooks):
     enable(database, ["caiu", "voltou"])
-    panel._state_alert(database, SERVIDOR, state(service="active"),
+    panel._state_alert(database, SERVER, state(service="active"),
                             state(service="inactive"))
     assert len(webhooks) == 1
 
 
 def test_nada_mudou_nada_sai(database, webhooks):
     enable(database, ["caiu", "voltou"])
-    panel._state_alert(database, SERVIDOR, state(service="active"), state(service="active"))
+    panel._state_alert(database, SERVER, state(service="active"), state(service="active"))
     assert len(webhooks) == 0
 
 
 def test_perder_contato_avisa_com_o_motivo(database, webhooks):
     enable(database, ["caiu", "voltou", "inacessivel", "acessivel"])
-    panel._state_alert(database, SERVIDOR,
+    panel._state_alert(database, SERVER,
                             state(reachable=False, service="inacessivel", error="timeout"),
                             state(service="active"))
     assert len(webhooks) == 1
@@ -211,21 +211,21 @@ def test_sem_contato_nao_acumula_alerta_de_servico(database, webhooks):
     """O painel nao sabe o que o servico esta fazendo sem contato: avisar 'caiu' junto
     seria inventar. Sai UMA mensagem, a do contato."""
     enable(database, ["caiu", "voltou", "inacessivel", "acessivel"])
-    panel._state_alert(database, SERVIDOR, state(reachable=False, service="inacessivel"),
+    panel._state_alert(database, SERVER, state(reachable=False, service="inacessivel"),
                             state(reachable=True, service="active"))
     assert len(webhooks) == 1
 
 
 def test_continua_sem_contato_nao_repete(database, webhooks):
     enable(database, ["caiu", "voltou", "inacessivel", "acessivel"])
-    panel._state_alert(database, SERVIDOR, state(reachable=False, service="inacessivel"),
+    panel._state_alert(database, SERVER, state(reachable=False, service="inacessivel"),
                             state(reachable=False, service="inacessivel"))
     assert len(webhooks) == 0
 
 
 def test_evento_desligado_na_tela_nao_sai(database, webhooks):
     enable(database, ["voltou"])
-    panel._state_alert(database, SERVIDOR, state(service="inactive"),
+    panel._state_alert(database, SERVER, state(service="inactive"),
                             state(service="active"))
     assert len(webhooks) == 0
 
@@ -852,12 +852,12 @@ def test_linha_de_jogador_reconhece_entrada_e_saida():
         "x" * 50000 + " [server] Player 'Ana' logged in", join_re, leave_re)
 
 
-def _srv(sid, **campos):
+def _srv(sid, **fields):
     base = {"id": sid, "host": "10.0.0.9", "ssh_port": 22, "ssh_user": "root",
             "service": "jogo.service", "log_path": "", "query_port": 0,
             "player_source": "log", "join_re": r"Player '(?P<name>[^']+)' logged in",
             "leave_re": ""}
-    return {**base, **campos}
+    return {**base, **fields}
 
 
 CFG_STREAM = {"events": {"jogador-entrou", "jogador-saiu"}}
@@ -902,10 +902,10 @@ def test_regex_que_nao_compila_faz_a_thread_desistir():
 # Nenhum SSH de verdade aqui: o que se mede e a decisao de abrir, trocar e fechar.
 
 class _FakeStream:
-    def __init__(self, server, signature, registro):
+    def __init__(self, server, signature, record):
         self.sid, self.signature = int(server["id"]), signature
         self.gave_up, self._vivo, self.parado = False, True, False
-        registro.append(self)
+        record.append(self)
 
     def start(self):
         pass
@@ -1152,21 +1152,21 @@ def test_tela_sem_destino_nenhum(alerts_screen):
     assert "nenhum destino ligado" in screen()
 
 
-SEGREDO_URL = "https://discord.com/api/webhooks/123/tok-que-nao-pode-vazar"
+SECRET_URL = "https://discord.com/api/webhooks/123/tok-que-nao-pode-vazar"
 
 
 @pytest.fixture
 def registered_target(database, alerts_screen):
     """Um destino "Equipe" cadastrado pela tela, com a URL secreta acima."""
-    _cli, post, _tela = alerts_screen
-    resp = post("/alerts/targets", {"name": "Equipe", "enabled": "1", "url": SEGREDO_URL,
+    _cli, post, _screen = alerts_screen
+    resp = post("/alerts/targets", {"name": "Equipe", "enabled": "1", "url": SECRET_URL,
                                         "events": ["caiu", "disco-cheio"]})
     assert resp.status_code == 302
     return panel.webhook_list(database)[0]["id"]
 
 
 def test_url_torta_nao_vira_destino(database, alerts_screen, registered_target):
-    _cli, post, _tela = alerts_screen
+    _cli, post, _screen = alerts_screen
     post("/alerts/targets", {"name": "Torto", "url": "nao-e-url"})
     assert len(panel.webhook_list(database)) == 1
 
@@ -1180,19 +1180,19 @@ def test_destino_aparece_pelo_nome_sem_o_token(alerts_screen, registered_target)
 
 
 def test_salvar_com_url_vazia_mantem_a_url_e_muda_eventos(database, alerts_screen, registered_target):
-    _cli, post, _tela = alerts_screen
+    _cli, post, _screen = alerts_screen
     hid = registered_target
     # O caminho normal e mexer so nos eventos: a URL fica mascarada e o campo de troca
     # vem vazio, entao um POST sem URL NAO pode limpar a que esta salva.
     post(f"/alerts/targets/{hid}", {"name": "Equipe", "url": "", "enabled": "1",
                                         "events": ["caiu"]})
     current_one = panel.webhook_list(database)[0]
-    assert current_one["url"] == SEGREDO_URL
+    assert current_one["url"] == SECRET_URL
     assert current_one["events"] == {"caiu"}
 
 
 def test_sem_a_caixa_ativo_o_destino_desliga(database, alerts_screen, registered_target):
-    _cli, post, _tela = alerts_screen
+    _cli, post, _screen = alerts_screen
     hid = registered_target
     post(f"/alerts/targets/{hid}", {"name": "Equipe", "url": "", "events": ["caiu"]})
     assert panel.webhook_list(database)[0]["enabled"] is False
@@ -1217,7 +1217,7 @@ def test_dois_destinos_tem_grupos_de_caixas_separados(database, alerts_screen, r
 def test_testar_usa_a_url_digitada_ou_a_salva(alerts_screen, registered_target, webhooks):
     """Testar serve para conferir uma URL ANTES de salvar: se ha uma digitada, e ela
     que vai; sem nada digitado, testa a que esta salva."""
-    _cli, post, _tela = alerts_screen
+    _cli, post, _screen = alerts_screen
     hid = registered_target
 
     webhooks.clear()
@@ -1226,7 +1226,7 @@ def test_testar_usa_a_url_digitada_ou_a_salva(alerts_screen, registered_target, 
 
     webhooks.clear()
     post(f"/alerts/targets/{hid}/test", {"url": ""})
-    assert [u for u, _ in webhooks] == [SEGREDO_URL]
+    assert [u for u, _ in webhooks] == [SECRET_URL]
 
 
 def test_limites_de_recurso_pela_tela(database, alerts_screen):
@@ -1258,7 +1258,7 @@ def test_limites_de_recurso_pela_tela(database, alerts_screen):
 
 
 def test_remover_tira_da_lista(database, alerts_screen, registered_target):
-    _cli, post, _tela = alerts_screen
+    _cli, post, _screen = alerts_screen
     post(f"/alerts/targets/{registered_target}/delete")
     assert len(panel.webhook_list(database)) == 0
 
@@ -1299,27 +1299,27 @@ def test_configurar_o_que_faltava_tira_o_aviso(database, alerts_screen):
 
 def test_cadastro_grava_e_valida_a_expressao_de_erro(database, alerts_screen):
     """O cadastro precisa gravar a expressao de erro: sem isso o alerta de log nunca liga."""
-    cli, post, _tela = alerts_screen
+    cli, post, _screen = alerts_screen
     with database:
         database.execute(
             "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"
             " VALUES ('Sem consulta', '10.0.0.7', 22, 'root', 'x.service', ?)",
             (panel.now_iso(),))
-    sid_novo = database.execute("SELECT id FROM servers").fetchone()["id"]
+    fresh_sid = database.execute("SELECT id FROM servers").fetchone()["id"]
 
-    post(f"/servers/{sid_novo}/edit", {
+    post(f"/servers/{fresh_sid}/edit", {
         "name": "Sem consulta", "host": "10.0.0.7", "ssh_port": "22", "ssh_user": "root",
         "service": "x.service", "player_source": "none", "error_re": "Out of memory"})
     assert database.execute("SELECT error_re FROM servers WHERE id = ?",
-                        (sid_novo,)).fetchone()["error_re"] == "Out of memory"
+                        (fresh_sid,)).fetchone()["error_re"] == "Out of memory"
 
-    post(f"/servers/{sid_novo}/edit", {
+    post(f"/servers/{fresh_sid}/edit", {
         "name": "Sem consulta", "host": "10.0.0.7", "ssh_port": "22", "ssh_user": "root",
         "service": "x.service", "player_source": "none", "error_re": "("})
-    assert database.execute("SELECT error_re FROM servers WHERE id = ?", (sid_novo,)).fetchone()[
+    assert database.execute("SELECT error_re FROM servers WHERE id = ?", (fresh_sid,)).fetchone()[
         "error_re"] == "Out of memory", "expressao que nao compila e recusada no cadastro"
 
-    form = cli.get(f"/servers/{sid_novo}/edit").get_data(as_text=True)
+    form = cli.get(f"/servers/{fresh_sid}/edit").get_data(as_text=True)
     assert 'name="error_re"' in form
     assert "Out of memory" in form
     assert 'name="error_re"' in cli.get("/servers/new").get_data(as_text=True)

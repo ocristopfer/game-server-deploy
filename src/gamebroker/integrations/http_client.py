@@ -82,7 +82,7 @@ class Client:
         self._host = parts.hostname
         self._port = parts.port or (443 if self._https else 80)
         self._prefix = parts.path.rstrip("/")
-        self._cabecalhos = dict(headers)
+        self._headers = dict(headers)
         self._impressao = normalize_fingerprint(fingerprint_sha256)
         self._timeout = timeout
 
@@ -106,16 +106,16 @@ class Client:
                               fingerprint=self._impressao)
 
     def request(self, method: str, path: str, *, form: dict | None = None,
-                   json_corpo: object = None, timeout: float | None = None) -> Response:
+                   json_body: object = None, timeout: float | None = None) -> Response:
         """`timeout` (s) vale so para esta chamada: uma sonda de saude precisa de poucos segundos,
         enquanto uma instalacao longa usa o padrao do cliente."""
-        headers = dict(self._cabecalhos)
+        headers = dict(self._headers)
         body: bytes | None = None
         if form is not None:
             body = urlencode(form).encode()
             headers["Content-Type"] = "application/x-www-form-urlencoded"
-        elif json_corpo is not None:
-            body = json.dumps(json_corpo).encode()
+        elif json_body is not None:
+            body = json.dumps(json_body).encode()
             headers["Content-Type"] = "application/json"
         connection = self._connection(self._timeout if timeout is None else timeout)
         try:

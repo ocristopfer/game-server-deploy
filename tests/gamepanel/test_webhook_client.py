@@ -26,7 +26,7 @@ UA = "GamePanel/teste"
 class _FakeServer:
     """Guarda o que recebeu e responde o que o teste mandar responder."""
 
-    def __init__(self, status: int = 204, corpo: bytes = b"", espera: float = 0.0):
+    def __init__(self, status: int = 204, body: bytes = b"", expects: float = 0.0):
         self.recebidos: list[dict] = []
         server = self
 
@@ -40,13 +40,13 @@ class _FakeServer:
                     "content_type": self.headers.get("Content-Type", ""),
                     "user_agent": self.headers.get("User-Agent", ""),
                 })
-                if espera:
-                    time.sleep(espera)
+                if expects:
+                    time.sleep(expects)
                 self.send_response(status)
-                self.send_header("Content-Length", str(len(corpo)))
+                self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                if corpo:
-                    self.wfile.write(corpo)
+                if body:
+                    self.wfile.write(body)
 
             def log_message(self, *_a):
                 pass  # sem ruido no relatorio do pytest
@@ -66,15 +66,15 @@ class _FakeServer:
 
 # ------------------------------------------------------------- mascara_url
 
-@pytest.mark.parametrize(("url", "esperado"), [
+@pytest.mark.parametrize(("url", "expected"), [
     ("https://discord.com/api/webhooks/123456/segredo-do-token",
      "discord.com/.../123456/********"),
     ("https://hooks.slack.com/serviceslongo", "hooks.slack.com/.../********"),
     ("https://exemplo.com", "exemplo.com"),
     ("", ""),
 ])
-def test_mascara_mostra_o_canal_e_esconde_o_token(url, esperado):
-    assert wc.mask_url(url) == esperado
+def test_mascara_mostra_o_canal_e_esconde_o_token(url, expected):
+    assert wc.mask_url(url) == expected
 
 
 def test_mascara_nao_deixa_o_token_aparecer():
@@ -100,9 +100,9 @@ def test_o_corpo_agrada_discord_e_slack_ao_mesmo_tempo():
     """'content' e o campo do Discord, 'text' o do Slack; cada um ignora o outro."""
     with _FakeServer() as srv:
         wc.send(srv.url, "**Palworld**\ncaiu", 5, UA)
-    corpo = srv.recebidos[0]["corpo"]
-    assert corpo["content"] == "**Palworld**\ncaiu"
-    assert corpo["text"] == corpo["content"]
+    body = srv.recebidos[0]["corpo"]
+    assert body["content"] == "**Palworld**\ncaiu"
+    assert body["text"] == body["content"]
     assert srv.recebidos[0]["content_type"] == "application/json"
 
 
@@ -114,8 +114,8 @@ def test_manda_o_user_agent_configurado():
 
 def test_recusa_do_destino_chega_com_codigo_e_motivo():
     """Sem o corpo da resposta, um 400 por payload torto e um 403 por bloqueio ficam iguais."""
-    corpo = json.dumps({"message": "Invalid Webhook Token"}).encode()
-    with _FakeServer(status=401, corpo=corpo) as srv:
+    body = json.dumps({"message": "Invalid Webhook Token"}).encode()
+    with _FakeServer(status=401, body=body) as srv:
         error = wc.send(srv.url, "oi", 5, UA)
     assert "HTTP 401" in error
     assert "Invalid Webhook Token" in error
@@ -128,8 +128,8 @@ def test_recusa_sem_corpo_fica_so_no_codigo():
 
 
 def test_motivo_longo_demais_e_cortado():
-    corpo = b'{"message": "' + b"x" * 5000 + b'"}'
-    with _FakeServer(status=400, corpo=corpo) as srv:
+    body = b'{"message": "' + b"x" * 5000 + b'"}'
+    with _FakeServer(status=400, body=body) as srv:
         error = wc.send(srv.url, "oi", 5, UA)
     assert len(error) < wc.ERROR_MAX + 100
 
@@ -143,7 +143,7 @@ def test_destino_fora_do_ar_vira_motivo_e_nao_excecao():
 
 def test_destino_pendurado_respeita_o_prazo():
     """Sem prazo, um destino que nao responde seguraria a volta inteira do monitor."""
-    with _FakeServer(espera=3) as srv:
+    with _FakeServer(expects=3) as srv:
         beginning = time.monotonic()
         error = wc.send(srv.url, "oi", 0.3, UA)
         spent = time.monotonic() - beginning

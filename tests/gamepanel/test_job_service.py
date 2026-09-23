@@ -56,5 +56,5 @@ def test_a_lista_do_app_e_a_do_service():
 
 def test_toda_acao_de_botao_tem_rotulo(database):
     """Acao com botao e sem rotulo aparece no historico como a chave crua."""
-    sem_rotulo = sorted(k for k in panel.COMMANDS if k not in panel.JOB_LABELS)
-    assert sem_rotulo == []
+    without_label = sorted(k for k in panel.COMMANDS if k not in panel.JOB_LABELS)
+    assert without_label == []

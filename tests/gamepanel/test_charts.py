@@ -14,22 +14,22 @@ import pytest
 
 from gamepanel import app as panel
 
-INICIO = datetime(2026, 8, 18, 0, 0, tzinfo=timezone.utc)
-FIM = INICIO + timedelta(hours=24)
+START = datetime(2026, 8, 18, 0, 0, tzinfo=timezone.utc)
+END = START + timedelta(hours=24)
 SERIE_CPU = [{"key": "cpu", "label": "CPU", "color": "#3987e5", "suffix": "%"}]
 DUAS_SERIES = SERIE_CPU + [
     {"key": "mem", "label": "Memoria", "color": "#d95926", "suffix": "%"}]
 
 
-def samples(valores, passo_min=5, start=None):
+def samples(values, min_step=5, start=None):
     """Lista de (quando, {cpu: v}) espacada de `passo_min`; None vira buraco."""
-    base = start or INICIO
-    return [(base + timedelta(minutes=passo_min * i), {"cpu": v})
-            for i, v in enumerate(valores)]
+    base = start or START
+    return [(base + timedelta(minutes=min_step * i), {"cpu": v})
+            for i, v in enumerate(values)]
 
 
 def chart_of(data, series=None, teto=100):
-    return panel.build_chart(data, series or SERIE_CPU, teto, INICIO, FIM, "%H:%M")
+    return panel.build_chart(data, series or SERIE_CPU, teto, START, END, "%H:%M")
 
 
 def ys_of(g):
@@ -77,9 +77,9 @@ def test_x_fica_dentro_da_moldura():
 
 def test_painel_fora_do_ar_parte_a_linha():
     """Sem amostra a linha tem de PARTIR: ligar as pontas diria que rodou liso na queda."""
-    far = samples([10, 20], passo_min=5)
-    far += [(INICIO + timedelta(hours=6), {"cpu": 30}),
-              (INICIO + timedelta(hours=6, minutes=5), {"cpu": 40})]
+    far = samples([10, 20], min_step=5)
+    far += [(START + timedelta(hours=6), {"cpu": 30}),
+              (START + timedelta(hours=6, minutes=5), {"cpu": 40})]
     assert len(chart_of(far)["linhas"][0]["tracos"]) == 2
 
 
@@ -89,16 +89,16 @@ def test_amostras_seguidas_ficam_num_traco_so():
 
 def test_leitura_que_falhou_tambem_e_buraco():
     """None no meio = o medidor nao respondeu naquela volta."""
-    with_failure = [(INICIO + timedelta(minutes=5 * i), {"cpu": v})
+    with_failure = [(START + timedelta(minutes=5 * i), {"cpu": v})
                  for i, v in enumerate([10, 20, None, 40, 50])]
     assert len(chart_of(with_failure)["linhas"][0]["tracos"]) == 2
 
 
 def test_amostra_sozinha_vira_ponto_em_vez_de_sumir():
     """Um segmento de um ponto so nao tem comprimento para virar polyline."""
-    alone = [(INICIO, {"cpu": 10}),
-                (INICIO + timedelta(hours=5), {"cpu": 55}),
-                (INICIO + timedelta(hours=10), {"cpu": 20})]
+    alone = [(START, {"cpu": 10}),
+                (START + timedelta(hours=5), {"cpu": 55}),
+                (START + timedelta(hours=10), {"cpu": 20})]
     g = chart_of(alone)
     assert len(g["linhas"][0]["pontos"]) == 3
     assert len(g["linhas"][0]["tracos"]) == 0
@@ -106,14 +106,14 @@ def test_amostra_sozinha_vira_ponto_em_vez_de_sumir():
 
 def test_grafico_sem_dado_se_declara_vazio():
     assert chart_of([])["vazio"] is True
-    assert chart_of([(INICIO, {"cpu": None})])["vazio"] is True, "serie so com buraco"
+    assert chart_of([(START, {"cpu": None})])["vazio"] is True, "serie so com buraco"
 
 
 # ----------------------------------------------------- rotulo das pontas
 
-def series_pair(cpu_fim, mem_fim):
-    return [(INICIO + timedelta(minutes=5 * i), {"cpu": c, "mem": m})
-            for i, (c, m) in enumerate([(10, 90), (cpu_fim, mem_fim)])]
+def series_pair(cpu_end, mem_end):
+    return [(START + timedelta(minutes=5 * i), {"cpu": c, "mem": m})
+            for i, (c, m) in enumerate([(10, 90), (cpu_end, mem_end)])]
 
 
 def test_pontas_separadas_ganham_rotulo():

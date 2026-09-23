@@ -14,12 +14,12 @@ import pytest
 
 from gamepanel import app as panel
 
-FUSO = timezone.utc
+TZ = timezone.utc
 
 
-def when_at(dia, clock_at, minuto=0):
+def when_at(day, clock_at, minute=0):
     """Uma quarta-feira (2026-08-19) as HH:MM, para as contas terem um chao fixo."""
-    return datetime(2026, 8, dia, clock_at, minuto, tzinfo=FUSO)
+    return datetime(2026, 8, day, clock_at, minute, tzinfo=TZ)
 
 
 def task(**kw):
@@ -31,7 +31,7 @@ def task(**kw):
 
 # --------------------------------------------------------- ocorrencia anterior
 
-@pytest.mark.parametrize("rotulo, sched, agora, esperado", [
+@pytest.mark.parametrize("label,sched,now,expected", [
     ("diario, ja passou hoje", task(hour=5), when_at(19, 14), when_at(19, 5)),
     ("diario, ainda nao chegou hoje -> foi ontem",
      task(hour=23), when_at(19, 2), when_at(18, 23)),
@@ -46,8 +46,8 @@ def task(**kw):
      task(kind="semanal", weekday=2, hour=23), when_at(19, 1), when_at(12, 23)),
     ("intervalo nao tem ocorrencia fixa", task(kind="intervalo"), when_at(19, 10), None),
 ])
-def test_ocorrencia_anterior(rotulo, sched, agora, esperado):
-    assert panel.previous_occurrence(sched, agora) == esperado, rotulo
+def test_ocorrencia_anterior(label, sched, now, expected):
+    assert panel.previous_occurrence(sched, now) == expected, label
 
 
 # ------------------------------------------------------------- quando vence
@@ -87,7 +87,7 @@ def test_last_run_ilegivel_nao_trava_a_tarefa():
 
 # -------------------------------------------------------------------- rotulos
 
-@pytest.mark.parametrize("rotulo, sched, esperado", [
+@pytest.mark.parametrize("label,sched,expected", [
     ("diario", task(hour=5, minute=30), "todo dia as 05:30"),
     # Concordancia: "toda segunda" (de segunda-feira) mas "todo domingo".
     ("semanal, dia feminino",
@@ -99,8 +99,8 @@ def test_last_run_ilegivel_nao_trava_a_tarefa():
     ("intervalo", task(kind="intervalo", every_hours=6), "a cada 6h"),
     ("intervalo de uma hora", task(kind="intervalo", every_hours=1), "a cada hora"),
 ])
-def test_rotulo_agendamento(rotulo, sched, esperado):
-    assert panel.schedule_label(sched) == esperado, rotulo
+def test_rotulo_agendamento(label, sched, expected):
+    assert panel.schedule_label(sched) == expected, label
 
 
 # --------------------------------------------------------- retencao do historico
@@ -165,7 +165,7 @@ def test_intervalo_nasce_com_o_relogio_zerado(server, admin, database, post):
     assert inter["last_run"] != ""
 
 
-@pytest.mark.parametrize("ruim", [
+@pytest.mark.parametrize("bad", [
     {"action": "restart", "kind": "diario", "hour": "99", "minute": "0"},
     {"action": "restart", "kind": "diario", "hour": "5", "minute": "-3"},
     {"action": "formatar-tudo", "kind": "diario", "hour": "5", "minute": "0"},
@@ -173,8 +173,8 @@ def test_intervalo_nasce_com_o_relogio_zerado(server, admin, database, post):
     {"action": "backup", "kind": "intervalo", "every_hours": "0"},
     {"action": "backup", "kind": "intervalo", "every_hours": "99999"},
 ])
-def test_valores_fora_da_faixa_nao_entram_no_banco(server, admin, database, post, ruim):
-    post(admin, f"/servers/{server}/schedules", ruim)
+def test_valores_fora_da_faixa_nao_entram_no_banco(server, admin, database, post, bad):
+    post(admin, f"/servers/{server}/schedules", bad)
     assert database.execute(
         "SELECT COUNT(*) FROM schedules WHERE server_id = ?", (server,)
     ).fetchone()[0] == 0

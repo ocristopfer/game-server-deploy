@@ -15,10 +15,10 @@ import pytest
 from gamepanel.runtime import backups as backupsmod
 from gamepanel.runtime.ssh import RemoteError
 
-SERVIDOR_SEM_CADASTRO = {
+UNKNOWN_SERVER = {
     "id": 1, "backup_paths": "", "config_path": "/opt/game/config", "service": "jogo1.service",
 }
-SERVIDOR_COM_CADASTRO = {
+REGISTERED_SERVER = {
     "id": 1, "backup_paths": "/opt/game/save\n/opt/game/config\n", "config_path": "", "service": "jogo1.service",
 }
 
@@ -36,7 +36,7 @@ def _ssh_run_of(stdout: str = "", returncode: int = 0, stderr: str = ""):
 # --------------------------------------------------------- caminhos e prefixo
 
 def test_backup_paths_sem_cadastro_usa_a_pasta_de_configuracao():
-    assert backupsmod.backup_paths(SERVIDOR_SEM_CADASTRO, 8) == ["/opt/game/config"]
+    assert backupsmod.backup_paths(UNKNOWN_SERVER, 8) == ["/opt/game/config"]
 
 
 def test_backup_paths_sem_nada_cadastrado_e_vazio():
@@ -45,7 +45,7 @@ def test_backup_paths_sem_nada_cadastrado_e_vazio():
 
 
 def test_backup_paths_cadastrado_ganha_do_padrao():
-    assert backupsmod.backup_paths(SERVIDOR_COM_CADASTRO, 8) == ["/opt/game/save", "/opt/game/config"]
+    assert backupsmod.backup_paths(REGISTERED_SERVER, 8) == ["/opt/game/save", "/opt/game/config"]
 
 
 def test_backup_paths_respeita_o_limite():
@@ -89,7 +89,7 @@ def test_validate_backup_name_rejeita_vazio():
 # ------------------------------------------------------------ comando
 
 def test_comando_de_backup_inclui_prefixo_limite_e_caminhos():
-    cmd = backupsmod.backup_command(SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 5, ["/opt/game/save"])
+    cmd = backupsmod.backup_command(REGISTERED_SERVER, "/var/backups/gamepanel", 5, ["/opt/game/save"])
     assert "jogo1" in cmd
     assert "/var/backups/gamepanel" in cmd
     assert "/opt/game/save" in cmd
@@ -97,7 +97,7 @@ def test_comando_de_backup_inclui_prefixo_limite_e_caminhos():
 
 def test_comando_de_backup_leva_o_sufixo_quando_passado():
     cmd = backupsmod.backup_command(
-        SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 5, ["/opt/game/save"], "-antes-de-restaurar",
+        REGISTERED_SERVER, "/var/backups/gamepanel", 5, ["/opt/game/save"], "-antes-de-restaurar",
     )
     assert "antes-de-restaurar" in cmd
 
@@ -106,7 +106,7 @@ def test_comando_de_backup_leva_o_sufixo_quando_passado():
 
 def test_list_backups_parseia_linhas():
     output = "jogo1-20240101-1200.tar.gz\t1024\t2024-01-01 12:00\n"
-    copies = backupsmod.list_backups(_ssh_run_of(output), SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 100)
+    copies = backupsmod.list_backups(_ssh_run_of(output), REGISTERED_SERVER, "/var/backups/gamepanel", 100)
     assert copies == [{
         "name": "jogo1-20240101-1200.tar.gz", "size": 1024, "mtime": "2024-01-01 12:00", "seguranca": False,
     }]
@@ -114,20 +114,20 @@ def test_list_backups_parseia_linhas():
 
 def test_list_backups_marca_a_copia_de_seguranca():
     output = "jogo1-20240101-1200-antes-de-restaurar.tar.gz\t512\t2024-01-01 12:00\n"
-    copies = backupsmod.list_backups(_ssh_run_of(output), SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 100)
+    copies = backupsmod.list_backups(_ssh_run_of(output), REGISTERED_SERVER, "/var/backups/gamepanel", 100)
     assert copies[0]["seguranca"] is True
 
 
 def test_list_backups_linha_malformada_e_ignorada():
     output = "so um campo sem tab\n"
-    copies = backupsmod.list_backups(_ssh_run_of(output), SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 100)
+    copies = backupsmod.list_backups(_ssh_run_of(output), REGISTERED_SERVER, "/var/backups/gamepanel", 100)
     assert copies == []
 
 
 def test_list_backups_erro_vira_remote_error():
     ssh_run = _ssh_run_of(returncode=3, stderr="falha ao listar")
     with pytest.raises(RemoteError):
-        backupsmod.list_backups(ssh_run, SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", 100)
+        backupsmod.list_backups(ssh_run, REGISTERED_SERVER, "/var/backups/gamepanel", 100)
 
 
 # -------------------------------------------------------------- apagar
@@ -135,7 +135,7 @@ def test_list_backups_erro_vira_remote_error():
 def test_delete_backup_devolve_confirmacao():
     output = backupsmod.delete_backup(
         _ssh_run_of("backup apagado: jogo1-x.tar.gz (10 bytes)"),
-        SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", "jogo1-x.tar.gz",
+        REGISTERED_SERVER, "/var/backups/gamepanel", "jogo1-x.tar.gz",
     )
     assert "apagado" in output
 
@@ -143,4 +143,4 @@ def test_delete_backup_devolve_confirmacao():
 def test_delete_backup_erro_vira_remote_error():
     ssh_run = _ssh_run_of(returncode=3, stderr="backup nao encontrado")
     with pytest.raises(RemoteError):
-        backupsmod.delete_backup(ssh_run, SERVIDOR_COM_CADASTRO, "/var/backups/gamepanel", "jogo1-x.tar.gz")
+        backupsmod.delete_backup(ssh_run, REGISTERED_SERVER, "/var/backups/gamepanel", "jogo1-x.tar.gz")

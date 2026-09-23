@@ -15,12 +15,12 @@ import pytest
 from gamepanel.runtime import files
 from gamepanel.services import server_service as ss
 
-LIMITES = ss.FormLimits(
+LIMITS = ss.FormLimits(
     config_files_max=8, backup_paths_max=8, http_url_max=300, http_body_max=2000,
     http_path_max=120, re_max_len=300, player_sources=("a2s", "http", "log", "none"),
 )
 
-MINIMO = {"name": "Palworld", "host": "10.0.0.1", "service": "palworld.service"}
+MINIMAL = {"name": "Palworld", "host": "10.0.0.1", "service": "palworld.service"}
 
 
 def clean_path(raw: str) -> str:
@@ -28,8 +28,8 @@ def clean_path(raw: str) -> str:
     return files.clean_path(raw, ("/",))
 
 
-def validate(**campos) -> tuple[dict, list[str]]:
-    return ss.form_server({**MINIMO, **campos}, clean_path, LIMITES)
+def validate(**fields) -> tuple[dict, list[str]]:
+    return ss.form_server({**MINIMAL, **fields}, clean_path, LIMITS)
 
 
 # ------------------------------------------------------------- caso feliz
@@ -54,19 +54,19 @@ def test_espacos_nas_pontas_somem():
 # ------------------------------------------------------ identificacao
 
 def test_nome_vazio_e_recusado():
-    _dados, errors = validate(name="")
+    _data, errors = validate(name="")
     assert any("nome" in e.lower() for e in errors)
 
 
 @pytest.mark.parametrize("host", ["", "com espaco", "10.0.0.1/rota", "a" * 300])
 def test_host_invalido_e_recusado(host):
-    _dados, errors = validate(host=host)
+    _data, errors = validate(host=host)
     assert any("Host invalido" in e for e in errors)
 
 
 @pytest.mark.parametrize("user", ["Root", "1nome", "com espaco", "x" * 40])
 def test_usuario_ssh_invalido_e_recusado(user):
-    _dados, errors = validate(ssh_user=user)
+    _data, errors = validate(ssh_user=user)
     assert any("Usuario SSH" in e for e in errors)
 
 
@@ -79,15 +79,15 @@ def test_instance_service_sem_sufixo_ganha_o_sufixo():
 
 @pytest.mark.parametrize("service", ["", "com espaco.service", "/etc/passwd"])
 def test_instance_service_invalido_e_recusado(service):
-    _dados, errors = validate(service=service)
+    _data, errors = validate(service=service)
     assert any("Servico invalido" in e for e in errors)
 
 
 # ------------------------------------------------------------- portas
 
-@pytest.mark.parametrize("porta", ["0", "65536", "-1", "abc", "22.5"])
-def test_porta_ssh_fora_da_faixa_e_recusada(porta):
-    _dados, errors = validate(ssh_port=porta)
+@pytest.mark.parametrize("port", ["0", "65536", "-1", "abc", "22.5"])
+def test_porta_ssh_fora_da_faixa_e_recusada(port):
+    _data, errors = validate(ssh_port=port)
     assert any("Porta SSH" in e for e in errors)
 
 
@@ -98,7 +98,7 @@ def test_porta_de_consulta_aceita_zero_para_desligar():
 
 
 def test_porta_de_consulta_fora_da_faixa_e_recusada():
-    _dados, errors = validate(query_port="99999")
+    _data, errors = validate(query_port="99999")
     assert any("Porta de consulta" in e for e in errors)
 
 
@@ -117,7 +117,7 @@ def test_arquivo_de_config_repetido_entra_uma_vez_so():
 
 
 def test_arquivo_de_config_relativo_e_recusado():
-    _dados, errors = validate(config_files="config.ini")
+    _data, errors = validate(config_files="config.ini")
     assert any("Arquivo de configuracao invalido" in e for e in errors)
 
 
@@ -130,7 +130,7 @@ def test_passar_do_limite_de_arquivos_corta_e_avisa():
 
 def test_backup_da_raiz_e_recusado():
     """Guardar '/' seria tentar um tar do container inteiro."""
-    _dados, errors = validate(backup_paths="/")
+    _data, errors = validate(backup_paths="/")
     assert any("Backup da raiz" in e for e in errors)
 
 
@@ -142,13 +142,13 @@ def test_passar_do_limite_de_caminhos_de_backup_corta_e_avisa():
 
 
 def test_pasta_de_config_relativa_e_recusada():
-    _dados, errors = validate(config_path="opt/game")
+    _data, errors = validate(config_path="opt/game")
     assert any("Pasta de configuracao invalida" in e for e in errors)
 
 
 def test_caminho_de_log_com_espaco_e_recusado():
     """O caminho entra num comando remoto sem aspas (o '*' precisa expandir)."""
-    _dados, errors = validate(log_path="/var/log/meu jogo.log")
+    _data, errors = validate(log_path="/var/log/meu jogo.log")
     assert any("caminho de log" in e.lower() for e in errors)
 
 
@@ -161,9 +161,9 @@ def test_caminho_de_log_com_glob_passa():
 # -------------------------------------------------------------- regex
 
 def test_regex_que_nao_compila_e_recusado():
-    _dados, errors = validate(join_re="(sem fechar")
+    _data, errors = validate(join_re="(sem fechar")
     assert errors
-    assert not _dados["join_re"], "regex torto nao pode ir para o banco"
+    assert not _data["join_re"], "regex torto nao pode ir para o banco"
 
 
 def test_regex_valido_passa_inteiro():
@@ -175,23 +175,23 @@ def test_regex_valido_passa_inteiro():
 # --------------------------------------------------------------- HTTP
 
 def test_url_da_api_invalida_e_recusada():
-    _dados, errors = validate(http_url="127.0.0.1:8212/v1/api/players")
+    _data, errors = validate(http_url="127.0.0.1:8212/v1/api/players")
     assert any("URL da API" in e for e in errors)
 
 
 def test_corpo_que_nao_e_json_e_recusado():
-    _dados, errors = validate(http_body="{isso nao e json}")
+    _data, errors = validate(http_body="{isso nao e json}")
     assert any("Corpo da requisicao" in e for e in errors)
 
 
 def test_caminho_json_com_caractere_estranho_e_recusado():
-    _dados, errors = validate(http_list_path="data/players")
+    _data, errors = validate(http_list_path="data/players")
     assert any("Caminho da lista" in e for e in errors)
 
 
 def test_login_sem_caminho_do_token_e_recusado():
     """Os tres campos do login andam juntos; meio preenchido quase sempre e engano."""
-    _dados, errors = validate(http_login_url="http://127.0.0.1:8212/login")
+    _data, errors = validate(http_login_url="http://127.0.0.1:8212/login")
     assert any("caminho do token" in e for e in errors)
 
 
@@ -213,16 +213,16 @@ def test_fonte_de_contagem_desconhecida_e_recusada():
     assert data["player_source"] == ""
 
 
-@pytest.mark.parametrize("fonte", ["a2s", "http", "log", "none"])
-def test_fontes_conhecidas_passam(fonte):
-    data, errors = validate(player_source=fonte)
+@pytest.mark.parametrize("source", ["a2s", "http", "log", "none"])
+def test_fontes_conhecidas_passam(source):
+    data, errors = validate(player_source=source)
     assert errors == []
-    assert data["player_source"] == fonte
+    assert data["player_source"] == source
 
 
 # ------------------------------------------------------------- juntos
 
 def test_erros_se_acumulam():
     """A tela mostra tudo de uma vez: corrigir um campo por envio seria cruel."""
-    _dados, errors = validate(name="", host="nao vale", ssh_port="0", service="")
+    _data, errors = validate(name="", host="nao vale", ssh_port="0", service="")
     assert len(errors) >= 4

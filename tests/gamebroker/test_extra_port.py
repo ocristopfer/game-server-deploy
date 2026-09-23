@@ -85,18 +85,18 @@ def test_publico_mostra_a_porta_extra(with_extra):
     assert cat.validate_dynamic(with_extra).as_public()["extra_port"] == 8888
 
 
-@pytest.mark.parametrize(("mudancas", "campo"), [
+@pytest.mark.parametrize(("changes", "field"), [
     ({"extra_port": 9999}, "extra_port"),               # nao esta entre as portas expostas
     ({"extra_port": 7777}, "extra_port"),               # igual a porta do jogo
     ({"extra_port": 27016}, "extra_port"),              # igual a de consulta
     ({"extra_port": "8888"}, "extra_port"),             # tem de ser numero
     ({"start_args": "-port={PORT} -queryport={QUERY_PORT}"}, "shiftable"),   # falta o marcador
 ])
-def test_extra_port_invalida_e_recusada(with_extra, mudancas, campo):
-    with_extra.update(mudancas)
+def test_extra_port_invalida_e_recusada(with_extra, changes, field):
+    with_extra.update(changes)
     with pytest.raises(ValidationError) as error:
         cat.validate_dynamic(with_extra)
-    assert campo in str(error.value)
+    assert field in str(error.value)
 
 
 def test_marcador_extra_sem_porta_extra_e_recusado(game_data):

@@ -13,14 +13,14 @@ import pytest
 from gamepanel.games import registry as game_fields
 
 
-def field(arquivo: str, chave: str) -> game_fields.FieldSpec:
+def field(arquivo: str, key: str) -> game_fields.FieldSpec:
     """O campo do catalogo, falhando alto se ele sumir.
 
     Sem isto, uma chave removida do catalogo faria os testes abaixo estourarem com
     `AttributeError: 'NoneType'` - erro que nao diz nada sobre o que se perdeu.
     """
-    spec = game_fields.describe(arquivo, chave)
-    assert spec is not None, f"{chave} sumiu do catalogo de {arquivo}"
+    spec = game_fields.describe(arquivo, key)
+    assert spec is not None, f"{key} sumiu do catalogo de {arquivo}"
     return spec
 
 
@@ -31,15 +31,15 @@ def test_duracao_arquivo_em_ns_tela_em_minutos():
     assert day.to_display(day.from_display("2")) == "2", "ida e volta tem de preservar"
 
 
-@pytest.mark.parametrize("minutos, aceita", [
+@pytest.mark.parametrize("minutes, accepted", [
     ("1", False),    # abaixo do minimo de 2 min
     ("2", True),
     ("60", True),
     ("61", False),   # acima do maximo
 ])
-def test_duracao_respeita_os_limites_do_jogo(minutos, aceita):
+def test_duracao_respeita_os_limites_do_jogo(minutes, accepted):
     day = field("enshrouded_server.json", "dayTimeDuration")
-    assert (day.validate(minutos) == "") is aceita
+    assert (day.validate(minutes) == "") is accepted
 
 
 def test_o_caso_real_noite_de_um_segundo_no_arquivo():
@@ -61,16 +61,16 @@ def test_enum_so_aceita_valor_que_o_jogo_entende():
     assert len(grave.options) == 3
 
 
-@pytest.mark.parametrize("value, aceita", [
+@pytest.mark.parametrize("value, accepted", [
     ("1", True),
     ("4", True),
     ("5", False),       # acima do teto
     ("0", False),       # abaixo do piso
     ("muito", False),   # nem numero e
 ])
-def test_fator_e_multiplicador_com_limite(value, aceita):
+def test_fator_e_multiplicador_com_limite(value, accepted):
     lifetime = field("enshrouded_server.json", "playerHealthFactor")
-    assert (lifetime.validate(value) == "") is aceita
+    assert (lifetime.validate(value) == "") is accepted
 
 
 def test_fator_nao_converte_unidade():
@@ -78,10 +78,10 @@ def test_fator_nao_converte_unidade():
     assert field("enshrouded_server.json", "playerHealthFactor").from_display("1.5") == "1.5"
 
 
-@pytest.mark.parametrize("value, aceita", [("0.5", True), ("1", True), ("2", False)])
-def test_reciclagem_de_perk_vai_de_zero_a_um(value, aceita):
+@pytest.mark.parametrize("value, accepted", [("0.5", True), ("1", True), ("2", False)])
+def test_reciclagem_de_perk_vai_de_zero_a_um(value, accepted):
     rec = field("enshrouded_server.json", "perkUpgradeRecyclingFactor")
-    assert (rec.validate(value) == "") is aceita
+    assert (rec.validate(value) == "") is accepted
 
 
 def test_outros_jogos_tem_catalogo_proprio():

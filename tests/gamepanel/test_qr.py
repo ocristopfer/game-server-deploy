@@ -35,26 +35,26 @@ def test_multiplicacao_por_zero_e_zero_e_por_um_e_identidade():
         assert qr._mul(x, 1) == x
 
 
-@pytest.mark.parametrize("grau", [7, 10, 13, 16, 18, 22, 24, 26, 30])
-def test_gerador_tem_raiz_em_cada_potencia_de_alpha_ate_o_grau(grau):
+@pytest.mark.parametrize("degree", [7, 10, 13, 16, 18, 22, 24, 26, 30])
+def test_gerador_tem_raiz_em_cada_potencia_de_alpha_ate_o_grau(degree):
     """Definicao do polinomio gerador de Reed-Solomon: g(x) = produto (x - alfa^i), i=0..grau-1.
     Cada alfa^i tem de ser raiz — se a construcao errar um fator, uma dessas raizes falha."""
-    generator = qr._generator(grau)
-    assert len(generator) == grau + 1
-    for i in range(grau):
+    generator = qr._generator(degree)
+    assert len(generator) == degree + 1
+    for i in range(degree):
         assert _evaluate(generator, qr._EXP[i]) == 0
 
 
-@pytest.mark.parametrize(("tamanho", "correcao"), [(16, 10), (28, 16), (32, 18), (43, 24), (27, 16)])
-def test_correcao_faz_o_resto_da_divisao_pelo_gerador_ser_zero(tamanho, correcao):
+@pytest.mark.parametrize(("size", "correction"), [(16, 10), (28, 16), (32, 18), (43, 24), (27, 16)])
+def test_correcao_faz_o_resto_da_divisao_pelo_gerador_ser_zero(size, correction):
     """A prova de que _correcao devolve um resto de verdade: dados+resto, como POLINOMIO, e
     multiplo do gerador — ou seja, se avalia a zero em toda raiz dele. E exatamente a
     propriedade que faz o decodificador (fora deste arquivo) saber corrigir erros."""
-    data = [(37 * i + 5) % 256 for i in range(tamanho)]
-    rest = qr._correction(data, correcao)
-    assert len(rest) == correcao
+    data = [(37 * i + 5) % 256 for i in range(size)]
+    rest = qr._correction(data, correction)
+    assert len(rest) == correction
     code = data + rest
-    for i in range(correcao):
+    for i in range(correction):
         assert _evaluate(code, qr._EXP[i]) == 0
 
 
@@ -124,10 +124,10 @@ def test_unicode_conta_em_bytes_utf8_nao_em_caracteres():
 
 # ------------------------------------------------------------------------- estrutura da matriz
 
-@pytest.mark.parametrize("versao", range(1, 11))
-def test_tamanho_da_matriz_segue_a_formula_da_iso(versao):
-    text = "a" * qr.capacity(versao) if versao == 1 else "a" * (qr.capacity(versao - 1) + 1)
-    assert len(qr.matrix(text)) == 17 + 4 * versao
+@pytest.mark.parametrize("version", range(1, 11))
+def test_tamanho_da_matriz_segue_a_formula_da_iso(version):
+    text = "a" * qr.capacity(version) if version == 1 else "a" * (qr.capacity(version - 1) + 1)
+    assert len(qr.matrix(text)) == 17 + 4 * version
 
 
 def test_localizador_do_canto_superior_esquerdo_tem_o_desenho_do_padrao():

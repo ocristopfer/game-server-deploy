@@ -32,7 +32,7 @@ def save():
     """So o que vale para todos os destinos: hoje, os limites de disco, memoria e CPU."""
     conn = panel.db()
     fresh_ones = []
-    for field, key, name in panel.LIMITES_ALERTA:
+    for field, key, name in panel.ALERT_LIMITS:
         # Campo que nem veio no formulario fica como esta. Tratar ausencia como erro
         # faria um formulario sem o campo derrubar um limite que ja estava certo.
         if field not in request.form:

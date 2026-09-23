@@ -8,12 +8,12 @@ from gamebroker.integrations.http_client import Client
 from gamebroker.runtime.opnsense import Opnsense, OpnsenseError, ReadError, busy_ports, instance_description
 from gamebroker.services.allocator import AllocatedPort
 
-PORTAS = [AllocatedPort(7001, 7001, "udp", "jogo"), AllocatedPort(7002, 7002, "udp", "query")]
+PORTS = [AllocatedPort(7001, 7001, "udp", "jogo"), AllocatedPort(7002, 7002, "udp", "query")]
 
 
-def _line(**campos):
+def _line(**fields):
     base = {"uuid": "u", "descr": "x", "interface": "wan", "protocol": "udp", "destination.port": "1234"}
-    return {**base, **campos}
+    return {**base, **fields}
 
 
 # --- leitura de portas taken (o parser que decide se uma porta esta livre) ------------------
@@ -49,9 +49,9 @@ def test_alias_sem_descricao():
     assert {p for p, _ in busy_ports([rule], "wan")} == {8211, 27015}
 
 
-@pytest.mark.parametrize("protocolo", ["tcp/udp", "TCP/UDP", "any", "", "icmp"])
-def test_protocolo_combinado_ou_desconhecido_ocupa_tcp_e_udp(protocolo):
-    taken = busy_ports([_line(protocol=protocolo, **{"destination.port": "7787"})], "wan")
+@pytest.mark.parametrize("protocol", ["tcp/udp", "TCP/UDP", "any", "", "icmp"])
+def test_protocolo_combinado_ou_desconhecido_ocupa_tcp_e_udp(protocol):
+    taken = busy_ports([_line(protocol=protocol, **{"destination.port": "7787"})], "wan")
     assert taken == {(7787, "tcp"), (7787, "udp")}
 
 
@@ -69,10 +69,10 @@ def test_regra_sem_porta_de_destino_e_ignorada():
     assert busy_ports([_line(**{"destination.port": ""})], "wan") == set()
 
 
-@pytest.mark.parametrize("porta", ["0", "65536", "99999", "8000-7000", "1-999999", "a-b"])
-def test_porta_fora_do_intervalo_e_erro_e_nao_livre(porta):
+@pytest.mark.parametrize("port", ["0", "65536", "99999", "8000-7000", "1-999999", "a-b"])
+def test_porta_fora_do_intervalo_e_erro_e_nao_livre(port):
     with pytest.raises(ReadError):
-        busy_ports([_line(**{"destination.port": porta})], "wan")
+        busy_ports([_line(**{"destination.port": port})], "wan")
 
 
 @pytest.mark.parametrize("meta", [None, [], "texto", [{"summary": None}], [{"value": "A"}],
@@ -99,13 +99,13 @@ def test_faixa_gigante_e_erro():
 # --- backend contra o OPNsense falso ---------------------------------------------------------------
 
 def test_portas_externas_via_http_inclui_aliases_e_desativadas(opn):
-    opn.fake.existing_rule("palworld", "JOGO_PALWORLD", alias=["8211", "27015"], desativada=True)
-    opn.fake.existing_rule("team-speak", "9987", protocolo="udp")
+    opn.fake.existing_rule("palworld", "JOGO_PALWORLD", alias=["8211", "27015"], disabled=True)
+    opn.fake.existing_rule("team-speak", "9987", protocol="udp")
     assert opn.backend.external_ports() == {(8211, "udp"), (27015, "udp"), (9987, "udp")}
 
 
 def test_abrir_cria_uma_regra_por_porta_e_aplica(opn):
-    opn.backend.open_ports(300, "10.0.0.30", PORTAS)
+    opn.backend.open_ports(300, "10.0.0.30", PORTS)
     rules = list(opn.fake.rules.values())
     assert sorted((r["destination.port"], r["protocol"]) for r in rules) == [("7001", "udp"), ("7002", "udp")]
     assert {r["descr"] for r in rules} == {"gamepanel:300"}
@@ -113,19 +113,19 @@ def test_abrir_cria_uma_regra_por_porta_e_aplica(opn):
     assert {r["interface"] for r in rules} == {"wan"}
     assert {r["pass"] for r in rules} == {"pass"}, "sem pass o WAN barra o pacote"
     assert {r["disabled"] for r in rules} == {"0"}
-    assert opn.fake.aplicacoes == 1
+    assert opn.fake.applies == 1
 
 
 def test_abrir_duas_vezes_nao_duplica(opn):
-    opn.backend.open_ports(300, "10.0.0.30", PORTAS)
-    opn.backend.open_ports(300, "10.0.0.30", PORTAS)
+    opn.backend.open_ports(300, "10.0.0.30", PORTS)
+    opn.backend.open_ports(300, "10.0.0.30", PORTS)
     assert len(opn.fake.rules) == 2
 
 
 def test_fechar_apaga_so_as_regras_da_instancia(opn):
     opn.fake.existing_rule("team-speak", "9987")
-    opn.fake.existing_rule("", "2222", protocolo="tcp")
-    opn.backend.open_ports(300, "10.0.0.30", PORTAS)
+    opn.fake.existing_rule("", "2222", protocol="tcp")
+    opn.backend.open_ports(300, "10.0.0.30", PORTS)
     opn.backend.open_ports(301, "10.0.0.31", [AllocatedPort(8001, 8001, "udp", "jogo")])
     opn.backend.close_ports(300)
     remaining = sorted(r["descr"] for r in opn.fake.rules.values())
@@ -134,7 +134,7 @@ def test_fechar_apaga_so_as_regras_da_instancia(opn):
 
 def test_fechar_sem_regras_nao_aplica_nada(opn):
     opn.backend.close_ports(300)
-    assert opn.fake.aplicacoes == 0
+    assert opn.fake.applies == 0
 
 
 def test_fechar_nao_confunde_ctid_que_e_prefixo_de_outro(opn):
@@ -145,31 +145,31 @@ def test_fechar_nao_confunde_ctid_que_e_prefixo_de_outro(opn):
 
 
 def test_falha_no_meio_desfaz_o_que_ja_criou(opn):
-    opn.fake.falhar_no_add_numero = 2
+    opn.fake.fail_on_add_number = 2
     with pytest.raises(OpnsenseError, match="rule.target"):
-        opn.backend.open_ports(300, "10.0.0.30", PORTAS)
+        opn.backend.open_ports(300, "10.0.0.30", PORTS)
     assert opn.fake.rules == {}
 
 
 def test_apply_sem_privilegio_desfaz_e_avisa(opn):
     opn.fake.apply_permitido = False
     with pytest.raises(OpnsenseError, match="HTTP 403"):
-        opn.backend.open_ports(300, "10.0.0.30", PORTAS)
+        opn.backend.open_ports(300, "10.0.0.30", PORTS)
     assert opn.fake.rules == {}
 
 
 @pytest.mark.parametrize("ip", ["10.0.0.300", "nao-e-ip", "10.0.0.30; drop", ""])
 def test_ip_invalido_nunca_chega_ao_opnsense(opn, ip):
     with pytest.raises(ValueError):
-        opn.backend.open_ports(300, ip, PORTAS)
-    assert opn.server.requisicoes == []
+        opn.backend.open_ports(300, ip, PORTS)
+    assert opn.server.requests_seen == []
 
 
-@pytest.mark.parametrize("porta", [AllocatedPort(1, 0, "udp", "x"), AllocatedPort(1, 70000, "udp", "x"),
+@pytest.mark.parametrize("port", [AllocatedPort(1, 0, "udp", "x"), AllocatedPort(1, 70000, "udp", "x"),
                                    AllocatedPort(1, 80, "icmp", "x")])
-def test_porta_invalida_e_recusada(opn, porta):
+def test_porta_invalida_e_recusada(opn, port):
     with pytest.raises(OpnsenseError, match="porta invalida"):
-        opn.backend.open_ports(300, "10.0.0.30", [porta])
+        opn.backend.open_ports(300, "10.0.0.30", [port])
     assert opn.fake.rules == {}
 
 
@@ -199,12 +199,12 @@ def test_descricao_usa_so_inteiro():
 
 
 def test_servidor_que_responde_lixo_no_apply():
-    def handler(metodo, caminho, *_):
-        if caminho.endswith("search_rule"):
+    def handler(method, path, *_):
+        if path.endswith("search_rule"):
             return 200, {"rows": []}
-        if caminho.endswith("add_rule"):
+        if path.endswith("add_rule"):
             return 200, {"result": "saved", "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}
-        if "del_rule" in caminho:
+        if "del_rule" in path:
             return 200, {"result": "deleted"}
         return 200, {"status": "ERRO interno"}
 
@@ -212,7 +212,7 @@ def test_servidor_que_responde_lixo_no_apply():
     try:
         backend = Opnsense(Client(server.url, {}), "wan")
         with pytest.raises(OpnsenseError, match="nao confirmou"):
-            backend.open_ports(300, "10.0.0.30", PORTAS)
+            backend.open_ports(300, "10.0.0.30", PORTS)
     finally:
         server.stop()
 

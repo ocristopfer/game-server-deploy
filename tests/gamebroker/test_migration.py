@@ -17,7 +17,7 @@ from gamebroker.persistence.db import Db
 
 # O esquema ANTES dos nomes em ingles, escrito por extenso. Copiar do `SCHEMA` de hoje
 # faria o teste concordar consigo mesmo.
-ESQUEMA_ANTIGO = """
+OLD_SCHEMA = """
 CREATE TABLE instancias (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ctid INTEGER NOT NULL UNIQUE,
@@ -71,7 +71,7 @@ def old_database(tmp_path):
     """Um broker como ele estava antes da traducao, com uma instancia de verdade."""
     path = tmp_path / "broker.db"
     con = sqlite3.connect(path)
-    con.executescript(ESQUEMA_ANTIGO)
+    con.executescript(OLD_SCHEMA)
     con.execute("INSERT INTO instancias (ctid, ip, jogo, nome, hostname, estado,"
                 " criado_por, criado_em, detalhe) VALUES"
                 " (302, '10.0.0.30', 'palworld', 'Servidor do Zeca', 'palworld-302',"

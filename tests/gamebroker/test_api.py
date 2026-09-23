@@ -23,11 +23,11 @@ def test_token_curto_nao_sobe():
 
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer errado"}, {"Authorization": TOKEN},
                                         {"Authorization": f"Basic {TOKEN}"}, {"Authorization": "Bearer "}])
-@pytest.mark.parametrize(("metodo", "url"), [("get", "/v1/health"), ("get", "/v1/catalog"),
+@pytest.mark.parametrize(("method", "url"), [("get", "/v1/health"), ("get", "/v1/catalog"),
                                              ("get", "/v1/instances"), ("post", "/v1/instances"),
                                              ("post", "/v1/catalog")])
-def test_sem_token_valido_nada_responde(http, metodo, url, headers):
-    response = getattr(http, metodo)(url, headers=headers, json={})
+def test_sem_token_valido_nada_responde(http, method, url, headers):
+    response = getattr(http, method)(url, headers=headers, json={})
     assert response.status_code == 401
     assert response.get_json()["codigo"] == "nao-autenticado"
 
@@ -39,8 +39,8 @@ def test_ip_fora_da_lista_e_barrado_mesmo_com_token(environment):
 
 
 def test_saude(http):
-    corpo = http.get("/v1/health", headers=AUTH).get_json()
-    assert (corpo["broker"], corpo["proxmox"], corpo["opnsense"]) == (True, True, True)
+    body = http.get("/v1/health", headers=AUTH).get_json()
+    assert (body["broker"], body["proxmox"], body["opnsense"]) == (True, True, True)
 
 
 def test_saude_mostra_proxmox_fora_do_ar(http, environment):
@@ -79,10 +79,10 @@ def test_criar_devolve_202_e_a_operacao_pode_ser_consultada(http):
     assert [i["name"] for i in listed] == ["Um"]
 
 
-@pytest.mark.parametrize("corpo", [{}, {"game": "beta"}, {"name": "x"}, {"game": "beta", "name": "a;b"},
+@pytest.mark.parametrize("body", [{}, {"game": "beta"}, {"name": "x"}, {"game": "beta", "name": "a;b"},
                                    {"game": "nao-existe", "name": "x"}])
-def test_criar_com_pedido_ruim_nao_e_500(http, corpo):
-    assert http.post("/v1/instances", headers=AUTH, json=corpo).status_code in (400, 404)
+def test_criar_com_pedido_ruim_nao_e_500(http, body):
+    assert http.post("/v1/instances", headers=AUTH, json=body).status_code in (400, 404)
 
 
 def test_corpo_que_nao_e_json_objeto(http):

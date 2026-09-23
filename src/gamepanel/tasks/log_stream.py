@@ -32,7 +32,7 @@ from gamepanel.runtime.log_probe import (
 from gamepanel.runtime.ssh import ServerLike, quote_command
 
 PLAYER_EVENTS = frozenset({"jogador-entrou", "jogador-saiu"})
-ESPERA_AO_ENCERRAR = 5
+SHUTDOWN_WAIT = 5
 
 
 class LogStreamDeps(NamedTuple):
@@ -187,7 +187,7 @@ class LogStream:
             with contextlib.suppress(OSError):
                 proc.terminate()
         try:
-            proc.wait(timeout=ESPERA_AO_ENCERRAR)  # sem isto sobra zumbi a cada reconexao
+            proc.wait(timeout=SHUTDOWN_WAIT)  # sem isto sobra zumbi a cada reconexao
         except subprocess.TimeoutExpired:
             proc.kill()
 

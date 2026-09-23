@@ -177,11 +177,11 @@ def test_limite_por_hora_libera_depois_de_uma_hora(environment):
 
 
 def test_so_uma_criacao_por_vez(environment):
-    environment.adiar = True
+    environment.defer = True
     _create(environment, "beta", "um")
     with pytest.raises(QuotaExceeded, match="em andamento"):
         _create(environment, "beta", "dois")
-    environment.pendentes.pop()()
+    environment.pending.pop()()
     _create(environment, "beta", "dois")
 
 
@@ -352,7 +352,7 @@ def test_ator_estranho_vira_desconhecido(environment):
 
 def test_auditoria_e_append_only(environment):
     _create(environment)
-    with sqlite3.connect(environment.db._caminho) as conn:
+    with sqlite3.connect(environment.db._path) as conn:
         with pytest.raises(sqlite3.DatabaseError, match="append-only"):
             conn.execute("UPDATE audit SET result = 'adulterado'")
         with pytest.raises(sqlite3.DatabaseError, match="append-only"):

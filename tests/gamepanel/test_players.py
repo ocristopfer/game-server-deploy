@@ -26,8 +26,8 @@ def names(result):
     return [p["name"] for p in result["list"]]
 
 
-def server(url, origem="http"):
-    return {"http_url": url, "player_source": origem, "query_port": 0,
+def server(url, origin="http"):
+    return {"http_url": url, "player_source": origin, "query_port": 0,
             "join_re": "", "leave_re": ""}
 
 
@@ -186,7 +186,7 @@ def test_client_type_ilegivel_nao_derruba_o_jogador():
 
 # --------------------------------------------------------- autenticacao e status
 
-@pytest.mark.parametrize("raw, esperado", [
+@pytest.mark.parametrize("raw, expected", [
     ("basic:admin:troque-me", "Authorization: Basic YWRtaW46dHJvcXVlLW1l"),
     ("basic:admin:a:b", "Authorization: Basic YWRtaW46YTpi"),  # ':' na senha
     ("bearer:abc123", "Authorization: Bearer abc123"),
@@ -198,10 +198,10 @@ def test_client_type_ilegivel_nao_derruba_o_jogador():
     # 'header:' sem os dois pontos do nome nao e cabecalho nenhum; cai na regra antiga.
     ("header:coisa", "Authorization: header:coisa"),
 ])
-def test_auth_header(raw, esperado):
+def test_auth_header(raw, expected):
     """auth_header devolve o cabecalho INTEIRO ('Nome: valor'), nao so o valor: ha API
     que nao autentica por Authorization, e com so o valor o nome seria sempre o mesmo."""
-    assert panel.auth_header(raw) == esperado
+    assert panel.auth_header(raw) == expected
 
 
 def test_split_status_separa_do_corpo():
@@ -214,15 +214,15 @@ def test_split_status_sem_marcador_fica_zero():
 
 # ---------------------------------------------------------------------------- URL
 
-@pytest.mark.parametrize("url, aceita", [
+@pytest.mark.parametrize("url, accepted", [
     ("http://127.0.0.1:8212/v1/api/players", True),
     ("https://127.0.0.1:7777/api/v1", True),
     ("127.0.0.1:8212/x", False),          # sem esquema
     ("file:///etc/passwd", False),
     ("http://127.0.0.1:8212/a b", False), # espaco
 ])
-def test_url_re(url, aceita):
-    assert bool(panel.URL_RE.match(url)) is aceita
+def test_url_re(url, accepted):
+    assert bool(panel.URL_RE.match(url)) is accepted
 
 
 # ------------------------------------------------------------- descoberta de portas
@@ -236,7 +236,7 @@ def test_sem_repetir_e_sem_a_porta_do_ssh():
 
 
 # Os tres estados que a tela precisa diferenciar, vindos do mapa porta -> dono.
-DONOS = {
+OWNERS = {
     ("tcp", 8212): {"pid": 40, "proc": "PalServer-Linu", "infra": False},
     ("tcp", 22): {"pid": 1, "proc": "sshd", "infra": True},
     ("tcp", 33039): {"pid": 0, "proc": "?", "infra": False},
@@ -245,7 +245,7 @@ DONOS = {
 
 def test_com_dono_classifica_cada_porta():
     entries = panel._with_owner(
-        [{"port": 8212}, {"port": 22}, {"port": 33039}, {"port": 7777}], DONOS, "tcp")
+        [{"port": 8212}, {"port": 22}, {"port": 33039}, {"port": 7777}], OWNERS, "tcp")
     assert (entries[0]["origem"], entries[0]["proc"], entries[0]["pid"]) == (
         "detectada", "PalServer-Linu", 40)
     assert (entries[1]["origem"], entries[1]["infra"]) == ("detectada", True), "sshd e infra"
@@ -363,30 +363,30 @@ def test_log_path_com_asterisco_passa():
     assert panel.valid_log_path("/opt/game/profiles/*.ADM") == "/opt/game/profiles/*.ADM"
 
 
-@pytest.mark.parametrize("ruim", [
+@pytest.mark.parametrize("bad", [
     "/tmp/x.log; touch /tmp/invadiu", "/opt/game/$(id).log", "/opt/game/`id`.log",
     "/opt/game/x.log|id", "/opt/game/a b.log", "relativo/x.log",
     "/opt/../../etc/shadow", "/opt/game/x.log&", "/opt/game/'x'.log",
 ])
-def test_log_path_torto_e_recusado(ruim):
+def test_log_path_torto_e_recusado(bad):
     """O caminho entra SEM aspas no comando remoto (para o shell expandir o '*'), entao
     tudo que o shell interpretaria de outro jeito tem de morrer aqui."""
     with pytest.raises(ValueError):
-        panel.valid_log_path(ruim)
+        panel.valid_log_path(bad)
 
 
 # --------------------------------------------------------------- acoes sobre jogadores
 
-@pytest.mark.parametrize("item, esperado", [
+@pytest.mark.parametrize("item, expected", [
     ({"name": "Ana", "userId": "steam_123"}, "steam_123"),
     ({"name": "Ana", "player_uid": "AB01"}, "AB01"),           # outra grafia
     ({"name": "Ana", "playerid": 42}, "42"),                   # numero tambem vale
     ({"name": "Ana", "ping": 12}, ""),                         # sem identificador
     ({"name": "Ana", "uid": True}, ""),                        # booleano nao e id
 ])
-def test_id_do_item(item, esperado):
+def test_id_do_item(item, expected):
     """Kick e ban pedem um identificador; o nome nao serve porque muda e repete."""
-    assert panel._id_do_item(item) == esperado
+    assert panel._id_do_item(item) == expected
 
 
 def test_id_entra_na_lista_normalizada_ao_lado_do_nome():

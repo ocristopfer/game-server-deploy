@@ -24,13 +24,13 @@ def _string(text: str) -> bytes:
 
 def _info_payload(
     name: str = "Servidor de teste", mapa: str = "de_teste", pasta: str = "jogo",
-    jogo: str = "Jogo de Teste", appid: int = 1234, players: int = 3, max_players: int = 10,
+    game: str = "Jogo de Teste", appid: int = 1234, players: int = 3, max_players: int = 10,
     bots: int = 0,
 ) -> bytes:
     """O corpo de uma resposta A2S_INFO, a partir do byte de versao do protocolo."""
     return (
         bytes([17])  # versao do protocolo, ignorada pelo leitor
-        + _string(name) + _string(mapa) + _string(pasta) + _string(jogo)
+        + _string(name) + _string(mapa) + _string(pasta) + _string(game)
         + struct.pack("<h", appid)
         + bytes([players, max_players, bots])
     )
@@ -57,12 +57,12 @@ class _FakeA2sServer:
         self._sock.settimeout(2)
         self.port = self._sock.getsockname()[1]
         self._roteiro = roteiro
-        self._parar = False
+        self._stopped = False
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
     def _serve(self) -> None:
-        while not self._parar:
+        while not self._stopped:
             try:
                 data, addr = self._sock.recvfrom(8192)
             except TimeoutError:
@@ -75,7 +75,7 @@ class _FakeA2sServer:
                 self._sock.sendto(response, addr)
 
     def close(self) -> None:
-        self._parar = True
+        self._stopped = True
         self._thread.join(timeout=2)
         self._sock.close()
 
@@ -146,10 +146,10 @@ def test_desafio_e_respondido_antes_da_resposta_valer(a2s_server):
 
 def test_resposta_dividida_em_varios_pacotes_e_remontada(a2s_server):
     """Resposta grande (varios jogadores) pode vir em pacotes 0xFFFFFFFE separados."""
-    corpo = a2s.A2S_HEADER + b"I" + _info_payload(players=1)
-    middle = len(corpo) // 2
-    package1 = corpo[:middle]
-    package2 = corpo[middle:]
+    body = a2s.A2S_HEADER + b"I" + _info_payload(players=1)
+    middle = len(body) // 2
+    package1 = body[:middle]
+    package2 = body[middle:]
 
     def answers_split(_pedido: bytes) -> list[bytes]:
         header1 = a2s.A2S_SPLIT + struct.pack("<lBBh", 1, 2, 0, 1024)

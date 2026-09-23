@@ -17,8 +17,8 @@ from gamebroker.integrations.http_client import RESPOSTA_MAX, Client, Connection
 TOKEN = "segredo-que-nunca-pode-vazar"
 
 
-def _echo(metodo, caminho, query, corpo, headers):
-    return 200, {"metodo": metodo, "caminho": caminho, "query": query, "corpo": corpo,
+def _echo(method, path, query, body, headers):
+    return 200, {"metodo": method, "caminho": path, "query": query, "corpo": body,
                  "auth": headers.get("authorization"), "tipo": headers.get("content-type", "")}
 
 
@@ -36,10 +36,10 @@ def test_impressao_aceita_o_formato_do_script_de_verificacao():
     assert normalize_fingerprint("") == ""
 
 
-@pytest.mark.parametrize("ruim", ["9F:92", "zz" * 32, "9F" * 33])
-def test_impressao_invalida(ruim):
+@pytest.mark.parametrize("bad", ["9F:92", "zz" * 32, "9F" * 33])
+def test_impressao_invalida(bad):
     with pytest.raises(ValueError, match="64 digitos"):
-        normalize_fingerprint(ruim)
+        normalize_fingerprint(bad)
 
 
 @pytest.mark.parametrize("url", ["http://192.168.1.254:8006", "http://proxmox.local", "ftp://x", "sem-esquema", "https://"])
@@ -54,7 +54,7 @@ def test_form_e_json_saem_no_formato_certo(echo_server):
     assert a["corpo"] == {"a": "b c", "d": "2"}
     assert a["tipo"] == "application/x-www-form-urlencoded"
     assert a["query"] == {"y": "1"}
-    b = client.request("POST", "/x", json_corpo={"k": [1, 2]}).json
+    b = client.request("POST", "/x", json_body={"k": [1, 2]}).json
     assert b["corpo"] == {"k": [1, 2]}
     assert b["tipo"] == "application/json"
     assert b["auth"] == f"Bearer {TOKEN}"
@@ -159,9 +159,9 @@ def test_tls_autoassinado_sem_impressao_nao_e_aceito(tls_server):
 
 # --- prazo por chamada -----------------------------------------------------------------------------
 
-def _slow(segundos: float):
+def _slow(seconds: float):
     def handler(*_a):
-        time.sleep(segundos)
+        time.sleep(seconds)
         return 200, {"ok": True}
     return handler
 

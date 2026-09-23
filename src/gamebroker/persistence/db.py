@@ -145,8 +145,8 @@ def now() -> str:
 
 class Db:
     def __init__(self, path: str, clock: Callable[[], str] = now):
-        self._caminho = path
-        self._relogio = clock
+        self._path = path
+        self._clock = clock
         with self._connection() as conn:
             # A migration vem ANTES do SCHEMA: com as tabelas velhas ainda de pe, o
             # `CREATE TABLE IF NOT EXISTS` criaria as novas VAZIAS ao lado, e o rename
@@ -158,7 +158,7 @@ class Db:
     def _connection(self) -> Iterator[sqlite3.Connection]:
         # isolation_level=None: as transacoes sao explicitas (BEGIN IMMEDIATE), nao as
         # que o modulo abre por conta propria antes de cada INSERT.
-        conn = sqlite3.connect(self._caminho, timeout=10, isolation_level=None)
+        conn = sqlite3.connect(self._path, timeout=10, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         try:
@@ -193,7 +193,7 @@ class Db:
                 cur = conn.execute(
                     "INSERT INTO instances (ctid, ip, game, name, hostname, state, created_by, created_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (ctid, ip, game, name, hostname, STATE_RESERVED, actor, self._relogio()))
+                    (ctid, ip, game, name, hostname, STATE_RESERVED, actor, self._clock()))
                 instance_id = int(cur.lastrowid or 0)
                 conn.executemany(
                     "INSERT INTO ports (instance_id, base, number, proto, role) VALUES (?, ?, ?, ?, ?)",
@@ -241,7 +241,7 @@ class Db:
         with self._transaction() as conn:
             conn.execute(
                 "INSERT INTO operations (id, instance_id, kind, state, started_at) VALUES (?, ?, ?, ?, ?)",
-                (op_id, instance_id, kind, OP_RUNNING, self._relogio()))
+                (op_id, instance_id, kind, OP_RUNNING, self._clock()))
         return op_id
 
     def append_log(self, op_id: str, row: str) -> None:
@@ -256,7 +256,7 @@ class Db:
     def finish_operation(self, op_id: str, state_dir: str, result: dict | None = None) -> None:
         with self._transaction() as conn:
             conn.execute("UPDATE operations SET state = ?, result = ?, finished_at = ? WHERE id = ?",
-                         (state_dir, json.dumps(result or {}, ensure_ascii=True), self._relogio(), op_id))
+                         (state_dir, json.dumps(result or {}, ensure_ascii=True), self._clock(), op_id))
 
     def operation(self, op_id: str) -> dict | None:
         with self._connection() as conn:
@@ -283,7 +283,7 @@ class Db:
         with self._transaction() as conn:
             conn.execute(
                 "INSERT INTO audit (at, actor, verb, target, result, detail) VALUES (?, ?, ?, ?, ?, ?)",
-                (self._relogio(), actor, verb, target, result, detail[:300]))
+                (self._clock(), actor, verb, target, result, detail[:300]))
 
     def audit_trail(self, limit: int = 100) -> list[dict]:
         with self._connection() as conn:

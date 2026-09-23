@@ -659,14 +659,14 @@ def translate_html(key: str, **fields: object) -> Markup:
     ))
 
 
-def labels_of(tabela: dict[str, str]) -> dict[str, str]:
+def labels_of(labels: dict[str, str]) -> dict[str, str]:
     """Traduz uma tabela de rotulos de uma vez, para a tela receber texto pronto.
 
     As tabelas (`ALERT_EVENTS`, `JOB_LABELS`, `ROLE_LABELS`, ...) guardam a CHAVE do
     catalogo e nao a frase: a chave e o que vai para o banco e para o `<option value=>`,
     e ela nao pode mudar so porque alguem corrigiu uma virgula no texto.
     """
-    return {key: translate(label) for key, label in tabela.items()}
+    return {key: translate(label) for key, label in labels.items()}
 
 @app.context_processor
 def _inject():
@@ -724,7 +724,7 @@ def _navigation_context() -> dict:
         "nav_desktop_account": account,
         "nav_active_desktop": ui.active_desktop_nav_for(request.endpoint),
         "server_sections": sections,
-        "section_endpoint": lambda secao: ui.section_endpoint(secao, tem_pty=has_pty),
+        "section_endpoint": lambda section: ui.section_endpoint(section, tem_pty=has_pty),
         "power_actions": ui.actions_in_group(ui.GROUP_POWER),
         "maintenance_actions": ui.actions_in_group(ui.GROUP_MAINTENANCE),
         "card_power": ui.card_power,
@@ -833,10 +833,10 @@ _id_do_item = http_probe._id_of
 _has_login = player_service._has_login
 
 
-def http_json(server: ServerRow, url: str, auth: str, corpo: str, exigir_json: bool = True):
+def http_json(server: ServerRow, url: str, auth: str, body: str, exigir_json: bool = True):
     # HTTP_TIMEOUT lido na hora da chamada, nao congelado - mesmo cuidado do SshClient
     # (runtime/ssh.py) e do query_players (runtime/a2s.py).
-    return http_probe.http_json(ssh_output, server, url, auth, corpo, HTTP_TIMEOUT, exigir_json)
+    return http_probe.http_json(ssh_output, server, url, auth, body, HTTP_TIMEOUT, exigir_json)
 
 
 def _stored_value(server: ServerRow, coluna: str) -> str:
@@ -863,9 +863,9 @@ def http_login(server: ServerRow) -> str:
     return player_service.http_login(_player_deps(), server)
 
 
-def call_game_api(server: ServerRow, url: str, corpo: str = "",
+def call_game_api(server: ServerRow, url: str, body: str = "",
                       exigir_json: bool = True):
-    return player_service.call_game_api(_player_deps(), server, url, corpo, exigir_json)
+    return player_service.call_game_api(_player_deps(), server, url, body, exigir_json)
 
 
 def players_from_http(server: ServerRow) -> dict:
@@ -1027,8 +1027,8 @@ assert set(COMMANDS) == set(ui.BY_KEY), "ui.ACOES e COMANDOS fora de sincronia"
 # Forma antiga, montada a partir das duas: chave -> (rotulo, comando, confirma).
 # Continua sendo o que `start_job` e o historico consomem.
 ACTIONS = {
-    key: (ui.BY_KEY[key].label, comando, ui.BY_KEY[key].confirm)
-    for key, comando in COMMANDS.items()
+    key: (ui.BY_KEY[key].label, command, ui.BY_KEY[key].confirm)
+    for key, command in COMMANDS.items()
 }
 
 # Os rotulos das acoes de botao vem do `ui`; os das acoes que nascem de outras telas
@@ -1504,7 +1504,7 @@ class _Rhythm(NamedTuple):
     see_log: bool
 
 
-def _monitor_rhythm(cfg: dict, agora: float, force: bool) -> _Rhythm | None:
+def _monitor_rhythm(cfg: dict, now: float, force: bool) -> _Rhythm | None:
     """Decide o que vence nesta volta e adianta os relogios. None = ainda nao e hora."""
     global _last_monitor, _last_state, _last_disk, _last_log
 
@@ -1512,30 +1512,30 @@ def _monitor_rhythm(cfg: dict, agora: float, force: bool) -> _Rhythm | None:
     # ligados a volta fica curta; sem eles nada muda em relacao a antes.
     wants_players = bool(cfg["events"] & {"jogador-entrou", "jogador-saiu"})
     step = min(MONITOR_EVERY, PLAYER_CHECK_EVERY) if wants_players else MONITOR_EVERY
-    if not force and agora - _last_monitor < step:
+    if not force and now - _last_monitor < step:
         return None
-    _last_monitor = agora
+    _last_monitor = now
 
     # ...mas so a contagem de jogadores anda nesse passo curto. Estado do servico, mudez
     # e restart continuam no ritmo antigo: cada um deles custa SSH por servidor, e
     # acelerar tudo junto multiplicaria essa conta por quatro sem necessidade.
-    see_state = force or agora - _last_state >= MONITOR_EVERY
+    see_state = force or now - _last_state >= MONITOR_EVERY
     if see_state:
-        _last_state = agora
+        _last_state = now
 
     # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
     # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
-    resource_wins = force or agora - _last_disk >= DISK_CHECK_EVERY
+    resource_wins = force or now - _last_disk >= DISK_CHECK_EVERY
     resources = cfg["events"] & RESOURCE_EVENTS if resource_wins else set()
     if resources:
-        _last_disk = agora
+        _last_disk = now
 
     # O log e o unico que custa uma ida de SSH so dele, entao anda no seu proprio ritmo.
     see_log = "erro-no-log" in cfg["events"] and (
-        force or agora - _last_log >= LOG_CHECK_EVERY
+        force or now - _last_log >= LOG_CHECK_EVERY
     )
     if see_log:
-        _last_log = agora
+        _last_log = now
 
     return _Rhythm(see_state, wants_players, resources, see_log)
 
@@ -1703,8 +1703,8 @@ previous_occurrence = schedule_service.previous_occurrence
 _parse_dt = schedule_service._parse_dt
 
 
-def is_due(sched, agora: datetime) -> bool:
-    return schedule_service.is_due(sched, agora, SCHEDULE_GRACE)
+def is_due(sched, now: datetime) -> bool:
+    return schedule_service.is_due(sched, now, SCHEDULE_GRACE)
 
 
 def fire_schedule(conn: sqlite3.Connection, sched) -> int:
@@ -1819,11 +1819,11 @@ def _with_context() -> None:
         _scheduler_tick()
 
 
-_relogio = scheduler.Clock(SCHEDULE_TICK, _with_context, app.logger)
+_clock = scheduler.Clock(SCHEDULE_TICK, _with_context, app.logger)
 
 
 def start_scheduler() -> None:
-    _relogio.start()
+    _clock.start()
 
 
 # ------------------------------------------------------------------- rotas
@@ -2186,8 +2186,8 @@ def _bar_level(pct: float | None) -> str:
 
 
 @app.template_filter("duration")
-def _human_uptime(segundos: float | None) -> str:
-    total = int(segundos or 0)
+def _human_uptime(seconds: float | None) -> str:
+    total = int(seconds or 0)
     days, rest = divmod(total, 86400)
     hours, rest = divmod(rest, 3600)
     minutes = rest // 60
@@ -2303,8 +2303,8 @@ def list_backups(server: ServerRow) -> list[dict]:
     return backups_rt.list_backups(ssh_run, server, BACKUP_DIR, BACKUP_LIST_MAX)
 
 
-def backup_command(server: ServerRow, caminhos: list[str], sufixo: str = "") -> str:
-    return backups_rt.backup_command(server, BACKUP_DIR, BACKUP_KEEP, caminhos, sufixo)
+def backup_command(server: ServerRow, paths: list[str], suffix: str = "") -> str:
+    return backups_rt.backup_command(server, BACKUP_DIR, BACKUP_KEEP, paths, suffix)
 
 
 def delete_backup(server: ServerRow, name: str) -> str:
@@ -2346,10 +2346,10 @@ def load_config_doc(server: ServerRow, path: str) -> tuple[gameconf.ConfigFile, 
     return doc, info
 
 
-def _save_config_files(sid: int, caminhos: list[str]) -> None:
+def _save_config_files(sid: int, paths: list[str]) -> None:
     conn = db()
     with conn:
-        servers_repo.set_config_files(conn, sid, caminhos)
+        servers_repo.set_config_files(conn, sid, paths)
 
 
 def _target_config(arquivos: list[str], errors: list[str]) -> str:
@@ -2556,10 +2556,10 @@ def follow_operation(job_id: int, op_id: str, sleep=time.sleep) -> None:
     broker_jobs.follow_operation(_broker_job_deps(), job_id, op_id, sleep)
 
 
-def start_broker_job(action: str, username: str, op_id: str, comando: str) -> int:
+def start_broker_job(action: str, username: str, op_id: str, command: str) -> int:
     conn = db()
     with conn:
-        job_id = jobs_repo.start_broker(conn, action, comando, username, now_iso(), op_id)
+        job_id = jobs_repo.start_broker(conn, action, command, username, now_iso(), op_id)
     _fire(lambda: follow_operation(job_id, op_id))
     return job_id
 
@@ -2580,13 +2580,13 @@ def resume_broker_jobs() -> int:
     return len(pending_ones)
 
 
-def _log_broker_action(action: str, username: str, comando: str, output: str,
+def _log_broker_action(action: str, username: str, command: str, output: str,
                              status: str = "ok") -> int:
     """Deixa no historico uma acao curta do broker (desativar, remover, jogo novo)."""
     conn = db()
     with conn:
         return jobs_repo.record_broker(
-            conn, action, status, output, comando, username, now_iso())
+            conn, action, status, output, command, username, now_iso())
 
 
 def _actor() -> str:
@@ -2641,7 +2641,7 @@ def _schedule_or_404(aid: int) -> sqlite3.Row:
     return sched
 
 
-def _next_occurrence(sched, agora: datetime) -> datetime:
+def _next_occurrence(sched, now: datetime) -> datetime:
     """Quando esta tarefa roda da proxima vez.
 
     'intervalo' conta a partir da ultima execucao; diario e semanal somam um passo a
@@ -2650,10 +2650,10 @@ def _next_occurrence(sched, agora: datetime) -> datetime:
     e um `TypeError` numa tela que so quebra para quem tem agendamento cadastrado.
     """
     if sched["kind"] == "intervalo":
-        last_one = _parse_dt(sched["last_run"]) or agora
+        last_one = _parse_dt(sched["last_run"]) or now
         return last_one + timedelta(hours=int(sched["every_hours"]))
 
-    previous = previous_occurrence(sched, agora) or agora
+    previous = previous_occurrence(sched, now) or now
     return previous + timedelta(days=7 if sched["kind"] == "semanal" else 1)
 
 
@@ -2674,11 +2674,11 @@ CHART_MEM = chart_service.CHART_MEM
 _clean_ceiling = chart_service.clean_ceiling
 
 
-def build_chart(amostras, series, teto: float, start, fim, formato_tempo: str) -> dict:
+def build_chart(amostras, series, teto: float, start, fim, time_format: str) -> dict:
     # `SAMPLE_EVERY` entra aqui porque e configuracao do painel: e ele que diz a partir
     # de que buraco entre duas amostras a linha do grafico deve ser cortada.
     return chart_service.build_chart(
-        amostras, series, teto, start, fim, formato_tempo, SAMPLE_EVERY)
+        amostras, series, teto, start, fim, time_format, SAMPLE_EVERY)
 
 
 # --------------------------------------------------------------- historico
@@ -2767,7 +2767,7 @@ def alerts_without_baseline(conn: sqlite3.Connection) -> dict:
 
 # Os limites em porcentagem da tela de Alertas: campo do formulario, chave no banco e
 # como o aviso de recusa chama a coisa.
-LIMITES_ALERTA = (
+ALERT_LIMITS = (
     ("disk_pct", "webhook_disk_pct", "disco cheio"),
     ("mem_pct", "webhook_mem_pct", "memoria cheia"),
     ("cpu_pct", "webhook_cpu_pct", "CPU alta"),
@@ -2961,16 +2961,16 @@ def _insert_server(conn: sqlite3.Connection, data: DeployServer) -> None:
     )
 
 
-def _merge_config_files(guardados: str, novos: str) -> str:
+def _merge_config_files(stored: str, incoming: str) -> str:
     """Os arquivos ja cadastrados mais os do deploy, sem repetir e sem perder nenhum."""
-    listing = [p for p in (guardados or "").splitlines() if p.strip()]
-    for fresh in novos.splitlines():
+    listing = [p for p in (stored or "").splitlines() if p.strip()]
+    for fresh in incoming.splitlines():
         if fresh.strip() and fresh.strip() not in listing:
             listing.append(fresh.strip())
     return "\n".join(listing[:CONFIG_FILES_MAX])
 
 
-def _update_server(conn: sqlite3.Connection, atual, data: DeployServer) -> None:
+def _update_server(conn: sqlite3.Connection, current, data: DeployServer) -> None:
     """Redeploy: o container manda no que e dele, o painel manda no que e escolha.
 
     Nome, servico, portas e caminho de config vem do deploy — sao fatos do container.
@@ -2983,17 +2983,17 @@ def _update_server(conn: sqlite3.Connection, atual, data: DeployServer) -> None:
         conn,
         [
             data.name, data.ssh_user, data.service, data.game_port,
-            data.notes or atual["notes"],
-            data.config_path or atual["config_path"],
-            _merge_config_files(atual["config_files"], data.config_files),
-            atual["backup_paths"] or data.backup_paths,
+            data.notes or current["notes"],
+            data.config_path or current["config_path"],
+            _merge_config_files(current["config_files"], data.config_files),
+            current["backup_paths"] or data.backup_paths,
             data.query_port,
-            atual["player_source"] or data.player_source,
-            atual["join_re"] or data.join_re,
-            atual["leave_re"] or data.leave_re,
-            atual["log_path"] or data.log_path,
+            current["player_source"] or data.player_source,
+            current["join_re"] or data.join_re,
+            current["leave_re"] or data.leave_re,
+            current["log_path"] or data.log_path,
         ],
-        atual["id"],
+        current["id"],
     )
 
 

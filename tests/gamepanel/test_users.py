@@ -186,7 +186,7 @@ def test_sessao_morre_junto_com_a_conta(ana, admin, database, post, login):
 
 # ---------------------------------------------- historico de jobs respeita o papel
 
-SEGREDO = "SENHA-QUE-SO-O-ADMIN-PODE-VER"
+SECRET = "SENHA-QUE-SO-O-ADMIN-PODE-VER"
 ROTINA = "acao-de-rotina-do-operador"
 
 
@@ -211,7 +211,7 @@ def server_with_jobs(database, admin):
     with database:
         for action in ("shell", "terminal", "edit-file", "delete-file", "download-file",
                      "start", "edit-config"):
-            mark = SEGREDO if action in panel.JOB_ACTIONS_ADMIN else ROTINA
+            mark = SECRET if action in panel.JOB_ACTIONS_ADMIN else ROTINA
             cur = database.execute(
                 "INSERT INTO jobs (server_id, target, action, status, exit_code, output,"
                 " command, username, created_at, finished_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -234,8 +234,8 @@ def test_apenas_admin_le_jobs_de_acao_restrita(server_with_jobs, admin, operator
 
 def test_admin_continua_lendo_a_saida_do_console(server_with_jobs, admin):
     _sid, jobs = server_with_jobs
-    corpo = admin.get(f"/jobs/{jobs['shell']}").get_data(as_text=True)
-    assert SEGREDO in corpo
+    body = admin.get(f"/jobs/{jobs['shell']}").get_data(as_text=True)
+    assert SECRET in body
 
 
 def test_historico_na_tela_do_servidor_esconde_o_restrito_do_operador(server_with_jobs, operator):
@@ -243,14 +243,14 @@ def test_historico_na_tela_do_servidor_esconde_o_restrito_do_operador(server_wit
     resp = operator.get(f"/servers/{sid}")
     assert resp.status_code == 200
     page = resp.get_data(as_text=True)
-    assert SEGREDO not in page, "comando do console nao aparece no historico do operador"
+    assert SECRET not in page, "comando do console nao aparece no historico do operador"
     assert ROTINA in page, "o que ele pode fazer continua visivel"
 
 
 def test_historico_na_tela_do_servidor_e_completo_para_o_admin(server_with_jobs, admin):
     sid, _jobs = server_with_jobs
     page = admin.get(f"/servers/{sid}").get_data(as_text=True)
-    assert SEGREDO in page
+    assert SECRET in page
 
 
 # -------------------------------------------- backup e upload seguem o mesmo corte
@@ -296,14 +296,14 @@ def test_operador_ve_backups_e_dispara_mas_nao_gerencia(target_server, operator,
     assert post(operator, f"/servers/{target_server}/files/upload").status_code == 403
 
 
-@pytest.mark.parametrize("ruim", [
+@pytest.mark.parametrize("bad", [
     "../../etc/passwd", "/etc/shadow", "x.tar.gz; rm -rf /", "sem-extensao",
     "..-..tar.gz", "",
 ])
-def test_nome_de_backup_torto_e_recusado_mesmo_para_admin(target_server, admin, post, ruim):
+def test_nome_de_backup_torto_e_recusado_mesmo_para_admin(target_server, admin, post, bad):
     """O nome volta da tela e entra num comando remoto: o que nao casar com
     "<algo>.tar.gz" tem de morrer no painel, antes de chegar no shell do container."""
-    resp = post(admin, f"/servers/{target_server}/backups/delete", {"nome": ruim})
+    resp = post(admin, f"/servers/{target_server}/backups/delete", {"nome": bad})
     assert resp.status_code == 400
 
 

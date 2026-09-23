@@ -13,10 +13,10 @@ import pytest
 from gamepanel.games import config_format as gc
 
 
-def field(doc: gc.ConfigFile, secao: str, chave: str) -> gc.Setting:
+def field(doc: gc.ConfigFile, section: str, key: str) -> gc.Setting:
     """A chave pedida, falhando alto se o parser tiver deixado de enxerga-la."""
-    found = doc.find(secao, chave)
-    assert found is not None, f"{chave!r} nao foi lido da secao {secao!r}"
+    found = doc.find(section, key)
+    assert found is not None, f"{key!r} nao foi lido da secao {section!r}"
     return found
 
 
@@ -78,7 +78,7 @@ def test_palworld_grava_sem_estragar_a_linha():
 
 # ----------------------------------------------------------------------- ini
 
-INI = """; Configuracao do servidor
+INI_TEXT = """; Configuracao do servidor
 [/Script/Dragonwilds.DedicatedServerSettings]
 ServerName=Servidor antigo
 ; senha de quem administra
@@ -93,14 +93,14 @@ SEC_DW = "/Script/Dragonwilds.DedicatedServerSettings"
 
 
 def test_ini_le_secoes_e_comentarios():
-    doc = gc.load("DedicatedServer.ini", INI)
+    doc = gc.load("DedicatedServer.ini", INI_TEXT)
     assert [s.key for s in doc.settings] == [
         "ServerName", "AdminPassword", "MaxPlayers", "FrameRateLimit"]
     assert field(doc, SEC_DW, "AdminPassword").comment == "senha de quem administra"
 
 
 def test_ini_grava_na_secao_certa():
-    doc = gc.load("DedicatedServer.ini", INI)
+    doc = gc.load("DedicatedServer.ini", INI_TEXT)
     fresh = doc.apply([
         gc.Edit(id=field(doc, SEC_DW, "MaxPlayers").id, section=SEC_DW,
                 key="MaxPlayers", value="12"),
@@ -227,7 +227,7 @@ def test_dayz_grava_dentro_da_class_sem_estragar_a_estrutura():
 
 # -------------------------------------------------------------------- limites
 
-@pytest.mark.parametrize("rotulo, chave, value, trecho", [
+@pytest.mark.parametrize("label,key,value,chunk", [
     ("chave vazia", "", "1", "invalido"),
     ("chave com = no nome", "x=y", "1", "invalido"),
     # O nome da chave vai para dentro do arquivo do jogo, gravado por SSH: ele e ASCII e
@@ -238,10 +238,10 @@ def test_dayz_grava_dentro_da_class_sem_estragar_a_estrutura():
     ("chave comecando com ponto", ".x", "1", "invalido"),
     ("quebra de linha no valor", "x", "a\nb", "quebra de linha"),
 ])
-def test_entrada_torta_e_recusada(rotulo, chave, value, trecho):
+def test_entrada_torta_e_recusada(label, key, value, chunk):
     doc = gc.load("a.ini", "[s]\nk=1\n")
-    error = apply_failure(doc, gc.Edit(id="", section="s", key=chave, value=value))
-    assert trecho in error, f"{rotulo}: erro={error!r}"
+    error = apply_failure(doc, gc.Edit(id="", section="s", key=key, value=value))
+    assert chunk in error, f"{label}: erro={error!r}"
 
 
 def test_chave_e_valor_sao_aparados():
@@ -260,7 +260,7 @@ def test_aspas_no_meio_do_valor_sao_recusadas():
 
 
 @pytest.mark.parametrize("name, text", [
-    ("a.ini", INI),
+    ("a.ini", INI_TEXT),
     ("P.ini", PALWORLD),
     ("serverDZ.cfg", DAYZ),
     ("x.json", ENSHROUDED),
@@ -270,12 +270,12 @@ def test_sem_edicao_o_arquivo_volta_igual(name, text):
     assert gc.load(name, text).apply([]) == text
 
 
-@pytest.mark.parametrize("name, text, formato", [
+@pytest.mark.parametrize("name, text, file_format", [
     ("x.json", "{}", "json"),
     ("config", '{"a": 1}', "json"),        # pelo conteudo, sem extensao
     ("serverDZ.cfg", DAYZ, "dayz"),        # pelo `class`
     ("s.cfg", 'a = "b";\n', "dayz"),       # cfg simples tambem e dayz
     ("qualquer.txt", "a=1\n", "ini"),      # ini e o padrao
 ])
-def test_deteccao_de_formato(name, text, formato):
-    assert gc.load(name, text).format_id == formato
+def test_deteccao_de_formato(name, text, file_format):
+    assert gc.load(name, text).format_id == file_format

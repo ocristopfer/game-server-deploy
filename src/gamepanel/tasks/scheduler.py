@@ -16,10 +16,10 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 # (nome para o log, o que rodar).
-Tarefa = tuple[str, Callable[[], Any]]
+Task = tuple[str, Callable[[], Any]]
 
 
-def tick(tasks: Iterable[Tarefa], on_failure: Callable[[str], None]) -> None:
+def tick(tasks: Iterable[Task], on_failure: Callable[[str], None]) -> None:
     """Uma volta do relogio.
 
     Cada tarefa vai no SEU try. Dividindo um try so, uma agenda quebrada levava junto o

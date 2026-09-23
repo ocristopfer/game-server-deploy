@@ -43,7 +43,7 @@ from gamepanel.security import totp  # noqa: E402
 
 # Toda tabela do SCHEMA. Esvaziar e melhor que recriar: `init_db()` tambem roda as
 # migracoes, e repeti-las a cada teste mediria o tempo delas, nao o do teste.
-TABELAS = ("alert_log", "jobs", "samples", "schedules", "servers", "settings",
+TABLES = ("alert_log", "jobs", "samples", "schedules", "servers", "settings",
            "users", "webhooks")
 
 
@@ -52,7 +52,7 @@ def database():
     """Conexao propria com o banco vazio. Fecha sozinha no fim do teste."""
     conn = panel._connect()
     with conn:
-        for table in TABELAS:
+        for table in TABLES:
             conn.execute(f"DELETE FROM {table}")
     _reset_module_state()
     try:
@@ -108,7 +108,7 @@ def client(database):
     return panel.app.test_client()
 
 
-def _login(cli, username: str, senha: str):
+def _login(cli, username: str, password: str):
     """Loga `username` no cliente de teste `cli`. Devolve o proprio `cli`, logado.
 
     Falhar alto (nao 302) e sempre um erro de FIXTURE, nao do teste que a usa - por
@@ -117,7 +117,7 @@ def _login(cli, username: str, senha: str):
     cli.get("/login")
     with cli.session_transaction() as sess:
         token = sess.get("csrf", "")
-    resp = cli.post("/login", data={"username": username, "password": senha, "csrf": token},
+    resp = cli.post("/login", data={"username": username, "password": password, "csrf": token},
                     follow_redirects=False)
     assert resp.status_code == 302, f"login de {username} falhou ({resp.status_code})"
     return cli
@@ -144,8 +144,8 @@ def login(database):
     Cada chamada cria seu proprio `test_client()` - dois logins na mesma suite (chefe e
     peao, por exemplo) nao podem compartilhar sessao.
     """
-    def _do(username: str, senha: str):
-        return _login(panel.app.test_client(), username, senha)
+    def _do(username: str, password: str):
+        return _login(panel.app.test_client(), username, password)
     return _do
 
 

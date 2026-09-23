@@ -199,12 +199,12 @@ def test_token_curto_e_recusado(monkeypatch):
         bc.configure("https://broker:8443", "curto")
 
 
-@pytest.mark.parametrize("ruim", ["9F:92", "zz" * 32, "9F" * 33])
-def test_impressao_invalida_e_erro_nao_ausencia(monkeypatch, ruim):
+@pytest.mark.parametrize("bad", ["9F:92", "zz" * 32, "9F" * 33])
+def test_impressao_invalida_e_erro_nao_ausencia(monkeypatch, bad):
     """Impressao digitada errada NAO pode virar 'sem impressao' (desligaria o pin)."""
     monkeypatch.setattr(bc, "_config", {})
     with pytest.raises(ValueError, match="64 digitos"):
-        bc.configure("https://broker:8443", TOKEN, ruim)
+        bc.configure("https://broker:8443", TOKEN, bad)
 
 
 def test_impressao_aceita_o_formato_do_script_de_verificacao():

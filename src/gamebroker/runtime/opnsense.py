@@ -125,8 +125,8 @@ class Opnsense:
         self._c = cliente
         self._interface = interface
 
-    def _api(self, metodo: str, path: str, action: str, corpo: object = None) -> Response:
-        response = self._c.request(metodo, "/api/firewall" + path, json_corpo=corpo)
+    def _api(self, method: str, path: str, action: str, body: object = None) -> Response:
+        response = self._c.request(method, "/api/firewall" + path, json_body=body)
         if not response.ok:
             raise OpnsenseError(f"{action}: HTTP {response.status}")
         return response
@@ -205,7 +205,7 @@ class Opnsense:
     def reachable(self) -> bool:
         try:
             return self._c.request("POST", "/api/firewall/d_nat/search_rule",
-                                      json_corpo={"current": 1, "rowCount": 1},
+                                      json_body={"current": 1, "rowCount": 1},
                                       timeout=SONDA_TIMEOUT).ok
         except Exception:  # noqa: BLE001
             return False

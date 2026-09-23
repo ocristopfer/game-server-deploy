@@ -82,7 +82,7 @@ def test_idioma_valido_passa(raw):
 
 # ------------------------------------------------------ Accept-Language
 
-@pytest.mark.parametrize(("cabecalho", "esperado"), [
+@pytest.mark.parametrize(("header", "expected"), [
     ("en-US,en;q=0.9", "en"),
     ("en", "en"),
     ("pt-BR,pt;q=0.9,en;q=0.8", "pt"),
@@ -91,8 +91,8 @@ def test_idioma_valido_passa(raw):
     (None, "pt"),
     ("klingon", "pt"),
 ])
-def test_le_a_preferencia_do_navegador(cabecalho, esperado):
-    assert i18n.from_header(cabecalho) == esperado
+def test_le_a_preferencia_do_navegador(header, expected):
+    assert i18n.from_header(header) == expected
 
 
 # ---------------------------------------------------------- campos na frase
@@ -107,15 +107,15 @@ def test_campo_a_mais_e_ignorado(monkeypatch):
     assert i18n.translate("t.simples", "pt", n=15) == "sem marcador"
 
 
-@pytest.mark.parametrize("frase", [
+@pytest.mark.parametrize("phrase", [
     "faltou o {outro}",      # marcador sem campo: KeyError
     "chave {} solta",        # posicional sem argumento: IndexError
     "chave { torta",         # marcador mal formado: ValueError
 ])
-def test_marcador_que_nao_casa_nao_derruba_a_tela(monkeypatch, frase):
+def test_marcador_que_nao_casa_nao_derruba_a_tela(monkeypatch, phrase):
     """Frase e campo vem de lugares diferentes; a tela inteira nao pode cair por isso."""
-    monkeypatch.setitem(i18n.CATALOGS["pt"], "t.torta", frase)
-    assert i18n.translate("t.torta", "pt", n=15) == frase
+    monkeypatch.setitem(i18n.CATALOGS["pt"], "t.torta", phrase)
+    assert i18n.translate("t.torta", "pt", n=15) == phrase
 
 
 def test_a_frase_do_idioma_pedido_e_que_recebe_o_campo(monkeypatch):

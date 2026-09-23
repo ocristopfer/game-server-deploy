@@ -69,11 +69,11 @@ def _code_only(source: str) -> str:
         for i in range(first - 1, (last or first)):
             lines[i] = ""
     sem_docstring = chr(10).join(lines)
-    saida = []
+    output = []
     for tok in tokenize.generate_tokens(io.StringIO(sem_docstring).readline):
         if tok.type != tokenize.COMMENT:
-            saida.append(tok.string)
-    return " ".join(saida)
+            output.append(tok.string)
+    return " ".join(output)
 
 
 def _tables_in(path: Path) -> set[str]:
@@ -91,12 +91,12 @@ def test_a_varredura_encontra_sql():
 
 @pytest.mark.parametrize(("table", "module"), sorted(OWNED.items()))
 def test_a_tabela_so_tem_sql_no_repositorio_dela(table: str, module: str):
-    dono = REPOSITORIES / module
-    assert dono.exists(), f"o repositorio de `{table}` nao existe: {dono}"
+    owner = REPOSITORIES / module
+    assert owner.exists(), f"o repositorio de `{table}` nao existe: {owner}"
     fora = sorted(
         p.relative_to(PANEL).as_posix()
         for p in _python_files()
-        if p != dono and table in _tables_in(p)
+        if p != owner and table in _tables_in(p)
         # O esquema e as migrations falam de TODA tabela por definicao.
         and p.parent.name != "persistence"
     )

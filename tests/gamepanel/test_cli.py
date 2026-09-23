@@ -149,11 +149,11 @@ def test_listas_vem_por_virgula_e_saem_uma_por_linha():
     assert seen_ones[0]["backup_paths"] == "/save"
 
 
-@pytest.mark.parametrize(("raw", "esperado"), [
+@pytest.mark.parametrize(("raw", "expected"), [
     ("", ""), ("  ", ""), ("/a", "/a"), ("/a,,/b", "/a\n/b"), (" /a , /b ", "/a\n/b"),
 ])
-def test_por_virgula(raw, esperado):
-    assert cli.by_comma(raw) == esperado
+def test_por_virgula(raw, expected):
+    assert cli.by_comma(raw) == expected
 
 
 # ----------------------------------------------------------- servidor web

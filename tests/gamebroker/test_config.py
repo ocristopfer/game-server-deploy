@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from fake_http import KEY_OPN, SECRET_OPN, TOKEN_PVE
-from test_ssh_installer import BLOB, CHAVE_PUBLICA, FakeRunner
+from test_ssh_installer import BLOB, PUBLIC_KEY, FakeRunner
 
 import gamebroker.wsgi as prod
 from gamebroker.config import ConfigError, load
@@ -14,8 +14,8 @@ from gamebroker.runtime.fakes import FakeNetwork
 from gamebroker.runtime.network import RealNetwork
 
 TOKEN_BROKER = "b" * 48
-CHAVE_DO_PAINEL = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainelPainelPainelPainelPainel painel@gp"
-SEGREDOS = (TOKEN_BROKER, TOKEN_PVE, SECRET_OPN)
+PANEL_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainelPainelPainelPainelPainel painel@gp"
+SECRETS = (TOKEN_BROKER, TOKEN_PVE, SECRET_OPN)
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def env(tmp_path: Path, games_dir: Path) -> dict[str, str]:
     """Um ambiente COMPLETO e valido (Proxmox/OPNsense em https com impressao)."""
     ssh = tmp_path / "ssh"
     ssh.mkdir()
-    (ssh / "id_ed25519.pub").write_text(CHAVE_PUBLICA + "\n", encoding="utf-8")
+    (ssh / "id_ed25519.pub").write_text(PUBLIC_KEY + "\n", encoding="utf-8")
     lib = tmp_path / "lib"
     lib.mkdir()
     for name in ("ct-install.sh", "ct-phases.sh"):
@@ -32,7 +32,7 @@ def env(tmp_path: Path, games_dir: Path) -> dict[str, str]:
         "BROKER_TOKEN": TOKEN_BROKER, "BROKER_ALLOW_IPS": "192.168.2.19",
         "BROKER_STATE_DIR": str(tmp_path / "state"), "BROKER_GAMES_DIR": str(games_dir),
         "BROKER_LIB_DIR": str(lib), "BROKER_SSH_KEY": str(ssh / "id_ed25519"),
-        "BROKER_PANEL_PUBKEY": CHAVE_DO_PAINEL, "BROKER_GATEWAY": "192.168.2.1",
+        "BROKER_PANEL_PUBKEY": PANEL_KEY, "BROKER_GATEWAY": "192.168.2.1",
         "BROKER_IP_PREFIX": "192.168.2", "BROKER_IP_INICIO": "30", "BROKER_IP_FIM": "40",
         "PROXMOX_URL": "https://192.168.1.254:8006", "PROXMOX_TOKEN": TOKEN_PVE,
         "PROXMOX_CERT_SHA256": ":".join(["9F"] * 32), "PROXMOX_NODE": "pve", "PROXMOX_POOL": "games",
@@ -53,7 +53,7 @@ def test_ambiente_completo_carrega(env):
     assert cfg.ips[-1] == "192.168.2.40"
     assert (cfg.ctids.start, cfg.ctids.stop - 1) == (300, 399)
     assert cfg.proxmox_fingerprint == "9f" * 32, "normalizada (sem dois-pontos, minuscula)"
-    assert cfg.proxmox.ssh_keys == (CHAVE_PUBLICA, CHAVE_DO_PAINEL), "as DUAS chaves entram no CT novo"
+    assert cfg.proxmox.ssh_keys == (PUBLIC_KEY, PANEL_KEY), "as DUAS chaves entram no CT novo"
     assert cfg.ssh.blob == BLOB
     assert (cfg.max_instances, cfg.max_creations_per_hour) == (8, 4)
     assert cfg.opnsense_wan == "wan"
@@ -82,13 +82,13 @@ def test_ctid_base_e_faixa_de_portas_configuraveis(env):
     assert (cfg.ips[0], cfg.ips[-1]) == ("192.168.2.102", "192.168.2.110")
 
 
-@pytest.mark.parametrize(("nome", "valor"), [
+@pytest.mark.parametrize(("name", "value"), [
     ("BROKER_PORT_INICIO", "80"), ("BROKER_PORT_INICIO", "abc"), ("BROKER_PORT_FIM", "70000"),
     ("BROKER_CTID_BASE", "-1"), ("BROKER_CTID_BASE", "abc"),
 ])
-def test_faixa_de_portas_e_base_invalidas(env, nome, valor):
-    env[nome] = valor
-    with pytest.raises(ConfigError, match=nome):
+def test_faixa_de_portas_e_base_invalidas(env, name, value):
+    env[name] = value
+    with pytest.raises(ConfigError, match=name):
         load(env)
 
 
@@ -105,17 +105,17 @@ def test_ctid_base_pequena_demais_deixaria_o_ctid_abaixo_de_100(env):
         load(env)
 
 
-OBRIGATORIAS = ["BROKER_TOKEN", "BROKER_PANEL_PUBKEY", "BROKER_GATEWAY", "BROKER_IP_PREFIX", "PROXMOX_URL",
+REQUIRED = ["BROKER_TOKEN", "BROKER_PANEL_PUBKEY", "BROKER_GATEWAY", "BROKER_IP_PREFIX", "PROXMOX_URL",
                 "PROXMOX_TOKEN", "PROXMOX_NODE", "PROXMOX_STORAGE", "PROXMOX_TEMPLATE", "PROXMOX_BRIDGE",
                 "OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET"]
 
 
-@pytest.mark.parametrize("nome", OBRIGATORIAS)
-def test_variavel_obrigatoria_ausente_e_nomeada(env, nome):
-    del env[nome]
+@pytest.mark.parametrize("name", REQUIRED)
+def test_variavel_obrigatoria_ausente_e_nomeada(env, name):
+    del env[name]
     with pytest.raises(ConfigError) as error:
         load(env)
-    assert any(p.startswith(f"{nome}:") for p in error.value.problems)
+    assert any(p.startswith(f"{name}:") for p in error.value.problems)
 
 
 def test_todos_os_problemas_de_uma_vez_sem_duplicar(env):
@@ -127,7 +127,7 @@ def test_todos_os_problemas_de_uma_vez_sem_duplicar(env):
     assert sorted(names) == ["BROKER_GATEWAY", "BROKER_TOKEN", "OPNSENSE_KEY", "PROXMOX_NODE"], "cada falta aparece UMA vez"
 
 
-@pytest.mark.parametrize(("nome", "valor", "trecho"), [
+@pytest.mark.parametrize(("name", "value", "chunk"), [
     ("BROKER_TOKEN", "curto", "ao menos 32"),
     ("BROKER_ALLOW_IPS", "192.168.2.19, nao-e-ip", "nao e um IPv4"),
     ("BROKER_IP_INICIO", "abc", "inteiro"),
@@ -145,9 +145,9 @@ def test_todos_os_problemas_de_uma_vez_sem_duplicar(env):
     ("PROXMOX_TEMPLATE", "debian.tar.zst", "template"),
     ("BROKER_PANEL_PUBKEY", "nao-e-chave", "PROXMOX_*"),
 ])
-def test_valor_invalido(env, nome, valor, trecho):
-    env[nome] = valor
-    with pytest.raises(ConfigError, match=trecho):
+def test_valor_invalido(env, name, value, chunk):
+    env[name] = value
+    with pytest.raises(ConfigError, match=chunk):
         load(env)
 
 
@@ -160,10 +160,10 @@ def test_faixas_invertidas(env):
     assert "BROKER_IP_PREFIX/INICIO/FIM" in text
 
 
-@pytest.mark.parametrize("nome", ["PROXMOX_CERT_SHA256", "OPNSENSE_CERT_SHA256"])
-def test_https_exige_impressao_do_certificado(env, nome):
-    del env[nome]
-    with pytest.raises(ConfigError, match=f"{nome}: obrigatoria com https"):
+@pytest.mark.parametrize("name", ["PROXMOX_CERT_SHA256", "OPNSENSE_CERT_SHA256"])
+def test_https_exige_impressao_do_certificado(env, name):
+    del env[name]
+    with pytest.raises(ConfigError, match=f"{name}: obrigatoria com https"):
         load(env)
 
 
@@ -185,15 +185,15 @@ def test_pasta_lib_incompleta(env):
         load(env)
 
 
-@pytest.mark.parametrize("nome", ["BROKER_TOKEN", "PROXMOX_TOKEN", "OPNSENSE_SECRET", "OPNSENSE_KEY"])
-def test_nenhuma_mensagem_de_erro_carrega_segredo(env, nome):
+@pytest.mark.parametrize("name", ["BROKER_TOKEN", "PROXMOX_TOKEN", "OPNSENSE_SECRET", "OPNSENSE_KEY"])
+def test_nenhuma_mensagem_de_erro_carrega_segredo(env, name):
     """Erro de config vai para o journal: o NOME da variavel pode aparecer, o VALOR nunca."""
-    env[nome] = "curto"
+    env[name] = "curto"
     env["BROKER_IP_INICIO"] = "abc"
     env["PROXMOX_CERT_SHA256"] = "lixo"
     with pytest.raises(ConfigError) as error:
         load(env)
-    for secret in SEGREDOS:
+    for secret in SECRETS:
         assert secret not in str(error.value)
 
 
@@ -211,7 +211,7 @@ def env_local(env, pve, opn):
 def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
     executor = FakeRunner()
     app = prod.create_app_from_config(load(env_local), executor=executor, network=FakeNetwork(),
-                                   run=lambda tarefa: tarefa())
+                                   run=lambda task: task())
     http = app.test_client()
     auth = {"Authorization": f"Bearer {TOKEN_BROKER}", "X-Actor": "zeca"}
 
@@ -221,8 +221,8 @@ def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
     operation = http.get(f"/v1/operations/{response.get_json()['operation_id']}", headers=auth).get_json()
     assert operation["state"] == "ok"
     ct = pve.fake.cts[300]
-    assert CHAVE_PUBLICA in ct["chaves"], "chave do broker: para instalar"
-    assert CHAVE_DO_PAINEL in ct["chaves"], "chave do painel: para operar depois"
+    assert PUBLIC_KEY in ct["keys"], "chave do broker: para instalar"
+    assert PANEL_KEY in ct["keys"], "chave do painel: para operar depois"
     assert ct["net0"].endswith("ip=192.168.2.30/24,gw=192.168.2.1,type=veth")
     assert sorted(r["destination.port"] for r in opn.fake.rules.values()) == ["7001", "7002"]
     assert any("bash ct-install.sh" in c for c in executor.commands())
@@ -246,7 +246,7 @@ def test_ambiente_ruim_derruba_o_start_com_a_lista_e_sem_segredo(env, capsys):
     assert "NAO SUBIU" in error
     assert "PROXMOX_NODE" in error
     assert "BROKER_IP_INICIO" in error
-    for secret in SEGREDOS:
+    for secret in SECRETS:
         assert secret not in error
 
 

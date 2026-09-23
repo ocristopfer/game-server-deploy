@@ -29,14 +29,14 @@ def clean_cache():
     ps._players_cache.clear()
 
 
-def server(**campos) -> dict:
+def server(**fields) -> dict:
     base = {
         "id": 1, "host": "10.0.0.1", "query_port": 0, "player_source": "",
         "http_url": "", "http_auth": "", "http_body": "", "http_list_path": "",
         "http_count_path": "", "http_login_url": "", "http_login_body": "",
         "http_token_path": "", "http_token": "", "join_re": "", "leave_re": "",
     }
-    return {**base, **campos}
+    return {**base, **fields}
 
 
 def deps(**trocas) -> ps.PlayerDeps:
@@ -44,7 +44,7 @@ def deps(**trocas) -> ps.PlayerDeps:
         "http_json": lambda *a, **k: {},
         "connect": lambda: sqlite3.connect(":memory:"),
         "read_log_lines": lambda *a, **k: [],
-        "query_players": lambda host, porta: {"players": 0, "list": []},
+        "query_players": lambda host, port: {"players": 0, "list": []},
         "players_ttl": 5.0,
     }
     return ps.PlayerDeps(**{**fallback, **trocas})
@@ -87,8 +87,8 @@ def test_servidor_sem_fonte_nao_consulta_nada():
 def test_a2s_usa_a_porta_de_consulta_e_marca_a_fonte():
     seen_ones = []
 
-    def fake(host, porta):
-        seen_ones.append((host, porta))
+    def fake(host, port):
+        seen_ones.append((host, port))
         return {"players": 3, "list": []}
 
     out = ps.server_players(deps(query_players=fake), server(player_source="a2s", query_port=27015))
@@ -109,8 +109,8 @@ def test_a2s_sem_porta_vira_erro_na_tela_e_nao_excecao():
 def test_contagem_vem_do_cache_dentro_do_prazo():
     calls = []
 
-    def fake(host, porta):
-        calls.append(porta)
+    def fake(host, port):
+        calls.append(port)
         return {"players": len(calls), "list": []}
 
     d = deps(query_players=fake)
@@ -124,8 +124,8 @@ def test_contagem_vem_do_cache_dentro_do_prazo():
 def test_force_ignora_o_cache():
     calls = []
 
-    def fake(host, porta):
-        calls.append(porta)
+    def fake(host, port):
+        calls.append(port)
         return {"players": len(calls), "list": []}
 
     d = deps(query_players=fake)
@@ -139,8 +139,8 @@ def test_force_ignora_o_cache():
 def test_prazo_zero_nunca_aproveita_o_cache():
     calls = []
 
-    def fake(host, porta):
-        calls.append(porta)
+    def fake(host, port):
+        calls.append(port)
         return {"players": 1, "list": []}
 
     d = deps(query_players=fake, players_ttl=0)
@@ -153,8 +153,8 @@ def test_prazo_zero_nunca_aproveita_o_cache():
 def test_invalidate_esquece_o_servidor():
     calls = []
 
-    def fake(host, porta):
-        calls.append(porta)
+    def fake(host, port):
+        calls.append(port)
         return {"players": 1, "list": []}
 
     d = deps(query_players=fake)
@@ -169,8 +169,8 @@ def test_erro_tambem_fica_em_cache():
     """Servidor fora do ar custa 3s de espera: repetir isso a cada tela nao se paga."""
     calls = []
 
-    def fake(host, porta):
-        calls.append(porta)
+    def fake(host, port):
+        calls.append(port)
         raise QueryError("fora do ar")
 
     d = deps(query_players=fake)
@@ -256,7 +256,7 @@ def test_login_vai_sem_authorization():
     """E ele quem PRODUZ a credencial: mandar a antiga junto so confunde a API."""
     seen_ones = []
 
-    def fake(server, url, auth, corpo, exigir_json=True):
+    def fake(server, url, auth, body, exigir_json=True):
         seen_ones.append(auth)
         return {"token": "t"}
 
@@ -270,7 +270,7 @@ def test_login_vai_sem_authorization():
 def test_sem_login_configurado_usa_a_credencial_do_cadastro():
     seen_ones = []
 
-    def fake(server, url, auth, corpo, exigir_json=True):
+    def fake(server, url, auth, body, exigir_json=True):
         seen_ones.append(auth)
         return {}
 
@@ -281,7 +281,7 @@ def test_sem_login_configurado_usa_a_credencial_do_cadastro():
 def test_com_login_e_sem_token_guardado_faz_login_antes(servers_database):
     seen_ones = []
 
-    def fake(server, url, auth, corpo, exigir_json=True):
+    def fake(server, url, auth, body, exigir_json=True):
         seen_ones.append((url, auth))
         return {"token": "novo"}
 
@@ -295,7 +295,7 @@ def test_com_login_e_sem_token_guardado_faz_login_antes(servers_database):
 def test_token_vencido_renova_uma_vez_e_repete(servers_database):
     seen_ones = []
 
-    def fake(server, url, auth, corpo, exigir_json=True):
+    def fake(server, url, auth, body, exigir_json=True):
         seen_ones.append((url, auth))
         if url == "http://x/login":
             return {"token": "novo"}
@@ -376,16 +376,16 @@ def test_avisar_sem_mensagem_e_recusado():
 def test_kick_monta_rota_e_corpo_do_catalogo():
     seen_ones = []
 
-    def fake(server, url, auth, corpo, exigir_json=True):
-        seen_ones.append((url, corpo, exigir_json))
+    def fake(server, url, auth, body, exigir_json=True):
+        seen_ones.append((url, body, exigir_json))
         return {}
 
     target = server(player_source="http", http_url="http://127.0.0.1:8212/v1/api/players")
     label = ps.player_action(deps(http_json=fake), target, "kick", "steam_1", "tchau")
-    url, corpo, require_json = seen_ones[0]
+    url, body, require_json = seen_ones[0]
     assert url == "http://127.0.0.1:8212/v1/api/kick"
-    assert '"userid": "steam_1"' in corpo
-    assert '"message": "tchau"' in corpo
+    assert '"userid": "steam_1"' in body
+    assert '"message": "tchau"' in body
     # As rotas de acao respondem 200 com corpo vazio.
     assert require_json is False
     # CHAVE de catalogo, nao a frase: o servico nao sabe em que idioma a tela esta
