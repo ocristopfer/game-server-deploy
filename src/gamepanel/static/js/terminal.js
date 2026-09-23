@@ -171,20 +171,20 @@
         else this.oscBuf += ch;
         continue;
       }
-      if (this.state === 'esc') { i = this.handleEsc(ch, chars, i); continue; }
+      if (this.state === 'escapeHtml') { i = this.handleEsc(ch, chars, i); continue; }
       if (this.state === 'csi') {
         if ((code >= 0x30 && code <= 0x3f) || code === 0x20) {
           if (code >= 0x3c && code <= 0x3f) this.prefix = ch; else this.params += ch;
         } else if (code >= 0x40 && code <= 0x7e) {
           this.handleCsi(ch);
           this.state = 'ground';
-        } else if (code === 0x1b) { this.state = 'esc'; }
+        } else if (code === 0x1b) { this.state = 'escapeHtml'; }
         continue;
       }
       if (this.state === 'charset') { this.state = 'ground'; continue; }
 
       switch (code) {
-        case 0x1b: this.state = 'esc'; break;
+        case 0x1b: this.state = 'escapeHtml'; break;
         case 0x07: break;                                  // bell
         case 0x08: this.x = Math.max(0, this.x - 1); this.wrapNext = false; break;
         case 0x09: this.x = Math.min(this.cols - 1, (Math.floor(this.x / 8) + 1) * 8); break;
@@ -197,7 +197,7 @@
       }
     }
     // Sequencia cortada no fim do bloco: guarda para o proximo pedaco.
-    if (this.state === 'esc' || this.state === 'csi') {
+    if (this.state === 'escapeHtml' || this.state === 'csi') {
       this.pending = '\x1b' + (this.state === 'csi' ? '[' + this.prefix + this.params : '');
       this.state = 'ground'; this.params = ''; this.prefix = '';
     }
@@ -341,7 +341,7 @@
       this.x = this.alt.x; this.y = this.alt.y;
       this.top = this.alt.top; this.bottom = this.alt.bottom;
       this.alt = null;
-      // A tela guardada pode ter outro tamanho se a janela mudou durante o htop.
+      // A tela guardada pode ter outro fileSize se a janela mudou durante o htop.
       this.resizeLinesTo(this.rows, this.cols);
     }
   };
@@ -391,7 +391,7 @@
   };
 
   // ---------------------------------------------------------- renderizacao
-  function esc(s) {
+  function escapeHtml(s) {
     return s.replace(/[&<>]/g, function (c) {
       return c === '&' ? '&amp;' : (c === '<' ? '&lt;' : '&gt;');
     });
@@ -417,14 +417,14 @@
     var html = '', run = '', sig = null, style = '', i;
     function flush() {
       if (!run) return;
-      html += style ? '<span style="' + style + '">' + esc(run) + '</span>' : esc(run);
+      html += style ? '<span style="' + style + '">' + escapeHtml(run) + '</span>' : escapeHtml(run);
       run = '';
     }
     for (i = 0; i < line.length; i++) {
       var c = line[i];
       if (i === cursorX) {
         flush();
-        html += '<span class="cur" style="' + styleOf(c) + '">' + esc(c.c || ' ') + '</span>';
+        html += '<span class="cur" style="' + styleOf(c) + '">' + escapeHtml(c.c || ' ') + '</span>';
         sig = null;
         continue;
       }
@@ -664,7 +664,7 @@
   inputEl.addEventListener('focus', function () { term.focused = true; term.render(); });
   inputEl.addEventListener('blur', function () { term.focused = false; term.render(); });
   viewEl.addEventListener('mouseup', function () {
-    // Clicar para focar sem atrapalhar quem esta selecionando texto para copiar.
+    // Clicar para focar sem atrapalhar quem esta selecionando texto para copyToClipboard.
     if (window.getSelection().isCollapsed) inputEl.focus();
   });
 
@@ -695,9 +695,9 @@
     Barra: '/',
     Til: '~',
   };
-  document.querySelectorAll('[data-tecla]').forEach(function (btn) {
+  document.querySelectorAll('[data-key]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var seq = SEQUENCIAS[btn.dataset.tecla];
+      var seq = SEQUENCIAS[btn.dataset.key];
       if (!seq) return;
       send(typeof seq === 'function' ? seq() : seq);
       inputEl.focus();

@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% import "components/servidor.html" as srv with context %}
+{% import "components/server.html" as srv with context %}
 {% block title %}{{ _('server.terminal') }} &mdash; {{ server.name }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('server.terminal') ~ ' — ' ~ server.name) }}
-{{ srv.abas(server, 'terminal') }}
+{{ ui.page_header(_('server.terminal') ~ ' — ' ~ server.name) }}
+{{ srv.tabs(server, 'terminal') }}
 
 {# Ver o comentario em console.html: um destino na navegacao, dois modos aqui. #}
 <nav class="tabs" aria-label="{{ _('console.terminal_mode') }}">
   <span class="tabs__item" aria-current="page">
-    <span class="icone" aria-hidden="true">⌨️</span>{{ _('console.interactive') }}</span>
+    <span class="icon" aria-hidden="true">⌨️</span>{{ _('console.interactive') }}</span>
   <a class="tabs__item" href="{{ url_for('console.index', sid=server.id) }}">
-    <span class="icone" aria-hidden="true">▶</span>{{ _('console.single_command') }}</a>
+    <span class="icon" aria-hidden="true">▶</span>{{ _('console.single_command') }}</a>
 </nav>
 
 <div class="flash">
@@ -49,22 +49,22 @@
   {# Fileira de teclas que o teclado virtual do celular nao tem. Sem ela, vim, htop e
      qualquer menu curses sao inoperaveis no telefone: nao ha Esc, nao ha Tab, nao ha
      setas. Cada botao manda a MESMA sequencia que o teclado fisico mandaria. #}
-  <div class="term-teclas" role="toolbar" aria-label="{{ _('terminal.special_keys') }}">
+  <div class="term-keys" role="toolbar" aria-label="{{ _('terminal.special_keys') }}">
     <button type="button" class="btn" id="term-teclado" title="{{ _('terminal.open_keyboard') }}">⌨</button>
-    <button type="button" class="btn" data-tecla="Escape">Esc</button>
-    <button type="button" class="btn" data-tecla="Tab">Tab</button>
+    <button type="button" class="btn" data-key="Escape">Esc</button>
+    <button type="button" class="btn" data-key="Tab">Tab</button>
     <button type="button" class="btn" data-ctrl="C" title="{{ _('terminal.interrupt') }}">^C</button>
-    <button type="button" class="btn" data-tecla="ArrowUp" aria-label="{{ _('terminal.arrow_up') }}">↑</button>
-    <button type="button" class="btn" data-tecla="ArrowDown" aria-label="{{ _('terminal.arrow_down') }}">↓</button>
-    <button type="button" class="btn" data-tecla="ArrowLeft" aria-label="{{ _('terminal.arrow_left') }}">←</button>
-    <button type="button" class="btn" data-tecla="ArrowRight" aria-label="{{ _('terminal.arrow_right') }}">→</button>
-    <button type="button" class="btn" data-tecla="Home">Home</button>
-    <button type="button" class="btn" data-tecla="End">End</button>
-    <button type="button" class="btn" data-tecla="PageUp">PgUp</button>
-    <button type="button" class="btn" data-tecla="PageDown">PgDn</button>
-    <button type="button" class="btn" data-tecla="Barra">/</button>
-    <button type="button" class="btn" data-tecla="Pipe">|</button>
-    <button type="button" class="btn" data-tecla="Til">~</button>
+    <button type="button" class="btn" data-key="ArrowUp" aria-label="{{ _('terminal.arrow_up') }}">↑</button>
+    <button type="button" class="btn" data-key="ArrowDown" aria-label="{{ _('terminal.arrow_down') }}">↓</button>
+    <button type="button" class="btn" data-key="ArrowLeft" aria-label="{{ _('terminal.arrow_left') }}">←</button>
+    <button type="button" class="btn" data-key="ArrowRight" aria-label="{{ _('terminal.arrow_right') }}">→</button>
+    <button type="button" class="btn" data-key="Home">Home</button>
+    <button type="button" class="btn" data-key="End">End</button>
+    <button type="button" class="btn" data-key="PageUp">PgUp</button>
+    <button type="button" class="btn" data-key="PageDown">PgDn</button>
+    <button type="button" class="btn" data-key="Barra">/</button>
+    <button type="button" class="btn" data-key="Pipe">|</button>
+    <button type="button" class="btn" data-key="Til">~</button>
   </div>
 </div>
 

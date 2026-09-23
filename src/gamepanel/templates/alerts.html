@@ -5,7 +5,7 @@
 {% macro caixas(prefixo, marcados) %}
   {# A lista de eventos e a mesma nos destinos e no formulario de cadastro; o prefixo so
      serve para o `for` do rotulo nao apontar para o id de outro destino. #}
-  <div class="opcoes">
+  <div class="options">
     {% for chave, rotulo in events.items() %}
     <label class="checkbox" for="{{ prefixo }}-{{ chave }}">
       <input type="checkbox" id="{{ prefixo }}-{{ chave }}" name="events"
@@ -17,13 +17,13 @@
 {% endmacro %}
 
 {% block content %}
-{% call ui.cabecalho(_('nav.alerts')) %}
+{% call ui.page_header(_('nav.alerts')) %}
   {% if cfg.active %}
     {# Plural e por idioma, entao sao duas chaves e nao um 's' colado no fim. #}
-    {{ ui.selo(_('alerts.destinations_on_one' if cfg.active | length == 1
+    {{ ui.badge(_('alerts.destinations_on_one' if cfg.active | length == 1
                  else 'alerts.destinations_on_many', n=cfg.active | length), 'on') }}
   {% else %}
-    {{ ui.selo(_('alerts.no_destination_on'), 'cold') }}
+    {{ ui.badge(_('alerts.no_destination_on'), 'cold') }}
   {% endif %}
 {% endcall %}
 
@@ -33,11 +33,11 @@
   <h2>{{ _('alerts.destinations') }}</h2>
 
   {% if not cfg.targets %}
-    <p class="muted small vazio">{{ _('alerts.no_destination_yet') }}</p>
+    <p class="muted small empty">{{ _('alerts.no_destination_yet') }}</p>
   {% endif %}
 
   {% if pending %}
-    <div class="flash pendencia">
+    <div class="flash pending">
       {{ _h('alerts.pending_intro') }}
       <ul>
         {% for chave, falta in pending.items() %}
@@ -49,17 +49,17 @@
   {% endif %}
 
   {% for h in cfg.targets %}
-  <form class="hook{% if not h.enabled %} desligado{% endif %}" method="post"
+  <form class="hook{% if not h.enabled %} disabled{% endif %}" method="post"
         action="{{ url_for('alerts.hook_save', hid=h.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
 
     <div class="hook-head">
-      <label class="hook-nome">
+      <label class="hook-name">
         <span class="sr-only">{{ _('alerts.destination_name') }}</span>
         <input name="name" value="{{ h.name }}" maxlength="60"
                placeholder="{{ _('alerts.team_channel') }}">
       </label>
-      <label class="checkbox hook-liga">
+      <label class="checkbox hook-toggle">
         <input type="checkbox" name="enabled" value="1" {% if h.enabled %}checked{% endif %}>
         <span>{{ _('alerts.on') if h.enabled else _('alerts.off') }}</span>
       </label>
@@ -68,26 +68,26 @@
     <p class="hook-url" title="{{ _('alerts.url_is_a_secret') }}">
       <code class="trunc">{{ h.url_curta }}</code>
     </p>
-    <label class="hook-troca">
-      <span class="rotulo">{{ _('alerts.change_url') }}</span>
+    <label class="hook-swap">
+      <span class="label">{{ _('alerts.change_url') }}</span>
       <input name="url" value="" spellcheck="false" autocomplete="off" autocapitalize="none"
              placeholder="{{ _('alerts.leave_blank_to_keep') }}">
     </label>
 
-    <div class="hook-eventos">
-      <span class="rotulo">{{ _('alerts.notify_about') }}</span>
+    <div class="hook-events">
+      <span class="label">{{ _('alerts.notify_about') }}</span>
       {{ caixas('h%d' % h.id, h.events) }}
       {% if not h.events %}
-        <p class="muted small aviso">{{ _('alerts.no_event_checked') }}</p>
+        <p class="muted small notice">{{ _('alerts.no_event_checked') }}</p>
       {% endif %}
     </div>
 
-    <div class="form-actions hook-acoes">
-      {{ ui.botao(_('action.save'), variante='primary') }}
-      {{ ui.botao(_('alerts.test'), extra='formaction="' ~ url_for('alerts.hook_test', hid=h.id) ~ '" formnovalidate') }}
+    <div class="form-actions hook-actions">
+      {{ ui.button(_('action.save'), variant='primary') }}
+      {{ ui.button(_('alerts.test'), extra='formaction="' ~ url_for('alerts.hook_test', hid=h.id) ~ '" formnovalidate') }}
       <span class="spacer"></span>
-      {{ ui.botao(_('alerts.remove'), variante='danger',
-                  confirmar=_('alerts.remove_confirm', name=h.name),
+      {{ ui.button(_('alerts.remove'), variant='danger',
+                  confirm=_('alerts.remove_confirm', name=h.name),
                   extra='formaction="' ~ url_for('alerts.hook_delete', hid=h.id) ~ '" formnovalidate') }}
     </div>
   </form>
@@ -96,7 +96,7 @@
   {% if cfg.targets | length >= hook_limit %}
     <p class="muted small">{{ _('alerts.limit_reached', n=hook_limit) }}</p>
   {% else %}
-  <details class="hook-novo"{% if not cfg.targets %} open{% endif %}>
+  <details class="hook-new"{% if not cfg.targets %} open{% endif %}>
     <summary>+ {{ _('alerts.add_destination') }}</summary>
     <form method="post" action="{{ url_for('alerts.hook_new') }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -112,10 +112,10 @@
           <small>{{ _('alerts.webhook_url_hint') }}</small>
         </label>
       </div>
-      <span class="rotulo">{{ _('alerts.notify_about') }}</span>
+      <span class="label">{{ _('alerts.notify_about') }}</span>
       {{ caixas('novo', defaults) }}
       <div class="form-actions">
-        {{ ui.botao(_('alerts.add'), variante='primary', bloco=true) }}
+        {{ ui.button(_('alerts.add'), variant='primary', block=true) }}
       </div>
     </form>
   </details>
@@ -130,29 +130,29 @@
   <h2>{{ _('alerts.preferences') }}</h2>
   <form method="post" action="{{ url_for('alerts.save') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label class="curto">{{ _('alerts.warn_disk_over') }}
-      <span class="com-unidade">
+    <label class="short">{{ _('alerts.warn_disk_over') }}
+      <span class="with-unit">
         <input name="disk_pct" type="number" min="50" max="100" value="{{ cfg.disk }}" inputmode="numeric">
-        <span class="unidade">%</span>
+        <span class="unit">%</span>
       </span>
       <small>{{ _('alerts.disk_hint') }}</small>
     </label>
-    <label class="curto">{{ _('alerts.warn_memory_over') }}
-      <span class="com-unidade">
+    <label class="short">{{ _('alerts.warn_memory_over') }}
+      <span class="with-unit">
         <input name="mem_pct" type="number" min="50" max="100" value="{{ cfg.memory }}" inputmode="numeric">
-        <span class="unidade">%</span>
+        <span class="unit">%</span>
       </span>
       <small>{{ _('alerts.memory_hint') }}</small>
     </label>
-    <label class="curto">{{ _('alerts.warn_cpu_over') }}
-      <span class="com-unidade">
+    <label class="short">{{ _('alerts.warn_cpu_over') }}
+      <span class="with-unit">
         <input name="cpu_pct" type="number" min="50" max="100" value="{{ cfg.cpu }}" inputmode="numeric">
-        <span class="unidade">%</span>
+        <span class="unit">%</span>
       </span>
       <small>{{ _('alerts.cpu_hint', n=disk_every) }}</small>
     </label>
     <div class="form-actions">
-      {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
+      {{ ui.button(_('action.save'), variant='primary', block=true) }}
     </div>
   </form>
 </div>
@@ -200,7 +200,7 @@
 
 <div class="card">
   <h2>{{ _('alerts.how_it_works') }}</h2>
-  <ul class="regras">
+  <ul class="rules">
     <li>{{ _h('alerts.rule_rhythm', monitor=monitor, meter=disk_every) }}</li>
     <li>{{ _h('alerts.rule_joining', n=players_every) }}</li>
     <li>{{ _h('alerts.rule_log_listen', monitor=monitor,

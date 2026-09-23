@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% import "components/servidor.html" as srv with context %}
+{% import "components/server.html" as srv with context %}
 {% block title %}{{ _('server.files') }} &mdash; {{ server.name }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('server.files') ~ ' — ' ~ server.name) }}
-{{ srv.abas(server, 'files') }}
+{{ ui.page_header(_('server.files') ~ ' — ' ~ server.name) }}
+{{ srv.tabs(server, 'files') }}
 
 {% for err in errors %}<div class="flash error">{{ err }}</div>{% endfor %}
 
@@ -14,7 +14,7 @@
     <form method="get" action="{{ url_for('files.index', sid=server.id) }}" class="path-form">
       <input name="path" value="{{ current }}" spellcheck="false" autocapitalize="none"
              aria-label="{{ _('files.path_lower') }}">
-      {{ ui.botao(_('files.go')) }}
+      {{ ui.button(_('files.go')) }}
     </form>
   </div>
   {# O upload vai para a pasta que esta aberta agora — por isso ele mora aqui, ao lado
@@ -24,7 +24,7 @@
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="path" value="{{ current }}">
     <input type="file" name="arquivo" required aria-label="{{ _('files.file_to_upload') }}">
-    {{ ui.botao(_('files.upload_here'), icone='⬆') }}
+    {{ ui.button(_('files.upload_here'), icon='⬆') }}
   </form>
   <p class="muted small">
     O arquivo sobe em pedacos, direto para o container &mdash; da para mandar mod ou save
@@ -37,8 +37,8 @@
 </div>
 
 <div class="filegrid">
-  <div class="card browser">
-    <h2 class="quebra">{{ current }}</h2>
+  <div class="card">
+    <h2 class="wrap-anywhere">{{ current }}</h2>
     <ul class="filelist">
       {% if current != '/' %}
       <li><a href="{{ url_for('files.index', sid=server.id, path=current.rsplit('/', 1)[0] or '/') }}">.. (subir)</a></li>
@@ -56,14 +56,14 @@
             <a class="dl" title="Baixar {{ e.name }}"
                href="{{ url_for('files.download', sid=server.id, path=e.path) }}">{{ _('files.download') }}</a>
           {% endif %}
-          {# O nome vem do container: ele viaja por data-confirmar (escapado como
+          {# O nome vem do container: ele viaja por data-confirm (escapado como
              HTML) e nunca dentro de codigo JavaScript. #}
           <form method="post" action="{{ url_for('files.delete', sid=server.id) }}"
                 class="inline-del">
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
             <input type="hidden" name="path" value="{{ e.path }}">
             <button class="btn-link btn-link--danger" type="submit"
-                    data-confirmar="Apagar {{ e.path }}?&#10;&#10;Isto nao tem volta."
+                    data-confirm="Apagar {{ e.path }}?&#10;&#10;Isto nao tem volta."
                     title="Apagar {{ e.name }}{{ ' (so se estiver vazia)' if e.dir else '' }}">{{ _('files.delete') }}</button>
           </form>
         </span>
@@ -88,9 +88,9 @@
           jogo &mdash; mas da para baixar o arquivo inteiro.
         </div>
         <div class="form-actions">
-          {{ ui.botao('Baixar (' ~ opened.size | filesize ~ ')',
+          {{ ui.button('Baixar (' ~ opened.size | filesize ~ ')',
                       href=url_for('files.download', sid=server.id, path=opened.path),
-                      variante='primary', icone='⬇', bloco=true) }}
+                      variant='primary', icon='⬇', block=true) }}
         </div>
       {% elif opened.truncated %}
         <div class="flash">
@@ -99,9 +99,9 @@
           {{ opened.shown | filesize }} &mdash; baixe o arquivo para trabalhar nele inteiro.
         </div>
         <div class="form-actions">
-          {{ ui.botao('Baixar (' ~ opened.size | filesize ~ ')',
+          {{ ui.button('Baixar (' ~ opened.size | filesize ~ ')',
                       href=url_for('files.download', sid=server.id, path=opened.path),
-                      variante='primary', icone='⬇', bloco=true) }}
+                      variant='primary', icon='⬇', block=true) }}
         </div>
         <pre class="log">{{ opened.text }}</pre>
       {% else %}
@@ -113,9 +113,9 @@
                   autocapitalize="off" autocorrect="off"
                   aria-labelledby="nome-do-arquivo">{{ opened.text }}</textarea>
         <div class="form-actions">
-          {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
-          {{ ui.botao(_('files.discard'), href=url_for('files.index', sid=server.id, file=opened.path), variante='ghost') }}
-          {{ ui.botao(_('files.download_title'), href=url_for('files.download', sid=server.id, path=opened.path), variante='ghost') }}
+          {{ ui.button(_('action.save'), variant='primary', block=true) }}
+          {{ ui.button(_('files.discard'), href=url_for('files.index', sid=server.id, file=opened.path), variant='ghost') }}
+          {{ ui.button(_('files.download_title'), href=url_for('files.download', sid=server.id, path=opened.path), variant='ghost') }}
           <span class="muted small" id="editor-pos"></span>
         </div>
         <p class="muted small mt-4">
@@ -126,8 +126,8 @@
         </p>
       </form>
       <div class="form-actions">
-        {{ ui.acao(url_for('config_quick.register_file', sid=server.id), _('files.edit_field_by_field'),
-                   variante='ghost', tamanho='sm', icone='⚙️', campos={'path': opened.path}) }}
+        {{ ui.action(url_for('config_quick.register_file', sid=server.id), _('files.edit_field_by_field'),
+                   variant='ghost', size='sm', icon='⚙️', fields={'path': opened.path}) }}
         <span class="muted small">
           {{ _('files.opens_as_form') }} <strong>{{ _('files.configuration') }}</strong>
         </span>
@@ -137,9 +137,9 @@
       {# Vale para os tres casos acima (binario, so leitura e editavel): o que nao da
          para editar ainda da para apagar. #}
       <div class="form-actions">
-        {{ ui.acao(url_for('files.delete', sid=server.id), _('files.delete_file'),
-                   variante='danger', tamanho='sm', campos={'path': opened.path},
-                   confirmar=_('files.delete_confirm', path=opened.path)) }}
+        {{ ui.action(url_for('files.delete', sid=server.id), _('files.delete_file'),
+                   variant='danger', size='sm', fields={'path': opened.path},
+                   confirm=_('files.delete_confirm', path=opened.path)) }}
         <span class="muted small">
           tira <code>{{ opened.name }}</code> do container na hora &mdash; aqui nao ha
           copia <code>.bak</code> nem como desfazer

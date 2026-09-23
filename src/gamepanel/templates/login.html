@@ -4,7 +4,7 @@
 {% block content %}
 <div class="card card--login">
   <h1><span aria-hidden="true">🎮</span> {{ _('app.name') }}</h1>
-  <p class="muted centro">{{ _('login.subtitle') }}</p>
+  <p class="muted center">{{ _('login.subtitle') }}</p>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>{{ _('login.username') }}
@@ -15,7 +15,7 @@
       <input name="password" type="password" autocomplete="current-password" required>
     </label>
     <div class="form-actions">
-      {{ ui.botao(_('login.title'), variante='primary', bloco=true) }}
+      {{ ui.button(_('login.title'), variant='primary', block=true) }}
     </div>
   </form>
 </div>

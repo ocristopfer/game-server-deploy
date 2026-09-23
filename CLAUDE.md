@@ -50,7 +50,8 @@ docker compose restart panel          # depois de mexer em app.py/navigation.py
 As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_gameconf.py`,
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
-`test_contrato_template.py`, `test_schema.py` e mais uma duzia) sao **pytest** — 861
+`test_contrato_template.py`, `test_contrato_frontend.py`, `test_javascript.py`,
+`test_schema.py` e mais uma duzia) sao **pytest** — 908
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`banco`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -100,7 +101,12 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 859 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 906 passam iguais nos dois lugares.
+
+**`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
+tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
+parseia e importa, que e o degrau que faltava — ate aqui um `const` renomeado pela
+metade so aparecia no console de quem abrisse a tela.
 
 Templates e estaticos entram por bind mount: recarregar a pagina basta. `app.py` e
 `navigation.py` sao recarregados pelo `--reload` do gunicorn, mas **rota nova ou mudanca
@@ -426,6 +432,48 @@ telas a mao** (a varredura de `curl` abaixo): foi so ali que apareceram o eixo d
 grafico sem numero e a macro `energia` chamada pelo nome velho.
 
 ---
+
+## O contrato do front: template, CSS e JavaScript
+
+O mesmo defeito do contrato de template, em mais tres pares. Em todos, o nome existe
+como TEXTO dos dois lados e nenhuma ferramenta liga os dois; em todos, a pagina continua
+respondendo 200.
+
+- classe so no `class=` = estilo que nunca chega, e a tela abre torta;
+- classe so no `.css` = regra morta, que a proxima pessoa le como se estivesse em uso;
+- `data-*` so no template = comportamento que nao monta, sem nada no console;
+- `data-*` so no JavaScript = feature que nunca encontra elemento nenhum.
+
+`tests/gamepanel/test_contrato_frontend.py` cobra os quatro, mais o contrato de LEITURA
+do medidor (`metrics.X` no `server_detail.html` contra o que o `parse_metrics` entrega —
+a lista sai do proprio codigo, nao de uma copia escrita a mao). Achados reais dele, na
+primeira execucao: tres classes sem regra e sete regras mortas.
+
+- **Regra de CSS que ninguem usa SAI.** Grandfathering uma lista de excecoes deixaria o
+  teste fraco desde o primeiro dia — e a lista e que envelheceria em silencio.
+- **Classe montada em runtime** (`{% set classes = classes + ['btn--' ~ variant] %}`)
+  entra pelo PREFIXO: o teste junta `btn--` e aceita qualquer `btn--*`. Sem isso toda
+  variacao pareceria morta.
+- **`cores` e a palavra que colide**: nucleo de CPU em ingles, cor em portugues. Uma
+  renomeacao automatica ja trocou uma pela outra nos dois lados e o numero de nucleos
+  sumiu da tela. Ha um teste so para ela.
+
+### Renomear no front: cada nome no SEU escopo
+
+- **Classe** troca no seletor do `.css` (com o ponto), dentro de `class="..."` e do
+  argumento `css_class=` dos macros, e no `classList`/seletor/`class="..."` do JS.
+  Trocar a palavra solta no arquivo mudaria dado: `key` tambem e variavel de template e
+  chave de dicionario.
+- **Seletor composto nao tem fronteira a esquerda.** Em `body.has-tabbar` o caractere
+  antes do ponto e uma letra, entao um `(?<![\w-])` recusa o casamento e a regra fica
+  para tras enquanto o template ja usa o nome novo. O ponto JA e a fronteira.
+- **O hifen conta como fronteira para o `\b`**, entao `icon` casaria dentro de
+  `btn--icon` e as duas trocas se atropelam. Use `(?<![\w-])x(?![\w-])`.
+- **`data-x` tem duas formas**: o atributo no template e `dataset.xCamel` no JavaScript.
+- **Parametro de macro Jinja vive em dois lugares**: a assinatura e o CORPO. Trocar so a
+  assinatura da `'campos' is undefined` na primeira tela que usa o macro.
+- **Macro chama macro sem prefixo** dentro do proprio arquivo (`{{ state(status) }}`, e
+  nao `srv.state`): uma troca que so procura `ui.`/`srv.` deixa essas para tras.
 
 ## Templates Jinja
 

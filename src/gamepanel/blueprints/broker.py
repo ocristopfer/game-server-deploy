@@ -19,7 +19,7 @@ def catalog():
     except panel.broker_client.BrokerError as failure:
         flash(panel.translate("flash.broker_error", reason=failure.message), "error")
         games = []
-    return render_template("catalogo.html", games=games, recipes=panel.BROKER_RECIPES, form={},
+    return render_template("catalog.html", games=games, recipes=panel.BROKER_RECIPES, form={},
                            game_templates=GAME_TEMPLATES)
 
 
@@ -51,7 +51,7 @@ def catalog_new():
             games = panel.broker_client.catalog()
         except panel.broker_client.BrokerError:
             games = []
-        return render_template("catalogo.html", games=games, recipes=panel.BROKER_RECIPES,
+        return render_template("catalog.html", games=games, recipes=panel.BROKER_RECIPES,
                                form=request.form, game_templates=GAME_TEMPLATES), 400
     panel._log_broker_action("broker-jogo", panel._ator(), data.get("chave", ""), "Jogo adicionado ao catalogo.")
     flash(panel.translate("flash.game_added",
@@ -73,7 +73,7 @@ def instances():
         r["broker_id"]: r
         for r in panel.db().execute("SELECT id, name, broker_id FROM servers WHERE broker_id > 0")
     }
-    return render_template("instancias.html", instances=instances, games=games, servers=bound)
+    return render_template("instances.html", instances=instances, games=games, servers=bound)
 
 
 @bp.post("/instances/new")

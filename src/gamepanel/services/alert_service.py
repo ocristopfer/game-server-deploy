@@ -307,11 +307,11 @@ def cpu_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> None
     mark = deps.monitor_state.setdefault(sid, {})
     # So avisa na virada
     if tall and not mark.get("cpu_alta"):
-        colors = data.get("cores", 1)
+        cores = data.get("cores", 1)
         proc = data.get("proc", {})
         proc_cpu = proc.get("cpu_pct")
-        detail = str(Message("alert.cpu_detail_one" if colors == 1
-                               else "alert.cpu_detail_many", pct=cpu, cores=colors))
+        detail = str(Message("alert.cpu_detail_one" if cores == 1
+                               else "alert.cpu_detail_many", pct=cpu, cores=cores))
         if proc_cpu is not None:
             detail += str(Message("alert.cpu_game_part", pct=proc_cpu))
         deps.notify(conn, "cpu-alta",

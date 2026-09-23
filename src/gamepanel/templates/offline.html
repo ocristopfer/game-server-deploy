@@ -19,7 +19,7 @@
 </head>
 <body>
 <main class="wrap">
-  <div class="card card--vazio card--login">
+  <div class="card card--empty card--login">
     <h1><span aria-hidden="true">📡</span> {{ _('offline.heading') }}</h1>
     <p class="muted">
       O painel nao respondeu. Ele so funciona com acesso a rede onde os containers
@@ -31,7 +31,7 @@
     {# Um link, e nao um botao com onclick: assim esta pagina nao precisa de uma
        linha de JavaScript para funcionar. #}
     <div class="form-actions">
-      <a class="btn btn--primary btn--bloco" href="{{ url_for('dashboard.index') }}">{{ _('offline.retry') }}</a>
+      <a class="btn btn--primary btn--block" href="{{ url_for('dashboard.index') }}">{{ _('offline.retry') }}</a>
     </div>
   </div>
 </main>

@@ -3,12 +3,12 @@
 {% block title %}{{ _('nav.instances.help') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{% call ui.cabecalho(_('nav.instances.help')) %}
-  {{ ui.botao(_('nav.catalog'), href=url_for('broker.catalog'), variante='ghost', icone='📚') }}
+{% call ui.page_header(_('nav.instances.help')) %}
+  {{ ui.button(_('nav.catalog'), href=url_for('broker.catalog'), variant='ghost', icon='📚') }}
 {% endcall %}
 
 {# Formulario a esquerda, instancias a direita no desktop; uma coluna no celular. #}
-<div class="grid-cartoes">
+<div class="card-grid">
 <div class="card">
   <h2>{{ _('instances.new') }}</h2>
   {% if games %}
@@ -28,8 +28,8 @@
       <small>Como a instancia aparece no painel. Letras, numeros, espaco, ponto, hifen e sublinhado.</small>
     </label>
     <div class="form-actions">
-      {{ ui.botao(_('instances.create'), variante='primary', bloco=true,
-                  confirmar=_('instances.create_confirm')) }}
+      {{ ui.button(_('instances.create'), variant='primary', block=true,
+                  confirm=_('instances.create_confirm')) }}
     </div>
   </form>
   <p class="muted small mt-4">
@@ -55,15 +55,15 @@
           {% else %}
             <strong>{{ i.name }}</strong>
           {% endif %}
-          <span class="badge {{ {'ativa':'on','desativada':'cold','reservada':'cold','falhou':'off'}.get(i.state, 'cold') }}">{{ i.state }}</span>
+          <span class="badge {{ {'active':'on','desativada':'cold','reservada':'cold','falhou':'off'}.get(i.state, 'cold') }}">{{ i.state }}</span>
           <div class="muted small">{{ i.game }} · {{ i.ip }} · CT {{ i.ctid }}</div>
           <div class="muted small">
             Portas: {% for p in i.ports %}{{ p.number }}/{{ p.proto }}{% if not loop.last %}, {% endif %}{% endfor %}
           </div>
           {% if i.detail %}<div class="muted small">{{ i.detail }}</div>{% endif %}
           {% if i.state == 'ativa' %}
-            {{ ui.acao(url_for('broker.instance_deactivate', iid=i.id), _('account.disable'), tamanho='sm',
-                       confirmar=_('instances.deactivate_confirm', name=i.name)) }}
+            {{ ui.action(url_for('broker.instance_deactivate', iid=i.id), _('account.disable'), size='sm',
+                       confirm=_('instances.deactivate_confirm', name=i.name)) }}
           {% elif i.state in ('desativada', 'falhou') %}
             <details>
               <summary class="btn btn--danger btn--sm">{{ _('instances.remove') }}</summary>
@@ -76,8 +76,8 @@
                   <input type="checkbox" name="db_only" value="1">
                   {{ _('instances.forget_record_only') }}
                 </label>
-                {{ ui.botao(_('instances.remove'), variante='danger', tamanho='sm',
-                            confirmar=_('instances.remove_confirm', name=i.name)) }}
+                {{ ui.button(_('instances.remove'), variant='danger', size='sm',
+                            confirm=_('instances.remove_confirm', name=i.name)) }}
               </form>
             </details>
           {% endif %}

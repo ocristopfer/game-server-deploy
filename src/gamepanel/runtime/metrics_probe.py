@@ -174,10 +174,10 @@ def _rates_from_samples(data: dict[str, Any]) -> dict[str, Any]:
     if dt <= 0:
         return out
 
-    colors = data["cores"]
+    cores = data["cores"]
     # cpu.stat do cgroup mede o container; /proc/stat so acerta com lxcfs no meio.
     if a[1] != "-" and b[1] != "-":
-        out["cpu_pct"] = _pct((_num(b[1]) - _num(a[1])) / 1e6, dt * colors)
+        out["cpu_pct"] = _pct((_num(b[1]) - _num(a[1])) / 1e6, dt * cores)
     else:
         total = _num(b[2]) - _num(a[2])
         out["cpu_pct"] = _pct(total - (_num(b[3]) - _num(a[3])), total)
@@ -186,7 +186,7 @@ def _rates_from_samples(data: dict[str, Any]) -> dict[str, Any]:
     out["net_tx"] = max(0.0, (_num(b[5]) - _num(a[5])) / dt)
     if data["pid"]:
         used = (_num(b[6]) - _num(a[6])) / data["clk_tck"]
-        out["proc_cpu_pct"] = _pct(used, dt * colors)
+        out["proc_cpu_pct"] = _pct(used, dt * cores)
     return out
 
 
@@ -207,12 +207,12 @@ def parse_metrics(raw: str) -> dict[str, Any]:
     """Transforma a saida do METRICS_SCRIPT em numeros prontos para a tela."""
     data = _collect_metrics(raw)
     rates = _rates_from_samples(data)
-    colors = data["cores"]
+    cores = data["cores"]
     meminfo = data["meminfo"]
 
     out: dict[str, Any] = {
         # Pode ser fracionario quando o container tem limite de CPU (ex.: 1.5 nucleos).
-        "cores": int(colors) if colors == int(colors) else round(colors, 1),
+        "cores": int(cores) if cores == int(cores) else round(cores, 1),
         "load": data["load"], "uptime": data["uptime"],
         "disks": sorted(data["disks"].values(), key=lambda d: d["mount"]),
         "cpu_pct": rates["cpu_pct"],

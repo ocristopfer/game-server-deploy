@@ -3,7 +3,7 @@
 {% block title %}{{ _('nav.ssh_key') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('nav.ssh_key')) }}
+{{ ui.page_header(_('nav.ssh_key')) }}
 
 <div class="card">
   <p>O painel controla cada servidor por SSH, usando a chave abaixo. Para um container
@@ -14,8 +14,8 @@
   {% if pubkey %}
     <pre class="log" id="pubkey">{{ pubkey }}</pre>
     <div class="form-actions">
-      {{ ui.botao(_('account_2fa.copy_key'), tipo='button', icone='📋',
-                  extra='data-copiar="#pubkey" hidden') }}
+      {{ ui.button(_('account_2fa.copy_key'), type='button', icon='📋',
+                  extra='data-copy="#pubkey" hidden') }}
     </div>
   {% else %}
     <p class="flash error">{{ _('ssh_key.not_found') }}</p>

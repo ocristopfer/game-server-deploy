@@ -9,21 +9,21 @@
 
 {# Selo de estado do servico. Uma regra so, num lugar so: antes esta expressao
    ternaria de tres niveis estava copiada em tres templates. #}
-{% macro estado(status) -%}
-  {{ ui.selo(status.service, 'on' if status.service == 'active' else ('off' if status.reachable else 'cold')) }}
+{% macro state(status) -%}
+  {{ ui.badge(status.service, 'on' if status.service == 'active' else ('off' if status.reachable else 'cold')) }}
 {%- endmacro %}
 
 
 {# ------------------------------------------------------------- navegacao
    A fita de abas das telas de um servidor. As secoes vem do `ui.py`; este macro so
    sabe desenhar o que vier — e por isso uma tela nova aparece aqui sozinha. #}
-{% macro abas(server, ativa) %}
+{% macro tabs(server, active) %}
 <nav class="tabs" aria-label="{{ _('server.sections_of_this_server') }}">
   {% for s in server_sections %}
     <a class="tabs__item" href="{{ url_for(section_endpoint(s), sid=server.id) }}"
        title="{{ _(s.help) }}"
-       {% if s.key == ativa %}aria-current="page"{% endif %}>
-      <span class="icone" aria-hidden="true">{{ s.icon }}</span>{{ _(s.label) }}
+       {% if s.key == active %}aria-current="page"{% endif %}>
+      <span class="icon" aria-hidden="true">{{ s.icon }}</span>{{ _(s.label) }}
     </a>
   {% endfor %}
 </nav>
@@ -33,16 +33,16 @@
 {# ---------------------------------------------------------------- acoes
    Os botoes de ligar/desligar. `compacto` e a versao do cartao do painel: rotulo
    curto e botao esticado, porque ali eles dividem uma linha de celular. #}
-{% macro power(server, actions, compacto=false) %}
-<div class="cluster energia">
+{% macro power(server, actions, compact=false) %}
+<div class="cluster power">
   {% for a in actions %}
-    {{ ui.acao(
+    {{ ui.action(
          url_for('servers.action', sid=server.id, action=a.key),
-         _(a.short) if compacto else _(a.label),
-         variante=a.variant,
-         icone=a.icon,
-         confirmar=(_(a.label) ~ ' — ' ~ server.name ~ '?') if a.confirm else '',
-         bloco=compacto) }}
+         _(a.short) if compact else _(a.label),
+         variant=a.variant,
+         icon=a.icon,
+         confirm=(_(a.label) ~ ' — ' ~ server.name ~ '?') if a.confirm else '',
+         block=compact) }}
   {% endfor %}
 </div>
 {% endmacro %}
@@ -51,15 +51,15 @@
 {# Manutencao e um grupo a parte de proposito: "Atualizar" derruba o servidor por
    varios minutos e nao pode ficar encostado no "Reiniciar" como se fosse do mesmo
    peso. Quem so queria reiniciar nao tropeca num update de 30 GB. #}
-{% macro manutencao(server, actions) %}
+{% macro maintenance(server, actions) %}
 <div class="cluster">
   {% for a in actions %}
-    {{ ui.acao(
+    {{ ui.action(
          url_for('servers.action', sid=server.id, action=a.key),
          _(a.label),
-         variante=a.variant,
-         icone=a.icon,
-         confirmar=(_(a.label) ~ ' — ' ~ server.name ~ '?') if a.confirm else '') }}
+         variant=a.variant,
+         icon=a.icon,
+         confirm=(_(a.label) ~ ' — ' ~ server.name ~ '?') if a.confirm else '') }}
   {% endfor %}
 </div>
 {% endmacro %}
@@ -70,16 +70,16 @@
    link); a linha de baixo tem so o controle de energia que faz sentido agora e um
    menu com o resto. Antes eram oito botoes por cartao, um deles ("Detalhes")
    apontando para o mesmo lugar que o titulo logo acima. #}
-{% macro cartao(server, status) %}
+{% macro card(server, status) %}
 <article class="card server">
   <div class="server__head">
-    <div class="server__nome">
+    <div class="server__name">
       <h2><a href="{{ url_for('servers.detail', sid=server.id) }}">{{ server.name }}</a></h2>
       <span class="server__host">{{ server.ssh_user }}@{{ server.host }}{% if server.ssh_port != 22 %}:{{ server.ssh_port }}{% endif %}</span>
     </div>
-    <div class="badges server__selos">
+    <div class="badges server__badges">
       {% if player_source(server) %}<span class="badge" data-players="{{ server.id }}" hidden></span>{% endif %}
-      {{ estado(status) }}
+      {{ state(status) }}
     </div>
   </div>
 
@@ -89,22 +89,22 @@
     <span class="muted small">{{ _('server.measuring') }}</span>
   </div>
 
-  <div class="server__acoes">
-    {{ power(server, card_power(status.service), compacto=true) }}
-    {% call ui.menu('', icone='⋯', titulo='Mais acoes em ' ~ server.name) %}
-      <span class="menu__titulo">{{ server.name }}</span>
+  <div class="server__actions">
+    {{ power(server, card_power(status.service), compact=true) }}
+    {% call ui.menu('', icon='⋯', title='Mais acoes em ' ~ server.name) %}
+      <span class="menu__title">{{ server.name }}</span>
       {% for s in server_sections %}
         <a class="menu__item" role="menuitem" href="{{ url_for(section_endpoint(s), sid=server.id) }}">
-          <span class="icone" aria-hidden="true">{{ s.icon }}</span>{{ _(s.label) }}
+          <span class="icon" aria-hidden="true">{{ s.icon }}</span>{{ _(s.label) }}
         </a>
       {% endfor %}
       <hr class="menu__sep">
-      <span class="menu__titulo">{{ _('server.server') }}</span>
+      <span class="menu__title">{{ _('server.server') }}</span>
       {% for a in remaining_power(status.service) + maintenance_actions %}
-        {{ ui.menu_acao(
+        {{ ui.menu_action(
              url_for('servers.action', sid=server.id, action=a.key),
-             _(a.label), icone=a.icon,
-             confirmar=(_(a.label) ~ ' — ' ~ server.name ~ '?') if a.confirm else '') }}
+             _(a.label), icon=a.icon,
+             confirm=(_(a.label) ~ ' — ' ~ server.name ~ '?') if a.confirm else '') }}
       {% endfor %}
     {% endcall %}
   </div>

@@ -294,14 +294,14 @@ def test_busca_nao_chama_o_broker(chefe, broker):
 
 def test_catalogo_traz_o_campo_de_busca(chefe, broker):
     html = chefe.get("/catalog").get_data(as_text=True)
-    assert "data-busca-de-jogo" in html
+    assert "data-game-search" in html
     assert "/api/v1/catalog/suggestions" in html
 
 
 def test_catalogo_oferece_o_modelo_de_unreal_com_os_valores_na_marcacao(chefe, broker):
-    """O seletor nasce escondido e sem `name` (nao vai no envio); o JS le data-valores."""
+    """O seletor nasce escondido e sem `name` (nao vai no envio); o JS le data-values."""
     html = chefe.get("/catalog").get_data(as_text=True)
-    assert "data-modelo-jogo" in html
+    assert "data-game-template" in html
     assert "Unreal Engine" in html
     assert "LogNet: Join succeeded" in html
     assert "-log -Port={PORT}" in html

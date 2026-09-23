@@ -1,7 +1,7 @@
 /* Ponto de entrada do painel.
  *
  * Aqui nao ha logica de tela nenhuma: este arquivo so conhece o CONTRATO das
- * features — cada uma exporta `{ seletor, montar(el) }` — e as liga aos elementos
+ * features — cada uma exporta `{ selector, mount(el) }` — e as liga aos elementos
  * que a pagina de fato trouxe.
  *
  * O que isso compra:
@@ -16,45 +16,45 @@
  */
 import { $$ } from './core/dom.js';
 
-import { menuSuspenso } from './features/menu.js';
-import { confirmar } from './features/confirm.js';
-import { copiar } from './features/copy.js';
-import { medidoresDoPainel, medidoresDoServidor, barrasIniciais } from './features/metrics.js';
-import { jogadoresDoPainel, jogadoresDoServidor } from './features/players.js';
-import { seguirLog } from './features/logfeed.js';
-import { acompanharJob } from './features/jobwatch.js';
-import { editorDeArquivo } from './features/fileeditor.js';
-import { filtroDeConfig, maisLinhasDeConfig, configSuja } from './features/configform.js';
-import { caixaDeComando } from './features/console.js';
-import { grafico } from './features/charts.js';
-import { botaoInstalar, servicoOffline } from './features/pwa.js';
-import { modeloDeJogo } from './features/modelo-jogo.js';
-import { buscaDeJogo } from './features/busca-de-jogo.js';
+import { dropdownMenu } from './features/menu.js';
+import { confirmAction } from './features/confirm.js';
+import { copyToClipboard } from './features/copy.js';
+import { panelMeters, serverMeters, initialBars } from './features/metrics.js';
+import { panelPlayers, serverPlayers } from './features/players.js';
+import { followLog } from './features/logfeed.js';
+import { watchJob } from './features/jobwatch.js';
+import { fileEditor } from './features/fileeditor.js';
+import { configFilter, moreConfigRows, dirtyConfig } from './features/configform.js';
+import { commandBox } from './features/console.js';
+import { chart } from './features/charts.js';
+import { installButton, offlineWorker } from './features/pwa.js';
+import { gameTemplate } from './features/game-template.js';
+import { gameSearch } from './features/game-search.js';
 
 const FEATURES = [
   // estrutura
-  menuSuspenso, confirmar, copiar, servicoOffline, botaoInstalar,
+  dropdownMenu, confirmAction, copyToClipboard, offlineWorker, installButton,
   // leitura ao vivo
-  barrasIniciais, medidoresDoPainel, medidoresDoServidor,
-  jogadoresDoPainel, jogadoresDoServidor, seguirLog, acompanharJob,
+  initialBars, panelMeters, serverMeters,
+  panelPlayers, serverPlayers, followLog, watchJob,
   // formularios
-  editorDeArquivo, filtroDeConfig, maisLinhasDeConfig, configSuja, caixaDeComando, modeloDeJogo, buscaDeJogo,
+  fileEditor, configFilter, moreConfigRows, dirtyConfig, commandBox, gameTemplate, gameSearch,
   // visualizacao
-  grafico,
+  chart,
 ];
 
-export function montarTudo(raiz = document) {
+export function mountAll(raiz = document) {
   FEATURES.forEach((feature) => {
-    $$(feature.seletor, raiz).forEach((el) => {
+    $$(feature.selector, raiz).forEach((el) => {
       try {
-        feature.montar(el);
+        feature.mount(el);
       } catch (err) {
         // Uma feature quebrada nao pode levar as outras junto: o painel controla
         // servidores de verdade, e uma tela meio viva vale mais que uma tela branca.
-        console.error(`feature "${feature.seletor}" falhou ao montar`, err);
+        console.error(`feature "${feature.selector}" falhou ao mount`, err);
       }
     });
   });
 }
 
-montarTudo();
+mountAll();

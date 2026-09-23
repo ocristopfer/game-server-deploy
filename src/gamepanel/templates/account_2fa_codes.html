@@ -3,10 +3,10 @@
 {% block title %}{{ _('account_2fa_codes.title') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('account_2fa_codes.title')) }}
+{{ ui.page_header(_('account_2fa_codes.title')) }}
 
 <div class="card card--form">
-  <p class="flash pendencia">
+  <p class="flash pending">
     <strong>{{ _('account_2fa_codes.save_them_now') }}</strong> Eles aparecem so esta vez. Cada um entra
     no lugar do codigo do aplicativo uma unica vez — e a saida se voce perder o celular.
     Guarde num gerenciador de senhas ou impresso, nunca no mesmo celular do aplicativo.
@@ -14,8 +14,8 @@
   <pre class="log" id="codigos-2fa">{% for c in codes %}{{ c }}
 {% endfor %}</pre>
   <div class="form-actions">
-    <button type="button" class="btn btn--sm" data-copiar="#codigos-2fa" hidden>{{ _('account_2fa_codes.copy_codes') }}</button>
-    {{ ui.botao(_('account_2fa_codes.saved_them'), href=url_for('account.index'), variante='primary', bloco=true) }}
+    <button type="button" class="btn btn--sm" data-copy="#codigos-2fa" hidden>{{ _('account_2fa_codes.copy_codes') }}</button>
+    {{ ui.button(_('account_2fa_codes.saved_them'), href=url_for('account.index'), variant='primary', block=true) }}
   </div>
 </div>
 {% endblock %}

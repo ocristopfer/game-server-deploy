@@ -2,7 +2,7 @@
 
 Este arquivo existe por causa de um defeito real. Durante a traducao dos identificadores
 para ingles, um `render_template(instancias=...)` virou `instances=...` e o
-`instancias.html` passou a renderizar uma lista VAZIA -- sem erro, sem 500, sem nada no
+`instances.html` passou a renderizar uma lista VAZIA -- sem erro, sem 500, sem nada no
 log. Jinja trata variavel ausente como indefinida e segue em frente, entao a unica pista
 era a tela em branco.
 

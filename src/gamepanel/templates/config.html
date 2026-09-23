@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% import "components/servidor.html" as srv with context %}
+{% import "components/server.html" as srv with context %}
 {% block title %}{{ _('server.config') }} &mdash; {{ server.name }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('server.config') ~ ' — ' ~ server.name) }}
-{{ srv.abas(server, 'config') }}
+{{ ui.page_header(_('server.config') ~ ' — ' ~ server.name) }}
+{{ srv.tabs(server, 'config') }}
 
 {% for err in errors %}<div class="flash error">{{ err }}</div>{% endfor %}
 
@@ -30,12 +30,12 @@
     <span class="path-form">
       <input name="path" placeholder="/opt/game/.../ServerSettings.ini" spellcheck="false"
              autocapitalize="none" aria-label="{{ _('config.file_path') }}">
-      {{ ui.botao(_('config.use_this_file')) }}
+      {{ ui.button(_('config.use_this_file')) }}
     </span>
     {# Procurar candidatos existe SO aqui. Antes havia um segundo botao "Procurar
        arquivos de config" na tela de Arquivos, rodando a mesma varredura e devolvendo
        a mesma lista — so que la o resultado nao dava para fixar em lugar nenhum. #}
-    {{ ui.botao(_('config.search_container'), variante='ghost', tamanho='sm', icone='🔎',
+    {{ ui.button(_('config.search_container'), variant='ghost', size='sm', icon='🔎',
                 href=url_for('config_quick.index', sid=server.id, descobrir=1, file=target)) }}
   </form>
   {% endif %}
@@ -104,16 +104,16 @@
   <div class="card">
     <div class="card__head">
       <h2>Configuracoes ({{ doc.settings | length }})</h2>
-      <input class="conf-busca" placeholder="{{ _('config.filter_placeholder') }}" data-filtro-config
+      <input class="conf-search" placeholder="{{ _('config.filter_placeholder') }}" data-config-filter
              spellcheck="false" autocomplete="off" aria-label="{{ _('config.filter_label') }}">
     </div>
 
     {% for sec in doc.sections %}
-    <fieldset class="conf-sec" data-sec="{{ sec.label }}">
+    <fieldset class="conf-section" data-sec="{{ sec.label }}">
       <legend>{{ sec.label }}</legend>
       <div class="conf-grid">
         {% for s in sec.settings %}
-        <label class="conf-item{{ ' conf-mapeado' if s.spec }}"
+        <label class="conf-item{{ ' conf-mapped' if s.spec }}"
                data-key="{{ s.key | lower }}{{ ' ' ~ (s.spec.label | lower) if s.spec and s.spec.label }}">
           <span class="conf-key">
             {%- if s.spec and s.spec.label -%}
@@ -169,7 +169,7 @@
                    {% if s.kind == 'number' %}inputmode="decimal"{% endif %}>
           {% endif %}
           {% if s.spec and s.spec.help %}
-            <small class="conf-ajuda">{{ s.spec.help }}
+            <small class="conf-help">{{ s.spec.help }}
               {%- if s.spec.kind in ('number', 'factor', 'duration')
                      and (s.spec.minimum is not none or s.spec.maximum is not none) %}
                 <em>({{ s.spec.minimum }}{{ ' a ' ~ s.spec.maximum if s.spec.maximum is not none }}{{ ' ' ~ s.spec.unit if s.spec.unit }})</em>
@@ -195,7 +195,7 @@
     </p>
     <div id="conf-novas">
       {% for extra in range(2) %}
-      <div class="conf-nova">
+      <div class="conf-new">
         <label class="sr-only" for="sec-{{ ns.i }}">{{ _('config.new_setting_block') }}</label>
         <select name="sec.{{ ns.i }}" id="sec-{{ ns.i }}">
           {% for sec in doc.sections %}
@@ -213,15 +213,15 @@
     {# Nasce escondido: sem JavaScript ele nao faria nada, e as duas linhas acima
        continuam funcionando. #}
     <div class="form-actions">
-      {{ ui.botao('+ ' ~ _('config.another_line'), variante='ghost', tamanho='sm', tipo='button',
-                  extra='data-config-mais hidden') }}
+      {{ ui.button('+ ' ~ _('config.another_line'), variant='ghost', size='sm', type='button',
+                  extra='data-config-more hidden') }}
     </div>
   </div>
 
   <div class="card">
     <input type="hidden" name="n" value="{{ ns.i }}">
     <div class="form-actions">
-      {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
+      {{ ui.button(_('action.save'), variant='primary', block=true) }}
       <label class="checkbox">
         <input type="checkbox" name="restart" value="1">
         <span>{{ _('config.restart_after_save') }}</span>

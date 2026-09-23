@@ -5,7 +5,7 @@
  * grito. Aqui a bandeira e local e o unico jeito de baixa-la esta na interface que
  * esta funcao devolve.
  */
-export function avisarAoSair(estaSujo) {
+export function warnBeforeLeaving(estaSujo) {
   let liberado = false;
 
   window.addEventListener('beforeunload', (ev) => {

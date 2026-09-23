@@ -15,20 +15,20 @@
   padding: var(--sp-4);
 }
 .server__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
-.server__nome { min-width: 0; }
-.server__nome h2 { font-size: var(--fs-lg); overflow-wrap: anywhere; }
-.server__nome h2 a { color: var(--text); }
+.server__name { min-width: 0; }
+.server__name h2 { font-size: var(--fs-lg); overflow-wrap: anywhere; }
+.server__name h2 a { color: var(--text); }
 .server__host {
   display: block; margin-top: 2px;
   color: var(--muted); font-size: var(--fs-xs); font-family: var(--mono);
   overflow-wrap: anywhere;
 }
-.server__selos { flex: none; }
+.server__badges { flex: none; }
 /* Linha de controle do cartao: energia a esquerda, menu a direita. */
-.server__acoes { display: flex; align-items: center; gap: var(--sp-2); }
-.server__acoes .energia { flex: 1; display: flex; gap: var(--sp-2); }
-.server__acoes .energia .btn { flex: 1; }
-.server__acoes .menu { flex: none; }
+.server__actions { display: flex; align-items: center; gap: var(--sp-2); }
+.server__actions .power { flex: 1; display: flex; gap: var(--sp-2); }
+.server__actions .power .btn { flex: 1; }
+.server__actions .menu { flex: none; }
 
 /* ============================================================ arquivos */
 .filegrid { display: grid; grid-template-columns: 1fr; gap: var(--sp-4); align-items: start; }
@@ -93,11 +93,11 @@
 .conf-files { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
 .conf-path { margin: var(--sp-3) 0 0; overflow-wrap: anywhere; }
 .conf-path form.inline { margin-left: 2px; }
-.conf-busca { width: 100%; margin-top: 0; }
+.conf-search { width: 100%; margin-top: 0; }
 
-.conf-sec { border: none; border-top: 1px solid var(--line); margin: 0; padding: var(--sp-3) 0 var(--sp-1); }
-.conf-sec:first-of-type { border-top: none; padding-top: 0; }
-.conf-sec legend {
+.conf-section { border: none; border-top: 1px solid var(--line); margin: 0; padding: var(--sp-3) 0 var(--sp-1); }
+.conf-section:first-of-type { border-top: none; padding-top: 0; }
+.conf-section legend {
   padding: 0; color: var(--muted); font-size: var(--fs-xs);
   text-transform: uppercase; letter-spacing: .04em; overflow-wrap: anywhere;
 }
@@ -110,21 +110,21 @@
 /* Campo reconhecido pelo catalogo (gamefields.py): ganha nome em portugues, unidade e
    explicacao. O nome tecnico continua visivel — e por ele que se acha o campo na
    documentacao do jogo e nos foruns. */
-.conf-mapeado .conf-key { font-family: inherit; font-size: var(--fs-md); text-transform: none; letter-spacing: 0; }
+.conf-mapped .conf-key { font-family: inherit; font-size: var(--fs-md); text-transform: none; letter-spacing: 0; }
 .conf-raw { font-family: var(--mono); font-size: var(--fs-xs); font-style: normal; color: var(--muted); margin-left: 6px; }
 .conf-num { display: flex; align-items: center; gap: var(--sp-1); }
 .conf-num input { flex: 1 1 auto; min-width: 0; }
 .conf-unit { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
-.conf-ajuda { display: block; margin-top: var(--sp-1); color: var(--muted); line-height: 1.45; }
-.conf-ajuda em { font-style: normal; white-space: nowrap; opacity: .85; }
-.conf-nova { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
-.conf-nova select, .conf-nova input { flex: 1 1 100%; margin-top: 0; }
+.conf-help { display: block; margin-top: var(--sp-1); color: var(--muted); line-height: 1.45; }
+.conf-help em { font-style: normal; white-space: nowrap; opacity: .85; }
+.conf-new { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
+.conf-new select, .conf-new input { flex: 1 1 100%; margin-top: 0; }
 
 @media (min-width: 600px) {
   .conf-grid { grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
-  .conf-busca { width: auto; min-width: 14rem; }
-  .conf-nova select { flex: 1 1 12rem; }
-  .conf-nova input { flex: 1 1 11rem; }
+  .conf-search { width: auto; min-width: 14rem; }
+  .conf-new select { flex: 1 1 12rem; }
+  .conf-new input { flex: 1 1 11rem; }
 }
 
 /* ============================================================ alertas */
@@ -134,39 +134,39 @@
   border: 1px solid var(--line); border-radius: var(--r-md);
   background: var(--panel-2); padding: var(--sp-4); margin-bottom: var(--sp-3);
 }
-.hook.desligado { opacity: .62; }
-.hook.desligado:focus-within, .hook.desligado:hover { opacity: 1; }
+.hook.disabled { opacity: .62; }
+.hook.disabled:focus-within, .hook.disabled:hover { opacity: 1; }
 .hook-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-2); }
-.hook-nome { flex: 1 1 14rem; margin: 0; }
-.hook-nome input { margin-top: 0; font-weight: 600; font-size: var(--fs-base); }
-.hook-liga { flex: none; color: var(--muted); font-size: var(--fs-sm); }
+.hook-name { flex: 1 1 14rem; margin: 0; }
+.hook-name input { margin-top: 0; font-weight: 600; font-size: var(--fs-base); }
+.hook-toggle { flex: none; color: var(--muted); font-size: var(--fs-sm); }
 .hook-url { margin: 0 0 var(--sp-2); }
 .hook-url code { color: var(--muted); }
 /* O campo de troca e secundario: o normal e nao mexer nele, entao ele nao pode ter o
    mesmo peso visual do nome. */
-.hook-troca { margin: 0 0 var(--sp-3); }
-.hook-troca input { font-size: var(--fs-sm); }
-.hook-eventos { margin-bottom: var(--sp-3); }
-.hook-eventos .aviso { margin: var(--sp-2) 0 0; color: var(--warn); }
-.hook-acoes { padding-top: var(--sp-3); border-top: 1px solid var(--line); margin-top: 0; }
+.hook-swap { margin: 0 0 var(--sp-3); }
+.hook-swap input { font-size: var(--fs-sm); }
+.hook-events { margin-bottom: var(--sp-3); }
+.hook-events .notice { margin: var(--sp-2) 0 0; color: var(--warn); }
+.hook-actions { padding-top: var(--sp-3); border-top: 1px solid var(--line); margin-top: 0; }
 
-.hook-novo > summary {
+.hook-new > summary {
   cursor: pointer; color: var(--accent); font-size: var(--fs-md);
   min-height: var(--tap); display: flex; align-items: center;
   list-style: none; width: fit-content;
 }
-.hook-novo > summary::-webkit-details-marker { display: none; }
-.hook-novo > summary:hover { text-decoration: underline; }
-.hook-novo[open] { border: 1px dashed var(--line); border-radius: var(--r-md); padding: var(--sp-3) var(--sp-4); }
-.hook-novo[open] > summary { margin-bottom: var(--sp-2); }
-.vazio { margin: 0 0 var(--sp-3); }
+.hook-new > summary::-webkit-details-marker { display: none; }
+.hook-new > summary:hover { text-decoration: underline; }
+.hook-new[open] { border: 1px dashed var(--line); border-radius: var(--r-md); padding: var(--sp-3) var(--sp-4); }
+.hook-new[open] > summary { margin-bottom: var(--sp-2); }
+.empty { margin: 0 0 var(--sp-3); }
 
-.regras { margin: 0; padding-left: var(--sp-5); color: var(--muted); font-size: var(--fs-sm); }
-.regras li { margin-bottom: var(--sp-2); }
-.regras li:last-child { margin-bottom: 0; }
-.regras strong { color: var(--text); font-weight: 600; }
-.regras ul { margin: var(--sp-1) 0 0; padding-left: var(--sp-4); }
-.regras em { font-style: normal; color: var(--text); }
+.rules { margin: 0; padding-left: var(--sp-5); color: var(--muted); font-size: var(--fs-sm); }
+.rules li { margin-bottom: var(--sp-2); }
+.rules li:last-child { margin-bottom: 0; }
+.rules strong { color: var(--text); font-weight: 600; }
+.rules ul { margin: var(--sp-1) 0 0; padding-left: var(--sp-4); }
+.rules em { font-style: normal; color: var(--text); }
 
 /* ============================================================ usuarios */
 /* O reset de senha fica dobrado dentro da linha da tabela: sao dois campos que so
@@ -176,41 +176,41 @@
 .users-reset > summary::-webkit-details-marker { display: none; }
 .users-form { display: flex; gap: var(--sp-1); flex-wrap: wrap; align-items: center; margin-top: var(--sp-2); }
 .users-form input { width: 9rem; margin-top: 0; }
-.users-papel { display: flex; gap: var(--sp-1); align-items: center; }
-.users-papel select { margin-top: 0; width: auto; }
+.users-role { display: flex; gap: var(--sp-1); align-items: center; }
+.users-role select { margin-top: 0; width: auto; }
 
 /* ============================================================ graficos
    Marcas finas, grade recessiva, e o texto sempre nas cores de texto do painel: a
    cor da serie mora na LINHA, e a identidade chega pelo tracinho ao lado do rotulo. */
-.grafico { display: block; width: 100%; height: auto; margin-top: var(--sp-1); touch-action: pan-y; }
-.grafico:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.grafico .grade, .grafico .eixo { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart { display: block; width: 100%; height: auto; margin-top: var(--sp-1); touch-action: pan-y; }
+.chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chart .gridlines, .chart .axis { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
 /* A mira nasce escondida por CSS, e nao pelo atributo `hidden`: em SVG ele nao e
    honrado do mesmo jeito que em HTML, e a linha aparecia colada no eixo Y. */
-.grafico .mira { display: none; stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.grafico .mira.ativa { display: inline; }
-.grafico .serie { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.grafico .tick { fill: var(--muted); font-size: 11px; }
-.grafico .ponta { fill: var(--text); font-size: 12px; font-weight: 600; }
+.chart .crosshair { display: none; stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart .crosshair.active { display: inline; }
+.chart .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.chart .tick { fill: var(--muted); font-size: 11px; }
+.chart .tip { fill: var(--text); font-size: 12px; font-weight: 600; }
 
-.legenda { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
-.legenda .chave { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--muted); }
+.legend { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+.legend .key { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--muted); }
 /* O tracinho da legenda e um SVG (ver charts.html): largura fixa, sem esticar. */
-.legenda .chave-cor { width: 14px; height: 2px; flex: none; }
+.legend .key-color { width: 14px; height: 2px; flex: none; }
 
 /* O cartao ancora o balao; o SVG nao pode conter HTML. */
-.card[data-grafico] { position: relative; }
-.balao {
+.card[data-chart] { position: relative; }
+.bubble {
   position: absolute; top: 3rem; z-index: 5; pointer-events: none;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm);
   padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); min-width: 8rem;
   box-shadow: var(--sombra-2);
 }
-.balao-hora { color: var(--muted); margin-bottom: var(--sp-1); }
-.balao-linha { display: flex; align-items: center; gap: var(--sp-1); line-height: 1.7; }
-.balao-linha i { width: 12px; height: 2px; border-radius: 1px; flex: none; }
-.balao-linha strong { color: var(--text); font-variant-numeric: tabular-nums; }
-.balao-linha span { color: var(--muted); }
+.bubble-time { color: var(--muted); margin-bottom: var(--sp-1); }
+.bubble-line { display: flex; align-items: center; gap: var(--sp-1); line-height: 1.7; }
+.bubble-line i { width: 12px; height: 2px; border-radius: 1px; flex: none; }
+.bubble-line strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.bubble-line span { color: var(--muted); }
 
 /* ============================================================ terminal */
 .term {
@@ -250,15 +250,15 @@
 
 /* Fileira de teclas que o teclado virtual do celular nao tem (Esc, Tab, setas).
    Sem ela, vim e htop sao inoperaveis no telefone. */
-.term-teclas {
+.term-keys {
   display: flex; gap: var(--sp-1); overflow-x: auto; scrollbar-width: none;
   padding: var(--sp-2); background: var(--panel-2); border-top: 1px solid var(--line);
 }
-.term-teclas::-webkit-scrollbar { display: none; }
-.term-teclas .btn { flex: none; min-width: 3rem; padding: 8px 10px; font-size: var(--fs-sm); }
+.term-keys::-webkit-scrollbar { display: none; }
+.term-keys .btn { flex: none; min-width: 3rem; padding: 8px 10px; font-size: var(--fs-sm); }
 @media (min-width: 900px) {
   .term-view { height: 62vh; }
   .term-bar { flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
   /* Com teclado fisico a fileira extra e so ocupacao de espaco. */
-  .term-teclas { display: none; }
+  .term-keys { display: none; }
 }

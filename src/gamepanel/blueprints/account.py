@@ -76,7 +76,7 @@ def two_factor():
             codes = panel._guarda_o_segundo_fator(session["uid"], secret, step)
             session.pop("totp_pendente", None)
             flash(panel.translate("flash.two_factor_on"), "ok")
-            return render_template("account_2fa_codigos.html", codes=codes)
+            return render_template("account_2fa_codes.html", codes=codes)
     # O segredo fica na SESSAO (cookie assinado) ate ser confirmado; recarregar a pagina mostra
     # o mesmo, e abandonar a tela nao deixa nada meio ligado no banco.
     secret = session.get("totp_pendente") or panel.totp.new_secret()
@@ -116,4 +116,4 @@ def two_factor_codes():
         conn.execute("UPDATE users SET totp_recovery = ? WHERE id = ?",
                      (json.dumps([panel.totp.hash_recovery_code(c) for c in codes]), row["id"]))
     flash(panel.translate("flash.new_codes"), "ok")
-    return render_template("account_2fa_codigos.html", codes=codes)
+    return render_template("account_2fa_codes.html", codes=codes)

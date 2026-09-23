@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% import "components/servidor.html" as srv with context %}
+{% import "components/server.html" as srv with context %}
 {% block title %}{{ _('server.schedules') }} &mdash; {{ server.name }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('server.schedules') ~ ' — ' ~ server.name) }}
-{{ srv.abas(server, 'schedules') }}
+{{ ui.page_header(_('server.schedules') ~ ' — ' ~ server.name) }}
+{{ srv.tabs(server, 'schedules') }}
 
 <div class="card">
   <h2>{{ _('schedules.tasks_here') }}</h2>
@@ -19,15 +19,15 @@
         <td>{{ _(label(t)) }}</td>
         <td class="muted">{% if t.enabled %}{{ next_runs[t.id] }}{% else %}<span class="badge">{{ _('schedules.off') }}</span>{% endif %}</td>
         <td class="muted small nowrap">{{ t.last_run[:16] | replace('T', ' ') or _('schedules.never') }}</td>
-        <td class="acoes">
+        <td class="actions">
           {% if is_admin %}
-            {{ ui.acao(url_for('schedules.run', aid=t.id), _('schedules.run_now'), variante='ghost',
-                       tamanho='sm', titulo=_('schedules.run_now_help')) }}
-            {{ ui.acao(url_for('schedules.toggle', aid=t.id),
-                       _('schedules.turn_on') if not t.enabled else _('schedules.turn_off'), tamanho='sm') }}
-            {{ ui.acao(url_for('schedules.delete', aid=t.id), _('schedules.delete'), variante='danger',
-                       tamanho='sm',
-                       confirmar=_('schedules.delete_confirm', task=job_labels.get(t.action, t.action) ~ ' ' ~ _(label(t)))) }}
+            {{ ui.action(url_for('schedules.run', aid=t.id), _('schedules.run_now'), variant='ghost',
+                       size='sm', title=_('schedules.run_now_help')) }}
+            {{ ui.action(url_for('schedules.toggle', aid=t.id),
+                       _('schedules.turn_on') if not t.enabled else _('schedules.turn_off'), size='sm') }}
+            {{ ui.action(url_for('schedules.delete', aid=t.id), _('schedules.delete'), variant='danger',
+                       size='sm',
+                       confirm=_('schedules.delete_confirm', task=job_labels.get(t.action, t.action) ~ ' ' ~ _(label(t)))) }}
           {% else %}
           <span class="muted small">{{ _('schedules.admin_only') }}</span>
           {% endif %}
@@ -92,7 +92,7 @@
       </label>
     </div>
     <div class="form-actions">
-      {{ ui.botao(_('schedules.schedule_it'), variante='primary', icone='⏰', bloco=true) }}
+      {{ ui.button(_('schedules.schedule_it'), variant='primary', icon='⏰', block=true) }}
     </div>
   </form>
   <p class="muted small mt-4">

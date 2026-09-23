@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% import "components/servidor.html" as srv with context %}
+{% import "components/server.html" as srv with context %}
 {% block title %}{{ _('server.charts') }} &mdash; {{ server.name }}{% endblock %}
 
 {% macro chave_da_legenda(cor, rotulo) -%}
-<span class="chave">
-  <svg class="chave-cor" viewBox="0 0 14 2" aria-hidden="true"><rect width="14" height="2" rx="1" fill="{{ cor }}"/></svg>
+<span class="key">
+  <svg class="key-color" viewBox="0 0 14 2" aria-hidden="true"><rect width="14" height="2" rx="1" fill="{{ cor }}"/></svg>
   {{ rotulo }}
 </span>
 {%- endmacro %}
@@ -26,28 +26,28 @@
      Marca de supressao aqui nao adianta: foi testada como comentario HTML na linha de
      cima e na mesma linha da tag, e o aviso continua nas duas. Esta regra so se cala
      pela configuracao do SonarLint/SonarQube, fora do repositorio. #}
-  <svg class="grafico" viewBox="0 0 {{ g.w }} {{ g.h }}" role="img" tabindex="0"
+  <svg class="chart" viewBox="0 0 {{ g.w }} {{ g.h }}" role="img" tabindex="0"
        aria-label="{{ titulo }} ao longo do tempo"
-       data-teto="{{ g.teto }}" data-topo="{{ g.t }}" data-base="{{ g.b }}"
-       data-esq="{{ g.l }}" data-dir="{{ g.r }}"
-       data-inicio="{{ g.inicio_ms }}" data-span="{{ g.span_s }}">
+       data-ceiling="{{ g.teto }}" data-top="{{ g.t }}" data-base="{{ g.b }}"
+       data-left="{{ g.l }}" data-dir="{{ g.r }}"
+       data-start="{{ g.inicio_ms }}" data-span="{{ g.span_s }}">
     {% for linha in g.grade %}
-      <line class="grade" x1="{{ g.l }}" y1="{{ linha.y }}" x2="{{ g.r }}" y2="{{ linha.y }}"/>
+      <line class="gridlines" x1="{{ g.l }}" y1="{{ linha.y }}" x2="{{ g.r }}" y2="{{ linha.y }}"/>
       <text class="tick" x="{{ g.l - 8 }}" y="{{ linha.y + 4 }}" text-anchor="end">{{ linha.label }}</text>
     {% endfor %}
     {% for t in g.tempos %}
       <text class="tick" x="{{ t.x }}" y="{{ g.h - 8 }}" text-anchor="middle">{{ t.label }}</text>
     {% endfor %}
-    <line class="eixo" x1="{{ g.l }}" y1="{{ g.b }}" x2="{{ g.r }}" y2="{{ g.b }}"/>
-    <line class="mira" x1="0" y1="{{ g.t }}" x2="0" y2="{{ g.b }}"/>
+    <line class="axis" x1="{{ g.l }}" y1="{{ g.b }}" x2="{{ g.r }}" y2="{{ g.b }}"/>
+    <line class="crosshair" x1="0" y1="{{ g.t }}" x2="0" y2="{{ g.b }}"/>
 
     {% for s in g.linhas %}
       {% for traco in s.tracos %}
-        <polyline class="serie" points="{{ traco }}" stroke="{{ s.color }}"
-                  data-serie="{{ s.label }}" data-sufixo="{{ s.suffix }}"/>
+        <polyline class="series" points="{{ traco }}" stroke="{{ s.color }}"
+                  data-series="{{ s.label }}" data-suffix="{{ s.suffix }}"/>
       {% endfor %}
       {% for ponto in s.pontos %}
-        <circle class="solto" cx="{{ ponto.split(',')[0] }}" cy="{{ ponto.split(',')[1] }}" r="2.5" fill="{{ s.color }}"/>
+        <circle cx="{{ ponto.split(',')[0] }}" cy="{{ ponto.split(',')[1] }}" r="2.5" fill="{{ s.color }}"/>
       {% endfor %}
       {% if s.ponta %}
         {# Rotulo direto na ponta: e o que faz o valor nao depender do balaozinho.
@@ -55,7 +55,7 @@
            a mira e a tabela e que carregam o numero. #}
         <circle cx="{{ s.ponta.x }}" cy="{{ s.ponta.y }}" r="4" fill="{{ s.color }}"/>
         {% if g.rotula_ponta %}
-        <text class="ponta" x="{{ s.ponta.x + 9 }}" y="{{ s.ponta.y + 4 }}">{{ '%g' % s.ponta.valor }}{{ s.suffix }}</text>
+        <text class="tip" x="{{ s.ponta.x + 9 }}" y="{{ s.ponta.y + 4 }}">{{ '%g' % s.ponta.valor }}{{ s.suffix }}</text>
         {% endif %}
       {% endif %}
     {% endfor %}
@@ -63,8 +63,8 @@
 {% endmacro %}
 
 {% block content %}
-{{ ui.cabecalho(_('server.charts') ~ ' — ' ~ server.name) }}
-{{ srv.abas(server, 'charts') }}
+{{ ui.page_header(_('server.charts') ~ ' — ' ~ server.name) }}
+{{ srv.tabs(server, 'charts') }}
 
 {# Um filtro so, acima de tudo o que ele governa: os dois graficos e a tabela mostram
    sempre a mesma fatia de tempo, entao os numeros nunca se contradizem. #}
@@ -79,14 +79,14 @@
 </p>
 
 {% if usage.vazio and players.vazio %}
-<div class="card card--vazio">
+<div class="card card--empty">
   <p>{{ _('charts.no_samples') }}</p>
   <p class="muted">O painel guarda uma leitura a cada {{ every }} minutos enquanto esta no ar
     &mdash; volte daqui a pouco, ou escolha um periodo maior.</p>
 </div>
 {% else %}
 
-<div class="card" data-grafico="uso">
+<div class="card" data-chart="uso">
   <div class="card__head">
     <h2>{{ _('charts.cpu_memory') }}</h2>
     {# Duas series: legenda sempre presente, e a identidade vem do traco colorido ao
@@ -96,7 +96,7 @@
        a cor vem do servidor, e valor de template dentro de um atributo `style` nao e
        CSS valido para ferramenta nenhuma - o arquivo inteiro passa a acusar erro. Como
        atributo de SVG ela e so um atributo, igual ao `stroke` das linhas do grafico. #}
-    <div class="legenda">
+    <div class="legend">
       {{ chave_da_legenda(colors.cpu, 'CPU') }}
       {{ chave_da_legenda(colors.mem, 'Memoria') }}
     </div>
@@ -108,7 +108,7 @@
 {# Grafico separado, e nao um segundo eixo no de cima: "por cento" e "quantidade de
    gente" nao dividem escala, e sobrepor as duas inventaria uma relacao que os dados
    nao tem. #}
-<div class="card" data-grafico="jogadores">
+<div class="card" data-chart="jogadores">
   <div class="card__head">
     <h2>{{ _('charts.players') }}</h2>
     {# Uma serie so: o titulo ja a nomeia, entao nao ha legenda. O espaco vai para o
@@ -129,7 +129,7 @@
       Os mesmos valores do grafico, sem depender de cor nem de passar o dedo por cima.
       Do mais recente para o mais antigo.
     </p>
-    <div class="table-wrap"><table class="jobs numerica">
+    <div class="table-wrap"><table class="jobs numeric">
       <thead><tr><th>{{ _('charts.when') }}</th><th>{{ _('charts.cpu') }}</th><th>{{ _('charts.memory') }}</th><th>{{ _('charts.players') }}</th></tr></thead>
       <tbody>
         {% for l in table %}

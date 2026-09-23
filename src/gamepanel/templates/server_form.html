@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% import "components/servidor.html" as srv with context %}
+{% import "components/server.html" as srv with context %}
 {% block title %}{{ _('server_form.title_new') if mode == 'new' else _('server_form.title_edit') }}{% endblock %}
 {% block content %}
-{{ ui.cabecalho(_('server_form.title_new') if mode == 'new' else _('server_form.title_edit')) }}
-{% if mode == "edit" %}{{ srv.abas(server, "editar") }}{% endif %}
+{{ ui.page_header(_('server_form.title_new') if mode == 'new' else _('server_form.title_edit')) }}
+{% if mode == "edit" %}{{ srv.tabs(server, "editar") }}{% endif %}
 
 <div class="card card--form">
   <form method="post">
@@ -135,8 +135,8 @@
       <textarea name="notes" rows="4">{{ data.notes }}</textarea>
     </label>
     <div class="form-actions">
-      {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
-      {{ ui.botao(_('server_form.cancel'), href=url_for('dashboard.index'), variante='ghost', bloco=true) }}
+      {{ ui.button(_('action.save'), variant='primary', block=true) }}
+      {{ ui.button(_('server_form.cancel'), href=url_for('dashboard.index'), variant='ghost', block=true) }}
     </div>
   </form>
   <p class="muted small">
@@ -145,13 +145,13 @@
 </div>
 
 {% if mode == 'edit' %}
-<div class="card card--perigo card--form">
+<div class="card card--danger card--form">
   <h2>{{ _('server_form.remove') }}</h2>
   <p class="muted">{{ _('server_form.remove_hint') }}</p>
   <div class="form-actions">
-    {{ ui.acao(url_for('servers.delete', sid=sid), _('server_form.remove'), variante='danger',
-               icone='🗑', bloco=true,
-               confirmar=_('server_form.remove_confirm')) }}
+    {{ ui.action(url_for('servers.delete', sid=sid), _('server_form.remove'), variant='danger',
+               icon='🗑', block=true,
+               confirm=_('server_form.remove_confirm')) }}
   </div>
 </div>
 {% endif %}

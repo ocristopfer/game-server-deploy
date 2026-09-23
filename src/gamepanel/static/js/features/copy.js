@@ -1,26 +1,26 @@
 /* Copiar para a area de transferencia.
  *
- * O alvo vem por seletor em data-copiar. No celular, marcar uma chave SSH de 80
+ * O alvo vem por selector em data-copy. No celular, marcar uma chave SSH de 80
  * caracteres com o dedo e um suplicio — este botao e o caminho normal, nao um luxo.
  */
-export const copiar = {
-  seletor: '[data-copiar]',
-  montar(botao) {
-    const alvo = document.querySelector(botao.dataset.copiar);
-    if (!alvo || !navigator.clipboard) return;
+export const copyToClipboard = {
+  selector: '[data-copy]',
+  mount(botao) {
+    const target = document.querySelector(botao.dataset.copy);
+    if (!target || !navigator.clipboard) return;
     botao.hidden = false;
 
-    const rotulo = botao.textContent;
+    const label = botao.textContent;
     botao.addEventListener('click', async () => {
       try {
-        await navigator.clipboard.writeText(alvo.textContent.trim());
+        await navigator.clipboard.writeText(target.textContent.trim());
         botao.textContent = 'Copiado!';
       } catch {
         // Sem permissao (http sem TLS, por exemplo): o texto continua na tela para
         // ser selecionado a mao, entao isto e um aviso, nao um erro.
-        botao.textContent = 'Nao consegui copiar';
+        botao.textContent = 'Nao consegui copyToClipboard';
       }
-      setTimeout(() => { botao.textContent = rotulo; }, 2000);
+      setTimeout(() => { botao.textContent = label; }, 2000);
     });
   },
 };

@@ -23,7 +23,7 @@
    corpo da pagina (.wrap). Sem isso, numa janela larga a marca ficava colada no canto
    esquerdo e o menu no direito, com uma coluna de conteudo no meio que nao alinhava
    com nenhum dos dois. */
-.appbar__miolo {
+.appbar__inner {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
@@ -33,17 +33,17 @@
   padding: 0 var(--sp-4);
 }
 
-.appbar__marca {
+.appbar__brand {
   display: flex; align-items: center; gap: var(--sp-2);
   font-weight: 700; font-size: var(--fs-base); color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.appbar__marca:hover { text-decoration: none; }
-.appbar__marca .logo { font-size: 1.25rem; line-height: 1; }
+.appbar__brand:hover { text-decoration: none; }
+.appbar__brand .logo { font-size: 1.25rem; line-height: 1; }
 /* No celular a marca inteira nao cabe ao lado de dois botoes: fica so o icone. */
-.appbar__nome { display: none; }
+.appbar__name { display: none; }
 
-.appbar__espaco { flex: 1; }
+.appbar__spacer { flex: 1; }
 
 /* Navegacao principal dentro da barra de cima: escondida no celular. */
 .appbar__nav { display: none; }
@@ -70,7 +70,7 @@
   text-align: center;
 }
 .tabbar__item:hover { text-decoration: none; color: var(--text); }
-.tabbar__item .icone { font-size: 1.15rem; line-height: 1; }
+.tabbar__item .icon { font-size: 1.15rem; line-height: 1; }
 .tabbar__item[aria-current="page"] { color: var(--accent); }
 
 /* ---------- corpo ---------- */
@@ -83,7 +83,7 @@
 /* So o conteudo reserva o espaco da barra de baixo. Se a regra pegasse qualquer
    .wrap, a faixa de "ha uma versao nova" (que e um .wrap proprio, acima do main)
    abriria um vao de 80px no meio da tela. */
-body.tem-tabbar main.wrap {
+body.has-tabbar main.wrap {
   padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-5));
 }
 
@@ -94,22 +94,18 @@ body.tem-tabbar main.wrap {
   gap: var(--sp-3);
   margin-bottom: var(--sp-4);
 }
-.page-head.tight { margin-bottom: var(--sp-3); }
-.page-head__titulo { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
-.page-head__titulo h1, .page-head__titulo h2 { min-width: 0; overflow-wrap: anywhere; }
+.page-head__title { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+.page-head__title h1, .page-head__title h2 { min-width: 0; overflow-wrap: anywhere; }
 
 /* ---------- primitivas de arranjo ---------- */
 .stack { display: flex; flex-direction: column; gap: var(--sp-3); }
 .stack--sm { gap: var(--sp-2); }
-.stack--lg { gap: var(--sp-5); }
 /* O espacamento de uma pilha e o gap; a margem propria do paragrafo somava por cima dele. */
 .stack > p { margin: 0; }
 
 /* Fila que quebra. E o arranjo de quase todo grupo de botoes do painel. */
 .cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.cluster--entre { justify-content: space-between; }
-.cluster--fim { justify-content: flex-end; }
-.cluster__espaco { flex: 1; }
+.cluster__spacer { flex: 1; }
 
 .grid {
   display: grid;
@@ -118,18 +114,18 @@ body.tem-tabbar main.wrap {
 }
 
 /* Cartoes de uma tela lado a lado. Uma coluna no celular; duas a partir de 900px, com
-   `.grid-cartoes__largo` ocupando a linha inteira (log, tabela comprida). A altura de
+   `.card-grid__wide` ocupando a linha inteira (log, tabela comprida). A altura de
    cada cartao e a do proprio conteudo: nada e esticado para igualar o vizinho. */
-.grid-cartoes {
+.card-grid {
   display: grid;
   gap: var(--sp-4);
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
-.grid-cartoes > .card { margin-bottom: 0; }
+.card-grid > .card { margin-bottom: 0; }
 @media (min-width: 900px) {
-  .grid-cartoes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5); }
-  .grid-cartoes__largo { grid-column: 1 / -1; }
+  .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5); }
+  .card-grid__wide { grid-column: 1 / -1; }
 }
 
 /* ---------- tabela com rolagem propria ----------
@@ -145,9 +141,9 @@ body.tem-tabbar main.wrap {
 /* ---------- respiro em telas maiores ---------- */
 @media (min-width: 600px) {
   .wrap { padding: var(--sp-5) calc(var(--sp-5) + var(--safe-right)) var(--sp-6) calc(var(--sp-5) + var(--safe-left)); }
-  body.tem-tabbar main.wrap { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-6)); }
+  body.has-tabbar main.wrap { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-6)); }
   .table-wrap { margin: 0 calc(var(--sp-5) * -1); padding: 0 var(--sp-5); }
-  .appbar__miolo { padding: 0 var(--sp-5); }
+  .appbar__inner { padding: 0 var(--sp-5); }
   .page-head {
     flex-direction: row;
     align-items: center;
@@ -160,8 +156,8 @@ body.tem-tabbar main.wrap {
 /* A partir daqui cabe tudo em cima: a barra de baixo sai de cena. */
 @media (min-width: 900px) {
   .tabbar { display: none; }
-  body.tem-tabbar main.wrap { padding-bottom: var(--sp-6); }
-  .appbar__miolo { gap: var(--sp-4); }
+  body.has-tabbar main.wrap { padding-bottom: var(--sp-6); }
+  .appbar__inner { gap: var(--sp-4); }
   .appbar__nav { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
   .appbar__nav a {
     display: inline-flex; align-items: center;
@@ -179,10 +175,10 @@ body.tem-tabbar main.wrap {
 
 /* O nome ao lado da marca so cabe quando sobra espaco depois dos seis destinos. */
 @media (min-width: 1100px) {
-  .appbar__nome { display: inline; }
+  .appbar__name { display: inline; }
 }
 @media (min-width: 600px) and (max-width: 899.98px) {
-  .appbar__nome { display: inline; }
+  .appbar__name { display: inline; }
 }
 
 /* Ultima linha da coluna de conteudo: informacao de suporte, nao conteudo. O respiro
@@ -199,5 +195,5 @@ body.tem-tabbar main.wrap {
    um template. Qualquer coisa alem disso pertence a um componente. */
 .mt-4 { margin-top: var(--sp-4); }
 .mb-4 { margin-bottom: var(--sp-4); }
-.campo-curto { width: 6rem; min-height: var(--tap-sm); }
-.centro { text-align: center; }
+.field-short { width: 6rem; min-height: var(--tap-sm); }
+.center { text-align: center; }

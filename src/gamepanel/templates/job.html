@@ -5,32 +5,32 @@
 {% block content %}
 {# O estado NAO vai no titulo: ele muda sozinho enquanto a acao roda, e o selo vivo
    mora na ficha abaixo, junto dos outros dados da execucao. #}
-{% call ui.cabecalho(job_label(job.action)) %}
+{% call ui.page_header(job_label(job.action)) %}
   {% if server %}
-    {{ ui.botao(server.name, href=url_for('servers.detail', sid=server.id), variante='ghost', icone='🎮') }}
+    {{ ui.button(server.name, href=url_for('servers.detail', sid=server.id), variant='ghost', icon='🎮') }}
   {% endif %}
 {% endcall %}
 
 <div class="card"
      {% if job.status == 'running' %}data-job-url="{{ url_for('jobs.api_detail', jid=job.id) }}"
-     data-intervalo="2000" data-job-rodando="(aguardando saida...)"
-     data-job-fim="Concluido com exit code {codigo}."{% endif %}>
+     data-interval="2000" data-job-running="(aguardando saida...)"
+     data-job-end="Concluido com exit code {codigo}."{% endif %}>
   <dl class="meta wide">
     <div><dt>{{ _('job.target') }}</dt><dd>{{ job.target }}</dd></div>
     <div><dt>{{ _('job.started') }}</dt><dd>{{ job.created_at.replace('T', ' ')[:19] }} UTC</dd></div>
     <div><dt>{{ _('job.by') }}</dt><dd>{{ job.username }}</dd></div>
     <div><dt>{{ _('job.result') }}</dt><dd>
-      <span class="badge {{ {'ok':'on','error':'off','running':'cold'}[job.status] }}" data-job-selo>{{ job.status }}</span>
+      <span class="badge {{ {'ok':'on','error':'off','running':'cold'}[job.status] }}" data-job-badge>{{ job.status }}</span>
     </dd></div>
   </dl>
   {% if job.command %}<pre class="log cmd">$ {{ job.command }}</pre>{% endif %}
-  <p class="muted" data-job-dica>
+  <p class="muted" data-job-hint>
     {% if job.status == 'running' %}
       Em execucao — a saida abaixo atualiza sozinha. Um update de jogo pode levar varios minutos.
     {% else %}
       Concluido com exit code {{ job.exit_code if job.exit_code is not none else '—' }}.
     {% endif %}
   </p>
-  <pre class="log" data-job-saida>{{ job.output or '(aguardando saida...)' }}</pre>
+  <pre class="log" data-job-output>{{ job.output or '(aguardando saida...)' }}</pre>
 </div>
 {% endblock %}

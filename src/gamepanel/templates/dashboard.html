@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% import "components/servidor.html" as srv with context %}
+{% import "components/server.html" as srv with context %}
 {% block title %}{{ _('nav.servers') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{% call ui.cabecalho(_('nav.servers')) %}
+{% call ui.page_header(_('nav.servers')) %}
   {% if is_admin %}
-    {{ ui.botao(_('nav.add_server'), href=url_for('servers.new'), variante='primary', icone='➕') }}
+    {{ ui.button(_('nav.add_server'), href=url_for('servers.new'), variant='primary', icon='➕') }}
   {% endif %}
 {% endcall %}
 
 {% if not servers %}
-  <div class="card card--vazio">
+  <div class="card card--empty">
     <p>{{ _('dashboard.no_servers') }}</p>
     {% if is_admin %}
       <p class="muted">Cadastre o IP de um container de jogo para controlar start, stop,
@@ -19,7 +19,7 @@
       <p class="muted small">O painel acessa cada container por SSH &mdash; antes autorize a
         chave dele no container em <a href="{{ url_for('account.ssh_key') }}">{{ _('dashboard.ssh_access') }}</a>.</p>
       <div class="form-actions">
-        {{ ui.botao(_('dashboard.add_the_first'), href=url_for('servers.new'), variante='primary') }}
+        {{ ui.button(_('dashboard.add_the_first'), href=url_for('servers.new'), variant='primary') }}
       </div>
     {% else %}
       <p class="muted">{{ _('dashboard.ask_an_admin') }}</p>
@@ -30,10 +30,10 @@
 {# Uma leitura de medidores e uma de jogadores alimentam TODOS os cartoes: os dois
    endereços ficam aqui, na lista, e nao um por cartao. #}
 <div class="grid"
-     data-medidores-painel="{{ url_for('dashboard.api_metrics') }}"
-     data-jogadores-painel="{{ url_for('dashboard.api_players') }}">
+     data-meters-panel="{{ url_for('dashboard.api_metrics') }}"
+     data-players-panel="{{ url_for('dashboard.api_players') }}">
   {% for s in servers %}
-    {{ srv.cartao(s, status[s.id]) }}
+    {{ srv.card(s, status[s.id]) }}
   {% endfor %}
 </div>
 {% endblock %}

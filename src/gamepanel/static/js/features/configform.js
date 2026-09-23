@@ -5,14 +5,14 @@
  * formulario continua listando, salvando e aceitando duas chaves novas.
  */
 import { $, $$ } from '../core/dom.js';
-import { avisarAoSair } from '../core/dirty.js';
+import { warnBeforeLeaving } from '../core/dirty.js';
 
 /* Filtro por nome: com o Palworld sao ~50 chaves numa linha so do .ini. */
-export const filtroDeConfig = {
-  seletor: '[data-filtro-config]',
-  montar(busca) {
+export const configFilter = {
+  selector: '[data-config-filter]',
+  mount(busca) {
     const itens = $$('.conf-item');
-    const secoes = $$('.conf-sec');
+    const secoes = $$('.conf-section');
     const vazio = $('#conf-vazio');
     if (!itens.length) return;
 
@@ -33,9 +33,9 @@ export const filtroDeConfig = {
 };
 
 /* "+ outra linha": clona a ultima linha de chave nova e renumera os campos. */
-export const maisLinhasDeConfig = {
-  seletor: '[data-config-mais]',
-  montar(botao) {
+export const moreConfigRows = {
+  selector: '[data-config-more]',
+  mount(botao) {
     const novas = $('#conf-novas');
     const total = $('input[name="n"]');
     if (!novas || !total) return;
@@ -44,18 +44,18 @@ export const maisLinhasDeConfig = {
     botao.addEventListener('click', () => {
       const modelo = novas.lastElementChild.cloneNode(true);
       const i = Number.parseInt(total.value, 10);
-      modelo.querySelectorAll('[name]').forEach((campo) => {
-        campo.name = campo.name.replace(/\.\d+$/, `.${i}`);
-        if (campo.tagName !== 'SELECT') campo.value = '';
+      modelo.querySelectorAll('[name]').forEach((field) => {
+        field.name = field.name.replace(/\.\d+$/, `.${i}`);
+        if (field.tagName !== 'SELECT') field.value = '';
       });
       // O id do bloco e o "for" do rotulo tem de andar junto com o indice: clonados
       // como estao, a linha nova repetiria o id da anterior e o rotulo apontaria
       // para o campo errado.
       const bloco = modelo.querySelector('select');
-      const rotulo = modelo.querySelector('label[for]');
+      const label = modelo.querySelector('label[for]');
       if (bloco) {
         bloco.id = `sec-${i}`;
-        if (rotulo) rotulo.htmlFor = bloco.id;
+        if (label) label.htmlFor = bloco.id;
       }
       novas.appendChild(modelo);
       total.value = String(i + 1);
@@ -64,12 +64,12 @@ export const maisLinhasDeConfig = {
 };
 
 /* Aviso de alteracao pendente, o mesmo do editor de texto. */
-export const configSuja = {
-  seletor: '[data-config-form]',
-  montar(form) {
+export const dirtyConfig = {
+  selector: '[data-config-form]',
+  mount(form) {
     const marca = $('#conf-mudou', form);
     let sujo = false;
-    const liberar = avisarAoSair(() => sujo);
+    const liberar = warnBeforeLeaving(() => sujo);
 
     form.addEventListener('input', () => {
       sujo = true;

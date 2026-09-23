@@ -3,7 +3,7 @@
 {% block title %}{{ _('account.two_factor') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('account.two_factor')) }}
+{{ ui.page_header(_('account.two_factor')) }}
 
 <div class="card card--form">
   <h2>1. Cadastre o painel no aplicativo</h2>
@@ -14,12 +14,12 @@
     manualmente</strong> {{ _('account_2fa.with_text_below') }}
   </p>
   <div class="qr-2fa">{{ qr_svg | safe }}</div>
-  <p><code id="segredo-2fa" class="segredo">{{ secret }}</code></p>
+  <p><code id="segredo-2fa" class="secret">{{ secret }}</code></p>
   <div class="cluster">
-    <button type="button" class="btn btn--ghost btn--sm" data-copiar="#segredo-2fa" hidden>{{ _('account_2fa.copy_key') }}</button>
+    <button type="button" class="btn btn--ghost btn--sm" data-copy="#segredo-2fa" hidden>{{ _('account_2fa.copy_key') }}</button>
     {# No celular sem camera a mao (ou testando no proprio aparelho), tocar aqui abre o
        aplicativo ja com a conta pronta. #}
-    {{ ui.botao(_('account_2fa.open_in_app'), href=address, variante='ghost', tamanho='sm', icone='📲') }}
+    {{ ui.button(_('account_2fa.open_in_app'), href=address, variant='ghost', size='sm', icon='📲') }}
   </div>
   <p class="muted small mt-4">
     {{ _('account_2fa.type') }} <strong>{{ _('account_2fa.time_based') }}</strong>, 6 digitos, 30 segundos. Guarde esta chave e este
@@ -37,8 +37,8 @@
       <small>Confira tambem se a hora do celular esta no automatico: e o que faz o codigo bater.</small>
     </label>
     <div class="form-actions">
-      {{ ui.botao(_('account.enable'), variante='primary', bloco=true) }}
-      {{ ui.botao(_('server_form.cancel'), href=url_for('account.index'), variante='ghost', bloco=true) }}
+      {{ ui.button(_('account.enable'), variant='primary', block=true) }}
+      {{ ui.button(_('server_form.cancel'), href=url_for('account.index'), variant='ghost', block=true) }}
     </div>
   </form>
 </div>

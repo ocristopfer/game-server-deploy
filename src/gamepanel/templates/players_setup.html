@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% import "components/servidor.html" as srv with context %}
+{% import "components/server.html" as srv with context %}
 {% block title %}{{ _('players_setup.title') }} &mdash; {{ server.name }}{% endblock %}
 {% block content %}
-{{ ui.cabecalho(_('players_setup.title') ~ ' — ' ~ server.name) }}
-{{ srv.abas(server, "visao") }}
+{{ ui.page_header(_('players_setup.title') ~ ' — ' ~ server.name) }}
+{{ srv.tabs(server, "visao") }}
 
 <div class="flash">{{ _h('players_setup.intro') }}</div>
 
@@ -49,7 +49,7 @@
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
             <input type="hidden" name="player_source" value="a2s">
             <input type="hidden" name="query_port" value="{{ p.port }}">
-            {{ ui.botao(_('players_setup.use_this'), variante="primary") }}
+            {{ ui.button(_('players_setup.use_this'), variant="primary") }}
           </form>
           {% endif %}
         </td>
@@ -110,7 +110,7 @@
               {% for campo, valor in http.items() if campo != 'http_url' %}
               <input type="hidden" name="{{ campo }}" value="{{ valor }}">
               {% endfor %}
-              {{ ui.botao(_('players_setup.use_this_url'), variante="ghost") }}
+              {{ ui.button(_('players_setup.use_this_url'), variant="ghost") }}
             </form>
           {% endif %}
         </td>
@@ -189,7 +189,7 @@
     </label>
     <p class="muted small">{{ _h('players_setup.leave_paths_empty') }}</p>
     <div class="form-actions">
-      {{ ui.botao(_('players_setup.test'), icone="🧪") }}
+      {{ ui.button(_('players_setup.test'), icon="🧪") }}
     </div>
   </form>
 
@@ -210,7 +210,7 @@
       {% for campo, valor in http.items() %}
       <input type="hidden" name="{{ campo }}" value="{{ valor }}">
       {% endfor %}
-      {{ ui.botao(_('players_setup.use_this_api'), variante="primary", bloco=true) }}
+      {{ ui.button(_('players_setup.use_this_api'), variant="primary", block=true) }}
     </form>
     <p class="muted small">{{ _h('players_setup.password_in_plain_text') }}</p>
   {% endif %}
@@ -249,7 +249,7 @@
              placeholder="UNetConnection::Close|Player left: (?P&lt;name&gt;.+)">
     </label>
     <div class="form-actions">
-      {{ ui.botao(_('players_setup.test'), icone="🧪") }}
+      {{ ui.button(_('players_setup.test'), icon="🧪") }}
     </div>
   </form>
 
@@ -271,7 +271,7 @@
       <input type="hidden" name="join_re" value="{{ join_re }}">
       <input type="hidden" name="leave_re" value="{{ leave_re }}">
       <input type="hidden" name="log_path" value="{{ log_path }}">
-      {{ ui.botao(_('players_setup.use_these_patterns'), variante="primary", bloco=true) }}
+      {{ ui.button(_('players_setup.use_these_patterns'), variant="primary", block=true) }}
     </form>
   {% endif %}
 </div>

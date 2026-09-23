@@ -2,11 +2,11 @@
 {% import "components/ui.html" as ui with context %}
 {% block title %}{{ _('error.title', code=code) }}{% endblock %}
 {% block content %}
-<div class="card card--vazio card--login">
+<div class="card card--empty card--login">
   <h1>{{ code }}</h1>
   <p class="muted">{{ message }}</p>
   <div class="form-actions">
-    {{ ui.botao(_('error.back_to_panel'), href=url_for('dashboard.index'), variante='primary', bloco=true) }}
+    {{ ui.button(_('error.back_to_panel'), href=url_for('dashboard.index'), variant='primary', block=true) }}
   </div>
 </div>
 {% endblock %}

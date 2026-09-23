@@ -43,17 +43,17 @@
   <link rel="stylesheet" href="{{ static_url('css/components.css') }}">
   <link rel="stylesheet" href="{{ static_url('css/pages.css') }}">
 </head>
-<body class="{{ 'tem-tabbar' if current_user }}" data-sw="{{ url_for('pwa.service_worker') }}">
+<body class="{{ 'has-tabbar' if current_user }}" data-sw="{{ url_for('pwa.service_worker') }}">
 
 {% if current_user %}
 {# O conteudo da barra vive num miolo com a MESMA largura e o MESMO recuo do corpo da pagina: em
    tela larga a marca fica alinhada com o titulo da pagina, e nao presa no canto da janela
    enquanto o resto da tela e uma coluna no meio. #}
 <header class="appbar">
- <div class="appbar__miolo">
-  <a class="appbar__marca" href="{{ url_for('dashboard.index') }}">
+ <div class="appbar__inner">
+  <a class="appbar__brand" href="{{ url_for('dashboard.index') }}">
     <span class="logo" aria-hidden="true">🎮</span>
-    <span class="appbar__nome">{{ _('app.name') }}</span>
+    <span class="appbar__name">{{ _('app.name') }}</span>
   </a>
 
   {# Em tela larga TODOS os destinos de uso diario sobem para ca (a lista vem do ui.py);
@@ -67,35 +67,35 @@
     {% endfor %}
   </nav>
 
-  <span class="appbar__espaco"></span>
+  <span class="appbar__spacer"></span>
 
-  {{ ui.botao(_('app.install'), icone='⬇', tamanho='sm', tipo='button',
-              extra='data-instalar hidden') }}
+  {{ ui.button(_('app.install'), icon='⬇', size='sm', type='button',
+              extra='data-install hidden') }}
 
   {# Celular: o "⋯" com o que nao coube nas abas de baixo. #}
-  {% call ui.menu('', icone='⋯', titulo=_('nav.more'), classe='menu--movel') %}
-    <span class="menu__titulo">{{ current_user }} &middot; {{ role_label }}</span>
+  {% call ui.menu('', icon='⋯', title=_('nav.more'), css_class='menu--mobile') %}
+    <span class="menu__title">{{ current_user }} &middot; {{ role_label }}</span>
     {% for item in nav_secondary %}
       <a class="menu__item" role="menuitem" href="{{ url_for(item.endpoint) }}">
-        <span class="icone" aria-hidden="true">{{ item.icon }}</span>{{ _(item.label) }}
+        <span class="icon" aria-hidden="true">{{ item.icon }}</span>{{ _(item.label) }}
       </a>
     {% endfor %}
     <hr class="menu__sep">
-    {{ ui.menu_acao(url_for('auth.logout'), _('nav.logout'), icone='🚪') }}
+    {{ ui.menu_action(url_for('auth.logout'), _('nav.logout'), icon='🚪') }}
   {% endcall %}
 
   {# Desktop: o menu da pessoa, com o nome no botao (quem esta logado e o que ela
      e, sem abrir nada). Os dois menus existem na pagina; o CSS mostra um por vez. #}
-  {% call ui.menu(current_user, icone='👤', titulo='Conta de ' ~ current_user, classe='menu--conta') %}
-    <span class="menu__titulo">{{ role_label }}</span>
+  {% call ui.menu(current_user, icon='👤', title='Conta de ' ~ current_user, css_class='menu--account') %}
+    <span class="menu__title">{{ role_label }}</span>
     {% for item in nav_desktop_account %}
       <a class="menu__item" role="menuitem" href="{{ url_for(item.endpoint) }}"
          {% if item.key == nav_active_desktop %}aria-current="page"{% endif %}>
-        <span class="icone" aria-hidden="true">{{ item.icon }}</span>{{ _(item.label) }}
+        <span class="icon" aria-hidden="true">{{ item.icon }}</span>{{ _(item.label) }}
       </a>
     {% endfor %}
     <hr class="menu__sep">
-    {{ ui.menu_acao(url_for('auth.logout'), _('nav.logout'), icone='🚪') }}
+    {{ ui.menu_action(url_for('auth.logout'), _('nav.logout'), icon='🚪') }}
   {% endcall %}
  </div>
 </header>
@@ -105,9 +105,9 @@
   {# Versao nova esperando para assumir: aparece so quando o service worker avisa.
      Fica DENTRO do main, junto dos outros avisos — como um bloco proprio antes dele,
      o espaco reservado para a barra de abas abria um vao no meio da tela. #}
-  <div class="flash cluster" data-versao-nova hidden>
+  <div class="flash cluster" data-new-version hidden>
     <span>{{ _('app.new_version') }}</span>
-    <span class="cluster__espaco"></span>
+    <span class="cluster__spacer"></span>
     <button class="btn btn--sm btn--primary" type="button">{{ _('app.update_now') }}</button>
   </div>
 
@@ -128,7 +128,7 @@
   {% for item in nav_main %}
     <a class="tabbar__item" href="{{ url_for(item.endpoint) }}"
        {% if item.key == nav_active %}aria-current="page"{% endif %}>
-      <span class="icone" aria-hidden="true">{{ item.icon }}</span>
+      <span class="icon" aria-hidden="true">{{ item.icon }}</span>
       <span>{{ _(item.label) }}</span>
     </a>
   {% endfor %}

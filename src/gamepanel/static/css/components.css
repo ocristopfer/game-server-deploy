@@ -41,9 +41,9 @@
 .btn--sm { min-height: var(--tap-sm); padding: 6px 12px; font-size: var(--fs-sm); }
 /* No celular quase todo botao principal de formulario ocupa a linha inteira: alvo
    maior, e a coluna de acoes deixa de ser um amontoado. */
-.btn--bloco { width: 100%; }
-.btn--icone { padding: 10px; min-width: var(--tap); }
-.btn .icone { font-size: 1.05em; line-height: 1; }
+.btn--block { width: 100%; }
+.btn--icon { padding: 10px; min-width: var(--tap); }
+.btn .icon { font-size: 1.05em; line-height: 1; }
 
 /* Botao que se apresenta como link (sair, apagar dentro de uma lista). */
 .btn-link {
@@ -59,7 +59,7 @@
 /* Formulario de um botao so: existe para carregar o CSRF, nao para ocupar linha. */
 form.inline { display: inline; }
 /* O mesmo formulario quando o botao dentro dele ocupa a largura toda (celular). */
-form.acao-bloco { display: block; flex: 1; min-width: 0; }
+form.action-block { display: block; flex: 1; min-width: 0; }
 
 /* ============================================================ cartao */
 .card {
@@ -70,9 +70,8 @@ form.acao-bloco { display: block; flex: 1; min-width: 0; }
   margin-bottom: var(--sp-4);
 }
 .card:last-child { margin-bottom: 0; }
-.card--limpo { background: transparent; border: none; padding: 0; }
-.card--vazio { text-align: center; }
-.card--perigo { border-color: color-mix(in srgb, var(--err) 30%, var(--line)); }
+.card--empty { text-align: center; }
+.card--danger { border-color: color-mix(in srgb, var(--err) 30%, var(--line)); }
 .card--form { max-width: 42rem; }
 .card--login { max-width: 25rem; margin: var(--sp-6) auto 0; }
 .card--login h1 { justify-content: center; }
@@ -117,8 +116,8 @@ form.acao-bloco { display: block; flex: 1; min-width: 0; }
 .flash:last-child { margin-bottom: 0; }
 .flash.error { border-color: var(--err-borda); color: var(--err-texto); background: var(--err-fundo); }
 .flash.ok { border-color: var(--ok-borda); color: #8ce39a; }
-.flash.pendencia { border-color: var(--warn-borda); font-size: var(--fs-sm); }
-.flash.pendencia ul { margin: var(--sp-2) 0; }
+.flash.pending { border-color: var(--warn-borda); font-size: var(--fs-sm); }
+.flash.pending ul { margin: var(--sp-2) 0; }
 .flash em { font-style: normal; color: var(--text); }
 
 /* ============================================================ abas rolaveis
@@ -178,7 +177,7 @@ form.acao-bloco { display: block; flex: 1; min-width: 0; }
 .menu > summary:hover { border-color: var(--line-forte); background: var(--panel-3); }
 .menu[open] > summary { border-color: var(--accent); }
 
-.menu__lista {
+.menu__list {
   position: absolute;
   right: 0;
   top: calc(100% + var(--sp-1));
@@ -195,7 +194,7 @@ form.acao-bloco { display: block; flex: 1; min-width: 0; }
   background: var(--panel-2);
   box-shadow: var(--sombra-3);
 }
-.menu__lista--esq { right: auto; left: 0; }
+.menu__list--left { right: auto; left: 0; }
 .menu__item {
   display: flex; align-items: center; gap: var(--sp-3);
   width: 100%;
@@ -216,13 +215,13 @@ form.acao-bloco { display: block; flex: 1; min-width: 0; }
 /* Dois menus no mesmo cabecalho: o "⋯" do celular e o da conta, no desktop. Cada um so
    existe na largura em que faz sentido (o `display: none` tira o outro da ordem de
    tabulacao tambem). */
-.menu--conta { display: none; }
-.menu--conta > summary::after { content: "▾"; color: var(--muted); font-size: var(--fs-xs); }
+.menu--account { display: none; }
+.menu--account > summary::after { content: "▾"; color: var(--muted); font-size: var(--fs-xs); }
 @media (min-width: 900px) {
-  .menu--movel { display: none; }
-  .menu--conta { display: block; }
+  .menu--mobile { display: none; }
+  .menu--account { display: block; }
 }
-.menu__titulo {
+.menu__title {
   padding: var(--sp-2) var(--sp-3) var(--sp-1);
   color: var(--muted); font-size: var(--fs-xs);
   text-transform: uppercase; letter-spacing: .04em;
@@ -258,7 +257,7 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 .qr-2fa svg { display: block; width: 100%; height: auto; }
 
 /* A chave do segundo fator: grande, em fonte de largura fixa e selecionavel com um toque. */
-.segredo {
+.secret {
   display: inline-block;
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--line);
@@ -275,13 +274,13 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 
 /* ============================================================ formulario */
 label { display: block; margin-bottom: var(--sp-4); font-size: var(--fs-sm); color: var(--muted); }
-label > input, label > textarea, label > select, label > .com-unidade { margin-top: var(--sp-1); }
+label > input, label > textarea, label > select, label > .with-unit { margin-top: var(--sp-1); }
 label small { display: block; margin-top: var(--sp-1); color: var(--muted); font-size: var(--fs-xs); line-height: 1.5; }
 label.inline-label { display: inline-flex; align-items: center; gap: var(--sp-2); margin: 0; }
 label.inline-label input { margin-top: 0; }
 
 /* Rotulo de um grupo, nao de um campo: mesma voz dos titulos de dl.meta. */
-.rotulo {
+.label {
   display: block; color: var(--muted); font-size: var(--fs-xs);
   text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-1);
 }
@@ -305,30 +304,30 @@ label.inline-label input { margin-top: 0; }
 
 /* Grupo de campos com titulo (as receitas de instalacao): a moldura do navegador, sem
    estilo, sai branca e grossa num painel escuro. */
-fieldset.grupo {
+fieldset.fieldgroup {
   min-width: 0;
   margin: 0 0 var(--sp-4);
   padding: var(--sp-2) var(--sp-4) var(--sp-3);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
 }
-fieldset.grupo legend {
+fieldset.fieldgroup legend {
   padding: 0 var(--sp-2);
   color: var(--muted); font-size: var(--fs-xs);
   text-transform: uppercase; letter-spacing: .04em;
 }
 
-.opcoes {
+.options {
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--sp-1) var(--sp-4);
   margin: var(--sp-1) 0 0;
 }
 
-label.curto { max-width: 34ch; }
-.com-unidade { display: flex; align-items: center; gap: var(--sp-2); }
-.com-unidade input { width: 6rem; margin-top: 0; }
-.unidade { color: var(--muted); font-size: var(--fs-sm); }
+label.short { max-width: 34ch; }
+.with-unit { display: flex; align-items: center; gap: var(--sp-2); }
+.with-unit input { width: 6rem; margin-top: 0; }
+.unit { color: var(--muted); font-size: var(--fs-sm); }
 
 .inline-field {
   display: flex; flex-direction: column; gap: var(--sp-1);
@@ -341,7 +340,7 @@ label.curto { max-width: 34ch; }
   .form-actions > .btn { width: auto; }
   .form-actions .spacer { display: block; flex: 1; }
   .row { flex-direction: row; gap: var(--sp-4); }
-  .opcoes { grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+  .options { grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
 }
 
 /* ============================================================ tabela de dados */
@@ -355,9 +354,9 @@ table.jobs th {
   text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
 }
 table.jobs tr:last-child td { border-bottom: none; }
-table.jobs td.acoes { white-space: nowrap; }
-table.jobs td.acoes > * { margin-right: var(--sp-1); }
-.numerica td { font-variant-numeric: tabular-nums; }
+table.jobs td.actions { white-space: nowrap; }
+table.jobs td.actions > * { margin-right: var(--sp-1); }
+.numeric td { font-variant-numeric: tabular-nums; }
 
 code.trunc {
   display: inline-block; max-width: 28ch; overflow: hidden;
@@ -388,6 +387,10 @@ pre.log.cmd { color: var(--accent); margin-bottom: var(--sp-2); max-height: 8rem
   gap: var(--sp-3) var(--sp-5);
   margin-bottom: var(--sp-4);
 }
+/* Celula do grid de medidores. `min-width: 0` nao e enfeite: item de grid nasce com
+   `min-width: auto`, e um nome de disco comprido empurraria a coluna para fora da tela
+   em vez de truncar. */
+.meter { min-width: 0; }
 .meter-head {
   display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2);
   font-size: var(--fs-xs); color: var(--muted);

@@ -7,7 +7,7 @@
 
 const UNIDADES = ['B', 'KB', 'MB', 'GB', 'TB'];
 
-export function tamanho(bytes) {
+export function fileSize(bytes) {
   let v = Number(bytes) || 0;
   for (let i = 0; i < UNIDADES.length; i++) {
     if (v < 1024 || i === UNIDADES.length - 1) {
@@ -18,7 +18,7 @@ export function tamanho(bytes) {
   return `${v.toFixed(1)} TB`;
 }
 
-export function duracao(seg) {
+export function duration(seg) {
   const t = Math.floor(Number(seg) || 0);
   const d = Math.floor(t / 86400);
   const h = Math.floor((t % 86400) / 3600);
@@ -29,12 +29,12 @@ export function duracao(seg) {
   return `${t}s`;   // jogador que acabou de entrar
 }
 
-export function pctTexto(v) {
+export function percentText(v) {
   return (v === null || v === undefined) ? '-' : Number(v).toFixed(1);
 }
 
 /* Perto do teto o medidor muda de cor: e o que se olha de relance. */
-export function nivel(pct) {
+export function level(pct) {
   if (pct === null || pct === undefined) return '';
   if (pct >= 92) return ' hot';
   if (pct >= 80) return ' warn';
@@ -43,7 +43,7 @@ export function nivel(pct) {
 
 /* Escapa texto que veio do jogo ou do container antes de virar HTML.
  * Onde der, prefira textContent; isto e para quando a marcacao e montada em bloco. */
-export function esc(s) {
+export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% import "components/servidor.html" as srv with context %}
+{% import "components/server.html" as srv with context %}
 {% block title %}{{ _('server.backups') }} &mdash; {{ server.name }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('server.backups') ~ ' — ' ~ server.name) }}
-{{ srv.abas(server, 'backups') }}
+{{ ui.page_header(_('server.backups') ~ ' — ' ~ server.name) }}
+{{ srv.tabs(server, 'backups') }}
 
 <div class="card">
   <h2>{{ _('backups.what_is_saved') }}</h2>
@@ -24,8 +24,8 @@
       {% endif %}
     </p>
     <div class="form-actions">
-      {{ ui.acao(url_for('backups.create', sid=server.id), _('backups.back_up_now'),
-                 variante='primary', icone='💾', bloco=true) }}
+      {{ ui.action(url_for('backups.create', sid=server.id), _('backups.back_up_now'),
+                 variant='primary', icon='💾', block=true) }}
     </div>
     <p class="muted small mt-4">
       Da para tirar a copia com o servidor ligado, e o normal. So saiba que um save
@@ -57,16 +57,16 @@
         </td>
         <td class="muted small nowrap">{{ c.mtime }}</td>
         <td class="muted nowrap">{{ c.size | filesize }}</td>
-        <td class="acoes">
+        <td class="actions">
           {% if is_admin %}
-            {{ ui.botao(_('files.download'), href=url_for('backups.download', sid=server.id, nome=c.name),
-                        variante='ghost', tamanho='sm', icone='⬇') }}
-            {{ ui.acao(url_for('backups.restore', sid=server.id), _('backups.restore'), tamanho='sm',
-                       campos={'nome': c.name},
-                       confirmar=_('backups.restore_confirm', file=c.name, server=server.name)) }}
-            {{ ui.acao(url_for('backups.delete', sid=server.id), _('files.delete'), variante='danger',
-                       tamanho='sm', campos={'nome': c.name},
-                       confirmar=_('backups.delete_confirm', file=c.name)) }}
+            {{ ui.button(_('files.download'), href=url_for('backups.download', sid=server.id, nome=c.name),
+                        variant='ghost', size='sm', icon='⬇') }}
+            {{ ui.action(url_for('backups.restore', sid=server.id), _('backups.restore'), size='sm',
+                       fields={'nome': c.name},
+                       confirm=_('backups.restore_confirm', file=c.name, server=server.name)) }}
+            {{ ui.action(url_for('backups.delete', sid=server.id), _('files.delete'), variant='danger',
+                       size='sm', fields={'nome': c.name},
+                       confirm=_('backups.delete_confirm', file=c.name)) }}
           {% else %}
           <span class="muted small">{{ _('backups.admin_only') }}</span>
           {% endif %}

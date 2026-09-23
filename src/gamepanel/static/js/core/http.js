@@ -18,11 +18,11 @@ export class ErroDeRede extends Error {
  * `cache: 'no-store'` importa de verdade aqui: com o service worker instalado, uma
  * leitura de medidores servida do cache mostraria o servidor como estava ha uma hora
  * — pior do que nao mostrar nada. */
-export async function lerJSON(url, opcoes = {}) {
+export async function readJSON(url, opcoes = {}) {
   let resp;
   try {
     resp = await fetch(url, {
-      headers: { Accept: 'application/json', ...opcoes.headers },
+      headers: { Accept: 'application/json', ...options.headers },
       cache: 'no-store',
       credentials: 'same-origin',
       signal: opcoes.signal,
@@ -31,15 +31,15 @@ export async function lerJSON(url, opcoes = {}) {
     throw new ErroDeRede(err.message || 'sem conexao');
   }
 
-  let dados = null;
+  let data = null;
   try {
-    dados = await resp.json();
+    data = await resp.json();
   } catch {
-    dados = null;
+    data = null;
   }
 
   if (!resp.ok) {
-    throw new ErroDeRede(dados?.error || `http ${resp.status}`, resp.status);
+    throw new ErroDeRede(data?.error || `http ${resp.status}`, resp.status);
   }
-  return dados;
+  return data;
 }

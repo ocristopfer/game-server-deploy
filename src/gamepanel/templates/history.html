@@ -3,7 +3,7 @@
 {% block title %}{{ _('nav.history') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('nav.history')) }}
+{{ ui.page_header(_('nav.history')) }}
 
 <div class="card">
   <form method="get" action="{{ url_for('history.index') }}" class="cluster">
@@ -32,8 +32,8 @@
       </select>
     </label>
     <div class="cluster">
-      {{ ui.botao(_('history.filter'), icone='🔎') }}
-      {{ ui.botao(_('history.clear'), href=url_for('history.index'), variante='ghost', tamanho='sm') }}
+      {{ ui.button(_('history.filter'), icon='🔎') }}
+      {{ ui.button(_('history.clear'), href=url_for('history.index'), variant='ghost', size='sm') }}
     </div>
   </form>
 </div>
@@ -66,11 +66,11 @@
   </table></div>
   <div class="cluster mt-4">
     {% if page > 0 %}
-      {{ ui.botao(_('history.newer'), variante='ghost', icone='←',
+      {{ ui.button(_('history.newer'), variant='ghost', icon='←',
                   href=url_for('history.index', servidor=server_filter, acao=action_filter, usuario=user_filter, p=page - 1)) }}
     {% endif %}
     {% if has_more %}
-      {{ ui.botao(_('history.older') ~ ' →', variante='ghost',
+      {{ ui.button(_('history.older') ~ ' →', variant='ghost',
                   href=url_for('history.index', servidor=server_filter, acao=action_filter, usuario=user_filter, p=page + 1)) }}
     {% endif %}
   </div>

@@ -4,17 +4,17 @@
  * com alteracoes pendentes pergunta antes.
  */
 import { $ } from '../core/dom.js';
-import { avisarAoSair } from '../core/dirty.js';
+import { warnBeforeLeaving } from '../core/dirty.js';
 
-export const editorDeArquivo = {
-  seletor: '[data-editor]',
-  montar(form) {
+export const fileEditor = {
+  selector: '[data-editor]',
+  mount(form) {
     const area = $('#content', form);
     const pos = $('#editor-pos', form);
     if (!area) return;
 
     const original = area.value;
-    const liberar = avisarAoSair(() => area.value !== original);
+    const liberar = warnBeforeLeaving(() => area.value !== original);
 
     area.addEventListener('keydown', (ev) => {
       if (ev.key === 'Tab') {
@@ -29,7 +29,7 @@ export const editorDeArquivo = {
     function mostrarPosicao() {
       if (!pos) return;
       const ate = area.value.slice(0, area.selectionStart);
-      const linha = ate.split('\n').length;
+      const line = ate.split('\n').length;
       const coluna = ate.length - ate.lastIndexOf('\n');
       pos.textContent = `linha ${linha}, coluna ${coluna}` +
         (area.value === original ? '' : ' - alterado');

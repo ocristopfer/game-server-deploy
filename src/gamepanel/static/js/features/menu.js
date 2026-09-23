@@ -26,16 +26,16 @@ function ligarDocumentoUmaVez() {
 
   document.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
-    const aberto = document.querySelector('details.menu[open]');
-    if (!aberto) return;
-    aberto.open = false;
-    aberto.querySelector('summary')?.focus();
+    const openState = document.querySelector('details.menu[open]');
+    if (!openState) return;
+    openState.open = false;
+    openState.querySelector('summary')?.focus();
   });
 }
 
-export const menuSuspenso = {
-  seletor: 'details.menu',
-  montar(menu) {
+export const dropdownMenu = {
+  selector: 'details.menu',
+  mount(menu) {
     ligarDocumentoUmaVez();
     menu.addEventListener('toggle', () => { if (menu.open) fecharOutros(menu); });
   },

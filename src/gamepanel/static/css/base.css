@@ -96,8 +96,7 @@ table { width: 100%; border-collapse: collapse; }
 .muted { color: var(--muted); }
 .small { font-size: var(--fs-sm); }
 .nowrap { white-space: nowrap; }
-.mono { font-family: var(--mono); }
-.quebra { overflow-wrap: anywhere; }
+.wrap-anywhere { overflow-wrap: anywhere; }
 
 /* Rotulo que existe so para o leitor de tela. */
 .sr-only {

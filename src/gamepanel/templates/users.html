@@ -3,7 +3,7 @@
 {% block title %}{{ _('nav.users') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('nav.users')) }}
+{{ ui.page_header(_('nav.users')) }}
 
 <div class="card">
   <div class="table-wrap"><table class="jobs">
@@ -20,7 +20,7 @@
           {% if u.id == my_id %}
             {{ role_labels[u.role] }}
           {% else %}
-          <form method="post" action="{{ url_for('users.role', uid=u.id) }}" class="users-papel">
+          <form method="post" action="{{ url_for('users.role', uid=u.id) }}" class="users-role">
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
             <label class="sr-only" for="papel-{{ u.id }}">Papel de {{ u.username }}</label>
             <select name="role" id="papel-{{ u.id }}">
@@ -28,12 +28,12 @@
                 <option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ role_labels[r] }}</option>
               {% endfor %}
             </select>
-            {{ ui.botao(_('users.change'), variante='ghost', tamanho='sm') }}
+            {{ ui.button(_('users.change'), variant='ghost', size='sm') }}
           </form>
           {% endif %}
         </td>
         <td class="muted small nowrap">{{ u.created_at.replace('T', ' ')[:19] }}</td>
-        <td class="acoes">
+        <td class="actions">
           <details class="users-reset">
             <summary class="btn btn--ghost btn--sm">{{ _('users.reset_password') }}</summary>
             <form method="post" action="{{ url_for('users.password', uid=u.id) }}" class="users-form">
@@ -42,18 +42,18 @@
                      minlength="{{ min_len }}" placeholder="{{ _('users.new_password_lower') }}" required>
               <input name="confirm" type="password" autocomplete="new-password" aria-label="{{ _('users.confirm_lower') }}"
                      minlength="{{ min_len }}" placeholder="{{ _('users.confirm_lower') }}" required>
-              {{ ui.botao(_('action.save'), tamanho='sm') }}
+              {{ ui.button(_('action.save'), size='sm') }}
             </form>
           </details>
           {% if u.totp_enabled and u.id != my_id %}
-            {{ ui.acao(url_for('users.two_factor_off', uid=u.id), _('users.two_factor_off'),
-                       variante='ghost', tamanho='sm',
-                       confirmar=_('users.two_factor_off_confirm', user=u.username)) }}
+            {{ ui.action(url_for('users.two_factor_off', uid=u.id), _('users.two_factor_off'),
+                       variant='ghost', size='sm',
+                       confirm=_('users.two_factor_off_confirm', user=u.username)) }}
           {% endif %}
           {% if u.id != my_id %}
-            {{ ui.acao(url_for('users.delete', uid=u.id), _('instances.remove'),
-                       variante='danger', tamanho='sm',
-                       confirmar=_('users.remove_confirm', user=u.username)) }}
+            {{ ui.action(url_for('users.delete', uid=u.id), _('instances.remove'),
+                       variant='danger', size='sm',
+                       confirm=_('users.remove_confirm', user=u.username)) }}
           {% endif %}
         </td>
       </tr>
@@ -94,7 +94,7 @@
       </label>
     </div>
     <div class="form-actions">
-      {{ ui.botao(_('users.create'), variante='primary', bloco=true) }}
+      {{ ui.button(_('users.create'), variant='primary', block=true) }}
     </div>
   </form>
   <p class="muted small mt-4">

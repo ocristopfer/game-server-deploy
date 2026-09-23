@@ -3,7 +3,7 @@
 {% block title %}{{ _('nav.account') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.cabecalho(_('nav.account')) }}
+{{ ui.page_header(_('nav.account')) }}
 
 <div class="card">
   <dl class="meta wide">
@@ -49,8 +49,8 @@
       <input name="confirm" type="password" autocomplete="new-password" minlength="8" required>
     </label>
     <div class="form-actions">
-      {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
-      {{ ui.botao(_('server_form.cancel'), href=url_for('dashboard.index'), variante='ghost', bloco=true) }}
+      {{ ui.button(_('action.save'), variant='primary', block=true) }}
+      {{ ui.button(_('server_form.cancel'), href=url_for('dashboard.index'), variant='ghost', block=true) }}
     </div>
   </form>
 </div>
@@ -72,7 +72,7 @@
           <input name="codigo" inputmode="numeric" autocomplete="one-time-code" required>
           <small>{{ _('account.old_codes_expire') }}</small>
         </label>
-        {{ ui.botao(_('account.generate'), tamanho='sm') }}
+        {{ ui.button(_('account.generate'), size='sm') }}
       </form>
     </details>
     {% if not requires_2fa %}
@@ -86,8 +86,8 @@
         <label>{{ _('account.app_or_recovery_code') }}
           <input name="codigo" autocomplete="one-time-code" required>
         </label>
-        {{ ui.botao(_('account.disable'), variante='danger', tamanho='sm',
-                    confirmar=_('account.disable_confirm')) }}
+        {{ ui.button(_('account.disable'), variant='danger', size='sm',
+                    confirm=_('account.disable_confirm')) }}
       </form>
     </details>
     {% else %}
@@ -105,18 +105,18 @@
       {% endif %}
     </p>
     <div class="form-actions">
-      {{ ui.botao(_('account.enable'), href=url_for('account.two_factor'), variante='primary', bloco=true, icone='🔐') }}
+      {{ ui.button(_('account.enable'), href=url_for('account.two_factor'), variant='primary', block=true, icon='🔐') }}
     </div>
   {% endif %}
 </div>
 
 {# O "sair" vivia so no canto da barra de cima. No celular, com a barra reduzida ao
    menu, a Conta e onde as pessoas procuram por ele. #}
-<div class="card card--perigo card--form">
+<div class="card card--danger card--form">
   <h2>{{ _('account.sign_out') }}</h2>
   <p class="muted small">{{ _('account.sign_out_hint') }}</p>
   <div class="form-actions">
-    {{ ui.acao(url_for('auth.logout'), _('account.sign_out_of_panel'), variante='danger', icone='🚪', bloco=true) }}
+    {{ ui.action(url_for('auth.logout'), _('account.sign_out_of_panel'), variant='danger', icon='🚪', block=true) }}
   </div>
 </div>
 {% endblock %}

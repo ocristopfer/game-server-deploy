@@ -21,9 +21,9 @@ export class Poller {
    * @param {boolean}  opcoes.aoVoltar    puxar na hora quando a aba reaparece
    * @param {Function} opcoes.aoErro      chamado com o erro de cada volta que falhou
    */
-  constructor(tarefa, { intervalo = 10000, aoVoltar = true, aoErro = null } = {}) {
+  constructor(tarefa, { interval = 10000, aoVoltar = true, aoErro = null } = {}) {
     this.tarefa = tarefa;
-    this.intervalo = intervalo;
+    this.intervalo = interval;
     this.aoVoltar = aoVoltar;
     this.aoErro = aoErro;
     this.timer = null;
@@ -37,7 +37,7 @@ export class Poller {
 
   get ativo() { return this.timer !== null; }
 
-  iniciar({ imediato = true } = {}) {
+  start({ imediato = true } = {}) {
     if (this.timer) return this;
     this.timer = setInterval(() => this.agora(), this.intervalo);
     document.addEventListener('visibilitychange', this._aoMudarVisibilidade);
@@ -45,7 +45,7 @@ export class Poller {
     return this;
   }
 
-  parar() {
+  stop() {
     if (!this.timer) return this;
     clearInterval(this.timer);
     this.timer = null;

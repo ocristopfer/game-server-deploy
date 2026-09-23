@@ -13,7 +13,7 @@ import { $ } from '../core/dom.js';
 
 /* Guarda o evento que o Chrome dispara quando a instalacao esta disponivel. Ele so
  * pode ser usado UMA vez e nao pode ser pedido do nada — por isso e capturado aqui,
- * no topo do modulo, antes de qualquer tela montar. */
+ * no topo do modulo, antes de qualquer tela mount. */
 let convite = null;
 const ouvintes = new Set();
 
@@ -31,14 +31,14 @@ window.addEventListener('appinstalled', () => {
 const instalado = () => window.matchMedia('(display-mode: standalone)').matches ||
   window.navigator.standalone === true;
 
-export const botaoInstalar = {
-  seletor: '[data-instalar]',
-  montar(botao) {
+export const installButton = {
+  selector: '[data-install]',
+  mount(botao) {
     if (instalado()) return;
 
-    const atualizar = (disponivel) => { botao.hidden = !disponivel; };
-    ouvintes.add(atualizar);
-    atualizar(Boolean(convite));
+    const refresh = (disponivel) => { botao.hidden = !disponivel; };
+    ouvintes.add(refresh);
+    refresh(Boolean(convite));
 
     botao.addEventListener('click', async () => {
       if (!convite) return;
@@ -54,9 +54,9 @@ export const botaoInstalar = {
  *
  * A URL vem do HTML (data-sw) porque so o servidor sabe onde ele mora; o escopo e a
  * raiz, senao o worker so enxergaria /static/. */
-export const servicoOffline = {
-  seletor: '[data-sw]',
-  montar(el) {
+export const offlineWorker = {
+  selector: '[data-sw]',
+  mount(el) {
     if (!('serviceWorker' in navigator)) return;
 
     // Guardado ANTES do registro: e o que separa "primeira instalacao" de
@@ -95,10 +95,10 @@ export const servicoOffline = {
  * esperando recebe a ordem de assumir, sai do "waiting", e o controllerchange logo
  * em seguida recarrega a pagina ja com o casco novo. */
 function avisarVersaoNova(reg) {
-  const aviso = $('[data-versao-nova]');
-  if (!aviso?.hidden) return;   // ausente, ou ja avisado: nao empilha ouvinte de clique
-  aviso.hidden = false;
-  aviso.querySelector('button')?.addEventListener('click', () => {
+  const notice = $('[data-new-version]');
+  if (!notice?.hidden) return;   // ausente, ou ja avisado: nao empilha ouvinte de clique
+  notice.hidden = false;
+  notice.querySelector('button')?.addEventListener('click', () => {
     reg.waiting?.postMessage({ tipo: 'assumir' });
   });
 }
