@@ -381,8 +381,8 @@ if ((Get-Cfg $cfg "ADMIN_SSH_PUBKEY") -eq "") {
 }
 
 if ($ProxmoxPassword -eq "") { $ProxmoxPassword = Get-Cfg $cfg "PROXMOX_PASSWORD" }
-$UsandoSenha = Initialize-ProxmoxAuth $ProxmoxHost $ProxmoxPassword
-if ($UsandoSenha -and $InstallKey) {
+$usingPassword = Initialize-ProxmoxAuth $ProxmoxHost $ProxmoxPassword
+if ($usingPassword -and $InstallKey) {
     Install-KeyOnProxmox $ProxmoxHost (Get-Cfg $cfg "ADMIN_SSH_PUBKEY")
 }
 
@@ -428,7 +428,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Provisionamento do painel falhou no host Proxmox (veja a saida acima)" }
 
     Write-Host "Painel implantado." -ForegroundColor Green
-    if ($UsandoSenha -and -not $InstallKey) {
+    if ($usingPassword -and -not $InstallKey) {
         Write-Host "Dica: rode com -InstallKey uma vez para autorizar sua chave e parar de usar senha." -ForegroundColor DarkGray
     }
 } finally {

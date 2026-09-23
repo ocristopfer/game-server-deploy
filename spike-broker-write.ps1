@@ -10,7 +10,7 @@ Tudo que cria e apagado no fim (try/finally), e SO apaga o que ele mesmo criou,
 conferindo o nome/descricao antes. O CT nunca e iniciado; a regra nasce DESATIVADA.
 Le broker.secrets.env e nunca imprime segredo.
 
-Uso:  .\spike-broker-write.ps1 [-SoProxmox] [-SoOpnsense]
+Uso:  .\spike-broker-write.ps1 [-ProxmoxOnly] [-OpnsenseOnly]
 #>
 param(
     [string]$EnvFile = (Join-Path $PSScriptRoot "broker.secrets.env"),
@@ -18,17 +18,26 @@ param(
     [string]$Ip = "192.168.2.250",
     [string]$Gateway = "192.168.2.1",
     [int]$Port = 65001,
-    [switch]$SoProxmox,
-    [switch]$SoOpnsense,
+    # O nome antigo `-SoProxmox` continua valendo pelo Alias: quem ja tem a linha de
+    # comando salva nao a perde.
+    [Alias('SoProxmox')]
+    [switch]$ProxmoxOnly,
+    # O nome antigo `-SoOpnsense` continua valendo pelo Alias: quem ja tem a linha de
+    # comando salva nao a perde.
+    [Alias('SoOpnsense')]
+    [switch]$OpnsenseOnly,
     # Liga o CT de teste e entra por SSH (confere sshd, rede, apt e keyctl) antes de destruir.
-    [switch]$ComSsh
+    # O nome antigo `-ComSsh` continua valendo pelo Alias: quem ja tem a linha de
+    # comando salva nao a perde.
+    [Alias('ComSsh')]
+    [switch]$WithSsh
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$HostnameDoTeste = "spike-broker"
-$DescricaoDoTeste = "gamepanel:spike"
+$TestHostname = "spike-broker"
+$TestDescription = "gamepanel:spike"
 
 # ----- Saida -----
 $script:Falhas = 0
@@ -92,8 +101,8 @@ function Invoke-Api([string]$Method, [string]$Url, [hashtable]$Headers, $Body = 
         if ($null -eq $resp) { return @{ Status = 0; Json = $null; Texto = $_.Exception.Message } }
         $text = ""
         try {
-            $leitor = New-Object IO.StreamReader($resp.GetResponseStream())
-            $text = $leitor.ReadToEnd()
+            $reader = New-Object IO.StreamReader($resp.GetResponseStream())
+            $text = $reader.ReadToEnd()
         } catch { $text = "" }
         # O Proxmox devolve o motivo ("Permission check failed (/vms/399, VM.Allocate)") na
         # linha de status HTTP, nao no corpo.
@@ -139,16 +148,16 @@ function Get-PveTaskLog([string]$Base, [hashtable]$H, [string]$Node, [string]$Up
 function New-TestKey {
     $dir = Join-Path ([IO.Path]::GetTempPath()) ("spike-key-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $dir | Out-Null
-    $arq = Join-Path $dir "id"
+    $keyFile = Join-Path $dir "id"
     # ssh-keygen escreve no stderr mesmo com sucesso; -N '""' porque o PS 5.1 descarta argumento vazio.
     $before = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & ssh-keygen -q -t ed25519 -N '""' -f $arq 2>&1 | Out-Null
+    & ssh-keygen -q -t ed25519 -N '""' -f $keyFile 2>&1 | Out-Null
     $ErrorActionPreference = $before
-    if (-not (Test-Path "$arq.pub")) { throw "ssh-keygen nao gerou a chave de teste" }
-    $pub = (Get-Content "$arq.pub" -Raw).Trim()
+    if (-not (Test-Path "$keyFile.pub")) { throw "ssh-keygen nao gerou a chave de teste" }
+    $pub = (Get-Content "$keyFile.pub" -Raw).Trim()
     # A pasta fica de pe (a chave privada e usada no teste de SSH); quem chama a apaga no finally.
-    return @{ Pub = $pub; Dir = $dir; Priv = $arq }
+    return @{ Pub = $pub; Dir = $dir; Priv = $keyFile }
 }
 
 function Test-ProxmoxWrite([hashtable]$Cfg) {
@@ -162,16 +171,16 @@ function Test-ProxmoxWrite([hashtable]$Cfg) {
         Say "FALHA" "$Ip responde a ping: escolha outro IP com -Ip (nada foi criado)"
         return
     }
-    $existe = Invoke-Api "GET" "$base/nodes/$node/lxc/$Ctid/config" $h
-    if ($existe.Status -eq 200) {
-        Say "FALHA" "o CT $Ctid ja existe (nome '$($existe.Json.data.hostname)'): escolha outro com -Ctid (nada foi criado)"
+    $existing = Invoke-Api "GET" "$base/nodes/$node/lxc/$Ctid/config" $h
+    if ($existing.Status -eq 200) {
+        Say "FALHA" "o CT $Ctid ja existe (nome '$($existing.Json.data.hostname)'): escolha outro com -Ctid (nada foi criado)"
         return
     }
 
-    $par = New-TestKey
-    $key = $par.Pub
-    $base_do_corpo = [ordered]@{
-        vmid = $Ctid; hostname = $HostnameDoTeste
+    $pair = New-TestKey
+    $key = $pair.Pub
+    $bodyBase = [ordered]@{
+        vmid = $Ctid; hostname = $TestHostname
         ostemplate = "$($Cfg['PROXMOX_TEMPLATE_STORAGE']):vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
         rootfs = "$($Cfg['PROXMOX_STORAGE']):4"; memory = 256; swap = 0; cores = 1; unprivileged = 1
         net0 = "name=eth0,bridge=$($Cfg['PROXMOX_BRIDGE']),ip=$Ip/24,gw=$Gateway,type=veth"
@@ -179,16 +188,16 @@ function Test-ProxmoxWrite([hashtable]$Cfg) {
     }
     # Ja sabido (rodadas anteriores): tag na criacao exige VM.Config.Options em /vms/<id> e
     # keyctl=1 so o root@pam pode. Aqui a variante realista do broker: nesting + chave SSH.
-    $variantes = @(
+    $variants = @(
         @{ Nome = "nesting + chave SSH"; Extra = @{ features = "nesting=1"; "ssh-public-keys" = $key } },
         @{ Nome = "so chave SSH"; Extra = @{ "ssh-public-keys" = $key } }
     )
 
-    $criouAlgum = $false
+    $createdAny = $false
     try {
-        foreach ($v in $variantes) {
+        foreach ($v in $variants) {
             $body = @{}
-            foreach ($k in $base_do_corpo.Keys) { $body[$k] = $base_do_corpo[$k] }
+            foreach ($k in $bodyBase.Keys) { $body[$k] = $bodyBase[$k] }
             foreach ($k in $v.Extra.Keys) { $body[$k] = $v.Extra[$k] }
 
             $r = Invoke-Api "POST" "$base/nodes/$node/lxc" $h $body
@@ -197,27 +206,27 @@ function Test-ProxmoxWrite([hashtable]$Cfg) {
                 continue
             }
             $upid = [string]$r.Json.data
-            $criouAlgum = $true
+            $createdAny = $true
             $output = Wait-PveTask $base $h $node $upid
             if ($output -ne "OK") {
                 Say "FALHA" "criar CT, variante $($v.Nome): tarefa terminou com '$output'"
                 Get-PveTaskLog $base $h $node $upid | ForEach-Object { Say "INFO" "  log: $_" }
                 Remove-TestCt $base $h $node
-                $criouAlgum = $false
+                $createdAny = $false
                 continue
             }
             Say "OK" "criar CT, variante $($v.Nome): FUNCIONOU"
             Confirm-TestCt $base $h $node $pool $v
-            if ($ComSsh) { Test-SshDoCt $base $h $node $par.Priv }
+            if ($WithSsh) { Test-SshDoCt $base $h $node $pair.Priv }
             break
         }
     } finally {
-        if ($criouAlgum) { Remove-TestCt $base $h $node }
-        if (Test-Path $par.Dir) { Remove-Item -Recurse -Force $par.Dir }
+        if ($createdAny) { Remove-TestCt $base $h $node }
+        if (Test-Path $pair.Dir) { Remove-Item -Recurse -Force $pair.Dir }
     }
 }
 
-function Test-SshDoCt([string]$Base, [hashtable]$H, [string]$Node, [string]$ChavePrivada) {
+function Test-SshDoCt([string]$Base, [hashtable]$H, [string]$Node, [string]$PrivateKey) {
     Write-Host "`n-- SSH no CT de teste --" -ForegroundColor Cyan
     $r = Invoke-Api "POST" "$Base/nodes/$Node/lxc/$Ctid/status/start" $H @{}
     if ($r.Status -ne 200) { Say "FALHA" "iniciar o CT: HTTP $($r.Status) - $(Short $r.Texto)"; return }
@@ -226,26 +235,26 @@ function Test-SshDoCt([string]$Base, [hashtable]$H, [string]$Node, [string]$Chav
     Say "OK" "CT iniciado"
 
     # Espera a porta 22 abrir (boot + sshd). 90 s e folga de sobra para um Debian de CT.
-    $aberta = $false
-    for ($i = 0; $i -lt 30 -and -not $aberta; $i++) {
+    $isOpen = $false
+    for ($i = 0; $i -lt 30 -and -not $isOpen; $i++) {
         $tcp = New-Object Net.Sockets.TcpClient
         try {
             $ar = $tcp.BeginConnect($Ip, 22, $null, $null)
-            if ($ar.AsyncWaitHandle.WaitOne(2000) -and $tcp.Connected) { $aberta = $true }
-        } catch { $aberta = $false } finally { $tcp.Close() }
-        if (-not $aberta) { Start-Sleep -Seconds 1 }
+            if ($ar.AsyncWaitHandle.WaitOne(2000) -and $tcp.Connected) { $isOpen = $true }
+        } catch { $isOpen = $false } finally { $tcp.Close() }
+        if (-not $isOpen) { Start-Sleep -Seconds 1 }
     }
-    if (-not $aberta) {
+    if (-not $isOpen) {
         Say "FALHA" "a porta 22 de $Ip nao abriu em ~90 s (o CT nao tem sshd, ou esta maquina nao alcanca a rede 192.168.2.x)"
         return
     }
     Say "OK" "porta 22 de $Ip aberta a partir desta maquina"
 
     # Sem aspas duplas de proposito: o PowerShell 5.1 as estraga ao passar argumento para o ssh.exe.
-    $remoto = 'echo SSH_OK; id -u; grep PRETTY_NAME /etc/os-release; systemctl is-active ssh; dpkg -s openssh-server | grep ^Status; getent hosts deb.debian.org && echo DNS_OK || echo DNS_FALHOU; timeout 90 apt-get update -qq >/dev/null 2>&1 && echo APT_OK || echo APT_FALHOU; timeout 90 apt-get install -y -qq keyutils >/dev/null 2>&1; keyctl show @s >/dev/null 2>&1 && echo KEYCTL_OK || echo KEYCTL_BLOQUEADO'
+    $remoteLine = 'echo SSH_OK; id -u; grep PRETTY_NAME /etc/os-release; systemctl is-active ssh; dpkg -s openssh-server | grep ^Status; getent hosts deb.debian.org && echo DNS_OK || echo DNS_FALHOU; timeout 90 apt-get update -qq >/dev/null 2>&1 && echo APT_OK || echo APT_FALHOU; timeout 90 apt-get install -y -qq keyutils >/dev/null 2>&1; keyctl show @s >/dev/null 2>&1 && echo KEYCTL_OK || echo KEYCTL_BLOQUEADO'
     $before = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    $text = (& ssh -i $ChavePrivada -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ConnectTimeout=10 "root@$Ip" $remoto 2>&1 | Out-String)
+    $text = (& ssh -i $PrivateKey -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ConnectTimeout=10 "root@$Ip" $remoteLine 2>&1 | Out-String)
     $ErrorActionPreference = $before
 
     if ($text -notmatch "SSH_OK") { Say "FALHA" "ssh nao entrou: $(Short $text)"; return }
@@ -258,7 +267,7 @@ function Test-SshDoCt([string]$Base, [hashtable]$H, [string]$Node, [string]$Chav
     elseif ($text -match "KEYCTL_BLOQUEADO") { Say "AVISO" "keyctl bloqueado sem a feature: se algum jogo/instalador precisar, sera preciso clonar de um CT-template feito pelo root" }
 }
 
-function Confirm-TestCt([string]$Base, [hashtable]$H, [string]$Node, [string]$Pool, $Variante) {
+function Confirm-TestCt([string]$Base, [hashtable]$H, [string]$Node, [string]$Pool, $Variant) {
     $c = Invoke-Api "GET" "$Base/nodes/$Node/lxc/$Ctid/config" $H
     if ($c.Status -ne 200) { Say "AVISO" "nao consegui ler a config do CT criado (HTTP $($c.Status))"; return }
     $d = $c.Json.data
@@ -278,20 +287,20 @@ function Confirm-TestCt([string]$Base, [hashtable]$H, [string]$Node, [string]$Po
 function Remove-TestCt([string]$Base, [hashtable]$H, [string]$Node) {
     $c = Invoke-Api "GET" "$Base/nodes/$Node/lxc/$Ctid/config" $H
     if ($c.Status -ne 200) { return }
-    if ($c.Json.data.hostname -ne $HostnameDoTeste) {
+    if ($c.Json.data.hostname -ne $TestHostname) {
         Say "FALHA" "o CT $Ctid NAO e o de teste (nome '$($c.Json.data.hostname)'): nao vou apagar"
         return
     }
     $st = Invoke-Api "GET" "$Base/nodes/$Node/lxc/$Ctid/status/current" $H
     if ($st.Status -eq 200 -and $st.Json.data.status -eq "running") {
-        $par = Invoke-Api "POST" "$Base/nodes/$Node/lxc/$Ctid/status/shutdown" $H @{ forceStop = 1; timeout = 20 }
-        if ($par.Status -eq 200) { Wait-PveTask $Base $H $Node ([string]$par.Json.data) | Out-Null }
+        $pair = Invoke-Api "POST" "$Base/nodes/$Node/lxc/$Ctid/status/shutdown" $H @{ forceStop = 1; timeout = 20 }
+        if ($pair.Status -eq 200) { Wait-PveTask $Base $H $Node ([string]$pair.Json.data) | Out-Null }
     }
     $r = Invoke-Api "DELETE" "$Base/nodes/$Node/lxc/${Ctid}?purge=1&destroy-unreferenced-disks=1" $H
     if ($r.Status -ne 200) { Say "FALHA" "destruir o CT de teste: HTTP $($r.Status) - $(Short $r.Texto). APAGUE A MAO o CT $Ctid" ; return }
     $output = Wait-PveTask $Base $H $Node ([string]$r.Json.data)
-    $ainda = Invoke-Api "GET" "$Base/nodes/$Node/lxc/$Ctid/config" $H
-    if ($output -eq "OK" -and $ainda.Status -ne 200) { Say "OK" "CT de teste destruido e confirmado ausente" }
+    $stillThere = Invoke-Api "GET" "$Base/nodes/$Node/lxc/$Ctid/config" $H
+    if ($output -eq "OK" -and $stillThere.Status -ne 200) { Say "OK" "CT de teste destruido e confirmado ausente" }
     else { Say "FALHA" "destruir o CT: tarefa '$output'. CONFIRA se o CT $Ctid ainda existe" }
 }
 
@@ -299,21 +308,21 @@ function Remove-TestCt([string]$Base, [hashtable]$H, [string]$Node) {
 function Test-OpnsenseWrite([hashtable]$Cfg) {
     Write-Host "`n== OPNsense: criar, aplicar e apagar um redirect desativado ==" -ForegroundColor Cyan
     $base = $Cfg["OPNSENSE_URL"].TrimEnd("/") + "/api/firewall"
-    $par = [Text.Encoding]::ASCII.GetBytes($Cfg["OPNSENSE_KEY"] + ":" + $Cfg["OPNSENSE_SECRET"])
-    $h = @{ Authorization = "Basic " + [Convert]::ToBase64String($par) }
+    $pair = [Text.Encoding]::ASCII.GetBytes($Cfg["OPNSENSE_KEY"] + ":" + $Cfg["OPNSENSE_SECRET"])
+    $h = @{ Authorization = "Basic " + [Convert]::ToBase64String($pair) }
     $wan = $Cfg["OPNSENSE_WAN"]
 
     $before = Invoke-Api "POST" "$base/d_nat/search_rule" $h '{"current":1,"rowCount":-1}'
     if ($before.Status -ne 200) { Say "FALHA" "ler regras: HTTP $($before.Status)"; return }
-    $sobra = @($before.Json.rows | Where-Object { $_.descr -eq $DescricaoDoTeste })
-    if ($sobra.Count -gt 0) { Say "FALHA" "ja existe regra '$DescricaoDoTeste' (sobra de teste anterior): apague pela tela do OPNsense e rode de novo"; return }
-    $ocupada = @($before.Json.rows | Where-Object { $_.'destination.port' -eq "$Port" })
-    if ($ocupada.Count -gt 0) { Say "FALHA" "a porta $Port ja e usada por outra regra: escolha outra com -Porta"; return }
+    $leftover = @($before.Json.rows | Where-Object { $_.descr -eq $TestDescription })
+    if ($leftover.Count -gt 0) { Say "FALHA" "ja existe regra '$TestDescription' (sobra de teste anterior): apague pela tela do OPNsense e rode de novo"; return }
+    $taken = @($before.Json.rows | Where-Object { $_.'destination.port' -eq "$Port" })
+    if ($taken.Count -gt 0) { Say "FALHA" "a porta $Port ja e usada por outra regra: escolha outra com -Porta"; return }
 
     $rule = @{ rule = [ordered]@{
         disabled = "1"; interface = $wan; protocol = "udp"; ipprotocol = "inet"
         destination = @{ network = "wanip"; port = "$Port" }
-        target = $Ip; "local-port" = "$Port"; descr = $DescricaoDoTeste
+        target = $Ip; "local-port" = "$Port"; descr = $TestDescription
         # Igual as regras de jogo que ja existem: "pass" libera o trafego no filtro tambem.
         # Sem isso o redirect existiria, mas o WAN barraria o pacote.
         pass = "pass"
@@ -329,9 +338,9 @@ function Test-OpnsenseWrite([hashtable]$Cfg) {
         $uuid = [string]$r.Json.uuid
         Say "OK" "add_rule criou a regra desativada (resultado: $($r.Json.result))"
 
-        $reg = Get-TestRule $base $h $uuid
-        if ($null -ne $reg) {
-            Say "INFO" "regra lida de volta: descr='$($reg.descr)' interface=$($reg.interface) alvo=$($reg.target) porta=$($reg.'destination.port') pass='$($reg.pass)' assoc='$($reg.'associated-rule-id')'"
+        $found = Get-TestRule $base $h $uuid
+        if ($null -ne $found) {
+            Say "INFO" "regra lida de volta: descr='$($found.descr)' interface=$($found.interface) alvo=$($found.target) porta=$($found.'destination.port') pass='$($found.pass)' assoc='$($found.'associated-rule-id')'"
         }
 
         $ap = Invoke-Api "POST" "$base/filter/apply" $h '{}'
@@ -351,26 +360,26 @@ function Get-TestRule([string]$Base, [hashtable]$H, [string]$Uuid) {
 }
 
 function Remove-TestRule([string]$Base, [hashtable]$H, [string]$Uuid) {
-    $reg = Get-TestRule $Base $H $Uuid
-    $ehNossa = ($null -ne $reg) -and ($reg.descr -eq $DescricaoDoTeste) -and ($reg.target -eq $Ip) -and ($reg.'destination.port' -eq "$Port")
-    if (-not $ehNossa) {
+    $found = Get-TestRule $Base $H $Uuid
+    $isOurs = ($null -ne $found) -and ($found.descr -eq $TestDescription) -and ($found.target -eq $Ip) -and ($found.'destination.port' -eq "$Port")
+    if (-not $isOurs) {
         Say "FALHA" "a regra $Uuid NAO bate com a de teste (descricao, alvo e porta): nao vou apagar (apague a mao)"
         return
     }
     $d = Invoke-Api "POST" "$Base/d_nat/del_rule/$Uuid" $H '{}'
-    if ($d.Status -ne 200) { Say "FALHA" "del_rule: HTTP $($d.Status) - $(Short $d.Texto). APAGUE A MAO a regra '$DescricaoDoTeste'"; return }
+    if ($d.Status -ne 200) { Say "FALHA" "del_rule: HTTP $($d.Status) - $(Short $d.Texto). APAGUE A MAO a regra '$TestDescription'"; return }
     $ap = Invoke-Api "POST" "$Base/filter/apply" $H '{}'
     $after = Invoke-Api "POST" "$Base/d_nat/search_rule" $H '{"current":1,"rowCount":-1}'
-    $resta = @($after.Json.rows | Where-Object { $_.descr -eq $DescricaoDoTeste }).Count
-    if ($ap.Status -eq 200 -and $resta -eq 0) { Say "OK" "del_rule + apply: regra de teste removida e confirmada ausente" }
-    else { Say "FALHA" "limpeza incompleta (apply HTTP $($ap.Status), restam $resta). CONFIRA no OPNsense" }
+    $remains = @($after.Json.rows | Where-Object { $_.descr -eq $TestDescription }).Count
+    if ($ap.Status -eq 200 -and $remains -eq 0) { Say "OK" "del_rule + apply: regra de teste removida e confirmada ausente" }
+    else { Say "FALHA" "limpeza incompleta (apply HTTP $($ap.Status), restam $remains). CONFIRA no OPNsense" }
 }
 
 # ============================== Execucao ==============================
 try { $cfg = Read-Secrets $EnvFile } catch { Say "FALHA" $_.Exception.Message; exit 1 }
 
-if (-not $SoOpnsense) { Test-ProxmoxWrite $cfg }
-if (-not $SoProxmox) { Test-OpnsenseWrite $cfg }
+if (-not $OpnsenseOnly) { Test-ProxmoxWrite $cfg }
+if (-not $ProxmoxOnly) { Test-OpnsenseWrite $cfg }
 
 Write-Host ""
 if ($script:Falhas -gt 0) { Say "FALHA" "$($script:Falhas) problema(s) acima."; exit 1 }

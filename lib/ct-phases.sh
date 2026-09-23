@@ -341,8 +341,8 @@ EOF
     run_ct "
       set -e
       install -d -o steam -g steam /home/steam/.steam/steam/ubuntu12_64 /home/steam/.steam/root/ubuntu12_64 /home/steam/.steam/sdk64
-      for destino in /home/steam/.steam/steam/ubuntu12_64 /home/steam/.steam/root/ubuntu12_64 /home/steam/.steam/sdk64; do
-        ln -sf ${STEAMCMD_DIR}/linux64/steamclient.so \"\$destino/steamclient.so\"
+      for target in /home/steam/.steam/steam/ubuntu12_64 /home/steam/.steam/root/ubuntu12_64 /home/steam/.steam/sdk64; do
+        ln -sf ${STEAMCMD_DIR}/linux64/steamclient.so \"\$target/steamclient.so\"
       done
       chown -R steam:steam /home/steam/.steam
     " || die "Falha preparando os symlinks de steamclient.so para o Proton"

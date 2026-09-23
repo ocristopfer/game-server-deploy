@@ -260,7 +260,7 @@ render_panel_config() {
   local tmp_file preserved
   tmp_file="$(mktemp)"
   # O broker grava as linhas GAMEPANEL_*BROKER* neste arquivo (deploy-broker.ps1
-  # -ConfigurarPainel), e este script reescreve o arquivo INTEIRO: sem guardar essas linhas antes,
+  # -ConfigurePanel), e este script reescreve o arquivo INTEIRO: sem guardar essas linhas antes,
   # cada deploy completo do painel desligava o broker em silencio.
   preserved="$(pct exec "$CTID" -- sh -c "grep -E '^GAMEPANEL_(BROKER_|ALLOW_BROKER)' ${CONF_DIR}/panel.env 2>/dev/null || true" | tr -d '\r')"
   cat > "$tmp_file" <<EOF

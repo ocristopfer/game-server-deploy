@@ -20,7 +20,7 @@ CONF_DIR=/etc/gamebroker
 DATA_DIR=/var/lib/gamebroker
 APP_USER=gamebroker
 # Modulos que ficam FORA do CT de producao: dobles de teste e o broker de brinquedo do compose.
-NAO_ENVIAR='^(test_.*|conftest|fakes|fake_http|dev)\.py$'
+DO_NOT_SHIP='^(test_.*|conftest|fakes|fake_http|dev)\.py$'
 
 msg() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m[aviso]\033[0m %s\n' "$*"; }
@@ -225,14 +225,14 @@ ensure_app_user() {
 
 # `pct push` nao cria diretorio e nao e recursivo: cria as pastas conforme aparecem.
 push_tree() {
-  local source_dir="$1" destino="$2" src rel
+  local source_dir="$1" dest_dir="$2" src rel
   while IFS= read -r src; do
     rel="${src#"$source_dir"/}"
-    [[ "$(basename "$src")" =~ $NAO_ENVIAR ]] && continue
+    [[ "$(basename "$src")" =~ $DO_NOT_SHIP ]] && continue
     if [[ "$rel" == */* ]]; then
-      run_ct "install -d '${destino}/${rel%/*}'"
+      run_ct "install -d '${dest_dir}/${rel%/*}'"
     fi
-    pct push "$CTID" "$src" "${destino}/${rel}" --perms 0644
+    pct push "$CTID" "$src" "${dest_dir}/${rel}" --perms 0644
   done < <(find "$source_dir" -type f ! -name '*.pyc' ! -path '*__pycache__*' | sort)
 }
 
@@ -534,7 +534,7 @@ Para o painel usar o broker, em /etc/gamepanel/panel.env do CT do painel:
   GAMEPANEL_BROKER_TOKEN_FILE=/etc/gamepanel/broker.token   (arquivo com o token: pct exec ${CTID} -- cat ${CONF_DIR}/token)
   GAMEPANEL_BROKER_CERT_SHA256=${BROKER_CERT_SHA256}
   GAMEPANEL_ALLOW_BROKER=0   # so vire 1 depois de proteger o painel (Cloudflare Access ou 2FA)
-Ou rode o deploy com -ConfigurarPainel.
+Ou rode o deploy com -ConfigurePanel.
 EOF
   fi
   cat <<EOF

@@ -93,7 +93,7 @@ if echo "$enviados" | grep -Eq '^(test_|conftest|fakes|fake_http|dev\.py)'; then
 [ "$(ls /opt/gamebroker/games/*.env | wc -l)" -ge 8 ] && ok "games/*.env enviados" || fail "games/ incompleto"
 
 echo "== o broker.env gerado e ACEITO pelo carregador de configuracao real =="
-python3 - > /tmp/carregar.out 2>&1 <<'PY'
+python3 - > /tmp/config-load.out 2>&1 <<'PY'
 import re, sys
 sys.path.insert(0, '/opt/gamebroker/current')
 def valor_systemd(texto):
@@ -124,21 +124,21 @@ print('segredo', cfg.opnsense_secret == 'a"b\\c$d`e f')
 print('chave_opn', cfg.opnsense_key == 'qSNu/chave+de=teste')
 print('ips', cfg.ips[0], cfg.ips[-1], cfg.allowed_ips)
 print('enderecos', cfg.ctid_base, cfg.ports.start, cfg.ports.stop - 1)
-print('chaves', len(cfg.proxmox.chaves_ssh), cfg.proxmox.chaves_ssh[0] == open('/etc/gamebroker/ssh/id_ed25519.pub').read().strip(), 'painel@gp' in cfg.proxmox.chaves_ssh[1])
+print('chaves', len(cfg.proxmox.ssh_keys), cfg.proxmox.ssh_keys[0] == open('/etc/gamebroker/ssh/id_ed25519.pub').read().strip(), 'painel@gp' in cfg.proxmox.ssh_keys[1])
 print('template', cfg.proxmox.template)
 print('impressoes', cfg.proxmox_fingerprint[:8], cfg.opnsense_fingerprint[:8])
-print('prefixo', cfg.proxmox.prefixo)
+print('prefixo', cfg.proxmox.prefix)
 PY
-cat /tmp/carregar.out | sed 's/^/          /'
-grep -q '^token_ok True' /tmp/carregar.out && ok "token do env = token do arquivo" || fail "token divergente"
-grep -q '^segredo True' /tmp/carregar.out && ok "segredo com aspas, barra, cifrao e crase sobrevive ao env do systemd" || fail "segredo corrompido no env"
-grep -q '^chave_opn True' /tmp/carregar.out && ok "chave com / + = intacta" || fail "chave do OPNsense corrompida"
-grep -q "^ips 192.168.2.102 192.168.2.199 ('192.168.2.19', '127.0.0.1')" /tmp/carregar.out && ok "faixa de IPs e origens: painel + loopback (teste de saude)" || fail "faixa/origens erradas"
-grep -q '^enderecos 200 31000 31999' /tmp/carregar.out && ok "CTID = 200 + ultimo numero do IP; portas dos jogos em 31000-31999" || fail "base do CTID ou faixa de portas erradas"
-grep -q '^chaves 2 True True' /tmp/carregar.out && ok "CT novo recebe a chave do broker E a do painel" || fail "chaves do CT novo erradas"
-grep -q 'template vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst' /tmp/carregar.out && ok "template dos jogos = o Debian 13 mais novo do storage" || fail "template errado"
-grep -q '^prefixo 24' /tmp/carregar.out && ok "mascara vem do BROKER_IP_CIDR" || fail "mascara errada"
-grep -q '^impressoes 9f9267f5 96865be9' /tmp/carregar.out && ok "impressoes do Proxmox e do OPNsense normalizadas" || fail "impressoes erradas"
+cat /tmp/config-load.out | sed 's/^/          /'
+grep -q '^token_ok True' /tmp/config-load.out && ok "token do env = token do arquivo" || fail "token divergente"
+grep -q '^segredo True' /tmp/config-load.out && ok "segredo com aspas, barra, cifrao e crase sobrevive ao env do systemd" || fail "segredo corrompido no env"
+grep -q '^chave_opn True' /tmp/config-load.out && ok "chave com / + = intacta" || fail "chave do OPNsense corrompida"
+grep -q "^ips 192.168.2.102 192.168.2.199 ('192.168.2.19', '127.0.0.1')" /tmp/config-load.out && ok "faixa de IPs e origens: painel + loopback (teste de saude)" || fail "faixa/origens erradas"
+grep -q '^enderecos 200 31000 31999' /tmp/config-load.out && ok "CTID = 200 + ultimo numero do IP; portas dos jogos em 31000-31999" || fail "base do CTID ou faixa de portas erradas"
+grep -q '^chaves 2 True True' /tmp/config-load.out && ok "CT novo recebe a chave do broker E a do painel" || fail "chaves do CT novo erradas"
+grep -q 'template vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst' /tmp/config-load.out && ok "template dos jogos = o Debian 13 mais novo do storage" || fail "template errado"
+grep -q '^prefixo 24' /tmp/config-load.out && ok "mascara vem do BROKER_IP_CIDR" || fail "mascara errada"
+grep -q '^impressoes 9f9267f5 96865be9' /tmp/config-load.out && ok "impressoes do Proxmox e do OPNsense normalizadas" || fail "impressoes erradas"
 
 echo "== servico systemd =="
 U=/etc/systemd/system/gamebroker.service

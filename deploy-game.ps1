@@ -220,7 +220,7 @@ function ConvertTo-Lf([string]$Text) { return ($Text -replace "`r", "") }
 # ssh/scp do fluxo principal: carregam o $script:SshOpts, que e onde vive a
 # autenticacao (chave ou senha via askpass).
 function Invoke-Ssh([string]$Target, [string]$Command) {
-    $opcoes = Get-SshOptsFor $Target
+    $sshOptions = Get-SshOptsFor $Target
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
@@ -243,8 +243,8 @@ function Invoke-Scp([string[]]$Sources, [string]$Destination) {
 # -Batch para destinos que so valem a pena por chave (o CT do painel): sem chave
 # autorizada a consulta falha na hora em vez de parar o deploy num prompt de senha.
 function Invoke-SshQuery([string]$Target, [string]$Command, [switch]$Batch) {
-    $opcoes = @(Get-SshOptsFor $Target) + @("-o", "ConnectTimeout=10")
-    if ($Batch) { $opcoes += @("-o", "BatchMode=yes") }
+    $sshOptions = @(Get-SshOptsFor $Target) + @("-o", "ConnectTimeout=10")
+    if ($Batch) { $sshOptions += @("-o", "BatchMode=yes") }
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
@@ -258,7 +258,7 @@ function Invoke-SshQuery([string]$Target, [string]$Command, [switch]$Batch) {
 # Igual a de cima, mas com a saida indo para a tela (o cadastro no painel responde
 # "servidor 'X' cadastrado").
 function Invoke-SshLive([string]$Target, [string]$Command) {
-    $opcoes = Get-SshOptsFor $Target
+    $sshOptions = Get-SshOptsFor $Target
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
@@ -423,16 +423,16 @@ if ((Get-Cfg $cfg "ADMIN_CTID") -eq $cfg["CTID"]) {
 }
 
 if ($cfg["IP_CIDR"] -ne "dhcp") {
-    $meuIp = Get-IpOnly $cfg["IP_CIDR"]
-    foreach ($par in (Get-ScopedOwners $cfg "IP_CIDR" $GameSuffix).GetEnumerator()) {
-        if ((Get-IpOnly $par.Key) -eq $meuIp) {
-            throw ("IP $meuIp ja e do jogo $($par.Value) (IP_CIDR_$($par.Value) no .env). " +
+    $myIp = Get-IpOnly $cfg["IP_CIDR"]
+    foreach ($pair in (Get-ScopedOwners $cfg "IP_CIDR" $GameSuffix).GetEnumerator()) {
+        if ((Get-IpOnly $pair.Key) -eq $myIp) {
+            throw ("IP $myIp ja e do jogo $($pair.Value) (IP_CIDR_$($pair.Value) no .env). " +
                    "Defina IP_CIDR_${GameSuffix} com um endereco livre.")
         }
     }
     $adminIp = Get-Cfg $cfg "ADMIN_IP_CIDR"
-    if ($adminIp -ne "" -and $adminIp -ne "dhcp" -and (Get-IpOnly $adminIp) -eq $meuIp) {
-        throw "IP $meuIp e o do painel (ADMIN_IP_CIDR). Defina IP_CIDR_${GameSuffix} com um endereco livre."
+    if ($adminIp -ne "" -and $adminIp -ne "dhcp" -and (Get-IpOnly $adminIp) -eq $myIp) {
+        throw "IP $myIp e o do painel (ADMIN_IP_CIDR). Defina IP_CIDR_${GameSuffix} com um endereco livre."
     }
 }
 
@@ -464,17 +464,17 @@ $PanelHost = Resolve-PanelHost $cfg
 # apareceria na tela como um servidor que nao responde. A chave e do proprio painel,
 # entao da para busca-la em vez de exigir que ela esteja copiada no .env.
 if ((Get-Cfg $cfg "PANEL_PUBKEY") -eq "") {
-    $lida = ""
+    $readBack = ""
     if ($AdminCtid -ne "") {
-        $lida = Get-FirstLine (Invoke-SshQuery $ProxmoxHost "pct exec $AdminCtid -- cat $PanelPubKeyPath")
-        if ($LASTEXITCODE -ne 0) { $lida = "" }
+        $readBack = Get-FirstLine (Invoke-SshQuery $ProxmoxHost "pct exec $AdminCtid -- cat $PanelPubKeyPath")
+        if ($LASTEXITCODE -ne 0) { $readBack = "" }
     }
-    if ($lida -eq "" -and $PanelHost -ne "") {
-        $lida = Get-FirstLine (Invoke-SshQuery $PanelHost "cat $PanelPubKeyPath" -Batch)
-        if ($LASTEXITCODE -ne 0) { $lida = "" }
+    if ($readBack -eq "" -and $PanelHost -ne "") {
+        $readBack = Get-FirstLine (Invoke-SshQuery $PanelHost "cat $PanelPubKeyPath" -Batch)
+        if ($LASTEXITCODE -ne 0) { $readBack = "" }
     }
-    if ($lida -ne "") {
-        $cfg["PANEL_PUBKEY"] = $lida
+    if ($readBack -ne "") {
+        $cfg["PANEL_PUBKEY"] = $readBack
         Write-Host "Chave publica do painel lida do proprio painel (PANEL_PUBKEY vazio no .env)." -ForegroundColor DarkGray
     } else {
         Write-Host ("Sem PANEL_PUBKEY e sem painel acessivel: o CT nao vai aceitar o painel por SSH. " +
@@ -554,7 +554,7 @@ function Get-CtIp([string]$Cidr, [string]$Ctid) {
     return (($output -split '\s+')[0])
 }
 
-$registrado = $false
+$registered = $false
 $CtIp = ""
 if (-not $NoRegister) {
     $CtIp = Get-CtIp $cfg["IP_CIDR"] $cfg["CTID"]
@@ -580,9 +580,9 @@ if (-not $NoRegister) {
             "--log-path", (Get-Cfg $game "LOG_PATH"),
             "--notes", "CT $($cfg['CTID']) no Proxmox $ProxmoxHost (deploy-game.ps1)."
         )
-        $partes = @("runuser", "-u", $PanelUser, "--", "python3", $PanelApp)
-        foreach ($value in $cmdArgs) { $partes += (ConvertTo-ShQuoted $value) }
-        $registerCmd = ($partes -join " ")
+        $parts = @("runuser", "-u", $PanelUser, "--", "python3", $PanelApp)
+        foreach ($value in $cmdArgs) { $parts += (ConvertTo-ShQuoted $value) }
+        $registerCmd = ($parts -join " ")
 
         # 1) Pelo proprio host Proxmox, que e o caminho que sempre existe num deploy LXC:
         #    o painel mora num CT do mesmo host e nao precisa aceitar SSH de fora.
@@ -591,21 +591,21 @@ if (-not $NoRegister) {
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "`nCadastrando $Display no painel (CT $AdminCtid)..." -ForegroundColor Cyan
                 Invoke-SshLive $ProxmoxHost "pct exec $AdminCtid -- $registerCmd"
-                $registrado = ($LASTEXITCODE -eq 0)
+                $registered = ($LASTEXITCODE -eq 0)
             } else {
                 Write-Host "Painel nao encontrado no CT $AdminCtid ($PanelApp)." -ForegroundColor DarkGray
             }
         }
         # 2) Painel fora deste Proxmox (ADMIN_HOST/ADMIN_IP_CIDR), falando direto com ele.
-        if (-not $registrado -and $PanelHost -ne "") {
+        if (-not $registered -and $PanelHost -ne "") {
             Invoke-SshQuery $PanelHost "test -f $PanelApp" -Batch | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "`nCadastrando $Display no painel ($PanelHost)..." -ForegroundColor Cyan
                 Invoke-SshLive $PanelHost $registerCmd
-                $registrado = ($LASTEXITCODE -eq 0)
+                $registered = ($LASTEXITCODE -eq 0)
             }
         }
-        if (-not $registrado) {
+        if (-not $registered) {
             Write-Host "Nao consegui cadastrar no painel - use a tela Adicionar (host $CtIp, servico $GameKey.service)." -ForegroundColor Yellow
         }
     }
@@ -616,7 +616,7 @@ if (-not $NoRegister) {
 Disable-PasswordAuth
 
 Write-Host "Deploy finalizado." -ForegroundColor Green
-if ($registrado) {
+if ($registered) {
     Write-Host "Servidor cadastrado no painel: $Display ($CtIp) - a tela Config ja abre o arquivo do jogo." -ForegroundColor Green
 }
 if ($UsandoSenha -and -not $InstallKey) {

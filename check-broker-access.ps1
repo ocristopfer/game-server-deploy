@@ -15,9 +15,9 @@ $ProgressPreference = "SilentlyContinue"
 # ----- Saida -----
 $script:Falhas = 0
 function Say([string]$Status, [string]$Text) {
-    $cores = @{ OK = "Green"; FALHA = "Red"; AVISO = "Yellow"; INFO = "Gray" }
+    $colors = @{ OK = "Green"; FALHA = "Red"; AVISO = "Yellow"; INFO = "Gray" }
     if ($Status -eq "FALHA") { $script:Falhas++ }
-    Write-Host ("[{0,-5}] {1}" -f $Status, $Text) -ForegroundColor $cores[$Status]
+    Write-Host ("[{0,-5}] {1}" -f $Status, $Text) -ForegroundColor $colors[$Status]
 }
 
 function Explain-Status([int]$Status) {
@@ -152,24 +152,24 @@ function Test-Proxmox([hashtable]$Cfg) {
 }
 
 function Test-ProxmoxPrivileges($Perms, [string]$Pool, [string[]]$Storages) {
-    $exigidos = [ordered]@{ "/pool/$Pool" = @("VM.Allocate", "VM.Audit", "VM.PowerMgmt", "VM.Config.CPU",
+    $needed = [ordered]@{ "/pool/$Pool" = @("VM.Allocate", "VM.Audit", "VM.PowerMgmt", "VM.Config.CPU",
             "VM.Config.Memory", "VM.Config.Disk", "VM.Config.Network", "VM.Config.Options") }
-    foreach ($s in $Storages) { $exigidos["/storage/$s"] = @("Datastore.AllocateSpace", "Datastore.Audit") }
-    $exigidos["/sdn/zones/localnetwork"] = @("SDN.Use")
+    foreach ($s in $Storages) { $needed["/storage/$s"] = @("Datastore.AllocateSpace", "Datastore.Audit") }
+    $needed["/sdn/zones/localnetwork"] = @("SDN.Use")
 
-    foreach ($path in $exigidos.Keys) {
-        $tem = Get-Privs $Perms $path
-        $falta = @($exigidos[$path] | Where-Object { $tem -notcontains $_ })
-        if ($falta.Count -eq 0) { Say "OK" "permissoes completas em $path" }
-        else { Say "FALHA" "faltam em ${caminho}: $($falta -join ', ')" }
+    foreach ($path in $needed.Keys) {
+        $granted = Get-Privs $Perms $path
+        $absent = @($needed[$path] | Where-Object { $granted -notcontains $_ })
+        if ($absent.Count -eq 0) { Say "OK" "permissoes completas em $path" }
+        else { Say "FALHA" "faltam em ${scopePath}: $($absent -join ', ')" }
     }
 
     # Minimo privilegio tambem e nao ter a MAIS: acusa poder de alterar fora do pool.
-    $perigosos = @("VM.Allocate", "Sys.Modify", "Permissions.Modify", "User.Modify", "Realm.AllocateUser")
+    $dangerous = @("VM.Allocate", "Sys.Modify", "Permissions.Modify", "User.Modify", "Realm.AllocateUser")
     foreach ($prop in $Perms.PSObject.Properties) {
-        if ($exigidos.Contains($prop.Name)) { continue }
-        $excesso = @(Get-Privs $Perms $prop.Name | Where-Object { $perigosos -contains $_ })
-        if ($excesso.Count -gt 0) { Say "AVISO" "token tem $($excesso -join ', ') em '$($prop.Name)' (mais do que o pool)" }
+        if ($needed.Contains($prop.Name)) { continue }
+        $extra = @(Get-Privs $Perms $prop.Name | Where-Object { $dangerous -contains $_ })
+        if ($extra.Count -gt 0) { Say "AVISO" "token tem $($extra -join ', ') em '$($prop.Name)' (mais do que o pool)" }
     }
 }
 
@@ -178,19 +178,19 @@ function Test-Opnsense([hashtable]$Cfg) {
     Write-Host "`n== OPNsense ==" -ForegroundColor Cyan
     if (-not (Test-Filled $Cfg @("OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET"))) { return }
     $url = $Cfg["OPNSENSE_URL"].TrimEnd("/")
-    $par = [Text.Encoding]::ASCII.GetBytes($Cfg["OPNSENSE_KEY"] + ":" + $Cfg["OPNSENSE_SECRET"])
-    $h = @{ Authorization = "Basic " + [Convert]::ToBase64String($par) }
+    $pair = [Text.Encoding]::ASCII.GetBytes($Cfg["OPNSENSE_KEY"] + ":" + $Cfg["OPNSENSE_SECRET"])
+    $h = @{ Authorization = "Basic " + [Convert]::ToBase64String($pair) }
 
     # search_rule e so consulta. A escrita (add/del/apply) fica para o proximo teste.
     $r = Invoke-Api "POST" "$url/api/firewall/d_nat/search_rule" $h '{"current":1,"rowCount":-1}'
     if ($r.Status -ne 200) { Say "FALHA" "d_nat/search_rule: $(Explain-Status $r.Status)"; return }
     $lines = @($r.Json.rows)
     Say "OK" "chave aceita e d_nat legivel ($($lines.Count) regras de redirect)"
-    $nossas = @($lines | Where-Object { $_.descr -like "gamepanel:*" })
-    Say "INFO" "regras do broker (descricao 'gamepanel:...'): $($nossas.Count)"
+    $ours = @($lines | Where-Object { $_.descr -like "gamepanel:*" })
+    Say "INFO" "regras do broker (descricao 'gamepanel:...'): $($ours.Count)"
     if ($lines.Count -gt 0) {
-        $campos = ($lines[0].PSObject.Properties | ForEach-Object { $_.Name }) -join ", "
-        Say "INFO" "campos de uma regra: $campos"
+        $fieldNames = ($lines[0].PSObject.Properties | ForEach-Object { $_.Name }) -join ", "
+        Say "INFO" "campos de uma regra: $fieldNames"
     }
 }
 

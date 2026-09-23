@@ -8,14 +8,20 @@ param(
     [string]$SecretsFile = "",
     # Apaga e recria o CT do broker (perde o token, a chave e o certificado).
     [switch]$RecreateCt,
-    # Gera um token novo para o painel (o painel precisa receber o novo: use -ConfigurarPainel).
+    # Gera um token novo para o painel (o painel precisa receber o novo: use -ConfigurePanel).
     [switch]$RotateToken,
-    # Gera um certificado novo (muda a impressao que o painel fixa: use -ConfigurarPainel).
+    # Gera um certificado novo (muda a impressao que o painel fixa: use -ConfigurePanel).
     [switch]$RotateCert,
     # Grava URL, token e impressao do broker no painel (o recurso continua DESLIGADO la).
-    [switch]$ConfigurarPainel,
-    # Alem de -ConfigurarPainel, LIGA o recurso no painel. So depois de proteger o painel.
-    [switch]$LigarNoPainel,
+    # O nome antigo `-ConfigurarPainel` continua valendo pelo Alias: quem ja tem a linha de
+    # comando salva nao a perde.
+    [Alias('ConfigurarPainel')]
+    [switch]$ConfigurePanel,
+    # Alem de -ConfigurePanel, LIGA o recurso no painel. So depois de proteger o painel.
+    # O nome antigo `-LigarNoPainel` continua valendo pelo Alias: quem ja tem a linha de
+    # comando salva nao a perde.
+    [Alias('LigarNoPainel')]
+    [switch]$EnableOnPanel,
     [string]$RemoteBundleDir = "/root/game-broker-deploy"
 )
 
@@ -81,10 +87,10 @@ function ConvertTo-Lf([string]$Text) { return ($Text -replace "`r", "") }
 # exemplo, imprime "Created symlink ..." la). No Windows PowerShell 5.1, com a saida redirecionada
 # e $ErrorActionPreference = "Stop", essa linha vira excecao e derruba o deploy em cima de um
 # sucesso. O que decide e o codigo de saida ($LASTEXITCODE), que os chamadores conferem.
-function Invoke-Native([scriptblock]$Comando) {
+function Invoke-Native([scriptblock]$Block) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    try { & $Comando } finally { $ErrorActionPreference = $previous }
+    try { & $Block } finally { $ErrorActionPreference = $previous }
 }
 
 function Invoke-Ssh([string]$Target, [string]$Command) {
@@ -156,18 +162,18 @@ if ($ProxmoxHost -eq "") { $ProxmoxHost = Get-Cfg $cfg "PROXMOX_HOST" }
 if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido no .env (ou use -ProxmoxHost)." }
 if ($ProxmoxPassword -eq "") { $ProxmoxPassword = Get-Cfg $cfg "PROXMOX_PASSWORD" }
 
-if ($LigarNoPainel -and -not $ConfigurarPainel) { throw "-LigarNoPainel exige -ConfigurarPainel." }
+if ($EnableOnPanel -and -not $ConfigurePanel) { throw "-EnableOnPanel exige -ConfigurePanel." }
 
-$faltando = @()
+$absent = @()
 foreach ($k in @("BROKER_CTID", "BROKER_IP_CIDR", "BROKER_IP_PREFIX")) {
-    if ((Get-Cfg $cfg $k) -eq "") { $faltando += "$k (.env)" }
+    if ((Get-Cfg $cfg $k) -eq "") { $absent += "$k (.env)" }
 }
 foreach ($k in @("PROXMOX_URL", "PROXMOX_TOKEN", "PROXMOX_NODE", "PROXMOX_STORAGE", "PROXMOX_BRIDGE",
                  "OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET")) {
     $v = Get-Cfg $sec $k
-    if ($v -eq "" -or $v -match "COLE_|IP_DO_") { $faltando += "$k (broker.secrets.env)" }
+    if ($v -eq "" -or $v -match "COLE_|IP_DO_") { $absent += "$k (broker.secrets.env)" }
 }
-if ($faltando.Count -gt 0) { throw ("Faltam valores:`n  - " + ($faltando -join "`n  - ")) }
+if ($absent.Count -gt 0) { throw ("Faltam valores:`n  - " + ($absent -join "`n  - ")) }
 
 # Endereco do painel: so ele pode falar com o broker.
 $panelIp = Get-Cfg $cfg "ADMIN_HOST"
@@ -178,7 +184,7 @@ if ($panelIp -eq "") {
 if ($panelIp -eq "") { Write-Host "ADMIN_HOST/ADMIN_IP_CIDR vazios: o broker aceitara qualquer origem (so o token). Defina para restringir ao IP do painel." -ForegroundColor Yellow }
 
 # ----- Confirmacao para ligar o recurso num painel exposto -----
-if ($LigarNoPainel) {
+if ($EnableOnPanel) {
     Write-Host "`nATENCAO: ligar o broker no painel da a quem entrar nele o poder de CRIAR containers e ABRIR portas no firewall." -ForegroundColor Yellow
     Write-Host "Se o painel esta na internet (Cloudflare), proteja-o antes: Cloudflare Access ou 2FA." -ForegroundColor Yellow
     $resp = Read-Host "Digite LIGAR para confirmar"
@@ -248,8 +254,8 @@ $conf = [ordered]@{
     RECREATE_BROKER_CT = $(if ($RecreateCt) { "1" } else { "0" })
     BROKER_ROTATE_TOKEN = $(if ($RotateToken) { "1" } else { "0" })
     BROKER_ROTATE_CERT = $(if ($RotateCert) { "1" } else { "0" })
-    BROKER_CONFIGURE_PANEL = $(if ($ConfigurarPainel) { "1" } else { "0" })
-    BROKER_ENABLE_IN_PANEL = $(if ($LigarNoPainel) { "1" } else { "0" })
+    BROKER_CONFIGURE_PANEL = $(if ($ConfigurePanel) { "1" } else { "0" })
+    BROKER_ENABLE_IN_PANEL = $(if ($EnableOnPanel) { "1" } else { "0" })
 }
 $lines = @()
 foreach ($k in $conf.Keys) { if ($conf[$k] -ne "") { $lines += "$k=" + (ConvertTo-BashQuoted $conf[$k]) } }

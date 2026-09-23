@@ -431,7 +431,7 @@ dessas tabelas.
   ativacao em vez de exercitar o que quer testar; `admin_without_2fa` e o admin sem 2FA, para provar a
   exigencia em si.
 - **`provision-admin-lxc.sh` reescreve o `panel.env` INTEIRO**; as linhas `GAMEPANEL_BROKER_*` e
-  `GAMEPANEL_ALLOW_BROKER` que o `deploy-broker.ps1 -ConfigurarPainel` grava sao preservadas de
+  `GAMEPANEL_ALLOW_BROKER` que o `deploy-broker.ps1 -ConfigurePanel` grava sao preservadas de
   proposito (antes um `-Full` do painel desligava o broker em silencio). Opcao nova de painel =
   variavel `ADMIN_*` no `.env`, uma linha no `render_panel_config` e o nome em `$adminKeys` do
   `deploy-admin.ps1`.
@@ -846,8 +846,12 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   memoria) e systemd endurecido. **Token, chave SSH e certificado PERSISTEM entre deploys**
   (regenerar quebraria o painel); so mudam com `-RotateToken` / `-RotateCert`. Os segredos
   chegam em `broker.secrets.env` (0600, apagado no fim) e vao para `/etc/gamebroker/broker.env`;
-  nada de segredo na unit. O deploy **nao liga o recurso no painel**: `-ConfigurarPainel` grava
-  URL/token/impressao com `GAMEPANEL_ALLOW_BROKER=0`, e `-LigarNoPainel` pede confirmacao.
+  nada de segredo na unit. O deploy **nao liga o recurso no painel**: `-ConfigurePanel` grava
+  URL/token/impressao com `GAMEPANEL_ALLOW_BROKER=0`, e `-EnableOnPanel` pede confirmacao.
+  Os nomes antigos (`-ConfigurarPainel`, `-LigarNoPainel`, e `-SoProxmox`/`-SoOpnsense`/
+  `-ComSsh` no spike) continuam valendo por `[Alias(...)]`: a linha de comando e a unica
+  coisa daqui que alguem tem salva em outro lugar, e traduzir o identificador nao pode
+  quebrar o que ja esta anotado num README ou num historico de shell.
   **Prove com `bash docker/ct-sandbox/broker.sh`** (modo/dono, env relido pelo `carregar` real,
   segredo com aspas/barra/cifrao/crase, idempotencia, rotacao).
 - **`set -e` + `pipefail` + `$(...)` = saida CALADA.** Falha dentro de uma substituicao encerra o
