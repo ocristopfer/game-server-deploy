@@ -47,11 +47,11 @@ docker compose up --build -d          # painel em http://localhost:8080 (admin/a
 docker compose restart panel          # depois de mexer em app.py/navigation.py
 ```
 
-As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_config_format.py`,
+As suites do painel (em `tests/gamepanel/`: `test_game_fields.py`, `test_config_format.py`,
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 971
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 982
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 972 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 980 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -338,11 +338,30 @@ tem duas instancias (`login_lockout`, `totp_lockout`) e os blueprints chamam
   custaria uma escrita por tentativa errada — que e exatamente o que um ataque produz em
   volume.
 
+### Ritmo de tarefa de fundo: um `Ticker`, nao um `global` por relogio
+
+Monitor, estado do servico, medidor de recurso, log, amostra e limpeza do historico tem
+seis passos diferentes na mesma thread. Cada um era uma variavel de modulo com `global`
+em cima; hoje sao seis instancias de `tasks.ticker.Ticker` (`monitor_tick`, `state_tick`,
+`resource_tick`, `log_tick`, `sample_tick`, `cleanup_tick`).
+
+- **`due()` NAO anota a passagem, e isso e de proposito.** O relogio do medidor de
+  recurso so avanca quando algum alerta de recurso esta ligado: se perguntar consumisse a
+  janela, uma volta sem nenhum deles gastaria o intervalo e a volta seguinte — ja com um
+  ligado — esperaria tudo de novo. Perguntar e anotar sao `due()` e `mark()`.
+- **O intervalo vai na CHAMADA, nao no construtor.** O passo do monitor encurta quando ha
+  alerta de jogador ligado: o mesmo relogio responde a 60s e a 15s conforme a volta.
+- **O `conftest.py` zera a lista de instancias, e nao seis nomes.** Com `global`, uma
+  renomeada em silencio deixava um teste herdando o relogio do anterior — sem erro, so
+  com um alerta que nao dispara. E `monkeypatch.setattr(panel, "_last_monitor", ...)`,
+  que cinco testes de `test_alerts.py` faziam, virou `panel.monitor_tick.mark(...)`.
+- **O zero inicial e proposital**: a primeira volta depois de subir o painel sempre vale.
+
 ### A regra que sustenta o resto: uma lista, um lugar
 
 Antes, a lista de telas de um servidor estava escrita a mao em **seis templates**. Cada
 um tinha um subconjunto diferente, e era por isso que "Graficos" existia numa tela e nao
-na outra. Hoje ela esta em `ui.py`.
+na outra. Hoje ela esta em `navigation.py`.
 
 - **Tela nova de servidor** = uma linha em `ui.SERVER_SECTIONS`. Nao edite template
   de navegacao; nao existe mais.
@@ -361,7 +380,7 @@ dessas tabelas.
 
 - **Dependencias do PAINEL EM PRODUCAO: so a stdlib mais o `python3-flask` do apt.** O
   container nao baixa pacote de lugar nenhum. Nada de `pip install`, nada de CDN. Isso
-  nao muda com o `uv` — `uv` so gerencia o `.venv` de desenvolvimento (`pyroject.toml`
+  nao muda com o `uv` — `uv` so gerencia o `.venv` de desenvolvimento (`pyproject.toml`
   na raiz), nunca entra em Dockerfile de producao nem em `provision-*-lxc.sh`. Se
   `import gamepanel`/`import flask` nao resolve no editor, rode `uv sync` (cria o
   `.venv` e instala os dois pacotes do repo como editaveis, mais o Flask que a
@@ -431,7 +450,7 @@ dessas tabelas.
 - **`\w` em Python NAO e `[A-Za-z0-9_]`** — sem `re.ASCII` ele casa acento e mais uns 900
   caracteres Unicode. O analisador pede a forma curta; se a expressao valida algo que vai
   parar num arquivo ou num comando remoto, a troca so vale **com a flag**. `KEY_RE` no
-  `gameconf.py` e o exemplo, e ha teste guardando isso.
+  `games/config_format.py` e o exemplo, e ha teste guardando isso.
 - **Nao comece comentario com "todo".** O detector de `TODO` do Sonar casa a palavra
   portuguesa: `# todo). O que faltava...` e `# TODO metodo que muda estado` viraram dois
   falsos positivos. No meio da frase nao dispara; no comeco da linha, sim.
@@ -774,9 +793,9 @@ Modulos ES, sem build, sem dependencia externa.
 O painel nao guarda credencial de Proxmox nem de OPNsense: quem guarda e o broker, que
 expoe verbos fixos (criar/desativar/remover instancia, catalogo). Pronto: nucleo,
 backends REAIS de Proxmox (`proxmox.py`) e OPNsense (`opnsense.py`) e o cliente HTTP
-(`conexao.py`), todos testados contra servidores falsos (`fake_http.py`), o instalador por
-SSH (`ssh_install.py` + `lib/ct-install.sh`), a tela no painel e o DEPLOY do broker
-(`config.py`, `prod.py`, `provision-broker-lxc.sh`, `deploy-broker.ps1`). Falta so uma criacao
+(`integrations/http_client.py`), todos testados contra servidores falsos (`fake_http.py`), o instalador por
+SSH (`runtime/ssh_installer.py` + `lib/ct-install.sh`), a tela no painel e o DEPLOY do broker
+(`config.py`, `wsgi.py`, `provision-broker-lxc.sh`, `deploy-broker.ps1`). Falta so uma criacao
 REAL de ponta a ponta (nada disto rodou contra o seu Proxmox/OPNsense ainda). Segredos de
 teste e de deploy ficam em `broker.secrets.env` (fora do git);
 `check-broker-access.ps1` confere so leitura e `spike-broker-write.ps1` cria e
@@ -844,13 +863,13 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   As suites de cada um vivem em `tests/gamebroker/`/`tests/gamepanel/`, testando o
   pacote instalado, nao um caminho relativo. Rode so o broker da raiz:
   `uv run pytest tests/gamebroker`.
-- **`servico.py` so conhece as interfaces de `backends.py`.** Proxmox, OPNsense, SSH e rede
-  reais entram depois sem mexer nele; os testes usam `fakes.py`.
+- **`services/instance_service.py` so conhece as interfaces de `runtime/base.py`.** Proxmox, OPNsense, SSH e rede
+  reais entram depois sem mexer nele; os testes usam `runtime/fakes.py`.
 - **Catalogo em dois niveis**: `games/*.env` (curado, pode ter `PRE/POST_INSTALL_CMD`) e
   jogos cadastrados pela API (**so dado**). O `.env` e lido por `catalog.read_env`, nunca por
   `source`, e campo que o broker nao conhece e RECUSADO — e assim que `pre_install_cmd`
   deixa de entrar de contrabando. Campo novo em jogo dinamico = regex propria em
-  `services/catalog.py` e um caso em `CASOS_INVALIDOS` do teste.
+  `services/catalog.py` e um caso em `INVALID_CASES` do teste.
 - **Porta interna == externa, sempre.** Jogo `deslocavel` (`PORTS_SHIFTABLE=1`) recebe um bloco
   de portas seguidas da FAIXA do broker (`BROKER_PORT_INICIO/FIM`, padrao 31000-31999, abaixo das
   efemeras 32768+ e longe das portas padrao dos jogos), nunca as portas padrao; os demais ficam
@@ -912,7 +931,7 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
 - **`broker_client` e chamado sempre pelo modulo** (`broker_client.create(...)`): e assim que os
   testes o trocam por um falso. Nao faca `from broker_client import create`.
 - **Tabela no celular: uma coluna.** Com estado e acoes em colunas proprias, as ACOES saiam
-  da tela (rolagem lateral). Ver `instancias.html` e `catalogo.html`. E o servidor local so
+  da tela (rolagem lateral). Ver `instances.html` e `catalog.html`. E o servidor local so
   recarrega template com `GAMEPANEL_DEV=1`: sem ele voce testa o template ANTIGO.
 - **Handler `Exception` do Flask engole 404/405** se nao houver um de `HTTPException` antes
   (ja aconteceu aqui: rota errada virava "erro interno").

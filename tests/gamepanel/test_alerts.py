@@ -45,7 +45,8 @@ def expired_clocks():
     recem-subido o zero pode estar a menos de um minuto de distancia — ai o monitor sai
     cedo e o teste falha por causa do uptime de quem rodou, nao do codigo.
     """
-    panel._last_monitor = panel._last_state = time.monotonic() - 3600
+    panel.monitor_tick.mark(time.monotonic() - 3600)
+    panel.state_tick.mark(time.monotonic() - 3600)
 
 
 def state(reachable=True, service="active", error="", restarts=0, result="", sub=""):
@@ -538,8 +539,8 @@ def test_entrada_chega_na_volta_rapida_sem_ssh(database, a2s_monitor, webhooks, 
     # Os relogios recuam 20s: o do estado (60s) ainda nao venceu, o dos jogadores (15s)
     # sim — que e exatamente a situacao no meio de dois minutos.
     indent = time.monotonic() - 20
-    monkeypatch.setattr(panel, "_last_monitor", indent)
-    monkeypatch.setattr(panel, "_last_state", indent)
+    panel.monitor_tick.mark(indent)
+    panel.state_tick.mark(indent)
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: {
         "configured": True, "error": "", "players": 1, "list": [{"name": "Ana"}]})
     with panel.app.app_context():
@@ -572,7 +573,7 @@ def test_contagem_por_log_nao_entra_na_volta_curta(database, target, webhooks, m
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: {
         "configured": True, "error": "", "players": 2,
         "list": [{"name": "Ana"}, {"name": "Bea"}]})
-    monkeypatch.setattr(panel, "_last_monitor", time.monotonic() - 20)
+    panel.monitor_tick.mark(time.monotonic() - 20)
     with panel.app.app_context():
         panel.monitor_servers()
     assert len(webhooks) == 0
@@ -591,8 +592,8 @@ def test_sem_alerta_de_jogador_20s_ainda_nao_e_hora(database, target, monkeypatc
     monkeypatch.setattr(panel, "server_status", lambda server, force=False: state())
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {"disks": []})
     indent = time.monotonic() - 20
-    monkeypatch.setattr(panel, "_last_monitor", indent)
-    monkeypatch.setattr(panel, "_last_state", indent)
+    panel.monitor_tick.mark(indent)
+    panel.state_tick.mark(indent)
     with panel.app.app_context():
         assert panel.monitor_servers() == 0
 

@@ -75,12 +75,9 @@ def _reset_module_state() -> None:
     panel._players_cache.clear()
     panel.login_lockout.reset()
     panel.totp_lockout.reset()
-    panel._last_monitor = 0.0
-    panel._last_state = 0.0
-    panel._last_disk = 0.0
-    panel._last_log = 0.0
-    panel._last_sample = 0.0
-    panel._last_cleanup = 0.0
+    for tick in (panel.monitor_tick, panel.state_tick, panel.resource_tick,
+                 panel.log_tick, panel.sample_tick, panel.cleanup_tick):
+        tick.reset()
 
 
 @pytest.fixture

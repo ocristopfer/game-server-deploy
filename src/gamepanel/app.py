@@ -93,7 +93,7 @@ from gamepanel.services import (
     server_service,
     status_service,
 )
-from gamepanel.tasks import broker_jobs, log_stream, scheduler
+from gamepanel.tasks import broker_jobs, log_stream, scheduler, ticker
 
 # O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
 # resto do painel continua funcionando e a tela do terminal responde 503.
@@ -1340,10 +1340,13 @@ def _recent_job(conn: sqlite3.Connection, sid: int) -> bool:
 # server_id -> ultimo estado visto. Fica so na memoria de proposito: reiniciar o painel
 # refaz a linha de base, e ninguem recebe um alerta de algo que ja estava assim.
 _monitor_state: dict[int, dict] = {}
-_last_monitor = 0.0
-_last_state = 0.0
-_last_disk = 0.0
-_last_log = 0.0
+# Um relogio por ritmo (ver `tasks/ticker.py`). Instancia e nao variavel solta porque o
+# `conftest.py` precisa zerar todos entre um teste e o outro, e um `global` a mais e um
+# nome a mais para ele errar em silencio.
+monitor_tick = ticker.Ticker()
+state_tick = ticker.Ticker()
+resource_tick = ticker.Ticker()
+log_tick = ticker.Ticker()
 
 
 def _alert_deps() -> alert_service.AlertDeps:
@@ -1506,36 +1509,34 @@ class _Rhythm(NamedTuple):
 
 def _monitor_rhythm(cfg: dict, now: float, force: bool) -> _Rhythm | None:
     """Decide o que vence nesta volta e adianta os relogios. None = ainda nao e hora."""
-    global _last_monitor, _last_state, _last_disk, _last_log
-
     # O passo do monitor e o do alerta mais apressado que esteja LIGADO. Com jogadores
     # ligados a volta fica curta; sem eles nada muda em relacao a antes.
     wants_players = bool(cfg["events"] & {"jogador-entrou", "jogador-saiu"})
     step = min(MONITOR_EVERY, PLAYER_CHECK_EVERY) if wants_players else MONITOR_EVERY
-    if not force and now - _last_monitor < step:
+    if not monitor_tick.due(now, step, force):
         return None
-    _last_monitor = now
+    monitor_tick.mark(now)
 
     # ...mas so a contagem de jogadores anda nesse passo curto. Estado do servico, mudez
     # e restart continuam no ritmo antigo: cada um deles custa SSH por servidor, e
     # acelerar tudo junto multiplicaria essa conta por quatro sem necessidade.
-    see_state = force or now - _last_state >= MONITOR_EVERY
+    see_state = state_tick.due(now, MONITOR_EVERY, force)
     if see_state:
-        _last_state = now
+        state_tick.mark(now)
 
     # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
     # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
-    resource_wins = force or now - _last_disk >= DISK_CHECK_EVERY
+    resource_wins = resource_tick.due(now, DISK_CHECK_EVERY, force)
     resources = cfg["events"] & RESOURCE_EVENTS if resource_wins else set()
+    # Anota so quando ALGO foi lido: sem alerta de recurso ligado, deixar a janela correr
+    # faria a proxima volta com um deles ligado esperar o intervalo inteiro de novo.
     if resources:
-        _last_disk = now
+        resource_tick.mark(now)
 
     # O log e o unico que custa uma ida de SSH so dele, entao anda no seu proprio ritmo.
-    see_log = "erro-no-log" in cfg["events"] and (
-        force or now - _last_log >= LOG_CHECK_EVERY
-    )
+    see_log = "erro-no-log" in cfg["events"] and log_tick.due(now, LOG_CHECK_EVERY, force)
     if see_log:
-        _last_log = now
+        log_tick.mark(now)
 
     return _Rhythm(see_state, wants_players, resources, see_log)
 
@@ -1642,16 +1643,15 @@ def _forget_removed_servers(servers) -> None:
 
 # -------------------------------------------------------- amostras de uso
 
-_last_sample = 0.0
+sample_tick = ticker.Ticker()
 
 
 def collect_samples(force: bool = False) -> int:
     """Guarda uma linha de CPU/memoria/jogadores por servidor. Devolve quantas gravou."""
-    global _last_sample
     now_ts = time.monotonic()
-    if not force and now_ts - _last_sample < SAMPLE_EVERY:
+    if not sample_tick.due(now_ts, SAMPLE_EVERY, force):
         return 0
-    _last_sample = now_ts
+    sample_tick.mark(now_ts)
 
     conn = db()
     stamp = now_iso()
@@ -1744,7 +1744,7 @@ def run_schedules() -> int:
     return fired
 
 
-_last_cleanup = 0.0
+cleanup_tick = ticker.Ticker()
 
 
 def clean_history(force: bool = False) -> int:
@@ -1754,11 +1754,10 @@ def clean_history(force: bool = False) -> int:
     nao pode crescer para sempre) e o mesmo relogio de hora em hora; so os prazos mudam,
     porque uma amostra e minuscula perto da saida de um job.
     """
-    global _last_cleanup
     now_ts = time.monotonic()
-    if not force and now_ts - _last_cleanup < JOBS_PURGE_EVERY:
+    if not cleanup_tick.due(now_ts, JOBS_PURGE_EVERY, force):
         return 0
-    _last_cleanup = now_ts
+    cleanup_tick.mark(now_ts)
     conn = db()
 
     if SAMPLES_KEEP_DAYS:
