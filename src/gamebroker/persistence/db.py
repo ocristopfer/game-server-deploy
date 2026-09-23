@@ -23,7 +23,7 @@ ESTADO_FALHOU = "falhou"
 
 OP_EXECUTANDO = "executando"
 OP_OK = "ok"
-OP_ERRO = "erro"
+OP_FAILED = "erro"
 
 LOG_MAX = 20000
 

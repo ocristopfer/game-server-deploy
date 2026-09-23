@@ -34,12 +34,12 @@ from gamebroker.services.allocator import ROLE_GAME, ROLE_QUERY, AllocatedPort, 
 from gamebroker.services.catalog import RECIPES_WINDOWS, Game
 
 DESTINO_REMOTO = "/root/gamepanel-install"
-MARCA_DE_SUCESSO = "INSTALACAO CONCLUIDA"
-ARQUIVOS_DA_LIB = ("ct-install.sh", "ct-phases.sh")
-LINHA_MAX = 400
-LOTE_LINHAS = 20
+SUCCESS_MARK = "INSTALACAO CONCLUIDA"
+LIB_FILES = ("ct-install.sh", "ct-phases.sh")
+MAX_LINE = 400
+LINE_BATCH = 20
 LOTE_SEGUNDOS = 1.5
-CAUDA_DE_ERRO = 6
+ERROR_TAIL = 6
 _BLOB_RE = re.compile(r"[A-Za-z0-9+/=]{20,}", re.ASCII)
 
 
@@ -136,14 +136,14 @@ class _Lote:
         self.concluida = False
 
     def line(self, text: str) -> None:
-        text = text.strip()[:LINHA_MAX]
+        text = text.strip()[:MAX_LINE]
         if not text:
             return
-        if MARCA_DE_SUCESSO in text:
+        if SUCCESS_MARK in text:
             self.concluida = True
-        self.cauda = (self.cauda + [text])[-CAUDA_DE_ERRO:]
+        self.cauda = (self.cauda + [text])[-ERROR_TAIL:]
         self._linhas.append(text)
-        if len(self._linhas) >= LOTE_LINHAS or self._agora() - self._ultimo >= LOTE_SEGUNDOS:
+        if len(self._linhas) >= LINE_BATCH or self._agora() - self._ultimo >= LOTE_SEGUNDOS:
             self.descarrega()
 
     def descarrega(self) -> None:
@@ -161,7 +161,7 @@ class SshInstaller:
         self._exec = executor or ExecutorReal()
         self._dormir = sleep
         self._agora = now
-        missing_ones = [a for a in ARQUIVOS_DA_LIB if not (config.lib_dir / a).is_file()]
+        missing_ones = [a for a in LIB_FILES if not (config.lib_dir / a).is_file()]
         if missing_ones:
             raise ValueError(f"faltam em {config.lib_dir}: {', '.join(missing_ones)}")
 
@@ -214,7 +214,7 @@ class SshInstaller:
         with tempfile.TemporaryDirectory(prefix="broker-install-") as tmp:
             env_file = Path(tmp) / "install.env"
             env_file.write_text(env, encoding="utf-8", newline="\n")
-            sources = [str(self._cfg.lib_dir / a) for a in ARQUIVOS_DA_LIB] + [str(env_file)]
+            sources = [str(self._cfg.lib_dir / a) for a in LIB_FILES] + [str(env_file)]
             self._comando(["scp", *self._opcoes(), *sources, f"{target}:{DESTINO_REMOTO}/"],
                           "enviar o instalador ao CT")
 

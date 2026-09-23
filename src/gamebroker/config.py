@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 
 from gamebroker.integrations.http_client import normalize_fingerprint
 from gamebroker.runtime.proxmox import ConfigProxmox
-from gamebroker.runtime.ssh_installer import ARQUIVOS_DA_LIB, ConfigSsh
+from gamebroker.runtime.ssh_installer import LIB_FILES, ConfigSsh
 from gamebroker.services.allocator import ips_in_range
 
 TOKEN_MINIMO = 32
@@ -182,7 +182,7 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
     if len(reader.problems) == before and gateway and broker_key and panel_key:
         proxmox = reader.attempt("PROXMOX_*", lambda: ConfigProxmox(
             **px, gateway=gateway, prefixo=network_prefix, chaves_ssh=(broker_key, panel_key)))
-    missing_ones = [a for a in ARQUIVOS_DA_LIB if not (lib_dir / a).is_file()]
+    missing_ones = [a for a in LIB_FILES if not (lib_dir / a).is_file()]
     if missing_ones:
         reader.problems.append(f"BROKER_LIB_DIR: faltam {', '.join(missing_ones)} em {lib_dir}")
     ssh = None

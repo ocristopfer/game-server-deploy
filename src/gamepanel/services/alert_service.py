@@ -30,7 +30,7 @@ JobRecente = Callable[..., bool]
 
 # Quem responde a uma sondagem de verdade pode ficar MUDO; contagem por log nao
 # pergunta nada ao jogo, entao nao tem o que travar.
-FONTES_QUE_RESPONDEM = ("a2s", "http")
+ANSWERING_SOURCES = ("a2s", "http")
 
 DETALHE_MAX = 300
 
@@ -160,7 +160,7 @@ def mute_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
     dashboard continua verde — e ninguem consegue entrar.
     """
     sid, name = int(server["id"]), server["name"]
-    if deps.player_source(server) not in FONTES_QUE_RESPONDEM:
+    if deps.player_source(server) not in ANSWERING_SOURCES:
         return
 
     # Jogo que acabou de subir ainda esta carregando mapa e nao responde: contar essas

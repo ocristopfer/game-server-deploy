@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from gamebroker.domain.exceptions import OutOfResources
-from gamebroker.persistence.db import ESTADO_ATIVA, OP_ERRO, OP_OK
+from gamebroker.persistence.db import ESTADO_ATIVA, OP_FAILED, OP_OK
 from gamebroker.runtime.fakes import FakeInstaller, FakeNetwork
 from gamebroker.services.allocator import ips_in_range
 from gamebroker.services.instance_service import Config, Service
@@ -44,7 +44,7 @@ def test_criar_de_ponta_a_ponta(real):
 def test_falha_na_instalacao_desfaz_no_proxmox_e_no_opnsense(real):
     real.instalador_real.failure = True
     response = real.servico_real.create("alfa", "x", "zeca")
-    assert real.servico_real.operation(response["operation_id"])["state"] == OP_ERRO
+    assert real.servico_real.operation(response["operation_id"])["state"] == OP_FAILED
     assert real.pve.fake.cts == {}, "o CT criado foi destruido"
     assert real.opn.fake.regras == {}
     assert real.db.count_instances() == 0

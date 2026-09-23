@@ -31,7 +31,7 @@ from gamepanel.runtime.log_probe import (
 )
 from gamepanel.runtime.ssh import ServerLike, quote_command
 
-EVENTOS_DE_JOGADOR = frozenset({"jogador-entrou", "jogador-saiu"})
+PLAYER_EVENTS = frozenset({"jogador-entrou", "jogador-saiu"})
 ESPERA_AO_ENCERRAR = 5
 
 
@@ -78,7 +78,7 @@ def wanted_streams(servers: Iterable[ServerLike], cfg: dict, enabled: bool,
                       player_source: Callable[[ServerLike], str],
                       stored_value: Callable[[ServerLike, str], str]) -> dict[int, tuple]:
     """Quais servidores merecem uma conexao de log aberta, e com que assinatura."""
-    if not (enabled and cfg["events"] & EVENTOS_DE_JOGADOR):
+    if not (enabled and cfg["events"] & PLAYER_EVENTS):
         return {}
     # So quem conta por log: A2S e HTTP ja respondem de graca na volta curta, e abrir uma
     # conexao permanente para eles seria pagar por nada.

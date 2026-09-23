@@ -57,7 +57,7 @@ def setup(sid: int):
 def use(sid: int):
     """Grava a forma de contagem escolhida no assistente."""
     panel._server_or_404(sid)  # so pelo 404: daqui para baixo os UPDATE usam o proprio sid
-    links_to = panel.FONTES_DE_CONTAGEM.get(request.form.get("player_source", ""))
+    links_to = panel.COUNT_SOURCES.get(request.form.get("player_source", ""))
     if links_to is None:
         flash(panel.translate("flash.bad_choice"), "error")
         return redirect(url_for("players.setup", sid=sid))

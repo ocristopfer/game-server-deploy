@@ -21,13 +21,13 @@ from collections.abc import Sequence
 from gamebroker.integrations.http_client import Client, Response
 from gamebroker.services.allocator import AllocatedPort
 
-PREFIXO_DA_DESCRICAO = "gamepanel:"
-LIMITE_DE_FAIXA = 5000
+DESCRIPTION_PREFIX = "gamepanel:"
+RANGE_LIMIT = 5000
 # Sonda de saude: um servico que nao responde em poucos segundos ja e a resposta.
 SONDA_TIMEOUT = 5.0
 _UUID_RE = re.compile(r"[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")
-_PORTA_RE = re.compile(r"\d{1,5}")
-_FAIXA_RE = re.compile(r"(\d{1,5})[-:](\d{1,5})")
+_PORT_RE = re.compile(r"\d{1,5}")
+_RANGE_RE = re.compile(r"(\d{1,5})[-:](\d{1,5})")
 _QUEBRA_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _BUSCA = {"current": 1, "rowCount": -1}
 
@@ -41,7 +41,7 @@ class ReadError(OpnsenseError):
 
 
 def instance_description(ctid: int) -> str:
-    return f"{PREFIXO_DA_DESCRICAO}{int(ctid)}"
+    return f"{DESCRIPTION_PREFIX}{int(ctid)}"
 
 
 # --- leitura das portas ocupadas ---------------------------------------------------
@@ -57,12 +57,12 @@ def _expandir(item: str, rule: str) -> set[int]:
     """`7660` ou `8000-8010` (ou `8000:8010`) -> conjunto de portas."""
     item = item.strip()
     try:
-        if _PORTA_RE.fullmatch(item):
+        if _PORT_RE.fullmatch(item):
             return {_number_of(item)}
-        span_range = _FAIXA_RE.fullmatch(item)
+        span_range = _RANGE_RE.fullmatch(item)
         if span_range:
             start_at, end_at = _number_of(span_range.group(1)), _number_of(span_range.group(2))
-            if start_at <= end_at and end_at - start_at < LIMITE_DE_FAIXA:
+            if start_at <= end_at and end_at - start_at < RANGE_LIMIT:
                 return set(range(start_at, end_at + 1))
     except ValueError:
         pass
@@ -107,7 +107,7 @@ def busy_ports(linhas: object, interface: str) -> set[tuple[int, str]]:
         if not target:
             continue
         name = str(rule.get("descr", "")) or str(rule.get("uuid", "?"))
-        if _PORTA_RE.fullmatch(target) or _FAIXA_RE.fullmatch(target):
+        if _PORT_RE.fullmatch(target) or _RANGE_RE.fullmatch(target):
             ports = _expandir(target, name)
         else:
             ports = _ports_of_alias(rule.get("alias_meta_destination.port"), name)

@@ -17,7 +17,7 @@ from gamebroker.domain.exceptions import Refusal, ValidationError
 from gamebroker.services.instance_service import Service
 
 TOKEN_MINIMO = 32
-CORPO_MAX = 64 * 1024
+MAX_BODY = 64 * 1024
 _OPERACAO_RE = re.compile(r"[0-9a-f]{32}", re.ASCII)
 ACTOR_HEADER = "X-Actor"
 
@@ -28,7 +28,7 @@ def create_app(service: Service, token: str, allowed_ips: tuple[str, ...] = ()) 
     if len(token) < TOKEN_MINIMO:
         raise ValueError(f"o token do broker precisa ter ao menos {TOKEN_MINIMO} caracteres")
     app = Flask(__name__)
-    app.config["MAX_CONTENT_LENGTH"] = CORPO_MAX
+    app.config["MAX_CONTENT_LENGTH"] = MAX_BODY
 
     @app.before_request
     def authenticate():

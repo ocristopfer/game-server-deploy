@@ -251,7 +251,7 @@ SAMPLES_KEEP_DAYS = int(os.environ.get("GAMEPANEL_SAMPLES_KEEP_DAYS", "7"))
 # quando um servidor cai, some do SSH, enche o disco ou quando uma tarefa agendada falha.
 # A URL fica no banco (tela "Alertas"); esta variavel so serve de valor inicial, para o
 # deploy poder deixar tudo pronto.
-WEBHOOK_URL_PADRAO = os.environ.get("GAMEPANEL_WEBHOOK_URL", "")
+DEFAULT_WEBHOOK_URL = os.environ.get("GAMEPANEL_WEBHOOK_URL", "")
 WEBHOOK_TIMEOUT = float(os.environ.get("GAMEPANEL_WEBHOOK_TIMEOUT", "6"))
 # O Cloudflare na frente do Discord devolve 403 (erro 1010) para o User-Agent padrao do
 # urllib ("Python-urllib/3.x"), antes mesmo do pedido chegar no webhook. Mandar um
@@ -304,7 +304,7 @@ SQL_ALL_SERVERS = "SELECT * FROM servers ORDER BY name"
 SQL_SET_PASSWORD = "UPDATE users SET password_hash = ? WHERE id = ?"
 # Formato de data curto do painel ("17/09 05:00"). Estava escrito a mao em tres
 # telas; uma delas com um espaco a mais bastaria para a lista parecer desalinhada.
-FORMATO_DATA_CURTA = "%d/%m %H:%M"
+SHORT_DATE_FORMAT = "%d/%m %H:%M"
 
 TPL_ERROR = "error.html"
 TPL_LOGIN = "login.html"
@@ -414,7 +414,7 @@ def _close_db(_exc) -> None:
 # O terceiro item e um comando SQL ou uma tupla deles (o ALTER mais o conserto das
 # linhas antigas, quando o valor padrao da coluna nao serve para quem ja existia).
 def init_db() -> None:
-    schema.init_db(DB_PATH, WEBHOOK_URL_PADRAO, ALERT_DEFAULT, now_iso)
+    schema.init_db(DB_PATH, DEFAULT_WEBHOOK_URL, ALERT_DEFAULT, now_iso)
 
 
 def now_iso() -> str:
@@ -564,7 +564,7 @@ def _check_csrf():
 
 
 # Com GAMEPANEL_REQUIRE_2FA=1 quem ainda nao ativou o segundo fator so alcanca isto.
-ENDPOINTS_SEM_2FA = frozenset({
+ENDPOINTS_WITHOUT_2FA = frozenset({
     "auth.login", "auth.login_2fa", "auth.logout", "account.two_factor",
     "health.health", "static",
     "pwa.manifest", "pwa.service_worker", "pwa.offline",
@@ -573,7 +573,7 @@ ENDPOINTS_SEM_2FA = frozenset({
 
 @app.before_request
 def _exige_segundo_fator():
-    if not REQUIRE_2FA or request.endpoint in ENDPOINTS_SEM_2FA or request.endpoint is None:
+    if not REQUIRE_2FA or request.endpoint in ENDPOINTS_WITHOUT_2FA or request.endpoint is None:
         return None
     user = logged_user()
     if user is None or user["totp_enabled"]:
@@ -905,7 +905,7 @@ PLAYER_ACTION_LABELS = player_service.PLAYER_ACTION_LABELS
 BASE_MARK = player_service.BASE_MARK
 PLAYER_MARK = player_service.PLAYER_MARK
 MESSAGE_MARK = player_service.MESSAGE_MARK
-API_ACOES = player_service.API_ACOES
+API_ACTIONS = player_service.API_ACTIONS
 actions_api = player_service.actions_api
 player_actions = player_service.player_actions
 _fill = player_service._fill
@@ -1035,7 +1035,7 @@ def all_status(servers) -> dict[int, dict]:
 # O que cada acao RODA no container. Como ela se apresenta (rotulo, icone, grupo,
 # peso visual) e outra responsabilidade, e mora no `ui.py` — aqui ficam so os
 # comandos, que e o que este modulo tem para dizer sobre elas.
-COMANDOS = {
+COMMANDS = {
     "start": lambda s: q("systemctl", "start", s["service"]),
     "restart": lambda s: q("systemctl", "restart", s["service"]),
     "stop": lambda s: q("systemctl", "stop", s["service"]),
@@ -1045,13 +1045,13 @@ COMANDOS = {
 
 # As duas listas nao podem divergir em silencio: uma acao com botao e sem comando da
 # 500 no clique, e uma com comando e sem botao e codigo morto que ninguem percebe.
-assert set(COMANDOS) == set(ui.BY_KEY), "ui.ACOES e COMANDOS fora de sincronia"
+assert set(COMMANDS) == set(ui.BY_KEY), "ui.ACOES e COMANDOS fora de sincronia"
 
 # Forma antiga, montada a partir das duas: chave -> (rotulo, comando, confirma).
 # Continua sendo o que `start_job` e o historico consomem.
 ACTIONS = {
     key: (ui.BY_KEY[key].label, comando, ui.BY_KEY[key].confirm)
-    for key, comando in COMANDOS.items()
+    for key, comando in COMMANDS.items()
 }
 
 JOB_LABELS = {key: label for key, (label, _cmd, _c) in ACTIONS.items()}
@@ -1267,7 +1267,7 @@ MEM_PCT_DEFAULT = 90
 CPU_PCT_DEFAULT = 90
 # Os tres saem da MESMA leitura do medidor: com o cache de server_metrics no meio, olhar
 # os tres custa uma ida de SSH so, entao eles andam juntos no mesmo relogio.
-RECURSO_EVENTOS = {"disco-cheio", "memoria-alta", "cpu-alta"}
+RESOURCE_EVENTS = {"disco-cheio", "memoria-alta", "cpu-alta"}
 # Quantas linhas do diario de alertas ficam guardadas.
 ALERT_LOG_KEEP = int(os.environ.get("GAMEPANEL_ALERT_LOG_KEEP", "500"))
 
@@ -1497,7 +1497,7 @@ def _cpu_alert(conn, server, cfg) -> None:
 #
 # Aponta para as funcoes DESTE modulo, nao para as do service: a tabela captura o
 # objeto no import, e e por estes nomes que os testes chamam.
-ALERTAS_DE_RECURSO = {
+RESOURCE_ALERTS = {
     "disco-cheio": _disk_alert,
     "memoria-alta": _memory_alert,
     "cpu-alta": _cpu_alert,
@@ -1626,7 +1626,7 @@ def _monitor_rhythm(cfg: dict, agora: float, force: bool) -> _Rhythm | None:
     # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
     # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
     resource_wins = force or agora - _last_disk >= DISK_CHECK_EVERY
-    resources = cfg["events"] & RECURSO_EVENTOS if resource_wins else set()
+    resources = cfg["events"] & RESOURCE_EVENTS if resource_wins else set()
     if resources:
         _last_disk = agora
 
@@ -1685,7 +1685,7 @@ def _server_alerts(conn, server, state, anterior, cfg, rhythm: _Rhythm) -> None:
     if rhythm.ver_log:
         _log_alert(conn, server, anterior)
 
-    for event, check_it in ALERTAS_DE_RECURSO.items():
+    for event, check_it in RESOURCE_ALERTS.items():
         if event in rhythm.recursos:
             check_it(conn, server, cfg)
 
@@ -2135,7 +2135,7 @@ def _enable_log_count(conn, sid: int):
 
 # Fonte de contagem -> quem grava a escolha. Uma fonte nova (RCON, por exemplo) e uma
 # funcao e uma linha aqui; a rota abaixo nao muda.
-FONTES_DE_CONTAGEM = {
+COUNT_SOURCES = {
     "a2s": _enable_a2s_count,
     "http": _enable_http_count,
     "log": _enable_log_count,
@@ -2148,7 +2148,7 @@ FONTES_DE_CONTAGEM = {
 UNIT_RE = server_service.UNIT_RE
 HOST_RE = server_service.HOST_RE
 USER_RE = server_service.USER_RE
-CAMINHO_JSON_RE = server_service.CAMINHO_JSON_RE
+JSON_PATH_RE = server_service.JSON_PATH_RE
 
 
 def _form_limits() -> server_service.FormLimits:
@@ -2999,7 +2999,7 @@ def _security_headers(resp):
 # ------------------------------------------------- aplicativo instalavel (PWA)
 
 # Pastas cujo conteudo o painel consegue servir sem rede depois de instalado.
-CASCO_PASTAS = ("css", "js", "icons")
+SHELL_FOLDERS = ("css", "js", "icons")
 
 
 def _shell_files() -> tuple[list[str], str]:
@@ -3016,7 +3016,7 @@ def _shell_files() -> tuple[list[str], str]:
     """
     urls: list[str] = []
     newest = 0
-    for folder in CASCO_PASTAS:
+    for folder in SHELL_FOLDERS:
         root = os.path.join(app.static_folder or "", folder)
         for base, _dirs, files in os.walk(root):
             for name in sorted(files):

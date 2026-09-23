@@ -14,7 +14,7 @@ def index():
     conn = panel.db()
     return render_template(
         "alerts.html", cfg=panel.webhook_config(conn), events=panel.labels_of(panel.ALERT_EVENTS),
-        defaults=panel.clean_events(panel.ALERT_DEFAULT), from_env=bool(panel.WEBHOOK_URL_PADRAO),
+        defaults=panel.clean_events(panel.ALERT_DEFAULT), from_env=bool(panel.DEFAULT_WEBHOOK_URL),
         monitor=int(panel.MONITOR_EVERY), disk_every=int(panel.DISK_CHECK_EVERY / 60),
         # O piso do relogio conta: o alerta nao pode chegar mais rapido que a volta dele.
         players_every=int(max(panel.PLAYER_CHECK_EVERY, panel.SCHEDULE_TICK)),

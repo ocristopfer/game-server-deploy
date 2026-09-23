@@ -24,7 +24,7 @@ from typing import Any, NamedTuple
 
 # A linha de comando nao aceita quebra de linha com conforto: as listas (arquivos de
 # config, caminhos de backup) vem separadas por virgula e viram uma por linha.
-SEPARADOR_DE_LISTA = ","
+LIST_SEPARATOR = ","
 
 
 class CliDeps(NamedTuple):
@@ -42,7 +42,7 @@ class CliDeps(NamedTuple):
 
 
 def by_comma(raw: str) -> str:
-    return "\n".join(p.strip() for p in raw.split(SEPARADOR_DE_LISTA) if p.strip())
+    return "\n".join(p.strip() for p in raw.split(LIST_SEPARATOR) if p.strip())
 
 
 def build_parser(roles: Sequence[str]) -> argparse.ArgumentParser:

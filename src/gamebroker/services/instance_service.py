@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 import gamebroker.services.allocator as alocador
 from gamebroker.domain import wire
 from gamebroker.domain.exceptions import Conflict, NotFound, QuotaExceeded, ValidationError
-from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK, Db
+from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_FAILED, OP_OK, Db
 from gamebroker.runtime.base import CtSpec, Installer, Network, Opnsense, Proxmox
 from gamebroker.services.allocator import AllocatedPort
 from gamebroker.services.catalog import NAME_RE, Catalog, Game
@@ -180,7 +180,7 @@ class Service:
             log("reserva liberada")
         else:
             self.db.set_state(inst["id"], ESTADO_FALHOU, error)
-        self.db.finish_operation(op_id, OP_ERRO)
+        self.db.finish_operation(op_id, OP_FAILED)
 
     # --- desativar / remover ---------------------------------------------
 

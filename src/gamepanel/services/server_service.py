@@ -26,9 +26,9 @@ from gamepanel.runtime.log_probe import compile_pattern, valid_log_path
 UNIT_RE = re.compile(r"^[A-Za-z0-9@._-]{1,80}\.service$")
 HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
 USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
-CAMINHO_JSON_RE = re.compile(r"^[A-Za-z0-9_.\[\]-]{0,120}$")
+JSON_PATH_RE = re.compile(r"^[A-Za-z0-9_.\[\]-]{0,120}$")
 
-PORTA_MAX = 65535
+MAX_PORT = 65535
 NOTES_MAX = 2000
 GAME_PORT_MAX = 120
 CONFIG_PATH_MAX = 400
@@ -61,7 +61,7 @@ def _port_field(value: str | None, default: int, minimum: int, error: Message,
            errors: list[str]) -> int:
     """Le uma porta do formulario; `minimo` 0 permite desligar o recurso."""
     raw = (value or "").strip() or str(default)
-    if raw.isdigit() and minimum <= int(raw) <= PORTA_MAX:
+    if raw.isdigit() and minimum <= int(raw) <= MAX_PORT:
         return int(raw)
     errors.append(error)
     return default
@@ -163,7 +163,7 @@ def _json_paths(form: Form, cap: int, errors: list[str]) -> dict:
                           ("http_count_path", "form.path_count"),
                           ("http_token_path", "form.path_token")):
         text = _field(form, field, cap)
-        if text and not CAMINHO_JSON_RE.match(text):
+        if text and not JSON_PATH_RE.match(text):
             errors.append(Message("form.bad_json_path", label=Message(label)))
             text = ""
         paths[field] = text

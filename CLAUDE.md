@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_config_f
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py` e mais uma duzia) sao **pytest** — 909
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 911
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 907 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 909 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -214,7 +214,7 @@ arquivo, quando tudo o que eles chamam ja existe.
   `servers.detail`, nao `servers.server_detail`. Em `url_for`, em `endpoint=` e nas
   tabelas de `navigation.py` o nome e sempre o completo, com ponto.
 - **Blueprint novo** = um arquivo aqui e um nome nas duas listas de `register_all`. Se a
-  rota precisa pular o segundo fator, tambem uma linha em `app.ENDPOINTS_SEM_2FA`.
+  rota precisa pular o segundo fator, tambem uma linha em `app.ENDPOINTS_WITHOUT_2FA`.
 
 ### A regra que sustenta o resto: uma lista, um lugar
 
@@ -222,13 +222,13 @@ Antes, a lista de telas de um servidor estava escrita a mao em **seis templates*
 um tinha um subconjunto diferente, e era por isso que "Graficos" existia numa tela e nao
 na outra. Hoje ela esta em `ui.py`.
 
-- **Tela nova de servidor** = uma linha em `ui.SECOES_DO_SERVIDOR`. Nao edite template
+- **Tela nova de servidor** = uma linha em `ui.SERVER_SECTIONS`. Nao edite template
   de navegacao; nao existe mais.
-- **Acao nova** (start/stop/...) = uma entrada em `ui.ACOES` (como aparece) + uma em
-  `app.COMANDOS` (o que roda). Um `assert` no import quebra se as duas divergirem.
+- **Acao nova** (start/stop/...) = uma entrada em `ui.ACTIONS` (como aparece) + uma em
+  `app.COMMANDS` (o que roda). Um `assert` no import quebra se as duas divergirem.
 - **Fonte de contagem de jogadores nova** = uma funcao + uma linha em
-  `app.FONTES_DE_CONTAGEM`.
-- **Alerta de recurso novo** = uma linha em `app.ALERTAS_DE_RECURSO`.
+  `app.COUNT_SOURCES`.
+- **Alerta de recurso novo** = uma linha em `app.RESOURCE_ALERTS`.
 
 Se voce se pegar escrevendo a mesma lista pela segunda vez, pare: ela pertence a uma
 dessas tabelas.
@@ -284,11 +284,11 @@ dessas tabelas.
   como "CSRF desabilitado" — e falso positivo, e ha um comentario no `Flask(__name__)`
   explicando. **Nao remova `_check_csrf`.**
 - **Complexidade cognitiva: teto de 15** (regra do Sonar). Quando estourar, o corte
-  quase sempre e o mesmo: separar *decidir* de *fazer*. `monitora_servidores` virou
-  `_ritmo_do_monitor` (o que vence agora) + `_alertas_do_servidor` (o que fazer com cada
+  quase sempre e o mesmo: separar *decidir* de *fazer*. `monitor_servers` virou
+  `_monitor_rhythm` (o que vence agora) + `_server_alerts` (o que fazer com cada
   um) e caiu de 48 para menos de 10.
-- **Literal repetido tres vezes vira constante.** `FORMATO_DATA_CURTA`, `MARCA_JOGADOR`,
-  `_texto_de_online()` nasceram assim — e o ultimo corrigiu um bug de brinde: uma das
+- **Literal repetido tres vezes vira constante.** `SHORT_DATE_FORMAT`, `PLAYER_MARK`,
+  `_online_text()` nasceram assim — e o ultimo corrigiu um bug de brinde: uma das
   quatro copias dizia "0 jogadores online".
 - **Mais de 13 parametros: passe um objeto.** `ensure_server` tinha 15; virou
   `DeployServer(NamedTuple)`. Quinze posicoes e onde um `join_re` vai parar no lugar
@@ -302,7 +302,7 @@ dessas tabelas.
   except Exception:  # noqa: BLE001
   ```
   `# noqa: BLE001 - motivo` na mesma linha e sintaxe invalida de supressao.
-- **Dicionario de funcoes** (`ALERTAS_DE_RECURSO`, `FONTES_DE_CONTAGEM`) captura o objeto
+- **Dicionario de funcoes** (`RESOURCE_ALERTS`, `COUNT_SOURCES`) captura o objeto
   no import. Se um teste precisar trocar a funcao por uma falsa, ele vai ter de trocar a
   entrada da tabela — nao o nome no modulo. Verifique antes de transformar `if/elif` em
   tabela.
@@ -382,16 +382,16 @@ chave que ninguem cadastrou aparece na tela como `nav.servers` em vez de sumir c
 - **Rotulo em tabela (`ALERT_EVENTS`, `JOB_LABELS`, `ROLE_LABELS`) guarda CHAVE**, nunca
   o texto: a chave do dicionario (`caiu`, `edit-config`) vai para o banco e para o
   `<option value=>`, e nao pode mudar porque alguem mexeu na redacao. Quem traduz e o
-  `rotulos_de()` na hora de renderizar.
-- **Texto que nasce em `services/`/`runtime/` usa `i18n.Mensagem`**, que e uma `str` de
+  `labels_of()` na hora de renderizar.
+- **Texto que nasce em `services/`/`runtime/` usa `i18n.Message`**, que e uma `str` de
   proposito: carrega a chave e os campos, mas `str(exc)`, `f"{erro}"`, `"pedaco" in
   erro` e o `logging` continuam funcionando sem mudanca. Quem quer o idioma da pessoa
-  chama `traduzir`; esquecer cai no idioma do deploy, que era o comportamento antigo.
+  chama `translate`; esquecer cai no idioma do deploy, que era o comportamento antigo.
 - **Fora de pedido vale `GAMEPANEL_LANG`, nao a pessoa.** Monitor e agendador rodam em
-  thread propria, sem `g` nem `request` — `idioma_atual()` tem um portao para isso, e
+  thread propria, sem `g` nem `request` — `current_language()` tem um portao para isso, e
   sem ele traduzir um alerta derruba a volta inteira do monitor com "Working outside of
   application context". Pelo mesmo motivo o alerta que vai para o canal e o texto
-  GRAVADO num job usam o idioma do deploy (`rotulo_para_o_banco`): o historico e lido
+  GRAVADO num job usam o idioma do deploy (`label_for_db`): o historico e lido
   depois, por outra pessoa, e a mesma acao escrita de tres jeitos quebraria o filtro.
 - Conferir uma tela nos dois idiomas: `POST /account/idioma` com `lang=pt|en`. Sem
   sessao (tela de login) vale o `Accept-Language` do navegador.
@@ -457,6 +457,19 @@ primeira execucao: tres classes sem regra e sete regras mortas.
 - **`cores` e a palavra que colide**: nucleo de CPU em ingles, cor em portugues. Uma
   renomeacao automatica ja trocou uma pela outra nos dois lados e o numero de nucleos
   sumiu da tela. Ha um teste so para ela.
+
+### A doc tambem tem rede
+
+`tests/gamepanel/test_docs_contract.py` cobra que todo `modulo.nome` citado entre crases
+NESTE arquivo ainda exista no codigo. Doc que envelhece nao e doc faltando: e doc que
+MENTE, e manda a proxima pessoa procurar um nome que nao existe. Achou quatro de uma vez
+na primeira execucao (`opnsense.taken_ports`, `_limpar`, `somente_banco`, `ui.menu_acao`).
+
+O escopo e estreito porque tres coisas tem o MESMO formato e nao sao referencia a codigo:
+chave de i18n (`charts.players`), nome de arquivo (`compare.sh`) e modulo de fora
+(`flask.g`). As duas primeiras saem por reconhecimento — a chave existe no catalogo, o
+arquivo tem extensao —, e nao por lista. As quatro colisoes que sobram estao em
+`NOT_CODE`, cada uma com o motivo ao lado.
 
 ### O JavaScript tem rede agora
 
@@ -541,7 +554,7 @@ deixou de casar.
   `aria-label="filtrar por servidor"` SUBSTITUI o texto visivel para o leitor de tela.
 - **Toda tabela dentro de `<div class="table-wrap">`**, senao ela empurra a pagina para
   fora da tela no celular.
-- Todo POST usa os macros `ui.acao` / `ui.menu_acao`, que montam o CSRF sozinhos.
+- Todo POST usa os macros `ui.action` / `ui.menu_action`, que montam o CSRF sozinhos.
 
 ---
 
@@ -574,10 +587,10 @@ Cinco camadas, e cada uma **so pode depender das anteriores**:
 - **Cabecalho e corpo dividem a mesma coluna.** O fundo da barra vai de ponta a ponta, mas o
   conteudo (`.appbar__miolo`) tem a `--largura-max` e o recuo do `.wrap`: sem isso a marca
   fica no canto da janela e o conteudo no meio, sem alinhar com nada. A partir de 900px a barra
-  mostra TODOS os destinos (`ui.NAV_DESKTOP_BARRA`, sem icone e com rotulo `curto` onde ha, para
-  caberem seis) e o menu do NOME da pessoa leva conta, chave SSH e sair (`NAV_DESKTOP_CONTA`).
-  No celular nada mudou: abas embaixo e o "⋯". Item aceso: `nav_ativa_desktop_de` (cada destino
-  acende o proprio) x `nav_ativa_de` (as quatro abas do celular).
+  mostra TODOS os destinos (`ui.NAV_DESKTOP_BAR`, sem icone e com rotulo `curto` onde ha, para
+  caberem seis) e o menu do NOME da pessoa leva conta, chave SSH e sair (`NAV_DESKTOP_ACCOUNT`).
+  No celular nada mudou: abas embaixo e o "⋯". Item aceso: `active_desktop_nav_for` (cada destino
+  acende o proprio) x `active_nav_for` (as quatro abas do celular).
 - **Cartoes lado a lado usam `.grid-cartoes`** (uma coluna no celular, duas a partir de 900px;
   `.grid-cartoes__largo` ocupa a linha inteira). Bloco comprido (log, tabela) vai no `__largo`,
   senao empurra o vizinho.
@@ -662,7 +675,7 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
 - **`install.env` e sempre `shlex.quote`.** Hook (`PRE/POST_INSTALL_CMD`) so existe no catalogo
   curado; jogo da API escolhe **receitas** (`apply_recipes`, lista fechada), nunca escreve shell.
   Receita desconhecida derruba a instalacao. A chave do broker sai do CT ao fim
-  (`_limpar`, roda SEMPRE) e se ela nao sair a criacao FALHA.
+  (`_cleanup`, roda SEMPRE) e se ela nao sair a criacao FALHA.
 - **`games/*.env` tem de passar no `source` do bash.** Regex de log (`JOIN_RE`) com parenteses
   precisa de aspas: sem elas 5 dos 8 jogos quebravam o deploy pelo Proxmox (o
   `provision-game-lxc.sh` da `source` no arquivo cru). Conferir:
@@ -731,7 +744,7 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   o instalador de referencia nao o conhece e deixaria `{EXTRA_PORT}` literal no ExecStart.
 - **Enderecos: o IP diz o CTID.** Painel `.100` (CT 300), broker `.101` (CT 301), jogos do
   broker `.102-.199` (CT 302-399): `CTID = BROKER_CTID_BASE (200) + ultimo numero do IP`, ou
-  seja "3" + os dois ultimos digitos do IP (`alocador.escolher_ip_e_ctid`; um IP so serve se o
+  seja "3" + os dois ultimos digitos do IP (`allocator.pick_ip_and_ctid`; um IP so serve se o
   CTID dele tambem esta livre). Tudo em 300-399 e deste sistema; os CTs 2xx sao os antigos, feitos
   a mao ou pelo `deploy-game.ps1`, e ficam onde estao. As VMs 100-111 do Proxmox nao colidem. Com
   `BROKER_CTID_BASE=0` o CTID volta a ser escolhido a parte, na faixa `BROKER_CTID_INICIO/FIM`.
@@ -751,29 +764,29 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   Enshrouded, Icarus e Dragonwilds nao estao no LinuxGSM: continuam manuais. E a busca e SEMPRE
   sugestao: quem valida e o broker no envio.
 - **Desfazer nao pode mentir**: se a limpeza falha, a reserva vira `falhou` e continua
-  bloqueando IP/CTID/portas ate alguem remover (`servico._desfazer`).
+  bloqueando IP/CTID/portas ate alguem remover (`instance_service._undo`).
 - **TLS e por IMPRESSAO, nunca `verify=False`.** Proxmox e OPNsense sao autoassinados;
-  `conexao.Cliente` aceita so o certificado cuja SHA-256 e a configurada (o
+  `http_client.Client` aceita so o certificado cuja SHA-256 e a configurada (o
   `check-broker-access.ps1` a imprime), e recusa `http://` fora de loopback. Impressao
   digitada errada e ERRO, nao "sem pin" (ja foi um bug: lixo virava string vazia).
 - **Regras que o Proxmox real impoe** (o `PveFalso` as repete, entao regredir quebra teste):
   tag na criacao e `keyctl` sao 403 para o token; tarefa `WARNINGS: n` e sucesso; a tag e
   gravada DEPOIS. A identidade de um CT do broker e o **pool**, nao a tag.
-- **O OPNsense guarda porta em ALIAS.** `opnsense.portas_ocupadas` le o alias do resumo em
+- **O OPNsense guarda porta em ALIAS.** `opnsense.busy_ports` le o alias do resumo em
   HTML do `search_rule` e **falha fechada**: regra do WAN que nao entende => `ErroDeLeitura`
   e nada novo e aberto. Regra desativada continua ocupando a porta. `fechar` casa a
   descricao `gamepanel:<ctid>` por IGUALDADE (por prefixo, o 30 apagaria o 300).
 - **`remover` nao libera CTID/IP de CT que talvez exista.** O token so enxerga o pool, e
-  "apagado a mao" e "movido de pool" dao o mesmo 403; so `somente_banco` limpa o registro.
+  "apagado a mao" e "movido de pool" dao o mesmo 403; so `db_only` limpa o registro.
 - **Job do broker nao e `start_job`.** Criar instancia demora minutos e nao tem servidor SSH
-  ainda: `start_broker_job` grava um job SEM servidor e `acompanha_operacao` faz polling no
+  ainda: `start_broker_job` grava um job SEM servidor e `follow_operation` faz polling no
   broker gravando o log a cada volta (o `start_job` comum so grava no fim). No fim
   cadastra o servidor pelo `ensure_server`; se isso falhar o job diz que **a instancia
-  existe** no Proxmox. `retoma_jobs_do_broker` religa o acompanhamento depois de um restart.
+  existe** no Proxmox. `resume_broker_jobs` religa o acompanhamento depois de um restart.
 - **Tudo do broker e so de admin**, inclusive a saida dos jobs (`JOB_ACTIONS_ADMIN`): ela cita
   IP, CTID e portas. A rota empilha `@admin_required` e depois `@broker_required`.
-- **`broker_client` e chamado sempre pelo modulo** (`broker_client.criar(...)`): e assim que os
-  testes o trocam por um falso. Nao faca `from broker_client import criar`.
+- **`broker_client` e chamado sempre pelo modulo** (`broker_client.create(...)`): e assim que os
+  testes o trocam por um falso. Nao faca `from broker_client import create`.
 - **Tabela no celular: uma coluna.** Com estado e acoes em colunas proprias, as ACOES saiam
   da tela (rolagem lateral). Ver `instancias.html` e `catalogo.html`. E o servidor local so
   recarrega template com `GAMEPANEL_DEV=1`: sem ele voce testa o template ANTIGO.

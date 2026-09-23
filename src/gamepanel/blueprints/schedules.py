@@ -21,7 +21,7 @@ def index(sid: int):
     # deixa claro se ela ja rodou hoje ou se ainda vai rodar.
     next_ones = {}
     for t in tasks:
-        next_ones[t["id"]] = panel._next_occurrence(t, now_ts).strftime(panel.FORMATO_DATA_CURTA)
+        next_ones[t["id"]] = panel._next_occurrence(t, now_ts).strftime(panel.SHORT_DATE_FORMAT)
     return render_template(
         "schedules.html", server=server, tasks=tasks, next_runs=next_ones,
         actions=panel.SCHEDULE_ACTIONS, job_labels=panel.labels_of(panel.JOB_LABELS),

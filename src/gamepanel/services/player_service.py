@@ -71,7 +71,7 @@ class ActionEntry(TypedDict):
 #
 # Dos jogos que este repo instala, so o Palworld publica essas acoes (o Satisfactory nao
 # tem kick na API). Jogo novo entra como mais uma entrada aqui, sem tocar no resto.
-API_ACOES: tuple[ActionEntry, ...] = (
+API_ACTIONS: tuple[ActionEntry, ...] = (
     {
         "name": "Palworld (REST)",
         "url": re.compile(r"^(?P<base>https?://[^/\s]+/v1/api)/players/?$", re.I),
@@ -219,7 +219,7 @@ def actions_api(server: ServerLike) -> dict[str, Any] | None:
     if player_source(server) != "http":
         return None
     url = (server["http_url"] or "").strip()
-    for entry in API_ACOES:
+    for entry in API_ACTIONS:
         matches_it = entry["url"].match(url)
         if matches_it:
             found: dict[str, Any] = {**entry, "base": matches_it.group("base")}

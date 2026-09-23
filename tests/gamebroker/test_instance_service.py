@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 
 from gamebroker.domain.exceptions import Conflict, NotFound, OutOfResources, QuotaExceeded, ValidationError
-from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_ERRO, OP_OK
+from gamebroker.persistence.db import ESTADO_ATIVA, ESTADO_DESATIVADA, ESTADO_FALHOU, OP_FAILED, OP_OK
 from gamebroker.services.allocator import ips_in_range
 
 
@@ -198,7 +198,7 @@ def test_falha_na_instalacao_destroi_o_ct_e_libera_a_reserva(environment):
     environment.installer.failure = True
     response = _create(environment)
     op = environment.servico.operation(response["operation_id"])
-    assert op["state"] == OP_ERRO
+    assert op["state"] == OP_FAILED
     assert "steamcmd falhou" in op["log"]
     assert "reserva liberada" in op["log"]
     assert environment.proxmox.cts == {}

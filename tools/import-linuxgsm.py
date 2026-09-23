@@ -45,14 +45,14 @@ from gamebroker.domain.exceptions import ValidationError  # noqa: E402
 from gamebroker.services.catalog import KEY_RE, NAME_RE, validate_dynamic  # noqa: E402
 
 FONTE_URL = "https://raw.githubusercontent.com/GameServerManagers/LinuxGSM/master/"
-PASTA_DO_JOGO = "/opt/game"
+GAME_FOLDER = "/opt/game"
 
 # Portas que o jogo anuncia para o cliente e por isso precisam existir no NAT.
-PORTAS_EXPOSTAS = ("clientport", "beaconport", "reliableport", "modserverport")
+EXPOSED_PORTS = ("clientport", "beaconport", "reliableport", "modserverport")
 # Portas de administracao: o numero vai nos argumentos, mas NUNCA sai do container.
-PORTAS_INTERNAS = ("rconport", "telnetport", "httpport", "sourcetvport", "appport")
+INTERNAL_PORTS = ("rconport", "telnetport", "httpport", "sourcetvport", "appport")
 # Protocolo que nao e UDP. O resto e presumido UDP (e o aviso da sugestao diz isso).
-PROTOCOLO_DA_VARIAVEL = {"reliableport": "tcp", "httpport": "tcp"}
+VARIABLE_PROTOCOL = {"reliableport": "tcp", "httpport": "tcp"}
 # Variavel cujo nome contem qualquer um destes trechos nunca e resolvida.
 SEGREDOS = ("pass", "gslt", "token", "key", "secret", "servername", "selfname", "ip", "rcon")
 
@@ -165,10 +165,10 @@ def sugerir(gamename: str, texto_do_cfg: str) -> dict | None:
 
     var_query = next((n for n in ("queryport", "steamport")
                       if _numero(v.get(n, "")) and f"${{{n}}}" in args_brutos), "")
-    extras_da_rede = [n for n in PORTAS_EXPOSTAS
+    extras_da_rede = [n for n in EXPOSED_PORTS
                       if _numero(v.get(n, "")) and f"${{{n}}}" in args_brutos]
 
-    trocas = {"serverfiles": PASTA_DO_JOGO}
+    trocas = {"serverfiles": GAME_FOLDER}
     if porta:
         trocas["port"] = "{PORT}"
     if var_query:
@@ -179,7 +179,7 @@ def sugerir(gamename: str, texto_do_cfg: str) -> dict | None:
     if var_extra:
         trocas[var_extra] = "{EXTRA_PORT}"
     # Toda outra porta vira o NUMERO padrao: o jogo sobe com ela, e so as expostas vao ao NAT.
-    for name in PORTAS_EXPOSTAS + PORTAS_INTERNAS + ("queryport", "steamport", "clientport"):
+    for name in EXPOSED_PORTS + INTERNAL_PORTS + ("queryport", "steamport", "clientport"):
         if name not in trocas and _numero(v.get(name, "")):
             trocas[name] = v[name]
     argumentos, removidos = _clean_arguments(resolver(args_brutos, v, trocas))
@@ -190,20 +190,20 @@ def sugerir(gamename: str, texto_do_cfg: str) -> dict | None:
     ports = [f"{porta}/udp"] if porta else []
     if var_query:
         ports.append(f"{_numero(v[var_query])}/udp")
-    ports += [f"{_numero(v[n])}/{PROTOCOLO_DA_VARIAVEL.get(n, 'udp')}" for n in extras_da_rede]
+    ports += [f"{_numero(v[n])}/{VARIABLE_PROTOCOL.get(n, 'udp')}" for n in extras_da_rede]
     ports = list(dict.fromkeys(ports))
-    escondidas = [n for n in PORTAS_INTERNAS if _numero(v.get(n, "")) and f"${{{n}}}" in args_brutos]
+    escondidas = [n for n in INTERNAL_PORTS if _numero(v.get(n, "")) and f"${{{n}}}" in args_brutos]
     if escondidas:
         avisos.append("Portas de administracao (" + ", ".join(escondidas)
                       + ") ficam so dentro do container, de proposito: nao entram no firewall.")
     avisos.append("Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).")
 
     script = ""
-    executavel = resolver(v.get("executable", ""), v, {"serverfiles": PASTA_DO_JOGO})
-    pasta = resolver(v.get("executabledir", "${serverfiles}"), v, {"serverfiles": PASTA_DO_JOGO})
+    executavel = resolver(v.get("executable", ""), v, {"serverfiles": GAME_FOLDER})
+    pasta = resolver(v.get("executabledir", "${serverfiles}"), v, {"serverfiles": GAME_FOLDER})
     caminho = posixpath.normpath(posixpath.join(pasta, executavel)) if executavel else ""
-    if caminho.startswith(PASTA_DO_JOGO + "/") and "${" not in caminho:
-        script = caminho[len(PASTA_DO_JOGO) + 1:]
+    if caminho.startswith(GAME_FOLDER + "/") and "${" not in caminho:
+        script = caminho[len(GAME_FOLDER) + 1:]
         avisos.append("O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, "
                       "use o script .sh que vem na pasta do jogo.")
     elif executavel:

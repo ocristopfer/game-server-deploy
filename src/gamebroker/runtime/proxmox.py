@@ -21,11 +21,11 @@ from urllib.parse import quote
 from gamebroker.integrations.http_client import Client, Response
 from gamebroker.runtime.base import CtSpec
 
-TAG_DO_BROKER = "gamepanel-broker"
-_NOME_RE = re.compile(r"[A-Za-z0-9._-]{1,64}", re.ASCII)
+BROKER_TAG = "gamepanel-broker"
+_NAME_RE = re.compile(r"[A-Za-z0-9._-]{1,64}", re.ASCII)
 _VOLID_RE = re.compile(r"[A-Za-z0-9._-]+:vztmpl/[A-Za-z0-9._+-]+", re.ASCII)
-_IP_DE_REDE_RE = re.compile(r"ip=(\d{1,3}(?:\.\d{1,3}){3})")
-ERRO_MAX = 200
+_NETWORK_IP_RE = re.compile(r"ip=(\d{1,3}(?:\.\d{1,3}){3})")
+MAX_ERRORS = 200
 # Sonda de saude: um servico que nao responde em poucos segundos ja e a resposta.
 SONDA_TIMEOUT = 5.0
 
@@ -49,7 +49,7 @@ class ConfigProxmox:
 
     def __post_init__(self) -> None:
         for field in (self.node, self.pool, self.storage, self.bridge):
-            if not _NOME_RE.fullmatch(field):
+            if not _NAME_RE.fullmatch(field):
                 raise ValueError(f"nome invalido na config do Proxmox: {field!r}")
         if not _VOLID_RE.fullmatch(self.template):
             raise ValueError("template deve ser <storage>:vztmpl/<arquivo>")
@@ -125,7 +125,7 @@ class Proxmox:
         found: set[str] = set()
         for key, value in config.items():
             if re.fullmatch(r"net\d+", str(key)) and isinstance(value, str):
-                found.update(_IP_DE_REDE_RE.findall(value))
+                found.update(_NETWORK_IP_RE.findall(value))
         return found
 
     def belongs_to_broker(self, ctid: int) -> bool:
@@ -156,7 +156,7 @@ class Proxmox:
         self._task(self._api("POST", f"/nodes/{cfg.node}/lxc", "criar CT", form=body), "criar CT")
         try:
             self._api("PUT", f"/nodes/{cfg.node}/lxc/{spec.ctid}/config", "gravar a tag",
-                      form={"tags": TAG_DO_BROKER})
+                      form={"tags": BROKER_TAG})
         except ProxmoxError:
             # Tag e conforto (aparece na tela do Proxmox); a identidade e o pool.
             pass
@@ -189,4 +189,4 @@ class Proxmox:
 
 def _curto(text: str) -> str:
     clean = " ".join(str(text).split())
-    return clean if len(clean) <= ERRO_MAX else clean[:ERRO_MAX] + "..."
+    return clean if len(clean) <= MAX_ERRORS else clean[:MAX_ERRORS] + "..."

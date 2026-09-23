@@ -59,7 +59,7 @@ def index(sid: int):
     # A tabela e o par acessivel do grafico: mesmos numeros, sem depender de cor nem de
     # passar o mouse. Do mais novo para o mais velho, que e como se procura um pico.
     table = [
-        {"quando": q.astimezone().strftime(panel.FORMATO_DATA_CURTA), **v}
+        {"quando": q.astimezone().strftime(panel.SHORT_DATE_FORMAT), **v}
         for q, v in reversed(samples)
     ][:200]
 
