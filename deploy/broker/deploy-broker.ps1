@@ -27,8 +27,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if ($EnvFile -eq "") { $EnvFile = Join-Path $ScriptDir ".env" }
-if ($SecretsFile -eq "") { $SecretsFile = Join-Path $ScriptDir "broker.secrets.env" }
+# `$ScriptDir` e a pasta DESTE script (onde mora o provision-*.sh irmao). `$RepoRoot` e a
+# raiz do repositorio, dois niveis acima, e e de la que saem tools/, lib/, games/ e .env.
+# Na raiz os dois eram a mesma coisa por acidente; aqui a diferenca precisa ser dita.
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
+if ($EnvFile -eq "") { $EnvFile = Join-Path $RepoRoot ".env" }
+if ($SecretsFile -eq "") { $SecretsFile = Join-Path $RepoRoot "broker.secrets.env" }
 
 function Read-EnvFile([string]$Path) {
     $map = @{}
@@ -195,7 +199,7 @@ function New-ReleaseBundle([string]$Package) {
     # Empacota aqui, com o Python do repo. O artefato e determinista (ver
     # tools/build-release.py), entao o sha256 que viaja com ele responde "o CT esta com
     # ESTE codigo?", e nao so "o arquivo chegou inteiro?".
-    $builder = Join-Path $ScriptDir "tools/build-release.py"
+    $builder = Join-Path $RepoRoot "tools/build-release.py"
     if (-not (Test-Path $builder)) { throw "tools/build-release.py nao encontrado em $ScriptDir" }
     $dist = Join-Path ([System.IO.Path]::GetTempPath()) "gamebroker-release"
     if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
@@ -213,7 +217,7 @@ if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 New-Item -ItemType Directory -Path $BundleDir | Out-Null
 
 Copy-AsLf (Join-Path $ScriptDir "provision-broker-lxc.sh") (Join-Path $BundleDir "provision-broker-lxc.sh")
-Copy-AsLf (Join-Path $ScriptDir "lib/install-release.sh") (Join-Path $BundleDir "install-release.sh")
+Copy-AsLf (Join-Path $RepoRoot "lib/install-release.sh") (Join-Path $BundleDir "install-release.sh")
 
 # O CODIGO do broker viaja num tar.gz de release; lib/ e games/ continuam soltos porque
 # nao sao o pacote Python - sao dados e scripts que o CT le, e o provisionamento ja troca
@@ -227,10 +231,10 @@ Write-LfFile (Join-Path $BundleDir "release.env") (
     "RELEASE_TARBALL='$($Release.Name)'`nRELEASE_SHA256='$($Release.Sha)'`n")
 Write-Host "Release do broker: $($Release.Name)" -ForegroundColor DarkGray
 
-foreach ($f in (Get-ChildItem (Join-Path $ScriptDir "lib") -Filter "*.sh" -File)) {
+foreach ($f in (Get-ChildItem (Join-Path $RepoRoot "lib") -Filter "*.sh" -File)) {
     Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "lib") $f.Name)
 }
-foreach ($f in (Get-ChildItem (Join-Path $ScriptDir "games") -Filter "*.env" -File)) {
+foreach ($f in (Get-ChildItem (Join-Path $RepoRoot "games") -Filter "*.env" -File)) {
     Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "games") $f.Name)
 }
 

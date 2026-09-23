@@ -783,6 +783,20 @@ docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos san
   `due()`/`mark()` separados e 9 testes que não precisam de banco nem de dormir. O corpo
   de `monitor_servers` fica no `app.py`: ele só orquestra, e já está dividido em
   `_monitor_rhythm` + `_server_alerts` desde antes (era o exemplo "bom" que o plano cita).
+- ~~`deploy/`~~ — **feito**: os 10 scripts da raiz foram para `deploy/{admin,broker,game}/`,
+  e a raiz ficou só com `CLAUDE.md`, `README.md`, `VERSION`, os arquivos de configuração e
+  as pastas. O item estava na seção 2 do plano aprovado e **não constava desta lista** —
+  junto com os dois abaixo, foram os três esquecidos.
+
+  O que a mudança obrigou, e que não estava previsto: **`$ScriptDir` não era "a pasta
+  deste script", era a raiz do repositório.** Na raiz os dois coincidiam, e os `.ps1`
+  usavam o mesmo nome para achar o `provision-*.sh` irmão E para achar `tools/`, `lib/`,
+  `games/` e o `.env`. Agora são `$ScriptDir` e `$RepoRoot`, e a diferença está escrita.
+  O `compare.sh` ganhou o mesmo tratamento que já dava ao `ct-fases.sh`: procura o script
+  no caminho de hoje e cai no antigo, para `BASE_REF` continuar apontando para commits
+  anteriores à mudança.
+- **`tests/{unit,integration}/`** e **`pytest.ini` dentro do `pyproject.toml`** — os
+  outros dois da seção 2 que esta lista tinha esquecido. Abertos.
 - `extensions.py`, `services/user_service.py` e `runtime/base.py`+`runtime/fakes.py` do
   painel continuam abertos: são extração de orquestração, sem ganho de teste como os
   anteriores. O `extensions.py` chega a contradizer a descrição do próprio `app.py` no

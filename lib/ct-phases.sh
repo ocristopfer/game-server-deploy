@@ -375,7 +375,7 @@ install_game_in_ct() {
   done
   if [[ "$STEAM_ANONYMOUS" != "1" ]]; then
     warn "Login com conta: se a saida acima fala em Steam Guard / Two-factor, rode o deploy"
-    warn "de novo com o codigo do momento: .\\deploy-game.ps1 -Game ${GAME_KEY} -SteamGuardCode 12345"
+    warn "de novo com o codigo do momento: .\\deploy\\game\\deploy-game.ps1 -Game ${GAME_KEY} -SteamGuardCode 12345"
   fi
   die "SteamCMD nao conseguiu instalar o app ${STEAM_APP_ID} apos 3 tentativas"
 }

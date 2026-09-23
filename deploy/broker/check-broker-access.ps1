@@ -6,7 +6,7 @@ Le broker.secrets.env (fora do git) e nunca imprime segredo.
 Uso:  .\check-broker-access.ps1
 #>
 param(
-    [string]$EnvFile = (Join-Path $PSScriptRoot "broker.secrets.env")
+    [string]$EnvFile = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "broker.secrets.env")
 )
 
 $ErrorActionPreference = "Stop"

@@ -146,6 +146,11 @@ conftest.py              insere src/ no sys.path antes de qualquer teste (funcio
 games/                   catalogo curado de jogos (um *.env por jogo), lido pelo gamebroker E pelos
                         scripts de provisionamento em bash - por isso fica na raiz, fora de src/
 lib/                     fases de instalacao de jogo (bash) + install-release.sh (publica um release no CT)
+deploy/                  infra fora do codigo Python, um grupo por alvo:
+  admin/                  deploy-admin.ps1 + provision-admin-lxc.sh
+  broker/                 deploy-broker.ps1 + provision-broker-lxc.sh, mais as duas
+                         ferramentas manuais (check-broker-access.ps1, spike-broker-write.ps1)
+  game/                   deploy-game.ps1, deploy-docker.ps1 e os dois provision-*-lxc.sh de jogo
 src/
   gamepanel/             o painel (era admin/)
     app.py               a montagem: banco, sessao, decoradores, tabelas, SSH, alertas, agendador
@@ -1051,9 +1056,15 @@ mesmo** nos dois caminhos:
 
 | caminho | quando |
 |---|---|
-| `deploy-admin.ps1` | envio direto por SSH (empacota, manda 2 arquivos e reinicia) |
-| `provision-admin-lxc.sh` | provisionamento completo pelo Proxmox (`pct push` do tarball) |
-| `deploy-broker.ps1` + `provision-broker-lxc.sh` | o broker (CT proprio); ver a secao "Broker" |
+| `deploy/admin/deploy-admin.ps1` | envio direto por SSH (empacota, manda 2 arquivos e reinicia) |
+| `deploy/admin/provision-admin-lxc.sh` | provisionamento completo pelo Proxmox (`pct push` do tarball) |
+| `deploy/broker/deploy-broker.ps1` + `provision-broker-lxc.sh` | o broker (CT proprio); ver a secao "Broker" |
+
+**`$ScriptDir` nao e mais a raiz do repositorio.** Na raiz os dois coincidiam por
+acidente, e os `.ps1` usavam `$ScriptDir` tanto para achar o `provision-*.sh` irmao
+quanto para achar `tools/`, `lib/`, `games/` e o `.env`. Dentro de `deploy/<grupo>/` sao
+duas coisas: `$ScriptDir` e a pasta do script, `$RepoRoot` (dois niveis acima) e o
+repositorio. Caminho novo num `.ps1` de deploy escolhe um dos dois de proposito.
 
 ```
 /opt/gamepanel/releases/0.1.0+abc1234/gamepanel/...

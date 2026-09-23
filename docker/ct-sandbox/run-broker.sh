@@ -26,7 +26,7 @@ RELEASE_SHA256='%s'
 cp "$REPO"/lib/*.sh "$work/lib/"
 cp "$REPO/lib/install-release.sh" "$work/install-release.sh"
 cp "$REPO"/games/*.env "$work/games/"
-cp "$REPO/provision-broker-lxc.sh" "$work/"
+cp "$REPO/deploy/broker/provision-broker-lxc.sh" "$work/"
 cat > "$work/broker.conf.env" <<'CONF'
 BROKER_CTID='208'
 BROKER_HOSTNAME='gamebroker'

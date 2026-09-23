@@ -18,7 +18,16 @@ BASE_REF="${BASE_REF:-HEAD}"
 work="$repo_root/docker/ct-sandbox/.work"
 cd "$repo_root"; rm -rf "$work"; mkdir -p "$work/orig/lib" "$work/novo" "$work/inst" "$work/games" "$work/out"
 
-git show "$BASE_REF:provision-game-lxc.sh" > "$work/orig/provision-game-lxc.sh"
+# O script mudou de LUGAR (raiz -> deploy/game/), e a referencia pode ser de antes disso.
+# Mesmo cuidado do `ct-fases.sh` logo abaixo: procura no caminho de hoje e cai no antigo.
+# O `>` criaria o arquivo vazio antes de o git falhar, entao o teste vem primeiro.
+for candidate in deploy/game/provision-game-lxc.sh provision-game-lxc.sh; do
+  if git cat-file -e "$BASE_REF:${candidate}" 2>/dev/null; then
+    git show "$BASE_REF:${candidate}" > "$work/orig/provision-game-lxc.sh"
+    break
+  fi
+done
+[[ -s "$work/orig/provision-game-lxc.sh" ]] || { echo "FALHA: nao achei o provision-game-lxc.sh em $BASE_REF" >&2; exit 1; }
 # A referencia pode ser anterior a lib/ (o `>` criaria o arquivo vazio antes do git
 # falhar) e, se for anterior a traducao dos nomes, a lib ainda se chamava `ct-fases.sh`.
 # O nome ANTIGO tambem e procurado: sem isso, comparar contra um commit de antes do
@@ -32,7 +41,7 @@ for candidate in ct-phases.sh ct-fases.sh; do
   fi
 done
 rmdir "$work/orig/lib"
-cp provision-game-lxc.sh "$work/novo/"
+cp deploy/game/provision-game-lxc.sh "$work/novo/"
 # Layout REAL do bundle do deploy-game.ps1: sem subpastas, a lib solta ao lado do script.
 cp lib/ct-phases.sh "$work/novo/ct-phases.sh"
 cp lib/ct-install.sh lib/ct-phases.sh "$work/inst/"

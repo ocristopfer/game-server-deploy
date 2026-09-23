@@ -130,7 +130,7 @@ instalar_jogo() {
   done
   if [[ "$STEAM_ANONYMOUS" != "1" ]]; then
     warn "Se a saida acima fala em Steam Guard, refaca o deploy com o codigo do momento:"
-    warn "  .\\deploy-docker.ps1 -Game ${GAME_KEY} -SteamGuardCode 12345"
+    warn "  .\\deploy\\game\\deploy-docker.ps1 -Game ${GAME_KEY} -SteamGuardCode 12345"
   fi
   die "SteamCMD nao instalou o app ${STEAM_APP_ID} apos 3 tentativas"
 }

@@ -13,7 +13,7 @@ Le broker.secrets.env e nunca imprime segredo.
 Uso:  .\spike-broker-write.ps1 [-ProxmoxOnly] [-OpnsenseOnly]
 #>
 param(
-    [string]$EnvFile = (Join-Path $PSScriptRoot "broker.secrets.env"),
+    [string]$EnvFile = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "broker.secrets.env"),
     [int]$Ctid = 399,
     [string]$Ip = "192.168.2.250",
     [string]$Gateway = "192.168.2.1",

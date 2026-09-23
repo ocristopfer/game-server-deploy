@@ -22,7 +22,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$StackDir = Join-Path $ScriptDir "docker\stacks"
+# `$ScriptDir` e a pasta DESTE script (onde mora o provision-*.sh irmao). `$RepoRoot` e a
+# raiz do repositorio, dois niveis acima, e e de la que saem tools/, lib/, games/ e .env.
+# Na raiz os dois eram a mesma coisa por acidente; aqui a diferenca precisa ser dita.
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
+$StackDir = Join-Path $RepoRoot "docker\stacks"
 $Network = "games"
 $PanelContainer = "gamepanel"
 
@@ -139,7 +143,7 @@ function Get-PanelPubKey($Map) {
 
 # ------------------------------------------------------------------ contexto
 
-if ($EnvFile -eq "") { $EnvFile = Join-Path $ScriptDir ".env" }
+if ($EnvFile -eq "") { $EnvFile = Join-Path $RepoRoot ".env" }
 $cfg = Read-EnvFile $EnvFile
 
 if ($DockerHost -eq "") { $DockerHost = Get-Cfg $cfg "DOCKER_HOST" }
@@ -149,7 +153,7 @@ if ($DockerHost -ne "") {
 }
 
 if (-not $Panel -and $Game -eq "" -and $AppId -eq "") {
-    $available = Get-ChildItem (Join-Path $ScriptDir "games") -Filter "*.env" |
+    $available = Get-ChildItem (Join-Path $RepoRoot "games") -Filter "*.env" |
         Where-Object { $_.Name -ne "_template.env" } |
         ForEach-Object { $_.BaseName }
     Write-Host "Informe -Game <nome>, -AppId <steam_app_id> ou -Panel." -ForegroundColor Yellow
@@ -241,14 +245,14 @@ if ($Game -eq "" -and $AppId -eq "") { exit 0 }
 # --------------------------------------------------------------------- jogo
 
 if ($Game -ne "") {
-    $GameEnvPath = Join-Path $ScriptDir "games\$Game.env"
+    $GameEnvPath = Join-Path $RepoRoot "games\$Game.env"
     if (-not (Test-Path $GameEnvPath)) { throw "Jogo desconhecido: $Game (esperado: $GameEnvPath)" }
     $GameEnvRel = "games/$Game.env"
 } else {
     if ($AppId -notmatch '^\d+$') { throw "AppId invalido: $AppId" }
     # Deploy generico: gera um games/app<id>.env minimo para a imagem ter o que copiar.
     $Game = "app$AppId"
-    $GameEnvPath = Join-Path $ScriptDir "games\$Game.env"
+    $GameEnvPath = Join-Path $RepoRoot "games\$Game.env"
     $GameEnvRel = "games/$Game.env"
     if (-not (Test-Path $GameEnvPath)) {
         Write-LfFile $GameEnvPath @"

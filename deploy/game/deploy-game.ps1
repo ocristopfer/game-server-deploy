@@ -21,6 +21,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# `$ScriptDir` e a pasta DESTE script (onde mora o provision-*.sh irmao). `$RepoRoot` e a
+# raiz do repositorio, dois niveis acima, e e de la que saem tools/, lib/, games/ e .env.
+# Na raiz os dois eram a mesma coisa por acidente; aqui a diferenca precisa ser dita.
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 function Read-EnvFile([string]$Path) {
     if (-not (Test-Path $Path)) { return @{} }
@@ -276,7 +280,7 @@ function Get-FirstLine($Output) {
 
 # ----- Selecao do jogo -----
 if ($Game -eq "" -and $AppId -eq "") {
-    $available = Get-ChildItem (Join-Path $ScriptDir "games") -Filter "*.env" |
+    $available = Get-ChildItem (Join-Path $RepoRoot "games") -Filter "*.env" |
         Where-Object { $_.Name -ne "_template.env" } |
         ForEach-Object { $_.BaseName }
     Write-Host "Informe -Game <nome> ou -AppId <steam_app_id>." -ForegroundColor Yellow
@@ -286,7 +290,7 @@ if ($Game -eq "" -and $AppId -eq "") {
 
 $GameEnvContent = $null
 if ($Game -ne "") {
-    $GameEnvPath = Join-Path $ScriptDir "games\$Game.env"
+    $GameEnvPath = Join-Path $RepoRoot "games\$Game.env"
     if (-not (Test-Path $GameEnvPath)) {
         throw "Jogo desconhecido: $Game (esperado: $GameEnvPath)"
     }
@@ -306,7 +310,7 @@ GAME_PORTS=""
 }
 
 # ----- Configuracao da infra (.env / interativo) -----
-if ($EnvFile -eq "") { $EnvFile = Join-Path $ScriptDir ".env" }
+if ($EnvFile -eq "") { $EnvFile = Join-Path $RepoRoot ".env" }
 $cfg = Read-EnvFile $EnvFile
 
 # ----- Valores por jogo (CTID_<JOGO>, IP_CIDR_<JOGO>, MEMORY_<JOGO>...) -----
@@ -503,7 +507,7 @@ Copy-Item (Join-Path $ScriptDir $ProvisionScript) (Join-Path $BundleDir $Provisi
 # que o provision-game-lxc.sh le com `source`. O bundle e uma pasta sem subpastas (o scp leva
 # so arquivos soltos), entao ela viaja ao lado do script. LF garantido: e lida pelo bash.
 if ($ProvisionScript -eq "provision-game-lxc.sh") {
-    Write-LfFile (Join-Path $BundleDir "ct-phases.sh") ([System.IO.File]::ReadAllText((Join-Path $ScriptDir "lib\ct-phases.sh")))
+    Write-LfFile (Join-Path $BundleDir "ct-phases.sh") ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "lib\ct-phases.sh")))
 }
 Write-LfFile (Join-Path $BundleDir "game.env") $GameEnvContent
 

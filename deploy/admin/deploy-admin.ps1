@@ -19,6 +19,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# `$ScriptDir` e a pasta DESTE script (onde mora o provision-*.sh irmao). `$RepoRoot` e a
+# raiz do repositorio, dois niveis acima, e e de la que saem tools/, lib/, games/ e .env.
+# Na raiz os dois eram a mesma coisa por acidente; aqui a diferenca precisa ser dita.
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 function Read-EnvFile([string]$Path) {
     $map = @{}
@@ -238,7 +242,7 @@ function New-ReleaseBundle([string]$Package) {
     # Empacota aqui, com o Python do repo. O artefato e determinista (ver
     # tools/build-release.py), entao o sha256 que viaja com ele responde "o CT esta com
     # ESTE codigo?", e nao so "o arquivo chegou inteiro?".
-    $builder = Join-Path $ScriptDir "tools/build-release.py"
+    $builder = Join-Path $RepoRoot "tools/build-release.py"
     if (-not (Test-Path $builder)) { throw "tools/build-release.py nao encontrado em $ScriptDir" }
     $dist = Join-Path ([System.IO.Path]::GetTempPath()) "gamepanel-release"
     if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
@@ -265,7 +269,7 @@ function Invoke-DirectDeploy([string]$Target, [string]$Port) {
     #
     # E copia de BYTES: o loop antigo passava cada arquivo por um normalizador de fim de
     # linha, e o PNG que caisse nessa peneira chegava corrompido (o icone do PWA chegou).
-    Invoke-Scp @($release.Path, (Join-Path $ScriptDir "lib/install-release.sh")) "root@${Target}:$remoteTmp/"
+    Invoke-Scp @($release.Path, (Join-Path $RepoRoot "lib/install-release.sh")) "root@${Target}:$remoteTmp/"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o release do painel" }
 
     # A sonda de saude e quem decide se o release fica: se ela nao responder, o
@@ -292,7 +296,7 @@ function Invoke-DirectDeploy([string]$Target, [string]$Port) {
 }
 
 # ----- Configuracao -----
-if ($EnvFile -eq "") { $EnvFile = Join-Path $ScriptDir ".env" }
+if ($EnvFile -eq "") { $EnvFile = Join-Path $RepoRoot ".env" }
 $cfg = Read-EnvFile $EnvFile
 
 if ($ProxmoxHost -eq "") { $ProxmoxHost = Get-Cfg $cfg "PROXMOX_HOST" }
@@ -349,7 +353,7 @@ if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 New-Item -ItemType Directory -Path $BundleDir | Out-Null
 
 Copy-AsLf (Join-Path $ScriptDir "provision-admin-lxc.sh") (Join-Path $BundleDir "provision-admin-lxc.sh")
-Copy-AsLf (Join-Path $ScriptDir "lib/install-release.sh") (Join-Path $BundleDir "install-release.sh")
+Copy-AsLf (Join-Path $RepoRoot "lib/install-release.sh") (Join-Path $BundleDir "install-release.sh")
 
 $Release = New-ReleaseBundle "gamepanel"
 # Copy-Item, nunca Copy-AsLf: um tar.gz passado pelo normalizador de fim de linha e

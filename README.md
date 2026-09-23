@@ -9,8 +9,8 @@ Dois destinos, a mesma definicao de jogo (`games/<jogo>.env`) nos dois:
 
 | Destino | Comando | Quando usar |
 |---------|---------|-------------|
-| **LXC no Proxmox** | `.\deploy-game.ps1 -Game palworld` | voce tem um Proxmox e quer o jogo num container proprio, com systemd de verdade |
-| **Docker** | `.\deploy-docker.ps1 -Game palworld` | qualquer maquina com Docker (ate o seu PC), sem Proxmox no caminho |
+| **LXC no Proxmox** | `.\deploy\game\deploy-game.ps1 -Game palworld` | voce tem um Proxmox e quer o jogo num container proprio, com systemd de verdade |
+| **Docker** | `.\deploy\game\deploy-docker.ps1 -Game palworld` | qualquer maquina com Docker (ate o seu PC), sem Proxmox no caminho |
 
 No caminho Proxmox o `.ps1` roda no Windows, envia o bundle via SSH para o host e executa
 o `provision-game-lxc.sh` la (que usa `pct`). No caminho Docker o mesmo `.ps1` gera a
@@ -29,13 +29,13 @@ cadastrado no painel**.
 
 ```powershell
 Copy-Item .env.example .env   # edite CTID, storage, rede, memoria, cores, disco...
-.\deploy-game.ps1 -Game dragonwilds
+.\deploy\game\deploy-game.ps1 -Game dragonwilds
 ```
 
 ### Modo interativo (pergunta cada valor)
 
 ```powershell
-.\deploy-game.ps1 -Game dragonwilds -Interactive
+.\deploy\game\deploy-game.ps1 -Game dragonwilds -Interactive
 ```
 
 Os valores do `.env` (se existir) viram os defaults dos prompts — Enter aceita.
@@ -43,7 +43,7 @@ Os valores do `.env` (se existir) viram os defaults dos prompts — Enter aceita
 ### Deploy generico por App ID da Steam
 
 ```powershell
-.\deploy-game.ps1 -AppId 4019830
+.\deploy\game\deploy-game.ps1 -AppId 4019830
 ```
 
 Use o App ID do **servidor dedicado** (consulte no [SteamDB](https://steamdb.info)).
@@ -125,13 +125,13 @@ Layout de referencia (o do `.env.example`):
 
 | Jogo | Comando | Portas |
 |------|---------|--------|
-| RuneScape: Dragonwilds | `.\deploy-game.ps1 -Game dragonwilds` | 7777/udp |
-| Palworld | `.\deploy-game.ps1 -Game palworld` | 8211/udp, 27015/udp |
-| Satisfactory | `.\deploy-game.ps1 -Game satisfactory` | 7787/udp, 7787/tcp |
-| Enshrouded | `.\deploy-game.ps1 -Game enshrouded` | 15636/udp, 15637/udp |
-| DayZ | `.\deploy-game.ps1 -Game dayz` | 2302-2304/udp, 27016/udp |
-| Icarus | `.\deploy-game.ps1 -Game icarus` | 17777/udp, 27017/udp |
-| TeamSpeak 6 Server | `.\deploy-game.ps1 -Game teamspeak` | 9987/udp, 30033/tcp |
+| RuneScape: Dragonwilds | `.\deploy\game\deploy-game.ps1 -Game dragonwilds` | 7777/udp |
+| Palworld | `.\deploy\game\deploy-game.ps1 -Game palworld` | 8211/udp, 27015/udp |
+| Satisfactory | `.\deploy\game\deploy-game.ps1 -Game satisfactory` | 7787/udp, 7787/tcp |
+| Enshrouded | `.\deploy\game\deploy-game.ps1 -Game enshrouded` | 15636/udp, 15637/udp |
+| DayZ | `.\deploy\game\deploy-game.ps1 -Game dayz` | 2302-2304/udp, 27016/udp |
+| Icarus | `.\deploy\game\deploy-game.ps1 -Game icarus` | 17777/udp, 27017/udp |
+| TeamSpeak 6 Server | `.\deploy\game\deploy-game.ps1 -Game teamspeak` | 9987/udp, 30033/tcp |
 
 O TeamSpeak so existe no caminho Proxmox/LXC (nao vem da Steam, entao `deploy-docker.ps1`
 nao o suporta) - veja [TeamSpeak 6 — notas](#teamspeak-6--notas). Troque `deploy-game.ps1`
@@ -443,7 +443,7 @@ na versao **beta** `v6.0.0-beta12.1` — nao existe versao estavel do TS6 ainda)
 ele tem provisionamento proprio, `provision-teamspeak-lxc.sh`, em vez de reusar o
 `provision-game-lxc.sh` (que so sabe instalar via SteamCMD) — os dois scripts nao se tocam.
 `games/teamspeak.env` aponta pro script certo via `PROVISION_SCRIPT`; fora isso o comando e
-igual ao de qualquer outro jogo: `.\deploy-game.ps1 -Game teamspeak`.
+igual ao de qualquer outro jogo: `.\deploy\game\deploy-game.ps1 -Game teamspeak`.
 
 - **Versao fixada de proposito** (mesmo motivo do `PROTON_VERSION`, veja acima): o deploy
   nunca segue "latest" sozinho. Atualizar = mudar `DOWNLOAD_VERSION`/`DOWNLOAD_URL` em
@@ -484,7 +484,7 @@ Se a conta usa Steam Guard, o codigo vale poucos segundos — passe na hora do d
 de deixar no `.env`:
 
 ```powershell
-.\deploy-game.ps1 -Game dayz -SteamGuardCode 12345
+.\deploy\game\deploy-game.ps1 -Game dayz -SteamGuardCode 12345
 ```
 
 Sem credencial nenhuma, o deploy para antes de enviar qualquer coisa:
@@ -561,11 +561,11 @@ Docker. Serve para rodar tudo no seu proprio PC, num NUC, num servidor qualquer 
 Docker instalado, ou num Docker remoto.
 
 ```powershell
-.\deploy-docker.ps1 -Panel                  # sobe o painel (http://localhost:8080)
-.\deploy-docker.ps1 -Game palworld          # sobe o jogo e o cadastra no painel
-.\deploy-docker.ps1 -Game dayz -SteamGuardCode 12345
-.\deploy-docker.ps1 -Game palworld -Down    # para o servidor (o mundo fica no volume)
-.\deploy-docker.ps1 -Game palworld -Recreate
+.\deploy\game\deploy-docker.ps1 -Panel                  # sobe o painel (http://localhost:8080)
+.\deploy\game\deploy-docker.ps1 -Game palworld          # sobe o jogo e o cadastra no painel
+.\deploy\game\deploy-docker.ps1 -Game dayz -SteamGuardCode 12345
+.\deploy\game\deploy-docker.ps1 -Game palworld -Down    # para o servidor (o mundo fica no volume)
+.\deploy\game\deploy-docker.ps1 -Game palworld -Recreate
 ```
 
 Suba o painel **antes** do primeiro jogo: e dele que sai a chave SSH que o container do
@@ -640,8 +640,8 @@ terminal interativo** e **editar, baixar ou apagar os arquivos dos jogos** — t
 dentro de cada container.
 
 ```powershell
-.\deploy-admin.ps1                # usa as chaves ADMIN_* do .env
-.\deploy-admin.ps1 -Interactive   # pergunta cada valor
+.\deploy\admin\deploy-admin.ps1                # usa as chaves ADMIN_* do .env
+.\deploy\admin\deploy-admin.ps1 -Interactive   # pergunta cada valor
 ```
 
 No fim o deploy mostra a URL (`http://<ip-do-ct>:8080`), o usuario e a senha.
@@ -696,7 +696,7 @@ E o caminho normal do dia a dia: leva segundos em vez de minutos.
   recursos do CT exige o caminho completo:
 
 ```powershell
-.\deploy-admin.ps1 -Full          # cria/reconfigura o CT pelo Proxmox
+.\deploy\admin\deploy-admin.ps1 -Full          # cria/reconfigura o CT pelo Proxmox
 ```
 
 ### Acesso ao Proxmox por senha
@@ -706,8 +706,8 @@ O ideal e ter sua chave publica autorizada no Proxmox. Quando nao ha chave, pree
 Vale para os **dois** scripts — `deploy-admin.ps1` e `deploy-game.ps1`:
 
 ```powershell
-.\deploy-admin.ps1 -Full -InstallKey        # painel: entra por senha e autoriza sua chave
-.\deploy-game.ps1 -Game icarus -InstallKey  # jogo: idem, no mesmo host Proxmox
+.\deploy\admin\deploy-admin.ps1 -Full -InstallKey        # painel: entra por senha e autoriza sua chave
+.\deploy\game\deploy-game.ps1 -Game icarus -InstallKey  # jogo: idem, no mesmo host Proxmox
 ```
 
 - O deploy tenta a chave primeiro e so cai para a senha se ela nao for aceita.
