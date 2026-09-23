@@ -15,7 +15,7 @@ import { fileSize, duration, percentText, level, escapeHtml } from '../core/form
 
 /* ------------------------------------------------------------ renderizadores */
 
-function medidor(key, title, pct, footer) {
+function meter(key, title, pct, footer) {
   return `<div class="meter" data-key="${escapeHtml(key)}">` +
     `<div class="meter-head"><span>${escapeHtml(title)}</span>` +
     `<span class="val">${percentText(pct)}%</span></div>` +
@@ -24,16 +24,16 @@ function medidor(key, title, pct, footer) {
 }
 
 export function fullList(data) {
-  let html = medidor('cpu', 'CPU', data.cpu_pct,
+  let html = meter('cpu', 'CPU', data.cpu_pct,
     `${data.colors || 1} nucleo(s) - load ${data.load || '-'}`);
-  html += medidor('mem', 'Memoria', data.mem && data.mem.pct,
+  html += meter('mem', 'Memoria', data.mem && data.mem.pct,
     `${fileSize(data.mem && data.mem.used)} de ${fileSize(data.mem && data.mem.total)}`);
   if (data.swap && data.swap.total) {
-    html += medidor('swap', 'Swap', data.swap.pct,
+    html += meter('swap', 'Swap', data.swap.pct,
       `${fileSize(data.swap.used)} de ${fileSize(data.swap.total)}`);
   }
   (data.disks || []).forEach((d) => {
-    html += medidor(`disk:${d.mount}`, `Disco ${d.mount}`, d.pct,
+    html += meter(`disk:${d.mount}`, `Disco ${d.mount}`, d.pct,
       `${fileSize(d.used)} de ${fileSize(d.total)}`);
   });
   return html;
@@ -42,11 +42,11 @@ export function fullList(data) {
 /* Versao enxuta do cartao do painel: so o essencial, sem numeros absolutos. */
 export function shortList(data) {
   if (data.error) return '<span class="muted small">medidores indisponiveis</span>';
-  const disco = (data.disks || [])[0];
+  const diskEl = (data.disks || [])[0];
   return [
     ['CPU', data.cpu_pct],
     ['RAM', data.mem && data.mem.pct],
-    ['Disco', disco && disco.pct],
+    ['Disco', diskEl && diskEl.pct],
   ].map(([label, bruto]) => {
     const pct = (bruto === undefined) ? null : bruto;
     return `<div class="mini"><span class="mini-label">${label}</span>` +
@@ -55,7 +55,7 @@ export function shortList(data) {
   }).join('');
 }
 
-function textoProcesso(proc) {
+function processText(proc) {
   if (!proc || !proc.pid) return 'parado';
   let text = `PID ${proc.pid} · ${fileSize(proc.rss)} RAM`;
   if (proc.cpu_pct !== null && proc.cpu_pct !== undefined) {
@@ -72,12 +72,12 @@ export const panelMeters = {
   selector: '[data-meters-panel]',
   mount(root) {
     const url = root.dataset.metersPanel;
-    const caixas = $$('.mini-meters', root);
-    if (!url || !caixas.length) return;
+    const boxes = $$('.mini-meters', root);
+    if (!url || !boxes.length) return;
 
     new Poller(async () => {
       const all = await readJSON(url);
-      caixas.forEach((box) => {
+      boxes.forEach((box) => {
         const data = all[box.dataset.server];
         if (data) box.innerHTML = shortList(data);
       });
@@ -90,19 +90,19 @@ export const serverMeters = {
   selector: '[data-meters-server]',
   mount(card) {
     const url = card.dataset.metersServer;
-    const grade = $('#meters', card);
+    const grid = $('#meters', card);
     const info = $('#recursos-info', card);
     const extra = $('#recursos-extra', card);
-    if (!url || !grade) return;
+    if (!url || !grid) return;
 
     const poller = new Poller(async () => {
       const data = await readJSON(url);
-      grade.innerHTML = fullList(data);
+      grid.innerHTML = fullList(data);
       if (extra) {
         $('[data-key="net"]', extra).textContent =
           `${fileSize(data.net_rx)}/s rx · ${fileSize(data.net_tx)}/s tx`;
         $('[data-key="uptime"]', extra).textContent = duration(data.uptime);
-        $('[data-key="proc"]', extra).textContent = textoProcesso(data.proc);
+        $('[data-key="proc"]', extra).textContent = processText(data.proc);
       }
       if (info) info.textContent = 'atualiza a cada 5s';
     }, {

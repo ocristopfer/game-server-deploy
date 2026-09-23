@@ -10,7 +10,7 @@
  * trocar esta implementacao (por SSE, por exemplo) sem tocar em nenhuma feature.
  */
 
-const RECUO_MAX = 4;   // 4 voltas puladas e o teto do castigo por falha
+const MAX_BACKOFF = 4;   // 4 voltas puladas e o teto do castigo por falha
 
 export class Poller {
   /**
@@ -62,7 +62,7 @@ export class Poller {
    * abertas deixam de bater nele de tres em tres segundos cada uma. */
   async now() {
     if (this.running || document.hidden) return;
-    if (this.failures && this.skipped < Math.min(this.failures, RECUO_MAX)) {
+    if (this.failures && this.skipped < Math.min(this.failures, MAX_BACKOFF)) {
       this.skipped += 1;
       return;
     }

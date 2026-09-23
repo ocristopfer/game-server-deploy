@@ -40,6 +40,11 @@ CLASSES_SEM_TEMPLATE = {
 }
 
 
+# `{% set classes = classes + ['btn--block'] %}` — nome COMPLETO, e nao um prefixo
+# montado com `~`: este o teste consegue conferir contra o CSS.
+SET_CLASS = re.compile(r"""\+\s*\[["']([\w-]+)["']\]""")
+
+
 def _templates() -> list[Path]:
     return sorted(p for p in TEMPLATES.rglob("*") if p.suffix in (".html", ".jinja"))
 
@@ -53,10 +58,20 @@ def classes_in_templates() -> dict[str, str]:
     """
     found: dict[str, str] = {}
     for path in _templates():
-        clean = JINJA_EXPR.sub(" ", path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        clean = JINJA_EXPR.sub(" ", text)
         for attr in CLASS_ATTR.findall(clean):
             for name in attr.split():
                 found.setdefault(name, path.name)
+        # Classe montada por LISTA no proprio Jinja: `{% set classes = classes +
+        # ['btn--block'] %}`. Ela nunca aparece num `class=`, entao o `JINJA_EXPR.sub`
+        # acima a apaga junto com o resto da expressao — e era assim que `btn--bloco`
+        # sobrevivia sem nenhuma regra de CSS. Todo botao `block=true` do painel (login,
+        # conta, formularios) deixou de ocupar a largura inteira do cartao e nada
+        # acusou: o HTML sai inteiro, a pagina responde 200 e a classe simplesmente
+        # nao casa com regra nenhuma.
+        for name in SET_CLASS.findall(text):
+            found.setdefault(name, path.name)
     return found
 
 
@@ -205,3 +220,49 @@ def test_o_medidor_ainda_entrega_o_numero_de_nucleos():
     """`cores` e a palavra que colide: nucleos em ingles, cores em portugues. Uma
     renomeacao automatica ja trocou uma pela outra nos dois lados."""
     assert "cores" in _meter_fields()
+
+
+# ---------------------------------------------------- tokens de CSS (custom properties)
+
+CSS_VAR_DEF = re.compile(r"^\s*(--[\w-]+)\s*:", re.M)
+CSS_VAR_USE = re.compile(r"var\(\s*(--[\w-]+)")
+
+# Nome que NASCE fora do CSS. `--safe-*` vem do `env(safe-area-inset-*)` por um `@supports`
+# que monta o nome; as duas telas cheias (terminal e console) escrevem a altura pelo JS.
+VARS_SEM_DEFINICAO: set[str] = set()
+VARS_SEM_USO = {
+    # Definida so para o `@supports` de notch trocar o valor; o uso e o proprio fallback.
+    "--safe-top", "--safe-bottom", "--safe-left", "--safe-right",
+}
+
+
+def _all_css_text() -> str:
+    return "\n".join(p.read_text(encoding="utf-8") for p in sorted(CSS_DIR.rglob("*.css")))
+
+
+def css_vars_defined() -> set[str]:
+    return set(CSS_VAR_DEF.findall(_all_css_text()))
+
+
+def css_vars_used() -> set[str]:
+    text = _all_css_text() + _js_text()
+    for path in _templates():
+        text += path.read_text(encoding="utf-8")
+    return set(CSS_VAR_USE.findall(text))
+
+
+def test_todo_token_de_css_definido_e_usado():
+    """Token morto e a mesma armadilha da regra morta, e escapava deste arquivo.
+
+    `--sombra-1` ficou definida em `tokens.css` sem um unico `var(--sombra-1)` no
+    repositorio: quem lesse a lista de sombras acharia que ha tres degraus disponiveis.
+    """
+    dead = sorted(css_vars_defined() - css_vars_used() - VARS_SEM_USO)
+    assert dead == [], "token de CSS definido e nunca usado:\n  " + "\n  ".join(dead)
+
+
+def test_todo_token_de_css_usado_esta_definido():
+    """`var(--nome-que-nao-existe)` nao e erro para navegador nenhum: a propriedade
+    simplesmente nao aplica, e a tela abre sem a cor, sem o espaco ou sem o raio."""
+    orphans = sorted(css_vars_used() - css_vars_defined() - VARS_SEM_DEFINICAO)
+    assert orphans == [], "var(--x) sem definicao em tokens.css:\n  " + "\n  ".join(orphans)

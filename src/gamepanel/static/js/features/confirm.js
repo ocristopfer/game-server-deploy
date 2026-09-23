@@ -14,9 +14,9 @@ export const confirmAction = {
     // No formulario a confirmacao vale para o envio inteiro; no botao, so para
     // aquele botao — um formulario de alertas tem "Salvar", "Testar" e "Remover",
     // e so o ultimo pergunta. O clique e cancelavel e acontece antes do submit.
-    const evento = el.tagName === 'FORM' ? 'submit' : 'click';
+    const event = el.tagName === 'FORM' ? 'submit' : 'click';
 
-    el.addEventListener(evento, (ev) => {
+    el.addEventListener(event, (ev) => {
       if (!window.confirm(el.dataset.confirm)) {
         ev.preventDefault();
         ev.stopPropagation();

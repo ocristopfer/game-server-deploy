@@ -11,23 +11,23 @@ import { warnBeforeLeaving } from '../core/dirty.js';
 export const configFilter = {
   selector: '[data-config-filter]',
   mount(busca) {
-    const itens = $$('.conf-item');
+    const items = $$('.conf-item');
     const sections = $$('.conf-section');
-    const empty = $('#conf-vazio');
-    if (!itens.length) return;
+    const empty = $('#conf-empty');
+    if (!items.length) return;
 
     busca.addEventListener('input', () => {
-      const termo = busca.value.trim().toLowerCase();
-      itens.forEach((el) => {
-        el.hidden = termo !== '' && !el.dataset.key.includes(termo);
+      const term = busca.value.trim().toLowerCase();
+      items.forEach((el) => {
+        el.hidden = term !== '' && !el.dataset.key.includes(term);
       });
-      let visiveis = 0;
+      let visible = 0;
       sections.forEach((sec) => {
-        const tem = $$('.conf-item', sec).some((el) => !el.hidden);
-        sec.hidden = !tem;
-        if (tem) visiveis += 1;
+        const has = $$('.conf-item', sec).some((el) => !el.hidden);
+        sec.hidden = !has;
+        if (has) visible += 1;
       });
-      if (empty) empty.hidden = visiveis > 0;
+      if (empty) empty.hidden = visible > 0;
     });
   },
 };
@@ -36,28 +36,28 @@ export const configFilter = {
 export const moreConfigRows = {
   selector: '[data-config-more]',
   mount(button) {
-    const novas = $('#conf-novas');
+    const extraRows = $('#conf-new-rows');
     const total = $('input[name="n"]');
-    if (!novas || !total) return;
+    if (!extraRows || !total) return;
     button.hidden = false;
 
     button.addEventListener('click', () => {
-      const modelo = novas.lastElementChild.cloneNode(true);
+      const clone = extraRows.lastElementChild.cloneNode(true);
       const i = Number.parseInt(total.value, 10);
-      modelo.querySelectorAll('[name]').forEach((field) => {
+      clone.querySelectorAll('[name]').forEach((field) => {
         field.name = field.name.replace(/\.\d+$/, `.${i}`);
         if (field.tagName !== 'SELECT') field.value = '';
       });
       // O id do bloco e o "for" do rotulo tem de andar junto com o indice: clonados
       // como estao, a linha nova repetiria o id da anterior e o rotulo apontaria
       // para o campo errado.
-      const block = modelo.querySelector('select');
-      const label = modelo.querySelector('label[for]');
+      const block = clone.querySelector('select');
+      const label = clone.querySelector('label[for]');
       if (block) {
         block.id = `sec-${i}`;
         if (label) label.htmlFor = block.id;
       }
-      novas.appendChild(modelo);
+      extraRows.appendChild(clone);
       total.value = String(i + 1);
     });
   },
@@ -67,13 +67,13 @@ export const moreConfigRows = {
 export const dirtyConfig = {
   selector: '[data-config-form]',
   mount(form) {
-    const marca = $('#conf-mudou', form);
+    const mark = $('#conf-changed', form);
     let dirty = false;
     const release = warnBeforeLeaving(() => dirty);
 
     form.addEventListener('input', () => {
       dirty = true;
-      if (marca) marca.textContent = 'ha alteracoes nao salvas';
+      if (mark) mark.textContent = 'ha alteracoes nao salvas';
     });
     form.addEventListener('submit', release);
   },

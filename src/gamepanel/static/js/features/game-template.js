@@ -14,14 +14,14 @@ export const gameTemplate = {
   mount(select) {
     const form = select.form;
     if (!form) return;
-    const dica = form.querySelector('[data-template-description]');
+    const hint = form.querySelector('[data-template-description]');
     const label = select.closest('label');
     if (label) label.hidden = false;
 
     select.addEventListener('change', () => {
-      const opcao = select.selectedOptions[0];
-      fillForm(form, JSON.parse(opcao.dataset.values || '{}'));
-      if (dica) dica.textContent = opcao.dataset.description || '';
+      const option = select.selectedOptions[0];
+      fillForm(form, JSON.parse(option.dataset.values || '{}'));
+      if (hint) hint.textContent = option.dataset.description || '';
     });
   },
 };

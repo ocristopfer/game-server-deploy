@@ -15,29 +15,29 @@ import { $ } from '../core/dom.js';
  * pode ser usado UMA vez e nao pode ser pedido do nada — por isso e capturado aqui,
  * no topo do modulo, antes de qualquer tela mount. */
 let invite = null;
-const ouvintes = new Set();
+const listeners = new Set();
 
 window.addEventListener('beforeinstallprompt', (ev) => {
   ev.preventDefault();          // sem isto o Chrome mostra a propria barrinha
   invite = ev;
-  ouvintes.forEach((f) => f(true));
+  listeners.forEach((f) => f(true));
 });
 
 window.addEventListener('appinstalled', () => {
   invite = null;
-  ouvintes.forEach((f) => f(false));
+  listeners.forEach((f) => f(false));
 });
 
-const instalado = () => window.matchMedia('(display-mode: standalone)').matches ||
+const installed = () => window.matchMedia('(display-mode: standalone)').matches ||
   window.navigator.standalone === true;
 
 export const installButton = {
   selector: '[data-install]',
   mount(button) {
-    if (instalado()) return;
+    if (installed()) return;
 
     const refresh = (available) => { button.hidden = !available; };
-    ouvintes.add(refresh);
+    listeners.add(refresh);
     refresh(Boolean(invite));
 
     button.addEventListener('click', async () => {
@@ -64,28 +64,28 @@ export const offlineWorker = {
     // (clients.claim) e isso dispara um controllerchange que NAO pode virar reload —
     // era o bastante para a tela se recarregar sozinha logo depois de abrir,
     // abortando no meio as leituras de medidores que ja estavam a caminho.
-    const jaTinhaControlador = Boolean(navigator.serviceWorker.controller);
+    const hadController = Boolean(navigator.serviceWorker.controller);
 
     navigator.serviceWorker.register(el.dataset.sw, { scope: '/' })
       .then((reg) => {
-        if (reg.waiting && jaTinhaControlador) avisarVersaoNova(reg);
+        if (reg.waiting && hadController) announceNewVersion(reg);
         reg.addEventListener('updatefound', () => {
           const novo = reg.installing;
           if (!novo) return;
           novo.addEventListener('statechange', () => {
             // "installed" com um controlador ja no ar = versao nova esperando.
             if (novo.state === 'installed' && navigator.serviceWorker.controller) {
-              avisarVersaoNova(reg);
+              announceNewVersion(reg);
             }
           });
         });
       })
       .catch((err) => console.debug('service worker nao registrou', err));
 
-    let recarregando = false;
+    let reloading = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!jaTinhaControlador || recarregando) return;
-      recarregando = true;
+      if (!hadController || reloading) return;
+      reloading = true;
       window.location.reload();
     });
   },
@@ -94,7 +94,7 @@ export const offlineWorker = {
 /* Mostra a faixa de "ha uma versao nova". Quem troca e o clique: o worker que esta
  * esperando recebe a ordem de assumir, sai do "waiting", e o controllerchange logo
  * em seguida recarrega a pagina ja com o casco novo. */
-function avisarVersaoNova(reg) {
+function announceNewVersion(reg) {
   const notice = $('[data-new-version]');
   if (!notice?.hidden) return;   // ausente, ou ja avisado: nao empilha ouvinte de clique
   notice.hidden = false;

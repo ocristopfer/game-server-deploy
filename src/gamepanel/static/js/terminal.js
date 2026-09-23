@@ -680,7 +680,7 @@
   // vim, htop e qualquer menu curses sao inoperaveis no telefone: nao ha Esc, nao ha
   // Tab e nao ha setas. Cada botao manda a MESMA sequencia que o teclado fisico
   // mandaria, entao nada aqui e um caminho paralelo ao do keydown.
-  var SEQUENCIAS = {
+  var SEQUENCES = {
     Escape: '\x1b',
     Tab: '\t',
     ArrowUp: function () { return term.appCursor ? '\x1bOA' : '\x1b[A'; },
@@ -697,7 +697,7 @@
   };
   document.querySelectorAll('[data-key]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var seq = SEQUENCIAS[btn.dataset.key];
+      var seq = SEQUENCES[btn.dataset.key];
       if (!seq) return;
       send(typeof seq === 'function' ? seq() : seq);
       inputEl.focus();
@@ -705,9 +705,9 @@
   });
 
   // No celular o teclado so aparece se um campo receber foco por um gesto do usuario.
-  var tecladoBtn = document.getElementById('term-teclado');
-  if (tecladoBtn) {
-    tecladoBtn.addEventListener('click', function () { inputEl.focus(); });
+  var keyboardBtn = document.getElementById('term-teclado');
+  if (keyboardBtn) {
+    keyboardBtn.addEventListener('click', function () { inputEl.focus(); });
   }
 
   document.getElementById('term-clear').addEventListener('click', function () {
@@ -740,16 +740,16 @@
       body: JSON.stringify({ cols: size.cols, rows: size.rows })
     }).catch(function () {});
   }
-  function agendarResize() {
+  function scheduleResize() {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(applyResize, 200);
   }
-  window.addEventListener('resize', agendarResize);
+  window.addEventListener('resize', scheduleResize);
   // No celular, abrir o teclado nao dispara 'resize' da janela em todo navegador —
   // quem encolhe e a viewport visual. Sem isto o shell continua achando que tem 24
   // linhas enquanto metade da tela virou teclado.
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', agendarResize);
+    window.visualViewport.addEventListener('resize', scheduleResize);
   }
   window.addEventListener('beforeunload', function () { closeSession(true); });
   document.getElementById('term-close').addEventListener('click', function () {

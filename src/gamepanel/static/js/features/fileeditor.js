@@ -26,7 +26,7 @@ export const fileEditor = {
       }
     });
 
-    function mostrarPosicao() {
+    function showPosition() {
       if (!pos) return;
       const upTo = area.value.slice(0, area.selectionStart);
       const line = upTo.split('\n').length;
@@ -34,8 +34,8 @@ export const fileEditor = {
       pos.textContent = `linha ${line}, coluna ${column}` +
         (area.value === original ? '' : ' - alterado');
     }
-    ['keyup', 'click', 'input'].forEach((ev) => area.addEventListener(ev, mostrarPosicao));
-    mostrarPosicao();
+    ['keyup', 'click', 'input'].forEach((ev) => area.addEventListener(ev, showPosition));
+    showPosition();
 
     form.addEventListener('submit', release);
   },

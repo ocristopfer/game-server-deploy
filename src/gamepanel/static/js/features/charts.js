@@ -12,7 +12,7 @@ import { createEl } from '../core/dom.js';
 
 const num = (el, name) => Number.parseFloat(el.getAttribute(name)) || 0;
 
-function pontosDe(poly) {
+function pointsOf(poly) {
   return (poly.getAttribute('points') || '').trim().split(/\s+/)
     .map((pair) => {
       const [x, y] = pair.split(',');
@@ -22,17 +22,17 @@ function pontosDe(poly) {
 }
 
 function timeAt(svg, x) {
-  const esq = num(svg, 'data-left');
+  const left = num(svg, 'data-left');
   const dir = num(svg, 'data-dir');
-  if (dir <= esq) return '';
-  const fatia = (x - esq) / (dir - esq);
-  const quando = new Date(num(svg, 'data-start') + fatia * num(svg, 'data-span') * 1000);
-  return quando.toLocaleString([], {
+  if (dir <= left) return '';
+  const fraction = (x - left) / (dir - left);
+  const when = new Date(num(svg, 'data-start') + fraction * num(svg, 'data-span') * 1000);
+  return when.toLocaleString([], {
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   });
 }
 
-function valorDe(svg, y) {
+function valueAt(svg, y) {
   const top = num(svg, 'data-top');
   const base = num(svg, 'data-base');
   if (base <= top) return 0;
@@ -42,14 +42,14 @@ function valorDe(svg, y) {
 export const chart = {
   selector: 'svg.chart',
   mount(svg) {
-    const mira = svg.querySelector('.crosshair');
+    const crosshair = svg.querySelector('.crosshair');
     const series = Array.from(svg.querySelectorAll('.series')).map((poly) => ({
       name: poly.dataset.series || '',
       suffix: poly.dataset.suffix || '',
       color: poly.getAttribute('stroke') || 'currentColor',
-      points: pontosDe(poly),
+      points: pointsOf(poly),
     }));
-    if (!mira || !series.length) return;
+    if (!crosshair || !series.length) return;
 
     // Um X so por instante, vindo de todas as series: o leitor mira numa hora, nunca
     // numa linha de 2px.
@@ -57,24 +57,24 @@ export const chart = {
       .sort((a, b) => a - b);
     if (!xs.length) return;
 
-    const balao = createEl('div', { className: 'bubble' });
-    balao.hidden = true;
-    svg.parentNode.appendChild(balao);
+    const bubble = createEl('div', { className: 'bubble' });
+    bubble.hidden = true;
+    svg.parentNode.appendChild(bubble);
 
     let index = -1;
 
-    function esconde() {
-      mira.classList.remove('active');
-      balao.hidden = true;
+    function hide() {
+      crosshair.classList.remove('active');
+      bubble.hidden = true;
       index = -1;
     }
 
     function showAt(i) {
       index = Math.max(0, Math.min(xs.length - 1, i));
       const x = xs[index];
-      mira.setAttribute('x1', x);
-      mira.setAttribute('x2', x);
-      mira.classList.add('active');
+      crosshair.setAttribute('x1', x);
+      crosshair.setAttribute('x2', x);
+      crosshair.classList.add('active');
 
       // Titulo e depois uma linha por serie. Tudo por textContent: o rotulo da serie
       // e dado, nao marcacao.
@@ -89,26 +89,26 @@ export const chart = {
           key,
           // O valor lidera; o nome da serie e secundario.
           createEl('strong', {
-            text: valorDe(svg, found.y).toFixed(s.suffix === '%' ? 1 : 0) + s.suffix,
+            text: valueAt(svg, found.y).toFixed(s.suffix === '%' ? 1 : 0) + s.suffix,
           }),
           createEl('span', { text: s.name }),
         );
         lines.push(line);
       });
-      balao.replaceChildren(...lines);
+      bubble.replaceChildren(...lines);
 
       const box = svg.getBoundingClientRect();
       const scale = box.width / (svg.viewBox.baseVal.width || 1);
-      balao.hidden = false;
+      bubble.hidden = false;
       // Vira para o outro lado perto da borda direita, para nao sair do cartao.
-      const solto = x * scale;
-      balao.style.left = `${solto > box.width * 0.6 ? solto - balao.offsetWidth - 12 : solto + 12}px`;
+      const loose = x * scale;
+      bubble.style.left = `${loose > box.width * 0.6 ? loose - bubble.offsetWidth - 12 : loose + 12}px`;
     }
 
-    function daPosicao(evento) {
+    function atPosition(event) {
       const box = svg.getBoundingClientRect();
       if (!box.width) return;
-      const x = (evento.clientX - box.left) / box.width * svg.viewBox.baseVal.width;
+      const x = (event.clientX - box.left) / box.width * svg.viewBox.baseVal.width;
       let best = 0;
       for (let i = 1; i < xs.length; i++) {
         if (Math.abs(xs[i] - x) < Math.abs(xs[best] - x)) best = i;
@@ -116,16 +116,16 @@ export const chart = {
       showAt(best);
     }
 
-    svg.addEventListener('pointermove', daPosicao);
-    svg.addEventListener('pointerdown', daPosicao);   // no toque nao existe "passar por cima"
-    svg.addEventListener('pointerleave', esconde);
+    svg.addEventListener('pointermove', atPosition);
+    svg.addEventListener('pointerdown', atPosition);   // no toque nao existe "passar por cima"
+    svg.addEventListener('pointerleave', hide);
     // Teclado ve o mesmo que o mouse: seta anda de amostra em amostra.
     svg.addEventListener('focus', () => showAt(index < 0 ? xs.length - 1 : index));
-    svg.addEventListener('blur', esconde);
+    svg.addEventListener('blur', hide);
     svg.addEventListener('keydown', (ev) => {
       if (ev.key === 'ArrowLeft') { showAt(index - 1); ev.preventDefault(); }
       else if (ev.key === 'ArrowRight') { showAt(index + 1); ev.preventDefault(); }
-      else if (ev.key === 'Escape') { esconde(); }
+      else if (ev.key === 'Escape') { hide(); }
     });
   },
 };

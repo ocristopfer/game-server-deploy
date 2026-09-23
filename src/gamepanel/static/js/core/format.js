@@ -5,13 +5,13 @@
  * usada por qualquer feature e testada sem navegador.
  */
 
-const UNIDADES = ['B', 'KB', 'MB', 'GB', 'TB'];
+const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
 export function fileSize(bytes) {
   let v = Number(bytes) || 0;
-  for (let i = 0; i < UNIDADES.length; i++) {
-    if (v < 1024 || i === UNIDADES.length - 1) {
-      return i === 0 ? `${Math.round(v)} B` : `${v.toFixed(1)} ${UNIDADES[i]}`;
+  for (let i = 0; i < UNITS.length; i++) {
+    if (v < 1024 || i === UNITS.length - 1) {
+      return i === 0 ? `${Math.round(v)} B` : `${v.toFixed(1)} ${UNITS[i]}`;
     }
     v /= 1024;
   }

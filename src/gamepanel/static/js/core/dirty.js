@@ -6,15 +6,15 @@
  * esta funcao devolve.
  */
 export function warnBeforeLeaving(estaSujo) {
-  let liberado = false;
+  let allowed = false;
 
   window.addEventListener('beforeunload', (ev) => {
-    if (!liberado && estaSujo()) ev.preventDefault();
+    if (!allowed && estaSujo()) ev.preventDefault();
   });
 
   // Apagar o arquivo aberto, ou qualquer acao que ja perguntou "tem certeza?", e uma
   // saida deliberada: nao cabe um segundo aviso por cima (ver features/confirm.js).
-  document.addEventListener('gp:saida-deliberada', () => { liberado = true; });
+  document.addEventListener('gp:saida-deliberada', () => { allowed = true; });
 
-  return () => { liberado = true; };
+  return () => { allowed = true; };
 }

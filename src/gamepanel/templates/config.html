@@ -184,7 +184,7 @@
       </div>
     </fieldset>
     {% endfor %}
-    <p class="muted small" id="conf-vazio" hidden>{{ _('config.no_match') }}</p>
+    <p class="muted small" id="conf-empty" hidden>{{ _('config.no_match') }}</p>
   </div>
 
   <div class="card">
@@ -193,7 +193,7 @@
       Para chave que ainda nao existe no arquivo. Ela entra no fim do bloco escolhido,
       sem mexer no resto.
     </p>
-    <div id="conf-novas">
+    <div id="conf-new-rows">
       {% for extra in range(2) %}
       <div class="conf-new">
         <label class="sr-only" for="sec-{{ ns.i }}">{{ _('config.new_setting_block') }}</label>
@@ -226,7 +226,7 @@
         <input type="checkbox" name="restart" value="1">
         <span>{{ _('config.restart_after_save') }}</span>
       </label>
-      <span class="muted small" id="conf-mudou"></span>
+      <span class="muted small" id="conf-changed"></span>
     </div>
     <p class="muted small mt-4">
       Grava so as chaves alteradas, mantendo comentarios e o resto do arquivo. Uma copia

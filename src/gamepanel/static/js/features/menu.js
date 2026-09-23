@@ -6,17 +6,17 @@
  */
 import { $$ } from '../core/dom.js';
 
-function fecharOutros(menu) {
+function closeOthers(menu) {
   $$('details.menu[open]').forEach((outro) => {
     if (outro !== menu) outro.open = false;
   });
 }
 
-let ligadoNoDocumento = false;
+let boundToDocument = false;
 
-function ligarDocumentoUmaVez() {
-  if (ligadoNoDocumento) return;
-  ligadoNoDocumento = true;
+function bindDocumentOnce() {
+  if (boundToDocument) return;
+  boundToDocument = true;
 
   document.addEventListener('click', (ev) => {
     $$('details.menu[open]').forEach((menu) => {
@@ -36,7 +36,7 @@ function ligarDocumentoUmaVez() {
 export const dropdownMenu = {
   selector: 'details.menu',
   mount(menu) {
-    ligarDocumentoUmaVez();
-    menu.addEventListener('toggle', () => { if (menu.open) fecharOutros(menu); });
+    bindDocumentOnce();
+    menu.addEventListener('toggle', () => { if (menu.open) closeOthers(menu); });
   },
 };

@@ -8,7 +8,7 @@ import { Poller } from '../core/poll.js';
 import { readJSON } from '../core/http.js';
 import { $ } from '../core/dom.js';
 
-const VAZIO = '(sem linhas de log)';
+const EMPTY_LOG = '(sem linhas de log)';
 
 export const followLog = {
   selector: '[data-log-feed]',
@@ -21,10 +21,10 @@ export const followLog = {
     const key = `gamepanel:follow:${button.dataset.server}`;
     let cursor = button.dataset.cursor || '';
 
-    const noFim = () => box.scrollHeight - box.scrollTop - box.clientHeight < 30;
-    const paraOFim = () => { box.scrollTop = box.scrollHeight; };
+    const atEnd = () => box.scrollHeight - box.scrollTop - box.clientHeight < 30;
+    const toEnd = () => { box.scrollTop = box.scrollHeight; };
 
-    function marca(text, className) {
+    function mark(text, className) {
       if (!state) return;
       state.textContent = text;
       state.className = `badge ${classe}`;
@@ -35,21 +35,21 @@ export const followLog = {
       if (cursor) params.set('cursor', cursor);
       const data = await readJSON(`${button.dataset.logFeedUrl || button.dataset.url}?${params}`);
 
-      const colado = noFim();
+      const pasted = atEnd();
       if (data.append) {
         // So chegou o que e novo: anexa sem repintar o que ja estava na tela.
         if (data.text) {
           box.textContent += (box.textContent.endsWith('\n') ? '' : '\n') + data.text;
         }
       } else if (data.text || !cursor) {
-        box.textContent = data.text || VAZIO;
+        box.textContent = data.text || EMPTY_LOG;
       }
       cursor = data.cursor || cursor;
-      if (colado) paraOFim();
-      marca('ao vivo', 'on');
+      if (pasted) toEnd();
+      mark('ao vivo', 'on');
     }, {
       interval: 3000,
-      onError: () => marca('sem conexao', 'off'),
+      onError: () => mark('sem conexao', 'off'),
     });
 
     function follow(turnOn) {
@@ -58,15 +58,15 @@ export const followLog = {
       if (state) state.hidden = !turnOn;
       try { localStorage.setItem(key, turnOn ? '1' : '0'); } catch { /* aba anonima */ }
       if (!turnOn) { poller.stop(); return; }
-      marca('ao vivo', 'on');
-      paraOFim();
+      mark('ao vivo', 'on');
+      toEnd();
       poller.start();
     }
 
     button.addEventListener('click', () => follow(!poller.active));
 
-    let guardado = '0';
-    try { guardado = localStorage.getItem(key) || '0'; } catch { /* aba anonima */ }
-    if (guardado === '1') follow(true);
+    let stored = '0';
+    try { stored = localStorage.getItem(key) || '0'; } catch { /* aba anonima */ }
+    if (stored === '1') follow(true);
   },
 };

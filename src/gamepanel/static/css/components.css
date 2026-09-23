@@ -25,15 +25,15 @@
   cursor: pointer;
   /* Toque nao tem "hover": sem isto o iOS deixa o botao aceso depois do clique. */
   -webkit-tap-highlight-color: transparent;
-  transition: background var(--transicao), border-color var(--transicao), opacity var(--transicao);
+  transition: background var(--transition), border-color var(--transition), opacity var(--transition);
 }
-.btn:hover { border-color: var(--line-forte); background: var(--panel-3); text-decoration: none; }
+.btn:hover { border-color: var(--line-strong); background: var(--panel-3); text-decoration: none; }
 .btn:active { transform: translateY(1px); }
 .btn[disabled], .btn[aria-disabled="true"] { opacity: .5; pointer-events: none; }
 
-.btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-texto); font-weight: 600; }
+.btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 .btn--primary:hover { background: color-mix(in srgb, var(--accent) 85%, #fff); border-color: var(--accent); }
-.btn--danger { color: var(--err-texto); border-color: var(--err-borda); background: var(--err-fundo); }
+.btn--danger { color: var(--err-text); border-color: var(--err-line); background: var(--err-bg); }
 .btn--danger:hover { background: color-mix(in srgb, var(--err) 22%, transparent); border-color: var(--err); }
 .btn--ghost { background: transparent; }
 .btn--ghost:hover { background: var(--panel-2); }
@@ -53,7 +53,7 @@
   color: var(--muted); text-decoration: underline; cursor: pointer;
 }
 .btn-link:hover { color: var(--text); }
-.btn-link--danger { color: var(--err-texto); }
+.btn-link--danger { color: var(--err-text); }
 .btn-link--danger:hover { color: #ffd7d3; }
 
 /* Formulario de um botao so: existe para carregar o CSRF, nao para ocupar linha. */
@@ -99,9 +99,9 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   font-weight: 500;
   white-space: nowrap;
 }
-.badge.on { color: var(--ok); border-color: var(--ok-borda); }
-.badge.off { color: var(--err); border-color: var(--err-borda); }
-.badge.cold { color: var(--warn); border-color: var(--warn-borda); }
+.badge.on { color: var(--ok); border-color: var(--ok-line); }
+.badge.off { color: var(--err); border-color: var(--err-line); }
+.badge.cold { color: var(--warn); border-color: var(--warn-line); }
 .badges { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
 
 /* ============================================================ aviso */
@@ -114,9 +114,9 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   font-size: var(--fs-md);
 }
 .flash:last-child { margin-bottom: 0; }
-.flash.error { border-color: var(--err-borda); color: var(--err-texto); background: var(--err-fundo); }
-.flash.ok { border-color: var(--ok-borda); color: #8ce39a; }
-.flash.pending { border-color: var(--warn-borda); font-size: var(--fs-sm); }
+.flash.error { border-color: var(--err-line); color: var(--err-text); background: var(--err-bg); }
+.flash.ok { border-color: var(--ok-line); color: #8ce39a; }
+.flash.pending { border-color: var(--warn-line); font-size: var(--fs-sm); }
 .flash.pending ul { margin: var(--sp-2) 0; }
 .flash em { font-style: normal; color: var(--text); }
 
@@ -148,9 +148,9 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   white-space: nowrap;
   scroll-snap-align: start;
 }
-.tabs__item:hover { text-decoration: none; color: var(--text); border-color: var(--line-forte); }
+.tabs__item:hover { text-decoration: none; color: var(--text); border-color: var(--line-strong); }
 .tabs__item[aria-current="page"] {
-  color: var(--accent-texto); background: var(--accent); border-color: var(--accent); font-weight: 600;
+  color: var(--accent-text); background: var(--accent); border-color: var(--accent); font-weight: 600;
 }
 @media (min-width: 600px) {
   .tabs { margin: 0 calc(var(--sp-5) * -1) var(--sp-4); padding: 0 var(--sp-5) var(--sp-2); }
@@ -174,7 +174,7 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   -webkit-tap-highlight-color: transparent;
 }
 .menu > summary::-webkit-details-marker { display: none; }
-.menu > summary:hover { border-color: var(--line-forte); background: var(--panel-3); }
+.menu > summary:hover { border-color: var(--line-strong); background: var(--panel-3); }
 .menu[open] > summary { border-color: var(--accent); }
 
 .menu__list {
@@ -189,10 +189,10 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--sp-1);
-  border: 1px solid var(--line-forte);
+  border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   background: var(--panel-2);
-  box-shadow: var(--sombra-3);
+  box-shadow: var(--shadow-3);
 }
 .menu__list--left { right: auto; left: 0; }
 .menu__item {
@@ -208,7 +208,7 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   cursor: pointer;
 }
 .menu__item:hover { background: var(--panel-3); text-decoration: none; }
-.menu__item--danger { color: var(--err-texto); }
+.menu__item--danger { color: var(--err-text); }
 .menu__item[aria-current="page"] { background: var(--panel-3); color: var(--accent); }
 .menu__sep { height: 1px; margin: var(--sp-1) 0; background: var(--line); border: none; }
 
@@ -262,7 +262,7 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: var(--preto);
+  background: var(--black);
   font: var(--fs-lg) var(--mono);
   letter-spacing: .08em;
   overflow-wrap: anywhere;
@@ -366,7 +366,7 @@ code.trunc {
 
 /* ============================================================ bloco de log */
 pre.log {
-  background: var(--preto);
+  background: var(--black);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: var(--sp-3);

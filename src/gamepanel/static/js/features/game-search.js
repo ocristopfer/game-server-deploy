@@ -9,7 +9,7 @@
 import { readJSON } from '../core/http.js';
 import { createEl, reset, fillForm } from '../core/dom.js';
 
-const ESPERA_MS = 250;
+const DEBOUNCE_MS = 250;
 
 export const gameSearch = {
   selector: '[data-game-search]',
@@ -20,8 +20,8 @@ export const gameSearch = {
     if (!field || !list || !form) return;
     block.hidden = false;
 
-    let espera = null;
-    let pedido = 0;
+    let waitId = null;
+    let request = 0;
 
     const show = (children) => reset(list, children);
 
@@ -38,10 +38,10 @@ export const gameSearch = {
     const search = async () => {
       const text = field.value.trim();
       if (!text) { show([]); return; }
-      const este = ++pedido;
+      const self = ++request;
       try {
         const data = await readJSON(`${block.dataset.url}?q=${encodeURIComponent(text)}`);
-        if (este !== pedido) return; // chegou depois de uma consulta mais nova: descarta
+        if (self !== request) return; // chegou depois de uma consulta mais nova: descarta
         if (!data.resultados.length) {
           show([createEl('p', {
             className: 'muted small',
@@ -59,21 +59,21 @@ export const gameSearch = {
           return button;
         }));
       } catch (failure) {
-        if (este === pedido) {
+        if (self === request) {
           show([createEl('p', { className: 'muted small', text: `Nao consegui buscar: ${failure.message}` })]);
         }
       }
     };
 
     field.addEventListener('input', () => {
-      clearTimeout(espera);
-      espera = setTimeout(search, ESPERA_MS);
+      clearTimeout(waitId);
+      waitId = setTimeout(search, DEBOUNCE_MS);
     });
     // Enter dentro do campo enviaria o formulario inteiro (e criaria um jogo pela metade).
     field.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Enter') return;
       ev.preventDefault();
-      clearTimeout(espera);
+      clearTimeout(waitId);
       search();
     });
   },

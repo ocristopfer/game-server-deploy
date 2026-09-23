@@ -17,7 +17,7 @@ body {
   min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
-  font: var(--fs-md)/1.55 var(--fonte);
+  font: var(--fs-md)/1.55 var(--font);
   /* No PWA, arrastar a pagina inteira para baixo parece um site quebrado, nao um
      app — o "puxar para atualizar" fica a cargo do botao de recarregar do sistema. */
   overscroll-behavior-y: none;
@@ -70,9 +70,9 @@ input, textarea, select {
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  transition: border-color var(--transicao);
+  transition: border-color var(--transition);
 }
-input:hover, textarea:hover, select:hover { border-color: var(--line-forte); }
+input:hover, textarea:hover, select:hover { border-color: var(--line-strong); }
 input:focus, textarea:focus, select:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;

@@ -9,10 +9,10 @@ import { readJSON } from '../core/http.js';
 import { $, createEl, reset } from '../core/dom.js';
 import { duration } from '../core/format.js';
 
-function pinta(selo, data) {
-  const teto = data.max_players ? '/' + data.max_players : '';
-  selo.textContent = data.players + teto;
-  selo.className = `badge ${data.players ? 'on' : 'cold'}`;
+function paint(badge, data) {
+  const ceiling = data.max_players ? '/' + data.max_players : '';
+  badge.textContent = data.players + ceiling;
+  badge.className = `badge ${data.players ? 'on' : 'cold'}`;
 }
 
 /* Painel de servidores: um selo por cartao, todos de uma leitura so. */
@@ -20,17 +20,17 @@ export const panelPlayers = {
   selector: '[data-players-panel]',
   mount(root) {
     const url = root.dataset.playersPanel;
-    const selos = Array.from(root.querySelectorAll('[data-players]'));
-    if (!url || !selos.length) return;
+    const badges = Array.from(root.querySelectorAll('[data-players]'));
+    if (!url || !badges.length) return;
 
     new Poller(async () => {
       const all = await readJSON(url);
-      selos.forEach((selo) => {
-        const data = all[selo.dataset.players];
+      badges.forEach((badge) => {
+        const data = all[badge.dataset.players];
         if (!data?.configured || data.error || data.players === null) return;
-        pinta(selo, data);
-        selo.textContent += ' jogadores';
-        selo.hidden = false;
+        paint(badge, data);
+        badge.textContent += ' jogadores';
+        badge.hidden = false;
       });
     }, { interval: Number(root.dataset.interval) || 10000 }).start();
   },
@@ -41,21 +41,21 @@ export const serverPlayers = {
   selector: '[data-players-server]',
   mount(card) {
     const url = card.dataset.playersServer;
-    const tabela = $('#jogadores-tabela', card);
-    const selo = $('#jogadores-badge', card);
-    if (!url || !tabela) return;
+    const table = $('#players-table', card);
+    const badge = $('#players-badge', card);
+    if (!url || !table) return;
 
-    const body = tabela.querySelector('tbody');
-    const colunas = tabela.querySelectorAll('thead th').length;
+    const body = table.querySelector('tbody');
+    const columnCount = table.querySelectorAll('thead th').length;
 
-    function semNinguem(quantos) {
+    function nobodyText(quantos) {
       const tr = createEl('tr');
       tr.append(createEl('td', {
         className: 'muted',
         text: quantos
           ? 'Este jogo nao publica a lista de nomes - so a contagem.'
           : 'Ninguem conectado agora.',
-        attrs: { colspan: String(colunas) },
+        attrs: { colspan: String(columnCount) },
       }));
       return [tr];
     }
@@ -70,20 +70,20 @@ export const serverPlayers = {
       );
       // A coluna de acoes (expulsar/banir) e desenhada pelo servidor com CSRF; ao
       // repintar, ela fica vazia ate a proxima carga da pagina.
-      if (colunas > 3) tr.append(createEl('td'));
+      if (columnCount > 3) tr.append(createEl('td'));
       return tr;
     }
 
     new Poller(async () => {
       const data = await readJSON(url);
       if (data.error) return;
-      if (selo) {
-        pinta(selo, data);
-        selo.textContent += ' online';
+      if (badge) {
+        paint(badge, data);
+        badge.textContent += ' online';
       }
       reset(body, (data.list?.length)
         ? data.list.map(line)
-        : semNinguem(data.players));
+        : nobodyText(data.players));
     }, { interval: Number(card.dataset.interval) || 10000 }).start({ immediate: false });
   },
 };

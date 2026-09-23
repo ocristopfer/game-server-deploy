@@ -60,7 +60,7 @@
   <div class="card__head">
     <h2>{{ _('charts.players') }}</h2>
     <div class="cluster">
-      <span class="badge {{ 'on' if players.players else 'cold' }}" id="jogadores-badge">
+      <span class="badge {{ 'on' if players.players else 'cold' }}" id="players-badge">
         {%- if players.players is not none -%}
           {{ players.players }}{% if players.max_players %}/{{ players.max_players }}{% endif %} online
         {%- else -%}
@@ -108,7 +108,7 @@
     </dl>
 
     {% set actions = player_actions(server) %}
-    <div class="table-wrap"><table class="jobs" id="jogadores-tabela">
+    <div class="table-wrap"><table class="jobs" id="players-table">
       <thead><tr><th>{{ _('server_detail.player') }}</th><th>{{ _('server_detail.connected_for') }}</th><th>{{ _('server_detail.score') }}</th>{% if actions %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for p in players.list %}

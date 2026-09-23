@@ -11,7 +11,7 @@
 .appbar {
   position: sticky;
   top: 0;
-  z-index: var(--z-barra);
+  z-index: var(--z-bar);
   height: calc(var(--appbar-h) + var(--safe-top));
   padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
   background: color-mix(in srgb, var(--panel) 92%, transparent);
@@ -28,7 +28,7 @@
   align-items: center;
   gap: var(--sp-3);
   height: var(--appbar-h);
-  max-width: var(--largura-max);
+  max-width: var(--max-width);
   margin: 0 auto;
   padding: 0 var(--sp-4);
 }
@@ -52,7 +52,7 @@
 .tabbar {
   position: fixed;
   left: 0; right: 0; bottom: 0;
-  z-index: var(--z-barra);
+  z-index: var(--z-bar);
   display: flex;
   padding-bottom: var(--safe-bottom);
   background: color-mix(in srgb, var(--panel) 96%, transparent);
@@ -75,7 +75,7 @@
 
 /* ---------- corpo ---------- */
 .wrap {
-  max-width: var(--largura-max);
+  max-width: var(--max-width);
   margin: 0 auto;
   padding: var(--sp-4) calc(var(--sp-4) + var(--safe-right)) var(--sp-5) calc(var(--sp-4) + var(--safe-left));
 }

@@ -8,32 +8,32 @@ import { Poller } from '../core/poll.js';
 import { readJSON } from '../core/http.js';
 import { $ } from '../core/dom.js';
 
-const CLASSE_DE_ESTADO = { ok: 'on', error: 'off', running: 'cold' };
+const STATE_CLASS = { ok: 'on', error: 'off', running: 'cold' };
 
 export const watchJob = {
   selector: '[data-job-url]',
   mount(root) {
     const url = root.dataset.jobUrl;
     const output = $('[data-job-output]', root);
-    const selo = $('[data-job-badge]', root);
-    const dica = $('[data-job-hint]', root);
+    const badge = $('[data-job-badge]', root);
+    const hint = $('[data-job-hint]', root);
     if (!url || !output) return;
 
     const running = root.dataset.jobRunning || '(executando...)';
-    const molde = root.dataset.jobEnd || 'exit code {codigo}';
+    const template = root.dataset.jobEnd || 'exit code {codigo}';
 
     const poller = new Poller(async () => {
       const data = await readJSON(url);
       output.textContent = data.output || running;
-      if (selo) {
-        selo.textContent = data.status;
-        selo.className = `badge ${CLASSE_DE_ESTADO[data.status] || ''}`;
+      if (badge) {
+        badge.textContent = data.status;
+        badge.className = `badge ${STATE_CLASS[data.status] || ''}`;
       }
       if (data.status === 'running') return;
 
       poller.stop();
-      if (dica) {
-        dica.textContent = molde.replace(
+      if (hint) {
+        hint.textContent = template.replace(
           '{codigo}', data.exit_code === null ? '—' : data.exit_code,
         );
       }

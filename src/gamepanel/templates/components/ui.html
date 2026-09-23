@@ -16,7 +16,7 @@
   {%- set classes = ['btn'] -%}
   {%- if variant %}{% set classes = classes + ['btn--' ~ variant] %}{% endif -%}
   {%- if size %}{% set classes = classes + ['btn--' ~ size] %}{% endif -%}
-  {%- if block %}{% set classes = classes + ['btn--bloco'] %}{% endif -%}
+  {%- if block %}{% set classes = classes + ['btn--block'] %}{% endif -%}
   {%- if href -%}
     <a class="{{ classes | join(' ') }}" href="{{ href }}"
        {%- if title %} title="{{ title }}"{% endif %}

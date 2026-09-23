@@ -13,10 +13,10 @@ export const commandBox = {
     const field = $('#command', form);
     if (!field) return;
 
-    let historico = [];
+    let history = [];
     const source = document.getElementById('historico-comandos');
     if (source) {
-      try { historico = JSON.parse(source.textContent) || []; } catch { historico = []; }
+      try { history = JSON.parse(source.textContent) || []; } catch { history = []; }
     }
     let cursor = -1;
 
@@ -26,14 +26,14 @@ export const commandBox = {
         form.requestSubmit();
         return;
       }
-      if (ev.key === 'ArrowUp' && field.selectionStart === 0 && cursor + 1 < historico.length) {
+      if (ev.key === 'ArrowUp' && field.selectionStart === 0 && cursor + 1 < history.length) {
         ev.preventDefault();
         cursor += 1;
-        field.value = historico[cursor];
+        field.value = history[cursor];
       } else if (ev.key === 'ArrowDown' && cursor > -1) {
         ev.preventDefault();
         cursor -= 1;
-        field.value = cursor === -1 ? '' : historico[cursor];
+        field.value = cursor === -1 ? '' : history[cursor];
       }
     });
   },

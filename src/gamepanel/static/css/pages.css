@@ -57,11 +57,11 @@
 .filelist a.dl, .filelist form.inline-del { margin-left: var(--sp-2); }
 .filelist form.inline-del { display: inline; }
 @media (hover: hover) and (pointer: fine) and (min-width: 900px) {
-  .filelist a.dl, .filelist form.inline-del { opacity: 0; transition: opacity var(--transicao); }
+  .filelist a.dl, .filelist form.inline-del { opacity: 0; transition: opacity var(--transition); }
   .filelist li:hover a.dl, .filelist a.dl:focus,
   .filelist li:hover form.inline-del, .filelist form.inline-del:focus-within { opacity: 1; }
 }
-.filelist form.inline-del button { color: var(--err-texto); }
+.filelist form.inline-del button { color: var(--err-text); }
 
 .filebar { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
 .path-form { display: flex; gap: var(--sp-2); flex: 1 1 100%; min-width: 0; }
@@ -74,7 +74,7 @@
 
 .editor .filename { font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
 #content {
-  min-height: 45vh; background: var(--preto); white-space: pre; overflow-wrap: normal;
+  min-height: 45vh; background: var(--black); white-space: pre; overflow-wrap: normal;
   overflow-x: auto; tab-size: 4;
   font: 12.5px/1.6 var(--mono);
 }
@@ -204,7 +204,7 @@
   position: absolute; top: 3rem; z-index: 5; pointer-events: none;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm);
   padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); min-width: 8rem;
-  box-shadow: var(--sombra-2);
+  box-shadow: var(--shadow-2);
 }
 .bubble-time { color: var(--muted); margin-bottom: var(--sp-1); }
 .bubble-line { display: flex; align-items: center; gap: var(--sp-1); line-height: 1.7; }
@@ -219,9 +219,9 @@
   border-radius: var(--r-md); overflow: hidden; margin-bottom: var(--sp-3);
 }
 .term.full {
-  position: fixed; inset: 0; z-index: var(--z-tela-cheia); margin: 0; border-radius: 0;
+  position: fixed; inset: 0; z-index: var(--z-fullscreen); margin: 0; border-radius: 0;
   padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
-  background: var(--preto);
+  background: var(--black);
 }
 .term-bar {
   display: flex; align-items: center; gap: var(--sp-1); flex-wrap: nowrap;
@@ -233,13 +233,13 @@
 .term-bar .spacer { flex: 1 0 var(--sp-2); }
 
 .term-view {
-  background: var(--preto); padding: var(--sp-1) var(--sp-2); overflow: auto;
+  background: var(--black); padding: var(--sp-1) var(--sp-2); overflow: auto;
   -webkit-overflow-scrolling: touch;
   height: 55vh; cursor: text;
 }
 .term.full .term-view { height: calc(100dvh - 7rem - var(--safe-top) - var(--safe-bottom)); }
 .term-view .tl { font: 13px/18px var(--mono); color: #c9d3de; white-space: pre; letter-spacing: 0; }
-.term-view .cur { background: var(--accent); color: var(--accent-texto); }
+.term-view .cur { background: var(--accent); color: var(--accent-text); }
 /* A entrada real e um textarea invisivel: e ele que recebe teclado, IME e colagem.
    Ele NAO pode ter width/height zero nem display:none, ou o teclado do celular nao
    abre; fica de 1px e transparente. */

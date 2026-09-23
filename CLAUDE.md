@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_game_fields.py`, `test_config_
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 992
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 994
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 990 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 992 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -610,9 +610,27 @@ primeira execucao: tres classes sem regra e sete regras mortas.
 - **Classe montada em runtime** (`{% set classes = classes + ['btn--' ~ variant] %}`)
   entra pelo PREFIXO: o teste junta `btn--` e aceita qualquer `btn--*`. Sem isso toda
   variacao pareceria morta.
+- **Nome COMPLETO dentro de um `{% set %}` e conferido, e essa era a brecha.** O macro
+  emitia `['btn--bloco']` e o CSS tinha `.btn--block`: todo botao `block=true` do painel
+  (entrar, salvar, adicionar — umas vinte telas) deixou de ocupar a largura do cartao, e
+  nada acusou. A classe nao esta num `class=`, entao o `JINJA_EXPR.sub` a apagava junto
+  com o resto da expressao, e o prefixo `btn--` a absolvia do outro lado. Hoje `SET_CLASS`
+  a colhe e o teste falha.
+- **Token de CSS (`--nome`) tem os DOIS lados conferidos**, como classe: definido e nunca
+  usado, e `var(--x)` sem definicao. `var()` de nome inexistente nao e erro para navegador
+  nenhum — a propriedade so nao aplica, e a tela abre sem a cor ou sem o espaco. Achou tres
+  tokens mortos de uma vez (`--sombra-1`, `--r-lg`, `--sp-7`), todos removidos: manter uma
+  lista de excecoes deixaria o teste fraco desde o primeiro dia.
 - **`cores` e a palavra que colide**: nucleo de CPU em ingles, cor em portugues. Uma
   renomeacao automatica ja trocou uma pela outra nos dois lados e o numero de nucleos
   sumiu da tela. Ha um teste so para ela.
+
+**Renomear JavaScript com um dicionario? use `Map`, nao objeto.** `MAP['constructor']`
+num objeto comum devolve `Object.prototype.constructor` em vez de `undefined`, e o
+renomeador troca a palavra `constructor` de toda classe pelo TEXTO de uma funcao nativa
+(`function Object() { [native code] }`). O `test_javascript.py` pegou na primeira
+execucao — sem ele, o terminal e o grafico teriam quebrado so no navegador de quem
+abrisse a tela.
 
 ### A doc tambem tem rede
 
@@ -852,7 +870,7 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   `-ComSsh` no spike) continuam valendo por `[Alias(...)]`: a linha de comando e a unica
   coisa daqui que alguem tem salva em outro lugar, e traduzir o identificador nao pode
   quebrar o que ja esta anotado num README ou num historico de shell.
-  **Prove com `bash docker/ct-sandbox/broker.sh`** (modo/dono, env relido pelo `carregar` real,
+  **Prove com `bash docker/ct-sandbox/broker.sh`** (modo/dono, env relido pelo `config.load` real,
   segredo com aspas/barra/cifrao/crase, idempotencia, rotacao).
 - **`set -e` + `pipefail` + `$(...)` = saida CALADA.** Falha dentro de uma substituicao encerra o
   script antes do `[[ -n "$x" ]] || die "..."` que a explicaria (foi o que o primeiro deploy real
