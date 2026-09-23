@@ -20,7 +20,7 @@
 
 <div class="card card--form">
   <h2>{{ _('account.language.title') }}</h2>
-  <form method="post" action="{{ url_for('account_language') }}">
+  <form method="post" action="{{ url_for('account.language') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label for="lang">{{ _('account.language') }}</label>
     <select id="lang" name="lang">
@@ -50,7 +50,7 @@
     </label>
     <div class="form-actions">
       {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
-      {{ ui.botao(_('server_form.cancel'), href=url_for('dashboard'), variante='ghost', bloco=true) }}
+      {{ ui.botao(_('server_form.cancel'), href=url_for('dashboard.index'), variante='ghost', bloco=true) }}
     </div>
   </form>
 </div>
@@ -63,7 +63,7 @@
     <p class="muted small">{{ _('account.two_factor_on_hint') }}</p>
     <details class="stack--sm">
       <summary class="btn btn--ghost btn--sm">{{ _('account.new_recovery_codes') }}</summary>
-      <form method="post" action="{{ url_for('account_2fa_codes') }}" class="mt-4">
+      <form method="post" action="{{ url_for('account.two_factor_codes') }}" class="mt-4">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <label>{{ _('login.password') }}
           <input name="senha" type="password" autocomplete="current-password" required>
@@ -78,7 +78,7 @@
     {% if not exige_2fa %}
     <details class="stack--sm mt-4">
       <summary class="btn btn--danger btn--sm">{{ _('account.disable') }}</summary>
-      <form method="post" action="{{ url_for('account_2fa_off') }}" class="mt-4">
+      <form method="post" action="{{ url_for('account.two_factor_off') }}" class="mt-4">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <label>{{ _('login.password') }}
           <input name="senha" type="password" autocomplete="current-password" required>
@@ -105,7 +105,7 @@
       {% endif %}
     </p>
     <div class="form-actions">
-      {{ ui.botao(_('account.enable'), href=url_for('account_2fa'), variante='primary', bloco=true, icone='🔐') }}
+      {{ ui.botao(_('account.enable'), href=url_for('account.two_factor'), variante='primary', bloco=true, icone='🔐') }}
     </div>
   {% endif %}
 </div>
@@ -116,7 +116,7 @@
   <h2>{{ _('account.sign_out') }}</h2>
   <p class="muted small">{{ _('account.sign_out_hint') }}</p>
   <div class="form-actions">
-    {{ ui.acao(url_for('logout'), _('account.sign_out_of_panel'), variante='danger', icone='🚪', bloco=true) }}
+    {{ ui.acao(url_for('auth.logout'), _('account.sign_out_of_panel'), variante='danger', icone='🚪', bloco=true) }}
   </div>
 </div>
 {% endblock %}

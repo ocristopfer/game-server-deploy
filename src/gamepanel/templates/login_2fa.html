@@ -17,7 +17,7 @@
     </label>
     <div class="form-actions">
       {{ ui.botao(_('login_2fa.confirm'), variante='primary', bloco=true) }}
-      {{ ui.botao(_('login_2fa.back'), href=url_for('login'), variante='ghost', bloco=true) }}
+      {{ ui.botao(_('login_2fa.back'), href=url_for('auth.login'), variante='ghost', bloco=true) }}
     </div>
   </form>
 </div>

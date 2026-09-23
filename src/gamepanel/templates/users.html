@@ -20,7 +20,7 @@
           {% if u.id == meu_id %}
             {{ role_labels[u.role] }}
           {% else %}
-          <form method="post" action="{{ url_for('user_role', uid=u.id) }}" class="users-papel">
+          <form method="post" action="{{ url_for('users.role', uid=u.id) }}" class="users-papel">
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
             <label class="sr-only" for="papel-{{ u.id }}">Papel de {{ u.username }}</label>
             <select name="role" id="papel-{{ u.id }}">
@@ -36,7 +36,7 @@
         <td class="acoes">
           <details class="users-reset">
             <summary class="btn btn--ghost btn--sm">{{ _('users.reset_password') }}</summary>
-            <form method="post" action="{{ url_for('user_password', uid=u.id) }}" class="users-form">
+            <form method="post" action="{{ url_for('users.password', uid=u.id) }}" class="users-form">
               <input type="hidden" name="csrf" value="{{ csrf_token() }}">
               <input name="new" type="password" autocomplete="new-password" aria-label="{{ _('users.new_password_lower') }}"
                      minlength="{{ min_len }}" placeholder="{{ _('users.new_password_lower') }}" required>
@@ -46,12 +46,12 @@
             </form>
           </details>
           {% if u.totp_enabled and u.id != meu_id %}
-            {{ ui.acao(url_for('user_2fa_off', uid=u.id), _('users.two_factor_off'),
+            {{ ui.acao(url_for('users.two_factor_off', uid=u.id), _('users.two_factor_off'),
                        variante='ghost', tamanho='sm',
                        confirmar=_('users.two_factor_off_confirm', user=u.username)) }}
           {% endif %}
           {% if u.id != meu_id %}
-            {{ ui.acao(url_for('user_delete', uid=u.id), _('instances.remove'),
+            {{ ui.acao(url_for('users.delete', uid=u.id), _('instances.remove'),
                        variante='danger', tamanho='sm',
                        confirmar=_('users.remove_confirm', user=u.username)) }}
           {% endif %}
@@ -64,7 +64,7 @@
 
 <div class="card card--form">
   <h2>{{ _('users.new_user') }}</h2>
-  <form method="post" action="{{ url_for('user_new') }}">
+  <form method="post" action="{{ url_for('users.new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>{{ _('users.user') }}
       <input name="username" pattern="[a-z_][a-z0-9_-]{0,31}" required autofocus
@@ -99,7 +99,7 @@
   </form>
   <p class="muted small mt-4">
     {{ _('users.password_handoff') }}
-    <a href="{{ url_for('account') }}">{{ _('nav.account') }}</a>. O painel nao envia e-mail.
+    <a href="{{ url_for('account.index') }}">{{ _('nav.account') }}</a>. O painel nao envia e-mail.
   </p>
 </div>
 

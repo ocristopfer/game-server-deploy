@@ -25,7 +25,7 @@ from dataclasses import dataclass
 # ---------------------------------------------------------------- recursos
 # Um "recurso" e um interruptor do deploy (GAMEPANEL_ALLOW_FILES, ALLOW_SHELL).
 # A secao que depende de um recurso desligado nao aparece em lugar nenhum.
-FEATURE_FILES = "files"
+FEATURE_FILES = "files.index"
 FEATURE_SHELL = "shell"
 FEATURE_BROKER = "broker"
 
@@ -56,22 +56,22 @@ class Item:
 # de abas; por isso "Adicionar servidor", "Usuarios" e "Acesso SSH" ficam no menu da
 # barra de cima — sao coisas que se faz uma vez, nao todo dia.
 NAV_MAIN = (
-    Item("servidores", "nav.servers", "🎮", "dashboard"),
+    Item("servidores", "nav.servers", "🎮", "dashboard.index"),
     Item("historico", "nav.history", "🕘", "history.index"),
-    Item("alertas", "nav.alerts", "🔔", "alerts", admin=True),
-    Item("conta", "nav.account", "👤", "account"),
+    Item("alertas", "nav.alerts", "🔔", "alerts.index", admin=True),
+    Item("conta", "nav.account", "👤", "account.index"),
 )
 
 # Menu do canto da barra de cima: o resto.
 NAV_SECONDARY = (
-    Item("novo", "nav.add_server", "➕", "server_new", admin=True),
+    Item("novo", "nav.add_server", "➕", "servers.new", admin=True),
     # Os dois do broker so existem no deploy que ligou GAMEPANEL_ALLOW_BROKER.
-    Item("instancias", "nav.instances.help", "🧩", "instances_list", admin=True,
+    Item("instancias", "nav.instances.help", "🧩", "broker.instances", admin=True,
          feature=FEATURE_BROKER, short="nav.instances"),
-    Item("catalogo", "nav.catalog.help", "📚", "catalog", admin=True,
+    Item("catalogo", "nav.catalog.help", "📚", "broker.catalog", admin=True,
          feature=FEATURE_BROKER, short="nav.catalog"),
-    Item("usuarios", "nav.users", "👥", "users_list", admin=True),
-    Item("ssh", "nav.ssh_key", "🔑", "ssh_key"),
+    Item("usuarios", "nav.users", "👥", "users.index", admin=True),
+    Item("ssh", "nav.ssh_key", "🔑", "account.ssh_key"),
 )
 
 
@@ -80,21 +80,22 @@ NAV_SECONDARY = (
 # espera ver a barra dizendo isso.
 _ACTIVE_EXTRA = {
     "servidores": (
-        "dashboard", "server_detail", "server_new", "server_edit", "server_action",
-        "config_quick", "config_files_edit", "config_save", "files", "files_search",
-        "files_save", "files_delete", "files_upload", "files_download",
-        "terminal", "console", "charts", "backups", "backup_create", "backup_restore",
-        "backup_delete", "backup_download", "schedules", "schedule_new",
-        "schedule_toggle", "schedule_delete", "schedule_run",
-        "players_setup", "players_use", "player_action", "job_detail",
-        "instances_list", "instance_new", "instance_deactivate", "instance_remove",
-        "catalog", "catalog_new",
+        "dashboard.index", "servers.detail", "servers.new", "servers.edit", "servers.action",
+        "config_quick.index", "config_quick.register_file", "config_quick.save", "files.index", "files.search",
+        "files.save", "files.delete", "files.upload", "files.download",
+        "terminal.index", "console.index", "charts.index", "backups.index", "backups.create", "backups.restore",
+        "backups.delete", "backups.download", "schedules.index", "schedules.new",
+        "schedules.toggle", "schedules.delete", "schedules.run",
+        "players.setup", "players.use", "players.action", "jobs.detail",
+        "broker.instances", "broker.instance_new", "broker.instance_deactivate", "broker.instance_remove",
+        "broker.catalog", "broker.catalog_new",
     ),
-    "alertas": ("alerts", "alerts_save", "alerts_hook_new", "alerts_hook_save",
-                "alerts_hook_del", "alerts_hook_test"),
-    "conta": ("account", "account_2fa", "account_2fa_off", "account_2fa_codes", "ssh_key",
-              "users_list", "user_new", "user_role", "user_password", "user_delete",
-              "user_2fa_off"),
+    "alertas": ("alerts.index", "alerts.save", "alerts.hook_new", "alerts.hook_save",
+                "alerts.hook_delete", "alerts.hook_test"),
+    "conta": ("account.index", "account.two_factor", "account.two_factor_off",
+              "account.two_factor_codes", "account.ssh_key",
+              "users.index", "users.new", "users.role", "users.password", "users.delete",
+              "users.two_factor_off"),
     "historico": ("history.index",),
 }
 
@@ -129,12 +130,12 @@ _ALL_ITEMS = {i.key: i for i in NAV_MAIN + NAV_SECONDARY}
 # "Conta"), porque so ha quatro abas. Na barra larga cada destino e o seu proprio
 # item, entao a rota acende ele mesmo — senao "Instancias" apareceria como "Servidores".
 _ACTIVE_ON_DESKTOP = {
-    "instancias": ("instances_list", "instance_new", "instance_deactivate", "instance_remove"),
-    "catalogo": ("catalog", "catalog_new"),
-    "usuarios": ("users_list", "user_new", "user_role", "user_password", "user_delete",
-                 "user_2fa_off"),
-    "ssh": ("ssh_key",),
-    "conta": ("account", "account_2fa", "account_2fa_off", "account_2fa_codes"),
+    "instancias": ("broker.instances", "broker.instance_new", "broker.instance_deactivate", "broker.instance_remove"),
+    "catalogo": ("broker.catalog", "broker.catalog_new"),
+    "usuarios": ("users.index", "users.new", "users.role", "users.password", "users.delete",
+                 "users.two_factor_off"),
+    "ssh": ("account.ssh_key",),
+    "conta": ("account.index", "account.two_factor", "account.two_factor_off", "account.two_factor_codes"),
 }
 _BY_ENDPOINT_ON_DESKTOP = {
     endpoint: key
@@ -160,26 +161,26 @@ def active_desktop_nav_for(endpoint: str | None) -> str:
 # A ordem aqui e a ordem na tela, e ela segue a frequencia de uso real: o que se
 # olha todo dia primeiro, o que se mexe uma vez por mes no fim.
 SERVER_SECTIONS = (
-    Item("visao", "server.overview", "📊", "server_detail",
+    Item("visao", "server.overview", "📊", "servers.detail",
          help="server.overview.help"),
-    Item("config", "server.config", "⚙️", "config_quick", feature=FEATURE_FILES,
+    Item("config", "server.config", "⚙️", "config_quick.index", feature=FEATURE_FILES,
          help="server.config.help"),
-    Item("charts", "server.charts", "📈", "charts",
+    Item("charts.index", "server.charts", "📈", "charts.index",
          help="server.charts.help"),
-    Item("backups", "server.backups", "💾", "backups",
+    Item("backups.index", "server.backups", "💾", "backups.index",
          help="server.backups.help"),
-    Item("schedules", "server.schedules", "⏰", "schedules",
+    Item("schedules.index", "server.schedules", "⏰", "schedules.index",
          help="server.schedules.help"),
     # "Arquivos" e o irmao bruto de "Configuracao": mesma pasta, sem formulario.
     # Os dois so aparecem juntos para quem pode navegar pelo container.
-    Item("files", "server.files", "📁", "files", admin=True, feature=FEATURE_FILES,
+    Item("files.index", "server.files", "📁", "files.index", admin=True, feature=FEATURE_FILES,
          help="server.files.help"),
     # UM destino de linha de comando, nao dois. Qual das duas telas ele abre e
     # detalhe de implementacao (ver `endpoint_do_terminal`): para quem usa, "Terminal"
     # e um lugar so, e la dentro se escolhe entre sessao interativa e comando unico.
-    Item("terminal", "server.terminal", "⌨️", "terminal", admin=True, feature=FEATURE_SHELL,
+    Item("terminal.index", "server.terminal", "⌨️", "terminal.index", admin=True, feature=FEATURE_SHELL,
          help="server.terminal.help"),
-    Item("editar", "server.edit", "✏️", "server_edit", admin=True,
+    Item("editar", "server.edit", "✏️", "servers.edit", admin=True,
          help="server.edit.help"),
 )
 
@@ -217,11 +218,11 @@ def terminal_endpoint(*, tem_pty: bool) -> str:
     nao precisa de terminal de verdade. Em nenhum dos dois casos aparecem duas
     entradas de menu para "rodar comando".
     """
-    return "terminal" if tem_pty else "console"
+    return "terminal.index" if tem_pty else "console.index"
 
 
 def section_endpoint(section: Item, *, tem_pty: bool) -> str:
-    if section.key == "terminal":
+    if section.key == "terminal.index":
         return terminal_endpoint(tem_pty=tem_pty)
     return section.endpoint
 

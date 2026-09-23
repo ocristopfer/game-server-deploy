@@ -7,12 +7,12 @@
    mora na ficha abaixo, junto dos outros dados da execucao. #}
 {% call ui.cabecalho(job_label(job.action)) %}
   {% if server %}
-    {{ ui.botao(server.name, href=url_for('server_detail', sid=server.id), variante='ghost', icone='🎮') }}
+    {{ ui.botao(server.name, href=url_for('servers.detail', sid=server.id), variante='ghost', icone='🎮') }}
   {% endif %}
 {% endcall %}
 
 <div class="card"
-     {% if job.status == 'running' %}data-job-url="{{ url_for('api_job', jid=job.id) }}"
+     {% if job.status == 'running' %}data-job-url="{{ url_for('jobs.api_detail', jid=job.id) }}"
      data-intervalo="2000" data-job-rodando="(aguardando saida...)"
      data-job-fim="Concluido com exit code {codigo}."{% endif %}>
   <dl class="meta wide">

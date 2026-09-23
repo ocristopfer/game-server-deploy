@@ -50,7 +50,7 @@
       <small>
         {{ _('server_form.player_count_hint') }}
         {%- if mode == 'edit' %} {{ _h('server_form.player_count_wizard',
-            url=url_for('players_setup', sid=sid)) }}{% endif %}
+            url=url_for('players.setup', sid=sid)) }}{% endif %}
       </small>
     </label>
     <div class="row">
@@ -75,7 +75,7 @@
       <input name="error_re" value="{{ data.error_re }}" spellcheck="false"
              placeholder="Fatal error|Out of memory|Assertion failed">
       <small>
-        {{ _h('server_form.log_error_hint', url=url_for('alerts')) }}
+        {{ _h('server_form.log_error_hint', url=url_for('alerts.index')) }}
       </small>
     </label>
 
@@ -118,7 +118,7 @@
                 placeholder="/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini">{{ data.config_files }}</textarea>
       <small>
         {% if mode == 'edit' %}{{ _h('server_form.config_files_hint_link',
-             url=url_for('config_quick', sid=sid)) }}
+             url=url_for('config_quick.index', sid=sid)) }}
         {% else %}{{ _h('server_form.config_files_hint') }}{% endif %}
       </small>
     </label>
@@ -127,7 +127,7 @@
                 placeholder="/opt/game/Pal/Saved/SaveGames">{{ data.backup_paths }}</textarea>
       <small>
         {% if mode == 'edit' %}{{ _h('server_form.backup_paths_hint_link',
-             url=url_for('backups', sid=sid)) }}
+             url=url_for('backups.index', sid=sid)) }}
         {% else %}{{ _h('server_form.backup_paths_hint') }}{% endif %}
       </small>
     </label>
@@ -136,11 +136,11 @@
     </label>
     <div class="form-actions">
       {{ ui.botao(_('action.save'), variante='primary', bloco=true) }}
-      {{ ui.botao(_('server_form.cancel'), href=url_for('dashboard'), variante='ghost', bloco=true) }}
+      {{ ui.botao(_('server_form.cancel'), href=url_for('dashboard.index'), variante='ghost', bloco=true) }}
     </div>
   </form>
   <p class="muted small">
-    {{ _h('server_form.sshd_note', url=url_for('ssh_key')) }}
+    {{ _h('server_form.sshd_note', url=url_for('account.ssh_key')) }}
   </p>
 </div>
 
@@ -149,7 +149,7 @@
   <h2>{{ _('server_form.remove') }}</h2>
   <p class="muted">{{ _('server_form.remove_hint') }}</p>
   <div class="form-actions">
-    {{ ui.acao(url_for('server_delete', sid=sid), _('server_form.remove'), variante='danger',
+    {{ ui.acao(url_for('servers.delete', sid=sid), _('server_form.remove'), variante='danger',
                icone='🗑', bloco=true,
                confirmar=_('server_form.remove_confirm')) }}
   </div>

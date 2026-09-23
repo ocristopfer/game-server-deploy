@@ -4,7 +4,7 @@
 
 {% block content %}
 {% call ui.cabecalho(_('catalog.title')) %}
-  {{ ui.botao(_('nav.instances'), href=url_for('instances_list'), variante='ghost', icone='🧩') }}
+  {{ ui.botao(_('nav.instances'), href=url_for('broker.instances'), variante='ghost', icone='🧩') }}
 {% endcall %}
 
 {# Lista a esquerda, formulario a direita no desktop; uma coluna no celular. #}
@@ -41,10 +41,10 @@
 <div class="card">
   <h2>{{ _('catalog.add_game') }}</h2>
   <p class="muted small">{{ _h('catalog.data_only') }}</p>
-  <form method="post" action="{{ url_for('catalog_new') }}">
+  <form method="post" action="{{ url_for('broker.catalog_new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     {# Busca por nome ou App ID (features/busca-de-jogo.js). Sem `name`: nao vai no envio. #}
-    <div class="mb-4" data-busca-de-jogo data-url="{{ url_for('api_catalog_suggestions') }}" hidden>
+    <div class="mb-4" data-busca-de-jogo data-url="{{ url_for('broker.api_suggestions') }}" hidden>
       <label>{{ _('catalog.search_game') }} <span class="muted">{{ _('catalog.by_name_or_app_id') }}</span>
         <input type="search" data-busca-campo maxlength="60" autocomplete="off" spellcheck="false"
                placeholder="Palworld, Valheim, 2394010...">

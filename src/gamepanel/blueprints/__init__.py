@@ -24,7 +24,31 @@ def register_all(app: Flask) -> None:
     `gamepanel.app` ainda esta sendo executado, e cada blueprint faria `import
     gamepanel.app` de um modulo pela metade.
     """
-    from gamepanel.blueprints import history
+    from gamepanel.blueprints import (
+        account,
+        alerts,
+        auth,
+        backups,
+        broker,
+        charts,
+        config_quick,
+        console,
+        dashboard,
+        files,
+        health,
+        history,
+        jobs,
+        players,
+        pwa,
+        schedules,
+        servers,
+        terminal,
+        users,
+    )
 
-    for modulo in (history,):
+    for modulo in (
+        account, alerts, auth, backups, broker, charts, config_quick, console,
+        dashboard, files, health, history, jobs, players, pwa, schedules, servers,
+        terminal, users,
+    ):
         app.register_blueprint(modulo.bp)

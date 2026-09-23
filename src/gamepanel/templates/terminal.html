@@ -11,7 +11,7 @@
 <nav class="tabs" aria-label="{{ _('console.terminal_mode') }}">
   <span class="tabs__item" aria-current="page">
     <span class="icone" aria-hidden="true">⌨️</span>{{ _('console.interactive') }}</span>
-  <a class="tabs__item" href="{{ url_for('console', sid=server.id) }}">
+  <a class="tabs__item" href="{{ url_for('console.index', sid=server.id) }}">
     <span class="icone" aria-hidden="true">▶</span>{{ _('console.single_command') }}</a>
 </nav>
 
@@ -24,7 +24,7 @@
 
 <div class="term" id="term"
      data-csrf="{{ csrf_token() }}"
-     data-open-url="{{ url_for('api_term_open', sid=server.id) }}"
+     data-open-url="{{ url_for('terminal.api_open', sid=server.id) }}"
      data-api-base="/api/v1/term/">
   <div class="term-bar">
     <span class="badge cold" id="term-status">{{ _('terminal.starting') }}</span>

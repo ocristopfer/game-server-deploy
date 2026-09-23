@@ -48,7 +48,7 @@
         <td class="muted small nowrap">{{ j.created_at[:16] | replace('T', ' ') }}</td>
         <td>{{ nomes.get(j.server_id, '(removido)') }}</td>
         <td>
-          <a href="{{ url_for('job_detail', jid=j.id) }}">{{ job_label(j.action) }}</a>
+          <a href="{{ url_for('jobs.detail', jid=j.id) }}">{{ job_label(j.action) }}</a>
           {% if j.command %} <code class="trunc">{{ j.command }}</code>{% endif %}
         </td>
         <td class="muted">

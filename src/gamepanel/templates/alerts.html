@@ -44,13 +44,13 @@
         <li>{{ _h('alerts.pending_item', event=eventos[chave], missing=falta) }}</li>
         {% endfor %}
       </ul>
-      {{ _h('alerts.pending_fix', url=url_for('dashboard')) }}
+      {{ _h('alerts.pending_fix', url=url_for('dashboard.index')) }}
     </div>
   {% endif %}
 
   {% for h in cfg.targets %}
   <form class="hook{% if not h.enabled %} desligado{% endif %}" method="post"
-        action="{{ url_for('alerts_hook_save', hid=h.id) }}">
+        action="{{ url_for('alerts.hook_save', hid=h.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
 
     <div class="hook-head">
@@ -84,11 +84,11 @@
 
     <div class="form-actions hook-acoes">
       {{ ui.botao(_('action.save'), variante='primary') }}
-      {{ ui.botao(_('alerts.test'), extra='formaction="' ~ url_for('alerts_hook_test', hid=h.id) ~ '" formnovalidate') }}
+      {{ ui.botao(_('alerts.test'), extra='formaction="' ~ url_for('alerts.hook_test', hid=h.id) ~ '" formnovalidate') }}
       <span class="spacer"></span>
       {{ ui.botao(_('alerts.remove'), variante='danger',
                   confirmar=_('alerts.remove_confirm', name=h.name),
-                  extra='formaction="' ~ url_for('alerts_hook_del', hid=h.id) ~ '" formnovalidate') }}
+                  extra='formaction="' ~ url_for('alerts.hook_delete', hid=h.id) ~ '" formnovalidate') }}
     </div>
   </form>
   {% endfor %}
@@ -98,7 +98,7 @@
   {% else %}
   <details class="hook-novo"{% if not cfg.targets %} open{% endif %}>
     <summary>+ {{ _('alerts.add_destination') }}</summary>
-    <form method="post" action="{{ url_for('alerts_hook_new') }}">
+    <form method="post" action="{{ url_for('alerts.hook_new') }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="enabled" value="1">
       <div class="row">
@@ -128,7 +128,7 @@
 
 <div class="card">
   <h2>{{ _('alerts.preferences') }}</h2>
-  <form method="post" action="{{ url_for('alerts_save') }}">
+  <form method="post" action="{{ url_for('alerts.save') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label class="curto">{{ _('alerts.warn_disk_over') }}
       <span class="com-unidade">

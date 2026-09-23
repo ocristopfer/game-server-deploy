@@ -15,7 +15,7 @@
 {% endfor %}</pre>
   <div class="form-actions">
     <button type="button" class="btn btn--sm" data-copiar="#codigos-2fa" hidden>{{ _('account_2fa_codes.copy_codes') }}</button>
-    {{ ui.botao(_('account_2fa_codes.saved_them'), href=url_for('account'), variante='primary', bloco=true) }}
+    {{ ui.botao(_('account_2fa_codes.saved_them'), href=url_for('account.index'), variante='primary', bloco=true) }}
   </div>
 </div>
 {% endblock %}

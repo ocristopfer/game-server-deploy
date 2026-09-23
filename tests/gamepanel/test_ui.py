@@ -32,21 +32,21 @@ def test_toda_chave_da_barra_larga_existe_nas_listas_de_itens():
 
 
 def test_no_desktop_cada_destino_acende_o_proprio_item():
-    assert ui.active_desktop_nav_for("instances_list") == "instancias"
-    assert ui.active_desktop_nav_for("catalog_new") == "catalogo"
-    assert ui.active_desktop_nav_for("users_list") == "usuarios"
-    assert ui.active_desktop_nav_for("ssh_key") == "ssh"
-    assert ui.active_desktop_nav_for("account") == "conta"
+    assert ui.active_desktop_nav_for("broker.instances") == "instancias"
+    assert ui.active_desktop_nav_for("broker.catalog_new") == "catalogo"
+    assert ui.active_desktop_nav_for("users.index") == "usuarios"
+    assert ui.active_desktop_nav_for("account.ssh_key") == "ssh"
+    assert ui.active_desktop_nav_for("account.index") == "conta"
 
 
 def test_no_celular_a_aba_de_cima_continua_acesa():
     """So ha quatro abas embaixo: 'Instancias' acende 'Servidores' e 'Usuarios' acende 'Conta'."""
-    assert ui.active_nav_for("instances_list") == "servidores"
-    assert ui.active_nav_for("users_list") == "conta"
+    assert ui.active_nav_for("broker.instances") == "servidores"
+    assert ui.active_nav_for("users.index") == "conta"
 
 
 def test_tela_de_servidor_acende_servidores_nos_dois():
-    assert ui.active_desktop_nav_for("server_detail") == "servidores"
+    assert ui.active_desktop_nav_for("servers.detail") == "servidores"
     assert ui.active_desktop_nav_for("history.index") == "historico"
     assert ui.active_desktop_nav_for("rota_que_nao_existe") == ""
 

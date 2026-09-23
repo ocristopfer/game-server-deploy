@@ -9,11 +9,11 @@
 <div class="flash">{{ _h('players_setup.intro') }}</div>
 
 <nav class="tabs" aria-label="{{ _('players_setup.how_to_count') }}">
-  <a class="tabs__item" href="{{ url_for('players_setup', sid=server.id, aba='porta') }}"
+  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, aba='porta') }}"
      {% if aba == 'porta' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_udp') }}</a>
-  <a class="tabs__item" href="{{ url_for('players_setup', sid=server.id, aba='http') }}"
+  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, aba='http') }}"
      {% if aba == 'http' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_http') }}</a>
-  <a class="tabs__item" href="{{ url_for('players_setup', sid=server.id, aba='log') }}"
+  <a class="tabs__item" href="{{ url_for('players.setup', sid=server.id, aba='log') }}"
      {% if aba == 'log' %}aria-current="page"{% endif %}>{{ _('players_setup.tab_log') }}</a>
 </nav>
 
@@ -45,7 +45,7 @@
         <td class="muted">{{ p.server_name or '-' }}</td>
         <td>
           {% if p.ok %}
-          <form method="post" action="{{ url_for('players_use', sid=server.id) }}" class="inline">
+          <form method="post" action="{{ url_for('players.use', sid=server.id) }}" class="inline">
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
             <input type="hidden" name="player_source" value="a2s">
             <input type="hidden" name="query_port" value="{{ p.port }}">
@@ -63,11 +63,11 @@
   {# Plural e por idioma: duas chaves, e nao um 's' colado no fim do numero. #}
   <p class="flash">{{ _h('players_setup.no_udp_query_one' if udp_do_jogo == 1
                          else 'players_setup.no_udp_query_many', n=udp_do_jogo,
-                         url_http=url_for('players_setup', sid=server.id, aba='http'),
-                         url_log=url_for('players_setup', sid=server.id, aba='log')) }}</p>
+                         url_http=url_for('players.setup', sid=server.id, aba='http'),
+                         url_log=url_for('players.setup', sid=server.id, aba='log')) }}</p>
   {% else %}
   <p class="muted small">{{ _h('players_setup.none_answered',
-                               url=url_for('players_setup', sid=server.id, aba='http')) }}</p>
+                               url=url_for('players.setup', sid=server.id, aba='http')) }}</p>
   {% endif %}
 </div>
 
@@ -103,7 +103,7 @@
             {# POST, e nao um link: entre os campos que precisam sobreviver ao clique
                esta a senha de admin do jogo, e na URL ela ficaria no historico do
                navegador e no log de qualquer proxy na frente do painel. #}
-            <form method="post" action="{{ url_for('players_setup', sid=server.id) }}" class="inline">
+            <form method="post" action="{{ url_for('players.setup', sid=server.id) }}" class="inline">
               <input type="hidden" name="csrf" value="{{ csrf_token() }}">
               <input type="hidden" name="aba" value="http">
               <input type="hidden" name="http_url" value="{{ a.url }}">
@@ -130,7 +130,7 @@
   {% endif %}
   {% if not tem_api %}
   <p class="flash">{{ _h('players_setup.no_game_api',
-                         url=url_for('players_setup', sid=server.id, aba='log')) }}</p>
+                         url=url_for('players.setup', sid=server.id, aba='log')) }}</p>
   {% endif %}
 </div>
 
@@ -138,7 +138,7 @@
   <h2>{{ _('players_setup.test_the_call') }}</h2>
   {# POST de proposito: este formulario carrega a senha de admin do jogo (Autenticacao e
      Corpo JSON do login). Num GET ela iria na barra de enderecos. #}
-  <form method="post" action="{{ url_for('players_setup', sid=server.id) }}">
+  <form method="post" action="{{ url_for('players.setup', sid=server.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="aba" value="http">
     <input type="hidden" name="testar" value="1">
@@ -204,7 +204,7 @@
       <summary class="muted small">{{ _('players_setup.raw_api_answer') }}</summary>
       <pre class="log">{{ teste_http.amostra }}</pre>
     </details>
-    <form method="post" action="{{ url_for('players_use', sid=server.id) }}">
+    <form method="post" action="{{ url_for('players.use', sid=server.id) }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="player_source" value="http">
       {% for campo, valor in http.items() %}
@@ -231,7 +231,7 @@
 
 <div class="card">
   <h2>{{ _('players_setup.test_the_pattern') }}</h2>
-  <form method="post" action="{{ url_for('players_setup', sid=server.id) }}">
+  <form method="post" action="{{ url_for('players.setup', sid=server.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="aba" value="log">
     <input type="hidden" name="testar" value="1">
@@ -265,7 +265,7 @@
     {% else %}
       <p class="muted small">{{ _('players_setup.no_line_matched') }}</p>
     {% endif %}
-    <form method="post" action="{{ url_for('players_use', sid=server.id) }}">
+    <form method="post" action="{{ url_for('players.use', sid=server.id) }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="player_source" value="log">
       <input type="hidden" name="join_re" value="{{ join_re }}">

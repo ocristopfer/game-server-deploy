@@ -13,7 +13,7 @@
    "Terminal interativo") que ninguem conseguia distinguir de fora. #}
 {% if allow_term %}
 <nav class="tabs" aria-label="{{ _('console.terminal_mode') }}">
-  <a class="tabs__item" href="{{ url_for('terminal', sid=server.id) }}">
+  <a class="tabs__item" href="{{ url_for('terminal.index', sid=server.id) }}">
     <span class="icone" aria-hidden="true">⌨️</span>{{ _('console.interactive') }}</a>
   <span class="tabs__item" aria-current="page">
     <span class="icone" aria-hidden="true">▶</span>{{ _('console.single_command') }}</span>
@@ -25,7 +25,7 @@
   <code>{{ server.host }}</code>, via SSH. Cada execucao tem limite de
   {{ shell_timeout }}s e fica registrada no historico abaixo.
   {% if allow_term %}Para algo interativo (nano, htop, prompts de confirmacao) use a
-  <a href="{{ url_for('terminal', sid=server.id) }}">{{ _('console.interactive_lower') }}</a>.{% endif %}
+  <a href="{{ url_for('terminal.index', sid=server.id) }}">{{ _('console.interactive_lower') }}</a>.{% endif %}
 </div>
 
 <div class="card">
@@ -50,7 +50,7 @@
 
 {% if job %}
 <div class="card"
-     {% if job.status == 'running' %}data-job-url="{{ url_for('api_job', jid=job.id) }}"
+     {% if job.status == 'running' %}data-job-url="{{ url_for('jobs.api_detail', jid=job.id) }}"
      data-job-rodando="(executando...)" data-job-fim="exit code {codigo}"{% endif %}>
   <div class="card__head">
     <h2>{{ _('console.output') }}</h2>
@@ -77,7 +77,7 @@
         <td><code class="trunc">{{ j.command }}</code></td>
         <td class="muted">{{ j.username }}</td>
         <td><span class="badge {{ {'ok':'on','error':'off','running':'cold'}[j.status] }}">{{ j.status }}</span></td>
-        <td><a href="{{ url_for('console', sid=server.id, job=j.id) }}">{{ _('console.view') }}</a></td>
+        <td><a href="{{ url_for('console.index', sid=server.id, job=j.id) }}">{{ _('console.view') }}</a></td>
       </tr>
       {% endfor %}
     </tbody>

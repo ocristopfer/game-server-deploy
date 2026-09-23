@@ -4,7 +4,7 @@
 
 {% block content %}
 {% call ui.cabecalho(_('nav.instances.help')) %}
-  {{ ui.botao(_('nav.catalog'), href=url_for('catalog'), variante='ghost', icone='📚') }}
+  {{ ui.botao(_('nav.catalog'), href=url_for('broker.catalog'), variante='ghost', icone='📚') }}
 {% endcall %}
 
 {# Formulario a esquerda, instancias a direita no desktop; uma coluna no celular. #}
@@ -12,7 +12,7 @@
 <div class="card">
   <h2>{{ _('instances.new') }}</h2>
   {% if jogos %}
-  <form method="post" action="{{ url_for('instance_new') }}">
+  <form method="post" action="{{ url_for('broker.instance_new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>{{ _('instances.game') }}
       <select name="game" required>
@@ -51,7 +51,7 @@
       <tr>
         <td>
           {% if servidores.get(i.id) %}
-            <a href="{{ url_for('server_detail', sid=servidores[i.id].id) }}"><strong>{{ i.name }}</strong></a>
+            <a href="{{ url_for('servers.detail', sid=servidores[i.id].id) }}"><strong>{{ i.name }}</strong></a>
           {% else %}
             <strong>{{ i.name }}</strong>
           {% endif %}
@@ -62,12 +62,12 @@
           </div>
           {% if i.detail %}<div class="muted small">{{ i.detail }}</div>{% endif %}
           {% if i.state == 'ativa' %}
-            {{ ui.acao(url_for('instance_deactivate', iid=i.id), _('account.disable'), tamanho='sm',
+            {{ ui.acao(url_for('broker.instance_deactivate', iid=i.id), _('account.disable'), tamanho='sm',
                        confirmar=_('instances.deactivate_confirm', name=i.name)) }}
           {% elif i.state in ('desativada', 'falhou') %}
             <details>
               <summary class="btn btn--danger btn--sm">{{ _('instances.remove') }}</summary>
-              <form method="post" action="{{ url_for('instance_remove', iid=i.id) }}">
+              <form method="post" action="{{ url_for('broker.instance_remove', iid=i.id) }}">
                 <input type="hidden" name="csrf" value="{{ csrf_token() }}">
                 <label>{{ _('instances.type_name_to_confirm') }}
                   <input name="confirmation" placeholder="{{ i.name }}" autocomplete="off" spellcheck="false" required>

@@ -21,11 +21,11 @@
         <td class="muted small nowrap">{{ t.last_run[:16] | replace('T', ' ') or _('schedules.never') }}</td>
         <td class="acoes">
           {% if is_admin %}
-            {{ ui.acao(url_for('schedule_run', aid=t.id), _('schedules.run_now'), variante='ghost',
+            {{ ui.acao(url_for('schedules.run', aid=t.id), _('schedules.run_now'), variante='ghost',
                        tamanho='sm', titulo=_('schedules.run_now_help')) }}
-            {{ ui.acao(url_for('schedule_toggle', aid=t.id),
+            {{ ui.acao(url_for('schedules.toggle', aid=t.id),
                        _('schedules.turn_on') if not t.enabled else _('schedules.turn_off'), tamanho='sm') }}
-            {{ ui.acao(url_for('schedule_delete', aid=t.id), _('schedules.delete'), variante='danger',
+            {{ ui.acao(url_for('schedules.delete', aid=t.id), _('schedules.delete'), variante='danger',
                        tamanho='sm',
                        confirmar=_('schedules.delete_confirm', task=job_labels.get(t.action, t.action) ~ ' ' ~ _(label(t)))) }}
           {% else %}
@@ -51,7 +51,7 @@
 {% if is_admin %}
 <div class="card">
   <h2>{{ _('schedules.new_task') }}</h2>
-  <form method="post" action="{{ url_for('schedule_new', sid=server.id) }}">
+  <form method="post" action="{{ url_for('schedules.new', sid=server.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <div class="row">
       <label>{{ _('schedules.what_to_do') }}

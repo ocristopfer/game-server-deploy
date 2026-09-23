@@ -24,7 +24,7 @@
   <meta name="robots" content="noindex, nofollow">
 
   {# --- aplicativo instalado --- #}
-  <link rel="manifest" href="{{ url_for('manifest') }}">
+  <link rel="manifest" href="{{ url_for('pwa.manifest') }}">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -43,7 +43,7 @@
   <link rel="stylesheet" href="{{ static_url('css/components.css') }}">
   <link rel="stylesheet" href="{{ static_url('css/pages.css') }}">
 </head>
-<body class="{{ 'tem-tabbar' if current_user }}" data-sw="{{ url_for('service_worker') }}">
+<body class="{{ 'tem-tabbar' if current_user }}" data-sw="{{ url_for('pwa.service_worker') }}">
 
 {% if current_user %}
 {# O conteudo da barra vive num miolo com a MESMA largura e o MESMO recuo do corpo da pagina: em
@@ -51,7 +51,7 @@
    enquanto o resto da tela e uma coluna no meio. #}
 <header class="appbar">
  <div class="appbar__miolo">
-  <a class="appbar__marca" href="{{ url_for('dashboard') }}">
+  <a class="appbar__marca" href="{{ url_for('dashboard.index') }}">
     <span class="logo" aria-hidden="true">🎮</span>
     <span class="appbar__nome">{{ _('app.name') }}</span>
   </a>
@@ -81,7 +81,7 @@
       </a>
     {% endfor %}
     <hr class="menu__sep">
-    {{ ui.menu_acao(url_for('logout'), _('nav.logout'), icone='🚪') }}
+    {{ ui.menu_acao(url_for('auth.logout'), _('nav.logout'), icone='🚪') }}
   {% endcall %}
 
   {# Desktop: o menu da pessoa, com o nome no botao (quem esta logado e o que ela
@@ -95,7 +95,7 @@
       </a>
     {% endfor %}
     <hr class="menu__sep">
-    {{ ui.menu_acao(url_for('logout'), _('nav.logout'), icone='🚪') }}
+    {{ ui.menu_acao(url_for('auth.logout'), _('nav.logout'), icone='🚪') }}
   {% endcall %}
  </div>
 </header>

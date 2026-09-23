@@ -25,7 +25,7 @@
     <div><dt>{{ _('files.configuration') }}</dt>
       <dd>
         {% for arquivo in server.config_files.splitlines() %}
-        <a href="{{ url_for('config_quick', sid=server.id, file=arquivo) }}"
+        <a href="{{ url_for('config_quick.index', sid=server.id, file=arquivo) }}"
            title="{{ arquivo }}">{{ arquivo.rsplit('/', 1)[-1] }}</a>{{ ", " if not loop.last }}
         {% endfor %}
       </dd>
@@ -34,7 +34,7 @@
     <div><dt>{{ _('server_detail.config_folder') }}</dt>
       <dd>
         {% if is_admin %}
-          <a href="{{ url_for('files', sid=server.id, path=server.config_path) }}">{{ server.config_path }}</a>
+          <a href="{{ url_for('files.index', sid=server.id, path=server.config_path) }}">{{ server.config_path }}</a>
         {% else %}{{ server.config_path }}{% endif %}
       </dd>
     </div>
@@ -56,7 +56,7 @@
   </div>
 </div>
 
-<div class="card" data-jogadores-servidor="{{ url_for('api_server_players', sid=server.id) }}">
+<div class="card" data-jogadores-servidor="{{ url_for('players.api_list', sid=server.id) }}">
   <div class="card__head">
     <h2>{{ _('charts.players') }}</h2>
     <div class="cluster">
@@ -68,7 +68,7 @@
         {%- endif -%}
       </span>
       {% if is_admin %}
-        {{ ui.botao(_('server_detail.configure'), href=url_for('players_setup', sid=server.id),
+        {{ ui.botao(_('server_detail.configure'), href=url_for('players.setup', sid=server.id),
                     variante='ghost', tamanho='sm', icone='🎚',
                     titulo=_('server_detail.how_counting_works')) }}
       {% endif %}
@@ -79,7 +79,7 @@
     {% if is_admin %}
     <p class="muted">
       {{ _('server_detail.count_off') }}
-      <a href="{{ url_for('players_setup', sid=server.id) }}">{{ _('server_detail.wizard') }}</a>: ele testa as
+      <a href="{{ url_for('players.setup', sid=server.id) }}">{{ _('server_detail.wizard') }}</a>: ele testa as
       portas UDP e TCP que o jogo abriu, monta a chamada da API HTTP quando existe uma e,
       se nada responder, ajuda a contar pelo log.
     </p>
@@ -92,7 +92,7 @@
     <p class="muted">Nao consegui consultar: {{ players.error }}</p>
     <p class="muted small">
       {% if is_admin %}
-      Confira no <a href="{{ url_for('players_setup', sid=server.id) }}">{{ _('server_detail.wizard') }}</a> se a
+      Confira no <a href="{{ url_for('players.setup', sid=server.id) }}">{{ _('server_detail.wizard') }}</a> se a
       porta/URL esta certa e se o servidor esta no ar.
       {% else %}
       Confira se o servidor esta no ar; se estiver, avise um administrador do painel.
@@ -120,7 +120,7 @@
           <td class="acoes">
             {% if p.id %}
               {% for a in acoes if a != 'announce' %}
-                {{ ui.acao(url_for('player_action', sid=server.id),
+                {{ ui.acao(url_for('players.action', sid=server.id),
                            rotulo_de_acao.get(a, a),
                            variante='danger' if a == 'ban' else 'ghost',
                            tamanho='sm',
@@ -148,13 +148,13 @@
       o log deste jogo avisa que alguem saiu sem dizer quem, entao o painel mostra os
       ultimos a entrar. Se a linha de saida do seu servidor tiver o nome, ponha
       <code>(?P&lt;name&gt;...)</code> nela{% if is_admin %} no
-      <a href="{{ url_for('players_setup', sid=server.id, aba='log') }}">{{ _('server_detail.wizard') }}</a>{% endif %}
+      <a href="{{ url_for('players.setup', sid=server.id, aba='log') }}">{{ _('server_detail.wizard') }}</a>{% endif %}
       e a lista passa a ser exata.
     </p>
     {% endif %}
 
     {% if 'announce' in acoes %}
-    <form method="post" action="{{ url_for('player_action', sid=server.id) }}" class="filebar">
+    <form method="post" action="{{ url_for('players.action', sid=server.id) }}" class="filebar">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="acao" value="announce">
       <span class="path-form">
@@ -171,7 +171,7 @@
   {% endif %}
 </div>
 
-<div class="card" data-medidores-servidor="{{ url_for('api_server_metrics', sid=server.id) }}">
+<div class="card" data-medidores-servidor="{{ url_for('servers.api_metrics', sid=server.id) }}">
   <div class="card__head">
     <h2>{{ _('server_detail.resources') }}</h2>
     <span class="muted small" id="recursos-info">
@@ -234,7 +234,7 @@
         <td>{{ job_label(j.action) }}{% if j.command %} <code class="trunc">{{ j.command }}</code>{% endif %}</td>
         <td class="muted">{{ j.username }}</td>
         <td><span class="badge {{ {'ok':'on','error':'off','running':'cold'}[j.status] }}">{{ j.status }}</span></td>
-        <td><a href="{{ url_for('job_detail', jid=j.id) }}">{{ _('console.output') }}</a></td>
+        <td><a href="{{ url_for('jobs.detail', jid=j.id) }}">{{ _('console.output') }}</a></td>
       </tr>
       {% endfor %}
     </tbody>
@@ -251,7 +251,7 @@
       <span class="badge cold" id="follow-state" hidden>{{ _('server_detail.live') }}</span>
       {% if not log_error %}
       <button class="btn btn--sm" type="button" id="follow-toggle"
-              data-log-feed-url="{{ url_for('api_logs', sid=server.id) }}"
+              data-log-feed-url="{{ url_for('servers.api_logs', sid=server.id) }}"
               data-cursor="{{ log_cursor }}" data-lines="{{ lines }}"
               data-server="{{ server.id }}">{{ _('server_detail.follow_log') }}</button>
       {% endif %}

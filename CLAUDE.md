@@ -8,9 +8,10 @@ faz, e como usar, esta no [README.md](README.md) — nao duplique conteudo entre
 > `docs/architecture-proposal.md`): o codigo saiu de `admin/`/`broker/` para
 > `src/gamepanel/`/`src/gamebroker/` (Fase 3), os identificadores estao **em ingles** nos
 > dois pacotes, e os dois grupos de mudanca de contrato ja foram: a API do broker (rotas,
-> corpo, resposta, cabecalho) e as colunas do banco, cada um com a sua migration. Falta a
-> divisao de `app.py` em `blueprints/` — ele continua um arquivo so, com
-> `services/`/`runtime/`/`tasks/` ja extraidos.
+> corpo, resposta, cabecalho) e as colunas do banco, cada um com a sua migration. A
+> divisao de `app.py` em `services/`/`runtime/`/`tasks/`/`blueprints/` tambem ja foi: as
+> 78 rotas moram em `blueprints/`, um arquivo por grupo de tela, e o `app.py` ficou com a
+> montagem (banco, sessao, decoradores, tabelas).
 
 O painel roda com poder de **root nos containers de jogo**. Isso muda o peso de tudo:
 um botao errado para um servidor de verdade, um cache errado mostra um servidor caido
@@ -31,7 +32,7 @@ docker compose restart panel          # depois de mexer em app.py/navigation.py
 As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_gameconf.py`,
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
-`test_contrato_template.py`, `test_schema.py` e mais uma duzia) sao **pytest** — 847
+`test_contrato_template.py`, `test_schema.py` e mais uma duzia) sao **pytest** — 861
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`banco`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -81,7 +82,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 321 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 859 passam iguais nos dois lugares.
 
 Templates e estaticos entram por bind mount: recarregar a pagina basta. `app.py` e
 `navigation.py` sao recarregados pelo `--reload` do gunicorn, mas **rota nova ou mudanca
@@ -119,7 +120,8 @@ games/                   catalogo curado de jogos (um *.env por jogo), lido pelo
 lib/                     fases de instalacao de jogo (bash), compartilhadas entre o host Proxmox e o CT do broker
 src/
   gamepanel/             o painel (era admin/)
-    app.py               rotas, SSH, banco, alertas, agendador  (arquivo grande; ver abaixo)
+    app.py               a montagem: banco, sessao, decoradores, tabelas, SSH, alertas, agendador
+    blueprints/          a camada HTTP, um arquivo por grupo de tela (ver a secao propria)
     wsgi.py              entry point do gunicorn (`gamepanel.wsgi:app`)
     cli.py               bootstrap: --create-user, --reset-2fa, --register-server (o rodape de app.py chama o main() daqui)
     navigation.py        mapa da interface: navegacao e acoes   (puro, sem Flask; era ui.py)
@@ -163,8 +165,29 @@ tools/
 ```
 
 `src/gamepanel/games/gamefields.py` ainda e um arquivo so (nao dividido em adapter por
-jogo) e `app.py` ainda nao tem `services/`/`blueprints/`/`runtime/` — essa divisao e Fase
-4, ainda nao feita (ver `docs/architecture-proposal.md`).
+jogo) — o que falta da Fase 4 (ver `docs/architecture-proposal.md`).
+
+### As rotas moram em `blueprints/`, e chamam o `app.py` pelo MODULO
+
+Cada arquivo de `src/gamepanel/blueprints/` e um grupo de tela (`servers.py`, `files.py`,
+`alerts.py`, ...) e so faz trabalho de HTTP: ler o pedido, chamar quem decide, escolher o
+template. O `app.py` registra todos no rodape, por `register_all(app)` — no FIM do
+arquivo, quando tudo o que eles chamam ja existe.
+
+- **Todo acesso ao `app.py` e `panel.X`**, nunca `from gamepanel.app import X`. Os testes
+  trocam funcao por falsa com `monkeypatch.setattr(panel, "server_status", ...)`, que
+  substitui o nome NO MODULO: um import direto copiaria a referencia na hora do import e
+  a troca deixaria de valer **em silencio** — os testes passariam sem testar nada.
+- **O que e da stdlib o blueprint importa sozinho** (`import time`, `import sqlite3`).
+  `panel.time` funciona, mas so alonga e esconde de quem le de onde o nome vem.
+- **Estado de modulo com `global` fica no `app.py`.** Um `global _reaper_started` dentro
+  de um blueprint escreveria na copia do modulo DELE, e o painel ligaria uma thread nova
+  a cada aba aberta. Por isso `_ensure_reaper()` mora no `app.py` e o blueprint so chama.
+- **O endpoint e `grupo.view`**, entao repetir o grupo no nome da funcao so alonga:
+  `servers.detail`, nao `servers.server_detail`. Em `url_for`, em `endpoint=` e nas
+  tabelas de `navigation.py` o nome e sempre o completo, com ponto.
+- **Blueprint novo** = um arquivo aqui e um nome nas duas listas de `register_all`. Se a
+  rota precisa pular o segundo fator, tambem uma linha em `app.ENDPOINTS_SEM_2FA`.
 
 ### A regra que sustenta o resto: uma lista, um lugar
 
@@ -282,10 +305,10 @@ separado. Hoje as suites dividem um processo (pytest as importa todas juntas), e
 sao o `monkeypatch` e a fixture `banco` (tabelas limpas a cada teste, em
 `tests/gamepanel/conftest.py`) que garantem o isolamento.
 
-Essa troca **so funciona porque tudo mora em `app.py`**. Se um dia esse arquivo for
-dividido em pacote, as funcoes precisam ser chamadas pelo modulo
-(`metrics.server_metrics(...)`, nao `from .metrics import server_metrics`), senao a
-troca no teste deixa de valer em silencio e os testes passam sem testar nada.
+Essa troca **so alcanca quem chama pelo modulo**. E por isso que os blueprints fazem
+`panel.server_status(...)` e nunca `from gamepanel.app import server_status`: o import
+direto copia a referencia na hora do import, a troca do teste deixa de valer em silencio
+e os testes passam sem testar nada. Vale para qualquer arquivo novo fora do `app.py`.
 
 ### `GAMEPANEL_DB` no `conftest.py` e atribuicao direta, nunca `setdefault`
 

@@ -6,7 +6,7 @@
   <h1>{{ code }}</h1>
   <p class="muted">{{ message }}</p>
   <div class="form-actions">
-    {{ ui.botao(_('error.back_to_panel'), href=url_for('dashboard'), variante='primary', bloco=true) }}
+    {{ ui.botao(_('error.back_to_panel'), href=url_for('dashboard.index'), variante='primary', bloco=true) }}
   </div>
 </div>
 {% endblock %}

@@ -70,7 +70,7 @@
    sempre a mesma fatia de tempo, entao os numeros nunca se contradizem. #}
 <nav class="tabs" aria-label="{{ _('charts.period') }}">
   {% for h, rotulo in faixas %}
-    <a class="tabs__item" href="{{ url_for('charts', sid=server.id, h=h) }}"
+    <a class="tabs__item" href="{{ url_for('charts.index', sid=server.id, h=h) }}"
        {% if h == horas %}aria-current="page"{% endif %}>{{ rotulo }}</a>
   {% endfor %}
 </nav>

@@ -12,7 +12,6 @@ Dependencias: python3-flask (apt). Hash de senha e sessao usam apenas a stdlib.
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
@@ -60,8 +59,6 @@ from gamepanel import navigation as ui
 from gamepanel.blueprints import register_all
 from gamepanel.games import config_format as gameconf
 from gamepanel.games import gamefields
-from gamepanel.games.catalog import search as busca_de_jogos
-from gamepanel.games.catalog.templates import TEMPLATES as MODELOS_DE_JOGO
 from gamepanel.integrations import broker_client, webhook_client
 from gamepanel.persistence import schema
 from gamepanel.runtime import a2s, http_probe, log_probe, port_probe
@@ -75,7 +72,7 @@ from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import ssh as ssh_transport
 from gamepanel.runtime import terminal as term_runtime
-from gamepanel.security import qr, totp
+from gamepanel.security import totp
 from gamepanel.services import (
     alert_service,
     broker_service,
@@ -103,7 +100,6 @@ from flask import (
     render_template,
     request,
     session,
-    stream_with_context,
     url_for,
 )
 
@@ -513,7 +509,7 @@ def login_required(view):
             # Conta apagada com a sessao ainda aberta: o cookie continua assinado e
             # valido, entao sem conferir o banco ela seguiria funcionando ate expirar.
             session.clear()
-            return redirect(url_for("login", next=request.path))
+            return redirect(url_for("auth.login", next=request.path))
         return view(*args, **kwargs)
 
     return wrapper
@@ -546,7 +542,7 @@ def csrf_token() -> str:
 # Este hook tem de vir ANTES do _check_csrf no arquivo: a ordem de registro e a ordem de
 # execucao, e e o _check_csrf quem toca em request.form primeiro — o teto e conferido na
 # hora em que o corpo e lido, entao ajustar so la dentro da view chegaria tarde (413).
-BIG_BODY_ENDPOINTS = {"files_upload"}
+BIG_BODY_ENDPOINTS = {"files.upload"}
 
 
 @app.before_request
@@ -569,8 +565,9 @@ def _check_csrf():
 
 # Com GAMEPANEL_REQUIRE_2FA=1 quem ainda nao ativou o segundo fator so alcanca isto.
 ENDPOINTS_SEM_2FA = frozenset({
-    "login", "login_2fa", "logout", "account_2fa", "health", "static",
-    "manifest", "service_worker", "offline",
+    "auth.login", "auth.login_2fa", "auth.logout", "account.two_factor",
+    "health.health", "static",
+    "pwa.manifest", "pwa.service_worker", "pwa.offline",
 })
 
 
@@ -584,7 +581,7 @@ def _exige_segundo_fator():
     if request.path.startswith("/api/"):
         return jsonify({"error": "ative a verificacao em duas etapas em Conta"}), 403
     flash(translate("flash.two_factor_required_here"), "error")
-    return redirect(url_for("account_2fa"))
+    return redirect(url_for("account.two_factor"))
 
 
 def static_url(name: str) -> str:
@@ -642,7 +639,6 @@ def translate(key: str, **campos: object) -> str:
     """O `_()` das telas e das mensagens: a frase daquela chave, no idioma
     deste pedido."""
     return i18n.translate(key, current_language(), **campos)
-
 
 
 def error_text(exc: BaseException) -> str:
@@ -1951,39 +1947,6 @@ def safe_target(raw: str) -> str:
     return target
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if session.get("uid"):
-        return redirect(url_for("dashboard"))
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        key = f"{request.remote_addr}|{username.lower()}"
-        remaining = _lockout_remaining(key)
-        if remaining:
-            flash(translate("flash.too_many_tries", n=remaining), "error")
-            return render_template(TPL_LOGIN), 429
-        row = db().execute(
-            "SELECT * FROM users WHERE username = ?", (username,)
-        ).fetchone()
-        if row and verify_password(password, row["password_hash"]):
-            _clear_fails(key)
-            proximo = safe_target(request.args.get("next", ""))
-            if row["totp_enabled"]:
-                # Senha certa NAO abre a sessao: so guarda "esta pessoa passou da senha, falta o
-                # codigo". Sem `uid` na sessao, nenhuma rota do painel a reconhece como logada.
-                session.clear()
-                session["pre2fa"] = {"uid": row["id"], "ate": time.time() + PRE_2FA_SEGUNDOS,
-                                     "proximo": proximo}
-                csrf_token()
-                return redirect(url_for("login_2fa"))
-            return _abre_sessao(row, proximo)
-        _record_fail(key)
-        flash(translate("flash.bad_credentials"), "error")
-        return render_template(TPL_LOGIN), 401
-    return render_template(TPL_LOGIN)
-
-
 # Tempo para digitar o codigo depois de acertar a senha.
 PRE_2FA_SEGUNDOS = 300
 # O chute de 6 digitos tem 3 numeros validos em 10^6: por isso a trava do codigo e por USUARIO
@@ -1998,7 +1961,7 @@ def _abre_sessao(row: sqlite3.Row, proximo: str = ""):
     session["username"] = row["username"]
     session.permanent = True
     csrf_token()
-    return redirect(proximo or url_for("dashboard"))
+    return redirect(proximo or url_for("dashboard.index"))
 
 
 def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
@@ -2027,87 +1990,6 @@ def _confere_segundo_fator(row: sqlite3.Row, digitado: str) -> bool:
             (json.dumps(sobra), row["id"], row["totp_recovery"]),
         ).rowcount
     return gasto == 1
-
-
-@app.route("/login/2fa", methods=["GET", "POST"])
-def login_2fa():
-    if session.get("uid"):
-        return redirect(url_for("dashboard"))
-    pendente = session.get("pre2fa") or {}
-    row = None
-    if pendente and pendente.get("ate", 0) > time.time():
-        row = db().execute("SELECT * FROM users WHERE id = ?", (pendente.get("uid"),)).fetchone()
-    if row is None or not row["totp_enabled"]:
-        session.clear()
-        flash(translate("flash.verification_expired"), "error")
-        return redirect(url_for("login"))
-    if request.method == "POST":
-        key = f"2fa|{row['username'].lower()}"
-        restante = _lockout_remaining(key, LOCKOUT_2FA_TENTATIVAS, LOCKOUT_2FA_JANELA)
-        if restante:
-            flash(translate("flash.too_many_tries", n=restante), "error")
-            return render_template("login_2fa.html"), 429
-        if _confere_segundo_fator(row, request.form.get("codigo", "")):
-            _clear_fails(key)
-            return _abre_sessao(row, pendente.get("proximo", ""))
-        _record_fail(key)
-        flash(translate("flash.code_invalid_or_used"), "error")
-        return render_template("login_2fa.html"), 401
-    return render_template("login_2fa.html")
-
-
-@app.post("/logout")
-@login_required
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-
-@app.get("/")
-@login_required
-def dashboard():
-    servers = db().execute(SQL_ALL_SERVERS).fetchall()
-    return render_template(
-        "dashboard.html", servers=servers, status=all_status(servers)
-    )
-
-
-@app.get("/api/v1/status")
-@login_required
-def api_status():
-    servers = db().execute(SQL_ALL_SERVERS).fetchall()
-    return jsonify({str(sid): state for sid, state in all_status(servers).items()})
-
-
-@app.get("/api/v1/resources")
-@login_required
-def api_metrics():
-    """Medidores de todos os servidores — alimenta os mini-graficos do painel.
-
-    O caminho e "/api/resources", e nao "/api/metrics", de proposito: "/api/metrics" e
-    uma regra corriqueira das listas de filtro de rastreadores (uBlock Origin, AdGuard,
-    DNS filtrado). Com uma delas ligada, o navegador nem chega a mandar o pedido — ele
-    devolve um pixel transparente com status 499 — e o painel ficava eternamente em
-    "medindo recursos...", sem erro visivel em lugar nenhum. Nome em portugues tambem
-    e o que o resto das rotas do painel usa (/historico, /alertas, /graficos)."""
-    servers = db().execute(SQL_ALL_SERVERS).fetchall()
-    return jsonify({str(sid): data for sid, data in all_metrics(servers).items()})
-
-
-@app.get("/api/v1/players")
-@login_required
-def api_players():
-    servers = db().execute(SQL_ALL_SERVERS).fetchall()
-    return jsonify({str(sid): data for sid, data in all_players(servers).items()})
-
-
-@app.get("/api/v1/servers/<int:sid>/players")
-@login_required
-def api_server_players(sid: int):
-    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
-    if not server:
-        abort(404)
-    return jsonify(server_players(server))
 
 
 def _port_tab(server: Servidor) -> dict:
@@ -2189,47 +2071,12 @@ def _aba_log(server: Servidor, join_re: str, leave_re: str, log_path: str,
     return output
 
 
-@app.route("/servers/<int:sid>/players/discover", methods=["GET", "POST"])
-@admin_required
-def players_setup(sid: int):
-    """Assistente: acha a porta/API que responde e ajuda a achar o padrao no log."""
-    server = _server_or_404(sid)
-    # Os campos das tres abas precisam sobreviver ao botao "Testar", e entre eles esta a
-    # senha de admin do jogo (http_auth, http_login_body). Por isso o formulario e POST:
-    # na URL a senha ficaria no historico do navegador, no cabecalho Referer e no log de
-    # qualquer proxy na frente do painel. O GET continua servindo a navegacao entre abas,
-    # que so carrega o nome da aba.
-    origem = request.form if request.method == "POST" else request.args
-    aba = origem.get("aba", "porta")
-    testar = bool(origem.get("testar"))
-
-    http = {campo: origem.get(campo, server[campo]) for campo in HTTP_FIELDS}
-    join_re = origem.get("join_re", server["join_re"])
-    leave_re = origem.get("leave_re", server["leave_re"])
-    log_path = origem.get("log_path", server["log_path"])
-
-    data = {"portas": [], "aviso": "", "achados": [], "mudas": [], "amostras": [],
-             "tem_api": False, "udp_do_jogo": 0, "udp_mudas": False,
-             "teste": None, "teste_http": None, "erro_log": "", "erro_http": ""}
-    if aba == "http":
-        data.update(_aba_http(server, http, testar))
-    elif aba == "log":
-        data.update(_aba_log(server, join_re, leave_re, log_path, testar))
-    else:
-        data.update(_port_tab(server))
-
-    return render_template(
-        "players_setup.html", server=server, aba=aba,
-        http=http, join_re=join_re, leave_re=leave_re, log_path=log_path, **data,
-    )
-
-
 def _enable_a2s_count(conn, sid: int):
     """Consulta UDP direta (A2S). Devolve um redirect quando o formulario esta errado."""
     porta = request.form.get("query_port", "0")
     if not porta.isdigit() or not 1 <= int(porta) <= 65535:
         flash(translate("flash.bad_port"), "error")
-        return redirect(url_for("players_setup", sid=sid))
+        return redirect(url_for("players.setup", sid=sid))
     with conn:
         conn.execute(
             "UPDATE servers SET query_port = ?, player_source = 'a2s' WHERE id = ?",
@@ -2245,7 +2092,7 @@ def _enable_http_count(conn, sid: int):
     campos = _http_fields(request.form, errors)
     if errors or not campos["http_url"]:
         flash(translate(errors[0]) if errors else translate("flash.need_api_url"), "error")
-        return redirect(url_for("players_setup", sid=sid, aba="http"))
+        return redirect(url_for("players.setup", sid=sid, aba="http"))
     with conn:
         conn.execute(
             "UPDATE servers SET http_url=?, http_auth=?, http_body=?,"
@@ -2271,7 +2118,7 @@ def _enable_log_count(conn, sid: int):
     caminho = _log_path(request.form.get("log_path"), errors)
     if errors or not entrada:
         flash(translate(errors[0]) if errors else translate("flash.need_join_pattern"), "error")
-        return redirect(url_for("players_setup", sid=sid, aba="log"))
+        return redirect(url_for("players.setup", sid=sid, aba="log"))
     with conn:
         conn.execute(
             "UPDATE servers SET join_re = ?, leave_re = ?, log_path = ?,"
@@ -2289,71 +2136,6 @@ FONTES_DE_CONTAGEM = {
     "http": _enable_http_count,
     "log": _enable_log_count,
 }
-
-
-@app.post("/servers/<int:sid>/players/use")
-@admin_required
-def players_use(sid: int):
-    """Grava a forma de contagem escolhida no assistente."""
-    _server_or_404(sid)  # so pelo 404: daqui para baixo os UPDATE usam o proprio sid
-    liga = FONTES_DE_CONTAGEM.get(request.form.get("player_source", ""))
-    if liga is None:
-        flash(translate("flash.bad_choice"), "error")
-        return redirect(url_for("players_setup", sid=sid))
-
-    recusa = liga(db(), sid)
-    if recusa is not None:
-        return recusa
-
-    invalidate_players(sid)
-    return redirect(url_for("server_detail", sid=sid))
-
-
-@app.post("/servers/<int:sid>/players/action")
-@login_required
-def player_action(sid: int):
-    """Expulsa, bane ou avisa, pela API do proprio jogo.
-
-    E operacao, nao administracao: moderar quem esta jogando nao da acesso ao container,
-    entao o operador pode — do mesmo jeito que ele ja reinicia o servidor.
-    """
-    server = _server_or_404(sid)
-    action = (request.form.get("acao", "") or "").strip()
-    player = (request.form.get("jogador", "") or "").strip()[:200]
-    name = (request.form.get("nome", "") or "").strip()[:100]
-    message = (request.form.get("mensagem", "") or "").strip()[:PLAYER_MSG_MAX]
-    quem = name or player or "todos"
-    registro = f"{label_for_db(PLAYER_ACTION_LABELS.get(action, action))}: {quem}"
-    if message:
-        registro += f" ({message})"
-    voltar = url_for("server_detail", sid=sid)
-
-    try:
-        label = translate(run_player_action(server, action, player, message))
-    except (QueryError, RemoteError) as exc:
-        log_job("player-action", server, session.get("username", "?"),
-                command=registro, output=str(exc), status="error")
-        flash(translate("flash.could_not", reason=exc), "error")
-        return redirect(voltar)
-
-    log_job("player-action", server, session.get("username", "?"),
-            command=registro, output="a API aceitou o pedido")
-    # A contagem fica alguns segundos em cache e ainda tem quem acabou de sair.
-    invalidate_players(sid)
-    flash(translate("flash.player_action_done", label=label, who=quem)
-          if action != "announce"
-          else translate("flash.notice_sent", message=message), "ok")
-    return redirect(voltar)
-
-
-@app.get("/api/v1/servers/<int:sid>/resources")
-@login_required
-def api_server_metrics(sid: int):
-    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
-    if not server:
-        abort(404)
-    data = server_metrics(server)
-    return jsonify(data), (502 if data.get("error") else 200)
 
 
 # Validacao do formulario em gamepanel.services.server_service. Os limites ficam aqui
@@ -2408,116 +2190,6 @@ SQL_UPDATE_SERVER = (
 )
 
 
-@app.route("/servers/new", methods=["GET", "POST"])
-@admin_required
-def server_new():
-    data: dict = dict.fromkeys(SERVER_FIELDS, "")
-    data.update({"ssh_user": "root", "ssh_port": 22, "query_port": 0})
-    if request.method == "POST":
-        data, errors = _form_server(request.form)
-        if not errors:
-            try:
-                conn = db()
-                with conn:
-                    conn.execute(
-                        SQL_INSERT_SERVER,
-                        (*[data[c] for c in SERVER_FIELDS], now_iso()),
-                    )
-                flash(translate("flash.server_added", name=data["name"]), "ok")
-                return redirect(url_for("dashboard"))
-            except sqlite3.IntegrityError:
-                errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
-        for err in errors:
-            flash(translate(err), "error")
-    return render_template("server_form.html", data=data, mode="new")
-
-
-@app.route("/servers/<int:sid>/edit", methods=["GET", "POST"])
-@admin_required
-def server_edit(sid: int):
-    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
-    if not server:
-        abort(404)
-    data = dict(server)
-    if request.method == "POST":
-        data, errors = _form_server(request.form)
-        if not errors:
-            try:
-                conn = db()
-                with conn:
-                    conn.execute(
-                        SQL_UPDATE_SERVER, (*[data[c] for c in SERVER_FIELDS], sid)
-                    )
-                invalidate_status(sid)
-                # A contagem fica em cache por alguns segundos: trocar a fonte pelo
-                # formulario tem que valer na hora, como vale pelo assistente.
-                invalidate_players(sid)
-                flash(translate("flash.server_updated"), "ok")
-                return redirect(url_for("server_detail", sid=sid))
-            except sqlite3.IntegrityError:
-                errors.append(f"Ja existe um servidor cadastrado em {data['host']}.")
-        for err in errors:
-            flash(translate(err), "error")
-    # `server` (a linha do banco, nao o formulario) vai junto: e dele que a barra de
-    # navegacao do servidor tira o id e o nome. Sem isso esta tela seria a unica do
-    # servidor sem a barra — e era exatamente assim que a navegacao ia divergindo.
-    return render_template("server_form.html", data=data, mode="edit", sid=sid,
-                           server=server)
-
-
-@app.post("/servers/<int:sid>/delete")
-@admin_required
-def server_delete(sid: int):
-    conn = db()
-    with conn:
-        conn.execute("DELETE FROM servers WHERE id = ?", (sid,))
-    invalidate_status(sid)
-    flash(translate("flash.server_removed"), "ok")
-    return redirect(url_for("dashboard"))
-
-
-@app.get("/servers/<int:sid>")
-@login_required
-def server_detail(sid: int):
-    conn = db()
-    server = conn.execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
-    if not server:
-        abort(404)
-    jobs = server_jobs(conn, sid, 15)
-    lines = _log_lines_arg(request.args.get("lines"))
-
-    # Status, medidores, jogadores e log sao quatro idas de SSH independentes. Em serie a
-    # tela custava a soma das quatro — e com o container fora do ar, a soma dos quatro
-    # timeouts antes de mostrar "inacessivel".
-    lido = em_paralelo({
-        "status": lambda: server_status(server),
-        "metrics": lambda: server_metrics(server),
-        "players": lambda: server_players(server),
-        "logs": lambda: read_logs(server, lines),
-    })
-    # read_logs devolve (texto, cursor) — o par inteiro vem no lugar do "valor".
-    par_log, log_error = lido["logs"]
-    logs, log_cursor = par_log if par_log else ("", "")
-
-    return render_template(
-        "server_detail.html",
-        server=server,
-        status=lido["status"][0] or {"reachable": False, "service": "desconhecido",
-                                     "error": lido["status"][1]},
-        metrics=lido["metrics"][0] or {"error": lido["metrics"][1]},
-        # Mesma forma que o server_players devolve, para a tela nao precisar saber que
-        # houve erro na leitura em vez de erro na contagem.
-        players=lido["players"][0] or {"configured": True, "error": lido["players"][1],
-                                       "players": None, "list": [], "source": ""},
-        jobs=jobs,
-        logs=logs,
-        log_cursor=log_cursor,
-        log_error=log_error,
-        lines=lines,
-        acoes=ACTIONS,
-    )
-
-
 # O cursor e uma chave opaca do journald ("s=...;i=...;b=..."): validada aqui porque
 # volta do navegador e entra num comando remoto.
 CURSOR_RE = re.compile(r"^[A-Za-z0-9=;:._-]{1,400}$")
@@ -2557,91 +2229,7 @@ def read_logs(server: Servidor, lines: int, cursor: str = "") -> tuple[str, str]
     return body, new_cursor
 
 
-@app.get("/api/v1/servers/<int:sid>/logs")
-@login_required
-def api_logs(sid: int):
-    """Alimenta o "seguir log" da tela de detalhe."""
-    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
-    if not server:
-        abort(404)
-    # Cursor recusado (adulterado, ou de um journalctl que nao os emite) vira leitura
-    # completa: sem isso o cliente anexaria o log inteiro por cima do que ja esta na tela.
-    cursor = request.args.get("cursor", "")
-    if not CURSOR_RE.match(cursor or ""):
-        cursor = ""
-    try:
-        text, new_cursor = read_logs(server, _log_lines_arg(request.args.get("lines")), cursor)
-    except RemoteError as exc:
-        return jsonify({"error": str(exc)}), 502
-    return jsonify({
-        "text": text,
-        "cursor": new_cursor,
-        # Sem cursor (primeira volta, ou journalctl antigo) o cliente troca o bloco
-        # inteiro; com cursor ele so anexa as linhas novas.
-        "append": bool(cursor and new_cursor),
-    })
-
-
-@app.post("/servers/<int:sid>/action/<action>")
-@login_required
-def server_action(sid: int, action: str):
-    if action not in ACTIONS:
-        abort(404)
-    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
-    if not server:
-        abort(404)
-    job_id = start_job(action, server, session.get("username", "?"))
-    invalidate_status(sid)
-    return redirect(url_for("job_detail", jid=job_id))
-
-
 # ------------------------------------------------------------------ console
-
-
-@app.route("/servers/<int:sid>/console", methods=["GET", "POST"])
-@admin_required
-def console(sid: int):
-    if not ALLOW_SHELL:
-        abort(403, "O console esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).")
-    conn = db()
-    server = conn.execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
-    if not server:
-        abort(404)
-
-    if request.method == "POST":
-        command = request.form.get("command", "").strip()
-        if not command:
-            flash(translate("flash.type_a_command"), "error")
-        elif len(command) > SHELL_MAX_LEN:
-            flash(translate("flash.command_too_long", n=SHELL_MAX_LEN), "error")
-        else:
-            # O comando inteiro vira UM argumento de 'bash -lc' no destino — o shell
-            # local do ssh nunca o interpreta, entao pipes e aspas chegam intactos.
-            job_id = start_job(
-                "shell",
-                server,
-                session.get("username", "?"),
-                remote_cmd=q("bash", "-lc", command),
-                command=command,
-                timeout=SHELL_TIMEOUT,
-            )
-            return redirect(url_for("console", sid=sid, job=job_id))
-
-    job = None
-    job_arg = request.args.get("job", "")
-    if job_arg.isdigit():
-        job = conn.execute(
-            "SELECT * FROM jobs WHERE id = ? AND server_id = ?", (int(job_arg), sid)
-        ).fetchone()
-    history = conn.execute(
-        "SELECT * FROM jobs WHERE server_id = ? AND action = 'shell'"
-        " ORDER BY id DESC LIMIT 20",
-        (sid,),
-    ).fetchall()
-    return render_template(
-        "console.html", server=server, job=job, history=history,
-        shell_timeout=SHELL_TIMEOUT,
-    )
 
 
 # ------------------------------------------------------- terminal interativo
@@ -2681,6 +2269,20 @@ def _reap_terms() -> None:
                     _terms.pop(term.id, None)
 
 
+def _ensure_reaper() -> None:
+    """Liga o coletor de sessoes ociosas na primeira vez que alguem abre um terminal.
+
+    A trava de "so uma vez" mora aqui, e nao no blueprint, porque `_reaper_started` e
+    `_terms_lock` sao do mesmo estado: um `global` do outro lado do pacote leria a copia
+    do modulo do blueprint e ligaria uma thread nova a cada aba aberta. Quem chama ja
+    esta com `_terms_lock` na mao.
+    """
+    global _reaper_started
+    if not _reaper_started:
+        threading.Thread(target=_reap_terms, daemon=True).start()
+        _reaper_started = True
+
+
 def _term_of_user(tid: str) -> TermSession:
     if not TERM_ID_RE.match(tid or ""):
         abort(404)
@@ -2698,119 +2300,6 @@ def _terminal_guard():
         abort(403, "O terminal esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).")
     if not HAVE_PTY:
         abort(503, "Terminal indisponivel: este sistema nao tem PTY.")
-
-
-@app.get("/servers/<int:sid>/terminal")
-@admin_required
-def terminal(sid: int):
-    _terminal_guard()
-    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
-    if not server:
-        abort(404)
-    return render_template(
-        "terminal.html", server=server, idle_timeout=TERM_IDLE_TIMEOUT
-    )
-
-
-@app.post("/api/v1/term/<int:sid>/open")
-@admin_required
-def api_term_open(sid: int):
-    global _reaper_started
-    _terminal_guard()
-    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
-    if not server:
-        abort(404)
-    body = request.get_json(silent=True) or {}
-    cols = max(20, min(400, int(body.get("cols") or 80)))
-    rows = max(5, min(150, int(body.get("rows") or 24)))
-
-    with _terms_lock:
-        # Uma aba esquecida nao pode impedir a proxima de abrir: derruba as mortas.
-        for dead in [t for t in _terms.values() if not t.alive]:
-            _terms.pop(dead.id, None)
-        if len(_terms) >= TERM_MAX_SESSIONS:
-            return jsonify({
-                "error": f"limite de {TERM_MAX_SESSIONS} terminais simultaneos atingido"
-            }), 429
-
-    try:
-        term = _open_term(dict(server), session["uid"], session.get("username", "?"), cols, rows)
-    except RemoteError as exc:
-        return jsonify({"error": str(exc)}), 502
-
-    with _terms_lock:
-        _terms[term.id] = term
-        if not _reaper_started:
-            threading.Thread(target=_reap_terms, daemon=True).start()
-            _reaper_started = True
-
-    log_job(
-        "terminal", server, session.get("username", "?"),
-        command=f"terminal interativo aberto ({cols}x{rows})",
-        output=f"sessao {term.id[:8]} em {server['ssh_user']}@{server['host']}",
-    )
-    return jsonify({"id": term.id, "offset": 0, "cols": cols, "rows": rows})
-
-
-@app.get("/api/v1/term/<tid>/read")
-@admin_required
-def api_term_read(tid: str):
-    _terminal_guard()
-    term = _term_of_user(tid)
-    try:
-        offset = max(0, int(request.args.get("offset", "0")))
-    except ValueError:
-        offset = 0
-    data, new_offset, lost = term.read(offset, TERM_POLL_WAIT)
-    return jsonify({
-        "data": base64.b64encode(data).decode("ascii"),
-        "offset": new_offset,
-        "lost": lost,
-        "alive": term.alive,
-        "exit_code": term.exit_code,
-    })
-
-
-@app.post("/api/v1/term/<tid>/keys")
-@admin_required
-def api_term_keys(tid: str):
-    _terminal_guard()
-    term = _term_of_user(tid)
-    body = request.get_json(silent=True) or {}
-    data = body.get("data", "")
-    if not isinstance(data, str) or len(data) > 64 * 1024:
-        abort(400, "entrada invalida")
-    try:
-        term.write(data.encode("utf-8"))
-    except RemoteError as exc:
-        return jsonify({"error": str(exc), "alive": False}), 409
-    return jsonify({"ok": True, "alive": term.alive})
-
-
-@app.post("/api/v1/term/<tid>/resize")
-@admin_required
-def api_term_resize(tid: str):
-    _terminal_guard()
-    term = _term_of_user(tid)
-    body = request.get_json(silent=True) or {}
-    try:
-        cols = max(20, min(400, int(body.get("cols", 80))))
-        rows = max(5, min(150, int(body.get("rows", 24))))
-    except (TypeError, ValueError):
-        abort(400, "tamanho invalido")
-    term.resize(cols, rows)
-    return jsonify({"ok": True})
-
-
-@app.post("/api/v1/term/<tid>/close")
-@admin_required
-def api_term_close(tid: str):
-    _terminal_guard()
-    term = _term_of_user(tid)
-    term.close()
-    with _terms_lock:
-        _terms.pop(term.id, None)
-    return jsonify({"ok": True})
 
 
 # ------------------------------------------------- editor de configuracoes
@@ -2900,53 +2389,6 @@ def ssh_stream_in(server, remote_cmd: str, origem, timeout: int) -> str:
     return files_rt.ssh_stream_in(ssh_argv, server, remote_cmd, origem, timeout, UPLOAD_CHUNK)
 
 
-@app.get("/servers/<int:sid>/files")
-@admin_required
-def files(sid: int):
-    _files_guard()
-    server = _server_or_404(sid)
-    default_dir = server["config_path"] or FILE_DEFAULT_PATH
-
-    entries: list[dict] = []
-    truncated = False
-    errors: list[str] = []
-    opened = None
-
-    file_arg = request.args.get("file", "").strip()
-    dir_arg = request.args.get("path", "").strip()
-
-    try:
-        current = clean_path(file_arg or dir_arg or default_dir)
-    except ValueError as exc:
-        errors.append(str(exc))
-        current = "/"
-    if file_arg and current != "/":
-        try:
-            opened = read_file(server, current)
-        except RemoteError as exc:
-            errors.append(str(exc))
-        current = parent_of(current)
-
-    try:
-        entries, truncated = list_dir(server, current)
-    except RemoteError as exc:
-        errors.append(str(exc))
-
-    # Migalhas de pao: /opt/game/Pal -> [/, /opt, /opt/game, /opt/game/Pal]
-    crumbs, walked = [{"name": "/", "path": "/"}], ""
-    for seg in current.strip("/").split("/"):
-        if not seg:
-            continue
-        walked += "/" + seg
-        crumbs.append({"name": seg, "path": walked})
-
-    return render_template(
-        "files.html", server=server, entries=entries, truncated=truncated,
-        current=current, crumbs=crumbs, opened=opened, errors=errors,
-        max_kb=FILE_MAX_BYTES // 1024, preview_kb=FILE_PREVIEW_BYTES // 1024,
-    )
-
-
 def find_config_files(server: Servidor, root: str) -> list[dict]:
     return files_rt.find_config_files(ssh_run, server, root, CONFIG_GLOBS)
 
@@ -2957,119 +2399,6 @@ def write_file(server: Servidor, path: str, data: bytes) -> str:
 
 def delete_file(server: Servidor, path: str) -> str:
     return files_rt.delete_file(ssh_run, server, path)
-
-
-@app.get("/servers/<int:sid>/files/search")
-@admin_required
-def files_search(sid: int):
-    """Procurar arquivos de configuracao — agora numa tela so.
-
-    Isto era uma SEGUNDA implementacao da mesma coisa: `find_config_files` numa lista
-    dentro de Arquivos, e a mesma `find_config_files` na mesma lista dentro de
-    Configuracao. Duas telas, dois botoes chamados "Procurar", um resultado que so
-    valia num dos dois lugares (so a tela de Configuracao sabe fixar o arquivo
-    encontrado).
-
-    A busca ficou onde ela serve para alguma coisa. Esta rota continua existindo para
-    nao quebrar link antigo nem historico de navegador.
-    """
-    _server_or_404(sid)
-    # `pasta` so entra na URL quando existe: `pasta=` vazio faria a busca procurar na
-    # raiz do container em vez da pasta de config do cadastro.
-    extras: dict[str, Any] = {"pasta": request.args["path"]} if request.args.get("path") else {}
-    return redirect(url_for("config_quick", sid=sid, descobrir=1, **extras))
-
-
-@app.post("/servers/<int:sid>/files/save")
-@admin_required
-def files_save(sid: int):
-    _files_guard()
-    server = _server_or_404(sid)
-    raw_path = request.form.get("path", "")
-    content = request.form.get("content", "")
-    keep_crlf = request.form.get("crlf") == "1"
-
-    try:
-        path = clean_path(raw_path)
-    except ValueError as exc:
-        flash(translate(error_text(exc)), "error")
-        return redirect(url_for("files", sid=sid))
-
-    # O navegador manda \r\n; so devolvemos assim se o arquivo original ja usava CRLF.
-    text = content.replace("\r\n", "\n")
-    if keep_crlf:
-        text = text.replace("\n", "\r\n")
-    data = text.encode("utf-8")
-    if len(data) > FILE_MAX_BYTES:
-        flash(translate("flash.file_too_big", kb=FILE_MAX_BYTES // 1024), "error")
-        return redirect(url_for("files", sid=sid, file=path))
-
-    # O arquivo pode ter crescido desde que a tela abriu (log, save do jogo). Gravar o
-    # que esta no textarea agora apagaria tudo o que nao coube nele.
-    try:
-        atual = stat_file(server, path)
-        if atual["size"] > FILE_MAX_BYTES:
-            flash(translate("flash.file_over_edit_limit", path=path,
-                              size=atual["size"] // 1024, kb=FILE_MAX_BYTES // 1024), "error")
-            return redirect(url_for("files", sid=sid, file=path))
-    except RemoteError:
-        pass  # arquivo novo, ou stat falhou: o proprio gravar reporta o erro
-
-    try:
-        output = write_file(server, path, data)
-        log_job(
-            "edit-file", server, session.get("username", "?"),
-            command=path, output=output,
-        )
-        flash(translate("flash.file_saved", path=path, bytes=len(data)), "ok")
-    except RemoteError as exc:
-        log_job(
-            "edit-file", server, session.get("username", "?"),
-            command=path, output=str(exc), status="error",
-        )
-        flash(translate("flash.could_not_save", reason=exc), "error")
-
-    return redirect(url_for("files", sid=sid, file=path))
-
-
-@app.post("/servers/<int:sid>/files/delete")
-@admin_required
-def files_delete(sid: int):
-    _files_guard()
-    server = _server_or_404(sid)
-
-    try:
-        path = clean_path(request.form.get("path", ""))
-    except ValueError as exc:
-        flash(translate(error_text(exc)), "error")
-        return redirect(url_for("files", sid=sid))
-
-    # Raiz permitida nao se apaga: sem isso um clique errado poderia levar /opt/game
-    # inteiro (a pasta so cai vazia, mas nem esse caso vale a pena permitir).
-    raizes = {"/"} | {r.rstrip("/") or "/" for r in FILE_ROOTS}
-    if path in raizes:
-        flash(translate("flash.is_a_root_folder", path=path), "error")
-        return redirect(url_for("files", sid=sid, path=path))
-
-    volta = parent_of(path)
-    try:
-        output = delete_file(server, path)
-        log_job("delete-file", server, session.get("username", "?"), command=path, output=output)
-        flash(translate("flash.deleted_no_bak", output=output), "ok")
-        # Arquivo fixado na tela Config que deixou de existir: tirar do cadastro evita
-        # que a tela abra sempre num erro de leitura.
-        registrados = config_paths(server)
-        if path in registrados:
-            _save_config_files(sid, [p for p in registrados if p != path])
-            flash(translate("flash.also_left_config", path=path), "ok")
-    except RemoteError as exc:
-        log_job(
-            "delete-file", server, session.get("username", "?"),
-            command=path, output=str(exc), status="error",
-        )
-        flash(translate("flash.could_not_delete", reason=exc), "error")
-
-    return redirect(url_for("files", sid=sid, path=volta))
 
 
 def _attachment_header(name: str) -> str:
@@ -3083,82 +2412,7 @@ def stream_remote_file(server: Servidor, path: str):
     return files_rt.stream_remote_file(ssh_argv, server, path, DOWNLOAD_CHUNK)
 
 
-@app.get("/servers/<int:sid>/files/download")
-@admin_required
-def files_download(sid: int):
-    """Baixa qualquer arquivo do container — inclusive binario ou grande demais para o editor."""
-    _files_guard()
-    server = _server_or_404(sid)
-    try:
-        path = clean_path(request.args.get("path", ""))
-        info = stat_file(server, path)
-    except (ValueError, RemoteError) as exc:
-        abort(400, str(exc))
-
-    if FILE_DOWNLOAD_MAX and info["size"] > FILE_DOWNLOAD_MAX:
-        abort(400, f"arquivo de {info['size']} bytes acima do limite de download"
-                   f" ({FILE_DOWNLOAD_MAX} bytes) — use scp para este")
-
-    log_job(
-        "download-file", server, session.get("username", "?"),
-        command=path, output=f"{info['size']} bytes",
-    )
-    return app.response_class(
-        stream_with_context(stream_remote_file(server, path)),
-        mimetype="application/octet-stream",
-        headers={
-            "Content-Disposition": _attachment_header(info["name"]),
-            "Content-Length": str(info["size"]),
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
-
-
 # ------------------------------------------------------------------ upload
-
-
-@app.post("/servers/<int:sid>/files/upload")
-@admin_required
-def files_upload(sid: int):
-    """Manda um arquivo do computador para dentro do container (mod, save, config)."""
-    _files_guard()
-    server = _server_or_404(sid)
-    # O teto deste request ja foi levantado no _teto_do_corpo (BIG_BODY_ENDPOINTS).
-    destino_dir = request.form.get("path", "") or FILE_DEFAULT_PATH
-    voltar = url_for("files", sid=sid, path=destino_dir)
-    enviado = request.files.get("arquivo")
-    if not enviado or not enviado.filename:
-        flash(translate("flash.pick_a_file"), "error")
-        return redirect(voltar)
-
-    # O navegador manda o nome como o disco de origem o tinha: fica so a ultima parte,
-    # para "../../etc/passwd" nao virar caminho.
-    name = enviado.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
-    if not name or name in (".", ".."):
-        flash(translate("flash.bad_file_name"), "error")
-        return redirect(voltar)
-
-    try:
-        pasta = clean_path(destino_dir)
-        alvo = clean_path(f"{pasta.rstrip('/')}/{name}")
-    except ValueError as exc:
-        flash(translate(error_text(exc)), "error")
-        return redirect(voltar)
-
-    try:
-        output = ssh_stream_in(
-            server, q("bash", "-lc", UPLOAD_SCRIPT, "gp", alvo),
-            enviado.stream, timeout=JOB_TIMEOUT,
-        )
-    except RemoteError as exc:
-        log_job("upload-file", server, session.get("username", "?"),
-                command=alvo, output=str(exc), status="error")
-        flash(translate("flash.could_not_upload", reason=exc), "error")
-        return redirect(voltar)
-
-    log_job("upload-file", server, session.get("username", "?"), command=alvo, output=output)
-    flash(translate("flash.uploaded", output=output), "ok")
-    return redirect(url_for("files", sid=sid, path=pasta))
 
 
 # ------------------------------------------------------------------ backup
@@ -3189,114 +2443,12 @@ def list_backups(server: Servidor) -> list[dict]:
     return backups_rt.list_backups(ssh_run, server, BACKUP_DIR, BACKUP_LIST_MAX)
 
 
-@app.get("/servers/<int:sid>/backups")
-@login_required
-def backups(sid: int):
-    server = _server_or_404(sid)
-    caminhos = backup_paths(server)
-    copias, erro = [], ""
-    try:
-        copias = list_backups(server)
-    except RemoteError as exc:
-        erro = str(exc)
-    return render_template(
-        "backups.html", server=server, copias=copias, erro=erro, caminhos=caminhos,
-        backup_dir=BACKUP_DIR, manter=BACKUP_KEEP,
-    )
-
-
 def backup_command(server: Servidor, caminhos: list[str], sufixo: str = "") -> str:
     return backups_rt.backup_command(server, BACKUP_DIR, BACKUP_KEEP, caminhos, sufixo)
 
 
 def delete_backup(server: Servidor, name: str) -> str:
     return backups_rt.delete_backup(ssh_run, server, BACKUP_DIR, name)
-
-
-@app.post("/servers/<int:sid>/backups/create")
-@login_required
-def backup_create(sid: int):
-    """Dispara o backup. E operacao, nao administracao: o operador pode tirar copia."""
-    server = _server_or_404(sid)
-    caminhos = backup_paths(server)
-    if not caminhos:
-        flash(translate("flash.nothing_to_back_up"), "error")
-        return redirect(url_for("backups", sid=sid))
-    job_id = start_job(
-        "backup", server, session.get("username", "?"),
-        remote_cmd=backup_command(server, caminhos),
-        command=", ".join(caminhos),
-        timeout=BACKUP_TIMEOUT,
-    )
-    return redirect(url_for("job_detail", jid=job_id))
-
-
-@app.post("/servers/<int:sid>/backups/restore")
-@admin_required
-def backup_restore(sid: int):
-    """Volta o servidor para uma copia. Para o jogo, extrai e religa."""
-    server = _server_or_404(sid)
-    name = _backup_or_400(request.form.get("nome", ""))
-    caminhos = backup_paths(server)
-
-    # Copia de seguranca ANTES de extrair: restaurar e a operacao mais destrutiva do
-    # painel, e sem isto quem escolhe o backup errado nao tem para onde voltar. Os dois
-    # comandos vao num job so — se o backup falhar, o '&&' impede a restauracao.
-    passos = []
-    if caminhos:
-        passos.append(backup_command(server, caminhos, "-antes-de-restaurar"))
-    passos.append(q("bash", "-lc", RESTORE_SCRIPT, "gp", BACKUP_DIR, name, server["service"]))
-
-    job_id = start_job(
-        "restore-backup", server, session.get("username", "?"),
-        remote_cmd=" && ".join(passos),
-        command=name,
-        timeout=BACKUP_TIMEOUT,
-    )
-    invalidate_status(sid)
-    return redirect(url_for("job_detail", jid=job_id))
-
-
-@app.post("/servers/<int:sid>/backups/delete")
-@admin_required
-def backup_delete(sid: int):
-    server = _server_or_404(sid)
-    name = _backup_or_400(request.form.get("nome", ""))
-    try:
-        output = delete_backup(server, name)
-    except RemoteError as exc:
-        log_job("delete-backup", server, session.get("username", "?"),
-                command=name, output=str(exc), status="error")
-        flash(translate("flash.could_not_delete", reason=exc), "error")
-        return redirect(url_for("backups", sid=sid))
-    log_job("delete-backup", server, session.get("username", "?"), command=name, output=output)
-    flash(output, "ok")
-    return redirect(url_for("backups", sid=sid))
-
-
-@app.get("/servers/<int:sid>/backups/download")
-@admin_required
-def backup_download(sid: int):
-    """Tira a copia do container. Mesmo streaming do download de arquivo."""
-    server = _server_or_404(sid)
-    name = _backup_or_400(request.args.get("nome", ""))
-    caminho = f"{BACKUP_DIR.rstrip('/')}/{name}"
-    try:
-        info = stat_file(server, caminho)
-    except RemoteError as exc:
-        abort(400, str(exc))
-
-    log_job("download-file", server, session.get("username", "?"),
-            command=caminho, output=f"{info['size']} bytes")
-    return app.response_class(
-        stream_with_context(stream_remote_file(server, caminho)),
-        mimetype="application/gzip",
-        headers={
-            "Content-Disposition": _attachment_header(info["name"]),
-            "Content-Length": str(info["size"]),
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
 
 
 # ------------------------------------------------- edicao rapida de config
@@ -3388,65 +2540,6 @@ def _config_sugestoes(server: Servidor, arquivos: list[str], alvo: str,
         return []
 
 
-@app.get("/servers/<int:sid>/config")
-@login_required
-def config_quick(sid: int):
-    _files_guard()
-    server = _server_or_404(sid)
-    arquivos = config_paths(server)
-    errors: list[str] = []
-    alvo = _config_alvo(arquivos, errors)
-
-    doc = info = None
-    if alvo:
-        try:
-            doc, info = load_config_doc(server, alvo)
-            # Aqui o formulario deixa de ser "chave = texto" e passa a saber o que cada
-            # campo significa: booleano vira caixa, enum vira lista, duracao aparece em
-            # minutos em vez de nanossegundos.
-            enriquece_settings(doc, info["name"])
-        except (RemoteError, gameconf.ConfigError) as exc:
-            errors.append(f"{alvo}: {exc}")
-
-    sugestoes = _config_sugestoes(server, arquivos, alvo, errors)
-
-    return render_template(
-        "config.html", server=server, arquivos=arquivos, alvo=alvo, doc=doc, info=info,
-        sugestoes=sugestoes, errors=errors, registrado=alvo in arquivos,
-        max_files=CONFIG_FILES_MAX,
-    )
-
-
-@app.post("/servers/<int:sid>/config/files")
-@admin_required
-def config_files_edit(sid: int):
-    """Registra (ou tira) um arquivo da tela rapida, com um clique."""
-    _files_guard()
-    server = _server_or_404(sid)
-    try:
-        path = clean_path(request.form.get("path", ""))
-    except ValueError as exc:
-        flash(translate(error_text(exc)), "error")
-        return redirect(url_for("config_quick", sid=sid))
-
-    caminhos = config_paths(server)
-    if request.form.get("acao") == "remover":
-        caminhos = [p for p in caminhos if p != path]
-        _save_config_files(sid, caminhos)
-        flash(translate("flash.left_config_screen", path=path), "ok")
-        return redirect(url_for("config_quick", sid=sid))
-
-    if path in caminhos:
-        return redirect(url_for("config_quick", sid=sid, file=path))
-    if len(caminhos) >= CONFIG_FILES_MAX:
-        flash(translate("flash.config_files_limit", n=CONFIG_FILES_MAX), "error")
-        return redirect(url_for("config_quick", sid=sid))
-    caminhos.append(path)
-    _save_config_files(sid, caminhos)
-    flash(translate("flash.now_opens_in_config", path=path), "ok")
-    return redirect(url_for("config_quick", sid=sid, file=path))
-
-
 @app.template_filter("ident")
 def _ident(value: str) -> str:
     """Identificador de secao/chave dentro do formulario.
@@ -3522,110 +2615,7 @@ def _edit_from_row(form, i: int, file_name: str, erros: list[str]) -> gameconf.E
     )
 
 
-@app.post("/servers/<int:sid>/config/save")
-@login_required
-def config_save(sid: int):
-    _files_guard()
-    server = _server_or_404(sid)
-    try:
-        path = clean_path(request.form.get("path", ""))
-    except ValueError as exc:
-        flash(translate(error_text(exc)), "error")
-        return redirect(url_for("config_quick", sid=sid))
-    # Mesma trava do config_quick, agora na escrita: o caminho chega pelo formulario.
-    if path not in config_paths(server) and not is_admin():
-        abort(403, "Operador so salva os arquivos de configuracao ja registrados neste servidor.")
-
-    voltar = url_for("config_quick", sid=sid, file=path)
-    try:
-        # O nome do arquivo escolhe o catalogo: e ele que diz o que validar e em que
-        # unidade o valor foi digitado.
-        edits, erros_validacao = _edits_from_form(request.form, path.rsplit("/", 1)[-1])
-    except gameconf.ConfigError as exc:
-        flash(translate(error_text(exc)), "error")
-        return redirect(voltar)
-    if erros_validacao:
-        # Nada e gravado quando ha erro: salvar metade das alteracoes deixaria o arquivo
-        # num estado que a pessoa nao pediu e nao sabe qual e.
-        flash(translate("flash.value_out_of_range",
-                       errors="; ".join(erros_validacao[:3])), "error")
-        return redirect(voltar)
-    if not edits:
-        flash(translate("flash.no_field_changed"), "ok")
-        return redirect(voltar)
-
-    # O arquivo e relido AGORA: o jogo pode te-lo reescrito desde que a tela abriu, e as
-    # alteracoes sao aplicadas por chave — nao por numero de linha.
-    try:
-        doc, info = load_config_doc(server, path)
-        text = doc.apply(edits)
-    except (RemoteError, gameconf.ConfigError) as exc:
-        flash(translate("flash.could_not_save", reason=exc), "error")
-        return redirect(voltar)
-
-    if info["crlf"]:
-        text = text.replace("\n", "\r\n")
-    data = text.encode("utf-8")
-    if len(data) > FILE_MAX_BYTES:
-        flash(translate("flash.file_too_big", kb=FILE_MAX_BYTES // 1024), "error")
-        return redirect(voltar)
-
-    mexidas = ", ".join(dict.fromkeys(e.key for e in edits))
-    try:
-        output = write_file(server, path, data)
-    except RemoteError as exc:
-        log_job("edit-config", server, session.get("username", "?"),
-                command=f"{path}: {mexidas}", output=str(exc), status="error")
-        flash(translate("flash.could_not_save", reason=exc), "error")
-        return redirect(voltar)
-
-    log_job("edit-config", server, session.get("username", "?"),
-            command=f"{path}: {mexidas}", output=f"{output}\nalterado: {mexidas}")
-    flash(translate("flash.settings_saved", n=len(edits), path=path,
-                       keys=mexidas), "ok")
-
-    # Quase todo jogo so le a configuracao no start — por isso o reiniciar mora aqui.
-    if request.form.get("restart") == "1":
-        job_id = start_job("restart", server, session.get("username", "?"))
-        invalidate_status(sid)
-        return redirect(url_for("job_detail", jid=job_id))
-    return redirect(voltar)
-
-
 # --------------------------------------------------------------------- jobs
-
-
-@app.get("/jobs/<int:jid>")
-@login_required
-def job_detail(jid: int):
-    conn = db()
-    job = conn.execute("SELECT * FROM jobs WHERE id = ?", (jid,)).fetchone()
-    if not job:
-        abort(404)
-    job_or_403(job)
-    server = None
-    if job["server_id"]:
-        server = conn.execute(
-            SQL_SERVER_BY_ID, (job["server_id"],)
-        ).fetchone()
-    return render_template("job.html", job=job, server=server)
-
-
-@app.get("/api/v1/jobs/<int:jid>")
-@login_required
-def api_job(jid: int):
-    job = db().execute("SELECT * FROM jobs WHERE id = ?", (jid,)).fetchone()
-    if not job:
-        abort(404)
-    job_or_403(job)
-    return jsonify(
-        {
-            "status": job["status"],
-            "exit_code": job["exit_code"],
-            "output": job["output"],
-            "finished_at": job["finished_at"],
-        }
-    )
 
 
 # ------------------------------------------------------------------- broker
@@ -3659,7 +2649,7 @@ def broker_required(view):
                 return jsonify({"error": "ative a verificacao em duas etapas em Conta para "
                                          "usar o broker"}), 403
             flash(translate("flash.broker_needs_two_factor"), "error")
-            return redirect(url_for("account_2fa"))
+            return redirect(url_for("account.two_factor"))
         return view(*args, **kwargs)
 
     return wrapper
@@ -3763,130 +2753,6 @@ def _ator() -> str:
 _game_from_form = broker_service.game_from_form
 
 
-@app.route("/catalog", methods=["GET"])
-@admin_required
-@broker_required
-def catalog():
-    try:
-        jogos = broker_client.catalog()
-    except broker_client.BrokerError as erro:
-        flash(translate("flash.broker_error", reason=erro.message), "error")
-        jogos = []
-    return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECIPES, form={},
-                           modelos=MODELOS_DE_JOGO)
-
-
-@app.get("/api/v1/catalog/suggestions")
-@admin_required
-@broker_required
-def api_catalog_suggestions():
-    """Busca por nome ou App ID numa lista FIXA (gerada do LinuxGSM, no repositorio): nada aqui
-    vai a internet, e a consulta so seleciona entre entradas conhecidas."""
-    achados = busca_de_jogos.search(request.args.get("q", ""))
-    return jsonify({"resultados": [busca_de_jogos.result(s) for s in achados],
-                    "fonte": busca_de_jogos.SOURCE})
-
-
-@app.post("/catalog/new")
-@admin_required
-@broker_required
-def catalog_new():
-    data, erros = _game_from_form(request.form)
-    if not erros:
-        try:
-            broker_client.add_game(data, _ator())
-        except broker_client.BrokerError as erro:
-            erros.append(f"Broker: {erro.message}")
-    if erros:
-        for erro in erros:
-            flash(translate(erro), "error")
-        try:
-            jogos = broker_client.catalog()
-        except broker_client.BrokerError:
-            jogos = []
-        return render_template("catalogo.html", jogos=jogos, receitas=BROKER_RECIPES,
-                               form=request.form, modelos=MODELOS_DE_JOGO), 400
-    _log_broker_action("broker-jogo", _ator(), data.get("chave", ""), "Jogo adicionado ao catalogo.")
-    flash(translate("flash.game_added",
-                       name=data.get("nome", data.get("chave", ""))), "ok")
-    return redirect(url_for("catalog"))
-
-
-@app.get("/instances")
-@admin_required
-@broker_required
-def instances_list():
-    try:
-        instances = broker_client.instances()
-        jogos = [j for j in broker_client.catalog() if j.get("creatable")]
-    except broker_client.BrokerError as erro:
-        flash(translate("flash.broker_error", reason=erro.message), "error")
-        instances, jogos = [], []
-    ligados = {
-        r["broker_id"]: r
-        for r in db().execute("SELECT id, name, broker_id FROM servers WHERE broker_id > 0")
-    }
-    return render_template("instancias.html", instancias=instances, jogos=jogos, servidores=ligados)
-
-
-@app.post("/instances/new")
-@admin_required
-@broker_required
-def instance_new():
-    game = (request.form.get("game") or "").strip()
-    name = (request.form.get("name") or "").strip()
-    try:
-        resposta = broker_client.create(game, name, _ator())
-    except broker_client.BrokerError as erro:
-        flash(translate("flash.broker_error", reason=erro.message), "error")
-        return redirect(url_for("instances_list"))
-    op_id = str(resposta.get("operation_id", ""))
-    if not op_id:
-        flash(translate("flash.broker_no_operation_id"), "error")
-        return redirect(url_for("instances_list"))
-    job_id = start_broker_job("broker-criar", _ator(), op_id, f"{game}: {name}")
-    return redirect(url_for("job_detail", jid=job_id))
-
-
-@app.post("/instances/<int:iid>/deactivate")
-@admin_required
-@broker_required
-def instance_deactivate(iid: int):
-    try:
-        broker_client.deactivate(iid, _ator())
-    except broker_client.BrokerError as erro:
-        _log_broker_action("broker-desativar", _ator(), f"instancia {iid}", erro.message, "error")
-        flash(translate("flash.broker_error", reason=erro.message), "error")
-    else:
-        _log_broker_action("broker-desativar", _ator(), f"instancia {iid}",
-                                 "Portas fechadas no firewall e container parado.")
-        flash(translate("flash.instance_deactivated"), "ok")
-    return redirect(url_for("instances_list"))
-
-
-@app.post("/instances/<int:iid>/delete")
-@admin_required
-@broker_required
-def instance_remove(iid: int):
-    confirm = (request.form.get("confirmation") or "").strip()
-    db_only = request.form.get("db_only") == "1"
-    try:
-        broker_client.remove(iid, confirm, _ator(), db_only)
-    except broker_client.BrokerError as erro:
-        _log_broker_action("broker-remover", _ator(), f"instancia {iid}", erro.message, "error")
-        flash(translate("flash.broker_error", reason=erro.message), "error")
-        return redirect(url_for("instances_list"))
-    conn = db()
-    with conn:
-        # O servidor do painel aponta para um container que deixou de existir.
-        conn.execute("DELETE FROM servers WHERE broker_id = ?", (iid,))
-    _log_broker_action(
-        "broker-remover", _ator(), f"instancia {iid}",
-        "So o registro foi esquecido." if db_only else "Container destruido e servidor removido do painel.")
-    flash(translate("flash.instance_removed"), "ok")
-    return redirect(url_for("instances_list"))
-
-
 # ------------------------------------------------------------- agendamentos
 
 
@@ -3948,89 +2814,6 @@ def _next_occurrence(sched, agora: datetime) -> datetime:
     return anterior + timedelta(days=7 if sched["kind"] == "semanal" else 1)
 
 
-@app.get("/servers/<int:sid>/schedules")
-@login_required
-def schedules(sid: int):
-    server = _server_or_404(sid)
-    conn = db()
-    tarefas = conn.execute(
-        "SELECT * FROM schedules WHERE server_id = ? ORDER BY id", (sid,)
-    ).fetchall()
-    agora = local_now()
-    # A tela mostra a proxima vez que cada tarefa roda: sem isso "todo dia as 5h" nao
-    # deixa claro se ela ja rodou hoje ou se ainda vai rodar.
-    proximas = {}
-    for t in tarefas:
-        proximas[t["id"]] = _next_occurrence(t, agora).strftime(FORMATO_DATA_CURTA)
-    return render_template(
-        "schedules.html", server=server, tarefas=tarefas, proximas=proximas,
-        acoes=SCHEDULE_ACTIONS, job_labels=labels_of(JOB_LABELS),
-        dias=[translate(d) for d in WEEKDAYS],
-        label=schedule_label, agora=agora, max_horas=EVERY_HOURS_MAX,
-    )
-
-
-@app.post("/servers/<int:sid>/schedules")
-@admin_required
-def schedule_new(sid: int):
-    _server_or_404(sid)
-    errors: list[str] = []
-    data = _schedule_form(request.form, errors)
-    if errors:
-        for err in errors:
-            flash(translate(err), "error")
-        return redirect(url_for("schedules", sid=sid))
-
-    # 'intervalo' comeca a contar de agora: sem isto, "a cada 6h" dispararia no instante
-    # em que fosse salvo, o que ninguem espera de um agendamento.
-    start = local_now().isoformat() if data["kind"] == "intervalo" else ""
-    conn = db()
-    with conn:
-        conn.execute(
-            "INSERT INTO schedules (server_id, action, kind, hour, minute, weekday,"
-            " every_hours, enabled, last_run, created_at) VALUES (?,?,?,?,?,?,?,1,?,?)",
-            (sid, data["action"], data["kind"], data["hour"], data["minute"],
-             data["weekday"], data["every_hours"], start, now_iso()),
-        )
-    flash(translate("flash.task_scheduled", task=job_label(data["action"])), "ok")
-    return redirect(url_for("schedules", sid=sid))
-
-
-@app.post("/schedules/<int:aid>/toggle")
-@admin_required
-def schedule_toggle(aid: int):
-    sched = _schedule_or_404(aid)
-    conn = db()
-    with conn:
-        conn.execute("UPDATE schedules SET enabled = ? WHERE id = ?",
-                     (0 if sched["enabled"] else 1, aid))
-    flash(translate("flash.task_off" if sched["enabled"] else "flash.task_on"), "ok")
-    return redirect(url_for("schedules", sid=sched["server_id"]))
-
-
-@app.post("/schedules/<int:aid>/delete")
-@admin_required
-def schedule_delete(aid: int):
-    sched = _schedule_or_404(aid)
-    conn = db()
-    with conn:
-        conn.execute("DELETE FROM schedules WHERE id = ?", (aid,))
-    flash(translate("flash.task_removed"), "ok")
-    return redirect(url_for("schedules", sid=sched["server_id"]))
-
-
-@app.post("/schedules/<int:aid>/run")
-@admin_required
-def schedule_run(aid: int):
-    """Roda a tarefa agora, sem esperar a hora — e como se confere se ela funciona."""
-    sched = _schedule_or_404(aid)
-    job_id = fire_schedule(db(), sched)
-    if not job_id:
-        flash(translate("flash.could_not_trigger"), "error")
-        return redirect(url_for("schedules", sid=sched["server_id"]))
-    return redirect(url_for("job_detail", jid=job_id))
-
-
 # ---------------------------------------------------------- graficos de uso
 #
 # As amostras viram COORDENADAS aqui, no servidor: a tela recebe um SVG ja pronto e
@@ -4055,120 +2838,10 @@ def build_chart(amostras, series, teto: float, start, fim, formato_tempo: str) -
         amostras, series, teto, start, fim, formato_tempo, SAMPLE_EVERY)
 
 
-@app.get("/servers/<int:sid>/charts")
-@login_required
-def charts(sid: int):
-    """CPU, memoria e jogadores ao longo do tempo.
-
-    Sao DOIS graficos e nao um: porcentagem e contagem de gente nao cabem no mesmo eixo,
-    e forcar as duas escalas num plot so inventa uma relacao que nao existe nos dados.
-    """
-    server = _server_or_404(sid)
-    validas = [h for h, _ in CHART_RANGES]
-    try:
-        horas = int(request.args.get("h", "24"))
-    except ValueError:
-        horas = 24
-    if horas not in validas:
-        horas = 24
-
-    fim = datetime.now(timezone.utc)
-    start = fim - timedelta(hours=horas)
-    lines_of = db().execute(
-        "SELECT taken_at, cpu_pct, mem_pct, players FROM samples"
-        " WHERE server_id = ? AND taken_at >= ? ORDER BY taken_at",
-        (sid, start.isoformat()),
-    ).fetchall()
-
-    amostras = []
-    for line in lines_of:
-        quando = _parse_dt(line["taken_at"])
-        if quando:
-            amostras.append((quando, {"cpu": line["cpu_pct"], "mem": line["mem_pct"],
-                                      "players": line["players"]}))
-
-    formato = "%d/%m" if horas > 48 else "%H:%M"
-    uso = build_chart(
-        amostras,
-        [{"key": "cpu", "label": "CPU", "color": CHART_CPU, "suffix": "%"},
-         {"key": "mem", "label": "Memoria", "color": CHART_MEM, "suffix": "%"}],
-        100, start, fim, formato,
-    )
-    pico = max((v["players"] for _, v in amostras if v["players"] is not None), default=0)
-    jogadores = build_chart(
-        amostras,
-        [{"key": "players", "label": "Jogadores", "color": CHART_CPU}],
-        _clean_ceiling(pico), start, fim, formato,
-    )
-
-    # A tabela e o par acessivel do grafico: mesmos numeros, sem depender de cor nem de
-    # passar o mouse. Do mais novo para o mais velho, que e como se procura um pico.
-    tabela = [
-        {"quando": q.astimezone().strftime(FORMATO_DATA_CURTA), **v}
-        for q, v in reversed(amostras)
-    ][:200]
-
-    return render_template(
-        "charts.html", server=server, uso=uso, jogadores=jogadores, tabela=tabela,
-        horas=horas, faixas=CHART_RANGES, total=len(amostras), pico=pico,
-        a_cada=int(SAMPLE_EVERY / 60), guarda_dias=SAMPLES_KEEP_DAYS,
-        cores={"cpu": CHART_CPU, "mem": CHART_MEM},
-    )
-
-
 # --------------------------------------------------------------- historico
 
 
 # ------------------------------------------------------------- acesso / conta
-
-
-@app.get("/ssh-key")
-@login_required
-def ssh_key():
-    return render_template("ssh_key.html", pubkey=public_key())
-
-
-@app.post("/account/language")
-@login_required
-def account_language():
-    """Guarda o idioma da tela para ESTA pessoa.
-
-    Por usuario, e nao por sessao: quem trabalha em ingles nao quer reescolher a cada
-    login, e duas pessoas no mesmo painel podem preferir idiomas diferentes.
-    """
-    escolhido = i18n.valid_language(request.form.get("lang"))
-    with db() as conn:
-        conn.execute("UPDATE users SET lang = ? WHERE id = ?", (escolhido, session["uid"]))
-    # O `g` desta requisicao ja guardou o idioma antigo, e o flash abaixo e lido na
-    # PROXIMA (depois do redirect) — entao ele ja sai no idioma novo.
-    g._idioma = escolhido
-    flash(translate("account.language.changed"), "ok")
-    return redirect(url_for("account"))
-
-
-@app.route("/account", methods=["GET", "POST"])
-@login_required
-def account():
-    if request.method == "POST":
-        current = request.form.get("current", "")
-        new = request.form.get("new", "")
-        confirm = request.form.get("confirm", "")
-        row = db().execute(
-            "SELECT * FROM users WHERE id = ?", (session["uid"],)
-        ).fetchone()
-        erro = validate_password(new, confirm)
-        if not row or not verify_password(current, row["password_hash"]):
-            flash(translate("flash.wrong_current_password"), "error")
-        elif erro:
-            flash(translate(erro), "error")
-        else:
-            conn = db()
-            with conn:
-                conn.execute(SQL_SET_PASSWORD, (hash_password(new), session["uid"]))
-            flash(translate("flash.password_changed"), "ok")
-            return redirect(url_for("dashboard"))
-    return render_template("account.html", segundo_fator=_two_factor_state(),
-                           exige_2fa=REQUIRE_2FA, broker_ligado=ALLOW_BROKER)
 
 
 def _two_factor_state() -> dict:
@@ -4212,64 +2885,6 @@ def _password_and_code_ok(uid: int) -> tuple[sqlite3.Row | None, str]:
     return row, ""
 
 
-@app.route("/account/2fa", methods=["GET", "POST"])
-@login_required
-def account_2fa():
-    """Ativar o segundo fator: mostra o segredo, confere UM codigo do aplicativo e so entao liga."""
-    if _two_factor_state()["ativo"]:
-        return redirect(url_for("account"))
-    if request.method == "POST":
-        segredo = session.get("totp_pendente", "")
-        passo = totp.verify(segredo, request.form.get("codigo", ""), time.time()) if segredo else None
-        if passo is None:
-            flash(translate("flash.wrong_code"), "error")
-        else:
-            codigos = _guarda_o_segundo_fator(session["uid"], segredo, passo)
-            session.pop("totp_pendente", None)
-            flash(translate("flash.two_factor_on"), "ok")
-            return render_template("account_2fa_codigos.html", codigos=codigos)
-    # O segredo fica na SESSAO (cookie assinado) ate ser confirmado; recarregar a pagina mostra
-    # o mesmo, e abandonar a tela nao deixa nada meio ligado no banco.
-    segredo = session.get("totp_pendente") or totp.new_secret()
-    session["totp_pendente"] = segredo
-    endereco = totp.uri(segredo, session.get("username", ""), "Painel de Jogos")
-    return render_template(
-        "account_2fa.html", segredo=totp.group(segredo), endereco=endereco,
-        qr_svg=qr.svg(endereco, label="QR code da verificacao em duas etapas"))
-
-
-@app.post("/account/2fa/off")
-@login_required
-def account_2fa_off():
-    if REQUIRE_2FA:
-        flash(translate("account.two_factor_required"), "error")
-        return redirect(url_for("account"))
-    row, erro = _password_and_code_ok(session["uid"])
-    if erro:
-        flash(translate(erro), "error")
-        return redirect(url_for("account"))
-    _apaga_o_segundo_fator(row["id"])
-    flash(translate("flash.two_factor_off"), "ok")
-    return redirect(url_for("account"))
-
-
-@app.post("/account/2fa/codes")
-@login_required
-def account_2fa_codes():
-    """Codigos de recuperacao novos: os antigos deixam de valer."""
-    row, erro = _password_and_code_ok(session["uid"])
-    if erro:
-        flash(translate(erro), "error")
-        return redirect(url_for("account"))
-    codigos = totp.new_recovery_codes()
-    conn = db()
-    with conn:
-        conn.execute("UPDATE users SET totp_recovery = ? WHERE id = ?",
-                     (json.dumps([totp.hash_recovery_code(c) for c in codigos]), row["id"]))
-    flash(translate("flash.new_codes"), "ok")
-    return render_template("account_2fa_codigos.html", codigos=codigos)
-
-
 def _apaga_o_segundo_fator(uid: int) -> None:
     conn = db()
     with conn:
@@ -4279,23 +2894,6 @@ def _apaga_o_segundo_fator(uid: int) -> None:
 
 
 # ------------------------------------------------------------------ alertas
-
-
-@app.get("/alerts")
-@admin_required
-def alerts():
-    conn = db()
-    return render_template(
-        "alerts.html", cfg=webhook_config(conn), eventos=labels_of(ALERT_EVENTS),
-        padrao=clean_events(ALERT_DEFAULT), do_env=bool(WEBHOOK_URL_PADRAO),
-        monitor=int(MONITOR_EVERY), disco_a_cada=int(DISK_CHECK_EVERY / 60),
-        # O piso do relogio conta: o alerta nao pode chegar mais rapido que a volta dele.
-        jogadores_a_cada=int(max(PLAYER_CHECK_EVERY, SCHEDULE_TICK)),
-        quieto=int(ALERT_QUIET), limite_hooks=WEBHOOK_MAX,
-        mudo_voltas=MUTE_ROUNDS, log_a_cada=int(LOG_CHECK_EVERY),
-        pendencias=alerts_without_baseline(conn), diario=recent_alerts(conn),
-        streams=live_streams(),
-    )
 
 
 def alerts_without_baseline(conn: sqlite3.Connection) -> dict:
@@ -4331,31 +2929,6 @@ LIMITES_ALERTA = (
 )
 
 
-@app.post("/alerts")
-@admin_required
-def alerts_save():
-    """So o que vale para todos os destinos: hoje, os limites de disco, memoria e CPU."""
-    conn = db()
-    novos = []
-    for campo, key, name in LIMITES_ALERTA:
-        # Campo que nem veio no formulario fica como esta. Tratar ausencia como erro
-        # faria um formulario sem o campo derrubar um limite que ja estava certo.
-        if campo not in request.form:
-            continue
-        value = (request.form.get(campo, "") or "").strip()
-        if not value.isdigit() or not 50 <= int(value) <= 100:
-            flash(translate("flash.threshold_range", name=name), "error")
-            return redirect(url_for("alerts"))
-        novos.append((key, value))
-    # So grava depois de validar todos: meio salvo e pior que nada salvo, porque a tela
-    # volta dizendo "recusado" enquanto um dos limites ja mudou por baixo.
-    for key, value in novos:
-        config_set(conn, key, value)
-    _reset_baseline()
-    flash(translate("flash.preferences_saved"), "ok")
-    return redirect(url_for("alerts"))
-
-
 def _reset_baseline() -> None:
     """A memoria do monitor fica velha quando a configuracao muda.
 
@@ -4374,96 +2947,6 @@ def _le_form_webhook() -> tuple:
     if url and not URL_RE.match(url):
         return None, "URL invalida (comece com http:// ou https://)."
     return {"name": name, "url": url, "events": ",".join(events), "enabled": enabled}, ""
-
-
-@app.post("/alerts/targets")
-@admin_required
-def alerts_hook_new():
-    conn = db()
-    quantos = conn.execute("SELECT COUNT(*) AS n FROM webhooks").fetchone()["n"]
-    if quantos >= WEBHOOK_MAX:
-        flash(translate("flash.destination_limit", n=WEBHOOK_MAX), "error")
-        return redirect(url_for("alerts"))
-    data, erro = _le_form_webhook()
-    if erro or not data["url"]:
-        flash(translate(erro) if erro else translate("flash.need_webhook_url"), "error")
-        return redirect(url_for("alerts"))
-    with conn:
-        conn.execute(
-            "INSERT INTO webhooks (name, url, events, enabled, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (data["name"] or "Destino", data["url"], data["events"],
-             data["enabled"], now_iso()),
-        )
-    _reset_baseline()
-    flash(translate("flash.destination_added"), "ok")
-    return redirect(url_for("alerts"))
-
-
-@app.post("/alerts/targets/<int:hid>")
-@admin_required
-def alerts_hook_save(hid: int):
-    conn = db()
-    atual = conn.execute("SELECT url FROM webhooks WHERE id = ?", (hid,)).fetchone()
-    if not atual:
-        flash(translate("flash.destination_not_found"), "error")
-        return redirect(url_for("alerts"))
-    data, erro = _le_form_webhook()
-    if erro:
-        flash(translate(erro), "error")
-        return redirect(url_for("alerts"))
-    # Campo de URL em branco quer dizer "mantem a que ja esta la". A tela mostra a URL
-    # mascarada, entao nao ha o que reenviar: so quem digitar uma nova a troca.
-    url = data["url"] or atual["url"]
-    with conn:
-        conn.execute(
-            "UPDATE webhooks SET name = ?, url = ?, events = ?, enabled = ? WHERE id = ?",
-            (data["name"] or "Destino", url, data["events"], data["enabled"], hid),
-        )
-    _reset_baseline()
-    flash(translate("flash.destination_saved"), "ok")
-    return redirect(url_for("alerts"))
-
-
-@app.post("/alerts/targets/<int:hid>/delete")
-@admin_required
-def alerts_hook_del(hid: int):
-    conn = db()
-    with conn:
-        conn.execute("DELETE FROM webhooks WHERE id = ?", (hid,))
-    flash(translate("flash.destination_removed"), "ok")
-    return redirect(url_for("alerts"))
-
-
-@app.post("/alerts/targets/<int:hid>/test")
-@admin_required
-def alerts_hook_test(hid: int):
-    """Manda uma mensagem agora para UM destino, para conferir se a URL esta certa."""
-    conn = db()
-    row = conn.execute(
-        "SELECT name, url FROM webhooks WHERE id = ?", (hid,)
-    ).fetchone()
-    if not row or not row["url"]:
-        flash(translate("flash.destination_not_found"), "error")
-        return redirect(url_for("alerts"))
-    # Se ha uma URL digitada no formulario, testa ELA: o ponto do botao e conferir a URL
-    # nova antes de gravar, e nao repetir o teste da que ja estava salva.
-    digitada = (request.form.get("url", "") or "").strip()[:400]
-    if digitada and not URL_RE.match(digitada):
-        flash(translate("flash.bad_url"), "error")
-        return redirect(url_for("alerts"))
-    erro = send_webhook(
-        digitada or row["url"],
-        f"**Teste do painel de jogos**\nSe voce esta lendo isto, os alertas funcionam."
-        f" ({session.get('username', '?')})",
-    )
-    name = row["name"] or "destino"
-    flash(
-        translate("flash.destination_test_failed", name=name, reason=erro) if erro
-        else translate("flash.destination_test_sent", name=name),
-        "error" if erro else "ok",
-    )
-    return redirect(url_for("alerts"))
 
 
 # ------------------------------------------------------------------ usuarios
@@ -4494,124 +2977,6 @@ def _user_or_404(uid: int) -> sqlite3.Row:
     return row
 
 
-@app.get("/users")
-@admin_required
-def users_list():
-    rows = db().execute(
-        "SELECT id, username, role, created_at, totp_enabled FROM users ORDER BY role, username"
-    ).fetchall()
-    return render_template(
-        "users.html", users=rows, roles=ROLES, role_labels=labels_of(ROLE_LABELS),
-        meu_id=session.get("uid"), min_len=PASSWORD_MIN,
-    )
-
-
-@app.post("/users")
-@admin_required
-def user_new():
-    username = request.form.get("username", "").strip().lower()
-    role = request.form.get("role", ROLE_OPERADOR)
-    senha = request.form.get("new", "")
-    if not USER_RE.match(username):
-        erro = ("Nome de usuario invalido: use de 1 a 32 caracteres entre letras"
-                " minusculas, numeros, '-' e '_', comecando por letra ou '_'.")
-    elif role not in ROLES:
-        erro = "Papel invalido."
-    else:
-        erro = validate_password(senha, request.form.get("confirm", ""))
-    if erro:
-        flash(translate(erro), "error")
-        return redirect(url_for("users_list"))
-
-    conn = db()
-    try:
-        with conn:
-            conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at)"
-                " VALUES (?,?,?,?)",
-                (username, hash_password(senha), role, now_iso()),
-            )
-    except sqlite3.IntegrityError:
-        # username e UNIQUE: e o unico jeito de dois admins criarem o mesmo nome ao
-        # mesmo tempo sem um sobrescrever o outro.
-        flash(translate("flash.user_exists", user=username), "error")
-        return redirect(url_for("users_list"))
-    flash(translate("flash.user_created", user=username,
-                       role=translate(ROLE_LABELS[role]).lower()), "ok")
-    return redirect(url_for("users_list"))
-
-
-@app.post("/users/<int:uid>/role")
-@admin_required
-def user_role(uid: int):
-    alvo = _user_or_404(uid)
-    role = request.form.get("role", "")
-    if role not in ROLES:
-        abort(400, "Papel invalido.")
-    if uid == session.get("uid"):
-        # Rebaixar a si mesmo tranca a pessoa fora desta tela no mesmo clique.
-        flash(translate("flash.cannot_change_own_role"), "error")
-    elif role == alvo["role"]:
-        flash(translate("flash.user_already_is", user=alvo["username"],
-                       role=translate(ROLE_LABELS[role]).lower()), "ok")
-    elif alvo["role"] == ROLE_ADMIN and count_admins(excluindo=uid) == 0:
-        flash(translate("flash.only_admin_demote"), "error")
-    else:
-        conn = db()
-        with conn:
-            conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, uid))
-        flash(translate("flash.user_now_is", user=alvo["username"],
-                       role=translate(ROLE_LABELS[role]).lower()), "ok")
-    return redirect(url_for("users_list"))
-
-
-@app.post("/users/<int:uid>/password")
-@admin_required
-def user_password(uid: int):
-    """Reset feito pelo admin — sem a senha atual, que e justamente a esquecida."""
-    alvo = _user_or_404(uid)
-    erro = validate_password(request.form.get("new", ""), request.form.get("confirm", ""))
-    if erro:
-        flash(translate(erro), "error")
-        return redirect(url_for("users_list"))
-    conn = db()
-    with conn:
-        conn.execute(SQL_SET_PASSWORD, (hash_password(request.form.get("new", "")), uid))
-    flash(translate("flash.password_reset", user=alvo["username"]), "ok")
-    return redirect(url_for("users_list"))
-
-
-@app.post("/users/<int:uid>/2fa/off")
-@admin_required
-def user_2fa_off(uid: int):
-    """Celular perdido e codigos de recuperacao perdidos: o admin desliga o 2FA da pessoa, que
-    entra so com a senha e ativa de novo. Nao vale para si mesmo (use a tela Conta)."""
-    alvo = _user_or_404(uid)
-    if uid == session.get("uid"):
-        flash(translate("flash.own_two_factor_in_account"), "error")
-    else:
-        _apaga_o_segundo_fator(uid)
-        flash(translate("flash.user_two_factor_off", user=alvo["username"]), "ok")
-    return redirect(url_for("users_list"))
-
-
-@app.post("/users/<int:uid>/delete")
-@admin_required
-def user_delete(uid: int):
-    alvo = _user_or_404(uid)
-    if uid == session.get("uid"):
-        flash(translate("flash.cannot_remove_self"), "error")
-    elif alvo["role"] == ROLE_ADMIN and count_admins(excluindo=uid) == 0:
-        flash(translate("flash.cannot_remove_only_admin"), "error")
-    else:
-        conn = db()
-        with conn:
-            conn.execute("DELETE FROM users WHERE id = ?", (uid,))
-        # A sessao dele morre no proximo clique: o login_required confere o banco.
-        flash(translate("flash.user_removed", user=alvo["username"]), "ok")
-    return redirect(url_for("users_list"))
-
-
 @app.after_request
 def _security_headers(resp):
     """O painel da poder de root nos containers: nao pode ser embutido em outra pagina.
@@ -4625,11 +2990,6 @@ def _security_headers(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
     return resp
-
-
-@app.get("/health")
-def health():
-    return jsonify({"status": "ok"})
 
 
 # ------------------------------------------------- aplicativo instalavel (PWA)
@@ -4657,51 +3017,6 @@ def _shell_files() -> tuple[list[str], int]:
                 urls.append(static_url(relativo))
                 marca = max(marca, int(os.path.getmtime(caminho)))
     return urls, marca
-
-
-@app.get("/manifest.webmanifest")
-def manifest():
-    """Ficha do aplicativo: nome, icones, cor e tela inicial.
-
-    Sai de um template (e nao de um arquivo estatico) para os caminhos dos icones
-    virem do proprio Flask — inclusive a marca de versao do `static_url`.
-    """
-    resp = app.response_class(
-        render_template("manifest.webmanifest.jinja"),
-        mimetype="application/manifest+json",
-    )
-    resp.headers["Cache-Control"] = "no-cache"
-    return resp
-
-
-@app.get("/sw.js")
-def service_worker():
-    """O service worker, servido da RAIZ de proposito.
-
-    O escopo de um service worker e a pasta em que ele mora: em /static/sw.js ele so
-    enxergaria /static/ e nao veria a navegacao do painel. Por isso ele nao e um
-    arquivo estatico — e uma rota.
-    """
-    precache, versao = _shell_files()
-    resp = app.response_class(
-        render_template("sw.js.jinja", versao=versao, precache=precache),
-        mimetype="text/javascript",
-    )
-    # Sem isto o proprio arquivo do worker ficaria em cache e o painel nunca
-    # descobriria que existe uma versao nova dele.
-    resp.headers["Cache-Control"] = "no-cache"
-    resp.headers["Service-Worker-Allowed"] = "/"
-    return resp
-
-
-@app.get("/offline")
-def offline():
-    """Tela de "sem conexao", guardada no aparelho junto com o casco.
-
-    Nao exige login: ela e servida do cache, sem passar pelo servidor, e nao mostra
-    dado nenhum — so explica o que aconteceu e oferece "tentar de novo".
-    """
-    return render_template("offline.html")
 
 
 @app.errorhandler(400)
