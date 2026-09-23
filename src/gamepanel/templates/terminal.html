@@ -25,7 +25,7 @@
 <div class="term" id="term"
      data-csrf="{{ csrf_token() }}"
      data-open-url="{{ url_for('api_term_open', sid=server.id) }}"
-     data-api-base="/api/term/">
+     data-api-base="/api/v1/term/">
   <div class="term-bar">
     <span class="badge cold" id="term-status">{{ _('terminal.starting') }}</span>
     <span class="muted small" id="term-size">80x24</span>

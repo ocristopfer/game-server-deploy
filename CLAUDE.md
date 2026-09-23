@@ -489,7 +489,7 @@ Modulos ES, sem build, sem dependencia externa.
   reinicie o servidor local depois de mexer no `app.py` (o `app.run` nao recarrega codigo Python).
 - **Nao batize rota de aplicacao com nome de telemetria.** `/api/metrics` e regra
   corriqueira de bloqueador (uBlock, AdGuard, DNS filtrado): o navegador devolve um pixel
-  com status 499 e o pedido nem chega ao servidor. A rota daqui e `/api/recursos`. Ao
+  com status 499 e o pedido nem chega ao servidor. A rota daqui e `/api/v1/resources`. Ao
   depurar "a requisicao some", compare **curl x navegador** antes de procurar bug no
   codigo.
 

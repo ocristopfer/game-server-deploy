@@ -41,12 +41,23 @@ from typing import Any, NamedTuple
 if __package__ in (None, ""):  # pragma: no cover - so vale fora do import normal
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Rodando como SCRIPT (`python -m gamepanel.app` ou pelo caminho do arquivo), este modulo
+# se chama `__main__` — e `gamepanel.app` nao esta em `sys.modules`. Quando um blueprint
+# faz `from gamepanel import app as panel`, o Python importa o arquivo DE NOVO, do zero;
+# essa segunda copia chega ao rodape, registra os blueprints outra vez e encontra o
+# primeiro deles ainda pela metade ("partially initialized module ... has no attribute
+# 'bp'"). Registrar o modulo sob o nome de import faz o blueprint achar esta copia, que e
+# a que tem o `app` de verdade.
+if __name__ == "__main__":  # pragma: no cover - so vale fora do import normal
+    sys.modules.setdefault("gamepanel.app", sys.modules[__name__])
+
 # markupsafe vem junto com o Jinja, que vem junto com o python3-flask do apt: nao e
 # dependencia nova. E o mesmo escape que o autoescape do template usa.
 from markupsafe import Markup, escape
 
 from gamepanel import cli, i18n
 from gamepanel import navigation as ui
+from gamepanel.blueprints import register_all
 from gamepanel.games import config_format as gameconf
 from gamepanel.games import gamefields
 from gamepanel.games.catalog import search as busca_de_jogos
@@ -2061,14 +2072,14 @@ def dashboard():
     )
 
 
-@app.get("/api/status")
+@app.get("/api/v1/status")
 @login_required
 def api_status():
     servers = db().execute(SQL_ALL_SERVERS).fetchall()
     return jsonify({str(sid): state for sid, state in all_status(servers).items()})
 
 
-@app.get("/api/resources")
+@app.get("/api/v1/resources")
 @login_required
 def api_metrics():
     """Medidores de todos os servidores — alimenta os mini-graficos do painel.
@@ -2083,14 +2094,14 @@ def api_metrics():
     return jsonify({str(sid): data for sid, data in all_metrics(servers).items()})
 
 
-@app.get("/api/players")
+@app.get("/api/v1/players")
 @login_required
 def api_players():
     servers = db().execute(SQL_ALL_SERVERS).fetchall()
     return jsonify({str(sid): data for sid, data in all_players(servers).items()})
 
 
-@app.get("/api/servers/<int:sid>/players")
+@app.get("/api/v1/servers/<int:sid>/players")
 @login_required
 def api_server_players(sid: int):
     server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
@@ -2335,7 +2346,7 @@ def player_action(sid: int):
     return redirect(voltar)
 
 
-@app.get("/api/servers/<int:sid>/resources")
+@app.get("/api/v1/servers/<int:sid>/resources")
 @login_required
 def api_server_metrics(sid: int):
     server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
@@ -2546,7 +2557,7 @@ def read_logs(server: Servidor, lines: int, cursor: str = "") -> tuple[str, str]
     return body, new_cursor
 
 
-@app.get("/api/servers/<int:sid>/logs")
+@app.get("/api/v1/servers/<int:sid>/logs")
 @login_required
 def api_logs(sid: int):
     """Alimenta o "seguir log" da tela de detalhe."""
@@ -2701,7 +2712,7 @@ def terminal(sid: int):
     )
 
 
-@app.post("/api/term/<int:sid>/open")
+@app.post("/api/v1/term/<int:sid>/open")
 @admin_required
 def api_term_open(sid: int):
     global _reaper_started
@@ -2741,7 +2752,7 @@ def api_term_open(sid: int):
     return jsonify({"id": term.id, "offset": 0, "cols": cols, "rows": rows})
 
 
-@app.get("/api/term/<tid>/read")
+@app.get("/api/v1/term/<tid>/read")
 @admin_required
 def api_term_read(tid: str):
     _terminal_guard()
@@ -2760,7 +2771,7 @@ def api_term_read(tid: str):
     })
 
 
-@app.post("/api/term/<tid>/keys")
+@app.post("/api/v1/term/<tid>/keys")
 @admin_required
 def api_term_keys(tid: str):
     _terminal_guard()
@@ -2776,7 +2787,7 @@ def api_term_keys(tid: str):
     return jsonify({"ok": True, "alive": term.alive})
 
 
-@app.post("/api/term/<tid>/resize")
+@app.post("/api/v1/term/<tid>/resize")
 @admin_required
 def api_term_resize(tid: str):
     _terminal_guard()
@@ -2791,7 +2802,7 @@ def api_term_resize(tid: str):
     return jsonify({"ok": True})
 
 
-@app.post("/api/term/<tid>/close")
+@app.post("/api/v1/term/<tid>/close")
 @admin_required
 def api_term_close(tid: str):
     _terminal_guard()
@@ -3600,7 +3611,7 @@ def job_detail(jid: int):
     return render_template("job.html", job=job, server=server)
 
 
-@app.get("/api/jobs/<int:jid>")
+@app.get("/api/v1/jobs/<int:jid>")
 @login_required
 def api_job(jid: int):
     job = db().execute("SELECT * FROM jobs WHERE id = ?", (jid,)).fetchone()
@@ -3765,7 +3776,7 @@ def catalog():
                            modelos=MODELOS_DE_JOGO)
 
 
-@app.get("/api/catalog/suggestions")
+@app.get("/api/v1/catalog/suggestions")
 @admin_required
 @broker_required
 def api_catalog_suggestions():
@@ -4106,63 +4117,6 @@ def charts(sid: int):
 
 
 # --------------------------------------------------------------- historico
-
-
-@app.get("/history")
-@login_required
-def history():
-    """Tudo o que aconteceu no painel, de todos os servidores.
-
-    O historico por servidor mostra os ultimos 15; e aqui que se responde "quem mexeu
-    nisso" e "o que o agendador andou fazendo".
-    """
-    conn = db()
-    servers = conn.execute(SQL_ALL_SERVERS).fetchall()
-    nomes = {int(s["id"]): s["name"] for s in servers}
-
-    filtro_srv = (request.args.get("servidor", "") or "").strip()
-    filtro_acao = (request.args.get("acao", "") or "").strip()
-    filtro_user = (request.args.get("usuario", "") or "").strip()[:80]
-    try:
-        pagina = max(0, int(request.args.get("p", "0")))
-    except ValueError:
-        pagina = 0
-
-    onde, valores = ["1 = 1"], []
-    if filtro_srv.isdigit():
-        onde.append("server_id = ?")
-        valores.append(int(filtro_srv))
-    if filtro_acao in JOB_LABELS:
-        onde.append("action = ?")
-        valores.append(filtro_acao)
-    if filtro_user:
-        onde.append("username = ?")
-        valores.append(filtro_user)
-
-    corte, escondidas = role_filter()
-    sql_onde = " AND ".join(onde) + corte
-    valores.extend(escondidas)
-
-    # Pede um a mais que o tamanho da pagina: e como se sabe se existe proxima sem contar
-    # a tabela inteira.
-    lines_of = conn.execute(
-        f"SELECT * FROM jobs WHERE {sql_onde} ORDER BY id DESC LIMIT ? OFFSET ?",
-        (*valores, HISTORY_PAGE + 1, pagina * HISTORY_PAGE),
-    ).fetchall()
-    tem_mais = len(lines_of) > HISTORY_PAGE
-    jobs = lines_of[:HISTORY_PAGE]
-
-    usuarios = [r[0] for r in conn.execute(
-        f"SELECT DISTINCT username FROM jobs WHERE username <> '' {corte} ORDER BY username",
-        escondidas,
-    ).fetchall()]
-
-    return render_template(
-        "history.html", jobs=jobs, servers=servers, nomes=nomes, usuarios=usuarios,
-        acoes=sorted(JOB_LABELS), filtro_srv=filtro_srv, filtro_acao=filtro_acao,
-        filtro_user=filtro_user, pagina=pagina, tem_mais=tem_mais,
-        manter_dias=JOBS_KEEP_DAYS,
-    )
 
 
 # ------------------------------------------------------------- acesso / conta
@@ -4935,6 +4889,11 @@ init_db()
 if __name__ != "__main__":
     start_scheduler()
     resume_broker_jobs()
+
+
+# No fim do arquivo de proposito: cada blueprint faz `from gamepanel import app as
+# panel` e chama `panel.X`, entao ela so pode ser importada depois que `X` existe.
+register_all(app)
 
 
 if __name__ == "__main__":

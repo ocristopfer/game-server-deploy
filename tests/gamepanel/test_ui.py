@@ -47,7 +47,7 @@ def test_no_celular_a_aba_de_cima_continua_acesa():
 
 def test_tela_de_servidor_acende_servidores_nos_dois():
     assert ui.active_desktop_nav_for("server_detail") == "servidores"
-    assert ui.active_desktop_nav_for("history") == "historico"
+    assert ui.active_desktop_nav_for("history.index") == "historico"
     assert ui.active_desktop_nav_for("rota_que_nao_existe") == ""
 
 

@@ -57,7 +57,7 @@ class Item:
 # barra de cima — sao coisas que se faz uma vez, nao todo dia.
 NAV_MAIN = (
     Item("servidores", "nav.servers", "🎮", "dashboard"),
-    Item("historico", "nav.history", "🕘", "history"),
+    Item("historico", "nav.history", "🕘", "history.index"),
     Item("alertas", "nav.alerts", "🔔", "alerts", admin=True),
     Item("conta", "nav.account", "👤", "account"),
 )
@@ -95,7 +95,7 @@ _ACTIVE_EXTRA = {
     "conta": ("account", "account_2fa", "account_2fa_off", "account_2fa_codes", "ssh_key",
               "users_list", "user_new", "user_role", "user_password", "user_delete",
               "user_2fa_off"),
-    "historico": ("history",),
+    "historico": ("history.index",),
 }
 
 _BY_ENDPOINT = {

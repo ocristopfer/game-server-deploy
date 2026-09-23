@@ -6,7 +6,7 @@
 {{ ui.cabecalho(_('nav.history')) }}
 
 <div class="card">
-  <form method="get" action="{{ url_for('history') }}" class="cluster">
+  <form method="get" action="{{ url_for('history.index') }}" class="cluster">
     <label class="inline-field">{{ _('history.server') }}
       <select name="servidor">
         <option value="">{{ _('history.any_server') }}</option>
@@ -33,7 +33,7 @@
     </label>
     <div class="cluster">
       {{ ui.botao(_('history.filter'), icone='🔎') }}
-      {{ ui.botao(_('history.clear'), href=url_for('history'), variante='ghost', tamanho='sm') }}
+      {{ ui.botao(_('history.clear'), href=url_for('history.index'), variante='ghost', tamanho='sm') }}
     </div>
   </form>
 </div>
@@ -67,11 +67,11 @@
   <div class="cluster mt-4">
     {% if pagina > 0 %}
       {{ ui.botao(_('history.newer'), variante='ghost', icone='←',
-                  href=url_for('history', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina - 1)) }}
+                  href=url_for('history.index', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina - 1)) }}
     {% endif %}
     {% if tem_mais %}
       {{ ui.botao(_('history.older') ~ ' →', variante='ghost',
-                  href=url_for('history', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina + 1)) }}
+                  href=url_for('history.index', servidor=filtro_srv, acao=filtro_acao, usuario=filtro_user, p=pagina + 1)) }}
     {% endif %}
   </div>
   {% else %}

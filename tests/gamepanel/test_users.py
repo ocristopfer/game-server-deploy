@@ -228,7 +228,7 @@ def test_apenas_admin_le_jobs_de_acao_restrita(servidor_com_jobs, chefe, peao, a
     jid = jobs[action]
     esperado = 403 if action in panel.JOB_ACTIONS_ADMIN else 200
     assert peao.get(f"/jobs/{jid}").status_code == esperado
-    assert peao.get(f"/api/jobs/{jid}").status_code == esperado
+    assert peao.get(f"/api/v1/jobs/{jid}").status_code == esperado
     assert chefe.get(f"/jobs/{jid}").status_code == 200
 
 

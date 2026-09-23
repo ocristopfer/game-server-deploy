@@ -366,7 +366,7 @@ def test_com_2fa_obrigatorio_quem_nao_ativou_so_alcanca_a_ativacao(chefe, monkey
 
 def test_com_2fa_obrigatorio_a_api_responde_403_em_json(chefe, monkeypatch):
     monkeypatch.setattr(panel, "REQUIRE_2FA", True)
-    resposta = chefe.get("/api/status")
+    resposta = chefe.get("/api/v1/status")
     assert resposta.status_code == 403
     assert "duas etapas" in resposta.get_json()["error"]
 

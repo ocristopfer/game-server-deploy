@@ -152,7 +152,7 @@ def servidores(banco) -> list:
 
 # --------------------------------------------------------------------------- quem abre
 
-ROTAS_GET = ["/catalog", "/instances", "/api/catalog/suggestions?q=palworld"]
+ROTAS_GET = ["/catalog", "/instances", "/api/v1/catalog/suggestions?q=palworld"]
 ROTAS_POST = ["/catalog/new", "/instances/new", "/instances/7/deactivate", "/instances/7/delete"]
 
 
@@ -224,7 +224,7 @@ def test_sem_2fa_o_post_e_redirecionado_para_a_ativacao_e_nao_chama_o_broker(sem
 
 
 def test_sem_2fa_a_api_json_responde_403_em_vez_de_redirecionar(sem_2fa, broker):
-    resposta = sem_2fa.get("/api/catalog/suggestions?q=palworld")
+    resposta = sem_2fa.get("/api/v1/catalog/suggestions?q=palworld")
     assert resposta.status_code == 403
     assert "duas etapas" in resposta.get_json()["error"]
     assert broker.chamadas == []
@@ -270,7 +270,7 @@ def test_itens_visiveis_filtra_por_recurso_e_papel():
 # ------------------------------------------------------------------------- catalogo
 
 def test_busca_de_jogo_devolve_a_sugestao_com_o_que_o_broker_precisa(chefe, broker):
-    resposta = chefe.get("/api/catalog/suggestions?q=satisfactory")
+    resposta = chefe.get("/api/v1/catalog/suggestions?q=satisfactory")
     assert resposta.status_code == 200
     data = resposta.get_json()
     achado = data["resultados"][0]
@@ -282,20 +282,20 @@ def test_busca_de_jogo_devolve_a_sugestao_com_o_que_o_broker_precisa(chefe, brok
 
 
 def test_busca_de_jogo_sem_consulta_devolve_lista_vazia(chefe, broker):
-    assert chefe.get("/api/catalog/suggestions").get_json()["resultados"] == []
-    assert chefe.get("/api/catalog/suggestions?q=%25%25%25").get_json()["resultados"] == []
+    assert chefe.get("/api/v1/catalog/suggestions").get_json()["resultados"] == []
+    assert chefe.get("/api/v1/catalog/suggestions?q=%25%25%25").get_json()["resultados"] == []
 
 
 def test_busca_nao_chama_o_broker(chefe, broker):
     """E uma lista fixa do repositorio: nada de rede, nem para o broker."""
-    chefe.get("/api/catalog/suggestions?q=palworld")
+    chefe.get("/api/v1/catalog/suggestions?q=palworld")
     assert broker.chamadas == []
 
 
 def test_catalogo_traz_o_campo_de_busca(chefe, broker):
     html = chefe.get("/catalog").get_data(as_text=True)
     assert "data-busca-de-jogo" in html
-    assert "/api/catalog/suggestions" in html
+    assert "/api/v1/catalog/suggestions" in html
 
 
 def test_catalogo_oferece_o_modelo_de_unreal_com_os_valores_na_marcacao(chefe, broker):
@@ -436,7 +436,7 @@ def test_tela_do_job_abre_e_tem_o_rotulo(chefe, broker, postar, banco):
     (line,) = jobs(banco)
     html = chefe.get(f"/jobs/{line['id']}").get_data(as_text=True)
     assert "Instancia criada (broker)" in html
-    assert chefe.get(f"/api/jobs/{line['id']}").get_json()["status"] == "running"
+    assert chefe.get(f"/api/v1/jobs/{line['id']}").get_json()["status"] == "running"
 
 
 def test_saida_do_job_do_broker_e_so_de_admin(chefe, peao, broker, postar, banco):
@@ -444,7 +444,7 @@ def test_saida_do_job_do_broker_e_so_de_admin(chefe, peao, broker, postar, banco
     postar(chefe, "/instances/new", {"game": "alfa", "name": "x"})
     (line,) = jobs(banco)
     assert peao.get(f"/jobs/{line['id']}").status_code == 403
-    assert peao.get(f"/api/jobs/{line['id']}").status_code == 403
+    assert peao.get(f"/api/v1/jobs/{line['id']}").status_code == 403
     link = f"/jobs/{line['id']}"
     assert link in chefe.get("/history").get_data(as_text=True), "o admin ve o job na lista"
     assert link not in peao.get("/history").get_data(as_text=True)
