@@ -238,7 +238,7 @@ nunca o valor, porque isso vai para o journal e ha segredo entre elas.
 - **Opcao nova** = um campo em `Settings`, uma linha em `load()` e (se for do deploy) o
   nome em `$adminKeys` do `deploy-admin.ps1` mais o `render_panel_config`.
 - **O `app.py` mantem os nomes de modulo** (`JOB_TIMEOUT = settings.job_timeout`). Nao e
-  redundancia: os testes trocam `panel.X` por falso, e ler `settings.x` direto faria a
+  redundancia: os testes trocam `panel.X` por falso, e ler o `settings` direto faria a
   troca deixar de valer em silencio. `BROKER_REQUESTED` e `DEV` existem pelo mesmo
   motivo — sao lidos DENTRO de `_configure_broker`, que os testes reexecutam.
 - **`test_settings.py` cobra que ninguem leia o ambiente por fora**, varrendo o pacote
