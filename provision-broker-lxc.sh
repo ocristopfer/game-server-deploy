@@ -13,6 +13,9 @@ CONF_ENV_FILE="${CONF_ENV_FILE:-$SCRIPT_DIR/broker.conf.env}"
 SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$SCRIPT_DIR/broker.secrets.env}"
 
 APP_DIR=/opt/gamebroker
+SERVICE_NAME=gamebroker.service
+RELEASE_ENV_FILE="${RELEASE_ENV_FILE:-$SCRIPT_DIR/release.env}"
+INSTALLER="${INSTALLER:-$SCRIPT_DIR/install-release.sh}"
 CONF_DIR=/etc/gamebroker
 DATA_DIR=/var/lib/gamebroker
 APP_USER=gamebroker
@@ -100,16 +103,16 @@ validate_bundle() {
   need_cmd pct
   need_cmd pveam
   need_cmd openssl
-  local f
-  # Caminhos, e nao so nomes: o pacote tem subpastas, e um bundle sem elas so quebraria
-  # la no start do servico, com ModuleNotFoundError.
-  local obrigatorios=(app.py wsgi.py config.py services/instance_service.py
-                      services/catalog.py services/allocator.py persistence/db.py
-                      runtime/proxmox.py runtime/opnsense.py runtime/ssh_installer.py
-                      integrations/http_client.py domain/exceptions.py)
-  for f in "${obrigatorios[@]}"; do
-    [[ -f "$SCRIPT_DIR/gamebroker/$f" ]] || die "gamebroker/$f nao encontrado no bundle"
-  done
+  # Havia aqui uma lista de arquivos do pacote (app.py, services/catalog.py, ...) que
+  # precisava crescer junto com o codigo e nunca crescia. O codigo agora chega num
+  # tarball unico e quem confere o conteudo e o sha256 dele.
+  [[ -f "$RELEASE_ENV_FILE" ]] || die "release.env nao encontrado: $RELEASE_ENV_FILE (rode pelo deploy-broker.ps1)"
+  [[ -f "$INSTALLER" ]] || die "install-release.sh nao encontrado: $INSTALLER"
+  load_env_file "$RELEASE_ENV_FILE"
+  [[ -n "${RELEASE_TARBALL:-}" ]] || die "RELEASE_TARBALL vazio em $RELEASE_ENV_FILE"
+  [[ -n "${RELEASE_SHA256:-}" ]] || die "RELEASE_SHA256 vazio em $RELEASE_ENV_FILE"
+  [[ -f "$SCRIPT_DIR/$RELEASE_TARBALL" ]] || die "release nao encontrado no bundle: $RELEASE_TARBALL"
+  # lib/ e games/ continuam soltos no bundle: sao dados, nao o pacote Python.
   [[ -f "$SCRIPT_DIR/lib/ct-install.sh" && -f "$SCRIPT_DIR/lib/ct-fases.sh" ]] || die "lib/ct-install.sh e lib/ct-fases.sh sao obrigatorios no bundle"
   compgen -G "$SCRIPT_DIR/games/*.env" >/dev/null || die "games/*.env nao encontrado no bundle"
 }
@@ -233,17 +236,36 @@ push_tree() {
   done < <(find "$origem" -type f ! -name '*.pyc' ! -path '*__pycache__*' | sort)
 }
 
-push_application() {
+publish_application() {
   msg "Publicando o broker em ${APP_DIR}"
-  run_ct "rm -rf ${APP_DIR}/gamebroker ${APP_DIR}/lib ${APP_DIR}/games"
-  run_ct "install -d ${APP_DIR}/gamebroker ${APP_DIR}/lib ${APP_DIR}/games"
-  push_tree "$SCRIPT_DIR/gamebroker" "${APP_DIR}/gamebroker"
+
+  # lib/ e games/ nao sao o pacote Python: sao os scripts de instalacao de jogo e o
+  # catalogo curado, lidos pelo broker em caminho absoluto. Continuam indo soltos, e
+  # trocados por INTEIRO - nao ha lista de subpasta para ficar para tras.
+  run_ct "rm -rf ${APP_DIR}/lib ${APP_DIR}/games"
+  run_ct "install -d ${APP_DIR}/lib ${APP_DIR}/games"
   push_tree "$SCRIPT_DIR/lib" "${APP_DIR}/lib"
   push_tree "$SCRIPT_DIR/games" "${APP_DIR}/games"
-  run_ct "chown -R root:root ${APP_DIR}"
+
+  # O CODIGO vem no tarball de release, verificado pelo sha256 e instalado numa pasta
+  # propria com o symlink `current` apontando para ela.
+  local remote_tmp=/tmp/gamebroker-release
+  run_ct "rm -rf '$remote_tmp' && install -d '$remote_tmp'"
+  # pct push, e nao o `tee` do push_file_to_ct: o tarball e binario e tem de chegar byte
+  # a byte - e o sha256 do outro lado nao perdoa um unico byte trocado.
+  pct push "$CTID" "$SCRIPT_DIR/$RELEASE_TARBALL" "${remote_tmp}/${RELEASE_TARBALL}" --perms 0644
+  pct push "$CTID" "$INSTALLER" "${remote_tmp}/install-release.sh" --perms 0755
+
+  # Sem sonda de saude aqui: a unit so e escrita mais adiante (render_service). O
+  # instalador percebe que ela nao existe e se limita a deixar o release no lugar.
+  run_ct "bash '${remote_tmp}/install-release.sh' gamebroker '${remote_tmp}/${RELEASE_TARBALL}' '${RELEASE_SHA256}' ${APP_DIR} ${SERVICE_NAME}" \
+    || die "A instalacao do release falhou dentro do CT (veja a saida acima)"
+  run_ct "rm -rf '$remote_tmp'"
+  run_ct "chown -R root:root ${APP_DIR}/lib ${APP_DIR}/games"
+
   # Falhar aqui e melhor do que o servico cair no start com ModuleNotFoundError.
-  run_ct "cd ${APP_DIR} && python3 -c 'import gamebroker.wsgi'" \
-    || die "O pacote do broker nao importa no CT (falta algum arquivo no bundle?)"
+  run_ct "cd ${APP_DIR}/current && python3 -c 'import gamebroker.wsgi'" \
+    || die "O pacote do broker nao importa no CT a partir de ${APP_DIR}/current"
 }
 
 ensure_ssh_key() {
@@ -386,7 +408,10 @@ Wants=network-online.target
 Type=simple
 User=${APP_USER}
 Group=${APP_USER}
-WorkingDirectory=${APP_DIR}
+# A release corrente, por symlink: trocar de versao (ou voltar) e mover o link e
+# reiniciar. O systemd resolve o caminho no start, entao cada restart pega o que o
+# link aponta AGORA.
+WorkingDirectory=${APP_DIR}/current
 EnvironmentFile=${CONF_DIR}/broker.env
 # UM worker de proposito: a trava que impede duas criacoes escolherem o mesmo IP mora na
 # memoria do processo. As threads atendem o polling do painel enquanto uma criacao roda.
@@ -543,7 +568,7 @@ main() {
   start_container
   install_packages
   ensure_app_user
-  push_application
+  publish_application
   ensure_ssh_key
   ensure_tls
   ensure_token

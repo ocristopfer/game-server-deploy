@@ -64,29 +64,19 @@ function Copy-AsLf([string]$Source, [string]$Dest) {
     Write-LfFile $Dest ([System.IO.File]::ReadAllText($Source))
 }
 
-# So estas extensoes sao texto. Qualquer outra (a comecar por .png) e binaria: ler com
-# ReadAllText decodifica como UTF-8 e todo byte fora do plano ASCII vira o caractere de
-# substituicao (U+FFFD), e o \r`n -> `n do Write-LfFile ainda come um byte 0x0D que por
+# Copy-AsLf so serve para TEXTO, e hoje so sobrou texto para ela: os scripts .sh que vao
+# para o bash do outro lado. O codigo do painel viaja dentro do tar.gz do release, que e
+# copia de bytes.
+#
+# Existiu aqui uma lista de extensoes "de texto" e um Copy-ArquivoDoAdmin que escolhia
+# entre ela e uma copia binaria, porque o deploy passava CADA arquivo do pacote por este
+# caminho. O ReadAllText decodifica como UTF-8: todo byte fora do plano ASCII vira o
+# caractere de substituicao (U+FFFD), e a troca \r`n -> `n ainda come um 0x0D que por
 # acaso caia depois de um 0x0A. Foi assim que os icones do manifest chegaram corrompidos
 # no servidor - a assinatura de PNG (89 50 4E 47 0D 0A 1A 0A) virou EF BF BD 50 4E 47 0A
 # 1A 0A, e o Chrome parou de aceitar qualquer icone do app (erro "no-acceptable-icon").
-$script:ExtensoesDeTexto = @(".py", ".html", ".jinja", ".css", ".js", ".svg", ".ini",
-    ".cfg", ".json", ".webmanifest", ".md", ".txt", ".sh")
-
-function Copy-Binario([string]$Source, [string]$Dest) {
-    $dir = Split-Path -Parent $Dest
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    Copy-Item -LiteralPath $Source -Destination $Dest -Force
-}
-
-function Copy-ArquivoDoAdmin([string]$Source, [string]$Dest) {
-    $ext = [System.IO.Path]::GetExtension($Source).ToLowerInvariant()
-    if ($script:ExtensoesDeTexto -contains $ext) {
-        Copy-AsLf $Source $Dest
-    } else {
-        Copy-Binario $Source $Dest
-    }
-}
+# Com o release em tar, nao ha mais arquivo do pacote passando por aqui, e a classe
+# inteira desse defeito deixou de existir. Nao devolva o loop.
 
 # ----- Acesso ao Proxmox: chave quando existe, senha do .env quando nao -----
 
@@ -230,65 +220,74 @@ function Get-LocalPubKey([string]$Configured) {
     return ""
 }
 
-function Invoke-DirectDeploy([string]$Target, [string]$SrcDir, [string]$Port) {
-    $remoteTmp = "/tmp/gamepanel-deploy"
-    Write-Host "`nCT do painel encontrado em $Target - enviando o codigo direto (sem Proxmox)." -ForegroundColor Cyan
+# Executavel nativo cujo stderr NAO e erro. O empacotador escreve o aviso de arvore suja
+# no stderr, e com ErrorActionPreference='Stop' isso viraria excecao em cima de um
+# sucesso. Quem decide aqui e o codigo de saida.
+function Invoke-Native([scriptblock]$Bloco, [string]$Oque) {
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Bloco
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao $Oque (codigo $LASTEXITCODE)" }
+    } finally {
+        $ErrorActionPreference = $anterior
+    }
+}
 
+function New-ReleaseBundle([string]$Package) {
+    # Empacota aqui, com o Python do repo. O artefato e determinista (ver
+    # tools/build-release.py), entao o sha256 que viaja com ele responde "o CT esta com
+    # ESTE codigo?", e nao so "o arquivo chegou inteiro?".
+    $builder = Join-Path $ScriptDir "tools/build-release.py"
+    if (-not (Test-Path $builder)) { throw "tools/build-release.py nao encontrado em $ScriptDir" }
+    $dist = Join-Path ([System.IO.Path]::GetTempPath()) "gamepanel-release"
+    if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
+    Invoke-Native { python $builder $Package --out $dist } "empacotar o release"
+    $tarball = Get-ChildItem -Path $dist -Filter "$Package-*.tar.gz" | Select-Object -First 1
+    if (-not $tarball) { throw "o empacotador nao gerou nenhum $Package-*.tar.gz em $dist" }
+    $sha = ((Get-Content "$($tarball.FullName).sha256" -Raw).Trim() -split "\s+")[0]
+    return [pscustomobject]@{ Path = $tarball.FullName; Name = $tarball.Name; Sha = $sha }
+}
+
+function Invoke-DirectDeploy([string]$Target, [string]$Port) {
+    Write-Host "`nCT do painel encontrado em $Target - enviando o release direto (sem Proxmox)." -ForegroundColor Cyan
+    $release = New-ReleaseBundle "gamepanel"
+    Write-Host "  $($release.Name)  sha256 $($release.Sha.Substring(0, 12))..." -ForegroundColor DarkGray
+
+    $remoteTmp = "/tmp/gamepanel-release"
     Invoke-Ssh $Target "rm -rf '$remoteTmp' && mkdir -p '$remoteTmp'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $remoteTmp em root@$Target" }
 
-    # A arvore inteira de uma vez: alem de app.py/wsgi.py/__init__.py e templates/+static/
-    # (que tem subpasta - components/, css/, js/core, js/features, icons/), o pacote agora
-    # tem tres subpastas proprias (games/, security/, integrations/). Um envio raso deixaria
-    # o import do painel inteiro quebrado.
-    Invoke-Scp @((Join-Path $SrcDir "*")) "root@${Target}:$remoteTmp/" -Recurse
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o codigo do painel" }
+    # DOIS arquivos, e so: o pacote e o instalador. O envio antigo copiava a arvore
+    # inteira e mantinha, do lado de la, uma lista escrita a mao de quais pastas apagar
+    # antes - lista que ficou para tras a cada pasta nova do pacote e deixava modulo
+    # renomeado vivo no container. Aqui o release e uma pasta nova: nao ha o que sobrar.
+    #
+    # E copia de BYTES: o loop antigo passava cada arquivo por um normalizador de fim de
+    # linha, e o PNG que caisse nessa peneira chegava corrompido (o icone do PWA chegou).
+    Invoke-Scp @($release.Path, (Join-Path $ScriptDir "lib/install-release.sh")) "root@${Target}:$remoteTmp/"
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o release do painel" }
 
-    # Troca o conteudo e reinicia.
-    #
-    # templates/, games/, security/ e integrations/ sao apagadas INTEIRAS antes da copia:
-    # tudo ali vem do repo, entao um arquivo renomeado (ou um componente que saiu de
-    # components/) nao pode continuar vivo no container. app.py/wsgi.py/__init__.py, no
-    # topo, sao so sobrescritos pela copia - nao tem subpasta pra sobrar lixo.
-    #
-    # static/ nao pode levar o mesmo tratamento: `maps/` e criada no proprio container
-    # e nao existe aqui para ser reenviada. A limpeza e por arquivo no topo e pelas
-    # subpastas que sao do repo (css/, js/, icons/) - assim um .js renomeado some, e o
-    # que o container criou fica. Nada de `rm -f *` solto: o glob pegaria a subpasta e o
-    # `rm -f` falharia com "Is a directory", derrubando o deploy no meio da troca por
-    # causa do `set -e`.
-    $install = @'
-set -e
-install -d /opt/gamepanel/gamepanel/templates /opt/gamepanel/gamepanel/static
-rm -rf /opt/gamepanel/gamepanel/templates /opt/gamepanel/gamepanel/games /opt/gamepanel/gamepanel/security /opt/gamepanel/gamepanel/integrations
-install -d /opt/gamepanel/gamepanel/templates
-find /opt/gamepanel/gamepanel/static -maxdepth 1 -type f -delete
-rm -rf /opt/gamepanel/gamepanel/static/css /opt/gamepanel/gamepanel/static/js /opt/gamepanel/gamepanel/static/icons
-cp -r /tmp/gamepanel-deploy/. /opt/gamepanel/gamepanel/
-chmod -R a+rX /opt/gamepanel/gamepanel/static /opt/gamepanel/gamepanel/templates
-# Bytecode da versao anterior: um .pyc de modulo que sumiu ainda seria importavel.
-find /opt/gamepanel/gamepanel -name '__pycache__' -type d -prune -exec rm -rf {} +
-chown -R root:root /opt/gamepanel
-rm -rf /tmp/gamepanel-deploy
-systemctl restart gamepanel.service
-sleep 3
-systemctl is-active --quiet gamepanel.service
-'@
-    Invoke-Ssh $Target $install
-    if ($LASTEXITCODE -ne 0) {
+    # A sonda de saude e quem decide se o release fica: se ela nao responder, o
+    # instalador devolve o symlink para a versao anterior e sai com erro. A limpeza vem
+    # DEPOIS, num comando separado, para o codigo de saida que chega aqui ser o do
+    # instalador e nao o do 'rm'.
+    $saude = "curl -fsS http://127.0.0.1:$Port/health"
+    Invoke-Ssh $Target "bash '$remoteTmp/install-release.sh' gamepanel '$remoteTmp/$($release.Name)' '$($release.Sha)' /opt/gamepanel gamepanel.service '$saude'"
+    $instalou = ($LASTEXITCODE -eq 0)
+    Invoke-Ssh $Target "rm -rf '$remoteTmp'"
+    if (-not $instalou) {
         Write-Host "`nO painel nao voltou. Ultimas linhas do log:" -ForegroundColor Yellow
         Invoke-Ssh $Target "journalctl -u gamepanel.service --no-pager -n 30"
         throw "gamepanel.service nao ficou ativo apos o envio direto"
     }
 
-    # Zero template e um painel que nao serve nenhuma tela: o install nao chegou a
-    # copiar nada. Sem esta conferencia o deploy anuncia sucesso em cima de um container
-    # que foi deixado pela metade.
-    $count = (Invoke-Ssh $Target "ls /opt/gamepanel/gamepanel/templates | wc -l").Trim()
-    if ($count -eq "0") {
-        throw "O envio terminou com /opt/gamepanel/gamepanel/templates vazio - o install nao rodou"
-    }
-    Write-Host "`nPainel atualizado em http://${Target}:$Port ($count templates)." -ForegroundColor Green
+    # Confirma pelo /health que o processo NO AR e o que acabou de ser publicado. Um
+    # "systemctl is-active" satisfeito e compativel com "o systemd reiniciou a versao
+    # velha": os dois dao verde, e so a versao separa os dois casos.
+    $noAr = (Invoke-Ssh $Target "curl -fsS http://127.0.0.1:$Port/health").Trim()
+    Write-Host "`nPainel atualizado em http://${Target}:$Port" -ForegroundColor Green
+    Write-Host "  /health: $noAr" -ForegroundColor DarkGray
     Write-Host "Config (ADMIN_*), recursos do CT e usuario so mudam no modo completo: .\deploy-admin.ps1 -Full" -ForegroundColor DarkGray
 }
 
@@ -325,33 +324,40 @@ if ($Interactive) {
     throw "Modo automatico requer o arquivo .env ($EnvFile). Copie o .env.example ou use -Interactive."
 }
 
-# ----- Monta o bundle -----
-$BundleDir = Join-Path ([System.IO.Path]::GetTempPath()) "game-admin-bundle"
-if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
-New-Item -ItemType Directory -Path $BundleDir | Out-Null
-
-Copy-AsLf (Join-Path $ScriptDir "provision-admin-lxc.sh") (Join-Path $BundleDir "provision-admin-lxc.sh")
-
-$AdminSrc = Join-Path (Join-Path $ScriptDir "src") "gamepanel"
-if (-not (Test-Path $AdminSrc)) { throw "Diretorio 'src/gamepanel' nao encontrado em $ScriptDir" }
-foreach ($file in Get-ChildItem -Path $AdminSrc -File -Recurse) {
-    $relative = $file.FullName.Substring($AdminSrc.Length).TrimStart('\', '/')
-    # __pycache__ nao serve para nada no destino - so peso extra no envio.
-    if ($relative -like "__pycache__*" -or $relative -like "*\__pycache__\*") { continue }
-    Copy-ArquivoDoAdmin $file.FullName (Join-Path (Join-Path $BundleDir "gamepanel") $relative)
-}
-
-# ----- Atalho: CT ja existe e responde? Manda o codigo direto para ele -----
+# ----- Atalho: CT ja existe e responde? Manda o release direto para ele -----
+# Antes do bundle de proposito: este caminho nao usa o bundle, so o tarball que o
+# Invoke-DirectDeploy empacota. Montar a arvore inteira aqui era trabalho jogado fora em
+# todo deploy incremental - que e a maioria deles.
 if (-not $Interactive -and -not $Full) {
     $TargetPanel = Resolve-PanelHost $cfg $PanelHost
     if (Test-PanelReachable $TargetPanel) {
-        Invoke-DirectDeploy $TargetPanel (Join-Path $BundleDir "gamepanel") (Get-Cfg $cfg "ADMIN_PORT" "8080")
+        Invoke-DirectDeploy $TargetPanel (Get-Cfg $cfg "ADMIN_PORT" "8080")
         return
     }
     if ($TargetPanel -ne "") {
         Write-Host "CT do painel nao respondeu em $TargetPanel - seguindo pelo Proxmox." -ForegroundColor DarkGray
     }
 }
+
+# ----- Monta o bundle do provisionamento completo -----
+# O caminho pelo Proxmox leva o script de provisionamento, o .env e o MESMO tarball de
+# release que o envio direto usa: um artefato so, publicado do mesmo jeito nos dois
+# caminhos. O loop que copiava arquivo por arquivo saiu junto com a lista escrita a mao
+# de quais pastas limpar do outro lado.
+$BundleDir = Join-Path ([System.IO.Path]::GetTempPath()) "game-admin-bundle"
+if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
+New-Item -ItemType Directory -Path $BundleDir | Out-Null
+
+Copy-AsLf (Join-Path $ScriptDir "provision-admin-lxc.sh") (Join-Path $BundleDir "provision-admin-lxc.sh")
+Copy-AsLf (Join-Path $ScriptDir "lib/install-release.sh") (Join-Path $BundleDir "install-release.sh")
+
+$Release = New-ReleaseBundle "gamepanel"
+# Copy-Item, nunca Copy-AsLf: um tar.gz passado pelo normalizador de fim de linha e
+# decodificado como UTF-8 e chega do outro lado como lixo.
+Copy-Item $Release.Path (Join-Path $BundleDir $Release.Name)
+Write-LfFile (Join-Path $BundleDir "release.env") (
+    "RELEASE_TARBALL='$($Release.Name)'`nRELEASE_SHA256='$($Release.Sha)'`n")
+Write-Host "Release do painel: $($Release.Name)" -ForegroundColor DarkGray
 
 # ----- Caminho completo: cria/reconfigura o CT pelo host Proxmox -----
 if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido (parametro, .env ou modo interativo)." }
@@ -404,15 +410,18 @@ try {
     Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
 
+    # Uma pasta rasa, sem subpasta nenhuma: quatro arquivos, um deles o tarball. O envio
+    # recursivo da arvore saiu daqui - era o que exigia conferir, a cada pasta nova do
+    # pacote, se o -Recurse ainda alcancava tudo.
     $topLevel = @(
         (Join-Path $BundleDir "provision-admin-lxc.sh"),
+        (Join-Path $BundleDir "install-release.sh"),
+        (Join-Path $BundleDir "release.env"),
+        (Join-Path $BundleDir $Release.Name),
         (Join-Path $BundleDir "admin.env")
     )
     Invoke-Scp $topLevel "root@${ProxmoxHost}:$RemoteBundleDir/"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para root@$ProxmoxHost" }
-
-    Invoke-Scp @((Join-Path $BundleDir "gamepanel")) "root@${ProxmoxHost}:$RemoteBundleDir/" -Recurse
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar a aplicacao para root@$ProxmoxHost" }
 
     Write-Host "Provisionando o painel no Proxmox...`n" -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./provision-admin-lxc.sh"

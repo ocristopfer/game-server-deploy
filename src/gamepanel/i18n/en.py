@@ -61,6 +61,7 @@ MESSAGES: dict[str, str] = {
     # ------------------------------------------------- base e aviso de versao
     "app.name": "Game Panel",
     "app.new_version": "There is a new version of the panel.",
+    "app.version": "Panel version {version}",
     "app.update_now": "Update now",
     "app.install": "Install",
 

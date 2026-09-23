@@ -1,6 +1,5 @@
 """Painel web (Flask) de administracao dos servidores dedicados de jogos.
 
-Esqueleto criado na Fase 3 (reorganizacao estrutural); o conteudo de
-admin/app.py ainda mora no lugar antigo ate a etapa correspondente do plano
-em docs/architecture-proposal.md ser executada.
+A camada HTTP esta em `blueprints/`, a regra em `services/`, o acesso remoto em
+`runtime/` e a montagem (banco, sessao, decoradores, tabelas) em `app.py`.
 """

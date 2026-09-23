@@ -117,6 +117,10 @@
     {% endfor %}
   {% endwith %}
   {% block content %}{% endblock %}
+
+  {# Discreto de proposito: e informacao de suporte, nao conteudo. Fica dentro do
+     `main` para herdar a mesma coluna do resto, senao encosta na borda do celular. #}
+  <p class="app-version muted small">{{ _('app.version', version=app_version) }}</p>
 </main>
 
 {% if current_user %}

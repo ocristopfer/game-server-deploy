@@ -43,6 +43,9 @@ services:
       - broker-token
     volumes:
       - ./src/gamepanel:/opt/gamepanel/gamepanel:ro   # o codigo vem do repo: edite e recarregue a pagina
+      # Sem isto o painel de desenvolvimento se apresenta como 0.0.0+dev: a versao sai do
+      # VERSION da raiz, e aqui o pacote esta montado longe dele.
+      - ./VERSION:/opt/gamepanel/VERSION:ro
       # Repo inteiro, so para `docker compose exec -w /workspace panel python3 -m pytest -q`
       # (ver CLAUDE.md) - pytest.ini, tests/ e src/ precisam estar juntos pro pytest achar
       # a config e os dois pacotes; o mount de cima e so o que o processo do painel serve.
@@ -70,6 +73,7 @@ services:
       - broker-token
     volumes:
       - ./src/gamebroker:/opt/gamebroker/gamebroker:ro
+      - ./VERSION:/opt/gamebroker/VERSION:ro
       - ./games:/opt/gamebroker/games:ro
 
   game-palworld:

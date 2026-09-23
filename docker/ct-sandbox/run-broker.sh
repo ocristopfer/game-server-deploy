@@ -13,12 +13,18 @@ confere() { # descricao, esperado, atual
 }
 
 # ----- bundle igual ao que o deploy-broker.ps1 monta -----
+# O CODIGO vai num tarball de release (nao mais arquivo a arquivo); lib/ e games/
+# continuam soltos, que e o que o deploy faz.
 work=$(mktemp -d)
-mkdir -p "$work/gamebroker" "$work/lib" "$work/games"
-# -r: o pacote tem subpastas (services/, runtime/, persistence/...).
-cp -r "$REPO"/src/gamebroker/. "$work/gamebroker/"
-find "$work/gamebroker" -name __pycache__ -type d -prune -exec rm -rf {} +
+mkdir -p "$work/lib" "$work/games"
+python3 "$REPO/tools/build-release.py" gamebroker --out "$work/dist" >/dev/null 2>&1   || { echo "FALHOU    build-release.py nao gerou o pacote do broker"; exit 1; }
+release_tar="$(basename "$(ls "$work"/dist/gamebroker-*.tar.gz)")"
+cp "$work/dist/$release_tar" "$work/"
+printf "RELEASE_TARBALL='%s'
+RELEASE_SHA256='%s'
+" "$release_tar"   "$(sha256sum "$work/$release_tar" | cut -d' ' -f1)" > "$work/release.env"
 cp "$REPO"/lib/*.sh "$work/lib/"
+cp "$REPO/lib/install-release.sh" "$work/install-release.sh"
 cp "$REPO"/games/*.env "$work/games/"
 cp "$REPO/provision-broker-lxc.sh" "$work/"
 cat > "$work/broker.conf.env" <<'CONF'
@@ -73,21 +79,23 @@ confere "broker.env: modo/dono"           "640 root:gamebroker"        "$(stat -
 confere "token: modo/dono"                "600 root:root"              "$(stat -c '%a %U:%G' /etc/gamebroker/token)"
 confere "chave ssh do broker: modo/dono"  "600 gamebroker:gamebroker"  "$(stat -c '%a %U:%G' /etc/gamebroker/ssh/id_ed25519)"
 confere "chave privada TLS: modo/dono"    "600 gamebroker:gamebroker"  "$(stat -c '%a %U:%G' /etc/gamebroker/tls/key.pem)"
-confere "codigo do broker e de root"      "root:root"                  "$(stat -c '%U:%G' /opt/gamebroker/gamebroker/wsgi.py)"
+confere "codigo do broker e de root"      "root:root"                  "$(stat -c '%U:%G' /opt/gamebroker/current/gamebroker/wsgi.py)"
 [ "${#T1}" -ge 32 ] && ok "token com ${#T1} caracteres" || nok "token curto: ${#T1}"
 openssl x509 -in /etc/gamebroker/tls/cert.pem -noout -ext subjectAltName | grep -q '192.168.2.18' \
   && ok "SAN = 192.168.2.18" || nok "SAN sem o IP do broker"
 
 # O que vai para producao NAO leva dobles de teste nem o broker de brinquedo.
-enviados="$(ls /opt/gamebroker/gamebroker)"
+enviados="$(ls /opt/gamebroker/current/gamebroker)"
 if echo "$enviados" | grep -Eq '^(test_|conftest|fakes|http_falso|dev\.py)'; then nok "dobles de teste foram para o CT: $(echo "$enviados" | tr '\n' ' ')"; else ok "sem dobles de teste no CT ($(echo "$enviados" | wc -l) modulos)"; fi
+[ -L /opt/gamebroker/current ] && ok "current e um symlink" || nok "current nao e symlink"
+[ -f /opt/gamebroker/current/gamebroker/_build.py ] && ok "o carimbo de versao chegou"   || nok "_build.py ausente no CT"
 [ -f /opt/gamebroker/lib/ct-install.sh ] && [ -f /opt/gamebroker/lib/ct-fases.sh ] && ok "lib/ enviada" || nok "lib/ ausente"
 [ "$(ls /opt/gamebroker/games/*.env | wc -l)" -ge 8 ] && ok "games/*.env enviados" || nok "games/ incompleto"
 
 echo "== o broker.env gerado e ACEITO pelo carregador de configuracao real =="
 python3 - > /tmp/carregar.out 2>&1 <<'PY'
 import re, sys
-sys.path.insert(0, '/opt/gamebroker')
+sys.path.insert(0, '/opt/gamebroker/current')
 def valor_systemd(texto):
     """Como o systemd le NOME="valor": a PRIMEIRA aspas sem escape fecha o valor, e o que sobra
     depois dela tem de ser so espaco. (Um regex guloso engoliria uma aspa sem escape e esconderia
@@ -109,16 +117,16 @@ for linha in open('/etc/gamebroker/broker.env', encoding='utf-8'):
     m = re.fullmatch(r'([A-Z_0-9]+)=(".*)\n?', linha)
     if m:
         env[m.group(1)] = valor_systemd(m.group(2))
-from gamebroker.config import carregar
-cfg = carregar(env)
+from gamebroker.config import load
+cfg = load(env)
 print('token_ok', cfg.token == open('/etc/gamebroker/token').read().strip())
 print('segredo', cfg.opnsense_secret == 'a"b\\c$d`e f')
 print('chave_opn', cfg.opnsense_key == 'qSNu/chave+de=teste')
-print('ips', cfg.ips[0], cfg.ips[-1], cfg.ips_permitidos)
-print('enderecos', cfg.ctid_base, cfg.portas.start, cfg.portas.stop - 1)
+print('ips', cfg.ips[0], cfg.ips[-1], cfg.allowed_ips)
+print('enderecos', cfg.ctid_base, cfg.ports.start, cfg.ports.stop - 1)
 print('chaves', len(cfg.proxmox.chaves_ssh), cfg.proxmox.chaves_ssh[0] == open('/etc/gamebroker/ssh/id_ed25519.pub').read().strip(), 'painel@gp' in cfg.proxmox.chaves_ssh[1])
 print('template', cfg.proxmox.template)
-print('impressoes', cfg.proxmox_impressao[:8], cfg.opnsense_impressao[:8])
+print('impressoes', cfg.proxmox_fingerprint[:8], cfg.opnsense_fingerprint[:8])
 print('prefixo', cfg.proxmox.prefixo)
 PY
 cat /tmp/carregar.out | sed 's/^/          /'
@@ -195,7 +203,12 @@ rc=$?
   && ok "servidor inalcancavel: o deploy falha DIZENDO o que fazer (nao sai calado)" || nok "deploy saiu sem explicar (rc=$rc): $(tail -3 /tmp/deploy7.log | tr '\n' ' ')"
 # Qualquer falha inesperada mostra a linha e o comando (trap ERR), sem valor de segredo.
 cp "$work/secrets.modelo" "$work/broker.secrets.env"
-sed 's#^  run_ct "chown -R root:root ${APP_DIR}"#  false#' "$work/provision-broker-lxc.sh" > "$work/quebrado.sh"
+# A linha trocada por `false` tem de EXISTIR no script: se ela mudar de texto, o sed
+# nao casa, nada quebra e o teste passa sem ter testado nada. Por isso a conferencia
+# abaixo, antes de rodar.
+alvo='^  run_ct "chown -R root:root ${APP_DIR}/lib ${APP_DIR}/games"$'
+grep -q "$alvo" "$work/provision-broker-lxc.sh"   || nok "a linha que este teste derruba de proposito sumiu do provision-broker-lxc.sh"
+sed "s#${alvo}#  false#" "$work/provision-broker-lxc.sh" > "$work/quebrado.sh"
 ( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./quebrado.sh ) > /tmp/deploy8.log 2>&1
 rc=$?
 if [ $rc -ne 0 ] && grep -q "falhou na linha .* executando: false" /tmp/deploy8.log && ! grep -qF "segredo-do-proxmox" /tmp/deploy8.log; then

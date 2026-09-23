@@ -12,6 +12,7 @@ import re
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 
+from gamebroker import version
 from gamebroker.domain.exceptions import Refusal, ValidationError
 from gamebroker.services.instance_service import Service
 
@@ -61,7 +62,10 @@ def create_app(service: Service, token: str, allowed_ips: tuple[str, ...] = ()) 
 
     @app.get("/v1/health")
     def health():
-        return jsonify(service.health())
+        # A versao vem daqui, e nao do `Service`: ela e identidade do PROCESSO que
+        # respondeu, nao um fato sobre Proxmox ou OPNsense. O painel usa para dizer se o
+        # broker que ele alcanca e o que o ultimo deploy publicou.
+        return jsonify({**service.health(), **version.BUILD.as_public()})
 
     @app.get("/v1/catalog")
     def catalog():

@@ -54,7 +54,7 @@ if __name__ == "__main__":  # pragma: no cover - so vale fora do import normal
 # dependencia nova. E o mesmo escape que o autoescape do template usa.
 from markupsafe import Markup, escape
 
-from gamepanel import cli, i18n
+from gamepanel import cli, i18n, version
 from gamepanel import navigation as ui
 from gamepanel.blueprints import register_all
 from gamepanel.games import config_format as gameconf
@@ -709,6 +709,10 @@ def _inject():
         "is_admin": bool(user) and user["role"] == ROLE_ADMIN,
         "role_label": translate(ROLE_LABELS[user["role"]]) if user else "",
         "job_label": job_label,
+        # Que codigo esta servindo esta tela. Vai no rodape, e nao so no /health, porque
+        # quem abre um chamado ("a tela nao atualizou") esta olhando a TELA — e a
+        # resposta cabe numa linha que ele consegue ler em voz alta.
+        "app_version": version.BUILD.version,
         "allow_shell": ALLOW_SHELL,
         "allow_term": ALLOW_SHELL and HAVE_PTY,
         "allow_files": ALLOW_FILES,
@@ -2998,25 +3002,30 @@ def _security_headers(resp):
 CASCO_PASTAS = ("css", "js", "icons")
 
 
-def _shell_files() -> tuple[list[str], int]:
+def _shell_files() -> tuple[list[str], str]:
     """URLs do casco do aplicativo e a marca de versao dele.
 
-    A versao e o mtime mais recente entre esses arquivos. E o que faz um deploy
-    chegar ao celular: byte novo no CSS -> versao nova -> arquivo do service worker
-    diferente -> o navegador instala e descarta o cache velho. Sem isso, quem
-    instalou o painel continuaria vendo a tela da semana passada.
+    E o que faz um deploy chegar ao celular: marca nova -> arquivo do service worker
+    diferente -> o navegador instala e descarta o cache velho. Sem isso, quem instalou
+    o painel continuaria vendo a tela da semana passada.
+
+    Num release empacotado a marca e a VERSAO — ela responde "qual codigo este celular
+    esta servindo?", que o mtime nao responde. Rodando do repositorio nao ha versao para
+    marcar, entao vale o mtime mais recente dos estaticos: e o unico sinal que muda
+    quando se salva um CSS sem empacotar nada.
     """
     urls: list[str] = []
-    marca = 0
-    for pasta in CASCO_PASTAS:
-        raiz = os.path.join(app.static_folder or "", pasta)
-        for base, _dirs, arquivos in os.walk(raiz):
-            for name in sorted(arquivos):
-                caminho = os.path.join(base, name)
-                relativo = os.path.relpath(caminho, app.static_folder).replace(os.sep, "/")
-                urls.append(static_url(relativo))
-                marca = max(marca, int(os.path.getmtime(caminho)))
-    return urls, marca
+    newest = 0
+    for folder in CASCO_PASTAS:
+        root = os.path.join(app.static_folder or "", folder)
+        for base, _dirs, files in os.walk(root):
+            for name in sorted(files):
+                path = os.path.join(base, name)
+                relative = os.path.relpath(path, app.static_folder).replace(os.sep, "/")
+                urls.append(static_url(relative))
+                newest = max(newest, int(os.path.getmtime(path)))
+    mark = str(newest) if version.BUILD.is_dev else version.BUILD.version
+    return urls, mark
 
 
 @app.errorhandler(400)

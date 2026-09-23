@@ -112,15 +112,17 @@ mudam, e e ali que mora o 403 que ninguem tinha visto.
 ## Onde cada coisa mora
 
 ```
+VERSION                  a versao do repositorio (semver, a mao); tools/build-release.py a carimba no pacote
 pyproject.toml          workspace uv: dependencias de dev (pytest/ruff/mypy), so gamepanel/gamebroker editaveis
 pytest.ini               onde o pytest procura os testes (tests/) e config de cache
 conftest.py              insere src/ no sys.path antes de qualquer teste (funciona sem `uv sync`)
 games/                   catalogo curado de jogos (um *.env por jogo), lido pelo gamebroker E pelos
                         scripts de provisionamento em bash - por isso fica na raiz, fora de src/
-lib/                     fases de instalacao de jogo (bash), compartilhadas entre o host Proxmox e o CT do broker
+lib/                     fases de instalacao de jogo (bash) + install-release.sh (publica um release no CT)
 src/
   gamepanel/             o painel (era admin/)
     app.py               a montagem: banco, sessao, decoradores, tabelas, SSH, alertas, agendador
+    version.py           a versao que esta rodando (le o _build.py do release, ou cai no VERSION+dev)
     blueprints/          a camada HTTP, um arquivo por grupo de tela (ver a secao propria)
     wsgi.py              entry point do gunicorn (`gamepanel.wsgi:app`)
     cli.py               bootstrap: --create-user, --reset-2fa, --register-server (o rodape de app.py chama o main() daqui)
@@ -160,6 +162,7 @@ tests/
   gamepanel/              as suites do painel (era admin/test_*.py + admin/conftest.py)
   gamebroker/             as suites do broker, mais os dobres de teste http_falso.py (era broker/test_*.py)
 tools/
+  build-release.py       empacota um release: dist/<pacote>-<versao>.tar.gz + .sha256 (so stdlib, determinista)
   importar-linuxgsm.py   gera src/gamepanel/games/catalog/suggestions.py a partir do LinuxGSM (precisa de internet)
   verificar-qr.py        verificacao manual do QR contra um leitor de verdade (venv descartavel)
 ```
@@ -685,22 +688,79 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
 
 ---
 
-## Deploy — os dois caminhos publicam a arvore inteira
+## Versao e deploy — um artefato, publicado por symlink
+
+A versao do repositorio esta no `VERSION` da raiz (semver, editado a mao). Quem a
+transforma em identidade de um artefato e `tools/build-release.py`:
+
+```bash
+python tools/build-release.py gamepanel    # dist/gamepanel-0.1.0+abc1234.tar.gz + .sha256
+python tools/build-release.py gamebroker
+```
+
+- **`_build.py` (versao, commit, data) e gravado DENTRO do tarball, nunca na arvore.**
+  `git status` continua limpo depois de empacotar, e o `.gitignore` guarda `src/*/_build.py`
+  caso um dia escape. Sem esse arquivo (rodando do repositorio) a versao vira `X.Y.Z+dev`,
+  e a marca `+dev` e o que impede confundir "o painel do CT esta na 0.1.0" com "estou
+  olhando a minha maquina".
+- **O tarball e determinista**: nomes ordenados, dono/grupo zerados, mtime do commit e
+  `mtime=0` no cabecalho do gzip. Dois empacotamentos do mesmo commit dao o MESMO sha256 —
+  e e isso que faz o hash responder "o CT esta com este codigo?" em vez de so "o arquivo
+  chegou inteiro?". **Sem git a data cai fora** (`built_at` vazio, mtime 0) de proposito:
+  cair no relogio ali custaria o determinismo.
+- **Arvore suja sai marcada `.dirty`** no nome do arquivo e na tela. Um release que nao
+  corresponde a commit nenhum nao pode se parecer com um que corresponde.
+- **Modulo que nao vai para producao sai por `SKIPPED_NAMES`/`SKIPPED_PREFIXES`**
+  (`dev.py`, `conftest.py`, `fakes.py`, `http_falso.py`, `test_*`). O caso que importa e o
+  `gamebroker/dev.py`: ele cria instancia contra backends falsos, e no CT de verdade seria
+  um jeito de o broker mentir sobre o que existe.
+- **A versao aparece em tres lugares**: o rodape de toda tela (`app.version`), o `/health`
+  (`{"status","version","commit","built_at"}`) e a marca do service worker. Num release a
+  marca do worker E a versao; rodando do repositorio ela volta a ser o mtime dos estaticos,
+  porque so o mtime muda quando se salva um CSS sem empacotar nada.
+
+O que o deploy manda e esse tarball mais `lib/install-release.sh`, e o instalador e **o
+mesmo** nos dois caminhos:
 
 | caminho | quando |
 |---|---|
-| `deploy-admin.ps1` | envio direto por SSH (troca codigo e reinicia) |
-| `provision-admin-lxc.sh` | provisionamento completo pelo Proxmox (`pct push`) |
+| `deploy-admin.ps1` | envio direto por SSH (empacota, manda 2 arquivos e reinicia) |
+| `provision-admin-lxc.sh` | provisionamento completo pelo Proxmox (`pct push` do tarball) |
 | `deploy-broker.ps1` + `provision-broker-lxc.sh` | o broker (CT proprio); ver a secao "Broker" |
+
+```
+/opt/gamepanel/releases/0.1.0+abc1234/gamepanel/...
+/opt/gamepanel/current -> releases/0.1.0+abc1234     # WorkingDirectory da unit
+```
+
+- **Release e PASTA NOVA, nunca copia por cima.** Antes cada caminho tinha a sua lista
+  escrita a mao de quais subpastas apagar antes de copiar (`templates/ games/ security/
+  integrations/`), e as duas ficaram para tras a cada pasta nova do pacote — `blueprints/`,
+  `i18n/`, `persistence/`, `runtime/`, `services/` e `tasks/` nunca entraram. Resultado:
+  modulo renomeado continuava vivo no container, importavel, sem ninguem ver. Com pasta por
+  versao nao existe o que sobrar. **Nao devolva a lista.**
+- **Voltar uma versao = mover o symlink.** `install-release.sh` guarda 5 releases, e faz o
+  rollback sozinho quando o servico nao sobe ou a sonda de saude nao responde.
+- **A troca do symlink e `ln -sfn` ao lado + `mv -T`**, nunca `ln -sfn` direto: num symlink
+  que ja existe o `ln` cria o link DENTRO da pasta apontada. O `mv -T` e atomico.
+- **O deploy confirma pelo `/health`**, nao por `systemctl is-active`: "o servico esta de
+  pe" e compativel com "o systemd reiniciou a versao velha", e os dois dao verde.
+- **Tarball vai por `Copy-Item`/`pct push`, nunca por `Copy-AsLf`/`tee`.** O normalizador de
+  fim de linha decodifica como UTF-8 e corrompe binario (foi como os icones do PWA
+  chegaram quebrados). `Copy-AsLf` hoje so ve `.sh`.
+- **Mexeu no `install-release.sh` ou no empacotador? Rode `bash docker/ct-sandbox/release.sh`**
+  (21 verificacoes: sha errado, pasta da versao, virada do symlink, remocao do layout
+  antigo, rollback) e `bash docker/ct-sandbox/broker.sh`. Nao existe teste de shell no
+  repositorio; a prova e o sandbox.
 
 **`ADMIN_HOST` do `.env` vence `ADMIN_IP_CIDR`** no atalho de envio direto do `deploy-admin.ps1`
 (sem `-Full`): ao mudar o painel de CT/IP, troque os DOIS, senao o deploy cai no CT antigo e o
 publica la (foi assim que o painel publico velho recebeu codigo novo sem ninguem pedir). `-Full`
 segue o `ADMIN_CTID`. O deploy do broker tambem deduz o IP permitido a partir do `ADMIN_HOST`.
 
-Os dois copiam `templates/` e `static/` **recursivamente**. Ao criar uma subpasta nova,
-confira os dois — eles ja quebraram por copiar so o primeiro nivel. `static/maps` fica
-de fora da limpeza: ela e criada dentro do container e nao existe no repo.
+`lib/` e `games/` do broker continuam viajando soltos: nao sao o pacote Python, e sim
+scripts de instalacao e o catalogo curado, lidos em caminho absoluto. O provisionamento
+troca os dois por inteiro.
 
 ### PowerShell (`.ps1`)
 

@@ -185,21 +185,42 @@ if ($LigarNoPainel) {
     if ($resp -ne "LIGAR") { throw "Cancelado: o recurso nao foi ligado." }
 }
 
+function New-ReleaseBundle([string]$Package) {
+    # Empacota aqui, com o Python do repo. O artefato e determinista (ver
+    # tools/build-release.py), entao o sha256 que viaja com ele responde "o CT esta com
+    # ESTE codigo?", e nao so "o arquivo chegou inteiro?".
+    $builder = Join-Path $ScriptDir "tools/build-release.py"
+    if (-not (Test-Path $builder)) { throw "tools/build-release.py nao encontrado em $ScriptDir" }
+    $dist = Join-Path ([System.IO.Path]::GetTempPath()) "gamebroker-release"
+    if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
+    Invoke-Native { python $builder $Package --out $dist }
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao empacotar o release (codigo $LASTEXITCODE)" }
+    $tarball = Get-ChildItem -Path $dist -Filter "$Package-*.tar.gz" | Select-Object -First 1
+    if (-not $tarball) { throw "o empacotador nao gerou nenhum $Package-*.tar.gz em $dist" }
+    $sha = ((Get-Content "$($tarball.FullName).sha256" -Raw).Trim() -split "\s+")[0]
+    return [pscustomobject]@{ Path = $tarball.FullName; Name = $tarball.Name; Sha = $sha }
+}
+
 # ----- Monta o bundle -----
 $BundleDir = Join-Path ([System.IO.Path]::GetTempPath()) "game-broker-bundle"
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 New-Item -ItemType Directory -Path $BundleDir | Out-Null
 
 Copy-AsLf (Join-Path $ScriptDir "provision-broker-lxc.sh") (Join-Path $BundleDir "provision-broker-lxc.sh")
-$gamebrokerSrc = Join-Path (Join-Path $ScriptDir "src") "gamebroker"
-# -Recurse e o caminho RELATIVO: o pacote tem subpastas (services/, runtime/,
-# persistence/, integrations/, domain/). Copiando so o primeiro nivel, o bundle sai sem
-# elas e o broker so quebra la no CT, no start, com ModuleNotFoundError.
-foreach ($f in (Get-ChildItem $gamebrokerSrc -Filter "*.py" -File -Recurse)) {
-    if ($f.FullName -like "*__pycache__*") { continue }
-    $rel = $f.FullName.Substring($gamebrokerSrc.Length + 1)
-    Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "gamebroker") $rel)
-}
+Copy-AsLf (Join-Path $ScriptDir "lib/install-release.sh") (Join-Path $BundleDir "install-release.sh")
+
+# O CODIGO do broker viaja num tar.gz de release; lib/ e games/ continuam soltos porque
+# nao sao o pacote Python - sao dados e scripts que o CT le, e o provisionamento ja troca
+# os dois por inteiro. O loop que copiava cada .py saiu daqui: era ele que precisava ser
+# revisto a cada subpasta nova do pacote, e que deixava modulo renomeado vivo no CT.
+$Release = New-ReleaseBundle "gamebroker"
+# Copy-Item, nunca Copy-AsLf: um tar.gz passado pelo normalizador de fim de linha e
+# decodificado como UTF-8 e chega do outro lado como lixo.
+Copy-Item $Release.Path (Join-Path $BundleDir $Release.Name)
+Write-LfFile (Join-Path $BundleDir "release.env") (
+    "RELEASE_TARBALL='$($Release.Name)'`nRELEASE_SHA256='$($Release.Sha)'`n")
+Write-Host "Release do broker: $($Release.Name)" -ForegroundColor DarkGray
+
 foreach ($f in (Get-ChildItem (Join-Path $ScriptDir "lib") -Filter "*.sh" -File)) {
     Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "lib") $f.Name)
 }

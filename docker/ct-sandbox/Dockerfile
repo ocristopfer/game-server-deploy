@@ -13,5 +13,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends tar gzip findut
 COPY fakes/ /usr/local/sbin/
 COPY fake-steamcmd.sh /usr/local/lib/fake-steamcmd.sh
 RUN chmod +x /usr/local/sbin/* /usr/local/lib/fake-steamcmd.sh
-COPY run-provision.sh run-broker.sh /usr/local/lib/
-RUN chmod +x /usr/local/lib/run-provision.sh /usr/local/lib/run-broker.sh
+COPY run-provision.sh run-broker.sh run-release.sh /usr/local/lib/
+RUN chmod +x /usr/local/lib/run-provision.sh /usr/local/lib/run-broker.sh /usr/local/lib/run-release.sh

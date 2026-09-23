@@ -25,3 +25,8 @@ __pycache__/
 
 # Saidas do sandbox de comparacao do instalador (docker/ct-sandbox/comparar.sh)
 docker/ct-sandbox/.work/
+
+# Releases empacotados (tools/build-release.py) - artefato, nao fonte.
+dist/
+# GERADO dentro do tarball pelo empacotador; nunca deve aparecer na arvore.
+src/*/_build.py

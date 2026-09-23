@@ -5,9 +5,11 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ADMIN_ENV_FILE="${ADMIN_ENV_FILE:-$SCRIPT_DIR/admin.env}"
-APP_SRC_DIR="${APP_SRC_DIR:-$SCRIPT_DIR/gamepanel}"
+RELEASE_ENV_FILE="${RELEASE_ENV_FILE:-$SCRIPT_DIR/release.env}"
+INSTALLER="${INSTALLER:-$SCRIPT_DIR/install-release.sh}"
 
 APP_DIR=/opt/gamepanel
+SERVICE_NAME=gamepanel.service
 CONF_DIR=/etc/gamepanel
 DATA_DIR=/var/lib/gamepanel
 APP_USER=gamepanel
@@ -90,25 +92,17 @@ resolve_variables() {
 validate_host_requirements() {
   need_cmd pct
   need_cmd pveam
-  [[ -d "$APP_SRC_DIR" ]] || die "Diretorio da aplicacao nao encontrado: $APP_SRC_DIR"
-  [[ -f "$APP_SRC_DIR/app.py" ]] || die "app.py nao encontrado em $APP_SRC_DIR"
-  # O app importa este modulo no topo: sem ele o painel nem inicia.
-  [[ -f "$APP_SRC_DIR/games/config_format.py" ]] || die "games/config_format.py nao encontrado em $APP_SRC_DIR"
-  # Sem estes o painel sobe e so quebra no navegador com 'TemplateNotFound'.
-  [[ -f "$APP_SRC_DIR/templates/login.html" ]] || die "templates/ ausente ou incompleto em $APP_SRC_DIR"
-  [[ -f "$APP_SRC_DIR/templates/base.html" ]] || die "templates/base.html nao encontrado em $APP_SRC_DIR"
-  [[ -f "$APP_SRC_DIR/templates/terminal.html" ]] || die "templates/terminal.html nao encontrado em $APP_SRC_DIR"
-  [[ -f "$APP_SRC_DIR/templates/files.html" ]] || die "templates/files.html nao encontrado em $APP_SRC_DIR"
-  # Os macros de interface: sem eles todo template quebra no primeiro {% import %}.
-  [[ -f "$APP_SRC_DIR/templates/components/ui.html" ]] || die "templates/components/ nao encontrado em $APP_SRC_DIR"
-  # Templates que nao sao .html: o worker e a ficha do aplicativo instalavel. Saem do
-  # Flask (tem url_for dentro), por isso vivem em templates/ e nao em static/.
-  [[ -f "$APP_SRC_DIR/templates/sw.js.jinja" ]] || die "templates/sw.js.jinja nao encontrado em $APP_SRC_DIR"
-  # Sem o CSS a tela abre sem estilo nenhum; sem o JS ela abre sem medidores e sem
-  # terminal. Nada disso da erro no servidor - so quebra no navegador.
-  [[ -f "$APP_SRC_DIR/static/css/tokens.css" ]] || die "static/css/ nao encontrado em $APP_SRC_DIR"
-  [[ -f "$APP_SRC_DIR/static/js/app.js" ]] || die "static/js/app.js nao encontrado em $APP_SRC_DIR"
-  [[ -f "$APP_SRC_DIR/static/js/terminal.js" ]] || die "static/js/terminal.js nao encontrado em $APP_SRC_DIR"
+  # O bundle traz UM tarball de release e o instalador que o abre do lado de la. Antes
+  # aqui havia uma lista de arquivos do pacote (app.py, templates/base.html, static/js/
+  # app.js...) que precisava crescer junto com o codigo e nunca crescia: ela conferia o
+  # primeiro nivel e deixava passar pasta nova inteira. Quem confere o conteudo agora e o
+  # sha256 do artefato.
+  [[ -f "$RELEASE_ENV_FILE" ]] || die "release.env nao encontrado: $RELEASE_ENV_FILE (rode pelo deploy-admin.ps1)"
+  [[ -f "$INSTALLER" ]] || die "install-release.sh nao encontrado: $INSTALLER"
+  load_env_file "$RELEASE_ENV_FILE"
+  [[ -n "${RELEASE_TARBALL:-}" ]] || die "RELEASE_TARBALL vazio em $RELEASE_ENV_FILE"
+  [[ -n "${RELEASE_SHA256:-}" ]] || die "RELEASE_SHA256 vazio em $RELEASE_ENV_FILE"
+  [[ -f "$SCRIPT_DIR/$RELEASE_TARBALL" ]] || die "release nao encontrado no bundle: $RELEASE_TARBALL"
 }
 
 ensure_debian_template() {
@@ -202,47 +196,30 @@ ensure_app_user() {
   run_ct "install -d -o root -g root -m 0755 ${APP_DIR}"
 }
 
-# Copia uma arvore inteira para dentro do container, criando as pastas conforme
-# aparecem. `pct push` nao cria diretorio e nao e recursivo: e isto que da conta de
-# templates/components/ e de static/{css,js,icons}.
-push_tree() {
-  local origem="$1" destino="$2" src rel
-  while IFS= read -r src; do
-    rel="${src#"$origem"/}"
-    if [[ "$rel" == */* ]]; then
-      run_ct "install -d '${destino}/${rel%/*}'"
-    fi
-    pct push "$CTID" "$src" "${destino}/${rel}" --perms 0644
-  done < <(find "$origem" -type f ! -name '*.pyc' ! -path '*__pycache__*' | sort)
-}
+publish_release() {
+  msg "Publicando o release ${RELEASE_TARBALL} em ${APP_DIR}"
+  local remote_tmp=/tmp/gamepanel-release
 
-push_application() {
-  msg "Publicando a aplicacao em ${APP_DIR}"
-  # O pacote inteiro vai para ${APP_DIR}/gamepanel (templates/ e static/ moram DENTRO
-  # dele agora - Flask(__name__) resolve os dois a partir do pacote, nao do CWD). Isso e
-  # o que faz `import gamepanel` funcionar sem PYTHONPATH: CWD e ${APP_DIR}, que contem a
-  # pasta gamepanel/ - mesmo mecanismo que ja fazia `app:app` funcionar antes da
-  # reorganizacao em src/ (ver docs/architecture-proposal.md).
-  run_ct "rm -rf ${APP_DIR}/gamepanel"
-  run_ct "install -d ${APP_DIR}/gamepanel"
+  run_ct "rm -rf '$remote_tmp' && install -d '$remote_tmp'"
+  # pct push, e nao o `tee` do push_file_to_ct: o tarball e binario e tem de chegar byte
+  # a byte — e o sha256 do outro lado nao perdoa um unico byte trocado.
+  pct push "$CTID" "$SCRIPT_DIR/$RELEASE_TARBALL" "${remote_tmp}/${RELEASE_TARBALL}" --perms 0644
+  pct push "$CTID" "$INSTALLER" "${remote_tmp}/install-release.sh" --perms 0755
 
-  # pct push copia arquivo a arquivo. E mais lento que mandar um tar.gz pelo stdin do
-  # 'pct exec', mas deterministico: aquele stream binario podia nao ser entregue, o tar
-  # do outro lado extraia zero arquivos e ainda assim saia com 0 — o deploy passava e o
-  # painel so quebrava em runtime com 'TemplateNotFound'.
-  # Percorre em PROFUNDIDADE: alem de templates/ (com components/) e static/ (com css/,
-  # js/core, js/features e icons/), o pacote agora tem subpastas proprias (games/,
-  # security/, integrations/) - um push raso deixaria o import do app inteiro quebrado.
-  push_tree "$APP_SRC_DIR" "${APP_DIR}/gamepanel"
-  run_ct "chown -R root:root ${APP_DIR}"
+  # Sem sonda de saude aqui: a unit do servico so e escrita mais adiante (render_service),
+  # e quem sobe o painel e o start_panel. O instalador percebe que ela nao existe e se
+  # limita a deixar o release no lugar com o symlink apontando para ele.
+  run_ct "bash '${remote_tmp}/install-release.sh' gamepanel \
+'${remote_tmp}/${RELEASE_TARBALL}' '${RELEASE_SHA256}' ${APP_DIR} ${SERVICE_NAME}" \
+    || die "A instalacao do release falhou dentro do CT (veja a saida acima)"
+  run_ct "rm -rf '$remote_tmp'"
 
-  # Falhar aqui e melhor do que descobrir pela tela de erro do navegador.
-  run_ct "test -f ${APP_DIR}/gamepanel/app.py && test -f ${APP_DIR}/gamepanel/games/config_format.py && test -f ${APP_DIR}/gamepanel/templates/base.html && test -f ${APP_DIR}/gamepanel/templates/login.html && test -f ${APP_DIR}/gamepanel/templates/components/ui.html && test -f ${APP_DIR}/gamepanel/templates/sw.js.jinja && test -f ${APP_DIR}/gamepanel/static/css/tokens.css && test -f ${APP_DIR}/gamepanel/static/js/app.js && test -f ${APP_DIR}/gamepanel/static/js/terminal.js" \
-    || die "Arquivos da aplicacao nao chegaram em ${APP_DIR} (veja a saida do pct push acima)"
   # Falhar aqui e melhor do que o servico cair no start com ModuleNotFoundError.
-  run_ct "cd ${APP_DIR} && python3 -c 'import gamepanel.app'" \
-    || die "O pacote do painel nao importa no CT (falta algum arquivo no bundle?)"
-  msg "Publicados: $(run_ct "ls ${APP_DIR}/gamepanel/templates | wc -l" | tr -d '\r') templates"
+  run_ct "cd ${APP_DIR}/current && python3 -c 'import gamepanel.app'" \
+    || die "O pacote do painel nao importa no CT a partir de ${APP_DIR}/current"
+  # || true dentro do $(...): sem ele o `set -e` derruba o script aqui e o motivo
+  # nunca chega a ser impresso.
+  msg "No ar: $(run_ct "readlink ${APP_DIR}/current" | tr -d '\r' || true)"
 }
 
 ensure_ssh_key() {
@@ -334,7 +311,7 @@ panel.ensure_admin_user('${PANEL_USER}', sys.stdin.read())
 }
 
 render_service() {
-  msg "Criando o servico systemd gamepanel.service"
+  msg "Criando o servico systemd ${SERVICE_NAME}"
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
@@ -347,7 +324,10 @@ Wants=network-online.target
 Type=simple
 User=${APP_USER}
 Group=${APP_USER}
-WorkingDirectory=${APP_DIR}
+# A release corrente, por symlink: trocar de versao (ou voltar) e mover o link e
+# reiniciar. O systemd resolve o caminho no start, entao cada restart pega o que o
+# link aponta AGORA.
+WorkingDirectory=${APP_DIR}/current
 EnvironmentFile=${CONF_DIR}/panel.env
 # Um worker so: as sessoes de terminal vivem na memoria do processo, e com dois
 # workers metade dos pedidos cairia no processo que nao tem a sessao. As threads
@@ -364,16 +344,16 @@ ProtectHome=true
 [Install]
 WantedBy=multi-user.target
 EOF
-  push_file_to_ct "$tmp_file" "/etc/systemd/system/gamepanel.service" 0644
+  push_file_to_ct "$tmp_file" "/etc/systemd/system/${SERVICE_NAME}" 0644
   rm -f "$tmp_file"
-  run_ct "systemctl daemon-reload && systemctl enable gamepanel.service"
+  run_ct "systemctl daemon-reload && systemctl enable ${SERVICE_NAME}"
 }
 
 start_panel() {
   msg "Subindo o painel"
-  run_ct "systemctl restart gamepanel.service"
+  run_ct "systemctl restart ${SERVICE_NAME}"
   sleep 5
-  if ! run_ct "systemctl is-active --quiet gamepanel.service"; then
+  if ! run_ct "systemctl is-active --quiet ${SERVICE_NAME}"; then
     warn "O painel nao ficou ativo. Ultimas linhas do log:"
     run_ct "journalctl -u gamepanel.service --no-pager -n 40" || true
     die "gamepanel.service nao subiu"
@@ -501,7 +481,7 @@ main() {
   start_container
   install_packages
   ensure_app_user
-  push_application
+  publish_release
   ensure_ssh_key
   enable_direct_deploy
   render_panel_config

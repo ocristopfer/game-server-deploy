@@ -185,6 +185,15 @@ body.tem-tabbar main.wrap {
   .appbar__nome { display: inline; }
 }
 
+/* Ultima linha da coluna de conteudo: informacao de suporte, nao conteudo. O respiro
+   em cima e o que a separa do ultimo cartao; sem ele parece legenda do cartao. */
+.app-version {
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
 /* ---------- utilidades ----------
    Deliberadamente poucas: sao as tres que evitam um atributo style solto no meio de
    um template. Qualquer coisa alem disso pertence a um componente. */
