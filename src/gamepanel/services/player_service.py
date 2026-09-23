@@ -28,14 +28,16 @@ from gamepanel.runtime import http_probe, log_probe
 from gamepanel.runtime.a2s import AuthError, QueryError
 from gamepanel.runtime.ssh import RemoteError, ServerLike
 from gamepanel.services import parallel
+from gamepanel.persistence.repositories import servers as servers_repo
 
 # De onde a contagem de jogadores pode sair. 'none' e o desligado explicito — diferente
 # do vazio, que significa "cadastro antigo, deduza pela porta de consulta".
 PLAYER_SOURCES = ("a2s", "http", "log", "none")
 
 # Colunas que descrevem a chamada HTTP; viajam juntas entre formulario, assistente e banco.
-HTTP_FIELDS = ("http_url", "http_auth", "http_body", "http_list_path", "http_count_path",
-               "http_login_url", "http_login_body", "http_token_path")
+# A lista de colunas mora no repositorio: e nome de coluna, e escrever a mesma lista
+# em dois lugares e onde uma coluna nova entra num e some do outro.
+HTTP_FIELDS = servers_repo.HTTP_FIELDS
 
 PLAYER_MSG_MAX = 200
 # O valor e chave de catalogo (`gamepanel.i18n`), nao o texto da tela.
@@ -154,8 +156,7 @@ def http_login(deps: PlayerDeps, server: ServerLike) -> str:
     con = deps.connect()
     try:
         with con:
-            con.execute("UPDATE servers SET http_token = ? WHERE id = ?",
-                        (token, int(server["id"])))
+            servers_repo.set_http_token(con, int(server["id"]), token)
     finally:
         con.close()
     return token

@@ -6,6 +6,7 @@ import sqlite3
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("servers", __name__)
 
@@ -21,10 +22,7 @@ def new():
             try:
                 conn = panel.db()
                 with conn:
-                    conn.execute(
-                        panel.SQL_INSERT_SERVER,
-                        (*[data[c] for c in panel.SERVER_FIELDS], panel.now_iso()),
-                    )
+                    servers_repo.insert(conn, data, panel.now_iso())
                 flash(panel.translate("flash.server_added", name=data["name"]), "ok")
                 return redirect(url_for("dashboard.index"))
             except sqlite3.IntegrityError:
@@ -37,7 +35,7 @@ def new():
 @bp.route("/servers/<int:sid>/edit", methods=["GET", "POST"])
 @panel.admin_required
 def edit(sid: int):
-    server = panel.db().execute(panel.SQL_SERVER_BY_ID, (sid,)).fetchone()
+    server = servers_repo.by_id(panel.db(), sid)
     if not server:
         abort(404)
     data = dict(server)
@@ -47,9 +45,7 @@ def edit(sid: int):
             try:
                 conn = panel.db()
                 with conn:
-                    conn.execute(
-                        panel.SQL_UPDATE_SERVER, (*[data[c] for c in panel.SERVER_FIELDS], sid)
-                    )
+                    servers_repo.update(conn, data, sid)
                 panel.invalidate_status(sid)
                 # A contagem fica em cache por alguns segundos: trocar a fonte pelo
                 # formulario tem que valer na hora, como vale pelo assistente.
@@ -72,7 +68,7 @@ def edit(sid: int):
 def delete(sid: int):
     conn = panel.db()
     with conn:
-        conn.execute("DELETE FROM servers WHERE id = ?", (sid,))
+        servers_repo.delete(conn, sid)
     panel.invalidate_status(sid)
     flash(panel.translate("flash.server_removed"), "ok")
     return redirect(url_for("dashboard.index"))
@@ -82,7 +78,7 @@ def delete(sid: int):
 @panel.login_required
 def detail(sid: int):
     conn = panel.db()
-    server = conn.execute(panel.SQL_SERVER_BY_ID, (sid,)).fetchone()
+    server = servers_repo.by_id(conn, sid)
     if not server:
         abort(404)
     jobs = panel.server_jobs(conn, sid, 15)
@@ -123,7 +119,7 @@ def detail(sid: int):
 @bp.get("/api/v1/servers/<int:sid>/resources")
 @panel.login_required
 def api_metrics(sid: int):
-    server = panel.db().execute(panel.SQL_SERVER_BY_ID, (sid,)).fetchone()
+    server = servers_repo.by_id(panel.db(), sid)
     if not server:
         abort(404)
     data = panel.server_metrics(server)
@@ -134,7 +130,7 @@ def api_metrics(sid: int):
 @panel.login_required
 def api_logs(sid: int):
     """Alimenta o "seguir log" da tela de detalhe."""
-    server = panel.db().execute(panel.SQL_SERVER_BY_ID, (sid,)).fetchone()
+    server = servers_repo.by_id(panel.db(), sid)
     if not server:
         abort(404)
     # Cursor recusado (adulterado, ou de um journalctl que nao os emite) vira leitura
@@ -160,7 +156,7 @@ def api_logs(sid: int):
 def action(sid: int, action: str):
     if action not in panel.ACTIONS:
         abort(404)
-    server = panel.db().execute(panel.SQL_SERVER_BY_ID, (sid,)).fetchone()
+    server = servers_repo.by_id(panel.db(), sid)
     if not server:
         abort(404)
     job_id = panel.start_job(action, server, session.get("username", "?"))

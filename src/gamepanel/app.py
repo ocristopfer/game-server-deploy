@@ -61,6 +61,7 @@ from gamepanel.games import config_format as gameconf
 from gamepanel.games import gamefields
 from gamepanel.integrations import broker_client, webhook_client
 from gamepanel.persistence import schema
+from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.runtime import a2s, http_probe, log_probe, port_probe
 
 # Apelido: ha uma rota `terminal()` neste mesmo modulo (a tela /servers/<id>/terminal),
@@ -299,8 +300,6 @@ CONFIG_FILES_MAX = 8
 # nao e configuracao (um log casa com "chave=valor" em varias linhas).
 CONFIG_SETTINGS_MAX = 600
 
-SQL_SERVER_BY_ID = "SELECT * FROM servers WHERE id = ?"
-SQL_ALL_SERVERS = "SELECT * FROM servers ORDER BY name"
 SQL_SET_PASSWORD = "UPDATE users SET password_hash = ? WHERE id = ?"
 # Formato de data curto do painel ("17/09 05:00"). Estava escrito a mao em tres
 # telas; uma delas com um espaco a mais bastaria para a lista parecer desalinhada.
@@ -1584,7 +1583,7 @@ def live_streams() -> int:
 def supervise_streams() -> int:
     """Liga, desliga e ressuscita as conexoes de log. Devolve quantas ficaram registradas."""
     conn = db()
-    servers = conn.execute(SQL_ALL_SERVERS).fetchall()
+    servers = servers_repo.all_ordered(conn)
     return _supervisor.sync(servers, wanted_streams(servers, webhook_config(conn)))
 
 
@@ -1703,7 +1702,7 @@ def monitor_servers(force: bool = False) -> int:
     if rhythm is None:
         return 0
 
-    servers = conn.execute(SQL_ALL_SERVERS).fetchall()
+    servers = servers_repo.all_ordered(conn)
     for server in servers:
         sid = int(server["id"])
         previous = _estado_monitor.get(sid)
@@ -1756,7 +1755,7 @@ def collect_samples(force: bool = False) -> int:
     conn = db()
     stamp = now_iso()
     lines_of = []
-    for server in conn.execute(SQL_ALL_SERVERS).fetchall():
+    for server in servers_repo.all_ordered(conn):
         data = server_metrics(server)
         if data.get("error"):
             # Container fora do ar nao vira linha: um buraco no grafico e a informacao
@@ -1812,7 +1811,7 @@ def is_due(sched, agora: datetime) -> bool:
 
 def fire_schedule(conn: sqlite3.Connection, sched) -> int:
     """Coloca a tarefa para rodar. Devolve o id do job (0 quando nao deu para disparar)."""
-    server = conn.execute(SQL_SERVER_BY_ID, (sched["server_id"],)).fetchone()
+    server = servers_repo.by_id(conn, sched["server_id"])
     if not server:
         return 0
     if sched["action"] == "backup":
@@ -2082,10 +2081,7 @@ def _enable_a2s_count(conn, sid: int):
         flash(translate("flash.bad_port"), "error")
         return redirect(url_for("players.setup", sid=sid))
     with conn:
-        conn.execute(
-            "UPDATE servers SET query_port = ?, player_source = 'a2s' WHERE id = ?",
-            (int(port), sid),
-        )
+        servers_repo.use_query_port(conn, sid, int(port))
     flash(translate("flash.count_on_by_query", port=port), "ok")
     return None
 
@@ -2098,15 +2094,7 @@ def _enable_http_count(conn, sid: int):
         flash(translate(errors[0]) if errors else translate("flash.need_api_url"), "error")
         return redirect(url_for("players.setup", sid=sid, aba="http"))
     with conn:
-        conn.execute(
-            "UPDATE servers SET http_url=?, http_auth=?, http_body=?,"
-            " http_list_path=?, http_count_path=?,"
-            " http_login_url=?, http_login_body=?, http_token_path=?,"
-            # Token guardado zera ao salvar: se a URL/credencial mudou, o antigo
-            # nao vale mais, e a proxima consulta ja faz login com o que ficou.
-            " http_token='', player_source='http' WHERE id=?",
-            (*[fields[c] for c in HTTP_FIELDS], sid),
-        )
+        servers_repo.use_http(conn, sid, fields)
     if fields["http_login_url"]:
         flash(translate("flash.count_on_by_api_login"), "ok")
     else:
@@ -2124,11 +2112,7 @@ def _enable_log_count(conn, sid: int):
         flash(translate(errors[0]) if errors else translate("flash.need_join_pattern"), "error")
         return redirect(url_for("players.setup", sid=sid, aba="log"))
     with conn:
-        conn.execute(
-            "UPDATE servers SET join_re = ?, leave_re = ?, log_path = ?,"
-            " player_source = 'log' WHERE id = ?",
-            (entry, output, path, sid),
-        )
+        servers_repo.use_log(conn, sid, entry, output, path)
     flash(translate("flash.count_on_by_log"), "ok")
     return None
 
@@ -2179,19 +2163,9 @@ def _http_fields(form, errors: list[str]) -> dict:
 
 # Colunas que o formulario preenche, na mesma ordem do INSERT/UPDATE abaixo. Manter a
 # lista em um lugar so evita o classico "acrescentei a coluna e esqueci de um dos SQLs".
-SERVER_FIELDS = (
-    "name", "host", "ssh_port", "ssh_user", "service", "game_port", "notes",
-    "config_path", "config_files", "backup_paths", "query_port", "player_source",
-    "join_re", "leave_re", "log_path", "error_re",
-    *HTTP_FIELDS,
-)
-SQL_INSERT_SERVER = (
-    f"INSERT INTO servers ({', '.join(SERVER_FIELDS)}, created_at)"
-    f" VALUES ({', '.join('?' * (len(SERVER_FIELDS) + 1))})"
-)
-SQL_UPDATE_SERVER = (
-    f"UPDATE servers SET {', '.join(c + '=?' for c in SERVER_FIELDS)} WHERE id=?"
-)
+# O nome das colunas mora no repositorio; aqui fica so o apelido que os blueprints
+# ja usavam (a troca por `panel.X` e o que faz o `monkeypatch` dos testes valer).
+SERVER_FIELDS = servers_repo.EDITABLE_FIELDS
 
 
 # O cursor e uma chave opaca do journald ("s=...;i=...;b=..."): validada aqui porque
@@ -2364,7 +2338,7 @@ def _files_guard():
 
 
 def _server_or_404(sid: int) -> sqlite3.Row:
-    server = db().execute(SQL_SERVER_BY_ID, (sid,)).fetchone()
+    server = servers_repo.by_id(db(), sid)
     if not server:
         abort(404)
     return server
@@ -2493,9 +2467,7 @@ def load_config_doc(server: ServerRow, path: str) -> tuple[gameconf.ConfigFile, 
 def _save_config_files(sid: int, caminhos: list[str]) -> None:
     conn = db()
     with conn:
-        conn.execute(
-            "UPDATE servers SET config_files = ? WHERE id = ?", ("\n".join(caminhos), sid)
-        )
+        servers_repo.set_config_files(conn, sid, caminhos)
 
 
 def _target_config(arquivos: list[str], errors: list[str]) -> str:
@@ -2910,7 +2882,7 @@ def alerts_without_baseline(conn: sqlite3.Connection) -> dict:
     bound = webhook_config(conn)["events"]
     if not bound & set(ALERT_PRECISA_CONFIG):
         return {}
-    servers = conn.execute(SQL_ALL_SERVERS).fetchall()
+    servers = servers_repo.all_ordered(conn)
     with_query = sum(1 for s in servers if player_source(s) in ("a2s", "http"))
     with_players = sum(1 for s in servers if player_source(s))
     with_regex = sum(1 for s in servers if _stored_value(s, "error_re"))
@@ -3132,15 +3104,10 @@ class DeployServer(NamedTuple):
 
 
 def _insert_server(conn: sqlite3.Connection, data: DeployServer) -> None:
-    conn.execute(
-        "INSERT INTO servers (name, host, ssh_port, ssh_user, service,"
-        " game_port, notes, config_path, config_files, backup_paths,"
-        " query_port, player_source, join_re, leave_re, log_path, broker_id, created_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (data.name, data.host, data.ssh_port, data.ssh_user, data.service,
-         data.game_port, data.notes, data.config_path, data.config_files,
-         data.backup_paths, data.query_port, data.player_source,
-         data.join_re, data.leave_re, data.log_path, data.broker_id, now_iso()),
+    servers_repo.deploy_insert(
+        conn,
+        [getattr(data, c) for c in servers_repo.DEPLOY_FIELDS],
+        now_iso(),
     )
 
 
@@ -3160,12 +3127,11 @@ def _update_server(conn: sqlite3.Connection, atual, data: DeployServer) -> None:
     Ja caminhos de backup, forma de contar jogadores e padroes do log costumam ser
     afinados na tela, e um redeploy nao pode apaga-los.
     """
-    conn.execute(
-        "UPDATE servers SET name=?, ssh_user=?, service=?, game_port=?,"
-        " notes=?, config_path=?, config_files=?, backup_paths=?,"
-        " query_port=?, player_source=?, join_re=?, leave_re=?, log_path=?"
-        " WHERE id=?",
-        (
+    # A ordem SEGUE `servers_repo.DEPLOY_UPDATE_FIELDS`: ali esta a lista de colunas, e
+    # aqui so a decisao de quem vence em cada uma.
+    servers_repo.deploy_update(
+        conn,
+        [
             data.name, data.ssh_user, data.service, data.game_port,
             data.notes or atual["notes"],
             data.config_path or atual["config_path"],
@@ -3176,8 +3142,8 @@ def _update_server(conn: sqlite3.Connection, atual, data: DeployServer) -> None:
             atual["join_re"] or data.join_re,
             atual["leave_re"] or data.leave_re,
             atual["log_path"] or data.log_path,
-            atual["id"],
-        ),
+        ],
+        atual["id"],
     )
 
 
@@ -3191,10 +3157,7 @@ def ensure_server(data: DeployServer) -> bool:
     conn = _connect()
     try:
         with conn:
-            current_one = conn.execute(
-                "SELECT * FROM servers WHERE host = ? AND ssh_port = ?",
-                (data.host, data.ssh_port),
-            ).fetchone()
+            current_one = servers_repo.by_address(conn, data.host, data.ssh_port)
             if current_one is None:
                 _insert_server(conn, data)
                 return True

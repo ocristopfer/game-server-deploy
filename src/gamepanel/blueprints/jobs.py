@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, jsonify, render_template
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("jobs", __name__)
 
@@ -18,9 +19,7 @@ def detail(jid: int):
     panel.job_or_403(job)
     server = None
     if job["server_id"]:
-        server = conn.execute(
-            panel.SQL_SERVER_BY_ID, (job["server_id"],)
-        ).fetchone()
+        server = servers_repo.by_id(conn, job["server_id"])
     return render_template("job.html", job=job, server=server)
 
 

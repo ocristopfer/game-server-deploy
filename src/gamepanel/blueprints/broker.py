@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.games.catalog import search as catalog_search
 from gamepanel.games.catalog.templates import TEMPLATES as GAME_TEMPLATES
 
@@ -71,7 +72,7 @@ def instances():
         instances, games = [], []
     bound = {
         r["broker_id"]: r
-        for r in panel.db().execute("SELECT id, name, broker_id FROM servers WHERE broker_id > 0")
+        for r in servers_repo.from_broker(panel.db())
     }
     return render_template("instances.html", instances=instances, games=games, servers=bound)
 
@@ -126,7 +127,7 @@ def instance_remove(iid: int):
     conn = panel.db()
     with conn:
         # O servidor do painel aponta para um container que deixou de existir.
-        conn.execute("DELETE FROM servers WHERE broker_id = ?", (iid,))
+        servers_repo.delete_by_broker_id(conn, iid)
     panel._log_broker_action(
         "broker-remover", panel._ator(), f"instancia {iid}",
         "So o registro foi esquecido." if db_only else "Container destruido e servidor removido do painel.")

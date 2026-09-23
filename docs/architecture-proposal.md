@@ -761,5 +761,8 @@ docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos san
 ### O que sobra
 
 - `games/gamefields.py` dividido em adapter por jogo (seção 2.3 do plano).
-- `repositories/` — hoje o acesso a banco está espalhado entre `app.py` e `services/`.
+- `repositories/` — **começado**: `servers` extraída (`persistence/repositories/`,
+  com `test_sql_placement.py` guardando que o SQL dela não volte a se espalhar).
+  Faltam `jobs`, `schedules`, `samples`, `webhooks`, `alert_log`, `users` e
+  `settings`.
 - Uma criação REAL de instância de ponta a ponta pelo broker contra o Proxmox/OPNsense.

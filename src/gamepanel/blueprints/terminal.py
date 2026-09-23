@@ -6,6 +6,7 @@ import base64
 from flask import Blueprint, abort, jsonify, render_template, request, session
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("terminal", __name__)
 
@@ -14,7 +15,7 @@ bp = Blueprint("terminal", __name__)
 @panel.admin_required
 def index(sid: int):
     panel._terminal_guard()
-    server = panel.db().execute(panel.SQL_SERVER_BY_ID, (sid,)).fetchone()
+    server = servers_repo.by_id(panel.db(), sid)
     if not server:
         abort(404)
     return render_template(
@@ -26,7 +27,7 @@ def index(sid: int):
 @panel.admin_required
 def api_open(sid: int):
     panel._terminal_guard()
-    server = panel.db().execute(panel.SQL_SERVER_BY_ID, (sid,)).fetchone()
+    server = servers_repo.by_id(panel.db(), sid)
     if not server:
         abort(404)
     body = request.get_json(silent=True) or {}

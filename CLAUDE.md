@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_gamefields.py`, `test_config_f
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 911
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 924
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -101,7 +101,7 @@ variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
 Uma diferenca conhecida entre os dois: **2 testes de `test_players.py` sao pulados no
 Windows** (`@posix_apenas`, no proprio arquivo) — os que conferem que a pasta do socket
 SSH so e visivel pelo dono (`0700`). E permissao POSIX pura: nao existe no Windows, e o
-resultado so vale no container. Os outros 909 passam iguais nos dois lugares.
+resultado so vale no container. Os outros 922 passam iguais nos dois lugares.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
 tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
@@ -148,6 +148,9 @@ src/
     app.py               a montagem: banco, sessao, decoradores, tabelas, SSH, alertas, agendador
     version.py           a versao que esta rodando (le o _build.py do release, ou cai no VERSION+dev)
     blueprints/          a camada HTTP, um arquivo por grupo de tela (ver a secao propria)
+    persistence/
+      schema.py          esquema, MIGRATIONS e RENAMES
+      repositories/      uma funcao por consulta; SQL de uma tabela so mora aqui
     wsgi.py              entry point do gunicorn (`gamepanel.wsgi:app`)
     cli.py               bootstrap: --create-user, --reset-2fa, --register-server (o rodape de app.py chama o main() daqui)
     navigation.py        mapa da interface: navegacao e acoes   (puro, sem Flask; era ui.py)
@@ -215,6 +218,33 @@ arquivo, quando tudo o que eles chamam ja existe.
   tabelas de `navigation.py` o nome e sempre o completo, com ponto.
 - **Blueprint novo** = um arquivo aqui e um nome nas duas listas de `register_all`. Se a
   rota precisa pular o segundo fator, tambem uma linha em `app.ENDPOINTS_WITHOUT_2FA`.
+
+### SQL de uma tabela mora no repositorio dela
+
+`persistence/repositories/` tem uma funcao por consulta, e toda funcao recebe a conexao
+como PRIMEIRO parametro — nunca chama `db()`. A conexao e por requisicao e mora no `g`
+do Flask: um repositorio que a buscasse sozinho nao serviria ao monitor nem ao agendador,
+que rodam em thread propria sem `g`. Passar a conexao tambem e o que permite testar uma
+consulta sem subir aplicacao nenhuma.
+
+O motivo de existir: o mesmo `SELECT * FROM servers WHERE id = ?` estava escrito em oito
+arquivos e a lista de colunas do `UPDATE` em mais quatro. Nada disso quebra ao renomear
+uma coluna — quebra na PRIMEIRA VISITA a tela que usa a copia que ficou para tras, em
+runtime, sem lint nem teste acusando.
+
+- **`tests/gamepanel/test_sql_placement.py` guarda a regra**, por TABELA e nao em bloco:
+  a tabela que ainda nao tem repositorio segue com SQL onde esta, e entra na lista
+  `OWNED` quando for extraida. Uma lista que ja nasce completa e mentira.
+- **Instrucao montada a partir da lista de colunas**, nunca escrita a mao quatro vezes.
+  O `# noqa: S608` que isso exige tem o motivo na linha acima: nada vem de fora, e todo
+  VALOR continua parametrizado.
+- **O repositorio nao decide.** Sem `flash`, sem `abort`, sem traducao, sem regra de quem
+  ve o que: isso e de quem chama. Ele so sabe ler e escrever linha.
+- **Quem liga uma fonte de contagem grava os campos dela E o `player_source` na MESMA
+  instrucao** (`use_query_port`, `use_http`, `use_log`). Separar deixaria um servidor
+  apontando para uma fonte sem os campos dela preenchidos.
+- Hoje so `servers` foi extraida. Faltam `jobs`, `schedules`, `samples`, `webhooks`,
+  `alert_log`, `users` e `settings` (ver `docs/architecture-proposal.md`).
 
 ### A regra que sustenta o resto: uma lista, um lugar
 

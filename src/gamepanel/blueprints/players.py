@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("players", __name__)
 
@@ -11,7 +12,7 @@ bp = Blueprint("players", __name__)
 @bp.get("/api/v1/servers/<int:sid>/players")
 @panel.login_required
 def api_list(sid: int):
-    server = panel.db().execute(panel.SQL_SERVER_BY_ID, (sid,)).fetchone()
+    server = servers_repo.by_id(panel.db(), sid)
     if not server:
         abort(404)
     return jsonify(panel.server_players(server))

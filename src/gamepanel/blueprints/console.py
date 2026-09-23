@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("console", __name__)
 
@@ -14,7 +15,7 @@ def index(sid: int):
     if not panel.ALLOW_SHELL:
         abort(403, "O console esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).")
     conn = panel.db()
-    server = conn.execute(panel.SQL_SERVER_BY_ID, (sid,)).fetchone()
+    server = servers_repo.by_id(conn, sid)
     if not server:
         abort(404)
 

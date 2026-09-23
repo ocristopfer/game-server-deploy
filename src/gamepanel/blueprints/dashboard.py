@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, render_template
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("dashboard", __name__)
 
@@ -11,7 +12,7 @@ bp = Blueprint("dashboard", __name__)
 @bp.get("/")
 @panel.login_required
 def index():
-    servers = panel.db().execute(panel.SQL_ALL_SERVERS).fetchall()
+    servers = servers_repo.all_ordered(panel.db())
     return render_template(
         "dashboard.html", servers=servers, status=panel.all_status(servers)
     )
@@ -20,7 +21,7 @@ def index():
 @bp.get("/api/v1/status")
 @panel.login_required
 def api_status():
-    servers = panel.db().execute(panel.SQL_ALL_SERVERS).fetchall()
+    servers = servers_repo.all_ordered(panel.db())
     return jsonify({str(sid): state for sid, state in panel.all_status(servers).items()})
 
 
@@ -35,12 +36,12 @@ def api_metrics():
     devolve um pixel transparente com status 499 — e o painel ficava eternamente em
     "medindo recursos...", sem erro visivel em lugar nenhum. Nome em portugues tambem
     e o que o resto das rotas do painel usa (/historico, /alertas, /graficos)."""
-    servers = panel.db().execute(panel.SQL_ALL_SERVERS).fetchall()
+    servers = servers_repo.all_ordered(panel.db())
     return jsonify({str(sid): data for sid, data in panel.all_metrics(servers).items()})
 
 
 @bp.get("/api/v1/players")
 @panel.login_required
 def api_players():
-    servers = panel.db().execute(panel.SQL_ALL_SERVERS).fetchall()
+    servers = servers_repo.all_ordered(panel.db())
     return jsonify({str(sid): data for sid, data in panel.all_players(servers).items()})
