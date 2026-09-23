@@ -91,7 +91,7 @@ def detail(sid: int):
     # Status, medidores, jogadores e log sao quatro idas de SSH independentes. Em serie a
     # tela custava a soma das quatro — e com o container fora do ar, a soma dos quatro
     # timeouts antes de mostrar "inacessivel".
-    read_value = panel.em_paralelo({
+    read_value = panel.in_parallel({
         "status": lambda: panel.server_status(server),
         "metrics": lambda: panel.server_metrics(server),
         "players": lambda: panel.server_players(server),

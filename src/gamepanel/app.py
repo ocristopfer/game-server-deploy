@@ -781,7 +781,7 @@ public_key = _ssh.public_key
 q = ssh_transport.quote_command
 
 
-def em_paralelo(tarefas: dict, timeout: float = 40.0) -> dict:
+def in_parallel(tasks: dict, timeout: float = 40.0) -> dict:
     """Roda varias leituras remotas ao mesmo tempo; devolve {nome: (valor, erro)}.
 
     Cada uma custa a sua ida de SSH, e elas nao dependem umas das outras — em serie a
@@ -794,21 +794,21 @@ def em_paralelo(tarefas: dict, timeout: float = 40.0) -> dict:
     output: dict = {}
     lock = threading.Lock()
 
-    def work(name, funcao):
+    def work(name, call):
         try:
-            value, failure = funcao(), ""
+            value, failure = call(), ""
         except (RemoteError, QueryError) as exc:
             value, failure = None, str(exc)
         with lock:
             output[name] = (value, failure)
 
     threads = [threading.Thread(target=work, args=(n, f), daemon=True)
-               for n, f in tarefas.items()]
+               for n, f in tasks.items()]
     for t in threads:
         t.start()
     for t in threads:
         t.join(timeout=timeout)
-    for name in tarefas:
+    for name in tasks:
         output.setdefault(name, (None, MSG_TIMEOUT))
     return output
 

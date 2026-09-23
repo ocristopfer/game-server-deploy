@@ -689,3 +689,77 @@ cobertura hoje for insuficiente (backups/arquivos/terminal, achados da Fase 1
   adicional).
 
 Fase 3 iniciada a seguir.
+
+---
+
+## O que já foi executado (atualizado em 2026-09-22)
+
+Esta seção é o registro; o plano acima ficou como foi aprovado, inclusive onde a
+execução divergiu dele — está marcado.
+
+### Fase 3 — estrutura
+
+Feita. `admin/` e `broker/` viraram `src/gamepanel/` e `src/gamebroker/`, com
+`tests/gamepanel/` e `tests/gamebroker/`, workspace `uv` e `pyrightconfig.json`.
+
+### Fase 4 — divisão de `app.py`
+
+Feita, e mais do que a seção 4 previa. O `app.py` saiu de 4949 para ~3200 linhas:
+`services/`, `runtime/`, `tasks/`, `persistence/`, `i18n/`, `security/`,
+`integrations/` e — no fim — `blueprints/`, com as 78 rotas em 19 arquivos, um por
+grupo de tela.
+
+O que **não** foi feito da seção 4: `games/gamefields.py` continua um arquivo só (não
+virou adapter por jogo), e não existe `repositories/`.
+
+**Regra que nasceu daí e não estava no plano:** blueprint acessa o `app.py` sempre pelo
+MÓDULO (`panel.server_status(...)`). Os testes trocam função por falsa com
+`monkeypatch.setattr(panel, ...)`; um import direto copiaria a referência no import e a
+troca deixaria de valer **em silêncio**.
+
+### Grupos de breaking change
+
+| grupo | o que era | situação |
+|---|---|---|
+| A | colunas e tabelas do banco (painel e broker) | feito, com migration de `RENAME` nos dois |
+| B | API do broker (rotas, corpo, resposta, cabeçalho) | feito, com `domain/wire.py` separando fio de coluna |
+| C | rotas do painel | feito, **sem redirect 301** — divergência da decisão aprovada |
+| D | i18n | feito: chaves em inglês nos dois catálogos, com teste de paridade |
+| E | variável de ambiente do broker | feito |
+| F | filtros Jinja | feito |
+
+**Divergência do grupo C.** O plano aprovado previa redirect 301 temporário das rotas
+em português. A execução foi corte limpo, a pedido: o painel não é público, não há link
+externo para preservar, e um redirect temporário sem data para sair vira permanente.
+
+### Tradução dos identificadores
+
+Feita no repositório inteiro, além do que o plano pedia: além dos dois pacotes Python
+(incluindo variável local), também o contexto dos templates, os macros Jinja, as classes
+de CSS, os `data-*`, o JavaScript e os nomes de função e variável de bash e PowerShell.
+Nome de arquivo também (`catalogo.html` → `catalog.html`, `busca-de-jogo.js` →
+`game-search.js`, `components/servidor.html` → `components/server.html`).
+
+O que continua em português, de propósito e registrado no `CLAUDE.md`: comentário,
+docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos sandboxes.
+
+### Fora do plano, mas feito
+
+- **Versão da aplicação e deploy por release empacotado.** `VERSION` na raiz,
+  `tools/build-release.py` (tarball determinista + sha256), `lib/install-release.sh`
+  publicando em `releases/<versão>/` com symlink `current` e rollback automático. Isso
+  consertou um defeito que estava no ar: cada caminho de deploy tinha a sua lista
+  escrita à mão de quais subpastas apagar antes de copiar, e as duas pararam em
+  `templates/ games/ security/ integrations/` — `blueprints/`, `i18n/`, `persistence/`,
+  `runtime/`, `services/` e `tasks/` nunca entraram.
+- **API do painel versionada** (`/api/v1/...`), como a do broker.
+- **Quatro redes novas**, todas nascidas de defeito real encontrado durante a execução:
+  `test_contrato_template.py` (kwarg de `render_template` sem leitor),
+  `test_contrato_frontend.py` (classe x regra de CSS, `data-*` x leitor),
+  `test_javascript.py` (o JS parseia, importa e MONTA) e `docker/ct-sandbox/release.sh`.
+
+### O que sobra
+
+- `games/gamefields.py` dividido em adapter por jogo (seção 2.3 do plano).
+- `repositories/` — hoje o acesso a banco está espalhado entre `app.py` e `services/`.
+- Uma criação REAL de instância de ponta a ponta pelo broker contra o Proxmox/OPNsense.
