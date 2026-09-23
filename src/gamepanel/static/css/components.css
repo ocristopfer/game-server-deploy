@@ -54,7 +54,7 @@
 }
 .btn-link:hover { color: var(--text); }
 .btn-link--danger { color: var(--err-text); }
-.btn-link--danger:hover { color: #ffd7d3; }
+.btn-link--danger:hover { color: color-mix(in srgb, var(--err-text) 80%, #fff); }
 
 /* Formulario de um botao so: existe para carregar o CSRF, nao para ocupar linha. */
 form.inline { display: inline; }
@@ -115,7 +115,7 @@ form.action-block { display: block; flex: 1; min-width: 0; }
 }
 .flash:last-child { margin-bottom: 0; }
 .flash.error { border-color: var(--err-line); color: var(--err-text); background: var(--err-bg); }
-.flash.ok { border-color: var(--ok-line); color: #8ce39a; }
+.flash.ok { border-color: var(--ok-line); color: var(--ok-text); }
 .flash.pending { border-color: var(--warn-line); font-size: var(--fs-sm); }
 .flash.pending ul { margin: var(--sp-2) 0; }
 .flash em { font-style: normal; color: var(--text); }
@@ -247,6 +247,10 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
    "100%" - um QR esticado pela largura do celular vira grande demais e sai da tela. */
 .qr-2fa {
   display: inline-block;
+  /* Os dois valores crus aqui sao requisito FISICO, nao escolha de tema: o QR precisa
+     de fundo branco e de uns 200px para a camera de um celular travar nele. Trocar o
+     branco por um token faria o modo escuro inverte-lo e nenhum leitor acharia o
+     codigo — que e justo a hora em que a pessoa esta trancada fora do painel. */
   width: 220px;
   max-width: 100%;
   padding: var(--sp-3);

@@ -51,7 +51,7 @@ As suites do painel (em `tests/gamepanel/`: `test_game_fields.py`, `test_config_
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 997
+`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 999
 testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
 fixtures compartilhadas em `tests/gamepanel/conftest.py`
 (`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
@@ -103,7 +103,7 @@ Windows: 14 pulados, sendo **2 de `test_players.py`** (`@posix_apenas`, no propr
 arquivo) — os que conferem que a pasta do socket SSH so e visivel pelo dono (`0700`). E
 permissao POSIX pura: nao existe no Windows, e o resultado so vale no container. No
 container: **23 pulados, todos de `test_javascript.py`** (nao ha node na imagem), e os 2
-de POSIX finalmente RODAM. Numeros de hoje: 1898 passam no `.venv`, 1888 no container
+de POSIX finalmente RODAM. Numeros de hoje: 1900 passam no `.venv`, 1888 no container
 mais o 1 conhecido do `GAMEPANEL_DEV` acima — o total coletado e o mesmo (1912) nos dois.
 
 **`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
@@ -762,7 +762,16 @@ Cinco camadas, e cada uma **so pode depender das anteriores**:
 
 - **Mobile primeiro**: o que esta fora de `@media` e a tela do celular; as media queries
   so **acrescentam** quando ha espaco (`min-width`, nunca `max-width`).
-- **Nenhum valor cru fora de `tokens.css`.** Sem `#4f9cf9`, sem `16px` solto.
+- **Nenhum valor cru fora de `tokens.css`.** Sem `#4f9cf9`, sem `16px` solto. Ha teste
+  (`test_frontend_contract.py`), e a excecao nao e uma lista de nomes: `color-mix(...,
+  #fff)` se reconhece pela FORMA (e "clareia isto", nao uma cor), e sobram duas cores com
+  motivo fisico escrito no proprio CSS — o branco do QR (um token seguiria o modo escuro e
+  a camera nao acharia o codigo, justo quando a pessoa esta trancada fora) e o primeiro
+  plano do terminal, que acompanha a paleta ANSI do `terminal.js`, que e protocolo.
+- **Estado tem PAR de token: `--x-line` e `--x-text`.** `--ok` tinha so a borda, e o
+  `.flash.ok` resolvia com um `#8ce39a` solto — a mensagem de sucesso era a unica cor do
+  painel fora da paleta. Texto de estado e um tom claro do proprio estado: sobre o fundo
+  escuro daqui, a cor de borda nao tem contraste para ler frase.
 - **Variacao entra por modificador** (`.btn--danger`), nunca por "esse botao dentro
   daquela tela" — regra de descendente e o que faz um CSS deixar de ser reutilizavel.
 - **Apareceu duas vezes? Subiu de camada.** Se esta em `pages.css` e serve a duas telas,

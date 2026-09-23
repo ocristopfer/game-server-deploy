@@ -238,6 +238,10 @@
   height: 55vh; cursor: text;
 }
 .term.full .term-view { height: calc(100dvh - 7rem - var(--safe-top) - var(--safe-bottom)); }
+/* O terminal tem o seu proprio mundo de cor: o `buildPalette()` do terminal.js monta as
+   256 cores ANSI, que sao protocolo e nao tema. Este `#c9d3de` e o primeiro plano
+   correspondente. E 13px/18px e a CELULA do grid — o `measure()` do JS le o tamanho
+   renderizado em vez de presumi-lo, entao mudar aqui reajusta cols/rows sozinho. */
 .term-view .tl { font: 13px/18px var(--mono); color: #c9d3de; white-space: pre; letter-spacing: 0; }
 .term-view .cur { background: var(--accent); color: var(--accent-text); }
 /* A entrada real e um textarea invisivel: e ele que recebe teclado, IME e colagem.

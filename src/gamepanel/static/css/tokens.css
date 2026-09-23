@@ -24,7 +24,11 @@
   --ok: #3fb950;
   --warn: #d29922;
   --err: #f85149;
+  /* Texto de estado e um tom CLARO do proprio estado, e nao o `--err`/`--ok` cru: sobre o
+     fundo escuro do painel a cor de borda nao tem contraste para ler frase. O `--ok-text`
+     nasceu de um `#8ce39a` solto no `.flash.ok`, que era o unico estado sem par. */
   --err-text: #ffb4ae;
+  --ok-text: #8ce39a;
 
   /* Misturas usadas em borda/fundo de estado. Calculadas uma vez aqui para os
      componentes nao repetirem color-mix em vinte lugares. */

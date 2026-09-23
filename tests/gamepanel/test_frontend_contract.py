@@ -266,3 +266,49 @@ def test_todo_token_de_css_usado_esta_definido():
     simplesmente nao aplica, e a tela abre sem a cor, sem o espaco ou sem o raio."""
     orphans = sorted(css_vars_used() - css_vars_defined() - VARS_SEM_DEFINICAO)
     assert orphans == [], "var(--x) sem definicao em tokens.css:\n  " + "\n  ".join(orphans)
+
+
+# ---------------------------------------------------------- valor cru fora de tokens.css
+
+RAW_COLOR = re.compile(r"#[0-9a-fA-F]{3,8}\b")
+# `color-mix(... , #fff)` e `#000` sao OPERANDO de mistura — "clareia isto", nao uma cor
+# de tema. Reconhecidos pela forma, e nao por uma lista que envelheceria.
+MIX_OPERAND = {"#fff", "#000", "#ffffff", "#000000"}
+# Cor crua que e REQUISITO FISICO, com o motivo no proprio CSS. Sao duas, e cada uma
+# quebraria de um jeito diferente se virasse token.
+COLOR_OUTSIDE_TOKENS = {
+    # O QR precisa de fundo branco para a camera travar nele; um token seguiria o modo
+    # escuro e nenhum leitor acharia o codigo.
+    "components.css": {"#fff"},
+    # Primeiro plano do terminal, que acompanha a paleta ANSI do `terminal.js` (protocolo,
+    # nao tema).
+    "pages.css": {"#c9d3de"},
+}
+
+
+def test_cor_crua_so_em_tokens_css():
+    """Cor escrita a mao num componente nao acompanha o tema e nao aparece na paleta.
+
+    A excecao nao e uma lista de nomes que envelhece: e `color-mix(..., #fff)`, que se
+    reconhece pela forma, mais duas cores com motivo FISICO escrito no proprio arquivo.
+    """
+    leftover = []
+    for path in sorted(CSS_DIR.rglob("*.css")):
+        if path.name == "tokens.css":
+            continue
+        allowed = MIX_OPERAND | COLOR_OUTSIDE_TOKENS.get(path.name, set())
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            code = line.split("/*", 1)[0]
+            for color in RAW_COLOR.findall(code):
+                if color.lower() not in allowed:
+                    leftover.append(f"{path.name}:{i} {color}")
+    assert leftover == [], (
+        "cor crua fora de tokens.css (ela nao acompanha o tema):\n  " + "\n  ".join(leftover))
+
+
+def test_todo_estado_tem_o_par_de_cor_de_texto():
+    """`--ok` tinha borda e nao tinha texto, e o `.flash.ok` resolvia com um hex solto."""
+    tokens = (CSS_DIR / "tokens.css").read_text(encoding="utf-8")
+    for state in ("ok", "err"):
+        assert f"--{state}-text:" in tokens, f"falta --{state}-text em tokens.css"
+        assert f"--{state}-line:" in tokens, f"falta --{state}-line em tokens.css"
