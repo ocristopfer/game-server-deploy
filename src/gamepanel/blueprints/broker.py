@@ -4,9 +4,9 @@ from __future__ import annotations
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
 from gamepanel import app as panel
-from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.games.catalog import search as catalog_search
 from gamepanel.games.catalog.templates import TEMPLATES as GAME_TEMPLATES
+from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("broker", __name__)
 

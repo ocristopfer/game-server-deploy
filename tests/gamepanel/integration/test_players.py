@@ -145,7 +145,7 @@ def test_caminho_de_lista_que_nao_e_lista_reclama():
         panel.read_players_json(PALWORLD_METRICS, "serverfps")
 
 
-# --------------------------------------------------------------- TeamSpeak (WebQuery)
+# ----------------------------------------------------------- TeamSpeak pela WebQuery
 
 # Resposta real do /1/clientlist: tudo string, nome em client_nickname, e as conexoes de
 # ServerQuery misturadas na mesma lista. Uma delas e a DO PAINEL, que acabou de perguntar.

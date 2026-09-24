@@ -58,7 +58,10 @@ class ExecutorReal:
     def run(self, argv: Sequence[str], on_line: Callable[[str], None] | None,
               timeout: float) -> int:
         try:
-            proc = subprocess.Popen(list(argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            # O argv vem sempre de `_ssh`/`_options` deste arquivo, com `shlex.quote` no
+            # que e dado; nao ha shell no meio e nada de fora entra como comando.
+            proc = subprocess.Popen(  # noqa: S603
+                list(argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                                     errors="replace", bufsize=1)
         except OSError as error:
@@ -67,7 +70,12 @@ class ExecutorReal:
         clock = threading.Timer(timeout, proc.kill)
         clock.start()
         try:
-            assert proc.stdout is not None
+            # `raise` e nao `assert`: com `python -O` o assert sai e o `for` abaixo
+            # estouraria com `TypeError: 'NoneType' is not iterable`, que nao diz nada a
+            # quem le o log de uma instalacao que falhou. Mesmo desenho do `ssh.no_stdout`
+            # do painel.
+            if proc.stdout is None:
+                raise InstallError(f"{argv[0]}: nao consegui ler a saida do processo")
             for line in proc.stdout:
                 if on_line is not None:
                     on_line(line.rstrip("\r\n"))
@@ -141,7 +149,7 @@ class _Batch:
             return
         if SUCCESS_MARK in text:
             self.concluida = True
-        self.cauda = (self.cauda + [text])[-ERROR_TAIL:]
+        self.cauda = [*self.cauda, text][-ERROR_TAIL:]
         self._lines.append(text)
         if len(self._lines) >= LINE_BATCH or self._now() - self._last_at >= BATCH_SECONDS:
             self.flush()
@@ -192,7 +200,7 @@ class SshInstaller:
         try:
             self._send(target, env)
             self._install(target, log)
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             failure = error
             raise
         finally:

@@ -24,7 +24,16 @@ ACTOR_HEADER = "X-Actor"
 log = logging.getLogger("broker")
 
 
-def create_app(service: Service, token: str, allowed_ips: tuple[str, ...] = ()) -> Flask:
+def create_app(service: Service, token: str,  # noqa: C901 - ver a nota abaixo
+               allowed_ips: tuple[str, ...] = ()) -> Flask:
+    """Monta o app: autenticacao, handlers de erro e as 8 rotas.
+
+    O `# noqa: C901` nao e desistencia. O mccabe conta cada `def` aninhado como ramo, e
+    uma factory Flask e uma LISTA de registros: 8 rotas de uma a tres linhas. O teto de 15
+    do repositorio existe para forcar 'separar decidir de fazer', e aqui nao ha decisao a
+    separar — quebrar em `_register_routes`/`_register_errors` trocaria um numero por tres
+    indirecoes e nada ficaria mais facil de ler.
+    """
     if len(token) < TOKEN_MINIMO:
         raise ValueError(f"o token do broker precisa ter ao menos {TOKEN_MINIMO} caracteres")
     app = Flask(__name__)

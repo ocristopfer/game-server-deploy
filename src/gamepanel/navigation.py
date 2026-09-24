@@ -64,7 +64,9 @@ NAV_MAIN = (
 
 # Menu do canto da barra de cima: o resto.
 NAV_SECONDARY = (
-    Item("novo", "nav.add_server", "➕", "servers.new", admin=True),
+    # O caractere e o sinal de mais PESADO (U+2795), que e o icone do botao — nao o
+    # operador `+`. O linter pergunta porque os dois se parecem; aqui a parecenca e o ponto.
+    Item("novo", "nav.add_server", "➕", "servers.new", admin=True),  # noqa: RUF001
     # Os dois do broker so existem no deploy que ligou GAMEPANEL_ALLOW_BROKER.
     Item("instancias", "nav.instances.help", "🧩", "broker.instances", admin=True,
          feature=FEATURE_BROKER, short="nav.instances"),

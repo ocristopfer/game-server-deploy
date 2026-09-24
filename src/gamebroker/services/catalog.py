@@ -182,13 +182,20 @@ def _quoted_value(key: str, rest: str, lines: list[str], start: int) -> tuple[st
 
 def _port(text: str) -> Port:
     m = _PORT_RE.fullmatch(text.strip())
-    if not m or not 1 <= int(m.group(1)) <= 65535:
+    if not m or not 1 <= int(m.group(1)) <= MAX_PORT:
         raise ValueError(f"porta invalida: {text!r}")
     return Port(int(m.group(1)), m.group(2))
 
 
 def _parts(value: str, separator: str) -> tuple[str, ...]:
     return tuple(p.strip() for p in re.split(separator, value) if p.strip())
+
+
+# A maior porta que existe em TCP/UDP: o campo tem 16 bits. Aparece em quatro checagens do
+# broker, e a constante diz o que o numero E — `65535` solto parece limite arbitrario.
+# Mora AQUI, e nao no `allocator`, porque o allocator importa `Game` daqui: o contrario
+# seria ciclo.
+MAX_PORT = 65535
 
 
 def _env_int(data: dict[str, str], key: str, default: int) -> int:
@@ -450,13 +457,13 @@ def validate_dynamic(data: object) -> Game:
         raise ValidationError(missing[0], "obrigatorio")
 
     ports = _ports_field(data)
-    game_port = _int_field(data, "game_port", 1024, 65535)
+    game_port = _int_field(data, "game_port", 1024, MAX_PORT)
     if game_port not in {p.number for p in ports}:
         raise ValidationError("game_port", "deve estar entre as portas expostas")
-    query_port = _int_field(data, "query_port", 0, 65535, default=0)
+    query_port = _int_field(data, "query_port", 0, MAX_PORT, default=0)
     if query_port and query_port not in {p.number for p in ports}:
         raise ValidationError("query_port", "deve estar entre as portas expostas (ou 0)")
-    extra_port = _int_field(data, "extra_port", 0, 65535, default=0)
+    extra_port = _int_field(data, "extra_port", 0, MAX_PORT, default=0)
     if extra_port and extra_port not in {p.number for p in ports}:
         raise ValidationError("extra_port", "deve estar entre as portas expostas (ou 0)")
     if extra_port and extra_port in (game_port, query_port):
@@ -505,7 +512,7 @@ def _single_path(data: dict, field: str) -> str:
 
 
 # ----------------------------------------------------------------------------
-# Catalogo (curado + dinamico)
+# Catalogo curado, mais o dinamico
 # ----------------------------------------------------------------------------
 
 class Catalog:

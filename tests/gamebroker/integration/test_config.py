@@ -124,7 +124,8 @@ def test_todos_os_problemas_de_uma_vez_sem_duplicar(env):
     with pytest.raises(ConfigError) as error:
         load(env)
     names = [p.split(":")[0] for p in error.value.problems]
-    assert sorted(names) == ["BROKER_GATEWAY", "BROKER_TOKEN", "OPNSENSE_KEY", "PROXMOX_NODE"], "cada falta aparece UMA vez"
+    assert sorted(names) == ["BROKER_GATEWAY", "BROKER_TOKEN", "OPNSENSE_KEY",
+                             "PROXMOX_NODE"], "cada falta aparece UMA vez"
 
 
 @pytest.mark.parametrize(("name", "value", "chunk"), [
@@ -175,7 +176,7 @@ def test_loopback_http_nao_exige_impressao(env):
 
 def test_chave_publica_do_broker_ausente_e_problema(env):
     Path(env["BROKER_SSH_KEY"] + ".pub").unlink()
-    with pytest.raises(ConfigError, match="BROKER_SSH_KEY.pub"):
+    with pytest.raises(ConfigError, match=r"BROKER_SSH_KEY\.pub"):
         load(env)
 
 

@@ -12,8 +12,6 @@ Dependencias: python3-flask (apt). Hash de senha e sessao usam apenas a stdlib.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import os
 import re
@@ -27,7 +25,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 from typing import Any, NamedTuple
 
@@ -64,10 +62,10 @@ from gamepanel.persistence import schema
 from gamepanel.persistence.repositories import alerts as alerts_repo
 from gamepanel.persistence.repositories import jobs as jobs_repo
 from gamepanel.persistence.repositories import samples as samples_repo
-from gamepanel.persistence.repositories import settings as settings_repo
-from gamepanel.persistence.repositories import users as users_repo
 from gamepanel.persistence.repositories import schedules as schedules_repo
 from gamepanel.persistence.repositories import servers as servers_repo
+from gamepanel.persistence.repositories import settings as settings_repo
+from gamepanel.persistence.repositories import users as users_repo
 from gamepanel.runtime import a2s, http_probe, log_probe, port_probe
 
 # Apelido: ha uma rota `terminal()` neste mesmo modulo (a tela /servers/<id>/terminal),
@@ -98,7 +96,9 @@ from gamepanel.tasks import broker_jobs, log_stream, scheduler, ticker
 # O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
 # resto do painel continua funcionando e a tela do terminal responde 503.
 HAVE_PTY = term_runtime.HAVE_PTY
-from flask import (
+# O import do flask vem DEPOIS de proposito: a linha acima le do `term_runtime` que acabou
+# de ser importado, e o comentario que a explica precisa ficar junto dela.
+from flask import (  # noqa: E402
     Flask,
     abort,
     flash,
@@ -156,6 +156,8 @@ METRICS_TTL = settings.metrics_ttl
 ALLOW_SHELL = settings.allow_shell
 SHELL_TIMEOUT = settings.shell_timeout
 SHELL_MAX_LEN = 4000
+# 16 bits: a maior porta que existe em TCP/UDP.
+MAX_PORT = 65535
 
 # Terminal interativo: sessao SSH viva com PTY, teclado ligado no shell do container.
 # Herda o ALLOW_SHELL (e o mesmo poder do console, so que interativo).
@@ -434,7 +436,7 @@ def init_db() -> None:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 # ------------------------------------------------------------------- senhas
@@ -790,7 +792,7 @@ def in_parallel(tasks: dict, timeout: float = 40.0) -> dict:
     return output
 
 
-# ------------------------------------------------------------- jogadores (A2S)
+# --------------------------------------------------------- jogadores pelo protocolo A2S
 #
 # Implementacao real em gamepanel.runtime.a2s (extraida na Fase 4). Os nomes abaixo
 # continuam existindo neste modulo de proposito - QueryError em particular e usado por
@@ -1022,7 +1024,15 @@ COMMANDS = {
 
 # As duas listas nao podem divergir em silencio: uma acao com botao e sem comando da
 # 500 no clique, e uma com comando e sem botao e codigo morto que ninguem percebe.
-assert set(COMMANDS) == set(ui.BY_KEY), "ui.ACOES e COMANDOS fora de sincronia"
+#
+# `raise` e nao `assert`: com `python -O` o assert e DESCARTADO, e medi que a divergencia
+# passa calada nesse modo — justo a coisa que esta linha existe para nao deixar passar.
+# Producao nao roda com -O hoje, mas uma invariante que depende disso nao e invariante.
+# No import, derrubar o START e o comportamento certo: melhor nao subir do que subir com
+# um botao que da 500 no primeiro clique.
+if set(COMMANDS) != set(ui.BY_KEY):
+    difference = set(COMMANDS) ^ set(ui.BY_KEY)
+    raise RuntimeError(f"ui.ACTIONS e app.COMMANDS fora de sincronia: {sorted(difference)}")
 
 # Forma antiga, montada a partir das duas: chave -> (rotulo, comando, confirma).
 # Continua sendo o que `start_job` e o historico consomem.
@@ -1131,7 +1141,7 @@ def start_job(
                          f"{target.get('name', '?')}: {job_label(action)} falhou",
                          (output or "").strip()[-500:])
             # Alerta nunca derruba o job.
-            except Exception:  # noqa: BLE001
+            except Exception:
                 app.logger.exception("falha ao avisar sobre o job %s", job_id)
         conn2.close()
         invalidate_status(server_id)
@@ -1324,7 +1334,7 @@ def _record_alert(conn: sqlite3.Connection, event: str, title: str, detail: str,
 
 def recent_alerts(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:
     """As ultimas linhas do diario, da mais nova para a mais velha."""
-    return [dict(l) for l in alerts_repo.recent(conn, limit)]
+    return [dict(row) for row in alerts_repo.recent(conn, limit)]
 
 
 def _recent_job(conn: sqlite3.Connection, sid: int) -> bool:
@@ -1333,7 +1343,7 @@ def _recent_job(conn: sqlite3.Connection, sid: int) -> bool:
     Reiniciar pelo botao derruba o servico por alguns segundos, e isso NAO e uma queda.
     Sem esta janela, todo restart e todo update viraria alerta.
     """
-    cut = (datetime.now(timezone.utc) - timedelta(seconds=ALERT_QUIET)).isoformat()
+    cut = (datetime.now(UTC) - timedelta(seconds=ALERT_QUIET)).isoformat()
     return jobs_repo.acted_since(conn, sid, cut)
 
 
@@ -1761,7 +1771,7 @@ def clean_history(force: bool = False) -> int:
     conn = db()
 
     if SAMPLES_KEEP_DAYS:
-        old_ones = (datetime.now(timezone.utc)
+        old_ones = (datetime.now(UTC)
                   - timedelta(days=SAMPLES_KEEP_DAYS)).isoformat()
         with conn:
             samples_repo.delete_older_than(conn, old_ones)
@@ -1774,7 +1784,7 @@ def clean_history(force: bool = False) -> int:
 
     if not JOBS_KEEP_DAYS:
         return 0
-    cut = (datetime.now(timezone.utc) - timedelta(days=JOBS_KEEP_DAYS)).isoformat()
+    cut = (datetime.now(UTC) - timedelta(days=JOBS_KEEP_DAYS)).isoformat()
     with conn:
         return jobs_repo.delete_older_than(conn, cut)
 
@@ -1787,11 +1797,13 @@ def _clock_failure(name: str) -> None:
     chega nada no Discord".
     """
     app.logger.exception("falha na tarefa '%s' do relogio", name)
-    try:
+    try:  # noqa: SIM105 - ver o except
         _record_alert(db(), "", f"a tarefa '{name}' do relogio falhou",
                          traceback.format_exc(limit=4)[-500:], "", "erro-interno")
-    # Registrar a falha nao pode virar outra falha.
-    except Exception:  # noqa: BLE001
+    # Registrar a falha nao pode virar outra falha: este bloco JA esta tratando um erro,
+    # e logar de dentro dele seria circular. `pass` mudo e deliberado — o
+    # `logger.exception` da linha de cima ja registrou o que importa.
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -1897,8 +1909,12 @@ def _http_tab(server: ServerRow, http: dict, should_test: bool) -> dict:
     _udp, candidates, owners, warning_text = candidate_ports(server)
     found, silent_ones, probe_failure = probe_http_ports(server, candidates)
     _with_owner(found, owners, "tcp")
-    silent_ones = _with_owner([{"port": p} for p in silent_ones], owners, "tcp")
-    output = {"achados": found, "mudas": silent_ones, "aviso": warning_text or probe_failure,
+    # NOME NOVO, e nao o mesmo reaproveitado: o valor troca de significado (de lista de
+    # numero de porta para lista de dicionario com dono), e reusar o nome escondia isso de
+    # quem le — foi o verificador de tipo que apontou, recusando a reanotacao.
+    silent_with_owner: list[dict] = _with_owner(
+        [{"port": p} for p in silent_ones], owners, "tcp")
+    output = {"achados": found, "mudas": silent_with_owner, "aviso": warning_text or probe_failure,
              # Achado que vale um clique: porta que respondeu numa rota conhecida. Sem
              # nenhum, a tela explica que a API costuma vir desligada de fabrica.
              "tem_api": any(not a.get("generico") for a in found),
@@ -1928,7 +1944,7 @@ def _http_tab(server: ServerRow, http: dict, should_test: bool) -> dict:
 def _log_tab(server: ServerRow, join_re: str, leave_re: str, log_path: str,
              should_test: bool) -> dict:
     """Aba 3: linhas do log com cara de entrada/saida e o teste dos padroes."""
-    output = {"amostras": [], "teste": None, "erro_log": ""}
+    output: dict[str, Any] = {"amostras": [], "teste": None, "erro_log": ""}
     try:
         # O caminho vem do FORMULARIO, nao do banco: e o unico jeito de conferir um
         # arquivo novo (o .ADM do DayZ, por exemplo) antes de salvar.
@@ -1958,7 +1974,7 @@ def _log_tab(server: ServerRow, join_re: str, leave_re: str, log_path: str,
 def _enable_a2s_count(conn, sid: int):
     """Consulta UDP direta (A2S). Devolve um redirect quando o formulario esta errado."""
     port = request.form.get("query_port", "0")
-    if not port.isdigit() or not 1 <= int(port) <= 65535:
+    if not port.isdigit() or not 1 <= int(port) <= MAX_PORT:
         flash(translate("flash.bad_port"), "error")
         return redirect(url_for("players.setup", sid=sid))
     with conn:
@@ -2172,14 +2188,23 @@ def parent_of(path: str) -> str:
     return files_rt.parent_of(path)
 
 
+# Quando a barra do medidor muda de cor. Os MESMOS numeros estao no `barLevel` do
+# `static/js/core/format.js`: a tela desenha a barra no servidor e o JS a atualiza ao vivo,
+# entao divergir aqui faria a cor mudar no recarregamento e nao no medidor que se move —
+# sem erro em lugar nenhum. Nao ha passo de build para compartilhar a constante, e por isso
+# ha teste comparando os dois arquivos (`test_frontend_contract.py`).
+GAUGE_HOT = 92
+GAUGE_WARN = 80
+
+
 @app.template_filter("level")
 def _bar_level(pct: float | None) -> str:
-    """Classe da barra: perto do teto ela muda de cor (mesma regra do metrics.js)."""
+    """Classe da barra: perto do teto ela muda de cor (mesma regra do format.js)."""
     if pct is None:
         return ""
-    if pct >= 92:
+    if pct >= GAUGE_HOT:
         return " hot"
-    if pct >= 80:
+    if pct >= GAUGE_WARN:
         return " warn"
     return ""
 

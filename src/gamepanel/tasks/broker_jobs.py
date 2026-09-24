@@ -17,8 +17,8 @@ from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from gamepanel.i18n import Message
-from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.integrations import broker_client
+from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.services.server_service import HOST_RE, UNIT_RE
 
 LOG_MAX = 200000

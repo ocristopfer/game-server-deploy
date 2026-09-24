@@ -321,7 +321,7 @@ def test_admin_desliga_o_2fa_de_outra_pessoa(client, post, clock_at):
 
 
 def test_operador_nao_desliga_o_2fa_de_ninguem(client, post, clock_at):
-    admin, uid = _two_users(post, clock_at)
+    _admin, uid = _two_users(post, clock_at)
     panel.ensure_admin_user("beto", "senha-do-beto", panel.ROLE_OPERATOR)
     beto = panel.app.test_client()
     _password(beto, post, "beto", "senha-do-beto")

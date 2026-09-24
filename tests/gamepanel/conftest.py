@@ -34,12 +34,12 @@ os.environ["GAMEPANEL_DB"] = os.path.join(tempfile.mkdtemp(), "teste.db")
 os.environ["GAMEPANEL_WEBHOOK_URL"] = ""
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import time  # noqa: E402
+import time
 
-import pytest  # noqa: E402
+import pytest
 
-from gamepanel import app as panel  # noqa: E402
-from gamepanel.security import totp  # noqa: E402
+from gamepanel import app as panel
+from gamepanel.security import totp
 
 # Toda tabela do SCHEMA. Esvaziar e melhor que recriar: `init_db()` tambem roda as
 # migracoes, e repeti-las a cada teste mediria o tempo delas, nao o do teste.

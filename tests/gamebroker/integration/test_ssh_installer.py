@@ -8,19 +8,19 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from fake_ssh import BLOB, PUBLIC_KEY, FakeRunner
 
 from gamebroker.runtime.ssh_installer import (
     REMOTE_DEST,
     ConfigSsh,
     ExecutorReal,
-    SshInstaller,
     InstallError,
+    SshInstaller,
     build_env,
 )
 from gamebroker.services.allocator import AllocatedPort
 from gamebroker.services.catalog import validate_dynamic
 
-from fake_ssh import BLOB, PUBLIC_KEY, FakeRunner
 
 @pytest.fixture
 def lib_dir(tmp_path: Path) -> Path:
@@ -71,7 +71,14 @@ def _values(env: str) -> dict[str, str]:
         f'printf "%s\\0" "{n}" "${{{n}}}"\n' for n in names)
     output = subprocess.run([bash, "-c", script], capture_output=True, check=True, text=True,
                            encoding="utf-8").stdout.split("\0")
-    return dict(zip(output[0::2], output[1::2]))
+    # O `printf` termina cada pedaco com um NUL, entao o `split` devolve um pedaco vazio no
+    # fim; sem descarta-lo, o `zip` o comeria em silencio (era `zip` sem `strict`, e o
+    # B905 do ruff foi quem apontou). Explicito aqui, `strict` logo abaixo: se a contagem
+    # ficar impar por outro motivo, o teste ESTOURA em vez de comparar contra um dicionario
+    # menor do que o install.env de verdade.
+    if output and output[-1] == "":
+        output.pop()
+    return dict(zip(output[0::2], output[1::2], strict=True))
 
 
 def test_env_completo_de_um_jogo_dinamico(game, ports):
@@ -291,7 +298,7 @@ def test_usuario_invalido(tmp_path, lib_dir):
 def test_lib_incompleta_e_recusada(tmp_path):
     (tmp_path / "ct-install.sh").write_text("x")
     cfg = ConfigSsh(private_key=tmp_path / "k", public_key=PUBLIC_KEY, lib_dir=tmp_path)
-    with pytest.raises(ValueError, match="ct-phases.sh"):
+    with pytest.raises(ValueError, match=r"ct-phases\.sh"):
         SshInstaller(cfg, FakeRunner())
 
 
@@ -316,5 +323,6 @@ def test_executor_real_binario_inexistente_e_erro_claro():
 
 def test_executor_real_nao_le_do_teclado():
     """stdin fechado: um ssh que pedisse senha/confirmacao falharia em vez de travar o broker."""
-    code = ExecutorReal().run([sys.executable, "-c", "import sys; sys.exit(0 if sys.stdin.read() == '' else 1)"], None, 30)
+    probe = "import sys; sys.exit(0 if sys.stdin.read() == '' else 1)"
+    code = ExecutorReal().run([sys.executable, "-c", probe], None, 30)
     assert code == 0

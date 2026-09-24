@@ -14,6 +14,7 @@ import base64
 import os
 import sys
 from collections.abc import Callable, Mapping
+from typing import Any
 
 from flask import Flask
 
@@ -38,7 +39,10 @@ def build_service(cfg: ConfigBroker, executor: Executor | None = None, network: 
     basic = base64.b64encode(f"{cfg.opnsense_key}:{cfg.opnsense_secret}".encode()).decode()
     opnsense = Opnsense(Client(cfg.opnsense_url, {"Authorization": f"Basic {basic}"},
                                 cfg.opnsense_fingerprint), cfg.opnsense_wan)
-    extra = {} if run is None else {"run": run}
+    # `dict[str, Any]`: o dicionario existe para virar `**` num construtor cujos parametros
+    # tem tipos diferentes. Sem a anotacao o verificador o estreita ao tipo do `run` e acusa
+    # todos os outros — ver o mesmo padrao, com o mesmo motivo, em `config.py`.
+    extra: dict[str, Any] = {} if run is None else {"run": run}
     return Service(
         Db(str(cfg.state_dir / "broker.db")), Catalog(cfg.games_dir, cfg.state_dir / "dinamico"),
         proxmox, opnsense, SshInstaller(cfg.ssh, executor), network or RealNetwork(),

@@ -21,7 +21,8 @@ def real(environment, pve, opn):
     service = Service(environment.db, environment.catalog, pve.backend, opn.backend, installer,
                       FakeNetwork(), Config(ctids=range(300, 310), ips=ips_in_range("10.0.0", 30, 40)),
                       run=lambda task: task(), clock=environment.clock)
-    environment.pve, environment.opn, environment.instalador_real, environment.real_service = pve, opn, installer, service
+    environment.pve, environment.opn = pve, opn
+    environment.instalador_real, environment.real_service = installer, service
     return environment
 
 

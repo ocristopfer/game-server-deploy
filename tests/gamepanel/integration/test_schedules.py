@@ -8,13 +8,13 @@ mesma ocorrencia, nao dispara atrasada quando o painel passou a noite fora do ar
 historico nao cresce para sempre. A conta do relogio e testada aqui como funcao pura -
 sem thread, sem esperar o tempo passar.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from gamepanel import app as panel
 
-TZ = timezone.utc
+TZ = UTC
 
 
 def when_at(day, clock_at, minute=0):
@@ -112,7 +112,7 @@ def test_jobs_antigos_saem_na_limpeza(database):
             " created_at) VALUES ('alvo', 'nao-existe.invalid', 22, 'root', 'jogo.service',"
             " '/opt/game/Saved', ?)", (panel.now_iso(),))
     sid = database.execute("SELECT id FROM servers WHERE name = 'alvo'").fetchone()["id"]
-    old_one = (datetime.now(timezone.utc) - timedelta(days=panel.JOBS_KEEP_DAYS + 5)).isoformat()
+    old_one = (datetime.now(UTC) - timedelta(days=panel.JOBS_KEEP_DAYS + 5)).isoformat()
     fresh = panel.now_iso()
     with database:
         for how_many, stamp in ((4, old_one), (3, fresh)):

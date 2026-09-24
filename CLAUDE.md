@@ -93,9 +93,21 @@ inteira fica para antes de publicar.
 
 ```powershell
 uv sync                          # cria .venv e instala gamepanel/gamebroker editaveis + dev (pytest/ruff/mypy)
+uv run pytest tests\gamepanel\unit    # 28 s - o ciclo de quem esta editando
 uv run pytest                    # a suite inteira, da raiz do repo
-uv run pytest tests\gamepanel\test_alerts.py -k test_loop_de_restart
+uv run pytest tests\gamepanel\integration\test_alerts.py -k test_loop_de_restart
+uv run ruff check src tests      # ZERO e o estado atual: qualquer achado e novo
+uv run mypy src                  # idem
 ```
+
+**`ruff check` e `mypy` estao em ZERO, e e isso que faz os dois valerem.** Eles ficaram em
+97 e 11 durante boa parte da reorganizacao, e uma lista que nunca zera e uma lista que
+ninguem le. Cada achado que sobrava teve resposta: `MAX_PORT` e `GAUGE_HOT`/`GAUGE_WARN`
+viraram constante (regra do proprio repositorio), tres `pytest.raises(match=...)` tinham um
+ponto nao escapado que casava texto errado, um `zip` truncava em silencio, dois `assert`
+guardavam invariante que `python -O` descarta, e o que sobrou de verdade foi desligado NA
+CONFIG com o motivo escrito, nunca com um `# noqa` solto. Achado novo, portanto, e achado
+de verdade.
 
 `uv` (https://docs.astral.sh/uv/) gerencia SO o `.venv` de desenvolvimento —
 `pyproject.toml`, na raiz, declara `flask` (versao que acompanha o apt do Debian 13) mais
@@ -498,7 +510,13 @@ dessas tabelas.
   # Alerta nunca derruba o job.
   except Exception:  # noqa: BLE001
   ```
-  `# noqa: BLE001 - motivo` na mesma linha e sintaxe invalida de supressao.
+  Isto e ESTILO, e nao correcao: por muito tempo esta linha dizia que
+  `# noqa: BLE001 - motivo` era "sintaxe invalida de supressao", e **medi que nao e** — o
+  ruff honra o motivo no fim E mantem a supressao especifica ao codigo (um
+  `# noqa: BLE001 - x` numa linha com E741 nao esconde o E741; um `# noqa` pelado esconde
+  os dois). A preferencia pelo motivo acima e porque um motivo de uma frase nao cabe no
+  fim da linha sem estourar as 120 colunas, e quando ele cabe e porque foi encurtado ate
+  nao explicar mais nada.
 - **Dicionario de funcoes** (`RESOURCE_ALERTS`, `COUNT_SOURCES`) captura o objeto
   no import. Se um teste precisar trocar a funcao por uma falsa, ele vai ter de trocar a
   entrada da tabela — nao o nome no modulo. Verifique antes de transformar `if/elif` em

@@ -9,7 +9,7 @@ Alerta a mais vira ruido e o canal deixa de ser lido; alerta a menos e um servid
 as 3h que ninguem descobre.
 """
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -265,7 +265,7 @@ def test_reiniciar_pelo_botao_nao_vira_alerta(database, target, webhooks):
 
 def test_job_velho_nao_segura_o_alerta_para_sempre(database, target, webhooks):
     enable(database, ["caiu"])
-    old_one = (datetime.now(timezone.utc) - timedelta(seconds=panel.ALERT_QUIET + 60)).isoformat()
+    old_one = (datetime.now(UTC) - timedelta(seconds=panel.ALERT_QUIET + 60)).isoformat()
     with database:
         database.execute(
             "INSERT INTO jobs (server_id, target, action, status, username, created_at)"

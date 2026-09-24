@@ -16,8 +16,12 @@ class RealNetwork:
     def answers(self, ip: str) -> bool:
         target = str(ipaddress.IPv4Address(ip))
         try:
-            result = subprocess.run(
-                ["ping", "-c", "1", "-W", str(self._timeout), target],
+            # O argv e literal e o unico valor variavel passou por `IPv4Address`, que
+            # recusa qualquer coisa que nao seja um IP: nada de fora chega ao comando.
+            # `ping` sem caminho absoluto de proposito: ele muda de lugar entre distros
+            # (/bin, /usr/bin, /sbin) e fixar um quebraria em metade delas.
+            result = subprocess.run(  # noqa: S603
+                ["ping", "-c", "1", "-W", str(self._timeout), target],  # noqa: S607
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 timeout=self._timeout + 3, check=False)
         except (OSError, subprocess.TimeoutExpired):

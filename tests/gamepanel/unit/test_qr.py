@@ -22,7 +22,7 @@ def _evaluate(poly: list[int], x: int) -> int:
     return result
 
 
-# ---------------------------------------------------------------- Reed-Solomon (GF(256))
+# ------------------------------- Reed-Solomon no corpo finito de 256 elementos
 
 def test_tabelas_de_log_sao_inversas_uma_da_outra():
     for x in (1, 2, 3, 100, 255):

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,7 +16,7 @@ from fake_http import KEY_OPN, SECRET_OPN, TOKEN_PVE, FakeIngressHttp, FakePve, 
 
 from gamebroker.integrations.http_client import Client
 from gamebroker.persistence.db import Db
-from gamebroker.runtime.fakes import FakeInstaller, FakeIngress, FakeCompute, FakeNetwork
+from gamebroker.runtime.fakes import FakeCompute, FakeIngress, FakeInstaller, FakeNetwork
 from gamebroker.runtime.opnsense import Opnsense
 from gamebroker.runtime.proxmox import ConfigProxmox, Proxmox
 from gamebroker.services.allocator import ips_in_range
@@ -62,7 +62,7 @@ GAME_PORTS="7200/udp"
 
 class Clock:
     def __init__(self) -> None:
-        self._now = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        self._now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
     def __call__(self) -> datetime:
         return self._now

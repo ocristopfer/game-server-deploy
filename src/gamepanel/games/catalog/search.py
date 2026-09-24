@@ -40,8 +40,11 @@ def search(query: str | None, limit: int = DEFAULT_LIMIT) -> list[dict]:
     if not terms:
         return []
     found = [(s, text) for s, text in _INDEX if all(t in text for t in terms)]
-    found.sort(key=lambda par: (not _normalize(par[0]["name"]).startswith(terms[0]),
-                                  par[0]["name"].lower()))
+    # `str(...)`: cada sugestao e um `dict` de valores mistos (numero do App ID, texto do
+    # nome), entao para o verificador de tipo `s["name"]` e `object`. O `str` diz o que
+    # este campo E, em vez de espalhar `cast` pelas duas linhas de ordenacao.
+    found.sort(key=lambda par: (not _normalize(str(par[0]["name"])).startswith(terms[0]),
+                                  str(par[0]["name"]).lower()))
     return [s for s, _ in found[:limit]]
 
 

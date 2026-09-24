@@ -312,3 +312,21 @@ def test_todo_estado_tem_o_par_de_cor_de_texto():
     for state in ("ok", "err"):
         assert f"--{state}-text:" in tokens, f"falta --{state}-text em tokens.css"
         assert f"--{state}-line:" in tokens, f"falta --{state}-line em tokens.css"
+
+
+# ------------------------------------------- os limites do medidor, nos DOIS lugares
+
+def test_o_limite_de_cor_da_barra_e_o_mesmo_no_python_e_no_javascript():
+    """A barra e desenhada no SERVIDOR e atualizada pelo JS: dois donos do mesmo numero.
+
+    O painel renderiza a barra com o filtro `level` do `app.py` e depois o `format.js` a
+    reescreve a cada leitura de medidor. Se os limites divergirem, a cor muda no
+    recarregamento e nao no medidor que se move (ou o contrario) — sem erro, sem log, so
+    uma tela que se contradiz. Nao ha passo de build neste repositorio para compartilhar a
+    constante entre Python e JavaScript, entao a ligacao e este teste.
+    """
+    js = (JS_DIR / "core" / "format.js").read_text(encoding="utf-8")
+    found = [int(n) for n in re.findall(r"pct >= (\d+)\)", js)]
+    assert found, "o `level` do format.js deixou de comparar pct com um limite"
+    assert found == [panel.GAUGE_HOT, panel.GAUGE_WARN], (
+        f"limites do JS {found} x do Python [{panel.GAUGE_HOT}, {panel.GAUGE_WARN}]")

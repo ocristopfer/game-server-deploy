@@ -15,6 +15,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from gamebroker.integrations.http_client import normalize_fingerprint
@@ -166,7 +167,9 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
     ssh_key = Path(reader.text("BROKER_SSH_KEY", "/etc/gamebroker/ssh/id_ed25519"))
     lib_dir = Path(reader.text("BROKER_LIB_DIR", "/opt/gamebroker/lib"))
     panel_key = reader.text("BROKER_PANEL_PUBKEY")
-    broker_key = reader.attempt("BROKER_SSH_KEY.pub", lambda: Path(f"{ssh_key}.pub").read_text(encoding="utf-8").strip()) or ""
+    broker_key = reader.attempt(
+        "BROKER_SSH_KEY.pub",
+        lambda: Path(f"{ssh_key}.pub").read_text(encoding="utf-8").strip()) or ""
 
     ctids, ctid_base, ips = _ranges(reader)
     ports = _port_range(reader)
@@ -175,7 +178,12 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
     # Le TODAS as variaveis antes; so constroi o objeto se elas vieram completas. Senao a mesma
     # falta apareceria duas vezes (a da variavel e a do construtor reclamando de texto vazio).
     before = len(reader.problems)
-    px = {"node": reader.text("PROXMOX_NODE"), "pool": reader.text("PROXMOX_POOL", "games"),
+    # `dict[str, Any]` e o tipo HONESTO, e nao uma supressao: o dicionario e heterogeneo
+    # (texto, numero, tupla) e existe para ser aberto com `**` num construtor tipado. Sem a
+    # anotacao o verificador infere `dict[str, str]` a partir das primeiras chaves e acusa
+    # cada campo que nao e texto — e essa e a armadilha que o CLAUDE.md descreve: aqui o
+    # nome do campo viaja como TEXTO, e nenhuma ferramenta liga a chave ao parametro.
+    px: dict[str, Any] = {"node": reader.text("PROXMOX_NODE"), "pool": reader.text("PROXMOX_POOL", "games"),
           "storage": reader.text("PROXMOX_STORAGE"), "template": reader.text("PROXMOX_TEMPLATE"),
           "bridge": reader.text("PROXMOX_BRIDGE")}
     proxmox = None
@@ -190,7 +198,7 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
         ssh = reader.attempt("BROKER_SSH_*", lambda: ConfigSsh(
             private_key=ssh_key, public_key=broker_key, lib_dir=lib_dir))
 
-    cfg_parcial = {
+    cfg_parcial: dict[str, Any] = {
         "proxmox_fingerprint": reader.fingerprint("PROXMOX_CERT_SHA256", px_https),
         "opnsense_fingerprint": reader.fingerprint("OPNSENSE_CERT_SHA256", op_https),
         "proxmox_token": reader.text("PROXMOX_TOKEN"), "opnsense_key": reader.text("OPNSENSE_KEY"),

@@ -146,7 +146,7 @@ def test_fechar_nao_confunde_ctid_que_e_prefixo_de_outro(opn):
 
 def test_falha_no_meio_desfaz_o_que_ja_criou(opn):
     opn.fake.fail_on_add_number = 2
-    with pytest.raises(OpnsenseError, match="rule.target"):
+    with pytest.raises(OpnsenseError, match=r"rule\.target"):
         opn.backend.open_ports("300", "10.0.0.30", PORTS)
     assert opn.fake.rules == {}
 

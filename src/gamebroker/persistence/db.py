@@ -11,7 +11,7 @@ import sqlite3
 import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from gamebroker.domain.exceptions import Conflict
 from gamebroker.services.allocator import AllocatedPort
@@ -173,7 +173,7 @@ def _migrate_names(conn: sqlite3.Connection) -> None:
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class Db:

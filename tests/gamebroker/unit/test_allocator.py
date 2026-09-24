@@ -37,7 +37,8 @@ def test_faixa_de_ips_valida():
     assert alocador.ips_in_range("192.168.2", 30, 32) == ("192.168.2.30", "192.168.2.31", "192.168.2.32")
 
 
-@pytest.mark.parametrize(("prefix", "start", "end"), [("192.168.2", 0, 5), ("192.168.2", 9, 3), ("192.168.2", 1, 255), ("nao-ip", 1, 5)])
+@pytest.mark.parametrize(("prefix", "start", "end"), [
+    ("192.168.2", 0, 5), ("192.168.2", 9, 3), ("192.168.2", 1, 255), ("nao-ip", 1, 5)])
 def test_faixa_de_ips_invalida(prefix, start, end):
     with pytest.raises(ValueError):
         alocador.ips_in_range(prefix, start, end)
@@ -76,7 +77,7 @@ def test_jogo_fixo_usa_as_portas_padrao_e_ganha_papel(game_data):
 
 def test_jogo_fixo_com_porta_ocupada_e_recusado(game_data):
     game = _game(game_data, shiftable=False)
-    with pytest.raises(OutOfResources, match="27016/udp.*nao aceita mudar"):
+    with pytest.raises(OutOfResources, match=r"27016/udp.*nao aceita mudar"):
         alocador.allocate_ports(game, {(27016, "udp")}, FAIXA)
 
 
@@ -102,7 +103,7 @@ def test_mesma_porta_em_udp_e_tcp_fica_com_o_mesmo_numero(game_data):
 
 def test_faixa_cheia_e_recusada_com_a_faixa_na_mensagem(game_data):
     taken = {(n, "udp") for n in FAIXA}
-    with pytest.raises(OutOfResources, match="31000-31009.*cheia"):
+    with pytest.raises(OutOfResources, match=r"31000-31009.*cheia"):
         alocador.allocate_ports(_game(game_data, shiftable=True), taken, FAIXA)
 
 

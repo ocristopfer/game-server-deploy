@@ -24,11 +24,11 @@ from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple, TypedDict
 
 from gamepanel.i18n import Message
+from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.runtime import http_probe, log_probe
 from gamepanel.runtime.a2s import AuthError, QueryError
 from gamepanel.runtime.ssh import RemoteError, ServerLike
 from gamepanel.services import parallel
-from gamepanel.persistence.repositories import servers as servers_repo
 
 # De onde a contagem de jogadores pode sair. 'none' e o desligado explicito — diferente
 # do vazio, que significa "cadastro antigo, deduza pela porta de consulta".

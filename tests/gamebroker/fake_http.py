@@ -104,7 +104,8 @@ class FakePve:
         self.tasks[upid] = {"saida": output, "rodadas": self.rounds_until_stop, "log": list(log)}
         return upid
 
-    def handle(self, method: str, path: str, _query: dict, body: dict, headers: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
+    def handle(self, method: str, path: str, _query: dict, body: dict,
+               headers: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
         if self.authenticate and headers.get("authorization") != f"PVEAPIToken={TOKEN_PVE}":
             return 401, "", "No ticket"
         route = path.removeprefix("/api2/json")
@@ -132,11 +133,12 @@ class FakePve:
             return 403, "", f"Permission check failed (/vms/{vmid}, VM.Config.Options)"
         resources = [p.split("=")[0] for p in body.get("features", "").split(",") if p]
         if any(r != "nesting" for r in resources):
-            return 403, "", "Permission check failed (changing feature flags (except nesting) is only allowed for root@pam)"
+            return 403, "", ("Permission check failed (changing feature flags"
+                             " (except nesting) is only allowed for root@pam)")
         if vmid in self.cts:
             return 500, "", f"CT {vmid} already exists"
         if body.get("pool") != self.pool:
-            return 403, "", "Permission check failed (/vms/%d, VM.Allocate)" % vmid
+            return 403, "", f"Permission check failed (/vms/{vmid}, VM.Allocate)"
         self.cts[vmid] = {"hostname": body["hostname"], "net0": body["net0"],
                           "features": body.get("features", ""), "tags": "", "status": "stopped",
                           "pool": self.pool, "keys": body.get("ssh-public-keys", ""),
@@ -157,7 +159,9 @@ class FakePve:
             return 200, {"data": {"status": "running"}}
         return 200, {"data": {"status": "stopped", "exitstatus": task["saida"]}}
 
-    def _ct(self, method: str, vmid: int, suffix: str, body: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
+    # Roteador por caminho: um return por rota le melhor que um if aninhado de 10 niveis.
+    def _ct(self, method: str, vmid: int, suffix: str,  # noqa: PLR0911
+            body: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
         ct = self.cts.get(vmid)
         if ct is None:
             return 500, "", f"Configuration file 'nodes/{self.node}/lxc/{vmid}.conf' does not exist"
@@ -223,7 +227,8 @@ class FakeIngressHttp:
         self.rules[uuid] = line
         return uuid
 
-    def handle(self, _method: str, path: str, _query: dict, body: dict, headers: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
+    def handle(self, _method: str, path: str, _query: dict, body: dict,
+               headers: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
         expected = "Basic " + base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
         if headers.get("authorization") != expected:
             return 401, {"status": 401, "message": "Authentication Failed"}, "Unauthorized"

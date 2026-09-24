@@ -20,6 +20,7 @@ from collections.abc import Sequence
 
 from gamebroker.integrations.http_client import Client, Response
 from gamebroker.services.allocator import AllocatedPort
+from gamebroker.services.catalog import MAX_PORT
 
 DESCRIPTION_PREFIX = "gamepanel:"
 RANGE_LIMIT = 5000
@@ -65,7 +66,7 @@ def instance_description(handle: str) -> str:
 
 def _number_of(text: str) -> int:
     value = int(text)
-    if not 1 <= value <= 65535:
+    if not 1 <= value <= MAX_PORT:
         raise ValueError
     return value
 
@@ -181,7 +182,7 @@ class Opnsense:
             raise
 
     def _create_rule(self, handle: str, target: str, port: AllocatedPort) -> str:
-        if port.proto not in ("tcp", "udp") or not 1 <= port.number <= 65535:
+        if port.proto not in ("tcp", "udp") or not 1 <= port.number <= MAX_PORT:
             raise OpnsenseError(f"porta invalida: {port}")
         rule = {"rule": {
             "disabled": "0", "interface": self._interface, "protocol": port.proto,

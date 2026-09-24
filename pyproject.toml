@@ -73,6 +73,21 @@ select = [
     "PLR",                                # pylint refactor: too-many-arguments, too-many-branches...
     "ERA",                                  # codigo comentado
 ]
+ignore = [
+    # PLR2004 (numero literal numa comparacao) foi olhada uma por uma: das 19 que havia,
+    # uma era a regra do proprio repositorio ("literal repetido tres vezes vira
+    # constante") e virou `catalog.MAX_PORT`, e duas eram politica de tela e viraram
+    # `app.GAUGE_HOT`/`GAUGE_WARN` (com teste ligando-as ao format.js, que guardava os
+    # mesmos numeros escritos de novo).
+    #
+    # As 13 que sobram sao NUMERO DE PROTOCOLO ou de formato, e nomear cada uma piora a
+    # leitura: `200 <= status < 300` (classe de sucesso do HTTP), `1 <= start <= end <= 254`
+    # (faixa de host de um /24), `hours > 48` (quando o eixo do grafico troca hora por dia),
+    # `1024` (bytes num KB). Um `HTTP_OK_MIN = 200` nao ensina nada a quem le e a regra,
+    # disparando 13 vezes em cima disso, treina a ignorar o ruff — que e o oposto do que
+    # ela existe para fazer. Religar: apague esta linha e rode `ruff check src tests`.
+    "PLR2004",
+]
 # Os `# noqa` que ja existem no codigo (ex.: `except Exception:  # noqa: BLE001` em
 # gamebroker/ssh_install.py) so silenciam BLE001 com essa selecao - sem ela, RUF100 os
 # marcaria como "unused noqa" (achado da Fase 1, ja corrigido no codigo, mas dependia
@@ -92,6 +107,13 @@ max-returns = 8
 # uma funcao com mais de 8 parametros ou mais complexa so pra montar cenario - regras de
 # bandit e de contagem de parametro sao para codigo de producao, nao para teste.
 "tests/**/*.py" = ["S", "PLR0913", "PLR0915", "PLR2004"]
+# Estes tres guardam uma LINHA REAL como dado: `startparameters=` de um config do LinuxGSM,
+# `OptionSettings=(...)` do Palworld e uma linha do journal do Enshrouded. Quebra-las em
+# duas faria o teste exercitar uma entrada que nao existe — e o comprimento e justamente o
+# que o parser tem de aguentar. Por isso o E501 sai por ARQUIVO, e nao por `# noqa` solto.
+"tests/gamebroker/unit/test_import_linuxgsm.py" = ["E501"]
+"tests/gamepanel/unit/test_config_format.py" = ["E501"]
+"tests/gamepanel/integration/test_players.py" = ["E501"]
 
 [tool.mypy]
 platform = "linux"

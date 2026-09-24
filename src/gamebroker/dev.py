@@ -42,7 +42,10 @@ class SlowInstaller:
 
 def main() -> None:
     token = Path(os.environ["BROKER_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
-    state_dir = Path(os.environ.get("BROKER_DEV_ESTADO", "/tmp/broker-dev"))
+    # `/tmp` como padrao vale porque este modulo e o broker de BRINQUEDO do compose e nao
+    # entra no release (ver `SKIPPED_NAMES`). O de producao recebe `BROKER_STATE_DIR` do
+    # provisionamento, em /var/lib, com dono e modo proprios.
+    state_dir = Path(os.environ.get("BROKER_DEV_ESTADO", "/tmp/broker-dev"))  # noqa: S108
     state_dir.mkdir(parents=True, exist_ok=True)
     catalog = Catalog(Path(os.environ.get("BROKER_GAMES_DIR", "games")), state_dir / "dinamico")
     service = Service(
@@ -50,7 +53,10 @@ def main() -> None:
         SlowInstaller(float(os.environ.get("BROKER_DEV_PASSO", "1.5"))), FakeNetwork(),
         Config(ctid_base=200, ips=ips_in_range("10.77.0", 102, 199)))
     app = create_app(service, token)
-    app.run(host="0.0.0.0", port=int(os.environ.get("BROKER_PORT", "8090")), threaded=True)  # NOSONAR - so no compose de dev
+    # Ouvir em todas as interfaces so vale aqui: este modulo e o broker de BRINQUEDO do
+    # compose de dev (backends falsos) e nao entra no pacote de release — ver
+    # `SKIPPED_NAMES` em tools/build-release.py. O de producao sobe por gunicorn com TLS.
+    app.run(host="0.0.0.0", port=int(os.environ.get("BROKER_PORT", "8090")), threaded=True)  # noqa: S104  # NOSONAR - so no compose de dev
 
 
 if __name__ == "__main__":

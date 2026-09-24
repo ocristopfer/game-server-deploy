@@ -842,6 +842,37 @@ docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos san
   viraram `parallel.per_server`, e o padrão "roda script remoto e converte erro", que
   estava sete vezes, virou `runtime/files.py`.
 
+### O levantamento de qualidade (Fase 1, §6) — zerado
+
+A configuração de `ruff` e `mypy` que a seção 4 pedia existia desde a Fase 3, e **ninguém
+tinha agido sobre os achados**: 97 no ruff e 11 no mypy. Uma lista que nunca zera é uma
+lista que ninguém lê, então os dois estão em **zero** agora, e cada achado teve resposta em
+vez de supressão:
+
+- **Dois `assert` guardavam invariante que `python -O` descarta.** Medi: com `-O`, a
+  divergência entre `ui.ACTIONS` e `app.COMMANDS` — a que o CLAUDE.md descreve como "500 no
+  clique" — passa calada. Viraram `raise`, e a invariante agora derruba o start, que é o
+  comportamento certo.
+- **Três `pytest.raises(match=...)` com um `.` não escapado**, casando texto que não era o
+  pretendido (`BROKER_SSH_KEY.pub` também casaria `BROKER_SSH_KEYXpub`). Os dois `.*`
+  deliberados viraram string crua, para a intenção ficar dita.
+- **Um `zip()` truncava em silêncio** no parser do `install.env`; hoje o descarte do pedaço
+  final é explícito e o `strict=True` estoura se a contagem ficar ímpar por outro motivo.
+- **Os limites de cor do medidor (92/80) estavam escritos duas vezes**, em Python e em
+  JavaScript, e nada os ligava: divergir fazia a barra mudar de cor no recarregamento e não
+  no medidor que se move. Viraram `GAUGE_HOT`/`GAUGE_WARN` com teste comparando os dois
+  arquivos.
+- **Seis `# noqa` não suprimiam nada** e quatro divisores de seção eram lidos como código
+  comentado — a mesma família do `# Palavra: coisa.ext` que o CLAUDE.md já registrava.
+- **`PLR2004` foi desligada NA CONFIG, com o motivo**, depois de olhar as 19 uma por uma: 3
+  viraram constante e as 13 restantes são número de protocolo (`200 <= status < 300`,
+  `<= 254`, `1024`), onde nomear piora a leitura. Religar é apagar uma linha.
+
+E uma correção de doc que saiu de medir: o CLAUDE.md afirmava que
+`# noqa: BLE001 - motivo` era "sintaxe inválida de supressão". **Não é** — o ruff honra o
+motivo no fim e mantém a supressão específica ao código. A preferência pelo motivo acima
+continua, mas como estilo, não como correção.
+
 ### Defeitos reais encontrados depois do plano
 
 - **Toda página de erro estava em português na tela em inglês.** `abort(403, "frase")` +

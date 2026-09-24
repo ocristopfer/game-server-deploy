@@ -86,7 +86,7 @@ def test_o_app_le_a_configuracao_uma_vez_so():
     from gamepanel import app as panel
 
     assert isinstance(panel.settings, config.Settings)
-    assert panel.JOB_TIMEOUT == panel.settings.job_timeout
+    assert panel.settings.job_timeout == panel.JOB_TIMEOUT
 
 
 def test_nenhum_modulo_le_o_ambiente_por_fora():

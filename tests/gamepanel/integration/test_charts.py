@@ -8,17 +8,17 @@ o grafico MENTIR (diz que o servidor rodou liso enquanto estava fora do ar), e u
 fora da moldura vaza por cima do resto da tela. E isso que esta testado aqui.
 """
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from gamepanel import app as panel
 
-START = datetime(2026, 8, 18, 0, 0, tzinfo=timezone.utc)
+START = datetime(2026, 8, 18, 0, 0, tzinfo=UTC)
 END = START + timedelta(hours=24)
 SERIE_CPU = [{"key": "cpu", "label": "CPU", "color": "#3987e5", "suffix": "%"}]
-DUAS_SERIES = SERIE_CPU + [
-    {"key": "mem", "label": "Memoria", "color": "#d95926", "suffix": "%"}]
+DUAS_SERIES = [*SERIE_CPU,
+               {"key": "mem", "label": "Memoria", "color": "#d95926", "suffix": "%"}]
 
 
 def samples(values, min_step=5, start=None):
@@ -34,7 +34,7 @@ def chart_of(data, series=None, teto=100):
 
 def ys_of(g):
     """Todo y desenhado, de tracos e de pontos soltos."""
-    all_of = [p for l in g["linhas"] for s in (l["tracos"] + l["pontos"]) for p in s.split()]
+    all_of = [p for line in g["linhas"] for s in (line["tracos"] + line["pontos"]) for p in s.split()]
     return [float(p.split(",")[1]) for p in all_of]
 
 
@@ -124,21 +124,21 @@ def test_pontas_coladas_perdem_o_rotulo_mas_nao_o_ponto():
     """Dois rotulos que se tocam se desgrudam das linhas e viram ruido: melhor nenhum."""
     g = chart_of(series_pair(50, 51), DUAS_SERIES)
     assert not g["rotula_ponta"]
-    assert all(l["ponta"] for l in g["linhas"]), "o ponto da ponta continua la"
+    assert all(line["ponta"] for line in g["linhas"]), "o ponto da ponta continua la"
 
 
 # ------------------------------------------------------ grade e eixo do tempo
 
 def test_grade_leva_o_sufixo_da_serie():
     g = chart_of(samples([10, 20]))
-    assert [l["label"] for l in g["grade"]] == ["0%", "50%", "100%"]
+    assert [line["label"] for line in g["grade"]] == ["0%", "50%", "100%"]
     assert len(g["tempos"]) == panel.CHART_TICKS
 
 
 def test_grade_sem_sufixo_quando_a_serie_nao_tem():
     without_suffix = [dict(SERIE_CPU[0], suffix="")]
     g = chart_of(samples([1, 2]), without_suffix, teto=12)
-    assert [l["label"] for l in g["grade"]] == ["0", "6", "12"]
+    assert [line["label"] for line in g["grade"]] == ["0", "6", "12"]
 
 
 # ------------------------------------------------------- coleta e retencao
@@ -182,7 +182,7 @@ def test_amostra_velha_sai_na_limpeza(database, monkeypatch):
     with panel.app.app_context():
         panel.collect_samples(force=True)
 
-    old_one_f = (datetime.now(timezone.utc)
+    old_one_f = (datetime.now(UTC)
              - timedelta(days=panel.SAMPLES_KEEP_DAYS + 2)).isoformat()
     with database:
         for _ in range(5):
@@ -235,7 +235,7 @@ def test_o_svg_desenhado_traz_os_rotulos_dos_eixos(database, admin):
     numero. E o caso que o CLAUDE.md descreve: template quebrado nao aparece em teste.
     """
     sid = register_server(database, "alvo3", "outro3.invalid")
-    now_at = datetime.now(timezone.utc)
+    now_at = datetime.now(UTC)
     for i in range(5):
         database.execute(
             "INSERT INTO samples (server_id, taken_at, cpu_pct, mem_pct, players)"

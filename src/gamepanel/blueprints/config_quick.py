@@ -70,7 +70,7 @@ def register_file(sid: int):
 
 @bp.post("/servers/<int:sid>/config/save")
 @panel.login_required
-def save(sid: int):
+def save(sid: int):  # noqa: PLR0911 - cada erro de validacao sai por um return proprio
     panel._files_guard()
     server = panel._server_or_404(sid)
     try:

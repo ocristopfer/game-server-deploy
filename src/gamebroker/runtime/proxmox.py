@@ -12,6 +12,7 @@ moldam o codigo:
 """
 from __future__ import annotations
 
+import contextlib
 import re
 import time
 from collections.abc import Callable
@@ -157,12 +158,12 @@ class Proxmox:
             "ssh-public-keys": "\n".join(cfg.ssh_keys),
         }
         self._task(self._api("POST", f"/nodes/{cfg.node}/lxc", "criar CT", form=body), "criar CT")
-        try:
+        # Tag e conforto (aparece na tela do Proxmox); a identidade e o pool, e o token
+        # nem sempre pode grava-la. `suppress` e nao `try/except/pass`: com um tipo so de
+        # erro ele diz a mesma coisa em uma linha.
+        with contextlib.suppress(ProxmoxError):
             self._api("PUT", f"/nodes/{cfg.node}/lxc/{int(spec.handle)}/config", "gravar a tag",
                       form={"tags": BROKER_TAG})
-        except ProxmoxError:
-            # Tag e conforto (aparece na tela do Proxmox); a identidade e o pool.
-            pass
 
     def start(self, handle: str) -> None:
         ctid = int(handle)

@@ -9,7 +9,7 @@ import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import gamebroker.services.allocator as alocador
 from gamebroker.domain import wire
@@ -41,7 +41,7 @@ def _in_thread(task: Callable[[], None]) -> None:
 
 
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _actor_of(bruto: str) -> str:
@@ -50,7 +50,11 @@ def _actor_of(bruto: str) -> str:
 
 
 class Service:
-    def __init__(self, db: Db, catalog: Catalog, compute: Compute, ingress: Ingress,
+    # Construtor de INJECAO: os 9 sao colaboradores, nao dados. Embrulha-los num objeto
+    # esconderia de quem le a lista do que o servico depende — que e a coisa que mais
+    # importa saber aqui. A regra do CLAUDE.md e 'mais de 13 parametros: passe um objeto'.
+    def __init__(self, db: Db, catalog: Catalog, compute: Compute,  # noqa: PLR0913, PLR0917
+                 ingress: Ingress,
                  installer: Installer, network: Network, config: Config,
                  run: Callable[[Callable[[], None]], None] = _in_thread,
                  clock: Callable[[], datetime] = _now_utc):
