@@ -56,27 +56,6 @@ def index(sid: int):
     )
 
 
-@bp.get("/servers/<int:sid>/files/search")
-@panel.admin_required
-def search(sid: int):
-    """Procurar arquivos de configuracao — agora numa tela so.
-
-    Isto era uma SEGUNDA implementacao da mesma coisa: `find_config_files` numa lista
-    dentro de Arquivos, e a mesma `find_config_files` na mesma lista dentro de
-    Configuracao. Duas telas, dois botoes chamados "Procurar", um resultado que so
-    valia num dos dois lugares (so a tela de Configuracao sabe fixar o arquivo
-    encontrado).
-
-    A busca ficou onde ela serve para alguma coisa. Esta rota continua existindo para
-    nao quebrar link antigo nem historico de navegador.
-    """
-    panel._server_or_404(sid)
-    # `pasta` so entra na URL quando existe: `pasta=` vazio faria a busca procurar na
-    # raiz do container em vez da pasta de config do cadastro.
-    extras: dict[str, panel.Any] = {"pasta": request.args["path"]} if request.args.get("path") else {}
-    return redirect(url_for("config_quick.index", sid=sid, discover=1, **extras))
-
-
 @bp.post("/servers/<int:sid>/files/save")
 @panel.admin_required
 def save(sid: int):

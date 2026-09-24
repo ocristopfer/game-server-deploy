@@ -830,6 +830,18 @@ docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos san
   CLAUDE.md ("a montagem: banco, sessão, decoradores, tabelas"), que é exatamente o que
   ele levaria embora.
 
+### Lacunas da análise (Fase 1) que foram fechadas
+
+- **Suíte de console.** A seção 4.1 da análise listou quatro rotas privilegiadas sem suíte
+  dedicada: arquivos, backups, terminal e console. As três primeiras ganharam suíte ao
+  longo da execução; o console — a que roda uma linha de shell como **root** no container —
+  era a última, e agora tem 25 casos: quem abre, o que vira job, como o comando chega
+  (`bash -lc` com um argumento só, para o shell local do ssh não interpretar pipe e aspas)
+  e o que o histórico mostra, inclusive que `?job=` de outro servidor não abre.
+- **As três funções de fan-out duplicadas** (`all_status`/`all_metrics`/`all_players`)
+  viraram `parallel.per_server`, e o padrão "roda script remoto e converte erro", que
+  estava sete vezes, virou `runtime/files.py`.
+
 ### Defeitos reais encontrados depois do plano
 
 - **Toda página de erro estava em português na tela em inglês.** `abort(403, "frase")` +

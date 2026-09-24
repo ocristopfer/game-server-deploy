@@ -1973,7 +1973,7 @@ def _enable_http_count(conn, sid: int):
     fields = _http_fields(request.form, errors)
     if errors or not fields["http_url"]:
         flash(translate(errors[0]) if errors else translate("flash.need_api_url"), "error")
-        return redirect(url_for("players.setup", sid=sid, aba="http"))
+        return redirect(url_for("players.setup", sid=sid, tab="http"))
     with conn:
         servers_repo.use_http(conn, sid, fields)
     if fields["http_login_url"]:
@@ -1991,7 +1991,7 @@ def _enable_log_count(conn, sid: int):
     path = _log_path(request.form.get("log_path"), errors)
     if errors or not entry:
         flash(translate(errors[0]) if errors else translate("flash.need_join_pattern"), "error")
-        return redirect(url_for("players.setup", sid=sid, aba="log"))
+        return redirect(url_for("players.setup", sid=sid, tab="log"))
     with conn:
         servers_repo.use_log(conn, sid, entry, output, path)
     flash(translate("flash.count_on_by_log"), "ok")

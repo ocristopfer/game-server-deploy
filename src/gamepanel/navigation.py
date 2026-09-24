@@ -81,7 +81,7 @@ NAV_SECONDARY = (
 _ACTIVE_EXTRA = {
     "servidores": (
         "dashboard.index", "servers.detail", "servers.new", "servers.edit", "servers.action",
-        "config_quick.index", "config_quick.register_file", "config_quick.save", "files.index", "files.search",
+        "config_quick.index", "config_quick.register_file", "config_quick.save", "files.index",
         "files.save", "files.delete", "files.upload", "files.download",
         "terminal.index", "console.index", "charts.index", "backups.index", "backups.create", "backups.restore",
         "backups.delete", "backups.download", "schedules.index", "schedules.new",

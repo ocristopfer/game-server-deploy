@@ -632,6 +632,17 @@ dentro de frase em prosa e como chave de dicionario. Depois, procure cada um des
   de proposito — o defeito sai CALADO. `test_i18n.py` cobra isso lendo o AST de cada
   `_()`/`_h()`/`Message()`.
 
+- **Kwarg de `url_for` e um par com quem LE aquela chave.** O que nao e captura de rota
+  vira query string, e alguem tem de `request.args.get` com o mesmo nome. Renomear com um
+  lado so deixa o link respondendo 200 e o valor nao chega: `aba="http"` depois de a rota
+  passar a ler `tab` mandava o botao "usar esta API" para a aba de portas, e um
+  `{"pasta": ...}` num `**extras` perdia a pasta escolhida na busca de arquivos. Os tres
+  casos eram `url_for` montado em PYTHON, que e por onde a conferencia de template nao
+  olha. `test_url_contract.py` cobre o kwarg direto E o dict que alimenta o `**`.
+- **Nome de endpoint em `navigation.py` tambem apodrece.** Ele e texto, nada o liga a rota,
+  e um nome que sobrou depois de a rota morrer nao quebra nada — a aba so nunca acende por
+  ele. O files.search ficou anos assim (sem crase de proposito: o teste de doc cobra que todo nome entre crases exista). O mesmo teste cobre.
+
 E o que nenhum teste pegava antes: **kwarg de `render_template`**. Trocar
 `instancias=` por `instances=` deixa a tela VAZIA — 200, sem erro, sem log, porque o
 Jinja trata variavel ausente como indefinida. Agora `tests/gamepanel/test_template_contract.py`

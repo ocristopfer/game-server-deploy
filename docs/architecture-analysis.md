@@ -350,10 +350,13 @@ Achados reais de duplicação/pontos de atenção:
   `all_status`, `all_metrics`, `all_players` implementam o mesmo padrão
   (spawn por servidor + `join(timeout=...)` + `setdefault` de erro), sem
   reaproveitar `em_paralelo` nem uma à outra.
-- **Rota vestigial documentada como tal**: `files_search` existe só para não
-  quebrar link/histórico antigo e redireciona para `config_quick` — o próprio
-  código já explica isso no docstring; candidata a remoção se confirmarmos
-  que não há mais link externo apontando para ela.
+- ~~**Rota vestigial documentada como tal**: `files_search`~~ — **removida.** Nada no
+  painel apontava para ela (só o `_ACTIVE_EXTRA` do `navigation.py`, que a citava sem
+  nunca acender por ela), e o painel não é público — a mesma razão pela qual o grupo C de
+  breaking change foi corte limpo. O argumento decisivo, porém, é que ela estava
+  **quebrada**: mandava `pasta=` para uma rota que passou a ler `folder`, então quem
+  tivesse o link antigo perdia a pasta escolhida em silêncio. Um redirect que perde o
+  argumento é pior que 404.
 - **Duplicação intencional de pinagem TLS** entre `admin/broker_client.py` e
   `broker/conexao.py` — não é redundância acidental (cada lado da fronteira de
   confiança tem seu próprio pino), mas vale registrar como candidato a NÃO
