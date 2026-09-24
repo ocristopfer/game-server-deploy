@@ -161,6 +161,10 @@ prune_old_layout() {
   for entry in "${APP_DIR}"/* "${APP_DIR}"/.[!.]*; do
     [[ -e "$entry" || -L "$entry" ]] || continue
     base="$(basename "$entry")"
+    # A pasta temporaria deste script nao e layout antigo: o trap de saida a remove. Sem
+    # esta linha o log do deploy anunciava "removendo o layout antigo: .staging.XXXXXX",
+    # que manda quem le procurar um problema que nao existe.
+    case "$base" in .staging.*) continue;; esac
     keep=0
     for name in "${KEPT_IN_APP_DIR[@]}"; do
       [[ "$base" == "$name" ]] && keep=1 && break
