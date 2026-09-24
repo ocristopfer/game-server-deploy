@@ -204,8 +204,16 @@ function Test-PanelReachable([string]$Target) {
     $ErrorActionPreference = "Continue"
     try {
         # BatchMode: sem chave autorizada, falha na hora em vez de pedir senha.
+        # O que se pergunta e "este CT ja tem o mecanismo de release?", e por isso a
+        # marca e o symlink `current` -- nao o pacote. Um CT anterior a esse mecanismo
+        # PRECISA do caminho completo: o atalho so empurra o tarball, e a unit de la
+        # ainda aponta para fora de `current`, entao o release entraria sem nunca ser
+        # servido. A sonda antiga testava o pacote DIRETO em /opt/gamepanel, que era o
+        # layout antigo: depois da migracao ela falhava SEMPRE, e todo deploy incremental
+        # virava um provisionamento completo em silencio -- que passa pelo Proxmox, roda
+        # apt e redefine a senha do admin a cada vez.
         ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new `
-            "root@$Target" "test -f /opt/gamepanel/gamepanel/app.py" 2>$null | Out-Null
+            "root@$Target" "test -L /opt/gamepanel/current" 2>$null | Out-Null
         return ($LASTEXITCODE -eq 0)
     } catch {
         return $false

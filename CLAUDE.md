@@ -469,8 +469,8 @@ dessas tabelas.
   (5 em 15 min), nao por IP; desativar ou pedir codigos novos exige senha E codigo; recuperacao =
   8 codigos de uso unico, so o hash no banco. `GAMEPANEL_REQUIRE_2FA=1` (`ADMIN_REQUIRE_2FA` no `.env`)
   tranca quem nao ativou na tela de ativacao: so ligue DEPOIS de todo admin ter ativado. Saida de
-  emergencia: `cd /opt/gamepanel && python3 -m gamepanel.cli --reset-2fa USUARIO` no CT do painel
-  (o caminho por arquivo, `python3 /opt/gamepanel/gamepanel/app.py --reset-2fa`, faz o mesmo), ou "Desligar 2FA"
+  emergencia: `cd /opt/gamepanel/current && python3 -m gamepanel.cli --reset-2fa USUARIO` no CT do
+  painel (o caminho por arquivo, `python3 /opt/gamepanel/current/gamepanel/app.py --reset-2fa`, faz o mesmo), ou "Desligar 2FA"
   em Usuarios. A tela de ativacao mostra um QR code (`qr.py`, ver acima) para escanear, a chave em
   texto para digitar a mao e um link `otpauth://` que abre o aplicativo no proprio celular.
 - **`broker_required` (app.py) tambem exige o 2FA DA PESSOA, sempre** — independente de
