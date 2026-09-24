@@ -568,7 +568,6 @@ main() {
   start_container
   install_packages
   ensure_app_user
-  publish_application
   ensure_ssh_key
   ensure_tls
   ensure_token
@@ -576,6 +575,21 @@ main() {
   resolve_upstream_fingerprints
   render_broker_config
   render_service
+  # A config e a unit vao ANTES de publicar, e a ordem importa: e o `install-release.sh`
+  # que reinicia o servico e faz a sonda de saude, e ele roda dentro do publish. Com a
+  # unit escrita depois, a sonda testava o binomio ERRADO -- unit velha com codigo novo --
+  # e o resultado dela nao queria dizer nada:
+  #
+  #   - se a unit velha chamava algo que o codigo novo nao tem mais (foi o caso, com
+  #     `gamebroker.wsgi:criar_app_de_ambiente()`), a sonda falha, o install-release faz
+  #     rollback e o script morre AQUI, justamente antes do passo que consertaria a unit.
+  #     O deploy fica sem saida: nao ha como chegar na unit nova;
+  #   - e se o layout velho ainda estivesse importavel, a sonda PASSA contra o codigo
+  #     velho e o deploy se declara bem-sucedido sem ter trocado nada.
+  #
+  # Nesta ordem a sonda ve unit nova, env novo e codigo novo, e o rollback dela volta
+  # para um estado que de fato funcionava.
+  publish_application
   start_broker
   configure_panel
   print_summary

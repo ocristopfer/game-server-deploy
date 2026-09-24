@@ -487,12 +487,31 @@ main() {
   start_container
   install_packages
   ensure_app_user
-  publish_release
   ensure_ssh_key
   enable_direct_deploy
   render_panel_config
-  bootstrap_admin_user
   render_service
+  # A config e a unit vao ANTES de publicar, e a ordem importa: e o `install-release.sh`
+  # que reinicia o servico e faz a sonda de saude, e ele roda dentro do publish. Com a
+  # unit escrita depois, a sonda testava o binomio ERRADO -- unit velha com codigo novo --
+  # e o resultado dela nao queria dizer nada:
+  #
+  #   - se a unit velha chamava algo que o codigo novo nao tem mais (foi o caso, com
+  #     `gamebroker.wsgi:criar_app_de_ambiente()`), a sonda falha, o install-release faz
+  #     rollback e o script morre AQUI, justamente antes do passo que consertaria a unit.
+  #     O deploy fica sem saida: nao ha como chegar na unit nova;
+  #   - e se o layout velho ainda estivesse importavel, a sonda PASSA contra o codigo
+  #     velho e o deploy se declara bem-sucedido sem ter trocado nada.
+  #
+  # Nesta ordem a sonda ve unit nova, env novo e codigo novo, e o rollback dela volta
+  # para um estado que de fato funcionava.
+  publish_release
+  # Depois do publish de proposito: importa `gamepanel` de ${APP_DIR}/current, que so
+  # existe a partir dali. As migrations de esquema correm neste import -- e com a unit
+  # ja certa, quem as roda e o processo NOVO, que ja esta servindo. Na ordem antiga o
+  # processo velho continuava no ar com SQL em portugues enquanto o banco ja tinha sido
+  # renomeado, e ele despejava `no such column: nome` por alguns segundos.
+  bootstrap_admin_user
   start_panel
   authorize_in_game_cts
   print_summary

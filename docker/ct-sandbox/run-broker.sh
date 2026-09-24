@@ -145,7 +145,20 @@ U=/etc/systemd/system/gamebroker.service
 grep -q "^User=gamebroker" $U && ok "roda como gamebroker, nao root" || fail "unit roda como root?"
 grep -q -- "--workers 1" $U && ok "UM worker (a trava de IP vive na memoria)" || fail "workers != 1"
 grep -q -- "--certfile /etc/gamebroker/tls/cert.pem" $U && grep -q -- "--keyfile /etc/gamebroker/tls/key.pem" $U && ok "gunicorn com TLS" || fail "sem TLS na unit"
-grep -q "gamebroker.wsgi:criar_app_de_ambiente()" $U && ok "entrada gamebroker.wsgi" || fail "entrada errada"
+# O ponto de entrada da unit e conferido contra o CODIGO, nao contra uma copia literal do
+# nome aqui. A checagem anterior era `grep -q "...:criar_app_de_ambiente()"`: ela comparava
+# o script com uma segunda copia do mesmo nome velho, entao os dois concordavam e a suite
+# ficava verde enquanto a funcao no pacote ja se chamava outra coisa. O gunicorn e que
+# descobria, em producao, com `Failed to find attribute` e exit 4 -- derrubando um broker
+# que estava no ar, porque a unit e reescrita antes de qualquer teste de saude.
+ENTRY="$(sed -n "s/.*'gamebroker\.wsgi:\([A-Za-z_][A-Za-z_0-9]*\)()'.*/\1/p" $U)"
+if [ -z "$ENTRY" ]; then
+  fail "a unit nao declara um gamebroker.wsgi:<funcao>()"
+elif grep -q "^def ${ENTRY}(" /opt/gamebroker/current/gamebroker/wsgi.py; then
+  ok "entrada gamebroker.wsgi:${ENTRY} existe no pacote"
+else
+  fail "a unit chama gamebroker.wsgi:${ENTRY}(), que nao existe no pacote publicado"
+fi
 grep -q "^EnvironmentFile=/etc/gamebroker/broker.env" $U && ok "segredos vem do EnvironmentFile (nao da unit)" || fail "EnvironmentFile ausente"
 grep -q "ProtectSystem=strict" $U && grep -q "NoNewPrivileges=true" $U && ok "endurecimento do systemd" || fail "sem endurecimento"
 ! grep -q "segredo-do-proxmox" $U && ok "nenhum segredo dentro da unit" || fail "SEGREDO NA UNIT"
