@@ -47,9 +47,24 @@ python3 "$REPO/tools/build-release.py" gamepanel --out "$work/dist2" >/dev/null 
 second_sum="$(sha256sum "$work"/dist2/gamepanel-*.tar.gz | cut -d' ' -f1)"
 check "empacotar duas vezes da o mesmo sha256" "$first_sum" "$second_sum"
 
-# ----- o CT, com o layout ANTIGO no lugar -----
+# ----- o CT, com os layouts ANTIGOS no lugar -----
+# Sao TRES formas diferentes, porque cada versao anterior deixou a sua, e todas foram
+# encontradas nos CTs de verdade ao publicar (300 e 301):
+#   a) ${APP_DIR}/<pacote>/ -- o layout imediatamente anterior ao release por versao;
+#   b) .py soltos + templates/ e static/ na raiz -- o painel antes do pacote;
+#   c) uma pasta com o NOME VELHO do pacote (broker/) -- o broker antes do rename.
+# (b) e (c) sao os que importam: e codigo com nome velho vivo e importavel no container.
 mkdir -p "$APP_DIR/gamepanel/templates"
 echo "# versao anterior a este mecanismo" > "$APP_DIR/gamepanel/app.py"
+mkdir -p "$APP_DIR/templates" "$APP_DIR/static/css" "$APP_DIR/broker"
+echo "# painel antes do pacote"  > "$APP_DIR/app.py"
+echo "# nome em portugues"       > "$APP_DIR/busca_de_jogos.py"
+echo "# pacote antes do rename"  > "$APP_DIR/broker/nucleo.py"
+echo "<!-- tela velha -->"       > "$APP_DIR/templates/base.html"
+# lib/ e games/ NAO sao o pacote: o provisionamento as empurra a parte e elas ficam.
+mkdir -p "$APP_DIR/lib" "$APP_DIR/games"
+echo "# fases"    > "$APP_DIR/lib/ct-phases.sh"
+echo "APP_ID=730" > "$APP_DIR/games/exemplo.env"
 
 # ----- 1. sha errado nao publica nada -----
 out="$(bash "$INSTALLER" gamepanel "$tarball" \
@@ -69,6 +84,13 @@ has "blueprints vieram junto"    "$APP_DIR/releases/$version/gamepanel/blueprint
 has "o carimbo esta no lugar"    "$APP_DIR/releases/$version/gamepanel/_build.py"
 check "current aponta para a versao" "$APP_DIR/releases/$version" "$(readlink -f $APP_DIR/current)"
 has_not "o layout antigo foi embora"  "$APP_DIR/gamepanel"
+has_not "os .py soltos foram embora"     "$APP_DIR/app.py"
+has_not "o .py de nome velho foi embora" "$APP_DIR/busca_de_jogos.py"
+has_not "templates/ da raiz foi embora"  "$APP_DIR/templates"
+has_not "static/ da raiz foi embora"     "$APP_DIR/static"
+has_not "a pasta do nome velho do pacote foi embora" "$APP_DIR/broker"
+has "lib/ do provisionamento fica"   "$APP_DIR/lib/ct-phases.sh"
+has "games/ do provisionamento fica" "$APP_DIR/games/exemplo.env"
 has_not "nao sobrou pasta temporaria" "$(ls -d $APP_DIR/.staging.* 2>/dev/null | head -1)"
 if grep -q "systemctl restart gamepanel.service" /var/log/fake-calls.log 2>/dev/null
   then ok "reiniciou o servico"; else fail "nao reiniciou o servico"; fi

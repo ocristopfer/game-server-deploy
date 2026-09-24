@@ -142,10 +142,34 @@ while IFS= read -r old; do
 done < <(find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
          | sort -rn | tail -n "+$((KEEP_RELEASES + 1))" | cut -d' ' -f2-)
 
-# O layout antigo publicava direto em ${APP_DIR}/${PACKAGE}. Depois que o symlink pegou,
-# ele so confunde: sao os arquivos da versao anterior a este mecanismo, sem nada que os
-# atualize.
-if [[ -d "${APP_DIR}/${PACKAGE}" && ! -L "${APP_DIR}/${PACKAGE}" ]]; then
-  msg "removendo o layout antigo em ${APP_DIR}/${PACKAGE}"
-  rm -rf "${APP_DIR:?}/${PACKAGE}"
-fi
+# Layout antigo: o que existia em ${APP_DIR} antes deste mecanismo. Depois que o symlink
+# pegou, ele so confunde -- e o risco nao e cosmetico: e codigo com os NOMES VELHOS ainda
+# vivo e importavel no container, sem nada que o atualize. Uma lista do que remover nao
+# serve, porque cada versao anterior deixou um layout diferente (o painel deixou 27 .py
+# soltos mais templates/ e static/; o broker deixou a pasta broker/, o nome do pacote antes
+# do rename), e uma lista escrita a mao ja nasceria incompleta -- foi assim que a lista de
+# subpastas a apagar ficou para tras a cada pasta nova, que e a razao de existir o layout
+# por versao. Entao a regra e invertida: diz-se o que FICA.
+#
+# Em ${APP_DIR} so moram o mecanismo de release e os diretorios que o provisionamento
+# empurra a parte (lib/ e games/ do broker, que nao sao o pacote Python). Dado e config
+# nunca estiveram aqui: vivem em /var/lib e /etc. Por isso remover o resto e seguro.
+KEPT_IN_APP_DIR=(releases current lib games)
+
+prune_old_layout() {
+  local entry base keep
+  for entry in "${APP_DIR}"/* "${APP_DIR}"/.[!.]*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    base="$(basename "$entry")"
+    keep=0
+    for name in "${KEPT_IN_APP_DIR[@]}"; do
+      [[ "$base" == "$name" ]] && keep=1 && break
+    done
+    [[ "$keep" -eq 1 ]] && continue
+    msg "removendo o layout antigo: ${base}"
+    # ${APP_DIR:?} para um APP_DIR vazio virar erro em vez de "rm -rf /nome".
+    rm -rf "${APP_DIR:?}/${base}"
+  done
+}
+
+prune_old_layout
