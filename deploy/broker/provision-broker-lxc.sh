@@ -256,8 +256,12 @@ publish_application() {
   pct push "$CTID" "$SCRIPT_DIR/$RELEASE_TARBALL" "${remote_tmp}/${RELEASE_TARBALL}" --perms 0644
   pct push "$CTID" "$INSTALLER" "${remote_tmp}/install-release.sh" --perms 0755
 
-  # Sem sonda de saude aqui: a unit so e escrita mais adiante (render_service). O
-  # instalador percebe que ela nao existe e se limita a deixar o release no lugar.
+  # Sem sonda de saude aqui, e o motivo nao e mais a ordem (a unit ja foi escrita): o
+  # /health do broker e HTTPS com certificado proprio e lista de IPs, e sondar isso de
+  # dentro do CT com wget pediria --no-check-certificate, justo o que este projeto nao
+  # faz em lugar nenhum. A sonda de verdade mora no start_broker, que fixa a impressao
+  # do certificado; o preco e o rollback do instalador nao valer aqui, e e por isso que
+  # o start_broker falha ALTO quando a saude nao responde.
   run_ct "bash '${remote_tmp}/install-release.sh' gamebroker '${remote_tmp}/${RELEASE_TARBALL}' '${RELEASE_SHA256}' ${APP_DIR} ${SERVICE_NAME}" \
     || die "A instalacao do release falhou dentro do CT (veja a saida acima)"
   run_ct "rm -rf '$remote_tmp'"

@@ -284,7 +284,13 @@ function Invoke-DirectDeploy([string]$Target, [string]$Port) {
     # instalador devolve o symlink para a versao anterior e sai com erro. A limpeza vem
     # DEPOIS, num comando separado, para o codigo de saida que chega aqui ser o do
     # instalador e nao o do 'rm'.
-    $healthCmd = "curl -fsS http://127.0.0.1:$Port/health"
+    # wget e nao curl: o CT do painel NAO tem curl (o install_packages instala wget, e
+    # nem ele vinha antes -- estava ali por acaso, pelo template). Com `curl` aqui o
+    # `eval` do instalador falhava com "command not found" nas dez tentativas, e o
+    # rollback desfazia um release que tinha subido perfeitamente: o servico respondia,
+    # so a FERRAMENTA da sonda nao existia. Falso negativo e pior que sonda nenhuma.
+    # Sem aspas de proposito: este comando viaja dentro de um argumento ja entre apostrofos.
+    $healthCmd = "wget -q -O /dev/null http://127.0.0.1:$Port/health"
     Invoke-Ssh $Target "bash '$remoteTmp/install-release.sh' gamepanel '$remoteTmp/$($release.Name)' '$($release.Sha)' /opt/gamepanel gamepanel.service '$healthCmd'"
     $installed = ($LASTEXITCODE -eq 0)
     Invoke-Ssh $Target "rm -rf '$remoteTmp'"
@@ -297,7 +303,7 @@ function Invoke-DirectDeploy([string]$Target, [string]$Port) {
     # Confirma pelo /health que o processo NO AR e o que acabou de ser publicado. Um
     # "systemctl is-active" satisfeito e compativel com "o systemd reiniciou a versao
     # velha": os dois dao verde, e so a versao separa os dois casos.
-    $live = (Invoke-Ssh $Target "curl -fsS http://127.0.0.1:$Port/health").Trim()
+    $live = (Invoke-Ssh $Target "wget -q -O - http://127.0.0.1:$Port/health").Trim()
     Write-Host "`nPainel atualizado em http://${Target}:$Port" -ForegroundColor Green
     Write-Host "  /health: $live" -ForegroundColor DarkGray
     Write-Host "Config (ADMIN_*), recursos do CT e usuario so mudam no modo completo: .\deploy-admin.ps1 -Full" -ForegroundColor DarkGray

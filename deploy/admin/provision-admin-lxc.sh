@@ -187,6 +187,7 @@ install_packages() {
   msg "Instalando dependencias no CT (python3-flask, gunicorn, openssh-client/server)"
   run_ct "export DEBIAN_FRONTEND=noninteractive && apt-get update -qq && \
     apt-get install -y -qq python3 python3-flask gunicorn openssh-client openssh-server \
+    wget \
     ca-certificates tar gzip"
 }
 
@@ -206,11 +207,15 @@ publish_release() {
   pct push "$CTID" "$SCRIPT_DIR/$RELEASE_TARBALL" "${remote_tmp}/${RELEASE_TARBALL}" --perms 0644
   pct push "$CTID" "$INSTALLER" "${remote_tmp}/install-release.sh" --perms 0755
 
-  # Sem sonda de saude aqui: a unit do servico so e escrita mais adiante (render_service),
-  # e quem sobe o painel e o start_panel. O instalador percebe que ela nao existe e se
-  # limita a deixar o release no lugar com o symlink apontando para ele.
+  # A sonda VAI aqui: a unit e o panel.env ja foram escritos (ver o comentario no main),
+  # entao o restart que o instalador faz sobe o codigo NOVO e a resposta dela quer dizer
+  # algo. Enquanto a unit vinha depois, o instalador so encontrava servico inexistente e
+  # se limitava a deixar o release no lugar -- o rollback dele nunca era exercitado. Num
+  # CT novo o banco ainda esta sem usuario neste ponto, e isso nao atrapalha: o /health
+  # nao depende de sessao.
   run_ct "bash '${remote_tmp}/install-release.sh' gamepanel \
-'${remote_tmp}/${RELEASE_TARBALL}' '${RELEASE_SHA256}' ${APP_DIR} ${SERVICE_NAME}" \
+'${remote_tmp}/${RELEASE_TARBALL}' '${RELEASE_SHA256}' ${APP_DIR} ${SERVICE_NAME} \
+'wget -q -O /dev/null http://127.0.0.1:${PANEL_PORT}/health'" \
     || die "A instalacao do release falhou dentro do CT (veja a saida acima)"
   run_ct "rm -rf '$remote_tmp'"
 
