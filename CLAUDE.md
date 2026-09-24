@@ -608,7 +608,7 @@ chave que ninguem cadastrou aparece na tela como `nav.servers` em vez de sumir c
   application context". Pelo mesmo motivo o alerta que vai para o canal e o texto
   GRAVADO num job usam o idioma do deploy (`label_for_db`): o historico e lido
   depois, por outra pessoa, e a mesma acao escrita de tres jeitos quebraria o filtro.
-- Conferir uma tela nos dois idiomas: `POST /account/idioma` com `lang=pt|en`. Sem
+- Conferir uma tela nos dois idiomas: `POST /account/language` com `lang=pt|en`. Sem
   sessao (tela de login) vale o `Accept-Language` do navegador.
 
 ---

@@ -417,7 +417,7 @@ EnvironmentFile=${CONF_DIR}/broker.env
 # memoria do processo. As threads atendem o polling do painel enquanto uma criacao roda.
 ExecStart=/usr/bin/gunicorn --workers 1 --threads 8 --timeout 120 \\
   --certfile ${CONF_DIR}/tls/cert.pem --keyfile ${CONF_DIR}/tls/key.pem \\
-  --bind 0.0.0.0:${BROKER_PORT} --access-logfile - 'gamebroker.wsgi:criar_app_de_ambiente()'
+  --bind 0.0.0.0:${BROKER_PORT} --access-logfile - 'gamebroker.wsgi:create_app_from_env()'
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

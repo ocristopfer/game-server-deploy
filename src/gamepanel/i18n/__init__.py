@@ -44,6 +44,22 @@ LANGUAGES: tuple[tuple[str, str], ...] = (
     ("en", "English"),
 )
 
+# O que vai no `lang=` do `<html>`, que NAO e a mesma coisa que a chave do catalogo: o
+# atributo aceita regiao e a nossa e a do Brasil (`pt-BR`), enquanto a chave e so `pt`.
+# Quem le esse atributo e o leitor de tela (que escolhe a voz e a pronuncia por ele) e a
+# traducao automatica do navegador -- com ele fixo em `pt-BR`, como estava no base.html, a
+# tela em ingles era ANUNCIADA como portuguesa e o leitor de tela lia ingles com fonemas
+# portugueses. Nao aparece em teste de rota nenhum: a pagina responde 200 igual.
+HTML_LANGS: dict[str, str] = {
+    "pt": "pt-BR",
+    "en": "en",
+}
+
+
+def html_lang(language: str) -> str:
+    """O `lang=` do `<html>` para um idioma do catalogo."""
+    return HTML_LANGS.get(language, HTML_LANGS[DEFAULT])
+
 
 def valid_language(raw: str | None) -> str:
     """Devolve um idioma que existe; qualquer outra coisa vira o padrao."""

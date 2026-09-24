@@ -680,6 +680,7 @@ def _inject():
         "_": translate,
         "_h": translate_html,
         "current_language": current_language(),
+        "html_lang": i18n.html_lang(current_language()),
         "languages": i18n.LANGUAGES,
         "static_url": static_url,
         "current_user": user["username"] if user else None,

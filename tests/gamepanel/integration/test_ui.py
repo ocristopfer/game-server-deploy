@@ -60,3 +60,24 @@ def test_barra_larga_usa_rotulo_curto_quando_ha(admin, monkeypatch):
     assert ">Instancias</a>" in slash
     assert ">Catalogo</a>" in slash
     assert "Instancias de jogo" not in slash
+
+
+# --------------------------------------------- o idioma DECLARADO da pagina
+
+def test_a_pagina_declara_o_idioma_que_ela_esta_falando(admin, post):
+    """O `lang=` do `<html>` acompanha o idioma escolhido, e nao fica fixo.
+
+    Era `<html lang="pt-BR">` escrito a mao no `base.html`: com a tela em ingles a
+    pagina continuava se ANUNCIANDO como portuguesa. Quem le esse atributo nao e a
+    pessoa -- e o leitor de tela, que escolhe voz e pronuncia por ele, e a traducao
+    automatica do navegador. Nenhum teste de rota pega isso: a pagina responde 200 e o
+    texto visivel ate esta correto.
+
+    Achado na varredura do painel AO VIVO, que e o unico lugar onde ele aparecia.
+    """
+    assert 'lang="pt-BR"' in admin.get("/").get_data(as_text=True)
+
+    assert post(admin, "/account/language", {"lang": "en"}).status_code in (200, 302)
+    english = admin.get("/").get_data(as_text=True)
+    assert 'lang="en"' in english
+    assert 'lang="pt-BR"' not in english

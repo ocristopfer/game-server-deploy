@@ -169,3 +169,50 @@ def test_todo_nome_citado_ainda_existe():
     assert missing == [], (
         "nome citado no CLAUDE.md que sumiu do codigo (a doc manda procurar o que nao "
         "existe):\n  " + "\n  ".join(missing))
+
+
+# --------------------------------------------------------------- rota citada
+
+# `POST /account/language`, `GET /health`: a doc mandando CHAMAR uma rota. O metodo na
+# frente e o que torna a citacao inequivoca -- sem ele, `/opt/gamepanel/gamepanel` e
+# `/etc/gamebroker/broker.env` (caminho de disco) e `/v1/instancias` (rota do broker,
+# citada como o nome ANTIGO numa frase historica) entrariam na conta e a lista de
+# excecoes cresceria mais que a checagem.
+CITED_ROUTE = re.compile(r"`(GET|POST|PUT|DELETE) (/[A-Za-z0-9/_.<>:-]*)`")
+
+
+def _panel_rules() -> set[tuple[str, str]]:
+    """(metodo, regra) de tudo que o painel serve, como o Flask registrou."""
+    from gamepanel import app as panel
+
+    found = set()
+    for rule in panel.app.url_map.iter_rules():
+        for method in rule.methods or ():
+            found.add((method, str(rule.rule)))
+    return found
+
+
+def test_toda_rota_citada_com_metodo_ainda_existe():
+    """Doc que manda chamar uma rota que nao existe mais custa uma sessao de depuracao.
+
+    Foi o caso do `POST /account/idioma`: a rota virou `/account/language` na traducao
+    dos identificadores, e a instrucao de "conferir uma tela nos dois idiomas" passou a
+    devolver 404 calado -- quem a seguia concluia que o seletor de idioma tinha quebrado.
+    A checagem de `modulo.nome` nao alcanca URL, e nenhuma outra olhava para ela.
+    """
+    rules = _panel_rules()
+    text = DOC.read_text(encoding="utf-8")
+    missing = []
+    for method, path in CITED_ROUTE.findall(text):
+        if (method, path) not in rules:
+            same_path = sorted(m for m, p in rules if p == path)
+            missing.append(f"{method} {path}"
+                           + (f" (existe, mas so aceita {same_path})" if same_path
+                              else " (nao existe rota nenhuma nesse caminho)"))
+    assert not missing, "rota citada no CLAUDE.md que o painel nao serve:\n  " + "\n  ".join(missing)
+
+
+def test_a_varredura_encontra_rotas_citadas():
+    """Se o formato da citacao mudar, o teste acima passa a nao conferir nada."""
+    found = CITED_ROUTE.findall(DOC.read_text(encoding="utf-8"))
+    assert found, "nenhuma rota `METODO /caminho` encontrada no CLAUDE.md"
