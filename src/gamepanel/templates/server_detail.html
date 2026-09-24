@@ -13,9 +13,12 @@
 {# Duas colunas a partir de 900px (informacoes ao lado de jogadores, recursos ao lado das
    acoes recentes) e o log, que e comprido, na largura toda. No celular e uma coluna so,
    na mesma ordem. As acoes recentes vem ANTES do log: o log e o bloco que cresce, e
-   empurrava o historico para o fim da tela. #}
-<div class="card-grid">
+   empurrava o historico para o fim da tela.
+   `card-grid--fixed`: os quatro cartoes tem a MESMA altura e o excesso rola dentro do
+   `card__body` de cada um (o titulo fica parado); o log ocupa o resto da tela. #}
+<div class="card-grid card-grid--fixed">
 <div class="card">
+ <div class="card__body">
   <dl class="meta wide">
     <div><dt>{{ _('server_detail.host') }}</dt><dd>{{ server.ssh_user }}@{{ server.host }}</dd></div>
     <div><dt>{{ _('server_detail.ssh_port') }}</dt><dd>{{ server.ssh_port }}</dd></div>
@@ -54,6 +57,7 @@
       {{ srv.maintenance(server, maintenance_actions) }}
     </div>
   </div>
+ </div>
 </div>
 
 <div class="card" data-players-server="{{ url_for('players.api_list', sid=server.id) }}">
@@ -75,6 +79,7 @@
     </div>
   </div>
 
+ <div class="card__body">
   {% if not players.configured %}
     {% if is_admin %}
     <p class="muted">
@@ -169,6 +174,7 @@
     </p>
     {% endif %}
   {% endif %}
+ </div>
 </div>
 
 <div class="card" data-meters-server="{{ url_for('servers.api_metrics', sid=server.id) }}">
@@ -178,6 +184,7 @@
       {% if metrics.error %}indisponivel{% else %}atualiza a cada 5s{% endif %}
     </span>
   </div>
+ <div class="card__body">
   {% if metrics.error %}
     <p class="muted">Nao consegui ler os medidores: {{ metrics.error }}</p>
   {% else %}
@@ -220,10 +227,12 @@
     </dd></div>
   </dl>
   {% endif %}
+ </div>
 </div>
 
 <div class="card">
-  <h2>{{ _('server_detail.recent_actions') }}</h2>
+  <div class="card__head"><h2>{{ _('server_detail.recent_actions') }}</h2></div>
+ <div class="card__body">
   {% if jobs %}
   <div class="table-wrap"><table class="jobs">
     <thead><tr><th>{{ _('console.when') }}</th><th>{{ _('history.action') }}</th><th>{{ _('console.by') }}</th><th>{{ _('console.result') }}</th><th></th></tr></thead>
@@ -242,9 +251,10 @@
   {% else %}
     <p class="muted">{{ _('server_detail.no_actions_yet') }}</p>
   {% endif %}
+ </div>
 </div>
 
-<div class="card card-grid__wide" {% if not log_error %}data-log-feed{% endif %}>
+<div class="card card-grid__wide card-grid__fill" {% if not log_error %}data-log-feed{% endif %}>
   <div class="card__head">
     <h2>{{ _('server_detail.service_log') }}</h2>
     <div class="cluster">
@@ -263,11 +273,13 @@
       </form>
     </div>
   </div>
+  <div class="card__body">
   {% if log_error %}
     <p class="flash error">{{ log_error }}</p>
   {% else %}
     <pre class="log" id="log-box">{{ logs or '(sem linhas de log)' }}</pre>
   {% endif %}
+  </div>
 </div>
 </div>
 {% endblock %}

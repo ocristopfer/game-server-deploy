@@ -83,7 +83,12 @@
      desconta ela da altura da tela. */
   --appbar-h: 52px;
   --tabbar-h: 56px;
-  --max-width: 1120px;
+  /* Largura da coluna de conteudo. Era 1120px, e num monitor comum sobrava um terco
+     da janela vazio dos dois lados enquanto os cartoes se espremiam em duas colunas. */
+  --max-width: 1440px;
+  /* Altura de um cartao na grade de altura fixa (visao geral): cabe o cartao de
+     informacoes inteiro com os dois grupos de botoes; o resto rola dentro dele. */
+  --card-h: 30rem;
 
   /* Recorte do aparelho (notch, barra de gestos). Fora do PWA todos valem 0. */
   --safe-top: env(safe-area-inset-top, 0px);

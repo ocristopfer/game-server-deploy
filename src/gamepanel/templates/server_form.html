@@ -6,8 +6,11 @@
 {{ ui.page_header(_('server_form.title_new') if mode == 'new' else _('server_form.title_edit')) }}
 {% if mode == "edit" %}{{ srv.tabs(server, "editar") }}{% endif %}
 
-<div class="card card--form">
-  <form method="post">
+{# O formulario vira duas colunas a partir de 900px (`form-grid`): numa so, estreita,
+   sobrava metade da tela vazia e o Salvar ficava tres rolagens abaixo. Os grupos com
+   tres campos (log) e os da API ocupam a linha toda. #}
+<div class="card">
+  <form method="post" class="form-grid">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>{{ _('server_form.name') }}
       <input name="name" value="{{ data.name }}" required autofocus>
@@ -53,7 +56,7 @@
             url=url_for('players.setup', sid=sid)) }}{% endif %}
       </small>
     </label>
-    <div class="row">
+    <div class="row form-grid__wide">
       <label>{{ _('server_form.log_join') }}
         <input name="join_re" value="{{ data.join_re }}" spellcheck="false"
                placeholder="Join succeeded: (?P&lt;name&gt;.+)">
@@ -71,15 +74,8 @@
       </label>
     </div>
 
-    <label>{{ _('server_form.log_error') }} <span class="muted">{{ _('server_form.optional') }}</span>
-      <input name="error_re" value="{{ data.error_re }}" spellcheck="false"
-             placeholder="Fatal error|Out of memory|Assertion failed">
-      <small>
-        {{ _h('server_form.log_error_hint', url=url_for('alerts.index')) }}
-      </small>
-    </label>
 
-    <div class="row">
+    <div class="row form-grid__wide">
       <label>{{ _('server_form.api_url') }}
         <input name="http_url" value="{{ data.http_url }}" spellcheck="false"
                placeholder="http://127.0.0.1:8212/v1/api/players">
@@ -91,7 +87,7 @@
         <small>{{ _h('server_form.api_auth_hint') }}</small>
       </label>
     </div>
-    <div class="row">
+    <div class="row form-grid__wide">
       <label>{{ _('server_form.api_body') }} <span class="muted">{{ _('server_form.optional') }}</span>
         <input name="http_body" value="{{ data.http_body }}" spellcheck="false"
                placeholder='{"function":"QueryServerState"}'>
@@ -107,6 +103,13 @@
         <small>{{ _('server_form.api_paths_hint') }}</small>
       </label>
     </div>
+    <label>{{ _('server_form.log_error') }} <span class="muted">{{ _('server_form.optional') }}</span>
+      <input name="error_re" value="{{ data.error_re }}" spellcheck="false"
+             placeholder="Fatal error|Out of memory|Assertion failed">
+      <small>
+        {{ _h('server_form.log_error_hint', url=url_for('alerts.index')) }}
+      </small>
+    </label>
     <label>{{ _('server_form.config_folder') }} <span class="muted">{{ _('server_form.optional') }}</span>
       <input name="config_path" value="{{ data.config_path }}" placeholder="/opt/game" spellcheck="false">
       <small>
@@ -131,7 +134,7 @@
         {% else %}{{ _h('server_form.backup_paths_hint') }}{% endif %}
       </small>
     </label>
-    <label>{{ _('server_form.notes') }} <span class="muted">{{ _('server_form.optional') }}</span>
+    <label class="form-grid__wide">{{ _('server_form.notes') }} <span class="muted">{{ _('server_form.optional') }}</span>
       <textarea name="notes" rows="4">{{ data.notes }}</textarea>
     </label>
     <div class="form-actions">
@@ -145,7 +148,7 @@
 </div>
 
 {% if mode == 'edit' %}
-<div class="card card--danger card--form">
+<div class="card card--danger mt-4">
   <h2>{{ _('server_form.remove') }}</h2>
   <p class="muted">{{ _('server_form.remove_hint') }}</p>
   <div class="form-actions">

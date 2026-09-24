@@ -5,7 +5,9 @@
 {% block content %}
 {{ ui.page_header(_('account.two_factor')) }}
 
-<div class="card card--form">
+{# Os dois passos lado a lado a partir de 900px: o QR fica a vista enquanto se digita o codigo. #}
+<div class="card-grid">
+<div class="card">
   <h2>1. Cadastre o painel no aplicativo</h2>
   <p class="muted small">
     Use um aplicativo autenticador (Google Authenticator, Authy, Microsoft Authenticator,
@@ -27,7 +29,7 @@
   </p>
 </div>
 
-<div class="card card--form">
+<div class="card">
   <h2>2. Confirme com um codigo</h2>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -41,5 +43,6 @@
       {{ ui.button(_('server_form.cancel'), href=url_for('account.index'), variant='ghost', block=true) }}
     </div>
   </form>
+</div>
 </div>
 {% endblock %}

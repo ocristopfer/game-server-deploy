@@ -114,19 +114,54 @@ body.has-tabbar main.wrap {
 }
 
 /* Cartoes de uma tela lado a lado. Uma coluna no celular; duas a partir de 900px, com
-   `.card-grid__wide` ocupando a linha inteira (log, tabela comprida). A altura de
-   cada cartao e a do proprio conteudo: nada e esticado para igualar o vizinho. */
+   `.card-grid__wide` ocupando a linha inteira (log, tabela comprida). Os dois cartoes
+   de uma linha ESTICAM ate o mais alto: com a altura de cada um, o menor deixava um
+   buraco embaixo dele e a tela parecia desalinhada. */
 .card-grid {
   display: grid;
   gap: var(--sp-4);
   grid-template-columns: minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
 }
 .card-grid > .card { margin-bottom: 0; }
 @media (min-width: 900px) {
   .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5); }
   .card-grid__wide { grid-column: 1 / -1; }
+
+  /* Variante de altura FIXA (visao geral do servidor): todo cartao tem a mesma altura,
+     e o que passar dela rola DENTRO do `.card__body`, com o titulo parado. Esticar so
+     ate o vizinho nao bastava ali: a tabela de acoes recentes cresce com o historico e
+     puxava a linha inteira junto. So a partir de 900px: no celular, rolagem dentro de
+     rolagem prende o dedo e a pagina para de descer. */
+  .card-grid--fixed > .card {
+    display: flex;
+    flex-direction: column;
+    height: var(--card-h);
+    min-height: 0;
+  }
+  /* O log e o bloco que cresce: fica com a largura toda e a altura que sobra da tela. */
+  .card-grid--fixed > .card-grid__fill {
+    height: calc(100dvh - var(--appbar-h) - var(--sp-6) * 2);
+    min-height: var(--card-h);
+  }
 }
+
+/* Miolo de cartao que rola sozinho. As margens negativas devolvem o recuo do cartao
+   ao miolo: sem elas o `.table-wrap` (que ja sai para dentro do recuo) seria cortado
+   pelo `overflow` e toda tabela ganharia rolagem lateral. */
+.card__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 calc(var(--sp-4) * -1);
+  padding: 0 var(--sp-4);
+}
+@media (min-width: 600px) {
+  .card__body { margin: 0 calc(var(--sp-5) * -1); padding: 0 var(--sp-5); }
+}
+/* O log dentro do miolo ocupa a altura toda dele em vez do teto de 55vh. */
+.card__body > pre.log { height: 100%; max-height: none; }
 
 /* ---------- tabela com rolagem propria ----------
    Tabela larga nao pode empurrar a pagina: quem rola de lado e esta caixa. */

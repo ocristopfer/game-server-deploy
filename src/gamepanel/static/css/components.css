@@ -347,6 +347,21 @@ label.short { max-width: 34ch; }
   .options { grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
 }
 
+/* Formulario comprido em duas colunas: cada campo (ou `.row`) e uma celula, e o que
+   precisa da linha toda leva `.form-grid__wide`. So a partir de 900px; abaixo disso o
+   formulario e a pilha de sempre. `align-items: start` para um campo com dica longa
+   nao esticar o vizinho e afastar o rotulo dele do campo. */
+@media (min-width: 900px) {
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--sp-5);
+    align-items: start;
+  }
+  .form-grid > .form-grid__wide,
+  .form-grid > .form-actions { grid-column: 1 / -1; }
+}
+
 /* ============================================================ tabela de dados */
 table.jobs { font-size: var(--fs-sm); }
 table.jobs th, table.jobs td {

@@ -5,7 +5,11 @@
 {% block content %}
 {{ ui.page_header(_('nav.account')) }}
 
-<div class="card">
+{# Grade de duas colunas a partir de 900px: com um cartao estreito embaixo do outro,
+   metade da tela ficava vazia e a pagina rolava a toa. Quem e voce na linha toda;
+   idioma ao lado do 2FA, senha ao lado do sair. #}
+<div class="card-grid">
+<div class="card card-grid__wide">
   <dl class="meta wide">
     <div><dt>{{ _('login.username') }}</dt><dd>{{ current_user }}</dd></div>
     <div><dt>{{ _('account.role') }}</dt><dd>{{ role_label }}</dd></div>
@@ -18,7 +22,7 @@
   {% endif %}
 </div>
 
-<div class="card card--form">
+<div class="card">
   <h2>{{ _('account.language.title') }}</h2>
   <form method="post" action="{{ url_for('account.language') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -34,28 +38,7 @@
   </form>
 </div>
 
-<div class="card card--form">
-  <h2>{{ _('account.change_password') }}</h2>
-  <form method="post">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label>{{ _('account.current_password') }}
-      <input name="current" type="password" autocomplete="current-password" required>
-    </label>
-    <label>{{ _('account.new_password') }}
-      <input name="new" type="password" autocomplete="new-password" minlength="8" required>
-      <small>{{ _('account.min_length') }}</small>
-    </label>
-    <label>{{ _('account.confirm_new_password') }}
-      <input name="confirm" type="password" autocomplete="new-password" minlength="8" required>
-    </label>
-    <div class="form-actions">
-      {{ ui.button(_('action.save'), variant='primary', block=true) }}
-      {{ ui.button(_('server_form.cancel'), href=url_for('dashboard.index'), variant='ghost', block=true) }}
-    </div>
-  </form>
-</div>
-
-<div class="card card--form">
+<div class="card">
   <h2>{{ _('account.two_factor') }}</h2>
   {% if two_factor.ativo %}
     <p><span class="badge on">{{ _('account.on') }}</span>
@@ -110,13 +93,35 @@
   {% endif %}
 </div>
 
+<div class="card">
+  <h2>{{ _('account.change_password') }}</h2>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>{{ _('account.current_password') }}
+      <input name="current" type="password" autocomplete="current-password" required>
+    </label>
+    <label>{{ _('account.new_password') }}
+      <input name="new" type="password" autocomplete="new-password" minlength="8" required>
+      <small>{{ _('account.min_length') }}</small>
+    </label>
+    <label>{{ _('account.confirm_new_password') }}
+      <input name="confirm" type="password" autocomplete="new-password" minlength="8" required>
+    </label>
+    <div class="form-actions">
+      {{ ui.button(_('action.save'), variant='primary', block=true) }}
+      {{ ui.button(_('server_form.cancel'), href=url_for('dashboard.index'), variant='ghost', block=true) }}
+    </div>
+  </form>
+</div>
+
 {# O "sair" vivia so no canto da barra de cima. No celular, com a barra reduzida ao
    menu, a Conta e onde as pessoas procuram por ele. #}
-<div class="card card--danger card--form">
+<div class="card card--danger">
   <h2>{{ _('account.sign_out') }}</h2>
   <p class="muted small">{{ _('account.sign_out_hint') }}</p>
   <div class="form-actions">
     {{ ui.action(url_for('auth.logout'), _('account.sign_out_of_panel'), variant='danger', icon='🚪', block=true) }}
   </div>
+</div>
 </div>
 {% endblock %}

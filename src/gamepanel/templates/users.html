@@ -5,7 +5,7 @@
 {% block content %}
 {{ ui.page_header(_('nav.users')) }}
 
-<div class="card">
+<div class="card mb-4">
   <div class="table-wrap"><table class="jobs">
     <thead><tr><th>{{ _('users.user') }}</th><th>{{ _('users.role') }}</th><th>{{ _('users.created_at') }}</th><th></th></tr></thead>
     <tbody>
@@ -62,7 +62,9 @@
   </table></div>
 </div>
 
-<div class="card card--form">
+{# Criar usuario ao lado do quadro de papeis: e ali que se decide qual papel dar. #}
+<div class="card-grid">
+<div class="card">
   <h2>{{ _('users.new_user') }}</h2>
   <form method="post" action="{{ url_for('users.new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -122,5 +124,6 @@
     O corte segue o que da acesso de root ao container: terminal, editor de arquivos e o
     cadastro do servidor (que aponta o SSH do painel) ficam com o administrador.
   </p>
+</div>
 </div>
 {% endblock %}
