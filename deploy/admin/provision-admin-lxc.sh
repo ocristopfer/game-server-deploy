@@ -297,13 +297,19 @@ bootstrap_admin_user() {
     warn "ADMIN_PASSWORD nao definido - uma senha foi gerada e sera exibida no resumo"
   fi
   msg "Criando/atualizando o usuario '${PANEL_USER}' do painel"
+  # A raiz de import e ${APP_DIR}/current, nunca ${APP_DIR}: desde que release virou
+  # pasta por versao o pacote mora em releases/<versao>/gamepanel, e ${APP_DIR} guarda
+  # so o symlink. Apontado para ${APP_DIR} o import falha e o set -e mata o script AQUI
+  # - ja com o release publicado e ANTES do render_service, ou seja o painel volta a
+  # subir pela unit VELHA com o codigo velho, e o resumo nem chega a dizer que faltou
+  # metade do deploy.
   # A senha vai por stdin (nao pela linha de comando) para nao vazar no ps do CT.
   printf '%s' "$PANEL_PASSWORD" | pct exec "$CTID" -- env \
     GAMEPANEL_DB="${DATA_DIR}/panel.db" \
     GAMEPANEL_SECRET_FILE="${CONF_DIR}/secret_key" \
     python3 -c "
-import os, sys
-sys.path.insert(0, '${APP_DIR}')
+import sys
+sys.path.insert(0, '${APP_DIR}/current')
 from gamepanel import app as panel
 panel.ensure_admin_user('${PANEL_USER}', sys.stdin.read())
 "
