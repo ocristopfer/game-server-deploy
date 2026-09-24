@@ -160,8 +160,11 @@ body.has-tabbar main.wrap {
 @media (min-width: 600px) {
   .card__body { margin: 0 calc(var(--sp-5) * -1); padding: 0 var(--sp-5); }
 }
-/* O log dentro do miolo ocupa a altura toda dele em vez do teto de 55vh. */
-.card__body > pre.log { height: 100%; max-height: none; }
+/* Na grade fixa o log ocupa a altura toda do miolo em vez do teto de 55vh. So ali: no
+   celular o miolo nao tem altura, e sem o teto o log empurrava a pagina por 80 linhas. */
+@media (min-width: 900px) {
+  .card-grid--fixed .card__body > pre.log { height: 100%; max-height: none; }
+}
 
 /* ---------- tabela com rolagem propria ----------
    Tabela larga nao pode empurrar a pagina: quem rola de lado e esta caixa. */

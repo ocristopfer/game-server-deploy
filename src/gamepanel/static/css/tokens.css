@@ -88,7 +88,7 @@
   --max-width: 1440px;
   /* Altura de um cartao na grade de altura fixa (visao geral): cabe o cartao de
      informacoes inteiro com os dois grupos de botoes; o resto rola dentro dele. */
-  --card-h: 30rem;
+  --card-h: 26rem;
 
   /* Recorte do aparelho (notch, barra de gestos). Fora do PWA todos valem 0. */
   --safe-top: env(safe-area-inset-top, 0px);
