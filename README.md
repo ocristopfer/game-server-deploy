@@ -131,6 +131,7 @@ Layout de referencia (o do `.env.example`):
 | Enshrouded | `.\deploy\game\deploy-game.ps1 -Game enshrouded` | 15636/udp, 15637/udp |
 | DayZ | `.\deploy\game\deploy-game.ps1 -Game dayz` | 2302-2304/udp, 27016/udp |
 | Icarus | `.\deploy\game\deploy-game.ps1 -Game icarus` | 17777/udp, 27017/udp |
+| Valheim | `.\deploy\game\deploy-game.ps1 -Game valheim` | 2456/udp, 2457/udp |
 | TeamSpeak 6 Server | `.\deploy\game\deploy-game.ps1 -Game teamspeak` | 9987/udp, 30033/tcp |
 
 O TeamSpeak so existe no caminho Proxmox/LXC (nao vem da Steam, entao `deploy-docker.ps1`
