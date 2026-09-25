@@ -758,6 +758,7 @@ ssh_argv = _ssh.argv
 ssh_run = _ssh.run
 ssh_output = _ssh.output
 public_key = _ssh.public_key
+forget_host_key = _ssh.forget_host
 q = ssh_transport.quote_command
 
 
@@ -2568,7 +2569,8 @@ def _broker_job_deps() -> broker_jobs.BrokerJobDeps:
     antes de acompanhar a operacao, e um bundle congelado no import nao veria a troca."""
     return broker_jobs.BrokerJobDeps(
         update_job=_update_job, close_job=_finish_job, ensure_server=ensure_server,
-        deploy_server=DeployServer, connect=_connect, poll=BROKER_POLL,
+        deploy_server=DeployServer, connect=_connect, forget_host_key=forget_host_key,
+        poll=BROKER_POLL,
         max_failures=BROKER_FAILURES_MAX, timeout=JOB_TIMEOUT,
     )
 

@@ -77,6 +77,7 @@ class FakeBroker:
         self.error: Exception | None = None
         self.operations: list[dict] = [{"state": "ok", "log": "tudo certo\n", "result": RESULTADO}]
         self.tasks: list = []
+        self.forgotten: list[str] = []
 
     def _call(self, name: str, *args) -> None:
         self.calls.append((name, *args))
@@ -123,6 +124,8 @@ def broker(monkeypatch, database):
     monkeypatch.setattr(panel, "ALLOW_BROKER", True)
     monkeypatch.setattr(panel, "BROKER_POLL", 0)
     monkeypatch.setattr(panel, "_fire", fake.tasks.append)
+    # Nunca o known_hosts de verdade: no container ele e o do painel de dev.
+    monkeypatch.setattr(panel, "forget_host_key", fake.forgotten.append)
     for name in ("catalog", "add_game", "instances", "create", "operation",
                  "deactivate", "remove"):
         monkeypatch.setattr(panel.broker_client, name, getattr(fake, name))
@@ -481,6 +484,20 @@ def test_operacao_ok_cadastra_o_servidor_e_liga_o_job_a_ele(broker, database):
     assert (final["status"], final["exit_code"], final["server_id"]) == ("ok", 0, server["id"])
     assert "Servidor cadastrado no painel" in final["output"]
     assert final["finished_at"]
+
+
+def test_ip_reaproveitado_esquece_a_chave_ssh_do_ct_antigo(broker, database):
+    """O broker reusa o IP de instancia removida; sem isto o CT novo nascia com
+    'REMOTE HOST IDENTIFICATION HAS CHANGED' em toda chamada SSH."""
+    panel.follow_operation(new_job(database), OP, sleep=lambda _s: None)
+    assert broker.forgotten == ["10.0.0.30"]
+
+
+def test_host_recusado_nao_mexe_no_known_hosts(broker, database):
+    broker.operations = [{"state": "ok", "log": "feito\n",
+                          "result": {**RESULTADO, "host": "-oProxyCommand=x"}}]
+    panel.follow_operation(new_job(database), OP, sleep=lambda _s: None)
+    assert broker.forgotten == []
 
 
 def test_operacao_com_erro_fecha_o_job_com_o_log_e_nao_cadastra(broker, database):

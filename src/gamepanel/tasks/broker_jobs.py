@@ -38,6 +38,7 @@ class BrokerJobDeps(NamedTuple):
     ensure_server: Callable[[Any], Any]
     deploy_server: Callable[..., Any]
     connect: Callable[[], sqlite3.Connection]
+    forget_host_key: Callable[[str], None]
     poll: float
     max_failures: int
     timeout: float
@@ -52,6 +53,12 @@ def register_server(deps: BrokerJobDeps, r: dict) -> int:
     service = str(r["service"])
     if not HOST_RE.match(host) or not UNIT_RE.match(service):
         raise ValueError(Message("broker.bad_host_or_service"))
+    # O broker reaproveita IP de instancia removida (o IP diz o CTID). A chave SSH que o
+    # painel aprendeu ali e do CT que nao existe mais, e com ela no known_hosts o novo
+    # nasceria com "REMOTE HOST IDENTIFICATION HAS CHANGED" em toda chamada. Aqui e o
+    # unico ponto em que se SABE que a maquina e outra - em qualquer outro, chave trocada
+    # continua sendo alarme.
+    deps.forget_host_key(host)
     deps.ensure_server(deps.deploy_server(
         name=str(r["name"])[:80], host=host, service=service,
         game_port=" ".join(str(p) for p in r.get("ports") or []),

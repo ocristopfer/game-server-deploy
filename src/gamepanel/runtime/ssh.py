@@ -8,6 +8,7 @@ de formulario.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import shlex
 import sqlite3
@@ -148,6 +149,28 @@ class SshClient:
             detail = (proc.stderr or proc.stdout or "").strip()
             raise RemoteError(detail or f"comando falhou (exit {proc.returncode})")
         return proc.stdout.strip()
+
+    def forget_host(self, host: str, port: int = 22) -> None:
+        """Apaga do known_hosts a chave que o painel aprendeu para `host`.
+
+        So para quem SABE que a maquina naquele endereco e outra: o broker acabou de criar
+        um CT num IP que ja foi de um CT removido. Sem isto o `accept-new` guarda a chave
+        do CT antigo e recusa a do novo como ataque, e o servidor recem-criado nasce sem
+        status, sem console e sem nada que passe por SSH.
+
+        `ssh-keygen -R` e nao uma edicao do arquivo aqui: com `HashKnownHosts yes` (o
+        padrao do Debian) a linha nao tem o IP em texto, so um hash dele.
+
+        Nunca levanta: quem chama esta cadastrando um servidor, e nao ter o que apagar (ou
+        nao ter o arquivo ainda) e o caso comum.
+        """
+        target = host if port == 22 else f"[{host}]:{port}"
+        # Pelo PATH, como o `ssh` do `argv`: os dois vem do mesmo openssh-client do apt.
+        cmd = ["ssh-keygen", "-f", self._config.known_hosts, "-R", target]
+        with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+            # Lista de argumentos, e `host` ja passou pelo HOST_RE de quem chama.
+            subprocess.run(  # noqa: S603  # NOSONAR
+                cmd, capture_output=True, timeout=self._config.quick_timeout, check=False)
 
     def public_key(self) -> str:
         try:
