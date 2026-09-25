@@ -1,0 +1,95 @@
+{#- Campos do jogo, os mesmos para adicionar e para editar. Quem inclui passa `form`
+    (dict ou request.form), `recipes`, `checked_recipes` e `editing`. Na edicao a chave
+    fica so leitura: ela e o nome do arquivo no broker e o do container das instancias. -#}
+<div class="row">
+  <label>{{ _('catalog.key') }}
+    <input name="key" value="{{ form.get('key', '') }}" required maxlength="24" spellcheck="false"
+           autocapitalize="none" pattern="[a-z][a-z0-9\-]{1,23}" placeholder="{{ _('catalog.key_example') }}"
+           {%- if editing %} readonly{% endif %}>
+    <small>{{ _('catalog.key_fixed_hint') if editing else _('catalog.key_hint') }}</small>
+  </label>
+  <label>{{ _('catalog.name') }}
+    <input name="name" value="{{ form.get('name', '') }}" required maxlength="40"
+           placeholder="{{ _('catalog.name_example') }}">
+  </label>
+</div>
+<label>{{ _('catalog.app_id') }}
+  <input name="app_id" value="{{ form.get('app_id', '') }}" required inputmode="numeric" placeholder="2394010">
+  <small>{{ _h('catalog.app_id_hint') }}</small>
+</label>
+<div class="row">
+  <label>{{ _('catalog.ports') }}
+    <input name="ports" value="{{ form.get('ports', '') }}" required spellcheck="false" placeholder="7777/udp 27015/udp">
+    <small>{{ _('catalog.ports_hint') }}</small>
+  </label>
+  <label>{{ _('catalog.game_port') }}
+    <input name="game_port" value="{{ form.get('game_port', '') }}" required inputmode="numeric" placeholder="7777">
+  </label>
+  <label>{{ _('catalog.query_port') }} <span class="muted">{{ _('catalog.optional') }}</span>
+    <input name="query_port" value="{{ form.get('query_port', '') }}" inputmode="numeric" placeholder="27015">
+  </label>
+  <label>{{ _('catalog.extra_port') }} <span class="muted">{{ _('catalog.optional') }}</span>
+    <input name="extra_port" value="{{ form.get('extra_port', '') }}" inputmode="numeric" placeholder="8888">
+  </label>
+</div>
+<div class="row">
+  <label>{{ _('catalog.start_script') }} <span class="muted">{{ _('catalog.optional') }}</span>
+    <input name="start_script" value="{{ form.get('start_script', '') }}" spellcheck="false" placeholder="PalServer.sh">
+  </label>
+  <label>{{ _('catalog.start_args') }} <span class="muted">{{ _('catalog.optional') }}</span>
+    <input name="start_args" value="{{ form.get('start_args', '') }}" spellcheck="false" placeholder="-port={PORT}">
+    <small>{{ _h('catalog.start_args_hint') }}</small>
+  </label>
+</div>
+<div class="row">
+  <label>{{ _('catalog.memory_mb') }}
+    <input name="memory_mb" value="{{ form.get('memory_mb', '') }}" inputmode="numeric" placeholder="4096">
+  </label>
+  <label>{{ _('catalog.cpus') }}
+    <input name="cores" value="{{ form.get('cores', '') }}" inputmode="numeric" placeholder="2">
+  </label>
+  <label>{{ _('catalog.disk_gb') }}
+    <input name="disk_gb" value="{{ form.get('disk_gb', '') }}" inputmode="numeric" placeholder="20">
+  </label>
+</div>
+<label>{{ _('catalog.config_folder') }} <span class="muted">{{ _('catalog.optional') }}</span>
+  <input name="config_path" value="{{ form.get('config_path', '') }}" spellcheck="false" placeholder="/opt/game/Config">
+  <small>{{ _h('catalog.config_folder_hint') }}</small>
+</label>
+<label>{{ _('catalog.config_files') }} <span class="muted">{{ _('catalog.one_per_line') }}</span>
+  <textarea name="config_files" rows="2" spellcheck="false">{{ form.get('config_files', '') }}</textarea>
+</label>
+<label>{{ _('catalog.backup_paths') }} <span class="muted">{{ _('catalog.one_per_line_f') }}</span>
+  <textarea name="backup_paths" rows="2" spellcheck="false">{{ form.get('backup_paths', '') }}</textarea>
+</label>
+<div class="row">
+  <label>{{ _('catalog.player_count') }}
+    <select name="player_source">
+      <option value="log" {{ 'selected' if form.get('player_source', 'log') == 'log' }}>{{ _('catalog.by_server_log') }}</option>
+      <option value="a2s" {{ 'selected' if form.get('player_source') == 'a2s' }}>{{ _('catalog.by_steam_query') }}</option>
+    </select>
+  </label>
+  <label>{{ _('catalog.platform') }}
+    <select name="platform">
+      <option value="">{{ _('catalog.linux_default') }}</option>
+      <option value="windows" {{ 'selected' if form.get('platform') == 'windows' }}>{{ _('catalog.windows_needs_wine') }}</option>
+    </select>
+  </label>
+</div>
+<label>{{ _('catalog.log_join_line') }} <span class="muted">{{ _('catalog.optional') }}</span>
+  <input name="join_re" value="{{ form.get('join_re', '') }}" spellcheck="false" placeholder="(?P&lt;name&gt;.+) joined">
+</label>
+<label>{{ _('catalog.log_leave_line') }} <span class="muted">{{ _('catalog.optional') }}</span>
+  <input name="leave_re" value="{{ form.get('leave_re', '') }}" spellcheck="false" placeholder="(?P&lt;name&gt;.+) left">
+</label>
+<fieldset class="fieldgroup">
+  <legend>{{ _('catalog.install_recipes') }}</legend>
+  {% for r in recipes %}
+    <label class="checkbox"><input type="checkbox" name="recipes" value="{{ r }}" {{ 'checked' if r in checked_recipes }}> {{ r }}</label>
+  {% endfor %}
+</fieldset>
+<label class="checkbox">
+  <input type="checkbox" name="shiftable" value="1" {{ 'checked' if form.get('shiftable') == '1' }}>
+  {{ _('catalog.broker_picks_ports') }}
+</label>
+<p class="muted small">{{ _('catalog.broker_picks_ports_hint') }}</p>

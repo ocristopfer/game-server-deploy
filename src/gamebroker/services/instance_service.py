@@ -91,6 +91,18 @@ class Service:
         self.db.audit(_actor_of(actor), "catalogo-adicionar", game.key, "ok")
         return game.as_public()
 
+    def update_game(self, key: str, data: object, actor: str) -> dict:
+        game = self.catalog.update(key, data)
+        self.db.audit(_actor_of(actor), "catalogo-editar", game.key, "ok")
+        return game.as_public()
+
+    def remove_game(self, key: str, actor: str) -> dict:
+        """Devolve o curado restaurado, ou `{}` quando o jogo deixou de existir."""
+        restored = self.catalog.remove(key)
+        action = "catalogo-restaurar" if restored is not None else "catalogo-apagar"
+        self.db.audit(_actor_of(actor), action, key, "ok")
+        return restored.as_public() if restored is not None else {}
+
     # --- criar ------------------------------------------------------------
 
     def create(self, game_key: str, name: str, actor: str) -> dict:

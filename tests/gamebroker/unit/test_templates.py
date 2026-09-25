@@ -74,7 +74,10 @@ def test_unreal_deixa_o_nome_do_projeto_bem_visivel():
 
 
 def test_chaves_do_modelo_sao_campos_do_formulario_do_catalogo():
-    html = (RAIZ / "src" / "gamepanel" / "templates" / "catalog.html").read_text(encoding="utf-8")
+    # Os campos moram no include, que o "adicionar" e o "editar" dividem.
+    templates = RAIZ / "src" / "gamepanel" / "templates"
+    html = "".join((templates / name).read_text(encoding="utf-8")
+                   for name in ("catalog.html", "components/game_form.html"))
     fields = set(re.findall(r'name="([a-z_]+)"', html))
     for template_of in modelos.TEMPLATES:
         assert set(template_of.values) <= fields, set(template_of.values) - fields

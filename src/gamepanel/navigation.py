@@ -90,7 +90,8 @@ _ACTIVE_EXTRA = {
         "schedules.toggle", "schedules.delete", "schedules.run",
         "players.setup", "players.use", "players.action", "jobs.detail",
         "broker.instances", "broker.instance_new", "broker.instance_deactivate", "broker.instance_remove",
-        "broker.catalog", "broker.catalog_new",
+        "broker.catalog", "broker.catalog_new", "broker.catalog_edit", "broker.catalog_update",
+        "broker.catalog_remove",
     ),
     "alertas": ("alerts.index", "alerts.save", "alerts.hook_new", "alerts.hook_save",
                 "alerts.hook_delete", "alerts.hook_test"),
@@ -133,7 +134,8 @@ _ALL_ITEMS = {i.key: i for i in NAV_MAIN + NAV_SECONDARY}
 # item, entao a rota acende ele mesmo — senao "Instancias" apareceria como "Servidores".
 _ACTIVE_ON_DESKTOP = {
     "instancias": ("broker.instances", "broker.instance_new", "broker.instance_deactivate", "broker.instance_remove"),
-    "catalogo": ("broker.catalog", "broker.catalog_new"),
+    "catalogo": ("broker.catalog", "broker.catalog_new", "broker.catalog_edit", "broker.catalog_update",
+                 "broker.catalog_remove"),
     "usuarios": ("users.index", "users.new", "users.role", "users.password", "users.delete",
                  "users.two_factor_off"),
     "ssh": ("account.ssh_key",),

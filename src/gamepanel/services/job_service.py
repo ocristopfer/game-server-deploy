@@ -31,6 +31,8 @@ EXTRA_LABELS: Mapping[str, str] = {
     "broker-desativar": "job.instance_deactivated",
     "broker-remover": "job.instance_removed",
     "broker-jogo": "job.game_added",
+    "broker-jogo-editar": "job.game_edited",
+    "broker-jogo-apagar": "job.game_removed",
 }
 
 # O historico guarda a saida INTEIRA do que rodou. Estas acoes so um admin consegue
@@ -46,6 +48,7 @@ ADMIN_ONLY_ACTIONS = frozenset({
     "upload-file", "restore-backup", "delete-backup",
     # Tudo do broker e de admin: a saida cita IP, CTID e portas da infraestrutura.
     "broker-criar", "broker-desativar", "broker-remover", "broker-jogo",
+    "broker-jogo-editar", "broker-jogo-apagar",
     # 'edit-config' fica de fora de proposito: mexer na configuracao do jogo e coisa de
     # operador, e a saida dela nao passa disso.
 })

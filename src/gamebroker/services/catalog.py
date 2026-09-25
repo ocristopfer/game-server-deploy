@@ -14,6 +14,7 @@ O `.env` NUNCA passa por `source` aqui. Ele e lido por um parser proprio que nao
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
@@ -97,6 +98,9 @@ class Game:
     # Terceira porta que o jogo aceita pelos argumentos ({EXTRA_PORT}): a "confiavel" do
     # Satisfactory (-ReliablePort), por exemplo. 0 = o jogo nao tem.
     extra_port: int = 0
+    # Jogo curado com os DADOS editados pela API (ver `Catalog.update`). O shell continua o
+    # do .env: e isso que deixa editar um curado sem abrir porta para comando.
+    edited: bool = False
 
     @property
     def has_hooks(self) -> bool:
@@ -112,6 +116,7 @@ class Game:
             "cores": self.cores, "disk_gb": self.disk_gb,
             "recipes": list(self.recipes), "shiftable": self.shiftable,
             "source": self.source, "creatable": self.creatable, "reason": self.reason,
+            "edited": self.edited,
         }
 
     def as_stored(self) -> dict:
@@ -515,17 +520,39 @@ def _single_path(data: dict, field: str) -> str:
 # Catalogo curado, mais o dinamico
 # ----------------------------------------------------------------------------
 
+def _as_override(curated: Game, edited: Game) -> Game:
+    """Os DADOS vem da edicao; o que so o git pode dizer vem do .env.
+
+    O shell (`pre_install`/`post_install`) e o motivo de o jogo ser ou nao criavel ficam
+    os do arquivo: a edicao passou pelo `validate_dynamic`, que nunca aceita comando, e
+    nao pode transformar em criavel um jogo que exige conta Steam ou instalador proprio.
+    """
+    return dataclasses.replace(
+        edited, source=SOURCE_CURATED, creatable=curated.creatable, reason=curated.reason,
+        pre_install=curated.pre_install, post_install=curated.post_install, edited=True)
+
+
+def _checked_key(key: str) -> str:
+    # A chave vira nome de ARQUIVO em `_dynamic_dir`: sem a regex, `../x` sairia da pasta.
+    if not KEY_RE.fullmatch(key or ""):
+        raise ValidationError("key", "formato invalido")
+    return key
+
+
 class Catalog:
     def __init__(self, curated_dir: Path, dynamic_dir: Path):
         self._curated_dir = Path(curated_dir)
         self._dynamic_dir = Path(dynamic_dir)
         self._lock = threading.Lock()
         self._games: dict[str, Game] = {}
+        # O curado como o git o descreve, para desfazer uma edicao sem reler a pasta.
+        self._curated: dict[str, Game] = {}
         self.errors: list[str] = []
         self.reload()
 
     def reload(self) -> None:
-        games, errors = load_curated(self._curated_dir)
+        curated, errors = load_curated(self._curated_dir)
+        games = dict(curated)
         self._dynamic_dir.mkdir(parents=True, exist_ok=True)
         for file in sorted(self._dynamic_dir.glob("*.json")):
             try:
@@ -534,12 +561,19 @@ class Catalog:
             except (ValueError, OSError, ValidationError) as error:
                 errors.append(f"{file.name}: {error}")
                 continue
-            if game.key in games or file.stem != game.key:
-                errors.append(f"{file.name}: chave repetida ou diferente do nome do arquivo")
+            if file.stem != game.key:
+                errors.append(f"{file.name}: chave diferente do nome do arquivo")
                 continue
-            games[game.key] = game
+            base = curated.get(game.key)
+            if base is None:
+                games[game.key] = game
+            elif base.creatable:
+                # Mesma chave de um curado = a edicao dele (ver `update`).
+                games[game.key] = _as_override(base, game)
+            else:
+                errors.append(f"{file.name}: edita um jogo curado que nao pode ser editado pela API")
         with self._lock:
-            self._games, self.errors = games, errors
+            self._games, self._curated, self.errors = games, curated, errors
 
     def list_all(self) -> list[Game]:
         with self._lock:
@@ -560,6 +594,53 @@ class Catalog:
             self._store(game)
             self._games[game.key] = game
         return game
+
+    def stored(self, key: str) -> dict:
+        """O jogo inteiro, para o formulario de edicao. Nunca o shell do curado."""
+        game = self.get(key)
+        return {**game.as_stored(), "source": game.source, "edited": game.edited,
+                "creatable": game.creatable, "reason": game.reason}
+
+    def update(self, key: str, data: object) -> Game:
+        """Troca os dados de um jogo. Num curado, grava a edicao POR CIMA do .env.
+
+        A edicao mora no mesmo lugar dos dinamicos (`<chave>.json`) e o arquivo do git nao
+        e tocado: o broker nem tem como escrever no repositorio, e o proximo deploy
+        sobrescreveria. Por isso existe `remove`, que num curado DESFAZ a edicao.
+        """
+        game = validate_dynamic(data)
+        if game.key != _checked_key(key):
+            raise ValidationError("key", "nao pode mudar ao editar (apague e adicione de novo)")
+        with self._lock:
+            if key not in self._games:
+                raise NotFound(f"jogo desconhecido: {key!r}")
+            base = self._curated.get(key)
+            if base is not None and not base.creatable:
+                raise Conflict(f"{key} nao sai pelo broker ({base.reason}): edite games/{key}.env")
+            self._store(game)
+            self._games[key] = _as_override(base, game) if base is not None else game
+            return self._games[key]
+
+    def remove(self, key: str) -> Game | None:
+        """Apaga um dinamico, ou desfaz a edicao de um curado (devolve o curado de volta).
+
+        Instancia ja criada nao depende do catalogo: ela guarda o que precisa na criacao.
+        """
+        _checked_key(key)
+        with self._lock:
+            current = self._games.get(key)
+            if current is None:
+                raise NotFound(f"jogo desconhecido: {key!r}")
+            base = self._curated.get(key)
+            if base is not None and not current.edited:
+                raise Conflict(f"{key} vem de games/{key}.env, no repositorio: tire o arquivo "
+                               "de la e publique o broker")
+            (self._dynamic_dir / f"{key}.json").unlink(missing_ok=True)
+            if base is not None:
+                self._games[key] = base
+                return base
+            del self._games[key]
+            return None
 
     def _store(self, game: Game) -> None:
         self._dynamic_dir.mkdir(parents=True, exist_ok=True)

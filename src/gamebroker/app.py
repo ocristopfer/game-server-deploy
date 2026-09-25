@@ -26,10 +26,10 @@ log = logging.getLogger("broker")
 
 def create_app(service: Service, token: str,  # noqa: C901 - ver a nota abaixo
                allowed_ips: tuple[str, ...] = ()) -> Flask:
-    """Monta o app: autenticacao, handlers de erro e as 8 rotas.
+    """Monta o app: autenticacao, handlers de erro e as 11 rotas.
 
     O `# noqa: C901` nao e desistencia. O mccabe conta cada `def` aninhado como ramo, e
-    uma factory Flask e uma LISTA de registros: 8 rotas de uma a tres linhas. O teto de 15
+    uma factory Flask e uma LISTA de registros: 11 rotas de uma a tres linhas. O teto de 15
     do repositorio existe para forcar 'separar decidir de fazer', e aqui nao ha decisao a
     separar — quebrar em `_register_routes`/`_register_errors` trocaria um numero por tres
     indirecoes e nada ficaria mais facil de ler.
@@ -83,6 +83,18 @@ def create_app(service: Service, token: str,  # noqa: C901 - ver a nota abaixo
     @app.post("/v1/catalog")
     def catalog_add():
         return jsonify(service.add_game(_body(), actor())), 201
+
+    @app.get("/v1/catalog/<key>")
+    def catalog_game(key: str):
+        return jsonify(service.catalog.stored(key))
+
+    @app.put("/v1/catalog/<key>")
+    def catalog_update(key: str):
+        return jsonify(service.update_game(key, _body(), actor()))
+
+    @app.delete("/v1/catalog/<key>")
+    def catalog_remove(key: str):
+        return jsonify(service.remove_game(key, actor()))
 
     @app.get("/v1/instances")
     def instances():

@@ -28,7 +28,7 @@ O que **nao** e identificador continua em **portugues sem acento**:
 > dois pacotes, e os dois grupos de mudanca de contrato ja foram: a API do broker (rotas,
 > corpo, resposta, cabecalho) e as colunas do banco, cada um com a sua migration. A
 > divisao de `app.py` em `services/`/`runtime/`/`tasks/`/`blueprints/` tambem ja foi: as
-> 78 rotas moram em `blueprints/`, um arquivo por grupo de tela, e o `app.py` ficou com a
+> 81 rotas moram em `blueprints/`, um arquivo por grupo de tela, e o `app.py` ficou com a
 > montagem (banco, sessao, decoradores, tabelas).
 
 O painel roda com poder de **root nos containers de jogo**. Isso muda o peso de tudo:
@@ -997,6 +997,13 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   `source`, e campo que o broker nao conhece e RECUSADO — e assim que `pre_install_cmd`
   deixa de entrar de contrabando. Campo novo em jogo dinamico = regex propria em
   `services/catalog.py` e um caso em `INVALID_CASES` do teste.
+- **Editar um jogo CURADO pelo painel grava uma sobreposicao, nunca o `.env`.** A edicao vai
+  para `<chave>.json` na pasta dos dinamicos, passa pelo mesmo `validate_dynamic` e so troca
+  DADOS: o `PRE/POST_INSTALL_CMD` e o motivo de nao ser criavel continuam os do arquivo
+  (`catalog._as_override`). "Apagar" num curado editado DESFAZ a edicao; num curado sem
+  edicao e recusado (ele vem do git). Consequencia que pega: um `.json` antigo com a chave
+  de um curado novo passa a valer POR CIMA dele — foi o caso do Valheim, cadastrado pela
+  sugestao do LinuxGSM antes de existir `games/valheim.env`.
 - **Porta interna == externa, sempre.** Jogo `deslocavel` (`PORTS_SHIFTABLE=1`) recebe um bloco
   de portas seguidas da FAIXA do broker (`BROKER_PORT_INICIO/FIM`, padrao 31000-31999, abaixo das
   efemeras 32768+ e longe das portas padrao dos jogos), nunca as portas padrao; os demais ficam

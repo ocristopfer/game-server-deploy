@@ -55,6 +55,17 @@ INSTANCE = {
                {"base": 7002, "numero": 7002, "proto": "udp", "papel": "query"}],
 }
 
+# O jogo como o GET /v1/catalog/<chave> do broker devolve (as_stored + origem).
+STORED = {
+    "key": "meujogo", "name": "Meu Jogo", "app_id": 123456, "platform": "", "start_script": "Server.sh",
+    "start_args": "-port={PORT}", "ports": ["7777/udp", "27016/udp"], "game_port": 7777,
+    "query_port": 27016, "extra_port": 0, "memory_mb": 8192, "cores": 4, "disk_gb": 40,
+    "config_path": "/opt/game/Config", "config_files": ["/opt/game/Config/a.ini", "/opt/game/Config/b.ini"],
+    "backup_paths": ["/opt/game/Saves"], "player_source": "a2s", "join_re": "", "leave_re": "",
+    "log_path": "", "recipes": ["wine"], "shiftable": True, "source": "dinamico", "edited": False,
+    "creatable": True, "reason": "",
+}
+
 RESULTADO = {
     "broker_id": 7, "name": "Servidor do Zeca", "host": "10.0.0.30", "service": "alfa.service",
     "game_port": 7001, "query_port": 7002, "ports": ["7001/udp", "7002/udp"],
@@ -78,6 +89,8 @@ class FakeBroker:
         self.operations: list[dict] = [{"state": "ok", "log": "tudo certo\n", "result": RESULTADO}]
         self.tasks: list = []
         self.forgotten: list[str] = []
+        # O que o DELETE de jogo devolve: {} = apagado; um jogo = curado restaurado.
+        self.restored: dict = {}
 
     def _call(self, name: str, *args) -> None:
         self.calls.append((name, *args))
@@ -91,6 +104,18 @@ class FakeBroker:
     def add_game(self, data, actor):
         self._call("add_game", data, actor)
         return {"key": data.get("key")}
+
+    def game(self, key):
+        self._call("game", key)
+        return {**STORED, "key": key}
+
+    def update_game(self, key, data, actor):
+        self._call("update_game", key, data, actor)
+        return {"key": key, "name": data.get("name")}
+
+    def remove_game(self, key, actor):
+        self._call("remove_game", key, actor)
+        return self.restored
 
     def instances(self):
         self._call("instances")
@@ -126,8 +151,8 @@ def broker(monkeypatch, database):
     monkeypatch.setattr(panel, "_fire", fake.tasks.append)
     # Nunca o known_hosts de verdade: no container ele e o do painel de dev.
     monkeypatch.setattr(panel, "forget_host_key", fake.forgotten.append)
-    for name in ("catalog", "add_game", "instances", "create", "operation",
-                 "deactivate", "remove"):
+    for name in ("catalog", "add_game", "game", "update_game", "remove_game", "instances",
+                 "create", "operation", "deactivate", "remove"):
         monkeypatch.setattr(panel.broker_client, name, getattr(fake, name))
     return fake
 
@@ -155,8 +180,9 @@ def servers(database) -> list:
 
 # --------------------------------------------------------------------------- quem abre
 
-ROTAS_GET = ["/catalog", "/instances", "/api/v1/catalog/suggestions?q=palworld"]
-ROTAS_POST = ["/catalog/new", "/instances/new", "/instances/7/deactivate", "/instances/7/delete"]
+ROTAS_GET = ["/catalog", "/instances", "/api/v1/catalog/suggestions?q=palworld", "/catalog/alfa/edit"]
+ROTAS_POST = ["/catalog/new", "/instances/new", "/instances/7/deactivate", "/instances/7/delete",
+              "/catalog/alfa/edit", "/catalog/alfa/delete"]
 
 
 @pytest.mark.parametrize("rota", ROTAS_GET)
@@ -381,6 +407,81 @@ def test_recusa_do_broker_volta_ao_formulario_com_o_que_foi_digitado(admin, brok
     assert response.status_code == 400
     assert "start_args: formato invalido" in html
     assert 'value="Server.sh"' in html, "o formulario nao pode perder o que a pessoa digitou"
+
+
+def test_novo_jogo_registra_qual_jogo_foi_no_historico_e_no_aviso(admin, broker, post, database):
+    """O formulario manda key/name; o historico lia chave/nome e gravava a acao sem o jogo."""
+    response = post(admin, "/catalog/new", GAME_FORM)
+    (line,) = jobs(database)
+    assert line["command"] == "meujogo"
+    assert "Meu Jogo" in admin.get(response.headers["Location"]).get_data(as_text=True)
+
+
+# ------------------------------------------------------------------ editar e apagar jogo
+
+def test_catalogo_oferece_editar_e_apagar_so_onde_cabe(admin, broker):
+    broker.games = [*GAMES, {**GAMES[0], "key": "meujogo", "name": "Meu Jogo", "source": "dinamico"},
+                    {**GAMES[0], "key": "beta", "name": "Beta", "edited": True}]
+    html = admin.get("/catalog").get_data(as_text=True)
+    for key in ("alfa", "meujogo", "beta"):
+        assert f'href="/catalog/{key}/edit"' in html
+    assert 'href="/catalog/conta/edit"' not in html, "curado que o broker nao cria so se edita no git"
+    assert 'action="/catalog/meujogo/delete"' in html, "dinamico se apaga"
+    assert 'action="/catalog/beta/delete"' in html, "curado editado se desfaz"
+    assert 'action="/catalog/alfa/delete"' not in html, "curado sem edicao vem do repositorio"
+
+
+def test_editar_abre_o_formulario_preenchido_com_o_que_o_broker_guarda(admin, broker):
+    html = admin.get("/catalog/meujogo/edit").get_data(as_text=True)
+    assert 'value="7777/udp 27016/udp"' in html
+    assert 'value="-port={PORT}"' in html
+    assert "/opt/game/Config/a.ini\n/opt/game/Config/b.ini" in html
+    assert 'value="wine" checked' in html, "a receita gravada volta marcada"
+    assert 'name="shiftable" value="1" checked' in html
+    assert 'value="a2s" selected' in html
+    assert "readonly" in html, "a chave nao se edita"
+
+
+def test_editar_manda_ao_broker_com_a_chave_da_url(admin, broker, post, database):
+    response = post(admin, "/catalog/meujogo/edit", {**GAME_FORM, "key": "outra", "name": "Novo Nome"})
+    assert response.status_code == 302
+    (_, key, sent, actor), = broker.called("update_game")
+    assert (key, sent["key"], sent["name"], actor) == ("meujogo", "meujogo", "Novo Nome", "chefe")
+    assert sent["app_id"] == 123456
+    (line,) = jobs(database)
+    assert (line["action"], line["command"]) == ("broker-jogo-editar", "meujogo")
+
+
+def test_recusa_na_edicao_volta_ao_formulario_com_o_que_foi_digitado(admin, broker, post):
+    broker.error = refusal("start_args: formato invalido", 400)
+    response = post(admin, "/catalog/meujogo/edit", {**GAME_FORM, "start_script": "Outro.sh"})
+    html = response.get_data(as_text=True)
+    assert response.status_code == 400
+    assert "start_args: formato invalido" in html
+    assert 'value="Outro.sh"' in html
+
+
+def test_apagar_dinamico(admin, broker, post, database):
+    response = post(admin, "/catalog/meujogo/delete", {})
+    assert response.status_code == 302
+    assert broker.called("remove_game") == [("remove_game", "meujogo", "chefe")]
+    assert "apagado do catalogo" in admin.get("/catalog").get_data(as_text=True)
+    (line,) = jobs(database)
+    assert (line["action"], line["status"]) == ("broker-jogo-apagar", "ok")
+
+
+def test_apagar_curado_editado_avisa_que_voltou_ao_arquivo(admin, broker, post):
+    broker.restored = {"key": "alfa", "name": "Alfa"}
+    post(admin, "/catalog/alfa/delete", {})
+    assert "vale de novo o arquivo do repositorio" in admin.get("/catalog").get_data(as_text=True)
+
+
+def test_recusa_ao_apagar_aparece_e_fica_no_historico(admin, broker, post, database):
+    broker.error = refusal("alfa vem de games/alfa.env, no repositorio", 409)
+    post(admin, "/catalog/alfa/delete", {})
+    assert "games/alfa.env" in admin.get("/catalog").get_data(as_text=True)
+    (line,) = jobs(database)
+    assert (line["action"], line["status"]) == ("broker-jogo-apagar", "error")
 
 
 # ---------------------------------------------------------------------------- instancias

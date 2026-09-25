@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% block title %}{{ _('catalog.edit_title', name=form.get('name') or key) }} &mdash; {{ _('app.name') }}{% endblock %}
+
+{% block content %}
+{% call ui.page_header(_('catalog.edit_title', name=form.get('name') or key)) %}
+  {{ ui.button(_('catalog.title'), href=url_for('broker.catalog'), variant='ghost', icon='📚') }}
+{% endcall %}
+
+<div class="card">
+  {% if source == 'curado' %}
+  <p class="muted small">{{ _h('catalog.curated_edit_note', key=key) }}</p>
+  {% else %}
+  <p class="muted small">{{ _h('catalog.data_only') }}</p>
+  {% endif %}
+  <p class="muted small">{{ _('catalog.edit_instances_note') }}</p>
+  <form method="post" action="{{ url_for('broker.catalog_update', key=key) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    {# So para a tela de erro repetir o aviso certo; o broker decide pela chave, nao por isto. #}
+    <input type="hidden" name="source" value="{{ source }}">
+    {% include "components/game_form.html" %}
+    <div class="form-actions">
+      {{ ui.button(_('catalog.save'), variant='primary', block=true) }}
+    </div>
+  </form>
+</div>
+{% endblock %}

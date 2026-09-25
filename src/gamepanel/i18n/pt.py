@@ -550,6 +550,25 @@ MESSAGES: dict[str, str] = {
         "So marque se o jogo aceita as portas pelos argumentos: os argumentos de start precisam "
         "ter {PORT} (e {QUERY_PORT} e {EXTRA_PORT}, se houver porta de consulta e porta extra) e o "
         "jogo so pode ter essas tres portas.",
+    "catalog.key_fixed_hint":
+        "A chave nao muda: ela e o nome do jogo no broker. Para trocar, apague e adicione de "
+        "novo.",
+    "catalog.edited": "editado",
+    "catalog.edited_help":
+        "Os dados foram editados pelo painel e valem por cima do arquivo games/*.env do "
+        "repositorio.",
+    "catalog.edit": "Editar",
+    "catalog.delete": "Apagar",
+    "catalog.delete_confirm": "Apagar {name} do catalogo? As instancias ja criadas continuam.",
+    "catalog.undo_edit": "Desfazer edicao",
+    "catalog.undo_edit_confirm": "Descartar a edicao de {name} e voltar ao arquivo do repositorio?",
+    "catalog.edit_title": "Editar {name}",
+    "catalog.curated_edit_note": (
+        "Jogo <strong>curado</strong>: a edicao fica guardada no broker, por cima de "
+        "<code>games/{key}.env</code>. Os comandos de instalacao continuam os do arquivo; "
+        "para voltar a ele, use <strong>Desfazer edicao</strong> no catalogo."),
+    "catalog.edit_instances_note": "Vale para as proximas instancias. As ja criadas nao mudam.",
+    "catalog.save": "Salvar",
     "catalog.add_to_catalog": "Adicionar ao catalogo",
 
     # ------------------------------------------ cadastro de servidor
@@ -915,6 +934,8 @@ MESSAGES: dict[str, str] = {
     "job.instance_created": "Instancia criada (broker)",
     "job.instance_deactivated": "Instancia desativada (broker)",
     "job.instance_removed": "Instancia removida (broker)",
+    "job.game_edited": "Jogo do catalogo editado",
+    "job.game_removed": "Jogo apagado do catalogo (ou edicao desfeita)",
     "job.game_added": "Jogo adicionado ao catalogo",
     "player_action.announce": "Avisar todo mundo",
     "player_action.kick": "Expulsar",
@@ -971,6 +992,9 @@ MESSAGES: dict[str, str] = {
         "O broker so pode ser usado por quem tem a verificacao em duas etapas ativa: ative-a em "
         "Conta.",
     "flash.broker_error": "Broker: {reason}",
+    "flash.game_updated": "Jogo {name} atualizado.",
+    "flash.game_restored": "Edicao de {name} desfeita: vale de novo o arquivo do repositorio.",
+    "flash.game_removed": "Jogo {name} apagado do catalogo.",
     "flash.game_added": "Jogo {name} adicionado ao catalogo.",
     "flash.broker_no_operation_id": "Broker: resposta sem identificador de operacao.",
     "flash.instance_deactivated": "Instancia desativada: portas fechadas e container parado.",

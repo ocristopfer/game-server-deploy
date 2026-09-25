@@ -170,6 +170,19 @@ def add_game(data: dict, actor: str) -> dict:
     return _as_object(_request("POST", "/v1/catalog", data, actor))
 
 
+def game(key: str) -> dict:
+    return _as_object(_request("GET", f"/v1/catalog/{quote(key, safe='')}"))
+
+
+def update_game(key: str, data: dict, actor: str) -> dict:
+    return _as_object(_request("PUT", f"/v1/catalog/{quote(key, safe='')}", data, actor))
+
+
+def remove_game(key: str, actor: str) -> dict:
+    """Apaga um dinamico; num curado editado, desfaz a edicao (devolve o curado)."""
+    return _as_object(_request("DELETE", f"/v1/catalog/{quote(key, safe='')}", {}, actor))
+
+
 def instances() -> list:
     return _as_list(_request("GET", "/v1/instances"))
 

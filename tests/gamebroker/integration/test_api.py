@@ -154,3 +154,25 @@ def test_erro_interno_nao_vaza_detalhe(http, environment):
 def test_ator_da_auditoria_vem_do_cabecalho(http, environment):
     http.post("/v1/instances", headers={**AUTH, "X-Actor": "zeca"}, json={"game": "beta", "name": "Um"})
     assert "zeca" in {a["actor"] for a in environment.db.audit_trail()}
+
+
+def test_editar_e_apagar_jogo_pela_api(http, game_data, environment):
+    http.post("/v1/catalog", headers=AUTH, json=game_data)
+    stored = http.get("/v1/catalog/meujogo", headers=AUTH).get_json()
+    assert stored["start_args"] == game_data["start_args"]
+    response = http.put("/v1/catalog/meujogo", headers=AUTH, json={**game_data, "name": "Novo Nome"})
+    assert (response.status_code, response.get_json()["name"]) == (200, "Novo Nome")
+    assert http.delete("/v1/catalog/meujogo", headers=AUTH).get_json() == {}
+    assert http.get("/v1/catalog/meujogo", headers=AUTH).status_code == 404
+    verbs = {a["verb"] for a in environment.db.audit_trail()}
+    assert {"catalogo-editar", "catalogo-apagar"} <= verbs
+
+
+def test_apagar_curado_sem_edicao_e_conflito(http):
+    response = http.delete("/v1/catalog/alfa", headers=AUTH)
+    assert (response.status_code, response.get_json()["codigo"]) == (409, "conflito")
+
+
+def test_rotas_do_jogo_pedem_token(http, game_data):
+    for method in ("get", "put", "delete"):
+        assert getattr(http, method)("/v1/catalog/alfa", json=game_data).status_code == 401

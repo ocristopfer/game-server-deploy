@@ -548,6 +548,23 @@ MESSAGES: dict[str, str] = {
         "Only check this if the game takes its ports from the arguments: the start arguments must "
         "contain {PORT} (plus {QUERY_PORT} and {EXTRA_PORT}, if there is a query port and an extra "
         "port) and the game may have only those three ports.",
+    "catalog.key_fixed_hint":
+        "The key cannot change: it is the game's name in the broker. To change it, delete and add "
+        "again.",
+    "catalog.edited": "edited",
+    "catalog.edited_help": "The data was edited in the panel and overrides the games/*.env file from the repository.",
+    "catalog.edit": "Edit",
+    "catalog.delete": "Delete",
+    "catalog.delete_confirm": "Delete {name} from the catalog? Instances already created stay.",
+    "catalog.undo_edit": "Undo edit",
+    "catalog.undo_edit_confirm": "Discard the edit of {name} and go back to the repository file?",
+    "catalog.edit_title": "Edit {name}",
+    "catalog.curated_edit_note": (
+        "<strong>Curated</strong> game: the edit is stored in the broker, on top of "
+        "<code>games/{key}.env</code>. The install commands are still the file's; "
+        "to go back to it, use <strong>Undo edit</strong> in the catalog."),
+    "catalog.edit_instances_note": "Applies to the next instances. The ones already created do not change.",
+    "catalog.save": "Save",
     "catalog.add_to_catalog": "Add to the catalog",
 
     # ------------------------------------------ cadastro de servidor
@@ -910,6 +927,8 @@ MESSAGES: dict[str, str] = {
     "job.instance_created": "Instance created (broker)",
     "job.instance_deactivated": "Instance turned off (broker)",
     "job.instance_removed": "Instance removed (broker)",
+    "job.game_edited": "Catalog game edited",
+    "job.game_removed": "Catalog game deleted (or edit undone)",
     "job.game_added": "Game added to the catalog",
     "player_action.announce": "Announce to everyone",
     "player_action.kick": "Kick",
@@ -964,6 +983,9 @@ MESSAGES: dict[str, str] = {
         "The broker can only be used by someone with two-step verification on: turn it on under "
         "Account.",
     "flash.broker_error": "Broker: {reason}",
+    "flash.game_updated": "Game {name} updated.",
+    "flash.game_restored": "Edit of {name} undone: the repository file applies again.",
+    "flash.game_removed": "Game {name} deleted from the catalog.",
     "flash.game_added": "Game {name} added to the catalog.",
     "flash.broker_no_operation_id": "Broker: answer with no operation identifier.",
     "flash.instance_deactivated": "Instance turned off: ports closed and container stopped.",

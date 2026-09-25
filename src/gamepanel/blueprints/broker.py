@@ -21,7 +21,7 @@ def catalog():
         flash(panel.translate("flash.broker_error", reason=failure.message), "error")
         games = []
     return render_template("catalog.html", games=games, recipes=panel.BROKER_RECIPES, form={},
-                           game_templates=GAME_TEMPLATES)
+                           checked_recipes=[], editing=False, game_templates=GAME_TEMPLATES)
 
 
 @bp.get("/api/v1/catalog/suggestions")
@@ -53,10 +53,87 @@ def catalog_new():
         except panel.broker_client.BrokerError:
             games = []
         return render_template("catalog.html", games=games, recipes=panel.BROKER_RECIPES,
-                               form=request.form, game_templates=GAME_TEMPLATES), 400
-    panel._log_broker_action("broker-jogo", panel._actor(), data.get("chave", ""), "Jogo adicionado ao catalogo.")
-    flash(panel.translate("flash.game_added",
-                       name=data.get("nome", data.get("chave", ""))), "ok")
+                               form=request.form, checked_recipes=request.form.getlist("recipes"),
+                               editing=False, game_templates=GAME_TEMPLATES), 400
+    # "key"/"name", e nao "chave"/"nome": o formulario ja manda os nomes em ingles, e com os
+    # antigos o historico gravava a acao sem dizer qual jogo e o aviso saia sem o nome.
+    panel._log_broker_action("broker-jogo", panel._actor(), data.get("key", ""), "Jogo adicionado ao catalogo.")
+    flash(panel.translate("flash.game_added", name=data.get("name", data.get("key", ""))), "ok")
+    return redirect(url_for("broker.catalog"))
+
+
+def _form_of(game: dict) -> dict:
+    """O jogo como o broker o guarda, no formato dos campos do formulario (texto)."""
+    form = {k: "" if v is None else str(v) for k, v in game.items()
+            if not isinstance(v, list | bool)}
+    form["ports"] = " ".join(game.get("ports") or [])
+    form["config_files"] = "\n".join(game.get("config_files") or [])
+    form["backup_paths"] = "\n".join(game.get("backup_paths") or [])
+    form["shiftable"] = "1" if game.get("shiftable") else ""
+    # Porta 0 e "nao tem": no formulario ela e o campo vazio, que e como foi cadastrada.
+    for field in ("query_port", "extra_port"):
+        if form.get(field) == "0":
+            form[field] = ""
+    return form
+
+
+def _render_edit(key: str, form, checked_recipes: list, source: str, status: int = 200):
+    return render_template("catalog_edit.html", key=key, form=form, checked_recipes=checked_recipes,
+                           source=source, recipes=panel.BROKER_RECIPES, editing=True), status
+
+
+@bp.get("/catalog/<key>/edit")
+@panel.admin_required
+@panel.broker_required
+def catalog_edit(key: str):
+    try:
+        game = panel.broker_client.game(key)
+    except panel.broker_client.BrokerError as failure:
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
+        return redirect(url_for("broker.catalog"))
+    return _render_edit(key, _form_of(game), list(game.get("recipes") or []), str(game.get("source", "")))
+
+
+@bp.post("/catalog/<key>/edit")
+@panel.admin_required
+@panel.broker_required
+def catalog_update(key: str):
+    data, failures = panel._game_from_form(request.form)
+    # A chave vem da URL, e nao do campo: ela e o que se esta editando, e o campo so leitura
+    # ainda pode ser adulterado no envio.
+    data["key"] = key
+    if not failures:
+        try:
+            panel.broker_client.update_game(key, data, panel._actor())
+        except panel.broker_client.BrokerError as exc:
+            failures.append(f"Broker: {exc.message}")
+    if failures:
+        for failure in failures:
+            flash(panel.translate(failure), "error")
+        return _render_edit(key, request.form, request.form.getlist("recipes"),
+                            request.form.get("source", ""), 400)
+    panel._log_broker_action("broker-jogo-editar", panel._actor(), key, "Jogo do catalogo editado.")
+    flash(panel.translate("flash.game_updated", name=data.get("name", key)), "ok")
+    return redirect(url_for("broker.catalog"))
+
+
+@bp.post("/catalog/<key>/delete")
+@panel.admin_required
+@panel.broker_required
+def catalog_remove(key: str):
+    try:
+        restored = panel.broker_client.remove_game(key, panel._actor())
+    except panel.broker_client.BrokerError as failure:
+        panel._log_broker_action("broker-jogo-apagar", panel._actor(), key, failure.message, "error")
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
+        return redirect(url_for("broker.catalog"))
+    if restored:
+        panel._log_broker_action("broker-jogo-apagar", panel._actor(), key,
+                                 "Edicao desfeita: vale de novo o arquivo do repositorio.")
+        flash(panel.translate("flash.game_restored", name=restored.get("name", key)), "ok")
+    else:
+        panel._log_broker_action("broker-jogo-apagar", panel._actor(), key, "Jogo apagado do catalogo.")
+        flash(panel.translate("flash.game_removed", name=key), "ok")
     return redirect(url_for("broker.catalog"))
 
 
