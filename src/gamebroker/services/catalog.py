@@ -38,6 +38,12 @@ FORBIDDEN_PORTS = frozenset({22, 80, 443, 8006, 8080, 8212, 25575})
 
 KEY_RE = re.compile(r"[a-z][a-z0-9-]{1,23}", re.ASCII)
 NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}", re.ASCII)
+# Nome de JOGO, e nao de instancia: "RuneScape: Dragonwilds" tem dois-pontos, e com o
+# NAME_RE a edicao do curado era recusada ("name: formato invalido"). O nome vai para o
+# install.env (por shlex.quote) e para o `Description=` da unit do systemd, entao `%`
+# (especificador do systemd), aspas duplas, `$`, crase, barra invertida e quebra de linha
+# continuam de fora. O nome da instancia segue no NAME_RE: ele vira nome de CT.
+GAME_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._:'&()!+-]{0,39}", re.ASCII)
 _PORT_RE = re.compile(r"(\d{1,5})/(tcp|udp)", re.ASCII)
 _SCRIPT_RE = re.compile(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*", re.ASCII)
 _PATH_RE = re.compile(r"/(opt/game|home/steam)(/[A-Za-z0-9._-]+)*", re.ASCII)
@@ -492,7 +498,7 @@ def validate_dynamic(data: object) -> Game:
 
     return Game(
         key=_text_field(data, "key", KEY_RE, required=True),
-        name=_text_field(data, "name", NAME_RE, required=True),
+        name=_text_field(data, "name", GAME_NAME_RE, required=True),
         app_id=_int_field(data, "app_id", 1, 2**31 - 1),
         platform=platform, ports=ports, game_port=game_port, query_port=query_port,
         extra_port=extra_port,

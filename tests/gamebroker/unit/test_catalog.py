@@ -333,3 +333,31 @@ def test_chave_que_nao_e_chave_nao_vira_caminho(catalog, key, game_data):
         catalog.remove(key)
     with pytest.raises(ValidationError):
         catalog.update(key, game_data)
+
+
+def test_todo_curado_editavel_salva_do_jeito_que_abre(tmp_path):
+    """Abrir a edicao e salvar sem mudar nada tem de passar. O Dragonwilds nao passava:
+    "RuneScape: Dragonwilds" tem dois-pontos, e o validador de jogo usava a regex do nome
+    de INSTANCIA ("name: formato invalido")."""
+    catalog = cat.Catalog(RAIZ / "games", tmp_path / "dinamico")
+    for game in catalog.list_all():
+        if game.creatable:
+            assert catalog.update(game.key, game.as_stored()).edited, game.key
+
+
+def test_nenhum_curado_anda_de_porta():
+    """Decisao: curado fica na porta padrao do jogo. Os marcadores continuam no START_ARGS."""
+    games, _ = cat.load_curated(RAIZ / "games")
+    assert [k for k, g in games.items() if g.shiftable] == []
+
+
+@pytest.mark.parametrize("name", ["RuneScape: Dragonwilds", "Don't Starve", "Rock & Stone (PvE)!"])
+def test_nome_de_jogo_aceita_pontuacao_de_titulo(game_data, name):
+    assert cat.validate_dynamic({**game_data, "name": name}).name == name
+
+
+@pytest.mark.parametrize("name", ["100% Orange", 'Aspas "x"', "Custa $5", "a`b", "a\b", "linha\nnova"])
+def test_nome_de_jogo_recusa_o_que_quebra_systemd_ou_shell(game_data, name):
+    """O nome vai para o Description= da unit (% e especificador do systemd) e para o install.env."""
+    with pytest.raises(ValidationError, match="name"):
+        cat.validate_dynamic({**game_data, "name": name})
