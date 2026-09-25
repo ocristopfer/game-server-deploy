@@ -566,7 +566,7 @@ MESSAGES: dict[str, str] = {
     "catalog.edit_title": "Editar {name}",
     "catalog.curated_edit_note": (
         "Jogo <strong>curado</strong>: a edicao fica guardada no broker, por cima de "
-        "<code>games/{key}.env</code>. Os comandos de instalacao continuam os do arquivo; "
+        "<code>games/{game}.env</code>. Os comandos de instalacao continuam os do arquivo; "
         "para voltar a ele, use <strong>Desfazer edicao</strong> no catalogo."),
     "catalog.edit_instances_note": "Vale para as proximas instancias. As ja criadas nao mudam.",
     "catalog.save": "Salvar",

@@ -9,7 +9,7 @@
 
 <div class="card">
   {% if source == 'curado' %}
-  <p class="muted small">{{ _h('catalog.curated_edit_note', key=key) }}</p>
+  <p class="muted small">{{ _h('catalog.curated_edit_note', game=key) }}</p>
   {% else %}
   <p class="muted small">{{ _h('catalog.data_only') }}</p>
   {% endif %}

@@ -442,6 +442,15 @@ def test_editar_abre_o_formulario_preenchido_com_o_que_o_broker_guarda(admin, br
     assert "readonly" in html, "a chave nao se edita"
 
 
+def test_editar_jogo_curado_abre_com_o_aviso_do_arquivo_do_repositorio(admin, broker, monkeypatch):
+    """Era 500 em producao: a frase do curado tinha o campo `{key}`, que colide com o
+    primeiro parametro de `translate`. O teste de cima abre um DINAMICO, que usa outra frase."""
+    monkeypatch.setattr(panel.broker_client, "game", lambda key: {**STORED, "key": key, "source": "curado"})
+    response = admin.get("/catalog/alfa/edit")
+    assert response.status_code == 200
+    assert "games/alfa.env" in response.get_data(as_text=True)
+
+
 def test_editar_manda_ao_broker_com_a_chave_da_url(admin, broker, post, database):
     response = post(admin, "/catalog/meujogo/edit", {**GAME_FORM, "key": "outra", "name": "Novo Nome"})
     assert response.status_code == 302

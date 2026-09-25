@@ -203,8 +203,10 @@ def _translation_calls(arvore: ast.AST) -> list[tuple[int, str, set[str]]]:
         if not isinstance(no, ast.Call):
             continue
         target = no.func.id if isinstance(no.func, ast.Name) else getattr(no.func, "attr", "")
-        if target not in {"_", "_h", "traduzir", "traduzir_html", "Mensagem",
-                        "rotulo_para_o_banco"} or not no.args:
+        # Os nomes de HOJE: com os de antes da traducao (traduzir, Mensagem) toda chamada
+        # de `translate`/`Message` em Python passava ao largo deste teste.
+        if target not in {"_", "_h", "translate", "translate_html", "Message",
+                        "label_for_db"} or not no.args:
             continue
         key = no.args[0]
         if isinstance(key, ast.Constant) and isinstance(key.value, str):
@@ -237,6 +239,19 @@ def test_todo_campo_passado_existe_como_marcador_na_frase():
                     f"{file_path.name}:{line} {key}: passa {sorted(left_over)}, "
                     f"a frase usa {sorted(markers)}")
     assert problems == [], "campo sem marcador correspondente:\n" + "\n".join(problems)
+
+
+def test_nenhum_marcador_tem_o_nome_de_um_parametro_da_traducao():
+    """`translate(key, language, **fields)`: um campo chamado `key` colide com o proprio
+    parametro e a tela morre com "got multiple values for argument 'key'". Foi o 500 de
+    Editar num jogo CURADO (`games/{key}.env`) - o teste da tela so abria um dinamico,
+    que usa outra frase. A regra mora na frase, entao vale para template e Python juntos.
+    """
+    reserved = {"key", "language"}
+    clashes = [f"{key}: {{{marker}}}"
+               for key, phrase in i18n.CATALOGS["pt"].items()
+               for marker in set(re.findall(r"\{([a-z_]+)\}", phrase)) & reserved]
+    assert clashes == [], "marcador com nome reservado:\n" + "\n".join(clashes)
 
 
 def test_os_dois_idiomas_usam_os_mesmos_marcadores():
