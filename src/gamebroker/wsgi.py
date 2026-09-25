@@ -44,7 +44,8 @@ def build_service(cfg: ConfigBroker, executor: Executor | None = None, network: 
     # todos os outros — ver o mesmo padrao, com o mesmo motivo, em `config.py`.
     extra: dict[str, Any] = {} if run is None else {"run": run}
     return Service(
-        Db(str(cfg.state_dir / "broker.db")), Catalog(cfg.games_dir, cfg.state_dir / "dinamico"),
+        Db(str(cfg.state_dir / "broker.db")),
+        Catalog(cfg.games_dir, cfg.state_dir / "dinamico", steam_account=cfg.ssh.steam is not None),
         proxmox, opnsense, SshInstaller(cfg.ssh, executor), network or RealNetwork(),
         Config(ctids=cfg.ctids, ctid_base=cfg.ctid_base, ips=cfg.ips, ports=cfg.ports,
                max_instances=cfg.max_instances, max_creations_per_hour=cfg.max_creations_per_hour),

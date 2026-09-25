@@ -10,8 +10,10 @@ Fluxo (tudo com `ssh`/`scp` do sistema, nunca por shell):
      acesso permanente do broker.
 
 O `install.env` tem aspas em todo valor (`shlex.quote`): nada do catalogo e concatenado numa
-linha de command ou interpretado como shell pelo `source` do CT. Credencial de conta Steam
-nunca entra (`STEAM_ANONYMOUS` e sempre 1: jogos que exigem conta nao sao criaveis por API).
+linha de command ou interpretado como shell pelo `source` do CT. A conta Steam do broker so
+entra no `install.env` de jogo CURADO que a exige (`Game.needs_account`, o DayZ): jogo da API
+nunca a pede, e o arquivo e apagado no fim pelo `_cleanup`, deu certo ou nao. Dentro do CT
+fica so o token que o SteamCMD grava no primeiro login, que e o que as atualizacoes usam.
 
 As mesmas fases rodam no deploy manual (lib/ct-phases.sh via provision-game-lxc.sh); o sandbox
 `docker/ct-sandbox/compare.sh` prova que os dois caminhos geram exatamente o mesmo CT.
@@ -26,7 +28,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -41,6 +43,10 @@ LINE_BATCH = 20
 BATCH_SECONDS = 1.5
 ERROR_TAIL = 6
 _BLOB_RE = re.compile(r"[A-Za-z0-9+/=]{20,}", re.ASCII)
+# Conta Steam: o ct-phases.sh a poe numa linha `su - steam -c '... +login USUARIO SENHA'`.
+# Aspa simples fecharia a linha, e espaco partiria a senha em dois argumentos do SteamCMD.
+_STEAM_USER_RE = re.compile(r"[A-Za-z0-9_.@-]{2,64}", re.ASCII)
+_STEAM_PASS_RE = re.compile(r"[!-&(-~]{1,128}", re.ASCII)
 
 
 class InstallError(RuntimeError):
@@ -87,6 +93,26 @@ class ExecutorReal:
 
 
 @dataclass(frozen=True)
+class SteamAccount:
+    """Conta Steam que o broker usa para jogo que nao baixa anonimo (DayZ).
+
+    Deve ser uma conta DEDICADA a servidores e sem Steam Guard: o primeiro login de cada CT
+    novo acontece minutos depois do pedido, e nao ha quem digite um codigo ali.
+    """
+
+    user: str
+    # Fora do repr: a configuracao aparece em traceback e em log de depuracao.
+    password: str = field(repr=False)
+
+    def __post_init__(self) -> None:
+        # Mensagem sem o valor: ela vai para o journal na subida do broker.
+        if not _STEAM_USER_RE.fullmatch(self.user):
+            raise ValueError("usuario: so letras, numeros e . _ @ - (2 a 64)")
+        if not _STEAM_PASS_RE.fullmatch(self.password):
+            raise ValueError("senha: sem espaco e sem aspa simples (a linha do SteamCMD as quebraria)")
+
+
+@dataclass(frozen=True)
 class ConfigSsh:
     private_key: Path
     public_key: str          # linha completa da chave do broker, a que foi injetada no CT
@@ -96,6 +122,7 @@ class ConfigSsh:
     interval: float = 3.0
     install_timeout: float = 7200.0
     command_timeout: float = 120.0
+    steam: SteamAccount | None = None
 
     def __post_init__(self) -> None:
         parts = self.public_key.split()
@@ -109,8 +136,12 @@ class ConfigSsh:
         return self.public_key.split()[1]
 
 
-def build_env(game: Game, ports: Sequence[AllocatedPort]) -> str:
+def build_env(game: Game, ports: Sequence[AllocatedPort], steam: SteamAccount | None = None) -> str:
     """O `install.env` do CT. Cada valor entre aspas: e DADO, nunca command."""
+    if game.needs_account and steam is None:
+        # O catalogo ja nao oferece o jogo sem conta; isto e a segunda porta, para um pedido
+        # que chegue entre uma troca de configuracao e a recarga do catalogo.
+        raise InstallError(f"{game.name} exige conta Steam e o broker nao tem STEAM_USER/STEAM_PASS")
     runtimes = [r for r in game.recipes if r in RECIPES_WINDOWS]
     if len(runtimes) > 1:
         raise InstallError("escolha 'wine' OU 'proton', nao os dois")
@@ -120,7 +151,7 @@ def build_env(game: Game, ports: Sequence[AllocatedPort]) -> str:
     extra_port = (port_from_base(ports, game.extra_port) or game.extra_port) if game.extra_port else 0
     variables = {
         "GAME_KEY": game.key, "GAME_DISPLAY_NAME": game.name, "STEAM_APP_ID": str(game.app_id),
-        "STEAM_PLATFORM": game.platform, "STEAM_ANONYMOUS": "1",
+        "STEAM_PLATFORM": game.platform, "STEAM_ANONYMOUS": "0" if game.needs_account else "1",
         "START_SCRIPT": game.start_script, "START_ARGS": game.start_args,
         "GAME_PORT": str(game_port), "QUERY_PORT": str(query_port), "EXTRA_PORT": str(extra_port),
         "GAME_PORTS": " ".join(str(p) for p in ports),
@@ -129,7 +160,15 @@ def build_env(game: Game, ports: Sequence[AllocatedPort]) -> str:
         # Shell so existe no catalogo curado, revisado no git; jogo cadastrado pela API vem vazio.
         "PRE_INSTALL_CMD": game.pre_install, "POST_INSTALL_CMD": game.post_install,
     }
+    if game.needs_account and steam is not None:
+        # So para quem precisa: um jogo anonimo nao tem por que carregar a senha para o CT.
+        variables["STEAM_USER"] = steam.user
+        variables["STEAM_PASS"] = steam.password
     return "".join(f"{name}={shlex.quote(value)}\n" for name, value in variables.items())
+
+
+def _masking(log: Callable[[str], None], secret: str) -> Callable[[str], None]:
+    return lambda text: log(text.replace(secret, "******"))
 
 
 class _Batch:
@@ -194,7 +233,11 @@ class SshInstaller:
                  log: Callable[[str], None]) -> None:
         ip = str(ipaddress.IPv4Address(ip))
         target = self._target(ip)
-        env = build_env(game, ports)
+        env = build_env(game, ports, self._cfg.steam)
+        if game.needs_account and self._cfg.steam is not None:
+            # Segunda defesa: o ct-install.sh ja mascara a senha no erro, mas a saida inteira do
+            # CT vira o log da operacao, que o painel mostra e guarda no historico.
+            log = _masking(log, self._cfg.steam.password)
         self._wait_for_ssh(target, ip, log)
         failure: Exception | None = None
         try:

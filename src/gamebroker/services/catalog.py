@@ -107,6 +107,9 @@ class Game:
     # Jogo curado com os DADOS editados pela API (ver `Catalog.update`). O shell continua o
     # do .env: e isso que deixa editar um curado sem abrir porta para comando.
     edited: bool = False
+    # O servidor nao baixa com login anonimo (DayZ): so existe no curado, e o instalador leva
+    # a conta Steam do broker para o CT. Jogo da API nunca a pede (`validate_dynamic`).
+    needs_account: bool = False
 
     @property
     def has_hooks(self) -> bool:
@@ -242,11 +245,13 @@ def extra_port_problem(start_args: str, extra_port: int) -> str:
     return ""
 
 
-def _reason_not_creatable(data: dict[str, str], app_id: int, ports: tuple[Port, ...]) -> str:
+def _reason_not_creatable(data: dict[str, str], app_id: int, ports: tuple[Port, ...],
+                          steam_account: bool) -> str:
     if data.get("PROVISION_SCRIPT"):
         return "instalador proprio (nao e Steam); use o deploy-game.ps1"
-    if data.get("STEAM_ANONYMOUS", "1") == "0":
-        return "exige conta Steam; use o deploy-game.ps1"
+    if data.get("STEAM_ANONYMOUS", "1") == "0" and not steam_account:
+        return ("exige conta Steam: configure STEAM_USER/STEAM_PASS no broker.secrets.env "
+                "(ou use o deploy-game.ps1)")
     if app_id <= 0:
         return "sem STEAM_APP_ID"
     if not ports:
@@ -254,14 +259,14 @@ def _reason_not_creatable(data: dict[str, str], app_id: int, ports: tuple[Port, 
     return ""
 
 
-def game_from_env(file_name: str, data: dict[str, str]) -> Game:
+def game_from_env(file_name: str, data: dict[str, str], steam_account: bool = False) -> Game:
     key = data.get("GAME_KEY", file_name)
     if not KEY_RE.fullmatch(key):
         raise ValueError(f"GAME_KEY invalida: {key!r}")
     app_id = _env_int(data, "STEAM_APP_ID", 0)
     ports = tuple(_port(p) for p in _parts(data.get("GAME_PORTS", ""), r"\s+"))
     runtime = data.get("WINDOWS_RUNTIME", "")
-    reason = _reason_not_creatable(data, app_id, ports)
+    reason = _reason_not_creatable(data, app_id, ports, steam_account)
     shiftable = data.get("PORTS_SHIFTABLE", "0") == "1"
     extra_port = _env_int(data, "EXTRA_PORT", 0)
     problem = extra_port_problem(data.get("START_ARGS", ""), extra_port)
@@ -291,12 +296,13 @@ def game_from_env(file_name: str, data: dict[str, str]) -> Game:
         recipes=(runtime,) if runtime in RECIPES_WINDOWS else (),
         shiftable=shiftable,
         source=SOURCE_CURATED, creatable=not reason, reason=reason,
+        needs_account=data.get("STEAM_ANONYMOUS", "1") == "0",
         pre_install=data.get("PRE_INSTALL_CMD", ""),
         post_install=data.get("POST_INSTALL_CMD", ""),
     )
 
 
-def load_curated(directory: Path) -> tuple[dict[str, Game], list[str]]:
+def load_curated(directory: Path, steam_account: bool = False) -> tuple[dict[str, Game], list[str]]:
     """Le `games/*.env` (menos os que comecam com `_`). Arquivo ruim vira erro, nao excecao."""
     games: dict[str, Game] = {}
     errors: list[str] = []
@@ -304,7 +310,7 @@ def load_curated(directory: Path) -> tuple[dict[str, Game], list[str]]:
         if file.name.startswith("_"):
             continue
         try:
-            game = game_from_env(file.stem, read_env(file.read_text(encoding="utf-8")))
+            game = game_from_env(file.stem, read_env(file.read_text(encoding="utf-8")), steam_account)
         except (ValueError, OSError) as error:
             errors.append(f"{file.name}: {error}")
             continue
@@ -535,7 +541,8 @@ def _as_override(curated: Game, edited: Game) -> Game:
     """
     return dataclasses.replace(
         edited, source=SOURCE_CURATED, creatable=curated.creatable, reason=curated.reason,
-        pre_install=curated.pre_install, post_install=curated.post_install, edited=True)
+        pre_install=curated.pre_install, post_install=curated.post_install,
+        needs_account=curated.needs_account, edited=True)
 
 
 def _checked_key(key: str) -> str:
@@ -546,9 +553,11 @@ def _checked_key(key: str) -> str:
 
 
 class Catalog:
-    def __init__(self, curated_dir: Path, dynamic_dir: Path):
+    def __init__(self, curated_dir: Path, dynamic_dir: Path, steam_account: bool = False):
         self._curated_dir = Path(curated_dir)
         self._dynamic_dir = Path(dynamic_dir)
+        # O broker tem conta Steam configurada? Decide se o curado que exige conta e criavel.
+        self._steam_account = steam_account
         self._lock = threading.Lock()
         self._games: dict[str, Game] = {}
         # O curado como o git o descreve, para desfazer uma edicao sem reler a pasta.
@@ -557,7 +566,7 @@ class Catalog:
         self.reload()
 
     def reload(self) -> None:
-        curated, errors = load_curated(self._curated_dir)
+        curated, errors = load_curated(self._curated_dir, self._steam_account)
         games = dict(curated)
         self._dynamic_dir.mkdir(parents=True, exist_ok=True)
         for file in sorted(self._dynamic_dir.glob("*.json")):

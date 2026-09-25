@@ -290,3 +290,35 @@ def test_ip_estranho_nunca_chega_ao_ping(monkeypatch, ip):
     with pytest.raises(ValueError):
         RealNetwork().answers(ip)
     assert calls == []
+
+
+# --- conta Steam (opcional) -----------------------------------------------------------------
+
+def test_sem_conta_steam_o_jogo_que_exige_conta_fica_manual(env):
+    cfg = load(env)
+    assert cfg.ssh.steam is None
+    catalog = prod.build_service(cfg).catalog
+    assert not catalog.get("conta").creatable
+
+
+def test_com_conta_steam_o_jogo_que_exige_conta_vira_criavel(env):
+    env.update(STEAM_USER="conta_servidor", STEAM_PASS="S3nha!forte")
+    cfg = load(env)
+    assert cfg.ssh.steam is not None and cfg.ssh.steam.user == "conta_servidor"
+    assert prod.build_service(cfg).catalog.get("conta").creatable
+
+
+@pytest.mark.parametrize("missing", ["STEAM_USER", "STEAM_PASS"])
+def test_so_metade_da_conta_e_erro_e_nao_conta_desligada(env, missing):
+    env.update(STEAM_USER="conta_servidor", STEAM_PASS="S3nha!forte")
+    del env[missing]
+    with pytest.raises(ConfigError, match="STEAM_USER/STEAM_PASS"):
+        load(env)
+
+
+def test_senha_invalida_e_nomeada_sem_o_valor(env):
+    env.update(STEAM_USER="conta_servidor", STEAM_PASS="tem'aspa")
+    with pytest.raises(ConfigError) as caught:
+        load(env)
+    assert "STEAM_USER/STEAM_PASS" in str(caught.value)
+    assert "tem'aspa" not in str(caught.value)

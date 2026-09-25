@@ -16,6 +16,7 @@ from gamebroker.runtime.ssh_installer import (
     ExecutorReal,
     InstallError,
     SshInstaller,
+    SteamAccount,
     build_env,
 )
 from gamebroker.services.allocator import AllocatedPort
@@ -326,3 +327,52 @@ def test_executor_real_nao_le_do_teclado():
     probe = "import sys; sys.exit(0 if sys.stdin.read() == '' else 1)"
     code = ExecutorReal().run([sys.executable, "-c", probe], None, 30)
     assert code == 0
+
+
+# --- conta Steam (jogo curado que nao baixa anonimo) ---------------------------------------
+
+STEAM = SteamAccount("conta_servidor", "S3nha!forte")
+
+
+def test_jogo_que_exige_conta_leva_a_conta_do_broker(game, ports):
+    values = _values(build_env(replace(game, needs_account=True), ports, STEAM))
+    assert values["STEAM_ANONYMOUS"] == "0"
+    assert (values["STEAM_USER"], values["STEAM_PASS"]) == ("conta_servidor", "S3nha!forte")
+
+
+def test_jogo_anonimo_nao_carrega_a_senha_mesmo_com_conta_configurada(game, ports):
+    env = build_env(game, ports, STEAM)
+    assert "STEAM_ANONYMOUS=1" in env
+    assert "S3nha" not in env and "STEAM_USER" not in env
+
+
+def test_jogo_que_exige_conta_sem_conta_e_recusado(game, ports):
+    with pytest.raises(InstallError, match="conta Steam"):
+        build_env(replace(game, needs_account=True), ports)
+
+
+def test_senha_nunca_aparece_no_log_da_operacao(config, game, ports):
+    executor = FakeRunner()
+    executor.outputs["ct-install.sh"] = (0, ["Logging in user conta_servidor", "echo S3nha!forte vazou",
+                                          "INSTALACAO CONCLUIDA: x"])
+    inst = SshInstaller(replace(config, steam=STEAM), executor, sleep=lambda _s: None)
+    lines: list[str] = []
+    inst.install("10.0.0.30", replace(game, needs_account=True), ports, lines.append)
+    assert "S3nha!forte" not in "\n".join(lines)
+    assert "echo ****** vazou" in "\n".join(lines)
+
+
+def test_repr_da_conta_nao_mostra_a_senha():
+    assert "S3nha" not in repr(STEAM)
+    assert "S3nha" not in repr(ConfigSsh(private_key=Path("k"), public_key=PUBLIC_KEY, lib_dir=Path("."), steam=STEAM))
+
+
+@pytest.mark.parametrize(("user", "password"), [
+    ("conta", "com espaco"), ("conta", "aspa'simples"), ("conta", "linha\nnova"), ("conta", ""),
+    ("com espaco", "x"), ("c'onta", "x"), ("x", "x"),
+])
+def test_conta_que_quebraria_a_linha_do_steamcmd_e_recusada_sem_mostrar_o_valor(user, password):
+    with pytest.raises(ValueError) as caught:
+        SteamAccount(user, password)
+    if password not in ("", "x"):
+        assert password not in str(caught.value)

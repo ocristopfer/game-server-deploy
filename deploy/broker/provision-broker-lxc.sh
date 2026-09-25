@@ -392,6 +392,10 @@ render_broker_config() {
     env_line OPNSENSE_SECRET "$OPNSENSE_SECRET"
     env_line OPNSENSE_CERT_SHA256 "$OPNSENSE_CERT_SHA256"
     env_line OPNSENSE_WAN "$OPNSENSE_WAN"
+    # Conta Steam: opcional (so jogo que nao baixa anonimo, o DayZ). Vazia = esse jogo fica
+    # manual; o broker recusa subir com so uma das duas, e diz qual falta.
+    env_line STEAM_USER "${STEAM_USER:-}"
+    env_line STEAM_PASS "${STEAM_PASS:-}"
   } > "$tmp_file"
   push_file_to_ct "$tmp_file" "${CONF_DIR}/broker.env" 0640
   rm -f "$tmp_file"

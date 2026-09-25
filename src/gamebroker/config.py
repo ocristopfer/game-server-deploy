@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 
 from gamebroker.integrations.http_client import normalize_fingerprint
 from gamebroker.runtime.proxmox import ConfigProxmox
-from gamebroker.runtime.ssh_installer import LIB_FILES, ConfigSsh
+from gamebroker.runtime.ssh_installer import LIB_FILES, ConfigSsh, SteamAccount
 from gamebroker.services.allocator import ips_in_range
 
 TOKEN_MINIMO = 32
@@ -140,6 +140,22 @@ def _port_range(reader: _Reader) -> range:
     return range(ini, end_at + 1)
 
 
+def _steam_account(reader: _Reader) -> SteamAccount | None:
+    """Opcional: sem as duas, o jogo que exige conta (DayZ) so fica fora do catalogo criavel.
+
+    Uma sem a outra e ERRO, e nao "sem conta": quem preencheu uma quis ligar o recurso, e
+    desliga-lo calado deixaria o DayZ "manual" sem ninguem saber por que.
+    """
+    user = reader.text("STEAM_USER", "")
+    password = reader.text("STEAM_PASS", "")
+    if not user and not password:
+        return None
+    if not (user and password):
+        reader.problems.append("STEAM_USER/STEAM_PASS: defina as duas, ou nenhuma")
+        return None
+    return reader.attempt("STEAM_USER/STEAM_PASS", lambda: SteamAccount(user, password))
+
+
 def _check_url(reader: _Reader, name: str, url: str) -> None:
     """https sempre; http so em loopback (testes). Token em texto puro pela rede nao existe aqui."""
     parts = urlsplit(url)
@@ -193,10 +209,11 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
     missing_ones = [a for a in LIB_FILES if not (lib_dir / a).is_file()]
     if missing_ones:
         reader.problems.append(f"BROKER_LIB_DIR: faltam {', '.join(missing_ones)} em {lib_dir}")
+    steam = _steam_account(reader)
     ssh = None
     if broker_key:
         ssh = reader.attempt("BROKER_SSH_*", lambda: ConfigSsh(
-            private_key=ssh_key, public_key=broker_key, lib_dir=lib_dir))
+            private_key=ssh_key, public_key=broker_key, lib_dir=lib_dir, steam=steam))
 
     cfg_parcial: dict[str, Any] = {
         "proxmox_fingerprint": reader.fingerprint("PROXMOX_CERT_SHA256", px_https),

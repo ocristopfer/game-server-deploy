@@ -938,6 +938,12 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   SteamCMD falsos e faz diff de arquivos, conteudo e linhas de comando; tambem compara host x
   broker e confere o `install.env` que o Python gera. Sem isso a refatoracao e no escuro: nao
   existe teste de shell no repositorio.
+- **Conta Steam do broker so vai para jogo CURADO que a exige** (`Game.needs_account`, vindo de
+  `STEAM_ANONYMOUS=0`; hoje o DayZ). Sem `STEAM_USER`/`STEAM_PASS` no broker esse jogo sai "manual"
+  do catalogo; com uma so, o broker nao sobe. `validate_dynamic` nunca a pede: jogo da API nao tem
+  como levar a senha para um CT. Ela entra no `install.env` (apagado pelo `_cleanup`), o log da
+  operacao a troca por `******` (`_masking`) e `SteamAccount` a tira do `repr`. A conta tem de
+  estar SEM Steam Guard: o primeiro login de cada CT novo e minutos depois do pedido.
 - **`install.env` e sempre `shlex.quote`.** Hook (`PRE/POST_INSTALL_CMD`) so existe no catalogo
   curado; jogo da API escolhe **receitas** (`apply_recipes`, lista fechada), nunca escreve shell.
   Receita desconhecida derruba a instalacao. A chave do broker sai do CT ao fim

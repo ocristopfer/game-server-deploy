@@ -361,3 +361,38 @@ def test_nome_de_jogo_recusa_o_que_quebra_systemd_ou_shell(game_data, name):
     """O nome vai para o Description= da unit (% e especificador do systemd) e para o install.env."""
     with pytest.raises(ValidationError, match="name"):
         cat.validate_dynamic({**game_data, "name": name})
+
+
+# --- jogo que exige conta Steam (DayZ) --------------------------------------------------
+
+def test_jogo_com_conta_so_e_criavel_quando_o_broker_tem_a_conta(tmp_path, games_dir):
+    without_account = cat.Catalog(games_dir, tmp_path / "a").get("conta")
+    assert not without_account.creatable
+    assert "STEAM_USER/STEAM_PASS" in without_account.reason, "o motivo diz o que configurar"
+    with_account = cat.Catalog(games_dir, tmp_path / "b", steam_account=True).get("conta")
+    assert with_account.creatable
+    assert with_account.needs_account
+
+
+def test_conta_nao_torna_criavel_quem_tem_outro_motivo():
+    game = cat.game_from_env("voz", {"GAME_KEY": "voz", "STEAM_APP_ID": "1", "GAME_PORT": "9987",
+                                    "GAME_PORTS": "9987/udp", "PROVISION_SCRIPT": "x.sh"}, steam_account=True)
+    assert not game.creatable
+
+
+def test_o_dayz_do_repositorio_sai_criavel_com_conta():
+    games, _ = cat.load_curated(RAIZ / "games", steam_account=True)
+    assert games["dayz"].creatable and games["dayz"].needs_account
+
+
+def test_jogo_da_api_nunca_pede_a_conta(game_data):
+    """So o curado, revisado no git, leva a senha da conta Steam para dentro de um CT."""
+    assert not cat.validate_dynamic(game_data).needs_account
+    with pytest.raises(ValidationError):
+        cat.validate_dynamic({**game_data, "needs_account": True})
+
+
+def test_edicao_do_curado_mantem_a_exigencia_da_conta(tmp_path, games_dir):
+    catalog = cat.Catalog(games_dir, tmp_path / "d", steam_account=True)
+    data = {"key": "conta", "name": "Conta Editada", "app_id": 1004, "ports": ["7200/udp"], "game_port": 7200}
+    assert catalog.update("conta", data).needs_account

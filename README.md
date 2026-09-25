@@ -455,6 +455,13 @@ THROW: O servidor de dayz nao esta disponivel por login anonimo na Steam.
        Preencha STEAM_USER e STEAM_PASS no .env (conta que POSSUA o jogo) ou use -Interactive.
 ```
 
+**Pelo painel (broker).** O DayZ tambem sai pela tela **Instancias** quando o broker tem uma
+conta: `STEAM_USER`/`STEAM_PASS` no `broker.secrets.env` e `.\deploy\broker\deploy-broker.ps1`.
+Ai nao ha como digitar codigo nenhum (o login acontece minutos depois do clique, dentro do CT
+novo), entao a conta tem de estar **sem Steam Guard** — por isso uma conta DEDICADA a
+servidores, que possua o jogo, e nunca a sua pessoal. Sem a conta o DayZ continua "manual"
+no catalogo, com o motivo escrito ali.
+
 Detalhes de como a senha e tratada:
 
 - Ela so aparece na **primeira** instalacao. Depois disso o SteamCMD guarda o token em

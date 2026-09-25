@@ -269,7 +269,8 @@ Write-LfFile (Join-Path $BundleDir "broker.conf.env") (($lines -join "`n") + "`n
 $lines = @()
 foreach ($k in @("PROXMOX_URL", "PROXMOX_TOKEN", "PROXMOX_NODE", "PROXMOX_POOL", "PROXMOX_STORAGE",
                  "PROXMOX_TEMPLATE_STORAGE", "PROXMOX_TEMPLATE", "PROXMOX_BRIDGE", "PROXMOX_CERT_SHA256",
-                 "OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET", "OPNSENSE_CERT_SHA256", "OPNSENSE_WAN")) {
+                 "OPNSENSE_URL", "OPNSENSE_KEY", "OPNSENSE_SECRET", "OPNSENSE_CERT_SHA256", "OPNSENSE_WAN",
+                 "STEAM_USER", "STEAM_PASS")) {
     $v = Get-Cfg $sec $k
     if ($v -ne "") { $lines += "$k=" + (ConvertTo-BashQuoted $v) }
 }
