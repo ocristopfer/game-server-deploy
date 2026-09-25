@@ -495,7 +495,7 @@ MESSAGES: dict[str, str] = {
     "catalog.curated_vs_dynamic":
         "<strong>curated</strong>: comes from the <code>games/*.env</code> files in the "
         "repository. <strong>dynamic</strong>: added from here. A game that needs a Steam account "
-        "or its own installer (TeamSpeak) is still created by <code>deploy-game.ps1</code>.",
+        "or its own installer is still created by <code>deploy-game.ps1</code>.",
     "catalog.add_game": "Add game",
     "catalog.data_only":
         "Data only: the broker <strong>accepts no commands</strong>. Anything needing a special "

@@ -501,8 +501,8 @@ function Write-LfFile([string]$Path, [string]$Content) {
 }
 
 # Qual .sh mandar pro Proxmox: provision-game-lxc.sh (SteamCMD) pra quase todo jogo, ou o
-# que o proprio games/<jogo>.env pedir (ex.: teamspeak.env usa provision-teamspeak-lxc.sh,
-# que nao depende da Steam). Sem a chave, comportamento identico ao de sempre.
+# que o proprio games/<jogo>.env pedir em PROVISION_SCRIPT (instalador que nao depende da
+# Steam; hoje nenhum jogo usa). Sem a chave, comportamento identico ao de sempre.
 $ProvisionScript = Get-Cfg $game "PROVISION_SCRIPT" "provision-game-lxc.sh"
 Copy-Item (Join-Path $ScriptDir $ProvisionScript) (Join-Path $BundleDir $ProvisionScript)
 # As fases que rodam dentro do CT (SteamCMD, Wine/Proton, systemd) moram em lib/ct-phases.sh,

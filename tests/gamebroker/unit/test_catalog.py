@@ -48,14 +48,21 @@ def test_todos_os_env_do_repo_sao_lidos_sem_erro():
     assert "palworld" in games
 
 
-def test_palworld_e_criavel_e_dayz_e_teamspeak_nao():
+def test_palworld_e_criavel_e_dayz_nao():
     games, _ = cat.load_curated(RAIZ / "games")
     assert games["palworld"].creatable
     assert cat.Port(8211, "udp") in games["palworld"].ports
     assert not games["dayz"].creatable
     assert "conta Steam" in games["dayz"].reason
-    assert not games["teamspeak"].creatable
-    assert "instalador proprio" in games["teamspeak"].reason
+
+
+def test_instalador_proprio_nao_sai_pelo_broker():
+    """Nenhum jogo do repositorio usa PROVISION_SCRIPT hoje (o TeamSpeak saiu), mas a regra
+    continua: um instalador que nao e SteamCMD nao roda pelo ct-install.sh do broker."""
+    game = cat.game_from_env("voz", {"GAME_KEY": "voz", "STEAM_APP_ID": "1", "GAME_PORT": "9987",
+                                    "GAME_PORTS": "9987/udp", "PROVISION_SCRIPT": "provision-voz.sh"})
+    assert not game.creatable
+    assert "instalador proprio" in game.reason
 
 
 def test_hooks_do_curado_nunca_aparecem_na_api():
