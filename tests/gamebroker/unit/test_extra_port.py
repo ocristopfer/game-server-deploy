@@ -2,6 +2,7 @@
 (-ReliablePort), que ate entao ficava fixa em 8888 e impedia duas instancias no mesmo firewall."""
 from __future__ import annotations
 
+import dataclasses
 import re
 from pathlib import Path
 
@@ -20,21 +21,36 @@ def _values(env: str) -> dict[str, str]:
     return dict(re.findall(r"^([A-Z_]+)=(.*)$", env, re.M))
 
 
-@pytest.fixture
-def satisfactory():
+def _real_satisfactory() -> cat.Game:
     games, errors = cat.load_curated(RAIZ / "games")
     assert errors == []
     return games["satisfactory"]
 
 
+@pytest.fixture
+def satisfactory():
+    """O Satisfactory do repositorio, ANDANDO de porta. O curado fica na porta padrao por
+    decisao (PORTS_SHIFTABLE=0), mas o mecanismo da porta extra continua valendo para quem
+    ligar a faixa (um jogo dinamico, ou o curado se a decisao mudar): e ele que se testa aqui,
+    com os dados reais do jogo que o motivou."""
+    game = _real_satisfactory()
+    problem = cat.shiftable_problem(game.ports, game.game_port, game.query_port,
+                                    game.start_args, game.extra_port)
+    assert problem == "", "o .env continua PRONTO para andar de porta: so a chave esta desligada"
+    return dataclasses.replace(game, shiftable=True)
+
+
 # --- o Satisfactory de verdade (games/satisfactory.env) ----------------------------------------
 
-def test_satisfactory_declara_a_porta_confiavel_e_pode_andar_de_porta(satisfactory):
-    assert satisfactory.extra_port == 8888
-    assert satisfactory.shiftable
-    assert satisfactory.creatable
-    assert "{EXTRA_PORT}" in satisfactory.start_args
-    assert cat.Port(8888, "tcp") in satisfactory.ports
+def test_satisfactory_declara_a_porta_confiavel_e_fica_na_porta_padrao():
+    game = _real_satisfactory()
+    assert game.extra_port == 8888
+    assert not game.shiftable
+    assert game.creatable
+    assert "{EXTRA_PORT}" in game.start_args
+    assert cat.Port(8888, "tcp") in game.ports
+    ports = alocador.allocate_ports(game, set(), FAIXA)
+    assert alocador.port_from_base(ports, 8888) == 8888
 
 
 def test_satisfactory_recebe_tres_numeros_seguidos_da_faixa_com_o_protocolo_certo(satisfactory):

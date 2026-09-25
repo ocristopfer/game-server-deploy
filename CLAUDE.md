@@ -1015,8 +1015,11 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   carregamento). A porta extra (`EXTRA_PORT=`/`porta_extra`) existe por causa do Satisfactory: alem
   da principal (UDP+TCP) ele abre a 8888/TCP de mensagens confiaveis, que sem `-ReliablePort=` fica
   fixa e impede uma segunda instancia. O `ct-phases.sh` troca `{EXTRA_PORT}` como os outros dois; o
-  marcador sem porta extra e recusado (viraria `0`). Hoje: Dragonwilds, Satisfactory, Palworld e
-  Icarus. Enshrouded (portas no JSON) e DayZ (2303/2304 derivadas) nao. Ver `services/allocator.py`.
+  marcador sem porta extra e recusado (viraria `0`). **Nenhum curado usa a faixa, por decisao**
+  (`PORTS_SHIFTABLE=0` com o motivo escrito em cada `.env`): o servidor fica na porta que todo
+  mundo conhece, e uma segunda instancia do mesmo jogo e recusada. Os marcadores continuam no
+  `START_ARGS` (recebem a porta padrao), entao voltar e trocar um numero. Jogo dinamico ainda pode
+  andar de porta. Ver `services/allocator.py`.
   No `compare.sh` o Satisfactory "antes x depois" roda sem o marcador (`satisfactory-legado.env`):
   o instalador de referencia nao o conhece e deixaria `{EXTRA_PORT}` literal no ExecStart.
 - **Enderecos: o IP diz o CTID.** Painel `.100` (CT 300), broker `.101` (CT 301), jogos do
