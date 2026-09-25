@@ -31,7 +31,10 @@ export const gameSearch = {
         className: 'flash ok',
         text: `${found.name}: campos preenchidos. Confira antes de enviar.`,
       });
-      const notes = found.avisos.map((text) => createEl('p', { className: 'muted small', text }));
+      // `warnings`, que e o que a API manda. Com o nome antigo (`avisos`) o `.map` estourava
+      // DEPOIS de preencher os campos: a tela ficava sem o aviso de conferir e sem os
+      // avisos da sugestao (porta presumida, argumento cortado), e sem erro nenhum a vista.
+      const notes = (found.warnings || []).map((text) => createEl('p', { className: 'muted small', text }));
       show([notice, ...notes]);
     };
 

@@ -519,6 +519,7 @@ MESSAGES: dict[str, str] = {
     "catalog.game_port": "Game port",
     "catalog.query_port": "Query port",
     "catalog.extra_port": "Extra port",
+    "catalog.example": "e.g. {value}",
     "catalog.optional": "(optional)",
     "catalog.start_script": "Start script",
     "catalog.start_args": "Arguments",

@@ -3,26 +3,28 @@
 Gerado por tools/import-linuxgsm.py a partir do LinuxGSM (MIT). Para atualizar, rode
 o script e revise o diff: cada linha aqui e uma sugestao que o broker valida de novo.
 """
-SOURCE = "LinuxGSM (MIT), gerado em 2026-09-21"
+SOURCE = "LinuxGSM (MIT), gerado em 2026-09-25"
 
 SUGGESTIONS = (
     {'appid': 294420,
      'name': '7 Days to Die',
      'key': 'g-7-days-to-die',
-     'ports': '',
-     'game_port': 0,
+     'ports': '26900/udp',
+     'game_port': 26900,
      'query_port': 0,
      'extra_port': 0,
      'start_script': '7DaysToDieServer.x86_64',
      'start_args': '-quit -batchmode -nographics -dedicated',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (configfile): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (serverconfig.xml): o jogo a le '
+                  'desse arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (configfile): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 90,
      'name': 'Action Half-Life',
      'key': 'action-half-life',
@@ -34,11 +36,13 @@ SUGGESTIONS = (
      'start_args': '-game action -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map ahl_hydro '
                    '-maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/action',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 985050,
      'name': 'Action Source',
      'key': 'action-source',
@@ -50,13 +54,15 @@ SUGGESTIONS = (
      'start_args': '-game ahl2 -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'act_airport -maxplayers 20',
      'shiftable': True,
+     'config_path': '/opt/game/ahl2/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 2239530,
      'name': 'American Truck Simulator',
      'key': 'american-truck-simulator',
@@ -67,11 +73,13 @@ SUGGESTIONS = (
      'start_script': 'bin/linux_x64/amtrucks_server',
      'start_args': '-nosingle',
      'shiftable': False,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'instalar e ver o que ele abre.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 376030,
      'name': 'ARK Survival Evolved',
      'key': 'ark-survival-evolved',
@@ -83,109 +91,135 @@ SUGGESTIONS = (
      'start_args': 'TheIsland?AltSaveDirectoryName=TheIsland -Port={PORT} -QueryPort={QUERY_PORT} '
                    '-AutoManagedMods -Crossplay',
      'shiftable': True,
+     'config_path': '/opt/game/ShooterGame/Saved/Config/LinuxServer',
+     'config_files': ['/opt/game/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini'],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (MultiHome, PublicIPForEpic): nome do servidor, '
-                'senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 233780,
      'name': 'ARMA 3',
      'key': 'arma-3',
-     'ports': '2302/udp',
+     'ports': '2302/udp 2303/udp',
      'game_port': 2302,
-     'query_port': 0,
+     'query_port': 2303,
      'extra_port': 0,
      'start_script': 'arma3server_x64',
      'start_args': '-port={PORT} -autoinit -loadmissiontomemory',
-     'shiftable': True,
+     'shiftable': False,
+     'config_path': '/opt/game/cfg',
+     'config_files': [],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (ip, cfg, config, mod, servermod, bepath): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Porta de consulta 2303 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. Por '
+                  'isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 1874900,
      'name': 'Arma Reforger',
      'key': 'arma-reforger',
-     'ports': '',
-     'game_port': 0,
-     'query_port': 0,
+     'ports': '2001/udp 17777/udp',
+     'game_port': 2001,
+     'query_port': 17777,
      'extra_port': 0,
      'start_script': 'ArmaReforgerServer',
      'start_args': '-profile /opt/game/profiles/server -maxFPS 60',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (config): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': [],
+     'player_source': 'a2s',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server.json): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (config): nome do servidor, senha, IP e caminhos '
+                  'de config. Acrescente o que faltar.',
+                  'Porta de consulta 17777 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. '
+                  'Por isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 302550,
      'name': 'Assetto Corsa',
      'key': 'assetto-corsa',
-     'ports': '',
-     'game_port': 0,
+     'ports': '9600/udp 9600/tcp',
+     'game_port': 9600,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'acServer',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (c): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/cfg',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server_cfg.ini): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (c): nome do servidor, senha, IP e caminhos de '
+                  'config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 565060,
      'name': 'Avorion',
      'key': 'avorion',
-     'ports': '',
-     'game_port': 0,
+     'ports': '27000/udp',
+     'game_port': 27000,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'bin/bin/AvorionServer',
      'start_args': '--datapath /opt/game/galaxy',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (galaxy-name, ip): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server.ini): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (galaxy-name, ip): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 416880,
      'name': 'Ballistic Overkill',
      'key': 'ballistic-overkill',
-     'ports': '',
-     'game_port': 0,
-     'query_port': 0,
+     'ports': '27015/udp 27016/udp',
+     'game_port': 27015,
+     'query_port': 27016,
      'extra_port': 0,
      'start_script': 'BODS.x86_64',
      'start_args': '-batchmode -nographics -dedicated',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (configfile): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': [],
+     'player_source': 'a2s',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (config.txt): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (configfile): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Porta de consulta 27016 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. '
+                  'Por isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 1026340,
      'name': 'Barotrauma',
      'key': 'barotrauma',
-     'ports': '',
-     'game_port': 0,
-     'query_port': 0,
+     'ports': '27015/udp 27016/udp',
+     'game_port': 27015,
+     'query_port': 27016,
      'extra_port': 0,
      'start_script': 'DedicatedServer.exe',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (serversettings.xml): o jogo a le '
+                  'desse arquivo, e nao do comando.',
+                  'Porta de consulta 27016 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. '
+                  'Por isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 817300,
      'name': 'Base Defense',
      'key': 'base-defense',
@@ -196,11 +230,13 @@ SUGGESTIONS = (
      'start_script': 'hlds_run',
      'start_args': '-game bdef -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map pve_tomb -maxplayers 3',
      'shiftable': True,
+     'config_path': '/opt/game/bdef',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 805140,
      'name': 'BATTALION Legacy',
      'key': 'battalion-legacy',
@@ -211,11 +247,14 @@ SUGGESTIONS = (
      'start_script': 'Battalion/Binaries/Linux/BattalionServer-Linux-Shipping',
      'start_args': '-Port={PORT} -QueryPort={QUERY_PORT} -log',
      'shiftable': True,
+     'config_path': '/opt/game/Battalion/Saved/Config/LinuxServer',
+     'config_files': ['/opt/game/Battalion/Saved/Config/LinuxServer/Game.ini'],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (BroadcastIp): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 346680,
      'name': 'Black Mesa Deathmatch',
      'key': 'black-mesa-deathmatch',
@@ -227,13 +266,15 @@ SUGGESTIONS = (
      'start_args': '-game bms -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'dm_bounce -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/bms/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, sv_setsteamaccount, servercfgfile): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 228780,
      'name': 'Blade Symphony',
      'key': 'blade-symphony',
@@ -245,13 +286,15 @@ SUGGESTIONS = (
      'start_args': '-game /opt/game/berimbau -autoupdate -strictportbind -port {PORT} +clientport {EXTRA_PORT} '
                    '+tv_port 27020 +map duel_winter -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/berimbau/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, sv_setsteamaccount, servercfgfile): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 90,
      'name': 'BrainBread',
      'key': 'brainbread',
@@ -263,11 +306,13 @@ SUGGESTIONS = (
      'start_args': '-game brainbread -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map '
                    'bb_chp4_slaywatch -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/brainbread',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 475370,
      'name': 'BrainBread 2',
      'key': 'brainbread-2',
@@ -279,13 +324,15 @@ SUGGESTIONS = (
      'start_args': '-game brainbread2 -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'bba_barracks -maxplayers 20',
      'shiftable': True,
+     'config_path': '/opt/game/brainbread2/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, sv_setsteamaccount, servercfgfile): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 220070,
      'name': 'Chivalry Medieval Warfare',
      'key': 'chivalry-medieval-warfar',
@@ -296,11 +343,14 @@ SUGGESTIONS = (
      'start_script': 'Binaries/Linux/UDKGameServer-Linux',
      'start_args': 'AOCTD-Frigid_p?steamsockets -Port={PORT} -QueryPort={QUERY_PORT} -seekfreeloadingserver',
      'shiftable': True,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (multihome, configsubdir, log): nome do servidor, '
-                'senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 383410,
      'name': 'Codename CURE',
      'key': 'codename-cure',
@@ -312,45 +362,54 @@ SUGGESTIONS = (
      'start_args': '-game cure -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'cbe_bunker -maxplayers 6',
      'shiftable': True,
+     'config_path': '/opt/game/cure/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 748090,
      'name': 'Colony Survival',
      'key': 'colony-survival',
-     'ports': '',
-     'game_port': 0,
+     'ports': '27004/udp',
+     'game_port': 27004,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'colonyserver.x86_64',
      'start_args': '-batchmode -nographics',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (server.config): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/gamedata/settings',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (colserver.json): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (server.config): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 1963720,
      'name': 'Core Keeper',
      'key': 'core-keeper',
-     'ports': '1234/udp',
+     'ports': '1234/udp 1235/udp',
      'game_port': 1234,
-     'query_port': 0,
+     'query_port': 1235,
      'extra_port': 0,
      'start_script': 'CoreKeeperServer',
      'start_args': '-batchmode -port {PORT}',
-     'shiftable': True,
-     'warnings': ['Removi do comando o que o painel nao passa (ip, datapath, logfile): nome do servidor, senha, IP '
-                'e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'shiftable': False,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'a2s',
+     'warnings': ['Removi do comando o que o painel nao passa (ip, datapath, logfile): nome do servidor, senha, '
+                  'IP e caminhos de config. Acrescente o que faltar.',
+                  'Porta de consulta 1235 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. Por '
+                  'isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 90,
      'name': 'Counter-Strike 1.6',
      'key': 'counter-strike-1-6',
@@ -362,11 +421,13 @@ SUGGESTIONS = (
      'start_args': '-game cstrike -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map de_dust2 '
                    '-maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/cstrike',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 730,
      'name': 'Counter-Strike 2',
      'key': 'counter-strike-2',
@@ -377,11 +438,13 @@ SUGGESTIONS = (
      'start_script': 'game/cs2.sh',
      'start_args': '-dedicated -port {PORT} -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/game/csgo/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, authkey, exec): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 90,
      'name': 'Counter-Strike Condition Zero',
      'key': 'counter-strike-condition',
@@ -393,11 +456,13 @@ SUGGESTIONS = (
      'start_args': '-game czero -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map de_dust2 -maxplayers '
                    '16',
      'shiftable': True,
+     'config_path': '/opt/game/czero',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 740,
      'name': 'Counter-Strike Global Offensive',
      'key': 'counter-strike-global-of',
@@ -410,14 +475,16 @@ SUGGESTIONS = (
                    '-tickrate 64 +map de_mirage -maxplayers_override 16 +mapgroup mg_active +game_type 0 '
                    '+game_mode 0 +sv_game_mode_flags 0 +sv_skirmish_id 0 -nobreakpad',
      'shiftable': True,
+     'config_path': '/opt/game/csgo/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, sv_setsteamaccount, servercfgfile, '
-                'host_workshop_collection, workshop_start_map, authkey): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'host_workshop_collection, workshop_start_map, authkey): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 232330,
      'name': 'Counter-Strike Source',
      'key': 'counter-strike-source',
@@ -429,28 +496,32 @@ SUGGESTIONS = (
      'start_args': '-game cstrike -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'de_dust2 -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/cstrike/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, sv_setsteamaccount, servercfgfile): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 1670340,
      'name': 'Craftopia',
      'key': 'craftopia',
-     'ports': '',
-     'game_port': 0,
+     'ports': '6587/udp',
+     'game_port': 6587,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'Craftopia.x86_64',
      'start_args': '-batchmode -showlogs',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': ['/opt/game/ServerSetting.ini'],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (ServerSetting.ini): o jogo a le '
+                  'desse arquivo, e nao do comando.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 90,
      'name': 'Day of Defeat',
      'key': 'day-of-defeat',
@@ -462,11 +533,13 @@ SUGGESTIONS = (
      'start_args': '-game dod -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map dod_Anzio -maxplayers '
                    '16',
      'shiftable': True,
+     'config_path': '/opt/game/dod',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 232290,
      'name': 'Day of Defeat Source',
      'key': 'day-of-defeat-source',
@@ -478,13 +551,15 @@ SUGGESTIONS = (
      'start_args': '-game dod -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'dod_Anzio -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/dod/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 1088320,
      'name': 'Day of Dragons',
      'key': 'day-of-dragons',
@@ -495,11 +570,14 @@ SUGGESTIONS = (
      'start_script': 'Dragons/Binaries/Linux/DragonsServer-Linux-Shipping',
      'start_args': '-Port={PORT} -QueryPort={QUERY_PORT} -log',
      'shiftable': True,
+     'config_path': '/opt/game/Dragons/Saved/Config/LinuxServer',
+     'config_files': ['/opt/game/Dragons/Saved/Config/LinuxServer/Game.ini'],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (MultiHome, SteamServerName): nome do servidor, '
-                'senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 462310,
      'name': 'Day of Infamy',
      'key': 'day-of-infamy',
@@ -511,28 +589,35 @@ SUGGESTIONS = (
      'start_args': '-game doi -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 -tickrate 64 '
                    '+map bastogne stronghold -maxplayers 32 -workshop -norestart',
      'shiftable': True,
+     'config_path': '/opt/game/doi/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 223350,
      'name': 'DayZ',
      'key': 'dayz',
-     'ports': '2302/udp',
+     'ports': '2302/udp 27016/udp',
      'game_port': 2302,
-     'query_port': 0,
+     'query_port': 27016,
      'extra_port': 0,
      'start_script': 'DayZServer',
      'start_args': '-port={PORT} -limitFPS=60 -dologs -adminlog -freezeCheck',
-     'shiftable': True,
+     'shiftable': False,
+     'config_path': '/opt/game/cfg',
+     'config_files': [],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (ip, config, mod, servermod, bepath): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Porta de consulta 27016 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. '
+                  'Por isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 90,
      'name': 'Deathmatch Classic',
      'key': 'deathmatch-classic',
@@ -543,28 +628,32 @@ SUGGESTIONS = (
      'start_script': 'hlds_run',
      'start_args': '-game dmc -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map dcdm5 -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/dmc',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 343050,
      'name': 'Don t Starve Together',
      'key': 'don-t-starve-together',
-     'ports': '',
-     'game_port': 0,
+     'ports': '10999/udp',
+     'game_port': 10999,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'bin/dontstarve_dedicated_server_nullrenderer',
      'start_args': '-conf_dir DoNotStarveTogether -cluster Cluster_1 -shard Master',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (persistent_storage_root): nome do servidor, senha, '
-                'IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server.ini): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (persistent_storage_root): nome do servidor, '
+                  'senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 317800,
      'name': 'Double Action Boogaloo',
      'key': 'double-action-boogaloo',
@@ -576,13 +665,15 @@ SUGGESTIONS = (
      'start_args': '-strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map da_rooftops '
                    '-maxplayers 10',
      'shiftable': True,
+     'config_path': '/opt/game/dab/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 17585,
      'name': 'Dystopia',
      'key': 'dystopia',
@@ -594,30 +685,34 @@ SUGGESTIONS = (
      'start_args': '-game /opt/game/dystopia -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port '
                    '27020 +map dys_broadcast -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/dystopia/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, sv_setsteamaccount, servercfgfile): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 739590,
      'name': 'Eco',
      'key': 'eco',
-     'ports': '',
-     'game_port': 0,
+     'ports': '3000/udp',
+     'game_port': 3000,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'EcoServer',
      'start_args': '-nogui',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (userToken): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/Configs',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (Network.eco): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (userToken): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 460040,
      'name': 'Empires Mod',
      'key': 'empires-mod',
@@ -629,13 +724,15 @@ SUGGESTIONS = (
      'start_args': '-game empires -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'con_district402 -maxplayers 62',
      'shiftable': True,
+     'config_path': '/opt/game/empires/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 1948160,
      'name': 'Euro Truck Simulator 2',
      'key': 'euro-truck-simulator-2',
@@ -646,11 +743,13 @@ SUGGESTIONS = (
      'start_script': 'bin/linux_x64/eurotrucks2_server',
      'start_args': '-nosingle',
      'shiftable': False,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'instalar e ver o que ele abre.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 295230,
      'name': 'Fistful of Frags',
      'key': 'fistful-of-frags',
@@ -662,13 +761,15 @@ SUGGESTIONS = (
      'start_args': '-game fof -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'fof_depot -maxplayers 20',
      'shiftable': True,
+     'config_path': '/opt/game/fof/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 4020,
      'name': 'Garrys Mod',
      'key': 'garrys-mod',
@@ -680,13 +781,15 @@ SUGGESTIONS = (
      'start_args': '-game garrysmod -strictportbind -port {PORT} -tickrate 66 +clientport {EXTRA_PORT} +tv_port '
                    '27020 +gamemode sandbox +map gm_construct -maxplayers 16 -disableluarefresh',
      'shiftable': True,
+     'config_path': '/opt/game/garrysmod/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, host_workshop_collection, sv_setsteamaccount, '
-                'servercfgfile): nome do servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servercfgfile): nome do servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 232370,
      'name': 'Half-Life 2 Deathmatch',
      'key': 'half-life-2-deathmatch',
@@ -698,13 +801,15 @@ SUGGESTIONS = (
      'start_args': '-game hl2mp -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'dm_lockdown -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/hl2mp/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 90,
      'name': 'Half-Life Deathmatch',
      'key': 'half-life-deathmatch',
@@ -716,11 +821,13 @@ SUGGESTIONS = (
      'start_args': '-game valve -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map crossfire -maxplayers '
                    '16',
      'shiftable': True,
+     'config_path': '/opt/game/valve',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 255470,
      'name': 'Half-Life Deathmatch Source',
      'key': 'half-life-deathmatch-sou',
@@ -732,13 +839,15 @@ SUGGESTIONS = (
      'start_args': '-game hl1mp -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'crossfire -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/hl1mp/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 2728330,
      'name': 'Humanitz',
      'key': 'humanitz',
@@ -749,11 +858,14 @@ SUGGESTIONS = (
      'start_script': 'HumanitZServer/Binaries/Linux/HumanitZServer-Linux-Shipping',
      'start_args': '-log -port={PORT} -queryport={QUERY_PORT}',
      'shiftable': True,
+     'config_path': '/opt/game/HumanitZServer',
+     'config_files': ['/opt/game/HumanitZServer/GameServerSettings.ini'],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (steamservername): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 405100,
      'name': 'Hurtworld',
      'key': 'hurtworld',
@@ -764,11 +876,14 @@ SUGGESTIONS = (
      'start_script': 'Hurtworld.x86_64',
      'start_args': '-batchmode -nographics {PORT} nullius',
      'shiftable': False,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (logfile, exec, comando encadeado): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 1045940,
      'name': 'HYPERCHARGE Unboxed',
      'key': 'hypercharge-unboxed',
@@ -779,11 +894,13 @@ SUGGESTIONS = (
      'start_script': 'Unboxed/Binaries/Linux/UnboxedServer-Linux-Shipping',
      'start_args': 'KidsBedroom?MaxPlayers=8 -Port={PORT} -QueryPort={QUERY_PORT}',
      'shiftable': True,
-     'warnings': ['Removi do comando o que o painel nao passa (ServerName): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/Unboxed/Saved/Config/LinuxServer',
+     'config_files': ['/opt/game/Unboxed/Saved/Config/LinuxServer/GameUserSettings.ini'],
+     'player_source': 'log',
+     'warnings': ['Removi do comando o que o painel nao passa (ServerName): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 237410,
      'name': 'Insurgency',
      'key': 'insurgency',
@@ -795,13 +912,15 @@ SUGGESTIONS = (
      'start_args': '-game insurgency -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 '
                    '-tickrate 64 +map embassy_coop checkpoint -maxplayers 32 -workshop -norestart',
      'shiftable': True,
+     'config_path': '/opt/game/insurgency/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, sv_setsteamaccount, servercfgfile): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 581330,
      'name': 'Insurgency Sandstorm',
      'key': 'insurgency-sandstorm',
@@ -813,13 +932,16 @@ SUGGESTIONS = (
      'start_args': 'Oilfield?Scenario=Scenario_Refinery_Push_Security?MaxPlayers=28 -Port={PORT} '
                    '-QueryPort={QUERY_PORT} -Rcon -RconListenPort=27015 -log',
      'shiftable': True,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (hostname, RconPassword, GSLTToken): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (rconport) ficam so dentro do container, de proposito: nao entram no '
-                'firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (rconport) ficam so dentro do container, de proposito: nao entram no '
+                  'firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 673990,
      'name': 'IOSoccer',
      'key': 'iosoccer',
@@ -831,13 +953,15 @@ SUGGESTIONS = (
      'start_args': '-game iosoccer -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    '8v8_vienna -maxplayers 32',
      'shiftable': True,
+     'config_path': '/opt/game/iosoccer/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 869800,
      'name': 'Jabroni Brawl Episode 3',
      'key': 'jabroni-brawl-episode-3',
@@ -849,13 +973,15 @@ SUGGESTIONS = (
      'start_args': '-game jbep3 -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'crossfire -maxplayers 24',
      'shiftable': True,
+     'config_path': '/opt/game/jbep3/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 6030,
      'name': 'Jedi Knight II Jedi Outcast',
      'key': 'jedi-knight-ii-jedi-outc',
@@ -867,75 +993,88 @@ SUGGESTIONS = (
      'start_args': '+set sv_punkbuster 0 +set fs_basepath /opt/game +set net_ip +set net_port {PORT} +map '
                    'ffa_bespin',
      'shiftable': True,
+     'config_path': '/opt/game/GameData',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (exec): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 261140,
      'name': 'Just Cause 2',
      'key': 'just-cause-2',
-     'ports': '',
-     'game_port': 0,
+     'ports': '7777/udp',
+     'game_port': 7777,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'Jcmp-Server',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (config.lua): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 619960,
      'name': 'Just Cause 3',
      'key': 'just-cause-3',
-     'ports': '',
-     'game_port': 0,
-     'query_port': 0,
+     'ports': '4200/udp 4201/udp',
+     'game_port': 4200,
+     'query_port': 4201,
      'extra_port': 0,
      'start_script': 'Server',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': ['/opt/game/config.json'],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (config.json): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Porta de consulta 4201 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. Por '
+                  'isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 215360,
      'name': 'Killing Floor',
      'key': 'killing-floor',
-     'ports': '',
-     'game_port': 0,
+     'ports': '7707/udp',
+     'game_port': 7707,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'System/ucc-bin',
      'start_args': 'server KF-BioticsLab.rom?game=KFmod.KFGameType?VACSecured=true',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (nohomedir): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/System',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (Default.ini): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (nohomedir): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 232130,
      'name': 'Killing Floor 2',
      'key': 'killing-floor-2',
-     'ports': '27015/udp',
-     'game_port': 0,
+     'ports': '7777/udp 27015/udp',
+     'game_port': 7777,
      'query_port': 27015,
      'extra_port': 0,
      'start_script': 'Binaries/Win64/KFGameSteamServer.bin.x86_64',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (QueryPort): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'a2s',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (LinuxServer-KFGame.ini): o jogo a '
+                  'le desse arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (QueryPort): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 222840,
      'name': 'Left 4 Dead',
      'key': 'left-4-dead',
@@ -947,11 +1086,13 @@ SUGGESTIONS = (
      'start_args': '-game left4dead -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map '
                    'l4d_hospital01_apartment -maxplayers 8',
      'shiftable': True,
+     'config_path': '/opt/game/left4dead/cfg',
+     'config_files': ['/opt/game/left4dead/cfg/server.cfg'],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 222860,
      'name': 'Left 4 Dead 2',
      'key': 'left-4-dead-2',
@@ -963,11 +1104,13 @@ SUGGESTIONS = (
      'start_args': '-game left4dead2 -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map c5m1_waterfront '
                    '-maxplayers 8',
      'shiftable': True,
+     'config_path': '/opt/game/left4dead2/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 1136190,
      'name': 'Military Conflict Vietnam',
      'key': 'military-conflict-vietna',
@@ -979,13 +1122,15 @@ SUGGESTIONS = (
      'start_args': '-game vietnam -usercon -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 '
                    '-tickrate 64 +map mcv_siege -maxplayers_override 32 +game_type 0 +game_mode 0 -nobreakpad',
      'shiftable': True,
+     'config_path': '/opt/game/vietnam/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 629800,
      'name': 'MORDHAU',
      'key': 'mordhau',
@@ -997,11 +1142,13 @@ SUGGESTIONS = (
      'start_args': 'Mordhau FFA_ThePit -Port={PORT} -BeaconPort={EXTRA_PORT} -QueryPort={QUERY_PORT} '
                    '-GameIni=/opt/game/Mordhau/Saved/Config/LinuxServer/Game.ini -log',
      'shiftable': True,
-     'warnings': ['Removi do comando o que o painel nao passa (MultiHome): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/Mordhau/Saved/Config/LinuxServer',
+     'config_files': ['/opt/game/Mordhau/Saved/Config/LinuxServer/Game.ini'],
+     'player_source': 'log',
+     'warnings': ['Removi do comando o que o painel nao passa (MultiHome): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 90,
      'name': 'Natural Selection',
      'key': 'natural-selection',
@@ -1012,15 +1159,17 @@ SUGGESTIONS = (
      'start_script': 'hlds_run',
      'start_args': '-game ns -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map ns_hera -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/ns',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 4940,
      'name': 'Natural Selection 2',
      'key': 'natural-selection-2',
-     'ports': '27015/udp 27031/udp',
+     'ports': '27015/udp 27031/tcp',
      'game_port': 27015,
      'query_port': 0,
      'extra_port': 27031,
@@ -1028,28 +1177,32 @@ SUGGESTIONS = (
      'start_args': '-port {PORT} -webadmin -webuser admin -webport 8080 -startmodserver -modserverport '
                    '{EXTRA_PORT} -map ns2_summit -limit 20 -speclimit 5 -logdir /opt/game/logs',
      'shiftable': True,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (name, webdomain, webpassword, config_path, '
-                'modstorage): nome do servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (httpport) ficam so dentro do container, de proposito: nao entram no '
-                'firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'modstorage): nome do servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (httpport) ficam so dentro do container, de proposito: nao entram no '
+                  'firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 1169370,
      'name': 'Necesse',
      'key': 'necesse',
-     'ports': '',
-     'game_port': 0,
+     'ports': '14159/udp',
+     'game_port': 14159,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'StartServer-nogui.sh',
      'start_args': '-localdir -world MyWorld',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/cfg',
+     'config_files': ['/opt/game/cfg/server.cfg'],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server.cfg): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 317670,
      'name': 'No More Room in Hell',
      'key': 'no-more-room-in-hell',
@@ -1061,13 +1214,15 @@ SUGGESTIONS = (
      'start_args': '-game nmrih -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'nmo_broadway -maxplayers 8',
      'shiftable': True,
+     'config_path': '/opt/game/nmrih/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, sv_setsteamaccount, servercfgfile): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 313900,
      'name': 'NS2 Combat',
      'key': 'ns2-combat',
@@ -1078,13 +1233,15 @@ SUGGESTIONS = (
      'start_script': 'ia32/ns2combatserver_linux32',
      'start_args': '-port {PORT} -webadmin -webuser admin -webport 8080 -map co_core -limit 24',
      'shiftable': True,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (name, webdomain, webpassword, config_path, '
-                'modstorage, mods): nome do servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (httpport) ficam so dentro do container, de proposito: nao entram no '
-                'firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'modstorage, mods): nome do servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (httpport) ficam so dentro do container, de proposito: nao entram no '
+                  'firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 111710,
      'name': 'Nuclear Dawn',
      'key': 'nuclear-dawn',
@@ -1096,28 +1253,32 @@ SUGGESTIONS = (
      'start_args': '-game nucleardawn -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'hydro -maxplayers 32',
      'shiftable': True,
+     'config_path': '/opt/game/nucleardawn/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 1204170,
      'name': 'Onset',
      'key': 'onset',
-     'ports': '',
-     'game_port': 0,
+     'ports': '7777/udp',
+     'game_port': 7777,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'OnsetServer',
      'start_args': '--config /opt/game/server_config.json',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': ['/opt/game/server_config.json'],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server_config.json): o jogo a le '
+                  'desse arquivo, e nao do comando.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 950900,
      'name': 'Operation Harsh Doorstop',
      'key': 'operation-harsh-doorstop',
@@ -1128,13 +1289,16 @@ SUGGESTIONS = (
      'start_script': 'HarshDoorstop/Binaries/Linux/HarshDoorstopServer-Linux-Shipping',
      'start_args': 'AAS-TestMap?MaxPlayers=16 -Port={PORT} -QueryPort={QUERY_PORT} -RconPort=7778 -log',
      'shiftable': True,
+     'config_path': '/opt/game/HarshDoorstop/Saved/Config/LinuxServer',
+     'config_files': ['/opt/game/HarshDoorstop/Saved/Config/LinuxServer/Game.ini'],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (MultiHome, SteamServerName): nome do servidor, '
-                'senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (rconport) ficam so dentro do container, de proposito: nao entram no '
-                'firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (rconport) ficam so dentro do container, de proposito: nao entram no '
+                  'firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 90,
      'name': 'Opposing Force',
      'key': 'opposing-force',
@@ -1146,11 +1310,13 @@ SUGGESTIONS = (
      'start_args': '-game gearbox -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map op4_bootcamp '
                    '-maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/gearbox',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 2394010,
      'name': 'Palworld',
      'key': 'palworld',
@@ -1162,26 +1328,30 @@ SUGGESTIONS = (
      'start_args': '-publiclobby -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS -port={PORT} '
                    '-queryport={QUERY_PORT}',
      'shiftable': True,
-     'warnings': ['Removi do comando o que o painel nao passa (servername): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/Pal/Saved/Config/LinuxServer',
+     'config_files': ['/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini'],
+     'player_source': 'log',
+     'warnings': ['Removi do comando o que o painel nao passa (servername): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 622970,
      'name': 'Pavlov VR',
      'key': 'pavlov-vr',
-     'ports': '7777/udp',
+     'ports': '7777/udp 7777/tcp',
      'game_port': 7777,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'Pavlov/Binaries/Linux/PavlovServer-Linux-Shipping',
      'start_args': 'Pavlov datacenter -Port={PORT} -log',
      'shiftable': True,
-     'warnings': ['Removi do comando o que o painel nao passa (MultiHome): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/Pavlov/Saved/Config/LinuxServer',
+     'config_files': ['/opt/game/Pavlov/Saved/Config/LinuxServer/Game.ini'],
+     'player_source': 'log',
+     'warnings': ['Removi do comando o que o painel nao passa (MultiHome): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 17575,
      'name': 'Pirates Vikings Knights II',
      'key': 'pirates-vikings-knights',
@@ -1193,64 +1363,78 @@ SUGGESTIONS = (
      'start_args': '-game pvkii -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'bt_island -maxplayers 24',
      'shiftable': True,
+     'config_path': '/opt/game/pvkii/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 332670,
      'name': 'Project Cars',
      'key': 'project-cars',
-     'ports': '',
-     'game_port': 0,
-     'query_port': 0,
+     'ports': '27015/udp 27016/udp',
+     'game_port': 27015,
+     'query_port': 27016,
      'extra_port': 0,
      'start_script': 'DedicatedServerCmd',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (config): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': [],
+     'player_source': 'a2s',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server.cfg): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (config): nome do servidor, senha, IP e caminhos '
+                  'de config. Acrescente o que faltar.',
+                  'Porta de consulta 27016 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. '
+                  'Por isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 413770,
      'name': 'Project Cars 2',
      'key': 'project-cars-2',
-     'ports': '',
-     'game_port': 0,
-     'query_port': 0,
+     'ports': '27015/udp 27016/udp',
+     'game_port': 27015,
+     'query_port': 27016,
      'extra_port': 0,
      'start_script': 'DedicatedServerCmd.elf',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (config): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': [],
+     'player_source': 'a2s',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (config_sample/server.cfg): o jogo a '
+                  'le desse arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (config): nome do servidor, senha, IP e caminhos '
+                  'de config. Acrescente o que faltar.',
+                  'Porta de consulta 27016 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. '
+                  'Por isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 380870,
      'name': 'Project Zomboid',
      'key': 'project-zomboid',
-     'ports': '',
-     'game_port': 0,
+     'ports': '16261/udp',
+     'game_port': 16261,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'start-server.sh',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (servername): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server.ini): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (servername): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 2210,
      'name': 'Quake 4',
      'key': 'quake-4',
@@ -1261,43 +1445,49 @@ SUGGESTIONS = (
      'start_script': 'quake4-dedicated',
      'start_args': '+set sv_punkbuster 0 +set fs_basepath /opt/game +set net_port {PORT}',
      'shiftable': True,
+     'config_path': '/opt/game/q4base',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (exec): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 349090,
      'name': 'Quake Live',
      'key': 'quake-live',
-     'ports': '',
-     'game_port': 0,
+     'ports': '27960/udp',
+     'game_port': 27960,
      'query_port': 0,
      'extra_port': 0,
      'start_script': '',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (exec): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).']},
+     'config_path': '/opt/game/baseq3',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server.cfg): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (exec): nome do servidor, senha, IP e caminhos de '
+                  'config. Acrescente o que faltar.']},
     {'appid': 223250,
      'name': 'Red Orchestra Ostfront 41-45',
      'key': 'red-orchestra-ostfront-4',
-     'ports': '',
-     'game_port': 0,
+     'ports': '7757/udp',
+     'game_port': 7757,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'system/ucc-bin',
      'start_args': 'server RO-Arad.rom?game=ROGame.ROTeamGame?VACSecured=true',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (nohomedir): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/system',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (default.ini): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (nohomedir): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 90,
      'name': 'Ricochet',
      'key': 'ricochet',
@@ -1309,26 +1499,30 @@ SUGGESTIONS = (
      'start_args': '-game ricochet -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map rc_arena '
                    '-maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/ricochet',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 339010,
      'name': 'Rising World',
      'key': 'rising-world',
-     'ports': '',
-     'game_port': 0,
+     'ports': '4255/udp',
+     'game_port': 4255,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'RisingWorldServer.x64',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': ['/opt/game/server.properties'],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server.properties): o jogo a le '
+                  'desse arquivo, e nao do comando.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 258550,
      'name': 'Rust',
      'key': 'rust',
@@ -1341,15 +1535,18 @@ SUGGESTIONS = (
                    '+server.tickrate 30 +server.gamemode vanilla +server.maxplayers 50 +server.worldsize 3000 '
                    '+server.saveinterval 300 +rcon.port 28016',
      'shiftable': True,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (app.listenip, server.ip, server.hostname, '
-                'server.identity, server.level, server.seed, server.salt, rcon.web, rcon.ip, rcon.password, '
-                'server.tags, logfile): nome do servidor, senha, IP e caminhos de config. Acrescente o que '
-                'faltar.',
-                'Portas de administracao (rconport, appport) ficam so dentro do container, de proposito: nao '
-                'entram no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'server.identity, server.level, server.seed, server.salt, rcon.web, rcon.ip, rcon.password, '
+                  'server.tags, logfile): nome do servidor, senha, IP e caminhos de config. Acrescente o que '
+                  'faltar.',
+                  'Portas de administracao (rconport, appport) ficam so dentro do container, de proposito: nao '
+                  'entram no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 1690800,
      'name': 'Satisfactory',
      'key': 'satisfactory',
@@ -1361,22 +1558,26 @@ SUGGESTIONS = (
      'start_args': 'FactoryGame -Port={PORT} -ServerQueryPort={QUERY_PORT} -BeaconPort=15000 -ReliablePort=8888 '
                    '-log',
      'shiftable': False,
-     'warnings': ['Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/FactoryGame/Saved/Config/LinuxServer',
+     'config_files': ['/opt/game/FactoryGame/Saved/Config/LinuxServer/GameUserSettings.ini'],
+     'player_source': 'log',
+     'warnings': ['O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 996560,
      'name': 'SCP Secret Laboratory',
      'key': 'scp-secret-laboratory',
-     'ports': '7777/udp',
+     'ports': '7777/tcp',
      'game_port': 7777,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'LocalAdmin',
      'start_args': '{PORT}',
      'shiftable': True,
-     'warnings': ['Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 786920,
      'name': 'SCP Secret Laboratory ServerMod',
      'key': 'scp-secret-laboratory-se',
@@ -1387,30 +1588,35 @@ SUGGESTIONS = (
      'start_script': 'LocalAdmin',
      'start_args': '{PORT}',
      'shiftable': True,
-     'warnings': ['Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Protocolo UDP presumido em parte das portas: confira (query e TCP em alguns jogos).',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 638500,
      'name': 'Soldat',
      'key': 'soldat',
-     'ports': '',
-     'game_port': 0,
+     'ports': '23073/udp',
+     'game_port': 23073,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'soldatserver',
      'start_args': '-m mapslist.txt -c soldat.ini',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (b): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': ['/opt/game/soldat.ini'],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (soldat.ini): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (b): nome do servidor, senha, IP e caminhos de '
+                  'config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 3017300,
      'name': 'Soulmask',
      'key': 'soulmask',
-     'ports': '8777/udp 27015/udp',
+     'ports': '8777/udp 8777/tcp 27015/udp',
      'game_port': 8777,
      'query_port': 27015,
      'extra_port': 0,
@@ -1418,13 +1624,16 @@ SUGGESTIONS = (
      'start_args': 'WS Level01_Main -Port={PORT} -EchoPort=18888 -QueryPort={QUERY_PORT} -MaxPlayers=50 '
                    '-initbackup -backupinterval=15 -UTF8Output -forcepassthrough -log',
      'shiftable': True,
-     'warnings': ['Removi do comando o que o painel nao passa (MultiHome, SteamServerName, PSW, adminpsw): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (telnetport) ficam so dentro do container, de proposito: nao entram no '
-                'firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'a2s',
+     'warnings': ['Removi do comando o que o painel nao passa (MultiHome, SteamServerName, PSW, adminpsw): nome '
+                  'do servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (telnetport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 244310,
      'name': 'SourceForts Classic',
      'key': 'sourceforts-classic',
@@ -1436,13 +1645,15 @@ SUGGESTIONS = (
      'start_args': '-game sfclassic -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'sf_astrodome -maxplayers 32',
      'shiftable': True,
+     'config_path': '/opt/game/sfclassic/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 403240,
      'name': 'Squad',
      'key': 'squad',
@@ -1453,11 +1664,13 @@ SUGGESTIONS = (
      'start_script': 'SquadGameServer.sh',
      'start_args': '-Port={PORT} -QueryPort={QUERY_PORT}',
      'shiftable': True,
-     'warnings': ['Removi do comando o que o painel nao passa (MultiHome): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/SquadGame/ServerConfig',
+     'config_files': ['/opt/game/SquadGame/ServerConfig/Server.cfg'],
+     'player_source': 'log',
+     'warnings': ['Removi do comando o que o painel nao passa (MultiHome): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 746200,
      'name': 'Squad 44',
      'key': 'squad-44',
@@ -1468,41 +1681,51 @@ SUGGESTIONS = (
      'start_script': 'PostScriptumServer.sh',
      'start_args': '-Port={PORT} -QueryPort={QUERY_PORT} -log',
      'shiftable': True,
-     'warnings': ['Removi do comando o que o painel nao passa (MultiHome): nome do servidor, senha, IP e caminhos '
-                'de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/PostScriptum/ServerConfig',
+     'config_files': ['/opt/game/PostScriptum/ServerConfig/Server.cfg'],
+     'player_source': 'a2s',
+     'warnings': ['Removi do comando o que o painel nao passa (MultiHome): nome do servidor, senha, IP e '
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Protocolo UDP presumido em parte das portas: confira (query e TCP em alguns jogos).',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 211820,
      'name': 'Starbound',
      'key': 'starbound',
-     'ports': '',
-     'game_port': 0,
+     'ports': '21025/udp',
+     'game_port': 21025,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'linux/starbound_server',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/storage',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (starbound_server.config): o jogo a '
+                  'le desse arquivo, e nao do comando.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 600760,
      'name': 'Stationeers',
      'key': 'stationeers',
-     'ports': '',
-     'game_port': 0,
-     'query_port': 0,
+     'ports': '27016/udp 27015/udp',
+     'game_port': 27016,
+     'query_port': 27015,
      'extra_port': 0,
      'start_script': 'rocketstation_DedicatedServer.x86_64',
      'start_args': '-LOAD moon_save Moon',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (setting.xml): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Porta de consulta 27015 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. '
+                  'Por isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 974130,
      'name': 'StickyBots',
      'key': 'stickybots',
@@ -1513,26 +1736,34 @@ SUGGESTIONS = (
      'start_script': 'blank1/Binaries/Linux/blank1Server-Linux-Shipping',
      'start_args': '-Port={PORT} -QueryPort={QUERY_PORT} -startup_map StationKappa',
      'shiftable': True,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (MultiHome, server_name): nome do servidor, senha, '
-                'IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'IP e caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 1502300,
      'name': 'Survive the Nights',
      'key': 'survive-the-nights',
-     'ports': '',
-     'game_port': 0,
-     'query_port': 0,
+     'ports': '7950/udp 7951/udp',
+     'game_port': 7950,
+     'query_port': 7951,
      'extra_port': 0,
      'start_script': 'Server_Linux_x64',
      'start_args': '-mc 20 -r 0',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/Config',
+     'config_files': [],
+     'player_source': 'a2s',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (ServerConfig.txt): o jogo a le '
+                  'desse arquivo, e nao do comando.',
+                  'Porta de consulta 7951 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. Por '
+                  'isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 276060,
      'name': 'Sven Co-op',
      'key': 'sven-co-op',
@@ -1544,11 +1775,13 @@ SUGGESTIONS = (
      'start_args': '-game svencoop -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map svencoop1 '
                    '+maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/svencoop',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 232250,
      'name': 'Team Fortress 2',
      'key': 'team-fortress-2',
@@ -1560,13 +1793,15 @@ SUGGESTIONS = (
      'start_args': '-game tf -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'cp_badlands -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/tf/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, sv_setsteamaccount, servercfgfile): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 3557020,
      'name': 'Team Fortress 2 Classified',
      'key': 'team-fortress-2-classifi',
@@ -1578,13 +1813,15 @@ SUGGESTIONS = (
      'start_args': '-game tf2classified -tf_path /opt/game/tf2 -strictportbind -port {PORT} +clientport '
                    '{EXTRA_PORT} +tv_port 27020 +map 4koth_frigid -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/tf2classified/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, sv_setsteamaccount, servercfgfile): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 90,
      'name': 'Team Fortress Classic',
      'key': 'team-fortress-classic',
@@ -1595,45 +1832,51 @@ SUGGESTIONS = (
      'start_script': 'hlds_run',
      'start_args': '-game tfc -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map dustbowl -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/tfc',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 380840,
      'name': 'Teeworlds',
      'key': 'teeworlds',
-     'ports': '',
-     'game_port': 0,
+     'ports': '8303/udp',
+     'game_port': 8303,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'tw/teeworlds_srv',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (f): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/tw',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (server.cfg): o jogo a le desse '
+                  'arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (f): nome do servidor, senha, IP e caminhos de '
+                  'config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 105600,
      'name': 'Terraria',
      'key': 'terraria',
-     'ports': '',
-     'game_port': 0,
+     'ports': '7777/tcp',
+     'game_port': 7777,
      'query_port': 0,
      'extra_port': 0,
      'start_script': 'TerrariaServer',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Este jogo guarda as portas no proprio arquivo de configuracao: preencha as portas depois de '
-                'instalar e ver o que ele abre.',
-                'Removi do comando o que o painel nao passa (config): nome do servidor, senha, IP e caminhos de '
-                'config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Porta lida do arquivo de configuracao padrao do LinuxGSM (serverconfig.txt): o jogo a le '
+                  'desse arquivo, e nao do comando.',
+                  'Removi do comando o que o painel nao passa (config): nome do servidor, senha, IP e caminhos '
+                  'de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 2334200,
      'name': 'The Front',
      'key': 'the-front',
@@ -1644,13 +1887,16 @@ SUGGESTIONS = (
      'start_script': 'ProjectWar/Binaries/Linux/TheFrontServer',
      'start_args': '',
      'shiftable': False,
-     'warnings': ['Removi do comando o que o painel nao passa (MultiHome, ConfigServerName, OutIPAddress, UserDir, '
-                'ServerName, IsCanFriendDamage, ServerAdminAccounts, ServerPassword): nome do servidor, senha, '
-                'IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.',
-                'O broker recusaria start_args; deixei em branco.']},
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'a2s',
+     'warnings': ['Removi do comando o que o painel nao passa (MultiHome, ConfigServerName, OutIPAddress, '
+                  'UserDir, ServerName, IsCanFriendDamage, ServerAdminAccounts, ServerPassword): nome do '
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.',
+                  'O broker recusaria start_args; deixei em branco.']},
     {'appid': 412680,
      'name': 'The Isle',
      'key': 'the-isle',
@@ -1661,9 +1907,11 @@ SUGGESTIONS = (
      'start_script': 'TheIsle/Binaries/Linux/TheIsleServer-Linux-Shipping',
      'start_args': '/Game/TheIsle/Maps/Game/Gateway/Gateway -Port={PORT} -log',
      'shiftable': True,
-     'warnings': ['Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/TheIsle/Saved/Config/LinuxServer',
+     'config_files': ['/opt/game/TheIsle/Saved/Config/LinuxServer/Game.ini'],
+     'player_source': 'log',
+     'warnings': ['O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 90,
      'name': 'The Specialists',
      'key': 'the-specialists',
@@ -1675,11 +1923,13 @@ SUGGESTIONS = (
      'start_args': '-game ts -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map ts_neobaroque '
                    '-maxplayers 32',
      'shiftable': True,
+     'config_path': '/opt/game/ts',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 439660,
      'name': 'Tower Unite',
      'key': 'tower-unite',
@@ -1690,11 +1940,14 @@ SUGGESTIONS = (
      'start_script': 'Tower/Binaries/Linux/TowerServer-Linux-Shipping',
      'start_args': '-Port={PORT} -QueryPort={QUERY_PORT} -log',
      'shiftable': True,
+     'config_path': '/opt/game/Tower/Binaries/Linux',
+     'config_files': [],
+     'player_source': 'a2s',
      'warnings': ['Removi do comando o que o painel nao passa (MultiHome, TowerServerINI): nome do servidor, '
-                'senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 1110390,
      'name': 'Unturned',
      'key': 'unturned',
@@ -1705,27 +1958,33 @@ SUGGESTIONS = (
      'start_script': 'Unturned_Headless.x86_64',
      'start_args': '-nographics -batchmode -port {PORT} -maxplayers 20 -perspective first -mode normal -map PEI',
      'shiftable': True,
-     'warnings': ['Removi do comando o que o painel nao passa (bind, name, gslt, InternetServer/${selfname}): nome '
-                'do servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Removi do comando o que o painel nao passa (bind, name, gslt, InternetServer/${selfname}): '
+                  'nome do servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 896660,
      'name': 'Valheim',
      'key': 'valheim',
-     'ports': '2456/udp',
+     'ports': '2456/udp 2457/udp',
      'game_port': 2456,
-     'query_port': 0,
+     'query_port': 2457,
      'extra_port': 0,
      'start_script': 'valheim_server.x86_64',
      'start_args': '-port {PORT} -public 1 -saveinterval 1800 -backups 4 -backupshort 7200 -backuplong 43200 '
                    '-crossplay -instanceid 1',
-     'shiftable': True,
+     'shiftable': False,
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (name, password, world, savedir, logFile): nome do '
-                'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'servidor, senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Porta de consulta 2457 aberta pelo proprio jogo: sem ela o servidor nao aparece na lista. Por '
+                  'isso o broker nao sorteia portas para este jogo.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 90,
      'name': 'Vampire Slayer',
      'key': 'vampire-slayer',
@@ -1736,11 +1995,13 @@ SUGGESTIONS = (
      'start_script': 'hlds_run',
      'start_args': '-game vs -strictportbind -port {PORT} +clientport {EXTRA_PORT} +map vs_frost -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/vs',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 1136510,
      'name': 'Warfork',
      'key': 'warfork',
@@ -1751,17 +2012,19 @@ SUGGESTIONS = (
      'start_script': 'wf_server.x86_64',
      'start_args': '+set sv_http_port 44444 +sv_port {PORT}',
      'shiftable': True,
-     'warnings': ['Removi do comando o que o painel nao passa (exec, sv_http_ip, sv_ip): nome do servidor, senha, '
-                'IP e caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (httpport) ficam so dentro do container, de proposito: nao entram no '
-                'firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '/opt/game/basewf',
+     'config_files': [],
+     'player_source': 'log',
+     'warnings': ['Removi do comando o que o painel nao passa (exec, sv_http_ip, sv_ip): nome do servidor, '
+                  'senha, IP e caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (httpport) ficam so dentro do container, de proposito: nao entram no '
+                  'firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 402370,
      'name': 'Wurm Unlimited',
      'key': 'wurm-unlimited',
-     'ports': '3724/udp 27016/udp',
+     'ports': '3724/tcp 27016/udp',
      'game_port': 3724,
      'query_port': 27016,
      'extra_port': 0,
@@ -1769,9 +2032,12 @@ SUGGESTIONS = (
      'start_args': 'start=Creative epicsettings=false externalport={PORT} homeserver=true homekingdom=4 '
                    'loginserver=true maxplayers=200 queryport={QUERY_PORT} rmiregport=7220',
      'shiftable': True,
-     'warnings': ['Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+     'config_path': '',
+     'config_files': [],
+     'player_source': 'a2s',
+     'warnings': ['O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.',
+                  'Contagem de jogadores pela consulta da Steam (A2S), como o LinuxGSM faz.']},
     {'appid': 244310,
      'name': 'Zombie Master Reborn',
      'key': 'zombie-master-reborn',
@@ -1783,13 +2049,15 @@ SUGGESTIONS = (
      'start_args': '-game zombie_master_reborn -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port '
                    '27020 +map zm_docksofthedead -maxplayers 16',
      'shiftable': True,
+     'config_path': '/opt/game/zombie_master_reborn/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
     {'appid': 17505,
      'name': 'Zombie Panic Source',
      'key': 'zombie-panic-source',
@@ -1801,11 +2069,13 @@ SUGGESTIONS = (
      'start_args': '-game zps -strictportbind -port {PORT} +clientport {EXTRA_PORT} +tv_port 27020 +map '
                    'zps_deadend -maxplayers 20',
      'shiftable': True,
+     'config_path': '/opt/game/zps/cfg',
+     'config_files': [],
+     'player_source': 'log',
      'warnings': ['Removi do comando o que o painel nao passa (ip, servercfgfile): nome do servidor, senha, IP e '
-                'caminhos de config. Acrescente o que faltar.',
-                'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
-                'no firewall.',
-                'Protocolo UDP presumido em todas as portas: confira (query e TCP em alguns jogos).',
-                'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
-                'vem na pasta do jogo.']},
+                  'caminhos de config. Acrescente o que faltar.',
+                  'Portas de administracao (sourcetvport) ficam so dentro do container, de proposito: nao entram '
+                  'no firewall.',
+                  'O executavel e o do LinuxGSM (binario direto). Se o servidor nao subir, use o script .sh que '
+                  'vem na pasta do jogo.']},
 )

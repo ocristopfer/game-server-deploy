@@ -50,13 +50,20 @@ def search(query: str | None, limit: int = DEFAULT_LIMIT) -> list[dict]:
 
 def to_form(s: dict) -> dict[str, str]:
     """Os valores nas chaves que sao os `name=` dos campos. TODAS as chaves sempre, mesmo
-    vazias: escolher outro jogo tem de limpar o que o anterior deixou (script, portas)."""
+    vazias: escolher outro jogo tem de limpar o que o anterior deixou (script, portas, a
+    pasta de config e o padrao de log de um jogo que nao e este)."""
     return {
         "key": s["key"], "name": s["name"], "app_id": str(s["appid"]),
         "ports": s["ports"], "game_port": str(s["game_port"] or ""),
         "query_port": str(s["query_port"] or ""), "extra_port": str(s.get("extra_port") or ""),
         "start_script": s["start_script"], "start_args": s["start_args"],
         "shiftable": "1" if s["shiftable"] else "",
+        "config_path": s.get("config_path", ""),
+        "config_files": "\n".join(s.get("config_files") or []),
+        "player_source": s.get("player_source") or "log",
+        # O LinuxGSM nao diz onde fica o save nem o que o log escreve: fica em branco, e
+        # nao com o que sobrou do jogo escolhido antes.
+        "backup_paths": "", "join_re": "", "leave_re": "",
     }
 
 

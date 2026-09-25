@@ -52,7 +52,8 @@ def test_consulta_gigante_e_cortada():
 
 def test_valores_do_formulario_sempre_trazem_todas_as_chaves():
     keys = {"key", "name", "app_id", "ports", "game_port", "query_port", "extra_port",
-              "start_script", "start_args", "shiftable"}
+              "start_script", "start_args", "shiftable", "config_path", "config_files",
+              "player_source", "backup_paths", "join_re", "leave_re"}
     for s in sugestoes_de_jogos.SUGGESTIONS:
         assert set(busca.to_form(s)) == keys
         assert all(isinstance(v, str) for v in busca.to_form(s).values())

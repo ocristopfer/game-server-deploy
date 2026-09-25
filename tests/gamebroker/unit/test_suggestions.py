@@ -83,3 +83,18 @@ def test_porta_de_administracao_nunca_e_exposta():
     rust = next(s for s in SUGGESTIONS if s["appid"] == 258550)
     assert "28016" not in rust["ports"]
     assert "+rcon.port 28016" in rust["start_args"]
+
+
+def test_quase_toda_sugestao_traz_porta_e_protocolo():
+    """Regerar sem o info_game.sh/info_messages.sh nao da erro nenhum: so volta a sair ~30
+    jogos sem porta e tudo como UDP presumido. Isto e o que acusa."""
+    without_port = [s["key"] for s in SUGGESTIONS if not s["game_port"]]
+    presumed = [s["key"] for s in SUGGESTIONS if any("presumido" in w for w in s["warnings"])]
+    assert len(without_port) <= 5, without_port
+    assert len(presumed) <= 5, presumed
+
+
+def test_project_zomboid_e_terraria_saem_com_a_porta_de_verdade():
+    by_key = {s["key"]: s for s in SUGGESTIONS}
+    assert by_key["project-zomboid"]["game_port"] == 16261
+    assert by_key["terraria"]["ports"] == "7777/tcp"

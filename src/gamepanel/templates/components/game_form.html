@@ -19,17 +19,17 @@
 </label>
 <div class="row">
   <label>{{ _('catalog.ports') }}
-    <input name="ports" value="{{ form.get('ports', '') }}" required spellcheck="false" placeholder="7777/udp 27015/udp">
+    <input name="ports" value="{{ form.get('ports', '') }}" required spellcheck="false" placeholder="{{ _('catalog.example', value='7777/udp 27015/udp') }}">
     <small>{{ _('catalog.ports_hint') }}</small>
   </label>
   <label>{{ _('catalog.game_port') }}
-    <input name="game_port" value="{{ form.get('game_port', '') }}" required inputmode="numeric" placeholder="7777">
+    <input name="game_port" value="{{ form.get('game_port', '') }}" required inputmode="numeric" placeholder="{{ _('catalog.example', value='7777') }}">
   </label>
   <label>{{ _('catalog.query_port') }} <span class="muted">{{ _('catalog.optional') }}</span>
-    <input name="query_port" value="{{ form.get('query_port', '') }}" inputmode="numeric" placeholder="27015">
+    <input name="query_port" value="{{ form.get('query_port', '') }}" inputmode="numeric" placeholder="{{ _('catalog.example', value='27015') }}">
   </label>
   <label>{{ _('catalog.extra_port') }} <span class="muted">{{ _('catalog.optional') }}</span>
-    <input name="extra_port" value="{{ form.get('extra_port', '') }}" inputmode="numeric" placeholder="8888">
+    <input name="extra_port" value="{{ form.get('extra_port', '') }}" inputmode="numeric" placeholder="{{ _('catalog.example', value='8888') }}">
   </label>
 </div>
 <div class="row">

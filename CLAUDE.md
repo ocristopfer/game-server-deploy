@@ -1035,11 +1035,16 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   `tests/gamebroker/test_import_linuxgsm.py` e `tests/gamebroker/test_suggestions.py`: so sai o que o
   `validate_dynamic` aceita; porta de RCON/telnet/HTTP vai so no argumento e NUNCA no NAT; variavel
   de senha/nome/IP/token nunca e resolvida (o argumento sai, com aviso); tudo depois de `; | & \`
-  `$(` e cortado; variavel vazia derruba a opcao junto (senao ela engole a proxima). Protocolo e
-  presumido UDP (so `reliableport`/`httpport` sao TCP): o aviso da sugestao diz isso. ~30 jogos
-  guardam a porta no config do proprio jogo e saem como sugestao PARCIAL (App ID sem porta).
-  Enshrouded, Icarus e Dragonwilds nao estao no LinuxGSM: continuam manuais. E a busca e SEMPRE
-  sugestao: quem valida e o broker no envio.
+  `$(` e cortado; variavel vazia derruba a opcao junto (senao ela engole a proxima).
+  **Tres fontes alem do `_default.cfg`**, e sem elas o conversor nao da erro, so sai mais pobre
+  (`test_suggestions.py` acusa): o info_game.sh do LinuxGSM diz em que CHAVE do config do jogo mora a porta
+  dos ~30 que nao a tem no `_default.cfg`, e o arquivo padrao do `Game-Server-Configs` da o valor
+  (`ports_from_game_config`) - sem isso o formulario mostrava o EXEMPLO do campo (7777) como se
+  fosse a porta; o info_messages.sh da o protocolo de cada porta (Terraria e so TCP), menos a
+  consulta da Steam, que e UDP sempre embora ele liste TCP em jogos Unreal. Consulta que o jogo
+  abre sozinho (`queryport="$((port + 1))"` do Valheim) entra no firewall e tira o jogo do
+  sorteio de portas: o broker nao tem como avisa-la. Enshrouded, Icarus e Dragonwilds nao estao
+  no LinuxGSM: continuam manuais. E a busca e SEMPRE sugestao: quem valida e o broker no envio.
 - **Desfazer nao pode mentir**: se a limpeza falha, a reserva vira `falhou` e continua
   bloqueando IP/CTID/portas ate alguem remover (`instance_service._undo`).
 - **TLS e por IMPRESSAO, nunca `verify=False`.** Proxmox e OPNsense sao autoassinados;
