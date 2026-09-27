@@ -364,3 +364,72 @@ def test_banco_recusa_reserva_duplicada_mesmo_sem_a_trava(environment):
     _create(environment, "beta", "um")
     with pytest.raises(Conflict):
         environment.db.reserve(300, "10.0.0.99", "beta", "outro", "beta-300", "x", [])
+
+
+# --- cancelar ----------------------------------------------------------------
+
+def test_cancelar_no_meio_da_instalacao_desfaz_tudo(environment):
+    environment.defer = True
+    response = _create(environment)
+    op_id = response["operation_id"]
+    environment.installer.during = lambda: environment.servico.cancel(op_id, "zeca")
+    environment.pending.pop()()
+    op = environment.servico.operation(op_id)
+    assert op["state"] == OP_FAILED
+    assert "CANCELAMENTO pedido por zeca" in op["log"]
+    assert "instalacao cancelada a pedido" in op["log"]
+    assert "reserva liberada" in op["log"]
+    assert environment.compute.cts == {}, "o CT criado foi apagado"
+    assert environment.ingress.rules == {}, "o firewall nunca abriu"
+    assert environment.db.taken() == (set(), set(), set()), "IP, CTID e portas voltam para o pool"
+
+
+def test_cancelar_antes_de_comecar_nem_cria_o_ct(environment):
+    environment.defer = True
+    op_id = _create(environment)["operation_id"]
+    environment.servico.cancel(op_id, "zeca")
+    environment.pending.pop()()
+    assert environment.compute.calls == []
+    assert environment.db.count_instances() == 0
+
+
+def test_cancelar_duas_vezes_nao_repete_o_pedido(environment):
+    environment.defer = True
+    op_id = _create(environment)["operation_id"]
+    environment.servico.cancel(op_id, "zeca")
+    environment.servico.cancel(op_id, "zeca")
+    assert environment.servico.operation(op_id)["log"].count("CANCELAMENTO") == 1
+
+
+def test_cancelar_operacao_que_ja_terminou_e_conflito(environment):
+    op_id = _create(environment)["operation_id"]
+    with pytest.raises(Conflict, match="nao esta em andamento"):
+        environment.servico.cancel(op_id, "zeca")
+
+
+def test_cancelar_operacao_desconhecida(environment):
+    with pytest.raises(NotFound):
+        environment.servico.cancel("0" * 32, "zeca")
+
+
+# --- previa -------------------------------------------------------------------
+
+def test_previa_mostra_o_que_a_criacao_vai_receber_sem_reservar(environment):
+    environment.with_config(ctid_base=270)  # .30 -> 300
+    preview = environment.servico.preview("alfa")
+    assert (preview["handle"], preview["ip"]) == ("300", "10.0.0.30")
+    assert [(p["number"], p["proto"]) for p in preview["ports"]] == [(7001, "udp"), (7002, "udp")]
+    assert environment.db.count_instances() == 0, "previa nao reserva nada"
+    inst = environment.db.instance(_create(environment)["instance_id"])
+    assert (inst["handle"], inst["ip"]) == (preview["handle"], preview["ip"])
+
+
+def test_previa_pula_o_que_ja_esta_ocupado(environment):
+    _create(environment)
+    assert environment.servico.preview("beta")["ip"] == "10.0.0.31"
+
+
+def test_previa_de_porta_ocupada_da_o_mesmo_erro_da_criacao(environment):
+    _create(environment)
+    with pytest.raises(OutOfResources, match="ja esta em uso"):
+        environment.servico.preview("alfa")

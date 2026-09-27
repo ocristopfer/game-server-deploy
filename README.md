@@ -1080,9 +1080,33 @@ do jogo direto no navegador — e a saida para tudo que a tela **Config** nao co
 
 ### Backups
 
-Cada servidor tem uma aba **Backups**: um `.tar.gz` das pastas que valem a pena guardar,
-criado e mantido **dentro do proprio container do jogo** (`/var/backups/gamepanel` por
-padrao). O painel dispara, lista, baixa, restaura e apaga — ele nao vira deposito de save.
+Cada servidor tem uma aba **Backups**: um `.tar.gz` das pastas do save, criado **dentro
+do proprio container do jogo** (`/var/backups/gamepanel` por padrao) e, no mesmo job,
+**copiado para o painel** (`/var/lib/gamepanel/backups/<jogo>/`). O painel dispara, lista,
+baixa, restaura e apaga as duas.
+
+**Por que duas copias.** A do container morre com ele: remover uma instancia pelo broker
+apaga o CT com os discos, e o save ia junto. A do painel sobrevive, e e organizada pelo
+**jogo** (o nome do servico, `valheim.service` -> `valheim/`), nao pelo servidor. Remover e
+criar de novo o mesmo jogo da um servidor com outro id, mas o mesmo servico — e a aba
+Backups dele ja mostra as **Copias no painel** do anterior, com o botao **restaurar**: a
+copia volta ao container e e extraida como qualquer outra.
+
+- **Todo backup vai para os dois lugares**, manual ou agendado. Se a copia do painel
+  falhar (disco cheio, conexao caiu no meio), o job sai com **erro** — a do container
+  continua la, mas quem conta com o painel precisa saber agora. Copia que chega truncada
+  nao fica com o nome certo: o tamanho e conferido.
+- **Desativar uma instancia do broker tira o backup antes**: desativar para o CT, e depois
+  disso nao ha SSH para copiar nada — e a ultima hora. Se o backup falhar, a instancia
+  continua ativa; o botao **Desativar sem backup** desativa assim mesmo. Na hora de remover, a tela
+  mostra quantas copias do save o painel tem (ou avisa que nao tem nenhuma).
+- **Copias antigas, de antes desta versao**, so existem no container: cada uma tem o botao
+  **enviar ao painel**.
+- **Jogo que ja nao tem servidor**: a tela **Backups** do menu (`/backups`, so admin) lista
+  tudo o que o painel guardou, por jogo, com baixar e apagar. Para restaurar, crie a
+  instancia (ou cadastre o servidor) do mesmo jogo de novo — a copia aparece na aba
+  Backups dele. So o servidor do MESMO jogo recebe a copia: o tar guarda caminho absoluto,
+  e o save de um jogo extraido no container de outro so espalharia arquivo.
 
 O que entra na copia sai do campo **Caminhos de backup** do cadastro do servidor, e o
 deploy ja o preenche: cada `games/<jogo>.env` tem um `BACKUP_PATHS` que o
@@ -1110,8 +1134,11 @@ Detalhes que importam:
   nasce quando alguem entra no servidor pela primeira vez, e as outras continuam entrando
   na copia. O backup so falha se nenhum dos caminhos existir.
 
-- **Retencao**: ficam as `GAMEPANEL_BACKUP_KEEP` copias mais novas (padrao **5**) e as
-  antigas saem sozinhas. `0` desliga a limpeza.
+- **Retencao**: no container ficam as `GAMEPANEL_BACKUP_KEEP` copias mais novas (padrao
+  **5**); no painel, as `GAMEPANEL_PANEL_BACKUP_KEEP` mais novas de cada jogo (padrao
+  **10**, `0` = nunca apagar). As antigas saem sozinhas. A copia `-antes-de-restaurar` nao
+  aplica a retencao do container: com as copias no limite, ela apagaria a mais antiga —
+  que pode ser justo a escolhida para restaurar.
 - **Com o servidor ligado funciona** e e o uso normal. O `tar` avisa quando um arquivo
   mudou durante a copia — o backup continua valendo, mas um save gravado bem nessa hora
   pode entrar pela metade. Para uma copia perfeita, pare o servidor antes.
@@ -1121,11 +1148,15 @@ Detalhes que importam:
   onde ele saiu (o `tar` guarda os caminhos relativos a `/`). Servidor que ja estava
   parado continua parado. Antes de extrair, o painel tira **sozinho** uma copia do estado
   atual, marcada `-antes-de-restaurar`: e a saida de quem escolheu o backup errado.
-- **Papeis**: tirar copia e operacao, e o **operador** pode dispara-la. Baixar, restaurar
-  e apagar sao de **administrador** — as duas ultimas destroem dado, e baixar tira o save
-  inteiro do container.
+- **Papeis**: tirar copia e operacao, e o **operador** pode dispara-la. Baixar, restaurar,
+  apagar e enviar ao painel sao de **administrador** — restaurar e apagar destroem dado, e
+  baixar tira o save inteiro do container.
+- **Espaco no CT do painel**: save costuma ter poucos MB, mas 10 copias de cada jogo somam.
+  Um DayZ com mundo grande e o caso de conferir o disco do painel.
 
-Variaveis: `GAMEPANEL_BACKUP_DIR`, `GAMEPANEL_BACKUP_KEEP`, `GAMEPANEL_BACKUP_TIMEOUT`.
+Variaveis: `GAMEPANEL_BACKUP_DIR`, `GAMEPANEL_BACKUP_KEEP`, `GAMEPANEL_BACKUP_TIMEOUT`,
+`GAMEPANEL_PANEL_BACKUP_DIR` (padrao: `backups/` ao lado do banco),
+`GAMEPANEL_PANEL_BACKUP_KEEP`.
 
 ### Agendamentos
 
@@ -1314,7 +1345,7 @@ Sao dois papeis:
 | Terminal, Console e navegador de **Arquivos** | nao | sim |
 | Enviar arquivo para o container | nao | sim |
 | Ver a lista de **Backups** e tirar copia | sim | sim |
-| Baixar, restaurar ou apagar um backup | nao | sim |
+| Baixar, restaurar, apagar ou enviar ao painel um backup | nao | sim |
 | **Historico** global e por servidor | sim | sim |
 | **Graficos** de uso | sim | sim |
 | Historico de terminal, console e arquivos | nao | sim |
@@ -1442,11 +1473,13 @@ graficos) sao pytest — nao rodam mais como script solto. Veja o
 | `/opt/gamepanel/` | aplicacao: `app.py`, `ui.py`, `templates/` (com `components/`) e `static/` (`css/`, `js/`, `icons/`) |
 | `/var/lib/gamepanel/panel.db` | SQLite: usuarios, servidores, historico |
 | `/var/lib/gamepanel/known_hosts` | host keys aprendidas dos containers |
+| `/var/lib/gamepanel/backups/<jogo>/` | a segunda copia de cada backup (`GAMEPANEL_PANEL_BACKUP_DIR`) |
 | `/etc/gamepanel/id_ed25519` | chave SSH do painel |
 | `/etc/gamepanel/panel.env` | configuracao lida pelo systemd |
 
-Os **backups nao ficam aqui**: cada `.tar.gz` mora no container do jogo, em
-`/var/backups/gamepanel` (`GAMEPANEL_BACKUP_DIR`) — veja [Backups](#backups).
+Cada backup existe em **dois lugares**: no container do jogo, em `/var/backups/gamepanel`
+(`GAMEPANEL_BACKUP_DIR`), e aqui, em `/var/lib/gamepanel/backups/` — a copia daqui e a que
+sobrevive a remover a instancia. Veja [Backups](#backups).
 
 ### Como a interface e montada
 

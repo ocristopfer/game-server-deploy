@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% block title %}{{ _('archive.title') }}{% endblock %}
+
+{% block content %}
+{{ ui.page_header(_('archive.title')) }}
+
+<div class="card">
+  <p class="muted small">
+    {{ _h('archive.intro', dir=archive_dir) }}
+    {% if keep %}{{ _('archive.keep', n=keep) }}{% else %}{{ _('archive.keep_all') }}{% endif %}
+  </p>
+  {% if not games %}
+    <p class="muted">{{ _('archive.none') }}</p>
+  {% endif %}
+</div>
+
+{% for g in games %}
+<div class="card">
+  <h2>{{ _('archive.game') }}: <code>{{ g.prefix }}</code></h2>
+  {% if g.servers %}
+    <p class="muted small">
+      {{ _('archive.restore_on') }}:
+      {% for s in g.servers %}
+        <a href="{{ url_for('backups.index', sid=s.id) }}">{{ s.name }}</a>{% if not loop.last %}, {% endif %}
+      {% endfor %}
+    </p>
+  {% else %}
+    <p class="flash error">{{ _('archive.no_server') }}</p>
+  {% endif %}
+  <div class="table-wrap"><table class="jobs">
+    <thead><tr><th>{{ _('backups.file') }}</th><th>{{ _('backups.when') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
+    <tbody>
+      {% for c in g.copies %}
+      <tr>
+        <td>
+          <code>{{ c.name }}</code>
+          {% if c.seguranca %}<span class="badge" title="{{ _('backups.pre_restore_copy') }}">{{ _('backups.before_restore') }}</span>{% endif %}
+        </td>
+        <td class="muted small nowrap">{{ c.mtime }}</td>
+        <td class="muted nowrap">{{ c.size | filesize }}</td>
+        <td class="actions">
+          {{ ui.button(_('files.download'), href=url_for('backups.archive_download', prefix=g.prefix, name=c.name),
+                      variant='ghost', size='sm', icon='⬇') }}
+          {{ ui.action(url_for('backups.archive_delete', prefix=g.prefix), _('files.delete'), variant='danger',
+                     size='sm', fields={'name': c.name},
+                     confirm=_('backups.panel_delete_confirm', file=c.name)) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endfor %}
+{% endblock %}

@@ -16,6 +16,7 @@ corpo de resposta bruto - o texto vai parar no log da operacao e o painel o exib
 """
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
@@ -77,8 +78,11 @@ class Ingress(Protocol):
 
 class Installer(Protocol):
     def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
-                 log: Callable[[str], None]) -> None:
+                 log: Callable[[str], None], cancel: threading.Event | None = None) -> None:
         """Instala o jogo dentro do CT por SSH e remove a chave do broker ao terminar.
+
+        `cancel` acionado no meio: para o que estiver rodando e levanta erro. Quem desfaz o
+        CT e o servico (`_undo`), como em qualquer outra falha.
 
         Continua recebendo IP, e nao handle: quem instala fala SSH com a maquina, nao com
         quem a criou. Tirar o instalador do servico e deixa-lo como detalhe do compute e a

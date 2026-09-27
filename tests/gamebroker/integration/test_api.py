@@ -176,3 +176,19 @@ def test_apagar_curado_sem_edicao_e_conflito(http):
 def test_rotas_do_jogo_pedem_token(http, game_data):
     for method in ("get", "put", "delete"):
         assert getattr(http, method)("/v1/catalog/alfa", json=game_data).status_code == 401
+
+
+def test_previa_pela_api(http):
+    response = http.get("/v1/instances/preview?game=alfa", headers=AUTH)
+    assert response.status_code == 200
+    assert response.get_json()["ip"] == "10.0.0.30"
+
+
+def test_cancelar_pela_api_operacao_ja_terminada_e_409(http):
+    created_one = http.post("/v1/instances", headers=AUTH, json={"game": "beta", "name": "Um"}).get_json()
+    response = http.post(f"/v1/operations/{created_one['operation_id']}/cancel", headers=AUTH)
+    assert response.status_code == 409
+
+
+def test_cancelar_pela_api_recusa_id_malformado(http):
+    assert http.post("/v1/operations/x/cancel", headers=AUTH).status_code == 400

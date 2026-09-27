@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% block title %}{{ _('instances.confirm_title') }} &mdash; {{ _('app.name') }}{% endblock %}
+
+{% block content %}
+{{ ui.page_header(_('instances.confirm_title')) }}
+
+<div class="card">
+  <p class="muted small">{{ _('instances.confirm_intro') }}</p>
+  <dl class="meta wide">
+    <div><dt>{{ _('instances.confirm_game') }}</dt><dd>{{ game_name }}</dd></div>
+    <div><dt>{{ _('instances.confirm_name') }}</dt><dd>{{ name }}</dd></div>
+    <div><dt>{{ _('instances.confirm_ct') }}</dt><dd><strong>{{ preview.handle }}</strong></dd></div>
+    <div><dt>{{ _('instances.confirm_ip') }}</dt><dd><strong>{{ preview.ip }}</strong></dd></div>
+    <div><dt>{{ _('instances.confirm_ports') }}</dt><dd>
+      {% for p in preview.ports %}{{ p.number }}/{{ p.proto }}{% if not loop.last %}, {% endif %}{% endfor %}
+    </dd></div>
+  </dl>
+  <p class="muted small">{{ _('instances.create_confirm') }}</p>
+  <form method="post" action="{{ url_for('broker.instance_new') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="game" value="{{ game }}">
+    <input type="hidden" name="name" value="{{ name }}">
+    <input type="hidden" name="confirmed" value="1">
+    <div class="form-actions">
+      {{ ui.button(_('instances.confirm_create'), variant='primary', block=true) }}
+      {{ ui.button(_('instances.back'), href=url_for('broker.instances'), variant='ghost', block=true) }}
+    </div>
+  </form>
+</div>
+{% endblock %}

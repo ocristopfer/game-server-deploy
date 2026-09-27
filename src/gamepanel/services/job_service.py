@@ -25,6 +25,7 @@ EXTRA_LABELS: Mapping[str, str] = {
     "backup": "job.backup",
     "restore-backup": "job.backup_restored",
     "delete-backup": "job.backup_deleted",
+    "backup-to-panel": "job.backup_sent_to_panel",
     # Moderacao nao da root em container nenhum: e operacao, e fica visivel ao operador.
     "player-action": "job.player_action",
     "broker-criar": "job.instance_created",

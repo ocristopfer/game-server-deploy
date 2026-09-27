@@ -7,6 +7,22 @@
   {{ ui.button(_('nav.catalog'), href=url_for('broker.catalog'), variant='ghost', icon='📚') }}
 {% endcall %}
 
+{# A criacao continua quando a pessoa sai da tela; sem este bloco, o log so era alcancavel
+   pelo redirect logo depois do clique (ou garimpando o historico). #}
+{% for job in installing %}
+<div class="card">
+  <h2>{{ _('instances.installing') }}</h2>
+  <p><strong>{{ job.command }}</strong> <span class="muted small">&middot; {{ job.username }} &middot;
+    {{ job.created_at.replace('T', ' ')[:16] }} UTC</span></p>
+  <p class="muted small">{{ _('instances.installing_help') }}</p>
+  <div class="form-actions">
+    {{ ui.button(_('instances.view_log'), href=url_for('jobs.detail', jid=job.id), variant='primary', icon='📜') }}
+    {{ ui.action(url_for('broker.instance_cancel', jid=job.id), _('instances.cancel_install'), variant='danger',
+               confirm=_('instances.cancel_confirm', name=job.command)) }}
+  </div>
+</div>
+{% endfor %}
+
 {# Formulario a esquerda, instancias a direita no desktop; uma coluna no celular. #}
 <div class="card-grid">
 <div class="card">
@@ -28,8 +44,9 @@
       <small>Como a instancia aparece no painel. Letras, numeros, espaco, ponto, hifen e sublinhado.</small>
     </label>
     <div class="form-actions">
-      {{ ui.button(_('instances.create'), variant='primary', block=true,
-                  confirm=_('instances.create_confirm')) }}
+      {# Sem confirmacao aqui: o botao leva a tela que mostra CT, IP e portas, e e ela que
+         pergunta. #}
+      {{ ui.button(_('instances.create'), variant='primary', block=true) }}
     </div>
   </form>
   <p class="muted small mt-4">
@@ -64,9 +81,18 @@
           {% if i.state == 'ativa' %}
             {{ ui.action(url_for('broker.instance_deactivate', iid=i.id), _('account.disable'), size='sm',
                        confirm=_('instances.deactivate_confirm', name=i.name)) }}
+            {{ ui.action(url_for('broker.instance_deactivate', iid=i.id), _('instances.deactivate_no_backup'),
+                       variant='ghost', size='sm', fields={'skip_backup': '1'},
+                       confirm=_('instances.deactivate_no_backup_confirm', name=i.name)) }}
           {% elif i.state in ('desativada', 'falhou') %}
             <details>
               <summary class="btn btn--danger btn--sm">{{ _('instances.remove') }}</summary>
+              {% set pc = panel_copies.get(i.id) %}
+              {% if pc and pc.count %}
+                <p class="muted small">{{ _('instances.panel_copies', n=pc.count, when=pc.latest) }}</p>
+              {% else %}
+                <p class="flash error">{{ _('instances.panel_copies_none') }}</p>
+              {% endif %}
               <form method="post" action="{{ url_for('broker.instance_remove', iid=i.id) }}">
                 <input type="hidden" name="csrf" value="{{ csrf_token() }}">
                 <label>{{ _('instances.type_name_to_confirm') }}

@@ -126,6 +126,8 @@ class Settings(NamedTuple):
     backup_dir: str
     backup_keep: int
     backup_timeout: int
+    panel_backup_dir: str
+    panel_backup_keep: int
     # --- agendador e limpeza ---
     schedule_tick: float
     schedule_grace: int
@@ -170,8 +172,9 @@ def load(env: Mapping[str, str] | None = None) -> Settings:
     reader = _Reader(os.environ if env is None else env)
 
     known_hosts = reader.text("KNOWN_HOSTS", "/var/lib/gamepanel/known_hosts")
+    db_path = reader.text("DB", "/var/lib/gamepanel/panel.db")
     settings = Settings(
-        db_path=reader.text("DB", "/var/lib/gamepanel/panel.db"),
+        db_path=db_path,
         secret_file=reader.text("SECRET_FILE", "/etc/gamepanel/secret_key"),
         ssh_key=reader.text("SSH_KEY", "/etc/gamepanel/id_ed25519"),
         known_hosts=known_hosts,
@@ -205,6 +208,11 @@ def load(env: Mapping[str, str] | None = None) -> Settings:
         backup_dir=reader.text("BACKUP_DIR", "/var/backups/gamepanel"),
         backup_keep=reader.integer("BACKUP_KEEP", 5, minimum=1),
         backup_timeout=reader.integer("BACKUP_TIMEOUT", 3600, minimum=1),
+        # A segunda copia, no PAINEL: ao lado do banco por padrao, no mesmo volume, que e o
+        # que o deploy ja trata como estado a preservar. 0 = nunca apagar por retencao.
+        panel_backup_dir=reader.text(
+            "PANEL_BACKUP_DIR", os.path.join(os.path.dirname(db_path), "backups")),
+        panel_backup_keep=reader.integer("PANEL_BACKUP_KEEP", 10, minimum=0),
 
         schedule_tick=reader.number("SCHEDULE_TICK", 15.0, minimum=1),
         schedule_grace=reader.integer("SCHEDULE_GRACE", 3600, minimum=0),

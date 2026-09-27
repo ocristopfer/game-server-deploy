@@ -191,6 +191,15 @@ def create(game: str, name: str, actor: str) -> dict:
     return _as_object(_request("POST", "/v1/instances", {"game": game, "name": name}, actor))
 
 
+def preview(game: str) -> dict:
+    """CT, IP e portas que uma criacao deste jogo receberia agora. Nao reserva nada."""
+    return _as_object(_request("GET", f"/v1/instances/preview?game={quote(game, safe='')}"))
+
+
+def cancel(op_id: str, actor: str) -> dict:
+    return _as_object(_request("POST", f"/v1/operations/{quote(op_id, safe='')}/cancel", {}, actor))
+
+
 def operation(op_id: str) -> dict:
     return _as_object(_request("GET", f"/v1/operations/{quote(op_id, safe='')}"))
 

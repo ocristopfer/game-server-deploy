@@ -6,6 +6,7 @@ de tela.
 """
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Sequence
 
 from gamebroker.runtime.base import InstanceSpec
@@ -88,10 +89,17 @@ class FakeInstaller:
     def __init__(self) -> None:
         self.installed: list[tuple[str, str]] = []
         self.failure = False
+        # Roda no MEIO da instalacao: e por onde um teste pede o cancelamento enquanto ela
+        # acontece, sem thread nenhuma.
+        self.during: Callable[[], None] | None = None
 
     def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
-                 log: Callable[[str], None]) -> None:
+                 log: Callable[[str], None], cancel: threading.Event | None = None) -> None:
         log(f"instalando {game.name} em {ip}")
+        if self.during is not None:
+            self.during()
+        if cancel is not None and cancel.is_set():
+            raise RuntimeError("instalacao cancelada")
         if self.failure:
             raise RuntimeError("instalador falso: steamcmd falhou")
         self.installed.append((ip, game.key))

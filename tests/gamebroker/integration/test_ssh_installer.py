@@ -376,3 +376,15 @@ def test_conta_que_quebraria_a_linha_do_steamcmd_e_recusada_sem_mostrar_o_valor(
         SteamAccount(user, password)
     if password not in ("", "x"):
         assert password not in str(caught.value)
+
+
+def test_cancelar_mata_o_processo_que_esta_calado():
+    # O SteamCMD passa minutos sem escrever nada: o pedido nao pode esperar a proxima linha.
+    import threading
+    import time
+    cancel = threading.Event()
+    threading.Timer(0.3, cancel.set).start()
+    started = time.monotonic()
+    code = ExecutorReal().run([sys.executable, "-c", "import time; time.sleep(60)"], None, 60, cancel)
+    assert code != 0
+    assert time.monotonic() - started < 10

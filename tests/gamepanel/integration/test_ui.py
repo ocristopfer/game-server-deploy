@@ -10,7 +10,8 @@ def _keys(itens):
 
 def test_admin_com_broker_ve_tudo_na_barra_larga():
     slash, account = ui.nav_desktop(admin=True, broker=True)
-    assert _keys(slash) == ["servidores", "instancias", "catalogo", "historico", "alertas", "usuarios"]
+    assert _keys(slash) == ["servidores", "instancias", "catalogo", "historico", "backups", "alertas",
+                            "usuarios"]
     assert _keys(account) == ["conta", "ssh"]
 
 

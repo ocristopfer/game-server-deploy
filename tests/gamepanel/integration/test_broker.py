@@ -10,6 +10,7 @@ cadastra no fim - inclusive quando o fim e ruim.
 """
 from __future__ import annotations
 
+import subprocess
 import time
 
 import pytest
@@ -129,6 +130,15 @@ class FakeBroker:
         self._call("operation", op_id)
         return self.operations.pop(0) if len(self.operations) > 1 else self.operations[0]
 
+    def preview(self, game):
+        self._call("preview", game)
+        return {"game": game, "handle": "302", "ip": "10.0.0.102",
+                "ports": [{"base": 7777, "number": 7777, "proto": "udp", "role": "game"}]}
+
+    def cancel(self, op_id, actor):
+        self._call("cancel", op_id, actor)
+        return {"operation_id": op_id, "cancelling": True}
+
     def deactivate(self, instance_id, actor):
         self._call("deactivate", instance_id, actor)
         return {"id": instance_id, "state": "desativada"}
@@ -152,7 +162,7 @@ def broker(monkeypatch, database):
     # Nunca o known_hosts de verdade: no container ele e o do painel de dev.
     monkeypatch.setattr(panel, "forget_host_key", fake.forgotten.append)
     for name in ("catalog", "add_game", "game", "update_game", "remove_game", "instances",
-                 "create", "operation", "deactivate", "remove"):
+                 "create", "operation", "deactivate", "remove", "preview", "cancel"):
         monkeypatch.setattr(panel.broker_client, name, getattr(fake, name))
     return fake
 
@@ -519,7 +529,7 @@ def test_instancias_com_broker_fora_do_ar(admin, broker):
 
 
 def test_criar_abre_um_job_sem_servidor_e_redireciona_para_ele(admin, broker, post, database):
-    response = post(admin, "/instances/new", {"game": "alfa", "name": "Servidor do Zeca"})
+    response = post(admin, "/instances/new", {"game": "alfa", "name": "Servidor do Zeca", "confirmed": "1"})
     (line,) = jobs(database)
     assert response.headers["Location"].endswith(f"/jobs/{line['id']}")
     assert broker.called("create") == [("create", "alfa", "Servidor do Zeca", "chefe")]
@@ -531,7 +541,7 @@ def test_criar_abre_um_job_sem_servidor_e_redireciona_para_ele(admin, broker, po
 
 def test_criar_recusado_pelo_broker_nao_deixa_job(admin, broker, post, database):
     broker.error = refusal("limite de 8 instancias atingido", 429)
-    response = post(admin, "/instances/new", {"game": "alfa", "name": "x"})
+    response = post(admin, "/instances/new", {"game": "alfa", "name": "x", "confirmed": "1"})
     assert response.status_code == 302
     assert "limite de 8 instancias" in admin.get("/instances").get_data(as_text=True)
     assert jobs(database) == []
@@ -540,12 +550,12 @@ def test_criar_recusado_pelo_broker_nao_deixa_job(admin, broker, post, database)
 
 def test_criar_sem_id_de_operacao_nao_deixa_job(admin, broker, post, database, monkeypatch):
     monkeypatch.setattr(panel.broker_client, "create", lambda *a: {})
-    post(admin, "/instances/new", {"game": "alfa", "name": "x"})
+    post(admin, "/instances/new", {"game": "alfa", "name": "x", "confirmed": "1"})
     assert jobs(database) == []
 
 
 def test_tela_do_job_abre_e_tem_o_rotulo(admin, broker, post, database):
-    post(admin, "/instances/new", {"game": "alfa", "name": "x"})
+    post(admin, "/instances/new", {"game": "alfa", "name": "x", "confirmed": "1"})
     (line,) = jobs(database)
     html = admin.get(f"/jobs/{line['id']}").get_data(as_text=True)
     assert "Instancia criada (broker)" in html
@@ -554,7 +564,7 @@ def test_tela_do_job_abre_e_tem_o_rotulo(admin, broker, post, database):
 
 def test_saida_do_job_do_broker_e_so_de_admin(admin, operator, broker, post, database):
     """A saida cita IP, CTID e portas da infraestrutura: operador nem abre nem lista."""
-    post(admin, "/instances/new", {"game": "alfa", "name": "x"})
+    post(admin, "/instances/new", {"game": "alfa", "name": "x", "confirmed": "1"})
     (line,) = jobs(database)
     assert operator.get(f"/jobs/{line['id']}").status_code == 403
     assert operator.get(f"/api/v1/jobs/{line['id']}").status_code == 403
@@ -676,7 +686,7 @@ def test_tempo_esgotado(broker, database, monkeypatch):
 
 
 def test_tarefa_disparada_pela_rota_faz_o_caminho_inteiro(admin, broker, post, database):
-    post(admin, "/instances/new", {"game": "alfa", "name": "Servidor do Zeca"})
+    post(admin, "/instances/new", {"game": "alfa", "name": "Servidor do Zeca", "confirmed": "1"})
     broker.tasks[0]()
     (line,) = jobs(database)
     assert line["status"] == "ok"
@@ -714,6 +724,66 @@ def test_desativar_pede_ao_broker_e_deixa_rastro(admin, broker, post, database):
     assert broker.called("deactivate") == [("deactivate", 7, "chefe")]
     (line,) = jobs(database)
     assert (line["action"], line["status"]) == ("broker-desativar", "ok")
+
+
+def _bound_server_with_save():
+    panel.ensure_server(panel.DeployServer(
+        name="Servidor do Zeca", host="10.0.0.30", service="alfa.service", broker_id=7,
+        backup_paths="/opt/game/save"))
+
+
+@pytest.fixture
+def captured_job(monkeypatch):
+    started = []
+    monkeypatch.setattr(panel, "start_job",
+                        lambda action, server, user, **kw: started.append((action, dict(server), kw)) or 1)
+    return started
+
+
+def test_desativar_tira_o_backup_para_o_painel_antes(admin, broker, post, captured_job, monkeypatch):
+    # Depois de desativado o CT esta parado e nao ha SSH: e a ultima hora de guardar o save.
+    _bound_server_with_save()
+    response = post(admin, "/instances/7/deactivate")
+    assert response.headers["Location"].endswith("/jobs/1")
+    assert broker.called("deactivate") == [], "so desativa depois do backup, dentro do job"
+    ((action, server, kw),) = captured_job
+    assert action == "broker-desativar"
+    steps = kw["steps"]
+    assert "backup pronto" in steps[0], "primeiro o backup no container"
+    assert steps[1] is panel.pull_new_backup_step, "depois a copia no painel"
+
+    # Backup que nao anuncia o arquivo: nada chega ao painel, e a instancia NAO e desativada.
+    monkeypatch.setattr(panel, "ssh_run", lambda *a, **k: subprocess.CompletedProcess([], 0, "", ""))
+    assert panel._run_steps(server, steps, 5)[1] == "error"
+    assert broker.called("deactivate") == []
+
+    steps[1] = lambda target, output: "copia guardada no painel\n"
+    assert panel._run_steps(server, steps, 5)[1] == "ok"
+    assert broker.called("deactivate") == [("deactivate", 7, "chefe")]
+
+
+def test_desativar_sem_backup_vai_direto(admin, broker, post, captured_job):
+    _bound_server_with_save()
+    post(admin, "/instances/7/deactivate", {"skip_backup": "1"})
+    assert captured_job == []
+    assert broker.called("deactivate") == [("deactivate", 7, "chefe")]
+
+
+def test_desativar_instancia_sem_o_que_guardar_avisa(admin, broker, post, captured_job):
+    post(admin, "/instances/7/deactivate")
+    assert broker.called("deactivate") == [("deactivate", 7, "chefe")]
+    assert "SEM copia do save" in admin.get("/instances").get_data(as_text=True)
+
+
+def test_remover_mostra_quantas_copias_o_painel_tem(admin, broker, monkeypatch, tmp_path):
+    monkeypatch.setattr(panel, "PANEL_BACKUP_DIR", str(tmp_path))
+    broker.lista = [{**INSTANCE, "state": "desativada"}]
+    html = admin.get("/instances").get_data(as_text=True)
+    assert "Nenhuma copia do save no painel" in html
+    (tmp_path / "alfa").mkdir()
+    (tmp_path / "alfa" / "alfa-20260101-120000.tar.gz").write_bytes(b"x")
+    html = admin.get("/instances").get_data(as_text=True)
+    assert "Copias do save no painel: 1" in html
 
 
 def test_desativar_recusado_mostra_o_motivo(admin, broker, post, database):
@@ -806,3 +876,62 @@ def test_config_ruim_desliga_o_recurso_sem_derrubar_o_painel(broker_environment,
     else:
         monkeypatch.setattr(panel, "BROKER_CERT_SHA256", "isto-nao-e-hex")
     assert panel._configure_broker() is False
+
+
+# ------------------------------------------------ previa, log e cancelamento
+
+def test_criar_mostra_ct_e_ip_antes_e_nao_cria_nada(admin, broker, post, database):
+    response = post(admin, "/instances/new", {"game": "alfa", "name": "Servidor do Zeca"})
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "302" in html and "10.0.0.102" in html and "7777/udp" in html
+    assert 'name="confirmed" value="1"' in html
+    assert broker.called("preview") == [("preview", "alfa")]
+    assert broker.called("create") == [], "so cria depois de confirmar"
+    assert jobs(database) == []
+
+
+def test_previa_recusada_volta_com_o_motivo(admin, broker, post, database):
+    broker.error = refusal("porta 7777/udp ja esta em uso", 409)
+    response = post(admin, "/instances/new", {"game": "alfa", "name": "x"})
+    assert response.status_code == 302
+    assert "7777/udp ja esta em uso" in admin.get("/instances").get_data(as_text=True)
+
+
+def test_instalacao_em_andamento_aparece_com_o_log_e_o_cancelar(admin, broker, post, database):
+    post(admin, "/instances/new", {"game": "alfa", "name": "Servidor do Zeca", "confirmed": "1"})
+    (line,) = jobs(database)
+    html = admin.get("/instances").get_data(as_text=True)
+    assert f"/jobs/{line['id']}" in html, "o caminho de volta para o log"
+    assert f"/instances/jobs/{line['id']}/cancel" in html
+
+
+def test_cancelar_pede_ao_broker_a_operacao_do_job(admin, broker, post, database):
+    post(admin, "/instances/new", {"game": "alfa", "name": "x", "confirmed": "1"})
+    (line,) = jobs(database)
+    assert f"/instances/jobs/{line['id']}/cancel" in admin.get(f"/jobs/{line['id']}").get_data(as_text=True)
+    response = post(admin, f"/instances/jobs/{line['id']}/cancel")
+    assert response.headers["Location"].endswith(f"/jobs/{line['id']}")
+    assert broker.called("cancel") == [("cancel", OP, "chefe")]
+
+
+def test_cancelar_job_que_ja_terminou_nao_chama_o_broker(admin, broker, post, database):
+    job_id = new_job(database)
+    with database:
+        database.execute("UPDATE jobs SET status = 'ok' WHERE id = ?", (job_id,))
+    post(admin, f"/instances/jobs/{job_id}/cancel")
+    assert broker.called("cancel") == []
+
+
+def test_cancelar_job_que_nao_e_de_criacao_e_404(admin, broker, post, database):
+    with database:
+        cur = database.execute(
+            "INSERT INTO jobs (server_id, target, action, status, command, username, created_at, broker_op)"
+            " VALUES (NULL, 'x', 'backup', 'running', '', 'chefe', ?, ?)", (panel.now_iso(), OP))
+    job_id = cur.lastrowid
+    assert post(admin, f"/instances/jobs/{job_id}/cancel").status_code == 404
+
+
+def test_desativar_sem_backup_diz_o_que_faz(admin, broker):
+    broker.lista = [INSTANCE]
+    assert "Desativar sem backup" in admin.get("/instances").get_data(as_text=True)

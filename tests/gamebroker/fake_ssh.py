@@ -26,8 +26,9 @@ class FakeRunner:
         self.first_ssh_failures = 0
         self.env_visto = ""
 
-    def run(self, argv, on_line, timeout):
+    def run(self, argv, on_line, timeout, cancel=None):
         self.calls.append((list(argv), timeout))
+        self.cancel_seen = cancel
         if argv[0] == "scp":
             self.env_visto = Path(argv[-2]).read_text(encoding="utf-8")  # o arquivo existe AGORA
         command = argv[-1] if argv[0] == "ssh" else " ".join(argv)

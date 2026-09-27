@@ -10,6 +10,7 @@ assim o Proxmox falso (em memoria) e o banco nunca ficam desencontrados.
 from __future__ import annotations
 
 import os
+import threading
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -29,14 +30,19 @@ class SlowInstaller:
         self._step = step
 
     def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
-                 log: Callable[[str], None]) -> None:
+                 log: Callable[[str], None], cancel: threading.Event | None = None) -> None:
         stages = (
             f"aguardando o SSH de {ip}", "instalando os pacotes base", "baixando o SteamCMD",
             f"baixando {game.name} (app {game.app_id})", "criando o servico systemd",
             "removendo a chave do broker do container",
         )
         for stage in stages:
-            time.sleep(self._step)
+            # Espera cancelavel: e o que deixa testar o botao "cancelar" no compose de dev.
+            if cancel is not None:
+                if cancel.wait(self._step):
+                    raise RuntimeError("instalacao cancelada")
+            else:
+                time.sleep(self._step)
             log(stage)
 
 

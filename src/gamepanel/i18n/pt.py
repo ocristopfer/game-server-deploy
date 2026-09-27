@@ -16,6 +16,22 @@ MESSAGES: dict[str, str] = {
     "nav.alerts": "Alertas",
     "nav.account": "Conta",
     "nav.users": "Usuarios",
+    "nav.backups": "Backups",
+    "nav.backups.help": "Copias do save guardadas no painel",
+    "archive.title": "Backups no painel",
+    "archive.intro":
+        "Todas as copias do save que o painel guardou, por jogo — inclusive as de um jogo cujo "
+        "servidor ja foi removido. Elas ficam em <code>{dir}</code>.",
+    "archive.keep": "De cada jogo ficam as {n} copias mais novas.",
+    "archive.keep_all": "Nenhuma copia e apagada automaticamente.",
+    "archive.none":
+        "O painel ainda nao guardou nenhuma copia. Todo backup novo vem para ca; os antigos, que so "
+        "estao no container, podem ser enviados pela aba Backups do servidor.",
+    "archive.restore_on": "Restaurar em",
+    "archive.no_server":
+        "Nenhum servidor deste jogo no painel. Crie a instancia (ou cadastre o servidor) de novo: "
+        "a copia aparece na aba Backups dele, com o botao restaurar.",
+    "archive.game": "Jogo",
     "nav.instances": "Instancias",
     "nav.instances.help": "Instancias de jogo",
     "nav.catalog": "Catalogo",
@@ -136,7 +152,7 @@ MESSAGES: dict[str, str] = {
     "backups.config_folder": "pasta de configuracao",
     "backups.or_the": "ou os",
     "backups.in_settings": "no cadastro",
-    "backups.stored_copies": "Copias guardadas",
+    "backups.stored_copies": "Copias no container",
     "backups.file": "Arquivo",
     "backups.when": "Quando",
     "backups.size": "Tamanho",
@@ -744,7 +760,9 @@ MESSAGES: dict[str, str] = {
     "instances.create_confirm":
         "Criar o container, instalar o jogo e abrir as portas no firewall? Isso pode levar varios "
         "minutos.",
-    "instances.deactivate_confirm": "Desativar {name}? O servidor sera PARADO e as portas fecham no firewall.",
+    "instances.deactivate_confirm":
+        "Desativar {name}? Primeiro o save e copiado para o painel; "
+        "depois o servidor sera PARADO e as portas fecham no firewall.",
     "instances.remove_confirm": "Remover {name}? O container e o jogo serao APAGADOS.",
     "login_2fa.confirm": "Confirmar",
     "login_2fa.back": "Voltar",
@@ -931,6 +949,57 @@ MESSAGES: dict[str, str] = {
     "job.backup": "Backup",
     "job.backup_restored": "Backup restaurado",
     "job.backup_deleted": "Backup apagado",
+    "backups.stored_both_html":
+        "Guardado como <code>.tar.gz</code> em <code>{dir}</code>, dentro do proprio container, "
+        "e uma segunda copia vai para o painel.",
+    "backups.panel_copies": "Copias no painel",
+    "backups.panel_copies_help":
+        "Ficam no painel mesmo que o servidor ou a instancia seja removido. Um servidor novo do "
+        "mesmo jogo enxerga estas copias e pode restaurar a partir delas.",
+    "backups.panel_keep": "As {n} mais novas ficam; as antigas saem sozinhas.",
+    "backups.panel_keep_all": "Nenhuma copia e apagada automaticamente.",
+    "backups.panel_none":
+        "Nenhuma copia no painel ainda. Os proximos backups vem para ca sozinhos; os antigos do "
+        "container podem ser enviados pelo botao \"enviar ao painel\".",
+    "backups.in_panel": "no painel",
+    "backups.in_panel_title": "Ja existe uma copia deste arquivo no painel",
+    "backups.send_to_panel": "enviar ao painel",
+    "backups.panel_restore_confirm":
+        "Restaurar {file} (copia do painel) em {server}? O servidor sera PARADO, a copia volta ao "
+        "container e substitui o save atual. Uma copia de seguranca e tirada antes.",
+    "backups.panel_delete_confirm":
+        "Apagar {file} do painel? Se o container "
+        "ja nao existir, esta pode ser a unica copia.",
+    "instances.installing": "Instalacao em andamento",
+    "instances.installing_help":
+        "A criacao continua mesmo que voce saia "
+        "desta tela; o log mostra em que fase ela esta.",
+    "instances.view_log": "Ver log",
+    "instances.cancel_install": "Cancelar instalacao",
+    "instances.cancel_confirm":
+        "Cancelar a instalacao de {name}? O container criado sera APAGADO e o IP, o CT e as portas "
+        "voltam a ficar livres.",
+    "instances.confirm_title": "Confirmar a nova instancia",
+    "instances.confirm_intro":
+        "Conferido agora no Proxmox e no OPNsense. Nada foi reservado ainda: se outra criacao "
+        "acontecer antes de voce confirmar, os numeros podem mudar.",
+    "instances.confirm_game": "Jogo",
+    "instances.confirm_name": "Nome",
+    "instances.confirm_ct": "Container (CT)",
+    "instances.confirm_ip": "IP",
+    "instances.confirm_ports": "Portas",
+    "instances.confirm_create": "Criar agora",
+    "instances.back": "Voltar",
+    "flash.install_cancelling": "Cancelamento pedido: a instalacao para e o container e apagado. Acompanhe no log.",
+    "flash.install_already_finished": "Essa instalacao ja terminou; nao ha o que cancelar.",
+    "instances.deactivate_no_backup": "Desativar sem backup",
+    "instances.deactivate_no_backup_confirm": "Desativar {name} SEM copiar o save para o painel?",
+    "instances.panel_copies": "Copias do save no painel: {n} (a mais nova em {when}).",
+    "instances.panel_copies_none": "Nenhuma copia do save no painel: remover apaga o jogo sem volta.",
+    "flash.panel_backup_deleted": "Copia {file} apagada do painel.",
+    "flash.deactivate_without_backup":
+        "Esta instancia nao tem servidor no painel com caminhos de backup: foi desativada SEM copia do save.",
+    "job.backup_sent_to_panel": "Backup enviado ao painel",
     "job.player_action": "Acao sobre jogador",
     "job.instance_created": "Instancia criada (broker)",
     "job.instance_deactivated": "Instancia desativada (broker)",

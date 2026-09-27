@@ -8,13 +8,21 @@ from __future__ import annotations
 import re
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 
 import gamebroker.services.allocator as alocador
 from gamebroker.domain import wire
 from gamebroker.domain.exceptions import Conflict, NotFound, QuotaExceeded, ValidationError
-from gamebroker.persistence.db import OP_FAILED, OP_OK, STATE_ACTIVE, STATE_DEACTIVATED, STATE_FAILED, Db
+from gamebroker.persistence.db import (
+    OP_FAILED,
+    OP_OK,
+    OP_RUNNING,
+    STATE_ACTIVE,
+    STATE_DEACTIVATED,
+    STATE_FAILED,
+    Db,
+)
 from gamebroker.runtime.base import Compute, Ingress, Installer, InstanceSpec, Network
 from gamebroker.services.allocator import AllocatedPort
 from gamebroker.services.catalog import NAME_RE, Catalog, Game
@@ -22,6 +30,7 @@ from gamebroker.services.catalog import NAME_RE, Catalog, Game
 _ACTOR_RE = re.compile(r"[A-Za-z0-9._-]{1,32}", re.ASCII)
 UNKNOWN_ACTOR = "desconhecido"
 ERROR_MAX = 300
+CANCELLED = "instalacao cancelada a pedido"
 
 
 @dataclass(frozen=True)
@@ -69,6 +78,11 @@ class Service:
         self._now = clock
         # Duas criacoes ao mesmo tempo escolheriam o mesmo IP antes de qualquer uma gravar.
         self._trava = threading.Lock()
+        # Pedido de cancelamento de cada criacao EM ANDAMENTO NESTE PROCESSO. Memoria e nao
+        # banco de proposito: quem obedece ao pedido e a thread que esta instalando, e ela
+        # so existe aqui. Depois de um restart a operacao antiga nao tem thread nenhuma, e
+        # "cancelar" nao teria a quem avisar (o broker roda com um worker so).
+        self._cancels: dict[str, threading.Event] = {}
 
     # --- consultas --------------------------------------------------------
 
@@ -115,6 +129,7 @@ class Service:
             self._check_quotas()
             instance_id, ports = self._reserve(game, name, actor)
             op_id = self.db.create_operation(instance_id, "criar")
+            self._cancels[op_id] = threading.Event()
         self.db.audit(actor, "criar", f"{game.key}:{name}", "aceito", f"instancia {instance_id}")
         self._executar(lambda: self._build(op_id, instance_id, game, ports, actor))
         return {"operation_id": op_id, "instance_id": instance_id}
@@ -134,7 +149,27 @@ class Service:
         if self.db.creations_since(since) >= self.config.max_creations_per_hour:
             raise QuotaExceeded(f"limite de {self.config.max_creations_per_hour} criacoes por hora atingido")
 
+    def preview(self, game_key: str) -> dict:
+        """O que uma criacao deste jogo receberia AGORA: CT, IP e portas. Nada e reservado.
+
+        Mesma conta da criacao (`_choose`), e nao uma copia dela: uma previa que calcula de
+        outro jeito mente justamente no caso em que alguem a consulta — quando o numero
+        esperado nao e o que sai.
+        """
+        game = self.catalog.get(game_key)
+        if not game.creatable:
+            raise Conflict(f"{game.name} nao pode ser criado pela API: {game.reason}")
+        handle, ip, ports = self._choose(game)
+        return {"game": game.key, "handle": handle, "ip": ip,
+                "ports": [wire.port(asdict(p)) for p in ports]}
+
     def _reserve(self, game: Game, name: str, actor: str) -> tuple[int, list[AllocatedPort]]:
+        handle, ip, ports = self._choose(game)
+        instance_id = self.db.reserve(handle, ip, game.key, name, f"{game.key}-{handle}",
+                                      actor, ports)
+        return instance_id, ports
+
+    def _choose(self, game: Game) -> tuple[str, str, list[AllocatedPort]]:
         # Snapshot de fora (Proxmox, OPNsense) + o que o banco ja reservou: o CT pode ter
         # sido criado na mao, e a regra de NAT tambem.
         handles_px, ips_px = self.compute.handles_and_ips()
@@ -153,36 +188,73 @@ class Service:
                                       {int(h) for h in taken_handles if h.isdigit()})
             ip = alocador.pick_ip(self.config.ips, ips_px | ips_db, self.network.answers)
         ports = alocador.allocate_ports(game, self.ingress.external_ports() | ports_db, self.config.ports)
-        handle = str(ctid)
-        instance_id = self.db.reserve(handle, ip, game.key, name, f"{game.key}-{handle}",
-                                      actor, ports)
-        return instance_id, ports
+        return str(ctid), ip, ports
 
     def _build(self, op_id: str, instance_id: int, game: Game, ports: list[AllocatedPort],
                    actor: str) -> None:
+        stop = self._cancels.get(op_id) or threading.Event()
+        try:
+            self._build_steps(op_id, instance_id, game, ports, actor, stop)
+        finally:
+            self._cancels.pop(op_id, None)
+
+    def _build_steps(self, op_id: str, instance_id: int, game: Game,
+                     ports: list[AllocatedPort], actor: str, stop: threading.Event) -> None:
         inst = self.db.instance(instance_id)
         if inst is None:
             return
         log = self._logger(op_id)
         created = False
+
+        def check() -> None:
+            # Entre uma fase e outra: criar o CT e liga-lo sao chamadas a API do Proxmox,
+            # que nao se interrompem no meio. A instalacao (a parte demorada) para sozinha.
+            if stop.is_set():
+                raise RuntimeError(CANCELLED)
+
         try:
+            check()
             log(f"criando o container {inst['handle']} ({inst['ip']})")
             self.compute.create(InstanceSpec(
                 handle=str(inst["handle"]), hostname=inst["hostname"], ip=inst["ip"], game=game.key,
                 memory_mb=game.memory_mb, cores=game.cores, disk_gb=game.disk_gb))
             created = True
+            check()
             self.compute.start(str(inst["handle"]))
-            self.installer.install(inst["ip"], game, ports, log)
+            check()
+            self.installer.install(inst["ip"], game, ports, log, stop)
+            check()
             # O firewall abre por ultimo: o jogo nao fica exposto enquanto ainda instala.
             log("abrindo as portas no firewall")
             self.ingress.open_ports(str(inst["handle"]), inst["ip"], ports)
         except Exception as error:  # noqa: BLE001
-            self._undo(op_id, inst, created, str(error))
-            self.db.audit(actor, "criar", inst["name"], "falhou", str(error))
+            # Cancelado, o erro que sobe e o do processo morto ("codigo -9"): o motivo de
+            # verdade e o pedido, e e ele que vai para o log e para a auditoria.
+            reason = CANCELLED if stop.is_set() else str(error)
+            self._undo(op_id, inst, created, reason)
+            self.db.audit(actor, "criar", inst["name"], "cancelado" if stop.is_set() else "falhou", reason)
             return
         self.db.set_state(instance_id, STATE_ACTIVE)
         self.db.finish_operation(op_id, OP_OK, record_for_the_panel(inst, game, ports))
         self.db.audit(actor, "criar", inst["name"], "ok", f"handle {inst['handle']}")
+
+    def cancel(self, op_id: str, actor: str) -> dict:
+        """Pede para a criacao em andamento parar. Quem para e desfaz e a propria thread
+        da criacao: o CT e apagado e IP, CTID e portas voltam a ficar livres."""
+        actor = _actor_of(actor)
+        op = self.db.operation(op_id)
+        if op is None:
+            raise NotFound("operacao desconhecida")
+        stop = self._cancels.get(op_id)
+        if op["state"] != OP_RUNNING or stop is None:
+            raise Conflict("essa operacao nao esta em andamento; nao ha o que cancelar")
+        if not stop.is_set():
+            # Escreve ANTES de sinalizar: a thread da criacao reage na hora, e o pedido sairia
+            # no log depois do "reserva liberada" que ele mesmo causou.
+            self.db.append_log(op_id, f"CANCELAMENTO pedido por {actor}: interrompendo e desfazendo")
+            self.db.audit(actor, "cancelar", op_id, "aceito")
+            stop.set()
+        return {"operation_id": op_id, "cancelling": True}
 
     def _logger(self, op_id: str) -> Callable[[str], None]:
         return lambda line: self.db.append_log(op_id, line)

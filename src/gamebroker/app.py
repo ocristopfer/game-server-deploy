@@ -106,11 +106,21 @@ def create_app(service: Service, token: str,  # noqa: C901 - ver a nota abaixo
         response = service.create(str(body.get("game", "")), body.get("name", ""), actor())
         return jsonify(response), 202
 
+    @app.get("/v1/instances/preview")
+    def instances_preview():
+        return jsonify(service.preview(str(request.args.get("game", ""))))
+
     @app.get("/v1/operations/<op_id>")
     def operation(op_id: str):
         if not _OPERATION_RE.fullmatch(op_id):
             raise ValidationError("operacao", "identificador invalido")
         return jsonify(service.operation(op_id))
+
+    @app.post("/v1/operations/<op_id>/cancel")
+    def operation_cancel(op_id: str):
+        if not _OPERATION_RE.fullmatch(op_id):
+            raise ValidationError("operacao", "identificador invalido")
+        return jsonify(service.cancel(op_id, actor()))
 
     @app.post("/v1/instances/<int:instance_id>/deactivate")
     def instances_deactivate(instance_id: int):

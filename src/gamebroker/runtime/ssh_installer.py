@@ -55,14 +55,20 @@ class InstallError(RuntimeError):
 
 class Executor(Protocol):
     def run(self, argv: Sequence[str], on_line: Callable[[str], None] | None,
-              timeout: float) -> int:
+              timeout: float, cancel: threading.Event | None = None) -> int:
         """Roda `argv` (sem shell), repassa cada linha de saida e devolve o codigo de saida.
-        Passou de `timeout` segundos: mata o processo e devolve um codigo negativo."""
+        Passou de `timeout` segundos, ou `cancel` foi acionado: mata o processo e devolve um
+        codigo negativo."""
+
+
+# De quanto em quanto tempo o vigia olha o pedido de cancelamento. Curto o bastante para o
+# "cancelar" parecer imediato; longo o bastante para nao ser um laco quente.
+CANCEL_POLL = 1.0
 
 
 class ExecutorReal:
     def run(self, argv: Sequence[str], on_line: Callable[[str], None] | None,
-              timeout: float) -> int:
+              timeout: float, cancel: threading.Event | None = None) -> int:
         try:
             # O argv vem sempre de `_ssh`/`_options` deste arquivo, com `shlex.quote` no
             # que e dado; nao ha shell no meio e nada de fora entra como comando.
@@ -75,6 +81,12 @@ class ExecutorReal:
         # A leitura de linhas bloqueia; quem impoe o prazo e um timer que mata o processo.
         clock = threading.Timer(timeout, proc.kill)
         clock.start()
+        if cancel is not None:
+            # A leitura de linhas bloqueia ate o processo falar: o SteamCMD passa minutos
+            # calado baixando. Por isso o cancelamento tem vigia proprio, e nao um teste
+            # entre uma linha e outra - que so valeria na proxima linha de saida.
+            threading.Thread(target=_kill_on_cancel, args=(proc, cancel), daemon=True,
+                             name="broker-cancelar").start()
         try:
             # `raise` e nao `assert`: com `python -O` o assert sai e o `for` abaixo
             # estouraria com `TypeError: 'NoneType' is not iterable`, que nao diz nada a
@@ -90,6 +102,13 @@ class ExecutorReal:
             clock.cancel()
             if proc.poll() is None:
                 proc.kill()
+
+
+def _kill_on_cancel(proc: subprocess.Popen, cancel: threading.Event) -> None:
+    while proc.poll() is None:
+        if cancel.wait(CANCEL_POLL):
+            proc.kill()
+            return
 
 
 @dataclass(frozen=True)
@@ -230,7 +249,7 @@ class SshInstaller:
     # --- fluxo ----------------------------------------------------------------------------------
 
     def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
-                 log: Callable[[str], None]) -> None:
+                 log: Callable[[str], None], cancel: threading.Event | None = None) -> None:
         ip = str(ipaddress.IPv4Address(ip))
         target = self._target(ip)
         env = build_env(game, ports, self._cfg.steam)
@@ -238,21 +257,24 @@ class SshInstaller:
             # Segunda defesa: o ct-install.sh ja mascara a senha no erro, mas a saida inteira do
             # CT vira o log da operacao, que o painel mostra e guarda no historico.
             log = _masking(log, self._cfg.steam.password)
-        self._wait_for_ssh(target, ip, log)
+        self._wait_for_ssh(target, ip, log, cancel)
         failure: Exception | None = None
         try:
             self._send(target, env)
-            self._install(target, log)
+            self._install(target, log, cancel)
         except Exception as error:
             failure = error
             raise
         finally:
             self._cleanup(target, log, failure)
 
-    def _wait_for_ssh(self, target: str, ip: str, log: Callable[[str], None]) -> None:
+    def _wait_for_ssh(self, target: str, ip: str, log: Callable[[str], None],
+                      cancel: threading.Event | None = None) -> None:
         log(f"aguardando o SSH de {ip}")
         limit = self._now() + self._cfg.ssh_wait
         while True:
+            if cancel is not None and cancel.is_set():
+                raise InstallError("instalacao cancelada")
             if self._exec.run(self._ssh(target, "true"), None, 20) == 0:
                 return
             if self._now() >= limit:
@@ -274,11 +296,15 @@ class SshInstaller:
         if code != 0:
             raise InstallError(f"falhou ao {action} (codigo {code})")
 
-    def _install(self, target: str, log: Callable[[str], None]) -> None:
+    def _install(self, target: str, log: Callable[[str], None],
+                 cancel: threading.Event | None = None) -> None:
         batch = _Batch(log, self._now)
         command = f"cd {shlex.quote(REMOTE_DEST)} && bash ct-install.sh install.env"
-        code = self._exec.run(self._ssh(target, command), batch.line, self._cfg.install_timeout)
+        code = self._exec.run(self._ssh(target, command), batch.line, self._cfg.install_timeout,
+                              cancel=cancel)
         batch.flush()
+        if cancel is not None and cancel.is_set():
+            raise InstallError("instalacao cancelada")
         if code != 0:
             summary = " | ".join(batch.cauda)
             raise InstallError(f"a instalacao falhou (codigo {code}): {summary}")

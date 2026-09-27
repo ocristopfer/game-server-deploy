@@ -74,7 +74,11 @@ def id_by_host(conn: sqlite3.Connection, host: str) -> sqlite3.Row | None:
 def from_broker(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Os que o broker criou: os unicos com `broker_id` preenchido."""
     return conn.execute(
-        "SELECT id, name, broker_id FROM servers WHERE broker_id > 0").fetchall()
+        "SELECT id, name, broker_id, service FROM servers WHERE broker_id > 0").fetchall()
+
+
+def by_broker_id(conn: sqlite3.Connection, broker_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM servers WHERE broker_id = ?", (broker_id,)).fetchone()
 
 
 # --- escrita pela tela ---------------------------------------------------------------

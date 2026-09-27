@@ -143,6 +143,26 @@ rm -f -- "$f"
 echo "backup apagado: $arq ($sz bytes)"
 """
 
+# $1 = pasta dos backups, $2 = nome do arquivo. O conteudo chega pela entrada padrao: e a
+# copia guardada no PAINEL voltando para o container, para o `RESTORE_SCRIPT` extrair de la.
+BACKUP_RECEIVE_SCRIPT = r"""
+set -e
+dir=$1
+arq=$2
+case "$arq" in
+  ''|*/*|*..*) echo "nome de backup invalido" >&2; exit 3 ;;
+esac
+mkdir -p -- "$dir"
+tmp="$dir/.$arq.parcial"
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp"
+# O teste de integridade de verdade e o do RESTORE_SCRIPT, logo depois; este so evita
+# trocar uma copia boa do container por um arquivo que ja chegou quebrado.
+gzip -t -- "$tmp" 2>/dev/null || { echo "a copia chegou corrompida: $arq" >&2; exit 4; }
+mv -f -- "$tmp" "$dir/$arq"
+echo "copia do painel enviada ao container: $arq ($(stat -Lc %s -- "$dir/$arq") bytes)"
+"""
+
 BACKUP_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}\.tar\.gz$")
 
 

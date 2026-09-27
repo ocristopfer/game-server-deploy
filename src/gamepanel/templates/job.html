@@ -32,5 +32,11 @@
     {% endif %}
   </p>
   <pre class="log" data-job-output>{{ job.output or '(aguardando saida...)' }}</pre>
+  {% if job.action == 'broker-criar' and job.status == 'running' and job.broker_op and is_admin %}
+    <div class="form-actions">
+      {{ ui.action(url_for('broker.instance_cancel', jid=job.id), _('instances.cancel_install'), variant='danger',
+                 confirm=_('instances.cancel_confirm', name=job.command)) }}
+    </div>
+  {% endif %}
 </div>
 {% endblock %}

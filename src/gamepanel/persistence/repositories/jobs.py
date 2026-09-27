@@ -102,6 +102,15 @@ def running_broker_ops(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def running_creations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Criacoes de instancia em andamento: a tela de instancias as mostra com o caminho de
+    volta para o log, que antes so existia no redirect logo depois do clique."""
+    return conn.execute(
+        "SELECT id, command, username, created_at FROM jobs"
+        " WHERE status = 'running' AND action = 'broker-criar' AND broker_op != '' ORDER BY id DESC"
+    ).fetchall()
+
+
 # --- escrita ------------------------------------------------------------------------
 
 def target_of(server: ServerLike) -> str:

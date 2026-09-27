@@ -854,7 +854,7 @@ Cinco camadas, e cada uma **so pode depender das anteriores**:
   conteudo (`.appbar__miolo`) tem a `--largura-max` e o recuo do `.wrap`: sem isso a marca
   fica no canto da janela e o conteudo no meio, sem alinhar com nada. A partir de 900px a barra
   mostra TODOS os destinos (`ui.NAV_DESKTOP_BAR`, sem icone e com rotulo `curto` onde ha, para
-  caberem seis) e o menu do NOME da pessoa leva conta, chave SSH e sair (`NAV_DESKTOP_ACCOUNT`).
+  caberem sete - medido a 900px, e o limite: um oitavo nao cabe sem mexer no CSS) e o menu do NOME da pessoa leva conta, chave SSH e sair (`NAV_DESKTOP_ACCOUNT`).
   No celular nada mudou: abas embaixo e o "⋯". Item aceso: `active_desktop_nav_for` (cada destino
   acende o proprio) x `active_nav_for` (as quatro abas do celular).
 - **Cartoes lado a lado usam `.grid-cartoes`** (uma coluna no celular, duas a partir de 900px;

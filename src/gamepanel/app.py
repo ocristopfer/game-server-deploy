@@ -24,7 +24,7 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 from typing import Any, NamedTuple
@@ -66,13 +66,13 @@ from gamepanel.persistence.repositories import schedules as schedules_repo
 from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.persistence.repositories import settings as settings_repo
 from gamepanel.persistence.repositories import users as users_repo
-from gamepanel.runtime import a2s, http_probe, log_probe, port_probe
 
 # Apelido: ha uma rota `terminal()` neste mesmo modulo (a tela /servers/<id>/terminal),
 # e o nome `terminal` sem apelido acabaria REBATIZADO por ela — o import ficaria valendo
 # so ate a definicao da rota, silenciosamente (mypy pegou isso: "Name already defined").
 # Apelidos pelo mesmo motivo: ha rotas `files()` (`/servers/<id>/files`) e
 # `backups()` (`/servers/<id>/backups`) neste modulo.
+from gamepanel.runtime import a2s, backup_archive, http_probe, log_probe, port_probe
 from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import ssh as ssh_transport
@@ -230,15 +230,20 @@ FILE_LIST_MAX = 800
 FILE_UPLOAD_MAX = settings.file_upload_max
 UPLOAD_CHUNK = 256 * 1024
 
-# Backup: tar.gz das pastas que valem a pena guardar (save + configuracao do jogo),
-# criado DENTRO do container e guardado la. O painel nao vira deposito de save — ele
-# dispara, lista, baixa e restaura.
+# Backup: tar.gz das pastas que valem a pena guardar (o save), criado DENTRO do
+# container e guardado la — e, logo em seguida, puxado para o painel (ver
+# `runtime.backup_archive`). As duas copias existem porque a do container morre com ele:
+# remover a instancia pelo broker apaga o CT com os discos.
 BACKUP_DIR = settings.backup_dir
-# Quantas copias manter por servidor; as mais antigas saem sozinhas. 0 = nunca apagar.
+# Quantas copias manter por servidor, no container; as mais antigas saem sozinhas.
 BACKUP_KEEP = settings.backup_keep
 BACKUP_TIMEOUT = settings.backup_timeout
 BACKUP_PATHS_MAX = 8
 BACKUP_LIST_MAX = 100
+# A copia do painel: por PREFIXO (o servico do jogo), nao por servidor, para sobreviver a
+# remover e cadastrar de novo. Retencao propria, 0 = nunca apagar.
+PANEL_BACKUP_DIR = settings.panel_backup_dir
+PANEL_BACKUP_KEEP = settings.panel_backup_keep
 
 # Agendamento: tarefas que o painel dispara sozinho (reiniciar de madrugada, backup
 # diario). O relogio e o do CONTAINER DO PAINEL — se as horas nao baterem com as suas,
@@ -1102,6 +1107,43 @@ def log_job(
                                 username, now_iso())
 
 
+# Um passo de job: comando remoto (texto, vai por SSH) ou funcao Python que recebe o
+# servidor e a saida ate ali e devolve o texto dela. Funcao e o que o SSH sozinho nao
+# faz: puxar o backup para o disco do painel, mandar a copia de volta, chamar o broker.
+JobStep = str | Callable[[dict, str], str]
+
+
+def _join_output(before: str, text: str) -> str:
+    if before and text and not before.endswith("\n"):
+        before += "\n"
+    return before + text
+
+
+def _run_steps(target: dict, steps: list[JobStep], timeout: int) -> tuple[str, str, int | None]:
+    """Roda os passos em ordem e para no primeiro que falha: (saida, status, codigo).
+
+    Parar e o ponto: o restore so extrai se a copia de seguranca saiu, e desativar a
+    instancia so acontece se o save ja esta no painel.
+    """
+    output = ""
+    for step in steps:
+        try:
+            if callable(step):
+                text, code = step(target, output), 0
+            else:
+                # Conexao propria: um update leva quase uma hora, e a mestre compartilhada
+                # ficaria presa a ele — com o monitor inteiro dependendo de um comando que
+                # pode cair no meio.
+                proc = ssh_run(target, step, timeout=timeout, multiplex=False)
+                text, code = (proc.stdout or "") + (proc.stderr or ""), proc.returncode
+        except RemoteError as exc:
+            return _join_output(output, str(exc)), "error", None
+        output = _join_output(output, text)
+        if code != 0:
+            return output, "error", code
+    return output, "ok", 0
+
+
 def start_job(
     action: str,
     server: ServerRow,
@@ -1109,10 +1151,13 @@ def start_job(
     remote_cmd: str | None = None,
     command: str = "",
     timeout: int = JOB_TIMEOUT,
+    steps: list[JobStep] | None = None,
 ) -> int:
     # Resolvido AQUI, e nao dentro do `run()` la embaixo: o que a thread executa nao
     # pode depender de um parametro opcional que alguem mude no meio do caminho.
-    remote_command: str = remote_cmd if remote_cmd is not None else ACTIONS[action][1](server)
+    if steps is None:
+        steps = [remote_cmd if remote_cmd is not None else ACTIONS[action][1](server)]
+    job_steps = list(steps)
     conn = db()
     with conn:
         job_id = jobs_repo.start(conn, server, action, command, username, now_iso())
@@ -1121,16 +1166,7 @@ def start_job(
     target = dict(server)
 
     def run():
-        try:
-            # Conexao propria: um update leva quase uma hora, e a mestre compartilhada
-            # ficaria presa a ele — com o monitor inteiro dependendo de um comando que
-            # pode cair no meio.
-            proc = ssh_run(target, remote_command, timeout=timeout, multiplex=False)
-            output = (proc.stdout or "") + (proc.stderr or "")
-            status = "ok" if proc.returncode == 0 else "error"
-            code = proc.returncode
-        except RemoteError as exc:
-            output, status, code = str(exc), "error", None
+        output, status, code = _run_steps(target, job_steps, timeout)
         # Conexao propria: esta thread vive fora do contexto do request.
         conn2 = _connect()
         with conn2:
@@ -1724,15 +1760,16 @@ def fire_schedule(conn: sqlite3.Connection, sched) -> int:
     server = servers_repo.by_id(conn, sched["server_id"])
     if not server:
         return 0
+    steps: list[JobStep]
     if sched["action"] == "backup":
         paths = backup_paths(server)
         if not paths:
             return 0  # sem o que guardar: nao adianta acordar o container
-        remote, limit = backup_command(server, paths), BACKUP_TIMEOUT
+        steps, limit = backup_steps(server, paths), BACKUP_TIMEOUT
     else:
-        remote, limit = ACTIONS[sched["action"]][1](server), JOB_TIMEOUT
+        steps, limit = [ACTIONS[sched["action"]][1](server)], JOB_TIMEOUT
     job_id = start_job(
-        sched["action"], server, SCHEDULE_USER, remote_cmd=remote,
+        sched["action"], server, SCHEDULE_USER, steps=steps,
         command=f"agendado: {schedule_label(sched)}", timeout=limit,
     )
     invalidate_status(int(server["id"]))
@@ -2303,10 +2340,10 @@ def stream_remote_file(server: ServerRow, path: str):
 
 # ------------------------------------------------------------------ backup
 #
-# O backup mora DENTRO do container do jogo, nao no painel: e um tar.gz das pastas que
-# valem a pena guardar (o save, e a configuracao junto). O painel dispara, lista, baixa e
-# restaura — e a restauracao para o servidor, extrai e religa, porque o jogo com o mundo
-# trocado embaixo dele grava por cima do que acabou de voltar.
+# O backup nasce DENTRO do container do jogo (um tar.gz das pastas do save) e e puxado
+# para o painel no mesmo job. O painel dispara, lista, baixa e restaura — e a restauracao
+# para o servidor, extrai e religa, porque o jogo com o mundo trocado embaixo dele grava
+# por cima do que acabou de voltar.
 
 
 def backup_paths(server: ServerRow) -> list[str]:
@@ -2329,12 +2366,82 @@ def list_backups(server: ServerRow) -> list[dict]:
     return backups_rt.list_backups(ssh_run, server, BACKUP_DIR, BACKUP_LIST_MAX)
 
 
-def backup_command(server: ServerRow, paths: list[str], suffix: str = "") -> str:
-    return backups_rt.backup_command(server, BACKUP_DIR, BACKUP_KEEP, paths, suffix)
+def backup_command(server: ServerRow | dict, paths: list[str], suffix: str = "") -> str:
+    # A copia de seguranca do restore (a unica com sufixo) NAO aplica retencao: com as
+    # copias no limite, ela apagaria a mais antiga — que pode ser justo a que a pessoa
+    # escolheu restaurar. O proximo backup comum limpa o excedente.
+    keep = 0 if suffix else BACKUP_KEEP
+    return backups_rt.backup_command(server, BACKUP_DIR, keep, paths, suffix)
 
 
 def delete_backup(server: ServerRow, name: str) -> str:
     return backups_rt.delete_backup(ssh_run, server, BACKUP_DIR, name)
+
+
+def list_panel_backups(server: ServerRow | dict) -> list[dict]:
+    return backup_archive.list_copies(PANEL_BACKUP_DIR, backup_prefix(server))
+
+
+def panel_backup_path(server: ServerRow | dict, name: str) -> str:
+    return backup_archive.path_of(PANEL_BACKUP_DIR, backup_prefix(server), name)
+
+
+def delete_panel_backup(server: ServerRow | dict, name: str) -> int:
+    return backup_archive.delete(PANEL_BACKUP_DIR, backup_prefix(server), name)
+
+
+def _pull_to_panel(target: dict, remote_path: str, size: int | None) -> str:
+    """Traz um backup do container para o disco do painel. Texto vai para a saida do job."""
+    name = backups_rt.validate_backup_name(remote_path.rsplit("/", 1)[-1])
+    try:
+        written, removed = backup_archive.store(
+            PANEL_BACKUP_DIR, backup_prefix(target), name,
+            stream_remote_file(target, remote_path), size, PANEL_BACKUP_KEEP)
+    except OSError as exc:
+        # O backup do container continua la; o que falhou foi so a segunda copia. E erro
+        # mesmo assim: quem conta com o painel para sobreviver a remocao do CT precisa
+        # saber agora, e nao no dia em que o container ja nao existir.
+        raise RemoteError(f"a copia no container saiu, mas a do painel falhou: {exc}") from exc
+    lines = [f"copia guardada no painel: {name} ({written} bytes)"]
+    lines += [f"retencao no painel: apagado {old}" for old in removed]
+    return "\n".join(lines) + "\n"
+
+
+def pull_new_backup_step(target: dict, output: str) -> str:
+    """Passo de job: puxa para o painel o backup que o passo anterior acabou de criar."""
+    try:
+        found = backup_archive.created_file(output, BACKUP_DIR)
+    except ValueError as exc:
+        raise RemoteError(str(exc)) from exc
+    if not found:
+        raise RemoteError("o backup nao disse qual arquivo criou; nada foi copiado para o painel")
+    return _pull_to_panel(target, *found)
+
+
+def pull_existing_backup_step(name: str) -> JobStep:
+    """Passo de job: puxa para o painel um backup que ja estava no container."""
+    def step(target: dict, _output: str) -> str:
+        path = f"{BACKUP_DIR.rstrip('/')}/{name}"
+        return _pull_to_panel(target, path, int(stat_file(target, path)["size"]))
+    return step
+
+
+def push_panel_backup_step(name: str) -> JobStep:
+    """Passo de job: devolve ao container uma copia guardada no painel."""
+    def step(target: dict, _output: str) -> str:
+        try:
+            path = panel_backup_path(target, name)
+        except FileNotFoundError as exc:
+            raise RemoteError(f"a copia {name} nao esta mais no painel") from exc
+        with open(path, "rb") as source:
+            remote = q("bash", "-lc", backups_rt.BACKUP_RECEIVE_SCRIPT, "gp", BACKUP_DIR, name)
+            return ssh_stream_in(target, remote, source, BACKUP_TIMEOUT) + "\n"
+    return step
+
+
+def backup_steps(server: ServerRow | dict, paths: list[str], suffix: str = "") -> list[JobStep]:
+    """Backup completo: cria no container e guarda a segunda copia no painel."""
+    return [backup_command(server, paths, suffix), pull_new_backup_step]
 
 
 # ------------------------------------------------- edicao rapida de config

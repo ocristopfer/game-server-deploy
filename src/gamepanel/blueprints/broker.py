@@ -1,11 +1,12 @@
 """Catalogo de jogos e instancias criadas pelo broker."""
 from __future__ import annotations
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
 from gamepanel import app as panel
 from gamepanel.games.catalog import search as catalog_search
 from gamepanel.games.catalog.templates import TEMPLATES as GAME_TEMPLATES
+from gamepanel.persistence.repositories import jobs as jobs_repo
 from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("broker", __name__)
@@ -151,15 +152,39 @@ def instances():
         r["broker_id"]: r
         for r in servers_repo.from_broker(panel.db())
     }
-    return render_template("instances.html", instances=instances, games=games, servers=bound)
+    return render_template("instances.html", instances=instances, games=games, servers=bound,
+                           panel_copies=_panel_copies(instances, bound),
+                           installing=jobs_repo.running_creations(panel.db()))
+
+
+def _panel_copies(instances: list, bound: dict) -> dict:
+    """Quantas copias do save o PAINEL tem de cada instancia, e a mais nova.
+
+    E o que a tela mostra na hora de remover: remover apaga o container e as copias de
+    dentro dele, e so o que esta no painel sobrevive. Instancia sem servidor no painel
+    cai no nome do jogo, que e o servico que o broker da a ela.
+    """
+    summary = {}
+    for inst in instances:
+        server = bound.get(inst.get("id")) or {"service": f"{inst.get('game', '')}.service"}
+        try:
+            copies = panel.list_panel_backups(server)
+        except ValueError:
+            copies = []
+        summary[inst.get("id")] = {"count": len(copies), "latest": copies[0]["mtime"] if copies else ""}
+    return summary
 
 
 @bp.post("/instances/new")
 @panel.admin_required
 @panel.broker_required
 def instance_new():
+    """Dois passos: primeiro mostra CT, IP e portas que a instancia vai receber, e so cria
+    quando a pessoa confirma. Sem JavaScript: a confirmacao e uma tela, nao um alerta."""
     game = (request.form.get("game") or "").strip()
     name = (request.form.get("name") or "").strip()
+    if request.form.get("confirmed") != "1":
+        return _confirm_instance(game, name)
     try:
         response = panel.broker_client.create(game, name, panel._actor())
     except panel.broker_client.BrokerError as failure:
@@ -173,10 +198,77 @@ def instance_new():
     return redirect(url_for("jobs.detail", jid=job_id))
 
 
+def _confirm_instance(game: str, name: str):
+    try:
+        preview = panel.broker_client.preview(game)
+        info = panel.broker_client.game(game)
+    except panel.broker_client.BrokerError as failure:
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
+        return redirect(url_for("broker.instances"))
+    return render_template("instance_confirm.html", game=game, game_name=info.get("name", game),
+                           name=name, preview=preview)
+
+
+@bp.post("/instances/jobs/<int:jid>/cancel")
+@panel.admin_required
+@panel.broker_required
+def instance_cancel(jid: int):
+    """Cancela a criacao que este job acompanha. Quem para e desfaz e o broker: o CT criado e
+    apagado, e o job termina sozinho quando a operacao dele terminar."""
+    job = jobs_repo.by_id(panel.db(), jid)
+    if job is None or job["action"] != "broker-criar" or not job["broker_op"]:
+        abort(404)
+    if job["status"] != "running":
+        flash(panel.translate("flash.install_already_finished"), "error")
+        return redirect(url_for("jobs.detail", jid=jid))
+    try:
+        panel.broker_client.cancel(job["broker_op"], panel._actor())
+    except panel.broker_client.BrokerError as failure:
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
+    else:
+        flash(panel.translate("flash.install_cancelling"), "ok")
+    return redirect(url_for("jobs.detail", jid=jid))
+
+
 @bp.post("/instances/<int:iid>/deactivate")
 @panel.admin_required
 @panel.broker_required
 def instance_deactivate(iid: int):
+    """Backup no painel, e SO ENTAO desativa.
+
+    Desativar e o passo que antecede remover, e remover apaga o CT com os discos. Depois
+    de desativado o container esta parado e nao ha SSH para tirar copia nenhuma: esta e a
+    ultima hora em que o save ainda pode ser guardado. Se o backup falhar, a instancia
+    continua ativa — quem quiser mesmo assim usa "sem backup".
+    """
+    server = servers_repo.by_broker_id(panel.db(), iid)
+    paths = panel.backup_paths(server) if server else []
+    if server is None or request.form.get("skip_backup") == "1" or not paths:
+        if not paths:
+            flash(panel.translate("flash.deactivate_without_backup"), "error")
+        return _deactivate_now(iid)
+    actor = panel._actor()
+    job_id = panel.start_job(
+        "broker-desativar", server, actor,
+        steps=[*panel.backup_steps(server, paths), _deactivate_step(iid, actor)],
+        command=f"instancia {iid}: backup e desativacao",
+        timeout=panel.BACKUP_TIMEOUT,
+    )
+    return redirect(url_for("jobs.detail", jid=job_id))
+
+
+def _deactivate_step(iid: int, actor: str):
+    def step(_target: dict, _output: str) -> str:
+        try:
+            panel.broker_client.deactivate(iid, actor)
+        except panel.broker_client.BrokerError as failure:
+            raise panel.RemoteError(
+                f"o backup foi guardado, mas o broker recusou a desativacao: {failure.message}") from failure
+        return "Portas fechadas no firewall e container parado.\n"
+    return step
+
+
+def _deactivate_now(iid: int):
     try:
         panel.broker_client.deactivate(iid, panel._actor())
     except panel.broker_client.BrokerError as failure:

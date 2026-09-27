@@ -4,6 +4,7 @@
 {% block title %}{{ _('server.backups') }} &mdash; {{ server.name }}{% endblock %}
 
 {% block content %}
+{% set panel_names = panel_copies | map(attribute='name') | list %}
 {{ ui.page_header(_('server.backups') ~ ' — ' ~ server.name) }}
 {{ srv.tabs(server, 'backups') }}
 
@@ -14,8 +15,7 @@
       {% for c in paths %}<li><code>{{ c }}</code></li>{% endfor %}
     </ul>
     <p class="muted small">
-      Guardado como <code>.tar.gz</code> em <code>{{ backup_dir }}</code>, dentro do
-      proprio container.
+      {{ _h('backups.stored_both_html', dir=backup_dir) }}
       {% if keep %}As <strong>{{ keep }}</strong> copias mais novas ficam; as
       antigas saem sozinhas.{% else %}Nenhuma copia e apagada automaticamente.{% endif %}
       {% if is_admin %}
@@ -54,6 +54,7 @@
         <td>
           <code>{{ c.name }}</code>
           {% if c.seguranca %}<span class="badge" title="{{ _('backups.pre_restore_copy') }}">{{ _('backups.before_restore') }}</span>{% endif %}
+          {% if c.name in panel_names %}<span class="badge on" title="{{ _('backups.in_panel_title') }}">{{ _('backups.in_panel') }}</span>{% endif %}
         </td>
         <td class="muted small nowrap">{{ c.mtime }}</td>
         <td class="muted nowrap">{{ c.size | filesize }}</td>
@@ -62,10 +63,14 @@
             {{ ui.button(_('files.download'), href=url_for('backups.download', sid=server.id, name=c.name),
                         variant='ghost', size='sm', icon='⬇') }}
             {{ ui.action(url_for('backups.restore', sid=server.id), _('backups.restore'), size='sm',
-                       fields={'nome': c.name},
+                       fields={'name': c.name},
                        confirm=_('backups.restore_confirm', file=c.name, server=server.name)) }}
+            {% if c.name not in panel_names %}
+            {{ ui.action(url_for('backups.send_to_panel', sid=server.id), _('backups.send_to_panel'),
+                       variant='ghost', size='sm', fields={'name': c.name}) }}
+            {% endif %}
             {{ ui.action(url_for('backups.delete', sid=server.id), _('files.delete'), variant='danger',
-                       size='sm', fields={'nome': c.name},
+                       size='sm', fields={'name': c.name},
                        confirm=_('backups.delete_confirm', file=c.name)) }}
           {% else %}
           <span class="muted small">{{ _('backups.admin_only') }}</span>
@@ -77,6 +82,47 @@
   </table></div>
   {% elif not error %}
     <p class="muted">{{ _('backups.none_yet') }}</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>{{ _('backups.panel_copies') }}</h2>
+  <p class="muted small">
+    {{ _('backups.panel_copies_help') }}
+    {% if panel_keep %}{{ _('backups.panel_keep', n=panel_keep) }}{% else %}{{ _('backups.panel_keep_all') }}{% endif %}
+  </p>
+  {% if panel_copies %}
+  <div class="table-wrap"><table class="jobs">
+    <thead><tr><th>{{ _('backups.file') }}</th><th>{{ _('backups.when') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
+    <tbody>
+      {% for c in panel_copies %}
+      <tr>
+        <td>
+          <code>{{ c.name }}</code>
+          {% if c.seguranca %}<span class="badge" title="{{ _('backups.pre_restore_copy') }}">{{ _('backups.before_restore') }}</span>{% endif %}
+        </td>
+        <td class="muted small nowrap">{{ c.mtime }}</td>
+        <td class="muted nowrap">{{ c.size | filesize }}</td>
+        <td class="actions">
+          {% if is_admin %}
+            {{ ui.button(_('files.download'), href=url_for('backups.panel_download', sid=server.id, name=c.name),
+                        variant='ghost', size='sm', icon='⬇') }}
+            {{ ui.action(url_for('backups.panel_restore', sid=server.id), _('backups.restore'), size='sm',
+                       fields={'name': c.name},
+                       confirm=_('backups.panel_restore_confirm', file=c.name, server=server.name)) }}
+            {{ ui.action(url_for('backups.panel_delete', sid=server.id), _('files.delete'), variant='danger',
+                       size='sm', fields={'name': c.name},
+                       confirm=_('backups.panel_delete_confirm', file=c.name)) }}
+          {% else %}
+          <span class="muted small">{{ _('backups.admin_only') }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+    <p class="muted">{{ _('backups.panel_none') }}</p>
   {% endif %}
 </div>
 {% endblock %}

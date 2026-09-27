@@ -47,7 +47,7 @@ class Item:
     # Descricao curta para o menu suspenso — onde o rotulo sozinho nao basta para
     # separar duas telas parecidas (e o caso de Configuracao x Arquivos).
     help: str = ""
-    # Rotulo da barra larga, onde seis destinos dividem uma linha so.
+    # Rotulo da barra larga, onde sete destinos dividem uma linha so.
     short: str = ""
 
 
@@ -73,6 +73,9 @@ NAV_SECONDARY = (
     Item("catalogo", "nav.catalog.help", "📚", "broker.catalog", admin=True,
          feature=FEATURE_BROKER, short="nav.catalog"),
     Item("usuarios", "nav.users", "👥", "users.index", admin=True),
+    # Todas as copias do save guardadas no painel, inclusive as de jogo que ja nao tem
+    # servidor: sem esta tela, a copia de um servidor removido ficava sem onde aparecer.
+    Item("backups", "nav.backups.help", "💾", "backups.archive", admin=True, short="nav.backups"),
     Item("ssh", "nav.ssh_key", "🔑", "account.ssh_key"),
 )
 
@@ -86,12 +89,14 @@ _ACTIVE_EXTRA = {
         "config_quick.index", "config_quick.register_file", "config_quick.save", "files.index",
         "files.save", "files.delete", "files.upload", "files.download",
         "terminal.index", "console.index", "charts.index", "backups.index", "backups.create", "backups.restore",
-        "backups.delete", "backups.download", "schedules.index", "schedules.new",
+        "backups.delete", "backups.download", "backups.send_to_panel", "backups.panel_restore",
+        "backups.panel_delete", "backups.panel_download", "schedules.index", "schedules.new",
         "schedules.toggle", "schedules.delete", "schedules.run",
         "players.setup", "players.use", "players.action", "jobs.detail",
         "broker.instances", "broker.instance_new", "broker.instance_deactivate", "broker.instance_remove",
-        "broker.catalog", "broker.catalog_new", "broker.catalog_edit", "broker.catalog_update",
-        "broker.catalog_remove",
+        "broker.instance_cancel", "broker.catalog", "broker.catalog_new", "broker.catalog_edit",
+        "broker.catalog_update",
+        "broker.catalog_remove", "backups.archive", "backups.archive_download", "backups.archive_delete",
     ),
     "alertas": ("alerts.index", "alerts.save", "alerts.hook_new", "alerts.hook_save",
                 "alerts.hook_delete", "alerts.hook_test"),
@@ -124,7 +129,7 @@ def active_nav_for(endpoint: str | None) -> str:
 # "⋯": os destinos de uso diario ficam na barra e os da pessoa (conta, chave SSH)
 # no menu do nome dela. Sao CHAVES dos itens acima, nao copias deles: o rotulo, o
 # icone, a regra de admin e o recurso continuam definidos num lugar so.
-NAV_DESKTOP_BAR = ("servidores", "instancias", "catalogo", "historico", "alertas", "usuarios")
+NAV_DESKTOP_BAR = ("servidores", "instancias", "catalogo", "historico", "backups", "alertas", "usuarios")
 NAV_DESKTOP_ACCOUNT = ("conta", "ssh")
 
 _ALL_ITEMS = {i.key: i for i in NAV_MAIN + NAV_SECONDARY}
@@ -133,11 +138,13 @@ _ALL_ITEMS = {i.key: i for i in NAV_MAIN + NAV_SECONDARY}
 # "Conta"), porque so ha quatro abas. Na barra larga cada destino e o seu proprio
 # item, entao a rota acende ele mesmo — senao "Instancias" apareceria como "Servidores".
 _ACTIVE_ON_DESKTOP = {
-    "instancias": ("broker.instances", "broker.instance_new", "broker.instance_deactivate", "broker.instance_remove"),
+    "instancias": ("broker.instances", "broker.instance_new", "broker.instance_deactivate",
+                   "broker.instance_remove", "broker.instance_cancel"),
     "catalogo": ("broker.catalog", "broker.catalog_new", "broker.catalog_edit", "broker.catalog_update",
                  "broker.catalog_remove"),
     "usuarios": ("users.index", "users.new", "users.role", "users.password", "users.delete",
                  "users.two_factor_off"),
+    "backups": ("backups.archive", "backups.archive_download", "backups.archive_delete"),
     "ssh": ("account.ssh_key",),
     "conta": ("account.index", "account.two_factor", "account.two_factor_off", "account.two_factor_codes"),
 }

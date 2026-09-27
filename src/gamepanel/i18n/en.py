@@ -13,6 +13,22 @@ MESSAGES: dict[str, str] = {
     "nav.alerts": "Alerts",
     "nav.account": "Account",
     "nav.users": "Users",
+    "nav.backups": "Backups",
+    "nav.backups.help": "Save copies kept in the panel",
+    "archive.title": "Backups in the panel",
+    "archive.intro":
+        "Every save copy the panel has kept, by game — including a game whose server has already "
+        "been removed. They live in <code>{dir}</code>.",
+    "archive.keep": "The {n} newest copies of each game are kept.",
+    "archive.keep_all": "No copy is deleted automatically.",
+    "archive.none":
+        "The panel has not kept any copy yet. Every new backup comes here; the older ones, which are "
+        "only in the container, can be sent from the server's Backups tab.",
+    "archive.restore_on": "Restore on",
+    "archive.no_server":
+        "No server of this game in the panel. Create the instance (or register the server) again: "
+        "the copy shows up in its Backups tab, with the restore button.",
+    "archive.game": "Game",
     "nav.instances": "Instances",
     "nav.instances.help": "Game instances",
     "nav.catalog": "Catalog",
@@ -133,7 +149,7 @@ MESSAGES: dict[str, str] = {
     "backups.config_folder": "configuration folder",
     "backups.or_the": "or the",
     "backups.in_settings": "in the server settings",
-    "backups.stored_copies": "Stored copies",
+    "backups.stored_copies": "Copies in the container",
     "backups.file": "File",
     "backups.when": "When",
     "backups.size": "Size",
@@ -737,7 +753,9 @@ MESSAGES: dict[str, str] = {
     "instances.create_confirm":
         "Create the container, install the game and open the ports on the firewall? This can take "
         "several minutes.",
-    "instances.deactivate_confirm": "Turn off {name}? The server will be STOPPED and the ports close on the firewall.",
+    "instances.deactivate_confirm":
+        "Turn off {name}? The save is copied to the panel first; then "
+        "the server will be STOPPED and the ports close on the firewall.",
     "instances.remove_confirm": "Remove {name}? The container and the game will be DELETED.",
     "login_2fa.confirm": "Confirm",
     "login_2fa.back": "Back",
@@ -924,6 +942,59 @@ MESSAGES: dict[str, str] = {
     "job.backup": "Backup",
     "job.backup_restored": "Backup restored",
     "job.backup_deleted": "Backup deleted",
+    "backups.stored_both_html":
+        "Stored as <code>.tar.gz</code> in <code>{dir}</code>, inside the container itself, "
+        "and a second copy goes to the panel.",
+    "backups.panel_copies": "Copies in the panel",
+    "backups.panel_copies_help":
+        "They stay in the panel even if the server or the instance is removed. A new server of the "
+        "same game sees these copies and can restore from them.",
+    "backups.panel_keep": "The {n} newest stay; older ones go away on their own.",
+    "backups.panel_keep_all": "No copy is deleted automatically.",
+    "backups.panel_none":
+        "No copy in the panel yet. The next backups come here on their own; the older ones in the "
+        "container can be sent with the \"send to panel\" button.",
+    "backups.in_panel": "in panel",
+    "backups.in_panel_title": "This file already has a copy in the panel",
+    "backups.send_to_panel": "send to panel",
+    "backups.panel_restore_confirm":
+        "Restore {file} (panel copy) on {server}? The server will be STOPPED, the copy goes back to "
+        "the container and replaces the current save. A safety copy is taken first.",
+    "backups.panel_delete_confirm":
+        "Delete {file} from the panel? If the "
+        "container is gone, this may be the only copy.",
+    "instances.installing": "Installation in progress",
+    "instances.installing_help":
+        "The creation goes on even if you leave "
+        "this screen; the log shows which step it is on.",
+    "instances.view_log": "View log",
+    "instances.cancel_install": "Cancel installation",
+    "instances.cancel_confirm":
+        "Cancel the installation of {name}? The container created so far will be DELETED and the IP, "
+        "the CT and the ports become free again.",
+    "instances.confirm_title": "Confirm the new instance",
+    "instances.confirm_intro":
+        "Checked just now on Proxmox and OPNsense. Nothing is reserved yet: if another creation "
+        "happens before you confirm, the numbers may change.",
+    "instances.confirm_game": "Game",
+    "instances.confirm_name": "Name",
+    "instances.confirm_ct": "Container (CT)",
+    "instances.confirm_ip": "IP",
+    "instances.confirm_ports": "Ports",
+    "instances.confirm_create": "Create now",
+    "instances.back": "Back",
+    "flash.install_cancelling":
+        "Cancellation requested: the installation stops "
+        "and the container is deleted. Follow it in the log.",
+    "flash.install_already_finished": "This installation has already finished; there is nothing to cancel.",
+    "instances.deactivate_no_backup": "Turn off without backup",
+    "instances.deactivate_no_backup_confirm": "Turn off {name} WITHOUT copying the save to the panel?",
+    "instances.panel_copies": "Save copies in the panel: {n} (newest on {when}).",
+    "instances.panel_copies_none": "No save copy in the panel: removing deletes the game for good.",
+    "flash.panel_backup_deleted": "Copy {file} deleted from the panel.",
+    "flash.deactivate_without_backup":
+        "This instance has no panel server with backup paths: it was turned off WITHOUT a save copy.",
+    "job.backup_sent_to_panel": "Backup sent to the panel",
     "job.player_action": "Action on a player",
     "job.instance_created": "Instance created (broker)",
     "job.instance_deactivated": "Instance turned off (broker)",
