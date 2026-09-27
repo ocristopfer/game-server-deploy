@@ -55,7 +55,7 @@ def test_ambiente_completo_carrega(env):
     assert cfg.proxmox_fingerprint == "9f" * 32, "normalizada (sem dois-pontos, minuscula)"
     assert cfg.proxmox.ssh_keys == (PUBLIC_KEY, PANEL_KEY), "as DUAS chaves entram no CT novo"
     assert cfg.ssh.blob == BLOB
-    assert (cfg.max_instances, cfg.max_creations_per_hour) == (8, 4)
+    assert (cfg.max_instances, cfg.max_creations_per_hour) == (8, 10)
     assert cfg.opnsense_wan == "wan"
 
 

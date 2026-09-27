@@ -221,7 +221,7 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
         "proxmox_token": reader.text("PROXMOX_TOKEN"), "opnsense_key": reader.text("OPNSENSE_KEY"),
         "opnsense_secret": reader.text("OPNSENSE_SECRET"), "opnsense_wan": reader.text("OPNSENSE_WAN", "wan"),
         "max_instances": reader.integer("BROKER_MAX_INSTANCIAS", 8, 1, 100),
-        "max_creations_per_hour": reader.integer("BROKER_MAX_CREATIONS_PER_HOUR", 4, 1, 100),
+        "max_creations_per_hour": reader.integer("BROKER_MAX_CREATIONS_PER_HOUR", 10, 1, 100),
         "allowed_ips": _read_allowed_ips(reader),
     }
     if reader.problems or proxmox is None or ssh is None:
