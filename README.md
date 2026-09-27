@@ -1465,6 +1465,43 @@ graficos) sao pytest — nao rodam mais como script solto. Veja o
   elas aparecem mascaradas, mas quem tem o arquivo do banco tem as URLs inteiras — se uma
   vazar, apague o webhook no Discord/Slack e cadastre outro aqui
 - Comprometer o painel da acesso root aos **containers de jogo**, nao ao Proxmox
+- Cada container tem **firewall proprio** (nftables), inclusive contra quem esta na mesma
+  rede — veja [Firewall dentro dos containers](#firewall-dentro-dos-containers)
+
+### Firewall dentro dos containers
+
+O OPNsense so filtra o que **atravessa** ele. Dentro da mesma sub-rede um CT fala com o
+outro direto, e um servidor de jogo invadido alcancaria o SSH do painel, a API do broker, o
+Proxmox e a API do OPNsense sem passar por regra nenhuma. Por isso cada CT tem o seu firewall
+(`lib/ct-firewall.sh`, instalado como `ct-firewall`), que **nega tudo o que entra** e so abre
+o que aquele CT precisa:
+
+| CT | Entrada | Saida |
+|----|---------|-------|
+| Painel | web (`ADMIN_PORT`) e SSH so de `ADMIN_FIREWALL_SOURCES` (padrao `192.168.0.0/16`) | livre (jogos, broker, webhook) |
+| Broker | API `:8443` so do painel; sem SSH (ele nao tem sshd) | so Proxmox e OPNsense (das URLs), SSH e ping na faixa dos jogos, DNS e apt |
+| Jogo | portas do jogo de qualquer origem; SSH e ping so do painel e do broker | internet sim; **rede interna nao** (so o DNS) |
+
+Em todos, o loopback passa (as APIs de admin do Palworld e do Satisfactory so escutam em
+`127.0.0.1`) e a resposta de conexao ja aberta passa.
+
+- **CT novo ja nasce com ele**: painel (`deploy-admin.ps1 -Full`), broker
+  (`deploy-broker.ps1`), jogo pelo broker e jogo pelo `deploy-game.ps1`. O jogo so ganha
+  firewall se o deploy sabe o IP do painel (`ADMIN_HOST`/`ADMIN_IP_CIDR`): aplicar sem ele
+  trancaria o painel fora do servidor que acabou de nascer.
+- **CTs que ja existiam**: `.\deploy\firewall\apply-firewall.ps1`. Ele acha os jogos pelo
+  banco do broker (com as portas que cada um recebeu), aplica, **testa** cada CT (o painel
+  ainda abre SSH no jogo? o broker ainda fala com o Proxmox?) e **desliga sozinho** o
+  firewall do CT cujo teste falhar. `-DryRun` so mostra as regras; `-Only 302` limita a um CT;
+  `-ExtraGameCts 210,211` inclui jogos feitos pelo `deploy-game.ps1`.
+- **Emergencia** (sempre funciona, porque passa pelo Proxmox e nao pela rede):
+  `pct exec <CT> -- ct-firewall off`. Religar: `pct exec <CT> -- ct-firewall apply`.
+  Conferir: `pct exec <CT> -- ct-firewall status`.
+- **Porta a mais num jogo** (ex.: os mundos extras do Dragonwilds em `7778`/`7779`): edite
+  `FW_GAME_PORTS` em `/etc/ct-firewall.env` do CT e rode `ct-firewall apply`.
+- O painel so e alcancavel da rede local. Acesso de fora tem de chegar por um tunel ou proxy
+  **de dentro** da LAN (ou incluido em `ADMIN_FIREWALL_SOURCES`).
+- `CT_FIREWALL=0` no `.env` desliga tudo isso nos proximos deploys.
 
 ### Arquivos
 

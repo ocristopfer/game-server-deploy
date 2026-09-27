@@ -510,6 +510,7 @@ Copy-Item (Join-Path $ScriptDir $ProvisionScript) (Join-Path $BundleDir $Provisi
 # so arquivos soltos), entao ela viaja ao lado do script. LF garantido: e lida pelo bash.
 if ($ProvisionScript -eq "provision-game-lxc.sh") {
     Write-LfFile (Join-Path $BundleDir "ct-phases.sh") ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "lib\ct-phases.sh")))
+    Write-LfFile (Join-Path $BundleDir "ct-firewall.sh") ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "lib\ct-firewall.sh")))
 }
 Write-LfFile (Join-Path $BundleDir "game.env") $GameEnvContent
 
@@ -519,6 +520,11 @@ foreach ($key in @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMP
         $deployLines += "$key=`"$($cfg[$key])`""
     }
 }
+# Firewall do CT: so o painel abre SSH neste servidor (o broker nao mexe em CT feito por aqui).
+# Sem o endereco do painel o firewall NAO e aplicado - aplicar trancaria o painel fora.
+if ($PanelHost -ne "") { $deployLines += "FW_MGMT_SOURCES=`"$PanelHost`"" }
+else { Write-Host "ADMIN_HOST/ADMIN_IP_CIDR vazios: o CT sobe SEM firewall interno." -ForegroundColor Yellow }
+if ((Get-Cfg $cfg "CT_FIREWALL") -eq "0") { $deployLines += "CT_FIREWALL=`"0`"" }
 Write-LfFile (Join-Path $BundleDir "deploy.env") (($deployLines -join "`n") + "`n")
 
 # ----- Envia e executa no Proxmox -----

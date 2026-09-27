@@ -71,6 +71,8 @@ install_helper() {
 # daquele arquivo). Este script so define o transporte: `pct exec`.
 # O bundle do deploy-game.ps1 e uma pasta SEM subpastas (o scp leva so arquivos soltos),
 # entao la a lib vem ao lado do script; no repositorio ela mora em lib/.
+FIREWALL_SCRIPT="${SCRIPT_DIR}/ct-firewall.sh"
+[[ -f "$FIREWALL_SCRIPT" ]] || FIREWALL_SCRIPT="${SCRIPT_DIR}/../../lib/ct-firewall.sh"
 LIB_FASES="${SCRIPT_DIR}/ct-phases.sh"
 [[ -f "$LIB_FASES" ]] || LIB_FASES="${SCRIPT_DIR}/lib/ct-phases.sh"
 [[ -f "$LIB_FASES" ]] || die "ct-phases.sh nao encontrado ao lado do script nem em lib/ (o bundle do deploy precisa leva-lo)"
@@ -243,6 +245,16 @@ Exemplo a partir do host Proxmox:
 EOF
 }
 
+# O CT e unprivileged: ele usa o nftables, mas nao carrega modulo de kernel. O host carrega
+# (e deixa carregando no boot), senao o `ct-firewall apply` de dentro falha com "Operation not
+# supported" - ou pior, o CT sobe sem regra depois de um reboot do host.
+load_nf_tables_on_host() {
+  [[ "${CT_FIREWALL:-1}" == "0" || -z "${FW_MGMT_SOURCES:-}" ]] && return 0
+  modprobe nf_tables 2>/dev/null || warn "nao consegui carregar o modulo nf_tables no host"
+  { mkdir -p /etc/modules-load.d && echo nf_tables > /etc/modules-load.d/ct-firewall.conf; } \
+    || warn "nao consegui deixar o nf_tables carregando no boot do host"
+}
+
 main() {
   load_env_file "$DEPLOY_ENV_FILE"
   load_env_file "$GAME_ENV_FILE"
@@ -268,6 +280,8 @@ main() {
   render_service_helpers
   render_systemd_unit
   start_game_service
+  load_nf_tables_on_host
+  setup_firewall
   print_summary
 }
 

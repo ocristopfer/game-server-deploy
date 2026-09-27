@@ -73,11 +73,11 @@ def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
     grava os comandos): e o caminho de criacao inteiro, exceto o SSH em si."""
     from fake_ssh import PUBLIC_KEY, FakeRunner
 
-    from gamebroker.runtime.ssh_installer import ConfigSsh, SshInstaller
+    from gamebroker.runtime.ssh_installer import LIB_FILES, ConfigSsh, SshInstaller
 
     lib = tmp_path / "lib"
     lib.mkdir()
-    for name in ("ct-install.sh", "ct-phases.sh"):
+    for name in LIB_FILES:
         (lib / name).write_text("#!/bin/bash\n")
     executor = FakeRunner()
     ssh = SshInstaller(ConfigSsh(private_key=tmp_path / "k", public_key=PUBLIC_KEY, lib_dir=lib),

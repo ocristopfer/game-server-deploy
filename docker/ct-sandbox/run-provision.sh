@@ -37,10 +37,10 @@ else
 fi
 echo $? > "$OUT/exit"
 find /etc/systemd/system /usr/local/bin /etc/game-runtime.env /home/steam /opt/game /opt/steamcmd \
-     /opt/proton /root/.ssh -printf '%p %m %u:%g %l\n' 2>/dev/null | sort > "$OUT/arquivos.txt"
+     /opt/proton /root/.ssh /usr/local/sbin/ct-firewall /etc/ct-firewall.env -printf '%p %m %u:%g %l\n' 2>/dev/null | sort > "$OUT/arquivos.txt"
 find /usr/bin -maxdepth 1 -type l -lname '/usr/local/bin/*' -printf '%p -> %l\n' | sort >> "$OUT/arquivos.txt"
 for f in /etc/systemd/system/*.service /etc/systemd/system/*.timer /usr/local/bin/* \
-         /etc/game-runtime.env /root/.ssh/authorized_keys; do
+         /etc/game-runtime.env /root/.ssh/authorized_keys /etc/ct-firewall.env /etc/nftables.conf; do
   [ -f "$f" ] && { echo "=== $f"; cat "$f"; }
 done > "$OUT/conteudo.txt" 2>/dev/null
 cp /var/log/fake-calls.log "$OUT/chamadas.log"

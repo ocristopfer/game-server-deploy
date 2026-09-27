@@ -12,6 +12,7 @@ import gamebroker.wsgi as prod
 from gamebroker.config import ConfigError, load
 from gamebroker.runtime.fakes import FakeNetwork
 from gamebroker.runtime.network import RealNetwork
+from gamebroker.runtime.ssh_installer import LIB_FILES
 
 TOKEN_BROKER = "b" * 48
 PANEL_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainelPainelPainelPainelPainel painel@gp"
@@ -26,7 +27,7 @@ def env(tmp_path: Path, games_dir: Path) -> dict[str, str]:
     (ssh / "id_ed25519.pub").write_text(PUBLIC_KEY + "\n", encoding="utf-8")
     lib = tmp_path / "lib"
     lib.mkdir()
-    for name in ("ct-install.sh", "ct-phases.sh"):
+    for name in LIB_FILES:
         (lib / name).write_text("#!/bin/bash\n")
     return {
         "BROKER_TOKEN": TOKEN_BROKER, "BROKER_ALLOW_IPS": "192.168.2.19",
@@ -322,3 +323,18 @@ def test_senha_invalida_e_nomeada_sem_o_valor(env):
         load(env)
     assert "STEAM_USER/STEAM_PASS" in str(caught.value)
     assert "tem'aspa" not in str(caught.value)
+
+
+def test_ips_do_firewall_dos_jogos_vao_para_o_instalador(env):
+    env["BROKER_FIREWALL_SOURCES"] = "192.168.2.100, 192.168.2.101"
+    assert load(env).ssh.firewall_sources == ("192.168.2.100", "192.168.2.101")
+
+
+def test_sem_ips_do_firewall_os_jogos_nascem_sem_ele(env):
+    assert load(env).ssh.firewall_sources == ()
+
+
+def test_ip_torto_no_firewall_derruba_a_subida_pelo_nome(env):
+    env["BROKER_FIREWALL_SOURCES"] = "192.168.2.100; rm -rf /"
+    with pytest.raises(ConfigError, match="BROKER_FIREWALL_SOURCES"):
+        load(env)

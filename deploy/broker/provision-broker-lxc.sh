@@ -113,7 +113,8 @@ validate_bundle() {
   [[ -n "${RELEASE_SHA256:-}" ]] || die "RELEASE_SHA256 vazio em $RELEASE_ENV_FILE"
   [[ -f "$SCRIPT_DIR/$RELEASE_TARBALL" ]] || die "release nao encontrado no bundle: $RELEASE_TARBALL"
   # lib/ e games/ continuam soltos no bundle: sao dados, nao o pacote Python.
-  [[ -f "$SCRIPT_DIR/lib/ct-install.sh" && -f "$SCRIPT_DIR/lib/ct-phases.sh" ]] || die "lib/ct-install.sh e lib/ct-phases.sh sao obrigatorios no bundle"
+  [[ -f "$SCRIPT_DIR/lib/ct-install.sh" && -f "$SCRIPT_DIR/lib/ct-phases.sh" && -f "$SCRIPT_DIR/lib/ct-firewall.sh" ]] \
+    || die "lib/ct-install.sh, lib/ct-phases.sh e lib/ct-firewall.sh sao obrigatorios no bundle"
   compgen -G "$SCRIPT_DIR/games/*.env" >/dev/null || die "games/*.env nao encontrado no bundle"
 }
 
@@ -362,6 +363,12 @@ render_broker_config() {
     else
       env_line BROKER_ALLOW_IPS ""
     fi
+    # Quem pode abrir SSH nos CTs de jogo depois de instalados (o firewall de dentro deles,
+    # lib/ct-firewall.sh): o painel, que administra, e este broker, que instala e limpa a chave.
+    # Sem o IP do painel os jogos nascem SEM firewall interno - com ele errado, trancados.
+    if [[ -n "${PANEL_IP:-}" && "${CT_FIREWALL:-1}" != "0" ]]; then
+      env_line BROKER_FIREWALL_SOURCES "${PANEL_IP},${CT_IP}"
+    fi
     env_line BROKER_STATE_DIR "$DATA_DIR"
     env_line BROKER_GAMES_DIR "${APP_DIR}/games"
     env_line BROKER_LIB_DIR "${APP_DIR}/lib"
@@ -445,6 +452,57 @@ EOF
   run_ct "systemctl daemon-reload && systemctl enable gamebroker.service"
 }
 
+# "https://192.168.2.1:8443/" -> "192.168.2.1:8443" (porta padrao do esquema quando falta).
+endpoint_of() {
+  local url="$1" rest host port
+  rest="${url#*://}"
+  rest="${rest%%/*}"
+  host="${rest%%:*}"
+  if [[ "$rest" == *:* ]]; then port="${rest##*:}"
+  elif [[ "$url" == https://* ]]; then port=443
+  else port=80
+  fi
+  printf '%s:%s' "$host" "$port"
+}
+
+# Firewall de dentro do CT do broker (lib/ct-firewall.sh, papel "broker"): a API so atende o
+# painel, e o broker so sai para o Proxmox, o OPNsense, o SSH/ping dos jogos, DNS e apt. Um
+# broker invadido nao vira ponte para o resto da rede.
+#
+# Roda ANTES de subir o servico: a sonda de saude de `start_broker` e o que prova, com as
+# regras novas ja valendo, que Proxmox e OPNsense continuam alcancaveis. Se nao estiverem, o
+# firewall sai (fica o broker funcionando e o aviso), em vez de um broker cego.
+apply_broker_firewall() {
+  if [[ "${CT_FIREWALL:-1}" == "0" ]]; then
+    warn "CT_FIREWALL=0: o CT do broker fica SEM firewall interno"
+    return 0
+  fi
+  if [[ -z "${PANEL_IP:-}" ]]; then
+    warn "IP do painel desconhecido (ADMIN_HOST/BROKER_ALLOW_IPS): o CT do broker fica SEM firewall interno"
+    return 0
+  fi
+  msg "Aplicando o firewall do CT do broker (nftables)"
+  modprobe nf_tables 2>/dev/null || warn "nao consegui carregar o modulo nf_tables no host"
+  { mkdir -p /etc/modules-load.d && echo nf_tables > /etc/modules-load.d/ct-firewall.conf; } \
+    || warn "nao consegui deixar o nf_tables carregando no boot do host"
+  local conf endpoints
+  endpoints="$(endpoint_of "$PROXMOX_URL") $(endpoint_of "$OPNSENSE_URL")"
+  conf="$(mktemp)"
+  {
+    printf 'FW_ROLE=broker\n'
+    printf 'FW_PANEL_SOURCES="%s"\n' "$PANEL_IP"
+    printf 'FW_BROKER_PORT="%s"\n' "$BROKER_PORT"
+    printf 'FW_API_ENDPOINTS="%s"\n' "$endpoints"
+    printf 'FW_GAME_NET="%s.%s-%s.%s"\n' "$BROKER_IP_PREFIX" "${BROKER_IP_INICIO:-102}" \
+      "$BROKER_IP_PREFIX" "${BROKER_IP_FIM:-199}"
+  } > "$conf"
+  push_file_to_ct "$SCRIPT_DIR/lib/ct-firewall.sh" /usr/local/sbin/ct-firewall 0755
+  push_file_to_ct "$conf" /etc/ct-firewall.env 0644
+  rm -f "$conf"
+  run_ct "/usr/local/sbin/ct-firewall apply" || die "o firewall do broker nao carregou (nada foi alterado nele)"
+  BROKER_FIREWALL_APPLIED=1
+}
+
 start_broker() {
   msg "Subindo o broker"
   run_ct "systemctl restart gamebroker.service"
@@ -476,8 +534,24 @@ sys.exit(0 if dados.get('proxmox') and dados.get('opnsense') else 3)
 PY
   push_file_to_ct "$tmp_file" /root/saude-do-broker.py 0600
   rm -f "$tmp_file"
-  run_ct "python3 /root/saude-do-broker.py; rc=\$?; rm -f /root/saude-do-broker.py; exit \$rc" \
-    || warn "O broker esta de pe, mas nem tudo respondeu (veja 'saude' acima). Se for a API do Proxmox ou do OPNsense, falta a regra de firewall do CT ${CT_IP} para ela (ver REGRAS DE FIREWALL no fim)"
+  local unhealthy="O broker esta de pe, mas nem tudo respondeu (veja 'saude' acima). Se for a API do Proxmox ou do OPNsense, falta a regra de firewall do CT ${CT_IP} para ela (ver REGRAS DE FIREWALL no fim)"
+  if ! run_ct "python3 /root/saude-do-broker.py"; then
+    if [[ "${BROKER_FIREWALL_APPLIED:-0}" == "1" ]]; then
+      # Com as regras novas algo nao respondeu: testa sem elas. Se ai responde, a culpa e das
+      # regras, e o broker fica funcionando SEM firewall (com o aviso) em vez de cego.
+      warn "Com o firewall do CT ligado nem tudo respondeu; testando sem ele"
+      run_ct "/usr/local/sbin/ct-firewall off"
+      if run_ct "python3 /root/saude-do-broker.py"; then
+        warn "SEM o firewall do CT tudo responde: as regras bloqueavam o Proxmox ou o OPNsense. O firewall do broker ficou DESLIGADO. Confira FW_API_ENDPOINTS em /etc/ct-firewall.env e religue com: pct exec ${CTID} -- ct-firewall apply"
+      else
+        run_ct "/usr/local/sbin/ct-firewall apply"
+        warn "$unhealthy"
+      fi
+    else
+      warn "$unhealthy"
+    fi
+  fi
+  run_ct "rm -f /root/saude-do-broker.py"
 }
 
 # Opcional (BROKER_CONFIGURE_PANEL=1): grava no painel a URL, o token e a impressao do broker.
@@ -598,6 +672,7 @@ main() {
   # Nesta ordem a sonda ve unit nova, env novo e codigo novo, e o rollback dela volta
   # para um estado que de fato funcionava.
   publish_application
+  apply_broker_firewall
   start_broker
   configure_panel
   print_summary

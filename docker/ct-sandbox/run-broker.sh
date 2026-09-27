@@ -91,6 +91,21 @@ if echo "$enviados" | grep -Eq '^(test_|conftest|fakes|fake_http|dev\.py)'; then
 [ -f /opt/gamebroker/current/gamebroker/_build.py ] && ok "o carimbo de versao chegou"   || fail "_build.py ausente no CT"
 [ -f /opt/gamebroker/lib/ct-install.sh ] && [ -f /opt/gamebroker/lib/ct-phases.sh ] && ok "lib/ enviada" || fail "lib/ ausente"
 [ "$(ls /opt/gamebroker/games/*.env | wc -l)" -ge 8 ] && ok "games/*.env enviados" || fail "games/ incompleto"
+[ -f /opt/gamebroker/lib/ct-firewall.sh ] && ok "lib/ct-firewall.sh enviada (vai para cada CT de jogo)" || fail "lib/ct-firewall.sh ausente"
+
+echo "== firewall de dentro do CT do broker =="
+check "papel do firewall" "FW_ROLE=broker" "$(grep '^FW_ROLE=' /etc/ct-firewall.env)"
+# A API so atende o painel; a saida so vai para o Proxmox e o OPNsense (da URL, com a porta).
+grep -q 'ip saddr { 192.168.2.19 } tcp dport 8443 accept' /etc/nftables.conf \
+  && ok "API do broker so para o painel" || fail "regra de entrada da API ausente"
+grep -q '192.168.1.254 . 8006, 192.168.1.1 . 8443' /etc/nftables.conf \
+  && ok "saida para Proxmox e OPNsense tirada das URLs" || fail "destinos da API errados: $(grep 'ip daddr . tcp dport' /etc/nftables.conf)"
+grep -q 'ip daddr { 192.168.2.102-192.168.2.199 } tcp dport 22 accept' /etc/nftables.conf \
+  && ok "SSH so para a faixa dos jogos" || fail "faixa dos jogos errada"
+grep -q '^nft -f /etc/nftables.conf' /var/log/fake-calls.log && ok "regras carregadas (nft -f)" || fail "nft -f nao foi chamado"
+# E os jogos que o broker criar: painel e o proprio broker podem abrir SSH neles.
+grep -q '^BROKER_FIREWALL_SOURCES="192.168.2.19,192.168.2.18"$' /etc/gamebroker/broker.env \
+  && ok "broker.env leva quem administra os jogos" || fail "BROKER_FIREWALL_SOURCES ausente ou errado"
 
 echo "== o broker.env gerado e ACEITO pelo carregador de configuracao real =="
 python3 - > /tmp/config-load.out 2>&1 <<'PY'

@@ -11,6 +11,7 @@ import pytest
 from fake_ssh import BLOB, PUBLIC_KEY, FakeRunner
 
 from gamebroker.runtime.ssh_installer import (
+    LIB_FILES,
     REMOTE_DEST,
     ConfigSsh,
     ExecutorReal,
@@ -27,7 +28,7 @@ from gamebroker.services.catalog import validate_dynamic
 def lib_dir(tmp_path: Path) -> Path:
     folder = tmp_path / "lib"
     folder.mkdir()
-    for name in ("ct-install.sh", "ct-phases.sh"):
+    for name in LIB_FILES:
         (folder / name).write_text("#!/bin/bash\n", encoding="utf-8")
     return folder
 
@@ -161,7 +162,7 @@ def test_ordem_dos_comandos(installer, game, ports):
 def test_scp_leva_a_lib_e_o_env_e_o_env_existe_na_hora(installer, game, ports):
     executor, _ = _install(installer, game, ports)
     scp = next(a for a, _ in executor.calls if a[0] == "scp")
-    assert [Path(f).name for f in scp[-4:-1]] == ["ct-install.sh", "ct-phases.sh", "install.env"]
+    assert [Path(f).name for f in scp[-5:-1]] == ["ct-install.sh", "ct-phases.sh", "ct-firewall.sh", "install.env"]
     assert scp[-1] == f"root@10.0.0.30:{REMOTE_DEST}/"
     assert "GAME_KEY=meujogo" in executor.env_visto
     assert not Path(scp[-2]).exists(), "o env temporario nao fica no disco do broker"
@@ -388,3 +389,19 @@ def test_cancelar_mata_o_processo_que_esta_calado():
     code = ExecutorReal().run([sys.executable, "-c", "import time; time.sleep(60)"], None, 60, cancel)
     assert code != 0
     assert time.monotonic() - started < 10
+
+
+def test_quem_pode_abrir_ssh_vai_no_install_env_para_o_firewall_do_ct(game, ports):
+    env = build_env(game, ports, None, ("192.168.2.100", "192.168.2.101"))
+    assert "FW_MGMT_SOURCES='192.168.2.100 192.168.2.101'" in env
+
+
+def test_sem_ips_de_administracao_o_install_env_nao_pede_firewall(game, ports):
+    # Sem a chave o ct-phases.sh PULA o firewall: aplica-lo sem saber quem e o painel
+    # trancaria o painel fora do servidor recem-criado.
+    assert "FW_MGMT_SOURCES" not in build_env(game, ports)
+
+
+def test_a_lib_real_tem_o_script_do_firewall():
+    lib = Path(__file__).resolve().parents[3] / "lib"
+    assert all((lib / name).is_file() for name in LIB_FILES)

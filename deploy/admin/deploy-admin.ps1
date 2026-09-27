@@ -368,6 +368,7 @@ New-Item -ItemType Directory -Path $BundleDir | Out-Null
 
 Copy-AsLf (Join-Path $ScriptDir "provision-admin-lxc.sh") (Join-Path $BundleDir "provision-admin-lxc.sh")
 Copy-AsLf (Join-Path $RepoRoot "lib/install-release.sh") (Join-Path $BundleDir "install-release.sh")
+Copy-AsLf (Join-Path $RepoRoot "lib/ct-firewall.sh") (Join-Path $BundleDir "ct-firewall.sh")
 
 $Release = New-ReleaseBundle "gamepanel"
 # Copy-Item, nunca Copy-AsLf: um tar.gz passado pelo normalizador de fim de linha e
@@ -412,7 +413,7 @@ $adminKeys = @(
     "ADMIN_FILE_DOWNLOAD_MAX_MB","ADMIN_FILE_ROOTS","ADMIN_FILE_DEFAULT",
     "ADMIN_TERM_MAX","ADMIN_TERM_IDLE","ADMIN_METRICS_TTL",
     "ADMIN_QUERY_TIMEOUT","ADMIN_PLAYERS_TTL",
-    "RECREATE_ADMIN_CT",
+    "RECREATE_ADMIN_CT","ADMIN_FIREWALL_SOURCES","CT_FIREWALL",
     "STORAGE","TEMPLATE_STORAGE","TEMPLATE_PATTERN","BRIDGE","GATEWAY","CT_PASSWORD","TZ"
 )
 $adminLines = @()
@@ -428,12 +429,13 @@ try {
     Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
 
-    # Uma pasta rasa, sem subpasta nenhuma: quatro arquivos, um deles o tarball. O envio
+    # Uma pasta rasa, sem subpasta nenhuma: seis arquivos, um deles o tarball. O envio
     # recursivo da arvore saiu daqui - era o que exigia conferir, a cada pasta nova do
     # pacote, se o -Recurse ainda alcancava tudo.
     $topLevel = @(
         (Join-Path $BundleDir "provision-admin-lxc.sh"),
         (Join-Path $BundleDir "install-release.sh"),
+        (Join-Path $BundleDir "ct-firewall.sh"),
         (Join-Path $BundleDir "release.env"),
         (Join-Path $BundleDir $Release.Name),
         (Join-Path $BundleDir "admin.env")

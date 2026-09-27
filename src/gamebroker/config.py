@@ -113,6 +113,18 @@ def _read_allowed_ips(reader: _Reader) -> tuple[str, ...]:
     return tuple(ips)
 
 
+def _read_firewall_sources(reader: _Reader) -> tuple[str, ...]:
+    """Quem pode abrir SSH nos CTs de jogo (painel e broker), para o firewall de dentro deles."""
+    raw_text = reader.text("BROKER_FIREWALL_SOURCES", "")
+    ips: list[str] = []
+    for item in filter(None, (p.strip() for p in raw_text.split(","))):
+        try:
+            ips.append(str(ipaddress.IPv4Address(item)))
+        except ValueError:
+            reader.problems.append(f"BROKER_FIREWALL_SOURCES: '{item}' nao e um IPv4")
+    return tuple(ips)
+
+
 def _ranges(reader: _Reader) -> tuple[range, int, tuple[str, ...]]:
     ctid_start = reader.integer("BROKER_CTID_INICIO", 300, 100, 999_999_999)
     ctid_end = reader.integer("BROKER_CTID_FIM", 399, 100, 999_999_999)
@@ -212,8 +224,10 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
     steam = _steam_account(reader)
     ssh = None
     if broker_key:
+        firewall_sources = _read_firewall_sources(reader)
         ssh = reader.attempt("BROKER_SSH_*", lambda: ConfigSsh(
-            private_key=ssh_key, public_key=broker_key, lib_dir=lib_dir, steam=steam))
+            private_key=ssh_key, public_key=broker_key, lib_dir=lib_dir, steam=steam,
+            firewall_sources=firewall_sources))
 
     cfg_parcial: dict[str, Any] = {
         "proxmox_fingerprint": reader.fingerprint("PROXMOX_CERT_SHA256", px_https),

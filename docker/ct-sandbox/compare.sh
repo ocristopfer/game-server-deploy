@@ -43,8 +43,8 @@ done
 rmdir "$work/orig/lib"
 cp deploy/game/provision-game-lxc.sh "$work/novo/"
 # Layout REAL do bundle do deploy-game.ps1: sem subpastas, a lib solta ao lado do script.
-cp lib/ct-phases.sh "$work/novo/ct-phases.sh"
-cp lib/ct-install.sh lib/ct-phases.sh "$work/inst/"
+cp lib/ct-phases.sh lib/ct-firewall.sh "$work/novo/"
+cp lib/ct-install.sh lib/ct-phases.sh lib/ct-firewall.sh "$work/inst/"
 cp games/*.env "$work/games/"
 # O script da referencia (antes desta mudanca) nao conhece {EXTRA_PORT}: com o games/satisfactory.env
 # de hoje ele deixaria o marcador literal no ExecStart. Para o guarda "antes x depois" continuar
@@ -145,6 +145,9 @@ run_broker_case icarus        icarus.env
 run_broker_case dayz-conta    dayz.env          "$DAYZ_CONTA"
 run_broker_case wine          sintetico-wine.env
 run_broker_case receita       sintetico-receita.env
+# Com o IP do painel/broker o CT ganha o firewall - e os dois transportes tem de gerar o MESMO.
+FW_EXTRA="FW_MGMT_SOURCES='192.168.2.100 192.168.2.101'"
+run_broker_case firewall      dragonwilds.env   "$FW_EXTRA"
 
 # Recursos NOVOS (o script da referencia nao os conhece, entao nao ha "antes" para comparar):
 # {EXTRA_PORT} no Satisfactory de hoje: o instalador troca pelo padrao do jogo (a confiavel, 8888).
@@ -165,6 +168,22 @@ if [ "$expected" = 1 ]; then
   printf 'OK        recursos novos  %-20s (receita steamclient-sdk64 e {QUERY_PORT})\n' receita
 else
   printf 'FALHOU    recursos novos  %-20s (veja %s)\n' receita "$r"; failures=$((failures + 1))
+fi
+
+# Firewall do CT: regras de jogo (porta publica, SSH so da administracao) e carregadas.
+f="$work/out/firewall-inst"
+expected=1
+grep -q '^FW_ROLE=game$' "$f/conteudo.txt" || expected=0
+grep -q '^FW_MGMT_SOURCES="192.168.2.100 192.168.2.101"$' "$f/conteudo.txt" || expected=0
+grep -q 'udp dport { 7777 } accept' "$f/conteudo.txt" || expected=0
+grep -q 'ip saddr { 192.168.2.100, 192.168.2.101 } tcp dport 22 accept' "$f/conteudo.txt" || expected=0
+grep -q '^nft -f /etc/nftables.conf' "$f/chamadas.log" || expected=0
+# Sem o IP do painel, NADA de firewall (aplicar trancaria o painel fora): e o caso de todos os outros.
+grep -q 'ct-firewall' "$work/out/dragonwilds-inst/arquivos.txt" && expected=0
+if [ "$expected" = 1 ]; then
+  printf 'OK        recursos novos  %-20s (regras de jogo aplicadas; sem IP do painel, nenhuma)\n' firewall
+else
+  printf 'FALHOU    recursos novos  %-20s (veja %s)\n' firewall "$f"; failures=$((failures + 1))
 fi
 
 # Costura Python -> ct-install.sh: o install.env gerado pelo broker, com portas 31000/31001/31002.

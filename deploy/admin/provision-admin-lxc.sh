@@ -483,6 +483,43 @@ ele por SSH (segundos, sem tocar no Proxmox). Use -Full para mexer no CT em si
 EOF
 }
 
+# Firewall de dentro do CT do painel (lib/ct-firewall.sh, papel "panel"): a web e o SSH so
+# atendem a rede de administracao (ADMIN_FIREWALL_SOURCES, padrao a rede local inteira). A
+# saida fica livre: o painel fala com os jogos, com o broker e com o webhook (Discord).
+#
+# Depois do `start_panel`: a sonda de saude dele usa 127.0.0.1, que o firewall sempre deixa
+# passar. A prova de que a REDE ainda chega e feita aqui, do host - e se nao chegar, o
+# firewall sai, em vez de um painel no ar que ninguem alcanca.
+apply_panel_firewall() {
+  if [[ "${CT_FIREWALL:-1}" == "0" ]]; then
+    warn "CT_FIREWALL=0: o CT do painel fica SEM firewall interno"
+    return 0
+  fi
+  local sources="${ADMIN_FIREWALL_SOURCES:-192.168.0.0/16}" conf ip
+  msg "Aplicando o firewall do CT do painel (nftables): web e SSH so de ${sources}"
+  modprobe nf_tables 2>/dev/null || warn "nao consegui carregar o modulo nf_tables no host"
+  { mkdir -p /etc/modules-load.d && echo nf_tables > /etc/modules-load.d/ct-firewall.conf; } \
+    || warn "nao consegui deixar o nf_tables carregando no boot do host"
+  conf="$(mktemp)"
+  {
+    printf 'FW_ROLE=panel\n'
+    printf 'FW_ADMIN_SOURCES="%s"\n' "$sources"
+    printf 'FW_PANEL_PORT="%s"\n' "$PANEL_PORT"
+  } > "$conf"
+  push_file_to_ct "$SCRIPT_DIR/ct-firewall.sh" /usr/local/sbin/ct-firewall 0755
+  push_file_to_ct "$conf" /etc/ct-firewall.env 0644
+  rm -f "$conf"
+  run_ct "/usr/local/sbin/ct-firewall apply" || die "o firewall do painel nao carregou (nada foi alterado nele)"
+  ip="$(run_ct "hostname -I | awk '{print \$1}'" | tr -d '\r \n' || true)"
+  [[ -n "$ip" ]] || return 0
+  # O host costuma estar na rede de administracao. Se ele nao alcanca a web do painel, ou a
+  # lista esta errada ou o host esta fora dela: nos dois casos, melhor aberto e avisado.
+  if ! timeout 5 bash -c "</dev/tcp/${ip}/${PANEL_PORT}" 2>/dev/null; then
+    run_ct "/usr/local/sbin/ct-firewall off"
+    warn "O host nao alcancou ${ip}:${PANEL_PORT} com o firewall ligado: ele foi DESLIGADO. Confira ADMIN_FIREWALL_SOURCES (${sources}) e religue com: pct exec ${CTID} -- ct-firewall apply"
+  fi
+}
+
 main() {
   load_env_file "$ADMIN_ENV_FILE"
   resolve_variables
@@ -518,6 +555,7 @@ main() {
   # renomeado, e ele despejava `no such column: nome` por alguns segundos.
   bootstrap_admin_user
   start_panel
+  apply_panel_firewall
   authorize_in_game_cts
   print_summary
 }

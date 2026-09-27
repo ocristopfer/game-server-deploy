@@ -51,6 +51,7 @@ install_helper() {
   run_ct "ln -sfn /usr/local/bin/${name} /usr/bin/${name}"
 }
 
+FIREWALL_SCRIPT="${SCRIPT_DIR}/ct-firewall.sh"
 LIB_FASES="${SCRIPT_DIR}/ct-phases.sh"
 [[ -f "$LIB_FASES" ]] || die "ct-phases.sh nao encontrado ao lado de $0"
 [[ -f "$INSTALL_ENV" ]] || die "Arquivo de ambiente nao encontrado: $INSTALL_ENV"
@@ -79,6 +80,7 @@ main() {
   render_service_helpers
   render_systemd_unit
   start_game_service
+  setup_firewall
   # Linha que o broker procura: sem ela, exit 0 nao basta para dar a instalacao por feita.
   msg "INSTALACAO CONCLUIDA: ${GAME_DISPLAY_NAME} (${SERVICE_NAME})"
 }

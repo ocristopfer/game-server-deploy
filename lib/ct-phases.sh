@@ -12,7 +12,7 @@
 #
 # O chamador precisa fornecer, ANTES do source:
 #   funcoes   msg warn die run_ct push_file_to_ct install_helper
-#   constantes STEAMCMD_URL STEAMCMD_DIR GAME_DIR
+#   constantes STEAMCMD_URL STEAMCMD_DIR GAME_DIR FIREWALL_SCRIPT (o lib/ct-firewall.sh do lado dele)
 #   variaveis  as do game.env (GAME_KEY, STEAM_APP_ID, START_*, PRE/POST_INSTALL_CMD...)
 # e chamar `resolve_game_variables` antes de qualquer fase.
 
@@ -581,6 +581,40 @@ EOF
   rm -f "$tmp_file"
   run_ct "chmod +x ${GAME_DIR}/${START_SCRIPT} && chown -R steam:steam ${GAME_DIR}"
   run_ct "systemctl daemon-reload && systemctl enable ${SERVICE_NAME}"
+}
+
+# Firewall de dentro do CT (lib/ct-firewall.sh, papel "game"): portas do jogo abertas para
+# qualquer um, SSH e ping so do painel/broker, e nenhuma saida para a rede interna.
+#
+# Por ULTIMO de proposito: as fases anteriores baixam da internet (apt, SteamCMD, Proton), e
+# uma regra de saida errada quebraria a instalacao no meio, sem dizer por que. Pelo broker a
+# sessao SSH que roda isto ja esta aberta (o `established` a mantem), e a limpeza da chave que
+# vem depois precisa do IP do broker em FW_MGMT_SOURCES - quem monta o install.env garante.
+#
+# Sem FW_MGMT_SOURCES o firewall NAO e aplicado (com aviso): aplicar sem saber quem e o painel
+# trancaria o proprio painel fora do servidor que acabou de nascer.
+setup_firewall() {
+  if [[ "${CT_FIREWALL:-1}" == "0" ]]; then
+    warn "CT_FIREWALL=0: firewall do CT NAO configurado"
+    return 0
+  fi
+  if [[ -z "${FW_MGMT_SOURCES:-}" ]]; then
+    warn "FW_MGMT_SOURCES vazio: firewall do CT NAO configurado (defina o IP do painel)"
+    return 0
+  fi
+  [[ -f "${FIREWALL_SCRIPT:-}" ]] || die "ct-firewall.sh nao encontrado (${FIREWALL_SCRIPT:-vazio})"
+  msg "Aplicando o firewall do CT (nftables)"
+  local conf
+  conf="$(mktemp)"
+  {
+    printf 'FW_ROLE=game\n'
+    printf 'FW_MGMT_SOURCES="%s"\n' "$FW_MGMT_SOURCES"
+    printf 'FW_GAME_PORTS="%s"\n' "$GAME_PORTS"
+  } > "$conf"
+  push_file_to_ct "$FIREWALL_SCRIPT" /usr/local/sbin/ct-firewall 0755
+  push_file_to_ct "$conf" /etc/ct-firewall.env 0644
+  rm -f "$conf"
+  run_ct "/usr/local/sbin/ct-firewall apply"
 }
 
 start_game_service() {

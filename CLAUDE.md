@@ -187,11 +187,13 @@ conftest.py              insere src/ no sys.path antes de qualquer teste (funcio
 games/                   catalogo curado de jogos (um *.env por jogo), lido pelo gamebroker E pelos
                         scripts de provisionamento em bash - por isso fica na raiz, fora de src/
 lib/                     fases de instalacao de jogo (bash) + install-release.sh (publica um release no CT)
+                        + ct-firewall.sh (o firewall nftables de DENTRO de cada CT; ver "Firewall dos CTs")
 deploy/                  infra fora do codigo Python, um grupo por alvo:
   admin/                  deploy-admin.ps1 + provision-admin-lxc.sh
   broker/                 deploy-broker.ps1 + provision-broker-lxc.sh, mais as duas
                          ferramentas manuais (check-broker-access.ps1, spike-broker-write.ps1)
   game/                   deploy-game.ps1, deploy-docker.ps1 e os dois provision-*-lxc.sh de jogo
+  firewall/               apply-firewall.ps1 + .sh: poe o firewall nos CTs que ja existiam
 src/
   gamepanel/             o painel (era admin/)
     app.py               a montagem: banco, sessao, decoradores, tabelas, SSH, alertas, agendador
@@ -1102,6 +1104,35 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   `tests/gamebroker/test_migration.py`, que montam o esquema antigo a mao.
 
 ---
+
+## Firewall dos CTs (`lib/ct-firewall.sh`)
+
+Um script so, com tres papeis (`panel`, `broker`, `game`), instalado em cada CT como
+`/usr/local/sbin/ct-firewall`; a configuracao do CT mora em `/etc/ct-firewall.env`. Existe
+porque o OPNsense nao ve o trafego DENTRO da sub-rede. O README tem a tabela de regras.
+
+- **Todo caminho de deploy chama o MESMO script**: `provision-admin-lxc.sh`,
+  `provision-broker-lxc.sh`, `setup_firewall` no `ct-phases.sh` (host e broker) e o
+  `deploy/firewall/apply-firewall.sh`. Regra de seguranca escrita em dois lugares diverge.
+- **Todo valor e conferido antes de virar regra** (IPv4/CIDR/faixa, porta 1-65535): ele vai
+  parar dentro de um texto do nft. Valor torto para o `apply` com a regra antiga intacta.
+- **`nft -c` antes de gravar o arquivo de boot**: uma regra que o kernel recusa nao pode virar
+  `/etc/nftables.conf`, senao o CT sobe sem firewall no proximo boot.
+- **Sem saber quem administra, NAO aplica** (jogo sem `FW_MGMT_SOURCES`, painel sem IP): o
+  erro que tranca o painel fora de um servidor e pior que o CT ficar sem firewall.
+- **Aplicou, testa; o teste falhou, desliga.** O deploy do broker repete a sonda de saude sem
+  as regras; o do painel testa a web a partir do host; o `apply-firewall.sh` testa cada CT.
+  Tudo passa por `pct`, entao uma regra errada nunca tranca o deploy fora do CT.
+- **O jogo aplica o firewall por ULTIMO** (`setup_firewall` depois de `start_game_service`): as
+  fases anteriores baixam da internet, e uma regra de saida errada quebraria a instalacao sem
+  dizer por que. Pelo broker, a limpeza da chave vem depois e precisa do IP DELE em
+  `BROKER_FIREWALL_SOURCES`, que o provision grava a partir do IP do CT.
+- **O host carrega o `nf_tables`** (e o deixa em `/etc/modules-load.d`): CT unprivileged usa o
+  nftables, mas nao carrega modulo de kernel.
+- **Prove com `bash docker/ct-sandbox/firewall.sh`** (nftables DE VERDADE, com `CAP_NET_ADMIN`:
+  um container por papel mais um intruso na mesma LAN, testando cada conexao que deve abrir e
+  cada uma que deve fechar). O `compare.sh` prova que host e broker geram o mesmo firewall, e
+  o `broker.sh` as regras do broker; os dois usam um `nft` falso.
 
 ## Versao e deploy — um artefato, publicado por symlink
 

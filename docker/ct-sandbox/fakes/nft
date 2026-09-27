@@ -1,0 +1,4 @@
+#!/bin/bash
+# nftables falso: o sandbox nao tem CAP_NET_ADMIN. As regras de verdade sao provadas no
+# docker/ct-sandbox/firewall.sh, com o nft do Debian e o kernel.
+echo "nft $*" >> /var/log/fake-calls.log

@@ -37,7 +37,7 @@ from gamebroker.services.catalog import RECIPES_WINDOWS, Game
 
 REMOTE_DEST = "/root/gamepanel-install"
 SUCCESS_MARK = "INSTALACAO CONCLUIDA"
-LIB_FILES = ("ct-install.sh", "ct-phases.sh")
+LIB_FILES = ("ct-install.sh", "ct-phases.sh", "ct-firewall.sh")
 MAX_LINE = 400
 LINE_BATCH = 20
 BATCH_SECONDS = 1.5
@@ -142,6 +142,9 @@ class ConfigSsh:
     install_timeout: float = 7200.0
     command_timeout: float = 120.0
     steam: SteamAccount | None = None
+    # Quem pode abrir SSH no CT depois de instalado (painel e broker): vira o FW_MGMT_SOURCES do
+    # firewall de dentro do CT. Vazio = o CT nasce SEM firewall (e o instalador avisa).
+    firewall_sources: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         parts = self.public_key.split()
@@ -155,7 +158,8 @@ class ConfigSsh:
         return self.public_key.split()[1]
 
 
-def build_env(game: Game, ports: Sequence[AllocatedPort], steam: SteamAccount | None = None) -> str:
+def build_env(game: Game, ports: Sequence[AllocatedPort], steam: SteamAccount | None = None,
+              firewall_sources: Sequence[str] = ()) -> str:
     """O `install.env` do CT. Cada valor entre aspas: e DADO, nunca command."""
     if game.needs_account and steam is None:
         # O catalogo ja nao oferece o jogo sem conta; isto e a segunda porta, para um pedido
@@ -179,6 +183,8 @@ def build_env(game: Game, ports: Sequence[AllocatedPort], steam: SteamAccount | 
         # Shell so existe no catalogo curado, revisado no git; jogo cadastrado pela API vem vazio.
         "PRE_INSTALL_CMD": game.pre_install, "POST_INSTALL_CMD": game.post_install,
     }
+    if firewall_sources:
+        variables["FW_MGMT_SOURCES"] = " ".join(firewall_sources)
     if game.needs_account and steam is not None:
         # So para quem precisa: um jogo anonimo nao tem por que carregar a senha para o CT.
         variables["STEAM_USER"] = steam.user
@@ -252,7 +258,7 @@ class SshInstaller:
                  log: Callable[[str], None], cancel: threading.Event | None = None) -> None:
         ip = str(ipaddress.IPv4Address(ip))
         target = self._target(ip)
-        env = build_env(game, ports, self._cfg.steam)
+        env = build_env(game, ports, self._cfg.steam, self._cfg.firewall_sources)
         if game.needs_account and self._cfg.steam is not None:
             # Segunda defesa: o ct-install.sh ja mascara a senha no erro, mas a saida inteira do
             # CT vira o log da operacao, que o painel mostra e guarda no historico.
