@@ -44,7 +44,7 @@ def _catalog_page(games: list, form, checked_recipes: list, status: int = 200):
 @panel.admin_required
 @panel.broker_required
 def api_suggestions():
-    """Busca por nome ou App ID em listas FIXAS do repositorio (LinuxGSM e a curadoria do painel):
+    """Busca por nome ou App ID em listas FIXAS do repositorio (LinuxGSM, Pterodactyl, curadoria):
     nada aqui vai a internet, e a consulta so seleciona entre entradas conhecidas."""
     found = catalog_search.search(request.args.get("q", ""))
     return jsonify({"resultados": [catalog_search.result(s) for s in found],

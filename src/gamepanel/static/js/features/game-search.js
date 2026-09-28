@@ -4,7 +4,8 @@
  * 1. o jogo JA esta no catalogo (curado ou adicionado antes): nao ha o que preencher, e o
  *    atalho e criar a instancia. A lista vem na propria pagina (data-catalog), sem pedido.
  *    Era o buraco do V Rising: ele e curado, e a busca dizia "nada encontrado".
- * 2. sugestoes das duas listas do repositorio (LinuxGSM e a curadoria do painel), pela API.
+ * 2. sugestoes das listas do repositorio (LinuxGSM, eggs do Pterodactyl e a curadoria do
+ *    painel), pela API.
  *    O painel nao vai a internet; clicar preenche os campos, e o broker valida no envio.
  * 3. nada: links para o NAVEGADOR procurar o App ID (SteamDB) e as portas. Quem abre e a
  *    pessoa, nunca o painel - continua sem SSRF e sem dependencia de terceiro.

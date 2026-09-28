@@ -488,10 +488,14 @@ servidores, que possua o jogo, e nunca a sua pessoal. Sem a conta o DayZ continu
 no catalogo, com o motivo escrito ali.
 
 **Adicionar ao catalogo um jogo que nao esta em lugar nenhum.** A tela **Catalogo** busca
-por nome ou App ID em tres lugares: os jogos que ja estao no catalogo (com um atalho para
-**Criar instancia**), o LinuxGSM e uma lista mantida a mao no painel
-(`manual_suggestions.py`) para servidores so de Windows que o LinuxGSM nao cobre (ARK:
-Survival Ascended, Abiotic Factor, Conan Exiles, Sons of the Forest). Se nada casar, a tela
+por nome ou App ID em quatro lugares: os jogos que ja estao no catalogo (com um atalho para
+**Criar instancia**), o LinuxGSM, os eggs do Pterodactyl (~40 jogos que o LinuxGSM nao tem,
+metade so de Windows: Astroneer, Bannerlord, Space Engineers, Myth of Empires...) e uma lista
+mantida a mao no painel (`manual_suggestions.py`: ARK: Survival Ascended, Abiotic Factor,
+Conan Exiles, Sons of the Forest). Cada sugestao diz de qual fonte veio; quando o egg completa
+um campo que o LinuxGSM deixou vazio (arquivos de config, portas), o aviso diz qual. Para
+atualizar as duas listas geradas: `python tools/import-linuxgsm.py` e
+`python tools/import-pterodactyl.py` (precisam de internet; o painel nao). Se nada casar, a tela
 oferece links para o SteamDB (App ID do servidor dedicado) e uma busca das portas na web.
 Quem abre esses links e o seu navegador; o painel continua sem ir a internet. Dai o caminho
 e **Comecar de um modelo** pelo motor do jogo: Unreal (Linux ou Windows via Proton), Unity

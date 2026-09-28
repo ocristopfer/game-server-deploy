@@ -59,9 +59,11 @@ filterwarnings = ["error::DeprecationWarning:gamepanel"]
 [tool.ruff]
 line-length = 120
 target-version = "py313"
-# Gerado por tools/import-linuxgsm.py a partir de dado de terceiros (LinuxGSM) - nao e
-# escrito a mao, e as strings de aviso em varias linhas disparam ISC004 sem ser bug real.
-extend-exclude = ["src/gamepanel/games/catalog/suggestions.py"]
+# Gerados por tools/import-linuxgsm.py e tools/import-pterodactyl.py a partir de dado de
+# terceiros (LinuxGSM, eggs do Pterodactyl) - nao sao escritos a mao, e as strings de aviso em
+# varias linhas disparam ISC004 sem ser bug real.
+extend-exclude = ["src/gamepanel/games/catalog/suggestions.py",
+                  "src/gamepanel/games/catalog/pterodactyl_suggestions.py"]
 
 [tool.ruff.lint]
 select = [
@@ -112,6 +114,8 @@ max-returns = 8
 # duas faria o teste exercitar uma entrada que nao existe — e o comprimento e justamente o
 # que o parser tem de aguentar. Por isso o E501 sai por ARQUIVO, e nao por `# noqa` solto.
 "tests/gamebroker/unit/test_import_linuxgsm.py" = ["E501"]
+# O mesmo motivo, com o `startup` de um egg do Pterodactyl.
+"tests/gamebroker/unit/test_import_pterodactyl.py" = ["E501"]
 "tests/gamepanel/unit/test_config_format.py" = ["E501"]
 "tests/gamepanel/integration/test_players.py" = ["E501"]
 

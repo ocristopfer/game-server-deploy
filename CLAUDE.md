@@ -221,6 +221,8 @@ src/
         suggestions.py      GERADO por tools/import-linuxgsm.py, nao edite (era sugestoes_de_jogos.py)
         manual_suggestions.py  escrita A MAO: servidor so de Windows que o LinuxGSM nao cobre (mesmo
                            formato + platform/recipes); curado nao entra (a busca o acha no catalogo)
+        pterodactyl_suggestions.py  GERADO por tools/import-pterodactyl.py, nao edite: jogos novos
+                           (SUGGESTIONS) e campos que faltam no LinuxGSM (COMPLEMENTS, por App ID)
     i18n/
       __init__.py         cascata idioma->pt->chave, campos na frase, `Mensagem`; ver a secao propria
       pt.py               catalogo em portugues (o padrao)
@@ -257,6 +259,7 @@ tests/
 tools/
   build-release.py       empacota um release: dist/<pacote>-<versao>.tar.gz + .sha256 (so stdlib, determinista)
   import-linuxgsm.py   gera src/gamepanel/games/catalog/suggestions.py a partir do LinuxGSM (precisa de internet)
+  import-pterodactyl.py  gera pterodactyl_suggestions.py dos eggs (pelican-eggs/games-steamcmd, MIT)
   verify-qr.py        verificacao manual do QR contra um leitor de verdade (venv descartavel)
 ```
 
@@ -1070,6 +1073,18 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   abre sozinho (`queryport="$((port + 1))"` do Valheim) entra no firewall e tira o jogo do
   sorteio de portas: o broker nao tem como avisa-la. Enshrouded, Icarus e Dragonwilds nao estao
   no LinuxGSM: continuam manuais. E a busca e SEMPRE sugestao: quem valida e o broker no envio.
+- **Segunda fonte: os eggs do Pterodactyl** (`python tools/import-pterodactyl.py`, ou `--source`
+  com um clone de pelican-eggs/games-steamcmd). Ordem de quem vence o mesmo App ID: catalogo da
+  pagina, lista manual, LinuxGSM, egg - o gerador PULA o que as outras ja tem, e
+  `test_suggestions.py` cobra que nenhum App ID cruze fontes. O egg so COMPLETA uma sugestao do
+  LinuxGSM campo a campo, no que la esta vazio (arquivos de config; portas quando o LinuxGSM nao
+  achou nenhuma, e ai em bloco e sem andar de porta), e a juncao passa pelo `validate_dynamic` NA
+  GERACAO: o painel em producao nao tem o pacote do broker para validar em tempo de uso. Tres
+  coisas que o egg nao diz e o conversor NAO chuta: o numero da porta principal (e a alocacao do
+  Pterodactyl; vem da tabela "Server Ports" do README da pasta), o protocolo (sem coluna, UDP com
+  aviso) e o executavel quando o egg sobe por `java`/`dotnet` (fica em branco com aviso). O
+  `install` do egg e shell e nunca e lido. Servidor de Windows do egg sai com `proton`, mesmo
+  quando o egg usa wine.
 - **Desfazer nao pode mentir**: se a limpeza falha, a reserva vira `falhou` e continua
   bloqueando IP/CTID/portas ate alguem remover (`instance_service._undo`).
 - **TLS e por IMPRESSAO, nunca `verify=False`.** Proxmox e OPNsense sao autoassinados;

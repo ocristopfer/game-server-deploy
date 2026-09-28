@@ -1,7 +1,7 @@
 """Busca de jogo por nome ou App ID (busca_de_jogos.py) sobre a lista gerada do LinuxGSM."""
 from __future__ import annotations
 
-from gamepanel.games.catalog import manual_suggestions
+from gamepanel.games.catalog import manual_suggestions, pterodactyl_suggestions
 from gamepanel.games.catalog import search as busca
 from gamepanel.games.catalog import suggestions as sugestoes_de_jogos
 
@@ -56,7 +56,8 @@ def test_valores_do_formulario_sempre_trazem_todas_as_chaves():
               "start_script", "start_args", "shiftable", "config_path", "config_files",
               "player_source", "backup_paths", "join_re", "leave_re", "memory_mb", "cores",
               "disk_gb", "platform", "recipes"}
-    for s in (*sugestoes_de_jogos.SUGGESTIONS, *manual_suggestions.SUGGESTIONS):
+    for s in (*sugestoes_de_jogos.SUGGESTIONS, *manual_suggestions.SUGGESTIONS,
+              *pterodactyl_suggestions.SUGGESTIONS):
         assert set(busca.to_form(s)) == keys
         assert all(isinstance(v, str) for v in busca.to_form(s).values())
 
@@ -97,3 +98,27 @@ def test_sugestao_do_linuxgsm_limpa_windows_e_proton_da_anterior():
     assert values["platform"] == ""
     assert values["recipes"] == ""
     assert busca.result(busca.search("2394010")[0])["source"] == sugestoes_de_jogos.SOURCE
+
+
+def test_jogo_que_so_o_pterodactyl_tem_e_achado_com_a_fonte():
+    found = busca.search("bannerlord")
+    assert _names(found) == ["Mount & Blade II: Bannerlord"]
+    assert busca.result(found[0])["source"] == pterodactyl_suggestions.SOURCE
+    assert busca.to_form(found[0])["recipes"] == "proton"
+
+
+def test_linuxgsm_ganha_o_que_faltava_do_egg_e_diz_de_onde_veio():
+    appid, extra = next(iter(sorted(pterodactyl_suggestions.COMPLEMENTS.items())))
+    found = busca.search(str(appid))[0]
+    result = busca.result(found)
+    assert "Pterodactyl" in result["source"]
+    assert "LinuxGSM" in result["source"]
+    if "config_path" in extra:
+        assert result["values"]["config_path"] == extra["config_path"]
+    assert any("Pterodactyl" in w for w in result["warnings"])
+
+
+def test_linuxgsm_sem_complemento_continua_so_linuxgsm():
+    palworld = busca.search("2394010")[0]
+    assert 2394010 not in pterodactyl_suggestions.COMPLEMENTS
+    assert busca.result(palworld)["source"] == sugestoes_de_jogos.SOURCE

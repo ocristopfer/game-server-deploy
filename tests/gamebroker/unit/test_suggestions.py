@@ -161,3 +161,93 @@ def test_lista_manual_nao_repete_um_curado():
                 curated_appids.add(int(line.split("=", 1)[1]))
     assert not {s["key"] for s in MANUAL} & curated_keys
     assert not {s["appid"] for s in MANUAL} & curated_appids
+
+
+# ----------------------------------------------------------------------------
+# A lista gerada dos eggs do Pterodactyl (pterodactyl_suggestions.py)
+# ----------------------------------------------------------------------------
+
+_spec_ptero = importlib.util.spec_from_file_location(
+    "pterodactyl_suggestions",
+    RAIZ / "src" / "gamepanel" / "games" / "catalog" / "pterodactyl_suggestions.py",
+)
+ptero = importlib.util.module_from_spec(_spec_ptero)
+sys.modules["pterodactyl_suggestions"] = ptero
+_spec_ptero.loader.exec_module(ptero)
+PTERO = ptero.SUGGESTIONS
+
+
+def _ptero_as_the_panel_sends(s: dict) -> dict:
+    sending = _manual_as_the_panel_sends({**s, "memory_mb": 4096, "cores": 2, "disk_gb": 20})
+    if not s["ports"]:
+        sending["player_source"] = "log"
+        sending.pop("query_port", None)
+        sending.pop("extra_port", None)
+    return sending
+
+
+def test_o_pterodactyl_traz_jogos_que_as_outras_fontes_nao_tem():
+    assert len(PTERO) >= 30
+    assert sum(s["platform"] == "windows" for s in PTERO) >= 15, "o motivo de existir: servidor so de Windows"
+
+
+@pytest.mark.parametrize("s", PTERO, ids=lambda s: s["key"])
+def test_sugestao_do_pterodactyl_passa_no_validador_do_broker(s):
+    assert validate_dynamic(_ptero_as_the_panel_sends(s)).key == s["key"]
+
+
+@pytest.mark.parametrize("s", PTERO, ids=lambda s: s["key"])
+def test_sugestao_do_pterodactyl_de_windows_usa_proton(s):
+    if s["platform"] == "windows":
+        assert "proton" in s["recipes"]
+        assert "wine" not in s["recipes"]
+
+
+@pytest.mark.parametrize("s", PTERO, ids=lambda s: s["key"])
+def test_sugestao_do_pterodactyl_nao_carrega_segredo_nem_caminho_do_container(s):
+    for forbidden_word in ("$", ";", "|", "&", "`", "{{", "password", "token", "/home/container"):
+        assert forbidden_word not in s["start_args"], (s["name"], forbidden_word)
+    assert "/home/container" not in s["start_script"]
+
+
+def test_nenhum_app_id_ou_chave_aparece_em_duas_fontes():
+    """Dois botoes para o mesmo jogo, com dados diferentes, e a pessoa nao sabe qual vale. Dentro
+    do LinuxGSM o App ID se repete de proposito (os mods do HLDS sao todos o 90): conta o CRUZAMENTO."""
+    linuxgsm = {s["appid"] for s in SUGGESTIONS}
+    manual_ids = {s["appid"] for s in MANUAL}
+    ptero_ids = [s["appid"] for s in PTERO]
+    assert len(ptero_ids) == len(set(ptero_ids))
+    assert not set(ptero_ids) & (linuxgsm | manual_ids)
+    keys = [s["key"] for s in (*SUGGESTIONS, *MANUAL, *PTERO)]
+    assert len(keys) == len(set(keys))
+
+
+def test_pterodactyl_nao_repete_um_curado():
+    curated = set()
+    for env in (RAIZ / "games").glob("[!_]*.env"):
+        for line in env.read_text(encoding="utf-8").splitlines():
+            if line.startswith("STEAM_APP_ID="):
+                curated.add(int(line.split("=", 1)[1]))
+    assert not {s["appid"] for s in PTERO} & curated
+
+
+def test_complemento_so_existe_para_jogo_do_linuxgsm_e_so_em_campo_vazio():
+    by_appid = {s["appid"]: s for s in SUGGESTIONS}
+    assert ptero.COMPLEMENTS, "sem complemento nenhum a juncao nao esta sendo gerada"
+    for appid, extra in ptero.COMPLEMENTS.items():
+        base = by_appid[appid]
+        for field in extra:
+            if field in ("config_path", "config_files", "ports"):
+                assert not base.get(field), (base["name"], field)
+        assert "start_args" not in extra, "o comando do LinuxGSM nunca e trocado pelo do egg"
+
+
+@pytest.mark.parametrize("appid", sorted(ptero.COMPLEMENTS))
+def test_linuxgsm_com_complemento_passa_no_validador(appid):
+    base = next(s for s in SUGGESTIONS if s["appid"] == appid)
+    merged = {**base, **ptero.COMPLEMENTS[appid]}
+    sending = _as_the_panel_sends(merged)
+    sending["config_files"] = list(merged.get("config_files") or [])
+    if merged.get("config_path"):
+        sending["config_path"] = merged["config_path"]
+    assert validate_dynamic(sending).key == base["key"]

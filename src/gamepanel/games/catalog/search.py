@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Busca de jogo por nome ou App ID, para preencher o formulario "Adicionar jogo".
 
-Le duas listas, as duas no repositorio: `suggestions.py` (gerado por tools/import-linuxgsm.py)
-e `manual_suggestions.py` (escrita a mao, para o servidor so de Windows que o LinuxGSM nao
-cobre, como o do V Rising antes de virar curado). O painel em producao nao consulta nada na
-internet, entao nao ha SSRF nem dependencia de terceiro em tempo de uso. Puro como
-`navigation.py`: sem Flask, sem banco.
+Le tres listas, todas no repositorio: `suggestions.py` (gerado por tools/import-linuxgsm.py),
+`manual_suggestions.py` (escrita a mao, para o servidor so de Windows revisado aqui) e
+`pterodactyl_suggestions.py` (gerado por tools/import-pterodactyl.py dos eggs do Pterodactyl:
+os jogos que as outras nao tem, e os campos que faltam numa sugestao do LinuxGSM). O painel em
+producao nao consulta nada na internet, entao nao ha SSRF nem dependencia de terceiro em tempo
+de uso. Puro como `navigation.py`: sem Flask, sem banco.
 
 O resultado e SUGESTAO. Quem valida e o broker quando o formulario e enviado.
 """
@@ -14,10 +15,13 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from gamepanel.games.catalog import manual_suggestions
+from gamepanel.games.catalog import manual_suggestions, pterodactyl_suggestions
 from gamepanel.games.catalog import suggestions as sugestoes_de_jogos
 
-SOURCE = f"{sugestoes_de_jogos.SOURCE}; {manual_suggestions.SOURCE}"
+SOURCE = f"{sugestoes_de_jogos.SOURCE}; {manual_suggestions.SOURCE}; {pterodactyl_suggestions.SOURCE}"
+_COMBINED_SOURCE = f"{sugestoes_de_jogos.SOURCE.split(',')[0]} + {pterodactyl_suggestions.SOURCE.split(',')[0]}"
+# O nome de cada campo que o egg completa, para o aviso dizer O QUE veio de la.
+_FIELD_LABELS = {"config_path": "pasta de config", "config_files": "arquivos de config", "ports": "portas"}
 DEFAULT_LIMIT = 8
 QUERY_MAX = 60
 
@@ -28,10 +32,24 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", without_accents.lower()).strip()
 
 
-# A fonte de cada sugestao vai junto, e a tela a mostra: "LinuxGSM" e "curadoria do painel" sao
-# graus de confianca diferentes, e quem confere o formulario precisa saber qual esta vendo.
-_ALL = (tuple((s, sugestoes_de_jogos.SOURCE) for s in sugestoes_de_jogos.SUGGESTIONS)
-        + tuple((s, manual_suggestions.SOURCE) for s in manual_suggestions.SUGGESTIONS))
+def _with_complement(s: dict) -> tuple[dict, str]:
+    """A sugestao do LinuxGSM com os campos VAZIOS que o egg preenche. A juncao ja passou pelo
+    validador do broker na geracao (o painel nao tem o broker para validar aqui)."""
+    extra = pterodactyl_suggestions.COMPLEMENTS.get(s["appid"])
+    if not extra:
+        return s, sugestoes_de_jogos.SOURCE
+    labels = sorted({_FIELD_LABELS[k] for k in extra if k in _FIELD_LABELS})
+    note = f"Veio do egg do Pterodactyl (o LinuxGSM nao tinha): {', '.join(labels)}."
+    return {**s, **extra, "warnings": [*s["warnings"], note]}, _COMBINED_SOURCE
+
+
+# A fonte de cada sugestao vai junto, e a tela a mostra: "LinuxGSM", "curadoria do painel" e
+# "Pterodactyl" sao graus de confianca diferentes, e quem confere precisa saber qual esta vendo.
+# Nenhum App ID aparece em duas listas (os testes cobram): quem gera a do Pterodactyl pula o que
+# as outras ja tem.
+_ALL = (tuple(_with_complement(s) for s in sugestoes_de_jogos.SUGGESTIONS)
+        + tuple((s, manual_suggestions.SOURCE) for s in manual_suggestions.SUGGESTIONS)
+        + tuple((s, pterodactyl_suggestions.SOURCE) for s in pterodactyl_suggestions.SUGGESTIONS))
 _SOURCE_OF = {id(s): source for s, source in _ALL}
 _INDEX = tuple((s, _normalize(f"{s['name']} {s['key']}")) for s, _ in _ALL)
 

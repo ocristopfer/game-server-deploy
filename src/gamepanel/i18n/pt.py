@@ -528,8 +528,8 @@ MESSAGES: dict[str, str] = {
     "catalog.search_game": "Buscar jogo",
     "catalog.by_name_or_app_id": "(nome ou App ID)",
     "catalog.search_hint":
-        "Preenche App ID, portas e comando de start a partir do LinuxGSM e de uma lista do painel "
-        "para servidores so de Windows. E so sugestao: confira antes de enviar.",
+        "Preenche App ID, portas e comando de start a partir do LinuxGSM, dos eggs do Pterodactyl "
+        "e de uma lista do painel. E so sugestao: confira antes de enviar.",
     "catalog.start_from_template": "Comecar de um modelo",
     "catalog.blank": "Em branco",
     "catalog.template_hint":

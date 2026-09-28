@@ -526,8 +526,8 @@ MESSAGES: dict[str, str] = {
     "catalog.search_game": "Search for a game",
     "catalog.by_name_or_app_id": "(name or App ID)",
     "catalog.search_hint":
-        "Fills in App ID, ports and start command from LinuxGSM and from a panel list of "
-        "Windows-only servers. It is only a suggestion: check it before submitting.",
+        "Fills in App ID, ports and start command from LinuxGSM, the Pterodactyl eggs and a "
+        "panel list. It is only a suggestion: check it before submitting.",
     "catalog.start_from_template": "Start from a template",
     "catalog.blank": "Blank",
     "catalog.template_hint":
