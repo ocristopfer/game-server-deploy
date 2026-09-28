@@ -50,7 +50,12 @@ listen() {  # container porta
 }
 listen ctfw-panel 8080; listen ctfw-panel 22
 listen ctfw-broker 8443
-listen ctfw-game 22; listen ctfw-game 8888; listen ctfw-game 9999
+# O SSH do jogo responde 4s DEPOIS de aceitar: e a instalacao do broker, que continua
+# escrevendo na sessao ja aberta depois que o firewall entra (ver "sessao anterior" abaixo).
+# So a PRIMEIRA conexao (a do broker) espera; depois o laco normal, senao a porta ficaria 4s
+# fechada entre um teste e outro e os casos seguintes dariam "fecha" por acaso.
+docker exec -d ctfw-game sh -c "(sleep 4; echo fim-da-instalacao) | nc -l -p 22 >/dev/null 2>&1; while true; do nc -l -p 22 </dev/null >/dev/null 2>&1; done"
+listen ctfw-game 8888; listen ctfw-game 9999
 listen ctfw-intruder 22
 listen ctfw-api 8006; listen ctfw-api 3306
 sleep 1
@@ -66,6 +71,16 @@ FW_PANEL_SOURCES=\"$PANEL\"
 FW_BROKER_PORT=8443
 FW_API_ENDPOINTS=\"$API:8006\"
 FW_GAME_NET=\"$PREFIX.102-$PREFIX.199\""
+# A sessao do broker abre ANTES do apply, como a do instalador real, e tem de continuar
+# recebendo depois dele. AVISO de quem escreveu: este caso NAO reproduz a falha do V Rising. La,
+# no CT do Proxmox, nada pedia conntrack antes do apply, e o primeiro pacote de saida depois
+# dele virava conexao NOVA (tcp_loose=1) e caia na recusa da rede interna. Aqui, no kernel do
+# WSL2/Docker, o conntrack ja acompanha a sessao desde o inicio, e o caso passa ate sem a regra
+# de resposta do SSH (medido; nem um `notrack` antes do apply mudou isso). A prova da correcao
+# foi no CT real: a regra de resposta destravou a sessao presa e a criacao terminou. O caso fica
+# como guarda contra o grosseiro (uma saida que derrube TODA sessao aberta).
+MSYS_NO_PATHCONV=1 docker exec -d ctfw-broker sh -c "nc -w 15 $GAME 22 </dev/null > /tmp/late.txt 2>&1"
+sleep 1
 configure ctfw-game "FW_ROLE=game
 FW_MGMT_SOURCES=\"$PANEL $BROKER\"
 FW_GAME_PORTS=\"8888/tcp 7777/udp\""
@@ -83,6 +98,13 @@ tcp() {  # esperado(abre|fecha) origem destino porta descricao
 }
 
 echo "== jogo"
+sleep 6
+if MSYS_NO_PATHCONV=1 docker exec ctfw-broker grep -q fim-da-instalacao /tmp/late.txt; then
+  printf 'ok    %-6s %s\n' abre "sessao anterior ao apply (broker instalando) continua recebendo"
+else
+  printf 'FALHA sessao aberta antes do apply parou de receber (a instalacao travaria)\n'
+  failures=$((failures + 1))
+fi
 tcp abre  ctfw-panel    "$GAME" 22   "painel -> SSH do jogo"
 tcp abre  ctfw-broker   "$GAME" 22   "broker -> SSH do jogo (instalacao)"
 tcp fecha ctfw-intruder "$GAME" 22   "intruso da LAN -> SSH do jogo"

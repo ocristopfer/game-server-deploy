@@ -1156,6 +1156,14 @@ porque o OPNsense nao ve o trafego DENTRO da sub-rede. O README tem a tabela de 
   fases anteriores baixam da internet, e uma regra de saida errada quebraria a instalacao sem
   dizer por que. Pelo broker, a limpeza da chave vem depois e precisa do IP DELE em
   `BROKER_FIREWALL_SOURCES`, que o provision grava a partir do IP do CT.
+- **`established` NAO segura a sessao que ja estava aberta antes do apply.** Num CT do Proxmox
+  nada pede conntrack antes do firewall, entao a sessao SSH do broker (a que roda a instalacao)
+  nao e acompanhada; com `tcp_loose=1` o primeiro pacote de saida depois do apply vira conexao
+  NOVA e cai na recusa da rede interna. A criacao do V Rising travou assim, "executando" para
+  sempre com o fim do log preso no socket. Por isso a saida do papel `game` aceita a RESPOSTA
+  do SSH e do ping para `FW_MGMT_SOURCES` antes de tudo, antes ate do `invalid drop`
+  (`output_game_first`). O sandbox (kernel do WSL2) NAO reproduz a falha - la o conntrack ja
+  acompanha a sessao -, e o comentario do caso diz isso; a prova foi no CT real.
 - **O host carrega o `nf_tables`** (e o deixa em `/etc/modules-load.d`): CT unprivileged usa o
   nftables, mas nao carrega modulo de kernel.
 - **Prove com `bash docker/ct-sandbox/firewall.sh`** (nftables DE VERDADE, com `CAP_NET_ADMIN`:

@@ -596,8 +596,10 @@ EOF
 #
 # Por ULTIMO de proposito: as fases anteriores baixam da internet (apt, SteamCMD, Proton), e
 # uma regra de saida errada quebraria a instalacao no meio, sem dizer por que. Pelo broker a
-# sessao SSH que roda isto ja esta aberta (o `established` a mantem), e a limpeza da chave que
-# vem depois precisa do IP do broker em FW_MGMT_SOURCES - quem monta o install.env garante.
+# sessao SSH que roda isto ja esta aberta, e o `established` NAO a mantem: ela nasceu antes de
+# o conntrack acompanhar qualquer coisa no CT. Quem a mantem e a regra de resposta do SSH para
+# FW_MGMT_SOURCES no ct-firewall.sh (sem ela a instalacao do V Rising travou aqui). A limpeza
+# da chave que vem depois precisa do IP do broker em FW_MGMT_SOURCES - o install.env garante.
 #
 # Sem FW_MGMT_SOURCES o firewall NAO e aplicado (com aviso): aplicar sem saber quem e o painel
 # trancaria o proprio painel fora do servidor que acabou de nascer.

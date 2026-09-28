@@ -151,6 +151,21 @@ dns_rules() {
   printf '    ip daddr { %s } tcp dport 53 accept\n' "$dns"
 }
 
+# A RESPOSTA do SSH e do ping para quem administra, ANTES de tudo na saida do jogo - antes ate
+# do `ct state invalid drop`. Antes deste ruleset nada no CT pedia conntrack, entao a sessao SSH
+# do broker, aberta ANTES do apply, nao era acompanhada: o primeiro pacote de saida depois dele
+# chega ao conntrack no meio da conexao e sai como invalido ou como NOVO - e os dois caem (no
+# drop do invalido ou na recusa da rede interna). A instalacao do V Rising travou assim, com o
+# fim do log preso na fila do socket e a operacao "executando" para sempre. Medido no
+# docker/ct-sandbox/firewall.sh ("sessao anterior ao apply"): com a regra depois do
+# `invalid drop` o caso continua falhando.
+output_game_first() {
+  local mgmt
+  mgmt="$(addr_list FW_MGMT_SOURCES "${FW_MGMT_SOURCES:-}")"
+  printf '    ip daddr { %s } tcp sport 22 accept\n' "$mgmt"
+  printf '    ip daddr { %s } icmp type echo-reply accept\n' "$mgmt"
+}
+
 output_game() {
   # Internet liberada (Steam, apt, Proton do GitHub); rede interna nao. `reject` e nao `drop`:
   # quem tentar ve o erro na hora, em vez de esperar um timeout que parece rede lenta.
@@ -195,6 +210,7 @@ render() {
   # CT nao roteia nada: o que chegar para encaminhar e engano ou ataque.
   printf '  chain forward {\n    type filter hook forward priority filter; policy drop;\n  }\n\n'
   printf '  chain output {\n    type filter hook output priority filter; policy %s;\n' "$out_policy"
+  [[ "$FW_ROLE" != game ]] || output_game_first
   common_head oif
   case "$FW_ROLE" in
     game) output_game ;;
