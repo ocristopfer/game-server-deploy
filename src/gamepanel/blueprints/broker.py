@@ -5,7 +5,7 @@ from flask import Blueprint, abort, flash, jsonify, redirect, render_template, r
 
 from gamepanel import app as panel
 from gamepanel.games.catalog import search as catalog_search
-from gamepanel.games.catalog.templates import TEMPLATES as GAME_TEMPLATES
+from gamepanel.games.catalog import templates as game_templates
 from gamepanel.persistence.repositories import jobs as jobs_repo
 from gamepanel.persistence.repositories import servers as servers_repo
 
@@ -21,16 +21,31 @@ def catalog():
     except panel.broker_client.BrokerError as failure:
         flash(panel.translate("flash.broker_error", reason=failure.message), "error")
         games = []
-    return render_template("catalog.html", games=games, recipes=panel.BROKER_RECIPES, form={},
-                           checked_recipes=[], editing=False, game_templates=GAME_TEMPLATES)
+    return _catalog_page(games, form={}, checked_recipes=[])
+
+
+def _catalog_page(games: list, form, checked_recipes: list, status: int = 200):
+    """A tela do catalogo, igual no GET e na volta de um envio recusado."""
+    # O que a busca precisa para dizer "ja esta no catalogo" sem pedir nada ao servidor: e o
+    # que faltava para o V Rising (curado) nao aparecer como "nada encontrado".
+    index = [{"key": g.get("key", ""), "name": g.get("name", ""), "app_id": g.get("app_id") or 0,
+              "creatable": bool(g.get("creatable"))} for g in games]
+    return render_template("catalog.html", games=games, recipes=panel.BROKER_RECIPES, form=form,
+                           checked_recipes=checked_recipes, editing=False,
+                           game_templates=game_templates.TEMPLATES, catalog_index=index,
+                           # Os nomes de mentira que cada modelo pede para trocar, citados na
+                           # descricao: a frase vem do catalogo de i18n, o nome daqui.
+                           template_project=game_templates.PROJECT,
+                           template_executable=game_templates.EXECUTABLE,
+                           template_mod=game_templates.MOD), status
 
 
 @bp.get("/api/v1/catalog/suggestions")
 @panel.admin_required
 @panel.broker_required
 def api_suggestions():
-    """Busca por nome ou App ID numa lista FIXA (gerada do LinuxGSM, no repositorio): nada aqui
-    vai a internet, e a consulta so seleciona entre entradas conhecidas."""
+    """Busca por nome ou App ID em listas FIXAS do repositorio (LinuxGSM e a curadoria do painel):
+    nada aqui vai a internet, e a consulta so seleciona entre entradas conhecidas."""
     found = catalog_search.search(request.args.get("q", ""))
     return jsonify({"resultados": [catalog_search.result(s) for s in found],
                     "fonte": catalog_search.SOURCE})
@@ -53,9 +68,8 @@ def catalog_new():
             games = panel.broker_client.catalog()
         except panel.broker_client.BrokerError:
             games = []
-        return render_template("catalog.html", games=games, recipes=panel.BROKER_RECIPES,
-                               form=request.form, checked_recipes=request.form.getlist("recipes"),
-                               editing=False, game_templates=GAME_TEMPLATES), 400
+        return _catalog_page(games, form=request.form,
+                             checked_recipes=request.form.getlist("recipes"), status=400)
     # "key"/"name", e nao "chave"/"nome": o formulario ja manda os nomes em ingles, e com os
     # antigos o historico gravava a acao sem dizer qual jogo e o aviso saia sem o nome.
     panel._log_broker_action("broker-jogo", panel._actor(), data.get("key", ""), "Jogo adicionado ao catalogo.")
@@ -152,7 +166,9 @@ def instances():
         r["broker_id"]: r
         for r in servers_repo.from_broker(panel.db())
     }
+    # ?game= vem do atalho "Criar instancia" do catalogo: o jogo ja chega escolhido.
     return render_template("instances.html", instances=instances, games=games, servers=bound,
+                           selected_game=request.args.get("game", ""),
                            panel_copies=_panel_copies(instances, bound),
                            installing=jobs_repo.running_creations(panel.db()))
 

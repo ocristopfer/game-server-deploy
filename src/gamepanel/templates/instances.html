@@ -33,15 +33,16 @@
     <label>{{ _('instances.game') }}
       <select name="game" required>
         {% for j in games %}
-          <option value="{{ j.key }}">{{ j.name }} — portas {{ j.ports | join(', ') }}</option>
+          <option value="{{ j.key }}" {{ 'selected' if j.key == selected_game }}>{{ j.name }} — {{ _('catalog.ports') | lower }} {{ j.ports | join(', ') }} · {{ j.memory_mb }} MB · {{ j.disk_gb }} GB</option>
         {% endfor %}
       </select>
-      <small>{{ _('instances.only_installable') }}</small>
+      <small>{{ _('instances.only_installable') }}
+        <a href="{{ url_for('broker.catalog') }}">{{ _('instances.game_not_listed') }}</a></small>
     </label>
     <label>{{ _('instances.name') }}
       <input name="name" maxlength="40" required autocomplete="off" spellcheck="false"
              pattern="[A-Za-z0-9][A-Za-z0-9 ._\-]{0,39}">
-      <small>Como a instancia aparece no painel. Letras, numeros, espaco, ponto, hifen e sublinhado.</small>
+      <small>{{ _('instances.name_hint') }}</small>
     </label>
     <div class="form-actions">
       {# Sem confirmacao aqui: o botao leva a tela que mostra CT, IP e portas, e e ela que
@@ -49,12 +50,10 @@
       {{ ui.button(_('instances.create'), variant='primary', block=true) }}
     </div>
   </form>
-  <p class="muted small mt-4">
-    O broker escolhe o IP e as portas livres, cria o container, instala o jogo e so entao
-    abre o firewall. Voce acompanha o progresso na tela da acao.
-  </p>
+  <p class="muted small mt-4">{{ _('instances.how_it_works') }}</p>
   {% else %}
     <p class="muted">{{ _('instances.none_creatable') }}</p>
+    {{ ui.button(_('catalog.add_game'), href=url_for('broker.catalog'), variant='primary', icon='📚') }}
   {% endif %}
 </div>
 
@@ -75,7 +74,7 @@
           <span class="badge {{ {'active':'on','desativada':'cold','reservada':'cold','falhou':'off'}.get(i.state, 'cold') }}">{{ i.state }}</span>
           <div class="muted small">{{ i.game }} · {{ i.ip }} · {{ i.backend }} {{ i.handle }}</div>
           <div class="muted small">
-            Portas: {% for p in i.ports %}{{ p.number }}/{{ p.proto }}{% if not loop.last %}, {% endif %}{% endfor %}
+            {{ _('catalog.ports') }}: {% for p in i.ports %}{{ p.number }}/{{ p.proto }}{% if not loop.last %}, {% endif %}{% endfor %}
           </div>
           {% if i.detail %}<div class="muted small">{{ i.detail }}</div>{% endif %}
           {% if i.state == 'ativa' %}

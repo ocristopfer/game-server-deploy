@@ -84,6 +84,7 @@
 </label>
 <fieldset class="fieldgroup">
   <legend>{{ _('catalog.install_recipes') }}</legend>
+  <p class="muted small">{{ _h('catalog.recipes_hint') }}</p>
   {% for r in recipes %}
     <label class="checkbox"><input type="checkbox" name="recipes" value="{{ r }}" {{ 'checked' if r in checked_recipes }}> {{ r }}</label>
   {% endfor %}

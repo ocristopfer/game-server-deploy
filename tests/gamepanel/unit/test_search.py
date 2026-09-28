@@ -1,6 +1,7 @@
 """Busca de jogo por nome ou App ID (busca_de_jogos.py) sobre a lista gerada do LinuxGSM."""
 from __future__ import annotations
 
+from gamepanel.games.catalog import manual_suggestions
 from gamepanel.games.catalog import search as busca
 from gamepanel.games.catalog import suggestions as sugestoes_de_jogos
 
@@ -53,8 +54,9 @@ def test_consulta_gigante_e_cortada():
 def test_valores_do_formulario_sempre_trazem_todas_as_chaves():
     keys = {"key", "name", "app_id", "ports", "game_port", "query_port", "extra_port",
               "start_script", "start_args", "shiftable", "config_path", "config_files",
-              "player_source", "backup_paths", "join_re", "leave_re"}
-    for s in sugestoes_de_jogos.SUGGESTIONS:
+              "player_source", "backup_paths", "join_re", "leave_re", "memory_mb", "cores",
+              "disk_gb", "platform", "recipes"}
+    for s in (*sugestoes_de_jogos.SUGGESTIONS, *manual_suggestions.SUGGESTIONS):
         assert set(busca.to_form(s)) == keys
         assert all(isinstance(v, str) for v in busca.to_form(s).values())
 
@@ -73,3 +75,25 @@ def test_deslocavel_vira_um_ou_vazio():
     assert busca.to_form(palworld)["shiftable"] == "1"
     satisfactory = busca.search("1690800")[0]
     assert busca.to_form(satisfactory)["shiftable"] == ""
+
+
+def test_jogo_so_de_windows_que_o_linuxgsm_nao_tem_e_achado():
+    """Era o buraco: servidor sem build Linux nao existe no LinuxGSM, e a busca voltava vazia."""
+    found = busca.search("abiotic")
+    assert _names(found) == ["Abiotic Factor"]
+    values = busca.to_form(found[0])
+    assert values["platform"] == "windows"
+    assert values["recipes"] == "proton"
+    assert busca.result(found[0])["source"] == manual_suggestions.SOURCE
+
+
+def test_app_id_da_lista_manual_tambem_casa():
+    assert _names(busca.search("2430930")) == ["ARK: Survival Ascended"]
+
+
+def test_sugestao_do_linuxgsm_limpa_windows_e_proton_da_anterior():
+    """Escolher Palworld depois do Abiotic Factor nao pode deixar o Proton marcado."""
+    values = busca.to_form(busca.search("2394010")[0])
+    assert values["platform"] == ""
+    assert values["recipes"] == ""
+    assert busca.result(busca.search("2394010")[0])["source"] == sugestoes_de_jogos.SOURCE

@@ -214,10 +214,13 @@ src/
       adapters/            um arquivo por jogo com tela de edicao rapida
       catalog/
         search.py          busca por nome/App ID sobre suggestions.py (era busca_de_jogos.py)
-        templates.py        modelos do formulario "Adicionar jogo" (Unreal Linux); puro, so dado
+        templates.py        modelos do formulario "Adicionar jogo", um por motor (Unreal/Unity Linux
+                           e Windows via Proton, Source); puro, so dado
                            (era modelos_de_jogo.py; `tests/gamebroker/test_templates.py` confere
                            que passam no validador do broker)
         suggestions.py      GERADO por tools/import-linuxgsm.py, nao edite (era sugestoes_de_jogos.py)
+        manual_suggestions.py  escrita A MAO: servidor so de Windows que o LinuxGSM nao cobre (mesmo
+                           formato + platform/recipes); curado nao entra (a busca o acha no catalogo)
     i18n/
       __init__.py         cascata idioma->pt->chave, campos na frase, `Mensagem`; ver a secao propria
       pt.py               catalogo em portugues (o padrao)
@@ -946,6 +949,17 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
   como levar a senha para um CT. Ela entra no `install.env` (apagado pelo `_cleanup`), o log da
   operacao a troca por `******` (`_masking`) e `SteamAccount` a tira do `repr`. A conta tem de
   estar SEM Steam Guard: o primeiro login de cada CT novo e minutos depois do pedido.
+- **Servidor sem build Linux: Proton primeiro, SEMPRE.** Todo `games/*.env`, modelo e sugestao
+  manual de jogo so de Windows nasce com `proton`; `wine` direto so depois de o Proton ter sido
+  tentado e falhado com aquele jogo, com o motivo escrito no `.env`. O preco do Proton e o appid:
+  a API de game server da Steam precisa do REAL (UMU_ID/SteamAppId), senao a query nunca abre -
+  ver `icarus.env` e `vrising.env`. `test_templates.py` e `test_suggestions.py` cobram a regra.
+- **X virtual e a receita `xvfb`**, que so vale junto de `proton`/`wine`. O curado com
+  `WINDOWS_RUNTIME_XVFB=1` a ganha em `catalog._curated_recipes`: antes so o runtime ia para o
+  `install.env` do broker, e um Icarus criado pelo painel subia SEM o X virtual que o `.env` pede.
+- **`.exe` no `START_SCRIPT` vira `win-run` no `ExecStart`** (`render_systemd_unit`). Jogo
+  dinamico nao tem `POST_INSTALL_CMD` para escrever um wrapper `.sh`, e sem isso o servico morria
+  com "Exec format error". Curado continua com o wrapper dele (o `compare.sh` prova que nada mudou).
 - **`install.env` e sempre `shlex.quote`.** Hook (`PRE/POST_INSTALL_CMD`) so existe no catalogo
   curado; jogo da API escolhe **receitas** (`apply_recipes`, lista fechada), nunca escreve shell.
   Receita desconhecida derruba a instalacao. A chave do broker sai do CT ao fim

@@ -26,12 +26,20 @@ export function reset(target, children) {
 }
 
 /* Preenche campos de um formulario a partir de { nome: valor }. Caixa de marcar liga com
- * '1' e desliga com qualquer outra coisa; nome que o formulario nao tem e ignorado. */
+ * '1' e desliga com qualquer outra coisa; nome que o formulario nao tem e ignorado.
+ *
+ * Varias caixas com o MESMO nome (as receitas) chegam como um grupo, e o valor e a lista das
+ * marcadas separadas por espaco: 'proton xvfb'. O grupo nao tem `tagName` (e uma lista, nao
+ * um elemento) - e o `select`, que tambem tem `length`, tem. Sem este caso o modelo "Unreal
+ * Windows" deixava o Proton desmarcado, e o broker recusava o jogo de Windows sem runtime. */
 export function fillForm(form, values) {
   Object.entries(values).forEach(([name, value]) => {
     const field = form.elements[name];
     if (!field) return;
-    if (field.type === 'checkbox') field.checked = value === '1';
+    if (!field.tagName) {
+      const marked = String(value).split(/\s+/).filter(Boolean);
+      Array.from(field).forEach((box) => { box.checked = marked.includes(box.value); });
+    } else if (field.type === 'checkbox') field.checked = value === '1';
     else field.value = value;
   });
 }

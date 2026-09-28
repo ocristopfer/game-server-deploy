@@ -132,6 +132,7 @@ Layout de referencia (o do `.env.example`):
 | DayZ | `.\deploy\game\deploy-game.ps1 -Game dayz` | 2302-2304/udp, 27016/udp |
 | Icarus | `.\deploy\game\deploy-game.ps1 -Game icarus` | 17777/udp, 27017/udp |
 | Valheim | `.\deploy\game\deploy-game.ps1 -Game valheim` | 2456/udp, 2457/udp |
+| V Rising | `.\deploy\game\deploy-game.ps1 -Game vrising` | 9876/udp, 9877/udp |
 
 Troque `deploy-game.ps1` por `deploy-docker.ps1` para rodar em Docker. Alem da
 instalacao, cada `games/<jogo>.env` diz ao painel onde fica a configuracao
@@ -141,7 +142,7 @@ a tela **Config** pronta e o **Backup** apontado para o save certo.
 
 ### Jogos sem build Linux: wine ou Proton
 
-Enshrouded e Icarus so publicam servidor para Windows. O deploy baixa o build Windows
+Enshrouded, Icarus e V Rising so publicam servidor para Windows. O deploy baixa o build Windows
 (`STEAM_PLATFORM=windows`) e roda o `.exe` dentro do CT com o runtime escolhido em
 `games/<jogo>.env`:
 
@@ -165,6 +166,10 @@ Trocar de runtime e mudar `WINDOWS_RUNTIME` e redeployar - nenhum script de jogo
 mutex/evento/semaforo do Windows vira syscall cara, e em servidor muito multi-thread isso
 vira gargalo de CPU. O Proton-GE traz o proprio wine com **fsync** (`futex_waitv`, kernel
 >= 5.16) ligado por padrao. Por isso o Enshrouded usa `proton`.
+
+**Regra para jogo novo sem build Linux: Proton primeiro.** Todo `games/*.env`, modelo e
+sugestao de servidor so de Windows nasce com `proton`; `wine` direto so quando o Proton ja
+foi tentado e nao funciona com aquele jogo, e o motivo fica escrito no `.env`.
 
 **O `UMU_ID` tem que ser o appid REAL do jogo.** Esta e a segunda armadilha do Proton fora
 do Steam, e ela e silenciosa: com um `UMU_ID` qualquer (0, por exemplo) o Proton propaga
@@ -237,6 +242,7 @@ mas para que todo redirecionamento seja **1:1** (porta externa = porta interna).
 | Enshrouded | 192.168.2.23 | `15636/udp`, `15637/udp` | — |
 | DayZ | 192.168.2.24 | `2302/udp`, `2303/udp`, `2304/udp`, `27016/udp` | — |
 | Icarus | 192.168.2.25 | `17777/udp`, `27017/udp` | — |
+| V Rising | (CT do broker) | `9876/udp`, `9877/udp` | RCON `25575/tcp` |
 
 **O 1:1 nao e preferencia estetica** nos jogos que publicam query A2S — Palworld, DayZ e
 Icarus. Esses servidores anunciam a *propria* porta ao master server da Steam; se o NAT
@@ -413,6 +419,25 @@ campos vazios, e uma regra sem porta de destino casa *qualquer* porta para aquel
 - Saves: `/opt/game/Icarus/Saved/PlayerData/` e `/opt/game/Icarus/Saved/Prospects/`
   (prefixo do Wine em `/home/steam/.wine-icarus`)
 
+### V Rising — notas
+
+- App do servidor dedicado: `1829350` — **sem build Linux**, e **fora do LinuxGSM** (por isso a
+  busca do painel nao o achava). Roda pelo **Proton** com X virtual (`WINDOWS_RUNTIME_XVFB=1`):
+  o servidor e Unity e cria janela na largada
+- Portas: **9876/UDP** (jogo, a do Direct Connect) e **9877/UDP** (query da Steam). As duas vao
+  por linha de comando (`-gamePort` / `-queryPort`) e vencem o que estiver no `.json`
+- **Appid sob Proton**: o wrapper fixa `SteamAppId=1604030` (o do jogo) quando o depot nao traz
+  `steam_appid.txt` — com 0 a query nunca abre, como aconteceu com o Icarus
+- Config: `/opt/game/save-data/Settings/ServerHostSettings.json` (nome, senha, lista publica em
+  `ListOnSteam`/`ListOnEOS`) e `ServerGameSettings.json` (regras do mundo). O deploy semeia os
+  dois a partir dos padroes do proprio servidor. Admins: SteamID64 em `adminlist.txt`, na mesma
+  pasta. Pare o servidor antes de editar (`systemctl stop vrising`)
+- Log: o servidor so escreve em `/opt/game/logs/VRisingServer.log`; o wrapper o repete no
+  journal com `tail -F`, e e dali que a tela de logs do painel le
+- Saves: `/opt/game/save-data/Saves/` (o Backup do painel guarda Saves e Settings)
+- Pelo painel: e curado e criavel, entao sai direto pela tela **Instancias**. **Nao foi testado
+  ainda contra um CT de verdade** - se o Proton nao subir, `WINDOWS_RUNTIME=wine` e redeploy
+
 ### DayZ — notas
 
 - App do servidor dedicado: `223350` (build **nativo Linux**, binario `DayZServer`)
@@ -461,6 +486,18 @@ Ai nao ha como digitar codigo nenhum (o login acontece minutos depois do clique,
 novo), entao a conta tem de estar **sem Steam Guard** — por isso uma conta DEDICADA a
 servidores, que possua o jogo, e nunca a sua pessoal. Sem a conta o DayZ continua "manual"
 no catalogo, com o motivo escrito ali.
+
+**Adicionar ao catalogo um jogo que nao esta em lugar nenhum.** A tela **Catalogo** busca
+por nome ou App ID em tres lugares: os jogos que ja estao no catalogo (com um atalho para
+**Criar instancia**), o LinuxGSM e uma lista mantida a mao no painel
+(`manual_suggestions.py`) para servidores so de Windows que o LinuxGSM nao cobre (ARK:
+Survival Ascended, Abiotic Factor, Conan Exiles, Sons of the Forest). Se nada casar, a tela
+oferece links para o SteamDB (App ID do servidor dedicado) e uma busca das portas na web.
+Quem abre esses links e o seu navegador; o painel continua sem ir a internet. Dai o caminho
+e **Comecar de um modelo** pelo motor do jogo: Unreal (Linux ou Windows via Proton), Unity
+(Linux ou Windows via Proton) e Source/srcds. Servidor de Windows cadastrado assim roda com
+`.exe` direto no "Script de start": o instalador o chama pelo `win-run`. As receitas
+`proton`/`wine` escolhem o runtime e `xvfb` liga o X virtual.
 
 Detalhes de como a senha e tratada:
 

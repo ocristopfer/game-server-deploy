@@ -421,7 +421,7 @@ apply_recipes() {
           chown -h steam:steam /home/steam/.steam/sdk64/steamclient.so
         "
         ;;
-      wine|proton) ;;  # runtime de Windows: quem trata e o setup_windows_runtime (WINDOWS_RUNTIME)
+      wine|proton|xvfb) ;;  # runtime de Windows e X virtual: quem trata e o setup_windows_runtime
       *) die "Receita desconhecida: ${r}" ;;
     esac
   done
@@ -556,6 +556,14 @@ render_systemd_unit() {
   # limite padrao (1024) o servidor cai com "failed to create eventfd" sob carga.
   local extra_limits=""
   [[ -n "$WINDOWS_RUNTIME" ]] && extra_limits=$'LimitNOFILE=1048576\n'
+  # Um .exe no START_SCRIPT (jogo de Windows cadastrado pelo painel, que nao tem
+  # POST_INSTALL_CMD para escrever um wrapper .sh como os curados) passa pelo win-run.
+  # Sem isto o ExecStart apontava o proprio .exe: o kernel nao sabe executa-lo, e o
+  # servico morria com "Exec format error" logo depois de uma instalacao "com sucesso".
+  local exec_start="${GAME_DIR}/${START_SCRIPT}"
+  if [[ -n "$WINDOWS_RUNTIME" && "${START_SCRIPT,,}" == *.exe ]]; then
+    exec_start="/usr/local/bin/win-run ${GAME_DIR}/${START_SCRIPT}"
+  fi
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
@@ -569,7 +577,7 @@ Type=simple
 User=steam
 Group=steam
 WorkingDirectory=${GAME_DIR}
-ExecStart=${GAME_DIR}/${START_SCRIPT} ${rendered_args}
+ExecStart=${exec_start} ${rendered_args}
 Restart=on-failure
 RestartSec=10
 ${extra_limits}

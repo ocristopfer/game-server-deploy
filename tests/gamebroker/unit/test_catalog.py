@@ -192,6 +192,37 @@ def test_jogo_de_windows_exige_receita_de_windows(game_data):
     assert cat.validate_dynamic(game_data).recipes == ("wine",)
 
 
+def test_xvfb_so_vale_junto_de_um_runtime_de_windows(game_data):
+    """Sozinho ele instalaria o X virtual num CT que nunca o chama."""
+    game_data["recipes"] = ["xvfb"]
+    with pytest.raises(ValidationError, match="xvfb"):
+        cat.validate_dynamic(game_data)
+    game_data.update(platform="windows", recipes=["proton", "xvfb"])
+    assert cat.validate_dynamic(game_data).recipes == ("proton", "xvfb")
+
+
+def test_curado_com_x_virtual_leva_a_receita_xvfb():
+    """Era um buraco: so o runtime chegava ao install.env do broker, e o Icarus criado pelo
+    painel subia sem o X virtual que o .env pede."""
+    games, _ = cat.load_curated(RAIZ / "games")
+    assert games["icarus"].recipes == ("proton", "xvfb")
+    assert games["enshrouded"].recipes == ("proton",)
+    assert games["palworld"].recipes == ()
+
+
+def test_v_rising_e_curado_criavel_pelo_proton():
+    games, _ = cat.load_curated(RAIZ / "games")
+    vrising = games["vrising"]
+    assert vrising.creatable, vrising.reason
+    assert vrising.app_id == 1829350
+    assert vrising.platform == "windows"
+    assert vrising.recipes == ("proton", "xvfb")
+    assert {str(p) for p in vrising.ports} == {"9876/udp", "9877/udp"}
+    assert (vrising.game_port, vrising.query_port) == (9876, 9877)
+    assert "{PORT}" in vrising.start_args
+    assert "{QUERY_PORT}" in vrising.start_args
+
+
 def test_so_o_minimo_basta(game_data):
     minimum = {k: game_data[k] for k in ("key", "name", "app_id", "ports", "game_port")}
     game = cat.validate_dynamic(minimum)

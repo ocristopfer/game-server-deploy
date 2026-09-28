@@ -29,8 +29,12 @@ SOURCE_CURATED = "curado"
 SOURCE_DYNAMIC = "dinamico"
 
 # Receitas: lista FECHADA no codigo. Jogo dinamico escolhe daqui, nunca escreve shell.
-RECIPES = ("wine", "proton", "steamclient-sdk64")
+RECIPES = ("wine", "proton", "xvfb", "steamclient-sdk64")
 RECIPES_WINDOWS = ("wine", "proton")
+# X virtual para o .exe que cria janela mesmo headless (Icarus, V Rising). E uma receita, e nao
+# um campo, porque so faz sentido junto de um runtime de Windows: sozinho ele instalaria o
+# xvfb num CT que nunca o chama.
+RECIPE_XVFB = "xvfb"
 
 # Portas que nunca podem ser expostas por jogo nenhum: painel, Proxmox, API REST e RCON
 # (ver PORT_NOTES do palworld.env - o painel fala com eles por dentro do container).
@@ -293,13 +297,23 @@ def game_from_env(file_name: str, data: dict[str, str], steam_account: bool = Fa
         player_source=data.get("PLAYER_SOURCE", "log"),
         join_re=data.get("JOIN_RE", ""), leave_re=data.get("LEAVE_RE", ""),
         log_path=data.get("LOG_PATH", ""),
-        recipes=(runtime,) if runtime in RECIPES_WINDOWS else (),
+        recipes=_curated_recipes(runtime, data.get("WINDOWS_RUNTIME_XVFB", "0") == "1"),
         shiftable=shiftable,
         source=SOURCE_CURATED, creatable=not reason, reason=reason,
         needs_account=data.get("STEAM_ANONYMOUS", "1") == "0",
         pre_install=data.get("PRE_INSTALL_CMD", ""),
         post_install=data.get("POST_INSTALL_CMD", ""),
     )
+
+
+def _curated_recipes(runtime: str, xvfb: bool) -> tuple[str, ...]:
+    """O runtime e o X virtual de um curado, na mesma forma das receitas de um dinamico: e
+    por elas que o `install.env` do broker chega ao CT. Antes so o runtime ia, e um Icarus
+    criado pelo painel subia SEM o X virtual que o .env pede (o deploy-game.ps1, que le o
+    arquivo cru, nunca teve o problema)."""
+    if runtime not in RECIPES_WINDOWS:
+        return ()
+    return (runtime, RECIPE_XVFB) if xvfb else (runtime,)
 
 
 def load_curated(directory: Path, steam_account: bool = False) -> tuple[dict[str, Game], list[str]]:
@@ -436,7 +450,9 @@ def _recipes_field(data: dict, platform: str) -> tuple[str, ...]:
     if unknown is not None:
         raise ValidationError("recipes", f"receita desconhecida: {unknown!r}")
     if platform == "windows" and not set(items) & set(RECIPES_WINDOWS):
-        raise ValidationError("recipes", "jogo de Windows precisa da receita 'wine' ou 'proton'")
+        raise ValidationError("recipes", "jogo de Windows precisa da receita 'proton' ou 'wine'")
+    if RECIPE_XVFB in items and not set(items) & set(RECIPES_WINDOWS):
+        raise ValidationError("recipes", "'xvfb' so vale junto de 'proton' ou 'wine'")
     return tuple(dict.fromkeys(items))
 
 

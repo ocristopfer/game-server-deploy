@@ -124,6 +124,18 @@ def test_runtime_de_windows_vira_windows_runtime_e_nao_receita(game_data, ports)
     assert values["STEAM_PLATFORM"] == "windows"
 
 
+def test_xvfb_vira_windows_runtime_xvfb_e_nao_receita(game_data, ports):
+    game_data.update(platform="windows", recipes=["proton", "xvfb"])
+    values = _values(build_env(validate_dynamic(game_data), ports))
+    assert values["WINDOWS_RUNTIME"] == "proton"
+    assert values["WINDOWS_RUNTIME_XVFB"] == "1"
+    assert values["RECIPES"] == ""
+
+
+def test_sem_xvfb_o_x_virtual_fica_desligado(game, ports):
+    assert _values(build_env(game, ports))["WINDOWS_RUNTIME_XVFB"] == "0"
+
+
 def test_wine_e_proton_juntos_sao_recusados(game_data, ports):
     game_data.update(platform="windows", recipes=["wine", "proton"])
     with pytest.raises(InstallError, match="OU"):

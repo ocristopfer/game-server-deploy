@@ -10,8 +10,11 @@ cadastra no fim - inclusive quando o fim e ruim.
 """
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 import time
+from html import unescape
 
 import pytest
 
@@ -335,6 +338,47 @@ def test_catalogo_traz_o_campo_de_busca(admin, broker):
     html = admin.get("/catalog").get_data(as_text=True)
     assert "data-game-search" in html
     assert "/api/v1/catalog/suggestions" in html
+
+
+def test_catalogo_manda_para_a_busca_os_jogos_que_ja_tem(admin, broker):
+    """E o que faz buscar um CURADO (o V Rising) responder "ja esta no catalogo" em vez de
+    "nada encontrado". Vai escapado no atributo: um nome com aspas nao pode quebrar a tag."""
+    html = admin.get("/catalog").get_data(as_text=True)
+    raw = re.search(r'data-catalog="([^"]*)"', html)
+    assert raw is not None
+    index = json.loads(unescape(raw.group(1)))
+    assert {"key": "alfa", "name": "Alfa", "app_id": 1001, "creatable": True} in index
+    assert {"key": "conta", "name": "Jogo com Conta", "app_id": 1004, "creatable": False} in index
+    assert 'data-instances-url="/instances"' in html
+
+
+def test_catalogo_leva_direto_a_criar_instancia_do_jogo(admin, broker):
+    html = admin.get("/catalog").get_data(as_text=True)
+    assert "/instances?game=alfa" in html
+    assert "/instances?game=conta" not in html, "jogo que o broker nao cria nao ganha o atalho"
+
+
+def test_instancias_ja_chega_com_o_jogo_escolhido(admin, broker):
+    html = admin.get("/instances?game=alfa").get_data(as_text=True)
+    assert re.search(r'<option value="alfa"\s+selected', html)
+    without = admin.get("/instances").get_data(as_text=True)
+    assert "selected" not in without.split('name="game"')[1].split("</select>")[0]
+
+
+def test_catalogo_oferece_um_modelo_por_motor(admin, broker):
+    html = admin.get("/catalog").get_data(as_text=True)
+    for key in ("unreal-linux", "unreal-windows", "unity-linux", "unity-windows", "source"):
+        assert f'<option value="{key}"' in html, key
+    # A descricao cita o nome de mentira que a pessoa tem de trocar (campo da frase).
+    assert "NomeDoProjeto" in html
+    assert "{project}" not in html
+
+
+def test_modelos_saem_no_idioma_da_pessoa(admin, broker, post):
+    post(admin, "/account/language", {"lang": "en"})
+    html = admin.get("/catalog").get_data(as_text=True)
+    assert "Unreal Engine (Windows only, via Proton)" in html
+    assert "App ID on SteamDB" in html
 
 
 def test_catalogo_oferece_o_modelo_de_unreal_com_os_valores_na_marcacao(admin, broker):

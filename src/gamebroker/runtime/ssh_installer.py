@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Protocol
 
 from gamebroker.services.allocator import ROLE_GAME, ROLE_QUERY, AllocatedPort, port_from_base, port_with_role
-from gamebroker.services.catalog import RECIPES_WINDOWS, Game
+from gamebroker.services.catalog import RECIPE_XVFB, RECIPES_WINDOWS, Game
 
 REMOTE_DEST = "/root/gamepanel-install"
 SUCCESS_MARK = "INSTALACAO CONCLUIDA"
@@ -179,7 +179,8 @@ def build_env(game: Game, ports: Sequence[AllocatedPort], steam: SteamAccount | 
         "GAME_PORT": str(game_port), "QUERY_PORT": str(query_port), "EXTRA_PORT": str(extra_port),
         "GAME_PORTS": " ".join(str(p) for p in ports),
         "WINDOWS_RUNTIME": runtimes[0] if runtimes else "",
-        "RECIPES": " ".join(r for r in game.recipes if r not in RECIPES_WINDOWS),
+        "WINDOWS_RUNTIME_XVFB": "1" if RECIPE_XVFB in game.recipes else "0",
+        "RECIPES": " ".join(r for r in game.recipes if r not in (*RECIPES_WINDOWS, RECIPE_XVFB)),
         # Shell so existe no catalogo curado, revisado no git; jogo cadastrado pela API vem vazio.
         "PRE_INSTALL_CMD": game.pre_install, "POST_INSTALL_CMD": game.post_install,
     }

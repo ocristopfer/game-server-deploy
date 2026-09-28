@@ -191,6 +191,13 @@ MESSAGES: dict[str, str] = {
     "instances.only_installable": "Only games the broker can install on its own are listed.",
     "instances.name": "Name",
     "instances.none_creatable": "No creatable game in the catalog (or the broker did not answer).",
+    "instances.game_not_listed": "Game not here? Add it to the catalog.",
+    "instances.name_hint":
+        "How the instance shows up in the panel. Letters, digits, space, dot, "
+        "hyphen and underscore.",
+    "instances.how_it_works":
+        "The broker picks a free IP and ports, creates the container, installs the game and only "
+        "then opens the firewall. You follow the progress on the job screen.",
     "instances.instance": "Instance",
     "instances.remove": "Remove",
     "instances.type_name_to_confirm": "Type the name to confirm",
@@ -519,11 +526,47 @@ MESSAGES: dict[str, str] = {
     "catalog.search_game": "Search for a game",
     "catalog.by_name_or_app_id": "(name or App ID)",
     "catalog.search_hint":
-        "Fills in App ID, ports and start command from the LinuxGSM catalog. It is only a "
-        "suggestion: check it before submitting.",
+        "Fills in App ID, ports and start command from LinuxGSM and from a panel list of "
+        "Windows-only servers. It is only a suggestion: check it before submitting.",
     "catalog.start_from_template": "Start from a template",
     "catalog.blank": "Blank",
-    "catalog.template_hint": "Fills in ports, paths, arguments and the log pattern in one go.",
+    "catalog.template_hint":
+        "Search can't find the game? Pick its engine: the template fills in ports, paths, "
+        "arguments and the log pattern in one go.",
+    "catalog.search_filled": "fields filled in. Check them before submitting.",
+    "catalog.search_in_catalog": "already in the catalog",
+    "catalog.search_none":
+        "No suggestion for that name. Start from a template below (by the game's engine) and "
+        "look up the dedicated server App ID and the ports:",
+    "catalog.search_steamdb": "App ID on SteamDB",
+    "catalog.search_web_ports": "Ports on the web",
+    "catalog.search_failed": "Could not search:",
+    "catalog.recipes_hint":
+        "Windows-only server: tick <strong>proton</strong> (preferred; <strong>wine</strong> only "
+        "if Proton does not work) and <strong>xvfb</strong> if it opens a window on start.",
+    "catalog.template.unreal_linux": "Unreal Engine (native Linux server)",
+    "catalog.template.unreal_linux_help":
+        "Palworld, Satisfactory, Dragonwilds and most Unreal games with a Linux build. Replace "
+        "{project} with the project folder (the one under /opt/game after installing) and enter "
+        "the dedicated server App ID.",
+    "catalog.template.unreal_windows": "Unreal Engine (Windows only, via Proton)",
+    "catalog.template.unreal_windows_help":
+        "Unreal server without a Linux build (Icarus, Abiotic Factor, Conan). Replace {project} "
+        "with the project folder in the paths and in the Shipping executable, which is the one "
+        "that opens the port.",
+    "catalog.template.unity_linux": "Unity (native Linux server)",
+    "catalog.template.unity_linux_help":
+        "Replace {executable} with the .x86_64 executable at the game root. Check the game's "
+        "guide for how it takes the port: Unity has no standard argument for it.",
+    "catalog.template.unity_windows": "Unity (Windows only, via Proton)",
+    "catalog.template.unity_windows_help":
+        "Unity server without a Linux build (V Rising, Sons of the Forest). Replace {executable} "
+        "with the .exe at the root. Comes with a virtual X (xvfb): Unity servers often open a "
+        "window on start.",
+    "catalog.template.source": "Source / srcds (Valve)",
+    "catalog.template.source_help":
+        "Valve games and mods (srcds_run). Replace {mod} with the game folder (cstrike, tf, "
+        "garrysmod) and MAPA with a map that exists.",
     "catalog.key": "Key",
     "catalog.key_example": "mygame",
     "catalog.key_hint": "Lowercase, digits and hyphen. It becomes the container and service name.",
@@ -556,7 +599,7 @@ MESSAGES: dict[str, str] = {
     "catalog.by_steam_query": "Steam query (A2S)",
     "catalog.platform": "Platform",
     "catalog.linux_default": "Linux (default)",
-    "catalog.windows_needs_wine": "Windows (needs Wine or Proton)",
+    "catalog.windows_needs_wine": "Windows (needs Proton or Wine)",
     "catalog.log_join_line": "Log: join line",
     "catalog.log_leave_line": "Log: leave line",
     "catalog.install_recipes": "Install recipes",

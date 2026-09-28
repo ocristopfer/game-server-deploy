@@ -32,6 +32,7 @@
              daqui: quem o instala e o deploy-game.ps1, que le o .env do git. #}
           {% if j.creatable %}
           <div class="cluster mt-4">
+            {{ ui.button(_('instances.create'), href=url_for('broker.instances', game=j.key), size='sm', variant='primary') }}
             {% if j.edited %}<span class="badge cold" title="{{ _('catalog.edited_help') }}">{{ _('catalog.edited') }}</span>{% endif %}
             {{ ui.button(_('catalog.edit'), href=url_for('broker.catalog_edit', key=j.key), size='sm', variant='ghost') }}
             {% if j.source != 'curado' %}
@@ -59,7 +60,16 @@
   <form method="post" action="{{ url_for('broker.catalog_new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     {# Busca por nome ou App ID (features/game-search.js). Sem `name`: nao vai no envio. #}
-    <div class="mb-4" data-game-search data-url="{{ url_for('broker.api_suggestions') }}" hidden>
+    <div class="mb-4" data-game-search data-url="{{ url_for('broker.api_suggestions') }}" hidden
+         data-catalog="{{ catalog_index | tojson | forceescape }}"
+         data-instances-url="{{ url_for('broker.instances') }}"
+         data-msg-filled="{{ _('catalog.search_filled') }}"
+         data-msg-in-catalog="{{ _('catalog.search_in_catalog') }}"
+         data-msg-create-instance="{{ _('instances.create') }}"
+         data-msg-none="{{ _('catalog.search_none') }}"
+         data-msg-steamdb="{{ _('catalog.search_steamdb') }}"
+         data-msg-web-ports="{{ _('catalog.search_web_ports') }}"
+         data-msg-failed="{{ _('catalog.search_failed') }}">
       <label>{{ _('catalog.search_game') }} <span class="muted">{{ _('catalog.by_name_or_app_id') }}</span>
         <input type="search" data-search-field maxlength="60" autocomplete="off" spellcheck="false"
                placeholder="Palworld, Valheim, 2394010...">
@@ -74,8 +84,8 @@
       <select data-game-template>
         <option value="">{{ _('catalog.blank') }}</option>
         {% for m in game_templates %}
-        <option value="{{ m.key }}" data-description="{{ m.description }}"
-                data-values='{{ m.values | tojson }}'>{{ m.label }}</option>
+        <option value="{{ m.key }}" data-description="{{ _(m.description_key, project=template_project, executable=template_executable, mod=template_mod) }}"
+                data-values='{{ m.values | tojson }}'>{{ _(m.label_key) }}</option>
         {% endfor %}
       </select>
       <small data-template-description>{{ _('catalog.template_hint') }}</small>

@@ -9,8 +9,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# Espelho do gamebroker.catalogo.RECEITAS: so para desenhar as caixas do formulario.
-BROKER_RECIPES = ("wine", "proton", "steamclient-sdk64")
+# Espelho do gamebroker.catalogo.RECEITAS: so para desenhar as caixas do formulario. Proton
+# vem antes do wine de proposito: e o runtime preferido para servidor sem build Linux (fsync e
+# ntsync; o wine da distro nao tem), e o wine fica para quando o Proton nao funcionar.
+BROKER_RECIPES = ("proton", "wine", "xvfb", "steamclient-sdk64")
 NUMBER_RE = re.compile(r"[0-9]{1,10}", re.ASCII)
 
 # Campos que entram como texto, se vierem preenchidos.

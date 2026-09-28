@@ -98,3 +98,66 @@ def test_project_zomboid_e_terraria_saem_com_a_porta_de_verdade():
     by_key = {s["key"]: s for s in SUGGESTIONS}
     assert by_key["project-zomboid"]["game_port"] == 16261
     assert by_key["terraria"]["ports"] == "7777/tcp"
+
+
+# ----------------------------------------------------------------------------
+# A lista escrita a mao (manual_suggestions.py): servidor so de Windows, que o LinuxGSM nao tem
+# ----------------------------------------------------------------------------
+
+_spec_manual = importlib.util.spec_from_file_location(
+    "manual_suggestions", RAIZ / "src" / "gamepanel" / "games" / "catalog" / "manual_suggestions.py"
+)
+manual = importlib.util.module_from_spec(_spec_manual)
+sys.modules["manual_suggestions"] = manual
+_spec_manual.loader.exec_module(manual)
+MANUAL = manual.SUGGESTIONS
+
+
+def _manual_as_the_panel_sends(s: dict) -> dict:
+    sending = _as_the_panel_sends(s)
+    sending.update(platform=s["platform"], recipes=list(s["recipes"]),
+                   config_files=list(s["config_files"]), backup_paths=list(s["backup_paths"]),
+                   player_source=s["player_source"], memory_mb=s["memory_mb"], cores=s["cores"],
+                   disk_gb=s["disk_gb"])
+    if s["config_path"]:
+        sending["config_path"] = s["config_path"]
+    return sending
+
+
+@pytest.mark.parametrize("s", MANUAL, ids=lambda s: s["key"])
+def test_sugestao_manual_passa_no_validador_do_broker(s):
+    assert validate_dynamic(_manual_as_the_panel_sends(s)).key == s["key"]
+
+
+@pytest.mark.parametrize("s", MANUAL, ids=lambda s: s["key"])
+def test_sugestao_manual_de_windows_usa_proton(s):
+    """Regra do repositorio: Proton primeiro; wine so com o motivo escrito num curado."""
+    if s["platform"] == "windows":
+        assert "proton" in s["recipes"]
+        assert "wine" not in s["recipes"]
+
+
+@pytest.mark.parametrize("s", MANUAL, ids=lambda s: s["key"])
+def test_sugestao_manual_nao_carrega_segredo_nem_encadeia_comando(s):
+    for forbidden_word in ("$", ";", "|", "&", "`", "password", "token"):
+        assert forbidden_word not in s["start_args"], (s["name"], forbidden_word)
+
+
+def test_lista_manual_nao_repete_o_linuxgsm():
+    """Repetir um jogo nas duas listas daria dois botoes com dados diferentes para o mesmo App ID."""
+    assert not {s["appid"] for s in MANUAL} & {s["appid"] for s in SUGGESTIONS}
+    assert not {s["key"] for s in MANUAL} & {s["key"] for s in SUGGESTIONS}
+
+
+def test_lista_manual_nao_repete_um_curado():
+    """Chave de um curado num jogo dinamico vira sobreposicao POR CIMA do .env (ver o Valheim).
+    Curado ja aparece na busca pelo catalogo da pagina; aqui ele nao entra."""
+    curated_keys, curated_appids = set(), set()
+    for env in (RAIZ / "games").glob("[!_]*.env"):
+        text = env.read_text(encoding="utf-8")
+        curated_keys.add(env.stem)
+        for line in text.splitlines():
+            if line.startswith("STEAM_APP_ID="):
+                curated_appids.add(int(line.split("=", 1)[1]))
+    assert not {s["key"] for s in MANUAL} & curated_keys
+    assert not {s["appid"] for s in MANUAL} & curated_appids
