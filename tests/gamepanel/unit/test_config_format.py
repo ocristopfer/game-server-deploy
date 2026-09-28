@@ -279,3 +279,44 @@ def test_sem_edicao_o_arquivo_volta_igual(name, text):
 ])
 def test_deteccao_de_formato(name, text, file_format):
     assert gc.load(name, text).format_id == file_format
+
+
+# ------------------------------------------------------------------ BOM
+
+VRISING_HOST = '﻿{\n  "Name": "V Rising Server",\n  "Port": 9876,\n  "ListOnSteam": false\n}\n'
+
+
+def test_json_com_bom_abre_no_formulario():
+    """Os padroes do V Rising vem com BOM, e o json.loads o recusava: a tela Config nao abria."""
+    doc = gc.load("ServerHostSettings.json", VRISING_HOST)
+    assert isinstance(doc, gc.JsonConfig)
+    assert doc.find(doc.settings[0].section, "Name").value == "V Rising Server"
+
+
+def test_bom_volta_ao_gravar_e_so_uma_vez():
+    doc = gc.load("ServerHostSettings.json", VRISING_HOST)
+    name = doc.find(doc.settings[0].section, "Name")
+    out = doc.apply([gc.Edit(id=name.id, section=name.section, key="Name", value="Castelo")])
+    assert out.startswith("﻿{")
+    assert out.count("﻿") == 1
+    assert json.loads(out.removeprefix("﻿"))["Name"] == "Castelo"
+
+
+def test_arquivo_sem_bom_continua_sem_bom():
+    doc = gc.load("ServerHostSettings.json", VRISING_HOST.removeprefix("﻿"))
+    name = doc.find(doc.settings[0].section, "Name")
+    out = doc.apply([gc.Edit(id=name.id, section=name.section, key="Name", value="Castelo")])
+    assert not out.startswith("﻿")
+
+
+def test_ini_com_bom_nao_vira_parte_do_nome_da_secao():
+    doc = gc.load("Game.ini", "﻿[/Script/Jogo]\nMaxPlayers=8\n")
+    assert isinstance(doc, gc.IniConfig)
+    setting = doc.find("/Script/Jogo", "MaxPlayers")
+    assert setting is not None
+    out = doc.apply([gc.Edit(id=setting.id, section=setting.section, key="MaxPlayers", value="16")])
+    assert out.startswith("﻿[/Script/Jogo]")
+
+
+def test_json_com_bom_e_extensao_estranha_ainda_e_json():
+    assert isinstance(gc.load("settings.txt", VRISING_HOST), gc.JsonConfig)

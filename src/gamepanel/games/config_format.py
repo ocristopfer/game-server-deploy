@@ -32,6 +32,9 @@ SEP = "\x1f"
 NO_SECTION = "(sem secao)"
 ROOT = "(raiz)"
 
+# Marca de ordem de bytes do UTF-8, ja decodificada: e como ela chega aqui (o texto vem lido).
+BOM = "﻿"
+
 VALUE_MAX = 4000
 # Nome de chave aceito num arquivo de configuracao de jogo.
 #
@@ -132,7 +135,12 @@ class ConfigFile:
     bool_words = ("True", "False")
 
     def __init__(self, text: str) -> None:
-        self.text = text
+        # O BOM (U+FEFF no comeco) sai antes de qualquer leitor ver o texto e volta no `apply`.
+        # Os padroes do V Rising vem com ele, e o `json.loads` o recusa ("Unexpected UTF-8 BOM"):
+        # a tela Config nao abria o ServerHostSettings.json. Devolver ao gravar e para o arquivo
+        # sair igual ao que o jogo escreveu, e nao trocar a codificacao de um arquivo alheio.
+        self.bom = text.startswith(BOM)
+        self.text = text[len(BOM):] if self.bom else text
         self.settings: list[Setting] = []
         self._sections: dict[str, Section] = {}
         self.parse()
@@ -173,7 +181,12 @@ class ConfigFile:
         return None
 
     # -- escrita -------------------------------------------------------
-    def apply(self, edits: list[Edit]) -> str:  # pragma: no cover - subclasses
+    def apply(self, edits: list[Edit]) -> str:
+        """O arquivo novo, com o BOM de volta se o original tinha."""
+        out = self._apply(edits)
+        return BOM + out if self.bom else out
+
+    def _apply(self, edits: list[Edit]) -> str:  # pragma: no cover - subclasses
         raise NotImplementedError
 
     def _resolve(self, edit: Edit) -> Setting | None:
@@ -399,7 +412,7 @@ class IniConfig(ConfigFile):
             self._section(target, f"[{section}] {name}" if section else name)
 
     # -- escrita -------------------------------------------------------
-    def apply(self, edits: list[Edit]) -> str:
+    def _apply(self, edits: list[Edit]) -> str:
         lines = list(self._lines)
         new_by_section: dict[str, list[str]] = {}
         changed_tuples: set[str] = set()
@@ -576,7 +589,7 @@ class JsonConfig(ConfigFile):
             return float(text) if "." in text else int(text)
         return value
 
-    def apply(self, edits: list[Edit]) -> str:
+    def _apply(self, edits: list[Edit]) -> str:
         for edit in edits:
             value = check_value(edit.value)
             current = self._resolve(edit)
@@ -672,7 +685,7 @@ class DayzConfig(ConfigFile):
             return f'"{value}"'
         return value.strip()
 
-    def apply(self, edits: list[Edit]) -> str:
+    def _apply(self, edits: list[Edit]) -> str:
         lines = list(self._lines)
         new_by_section: dict[str, list[str]] = {}
 
@@ -713,7 +726,9 @@ class DayzConfig(ConfigFile):
 def load(name: str, text: str) -> ConfigFile:
     """Escolhe o formato pelo nome do arquivo + conteudo e devolve o documento lido."""
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    start = text.lstrip()[:1]
+    # Sem o BOM: `lstrip` nao o tira (nao e espaco), e um JSON com BOM e extensao estranha
+    # deixaria de ser reconhecido pelo "{" do comeco.
+    start = text.removeprefix(BOM).lstrip()[:1]
 
     if ext == "json" or (start in ("{", "[") and ext not in ("ini", "cfg", "conf", "properties")):
         return JsonConfig(text)
