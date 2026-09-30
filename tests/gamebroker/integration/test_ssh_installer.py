@@ -417,3 +417,16 @@ def test_sem_ips_de_administracao_o_install_env_nao_pede_firewall(game, ports):
 def test_a_lib_real_tem_o_script_do_firewall():
     lib = Path(__file__).resolve().parents[3] / "lib"
     assert all((lib / name).is_file() for name in LIB_FILES)
+
+
+def test_ajuste_do_wine_do_curado_chega_ao_ct(ports):
+    """O V Rising pede o mscoree LIGADO (o BepInEx e .NET); antes o install.env do broker nao
+    levava o WINE_DLL_OVERRIDES do .env, e o CT nascia com o padrao, que o desliga."""
+    from gamebroker.services.catalog import load_curated
+    games, _ = load_curated(Path(__file__).resolve().parents[3] / "games")
+    values = _values(build_env(games["vrising"], ports))
+    assert values["WINE_DLL_OVERRIDES"] == "mshtml=;winhttp=n,b"
+
+
+def test_jogo_da_api_nao_escolhe_dll_do_wine(game, ports):
+    assert "WINE_DLL_OVERRIDES" not in build_env(game, ports)

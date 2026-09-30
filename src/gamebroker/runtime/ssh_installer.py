@@ -184,6 +184,9 @@ def build_env(game: Game, ports: Sequence[AllocatedPort], steam: SteamAccount | 
         # Shell so existe no catalogo curado, revisado no git; jogo cadastrado pela API vem vazio.
         "PRE_INSTALL_CMD": game.pre_install, "POST_INSTALL_CMD": game.post_install,
     }
+    if game.wine_overrides:
+        # So quando o .env curado diz: sem ela, o ct-phases.sh aplica o padrao dele.
+        variables["WINE_DLL_OVERRIDES"] = game.wine_overrides
     if firewall_sources:
         variables["FW_MGMT_SOURCES"] = " ".join(firewall_sources)
     if game.needs_account and steam is not None:

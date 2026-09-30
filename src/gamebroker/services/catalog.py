@@ -114,6 +114,11 @@ class Game:
     # O servidor nao baixa com login anonimo (DayZ): so existe no curado, e o instalador leva
     # a conta Steam do broker para o CT. Jogo da API nunca a pede (`validate_dynamic`).
     needs_account: bool = False
+    # WINE_DLL_OVERRIDES do .env curado. Vazio = o padrao do instalador (ct-phases.sh). Antes ele
+    # nao ia para o install.env do broker: o V Rising pedia o mscoree ligado (e o que deixa o
+    # BepInEx, .NET, carregar) e o CT criado pelo painel nascia com o padrao, que o desliga. So
+    # existe no curado, como o shell: jogo da API nao escolhe DLL do Wine.
+    wine_overrides: str = ""
 
     @property
     def has_hooks(self) -> bool:
@@ -301,6 +306,7 @@ def game_from_env(file_name: str, data: dict[str, str], steam_account: bool = Fa
         shiftable=shiftable,
         source=SOURCE_CURATED, creatable=not reason, reason=reason,
         needs_account=data.get("STEAM_ANONYMOUS", "1") == "0",
+        wine_overrides=data.get("WINE_DLL_OVERRIDES", ""),
         pre_install=data.get("PRE_INSTALL_CMD", ""),
         post_install=data.get("POST_INSTALL_CMD", ""),
     )
@@ -558,7 +564,7 @@ def _as_override(curated: Game, edited: Game) -> Game:
     return dataclasses.replace(
         edited, source=SOURCE_CURATED, creatable=curated.creatable, reason=curated.reason,
         pre_install=curated.pre_install, post_install=curated.post_install,
-        needs_account=curated.needs_account, edited=True)
+        needs_account=curated.needs_account, wine_overrides=curated.wine_overrides, edited=True)
 
 
 def _checked_key(key: str) -> str:

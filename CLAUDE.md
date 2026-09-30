@@ -1008,6 +1008,9 @@ broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up -
 - **`.exe` no `START_SCRIPT` vira `win-run` no `ExecStart`** (`render_systemd_unit`). Jogo
   dinamico nao tem `POST_INSTALL_CMD` para escrever um wrapper `.sh`, e sem isso o servico morria
   com "Exec format error". Curado continua com o wrapper dele (o `compare.sh` prova que nada mudou).
+- **O `WINE_DLL_OVERRIDES` do curado vai para o `install.env`** (`Game.wine_overrides`). Antes
+  so o runtime ia, e o V Rising criado pelo painel nascia com o padrao do `ct-phases.sh`, que
+  desliga o mscoree de que o BepInEx precisa. Jogo da API nao escolhe DLL do Wine.
 - **`install.env` e sempre `shlex.quote`.** Hook (`PRE/POST_INSTALL_CMD`) so existe no catalogo
   curado; jogo da API escolhe **receitas** (`apply_recipes`, lista fechada), nunca escreve shell.
   Receita desconhecida derruba a instalacao. A chave do broker sai do CT ao fim
