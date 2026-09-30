@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 import pytest
 
@@ -142,3 +143,120 @@ def test_jogo_sem_gestor_manda_para_arquivos(admin, database):
     sid = _server(database, "valheim.service")
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
     assert f"/servers/{sid}/files" in html
+
+
+# ------------------------------------------------------------------ V Rising (Thunderstore)
+
+def _status(**over):
+    state = {"loader_installed": True, "loader": "BepInEx-BepInExPack_V_Rising-1.733.2",
+             "loader_version": "1.733.2", "enabled": True, "overrides_ok": True, "memory_mb": 12288,
+             "plugins": [{"dir": "deca-VampireCommandFramework", "full_name": "deca-VampireCommandFramework-0.11.0",
+                          "version": "0.11.0"}]}
+    state.update(over)
+    return state
+
+
+# O que o `status` do instalador remoto responde no teste atual (a fixture zera).
+REMOTE_STATE: dict = {}
+
+
+@pytest.fixture
+def vrising(database, monkeypatch):
+    sid = _server(database, "vrising.service")
+    calls: list[str] = []
+
+    def ssh_run(server, cmd, timeout=None, **kw):
+        calls.append(cmd)
+        out = type("P", (), {})()
+        out.returncode, out.stderr = 0, ""
+        out.stdout = "progresso\n" + json.dumps(REMOTE_STATE)
+        return out
+    REMOTE_STATE.clear()
+    REMOTE_STATE.update(_status())
+    monkeypatch.setattr(panel, "ssh_run", ssh_run)
+    jobs: list[tuple] = []
+    monkeypatch.setattr(panel, "start_job", lambda action, server, user, **kw: jobs.append((action, kw)) or 99)
+    return sid, calls, jobs
+
+
+def test_tela_do_v_rising_mostra_bepinex_e_plugins(admin, vrising):
+    sid, calls, _ = vrising
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert "BepInEx-BepInExPack_V_Rising-1.733.2" in html
+    assert "deca-VampireCommandFramework" in html
+    assert "https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/" in html
+    # O status e lido rodando o instalador no CT, e nao por um caminho que o painel adivinha.
+    assert "python3" in calls[0]
+    assert "status" in calls[0]
+
+
+def test_pouca_memoria_avisa_antes_de_instalar(admin, vrising):
+    sid, _, _ = vrising
+    REMOTE_STATE.update(memory_mb=8192, loader_installed=False, plugins=[])
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert "8192 MB" in html
+    assert "10240 MB" in html
+
+
+def test_ajuste_do_wine_desfeito_aparece(admin, vrising):
+    sid, _, _ = vrising
+    REMOTE_STATE.update(overrides_ok=False)
+    assert "redeploy" in admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+
+
+def test_instalar_mod_vira_job_com_reinicio_so_no_fim(admin, post, vrising):
+    sid, _, jobs = vrising
+    response = post(admin, f"/servers/{sid}/mods/plugin/install",
+                    {"package": "https://thunderstore.io/c/v-rising/p/odjit/KindredCommands/", "restart": "1"})
+    assert response.status_code == 302
+    assert "/jobs/99" in response.headers["Location"]
+    action, kw = jobs[0]
+    assert action == "mod-install"
+    install, restart = kw["steps"]
+    assert "plugin-install" in install
+    assert "odjit" in install
+    assert "KindredCommands" in install
+    assert restart.endswith("restart vrising.service")
+
+
+def test_sem_reiniciar_o_job_tem_um_passo_so(admin, post, vrising):
+    sid, _, jobs = vrising
+    post(admin, f"/servers/{sid}/mods/plugin/install", {"package": "deca/VampireCommandFramework"})
+    assert len(jobs[0][1]["steps"]) == 1
+
+
+def test_pacote_irreconhecivel_nao_chega_ao_container(admin, post, vrising):
+    sid, _, jobs = vrising
+    post(admin, f"/servers/{sid}/mods/plugin/install", {"package": "deca/x; rm -rf /"})
+    assert jobs == []
+
+
+def test_carregador_so_aceita_as_tres_acoes(admin, post, vrising):
+    sid, _, jobs = vrising
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install"})
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "rm"})
+    assert [a for a, _ in jobs] == ["mod-loader"]
+    assert "loader-install" in jobs[0][1]["steps"][0]
+
+
+def test_remover_plugin_so_pela_pasta_do_instalador(admin, post, vrising):
+    sid, _, jobs = vrising
+    post(admin, f"/servers/{sid}/mods/plugin/remove", {"dir": "../../etc"})
+    post(admin, f"/servers/{sid}/mods/plugin/remove", {"dir": "deca-VampireCommandFramework"})
+    assert len(jobs) == 1
+    assert "plugin-remove" in jobs[0][1]["steps"][0]
+
+
+def test_rotas_do_thunderstore_recusam_outro_jogo(admin, post, ets2_server, monkeypatch):
+    jobs: list = []
+    monkeypatch.setattr(panel, "start_job", lambda *a, **k: jobs.append(a) or 1)
+    post(admin, f"/servers/{ets2_server}/mods/plugin/install", {"package": "deca/VampireCommandFramework"})
+    post(admin, f"/servers/{ets2_server}/mods/loader", {"action": "install"})
+    assert jobs == []
+
+
+def test_operador_nao_instala(operator, post, vrising):
+    sid, _, jobs = vrising
+    response = post(operator, f"/servers/{sid}/mods/plugin/install", {"package": "deca/VampireCommandFramework"})
+    assert response.status_code == 403
+    assert jobs == []

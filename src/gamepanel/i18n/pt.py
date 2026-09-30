@@ -560,6 +560,40 @@ MESSAGES: dict[str, str] = {
     "mods.restart_after": "Reiniciar o servidor depois (mod so entra quando ele sobe de novo)",
     "mods.upload_button": "Enviar",
     "mods.uploaded": "{n} arquivo(s) enviado(s).",
+    "mods.help_vrising":
+        "Mods do V Rising vem do <strong>Thunderstore</strong> e rodam no <strong>BepInEx</strong>, "
+        "que precisa estar instalado e ligado no servidor. O painel baixa tudo DE DENTRO do "
+        "container. Mod de servidor so precisa estar aqui; se o mod mexe no cliente, cada jogador "
+        "instala o seu.",
+    "mods.status_failed": "Nao consegui ler os mods do servidor: {reason}",
+    "mods.not_thunderstore": "Este servidor nao usa mods do Thunderstore.",
+    "mods.bad_package":
+        "Nao reconheci o pacote. Cole o link da pagina dele no Thunderstore, ou autor/pacote.",
+    "mods.loader_title": "BepInEx (carregador de mods)",
+    "mods.loader_on": "ligado",
+    "mods.loader_off": "desligado",
+    "mods.loader_missing": "O BepInEx ainda nao esta instalado neste servidor.",
+    "mods.loader_install": "Instalar o BepInEx",
+    "mods.loader_update": "Reinstalar / atualizar",
+    "mods.loader_enable": "Ligar",
+    "mods.loader_disable": "Desligar (o servidor sobe sem mods)",
+    "mods.overrides_bad":
+        "O ajuste do Wine que o BepInEx precisa foi desfeito (um redeploy do jogo reescreve esse "
+        "arquivo). Instale o BepInEx de novo para reaplicar.",
+    "mods.low_memory":
+        "Este servidor tem {have} MB de memoria, e a primeira subida com o BepInEx pede uns "
+        "{need} MB (medido: 9,4 GB). Com menos, o servidor cai por falta de memoria em laco. "
+        "Aumente a memoria do container antes de instalar.",
+    "mods.loader_first_run":
+        "A primeira subida depois de instalar o BepInEx demora varios minutos: ele gera o codigo "
+        "do jogo antes de abrir o servidor. As seguintes sao normais.",
+    "mods.plugins_title": "Mods (plugins)",
+    "mods.col_version": "Versao",
+    "mods.plugin_add_label": "Instalar mod do Thunderstore",
+    "mods.plugin_add_help":
+        "Link da pagina do mod, ou autor/pacote (ex.: deca/VampireCommandFramework). As "
+        "dependencias vem junto; sempre a versao mais nova.",
+    "mods.plugin_install": "Instalar",
     "mods.bad_name": "{name} nao e aceito aqui. Esperado: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos
@@ -1042,6 +1076,9 @@ MESSAGES: dict[str, str] = {
     "job.file_deleted": "Arquivo apagado",
     "job.config_changed": "Configuracao alterada",
     "job.file_downloaded": "Arquivo baixado",
+    "job.mod_loader": "Carregador de mods",
+    "job.mod_installed": "Mod instalado",
+    "job.mod_removed_plugin": "Mod desinstalado",
     "job.mod_uploaded": "Mod enviado",
     "job.mod_deleted": "Mod removido",
     "job.file_uploaded": "Arquivo enviado",

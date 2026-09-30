@@ -16,6 +16,8 @@ from dataclasses import dataclass
 KIND_PACKAGES = "packages"
 # O servidor precisa do arquivo do mod numa pasta dele.
 KIND_FOLDER = "folder"
+# Mods do Thunderstore com o BepInEx: o CT baixa e instala (games/mods/thunderstore_remote.py).
+KIND_THUNDERSTORE = "thunderstore"
 
 
 @dataclass(frozen=True)
@@ -34,11 +36,17 @@ class ModProfile:
     extensions: tuple[str, ...] = ()
     # App ID do JOGO na Steam, para o link da Workshop que vai para os jogadores.
     workshop_appid: int = 0
+    # Thunderstore: a comunidade (parte da URL), o carregador (namespace, nome) e a memoria
+    # que a PRIMEIRA subida com ele pede - medida, e nao chutada (ver VRISING).
+    community: str = ""
+    loader: tuple[str, str] = ("", "")
+    min_memory_mb: int = 0
 
     def accepts(self, name: str) -> bool:
         """O nome de arquivo que pode entrar pela tela Mods deste jogo."""
         if self.upload_names:
             return name in self.upload_names
+        # Sem extensao declarada (Thunderstore) nada entra por envio: `endswith(())` e False.
         return name.lower().endswith(self.extensions)
 
 
@@ -65,7 +73,21 @@ PALWORLD = ModProfile(
     extensions=(".pak",),
 )
 
-PROFILES = (ETS2, PALWORLD)
+VRISING = ModProfile(
+    key="vrising",
+    kind=KIND_THUNDERSTORE,
+    services=("vrising", "v-rising"),
+    # A pasta do JOGO: o BepInExPack vai na raiz dele, e os plugins em BepInEx/plugins.
+    folder="/opt/game",
+    help_key="mods.help_vrising",
+    community="v-rising",
+    loader=("BepInEx", "BepInExPack_V_Rising"),
+    # Medido num CT de teste: a primeira subida com o BepInEx gera o codigo do jogo inteiro
+    # e chegou a 9,4 GB; com 6 GB o OOM killer derrubava o servidor em laco. O curado tem 8.
+    min_memory_mb=10240,
+)
+
+PROFILES = (ETS2, PALWORLD, VRISING)
 
 
 def service_stem(service: str) -> str:

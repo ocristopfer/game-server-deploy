@@ -1155,6 +1155,14 @@ jogo entende mod:
   conversa do jeito que veio) e ela aponta os que ficaram de fora do pacote - o caso tipico e
   um mod que nao estava ativo no perfil de quem exportou. O envio aceita so os dois pacotes.
 - **Palworld**: lista, envia e remove os `.pak` de `Pal/Content/Paks/~mods`.
+- **V Rising**: mods do **Thunderstore**, sobre o **BepInEx**. O primeiro botao instala o
+  BepInEx; depois e colar o link do mod (ou `autor/pacote`) e instalar - as dependencias vem
+  junto. Quem baixa e o proprio container do jogo, e cada instalacao vira uma tarefa com log.
+  A primeira subida depois do BepInEx demora varios minutos (ele gera o codigo do jogo) e pede
+  uns **10 GB de memoria** (medido: 9,4 GB): com o V Rising curado (8 GB) o servidor cai por
+  falta de memoria em laco, entao aumente a memoria do CT antes (`pct set <ctid> --memory
+  12288` no Proxmox). Um redeploy do jogo desfaz um ajuste do Wine que o BepInEx precisa: a
+  tela avisa, e reinstalar o BepInEx resolve.
 - Jogo sem gestor ainda: a tela manda para **Arquivos**.
 
 O envio pode reiniciar o servidor no fim (mod so entra quando ele sobe de novo), e fica no

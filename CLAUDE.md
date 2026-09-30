@@ -213,7 +213,9 @@ src/
       registry.py          qual adapter vale para qual arquivo
       adapters/            um arquivo por jogo com tela de edicao rapida
       mods/                gestor de mods: um perfil por jogo (profiles.py), o leitor dos
-                           server_packages do ETS2 (ets2.py) e os IDs da Workshop (workshop.py)
+                           server_packages do ETS2 (ets2.py), os IDs da Workshop (workshop.py) e o
+                           Thunderstore/BepInEx (thunderstore.py no painel, thunderstore_remote.py
+                           que RODA NO CT)
       catalog/
         search.py          busca por nome/App ID sobre suggestions.py (era busca_de_jogos.py)
         templates.py        modelos do formulario "Adicionar jogo", um por motor (Unreal/Unity Linux
@@ -283,6 +285,17 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
 - **O gabarito e a coluna `mods_expected` da tabela de servidores** (IDs da Workshop, um por linha). O leitor
   (`workshop.parse_ids`) aceita a lista do jeito que circula no chat, com hora e nome na
   frente; numero com menos de 6 digitos nao e ID.
+- **Thunderstore (V Rising) e o CT quem baixa.** `thunderstore_remote.py` vai para o container
+  como TEXTO e roda la (`python3 -c`, por SSH): o painel nao vai a internet, o CT vai. Por isso
+  ele e so stdlib e nao importa nada do `gamepanel` - la dentro o pacote nao existe. Instalar e
+  remover viram JOB (baixar o BepInEx sao 33 MB), com o reinicio como PASSO seguinte do mesmo
+  job: instalacao que falha nao reinicia o servidor. Tres coisas MEDIDAS num V Rising de verdade
+  sob o Proton, e cada uma tem teste: o `mscoree=` dos .env de Windows impede o BepInEx (.NET)
+  de carregar, e sai da lista (`fix_overrides`); o `winhttp=n,b` e por onde ele entra; e o
+  console do BepInEx TRAVAVA o servidor sob o X virtual (parado, sem CPU e sem log), e fica
+  desligado. A primeira subida com ele chegou a 9,4 GB (`min_memory_mb` do perfil; a tela
+  avisa antes de instalar). Um redeploy do jogo reescreve o `/etc/game-runtime.env` e desfaz o
+  ajuste do Wine: o status acusa (`overrides_ok`) e reinstalar reaplica.
 - **No ETS2 o `mod_id` so e ID da Workshop quando `workshop_mod: true`.** No mod instalado a
   mao (o Mapa BR) ele e uma assinatura interna, e virar link apontaria para um item qualquer.
 

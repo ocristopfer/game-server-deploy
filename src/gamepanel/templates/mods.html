@@ -82,6 +82,73 @@
       <div class="form-actions">{{ ui.button(_('mods.expected_save')) }}</div>
     </form>
   </div>
+{% elif profile.kind == kind_thunderstore %}
+  {% set st = view.state %}
+  <div class="card">
+    <h2>{{ _('mods.loader_title') }}</h2>
+    {% if st %}
+      {% if view.low_memory %}
+        <p class="flash error">{{ _('mods.low_memory', have=st.memory_mb, need=profile.min_memory_mb) }}</p>
+      {% endif %}
+      {% if st.loader_installed %}
+        <p>
+          <a href="{{ loader_url }}" target="_blank" rel="noopener noreferrer">{{ st.loader or profile.loader | join('-') }}</a>
+          {% if st.enabled %}<span class="badge on">{{ _('mods.loader_on') }}</span>{% else %}<span class="badge cold">{{ _('mods.loader_off') }}</span>{% endif %}
+        </p>
+        {% if not st.overrides_ok %}<p class="flash error">{{ _('mods.overrides_bad') }}</p>{% endif %}
+      {% else %}
+        <p class="muted small">{{ _('mods.loader_missing') }}</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('mods.loader', sid=server.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+        <div class="form-actions cluster">
+          {% if not st.loader_installed or not st.overrides_ok %}
+            {{ ui.button(_('mods.loader_install'), variant='primary', icon='⬇', extra='name=action value=install') }}
+          {% elif st.enabled %}
+            {{ ui.button(_('mods.loader_update'), icon='⬇', extra='name=action value=install') }}
+            {{ ui.button(_('mods.loader_disable'), variant='danger', extra='name=action value=disable') }}
+          {% else %}
+            {{ ui.button(_('mods.loader_enable'), variant='primary', extra='name=action value=enable') }}
+          {% endif %}
+        </div>
+      </form>
+      <p class="muted small mt-4">{{ _('mods.loader_first_run') }}</p>
+    {% endif %}
+  </div>
+
+  {% if st and st.loader_installed %}
+  <div class="card">
+    <h2>{{ _('mods.plugins_title') }}</h2>
+    {% if st.plugins %}
+    <div class="table-wrap"><table class="jobs">
+      <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('mods.col_version') }}</th><th></th></tr></thead>
+      <tbody>
+        {% for p in st.plugins %}
+        <tr>
+          <td>{% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener noreferrer">{{ p.dir }}</a>{% else %}<code>{{ p.dir }}</code>{% endif %}</td>
+          <td class="muted nowrap">{{ p.version or '—' }}</td>
+          <td>{{ ui.action(url_for('mods.plugin_remove', sid=server.id), _('mods.delete'), size='sm', variant='danger',
+                           confirm=_('mods.delete_confirm', name=p.dir), fields={'dir': p.dir, 'restart': '1'}) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      <p class="muted">{{ _('mods.no_files') }}</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('mods.plugin_install', sid=server.id) }}" class="mt-4">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label>{{ _('mods.plugin_add_label') }}
+        <input name="package" required spellcheck="false" autocomplete="off"
+               placeholder="https://thunderstore.io/c/{{ profile.community }}/p/deca/VampireCommandFramework/">
+        <small>{{ _('mods.plugin_add_help') }}</small>
+      </label>
+      <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+      <div class="form-actions">{{ ui.button(_('mods.plugin_install'), variant='primary', icon='⬇', block=true) }}</div>
+    </form>
+  </div>
+  {% endif %}
 {% else %}
   <div class="card">
     <h2>{{ _('mods.files_title') }}</h2>
@@ -105,6 +172,7 @@
   </div>
 {% endif %}
 
+{% if profile.kind != kind_thunderstore %}
 <div class="card">
   <h2>{{ _('mods.upload_title') }}</h2>
   <form method="post" action="{{ url_for('mods.upload', sid=server.id) }}" enctype="multipart/form-data">
@@ -118,5 +186,6 @@
     <div class="form-actions">{{ ui.button(_('mods.upload_button'), variant='primary', icon='⬆', block=true) }}</div>
   </form>
 </div>
+{% endif %}
 {% endif %}
 {% endblock %}

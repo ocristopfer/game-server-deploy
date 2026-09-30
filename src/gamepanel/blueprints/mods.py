@@ -7,14 +7,26 @@ envio grava dentro do container.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
 from gamepanel.games.mods import ets2 as ets2_mods
-from gamepanel.games.mods import profiles, workshop
+from gamepanel.games.mods import profiles, thunderstore, thunderstore_remote, workshop
 from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("mods", __name__)
+
+# O instalador do Thunderstore vai para o CT como TEXTO e roda la com `python3 -c`: o CT nao
+# tem o pacote do painel, e e ele (nao o painel) quem pode ir a internet.
+REMOTE_SOURCE = Path(thunderstore_remote.__file__).read_text(encoding="utf-8")
+# Baixar o BepInEx (33 MB) e as dependencias leva minutos: vira job, com log e prazo proprio.
+INSTALL_TIMEOUT = 1800
+LOADER_ACTIONS = ("install", "enable", "disable")
+# O endpoint da propria tela, para onde toda acao volta.
+INDEX = "mods.index"
 
 # Cria a pasta de mods se ela ainda nao existe (o ~mods do Palworld so nasce quando alguem
 # poe o primeiro mod), com o dono da pasta de cima: o jogo roda como 'steam' e precisa ler.
@@ -59,13 +71,36 @@ def _packages_view(server, profile: profiles.ModProfile, errors: list[str]) -> d
     }
 
 
-def _folder_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
+def _folder_view(server, profile: profiles.ModProfile) -> dict:
     try:
         entries, _ = panel.list_dir(server, profile.folder)
     except panel.RemoteError:
         # Pasta que ainda nao existe = nenhum mod; ela nasce no primeiro envio.
         return {"files": []}
     return {"files": [e for e in entries if not e["dir"] and profile.accepts(e["name"])]}
+
+
+def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str) -> str:
+    return panel.q("python3", "-c", REMOTE_SOURCE, action, profile.folder, *profile.loader, *args)
+
+
+def _thunderstore_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
+    """O estado do BepInEx e dos plugins, lido na hora (so lista pastas: e rapido)."""
+    try:
+        proc = panel.ssh_run(server, _remote_cmd(profile, "status"), timeout=40)
+        lines = (proc.stdout or "").strip().splitlines()
+        state = json.loads(lines[-1]) if lines else {}
+    except (panel.RemoteError, ValueError) as exc:
+        errors.append(panel.translate("mods.status_failed", reason=exc))
+        return {"state": None}
+    if "error" in state:
+        errors.append(panel.translate("mods.status_failed", reason=state["error"]))
+        return {"state": None}
+    for p in state.get("plugins", []):
+        parts = thunderstore.split_dir(p.get("dir", ""))
+        p["url"] = thunderstore.package_url(profile.community, *parts) if parts else ""
+    low_memory = 0 < state.get("memory_mb", 0) < profile.min_memory_mb
+    return {"state": state, "low_memory": low_memory}
 
 
 @bp.get("/servers/<int:sid>/mods")
@@ -78,13 +113,83 @@ def index(sid: int):
     view: dict = {}
     if profile and profile.kind == profiles.KIND_PACKAGES:
         view = _packages_view(server, profile, errors)
+    elif profile and profile.kind == profiles.KIND_THUNDERSTORE:
+        view = _thunderstore_view(server, profile, errors)
     elif profile:
-        view = _folder_view(server, profile, errors)
+        view = _folder_view(server, profile)
     return render_template(
         "mods.html", server=server, profile=profile, view=view, errors=errors,
         expected_text="\n".join(str(i) for i in _expected_ids(server)),
         workshop_url=workshop.url, kind_packages=profiles.KIND_PACKAGES,
+        kind_thunderstore=profiles.KIND_THUNDERSTORE,
+        loader_url=_loader_url(profile),
     )
+
+
+def _loader_url(profile: profiles.ModProfile | None) -> str:
+    if not profile or not profile.community:
+        return ""
+    return thunderstore.package_url(profile.community, *profile.loader)
+
+
+def _thunderstore_job(sid: int, action: str, step: str, label: str):
+    """Dispara o job do Thunderstore (e o reinicio, se pedido) e manda para a tela dele."""
+    server = panel._server_or_404(sid)
+    steps: list[panel.JobStep] = [step]
+    # Plugin e BepInEx so entram quando o servidor sobe de novo. O reinicio e um PASSO do mesmo
+    # job: se a instalacao falhar, o servidor nao reinicia no meio de uma instalacao quebrada.
+    if request.form.get("restart") == "1":
+        steps.append(panel.COMMANDS["restart"](server))
+    job_id = panel.start_job(action, server, session.get("username", "?"), command=label,
+                             timeout=INSTALL_TIMEOUT, steps=steps)
+    panel.invalidate_status(sid)
+    return redirect(url_for("jobs.detail", jid=job_id))
+
+
+def _thunderstore_profile_or_back(sid: int):
+    panel._files_guard()
+    server = panel._server_or_404(sid)
+    profile = _profile_or_none(server)
+    if not profile or profile.kind != profiles.KIND_THUNDERSTORE:
+        flash(panel.translate("mods.not_thunderstore"), "error")
+        return None
+    return profile
+
+
+@bp.post("/servers/<int:sid>/mods/loader")
+@panel.admin_required
+def loader(sid: int):
+    profile = _thunderstore_profile_or_back(sid)
+    action = request.form.get("action", "")
+    if not profile or action not in LOADER_ACTIONS:
+        return redirect(url_for(INDEX, sid=sid))
+    return _thunderstore_job(sid, "mod-loader", _remote_cmd(profile, f"loader-{action}"),
+                             f"{'-'.join(profile.loader)}: {action}")
+
+
+@bp.post("/servers/<int:sid>/mods/plugin/install")
+@panel.admin_required
+def plugin_install(sid: int):
+    profile = _thunderstore_profile_or_back(sid)
+    if not profile:
+        return redirect(url_for(INDEX, sid=sid))
+    parsed = thunderstore.parse_package(request.form.get("package", ""))
+    if not parsed:
+        flash(panel.translate("mods.bad_package"), "error")
+        return redirect(url_for(INDEX, sid=sid))
+    ns, name = parsed
+    return _thunderstore_job(sid, "mod-install", _remote_cmd(profile, "plugin-install", ns, name), f"{ns}/{name}")
+
+
+@bp.post("/servers/<int:sid>/mods/plugin/remove")
+@panel.admin_required
+def plugin_remove(sid: int):
+    profile = _thunderstore_profile_or_back(sid)
+    parsed = thunderstore.split_dir(request.form.get("dir", ""))
+    if not profile or not parsed:
+        return redirect(url_for(INDEX, sid=sid))
+    ns, name = parsed
+    return _thunderstore_job(sid, "mod-remove", _remote_cmd(profile, "plugin-remove", ns, name), f"{ns}/{name}")
 
 
 def _upload_one(server, profile: profiles.ModProfile, sent) -> str:
@@ -105,7 +210,7 @@ def upload(sid: int):
     panel._files_guard()
     server = panel._server_or_404(sid)
     profile = _profile_or_none(server)
-    go_back = url_for("mods.index", sid=sid)
+    go_back = url_for(INDEX, sid=sid)
     sent = [f for f in request.files.getlist("file") if f and f.filename]
     if not profile or not sent:
         flash(panel.translate("flash.pick_a_file"), "error")
@@ -138,7 +243,7 @@ def delete(sid: int):
     panel._files_guard()
     server = panel._server_or_404(sid)
     profile = _profile_or_none(server)
-    go_back = url_for("mods.index", sid=sid)
+    go_back = url_for(INDEX, sid=sid)
     name = (request.form.get("name") or "").strip()
     # So o arquivo de mod da pasta do perfil, pelo nome: nada de caminho vindo do formulario.
     if not profile or profile.kind != profiles.KIND_FOLDER or "/" in name or not profile.accepts(name):
@@ -168,4 +273,4 @@ def expected(sid: int):
     with conn:
         servers_repo.set_mods_expected(conn, sid, ids)
     flash(panel.translate("mods.expected_saved", n=len(ids)), "ok")
-    return redirect(url_for("mods.index", sid=sid))
+    return redirect(url_for(INDEX, sid=sid))

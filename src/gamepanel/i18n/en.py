@@ -558,6 +558,40 @@ MESSAGES: dict[str, str] = {
     "mods.restart_after": "Restart the server afterwards (mods only load when it starts again)",
     "mods.upload_button": "Upload",
     "mods.uploaded": "{n} file(s) uploaded.",
+    "mods.help_vrising":
+        "V Rising mods come from <strong>Thunderstore</strong> and run on <strong>BepInEx</strong>, "
+        "which must be installed and enabled on the server. The panel downloads everything FROM "
+        "INSIDE the container. A server mod only needs to be here; if a mod touches the client, "
+        "each player installs their own.",
+    "mods.status_failed": "Could not read the server mods: {reason}",
+    "mods.not_thunderstore": "This server does not use Thunderstore mods.",
+    "mods.bad_package":
+        "Package not recognised. Paste the link to its Thunderstore page, or author/package.",
+    "mods.loader_title": "BepInEx (mod loader)",
+    "mods.loader_on": "on",
+    "mods.loader_off": "off",
+    "mods.loader_missing": "BepInEx is not installed on this server yet.",
+    "mods.loader_install": "Install BepInEx",
+    "mods.loader_update": "Reinstall / update",
+    "mods.loader_enable": "Enable",
+    "mods.loader_disable": "Disable (the server starts without mods)",
+    "mods.overrides_bad":
+        "The Wine setting BepInEx needs was undone (a game redeploy rewrites that file). Install "
+        "BepInEx again to reapply it.",
+    "mods.low_memory":
+        "This server has {have} MB of memory, and the first start with BepInEx needs about "
+        "{need} MB (measured: 9.4 GB). With less, the server keeps dying out of memory. Raise the "
+        "container memory before installing.",
+    "mods.loader_first_run":
+        "The first start after installing BepInEx takes several minutes: it generates the game "
+        "code before opening the server. The following ones are normal.",
+    "mods.plugins_title": "Mods (plugins)",
+    "mods.col_version": "Version",
+    "mods.plugin_add_label": "Install a Thunderstore mod",
+    "mods.plugin_add_help":
+        "Link to the mod page, or author/package (e.g. deca/VampireCommandFramework). "
+        "Dependencies come along; always the newest version.",
+    "mods.plugin_install": "Install",
     "mods.bad_name": "{name} is not accepted here. Expected: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos
@@ -1037,6 +1071,9 @@ MESSAGES: dict[str, str] = {
     "job.file_deleted": "File deleted",
     "job.config_changed": "Configuration changed",
     "job.file_downloaded": "File downloaded",
+    "job.mod_loader": "Mod loader",
+    "job.mod_installed": "Mod installed",
+    "job.mod_removed_plugin": "Mod uninstalled",
     "job.mod_uploaded": "Mod uploaded",
     "job.mod_deleted": "Mod removed",
     "job.file_uploaded": "File uploaded",

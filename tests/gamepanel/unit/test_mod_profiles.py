@@ -1,7 +1,9 @@
 """Gestor de mods: leitura dos server_packages do ETS2, IDs da Workshop e perfil por jogo."""
 from __future__ import annotations
 
-from gamepanel.games.mods import ets2, profiles, workshop
+import pytest
+
+from gamepanel.games.mods import ets2, profiles, thunderstore, workshop
 
 # Trecho no formato real de um server_packages.sii exportado pelo ETS2 1.61 (o de um servidor
 # com o Mapa BR e mods da Workshop).
@@ -129,6 +131,44 @@ def test_palworld_aceita_pak_em_qualquer_caixa():
 
 def test_todo_perfil_diz_para_onde_vai_e_o_que_aceita():
     for p in profiles.PROFILES:
-        assert p.folder.startswith("/opt/game/")
-        assert p.kind in (profiles.KIND_PACKAGES, profiles.KIND_FOLDER)
-        assert bool(p.upload_names) != bool(p.extensions), p.key
+        assert p.folder == "/opt/game" or p.folder.startswith("/opt/game/")
+        assert p.kind in (profiles.KIND_PACKAGES, profiles.KIND_FOLDER, profiles.KIND_THUNDERSTORE)
+        if p.kind == profiles.KIND_THUNDERSTORE:
+            # Nada entra por envio: o CT baixa do Thunderstore.
+            assert not p.upload_names and not p.extensions, p.key
+            assert p.community and all(p.loader) and p.min_memory_mb, p.key
+        else:
+            assert bool(p.upload_names) != bool(p.extensions), p.key
+
+
+def test_v_rising_usa_o_thunderstore_com_a_memoria_medida():
+    vr = profiles.profile_for("vrising.service")
+    assert vr is profiles.VRISING
+    assert vr.loader == ("BepInEx", "BepInExPack_V_Rising")
+    assert vr.min_memory_mb >= 9500, "medido: 9,4 GB na primeira subida com o BepInEx"
+    assert not vr.accepts("plugin.dll")
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/", ("deca", "VampireCommandFramework")),
+    ("https://thunderstore.io/c/v-rising/p/odjit/KindredCommands/versions/", ("odjit", "KindredCommands")),
+    ("https://thunderstore.io/package/download/deca/VampireCommandFramework/0.11.0/",
+     ("deca", "VampireCommandFramework")),
+    ("deca/VampireCommandFramework", ("deca", "VampireCommandFramework")),
+    ("deca-VampireCommandFramework-0.11.0", ("deca", "VampireCommandFramework")),
+    ("  deca-VampireCommandFramework  ", ("deca", "VampireCommandFramework")),
+])
+def test_pacote_colado_de_varios_jeitos(text, expected):
+    assert thunderstore.parse_package(text) == expected
+
+
+@pytest.mark.parametrize("text", ["", "deca", "../x/y", "deca/Vampire Command", "https://evil.example/p/a/b/",
+                                  "deca/x;rm -rf", "a/b/c"])
+def test_pacote_irreconhecivel_nao_vira_nada(text):
+    assert thunderstore.parse_package(text) is None
+
+
+def test_pasta_do_plugin_volta_a_ns_e_nome():
+    assert thunderstore.split_dir("deca-VampireCommandFramework") == ("deca", "VampireCommandFramework")
+    assert thunderstore.split_dir("../../etc") is None
+    assert thunderstore.package_url("v-rising", "deca", "VampireCommandFramework") ==         "https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/"
