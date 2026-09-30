@@ -51,6 +51,8 @@ MESSAGES: dict[str, str] = {
     "server.overview.help": "Estado, jogadores, recursos e log",
     "server.config": "Configuracao",
     "server.config.help": "As chaves do jogo, campo a campo",
+    "server.mods": "Mods",
+    "server.mods.help": "O que o servidor carrega de mod, e enviar mod para ele",
     "server.files": "Arquivos",
     "server.files.help": "Navegar, editar como texto, enviar e baixar",
     "server.charts": "Graficos",
@@ -505,6 +507,60 @@ MESSAGES: dict[str, str] = {
     "alerts.rule_editing_resets":
         "Mexer nesta tela zera a linha de base do monitor, para a volta seguinte nao avisar sobre "
         "o que ja estava assim antes da mudanca.",
+
+    # --------------------------------------------- gestor de mods
+    "mods.no_profile":
+        "Este jogo ainda nao tem gestor de mods. Os arquivos de mod podem ir pela tela Arquivos.",
+    "mods.help_ets2":
+        "No Euro Truck Simulator 2 o servidor <strong>nao carrega arquivo de mod</strong>: mapa, "
+        "DLCs e mods vem dentro dos <code>server_packages</code>, exportados do JOGO com os mods "
+        "ativos no perfil (console, com o mapa carregado: <code>export_server_packages</code>). "
+        "Cada jogador precisa ter os MESMOS mods. Trocou a lista? Exporte e envie os pacotes de novo.",
+    "mods.help_palworld":
+        "Os mods <code>.pak</code> do servidor ficam em <code>{folder}</code>. Mod que mexe so no "
+        "visual e do cliente; mod de regra de jogo precisa estar aqui E, em geral, nos jogadores.",
+    "mods.packages_title": "O que o servidor carrega",
+    "mods.no_packages":
+        "Nenhum pacote em <code>{folder}</code> ainda: exporte do jogo e envie o "
+        "<code>server_packages.sii</code> e o <code>server_packages.dat</code> abaixo.",
+    "mods.packages_unreadable": "O server_packages.sii do servidor nao pode ser lido como texto.",
+    "mods.summary": "Mapa {map} - {dlcs} DLCs - {n} mods",
+    "mods.col_mod": "Mod",
+    "mods.col_origin": "Origem",
+    "mods.workshop": "Workshop",
+    "mods.manual": "instalado a mao (fora da Workshop)",
+    "mods.optional": "opcional",
+    "mods.players_list_title": "Links para os jogadores",
+    "mods.players_list_help":
+        "Copie e mande para quem vai jogar: sao os mods da Workshop que o servidor usa. Os "
+        "instalados a mao (como um mapa baixado de site) nao estao aqui.",
+    "mods.expected_title": "Lista de mods que o servidor deveria ter",
+    "mods.missing": "Faltam {n} mods da lista nos pacotes do servidor:",
+    "mods.missing_help":
+        "Nao estavam ativos no perfil de quem exportou. Ative-os no jogo, exporte de novo e envie "
+        "os pacotes.",
+    "mods.all_present": "Todos os mods da lista estao nos pacotes do servidor.",
+    "mods.extra": "No servidor, mas fora da lista: {names}",
+    "mods.expected_label": "Links ou IDs da Workshop, um por linha",
+    "mods.expected_help":
+        "Pode colar a conversa do jeito que veio (com hora e nome na frente): o painel acha o "
+        "id= de cada linha.",
+    "mods.expected_save": "Guardar lista",
+    "mods.expected_saved": "Lista guardada: {n} mods.",
+    "mods.files_title": "Mods no servidor",
+    "mods.no_files": "Nenhum mod na pasta ainda.",
+    "mods.delete": "Remover",
+    "mods.delete_confirm": "Remover {name} do servidor?",
+    "mods.deleted": "{name} removido.",
+    "mods.upload_title": "Enviar para o servidor",
+    "mods.files_to_send": "Arquivos",
+    "mods.upload_accepts":
+        "Aceita {allowed}. Vai para {folder}; um arquivo de mesmo nome e substituido (fica uma "
+        "copia .bak).",
+    "mods.restart_after": "Reiniciar o servidor depois (mod so entra quando ele sobe de novo)",
+    "mods.upload_button": "Enviar",
+    "mods.uploaded": "{n} arquivo(s) enviado(s).",
+    "mods.bad_name": "{name} nao e aceito aqui. Esperado: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos
     "catalog.title": "Catalogo de jogos",
@@ -986,6 +1042,8 @@ MESSAGES: dict[str, str] = {
     "job.file_deleted": "Arquivo apagado",
     "job.config_changed": "Configuracao alterada",
     "job.file_downloaded": "Arquivo baixado",
+    "job.mod_uploaded": "Mod enviado",
+    "job.mod_deleted": "Mod removido",
     "job.file_uploaded": "Arquivo enviado",
     "job.backup": "Backup",
     "job.backup_restored": "Backup restaurado",

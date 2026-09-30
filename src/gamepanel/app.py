@@ -529,7 +529,8 @@ def csrf_token() -> str:
 # Este hook tem de vir ANTES do _check_csrf no arquivo: a ordem de registro e a ordem de
 # execucao, e e o _check_csrf quem toca em request.form primeiro — o teto e conferido na
 # hora em que o corpo e lido, entao ajustar so la dentro da view chegaria tarde (413).
-BIG_BODY_ENDPOINTS = {"files.upload"}
+# O envio de mod tambem: um .pak ou um pacote de mapa passa facil do teto normal.
+BIG_BODY_ENDPOINTS = {"files.upload", "mods.upload"}
 
 
 @app.before_request

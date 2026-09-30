@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/server.html" as srv with context %}
+{% block title %}{{ _('server.mods') }} &mdash; {{ server.name }}{% endblock %}
+
+{% block content %}
+{{ ui.page_header(_('server.mods') ~ ' — ' ~ server.name) }}
+{{ srv.tabs(server, 'mods.index') }}
+
+{% for e in errors %}<p class="flash error">{{ e }}</p>{% endfor %}
+
+{% if not profile %}
+<div class="card">
+  <p>{{ _('mods.no_profile') }}</p>
+  <div class="form-actions">
+    {{ ui.button(_('server.files'), href=url_for('files.index', sid=server.id), icon='📁') }}
+  </div>
+</div>
+{% else %}
+
+<div class="card">
+  <p class="muted small">{{ _h(profile.help_key, folder=profile.folder) }}</p>
+</div>
+
+{% if profile.kind == kind_packages %}
+  {% set packages = view.packages %}
+  <div class="card">
+    <h2>{{ _('mods.packages_title') }}</h2>
+    {% if not packages %}
+      <p class="flash error">{{ _h('mods.no_packages', folder=profile.folder) }}</p>
+    {% else %}
+      <p class="muted small">
+        {{ _('mods.summary', map=packages.map_name or '—', dlcs=packages.dlc_count, n=packages.mods | length) }}
+      </p>
+      <div class="table-wrap"><table class="jobs">
+        <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('mods.col_origin') }}</th></tr></thead>
+        <tbody>
+          {% for m in packages.mods %}
+          <tr>
+            <td>{{ m.name }}{% if m.optional %} <span class="badge cold">{{ _('mods.optional') }}</span>{% endif %}</td>
+            <td class="nowrap">
+              {% if m.workshop_id %}
+                <a href="{{ workshop_url(m.workshop_id) }}" target="_blank" rel="noopener noreferrer">{{ _('mods.workshop') }} {{ m.workshop_id }}</a>
+              {% else %}
+                <span class="muted">{{ _('mods.manual') }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% if packages.workshop_ids %}
+      <label class="mt-4">{{ _('mods.players_list_title') }}
+        <textarea rows="4" readonly spellcheck="false">{% for i in packages.workshop_ids %}{{ workshop_url(i) }}
+{% endfor %}</textarea>
+        <small>{{ _('mods.players_list_help') }}</small>
+      </label>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>{{ _('mods.expected_title') }}</h2>
+    {% if packages and view.missing %}
+      <p class="flash error">{{ _('mods.missing', n=view.missing | length) }}</p>
+      <ul class="filelist">
+        {% for i in view.missing %}<li><a href="{{ workshop_url(i) }}" target="_blank" rel="noopener noreferrer">{{ i }}</a></li>{% endfor %}
+      </ul>
+      <p class="muted small">{{ _('mods.missing_help') }}</p>
+    {% elif packages and expected_text %}
+      <p class="flash ok">{{ _('mods.all_present') }}</p>
+    {% endif %}
+    {% if view.extra %}
+      <p class="muted small">{{ _('mods.extra', names=view.extra | map(attribute='name') | join(', ')) }}</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('mods.expected', sid=server.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label>{{ _('mods.expected_label') }}
+        <textarea name="expected" rows="6" spellcheck="false" placeholder="https://steamcommunity.com/sharedfiles/filedetails/?id=3132251325">{{ expected_text }}</textarea>
+        <small>{{ _('mods.expected_help') }}</small>
+      </label>
+      <div class="form-actions">{{ ui.button(_('mods.expected_save')) }}</div>
+    </form>
+  </div>
+{% else %}
+  <div class="card">
+    <h2>{{ _('mods.files_title') }}</h2>
+    {% if view.files %}
+    <div class="table-wrap"><table class="jobs">
+      <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
+      <tbody>
+        {% for f in view.files %}
+        <tr>
+          <td><code>{{ f.name }}</code></td>
+          <td class="muted nowrap">{{ f.size | filesize }}</td>
+          <td>{{ ui.action(url_for('mods.delete', sid=server.id), _('mods.delete'), size='sm', variant='danger',
+                           confirm=_('mods.delete_confirm', name=f.name), fields={'name': f.name}) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      <p class="muted">{{ _('mods.no_files') }}</p>
+    {% endif %}
+  </div>
+{% endif %}
+
+<div class="card">
+  <h2>{{ _('mods.upload_title') }}</h2>
+  <form method="post" action="{{ url_for('mods.upload', sid=server.id) }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>{{ _('mods.files_to_send') }}
+      <input type="file" name="file" multiple required
+             accept="{{ (profile.upload_names or profile.extensions) | join(',') }}">
+      <small>{{ _('mods.upload_accepts', allowed=(profile.upload_names or profile.extensions) | join(', '), folder=profile.folder) }}</small>
+    </label>
+    <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+    <div class="form-actions">{{ ui.button(_('mods.upload_button'), variant='primary', icon='⬆', block=true) }}</div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

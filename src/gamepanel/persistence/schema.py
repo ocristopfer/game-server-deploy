@@ -69,6 +69,9 @@ CREATE TABLE IF NOT EXISTS servers (
   -- Id da instancia no broker (0 = servidor cadastrado a mao). E o que liga a tela de
   -- instancias ao servidor, e o que remover a instancia usa para apagar este cadastro.
   broker_id  INTEGER NOT NULL DEFAULT 0,
+  -- Mods que o servidor DEVERIA ter (IDs da Workshop, um por linha), colados na tela Mods.
+  -- E o gabarito: a tela compara com o que o servidor carrega de fato e aponta o que falta.
+  mods_expected TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   UNIQUE (host, ssh_port)
 );
@@ -212,6 +215,8 @@ MIGRATIONS = (
     # Idioma da tela, por pessoa. Vazio de proposito: quem nunca escolheu segue o que o
     # navegador pede, e nao uma escolha que o painel fez por ela.
     ("users", "lang", "ALTER TABLE users ADD COLUMN lang TEXT NOT NULL DEFAULT ''"),
+    # Gabarito de mods da tela Mods. Vazio = ninguem colou lista, e a tela so mostra o que ha.
+    ("servers", "mods_expected", "ALTER TABLE servers ADD COLUMN mods_expected TEXT NOT NULL DEFAULT ''"),
 )
 
 

@@ -212,6 +212,8 @@ src/
       base.py             o que um campo E: tipo, limite, unidade, rotulo
       registry.py          qual adapter vale para qual arquivo
       adapters/            um arquivo por jogo com tela de edicao rapida
+      mods/                gestor de mods: um perfil por jogo (profiles.py), o leitor dos
+                           server_packages do ETS2 (ets2.py) e os IDs da Workshop (workshop.py)
       catalog/
         search.py          busca por nome/App ID sobre suggestions.py (era busca_de_jogos.py)
         templates.py        modelos do formulario "Adicionar jogo", um por motor (Unreal/Unity Linux
@@ -262,6 +264,27 @@ tools/
   import-pterodactyl.py  gera pterodactyl_suggestions.py dos eggs (pelican-eggs/games-steamcmd, MIT)
   verify-qr.py        verificacao manual do QR contra um leitor de verdade (venv descartavel)
 ```
+
+### Gestor de mods: o que "mod" significa muda por jogo
+
+A tela Mods (`blueprints/mods.py`) nao trata todo mod como "arquivo numa pasta", porque nao
+e: no ETS2 o servidor NAO carrega arquivo de mod nenhum (mapa, DLCs e mods vem dentro dos
+`server_packages`, exportados do jogo), e mandar um `.scs` para o CT nao faria nada. Quem
+diz o que o jogo entende por mod e o perfil em `games/mods/profiles.py`, escolhido pelo NOME
+DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo servidor tem.
+
+- **Dois tipos**: `KIND_PACKAGES` (ETS2: a tela le o que os pacotes carregam, gera os links
+  da Workshop para os jogadores e confronta com o gabarito colado) e `KIND_FOLDER` (Palworld:
+  lista, recebe e remove os arquivos da pasta de mods). Perfil novo = uma entrada em
+  `PROFILES`; um teste cobra que dois perfis nao disputem o mesmo servico.
+- **O envio so aceita o que o perfil declara** (`accepts`): nome exato ou extensao, e so a
+  ultima parte do nome que o navegador mandou. Remover e pelo NOME, dentro da pasta do perfil
+  - o formulario nunca manda caminho.
+- **O gabarito e a coluna `mods_expected` da tabela de servidores** (IDs da Workshop, um por linha). O leitor
+  (`workshop.parse_ids`) aceita a lista do jeito que circula no chat, com hora e nome na
+  frente; numero com menos de 6 digitos nao e ID.
+- **No ETS2 o `mod_id` so e ID da Workshop quando `workshop_mod: true`.** No mod instalado a
+  mao (o Mapa BR) ele e uma assinatura interna, e virar link apontaria para um item qualquer.
 
 ### Jogo novo com tela propria = um arquivo e uma linha
 

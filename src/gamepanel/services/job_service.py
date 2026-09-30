@@ -22,6 +22,8 @@ EXTRA_LABELS: Mapping[str, str] = {
     "edit-config": "job.config_changed",
     "download-file": "job.file_downloaded",
     "upload-file": "job.file_uploaded",
+    "upload-mod": "job.mod_uploaded",
+    "delete-mod": "job.mod_deleted",
     "backup": "job.backup",
     "restore-backup": "job.backup_restored",
     "delete-backup": "job.backup_deleted",
@@ -47,6 +49,8 @@ ADMIN_ONLY_ACTIONS = frozenset({
     # restaurar e apagar destroem dado, e baixar tira o save do container — sao de admin,
     # e o registro delas acompanha.
     "upload-file", "restore-backup", "delete-backup",
+    # Mod entra e sai de dentro do container, como o envio da tela Arquivos.
+    "upload-mod", "delete-mod",
     # Tudo do broker e de admin: a saida cita IP, CTID e portas da infraestrutura.
     "broker-criar", "broker-desativar", "broker-remover", "broker-jogo",
     "broker-jogo-editar", "broker-jogo-apagar",

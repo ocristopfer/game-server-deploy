@@ -182,6 +182,10 @@ SERVER_SECTIONS = (
          help="server.backups.help"),
     Item("schedules.index", "server.schedules", "⏰", "schedules.index",
          help="server.schedules.help"),
+    # Mods: o que o servidor carrega e o envio de mod. De admin como "Arquivos", porque o
+    # envio grava dentro do container.
+    Item("mods.index", "server.mods", "🧩", "mods.index", admin=True, feature=FEATURE_FILES,
+         help="server.mods.help"),
     # "Arquivos" e o irmao bruto de "Configuracao": mesma pasta, sem formulario.
     # Os dois so aparecem juntos para quem pode navegar pelo container.
     Item("files.index", "server.files", "📁", "files.index", admin=True, feature=FEATURE_FILES,

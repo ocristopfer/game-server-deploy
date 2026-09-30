@@ -1142,6 +1142,24 @@ do jogo direto no navegador — e a saida para tudo que a tela **Config** nao co
 - Pare o servidor antes de editar o que ele reescreve ao sair — varios jogos sobrescrevem
   o `.ini` no shutdown.
 
+### Mods
+
+A tela **Mods** de cada servidor mostra o que ele carrega e recebe mod, do jeito que CADA
+jogo entende mod:
+
+- **Euro Truck Simulator 2**: o servidor nao carrega arquivo de mod - mapa, DLCs e mods vem
+  dentro do `server_packages.sii`/`.dat`, exportados do jogo (console, com o mapa carregado:
+  `export_server_packages`) com os mods ativos no perfil. A tela le esses pacotes e lista
+  mapa, quantidade de DLCs e cada mod (Workshop ou instalado a mao), com os links da Workshop
+  prontos para mandar aos jogadores. Cole a lista de mods combinada (links ou IDs, pode ser a
+  conversa do jeito que veio) e ela aponta os que ficaram de fora do pacote - o caso tipico e
+  um mod que nao estava ativo no perfil de quem exportou. O envio aceita so os dois pacotes.
+- **Palworld**: lista, envia e remove os `.pak` de `Pal/Content/Paks/~mods`.
+- Jogo sem gestor ainda: a tela manda para **Arquivos**.
+
+O envio pode reiniciar o servidor no fim (mod so entra quando ele sobe de novo), e fica no
+historico como "Mod enviado". A tela e so de admin, como Arquivos.
+
 ### Backups
 
 Cada servidor tem uma aba **Backups**: um `.tar.gz` das pastas do save, criado **dentro

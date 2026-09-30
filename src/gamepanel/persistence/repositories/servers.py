@@ -137,6 +137,11 @@ def set_config_files(conn: sqlite3.Connection, sid: int, paths: Iterable[str]) -
     conn.execute("UPDATE servers SET config_files = ? WHERE id = ?", ("\n".join(paths), sid))
 
 
+def set_mods_expected(conn: sqlite3.Connection, sid: int, workshop_ids: Iterable[int]) -> None:
+    conn.execute("UPDATE servers SET mods_expected = ? WHERE id = ?",
+                 ("\n".join(str(i) for i in workshop_ids), sid))
+
+
 # --- escrita pelo deploy (sem tela) ---------------------------------------------------
 
 def deploy_insert(conn: sqlite3.Connection, values: Sequence[Any], created_at: str) -> None:
