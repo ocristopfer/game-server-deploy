@@ -133,6 +133,7 @@ Layout de referencia (o do `.env.example`):
 | Icarus | `.\deploy\game\deploy-game.ps1 -Game icarus` | 17777/udp, 27017/udp |
 | Valheim | `.\deploy\game\deploy-game.ps1 -Game valheim` | 2456/udp, 2457/udp |
 | V Rising | `.\deploy\game\deploy-game.ps1 -Game vrising` | 9876/udp, 9877/udp |
+| Euro Truck Simulator 2 | `.\deploy\game\deploy-game.ps1 -Game ets2` | 27018 e 27019, TCP e UDP |
 
 Troque `deploy-game.ps1` por `deploy-docker.ps1` para rodar em Docker. Alem da
 instalacao, cada `games/<jogo>.env` diz ao painel onde fica a configuracao
@@ -243,6 +244,7 @@ mas para que todo redirecionamento seja **1:1** (porta externa = porta interna).
 | DayZ | 192.168.2.24 | `2302/udp`, `2303/udp`, `2304/udp`, `27016/udp` | — |
 | Icarus | 192.168.2.25 | `17777/udp`, `27017/udp` | — |
 | V Rising | (CT do broker) | `9876/udp`, `9877/udp` | RCON `25575/tcp` |
+| Euro Truck Simulator 2 | (CT do broker) | `27018`, `27019` (TCP e UDP) | — |
 
 **O 1:1 nao e preferencia estetica** nos jogos que publicam query A2S — Palworld, DayZ e
 Icarus. Esses servidores anunciam a *propria* porta ao master server da Steam; se o NAT
@@ -437,6 +439,27 @@ campos vazios, e uma regra sem porta de destino casa *qualquer* porta para aquel
 - Saves: `/opt/game/save-data/Saves/` (o Backup do painel guarda Saves e Settings)
 - Pelo painel: e curado e criavel, entao sai direto pela tela **Instancias**. **Nao foi testado
   ainda contra um CT de verdade** - se o Proton nao subir, `WINDOWS_RUNTIME=wine` e redeploy
+
+### Euro Truck Simulator 2 — notas
+
+- App do servidor dedicado: `1948160`, build nativo Linux. Documentacao oficial:
+  modding.scssoft.com/wiki/Documentation/Tools/Dedicated_Server
+- **O servidor nao sobe sem `server_packages.sii` e `server_packages.dat`**, que so o JOGO gera:
+  com um mapa carregado, abra o console e rode `export_server_packages`. Envie os dois arquivos
+  para `/opt/game/server-home` pela tela **Arquivos**; o servidor sobe sozinho em ate 30 s. Ate
+  la o servico fica de pe, dizendo no log o que esta esperando (a criacao pelo painel precisa
+  do servico ativo, e os arquivos so podem ser enviados depois que o CT existe)
+- **Mods e DLCs vao dentro desses pacotes.** O servidor nao baixa mod nenhum (roda sem o cliente
+  Steam e nao ve a Workshop): ele aplica o que estava ativo no perfil de quem exportou. Para jogar
+  com mods, ative-os no perfil ANTES de exportar, e cada jogador precisa ter os MESMOS mods
+  inscritos na Workshop. Trocou a lista de mods? Exporte e envie os pacotes de novo
+- Portas: **27018** (conexao) e **27019** (consulta), TCP e UDP nas duas - fora das padrao
+  27015/27016, que no roteador ja sao do Palworld e do DayZ. O script de start as grava no
+  `server_config.sii` a cada subida; as portas virtuais 100/101 nao precisam de NAT
+- Config: `/opt/game/server-home/server_config.sii` (nasce na primeira subida): `lobby_name`,
+  `password`, `max_players`. Opcional: `server_logon_token`, gerado em
+  steamcommunity.com/dev/managegameservers com o App ID do JOGO (227300), para o servidor manter
+  a mesma identidade entre reinicios
 
 ### DayZ — notas
 

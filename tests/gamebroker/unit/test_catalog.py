@@ -223,6 +223,19 @@ def test_v_rising_e_curado_criavel_pelo_proton():
     assert "{QUERY_PORT}" in vrising.start_args
 
 
+def test_ets2_e_curado_criavel_fora_das_portas_do_palworld_e_do_dayz():
+    """27015/27016 sao do Palworld e do DayZ no roteador; o ETS2 fica em 27018/27019."""
+    games, _ = cat.load_curated(RAIZ / "games")
+    ets2 = games["ets2"]
+    assert ets2.creatable, ets2.reason
+    assert ets2.app_id == 1948160
+    assert ets2.platform == ""
+    assert {str(p) for p in ets2.ports} == {"27018/udp", "27018/tcp", "27019/udp", "27019/tcp"}
+    assert (ets2.game_port, ets2.query_port) == (27018, 27019)
+    taken = {p.number for g in games.values() if g.key != "ets2" for p in g.ports}
+    assert not {27018, 27019} & taken
+
+
 def test_so_o_minimo_basta(game_data):
     minimum = {k: game_data[k] for k in ("key", "name", "app_id", "ports", "game_port")}
     game = cat.validate_dynamic(minimum)

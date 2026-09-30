@@ -117,7 +117,10 @@ install_base_packages_in_ct() {
   run_ct "
     export DEBIAN_FRONTEND=noninteractive
     missing=''
-    for pkg in ca-certificates curl lib32gcc-s1 lib32stdc++6 locales; do
+    # libatomic1: o servidor do Euro Truck Simulator 2 (e o do American Truck, mesmo motor) nao
+    # carrega sem ele ('libatomic.so.1: cannot open shared object file'), e jogo cadastrado pelo
+    # painel nao tem como pedir pacote. E pequeno e do proprio Debian, entao vai em todo CT.
+    for pkg in ca-certificates curl lib32gcc-s1 lib32stdc++6 libatomic1 locales; do
       dpkg -s \"\$pkg\" >/dev/null 2>&1 || missing=\"\$missing \$pkg\"
     done
     if [[ -n \"\$missing\" ]]; then
