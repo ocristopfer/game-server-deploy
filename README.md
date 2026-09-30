@@ -1159,10 +1159,20 @@ jogo entende mod:
   BepInEx; depois e colar o link do mod (ou `autor/pacote`) e instalar - as dependencias vem
   junto. Quem baixa e o proprio container do jogo, e cada instalacao vira uma tarefa com log.
   A primeira subida depois do BepInEx demora varios minutos (ele gera o codigo do jogo) e pede
-  uns **10 GB de memoria** (medido: 9,4 GB): com o V Rising curado (8 GB) o servidor cai por
-  falta de memoria em laco, entao aumente a memoria do CT antes (`pct set <ctid> --memory
-  12288` no Proxmox). Um redeploy do jogo desfaz um ajuste do Wine que o BepInEx precisa: a
-  tela avisa, e reinstalar o BepInEx resolve.
+  uns **10 GB de memoria** (medido: 9,4 GB). O V Rising curado ja nasce com 12 GB e com o
+  ajuste do Wine que o BepInEx precisa; num servidor criado antes disso, aumente a memoria do
+  CT antes de instalar (`pct set <ctid> --memory 12288` no Proxmox), senao ele cai por falta
+  de memoria em laco - a tela avisa.
+- **RuneScape: Dragonwilds**: os `.pak` de mod (com o `.utoc` e o `.ucas` de mesmo nome, que a
+  Unreal 5 exige - mande os tres juntos) vao em `RSDragonwilds/Content/Paks/~mods`. Mod de
+  script (UE4SS) nao roda no servidor dedicado.
+- **Enshrouded**: so o guia, por enquanto. Mod precisa do carregador Shroudtopia (um
+  `winmm.dll` ao lado do `.exe`), que sob o Proton pede um ajuste do Wine ainda nao provado num
+  servidor de verdade.
+
+Toda tela Mods tem os links de **onde achar mods** daquele jogo. O **Nexus Mods** e sempre
+link, nunca download automatico: a API dele so entrega arquivo para conta Premium, e automatizar
+sem ela viola os termos de uso - baixe la e envie pela tela.
 - Jogo sem gestor ainda: a tela manda para **Arquivos**.
 
 O envio pode reiniciar o servidor no fim (mod so entra quando ele sobe de novo), e fica no

@@ -115,13 +115,13 @@ def index(sid: int):
         view = _packages_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_THUNDERSTORE:
         view = _thunderstore_view(server, profile, errors)
-    elif profile:
+    elif profile and profile.kind == profiles.KIND_FOLDER:
         view = _folder_view(server, profile)
     return render_template(
         "mods.html", server=server, profile=profile, view=view, errors=errors,
         expected_text="\n".join(str(i) for i in _expected_ids(server)),
         workshop_url=workshop.url, kind_packages=profiles.KIND_PACKAGES,
-        kind_thunderstore=profiles.KIND_THUNDERSTORE,
+        kind_thunderstore=profiles.KIND_THUNDERSTORE, kind_folder=profiles.KIND_FOLDER,
         loader_url=_loader_url(profile),
     )
 
@@ -192,13 +192,18 @@ def plugin_remove(sid: int):
     return _thunderstore_job(sid, "mod-remove", _remote_cmd(profile, "plugin-remove", ns, name), f"{ns}/{name}")
 
 
-def _upload_one(server, profile: profiles.ModProfile, sent) -> str:
-    """Manda UM arquivo para a pasta do perfil. Devolve a saida do container."""
+def _checked_name(profile: profiles.ModProfile, sent) -> str:
+    """O nome que o arquivo tera no container, ou ValueError se o perfil nao o aceita."""
     # So a ultima parte do nome: "../../etc/passwd" nao vira caminho.
     name = sent.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not name or not profile.accepts(name):
         allowed = ", ".join(profile.upload_names or profile.extensions)
         raise ValueError(panel.translate("mods.bad_name", name=name or "?", allowed=allowed))
+    return name
+
+
+def _upload_one(server, profile: profiles.ModProfile, sent, name: str) -> str:
+    """Manda UM arquivo (ja conferido) para a pasta do perfil. Devolve a saida do container."""
     target = panel.clean_path(f"{profile.folder}/{name}")
     return panel.ssh_stream_in(server, panel.q("bash", "-lc", panel.UPLOAD_SCRIPT, "gp", target),
                                sent.stream, timeout=panel.JOB_TIMEOUT)
@@ -218,10 +223,13 @@ def upload(sid: int):
 
     user = session.get("username", "?")
     try:
+        # TODOS os nomes antes de qualquer coisa ir ao container: um mod de Unreal 5 vem em tres
+        # arquivos, e mandar dois e recusar o terceiro deixaria um mod pela metade na pasta.
+        names = [_checked_name(profile, f) for f in sent]
         proc = panel.ssh_run(server, panel.q("bash", "-lc", MKDIR_SCRIPT, "gp", profile.folder), timeout=40)
         if proc.returncode != 0:
             raise panel.RemoteError((proc.stderr or proc.stdout).strip() or profile.folder)
-        outputs = [_upload_one(server, profile, f) for f in sent]
+        outputs = [_upload_one(server, profile, f, n) for f, n in zip(sent, names, strict=True)]
     except (ValueError, panel.RemoteError) as exc:
         panel.log_job("upload-mod", server, user, command=profile.folder, output=str(exc), status="error")
         flash(panel.translate("flash.could_not_upload", reason=exc), "error")

@@ -296,6 +296,15 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   desligado. A primeira subida com ele chegou a 9,4 GB (`min_memory_mb` do perfil; a tela
   avisa antes de instalar). Um redeploy do jogo reescreve o `/etc/game-runtime.env` e desfaz o
   ajuste do Wine: o status acusa (`overrides_ok`) e reinstalar reaplica.
+- **`KIND_GUIDE` e perfil sem botao, e isso e decisao.** O Enshrouded tem caminho (Shroudtopia,
+  um `winmm.dll` ao lado do `.exe`), mas sob o Proton ele pede um ajuste do Wine que ninguem
+  provou num servidor de verdade - e o V Rising mostrou tres armadilhas que so apareceram la.
+  Botao que "instala" sem prova e pior que instrucao clara. Todo perfil tem `sources` (onde
+  achar), e o Nexus e so LINK: a API dele so entrega arquivo para conta Premium, e automatizar
+  sem ela viola os termos.
+- **Dragonwilds (Unreal 5) aceita `.pak`, `.utoc` e `.ucas`**, e o envio confere TODOS os nomes
+  antes de mandar qualquer um (`_checked_name`): o mod vem em tres arquivos, e dois de tres na
+  pasta e um mod quebrado.
 - **No ETS2 o `mod_id` so e ID da Workshop quando `workshop_mod: true`.** No mod instalado a
   mao (o Mapa BR) ele e uma assinatura interna, e virar link apontaria para um item qualquer.
 

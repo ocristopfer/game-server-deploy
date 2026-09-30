@@ -18,6 +18,14 @@ KIND_PACKAGES = "packages"
 KIND_FOLDER = "folder"
 # Mods do Thunderstore com o BepInEx: o CT baixa e instala (games/mods/thunderstore_remote.py).
 KIND_THUNDERSTORE = "thunderstore"
+# So o guia (onde achar, como instalar), sem acao: o caminho existe mas ainda nao foi provado
+# num servidor de verdade, e botao que "instala" sem prova e pior que instrucao clara.
+KIND_GUIDE = "guide"
+
+# Onde se acha mod de cada jogo. O Nexus Mods fica como LINK, nunca como download automatico:
+# a API dele so entrega arquivo para conta Premium, e automatizar sem ela viola os termos de
+# uso. Quem baixa do Nexus e a pessoa; o painel recebe o arquivo pela tela.
+NEXUS = "https://www.nexusmods.com/"
 
 
 @dataclass(frozen=True)
@@ -41,6 +49,8 @@ class ModProfile:
     community: str = ""
     loader: tuple[str, str] = ("", "")
     min_memory_mb: int = 0
+    # (chave de i18n do rotulo, URL) de onde os mods deste jogo sao encontrados.
+    sources: tuple[tuple[str, str], ...] = ()
 
     def accepts(self, name: str) -> bool:
         """O nome de arquivo que pode entrar pela tela Mods deste jogo."""
@@ -60,6 +70,7 @@ ETS2 = ModProfile(
     help_key="mods.help_ets2",
     upload_names=("server_packages.sii", "server_packages.dat"),
     workshop_appid=227300,
+    sources=(("mods.source_workshop", "https://steamcommunity.com/app/227300/workshop/"),),
 )
 
 PALWORLD = ModProfile(
@@ -71,6 +82,34 @@ PALWORLD = ModProfile(
     folder="/opt/game/Pal/Content/Paks/~mods",
     help_key="mods.help_palworld",
     extensions=(".pak",),
+    sources=(("mods.source_nexus", NEXUS + "palworld/mods/"),),
+)
+
+DRAGONWILDS = ModProfile(
+    key="dragonwilds",
+    kind=KIND_FOLDER,
+    services=("dragonwilds",),
+    # O servidor e Unreal 5 nativo Linux: le de ~mods o que nao veio com o jogo. Conferido no
+    # CT de producao (os proprios arquivos do jogo em Paks/ sao .pak + .ucas + .utoc).
+    folder="/opt/game/RSDragonwilds/Content/Paks/~mods",
+    help_key="mods.help_dragonwilds",
+    # Unreal 5 (IoStore): um mod costuma vir em TRES arquivos com o mesmo nome, e o .pak sozinho
+    # nao carrega. Os tres entram juntos.
+    extensions=(".pak", ".utoc", ".ucas"),
+    sources=(("mods.source_nexus", NEXUS + "runescapedragonwilds/mods/"),),
+)
+
+ENSHROUDED = ModProfile(
+    key="enshrouded",
+    kind=KIND_GUIDE,
+    services=("enshrouded",),
+    # O Shroudtopia (carregador) poe um winmm.dll ao lado do enshrouded_server.exe e le as DLLs de
+    # mods/. Sob o Proton isso pede o winmm nativo no WINEDLLOVERRIDES - e ainda nao foi testado
+    # num servidor de verdade (o do V Rising mostrou que o Wine tem armadilha que so aparece la).
+    folder="/opt/game",
+    help_key="mods.help_enshrouded",
+    sources=(("mods.source_shroudtopia", "https://github.com/s0t7x/shroudtopia/releases"),
+             ("mods.source_nexus", NEXUS + "enshrouded/mods/")),
 )
 
 VRISING = ModProfile(
@@ -85,9 +124,10 @@ VRISING = ModProfile(
     # Medido num CT de teste: a primeira subida com o BepInEx gera o codigo do jogo inteiro
     # e chegou a 9,4 GB; com 6 GB o OOM killer derrubava o servidor em laco. O curado tem 8.
     min_memory_mb=10240,
+    sources=(("mods.source_thunderstore", "https://thunderstore.io/c/v-rising/"),),
 )
 
-PROFILES = (ETS2, PALWORLD, VRISING)
+PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED)
 
 
 def service_stem(service: str) -> str:

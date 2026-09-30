@@ -20,6 +20,14 @@
 
 <div class="card">
   <p class="muted small">{{ _h(profile.help_key, folder=profile.folder) }}</p>
+  {% if profile.sources %}
+  <h2>{{ _('mods.where_to_find') }}</h2>
+  <div class="cluster">
+    {% for label_key, url in profile.sources %}
+      {{ ui.button(_(label_key), href=url, icon='🔗', extra='target="_blank" rel="noopener noreferrer"') }}
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 
 {% if profile.kind == kind_packages %}
@@ -149,7 +157,7 @@
     </form>
   </div>
   {% endif %}
-{% else %}
+{% elif profile.kind == kind_folder %}
   <div class="card">
     <h2>{{ _('mods.files_title') }}</h2>
     {% if view.files %}
@@ -172,7 +180,9 @@
   </div>
 {% endif %}
 
-{% if profile.kind != kind_thunderstore %}
+{# Envio so para quem declara o que aceita: o Thunderstore baixa sozinho, e o guia (Enshrouded)
+   ainda nao tem caminho provado para o arquivo ir parar. #}
+{% if profile.upload_names or profile.extensions %}
 <div class="card">
   <h2>{{ _('mods.upload_title') }}</h2>
   <form method="post" action="{{ url_for('mods.upload', sid=server.id) }}" enctype="multipart/form-data">

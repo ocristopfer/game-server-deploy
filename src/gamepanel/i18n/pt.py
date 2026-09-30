@@ -594,6 +594,25 @@ MESSAGES: dict[str, str] = {
         "Link da pagina do mod, ou autor/pacote (ex.: deca/VampireCommandFramework). As "
         "dependencias vem junto; sempre a versao mais nova.",
     "mods.plugin_install": "Instalar",
+    "mods.where_to_find": "Onde achar mods",
+    "mods.source_workshop": "Steam Workshop",
+    "mods.source_nexus": "Nexus Mods",
+    "mods.source_thunderstore": "Thunderstore",
+    "mods.source_shroudtopia": "Shroudtopia (carregador)",
+    "mods.help_dragonwilds":
+        "Os mods do servidor sao os <strong>.pak</strong> (com os <code>.utoc</code> e "
+        "<code>.ucas</code> de mesmo nome, que a Unreal 5 exige - mande os tres juntos) e ficam em "
+        "<code>{folder}</code>. Mods de script (UE4SS) NAO rodam no servidor dedicado, so no jogo. "
+        "O Nexus Mods nao deixa baixar por automacao sem conta Premium: baixe la e envie aqui. A "
+        "pagina de cada mod diz se os jogadores tambem precisam dele.",
+    "mods.help_enshrouded":
+        "Mods do Enshrouded precisam de um <strong>carregador</strong> no servidor: o Shroudtopia "
+        "(GitHub) poe um <code>winmm.dll</code> ao lado do <code>enshrouded_server.exe</code> e le "
+        "as DLLs de mod da pasta <code>mods</code>; os mods em si ficam no Nexus Mods. O painel "
+        "ainda NAO instala isso: o servidor roda pelo Proton, e o carregador pede um ajuste do Wine "
+        "que ainda nao foi provado num servidor de verdade (o do V Rising mostrou que ha armadilha "
+        "que so aparece la). Ate la: tela Arquivos, e a pagina de cada mod diz se ele e so do "
+        "servidor ou tambem dos jogadores.",
     "mods.bad_name": "{name} nao e aceito aqui. Esperado: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos

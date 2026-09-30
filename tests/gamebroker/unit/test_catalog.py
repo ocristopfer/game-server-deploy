@@ -223,6 +223,15 @@ def test_v_rising_e_curado_criavel_pelo_proton():
     assert "{QUERY_PORT}" in vrising.start_args
 
 
+def test_v_rising_ja_nasce_pronto_para_mods():
+    """Medido: a primeira subida com o BepInEx chegou a 9,4 GB, e o BepInEx (.NET) so carrega
+    com o mscoree ligado e o winhttp nativo. Com isso no .env, um redeploy nao desfaz nada."""
+    text = (RAIZ / "games" / "vrising.env").read_text(encoding="utf-8")
+    values = cat.read_env(text)
+    assert int(values["RECOMMENDED_MEMORY"]) >= 10240
+    assert values["WINE_DLL_OVERRIDES"] == "mshtml=;winhttp=n,b"
+
+
 def test_ets2_e_curado_criavel_fora_das_portas_do_palworld_e_do_dayz():
     """27015/27016 sao do Palworld e do DayZ no roteador; o ETS2 fica em 27018/27019."""
     games, _ = cat.load_curated(RAIZ / "games")

@@ -132,7 +132,13 @@ def test_palworld_aceita_pak_em_qualquer_caixa():
 def test_todo_perfil_diz_para_onde_vai_e_o_que_aceita():
     for p in profiles.PROFILES:
         assert p.folder == "/opt/game" or p.folder.startswith("/opt/game/")
-        assert p.kind in (profiles.KIND_PACKAGES, profiles.KIND_FOLDER, profiles.KIND_THUNDERSTORE)
+        assert p.kind in (profiles.KIND_PACKAGES, profiles.KIND_FOLDER, profiles.KIND_THUNDERSTORE,
+                          profiles.KIND_GUIDE)
+        # Toda tela de mods diz onde procurar: era a pergunta que ficava sem resposta.
+        assert p.sources, p.key
+        if p.kind == profiles.KIND_GUIDE:
+            assert not p.upload_names and not p.extensions, p.key
+            continue
         if p.kind == profiles.KIND_THUNDERSTORE:
             # Nada entra por envio: o CT baixa do Thunderstore.
             assert not p.upload_names and not p.extensions, p.key
@@ -172,3 +178,27 @@ def test_pasta_do_plugin_volta_a_ns_e_nome():
     assert thunderstore.split_dir("deca-VampireCommandFramework") == ("deca", "VampireCommandFramework")
     assert thunderstore.split_dir("../../etc") is None
     assert thunderstore.package_url("v-rising", "deca", "VampireCommandFramework") ==         "https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/"
+
+
+def test_dragonwilds_aceita_os_tres_arquivos_do_mod_da_unreal_5():
+    dw = profiles.profile_for("dragonwilds.service")
+    assert dw is profiles.DRAGONWILDS
+    assert dw.folder == "/opt/game/RSDragonwilds/Content/Paks/~mods"
+    for name in ("MeuMod_P.pak", "MeuMod_P.utoc", "MeuMod_P.ucas"):
+        assert dw.accepts(name)
+    assert not dw.accepts("dwmapi.dll"), "UE4SS nao roda no servidor dedicado"
+
+
+def test_enshrouded_e_so_guia_ate_o_carregador_ser_provado():
+    en = profiles.profile_for("enshrouded.service")
+    assert en.kind == profiles.KIND_GUIDE
+    assert not en.accepts("winmm.dll")
+
+
+def test_nexus_e_so_link_nunca_download():
+    """A API do Nexus so entrega arquivo para conta Premium, e automatizar sem ela viola os
+    termos: nenhum perfil pode depender de baixar de la."""
+    for p in profiles.PROFILES:
+        for _, url in p.sources:
+            assert url.startswith("https://")
+            assert "/api/" not in url

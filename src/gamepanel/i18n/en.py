@@ -592,6 +592,25 @@ MESSAGES: dict[str, str] = {
         "Link to the mod page, or author/package (e.g. deca/VampireCommandFramework). "
         "Dependencies come along; always the newest version.",
     "mods.plugin_install": "Install",
+    "mods.where_to_find": "Where to find mods",
+    "mods.source_workshop": "Steam Workshop",
+    "mods.source_nexus": "Nexus Mods",
+    "mods.source_thunderstore": "Thunderstore",
+    "mods.source_shroudtopia": "Shroudtopia (loader)",
+    "mods.help_dragonwilds":
+        "Server mods are <strong>.pak</strong> files (with the same-named <code>.utoc</code> and "
+        "<code>.ucas</code> that Unreal 5 requires - send all three together) and live in "
+        "<code>{folder}</code>. Script mods (UE4SS) do NOT run on the dedicated server, only in the "
+        "game. Nexus Mods does not allow automated downloads without a Premium account: download "
+        "there and upload here. Each mod page says whether players need it too.",
+    "mods.help_enshrouded":
+        "Enshrouded mods need a <strong>loader</strong> on the server: Shroudtopia (GitHub) drops a "
+        "<code>winmm.dll</code> next to <code>enshrouded_server.exe</code> and loads the mod DLLs "
+        "from the <code>mods</code> folder; the mods themselves are on Nexus Mods. The panel does "
+        "NOT install this yet: the server runs on Proton, and the loader needs a Wine setting that "
+        "has not been proven on a real server (V Rising showed there are traps that only show up "
+        "there). Until then: the Files screen, and each mod page says whether it is server-only or "
+        "for the players too.",
     "mods.bad_name": "{name} is not accepted here. Expected: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos
