@@ -320,3 +320,74 @@ def test_ini_com_bom_nao_vira_parte_do_nome_da_secao():
 
 def test_json_com_bom_e_extensao_estranha_ainda_e_json():
     assert isinstance(gc.load("settings.txt", VRISING_HOST), gc.JsonConfig)
+
+
+# ---------------------------------------------------------------------- sii
+
+# Copia do server_config.sii de um ETS2 de verdade (senha e token trocados). O
+# `description: discordia` sem aspas e como o proprio servidor grava.
+ETS2_SII = """SiiNunit
+{
+server_config : _nameless.39bc.86a0 {
+ lobby_name: "server da discordia"
+ description: discordia
+ welcome_message: ""
+ password: "segredo"
+ max_players: 8
+ connection_dedicated_port: 27018
+ player_damage: true
+ moderator_list: 1
+ moderator_list[0]: 76561198000000000
+}
+
+}"""
+
+
+def test_sii_abre_o_server_config_do_ets2_como_campos():
+    """Antes caia no leitor de ini, sem `=` nenhum: "Configuracoes (0)" na tela."""
+    doc = gc.load("server_config.sii", ETS2_SII)
+    assert isinstance(doc, gc.SiiConfig)
+    assert [s.label for s in doc.sections] == ["server_config"]
+    assert doc.find("server_config", "lobby_name").value == "server da discordia"
+    assert doc.find("server_config", "description").value == "discordia"
+    assert doc.find("server_config", "max_players").kind == "number"
+    assert doc.find("server_config", "player_damage").kind == "bool"
+    assert doc.find("server_config", "moderator_list[0]").value == "76561198000000000"
+
+
+def test_sii_grava_so_a_linha_alterada_e_respeita_as_aspas():
+    doc = gc.load("server_config.sii", ETS2_SII)
+    edits = []
+    for key, value in (("max_players", "16"), ("description", "dois termos"),
+                       ("lobby_name", "Caminhoneiros"), ("player_damage", "false")):
+        s = doc.find("server_config", key)
+        edits.append(gc.Edit(id=s.id, section=s.section, key=key, value=value))
+    out = doc.apply(edits)
+    assert " max_players: 16\n" in out
+    # Palavra solta podia ficar sem aspas; frase com espaco, nao.
+    assert ' description: "dois termos"\n' in out
+    assert ' lobby_name: "Caminhoneiros"\n' in out
+    assert " player_damage: false\n" in out
+    assert out.replace(" max_players: 16", " max_players: 8").replace(
+        ' description: "dois termos"', " description: discordia").replace(
+        '"Caminhoneiros"', '"server da discordia"').replace(
+        "player_damage: false", "player_damage: true") == ETS2_SII
+
+
+def test_sii_chave_nova_entra_dentro_do_bloco():
+    doc = gc.load("server_config.sii", ETS2_SII)
+    out = doc.apply([gc.Edit(section="server_config", key="traffic", value="true")])
+    lines = out.split("\n")
+    assert lines[lines.index(" moderator_list[0]: 76561198000000000") + 1] == " traffic: true"
+
+
+def test_sii_recusa_aspas_no_valor():
+    doc = gc.load("server_config.sii", ETS2_SII)
+    s = doc.find("server_config", "lobby_name")
+    with pytest.raises(gc.ConfigError):
+        doc.apply([gc.Edit(id=s.id, section=s.section, key=s.key, value='a"b')])
+
+
+def test_sii_sem_edicao_volta_igual_e_e_detectado_pelo_conteudo():
+    assert gc.load("server_config.sii", ETS2_SII).apply([]) == ETS2_SII
+    assert isinstance(gc.load("config.txt", ETS2_SII), gc.SiiConfig)

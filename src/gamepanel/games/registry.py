@@ -6,13 +6,13 @@ inclusive num servidor cujo jogo ninguem declarou.
 """
 from __future__ import annotations
 
-from gamepanel.games.adapters import dayz, dragonwilds, enshrouded, icarus, palworld
+from gamepanel.games.adapters import dayz, dragonwilds, enshrouded, ets2, icarus, palworld
 from gamepanel.games.base import FieldSpec
 
 # A ordem nao importa: os padroes sao nomes de arquivo distintos. A lista e explicita —
 # e nao uma varredura da pasta — para quem ler saber, sem rodar nada, quais jogos tem
 # tela propria. O teste cobra que ela nao fique para tras.
-ADAPTERS = (dragonwilds, enshrouded, palworld, icarus, dayz)
+ADAPTERS = (dragonwilds, enshrouded, palworld, icarus, dayz, ets2)
 
 
 def catalog_for(filename: str) -> dict[str, FieldSpec]:

@@ -41,6 +41,23 @@ def test_toda_chave_segue_a_convencao():
     assert outside == [], f"chave fora da convencao: {outside}"
 
 
+def test_chave_com_marcacao_nao_passa_por_traducao_que_escapa():
+    """`_()` escapa: `&mdash;` saia na tela como o texto `&mdash;` (Config do ETS2, console).
+
+    Frase com entidade ou tag e para `_h()`, que confia no catalogo e so escapa os campos.
+    """
+    markup = {k for k, v in i18n.CATALOGS["pt"].items() if re.search(r"&\w+;|<\w", v)}
+    templates = Path(panel.__file__).parent / "templates"
+    found = []
+    for path in templates.rglob("*"):
+        if path.suffix not in (".html", ".jinja"):
+            continue
+        for key in re.findall(r"(?<![\w])_\(\s*['\"]([\w.]+)['\"]", path.read_text(encoding="utf-8")):
+            if key in markup:
+                found.append(f"{path.name}: {key}")
+    assert found == [], f"use _h() nestas chaves: {found}"
+
+
 def test_idiomas_oferecidos_tem_catalogo():
     for code, label in i18n.LANGUAGES:
         assert code in i18n.CATALOGS, f"{code} aparece no seletor e nao tem catalogo"

@@ -11,6 +11,7 @@ Formatos (detectados pelo nome + conteudo):
           (OptionSettings=(Chave=Valor,...), do Palworld) viram sub-configuracoes.
   json  - Enshrouded (enshrouded_server.json)
   dayz  - serverDZ.cfg: 'chave = valor;' e blocos 'class X { ... };'
+  sii   - server_config.sii do ETS2/ATS: 'SiiNunit { classe : nome { chave: valor } }'
 
 Este modulo nao fala SSH nem HTTP: recebe texto, devolve texto. E o que permite testa-lo
 sozinho (test_config_format.py).
@@ -720,6 +721,106 @@ class DayzConfig(ConfigFile):
         return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------- sii
+
+
+# `server_config : _nameless.39bc.86a0 {` - classe, nome da unidade e a chave que abre.
+_SII_UNIT_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*:\s*([\w.]+)\s*\{\s*$", re.ASCII)
+# ` lobby_name: "x"` / ` moderator_list[0]: 7656...` - a lista vem com o indice no nome.
+_SII_PAIR_RE = re.compile(r"^([ \t]*)([A-Za-z_]\w*(?:\[\d*\])?)(:[ \t]*)(.*?)[ \t]*$", re.ASCII)
+# Valor que o formato aceita sem aspas: palavra, numero, true/false.
+_SII_BARE_RE = re.compile(r"^[\w.\-]+$", re.ASCII)
+
+
+class SiiConfig(ConfigFile):
+    """server_config.sii do ETS2/ATS: 'SiiNunit { classe : nome { chave: valor } }'.
+
+    Cada unidade vira uma secao pelo nome da CLASSE (`server_config`), e nao pelo nome da
+    unidade: o `_nameless.39bc.86a0` e sorteado, e o servidor reescreve o arquivo ao subir.
+    Com ele no id, uma edicao feita com a tela aberta durante um reinicio nao acharia mais a
+    chave e a acrescentaria em duplicata.
+    """
+
+    format_id = "sii"
+    label = "SiiNunit (.sii)"
+    bool_words = ("true", "false")
+
+    def parse(self) -> None:
+        self._lines = self.text.split("\n")
+        self._pos: dict[str, tuple[int, str, str, str, bool]] = {}
+        self._section_end: dict[str, int] = {}
+        current = ""
+        seen: dict[str, int] = {}
+
+        for i, line in enumerate(self._lines):
+            unit_match = _SII_UNIT_RE.match(line)
+            if unit_match:
+                cls = unit_match.group(1)
+                seen[cls] = seen.get(cls, 0) + 1
+                current = cls if seen[cls] == 1 else f"{cls}#{seen[cls]}"
+                self._section(current, current)
+                self._section_end[current] = i
+                continue
+            if line.strip().startswith("}"):
+                current = ""
+                continue
+            if not current:
+                continue
+            pair_match = _SII_PAIR_RE.match(line)
+            if pair_match:
+                self._read_pair(i, pair_match, current)
+
+    def _read_pair(self, i: int, pair_match: re.Match[str], section: str) -> None:
+        prefix, name, sep, raw = pair_match.groups()
+        text, quoted = _unquote(raw)
+        self._section_end[section] = i
+        sid = f"{section}{SEP}{name}"
+        self._pos[sid] = (i, prefix, name, sep, quoted)
+        self._add(Setting(id=sid, section=section, key=name, value=text, kind=_kind_of(text)),
+                  label=section)
+
+    @staticmethod
+    def _format(value: str, quoted: bool) -> str:
+        # Aspas e barra invertida sao escape no .sii; recusar e mais seguro que adivinhar a
+        # regra de escape do leitor da SCS e deixar o servidor sem subir.
+        if '"' in value or "\\" in value:
+            raise ConfigError('o valor nao pode conter aspas (") nem barra invertida (\\)')
+        # Palavra solta pode ficar sem aspas (o servidor grava `description: discordia`
+        # assim), mas frase com espaco ou valor vazio sem aspas o leitor da SCS nao entende.
+        if quoted or not _SII_BARE_RE.match(value):
+            return f'"{value}"'
+        return value
+
+    def _apply(self, edits: list[Edit]) -> str:
+        lines = list(self._lines)
+        new_by_section: dict[str, list[str]] = {}
+
+        for edit in edits:
+            value = check_value(edit.value)
+            current = self._resolve(edit)
+            if current is not None and current.id in self._pos:
+                i, prefix, name, sep, quoted = self._pos[current.id]
+                lines[i] = f"{prefix}{name}{sep}{self._format(value, quoted)}"
+                continue
+            if edit.section not in self._section_end:
+                raise ConfigError("no .sii a configuracao nova precisa ir dentro de um bloco")
+            key = check_key(edit.key)
+            if " " in key or "." in key or "-" in key:
+                raise ConfigError(f"nome de configuracao invalido no .sii: {key!r}")
+            new_by_section.setdefault(edit.section, []).append(
+                f"{key}: {self._format(value, quoted=False)}")
+
+        # De baixo para cima: inserir num bloco nao desloca a posicao dos de cima.
+        for section, new_lines in sorted(new_by_section.items(),
+                                         key=lambda item: self._section_end[item[0]], reverse=True):
+            end = self._section_end[section]
+            reference = lines[end]
+            indent = reference[:len(reference) - len(reference.lstrip())] or " "
+            _insert_after(lines, end, [f"{indent}{item}" for item in new_lines])
+
+        return "\n".join(lines)
+
+
 # ------------------------------------------------------------------ deteccao
 
 
@@ -730,6 +831,10 @@ def load(name: str, text: str) -> ConfigFile:
     # deixaria de ser reconhecido pelo "{" do comeco.
     start = text.removeprefix(BOM).lstrip()[:1]
 
+    # Antes do ini: o .sii caia no leitor de ini, que nao acha `=` nenhum e mostrava um
+    # formulario vazio ("Configuracoes (0)") para o server_config.sii do ETS2.
+    if ext == "sii" or text.removeprefix(BOM).lstrip().startswith("SiiNunit"):
+        return SiiConfig(text)
     if ext == "json" or (start in ("{", "[") and ext not in ("ini", "cfg", "conf", "properties")):
         return JsonConfig(text)
     if _CLASS_RE.search(text) or (ext == "cfg" and _DZ_PAIR_RE.search(text)):
