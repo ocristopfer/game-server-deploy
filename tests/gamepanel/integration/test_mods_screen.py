@@ -269,13 +269,62 @@ def test_toda_tela_de_mods_diz_onde_achar(admin, ets2_server, packages_on_server
     assert "https://steamcommunity.com/app/227300/workshop/" in html
 
 
-def test_enshrouded_mostra_o_guia_sem_envio(admin, database, monkeypatch):
+@pytest.fixture
+def enshrouded(database, monkeypatch):
     sid = _server(database, "enshrouded.service")
-    monkeypatch.setattr(panel, "list_dir", lambda *a, **k: pytest.fail("guia nao lista pasta"))
+    calls: list[str] = []
+    state = {"loader_installed": False, "loader": "Shroudtopia", "loader_version": "",
+             "enabled": False, "mods": [], "log": []}
+
+    def ssh_run(server, cmd, timeout=None, **kw):
+        calls.append(cmd)
+        out = type("P", (), {})()
+        out.returncode, out.stderr, out.stdout = 0, "", json.dumps(state)
+        return out
+    monkeypatch.setattr(panel, "ssh_run", ssh_run)
+    jobs: list[tuple] = []
+    monkeypatch.setattr(panel, "start_job", lambda action, server, user, **kw: jobs.append((action, kw)) or 99)
+    return sid, calls, jobs, state
+
+
+def test_enshrouded_oferece_instalar_o_shroudtopia(admin, enshrouded):
+    sid, calls, _, _ = enshrouded
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
     assert "https://github.com/s0t7x/shroudtopia/releases" in html
-    assert "https://www.nexusmods.com/enshrouded/mods/" in html
-    assert "multipart/form-data" not in html
+    assert "value=install" in html
+    # O status sai do instalador do Shroudtopia, rodando na pasta do JOGO (acima de mods/).
+    assert "shroudtopia" in calls[0]
+    assert "/opt/game" in calls[0]
+    assert "/opt/game/mods" not in calls[0]
+
+
+def test_enshrouded_mostra_mods_e_o_log_do_carregador(admin, enshrouded):
+    sid, _, _, state = enshrouded
+    state.update(loader_installed=True, enabled=True, loader_version="0.1.1",
+                 mods=[{"name": "flight.dll", "dir": False, "size": 2048}],
+                 log=["(basics) class NoResourceCostAddress not found"])
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert "Shroudtopia 0.1.1" in html
+    assert "flight.dll" in html
+    assert "NoResourceCostAddress not found" in html
+    assert 'accept=".dll"' in html
+
+
+def test_instalar_o_shroudtopia_vira_job_com_reinicio(admin, post, enshrouded):
+    sid, _, jobs, _ = enshrouded
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "restart": "1"})
+    action, kw = jobs[0]
+    assert action == "mod-loader"
+    install, restart = kw["steps"]
+    assert "loader-install" in install
+    assert "shroudtopia" in install
+    assert restart.endswith("restart enshrouded.service")
+
+
+def test_enshrouded_nao_recebe_plugin_do_thunderstore(admin, post, enshrouded):
+    sid, _, jobs, _ = enshrouded
+    post(admin, f"/servers/{sid}/mods/plugin/install", {"package": "deca/VampireCommandFramework"})
+    assert jobs == []
 
 
 def test_lote_com_um_nome_errado_nao_manda_nada(admin, database, monkeypatch):

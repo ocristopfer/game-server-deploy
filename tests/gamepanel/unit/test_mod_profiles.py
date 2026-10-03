@@ -133,7 +133,7 @@ def test_todo_perfil_diz_para_onde_vai_e_o_que_aceita():
     for p in profiles.PROFILES:
         assert p.folder == "/opt/game" or p.folder.startswith("/opt/game/")
         assert p.kind in (profiles.KIND_PACKAGES, profiles.KIND_FOLDER, profiles.KIND_THUNDERSTORE,
-                          profiles.KIND_GUIDE)
+                          profiles.KIND_SHROUDTOPIA, profiles.KIND_GUIDE)
         # Toda tela de mods diz onde procurar: era a pergunta que ficava sem resposta.
         assert p.sources, p.key
         if p.kind == profiles.KIND_GUIDE:
@@ -189,10 +189,15 @@ def test_dragonwilds_aceita_os_tres_arquivos_do_mod_da_unreal_5():
     assert not dw.accepts("dwmapi.dll"), "UE4SS nao roda no servidor dedicado"
 
 
-def test_enshrouded_e_so_guia_ate_o_carregador_ser_provado():
+def test_enshrouded_usa_o_shroudtopia_provado_no_ct():
+    """Provado no CT 303 sob o Proton: o carregador sobe e carrega a DLL de mods/."""
     en = profiles.profile_for("enshrouded.service")
-    assert en.kind == profiles.KIND_GUIDE
-    assert not en.accepts("winmm.dll")
+    assert en.kind == profiles.KIND_SHROUDTOPIA
+    assert en.folder == "/opt/game/mods"
+    assert en.accepts("flight_mod.dll")
+    # O carregador entra pelo botao, nunca por envio: um winmm.dll qualquer na pasta de mods
+    # nao faria nada, e um na pasta do jogo trocaria o que o Wine carrega.
+    assert not en.accepts("shroudtopia.json")
 
 
 def test_nexus_e_so_link_nunca_download():

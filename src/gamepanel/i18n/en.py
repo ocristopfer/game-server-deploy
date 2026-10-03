@@ -627,13 +627,22 @@ MESSAGES: dict[str, str] = {
         "game. Nexus Mods does not allow automated downloads without a Premium account: download "
         "there and upload here. Each mod page says whether players need it too.",
     "mods.help_enshrouded":
-        "Enshrouded mods need a <strong>loader</strong> on the server: Shroudtopia (GitHub) drops a "
-        "<code>winmm.dll</code> next to <code>enshrouded_server.exe</code> and loads the mod DLLs "
-        "from the <code>mods</code> folder; the mods themselves are on Nexus Mods. The panel does "
-        "NOT install this yet: the server runs on Proton, and the loader needs a Wine setting that "
-        "has not been proven on a real server (V Rising showed there are traps that only show up "
-        "there). Until then: the Files screen, and each mod page says whether it is server-only or "
-        "for the players too.",
+        "Enshrouded mods need a <strong>loader</strong> on the server: Shroudtopia, which the panel "
+        "downloads from GitHub and places next to <code>enshrouded_server.exe</code>. Mods are DLLs "
+        "(Nexus Mods) that go into <code>{folder}</code>. Proven on a real server under Proton. "
+        "Each mod page says whether it is server-only or for the players too.",
+    "mods.shroudtopia_title": "Shroudtopia (mod loader)",
+    "mods.shroudtopia_missing": "Shroudtopia is not installed on this server yet.",
+    "mods.shroudtopia_install": "Install Shroudtopia",
+    "mods.shroudtopia_folder_mod": "folder (with mod.json)",
+    "mods.shroudtopia_log": "End of the loader log",
+    "mods.shroudtopia_log_help":
+        "A mod built for another game version does not bring the server down, but "
+        "silently loses its feature: it shows up here as \"not found\".",
+    "mods.shroudtopia_config_help":
+        "The example mods in the official package are NOT installed: they come with "
+        "cheats turned on. Each mod's options live in <code>shroudtopia.json</code>, "
+        "on the <a href=\"{url}\">Files screen</a>.",
     "mods.bad_name": "{name} is not accepted here. Expected: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos

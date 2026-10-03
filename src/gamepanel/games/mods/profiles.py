@@ -18,6 +18,9 @@ KIND_PACKAGES = "packages"
 KIND_FOLDER = "folder"
 # Mods do Thunderstore com o BepInEx: o CT baixa e instala (games/mods/thunderstore_remote.py).
 KIND_THUNDERSTORE = "thunderstore"
+# Carregador nativo do Enshrouded (Shroudtopia): o CT baixa o carregador, o Wine passa a usar
+# o winmm.dll dele, e os mods sao DLLs que entram pela tela (games/mods/shroudtopia_remote.py).
+KIND_SHROUDTOPIA = "shroudtopia"
 # So o guia (onde achar, como instalar), sem acao: o caminho existe mas ainda nao foi provado
 # num servidor de verdade, e botao que "instala" sem prova e pior que instrucao clara.
 KIND_GUIDE = "guide"
@@ -101,13 +104,14 @@ DRAGONWILDS = ModProfile(
 
 ENSHROUDED = ModProfile(
     key="enshrouded",
-    kind=KIND_GUIDE,
+    kind=KIND_SHROUDTOPIA,
     services=("enshrouded",),
-    # O Shroudtopia (carregador) poe um winmm.dll ao lado do enshrouded_server.exe e le as DLLs de
-    # mods/. Sob o Proton isso pede o winmm nativo no WINEDLLOVERRIDES - e ainda nao foi testado
-    # num servidor de verdade (o do V Rising mostrou que o Wine tem armadilha que so aparece la).
-    folder="/opt/game",
+    # A pasta dos MODS; o carregador mora na de cima, ao lado do enshrouded_server.exe. Provado
+    # no CT 303 (Proton GE 11) em 2026-10-03: com winmm=n,b o Shroudtopia sobe, carrega a DLL
+    # de mods/ e o servidor segue respondendo a A2S. Ver shroudtopia_remote.py.
+    folder="/opt/game/mods",
     help_key="mods.help_enshrouded",
+    extensions=(".dll",),
     sources=(("mods.source_shroudtopia", "https://github.com/s0t7x/shroudtopia/releases"),
              ("mods.source_nexus", NEXUS + "enshrouded/mods/")),
 )

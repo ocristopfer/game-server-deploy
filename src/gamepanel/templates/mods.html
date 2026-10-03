@@ -157,6 +157,64 @@
     </form>
   </div>
   {% endif %}
+{% elif profile.kind == kind_shroudtopia %}
+  {% set st = view.state %}
+  <div class="card">
+    <h2>{{ _('mods.shroudtopia_title') }}</h2>
+    {% if st %}
+      {% if st.loader_installed %}
+        <p>
+          Shroudtopia {{ st.loader_version }}
+          {% if st.enabled %}<span class="badge on">{{ _('mods.loader_on') }}</span>{% else %}<span class="badge cold">{{ _('mods.loader_off') }}</span>{% endif %}
+        </p>
+      {% else %}
+        <p class="muted small">{{ _('mods.shroudtopia_missing') }}</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('mods.loader', sid=server.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+        <div class="form-actions cluster">
+          {% if not st.loader_installed %}
+            {{ ui.button(_('mods.shroudtopia_install'), variant='primary', icon='⬇', extra='name=action value=install') }}
+          {% elif st.enabled %}
+            {{ ui.button(_('mods.loader_update'), icon='⬇', extra='name=action value=install') }}
+            {{ ui.button(_('mods.loader_disable'), variant='danger', extra='name=action value=disable') }}
+          {% else %}
+            {{ ui.button(_('mods.loader_enable'), variant='primary', extra='name=action value=enable') }}
+          {% endif %}
+        </div>
+      </form>
+      <p class="muted small mt-4">{{ _h('mods.shroudtopia_config_help', url=url_for('files.index', sid=server.id)) }}</p>
+    {% endif %}
+  </div>
+
+  {% if st and st.loader_installed %}
+  <div class="card">
+    <h2>{{ _('mods.files_title') }}</h2>
+    {% if st.mods %}
+    <div class="table-wrap"><table class="jobs">
+      <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
+      <tbody>
+        {% for m in st.mods %}
+        <tr>
+          <td><code>{{ m.name }}</code></td>
+          <td class="muted nowrap">{% if m.dir %}{{ _('mods.shroudtopia_folder_mod') }}{% else %}{{ m.size | filesize }}{% endif %}</td>
+          <td>{% if not m.dir %}{{ ui.action(url_for('mods.delete', sid=server.id), _('mods.delete'), size='sm', variant='danger',
+                           confirm=_('mods.delete_confirm', name=m.name), fields={'name': m.name}) }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      <p class="muted">{{ _('mods.no_files') }}</p>
+    {% endif %}
+    {% if st.log %}
+    <h3 class="mt-4">{{ _('mods.shroudtopia_log') }}</h3>
+    <pre class="log">{{ st.log | join('\n') }}</pre>
+    <p class="muted small">{{ _('mods.shroudtopia_log_help') }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
 {% elif profile.kind == kind_folder %}
   <div class="card">
     <h2>{{ _('mods.files_title') }}</h2>

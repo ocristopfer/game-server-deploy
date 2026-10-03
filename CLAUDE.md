@@ -296,12 +296,21 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   desligado. A primeira subida com ele chegou a 9,4 GB (`min_memory_mb` do perfil; a tela
   avisa antes de instalar). Um redeploy do jogo reescreve o `/etc/game-runtime.env` e desfaz o
   ajuste do Wine: o status acusa (`overrides_ok`) e reinstalar reaplica.
-- **`KIND_GUIDE` e perfil sem botao, e isso e decisao.** O Enshrouded tem caminho (Shroudtopia,
-  um `winmm.dll` ao lado do `.exe`), mas sob o Proton ele pede um ajuste do Wine que ninguem
-  provou num servidor de verdade - e o V Rising mostrou tres armadilhas que so apareceram la.
-  Botao que "instala" sem prova e pior que instrucao clara. Todo perfil tem `sources` (onde
-  achar), e o Nexus e so LINK: a API dele so entrega arquivo para conta Premium, e automatizar
-  sem ela viola os termos.
+- **`KIND_GUIDE` e perfil sem botao, e isso e decisao**: carregador que ninguem provou num
+  servidor de verdade fica so com instrucao - o V Rising mostrou tres armadilhas que so
+  apareceram la. Botao que "instala" sem prova e pior que instrucao clara. Todo perfil tem
+  `sources` (onde achar), e o Nexus e so LINK: a API dele so entrega arquivo para conta
+  Premium, e automatizar sem ela viola os termos.
+- **Enshrouded e `KIND_SHROUDTOPIA`, provado no CT 303** (Proton GE 11): o carregador entra
+  pelo `winmm.dll` ao lado do `.exe` e so roda com `winmm=n,b` no Wine; com isso ele sobe e
+  carrega a DLL de `mods/`, e o servidor segue respondendo a A2S. `shroudtopia_remote.py` roda
+  no CT como o do Thunderstore. Os mods de EXEMPLO do zip oficial ficam de fora (trapaca
+  ligada), desligar e tirar o `winmm=n,b` (nenhum codigo do carregador roda), e o status traz
+  o fim do `shroudtopia.log`: mod de outra versao do jogo perde funcao calado (`not found`).
+- **UE4SS so roda no executavel Windows.** O Dragonwilds e o Palworld daqui sao Linux nativo;
+  os ports Linux do UE4SS sao do Palworld (UE 5.1), sem binario confiavel publicado, e o
+  Dragonwilds e UE 5.6.1. Ficou fora por decisao: carregar binario de terceiro sem auditoria
+  dentro do servidor.
 - **Dragonwilds (Unreal 5) aceita `.pak`, `.utoc` e `.ucas`**, e o envio confere TODOS os nomes
   antes de mandar qualquer um (`_checked_name`): o mod vem em tres arquivos, e dois de tres na
   pasta e um mod quebrado.

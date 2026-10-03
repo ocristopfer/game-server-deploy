@@ -1191,9 +1191,12 @@ jogo entende mod:
 - **RuneScape: Dragonwilds**: os `.pak` de mod (com o `.utoc` e o `.ucas` de mesmo nome, que a
   Unreal 5 exige - mande os tres juntos) vao em `RSDragonwilds/Content/Paks/~mods`. Mod de
   script (UE4SS) nao roda no servidor dedicado.
-- **Enshrouded**: so o guia, por enquanto. Mod precisa do carregador Shroudtopia (um
-  `winmm.dll` ao lado do `.exe`), que sob o Proton pede um ajuste do Wine ainda nao provado num
-  servidor de verdade.
+- **Enshrouded**: botao **Instalar o Shroudtopia** (o carregador). O container baixa a versao
+  mais recente do GitHub, poe o `winmm.dll` e o `shroudtopia.dll` ao lado do `.exe` e liga o
+  `winmm=n,b` do Wine; os mods de exemplo do pacote oficial NAO entram (trazem trapaca ligada).
+  Os mods sao `.dll` (Nexus) enviados pela tela para `/opt/game/mods`, e as opcoes de cada um
+  ficam no `shroudtopia.json`. Desligar tira o ajuste do Wine. A tela mostra o fim do
+  `shroudtopia.log`: mod feito para outra versao do jogo aparece ali como `not found`.
 
 Toda tela Mods tem os links de **onde achar mods** daquele jogo. O **Nexus Mods** e sempre
 link, nunca download automatico: a API dele so entrega arquivo para conta Premium, e automatizar

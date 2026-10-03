@@ -629,13 +629,22 @@ MESSAGES: dict[str, str] = {
         "O Nexus Mods nao deixa baixar por automacao sem conta Premium: baixe la e envie aqui. A "
         "pagina de cada mod diz se os jogadores tambem precisam dele.",
     "mods.help_enshrouded":
-        "Mods do Enshrouded precisam de um <strong>carregador</strong> no servidor: o Shroudtopia "
-        "(GitHub) poe um <code>winmm.dll</code> ao lado do <code>enshrouded_server.exe</code> e le "
-        "as DLLs de mod da pasta <code>mods</code>; os mods em si ficam no Nexus Mods. O painel "
-        "ainda NAO instala isso: o servidor roda pelo Proton, e o carregador pede um ajuste do Wine "
-        "que ainda nao foi provado num servidor de verdade (o do V Rising mostrou que ha armadilha "
-        "que so aparece la). Ate la: tela Arquivos, e a pagina de cada mod diz se ele e so do "
-        "servidor ou tambem dos jogadores.",
+        "Mods do Enshrouded precisam de um <strong>carregador</strong> no servidor: o Shroudtopia, que "
+        "o painel baixa do GitHub e poe ao lado do <code>enshrouded_server.exe</code>. Os mods sao DLLs "
+        "(Nexus Mods) que entram em <code>{folder}</code>. Provado num servidor de verdade sob o Proton. "
+        "A pagina de cada mod diz se ele e so do servidor ou tambem dos jogadores.",
+    "mods.shroudtopia_title": "Shroudtopia (carregador de mods)",
+    "mods.shroudtopia_missing": "O Shroudtopia ainda nao esta instalado neste servidor.",
+    "mods.shroudtopia_install": "Instalar o Shroudtopia",
+    "mods.shroudtopia_folder_mod": "pasta (com mod.json)",
+    "mods.shroudtopia_log": "Fim do log do carregador",
+    "mods.shroudtopia_log_help":
+        "Mod feito para outra versao do jogo nao derruba o servidor, mas perde a funcao "
+        "em silencio: aqui aparece como \"not found\".",
+    "mods.shroudtopia_config_help":
+        "Os mods de exemplo do pacote oficial NAO sao instalados: eles trazem trapaca "
+        "ligada. Opcoes de cada mod ficam no <code>shroudtopia.json</code>, "
+        "na <a href=\"{url}\">tela Arquivos</a>.",
     "mods.bad_name": "{name} nao e aceito aqui. Esperado: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos

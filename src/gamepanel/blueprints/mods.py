@@ -8,13 +8,14 @@ envio grava dentro do container.
 from __future__ import annotations
 
 import json
+import posixpath
 from pathlib import Path
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
 from gamepanel.games.mods import ets2 as ets2_mods
-from gamepanel.games.mods import profiles, thunderstore, thunderstore_remote, workshop
+from gamepanel.games.mods import profiles, shroudtopia_remote, thunderstore, thunderstore_remote, workshop
 from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("mods", __name__)
@@ -22,6 +23,7 @@ bp = Blueprint("mods", __name__)
 # O instalador do Thunderstore vai para o CT como TEXTO e roda la com `python3 -c`: o CT nao
 # tem o pacote do painel, e e ele (nao o painel) quem pode ir a internet.
 REMOTE_SOURCE = Path(thunderstore_remote.__file__).read_text(encoding="utf-8")
+SHROUDTOPIA_SOURCE = Path(shroudtopia_remote.__file__).read_text(encoding="utf-8")
 # Baixar o BepInEx (33 MB) e as dependencias leva minutos: vira job, com log e prazo proprio.
 INSTALL_TIMEOUT = 1800
 LOADER_ACTIONS = ("install", "enable", "disable")
@@ -81,20 +83,35 @@ def _folder_view(server, profile: profiles.ModProfile) -> dict:
 
 
 def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str) -> str:
+    if profile.kind == profiles.KIND_SHROUDTOPIA:
+        # O carregador mora na pasta do JOGO, um nivel acima da de mods.
+        return panel.q("python3", "-c", SHROUDTOPIA_SOURCE, action, posixpath.dirname(profile.folder))
     return panel.q("python3", "-c", REMOTE_SOURCE, action, profile.folder, *profile.loader, *args)
 
 
-def _thunderstore_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
-    """O estado do BepInEx e dos plugins, lido na hora (so lista pastas: e rapido)."""
+def _remote_state(server, profile: profiles.ModProfile, errors: list[str]) -> dict | None:
+    """A ultima linha JSON do instalador remoto, ou None (com o motivo em `errors`)."""
     try:
         proc = panel.ssh_run(server, _remote_cmd(profile, "status"), timeout=40)
         lines = (proc.stdout or "").strip().splitlines()
         state = json.loads(lines[-1]) if lines else {}
     except (panel.RemoteError, ValueError) as exc:
         errors.append(panel.translate("mods.status_failed", reason=exc))
-        return {"state": None}
+        return None
     if "error" in state:
         errors.append(panel.translate("mods.status_failed", reason=state["error"]))
+        return None
+    return state
+
+
+def _shroudtopia_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
+    return {"state": _remote_state(server, profile, errors)}
+
+
+def _thunderstore_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
+    """O estado do BepInEx e dos plugins, lido na hora (so lista pastas: e rapido)."""
+    state = _remote_state(server, profile, errors)
+    if state is None:
         return {"state": None}
     for p in state.get("plugins", []):
         parts = thunderstore.split_dir(p.get("dir", ""))
@@ -115,6 +132,8 @@ def index(sid: int):
         view = _packages_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_THUNDERSTORE:
         view = _thunderstore_view(server, profile, errors)
+    elif profile and profile.kind == profiles.KIND_SHROUDTOPIA:
+        view = _shroudtopia_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_FOLDER:
         view = _folder_view(server, profile)
     return render_template(
@@ -122,6 +141,7 @@ def index(sid: int):
         expected_text="\n".join(str(i) for i in _expected_ids(server)),
         workshop_url=workshop.url, kind_packages=profiles.KIND_PACKAGES,
         kind_thunderstore=profiles.KIND_THUNDERSTORE, kind_folder=profiles.KIND_FOLDER,
+        kind_shroudtopia=profiles.KIND_SHROUDTOPIA,
         loader_url=_loader_url(profile),
     )
 
@@ -146,6 +166,20 @@ def _thunderstore_job(sid: int, action: str, step: str, label: str):
     return redirect(url_for("jobs.detail", jid=job_id))
 
 
+# Perfis em que o painel instala o CARREGADOR (o botao "Instalar/Ligar/Desligar").
+LOADER_KINDS = (profiles.KIND_THUNDERSTORE, profiles.KIND_SHROUDTOPIA)
+
+
+def _loader_profile_or_back(sid: int):
+    panel._files_guard()
+    server = panel._server_or_404(sid)
+    profile = _profile_or_none(server)
+    if not profile or profile.kind not in LOADER_KINDS:
+        flash(panel.translate("mods.not_thunderstore"), "error")
+        return None
+    return profile
+
+
 def _thunderstore_profile_or_back(sid: int):
     panel._files_guard()
     server = panel._server_or_404(sid)
@@ -159,12 +193,13 @@ def _thunderstore_profile_or_back(sid: int):
 @bp.post("/servers/<int:sid>/mods/loader")
 @panel.admin_required
 def loader(sid: int):
-    profile = _thunderstore_profile_or_back(sid)
+    profile = _loader_profile_or_back(sid)
     action = request.form.get("action", "")
     if not profile or action not in LOADER_ACTIONS:
         return redirect(url_for(INDEX, sid=sid))
+    name = "Shroudtopia" if profile.kind == profiles.KIND_SHROUDTOPIA else "-".join(profile.loader)
     return _thunderstore_job(sid, "mod-loader", _remote_cmd(profile, f"loader-{action}"),
-                             f"{'-'.join(profile.loader)}: {action}")
+                             f"{name}: {action}")
 
 
 @bp.post("/servers/<int:sid>/mods/plugin/install")
@@ -254,7 +289,9 @@ def delete(sid: int):
     go_back = url_for(INDEX, sid=sid)
     name = (request.form.get("name") or "").strip()
     # So o arquivo de mod da pasta do perfil, pelo nome: nada de caminho vindo do formulario.
-    if not profile or profile.kind != profiles.KIND_FOLDER or "/" in name or not profile.accepts(name):
+    # Pasta de mods com arquivo solto: a dos .pak e a das DLLs do Shroudtopia.
+    deletable = (profiles.KIND_FOLDER, profiles.KIND_SHROUDTOPIA)
+    if not profile or profile.kind not in deletable or "/" in name or not profile.accepts(name):
         flash(panel.translate("mods.bad_name", name=name or "?",
                               allowed=", ".join(profile.extensions if profile else ())), "error")
         return redirect(go_back)
