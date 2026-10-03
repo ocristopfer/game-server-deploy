@@ -41,6 +41,10 @@
         <input name="query_port" value="{{ data.query_port or '' }}" placeholder="27015" inputmode="numeric">
         <small>{{ _h('server_form.query_port_hint') }}</small>
       </label>
+      <label>{{ _('server_form.max_players') }} <span class="muted">{{ _('server_form.optional') }}</span>
+        <input name="max_players" value="{{ data.max_players or '' }}" placeholder="6" inputmode="numeric">
+        <small>{{ _('server_form.max_players_hint') }}</small>
+      </label>
     </div>
 
     <label>{{ _('server_form.player_count') }}

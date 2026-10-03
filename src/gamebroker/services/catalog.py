@@ -121,6 +121,9 @@ class Game:
     # BepInEx, .NET, carregar) e o CT criado pelo painel nascia com o padrao, que o desliga. So
     # existe no curado, como o shell: jogo da API nao escolhe DLL do Wine.
     wine_overrides: str = ""
+    # Vagas do servidor (MAX_PLAYERS do .env). O painel so o usa quando a contagem nao traz o
+    # total - log ou conexoes ativas; a A2S traz o dela. 0 = nao se sabe.
+    max_players: int = 0
 
     @property
     def has_hooks(self) -> bool:
@@ -152,6 +155,7 @@ class Game:
             "backup_paths": list(self.backup_paths), "player_source": self.player_source,
             "join_re": self.join_re, "leave_re": self.leave_re, "log_path": self.log_path,
             "recipes": list(self.recipes), "shiftable": self.shiftable,
+            "max_players": self.max_players,
         }
 
 
@@ -310,6 +314,7 @@ def game_from_env(file_name: str, data: dict[str, str], steam_account: bool = Fa
         needs_account=data.get("STEAM_ANONYMOUS", "1") == "0",
         wine_overrides=data.get("WINE_DLL_OVERRIDES", ""),
         pre_install=data.get("PRE_INSTALL_CMD", ""),
+        max_players=_env_int(data, "MAX_PLAYERS", 0),
         post_install=data.get("POST_INSTALL_CMD", ""),
     )
 
@@ -348,7 +353,7 @@ _DYNAMIC_FIELDS = frozenset({
     "key", "name", "app_id", "platform", "start_script", "start_args", "ports",
     "game_port", "query_port", "extra_port", "memory_mb", "cores", "disk_gb", "config_path",
     "config_files", "backup_paths", "player_source", "join_re", "leave_re", "log_path",
-    "recipes", "shiftable",
+    "recipes", "shiftable", "max_players",
 })
 _REQUIRED_FIELDS = ("key", "name", "app_id", "ports", "game_port")
 
@@ -544,6 +549,7 @@ def validate_dynamic(data: object) -> Game:
         log_path=_single_path(data, "log_path"),
         recipes=_recipes_field(data, platform), shiftable=shiftable,
         source=SOURCE_DYNAMIC, creatable=True, reason="",
+        max_players=_int_field(data, "max_players", 0, 1000, default=0),
     )
 
 
@@ -566,7 +572,10 @@ def _as_override(curated: Game, edited: Game) -> Game:
     return dataclasses.replace(
         edited, source=SOURCE_CURATED, creatable=curated.creatable, reason=curated.reason,
         pre_install=curated.pre_install, post_install=curated.post_install,
-        needs_account=curated.needs_account, wine_overrides=curated.wine_overrides, edited=True)
+        needs_account=curated.needs_account, wine_overrides=curated.wine_overrides, edited=True,
+        # A tela de edicao do catalogo nao tem o campo: sem isto, editar o Dragonwilds zeraria
+        # as 6 vagas que so o .env sabe.
+        max_players=edited.max_players or curated.max_players)
 
 
 def _checked_key(key: str) -> str:

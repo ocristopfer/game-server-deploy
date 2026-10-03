@@ -3113,6 +3113,8 @@ class DeployServer(NamedTuple):
     player_source: str = ""
     # Instancia do broker que originou este servidor (0 = cadastro manual/deploy antigo).
     broker_id: int = 0
+    # Vagas, do MAX_PLAYERS do .env do jogo (0 = a fonte de contagem informa, ou ninguem sabe).
+    max_players: int = 0
 
 
 def _insert_server(conn: sqlite3.Connection, data: DeployServer) -> None:
@@ -3154,6 +3156,7 @@ def _update_server(conn: sqlite3.Connection, current, data: DeployServer) -> Non
             current["join_re"] or data.join_re,
             current["leave_re"] or data.leave_re,
             current["log_path"] or data.log_path,
+            current["max_players"] or data.max_players,
         ],
         current["id"],
     )

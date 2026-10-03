@@ -359,6 +359,11 @@ MESSAGES: dict[str, str] = {
     "server_detail.count": "contagem",
     "server_detail.count_right_names_wrong": "esta certa, mas os",
     "server_detail.names": "nomes",
+    "server_form.max_players": "Vagas",
+    "server_form.max_players_hint": (
+        "Total de jogadores do servidor, para a tela mostrar 2/6. So conta "
+        "quando a contagem nao informa (log, conexoes ativas)."),
+    "form.bad_max_players": "Vagas: um numero de 0 a 1000.",
     "player_source.net": "conexoes ativas",
     "server_form.count_net": "Conexoes ativas na porta do jogo (firewall do CT)",
     "flash.count_on_by_net": "Contagem ligada pelas conexoes ativas na porta do jogo.",

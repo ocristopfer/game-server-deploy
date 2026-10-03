@@ -13,7 +13,7 @@ HTTP_FIELDS = ("http_url", "http_auth", "http_body", "http_list_path", "http_cou
 EDITABLE_FIELDS = (
     "name", "host", "ssh_port", "ssh_user", "service", "game_port", "notes",
     "config_path", "config_files", "backup_paths", "query_port", "player_source",
-    "join_re", "leave_re", "log_path", "error_re",
+    "join_re", "leave_re", "log_path", "error_re", "max_players",
     *HTTP_FIELDS,
 )
 
@@ -22,13 +22,14 @@ EDITABLE_FIELDS = (
 DEPLOY_FIELDS = (
     "name", "host", "ssh_port", "ssh_user", "service", "game_port", "notes",
     "config_path", "config_files", "backup_paths", "query_port", "player_source",
-    "join_re", "leave_re", "log_path", "broker_id",
+    "join_re", "leave_re", "log_path", "broker_id", "max_players",
 )
 # O que um redeploy NAO sobrescreve esta fora desta lista (`host` e `ssh_port` sao a
 # identidade; `error_re` e as de HTTP sao afinadas na tela).
 DEPLOY_UPDATE_FIELDS = (
     "name", "ssh_user", "service", "game_port", "notes", "config_path", "config_files",
     "backup_paths", "query_port", "player_source", "join_re", "leave_re", "log_path",
+    "max_players",
 )
 
 # As quatro instrucoes sao MONTADAS a partir das listas acima, e nao escritas a mao: a

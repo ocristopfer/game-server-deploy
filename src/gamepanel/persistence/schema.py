@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS servers (
   -- Pastas/arquivos (um por linha) que entram no backup. Vazio = usa o config_path.
   backup_paths TEXT NOT NULL DEFAULT '',
   query_port INTEGER NOT NULL DEFAULT 0,
+  -- Vagas do servidor, para a tela mostrar "2/6". So vale quando a fonte de contagem
+  -- nao informa o total (log, conexoes ativas); a A2S traz o dela. 0 = nao se sabe.
+  max_players INTEGER NOT NULL DEFAULT 0,
   player_source TEXT NOT NULL DEFAULT '',
   join_re    TEXT NOT NULL DEFAULT '',
   leave_re   TEXT NOT NULL DEFAULT '',
@@ -178,6 +181,9 @@ MIGRATIONS = (
     )),
     ("servers", "config_path", "ALTER TABLE servers ADD COLUMN config_path TEXT NOT NULL DEFAULT ''"),
     ("servers", "query_port", "ALTER TABLE servers ADD COLUMN query_port INTEGER NOT NULL DEFAULT 0"),
+    # Total de vagas para quem conta sem A2S: o Dragonwilds (EOS) nao publica o limite em
+    # lugar nenhum que o painel alcance, e a tela mostrava "0 jogadores" em vez de "0/6".
+    ("servers", "max_players", "ALTER TABLE servers ADD COLUMN max_players INTEGER NOT NULL DEFAULT 0"),
     ("servers", "player_source", "ALTER TABLE servers ADD COLUMN player_source TEXT NOT NULL DEFAULT ''"),
     ("servers", "join_re", "ALTER TABLE servers ADD COLUMN join_re TEXT NOT NULL DEFAULT ''"),
     ("servers", "leave_re", "ALTER TABLE servers ADD COLUMN leave_re TEXT NOT NULL DEFAULT ''"),

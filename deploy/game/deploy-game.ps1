@@ -585,6 +585,8 @@ if (-not $NoRegister) {
             # mantem o que ja estava la: quem ajustou pela tela nao perde o ajuste.
             "--backup-paths", (Get-Cfg $game "BACKUP_PATHS"),
             "--player-source", (Get-Cfg $game "PLAYER_SOURCE"),
+            # Vagas: o painel mostra "2/6" quando a contagem nao traz o total (log, conexoes).
+            "--max-players", $(if ((Get-Cfg $game "MAX_PLAYERS") -match '^\d+$') { (Get-Cfg $game "MAX_PLAYERS") } else { "0" }),
             # Contagem pelo log: padroes e, quando o nome so existe em arquivo proprio
             # (o .ADM do DayZ), o caminho dele.
             "--join-re", (Get-Cfg $game "JOIN_RE"),

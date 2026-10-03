@@ -356,6 +356,11 @@ MESSAGES: dict[str, str] = {
     "server_detail.count": "count",
     "server_detail.count_right_names_wrong": "is right, but the",
     "server_detail.names": "names",
+    "server_form.max_players": "Slots",
+    "server_form.max_players_hint": (
+        "The server's player limit, so the screen shows 2/6. Only used when the "
+        "count does not report it (log, active connections)."),
+    "form.bad_max_players": "Slots: a number from 0 to 1000.",
     "player_source.net": "active connections",
     "server_form.count_net": "Active connections on the game port (CT firewall)",
     "flash.count_on_by_net": "Player count now uses the active connections on the game port.",

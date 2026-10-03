@@ -129,6 +129,14 @@ def _stored_value(server: ServerLike, column: str) -> str:
         return ""
 
 
+def _stored_max_players(server: ServerLike) -> int:
+    # Coluna INTEIRA: o `_stored_value` faz .strip() e quebraria aqui.
+    try:
+        return int(server["max_players"] or 0)
+    except (IndexError, KeyError, TypeError, ValueError):
+        return 0
+
+
 def player_source(server: ServerLike) -> str:
     """Como contar os jogadores deste servidor: 'a2s', 'http', 'log' ou '' (desligado)."""
     chosen_one = (server["player_source"] or "").strip()
@@ -359,6 +367,9 @@ def _count_combined(deps: PlayerDeps, server: ServerLike, sources: list[str]) ->
             continue
         data["configured"] = True
         data["source"] = source
+        if not data.get("max_players"):
+            # Log e conexoes ativas nao sabem o total; a A2S traz o dela e vence o cadastro.
+            data["max_players"] = _stored_max_players(server) or None
         if position:
             # Caiu para a reserva: a tela mostra o numero, e o erro da escolhida fica junto
             # para ninguem achar que a A2S esta funcionando quando quem respondeu foi o log.

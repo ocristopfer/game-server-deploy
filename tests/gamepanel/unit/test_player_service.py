@@ -313,6 +313,20 @@ def test_conexoes_ativas_so_valem_quando_escolhidas():
     assert "net" not in ps.configured_sources(target)
 
 
+def test_total_de_vagas_vem_do_cadastro_quando_a_fonte_nao_sabe():
+    """Conexoes ativas e log nao sabem o limite: sem isto a tela dizia "0 jogadores", e nao "0/6"."""
+    d = deps(presence_players=lambda srv: {"players": 0, "list": [], "max_players": None})
+    out = ps.server_players(d, server(player_source="net", max_players=6))
+    assert out["max_players"] == 6
+
+
+def test_total_da_consulta_vence_o_do_cadastro():
+    """A A2S diz o que o servidor esta usando AGORA; o cadastro pode ter ficado para tras."""
+    d = deps(query_players=lambda h, p: {"players": 1, "list": [], "max_players": 32})
+    out = ps.server_players(d, server(player_source="a2s", query_port=27015, max_players=6))
+    assert out["max_players"] == 32
+
+
 # ----------------------------------------------------------------- all_players
 
 def test_all_players_junta_por_id():

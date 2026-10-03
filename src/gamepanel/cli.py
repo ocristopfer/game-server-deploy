@@ -73,6 +73,7 @@ def build_parser(roles: Sequence[str]) -> argparse.ArgumentParser:
     parser.add_argument("--leave-re", default="")
     parser.add_argument("--log-path", default="")
     parser.add_argument("--player-source", default="")
+    parser.add_argument("--max-players", type=int, default=0)
     parser.add_argument("--notes", default="")
     return parser
 
@@ -108,6 +109,7 @@ def register_server(deps: CliDeps, opts: argparse.Namespace) -> None:
         log_path=opts.log_path,
         query_port=opts.query_port,
         player_source=opts.player_source,
+        max_players=opts.max_players,
     ))
     print(f"servidor '{opts.register_server}' {'cadastrado' if created_at else 'atualizado'}"
           f" ({opts.server_host})")

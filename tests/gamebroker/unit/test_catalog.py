@@ -473,3 +473,17 @@ def test_curado_com_a2s_nasce_no_painel_com_a_porta_de_consulta():
         record = record_for_the_panel(inst, game, ports)
         assert record["query_port"] == game.query_port, key
         assert record["player_source"] == "a2s", key
+
+
+def test_vagas_do_curado_chegam_ao_painel():
+    """O Dragonwilds conta por conexoes ativas, que nao sabem o total: o "/6" vem do .env."""
+    from gamebroker.services import allocator
+    from gamebroker.services.instance_service import record_for_the_panel
+
+    games, _ = cat.load_curated(RAIZ / "games")
+    game = games["dragonwilds"]
+    assert game.max_players == 6
+    ports = allocator.allocate_ports(game, set(), range(31000, 32000))
+    record = record_for_the_panel({"id": 1, "name": "x", "ip": "10.0.0.30", "handle": "300"},
+                                  game, ports)
+    assert record["max_players"] == 6

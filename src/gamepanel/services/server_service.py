@@ -67,6 +67,19 @@ def _port_field(value: str | None, default: int, minimum: int, error: Message,
     return default
 
 
+# Vagas de um servidor: acima disto e digito a mais, nao jogo de verdade.
+MAX_PLAYERS_LIMIT = 1000
+
+
+def _count_field(value: str | None, errors: list[str]) -> int:
+    """Vagas do servidor; vazio = 0 (nao se sabe, ou a fonte de contagem informa)."""
+    raw = (value or "").strip() or "0"
+    if raw.isdigit() and int(raw) <= MAX_PLAYERS_LIMIT:
+        return int(raw)
+    errors.append(Message("form.bad_max_players"))
+    return 0
+
+
 def _service_field(value: str | None, errors: list[str]) -> str:
     service = (value or "").strip()
     if service and not service.endswith(".service"):
@@ -267,6 +280,7 @@ def form_server(form: Form, clean_path: CleanPath,
                 Message("form.bad_query_port"), errors,
             ),
             "player_source": source,
+            "max_players": _count_field(form.get("max_players"), errors),
             "join_re": _pattern(form.get("join_re"), "pattern.join", limits.re_max_len, errors),
             "leave_re": _pattern(form.get("leave_re"), "pattern.leave", limits.re_max_len, errors),
             "error_re": _pattern(form.get("error_re"), "pattern.error", limits.re_max_len, errors),

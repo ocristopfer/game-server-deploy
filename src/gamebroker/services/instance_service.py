@@ -350,5 +350,6 @@ def record_for_the_panel(inst: dict, game: Game, ports: list[AllocatedPort]) -> 
         "config_path": game.config_path, "config_files": list(game.config_files),
         "backup_paths": list(game.backup_paths), "player_source": game.player_source,
         "join_re": game.join_re, "leave_re": game.leave_re, "log_path": game.log_path,
+        "max_players": game.max_players,
         "notes": f"Criado pelo broker (CT {inst['handle']})",
     }

@@ -68,6 +68,7 @@ def register_server(deps: BrokerJobDeps, r: dict) -> int:
         backup_paths="\n".join(r.get("backup_paths") or []),
         join_re=str(r.get("join_re", "")), leave_re=str(r.get("leave_re", "")),
         log_path=str(r.get("log_path", "")), query_port=int(r.get("query_port") or 0),
+        max_players=int(r.get("max_players") or 0),
         player_source=str(r.get("player_source", "")), broker_id=int(r.get("broker_id") or 0),
     ))
     conn = deps.connect()
