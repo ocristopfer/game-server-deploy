@@ -309,6 +309,22 @@ def upload(sid: int):
     return redirect(url_for("jobs.detail", jid=job_id))
 
 
+@bp.post("/servers/<int:sid>/mods/audit")
+@panel.admin_required
+def audit(sid: int):
+    """Passa o antivirus no que JA esta instalado (o que entrou antes dele). So le."""
+    panel._files_guard()
+    server = panel._server_or_404(sid)
+    profile = _profile_or_none(server)
+    if not profile:
+        return redirect(url_for(INDEX, sid=sid))
+    paths = profile.scan_paths
+    job_id = panel.start_job("mod-audit", server, session.get("username", "?"), command=" ".join(paths),
+                             timeout=INSTALL_TIMEOUT,
+                             steps=[panel.q("bash", "-c", antivirus.AUDIT_SCRIPT, "gp", *paths)])
+    return redirect(url_for("jobs.detail", jid=job_id))
+
+
 @bp.post("/servers/<int:sid>/mods/delete")
 @panel.admin_required
 def delete(sid: int):

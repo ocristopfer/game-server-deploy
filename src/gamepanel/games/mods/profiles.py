@@ -54,6 +54,14 @@ class ModProfile:
     min_memory_mb: int = 0
     # (chave de i18n do rotulo, URL) de onde os mods deste jogo sao encontrados.
     sources: tuple[tuple[str, str], ...] = ()
+    # O que o "Verificar mods instalados" passa pelo antivirus, quando nao e so `folder`: o
+    # carregador mora fora da pasta de mods, e na pasta do jogo inteira (V Rising) seriam gigas
+    # de arquivo do proprio jogo para nada.
+    audit_paths: tuple[str, ...] = ()
+
+    @property
+    def scan_paths(self) -> tuple[str, ...]:
+        return self.audit_paths or (self.folder,)
 
     def accepts(self, name: str) -> bool:
         """O nome de arquivo que pode entrar pela tela Mods deste jogo."""
@@ -72,6 +80,7 @@ ETS2 = ModProfile(
     folder="/opt/game/server-home",
     help_key="mods.help_ets2",
     upload_names=("server_packages.sii", "server_packages.dat"),
+    audit_paths=("/opt/game/server-home/server_packages.sii", "/opt/game/server-home/server_packages.dat"),
     workshop_appid=227300,
     sources=(("mods.source_workshop", "https://steamcommunity.com/app/227300/workshop/"),),
 )
@@ -112,6 +121,7 @@ ENSHROUDED = ModProfile(
     folder="/opt/game/mods",
     help_key="mods.help_enshrouded",
     extensions=(".dll",),
+    audit_paths=("/opt/game/mods", "/opt/game/winmm.dll", "/opt/game/shroudtopia.dll"),
     sources=(("mods.source_shroudtopia", "https://github.com/s0t7x/shroudtopia/releases"),
              ("mods.source_nexus", NEXUS + "enshrouded/mods/")),
 )
@@ -125,6 +135,8 @@ VRISING = ModProfile(
     help_key="mods.help_vrising",
     community="v-rising",
     loader=("BepInEx", "BepInExPack_V_Rising"),
+    # O BepInEx inteiro (core, plugins, a pasta do .NET) e o winhttp.dll do doorstop.
+    audit_paths=("/opt/game/BepInEx", "/opt/game/winhttp.dll", "/opt/game/dotnet"),
     # Medido num CT de teste: a primeira subida com o BepInEx gera o codigo do jogo inteiro
     # e chegou a 9,4 GB; com 6 GB o OOM killer derrubava o servidor em laco. O curado tem 8.
     min_memory_mb=10240,

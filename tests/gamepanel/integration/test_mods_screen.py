@@ -452,3 +452,36 @@ def test_tela_avisa_que_todo_mod_passa_pelo_antivirus(admin, vrising):
 
 def test_enshrouded_tambem_avisa_do_antivirus(admin, enshrouded):
     assert "ClamAV" in admin.get(f"/servers/{enshrouded[0]}/mods").get_data(as_text=True)
+
+
+# ------------------------------------------------------------------ verificar mods instalados
+
+@pytest.mark.parametrize(("service", "expected"), [
+    ("vrising.service", ["/opt/game/BepInEx", "/opt/game/winhttp.dll", "/opt/game/dotnet"]),
+    ("enshrouded.service", ["/opt/game/mods", "/opt/game/winmm.dll", "/opt/game/shroudtopia.dll"]),
+    ("palworld.service", ["/opt/game/Pal/Content/Paks/~mods"]),
+])
+def test_verificar_instalados_vira_job_so_nas_pastas_de_mod(admin, post, database, upload_jobs, service, expected):
+    """Nunca a pasta do jogo inteira: seriam gigas de arquivo do proprio jogo para nada."""
+    sid = _server(database, service)
+    response = post(admin, f"/servers/{sid}/mods/audit", {})
+    assert "/jobs/77" in response.headers["Location"]
+    action, kw = upload_jobs[0]
+    assert action == "mod-audit"
+    [step] = kw["steps"]
+    assert "clamscan" in step
+    for path in expected:
+        assert path in step
+    assert not step.rstrip().endswith("/opt/game")
+
+
+def test_operador_nao_verifica(operator, post, database, upload_jobs):
+    sid = _server(database, "palworld.service")
+    assert post(operator, f"/servers/{sid}/mods/audit", {}).status_code == 403
+    assert upload_jobs == []
+
+
+def test_jogo_sem_gestor_nao_tem_o_que_verificar(admin, post, database, upload_jobs):
+    sid = _server(database, "valheim.service")
+    post(admin, f"/servers/{sid}/mods/audit", {})
+    assert upload_jobs == []

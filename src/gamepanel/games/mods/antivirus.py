@@ -37,22 +37,14 @@ INCOMING_PREFIX = STAGING_PREFIX + "incoming-"
 FRESH_DAYS = 1
 MAX_AGE_DAYS = 7
 
-SCAN_SCRIPT = r"""
-set -u
-target=${1:?}
-case "$target" in
-  /var/tmp/gamepanel-*) ;;
-  *) echo "ANTIVIRUS: caminho fora da area de verificacao: $target" >&2; exit 2 ;;
-esac
-case "$target" in *..*) echo "ANTIVIRUS: caminho invalido: $target" >&2; exit 2 ;; esac
-# Achou algo ou nao conseguiu verificar: o que esta na espera nao serve para nada, e sai.
-refuse() { rm -rf -- "$target"; echo "ANTIVIRUS: $1" >&2; exit "$2"; }
-
+# Instala o ClamAV se faltar e garante assinaturas recentes. Parte COMUM dos dois scripts
+# abaixo: quem inclui define `refuse MENSAGEM CODIGO`, que diz a consequencia e sai.
+_ENSURE = r"""
 if ! command -v clamscan >/dev/null 2>&1; then
   echo "antivirus: instalando o ClamAV (so na primeira vez neste servidor)..."
   export DEBIAN_FRONTEND=noninteractive
   { apt-get update -qq && apt-get install -y -qq --no-install-recommends clamav clamav-freshclam; } >/dev/null 2>&1 \
-    || refuse "nao consegui instalar o ClamAV (apt); o mod NAO foi instalado" 2
+    || refuse "nao consegui instalar o ClamAV (apt)" 2
 fi
 
 # Trocavel so para o teste do script; no CT e sempre o padrao do pacote do Debian.
@@ -64,21 +56,63 @@ if [ -z "$(newest __FRESH_DAYS__)" ]; then
   systemctl stop clamav-freshclam >/dev/null 2>&1 || true
   freshclam --quiet >/dev/null 2>&1 || echo "antivirus: a atualizacao falhou; usando as assinaturas que ja havia"
   systemctl start clamav-freshclam >/dev/null 2>&1 || true
-  [ -n "$(newest __MAX_AGE_DAYS__)" ] \
-    || refuse "sem assinaturas dos ultimos __MAX_AGE_DAYS__ dias; o mod NAO foi instalado" 2
+  [ -n "$(newest __MAX_AGE_DAYS__)" ] || refuse "sem assinaturas dos ultimos __MAX_AGE_DAYS__ dias" 2
 fi
+CLAMSCAN_OPTS="--recursive --infected --stdout --alert-exceeds-max=yes --alert-encrypted=yes"
+CLAMSCAN_OPTS="$CLAMSCAN_OPTS --max-filesize=512M --max-scansize=1024M"
+""".replace("__FRESH_DAYS__", str(FRESH_DAYS)).replace("__MAX_AGE_DAYS__", str(MAX_AGE_DAYS))
 
+# Antes de instalar: verifica a pasta de espera e, se nao passar, APAGA a espera.
+SCAN_SCRIPT = r"""
+set -u
+target=${1:?}
+case "$target" in
+  /var/tmp/gamepanel-*) ;;
+  *) echo "ANTIVIRUS: caminho fora da area de verificacao: $target" >&2; exit 2 ;;
+esac
+case "$target" in *..*) echo "ANTIVIRUS: caminho invalido: $target" >&2; exit 2 ;; esac
+# Achou algo ou nao conseguiu verificar: o que esta na espera nao serve para nada, e sai.
+refuse() { rm -rf -- "$target"; echo "ANTIVIRUS: $1; o mod NAO foi instalado" >&2; exit "$2"; }
+""" + _ENSURE + r"""
 echo "antivirus: verificando..."
-out=$(clamscan --recursive --infected --no-summary --stdout \
-        --alert-exceeds-max=yes --alert-encrypted=yes \
-        --max-filesize=512M --max-scansize=1024M -- "$target" 2>&1)
+# shellcheck disable=SC2086 # as opcoes sao uma lista de palavras de proposito
+out=$(clamscan $CLAMSCAN_OPTS --no-summary -- "$target" 2>&1)
 rc=$?
 case $rc in
   0) echo "antivirus: nada encontrado" ;;
-  1) printf '%s\n' "$out" >&2; refuse "o ClamAV encontrou algo; o mod NAO foi instalado" 1 ;;
-  *) printf '%s\n' "$out" >&2; refuse "a verificacao nao rodou (codigo $rc); o mod NAO foi instalado" 2 ;;
+  1) printf '%s\n' "$out" >&2; refuse "o ClamAV encontrou algo" 1 ;;
+  *) printf '%s\n' "$out" >&2; refuse "a verificacao nao rodou (codigo $rc)" 2 ;;
 esac
-""".replace("__FRESH_DAYS__", str(FRESH_DAYS)).replace("__MAX_AGE_DAYS__", str(MAX_AGE_DAYS))
+"""
+
+# Depois de instalado: verifica o que JA esta no servidor (o que entrou antes do antivirus).
+# So LE - nada e apagado nem movido. Mod de servidor que roda e decisao de quem cuida dele:
+# apagar sozinho por um falso positivo derrubaria um mod de que o servidor depende.
+AUDIT_SCRIPT = r"""
+set -u
+refuse() { echo "ANTIVIRUS: $1; nada foi verificado" >&2; exit "$2"; }
+present=()
+for p in "$@"; do
+  case "$p" in *..*) refuse "caminho invalido: $p" 2 ;; esac
+  if [ -e "$p" ]; then present+=("$p"); else echo "antivirus: nao existe (pulado): $p"; fi
+done
+if [ ${#present[@]} -eq 0 ]; then
+  echo "antivirus: nenhum mod instalado para verificar"
+  exit 0
+fi
+""" + _ENSURE + r"""
+echo "antivirus: verificando ${present[*]}"
+# shellcheck disable=SC2086 # as opcoes sao uma lista de palavras de proposito
+clamscan $CLAMSCAN_OPTS -- "${present[@]}" 2>&1
+rc=$?
+case $rc in
+  0) echo "antivirus: nada encontrado" ;;
+  1) echo "ANTIVIRUS: o ClamAV encontrou algo (linhas FOUND acima)." >&2
+     echo "Nada foi apagado: remova pela tela Mods e reinicie o servidor." >&2
+     exit 1 ;;
+  *) echo "ANTIVIRUS: a verificacao nao rodou (codigo $rc)" >&2; exit 2 ;;
+esac
+"""
 
 # Cria a pasta de espera do upload (so root le) e varre as que sobraram de um envio que nao
 # chegou a virar job - o navegador fechado no meio, por exemplo.

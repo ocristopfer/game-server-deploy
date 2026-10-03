@@ -23,6 +23,12 @@
   {% if profile.upload_names or profile.extensions or profile.kind in (kind_thunderstore, kind_shroudtopia) %}
   <p class="muted small">{{ _h('mods.antivirus_note') }}</p>
   {% endif %}
+  {# O que entrou ANTES do antivirus nunca foi verificado: este botao passa por ele o que ja
+     esta no servidor. So le, e o resultado sai no log da tarefa. #}
+  <p class="muted small">{{ _('mods.audit_help') }}</p>
+  <div class="cluster">
+    {{ ui.action(url_for('mods.audit', sid=server.id), _('mods.audit_button'), icon='🛡') }}
+  </div>
   {% if profile.sources %}
   <h2>{{ _('mods.where_to_find') }}</h2>
   <div class="cluster">

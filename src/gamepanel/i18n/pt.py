@@ -632,6 +632,11 @@ MESSAGES: dict[str, str] = {
         "chegar ao jogo; se ele achar algo, ou nao conseguir verificar, o mod NAO entra e o "
         "servidor nao reinicia. Na primeira vez o container instala o ClamAV (uns minutos a "
         "mais). Ele acha o que ja e conhecido: continue baixando so de fonte em que confia.",
+    "mods.audit_button": "Verificar mods instalados",
+    "mods.audit_help":
+        "Passa o antivirus no que ja esta instalado neste servidor, inclusive o que entrou antes "
+        "da verificacao existir. So le: nada e apagado, e o resultado sai no log da tarefa. Usa "
+        "uns 1 GB de memoria por alguns segundos, ao lado do jogo.",
     "mods.plugin_install": "Instalar",
     "mods.where_to_find": "Onde achar mods",
     "mods.source_workshop": "Steam Workshop",
@@ -1145,6 +1150,7 @@ MESSAGES: dict[str, str] = {
     "job.file_downloaded": "Arquivo baixado",
     "job.mod_loader": "Carregador de mods",
     "job.mod_installed": "Mod instalado",
+    "job.mod_audited": "Mods verificados (antivirus)",
     "job.mod_removed_plugin": "Mod desinstalado",
     "job.mod_uploaded": "Mod enviado",
     "job.mod_deleted": "Mod removido",

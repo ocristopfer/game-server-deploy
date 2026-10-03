@@ -631,6 +631,11 @@ MESSAGES: dict[str, str] = {
         "installed and the server does not restart. The first time, the container installs "
         "ClamAV (a few extra minutes). It catches what is already known: keep downloading "
         "only from sources you trust.",
+    "mods.audit_button": "Scan installed mods",
+    "mods.audit_help":
+        "Runs the antivirus over what is already installed on this server, including what came "
+        "in before scanning existed. Read-only: nothing is deleted, and the result is in the "
+        "task log. Uses about 1 GB of memory for a few seconds, next to the game.",
     "mods.plugin_install": "Install",
     "mods.where_to_find": "Where to find mods",
     "mods.source_workshop": "Steam Workshop",
@@ -1141,6 +1146,7 @@ MESSAGES: dict[str, str] = {
     "job.file_downloaded": "File downloaded",
     "job.mod_loader": "Mod loader",
     "job.mod_installed": "Mod installed",
+    "job.mod_audited": "Mods scanned (antivirus)",
     "job.mod_removed_plugin": "Mod uninstalled",
     "job.mod_uploaded": "Mod uploaded",
     "job.mod_deleted": "Mod removed",

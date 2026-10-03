@@ -1220,6 +1220,11 @@ tarefa diz por que. Durante a verificacao o ClamAV usa ~1 GB de memoria por algu
 lado do jogo. Ele acha o que ja e conhecido: mod malicioso feito sob medida passa - e uma camada
 a mais, nao a garantia.
 
+**Verificar mods instalados.** O que entrou antes do antivirus nunca foi verificado: o botao
+**Verificar mods instalados** da tela Mods passa o ClamAV no que ja esta no servidor (so as
+pastas de mod e o carregador, nunca o jogo inteiro) e mostra o resultado no log da tarefa. Ele
+so LE: se achar algo, nada e apagado - remova pela tela Mods e reinicie o servidor.
+
 O envio pode reiniciar o servidor no fim (mod so entra quando ele sobe de novo), e fica no
 historico como "Mod enviado". A tela e so de admin, como Arquivos.
 

@@ -316,6 +316,11 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   (`apt`), entao servidor que ja roda ganha a verificacao sem redeploy. O script so aceita
   (e so apaga) caminho sob `STAGING_PREFIX`. O ClamAV carrega ~1 GB ao verificar, ao lado do
   jogo, e so acha o que ja e conhecido: e camada, nao barreira.
+- **"Verificar mods instalados" (`AUDIT_SCRIPT`) so LE**: acusa no log e nao apaga nada,
+  porque apagar sozinho por um falso positivo derrubaria um mod de que o servidor depende. Ele
+  divide com o `SCAN_SCRIPT` a instalacao do ClamAV e as opcoes do `clamscan` (`_ENSURE`), e
+  verifica `profile.scan_paths` - as pastas de mod e o carregador, nunca `/opt/game` inteiro.
+  Sem nada instalado ele nem instala o ClamAV.
 - **`KIND_GUIDE` e perfil sem botao, e isso e decisao**: carregador que ninguem provou num
   servidor de verdade fica so com instrucao - o V Rising mostrou tres armadilhas que so
   apareceram la. Botao que "instala" sem prova e pior que instrucao clara. Todo perfil tem

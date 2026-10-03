@@ -198,3 +198,54 @@ def test_instalador_remoto_sem_antivirus_nao_instala(tmp_path, capsys):
                                      "deca", "VampireCommandFramework"]) == 1
     assert "antivirus" in capsys.readouterr().out
     assert shroudtopia_remote.main(["loader-install", str(tmp_path)]) == 1
+
+
+# ------------------------------------------------------------------ verificar o que ja esta instalado
+
+def _audit(env: dict, *paths) -> subprocess.CompletedProcess:
+    run_env = {k: v for k, v in env.items() if isinstance(v, str)}
+    return subprocess.run(["bash", "-c", antivirus.AUDIT_SCRIPT, "gp", *map(str, paths)],
+                          capture_output=True, text=True, env=run_env, check=False)
+
+
+def test_verificar_instalados_acusa_e_nao_apaga_nada(env, tmp_path):
+    """So le: apagar sozinho por um falso positivo derrubaria um mod de que o servidor depende."""
+    mods = tmp_path / "mods"
+    mods.mkdir()
+    (mods / "Bom.dll").write_bytes(b"limpo")
+    (mods / "Ruim.dll").write_bytes(b"MALWARE")
+    proc = _audit(env, mods)
+    assert proc.returncode == 1
+    assert "FOUND" in proc.stdout
+    assert "Nada foi apagado" in proc.stderr
+    assert sorted(p.name for p in mods.iterdir()) == ["Bom.dll", "Ruim.dll"]
+
+
+def test_verificar_instalados_limpo_e_caminho_que_falta_e_pulado(env, tmp_path):
+    loader = tmp_path / "winmm.dll"
+    loader.write_bytes(b"limpo")
+    proc = _audit(env, loader, tmp_path / "nao-existe")
+    assert proc.returncode == 0, proc.stderr
+    assert "pulado" in proc.stdout
+    assert "nada encontrado" in proc.stdout
+    args = Path(env["CLAMSCAN_ARGS"]).read_text()
+    assert str(loader) in args and "nao-existe" not in args
+    assert "--alert-exceeds-max=yes" in args, "a mesma regra da verificacao de envio"
+
+
+def test_servidor_sem_mod_nenhum_nem_instala_o_clamav(env, tmp_path):
+    """Nada para verificar = nada para instalar: servidor sem mod nao paga o ClamAV."""
+    (env["bin"] / "clamscan").unlink()
+    _tool(env["bin"], "apt-get", "#!/bin/sh\necho apt chamado >&2\nexit 100\n")
+    proc = _audit(env, tmp_path / "nao-existe")
+    assert proc.returncode == 0
+    assert "nenhum mod instalado" in proc.stdout
+    assert "apt chamado" not in proc.stderr
+
+
+def test_verificar_instalados_sem_assinatura_falha_fechado(env, tmp_path):
+    _tool(env["bin"], "freshclam", FAKE_FRESHCLAM_FAIL)
+    (tmp_path / "Mod.pak").write_bytes(b"limpo")
+    proc = _audit(env, tmp_path / "Mod.pak")
+    assert proc.returncode == 2
+    assert "nada foi verificado" in proc.stderr
