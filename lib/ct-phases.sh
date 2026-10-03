@@ -623,6 +623,12 @@ setup_firewall() {
     printf 'FW_ROLE=game\n'
     printf 'FW_MGMT_SOURCES="%s"\n' "$FW_MGMT_SOURCES"
     printf 'FW_GAME_PORTS="%s"\n' "$GAME_PORTS"
+    # A porta do JOGO, para o painel contar quem esta conversando com ele. Fica de fora
+    # quando a consulta divide a porta (Enshrouded): ali todo navegador de servidores que
+    # pergunta pelo jogo contaria como jogador - e esse jogo ja conta pela consulta.
+    if [[ -n "$GAME_PORT" && "$GAME_PORT" != "$QUERY_PORT" ]]; then
+      printf 'FW_PRESENCE_PORTS="%s"\n' "$GAME_PORT"
+    fi
   } > "$conf"
   push_file_to_ct "$FIREWALL_SCRIPT" /usr/local/sbin/ct-firewall 0755
   push_file_to_ct "$conf" /etc/ct-firewall.env 0644

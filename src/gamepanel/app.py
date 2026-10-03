@@ -72,7 +72,7 @@ from gamepanel.persistence.repositories import users as users_repo
 # so ate a definicao da rota, silenciosamente (mypy pegou isso: "Name already defined").
 # Apelidos pelo mesmo motivo: ha rotas `files()` (`/servers/<id>/files`) e
 # `backups()` (`/servers/<id>/backups`) neste modulo.
-from gamepanel.runtime import a2s, backup_archive, http_probe, log_probe, port_probe
+from gamepanel.runtime import a2s, backup_archive, http_probe, log_probe, port_probe, presence_probe
 from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import ssh as ssh_transport
@@ -866,7 +866,12 @@ def _player_deps() -> player_service.PlayerDeps:
     return player_service.PlayerDeps(
         http_json=http_json, connect=_connect, read_log_lines=read_log_lines,
         query_players=query_players, players_ttl=PLAYERS_TTL,
+        presence_players=presence_players,
     )
+
+
+def presence_players(server: ServerRow) -> dict:
+    return presence_probe.players_from_presence(ssh_output, server)
 
 
 def http_login(server: ServerRow) -> str:
@@ -1936,7 +1941,14 @@ def _port_tab(server: ServerRow) -> dict:
     # erro: o jogo simplesmente nao publica consulta. Sem essa contagem a tela so diria
     # "sem resposta" e deixaria a duvida entre "porta errada" e "nao existe consulta".
     from_game = [p for p in ports if p["origem"] == "detectada" and not p["infra"]]
+    # As conversas ativas na porta do jogo valem para todo CT com o firewall atual, mesmo
+    # quando nenhuma porta responde A2S - e o caso do Dragonwilds (EOS, sem consulta).
+    try:
+        presence: dict[str, Any] = {"players": presence_players(server)["players"], "error": ""}
+    except QueryError as exc:
+        presence = {"players": None, "error": str(exc)}
     return {
+        "presenca": presence,
         "portas": ports,
         "aviso": warning_text,
         "udp_do_jogo": len(from_game),
@@ -2023,6 +2035,13 @@ def _enable_a2s_count(conn, sid: int):
     return None
 
 
+def _enable_net_count(conn, sid: int):
+    """Conversas ativas na porta do jogo, pelo firewall do CT. Nao tem campo: so a escolha."""
+    with conn:
+        servers_repo.use_presence(conn, sid)
+    flash(translate("flash.count_on_by_net"), "ok")
+
+
 def _enable_http_count(conn, sid: int):
     """API HTTP do proprio jogo."""
     errors: list[str] = []
@@ -2059,6 +2078,7 @@ def _enable_log_count(conn, sid: int):
 COUNT_SOURCES = {
     "a2s": _enable_a2s_count,
     "http": _enable_http_count,
+    "net": _enable_net_count,
     "log": _enable_log_count,
 }
 

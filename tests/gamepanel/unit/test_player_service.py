@@ -46,6 +46,7 @@ def deps(**trocas) -> ps.PlayerDeps:
         "read_log_lines": lambda *a, **k: [],
         "query_players": lambda host, port: {"players": 0, "list": []},
         "players_ttl": 5.0,
+        "presence_players": lambda server: {"players": 0, "list": []},
     }
     return ps.PlayerDeps(**{**fallback, **trocas})
 
@@ -282,6 +283,34 @@ def test_log_que_falha_ao_completar_nomes_nao_estraga_a_contagem():
     assert out["players"] == 2
     assert not out.get("error")
     assert out["list"] == []
+
+
+def test_conexoes_ativas_contam_e_o_log_da_os_nomes():
+    """O Dragonwilds: sem consulta (EOS), o numero sai do firewall e os nomes do log."""
+    d = deps(presence_players=lambda srv: {"players": 1, "list": []},
+             read_log_lines=log_lines("ana entrou", "bia entrou"))
+    out = ps.server_players(d, server(player_source="net", join_re=JOIN))
+    assert out["players"] == 1
+    assert out["source"] == "net"
+    assert [p["name"] for p in out["list"]] == ["bia"]
+    assert out["names_from"] == "log"
+
+
+def test_conexoes_ativas_sem_firewall_caem_para_o_log():
+    def missing(srv):
+        raise QueryError("O firewall deste CT nao conta conexoes ainda")
+
+    d = deps(presence_players=missing, read_log_lines=log_lines("ana entrou"))
+    out = ps.server_players(d, server(player_source="net", join_re=JOIN))
+    assert out["players"] == 1
+    assert out["source"] == "log"
+    assert "firewall" in out["fallback_error"]
+
+
+def test_conexoes_ativas_so_valem_quando_escolhidas():
+    """Nao ha campo que diga se o CT tem o conjunto: como reserva ela so geraria erro."""
+    target = server(player_source="a2s", query_port=27015, join_re=JOIN)
+    assert "net" not in ps.configured_sources(target)
 
 
 # ----------------------------------------------------------------- all_players

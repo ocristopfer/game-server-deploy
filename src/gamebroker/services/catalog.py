@@ -63,7 +63,9 @@ _REGEX_MAX_LEN = 200
 _NESTED_REPETITION = re.compile(r"\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)[+*{]")  # NOSONAR
 _ASSIGN_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]*)=(.*)$", re.ASCII)
 
-PLAYER_SOURCES_DYNAMIC = ("a2s", "log")
+# 'net' = conversas ativas na porta do jogo, contadas pelo firewall que o proprio broker poe
+# no CT (FW_PRESENCE_PORTS no ct-phases.sh); nao precisa de nada do jogo.
+PLAYER_SOURCES_DYNAMIC = ("a2s", "net", "log")
 PLATFORMS = ("", "linux", "windows")
 
 

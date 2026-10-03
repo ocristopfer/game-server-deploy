@@ -39,7 +39,8 @@ def setup(sid: int):
 
     data = {"portas": [], "aviso": "", "achados": [], "mudas": [], "amostras": [],
              "tem_api": False, "udp_do_jogo": 0, "udp_mudas": False,
-             "teste": None, "teste_http": None, "erro_log": "", "erro_http": ""}
+             "teste": None, "teste_http": None, "erro_log": "", "erro_http": "",
+             "presenca": None}
     if tab == "http":
         data.update(panel._http_tab(server, http, should_test))
     elif tab == "log":

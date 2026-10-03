@@ -147,27 +147,31 @@ if [[ -n "$BROKER_IP" ]]; then
 import sqlite3
 c = sqlite3.connect("file:/var/lib/gamebroker/broker.db?mode=ro", uri=True)
 for iid, handle, ip in c.execute("SELECT id, handle, ip FROM instances").fetchall():
-    ports = c.execute("SELECT number, proto FROM ports WHERE instance_id = ?", (iid,)).fetchall()
-    print(handle, ip, " ".join(f"{n}/{p}" for n, p in ports))
+    ports = c.execute("SELECT number, proto, role FROM ports WHERE instance_id = ?", (iid,)).fetchall()
+    game = [str(n) for n, p, r in ports if r == "jogo" and p == "udp"]
+    print(handle, ip, ",".join(game) or "-", " ".join(f"{n}/{p}" for n, p, _ in ports))
 ')"
 fi
 
-apply_game() {  # ctid ip portas descricao
-  local ctid="$1" ip="$2" ports="$3" label="$4"
+# A presenca (FW_PRESENCE_PORTS) e a porta UDP do JOGO, por onde o painel conta quem esta
+# conversando com ele; "-" = nenhuma. Ver o ct-firewall.sh.
+apply_game() {  # ctid ip portas descricao presenca
+  local ctid="$1" ip="$2" ports="$3" label="$4" presence="${5:--}"
+  [[ "$presence" != "-" ]] || presence=""
   if [[ -z "$ports" ]]; then
     skipped+=("$ctid ($label): nao sei as portas do jogo")
     return 0
   fi
-  write_conf "$tmp/game-$ctid.env" "FW_ROLE=game" "FW_MGMT_SOURCES=\"$MGMT\"" "FW_GAME_PORTS=\"$ports\""
+  write_conf "$tmp/game-$ctid.env" "FW_ROLE=game" "FW_MGMT_SOURCES=\"$MGMT\"" "FW_GAME_PORTS=\"$ports\""     "FW_PRESENCE_PORTS=\"$presence\""
   # shellcheck disable=SC2317
   verify_game() { reaches "$PANEL_CTID" "$ip" 22; }
   apply_to "$ctid" "$label" "$tmp/game-$ctid.env" verify_game
 }
 
-while read -r handle ip ports; do
+while read -r handle ip presence ports; do
   [[ -n "${handle:-}" ]] || continue
   selected "$handle" || continue
-  apply_game "$handle" "$ip" "$ports" "jogo do broker, $ip"
+  apply_game "$handle" "$ip" "$ports" "jogo do broker, $ip" "$presence"
 done <<<"$game_lines"
 
 # --- jogos legados (feitos pelo deploy-game.ps1) ----------------------------------------------
@@ -188,7 +192,9 @@ for ctid in ${EXTRA_GAME_CTS//,/ }; do
     continue
   fi
   ports="$(bash -c 'set -a; source "$1"; echo "${GAME_PORTS:-}"' _ "$GAMES_DIR/$key.env")"
-  apply_game "$ctid" "$(ct_ip "$ctid")" "$ports" "legado, $key"
+  # Mesma regra do ct-phases.sh: sem presenca quando a consulta divide a porta do jogo.
+  presence="$(bash -c 'set -a; source "$1"; [[ "${GAME_PORT:-}" != "${QUERY_PORT:-0}" ]] && echo "${GAME_PORT:-}"' _ "$GAMES_DIR/$key.env" || true)"
+  apply_game "$ctid" "$(ct_ip "$ctid")" "$ports" "legado, $key" "${presence:--}"
 done
 
 # --- painel (por ultimo: e dele que os outros testes partem) --------------------------------

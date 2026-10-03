@@ -110,6 +110,11 @@ def use_query_port(conn: sqlite3.Connection, sid: int, port: int) -> None:
         "UPDATE servers SET query_port = ?, player_source = 'a2s' WHERE id = ?", (port, sid))
 
 
+def use_presence(conn: sqlite3.Connection, sid: int) -> None:
+    # Sem campo proprio: a fonte le o conjunto que o firewall do CT mantem.
+    conn.execute("UPDATE servers SET player_source = 'net' WHERE id = ?", (sid,))
+
+
 def use_http(conn: sqlite3.Connection, sid: int, fields: Mapping[str, Any]) -> None:
     """O token guardado ZERA ao salvar: se a URL ou a credencial mudou, o antigo nao vale
     mais, e a proxima consulta ja faz login com o que ficou."""

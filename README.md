@@ -307,7 +307,8 @@ campos vazios, e uma regra sem porta de destino casa *qualquer* porta para aquel
   nome exato, pelas sessoes da Epic. Medido num CT de verdade: abre so `7777`, `8888` e uma
   porta alta, e nenhuma responde A2S, nem por loopback; a doc da Jagex nao tem query port nem
   argumento para isso. Guias de hosting que mandam abrir `27015` estao copiando texto de
-  outros jogos Unreal. A contagem de jogadores no painel so pode vir do log
+  outros jogos Unreal. O painel conta pelas **conexoes ativas** na porta do jogo (o
+  firewall do CT anota quem conversa com a 7777) e tira os nomes do log
 - Saves: `/opt/game/RSDragonwilds/Saved/SaveGames/`
 
 ### Palworld — notas
@@ -781,7 +782,7 @@ que eles voltam. Todos foram validados contra o log/API real de cada servidor.
 | Jogo | Fonte | Nomes? |
 |------|-------|--------|
 | Palworld | A2S `27015` + nomes pelo log; ou API REST `http://127.0.0.1:8212/v1/api/players`, auth `basic:admin:<AdminPassword>`, caminho da lista `players` | **sim** |
-| Dragonwilds | log do servico (regex abaixo; o jogo nao tem A2S) | **sim** |
+| Dragonwilds | conexoes ativas na `7777` + nomes pelo log (regex abaixo; o jogo nao tem A2S) | **sim** |
 | DayZ | A2S `27016` + nomes pelo log **em arquivo**: `/opt/game/profiles/*.ADM` (regex abaixo) | **sim** |
 | Satisfactory | log do servico (regex abaixo) | **aproximado** |
 | Icarus | A2S na porta de query | so contagem |
@@ -906,7 +907,7 @@ Start, stop, restart, update, terminal e editor rodam a partir dai. Acoes demora
 
 ### Jogadores conectados
 
-Ha tres formas, e a tela **Configurar contagem** (botao no card "Jogadores") descobre
+Ha quatro formas, e a tela **Configurar contagem** (botao no card "Jogadores") descobre
 qual serve para cada jogo.
 
 **1. Consulta direta (A2S da Steam)** — a mesma consulta que o navegador de servidores
@@ -969,6 +970,16 @@ usa EOS e nao a Steam; Satisfactory), e para dar os NOMES a quem conta por A2S s
 ver "As fontes se combinam" acima). Num jogo Unreal com `-log` no `START_ARGS`, o log vai
 para o stdout e o journald guarda — da para contar reproduzindo as entradas e saidas desde
 o ultimo start do servico.
+
+**4. Conexoes ativas na porta do jogo** — para jogo sem consulta nenhuma. O firewall do CT
+(`ct-firewall.sh`, `FW_PRESENCE_PORTS`, que o instalador preenche com o `GAME_PORT`) anota
+num conjunto o `IP:porta` de quem conversa com a porta do jogo, por 20 s depois do ultimo
+pacote. So entra conversa que o servidor ja respondeu, entao scanner nao vira jogador, e
+dois jogadores da mesma casa contam como dois (portas de origem diferentes). O numero nao
+depende do log; os nomes, sim. CT criado antes disso: reaplique o firewall
+(`deploy/firewall/apply-firewall.ps1`) - ate la a tela avisa e a contagem cai para o log.
+Nao vale quando a consulta divide a porta do jogo (Enshrouded): ali todo navegador de
+servidores contaria como jogador, e esse jogo ja tem A2S.
 
 O firewall do CT de jogo aceita UDP **do painel** em qualquer porta (`ct-firewall.sh`): e
 o que deixa a consulta e o assistente chegarem a uma porta de query que o `.env` nao

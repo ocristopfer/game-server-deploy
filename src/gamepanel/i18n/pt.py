@@ -359,6 +359,18 @@ MESSAGES: dict[str, str] = {
     "server_detail.count": "contagem",
     "server_detail.count_right_names_wrong": "esta certa, mas os",
     "server_detail.names": "nomes",
+    "player_source.net": "conexoes ativas",
+    "server_form.count_net": "Conexoes ativas na porta do jogo (firewall do CT)",
+    "flash.count_on_by_net": "Contagem ligada pelas conexoes ativas na porta do jogo.",
+    "presence.missing": (
+        "O firewall deste CT nao conta conexoes ainda: reaplique o firewall "
+        "(deploy/firewall/apply-firewall.ps1)."),
+    "presence.unreadable": "Nao consegui ler as conexoes ativas do firewall do CT.",
+    "players_setup.presence_title": "Conexoes ativas na porta do jogo",
+    "players_setup.presence_help": (
+        "Quem esta trocando pacotes com o servidor agora, contado pelo firewall do CT. Serve para "
+        "jogo sem consulta (o Dragonwilds usa EOS): o numero nao depende do log, e os nomes "
+        "continuam vindo dele."),
     "server_detail.names_from": "Contagem por: {source}. Nomes por: {names_from}.",
     "server_detail.names_partial": "Os nomes nao batem com a contagem: a lista mostra os ultimos a entrar.",
     "server_detail.fallback": "A fonte escolhida nao respondeu ({error}). Contando por: {source}.",

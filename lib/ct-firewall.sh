@@ -26,6 +26,8 @@
 #           FW_GAME_NET        faixa dos CTs de jogo (SSH e ping de instalacao)
 #   game:   FW_MGMT_SOURCES    quem pode abrir SSH e pingar (painel e broker)
 #           FW_GAME_PORTS      portas do jogo, abertas para qualquer origem ("7777/udp 8888/tcp")
+#           FW_PRESENCE_PORTS  porta(s) UDP do JOGO cujas conversas o painel conta como
+#                              jogadores ("7777"); vazio = sem contagem. Nunca a de consulta.
 set -Eeuo pipefail
 
 CONF="${CT_FIREWALL_CONF:-/etc/ct-firewall.env}"
@@ -85,6 +87,37 @@ load_conf() {
 }
 
 # --- regras ---------------------------------------------------------------------------------
+
+# Validade de uma conversa no conjunto de presenca. Cliente de jogo manda pacote varias vezes
+# por segundo (ate na tela de carregamento); 20 s sem nada e quem fechou o jogo ou caiu.
+PRESENCE_TIMEOUT="20s"
+
+presence_ports() {
+  local num out=""
+  for num in ${FW_PRESENCE_PORTS:+${FW_PRESENCE_PORTS//,/ }}; do
+    num="${num%%/*}"
+    valid_port "$num" FW_PRESENCE_PORTS
+    out+="${out:+, }$num"
+  done
+  printf '%s' "$out"
+}
+
+# O conjunto que o painel le (`runtime/presence_probe.py`): IP:porta de origem de quem conversa
+# com a porta do jogo. So entra conversa ESTABELECIDA - o servidor ja respondeu -, entao scanner
+# que manda um pacote solto nao vira jogador. Nao decide nada: so anota, e a regra roda ANTES do
+# `established accept` do common_head, senao o pacote de quem esta jogando nunca chegaria a ela.
+presence_set() {
+  [[ "$FW_ROLE" == game && -n "$(presence_ports)" ]] || return 0
+  printf '  set players {\n    type ipv4_addr . inet_service\n'
+  printf '    flags dynamic, timeout\n    timeout %s\n  }\n\n' "$PRESENCE_TIMEOUT"
+}
+
+presence_rule() {
+  local ports
+  ports="$(presence_ports)"
+  [[ "$FW_ROLE" == game && -n "$ports" ]] || return 0
+  printf '    udp dport { %s } ct state established update @players { ip saddr . udp sport }\n' "$ports"
+}
 
 # Comum aos tres: resposta de conexao ja aberta passa (e o que deixa o painel receber a volta
 # do A2S e o jogo responder ao jogador), loopback passa (as APIs de admin do Palworld e do
@@ -208,7 +241,9 @@ render() {
   printf '# Gerado por ct-firewall (papel: %s). Edite %s e rode "ct-firewall apply".\n' "$FW_ROLE" "$CONF"
   printf 'flush ruleset\n\n'
   printf 'table inet ct_firewall {\n'
+  presence_set
   printf '  chain input {\n    type filter hook input priority filter; policy drop;\n'
+  presence_rule
   common_head iif
   "input_${FW_ROLE}"
   printf '  }\n\n'

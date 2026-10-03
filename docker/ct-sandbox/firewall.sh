@@ -59,6 +59,9 @@ listen ctfw-game 8888; listen ctfw-game 9999
 # UDP nao tem "conectou": quem prova que o pacote passou e o arquivo do lado do jogo.
 # -W 1 = um datagrama por volta, para o laco anotar cada remetente numa linha.
 docker exec -d ctfw-game sh -c "while true; do nc -u -l -p 27015 -W 1 >> /tmp/udp.txt 2>/dev/null; done"
+# O "jogo" na 7777 RESPONDE (como um servidor de verdade): e a resposta que torna a conversa
+# estabelecida, e so conversa estabelecida entra na contagem de jogadores.
+docker exec -d ctfw-game sh -c "while true; do (sleep 1; echo pong) | nc -u -l -p 7777 -w 3 >/dev/null 2>&1; done"
 listen ctfw-intruder 22
 listen ctfw-api 8006; listen ctfw-api 3306
 sleep 1
@@ -86,7 +89,8 @@ MSYS_NO_PATHCONV=1 docker exec -d ctfw-broker sh -c "nc -w 15 $GAME 22 </dev/nul
 sleep 1
 configure ctfw-game "FW_ROLE=game
 FW_MGMT_SOURCES=\"$PANEL $BROKER\"
-FW_GAME_PORTS=\"8888/tcp 7777/udp\""
+FW_GAME_PORTS=\"8888/tcp 7777/udp\"
+FW_PRESENCE_PORTS=\"7777\""
 
 failures=0
 tcp() {  # esperado(abre|fecha) origem destino porta descricao
@@ -129,6 +133,23 @@ tcp fecha ctfw-intruder "$GAME" 9999 "qualquer um -> porta que o jogo nao declar
 # A consulta A2S do painel numa porta que o .env nao declarou (a 27015 de um jogo Unreal).
 udp abre  ctfw-panel    "painel -> UDP nao declarado do jogo (consulta A2S)"
 udp fecha ctfw-intruder "intruso da LAN -> UDP nao declarado do jogo"
+
+# Contagem de jogadores pelo firewall: quem conversa com a 7777 (o jogo respondeu) entra no
+# conjunto `players`; pacote solto numa porta que nao responde, nao.
+presence() {  # esperado(conta|nao-conta) origem ip-da-origem porta descricao
+  local got=nao-conta
+  docker exec "$2" sh -c "(echo ping; sleep 2; echo de-novo; sleep 1) | nc -u -w 4 $GAME $4" >/dev/null 2>&1 || true
+  MSYS_NO_PATHCONV=1 docker exec ctfw-game nft list set inet ct_firewall players 2>/dev/null \
+    | grep -q "$3 \. " && got=conta
+  if [[ "$got" == "$1" ]]; then
+    printf 'ok    %-9s %s\n' "$1" "$5"
+  else
+    printf 'FALHA esperava %s, deu %s: %s\n' "$1" "$got" "$5"
+    failures=$((failures + 1))
+  fi
+}
+presence conta     ctfw-intruder "$INTRUDER" 7777 "jogador (conversa respondida) entra na contagem"
+presence nao-conta ctfw-broker   "$BROKER"   8888 "pacote sem resposta nao vira jogador"
 tcp fecha ctfw-game     "$PANEL" 8080 "jogo -> web do painel (rede interna)"
 tcp fecha ctfw-game     "$INTRUDER" 22 "jogo -> outra maquina da LAN"
 tcp fecha ctfw-game     "$API" 8006  "jogo -> Proxmox"

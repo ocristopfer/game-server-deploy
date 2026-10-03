@@ -48,6 +48,7 @@
         <option value="none" {{ 'selected' if data.player_source in ('', 'none') and not data.query_port }}>{{ _('server_form.count_off') }}</option>
         <option value="a2s" {{ 'selected' if data.player_source == 'a2s' or (not data.player_source and data.query_port) }}>{{ _('server_form.count_a2s') }}</option>
         <option value="http" {{ 'selected' if data.player_source == 'http' }}>{{ _('server_form.count_http') }}</option>
+        <option value="net" {{ 'selected' if data.player_source == 'net' }}>{{ _('server_form.count_net') }}</option>
         <option value="log" {{ 'selected' if data.player_source == 'log' }}>{{ _('server_form.count_log') }}</option>
       </select>
       <small>

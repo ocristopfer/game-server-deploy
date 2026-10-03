@@ -31,10 +31,12 @@ from gamepanel.runtime.ssh import RemoteError, ServerLike
 from gamepanel.services import parallel
 
 # De onde a contagem de jogadores pode sair. 'none' e o desligado explicito — diferente
-# do vazio, que significa "cadastro antigo, deduza pela porta de consulta".
-PLAYER_SOURCES = ("a2s", "http", "log", "none")
+# do vazio, que significa "cadastro antigo, deduza pela porta de consulta". 'net' conta
+# as conversas ativas na porta do jogo, pelo firewall do CT (`runtime.presence_probe`).
+PLAYER_SOURCES = ("a2s", "http", "net", "log", "none")
 # Quem complementa a fonte escolhida, nesta ordem: o que fala com o jogo AO VIVO antes do
-# log, que e reconstruido de eventos (ver `configured_sources`).
+# log, que e reconstruido de eventos (ver `configured_sources`). 'net' nao entra aqui: ela
+# nao tem campo proprio que diga se o CT a suporta, entao so vale quando escolhida.
 COMBINE_ORDER = ("a2s", "http", "log")
 
 # Colunas que descrevem a chamada HTTP; viajam juntas entre formulario, assistente e banco.
@@ -99,6 +101,8 @@ Connect = Callable[[], sqlite3.Connection]
 ReadLogLines = Callable[..., list[str]]
 # (host, porta) -> resposta da consulta A2S.
 QueryPlayers = Callable[[str, int], dict]
+# (server) -> contagem pelas conversas ativas na porta do jogo.
+PresencePlayers = Callable[[ServerLike], dict]
 
 
 class PlayerDeps(NamedTuple):
@@ -114,6 +118,7 @@ class PlayerDeps(NamedTuple):
     read_log_lines: ReadLogLines
     query_players: QueryPlayers
     players_ttl: float
+    presence_players: PresencePlayers
 
 
 def _stored_value(server: ServerLike, column: str) -> str:
@@ -289,6 +294,8 @@ def _count_now(deps: PlayerDeps, server: ServerLike, source: str) -> dict:
         return players_from_log(deps, server)
     if source == "http":
         return players_from_http(deps, server)
+    if source == "net":
+        return deps.presence_players(server)
     port = int(server["query_port"] or 0)
     if not port:
         raise QueryError(Message("api.need_query_port"))

@@ -356,6 +356,18 @@ MESSAGES: dict[str, str] = {
     "server_detail.count": "count",
     "server_detail.count_right_names_wrong": "is right, but the",
     "server_detail.names": "names",
+    "player_source.net": "active connections",
+    "server_form.count_net": "Active connections on the game port (CT firewall)",
+    "flash.count_on_by_net": "Player count now uses the active connections on the game port.",
+    "presence.missing": (
+        "This CT's firewall does not count connections yet: re-apply the firewall "
+        "(deploy/firewall/apply-firewall.ps1)."),
+    "presence.unreadable": "Could not read the active connections from the CT firewall.",
+    "players_setup.presence_title": "Active connections on the game port",
+    "players_setup.presence_help": (
+        "Who is exchanging packets with the server right now, counted by the CT firewall. Meant for "
+        "games with no query (Dragonwilds uses EOS): the number does not depend on the log, and the "
+        "names still come from it."),
     "server_detail.names_from": "Counted by: {source}. Names by: {names_from}.",
     "server_detail.names_partial": "The names do not match the count: the list shows the most recent to join.",
     "server_detail.fallback": "The chosen source did not answer ({error}). Counting by: {source}.",
