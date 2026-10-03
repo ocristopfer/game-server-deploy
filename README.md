@@ -237,7 +237,7 @@ mas para que todo redirecionamento seja **1:1** (porta externa = porta interna).
 
 | Jogo | Destino | Redirecionar no roteador | Nunca redirecionar |
 |------|---------|--------------------------|--------------------|
-| Dragonwilds | 192.168.2.20 | `7777/udp` (+ `7778`, `7779` se criar mundos extras), `27020/udp` | — |
+| Dragonwilds | 192.168.2.20 | `7777/udp` (+ `7778`, `7779` se criar mundos extras) | — |
 | Palworld | 192.168.2.21 | `8211/udp`, `27015/udp` | REST `8212/tcp`, RCON `25575/tcp` |
 | Satisfactory | 192.168.2.22 | `7787/udp`, `7787/tcp` | — |
 | Enshrouded | 192.168.2.23 | `15636/udp`, `15637/udp` | — |
@@ -302,11 +302,12 @@ campos vazios, e uma regra sem porta de destino casa *qualquer* porta para aquel
 - Config criada no primeiro start (localize com `find /opt/game -name DedicatedServer.ini`):
   nome do servidor, senha do mundo, senha de admin, OwnerID. Pare o servidor antes de editar!
 - Limite de jogadores: fixo em 6 (travado pela Jagex, nao configuravel)
-- **Consulta A2S da Steam** pelo subsistema Steam do Unreal. O padrao seria `27015`, que
-  no roteador e do Palworld; o `START_ARGS` passa `-QueryPort=27020`. A consulta da so a
-  contagem - os nomes vem do log, e o log assume a contagem se a consulta nao responder.
-  Nao ha RCON nem API HTTP. Se a consulta ficar muda num servidor de verdade, o
-  assistente (**Configurar contagem**) lista as portas UDP que o processo do jogo abriu
+- **Nao publica nada consultavel**: nem query A2S da Steam, nem RCON, nem API HTTP. O
+  servidor usa **EOS** (Epic Online Services), nao a Steam - o mundo e achado no jogo pelo
+  nome exato, pelas sessoes da Epic. Medido num CT de verdade: abre so `7777`, `8888` e uma
+  porta alta, e nenhuma responde A2S, nem por loopback; a doc da Jagex nao tem query port nem
+  argumento para isso. Guias de hosting que mandam abrir `27015` estao copiando texto de
+  outros jogos Unreal. A contagem de jogadores no painel so pode vir do log
 - Saves: `/opt/game/RSDragonwilds/Saved/SaveGames/`
 
 ### Palworld — notas
@@ -780,7 +781,7 @@ que eles voltam. Todos foram validados contra o log/API real de cada servidor.
 | Jogo | Fonte | Nomes? |
 |------|-------|--------|
 | Palworld | A2S `27015` + nomes pelo log; ou API REST `http://127.0.0.1:8212/v1/api/players`, auth `basic:admin:<AdminPassword>`, caminho da lista `players` | **sim** |
-| Dragonwilds | A2S `27020` + nomes pelo log (regex abaixo) | **sim** |
+| Dragonwilds | log do servico (regex abaixo; o jogo nao tem A2S) | **sim** |
 | DayZ | A2S `27016` + nomes pelo log **em arquivo**: `/opt/game/profiles/*.ADM` (regex abaixo) | **sim** |
 | Satisfactory | log do servico (regex abaixo) | **aproximado** |
 | Icarus | A2S na porta de query | so contagem |
@@ -962,8 +963,9 @@ No Palworld, ligue a API no `PalWorldSettings.ini` (`RESTAPIEnabled=True`,
 > de cada chamada). O banco ja guarda o caminho da chave SSH que da root nos containers,
 > entao trate o arquivo como segredo de qualquer forma.
 
-**3. Pelo log do servidor** — para jogo que nao publica nada na rede (Satisfactory), e
-para dar os NOMES a quem conta por A2S sem lista (Dragonwilds, DayZ, Palworld, Enshrouded:
+**3. Pelo log do servidor** — para jogo que nao publica nada na rede (Dragonwilds, que
+usa EOS e nao a Steam; Satisfactory), e para dar os NOMES a quem conta por A2S sem lista
+(DayZ, Palworld, Enshrouded:
 ver "As fontes se combinam" acima). Num jogo Unreal com `-log` no `START_ARGS`, o log vai
 para o stdout e o journald guarda — da para contar reproduzindo as entradas e saidas desde
 o ultimo start do servico.

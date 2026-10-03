@@ -466,7 +466,7 @@ def test_curado_com_a2s_nasce_no_painel_com_a_porta_de_consulta():
 
     games, _ = cat.load_curated(RAIZ / "games")
     with_query = {k: g for k, g in games.items() if g.query_port}
-    assert {"dragonwilds", "enshrouded", "dayz", "palworld"} <= set(with_query)
+    assert {"enshrouded", "dayz", "palworld"} <= set(with_query)
     for key, game in with_query.items():
         ports = allocator.allocate_ports(game, set(), range(31000, 32000))
         inst = {"id": 1, "name": key, "ip": "10.0.0.30", "handle": "300"}
