@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import json
 import posixpath
+import secrets
 from pathlib import Path
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel.games.mods import antivirus, profiles, shroudtopia_remote, thunderstore, thunderstore_remote, workshop
 from gamepanel.games.mods import ets2 as ets2_mods
-from gamepanel.games.mods import profiles, shroudtopia_remote, thunderstore, thunderstore_remote, workshop
 from gamepanel.persistence.repositories import servers as servers_repo
 
 bp = Blueprint("mods", __name__)
@@ -30,15 +31,6 @@ LOADER_ACTIONS = ("install", "enable", "disable")
 # O endpoint da propria tela, para onde toda acao volta.
 INDEX = "mods.index"
 
-# Cria a pasta de mods se ela ainda nao existe (o ~mods do Palworld so nasce quando alguem
-# poe o primeiro mod), com o dono da pasta de cima: o jogo roda como 'steam' e precisa ler.
-MKDIR_SCRIPT = r"""
-set -e
-d=$1
-[ -d "$d" ] && exit 0
-mkdir -p -- "$d"
-chown --reference="$(dirname -- "$d")" -- "$d" 2>/dev/null || true
-"""
 # Teto do texto colado como gabarito: a lista e de mods, nao um arquivo.
 EXPECTED_MAX_CHARS = 20000
 
@@ -82,11 +74,16 @@ def _folder_view(server, profile: profiles.ModProfile) -> dict:
     return {"files": [e for e in entries if not e["dir"] and profile.accepts(e["name"])]}
 
 
+# Toda acao que BAIXA algo leva o antivirus junto; o instalador remoto recusa instalar sem ele.
+SCANNED_ACTIONS = ("loader-install", "plugin-install")
+
+
 def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str) -> str:
+    scan = ("--scan", antivirus.SCAN_SCRIPT) if action in SCANNED_ACTIONS else ()
     if profile.kind == profiles.KIND_SHROUDTOPIA:
         # O carregador mora na pasta do JOGO, um nivel acima da de mods.
-        return panel.q("python3", "-c", SHROUDTOPIA_SOURCE, action, posixpath.dirname(profile.folder), *args)
-    return panel.q("python3", "-c", REMOTE_SOURCE, action, profile.folder, *profile.loader, *args)
+        return panel.q("python3", "-c", SHROUDTOPIA_SOURCE, *scan, action, posixpath.dirname(profile.folder), *args)
+    return panel.q("python3", "-c", REMOTE_SOURCE, *scan, action, profile.folder, *profile.loader, *args)
 
 
 def _remote_state(server, profile: profiles.ModProfile, errors: list[str]) -> dict | None:
@@ -262,10 +259,9 @@ def _checked_name(profile: profiles.ModProfile, sent) -> str:
     return name
 
 
-def _upload_one(server, profile: profiles.ModProfile, sent, name: str) -> str:
-    """Manda UM arquivo (ja conferido) para a pasta do perfil. Devolve a saida do container."""
-    target = panel.clean_path(f"{profile.folder}/{name}")
-    return panel.ssh_stream_in(server, panel.q("bash", "-lc", panel.UPLOAD_SCRIPT, "gp", target),
+def _upload_one(server, incoming: str, sent, name: str) -> str:
+    """Manda UM arquivo (ja conferido) para a pasta de ESPERA. Devolve a saida do container."""
+    return panel.ssh_stream_in(server, panel.q("bash", "-lc", panel.UPLOAD_SCRIPT, "gp", f"{incoming}/{name}"),
                                sent.stream, timeout=panel.JOB_TIMEOUT)
 
 
@@ -282,27 +278,35 @@ def upload(sid: int):
         return redirect(go_back)
 
     user = session.get("username", "?")
+    # O arquivo NUNCA vai direto para a pasta de mods: vai para a espera, fora da pasta do
+    # jogo, e um job verifica com o antivirus e so entao move. Verificacao que acha algo ou
+    # nao roda apaga a espera, e o servidor nao reinicia (o reinicio e o ultimo passo).
+    incoming = antivirus.incoming_dir(secrets.token_hex(16))
     try:
         # TODOS os nomes antes de qualquer coisa ir ao container: um mod de Unreal 5 vem em tres
         # arquivos, e mandar dois e recusar o terceiro deixaria um mod pela metade na pasta.
         names = [_checked_name(profile, f) for f in sent]
-        proc = panel.ssh_run(server, panel.q("bash", "-lc", MKDIR_SCRIPT, "gp", profile.folder), timeout=40)
+        proc = panel.ssh_run(server, panel.q("bash", "-c", antivirus.INCOMING_SCRIPT, "gp", incoming), timeout=40)
         if proc.returncode != 0:
-            raise panel.RemoteError((proc.stderr or proc.stdout).strip() or profile.folder)
-        outputs = [_upload_one(server, profile, f, n) for f, n in zip(sent, names, strict=True)]
+            raise panel.RemoteError((proc.stderr or proc.stdout).strip() or incoming)
+        for f, n in zip(sent, names, strict=True):
+            _upload_one(server, incoming, f, n)
     except (ValueError, panel.RemoteError) as exc:
         panel.log_job("upload-mod", server, user, command=profile.folder, output=str(exc), status="error")
         flash(panel.translate("flash.could_not_upload", reason=exc), "error")
         return redirect(go_back)
 
-    panel.log_job("upload-mod", server, user, command=profile.folder, output="\n".join(outputs))
-    flash(panel.translate("mods.uploaded", n=len(outputs)), "ok")
+    steps: list[panel.JobStep] = [
+        panel.q("bash", "-c", antivirus.SCAN_SCRIPT, "gp", incoming),
+        panel.q("bash", "-c", antivirus.PLACE_SCRIPT, "gp", incoming, profile.folder),
+    ]
     # Mod so entra quando o servidor sobe de novo: o reiniciar mora aqui, como na tela Config.
     if request.form.get("restart") == "1":
-        job_id = panel.start_job("restart", server, user)
-        panel.invalidate_status(sid)
-        return redirect(url_for("jobs.detail", jid=job_id))
-    return redirect(go_back)
+        steps.append(panel.COMMANDS["restart"](server))
+    job_id = panel.start_job("upload-mod", server, user, command=f"{profile.folder}: {', '.join(names)}",
+                             timeout=INSTALL_TIMEOUT, steps=steps)
+    panel.invalidate_status(sid)
+    return redirect(url_for("jobs.detail", jid=job_id))
 
 
 @bp.post("/servers/<int:sid>/mods/delete")

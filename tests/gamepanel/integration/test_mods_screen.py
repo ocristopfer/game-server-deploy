@@ -111,22 +111,50 @@ def test_envio_de_arquivo_que_nao_e_pacote_e_recusado_sem_tocar_no_container(adm
     assert sent == []
 
 
-def test_envio_do_pacote_vai_para_a_pasta_do_servidor(admin, ets2_server, monkeypatch, database, mkdir_ok):
+@pytest.fixture
+def upload_jobs(monkeypatch):
+    jobs: list[tuple] = []
+    monkeypatch.setattr(panel, "start_job", lambda action, server, user, **kw: jobs.append((action, kw)) or 77)
+    return jobs
+
+
+def test_envio_vai_para_a_espera_e_o_job_verifica_antes_de_por_na_pasta(admin, ets2_server, monkeypatch,
+                                                                       mkdir_ok, upload_jobs):
+    """O arquivo nunca cai direto na pasta do jogo: espera, antivirus, e so entao a pasta."""
     sent: list = []
     monkeypatch.setattr(panel, "ssh_stream_in", lambda server, cmd, source, timeout: sent.append(cmd) or "enviado")
-    assert _upload(admin, ets2_server, "server_packages.sii").status_code == 302
+    response = _upload(admin, ets2_server, "server_packages.sii")
+    assert "/jobs/77" in response.headers["Location"]
     assert len(sent) == 1
-    assert "/opt/game/server-home/server_packages.sii" in sent[0]
-    job = database.execute("SELECT action, status FROM jobs ORDER BY id DESC LIMIT 1").fetchone()
-    assert (job["action"], job["status"]) == ("upload-mod", "ok")
+    assert "/var/tmp/gamepanel-incoming-" in sent[0]
+    assert "/opt/game/server-home" not in sent[0]
+    action, kw = upload_jobs[0]
+    assert action == "upload-mod"
+    scan, place = kw["steps"]
+    incoming = sent[0].split("/var/tmp/", 1)[1].split("/", 1)[0]
+    assert "clamscan" in scan and incoming in scan
+    assert incoming in place and "/opt/game/server-home" in place
 
 
-def test_nome_com_caminho_vira_so_o_nome(admin, ets2_server, monkeypatch, mkdir_ok):
+def test_reiniciar_e_o_ultimo_passo_do_envio(admin, ets2_server, monkeypatch, mkdir_ok, upload_jobs):
+    """Se o antivirus recusa, o job para antes: o servidor nao reinicia por um mod que nao entrou."""
+    monkeypatch.setattr(panel, "ssh_stream_in", lambda *a, **k: "enviado")
+    with admin.session_transaction() as sess:
+        token = sess.get("csrf", "")
+    admin.post(f"/servers/{ets2_server}/mods/upload", content_type="multipart/form-data",
+               data={"csrf": token, "restart": "1", "file": (io.BytesIO(b"x"), "server_packages.sii")})
+    steps = upload_jobs[0][1]["steps"]
+    assert len(steps) == 3
+    assert "clamscan" in steps[0]
+    assert steps[-1].endswith("restart ets2.service")
+
+
+def test_nome_com_caminho_vira_so_o_nome(admin, ets2_server, monkeypatch, mkdir_ok, upload_jobs):
     sent: list = []
     monkeypatch.setattr(panel, "ssh_stream_in", lambda server, cmd, source, timeout: sent.append(cmd) or "enviado")
     _upload(admin, ets2_server, "../../etc/server_packages.dat")
-    assert "/opt/game/server-home/server_packages.dat" in sent[0]
-    assert "/etc/" not in sent[0].replace("/opt/game/server-home/", "")
+    assert "/server_packages.dat" in sent[0]
+    assert "/etc/" not in sent[0]
 
 
 def test_remover_so_vale_para_pasta_de_mods_e_so_pelo_nome(admin, post, database, monkeypatch):
@@ -343,7 +371,7 @@ def test_lote_com_um_nome_errado_nao_manda_nada(admin, database, monkeypatch):
     assert touched == []
 
 
-def test_lote_do_dragonwilds_vai_inteiro_para_mods(admin, database, monkeypatch, mkdir_ok):
+def test_lote_do_dragonwilds_vai_inteiro_para_mods(admin, database, monkeypatch, mkdir_ok, upload_jobs):
     sid = _server(database, "dragonwilds.service")
     sent: list = []
     monkeypatch.setattr(panel, "ssh_stream_in", lambda server, cmd, source, timeout: sent.append(cmd) or "enviado")
@@ -354,7 +382,9 @@ def test_lote_do_dragonwilds_vai_inteiro_para_mods(admin, database, monkeypatch,
         "file": [(io.BytesIO(b"p"), "Mod_P.pak"), (io.BytesIO(b"u"), "Mod_P.utoc"), (io.BytesIO(b"c"), "Mod_P.ucas")],
     })
     assert len(sent) == 3
-    assert all("/opt/game/RSDragonwilds/Content/Paks/~mods/Mod_P." in c for c in sent)
+    # Os tres na MESMA espera: verificados juntos e movidos juntos.
+    assert len({c.split("/var/tmp/", 1)[1].split("/", 1)[0] for c in sent}) == 1
+    assert "/opt/game/RSDragonwilds/Content/Paks/~mods" in upload_jobs[0][1]["steps"][1]
 
 
 # ------------------------------------------------------------------ versao escolhida
@@ -414,3 +444,11 @@ def test_shroudtopia_em_versao_escolhida(admin, post, enshrouded):
     step = jobs[0][1]["steps"][0]
     assert "loader-install" in step
     assert step.rstrip().endswith("0.1.0")
+
+
+def test_tela_avisa_que_todo_mod_passa_pelo_antivirus(admin, vrising):
+    assert "ClamAV" in admin.get(f"/servers/{vrising[0]}/mods").get_data(as_text=True)
+
+
+def test_enshrouded_tambem_avisa_do_antivirus(admin, enshrouded):
+    assert "ClamAV" in admin.get(f"/servers/{enshrouded[0]}/mods").get_data(as_text=True)

@@ -305,6 +305,17 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   ja roda e o mesmo POST de instalar, pela pasta do instalador; a marca do instalador (`MARK`) grava
   `pinned`, e marca antiga sem o campo conta como "a mais nova". A tag do Shroudtopia no
   GitHub aparece com e sem `v`, e o instalador tenta as duas.
+- **Todo mod passa pelo antivirus antes de chegar ao jogo** (`games/mods/antivirus.py`). O
+  `SCAN_SCRIPT` e a regra num lugar so: o upload o roda como passo de job (o arquivo vai antes
+  para `INCOMING_PREFIX`, fora da pasta do jogo, e o `PLACE_SCRIPT` so move depois), e os
+  instaladores remotos o recebem por `--scan` e baixam TUDO (pacote e dependencias) antes de
+  verificar de uma vez - dependencia recusada nao deixa o mod principal pela metade. O
+  `scanner` dos dois instaladores e uma copia (rodam soltos no CT), e um teste cobra que seja
+  igual. **Falha fechada**: sem ClamAV, sem assinatura de ate 7 dias ou com erro, nada entra;
+  instalar sem `--scan` e recusado no proprio CT. O ClamAV so chega ao CT no primeiro mod
+  (`apt`), entao servidor que ja roda ganha a verificacao sem redeploy. O script so aceita
+  (e so apaga) caminho sob `STAGING_PREFIX`. O ClamAV carrega ~1 GB ao verificar, ao lado do
+  jogo, e so acha o que ja e conhecido: e camada, nao barreira.
 - **`KIND_GUIDE` e perfil sem botao, e isso e decisao**: carregador que ninguem provou num
   servidor de verdade fica so com instrucao - o V Rising mostrou tres armadilhas que so
   apareceram la. Botao que "instala" sem prova e pior que instrucao clara. Todo perfil tem

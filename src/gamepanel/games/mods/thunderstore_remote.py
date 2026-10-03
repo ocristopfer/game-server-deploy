@@ -14,10 +14,14 @@ um desses:
   CPU e sem log: fica desligado;
 - a primeira subida gera o codigo do jogo inteiro e chegou a 9,4 GB de memoria.
 
-Acoes (argv): status | loader-install [VERSAO] | loader-enable | loader-disable |
+Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable |
 plugin-install NS NOME [VERSAO] | plugin-remove NS NOME. Sem VERSAO vale a mais nova; com ela,
 o pacote e as dependencias vem nas versoes que ELE declara (ver `install_plugin`). Toda acao
 imprime o progresso e termina com UMA linha JSON, que e o que o painel le.
+
+Instalar exige `--scan` (o `antivirus.SCAN_SCRIPT` do painel): tudo o que vai ser instalado
+- o pacote e TODAS as dependencias - e baixado primeiro, verificado de uma vez e so entao
+gravado na pasta do jogo. Achado ou verificacao que nao roda = nada e instalado.
 """
 from __future__ import annotations
 
@@ -28,7 +32,9 @@ import os
 import posixpath
 import re
 import shutil
+import subprocess
 import sys
+import tempfile
 import urllib.request
 import zipfile
 
@@ -55,6 +61,39 @@ def fetch(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": "gamepanel"})  # noqa: S310
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310
         return r.read()
+
+
+# ------------------------------------------------------------------ antivirus
+# IGUAL em shroudtopia_remote.py (ha teste comparando): os dois rodam soltos no CT e nao
+# importam um ao outro. A regra (o que conta como achado) nao mora aqui, e sim no script
+# que o painel manda; aqui so se escreve o que baixou numa pasta e se chama o script.
+
+def scanner(script: str):
+    """Funcao que verifica [(nome, bytes)] com o script do painel; ValueError = recusado."""
+    def scan(blobs: list[tuple[str, bytes]]) -> None:
+        # /var/tmp e nao /tmp: no Debian 13 o /tmp e tmpfs (memoria), e o pacote pode ter
+        # dezenas de MB. O prefixo e o que o script do antivirus aceita apagar. mkdtemp:
+        # nome imprevisivel e 0700.
+        os.makedirs("/var/tmp", exist_ok=True)  # noqa: S108
+        work = tempfile.mkdtemp(prefix="gamepanel-scan-", dir="/var/tmp")
+        try:
+            for i, (name, data) in enumerate(blobs):
+                safe = re.sub(r"[^A-Za-z0-9._-]", "_", name)[:120]
+                with open(os.path.join(work, f"{i:02d}-{safe}.zip"), "wb") as f:
+                    f.write(data)
+            sys.stdout.flush()
+            proc = subprocess.run(["bash", "-c", script, "gp", work],  # noqa: S603, S607
+                                  capture_output=True, text=True, check=False)
+            sys.stdout.write((proc.stdout or "") + (proc.stderr or ""))
+            if proc.returncode != 0:
+                raise ValueError("o antivirus recusou o pacote: nada foi instalado")
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    return scan
+
+
+def _no_scan(blobs: list[tuple[str, bytes]]) -> None:
+    """So para teste e status: `main` recusa instalar sem `--scan`."""
 
 
 def _read_text(path: str, default: str = "") -> str:
@@ -179,10 +218,12 @@ def set_enabled(game_dir: str, enabled: bool) -> None:
 
 
 def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: str = RUNTIME_ENV,
-                   version: str = "") -> dict:
+                   version: str = "", scan=_no_scan) -> dict:
     meta = package_meta(ns, name, version, fetcher)
     print(f"baixando {meta['full_name']}")
-    z = zipfile.ZipFile(io.BytesIO(fetcher(meta["download_url"])))
+    data = fetcher(meta["download_url"])
+    scan([(meta["full_name"], data)])
+    z = zipfile.ZipFile(io.BytesIO(data))
     # O pacote traz uma pasta (BepInExPack_V_Rising/) com o que vai na RAIZ do jogo: e a
     # que contem BepInEx/core. O resto do zip (icone, README) fica de fora.
     core = next((n for n in z.namelist() if "BepInEx/core/" in n), "")
@@ -231,12 +272,12 @@ def _plugin_rel(entry: str) -> tuple[str, str]:
     return "plugins", rel
 
 
-def _install_one(game_dir: str, meta: dict, fetcher, pinned: bool) -> int:
+def _install_one(game_dir: str, meta: dict, data: bytes, pinned: bool) -> int:
     ns, name = meta["full_name"].split("-")[0], meta["name"]
     target = os.path.join(_plugins_dir(game_dir), f"{check_part(ns)}-{check_part(name)}")
     shutil.rmtree(target, ignore_errors=True)  # versao nova substitui a velha por inteiro
     os.makedirs(target, exist_ok=True)
-    z = zipfile.ZipFile(io.BytesIO(fetcher(meta["download_url"])))
+    z = zipfile.ZipFile(io.BytesIO(data))
     count = 0
     for entry in z.namelist():
         if entry.endswith("/"):
@@ -260,18 +301,21 @@ def _install_one(game_dir: str, meta: dict, fetcher, pinned: bool) -> int:
 
 
 def install_plugin(game_dir: str, ns: str, name: str, fetcher=fetch, loader_ns: str = "BepInEx",
-                   version: str = "") -> dict:
+                   version: str = "", scan=_no_scan) -> dict:
     """O pacote e as dependencias dele (menos o proprio BepInEx, que tem botao proprio).
 
     Com versao fixada, as dependencias vem na versao que AQUELA versao declara, e nao na mais
     nova: quem fixa uma versao quer o conjunto que o autor testou, e uma dependencia nova
     demais e justamente o tipo de coisa que quebra o mod que se quis segurar. A consequencia:
     uma dependencia dividida com outro mod pode voltar para uma versao mais velha.
+
+    Baixa TUDO antes de gravar qualquer coisa: a verificacao e uma so, e uma dependencia
+    recusada nao deixa o mod principal instalado pela metade.
     """
     pinned = bool(version)
     queue = [(check_part(ns), check_part(name), check_version(version) if pinned else "")]
     done: set[tuple[str, str]] = set()
-    installed = []
+    downloaded: list[tuple[dict, bytes]] = []
     while queue:
         pns, pname, pversion = queue.pop(0)
         if (pns, pname) in done:
@@ -280,14 +324,18 @@ def install_plugin(game_dir: str, ns: str, name: str, fetcher=fetch, loader_ns: 
         if len(done) > MAX_PACKAGES:
             raise ValueError(f"mais de {MAX_PACKAGES} pacotes na arvore de dependencias")
         meta = package_meta(pns, pname, pversion, fetcher)
-        print(f"instalando {meta['full_name']}")
-        files = _install_one(game_dir, meta, fetcher, pinned)
-        installed.append({"full_name": meta["full_name"], "files": files})
+        print(f"baixando {meta['full_name']}")
+        downloaded.append((meta, fetcher(meta["download_url"])))
         for dep in meta.get("dependencies", []):
             dns, dname, dversion = _dependency(dep)
             if dns == loader_ns and dname.startswith("BepInExPack"):
                 continue
             queue.append((dns, dname, dversion if pinned else ""))
+    scan([(meta["full_name"], data) for meta, data in downloaded])
+    installed = []
+    for meta, data in downloaded:
+        print(f"instalando {meta['full_name']}")
+        installed.append({"full_name": meta["full_name"], "files": _install_one(game_dir, meta, data, pinned)})
     return {"installed": installed}
 
 
@@ -337,19 +385,28 @@ def _chown(path: str) -> None:
                 os.chown(n, pw.pw_uid, pw.pw_gid)
 
 
+INSTALL_ACTIONS = ("loader-install", "plugin-install")
+
+
 def main(argv: list[str]) -> int:
+    script = ""
+    if argv[:1] == ["--scan"]:
+        script, argv = argv[1], argv[2:]
     action, game_dir, loader_ns, loader_name, *rest = argv
+    scan = scanner(script) if script else _no_scan
     try:
+        if action in INSTALL_ACTIONS and not script:
+            raise ValueError("instalar sem a verificacao do antivirus nao e caminho do painel")
         if action == "status":
             result = status(game_dir)
         elif action == "loader-install":
-            result = install_loader(game_dir, loader_ns, loader_name, version=rest[0] if rest else "")
+            result = install_loader(game_dir, loader_ns, loader_name, version=rest[0] if rest else "", scan=scan)
         elif action in ("loader-enable", "loader-disable"):
             set_enabled(game_dir, action == "loader-enable")
             result = {"enabled": action == "loader-enable"}
         elif action == "plugin-install":
             result = install_plugin(game_dir, rest[0], rest[1], loader_ns=loader_ns,
-                                    version=rest[2] if len(rest) > 2 else "")
+                                    version=rest[2] if len(rest) > 2 else "", scan=scan)
         elif action == "plugin-remove":
             result = remove_plugin(game_dir, rest[0], rest[1])
         else:

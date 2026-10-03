@@ -20,6 +20,9 @@
 
 <div class="card">
   <p class="muted small">{{ _h(profile.help_key, folder=profile.folder) }}</p>
+  {% if profile.upload_names or profile.extensions or profile.kind in (kind_thunderstore, kind_shroudtopia) %}
+  <p class="muted small">{{ _h('mods.antivirus_note') }}</p>
+  {% endif %}
   {% if profile.sources %}
   <h2>{{ _('mods.where_to_find') }}</h2>
   <div class="cluster">

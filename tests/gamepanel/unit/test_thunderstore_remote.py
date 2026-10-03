@@ -278,9 +278,42 @@ def test_main_passa_a_versao_adiante(game, capsys, monkeypatch):
     monkeypatch.setattr(ts, "install_plugin", lambda *a, **kw: calls.append((a, kw)) or {"installed": []})
     monkeypatch.setattr(ts, "install_loader", lambda *a, **kw: calls.append((a, kw)) or {})
     monkeypatch.setattr(ts, "_chown", lambda path: None)
-    base = [game_dir, "BepInEx", "BepInExPack_V_Rising"]
-    assert ts.main(["plugin-install", *base, "deca", "VampireCommandFramework", "0.10.4"]) == 0
-    assert ts.main(["plugin-install", *base, "deca", "VampireCommandFramework"]) == 0
-    assert ts.main(["loader-install", *base, "1.691.3"]) == 0
-    assert ts.main(["loader-install", *base]) == 0
+    scan, base = ["--scan", "true"], [game_dir, "BepInEx", "BepInExPack_V_Rising"]
+    assert ts.main([*scan, "plugin-install", *base, "deca", "VampireCommandFramework", "0.10.4"]) == 0
+    assert ts.main([*scan, "plugin-install", *base, "deca", "VampireCommandFramework"]) == 0
+    assert ts.main([*scan, "loader-install", *base, "1.691.3"]) == 0
+    assert ts.main([*scan, "loader-install", *base]) == 0
     assert [kw["version"] for _, kw in calls] == ["0.10.4", "", "1.691.3", ""]
+
+
+# ------------------------------------------------------------------ antivirus
+
+def test_verifica_o_pacote_e_as_dependencias_de_uma_vez_antes_de_gravar(game):
+    game_dir, _ = game
+    seen: list = []
+    ts.install_plugin(game_dir, "odjit", "KindredCommands", fake_fetch, scan=lambda blobs: seen.append(blobs))
+    assert len(seen) == 1, "uma verificacao so, com tudo"
+    assert [name for name, _ in seen[0]] == ["odjit-KindredCommands-2.1.0", "deca-VampireCommandFramework-0.11.0"]
+
+
+def test_dependencia_recusada_nao_deixa_nada_instalado(game):
+    """Gravar o mod principal e recusar a dependencia deixaria um mod pela metade."""
+    game_dir, _ = game
+
+    def refuse(blobs):
+        if any(b"vcf" in data for _, data in blobs):
+            raise ValueError("o antivirus recusou o pacote: nada foi instalado")
+    with pytest.raises(ValueError, match="antivirus"):
+        ts.install_plugin(game_dir, "odjit", "KindredCommands", fake_fetch, scan=refuse)
+    assert not os.path.exists(os.path.join(game_dir, "BepInEx"))
+
+
+def test_carregador_recusado_nao_toca_no_jogo_nem_no_wine(game):
+    game_dir, env = game
+
+    def refuse(blobs):
+        raise ValueError("o antivirus recusou o pacote: nada foi instalado")
+    with pytest.raises(ValueError):
+        ts.install_loader(game_dir, "BepInEx", "BepInExPack_V_Rising", fake_fetch, env_path=env, scan=refuse)
+    assert os.listdir(game_dir) == []
+    assert "mscoree,mshtml=" in Path(env).read_text()

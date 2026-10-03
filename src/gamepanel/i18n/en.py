@@ -580,7 +580,6 @@ MESSAGES: dict[str, str] = {
         "is kept).",
     "mods.restart_after": "Restart the server afterwards (mods only load when it starts again)",
     "mods.upload_button": "Upload",
-    "mods.uploaded": "{n} file(s) uploaded.",
     "mods.help_vrising":
         "V Rising mods come from <strong>Thunderstore</strong> and run on <strong>BepInEx</strong>, "
         "which must be installed and enabled on the server. The panel downloads everything FROM "
@@ -626,6 +625,12 @@ MESSAGES: dict[str, str] = {
         "asks for (a dependency shared with another mod may go back to an older version). The "
         "mod's config is kept. Empty updates to the newest.",
     "mods.change_version_button": "Change version",
+    "mods.antivirus_note":
+        "Every mod goes through the <strong>antivirus (ClamAV)</strong> inside the container "
+        "before it reaches the game; if it finds something, or cannot scan, the mod is NOT "
+        "installed and the server does not restart. The first time, the container installs "
+        "ClamAV (a few extra minutes). It catches what is already known: keep downloading "
+        "only from sources you trust.",
     "mods.plugin_install": "Install",
     "mods.where_to_find": "Where to find mods",
     "mods.source_workshop": "Steam Workshop",

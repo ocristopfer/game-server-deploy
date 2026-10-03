@@ -1191,8 +1191,8 @@ jogo entende mod:
 - **RuneScape: Dragonwilds**: os `.pak` de mod (com o `.utoc` e o `.ucas` de mesmo nome, que a
   Unreal 5 exige - mande os tres juntos) vao em `RSDragonwilds/Content/Paks/~mods`. Mod de
   script (UE4SS) nao roda no servidor dedicado.
-- **Enshrouded**: botao **Instalar o Shroudtopia** (o carregador). O container baixa a versao
-  mais recente do GitHub, poe o `winmm.dll` e o `shroudtopia.dll` ao lado do `.exe` e liga o
+- **Enshrouded**: botao **Instalar o Shroudtopia** (o carregador). O container baixa do
+  GitHub a versao mais recente (ou a que voce escolher), poe o `winmm.dll` e o `shroudtopia.dll` ao lado do `.exe` e liga o
   `winmm=n,b` do Wine; os mods de exemplo do pacote oficial NAO entram (trazem trapaca ligada).
   Os mods sao `.dll` (Nexus) enviados pela tela para `/opt/game/mods`, e as opcoes de cada um
   ficam no `shroudtopia.json`. Desligar tira o ajuste do Wine. A tela mostra o fim do
@@ -1202,6 +1202,23 @@ Toda tela Mods tem os links de **onde achar mods** daquele jogo. O **Nexus Mods*
 link, nunca download automatico: a API dele so entrega arquivo para conta Premium, e automatizar
 sem ela viola os termos de uso - baixe la e envie pela tela.
 - Jogo sem gestor ainda: a tela manda para **Arquivos**.
+
+**Versao.** BepInEx, mod do Thunderstore e Shroudtopia aceitam uma versao (`1.2.3`); vazio
+instala a mais nova. Colar o nome com versao (`deca-VampireCommandFramework-0.11.0`) tambem
+vale. Mod com versao escolhida traz as dependencias na versao que ele pede e aparece como
+**versao fixada**. Num servidor que ja roda, **Trocar a versao de um mod instalado** substitui
+a versao por inteiro (a config do mod fica); o carregador troca pelo **Reinstalar / atualizar**.
+
+**Antivirus.** Todo mod passa pelo **ClamAV dentro do container do jogo** antes de chegar a
+pasta do jogo: o que o container baixa (Thunderstore, Shroudtopia - o pacote e todas as
+dependencias, verificados juntos) e o que voce envia pela tela (que vai primeiro para uma
+pasta de espera, e so e movido depois de limpo). Na primeira vez o container instala o ClamAV
+(`apt`, ~300 MB, mais o servico que atualiza as assinaturas); servidor sem mod nao recebe nada.
+A verificacao **falha fechada**: achado, arquivo grande demais, zip com senha, assinaturas com
+mais de 7 dias ou o ClamAV que nao instala - o mod NAO entra, o servidor nao reinicia e o log da
+tarefa diz por que. Durante a verificacao o ClamAV usa ~1 GB de memoria por alguns segundos, ao
+lado do jogo. Ele acha o que ja e conhecido: mod malicioso feito sob medida passa - e uma camada
+a mais, nao a garantia.
 
 O envio pode reiniciar o servidor no fim (mod so entra quando ele sobe de novo), e fica no
 historico como "Mod enviado". A tela e so de admin, como Arquivos.

@@ -18,8 +18,10 @@ por um desses:
 Desligar e tirar o `winmm=n,b`: o Wine volta ao winmm dele e nenhum codigo do carregador
 roda. Mais seguro que confiar no `"active": false` do json, que ainda carrega a DLL.
 
-Acoes (argv): status | loader-install [VERSAO] | loader-enable | loader-disable. Sem VERSAO
-vale a release mais recente do GitHub; com ela, a release daquela tag. Toda acao imprime o
+Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable. Sem VERSAO
+vale a release mais recente do GitHub; com ela, a release daquela tag. Instalar exige
+`--scan` (o `antivirus.SCAN_SCRIPT` do painel): o zip e verificado antes de qualquer arquivo
+chegar a pasta do jogo. Toda acao imprime o
 progresso e termina com UMA linha JSON, que e o que o painel le.
 """
 from __future__ import annotations
@@ -29,7 +31,10 @@ import io
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import urllib.request
 import zipfile
 
@@ -61,6 +66,39 @@ def fetch(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": "gamepanel"})  # noqa: S310
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310
         return r.read()
+
+
+# ------------------------------------------------------------------ antivirus
+# IGUAL em thunderstore_remote.py (ha teste comparando): os dois rodam soltos no CT e nao
+# importam um ao outro. A regra (o que conta como achado) nao mora aqui, e sim no script
+# que o painel manda; aqui so se escreve o que baixou numa pasta e se chama o script.
+
+def scanner(script: str):
+    """Funcao que verifica [(nome, bytes)] com o script do painel; ValueError = recusado."""
+    def scan(blobs: list[tuple[str, bytes]]) -> None:
+        # /var/tmp e nao /tmp: no Debian 13 o /tmp e tmpfs (memoria), e o pacote pode ter
+        # dezenas de MB. O prefixo e o que o script do antivirus aceita apagar. mkdtemp:
+        # nome imprevisivel e 0700.
+        os.makedirs("/var/tmp", exist_ok=True)  # noqa: S108
+        work = tempfile.mkdtemp(prefix="gamepanel-scan-", dir="/var/tmp")
+        try:
+            for i, (name, data) in enumerate(blobs):
+                safe = re.sub(r"[^A-Za-z0-9._-]", "_", name)[:120]
+                with open(os.path.join(work, f"{i:02d}-{safe}.zip"), "wb") as f:
+                    f.write(data)
+            sys.stdout.flush()
+            proc = subprocess.run(["bash", "-c", script, "gp", work],  # noqa: S603, S607
+                                  capture_output=True, text=True, check=False)
+            sys.stdout.write((proc.stdout or "") + (proc.stderr or ""))
+            if proc.returncode != 0:
+                raise ValueError("o antivirus recusou o pacote: nada foi instalado")
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    return scan
+
+
+def _no_scan(blobs: list[tuple[str, bytes]]) -> None:
+    """So para teste e status: `main` recusa instalar sem `--scan`."""
 
 
 def _read_text(path: str, default: str = "") -> str:
@@ -147,11 +185,15 @@ def release_for(version: str = "", fetcher=fetch) -> dict:
     raise ValueError(f"o Shroudtopia nao tem a versao {version}: {last}")
 
 
-def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, version: str = "") -> dict:
+def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, version: str = "",
+                   scan=_no_scan) -> dict:
     release = release_for(version, fetcher)
     name, url = _asset_url(release)
     print(f"baixando {name}")
-    z = zipfile.ZipFile(io.BytesIO(fetcher(url)))
+    data = fetcher(url)
+    # O zip inteiro, mods de exemplo inclusive: e o que veio da internet.
+    scan([(name, data)])
+    z = zipfile.ZipFile(io.BytesIO(data))
     by_base = {n.rsplit("/", 1)[-1].lower(): n for n in z.namelist() if not n.endswith("/")}
     missing = [f for f in LOADER_FILES if f not in by_base]
     if missing:
@@ -207,12 +249,17 @@ def _chown(game_dir: str) -> None:
 
 
 def main(argv: list[str]) -> int:
+    script = ""
+    if argv[:1] == ["--scan"]:
+        script, argv = argv[1], argv[2:]
     action, game_dir, *rest = argv
     try:
+        if action == "loader-install" and not script:
+            raise ValueError("instalar sem a verificacao do antivirus nao e caminho do painel")
         if action == "status":
             result = status(game_dir)
         elif action == "loader-install":
-            result = install_loader(game_dir, version=rest[0] if rest else "")
+            result = install_loader(game_dir, version=rest[0] if rest else "", scan=scanner(script))
         elif action in ("loader-enable", "loader-disable"):
             set_enabled(RUNTIME_ENV, action == "loader-enable")
             result = {"enabled": action == "loader-enable"}

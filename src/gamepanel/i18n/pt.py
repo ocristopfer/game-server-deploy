@@ -582,7 +582,6 @@ MESSAGES: dict[str, str] = {
         "copia .bak).",
     "mods.restart_after": "Reiniciar o servidor depois (mod so entra quando ele sobe de novo)",
     "mods.upload_button": "Enviar",
-    "mods.uploaded": "{n} arquivo(s) enviado(s).",
     "mods.help_vrising":
         "Mods do V Rising vem do <strong>Thunderstore</strong> e rodam no <strong>BepInEx</strong>, "
         "que precisa estar instalado e ligado no servidor. O painel baixa tudo DE DENTRO do "
@@ -628,6 +627,11 @@ MESSAGES: dict[str, str] = {
         "ela pede (uma dependencia dividida com outro mod pode voltar para uma versao mais "
         "velha). A config do mod e mantida. Vazio atualiza para a mais nova.",
     "mods.change_version_button": "Trocar versao",
+    "mods.antivirus_note":
+        "Todo mod passa pelo <strong>antivirus (ClamAV)</strong> dentro do container antes de "
+        "chegar ao jogo; se ele achar algo, ou nao conseguir verificar, o mod NAO entra e o "
+        "servidor nao reinicia. Na primeira vez o container instala o ClamAV (uns minutos a "
+        "mais). Ele acha o que ja e conhecido: continue baixando so de fonte em que confia.",
     "mods.plugin_install": "Instalar",
     "mods.where_to_find": "Onde achar mods",
     "mods.source_workshop": "Steam Workshop",
