@@ -709,6 +709,12 @@ MESSAGES: dict[str, str] = {
     "mods.oxide_log": "End of the Oxide log",
     "mods.source_ficsit": "ficsit.app",
     "mods.source_umod": "uMod (plugins)",
+    "mods.ue4ss_linux_config_help":
+        "Linux port of UE4SS (XarminaEu/ue4ss-linux), loaded by LD_PRELOAD on the service, with no "
+        "console or window. Each mod is a folder in <code>{folder}</code>, switched on in the "
+        "<code>mods.txt</code> there, on the <a href=\"{url}\">Files screen</a>. Lua or Linux "
+        "<code>.so</code> mods only: Windows <code>.dll</code> mods do not load.",
+    "mods.source_ue4ss_linux": "UE4SS Linux (port)",
     "mods.bad_name": "{name} is not accepted here. Expected: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos

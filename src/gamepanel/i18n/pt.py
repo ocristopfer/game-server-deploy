@@ -710,6 +710,12 @@ MESSAGES: dict[str, str] = {
     "mods.oxide_log": "Fim do log do Oxide",
     "mods.source_ficsit": "ficsit.app",
     "mods.source_umod": "uMod (plugins)",
+    "mods.ue4ss_linux_config_help":
+        "Port Linux do UE4SS (XarminaEu/ue4ss-linux), ligado por LD_PRELOAD no servico, sem console "
+        "nem janela. Cada mod e uma pasta em <code>{folder}</code>, ligada no <code>mods.txt</code> "
+        "dali, pela <a href=\"{url}\">tela Arquivos</a>. So mods em Lua ou <code>.so</code> de Linux: "
+        "<code>.dll</code> de Windows nao carrega.",
+    "mods.source_ue4ss_linux": "UE4SS Linux (port)",
     "mods.bad_name": "{name} nao e aceito aqui. Esperado: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos

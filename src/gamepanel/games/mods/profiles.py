@@ -30,6 +30,10 @@ KIND_UE4SS = "ue4ss"
 KIND_SML = "sml"
 # Rust: o Oxide (uMod) sobrescreve DLLs do jogo e os plugins sao .cs (games/mods/oxide_remote.py).
 KIND_OXIDE = "oxide"
+# Unreal LINUX nativo (Palworld): o port XarminaEu/ue4ss-linux por LD_PRELOAD num drop-in do systemd
+# (games/mods/ue4ss_linux_remote.py). A pasta do perfil continua a dos .pak (envio); os mods
+# do UE4SS ficam em <loader_dir>/Mods.
+KIND_UE4SS_LINUX = "ue4ss-linux"
 # So o guia (onde achar, como instalar), sem acao: o caminho existe mas ainda nao foi provado
 # num servidor de verdade, e botao que "instala" sem prova e pior que instrucao clara.
 KIND_GUIDE = "guide"
@@ -105,14 +109,20 @@ ETS2 = ModProfile(
 
 PALWORLD = ModProfile(
     key="palworld",
-    kind=KIND_FOLDER,
+    kind=KIND_UE4SS_LINUX,
     services=("palworld",),
     # A Unreal carrega de ~mods os .pak que nao vieram com o jogo; o servidor e o cliente
     # tem cada um a sua copia, e mod de servidor so vale se estiver aqui.
     folder="/opt/game/Pal/Content/Paks/~mods",
+    # O UE4SS Linux (port verificado pelos autores no Palworld, UE 5.1) entra ao lado do binario.
+    loader_dir="/opt/game/Pal/Binaries/Linux",
     help_key="mods.help_palworld",
     extensions=(".pak",),
-    sources=(("mods.source_nexus", NEXUS + "palworld/mods/"),),
+    audit_paths=("/opt/game/Pal/Content/Paks/~mods", "/opt/game/Pal/Binaries/Linux/Mods",
+                 "/opt/game/Pal/Binaries/Linux/libUE4SS.so"),
+    sources=(("mods.source_nexus", NEXUS + "palworld/mods/"),
+             ("mods.source_ue4ss_linux", "https://github.com/XarminaEu/ue4ss-linux/releases")),
+    proven=False,
 )
 
 DRAGONWILDS = ModProfile(

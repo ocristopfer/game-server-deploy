@@ -1206,6 +1206,11 @@ jogo entende mod:
     por um drop-in do systemd.
   - Rust: **Oxide** (uMod). Ele sobrescreve arquivos do jogo (o painel guarda os originais para
     desligar), e **toda atualizacao do Rust o apaga**: reinstale depois. Plugins `.cs` pela tela.
+- **Palworld**: alem dos `.pak`, botao **Instalar o UE4SS Linux** (o port XarminaEu/ue4ss-linux,
+  feito para o Palworld; ainda nao testado aqui). Ele entra por `LD_PRELOAD` no servico; mods em
+  Lua ou `.so` de Linux, nunca `.dll` de Windows.
+- **Dragonwilds**: so `.pak`. Os ports Linux do UE4SS foram testados no servidor de verdade e nao
+  servem (o melhor roda Lua puro, mas qualquer mod que toque o jogo derruba o servidor).
 - **Icarus**: botao **Instalar o UE4SS** (o carregador de mods de script). O container baixa a
   versao experimental do GitHub - a estavel (v3.0.1) quebra a Steam do servidor sob o Proton e
   ele some do navegador -, verifica no antivirus, poe o `dwmapi.dll` ao lado do `.exe` e o resto

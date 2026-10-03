@@ -23,6 +23,7 @@ from gamepanel.games.mods import (
     shroudtopia_remote,
     sml_remote,
     thunderstore_remote,
+    ue4ss_linux_remote,
     ue4ss_remote,
 )
 
@@ -186,7 +187,7 @@ def test_token_de_envio_so_hex(token):
 def test_os_instaladores_remotos_verificam_do_mesmo_jeito():
     """Eles rodam soltos no CT e nao importam um ao outro: a copia tem de ser igual."""
     source = inspect.getsource(thunderstore_remote.scanner)
-    for other in (shroudtopia_remote, ue4ss_remote, sml_remote, oxide_remote):
+    for other in (shroudtopia_remote, ue4ss_remote, sml_remote, oxide_remote, ue4ss_linux_remote):
         assert source == inspect.getsource(other.scanner), other.__name__
 
 

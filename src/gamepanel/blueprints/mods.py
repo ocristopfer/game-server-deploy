@@ -23,6 +23,7 @@ from gamepanel.games.mods import (
     sml_remote,
     thunderstore,
     thunderstore_remote,
+    ue4ss_linux_remote,
     ue4ss_remote,
     workshop,
 )
@@ -38,6 +39,7 @@ SHROUDTOPIA_SOURCE = Path(shroudtopia_remote.__file__).read_text(encoding="utf-8
 UE4SS_SOURCE = Path(ue4ss_remote.__file__).read_text(encoding="utf-8")
 OXIDE_SOURCE = Path(oxide_remote.__file__).read_text(encoding="utf-8")
 SML_SOURCE = Path(sml_remote.__file__).read_text(encoding="utf-8")
+UE4SS_LINUX_SOURCE = Path(ue4ss_linux_remote.__file__).read_text(encoding="utf-8")
 # Baixar o BepInEx (33 MB) e as dependencias leva minutos: vira job, com log e prazo proprio.
 INSTALL_TIMEOUT = 1800
 LOADER_ACTIONS = ("install", "enable", "disable")
@@ -92,7 +94,8 @@ NATIVE_LOADERS = {profiles.KIND_SHROUDTOPIA: SHROUDTOPIA_SOURCE, profiles.KIND_U
                   profiles.KIND_OXIDE: OXIDE_SOURCE}
 # Nome do carregador no historico de tarefas.
 LOADER_NAMES = {profiles.KIND_SHROUDTOPIA: "Shroudtopia", profiles.KIND_UE4SS: "UE4SS",
-                profiles.KIND_OXIDE: "Oxide", profiles.KIND_SML: "SML"}
+                profiles.KIND_OXIDE: "Oxide", profiles.KIND_SML: "SML",
+                profiles.KIND_UE4SS_LINUX: "UE4SS Linux"}
 
 # Toda acao que BAIXA algo leva o antivirus junto; o instalador remoto recusa instalar sem ele.
 SCANNED_ACTIONS = ("loader-install", "plugin-install", "mod-install")
@@ -102,6 +105,10 @@ def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str) -> str:
     scan = ("--scan", antivirus.SCAN_SCRIPT) if action in SCANNED_ACTIONS else ()
     if profile.kind == profiles.KIND_SML:
         return panel.q("python3", "-c", SML_SOURCE, *scan, action, profile.loader_dir, *args)
+    if profile.kind == profiles.KIND_UE4SS_LINUX:
+        # LD_PRELOAD num drop-in deste servico; o nome sai do perfil (escolhido por ele).
+        service = ("--unit", f"{profile.services[0]}.service")
+        return panel.q("python3", "-c", UE4SS_LINUX_SOURCE, *scan, *service, action, profile.loader_dir, *args)
     if profile.kind in NATIVE_LOADERS:
         # O carregador mora um nivel acima da pasta de mods: ao lado do executavel do jogo.
         source = NATIVE_LOADERS[profile.kind]
@@ -160,13 +167,16 @@ def index(sid: int):
         view = _shroudtopia_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_FOLDER:
         view = _folder_view(server, profile)
+    elif profile and profile.kind == profiles.KIND_UE4SS_LINUX:
+        # Os dois: o carregador (status no CT) e os .pak da pasta do perfil.
+        view = {**_shroudtopia_view(server, profile, errors), **_folder_view(server, profile)}
     return render_template(
         "mods.html", server=server, profile=profile, view=view, errors=errors,
         expected_text="\n".join(str(i) for i in _expected_ids(server)),
         workshop_url=workshop.url, kind_packages=profiles.KIND_PACKAGES,
         kind_thunderstore=profiles.KIND_THUNDERSTORE, kind_folder=profiles.KIND_FOLDER,
         kind_shroudtopia=profiles.KIND_SHROUDTOPIA, kind_ue4ss=profiles.KIND_UE4SS,
-        kind_sml=profiles.KIND_SML, kind_oxide=profiles.KIND_OXIDE,
+        kind_sml=profiles.KIND_SML, kind_oxide=profiles.KIND_OXIDE, kind_ue4ss_linux=profiles.KIND_UE4SS_LINUX,
         loader_url=_loader_url(profile),
     )
 
@@ -192,7 +202,7 @@ def _thunderstore_job(sid: int, action: str, step: str, label: str):
 
 
 # Perfis em que o painel instala o CARREGADOR (o botao "Instalar/Ligar/Desligar").
-LOADER_KINDS = (profiles.KIND_THUNDERSTORE, *NATIVE_LOADERS, profiles.KIND_SML)
+LOADER_KINDS = (profiles.KIND_THUNDERSTORE, *NATIVE_LOADERS, profiles.KIND_SML, profiles.KIND_UE4SS_LINUX)
 
 
 def _loader_profile_or_back(sid: int):
@@ -408,7 +418,7 @@ def delete(sid: int):
     name = (request.form.get("name") or "").strip()
     # So o arquivo de mod da pasta do perfil, pelo nome: nada de caminho vindo do formulario.
     # Pasta de mods com arquivo solto: a dos .pak e a das DLLs do Shroudtopia.
-    deletable = (profiles.KIND_FOLDER, profiles.KIND_SHROUDTOPIA, profiles.KIND_OXIDE)
+    deletable = (profiles.KIND_FOLDER, profiles.KIND_SHROUDTOPIA, profiles.KIND_OXIDE, profiles.KIND_UE4SS_LINUX)
     if not profile or profile.kind not in deletable or "/" in name or not profile.accepts(name):
         flash(panel.translate("mods.bad_name", name=name or "?",
                               allowed=", ".join(profile.extensions if profile else ())), "error")

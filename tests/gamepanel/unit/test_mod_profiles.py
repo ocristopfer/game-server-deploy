@@ -135,7 +135,7 @@ def test_todo_perfil_diz_para_onde_vai_e_o_que_aceita():
         assert p.folder == "/opt/game" or p.folder.startswith("/opt/game/")
         assert p.kind in (profiles.KIND_PACKAGES, profiles.KIND_FOLDER, profiles.KIND_THUNDERSTORE,
                           profiles.KIND_SHROUDTOPIA, profiles.KIND_UE4SS, profiles.KIND_SML,
-                          profiles.KIND_OXIDE, profiles.KIND_GUIDE)
+                          profiles.KIND_OXIDE, profiles.KIND_UE4SS_LINUX, profiles.KIND_GUIDE)
         # Toda tela de mods diz onde procurar: era a pergunta que ficava sem resposta.
         assert p.sources, p.key
         if p.kind == profiles.KIND_GUIDE:

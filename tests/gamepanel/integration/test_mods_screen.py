@@ -581,3 +581,28 @@ def test_rust_recebe_plugin_cs_e_instala_o_oxide(admin, post, database, remote):
     assert "Kits.cs" in html
     post(admin, f"/servers/{sid}/mods/loader", {"action": "install"})
     assert jobs[0][1]["steps"][0].endswith("loader-install /opt/game")
+
+
+def test_palworld_instala_o_ue4ss_linux_e_continua_recebendo_pak(admin, post, database, remote, monkeypatch):
+    calls, jobs, _ = remote
+    monkeypatch.setattr(panel, "list_dir", lambda *a, **k: ([{"name": "MeuMod_P.pak", "dir": False, "size": 10}], None))
+    sid = _server(database, "palworld.service")
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert "NAO foi testado" in html
+    assert "MeuMod_P.pak" in html
+    assert 'accept=".pak"' in html
+    assert calls[0].endswith("--unit palworld.service status /opt/game/Pal/Binaries/Linux")
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "restart": "1"})
+    install, restart = jobs[0][1]["steps"]
+    assert "--scan" in install
+    assert install.endswith("--unit palworld.service loader-install /opt/game/Pal/Binaries/Linux")
+    assert restart.endswith("restart palworld.service")
+
+
+def test_dragonwilds_nao_tem_ue4ss(admin, database, monkeypatch):
+    """Medido: no Dragonwilds (UE 5.6.1) o port roda Lua puro, mas mod que toca o jogo o derruba."""
+    monkeypatch.setattr(panel, "list_dir", lambda *a, **k: ([], None))
+    sid = _server(database, "dragonwilds.service")
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert "value=install" not in html
+    assert 'accept=".pak,.utoc,.ucas"' in html

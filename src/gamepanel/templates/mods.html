@@ -21,7 +21,7 @@
 <div class="card">
   <p class="muted small">{{ _h(profile.help_key, folder=profile.folder) }}</p>
   {% if not profile.proven %}<p class="flash error">{{ _('mods.not_proven') }}</p>{% endif %}
-  {% if profile.upload_names or profile.extensions or profile.kind in (kind_thunderstore, kind_shroudtopia, kind_ue4ss, kind_sml) %}
+  {% if profile.upload_names or profile.extensions or profile.kind in (kind_thunderstore, kind_shroudtopia, kind_ue4ss, kind_sml, kind_ue4ss_linux) %}
   <p class="muted small">{{ _h('mods.antivirus_note') }}</p>
   {% endif %}
   {# O que entrou ANTES do antivirus nunca foi verificado: este botao passa por ele o que ja
@@ -267,14 +267,15 @@
     {% endif %}
   </div>
   {% endif %}
-{% elif profile.kind == kind_ue4ss %}
+{% elif profile.kind in (kind_ue4ss, kind_ue4ss_linux) %}
+  {% set linux = profile.kind == kind_ue4ss_linux %}
   {% set st = view.state %}
   <div class="card">
     <h2>{{ _('mods.ue4ss_title') }}</h2>
     {% if st %}
       {% if st.loader_installed %}
         <p>
-          UE4SS {{ st.loader_version }}
+          {{ st.loader }} {{ st.loader_version }}
           {% if st.loader_pinned %}<span class="badge cold">{{ _('mods.pinned') }}</span>{% endif %}
           {% if st.enabled %}<span class="badge on">{{ _('mods.loader_on') }}</span>{% else %}<span class="badge cold">{{ _('mods.loader_off') }}</span>{% endif %}
         </p>
@@ -286,7 +287,7 @@
         {% if not st.loader_installed or st.enabled %}
         <label class="short">{{ _('mods.version_label') }}
           <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
-                 pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="3.0.1">
+                 pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="{{ '3.0.2' if linux else '3.0.1' }}">
           <small>{{ _('mods.version_help') }}</small>
         </label>
         {% endif %}
@@ -302,7 +303,7 @@
           {% endif %}
         </div>
       </form>
-      <p class="muted small mt-4">{{ _h('mods.ue4ss_config_help', folder=profile.folder, url=url_for('files.index', sid=server.id)) }}</p>
+      <p class="muted small mt-4">{% if linux %}{{ _h('mods.ue4ss_linux_config_help', folder=profile.loader_dir ~ '/Mods', url=url_for('files.index', sid=server.id)) }}{% else %}{{ _h('mods.ue4ss_config_help', folder=profile.folder, url=url_for('files.index', sid=server.id)) }}{% endif %}</p>
     {% endif %}
   </div>
 
@@ -327,6 +328,28 @@
     {% if st.log %}
     <h3 class="mt-4">{{ _('mods.ue4ss_log') }}</h3>
     <pre class="log">{{ st.log | join('\n') }}</pre>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if linux %}
+  <div class="card">
+    <h2>{{ _('mods.files_title') }} (.pak)</h2>
+    {% if view.files %}
+    <div class="table-wrap"><table class="jobs">
+      <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
+      <tbody>
+        {% for f in view.files %}
+        <tr>
+          <td><code>{{ f.name }}</code></td>
+          <td class="muted nowrap">{{ f.size | filesize }}</td>
+          <td>{{ ui.action(url_for('mods.delete', sid=server.id), _('mods.delete'), size='sm', variant='danger',
+                           confirm=_('mods.delete_confirm', name=f.name), fields={'name': f.name}) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      <p class="muted">{{ _('mods.no_files') }}</p>
     {% endif %}
   </div>
   {% endif %}

@@ -341,9 +341,7 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   trapaca de fabrica (so `BPModLoaderMod`/`BPML_GenericFunctions` ficam ligados), e o
   `mods.txt` oficial vem com BOM, que gruda no nome do primeiro mod. Servidor Linux nativo
   (Dragonwilds, Palworld daqui) nao carrega o UE4SS oficial; o port Linux e do Palworld (UE
-  5.1): testado no Dragonwilds (UE 5.6.1), ele entra no processo sem atrapalhar o jogo, mas se
-  acha UE 5.1, nao confirma o FName nem acha a KismetSystemLibrary, e nenhum mod Lua roda.
-  Cuidado ao medir travamento ali: a saida do Dragonwilds chega ao journal em blocos atrasados;
+  5.1); o resultado no Dragonwilds esta no item proprio, abaixo. Cuidado ao medir travamento ali: a saida do Dragonwilds chega ao journal em blocos atrasados;
   o sinal certo e o `Saved/Logs/RSDragonwilds.log` (o `HeartbeatSession` de 30 em 30 s).
 - **`proven=False` e instalador escrito sem CT de teste, e a tela AVISA** (`mods.not_proven`). Foi
   pedido assim para o Satisfactory, o Valheim e o Rust: implementar tudo e provar depois. Quem
@@ -358,6 +356,19 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   systemd com as variaveis do script de partida que vem DENTRO do pacote do BepInEx (start_server_bepinex, fora do repo) (`DOORSTOP_*`, `LD_PRELOAD` do
   `libdoorstop_x64.so`), com caminho absoluto, sem trocar o wrapper do jogo. Desligar apaga o
   drop-in; sem `daemon-reload` o systemd seguiria com o ambiente antigo.
+- **Palworld e `KIND_UE4SS_LINUX`** (`ue4ss_linux_remote.py`): o port XarminaEu/ue4ss-linux,
+  verificado pelos AUTORES no Palworld (UE 5.1) e ainda nao por nos (`proven=False`). Entra por
+  `LD_PRELOAD` num drop-in do systemd; o `.so` e trocado por `rename` (copiar por cima com o
+  servidor rodando corrompe o mapeamento); faltando biblioteca de sistema (X11, por causa da GUI
+  embutida), ela vem do apt. O perfil continua recebendo `.pak` na pasta dele: `loader_dir` e onde
+  o UE4SS entra. Versao padrao: a estavel v3.0.2 (`releases/latest`), e nao os `*-linux-dev`.
+- **Dragonwilds NAO tem UE4SS, e foi medido com os dois ports.** No CT 302 (UE 5.6.1, binario
+  sem simbolos): o port do Palworld (waze3174) se acha UE 5.1 e nao roda Lua; o XarminaEu v3.0.26
+  acha o motor e nao inicia mod nenhum; a v3.0.2 roda Lua PURO, mas `FindFirstOf`/`GetFullName`
+  e ate um `RegisterHook` derrubam o servidor (os deslocamentos sao os do Palworld). Botao ali
+  seria armadilha. O jogo tambem ACUSA o `.so` (`CheckForMods`) e marca a sessao como modificada.
+  O Nexus distribui o RE-UE4SS oficial de Windows: no servidor, so trocando para a build Windows
+  sob o Proton (o caminho provado no Icarus) - ainda nao testado.
 - **Rust e `KIND_OXIDE`** (`oxide_remote.py`): o pacote SOBRESCREVE DLLs do jogo, entao o
   instalador guarda o original (so o que NAO e dele, comparando sha256: reinstalar com o Oxide
   ligado nao pode virar "original") e desligar o devolve. Toda atualizacao do Rust pela Steam
