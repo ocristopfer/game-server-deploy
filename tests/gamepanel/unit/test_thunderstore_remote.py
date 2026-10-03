@@ -50,10 +50,27 @@ PACKAGES = {
 }
 
 
+# Versoes antigas, servidas so pela rota de versao da API: a mais nova continua a de PACKAGES.
+VCF_OLD = "deca-VampireCommandFramework-0.10.4"
+KC_OLD = "odjit-KindredCommands-2.0.0"
+LOADER_OLD = "BepInEx-BepInExPack_V_Rising-1.691.3"
+OLD_VCF_ZIP = _zip({"VampireCommandFramework.dll": b"vcf-velho"})
+VERSIONS = {
+    ("deca", "VampireCommandFramework", "0.10.4"): (_meta(VCF_OLD, [LOADER], "https://x/vcf-old"), OLD_VCF_ZIP),
+    ("odjit", "KindredCommands", "2.0.0"): (_meta(KC_OLD, [LOADER, VCF_OLD], "https://x/kc-old"), KIT_ZIP),
+    ("BepInEx", "BepInExPack_V_Rising", "1.691.3"): (_meta(LOADER_OLD, [], "https://x/loader-old"), LOADER_ZIP),
+}
+for (_ns, _name), (_m, _d) in PACKAGES.items():
+    VERSIONS[(_ns, _name, _m["version_number"])] = (_m, _d)
+
+
 def fake_fetch(url: str) -> bytes:
-    for (ns, name), (meta, data) in PACKAGES.items():
+    for (ns, name), (meta, _data) in PACKAGES.items():
         if url == ts.API.format(ns=ns, name=name):
             return json.dumps({"latest": meta}).encode()
+    for (ns, name, version), (meta, data) in VERSIONS.items():
+        if url == ts.API_VERSION.format(ns=ns, name=name, version=version):
+            return json.dumps(meta).encode()
         if url == meta["download_url"]:
             return data
     raise OSError(f"404 {url}")
@@ -186,3 +203,84 @@ def test_main_termina_com_uma_linha_json(game, capsys, monkeypatch):
     assert json.loads(last)["loader_installed"] is False
     assert ts.main(["plugin-remove", game_dir, "BepInEx", "BepInExPack_V_Rising", "../x", "y"]) == 1
     assert "error" in json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+
+
+# ------------------------------------------------------------------ versao escolhida
+
+def test_sem_versao_continua_a_mais_nova_e_nao_fixa(game):
+    game_dir, env = game
+    ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch)
+    [plugin] = ts.status(game_dir, env_path=env)["plugins"]
+    assert (plugin["version"], plugin["pinned"]) == ("0.11.0", False)
+
+
+def test_versao_fixada_traz_as_dependencias_na_versao_que_ela_pede(game):
+    """Quem fixa a 2.0.0 quer o conjunto que o autor testou, e nao a dependencia mais nova."""
+    game_dir, env = game
+    result = ts.install_plugin(game_dir, "odjit", "KindredCommands", fake_fetch, version="2.0.0")
+    assert [p["full_name"] for p in result["installed"]] == [KC_OLD, VCF_OLD]
+    st = {p["dir"]: p for p in ts.status(game_dir, env_path=env)["plugins"]}
+    assert st["deca-VampireCommandFramework"]["version"] == "0.10.4"
+    assert all(p["pinned"] for p in st.values())
+
+
+def test_trocar_a_versao_de_um_mod_ja_instalado_substitui_por_inteiro(game):
+    """O servidor que ja roda a 0.11.0 volta para a 0.10.4 sem sobrar arquivo da outra."""
+    game_dir, env = game
+    ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch)
+    ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch, version="0.10.4")
+    dll = Path(game_dir, "BepInEx", "plugins", "deca-VampireCommandFramework", "VampireCommandFramework.dll")
+    assert dll.read_bytes() == b"vcf-velho"
+    # E de volta para a mais nova, sem versao.
+    ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch)
+    assert dll.read_bytes() == b"vcf"
+    assert not ts.status(game_dir, env_path=env)["plugins"][0]["pinned"]
+
+
+def test_versao_que_nao_existe_falha_sem_instalar_nada(game):
+    game_dir, _ = game
+    with pytest.raises(OSError):
+        ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch, version="9.9.9")
+    assert not os.path.exists(os.path.join(game_dir, "BepInEx", "plugins"))
+
+
+def test_api_que_devolve_outra_versao_e_recusada(game):
+    """Pediu a 0.10.4 e veio a 0.11.0: instalar assim mesmo mentiria na tela."""
+    game_dir, _ = game
+
+    def wrong(url):
+        if url == ts.API_VERSION.format(ns="deca", name="VampireCommandFramework", version="0.10.4"):
+            return json.dumps(PACKAGES[("deca", "VampireCommandFramework")][0]).encode()
+        return fake_fetch(url)
+    with pytest.raises(ValueError, match="nao tem"):
+        ts.install_plugin(game_dir, "deca", "VampireCommandFramework", wrong, version="0.10.4")
+
+
+@pytest.mark.parametrize("bad", ["latest", "1.2", "../1.2.3", "1.2.3/x", "1.2.3;rm"])
+def test_versao_invalida_nao_vira_url(game, bad):
+    game_dir, env = game
+    with pytest.raises(ValueError):
+        ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch, version=bad)
+    with pytest.raises(ValueError):
+        ts.install_loader(game_dir, "BepInEx", "BepInExPack_V_Rising", fake_fetch, env_path=env, version=bad)
+
+
+def test_carregador_em_versao_escolhida(game):
+    game_dir, env = game
+    ts.install_loader(game_dir, "BepInEx", "BepInExPack_V_Rising", fake_fetch, env_path=env, version="1.691.3")
+    st = ts.status(game_dir, env_path=env)
+    assert (st["loader"], st["loader_pinned"]) == (LOADER_OLD, True)
+
+
+def test_main_passa_a_versao_adiante(game, capsys, monkeypatch):
+    game_dir, _ = game
+    calls: list = []
+    monkeypatch.setattr(ts, "install_plugin", lambda *a, **kw: calls.append((a, kw)) or {"installed": []})
+    monkeypatch.setattr(ts, "install_loader", lambda *a, **kw: calls.append((a, kw)) or {})
+    monkeypatch.setattr(ts, "_chown", lambda path: None)
+    base = [game_dir, "BepInEx", "BepInExPack_V_Rising"]
+    assert ts.main(["plugin-install", *base, "deca", "VampireCommandFramework", "0.10.4"]) == 0
+    assert ts.main(["plugin-install", *base, "deca", "VampireCommandFramework"]) == 0
+    assert ts.main(["loader-install", *base, "1.691.3"]) == 0
+    assert ts.main(["loader-install", *base]) == 0
+    assert [kw["version"] for _, kw in calls] == ["0.10.4", "", "1.691.3", ""]

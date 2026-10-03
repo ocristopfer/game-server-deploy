@@ -18,7 +18,8 @@ por um desses:
 Desligar e tirar o `winmm=n,b`: o Wine volta ao winmm dele e nenhum codigo do carregador
 roda. Mais seguro que confiar no `"active": false` do json, que ainda carrega a DLL.
 
-Acoes (argv): status | loader-install | loader-enable | loader-disable. Toda acao imprime o
+Acoes (argv): status | loader-install [VERSAO] | loader-enable | loader-disable. Sem VERSAO
+vale a release mais recente do GitHub; com ela, a release daquela tag. Toda acao imprime o
 progresso e termina com UMA linha JSON, que e o que o painel le.
 """
 from __future__ import annotations
@@ -33,6 +34,9 @@ import urllib.request
 import zipfile
 
 RELEASES = "https://api.github.com/repos/s0t7x/shroudtopia/releases/latest"
+RELEASE_TAG = "https://api.github.com/repos/s0t7x/shroudtopia/releases/tags/{tag}"
+# A versao vira parte da URL: so numero e ponto (o painel confere a mesma forma).
+VERSION = re.compile(r"\d{1,9}\.\d{1,9}\.\d{1,9}")
 # O zip da versao: Shroudtopia-0.1.1.zip. Asset com outro nome nao e o carregador.
 ASSET = re.compile(r"^Shroudtopia-[0-9][0-9A-Za-z.\-]*\.zip$")
 # O que sai do zip. O resto (mods/ de exemplo) fica de fora de proposito.
@@ -123,11 +127,28 @@ def _asset_url(release: dict) -> tuple[str, str]:
         url = asset.get("browser_download_url", "")
         if ASSET.match(asset.get("name", "")) and url.startswith("https://github.com/"):
             return asset["name"], url
-    raise ValueError("a versao mais recente do Shroudtopia nao traz o zip do carregador")
+    raise ValueError("esta versao do Shroudtopia nao traz o zip do carregador")
 
 
-def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV) -> dict:
-    release = json.loads(fetcher(RELEASES))
+def release_for(version: str = "", fetcher=fetch) -> dict:
+    """A release pedida (vazio = a mais recente)."""
+    if not version:
+        return json.loads(fetcher(RELEASES))
+    if not VERSION.fullmatch(version):
+        raise ValueError(f"versao invalida: {version!r}")
+    # A tag pode ter sido criada com ou sem o "v" na frente: o painel so recebe o numero, e
+    # quem digita nao tem como saber qual dos dois o autor usou.
+    last: OSError | None = None
+    for tag in (f"v{version}", version):
+        try:
+            return json.loads(fetcher(RELEASE_TAG.format(tag=tag)))
+        except OSError as exc:
+            last = exc
+    raise ValueError(f"o Shroudtopia nao tem a versao {version}: {last}")
+
+
+def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, version: str = "") -> dict:
+    release = release_for(version, fetcher)
     name, url = _asset_url(release)
     print(f"baixando {name}")
     z = zipfile.ZipFile(io.BytesIO(fetcher(url)))
@@ -146,11 +167,11 @@ def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV) ->
     os.makedirs(os.path.join(game_dir, MODS), exist_ok=True)
     if os.path.exists(env_path):
         set_enabled(env_path, True)
-    version = release.get("tag_name", "")
+    tag = release.get("tag_name", "")
     with open(os.path.join(game_dir, MARK), "w", encoding="utf-8") as f:
-        json.dump({"version": version, "asset": name}, f)
-    print(f"Shroudtopia {version} em {game_dir} (sem os mods de exemplo)")
-    return {"loader": "Shroudtopia", "version": version}
+        json.dump({"version": tag, "asset": name, "pinned": bool(version)}, f)
+    print(f"Shroudtopia {tag} em {game_dir} (sem os mods de exemplo)")
+    return {"loader": "Shroudtopia", "version": tag}
 
 
 def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
@@ -166,6 +187,7 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
     return {
         "loader_installed": all(os.path.exists(os.path.join(game_dir, f)) for f in LOADER_FILES),
         "loader": "Shroudtopia", "loader_version": mark.get("version", ""),
+        "loader_pinned": bool(mark.get("pinned")),
         "enabled": is_enabled(env_path) if os.path.exists(env_path) else False,
         "mods": mods, "log": log,
     }
@@ -185,12 +207,12 @@ def _chown(game_dir: str) -> None:
 
 
 def main(argv: list[str]) -> int:
-    action, game_dir, *_ = argv
+    action, game_dir, *rest = argv
     try:
         if action == "status":
             result = status(game_dir)
         elif action == "loader-install":
-            result = install_loader(game_dir)
+            result = install_loader(game_dir, version=rest[0] if rest else "")
         elif action in ("loader-enable", "loader-disable"):
             set_enabled(RUNTIME_ENV, action == "loader-enable")
             result = {"enabled": action == "loader-enable"}

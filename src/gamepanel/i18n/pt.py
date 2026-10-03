@@ -615,7 +615,19 @@ MESSAGES: dict[str, str] = {
     "mods.plugin_add_label": "Instalar mod do Thunderstore",
     "mods.plugin_add_help":
         "Link da pagina do mod, ou autor/pacote (ex.: deca/VampireCommandFramework). As "
-        "dependencias vem junto; sempre a versao mais nova.",
+        "dependencias vem junto. Sem versao, vem a mais nova; com versao (no campo abaixo ou "
+        "no nome colado, deca-VampireCommandFramework-0.11.0), vem aquela e as dependencias "
+        "na versao que ela pede.",
+    "mods.version_label": "Versao (opcional)",
+    "mods.version_help": "Vazio = a mais nova. Ex.: 1.2.3",
+    "mods.bad_version": "Versao invalida. Use numeros no formato 1.2.3, ou deixe vazio para a mais nova.",
+    "mods.pinned": "versao fixada",
+    "mods.change_version_title": "Trocar a versao de um mod instalado",
+    "mods.change_version_help":
+        "A versao escolhida substitui a instalada por inteiro, junto com as dependencias que "
+        "ela pede (uma dependencia dividida com outro mod pode voltar para uma versao mais "
+        "velha). A config do mod e mantida. Vazio atualiza para a mais nova.",
+    "mods.change_version_button": "Trocar versao",
     "mods.plugin_install": "Instalar",
     "mods.where_to_find": "Onde achar mods",
     "mods.source_workshop": "Steam Workshop",

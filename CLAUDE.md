@@ -296,6 +296,15 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   desligado. A primeira subida com ele chegou a 9,4 GB (`min_memory_mb` do perfil; a tela
   avisa antes de instalar). Um redeploy do jogo reescreve o `/etc/game-runtime.env` e desfaz o
   ajuste do Wine: o status acusa (`overrides_ok`) e reinstalar reaplica.
+- **A versao do mod e escolhida na tela, nunca fixada no codigo.** BepInEx, plugin do
+  Thunderstore e Shroudtopia aceitam uma versao `x.y.z` (vazio = a mais nova), conferida no
+  painel (`thunderstore.parse_version`) e de novo no CT, porque vira parte da URL da API. O
+  plugin fixado traz as dependencias na versao que ELE declara: e o conjunto que o autor
+  testou, e a mais nova e justo o que quebra o mod que se quis segurar (preco: dependencia
+  dividida com outro mod pode voltar para uma mais velha). Trocar a versao de um servidor que
+  ja roda e o mesmo POST de instalar, pela pasta do instalador; a marca do instalador (`MARK`) grava
+  `pinned`, e marca antiga sem o campo conta como "a mais nova". A tag do Shroudtopia no
+  GitHub aparece com e sem `v`, e o instalador tenta as duas.
 - **`KIND_GUIDE` e perfil sem botao, e isso e decisao**: carregador que ninguem provou num
   servidor de verdade fica so com instrucao - o V Rising mostrou tres armadilhas que so
   apareceram la. Botao que "instala" sem prova e pior que instrucao clara. Todo perfil tem

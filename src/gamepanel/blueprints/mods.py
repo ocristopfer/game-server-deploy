@@ -85,7 +85,7 @@ def _folder_view(server, profile: profiles.ModProfile) -> dict:
 def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str) -> str:
     if profile.kind == profiles.KIND_SHROUDTOPIA:
         # O carregador mora na pasta do JOGO, um nivel acima da de mods.
-        return panel.q("python3", "-c", SHROUDTOPIA_SOURCE, action, posixpath.dirname(profile.folder))
+        return panel.q("python3", "-c", SHROUDTOPIA_SOURCE, action, posixpath.dirname(profile.folder), *args)
     return panel.q("python3", "-c", REMOTE_SOURCE, action, profile.folder, *profile.loader, *args)
 
 
@@ -190,6 +190,18 @@ def _thunderstore_profile_or_back(sid: int):
     return profile
 
 
+def _form_version() -> str | None:
+    """A versao do campo do formulario: vazia = a mais nova; None = invalida (e ja avisou)."""
+    version = thunderstore.parse_version(request.form.get("version", ""))
+    if version is None:
+        flash(panel.translate("mods.bad_version"), "error")
+    return version
+
+
+def _with_version(label: str, version: str) -> str:
+    return f"{label}@{version}" if version else label
+
+
 @bp.post("/servers/<int:sid>/mods/loader")
 @panel.admin_required
 def loader(sid: int):
@@ -197,9 +209,14 @@ def loader(sid: int):
     action = request.form.get("action", "")
     if not profile or action not in LOADER_ACTIONS:
         return redirect(url_for(INDEX, sid=sid))
+    # A versao so vale para instalar: ligar e desligar nao baixam nada.
+    version = _form_version() if action == "install" else ""
+    if version is None:
+        return redirect(url_for(INDEX, sid=sid))
     name = "Shroudtopia" if profile.kind == profiles.KIND_SHROUDTOPIA else "-".join(profile.loader)
-    return _thunderstore_job(sid, "mod-loader", _remote_cmd(profile, f"loader-{action}"),
-                             f"{name}: {action}")
+    args = (version,) if version else ()
+    return _thunderstore_job(sid, "mod-loader", _remote_cmd(profile, f"loader-{action}", *args),
+                             _with_version(f"{name}: {action}", version))
 
 
 @bp.post("/servers/<int:sid>/mods/plugin/install")
@@ -212,8 +229,16 @@ def plugin_install(sid: int):
     if not parsed:
         flash(panel.translate("mods.bad_package"), "error")
         return redirect(url_for(INDEX, sid=sid))
-    ns, name = parsed
-    return _thunderstore_job(sid, "mod-install", _remote_cmd(profile, "plugin-install", ns, name), f"{ns}/{name}")
+    ns, name, pasted_version = parsed
+    # O campo de versao vence a versao que veio colada no nome: e o que a pessoa escolheu por
+    # ultimo. E e por ele que se troca a versao de um mod ja instalado (a linha da tabela).
+    version = _form_version()
+    if version is None:
+        return redirect(url_for(INDEX, sid=sid))
+    version = version or pasted_version
+    args = (ns, name, version) if version else (ns, name)
+    return _thunderstore_job(sid, "mod-install", _remote_cmd(profile, "plugin-install", *args),
+                             _with_version(f"{ns}/{name}", version))
 
 
 @bp.post("/servers/<int:sid>/mods/plugin/remove")

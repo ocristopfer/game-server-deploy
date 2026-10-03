@@ -14,9 +14,10 @@ um desses:
   CPU e sem log: fica desligado;
 - a primeira subida gera o codigo do jogo inteiro e chegou a 9,4 GB de memoria.
 
-Acoes (argv): status | loader-install | loader-enable | loader-disable |
-plugin-install NS NOME | plugin-remove NS NOME. Toda acao imprime o progresso e termina com
-UMA linha JSON, que e o que o painel le.
+Acoes (argv): status | loader-install [VERSAO] | loader-enable | loader-disable |
+plugin-install NS NOME [VERSAO] | plugin-remove NS NOME. Sem VERSAO vale a mais nova; com ela,
+o pacote e as dependencias vem nas versoes que ELE declara (ver `install_plugin`). Toda acao
+imprime o progresso e termina com UMA linha JSON, que e o que o painel le.
 """
 from __future__ import annotations
 
@@ -32,9 +33,12 @@ import urllib.request
 import zipfile
 
 API = "https://thunderstore.io/api/experimental/package/{ns}/{name}/"
+API_VERSION = "https://thunderstore.io/api/experimental/package/{ns}/{name}/{version}/"
 # Namespace e nome de pacote do Thunderstore: letras, numeros e sublinhado. Conferido aqui
 # de novo (o painel ja confere): isto vira caminho de pasta e URL.
 PART = re.compile(r"[A-Za-z0-9_]{1,64}")
+# A mesma forma de versao que o painel confere (thunderstore.VERSION): vira parte da URL.
+VERSION = re.compile(r"\d{1,9}\.\d{1,9}\.\d{1,9}")
 # O que vem no zip de todo pacote e nao e do jogo.
 SKIP = {"icon.png", "readme.md", "manifest.json", "changelog.md", "license", "license.md",
         "license.txt"}
@@ -75,9 +79,35 @@ def check_part(value: str) -> str:
     return value
 
 
+def check_version(value: str) -> str:
+    if not VERSION.fullmatch(value or ""):
+        raise ValueError(f"versao invalida: {value!r}")
+    return value
+
+
 def latest(ns: str, name: str, fetcher=fetch) -> dict:
     data = json.loads(fetcher(API.format(ns=check_part(ns), name=check_part(name))))
     return data["latest"]
+
+
+def package_meta(ns: str, name: str, version: str = "", fetcher=fetch) -> dict:
+    """Os dados de UMA versao do pacote; versao vazia = a mais nova."""
+    if not version:
+        return latest(ns, name, fetcher)
+    url = API_VERSION.format(ns=check_part(ns), name=check_part(name), version=check_version(version))
+    meta = json.loads(fetcher(url))
+    # Pediu a 1.2.0 e veio outra coisa: instalar assim mesmo seria mentir na tela.
+    if meta.get("version_number") != version:
+        raise ValueError(f"o Thunderstore nao tem {ns}-{name}-{version}")
+    return meta
+
+
+def _dependency(dep: str) -> tuple[str, str, str]:
+    """`ns-nome-1.2.3` como vem na lista de dependencias de um pacote."""
+    parts = dep.split("-")
+    if len(parts) != 3:
+        raise ValueError(f"dependencia que nao entendi: {dep!r}")
+    return parts[0], parts[1], parts[2]
 
 
 def _safe_rel(path: str) -> str:
@@ -148,8 +178,9 @@ def set_enabled(game_dir: str, enabled: bool) -> None:
              "true" if enabled else "false")
 
 
-def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: str = RUNTIME_ENV) -> dict:
-    meta = latest(ns, name, fetcher)
+def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: str = RUNTIME_ENV,
+                   version: str = "") -> dict:
+    meta = package_meta(ns, name, version, fetcher)
     print(f"baixando {meta['full_name']}")
     z = zipfile.ZipFile(io.BytesIO(fetcher(meta["download_url"])))
     # O pacote traz uma pasta (BepInExPack_V_Rising/) com o que vai na RAIZ do jogo: e a
@@ -176,7 +207,8 @@ def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: s
     if os.path.exists(env_path):
         _write_overrides(env_path, fix_overrides(old))
     with open(os.path.join(game_dir, "BepInEx", MARK), "w", encoding="utf-8") as f:
-        json.dump({"full_name": meta["full_name"], "version": meta["version_number"]}, f)
+        json.dump({"full_name": meta["full_name"], "version": meta["version_number"],
+                   "pinned": bool(version)}, f)
     print(f"{count} arquivos do carregador em {game_dir}")
     return {"loader": meta["full_name"], "files": count}
 
@@ -199,7 +231,7 @@ def _plugin_rel(entry: str) -> tuple[str, str]:
     return "plugins", rel
 
 
-def _install_one(game_dir: str, meta: dict, fetcher) -> int:
+def _install_one(game_dir: str, meta: dict, fetcher, pinned: bool) -> int:
     ns, name = meta["full_name"].split("-")[0], meta["name"]
     target = os.path.join(_plugins_dir(game_dir), f"{check_part(ns)}-{check_part(name)}")
     shutil.rmtree(target, ignore_errors=True)  # versao nova substitui a velha por inteiro
@@ -223,29 +255,39 @@ def _install_one(game_dir: str, meta: dict, fetcher) -> int:
         count += 1
     with open(os.path.join(target, MARK), "w", encoding="utf-8") as f:
         json.dump({"full_name": meta["full_name"], "version": meta["version_number"],
-                   "dependencies": meta.get("dependencies", [])}, f)
+                   "dependencies": meta.get("dependencies", []), "pinned": pinned}, f)
     return count
 
 
-def install_plugin(game_dir: str, ns: str, name: str, fetcher=fetch, loader_ns: str = "BepInEx") -> dict:
-    """O pacote e as dependencias dele (menos o proprio BepInEx, que tem botao proprio)."""
-    queue, done, installed = [(check_part(ns), check_part(name))], set(), []
+def install_plugin(game_dir: str, ns: str, name: str, fetcher=fetch, loader_ns: str = "BepInEx",
+                   version: str = "") -> dict:
+    """O pacote e as dependencias dele (menos o proprio BepInEx, que tem botao proprio).
+
+    Com versao fixada, as dependencias vem na versao que AQUELA versao declara, e nao na mais
+    nova: quem fixa uma versao quer o conjunto que o autor testou, e uma dependencia nova
+    demais e justamente o tipo de coisa que quebra o mod que se quis segurar. A consequencia:
+    uma dependencia dividida com outro mod pode voltar para uma versao mais velha.
+    """
+    pinned = bool(version)
+    queue = [(check_part(ns), check_part(name), check_version(version) if pinned else "")]
+    done: set[tuple[str, str]] = set()
+    installed = []
     while queue:
-        pns, pname = queue.pop(0)
+        pns, pname, pversion = queue.pop(0)
         if (pns, pname) in done:
             continue
         done.add((pns, pname))
         if len(done) > MAX_PACKAGES:
             raise ValueError(f"mais de {MAX_PACKAGES} pacotes na arvore de dependencias")
-        meta = latest(pns, pname, fetcher)
+        meta = package_meta(pns, pname, pversion, fetcher)
         print(f"instalando {meta['full_name']}")
-        files = _install_one(game_dir, meta, fetcher)
+        files = _install_one(game_dir, meta, fetcher, pinned)
         installed.append({"full_name": meta["full_name"], "files": files})
         for dep in meta.get("dependencies", []):
-            dns, dname = dep.split("-")[0], dep.split("-")[1]
+            dns, dname, dversion = _dependency(dep)
             if dns == loader_ns and dname.startswith("BepInExPack"):
                 continue
-            queue.append((dns, dname))
+            queue.append((dns, dname, dversion if pinned else ""))
     return {"installed": installed}
 
 
@@ -261,7 +303,8 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
     pdir = _plugins_dir(game_dir)
     for entry in sorted(os.listdir(pdir)) if os.path.isdir(pdir) else []:
         # Pasta posta a mao, sem a marca do instalador: aparece pelo nome.
-        plugins.append({"dir": entry, "full_name": entry, "version": "",
+        # Marca de antes da versao fixavel nao tem `pinned`: foi a mais nova, entao False.
+        plugins.append({"dir": entry, "full_name": entry, "version": "", "pinned": False,
                         **_read_json(os.path.join(pdir, entry, MARK))})
     loader = _read_json(os.path.join(game_dir, "BepInEx", MARK))
     ini = _read_text(os.path.join(game_dir, "doorstop_config.ini"))
@@ -273,6 +316,7 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
     return {
         "loader_installed": os.path.isdir(os.path.join(game_dir, "BepInEx", "core")),
         "loader": loader.get("full_name", ""), "loader_version": loader.get("version", ""),
+        "loader_pinned": bool(loader.get("pinned")),
         "enabled": enabled,
         "overrides_ok": overrides_ok(_read_overrides(env_path)) if os.path.exists(env_path) else True,
         "memory_mb": mem_kb // 1024,
@@ -299,12 +343,13 @@ def main(argv: list[str]) -> int:
         if action == "status":
             result = status(game_dir)
         elif action == "loader-install":
-            result = install_loader(game_dir, loader_ns, loader_name)
+            result = install_loader(game_dir, loader_ns, loader_name, version=rest[0] if rest else "")
         elif action in ("loader-enable", "loader-disable"):
             set_enabled(game_dir, action == "loader-enable")
             result = {"enabled": action == "loader-enable"}
         elif action == "plugin-install":
-            result = install_plugin(game_dir, rest[0], rest[1], loader_ns=loader_ns)
+            result = install_plugin(game_dir, rest[0], rest[1], loader_ns=loader_ns,
+                                    version=rest[2] if len(rest) > 2 else "")
         elif action == "plugin-remove":
             result = remove_plugin(game_dir, rest[0], rest[1])
         else:

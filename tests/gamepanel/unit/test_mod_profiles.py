@@ -156,13 +156,15 @@ def test_v_rising_usa_o_thunderstore_com_a_memoria_medida():
 
 
 @pytest.mark.parametrize(("text", "expected"), [
-    ("https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/", ("deca", "VampireCommandFramework")),
-    ("https://thunderstore.io/c/v-rising/p/odjit/KindredCommands/versions/", ("odjit", "KindredCommands")),
+    ("https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/", ("deca", "VampireCommandFramework", "")),
+    ("https://thunderstore.io/c/v-rising/p/odjit/KindredCommands/versions/", ("odjit", "KindredCommands", "")),
     ("https://thunderstore.io/package/download/deca/VampireCommandFramework/0.11.0/",
-     ("deca", "VampireCommandFramework")),
-    ("deca/VampireCommandFramework", ("deca", "VampireCommandFramework")),
-    ("deca-VampireCommandFramework-0.11.0", ("deca", "VampireCommandFramework")),
-    ("  deca-VampireCommandFramework  ", ("deca", "VampireCommandFramework")),
+     ("deca", "VampireCommandFramework", "0.11.0")),
+    ("https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/v/0.10.4/",
+     ("deca", "VampireCommandFramework", "0.10.4")),
+    ("deca/VampireCommandFramework", ("deca", "VampireCommandFramework", "")),
+    ("deca-VampireCommandFramework-0.11.0", ("deca", "VampireCommandFramework", "0.11.0")),
+    ("  deca-VampireCommandFramework  ", ("deca", "VampireCommandFramework", "")),
 ])
 def test_pacote_colado_de_varios_jeitos(text, expected):
     assert thunderstore.parse_package(text) == expected
@@ -174,9 +176,19 @@ def test_pacote_irreconhecivel_nao_vira_nada(text):
     assert thunderstore.parse_package(text) is None
 
 
+@pytest.mark.parametrize(("text", "expected"), [
+    ("", ""), ("  ", ""), ("1.2.3", "1.2.3"), (" v0.11.0 ", "0.11.0"),
+    ("1.2", None), ("1.2.3.4", None), ("latest", None), ("1.2.3/../x", None), ("1.2.3;rm", None),
+])
+def test_versao_do_formulario(text, expected):
+    """Vazio = a mais nova; o que nao e x.y.z nao chega ao CT (vira parte de uma URL la)."""
+    assert thunderstore.parse_version(text) == expected
+
+
 def test_pasta_do_plugin_volta_a_ns_e_nome():
     assert thunderstore.split_dir("deca-VampireCommandFramework") == ("deca", "VampireCommandFramework")
     assert thunderstore.split_dir("../../etc") is None
+    assert thunderstore.split_dir("deca-VampireCommandFramework-0.11.0") is None, "pasta nao leva versao"
     assert thunderstore.package_url("v-rising", "deca", "VampireCommandFramework") ==         "https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/"
 
 

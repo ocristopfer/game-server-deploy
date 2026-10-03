@@ -101,6 +101,7 @@
       {% if st.loader_installed %}
         <p>
           <a href="{{ loader_url }}" target="_blank" rel="noopener noreferrer">{{ st.loader or profile.loader | join('-') }}</a>
+          {% if st.loader_pinned %}<span class="badge cold">{{ _('mods.pinned') }}</span>{% endif %}
           {% if st.enabled %}<span class="badge on">{{ _('mods.loader_on') }}</span>{% else %}<span class="badge cold">{{ _('mods.loader_off') }}</span>{% endif %}
         </p>
         {% if not st.overrides_ok %}<p class="flash error">{{ _('mods.overrides_bad') }}</p>{% endif %}
@@ -109,6 +110,13 @@
       {% endif %}
       <form method="post" action="{{ url_for('mods.loader', sid=server.id) }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        {% if not st.loader_installed or not st.overrides_ok or st.enabled %}
+        <label class="short">{{ _('mods.version_label') }}
+          <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
+                 pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="1.733.2">
+          <small>{{ _('mods.version_help') }}</small>
+        </label>
+        {% endif %}
         <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
         <div class="form-actions cluster">
           {% if not st.loader_installed or not st.overrides_ok %}
@@ -135,7 +143,7 @@
         {% for p in st.plugins %}
         <tr>
           <td>{% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener noreferrer">{{ p.dir }}</a>{% else %}<code>{{ p.dir }}</code>{% endif %}</td>
-          <td class="muted nowrap">{{ p.version or '—' }}</td>
+          <td class="muted nowrap">{{ p.version or '—' }}{% if p.pinned %} <span class="badge cold">{{ _('mods.pinned') }}</span>{% endif %}</td>
           <td>{{ ui.action(url_for('mods.plugin_remove', sid=server.id), _('mods.delete'), size='sm', variant='danger',
                            confirm=_('mods.delete_confirm', name=p.dir), fields={'dir': p.dir, 'restart': '1'}) }}</td>
         </tr>
@@ -152,9 +160,35 @@
                placeholder="https://thunderstore.io/c/{{ profile.community }}/p/deca/VampireCommandFramework/">
         <small>{{ _('mods.plugin_add_help') }}</small>
       </label>
+      <label class="short">{{ _('mods.version_label') }}
+        <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
+               pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="0.11.0">
+        <small>{{ _('mods.version_help') }}</small>
+      </label>
       <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
       <div class="form-actions">{{ ui.button(_('mods.plugin_install'), variant='primary', icon='⬇', block=true) }}</div>
     </form>
+    {% if st.plugins %}
+    {# O mesmo POST de instalar: o pacote vem da pasta do instalador, e a versao nova
+       substitui a velha por inteiro. E por aqui que um servidor que ja roda troca de versao. #}
+    <h3 class="mt-4">{{ _('mods.change_version_title') }}</h3>
+    <form method="post" action="{{ url_for('mods.plugin_install', sid=server.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label>{{ _('mods.col_mod') }}
+        <select name="package" required>
+          {% for p in st.plugins %}<option value="{{ p.dir }}">{{ p.dir }}{% if p.version %} ({{ p.version }}){% endif %}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="short">{{ _('mods.version_label') }}
+        <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
+               pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="0.11.0">
+        <small>{{ _('mods.version_help') }}</small>
+      </label>
+      <p class="muted small">{{ _('mods.change_version_help') }}</p>
+      <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+      <div class="form-actions">{{ ui.button(_('mods.change_version_button'), icon='⇅', block=true) }}</div>
+    </form>
+    {% endif %}
   </div>
   {% endif %}
 {% elif profile.kind == kind_shroudtopia %}
@@ -165,6 +199,7 @@
       {% if st.loader_installed %}
         <p>
           Shroudtopia {{ st.loader_version }}
+          {% if st.loader_pinned %}<span class="badge cold">{{ _('mods.pinned') }}</span>{% endif %}
           {% if st.enabled %}<span class="badge on">{{ _('mods.loader_on') }}</span>{% else %}<span class="badge cold">{{ _('mods.loader_off') }}</span>{% endif %}
         </p>
       {% else %}
@@ -172,6 +207,13 @@
       {% endif %}
       <form method="post" action="{{ url_for('mods.loader', sid=server.id) }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        {% if not st.loader_installed or st.enabled %}
+        <label class="short">{{ _('mods.version_label') }}
+          <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
+                 pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="0.1.1">
+          <small>{{ _('mods.version_help') }}</small>
+        </label>
+        {% endif %}
         <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
         <div class="form-actions cluster">
           {% if not st.loader_installed %}

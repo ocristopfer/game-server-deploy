@@ -112,3 +112,51 @@ def test_zip_sem_o_carregador_e_recusado(game):
     with pytest.raises(ValueError, match=r"winmm.dll"):
         sr.install_loader(str(game_dir), env_path=str(env),
                           fetcher=lambda u: json.dumps(RELEASE).encode() if u == sr.RELEASES else buf.getvalue())
+
+
+# ------------------------------------------------------------------ versao escolhida
+
+OLD_RELEASE = {"tag_name": "v0.1.0", "assets": [{
+    "name": "Shroudtopia-0.1.0.zip",
+    "browser_download_url": "https://github.com/s0t7x/shroudtopia/releases/download/v0.1.0/Shroudtopia-0.1.0.zip",
+}]}
+
+
+def tagged_fetcher(url: str) -> bytes:
+    """GitHub falso com a 0.1.1 sem "v" na tag e a 0.1.0 com: o autor nao foi consistente."""
+    if url == sr.RELEASE_TAG.format(tag="0.1.1"):
+        return json.dumps(RELEASE).encode()
+    if url == sr.RELEASE_TAG.format(tag="v0.1.0"):
+        return json.dumps(OLD_RELEASE).encode()
+    if url.startswith("https://api.github.com/"):
+        raise OSError(f"404 {url}")
+    return fetcher(url)
+
+
+@pytest.mark.parametrize(("version", "tag"), [("0.1.1", "0.1.1"), ("0.1.0", "v0.1.0")])
+def test_versao_escolhida_acha_a_tag_com_ou_sem_v(game, version, tag):
+    game_dir, env = game
+    result = sr.install_loader(str(game_dir), fetcher=tagged_fetcher, env_path=str(env), version=version)
+    assert result["version"] == tag
+    st = sr.status(str(game_dir), env_path=str(env))
+    assert (st["loader_version"], st["loader_pinned"]) == (tag, True)
+
+
+def test_sem_versao_e_a_mais_recente_e_nao_fixa(game):
+    game_dir, env = game
+    sr.install_loader(str(game_dir), fetcher=fetcher, env_path=str(env))
+    assert not sr.status(str(game_dir), env_path=str(env))["loader_pinned"]
+
+
+def test_versao_que_nao_existe_falha_sem_tocar_no_jogo(game):
+    game_dir, env = game
+    with pytest.raises(ValueError, match="nao tem a versao"):
+        sr.install_loader(str(game_dir), fetcher=tagged_fetcher, env_path=str(env), version="9.9.9")
+    assert not (game_dir / "winmm.dll").exists()
+
+
+@pytest.mark.parametrize("bad", ["latest", "0.1", "../0.1.1", "0.1.1/x"])
+def test_versao_invalida_nao_vira_url(game, bad):
+    game_dir, env = game
+    with pytest.raises(ValueError, match="versao invalida"):
+        sr.install_loader(str(game_dir), fetcher=tagged_fetcher, env_path=str(env), version=bad)

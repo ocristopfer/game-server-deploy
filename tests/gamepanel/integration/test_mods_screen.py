@@ -355,3 +355,62 @@ def test_lote_do_dragonwilds_vai_inteiro_para_mods(admin, database, monkeypatch,
     })
     assert len(sent) == 3
     assert all("/opt/game/RSDragonwilds/Content/Paks/~mods/Mod_P." in c for c in sent)
+
+
+# ------------------------------------------------------------------ versao escolhida
+
+def test_instalar_mod_em_versao_escolhida(admin, post, vrising):
+    sid, _, jobs = vrising
+    post(admin, f"/servers/{sid}/mods/plugin/install", {"package": "deca/VampireCommandFramework", "version": "0.10.4"})
+    [step] = jobs[0][1]["steps"]
+    assert step.rstrip().endswith("deca VampireCommandFramework 0.10.4")
+    assert jobs[0][1]["command"] == "deca/VampireCommandFramework@0.10.4"
+
+
+def test_versao_colada_no_nome_vale_e_o_campo_vence(admin, post, vrising):
+    sid, _, jobs = vrising
+    post(admin, f"/servers/{sid}/mods/plugin/install", {"package": "deca-VampireCommandFramework-0.10.4"})
+    post(admin, f"/servers/{sid}/mods/plugin/install",
+         {"package": "deca-VampireCommandFramework-0.10.4", "version": "0.9.0"})
+    assert jobs[0][1]["steps"][0].rstrip().endswith("VampireCommandFramework 0.10.4")
+    assert jobs[1][1]["steps"][0].rstrip().endswith("VampireCommandFramework 0.9.0")
+
+
+def test_sem_versao_o_comando_nao_leva_versao(admin, post, vrising):
+    sid, _, jobs = vrising
+    post(admin, f"/servers/{sid}/mods/plugin/install", {"package": "deca/VampireCommandFramework", "version": ""})
+    assert jobs[0][1]["steps"][0].rstrip().endswith("deca VampireCommandFramework")
+
+
+@pytest.mark.parametrize("bad", ["latest", "1.2", "1.2.3; rm -rf /", "../1.2.3"])
+def test_versao_invalida_nao_chega_ao_container(admin, post, vrising, bad):
+    sid, _, jobs = vrising
+    post(admin, f"/servers/{sid}/mods/plugin/install", {"package": "deca/VampireCommandFramework", "version": bad})
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "version": bad})
+    assert jobs == []
+
+
+def test_carregador_em_versao_escolhida_e_ligar_ignora_versao(admin, post, vrising):
+    sid, _, jobs = vrising
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "version": "1.691.3"})
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "enable", "version": "lixo"})
+    assert jobs[0][1]["steps"][0].rstrip().endswith("BepInExPack_V_Rising 1.691.3")
+    assert "loader-enable" in jobs[1][1]["steps"][0]
+
+
+def test_servidor_que_ja_roda_pode_trocar_a_versao_de_um_mod(admin, vrising):
+    """A tela oferece trocar a versao de cada mod instalado, e mostra qual esta fixada."""
+    sid, _, _ = vrising
+    REMOTE_STATE["plugins"][0]["pinned"] = True
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert '<option value="deca-VampireCommandFramework">deca-VampireCommandFramework (0.11.0)</option>' in html
+    assert html.count('name="version"') == 3, "carregador, instalar e trocar"
+    assert "versao fixada" in html
+
+
+def test_shroudtopia_em_versao_escolhida(admin, post, enshrouded):
+    sid, _, jobs, _ = enshrouded
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "version": "0.1.0"})
+    step = jobs[0][1]["steps"][0]
+    assert "loader-install" in step
+    assert step.rstrip().endswith("0.1.0")

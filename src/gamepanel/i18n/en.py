@@ -613,7 +613,19 @@ MESSAGES: dict[str, str] = {
     "mods.plugin_add_label": "Install a Thunderstore mod",
     "mods.plugin_add_help":
         "Link to the mod page, or author/package (e.g. deca/VampireCommandFramework). "
-        "Dependencies come along; always the newest version.",
+        "Dependencies come along. Without a version you get the newest; with one (in the field "
+        "below or in the pasted name, deca-VampireCommandFramework-0.11.0) you get that one, "
+        "with dependencies at the versions it asks for.",
+    "mods.version_label": "Version (optional)",
+    "mods.version_help": "Empty = the newest. E.g. 1.2.3",
+    "mods.bad_version": "Invalid version. Use numbers like 1.2.3, or leave it empty for the newest.",
+    "mods.pinned": "pinned version",
+    "mods.change_version_title": "Change the version of an installed mod",
+    "mods.change_version_help":
+        "The chosen version fully replaces the installed one, along with the dependencies it "
+        "asks for (a dependency shared with another mod may go back to an older version). The "
+        "mod's config is kept. Empty updates to the newest.",
+    "mods.change_version_button": "Change version",
     "mods.plugin_install": "Install",
     "mods.where_to_find": "Where to find mods",
     "mods.source_workshop": "Steam Workshop",
