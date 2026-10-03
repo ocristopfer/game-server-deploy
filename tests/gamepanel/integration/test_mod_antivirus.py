@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from gamepanel.games.mods import antivirus, shroudtopia_remote, thunderstore_remote
+from gamepanel.games.mods import antivirus, shroudtopia_remote, thunderstore_remote, ue4ss_remote
 
 pytestmark = [
     pytest.mark.skipif(sys.platform == "win32", reason="script bash; roda no container"),
@@ -176,9 +176,11 @@ def test_token_de_envio_so_hex(token):
 
 # ------------------------------------------------------------------ os instaladores remotos
 
-def test_os_dois_instaladores_remotos_verificam_do_mesmo_jeito():
+def test_os_instaladores_remotos_verificam_do_mesmo_jeito():
     """Eles rodam soltos no CT e nao importam um ao outro: a copia tem de ser igual."""
-    assert inspect.getsource(thunderstore_remote.scanner) == inspect.getsource(shroudtopia_remote.scanner)
+    source = inspect.getsource(thunderstore_remote.scanner)
+    assert source == inspect.getsource(shroudtopia_remote.scanner)
+    assert source == inspect.getsource(ue4ss_remote.scanner)
 
 
 def test_instalador_remoto_recusa_pacote_com_achado_e_nao_deixa_rastro(env, monkeypatch):
@@ -198,6 +200,7 @@ def test_instalador_remoto_sem_antivirus_nao_instala(tmp_path, capsys):
                                      "deca", "VampireCommandFramework"]) == 1
     assert "antivirus" in capsys.readouterr().out
     assert shroudtopia_remote.main(["loader-install", str(tmp_path)]) == 1
+    assert ue4ss_remote.main(["loader-install", str(tmp_path)]) == 1
 
 
 # ------------------------------------------------------------------ verificar o que ja esta instalado

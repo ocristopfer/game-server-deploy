@@ -15,7 +15,15 @@ from pathlib import Path
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
-from gamepanel.games.mods import antivirus, profiles, shroudtopia_remote, thunderstore, thunderstore_remote, workshop
+from gamepanel.games.mods import (
+    antivirus,
+    profiles,
+    shroudtopia_remote,
+    thunderstore,
+    thunderstore_remote,
+    ue4ss_remote,
+    workshop,
+)
 from gamepanel.games.mods import ets2 as ets2_mods
 from gamepanel.persistence.repositories import servers as servers_repo
 
@@ -25,6 +33,7 @@ bp = Blueprint("mods", __name__)
 # tem o pacote do painel, e e ele (nao o painel) quem pode ir a internet.
 REMOTE_SOURCE = Path(thunderstore_remote.__file__).read_text(encoding="utf-8")
 SHROUDTOPIA_SOURCE = Path(shroudtopia_remote.__file__).read_text(encoding="utf-8")
+UE4SS_SOURCE = Path(ue4ss_remote.__file__).read_text(encoding="utf-8")
 # Baixar o BepInEx (33 MB) e as dependencias leva minutos: vira job, com log e prazo proprio.
 INSTALL_TIMEOUT = 1800
 LOADER_ACTIONS = ("install", "enable", "disable")
@@ -74,15 +83,22 @@ def _folder_view(server, profile: profiles.ModProfile) -> dict:
     return {"files": [e for e in entries if not e["dir"] and profile.accepts(e["name"])]}
 
 
+# Carregador nativo (DLL ao lado do .exe sob o Proton) -> o instalador que roda no CT.
+NATIVE_LOADERS = {profiles.KIND_SHROUDTOPIA: SHROUDTOPIA_SOURCE, profiles.KIND_UE4SS: UE4SS_SOURCE}
+# Nome do carregador no historico de tarefas.
+LOADER_NAMES = {profiles.KIND_SHROUDTOPIA: "Shroudtopia", profiles.KIND_UE4SS: "UE4SS"}
+
 # Toda acao que BAIXA algo leva o antivirus junto; o instalador remoto recusa instalar sem ele.
 SCANNED_ACTIONS = ("loader-install", "plugin-install")
 
 
 def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str) -> str:
     scan = ("--scan", antivirus.SCAN_SCRIPT) if action in SCANNED_ACTIONS else ()
-    if profile.kind == profiles.KIND_SHROUDTOPIA:
-        # O carregador mora na pasta do JOGO, um nivel acima da de mods.
-        return panel.q("python3", "-c", SHROUDTOPIA_SOURCE, *scan, action, posixpath.dirname(profile.folder), *args)
+    if profile.kind in NATIVE_LOADERS:
+        # O carregador mora um nivel acima da pasta de mods: ao lado do executavel do jogo.
+        source = NATIVE_LOADERS[profile.kind]
+        game_dir = profile.loader_dir or posixpath.dirname(profile.folder)
+        return panel.q("python3", "-c", source, *scan, action, game_dir, *args)
     return panel.q("python3", "-c", REMOTE_SOURCE, *scan, action, profile.folder, *profile.loader, *args)
 
 
@@ -129,7 +145,7 @@ def index(sid: int):
         view = _packages_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_THUNDERSTORE:
         view = _thunderstore_view(server, profile, errors)
-    elif profile and profile.kind == profiles.KIND_SHROUDTOPIA:
+    elif profile and profile.kind in NATIVE_LOADERS:
         view = _shroudtopia_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_FOLDER:
         view = _folder_view(server, profile)
@@ -138,7 +154,7 @@ def index(sid: int):
         expected_text="\n".join(str(i) for i in _expected_ids(server)),
         workshop_url=workshop.url, kind_packages=profiles.KIND_PACKAGES,
         kind_thunderstore=profiles.KIND_THUNDERSTORE, kind_folder=profiles.KIND_FOLDER,
-        kind_shroudtopia=profiles.KIND_SHROUDTOPIA,
+        kind_shroudtopia=profiles.KIND_SHROUDTOPIA, kind_ue4ss=profiles.KIND_UE4SS,
         loader_url=_loader_url(profile),
     )
 
@@ -164,7 +180,7 @@ def _thunderstore_job(sid: int, action: str, step: str, label: str):
 
 
 # Perfis em que o painel instala o CARREGADOR (o botao "Instalar/Ligar/Desligar").
-LOADER_KINDS = (profiles.KIND_THUNDERSTORE, profiles.KIND_SHROUDTOPIA)
+LOADER_KINDS = (profiles.KIND_THUNDERSTORE, *NATIVE_LOADERS)
 
 
 def _loader_profile_or_back(sid: int):
@@ -210,7 +226,7 @@ def loader(sid: int):
     version = _form_version() if action == "install" else ""
     if version is None:
         return redirect(url_for(INDEX, sid=sid))
-    name = "Shroudtopia" if profile.kind == profiles.KIND_SHROUDTOPIA else "-".join(profile.loader)
+    name = LOADER_NAMES.get(profile.kind) or "-".join(profile.loader)
     args = (version,) if version else ()
     return _thunderstore_job(sid, "mod-loader", _remote_cmd(profile, f"loader-{action}", *args),
                              _with_version(f"{name}: {action}", version))

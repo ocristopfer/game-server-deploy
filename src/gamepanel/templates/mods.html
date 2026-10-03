@@ -20,7 +20,7 @@
 
 <div class="card">
   <p class="muted small">{{ _h(profile.help_key, folder=profile.folder) }}</p>
-  {% if profile.upload_names or profile.extensions or profile.kind in (kind_thunderstore, kind_shroudtopia) %}
+  {% if profile.upload_names or profile.extensions or profile.kind in (kind_thunderstore, kind_shroudtopia, kind_ue4ss) %}
   <p class="muted small">{{ _h('mods.antivirus_note') }}</p>
   {% endif %}
   {# O que entrou ANTES do antivirus nunca foi verificado: este botao passa por ele o que ja
@@ -263,6 +263,69 @@
     <h3 class="mt-4">{{ _('mods.shroudtopia_log') }}</h3>
     <pre class="log">{{ st.log | join('\n') }}</pre>
     <p class="muted small">{{ _('mods.shroudtopia_log_help') }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+{% elif profile.kind == kind_ue4ss %}
+  {% set st = view.state %}
+  <div class="card">
+    <h2>{{ _('mods.ue4ss_title') }}</h2>
+    {% if st %}
+      {% if st.loader_installed %}
+        <p>
+          UE4SS {{ st.loader_version }}
+          {% if st.loader_pinned %}<span class="badge cold">{{ _('mods.pinned') }}</span>{% endif %}
+          {% if st.enabled %}<span class="badge on">{{ _('mods.loader_on') }}</span>{% else %}<span class="badge cold">{{ _('mods.loader_off') }}</span>{% endif %}
+        </p>
+      {% else %}
+        <p class="muted small">{{ _('mods.ue4ss_missing') }}</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('mods.loader', sid=server.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        {% if not st.loader_installed or st.enabled %}
+        <label class="short">{{ _('mods.version_label') }}
+          <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
+                 pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="3.0.1">
+          <small>{{ _('mods.version_help') }}</small>
+        </label>
+        {% endif %}
+        <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+        <div class="form-actions cluster">
+          {% if not st.loader_installed %}
+            {{ ui.button(_('mods.ue4ss_install'), variant='primary', icon='⬇', extra='name=action value=install') }}
+          {% elif st.enabled %}
+            {{ ui.button(_('mods.loader_update'), icon='⬇', extra='name=action value=install') }}
+            {{ ui.button(_('mods.loader_disable'), variant='danger', extra='name=action value=disable') }}
+          {% else %}
+            {{ ui.button(_('mods.loader_enable'), variant='primary', extra='name=action value=enable') }}
+          {% endif %}
+        </div>
+      </form>
+      <p class="muted small mt-4">{{ _h('mods.ue4ss_config_help', folder=profile.folder, url=url_for('files.index', sid=server.id)) }}</p>
+    {% endif %}
+  </div>
+
+  {% if st and st.loader_installed %}
+  <div class="card">
+    <h2>{{ _('mods.files_title') }}</h2>
+    {% if st.mods %}
+    <div class="table-wrap"><table class="jobs">
+      <thead><tr><th>{{ _('mods.col_mod') }}</th><th></th></tr></thead>
+      <tbody>
+        {% for m in st.mods %}
+        <tr>
+          <td><code>{{ m.name }}</code></td>
+          <td class="nowrap">{% if m.enabled %}<span class="badge on">{{ _('mods.loader_on') }}</span>{% else %}<span class="badge cold">{{ _('mods.loader_off') }}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      <p class="muted">{{ _('mods.no_files') }}</p>
+    {% endif %}
+    {% if st.log %}
+    <h3 class="mt-4">{{ _('mods.ue4ss_log') }}</h3>
+    <pre class="log">{{ st.log | join('\n') }}</pre>
     {% endif %}
   </div>
   {% endif %}

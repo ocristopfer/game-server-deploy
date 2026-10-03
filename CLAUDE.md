@@ -332,10 +332,16 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   no CT como o do Thunderstore. Os mods de EXEMPLO do zip oficial ficam de fora (trapaca
   ligada), desligar e tirar o `winmm=n,b` (nenhum codigo do carregador roda), e o status traz
   o fim do `shroudtopia.log`: mod de outra versao do jogo perde funcao calado (`not found`).
-- **UE4SS so roda no executavel Windows.** O Dragonwilds e o Palworld daqui sao Linux nativo;
-  os ports Linux do UE4SS sao do Palworld (UE 5.1), sem binario confiavel publicado, e o
-  Dragonwilds e UE 5.6.1. Ficou fora por decisao: carregar binario de terceiro sem auditoria
-  dentro do servidor.
+- **UE4SS e `KIND_UE4SS`, so para servidor Unreal que e o `.exe` de Windows sob o Proton**
+  (hoje o Icarus). `ue4ss_remote.py` roda no CT como os outros dois. MEDIDO num Icarus de teste:
+  a v3.0.1 ESTAVEL carrega e roda Lua, mas a Steam do servidor sobe com `AppId: 0` e a A2S
+  some; a `experimental-latest` (proxy `dwmapi.dll` solto, o resto em `ue4ss/`) mantem a Steam
+  e a A2S. Por isso o padrao e a experimental, e o perfil tem `loader_dir` (a pasta do `.exe`),
+  porque os mods ficam dois niveis abaixo. Instalar desliga console, janela e os mods de
+  trapaca de fabrica (so `BPModLoaderMod`/`BPML_GenericFunctions` ficam ligados), e o
+  `mods.txt` oficial vem com BOM, que gruda no nome do primeiro mod. Servidor Linux nativo
+  (Dragonwilds, Palworld daqui) nao carrega o UE4SS oficial; o port Linux e do Palworld (UE
+  5.1) e o teste dele no Dragonwilds (UE 5.6.1) ficou com quem administra o host.
 - **Dragonwilds (Unreal 5) aceita `.pak`, `.utoc` e `.ucas`**, e o envio confere TODOS os nomes
   antes de mandar qualquer um (`_checked_name`): o mod vem em tres arquivos, e dois de tres na
   pasta e um mod quebrado.

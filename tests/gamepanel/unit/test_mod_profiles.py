@@ -133,7 +133,7 @@ def test_todo_perfil_diz_para_onde_vai_e_o_que_aceita():
     for p in profiles.PROFILES:
         assert p.folder == "/opt/game" or p.folder.startswith("/opt/game/")
         assert p.kind in (profiles.KIND_PACKAGES, profiles.KIND_FOLDER, profiles.KIND_THUNDERSTORE,
-                          profiles.KIND_SHROUDTOPIA, profiles.KIND_GUIDE)
+                          profiles.KIND_SHROUDTOPIA, profiles.KIND_UE4SS, profiles.KIND_GUIDE)
         # Toda tela de mods diz onde procurar: era a pergunta que ficava sem resposta.
         assert p.sources, p.key
         if p.kind == profiles.KIND_GUIDE:
@@ -143,6 +143,10 @@ def test_todo_perfil_diz_para_onde_vai_e_o_que_aceita():
             # Nada entra por envio: o CT baixa do Thunderstore.
             assert not p.upload_names and not p.extensions, p.key
             assert p.community and all(p.loader) and p.min_memory_mb, p.key
+        elif p.kind == profiles.KIND_UE4SS:
+            # Mod do UE4SS e uma PASTA (Scripts/main.lua): arquivo solto nao seria mod nenhum.
+            assert not p.upload_names and not p.extensions, p.key
+            assert p.loader_dir, p.key
         else:
             assert bool(p.upload_names) != bool(p.extensions), p.key
 
@@ -219,3 +223,13 @@ def test_nexus_e_so_link_nunca_download():
         for _, url in p.sources:
             assert url.startswith("https://")
             assert "/api/" not in url
+
+
+def test_icarus_usa_o_ue4ss_provado_no_ct():
+    """Provado num Icarus de verdade sob o Proton: com a experimental a Steam sobe e o Lua roda."""
+    ic = profiles.profile_for("icarus.service")
+    assert ic.kind == profiles.KIND_UE4SS
+    # Layout da experimental: o proxy ao lado do .exe, os mods em ue4ss/Mods.
+    assert ic.loader_dir == "/opt/game/Icarus/Binaries/Win64"
+    assert ic.folder == ic.loader_dir + "/ue4ss/Mods"
+    assert set(ic.scan_paths) == {ic.loader_dir + "/ue4ss", ic.loader_dir + "/dwmapi.dll"}

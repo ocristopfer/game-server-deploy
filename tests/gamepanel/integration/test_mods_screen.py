@@ -485,3 +485,28 @@ def test_jogo_sem_gestor_nao_tem_o_que_verificar(admin, post, database, upload_j
     sid = _server(database, "valheim.service")
     post(admin, f"/servers/{sid}/mods/audit", {})
     assert upload_jobs == []
+
+
+def test_icarus_instala_o_ue4ss_na_pasta_do_executavel(admin, post, database, monkeypatch):
+    sid = _server(database, "icarus.service")
+    calls: list[str] = []
+    state = {"loader_installed": False, "loader": "UE4SS", "loader_version": "", "loader_pinned": False,
+             "enabled": False, "mods": [], "log": []}
+
+    def ssh_run(server, cmd, timeout=None, **kw):
+        calls.append(cmd)
+        out = type("P", (), {})()
+        out.returncode, out.stderr, out.stdout = 0, "", json.dumps(state)
+        return out
+    monkeypatch.setattr(panel, "ssh_run", ssh_run)
+    jobs: list[tuple] = []
+    monkeypatch.setattr(panel, "start_job", lambda action, server, user, **kw: jobs.append((action, kw)) or 99)
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert "value=install" in html
+    # O instalador recebe a pasta do EXECUTAVEL, e nao a de mods (dois niveis abaixo).
+    assert calls[0].endswith("status /opt/game/Icarus/Binaries/Win64")
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "restart": "1"})
+    install, restart = jobs[0][1]["steps"]
+    assert "--scan" in install
+    assert install.endswith("loader-install /opt/game/Icarus/Binaries/Win64")
+    assert restart.endswith("restart icarus.service")

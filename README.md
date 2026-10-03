@@ -1197,6 +1197,12 @@ jogo entende mod:
   Os mods sao `.dll` (Nexus) enviados pela tela para `/opt/game/mods`, e as opcoes de cada um
   ficam no `shroudtopia.json`. Desligar tira o ajuste do Wine. A tela mostra o fim do
   `shroudtopia.log`: mod feito para outra versao do jogo aparece ali como `not found`.
+- **Icarus**: botao **Instalar o UE4SS** (o carregador de mods de script). O container baixa a
+  versao experimental do GitHub - a estavel (v3.0.1) quebra a Steam do servidor sob o Proton e
+  ele some do navegador -, verifica no antivirus, poe o `dwmapi.dll` ao lado do `.exe` e o resto
+  em `Binaries/Win64/ue4ss/`, e liga o `dwmapi=n,b` do Wine. Console, janela e os mods de
+  trapaca que vem com ele ficam desligados. Cada mod e uma pasta em `ue4ss/Mods`, ligada no
+  `mods.txt` dali (tela Arquivos).
 
 Toda tela Mods tem os links de **onde achar mods** daquele jogo. O **Nexus Mods** e sempre
 link, nunca download automatico: a API dele so entrega arquivo para conta Premium, e automatizar

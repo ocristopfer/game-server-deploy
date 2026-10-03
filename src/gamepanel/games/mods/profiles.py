@@ -21,6 +21,10 @@ KIND_THUNDERSTORE = "thunderstore"
 # Carregador nativo do Enshrouded (Shroudtopia): o CT baixa o carregador, o Wine passa a usar
 # o winmm.dll dele, e os mods sao DLLs que entram pela tela (games/mods/shroudtopia_remote.py).
 KIND_SHROUDTOPIA = "shroudtopia"
+# UE4SS (jogo Unreal cujo servidor e o .exe de Windows sob o Proton): o CT baixa o carregador, o
+# Wine passa a usar o dwmapi.dll dele, e os mods moram em Mods/ ao lado do executavel
+# (games/mods/ue4ss_remote.py). A pasta do perfil e a Mods/; o carregador mora na de cima.
+KIND_UE4SS = "ue4ss"
 # So o guia (onde achar, como instalar), sem acao: o caminho existe mas ainda nao foi provado
 # num servidor de verdade, e botao que "instala" sem prova e pior que instrucao clara.
 KIND_GUIDE = "guide"
@@ -58,6 +62,9 @@ class ModProfile:
     # carregador mora fora da pasta de mods, e na pasta do jogo inteira (V Rising) seriam gigas
     # de arquivo do proprio jogo para nada.
     audit_paths: tuple[str, ...] = ()
+    # Carregador nativo: a pasta do executavel do jogo, onde o carregador entra. Vazio = um nivel
+    # acima da pasta de mods (Shroudtopia); o UE4SS experimental poe os mods DOIS niveis abaixo.
+    loader_dir: str = ""
 
     @property
     def scan_paths(self) -> tuple[str, ...]:
@@ -126,6 +133,21 @@ ENSHROUDED = ModProfile(
              ("mods.source_nexus", NEXUS + "enshrouded/mods/")),
 )
 
+ICARUS = ModProfile(
+    key="icarus",
+    kind=KIND_UE4SS,
+    services=("icarus",),
+    # O servidor e o IcarusServer-Win64-Shipping.exe sob o Proton (UE 4.27): o proxy do UE4SS
+    # (dwmapi.dll) entra ao lado dele, e o resto - mods inclusive - em ue4ss/ (layout da
+    # experimental, a que nao quebra a Steam: ver ue4ss_remote.py). Provado num Icarus de teste.
+    folder="/opt/game/Icarus/Binaries/Win64/ue4ss/Mods",
+    loader_dir="/opt/game/Icarus/Binaries/Win64",
+    help_key="mods.help_icarus",
+    audit_paths=("/opt/game/Icarus/Binaries/Win64/ue4ss", "/opt/game/Icarus/Binaries/Win64/dwmapi.dll"),
+    sources=(("mods.source_ue4ss", "https://github.com/UE4SS-RE/RE-UE4SS/releases"),
+             ("mods.source_nexus", NEXUS + "icarus/mods/")),
+)
+
 VRISING = ModProfile(
     key="vrising",
     kind=KIND_THUNDERSTORE,
@@ -143,7 +165,7 @@ VRISING = ModProfile(
     sources=(("mods.source_thunderstore", "https://thunderstore.io/c/v-rising/"),),
 )
 
-PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED)
+PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED, ICARUS)
 
 
 def service_stem(service: str) -> str:

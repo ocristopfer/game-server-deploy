@@ -665,6 +665,19 @@ MESSAGES: dict[str, str] = {
         "The example mods in the official package are NOT installed: they come with "
         "cheats turned on. Each mod's options live in <code>shroudtopia.json</code>, "
         "on the <a href=\"{url}\">Files screen</a>.",
+    "mods.help_icarus":
+        "Icarus script mods run on <strong>UE4SS</strong>, which the panel downloads from GitHub and places "
+        "next to <code>IcarusServer-Win64-Shipping.exe</code>. Mods live in <code>{folder}</code>, "
+        "one folder per mod.",
+    "mods.ue4ss_title": "UE4SS (mod loader)",
+    "mods.ue4ss_missing": "UE4SS is not installed on this server yet.",
+    "mods.ue4ss_install": "Install UE4SS",
+    "mods.ue4ss_log": "End of the UE4SS log",
+    "mods.ue4ss_config_help":
+        "Installed with no console and without its bundled cheat mods: only the blueprint mod "
+        "loaders stay on. Each mod is a folder in <code>{folder}</code>, switched on in the "
+        "<code>mods.txt</code> of that folder, on the <a href=\"{url}\">Files screen</a>.",
+    "mods.source_ue4ss": "UE4SS (loader)",
     "mods.bad_name": "{name} is not accepted here. Expected: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos
