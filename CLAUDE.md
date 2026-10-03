@@ -265,6 +265,7 @@ tools/
   import-linuxgsm.py   gera src/gamepanel/games/catalog/suggestions.py a partir do LinuxGSM (precisa de internet)
   import-pterodactyl.py  gera pterodactyl_suggestions.py dos eggs (pelican-eggs/games-steamcmd, MIT)
   verify-qr.py        verificacao manual do QR contra um leitor de verdade (venv descartavel)
+  ue-sym-addresses.py  le o .sym de um servidor Unreal Linux e gera o UE4SS_Addresses.ini (roda no CT)
 ```
 
 ### Gestor de mods: o que "mod" significa muda por jogo
@@ -369,6 +370,14 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   seria armadilha. O jogo tambem ACUSA o `.so` (`CheckForMods`) e marca a sessao como modificada.
   O Nexus distribui o RE-UE4SS oficial de Windows: no servidor, so trocando para a build Windows
   sob o Proton (o caminho provado no Icarus) - ainda nao testado.
+  **O mais longe que chegamos** (base de um fork, se um dia houver): o servidor traz um `.sym` de
+  300 MB (o arquivo de crash do Unreal) com nome e endereco de cada funcao, e
+  `tools/ue-sym-addresses.py` gera dele o `UE4SS_Addresses.ini` (endereco = o do .sym + a base de
+  carga, 0x200000; conferido: cada um cai num prologo). Com ele, o modelo
+  `MemberVariableLayout_5_06_Template.ini` do proprio port e `[EngineVersionOverride] 5.6`, a
+  v3.0.26 entra em "full mode", acha o GUObjectArray (153 mil objetos) e cai com SIGSEGV em
+  `LuaMod::on_program_start()` - o port captura, desiste do UE4SS e o jogo segue. A v3.0.2 nem le
+  esses arquivos. O binario publicado e sem simbolos: achar a linha exige compilar o port.
 - **Rust e `KIND_OXIDE`** (`oxide_remote.py`): o pacote SOBRESCREVE DLLs do jogo, entao o
   instalador guarda o original (so o que NAO e dele, comparando sha256: reinstalar com o Oxide
   ligado nao pode virar "original") e desligar o devolve. Toda atualizacao do Rust pela Steam
