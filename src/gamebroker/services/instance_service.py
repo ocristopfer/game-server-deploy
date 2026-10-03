@@ -341,7 +341,11 @@ def record_for_the_panel(inst: dict, game: Game, ports: list[AllocatedPort]) -> 
         "broker_id": inst["id"], "name": inst["name"], "host": inst["ip"],
         "service": f"{game.key}.service",
         "game_port": alocador.port_with_role(ports, alocador.ROLE_GAME),
-        "query_port": alocador.port_with_role(ports, alocador.ROLE_QUERY),
+        # Pela BASE, e nao pelo papel: no Enshrouded a consulta e a propria porta do jogo
+        # (15637), que fica com o papel de jogo - pelo papel o painel recebia 0 e nascia sem
+        # contagem A2S.
+        "query_port": (alocador.port_from_base(ports, game.query_port)
+                       if game.query_port else 0),
         "ports": [str(p) for p in ports],
         "config_path": game.config_path, "config_files": list(game.config_files),
         "backup_paths": list(game.backup_paths), "player_source": game.player_source,

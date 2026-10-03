@@ -181,6 +181,109 @@ def test_erro_tambem_fica_em_cache():
     assert len(calls) == 1
 
 
+# ------------------------------------------------------- fontes combinadas
+
+JOIN = r"(?P<name>\w+) entrou"
+LEAVE = r"(?P<name>\w+) saiu"
+
+
+def log_lines(*lines):
+    return lambda *a, **k: list(lines)
+
+
+def test_fontes_combinadas_poem_a_escolhida_na_frente_e_o_log_por_ultimo():
+    target = server(player_source="log", query_port=27015, http_url="http://x/players",
+                    join_re=JOIN)
+    assert ps.configured_sources(target) == ["log", "a2s", "http"]
+
+
+def test_fonte_sem_campo_preenchido_nao_entra_na_combinacao():
+    assert ps.configured_sources(server(player_source="a2s", query_port=27015)) == ["a2s"]
+
+
+def test_none_desliga_ate_as_fontes_com_campo_preenchido():
+    """Calar um servidor sem apagar o cadastro: o regex do log nao pode religar a contagem."""
+    target = server(player_source="none", query_port=27015, join_re=JOIN)
+    assert ps.configured_sources(target) == []
+
+
+def test_a2s_conta_e_o_log_da_os_nomes():
+    """O caso do Unreal: a consulta sabe QUANTOS, so o log sabe QUEM."""
+    d = deps(query_players=lambda h, p: {"players": 2, "list": []},
+             read_log_lines=log_lines("ana entrou", "bia entrou"))
+    out = ps.server_players(d, server(player_source="a2s", query_port=27015,
+                                      join_re=JOIN, leave_re=LEAVE))
+    assert out["players"] == 2
+    assert out["source"] == "a2s"
+    assert [p["name"] for p in out["list"]] == ["ana", "bia"]
+    assert out["names_from"] == "log"
+    assert out["names_partial"] is False
+
+
+def test_numero_e_da_consulta_mesmo_quando_o_log_lembra_de_mais_gente():
+    """Quem caiu sem linha de saida ficou no log; a lista e cortada nos ultimos a entrar."""
+    d = deps(query_players=lambda h, p: {"players": 1, "list": []},
+             read_log_lines=log_lines("ana entrou", "bia entrou"))
+    out = ps.server_players(d, server(player_source="a2s", query_port=27015, join_re=JOIN))
+    assert out["players"] == 1
+    assert [p["name"] for p in out["list"]] == ["bia"]
+    assert out["names_partial"] is True
+
+
+def test_ninguem_online_nao_gasta_ssh_lendo_o_log():
+    read = []
+    d = deps(query_players=lambda h, p: {"players": 0, "list": []},
+             read_log_lines=lambda *a, **k: read.append(1) or [])
+    ps.server_players(d, server(player_source="a2s", query_port=27015, join_re=JOIN))
+    assert read == []
+
+
+def test_consulta_que_ja_da_nomes_nao_pede_o_log():
+    read = []
+    d = deps(query_players=lambda h, p: {"players": 1, "list": [{"name": "ana"}]},
+             read_log_lines=lambda *a, **k: read.append(1) or [])
+    out = ps.server_players(d, server(player_source="a2s", query_port=27015, join_re=JOIN))
+    assert read == []
+    assert "names_from" not in out
+
+
+def test_consulta_muda_cai_para_o_log_e_a_tela_sabe_por_que():
+    def silent(host, port):
+        raise QueryError("sem resposta em 3s na porta 27015/udp")
+
+    d = deps(query_players=silent, read_log_lines=log_lines("ana entrou"))
+    out = ps.server_players(d, server(player_source="a2s", query_port=27015, join_re=JOIN))
+    assert out["players"] == 1
+    assert out["source"] == "log"
+    assert "27015" in out["fallback_error"]
+    assert out["error"] == ""
+
+
+def test_todas_as_fontes_falhando_mostra_o_erro_da_escolhida():
+    def silent(host, port):
+        raise QueryError("sem resposta da consulta")
+
+    def no_ssh(*a, **k):
+        raise RemoteError("ssh caiu")
+
+    d = deps(query_players=silent, read_log_lines=no_ssh)
+    out = ps.server_players(d, server(player_source="a2s", query_port=27015, join_re=JOIN))
+    assert out["players"] is None
+    assert out["error"] == "sem resposta da consulta"
+    assert out["source"] == "a2s"
+
+
+def test_log_que_falha_ao_completar_nomes_nao_estraga_a_contagem():
+    def no_ssh(*a, **k):
+        raise RemoteError("ssh caiu")
+
+    d = deps(query_players=lambda h, p: {"players": 2, "list": []}, read_log_lines=no_ssh)
+    out = ps.server_players(d, server(player_source="a2s", query_port=27015, join_re=JOIN))
+    assert out["players"] == 2
+    assert not out.get("error")
+    assert out["list"] == []
+
+
 # ----------------------------------------------------------------- all_players
 
 def test_all_players_junta_por_id():

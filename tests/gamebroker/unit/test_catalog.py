@@ -449,3 +449,27 @@ def test_edicao_do_curado_mantem_a_exigencia_da_conta(tmp_path, games_dir):
     catalog = cat.Catalog(games_dir, tmp_path / "d", steam_account=True)
     data = {"key": "conta", "name": "Conta Editada", "app_id": 1004, "ports": ["7200/udp"], "game_port": 7200}
     assert catalog.update("conta", data).needs_account
+
+
+# --- o que o painel recebe para contar jogadores ----------------------------
+
+def test_curado_com_a2s_nasce_no_painel_com_a_porta_de_consulta():
+    """Todo curado que declara consulta A2S tem de chegar ao painel com ela preenchida.
+
+    O Enshrouded e o caso que pega: a consulta e a propria porta do jogo, que fica com o
+    papel de jogo no alocador - procurada pelo PAPEL de consulta, chegava 0 e o servidor
+    nascia sem A2S. Os outros pegam o oposto: porta de consulta fora do GAME_PORTS nao
+    vira porta alocada, e tambem chegaria 0.
+    """
+    from gamebroker.services import allocator
+    from gamebroker.services.instance_service import record_for_the_panel
+
+    games, _ = cat.load_curated(RAIZ / "games")
+    with_query = {k: g for k, g in games.items() if g.query_port}
+    assert {"dragonwilds", "enshrouded", "dayz", "palworld"} <= set(with_query)
+    for key, game in with_query.items():
+        ports = allocator.allocate_ports(game, set(), range(31000, 32000))
+        inst = {"id": 1, "name": key, "ip": "10.0.0.30", "handle": "300"}
+        record = record_for_the_panel(inst, game, ports)
+        assert record["query_port"] == game.query_port, key
+        assert record["player_source"] == "a2s", key

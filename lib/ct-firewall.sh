@@ -139,6 +139,11 @@ input_game() {
   [[ -n "$udp" ]] && printf '    udp dport { %s } accept\n' "$udp"
   [[ -n "$tcp" ]] && printf '    tcp dport { %s } accept\n' "$tcp"
   printf '    ip saddr { %s } tcp dport 22 accept\n' "$mgmt"
+  # UDP de quem administra, em QUALQUER porta: e por onde o painel faz a consulta A2S e o
+  # assistente sonda as portas do jogo. So com as do GAME_PORTS, uma porta de consulta que o
+  # .env nao declarou (a 27015 da Steam num jogo Unreal) era descartada aqui e a tela dizia
+  # "sem resposta" - parecia jogo sem A2S. Nao abre nada novo: essa origem ja tem root por SSH.
+  printf '    ip saddr { %s } udp dport 1-65535 accept\n' "$mgmt"
   # O broker pinga o IP antes de usa-lo; um jogo que nao responde pareceria endereco livre.
   printf '    ip saddr { %s } icmp type echo-request accept\n' "$mgmt"
 }

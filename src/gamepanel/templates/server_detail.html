@@ -147,6 +147,16 @@
       </tbody>
     </table></div>
 
+    {% if players.fallback_error %}
+    <p class="muted small">{{ _('server_detail.fallback', error=players.fallback_error,
+                                source=_('player_source.' ~ players.source)) }}</p>
+    {% endif %}
+    {% if players.names_from %}
+    <p class="muted small">{{ _('server_detail.names_from', source=_('player_source.' ~ players.source),
+                                names_from=_('player_source.' ~ players.names_from)) }}
+      {% if players.names_partial %}{{ _('server_detail.names_partial') }}{% endif %}</p>
+    {% endif %}
+
     {% if players.aproximado %}
     <p class="muted small">
       A <strong>{{ _('server_detail.count') }}</strong> {{ _('server_detail.count_right_names_wrong') }} <strong>{{ _('server_detail.names') }}</strong> sao um palpite:

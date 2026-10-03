@@ -237,7 +237,7 @@ mas para que todo redirecionamento seja **1:1** (porta externa = porta interna).
 
 | Jogo | Destino | Redirecionar no roteador | Nunca redirecionar |
 |------|---------|--------------------------|--------------------|
-| Dragonwilds | 192.168.2.20 | `7777/udp` (+ `7778`, `7779` se criar mundos extras) | — |
+| Dragonwilds | 192.168.2.20 | `7777/udp` (+ `7778`, `7779` se criar mundos extras), `27020/udp` | — |
 | Palworld | 192.168.2.21 | `8211/udp`, `27015/udp` | REST `8212/tcp`, RCON `25575/tcp` |
 | Satisfactory | 192.168.2.22 | `7787/udp`, `7787/tcp` | — |
 | Enshrouded | 192.168.2.23 | `15636/udp`, `15637/udp` | — |
@@ -302,10 +302,11 @@ campos vazios, e uma regra sem porta de destino casa *qualquer* porta para aquel
 - Config criada no primeiro start (localize com `find /opt/game -name DedicatedServer.ini`):
   nome do servidor, senha do mundo, senha de admin, OwnerID. Pare o servidor antes de editar!
 - Limite de jogadores: fixo em 6 (travado pela Jagex, nao configuravel)
-- **Nao publica nada consultavel**: nem query A2S da Steam, nem RCON, nem API HTTP. O
-  `DedicatedServer.ini` nao tem chave para isso e o jogo nao tem navegador de servidores
-  (entra-se por IP direto). Guias de hosting que mandam abrir `27015` estao copiando
-  texto de outros jogos Unreal. A contagem de jogadores no painel so pode vir do log
+- **Consulta A2S da Steam** pelo subsistema Steam do Unreal. O padrao seria `27015`, que
+  no roteador e do Palworld; o `START_ARGS` passa `-QueryPort=27020`. A consulta da so a
+  contagem - os nomes vem do log, e o log assume a contagem se a consulta nao responder.
+  Nao ha RCON nem API HTTP. Se a consulta ficar muda num servidor de verdade, o
+  assistente (**Configurar contagem**) lista as portas UDP que o processo do jogo abriu
 - Saves: `/opt/game/RSDragonwilds/Saved/SaveGames/`
 
 ### Palworld — notas
@@ -360,7 +361,8 @@ campos vazios, e uma regra sem porta de destino casa *qualquer* porta para aquel
   **Troque as senhas** de `userGroups` (Admin / Friend / Guest): cada jogador entra com a
   senha do grupo dele, nao existe senha unica de servidor. `slotCount` vai ate 16.
   Pare o servidor antes de editar (`systemctl stop enshrouded`)
-- Nao publica query A2S da Steam — a contagem de jogadores no painel vem do log
+- A `15637` tambem responde a consulta **A2S** da Steam: ela conta, o log da os nomes
+  (e assume a contagem se a consulta nao responder)
 - Memoria: 16GB (recomendacao oficial para 16 slots, mais a folga do Wine).
   Disco: o build Windows passa de 12GB, por isso 40GB
 - O primeiro start demora mais que o normal: o Wine monta o prefixo e o jogo gera o mundo.
@@ -777,12 +779,12 @@ que eles voltam. Todos foram validados contra o log/API real de cada servidor.
 
 | Jogo | Fonte | Nomes? |
 |------|-------|--------|
-| Palworld | API REST `http://127.0.0.1:8212/v1/api/players`, auth `basic:admin:<AdminPassword>`, caminho da lista `players` | **sim** |
-| Dragonwilds | log do servico (regex abaixo) | **sim** |
-| DayZ | log **em arquivo**: `/opt/game/profiles/*.ADM` (regex abaixo) | **sim** |
+| Palworld | A2S `27015` + nomes pelo log; ou API REST `http://127.0.0.1:8212/v1/api/players`, auth `basic:admin:<AdminPassword>`, caminho da lista `players` | **sim** |
+| Dragonwilds | A2S `27020` + nomes pelo log (regex abaixo) | **sim** |
+| DayZ | A2S `27016` + nomes pelo log **em arquivo**: `/opt/game/profiles/*.ADM` (regex abaixo) | **sim** |
 | Satisfactory | log do servico (regex abaixo) | **aproximado** |
 | Icarus | A2S na porta de query | so contagem |
-| Enshrouded | log do servico | so contagem |
+| Enshrouded | A2S `15637` + nomes pelo log | **sim** |
 
 As tres formas de contar ja vem preenchidas pelo deploy (`JOIN_RE`, `LEAVE_RE`,
 `LOG_PATH` no `games/<jogo>.env`); o assistente do painel serve para ajustar.
@@ -795,7 +797,13 @@ As tres formas de contar ja vem preenchidas pelo deploy (`JOIN_RE`, `LEAVE_RE`,
 | so na **entrada** | contagem exata + os ultimos a entrar, marcados como palpite |
 | em nenhuma | so a contagem |
 
-**Dragonwilds** - `Configurar contagem > Pelo log`:
+**As fontes se combinam.** A escolhida no cadastro (`player_source`) conta; as outras que
+tiverem campo preenchido entram atras dela: se a contagem saiu SEM nomes (A2S de jogo
+Unreal, DayZ), os nomes vem da proxima que os tiver - a API e depois o log -, cortados nos
+ultimos a entrar quando o log lembra de mais gente que a consulta. Se a escolhida nao
+responder, a seguinte conta no lugar e a tela diz por que. `nenhuma` desliga todas.
+
+**Dragonwilds** - os padroes do log (que dao os nomes):
 
 ```
 entrada: PlayerChar entered world \[Account\[[^\]]*\] Character Name\[(?P<name>[^\]]+)\]
@@ -954,11 +962,15 @@ No Palworld, ligue a API no `PalWorldSettings.ini` (`RESTAPIEnabled=True`,
 > de cada chamada). O banco ja guarda o caminho da chave SSH que da root nos containers,
 > entao trate o arquivo como segredo de qualquer forma.
 
-**3. Pelo log do servidor** — para jogo que nao publica nada na rede. O
-**RuneScape Dragonwilds e assim**: a contagem que aparece no navegador do jogo vem do
-servico da Steam/Epic, nao do servidor, entao nao ha o que consultar na LAN. Como o
-`START_ARGS` dele tem `-log`, a Unreal despeja o log no stdout e o journald guarda —
-da para contar reproduzindo as entradas e saidas desde o ultimo start do servico.
+**3. Pelo log do servidor** — para jogo que nao publica nada na rede (Satisfactory), e
+para dar os NOMES a quem conta por A2S sem lista (Dragonwilds, DayZ, Palworld, Enshrouded:
+ver "As fontes se combinam" acima). Num jogo Unreal com `-log` no `START_ARGS`, o log vai
+para o stdout e o journald guarda — da para contar reproduzindo as entradas e saidas desde
+o ultimo start do servico.
+
+O firewall do CT de jogo aceita UDP **do painel** em qualquer porta (`ct-firewall.sh`): e
+o que deixa a consulta e o assistente chegarem a uma porta de query que o `.env` nao
+declarou. Antes, so as do `GAME_PORTS` passavam, e um jogo com A2S parecia mudo.
 
 Como nenhum jogo escreve o log igual ao outro, os padroes sao configuraveis e o
 assistente ajuda a achar: ele mostra as linhas do log que parecem de entrada/saida, deixa

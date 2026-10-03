@@ -33,6 +33,9 @@ from gamepanel.services import parallel
 # De onde a contagem de jogadores pode sair. 'none' e o desligado explicito — diferente
 # do vazio, que significa "cadastro antigo, deduza pela porta de consulta".
 PLAYER_SOURCES = ("a2s", "http", "log", "none")
+# Quem complementa a fonte escolhida, nesta ordem: o que fala com o jogo AO VIVO antes do
+# log, que e reconstruido de eventos (ver `configured_sources`).
+COMBINE_ORDER = ("a2s", "http", "log")
 
 # Colunas que descrevem a chamada HTTP; viajam juntas entre formulario, assistente e banco.
 # A lista de colunas mora no repositorio: e nome de coluna, e escrever a mesma lista
@@ -292,9 +295,76 @@ def _count_now(deps: PlayerDeps, server: ServerLike, source: str) -> dict:
     return deps.query_players(server["host"], port)
 
 
+def configured_sources(server: ServerLike) -> list[str]:
+    """As fontes que este servidor tem preenchidas, a ESCOLHIDA primeiro.
+
+    A escolhida continua mandando na contagem; as outras so entram para cobrir o que ela
+    nao da. Atras dela vem quem fala com o jogo ao vivo (A2S, API) e por ultimo o log, que
+    erra quando o servidor cai sem escrever as saidas. 'none' desliga todas, inclusive as
+    que tem campo preenchido: e a forma de calar um servidor sem apagar o cadastro.
+    """
+    chosen = player_source(server)
+    if not chosen:
+        return []
+    ready = {
+        "a2s": int(server["query_port"] or 0) > 0,
+        "http": bool(_stored_value(server, "http_url")),
+        "log": bool(_stored_value(server, "join_re")),
+    }
+    return [chosen] + [s for s in COMBINE_ORDER if s != chosen and ready[s]]
+
+
+def _names_from_others(deps: PlayerDeps, server: ServerLike, data: dict,
+                       others: list[str]) -> None:
+    """A contagem saiu sem nomes (A2S de jogo Unreal, DayZ): pede os nomes a quem sobrou.
+
+    O NUMERO continua o da fonte que contou - ela fala com o jogo agora; a lista do log e
+    reconstruida de eventos e pode ter ficado com alguem que caiu sem linha de saida. Por
+    isso a lista e cortada nos ultimos a entrar, tantos quantos a contagem disser, e a tela
+    avisa quando os dois nao batem.
+    """
+    count = data.get("players") or 0
+    if not count or data.get("list"):
+        # Ninguem online, ou a fonte ja disse quem: perguntar a outra so gastaria SSH.
+        return
+    for source in others:
+        try:
+            names = _count_now(deps, server, source).get("list") or []
+        except QueryError:
+            # Fonte que complementa falha calada: a contagem ja esta na tela, e o erro da
+            # fonte principal (se houver) e o que importa para quem le.
+            continue
+        if names:
+            data["list"] = names[-count:]
+            data["names_from"] = source
+            data["names_partial"] = len(names) != count
+            return
+
+
+def _count_combined(deps: PlayerDeps, server: ServerLike, sources: list[str]) -> dict:
+    """Conta pela primeira fonte que responder e completa os nomes com as seguintes."""
+    first_error = ""
+    for position, source in enumerate(sources):
+        try:
+            data = _count_now(deps, server, source)
+        except QueryError as exc:
+            first_error = first_error or str(exc)
+            continue
+        data["configured"] = True
+        data["source"] = source
+        if position:
+            # Caiu para a reserva: a tela mostra o numero, e o erro da escolhida fica junto
+            # para ninguem achar que a A2S esta funcionando quando quem respondeu foi o log.
+            data["fallback_error"] = first_error
+        _names_from_others(deps, server, data, sources[position + 1:])
+        return data
+    return {"configured": True, "error": first_error, "players": None, "list": [],
+            "source": sources[0]}
+
+
 def server_players(deps: PlayerDeps, server: ServerLike, force: bool = False) -> dict:
-    source = player_source(server)
-    if not source:
+    sources = configured_sources(server)
+    if not sources:
         return {"configured": False, "error": "", "players": None, "list": [], "source": ""}
 
     key = int(server["id"])
@@ -305,12 +375,7 @@ def server_players(deps: PlayerDeps, server: ServerLike, force: bool = False) ->
         if cached and now_ts - cached[0] < deps.players_ttl:
             return cached[1]
 
-    try:
-        data = _count_now(deps, server, source)
-        data["configured"] = True
-    except QueryError as exc:
-        data = {"configured": True, "error": str(exc), "players": None, "list": []}
-    data["source"] = source
+    data = _count_combined(deps, server, sources)
 
     with _players_lock:
         _players_cache[key] = (now_ts, data)

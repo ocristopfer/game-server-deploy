@@ -56,6 +56,9 @@ listen ctfw-broker 8443
 # fechada entre um teste e outro e os casos seguintes dariam "fecha" por acaso.
 docker exec -d ctfw-game sh -c "(sleep 4; echo fim-da-instalacao) | nc -l -p 22 >/dev/null 2>&1; while true; do nc -l -p 22 </dev/null >/dev/null 2>&1; done"
 listen ctfw-game 8888; listen ctfw-game 9999
+# UDP nao tem "conectou": quem prova que o pacote passou e o arquivo do lado do jogo.
+# -W 1 = um datagrama por volta, para o laco anotar cada remetente numa linha.
+docker exec -d ctfw-game sh -c "while true; do nc -u -l -p 27015 -W 1 >> /tmp/udp.txt 2>/dev/null; done"
 listen ctfw-intruder 22
 listen ctfw-api 8006; listen ctfw-api 3306
 sleep 1
@@ -97,6 +100,19 @@ tcp() {  # esperado(abre|fecha) origem destino porta descricao
   fi
 }
 
+udp() {  # esperado(abre|fecha) origem descricao
+  local got=fecha mark="udp-de-$2"
+  docker exec "$2" sh -c "echo $mark | nc -u -w 1 $GAME 27015" >/dev/null 2>&1 || true
+  sleep 1
+  MSYS_NO_PATHCONV=1 docker exec ctfw-game grep -q "$mark" /tmp/udp.txt 2>/dev/null && got=abre
+  if [[ "$got" == "$1" ]]; then
+    printf 'ok    %-6s %s\n' "$1" "$3"
+  else
+    printf 'FALHA esperava %s, deu %s: %s\n' "$1" "$got" "$3"
+    failures=$((failures + 1))
+  fi
+}
+
 echo "== jogo"
 sleep 6
 if MSYS_NO_PATHCONV=1 docker exec ctfw-broker grep -q fim-da-instalacao /tmp/late.txt; then
@@ -110,6 +126,9 @@ tcp abre  ctfw-broker   "$GAME" 22   "broker -> SSH do jogo (instalacao)"
 tcp fecha ctfw-intruder "$GAME" 22   "intruso da LAN -> SSH do jogo"
 tcp abre  ctfw-intruder "$GAME" 8888 "qualquer um -> porta publica do jogo"
 tcp fecha ctfw-intruder "$GAME" 9999 "qualquer um -> porta que o jogo nao declarou"
+# A consulta A2S do painel numa porta que o .env nao declarou (a 27015 de um jogo Unreal).
+udp abre  ctfw-panel    "painel -> UDP nao declarado do jogo (consulta A2S)"
+udp fecha ctfw-intruder "intruso da LAN -> UDP nao declarado do jogo"
 tcp fecha ctfw-game     "$PANEL" 8080 "jogo -> web do painel (rede interna)"
 tcp fecha ctfw-game     "$INTRUDER" 22 "jogo -> outra maquina da LAN"
 tcp fecha ctfw-game     "$API" 8006  "jogo -> Proxmox"
