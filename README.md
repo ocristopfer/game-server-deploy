@@ -1197,6 +1197,15 @@ jogo entende mod:
   Os mods sao `.dll` (Nexus) enviados pela tela para `/opt/game/mods`, e as opcoes de cada um
   ficam no `shroudtopia.json`. Desligar tira o ajuste do Wine. A tela mostra o fim do
   `shroudtopia.log`: mod feito para outra versao do jogo aparece ali como `not found`.
+- **Satisfactory**, **Valheim** e **Rust** tem instalador, mas **ainda nao testado num servidor de
+  verdade** (a tela avisa; faca backup antes):
+  - Satisfactory: **SML** e mods do ficsit.app pela referencia (`RefinedPower`) ou pelo link da
+    pagina, com as dependencias. O pacote de servidor Linux de cada mod e conferido pelo sha256
+    e pelo antivirus. Todo jogador precisa dos mesmos mods (Satisfactory Mod Manager).
+  - Valheim: **BepInEx** e mods do Thunderstore, como no V Rising; no servidor Linux ele entra
+    por um drop-in do systemd.
+  - Rust: **Oxide** (uMod). Ele sobrescreve arquivos do jogo (o painel guarda os originais para
+    desligar), e **toda atualizacao do Rust o apaga**: reinstale depois. Plugins `.cs` pela tela.
 - **Icarus**: botao **Instalar o UE4SS** (o carregador de mods de script). O container baixa a
   versao experimental do GitHub - a estavel (v3.0.1) quebra a Steam do servidor sob o Proton e
   ele some do navegador -, verifica no antivirus, poe o `dwmapi.dll` ao lado do `.exe` e o resto

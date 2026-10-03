@@ -678,6 +678,37 @@ MESSAGES: dict[str, str] = {
         "loaders stay on. Each mod is a folder in <code>{folder}</code>, switched on in the "
         "<code>mods.txt</code> of that folder, on the <a href=\"{url}\">Files screen</a>.",
     "mods.source_ue4ss": "UE4SS (loader)",
+    "mods.not_proven":
+        "This installer has NOT been tested on a real server yet. Back up the world first (Backups "
+        "screen) and check the server after installing.",
+    "mods.help_satisfactory":
+        "Satisfactory mods run on <strong>SML</strong> (Satisfactory Mod Loader). The panel "
+        "downloads the Linux server package of each mod and its dependencies from ficsit.app, "
+        "checks the sha256 and the antivirus, and puts each one in a folder in <code>{folder}</code>. "
+        "Every player needs the SAME mods in the game (through the Satisfactory Mod Manager).",
+    "mods.help_valheim":
+        "Valheim mods run on <strong>BepInEx</strong>, installed from Thunderstore. On a Linux "
+        "server it is loaded by systemd variables (a drop-in), without changing the start script.",
+    "mods.help_rust":
+        "Rust plugins run on <strong>Oxide</strong> (uMod). It OVERWRITES game files, and the panel "
+        "keeps the originals so it can be switched off. <strong>Every Rust update wipes "
+        "Oxide</strong>: reinstall after updating. Plugins are <code>.cs</code> files in "
+        "<code>{folder}</code>, and load without a restart.",
+    "mods.sml_title": "SML (Satisfactory Mod Loader)",
+    "mods.sml_missing": "SML is not installed yet. It also comes on its own with the first mod.",
+    "mods.sml_install": "Install SML",
+    "mods.sml_mod_label": "Install a mod from ficsit.app",
+    "mods.sml_mod_help": (
+        "The mod reference (RefinedPower) or the link to its ficsit.app page. Dependencies come "
+        "along."),
+    "mods.sml_bad_ref": "Could not recognise the mod: use the reference (RefinedPower) or a ficsit.app/mod/... link",
+    "mods.oxide_title": "Oxide (plugin loader)",
+    "mods.oxide_missing": "Oxide is not installed on this server yet.",
+    "mods.oxide_install": "Install Oxide",
+    "mods.oxide_wiped": "Some Oxide files were replaced (was Rust updated?): reinstall.",
+    "mods.oxide_log": "End of the Oxide log",
+    "mods.source_ficsit": "ficsit.app",
+    "mods.source_umod": "uMod (plugins)",
     "mods.bad_name": "{name} is not accepted here. Expected: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos

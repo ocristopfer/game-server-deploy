@@ -10,6 +10,7 @@ mesmo servico (o primeiro venceria e o segundo viraria codigo morto calado).
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 # O servidor LE os pacotes exportados do jogo; mod nenhum e copiado para ele.
@@ -25,6 +26,10 @@ KIND_SHROUDTOPIA = "shroudtopia"
 # Wine passa a usar o dwmapi.dll dele, e os mods moram em Mods/ ao lado do executavel
 # (games/mods/ue4ss_remote.py). A pasta do perfil e a Mods/; o carregador mora na de cima.
 KIND_UE4SS = "ue4ss"
+# Satisfactory: SML e os mods do ficsit.app, pela API dele (games/mods/sml_remote.py).
+KIND_SML = "sml"
+# Rust: o Oxide (uMod) sobrescreve DLLs do jogo e os plugins sao .cs (games/mods/oxide_remote.py).
+KIND_OXIDE = "oxide"
 # So o guia (onde achar, como instalar), sem acao: o caminho existe mas ainda nao foi provado
 # num servidor de verdade, e botao que "instala" sem prova e pior que instrucao clara.
 KIND_GUIDE = "guide"
@@ -65,6 +70,12 @@ class ModProfile:
     # Carregador nativo: a pasta do executavel do jogo, onde o carregador entra. Vazio = um nivel
     # acima da pasta de mods (Shroudtopia); o UE4SS experimental poe os mods DOIS niveis abaixo.
     loader_dir: str = ""
+    # False = o instalador existe mas ainda nao rodou num servidor de verdade: a tela avisa.
+    # Quem provar num CT real troca para True, com o que foi medido escrito no perfil.
+    proven: bool = True
+    # Thunderstore num servidor Linux NATIVO (Valheim): o BepInEx entra por drop-in do systemd
+    # (LD_PRELOAD do doorstop), e nao pelo winhttp do Wine.
+    linux_bepinex: bool = False
 
     @property
     def scan_paths(self) -> tuple[str, ...]:
@@ -165,7 +176,50 @@ VRISING = ModProfile(
     sources=(("mods.source_thunderstore", "https://thunderstore.io/c/v-rising/"),),
 )
 
-PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED, ICARUS)
+SATISFACTORY = ModProfile(
+    key="satisfactory",
+    kind=KIND_SML,
+    services=("satisfactory",),
+    # Servidor Linux nativo: cada mod numa pasta em FactoryGame/Mods, o SML inclusive.
+    folder="/opt/game/FactoryGame/Mods",
+    loader_dir="/opt/game",
+    help_key="mods.help_satisfactory",
+    audit_paths=("/opt/game/FactoryGame/Mods",),
+    sources=(("mods.source_ficsit", "https://ficsit.app/mods"),),
+    proven=False,
+)
+
+VALHEIM = ModProfile(
+    key="valheim",
+    kind=KIND_THUNDERSTORE,
+    services=("valheim",),
+    folder="/opt/game",
+    help_key="mods.help_valheim",
+    community="valheim",
+    loader=("denikson", "BepInExPack_Valheim"),
+    # Chute, nao medida: o Valheim pede bem menos que o V Rising. Medir ao provar.
+    min_memory_mb=4096,
+    audit_paths=("/opt/game/BepInEx", "/opt/game/doorstop_libs"),
+    sources=(("mods.source_thunderstore", "https://thunderstore.io/c/valheim/"),),
+    proven=False,
+    linux_bepinex=True,
+)
+
+RUST = ModProfile(
+    key="rust",
+    kind=KIND_OXIDE,
+    services=("rust",),
+    # A pasta dos PLUGINS (.cs); o Oxide entra na do jogo (RustDedicated_Data/Managed).
+    folder="/opt/game/oxide/plugins",
+    loader_dir="/opt/game",
+    help_key="mods.help_rust",
+    extensions=(".cs",),
+    audit_paths=("/opt/game/oxide/plugins", "/opt/game/.gamepanel-oxide/package"),
+    sources=(("mods.source_umod", "https://umod.org/plugins?page=1&categories=rust"),),
+    proven=False,
+)
+
+PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED, ICARUS, SATISFACTORY, VALHEIM, RUST)
 
 
 def service_stem(service: str) -> str:
@@ -175,3 +229,13 @@ def service_stem(service: str) -> str:
 def profile_for(service: str) -> ModProfile | None:
     stem = service_stem(service)
     return next((p for p in PROFILES if stem in p.services), None)
+
+
+# Referencia de mod do ficsit.app, solta ou dentro do link da pagina (ficsit.app/mod/<ref>).
+# A mesma forma que o sml_remote confere de novo no CT: ela vira nome de pasta.
+_FICSIT_REF = re.compile(r"^(?:https?://(?:www\.)?ficsit\.app/mod/)?([A-Za-z0-9_]{1,64})/?(?:[?#].*)?$", re.ASCII)
+
+
+def ficsit_ref(text: str) -> str:
+    found = _FICSIT_REF.match((text or "").strip())
+    return found.group(1) if found else ""

@@ -107,7 +107,8 @@ def test_perfil_pelo_nome_do_servico():
     assert profiles.profile_for("ets2.service") is profiles.ETS2
     assert profiles.profile_for("euro-truck-simulator-2.service") is profiles.ETS2
     assert profiles.profile_for("palworld.service") is profiles.PALWORLD
-    assert profiles.profile_for("valheim.service") is None
+    assert profiles.profile_for("valheim.service") is profiles.VALHEIM
+    assert profiles.profile_for("terraria.service") is None
     assert profiles.profile_for("") is None
 
 
@@ -133,7 +134,8 @@ def test_todo_perfil_diz_para_onde_vai_e_o_que_aceita():
     for p in profiles.PROFILES:
         assert p.folder == "/opt/game" or p.folder.startswith("/opt/game/")
         assert p.kind in (profiles.KIND_PACKAGES, profiles.KIND_FOLDER, profiles.KIND_THUNDERSTORE,
-                          profiles.KIND_SHROUDTOPIA, profiles.KIND_UE4SS, profiles.KIND_GUIDE)
+                          profiles.KIND_SHROUDTOPIA, profiles.KIND_UE4SS, profiles.KIND_SML,
+                          profiles.KIND_OXIDE, profiles.KIND_GUIDE)
         # Toda tela de mods diz onde procurar: era a pergunta que ficava sem resposta.
         assert p.sources, p.key
         if p.kind == profiles.KIND_GUIDE:
@@ -143,7 +145,7 @@ def test_todo_perfil_diz_para_onde_vai_e_o_que_aceita():
             # Nada entra por envio: o CT baixa do Thunderstore.
             assert not p.upload_names and not p.extensions, p.key
             assert p.community and all(p.loader) and p.min_memory_mb, p.key
-        elif p.kind == profiles.KIND_UE4SS:
+        elif p.kind in (profiles.KIND_UE4SS, profiles.KIND_SML):
             # Mod do UE4SS e uma PASTA (Scripts/main.lua): arquivo solto nao seria mod nenhum.
             assert not p.upload_names and not p.extensions, p.key
             assert p.loader_dir, p.key
@@ -233,3 +235,30 @@ def test_icarus_usa_o_ue4ss_provado_no_ct():
     assert ic.loader_dir == "/opt/game/Icarus/Binaries/Win64"
     assert ic.folder == ic.loader_dir + "/ue4ss/Mods"
     assert set(ic.scan_paths) == {ic.loader_dir + "/ue4ss", ic.loader_dir + "/dwmapi.dll"}
+
+
+def test_instalador_sem_prova_e_marcado_na_tela():
+    """Satisfactory, Valheim e Rust foram escritos sem CT de teste: a tela tem de avisar."""
+    for key in ("satisfactory", "valheim", "rust"):
+        assert not profiles.profile_for(f"{key}.service").proven, key
+    for p in (profiles.ENSHROUDED, profiles.ICARUS, profiles.VRISING):
+        assert p.proven, p.key
+
+
+def test_valheim_e_bepinex_de_linux_nativo():
+    vh = profiles.profile_for("valheim.service")
+    assert vh.kind == profiles.KIND_THUNDERSTORE
+    assert vh.linux_bepinex is True
+    assert vh.loader == ("denikson", "BepInExPack_Valheim")
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("RefinedPower", "RefinedPower"),
+    ("https://ficsit.app/mod/SmartFoundations", "SmartFoundations"),
+    ("https://ficsit.app/mod/SmartFoundations/", "SmartFoundations"),
+    ("../etc", ""),
+    ("a;rm -rf /", ""),
+    ("https://evil.example/mod/X", ""),
+])
+def test_referencia_do_ficsit_app(text, expected):
+    assert profiles.ficsit_ref(text) == expected

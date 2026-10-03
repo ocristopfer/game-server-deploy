@@ -17,8 +17,10 @@ from flask import Blueprint, flash, redirect, render_template, request, session,
 from gamepanel import app as panel
 from gamepanel.games.mods import (
     antivirus,
+    oxide_remote,
     profiles,
     shroudtopia_remote,
+    sml_remote,
     thunderstore,
     thunderstore_remote,
     ue4ss_remote,
@@ -34,6 +36,8 @@ bp = Blueprint("mods", __name__)
 REMOTE_SOURCE = Path(thunderstore_remote.__file__).read_text(encoding="utf-8")
 SHROUDTOPIA_SOURCE = Path(shroudtopia_remote.__file__).read_text(encoding="utf-8")
 UE4SS_SOURCE = Path(ue4ss_remote.__file__).read_text(encoding="utf-8")
+OXIDE_SOURCE = Path(oxide_remote.__file__).read_text(encoding="utf-8")
+SML_SOURCE = Path(sml_remote.__file__).read_text(encoding="utf-8")
 # Baixar o BepInEx (33 MB) e as dependencias leva minutos: vira job, com log e prazo proprio.
 INSTALL_TIMEOUT = 1800
 LOADER_ACTIONS = ("install", "enable", "disable")
@@ -84,22 +88,29 @@ def _folder_view(server, profile: profiles.ModProfile) -> dict:
 
 
 # Carregador nativo (DLL ao lado do .exe sob o Proton) -> o instalador que roda no CT.
-NATIVE_LOADERS = {profiles.KIND_SHROUDTOPIA: SHROUDTOPIA_SOURCE, profiles.KIND_UE4SS: UE4SS_SOURCE}
+NATIVE_LOADERS = {profiles.KIND_SHROUDTOPIA: SHROUDTOPIA_SOURCE, profiles.KIND_UE4SS: UE4SS_SOURCE,
+                  profiles.KIND_OXIDE: OXIDE_SOURCE}
 # Nome do carregador no historico de tarefas.
-LOADER_NAMES = {profiles.KIND_SHROUDTOPIA: "Shroudtopia", profiles.KIND_UE4SS: "UE4SS"}
+LOADER_NAMES = {profiles.KIND_SHROUDTOPIA: "Shroudtopia", profiles.KIND_UE4SS: "UE4SS",
+                profiles.KIND_OXIDE: "Oxide", profiles.KIND_SML: "SML"}
 
 # Toda acao que BAIXA algo leva o antivirus junto; o instalador remoto recusa instalar sem ele.
-SCANNED_ACTIONS = ("loader-install", "plugin-install")
+SCANNED_ACTIONS = ("loader-install", "plugin-install", "mod-install")
 
 
 def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str) -> str:
     scan = ("--scan", antivirus.SCAN_SCRIPT) if action in SCANNED_ACTIONS else ()
+    if profile.kind == profiles.KIND_SML:
+        return panel.q("python3", "-c", SML_SOURCE, *scan, action, profile.loader_dir, *args)
     if profile.kind in NATIVE_LOADERS:
         # O carregador mora um nivel acima da pasta de mods: ao lado do executavel do jogo.
         source = NATIVE_LOADERS[profile.kind]
         game_dir = profile.loader_dir or posixpath.dirname(profile.folder)
         return panel.q("python3", "-c", source, *scan, action, game_dir, *args)
-    return panel.q("python3", "-c", REMOTE_SOURCE, *scan, action, profile.folder, *profile.loader, *args)
+    # Servidor Linux nativo (Valheim): o instalador escreve o drop-in deste servico. O nome sai
+    # do perfil, que foi escolhido justamente pelo nome do servico.
+    unit = ("--unit", f"{profile.services[0]}.service") if profile.linux_bepinex else ()
+    return panel.q("python3", "-c", REMOTE_SOURCE, *scan, *unit, action, profile.folder, *profile.loader, *args)
 
 
 def _remote_state(server, profile: profiles.ModProfile, errors: list[str]) -> dict | None:
@@ -145,7 +156,7 @@ def index(sid: int):
         view = _packages_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_THUNDERSTORE:
         view = _thunderstore_view(server, profile, errors)
-    elif profile and profile.kind in NATIVE_LOADERS:
+    elif profile and (profile.kind in NATIVE_LOADERS or profile.kind == profiles.KIND_SML):
         view = _shroudtopia_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_FOLDER:
         view = _folder_view(server, profile)
@@ -155,6 +166,7 @@ def index(sid: int):
         workshop_url=workshop.url, kind_packages=profiles.KIND_PACKAGES,
         kind_thunderstore=profiles.KIND_THUNDERSTORE, kind_folder=profiles.KIND_FOLDER,
         kind_shroudtopia=profiles.KIND_SHROUDTOPIA, kind_ue4ss=profiles.KIND_UE4SS,
+        kind_sml=profiles.KIND_SML, kind_oxide=profiles.KIND_OXIDE,
         loader_url=_loader_url(profile),
     )
 
@@ -180,7 +192,7 @@ def _thunderstore_job(sid: int, action: str, step: str, label: str):
 
 
 # Perfis em que o painel instala o CARREGADOR (o botao "Instalar/Ligar/Desligar").
-LOADER_KINDS = (profiles.KIND_THUNDERSTORE, *NATIVE_LOADERS)
+LOADER_KINDS = (profiles.KIND_THUNDERSTORE, *NATIVE_LOADERS, profiles.KIND_SML)
 
 
 def _loader_profile_or_back(sid: int):
@@ -228,6 +240,12 @@ def loader(sid: int):
         return redirect(url_for(INDEX, sid=sid))
     name = LOADER_NAMES.get(profile.kind) or "-".join(profile.loader)
     args = (version,) if version else ()
+    if profile.kind == profiles.KIND_SML:
+        # O SML e um mod do ficsit.app como os outros: so se instala ou atualiza, nao se desliga.
+        if action != "install":
+            return redirect(url_for(INDEX, sid=sid))
+        return _thunderstore_job(sid, "mod-loader", _remote_cmd(profile, "mod-install", "SML", *args),
+                                 _with_version("SML: install", version))
     return _thunderstore_job(sid, "mod-loader", _remote_cmd(profile, f"loader-{action}", *args),
                              _with_version(f"{name}: {action}", version))
 
@@ -263,6 +281,45 @@ def plugin_remove(sid: int):
         return redirect(url_for(INDEX, sid=sid))
     ns, name = parsed
     return _thunderstore_job(sid, "mod-remove", _remote_cmd(profile, "plugin-remove", ns, name), f"{ns}/{name}")
+
+
+def _sml_profile_or_back(sid: int):
+    panel._files_guard()
+    server = panel._server_or_404(sid)
+    profile = _profile_or_none(server)
+    if not profile or profile.kind != profiles.KIND_SML:
+        flash(panel.translate("mods.not_thunderstore"), "error")
+        return None
+    return profile
+
+
+@bp.post("/servers/<int:sid>/mods/sml/install")
+@panel.admin_required
+def sml_install(sid: int):
+    """Um mod do ficsit.app (e as dependencias dele), pela referencia ou pelo link da pagina."""
+    profile = _sml_profile_or_back(sid)
+    if not profile:
+        return redirect(url_for(INDEX, sid=sid))
+    ref = profiles.ficsit_ref(request.form.get("mod", ""))
+    if not ref:
+        flash(panel.translate("mods.sml_bad_ref"), "error")
+        return redirect(url_for(INDEX, sid=sid))
+    version = _form_version()
+    if version is None:
+        return redirect(url_for(INDEX, sid=sid))
+    args = (ref, version) if version else (ref,)
+    return _thunderstore_job(sid, "mod-install", _remote_cmd(profile, "mod-install", *args),
+                             _with_version(ref, version))
+
+
+@bp.post("/servers/<int:sid>/mods/sml/remove")
+@panel.admin_required
+def sml_remove(sid: int):
+    profile = _sml_profile_or_back(sid)
+    ref = profiles.ficsit_ref(request.form.get("mod", ""))
+    if not profile or not ref:
+        return redirect(url_for(INDEX, sid=sid))
+    return _thunderstore_job(sid, "mod-remove", _remote_cmd(profile, "mod-remove", ref), ref)
 
 
 def _checked_name(profile: profiles.ModProfile, sent) -> str:
@@ -351,7 +408,7 @@ def delete(sid: int):
     name = (request.form.get("name") or "").strip()
     # So o arquivo de mod da pasta do perfil, pelo nome: nada de caminho vindo do formulario.
     # Pasta de mods com arquivo solto: a dos .pak e a das DLLs do Shroudtopia.
-    deletable = (profiles.KIND_FOLDER, profiles.KIND_SHROUDTOPIA)
+    deletable = (profiles.KIND_FOLDER, profiles.KIND_SHROUDTOPIA, profiles.KIND_OXIDE)
     if not profile or profile.kind not in deletable or "/" in name or not profile.accepts(name):
         flash(panel.translate("mods.bad_name", name=name or "?",
                               allowed=", ".join(profile.extensions if profile else ())), "error")

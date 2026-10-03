@@ -317,3 +317,28 @@ def test_carregador_recusado_nao_toca_no_jogo_nem_no_wine(game):
         ts.install_loader(game_dir, "BepInEx", "BepInExPack_V_Rising", fake_fetch, env_path=env, scan=refuse)
     assert os.listdir(game_dir) == []
     assert "mscoree,mshtml=" in Path(env).read_text()
+
+
+# ------------------------------------------------------------------ Linux nativo (Valheim)
+
+def test_linux_nativo_liga_o_bepinex_por_drop_in_e_nao_mexe_no_wine(tmp_path, monkeypatch):
+    """As variaveis sao as do start_server_bepinex.sh do BepInExPack_Valheim, com caminho absoluto."""
+    reloads: list[int] = []
+    monkeypatch.setattr(ts, "SYSTEMD_DIR", str(tmp_path / "systemd"))
+    monkeypatch.setattr(ts, "_daemon_reload", lambda: reloads.append(1))
+    ts.set_linux_enabled("/opt/game", "valheim.service", True)
+    text = (tmp_path / "systemd" / "valheim.service.d" / "gamepanel-bepinex.conf").read_text(encoding="utf-8")
+    assert "Environment=DOORSTOP_ENABLED=1" in text
+    assert "Environment=DOORSTOP_TARGET_ASSEMBLY=/opt/game/BepInEx/core/BepInEx.Preloader.dll" in text
+    assert "Environment=LD_PRELOAD=/opt/game/doorstop_libs/libdoorstop_x64.so" in text
+    assert ts.status(str(tmp_path), unit="valheim.service")["enabled"] is True
+    ts.set_linux_enabled("/opt/game", "valheim.service", False)
+    assert ts.status(str(tmp_path), unit="valheim.service")["enabled"] is False
+    # Sem o daemon-reload o systemd segue com o ambiente antigo.
+    assert reloads == [1, 1]
+
+
+@pytest.mark.parametrize("unit", ["", "x", "../etc.service", "a b.service", "valheim"])
+def test_servico_do_drop_in_e_conferido(unit):
+    with pytest.raises(ValueError):
+        ts.dropin_path(unit)

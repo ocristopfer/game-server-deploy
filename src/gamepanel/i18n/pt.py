@@ -679,6 +679,37 @@ MESSAGES: dict[str, str] = {
         "de blueprint ficam ligados. Cada mod e uma pasta em <code>{folder}</code>, ligada no "
         "<code>mods.txt</code> da mesma pasta, pela <a href=\"{url}\">tela Arquivos</a>.",
     "mods.source_ue4ss": "UE4SS (carregador)",
+    "mods.not_proven":
+        "Este instalador ainda NAO foi testado num servidor de verdade. Faca backup do mundo antes "
+        "(tela Backups) e confira o servidor depois de instalar.",
+    "mods.help_satisfactory":
+        "Mods do Satisfactory rodam no <strong>SML</strong> (Satisfactory Mod Loader). O painel "
+        "baixa do ficsit.app o pacote de servidor Linux de cada mod e das dependencias dele, "
+        "confere o sha256 e o antivirus, e poe cada um numa pasta em <code>{folder}</code>. "
+        "Todo jogador precisa dos MESMOS mods no jogo (pelo Satisfactory Mod Manager).",
+    "mods.help_valheim":
+        "Mods do Valheim rodam no <strong>BepInEx</strong>, instalado do Thunderstore. No servidor "
+        "Linux ele entra por variaveis do systemd (um drop-in), sem trocar o script de partida.",
+    "mods.help_rust":
+        "Plugins do Rust rodam no <strong>Oxide</strong> (uMod). Ele SOBRESCREVE arquivos do jogo, "
+        "e o painel guarda os originais para poder desligar. <strong>Toda atualizacao do Rust "
+        "apaga o Oxide</strong>: reinstale depois de atualizar. Os plugins sao <code>.cs</code> "
+        "em <code>{folder}</code>, e entram sem reiniciar.",
+    "mods.sml_title": "SML (Satisfactory Mod Loader)",
+    "mods.sml_missing": "O SML ainda nao esta instalado. Ele tambem vem sozinho com o primeiro mod.",
+    "mods.sml_install": "Instalar o SML",
+    "mods.sml_mod_label": "Instalar mod do ficsit.app",
+    "mods.sml_mod_help": (
+        "A referencia do mod (RefinedPower) ou o link da pagina dele no ficsit.app. As dependencias "
+        "vem junto."),
+    "mods.sml_bad_ref": "Nao reconheci o mod: use a referencia (RefinedPower) ou o link ficsit.app/mod/...",
+    "mods.oxide_title": "Oxide (carregador de plugins)",
+    "mods.oxide_missing": "O Oxide ainda nao esta instalado neste servidor.",
+    "mods.oxide_install": "Instalar o Oxide",
+    "mods.oxide_wiped": "Parte dos arquivos do Oxide foi trocada (o Rust foi atualizado?): reinstale.",
+    "mods.oxide_log": "Fim do log do Oxide",
+    "mods.source_ficsit": "ficsit.app",
+    "mods.source_umod": "uMod (plugins)",
     "mods.bad_name": "{name} nao e aceito aqui. Esperado: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos

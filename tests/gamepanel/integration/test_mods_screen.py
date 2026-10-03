@@ -168,7 +168,7 @@ def test_remover_so_vale_para_pasta_de_mods_e_so_pelo_nome(admin, post, database
 
 
 def test_jogo_sem_gestor_manda_para_arquivos(admin, database):
-    sid = _server(database, "valheim.service")
+    sid = _server(database, "terraria.service")
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
     assert f"/servers/{sid}/files" in html
 
@@ -482,7 +482,7 @@ def test_operador_nao_verifica(operator, post, database, upload_jobs):
 
 
 def test_jogo_sem_gestor_nao_tem_o_que_verificar(admin, post, database, upload_jobs):
-    sid = _server(database, "valheim.service")
+    sid = _server(database, "terraria.service")
     post(admin, f"/servers/{sid}/mods/audit", {})
     assert upload_jobs == []
 
@@ -510,3 +510,74 @@ def test_icarus_instala_o_ue4ss_na_pasta_do_executavel(admin, post, database, mo
     assert "--scan" in install
     assert install.endswith("loader-install /opt/game/Icarus/Binaries/Win64")
     assert restart.endswith("restart icarus.service")
+
+
+# ------------------------------------------------------------- instaladores ainda sem prova
+
+@pytest.fixture
+def remote(database, monkeypatch):
+    """Servidor qualquer cujo instalador remoto responde `state`; guarda comandos e jobs."""
+    calls: list[str] = []
+    jobs: list[tuple] = []
+    state: dict = {"loader_installed": False, "loader": "", "loader_version": "", "loader_pinned": False,
+                   "enabled": False, "mods": [], "log": [], "plugins": [], "overrides_ok": True,
+                   "memory_mb": 16384, "wiped": False}
+
+    def ssh_run(server, cmd, timeout=None, **kw):
+        calls.append(cmd)
+        out = type("P", (), {})()
+        out.returncode, out.stderr, out.stdout = 0, "", json.dumps(state)
+        return out
+    monkeypatch.setattr(panel, "ssh_run", ssh_run)
+    monkeypatch.setattr(panel, "start_job", lambda action, server, user, **kw: jobs.append((action, kw)) or 99)
+    return calls, jobs, state
+
+
+@pytest.mark.parametrize("service", ["satisfactory.service", "valheim.service", "rust.service"])
+def test_instalador_sem_prova_avisa_na_tela(admin, database, remote, service):
+    sid = _server(database, service)
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert "NAO foi testado" in html
+
+
+def test_satisfactory_instala_mod_do_ficsit_app_com_antivirus(admin, post, database, remote):
+    calls, jobs, _ = remote
+    sid = _server(database, "satisfactory.service")
+    admin.get(f"/servers/{sid}/mods")
+    assert calls[0].endswith("status /opt/game")
+    post(admin, f"/servers/{sid}/mods/sml/install", {"mod": "https://ficsit.app/mod/RefinedPower", "restart": "1"})
+    post(admin, f"/servers/{sid}/mods/sml/install", {"mod": "x; rm -rf /"})
+    assert len(jobs) == 1
+    install, restart = jobs[0][1]["steps"]
+    assert "--scan" in install
+    assert install.endswith("mod-install /opt/game RefinedPower")
+    assert restart.endswith("restart satisfactory.service")
+
+
+def test_satisfactory_botao_do_carregador_instala_o_sml(admin, post, database, remote):
+    _, jobs, _ = remote
+    sid = _server(database, "satisfactory.service")
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install"})
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "disable"})
+    assert len(jobs) == 1
+    assert jobs[0][1]["steps"][0].endswith("mod-install /opt/game SML")
+
+
+def test_valheim_instala_o_bepinex_no_modo_linux(admin, post, database, remote):
+    _, jobs, _ = remote
+    sid = _server(database, "valheim.service")
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install"})
+    step = jobs[0][1]["steps"][0]
+    assert "--unit valheim.service loader-install /opt/game denikson BepInExPack_Valheim" in step
+
+
+def test_rust_recebe_plugin_cs_e_instala_o_oxide(admin, post, database, remote):
+    _, jobs, state = remote
+    state.update(loader_installed=True, enabled=True, loader_version="2.0.7801",
+                 mods=[{"name": "Kits.cs", "size": 900}])
+    sid = _server(database, "rust.service")
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert 'accept=".cs"' in html
+    assert "Kits.cs" in html
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install"})
+    assert jobs[0][1]["steps"][0].endswith("loader-install /opt/game")

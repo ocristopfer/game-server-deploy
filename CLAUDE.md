@@ -341,7 +341,27 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   trapaca de fabrica (so `BPModLoaderMod`/`BPML_GenericFunctions` ficam ligados), e o
   `mods.txt` oficial vem com BOM, que gruda no nome do primeiro mod. Servidor Linux nativo
   (Dragonwilds, Palworld daqui) nao carrega o UE4SS oficial; o port Linux e do Palworld (UE
-  5.1) e o teste dele no Dragonwilds (UE 5.6.1) ficou com quem administra o host.
+  5.1): testado no Dragonwilds (UE 5.6.1), ele entra no processo sem atrapalhar o jogo, mas se
+  acha UE 5.1, nao confirma o FName nem acha a KismetSystemLibrary, e nenhum mod Lua roda.
+  Cuidado ao medir travamento ali: a saida do Dragonwilds chega ao journal em blocos atrasados;
+  o sinal certo e o `Saved/Logs/RSDragonwilds.log` (o `HeartbeatSession` de 30 em 30 s).
+- **`proven=False` e instalador escrito sem CT de teste, e a tela AVISA** (`mods.not_proven`). Foi
+  pedido assim para o Satisfactory, o Valheim e o Rust: implementar tudo e provar depois. Quem
+  provar num CT real troca para `True` e escreve no perfil o que mediu - a mesma regra do
+  `KIND_GUIDE`, so que com o botao ja pronto. Um teste cobra que os tres continuem marcados.
+- **Satisfactory e `KIND_SML`, pela API do ficsit.app** (`sml_remote.py`), e nao pelo
+  ficsit-cli: a v0.7.1 nao tem comando para ADICIONAR mod (so a interface interativa). A API e
+  publica, diz o pacote `LinuxServer` de cada versao com o sha256 e as dependencias; o sha256 e
+  conferido ANTES do antivirus, e a dependencia vem na versao que a condicao pede (`^3.12.0` nao
+  aceita o SML 4.0.0). Cada mod numa pasta em `FactoryGame/Mods`, trocada por inteiro.
+- **Valheim e Thunderstore em modo Linux** (`linux_bepinex`): o BepInEx entra por um drop-in do
+  systemd com as variaveis do script de partida que vem DENTRO do pacote do BepInEx (start_server_bepinex, fora do repo) (`DOORSTOP_*`, `LD_PRELOAD` do
+  `libdoorstop_x64.so`), com caminho absoluto, sem trocar o wrapper do jogo. Desligar apaga o
+  drop-in; sem `daemon-reload` o systemd seguiria com o ambiente antigo.
+- **Rust e `KIND_OXIDE`** (`oxide_remote.py`): o pacote SOBRESCREVE DLLs do jogo, entao o
+  instalador guarda o original (so o que NAO e dele, comparando sha256: reinstalar com o Oxide
+  ligado nao pode virar "original") e desligar o devolve. Toda atualizacao do Rust pela Steam
+  apaga o Oxide: o status compara os arquivos e acusa (`wiped`). Plugins sao `.cs` pelo envio.
 - **Dragonwilds (Unreal 5) aceita `.pak`, `.utoc` e `.ucas`**, e o envio confere TODOS os nomes
   antes de mandar qualquer um (`_checked_name`): o mod vem em tres arquivos, e dois de tres na
   pasta e um mod quebrado.

@@ -20,7 +20,8 @@
 
 <div class="card">
   <p class="muted small">{{ _h(profile.help_key, folder=profile.folder) }}</p>
-  {% if profile.upload_names or profile.extensions or profile.kind in (kind_thunderstore, kind_shroudtopia, kind_ue4ss) %}
+  {% if not profile.proven %}<p class="flash error">{{ _('mods.not_proven') }}</p>{% endif %}
+  {% if profile.upload_names or profile.extensions or profile.kind in (kind_thunderstore, kind_shroudtopia, kind_ue4ss, kind_sml) %}
   <p class="muted small">{{ _h('mods.antivirus_note') }}</p>
   {% endif %}
   {# O que entrou ANTES do antivirus nunca foi verificado: este botao passa por ele o que ja
@@ -325,6 +326,137 @@
     {% endif %}
     {% if st.log %}
     <h3 class="mt-4">{{ _('mods.ue4ss_log') }}</h3>
+    <pre class="log">{{ st.log | join('\n') }}</pre>
+    {% endif %}
+  </div>
+  {% endif %}
+{% elif profile.kind == kind_sml %}
+  {% set st = view.state %}
+  <div class="card">
+    <h2>{{ _('mods.sml_title') }}</h2>
+    {% if st %}
+      {% if st.loader_installed %}
+        <p>SML {{ st.loader_version }}
+          {% if st.loader_pinned %}<span class="badge cold">{{ _('mods.pinned') }}</span>{% endif %}
+          <span class="badge on">{{ _('mods.loader_on') }}</span></p>
+      {% else %}
+        <p class="muted small">{{ _('mods.sml_missing') }}</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('mods.loader', sid=server.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <label class="short">{{ _('mods.version_label') }}
+          <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
+                 pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="3.12.0">
+          <small>{{ _('mods.version_help') }}</small>
+        </label>
+        <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+        <div class="form-actions cluster">
+          {% if st.loader_installed %}
+            {{ ui.button(_('mods.loader_update'), icon='⬇', extra='name=action value=install') }}
+          {% else %}
+            {{ ui.button(_('mods.sml_install'), variant='primary', icon='⬇', extra='name=action value=install') }}
+          {% endif %}
+        </div>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if st %}
+  <div class="card">
+    <h2>{{ _('mods.files_title') }}</h2>
+    {% if st.mods %}
+    <div class="table-wrap"><table class="jobs">
+      <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('mods.col_version') }}</th><th></th></tr></thead>
+      <tbody>
+        {% for m in st.mods %}
+        <tr>
+          <td><a href="https://ficsit.app/mod/{{ m.name }}" target="_blank" rel="noopener noreferrer">{{ m.name }}</a></td>
+          <td class="muted nowrap">{{ m.version or '—' }}{% if m.pinned %} <span class="badge cold">{{ _('mods.pinned') }}</span>{% endif %}</td>
+          <td>{{ ui.action(url_for('mods.sml_remove', sid=server.id), _('mods.delete'), size='sm', variant='danger',
+                           confirm=_('mods.delete_confirm', name=m.name), fields={'mod': m.name, 'restart': '1'}) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      <p class="muted">{{ _('mods.no_files') }}</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('mods.sml_install', sid=server.id) }}" class="mt-4">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label>{{ _('mods.sml_mod_label') }}
+        <input name="mod" required spellcheck="false" autocomplete="off" placeholder="https://ficsit.app/mod/RefinedPower">
+        <small>{{ _('mods.sml_mod_help') }}</small>
+      </label>
+      <label class="short">{{ _('mods.version_label') }}
+        <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
+               pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+">
+        <small>{{ _('mods.version_help') }}</small>
+      </label>
+      <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+      <div class="form-actions">{{ ui.button(_('mods.plugin_install'), variant='primary', icon='⬇', block=true) }}</div>
+    </form>
+  </div>
+  {% endif %}
+{% elif profile.kind == kind_oxide %}
+  {% set st = view.state %}
+  <div class="card">
+    <h2>{{ _('mods.oxide_title') }}</h2>
+    {% if st %}
+      {% if st.loader_installed %}
+        <p>Oxide {{ st.loader_version }}
+          {% if st.loader_pinned %}<span class="badge cold">{{ _('mods.pinned') }}</span>{% endif %}
+          {% if st.enabled %}<span class="badge on">{{ _('mods.loader_on') }}</span>{% else %}<span class="badge cold">{{ _('mods.loader_off') }}</span>{% endif %}
+        </p>
+        {% if st.wiped %}<p class="flash error">{{ _('mods.oxide_wiped') }}</p>{% endif %}
+      {% else %}
+        <p class="muted small">{{ _('mods.oxide_missing') }}</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('mods.loader', sid=server.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        {% if not st.loader_installed or st.enabled or st.wiped %}
+        <label class="short">{{ _('mods.version_label') }}
+          <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
+                 pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="2.0.7801">
+          <small>{{ _('mods.version_help') }}</small>
+        </label>
+        {% endif %}
+        <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+        <div class="form-actions cluster">
+          {% if not st.loader_installed %}
+            {{ ui.button(_('mods.oxide_install'), variant='primary', icon='⬇', extra='name=action value=install') }}
+          {% elif st.enabled or st.wiped %}
+            {{ ui.button(_('mods.loader_update'), icon='⬇', extra='name=action value=install') }}
+            {% if st.enabled %}{{ ui.button(_('mods.loader_disable'), variant='danger', extra='name=action value=disable') }}{% endif %}
+          {% else %}
+            {{ ui.button(_('mods.loader_enable'), variant='primary', extra='name=action value=enable') }}
+          {% endif %}
+        </div>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if st and st.loader_installed %}
+  <div class="card">
+    <h2>{{ _('mods.files_title') }}</h2>
+    {% if st.mods %}
+    <div class="table-wrap"><table class="jobs">
+      <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
+      <tbody>
+        {% for m in st.mods %}
+        <tr>
+          <td><code>{{ m.name }}</code></td>
+          <td class="muted nowrap">{{ m.size | filesize }}</td>
+          <td>{{ ui.action(url_for('mods.delete', sid=server.id), _('mods.delete'), size='sm', variant='danger',
+                           confirm=_('mods.delete_confirm', name=m.name), fields={'name': m.name}) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      <p class="muted">{{ _('mods.no_files') }}</p>
+    {% endif %}
+    {% if st.log %}
+    <h3 class="mt-4">{{ _('mods.oxide_log') }}</h3>
     <pre class="log">{{ st.log | join('\n') }}</pre>
     {% endif %}
   </div>

@@ -217,8 +217,55 @@ def set_enabled(game_dir: str, enabled: bool) -> None:
              "true" if enabled else "false")
 
 
+# ------------------------------------------------------------------ servidor Linux nativo
+# O Valheim (e todo Unity Linux) carrega o BepInEx pelo doorstop .so, por LD_PRELOAD, e nao por
+# DLL do Wine. As variaveis sao as do start_server_bepinex.sh do BepInExPack_Valheim 5.4.2351,
+# lidas do pacote; aqui elas vao num drop-in do systemd, com caminho ABSOLUTO (o script usa
+# ./, relativo a pasta do jogo), para nao precisar trocar o wrapper de partida do jogo.
+# Desligar e apagar o drop-in: o servidor sobe sem nenhum codigo do BepInEx.
+# NAO TESTADO num servidor de verdade ainda.
+SYSTEMD_DIR = "/etc/systemd/system"
+DROPIN = "gamepanel-bepinex.conf"
+UNIT = re.compile(r"[A-Za-z0-9_.@-]{1,120}\.service")
+
+
+def dropin_path(unit: str, systemd_dir: str = SYSTEMD_DIR) -> str:
+    if not UNIT.fullmatch(unit or ""):
+        raise ValueError(f"servico invalido: {unit!r}")
+    return posixpath.join(systemd_dir, f"{unit}.d", DROPIN)
+
+
+def dropin_text(game_dir: str) -> str:
+    libs = posixpath.join(game_dir, "doorstop_libs")
+    preloader = posixpath.join(game_dir, "BepInEx", "core", "BepInEx.Preloader.dll")
+    return ("[Service]\n"
+            "Environment=DOORSTOP_ENABLED=1\n"
+            f"Environment=DOORSTOP_TARGET_ASSEMBLY={preloader}\n"
+            f"Environment=LD_LIBRARY_PATH={libs}:{posixpath.join(game_dir, 'linux64')}\n"
+            f"Environment=LD_PRELOAD={posixpath.join(libs, 'libdoorstop_x64.so')}\n")
+
+
+def set_linux_enabled(game_dir: str, unit: str, enabled: bool) -> None:
+    # SYSTEMD_DIR e _daemon_reload lidos na hora, pelo nome do modulo: e o que deixa o teste
+    # troca-los sem um parametro a mais em cada funcao do caminho.
+    path = dropin_path(unit, SYSTEMD_DIR)
+    if enabled:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(dropin_text(game_dir))
+    else:
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(path)
+    # Sem o daemon-reload o systemd segue com o ambiente antigo ate o proximo boot.
+    _daemon_reload()
+
+
+def _daemon_reload() -> None:
+    subprocess.run(["systemctl", "daemon-reload"], check=False)  # noqa: S607
+
+
 def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: str = RUNTIME_ENV,
-                   version: str = "", scan=_no_scan) -> dict:
+                   version: str = "", scan=_no_scan, unit: str = "") -> dict:
     meta = package_meta(ns, name, version, fetcher)
     print(f"baixando {meta['full_name']}")
     data = fetcher(meta["download_url"])
@@ -244,9 +291,13 @@ def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: s
         count += 1
     set_enabled(game_dir, True)
     _set_ini(os.path.join(game_dir, "BepInEx", "config", "BepInEx.cfg"), "Logging.Console", "Enabled", "false")
-    old = _read_overrides(env_path)
-    if os.path.exists(env_path):
-        _write_overrides(env_path, fix_overrides(old))
+    if unit:
+        # Linux nativo: nada de Wine; o carregador entra pelo drop-in do systemd.
+        set_linux_enabled(game_dir, unit, True)
+    else:
+        old = _read_overrides(env_path)
+        if os.path.exists(env_path):
+            _write_overrides(env_path, fix_overrides(old))
     with open(os.path.join(game_dir, "BepInEx", MARK), "w", encoding="utf-8") as f:
         json.dump({"full_name": meta["full_name"], "version": meta["version_number"],
                    "pinned": bool(version)}, f)
@@ -346,7 +397,7 @@ def remove_plugin(game_dir: str, ns: str, name: str) -> dict:
     return {"removed": existed}
 
 
-def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
+def status(game_dir: str, env_path: str = RUNTIME_ENV, unit: str = "") -> dict:
     plugins = []
     pdir = _plugins_dir(game_dir)
     for entry in sorted(os.listdir(pdir)) if os.path.isdir(pdir) else []:
@@ -356,7 +407,10 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
                         **_read_json(os.path.join(pdir, entry, MARK))})
     loader = _read_json(os.path.join(game_dir, "BepInEx", MARK))
     ini = _read_text(os.path.join(game_dir, "doorstop_config.ini"))
-    enabled = re.search(r"(?m)^enabled\s*=\s*true", ini) is not None
+    if unit:
+        enabled = os.path.exists(dropin_path(unit, SYSTEMD_DIR))
+    else:
+        enabled = re.search(r"(?m)^enabled\s*=\s*true", ini) is not None
     mem_kb = 0
     for line in _read_text("/proc/meminfo").splitlines():
         if line.startswith("MemTotal:") and line.split()[1].isdigit():
@@ -366,7 +420,8 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
         "loader": loader.get("full_name", ""), "loader_version": loader.get("version", ""),
         "loader_pinned": bool(loader.get("pinned")),
         "enabled": enabled,
-        "overrides_ok": overrides_ok(_read_overrides(env_path)) if os.path.exists(env_path) else True,
+        # Linux nativo nao tem Wine: nao ha ajuste dele para conferir.
+        "overrides_ok": bool(unit) or not os.path.exists(env_path) or overrides_ok(_read_overrides(env_path)),
         "memory_mb": mem_kb // 1024,
         "plugins": plugins,
     }
@@ -389,20 +444,26 @@ INSTALL_ACTIONS = ("loader-install", "plugin-install")
 
 
 def main(argv: list[str]) -> int:
-    script = ""
+    script = unit = ""
     if argv[:1] == ["--scan"]:
         script, argv = argv[1], argv[2:]
+    # Servidor Linux nativo (Valheim): o carregador entra por drop-in do systemd deste servico.
+    if argv[:1] == ["--unit"]:
+        unit, argv = argv[1], argv[2:]
     action, game_dir, loader_ns, loader_name, *rest = argv
     scan = scanner(script) if script else _no_scan
     try:
         if action in INSTALL_ACTIONS and not script:
             raise ValueError("instalar sem a verificacao do antivirus nao e caminho do painel")
         if action == "status":
-            result = status(game_dir)
+            result = status(game_dir, unit=unit)
         elif action == "loader-install":
-            result = install_loader(game_dir, loader_ns, loader_name, version=rest[0] if rest else "", scan=scan)
+            result = install_loader(game_dir, loader_ns, loader_name, version=rest[0] if rest else "", scan=scan,
+                                    unit=unit)
         elif action in ("loader-enable", "loader-disable"):
             set_enabled(game_dir, action == "loader-enable")
+            if unit:
+                set_linux_enabled(game_dir, unit, action == "loader-enable")
             result = {"enabled": action == "loader-enable"}
         elif action == "plugin-install":
             result = install_plugin(game_dir, rest[0], rest[1], loader_ns=loader_ns,
