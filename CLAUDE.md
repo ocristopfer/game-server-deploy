@@ -372,9 +372,9 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   sob o Proton (o caminho provado no Icarus) - ainda nao testado.
   **O mais longe que chegamos** (base de um fork, se um dia houver): o servidor traz um `.sym` de
   300 MB (o arquivo de crash do Unreal) com nome e endereco de cada funcao, e
-  `tools/ue-sym-addresses.py` gera dele o `UE4SS_Addresses.ini` (endereco = o do .sym + a base de
+  `tools/ue-sym-addresses.py` gera dele o UE4SS_Addresses.ini (arquivo do port, gerado no CT) (endereco = o do .sym + a base de
   carga, 0x200000; conferido: cada um cai num prologo). Com ele, o modelo
-  `MemberVariableLayout_5_06_Template.ini` do proprio port e `[EngineVersionOverride] 5.6`, a
+  de layout do UE 5.6 que vem no proprio port (MemberVarLayoutTemplates, fora deste repo) e `[EngineVersionOverride] 5.6`, a
   v3.0.26 entra em "full mode", acha o GUObjectArray (153 mil objetos) e cai com SIGSEGV em
   `LuaMod::on_program_start()` - o port captura, desiste do UE4SS e o jogo segue. A v3.0.2 nem le
   esses arquivos. O binario publicado e sem simbolos: achar a linha exige compilar o port.
