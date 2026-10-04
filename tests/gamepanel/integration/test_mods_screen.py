@@ -583,20 +583,19 @@ def test_rust_recebe_plugin_cs_e_instala_o_oxide(admin, post, database, remote):
     assert jobs[0][1]["steps"][0].endswith("loader-install /opt/game")
 
 
-def test_palworld_instala_o_ue4ss_linux_e_continua_recebendo_pak(admin, post, database, remote, monkeypatch):
+def test_palworld_recebe_pak_mas_nao_instala_o_ue4ss(admin, post, database, remote, monkeypatch):
+    """Medido: o UE4SS de Linux derruba o Palworld (port oficial) ou nao inicia (fork). A tela
+    continua recebendo .pak, mas nao oferece o botao - e o POST direto e recusado."""
     calls, jobs, _ = remote
     monkeypatch.setattr(panel, "list_dir", lambda *a, **k: ([{"name": "MeuMod_P.pak", "dir": False, "size": 10}], None))
     sid = _server(database, "palworld.service")
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
-    assert "NAO foi testado" in html
     assert "MeuMod_P.pak" in html
     assert 'accept=".pak"' in html
-    assert calls[0].endswith("--unit palworld.service status /opt/game/Pal/Binaries/Linux")
+    assert "value=install" not in html
+    assert calls == []
     post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "restart": "1"})
-    install, restart = jobs[0][1]["steps"]
-    assert "--scan" in install
-    assert install.endswith("--unit palworld.service loader-install /opt/game/Pal/Binaries/Linux")
-    assert restart.endswith("restart palworld.service")
+    assert jobs == []
 
 
 def test_dragonwilds_instala_o_fork_do_ue4ss_e_continua_recebendo_os_tres_arquivos(
@@ -609,15 +608,15 @@ def test_dragonwilds_instala_o_fork_do_ue4ss_e_continua_recebendo_os_tres_arquiv
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
     assert "value=install" in html
     assert 'accept=".pak,.utoc,.ucas"' in html
-    assert "dragonwilds-v1" in html
+    assert "dragonwilds-v2" in html
     # Tag fixa: o campo de versao (x.y.z do port oficial) nao vale para o fork.
     assert 'name="version"' not in html
-    assert "--fork dragonwilds-v1" not in calls[0]
+    assert "--fork dragonwilds-v2" not in calls[0]
     assert calls[0].endswith("--unit dragonwilds.service status /opt/game/RSDragonwilds/Binaries/Linux")
     post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "restart": "1"})
     install, restart = jobs[0][1]["steps"]
     assert "--scan" in install
-    assert "--fork dragonwilds-v1 --engine 5.6 --addresses" in install
+    assert "--fork dragonwilds-v2 --engine 5.6 --addresses" in install
     assert "GNatives" in install  # o texto do gerador foi junto
     assert install.endswith("loader-install /opt/game/RSDragonwilds/Binaries/Linux")
     assert restart.endswith("restart dragonwilds.service")

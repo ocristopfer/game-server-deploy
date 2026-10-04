@@ -115,20 +115,20 @@ ETS2 = ModProfile(
 
 PALWORLD = ModProfile(
     key="palworld",
-    kind=KIND_UE4SS_LINUX,
+    # Pasta de .pak, SEM o botao do UE4SS: medido num servidor de verdade (Docker, 2026-10-04),
+    # o port XarminaEu v3.0.2 roda Lua mas DERRUBA o servidor no primeiro acesso ao jogo
+    # (FindFirstOf), e o nosso fork falha ao iniciar (SIGBUS, o jogo segue). Os dois acham um
+    # GUObjectArray errado: o Palworld nao traz .sym nem exporta esses simbolos, entao nao ha
+    # UE4SS_Addresses.ini como no Dragonwilds. Botao que instala o que derruba o servidor e pior
+    # que nenhum - a mesma regra do KIND_GUIDE. Volta quando houver como achar os enderecos.
+    kind=KIND_FOLDER,
     services=("palworld",),
     # A Unreal carrega de ~mods os .pak que nao vieram com o jogo; o servidor e o cliente
     # tem cada um a sua copia, e mod de servidor so vale se estiver aqui.
     folder="/opt/game/Pal/Content/Paks/~mods",
-    # O UE4SS Linux (port verificado pelos autores no Palworld, UE 5.1) entra ao lado do binario.
-    loader_dir="/opt/game/Pal/Binaries/Linux",
     help_key="mods.help_palworld",
     extensions=(".pak",),
-    audit_paths=("/opt/game/Pal/Content/Paks/~mods", "/opt/game/Pal/Binaries/Linux/Mods",
-                 "/opt/game/Pal/Binaries/Linux/libUE4SS.so"),
-    sources=(("mods.source_nexus", NEXUS + "palworld/mods/"),
-             ("mods.source_ue4ss_linux", "https://github.com/XarminaEu/ue4ss-linux/releases")),
-    proven=False,
+    sources=(("mods.source_nexus", NEXUS + "palworld/mods/"),),
 )
 
 DRAGONWILDS = ModProfile(
@@ -146,7 +146,9 @@ DRAGONWILDS = ModProfile(
     # real rodando em Docker (Lua, FindFirstOf, hook nativo e de Blueprint), mas ainda nao
     # instalado por esta tela num CT - por isso proven=False.
     loader_dir="/opt/game/RSDragonwilds/Binaries/Linux",
-    ue4ss_fork_tag="dragonwilds-v1",
+    # v2: inicia antes do mundo (sem a espera fixa de 30 s do port), e e isso que deixa um mod
+    # mexer nos baus do save antes de eles nascerem. A v1 iniciava com o mundo ja carregado.
+    ue4ss_fork_tag="dragonwilds-v2",
     engine_version="5.6",
     audit_paths=("/opt/game/RSDragonwilds/Content/Paks/~mods", "/opt/game/RSDragonwilds/Binaries/Linux/Mods",
                  "/opt/game/RSDragonwilds/Binaries/Linux/libUE4SS.so"),

@@ -541,7 +541,9 @@ MESSAGES: dict[str, str] = {
         "Cada jogador precisa ter os MESMOS mods. Trocou a lista? Exporte e envie os pacotes de novo.",
     "mods.help_palworld":
         "Os mods <code>.pak</code> do servidor ficam em <code>{folder}</code>. Mod que mexe so no "
-        "visual e do cliente; mod de regra de jogo precisa estar aqui E, em geral, nos jogadores.",
+        "visual e do cliente; mod de regra de jogo precisa estar aqui E, em geral, nos jogadores. "
+        "Mods de script (UE4SS) ainda nao rodam neste servidor: testado, o UE4SS de Linux derruba "
+        "o Palworld ao mexer no jogo, entao o painel nao o instala.",
     "mods.packages_title": "O que o servidor carrega",
     "mods.no_packages":
         "Nenhum pacote em <code>{folder}</code> ainda: exporte do jogo e envie o "

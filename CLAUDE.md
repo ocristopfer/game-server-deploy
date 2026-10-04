@@ -357,12 +357,13 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   systemd com as variaveis do script de partida que vem DENTRO do pacote do BepInEx (start_server_bepinex, fora do repo) (`DOORSTOP_*`, `LD_PRELOAD` do
   `libdoorstop_x64.so`), com caminho absoluto, sem trocar o wrapper do jogo. Desligar apaga o
   drop-in; sem `daemon-reload` o systemd seguiria com o ambiente antigo.
-- **Palworld e `KIND_UE4SS_LINUX`** (`ue4ss_linux_remote.py`): o port XarminaEu/ue4ss-linux,
-  verificado pelos AUTORES no Palworld (UE 5.1) e ainda nao por nos (`proven=False`). Entra por
-  `LD_PRELOAD` num drop-in do systemd; o `.so` e trocado por `rename` (copiar por cima com o
-  servidor rodando corrompe o mapeamento); faltando biblioteca de sistema (X11, por causa da GUI
-  embutida), ela vem do apt. O perfil continua recebendo `.pak` na pasta dele: `loader_dir` e onde
-  o UE4SS entra. Versao padrao: a estavel v3.0.2 (`releases/latest`), e nao os `*-linux-dev`.
+- **Palworld e `KIND_FOLDER` (so `.pak`), SEM o botao do UE4SS, e isso foi MEDIDO** num servidor
+  de verdade em Docker: o port XarminaEu v3.0.2 roda Lua e DERRUBA o servidor no primeiro acesso ao
+  jogo (`FindFirstOf`); o nosso fork falha ao iniciar (SIGBUS capturado) e o jogo segue. Os dois
+  acham um GUObjectArray errado: o Palworld nao traz `.sym` nem exporta esses simbolos, entao nao
+  ha `UE4SS_Addresses.ini`. O `ue4ss_linux_remote.py` continua com o modo do port oficial (sem
+  `--fork`): `LD_PRELOAD` num drop-in do systemd, `.so` trocado por `rename` (copiar por cima com o
+  servidor rodando corrompe o mapeamento), biblioteca de sistema que falta (X11) vem do apt.
 - **Dragonwilds: os ports PRONTOS nao servem, o NOSSO fork serve.** No CT 302
   (UE 5.6.1, binario sem simbolos): o port do Palworld (waze3174) se acha UE 5.1 e nao roda Lua; o
   XarminaEu v3.0.26 acha o motor e cai com SIGSEGV ao iniciar os mods; a v3.0.2 roda Lua PURO, mas
@@ -388,7 +389,11 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   arquivo conferido contra o SHA256SUMS do release ANTES do antivirus, e o gerador vai como texto
   para o CT (por isso mora no pacote, e nao em `tools/`: o release do painel nao leva `tools/`).
   Os enderecos sao gerados ANTES do download, e sem GNatives nada e instalado. Depois de um
-  update do jogo os enderecos mudam: instalar de novo os refaz. `proven=False` ate a primeira
+  update do jogo os enderecos mudam: instalar de novo os refaz. **A tag e a `dragonwilds-v2`**: com
+  `UE4SS_Addresses.ini` o fork inicia NA HORA, sem a espera fixa de 30 s do port (que fazia os mods
+  rodarem com o save ja carregado - todo bau ja existia com a capacidade antiga). Provado com o save
+  real do CT 302 (87 baus) e o mod de armazenamento do repositorio ue4ss-mods: 85 baus com a
+  capacidade nova e a mesma contagem de espacos ocupados de uma rodada sem o mod. `proven=False` ate a primeira
   instalacao por esta tela num CT de verdade (a ponta a ponta rodou no testbed, com o antivirus
   e o release reais).
 - **Rust e `KIND_OXIDE`** (`oxide_remote.py`): o pacote SOBRESCREVE DLLs do jogo, entao o

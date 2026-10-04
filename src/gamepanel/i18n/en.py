@@ -539,7 +539,9 @@ MESSAGES: dict[str, str] = {
         "Every player needs the SAME mods. Changed the list? Export and upload the packages again.",
     "mods.help_palworld":
         "The server's <code>.pak</code> mods live in <code>{folder}</code>. Visual-only mods are "
-        "client-side; gameplay mods must be here AND, usually, on the players too.",
+        "client-side; gameplay mods must be here AND, usually, on the players too. Script mods "
+        "(UE4SS) do not run on this server yet: tested, UE4SS for Linux crashes Palworld as soon as "
+        "it touches the game, so the panel does not install it.",
     "mods.packages_title": "What the server loads",
     "mods.no_packages":
         "No packages in <code>{folder}</code> yet: export them from the game and upload "
