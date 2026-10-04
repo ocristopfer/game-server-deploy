@@ -361,7 +361,7 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   de verdade em Docker: o port XarminaEu v3.0.2 roda Lua e DERRUBA o servidor no primeiro acesso ao
   jogo (`FindFirstOf`); o nosso fork falha ao iniciar (SIGBUS capturado) e o jogo segue. Os dois
   acham um GUObjectArray errado: o Palworld nao traz `.sym` nem exporta esses simbolos, entao nao
-  ha `UE4SS_Addresses.ini`. O `ue4ss_linux_remote.py` continua com o modo do port oficial (sem
+  ha UE4SS_Addresses.ini. O `ue4ss_linux_remote.py` continua com o modo do port oficial (sem
   `--fork`): `LD_PRELOAD` num drop-in do systemd, `.so` trocado por `rename` (copiar por cima com o
   servidor rodando corrompe o mapeamento), biblioteca de sistema que falta (X11) vem do apt.
 - **Dragonwilds: os ports PRONTOS nao servem, o NOSSO fork serve.** No CT 302
@@ -390,7 +390,7 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   para o CT (por isso mora no pacote, e nao em `tools/`: o release do painel nao leva `tools/`).
   Os enderecos sao gerados ANTES do download, e sem GNatives nada e instalado. Depois de um
   update do jogo os enderecos mudam: instalar de novo os refaz. **A tag e a `dragonwilds-v2`**: com
-  `UE4SS_Addresses.ini` o fork inicia NA HORA, sem a espera fixa de 30 s do port (que fazia os mods
+  UE4SS_Addresses.ini o fork inicia NA HORA, sem a espera fixa de 30 s do port (que fazia os mods
   rodarem com o save ja carregado - todo bau ja existia com a capacidade antiga). Provado com o save
   real do CT 302 (87 baus) e o mod de armazenamento do repositorio ue4ss-mods: 85 baus com a
   capacidade nova e a mesma contagem de espacos ocupados de uma rodada sem o mod. `proven=False` ate a primeira
