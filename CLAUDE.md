@@ -363,21 +363,27 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   servidor rodando corrompe o mapeamento); faltando biblioteca de sistema (X11, por causa da GUI
   embutida), ela vem do apt. O perfil continua recebendo `.pak` na pasta dele: `loader_dir` e onde
   o UE4SS entra. Versao padrao: a estavel v3.0.2 (`releases/latest`), e nao os `*-linux-dev`.
-- **Dragonwilds NAO tem UE4SS, e foi medido com os dois ports.** No CT 302 (UE 5.6.1, binario
-  sem simbolos): o port do Palworld (waze3174) se acha UE 5.1 e nao roda Lua; o XarminaEu v3.0.26
-  acha o motor e nao inicia mod nenhum; a v3.0.2 roda Lua PURO, mas `FindFirstOf`/`GetFullName`
-  e ate um `RegisterHook` derrubam o servidor (os deslocamentos sao os do Palworld). Botao ali
-  seria armadilha. O jogo tambem ACUSA o `.so` (`CheckForMods`) e marca a sessao como modificada.
-  O Nexus distribui o RE-UE4SS oficial de Windows: no servidor, so trocando para a build Windows
-  sob o Proton (o caminho provado no Icarus) - ainda nao testado.
-  **O mais longe que chegamos** (base de um fork, se um dia houver): o servidor traz um `.sym` de
-  300 MB (o arquivo de crash do Unreal) com nome e endereco de cada funcao, e
-  `tools/ue-sym-addresses.py` gera dele o UE4SS_Addresses.ini (arquivo do port, gerado no CT) (endereco = o do .sym + a base de
-  carga, 0x200000; conferido: cada um cai num prologo). Com ele, o modelo
-  de layout do UE 5.6 que vem no proprio port (MemberVarLayoutTemplates, fora deste repo) e `[EngineVersionOverride] 5.6`, a
-  v3.0.26 entra em "full mode", acha o GUObjectArray (153 mil objetos) e cai com SIGSEGV em
-  `LuaMod::on_program_start()` - o port captura, desiste do UE4SS e o jogo segue. A v3.0.2 nem le
-  esses arquivos. O binario publicado e sem simbolos: achar a linha exige compilar o port.
+- **Dragonwilds: os ports PRONTOS nao servem, o NOSSO fork serve (ainda fora do painel).** No CT 302
+  (UE 5.6.1, binario sem simbolos): o port do Palworld (waze3174) se acha UE 5.1 e nao roda Lua; o
+  XarminaEu v3.0.26 acha o motor e cai com SIGSEGV ao iniciar os mods; a v3.0.2 roda Lua PURO, mas
+  `FindFirstOf`/`GetFullName` e ate um `RegisterHook` derrubam o servidor. O jogo tambem ACUSA o
+  `.so` (`CheckForMods`) e marca a sessao como modificada.
+  **O fork** (pasta irma ue4ss-dragonwilds, branch dragonwilds, so local) corrige QUATRO defeitos
+  de ABI do Linux, nenhum especifico do jogo, cada um achado no gdb: ponteiro para metodo do
+  Itanium tem dois campos e o port deixava o ajuste de `this` com lixo da pilha; o construtor de
+  FName era chamado sem `this` (o motor gravava o nome em cima da string); o modo completo saia
+  da inicializacao antes de preencher os nomes de tipo (sem eles o caminho perde o `:` e o
+  `RegisterHook` nao acha a funcao); e a tabela de vtable do MSVC tem um destrutor a menos por
+  classe raiz. Provado num servidor de verdade em Docker (testbed do fork, mesmo executavel do CT):
+  Lua, `FindFirstOf`, `FindAllOf`, hook nativo e de Blueprint e `ExecuteInGameThread`
+  funcionam, e o heartbeat do EOS continua.
+  **Os enderecos sao POR JOGO, e saem do proprio servidor**: ele traz um `.sym` de 300 MB (o
+  arquivo de crash do Unreal) com nome e endereco de cada funcao, e `tools/ue-sym-addresses.py`
+  gera dele o UE4SS_Addresses.ini (funcoes = o do .sym + a base de carga, 0x200000). Os globais
+  (GUObjectArray, GMalloc, GNatives) nao estao no .sym: saem decodificando a instrucao que os le
+  numa funcao curta. O GNatives e o que mais importa: o port o CHUTA, e com o chute errado todo
+  hook nativo desalinha a pilha do Blueprint e o proprio Unreal aborta (execUndefined). Falta:
+  publicar o fork e um perfil no gestor de mods que instale a build dele e gere o .ini no CT.
 - **Rust e `KIND_OXIDE`** (`oxide_remote.py`): o pacote SOBRESCREVE DLLs do jogo, entao o
   instalador guarda o original (so o que NAO e dele, comparando sha256: reinstalar com o Oxide
   ligado nao pode virar "original") e desligar o devolve. Toda atualizacao do Rust pela Steam
