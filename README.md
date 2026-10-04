@@ -703,6 +703,14 @@ reinicia um servidor as onze da noite, nao da mesa do escritorio.
   o cache**: um painel com poder de root nos containers nao pode reexibir a tela de
   servidores depois do logout, nem mostrar o uso de CPU de uma hora atras como se fosse
   de agora.
+- **Entrar com a biometria**: em _Conta &rarr; Biometria do aparelho_, cadastre o celular
+  (pede a senha, e o codigo se o 2FA estiver ligado); dali em diante a tela de login mostra
+  **Entrar com biometria**, que usa a digital, o rosto ou o PIN do aparelho (passkey/WebAuthn).
+  So funciona com o painel aberto por **https com um nome de dominio** (o navegador nao libera
+  isso em `http://IP`): ponha esse endereco em `ADMIN_WEBAUTHN_ORIGIN` no `.env`
+  (`https://painel.seudominio.com`) e refaca o deploy do painel. Vazio, o botao nao aparece.
+  A passkey vale como senha **e** segundo fator juntos, porque o aparelho so assina depois de
+  conferir a pessoa; trocar o endereco depois invalida as passkeys cadastradas.
 - **Versao nova**: quando o deploy troca os arquivos, o painel mostra uma faixa
   _&quot;Ha uma versao nova&quot;_ com um botao. Ele nao se recarrega sozinho de
   proposito &mdash; pode haver uma sessao de terminal aberta no meio de uma edicao.
@@ -1621,6 +1629,9 @@ graficos) sao pytest — nao rodam mais como script solto. Veja o
   servidor, gestao de usuarios **e o historico dessas acoes** sao so do administrador —
   veja [Usuarios e papeis](#usuarios-e-papeis)
 - Todos os POSTs exigem token **CSRF**
+- **Passkey** (biometria do aparelho) so com verificacao do usuario (biometria/PIN), desafio
+  de uso unico guardado no servidor, origem e dominio exatos e contador contra chave clonada;
+  cadastrar exige a senha (e o codigo, com 2FA). Ver [No celular](#no-celular-instalar-como-aplicativo)
 - Respostas levam `X-Frame-Options: DENY` (o painel nao pode ser embutido em iframe),
   `X-Content-Type-Options: nosniff` e `Referrer-Policy: same-origin`
 - A volta do `?next=` do login so aceita caminho interno — `//host` e `/\host` sao

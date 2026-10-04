@@ -77,7 +77,7 @@ from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import ssh as ssh_transport
 from gamepanel.runtime import terminal as term_runtime
-from gamepanel.security import csrf, passwords, totp
+from gamepanel.security import csrf, passwords, totp, webauthn
 from gamepanel.services import (
     alert_service,
     auth_service,
@@ -206,6 +206,10 @@ ALLOW_FILES = settings.allow_files
 # 1 = quem nao ativou o segundo fator so alcanca a tela de ativacao. Desligado por padrao: ligar
 # ANTES de cada admin ter o aplicativo no celular tranca todo mundo fora do painel.
 REQUIRE_2FA = settings.require_2fa
+# Endereco https (com DOMINIO) por onde as pessoas abrem o painel; vazio = sem entrar por
+# biometria. O navegador so libera o WebAuthn em contexto seguro, e a chave do aparelho fica
+# presa ao dominio: trocar o endereco depois invalida todas as passkeys cadastradas.
+WEBAUTHN_ORIGIN = settings.webauthn_origin
 # Limite para EDITAR (o arquivo inteiro vai para um textarea e volta num POST).
 FILE_MAX_BYTES = settings.file_max_bytes
 # Acima do limite de edicao o painel ainda mostra o fim do arquivo, so para leitura.
@@ -467,6 +471,8 @@ LOCKOUT_2FA_WINDOW = 900.0
 # separadas porque os limites diferem, e nao porque as chaves colidiriam.
 login_lockout = auth_service.Lockout(LOCKOUT_TRIES, LOCKOUT_WINDOW)
 totp_lockout = auth_service.Lockout(LOCKOUT_2FA_TRIES, LOCKOUT_2FA_WINDOW)
+# Desafios de passkey emitidos e ainda nao respondidos (uso unico, na memoria do worker).
+passkey_challenges = webauthn.Challenges()
 
 
 def logged_user() -> sqlite3.Row | None:
@@ -551,6 +557,7 @@ def _check_csrf():
 # Com GAMEPANEL_REQUIRE_2FA=1 quem ainda nao ativou o segundo fator so alcanca isto.
 ENDPOINTS_WITHOUT_2FA = frozenset({
     "auth.login", "auth.login_2fa", "auth.logout", "account.two_factor",
+    "passkeys.login_options", "passkeys.login",
     "health.health", "static",
     "pwa.manifest", "pwa.service_worker", "pwa.offline",
 })
@@ -693,6 +700,8 @@ def _inject():
         # As telas escondem o que o operador nao pode abrir. Quem manda e o
         # @admin_required na rota; isto aqui e so para nao mostrar botao que da 403.
         "is_admin": bool(user) and user["role"] == ROLE_ADMIN,
+        # O botao de biometria so aparece com o endereco configurado (sem ele nao ha RP ID).
+        "passkeys_enabled": bool(WEBAUTHN_ORIGIN),
         "role_label": translate(ROLE_LABELS[user["role"]]) if user else "",
         "job_label": job_label,
         # Que codigo esta servindo esta tela. Vai no rodape, e nao so no /health, porque

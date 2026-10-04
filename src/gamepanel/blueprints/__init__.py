@@ -39,6 +39,7 @@ def register_all(app: Flask) -> None:
         history,
         jobs,
         mods,
+        passkeys,
         players,
         pwa,
         schedules,
@@ -49,7 +50,7 @@ def register_all(app: Flask) -> None:
 
     for module in (
         account, alerts, auth, backups, broker, charts, config_quick, console,
-        dashboard, files, health, history, jobs, mods, players, pwa, schedules, servers,
-        terminal, users,
+        dashboard, files, health, history, jobs, mods, passkeys, players, pwa, schedules,
+        servers, terminal, users,
     ):
         app.register_blueprint(module.bp)

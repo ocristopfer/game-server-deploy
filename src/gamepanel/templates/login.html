@@ -18,5 +18,14 @@
       {{ ui.button(_('login.title'), variant='primary', block=true) }}
     </div>
   </form>
+  {% if passkeys_enabled %}
+  {# Nasce escondido: sem JavaScript (ou sem WebAuthn no navegador) nao ha como usar, e o
+     proprio modulo o revela quando da. #}
+  <div class="form-actions" hidden data-passkey-login="{{ url_for('passkeys.login_options') }}"
+       data-passkey-finish="{{ url_for('passkeys.login') }}" data-passkey-next="{{ request.args.get('next', '') }}">
+    {{ ui.button(_('passkey.sign_in'), type='button', variant='ghost', block=true, icon='👆') }}
+    <p class="muted small center" role="status" data-passkey-status data-passkey-cancelled="{{ _('passkey.cancelled') }}"></p>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

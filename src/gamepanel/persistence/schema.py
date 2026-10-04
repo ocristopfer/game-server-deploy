@@ -167,6 +167,22 @@ CREATE TABLE IF NOT EXISTS alert_log (
   error      TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_alert_log_id ON alert_log (id DESC);
+
+-- Passkeys: entrar com a biometria do aparelho (WebAuthn). Uma linha por aparelho cadastrado;
+-- so a chave PUBLICA fica aqui - a privada nunca sai do aparelho. CASCADE: apagar o usuario
+-- leva os aparelhos dele. `user_handle` e o id aleatorio que o aparelho guarda junto da
+-- passkey (o WebAuthn pede um id opaco, e o `id` da tabela vazaria quantos usuarios existem).
+CREATE TABLE IF NOT EXISTS passkeys (
+  id           TEXT PRIMARY KEY,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_handle  TEXT NOT NULL,
+  public_key   BLOB NOT NULL,
+  sign_count   INTEGER NOT NULL DEFAULT 0,
+  label        TEXT NOT NULL DEFAULT '',
+  created_at   TEXT NOT NULL,
+  last_used_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_passkeys_user ON passkeys (user_id);
 """
 
 

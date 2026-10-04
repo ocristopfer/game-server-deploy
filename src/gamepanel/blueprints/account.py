@@ -7,6 +7,7 @@ import time
 from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel.persistence.repositories import passkeys as passkeys_repo
 from gamepanel.persistence.repositories import users as users_repo
 from gamepanel.security import qr
 
@@ -57,7 +58,8 @@ def index():
             flash(panel.translate("flash.password_changed"), "ok")
             return redirect(url_for("dashboard.index"))
     return render_template("account.html", two_factor=panel._two_factor_state(),
-                           requires_2fa=panel.REQUIRE_2FA, broker_enabled=panel.ALLOW_BROKER)
+                           requires_2fa=panel.REQUIRE_2FA, broker_enabled=panel.ALLOW_BROKER,
+                           passkeys=passkeys_repo.for_user(panel.db(), session["uid"]))
 
 
 @bp.route("/account/2fa", methods=["GET", "POST"])

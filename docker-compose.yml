@@ -32,6 +32,9 @@ services:
       GAMEPANEL_ALLOW_SHELL: "1"
       GAMEPANEL_ALLOW_FILES: "1"
       GAMEPANEL_FILE_DEFAULT: "/opt/game"
+      # localhost e contexto seguro para o navegador: da para testar a biometria (Windows Hello,
+      # Touch ID) sem https. Abra por http://localhost:8080, nao pelo IP, senao a origem nao confere.
+      GAMEPANEL_WEBAUTHN_ORIGIN: "http://localhost:8080"
       # Broker de brinquedo abaixo (backends falsos). Em producao isto fica DESLIGADO ate
       # o painel ter uma camada extra na frente (ver o plano do broker).
       GAMEPANEL_ALLOW_BROKER: "1"

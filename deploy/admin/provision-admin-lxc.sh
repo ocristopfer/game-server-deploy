@@ -66,6 +66,9 @@ resolve_variables() {
   # 1 = todo usuario precisa ter o segundo fator (2FA) para usar o painel. Ligue DEPOIS de cada
   # admin ativar o dele em Conta: ligar antes tranca todo mundo fora.
   REQUIRE_2FA="${ADMIN_REQUIRE_2FA:-0}"
+  # Endereco https (com dominio) por onde o painel e aberto; vazio = sem entrar por biometria.
+  # O painel confere o formato no start e, se for ruim, recusa subir dizendo o nome da variavel.
+  WEBAUTHN_ORIGIN="${ADMIN_WEBAUTHN_ORIGIN:-}"
   # Idioma da tela para quem ainda nao escolheu na Conta E para o que sai pelo webhook
   # (o canal e um so: a mensagem nao pode trocar de lingua conforme quem clicou).
   LANG_PADRAO="${ADMIN_LANG:-pt}"
@@ -287,6 +290,7 @@ GAMEPANEL_FILE_DOWNLOAD_MAX=$((FILE_DOWNLOAD_MAX_MB * 1024 * 1024))
 GAMEPANEL_FILE_ROOTS=${FILE_ROOTS}
 GAMEPANEL_FILE_DEFAULT=${FILE_DEFAULT}
 GAMEPANEL_REQUIRE_2FA=${REQUIRE_2FA}
+GAMEPANEL_WEBAUTHN_ORIGIN=${WEBAUTHN_ORIGIN}
 GAMEPANEL_LANG=${LANG_PADRAO}
 EOF
   [[ -z "$preserved" ]] || printf '%s\n' "$preserved" >> "$tmp_file"

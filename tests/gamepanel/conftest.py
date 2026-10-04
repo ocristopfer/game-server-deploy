@@ -75,6 +75,7 @@ def _reset_module_state() -> None:
     panel._players_cache.clear()
     panel.login_lockout.reset()
     panel.totp_lockout.reset()
+    panel.passkey_challenges.reset()
     for tick in (panel.monitor_tick, panel.state_tick, panel.resource_tick,
                  panel.log_tick, panel.sample_tick, panel.cleanup_tick):
         tick.reset()

@@ -93,6 +93,49 @@
   {% endif %}
 </div>
 
+{% if passkeys_enabled or passkeys %}
+<div class="card">
+  <h2>{{ _('passkey.title') }}</h2>
+  <p class="muted small">{{ _('passkey.hint') }}</p>
+  {% for key in passkeys %}
+  <div class="cluster mt-4">
+    <span><strong>{{ key.label }}</strong><br>
+      <span class="muted small">{{ _('passkey.created', when=key.created_at[:10]) }}
+      {%- if key.last_used_at %} &middot; {{ _('passkey.last_used', when=key.last_used_at[:10]) }}{% endif %}</span></span>
+    <span class="cluster__spacer"></span>
+    {{ ui.action(url_for('passkeys.delete'), _('passkey.remove'), variant='danger', size='sm',
+                 fields={'id': key.id}, confirm=_('passkey.remove_confirm', name=key.label)) }}
+  </div>
+  {% endfor %}
+  {% if passkeys_enabled %}
+  {# Escondido ate o modulo confirmar que este navegador tem WebAuthn: o formulario sozinho
+     (sem JavaScript) so devolveria JSON. #}
+  <details class="stack--sm mt-4" hidden data-passkey-available>
+    <summary class="btn btn--primary btn--sm">{{ _('passkey.add') }}</summary>
+    <form method="post" action="{{ url_for('passkeys.register_options') }}" class="mt-4"
+          data-passkey-register="{{ url_for('passkeys.register') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label>{{ _('passkey.label') }}
+        <input name="label" maxlength="60" placeholder="{{ _('passkey.label_example') }}">
+      </label>
+      <label>{{ _('login.password') }}
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      {% if two_factor.ativo %}
+      <label>{{ _('account.app_code') }}
+        <input name="code" inputmode="numeric" autocomplete="one-time-code" required>
+      </label>
+      {% endif %}
+      {{ ui.button(_('passkey.add'), size='sm') }}
+      <p class="muted small" role="status" data-passkey-status data-passkey-cancelled="{{ _('passkey.cancelled') }}"></p>
+    </form>
+  </details>
+  {% else %}
+  <p class="muted small mt-4">{{ _('passkey.disabled') }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card">
   <h2>{{ _('account.change_password') }}</h2>
   <form method="post">

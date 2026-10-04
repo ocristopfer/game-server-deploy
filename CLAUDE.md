@@ -233,6 +233,7 @@ src/
       en.py               catalogo em ingles, MESMAS chaves (test_i18n.py cobra a paridade)
     security/
       totp.py             2FA, so stdlib
+      webauthn.py         passkey (biometria do aparelho): CBOR, ES256 e RS256, so stdlib
       qr.py               gerador de QR, so stdlib
       passwords.py        scrypt (hash, conferencia e a regra de senha boa)
       csrf.py             o token da sessao e a conferencia do POST
@@ -630,6 +631,20 @@ dessas tabelas.
   painel (o caminho por arquivo, `python3 /opt/gamepanel/current/gamepanel/app.py --reset-2fa`, faz o mesmo), ou "Desligar 2FA"
   em Usuarios. A tela de ativacao mostra um QR code (`qr.py`, ver acima) para escanear, a chave em
   texto para digitar a mao e um link `otpauth://` que abre o aplicativo no proprio celular.
+- **Passkey (biometria do aparelho) e WebAuthn proprio, so stdlib** (`security/webauthn.py`,
+  rotas em `blueprints/passkeys.py`). Pelo mesmo motivo do TOTP: sem `cryptography` em producao,
+  a conta da curva P-256 (ES256: Android/iPhone) e o RSA (RS256: Windows Hello) moram ali, com o
+  vetor do RFC 6979 no teste. Regras que `test_passkeys.py` guarda: o desafio e de uso unico e
+  mora NA MEMORIA do servidor (`webauthn.Challenges`, o `panel.passkey_challenges`), e nao na
+  sessao - o cookie e do cliente, e um cookie antigo traria de volta um desafio ja gasto; so
+  vale com UV (o aparelho conferiu a pessoa), e por isso a passkey substitui senha E 2FA, e
+  cadastrar pede a senha (mais o codigo, se o 2FA esta ligado); o desafio de cadastro guarda o
+  `uid` de quem o pediu. Desligado sem `GAMEPANEL_WEBAUTHN_ORIGIN` (`ADMIN_WEBAUTHN_ORIGIN` no
+  `.env`), que tem de ser https com DOMINIO (IP e recusado no start): o navegador so libera o
+  WebAuthn em contexto seguro, e a chave do aparelho fica presa ao dominio. O login de passkey
+  nao diz o usuario antes de conferir a assinatura, entao a trava e por IP (`passkey|ip`), na
+  mesma `login_lockout`. O aparelho falso dos testes e o `fake_passkey.py`, ao lado do
+  `conftest.py` (os dois baldes o usam).
 - **`broker_required` (app.py) tambem exige o 2FA DA PESSOA, sempre** — independente de
   `GAMEPANEL_REQUIRE_2FA` (que e sobre o painel inteiro). O broker cria/apaga CT e abre porta no
   OPNsense; e a unica barreira que sobra se uma sessao de admin for roubada. GET normal sem 2FA

@@ -30,6 +30,7 @@ import { chart } from './features/charts.js';
 import { installButton, offlineWorker } from './features/pwa.js';
 import { gameTemplate } from './features/game-template.js';
 import { gameSearch } from './features/game-search.js';
+import { passkeyLogin, passkeyRegister } from './features/passkey.js';
 
 export const FEATURES = [
   // estrutura
@@ -39,6 +40,7 @@ export const FEATURES = [
   panelPlayers, serverPlayers, followLog, watchJob,
   // formularios
   fileEditor, configFilter, moreConfigRows, dirtyConfig, commandBox, gameTemplate, gameSearch,
+  passkeyLogin, passkeyRegister,
   // visualizacao
   chart,
 ];

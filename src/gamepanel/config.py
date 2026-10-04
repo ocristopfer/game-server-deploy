@@ -16,9 +16,11 @@ metade da configuracao e pior que um que nao sobe.
 """
 from __future__ import annotations
 
+import ipaddress
 import os
 from collections.abc import Mapping
 from typing import NamedTuple
+from urllib.parse import urlsplit
 
 PREFIX = "GAMEPANEL_"
 TRUE_VALUES = ("1", "true", "yes", "on")
@@ -85,6 +87,28 @@ class _Reader:
             self.problems.append(f"{PREFIX}{name}: maximo {maximum}")
             return default
         return value
+
+    def origin(self, name: str) -> str:
+        """Endereco do painel para a passkey: `https://<dominio>[:porta]`, ou `http://localhost`.
+
+        O navegador so oferece WebAuthn em contexto seguro (https, ou localhost), e a passkey
+        fica presa ao DOMINIO: IP nao serve de RP ID. Vazio = recurso desligado.
+        """
+        raw = self.text(name).strip().rstrip("/")
+        if not raw:
+            return ""
+        parts = urlsplit(raw)
+        host = parts.hostname or ""
+        try:
+            ipaddress.ip_address(host)
+            is_ip = True
+        except ValueError:
+            is_ip = False
+        secure = parts.scheme == "https" or (parts.scheme == "http" and host == "localhost")
+        if not host or is_ip or not secure or parts.path or parts.query or parts.fragment:
+            self.problems.append(f"{PREFIX}{name}: esperado https://<dominio> (IP nao serve), ou http://localhost")
+            return ""
+        return raw
 
     def path_list(self, name: str, default: str) -> tuple[str, ...]:
         raw = self.text(name, default)
@@ -159,6 +183,8 @@ class Settings(NamedTuple):
     # --- tela ---
     lang: str
     require_2fa: bool
+    # Entrar com a biometria do aparelho (passkey): o endereco https do painel. Vazio = desligado.
+    webauthn_origin: str
     # --- servidor de desenvolvimento (`python -m gamepanel.cli`) ---
     port: int
 
@@ -244,6 +270,7 @@ def load(env: Mapping[str, str] | None = None) -> Settings:
 
         lang=reader.text("LANG"),
         require_2fa=reader.flag("REQUIRE_2FA", False),
+        webauthn_origin=reader.origin("WEBAUTHN_ORIGIN"),
         port=reader.integer("PORT", 8080, minimum=1, maximum=65535),
     )
     if reader.problems:

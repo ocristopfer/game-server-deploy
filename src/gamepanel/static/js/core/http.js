@@ -19,14 +19,28 @@ export class NetworkError extends Error {
  * leitura de medidores servida do cache mostraria o servidor como estava ha uma hora
  * — pior do que nao mostrar nada. */
 export async function readJSON(url, options = {}) {
+  return request(url, {
+    headers: { Accept: 'application/json', ...options.headers },
+    signal: options.signal,
+  });
+}
+
+/* Manda um POST e le o JSON da resposta.
+ *
+ * `FormData` vai como formulario (o token CSRF ja esta num campo dele); objeto vai como
+ * JSON, e ai o token tem de ir no cabecalho, que e o outro lugar onde o painel o procura. */
+export async function postJSON(url, body, { csrf = '' } = {}) {
+  const form = body instanceof FormData;
+  const headers = { Accept: 'application/json' };
+  if (!form) headers['Content-Type'] = 'application/json';
+  if (csrf) headers['X-CSRF-Token'] = csrf;
+  return request(url, { method: 'POST', headers, body: form ? body : JSON.stringify(body) });
+}
+
+async function request(url, init) {
   let resp;
   try {
-    resp = await fetch(url, {
-      headers: { Accept: 'application/json', ...options.headers },
-      cache: 'no-store',
-      credentials: 'same-origin',
-      signal: options.signal,
-    });
+    resp = await fetch(url, { ...init, cache: 'no-store', credentials: 'same-origin' });
   } catch (err) {
     throw new NetworkError(err.message || 'sem conexao');
   }
