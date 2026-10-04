@@ -284,12 +284,13 @@
       {% endif %}
       <form method="post" action="{{ url_for('mods.loader', sid=server.id) }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-        {% if profile.ue4ss_fork_tag %}
-        <p class="muted small">{{ _('mods.ue4ss_fork_tag', tag=profile.ue4ss_fork_tag) }}</p>
+        {% if linux %}
+        <p class="muted small">{{ _('mods.ue4ss_release', tag=profile.ue4ss_release) }}</p>
+        {% if st.old_layout %}<p class="small">{{ _('mods.ue4ss_old_layout') }}</p>{% endif %}
         {% elif not st.loader_installed or st.enabled %}
         <label class="short">{{ _('mods.version_label') }}
           <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
-                 pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="{{ '3.0.2' if linux else '3.0.1' }}">
+                 pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="3.0.1">
           <small>{{ _('mods.version_help') }}</small>
         </label>
         {% endif %}
@@ -305,7 +306,7 @@
           {% endif %}
         </div>
       </form>
-      <p class="muted small mt-4">{% if linux %}{{ _h('mods.ue4ss_linux_config_help', folder=profile.loader_dir ~ '/Mods', url=url_for('files.index', sid=server.id)) }}{% else %}{{ _h('mods.ue4ss_config_help', folder=profile.folder, url=url_for('files.index', sid=server.id)) }}{% endif %}</p>
+      <p class="muted small mt-4">{% if linux %}{{ _h('mods.ue4ss_linux_config_help', folder=profile.loader_dir ~ '/ue4ss/Mods', url=url_for('files.index', sid=server.id)) }}{% else %}{{ _h('mods.ue4ss_config_help', folder=profile.folder, url=url_for('files.index', sid=server.id)) }}{% endif %}</p>
     {% endif %}
   </div>
 

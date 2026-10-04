@@ -583,40 +583,31 @@ def test_rust_recebe_plugin_cs_e_instala_o_oxide(admin, post, database, remote):
     assert jobs[0][1]["steps"][0].endswith("loader-install /opt/game")
 
 
-def test_palworld_recebe_pak_mas_nao_instala_o_ue4ss(admin, post, database, remote, monkeypatch):
-    """Medido: o UE4SS de Linux derruba o Palworld (port oficial) ou nao inicia (fork). A tela
-    continua recebendo .pak, mas nao oferece o botao - e o POST direto e recusado."""
+@pytest.mark.parametrize("case", [
+    ("palworld.service", "/opt/game/Pal/Binaries/Linux", "5.1", ".pak"),
+    ("dragonwilds.service", "/opt/game/RSDragonwilds/Binaries/Linux", "5.6", ".pak,.utoc,.ucas"),
+])
+def test_unreal_linux_instala_o_ue4ss_do_release_e_continua_recebendo_pak(
+        admin, post, database, remote, monkeypatch, case):
+    """Palworld e Dragonwilds: o UE4SS oficial para Linux, numa tag fixa do release, com a versao do
+    motor e o gerador dos arquivos do .sym - so ao INSTALAR, que o status nao precisa deles."""
+    service, exe_dir, engine, accept = case
     calls, jobs, _ = remote
     monkeypatch.setattr(panel, "list_dir", lambda *a, **k: ([{"name": "MeuMod_P.pak", "dir": False, "size": 10}], None))
-    sid = _server(database, "palworld.service")
+    sid = _server(database, service)
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
     assert "MeuMod_P.pak" in html
-    assert 'accept=".pak"' in html
-    assert "value=install" not in html
-    assert calls == []
-    post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "restart": "1"})
-    assert jobs == []
-
-
-def test_dragonwilds_instala_o_fork_do_ue4ss_e_continua_recebendo_os_tres_arquivos(
-        admin, post, database, remote, monkeypatch):
-    """O port oficial derruba o Dragonwilds (UE 5.6.1); o fork vem numa tag fixa, com a versao do
-    motor e o gerador de enderecos - e so ao INSTALAR, que o status nao precisa deles."""
-    calls, jobs, _ = remote
-    monkeypatch.setattr(panel, "list_dir", lambda *a, **k: ([], None))
-    sid = _server(database, "dragonwilds.service")
-    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert f'accept="{accept}"' in html
     assert "value=install" in html
-    assert 'accept=".pak,.utoc,.ucas"' in html
-    assert "dragonwilds-v2" in html
-    # Tag fixa: o campo de versao (x.y.z do port oficial) nao vale para o fork.
+    assert "linux-v1" in html
+    # Tag fixa: o campo de versao (x.y.z do UE4SS de Windows) nao vale aqui.
     assert 'name="version"' not in html
-    assert "--fork dragonwilds-v2" not in calls[0]
-    assert calls[0].endswith("--unit dragonwilds.service status /opt/game/RSDragonwilds/Binaries/Linux")
+    assert "--release linux-v1" not in calls[0]
+    assert calls[0].endswith(f"--unit {service} status {exe_dir}")
     post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "restart": "1"})
     install, restart = jobs[0][1]["steps"]
     assert "--scan" in install
-    assert "--fork dragonwilds-v2 --engine 5.6 --addresses" in install
-    assert "GNatives" in install  # o texto do gerador foi junto
-    assert install.endswith("loader-install /opt/game/RSDragonwilds/Binaries/Linux")
-    assert restart.endswith("restart dragonwilds.service")
+    assert f"--release linux-v1 --engine {engine} --symfiles" in install
+    assert "UE4SS_Signatures" in install  # o texto do gerador foi junto
+    assert install.endswith(f"loader-install {exe_dir}")
+    assert restart.endswith(f"restart {service}")

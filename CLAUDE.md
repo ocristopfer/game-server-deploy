@@ -340,9 +340,9 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   porque os mods ficam dois niveis abaixo. Instalar desliga console, janela e os mods de
   trapaca de fabrica (so `BPModLoaderMod`/`BPML_GenericFunctions` ficam ligados), e o
   `mods.txt` oficial vem com BOM, que gruda no nome do primeiro mod. Servidor Linux nativo
-  (Dragonwilds, Palworld daqui) nao carrega o UE4SS oficial; o port Linux e do Palworld (UE
-  5.1); o resultado no Dragonwilds esta no item proprio, abaixo. Cuidado ao medir travamento ali: a saida do Dragonwilds chega ao journal em blocos atrasados;
-  o sinal certo e o `Saved/Logs/RSDragonwilds.log` (o `HeartbeatSession` de 30 em 30 s).
+  (Dragonwilds, Palworld daqui) e o item "UE4SS para Linux", abaixo. Cuidado ao medir travamento
+  no Dragonwilds: a saida dele chega ao journal em blocos atrasados; o sinal certo e o
+  `Saved/Logs/RSDragonwilds.log` (o `HeartbeatSession` de 30 em 30 s).
 - **`proven=False` e instalador escrito sem CT de teste, e a tela AVISA** (`mods.not_proven`). Foi
   pedido assim para o Satisfactory, o Valheim e o Rust: implementar tudo e provar depois. Quem
   provar num CT real troca para `True` e escreve no perfil o que mediu - a mesma regra do
@@ -357,45 +357,42 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   systemd com as variaveis do script de partida que vem DENTRO do pacote do BepInEx (start_server_bepinex, fora do repo) (`DOORSTOP_*`, `LD_PRELOAD` do
   `libdoorstop_x64.so`), com caminho absoluto, sem trocar o wrapper do jogo. Desligar apaga o
   drop-in; sem `daemon-reload` o systemd seguiria com o ambiente antigo.
-- **Palworld e `KIND_FOLDER` (so `.pak`), SEM o botao do UE4SS, e isso foi MEDIDO** num servidor
-  de verdade em Docker: o port XarminaEu v3.0.2 roda Lua e DERRUBA o servidor no primeiro acesso ao
-  jogo (`FindFirstOf`); o nosso fork falha ao iniciar (SIGBUS capturado) e o jogo segue. Os dois
-  acham um GUObjectArray errado: o Palworld nao traz `.sym` nem exporta esses simbolos, entao nao
-  ha UE4SS_Addresses.ini. O `ue4ss_linux_remote.py` continua com o modo do port oficial (sem
-  `--fork`): `LD_PRELOAD` num drop-in do systemd, `.so` trocado por `rename` (copiar por cima com o
-  servidor rodando corrompe o mapeamento), biblioteca de sistema que falta (X11) vem do apt.
-- **Dragonwilds: os ports PRONTOS nao servem, o NOSSO fork serve.** No CT 302
-  (UE 5.6.1, binario sem simbolos): o port do Palworld (waze3174) se acha UE 5.1 e nao roda Lua; o
-  XarminaEu v3.0.26 acha o motor e cai com SIGSEGV ao iniciar os mods; a v3.0.2 roda Lua PURO, mas
-  `FindFirstOf`/`GetFullName` e ate um `RegisterHook` derrubam o servidor. O jogo tambem ACUSA o
-  `.so` (`CheckForMods`) e marca a sessao como modificada.
-  **O fork** (github.com/ocristopfer/ue4ss-linux, branch e release `dragonwilds-v1`) corrige QUATRO defeitos
-  de ABI do Linux, nenhum especifico do jogo, cada um achado no gdb: ponteiro para metodo do
-  Itanium tem dois campos e o port deixava o ajuste de `this` com lixo da pilha; o construtor de
-  FName era chamado sem `this` (o motor gravava o nome em cima da string); o modo completo saia
-  da inicializacao antes de preencher os nomes de tipo (sem eles o caminho perde o `:` e o
-  `RegisterHook` nao acha a funcao); e a tabela de vtable do MSVC tem um destrutor a menos por
-  classe raiz. Provado num servidor de verdade em Docker (testbed do fork, mesmo executavel do CT):
-  Lua, `FindFirstOf`, `FindAllOf`, hook nativo e de Blueprint e `ExecuteInGameThread`
-  funcionam, e o heartbeat do EOS continua.
-  **Os enderecos sao POR JOGO, e saem do proprio servidor**: ele traz um `.sym` de 300 MB (o
-  arquivo de crash do Unreal) com nome e endereco de cada funcao, e `ue_sym_addresses.py`
-  gera dele o UE4SS_Addresses.ini (funcoes = o do .sym + a base de carga, 0x200000). Os globais
-  (GUObjectArray, GMalloc, GNatives) nao estao no .sym: saem decodificando a instrucao que os le
-  numa funcao curta. O GNatives e o que mais importa: o port o CHUTA, e com o chute errado todo
-  hook nativo desalinha a pilha do Blueprint e o proprio Unreal aborta (execUndefined).
-  **No painel e o `KIND_UE4SS_LINUX` com `ue4ss_fork_tag`** (o mesmo instalador do Palworld, em
-  modo fork): tag fixa no perfil (o release e pre-release, e a API "latest" o ignora), cada
-  arquivo conferido contra o SHA256SUMS do release ANTES do antivirus, e o gerador vai como texto
-  para o CT (por isso mora no pacote, e nao em `tools/`: o release do painel nao leva `tools/`).
-  Os enderecos sao gerados ANTES do download, e sem GNatives nada e instalado. Depois de um
-  update do jogo os enderecos mudam: instalar de novo os refaz. **A tag e a `dragonwilds-v2`**: com
-  UE4SS_Addresses.ini o fork inicia NA HORA, sem a espera fixa de 30 s do port (que fazia os mods
-  rodarem com o save ja carregado - todo bau ja existia com a capacidade antiga). Provado com o save
-  real do CT 302 (87 baus) e o mod de armazenamento do repositorio ue4ss-mods: 85 baus com a
-  capacidade nova e a mesma contagem de espacos ocupados de uma rodada sem o mod. `proven=False` ate a primeira
-  instalacao por esta tela num CT de verdade (a ponta a ponta rodou no testbed, com o antivirus
-  e o release reais).
+- **UE4SS para Linux (Palworld, Dragonwilds) e `KIND_UE4SS_LINUX`: o UE4SS OFICIAL compilado
+  para Linux**, no nosso fork (github.com/ocristopfer/RE-UE4SS, branch `linux`, release
+  `linux-v1`; o README do fork, docs/linux.md, lista os jogos testados). Nao e mais port: sao os
+  mecanismos oficiais (patternsleuth, UE4SS_Signatures, VTableLayout.ini, mods Lua) com o que o
+  Linux pede - e o que o Linux pede foi MEDIDO, cada item no gdb: o runtime C++ e o unwinder
+  ligados dentro da biblioteca (o jogo exporta os dele, e todo `throw` do UE4SS morria neles); o
+  layout de vtable e de membro de cada versao do motor GERADO a partir do codigo da Epic
+  (`tools/linux-layouts` do fork: o Itanium ordena vtable diferente do MSVC, reaproveita o fim
+  de uma classe-base e o `FRWLock` tem 56 bytes no Linux, contra 8); e o lock do estado Lua nos
+  callbacks do `RegisterHook` (o Palworld chama funcao hookada de thread de animacao). Provado
+  nos dois servidores de verdade em Docker com um mod de prova: Lua, `FindFirstOf`,
+  `RegisterHook` de Blueprint e nativo, `ExecuteInGameThread` - o Palworld 10 minutos de pe. Os
+  ports antigos (XarminaEu e o nosso ocristopfer/ue4ss-linux) sairam: derrubavam o Palworld.
+  - **`ue4ss_linux_remote.py`** baixa a tag FIXA do perfil (`ue4ss_release`), confere cada arquivo
+    contra o SHA256SUMS ANTES do antivirus, e instala no layout oficial: `ue4ss/` ao lado do
+    executavel (o UE4SS acha config, mods e log na pasta da propria biblioteca), `.so` trocado por
+    `rename` (copiar por cima com o servidor rodando corrompe o mapeamento), config e `mods.txt` do
+    dono preservados, `Mods/shared` (UEHelpers) trocado inteiro, `LD_PRELOAD` num drop-in do
+    systemd. A biblioteca so inicia em executavel com `-Linux-` no nome: o script de partida fica
+    de fora.
+  - **Motor modificado pede o `.sym`.** O layout embutido e o do motor da Epic; o Dragonwilds e um
+    5.6.1 da Jagex com virtuais a mais na AActor (o BeginPlay caia em
+    RemoveTickPrerequisiteComponent). Servidor que traz o `.sym` (300 MB, o arquivo de crash do
+    Unreal) ganha, gerados NO CT por `ue_sym_layout.py` (vai como texto, por isso mora no pacote e
+    nao em `tools/`), o VTableLayout.ini deste build e as UE4SS_Signatures das quatro funcoes que o
+    patternsleuth nao acha em codigo do Clang (FName::ToString, construtor de FName,
+    StaticConstructObject, GNatives). Refeitos a cada instalacao (update do jogo muda tudo); sem
+    `.sym` (Palworld) nao ha nada a gerar. Conferido: o gerador produz byte a byte os arquivos
+    testados no Dragonwilds.
+  - **Migra a instalacao do fork antigo** (tudo ao lado do executavel, com a marca
+    .gamepanel-ue4ss-linux.json): os mods Lua vao para `ue4ss/Mods` e so os arquivos que o fork
+    escrevia saem. Sem a marca nada ao lado do executavel e tocado.
+  - **`proven=False` nos dois** ate a primeira instalacao por esta tela num CT de verdade. O jogo
+    ACUSA o `.so` (o Dragonwilds marca a sessao como modificada, `CheckForMods`): e so aviso.
+  - **Hook em funcao chamada fora da thread do jogo e caro**: o lock serializa as threads de
+    animacao com a do jogo. Mod que hookeia `KismetMathLibrary` funciona, mas pesa.
 - **Rust e `KIND_OXIDE`** (`oxide_remote.py`): o pacote SOBRESCREVE DLLs do jogo, entao o
   instalador guarda o original (so o que NAO e dele, comparando sha256: reinstalar com o Oxide
   ligado nao pode virar "original") e desligar o devolve. Toda atualizacao do Rust pela Steam

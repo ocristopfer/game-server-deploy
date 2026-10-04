@@ -540,8 +540,8 @@ MESSAGES: dict[str, str] = {
     "mods.help_palworld":
         "The server's <code>.pak</code> mods live in <code>{folder}</code>. Visual-only mods are "
         "client-side; gameplay mods must be here AND, usually, on the players too. Script mods "
-        "(UE4SS) do not run on this server yet: tested, UE4SS for Linux crashes Palworld as soon as "
-        "it touches the game, so the panel does not install it.",
+        "(UE4SS) run through the official UE4SS built for Linux, below: Lua mods live in the "
+        "<code>ue4ss/Mods</code> folder next to the game's executable.",
     "mods.packages_title": "What the server loads",
     "mods.no_packages":
         "No packages in <code>{folder}</code> yet: export them from the game and upload "
@@ -647,8 +647,8 @@ MESSAGES: dict[str, str] = {
     "mods.help_dragonwilds":
         "Server mods are <strong>.pak</strong> files (with the same-named <code>.utoc</code> and "
         "<code>.ucas</code> that Unreal 5 requires - send all three together) and live in "
-        "<code>{folder}</code>. Script mods (UE4SS) run through our fork of UE4SS Linux, below; the "
-        "game flags the session as modded while it is on. Nexus Mods does not allow "
+        "<code>{folder}</code>. Script mods (UE4SS) run through the official UE4SS built for Linux, "
+        "below; the game flags the session as modded while it is on. Nexus Mods does not allow "
         "automated downloads without a Premium account: download "
         "there and upload here. Each mod page says whether players need it too.",
     "mods.help_enshrouded":
@@ -717,11 +717,13 @@ MESSAGES: dict[str, str] = {
         "console or window. Each mod is a folder in <code>{folder}</code>, switched on in the "
         "<code>mods.txt</code> there, on the <a href=\"{url}\">Files screen</a>. Lua or Linux "
         "<code>.so</code> mods only: Windows <code>.dll</code> mods do not load.",
-    "mods.source_ue4ss_linux": "UE4SS Linux (port)",
-    "mods.source_ue4ss_fork": "UE4SS Linux (our fork)",
-    "mods.ue4ss_fork_tag":
-        "Pinned fork version: {tag}. The game's addresses are generated on the server from its .sym "
-        "on every install - after a game update, install again.",
+    "mods.source_ue4ss_linux": "UE4SS for Linux (tested games)",
+    "mods.ue4ss_release":
+        "Pinned UE4SS for Linux version: {tag}. If the server ships a .sym, the game's layout is "
+        "generated from it on every install - after a game update, install again.",
+    "mods.ue4ss_old_layout":
+        "The old UE4SS install (the previous fork) is still next to the executable: install again "
+        "to move the Lua mods into the ue4ss/ folder and remove its files.",
     "mods.bad_name": "{name} is not accepted here. Expected: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos
