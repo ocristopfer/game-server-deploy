@@ -265,7 +265,6 @@ tools/
   import-linuxgsm.py   gera src/gamepanel/games/catalog/suggestions.py a partir do LinuxGSM (precisa de internet)
   import-pterodactyl.py  gera pterodactyl_suggestions.py dos eggs (pelican-eggs/games-steamcmd, MIT)
   verify-qr.py        verificacao manual do QR contra um leitor de verdade (venv descartavel)
-  ue-sym-addresses.py  le o .sym de um servidor Unreal Linux e gera o UE4SS_Addresses.ini (roda no CT)
 ```
 
 ### Gestor de mods: o que "mod" significa muda por jogo
@@ -347,7 +346,8 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
 - **`proven=False` e instalador escrito sem CT de teste, e a tela AVISA** (`mods.not_proven`). Foi
   pedido assim para o Satisfactory, o Valheim e o Rust: implementar tudo e provar depois. Quem
   provar num CT real troca para `True` e escreve no perfil o que mediu - a mesma regra do
-  `KIND_GUIDE`, so que com o botao ja pronto. Um teste cobra que os tres continuem marcados.
+  `KIND_GUIDE`, so que com o botao ja pronto. Um teste cobra que os quatro (com o Dragonwilds,
+  abaixo) continuem marcados.
 - **Satisfactory e `KIND_SML`, pela API do ficsit.app** (`sml_remote.py`), e nao pelo
   ficsit-cli: a v0.7.1 nao tem comando para ADICIONAR mod (so a interface interativa). A API e
   publica, diz o pacote `LinuxServer` de cada versao com o sha256 e as dependencias; o sha256 e
@@ -363,12 +363,12 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   servidor rodando corrompe o mapeamento); faltando biblioteca de sistema (X11, por causa da GUI
   embutida), ela vem do apt. O perfil continua recebendo `.pak` na pasta dele: `loader_dir` e onde
   o UE4SS entra. Versao padrao: a estavel v3.0.2 (`releases/latest`), e nao os `*-linux-dev`.
-- **Dragonwilds: os ports PRONTOS nao servem, o NOSSO fork serve (ainda fora do painel).** No CT 302
+- **Dragonwilds: os ports PRONTOS nao servem, o NOSSO fork serve.** No CT 302
   (UE 5.6.1, binario sem simbolos): o port do Palworld (waze3174) se acha UE 5.1 e nao roda Lua; o
   XarminaEu v3.0.26 acha o motor e cai com SIGSEGV ao iniciar os mods; a v3.0.2 roda Lua PURO, mas
   `FindFirstOf`/`GetFullName` e ate um `RegisterHook` derrubam o servidor. O jogo tambem ACUSA o
   `.so` (`CheckForMods`) e marca a sessao como modificada.
-  **O fork** (pasta irma ue4ss-dragonwilds, branch dragonwilds, so local) corrige QUATRO defeitos
+  **O fork** (github.com/ocristopfer/ue4ss-linux, branch e release `dragonwilds-v1`) corrige QUATRO defeitos
   de ABI do Linux, nenhum especifico do jogo, cada um achado no gdb: ponteiro para metodo do
   Itanium tem dois campos e o port deixava o ajuste de `this` com lixo da pilha; o construtor de
   FName era chamado sem `this` (o motor gravava o nome em cima da string); o modo completo saia
@@ -378,12 +378,19 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   Lua, `FindFirstOf`, `FindAllOf`, hook nativo e de Blueprint e `ExecuteInGameThread`
   funcionam, e o heartbeat do EOS continua.
   **Os enderecos sao POR JOGO, e saem do proprio servidor**: ele traz um `.sym` de 300 MB (o
-  arquivo de crash do Unreal) com nome e endereco de cada funcao, e `tools/ue-sym-addresses.py`
+  arquivo de crash do Unreal) com nome e endereco de cada funcao, e `ue_sym_addresses.py`
   gera dele o UE4SS_Addresses.ini (funcoes = o do .sym + a base de carga, 0x200000). Os globais
   (GUObjectArray, GMalloc, GNatives) nao estao no .sym: saem decodificando a instrucao que os le
   numa funcao curta. O GNatives e o que mais importa: o port o CHUTA, e com o chute errado todo
-  hook nativo desalinha a pilha do Blueprint e o proprio Unreal aborta (execUndefined). Falta:
-  publicar o fork e um perfil no gestor de mods que instale a build dele e gere o .ini no CT.
+  hook nativo desalinha a pilha do Blueprint e o proprio Unreal aborta (execUndefined).
+  **No painel e o `KIND_UE4SS_LINUX` com `ue4ss_fork_tag`** (o mesmo instalador do Palworld, em
+  modo fork): tag fixa no perfil (o release e pre-release, e a API "latest" o ignora), cada
+  arquivo conferido contra o SHA256SUMS do release ANTES do antivirus, e o gerador vai como texto
+  para o CT (por isso mora no pacote, e nao em `tools/`: o release do painel nao leva `tools/`).
+  Os enderecos sao gerados ANTES do download, e sem GNatives nada e instalado. Depois de um
+  update do jogo os enderecos mudam: instalar de novo os refaz. `proven=False` ate a primeira
+  instalacao por esta tela num CT de verdade (a ponta a ponta rodou no testbed, com o antivirus
+  e o release reais).
 - **Rust e `KIND_OXIDE`** (`oxide_remote.py`): o pacote SOBRESCREVE DLLs do jogo, entao o
   instalador guarda o original (so o que NAO e dele, comparando sha256: reinstalar com o Oxide
   ligado nao pode virar "original") e desligar o devolve. Toda atualizacao do Rust pela Steam

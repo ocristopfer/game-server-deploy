@@ -238,8 +238,9 @@ def test_icarus_usa_o_ue4ss_provado_no_ct():
 
 
 def test_instalador_sem_prova_e_marcado_na_tela():
-    """Satisfactory, Valheim e Rust foram escritos sem CT de teste: a tela tem de avisar."""
-    for key in ("satisfactory", "valheim", "rust"):
+    """Satisfactory, Valheim e Rust foram escritos sem CT de teste, e o fork do UE4SS no
+    Dragonwilds so rodou no testbed em Docker: a tela tem de avisar."""
+    for key in ("satisfactory", "valheim", "rust", "dragonwilds"):
         assert not profiles.profile_for(f"{key}.service").proven, key
     for p in (profiles.ENSHROUDED, profiles.ICARUS, profiles.VRISING):
         assert p.proven, p.key

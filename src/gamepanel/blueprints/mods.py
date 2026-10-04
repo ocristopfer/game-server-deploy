@@ -25,6 +25,7 @@ from gamepanel.games.mods import (
     thunderstore_remote,
     ue4ss_linux_remote,
     ue4ss_remote,
+    ue_sym_addresses,
     workshop,
 )
 from gamepanel.games.mods import ets2 as ets2_mods
@@ -40,6 +41,8 @@ UE4SS_SOURCE = Path(ue4ss_remote.__file__).read_text(encoding="utf-8")
 OXIDE_SOURCE = Path(oxide_remote.__file__).read_text(encoding="utf-8")
 SML_SOURCE = Path(sml_remote.__file__).read_text(encoding="utf-8")
 UE4SS_LINUX_SOURCE = Path(ue4ss_linux_remote.__file__).read_text(encoding="utf-8")
+# O gerador do UE4SS_Addresses.ini: vai como texto para o CT, que o roda contra o .sym do jogo.
+UE_SYM_SOURCE = Path(ue_sym_addresses.__file__).read_text(encoding="utf-8")
 # Baixar o BepInEx (33 MB) e as dependencias leva minutos: vira job, com log e prazo proprio.
 INSTALL_TIMEOUT = 1800
 LOADER_ACTIONS = ("install", "enable", "disable")
@@ -108,7 +111,11 @@ def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str) -> str:
     if profile.kind == profiles.KIND_UE4SS_LINUX:
         # LD_PRELOAD num drop-in deste servico; o nome sai do perfil (escolhido por ele).
         service = ("--unit", f"{profile.services[0]}.service")
-        return panel.q("python3", "-c", UE4SS_LINUX_SOURCE, *scan, *service, action, profile.loader_dir, *args)
+        # O fork so precisa do resto ao instalar (o gerador sao ~10 KB de texto a toa no status).
+        fork = ("--fork", profile.ue4ss_fork_tag, "--engine", profile.engine_version, "--addresses", UE_SYM_SOURCE) \
+            if profile.ue4ss_fork_tag and action == "loader-install" else ()
+        return panel.q("python3", "-c", UE4SS_LINUX_SOURCE, *scan, *service, *fork, action, profile.loader_dir,
+                       *args)
     if profile.kind in NATIVE_LOADERS:
         # O carregador mora um nivel acima da pasta de mods: ao lado do executavel do jogo.
         source = NATIVE_LOADERS[profile.kind]

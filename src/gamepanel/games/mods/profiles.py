@@ -30,9 +30,10 @@ KIND_UE4SS = "ue4ss"
 KIND_SML = "sml"
 # Rust: o Oxide (uMod) sobrescreve DLLs do jogo e os plugins sao .cs (games/mods/oxide_remote.py).
 KIND_OXIDE = "oxide"
-# Unreal LINUX nativo (Palworld): o port XarminaEu/ue4ss-linux por LD_PRELOAD num drop-in do systemd
-# (games/mods/ue4ss_linux_remote.py). A pasta do perfil continua a dos .pak (envio); os mods
-# do UE4SS ficam em <loader_dir>/Mods.
+# Unreal LINUX nativo (Palworld, Dragonwilds): o UE4SS Linux por LD_PRELOAD num drop-in do systemd
+# (games/mods/ue4ss_linux_remote.py) - o port XarminaEu/ue4ss-linux ou, com `ue4ss_fork_tag`, o
+# nosso fork dele. A pasta do perfil continua a dos .pak (envio); os mods do UE4SS ficam em
+# <loader_dir>/Mods.
 KIND_UE4SS_LINUX = "ue4ss-linux"
 # So o guia (onde achar, como instalar), sem acao: o caminho existe mas ainda nao foi provado
 # num servidor de verdade, e botao que "instala" sem prova e pior que instrucao clara.
@@ -80,6 +81,11 @@ class ModProfile:
     # Thunderstore num servidor Linux NATIVO (Valheim): o BepInEx entra por drop-in do systemd
     # (LD_PRELOAD do doorstop), e nao pelo winhttp do Wine.
     linux_bepinex: bool = False
+    # UE4SS Linux pelo NOSSO fork (ocristopfer/ue4ss-linux), nesta tag de release: o port oficial
+    # derruba o servidor do jogo. Vazio = o port oficial. O fork pede a versao do motor
+    # (`engine_version`) para achar os layouts, e gera os enderecos a partir do .sym no CT.
+    ue4ss_fork_tag: str = ""
+    engine_version: str = ""
 
     @property
     def scan_paths(self) -> tuple[str, ...]:
@@ -127,7 +133,7 @@ PALWORLD = ModProfile(
 
 DRAGONWILDS = ModProfile(
     key="dragonwilds",
-    kind=KIND_FOLDER,
+    kind=KIND_UE4SS_LINUX,
     services=("dragonwilds",),
     # O servidor e Unreal 5 nativo Linux: le de ~mods o que nao veio com o jogo. Conferido no
     # CT de producao (os proprios arquivos do jogo em Paks/ sao .pak + .ucas + .utoc).
@@ -136,7 +142,17 @@ DRAGONWILDS = ModProfile(
     # Unreal 5 (IoStore): um mod costuma vir em TRES arquivos com o mesmo nome, e o .pak sozinho
     # nao carrega. Os tres entram juntos.
     extensions=(".pak", ".utoc", ".ucas"),
-    sources=(("mods.source_nexus", NEXUS + "runescapedragonwilds/mods/"),),
+    # UE4SS: o port oficial derruba este servidor (UE 5.6.1); o fork foi provado no servidor
+    # real rodando em Docker (Lua, FindFirstOf, hook nativo e de Blueprint), mas ainda nao
+    # instalado por esta tela num CT - por isso proven=False.
+    loader_dir="/opt/game/RSDragonwilds/Binaries/Linux",
+    ue4ss_fork_tag="dragonwilds-v1",
+    engine_version="5.6",
+    audit_paths=("/opt/game/RSDragonwilds/Content/Paks/~mods", "/opt/game/RSDragonwilds/Binaries/Linux/Mods",
+                 "/opt/game/RSDragonwilds/Binaries/Linux/libUE4SS.so"),
+    sources=(("mods.source_nexus", NEXUS + "runescapedragonwilds/mods/"),
+             ("mods.source_ue4ss_fork", "https://github.com/ocristopfer/ue4ss-linux/releases")),
+    proven=False,
 )
 
 ENSHROUDED = ModProfile(

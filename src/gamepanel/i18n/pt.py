@@ -646,8 +646,9 @@ MESSAGES: dict[str, str] = {
     "mods.help_dragonwilds":
         "Os mods do servidor sao os <strong>.pak</strong> (com os <code>.utoc</code> e "
         "<code>.ucas</code> de mesmo nome, que a Unreal 5 exige - mande os tres juntos) e ficam em "
-        "<code>{folder}</code>. Mods de script (UE4SS) NAO rodam no servidor dedicado, so no jogo. "
-        "O Nexus Mods nao deixa baixar por automacao sem conta Premium: baixe la e envie aqui. A "
+        "<code>{folder}</code>. Mods de script (UE4SS) rodam pelo nosso fork do UE4SS Linux, logo "
+        "abaixo; o jogo marca a sessao como modificada enquanto ele estiver ligado. O Nexus "
+        "Mods nao deixa baixar por automacao sem conta Premium: baixe la e envie aqui. A "
         "pagina de cada mod diz se os jogadores tambem precisam dele.",
     "mods.help_enshrouded":
         "Mods do Enshrouded precisam de um <strong>carregador</strong> no servidor: o Shroudtopia, que "
@@ -711,11 +712,15 @@ MESSAGES: dict[str, str] = {
     "mods.source_ficsit": "ficsit.app",
     "mods.source_umod": "uMod (plugins)",
     "mods.ue4ss_linux_config_help":
-        "Port Linux do UE4SS (XarminaEu/ue4ss-linux), ligado por LD_PRELOAD no servico, sem console "
+        "Port Linux do UE4SS, ligado por LD_PRELOAD no servico, sem console "
         "nem janela. Cada mod e uma pasta em <code>{folder}</code>, ligada no <code>mods.txt</code> "
         "dali, pela <a href=\"{url}\">tela Arquivos</a>. So mods em Lua ou <code>.so</code> de Linux: "
         "<code>.dll</code> de Windows nao carrega.",
     "mods.source_ue4ss_linux": "UE4SS Linux (port)",
+    "mods.source_ue4ss_fork": "UE4SS Linux (nosso fork)",
+    "mods.ue4ss_fork_tag":
+        "Versao fixa do fork: {tag}. Os enderecos do jogo sao gerados no servidor a partir do .sym "
+        "dele a cada instalacao - depois de um update do jogo, instale de novo.",
     "mods.bad_name": "{name} nao e aceito aqui. Esperado: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos

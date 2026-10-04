@@ -5,6 +5,7 @@ da v3.0.2 (so o libUE4SS.so dentro) e o systemd trocado por uma pasta.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import tarfile
@@ -104,3 +105,116 @@ def test_servico_conferido_antes_de_baixar(game, unit):
 def test_sem_antivirus_nao_instala(tmp_path, capsys):
     assert ul.main(["--unit", "palworld.service", "loader-install", str(tmp_path)]) == 1
     assert "antivirus" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ modo fork (Dragonwilds)
+
+FORK_LIB = b"\x7fELF-fork"
+FORK_LAYOUTS = {"VTableLayout.ini": b"[UObjectBase]\n__vecDelDtor\n", "MemberVariableLayout.ini": b"[UObject]\n"}
+GOOD_ADDRESSES = "[Addresses]\nGUObjectArray = 0xDE3A500\nFNameConstructor = 0x4E072B0\nGNatives = 0xDE38B70\n"
+
+
+def fork_fetcher(files: dict[str, bytes] | None = None, sums: dict[str, bytes] | None = None):
+    """GitHub falso do release do fork; `sums` permite um SHA256SUMS que nao bate."""
+    files = files if files is not None else {"libUE4SS.so": FORK_LIB, **FORK_LAYOUTS}
+    sums_of = sums if sums is not None else files
+    sums_text = "".join(f"{hashlib.sha256(d).hexdigest()}  {n}\n" for n, d in sums_of.items()).encode()
+    base = "https://github.com/ocristopfer/ue4ss-linux/releases/download/dragonwilds-v1/"
+    assets = {**files, "SHA256SUMS": sums_text}
+
+    def fetch(url: str) -> bytes:
+        if "api.github.com" in url:
+            assert url.endswith("/releases/tags/dragonwilds-v1")
+            return json.dumps({"tag_name": "dragonwilds-v1", "assets": [
+                {"name": n, "browser_download_url": base + n} for n in assets]}).encode()
+        return assets[url.rsplit("/", 1)[1]]
+    return fetch
+
+
+@pytest.fixture
+def dragonwilds(game, monkeypatch):
+    exe_dir, _, _ = game
+    (exe_dir / "RSDragonwildsServer-Linux-Shipping").write_bytes(b"\x7fELF")
+    (exe_dir / "RSDragonwildsServer-Linux-Shipping.sym").write_bytes(b"sym")
+    generated: list[str] = []
+
+    def fake_generate(path, script):
+        generated.append(ul.find_executable(path))
+        return GOOD_ADDRESSES
+    monkeypatch.setattr(ul, "generate_addresses", fake_generate)
+    return exe_dir, generated
+
+
+FORK = ul.Fork("dragonwilds-v1", "5.6", "print('gerador')")
+
+
+def test_fork_instala_o_so_os_layouts_e_os_enderecos(dragonwilds):
+    exe_dir, generated = dragonwilds
+    scanned: list[list[str]] = []
+    result = ul.install_loader(str(exe_dir), "dragonwilds.service", fetcher=fork_fetcher(),
+                               scan=lambda blobs: scanned.append([n for n, _ in blobs]), fork=FORK)
+    assert result["version"] == "dragonwilds-v1"
+    assert (exe_dir / "libUE4SS.so").read_bytes() == FORK_LIB
+    for name, data in FORK_LAYOUTS.items():
+        assert (exe_dir / name).read_bytes() == data
+    assert "GNatives = 0xDE38B70" in (exe_dir / "UE4SS_Addresses.ini").read_text(encoding="utf-8")
+    settings = (exe_dir / "UE4SS-settings.ini").read_text(encoding="utf-8")
+    assert "[EngineVersionOverride]\nMajorVersion = 5\nMinorVersion = 6" in settings
+    # O antivirus ve o pacote INTEIRO de uma vez, e o executavel achado e o que tem .sym.
+    assert scanned == [["MemberVariableLayout.ini", "VTableLayout.ini", "libUE4SS.so"]]
+    assert generated[0].endswith("RSDragonwildsServer-Linux-Shipping")
+
+
+def test_fork_preserva_a_config_do_dono_e_so_acrescenta_o_motor(dragonwilds):
+    exe_dir, _ = dragonwilds
+    (exe_dir / "UE4SS-settings.ini").write_text("[General]\nMeuAjuste = 1\n", encoding="utf-8")
+    ul.install_loader(str(exe_dir), "dragonwilds.service", fetcher=fork_fetcher(), fork=FORK)
+    ul.install_loader(str(exe_dir), "dragonwilds.service", fetcher=fork_fetcher(), fork=FORK)
+    settings = (exe_dir / "UE4SS-settings.ini").read_text(encoding="utf-8")
+    assert "MeuAjuste = 1" in settings
+    assert settings.count("[EngineVersionOverride]") == 1
+
+
+def test_fork_com_hash_que_nao_bate_nao_instala_nada(dragonwilds):
+    exe_dir, _ = dragonwilds
+    lying = {"libUE4SS.so": b"outro binario", **FORK_LAYOUTS}
+    with pytest.raises(ValueError, match="SHA256SUMS"):
+        ul.install_loader(str(exe_dir), "dragonwilds.service", fetcher=fork_fetcher(sums=lying), fork=FORK)
+    assert not (exe_dir / "libUE4SS.so").exists()
+
+
+def test_fork_sem_arquivo_no_release_e_recusado(dragonwilds):
+    exe_dir, _ = dragonwilds
+    with pytest.raises(ValueError, match="VTableLayout"):
+        ul.install_loader(str(exe_dir), "dragonwilds.service",
+                          fetcher=fork_fetcher(files={"libUE4SS.so": FORK_LIB}), fork=FORK)
+
+
+def test_fork_nao_aceita_versao_escolhida(dragonwilds):
+    exe_dir, _ = dragonwilds
+    with pytest.raises(ValueError, match="tag fixa"):
+        ul.install_loader(str(exe_dir), "dragonwilds.service", "3.0.2", fetcher=fork_fetcher(), fork=FORK)
+
+
+def test_enderecos_sem_gnatives_sao_recusados():
+    """Com o GNatives chutado pelo port, todo hook nativo derruba o servidor (medido)."""
+    with pytest.raises(ValueError, match="GNatives"):
+        ul.check_addresses("[Addresses]\nGUObjectArray = 0x1\nFNameConstructor = 0x2\n; GNatives = nao achado\n")
+    ul.check_addresses(GOOD_ADDRESSES)
+
+
+def test_servidor_sem_sym_nao_recebe_o_so(game):
+    """Os enderecos vem ANTES do download: sem .sym nada e baixado nem ligado."""
+    exe_dir, root, _ = game
+    (exe_dir / "RSDragonwildsServer-Linux-Shipping").write_bytes(b"\x7fELF")
+    with pytest.raises(ValueError, match=r"\.sym"):
+        ul.install_loader(str(exe_dir), "dragonwilds.service",
+                          fetcher=lambda u: pytest.fail("baixou sem enderecos"), fork=FORK)
+    assert not (root / "systemd").exists()
+
+
+@pytest.mark.parametrize(("tag", "engine", "script"), [
+    ("", "5.6", "x"), ("../x", "5.6", "x"), ("dragonwilds-v1", "5", "x"), ("dragonwilds-v1", "5.6", "")])
+def test_argumentos_do_fork_sao_conferidos(tag, engine, script):
+    with pytest.raises(ValueError):
+        ul.Fork(tag, engine, script)

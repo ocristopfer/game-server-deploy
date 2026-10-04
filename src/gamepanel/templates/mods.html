@@ -284,7 +284,9 @@
       {% endif %}
       <form method="post" action="{{ url_for('mods.loader', sid=server.id) }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-        {% if not st.loader_installed or st.enabled %}
+        {% if profile.ue4ss_fork_tag %}
+        <p class="muted small">{{ _('mods.ue4ss_fork_tag', tag=profile.ue4ss_fork_tag) }}</p>
+        {% elif not st.loader_installed or st.enabled %}
         <label class="short">{{ _('mods.version_label') }}
           <input name="version" inputmode="decimal" autocomplete="off" spellcheck="false"
                  pattern="[vV]?[0-9]+\.[0-9]+\.[0-9]+" placeholder="{{ '3.0.2' if linux else '3.0.1' }}">

@@ -599,10 +599,25 @@ def test_palworld_instala_o_ue4ss_linux_e_continua_recebendo_pak(admin, post, da
     assert restart.endswith("restart palworld.service")
 
 
-def test_dragonwilds_nao_tem_ue4ss(admin, database, monkeypatch):
-    """Medido: no Dragonwilds (UE 5.6.1) o port roda Lua puro, mas mod que toca o jogo o derruba."""
+def test_dragonwilds_instala_o_fork_do_ue4ss_e_continua_recebendo_os_tres_arquivos(
+        admin, post, database, remote, monkeypatch):
+    """O port oficial derruba o Dragonwilds (UE 5.6.1); o fork vem numa tag fixa, com a versao do
+    motor e o gerador de enderecos - e so ao INSTALAR, que o status nao precisa deles."""
+    calls, jobs, _ = remote
     monkeypatch.setattr(panel, "list_dir", lambda *a, **k: ([], None))
     sid = _server(database, "dragonwilds.service")
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
-    assert "value=install" not in html
+    assert "value=install" in html
     assert 'accept=".pak,.utoc,.ucas"' in html
+    assert "dragonwilds-v1" in html
+    # Tag fixa: o campo de versao (x.y.z do port oficial) nao vale para o fork.
+    assert 'name="version"' not in html
+    assert "--fork dragonwilds-v1" not in calls[0]
+    assert calls[0].endswith("--unit dragonwilds.service status /opt/game/RSDragonwilds/Binaries/Linux")
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "restart": "1"})
+    install, restart = jobs[0][1]["steps"]
+    assert "--scan" in install
+    assert "--fork dragonwilds-v1 --engine 5.6 --addresses" in install
+    assert "GNatives" in install  # o texto do gerador foi junto
+    assert install.endswith("loader-install /opt/game/RSDragonwilds/Binaries/Linux")
+    assert restart.endswith("restart dragonwilds.service")

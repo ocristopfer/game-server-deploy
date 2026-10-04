@@ -645,8 +645,9 @@ MESSAGES: dict[str, str] = {
     "mods.help_dragonwilds":
         "Server mods are <strong>.pak</strong> files (with the same-named <code>.utoc</code> and "
         "<code>.ucas</code> that Unreal 5 requires - send all three together) and live in "
-        "<code>{folder}</code>. Script mods (UE4SS) do NOT run on the dedicated server, only in the "
-        "game. Nexus Mods does not allow automated downloads without a Premium account: download "
+        "<code>{folder}</code>. Script mods (UE4SS) run through our fork of UE4SS Linux, below; the "
+        "game flags the session as modded while it is on. Nexus Mods does not allow "
+        "automated downloads without a Premium account: download "
         "there and upload here. Each mod page says whether players need it too.",
     "mods.help_enshrouded":
         "Enshrouded mods need a <strong>loader</strong> on the server: Shroudtopia, which the panel "
@@ -710,11 +711,15 @@ MESSAGES: dict[str, str] = {
     "mods.source_ficsit": "ficsit.app",
     "mods.source_umod": "uMod (plugins)",
     "mods.ue4ss_linux_config_help":
-        "Linux port of UE4SS (XarminaEu/ue4ss-linux), loaded by LD_PRELOAD on the service, with no "
+        "Linux port of UE4SS, loaded by LD_PRELOAD on the service, with no "
         "console or window. Each mod is a folder in <code>{folder}</code>, switched on in the "
         "<code>mods.txt</code> there, on the <a href=\"{url}\">Files screen</a>. Lua or Linux "
         "<code>.so</code> mods only: Windows <code>.dll</code> mods do not load.",
     "mods.source_ue4ss_linux": "UE4SS Linux (port)",
+    "mods.source_ue4ss_fork": "UE4SS Linux (our fork)",
+    "mods.ue4ss_fork_tag":
+        "Pinned fork version: {tag}. The game's addresses are generated on the server from its .sym "
+        "on every install - after a game update, install again.",
     "mods.bad_name": "{name} is not accepted here. Expected: {allowed}.",
 
     # --------------------------------------------- catalogo de jogos

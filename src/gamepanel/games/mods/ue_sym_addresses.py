@@ -22,8 +22,11 @@ errado todo hook nativo (RegisterHook numa funcao C++) desalinha a pilha do Blue
 proprio Unreal aborta em UObject::execUndefined - medido no Dragonwilds. Endereco que nao cai
 num segmento GRAVAVEL do executavel e descartado: e sinal de que o padrao casou no lugar errado.
 
-Uso (dentro do CT, onde o .sym tem 300 MB e nao vale a pena copiar):
-    python3 ue-sym-addresses.py <executavel> [<executavel>.sym] > UE4SS_Addresses.ini
+Roda DENTRO do CT, como os instaladores remotos: o ue4ss_linux_remote recebe este texto do
+painel e o executa com `python3 -c` (por isso so stdlib e sem import do `gamepanel`).
+
+Uso a mao (dentro do CT, onde o .sym tem 300 MB e nao vale a pena copiar):
+    python3 ue_sym_addresses.py <executavel> [<executavel>.sym] > UE4SS_Addresses.ini
 So stdlib; varre o arquivo por mmap, sem montar texto para cada um dos milhoes de registros.
 """
 from __future__ import annotations
@@ -113,7 +116,7 @@ def _int32(code: bytes, at: int) -> int:
 
 def table_base(code: bytes) -> int | None:
     """`mov r64, [disp32 + reg*8]` sem base (REX.W 8B, ModRM mod=00 rm=100, SIB escala 8 base=101)."""
-    for i in range(len(code) - 8):
+    for i in range(len(code) - 7):
         rex, opcode, modrm, sib = code[i:i + 4]
         if rex & 0xF8 == 0x48 and opcode == 0x8B and modrm & 0xC7 == 0x04 and sib & 0xC7 == 0xC5:
             return _int32(code, i + 4) & 0xFFFFFFFF
@@ -122,7 +125,7 @@ def table_base(code: bytes) -> int | None:
 
 def first_rip_load(code: bytes, va: int) -> int | None:
     """O alvo do primeiro `mov r64, [rip+disp32]` (REX.W 8B, ModRM mod=00 rm=101)."""
-    for i in range(len(code) - 7):
+    for i in range(len(code) - 6):
         rex, opcode, modrm = code[i:i + 3]
         if rex & 0xF8 == 0x48 and opcode == 0x8B and modrm & 0xC7 == 0x05:
             return va + i + 7 + _int32(code, i + 3)
@@ -135,7 +138,7 @@ def this_of_call(code: bytes, va: int, target: int) -> int | None:
     Executavel nao-PIE carrega com `mov edi, imm32`; PIE usaria `lea rdi, [rip+X]`. Vale o
     mais perto da chamada, que e o que esta no registrador quando ela acontece.
     """
-    for i in range(len(code) - 5):
+    for i in range(len(code) - 4):
         if code[i] != CALL_REL32 or va + i + 5 + _int32(code, i + 1) != target:
             continue
         for j in range(i - 5, max(i - THIS_WINDOW, 0) - 1, -1):
@@ -199,7 +202,7 @@ def main(argv: list[str]) -> int:
     base = min(seg.vaddr for seg in segments)
     functions = {key: addr + base for key, addr in find_addresses(sym_path).items()}
     data = find_globals(executable, segments, functions)
-    print(f"; gerado por tools/ue-sym-addresses.py a partir de {sym_path} (base de carga 0x{base:X})")
+    print(f"; gerado por ue_sym_addresses.py a partir de {sym_path} (base de carga 0x{base:X})")
     print("[Addresses]")
     for key in WANTED:
         if key in functions:

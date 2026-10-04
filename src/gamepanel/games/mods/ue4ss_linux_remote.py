@@ -8,10 +8,18 @@ de Windows; este port entra por LD_PRELOAD (`libUE4SS.so`), num drop-in do syste
 trocar o script de partida do jogo. O port foi feito e verificado pelos autores no Palworld
 (UE 5.1); aqui ainda nao rodou num servidor de verdade.
 
-O que foi MEDIDO no Dragonwilds (UE 5.6.1, binario sem simbolos), e por isso ele NAO tem
-este instalador: a v3.0.2 acha o motor (GUObjectArray, FName) e roda Lua puro, mas QUALQUER
-acesso ao jogo - `FindFirstOf`/`GetFullName` ou um `RegisterHook` - derruba o servidor (os
-deslocamentos sao os do Palworld 5.1). A v3.0.26 (dev) acha o motor e nao roda mod nenhum.
+MODO FORK (`--fork TAG`, o Dragonwilds): o port oficial derruba o servidor do Dragonwilds
+(UE 5.6.1) - a v3.0.2 roda Lua puro e cai em qualquer acesso ao jogo, a v3.0.26 cai ao iniciar
+os mods. O fork ocristopfer/ue4ss-linux corrige quatro defeitos de ABI do Linux e foi provado
+num servidor de verdade (Lua, busca de objetos, hook nativo e de Blueprint). Ele pede, ao lado
+do executavel, o que o port oficial nao pede:
+- UE4SS_Addresses.ini, gerado AQUI a partir do .sym que o proprio servidor traz (o texto do
+  gerador vem do painel por `--addresses`). Sem o GNatives a instalacao FALHA: com o chute do
+  port, todo hook nativo desalinha a pilha do Blueprint e o Unreal aborta;
+- VTableLayout.ini e MemberVariableLayout.ini da versao do motor (vem no release do fork);
+- `[EngineVersionOverride]` no UE4SS-settings.ini (`--engine 5.6`).
+O release do fork e pre-release (a API "latest" o ignora): a tag e fixa, vinda do perfil, e
+cada arquivo e conferido contra o SHA256SUMS do release ANTES do antivirus.
 
 Decisoes, cada uma com o motivo:
 - **A release estavel (`releases/latest`, v3.0.2), e nao os `*-linux-dev`.** Medido acima.
@@ -24,12 +32,14 @@ Decisoes, cada uma com o motivo:
 - **O proprio jogo pode acusar o .so** (o Dragonwilds marca a sessao com ModDetection=1): e so
   um aviso no log do jogo, nao bloqueia.
 
-Acoes (argv): [--scan SCRIPT] --unit SERVICO status|loader-install [VERSAO]|loader-enable|
-loader-disable, seguidas da pasta do executavel (Binaries/Linux). Termina com UMA linha JSON.
+Acoes (argv): [--scan SCRIPT] --unit SERVICO [--fork TAG --engine X.Y --addresses SCRIPT]
+status|loader-install [VERSAO]|loader-enable|loader-disable, seguidas da pasta do executavel
+(Binaries/Linux). Termina com UMA linha JSON.
 """
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -46,6 +56,17 @@ RELEASES = "https://api.github.com/repos/XarminaEu/ue4ss-linux/releases/latest"
 RELEASE_TAG = "https://api.github.com/repos/XarminaEu/ue4ss-linux/releases/tags/{tag}"
 VERSION = re.compile(r"\d{1,9}\.\d{1,9}\.\d{1,9}")
 ASSET = re.compile(r"^ue4ss-linux-v[0-9][0-9A-Za-z.\-]*\.tar\.gz$")
+FORK_RELEASE = "https://api.github.com/repos/ocristopfer/ue4ss-linux/releases/tags/{tag}"
+FORK_TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}")
+ENGINE = re.compile(r"(\d{1,2})\.(\d{1,2})")
+SHA256 = re.compile(r"[0-9a-f]{64}")
+SUMS = "SHA256SUMS"
+ADDRESSES = "UE4SS_Addresses.ini"
+LAYOUTS = ("VTableLayout.ini", "MemberVariableLayout.ini")
+# Sem estes o fork nao sobe certo: GNatives e o que os hooks nativos usam (ver o docstring).
+REQUIRED_ADDRESSES = ("GUObjectArray", "FNameConstructor", "GNatives")
+# Varrer o .sym (300 MB, ~12 milhoes de registros) leva da ordem de um minuto.
+ADDRESSES_TIMEOUT = 900
 LIB = "libUE4SS.so"
 SETTINGS = "UE4SS-settings.ini"
 LOG = "UE4SS.log"
@@ -198,16 +219,116 @@ def _ensure_libs(lib_path: str) -> None:
         raise ValueError(f"faltam bibliotecas de sistema: {', '.join(missing)}")
 
 
-def install_loader(exe_dir: str, unit: str, version: str = "", fetcher=fetch, scan=_no_scan) -> dict:
+class Fork:
+    """O que o modo fork precisa: a tag do release, a versao do motor e o gerador de enderecos."""
+
+    def __init__(self, tag: str, engine: str, addresses_script: str) -> None:
+        if not FORK_TAG.fullmatch(tag or ""):
+            raise ValueError(f"tag do fork invalida: {tag!r}")
+        if not ENGINE.fullmatch(engine or ""):
+            raise ValueError(f"versao do motor invalida: {engine!r}")
+        if not addresses_script:
+            raise ValueError("o modo fork precisa do gerador de enderecos")
+        self.tag, self.engine, self.addresses_script = tag, engine, addresses_script
+
+
+def parse_sums(text: str) -> dict[str, str]:
+    """`sha256sum` -> {nome: hash}. Linha torta e ignorada: arquivo sem hash e recusado depois."""
+    sums = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and SHA256.fullmatch(parts[0]):
+            sums[parts[1].lstrip("*")] = parts[0]
+    return sums
+
+
+def fork_files(fork: Fork, fetcher=fetch) -> dict[str, bytes]:
+    """Os arquivos do release do fork, cada um conferido contra o SHA256SUMS dele."""
+    release = json.loads(fetcher(FORK_RELEASE.format(tag=fork.tag)))
+    urls = {a.get("name", ""): a.get("browser_download_url", "") for a in release.get("assets", [])}
+    wanted = (LIB, *LAYOUTS)
+    for name in (SUMS, *wanted):
+        if not urls.get(name, "").startswith("https://github.com/"):
+            raise ValueError(f"o release {fork.tag} do fork nao traz {name}")
+    sums = parse_sums(fetcher(urls[SUMS]).decode("utf-8", "replace"))
+    files = {}
+    for name in wanted:
+        print(f"baixando {name}")
+        data = fetcher(urls[name])
+        if hashlib.sha256(data).hexdigest() != sums.get(name):
+            raise ValueError(f"{name} nao confere com o SHA256SUMS do release: nada foi instalado")
+        files[name] = data
+    return files
+
+
+def find_executable(exe_dir: str) -> str:
+    """O executavel do servidor: o arquivo da pasta que tem um `.sym` ao lado."""
+    for name in sorted(os.listdir(exe_dir)):
+        path = os.path.join(exe_dir, name)
+        if os.path.isfile(path) and os.path.isfile(path + ".sym"):
+            return path
+    raise ValueError(f"nenhum executavel com .sym em {exe_dir}: sem ele nao ha como achar os enderecos")
+
+
+def check_addresses(text: str) -> None:
+    keys = {line.split("=", 1)[0].strip() for line in text.splitlines()
+            if "=" in line and not line.lstrip().startswith(";")}
+    missing = [k for k in REQUIRED_ADDRESSES if k not in keys]
+    if missing:
+        raise ValueError(f"o .sym nao deu {', '.join(missing)}: o UE4SS derrubaria o servidor, nada foi ligado")
+
+
+def generate_addresses(exe_dir: str, script: str) -> str:
+    executable = find_executable(exe_dir)
+    print(f"gerando {ADDRESSES} a partir de {posixpath.basename(executable)}.sym")
+    sys.stdout.flush()
+    # O script e o gerador do painel (texto fixo dele); o caminho foi achado nesta pasta.
+    proc = subprocess.run(["python3", "-c", script, executable],  # noqa: S603, S607
+                          capture_output=True, text=True, check=False, timeout=ADDRESSES_TIMEOUT)
+    if proc.returncode != 0:
+        raise ValueError(f"o gerador de enderecos falhou: {(proc.stderr or '').strip()[-300:]}")
+    check_addresses(proc.stdout)
+    return proc.stdout
+
+
+def engine_override(engine: str) -> str:
+    found = ENGINE.fullmatch(engine)
+    if not found:
+        raise ValueError(f"versao do motor invalida: {engine!r}")
+    major, minor = found.groups()
+    return f"\n[EngineVersionOverride]\nMajorVersion = {major}\nMinorVersion = {minor}\nDebugBuild = false\n"
+
+
+def _write(path: str, data: bytes) -> None:
+    staged = path + ".new"
+    with open(staged, "wb") as f:
+        f.write(data)
+    os.replace(staged, path)
+
+
+def install_loader(exe_dir: str, unit: str, version: str = "", fetcher=fetch, scan=_no_scan,
+                   fork: Fork | None = None) -> dict:
     if not os.path.isdir(exe_dir):
         raise ValueError(f"a pasta do executavel nao existe: {exe_dir}")
     dropin_path(unit)  # confere o servico antes de baixar qualquer coisa
-    release = release_for(version, fetcher)
-    name, url = _asset_url(release)
-    print(f"baixando {name}")
-    data = fetcher(url)
-    scan([(name, data)])
-    lib = _lib_from_tar(data)
+    if fork and version:
+        raise ValueError("o fork vem numa tag fixa do perfil: versao escolhida nao vale aqui")
+    addresses = ""
+    files: dict[str, bytes] = {}
+    if fork:
+        # Os enderecos ANTES de baixar: servidor sem .sym (ou com um que nao da o GNatives)
+        # nao chega a receber o .so.
+        addresses = generate_addresses(exe_dir, fork.addresses_script)
+        files = fork_files(fork, fetcher)
+        scan(sorted(files.items()))
+        lib, tag = files[LIB], fork.tag
+    else:
+        release = release_for(version, fetcher)
+        name, url = _asset_url(release)
+        print(f"baixando {name}")
+        data = fetcher(url)
+        scan([(name, data)])
+        lib, tag = _lib_from_tar(data), release.get("tag_name", "")
     target = os.path.join(exe_dir, LIB)
     staged = target + ".new"
     with open(staged, "wb") as f:
@@ -220,15 +341,24 @@ def install_loader(exe_dir: str, unit: str, version: str = "", fetcher=fetch, sc
     if not os.path.exists(settings):
         with open(settings, "w", encoding="utf-8") as f:
             f.write(SETTINGS_TEXT)
+    if fork:
+        # Os layouts e os enderecos sao DESTA versao do fork e deste executavel: os velhos
+        # (de outra versao do motor, ou de antes de um update do jogo) derrubariam o servidor.
+        for name in LAYOUTS:
+            _write(os.path.join(exe_dir, name), files[name])
+        _write(os.path.join(exe_dir, ADDRESSES), addresses.encode("utf-8"))
+        # A config do dono fica; so falta a versao do motor, sem a qual o fork nao acha os layouts.
+        if "[EngineVersionOverride]" not in _read_text(settings):
+            with open(settings, "a", encoding="utf-8") as f:
+                f.write(engine_override(fork.engine))
     os.makedirs(os.path.join(exe_dir, MODS), exist_ok=True)
     mods_txt = os.path.join(exe_dir, MODS, MODS_TXT)
     if not os.path.exists(mods_txt):
         with open(mods_txt, "w", encoding="utf-8") as f:
             f.write("")
     set_enabled(exe_dir, unit, True)
-    tag = release.get("tag_name", "")
     with open(os.path.join(exe_dir, MARK), "w", encoding="utf-8") as f:
-        json.dump({"version": tag, "pinned": bool(version)}, f)
+        json.dump({"version": tag, "pinned": bool(version), "fork": bool(fork)}, f)
     print(f"UE4SS Linux {tag} em {exe_dir} (LD_PRELOAD no {unit})")
     return {"loader": "UE4SS Linux", "version": tag}
 
@@ -267,7 +397,7 @@ def _chown(exe_dir: str) -> None:
         pw = pwd.getpwnam(OWNER)
     except (ImportError, KeyError):
         return
-    for name in (LIB, SETTINGS, MARK):
+    for name in (LIB, SETTINGS, MARK, ADDRESSES, *LAYOUTS):
         with contextlib.suppress(OSError):
             os.chown(os.path.join(exe_dir, name), pw.pw_uid, pw.pw_gid)
     for root, dirs, files in os.walk(os.path.join(exe_dir, MODS)):
@@ -278,18 +408,23 @@ def _chown(exe_dir: str) -> None:
 
 def main(argv: list[str]) -> int:
     script = unit = ""
+    fork_args: dict[str, str] = {}
     if argv[:1] == ["--scan"]:
         script, argv = argv[1], argv[2:]
     if argv[:1] == ["--unit"]:
         unit, argv = argv[1], argv[2:]
+    while argv[:1] and argv[0] in ("--fork", "--engine", "--addresses"):
+        fork_args[argv[0][2:]], argv = argv[1], argv[2:]
     action, exe_dir, *rest = argv
     try:
+        fork = Fork(fork_args.get("fork", ""), fork_args.get("engine", ""),
+                    fork_args.get("addresses", "")) if fork_args else None
         if action == "loader-install" and not script:
             raise ValueError("instalar sem a verificacao do antivirus nao e caminho do painel")
         if action == "status":
             result = status(exe_dir, unit)
         elif action == "loader-install":
-            result = install_loader(exe_dir, unit, rest[0] if rest else "", scan=scanner(script))
+            result = install_loader(exe_dir, unit, rest[0] if rest else "", scan=scanner(script), fork=fork)
         elif action in ("loader-enable", "loader-disable"):
             set_enabled(exe_dir, unit, action == "loader-enable")
             result = {"enabled": action == "loader-enable"}
@@ -297,7 +432,7 @@ def main(argv: list[str]) -> int:
             raise ValueError(f"acao desconhecida: {action}")
         if action != "status":
             _chown(exe_dir)
-    except (ValueError, KeyError, OSError, tarfile.TarError) as exc:
+    except (ValueError, KeyError, OSError, tarfile.TarError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"error": str(exc)}))
         return 1
     print(json.dumps(result))
