@@ -31,7 +31,7 @@ O que a instalacao faz, cada passo com o motivo:
   fora. Desligar e apagar o drop-in (nenhum codigo do UE4SS roda, sem apagar mod nenhum).
 
 Acoes (argv): [--scan SCRIPT] --unit SERVICO [--release TAG --engine X.Y --symfiles SCRIPT]
-status|loader-install|loader-enable|loader-disable, seguidas da pasta do executavel
+status|loader-install|loader-enable|loader-disable|loader-uninstall, seguidas da pasta do executavel
 (Binaries/Linux). Termina com UMA linha JSON.
 """
 from __future__ import annotations
@@ -372,6 +372,33 @@ def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, sca
     return {"loader": "UE4SS Linux", "version": release.tag}
 
 
+def uninstall_loader(exe_dir: str, unit: str) -> dict:
+    """Tira o UE4SS: o drop-in (o jogo volta a subir sem LD_PRELOAD) e a pasta ue4ss/ inteira.
+
+    Os mods Lua moram em ue4ss/Mods e saem junto (a tela avisa antes); os .pak do jogo nao sao
+    do UE4SS e ficam. Sobra da instalacao do fork antigo (ao lado do executavel, com a marca
+    dele) sai tambem, com o Mods/ dele - so os nomes que o fork escrevia.
+    """
+    set_enabled(exe_dir, unit, False)
+    removed = []
+    ue4ss_dir = os.path.join(exe_dir, UE4SS_DIR)
+    if os.path.isdir(ue4ss_dir) and not os.path.islink(ue4ss_dir):
+        shutil.rmtree(ue4ss_dir)
+        removed.append(UE4SS_DIR)
+    if os.path.exists(os.path.join(exe_dir, MARK)):
+        for name in (*OLD_FILES, MODS):
+            path = os.path.join(exe_dir, name)
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path)
+            elif os.path.lexists(path):
+                os.remove(path)
+            else:
+                continue
+            removed.append(name)
+    print(f"UE4SS desinstalado de {exe_dir}: {', '.join(removed) or 'nada a apagar'} (sem LD_PRELOAD no {unit})")
+    return {"uninstalled": True, "removed": removed}
+
+
 def enabled_mods(text: str) -> dict[str, bool]:
     result = {}
     for line in text.lstrip("﻿").splitlines():
@@ -440,9 +467,11 @@ def main(argv: list[str]) -> int:
         elif action in ("loader-enable", "loader-disable"):
             set_enabled(exe_dir, unit, action == "loader-enable")
             result = {"enabled": action == "loader-enable"}
+        elif action == "loader-uninstall":
+            result = uninstall_loader(exe_dir, unit)
         else:
             raise ValueError(f"acao desconhecida: {action}")
-        if action != "status":
+        if action not in ("status", "loader-uninstall"):
             _chown(exe_dir)
     except (ValueError, KeyError, OSError, tarfile.TarError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"error": str(exc)}))

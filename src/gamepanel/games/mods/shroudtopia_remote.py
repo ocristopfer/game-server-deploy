@@ -18,7 +18,8 @@ por um desses:
 Desligar e tirar o `winmm=n,b`: o Wine volta ao winmm dele e nenhum codigo do carregador
 roda. Mais seguro que confiar no `"active": false` do json, que ainda carrega a DLL.
 
-Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable. Sem VERSAO
+Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable |
+loader-uninstall. Sem VERSAO
 vale a release mais recente do GitHub; com ela, a release daquela tag. Instalar exige
 `--scan` (o `antivirus.SCAN_SCRIPT` do painel): o zip e verificado antes de qualquer arquivo
 chegar a pasta do jogo. Toda acao imprime o
@@ -216,6 +217,28 @@ def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, ve
     return {"loader": "Shroudtopia", "version": tag}
 
 
+def uninstall_loader(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
+    """Tira o Shroudtopia e o winmm=n,b: o Enshrouded volta a subir sem nenhum codigo dele.
+
+    Os mods (DLLs em mods/) dependem dele e saem junto (a tela avisa antes). Sao nomes fixos do
+    carregador ao lado do executavel, nunca a pasta do jogo inteira.
+    """
+    if os.path.exists(env_path):
+        set_enabled(env_path, False)
+    removed = []
+    for name in (*LOADER_FILES, CONFIG, LOG, MODS, MARK):
+        path = os.path.join(game_dir, name)
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        elif os.path.lexists(path):
+            os.remove(path)
+        else:
+            continue
+        removed.append(name)
+    print(f"Shroudtopia desinstalado de {game_dir}: {', '.join(removed) or 'nada a apagar'}")
+    return {"uninstalled": True, "removed": removed}
+
+
 def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
     mods_dir = os.path.join(game_dir, MODS)
     mods = []
@@ -263,9 +286,11 @@ def main(argv: list[str]) -> int:
         elif action in ("loader-enable", "loader-disable"):
             set_enabled(RUNTIME_ENV, action == "loader-enable")
             result = {"enabled": action == "loader-enable"}
+        elif action == "loader-uninstall":
+            result = uninstall_loader(game_dir)
         else:
             raise ValueError(f"acao desconhecida: {action}")
-        if action != "status":
+        if action not in ("status", "loader-uninstall"):
             _chown(game_dir)
     except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
         print(json.dumps({"error": str(exc)}))

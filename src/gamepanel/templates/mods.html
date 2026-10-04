@@ -137,6 +137,9 @@
           {% else %}
             {{ ui.button(_('mods.loader_enable'), variant='primary', extra='name=action value=enable') }}
           {% endif %}
+          {% if st.loader_installed %}
+            {{ ui.button(_('mods.loader_uninstall'), variant='danger', confirm=_('mods.loader_uninstall_confirm', name=st.loader), extra='name=action value=uninstall') }}
+          {% endif %}
         </div>
       </form>
       <p class="muted small mt-4">{{ _('mods.loader_first_run') }}</p>
@@ -234,6 +237,9 @@
           {% else %}
             {{ ui.button(_('mods.loader_enable'), variant='primary', extra='name=action value=enable') }}
           {% endif %}
+          {% if st.loader_installed %}
+            {{ ui.button(_('mods.loader_uninstall'), variant='danger', confirm=_('mods.loader_uninstall_confirm', name=st.loader), extra='name=action value=uninstall') }}
+          {% endif %}
         </div>
       </form>
       <p class="muted small mt-4">{{ _h('mods.shroudtopia_config_help', url=url_for('files.index', sid=server.id)) }}</p>
@@ -303,6 +309,9 @@
             {{ ui.button(_('mods.loader_disable'), variant='danger', extra='name=action value=disable') }}
           {% else %}
             {{ ui.button(_('mods.loader_enable'), variant='primary', extra='name=action value=enable') }}
+          {% endif %}
+          {% if st.loader_installed %}
+            {{ ui.button(_('mods.loader_uninstall'), variant='danger', confirm=_('mods.loader_uninstall_confirm', name=st.loader), extra='name=action value=uninstall') }}
           {% endif %}
         </div>
       </form>
@@ -455,6 +464,9 @@
             {% if st.enabled %}{{ ui.button(_('mods.loader_disable'), variant='danger', extra='name=action value=disable') }}{% endif %}
           {% else %}
             {{ ui.button(_('mods.loader_enable'), variant='primary', extra='name=action value=enable') }}
+          {% endif %}
+          {% if st.loader_installed %}
+            {{ ui.button(_('mods.loader_uninstall'), variant='danger', confirm=_('mods.loader_uninstall_confirm', name=st.loader), extra='name=action value=uninstall') }}
           {% endif %}
         </div>
       </form>

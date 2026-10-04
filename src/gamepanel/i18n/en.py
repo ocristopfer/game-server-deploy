@@ -599,6 +599,10 @@ MESSAGES: dict[str, str] = {
     "mods.loader_update": "Reinstall / update",
     "mods.loader_enable": "Enable",
     "mods.loader_disable": "Disable (the server starts without mods)",
+    "mods.loader_uninstall": "Uninstall",
+    "mods.loader_uninstall_confirm":
+        "Uninstall {name}? It leaves the server together with the mods that depend on it, and the "
+        "game goes back to the original. The .pak files in the game folder stay. Install again to undo.",
     "mods.overrides_bad":
         "The Wine setting BepInEx needs was undone (a game redeploy rewrites that file). Install "
         "BepInEx again to reapply it.",

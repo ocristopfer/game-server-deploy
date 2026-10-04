@@ -15,7 +15,7 @@ um desses:
 - a primeira subida gera o codigo do jogo inteiro e chegou a 9,4 GB de memoria.
 
 Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable |
-plugin-install NS NOME [VERSAO] | plugin-remove NS NOME. Sem VERSAO vale a mais nova; com ela,
+loader-uninstall | plugin-install NS NOME [VERSAO] | plugin-remove NS NOME. Sem VERSAO vale a mais nova; com ela,
 o pacote e as dependencias vem nas versoes que ELE declara (ver `install_plugin`). Toda acao
 imprime o progresso e termina com UMA linha JSON, que e o que o painel le.
 
@@ -50,6 +50,7 @@ SKIP = {"icon.png", "readme.md", "manifest.json", "changelog.md", "license", "li
         "license.txt"}
 MARK = ".gamepanel.json"
 RUNTIME_ENV = "/etc/game-runtime.env"
+DOORSTOP_CONFIG = "doorstop_config.ini"
 OWNER = "steam"
 MAX_PACKAGES = 25
 TIMEOUT = 120
@@ -213,7 +214,7 @@ def _set_ini(path: str, section: str, key: str, value: str) -> None:
 
 
 def set_enabled(game_dir: str, enabled: bool) -> None:
-    _set_ini(os.path.join(game_dir, "doorstop_config.ini"), "General", "enabled",
+    _set_ini(os.path.join(game_dir, DOORSTOP_CONFIG), "General", "enabled",
              "true" if enabled else "false")
 
 
@@ -264,6 +265,29 @@ def _daemon_reload() -> None:
     subprocess.run(["systemctl", "daemon-reload"], check=False)  # noqa: S607
 
 
+def _extract_pack(z: zipfile.ZipFile, prefix: str, game_dir: str, created: set[str]) -> tuple[int, set[str]]:
+    """Grava na raiz do jogo o que esta sob `prefix`; devolve (arquivos, nomes de raiz CRIADOS).
+
+    So o que o pacote cria e anotado - e so isso o desinstalar apaga: o que ja existia antes da
+    primeira instalacao e do jogo, e o que uma instalacao anterior criou (`created`) segue nosso.
+    """
+    created = set(created)
+    count = 0
+    for entry in z.namelist():
+        rel = _safe_rel(entry[len(prefix):]) if entry.startswith(prefix) and not entry.endswith("/") else ""
+        if not rel:
+            continue
+        top = rel.split("/", 1)[0]
+        if not os.path.exists(os.path.join(game_dir, top)):
+            created.add(top)
+        dest = os.path.join(game_dir, rel)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with z.open(entry) as src, open(dest, "wb") as out:
+            shutil.copyfileobj(src, out)
+        count += 1
+    return count, created
+
+
 def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: str = RUNTIME_ENV,
                    version: str = "", scan=_no_scan, unit: str = "") -> dict:
     meta = package_meta(ns, name, version, fetcher)
@@ -277,32 +301,75 @@ def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: s
     if not core:
         raise ValueError("o pacote nao tem BepInEx/core: nao e um carregador BepInEx")
     prefix = core[: core.index("BepInEx/core/")]
-    count = 0
-    for entry in z.namelist():
-        if not entry.startswith(prefix) or entry.endswith("/"):
-            continue
-        rel = _safe_rel(entry[len(prefix):])
-        if not rel:
-            continue
-        dest = os.path.join(game_dir, rel)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with z.open(entry) as src, open(dest, "wb") as out:
-            shutil.copyfileobj(src, out)
-        count += 1
+    previous = _read_json(os.path.join(game_dir, "BepInEx", MARK))
+    count, created = _extract_pack(z, prefix, game_dir, set(previous.get("files", [])))
     set_enabled(game_dir, True)
     _set_ini(os.path.join(game_dir, "BepInEx", "config", "BepInEx.cfg"), "Logging.Console", "Enabled", "false")
+    # O WINE_DLL_OVERRIDES de antes do BepInEx, para o desinstalar devolver (o fix_overrides tira
+    # o mscoree da lista desligada, e isso nao se desfaz sem saber como estava).
+    overrides_before = previous.get("overrides_before")
     if unit:
         # Linux nativo: nada de Wine; o carregador entra pelo drop-in do systemd.
         set_linux_enabled(game_dir, unit, True)
     else:
         old = _read_overrides(env_path)
         if os.path.exists(env_path):
+            if overrides_before is None:
+                overrides_before = old
             _write_overrides(env_path, fix_overrides(old))
     with open(os.path.join(game_dir, "BepInEx", MARK), "w", encoding="utf-8") as f:
         json.dump({"full_name": meta["full_name"], "version": meta["version_number"],
-                   "pinned": bool(version)}, f)
+                   "pinned": bool(version), "files": sorted(created),
+                   "overrides_before": overrides_before}, f)
     print(f"{count} arquivos do carregador em {game_dir}")
     return {"loader": meta["full_name"], "files": count}
+
+
+# O que um pacote do BepInEx poe na raiz do jogo, para instalacao feita antes de o painel anotar
+# a lista (o .gamepanel.json sem "files"). So nomes do proprio BepInEx/doorstop.
+BEPINEX_ROOT = ("BepInEx", DOORSTOP_CONFIG, "winhttp.dll", ".doorstop_version", "doorstop_libs",
+                "dotnet", "start_server_bepinex.sh")
+
+
+def without_winhttp(value: str) -> str:
+    return ";".join(g for g in (x.strip() for x in value.split(";")) if g and g != "winhttp=n,b")
+
+
+def set_loader(game_dir: str, unit: str, enabled: bool) -> None:
+    set_enabled(game_dir, enabled)
+    if unit:
+        set_linux_enabled(game_dir, unit, enabled)
+
+
+def uninstall_loader(game_dir: str, env_path: str = RUNTIME_ENV, unit: str = "") -> dict:
+    """Tira o BepInEx e o que ele mudou no jogo: o jogo volta a subir sem nenhum codigo dele.
+
+    Os plugins moram dentro de BepInEx/ e saem junto (a tela avisa antes). O WINE_DLL_OVERRIDES
+    volta ao de antes da instalacao; sem ele anotado, so o winhttp=n,b sai (o mscoree que o
+    BepInEx religou fica - inofensivo sem o BepInEx).
+    """
+    mark = _read_json(os.path.join(game_dir, "BepInEx", MARK))
+    names = mark.get("files") or BEPINEX_ROOT
+    if unit:
+        set_linux_enabled(game_dir, unit, False)
+    elif os.path.exists(env_path):
+        before = mark.get("overrides_before")
+        _write_overrides(env_path, before if isinstance(before, str) else without_winhttp(_read_overrides(env_path)))
+    removed = []
+    for name in names:
+        # So um nome da raiz, nunca um caminho: o que vem da marca nao pode sair da pasta do jogo.
+        if not name or name in (".", "..") or "/" in name or "\\" in name:
+            continue
+        path = os.path.join(game_dir, name)
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        elif os.path.lexists(path):
+            os.remove(path)
+        else:
+            continue
+        removed.append(name)
+    print(f"BepInEx desinstalado de {game_dir}: {', '.join(removed) or 'nada a apagar'}")
+    return {"uninstalled": True, "removed": removed}
 
 
 # ------------------------------------------------------------------ plugins
@@ -406,7 +473,7 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV, unit: str = "") -> dict:
         plugins.append({"dir": entry, "full_name": entry, "version": "", "pinned": False,
                         **_read_json(os.path.join(pdir, entry, MARK))})
     loader = _read_json(os.path.join(game_dir, "BepInEx", MARK))
-    ini = _read_text(os.path.join(game_dir, "doorstop_config.ini"))
+    ini = _read_text(os.path.join(game_dir, DOORSTOP_CONFIG))
     if unit:
         enabled = os.path.exists(dropin_path(unit, SYSTEMD_DIR))
     else:
@@ -443,6 +510,27 @@ def _chown(path: str) -> None:
 INSTALL_ACTIONS = ("loader-install", "plugin-install")
 
 
+def run(action: str, game_dir: str, loader: tuple[str, str], rest: list[str], unit: str, scan) -> dict:
+    """Executa uma acao; o `main` so le o argv e transforma erro em JSON."""
+    loader_ns, loader_name = loader
+    if action == "status":
+        return status(game_dir, unit=unit)
+    if action == "loader-install":
+        return install_loader(game_dir, loader_ns, loader_name, version=rest[0] if rest else "", scan=scan,
+                              unit=unit)
+    if action in ("loader-enable", "loader-disable"):
+        set_loader(game_dir, unit, action == "loader-enable")
+        return {"enabled": action == "loader-enable"}
+    if action == "loader-uninstall":
+        return uninstall_loader(game_dir, unit=unit)
+    if action == "plugin-install":
+        return install_plugin(game_dir, rest[0], rest[1], loader_ns=loader_ns,
+                              version=rest[2] if len(rest) > 2 else "", scan=scan)
+    if action == "plugin-remove":
+        return remove_plugin(game_dir, rest[0], rest[1])
+    raise ValueError(f"acao desconhecida: {action}")
+
+
 def main(argv: list[str]) -> int:
     script = unit = ""
     if argv[:1] == ["--scan"]:
@@ -455,24 +543,8 @@ def main(argv: list[str]) -> int:
     try:
         if action in INSTALL_ACTIONS and not script:
             raise ValueError("instalar sem a verificacao do antivirus nao e caminho do painel")
-        if action == "status":
-            result = status(game_dir, unit=unit)
-        elif action == "loader-install":
-            result = install_loader(game_dir, loader_ns, loader_name, version=rest[0] if rest else "", scan=scan,
-                                    unit=unit)
-        elif action in ("loader-enable", "loader-disable"):
-            set_enabled(game_dir, action == "loader-enable")
-            if unit:
-                set_linux_enabled(game_dir, unit, action == "loader-enable")
-            result = {"enabled": action == "loader-enable"}
-        elif action == "plugin-install":
-            result = install_plugin(game_dir, rest[0], rest[1], loader_ns=loader_ns,
-                                    version=rest[2] if len(rest) > 2 else "", scan=scan)
-        elif action == "plugin-remove":
-            result = remove_plugin(game_dir, rest[0], rest[1])
-        else:
-            raise ValueError(f"acao desconhecida: {action}")
-        if action != "status":
+        result = run(action, game_dir, (loader_ns, loader_name), rest, unit, scan)
+        if action not in ("status", "loader-uninstall"):
             _chown(os.path.join(game_dir, "BepInEx"))
     except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
         print(json.dumps({"error": str(exc)}))

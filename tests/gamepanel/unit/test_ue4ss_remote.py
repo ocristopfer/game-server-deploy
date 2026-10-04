@@ -172,3 +172,26 @@ def test_padrao_e_a_experimental_que_nao_quebra_a_steam(game):
     state = ur.status(str(exe_dir), env_path=str(env))
     assert state["loader_installed"] is True
     assert [m["name"] for m in state["mods"]] == ["BPModLoaderMod"]
+
+
+# ------------------------------------------------------------------ desinstalar
+
+def test_desinstalar_tira_o_ue4ss_e_a_dwmapi_e_deixa_o_jogo(game):
+    exe_dir, env = game
+    (exe_dir / "Icarus-Win64-Shipping.exe").write_bytes(b"jogo")
+    ur.install_loader(str(exe_dir), fetcher=fetched([]), env_path=str(env))
+    result = ur.uninstall_loader(str(exe_dir), env_path=str(env))
+    assert set(result["removed"]) >= {"dwmapi.dll", "UE4SS.dll", "Mods", "UE4SS-settings.ini"}
+    assert sorted(p.name for p in exe_dir.iterdir()) == ["Icarus-Win64-Shipping.exe"]
+    assert "dwmapi=n,b" not in env.read_text(encoding="utf-8")
+    assert "WINE_DLL_OVERRIDES='mscoree,mshtml='" in env.read_text(encoding="utf-8")
+
+
+def test_desinstalar_instalacao_antiga_da_experimental_sem_lista(game):
+    exe_dir, env = game
+    (exe_dir / "Icarus-Win64-Shipping.exe").write_bytes(b"jogo")
+    (exe_dir / "dwmapi.dll").write_bytes(b"MZ-proxy")
+    (exe_dir / "ue4ss" / "Mods").mkdir(parents=True)
+    (exe_dir / ur.MARK).write_text(json.dumps({"version": "experimental-latest"}), encoding="utf-8")
+    ur.uninstall_loader(str(exe_dir), env_path=str(env))
+    assert sorted(p.name for p in exe_dir.iterdir()) == ["Icarus-Win64-Shipping.exe"]

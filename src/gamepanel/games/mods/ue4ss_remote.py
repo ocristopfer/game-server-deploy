@@ -32,7 +32,8 @@ Decisoes, cada uma com o motivo:
 - **Dois layouts**: a experimental poe tudo menos o proxy em `ue4ss/`; a v3.0.x estavel deixa
   tudo solto ao lado do `.exe`. O instalador segue o que o zip trouxer, e o status acha os dois.
 
-Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable,
+Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable |
+loader-uninstall,
 seguidas da pasta do executavel (Binaries/Win64). Instalar exige `--scan` (o
 `antivirus.SCAN_SCRIPT` do painel): o zip e verificado antes de qualquer arquivo chegar ao
 jogo. Toda acao imprime o progresso e termina com UMA linha JSON, que e o que o painel le.
@@ -262,6 +263,54 @@ def _safe_rel(path: str) -> str:
     return rel
 
 
+def _extract_zip(z: zipfile.ZipFile, names: list[str], prefix: str, exe_dir: str,
+                 created: set[str]) -> tuple[int, set[str]]:
+    """Grava ao lado do .exe o que esta sob `prefix`; devolve (arquivos, nomes de raiz CRIADOS).
+
+    So o que o zip cria e anotado - e so isso o desinstalar apaga: o que ja existia antes da
+    primeira instalacao e do jogo, e o que uma instalacao anterior criou (`created`) segue nosso.
+    """
+    keep = {SETTINGS.lower(), MODS_TXT.lower()}
+    created = set(created)
+    count = 0
+    for entry in names:
+        rel = _safe_rel(entry[len(prefix):]) if entry.startswith(prefix) else ""
+        if not rel or posixpath.basename(rel).lower() in SKIP:
+            continue
+        top = rel.split("/", 1)[0]
+        if not os.path.exists(os.path.join(exe_dir, top)):
+            created.add(top)
+        dest = os.path.join(exe_dir, rel)
+        # Configuracao que ja existe e do dono do servidor: so nasce se faltar.
+        if posixpath.basename(rel).lower() in keep and os.path.exists(dest):
+            continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with z.open(entry) as src, open(dest, "wb") as out:
+            shutil.copyfileobj(src, out)
+        count += 1
+    return count, created
+
+
+def _tidy_config(exe_dir: str, first_install: bool) -> None:
+    """BOM fora do mods.txt sempre; console, janela e mods de fabrica so na primeira instalacao
+    (numa reinstalacao a config e do dono)."""
+    base = loader_dir(exe_dir)
+    mods_txt = os.path.join(base, MODS, MODS_TXT)
+    if os.path.exists(mods_txt):
+        text = _read_text(mods_txt)
+        if first_install:
+            text = server_mods_txt(text)
+        with open(mods_txt, "w", encoding="utf-8") as f:
+            f.write(text.lstrip("﻿"))
+    if first_install:
+        settings = os.path.join(base, SETTINGS)
+        text = _read_text(settings)
+        for section, key, value in HEADLESS:
+            text = set_ini(text, section, key, value)
+        with open(settings, "w", encoding="utf-8") as f:
+            f.write(text)
+
+
 def install_loader(exe_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, version: str = "",
                    scan=_no_scan) -> dict:
     if not os.path.isdir(exe_dir):
@@ -278,46 +327,51 @@ def install_loader(exe_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, ver
         raise ValueError(f"o zip nao tem {PROXY} e {CORE}: nao e o UE4SS")
     # Tudo e relativo a pasta do dwmapi.dll dentro do zip: e ela que vai ao lado do .exe.
     prefix = proxy[: -len(posixpath.basename(proxy))]
-    keep = {SETTINGS.lower(), MODS_TXT.lower()}
-    count = 0
-    for entry in names:
-        if not entry.startswith(prefix):
-            continue
-        rel = _safe_rel(entry[len(prefix):])
-        if not rel or posixpath.basename(rel).lower() in SKIP:
-            continue
-        dest = os.path.join(exe_dir, rel)
-        # Configuracao que ja existe e do dono do servidor: so nasce se faltar.
-        if posixpath.basename(rel).lower() in keep and os.path.exists(dest):
-            continue
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with z.open(entry) as src, open(dest, "wb") as out:
-            shutil.copyfileobj(src, out)
-        count += 1
-    base = loader_dir(exe_dir)
-    settings = os.path.join(base, SETTINGS)
-    mods_txt = os.path.join(base, MODS, MODS_TXT)
-    if os.path.exists(mods_txt):
-        # BOM fora sempre; os mods de fabrica so na primeira instalacao (abaixo).
-        text = _read_text(mods_txt)
-        if not _read_json(os.path.join(exe_dir, MARK)):
-            text = server_mods_txt(text)
-        with open(mods_txt, "w", encoding="utf-8") as f:
-            f.write(text.lstrip("\ufeff"))
-    if not _read_json(os.path.join(exe_dir, MARK)):
-        # Primeira instalacao: sem console nem janela. Numa reinstalacao a config e do dono.
-        text = _read_text(settings)
-        for section, key, value in HEADLESS:
-            text = set_ini(text, section, key, value)
-        with open(settings, "w", encoding="utf-8") as f:
-            f.write(text)
+    previous = _read_json(os.path.join(exe_dir, MARK))
+    count, created = _extract_zip(z, names, prefix, exe_dir, set(previous.get("files", [])))
+    _tidy_config(exe_dir, first_install=not previous)
     if os.path.exists(env_path):
         set_enabled(env_path, True)
     tag = release.get("tag_name", "")
     with open(os.path.join(exe_dir, MARK), "w", encoding="utf-8") as f:
-        json.dump({"version": tag, "asset": name, "pinned": bool(version)}, f)
+        json.dump({"version": tag, "asset": name, "pinned": bool(version), "files": sorted(created)}, f)
     print(f"UE4SS {tag} em {exe_dir} ({count} arquivos; console e mods de trapaca desligados)")
     return {"loader": "UE4SS", "version": tag, "files": count}
+
+
+def _fallback_names(exe_dir: str) -> tuple[str, ...]:
+    """O que o UE4SS poe ao lado do .exe, para instalacao feita antes de o painel anotar a lista:
+    a experimental poe tudo em ue4ss/, a estavel v3.0.x deixa solto (Mods/ junto do UE4SS.dll)."""
+    if os.path.isdir(os.path.join(exe_dir, SUBDIR)):
+        return (PROXY, SUBDIR)
+    loose = (PROXY, CORE, SETTINGS, LOG, "UE4SS_Signatures", "UE4SS.pdb")
+    return (*loose, MODS) if os.path.exists(os.path.join(exe_dir, CORE)) else loose
+
+
+def uninstall_loader(exe_dir: str, env_path: str = RUNTIME_ENV) -> dict:
+    """Tira o UE4SS e o ajuste do Wine: o jogo volta a subir sem nenhum codigo dele.
+
+    Os mods do UE4SS moram na pasta dele e saem junto (a tela avisa antes); os .pak do jogo
+    nao sao dele e ficam.
+    """
+    if os.path.exists(env_path):
+        set_enabled(env_path, False)
+    names = _read_json(os.path.join(exe_dir, MARK)).get("files") or _fallback_names(exe_dir)
+    removed = []
+    for name in (*names, MARK):
+        # So um nome da pasta, nunca um caminho: o que vem da marca nao pode sair dela.
+        if not name or name in (".", "..") or "/" in name or "\\" in name:
+            continue
+        path = os.path.join(exe_dir, name)
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        elif os.path.lexists(path):
+            os.remove(path)
+        else:
+            continue
+        removed.append(name)
+    print(f"UE4SS desinstalado de {exe_dir}: {', '.join(removed) or 'nada a apagar'}")
+    return {"uninstalled": True, "removed": removed}
 
 
 def status(exe_dir: str, env_path: str = RUNTIME_ENV) -> dict:
@@ -380,9 +434,11 @@ def main(argv: list[str]) -> int:
         elif action in ("loader-enable", "loader-disable"):
             set_enabled(RUNTIME_ENV, action == "loader-enable")
             result = {"enabled": action == "loader-enable"}
+        elif action == "loader-uninstall":
+            result = uninstall_loader(exe_dir)
         else:
             raise ValueError(f"acao desconhecida: {action}")
-        if action != "status":
+        if action not in ("status", "loader-uninstall"):
             _chown(exe_dir)
     except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
         print(json.dumps({"error": str(exc)}))

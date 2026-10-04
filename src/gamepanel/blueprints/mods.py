@@ -46,7 +46,7 @@ UE4SS_LINUX_SOURCE = Path(ue4ss_linux_remote.__file__).read_text(encoding="utf-8
 UE_SYM_SOURCE = Path(ue_sym_layout.__file__).read_text(encoding="utf-8")
 # Baixar o BepInEx (33 MB) e as dependencias leva minutos: vira job, com log e prazo proprio.
 INSTALL_TIMEOUT = 1800
-LOADER_ACTIONS = ("install", "enable", "disable")
+LOADER_ACTIONS = ("install", "enable", "disable", "uninstall")
 # O endpoint da propria tela, para onde toda acao volta.
 INDEX = "mods.index"
 

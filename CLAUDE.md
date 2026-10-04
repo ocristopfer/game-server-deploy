@@ -321,6 +321,15 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   divide com o `SCAN_SCRIPT` a instalacao do ClamAV e as opcoes do `clamscan` (`_ENSURE`), e
   verifica `profile.scan_paths` - as pastas de mod e o carregador, nunca `/opt/game` inteiro.
   Sem nada instalado ele nem instala o ClamAV.
+- **Desinstalar o carregador (`loader-uninstall`) devolve o jogo ao original**, e cada instalador
+  so apaga o que ELE pos: BepInEx e UE4SS de Windows anotam na marca os nomes de raiz que CRIARAM
+  (o que ja existia era do jogo e fica; instalacao antiga sem a lista cai nos nomes conhecidos do
+  carregador); Shroudtopia e UE4SS Linux tem nomes fixos. O ajuste do Wine volta ao de antes
+  (o BepInEx guarda o WINE_DLL_OVERRIDES original, porque religar o mscoree nao se desfaz sem ele)
+  e o drop-in do systemd sai. O Oxide devolve as DLLs do jogo ARQUIVO A ARQUIVO, so onde a pasta
+  ainda tem a do Oxide: depois de um update do Rust o backup e da versao velha, e copia-lo de volta
+  estragaria o servidor. Os mods que vivem dentro do carregador (plugins, Lua) saem junto, e a tela
+  confirma antes; os `.pak` da pasta do jogo ficam. O SML nao tem o botao: e mod, e ja tem remover.
 - **`KIND_GUIDE` e perfil sem botao, e isso e decisao**: carregador que ninguem provou num
   servidor de verdade fica so com instrucao - o V Rising mostrou tres armadilhas que so
   apareceram la. Botao que "instala" sem prova e pior que instrucao clara. Todo perfil tem

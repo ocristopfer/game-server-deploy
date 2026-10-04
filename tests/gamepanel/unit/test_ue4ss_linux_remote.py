@@ -267,3 +267,26 @@ def test_sem_a_marca_do_fork_antigo_nada_ao_lado_do_executavel_e_mexido(game):
     (exe_dir / "libUE4SS.so").write_text("de outra pessoa", encoding="utf-8")
     ul.install_loader(str(exe_dir), "palworld.service", RELEASE, fetcher=gh())
     assert (exe_dir / "libUE4SS.so").read_text(encoding="utf-8") == "de outra pessoa"
+
+
+def test_desinstalar_apaga_a_pasta_ue4ss_e_o_drop_in(game):
+    exe_dir, root, _ = game
+    ul.install_loader(str(exe_dir), "palworld.service", RELEASE, fetcher=gh())
+    (exe_dir / "ue4ss" / "Mods" / "MeuMod").mkdir()
+    result = ul.uninstall_loader(str(exe_dir), "palworld.service")
+    assert result["removed"] == ["ue4ss"]
+    assert not (exe_dir / "ue4ss").exists()
+    assert not (root / "systemd" / "palworld.service.d" / "gamepanel-ue4ss.conf").exists()
+    assert (exe_dir / "PalServer-Linux-Shipping").exists()
+    state = ul.status(str(exe_dir), "palworld.service")
+    assert state["loader_installed"] is False
+    assert state["enabled"] is False
+
+
+def test_desinstalar_tambem_limpa_a_sobra_do_fork_antigo(game):
+    exe_dir, _, _ = game
+    (exe_dir / "libUE4SS.so").write_text("velho", encoding="utf-8")
+    (exe_dir / "Mods" / "Velho").mkdir(parents=True)
+    (exe_dir / ".gamepanel-ue4ss-linux.json").write_text("{}", encoding="utf-8")
+    ul.uninstall_loader(str(exe_dir), "palworld.service")
+    assert sorted(p.name for p in exe_dir.iterdir()) == ["PalServer-Linux-Shipping"]

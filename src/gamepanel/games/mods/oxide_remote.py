@@ -18,7 +18,8 @@ proprio jogo. Daqui saem as decisoes:
 
 NAO TESTADO num servidor de verdade ainda.
 
-Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable,
+Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable |
+loader-uninstall,
 seguidas da pasta do jogo (onde mora o RustDedicated). Toda acao termina com UMA linha JSON.
 """
 from __future__ import annotations
@@ -202,6 +203,38 @@ def set_enabled(game_dir: str, enabled: bool) -> dict:
     return {"enabled": enabled, "files": count}
 
 
+def uninstall_loader(game_dir: str) -> dict:
+    """Tira o Oxide: devolve as DLLs do jogo e apaga oxide/ (plugins, dados, logs) e o estado.
+
+    Arquivo a arquivo, e nao copiando o backup inteiro de volta: depois de uma atualizacao do
+    Rust a pasta ja tem as DLLs NOVAS do jogo e o backup e da versao velha - devolve-lo
+    estragaria o servidor. So o que ainda e o arquivo do Oxide (mesmo sha256) volta ao original
+    (ou sai, se o jogo nao o tinha); o que a Steam ja trocou fica.
+    """
+    state = os.path.join(game_dir, STATE_DIR)
+    files = _read_json(os.path.join(state, MARK)).get("files", {})
+    restored = removed = kept = 0
+    for rel, sha in files.items():
+        if not _safe_rel(rel):
+            continue
+        path = os.path.join(game_dir, rel)
+        if _sha(path) != sha:
+            kept += 1
+            continue
+        original = os.path.join(state, ORIGINAL, rel)
+        if os.path.exists(original):
+            shutil.copy2(original, path)
+            restored += 1
+        else:
+            os.remove(path)
+            removed += 1
+    for folder in (os.path.join(game_dir, "oxide"), state):
+        shutil.rmtree(folder, ignore_errors=True)
+    print(f"Oxide desinstalado de {game_dir}: {restored} arquivo(s) do jogo devolvido(s), {removed} apagado(s), "
+          f"{kept} ja trocado(s) pela Steam")
+    return {"uninstalled": True, "restored": restored, "removed": removed, "kept": kept}
+
+
 def status(game_dir: str) -> dict:
     mark = _read_json(os.path.join(game_dir, STATE_DIR, MARK))
     files = mark.get("files", {})
@@ -256,9 +289,11 @@ def main(argv: list[str]) -> int:
             result = install_loader(game_dir, rest[0] if rest else "", scan=scanner(script))
         elif action in ("loader-enable", "loader-disable"):
             result = set_enabled(game_dir, action == "loader-enable")
+        elif action == "loader-uninstall":
+            result = uninstall_loader(game_dir)
         else:
             raise ValueError(f"acao desconhecida: {action}")
-        if action != "status":
+        if action not in ("status", "loader-uninstall"):
             _chown(game_dir)
     except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
         print(json.dumps({"error": str(exc)}))

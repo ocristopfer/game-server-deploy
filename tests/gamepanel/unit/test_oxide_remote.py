@@ -101,3 +101,23 @@ def test_lista_plugins_cs(rust):
 def test_sem_antivirus_nao_instala(rust, capsys):
     assert ox.main(["loader-install", str(rust)]) == 1
     assert "antivirus" in capsys.readouterr().out
+
+
+def test_desinstalar_devolve_o_jogo_e_apaga_oxide_e_estado(rust):
+    ox.install_loader(str(rust), fetcher=fetcher_for())
+    (rust / "oxide" / "plugins" / "MeuPlugin.cs").write_text("// plugin", encoding="utf-8")
+    result = ox.uninstall_loader(str(rust))
+    assert (rust / MANAGED / "Assembly-CSharp.dll").read_bytes() == b"JOGO ORIGINAL"
+    assert not (rust / MANAGED / "Oxide.Rust.dll").exists()
+    assert not (rust / "oxide").exists()
+    assert not (rust / ox.STATE_DIR).exists()
+    assert (result["restored"], result["removed"], result["kept"]) == (1, 1, 0)
+
+
+def test_desinstalar_depois_de_update_do_rust_nao_volta_a_dll_velha(rust):
+    """O backup e da versao velha do jogo: devolve-lo por cima da nova estragaria o servidor."""
+    ox.install_loader(str(rust), fetcher=fetcher_for())
+    (rust / MANAGED / "Assembly-CSharp.dll").write_bytes(b"JOGO NOVO")
+    result = ox.uninstall_loader(str(rust))
+    assert (rust / MANAGED / "Assembly-CSharp.dll").read_bytes() == b"JOGO NOVO"
+    assert result["kept"] == 1

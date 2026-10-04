@@ -160,3 +160,13 @@ def test_versao_invalida_nao_vira_url(game, bad):
     game_dir, env = game
     with pytest.raises(ValueError, match="versao invalida"):
         sr.install_loader(str(game_dir), fetcher=tagged_fetcher, env_path=str(env), version=bad)
+
+
+def test_desinstalar_tira_o_carregador_os_mods_dele_e_o_winmm(game):
+    game_dir, env = game
+    (game_dir / "enshrouded_server.exe").write_bytes(b"jogo")
+    sr.install_loader(str(game_dir), fetcher=fetcher, env_path=str(env))
+    (game_dir / "mods" / "MeuMod.dll").write_bytes(b"mod")
+    sr.uninstall_loader(str(game_dir), env_path=str(env))
+    assert sorted(p.name for p in game_dir.iterdir()) == ["enshrouded_server.exe"]
+    assert "winmm=n,b" not in env.read_text(encoding="utf-8")

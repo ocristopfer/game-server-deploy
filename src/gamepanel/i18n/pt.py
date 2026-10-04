@@ -601,6 +601,10 @@ MESSAGES: dict[str, str] = {
     "mods.loader_update": "Reinstalar / atualizar",
     "mods.loader_enable": "Ligar",
     "mods.loader_disable": "Desligar (o servidor sobe sem mods)",
+    "mods.loader_uninstall": "Desinstalar",
+    "mods.loader_uninstall_confirm":
+        "Desinstalar o {name}? Ele sai do servidor junto com os mods que dependem dele, e o jogo "
+        "volta ao original. Os .pak da pasta do jogo ficam. Para voltar, instale de novo.",
     "mods.overrides_bad":
         "O ajuste do Wine que o BepInEx precisa foi desfeito (um redeploy do jogo reescreve esse "
         "arquivo). Instale o BepInEx de novo para reaplicar.",

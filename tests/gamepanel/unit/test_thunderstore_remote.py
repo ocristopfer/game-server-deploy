@@ -342,3 +342,68 @@ def test_linux_nativo_liga_o_bepinex_por_drop_in_e_nao_mexe_no_wine(tmp_path, mo
 def test_servico_do_drop_in_e_conferido(unit):
     with pytest.raises(ValueError):
         ts.dropin_path(unit)
+
+
+# ------------------------------------------------------------------ desinstalar
+
+def test_desinstalar_tira_so_o_que_o_pacote_criou_e_devolve_o_wine(game):
+    game_dir, env = game
+    # Do jogo: existia antes, nao pode sair (nem o dotnet do proprio jogo, se ele tiver um).
+    Path(game_dir, "VRisingServer.exe").write_bytes(b"jogo")
+    Path(game_dir, "dotnet").mkdir()
+    Path(game_dir, "dotnet", "do-jogo.dll").write_bytes(b"jogo")
+    ts.install_loader(game_dir, "BepInEx", "BepInExPack_V_Rising", fake_fetch, env_path=env)
+    ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch)
+    result = ts.uninstall_loader(game_dir, env_path=env)
+    assert sorted(result["removed"]) == ["BepInEx", "doorstop_config.ini", "winhttp.dll"]
+    assert not Path(game_dir, "BepInEx").exists()  # os plugins moram ali e saem junto
+    assert Path(game_dir, "VRisingServer.exe").read_bytes() == b"jogo"
+    assert Path(game_dir, "dotnet", "do-jogo.dll").exists()
+    # O WINE_DLL_OVERRIDES volta ao de antes (com o mscoree desligado, como o .env do jogo pos).
+    assert "WINE_DLL_OVERRIDES='mscoree,mshtml='" in Path(env).read_text()
+    assert "RUNTIME='proton'" in Path(env).read_text()
+
+
+def test_desinstalar_instalacao_antiga_sem_lista_usa_os_nomes_do_bepinex(game):
+    game_dir, env = game
+    ts.install_loader(game_dir, "BepInEx", "BepInExPack_V_Rising", fake_fetch, env_path=env)
+    mark = Path(game_dir, "BepInEx", ts.MARK)
+    mark.write_text(json.dumps({"full_name": LOADER, "version": "1.733.2"}), encoding="utf-8")
+    Path(game_dir, "VRisingServer.exe").write_bytes(b"jogo")
+    ts.uninstall_loader(game_dir, env_path=env)
+    assert not Path(game_dir, "BepInEx").exists()
+    assert not Path(game_dir, "winhttp.dll").exists()
+    assert Path(game_dir, "VRisingServer.exe").exists()
+    # Sem o valor de antes anotado, so o winhttp sai.
+    assert "WINE_DLL_OVERRIDES='mshtml='" in Path(env).read_text()
+
+
+def test_marca_com_caminho_nao_apaga_fora_da_raiz(game, tmp_path):
+    game_dir, env = game
+    outside = tmp_path / "fora.txt"
+    outside.write_text("fica", encoding="utf-8")
+    Path(game_dir, "BepInEx").mkdir()
+    Path(game_dir, "BepInEx", ts.MARK).write_text(json.dumps({"files": ["../fora.txt", "/etc", ".."]}),
+                                                   encoding="utf-8")
+    ts.uninstall_loader(game_dir, env_path=env)
+    assert outside.read_text(encoding="utf-8") == "fica"
+
+
+def test_desinstalar_no_linux_apaga_o_drop_in(tmp_path, monkeypatch):
+    monkeypatch.setattr(ts, "SYSTEMD_DIR", str(tmp_path / "systemd"))
+    monkeypatch.setattr(ts, "_daemon_reload", lambda: None)
+    game_dir = tmp_path / "valheim"
+    game_dir.mkdir()
+    ts.install_loader(str(game_dir), "BepInEx", "BepInExPack_V_Rising", fake_fetch,
+                      env_path=str(tmp_path / "nao-existe.env"), unit="valheim.service")
+    assert ts.status(str(game_dir), unit="valheim.service")["enabled"] is True
+    ts.uninstall_loader(str(game_dir), env_path=str(tmp_path / "nao-existe.env"), unit="valheim.service")
+    assert ts.status(str(game_dir), unit="valheim.service")["enabled"] is False
+    assert not (game_dir / "BepInEx").exists()
+
+
+def test_main_desinstala(game, capsys):
+    game_dir, _env = game
+    ts.install_loader(game_dir, "BepInEx", "BepInExPack_V_Rising", fake_fetch, env_path=_env)
+    assert ts.main(["loader-uninstall", game_dir, "BepInEx", "BepInExPack_V_Rising"]) == 0
+    assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["uninstalled"] is True
