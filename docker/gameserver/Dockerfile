@@ -55,7 +55,10 @@ RUN chmod 0755 /usr/local/bin/systemctl /usr/local/bin/journalctl \
 COPY ${GAME_ENV} /etc/game/game.env
 
 # /opt/game (game) and /home/steam (Steam token, Wine prefix) are the volumes:
-# recreating the container must not mean downloading everything again.
-VOLUME ["/opt/game", "/home/steam"]
+# recreating the container must not mean downloading everything again. The panel's backups
+# and the Mods screen's environment overlay (lib/ct-panel-access.sh) are volumes too: without
+# them a redeploy deleted every backup, and a loader installed in /opt/game stayed on disk but
+# silently stopped loading (its LD_PRELOAD/Wine setting lived in the container's /etc).
+VOLUME ["/opt/game", "/home/steam", "/var/backups/gamepanel", "/etc/gamepanel/game-env"]
 EXPOSE 22
 ENTRYPOINT ["/usr/local/bin/game-entrypoint"]

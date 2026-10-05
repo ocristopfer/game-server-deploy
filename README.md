@@ -441,11 +441,20 @@ starts the server. Since there is no systemd inside a container, its role is pla
 panel uses, so start/stop/restart, live logs, meters and player counting work the same on both
 targets.
 
+The container follows the same access rule as an LXC (see "Security"): the panel logs in as
+`gamepanel`, the game runs as `steam`, root SSH is refused, and the deploy registers the server
+with `--ssh-user gamepanel`. The supervisor also hands the game the variables of the unit's
+drop-ins (`Environment=`/`EnvironmentFile=`, read, never executed), so the Mods screen's loader
+settings reach the game exactly as systemd would deliver them on a CT, and it counts automatic
+restarts (`NRestarts`), so the crash-loop alert works here too.
+
 **Data and updates**
 
-- Two volumes per game: `game-<game>-data` (the game and saves, in `/opt/game`) and
-  `game-<game>-steam` (Steam token and Wine prefix). **Recreating the container does not
-  download the game again or lose the world.**
+- Four volumes per game: `game-<game>-data` (the game and saves, in `/opt/game`),
+  `game-<game>-steam` (Steam token and Wine prefix), `game-<game>-backups` (the panel's
+  backups) and `game-<game>-modenv` (the Mods screen's environment overlay). **Recreating the
+  container does not download the game again, lose the world or the backups, or switch an
+  installed mod loader off.**
 - `restart: unless-stopped` and `stop_grace_period: 120s`: on `docker stop` the server gets
   TERM and has time to save before dying.
 - Daily automatic update inside the container (`UPDATE_TIME`, default 06:00), with the same
@@ -1807,7 +1816,7 @@ MSYS_NO_PATHCONV=1 docker compose exec -T -w /workspace panel python3 -m pytest 
 
 `test_javascript.py` needs `node` on the PATH and is skipped without it. Shell scripts are
 proven by the sandboxes in `docker/ct-sandbox/` (`compare.sh`, `broker.sh`, `release.sh`,
-`firewall.sh`).
+`firewall.sh`, `panel-access.sh`, and `gameserver.sh` for the real Docker game image).
 
 ## Roadmap
 

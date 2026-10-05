@@ -1378,6 +1378,12 @@ the reasoning is [docs/security-hardening.md](docs/security-hardening.md). In sh
   root lock**, used by `ct-phases.sh` (host and broker), both Docker images and the future
   migration. `lock` only runs after `verify` passes, so a broken sudo never locks anyone out.
   Prove it with `bash docker/ct-sandbox/panel-access.sh` (real sudo and sshd of Debian 13).
+- **The real Docker image (`docker/gameserver`) is helper mode only**, and its `systemctl`,
+  `journalctl` and `game-supervisor` play systemd's part: several `-p` in one `show`,
+  `NRestarts`/`SubState`/`Result`, the unit's drop-ins (`Environment=`/`EnvironmentFile=`, PARSED
+  by the supervisor, never sourced: the overlay is steam's and the supervisor is root). Touched any
+  of them? Run `bash docker/ct-sandbox/gameserver.sh` (real build, real SteamCMD install of app
+  1007, ssh as gamepanel with the panel's own command strings; `--game <key>` for a real game).
 - **In the dev compose `game-palworld` is helper mode and `game-dragonwilds` is root**, so both
   paths run every day. Rebuilding the game images changes their SSH host keys: the panel refuses
   them (as it should) until you remove the old keys from `/var/lib/gamepanel/known_hosts` in the

@@ -5,7 +5,9 @@ Status: **phases 1-8 implemented** (see the table at the end and
 four existing game CTs were migrated with `deploy/game/migrate-ct.ps1 -Ctid <CT>` and root SSH
 is refused on them. Phase 6 (mod loaders without root) is proven in the sandbox (real Debian 13
 sudo) and in the dev compose (UE4SS Linux install/uninstall on the helper-mode fake Palworld),
-and still needs one real CT per loader. Phases 9 and 10 still need a real CT to be validated. Root stays only where it is unavoidable: provisioning a container
+and still needs one real CT per loader. Phase 10 (the real Docker game image) is done and proven
+by `docker/ct-sandbox/gameserver.sh` (local build, real SteamCMD install, real sudo and sshd).
+Phase 9 still needs a real CT to be validated. Root stays only where it is unavoidable: provisioning a container
 (`pct exec` on the host, or the broker's one-time install).
 
 ## Goal
@@ -164,6 +166,39 @@ The panel key gets options: `from="<panel IP>",no-agent-forwarding,no-port-forwa
 (which calls the fake `systemctl` in dev), stop writing `/root/.ssh` and set
 `PermitRootLogin no`.
 
+Phase 10, the real image (`docker/gameserver`, used by `deploy/game/deploy-docker.ps1`):
+
+- The entrypoint runs `lib/ct-panel-access.sh install` + `lock` on EVERY container start (the
+  pieces are idempotent), so a recreated or restarted container comes back in helper mode; without
+  `PANEL_PUBKEY` nobody gets in (root has no key, `PermitRootLogin no`). `gp-service` calls the
+  image's `systemctl` shim, which runs `game-supervisor`, which runs the game as `steam`
+  (`setpriv`). The deploy registers the server with `--ssh-user gamepanel`.
+- The `systemctl` shim answers `show` with SEVERAL `-p` (the panel's status asks four properties
+  in one call; the old shim kept only the last one and every Docker server read as stopped),
+  reports `SubState`, `NRestarts` and `Result` (the crash-loop alert works in Docker), and
+  `daemon-reload` is a no-op that needs no unit (the mod installers call it as `steam`).
+- The supervisor hands the game the drop-ins of `/etc/systemd/system/<unit>.d/`
+  (`Environment=` and `EnvironmentFile=`, re-read at every start), which is how the phase 6
+  overlay reaches a Docker game. The overlay is PARSED (one `KEY=value` per line, one pair of
+  quotes removed, nothing expanded), never sourced: it is steam's file read by root.
+- The supervisor traps TERM and waits for the game: before, the group TERM of a stop killed the
+  supervisor first, `systemctl stop` returned while the game was still saving, and `docker stop`
+  could take the container down mid-save.
+- `/var/backups/gamepanel` and `/etc/gamepanel/game-env` are volumes (`game-<key>-backups`,
+  `game-<key>-modenv` in the deploy's stack): a recreated container used to lose every backup and
+  silently switch an installed loader off.
+- Not covered in Docker: player presence (`nft`, there is no CT firewall in a container: the
+  sudo line exists, the command fails, and the other counting sources apply), the ClamAV install
+  helper (`gp-clamav-ensure` is in sudoers but was not run in the sandbox: it downloads ClamAV),
+  and the Wine loaders' `runtime.env` (the image has no `win-run`; Windows games use their own
+  `POST_INSTALL_CMD` wrapper, so the Mods screen's Wine setting does not reach them in Docker).
+
+**Existing Docker deploys** need no manual step: re-running `deploy-docker.ps1 -Game <key>`
+rebuilds the image, recreates the container (the new entrypoint installs `gamepanel` and locks
+root) and re-registers the server, which updates `ssh_user` to `gamepanel` on the existing row.
+Backups taken before that lived in the old container's filesystem and do not move to the new
+volume.
+
 ### Panel code
 
 One function, `privileged(server)`: `ssh_user == "root"` is legacy mode, anything else is helper
@@ -222,7 +257,7 @@ If step 4 fails nothing has been locked and the server stays in legacy mode.
 
 | # | Step | Risk | Validated by |
 |---|---|---|---|
-| | **Done: 1-8** (tests, `docker/ct-sandbox/panel-access.sh`, dev compose; 8 on a real Proxmox; 6 still needs one real CT per loader). **Open: 9, 10.** | | |
+| | **Done: 1-8, 10** (tests, `docker/ct-sandbox/panel-access.sh`, `docker/ct-sandbox/gameserver.sh`, dev compose; 8 on a real Proxmox; 6 still needs one real CT per loader). **Open: 9.** | | |
 | 1 | Safe restore (member check, `--no-same-owner`) and narrower `FILE_ROOTS` default, still in root mode | low | pytest, compose |
 | 2 | `remote_cmd` builder + `privileged(server)`; behavior unchanged for `root` | low | full pytest (same strings for root) |
 | 3 | `gp-service`, `gp-clamav-ensure`, sudoers and sshd templates in `lib/`, shared by `ct-phases.sh`, Docker and migration | low | `docker/ct-sandbox` (`visudo -cf`) |
@@ -232,7 +267,7 @@ If step 4 fails nothing has been locked and the server stays in legacy mode.
 | 7 | New containers created with `gamepanel`; broker locks root at cleanup | medium | `compare.sh` (expected diff), `broker.sh`, tests, then **one real broker install** |
 | 8 | `ct-migrate-user.sh` + "Migrate access" button + `migrate-ct.sh` | **high** (lockout) | sandbox idempotence; **real throwaway CT** first (`pct enter` is the way back) |
 | 9 | Game unit sandboxing drop-in, opt-in per game | medium | **real CT only**, per game |
-| 10 | Docker `gameserver` image | low | local build + one real SteamCMD install |
+| 10 | Docker `gameserver` image | low | local build + one real SteamCMD install: `docker/ct-sandbox/gameserver.sh` (app 1007 by default, `--game <key>` for a real game) |
 
 **Done when** every registered server has `ssh_user=gamepanel`, `ssh root@ct` is refused,
 `sudo -l -U steam` shows nothing, and every screen of the CLAUDE.md screen walk returns 200.

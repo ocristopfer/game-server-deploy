@@ -375,6 +375,10 @@ $($portLines -join "`n")
     volumes:
       - ${Container}-data:/opt/game
       - ${Container}-steam:/home/steam
+      # Backups the panel takes, and the Mods screen's environment overlay: both outlive a
+      # recreated container (docker/gameserver/Dockerfile says why).
+      - ${Container}-backups:/var/backups/gamepanel
+      - ${Container}-modenv:/etc/gamepanel/game-env
     mem_limit: ${memory}m
     cpus: $cores
     networks:
@@ -383,6 +387,8 @@ $($portLines -join "`n")
 volumes:
   ${Container}-data:
   ${Container}-steam:
+  ${Container}-backups:
+  ${Container}-modenv:
 
 networks:
   ${Network}:
@@ -446,7 +452,7 @@ Write-Host " Deploy em Docker concluido: $Display"
 Write-Host "========================================================================"
 Write-Host ""
 Write-Host "Container : $Container (rede $Network, ${memory}MB, $cores cpu)"
-Write-Host "Volumes   : ${Container}-data (jogo) e ${Container}-steam (conta/Steam)"
+Write-Host "Volumes   : ${Container}-data (jogo), ${Container}-steam (conta/Steam), ${Container}-backups e ${Container}-modenv"
 Write-Host "Portas    : $portasTexto"
 $notes = Get-Cfg $game "PORT_NOTES"
 if ($notes -ne "") { Write-Host "Nota      : $notes" }
