@@ -1114,9 +1114,9 @@ def test_servidor_removido_sai_da_memoria_do_monitor(database, target, monkeypat
 def test_url_invalida_nao_chega_a_tentar_conexao():
     """The check happens BEFORE any socket: a malformed URL does not turn into a connection
     attempt (nor a timeout wait) hidden behind a network message."""
-    assert panel.send_webhook("nao-e-url", "oi").startswith("URL invalida")
-    assert panel.send_webhook("", "oi").startswith("URL invalida")
-    assert panel.send_webhook("file:///etc/passwd", "oi").startswith("URL invalida")
+    assert panel.send_webhook("nao-e-url", "oi").startswith("URL inválida")
+    assert panel.send_webhook("", "oi").startswith("URL inválida")
+    assert panel.send_webhook("file:///etc/passwd", "oi").startswith("URL inválida")
 
 
 # ------------------------------------------------------------------------ the screen

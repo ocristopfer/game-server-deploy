@@ -85,7 +85,10 @@ def action(sid: int):
     player = (request.form.get("player", "") or "").strip()[:200]
     name = (request.form.get("name", "") or "").strip()[:100]
     message = (request.form.get("message", "") or "").strip()[:panel.PLAYER_MSG_MAX]
+    # Two versions of "everyone": the history record stays in the deploy language (it is read
+    # later by someone else and filtered by it), the notice goes out in the viewer's language.
     who = name or player or "todos"
+    who_on_screen = name or player or panel.translate("players.everyone")
     record = f"{panel.label_for_db(panel.PLAYER_ACTION_LABELS.get(action, action))}: {who}"
     if message:
         record += f" ({message})"
@@ -96,14 +99,14 @@ def action(sid: int):
     except (panel.QueryError, panel.RemoteError) as exc:
         panel.log_job("player-action", server, session.get("username", "?"),
                 command=record, output=str(exc), status="error")
-        flash(panel.translate("flash.could_not", reason=exc), "error")
+        flash(panel.translate("flash.could_not", reason=panel.error_text(exc)), "error")
         return redirect(go_back)
 
     panel.log_job("player-action", server, session.get("username", "?"),
             command=record, output="a API aceitou o pedido")
     # The count stays cached for a few seconds and still includes whoever just left.
     panel.invalidate_players(sid)
-    flash(panel.translate("flash.player_action_done", label=label, who=who)
+    flash(panel.translate("flash.player_action_done", label=label, who=who_on_screen)
           if action != "announce"
           else panel.translate("flash.notice_sent", message=message), "ok")
     return redirect(go_back)

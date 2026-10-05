@@ -23,6 +23,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from gamepanel.i18n import Message
+
 # Separates the levels of a setting's identifier ("section\x1fkey"). It does not appear in
 # any config file, so it works as a separator without escaping.
 SEP = "\x1f"
@@ -30,8 +32,11 @@ SEP = "\x1f"
 # Label of the unnamed block: a loose key at the top of an .ini, or the top level of a
 # .json. It becomes a section title on the Configuration screen, and the three formats must
 # say the SAME thing - not "(sem secao)" in one and "(raiz)" in another for the same idea.
-NO_SECTION = "(sem seção)"
-ROOT = "(raiz)"
+# Both are i18n KEYS, like the field labels of `base.FieldSpec`: the template passes every
+# section label through `_()`, and a real section name ("[ServerSettings]") is not a catalog
+# key, so it comes back unchanged.
+NO_SECTION = "config.no_section"
+ROOT = "config.root"
 
 # UTF-8 byte order mark, already decoded: that is how it arrives here (the text comes in already read).
 BOM = "﻿"
@@ -95,16 +100,16 @@ class Edit:
 def check_key(key: str) -> str:
     key = (key or "").strip()
     if not KEY_RE.match(key):
-        raise ConfigError(f"nome de configuracao invalido: {key!r}")
+        raise ConfigError(Message("config.error.invalid_name", name=repr(key)))
     return key
 
 
 def check_value(value: str) -> str:
     value = (value or "").replace("\r", "")
     if "\n" in value or "\x00" in value:
-        raise ConfigError("o valor não pode ter quebra de linha")
+        raise ConfigError(Message("config.error.value_newline"))
     if len(value) > VALUE_MAX:
-        raise ConfigError(f"valor longo demais (limite de {VALUE_MAX} caracteres)")
+        raise ConfigError(Message("config.error.value_too_long", n=VALUE_MAX))
     return value.strip()
 
 
@@ -119,7 +124,7 @@ def _kind_of(value: str) -> str:
 def _as_bool(value: str) -> bool:
     got = BOOL_WORDS.get(value.strip().lower())
     if got is None:
-        raise ConfigError(f"valor booleano invalido: {value!r} (use True ou False)")
+        raise ConfigError(Message("config.error.invalid_bool", value=repr(value)))
     return got
 
 
@@ -130,7 +135,7 @@ class ConfigFile:
     """Common contract: parse in the constructor, `apply` returns the new file."""
 
     format_id = "texto"
-    label = "Texto"
+    label = "config.format_text"  # i18n key; the other formats' names need no translation
     # How the format writes true/false. The screen uses this in the selector of boolean
     # fields: with the right spelling, opening and saving without touching anything "changes" nothing.
     bool_words = ("True", "False")
@@ -283,7 +288,7 @@ def _unquote(value: str) -> tuple[str, bool]:
 def _requote(value: str, was_quoted: bool) -> str:
     """Return the value in the file format: quoted if it already was, or if it needs to be."""
     if '"' in value:
-        raise ConfigError('o valor não pode conter aspas duplas (")')
+        raise ConfigError(Message("config.error.value_double_quote"))
     needs_quotes = any(ch in value for ch in ',()= ') or value == ""
     if was_quoted or needs_quotes:
         return f'"{value}"'
@@ -532,9 +537,9 @@ class JsonConfig(ConfigFile):
         try:
             self.data = json.loads(self.text or "{}")
         except ValueError as exc:
-            raise ConfigError(f"JSON invalido: {exc}") from exc
+            raise ConfigError(Message("config.error.invalid_json", reason=str(exc))) from exc
         if not isinstance(self.data, (dict, list)):
-            raise ConfigError("JSON precisa ser um objeto ou lista para virar formulário")
+            raise ConfigError(Message("config.error.json_not_container"))
         self._section("", ROOT)
         self._walk(self.data, "")
 
@@ -559,11 +564,11 @@ class JsonConfig(ConfigFile):
         for part in path.split("."):
             if isinstance(node, list):
                 if not part.isdigit() or int(part) >= len(node):
-                    raise ConfigError(f"caminho inexistente no JSON: {path}")
+                    raise ConfigError(Message("config.error.json_missing_path", path=path))
                 node = node[int(part)]
                 continue
             if not isinstance(node, dict) or part not in node:
-                raise ConfigError(f"caminho inexistente no JSON: {path}")
+                raise ConfigError(Message("config.error.json_missing_path", path=path))
             node = node[part]
         return node
 
@@ -575,12 +580,12 @@ class JsonConfig(ConfigFile):
             try:
                 return int(value)
             except ValueError:
-                raise ConfigError(f"{value!r} nao e um numero inteiro") from None
+                raise ConfigError(Message("config.error.not_an_integer", value=repr(value))) from None
         if isinstance(previous, float):
             try:
                 return float(value)
             except ValueError:
-                raise ConfigError(f"{value!r} nao e um numero") from None
+                raise ConfigError(Message("config.error.not_a_number", value=repr(value))) from None
         if isinstance(previous, str):
             return value
         # New (or null) key: the type comes from the typed text itself.
@@ -601,15 +606,15 @@ class JsonConfig(ConfigFile):
             else:
                 key = check_key(edit.key)
                 if "." in key:
-                    raise ConfigError("ponto (.) não é aceito no nome de uma chave JSON")
+                    raise ConfigError(Message("config.error.json_dot_in_key"))
                 parent = self._parent(edit.section)
             if isinstance(parent, list):
                 if not key.isdigit() or int(key) >= len(parent):
-                    raise ConfigError(f"nao da para acrescentar {key!r} numa lista JSON")
+                    raise ConfigError(Message("config.error.json_add_to_list", name=repr(key)))
                 parent[int(key)] = self._coerce(value, parent[int(key)])
                 continue
             if not isinstance(parent, dict):
-                raise ConfigError(f"{edit.section} nao e um objeto JSON")
+                raise ConfigError(Message("config.error.json_not_object", section=edit.section))
             parent[key] = self._coerce(value, parent.get(key))
         return json.dumps(self.data, indent=2, ensure_ascii=False) + "\n"
 
@@ -683,7 +688,7 @@ class DayzConfig(ConfigFile):
     def _format(value: str, quoted: bool) -> str:
         if quoted or not NUM_RE.match(value.strip()):
             if '"' in value:
-                raise ConfigError('o valor não pode conter aspas duplas (")')
+                raise ConfigError(Message("config.error.value_double_quote"))
             return f'"{value}"'
         return value.strip()
 
@@ -785,7 +790,7 @@ class SiiConfig(ConfigFile):
         # Quotes and backslashes are escapes in .sii; refusing is safer than guessing the
         # escape rule of the SCS reader and leaving the server unable to start.
         if '"' in value or "\\" in value:
-            raise ConfigError('o valor não pode conter aspas (") nem barra invertida (\\)')
+            raise ConfigError(Message("config.error.sii_value_quote"))
         # A single word may go without quotes (the server writes `description: discordia`
         # like that), but a phrase with spaces or an empty value without quotes the SCS reader does not understand.
         if quoted or not _SII_BARE_RE.match(value):
@@ -804,10 +809,10 @@ class SiiConfig(ConfigFile):
                 lines[i] = f"{prefix}{name}{sep}{self._format(value, quoted)}"
                 continue
             if edit.section not in self._section_end:
-                raise ConfigError("no .sii a configuração nova precisa ir dentro de um bloco")
+                raise ConfigError(Message("config.error.sii_needs_block"))
             key = check_key(edit.key)
             if " " in key or "." in key or "-" in key:
-                raise ConfigError(f"nome de configuracao invalido no .sii: {key!r}")
+                raise ConfigError(Message("config.error.sii_invalid_name", name=repr(key)))
             new_by_section.setdefault(edit.section, []).append(
                 f"{key}: {self._format(value, quoted=False)}")
 

@@ -27,7 +27,9 @@ def index(sid: int):
             # minutes instead of nanoseconds.
             panel.enrich_settings(doc, info["name"])
         except (panel.RemoteError, panel.gameconf.ConfigError) as exc:
-            errors.append(f"{target}: {exc}")
+            # `error_text` keeps the KEY of a `Message` (ConfigError), so the reason comes out in
+            # the language of whoever is looking and not in the deploy language.
+            errors.append(f"{target}: {panel.translate(panel.error_text(exc))}")
 
     suggestions = panel._suggestion_config(server, file_names, target, errors)
 
@@ -106,7 +108,7 @@ def save(sid: int):  # noqa: PLR0911 - each validation error leaves through its 
         doc, info = panel.load_config_doc(server, path)
         text = doc.apply(edits)
     except (panel.RemoteError, panel.gameconf.ConfigError) as exc:
-        flash(panel.translate("flash.could_not_save", reason=exc), "error")
+        flash(panel.translate("flash.could_not_save", reason=panel.error_text(exc)), "error")
         return redirect(go_back)
 
     if info["crlf"]:
@@ -122,7 +124,7 @@ def save(sid: int):  # noqa: PLR0911 - each validation error leaves through its 
     except panel.RemoteError as exc:
         panel.log_job("edit-config", server, session.get("username", "?"),
                 command=f"{path}: {touched}", output=str(exc), status="error")
-        flash(panel.translate("flash.could_not_save", reason=exc), "error")
+        flash(panel.translate("flash.could_not_save", reason=panel.error_text(exc)), "error")
         return redirect(go_back)
 
     panel.log_job("edit-config", server, session.get("username", "?"),

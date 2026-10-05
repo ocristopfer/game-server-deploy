@@ -41,13 +41,13 @@ def api_open(sid: int):
             panel._terms.pop(dead.id, None)
         if len(panel._terms) >= panel.TERM_MAX_SESSIONS:
             return jsonify({
-                "error": f"limite de {panel.TERM_MAX_SESSIONS} terminais simultaneos atingido"
+                "error": panel.translate("terminal.too_many_sessions", n=panel.TERM_MAX_SESSIONS)
             }), 429
 
     try:
         term = panel._open_term(dict(server), session["uid"], session.get("username", "?"), cols, rows)
     except panel.RemoteError as exc:
-        return jsonify({"error": str(exc)}), 502
+        return jsonify({"error": panel.translate(panel.error_text(exc))}), 502
 
     with panel._terms_lock:
         panel._terms[term.id] = term
@@ -92,7 +92,7 @@ def api_keys(tid: str):
     try:
         term.write(data.encode("utf-8"))
     except panel.RemoteError as exc:
-        return jsonify({"error": str(exc), "alive": False}), 409
+        return jsonify({"error": panel.translate(panel.error_text(exc)), "alive": False}), 409
     return jsonify({"ok": True, "alive": term.alive})
 
 

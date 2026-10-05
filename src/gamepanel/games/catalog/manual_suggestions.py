@@ -7,7 +7,7 @@ what only a Windows game needs (`platform` and `recipes`).
 
 Unlike suggestions.py, this file IS EDITED: each entry was written from the game's own
 documentation or from the community Docker images, and the reason for each choice goes into
-the `warnings`, which the screen shows when it is picked. A game that has already become
+the `warnings` (as i18n catalog keys), which the screen shows when it is picked. A game that has already become
 curated (games/*.env, like V Rising, Enshrouded and Icarus) does NOT go here: the search
 already finds it in the catalog, and a suggestion with the same key would become an override
 on top of the curated one.
@@ -17,10 +17,12 @@ Rules (tests/gamebroker/unit/test_suggestions.py checks the same ones as for the
 - a Windows-only server uses `proton`; `wine` only when Proton has been proven to fail;
 - no secrets and no shell chaining in `start_args`.
 """
-SOURCE = "curadoria do painel"
+# The source and the `warnings` are i18n catalog KEYS, not text: the search sends them to the screen
+# of whoever is looking, in that person's language (`search.result` translates them on the way out).
+# Text written here would come out in Portuguese on the English screen.
+SOURCE = "catalog.source.manual"
 
-_PROTON_NOTE = ("Servidor só de Windows: roda pelo Proton (receita proton). Se não subir, "
-                "troque para wine e anote o motivo.")
+_PROTON_NOTE = "catalog.suggestion.proton_note"
 
 SUGGESTIONS = (
     {'appid': 2430930,
@@ -42,10 +44,9 @@ SUGGESTIONS = (
      'player_source': 'log',
      'memory_mb': 16384, 'cores': 4, 'disk_gb': 50,
      'warnings': [_PROTON_NOTE,
-                  'O ASA não publica query da Steam (a lista é pela Epic): a contagem vem do log.',
-                  'O mapa é o primeiro argumento (TheIsland_WP). Nome e senha do servidor ficam no '
-                  'GameUserSettings.ini, não no comando.',
-                  'Precisa de ~13 GB de RAM só para subir o mapa padrão.']},
+                  'catalog.suggestion.ark_ascended.no_steam_query',
+                  'catalog.suggestion.ark_ascended.map_argument',
+                  'catalog.suggestion.ark_ascended.memory']},
     {'appid': 2857200,
      'name': 'Abiotic Factor',
      'key': 'abiotic-factor',
@@ -65,8 +66,7 @@ SUGGESTIONS = (
      'player_source': 'a2s',
      'memory_mb': 8192, 'cores': 4, 'disk_gb': 20,
      'warnings': [_PROTON_NOTE,
-                  'As regras do mundo ficam no SandboxSettings.ini de cada mundo, que só nasce no '
-                  'primeiro start (Saved/SaveGames/Server/Worlds/<mundo>/).']},
+                  'catalog.suggestion.abiotic_factor.sandbox_settings']},
     {'appid': 443030,
      'name': 'Conan Exiles',
      'key': 'conan-exiles',
@@ -86,9 +86,8 @@ SUGGESTIONS = (
      'player_source': 'a2s',
      'memory_mb': 8192, 'cores': 4, 'disk_gb': 40,
      'warnings': [_PROTON_NOTE,
-                  'A 7778/UDP é a porta do jogo + 1, aberta sozinha pelo servidor: por isso ele não '
-                  'anda de porta (o broker não tem como avisá-la).',
-                  'O save inteiro é o game.db em ConanSandbox/Saved.']},
+                  'catalog.suggestion.conan_exiles.port_plus_one',
+                  'catalog.suggestion.conan_exiles.save']},
     {'appid': 2465200,
      'name': 'Sons of the Forest',
      'key': 'sons-of-the-forest',
@@ -107,8 +106,6 @@ SUGGESTIONS = (
      'player_source': 'a2s',
      'memory_mb': 8192, 'cores': 4, 'disk_gb': 20,
      'warnings': [_PROTON_NOTE,
-                  'As portas (GamePort, QueryPort, BlobSyncPort) moram no dedicatedserver.cfg, que o '
-                  'servidor cria em /opt/game/userdata no primeiro start: não há como passá-las pelo '
-                  'comando, então ele fica nas portas padrão.',
-                  'O servidor cria janela na largada: por isso a receita xvfb.']},
+                  'catalog.suggestion.sons_of_the_forest.ports',
+                  'catalog.suggestion.sons_of_the_forest.xvfb']},
 )

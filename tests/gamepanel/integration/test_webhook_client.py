@@ -87,7 +87,7 @@ def test_mascara_nao_deixa_o_token_aparecer():
 
 @pytest.mark.parametrize("url", ["", "nao-e-url", "file:///etc/passwd", "ftp://x/y"])
 def test_url_invalida_e_recusada_antes_de_qualquer_socket(url):
-    assert wc.send(url, "oi", 1, UA).startswith("URL invalida")
+    assert wc.send(url, "oi", 1, UA).startswith("URL inválida")
 
 
 def test_envio_que_da_certo_devolve_string_vazia():
@@ -138,7 +138,7 @@ def test_destino_fora_do_ar_vira_motivo_e_nao_excecao():
     """A broken webhook must not take the monitor down with it."""
     # Closed port on loopback: refused immediately, without waiting for a timeout.
     error = wc.send("http://127.0.0.1:1/webhook", "oi", 1, UA)
-    assert error.startswith("nao consegui chamar o webhook")
+    assert error.startswith("não consegui chamar o webhook")
 
 
 def test_destino_pendurado_respeita_o_prazo():
@@ -147,5 +147,5 @@ def test_destino_pendurado_respeita_o_prazo():
         beginning = time.monotonic()
         error = wc.send(srv.url, "oi", 0.3, UA)
         spent = time.monotonic() - beginning
-    assert error.startswith("nao consegui chamar o webhook")
+    assert error.startswith("não consegui chamar o webhook")
     assert spent < 2

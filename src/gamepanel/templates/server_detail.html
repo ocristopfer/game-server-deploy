@@ -8,7 +8,7 @@
                 badge_tone='on' if status.service == 'active' else ('off' if status.reachable else 'cold')) }}
 {{ srv.tabs(server, 'visao') }}
 
-{% if status.error %}<div class="flash error">{{ status.error }}</div>{% endif %}
+{% if status.error %}<div class="flash error">{{ _(status.error) }}</div>{% endif %}
 
 {# Two columns from 900px up (info next to players, resources next to
    recent actions) and the log, which is long, at full width. On the phone it is a single column,
@@ -287,7 +287,7 @@
   </div>
   <div class="card__body">
   {% if log_error %}
-    <p class="flash error">{{ log_error }}</p>
+    <p class="flash error">{{ _(log_error) }}</p>
   {% else %}
     <pre class="log" id="log-box">{{ logs or _('server_detail.no_log_lines') }}</pre>
   {% endif %}

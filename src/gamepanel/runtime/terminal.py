@@ -17,6 +17,7 @@ import threading
 import time
 from collections.abc import Callable
 
+from gamepanel.i18n import Message
 from gamepanel.runtime import remote_cmd
 from gamepanel.runtime.ssh import RemoteError, ServerLike
 
@@ -109,7 +110,7 @@ class TermSession:
             )
         except OSError as exc:
             os.close(self.master)
-            raise RemoteError(f"falha ao abrir a sessao: {exc}") from exc
+            raise RemoteError(Message("terminal.session_open_failed", reason=exc)) from exc
         finally:
             os.close(slave)
 
@@ -163,7 +164,7 @@ class TermSession:
                 try:
                     sent = os.write(self.master, data)
                 except (OSError, ValueError) as exc:
-                    raise RemoteError(f"sessao encerrada: {exc}") from exc
+                    raise RemoteError(Message("terminal.session_ended", reason=exc)) from exc
                 data = data[sent:]
 
     def resize(self, cols: int, rows: int) -> None:

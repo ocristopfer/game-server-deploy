@@ -10,6 +10,7 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
+from gamepanel.i18n import Message
 from gamepanel.runtime import remote_cmd
 from gamepanel.runtime.a2s import QueryError, query_players
 from gamepanel.runtime.ssh import RemoteError, ServerLike
@@ -82,6 +83,17 @@ SshOutput = Callable[[ServerLike, str, int], str]
 
 
 
+def _reason(exc: BaseException) -> str:
+    """The failure as it came, keeping the KEY when it is a `Message`.
+
+    `str(exc)` would freeze an `i18n.Message` in the deploy language; the screen that shows
+    this translates it into the language of whoever is looking.
+    """
+    if exc.args and isinstance(exc.args[0], Message):
+        return exc.args[0]
+    return str(exc)
+
+
 def _ports_from_text(text: str) -> list[int]:
     """Extracts port numbers from the free-form 'Game ports' field (e.g. '8211/udp 27015/udp')."""
     return [int(n) for n in re.findall(r"\d{2,5}", text or "") if 1 <= int(n) <= MAX_TCP_PORT]
@@ -137,7 +149,7 @@ def candidate_ports(
         raw = ssh_output(server, remote_cmd.as_steam(server, "bash", "-lc", LISTEN_PORTS_SCRIPT, "gp"), 60)
         _read_open_ports(raw, listening, owners)
     except (RemoteError, ValueError) as exc:
-        warning = f"nao consegui listar as portas abertas do container: {exc}"
+        warning = Message("ports.list_failed", reason=_reason(exc))
 
     def priority(proto: str, port: int) -> int:
         """Ports with a real owning process first; infra last.
@@ -273,7 +285,7 @@ def probe_http_ports(
             limit,
         )
     except RemoteError as exc:
-        return [], ports, f"nao consegui sondar as portas TCP: {exc}"
+        return [], ports, Message("ports.tcp_probe_failed", reason=_reason(exc))
 
     found: list[dict] = []
     answered: set[int] = set()
@@ -342,7 +354,7 @@ def probe_ports(host: str, ports: list[int], query_timeout: float = 3.0) -> list
                 "server_name": info["server_name"],
             })
         except QueryError as exc:
-            item["error"] = str(exc)
+            item["error"] = _reason(exc)
         with lock:
             results[port] = item
 
@@ -351,4 +363,4 @@ def probe_ports(host: str, ports: list[int], query_timeout: float = 3.0) -> list
         t.start()
     for t in threads:
         t.join(timeout=query_timeout * 2 + 2)
-    return [results.get(p, {"port": p, "ok": False, "error": "tempo esgotado"}) for p in ports]
+    return [results.get(p, {"port": p, "ok": False, "error": Message("error.timed_out")}) for p in ports]

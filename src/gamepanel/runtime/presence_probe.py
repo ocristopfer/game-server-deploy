@@ -57,6 +57,8 @@ def players_from_presence(ssh_output: SshOutput, server: ServerLike) -> dict:
         # the person to reapply rules on a CT that is merely powered off.
         if "no such file" in str(exc).lower():
             raise QueryError(Message("presence.missing")) from exc
-        raise QueryError(str(exc)) from exc
+        # The original reason as is: it may be a `Message`, and `str` would freeze it in the
+        # deploy language.
+        raise QueryError(exc.args[0] if exc.args else str(exc)) from exc
     return {"players": count_from_json(raw), "list": [], "error": "",
             "max_players": None, "server_name": "", "map": ""}

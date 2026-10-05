@@ -41,7 +41,7 @@
       {{ _h('alerts.pending_intro') }}
       <ul>
         {% for chave, falta in pending.items() %}
-        <li>{{ _h('alerts.pending_item', event=events[chave], missing=falta) }}</li>
+        <li>{{ _h('alerts.pending_item', event=events[chave], missing=_(falta)) }}</li>
         {% endfor %}
       </ul>
       {{ _h('alerts.pending_fix', url=url_for('dashboard.index')) }}

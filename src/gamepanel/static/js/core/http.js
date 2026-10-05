@@ -42,9 +42,10 @@ async function request(url, init) {
   try {
     resp = await fetch(url, { ...init, cache: 'no-store', credentials: 'same-origin' });
   } catch (err) {
-    // Read at call time, from the page: the module has no catalog of its own.
-    const fallback = document.body?.dataset.labelNoConnection || 'sem conexao';
-    throw new NetworkError(err.message || fallback);
+    // Read at call time, from the page: the module has no catalog of its own. The page's
+    // phrase comes FIRST: the browser's own message ("Failed to fetch") is in the browser's
+    // language, not the panel's, and says nothing more than "no connection".
+    throw new NetworkError(document.body?.dataset.labelNoConnection || err.message);
   }
 
   let data = null;

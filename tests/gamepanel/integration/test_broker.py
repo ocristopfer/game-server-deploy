@@ -450,7 +450,7 @@ def test_novo_jogo_deixa_rastro_no_historico(admin, broker, post, database):
 def test_numero_invalido_nem_chega_ao_broker(admin, broker, post, field, lixo):
     response = post(admin, "/catalog/new", {**GAME_FORM, field: lixo})
     assert response.status_code == 400
-    assert "deve ser um numero" in response.get_data(as_text=True)
+    assert "deve ser um número" in response.get_data(as_text=True)
     assert broker.called("add_game") == []
 
 

@@ -28,19 +28,19 @@ def index(sid: int):
     try:
         current = panel.clean_path(file_arg or dir_arg or default_dir)
     except ValueError as exc:
-        errors.append(str(exc))
+        errors.append(panel.translate(panel.error_text(exc)))
         current = "/"
     if file_arg and current != "/":
         try:
             opened = panel.read_file(server, current)
         except panel.RemoteError as exc:
-            errors.append(str(exc))
+            errors.append(panel.translate(panel.error_text(exc)))
         current = panel.parent_of(current)
 
     try:
         entries, truncated = panel.list_dir(server, current)
     except panel.RemoteError as exc:
-        errors.append(str(exc))
+        errors.append(panel.translate(panel.error_text(exc)))
 
     # Breadcrumbs: /opt/game/Pal -> [/, /opt, /opt/game, /opt/game/Pal]
     crumbs, walked = [{"name": "/", "path": "/"}], ""
@@ -104,7 +104,7 @@ def save(sid: int):
             "edit-file", server, session.get("username", "?"),
             command=path, output=str(exc), status="error",
         )
-        flash(panel.translate("flash.could_not_save", reason=exc), "error")
+        flash(panel.translate("flash.could_not_save", reason=panel.error_text(exc)), "error")
 
     return redirect(url_for("files.index", sid=sid, file=path))
 
@@ -144,7 +144,7 @@ def delete(sid: int):
             "delete-file", server, session.get("username", "?"),
             command=path, output=str(exc), status="error",
         )
-        flash(panel.translate("flash.could_not_delete", reason=exc), "error")
+        flash(panel.translate("flash.could_not_delete", reason=panel.error_text(exc)), "error")
 
     return redirect(url_for("files.index", sid=sid, path=round_trip))
 
@@ -159,7 +159,7 @@ def download(sid: int):
         path = panel.clean_path(request.args.get("path", ""))
         info = panel.stat_file(server, path)
     except (ValueError, panel.RemoteError) as exc:
-        abort(400, str(exc))
+        abort(400, panel.error_text(exc))
 
     if panel.FILE_DOWNLOAD_MAX and info["size"] > panel.FILE_DOWNLOAD_MAX:
         abort(400, i18n.Message("error.download_too_large", size=info["size"],
@@ -216,7 +216,7 @@ def upload(sid: int):
     except panel.RemoteError as exc:
         panel.log_job("upload-file", server, session.get("username", "?"),
                 command=target, output=str(exc), status="error")
-        flash(panel.translate("flash.could_not_upload", reason=exc), "error")
+        flash(panel.translate("flash.could_not_upload", reason=panel.error_text(exc)), "error")
         return redirect(go_back)
 
     panel.log_job("upload-file", server, session.get("username", "?"), command=target, output=output)

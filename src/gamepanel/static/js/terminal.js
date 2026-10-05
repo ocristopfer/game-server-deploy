@@ -462,21 +462,23 @@
   if (!el) return;
 
   var CSRF = el.dataset.csrf;
-  // Screen text comes from the template (the catalog lives in Python); the Portuguese
-  // fallback keeps the terminal readable if an attribute goes missing.
+  // Screen text comes from the template (the catalog lives in Python), already in the
+  // viewer's language. The fallback carries no words - a phrase written here would be
+  // Portuguese on the English screen - only the data (exit code, status, error) when a
+  // phrase has some.
   var LABELS = {
-    fullscreen: el.dataset.labelFullscreen || 'Tela cheia',
-    exitFullscreen: el.dataset.labelExitFullscreen || 'Sair da tela cheia',
-    expired: el.dataset.labelExpired || 'sessao expirada',
-    closed: el.dataset.labelClosed || 'sessao fechada',
-    ended: el.dataset.labelEnded || 'encerrado',
-    endedExit: el.dataset.labelEndedExit || 'encerrado (exit {code})',
-    reconnecting: el.dataset.labelReconnecting || 'reconectando...',
-    connecting: el.dataset.labelConnecting || 'conectando...',
-    connected: el.dataset.labelConnected || 'conectado',
-    httpError: el.dataset.labelHttpError || 'erro http {status}',
-    openFailed: el.dataset.labelOpenFailed || 'falha ao abrir: {error}',
-    outputLost: el.dataset.labelOutputLost || '[painel: saida antiga descartada]'
+    fullscreen: el.dataset.labelFullscreen || '',
+    exitFullscreen: el.dataset.labelExitFullscreen || '',
+    expired: el.dataset.labelExpired || '',
+    closed: el.dataset.labelClosed || '',
+    ended: el.dataset.labelEnded || '',
+    endedExit: el.dataset.labelEndedExit || 'exit {code}',
+    reconnecting: el.dataset.labelReconnecting || '',
+    connecting: el.dataset.labelConnecting || '',
+    connected: el.dataset.labelConnected || '',
+    httpError: el.dataset.labelHttpError || 'http {status}',
+    openFailed: el.dataset.labelOpenFailed || '{error}',
+    outputLost: el.dataset.labelOutputLost || ''
   };
   function label(name, fields) {
     var text = LABELS[name];

@@ -44,7 +44,7 @@
     <p class="muted small conf-path">
       <code>{{ target }}</code>
       {% if info %} &middot; {{ info.size | filesize }} &middot; {{ info.owner }} &middot; {{ info.mtime }}{% endif %}
-      {% if doc %} &middot; {{ _('config.format', name=doc.label) }}{% endif %}
+      {% if doc %} &middot; {{ _('config.format', name=_(doc.label)) }}{% endif %}
       {% if is_admin %}
       &middot; <a href="{{ url_for('files.index', sid=server.id, file=target) }}">{{ _('config.edit_as_text') }}</a>
       {% endif %}
@@ -104,15 +104,15 @@
     </div>
 
     {% for sec in doc.sections %}
-    <fieldset class="conf-section" data-sec="{{ sec.label }}">
-      <legend>{{ sec.label }}</legend>
+    <fieldset class="conf-section" data-sec="{{ _(sec.label) }}">
+      <legend>{{ _(sec.label) }}</legend>
       <div class="conf-grid">
         {% for s in sec.settings %}
         <label class="conf-item{{ ' conf-mapped' if s.spec }}"
-               data-key="{{ s.key | lower }}{{ ' ' ~ (s.spec.label | lower) if s.spec and s.spec.label }}">
+               data-key="{{ s.key | lower }}{{ ' ' ~ (_(s.spec.label) | lower) if s.spec and s.spec.label }}">
           <span class="conf-key">
             {%- if s.spec and s.spec.label -%}
-              {{ s.spec.label }} <em class="conf-raw">{{ s.key }}</em>
+              {{ _(s.spec.label) }} <em class="conf-raw">{{ s.key }}</em>
             {%- else -%}
               {{ s.key }}
             {%- endif -%}
@@ -139,7 +139,7 @@
             <input type="hidden" name="orig.{{ ns.i }}" value="{{ s.value }}">
             <select name="val.{{ ns.i }}">
               {% for valor, rotulo in s.spec.options.items() %}
-                <option value="{{ valor }}" {{ 'selected' if s.value == valor }}>{{ rotulo }}</option>
+                <option value="{{ valor }}" {{ 'selected' if s.value == valor }}>{{ _(rotulo) }}</option>
               {% endfor %}
               {% if s.value and s.value not in s.spec.options %}
                 <option value="{{ s.value }}" selected>{{ _('config.outside_catalog', value=s.value) }}</option>
@@ -153,7 +153,7 @@
                      {% if s.spec.step %}step="{{ s.spec.step }}"{% endif %}
                      {% if s.spec.minimum is not none %}min="{{ s.spec.minimum }}"{% endif %}
                      {% if s.spec.maximum is not none %}max="{{ s.spec.maximum }}"{% endif %}>
-              {% if s.spec.unit %}<span class="conf-unit">{{ s.spec.unit }}</span>{% endif %}
+              {% if s.spec.unit %}<span class="conf-unit">{{ _(s.spec.unit) }}</span>{% endif %}
             </span>
           {% elif s.spec and s.spec.kind == 'password' %}
             <input name="val.{{ ns.i }}" value="{{ s.value }}" spellcheck="false"
@@ -164,10 +164,10 @@
                    {% if s.kind == 'number' %}inputmode="decimal"{% endif %}>
           {% endif %}
           {% if s.spec and s.spec.help %}
-            <small class="conf-help">{{ s.spec.help }}
+            <small class="conf-help">{{ _(s.spec.help) }}
               {%- if s.spec.kind in ('number', 'factor', 'duration')
                      and (s.spec.minimum is not none or s.spec.maximum is not none) %}
-                <em>({{ _('config.range', low=s.spec.minimum, high=s.spec.maximum) if s.spec.maximum is not none else s.spec.minimum }}{{ ' ' ~ s.spec.unit if s.spec.unit }})</em>
+                <em>({{ _('config.range', low=s.spec.minimum, high=s.spec.maximum) if s.spec.maximum is not none else s.spec.minimum }}{{ ' ' ~ _(s.spec.unit) if s.spec.unit }})</em>
               {%- endif %}
             </small>
           {% elif s.comment %}<small>{{ s.comment }}</small>{% endif %}
@@ -191,7 +191,7 @@
         <label class="sr-only" for="sec-{{ ns.i }}">{{ _('config.new_setting_block') }}</label>
         <select name="sec.{{ ns.i }}" id="sec-{{ ns.i }}">
           {% for sec in doc.sections %}
-          <option value="{{ sec.id | ident }}">{{ sec.label }}</option>
+          <option value="{{ sec.id | ident }}">{{ _(sec.label) }}</option>
           {% endfor %}
         </select>
         <input name="key.{{ ns.i }}" placeholder="{{ _('config.name_example') }}"

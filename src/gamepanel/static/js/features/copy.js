@@ -14,11 +14,12 @@ export const copyToClipboard = {
     button.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(target.textContent.trim());
-        button.textContent = document.body.dataset.labelCopied || 'Copiado!';
+        // The phrases come from the page (base.html); without them the button keeps its own text.
+        button.textContent = document.body.dataset.labelCopied || label;
       } catch {
         // No permission (http without TLS, for example): the text stays on the screen to
         // be selected by hand, so this is a warning, not an error.
-        button.textContent = document.body.dataset.labelCopyFailed || 'Nao consegui copiar';
+        button.textContent = document.body.dataset.labelCopyFailed || label;
       }
       setTimeout(() => { button.textContent = label; }, 2000);
     });

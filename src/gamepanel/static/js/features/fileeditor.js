@@ -15,8 +15,10 @@ export const fileEditor = {
     if (!area) return;
 
     const original = area.value;
-    const position = form.dataset.labelPosition || 'linha {line}, coluna {column}';
-    const changed = form.dataset.labelChanged || ' - alterado';
+    // Phrases from the template (data-label-*), already in the viewer's language. The
+    // fallback carries no words: text written here would be Portuguese on the English screen.
+    const position = form.dataset.labelPosition || '{line}:{column}';
+    const changed = form.dataset.labelChanged || '';
     const release = warnBeforeLeaving(() => area.value !== original);
 
     area.addEventListener('keydown', (ev) => {

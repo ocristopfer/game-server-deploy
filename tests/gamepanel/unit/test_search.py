@@ -1,6 +1,7 @@
 """Game search by name or App ID (busca_de_jogos.py) over the list generated from LinuxGSM."""
 from __future__ import annotations
 
+from gamepanel import i18n
 from gamepanel.games.catalog import manual_suggestions, pterodactyl_suggestions
 from gamepanel.games.catalog import search as busca
 from gamepanel.games.catalog import suggestions as sugestoes_de_jogos
@@ -85,7 +86,7 @@ def test_jogo_so_de_windows_que_o_linuxgsm_nao_tem_e_achado():
     values = busca.to_form(found[0])
     assert values["platform"] == "windows"
     assert values["recipes"] == "proton"
-    assert busca.result(found[0])["source"] == manual_suggestions.SOURCE
+    assert busca.result(found[0])["source"] == i18n.translate(manual_suggestions.SOURCE, "pt")
 
 
 def test_app_id_da_lista_manual_tambem_casa():
@@ -122,3 +123,34 @@ def test_linuxgsm_sem_complemento_continua_so_linuxgsm():
     palworld = busca.search("2394010")[0]
     assert 2394010 not in pterodactyl_suggestions.COMPLEMENTS
     assert busca.result(palworld)["source"] == sugestoes_de_jogos.SOURCE
+
+
+def _english(key: str, **fields: object) -> str:
+    return i18n.translate(key, "en", **fields)
+
+
+def test_aviso_e_fonte_da_lista_manual_saem_no_idioma_de_quem_busca():
+    """The manual list carries catalog KEYS: text written there came out in Portuguese on the English screen."""
+    ark = busca.search("2430930")[0]
+    pt, en = busca.result(ark), busca.result(ark, _english)
+    assert en["source"] == "panel curation"
+    assert pt["source"] == "curadoria do painel"
+    assert any("Proton" in w for w in en["warnings"])
+    assert en["warnings"] != pt["warnings"]
+    for warning in (*pt["warnings"], *en["warnings"]):
+        assert not warning.startswith("catalog."), warning
+
+
+def test_toda_chave_da_lista_manual_existe_nos_dois_idiomas():
+    keys = [manual_suggestions.SOURCE, *(w for s in manual_suggestions.SUGGESTIONS for w in s["warnings"])]
+    for key in keys:
+        for language in ("pt", "en"):
+            assert key in i18n.CATALOGS[language], (language, key)
+
+
+def test_aviso_do_egg_sai_no_idioma_de_quem_busca():
+    appid = next(iter(sorted(pterodactyl_suggestions.COMPLEMENTS)))
+    found = busca.search(str(appid))[0]
+    note = busca.result(found, _english)["warnings"][-1]
+    assert note.startswith("Came from the Pterodactyl egg"), note
+    assert busca.result(found)["warnings"][-1].startswith("Veio do egg do Pterodactyl")

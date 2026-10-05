@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
 from gamepanel import app as panel
+from gamepanel import i18n
 from gamepanel.games.catalog import search as catalog_search
 from gamepanel.games.catalog import templates as game_templates
 from gamepanel.persistence.repositories import jobs as jobs_repo
@@ -47,8 +48,10 @@ def api_suggestions():
     """Search by name or App ID in FIXED lists from the repository (LinuxGSM, Pterodactyl, curation):
     nothing here goes to the internet, and the query only selects among known entries."""
     found = catalog_search.search(request.args.get("q", ""))
-    return jsonify({"resultados": [catalog_search.result(s) for s in found],
-                    "fonte": catalog_search.SOURCE})
+    # Warnings and source of the hand-written list are catalog keys: translated here, in the
+    # language of whoever is searching (the search module itself has no request).
+    return jsonify({"resultados": [catalog_search.result(s, panel.translate) for s in found],
+                    "fonte": catalog_search.source_text(panel.translate)})
 
 
 @bp.post("/catalog/new")
@@ -60,7 +63,9 @@ def catalog_new():
         try:
             panel.broker_client.add_game(data, panel._actor())
         except panel.broker_client.BrokerError as exc:
-            failures.append(f"Broker: {exc.message}")
+            # A `Message`, not an f-string: `translate` below then puts the reason in the viewer's
+            # language too (the broker's own sentence passes as is).
+            failures.append(i18n.Message("flash.broker_error", reason=exc.message))
     if failures:
         for failure in failures:
             flash(panel.translate(failure), "error")
@@ -121,7 +126,9 @@ def catalog_update(key: str):
         try:
             panel.broker_client.update_game(key, data, panel._actor())
         except panel.broker_client.BrokerError as exc:
-            failures.append(f"Broker: {exc.message}")
+            # A `Message`, not an f-string: `translate` below then puts the reason in the viewer's
+            # language too (the broker's own sentence passes as is).
+            failures.append(i18n.Message("flash.broker_error", reason=exc.message))
     if failures:
         for failure in failures:
             flash(panel.translate(failure), "error")

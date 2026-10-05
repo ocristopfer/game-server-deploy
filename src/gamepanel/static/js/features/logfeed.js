@@ -16,14 +16,16 @@ export const followLog = {
     const button = $('#follow-toggle', root);
     const state = $('#follow-state', root);
     if (!box || !button) return;
-    // Screen text comes translated from the template; the fallback is the Portuguese text.
+    // Screen text comes translated from the template. No fallback phrase: one written here
+    // would be Portuguese on the English screen (the frontend contract test guarantees a
+    // template writes each of these attributes).
     const d = root.dataset;
     const text = {
-      empty: d.labelEmpty || '(sem linhas de log)',
-      live: d.labelLive || 'ao vivo',
-      noConnection: d.labelNoConnection || 'sem conexao',
-      follow: d.labelFollow || 'Seguir log',
-      stopFollowing: d.labelStopFollowing || 'Parar de seguir',
+      empty: d.labelEmpty || '',
+      live: d.labelLive || '',
+      noConnection: d.labelNoConnection || '',
+      follow: d.labelFollow || '',
+      stopFollowing: d.labelStopFollowing || '',
     };
 
     const key = `gamepanel:follow:${button.dataset.server}`;

@@ -26,11 +26,11 @@ What **stays in Portuguese**, because it is not an identifier or a comment:
 - screen text, which lives in the `i18n/` catalog (Portuguese and English, same keys).
   Portuguese screen text is written as proper Brazilian Portuguese, **with accents and
   cedilla** (UTF-8: "Usuários", "não", "é", "configuração"); code, comments and
-  identifiers stay English/ASCII. The same goes for the few visible labels that still live
-  in Python (the field labels of `games/adapters/`, `config_format.NO_SECTION`, the notes
-  of `catalog/manual_suggestions.py`). A test that asserts screen text asserts it WITH the
+  identifiers stay English/ASCII. A test that asserts screen text asserts it WITH the
   accents; a stored key or a value compared in code (`inacessivel`, `agendador`) is data,
-  not screen text, and stays as it is;
+  not screen text, and stays as it is. **No screen text is hardcoded anywhere** — Python,
+  templates or JS: if a person can read it on the panel, it is a catalog key (see "Screen
+  language");
 - keys already stored in a database, on disk or in an API (`"chave"`, `"jogos"`,
   `GAMES_DIR`): changing them changes DATA, and requires a migration — see the contract
   groups;
@@ -519,11 +519,27 @@ only game identity every server has.
   - **A list that yielded no ID at all is refused**; only an EMPTY field clears the list.
     A wrong paste would delete all of the server's mods.
 
-### A new game with its own screen = one file and one line
+### A new game with its own screen = one file, one line and its keys
 
 `games/adapters/<jogo>.py` declares `FILENAME` (which file it recognizes) and `FIELDS`
-(what it knows about each key), and `registry.ADAPTERS` gets one line. No route,
-template or other game is touched.
+(what it knows about each key), `registry.ADAPTERS` gets one line, and the field texts go
+into `i18n/pt.py` and `i18n/en.py`, in the "game config fields" section at the end. No
+route, template or other game is touched.
+
+- **A field holds KEYS, never sentences**: label, help, option labels and unit are
+  `game.<adapter>.<field>.label` / `.help` / `.opt.<value>` (field and value lowercased:
+  the key convention test), and the Config template translates them with `_()` at render
+  time. The labels several games share on purpose are `base.LABEL_NAME` and the two
+  password ones (`game.common.*`); units are `base.UNIT_FACTOR` and friends
+  (`game.unit.*`). The labels used to be Portuguese sentences inside each adapter, and
+  the English screen showed them in Portuguese: `test_i18n.py` reads the `_()` CALLS,
+  never a `FieldSpec`, so nothing noticed. `test_game_texts.py` walks every adapter of
+  `registry.ADAPTERS` and fails for a text that is not a key of BOTH catalogs, a key
+  outside the field's own prefix and a `game.*` key no field uses. Forgetting the keys
+  raises nothing at runtime: the screen just shows `game.valheim.slots.label`.
+- **One key per game, even for the same Portuguese.** "Vagas" in four games is four keys:
+  each English follows that game's own menu ("Max players", "Slots"), and rewording one
+  never changes another.
 
 - **A game without an adapter is not left out**: it falls into the generic file editor,
   which knows no game at all. That is why forgetting the registry line does not raise an
@@ -883,6 +899,17 @@ reason TOTP and QR are our own code). `pt.py` and `en.py` have the SAME keys, an
 `test_i18n.py` enforces parity; lookup cascades `idioma pedido -> pt -> a propria chave`
 (requested language -> pt -> the key itself), so a key nobody registered shows on screen
 as `nav.servers` instead of silently disappearing.
+
+> **No screen text is hardcoded anywhere — Python, templates or JS.** If a person can read
+> it on the panel, it is a catalog key (`pt.py` + `en.py`). That includes exception
+> messages that end up on screen (`i18n.Message`), field labels, units and section names.
+> The only literals allowed are DATA (stored keys, values compared in code) and job/script
+> output (see below). Why it is a rule and not a preference: the English screen showed
+> Portuguese in every Config label and in the config readers' errors, because that text
+> lived in `games/adapters/` and `games/config_format.py`, where no test looked — every
+> test was green and every page answered 200. `test_screen_text.py` now also refuses a
+> `raise ...("sentence")` in the modules whose errors reach the screen and a `FieldSpec`
+> built with a sentence instead of a key.
 
 - **New screen text = one line in `pt.py` and one in `en.py`.** The key is
   `area.assunto` (area.subject), **in English** (it is a code identifier, not screen

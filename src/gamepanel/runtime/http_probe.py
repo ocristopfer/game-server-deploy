@@ -213,12 +213,12 @@ def _json_walk(data: Any, path: str) -> Any:
         if part.startswith("["):
             index = int(part[1:-1])
             if not isinstance(current, list) or index >= len(current):
-                raise QueryError(f"'{path}' nao existe na resposta")
+                raise QueryError(Message("http.path_missing", path=path))
             current = current[index]
         elif isinstance(current, dict) and part in current:
             current = current[part]
         else:
-            raise QueryError(f"'{path}' nao existe na resposta")
+            raise QueryError(Message("http.path_missing", path=path))
     return current
 
 
@@ -320,7 +320,7 @@ def _list_from_json(data: Any, list_path: str, count_path: str) -> list | None:
     if list_path:
         found_list = _json_walk(data, list_path)
         if not isinstance(found_list, list):
-            raise QueryError(f"'{list_path}' nao aponta para uma lista")
+            raise QueryError(Message("http.not_a_list", path=list_path))
     elif count_path:
         return None
     else:
@@ -344,7 +344,7 @@ def _count_from_json(data: Any, count_path: str, player_list: list | None) -> in
             return len(raw)
         if isinstance(raw, (int, float)) and not isinstance(raw, bool):
             return int(raw)
-        raise QueryError(f"'{count_path}' nao e um numero nem uma lista")
+        raise QueryError(Message("http.not_a_count", path=count_path))
     if player_list is not None:
         return None
     found = _find_value(data, COUNT_KEYS, (int, float))
@@ -377,9 +377,7 @@ def read_players_json(data: Any, list_path: str = "", count_path: str = "") -> d
         count = len(player_list)
 
     if count is None:
-        raise QueryError(
-            "nao achei jogadores na resposta - preencha o caminho da lista ou da contagem"
-        )
+        raise QueryError(Message("http.no_players_found"))
 
     maximum = _find_value(data, MAX_KEYS, (int, float))
     return {

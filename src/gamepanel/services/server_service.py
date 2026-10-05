@@ -226,7 +226,9 @@ def _log_path(value: str | None, errors: list[str]) -> str:
     try:
         return valid_log_path(value)
     except ValueError as exc:
-        errors.append(str(exc).capitalize())
+        # The `Message` itself, not `str(exc)`: the string is the deploy language, and the
+        # form shows the error in the language of whoever is filling it in.
+        errors.append(exc.args[0] if exc.args else str(exc))
         return ""
 
 
@@ -238,7 +240,7 @@ def _pattern(value: str | None, label: str, cap: int, errors: list[str]) -> str:
     try:
         compile_pattern(text, label)
     except QueryError as exc:
-        errors.append(str(exc))
+        errors.append(exc.args[0] if exc.args else str(exc))
         return ""
     return text
 

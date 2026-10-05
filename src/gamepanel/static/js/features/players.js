@@ -23,7 +23,8 @@ export const panelPlayers = {
     const badges = Array.from(root.querySelectorAll('[data-players]'));
     if (!url || !badges.length) return;
     // The phrase comes translated from the template, with `{count}` still in it.
-    const phrase = root.dataset.labelPlayers || '{count} jogadores';
+    // Phrases from the template, already in the viewer's language; without one, the bare number.
+    const phrase = root.dataset.labelPlayers || '{count}';
 
     new Poller(async () => {
       const all = await readJSON(url);
@@ -49,10 +50,11 @@ export const serverPlayers = {
 
     const body = table.querySelector('tbody');
     const columnCount = table.querySelectorAll('thead th').length;
-    const online = card.dataset.labelOnline || '{count} online';
-    const unpublished = card.dataset.labelNamesUnpublished
-      || 'Este jogo nao publica a lista de nomes — so a contagem.';
-    const nobody = card.dataset.labelNobody || 'Ninguem conectado agora.';
+    // Phrases from the template, already in the viewer's language: one written here would be
+    // Portuguese on the English screen.
+    const online = card.dataset.labelOnline || '{count}';
+    const unpublished = card.dataset.labelNamesUnpublished || '';
+    const nobody = card.dataset.labelNobody || '';
 
     function nobodyText(quantos) {
       const tr = createEl('tr');

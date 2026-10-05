@@ -24,6 +24,8 @@ import re
 import ssl
 from urllib.parse import quote, urlsplit
 
+from gamepanel.i18n import Message
+
 TIMEOUT = 30.0
 RESPOSTA_MAX = 2_000_000
 _LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
@@ -87,7 +89,7 @@ class _PinnedConnection(http.client.HTTPSConnection):
         # compare_digest: constant time, as for any secret comparison.
         if not hmac.compare_digest(hashlib.sha256(der).hexdigest(), self._impressao):
             self.close()
-            raise BrokerError("o certificado do broker nao confere com a impressao fixada")
+            raise BrokerError(Message("broker.cert_mismatch"))
 
 
 def _connection() -> http.client.HTTPConnection:
@@ -110,7 +112,7 @@ def _connection() -> http.client.HTTPConnection:
 
 def _request(method: str, path: str, body: object = None, actor: str = ""):
     if not is_configured():
-        raise BrokerError("o broker nao esta configurado neste painel")
+        raise BrokerError(Message("broker.not_configured"))
     headers = {"Authorization": f"Bearer {_config['token']}", "Accept": "application/json"}
     if actor:
         headers["X-Actor"] = actor
@@ -128,11 +130,11 @@ def _request(method: str, path: str, body: object = None, actor: str = ""):
         raise
     except (OSError, http.client.HTTPException) as failure:
         # Only the error type: never a header (token) nor the request body.
-        raise BrokerError(f"nao consegui falar com o broker ({type(failure).__name__})") from None
+        raise BrokerError(Message("broker.unreachable", kind=type(failure).__name__)) from None
     finally:
         connection.close()
     if len(raw_text) > RESPOSTA_MAX:
-        raise BrokerError("resposta grande demais do broker")
+        raise BrokerError(Message("broker.reply_too_big"))
     try:
         json_resposta = json.loads(raw_text.decode("utf-8", errors="replace")) if raw_text.strip() else None
     except ValueError:
@@ -140,19 +142,22 @@ def _request(method: str, path: str, body: object = None, actor: str = ""):
     if status >= 400:
         message = json_resposta.get("erro") if isinstance(json_resposta, dict) else None
         code = json_resposta.get("codigo", "") if isinstance(json_resposta, dict) else ""
-        raise BrokerError(str(message or f"o broker respondeu HTTP {status}")[:300], status, str(code))
+        # The broker's own sentence comes as it is (it is the broker's text, not a catalog key);
+        # without one, the panel's sentence, as a `Message` so it follows the viewer's language.
+        reason = str(message)[:300] if message else Message("broker.http_status", status=status)
+        raise BrokerError(reason, status, str(code))
     return json_resposta
 
 
 def _as_list(data: object) -> list:
     if not isinstance(data, list):
-        raise BrokerError("resposta inesperada do broker")
+        raise BrokerError(Message("broker.unexpected_reply"))
     return data
 
 
 def _as_object(data: object) -> dict:
     if not isinstance(data, dict):
-        raise BrokerError("resposta inesperada do broker")
+        raise BrokerError(Message("broker.unexpected_reply"))
     return data
 
 

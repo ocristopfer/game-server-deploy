@@ -39,7 +39,7 @@ def save():
             continue
         value = (request.form.get(field, "") or "").strip()
         if not value.isdigit() or not 50 <= int(value) <= 100:
-            flash(panel.translate("flash.threshold_range", name=name), "error")
+            flash(panel.translate("flash.threshold_range", name=panel.translate(name)), "error")
             return redirect(url_for("alerts.index"))
         fresh_ones.append((key, value))
     # Only save after validating all of them: half saved is worse than nothing saved, because the
@@ -123,7 +123,7 @@ def hook_test(hid: int):
         f"**Teste do painel de jogos**\nSe voce esta lendo isto, os alertas funcionam."
         f" ({session.get('username', '?')})",
     )
-    name = row["name"] or "destino"
+    name = row["name"] or panel.translate("alerts.destination_fallback")
     flash(
         panel.translate("flash.destination_test_failed", name=name, reason=failure) if failure
         else panel.translate("flash.destination_test_sent", name=name),

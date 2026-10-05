@@ -179,7 +179,7 @@ def _remote_state(server, profile: profiles.ModProfile, errors: list[str]) -> di
         lines = (proc.stdout or "").strip().splitlines()
         state = json.loads(lines[-1]) if lines else {}
     except (panel.RemoteError, ValueError) as exc:
-        errors.append(panel.translate("mods.status_failed", reason=exc))
+        errors.append(panel.translate("mods.status_failed", reason=panel.error_text(exc)))
         return None
     if "error" in state:
         errors.append(panel.translate("mods.status_failed", reason=state["error"]))
@@ -499,7 +499,7 @@ def upload(sid: int):
             _upload_one(server, incoming, f, n)
     except (ValueError, panel.RemoteError) as exc:
         panel.log_job("upload-mod", server, user, command=profile.folder, output=str(exc), status="error")
-        flash(panel.translate("flash.could_not_upload", reason=exc), "error")
+        flash(panel.translate("flash.could_not_upload", reason=panel.error_text(exc)), "error")
         return redirect(go_back)
 
     steps: list[panel.JobStep] = [
@@ -552,7 +552,7 @@ def delete(sid: int):
         output = panel.delete_file(server, panel.clean_path(path))
     except (ValueError, panel.RemoteError) as exc:
         panel.log_job("delete-mod", server, user, command=path, output=str(exc), status="error")
-        flash(panel.translate("flash.could_not_delete", reason=exc), "error")
+        flash(panel.translate("flash.could_not_delete", reason=panel.error_text(exc)), "error")
         return redirect(go_back)
     panel.log_job("delete-mod", server, user, command=path, output=output)
     flash(panel.translate("mods.deleted", name=name), "ok")

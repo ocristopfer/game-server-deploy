@@ -156,7 +156,7 @@ def test_http_client_recusada_nao_vaza_o_token(server):
     with pytest.raises(bc.BrokerError) as error:
         bc.health()
     assert TOKEN not in str(error.value)
-    assert "nao consegui falar com o broker" in str(error.value)
+    assert "não consegui falar com o broker" in str(error.value)
 
 
 @pytest.mark.parametrize("funcao", [bc.catalog, bc.instances])
@@ -174,7 +174,7 @@ def test_objeto_que_nao_e_objeto_e_erro(server):
 
 def test_sem_configurar_e_erro_claro(monkeypatch):
     monkeypatch.setattr(bc, "_config", {})
-    with pytest.raises(bc.BrokerError, match="nao esta configurado"):
+    with pytest.raises(bc.BrokerError, match="não está configurado"):
         bc.health()
 
 
@@ -257,7 +257,7 @@ def test_tls_com_impressao_errada_e_recusado(monkeypatch, broker_tls):
     monkeypatch.setattr(bc, "_config", {})
     url, _ = broker_tls
     bc.configure(url, TOKEN, "00" * 32)
-    with pytest.raises(bc.BrokerError, match="nao confere"):
+    with pytest.raises(bc.BrokerError, match="não confere"):
         bc.health()
 
 
@@ -265,5 +265,5 @@ def test_tls_autoassinado_sem_impressao_nao_passa(monkeypatch, broker_tls):
     monkeypatch.setattr(bc, "_config", {})
     url, _ = broker_tls
     bc.configure(url, TOKEN)
-    with pytest.raises(bc.BrokerError, match="nao consegui falar"):
+    with pytest.raises(bc.BrokerError, match="não consegui falar"):
         bc.health()

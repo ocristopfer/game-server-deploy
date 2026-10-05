@@ -127,6 +127,10 @@ def api_metrics(sid: int):
     if not server:
         abort(404)
     data = panel.server_metrics(server)
+    if data.get("error"):
+        # A copy: the reading may be cached, and the cache keeps the `Message` (with its key)
+        # for the next viewer, who may read another language.
+        data = {**data, "error": panel.translate(data["error"])}
     return jsonify(data), (502 if data.get("error") else 200)
 
 
@@ -145,7 +149,7 @@ def api_logs(sid: int):
     try:
         text, new_cursor = panel.read_logs(server, panel._log_lines_arg(request.args.get("lines")), cursor)
     except panel.RemoteError as exc:
-        return jsonify({"error": str(exc)}), 502
+        return jsonify({"error": panel.translate(panel.error_text(exc))}), 502
     return jsonify({
         "text": text,
         "cursor": new_cursor,

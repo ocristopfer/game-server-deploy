@@ -13,19 +13,20 @@ import { readJSON } from '../core/http.js';
 import { $, $$ } from '../core/dom.js';
 import { fileSize, duration, percentText, level, escapeHtml, fillText } from '../core/format.js';
 
-/* Screen text, in Portuguese, for when the template did not hand over a translation (the
- * mount reads `data-label-*`). Keeping a fallback means a missing attribute shows the old
- * Portuguese text instead of `undefined`. */
+/* What is used when the template did not hand over a phrase (the mount reads `data-label-*`,
+ * already translated). Only placeholders and punctuation, never words: a phrase written here
+ * would come out in Portuguese on the English screen. Keeping the placeholders means a missing
+ * attribute still shows the number instead of `undefined`. */
 const DEFAULT_LABELS = {
-  memory: 'Memoria',
-  cores: '{cores} nucleo(s) · load {load}',
-  usedOf: '{used} de {total}',
-  diskMount: 'Disco {mount}',
-  disk: 'Disco',
-  metersUnavailable: 'medidores indisponiveis',
-  stopped: 'parado',
-  refresh: 'atualiza a cada 5s',
-  noReading: 'sem leitura no momento',
+  memory: '',
+  cores: '{cores} · {load}',
+  usedOf: '{used} / {total}',
+  diskMount: '{mount}',
+  disk: '',
+  metersUnavailable: '',
+  stopped: '',
+  refresh: '',
+  noReading: '',
 };
 
 /* The labels a mount point declares, over the defaults. */

@@ -342,7 +342,9 @@ SHORT_DATE_FORMAT = "%d/%m %H:%M"
 
 TPL_ERROR = "error.html"
 TPL_LOGIN = "login.html"
-MSG_TIMEOUT = "tempo esgotado"
+# A `Message`, not text: it lands in the "error" of a reading that took too long, and the screen
+# translates it into the viewer's language (`str` of it is still the deploy language).
+MSG_TIMEOUT = i18n.Message("error.timed_out")
 
 UNIT_RE = re.compile(r"^[A-Za-z0-9@._-]{1,80}\.service$")
 HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
@@ -585,7 +587,7 @@ def _requires_second_factor():
     if user is None or user["totp_enabled"]:
         return None
     if request.path.startswith("/api/"):
-        return jsonify({"error": "ative a verificacao em duas etapas em Conta"}), 403
+        return jsonify({"error": translate("api.two_factor_required")}), 403
     flash(translate("flash.two_factor_required_here"), "error")
     return redirect(url_for("account.two_factor"))
 
@@ -823,7 +825,9 @@ def in_parallel(tasks: dict, timeout: float = 40.0) -> dict:
         try:
             value, failure = call(), ""
         except (RemoteError, QueryError) as exc:
-            value, failure = None, str(exc)
+            # `error_text`, not `str`: this runs in a thread with no request, so it cannot
+            # translate; keeping the `Message` lets the screen do it in the viewer's language.
+            value, failure = None, error_text(exc)
         with lock:
             output[name] = (value, failure)
 
@@ -1259,13 +1263,13 @@ ALERT_EVENTS = {
 }
 # They need configuration in the server registration to do anything. The screen warns
 # about whoever is checked without having anywhere to look; otherwise the alert stays on and silent, and the person
-# concludes the game never fails.
+# concludes the game never fails. The values are catalog KEYS: the screen translates them.
 ALERT_PRECISA_CONFIG = {
-    "travou": "contagem de jogadores por consulta (A2S) ou API HTTP",
-    "respondeu": "contagem de jogadores por consulta (A2S) ou API HTTP",
-    "jogador-entrou": "contagem de jogadores (A2S, API HTTP ou log)",
-    "jogador-saiu": "contagem de jogadores (A2S, API HTTP ou log)",
-    "erro-no-log": "uma expressao de erro no cadastro do servidor",
+    "travou": "alerts.needs_query_count",
+    "respondeu": "alerts.needs_query_count",
+    "jogador-entrou": "alerts.needs_player_count",
+    "jogador-saiu": "alerts.needs_player_count",
+    "erro-no-log": "alerts.needs_error_pattern",
 }
 # What comes on by default: the bad news that works without configuring anything. 'voltou',
 # 'acessivel' and 'respondeu' are relief, not urgency; whoever wants the full pair turns it on in the
@@ -1314,7 +1318,7 @@ def webhook_list(conn: sqlite3.Connection) -> list:
     return [
         {
             "id": r["id"],
-            "name": r["name"] or "Sem nome",
+            "name": r["name"] or translate("alerts.unnamed"),
             "url": r["url"],
             "url_curta": mask_url(r["url"]),
             "events": clean_events(r["events"]),
@@ -1984,11 +1988,11 @@ def _port_tab(server: ServerRow) -> dict:
     try:
         presence: dict[str, Any] = {"players": presence_players(server)["players"], "error": ""}
     except QueryError as exc:
-        presence = {"players": None, "error": str(exc)}
+        presence = {"players": None, "error": translate(error_text(exc))}
     return {
         "presenca": presence,
         "portas": ports,
-        "aviso": warning_text,
+        "aviso": translate(warning_text),
         "udp_do_jogo": len(from_game),
         "udp_mudas": bool(from_game) and not any(p["ok"] for p in from_game),
     }
@@ -2004,7 +2008,8 @@ def _http_tab(server: ServerRow, http: dict, should_test: bool) -> dict:
     # the reader; it was the type checker that pointed it out, rejecting the re-annotation.
     silent_with_owner: list[dict] = _with_owner(
         [{"port": p} for p in silent_ones], owners, "tcp")
-    output = {"achados": found, "mudas": silent_with_owner, "aviso": warning_text or probe_failure,
+    output = {"achados": found, "mudas": silent_with_owner,
+              "aviso": translate(warning_text or probe_failure),
              # A finding worth a click: a port that answered on a known route. With
              # none, the screen explains that the API usually comes disabled out of the box.
              "tem_api": any(not a.get("generico") for a in found),
@@ -2027,7 +2032,7 @@ def _http_tab(server: ServerRow, http: dict, should_test: bool) -> dict:
         test_value["amostra"] = json.dumps(data, indent=2, ensure_ascii=False)[:4000]
         output["teste_http"] = test_value
     except QueryError as exc:
-        output["erro_http"] = str(exc)
+        output["erro_http"] = translate(error_text(exc))
     return output
 
 
@@ -2048,7 +2053,7 @@ def _log_tab(server: ServerRow, join_re: str, leave_re: str, log_path: str,
             return output
         join_pattern = compile_pattern(join_re, "pattern.join")
         if not join_pattern:
-            raise QueryError("informe o padrao da linha de entrada")
+            raise QueryError(i18n.Message("players.need_join_pattern"))
         leave_pattern = compile_pattern(leave_re, "pattern.leave")
         test_value = _apply_log_events(lines_of, join_pattern, leave_pattern)
         test_value["casaram"] = [
@@ -2057,7 +2062,7 @@ def _log_tab(server: ServerRow, join_re: str, leave_re: str, log_path: str,
         ][-20:]
         output["teste"] = test_value
     except (RemoteError, QueryError) as exc:
-        output["erro_log"] = str(exc)
+        output["erro_log"] = translate(error_text(exc))
     return output
 
 
@@ -2419,7 +2424,7 @@ def _backup_or_400(name: str) -> str:
     try:
         return backups_rt.validate_backup_name(name)
     except ValueError as exc:
-        abort(400, str(exc))
+        abort(400, error_text(exc))
 
 
 def list_backups(server: ServerRow) -> list[dict]:
@@ -2524,22 +2529,15 @@ def load_config_doc(server: ServerRow, path: str) -> tuple[gameconf.ConfigFile, 
     """Read the file in the container and interpret it field by field."""
     info = read_file(server, path)
     if info["binary"]:
-        raise gameconf.ConfigError(
-            "este arquivo e binario — a edicao campo a campo nao se aplica a ele"
-        )
+        raise gameconf.ConfigError(i18n.Message("config.error.binary_file"))
     if info["truncated"]:
-        raise gameconf.ConfigError(
-            f"o arquivo tem {info['size'] // 1024} KB e passa do limite de edicao"
-            f" ({FILE_MAX_BYTES // 1024} KB) — arquivo de configuracao nao costuma"
-            " chegar a esse tamanho, confira se e o arquivo certo"
-        )
+        raise gameconf.ConfigError(i18n.Message(
+            "config.error.file_too_big", kb=info["size"] // 1024, limit=FILE_MAX_BYTES // 1024))
     # The parser works with \n only; if the file used CRLF it goes back that way on write.
     doc = gameconf.load(info["name"], info["text"].replace("\r\n", "\n"))
     if len(doc.settings) > CONFIG_SETTINGS_MAX:
-        raise gameconf.ConfigError(
-            f"o arquivo tem {len(doc.settings)} chaves (o formulario para em"
-            f" {CONFIG_SETTINGS_MAX}) — pelo jeito nao e um arquivo de configuracao"
-        )
+        raise gameconf.ConfigError(i18n.Message(
+            "config.error.too_many_keys", n=len(doc.settings), limit=CONFIG_SETTINGS_MAX))
     return doc, info
 
 
@@ -2557,7 +2555,7 @@ def _target_config(arquivos: list[str], errors: list[str]) -> str:
     try:
         target = clean_path(request_body)
     except ValueError as exc:
-        errors.append(str(exc))
+        errors.append(translate(error_text(exc)))
         return arquivos[0] if arquivos else ""
     # The path comes from the URL: without this guard the Config screen would be a reader of any
     # file in the container (as root), exactly what the operator is not allowed to
@@ -2586,12 +2584,12 @@ def _suggestion_config(server: ServerRow, arquivos: list[str], alvo: str,
     try:
         root = clean_path(request.args.get("folder", "") or fallback)
     except ValueError as exc:
-        errors.append(str(exc))
+        errors.append(translate(error_text(exc)))
         root = fallback
     try:
         return find_config_files(server, root)
     except RemoteError as exc:
-        errors.append(str(exc))
+        errors.append(translate(error_text(exc)))
         return []
 
 
@@ -2658,7 +2656,9 @@ def _edit_from_row(form, i: int, file_name: str, errors: list[str]) -> gameconf.
     if spec:
         problem = spec.validate(value)
         if problem:
-            errors.append(f"{spec.label or key}: {problem}")
+            # The label is a catalog key (`game.<adapter>.<field>.label`) and the problem a
+            # `Message`: both go out in the language of whoever typed the value.
+            errors.append(f"{translate(spec.label) if spec.label else key}: {translate(problem)}")
             return None
         value = spec.from_display(value)
 
@@ -2701,8 +2701,7 @@ def broker_required(view):
         user = logged_user()
         if not user or not user["totp_enabled"]:
             if request.path.startswith("/api/"):
-                return jsonify({"error": "ative a verificacao em duas etapas em Conta para "
-                                         "usar o broker"}), 403
+                return jsonify({"error": translate("api.broker_needs_two_factor")}), 403
             flash(translate("flash.broker_needs_two_factor"), "error")
             return redirect(url_for("account.two_factor"))
         return view(*args, **kwargs)
@@ -2916,16 +2915,16 @@ def _password_and_code_ok(uid: int) -> tuple[sqlite3.Row | None, str]:
     row = users_repo.by_id(db(), uid)
     if row is None:
         # Same orphan session as in `_two_factor_state`: without a user there is no password to check.
-        return None, "Senha incorreta."
+        return None, "account.wrong_password"
     key = f"2fa|{row['username'].lower()}"
     if totp_lockout.remaining(key):
-        return None, "Muitas tentativas. Espere alguns minutos."
+        return None, "account.too_many_tries"
     if not verify_password(request.form.get("password", ""), row["password_hash"]):
         totp_lockout.record_failure(key)
-        return None, "Senha incorreta."
+        return None, "account.wrong_password"
     if not _check_second_factor(row, request.form.get("code", "")):
         totp_lockout.record_failure(key)
-        return None, "Codigo invalido ou ja usado."
+        return None, "account.code_invalid_or_used"
     totp_lockout.clear(key)
     return row, ""
 
@@ -2964,11 +2963,11 @@ def alerts_without_baseline(conn: sqlite3.Connection) -> dict:
 
 
 # The percentage limits of the Alerts screen: form field, database key and
-# how the rejection notice names the thing.
+# how the rejection notice names the thing (a catalog key, translated by the route).
 ALERT_LIMITS = (
-    ("disk_pct", "webhook_disk_pct", "disco cheio"),
-    ("mem_pct", "webhook_mem_pct", "memoria cheia"),
-    ("cpu_pct", "webhook_cpu_pct", "CPU alta"),
+    ("disk_pct", "webhook_disk_pct", "alerts.limit_disk"),
+    ("mem_pct", "webhook_mem_pct", "alerts.limit_memory"),
+    ("cpu_pct", "webhook_cpu_pct", "alerts.limit_cpu"),
 )
 
 
@@ -2988,7 +2987,7 @@ def _read_webhook_form() -> tuple:
     events = [e for e in request.form.getlist("events") if e in ALERT_EVENTS]
     enabled = 1 if request.form.get("enabled") else 0
     if url and not URL_RE.match(url):
-        return None, "URL invalida (comece com http:// ou https://)."
+        return None, "alerts.bad_webhook_url"
     return {"name": name, "url": url, "events": ",".join(events), "enabled": enabled}, ""
 
 

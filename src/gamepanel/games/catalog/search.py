@@ -14,14 +14,32 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Callable
 
+from gamepanel import i18n
 from gamepanel.games.catalog import manual_suggestions, pterodactyl_suggestions
 from gamepanel.games.catalog import suggestions as sugestoes_de_jogos
 
-SOURCE = f"{sugestoes_de_jogos.SOURCE}; {manual_suggestions.SOURCE}; {pterodactyl_suggestions.SOURCE}"
+# `translate(key, **fields)`: the blueprint passes the one of the request (the person's language).
+# Translating at import would freeze the deploy language into every warning.
+Translate = Callable[..., str]
+
 _COMBINED_SOURCE = f"{sugestoes_de_jogos.SOURCE.split(',')[0]} + {pterodactyl_suggestions.SOURCE.split(',')[0]}"
-# The name of each field the egg fills in, so the warning says WHAT came from there.
-_FIELD_LABELS = {"config_path": "pasta de config", "config_files": "arquivos de config", "ports": "portas"}
+# The label of each field the egg fills in (i18n keys), so the warning says WHAT came from there.
+_FIELD_LABELS = {"config_path": "catalog.suggestion.field.config_path",
+                 "config_files": "catalog.suggestion.field.config_files",
+                 "ports": "catalog.suggestion.field.ports"}
+
+
+def _deploy_language(key: str, **fields: object) -> str:
+    return i18n.translate(key, i18n.DEFAULT, **fields)
+
+
+def source_text(translate: Translate = _deploy_language) -> str:
+    """Every source of the search, in one line. The manual list's source is a catalog key; the
+    generated ones (LinuxGSM, Pterodactyl) are data and pass through `translate` unchanged."""
+    return "; ".join(translate(s) for s in (sugestoes_de_jogos.SOURCE, manual_suggestions.SOURCE,
+                                              pterodactyl_suggestions.SOURCE))
 DEFAULT_LIMIT = 8
 QUERY_MAX = 60
 
@@ -34,13 +52,19 @@ def _normalize(text: str) -> str:
 
 def _with_complement(s: dict) -> tuple[dict, str]:
     """The LinuxGSM suggestion with the EMPTY fields the egg fills in. The merge already went through
-    the broker validator at generation time (the panel does not have the broker to validate here)."""
+    the broker validator at generation time (the panel does not have the broker to validate here).
+    Which fields came from the egg is noted in `_COMPLEMENTED`, and `result` turns it into the warning
+    in the language of whoever asked."""
     extra = pterodactyl_suggestions.COMPLEMENTS.get(s["appid"])
     if not extra:
         return s, sugestoes_de_jogos.SOURCE
-    labels = sorted({_FIELD_LABELS[k] for k in extra if k in _FIELD_LABELS})
-    note = f"Veio do egg do Pterodactyl (o LinuxGSM nao tinha): {', '.join(labels)}."
-    return {**s, **extra, "warnings": [*s["warnings"], note]}, _COMBINED_SOURCE
+    merged = {**s, **extra}
+    _COMPLEMENTED[id(merged)] = tuple(_FIELD_LABELS[k] for k in extra if k in _FIELD_LABELS)
+    return merged, _COMBINED_SOURCE
+
+
+# id(suggestion) -> label keys of the fields the Pterodactyl egg filled in.
+_COMPLEMENTED: dict[int, tuple[str, ...]] = {}
 
 
 # The source of each suggestion goes along, and the screen shows it: "LinuxGSM", "panel curation"
@@ -100,6 +124,13 @@ def to_form(s: dict) -> dict[str, str]:
     }
 
 
-def result(s: dict) -> dict:
+def result(s: dict, translate: Translate = _deploy_language) -> dict:
+    """What the API sends. The manual list's warnings and source are catalog keys; the generated
+    lists' are data (LinuxGSM/Pterodactyl), and `translate` gives an unknown key back as is."""
+    warnings = [translate(w) for w in s["warnings"]]
+    labels = _COMPLEMENTED.get(id(s))
+    if labels:
+        fields = ", ".join(sorted(translate(k) for k in labels))
+        warnings.append(translate("catalog.suggestion.from_pterodactyl", fields=fields))
     return {"appid": s["appid"], "name": s["name"], "values": to_form(s),
-            "warnings": list(s["warnings"]), "source": _SOURCE_OF.get(id(s), "")}
+            "warnings": warnings, "source": translate(_SOURCE_OF.get(id(s), ""))}

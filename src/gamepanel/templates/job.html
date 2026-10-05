@@ -14,7 +14,7 @@
 <div class="card"
      {% if job.status == 'running' %}data-job-url="{{ url_for('jobs.api_detail', jid=job.id) }}"
      data-interval="2000" data-job-running="{{ _('job.waiting_output') }}"
-     data-job-end="{{ _('job.finished_exit', code='{codigo}') }}"{% endif %}>
+     data-job-end="{{ _('job.finished_exit', code='{code}') }}"{% endif %}>
   <dl class="meta wide">
     <div><dt>{{ _('job.target') }}</dt><dd>{{ job.target }}</dd></div>
     <div><dt>{{ _('job.started') }}</dt><dd>{{ job.created_at.replace('T', ' ')[:19] }} UTC</dd></div>

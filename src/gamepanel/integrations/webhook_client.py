@@ -2,7 +2,7 @@
 
 Only the sending: what to alert about, and to whom, is decided by
 `services.alert_service`. There is no database or rule here - just a POST and the failure
-reason in Portuguese, for the screen.
+reason (an `i18n.Message`, so the screen can show it in the viewer's language).
 """
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import json
 import urllib.error
 import urllib.request
 
+from gamepanel.i18n import Message
 from gamepanel.runtime.http_probe import URL_RE
 
 # How much of the error response body is worth reading: the destination says what it
@@ -48,7 +49,7 @@ def send(url: str, text: str, timeout: float, user_agent: str) -> str:
     anything else that accepts JSON).
     """
     if not URL_RE.match(url or ""):
-        return "URL invalida (use http:// ou https://)"
+        return Message("webhook.bad_url")
     body = json.dumps({"content": text, "text": text}).encode("utf-8")
     request_body = urllib.request.Request(  # noqa: S310  # NOSONAR - URL_RE already rejected anything not http(s)
         url,
@@ -68,7 +69,9 @@ def send(url: str, text: str, timeout: float, user_agent: str) -> str:
         # Response already consumed/closed.
         except Exception:  # noqa: BLE001
             reason = ""
-        return f"o webhook respondeu HTTP {exc.code}" + (f": {reason}" if reason else "")
+        if reason:
+            return Message("webhook.http_status_reason", status=exc.code, reason=reason)
+        return Message("webhook.http_status", status=exc.code)
     # Network: DNS, TLS, timeout, refused...
     except Exception as exc:  # noqa: BLE001
-        return f"nao consegui chamar o webhook: {exc}"
+        return Message("webhook.call_failed", reason=exc)

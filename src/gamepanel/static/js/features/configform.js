@@ -73,7 +73,7 @@ export const dirtyConfig = {
 
     form.addEventListener('input', () => {
       dirty = true;
-      if (mark) mark.textContent = form.dataset.labelUnsaved || 'ha alteracoes nao salvas';
+      if (mark) mark.textContent = form.dataset.labelUnsaved || '';
     });
     form.addEventListener('submit', release);
   },

@@ -421,7 +421,7 @@ def list_backups(ssh_run: SshRun, server: ServerLike, backup_dir: str, limit: in
         timeout=40,
     )
     if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao listar os backups")
+        raise RemoteError((proc.stderr or proc.stdout).strip() or Message("backup.list_failed"))
     copies: list[dict] = []
     for line in proc.stdout.splitlines():
         parts = line.split("\t", 2)
@@ -442,5 +442,5 @@ def delete_backup(ssh_run: SshRun, server: ServerLike, backup_dir: str, name: st
     proc = ssh_run(
         server, remote_cmd.as_steam(server, "bash", "-lc", BACKUP_DELETE_SCRIPT, "gp", backup_dir, name), timeout=40)
     if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao apagar o backup")
+        raise RemoteError((proc.stderr or proc.stdout).strip() or Message("backup.delete_failed"))
     return proc.stdout.strip()

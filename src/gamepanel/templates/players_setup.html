@@ -39,7 +39,7 @@
           {% if p.ok %}
             <span class="badge on">{{ p.players }}{% if p.max_players %}/{{ p.max_players }}{% endif %} {{ _('charts.players') | lower }}</span>
           {% else %}
-            <span class="muted small">{{ p.error or _('players_setup.no_answer') }}</span>
+            <span class="muted small">{{ _(p.error) if p.error else _('players_setup.no_answer') }}</span>
           {% endif %}
         </td>
         <td class="muted">{{ p.server_name or '-' }}</td>

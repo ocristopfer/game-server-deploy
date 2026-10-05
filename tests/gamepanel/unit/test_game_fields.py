@@ -86,7 +86,7 @@ def test_reciclagem_de_perk_vai_de_zero_a_um(value, accepted):
 
 def test_outros_jogos_tem_catalogo_proprio():
     assert field("PalWorldSettings.ini", "ServerPlayerMaxNum").kind == "number"
-    assert field("ServerSettings.ini", "ShutdownIfEmptyFor").unit == "s"
+    assert field("ServerSettings.ini", "ShutdownIfEmptyFor").unit == "game.unit.seconds"
     assert field("serverDZ.cfg", "steamQueryPort").kind == "number"
     assert field("DedicatedServer.ini", "WorldPassword").kind == "password"
     assert field("/opt/game/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini",

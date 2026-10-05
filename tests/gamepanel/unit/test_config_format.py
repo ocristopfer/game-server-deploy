@@ -174,7 +174,7 @@ def test_json_recusa_texto_onde_o_arquivo_tem_numero():
     doc = gc.load("enshrouded_server.json", ENSHROUDED)
     error = apply_failure(
         doc, gc.Edit(id="slotCount", section="", key="slotCount", value="dezesseis"))
-    assert "numero" in error, error
+    assert "número" in error, error
 
 
 # ---------------------------------------------------------------------- dayz
@@ -228,14 +228,14 @@ def test_dayz_grava_dentro_da_class_sem_estragar_a_estrutura():
 # -------------------------------------------------------------------- limits
 
 @pytest.mark.parametrize("label,key,value,chunk", [
-    ("chave vazia", "", "1", "invalido"),
-    ("chave com = no nome", "x=y", "1", "invalido"),
+    ("chave vazia", "", "1", "inválido"),
+    ("chave com = no nome", "x=y", "1", "inválido"),
     # The key name goes into the game's file, written over SSH: it is ASCII, period.
     # This guards the `re.ASCII` of KEY_RE - without the flag, `\w` in Python would
     # accept accented letters and some 900 other Unicode characters.
-    ("chave com acento", "opção", "1", "invalido"),
-    ("chave com ; no nome", "a;b", "1", "invalido"),
-    ("chave comecando com ponto", ".x", "1", "invalido"),
+    ("chave com acento", "opção", "1", "inválido"),
+    ("chave com ; no nome", "a;b", "1", "inválido"),
+    ("chave comecando com ponto", ".x", "1", "inválido"),
     ("quebra de linha no valor", "x", "a\nb", "quebra de linha"),
 ])
 def test_entrada_torta_e_recusada(label, key, value, chunk):

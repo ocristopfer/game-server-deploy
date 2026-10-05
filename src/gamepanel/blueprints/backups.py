@@ -34,7 +34,7 @@ def index(sid: int):
     try:
         copies = panel.list_backups(server)
     except panel.RemoteError as exc:
-        failure = str(exc)
+        failure = panel.translate(panel.error_text(exc))
     return render_template(
         "backups.html", server=server, copies=copies, error=failure, paths=paths,
         backup_dir=panel.BACKUP_DIR, keep=panel.BACKUP_KEEP,
@@ -173,10 +173,12 @@ def delete(sid: int):
     except panel.RemoteError as exc:
         panel.log_job("delete-backup", server, session.get("username", "?"),
                 command=name, output=str(exc), status="error")
-        flash(panel.translate("flash.could_not_delete", reason=exc), "error")
+        flash(panel.translate("flash.could_not_delete", reason=panel.error_text(exc)), "error")
         return redirect(url_for("backups.index", sid=sid))
     panel.log_job("delete-backup", server, session.get("username", "?"), command=name, output=output)
-    flash(output, "ok")
+    # The script's own line ("backup apagado: ...") stays in the history; the notice comes from the
+    # catalog, so it follows the viewer's language.
+    flash(panel.translate("flash.backup_deleted", file=name), "ok")
     return redirect(url_for("backups.index", sid=sid))
 
 
@@ -190,7 +192,7 @@ def download(sid: int):
     try:
         info = panel.stat_file(server, path)
     except panel.RemoteError as exc:
-        abort(400, str(exc))
+        abort(400, panel.error_text(exc))
 
     panel.log_job("download-file", server, session.get("username", "?"),
             command=path, output=f"{info['size']} bytes")

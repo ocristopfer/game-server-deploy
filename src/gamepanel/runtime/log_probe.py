@@ -184,10 +184,7 @@ def valid_log_path(raw: str | None) -> str:
     if not path:
         return ""
     if not LOG_PATH_RE.match(path) or ".." in path:
-        raise ValueError(
-            "caminho de log invalido - use um caminho absoluto, sem espacos"
-            " (o '*' e permitido, ex.: /opt/game/profiles/*.ADM)"
-        )
+        raise ValueError(Message("log.bad_path"))
     return path
 
 
@@ -206,7 +203,9 @@ def read_log_lines(
     try:
         target = valid_log_path(log_path)
     except ValueError as exc:
-        raise QueryError(str(exc)) from exc
+        # `exc.args[0]`, not `str(exc)`: the reason is a `Message`, and keeping it keeps the key
+        # (the screen shows it in the language of whoever is looking, not the deploy one).
+        raise QueryError(exc.args[0]) from exc
     # journalctl through the systemd-journal group, the log file is world-readable: no right needed.
     command = remote_cmd.unprivileged("bash", "-lc", LOG_PLAYERS_SCRIPT, "gp", service, str(limit), target)
     raw = ssh_output(server, command, 60)

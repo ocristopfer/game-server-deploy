@@ -7,6 +7,7 @@
 import { Poller } from '../core/poll.js';
 import { readJSON } from '../core/http.js';
 import { $ } from '../core/dom.js';
+import { fillText } from '../core/format.js';
 
 const STATE_CLASS = { ok: 'on', error: 'off', running: 'cold' };
 
@@ -19,8 +20,9 @@ export const watchJob = {
     const hint = $('[data-job-hint]', root);
     if (!url || !output) return;
 
-    const running = root.dataset.jobRunning || '(executando...)';
-    const template = root.dataset.jobEnd || 'exit code {codigo}';
+    // Phrases from the template, already in the viewer's language; no text of our own here.
+    const running = root.dataset.jobRunning || '';
+    const template = root.dataset.jobEnd || '{code}';
 
     const poller = new Poller(async () => {
       const data = await readJSON(url);
@@ -33,9 +35,9 @@ export const watchJob = {
 
       poller.stop();
       if (hint) {
-        hint.textContent = template.replace(
-          '{codigo}', data.exit_code === null ? '—' : data.exit_code,
-        );
+        hint.textContent = fillText(template, {
+          code: data.exit_code === null ? '—' : data.exit_code,
+        });
       }
     }, { interval: Number(root.dataset.interval) || 1500 });
 

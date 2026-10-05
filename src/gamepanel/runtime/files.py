@@ -185,7 +185,7 @@ _LIST_LINE_FIELDS = 6
 def list_dir(ssh_run: SshRun, server: ServerLike, path: str, limit: int) -> tuple[list[dict], bool]:
     proc = ssh_run(server, remote_cmd.as_steam(server, "bash", "-lc", LIST_SCRIPT, "gp", path, str(limit)), timeout=40)
     if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao listar a pasta")
+        raise RemoteError((proc.stderr or proc.stdout).strip() or Message("file.list_failed"))
     entries: list[dict] = []
     for line in proc.stdout.splitlines():
         parts = line.split("\t", 5)
@@ -222,7 +222,7 @@ def find_config_files(ssh_run: SshRun, server: ServerLike, root: str, globs: Ite
     )
     proc = ssh_run(server, remote_cmd.as_steam(server, "bash", "-lc", script, "gp", root), timeout=90)
     if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha na busca")
+        raise RemoteError((proc.stderr or proc.stdout).strip() or Message("file.search_failed"))
     found: list[dict] = []
     for line in proc.stdout.splitlines():
         parts = line.split("\t", 2)
@@ -249,7 +249,7 @@ def stat_file(ssh_run: SshRun, server: ServerLike, path: str) -> dict:
     """Metadata without fetching the content - used before starting a download."""
     proc = ssh_run(server, remote_cmd.as_steam(server, "bash", "-lc", STAT_SCRIPT, "gp", path), timeout=40)
     if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao ler o arquivo")
+        raise RemoteError((proc.stderr or proc.stdout).strip() or Message("file.read_failed"))
     meta = _parse_meta(proc.stdout.strip(), 6)
     return {
         "path": path,
@@ -275,7 +275,7 @@ def read_file(
         timeout=180,
     )
     if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao ler o arquivo")
+        raise RemoteError((proc.stderr or proc.stdout).strip() or Message("file.read_failed"))
     head, _, payload = proc.stdout.partition("\n")
     meta = _parse_meta(head, 7)
     try:
@@ -310,7 +310,7 @@ def write_file(ssh_run: SshRun, server: ServerLike, path: str, data: bytes) -> s
         stdin_data=base64.b64encode(data),
     )
     if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao gravar")
+        raise RemoteError((proc.stderr or proc.stdout).strip() or Message("file.write_failed"))
     return proc.stdout.strip()
 
 
@@ -318,7 +318,7 @@ def delete_file(ssh_run: SshRun, server: ServerLike, path: str) -> str:
     """Delete a file (or empty folder) in the container. There is no undo."""
     proc = ssh_run(server, remote_cmd.as_steam(server, "bash", "-lc", DELETE_SCRIPT, "gp", path), timeout=60)
     if proc.returncode != 0:
-        raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao apagar")
+        raise RemoteError((proc.stderr or proc.stdout).strip() or Message("file.delete_failed"))
     return proc.stdout.strip()
 
 
@@ -376,7 +376,7 @@ def ssh_stream_in(
                                    host=server["host"])) from None
     if proc.returncode != 0:
         detail = (failure or out_text or b"").decode("utf-8", "replace").strip()
-        raise RemoteError(detail or f"falha ao enviar (exit {proc.returncode})")
+        raise RemoteError(detail or Message("file.upload_failed", code=proc.returncode))
     return out_text.decode("utf-8", "replace").strip()
 
 

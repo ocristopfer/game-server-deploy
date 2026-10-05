@@ -17,6 +17,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from gamepanel.i18n import Message
+
 # A registered server, as this layer needs to see it: either the SQLite row, or a dict
 # copy of it (used by long tasks, which cannot carry a connection from another thread).
 # Both answer `server["host"]`, which is all that matters here.
@@ -138,15 +140,15 @@ class SshClient:
                 cmd, capture_output=True, text=True, timeout=timeout, check=False
             )
         except subprocess.TimeoutExpired:
-            raise RemoteError(f"tempo esgotado ({timeout}s) executando no host {server['host']}") from None
+            raise RemoteError(Message("ssh.timeout", seconds=timeout, host=server["host"])) from None
         except OSError as exc:
-            raise RemoteError(f"falha ao executar ssh: {exc}") from exc
+            raise RemoteError(Message("ssh.failed_to_run", reason=exc)) from exc
 
     def output(self, server: ServerLike, remote_cmd: str, timeout: int | None = None) -> str:
         proc = self.run(server, remote_cmd, timeout=timeout)
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout or "").strip()
-            raise RemoteError(detail or f"comando falhou (exit {proc.returncode})")
+            raise RemoteError(detail or Message("ssh.command_failed", code=proc.returncode))
         return proc.stdout.strip()
 
     def forget_host(self, host: str, port: int = 22) -> None:

@@ -93,7 +93,7 @@
     </div>
   </div>
 
-  {% if status.error %}<p class="flash error small">{{ status.error }}</p>{% endif %}
+  {% if status.error %}<p class="flash error small">{{ _(status.error) }}</p>{% endif %}
 
   <div class="mini-meters" data-server="{{ server.id }}">
     <span class="muted small">{{ _('server.measuring') }}</span>

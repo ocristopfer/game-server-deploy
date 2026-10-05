@@ -15,21 +15,18 @@ FILENAME = re.compile(r"^DedicatedServer\.ini$", re.I)
 # save (.sav), and mods like "No Carry Capacity" only expose them in the game's "Edit
 # Settings" menu. Do not invent such keys in this catalog: the game ignores them.
 FIELDS = {
-    "OwnerId": FieldSpec("ID do dono",
-                         "Seu Player ID, no rodapé do menu de Configurações do jogo (não é "
-                         "o Steam ID de 17 dígitos). Sem ele o servidor NÃO sobe."),
-    "ServerName": FieldSpec(LABEL_NAME, "Como ele aparece para quem entra."),
-    "DefaultWorldName": FieldSpec("Nome do mundo padrão",
-                                  "Nome do mundo criado no primeiro start. "
-                                  "Trocar depois não renomeia um mundo que já existe."),
+    "OwnerId": FieldSpec("game.dragonwilds.ownerid.label",
+                         "game.dragonwilds.ownerid.help"),
+    "ServerName": FieldSpec(LABEL_NAME, "game.dragonwilds.servername.help"),
+    "DefaultWorldName": FieldSpec("game.dragonwilds.defaultworldname.label",
+                                  "game.dragonwilds.defaultworldname.help"),
     "AdminPassword": FieldSpec(LABEL_ADMIN_PASSWORD,
-                               "Quem souber esta senha abre a aba Server Management no menu "
-                               "do jogo e vira admin. TROQUE antes de expor o servidor.",
+                               "game.dragonwilds.adminpassword.help",
                                kind="password"),
-    "WorldPassword": FieldSpec(LABEL_JOIN_PASSWORD, "Vazio = qualquer um entra.",
+    "WorldPassword": FieldSpec(LABEL_JOIN_PASSWORD, "game.dragonwilds.worldpassword.help",
                                kind="password"),
-    "ServerGuid": FieldSpec("GUID do servidor", "Gerado pelo próprio jogo. Não edite à mão."),
-    "KnownPlayerList": FieldSpec("Jogadores conhecidos",
-                                 "Preenchido pelo próprio jogo (quem já entrou, privilégios "
-                                 "e banimentos). Não edite à mão."),
+    "ServerGuid": FieldSpec("game.dragonwilds.serverguid.label",
+                            "game.dragonwilds.serverguid.help"),
+    "KnownPlayerList": FieldSpec("game.dragonwilds.knownplayerlist.label",
+                                 "game.dragonwilds.knownplayerlist.help"),
 }
