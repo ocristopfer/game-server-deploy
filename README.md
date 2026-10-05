@@ -1108,7 +1108,27 @@ understands mods:
   screen on a production container: the screen warns. **The antivirus does not scan beforehand**,
   because the game does the download: use **Scan installed mods** afterwards. A list that yields
   no IDs is rejected; only an EMPTY field clears the list.
-- Game without a manager yet: the screen sends you to **Files**.
+- **Any other game: manual setup.** A game the panel has no manager for gets a **Manual mod
+  setup** form (admins only): the link to its mod loader (https only; a `.zip`, `.tar.gz` or a
+  single file), the folder it is unpacked into and the folder mods go in (both relative to
+  `/opt/game`), the accepted extensions (default `.pak .utoc .ucas .dll .jar .cs .lua .esp .esm
+  .bsa`; scripts and executables such as `.sh`, `.so`, `.exe` are never accepted) and, only for a
+  container in the hardened (helper) mode, extra Wine overrides (`winhttp=n,b`) and one
+  `LD_PRELOAD` library. **Install the loader** is a job: the container downloads it (256 MB at
+  most), the antivirus scans it, and it is unpacked only if no entry is a link, leaves the folder
+  or would overwrite a file the install did not create (zip slip, zip bombs and game files are
+  refused before anything is written). **Uninstall** removes only what the install created and
+  the environment lines it set. Then mods are uploaded, listed and removed like on any other
+  game. The panel cannot know whether a loader it did not measure works: the screen says so. A
+  game with its own manager keeps it: the manual setup is not offered there.
+
+**Removing mods.** Every list of mods on the screen (files, folder mods, UE4SS Lua mods, `.cs`
+plugins) has a box per row and one **Remove the ticked ones** button, with confirmation and the
+restart as the last step of the job. Only names travel, never paths, and the container refuses a
+mods folder that is (or sits under) a link. An Unreal 5 mod leaves with its three files (`.pak`,
+`.utoc`, `.ucas`); a UE4SS Lua mod leaves with its line in `mods.txt` (the rest of the file stays
+as it was). Thunderstore and ficsit.app mods keep their own remove button; Workshop mods are
+removed by taking the line out of the list.
 
 Every Mods screen has links to **where to find mods** for that game. **Nexus Mods** is always a
 link, never an automatic download: its API only serves files to Premium accounts, and automating

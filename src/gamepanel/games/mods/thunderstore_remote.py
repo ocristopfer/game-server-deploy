@@ -596,10 +596,37 @@ def install_plugin(game_dir: str, ns: str, name: str, fetcher=fetch, loader_ns: 
     return {"installed": installed}
 
 
+def under_link(path: str) -> bool:
+    """True when `path` or any folder above it is a symbolic link.
+
+    realpath() against abspath() would say the same on Linux, but also flags Windows 8.3 short names
+    (PROGRA~1) in the tests. What matters is the link: the game can plant one in a folder it
+    writes, and an rmtree run as root through it deletes wherever it points.
+    """
+    path = os.path.abspath(path)
+    while True:
+        if os.path.islink(path):
+            return True
+        parent = os.path.dirname(path)
+        if parent == path:
+            return False
+        path = parent
+
+
 def remove_plugin(game_dir: str, ns: str, name: str) -> dict:
     target = os.path.join(_plugins_dir(game_dir), f"{check_part(ns)}-{check_part(name)}")
+    # BepInEx/plugins being a link (or under one) would make rmtree delete wherever it points: in
+    # legacy mode this runs as root, in a folder the game itself can write.
+    if under_link(_plugins_dir(game_dir)):
+        raise ValueError(f"the plugins folder is (or is under) a link: {_plugins_dir(game_dir)}")
+    if os.path.islink(target):
+        os.remove(target)
+        return {"removed": True}
     existed = os.path.isdir(target)
-    shutil.rmtree(target, ignore_errors=True)
+    # No ignore_errors: a folder steam cannot delete (left by a root install before the CT was
+    # migrated) used to come back as "removed" while the plugin stayed and kept loading.
+    if existed:
+        shutil.rmtree(target)
     return {"removed": existed}
 
 

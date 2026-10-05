@@ -157,14 +157,18 @@ def test_nome_com_caminho_vira_so_o_nome(admin, ets2_server, monkeypatch, mkdir_
     assert "/etc/" not in sent[0]
 
 
-def test_remover_so_vale_para_pasta_de_mods_e_so_pelo_nome(admin, post, database, monkeypatch):
+def test_remover_so_vale_para_pasta_de_mods_e_so_pelo_nome(admin, post, database, upload_jobs):
+    """The removal is a job, by name, in the profile's folder: a path or a foreign extension never gets in."""
     sid = _server(database, "palworld.service")
-    removed: list = []
-    monkeypatch.setattr(panel, "delete_file", lambda server, path: removed.append(path) or "apagado")
     post(admin, f"/servers/{sid}/mods/delete", {"name": "../../../etc/passwd"})
     post(admin, f"/servers/{sid}/mods/delete", {"name": "script.sh"})
+    assert upload_jobs == []
     post(admin, f"/servers/{sid}/mods/delete", {"name": "MeuMod_P.pak"})
-    assert removed == ["/opt/game/Pal/Content/Paks/~mods/MeuMod_P.pak"]
+    (action, kw), = upload_jobs
+    assert action == "delete-mod"
+    (step,) = kw["steps"]
+    assert "'/opt/game/Pal/Content/Paks/~mods' f MeuMod_P.pak" in step
+    assert "/etc/passwd" not in step
 
 
 def test_jogo_sem_gestor_manda_para_arquivos(admin, database):

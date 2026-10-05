@@ -17,8 +17,11 @@ from flask import Blueprint, flash, redirect, render_template, request, session,
 from gamepanel import app as panel
 from gamepanel.games.mods import (
     antivirus,
+    custom,
+    custom_remote,
     oxide_remote,
     profiles,
+    removal,
     shroudtopia_remote,
     sml_remote,
     thunderstore,
@@ -31,6 +34,7 @@ from gamepanel.games.mods import (
     workshop_remote,
 )
 from gamepanel.games.mods import ets2 as ets2_mods
+from gamepanel.i18n import Message
 from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.runtime import remote_cmd
 
@@ -51,6 +55,8 @@ UE_SYM_SOURCE = Path(ue_sym_layout.__file__).read_text(encoding="utf-8")
 UE_LINUX_LAYOUT_SOURCE = Path(ue_linux_layout.__file__).read_text(encoding="utf-8")
 # Workshop through the config: the script only reads and writes the mod list in the game config, on the CT.
 WORKSHOP_SOURCE = Path(workshop_remote.__file__).read_text(encoding="utf-8")
+# The custom setup (a loader from the admin's link): download, unpack, mods folder - all in the CT.
+CUSTOM_SOURCE = Path(custom_remote.__file__).read_text(encoding="utf-8")
 # Downloading BepInEx (33 MB) and the dependencies takes minutes: it becomes a job, with its own log and deadline.
 INSTALL_TIMEOUT = 1800
 LOADER_ACTIONS = ("install", "enable", "disable", "uninstall")
@@ -61,8 +67,26 @@ INDEX = "mods.index"
 EXPECTED_MAX_CHARS = 20000
 
 
+def _custom_setup(server) -> custom.CustomSetup | None:
+    """The server's custom mod setup, re-validated from the database (None = there is none)."""
+    try:
+        text = server["mods_custom"]
+    except (IndexError, KeyError):
+        return None
+    return custom.from_json(text or "")
+
+
 def _profile_or_none(server) -> profiles.ModProfile | None:
-    return profiles.profile_for(server["service"])
+    """The built-in profile of the game, or the custom setup when the game has none.
+
+    The built-in one WINS: it carries what was measured on a real server, and two managers on the
+    same folder would fight over the same files and the same Wine setting.
+    """
+    builtin = profiles.profile_for(server["service"])
+    if builtin:
+        return builtin
+    setup = _custom_setup(server)
+    return custom.profile(setup) if setup else None
 
 
 def _expected_ids(server) -> list[int]:
@@ -126,7 +150,25 @@ def uses_overlay(profile: profiles.ModProfile) -> bool:
 def _remote_cmd(server, profile: profiles.ModProfile, action: str, *args: str, service: str = "") -> str:
     """The installer command for this server: as root in legacy mode, as steam in helper mode."""
     helper = not remote_cmd.privileged(server)
+    if profile.kind == profiles.KIND_CUSTOM:
+        setup = _custom_setup(server)
+        # The setup travels whole, as JSON: the CT checks it again before touching anything.
+        return remote_cmd.as_steam(server, *_custom_argv(setup.to_json() if setup else "{}", action, *args,
+                                                         service=service or server["service"] or "",
+                                                         helper=helper))
     return remote_cmd.as_steam(server, *_installer_argv(profile, action, *args, service=service, helper=helper))
+
+
+def _custom_argv(setup_json: str, action: str, *args: str, service: str = "", helper: bool = False) -> tuple[str, ...]:
+    script = antivirus.SCAN_SCRIPT_AS_STEAM if helper else antivirus.SCAN_SCRIPT
+    scan = ("--scan", script) if action in SCANNED_ACTIONS else ()
+    # Always in helper mode: whether the setup HAS environment settings is the CT's to check (it
+    # reads the same JSON), and without the flag it refuses them as a legacy-mode CT.
+    overlay = ("--overlay",) if helper else ()
+    stem = profiles.service_stem(service)
+    unit = ("--unit", f"{stem}.service") if stem else ()
+    return ("python3", "-c", CUSTOM_SOURCE, *overlay, *scan, *unit, "--setup", setup_json, action,
+            profiles.GAME_DIR, *args)
 
 
 def _installer_steps(server, profile: profiles.ModProfile, action: str, *args: str, service: str = "") -> list[str]:
@@ -264,8 +306,15 @@ def index(sid: int):
     elif profile and profile.kind == profiles.KIND_UE4SS_LINUX:
         # Both: the loader (status on the CT) and the .pak files of the profile folder.
         view = {**_shroudtopia_view(server, profile, errors), **_folder_view(server, profile)}
+    elif profile and profile.kind == profiles.KIND_CUSTOM:
+        view = _shroudtopia_view(server, profile, errors)
+    setup = _custom_setup(server)
     return render_template(
         "mods.html", server=server, profile=profile, view=view, errors=errors,
+        # The custom setup form: only where the game has no built-in profile (the built-in one wins).
+        custom_allowed=profiles.profile_for(server["service"]) is None,
+        custom_form=setup.as_form() if setup else {"extensions": " ".join(custom.DEFAULT_EXTENSIONS)},
+        helper_mode=not remote_cmd.privileged(server), kind_custom=profiles.KIND_CUSTOM,
         expected_text="\n".join(str(i) for i in _expected_ids(server)),
         workshop_url=workshop.url, kind_packages=profiles.KIND_PACKAGES,
         kind_thunderstore=profiles.KIND_THUNDERSTORE, kind_folder=profiles.KIND_FOLDER,
@@ -296,7 +345,11 @@ def _thunderstore_job(sid: int, action: str, step: str | list[str], label: str):
 
 
 # Profiles where the panel installs the LOADER (the "Install/Enable/Disable" button).
-LOADER_KINDS = (profiles.KIND_THUNDERSTORE, *NATIVE_LOADERS, profiles.KIND_SML, profiles.KIND_UE4SS_LINUX)
+LOADER_KINDS = (profiles.KIND_THUNDERSTORE, *NATIVE_LOADERS, profiles.KIND_SML, profiles.KIND_UE4SS_LINUX,
+                profiles.KIND_CUSTOM)
+# The custom loader is only installed or uninstalled: enabling and disabling would need knowledge
+# of how THAT loader is switched off, which the panel does not have.
+CUSTOM_LOADER_ACTIONS = ("install", "uninstall")
 
 
 def _loader_profile_or_back(sid: int):
@@ -338,6 +391,8 @@ def loader(sid: int):
     action = request.form.get("action", "")
     if not profile or action not in LOADER_ACTIONS:
         return redirect(url_for(INDEX, sid=sid))
+    if profile.kind == profiles.KIND_CUSTOM:
+        return _custom_loader(sid, profile, action)
     # The version only applies to installing: enabling and disabling download nothing.
     version = _form_version() if action == "install" else ""
     if version is None:
@@ -353,6 +408,61 @@ def loader(sid: int):
                                  _with_version("SML: install", version))
     command = _installer_steps(server, profile, f"loader-{action}", *args, service=server["service"] or "")
     return _thunderstore_job(sid, "mod-loader", command, _with_version(f"{name}: {action}", version))
+
+
+def _custom_loader(sid: int, profile: profiles.ModProfile, action: str):
+    server = panel._server_or_404(sid)
+    setup = _custom_setup(server)
+    if action not in CUSTOM_LOADER_ACTIONS or not setup or (action == "install" and not setup.loader_url):
+        return redirect(url_for(INDEX, sid=sid))
+    # The CT refuses too; saying it here keeps the person from waiting for a job that cannot work
+    # (the mode can change after the setup was saved: a CT migrated back, a server re-registered).
+    if setup.needs_overlay and remote_cmd.privileged(server):
+        flash(panel.translate("mods.custom_overlay_needs_helper"), "error")
+        return redirect(url_for(INDEX, sid=sid))
+    steps = _installer_steps(server, profile, f"loader-{action}", service=server["service"] or "")
+    return _thunderstore_job(sid, "mod-loader", steps, f"custom: {action}")
+
+
+@bp.post("/servers/<int:sid>/mods/custom")
+@panel.admin_required
+def custom_save(sid: int):
+    """Store the custom mod setup (only for a game with no built-in profile)."""
+    panel._files_guard()
+    server = panel._server_or_404(sid)
+    go_back = url_for(INDEX, sid=sid)
+    if profiles.profile_for(server["service"]) is not None:
+        flash(panel.translate("mods.custom_builtin_wins"), "error")
+        return redirect(go_back)
+    form = {field: (request.form.get(field) or "")[:EXPECTED_MAX_CHARS] for field in custom.FIELDS}
+    setup, problems = custom.parse(form)
+    if setup and setup.needs_overlay and remote_cmd.privileged(server):
+        problems = [Message("mods.custom_overlay_needs_helper")]
+    if not setup or problems:
+        for problem in problems:
+            flash(panel.translate(problem), "error")
+        return redirect(go_back)
+    conn = panel.db()
+    with conn:
+        servers_repo.set_mods_custom(conn, sid, setup.to_json())
+    # Who changed the link a loader is downloaded from is worth a line in the history.
+    panel.log_job("mod-setup", server, session.get("username", "?"), command=setup.to_json(), output="")
+    flash(panel.translate("mods.custom_saved"), "ok")
+    return redirect(go_back)
+
+
+@bp.post("/servers/<int:sid>/mods/custom/clear")
+@panel.admin_required
+def custom_clear(sid: int):
+    """Forget the custom setup. Nothing is deleted in the container: uninstalling is its own button."""
+    panel._files_guard()
+    server = panel._server_or_404(sid)
+    conn = panel.db()
+    with conn:
+        servers_repo.set_mods_custom(conn, sid, "")
+    panel.log_job("mod-setup", server, session.get("username", "?"), command="", output="")
+    flash(panel.translate("mods.custom_cleared"), "ok")
+    return redirect(url_for(INDEX, sid=sid))
 
 
 @bp.post("/servers/<int:sid>/mods/plugin/install")
@@ -535,10 +645,11 @@ def upload(sid: int):
         flash(panel.translate("flash.could_not_upload", reason=panel.error_text(exc)), "error")
         return redirect(go_back)
 
-    steps: list[panel.JobStep] = [
-        *antivirus.scan_steps(server, incoming),
-        antivirus.place_command(server, incoming, profile.folder),
-    ]
+    # The custom setup's folder is the admin's choice: its installer places the file itself, after
+    # checking in the CT that the folder (links resolved) is still inside the game folder.
+    place = (_remote_cmd(server, profile, "mod-place", incoming) if profile.kind == profiles.KIND_CUSTOM
+             else antivirus.place_command(server, incoming, profile.folder))
+    steps: list[panel.JobStep] = [*antivirus.scan_steps(server, incoming), place]
     # A mod only takes effect when the server starts again: restart lives here, as on the Config screen.
     if request.form.get("restart") == "1":
         steps.append(panel.COMMANDS["restart"](server))
@@ -564,32 +675,71 @@ def audit(sid: int):
     return redirect(url_for("jobs.detail", jid=job_id))
 
 
+# Profiles whose mods are FILES (and, where the profile says so, folders) in one mods folder.
+FILE_REMOVAL_KINDS = (profiles.KIND_FOLDER, profiles.KIND_SHROUDTOPIA, profiles.KIND_OXIDE,
+                      profiles.KIND_UE4SS_LINUX, profiles.KIND_CUSTOM)
+# Profiles whose Lua mods (folders in UE4SS's Mods/) are listed by the installer's status.
+LUA_KINDS = (profiles.KIND_UE4SS, profiles.KIND_UE4SS_LINUX)
+
+
+def _removal_job(sid: int, server, action: str, step: str, label: str):
+    steps: list[panel.JobStep] = [step]
+    # A removed mod only stops loading when the server starts again: same restart as the upload,
+    # and the LAST step, so a removal that failed does not restart the server for nothing.
+    if request.form.get("restart") == "1":
+        steps.append(panel.COMMANDS["restart"](server))
+    job_id = panel.start_job(action, server, session.get("username", "?"), command=label,
+                             timeout=INSTALL_TIMEOUT, steps=steps)
+    panel.invalidate_status(sid)
+    return redirect(url_for("jobs.detail", jid=job_id))
+
+
 @bp.post("/servers/<int:sid>/mods/delete")
 @panel.admin_required
 def delete(sid: int):
+    """Remove the ticked mod files (and folder mods) from the profile's mods folder, as a job."""
     panel._files_guard()
     server = panel._server_or_404(sid)
     profile = _profile_or_none(server)
     go_back = url_for(INDEX, sid=sid)
-    name = (request.form.get("name") or "").strip()
-    # Only the mod file in the profile folder, by name: no path coming from the form.
-    # Mods folder with loose files: the one for .pak files and the one for Shroudtopia DLLs.
-    deletable = (profiles.KIND_FOLDER, profiles.KIND_SHROUDTOPIA, profiles.KIND_OXIDE, profiles.KIND_UE4SS_LINUX)
-    if not profile or profile.kind not in deletable or "/" in name or not profile.accepts(name):
-        flash(panel.translate("mods.bad_name", name=name or "?",
-                              allowed=", ".join(profile.extensions if profile else ())), "error")
+    if not profile or profile.kind not in FILE_REMOVAL_KINDS:
+        flash(panel.translate("mods.not_thunderstore"), "error")
         return redirect(go_back)
-    path = f"{profile.folder}/{name}"
-    user = session.get("username", "?")
     try:
-        output = panel.delete_file(server, panel.clean_path(path))
-    except (ValueError, panel.RemoteError) as exc:
-        panel.log_job("delete-mod", server, user, command=path, output=str(exc), status="error")
-        flash(panel.translate("flash.could_not_delete", reason=panel.error_text(exc)), "error")
+        # Names only, never a path, and all of them checked before anything reaches the container.
+        pairs = removal.targets(profile, request.form.getlist("name"), request.form.getlist("folder"))
+    except ValueError as exc:
+        flash(panel.translate(panel.error_text(exc)), "error")
         return redirect(go_back)
-    panel.log_job("delete-mod", server, user, command=path, output=output)
-    flash(panel.translate("mods.deleted", name=name), "ok")
-    return redirect(go_back)
+    if profile.kind == profiles.KIND_CUSTOM:
+        step = _remote_cmd(server, profile, "mod-remove", *(part for pair in pairs for part in pair))
+    else:
+        step = removal.remove_command(server, profile.folder, pairs)
+    label = f"{profile.folder}: {', '.join(name for _, name in pairs)}"
+    return _removal_job(sid, server, "delete-mod", step, label)
+
+
+@bp.post("/servers/<int:sid>/mods/lua/remove")
+@panel.admin_required
+def lua_remove(sid: int):
+    """Remove UE4SS Lua mods (folders in Mods/) and their mods.txt lines, through the installer."""
+    panel._files_guard()
+    server = panel._server_or_404(sid)
+    profile = _profile_or_none(server)
+    go_back = url_for(INDEX, sid=sid)
+    names = [n.strip() for n in request.form.getlist("lua")]
+    if not profile or profile.kind not in LUA_KINDS:
+        flash(panel.translate("mods.not_thunderstore"), "error")
+        return redirect(go_back)
+    # The installer checks again in the CT; checking here keeps a bad name out of the command.
+    bad = next((n for n in names if not ue4ss_remote.LUA_MOD_NAME.fullmatch(n)
+                or n.lower() in ue4ss_remote.LUA_PROTECTED), None)
+    if not names or bad is not None or len(names) > removal.MAX_NAMES:
+        flash(panel.translate("mods.remove_none_selected") if not names
+              else panel.translate("mods.bad_lua_name", name=bad or "?"), "error")
+        return redirect(go_back)
+    step = _remote_cmd(server, profile, "mod-remove", *names, service=server["service"] or "")
+    return _removal_job(sid, server, "mod-remove", step, f"Lua: {', '.join(names)}")
 
 
 @bp.post("/servers/<int:sid>/mods/expected")

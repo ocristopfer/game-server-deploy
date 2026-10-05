@@ -19,6 +19,7 @@ import pytest
 
 from gamepanel.games.mods import (
     antivirus,
+    custom_remote,
     oxide_remote,
     shroudtopia_remote,
     sml_remote,
@@ -187,7 +188,7 @@ def test_token_de_envio_so_hex(token):
 def test_os_instaladores_remotos_verificam_do_mesmo_jeito():
     """They run standalone in the CT and do not import each other: the copy has to be identical."""
     source = inspect.getsource(thunderstore_remote.scanner)
-    for other in (shroudtopia_remote, ue4ss_remote, sml_remote, oxide_remote, ue4ss_linux_remote):
+    for other in (shroudtopia_remote, ue4ss_remote, sml_remote, oxide_remote, ue4ss_linux_remote, custom_remote):
         assert source == inspect.getsource(other.scanner), other.__name__
 
 

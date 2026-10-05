@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from gamepanel.games.mods import (
+    custom_remote,
     shroudtopia_remote,
     thunderstore_remote,
     ue4ss_linux_remote,
@@ -25,7 +26,8 @@ from gamepanel.games.mods import (
 )
 
 REPO = Path(__file__).resolve().parents[3]
-OVERLAY_USERS = (thunderstore_remote, shroudtopia_remote, ue4ss_remote, ue4ss_linux_remote, workshop_remote)
+OVERLAY_USERS = (thunderstore_remote, shroudtopia_remote, ue4ss_remote, ue4ss_linux_remote, workshop_remote,
+                 custom_remote)
 BLOCK = re.compile(r"# -+ steam overlay \(helper mode\)\n.*?# -+ end of the steam overlay\n", re.S)
 
 

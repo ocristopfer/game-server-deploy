@@ -41,6 +41,15 @@ KIND_WORKSHOP = "workshop"
 # Guide only (where to find, how to install), no action: the path exists but has not been proven
 # on a real server yet, and a button that "installs" without proof is worse than clear instructions.
 KIND_GUIDE = "guide"
+# Set up BY HAND on a server whose game has no built-in profile (games/mods/custom.py): a loader
+# downloaded from a link the admin gives, unpacked where the admin says, and a mods folder that
+# receives uploads. The panel cannot know whether that loader works: the screen says so.
+KIND_CUSTOM = "custom"
+
+# Where every game lives in the container: GAME_DIR of lib/ct-install.sh, deploy/game/
+# provision-game-lxc.sh and docker/gameserver. The built-in profiles below spell it out; the custom
+# setup only takes folders RELATIVE to it.
+GAME_DIR = "/opt/game"
 
 # Where each game's mods are found. Nexus Mods stays as a LINK, never as an automatic download:
 # its API only serves files to Premium accounts, and automating without one violates the terms
@@ -91,6 +100,9 @@ class ModProfile:
     engine_version: str = ""
     # Workshop through the config: the format workshop_remote knows how to write.
     workshop_format: str = ""
+    # Mods that are FOLDERS in the mods folder (Shroudtopia's mod.json folders): the screen lists
+    # them and they can be removed as a whole. Without this, only accepted FILES are removable.
+    folder_mods: bool = False
 
     @property
     def scan_paths(self) -> tuple[str, ...]:
@@ -177,6 +189,8 @@ ENSHROUDED = ModProfile(
     folder="/opt/game/mods",
     help_key="mods.help_enshrouded",
     extensions=(".dll",),
+    # A Shroudtopia mod is a DLL or a folder with its mod.json (shroudtopia_remote lists both).
+    folder_mods=True,
     audit_paths=("/opt/game/mods", "/opt/game/winmm.dll", "/opt/game/shroudtopia.dll"),
     sources=(("mods.source_shroudtopia", "https://github.com/s0t7x/shroudtopia/releases"),
              ("mods.source_nexus", NEXUS + "enshrouded/mods/")),

@@ -234,7 +234,8 @@ src/
       mods/                mod manager: one profile per game (profiles.py), the reader of ETS2's
                            server_packages (ets2.py), Workshop IDs (workshop.py) and
                            Thunderstore/BepInEx (thunderstore.py in the panel, thunderstore_remote.py
-                           which RUNS IN THE CT)
+                           which RUNS IN THE CT), removal by name (removal.py) and the manual setup
+                           for games without a profile (custom.py in the panel, custom_remote.py in the CT)
       catalog/
         search.py          search by name/App ID over suggestions.py (was busca_de_jogos.py)
         templates.py        "Add game" form templates, one per engine (Unreal/Unity Linux
@@ -564,6 +565,45 @@ only game identity every server has.
     ServerSettings.ini (`read_text(..., raw=True)`: text mode turned it into LF). Measured: a
     "[Legacy]" (UE4) item is ignored without a word, and a mod "too old for this game version"
     makes the server EXIT at boot; the status reads those refusals from ConanSandbox.log.
+- **Every mod that can get in can get out, by NAME, as a job.** The lists (files, folder mods,
+  UE4SS Lua mods, Oxide plugins) are one form with a box per row, one restart choice and one
+  confirmed button (`srv.mod_removal`): a form per row could not carry the restart, which is the
+  job's LAST step. The panel says which rows are files (`name`) and which are folders (`folder`,
+  only where the profile has `folder_mods`, today Shroudtopia and the manual setup); a name with a
+  slash, `..` or an extension the profile does not take refuses the WHOLE batch
+  (`removal.targets`). The script (`removal.REMOVE_SCRIPT`, as steam in helper mode) refuses a
+  mods folder whose `realpath` is not itself: in legacy mode it runs as root in a folder the game
+  writes, and a planted link would turn `rm -rf` into a delete elsewhere. An Unreal 5 `.pak`
+  takes its `.utoc`/`.ucas` (IoStore) along, only where the profile accepts them. A Lua mod goes
+  through its installer (`mod-remove`), which also drops ONLY its `mods.txt` line, byte for byte
+  (BOM, CRLF and the owner's comments stay; the block is identical in both UE4SS installers and a
+  test compares them). Two lists were invisible before: a DLL or `.cs` uploaded before its loader
+  was installed (Shroudtopia, Oxide) - the status lists the folder regardless now.
+- **`rmtree(..., ignore_errors=True)` lied**: the Thunderstore and SML removals answered "removed"
+  when steam could not delete a folder a root install had left, and the plugin kept loading. They
+  raise now, and refuse a plugins/mods folder under a link (`under_link`, ancestor by ancestor:
+  `realpath` against `abspath` also flags Windows 8.3 names in the tests).
+- **`KIND_CUSTOM` is the manual setup** (`games/mods/custom.py`), for a game with NO built-in
+  profile: the built-in one wins (two managers on one folder would fight over the same files and
+  Wine setting), so the form is only offered, and the POST only accepted, there. It is one JSON
+  column (mods_custom, in the servers table): the six fields are always read, checked and written together.
+  The row is re-validated through `custom.parse` on every read, and the CT checks it again
+  (`custom_remote.load_setup`, same rules; a test keeps the copies equal). No free text becomes
+  shell: an https link, folders relative to `profiles.GAME_DIR` (one short character set per
+  part, no `.`/`..`), extensions (scripts, `.so` and executables never), and only two
+  environment settings - Wine overrides (`name=n,b`) and one `LD_PRELOAD` `.so`.
+  - **The environment needs helper mode.** It goes through steam's overlay, applied when the
+    loader is installed and taken out on uninstall (with the game's own replaced entries, like
+    `mscoree=`, put back). In legacy mode a setup with environment is refused on save AND in the
+    CT: writing root's drop-ins for a loader nobody measured is the wrong place to start.
+  - **The CT does everything inside the game folder after `realpath`** (`custom_remote.confined`),
+    caps the download (256 MB, https redirects only) and the unpacking (1 GB, 20000 entries),
+    refuses links, devices and `..` in the archive BEFORE writing, and refuses to overwrite a file
+    the install did not create (a game file it could not give back). The marker records what the
+    install CREATED (written even when it stops halfway, flagged as incomplete), and uninstall
+    removes only that. Uploads land through the custom installer (`mod-place`), not the generic
+    `PLACE_SCRIPT`, because the folder is the admin's choice and has to be confined in the CT.
+  - Proven in the dev compose with the real BepInEx 5 Linux zip and real ClamAV, in both modes.
 
 ### A new game with its own screen = one file, one line and its keys
 

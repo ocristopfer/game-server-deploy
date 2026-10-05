@@ -552,7 +552,6 @@ MESSAGES: dict[str, str] = {
     "mods.no_files": "No mods in the folder yet.",
     "mods.delete": "Remove",
     "mods.delete_confirm": "Remove {name} from the server?",
-    "mods.deleted": "{name} removed.",
     "mods.upload_title": "Upload to the server",
     "mods.files_to_send": "Files",
     "mods.upload_accepts":
@@ -643,7 +642,6 @@ MESSAGES: dict[str, str] = {
     "mods.shroudtopia_title": "Shroudtopia (mod loader)",
     "mods.shroudtopia_missing": "Shroudtopia is not installed on this server yet.",
     "mods.shroudtopia_install": "Install Shroudtopia",
-    "mods.shroudtopia_folder_mod": "folder (with mod.json)",
     "mods.shroudtopia_log": "End of the loader log",
     "mods.shroudtopia_log_help":
         "A mod built for another game version does not bring the server down, but "
@@ -798,6 +796,94 @@ MESSAGES: dict[str, str] = {
         "The old UE4SS install (the previous fork) is still next to the executable: install again "
         "to move the Lua mods into the ue4ss/ folder and remove its files.",
     "mods.bad_name": "{name} is not accepted here. Expected: {allowed}.",
+    "mods.folder_mod": "folder (whole mod)",
+    "mods.remove_selected": "Remove the ticked ones",
+    "mods.remove_selected_confirm":
+        "Remove the ticked mods from the server? This cannot be undone: to bring one back, upload it "
+        "again.",
+    "mods.remove_none_selected": "Tick at least one mod to remove.",
+    "mods.remove_too_many": "At most {n} mods at a time.",
+    "mods.bad_lua_name": "{name} is not the name of a Lua mod that can be removed here.",
+    "mods.lua_title": "Lua mods (UE4SS)",
+    "mods.lua_remove_help":
+        "Removing deletes the mod's folder and its line in mods.txt; the rest of mods.txt stays as it "
+        "is.",
+    "mods.iostore_remove_help":
+        "An Unreal 5 mod comes in three files with the same name (.pak, .utoc and .ucas): ticking one "
+        "of them removes all three.",
+    "mods.help_custom":
+        "Manual setup: the panel downloads the loader from the link you gave, unpacks it where you "
+        "said and receives mods in <code>{folder}</code>.",
+    "mods.custom_warning":
+        "Manual setup: the panel has no way of knowing whether this loader works with this game. It "
+        "only downloads, runs the antivirus, unpacks and removes what it installed - if the server "
+        "does not start, uninstall the loader.",
+    "mods.custom_setup_title": "Manual mod setup",
+    "mods.custom_setup_help":
+        "For a game the panel does not know: the link to the loader (mod manager), the folder it goes "
+        "in and the folder mods live in. Folders are relative to the game folder (/opt/game).",
+    "mods.custom_url_label": "Loader link (optional)",
+    "mods.custom_url_help":
+        "https only. A .zip, a .tar.gz or a single file (a DLL). Empty = the game needs no loader, "
+        "just the mods folder.",
+    "mods.custom_loader_dir_label": "Loader folder",
+    "mods.custom_loader_dir_help":
+        "Where the package is unpacked, relative to the game folder (usually the executable's). Empty "
+        "= the game folder itself.",
+    "mods.custom_mods_dir_label": "Mods folder",
+    "mods.custom_mods_dir_help": "Where uploaded mods go, relative to the game folder. E.g. BepInEx/plugins",
+    "mods.custom_ext_label": "Accepted extensions",
+    "mods.custom_ext_help":
+        "Separated by spaces. Scripts and executables (.sh, .so, .exe...) never get in. Empty goes "
+        "back to the default.",
+    "mods.custom_env_title": "Game environment (optional)",
+    "mods.custom_wine_label": "Wine overrides",
+    "mods.custom_wine_help":
+        "For Windows loaders (Proton/Wine): entries like winhttp=n,b, separated by spaces. They are "
+        "added when the loader is installed and taken out when it is uninstalled.",
+    "mods.custom_preload_label": "LD_PRELOAD",
+    "mods.custom_preload_help":
+        "For Linux loaders: the loader's .so library, relative to the game folder. Added when the "
+        "loader is installed and taken out when it is uninstalled.",
+    "mods.custom_save": "Save the setup",
+    "mods.custom_saved": "Mod setup saved.",
+    "mods.custom_clear": "Delete the setup",
+    "mods.custom_clear_confirm":
+        "Delete the manual setup? Nothing is deleted on the server: uninstall the loader first if you "
+        "want it gone.",
+    "mods.custom_cleared": "Mod setup deleted.",
+    "mods.custom_bad_url": "The loader link must be a valid https:// address (up to 500 characters).",
+    "mods.custom_bad_loader_dir":
+        "Invalid loader folder: use a path relative to the game folder, with no .. and no leading /.",
+    "mods.custom_bad_mods_dir":
+        "Invalid mods folder: it is required, relative to the game folder, with no .. and no leading "
+        "/.",
+    "mods.custom_bad_ext": "Invalid extensions: use up to 16, like .pak .dll .lua.",
+    "mods.custom_blocked_ext": "{ext} is not accepted as a mod (these never get in: {blocked}).",
+    "mods.custom_bad_wine": "Invalid Wine overrides: use up to 8 entries like winhttp=n,b, one per DLL.",
+    "mods.custom_bad_preload":
+        "Invalid LD_PRELOAD: a .so file relative to the game folder, with letters, digits, _ . + - "
+        "only",
+    "mods.custom_overlay_needs_helper":
+        "Wine overrides and LD_PRELOAD only work with the server in rootless mode (gamepanel login): "
+        "migrate the CT or leave those fields empty.",
+    "mods.custom_overlay_needs_loader":
+        "Wine overrides and LD_PRELOAD come in with the loader: fill in its link.",
+    "mods.custom_builtin_wins":
+        "This game already has its own mod manager in the panel: the manual setup does not apply.",
+    "mods.custom_loader_title": "Loader (manual setup)",
+    "mods.custom_loader_missing": "The loader is not installed on this server yet.",
+    "mods.custom_no_loader": "No loader: mods go straight into the mods folder.",
+    "mods.custom_loader_install": "Install the loader",
+    "mods.custom_installed": "installed",
+    "mods.custom_installed_files": "{n} file(s) installed by the panel - sha256 {sha}...",
+    "mods.custom_incomplete":
+        "The last install stopped halfway: what got in is recorded. Reinstall or uninstall.",
+    "mods.custom_uninstall_confirm":
+        "Uninstall the loader? Only what the panel installed goes (and the folders it created, with "
+        "whatever is in them), plus the environment settings.",
+    "mods.custom_mods_folder": "Mods folder: <code>{folder}</code>",
+    "mods.source_custom_loader": "Loader (configured link)",
 
     # --------------------------------------------- game catalog
     "catalog.title": "Game catalog",
@@ -1295,6 +1381,7 @@ MESSAGES: dict[str, str] = {
     "job.mod_removed_plugin": "Mod uninstalled",
     "job.mod_uploaded": "Mod uploaded",
     "job.mod_deleted": "Mod removed",
+    "job.mod_setup": "Manual mod setup changed",
     "job.file_uploaded": "File uploaded",
     "job.backup": "Backup",
     "job.backup_restored": "Backup restored",

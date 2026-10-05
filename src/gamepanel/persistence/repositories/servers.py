@@ -154,6 +154,11 @@ def set_mods_expected(conn: sqlite3.Connection, sid: int, workshop_ids: Iterable
                  ("\n".join(str(i) for i in workshop_ids), sid))
 
 
+def set_mods_custom(conn: sqlite3.Connection, sid: int, setup_json: str) -> None:
+    """The custom mod setup (already validated by games/mods/custom.py); '' clears it."""
+    conn.execute("UPDATE servers SET mods_custom = ? WHERE id = ?", (setup_json, sid))
+
+
 # --- writes from the deploy (no screen) ---------------------------------------------------
 
 def deploy_insert(conn: sqlite3.Connection, values: Sequence[Any], created_at: str) -> None:

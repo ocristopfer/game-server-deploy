@@ -42,8 +42,8 @@ What the install does, each step with its reason:
   any mod).
 
 Actions (argv): [--scan SCRIPT] --unit SERVICE [--release TAG --engine X.Y --symfiles SCRIPT --layout SCRIPT]
-status|loader-install|loader-enable|loader-disable|loader-uninstall, followed by the executable folder
-(Binaries/Linux). Ends with ONE JSON line.
+status|loader-install|loader-enable|loader-disable|loader-uninstall|mod-remove, followed by the executable
+folder (Binaries/Linux) and, for mod-remove, the Lua mod names. Ends with ONE JSON line.
 """
 from __future__ import annotations
 
@@ -599,6 +599,86 @@ def uninstall_loader(exe_dir: str, unit: str, overlay: bool = False) -> dict:
     return {"uninstalled": True, "removed": removed}
 
 
+# ------------------------------------------------------------------ Lua mod removal
+# IDENTICAL in ue4ss_remote.py and ue4ss_linux_remote.py (a test compares them): both run
+# standalone in the CT and do not import each other. A Lua mod is a FOLDER in Mods/ plus its
+# `Name : 1` line in mods.txt. Deleting only the folder leaves UE4SS looking for a mod that is gone
+# on every start; rewriting the whole mods.txt would lose the owner's comments, order and line
+# endings - so only the lines of the removed names go, and every other byte stays.
+LUA_MOD_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.+ -]{0,127}")
+# The Lua libraries other mods `require` (UEHelpers): not a mod, and removing it breaks the rest.
+LUA_PROTECTED = ("shared",)
+
+
+def under_link(path: str) -> bool:
+    """True when `path` or any folder above it is a symbolic link.
+
+    realpath() against abspath() would say the same on Linux, but also flags Windows 8.3 short names
+    (PROGRA~1) in the tests. What matters is the link: the game can plant one in a folder it
+    writes, and an rmtree run as root through it deletes wherever it points.
+    """
+    path = os.path.abspath(path)
+    while True:
+        if os.path.islink(path):
+            return True
+        parent = os.path.dirname(path)
+        if parent == path:
+            return False
+        path = parent
+
+
+def without_mod_lines(text: str, names: set[str]) -> str:
+    """mods.txt without the lines of `names`; the BOM, CRLF and comments stay as they were."""
+    out = []
+    for line in text.splitlines(keepends=True):
+        body = line.lstrip("﻿")
+        name, sep, _ = body.partition(":")
+        if sep and not body.lstrip().startswith(";") and name.strip() in names:
+            # The BOM belongs to the FILE, not to the first line: it stays even when that line goes.
+            out.append(line[: len(line) - len(body)])
+            continue
+        out.append(line)
+    return "".join(out)
+
+
+def remove_lua_mods(mods_dir: str, names: list[str]) -> dict:
+    """Remove Lua mods from Mods/ by NAME (never a path), and their mods.txt lines."""
+    for name in names:
+        if not LUA_MOD_NAME.fullmatch(name) or name.lower() in LUA_PROTECTED:
+            raise ValueError(f"invalid mod name: {name!r}")
+    # Mods/ being a link (or living under one) would make rmtree delete wherever it points: in
+    # legacy mode this runs as root, and the folder is one the game itself can write.
+    if under_link(mods_dir):
+        raise ValueError(f"the mods folder is (or is under) a link: {mods_dir}")
+    removed = []
+    for name in names:
+        path = os.path.join(mods_dir, name)
+        if os.path.islink(path):
+            os.remove(path)
+        elif os.path.isdir(path):
+            shutil.rmtree(path)
+        elif os.path.exists(path):
+            # A loose file is not a Lua mod (mods.txt itself would match the name rule).
+            raise ValueError(f"{name} is not a mod folder")
+        else:
+            print(f"{name}: no such folder (only its mods.txt line goes)")
+            continue
+        removed.append(name)
+    mods_txt = os.path.join(mods_dir, "mods.txt")
+    if os.path.isfile(mods_txt) and not os.path.islink(mods_txt):
+        # newline="" and surrogateescape: the file comes back byte for byte, CRLF and odd bytes included.
+        with open(mods_txt, encoding="utf-8", errors="surrogateescape", newline="") as f:
+            text = f.read()
+        new = without_mod_lines(text, set(names))
+        if new != text:
+            # In place (same inode): the owner and the mode stay the ones the game expects.
+            with open(mods_txt, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+                f.write(new)
+    print(f"Lua mods removed from {mods_dir}: {', '.join(removed) or 'no folder'}")
+    return {"removed": removed}
+# ------------------------------------------------------------------ end of the Lua mod removal
+
+
 def enabled_mods(text: str) -> dict[str, bool]:
     result = {}
     for line in text.lstrip("﻿").splitlines():
@@ -671,15 +751,18 @@ def parse_options(argv: list[str]) -> tuple[dict[str, str], list[str]]:
 def main(argv: list[str]) -> int:
     options, argv = parse_options(argv)
     script, unit, overlay = options.get("scan", ""), options.get("unit", ""), "overlay" in options
-    action, exe_dir, *_rest = argv
+    action, exe_dir, *rest = argv
     try:
         if action == "loader-install" and not script:
             raise ValueError("instalar sem a verificacao do antivirus nao e caminho do painel")
         # Before downloading anything: a setting that would not reach the game is a broken install.
-        if overlay and action != "status" and overlay_problem(unit):
+        # Removing a Lua mod touches no environment, so a CT without the overlay can still do it.
+        if overlay and action not in ("status", "mod-remove") and overlay_problem(unit):
             raise ValueError(overlay_problem(unit))
         if action == "status":
             result = status(exe_dir, unit, overlay)
+        elif action == "mod-remove":
+            result = remove_lua_mods(os.path.join(exe_dir, UE4SS_DIR, MODS), rest)
         elif action == "loader-install":
             release = Release(options.get("release", ""), options.get("engine", ""),
                               options.get("symfiles", ""), options.get("layout", ""))
@@ -691,7 +774,7 @@ def main(argv: list[str]) -> int:
             result = uninstall_loader(exe_dir, unit, overlay)
         else:
             raise ValueError(f"acao desconhecida: {action}")
-        if action not in ("status", "loader-uninstall"):
+        if action not in ("status", "loader-uninstall", "mod-remove"):
             _chown(exe_dir)
     except (ValueError, KeyError, OSError, tarfile.TarError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"error": str(exc)}))

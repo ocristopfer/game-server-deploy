@@ -18,11 +18,14 @@
     {{ ui.button(_('server.files'), href=url_for('files.index', sid=server.id), icon='📁') }}
   </div>
 </div>
-{% else %}
+{% endif %}
+
+{% if profile %}
 
 <div class="card">
   <p class="muted small">{{ _h(profile.help_key, folder=profile.folder) }}</p>
-  {% if not profile.proven %}<p class="flash error">{{ _('mods.not_proven') }}</p>{% endif %}
+  {% if profile.kind == kind_custom %}<p class="flash error">{{ _('mods.custom_warning') }}</p>
+  {% elif not profile.proven %}<p class="flash error">{{ _('mods.not_proven') }}</p>{% endif %}
   {% if profile.upload_names or profile.extensions or profile.kind in (kind_thunderstore, kind_shroudtopia, kind_ue4ss, kind_sml, kind_ue4ss_linux) %}
   <p class="muted small">{{ _h('mods.antivirus_note') }}</p>
   {% elif profile.kind == kind_workshop and profile.workshop_format == 'conan' %}
@@ -252,23 +255,11 @@
     {% endif %}
   </div>
 
-  {% if st and st.loader_installed %}
+  {% if st %}
   <div class="card">
     <h2>{{ _('mods.files_title') }}</h2>
     {% if st.mods %}
-    <div class="table-wrap"><table class="jobs">
-      <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
-      <tbody>
-        {% for m in st.mods %}
-        <tr>
-          <td><code>{{ m.name }}</code></td>
-          <td class="muted nowrap">{% if m.dir %}{{ _('mods.shroudtopia_folder_mod') }}{% else %}{{ m.size | filesize }}{% endif %}</td>
-          <td>{% if not m.dir %}{{ ui.action(url_for('mods.delete', sid=server.id), _('mods.delete'), size='sm', variant='danger',
-                           confirm=_('mods.delete_confirm', name=m.name), fields={'name': m.name}) }}{% endif %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table></div>
+      {{ srv.mod_removal(url_for('mods.delete', sid=server.id), st.mods) }}
     {% else %}
       <p class="muted">{{ _('mods.no_files') }}</p>
     {% endif %}
@@ -325,21 +316,12 @@
     {% endif %}
   </div>
 
-  {% if st and st.loader_installed %}
+  {% if st and (st.loader_installed or st.mods) %}
   <div class="card">
-    <h2>{{ _('mods.files_title') }}</h2>
+    <h2>{{ _('mods.lua_title') }}</h2>
     {% if st.mods %}
-    <div class="table-wrap"><table class="jobs">
-      <thead><tr><th>{{ _('mods.col_mod') }}</th><th></th></tr></thead>
-      <tbody>
-        {% for m in st.mods %}
-        <tr>
-          <td><code>{{ m.name }}</code></td>
-          <td class="nowrap">{% if m.enabled %}<span class="badge on">{{ _('mods.loader_on') }}</span>{% else %}<span class="badge cold">{{ _('mods.loader_off') }}</span>{% endif %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table></div>
+      <p class="muted small">{{ _('mods.lua_remove_help') }}</p>
+      {{ srv.mod_removal(url_for('mods.lua_remove', sid=server.id), st.mods, field='lua', lua=true) }}
     {% else %}
       <p class="muted">{{ _('mods.no_files') }}</p>
     {% endif %}
@@ -353,19 +335,8 @@
   <div class="card">
     <h2>{{ _('mods.files_title') }} (.pak)</h2>
     {% if view.files %}
-    <div class="table-wrap"><table class="jobs">
-      <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
-      <tbody>
-        {% for f in view.files %}
-        <tr>
-          <td><code>{{ f.name }}</code></td>
-          <td class="muted nowrap">{{ f.size | filesize }}</td>
-          <td>{{ ui.action(url_for('mods.delete', sid=server.id), _('mods.delete'), size='sm', variant='danger',
-                           confirm=_('mods.delete_confirm', name=f.name), fields={'name': f.name}) }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table></div>
+      {% if '.utoc' in profile.extensions %}<p class="muted small">{{ _('mods.iostore_remove_help') }}</p>{% endif %}
+      {{ srv.mod_removal(url_for('mods.delete', sid=server.id), view.files) }}
     {% else %}
       <p class="muted">{{ _('mods.no_files') }}</p>
     {% endif %}
@@ -479,23 +450,11 @@
     {% endif %}
   </div>
 
-  {% if st and st.loader_installed %}
+  {% if st %}
   <div class="card">
     <h2>{{ _('mods.files_title') }}</h2>
     {% if st.mods %}
-    <div class="table-wrap"><table class="jobs">
-      <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
-      <tbody>
-        {% for m in st.mods %}
-        <tr>
-          <td><code>{{ m.name }}</code></td>
-          <td class="muted nowrap">{{ m.size | filesize }}</td>
-          <td>{{ ui.action(url_for('mods.delete', sid=server.id), _('mods.delete'), size='sm', variant='danger',
-                           confirm=_('mods.delete_confirm', name=m.name), fields={'name': m.name}) }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table></div>
+      {{ srv.mod_removal(url_for('mods.delete', sid=server.id), st.mods) }}
     {% else %}
       <p class="muted">{{ _('mods.no_files') }}</p>
     {% endif %}
@@ -560,23 +519,55 @@
   <div class="card">
     <h2>{{ _('mods.files_title') }}</h2>
     {% if view.files %}
-    <div class="table-wrap"><table class="jobs">
-      <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{{ _('backups.size') }}</th><th></th></tr></thead>
-      <tbody>
-        {% for f in view.files %}
-        <tr>
-          <td><code>{{ f.name }}</code></td>
-          <td class="muted nowrap">{{ f.size | filesize }}</td>
-          <td>{{ ui.action(url_for('mods.delete', sid=server.id), _('mods.delete'), size='sm', variant='danger',
-                           confirm=_('mods.delete_confirm', name=f.name), fields={'name': f.name}) }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table></div>
+      {{ srv.mod_removal(url_for('mods.delete', sid=server.id), view.files) }}
     {% else %}
       <p class="muted">{{ _('mods.no_files') }}</p>
     {% endif %}
   </div>
+{% elif profile.kind == kind_custom %}
+  {% set st = view.state %}
+  <div class="card">
+    <h2>{{ _('mods.custom_loader_title') }}</h2>
+    {% if st %}
+      {% if st.legacy_env %}<p class="flash error">{{ _('mods.custom_overlay_needs_helper') }}</p>{% endif %}
+      {% if st.loader_installed %}
+        <p><code>{{ st.loader_url }}</code> <span class="badge on">{{ _('mods.custom_installed') }}</span></p>
+        <p class="muted small">{{ _('mods.custom_installed_files', n=st.loader_files, sha=st.loader_sha256[:16]) }}</p>
+        {% if not st.loader_complete %}<p class="flash error">{{ _('mods.custom_incomplete') }}</p>{% endif %}
+      {% elif custom_form.loader_url %}
+        <p class="muted small">{{ _('mods.custom_loader_missing') }}</p>
+      {% else %}
+        <p class="muted small">{{ _('mods.custom_no_loader') }}</p>
+      {% endif %}
+      {% if custom_form.loader_url or st.loader_installed %}
+      <form method="post" action="{{ url_for('mods.loader', sid=server.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+        <div class="form-actions cluster">
+          {% if custom_form.loader_url %}
+            {{ ui.button(_('mods.loader_update') if st.loader_installed else _('mods.custom_loader_install'),
+                         variant='' if st.loader_installed else 'primary', icon='⬇', extra='name=action value=install') }}
+          {% endif %}
+          {% if st.loader_installed %}
+            {{ ui.button(_('mods.loader_uninstall'), variant='danger', confirm=_('mods.custom_uninstall_confirm'), extra='name=action value=uninstall') }}
+          {% endif %}
+        </div>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  {% if st %}
+  <div class="card">
+    <h2>{{ _('mods.files_title') }}</h2>
+    <p class="muted small">{{ _h('mods.custom_mods_folder', folder=st.mods_dir) }}</p>
+    {% if st.mods %}
+      {{ srv.mod_removal(url_for('mods.delete', sid=server.id), st.mods) }}
+    {% else %}
+      <p class="muted">{{ _('mods.no_files') }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
 {% endif %}
 
 {# Upload only for profiles that declare what they accept: Thunderstore downloads on its own, and the guide (Enshrouded)
@@ -596,5 +587,57 @@
   </form>
 </div>
 {% endif %}
+{% endif %}
+
+{% if custom_allowed %}
+<div class="card">
+  <h2>{{ _('mods.custom_setup_title') }}</h2>
+  <p class="muted small">{{ _('mods.custom_setup_help') }}</p>
+  {# With a setup saved, the same warning already heads the screen. #}
+  {% if not profile %}<p class="flash error">{{ _('mods.custom_warning') }}</p>{% endif %}
+  <form method="post" action="{{ url_for('mods.custom_save', sid=server.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>{{ _('mods.custom_url_label') }}
+      <input name="loader_url" type="url" maxlength="500" value="{{ custom_form.loader_url }}" spellcheck="false"
+             autocomplete="off" placeholder="https://github.com/owner/loader/releases/download/v1.0.0/loader.zip">
+      <small>{{ _('mods.custom_url_help') }}</small>
+    </label>
+    <label>{{ _('mods.custom_loader_dir_label') }}
+      <input name="loader_dir" maxlength="240" value="{{ custom_form.loader_dir }}" spellcheck="false"
+             autocomplete="off" placeholder="Binaries/Win64">
+      <small>{{ _('mods.custom_loader_dir_help') }}</small>
+    </label>
+    <label>{{ _('mods.custom_mods_dir_label') }}
+      <input name="mods_dir" required maxlength="240" value="{{ custom_form.mods_dir }}" spellcheck="false"
+             autocomplete="off" placeholder="BepInEx/plugins">
+      <small>{{ _('mods.custom_mods_dir_help') }}</small>
+    </label>
+    <label>{{ _('mods.custom_ext_label') }}
+      <input name="extensions" maxlength="300" value="{{ custom_form.extensions }}" spellcheck="false" autocomplete="off">
+      <small>{{ _('mods.custom_ext_help') }}</small>
+    </label>
+    <fieldset class="fieldgroup">
+      <legend>{{ _('mods.custom_env_title') }}</legend>
+      {% if not helper_mode %}<p class="muted small">{{ _('mods.custom_overlay_needs_helper') }}</p>{% endif %}
+      <label>{{ _('mods.custom_wine_label') }}
+        <input name="wine_overrides" maxlength="600" value="{{ custom_form.wine_overrides }}" spellcheck="false"
+               autocomplete="off" placeholder="winhttp=n,b">
+        <small>{{ _('mods.custom_wine_help') }}</small>
+      </label>
+      <label>{{ _('mods.custom_preload_label') }}
+        <input name="ld_preload" maxlength="240" value="{{ custom_form.ld_preload }}" spellcheck="false"
+               autocomplete="off" placeholder="Binaries/Linux/libloader.so">
+        <small>{{ _('mods.custom_preload_help') }}</small>
+      </label>
+    </fieldset>
+    <div class="form-actions">{{ ui.button(_('mods.custom_save'), variant='primary', icon='💾', block=true) }}</div>
+  </form>
+  {% if profile %}
+  <div class="form-actions">
+    {{ ui.action(url_for('mods.custom_clear', sid=server.id), _('mods.custom_clear'), variant='danger',
+                 confirm=_('mods.custom_clear_confirm')) }}
+  </div>
+  {% endif %}
+</div>
 {% endif %}
 {% endblock %}

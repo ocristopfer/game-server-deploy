@@ -267,10 +267,37 @@ def install(game_dir: str, ref: str, version: str = "", fetcher=fetch, scan=_no_
     return {"installed": installed}
 
 
+def under_link(path: str) -> bool:
+    """True when `path` or any folder above it is a symbolic link.
+
+    realpath() against abspath() would say the same on Linux, but also flags Windows 8.3 short names
+    (PROGRA~1) in the tests. What matters is the link: the game can plant one in a folder it
+    writes, and an rmtree run as root through it deletes wherever it points.
+    """
+    path = os.path.abspath(path)
+    while True:
+        if os.path.islink(path):
+            return True
+        parent = os.path.dirname(path)
+        if parent == path:
+            return False
+        path = parent
+
+
 def remove(game_dir: str, ref: str) -> dict:
-    dest = os.path.join(game_dir, MODS, check_ref(ref))
+    mods_dir = os.path.join(game_dir, MODS)
+    dest = os.path.join(mods_dir, check_ref(ref))
+    # FactoryGame/Mods being a link (or under one) would make rmtree delete wherever it points.
+    if under_link(mods_dir):
+        raise ValueError(f"the mods folder is (or is under) a link: {mods_dir}")
+    if os.path.islink(dest):
+        os.remove(dest)
+        return {"removed": True}
     existed = os.path.isdir(dest)
-    shutil.rmtree(dest, ignore_errors=True)
+    # No ignore_errors: a folder this user cannot delete used to come back as "removed" while
+    # the mod stayed and kept loading.
+    if existed:
+        shutil.rmtree(dest)
     return {"removed": existed}
 
 

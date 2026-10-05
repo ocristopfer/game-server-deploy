@@ -88,6 +88,18 @@ INI
   chmod 0755 /opt/game/RSDragonwildsServer.sh
 }
 
+# The Mods screen's folders, as the real game and UE4SS would leave them: the .pak folder (~mods)
+# and one Lua mod in ue4ss/Mods with its mods.txt line (CRLF, like the file UE4SS ships). Without
+# them, listing and removing mods could only be exercised after downloading UE4SS into a fake game.
+seed_mod_folders() {
+  local project="$1"
+  local lua="/opt/game/$project/Binaries/Linux/ue4ss/Mods"
+  install -d -o steam -g steam "/opt/game/$project/Content/Paks/~mods" "$lua/ExampleLuaMod/Scripts"
+  [ -e "$lua/mods.txt" ] && return 0
+  echo 'print("[ExampleLuaMod] loaded")' >"$lua/ExampleLuaMod/Scripts/main.lua"
+  printf '%s\r\n' '; mod list of the dev compose' 'ExampleLuaMod : 1' >"$lua/mods.txt"
+}
+
 # A binary save and a big log: they are what lets us test the download and the editor's
 # read-only mode without installing any game.
 seed_arquivos_grandes() {
@@ -105,10 +117,12 @@ seed_game_files() {
   case "$GAME_KIND" in
     palworld)
       seed_palworld
+      seed_mod_folders Pal
       seed_arquivos_grandes /opt/game/Pal/Saved/SaveGames/0/Level.sav /opt/game/Pal/Saved/Logs/Pal.log
       ;;
     dragonwilds)
       seed_dragonwilds
+      seed_mod_folders RSDragonwilds
       seed_arquivos_grandes /opt/game/RSDragonwilds/Saved/SaveGames/world.sav \
         /opt/game/RSDragonwilds/Saved/Logs/RSDragonwilds.log
       ;;

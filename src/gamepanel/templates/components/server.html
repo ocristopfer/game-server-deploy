@@ -120,3 +120,33 @@
   </div>
 </article>
 {% endmacro %}
+
+
+{# Mod removal: the mods of one folder as a list to tick, ONE restart choice and ONE confirmed
+   button. A form per row (the old way) could not carry the restart choice, and a removal is a job
+   like the upload, whose last step is the restart. Each row travels as a NAME, never a path:
+   `field` for files ('name') or Lua mods ('lua'), and 'folder' for a folder mod, so the panel
+   knows which of the two the person ticked before anything reaches the container. #}
+{% macro mod_removal(url, rows, field='name', lua=false) %}
+<form method="post" action="{{ url }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <div class="table-wrap"><table class="jobs">
+    <thead><tr><th>{{ _('mods.col_mod') }}</th><th>{% if not lua %}{{ _('backups.size') }}{% endif %}</th></tr></thead>
+    <tbody>
+      {% for m in rows %}
+      <tr>
+        <td><label class="checkbox"><input type="checkbox" name="{{ 'folder' if m.dir else field }}" value="{{ m.name }}"> <code>{{ m.name }}</code></label></td>
+        <td class="muted nowrap">
+          {%- if lua %}{% if m.enabled %}<span class="badge on">{{ _('mods.loader_on') }}</span>{% else %}<span class="badge cold">{{ _('mods.loader_off') }}</span>{% endif %}
+          {%- elif m.dir %}{{ _('mods.folder_mod') }}
+          {%- else %}{{ m.size | filesize }}{% endif -%}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+  <div class="form-actions">{{ ui.button(_('mods.remove_selected'), variant='danger', icon='🗑',
+                                         confirm=_('mods.remove_selected_confirm')) }}</div>
+</form>
+{% endmacro %}

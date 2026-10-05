@@ -75,6 +75,11 @@ CREATE TABLE IF NOT EXISTS servers (
   -- Mods the server SHOULD have (Workshop IDs, one per line), pasted on the Mods screen.
   -- It is the reference list: the screen compares it with what the server actually loads.
   mods_expected TEXT NOT NULL DEFAULT '',
+  -- Custom mod setup (games/mods/custom.py), JSON: loader link, loader and mods folders relative
+  -- to the game folder, accepted extensions and the optional environment. Empty = none. Only
+  -- used when the game has no built-in profile; one JSON and not six columns because the six are
+  -- always read, checked and written together, and nothing ever queries by one of them.
+  mods_custom TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   UNIQUE (host, ssh_port)
 );
@@ -241,6 +246,9 @@ MIGRATIONS = (
     # Expected mod list of the Mods screen. Empty = nobody pasted a list, and the screen only
     # shows what is there.
     ("servers", "mods_expected", "ALTER TABLE servers ADD COLUMN mods_expected TEXT NOT NULL DEFAULT ''"),
+    # Custom mod setup of the Mods screen. Empty = the game has a built-in profile, or nobody set
+    # one up: the screen offers the form, nothing is assumed.
+    ("servers", "mods_custom", "ALTER TABLE servers ADD COLUMN mods_custom TEXT NOT NULL DEFAULT ''"),
 )
 
 

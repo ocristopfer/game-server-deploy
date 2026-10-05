@@ -553,7 +553,6 @@ MESSAGES: dict[str, str] = {
     "mods.no_files": "Nenhum mod na pasta ainda.",
     "mods.delete": "Remover",
     "mods.delete_confirm": "Remover {name} do servidor?",
-    "mods.deleted": "{name} removido.",
     "mods.upload_title": "Enviar para o servidor",
     "mods.files_to_send": "Arquivos",
     "mods.upload_accepts":
@@ -643,7 +642,6 @@ MESSAGES: dict[str, str] = {
     "mods.shroudtopia_title": "Shroudtopia (carregador de mods)",
     "mods.shroudtopia_missing": "O Shroudtopia ainda não está instalado neste servidor.",
     "mods.shroudtopia_install": "Instalar o Shroudtopia",
-    "mods.shroudtopia_folder_mod": "pasta (com mod.json)",
     "mods.shroudtopia_log": "Fim do log do carregador",
     "mods.shroudtopia_log_help":
         "Mod feito para outra versão do jogo não derruba o servidor, mas perde a função "
@@ -797,6 +795,97 @@ MESSAGES: dict[str, str] = {
         "Ainda há a instalação antiga do UE4SS (o fork anterior) ao lado do executável: instale de "
         "novo para passar os mods Lua para a pasta ue4ss/ e tirar os arquivos dela.",
     "mods.bad_name": "{name} não é aceito aqui. Esperado: {allowed}.",
+    "mods.folder_mod": "pasta (mod inteiro)",
+    "mods.remove_selected": "Remover os marcados",
+    "mods.remove_selected_confirm":
+        "Remover do servidor os mods marcados? Não tem como desfazer: para voltar, envie o mod de "
+        "novo.",
+    "mods.remove_none_selected": "Marque pelo menos um mod para remover.",
+    "mods.remove_too_many": "No máximo {n} mods por vez.",
+    "mods.bad_lua_name": "{name} não é o nome de um mod Lua que dê para remover aqui.",
+    "mods.lua_title": "Mods Lua (UE4SS)",
+    "mods.lua_remove_help":
+        "Remover apaga a pasta do mod e a linha dele no mods.txt; o resto do mods.txt fica como está.",
+    "mods.iostore_remove_help":
+        "Um mod de Unreal 5 vem em três arquivos com o mesmo nome (.pak, .utoc e .ucas): marcar um "
+        "deles remove os três.",
+    "mods.help_custom":
+        "Configuração manual: o painel baixa o carregador do link que você deu, descompacta onde você "
+        "disse e recebe os mods em <code>{folder}</code>.",
+    "mods.custom_warning":
+        "Configuração manual: o painel não tem como saber se este carregador funciona neste jogo. Ele "
+        "só baixa, passa no antivírus, descompacta e remove o que instalou - se o servidor não subir, "
+        "desinstale o carregador.",
+    "mods.custom_setup_title": "Configuração manual de mods",
+    "mods.custom_setup_help":
+        "Para um jogo que o painel não conhece: o link do carregador (gerenciador de mods), a pasta "
+        "onde ele vai e a pasta onde ficam os mods. As pastas são relativas à pasta do jogo "
+        "(/opt/game).",
+    "mods.custom_url_label": "Link do carregador (opcional)",
+    "mods.custom_url_help":
+        "Só https. Um .zip, um .tar.gz ou um arquivo só (uma DLL). Vazio = o jogo não precisa de "
+        "carregador, só da pasta de mods.",
+    "mods.custom_loader_dir_label": "Pasta do carregador",
+    "mods.custom_loader_dir_help":
+        "Onde o pacote é descompactado, relativa à pasta do jogo (em geral a do executável). Vazio = "
+        "a própria pasta do jogo.",
+    "mods.custom_mods_dir_label": "Pasta dos mods",
+    "mods.custom_mods_dir_help":
+        "Para onde vão os mods enviados, relativa à pasta do jogo. Ex.: BepInEx/plugins",
+    "mods.custom_ext_label": "Extensões aceitas",
+    "mods.custom_ext_help":
+        "Separadas por espaço. Scripts e executáveis (.sh, .so, .exe...) nunca entram. Vazio volta ao "
+        "padrão.",
+    "mods.custom_env_title": "Ambiente do jogo (opcional)",
+    "mods.custom_wine_label": "Overrides do Wine",
+    "mods.custom_wine_help":
+        "Para carregadores de Windows (Proton/Wine): entradas como winhttp=n,b, separadas por espaço. "
+        "Entram quando o carregador é instalado e saem quando ele é desinstalado.",
+    "mods.custom_preload_label": "LD_PRELOAD",
+    "mods.custom_preload_help":
+        "Para carregadores de Linux: a biblioteca .so do carregador, relativa à pasta do jogo. Entra "
+        "quando o carregador é instalado e sai quando ele é desinstalado.",
+    "mods.custom_save": "Salvar a configuração",
+    "mods.custom_saved": "Configuração de mods salva.",
+    "mods.custom_clear": "Apagar a configuração",
+    "mods.custom_clear_confirm":
+        "Apagar a configuração manual? Nada é apagado no servidor: desinstale o carregador antes, se "
+        "quiser tirá-lo.",
+    "mods.custom_cleared": "Configuração de mods apagada.",
+    "mods.custom_bad_url":
+        "O link do carregador precisa ser um endereço https:// válido (até 500 caracteres).",
+    "mods.custom_bad_loader_dir":
+        "Pasta do carregador inválida: use um caminho relativo à pasta do jogo, sem .. e sem / no "
+        "começo.",
+    "mods.custom_bad_mods_dir":
+        "Pasta dos mods inválida: é obrigatória, relativa à pasta do jogo, sem .. e sem / no começo.",
+    "mods.custom_bad_ext": "Extensões inválidas: use até 16, como .pak .dll .lua.",
+    "mods.custom_blocked_ext": "{ext} não é aceita como mod (nunca entram: {blocked}).",
+    "mods.custom_bad_wine": "Overrides do Wine inválidos: use até 8 entradas como winhttp=n,b, uma por DLL.",
+    "mods.custom_bad_preload":
+        "LD_PRELOAD inválido: um arquivo .so relativo à pasta do jogo, só com letras, números, _ . + "
+        "-",
+    "mods.custom_overlay_needs_helper":
+        "Overrides do Wine e LD_PRELOAD só funcionam com o servidor no modo sem root (login "
+        "gamepanel): migre o CT ou deixe esses campos vazios.",
+    "mods.custom_overlay_needs_loader":
+        "Overrides do Wine e LD_PRELOAD entram junto com o carregador: preencha o link dele.",
+    "mods.custom_builtin_wins":
+        "Este jogo já tem um gerenciador de mods próprio no painel: a configuração manual não se "
+        "aplica.",
+    "mods.custom_loader_title": "Carregador (configuração manual)",
+    "mods.custom_loader_missing": "O carregador ainda não está instalado neste servidor.",
+    "mods.custom_no_loader": "Sem carregador: os mods vão direto para a pasta de mods.",
+    "mods.custom_loader_install": "Instalar o carregador",
+    "mods.custom_installed": "instalado",
+    "mods.custom_installed_files": "{n} arquivo(s) instalados pelo painel - sha256 {sha}...",
+    "mods.custom_incomplete":
+        "A última instalação parou no meio: o que entrou está registrado. Reinstale ou desinstale.",
+    "mods.custom_uninstall_confirm":
+        "Desinstalar o carregador? Sai só o que o painel instalou (e as pastas que ele criou, com o "
+        "que tiver dentro), mais os ajustes de ambiente.",
+    "mods.custom_mods_folder": "Pasta dos mods: <code>{folder}</code>",
+    "mods.source_custom_loader": "Carregador (link configurado)",
 
     # --------------------------------------------- game catalog
     "catalog.title": "Catálogo de jogos",
@@ -1297,6 +1386,7 @@ MESSAGES: dict[str, str] = {
     "job.mod_removed_plugin": "Mod desinstalado",
     "job.mod_uploaded": "Mod enviado",
     "job.mod_deleted": "Mod removido",
+    "job.mod_setup": "Configuração manual de mods alterada",
     "job.file_uploaded": "Arquivo enviado",
     "job.backup": "Backup",
     "job.backup_restored": "Backup restaurado",
