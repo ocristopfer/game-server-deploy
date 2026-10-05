@@ -15,10 +15,10 @@ DATA_DIR=/var/lib/gamepanel
 APP_USER=gamepanel
 
 msg() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
-warn() { printf '\033[1;33m[aviso]\033[0m %s\n' "$*"; }
-die() { printf '\033[1;31m[erro]\033[0m %s\n' "$*" >&2; exit 1; }
+warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
+die() { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
-need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Comando obrigatorio ausente: $1"; }
+need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command missing: $1"; }
 
 run_ct() { pct exec "$CTID" -- bash -lc "$1"; }
 
@@ -30,7 +30,7 @@ push_file_to_ct() {
 }
 
 load_env_file() {
-  [[ -f "$1" ]] || die "Arquivo de ambiente nao encontrado: $1"
+  [[ -f "$1" ]] || die "Environment file not found: $1"
   set -a
   # shellcheck disable=SC1090
   source "$1"
@@ -39,8 +39,8 @@ load_env_file() {
 
 resolve_variables() {
   CTID="${ADMIN_CTID:-}"
-  [[ -n "$CTID" ]] || die "ADMIN_CTID nao definido"
-  [[ "$CTID" =~ ^[0-9]+$ ]] || die "ADMIN_CTID deve ser numerico: $CTID"
+  [[ -n "$CTID" ]] || die "ADMIN_CTID is not set"
+  [[ "$CTID" =~ ^[0-9]+$ ]] || die "ADMIN_CTID must be numeric: $CTID"
 
   CT_HOSTNAME="${ADMIN_HOSTNAME:-gamepanel}"
   STORAGE="${STORAGE:-local-zfs}"
@@ -73,7 +73,7 @@ resolve_variables() {
   WEBAUTHN_ORIGIN="${ADMIN_WEBAUTHN_ORIGIN:-}"
   # Screen language for whoever has not chosen one in Account YET, AND for what goes out through
   # the webhook (there is a single channel: the message cannot switch language based on who clicked).
-  LANG_PADRAO="${ADMIN_LANG:-pt}"
+  DEFAULT_LANG="${ADMIN_LANG:-pt}"
   FILE_MAX_KB="${ADMIN_FILE_MAX_KB:-4096}"
   FILE_PREVIEW_KB="${ADMIN_FILE_PREVIEW_KB:-256}"
   FILE_DOWNLOAD_MAX_MB="${ADMIN_FILE_DOWNLOAD_MAX_MB:-2048}"
@@ -89,7 +89,7 @@ resolve_variables() {
   if [[ "$IP_CIDR" == "dhcp" ]]; then
     NET0="name=eth0,bridge=${BRIDGE},ip=dhcp,type=veth"
   else
-    [[ -n "$GATEWAY" ]] || die "ADMIN_GATEWAY obrigatorio quando ADMIN_IP_CIDR nao e dhcp"
+    [[ -n "$GATEWAY" ]] || die "ADMIN_GATEWAY is required when ADMIN_IP_CIDR is not dhcp"
     NET0="name=eth0,bridge=${BRIDGE},ip=${IP_CIDR},gw=${GATEWAY},type=veth"
   fi
 }
@@ -102,24 +102,24 @@ validate_host_requirements() {
   # app.js...) that had to grow along with the code and never did: it checked the
   # first level and let a whole new folder slip by. What checks the content now is the
   # artifact's sha256.
-  [[ -f "$RELEASE_ENV_FILE" ]] || die "release.env nao encontrado: $RELEASE_ENV_FILE (rode pelo deploy-admin.ps1)"
-  [[ -f "$INSTALLER" ]] || die "install-release.sh nao encontrado: $INSTALLER"
+  [[ -f "$RELEASE_ENV_FILE" ]] || die "release.env not found: $RELEASE_ENV_FILE (run this through deploy-admin.ps1)"
+  [[ -f "$INSTALLER" ]] || die "install-release.sh not found: $INSTALLER"
   load_env_file "$RELEASE_ENV_FILE"
-  [[ -n "${RELEASE_TARBALL:-}" ]] || die "RELEASE_TARBALL vazio em $RELEASE_ENV_FILE"
-  [[ -n "${RELEASE_SHA256:-}" ]] || die "RELEASE_SHA256 vazio em $RELEASE_ENV_FILE"
-  [[ -f "$SCRIPT_DIR/$RELEASE_TARBALL" ]] || die "release nao encontrado no bundle: $RELEASE_TARBALL"
+  [[ -n "${RELEASE_TARBALL:-}" ]] || die "RELEASE_TARBALL is empty in $RELEASE_ENV_FILE"
+  [[ -n "${RELEASE_SHA256:-}" ]] || die "RELEASE_SHA256 is empty in $RELEASE_ENV_FILE"
+  [[ -f "$SCRIPT_DIR/$RELEASE_TARBALL" ]] || die "release not found in the bundle: $RELEASE_TARBALL"
 }
 
 ensure_debian_template() {
   if pct status "$CTID" >/dev/null 2>&1 && [[ "$RECREATE_CT" != "1" ]]; then
     return
   fi
-  msg "Atualizando lista de templates do Proxmox"
+  msg "Updating the Proxmox template list"
   pveam update >/dev/null
   TEMPLATE="$(pveam available --section system | awk -v pat="$TEMPLATE_PATTERN" '$2 ~ pat {print $2}' | tail -n1)"
-  [[ -n "$TEMPLATE" ]] || die "Template Debian nao encontrado para o padrao $TEMPLATE_PATTERN"
+  [[ -n "$TEMPLATE" ]] || die "No Debian template found for the pattern $TEMPLATE_PATTERN"
   if ! pveam list "$TEMPLATE_STORAGE" | awk '{print $2}' | grep -qx "$TEMPLATE"; then
-    msg "Baixando template $TEMPLATE"
+    msg "Downloading template $TEMPLATE"
     pveam download "$TEMPLATE_STORAGE" "$TEMPLATE"
   fi
 }
@@ -129,14 +129,14 @@ ensure_container() {
   pct status "$CTID" >/dev/null 2>&1 && ct_exists=1
 
   if [[ "$ct_exists" -eq 1 && "$RECREATE_CT" == "1" ]]; then
-    msg "Recriando CT $CTID (RECREATE_ADMIN_CT=1)"
+    msg "Recreating CT $CTID (RECREATE_ADMIN_CT=1)"
     pct stop "$CTID" >/dev/null 2>&1 || true
     pct destroy "$CTID" --destroy-unreferenced-disks 1
     ct_exists=0
   fi
 
   if [[ "$ct_exists" -eq 0 ]]; then
-    msg "Criando CT $CTID ($CT_HOSTNAME) - ${CORES} core(s), ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB"
+    msg "Creating CT $CTID ($CT_HOSTNAME) - ${CORES} core(s), ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB"
     pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" \
       --arch amd64 \
       --hostname "$CT_HOSTNAME" \
@@ -153,7 +153,7 @@ ensure_container() {
       --timezone "$TZ" \
       --tags "admin;gamepanel"
   else
-    msg "Atualizando configuracao do CT $CTID"
+    msg "Updating the configuration of CT $CTID"
     pct set "$CTID" \
       --hostname "$CT_HOSTNAME" \
       --cores "$CORES" \
@@ -168,28 +168,28 @@ ensure_container() {
 
 start_container() {
   if ! pct status "$CTID" 2>/dev/null | grep -q running; then
-    msg "Iniciando CT $CTID"
+    msg "Starting CT $CTID"
     pct start "$CTID"
   fi
   local waited=0
   until pct exec "$CTID" -- true >/dev/null 2>&1; do
     sleep 2
     waited=$((waited + 2))
-    [[ "$waited" -lt 120 ]] || die "CT $CTID nao respondeu em 120s"
+    [[ "$waited" -lt 120 ]] || die "CT $CTID did not answer within 120s"
   done
   # Without network apt fails with an error far less clear than this one.
   waited=0
   until run_ct "getent hosts deb.debian.org >/dev/null 2>&1"; do
     sleep 2
     waited=$((waited + 2))
-    [[ "$waited" -lt 60 ]] || die "CT $CTID sem resolucao DNS/rede apos 60s"
+    [[ "$waited" -lt 60 ]] || die "CT $CTID has no DNS/network after 60s"
   done
 }
 
 install_packages() {
   # openssh-server is for reaching the panel from outside: it is what allows updating the code
   # straight from Windows (deploy-admin.ps1 without -Full), without going through Proxmox.
-  msg "Instalando dependencias no CT (python3-flask, gunicorn, openssh-client/server)"
+  msg "Installing dependencies in the CT (python3-flask, gunicorn, openssh-client/server)"
   run_ct "export DEBIAN_FRONTEND=noninteractive && apt-get update -qq && \
     apt-get install -y -qq python3 python3-flask gunicorn openssh-client openssh-server \
     wget \
@@ -203,7 +203,7 @@ ensure_app_user() {
 }
 
 publish_release() {
-  msg "Publicando o release ${RELEASE_TARBALL} em ${APP_DIR}"
+  msg "Publishing release ${RELEASE_TARBALL} in ${APP_DIR}"
   local remote_tmp=/tmp/gamepanel-release
 
   run_ct "rm -rf '$remote_tmp' && install -d '$remote_tmp'"
@@ -221,19 +221,19 @@ publish_release() {
   run_ct "bash '${remote_tmp}/install-release.sh' gamepanel \
 '${remote_tmp}/${RELEASE_TARBALL}' '${RELEASE_SHA256}' ${APP_DIR} ${SERVICE_NAME} \
 'wget -q -O /dev/null http://127.0.0.1:${PANEL_PORT}/health'" \
-    || die "A instalacao do release falhou dentro do CT (veja a saida acima)"
+    || die "The release install failed inside the CT (see the output above)"
   run_ct "rm -rf '$remote_tmp'"
 
   # Failing here is better than the service dying at start with ModuleNotFoundError.
   run_ct "cd ${APP_DIR}/current && python3 -c 'import gamepanel.app'" \
-    || die "O pacote do painel nao importa no CT a partir de ${APP_DIR}/current"
+    || die "The panel package does not import in the CT from ${APP_DIR}/current"
   # || true inside the $(...): without it `set -e` kills the script here and the reason
   # never gets printed.
-  msg "No ar: $(run_ct "readlink ${APP_DIR}/current" | tr -d '\r' || true)"
+  msg "Live: $(run_ct "readlink ${APP_DIR}/current" | tr -d '\r' || true)"
 }
 
 ensure_ssh_key() {
-  msg "Preparando a chave SSH do painel"
+  msg "Preparing the panel SSH key"
   # The key is from the panel to the GAME CONTAINERS. The panel gets no key at all
   # for the Proxmox host: it never talks to the hypervisor.
   run_ct "test -f ${CONF_DIR}/id_ed25519 || ssh-keygen -t ed25519 -N '' -C 'gamepanel@${CT_HOSTNAME}' -f ${CONF_DIR}/id_ed25519 >/dev/null"
@@ -243,7 +243,7 @@ ensure_ssh_key() {
   run_ct "touch ${DATA_DIR}/known_hosts && chown ${APP_USER}:${APP_USER} ${DATA_DIR}/known_hosts && chmod 0644 ${DATA_DIR}/known_hosts"
 
   PANEL_PUBKEY="$(pct exec "$CTID" -- cat "${CONF_DIR}/id_ed25519.pub" | tr -d '\r\n')"
-  [[ -n "$PANEL_PUBKEY" ]] || die "Nao consegui ler a chave publica do painel"
+  [[ -n "$PANEL_PUBKEY" ]] || die "Could not read the panel public key"
 }
 
 enable_direct_deploy() {
@@ -256,17 +256,17 @@ enable_direct_deploy() {
     systemctl reload ssh >/dev/null 2>&1 || true"
 
   if [[ -z "$pubkey" ]]; then
-    warn "ADMIN_SSH_PUBKEY vazio: o envio direto para o CT nao vai funcionar"
+    warn "ADMIN_SSH_PUBKEY is empty: the direct push to the CT will not work"
     return 0
   fi
-  msg "Autorizando sua chave SSH no CT do painel (para o envio direto)"
+  msg "Authorizing your SSH key on the panel CT (for the direct push)"
   run_ct "install -d -m 700 /root/.ssh && touch /root/.ssh/authorized_keys && \
     chmod 600 /root/.ssh/authorized_keys && \
     grep -qF '${pubkey}' /root/.ssh/authorized_keys || echo '${pubkey}' >> /root/.ssh/authorized_keys"
 }
 
 render_panel_config() {
-  msg "Gravando configuracao do painel"
+  msg "Writing the panel configuration"
   local tmp_file preserved
   tmp_file="$(mktemp)"
   # The broker writes the GAMEPANEL_*BROKER* lines into this file (deploy-broker.ps1
@@ -293,7 +293,7 @@ GAMEPANEL_FILE_ROOTS=${FILE_ROOTS}
 GAMEPANEL_FILE_DEFAULT=${FILE_DEFAULT}
 GAMEPANEL_REQUIRE_2FA=${REQUIRE_2FA}
 GAMEPANEL_WEBAUTHN_ORIGIN=${WEBAUTHN_ORIGIN}
-GAMEPANEL_LANG=${LANG_PADRAO}
+GAMEPANEL_LANG=${DEFAULT_LANG}
 EOF
   [[ -z "$preserved" ]] || printf '%s\n' "$preserved" >> "$tmp_file"
   push_file_to_ct "$tmp_file" "${CONF_DIR}/panel.env" 0640
@@ -305,9 +305,9 @@ bootstrap_admin_user() {
   if [[ -z "$PANEL_PASSWORD" ]]; then
     PANEL_PASSWORD="$(head -c 12 /dev/urandom | base64 | tr -d '/+=' | cut -c1-14)"
     GENERATED_PASSWORD=1
-    warn "ADMIN_PASSWORD nao definido - uma senha foi gerada e sera exibida no resumo"
+    warn "ADMIN_PASSWORD is not set - a password was generated and will be shown in the summary"
   fi
-  msg "Criando/atualizando o usuario '${PANEL_USER}' do painel"
+  msg "Creating/updating the panel user '${PANEL_USER}'"
   # The import root is ${APP_DIR}/current, never ${APP_DIR}: since releases became one
   # folder per version the package lives in releases/<version>/gamepanel, and ${APP_DIR} holds
   # only the symlink. Pointed at ${APP_DIR} the import fails and set -e kills the script HERE
@@ -332,7 +332,7 @@ panel.ensure_admin_user('${PANEL_USER}', sys.stdin.read())
 render_panel_unit() {
   cat <<EOF
 [Unit]
-Description=Painel administrativo dos servidores de jogos
+Description=Game servers admin panel
 After=network-online.target
 Wants=network-online.target
 
@@ -377,7 +377,7 @@ EOF
 }
 
 render_service() {
-  msg "Criando o servico systemd ${SERVICE_NAME}"
+  msg "Creating the systemd service ${SERVICE_NAME}"
   local tmp_file
   tmp_file="$(mktemp)"
   render_panel_unit > "$tmp_file"
@@ -387,60 +387,14 @@ render_service() {
 }
 
 start_panel() {
-  msg "Subindo o painel"
+  msg "Starting the panel"
   run_ct "systemctl restart ${SERVICE_NAME}"
   sleep 5
   if ! run_ct "systemctl is-active --quiet ${SERVICE_NAME}"; then
-    warn "O painel nao ficou ativo. Ultimas linhas do log:"
+    warn "The panel did not become active. Last lines of the log:"
     run_ct "journalctl -u gamepanel.service --no-pager -n 40" || true
-    die "gamepanel.service nao subiu"
+    die "gamepanel.service did not start"
   fi
-}
-
-authorize_in_game_cts() {
-  # LEGACY bootstrap: puts the panel key in ROOT's authorized_keys of the listed game CTs, which
-  # is the old root access mode (docs/security-hardening.md). Kept as it was for whoever still has
-  # servers registered as root, but no longer recommended: the panel registers new servers as
-  # `gamepanel`, and a CT that only has the key on root refuses that user. The way forward is
-  # deploy/game/migrate-ct.ps1, which installs `gamepanel` through lib/ct-panel-access.sh, proves
-  # it FROM the panel and switches the server record. Not done here: installing gamepanel without
-  # switching the record would convert the CT's mod drop-ins under a panel still talking as root.
-  # Runs here (on the host, during the deploy) because only the host can get into the CTs without
-  # prior SSH - the panel itself never has access to the hypervisor.
-  local raw="${ADMIN_AUTHORIZE_CTIDS:-}"
-  [[ -n "$raw" ]] || return 0
-  warn "ADMIN_AUTHORIZE_CTIDS is legacy: it authorizes the panel as ROOT. Move each CT to the gamepanel user with deploy/game/migrate-ct.ps1 -Ctid <CTID>."
-
-  local target
-  for target in ${raw//,/ }; do
-    if [[ ! "$target" =~ ^[0-9]+$ ]]; then
-      warn "ADMIN_AUTHORIZE_CTIDS: ignoring non-numeric value '$target'"
-      continue
-    fi
-    if ! pct status "$target" >/dev/null 2>&1; then
-      warn "CT $target does not exist; skipping"
-      continue
-    fi
-    msg "Authorizing the panel key for root on CT $target (legacy mode)"
-    pct start "$target" >/dev/null 2>&1 || true
-    if ! pct exec "$target" -- true >/dev/null 2>&1; then
-      warn "CT $target did not answer; skipping"
-      continue
-    fi
-    pct exec "$target" -- bash -lc "
-      set -e
-      command -v sshd >/dev/null 2>&1 || {
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -qq && apt-get install -y -qq openssh-server
-      }
-      systemctl enable --now ssh >/dev/null 2>&1 || systemctl enable --now sshd
-      install -d -m 700 /root/.ssh
-      touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
-      grep -qF '${PANEL_PUBKEY}' /root/.ssh/authorized_keys \
-        || echo '${PANEL_PUBKEY}' >> /root/.ssh/authorized_keys
-    " || warn "Failed to authorize the panel on CT $target (use deploy/game/migrate-ct.ps1 -Ctid $target)"
-    AUTHORIZED_CTS="${AUTHORIZED_CTS:-} $target"
-  done
 }
 
 get_ct_ip() {
@@ -488,15 +442,6 @@ Game containers:
     .\\deploy\\game\\migrate-ct.ps1 -Ctid <CTID>
   It installs the user, proves the access FROM the panel, switches the server record and
   only then locks root (-NoLock keeps root login open for a first, softer step).
-EOF
-  if [[ -n "${AUTHORIZED_CTS:-}" ]]; then
-    cat <<EOF
-
-  WARNING: ADMIN_AUTHORIZE_CTIDS put this key in ROOT's authorized_keys (legacy mode) on
-  CTs:${AUTHORIZED_CTS}. Run migrate-ct.ps1 on each of them and empty ADMIN_AUTHORIZE_CTIDS.
-EOF
-  fi
-  cat <<EOF
 
 Next step: log in to the panel and register your servers under "Add server", giving the
 container IP and the service (e.g. 10.20.1.20, dragonwilds.service). Also fill in the
@@ -528,14 +473,14 @@ EOF
 # the firewall comes off, instead of a live panel that nobody can reach.
 apply_panel_firewall() {
   if [[ "${CT_FIREWALL:-1}" == "0" ]]; then
-    warn "CT_FIREWALL=0: o CT do painel fica SEM firewall interno"
+    warn "CT_FIREWALL=0: the panel CT stays WITHOUT an internal firewall"
     return 0
   fi
   local sources="${ADMIN_FIREWALL_SOURCES:-192.168.0.0/16}" conf ip
-  msg "Aplicando o firewall do CT do painel (nftables): web e SSH so de ${sources}"
-  modprobe nf_tables 2>/dev/null || warn "nao consegui carregar o modulo nf_tables no host"
+  msg "Applying the panel CT firewall (nftables): web and SSH only from ${sources}"
+  modprobe nf_tables 2>/dev/null || warn "could not load the nf_tables module on the host"
   { mkdir -p /etc/modules-load.d && echo nf_tables > /etc/modules-load.d/ct-firewall.conf; } \
-    || warn "nao consegui deixar o nf_tables carregando no boot do host"
+    || warn "could not make nf_tables load at the host boot"
   conf="$(mktemp)"
   {
     printf 'FW_ROLE=panel\n'
@@ -545,14 +490,14 @@ apply_panel_firewall() {
   push_file_to_ct "$SCRIPT_DIR/ct-firewall.sh" /usr/local/sbin/ct-firewall 0755
   push_file_to_ct "$conf" /etc/ct-firewall.env 0644
   rm -f "$conf"
-  run_ct "/usr/local/sbin/ct-firewall apply" || die "o firewall do painel nao carregou (nada foi alterado nele)"
+  run_ct "/usr/local/sbin/ct-firewall apply" || die "the panel firewall did not load (nothing was changed in it)"
   ip="$(run_ct "hostname -I | awk '{print \$1}'" | tr -d '\r \n' || true)"
   [[ -n "$ip" ]] || return 0
   # The host is usually on the administration network. If it cannot reach the panel web, either the
   # list is wrong or the host is outside it: in both cases, better open and warned.
   if ! timeout 5 bash -c "</dev/tcp/${ip}/${PANEL_PORT}" 2>/dev/null; then
     run_ct "/usr/local/sbin/ct-firewall off"
-    warn "O host nao alcancou ${ip}:${PANEL_PORT} com o firewall ligado: ele foi DESLIGADO. Confira ADMIN_FIREWALL_SOURCES (${sources}) e religue com: pct exec ${CTID} -- ct-firewall apply"
+    warn "The host could not reach ${ip}:${PANEL_PORT} with the firewall on: it was turned OFF. Check ADMIN_FIREWALL_SOURCES (${sources}) and turn it back on with: pct exec ${CTID} -- ct-firewall apply"
   fi
 }
 
@@ -592,7 +537,6 @@ main() {
   bootstrap_admin_user
   start_panel
   apply_panel_firewall
-  authorize_in_game_cts
   print_summary
 }
 

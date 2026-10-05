@@ -79,16 +79,16 @@ function Invoke-Scp([string[]]$Sources, [string]$Destination, [switch]$Recurse) 
 # List "302, 303" -> "302,303", rejecting anything that is not a CT number.
 function ConvertTo-CtList([string]$Raw, [string]$Name) {
     $items = @($Raw -split '[,\s]+' | Where-Object { $_ -ne "" })
-    foreach ($i in $items) { if ($i -notmatch '^\d{2,9}$') { throw "${Name}: '$i' nao e um numero de CT." } }
+    foreach ($i in $items) { if ($i -notmatch '^\d{2,9}$') { throw "${Name}: '$i' is not a CT number." } }
     return ($items -join ",")
 }
 
 # ----- Configuration -----
 $cfg = Read-EnvFile $EnvFile
 if ($ProxmoxHost -eq "") { $ProxmoxHost = Get-Cfg $cfg "PROXMOX_HOST" }
-if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido no .env (ou use -ProxmoxHost)." }
+if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST is not set in .env (or use -ProxmoxHost)." }
 $panelCtid = Get-Cfg $cfg "ADMIN_CTID"
-if ($panelCtid -eq "") { throw "ADMIN_CTID nao definido no .env: e do painel que os testes partem." }
+if ($panelCtid -eq "") { throw "ADMIN_CTID is not set in .env: the tests start from the panel." }
 
 $fwLines = @(
     "PANEL_CTID=`"$panelCtid`"",
@@ -118,12 +118,12 @@ Write-LfFile (Join-Path $BundleDir "fw.env") (($fwLines -join "`n") + "`n")
 
 # ----- Send and run -----
 try {
-    Write-Host "`nEnviando para root@$ProxmoxHost..." -ForegroundColor Cyan
+    Write-Host "`nSending to root@$ProxmoxHost..." -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to prepare $RemoteBundleDir on root@$ProxmoxHost" }
     $items = @(Get-ChildItem -Path $BundleDir | ForEach-Object { $_.FullName })
     Invoke-Scp $items "root@${ProxmoxHost}:$RemoteBundleDir/" -Recurse
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos para root@$ProxmoxHost" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to send the files to root@$ProxmoxHost" }
 
     Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./apply-firewall.sh"
     $code = $LASTEXITCODE
@@ -131,4 +131,4 @@ try {
     if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
     try { Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir'" | Out-Null } catch { }
 }
-if ($code -ne 0) { throw "Algum CT falhou (veja FALHOU no resumo acima). Os que falharam ficaram SEM firewall, nao trancados." }
+if ($code -ne 0) { throw "Some CT failed (see FAILED in the summary above). The ones that failed were left WITHOUT a firewall, not locked out." }

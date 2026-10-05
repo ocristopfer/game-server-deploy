@@ -75,7 +75,7 @@ function Copy-AsLf([string]$Source, [string]$Dest) {
 # Value for bash `source`: in single quotes, with ' escaped. Without this a secret containing
 # $, a backtick or quotes would be interpreted, and the error would only show up as an "invalid" token.
 function ConvertTo-BashQuoted([string]$Value) {
-    if ($Value -match "[\r\n]") { throw "Um valor de configuracao tem quebra de linha (nao suportado)." }
+    if ($Value -match "[\r\n]") { throw "A configuration value contains a line break (not supported)." }
     return "'" + ($Value -replace "'", "'\''") + "'"
 }
 
@@ -143,30 +143,30 @@ function Test-KeyAuth([string]$Target) {
 
 function Initialize-ProxmoxAuth([string]$Target, [string]$Password) {
     if (Test-KeyAuth $Target) {
-        Write-Host "Proxmox: entrando por chave SSH." -ForegroundColor DarkGray
+        Write-Host "Proxmox: logging in with an SSH key." -ForegroundColor DarkGray
         return
     }
     if ($Password -eq "") {
-        throw ("Nao consegui entrar em root@$Target por chave SSH. Preencha PROXMOX_PASSWORD no .env " +
-               "(ou use -ProxmoxPassword), ou autorize sua chave publica no Proxmox.")
+        throw ("Could not log into root@$Target with an SSH key. Fill in PROXMOX_PASSWORD in .env " +
+               "(or use -ProxmoxPassword), or authorize your public key on Proxmox.")
     }
     Enable-PasswordAuth $Password
-    Write-Host "Proxmox: sem chave autorizada, usando a senha do .env." -ForegroundColor DarkGray
+    Write-Host "Proxmox: no authorized key, using the password from .env." -ForegroundColor DarkGray
 }
 
 # ----- Configuration -----
 if (-not (Test-Path $SecretsFile)) {
-    throw ("Nao achei $SecretsFile. Copie broker.secrets.env.example para broker.secrets.env e preencha " +
-           "(token do Proxmox, chave do OPNsense).")
+    throw ("$SecretsFile not found. Copy broker.secrets.env.example to broker.secrets.env and fill it in " +
+           "(Proxmox token, OPNsense key).")
 }
 $cfg = Read-EnvFile $EnvFile
 $sec = Read-EnvFile $SecretsFile
 
 if ($ProxmoxHost -eq "") { $ProxmoxHost = Get-Cfg $cfg "PROXMOX_HOST" }
-if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido no .env (ou use -ProxmoxHost)." }
+if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST is not set in .env (or use -ProxmoxHost)." }
 if ($ProxmoxPassword -eq "") { $ProxmoxPassword = Get-Cfg $cfg "PROXMOX_PASSWORD" }
 
-if ($EnableOnPanel -and -not $ConfigurePanel) { throw "-EnableOnPanel exige -ConfigurePanel." }
+if ($EnableOnPanel -and -not $ConfigurePanel) { throw "-EnableOnPanel requires -ConfigurePanel." }
 
 $absent = @()
 foreach ($k in @("BROKER_CTID", "BROKER_IP_CIDR", "BROKER_IP_PREFIX")) {
@@ -177,7 +177,7 @@ foreach ($k in @("PROXMOX_URL", "PROXMOX_TOKEN", "PROXMOX_NODE", "PROXMOX_STORAG
     $v = Get-Cfg $sec $k
     if ($v -eq "" -or $v -match "COLE_|IP_DO_") { $absent += "$k (broker.secrets.env)" }
 }
-if ($absent.Count -gt 0) { throw ("Faltam valores:`n  - " + ($absent -join "`n  - ")) }
+if ($absent.Count -gt 0) { throw ("Missing values:`n  - " + ($absent -join "`n  - ")) }
 
 # Panel address: only it may talk to the broker.
 $panelIp = Get-Cfg $cfg "ADMIN_HOST"
@@ -185,14 +185,14 @@ if ($panelIp -eq "") {
     $adminCidr = Get-Cfg $cfg "ADMIN_IP_CIDR"
     if ($adminCidr -ne "" -and $adminCidr -ne "dhcp") { $panelIp = ($adminCidr -split '/')[0] }
 }
-if ($panelIp -eq "") { Write-Host "ADMIN_HOST/ADMIN_IP_CIDR vazios: o broker aceitara qualquer origem (so o token). Defina para restringir ao IP do painel." -ForegroundColor Yellow }
+if ($panelIp -eq "") { Write-Host "ADMIN_HOST/ADMIN_IP_CIDR are empty: the broker will accept any source (token only). Set them to restrict it to the panel IP." -ForegroundColor Yellow }
 
 # ----- Confirmation before turning the feature on in an exposed panel -----
 if ($EnableOnPanel) {
-    Write-Host "`nATENCAO: ligar o broker no painel da a quem entrar nele o poder de CRIAR containers e ABRIR portas no firewall." -ForegroundColor Yellow
-    Write-Host "Se o painel esta na internet (Cloudflare), proteja-o antes: Cloudflare Access ou 2FA." -ForegroundColor Yellow
-    $resp = Read-Host "Digite LIGAR para confirmar"
-    if ($resp -ne "LIGAR") { throw "Cancelado: o recurso nao foi ligado." }
+    Write-Host "`nWARNING: turning the broker on in the panel gives whoever logs into it the power to CREATE containers and OPEN ports on the firewall." -ForegroundColor Yellow
+    Write-Host "If the panel is on the internet (Cloudflare), protect it first: Cloudflare Access or 2FA." -ForegroundColor Yellow
+    $resp = Read-Host "Type ENABLE to confirm"
+    if ($resp -ne "ENABLE") { throw "Cancelled: the feature was not turned on." }
 }
 
 function New-ReleaseBundle([string]$Package) {
@@ -200,13 +200,13 @@ function New-ReleaseBundle([string]$Package) {
     # tools/build-release.py), so the sha256 that travels with it answers "does the CT have
     # THIS code?", and not just "did the file arrive whole?".
     $builder = Join-Path $RepoRoot "tools/build-release.py"
-    if (-not (Test-Path $builder)) { throw "tools/build-release.py nao encontrado em $ScriptDir" }
+    if (-not (Test-Path $builder)) { throw "tools/build-release.py not found in $RepoRoot" }
     $dist = Join-Path ([System.IO.Path]::GetTempPath()) "gamebroker-release"
     if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
     Invoke-Native { python $builder $Package --out $dist }
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao empacotar o release (codigo $LASTEXITCODE)" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to package the release (exit code $LASTEXITCODE)" }
     $tarball = Get-ChildItem -Path $dist -Filter "$Package-*.tar.gz" | Select-Object -First 1
-    if (-not $tarball) { throw "o empacotador nao gerou nenhum $Package-*.tar.gz em $dist" }
+    if (-not $tarball) { throw "the packager produced no $Package-*.tar.gz in $dist" }
     $sha = ((Get-Content "$($tarball.FullName).sha256" -Raw).Trim() -split "\s+")[0]
     return [pscustomobject]@{ Path = $tarball.FullName; Name = $tarball.Name; Sha = $sha }
 }
@@ -229,7 +229,7 @@ $Release = New-ReleaseBundle "gamebroker"
 Copy-Item $Release.Path (Join-Path $BundleDir $Release.Name)
 Write-LfFile (Join-Path $BundleDir "release.env") (
     "RELEASE_TARBALL='$($Release.Name)'`nRELEASE_SHA256='$($Release.Sha)'`n")
-Write-Host "Release do broker: $($Release.Name)" -ForegroundColor DarkGray
+Write-Host "Broker release: $($Release.Name)" -ForegroundColor DarkGray
 
 foreach ($f in (Get-ChildItem (Join-Path $RepoRoot "lib") -Filter "*.sh" -File)) {
     Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "lib") $f.Name)
@@ -279,21 +279,21 @@ Write-LfFile (Join-Path $BundleDir "broker.secrets.env") (($lines -join "`n") + 
 # ----- Send and run on Proxmox -----
 try {
     Initialize-ProxmoxAuth $ProxmoxHost $ProxmoxPassword
-    Write-Host "`nEnviando bundle para root@$ProxmoxHost..." -ForegroundColor Cyan
+    Write-Host "`nSending the bundle to root@$ProxmoxHost..." -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to prepare $RemoteBundleDir on root@$ProxmoxHost" }
 
     # scp -r: gamebroker/, lib/ and games/ are folders; the loose files go along.
     $items = @(Get-ChildItem -Path $BundleDir | ForEach-Object { $_.FullName })
     Invoke-Scp $items "root@${ProxmoxHost}:$RemoteBundleDir/" -Recurse
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o bundle para root@$ProxmoxHost" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to send the bundle to root@$ProxmoxHost" }
 
     # The bundle carries Proxmox and OPNsense tokens: only root reads it, and provisioning deletes it.
     Invoke-Ssh $ProxmoxHost "chmod 700 '$RemoteBundleDir' && chmod 600 '$RemoteBundleDir/broker.secrets.env'" | Out-Null
 
-    Write-Host "Executando o provisionamento no Proxmox...`n" -ForegroundColor Cyan
+    Write-Host "Running the provisioning on Proxmox...`n" -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./provision-broker-lxc.sh"
-    if ($LASTEXITCODE -ne 0) { throw "Provisionamento do broker falhou no host Proxmox (veja a saida acima)" }
+    if ($LASTEXITCODE -ne 0) { throw "Broker provisioning failed on the Proxmox host (see the output above)" }
 } finally {
     # The local bundle holds a copy of the secrets: do not leave it lying in %TEMP%, nor the remote one.
     if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
@@ -301,4 +301,4 @@ try {
     Disable-PasswordAuth
 }
 
-Write-Host "`nBroker publicado. Confira a IMPRESSAO dos certificados e as REGRAS DE FIREWALL do resumo acima." -ForegroundColor Green
+Write-Host "`nBroker published. Check the certificate FINGERPRINTS and the FIREWALL RULES in the summary above." -ForegroundColor Green

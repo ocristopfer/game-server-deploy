@@ -155,31 +155,31 @@ function Test-KeyAuth([string]$Target) {
 
 function Initialize-ProxmoxAuth([string]$Target, [string]$Password) {
     if (Test-KeyAuth $Target) {
-        Write-Host "Proxmox: entrando por chave SSH." -ForegroundColor DarkGray
+        Write-Host "Proxmox: logging in with the SSH key." -ForegroundColor DarkGray
         return $false
     }
     if ($Password -eq "") {
-        throw ("Nao consegui entrar em root@$Target por chave SSH. " +
-               "Preencha PROXMOX_PASSWORD no .env (ou use -ProxmoxPassword), " +
-               "ou autorize sua chave publica no Proxmox.")
+        throw ("Could not log in to root@$Target with an SSH key. " +
+               "Fill in PROXMOX_PASSWORD in .env (or use -ProxmoxPassword), " +
+               "or authorize your public key on Proxmox.")
     }
     Enable-PasswordAuth $Password
-    Write-Host "Proxmox: sem chave autorizada, usando a senha do .env." -ForegroundColor DarkGray
+    Write-Host "Proxmox: no authorized key, using the password from .env." -ForegroundColor DarkGray
     return $true
 }
 
 function Install-KeyOnProxmox([string]$Target, [string]$PubKey) {
     if ($PubKey -eq "") {
-        Write-Host "Sem chave publica local para instalar (rode ssh-keygen)." -ForegroundColor Yellow
+        Write-Host "No local public key to install (run ssh-keygen)." -ForegroundColor Yellow
         return
     }
-    Write-Host "Autorizando sua chave publica em root@$Target..." -ForegroundColor Cyan
+    Write-Host "Authorizing your public key on root@$Target..." -ForegroundColor Cyan
     $cmd = "install -d -m 700 /root/.ssh && touch /root/.ssh/authorized_keys && " +
            "chmod 600 /root/.ssh/authorized_keys && " +
            "grep -qF '$PubKey' /root/.ssh/authorized_keys || echo '$PubKey' >> /root/.ssh/authorized_keys"
     Invoke-Ssh $Target $cmd
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao autorizar a chave em root@$Target" }
-    Write-Host "Pronto: os proximos deploys entram por chave, sem senha." -ForegroundColor Green
+    if ($LASTEXITCODE -ne 0) { throw "Failed to authorize the key on root@$Target" }
+    Write-Host "Done: the next deploys log in with the key, no password." -ForegroundColor Green
 }
 
 # ----- Direct push to the panel CT (without going through Proxmox) -----
@@ -240,7 +240,7 @@ function Invoke-Native([scriptblock]$Command, [string]$What) {
     $ErrorActionPreference = "Continue"
     try {
         & $Command
-        if ($LASTEXITCODE -ne 0) { throw "Falha ao $What (codigo $LASTEXITCODE)" }
+        if ($LASTEXITCODE -ne 0) { throw "Failed to $What (exit code $LASTEXITCODE)" }
     } finally {
         $ErrorActionPreference = $previous
     }
@@ -251,24 +251,24 @@ function New-ReleaseBundle([string]$Package) {
     # tools/build-release.py), so the sha256 that travels with it answers "does the CT have
     # THIS code?", and not just "did the file arrive whole?".
     $builder = Join-Path $RepoRoot "tools/build-release.py"
-    if (-not (Test-Path $builder)) { throw "tools/build-release.py nao encontrado em $ScriptDir" }
+    if (-not (Test-Path $builder)) { throw "tools/build-release.py not found in $RepoRoot" }
     $dist = Join-Path ([System.IO.Path]::GetTempPath()) "gamepanel-release"
     if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
-    Invoke-Native { python $builder $Package --out $dist } "empacotar o release"
+    Invoke-Native { python $builder $Package --out $dist } "package the release"
     $tarball = Get-ChildItem -Path $dist -Filter "$Package-*.tar.gz" | Select-Object -First 1
-    if (-not $tarball) { throw "o empacotador nao gerou nenhum $Package-*.tar.gz em $dist" }
+    if (-not $tarball) { throw "the packager produced no $Package-*.tar.gz in $dist" }
     $sha = ((Get-Content "$($tarball.FullName).sha256" -Raw).Trim() -split "\s+")[0]
     return [pscustomobject]@{ Path = $tarball.FullName; Name = $tarball.Name; Sha = $sha }
 }
 
 function Invoke-DirectDeploy([string]$Target, [string]$Port) {
-    Write-Host "`nCT do painel encontrado em $Target - enviando o release direto (sem Proxmox)." -ForegroundColor Cyan
+    Write-Host "`nPanel CT found at $Target - sending the release straight to it (no Proxmox)." -ForegroundColor Cyan
     $release = New-ReleaseBundle "gamepanel"
     Write-Host "  $($release.Name)  sha256 $($release.Sha.Substring(0, 12))..." -ForegroundColor DarkGray
 
     $remoteTmp = "/tmp/gamepanel-release"
     Invoke-Ssh $Target "rm -rf '$remoteTmp' && mkdir -p '$remoteTmp'"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $remoteTmp em root@$Target" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to prepare $remoteTmp on root@$Target" }
 
     # TWO files, and that is all: the package and the installer. The old push copied the whole
     # tree and kept, on the other side, a hand-written list of which folders to delete
@@ -278,7 +278,7 @@ function Invoke-DirectDeploy([string]$Target, [string]$Port) {
     # It is a BYTE copy: the old loop passed every file through a line-ending
     # normalizer, and any PNG caught in that sieve arrived corrupted (the PWA icon did).
     Invoke-Scp @($release.Path, (Join-Path $RepoRoot "lib/install-release.sh")) "root@${Target}:$remoteTmp/"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o release do painel" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to send the panel release" }
 
     # The health probe decides whether the release stays: if it does not answer, the
     # installer points the symlink back to the previous version and exits with an error. Cleanup comes
@@ -295,18 +295,18 @@ function Invoke-DirectDeploy([string]$Target, [string]$Port) {
     $installed = ($LASTEXITCODE -eq 0)
     Invoke-Ssh $Target "rm -rf '$remoteTmp'"
     if (-not $installed) {
-        Write-Host "`nO painel nao voltou. Ultimas linhas do log:" -ForegroundColor Yellow
+        Write-Host "`nThe panel did not come back. Last lines of the log:" -ForegroundColor Yellow
         Invoke-Ssh $Target "journalctl -u gamepanel.service --no-pager -n 30"
-        throw "gamepanel.service nao ficou ativo apos o envio direto"
+        throw "gamepanel.service did not become active after the direct push"
     }
 
     # Confirms via /health that the LIVE process is the one just published. A
     # satisfied "systemctl is-active" is compatible with "systemd restarted the old
     # version": both show green, and only the version tells the two cases apart.
     $live = (Invoke-Ssh $Target "wget -q -O - http://127.0.0.1:$Port/health").Trim()
-    Write-Host "`nPainel atualizado em http://${Target}:$Port" -ForegroundColor Green
+    Write-Host "`nPanel updated at http://${Target}:$Port" -ForegroundColor Green
     Write-Host "  /health: $live" -ForegroundColor DarkGray
-    Write-Host "Config (ADMIN_*), recursos do CT e usuario so mudam no modo completo: .\deploy-admin.ps1 -Full" -ForegroundColor DarkGray
+    Write-Host "Config (ADMIN_*), CT resources and the user only change in full mode: .\deploy\admin\deploy-admin.ps1 -Full" -ForegroundColor DarkGray
 }
 
 # ----- Configuration -----
@@ -316,30 +316,29 @@ $cfg = Read-EnvFile $EnvFile
 if ($ProxmoxHost -eq "") { $ProxmoxHost = Get-Cfg $cfg "PROXMOX_HOST" }
 
 if ($Interactive) {
-    Write-Host "`n=== Painel administrativo - modo interativo (Enter aceita o valor entre colchetes) ===`n" -ForegroundColor Cyan
-    $ProxmoxHost               = Ask "Host Proxmox (ssh root)" $ProxmoxHost
-    $cfg["ADMIN_CTID"]         = Ask "ID do container do painel (ADMIN_CTID)" (Get-Cfg $cfg "ADMIN_CTID" "200")
-    $cfg["ADMIN_HOSTNAME"]     = Ask "Hostname do CT" (Get-Cfg $cfg "ADMIN_HOSTNAME" "gamepanel")
-    $cfg["STORAGE"]            = Ask "Storage do rootfs" (Get-Cfg $cfg "STORAGE")
-    $cfg["TEMPLATE_STORAGE"]   = Ask "Storage de templates" (Get-Cfg $cfg "TEMPLATE_STORAGE")
-    $cfg["BRIDGE"]             = Ask "Bridge de rede" (Get-Cfg $cfg "BRIDGE")
-    $cfg["ADMIN_IP_CIDR"]      = Ask "IP/CIDR do painel (ou 'dhcp')" (Get-Cfg $cfg "ADMIN_IP_CIDR" "dhcp")
+    Write-Host "`n=== Admin panel - interactive mode (Enter accepts the value in brackets) ===`n" -ForegroundColor Cyan
+    $ProxmoxHost               = Ask "Proxmox host (ssh root)" $ProxmoxHost
+    $cfg["ADMIN_CTID"]         = Ask "Panel container ID (ADMIN_CTID)" (Get-Cfg $cfg "ADMIN_CTID" "200")
+    $cfg["ADMIN_HOSTNAME"]     = Ask "CT hostname" (Get-Cfg $cfg "ADMIN_HOSTNAME" "gamepanel")
+    $cfg["STORAGE"]            = Ask "Rootfs storage" (Get-Cfg $cfg "STORAGE")
+    $cfg["TEMPLATE_STORAGE"]   = Ask "Template storage" (Get-Cfg $cfg "TEMPLATE_STORAGE")
+    $cfg["BRIDGE"]             = Ask "Network bridge" (Get-Cfg $cfg "BRIDGE")
+    $cfg["ADMIN_IP_CIDR"]      = Ask "Panel IP/CIDR (or 'dhcp')" (Get-Cfg $cfg "ADMIN_IP_CIDR" "dhcp")
     if ($cfg["ADMIN_IP_CIDR"] -ne "dhcp") {
         $cfg["ADMIN_GATEWAY"]  = Ask "Gateway" (Get-Cfg $cfg "ADMIN_GATEWAY" (Get-Cfg $cfg "GATEWAY"))
     }
-    $cfg["ADMIN_MEMORY"]       = Ask "Memoria MB" (Get-Cfg $cfg "ADMIN_MEMORY" "512")
+    $cfg["ADMIN_MEMORY"]       = Ask "Memory MB" (Get-Cfg $cfg "ADMIN_MEMORY" "512")
     $cfg["ADMIN_CORES"]        = Ask "Cores" (Get-Cfg $cfg "ADMIN_CORES" "1")
-    $cfg["ADMIN_DISK_GB"]      = Ask "Disco GB" (Get-Cfg $cfg "ADMIN_DISK_GB" "4")
-    $cfg["ADMIN_PORT"]         = Ask "Porta do painel" (Get-Cfg $cfg "ADMIN_PORT" "8080")
-    $cfg["ADMIN_USER"]         = Ask "Usuario do painel" (Get-Cfg $cfg "ADMIN_USER" "admin")
-    $cfg["ADMIN_PASSWORD"]     = Ask "Senha do painel (vazio = gerar automaticamente)" (Get-Cfg $cfg "ADMIN_PASSWORD")
-    $cfg["ADMIN_AUTHORIZE_CTIDS"] = Ask "CTIDs de jogo para ja autorizar (ex: 210 211)" (Get-Cfg $cfg "ADMIN_AUTHORIZE_CTIDS")
-    $cfg["ADMIN_ALLOW_SHELL"]  = Ask "Habilitar console/terminal no painel? (1/0)" (Get-Cfg $cfg "ADMIN_ALLOW_SHELL" "1")
-    $cfg["ADMIN_ALLOW_FILES"]  = Ask "Habilitar editor de arquivos de config? (1/0)" (Get-Cfg $cfg "ADMIN_ALLOW_FILES" "1")
-    $cfg["CT_PASSWORD"]        = Ask "Senha root do CT" (Get-Cfg $cfg "CT_PASSWORD")
-    $cfg["RECREATE_ADMIN_CT"]  = Ask "Recriar CT se existir? (0/1)" (Get-Cfg $cfg "RECREATE_ADMIN_CT" "0")
+    $cfg["ADMIN_DISK_GB"]      = Ask "Disk GB" (Get-Cfg $cfg "ADMIN_DISK_GB" "4")
+    $cfg["ADMIN_PORT"]         = Ask "Panel port" (Get-Cfg $cfg "ADMIN_PORT" "8080")
+    $cfg["ADMIN_USER"]         = Ask "Panel user" (Get-Cfg $cfg "ADMIN_USER" "admin")
+    $cfg["ADMIN_PASSWORD"]     = Ask "Panel password (empty = generate one)" (Get-Cfg $cfg "ADMIN_PASSWORD")
+    $cfg["ADMIN_ALLOW_SHELL"]  = Ask "Enable the console/terminal in the panel? (1/0)" (Get-Cfg $cfg "ADMIN_ALLOW_SHELL" "1")
+    $cfg["ADMIN_ALLOW_FILES"]  = Ask "Enable the config file editor? (1/0)" (Get-Cfg $cfg "ADMIN_ALLOW_FILES" "1")
+    $cfg["CT_PASSWORD"]        = Ask "CT root password" (Get-Cfg $cfg "CT_PASSWORD")
+    $cfg["RECREATE_ADMIN_CT"]  = Ask "Recreate the CT if it exists? (0/1)" (Get-Cfg $cfg "RECREATE_ADMIN_CT" "0")
 } elseif (-not (Test-Path $EnvFile)) {
-    throw "Modo automatico requer o arquivo .env ($EnvFile). Copie o .env.example ou use -Interactive."
+    throw "Automatic mode needs the .env file ($EnvFile). Copy .env.example or use -Interactive."
 }
 
 # ----- Shortcut: CT already exists and answers? Send the release straight to it -----
@@ -353,7 +352,7 @@ if (-not $Interactive -and -not $Full) {
         return
     }
     if ($TargetPanel -ne "") {
-        Write-Host "CT do painel nao respondeu em $TargetPanel - seguindo pelo Proxmox." -ForegroundColor DarkGray
+        Write-Host "Panel CT did not answer at $TargetPanel - going through Proxmox." -ForegroundColor DarkGray
     }
 }
 
@@ -376,27 +375,27 @@ $Release = New-ReleaseBundle "gamepanel"
 Copy-Item $Release.Path (Join-Path $BundleDir $Release.Name)
 Write-LfFile (Join-Path $BundleDir "release.env") (
     "RELEASE_TARBALL='$($Release.Name)'`nRELEASE_SHA256='$($Release.Sha)'`n")
-Write-Host "Release do painel: $($Release.Name)" -ForegroundColor DarkGray
+Write-Host "Panel release: $($Release.Name)" -ForegroundColor DarkGray
 
 # ----- Full path: create/reconfigure the CT through the Proxmox host -----
-if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido (parametro, .env ou modo interativo)." }
+if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST is not set (parameter, .env or interactive mode)." }
 foreach ($required in @("ADMIN_CTID", "STORAGE", "BRIDGE")) {
     if ((Get-Cfg $cfg $required) -eq "") {
-        throw "Valor obrigatorio ausente: $required (preencha o .env ou use -Interactive)"
+        throw "Required value missing: $required (fill in .env or use -Interactive)"
     }
 }
 if ((Get-Cfg $cfg "ADMIN_IP_CIDR" "dhcp") -ne "dhcp" -and
     (Get-Cfg $cfg "ADMIN_GATEWAY" (Get-Cfg $cfg "GATEWAY")) -eq "") {
-    throw "ADMIN_GATEWAY (ou GATEWAY) obrigatorio quando ADMIN_IP_CIDR nao e dhcp"
+    throw "ADMIN_GATEWAY (or GATEWAY) is required when ADMIN_IP_CIDR is not dhcp"
 }
 if ((Get-Cfg $cfg "ADMIN_CTID") -eq (Get-Cfg $cfg "CTID")) {
-    throw "ADMIN_CTID nao pode ser igual ao CTID usado pelos servidores de jogo ($($cfg['CTID']))"
+    throw "ADMIN_CTID cannot be the same as the CTID used by the game servers ($($cfg['CTID']))"
 }
 
 # The operator's key goes along: it is what enables the direct push on the next deploys.
 $cfg["ADMIN_SSH_PUBKEY"] = Get-LocalPubKey (Get-Cfg $cfg "ADMIN_SSH_PUBKEY")
 if ((Get-Cfg $cfg "ADMIN_SSH_PUBKEY") -eq "") {
-    Write-Host "Sem chave publica SSH local: o CT nao vai aceitar envio direto (rode ssh-keygen)." -ForegroundColor DarkGray
+    Write-Host "No local SSH public key: the CT will not accept the direct push (run ssh-keygen)." -ForegroundColor DarkGray
 }
 
 if ($ProxmoxPassword -eq "") { $ProxmoxPassword = Get-Cfg $cfg "PROXMOX_PASSWORD" }
@@ -408,7 +407,7 @@ if ($usingPassword -and $InstallKey) {
 $adminKeys = @(
     "ADMIN_CTID","ADMIN_HOSTNAME","ADMIN_IP_CIDR","ADMIN_GATEWAY","ADMIN_SSH_PUBKEY",
     "ADMIN_MEMORY","ADMIN_CORES","ADMIN_DISK_GB","ADMIN_SWAP","ADMIN_PORT",
-    "ADMIN_USER","ADMIN_PASSWORD","ADMIN_ALLOW_SHELL","ADMIN_AUTHORIZE_CTIDS",
+    "ADMIN_USER","ADMIN_PASSWORD","ADMIN_ALLOW_SHELL",
     "ADMIN_ALLOW_FILES","ADMIN_REQUIRE_2FA","ADMIN_WEBAUTHN_ORIGIN","ADMIN_LANG","ADMIN_FILE_MAX_KB","ADMIN_FILE_PREVIEW_KB",
     "ADMIN_FILE_DOWNLOAD_MAX_MB","ADMIN_FILE_ROOTS","ADMIN_FILE_DEFAULT",
     "ADMIN_TERM_MAX","ADMIN_TERM_IDLE","ADMIN_METRICS_TTL",
@@ -425,9 +424,9 @@ Write-LfFile (Join-Path $BundleDir "admin.env") (($adminLines -join "`n") + "`n"
 
 # ----- Send and run on Proxmox -----
 try {
-    Write-Host "`nEnviando bundle do painel para root@$ProxmoxHost..." -ForegroundColor Cyan
+    Write-Host "`nSending the panel bundle to root@$ProxmoxHost..." -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to prepare $RemoteBundleDir on root@$ProxmoxHost" }
 
     # A flat folder, no subfolders at all: six files, one of them the tarball. The recursive
     # push of the tree left this place - it was what required checking, with every new folder
@@ -441,15 +440,15 @@ try {
         (Join-Path $BundleDir "admin.env")
     )
     Invoke-Scp $topLevel "root@${ProxmoxHost}:$RemoteBundleDir/"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para root@$ProxmoxHost" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to send the bundle files to root@$ProxmoxHost" }
 
-    Write-Host "Provisionando o painel no Proxmox...`n" -ForegroundColor Cyan
+    Write-Host "Provisioning the panel on Proxmox...`n" -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./provision-admin-lxc.sh"
-    if ($LASTEXITCODE -ne 0) { throw "Provisionamento do painel falhou no host Proxmox (veja a saida acima)" }
+    if ($LASTEXITCODE -ne 0) { throw "Panel provisioning failed on the Proxmox host (see the output above)" }
 
-    Write-Host "Painel implantado." -ForegroundColor Green
+    Write-Host "Panel deployed." -ForegroundColor Green
     if ($usingPassword -and -not $InstallKey) {
-        Write-Host "Dica: rode com -InstallKey uma vez para autorizar sua chave e parar de usar senha." -ForegroundColor DarkGray
+        Write-Host "Tip: run once with -InstallKey to authorize your key and stop using the password." -ForegroundColor DarkGray
     }
 } finally {
     # The password leaves the environment even if the deploy fails midway.

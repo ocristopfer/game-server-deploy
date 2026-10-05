@@ -23,16 +23,16 @@ APP_USER=gamebroker
 DO_NOT_SHIP='^(test_.*|conftest|fakes|fake_http|dev)\.py$'
 
 msg() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
-warn() { printf '\033[1;33m[aviso]\033[0m %s\n' "$*"; }
-die() { printf '\033[1;31m[erro]\033[0m %s\n' "$*" >&2; exit 1; }
+warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
+die() { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
 # Without this a failure inside $(...) ends the script silently (set -e + pipefail): the `die`
 # with the explanation, right after it, never gets to run. BASH_COMMAND is the command text BEFORE
 # expansion, so no secret shows up here.
-on_error() { die "Provisionamento falhou na linha ${1} executando: ${2}"; }
+on_error() { die "Provisioning failed at line ${1} running: ${2}"; }
 trap 'on_error "${LINENO}" "${BASH_COMMAND}"' ERR
 
-need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Comando obrigatorio ausente: $1"; }
+need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command missing: $1"; }
 
 run_ct() { pct exec "$CTID" -- bash -lc "$1"; }
 
@@ -44,7 +44,7 @@ push_file_to_ct() {
 }
 
 load_env_file() {
-  [[ -f "$1" ]] || die "Arquivo de ambiente nao encontrado: $1"
+  [[ -f "$1" ]] || die "Environment file not found: $1"
   set -a
   # shellcheck disable=SC1090
   source "$1"
@@ -55,7 +55,7 @@ load_env_file() {
 # there ($ is not expanded); a line break cannot be represented, so it is refused.
 env_line() {
   local name="$1" value="$2"
-  [[ "$value" != *$'\n'* ]] || die "O valor de $name tem quebra de linha"
+  [[ "$value" != *$'\n'* ]] || die "The value of $name contains a line break"
   value="${value//\\/\\\\}"
   value="${value//\"/\\\"}"
   printf '%s="%s"\n' "$name" "$value"
@@ -63,8 +63,8 @@ env_line() {
 
 resolve_variables() {
   CTID="${BROKER_CTID:-}"
-  [[ -n "$CTID" ]] || die "BROKER_CTID nao definido no .env"
-  [[ "$CTID" =~ ^[0-9]+$ ]] || die "BROKER_CTID deve ser numerico: $CTID"
+  [[ -n "$CTID" ]] || die "BROKER_CTID is not set in .env"
+  [[ "$CTID" =~ ^[0-9]+$ ]] || die "BROKER_CTID must be numeric: $CTID"
   CT_HOSTNAME="${BROKER_HOSTNAME:-gamebroker}"
   STORAGE="${STORAGE:-local-zfs}"
   TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
@@ -77,10 +77,10 @@ resolve_variables() {
   RECREATE_CT="${RECREATE_BROKER_CT:-0}"
 
   IP_CIDR="${BROKER_IP_CIDR:-}"
-  [[ -n "$IP_CIDR" && "$IP_CIDR" != "dhcp" ]] || die "BROKER_IP_CIDR precisa ser um IP fixo (ex.: 10.20.1.18/24): o certificado e a regra de firewall dependem dele"
+  [[ -n "$IP_CIDR" && "$IP_CIDR" != "dhcp" ]] || die "BROKER_IP_CIDR must be a fixed IP (e.g. 10.20.1.18/24): the certificate and the firewall rule depend on it"
   CT_IP="${IP_CIDR%%/*}"
   GATEWAY="${BROKER_GATEWAY:-${GATEWAY:-}}"
-  [[ -n "$GATEWAY" ]] || die "BROKER_GATEWAY (ou GATEWAY) obrigatorio"
+  [[ -n "$GATEWAY" ]] || die "BROKER_GATEWAY (or GATEWAY) is required"
   NET0="name=eth0,bridge=${BRIDGE},ip=${IP_CIDR},gw=${GATEWAY},type=veth"
   MEMORY="${BROKER_MEMORY:-512}"
   CORES="${BROKER_CORES:-1}"
@@ -92,7 +92,7 @@ resolve_variables() {
   local var
   for var in PROXMOX_URL PROXMOX_TOKEN PROXMOX_NODE PROXMOX_STORAGE PROXMOX_BRIDGE OPNSENSE_URL \
              OPNSENSE_KEY OPNSENSE_SECRET BROKER_IP_PREFIX; do
-    [[ -n "${!var:-}" ]] || die "$var nao definido (broker.secrets.env / .env)"
+    [[ -n "${!var:-}" ]] || die "$var is not set (broker.secrets.env / .env)"
   done
   PROXMOX_POOL="${PROXMOX_POOL:-games}"
   PROXMOX_TEMPLATE_STORAGE="${PROXMOX_TEMPLATE_STORAGE:-$TEMPLATE_STORAGE}"
@@ -108,29 +108,29 @@ validate_bundle() {
   # There used to be a list of package files here (app.py, services/catalog.py, ...) that
   # had to grow along with the code and never did. The code now arrives in a single
   # tarball and its sha256 is what checks the content.
-  [[ -f "$RELEASE_ENV_FILE" ]] || die "release.env nao encontrado: $RELEASE_ENV_FILE (rode pelo deploy-broker.ps1)"
-  [[ -f "$INSTALLER" ]] || die "install-release.sh nao encontrado: $INSTALLER"
+  [[ -f "$RELEASE_ENV_FILE" ]] || die "release.env not found: $RELEASE_ENV_FILE (run it through deploy-broker.ps1)"
+  [[ -f "$INSTALLER" ]] || die "install-release.sh not found: $INSTALLER"
   load_env_file "$RELEASE_ENV_FILE"
-  [[ -n "${RELEASE_TARBALL:-}" ]] || die "RELEASE_TARBALL vazio em $RELEASE_ENV_FILE"
-  [[ -n "${RELEASE_SHA256:-}" ]] || die "RELEASE_SHA256 vazio em $RELEASE_ENV_FILE"
-  [[ -f "$SCRIPT_DIR/$RELEASE_TARBALL" ]] || die "release nao encontrado no bundle: $RELEASE_TARBALL"
+  [[ -n "${RELEASE_TARBALL:-}" ]] || die "RELEASE_TARBALL is empty in $RELEASE_ENV_FILE"
+  [[ -n "${RELEASE_SHA256:-}" ]] || die "RELEASE_SHA256 is empty in $RELEASE_ENV_FILE"
+  [[ -f "$SCRIPT_DIR/$RELEASE_TARBALL" ]] || die "release not found in the bundle: $RELEASE_TARBALL"
   # lib/ and games/ still go loose in the bundle: they are data, not the Python package.
   [[ -f "$SCRIPT_DIR/lib/ct-install.sh" && -f "$SCRIPT_DIR/lib/ct-phases.sh" && -f "$SCRIPT_DIR/lib/ct-firewall.sh" \
      && -f "$SCRIPT_DIR/lib/ct-panel-access.sh" ]] \
-    || die "lib/ct-install.sh, lib/ct-phases.sh, lib/ct-firewall.sh e lib/ct-panel-access.sh sao obrigatorios no bundle"
-  compgen -G "$SCRIPT_DIR/games/*.env" >/dev/null || die "games/*.env nao encontrado no bundle"
+    || die "lib/ct-install.sh, lib/ct-phases.sh, lib/ct-firewall.sh and lib/ct-panel-access.sh are required in the bundle"
+  compgen -G "$SCRIPT_DIR/games/*.env" >/dev/null || die "games/*.env not found in the bundle"
 }
 
 ensure_debian_template() {
   if pct status "$CTID" >/dev/null 2>&1 && [[ "$RECREATE_CT" != "1" ]]; then
     return
   fi
-  msg "Atualizando lista de templates do Proxmox"
+  msg "Updating the Proxmox template list"
   pveam update >/dev/null
   TEMPLATE="$(pveam available --section system | awk -v pat="$TEMPLATE_PATTERN" '$2 ~ pat {print $2}' | tail -n1)"
-  [[ -n "$TEMPLATE" ]] || die "Template Debian nao encontrado para o padrao $TEMPLATE_PATTERN"
+  [[ -n "$TEMPLATE" ]] || die "No Debian template found for the pattern $TEMPLATE_PATTERN"
   if ! pveam list "$TEMPLATE_STORAGE" | awk '{print $2}' | grep -qx "$TEMPLATE"; then
-    msg "Baixando template $TEMPLATE"
+    msg "Downloading template $TEMPLATE"
     pveam download "$TEMPLATE_STORAGE" "$TEMPLATE"
   fi
 }
@@ -142,9 +142,9 @@ resolve_game_template() {
   local name
   name="$(pveam list "$PROXMOX_TEMPLATE_STORAGE" | awk '{print $1}' | sed 's#.*/##' \
           | grep -E 'debian-13-standard_.*_amd64\.tar\.zst' | sort -V | tail -n1 || true)"
-  [[ -n "$name" ]] || die "Nenhum template debian-13-standard em ${PROXMOX_TEMPLATE_STORAGE}; defina PROXMOX_TEMPLATE ou rode: pveam download ${PROXMOX_TEMPLATE_STORAGE} <template>"
+  [[ -n "$name" ]] || die "No debian-13-standard template in ${PROXMOX_TEMPLATE_STORAGE}; set PROXMOX_TEMPLATE or run: pveam download ${PROXMOX_TEMPLATE_STORAGE} <template>"
   PROXMOX_TEMPLATE="${PROXMOX_TEMPLATE_STORAGE}:vztmpl/${name}"
-  msg "Template dos CTs de jogo: ${PROXMOX_TEMPLATE}"
+  msg "Template for the game CTs: ${PROXMOX_TEMPLATE}"
 }
 
 ensure_container() {
@@ -152,7 +152,7 @@ ensure_container() {
   pct status "$CTID" >/dev/null 2>&1 && ct_exists=1
 
   if [[ "$ct_exists" -eq 1 && "$RECREATE_CT" == "1" ]]; then
-    msg "Recriando CT $CTID (RECREATE_BROKER_CT=1)"
+    msg "Recreating CT $CTID (RECREATE_BROKER_CT=1)"
     pct stop "$CTID" >/dev/null 2>&1 || true
     pct destroy "$CTID" --destroy-unreferenced-disks 1
     ct_exists=0
@@ -161,7 +161,7 @@ ensure_container() {
   # The broker CT does NOT join the games pool: the Proxmox token only sees the pool, and the
   # broker must not even list (let alone destroy) its own container.
   if [[ "$ct_exists" -eq 0 ]]; then
-    msg "Criando CT $CTID ($CT_HOSTNAME) - ${CORES} core(s), ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB"
+    msg "Creating CT $CTID ($CT_HOSTNAME) - ${CORES} core(s), ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB"
     pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" \
       --arch amd64 \
       --hostname "$CT_HOSTNAME" \
@@ -177,7 +177,7 @@ ensure_container() {
       --timezone "$TZ" \
       --tags "broker;gamepanel"
   else
-    msg "Atualizando configuracao do CT $CTID"
+    msg "Updating the configuration of CT $CTID"
     pct set "$CTID" \
       --hostname "$CT_HOSTNAME" \
       --cores "$CORES" \
@@ -192,20 +192,20 @@ ensure_container() {
 
 start_container() {
   if ! pct status "$CTID" 2>/dev/null | grep -q running; then
-    msg "Iniciando CT $CTID"
+    msg "Starting CT $CTID"
     pct start "$CTID"
   fi
   local waited=0
   until pct exec "$CTID" -- true >/dev/null 2>&1; do
     sleep 2
     waited=$((waited + 2))
-    [[ "$waited" -lt 120 ]] || die "CT $CTID nao respondeu em 120s"
+    [[ "$waited" -lt 120 ]] || die "CT $CTID did not respond within 120s"
   done
   waited=0
   until run_ct "getent hosts deb.debian.org >/dev/null 2>&1"; do
     sleep 2
     waited=$((waited + 2))
-    [[ "$waited" -lt 60 ]] || die "CT $CTID sem resolucao DNS/rede apos 60s"
+    [[ "$waited" -lt 60 ]] || die "CT $CTID has no DNS resolution/network after 60s"
   done
 }
 
@@ -213,7 +213,7 @@ install_packages() {
   # iputils-ping: the broker checks whether an IP already answers on the network before picking it.
   # openssh-client: it is what logs into the game CTs. Does NOT install openssh-server: nothing gets
   # into the broker over SSH (the code arrives via `pct push`, from Proxmox).
-  msg "Instalando dependencias no CT (python3-flask, gunicorn, openssh-client, openssl, ping)"
+  msg "Installing dependencies in the CT (python3-flask, gunicorn, openssh-client, openssl, ping)"
   run_ct "export DEBIAN_FRONTEND=noninteractive && apt-get update -qq && \
     apt-get install -y -qq python3 python3-flask gunicorn openssh-client openssl iputils-ping \
     ca-certificates"
@@ -241,7 +241,7 @@ push_tree() {
 }
 
 publish_application() {
-  msg "Publicando o broker em ${APP_DIR}"
+  msg "Publishing the broker to ${APP_DIR}"
 
   # lib/ and games/ are not the Python package: they are the game install scripts and the
   # curated catalog, read by the broker at an absolute path. They still go loose, and are
@@ -267,17 +267,17 @@ publish_application() {
   # the price is that the installer's rollback does not apply here, and that is why
   # start_broker fails LOUDLY when health does not answer.
   run_ct "bash '${remote_tmp}/install-release.sh' gamebroker '${remote_tmp}/${RELEASE_TARBALL}' '${RELEASE_SHA256}' ${APP_DIR} ${SERVICE_NAME}" \
-    || die "A instalacao do release falhou dentro do CT (veja a saida acima)"
+    || die "Installing the release failed inside the CT (see the output above)"
   run_ct "rm -rf '$remote_tmp'"
   run_ct "chown -R root:root ${APP_DIR}/lib ${APP_DIR}/games"
 
   # Failing here is better than the service dying at start with ModuleNotFoundError.
   run_ct "cd ${APP_DIR}/current && python3 -c 'import gamebroker.wsgi'" \
-    || die "O pacote do broker nao importa no CT a partir de ${APP_DIR}/current"
+    || die "The broker package does not import in the CT from ${APP_DIR}/current"
 }
 
 ensure_ssh_key() {
-  msg "Chave SSH do broker (para entrar nos CTs de jogo durante a instalacao)"
+  msg "Broker SSH key (to log into the game CTs during installation)"
   run_ct "test -f ${CONF_DIR}/ssh/id_ed25519 || ssh-keygen -t ed25519 -N '' -C 'gamebroker@${CT_HOSTNAME}' -f ${CONF_DIR}/ssh/id_ed25519 >/dev/null"
   run_ct "chown ${APP_USER}:${APP_USER} ${CONF_DIR}/ssh/id_ed25519 ${CONF_DIR}/ssh/id_ed25519.pub && chmod 0600 ${CONF_DIR}/ssh/id_ed25519 && chmod 0644 ${CONF_DIR}/ssh/id_ed25519.pub"
 }
@@ -285,7 +285,7 @@ ensure_ssh_key() {
 # Self-signed certificate of the broker ITSELF. The panel pins it by SHA-256 fingerprint (there is
 # no CA at all), so it is only replaced on request: replacing it invalidates the panel configuration.
 ensure_tls() {
-  msg "Certificado TLS do broker"
+  msg "Broker TLS certificate"
   if [[ "${BROKER_ROTATE_CERT:-0}" == "1" ]]; then
     run_ct "rm -f ${CONF_DIR}/tls/cert.pem ${CONF_DIR}/tls/key.pem"
   fi
@@ -295,20 +295,20 @@ ensure_tls() {
   run_ct "chown ${APP_USER}:${APP_USER} ${CONF_DIR}/tls/cert.pem ${CONF_DIR}/tls/key.pem && chmod 0644 ${CONF_DIR}/tls/cert.pem && chmod 0600 ${CONF_DIR}/tls/key.pem"
   BROKER_CERT_SHA256="$(pct exec "$CTID" -- openssl x509 -in "${CONF_DIR}/tls/cert.pem" -noout -fingerprint -sha256 \
     | cut -d= -f2 | tr -d '\r\n' || true)"
-  [[ -n "$BROKER_CERT_SHA256" ]] || die "Nao consegui calcular a impressao do certificado do broker"
+  [[ -n "$BROKER_CERT_SHA256" ]] || die "Could not compute the broker certificate fingerprint"
 }
 
 # Token the PANEL uses to talk to the broker. Persists across deploys (regenerating would break
 # the panel), and only changes with BROKER_ROTATE_TOKEN=1.
 ensure_token() {
-  msg "Token do painel para o broker"
+  msg "Panel token for the broker"
   if [[ "${BROKER_ROTATE_TOKEN:-0}" == "1" ]]; then
     run_ct "rm -f ${CONF_DIR}/token"
   fi
   run_ct "test -s ${CONF_DIR}/token || { head -c 36 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-48 > ${CONF_DIR}/token; }"
   run_ct "chown root:root ${CONF_DIR}/token && chmod 0600 ${CONF_DIR}/token"
   BROKER_TOKEN="$(pct exec "$CTID" -- cat "${CONF_DIR}/token" | tr -d '\r\n' || true)"
-  [[ ${#BROKER_TOKEN} -ge 32 ]] || die "Token do broker invalido (menos de 32 caracteres)"
+  [[ ${#BROKER_TOKEN} -ge 32 ]] || die "Invalid broker token (fewer than 32 characters)"
 }
 
 resolve_panel_pubkey() {
@@ -318,7 +318,7 @@ resolve_panel_pubkey() {
   if [[ -z "$BROKER_PANEL_PUBKEY" && -n "$ADMIN_CTID" ]]; then
     BROKER_PANEL_PUBKEY="$(pct exec "$ADMIN_CTID" -- cat /etc/gamepanel/id_ed25519.pub 2>/dev/null | head -n1 | tr -d '\r\n' || true)"
   fi
-  [[ -n "$BROKER_PANEL_PUBKEY" ]] || die "Chave publica do painel nao encontrada: defina ADMIN_CTID (o CT do painel) ou BROKER_PANEL_PUBKEY no .env"
+  [[ -n "$BROKER_PANEL_PUBKEY" ]] || die "Panel public key not found: set ADMIN_CTID (the panel CT) or BROKER_PANEL_PUBKEY in .env"
 }
 
 # SHA-256 fingerprint of an https server's certificate, read from the host. TOFU: trusts what the
@@ -340,18 +340,18 @@ resolve_upstream_fingerprints() {
   OPNSENSE_CERT_SHA256="${OPNSENSE_CERT_SHA256:-}"
   if [[ -z "$PROXMOX_CERT_SHA256" && "$PROXMOX_URL" == https://* ]]; then
     PROXMOX_CERT_SHA256="$(fingerprint_of "$PROXMOX_URL")"
-    [[ -n "$PROXMOX_CERT_SHA256" ]] || die "O host Proxmox nao conseguiu ler o certificado de $PROXMOX_URL (firewall?). Defina PROXMOX_CERT_SHA256 no broker.secrets.env: o check-broker-access.ps1 imprime a impressao a partir da sua maquina"
+    [[ -n "$PROXMOX_CERT_SHA256" ]] || die "The Proxmox host could not read the certificate of $PROXMOX_URL (firewall?). Set PROXMOX_CERT_SHA256 in broker.secrets.env: check-broker-access.ps1 prints the fingerprint from your machine"
     FIXOU_PROXMOX=1
   fi
   if [[ -z "$OPNSENSE_CERT_SHA256" && "$OPNSENSE_URL" == https://* ]]; then
     OPNSENSE_CERT_SHA256="$(fingerprint_of "$OPNSENSE_URL")"
-    [[ -n "$OPNSENSE_CERT_SHA256" ]] || die "O host Proxmox nao conseguiu ler o certificado de $OPNSENSE_URL (firewall?). Defina OPNSENSE_CERT_SHA256 no broker.secrets.env: o check-broker-access.ps1 imprime a impressao a partir da sua maquina"
+    [[ -n "$OPNSENSE_CERT_SHA256" ]] || die "The Proxmox host could not read the certificate of $OPNSENSE_URL (firewall?). Set OPNSENSE_CERT_SHA256 in broker.secrets.env: check-broker-access.ps1 prints the fingerprint from your machine"
     FIXOU_OPNSENSE=1
   fi
 }
 
 render_broker_config() {
-  msg "Gravando a configuracao do broker (${CONF_DIR}/broker.env, 0640 root:${APP_USER})"
+  msg "Writing the broker configuration (${CONF_DIR}/broker.env, 0640 root:${APP_USER})"
   local tmp_file
   tmp_file="$(mktemp)"
   chmod 600 "$tmp_file"
@@ -413,7 +413,7 @@ render_broker_config() {
 }
 
 render_service() {
-  msg "Criando o servico systemd gamebroker.service"
+  msg "Creating the systemd service gamebroker.service"
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
@@ -477,17 +477,17 @@ endpoint_of() {
 # firewall comes off (the broker keeps working, with the warning), instead of a blind broker.
 apply_broker_firewall() {
   if [[ "${CT_FIREWALL:-1}" == "0" ]]; then
-    warn "CT_FIREWALL=0: o CT do broker fica SEM firewall interno"
+    warn "CT_FIREWALL=0: the broker CT is left WITHOUT an internal firewall"
     return 0
   fi
   if [[ -z "${PANEL_IP:-}" ]]; then
-    warn "IP do painel desconhecido (ADMIN_HOST/BROKER_ALLOW_IPS): o CT do broker fica SEM firewall interno"
+    warn "Panel IP unknown (ADMIN_HOST/BROKER_ALLOW_IPS): the broker CT is left WITHOUT an internal firewall"
     return 0
   fi
-  msg "Aplicando o firewall do CT do broker (nftables)"
-  modprobe nf_tables 2>/dev/null || warn "nao consegui carregar o modulo nf_tables no host"
+  msg "Applying the broker CT firewall (nftables)"
+  modprobe nf_tables 2>/dev/null || warn "could not load the nf_tables module on the host"
   { mkdir -p /etc/modules-load.d && echo nf_tables > /etc/modules-load.d/ct-firewall.conf; } \
-    || warn "nao consegui deixar o nf_tables carregando no boot do host"
+    || warn "could not make nf_tables load at host boot"
   local conf endpoints
   endpoints="$(endpoint_of "$PROXMOX_URL") $(endpoint_of "$OPNSENSE_URL")"
   conf="$(mktemp)"
@@ -502,18 +502,18 @@ apply_broker_firewall() {
   push_file_to_ct "$SCRIPT_DIR/lib/ct-firewall.sh" /usr/local/sbin/ct-firewall 0755
   push_file_to_ct "$conf" /etc/ct-firewall.env 0644
   rm -f "$conf"
-  run_ct "/usr/local/sbin/ct-firewall apply" || die "o firewall do broker nao carregou (nada foi alterado nele)"
+  run_ct "/usr/local/sbin/ct-firewall apply" || die "the broker firewall did not load (nothing in it was changed)"
   BROKER_FIREWALL_APPLIED=1
 }
 
 start_broker() {
-  msg "Subindo o broker"
+  msg "Starting the broker"
   run_ct "systemctl restart gamebroker.service"
   sleep 4
   if ! run_ct "systemctl is-active --quiet gamebroker.service"; then
-    warn "O broker nao ficou ativo. Ultimas linhas do log:"
+    warn "The broker did not stay active. Last lines of the log:"
     run_ct "journalctl -u gamebroker.service --no-pager -n 40" || true
-    die "gamebroker.service nao subiu (a lista de problemas de configuracao esta no log acima)"
+    die "gamebroker.service did not start (the list of configuration problems is in the log above)"
   fi
   [[ "${BROKER_SKIP_HEALTHCHECK:-0}" != "1" ]] || return 0
   # Requests /v1/health from inside the CT: proves TLS, the token, and that Proxmox and OPNsense answer.
@@ -526,26 +526,26 @@ req = urllib.request.Request('https://127.0.0.1:${BROKER_PORT}/v1/health', heade
 try:
     dados = json.loads(urllib.request.urlopen(req, context=ssl._create_unverified_context(), timeout=40).read())
 except urllib.error.HTTPError as erro:
-    print('saude: o broker respondeu HTTP', erro.code, '(403 = origem fora de BROKER_ALLOW_IPS)')
+    print('health: the broker answered HTTP', erro.code, '(403 = source outside BROKER_ALLOW_IPS)')
     sys.exit(2)
 except OSError as erro:
-    print('saude: nao consegui falar com o broker:', type(erro).__name__)
+    print('health: could not talk to the broker:', type(erro).__name__)
     sys.exit(2)
-for nome, rotulo in (('broker', 'broker'), ('proxmox', 'API do Proxmox'), ('opnsense', 'API do OPNsense')):
-    print('saude: %-16s %s' % (rotulo, 'OK' if dados.get(nome) else 'NAO RESPONDE'))
+for nome, rotulo in (('broker', 'broker'), ('proxmox', 'Proxmox API'), ('opnsense', 'OPNsense API')):
+    print('health: %-16s %s' % (rotulo, 'OK' if dados.get(nome) else 'NOT RESPONDING'))
 sys.exit(0 if dados.get('proxmox') and dados.get('opnsense') else 3)
 PY
   push_file_to_ct "$tmp_file" /root/saude-do-broker.py 0600
   rm -f "$tmp_file"
-  local unhealthy="O broker esta de pe, mas nem tudo respondeu (veja 'saude' acima). Se for a API do Proxmox ou do OPNsense, falta a regra de firewall do CT ${CT_IP} para ela (ver REGRAS DE FIREWALL no fim)"
+  local unhealthy="The broker is up, but not everything answered (see 'health' above). If it is the Proxmox or OPNsense API, the firewall rule for CT ${CT_IP} to reach it is missing (see FIREWALL RULES at the end)"
   if ! run_ct "python3 /root/saude-do-broker.py"; then
     if [[ "${BROKER_FIREWALL_APPLIED:-0}" == "1" ]]; then
       # With the new rules something did not answer: test without them. If it answers then, the rules
       # are to blame, and the broker keeps working WITHOUT a firewall (with the warning) instead of blind.
-      warn "Com o firewall do CT ligado nem tudo respondeu; testando sem ele"
+      warn "With the CT firewall on not everything answered; testing without it"
       run_ct "/usr/local/sbin/ct-firewall off"
       if run_ct "python3 /root/saude-do-broker.py"; then
-        warn "SEM o firewall do CT tudo responde: as regras bloqueavam o Proxmox ou o OPNsense. O firewall do broker ficou DESLIGADO. Confira FW_API_ENDPOINTS em /etc/ct-firewall.env e religue com: pct exec ${CTID} -- ct-firewall apply"
+        warn "WITHOUT the CT firewall everything answers: the rules were blocking Proxmox or OPNsense. The broker firewall was left OFF. Check FW_API_ENDPOINTS in /etc/ct-firewall.env and turn it back on with: pct exec ${CTID} -- ct-firewall apply"
       else
         run_ct "/usr/local/sbin/ct-firewall apply"
         warn "$unhealthy"
@@ -562,8 +562,8 @@ PY
 # in a panel exposed to the internet requires an extra authentication layer first.
 configure_panel() {
   [[ "${BROKER_CONFIGURE_PANEL:-0}" == "1" ]] || return 0
-  [[ -n "$ADMIN_CTID" ]] || die "BROKER_CONFIGURE_PANEL=1 exige ADMIN_CTID"
-  msg "Configurando o painel (CT ${ADMIN_CTID}) para falar com o broker"
+  [[ -n "$ADMIN_CTID" ]] || die "BROKER_CONFIGURE_PANEL=1 requires ADMIN_CTID"
+  msg "Configuring the panel (CT ${ADMIN_CTID}) to talk to the broker"
   local enable="${BROKER_ENABLE_IN_PANEL:-0}" tmp_file
   tmp_file="$(mktemp)"
   chmod 600 "$tmp_file"
@@ -591,48 +591,48 @@ print_summary() {
   cat <<EOF
 
 ========================================================================
- Broker pronto
+ Broker ready
 ========================================================================
 
-Container : CT ${CTID} (${CT_HOSTNAME}) - ${CORES} core(s), ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB
-Endereco  : https://${CT_IP}:${BROKER_PORT}
-Impressao : ${BROKER_CERT_SHA256}
-            ^ certificado do PROPRIO broker (o painel fixa esta impressao)
-Pool      : ${PROXMOX_POOL}  |  IPs ${BROKER_IP_PREFIX}.${BROKER_IP_INICIO:-102}-${BROKER_IP_FIM:-199}  |  CTID = ${BROKER_CTID_BASE:-200} + ultimo numero do IP
-Portas    : jogos que andam de porta usam ${BROKER_PORT_INICIO:-31000}-${BROKER_PORT_FIM:-31999} (faixa propria, fora das portas padrao dos jogos)
+Container  : CT ${CTID} (${CT_HOSTNAME}) - ${CORES} core(s), ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB
+Address    : https://${CT_IP}:${BROKER_PORT}
+Fingerprint: ${BROKER_CERT_SHA256}
+             ^ certificate of the broker ITSELF (the panel pins this fingerprint)
+Pool       : ${PROXMOX_POOL}  |  IPs ${BROKER_IP_PREFIX}.${BROKER_IP_INICIO:-102}-${BROKER_IP_FIM:-199}  |  CTID = ${BROKER_CTID_BASE:-200} + last number of the IP
+Ports      : games that can shift ports use ${BROKER_PORT_INICIO:-31000}-${BROKER_PORT_FIM:-31999} (own range, away from the games' default ports)
 
-Certificados que o broker fixou (CONFIRA: se nao forem os seus, algo esta no meio do caminho):
-  Proxmox  : ${PROXMOX_CERT_SHA256:-(nao-https)}${FIXOU_PROXMOX:+   <- lido do servidor agora}
-  OPNsense : ${OPNSENSE_CERT_SHA256:-(nao-https)}${FIXOU_OPNSENSE:+   <- lido do servidor agora}
+Certificates the broker pinned (CHECK THEM: if they are not yours, something is in the middle):
+  Proxmox  : ${PROXMOX_CERT_SHA256:-(not https)}${FIXOU_PROXMOX:+   <- read from the server just now}
+  OPNsense : ${OPNSENSE_CERT_SHA256:-(not https)}${FIXOU_OPNSENSE:+   <- read from the server just now}
 EOF
   if [[ "${PANEL_CONFIGURED:-0}" == "1" ]]; then
     cat <<EOF
 
-Painel (CT ${ADMIN_CTID}) configurado: URL, token e impressao gravados em /etc/gamepanel/.
-  GAMEPANEL_ALLOW_BROKER=${BROKER_ENABLE_IN_PANEL:-0}  (0 = recurso DESLIGADO na tela)
+Panel (CT ${ADMIN_CTID}) configured: URL, token and fingerprint written to /etc/gamepanel/.
+  GAMEPANEL_ALLOW_BROKER=${BROKER_ENABLE_IN_PANEL:-0}  (0 = feature OFF on screen)
 EOF
   else
     cat <<EOF
 
-Para o painel usar o broker, em /etc/gamepanel/panel.env do CT do painel:
+For the panel to use the broker, in /etc/gamepanel/panel.env of the panel CT:
   GAMEPANEL_BROKER_URL=https://${CT_IP}:${BROKER_PORT}
-  GAMEPANEL_BROKER_TOKEN_FILE=/etc/gamepanel/broker.token   (arquivo com o token: pct exec ${CTID} -- cat ${CONF_DIR}/token)
+  GAMEPANEL_BROKER_TOKEN_FILE=/etc/gamepanel/broker.token   (file with the token: pct exec ${CTID} -- cat ${CONF_DIR}/token)
   GAMEPANEL_BROKER_CERT_SHA256=${BROKER_CERT_SHA256}
-  GAMEPANEL_ALLOW_BROKER=0   # so vire 1 depois de proteger o painel (Cloudflare Access ou 2FA)
-Ou rode o deploy com -ConfigurePanel.
+  GAMEPANEL_ALLOW_BROKER=0   # only set it to 1 after protecting the panel (Cloudflare Access or 2FA)
+Or run the deploy with -ConfigurePanel.
 EOF
   fi
   cat <<EOF
 
-REGRAS DE FIREWALL (OPNsense) - o broker tem chaves de infraestrutura, isole-o:
-  1. ${PANEL_IP:-<IP do painel>} -> ${CT_IP}:${BROKER_PORT}/tcp        (so o painel fala com o broker)
-  2. ${CT_IP} -> ${PROXMOX_HOSTPORT}      (API do Proxmox)
-  3. ${CT_IP} -> ${OPNSENSE_HOSTPORT}     (API do OPNsense)
-  4. ${CT_IP} -> ${BROKER_IP_PREFIX}.${BROKER_IP_INICIO:-102}-${BROKER_IP_FIM:-199}:22/tcp   (SSH nos CTs novos)
-  5. ${CT_IP} -> internet DNS/HTTPS (apt); bloqueie o resto
-  E no OPNsense, deixe o GUI/API (${OPNSENSE_HOSTPORT}) acessivel SO a ${CT_IP} e a voce.
-  (Trafego entre maquinas da MESMA sub-rede, como o do Proxmox e dos CTs, passa pelo switch/bridge e
-   nao pelo OPNsense: as regras 1, 2 e 4 so importam se algo estiver em outra sub-rede/VLAN.)
+FIREWALL RULES (OPNsense) - the broker holds infrastructure keys, isolate it:
+  1. ${PANEL_IP:-<panel IP>} -> ${CT_IP}:${BROKER_PORT}/tcp        (only the panel talks to the broker)
+  2. ${CT_IP} -> ${PROXMOX_HOSTPORT}      (Proxmox API)
+  3. ${CT_IP} -> ${OPNSENSE_HOSTPORT}     (OPNsense API)
+  4. ${CT_IP} -> ${BROKER_IP_PREFIX}.${BROKER_IP_INICIO:-102}-${BROKER_IP_FIM:-199}:22/tcp   (SSH into the new CTs)
+  5. ${CT_IP} -> internet DNS/HTTPS (apt); block the rest
+  And on OPNsense, make the GUI/API (${OPNSENSE_HOSTPORT}) reachable ONLY from ${CT_IP} and from you.
+  (Traffic between machines on the SAME subnet, like Proxmox and the CTs, goes through the switch/bridge
+   and not through OPNsense: rules 1, 2 and 4 only matter if something is on another subnet/VLAN.)
 
 EOF
 }

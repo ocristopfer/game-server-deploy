@@ -11,7 +11,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-INSTALL_ENV="${1:?uso: ct-install.sh <install.env>}"
+INSTALL_ENV="${1:?usage: ct-install.sh <install.env>}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 STEAMCMD_URL="https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz"
@@ -26,7 +26,7 @@ on_error() {
   local cmd="$2"
   # The failed command may be the SteamCMD line carrying the Steam account password
   [[ -n "${STEAM_PASS:-}" ]] && cmd="${cmd//${STEAM_PASS}/******}"
-  die "Instalacao falhou na linha ${1} executando: ${cmd}"
+  die "Installation failed at line ${1} running: ${cmd}"
 }
 trap 'on_error "${LINENO}" "${BASH_COMMAND}"' ERR
 
@@ -54,8 +54,8 @@ install_helper() {
 FIREWALL_SCRIPT="${SCRIPT_DIR}/ct-firewall.sh"
 PANEL_ACCESS_SCRIPT="${SCRIPT_DIR}/ct-panel-access.sh"
 LIB_FASES="${SCRIPT_DIR}/ct-phases.sh"
-[[ -f "$LIB_FASES" ]] || die "ct-phases.sh nao encontrado ao lado de $0"
-[[ -f "$INSTALL_ENV" ]] || die "Arquivo de ambiente nao encontrado: $INSTALL_ENV"
+[[ -f "$LIB_FASES" ]] || die "ct-phases.sh not found next to $0"
+[[ -f "$INSTALL_ENV" ]] || die "Environment file not found: $INSTALL_ENV"
 set -a
 # shellcheck disable=SC1090
 source "$INSTALL_ENV"

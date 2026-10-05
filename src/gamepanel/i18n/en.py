@@ -131,7 +131,7 @@ MESSAGES: dict[str, str] = {
     # ----------------------------------------------------- ssh key
     "ssh_key.public_key": "Panel public key",
     "ssh_key.not_found": "Key not found. Run the panel deploy again.",
-    "ssh_key.authorize": "Authorize on a game container",
+    "ssh_key.containers": "Game containers",
     "ssh_key.host_keys": "Host keys",
 
     # ------------------------------------------------------ charts
@@ -1844,15 +1844,25 @@ MESSAGES: dict[str, str] = {
         "No phone? Use one of the recovery codes (<code class=\"nowrap\">abcde-12345</code>); "
         "each one works once.",
     "ssh_key.intro":
-        "The panel controls each server over SSH, using the key below. For a container to show "
-        "up as reachable, it needs <code>sshd</code> running and this key authorized for the "
-        "user given in the server settings (usually <code>root</code>).",
-    "ssh_key.from_proxmox":
-        "From the Proxmox host, replacing <code>&lt;CTID&gt;</code> with the container id:",
-    "ssh_key.provisioned_note":
-        "Containers provisioned by <code>deploy-game.ps1</code> with <code>PANEL_PUBKEY</code> "
-        "in <code>.env</code> come out ready &mdash; this step is only for the ones created "
-        "before that.",
+        "The panel controls each server over SSH, using the key below. It logs in as the "
+        "unprivileged <code>gamepanel</code> user, never as <code>root</code>, and the game "
+        "itself runs as <code>steam</code>.",
+    "ssh_key.new_cts":
+        "Containers created by <code>deploy-game.ps1</code> or by the broker already come with "
+        "the <code>gamepanel</code> user and this key: there is nothing to do.",
+    "ssh_key.existing_cts":
+        "A container that still lets the panel in as <code>root</code> is converted from the "
+        "repository, on your machine, replacing <code>&lt;CTID&gt;</code> with the container id:",
+    "ssh_key.migrate_note":
+        "It installs the user, proves the access from the panel, switches the server to "
+        "<code>gamepanel</code> and only then locks root over SSH.",
+    "ssh_key.manual":
+        "Or by hand, inside the container as <code>root</code>, with "
+        "<code>lib/ct-panel-access.sh</code> copied from the repository:",
+    "ssh_key.manual_lock":
+        "Then set the SSH user to <code>gamepanel</code> on the server's edit screen, check that "
+        "it shows up as reachable, and only then lock root:",
+    "ssh_key.unit_placeholder": "game.service",
     "ssh_key.host_key_changed":
         "On the first connection the panel learns and pins the container's host key "
         "(<code>accept-new</code>). If the container is recreated, the key changes and the "

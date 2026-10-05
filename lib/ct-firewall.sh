@@ -52,14 +52,14 @@ IPV4_RE='^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2}|-([0-9]{1,3}\.){3}[0-9]{1,3})?
 addr_list() {
   local name="$1" raw="$2" item out=""
   for item in ${raw//,/ }; do
-    [[ "$item" =~ $IPV4_RE ]] || die "$name: '$item' nao e IPv4, CIDR nem faixa"
+    [[ "$item" =~ $IPV4_RE ]] || die "$name: '$item' is not an IPv4 address, CIDR or range"
     out+="${out:+, }$item"
   done
   printf '%s' "$out"
 }
 
 valid_port() {
-  [[ "$1" =~ ^[0-9]{1,5}$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )) || die "$2: porta invalida '$1'"
+  [[ "$1" =~ ^[0-9]{1,5}$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )) || die "$2: invalid port '$1'"
 }
 
 # DNS servers the CT uses: without them the game cannot resolve Steam's name, and the resolver
@@ -75,14 +75,14 @@ dns_servers() {
 }
 
 load_conf() {
-  [[ -f "$CONF" ]] || die "$CONF nao existe: nada a aplicar"
+  [[ -f "$CONF" ]] || die "$CONF does not exist: nothing to apply"
   set -a
   # shellcheck disable=SC1090
   source "$CONF"
   set +a
   case "${FW_ROLE:-}" in
     panel|broker|game) ;;
-    *) die "FW_ROLE invalido: '${FW_ROLE:-}' (use panel, broker ou game)" ;;
+    *) die "invalid FW_ROLE: '${FW_ROLE:-}' (use panel, broker or game)" ;;
   esac
 }
 
@@ -138,7 +138,7 @@ EOF
 input_panel() {
   local admin port="${FW_PANEL_PORT:-8080}"
   admin="$(addr_list FW_ADMIN_SOURCES "${FW_ADMIN_SOURCES:-}")"
-  [[ -n "$admin" ]] || die "FW_ADMIN_SOURCES vazio: ninguem alcancaria o painel"
+  [[ -n "$admin" ]] || die "FW_ADMIN_SOURCES is empty: nobody would reach the panel"
   valid_port "$port" FW_PANEL_PORT
   printf '    ip saddr { %s } tcp dport { 22, %s } accept\n' "$admin" "$port"
   printf '    ip saddr { %s } icmp type echo-request accept\n' "$admin"
@@ -147,7 +147,7 @@ input_panel() {
 input_broker() {
   local panel port="${FW_BROKER_PORT:-8443}"
   panel="$(addr_list FW_PANEL_SOURCES "${FW_PANEL_SOURCES:-}")"
-  [[ -n "$panel" ]] || die "FW_PANEL_SOURCES vazio: o painel nao alcancaria o broker"
+  [[ -n "$panel" ]] || die "FW_PANEL_SOURCES is empty: the panel would not reach the broker"
   valid_port "$port" FW_BROKER_PORT
   # No SSH on purpose: the broker has no sshd, the code arrives via `pct push`.
   printf '    ip saddr { %s } tcp dport %s accept\n' "$panel" "$port"
@@ -157,7 +157,7 @@ input_broker() {
 input_game() {
   local mgmt spec num proto tcp="" udp=""
   mgmt="$(addr_list FW_MGMT_SOURCES "${FW_MGMT_SOURCES:-}")"
-  [[ -n "$mgmt" ]] || die "FW_MGMT_SOURCES vazio: o painel perderia o SSH deste servidor"
+  [[ -n "$mgmt" ]] || die "FW_MGMT_SOURCES is empty: the panel would lose SSH to this server"
   for spec in ${FW_GAME_PORTS//,/ }; do
     num="${spec%%/*}"
     proto="${spec#*/}"
@@ -166,7 +166,7 @@ input_game() {
     case "$proto" in
       tcp) tcp+="${tcp:+, }$num" ;;
       udp) udp+="${udp:+, }$num" ;;
-      *) die "FW_GAME_PORTS: protocolo invalido em '$spec'" ;;
+      *) die "FW_GAME_PORTS: invalid protocol in '$spec'" ;;
     esac
   done
   # The game ports are public: the player arrives through the OPNsense NAT, from anywhere.
@@ -176,7 +176,7 @@ input_game() {
   # UDP from the administrators, on ANY port: that is how the panel runs the A2S query and the
   # wizard probes the game ports. With only the GAME_PORTS ones, a query port the .env did not
   # declare (Steam's 27015 in an Unreal game) was dropped here and the screen said
-  # "sem resposta" - it looked like a game without A2S. It opens nothing new: that source
+  # "no response" - it looked like a game without A2S. It opens nothing new: that source
   # already has root over SSH.
   printf '    ip saddr { %s } udp dport 1-65535 accept\n' "$mgmt"
   # The broker pings the IP before using it; a game that does not answer would look like a free address.
@@ -220,13 +220,13 @@ output_broker() {
   for endpoint in ${FW_API_ENDPOINTS//,/ }; do
     ip="${endpoint%:*}"
     port="${endpoint##*:}"
-    [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || die "FW_API_ENDPOINTS: '$endpoint' nao e ip:porta"
+    [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || die "FW_API_ENDPOINTS: '$endpoint' is not ip:port"
     valid_port "$port" FW_API_ENDPOINTS
     pairs+="${pairs:+, }$ip . $port"
   done
-  [[ -n "$pairs" ]] || die "FW_API_ENDPOINTS vazio: o broker nao falaria com o Proxmox nem com o OPNsense"
+  [[ -n "$pairs" ]] || die "FW_API_ENDPOINTS is empty: the broker would talk to neither Proxmox nor OPNsense"
   games="$(addr_list FW_GAME_NET "${FW_GAME_NET:-}")"
-  [[ -n "$games" ]] || die "FW_GAME_NET vazio: o broker nao instalaria jogo nenhum"
+  [[ -n "$games" ]] || die "FW_GAME_NET is empty: the broker would not install any game"
   dns_rules
   printf '    ip daddr . tcp dport { %s } accept\n' "$pairs"
   printf '    ip daddr { %s } tcp dport 22 accept\n' "$games"
@@ -265,7 +265,7 @@ render() {
 ensure_nft() {
   command -v nft >/dev/null 2>&1 && return 0
   DEBIAN_FRONTEND=noninteractive apt-get install -y -q nftables >/dev/null \
-    || die "nao consegui instalar o nftables (apt-get install nftables)"
+    || die "could not install nftables (apt-get install nftables)"
 }
 
 cmd_apply() {
@@ -278,17 +278,17 @@ cmd_apply() {
   ensure_nft
   # `nft -c` checks against the kernel without loading: a rule that does not go in cannot become
   # the boot file, otherwise the CT would come up with no firewall at all next time.
-  nft -c -f "$tmp" || die "o kernel recusou as regras; nada foi alterado"
+  nft -c -f "$tmp" || die "the kernel refused the rules; nothing was changed"
   install -m 0644 "$tmp" "$RULES"
   nft -f "$RULES"
   systemctl enable nftables >/dev/null 2>&1 || true
-  printf 'ct-firewall: regras de %s aplicadas (%s)\n' "$FW_ROLE" "$RULES"
+  printf 'ct-firewall: %s rules applied (%s)\n' "$FW_ROLE" "$RULES"
 }
 
 cmd_off() {
   command -v nft >/dev/null 2>&1 && nft flush ruleset
   systemctl disable nftables >/dev/null 2>&1 || true
-  printf 'ct-firewall: firewall DESLIGADO neste CT (rode "ct-firewall apply" para religar)\n'
+  printf 'ct-firewall: firewall OFF in this CT (run "ct-firewall apply" to turn it back on)\n'
 }
 
 case "${1:-}" in
@@ -296,5 +296,5 @@ case "${1:-}" in
   render) load_conf; render ;;
   status) nft list ruleset ;;
   off) cmd_off ;;
-  *) die "uso: ct-firewall apply | render | status | off" ;;
+  *) die "usage: ct-firewall apply | render | status | off" ;;
 esac

@@ -94,13 +94,13 @@ function Invoke-DockerQuery([string[]]$Arguments) {
 
 function Assert-Docker {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-        throw "O comando 'docker' nao foi encontrado. Instale o Docker Desktop ou o docker CLI."
+        throw "The 'docker' command was not found. Install Docker Desktop or the docker CLI."
     }
     Invoke-DockerQuery @("version", "--format", "{{.Server.Version}}") | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        $target = "daemon local"
+        $target = "local daemon"
         if ($env:DOCKER_HOST) { $target = $env:DOCKER_HOST }
-        throw "Nao consegui falar com o Docker ($target). O Docker Desktop esta rodando?"
+        throw "Could not talk to Docker ($target). Is Docker Desktop running?"
     }
 }
 
@@ -118,9 +118,9 @@ function Test-Container([string]$Name) {
 
 function Ensure-Network {
     if (-not (Test-Network $Network)) {
-        Write-Host "Criando a rede docker '$Network' (painel e jogos conversam por ela)" -ForegroundColor DarkGray
+        Write-Host "Creating the docker network '$Network' (the panel and the games talk over it)" -ForegroundColor DarkGray
         Invoke-DockerLive @("network", "create", $Network)
-        if ($LASTEXITCODE -ne 0) { throw "Falha ao criar a rede docker '$Network'" }
+        if ($LASTEXITCODE -ne 0) { throw "Failed to create the docker network '$Network'" }
     }
 }
 
@@ -128,7 +128,7 @@ function Invoke-Compose([string]$File, [string]$Project, [string[]]$ComposeArgs)
     $all = @("compose", "-f", $File, "-p", $Project) + $ComposeArgs
     Invoke-DockerLive $all
     if ($LASTEXITCODE -ne 0) {
-        throw "docker compose $($ComposeArgs -join ' ') falhou (veja a saida acima)"
+        throw "docker compose $($ComposeArgs -join ' ') failed (see the output above)"
     }
 }
 
@@ -149,21 +149,21 @@ $cfg = Read-EnvFile $EnvFile
 if ($DockerHost -eq "") { $DockerHost = Get-Cfg $cfg "DOCKER_HOST" }
 if ($DockerHost -ne "") {
     $env:DOCKER_HOST = $DockerHost
-    Write-Host "Docker de destino: $DockerHost" -ForegroundColor Cyan
+    Write-Host "Target Docker: $DockerHost" -ForegroundColor Cyan
 }
 
 if (-not $Panel -and $Game -eq "" -and $AppId -eq "") {
     $available = Get-ChildItem (Join-Path $RepoRoot "games") -Filter "*.env" |
         Where-Object { $_.Name -ne "_template.env" } |
         ForEach-Object { $_.BaseName }
-    Write-Host "Informe -Game <nome>, -AppId <steam_app_id> ou -Panel." -ForegroundColor Yellow
-    Write-Host ("Jogos disponiveis: " + ($available -join ", "))
+    Write-Host "Pass -Game <name>, -AppId <steam_app_id> or -Panel." -ForegroundColor Yellow
+    Write-Host ("Available games: " + ($available -join ", "))
     Write-Host ""
-    Write-Host "Exemplos:"
-    Write-Host "  .\deploy-docker.ps1 -Panel                 # sobe o painel"
-    Write-Host "  .\deploy-docker.ps1 -Game palworld         # sobe o jogo e o cadastra no painel"
-    Write-Host "  .\deploy-docker.ps1 -Game dayz -SteamGuardCode 12345"
-    Write-Host "  .\deploy-docker.ps1 -Game palworld -Down   # para o servidor (o mundo fica no volume)"
+    Write-Host "Examples:"
+    Write-Host "  .\deploy\game\deploy-docker.ps1 -Panel                 # brings up the panel"
+    Write-Host "  .\deploy\game\deploy-docker.ps1 -Game palworld         # brings up the game and registers it in the panel"
+    Write-Host "  .\deploy\game\deploy-docker.ps1 -Game dayz -SteamGuardCode 12345"
+    Write-Host "  .\deploy\game\deploy-docker.ps1 -Game palworld -Down   # stops the server (the world stays in the volume)"
     exit 1
 }
 
@@ -195,7 +195,7 @@ services:
     container_name: $PanelContainer
     restart: unless-stopped
     ports:
-      - "${porta}:8080"
+      - "${port}:8080"
     environment:
       PANEL_USER: "$user"
       PANEL_PASSWORD: "$password"
@@ -221,22 +221,22 @@ networks:
 
     if ($Down) {
         Invoke-Compose $file "gamepanel" @("down")
-        Write-Host "Painel parado (os cadastros e a chave SSH ficam nos volumes)." -ForegroundColor Green
+        Write-Host "Panel stopped (the registered servers and the SSH key stay in the volumes)." -ForegroundColor Green
         if ($Game -eq "" -and $AppId -eq "") { exit 0 }
     } else {
         if ($Recreate) { Invoke-Compose $file "gamepanel" @("down") }
-        Write-Host "`nSubindo o painel..." -ForegroundColor Cyan
+        Write-Host "`nBringing up the panel..." -ForegroundColor Cyan
         Invoke-Compose $file "gamepanel" @("up", "-d", "--build")
 
         Write-Host ""
-        Write-Host "Painel: http://localhost:$port" -ForegroundColor Green
-        Write-Host "Usuario: $user"
+        Write-Host "Panel: http://localhost:$port" -ForegroundColor Green
+        Write-Host "User: $user"
         if ($generated) {
-            Write-Host "Senha gerada agora: $password" -ForegroundColor Yellow
-            Write-Host "(preencha ADMIN_PASSWORD no .env para fixar uma senha sua)"
+            Write-Host "Password generated now: $password" -ForegroundColor Yellow
+            Write-Host "(fill in ADMIN_PASSWORD in .env to pin a password of your own)"
         }
         $pub = Get-PanelPubKey $cfg
-        if ($pub -ne "") { Write-Host "Chave SSH do painel: $pub" -ForegroundColor DarkGray }
+        if ($pub -ne "") { Write-Host "Panel SSH key: $pub" -ForegroundColor DarkGray }
     }
 }
 
@@ -246,10 +246,10 @@ if ($Game -eq "" -and $AppId -eq "") { exit 0 }
 
 if ($Game -ne "") {
     $GameEnvPath = Join-Path $RepoRoot "games\$Game.env"
-    if (-not (Test-Path $GameEnvPath)) { throw "Jogo desconhecido: $Game (esperado: $GameEnvPath)" }
+    if (-not (Test-Path $GameEnvPath)) { throw "Unknown game: $Game (expected: $GameEnvPath)" }
     $GameEnvRel = "games/$Game.env"
 } else {
-    if ($AppId -notmatch '^\d+$') { throw "AppId invalido: $AppId" }
+    if ($AppId -notmatch '^\d+$') { throw "Invalid AppId: $AppId" }
     # Generic deploy: generates a minimal games/app<id>.env so the image has something to copy.
     $Game = "app$AppId"
     $GameEnvPath = Join-Path $RepoRoot "games\$Game.env"
@@ -265,7 +265,7 @@ START_ARGS=""
 GAME_PORT=
 GAME_PORTS=""
 "@
-        Write-Host "Criado $GameEnvRel - ajuste portas e START_SCRIPT se precisar." -ForegroundColor DarkGray
+        Write-Host "Created $GameEnvRel - adjust the ports and START_SCRIPT if needed." -ForegroundColor DarkGray
     }
 }
 
@@ -281,9 +281,9 @@ $secretsPath = Join-Path $StackDir "$GameKey.secret.env"
 if ($Down) {
     if (Test-Path $file) {
         Invoke-Compose $file $composeProject @("down")
-        Write-Host "$Display parado. O mundo continua no volume ${Container}-data." -ForegroundColor Green
+        Write-Host "$Display stopped. The world stays in the ${Container}-data volume." -ForegroundColor Green
     } else {
-        Write-Host "Nao ha stack gerada para $GameKey ($file)." -ForegroundColor Yellow
+        Write-Host "There is no generated stack for $GameKey ($file)." -ForegroundColor Yellow
     }
     exit 0
 }
@@ -317,9 +317,9 @@ if ($UpdateOnStart) { $revalidate = "1" }
 
 $pub = Get-PanelPubKey $cfg
 if ($pub -eq "") {
-    Write-Host "Aviso: nao achei a chave publica do painel." -ForegroundColor Yellow
-    Write-Host "  Suba o painel antes (.\deploy-docker.ps1 -Panel) ou preencha PANEL_PUBKEY no .env;" -ForegroundColor Yellow
-    Write-Host "  sem ela o painel nao consegue entrar neste container." -ForegroundColor Yellow
+    Write-Host "[warn] could not find the panel's public key." -ForegroundColor Yellow
+    Write-Host "  Bring up the panel first (.\deploy\game\deploy-docker.ps1 -Panel) or fill in PANEL_PUBKEY in .env;" -ForegroundColor Yellow
+    Write-Host "  without it the panel cannot log in to this container." -ForegroundColor Yellow
 }
 
 # ----- Steam account (games with STEAM_ANONYMOUS=0, today dayz) -----
@@ -331,11 +331,11 @@ if (-not $anon) {
     if ($SteamGuardCode -ne "") { $cfg["STEAM_GUARD_CODE"] = $SteamGuardCode }
     $steamGuard = Get-Cfg $cfg "STEAM_GUARD_CODE"
     if ($steamUser -eq "" -or $steamPass -eq "") {
-        throw ("O servidor de $GameKey nao sai por login anonimo na Steam. " +
-               "Preencha STEAM_USER e STEAM_PASS no .env (conta que POSSUA o jogo).")
+        throw ("The $GameKey server cannot be downloaded with an anonymous Steam login. " +
+               "Fill in STEAM_USER and STEAM_PASS in .env (an account that OWNS the game).")
     }
     if ($steamGuard -eq "") {
-        Write-Host "Sem SteamGuardCode: se a conta usa Steam Guard o login falha - repita com -SteamGuardCode <codigo>." -ForegroundColor Yellow
+        Write-Host "No SteamGuardCode: if the account uses Steam Guard the login fails - repeat with -SteamGuardCode <code>." -ForegroundColor Yellow
     }
     $secretLines += "STEAM_USER=$steamUser"
     $secretLines += "STEAM_PASS=$steamPass"
@@ -397,10 +397,10 @@ networks:
 
 if ($Recreate) { Invoke-Compose $file $composeProject @("down") }
 
-Write-Host "`nSubindo $Display (o primeiro deploy baixa o jogo inteiro, pode demorar)..." -ForegroundColor Cyan
+Write-Host "`nBringing up $Display (the first deploy downloads the whole game, it may take a while)..." -ForegroundColor Cyan
 Invoke-Compose $file $composeProject @("up", "-d", "--build")
 
-Write-Host "`nAcompanhe a instalacao com:" -ForegroundColor DarkGray
+Write-Host "`nFollow the installation with:" -ForegroundColor DarkGray
 Write-Host "  docker logs -f $Container"
 
 # ----- registration in the panel -----
@@ -431,38 +431,38 @@ if (-not $NoRegister) {
             "--join-re", (Get-Cfg $game "JOIN_RE"),
             "--leave-re", (Get-Cfg $game "LEAVE_RE"),
             "--log-path", (Get-Cfg $game "LOG_PATH"),
-            "--notes", "Container Docker $Container (deploy-docker.ps1)."
+            "--notes", "Docker container $Container (deploy-docker.ps1)."
         )
         Invoke-DockerLive $cmdArgs
         if ($LASTEXITCODE -eq 0) {
             $registered = $true
         } else {
-            Write-Host "Nao consegui cadastrar no painel (faca pela tela Adicionar)." -ForegroundColor Yellow
+            Write-Host "Could not register in the panel (do it through the Add screen)." -ForegroundColor Yellow
         }
     } else {
-        Write-Host "Painel nao encontrado no Docker: cadastre o servidor manualmente ou rode -Panel." -ForegroundColor DarkGray
+        Write-Host "Panel not found in Docker: register the server by hand or run -Panel." -ForegroundColor DarkGray
     }
 }
 
 # ----- summary -----
-$portasTexto = if ($portList -ne "") { $portList } else { "(nao definidas para este jogo)" }
+$portasTexto = if ($portList -ne "") { $portList } else { "(not defined for this game)" }
 Write-Host ""
 Write-Host "========================================================================"
-Write-Host " Deploy em Docker concluido: $Display"
+Write-Host " Docker deploy finished: $Display"
 Write-Host "========================================================================"
 Write-Host ""
-Write-Host "Container : $Container (rede $Network, ${memory}MB, $cores cpu)"
-Write-Host "Volumes   : ${Container}-data (jogo), ${Container}-steam (conta/Steam), ${Container}-backups e ${Container}-modenv"
-Write-Host "Portas    : $portasTexto"
+Write-Host "Container : $Container (network $Network, ${memory}MB, $cores cpu)"
+Write-Host "Volumes   : ${Container}-data (game), ${Container}-steam (account/Steam), ${Container}-backups and ${Container}-modenv"
+Write-Host "Ports     : $portasTexto"
 $notes = Get-Cfg $game "PORT_NOTES"
-if ($notes -ne "") { Write-Host "Nota      : $notes" }
+if ($notes -ne "") { Write-Host "Note      : $notes" }
 $hints = Get-Cfg $game "CONFIG_HINT"
 if ($hints -ne "") { Write-Host "Config    : $hints" }
 Write-Host ""
 if ($registered) {
-    Write-Host "Ja cadastrado no painel - a tela Config abre o arquivo do jogo direto." -ForegroundColor Green
+    Write-Host "Already registered in the panel - the Config screen opens the game's file directly." -ForegroundColor Green
 }
-Write-Host "Atalhos dentro do container:"
+Write-Host "Shortcuts inside the container:"
 Write-Host "  docker exec $Container game-status"
 Write-Host "  docker exec $Container game-logs -n 50"
 Write-Host "  docker exec $Container update-game"

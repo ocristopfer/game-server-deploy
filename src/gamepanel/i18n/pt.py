@@ -133,7 +133,7 @@ MESSAGES: dict[str, str] = {
     # ----------------------------------------------------- ssh key
     "ssh_key.public_key": "Chave pública do painel",
     "ssh_key.not_found": "Chave não encontrada. Rode o deploy do painel novamente.",
-    "ssh_key.authorize": "Autorizar num container de jogo",
+    "ssh_key.containers": "Containers de jogo",
     "ssh_key.host_keys": "Host keys",
 
     # ------------------------------------------------------ charts
@@ -1847,15 +1847,26 @@ MESSAGES: dict[str, str] = {
         "Sem o celular? Use um dos códigos de recuperação (<code "
         "class=\"nowrap\">abcde-12345</code>); cada um serve uma vez.",
     "ssh_key.intro":
-        "O painel controla cada servidor por SSH, usando a chave abaixo. Para um container "
-        "aparecer como acessível, ele precisa de <code>sshd</code> rodando e desta chave "
-        "autorizada no usuário informado no cadastro (normalmente <code>root</code>).",
-    "ssh_key.from_proxmox":
-        "A partir do host Proxmox, trocando <code>&lt;CTID&gt;</code> pelo id do container:",
-    "ssh_key.provisioned_note":
-        "Containers provisionados pelo <code>deploy-game.ps1</code> com "
-        "<code>PANEL_PUBKEY</code> no <code>.env</code> já saem prontos &mdash; este passo é só "
-        "para os criados antes disso.",
+        "O painel controla cada servidor por SSH, usando a chave abaixo. Ele entra com o "
+        "usuário sem privilégios <code>gamepanel</code>, nunca como <code>root</code>, e o jogo "
+        "roda como <code>steam</code>.",
+    "ssh_key.new_cts":
+        "Containers criados pelo <code>deploy-game.ps1</code> ou pelo broker já saem com o "
+        "usuário <code>gamepanel</code> e esta chave: não há nada a fazer.",
+    "ssh_key.existing_cts":
+        "Um container que ainda deixa o painel entrar como <code>root</code> é convertido a "
+        "partir do repositório, na sua máquina, trocando <code>&lt;CTID&gt;</code> pelo id do "
+        "container:",
+    "ssh_key.migrate_note":
+        "Ele instala o usuário, prova o acesso a partir do painel, troca o servidor para "
+        "<code>gamepanel</code> e só então bloqueia o root por SSH.",
+    "ssh_key.manual":
+        "Ou à mão, dentro do container como <code>root</code>, com o "
+        "<code>lib/ct-panel-access.sh</code> copiado do repositório:",
+    "ssh_key.manual_lock":
+        "Depois troque o usuário SSH para <code>gamepanel</code> na tela de edição do servidor, "
+        "confira que ele aparece como acessível e só então bloqueie o root:",
+    "ssh_key.unit_placeholder": "jogo.service",
     "ssh_key.host_key_changed":
         "Na primeira conexão o painel aprende e fixa a host key do container "
         "(<code>accept-new</code>). Se o container for recriado, a chave muda e a conexão passa "

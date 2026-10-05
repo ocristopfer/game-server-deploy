@@ -25,12 +25,12 @@ HEALTH_SLEEP=2
 
 # A failure inside $(...) ends the script before the `die` that would explain it: without this
 # trap the deploy stops without saying a word, and that is how the first real deploy ended.
-trap 'echo "ERRO na linha ${LINENO}: ${BASH_COMMAND}" >&2' ERR
+trap 'echo "ERROR at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
 
-die() { echo "ERRO: $*" >&2; exit 1; }
+die() { echo "ERROR: $*" >&2; exit 1; }
 msg() { echo "==> $*"; }
 
-[[ $# -ge 5 ]] || die "uso: install-release.sh <pacote> <tarball> <sha256> <app_dir> <servico> [saude]"
+[[ $# -ge 5 ]] || die "usage: install-release.sh <package> <tarball> <sha256> <app_dir> <service> [health_command]"
 
 PACKAGE="$1"
 TARBALL="$2"
@@ -42,13 +42,13 @@ HEALTH_CMD="${6:-}"
 RELEASES_DIR="${APP_DIR}/releases"
 CURRENT_LINK="${APP_DIR}/current"
 
-[[ -f "$TARBALL" ]] || die "tarball nao encontrado: $TARBALL"
+[[ -f "$TARBALL" ]] || die "tarball not found: $TARBALL"
 
 # --- 1. is the file what the deploy sent? -------------------------------------
 # The hash is deterministic (see tools/build-release.py), so it answers "does the CT have
 # THIS code?", and not just "did the file arrive intact?".
 actual_sha="$(sha256sum "$TARBALL" | cut -d' ' -f1 || true)"
-[[ -n "$actual_sha" ]] || die "nao consegui calcular o sha256 de $TARBALL"
+[[ -n "$actual_sha" ]] || die "could not compute the sha256 of $TARBALL"
 [[ "$actual_sha" == "$EXPECTED_SHA" ]] \
   || die "sha256 nao confere: esperado $EXPECTED_SHA, recebido $actual_sha"
 
@@ -56,15 +56,15 @@ actual_sha="$(sha256sum "$TARBALL" | cut -d' ' -f1 || true)"
 # The version comes from the STAMP inside the package, not from the file name: a name can be
 # renamed, the stamp is what the process will present itself as in /health.
 staging="$(mktemp -d "${APP_DIR}/.staging.XXXXXX" || true)"
-[[ -n "$staging" ]] || die "nao consegui criar pasta temporaria em $APP_DIR"
+[[ -n "$staging" ]] || die "could not create a temporary folder in $APP_DIR"
 cleanup() { rm -rf "$staging"; }
 trap 'cleanup' EXIT
 
-tar -xzf "$TARBALL" -C "$staging" || die "tar falhou ao extrair $TARBALL"
+tar -xzf "$TARBALL" -C "$staging" || die "tar failed to extract $TARBALL"
 stamp="${staging}/${PACKAGE}/_build.py"
-[[ -f "$stamp" ]] || die "o pacote nao tem ${PACKAGE}/_build.py (foi gerado por tools/build-release.py?)"
+[[ -f "$stamp" ]] || die "the package has no ${PACKAGE}/_build.py (was it built by tools/build-release.py?)"
 version="$(sed -n "s/^VERSION = '\\(.*\\)'$/\\1/p" "$stamp" || true)"
-[[ -n "$version" ]] || die "nao consegui ler a VERSION de ${PACKAGE}/_build.py"
+[[ -n "$version" ]] || die "could not read VERSION from ${PACKAGE}/_build.py"
 
 target="${RELEASES_DIR}/${version}"
 msg "release ${version}"
@@ -82,7 +82,7 @@ chmod -R a+rX "$target"
 # Failing here is better than the service crashing at start with ModuleNotFoundError, or the
 # browser getting a TemplateNotFound.
 ( cd "$target" && python3 -c "import ${PACKAGE}, ${PACKAGE}.version" ) \
-  || die "o pacote nao importa a partir de ${target}"
+  || die "the package does not import from ${target}"
 
 # --- 4. flip the symlink (and remember where it pointed) ----------------------
 previous=""
@@ -102,7 +102,7 @@ restart_and_check() {
   # in place. There is nothing to restart or probe, and insisting here would make the whole
   # provisioning fail before reaching the part that creates the service.
   if ! systemctl cat "$SERVICE" >/dev/null 2>&1; then
-    msg "o servico ${SERVICE} ainda nao existe — quem sobe e o provisionamento"
+    msg "service ${SERVICE} does not exist yet - provisioning is what starts it"
     return 0
   fi
   systemctl restart "$SERVICE" || return 1
@@ -115,21 +115,21 @@ restart_and_check() {
     if [[ -z "$HEALTH_CMD" ]] || eval "$HEALTH_CMD" >/dev/null 2>&1; then
       return 0
     fi
-    echo "   saude ainda nao respondeu (${try}/${HEALTH_TRIES})"
+    echo "   health check has not answered yet (${try}/${HEALTH_TRIES})"
   done
   return 1
 }
 
 if restart_and_check; then
-  msg "no ar: ${version}"
+  msg "live: ${version}"
 else
   if [[ -n "$previous" && -d "$previous" && "$previous" != "$target" ]]; then
-    msg "NAO subiu — voltando para $(basename "$previous")"
+    msg "did NOT come up - rolling back to $(basename "$previous")"
     ln -sfn "$previous" "${CURRENT_LINK}.new"
     mv -T "${CURRENT_LINK}.new" "$CURRENT_LINK"
     systemctl restart "$SERVICE" || true
   fi
-  die "o servico ${SERVICE} nao ficou de pe com o release ${version}"
+  die "service ${SERVICE} did not stay up with release ${version}"
 fi
 
 # --- 6. prune -----------------------------------------------------------------
@@ -162,7 +162,7 @@ prune_old_layout() {
     [[ -e "$entry" || -L "$entry" ]] || continue
     base="$(basename "$entry")"
     # This script's temporary folder is not old layout: the exit trap removes it. Without
-    # this line the deploy log announced "removendo o layout antigo: .staging.XXXXXX",
+    # this line the deploy log announced "removing the old layout: .staging.XXXXXX",
     # which sends the reader looking for a problem that does not exist.
     case "$base" in .staging.*) continue;; esac
     keep=0
@@ -170,7 +170,7 @@ prune_old_layout() {
       [[ "$base" == "$name" ]] && keep=1 && break
     done
     [[ "$keep" -eq 1 ]] && continue
-    msg "removendo o layout antigo: ${base}"
+    msg "removing the old layout: ${base}"
     # ${APP_DIR:?} so an empty APP_DIR becomes an error instead of "rm -rf /name".
     rm -rf "${APP_DIR:?}/${base}"
   done

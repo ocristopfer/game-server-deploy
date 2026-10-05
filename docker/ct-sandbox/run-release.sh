@@ -125,7 +125,7 @@ broken_tarball="$(ls "$work"/dist4/gamepanel-8.8.8*.tar.gz 2>/dev/null | head -1
 out="$(install_release "$broken_tarball" 2>&1)"
 check "release que nao sobe sai com erro" "1" "$?"
 check "current voltou para a anterior" "$before" "$(readlink -f $APP_DIR/current)"
-case "$out" in *"voltando para"*) ok "o rollback aparece na saida";;
+case "$out" in *"rolling back to"*) ok "o rollback aparece na saida";;
                *) fail "o rollback nao foi anunciado (saida: $out)";; esac
 
 echo

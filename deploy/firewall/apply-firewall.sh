@@ -11,7 +11,7 @@
 # Reads fw.env (next to it): PANEL_CTID BROKER_CTID ADMIN_FIREWALL_SOURCES PANEL_PORT BROKER_PORT
 # BROKER_IP_PREFIX BROKER_IP_INICIO BROKER_IP_FIM EXTRA_GAME_CTS ONLY_CTS DRY_RUN
 set -Eeuo pipefail
-trap 'printf "\n[ERROR] linha %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
+trap 'printf "\n[ERROR] line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIREWALL="$SCRIPT_DIR/ct-firewall.sh"
@@ -21,8 +21,8 @@ msg() { printf '\n[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 warn() { printf '[WARN] %s\n' "$*" >&2; }
 die() { printf '\n[ERROR] %s\n' "$*" >&2; exit 1; }
 
-[[ -f "$SCRIPT_DIR/fw.env" ]] || die "fw.env nao encontrado ao lado do script"
-[[ -f "$FIREWALL" ]] || die "ct-firewall.sh nao encontrado ao lado do script"
+[[ -f "$SCRIPT_DIR/fw.env" ]] || die "fw.env not found next to the script"
+[[ -f "$FIREWALL" ]] || die "ct-firewall.sh not found next to the script"
 set -a
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/fw.env"
@@ -70,16 +70,16 @@ apply_to() {  # ctid description conf verify...
   local ctid="$1" label="$2" conf="$3"
   shift 3
   if ! running "$ctid"; then
-    skipped+=("$ctid ($label): CT parado")
+    skipped+=("$ctid ($label): CT stopped")
     return 0
   fi
   if [[ "$DRY_RUN" == "1" ]]; then
     # Show only: files in the CT's /tmp, nothing that is live gets touched.
     pct push "$ctid" "$FIREWALL" /tmp/ct-firewall --perms 0755
     pct push "$ctid" "$conf" /tmp/ct-firewall.env --perms 0600
-    msg "CT $ctid ($label) - regras que seriam aplicadas:"
+    msg "CT $ctid ($label) - rules that would be applied:"
     pct exec "$ctid" -- env CT_FIREWALL_CONF=/tmp/ct-firewall.env bash /tmp/ct-firewall render \
-      || failed+=("$ctid ($label): configuracao recusada")
+      || failed+=("$ctid ($label): configuration refused")
     pct exec "$ctid" -- rm -f /tmp/ct-firewall /tmp/ct-firewall.env
     return 0
   fi
@@ -87,15 +87,15 @@ apply_to() {  # ctid description conf verify...
   pct push "$ctid" "$FIREWALL" /usr/local/sbin/ct-firewall --perms 0755
   pct push "$ctid" "$conf" /etc/ct-firewall.env --perms 0644
   if ! pct exec "$ctid" -- /usr/local/sbin/ct-firewall apply; then
-    failed+=("$ctid ($label): as regras nao carregaram (o CT ficou como estava)")
+    failed+=("$ctid ($label): the rules did not load (the CT was left as it was)")
     return 0
   fi
   if "$@"; then
-    printf '  teste ok\n'
+    printf '  test ok\n'
     ok_count=$((ok_count + 1))
   else
     pct exec "$ctid" -- /usr/local/sbin/ct-firewall off || true
-    failed+=("$ctid ($label): o teste de conexao falhou - firewall DESLIGADO neste CT")
+    failed+=("$ctid ($label): the connection test failed - firewall OFF in this CT")
   fi
 }
 
@@ -106,13 +106,13 @@ write_conf() {  # file lines...
 }
 
 # ----------------------------------------------------------------------------------- start
-modprobe nf_tables 2>/dev/null || warn "nao consegui carregar o modulo nf_tables no host"
+modprobe nf_tables 2>/dev/null || warn "could not load the nf_tables module on the host"
 { mkdir -p /etc/modules-load.d && echo nf_tables > /etc/modules-load.d/ct-firewall.conf; } \
-  || warn "nao consegui deixar o nf_tables carregando no boot do host"
+  || warn "could not make nf_tables load at host boot"
 
-[[ -n "$PANEL_CTID" ]] && running "$PANEL_CTID" || die "o CT do painel (${PANEL_CTID:-?}) precisa estar ligado: e dele que os testes partem"
+[[ -n "$PANEL_CTID" ]] && running "$PANEL_CTID" || die "the panel CT (${PANEL_CTID:-?}) must be running: the tests start from it"
 PANEL_IP="$(ct_ip "$PANEL_CTID")"
-[[ -n "$PANEL_IP" ]] || die "nao descobri o IP do painel (CT $PANEL_CTID)"
+[[ -n "$PANEL_IP" ]] || die "could not find the panel IP (CT $PANEL_CTID)"
 BROKER_IP=""
 if [[ -n "$BROKER_CTID" ]] && running "$BROKER_CTID"; then
   BROKER_IP="$(ct_ip "$BROKER_CTID")"
@@ -159,7 +159,7 @@ apply_game() {  # ctid ip ports description presence
   local ctid="$1" ip="$2" ports="$3" label="$4" presence="${5:--}"
   [[ "$presence" != "-" ]] || presence=""
   if [[ -z "$ports" ]]; then
-    skipped+=("$ctid ($label): nao sei as portas do jogo")
+    skipped+=("$ctid ($label): the game ports are unknown")
     return 0
   fi
   write_conf "$tmp/game-$ctid.env" "FW_ROLE=game" "FW_MGMT_SOURCES=\"$MGMT\"" "FW_GAME_PORTS=\"$ports\""     "FW_PRESENCE_PORTS=\"$presence\""
@@ -171,7 +171,7 @@ apply_game() {  # ctid ip ports description presence
 while read -r handle ip presence ports; do
   [[ -n "${handle:-}" ]] || continue
   selected "$handle" || continue
-  apply_game "$handle" "$ip" "$ports" "jogo do broker, $ip" "$presence"
+  apply_game "$handle" "$ip" "$ports" "broker game, $ip" "$presence"
 done <<<"$game_lines"
 
 # --- legacy games (made by deploy-game.ps1) ---------------------------------------------------
@@ -179,7 +179,7 @@ done <<<"$game_lines"
 for ctid in ${EXTRA_GAME_CTS//,/ }; do
   selected "$ctid" || continue
   if ! running "$ctid"; then
-    skipped+=("$ctid (legado): CT parado")
+    skipped+=("$ctid (legacy): CT stopped")
     continue
   fi
   key=""
@@ -188,13 +188,13 @@ for ctid in ${EXTRA_GAME_CTS//,/ }; do
     if pct exec "$ctid" -- test -f "/etc/systemd/system/${k}.service"; then key="$k"; break; fi
   done
   if [[ -z "$key" ]]; then
-    skipped+=("$ctid (legado): nao reconheci o jogo (nenhuma unit <jogo>.service conhecida)")
+    skipped+=("$ctid (legacy): game not recognized (no known <game>.service unit)")
     continue
   fi
   ports="$(bash -c 'set -a; source "$1"; echo "${GAME_PORTS:-}"' _ "$GAMES_DIR/$key.env")"
   # Same rule as ct-phases.sh: no presence when the query shares the game port.
   presence="$(bash -c 'set -a; source "$1"; [[ "${GAME_PORT:-}" != "${QUERY_PORT:-0}" ]] && echo "${GAME_PORT:-}"' _ "$GAMES_DIR/$key.env" || true)"
-  apply_game "$ctid" "$(ct_ip "$ctid")" "$ports" "legado, $key" "${presence:--}"
+  apply_game "$ctid" "$(ct_ip "$ctid")" "$ports" "legacy, $key" "${presence:--}"
 done
 
 # --- panel (last: the other tests start from it) --------------------------------------------
@@ -203,15 +203,15 @@ if selected "$PANEL_CTID"; then
     "FW_PANEL_PORT=\"$PANEL_PORT\""
   # From the host: it is on the administration network. If it cannot reach, the list is wrong.
   verify_panel() { timeout 5 bash -c "</dev/tcp/$PANEL_IP/$PANEL_PORT" 2>/dev/null; }
-  apply_to "$PANEL_CTID" "painel" "$tmp/panel.env" verify_panel
+  apply_to "$PANEL_CTID" "panel" "$tmp/panel.env" verify_panel
 fi
 
 # ----------------------------------------------------------------------------------- summary
-printf '\n==================== FIREWALL DOS CTs ====================\n'
-[[ "$DRY_RUN" == "1" ]] && printf 'Modo so-mostrar: NADA foi aplicado.\n'
-printf 'Aplicado e testado: %s CT(s)\n' "$ok_count"
-for line in "${skipped[@]}"; do printf 'PULADO  %s\n' "$line"; done
-for line in "${failed[@]}"; do printf 'FALHOU  %s\n' "$line"; done
-printf '\nDesligar num CT (emergencia): pct exec <CT> -- ct-firewall off\n'
-printf 'Ver as regras de um CT:        pct exec <CT> -- ct-firewall status\n'
+printf '\n==================== CT FIREWALL ====================\n'
+[[ "$DRY_RUN" == "1" ]] && printf 'Show-only mode: NOTHING was applied.\n'
+printf 'Applied and tested: %s CT(s)\n' "$ok_count"
+for line in "${skipped[@]}"; do printf 'SKIPPED %s\n' "$line"; done
+for line in "${failed[@]}"; do printf 'FAILED  %s\n' "$line"; done
+printf '\nTurn it off on a CT (emergency): pct exec <CT> -- ct-firewall off\n'
+printf 'See the rules of a CT:           pct exec <CT> -- ct-firewall status\n'
 (( ${#failed[@]} == 0 ))

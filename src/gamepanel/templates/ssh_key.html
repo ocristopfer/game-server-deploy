@@ -21,16 +21,16 @@
 </div>
 
 <div class="card">
-  <h2>{{ _('ssh_key.authorize') }}</h2>
-  <p class="muted">{{ _h('ssh_key.from_proxmox') }}</p>
-  <pre class="log">pct exec &lt;CTID&gt; -- bash -lc '
-  apt-get update -qq && apt-get install -y -qq openssh-server
-  systemctl enable --now ssh
-  mkdir -p /root/.ssh &amp;&amp; chmod 700 /root/.ssh
-  echo "{{ pubkey }}" &gt;&gt; /root/.ssh/authorized_keys
-  chmod 600 /root/.ssh/authorized_keys
-'</pre>
-  <p class="muted small">{{ _h('ssh_key.provisioned_note') }}</p>
+  <h2>{{ _('ssh_key.containers') }}</h2>
+  <p>{{ _h('ssh_key.new_cts') }}</p>
+  <p class="muted">{{ _h('ssh_key.existing_cts') }}</p>
+  <pre class="log">.\deploy\game\migrate-ct.ps1 -Ctid &lt;CTID&gt;</pre>
+  <p class="muted small">{{ _h('ssh_key.migrate_note') }}</p>
+  <p class="muted">{{ _h('ssh_key.manual') }}</p>
+  <pre class="log">bash ct-panel-access.sh install {{ _('ssh_key.unit_placeholder') }} '{{ pubkey }}'
+bash ct-panel-access.sh verify</pre>
+  <p class="muted">{{ _h('ssh_key.manual_lock') }}</p>
+  <pre class="log">bash ct-panel-access.sh lock</pre>
 </div>
 
 <div class="card">

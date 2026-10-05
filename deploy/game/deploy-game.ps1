@@ -91,7 +91,7 @@ function Get-IpOnly([string]$Cidr) {
 # Asks without echoing to the screen (Steam account password). Empty = keeps the default.
 function AskSecret([string]$Label, [string]$Default) {
     $mark = ""
-    if ($Default -ne "") { $mark = " [Enter mantem o valor do .env]" }
+    if ($Default -ne "") { $mark = " [Enter keeps the .env value]" }
     $sec = Read-Host "$Label$mark" -AsSecureString
     if ($sec.Length -eq 0) { return $Default }
     $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
@@ -175,16 +175,16 @@ function Test-KeyAuth([string]$Target) {
 function Initialize-ProxmoxAuth([string]$Target, [string]$Password) {
     $script:AuthTarget = $Target
     if (Test-KeyAuth $Target) {
-        Write-Host "Proxmox: entrando por chave SSH." -ForegroundColor DarkGray
+        Write-Host "Proxmox: logging in with the SSH key." -ForegroundColor DarkGray
         return $false
     }
     if ($Password -eq "") {
-        throw ("Nao consegui entrar em root@$Target por chave SSH. " +
-               "Preencha PROXMOX_PASSWORD no .env (ou use -ProxmoxPassword), " +
-               "ou autorize sua chave publica no Proxmox.")
+        throw ("Could not log in to root@$Target with an SSH key. " +
+               "Fill in PROXMOX_PASSWORD in .env (or use -ProxmoxPassword), " +
+               "or authorize your public key on the Proxmox.")
     }
     Enable-PasswordAuth $Password
-    Write-Host "Proxmox: sem chave autorizada, usando a senha do .env." -ForegroundColor DarkGray
+    Write-Host "Proxmox: no authorized key, using the .env password." -ForegroundColor DarkGray
     return $true
 }
 
@@ -201,16 +201,16 @@ function Get-LocalPubKey {
 function Install-KeyOnProxmox([string]$Target) {
     $pub = Get-LocalPubKey
     if ($pub -eq "") {
-        Write-Host "Sem chave publica local para instalar (rode ssh-keygen -t ed25519)." -ForegroundColor Yellow
+        Write-Host "No local public key to install (run ssh-keygen -t ed25519)." -ForegroundColor Yellow
         return
     }
-    Write-Host "Autorizando sua chave publica em root@$Target..." -ForegroundColor Cyan
+    Write-Host "Authorizing your public key on root@$Target..." -ForegroundColor Cyan
     $cmd = "install -d -m 700 /root/.ssh && touch /root/.ssh/authorized_keys && " +
            "chmod 600 /root/.ssh/authorized_keys && " +
            "grep -qF '$pub' /root/.ssh/authorized_keys || echo '$pub' >> /root/.ssh/authorized_keys"
     Invoke-Ssh $Target $cmd
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao autorizar a chave em root@$Target" }
-    Write-Host "Pronto: os proximos deploys entram por chave, sem senha." -ForegroundColor Green
+    if ($LASTEXITCODE -ne 0) { throw "Failed to authorize the key on root@$Target" }
+    Write-Host "Done: the next deploys log in with the key, no password." -ForegroundColor Green
 }
 
 # ----- auxiliary ssh (queries and registration in the panel) -----
@@ -262,8 +262,8 @@ function Invoke-SshQuery([string]$Target, [string]$Command, [switch]$Batch) {
     return $output
 }
 
-# Same as above, but with the output going to the screen (the panel registration replies
-# "servidor 'X' cadastrado").
+# Same as above, but with the output going to the screen (the panel registration prints a
+# confirmation line naming the server).
 function Invoke-SshLive([string]$Target, [string]$Command) {
     $sshOptions = Get-SshOptsFor $Target
     $previous = $ErrorActionPreference
@@ -286,8 +286,8 @@ if ($Game -eq "" -and $AppId -eq "") {
     $available = Get-ChildItem (Join-Path $RepoRoot "games") -Filter "*.env" |
         Where-Object { $_.Name -ne "_template.env" } |
         ForEach-Object { $_.BaseName }
-    Write-Host "Informe -Game <nome> ou -AppId <steam_app_id>." -ForegroundColor Yellow
-    Write-Host ("Jogos disponiveis: " + ($available -join ", "))
+    Write-Host "Pass -Game <name> or -AppId <steam_app_id>." -ForegroundColor Yellow
+    Write-Host ("Available games: " + ($available -join ", "))
     exit 1
 }
 
@@ -295,12 +295,12 @@ $GameEnvContent = $null
 if ($Game -ne "") {
     $GameEnvPath = Join-Path $RepoRoot "games\$Game.env"
     if (-not (Test-Path $GameEnvPath)) {
-        throw "Jogo desconhecido: $Game (esperado: $GameEnvPath)"
+        throw "Unknown game: $Game (expected: $GameEnvPath)"
     }
     $GameEnvContent = Get-Content $GameEnvPath -Raw
 } else {
-    if ($AppId -notmatch '^\d+$') { throw "AppId invalido: $AppId" }
-    Write-Host "Deploy generico do app Steam $AppId (script de start sera detectado automaticamente)"
+    if ($AppId -notmatch '^\d+$') { throw "Invalid AppId: $AppId" }
+    Write-Host "Generic deploy of Steam app $AppId (the start script will be detected automatically)"
     $GameEnvContent = @"
 GAME_KEY=app$AppId
 GAME_DISPLAY_NAME="Steam App $AppId"
@@ -338,9 +338,9 @@ foreach ($key in $OverridableKeys) {
     }
 }
 if ($overridden.Count -gt 0) {
-    Write-Host ("Valores especificos de ${GameSuffix}: " + ($overridden -join ", ")) -ForegroundColor DarkGray
+    Write-Host ("Values specific to ${GameSuffix}: " + ($overridden -join ", ")) -ForegroundColor DarkGray
 } else {
-    Write-Host "Sem chaves _${GameSuffix} no .env - usando CTID/IP genericos." -ForegroundColor DarkGray
+    Write-Host "No _${GameSuffix} keys in .env - using the generic CTID/IP." -ForegroundColor DarkGray
 }
 
 if ($ProxmoxHost -eq "") {
@@ -353,35 +353,35 @@ $SteamAnon = (Get-Cfg $game "STEAM_ANONYMOUS" "1") -ne "0"
 if ($SteamGuardCode -ne "") { $cfg["STEAM_GUARD_CODE"] = $SteamGuardCode }
 
 if ($Interactive) {
-    Write-Host "`n=== Modo interativo (Enter aceita o valor entre colchetes) ===`n" -ForegroundColor Cyan
-    $ProxmoxHost            = Ask "Host Proxmox (ssh root)" $ProxmoxHost
-    $cfg["CTID"]            = Ask "ID do container (CTID)" ($cfg["CTID"])
-    $cfg["HOSTNAME_OVERRIDE"] = Ask "Hostname do CT (vazio = nome do jogo)" ($cfg["HOSTNAME_OVERRIDE"])
-    $cfg["STORAGE"]         = Ask "Storage do rootfs" ($cfg["STORAGE"])
-    $cfg["TEMPLATE_STORAGE"] = Ask "Storage de templates" ($cfg["TEMPLATE_STORAGE"])
-    $cfg["BRIDGE"]          = Ask "Bridge de rede" ($cfg["BRIDGE"])
-    $cfg["IP_CIDR"]         = Ask "IP/CIDR do CT (ou 'dhcp')" ($cfg["IP_CIDR"])
+    Write-Host "`n=== Interactive mode (Enter accepts the value in brackets) ===`n" -ForegroundColor Cyan
+    $ProxmoxHost            = Ask "Proxmox host (ssh root)" $ProxmoxHost
+    $cfg["CTID"]            = Ask "Container ID (CTID)" ($cfg["CTID"])
+    $cfg["HOSTNAME_OVERRIDE"] = Ask "CT hostname (empty = game name)" ($cfg["HOSTNAME_OVERRIDE"])
+    $cfg["STORAGE"]         = Ask "Rootfs storage" ($cfg["STORAGE"])
+    $cfg["TEMPLATE_STORAGE"] = Ask "Template storage" ($cfg["TEMPLATE_STORAGE"])
+    $cfg["BRIDGE"]          = Ask "Network bridge" ($cfg["BRIDGE"])
+    $cfg["IP_CIDR"]         = Ask "CT IP/CIDR (or 'dhcp')" ($cfg["IP_CIDR"])
     if ($cfg["IP_CIDR"] -ne "dhcp") {
         $cfg["GATEWAY"]     = Ask "Gateway" ($cfg["GATEWAY"])
     }
-    $cfg["MEMORY"]          = Ask "Memoria MB (vazio = recomendado do jogo)" ($cfg["MEMORY"])
-    $cfg["CORES"]           = Ask "Cores (vazio = recomendado do jogo)" ($cfg["CORES"])
-    $cfg["ROOTFS_SIZE_GB"]  = Ask "Disco GB (vazio = recomendado do jogo)" ($cfg["ROOTFS_SIZE_GB"])
-    $cfg["CT_PASSWORD"]     = Ask "Senha root do CT" ($cfg["CT_PASSWORD"])
-    $cfg["RECREATE_CT"]     = Ask "Recriar CT se existir? (0/1)" (Get-Cfg $cfg "RECREATE_CT" "0")
+    $cfg["MEMORY"]          = Ask "Memory MB (empty = the game's recommendation)" ($cfg["MEMORY"])
+    $cfg["CORES"]           = Ask "Cores (empty = the game's recommendation)" ($cfg["CORES"])
+    $cfg["ROOTFS_SIZE_GB"]  = Ask "Disk GB (empty = the game's recommendation)" ($cfg["ROOTFS_SIZE_GB"])
+    $cfg["CT_PASSWORD"]     = Ask "CT root password" ($cfg["CT_PASSWORD"])
+    $cfg["RECREATE_CT"]     = Ask "Recreate the CT if it exists? (0/1)" (Get-Cfg $cfg "RECREATE_CT" "0")
     if (-not $SteamAnon) {
-        Write-Host "`n$GameKey nao aceita login anonimo: informe uma conta Steam que POSSUA o jogo." -ForegroundColor Yellow
-        $cfg["STEAM_USER"]       = Ask       "Conta Steam (login)" (Get-Cfg $cfg "STEAM_USER")
-        $cfg["STEAM_PASS"]       = AskSecret "Senha da conta Steam" (Get-Cfg $cfg "STEAM_PASS")
-        $cfg["STEAM_GUARD_CODE"] = Ask       "Codigo do Steam Guard (vazio se a conta nao usa)" (Get-Cfg $cfg "STEAM_GUARD_CODE")
+        Write-Host "`n$GameKey does not accept an anonymous login: enter a Steam account that OWNS the game." -ForegroundColor Yellow
+        $cfg["STEAM_USER"]       = Ask       "Steam account (login)" (Get-Cfg $cfg "STEAM_USER")
+        $cfg["STEAM_PASS"]       = AskSecret "Steam account password" (Get-Cfg $cfg "STEAM_PASS")
+        $cfg["STEAM_GUARD_CODE"] = Ask       "Steam Guard code (empty if the account does not use it)" (Get-Cfg $cfg "STEAM_GUARD_CODE")
     }
 } else {
     if (-not (Test-Path $EnvFile)) {
-        throw "Modo automatico requer o arquivo .env ($EnvFile). Copie o .env.example ou use -Interactive."
+        throw "Automatic mode requires the .env file ($EnvFile). Copy .env.example or use -Interactive."
     }
 }
 
-if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido (parametro, .env ou modo interativo)." }
+if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST is not set (parameter, .env or interactive mode)." }
 
 # Authentication is decided ONCE, before any ssh/scp: by key if it is already
 # authorized, otherwise by the .env password via askpass. Without that every ssh of the deploy
@@ -392,28 +392,28 @@ if ($InstallKey) {
     if ($UsandoSenha) {
         Install-KeyOnProxmox $ProxmoxHost
     } else {
-        Write-Host "Chave SSH ja autorizada no Proxmox - nada a instalar." -ForegroundColor DarkGray
+        Write-Host "SSH key already authorized on the Proxmox - nothing to install." -ForegroundColor DarkGray
     }
 }
 
 foreach ($required in @("CTID", "STORAGE", "BRIDGE", "IP_CIDR")) {
     if (-not $cfg.ContainsKey($required) -or $cfg[$required] -eq "") {
-        throw "Valor obrigatorio ausente: $required (preencha o .env ou use -Interactive)"
+        throw "Required value missing: $required (fill in the .env or use -Interactive)"
     }
 }
 if ($cfg["IP_CIDR"] -ne "dhcp" -and (Get-Cfg $cfg "GATEWAY") -eq "") {
-    throw "GATEWAY obrigatorio quando IP_CIDR nao e dhcp"
+    throw "GATEWAY is required when IP_CIDR is not dhcp"
 }
 
 if (-not $SteamAnon) {
     foreach ($k in @("STEAM_USER","STEAM_PASS")) {
         if ((Get-Cfg $cfg $k) -eq "") {
-            throw ("O servidor de $GameKey nao esta disponivel por login anonimo na Steam. " +
-                   "Preencha STEAM_USER e STEAM_PASS no .env (conta que POSSUA o jogo) ou use -Interactive. Faltando: $k")
+            throw ("The $GameKey server is not available through an anonymous Steam login. " +
+                   "Fill in STEAM_USER and STEAM_PASS in .env (an account that OWNS the game) or use -Interactive. Missing: $k")
         }
     }
     if ((Get-Cfg $cfg "STEAM_GUARD_CODE") -eq "") {
-        Write-Host "Sem STEAM_GUARD_CODE. Se a conta usa Steam Guard, o login vai falhar - repita com -SteamGuardCode <codigo>." -ForegroundColor Yellow
+        Write-Host "No STEAM_GUARD_CODE. If the account uses Steam Guard, the login will fail - repeat with -SteamGuardCode <code>." -ForegroundColor Yellow
     }
 }
 
@@ -422,36 +422,36 @@ if (-not $SteamAnon) {
 # container, it reconfigures the existing one and swaps the game running inside it.
 $ctidOwners = Get-ScopedOwners $cfg "CTID" $GameSuffix
 if ($ctidOwners.ContainsKey($cfg["CTID"])) {
-    throw ("CTID $($cfg['CTID']) ja pertence ao jogo $($ctidOwners[$cfg['CTID']]) (CTID_$($ctidOwners[$cfg['CTID']]) no .env). " +
-           "Defina CTID_${GameSuffix} com um id livre.")
+    throw ("CTID $($cfg['CTID']) already belongs to game $($ctidOwners[$cfg['CTID']]) (CTID_$($ctidOwners[$cfg['CTID']]) in .env). " +
+           "Set CTID_${GameSuffix} to a free id.")
 }
 if ((Get-Cfg $cfg "ADMIN_CTID") -eq $cfg["CTID"]) {
-    throw "CTID $($cfg['CTID']) e o do painel (ADMIN_CTID). Defina CTID_${GameSuffix} com um id livre."
+    throw "CTID $($cfg['CTID']) is the panel's (ADMIN_CTID). Set CTID_${GameSuffix} to a free id."
 }
 
 if ($cfg["IP_CIDR"] -ne "dhcp") {
     $myIp = Get-IpOnly $cfg["IP_CIDR"]
     foreach ($pair in (Get-ScopedOwners $cfg "IP_CIDR" $GameSuffix).GetEnumerator()) {
         if ((Get-IpOnly $pair.Key) -eq $myIp) {
-            throw ("IP $myIp ja e do jogo $($pair.Value) (IP_CIDR_$($pair.Value) no .env). " +
-                   "Defina IP_CIDR_${GameSuffix} com um endereco livre.")
+            throw ("IP $myIp already belongs to game $($pair.Value) (IP_CIDR_$($pair.Value) in .env). " +
+                   "Set IP_CIDR_${GameSuffix} to a free address.")
         }
     }
     $adminIp = Get-Cfg $cfg "ADMIN_IP_CIDR"
     if ($adminIp -ne "" -and $adminIp -ne "dhcp" -and (Get-IpOnly $adminIp) -eq $myIp) {
-        throw "IP $myIp e o do painel (ADMIN_IP_CIDR). Defina IP_CIDR_${GameSuffix} com um endereco livre."
+        throw "IP $myIp is the panel's (ADMIN_IP_CIDR). Set IP_CIDR_${GameSuffix} to a free address."
     }
 }
 
-Write-Host ("Alvo: CT $($cfg['CTID']) ($GameKey) em $($cfg['IP_CIDR'])") -ForegroundColor Cyan
+Write-Host ("Target: CT $($cfg['CTID']) ($GameKey) at $($cfg['IP_CIDR'])") -ForegroundColor Cyan
 
 # ----- Panel: where it runs and what its public key is -----
 # Fixed paths of the panel CT (provision-admin-lxc.sh). Registration runs as the
 # panel user, not as root: sqlite creates the -wal/-shm files next to the
 # database, and if root created them the panel (which runs as gamepanel) would lose write access.
 # The package lives under the `current` symlink (one release per version; see install-release.sh).
-# The `test -f` below fails SILENTLY when this path goes stale: the deploy only says "painel
-# nao encontrado" and goes on WITHOUT registering the server. It happened twice already, first
+# The `test -f` below fails SILENTLY when this path goes stale: the deploy only says "Panel
+# not found" and goes on WITHOUT registering the server. It happened twice already, first
 # when the code moved to src/ and again when the release became a folder per version.
 # Running the file directly works because app.py puts the parent folder on sys.path.
 $PanelApp = "/opt/gamepanel/current/gamepanel/app.py"
@@ -484,10 +484,10 @@ if ((Get-Cfg $cfg "PANEL_PUBKEY") -eq "") {
     }
     if ($readBack -ne "") {
         $cfg["PANEL_PUBKEY"] = $readBack
-        Write-Host "Chave publica do painel lida do proprio painel (PANEL_PUBKEY vazio no .env)." -ForegroundColor DarkGray
+        Write-Host "Panel public key read from the panel itself (PANEL_PUBKEY empty in .env)." -ForegroundColor DarkGray
     } else {
-        Write-Host ("Sem PANEL_PUBKEY e sem painel acessivel: o CT nao vai aceitar o painel por SSH. " +
-                    "Suba o painel (.\deploy-admin.ps1) ou preencha PANEL_PUBKEY no .env.") -ForegroundColor Yellow
+        Write-Host ("No PANEL_PUBKEY and no reachable panel: the CT will not accept the panel over SSH. " +
+                    "Deploy the panel (.\deploy\admin\deploy-admin.ps1) or fill in PANEL_PUBKEY in .env.") -ForegroundColor Yellow
     }
 }
 
@@ -530,28 +530,28 @@ foreach ($key in @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMP
 # CT firewall: only the panel opens SSH on this server (the broker does not touch CTs made here).
 # Without the panel address the firewall is NOT applied - applying it would lock the panel out.
 if ($PanelHost -ne "") { $deployLines += "FW_MGMT_SOURCES=`"$PanelHost`"" }
-else { Write-Host "ADMIN_HOST/ADMIN_IP_CIDR vazios: o CT sobe SEM firewall interno." -ForegroundColor Yellow }
+else { Write-Host "ADMIN_HOST/ADMIN_IP_CIDR empty: the CT comes up WITHOUT the internal firewall." -ForegroundColor Yellow }
 if ((Get-Cfg $cfg "CT_FIREWALL") -eq "0") { $deployLines += "CT_FIREWALL=`"0`"" }
 if ($UnitSandbox) { $deployLines += "GAME_UNIT_SANDBOX=`"1`"" }
 Write-LfFile (Join-Path $BundleDir "deploy.env") (($deployLines -join "`n") + "`n")
 
 # ----- Send and run on Proxmox -----
-Write-Host "`nEnviando bundle para root@$ProxmoxHost..." -ForegroundColor Cyan
+Write-Host "`nSending the bundle to root@$ProxmoxHost..." -ForegroundColor Cyan
 Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
-if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to prepare $RemoteBundleDir on root@$ProxmoxHost" }
 
 # scp instead of 'tar -czf - | ssh tar -xzf -': PowerShell converts to text whatever
 # goes through a pipe between two native executables, which corrupts the tar.gz stream.
 $bundleFiles = @(Get-ChildItem -Path $BundleDir -File | ForEach-Object { $_.FullName })
 Invoke-Scp $bundleFiles "root@${ProxmoxHost}:$RemoteBundleDir/"
-if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para root@$ProxmoxHost" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to send the bundle files to root@$ProxmoxHost" }
 
 # deploy.env carries the CT password and, in games like dayz, the Steam account password
 Invoke-Ssh $ProxmoxHost "chmod 700 '$RemoteBundleDir' && chmod 600 '$RemoteBundleDir/deploy.env'" | Out-Null
 
-Write-Host "Executando provisionamento no Proxmox (o download do jogo pode demorar)...`n" -ForegroundColor Cyan
+Write-Host "Running the provisioning on the Proxmox (the game download may take a while)...`n" -ForegroundColor Cyan
 Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./$ProvisionScript"
-if ($LASTEXITCODE -ne 0) { throw "Provisionamento falhou no host Proxmox (veja a saida acima)" }
+if ($LASTEXITCODE -ne 0) { throw "Provisioning failed on the Proxmox host (see the output above)" }
 
 # The local bundle has a copy of deploy.env (passwords) - do not leave it lying in %TEMP%
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
@@ -579,7 +579,7 @@ $CtIp = ""
 if (-not $NoRegister) {
     $CtIp = Get-CtIp $cfg["IP_CIDR"] $cfg["CTID"]
     if ($CtIp -eq "") {
-        Write-Host "Nao consegui descobrir o IP do CT $($cfg['CTID']) - cadastre o servidor pela tela Adicionar." -ForegroundColor Yellow
+        Write-Host "Could not find out the IP of CT $($cfg['CTID']) - register the server through the Add screen." -ForegroundColor Yellow
     } else {
         $cmdArgs = @(
             "--register-server", $Display,
@@ -604,7 +604,7 @@ if (-not $NoRegister) {
             "--join-re", (Get-Cfg $game "JOIN_RE"),
             "--leave-re", (Get-Cfg $game "LEAVE_RE"),
             "--log-path", (Get-Cfg $game "LOG_PATH"),
-            "--notes", "CT $($cfg['CTID']) no Proxmox $ProxmoxHost (deploy-game.ps1)."
+            "--notes", "CT $($cfg['CTID']) on Proxmox $ProxmoxHost (deploy-game.ps1)."
         )
         $parts = @("runuser", "-u", $PanelUser, "--", "python3", $PanelApp)
         foreach ($value in $cmdArgs) { $parts += (ConvertTo-ShQuoted $value) }
@@ -615,24 +615,24 @@ if (-not $NoRegister) {
         if ($AdminCtid -ne "") {
             Invoke-SshQuery $ProxmoxHost "pct exec $AdminCtid -- test -f $PanelApp" | Out-Null
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "`nCadastrando $Display no painel (CT $AdminCtid)..." -ForegroundColor Cyan
+                Write-Host "`nRegistering $Display in the panel (CT $AdminCtid)..." -ForegroundColor Cyan
                 Invoke-SshLive $ProxmoxHost "pct exec $AdminCtid -- $registerCmd"
                 $registered = ($LASTEXITCODE -eq 0)
             } else {
-                Write-Host "Painel nao encontrado no CT $AdminCtid ($PanelApp)." -ForegroundColor DarkGray
+                Write-Host "Panel not found in CT $AdminCtid ($PanelApp)." -ForegroundColor DarkGray
             }
         }
         # 2) Panel outside this Proxmox (ADMIN_HOST/ADMIN_IP_CIDR), talking to it directly.
         if (-not $registered -and $PanelHost -ne "") {
             Invoke-SshQuery $PanelHost "test -f $PanelApp" -Batch | Out-Null
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "`nCadastrando $Display no painel ($PanelHost)..." -ForegroundColor Cyan
+                Write-Host "`nRegistering $Display in the panel ($PanelHost)..." -ForegroundColor Cyan
                 Invoke-SshLive $PanelHost $registerCmd
                 $registered = ($LASTEXITCODE -eq 0)
             }
         }
         if (-not $registered) {
-            Write-Host "Nao consegui cadastrar no painel - use a tela Adicionar (host $CtIp, servico $GameKey.service)." -ForegroundColor Yellow
+            Write-Host "Could not register in the panel - use the Add screen (host $CtIp, service $GameKey.service)." -ForegroundColor Yellow
         }
     }
 }
@@ -641,10 +641,10 @@ if (-not $NoRegister) {
 # linger for the next command in this same PowerShell window.
 Disable-PasswordAuth
 
-Write-Host "Deploy finalizado." -ForegroundColor Green
+Write-Host "Deploy finished." -ForegroundColor Green
 if ($registered) {
-    Write-Host "Servidor cadastrado no painel: $Display ($CtIp) - a tela Config ja abre o arquivo do jogo." -ForegroundColor Green
+    Write-Host "Server registered in the panel: $Display ($CtIp) - the Config screen already opens the game's file." -ForegroundColor Green
 }
 if ($UsandoSenha -and -not $InstallKey) {
-    Write-Host "Dica: rode uma vez com -InstallKey para autorizar sua chave e parar de usar senha." -ForegroundColor DarkGray
+    Write-Host "Tip: run once with -InstallKey to authorize your key and stop using a password." -ForegroundColor DarkGray
 }

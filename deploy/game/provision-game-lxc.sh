@@ -26,17 +26,17 @@ on_error() {
   local cmd="$2"
   # The failed command may be the SteamCMD line with the Steam account password
   [[ -n "${STEAM_PASS:-}" ]] && cmd="${cmd//${STEAM_PASS}/******}"
-  die "Provisionamento falhou na linha ${1} executando: ${cmd}"
+  die "Provisioning failed at line ${1} running: ${cmd}"
 }
 trap 'on_error "${LINENO}" "${BASH_COMMAND}"' ERR
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "Comando obrigatorio ausente: $1"
+  command -v "$1" >/dev/null 2>&1 || die "Required command missing: $1"
 }
 
 load_env_file() {
   local env_file="$1"
-  [[ -f "$env_file" ]] || die "Arquivo de ambiente nao encontrado: $env_file"
+  [[ -f "$env_file" ]] || die "Environment file not found: $env_file"
   set -a
   # shellcheck disable=SC1090
   source "$env_file"
@@ -79,7 +79,7 @@ UNIT_SANDBOX_SCRIPT="${SCRIPT_DIR}/ct-sandbox-unit.sh"
 [[ -f "$UNIT_SANDBOX_SCRIPT" ]] || UNIT_SANDBOX_SCRIPT="${SCRIPT_DIR}/../../lib/ct-sandbox-unit.sh"
 LIB_FASES="${SCRIPT_DIR}/ct-phases.sh"
 [[ -f "$LIB_FASES" ]] || LIB_FASES="${SCRIPT_DIR}/lib/ct-phases.sh"
-[[ -f "$LIB_FASES" ]] || die "ct-phases.sh nao encontrado ao lado do script nem em lib/ (o bundle do deploy precisa leva-lo)"
+[[ -f "$LIB_FASES" ]] || die "ct-phases.sh not found next to the script nor in lib/ (the deploy bundle must carry it)"
 # shellcheck source=lib/ct-phases.sh
 source "$LIB_FASES"
 
@@ -87,7 +87,7 @@ resolve_variables() {
   resolve_game_variables
 
   CTID="${CTID:-}"
-  [[ -n "$CTID" ]] || die "CTID nao definido (preencha o .env ou use -Interactive)"
+  [[ -n "$CTID" ]] || die "CTID is not set (fill in the .env or use -Interactive)"
   CT_HOSTNAME="${HOSTNAME_OVERRIDE:-${GAME_KEY}}"
   STORAGE="${STORAGE:-local-zfs}"
   TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
@@ -109,7 +109,7 @@ resolve_variables() {
   if [[ "$IP_CIDR" == "dhcp" ]]; then
     NET0="name=eth0,bridge=${BRIDGE},ip=dhcp,type=veth"
   else
-    [[ -n "$GATEWAY" ]] || die "GATEWAY obrigatorio quando IP_CIDR nao e dhcp"
+    [[ -n "$GATEWAY" ]] || die "GATEWAY is required when IP_CIDR is not dhcp"
     NET0="name=eth0,bridge=${BRIDGE},ip=${IP_CIDR},gw=${GATEWAY},type=veth"
   fi
 }
@@ -122,16 +122,16 @@ validate_host_requirements() {
 
 ensure_debian_template() {
   if pct status "$CTID" >/dev/null 2>&1 && [[ "$RECREATE_CT" != "1" ]]; then
-    msg "CT $CTID ja existe, pulando download de template"
+    msg "CT $CTID already exists, skipping the template download"
     return
   fi
 
-  msg "Atualizando lista de templates do Proxmox"
+  msg "Updating the Proxmox template list"
   pveam update >/dev/null
   TEMPLATE="$(pveam available --section system | awk -v pat="$TEMPLATE_PATTERN" '$2 ~ pat {print $2}' | tail -n1)"
-  [[ -n "$TEMPLATE" ]] || die "Template Debian nao encontrado para o padrao $TEMPLATE_PATTERN"
+  [[ -n "$TEMPLATE" ]] || die "Debian template not found for the pattern $TEMPLATE_PATTERN"
   if ! pveam list "$TEMPLATE_STORAGE" | awk '{print $2}' | grep -qx "$TEMPLATE"; then
-    msg "Baixando template $TEMPLATE"
+    msg "Downloading template $TEMPLATE"
     pveam download "$TEMPLATE_STORAGE" "$TEMPLATE"
   fi
 }
@@ -143,14 +143,14 @@ ensure_container() {
   fi
 
   if [[ "$ct_exists" -eq 1 && "$RECREATE_CT" == "1" ]]; then
-    msg "Recriando CT $CTID (RECREATE_CT=1)"
+    msg "Recreating CT $CTID (RECREATE_CT=1)"
     pct stop "$CTID" >/dev/null 2>&1 || true
     pct destroy "$CTID" --destroy-unreferenced-disks 1
     ct_exists=0
   fi
 
   if [[ "$ct_exists" -eq 0 ]]; then
-    msg "Criando CT $CTID ($CT_HOSTNAME) - ${CORES} cores, ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB disco"
+    msg "Creating CT $CTID ($CT_HOSTNAME) - ${CORES} cores, ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB disk"
     pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" \
       --arch amd64 \
       --hostname "$CT_HOSTNAME" \
@@ -167,7 +167,7 @@ ensure_container() {
       --timezone "$TZ" \
       --tags "game;steam;${GAME_KEY}"
   else
-    msg "Atualizando configuracao do CT $CTID"
+    msg "Updating the configuration of CT $CTID"
     pct set "$CTID" \
       --hostname "$CT_HOSTNAME" \
       --cores "$CORES" \
@@ -182,14 +182,14 @@ ensure_container() {
 
 start_container() {
   if ! pct status "$CTID" 2>/dev/null | grep -q running; then
-    msg "Iniciando CT $CTID"
+    msg "Starting CT $CTID"
     pct start "$CTID"
   fi
 
   local tries=0
   until pct exec "$CTID" -- true >/dev/null 2>&1; do
     tries=$((tries + 1))
-    [[ "$tries" -lt 30 ]] || die "CT $CTID nao ficou pronto a tempo"
+    [[ "$tries" -lt 30 ]] || die "CT $CTID was not ready in time"
     sleep 2
   done
 }
@@ -198,7 +198,7 @@ start_container() {
 get_ct_ip() {
   if [[ "$IP_CIDR" == "dhcp" ]]; then
     CT_IP="$(run_ct "hostname -I | awk '{print \$1}'" | tr -d '\r' | tr -d ' \n' || true)"
-    [[ -n "$CT_IP" ]] || CT_IP="<verifique com: pct exec $CTID -- hostname -I>"
+    [[ -n "$CT_IP" ]] || CT_IP="<check with: pct exec $CTID -- hostname -I>"
   else
     CT_IP="${IP_CIDR%%/*}"
   fi
@@ -209,14 +209,14 @@ print_summary() {
   cat <<EOF
 
 ========================================================================
- Deploy concluido: ${GAME_DISPLAY_NAME}
+ Deploy finished: ${GAME_DISPLAY_NAME}
 ========================================================================
 
 Container : CT ${CTID} (${CT_HOSTNAME}) - ${CORES} cores, ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB
-IP do CT  : ${CT_IP}
-Servico   : ${SERVICE_NAME} (start automatico no boot)
+CT IP     : ${CT_IP}
+Service   : ${SERVICE_NAME} (starts automatically on boot)
 
->>> PORTAS PARA REDIRECIONAR NO ROTEADOR (destino ${CT_IP}):
+>>> PORTS TO FORWARD ON THE ROUTER (destination ${CT_IP}):
 EOF
   if [[ -n "$GAME_PORTS" ]]; then
     local entry
@@ -224,28 +224,28 @@ EOF
       printf '    - %s -> %s\n' "$entry" "$CT_IP"
     done
   else
-    echo "    - (portas nao definidas para este jogo; verifique a documentacao do servidor)"
+    echo "    - (no ports defined for this game; check the server's documentation)"
   fi
-  [[ -n "${PORT_NOTES:-}" ]] && printf '\n    Nota: %s\n' "$PORT_NOTES"
+  [[ -n "${PORT_NOTES:-}" ]] && printf '\n    Note: %s\n' "$PORT_NOTES"
 
   cat <<EOF
 
-Arquivos do jogo : ${GAME_DIR}
+Game files       : ${GAME_DIR}
 EOF
-  [[ -n "${CONFIG_HINT:-}" ]] && echo "Configuracao     : ${CONFIG_HINT}"
+  [[ -n "${CONFIG_HINT:-}" ]] && echo "Configuration    : ${CONFIG_HINT}"
   [[ -n "${SAVE_HINT:-}" ]] && echo "Saves            : ${SAVE_HINT}"
 
   cat <<EOF
 
-Atalhos (funcionam logado no CT via 'pct enter ${CTID}' ou pelo host com 'pct exec ${CTID} -- <atalho>'):
-  game-restart      # reinicia o servidor
-  game-stop         # para o servidor
-  game-start        # sobe o servidor
-  game-status       # status do servico
-  game-logs         # log ao vivo (aceita args do journalctl, ex.: game-logs -n 50)
-  update-game       # atualiza o jogo via SteamCMD (para/atualiza/reinicia)
+Shortcuts (they work logged into the CT via 'pct enter ${CTID}' or from the host with 'pct exec ${CTID} -- <shortcut>'):
+  game-restart      # restarts the server
+  game-stop         # stops the server
+  game-start        # starts the server
+  game-status       # service status
+  game-logs         # live log (accepts journalctl args, e.g. game-logs -n 50)
+  update-game       # updates the game via SteamCMD (stop/update/restart)
 
-Exemplo a partir do host Proxmox:
+Example from the Proxmox host:
   pct exec ${CTID} -- game-restart
 
 EOF
@@ -256,9 +256,9 @@ EOF
 # supported" - or worse, the CT comes up without rules after a host reboot.
 load_nf_tables_on_host() {
   [[ "${CT_FIREWALL:-1}" == "0" || -z "${FW_MGMT_SOURCES:-}" ]] && return 0
-  modprobe nf_tables 2>/dev/null || warn "nao consegui carregar o modulo nf_tables no host"
+  modprobe nf_tables 2>/dev/null || warn "could not load the nf_tables module on the host"
   { mkdir -p /etc/modules-load.d && echo nf_tables > /etc/modules-load.d/ct-firewall.conf; } \
-    || warn "nao consegui deixar o nf_tables carregando no boot do host"
+    || warn "could not make nf_tables load at the host's boot"
 }
 
 main() {

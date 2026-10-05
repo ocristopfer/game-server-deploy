@@ -193,7 +193,7 @@ echo "== segredos no log do deploy =="
 for s in "$T1" 'segredo-do-proxmox' 'chave+de=teste' 'a"b'; do
   grep -qF -- "$s" /tmp/deploy1.log && fail "segredo '${s:0:8}...' apareceu no log do deploy" || ok "segredo '${s:0:8}...' fora do log"
 done
-grep -q "REGRAS DE FIREWALL" /tmp/deploy1.log && ok "resumo traz as regras de firewall" || fail "resumo sem firewall"
+grep -q "FIREWALL RULES" /tmp/deploy1.log && ok "resumo traz as regras de firewall" || fail "resumo sem firewall"
 grep -q "1. 10.20.1.19 -> 10.20.1.18:8443/tcp" /tmp/deploy1.log && ok "regra 1 do resumo traz o IP do painel" || fail "resumo sem o IP do painel"
 grep -q "3. 10.20.1.18 -> 10.20.0.1:8443 " /tmp/deploy1.log && ok "resumo sem barra sobrando nas URLs" || fail "resumo com URL suja: $(grep '3. 10.20.1.18' /tmp/deploy1.log)"
 [ ! -f "$work/broker.secrets.env" ] && ok "copia dos segredos apagada do bundle" || fail "segredos ficaram no bundle"
@@ -221,14 +221,14 @@ grep -q "^GAMEPANEL_BROKER_CERT_SHA256=$C4\$" /etc/gamepanel/panel.env && ok "pa
 echo "== falhas claras =="
 cp "$work/secrets.modelo" "$work/broker.secrets.env"; sed -i '/^PROXMOX_TOKEN=/d' "$work/broker.secrets.env"
 ( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./provision-broker-lxc.sh ) > /tmp/deploy5.log 2>&1
-[ $? -ne 0 ] && grep -q "PROXMOX_TOKEN nao definido" /tmp/deploy5.log && ok "falta de PROXMOX_TOKEN derruba o deploy nomeando a variavel" || fail "deploy nao reclamou do PROXMOX_TOKEN"
+[ $? -ne 0 ] && grep -q "PROXMOX_TOKEN is not set" /tmp/deploy5.log && ok "falta de PROXMOX_TOKEN derruba o deploy nomeando a variavel" || fail "deploy nao reclamou do PROXMOX_TOKEN"
 # Fingerprint not given + server unreachable from the host (what really happened with
 # OPNsense): it must fail LOUDLY, saying what to do. It used to exit silently (set -e + pipefail).
 cp "$work/secrets.modelo" "$work/broker.secrets.env"
 sed -i "/^OPNSENSE_CERT_SHA256=/d;s#^OPNSENSE_URL=.*#OPNSENSE_URL='https://127.0.0.1:1/'#" "$work/broker.secrets.env"
 ( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./provision-broker-lxc.sh ) > /tmp/deploy7.log 2>&1
 rc=$?
-[ $rc -ne 0 ] && grep -q "nao conseguiu ler o certificado de https://127.0.0.1:1/" /tmp/deploy7.log && grep -q "OPNSENSE_CERT_SHA256 no broker.secrets.env" /tmp/deploy7.log \
+[ $rc -ne 0 ] && grep -q "could not read the certificate of https://127.0.0.1:1/" /tmp/deploy7.log && grep -q "OPNSENSE_CERT_SHA256 in broker.secrets.env" /tmp/deploy7.log \
   && ok "servidor inalcancavel: o deploy falha DIZENDO o que fazer (nao sai calado)" || fail "deploy saiu sem explicar (rc=$rc): $(tail -3 /tmp/deploy7.log | tr '\n' ' ')"
 # Any unexpected failure shows the line and the command (trap ERR), with no secret value.
 cp "$work/secrets.modelo" "$work/broker.secrets.env"
@@ -240,7 +240,7 @@ grep -q "$target_line" "$work/provision-broker-lxc.sh"   || fail "a linha que es
 sed "s#${target_line}#  false#" "$work/provision-broker-lxc.sh" > "$work/quebrado.sh"
 ( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./quebrado.sh ) > /tmp/deploy8.log 2>&1
 rc=$?
-if [ $rc -ne 0 ] && grep -q "falhou na linha .* executando: false" /tmp/deploy8.log && ! grep -qF "segredo-do-proxmox" /tmp/deploy8.log; then
+if [ $rc -ne 0 ] && grep -q "failed at line .* running: false" /tmp/deploy8.log && ! grep -qF "segredo-do-proxmox" /tmp/deploy8.log; then
   ok "falha inesperada mostra linha e comando (sem segredo)"
 else
   fail "trap ERR nao explicou a falha (rc=$rc): $(tail -3 /tmp/deploy8.log | tr '
@@ -252,7 +252,7 @@ cp "$work/secrets.modelo" "$work/broker.secrets.env"
 sed -i "s#^BROKER_IP_CIDR=.*#BROKER_IP_CIDR='dhcp'#" "$work/broker.conf.env"
 ( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./provision-broker-lxc.sh ) > /tmp/deploy6.log 2>&1
 rc=$?
-[ $rc -ne 0 ] && grep -q "BROKER_IP_CIDR precisa ser um IP fixo" /tmp/deploy6.log && ok "IP dhcp e recusado, com a explicacao" || fail "IP dhcp aceito ou recusado sem explicar (rc=$rc)"
+[ $rc -ne 0 ] && grep -q "BROKER_IP_CIDR must be a fixed IP" /tmp/deploy6.log && ok "IP dhcp e recusado, com a explicacao" || fail "IP dhcp aceito ou recusado sem explicar (rc=$rc)"
 
 echo
 echo "falhas: $failures"

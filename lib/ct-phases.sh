@@ -20,8 +20,8 @@
 # Reads what game.env defines and computes what the phases derive from it. Only GAME decisions:
 # no CTID, network or storage (that belongs to the host, see resolve_variables in the provision).
 resolve_game_variables() {
-  [[ -n "${GAME_KEY:-}" ]] || die "GAME_KEY nao definido no game.env"
-  [[ -n "${STEAM_APP_ID:-}" ]] || die "STEAM_APP_ID nao definido no game.env"
+  [[ -n "${GAME_KEY:-}" ]] || die "GAME_KEY is not set in game.env"
+  [[ -n "${STEAM_APP_ID:-}" ]] || die "STEAM_APP_ID is not set in game.env"
 
   AUTO_UPDATE="${AUTO_UPDATE:-1}"
   UPDATE_SCHEDULE="${UPDATE_SCHEDULE:-*-*-* 06:00:00}"
@@ -59,7 +59,7 @@ resolve_game_variables() {
   WINDOWS_RUNTIME="${WINDOWS_RUNTIME:-}"
   case "$WINDOWS_RUNTIME" in
     ""|wine|proton) ;;
-    *) die "WINDOWS_RUNTIME invalido: '${WINDOWS_RUNTIME}' (use wine, proton ou deixe vazio)" ;;
+    *) die "invalid WINDOWS_RUNTIME: '${WINDOWS_RUNTIME}' (use wine, proton or leave it empty)" ;;
   esac
   # PINNED version on purpose: 'latest' would make the server switch runtime on its own
   # in any redeploy, and a Proton regression is hard to diagnose afterwards.
@@ -72,7 +72,7 @@ resolve_game_variables() {
   # The value is written between single quotes in /etc/game-runtime.env; a single
   # quote here would break the file and only show up as an error when the game starts.
   case "$WINE_DLL_OVERRIDES" in
-    *\'*) die "WINE_DLL_OVERRIDES nao pode conter aspa simples (')." ;;
+    *\'*) die "WINE_DLL_OVERRIDES cannot contain a single quote (')." ;;
   esac
   # 1 when the .exe insists on creating a window even though it is a server.
   WINDOWS_RUNTIME_XVFB="${WINDOWS_RUNTIME_XVFB:-0}"
@@ -100,11 +100,11 @@ resolve_game_variables() {
     STEAMCMD_TIMEOUT_UPDATE=""
     STEAMCMD_TIMEOUT_INFO=""
   else
-    [[ -n "$STEAM_USER" ]] || die "${GAME_DISPLAY_NAME} nao aceita login anonimo na Steam. Preencha STEAM_USER e STEAM_PASS no .env com uma conta que POSSUA o jogo."
-    [[ -n "$STEAM_PASS" ]] || die "STEAM_PASS vazio (necessario para o primeiro login de ${STEAM_USER} na Steam)."
+    [[ -n "$STEAM_USER" ]] || die "${GAME_DISPLAY_NAME} does not accept an anonymous Steam login. Fill in STEAM_USER and STEAM_PASS in .env with an account that OWNS the game."
+    [[ -n "$STEAM_PASS" ]] || die "STEAM_PASS is empty (needed for the first Steam login of ${STEAM_USER})."
     # The values go into a `su - steam -c '...'`; a single quote would break the line
     case "${STEAM_USER}${STEAM_PASS}${STEAM_GUARD_CODE}" in
-      *\'*) die "STEAM_USER/STEAM_PASS/STEAM_GUARD_CODE nao podem conter aspa simples (')." ;;
+      *\'*) die "STEAM_USER/STEAM_PASS/STEAM_GUARD_CODE cannot contain a single quote (')." ;;
     esac
     STEAMCMD_GUARD=""
     [[ -n "$STEAM_GUARD_CODE" ]] && STEAMCMD_GUARD=" ${STEAM_GUARD_CODE}"
@@ -120,7 +120,7 @@ resolve_game_variables() {
 }
 
 install_base_packages_in_ct() {
-  msg "Instalando pacotes base no CT (dependencias do SteamCMD)"
+  msg "Installing base packages in the CT (SteamCMD dependencies)"
   run_ct "
     export DEBIAN_FRONTEND=noninteractive
     missing=''
@@ -137,7 +137,7 @@ install_base_packages_in_ct() {
       apt-get update
       apt-get install -y \$missing
     else
-      echo 'Pacotes base ja instalados'
+      echo 'Base packages already installed'
     fi
   "
 }
@@ -153,10 +153,10 @@ setup_panel_access() {
   # "gamepanel may act as steam" points at that user.
   [[ -n "${PANEL_PUBKEY:-}" ]] || return 0
   case "$PANEL_PUBKEY" in
-    *\'*) die "PANEL_PUBKEY nao pode conter aspa simples (')." ;;
+    *\'*) die "PANEL_PUBKEY cannot contain a single quote (')." ;;
   esac
-  [[ -f "${PANEL_ACCESS_SCRIPT:-}" ]] || die "ct-panel-access.sh nao encontrado (${PANEL_ACCESS_SCRIPT:-vazio})"
-  msg "Habilitando acesso do painel administrativo via SSH (usuario gamepanel)"
+  [[ -f "${PANEL_ACCESS_SCRIPT:-}" ]] || die "ct-panel-access.sh not found (${PANEL_ACCESS_SCRIPT:-empty})"
+  msg "Enabling the admin panel's SSH access (gamepanel user)"
   run_ct "
     set -e
     if ! command -v sshd >/dev/null 2>&1; then
@@ -167,7 +167,7 @@ setup_panel_access() {
   "
   push_file_to_ct "$PANEL_ACCESS_SCRIPT" "$PANEL_ACCESS_IN_CT" 0755
   run_ct "bash ${PANEL_ACCESS_IN_CT} install '${SERVICE_NAME}' '${PANEL_PUBKEY}'" \
-    || die "Falha preparando o acesso do painel (usuario gamepanel, sudo e helpers)"
+    || die "Failed to prepare the panel's access (gamepanel user, sudo and helpers)"
 }
 
 # Refuses root over SSH: from here on the panel only gets in as gamepanel. LAST phase of the host
@@ -178,20 +178,20 @@ setup_panel_access() {
 # locked and the deploy fails here, with root still open for whoever fixes it.
 lock_root_login() {
   [[ -n "${PANEL_PUBKEY:-}" ]] || return 0
-  msg "Trancando o login do root por SSH (o painel entra como gamepanel)"
-  run_ct "bash ${PANEL_ACCESS_IN_CT} lock" || die "Nao tranquei o root: o acesso pelo gamepanel nao passou na verificacao"
+  msg "Locking root login over SSH (the panel logs in as gamepanel)"
+  run_ct "bash ${PANEL_ACCESS_IN_CT} lock" || die "Root NOT locked: the gamepanel access did not pass the verification"
 }
 
 ensure_steam_user() {
-  msg "Garantindo usuario steam no CT"
+  msg "Ensuring the steam user exists in the CT"
   run_ct "id -u steam >/dev/null 2>&1 || useradd -m -s /bin/bash steam"
 }
 
 install_steamcmd_in_ct() {
-  msg "Instalando SteamCMD no CT"
+  msg "Installing SteamCMD in the CT"
   run_ct "
     if [[ -x ${STEAMCMD_DIR}/steamcmd.sh ]]; then
-      echo 'SteamCMD ja instalado'
+      echo 'SteamCMD already installed'
       exit 0
     fi
     install -d ${STEAMCMD_DIR}
@@ -205,7 +205,7 @@ install_steamcmd_in_ct() {
 # the runtime being ready and only take care of what is specific to it.
 setup_windows_runtime() {
   [[ -n "$WINDOWS_RUNTIME" ]] || return 0
-  msg "Preparando runtime de Windows: ${WINDOWS_RUNTIME}"
+  msg "Preparing the Windows runtime: ${WINDOWS_RUNTIME}"
 
   local packages="xz-utils"
   [[ "$WINDOWS_RUNTIME" == "wine" ]] && packages="wine"
@@ -229,12 +229,12 @@ setup_windows_runtime() {
       apt-get update
       apt-get install -y --no-install-recommends \$faltando
     else
-      echo 'Pacotes do runtime ja instalados'
+      echo 'Runtime packages already installed'
     fi
-  " || die "Falha instalando pacotes do runtime ${WINDOWS_RUNTIME}"
+  " || die "Failed to install the ${WINDOWS_RUNTIME} runtime packages"
 
   if [[ "$WINDOWS_RUNTIME" == "wine" ]]; then
-    run_ct "command -v wine >/dev/null 2>&1" || die "wine nao ficou disponivel no CT"
+    run_ct "command -v wine >/dev/null 2>&1" || die "wine did not become available in the CT"
     run_ct "echo \"Wine: \$(wine --version)\""
   fi
 
@@ -243,22 +243,22 @@ setup_windows_runtime() {
     run_ct "
       set -e
       if [ -x '${PROTON_DIR}/proton' ]; then
-        echo 'Proton ${PROTON_VERSION} ja instalado'
+        echo 'Proton ${PROTON_VERSION} already installed'
         exit 0
       fi
       install -d '${PROTON_DIR}'
       tmp=\$(mktemp -d)
-      echo 'Baixando ${PROTON_VERSION} (~450MB)...'
+      echo 'Downloading ${PROTON_VERSION} (~450MB)...'
       curl -fsSL '${url}' -o \"\$tmp/proton.tar.gz\"
       # --strip-components=1: the tarball has a root directory whose name does not follow
       # the tag (GE-Proton11-5 becomes GE-Proton11-5-x86_64). Extracting the contents straight
       # into PROTON_DIR keeps the path predictable whatever that name is.
       tar -xzf \"\$tmp/proton.tar.gz\" -C '${PROTON_DIR}' --strip-components=1
       rm -rf \"\$tmp\"
-      [ -x '${PROTON_DIR}/proton' ] || { echo 'ERRO: ${PROTON_DIR}/proton nao existe apos extrair'; ls -la '${PROTON_DIR}'; exit 1; }
+      [ -x '${PROTON_DIR}/proton' ] || { echo 'ERROR: ${PROTON_DIR}/proton does not exist after extracting'; ls -la '${PROTON_DIR}'; exit 1; }
       chmod -R a+rX '${PROTON_DIR}'
-      echo 'Proton ${PROTON_VERSION} instalado'
-    " || die "Falha instalando o Proton ${PROTON_VERSION}"
+      echo 'Proton ${PROTON_VERSION} installed'
+    " || die "Failed to install Proton ${PROTON_VERSION}"
   fi
 
   # Configuration read by win-run. It lives outside the script so the runtime can be
@@ -391,23 +391,23 @@ EOF
         ln -sf ${STEAMCMD_DIR}/linux64/steamclient.so \"\$target/steamclient.so\"
       done
       chown -R steam:steam /home/steam/.steam
-    " || die "Falha preparando os symlinks de steamclient.so para o Proton"
+    " || die "Failed to prepare the steamclient.so symlinks for Proton"
   fi
 }
 
 run_pre_install() {
   [[ -n "$PRE_INSTALL_CMD" ]] || return 0
-  msg "Executando PRE_INSTALL_CMD do jogo dentro do CT"
-  run_ct "$PRE_INSTALL_CMD" || die "PRE_INSTALL_CMD falhou (veja a saida acima)"
+  msg "Running the game's PRE_INSTALL_CMD inside the CT"
+  run_ct "$PRE_INSTALL_CMD" || die "PRE_INSTALL_CMD failed (see the output above)"
 }
 
 install_game_in_ct() {
-  msg "Instalando ${GAME_DISPLAY_NAME} (app ${STEAM_APP_ID}) via SteamCMD - pode demorar (download de varios GB)"
+  msg "Installing ${GAME_DISPLAY_NAME} (app ${STEAM_APP_ID}) via SteamCMD - this may take a while (a download of several GB)"
   if [[ -n "$STEAM_PLATFORM" ]]; then
-    msg "Forcando plataforma do SteamCMD: ${STEAM_PLATFORM}"
+    msg "Forcing the SteamCMD platform: ${STEAM_PLATFORM}"
   fi
   if [[ "$STEAM_ANONYMOUS" != "1" ]]; then
-    msg "Login na Steam como ${STEAM_USER} (este app nao aceita login anonimo)"
+    msg "Logging in to Steam as ${STEAM_USER} (this app does not accept an anonymous login)"
   fi
   run_ct "install -d -o steam -g steam ${GAME_DIR}"
 
@@ -416,36 +416,36 @@ install_game_in_ct() {
     if run_ct "su - steam -c '${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}+force_install_dir ${GAME_DIR} ${STEAMCMD_LOGIN} +app_update ${STEAM_APP_ID} validate +quit'"; then
       return 0
     fi
-    warn "SteamCMD falhou (tentativa ${attempt}/3), tentando novamente em 10s"
+    warn "SteamCMD failed (attempt ${attempt}/3), trying again in 10s"
     sleep 10
   done
   if [[ "$STEAM_ANONYMOUS" != "1" ]]; then
-    warn "Login com conta: se a saida acima fala em Steam Guard / Two-factor, rode o deploy"
-    warn "de novo com o codigo do momento: .\\deploy\\game\\deploy-game.ps1 -Game ${GAME_KEY} -SteamGuardCode 12345"
+    warn "Account login: if the output above mentions Steam Guard / Two-factor, run the deploy"
+    warn "again with the current code: .\\deploy\\game\\deploy-game.ps1 -Game ${GAME_KEY} -SteamGuardCode 12345"
   fi
-  die "SteamCMD nao conseguiu instalar o app ${STEAM_APP_ID} apos 3 tentativas"
+  die "SteamCMD could not install app ${STEAM_APP_ID} after 3 attempts"
 }
 
 detect_start_script() {
   if [[ -n "$START_SCRIPT" ]]; then
-    run_ct "test -f ${GAME_DIR}/${START_SCRIPT}" || die "Script de start nao encontrado: ${GAME_DIR}/${START_SCRIPT}"
+    run_ct "test -f ${GAME_DIR}/${START_SCRIPT}" || die "Start script not found: ${GAME_DIR}/${START_SCRIPT}"
     return
   fi
 
-  msg "START_SCRIPT vazio, tentando detectar automaticamente"
+  msg "START_SCRIPT is empty, trying to detect it automatically"
   START_SCRIPT="$(run_ct "find ${GAME_DIR} -maxdepth 1 -name '*.sh' -printf '%f\n' | sort | head -n1" | tr -d '\r')"
   if [[ -z "$START_SCRIPT" ]]; then
-    warn "Nao foi possivel detectar o script de start. Conteudo da raiz do jogo:"
+    warn "Could not detect the start script. Contents of the game's root folder:"
     run_ct "ls -la ${GAME_DIR}" || true
-    die "Defina START_SCRIPT no arquivo do jogo (games/<jogo>.env) e rode de novo"
+    die "Set START_SCRIPT in the game's file (games/<game>.env) and run again"
   fi
-  msg "Script de start detectado: $START_SCRIPT"
+  msg "Start script detected: $START_SCRIPT"
 }
 
 run_post_install() {
   [[ -n "$POST_INSTALL_CMD" ]] || return 0
-  msg "Executando POST_INSTALL_CMD do jogo dentro do CT"
-  run_ct "$POST_INSTALL_CMD" || die "POST_INSTALL_CMD falhou (veja a saida acima)"
+  msg "Running the game's POST_INSTALL_CMD inside the CT"
+  run_ct "$POST_INSTALL_CMD" || die "POST_INSTALL_CMD failed (see the output above)"
 }
 
 # Named recipes: the list is CLOSED here, on purpose. A game registered through the API picks
@@ -457,7 +457,7 @@ apply_recipes() {
   for r in "${recipes[@]}"; do
     case "$r" in
       steamclient-sdk64)
-        msg "Receita steamclient-sdk64: ligando a steamclient.so do SteamCMD ao SDK do jogo"
+        msg "Recipe steamclient-sdk64: linking SteamCMD's steamclient.so to the game's SDK"
         run_ct "
           set -e
           # The parent (.steam) also belongs to steam: `install -d` only sets the owner of the last
@@ -483,13 +483,13 @@ apply_recipes() {
         "
         ;;
       wine|proton|xvfb) ;;  # Windows runtime and virtual X: setup_windows_runtime handles them
-      *) die "Receita desconhecida: ${r}" ;;
+      *) die "Unknown recipe: ${r}" ;;
     esac
   done
 }
 
 render_update_helper() {
-  msg "Criando helper de atualizacao (/usr/local/bin/update-game)"
+  msg "Creating the update helper (/usr/local/bin/update-game)"
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
@@ -506,7 +506,7 @@ EOF
 }
 
 render_update_checker() {
-  msg "Criando verificacao automatica de update (timer systemd)"
+  msg "Creating the automatic update check (systemd timer)"
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
@@ -577,12 +577,12 @@ EOF
     run_ct "systemctl daemon-reload && systemctl enable --now game-update-check.timer"
   else
     run_ct "systemctl daemon-reload && systemctl disable --now game-update-check.timer >/dev/null 2>&1 || true"
-    msg "AUTO_UPDATE=0: timer instalado porem desabilitado"
+    msg "AUTO_UPDATE=0: timer installed but disabled"
   fi
 }
 
 render_service_helpers() {
-  msg "Criando atalhos de controle (game-start/stop/restart/status/logs)"
+  msg "Creating the control shortcuts (game-start/stop/restart/status/logs)"
   local tmp_file name body
   tmp_file="$(mktemp)"
   for name in game-start game-stop game-restart game-status game-logs; do
@@ -605,7 +605,7 @@ EOF
 }
 
 render_systemd_unit() {
-  msg "Criando servico systemd ${SERVICE_NAME}"
+  msg "Creating systemd service ${SERVICE_NAME}"
   local rendered_args="${START_ARGS//\{PORT\}/${GAME_PORT}}"
   # {QUERY_PORT}: a game that shifts ports (several instances) must tell the server BOTH.
   # No games/*.env uses the marker, so the old deploy does not change.
@@ -666,15 +666,15 @@ EOF
 # knowing who the panel is would lock the panel itself out of the server that was just born.
 setup_firewall() {
   if [[ "${CT_FIREWALL:-1}" == "0" ]]; then
-    warn "CT_FIREWALL=0: firewall do CT NAO configurado"
+    warn "CT_FIREWALL=0: the CT firewall was NOT configured"
     return 0
   fi
   if [[ -z "${FW_MGMT_SOURCES:-}" ]]; then
-    warn "FW_MGMT_SOURCES vazio: firewall do CT NAO configurado (defina o IP do painel)"
+    warn "FW_MGMT_SOURCES is empty: the CT firewall was NOT configured (set the panel's IP)"
     return 0
   fi
-  [[ -f "${FIREWALL_SCRIPT:-}" ]] || die "ct-firewall.sh nao encontrado (${FIREWALL_SCRIPT:-vazio})"
-  msg "Aplicando o firewall do CT (nftables)"
+  [[ -f "${FIREWALL_SCRIPT:-}" ]] || die "ct-firewall.sh not found (${FIREWALL_SCRIPT:-empty})"
+  msg "Applying the CT firewall (nftables)"
   local conf
   conf="$(mktemp)"
   {
@@ -715,14 +715,14 @@ setup_unit_sandbox() {
 }
 
 start_game_service() {
-  msg "Iniciando o servidor do jogo"
+  msg "Starting the game server"
   run_ct "systemctl restart ${SERVICE_NAME}"
   sleep 15
   if run_ct "systemctl is-active --quiet ${SERVICE_NAME}"; then
-    msg "Servico ${SERVICE_NAME} ativo"
+    msg "Service ${SERVICE_NAME} is active"
   else
-    warn "Servico nao esta ativo. Ultimas linhas do log:"
+    warn "The service is not active. Last lines of the log:"
     run_ct "journalctl -u ${SERVICE_NAME} --no-pager -n 40" || true
-    die "O servidor nao subiu. Verifique o log acima."
+    die "The server did not come up. Check the log above."
   fi
 }

@@ -1504,7 +1504,7 @@ starts a toy broker (`gamebroker/dev.py`, fake backends): `docker compose up --b
   firewall that drops packets cannot make the health check take 30 s.
 - **The Proxmox API and the OPNsense API need a firewall rule for the broker's CT** (the
   deploy summary lists them). Without them the broker starts, but health shows
-  "NAO RESPONDE" and nothing gets created.
+  "NOT RESPONDING" and nothing gets created.
 - **`gamebroker/config.py` validates EVERYTHING and lists ALL problems at once**, only by
   the variable NAME (never the value). A bad config kills the START (`SystemExit(2)`),
   never a request. https requires a SHA-256 fingerprint; http only on loopback.

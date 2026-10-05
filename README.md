@@ -283,19 +283,16 @@ it. So `deploy-game.ps1` stops before sending anything if the resolved CTID or I
 belongs to another game or to the panel:
 
 ```
-THROW: CTID 210 ja pertence ao jogo DRAGONWILDS (CTID_DRAGONWILDS no .env).
-       Defina CTID_SATISFACTORY com um id livre.
+THROW: CTID 210 already belongs to game DRAGONWILDS (CTID_DRAGONWILDS in .env). Set CTID_SATISFACTORY to a free id.
 ```
 
 At the start of each deploy the script prints the resolved target; check it before letting it
 run:
 
 ```
-Valores especificos de SATISFACTORY: CTID, IP_CIDR
-Alvo: CT 212 (satisfactory) em 10.20.1.22/24
+Values specific to SATISFACTORY: CTID, IP_CIDR
+Target: CT 212 (satisfactory) at 10.20.1.22/24
 ```
-
-(The scripts' console messages are in Portuguese.)
 
 Reference layout for games deployed this way (the one in `.env.example`):
 
@@ -381,8 +378,8 @@ instead of leaving it in `.env`:
 With no credentials at all, the deploy stops before sending anything:
 
 ```
-THROW: O servidor de dayz nao esta disponivel por login anonimo na Steam.
-       Preencha STEAM_USER e STEAM_PASS no .env (conta que POSSUA o jogo) ou use -Interactive.
+THROW: The dayz server is not available through an anonymous Steam login.
+       Fill in STEAM_USER and STEAM_PASS in .env (an account that OWNS the game) or use -Interactive.
 ```
 
 How the password is handled:
@@ -636,14 +633,14 @@ game container:
                  --ssh--> [ CT palworld    ]
 ```
 
-To be manageable, a container needs `sshd` and the panel's public key authorized. There are
-three ways to get that:
+To be manageable, a container needs `sshd` and the panel's public key authorized for the
+unprivileged `gamepanel` user (the panel never logs in as root). There are three ways to get that:
 
 | Situation | What to do |
 |-----------|------------|
 | New game CT | nothing: `deploy-game.ps1` reads the panel key and leaves the CT ready (or set `PANEL_PUBKEY` in `.env` to pin one) |
-| Existing game CTs | `deploy/game/migrate-ct.ps1 -Ctid <CTID>`: installs the `gamepanel` user, proves it from the panel, switches the server record, then locks root (`ADMIN_AUTHORIZE_CTIDS` is the legacy way: it authorizes the key on root) |
-| Case by case | copy the ready-made command from the panel's **SSH access** screen |
+| Existing game CTs | `deploy/game/migrate-ct.ps1 -Ctid <CTID>`: installs the `gamepanel` user, proves it from the panel, switches the server record, then locks root |
+| Case by case | inside the CT, as root, with `lib/ct-panel-access.sh` copied over: `install <unit> '<panel key>'`, `verify`, set the server's SSH user to `gamepanel`, then `lock` (the panel's **SSH access** screen shows the commands with the key filled in) |
 
 The public key appears in the panel deploy summary and on the "SSH access" screen.
 
@@ -1510,7 +1507,7 @@ The main groups:
 | Panel login | `ADMIN_USER`, `ADMIN_PASSWORD`, `ADMIN_REQUIRE_2FA`, `ADMIN_WEBAUTHN_ORIGIN`, `ADMIN_LANG` |
 | Panel features | `ADMIN_ALLOW_SHELL`, `ADMIN_TERM_MAX`, `ADMIN_TERM_IDLE`, `ADMIN_ALLOW_FILES`, `ADMIN_FILE_MAX_KB`, `ADMIN_FILE_PREVIEW_KB`, `ADMIN_FILE_DOWNLOAD_MAX_MB`, `ADMIN_FILE_DEFAULT`, `ADMIN_FILE_ROOTS` |
 | Panel timing | `ADMIN_METRICS_TTL`, `ADMIN_QUERY_TIMEOUT`, `ADMIN_PLAYERS_TTL` |
-| Panel SSH reach | `PANEL_PUBKEY`, `ADMIN_AUTHORIZE_CTIDS` |
+| Panel SSH reach | `PANEL_PUBKEY` |
 | Firewall | `CT_FIREWALL`, `ADMIN_FIREWALL_SOURCES` |
 | Broker CT | `BROKER_CTID`, `BROKER_HOSTNAME`, `BROKER_IP_CIDR`, `BROKER_GATEWAY`, `BROKER_PORT`, `BROKER_IP_PREFIX`, `BROKER_IP_INICIO`/`BROKER_IP_FIM`, `BROKER_CTID_BASE`, `BROKER_PORT_INICIO`/`BROKER_PORT_FIM`, `BROKER_MAX_INSTANCIAS`, `BROKER_MAX_CREATIONS_PER_HOUR`, `BROKER_ALLOW_IPS`, `RECREATE_BROKER_CT` |
 
@@ -1579,7 +1576,7 @@ Copy-Item broker.secrets.env.example broker.secrets.env   # Proxmox and OPNsense
   confirmation. The old Portuguese names (`-ConfigurarPainel`, `-LigarNoPainel`) still work as
   aliases.
 - The Proxmox and OPNsense APIs need **firewall rules for the broker CT** (the deploy summary
-  lists them). Without them the broker starts, but health shows "NAO RESPONDE" (not responding)
+  lists them). Without them the broker starts, but health shows "NOT RESPONDING"
   and nothing is created.
 - **TLS is pinned by fingerprint, never `verify=False`.** Proxmox and OPNsense are self-signed;
   the broker only accepts the certificate whose SHA-256 is configured. The deploy reads the
