@@ -243,6 +243,8 @@ dropins=/etc/systemd/system/palworld.service.d
 printf '[Service]\nEnvironment=LD_PRELOAD=/opt/game/ue4ss/libUE4SS.so\nEnvironment=UE4SS_TARGET_EXE=TheFrontServer\n' \
   > "$dropins/gamepanel-ue4ss.conf"
 printf '[Service]\nExecStartPre=/bin/true\n' > "$dropins/gamepanel-feito-a-mao.conf"
+# The unit sandbox (lib/ct-sandbox-unit.sh) is not a loader drop-in: install keeps it, silently.
+bash "$REPO/lib/ct-sandbox-unit.sh" render > "$dropins/gamepanel-sandbox.conf"
 printf '# Written by the game panel\n# gamepanel-base: /usr/local/bin/win-run /opt/game/x.exe -log\n[Service]\nExecStart=\nExecStart=/usr/local/bin/win-run /opt/game/x.exe -log -mods=928988,929420\n' \
   > "$dropins/gamepanel-mods.conf"
 printf "RUNTIME='wine'\nGAME_KEY='prova'\nWINE_PREFIX='/home/steam/pfx'\nWINE_DLL_OVERRIDES='mshtml=;winhttp=n,b'\nUSE_XVFB='0'\n" \
@@ -265,6 +267,8 @@ UE4SS_TARGET_EXE='TheFrontServer'" "$(grep -v '^#' "$ENV_DIR/service.env")"
 if [ -e "$dropins/gamepanel-ue4ss.conf" ]; then fail "o drop-in do UE4SS ficou"; else ok "o drop-in do UE4SS saiu"; fi
 if [ -e "$dropins/gamepanel-feito-a-mao.conf" ]; then ok "drop-in feito a mao ficou"; else fail "apagou um drop-in feito a mao"; fi
 if grep -q 'gamepanel-feito-a-mao.conf' "$work/convert.log"; then ok "o drop-in feito a mao foi avisado"; else fail "sem aviso do drop-in feito a mao"; fi
+if [ -e "$dropins/gamepanel-sandbox.conf" ]; then ok "the sandbox drop-in stays"; else fail "deleted the sandbox drop-in"; fi
+if grep -q 'gamepanel-sandbox.conf' "$work/convert.log"; then fail "warned about the sandbox drop-in as if it were a loader"; else ok "the sandbox drop-in raises no warning"; fi
 if [ -e "$dropins/gamepanel-mods.conf" ]; then fail "o drop-in do ARK ficou"; else ok "o drop-in do ARK saiu"; fi
 check "runtime.env com o Wine do carregador e a lista do ARK" \
   "GAMEPANEL_EXTRA_ARGS='-mods=928988,929420'

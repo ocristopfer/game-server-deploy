@@ -694,6 +694,26 @@ setup_firewall() {
   run_ct "/usr/local/sbin/ct-firewall apply"
 }
 
+# Where the unit sandbox tool lives inside the CT (next to ct-panel-access.sh): it stays there so
+# `ct-sandbox-unit.sh status|off <unit>` works later from `pct enter`.
+UNIT_SANDBOX_IN_CT=/usr/local/lib/gamepanel/ct-sandbox-unit.sh
+
+# OPT-IN systemd sandbox of the game unit (lib/ct-sandbox-unit.sh; phase 9 of
+# docs/security-hardening.md). Off unless the deploy asks for it (GAME_UNIT_SANDBOX=1, from
+# deploy-game.ps1 -UnitSandbox): every game must be proven with it first, on a real CT. Runs
+# after start_game_service because `on` needs a RUNNING game as the baseline it compares with.
+# A failure does not fail the deploy: the tool already put the game back the way it was, and a
+# working server without the sandbox is the state every other CT is in.
+# Not offered by the broker yet: install.env has no such field, and ct-install.sh does not call it.
+setup_unit_sandbox() {
+  [[ "${GAME_UNIT_SANDBOX:-0}" == "1" ]] || return 0
+  [[ -f "${UNIT_SANDBOX_SCRIPT:-}" ]] || die "ct-sandbox-unit.sh not found (${UNIT_SANDBOX_SCRIPT:-empty})"
+  msg "Turning on the systemd sandbox of ${SERVICE_NAME} (rolled back on its own if the game fails)"
+  push_file_to_ct "$UNIT_SANDBOX_SCRIPT" "$UNIT_SANDBOX_IN_CT" 0755
+  run_ct "bash ${UNIT_SANDBOX_IN_CT} on '${SERVICE_NAME}'" \
+    || warn "The game stays WITHOUT the systemd sandbox (see the reason above); the server runs as before"
+}
+
 start_game_service() {
   msg "Iniciando o servidor do jogo"
   run_ct "systemctl restart ${SERVICE_NAME}"

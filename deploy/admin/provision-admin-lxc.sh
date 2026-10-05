@@ -327,11 +327,10 @@ panel.ensure_admin_user('${PANEL_USER}', sys.stdin.read())
   run_ct "chown -R ${APP_USER}:${APP_USER} ${DATA_DIR} && chown ${APP_USER}:${APP_USER} ${CONF_DIR}/secret_key && chmod 0600 ${CONF_DIR}/secret_key"
 }
 
-render_service() {
-  msg "Criando o servico systemd ${SERVICE_NAME}"
-  local tmp_file
-  tmp_file="$(mktemp)"
-  cat > "$tmp_file" <<EOF
+# The panel's unit, on stdout. Separate from render_service so the systemd sandbox
+# (docker/ct-sandbox/unit-sandbox.sh) starts the REAL panel under this exact text.
+render_panel_unit() {
+  cat <<EOF
 [Unit]
 Description=Painel administrativo dos servidores de jogos
 After=network-online.target
@@ -353,14 +352,35 @@ ExecStart=/usr/bin/gunicorn --workers 1 --threads 16 --timeout 120 \\
   --bind 0.0.0.0:${PANEL_PORT} --access-logfile - gamepanel.wsgi:app
 Restart=on-failure
 RestartSec=5
+# The panel holds the SSH key to every game container: a bug in it must not become write access
+# to the rest of its own CT. strict = the whole file system is read-only for it except
+# ReadWritePaths, and DATA_DIR is everything it writes at runtime: the database, known_hosts,
+# the SSH control sockets (ssh-control/) and the panel-side backup copies (backups/). The secret
+# key and the SSH key in CONF_DIR are created by this script, as root, before the start; the
+# panel only reads them. Same approach as the broker's unit (provision-broker-lxc.sh).
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=full
+ProtectSystem=strict
+ReadWritePaths=${DATA_DIR}
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
+}
+
+render_service() {
+  msg "Criando o servico systemd ${SERVICE_NAME}"
+  local tmp_file
+  tmp_file="$(mktemp)"
+  render_panel_unit > "$tmp_file"
   push_file_to_ct "$tmp_file" "/etc/systemd/system/${SERVICE_NAME}" 0644
   rm -f "$tmp_file"
   run_ct "systemctl daemon-reload && systemctl enable ${SERVICE_NAME}"
@@ -566,4 +586,7 @@ main() {
   print_summary
 }
 
-main "$@"
+# Executed, not sourced: the systemd sandbox sources this file only to call render_panel_unit.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

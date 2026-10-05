@@ -15,6 +15,9 @@ param(
     [string]$ProxmoxPassword = "",
     # Authorizes your public key on Proxmox and stops depending on a password in later deploys
     [switch]$InstallKey,
+    # Turns on the systemd sandbox of the game unit (lib/ct-sandbox-unit.sh) after the first start,
+    # with automatic rollback if the game fails under it. Off by default: prove each game first.
+    [switch]$UnitSandbox,
     [string]$EnvFile = "",
     [string]$RemoteBundleDir = "/root/game-deploy"
 )
@@ -513,6 +516,8 @@ if ($ProvisionScript -eq "provision-game-lxc.sh") {
     Write-LfFile (Join-Path $BundleDir "ct-firewall.sh") ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "lib\ct-firewall.sh")))
     # The gamepanel user, sudo rules and root helpers (the panel no longer logs in as root).
     Write-LfFile (Join-Path $BundleDir "ct-panel-access.sh") ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "lib\ct-panel-access.sh")))
+    # The opt-in game unit sandbox (it only runs with -UnitSandbox).
+    Write-LfFile (Join-Path $BundleDir "ct-sandbox-unit.sh") ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "lib\ct-sandbox-unit.sh")))
 }
 Write-LfFile (Join-Path $BundleDir "game.env") $GameEnvContent
 
@@ -527,6 +532,7 @@ foreach ($key in @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMP
 if ($PanelHost -ne "") { $deployLines += "FW_MGMT_SOURCES=`"$PanelHost`"" }
 else { Write-Host "ADMIN_HOST/ADMIN_IP_CIDR vazios: o CT sobe SEM firewall interno." -ForegroundColor Yellow }
 if ((Get-Cfg $cfg "CT_FIREWALL") -eq "0") { $deployLines += "CT_FIREWALL=`"0`"" }
+if ($UnitSandbox) { $deployLines += "GAME_UNIT_SANDBOX=`"1`"" }
 Write-LfFile (Join-Path $BundleDir "deploy.env") (($deployLines -join "`n") + "`n")
 
 # ----- Send and run on Proxmox -----

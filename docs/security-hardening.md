@@ -7,7 +7,9 @@ is refused on them. Phase 6 (mod loaders without root) is proven in the sandbox 
 sudo) and in the dev compose (UE4SS Linux install/uninstall on the helper-mode fake Palworld),
 and still needs one real CT per loader. Phase 10 (the real Docker game image) is done and proven
 by `docker/ct-sandbox/gameserver.sh` (local build, real SteamCMD install, real sudo and sshd).
-Phase 9 still needs a real CT to be validated. Root stays only where it is unavoidable: provisioning a container
+Phase 9 (the opt-in game unit sandbox) and the panel unit's `ProtectSystem=strict` are built
+and proven against a real systemd in `docker/ct-sandbox/unit-sandbox.sh`; each game still has to
+be turned on, one real CT at a time (see "Game unit sandbox"). Root stays only where it is unavoidable: provisioning a container
 (`pct exec` on the host, or the broker's one-time install).
 
 ## Goal
@@ -225,6 +227,90 @@ Implemented as `deploy/game/migrate-ct.ps1 -Ctid <CT> [-Service x] [-NoLock]`, w
 
 If step 4 fails nothing has been locked and the server stays in legacy mode.
 
+### Game unit sandbox (phase 9, opt-in per CT)
+
+`lib/ct-sandbox-unit.sh` is the one place for the drop-in and its logic; it writes
+`/etc/systemd/system/<unit>.d/gamepanel-sandbox.conf`:
+
+```
+[Service]
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectClock=yes
+```
+
+- **What stays writable, and why that is enough**: `full` makes `/usr`, `/boot`, `/efi` and `/etc`
+  read-only. The game writes in `/opt/game` (saves, logs, `ue4ss/`, BepInEx), in `/home/steam`
+  (Wine/Proton prefixes, `~/.steam/sdk64`, ETS2's home) and in `/tmp` (win-run's `XDG_RUNTIME_DIR`,
+  xvfb-run's X socket and lock, the wineserver socket) - which becomes a PRIVATE `/tmp`, shared
+  by every process of the unit (Xvfb is a child of xvfb-run, so it sees the same one). The overlay
+  in `/etc/gamepanel/game-env` and `/etc/game-runtime.env` are only read by the unit. Backups,
+  mod installs, the antivirus staging (`/var/tmp/gamepanel-*`) and updates run over SSH or in
+  their own units, outside this one.
+- **Never `MemoryDenyWriteExecute`, never `ProtectHome`** (JIT in Wine/Proton/Mono/UE4SS; the
+  prefix in `/home/steam`). `--without <Directive>` drops one for a game proven to need it, and
+  the drop-in header records it.
+- **`on` is a transaction.** It refuses a unit that is not active (the baseline must be a
+  running game), records the ports the game has bound below the ephemeral range (read from
+  `/proc/net` through the unit's cgroup; Dragonwilds' random EOS port is ignored), writes the
+  drop-in, runs `daemon-reload`, restarts, and watches: active for `--settle` seconds (60), no
+  automatic restart, the same main PID, and every recorded or `--port` port back within
+  `--port-timeout` (300). Any failure prints the journal since the restart, removes the drop-in,
+  restarts the game and checks that it is back (only the ports that were open before): exit 1 =
+  not applied, game as before; exit 2 = the game did not come back even without it. `status`
+  reads the RUNNING process (`NoNewPrivs`, `Seccomp`, a mount namespace of its own), not only
+  the file.
+- **Unprivileged LXC**: the mount namespace needs `features: nesting=1` (Proxmox's AppArmor
+  profile refuses the mounts otherwise, and the unit fails with `status=226/NAMESPACE`). Every CT
+  this project creates has it, and the broker unit already runs `PrivateTmp`,
+  `ProtectSystem=strict` and `ProtectKernelTunables` in the same kind of CT. The host tool warns
+  when `nesting=1` is missing; the rollback covers it either way.
+- **Existing CT** (root SSH is locked after phase 8, so it goes through the host):
+  `deploy/game/sandbox-ct.ps1 -Ctid <CT> -Action on|off|status [-Service x] [-Settle s]
+  [-Ports "7777/udp"] [-Without LockPersonality]`, which runs `deploy/game/sandbox-ct.sh` on the
+  Proxmox host (`pct push` + `pct exec`). The unit defaults to `GAME_UNIT` of
+  `/etc/gamepanel/ct.env`. The way back by hand: `pct exec <CT> -- bash
+  /usr/local/lib/gamepanel/ct-sandbox-unit.sh off <unit>`.
+- **New CT**: `deploy/game/deploy-game.ps1 -Game <key> -UnitSandbox` runs `setup_unit_sandbox`
+  (`lib/ct-phases.sh`) right after the first start; a rollback there is a warning, not a failed
+  deploy. Off by default; the broker does not offer it (no `install.env` field yet).
+- **The panel has no switch for it, on purpose**: `gamepanel` gets no sudo rule for it, since a
+  sandbox a compromised panel could switch off protects nothing. `ct-panel-access.sh install` and
+  `migrate-ct.sh` leave the drop-in alone (it is not a loader drop-in).
+- **The Docker image does not honor it**: `docker/gameserver/supervisor.sh` reads only
+  `Environment=`/`EnvironmentFile=` from the unit's drop-ins, and a container has its own
+  isolation knobs (`--read-only`, `--cap-drop`, `no-new-privileges`).
+- **Proof**: `bash docker/ct-sandbox/unit-sandbox.sh` boots a real systemd (privileged Docker, NOT
+  an unprivileged LXC) with a fake game shaped like `render_systemd_unit`'s unit: applied to the
+  running process, rolled back for a game that dies (needs `/usr`), for one that stays up but
+  loses a port (needs the host's `/tmp`), exit 2 for one that cannot come back, and the deploy
+  phase off, on and failing. What only a real CT proves: each game, and AppArmor.
+
+Per game (each one alone, with nobody playing - `on` restarts the game): `status`, then `on`,
+then join the server once and look at the log screen. If a game fails, read the journal lines
+`on` printed before trying `-Without` with one directive at a time.
+
+### Panel unit (item 7)
+
+The panel's unit (`render_panel_unit` in `deploy/admin/provision-admin-lxc.sh`) is
+`ProtectSystem=strict` with `ReadWritePaths=/var/lib/gamepanel` - the database, `known_hosts`,
+`ssh-control/` and the panel-side `backups/` all live there; the secret key and the SSH key in
+`/etc/gamepanel` are created by the provisioning, as root, and only read by the panel - plus
+`PrivateTmp`, `ProtectHome`, `ProtectKernelTunables`, `ProtectKernelModules`,
+`ProtectControlGroups`, `ProtectClock`, `RestrictSUIDSGID`, `RestrictRealtime` and
+`LockPersonality`, like the broker. A `GAMEPANEL_PANEL_BACKUP_DIR` or `GAMEPANEL_DB` moved outside
+`/var/lib/gamepanel` needs its own `ReadWritePaths`. It reaches a CT with `deploy-admin.ps1
+-Full` (the direct push does not rewrite the unit). Proven by the same `unit-sandbox.sh`: the REAL
+panel answers `/health` under this exact unit text, writes its folder, and cannot write
+`/etc/gamepanel` (its own folder) nor a folder it owns outside `ReadWritePaths`. Root SSH to the
+panel CT (the other half of item 7) is unchanged.
+
 ## Alternatives considered
 
 - **polkit** rule for the game unit: removes sudo for start/stop only; needs `polkitd` in every
@@ -245,11 +331,13 @@ If step 4 fails nothing has been locked and the server stays in legacy mode.
    `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=full`, `ProtectKernelTunables/Modules/
    ControlGroups`, `RestrictSUIDSGID`, `LockPersonality`, `ProtectClock`. **Never
    `MemoryDenyWriteExecute`** (breaks Wine, Proton, Mono, BepInEx, UE4SS). No `ProtectHome`
-   (the Wine prefix lives in `/home/steam`). Must be validated on a real unprivileged LXC.
+   (the Wine prefix lives in `/home/steam`). **Built** (see "Game unit sandbox"); each game is
+   still validated on its real CT.
 6. **Medium** - `PRE_INSTALL_CMD`/`POST_INSTALL_CMD` run as root: run the ones that do not need
    it as `steam`.
-7. **Medium** - panel CT: `ProtectSystem=strict` with `ReadWritePaths=/var/lib/gamepanel`;
-   restrict root SSH to the panel CT or move panel deploys to `pct exec`.
+7. **Medium** - panel CT: `ProtectSystem=strict` with `ReadWritePaths=/var/lib/gamepanel`
+   (**done**, see "Panel unit"); restrict root SSH to the panel CT or move panel deploys to
+   `pct exec` (open).
 8. **Low** - optional egress rule for `steam` (`nft meta skuid`) to log/limit new outbound TCP.
 9. **Low** - keep `broker.secrets.env` outside the repository folder.
 
@@ -257,7 +345,7 @@ If step 4 fails nothing has been locked and the server stays in legacy mode.
 
 | # | Step | Risk | Validated by |
 |---|---|---|---|
-| | **Done: 1-8, 10** (tests, `docker/ct-sandbox/panel-access.sh`, `docker/ct-sandbox/gameserver.sh`, dev compose; 8 on a real Proxmox; 6 still needs one real CT per loader). **Open: 9.** | | |
+| | **Done: 1-8, 10** (tests, `docker/ct-sandbox/panel-access.sh`, `docker/ct-sandbox/gameserver.sh`, dev compose; 8 on a real Proxmox; 6 still needs one real CT per loader). **9 built** (`docker/ct-sandbox/unit-sandbox.sh`), turned on per game on real CTs. | | |
 | 1 | Safe restore (member check, `--no-same-owner`) and narrower `FILE_ROOTS` default, still in root mode | low | pytest, compose |
 | 2 | `remote_cmd` builder + `privileged(server)`; behavior unchanged for `root` | low | full pytest (same strings for root) |
 | 3 | `gp-service`, `gp-clamav-ensure`, sudoers and sshd templates in `lib/`, shared by `ct-phases.sh`, Docker and migration | low | `docker/ct-sandbox` (`visudo -cf`) |
@@ -266,7 +354,7 @@ If step 4 fails nothing has been locked and the server stays in legacy mode.
 | 6 | Mod `EnvironmentFile` overlay; installers as `steam` | **high** | pytest + **real CT** per loader (BepInEx, UE4SS Linux, Proton overrides) |
 | 7 | New containers created with `gamepanel`; broker locks root at cleanup | medium | `compare.sh` (expected diff), `broker.sh`, tests, then **one real broker install** |
 | 8 | `ct-migrate-user.sh` + "Migrate access" button + `migrate-ct.sh` | **high** (lockout) | sandbox idempotence; **real throwaway CT** first (`pct enter` is the way back) |
-| 9 | Game unit sandboxing drop-in, opt-in per game | medium | **real CT only**, per game |
+| 9 | Game unit sandboxing drop-in, opt-in per game (`lib/ct-sandbox-unit.sh`, `deploy/game/sandbox-ct.ps1`) | medium | `docker/ct-sandbox/unit-sandbox.sh` (real systemd), then **real CT**, per game |
 | 10 | Docker `gameserver` image | low | local build + one real SteamCMD install: `docker/ct-sandbox/gameserver.sh` (app 1007 by default, `--game <key>` for a real game) |
 
 **Done when** every registered server has `ssh_user=gamepanel`, `ssh root@ct` is refused,

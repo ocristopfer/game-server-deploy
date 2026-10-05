@@ -1,0 +1,15 @@
+# A "CT" with a REAL systemd as PID 1, for what the other sandboxes cannot prove with a fake
+# systemctl: that a unit drop-in is actually applied (namespaces, read-only mounts, seccomp) and
+# that a service survives it. Used by docker/ct-sandbox/unit-sandbox.sh.
+#
+# It is NOT an unprivileged LXC: it runs --privileged, so it proves the drop-in text and the
+# apply/rollback logic, never whether Proxmox's AppArmor profile allows the mount namespace.
+# python3: the fake game. python3-flask/gunicorn/openssh-client: the REAL panel under its unit.
+FROM debian:13-slim
+RUN apt-get update && apt-get install -y --no-install-recommends systemd systemd-sysv procps \
+      python3 python3-flask gunicorn openssh-client \
+ && rm -rf /var/lib/apt/lists/*
+# Nothing in a container can load kernel modules; the unit would only show as failed in the logs.
+RUN systemctl mask systemd-modules-load.service
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

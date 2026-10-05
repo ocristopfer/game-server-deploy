@@ -75,6 +75,8 @@ FIREWALL_SCRIPT="${SCRIPT_DIR}/ct-firewall.sh"
 [[ -f "$FIREWALL_SCRIPT" ]] || FIREWALL_SCRIPT="${SCRIPT_DIR}/../../lib/ct-firewall.sh"
 PANEL_ACCESS_SCRIPT="${SCRIPT_DIR}/ct-panel-access.sh"
 [[ -f "$PANEL_ACCESS_SCRIPT" ]] || PANEL_ACCESS_SCRIPT="${SCRIPT_DIR}/../../lib/ct-panel-access.sh"
+UNIT_SANDBOX_SCRIPT="${SCRIPT_DIR}/ct-sandbox-unit.sh"
+[[ -f "$UNIT_SANDBOX_SCRIPT" ]] || UNIT_SANDBOX_SCRIPT="${SCRIPT_DIR}/../../lib/ct-sandbox-unit.sh"
 LIB_FASES="${SCRIPT_DIR}/ct-phases.sh"
 [[ -f "$LIB_FASES" ]] || LIB_FASES="${SCRIPT_DIR}/lib/ct-phases.sh"
 [[ -f "$LIB_FASES" ]] || die "ct-phases.sh nao encontrado ao lado do script nem em lib/ (o bundle do deploy precisa leva-lo)"
@@ -284,6 +286,7 @@ main() {
   render_service_helpers
   render_systemd_unit
   start_game_service
+  setup_unit_sandbox
   load_nf_tables_on_host
   setup_firewall
   lock_root_login

@@ -1384,6 +1384,17 @@ the reasoning is [docs/security-hardening.md](docs/security-hardening.md). In sh
   by the supervisor, never sourced: the overlay is steam's and the supervisor is root). Touched any
   of them? Run `bash docker/ct-sandbox/gameserver.sh` (real build, real SteamCMD install of app
   1007, ssh as gamepanel with the panel's own command strings; `--game <key>` for a real game).
+- **The game unit sandbox is opt-in per CT and lives in ONE file, `lib/ct-sandbox-unit.sh`**
+  (`on|off|status|render`; drop-in `<unit>.d/gamepanel-sandbox.conf`). `on` restarts the game and
+  rolls back on its own (journal printed, drop-in removed, game restarted) when the game does not
+  stay up or does not reopen the ports it had. Never `MemoryDenyWriteExecute` (Wine/Proton/Mono/
+  UE4SS JIT), never `ProtectHome` (prefixes in `/home/steam`). Existing CTs go through the HOST
+  (`deploy/game/sandbox-ct.ps1`, `pct exec`), new ones through `deploy-game.ps1 -UnitSandbox`; the
+  panel has no switch for it on purpose. The panel's own unit is `ProtectSystem=strict` with
+  `ReadWritePaths=/var/lib/gamepanel`: a new path the panel WRITES must live in that folder or get
+  its own line. Touched either unit? Run `bash docker/ct-sandbox/unit-sandbox.sh` (real systemd
+  as PID 1 in privileged Docker: it proves the drop-ins and the rollback, NOT an unprivileged
+  LXC's AppArmor).
 - **In the dev compose `game-palworld` is helper mode and `game-dragonwilds` is root**, so both
   paths run every day. Rebuilding the game images changes their SSH host keys: the panel refuses
   them (as it should) until you remove the old keys from `/var/lib/gamepanel/known_hosts` in the

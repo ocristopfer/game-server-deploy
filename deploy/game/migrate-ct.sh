@@ -74,7 +74,7 @@ ok "instalado"
 # runtime.env, root files in the game folder -> steam. The running game is NOT restarted: the
 # environment it gets on the next start is the same it had, now from files steam can change.
 # What could not be converted (a drop-in written by hand) stays, and is listed here.
-leftover="$(in_ct "ls /etc/systemd/system/${SERVICE}.d/ 2>/dev/null | grep '^gamepanel-' | grep -vx 'gamepanel-env.conf' || true")"
+leftover="$(in_ct "ls /etc/systemd/system/${SERVICE}.d/ 2>/dev/null | grep '^gamepanel-' | grep -vxE 'gamepanel-(env|sandbox).conf' || true")"
 if [[ -n "$leftover" ]]; then
   printf '  AVISO drop-in que ficou como estava (%s): o painel sem root nao consegue muda-lo.\n' "${leftover//$'\n'/ }"
 fi

@@ -408,7 +408,8 @@ gp_convert_loader_dropins() {
   local unit="$1" f line kv
   for f in "$GP_SYSTEMD_DIR/${unit}.d"/gamepanel-*.conf; do
     [[ -f "$f" ]] || continue
-    case "${f##*/}" in "$GP_ENV_DROPIN"|gamepanel-mods.conf) continue ;; esac
+    # gamepanel-sandbox.conf is the unit sandbox (lib/ct-sandbox-unit.sh): not a loader, never converted.
+    case "${f##*/}" in "$GP_ENV_DROPIN"|gamepanel-mods.conf|gamepanel-sandbox.conf) continue ;; esac
     if grep -qvE '^(\[Service\]|Environment=[A-Z_][A-Z0-9_]*=[A-Za-z0-9_./:,;=@+-]*|)$' "$f"; then
       gp_msg "AVISO: ${f} tem algo alem de Environment=: ficou como estava (converta a mao)"
       continue
