@@ -1,52 +1,57 @@
-# Proposta de reorganização (Fase 2)
+# Reorganization proposal (Phase 2)
 
-> Depende da leitura de [`architecture-analysis.md`](architecture-analysis.md) (Fase 1).
-> Nada foi movido ou editado para produzir este documento — é só a proposta,
-> para você aprovar antes da Fase 3 mexer em qualquer arquivo.
+> **Historical:** this proposal was approved and executed - Phases 3 and 4 are done
+> (`src/gamepanel/`/`src/gamebroker/`, English identifiers, all breaking-change groups,
+> `app.py` split into blueprints). The plan is kept as approved; the "What has already been
+> executed" section at the end records where the execution diverged.
+
+> Depends on reading [`architecture-analysis.md`](architecture-analysis.md) (Phase 1).
+> Nothing was moved or edited to produce this document - it is only the proposal,
+> for the owner to approve before Phase 3 touches any file.
 
 ---
 
-## 0. Gerenciador de dependências: faz sentido usar `uv`?
+## 0. Dependency manager: does it make sense to use `uv`?
 
-**Sim, mas só para o lado de desenvolvimento — nunca para produção.** A
-restrição de produção do `CLAUDE.md` (`admin/requirements-dev.txt`: "o painel
-em produção roda com o que o apt instala... e não baixa pacote de lugar
-nenhum") é deliberada e **continua valendo exatamente como está**: `uv` não
-entra em nenhum Dockerfile de produção nem em `provision-*-lxc.sh`. O que ele
-substitui é só o fluxo `python -m venv .venv` + `pip install -r
-requirements-dev.txt pytest` descrito no `CLAUDE.md` hoje.
+**Yes, but only for the development side - never for production.** The
+production constraint in `CLAUDE.md` (`admin/requirements-dev.txt`: "the panel
+in production runs with what apt installs... and does not download packages from
+anywhere") is deliberate and **stays exactly as it is**: `uv` does not go into any
+production Dockerfile or `provision-*-lxc.sh`. What it replaces is only the
+`python -m venv .venv` + `pip install -r requirements-dev.txt pytest` flow
+described in `CLAUDE.md` today.
 
-**Por que vale a pena:**
+**Why it is worth it:**
 
-- **Hoje a suíte de dev não é reprodutível de verdade**: `flask~=3.1.1` é a
-  única versão pinada; `pytest`, e agora `ruff`/`mypy` (instalados manualmente
-  na Fase 1), não têm versão fixa em lugar nenhum. Um `uv.lock` versionado
-  resolve isso sem esforço extra — todo mundo (e o futuro CI) instala
-  exatamente a mesma árvore de dependências.
-- **A Fase 2 introduz `src/` layout com dois pacotes** (`gamepanel/`,
-  `gamebroker/`, seção 2). Para o pytest e o Pylance resolverem `from
-  gamepanel.services import x` em vez de import solto por nome de arquivo
-  (como hoje), os pacotes precisam de **instalação editável** (`pip install
-  -e .`). `uv` trata isso como parte natural de um *workspace* — `uv sync`
-  resolve os dois pacotes-membro e os instala editáveis num só comando, sem a
-  dança manual de `pip install -e .` por pacote.
-- **Muito mais rápido** que pip puro para o ciclo `venv → install → pytest`
-  que o `CLAUDE.md` já descreve como "o ciclo normal enquanto se edita" — isso
-  importa porque é rodado com frequência.
-- Se a Fase 1 confirmar (com você) que o alvo de CI é GitLab CI, `uv` também é
-  a peça mais simples de configurar lá: `uv sync --locked` é uma linha,
-  determinística, sem cache de pip para gerenciar.
+- **Today the dev suite is not truly reproducible**: `flask~=3.1.1` is the
+  only pinned version; `pytest`, and now `ruff`/`mypy` (installed manually
+  in Phase 1), have no fixed version anywhere. A versioned `uv.lock`
+  solves this with no extra effort - everyone (and the future CI) installs
+  exactly the same dependency tree.
+- **Phase 2 introduces a `src/` layout with two packages** (`gamepanel/`,
+  `gamebroker/`, section 2). For pytest and Pylance to resolve `from
+  gamepanel.services import x` instead of a loose import by file name
+  (as today), the packages need an **editable install** (`pip install
+  -e .`). `uv` treats this as a natural part of a *workspace* - `uv sync`
+  resolves the two member packages and installs them editable in a single
+  command, without the manual `pip install -e .` dance per package.
+- **Much faster** than plain pip for the `venv -> install -> pytest` cycle
+  that `CLAUDE.md` already describes as "the normal cycle while editing" - this
+  matters because it runs often.
+- If Phase 1 confirms (with the owner) that the CI target is GitLab CI, `uv` is
+  also the simplest piece to configure there: `uv sync --locked` is one line,
+  deterministic, with no pip cache to manage.
 
-**Desenho proposto (ajustado na execução, ver nota abaixo)**: um único
-`pyproject.toml` **na raiz do repo** (não publicável — não vai para PyPI,
-ninguém roda `pip install gamepanel`; existe só para dependências de dev,
-lint/type-check e imports editáveis), empacotando os dois pacotes via
+**Proposed design (adjusted during execution, see note below)**: a single
+`pyproject.toml` **at the repo root** (not publishable - it does not go to PyPI,
+nobody runs `pip install gamepanel`; it exists only for dev dependencies,
+lint/type-check and editable imports), packaging both packages via
 `hatchling`:
 
 ```toml
 [project]
 name = "games-workspace"
-dependencies = ["flask>=3.1,<3.2"]   # mesma faixa que o apt do Debian 13 traz
+dependencies = ["flask>=3.1,<3.2"]   # same range Debian 13's apt ships
 
 [build-system]
 requires = ["hatchling"]
@@ -59,104 +64,104 @@ packages = ["src/gamepanel", "src/gamebroker"]
 dev = ["pytest>=9", "ruff>=0.16", "mypy>=1.14"]
 ```
 
-`uv.lock` fica versionado; `.venv` continua fora do git como hoje.
+`uv.lock` is versioned; `.venv` stays out of git as today.
 
-> **Nota de execução**: a ideia original desta seção era um *workspace* `uv`
-> de dois membros, cada um com seu próprio `pyproject.toml` (padrão
-> `src/gamepanel/pyproject.toml` + `src/gamepanel/src/gamepanel/...`, `src/`
-> duplicado). Na hora de criar o esqueleto (Fase 3, etapa 1), simplifiquei
-> para um único `pyproject.toml` empacotando os dois via `packages = [...]`
-> do hatchling — o benefício de um workspace de verdade (versionar/publicar
-> cada pacote de forma independente) não se aplica aqui, já que nenhum dos
-> dois é publicado nem instalado via pip em produção; a única coisa que
-> importa é `import gamepanel`/`import gamebroker` resolverem em dev. Isso
-> também deixa a árvore mais perto do pedido original ("`src/<pacote>/`"
-> literal, sem aninhar `src/` dentro de `src/`). Não muda nada do resto da
-> proposta (mapeamento, riscos, ordem de migração).
+> **Execution note**: the original idea of this section was a two-member `uv`
+> *workspace*, each with its own `pyproject.toml` (the
+> `src/gamepanel/pyproject.toml` + `src/gamepanel/src/gamepanel/...` pattern, `src/`
+> duplicated). When creating the skeleton (Phase 3, step 1), I simplified it
+> to a single `pyproject.toml` packaging both via hatchling's `packages = [...]`
+> - the benefit of a real workspace (versioning/publishing each package
+> independently) does not apply here, since neither of them is published or
+> installed via pip in production; the only thing that matters is that
+> `import gamepanel`/`import gamebroker` resolve in dev. This also brings the
+> tree closer to the original request (literal "`src/<package>/`", without
+> nesting `src/` inside `src/`). It changes nothing in the rest of the
+> proposal (mapping, risks, migration order).
 
-Comandos do dia a dia passam a ser `uv sync` (no lugar de criar venv + pip
-install), `uv run pytest`, `uv run ruff check`, `uv run mypy` — mais curtos
-que os comandos `.venv\Scripts\...` atuais, e funcionam iguais em qualquer
-SO. `pyrightconfig.json` continua existindo (Pylance não fala `uv` ainda),
-só troca `venvPath`/`venv` para apontar pro `.venv` que o `uv` cria (mesmo
-lugar de hoje, então nem muda).
+Day-to-day commands become `uv sync` (instead of creating a venv + pip
+install), `uv run pytest`, `uv run ruff check`, `uv run mypy` - shorter than
+the current `.venv\Scripts\...` commands, and they work the same on any
+OS. `pyrightconfig.json` keeps existing (Pylance does not speak `uv` yet),
+it just switches `venvPath`/`venv` to point at the `.venv` that `uv` creates
+(the same place as today, so it does not even change).
 
-**O que eu NÃO estou propondo**: usar `uv` para empacotar/publicar nada, nem
-para resolver dependências de produção (produção continua zero-pip, só apt),
-nem para os scripts `.sh`/`.ps1` de deploy (esses não mudam por causa disso).
+**What I am NOT proposing**: using `uv` to package/publish anything, nor to
+resolve production dependencies (production stays zero-pip, apt only), nor
+for the `.sh`/`.ps1` deploy scripts (those do not change because of this).
 
-Se você preferir manter `pip`+`requirements-dev.txt` como está hoje só
-estendido com mais um arquivo (`requirements-lint.txt`), o resto desta
-proposta funciona igual — a única diferença prática é o comando usado e o
-lockfile. Recomendo `uv`, mas é uma decisão de baixo risco de reverter se não
-gostar.
-
----
-
-## 1. Onde os princípios pedidos batem com o que existe — e onde ajustei
-
-O pedido original lista seis princípios (seção "Fase 2 — Proposta"). Cinco
-batem direto com o que a Fase 1 encontrou. Um precisa de ajuste, com
-justificativa, porque a premissa não corresponde ao que o código faz hoje:
-
-> **"runtime/ (Docker, processo local, SteamCMD): define COMO rodar"**
-
-O painel **nunca** fala com Docker nem controla processo local — ele só sabe
-falar **SSH** com um host remoto (seja esse host um CT LXC do Proxmox, seja
-um container Docker do `deploy-docker.ps1`). Os dois expõem a mesma interface
-de shell (`systemctl`/`journalctl`, reais ou via os wrappers de
-`docker/gameserver/`) porque isso foi desenhado assim de propósito — o painel
-não sabe nem precisa saber qual dos dois está do outro lado. "Docker vs.
-processo local" é uma decisão de **deploy/provisionamento** (Proxmox LXC vs.
-`deploy-docker.ps1`), não uma decisão de **runtime do painel**.
-
-Por isso, proponho `runtime/` como **abstração de controle remoto por SSH**
-(uma interface, uma implementação real por SSH, uma falsa para teste — o
-mesmo padrão que `broker/backends.py` já usa e que funciona bem), não como
-"Docker vs. processo local". SteamCMD nem entra aqui — SteamCMD só roda
-dentro do CT/container de jogo, nunca é chamado pelo painel nem pelo broker
-diretamente (é uma fase do instalador, `lib/ct-phases.sh`).
-
-Os outros cinco princípios (src layout, camada HTTP fina, `services/`, adapter
-por jogo, `tasks/`, infra fora do código Python, `tests/` espelhado com
-`unit/`+`integration/`) batem com a realidade encontrada e entram como
-proposto — com uma ressalva também justificada na seção 2.3 sobre "adapter
-por jogo" (o projeto já tem **dois** catálogos de jogo com propósitos
-diferentes, e forçar os dois num adapter só criaria acoplamento entre
-`admin/` e `broker/` que hoje não existe).
-
-Sobre **"broker isolado: pacote separado ou serviço à parte?"** — a resposta
-curta é: **já é um serviço à parte hoje** (CT próprio em produção, fala só
-HTTP com o painel, zero import cruzado — confirmado na Fase 1). A decisão real
-que sobra é só *onde no repositório* ele mora daqui pra frente. Recomendo
-**continuar no mesmo repositório**, como um segundo membro do workspace `uv`
-(`src/gamebroker/`), não um repositório separado — ver justificativa na seção
-2.2.
+If the owner prefers to keep `pip`+`requirements-dev.txt` as it is today, just
+extended with one more file (`requirements-lint.txt`), the rest of this
+proposal works the same - the only practical difference is the command used and
+the lockfile. I recommend `uv`, but it is a low-risk decision to revert if it
+turns out not to be liked.
 
 ---
 
-## 2. Árvore de pastas proposta
+## 1. Where the requested principles match what exists - and where I adjusted
+
+The original request lists six principles (section "Phase 2 - Proposal"). Five
+match directly what Phase 1 found. One needs an adjustment, with
+justification, because the premise does not match what the code does today:
+
+> **"runtime/ (Docker, local process, SteamCMD): defines HOW to run"**
+
+The panel **never** talks to Docker or controls a local process - it only knows
+how to talk **SSH** to a remote host (whether that host is a Proxmox LXC CT or
+a Docker container from `deploy-docker.ps1`). Both expose the same shell
+interface (`systemctl`/`journalctl`, real or via the wrappers in
+`docker/gameserver/`) because it was designed that way on purpose - the panel
+does not know, and does not need to know, which of the two is on the other side.
+"Docker vs. local process" is a **deploy/provisioning** decision (Proxmox LXC vs.
+`deploy-docker.ps1`), not a **panel runtime** decision.
+
+That is why I propose `runtime/` as a **remote-control-over-SSH abstraction**
+(one interface, one real SSH implementation, one fake for tests - the
+same pattern `broker/backends.py` already uses and that works well), not as
+"Docker vs. local process". SteamCMD does not even enter here - SteamCMD only runs
+inside the game CT/container, it is never called by the panel or by the broker
+directly (it is an installer phase, `lib/ct-phases.sh`).
+
+The other five principles (src layout, thin HTTP layer, `services/`, adapter
+per game, `tasks/`, infra outside the Python code, mirrored `tests/` with
+`unit/`+`integration/`) match the reality found and go in as proposed - with
+one caveat, also justified in section 2.3, about "adapter per game" (the project
+already has **two** game catalogs with different purposes, and forcing both into
+a single adapter would create coupling between `admin/` and `broker/` that does
+not exist today).
+
+On **"isolated broker: separate package or separate service?"** - the short
+answer is: **it already is a separate service today** (its own CT in production,
+talks only HTTP with the panel, zero cross imports - confirmed in Phase 1). The
+real decision left is only *where in the repository* it lives from now on. I
+recommend **staying in the same repository**, as a second member of the `uv`
+workspace (`src/gamebroker/`), not a separate repository - see the justification
+in section 2.2.
+
+---
+
+## 2. Proposed folder tree
 
 ```
-pyproject.toml                    # workspace uv, dev deps, config ruff/mypy
+pyproject.toml                    # uv workspace, dev deps, ruff/mypy config
 uv.lock
 .python-version
 
 src/
   gamepanel/
       __init__.py
-      app.py                      # create_app() — application factory
-      wsgi.py                     # entry point do gunicorn: gamepanel.wsgi:app
-      cli.py                      # bootstrap: --create-user, --reset-2fa, ensure_server (era o rodapé de app.py)
-      config.py                   # leitura das GAMEPANEL_* (Config dataclass, hoje espalhado em ~60 os.environ.get)
+      app.py                      # create_app() - application factory
+      wsgi.py                     # gunicorn entry point: gamepanel.wsgi:app
+      cli.py                      # bootstrap: --create-user, --reset-2fa, ensure_server (was the footer of app.py)
+      config.py                   # reads the GAMEPANEL_* (Config dataclass, today spread over ~60 os.environ.get)
       extensions.py               # csrf, before_request, error handlers, security headers
 
-      blueprints/                 # camada HTTP fina — só valida input e chama services/
+      blueprints/                 # thin HTTP layer - only validates input and calls services/
         __init__.py
         auth.py                   # /login, /login/2fa, /logout
         dashboard.py               # /, /api/status, /api/recursos, /api/players
         servers.py                 # /servers/new, /edit, /delete, /<id>, /<id>/action
-        players.py                  # descobrir/usar/ação de jogador
+        players.py                  # player discover/use/action
         console.py                  # /servers/<id>/console
         terminal.py                  # /servers/<id>/terminal, /api/term/*
         files.py                     # /servers/<id>/files*
@@ -173,52 +178,52 @@ src/
         pwa.py                                # /manifest.webmanifest, /sw.js, /offline
         health.py                             # /health
 
-      services/                   # regra de negócio — sem Flask, sem SQL cru
+      services/                   # business rules - no Flask, no raw SQL
         __init__.py
-        auth_service.py           # hash/verify de senha, gate de 2FA
-        server_service.py          # CRUD, validação de formulário (era _form_server)
-        player_service.py           # resolve fonte de contagem, cache, ações
-        metrics_service.py           # cache/leitura de métricas de recurso
-        status_service.py             # cache/leitura de status do serviço
+        auth_service.py           # password hash/verify, 2FA gate
+        server_service.py          # CRUD, form validation (was _form_server)
+        player_service.py           # resolves the counting source, cache, actions
+        metrics_service.py           # resource metrics cache/read
+        status_service.py             # service status cache/read
         job_service.py                 # log_job, start_job, COMANDOS
-        alert_service.py                # regras de disparo (_alerta_de_*), webhooks
+        alert_service.py                # trigger rules (_alerta_de_*), webhooks
         schedule_service.py              # venceu, dispara_agendamento
-        backup_service.py                 # orquestra criar/restaurar/remover
-        file_service.py                    # valida path, delega IO ao runtime/
+        backup_service.py                 # orchestrates create/restore/remove
+        file_service.py                    # validates path, delegates IO to runtime/
         chart_service.py                    # monta_grafico, coleta_amostras
-        broker_service.py                    # cadastra servidor pós-criação, acompanha operação
-        user_service.py                       # papéis, gestão de usuário
+        broker_service.py                    # registers the server after creation, follows the operation
+        user_service.py                       # roles, user management
 
-      games/                      # "O QUE rodar" — adapter por jogo (ver 2.3)
+      games/                      # "WHAT to run" - adapter per game (see 2.3)
         __init__.py
         base.py                   # Protocol/ABC GameFieldAdapter
-        registry.py                # chave de jogo -> adapter (default: GenericAdapter)
-        config_format.py            # motor de parsing ini/json (era gameconf.py, genérico)
+        registry.py                # game key -> adapter (default: GenericAdapter)
+        config_format.py            # ini/json parsing engine (was gameconf.py, generic)
         adapters/
           enshrouded.py
           palworld.py
           icarus.py
           dayz.py
           dragonwilds.py
-        catalog/                    # eixo diferente: sugestões p/ formulário "Adicionar jogo"
-          suggestions.py            # gerado por tools/import-linuxgsm.py (era sugestoes_de_jogos.py)
-          search.py                  # era busca_de_jogos.py
-          templates.py                 # era modelos_de_jogo.py
+        catalog/                    # a different axis: suggestions for the "Add game" form
+          suggestions.py            # generated by tools/import-linuxgsm.py (was sugestoes_de_jogos.py)
+          search.py                  # was busca_de_jogos.py
+          templates.py                 # was modelos_de_jogo.py
 
-      runtime/                    # "COMO rodar" — abstração de controle remoto por SSH
+      runtime/                    # "HOW to run" - remote control abstraction over SSH
         __init__.py
         base.py                   # Protocol RemoteControl (run/read/write/stream)
-        ssh.py                     # implementação real (era ssh_argv/ssh_run/ssh_output)
-        fakes.py                    # implementação falsa p/ teste (mesmo padrão de broker/fakes.py)
-        a2s.py                       # protocolo A2S
-        http_probe.py                  # contagem via API HTTP própria do jogo
-        log_replay.py                   # contagem por log (máquina de estados)
-        port_probe.py                    # descoberta de porta/API
+        ssh.py                     # real implementation (was ssh_argv/ssh_run/ssh_output)
+        fakes.py                    # fake implementation for tests (same pattern as broker/fakes.py)
+        a2s.py                       # A2S protocol
+        http_probe.py                  # counting via the game's own HTTP API
+        log_replay.py                   # counting by log (state machine)
+        port_probe.py                    # port/API discovery
         terminal.py                       # TermSession (PTY)
-        files.py                           # list/read/write/delete remoto
-        metrics_probe.py                    # coleta de CPU/mem/disco
+        files.py                           # remote list/read/write/delete
+        metrics_probe.py                    # CPU/mem/disk collection
 
-      tasks/                       # trabalho longo, fora do ciclo da requisição
+      tasks/                       # long-running work, outside the request cycle
         __init__.py
         monitor.py                 # monitora_servidores / _ritmo_do_monitor
         scheduler.py                 # _scheduler_loop
@@ -227,9 +232,9 @@ src/
 
       persistence/
         __init__.py
-        db.py                       # conexão, init_db
-        schema.py                    # SCHEMA + MIGRATIONS (tabelas)
-        repositories/                # troca SQL cru inline por uma função por tabela
+        db.py                       # connection, init_db
+        schema.py                    # SCHEMA + MIGRATIONS (tables)
+        repositories/                # replaces inline raw SQL with one function per table
           servers.py
           jobs.py
           schedules.py
@@ -241,197 +246,197 @@ src/
 
       security/
         __init__.py
-        totp.py                     # (já puro hoje, só muda de pasta)
-        qr.py                        # (idem)
+        totp.py                     # (already pure today, only changes folder)
+        qr.py                        # (same)
         csrf.py
         passwords.py
 
       integrations/
         __init__.py
-        broker_client.py            # (já puro/stdlib hoje, só muda de pasta)
+        broker_client.py            # (already pure/stdlib today, only changes folder)
 
-      navigation.py                 # era ui.py — mapa de telas/ações (puro)
+      navigation.py                 # was ui.py - map of screens/actions (pure)
 
-    templates/                      # movido de admin/templates/
-    static/                          # movido de admin/static/
+    templates/                      # moved from admin/templates/
+    static/                          # moved from admin/static/
 
   gamebroker/
-    pyproject.toml                  # sem dependência externa (stdlib + flask só p/ api.py)
+    pyproject.toml                  # no external dependency (stdlib + flask only for api.py)
     src/gamebroker/
       __init__.py
-      app.py                        # create_app(servico) — hoje é broker/api.py::criar_app
-      wsgi.py                        # era broker/prod.py
-      cli.py                          # era broker/dev.py
+      app.py                        # create_app(servico) - today it is broker/api.py::criar_app
+      wsgi.py                        # was broker/prod.py
+      cli.py                          # was broker/dev.py
 
       services/
-        instance_service.py          # era servico.py
-        allocator.py                   # era alocador.py
-        catalog.py                       # era catalogo.py
+        instance_service.py          # was servico.py
+        allocator.py                   # was alocador.py
+        catalog.py                       # was catalogo.py
 
       domain/
-        exceptions.py                 # era erros.py
-        models.py                       # EspecificacaoDeCt e afins (de backends.py)
+        exceptions.py                 # was erros.py
+        models.py                       # EspecificacaoDeCt and the like (from backends.py)
 
-      runtime/                        # "COMO" criar infraestrutura — já é Protocol hoje
-        base.py                       # era backends.py (as 4 interfaces)
+      runtime/                        # "HOW" to create infrastructure - already a Protocol today
+        base.py                       # was backends.py (the 4 interfaces)
         proxmox.py
         opnsense.py
-        ssh_installer.py               # era ssh_install.py
-        network.py                      # era rede.py
+        ssh_installer.py               # was ssh_install.py
+        network.py                      # was rede.py
         fakes.py
 
       persistence/
-        db.py                           # era banco.py
+        db.py                           # was banco.py
 
       integrations/
-        http_client.py                   # era conexao.py
+        http_client.py                   # was conexao.py
 
-      config.py                           # (já é quase só isso hoje)
+      config.py                           # (already almost only this today)
 
 tests/
   gamepanel/
     unit/
       services/
       games/
-      runtime/                          # usa runtime/fakes.py
+      runtime/                          # uses runtime/fakes.py
       security/
     integration/
-      blueprints/                        # Flask test client, banco real, runtime/fakes.py
+      blueprints/                        # Flask test client, real database, runtime/fakes.py
   gamebroker/
     unit/
       services/
-      runtime/                           # usa runtime/fakes.py e fake_http (nome mantido — ver seção 4)
+      runtime/                           # uses runtime/fakes.py and fake_http (name kept - see section 4)
     integration/
-  conftest.py                             # fixtures raiz compartilhadas (banco, webhooks, chefe/peao, entrar/postar)
+  conftest.py                             # shared root fixtures (banco, webhooks, chefe/peao, entrar/postar)
 
-games/                                     # NÃO MOVE — catálogo curado, lido também por lib/ct-phases.sh (bash)
-lib/                                        # NÃO MOVE — fases de instalação, bash puro
-tools/                                       # NÃO MOVE — scripts manuais de dev
+games/                                     # DOES NOT MOVE - curated catalog, also read by lib/ct-phases.sh (bash)
+lib/                                        # DOES NOT MOVE - installation phases, pure bash
+tools/                                       # DOES NOT MOVE - manual dev scripts
 
-deploy/                                       # NOVO — agrupa infra fora do código Python
+deploy/                                       # NEW - groups infra outside the Python code
   admin/
     deploy-admin.ps1
     provision-admin-lxc.sh
   broker/
     deploy-broker.ps1
     provision-broker-lxc.sh
-    check-broker-access.ps1            # ferramenta manual, mas do broker
-    spike-broker-write.ps1                # idem
+    check-broker-access.ps1            # manual tool, but belongs to the broker
+    spike-broker-write.ps1                # same
   game/
     deploy-game.ps1
     deploy-docker.ps1
     provision-game-lxc.sh
     provision-teamspeak-lxc.sh
 
-docker/                                        # NÃO MOVE (estrutura interna já faz sentido)
-docker-compose.yml                              # fica na raiz (convenção docker compose)
-.env.example                                     # fica na raiz
-pytest.ini                                        # vira [tool.pytest.ini_options] dentro do pyproject.toml raiz
-pyrightconfig.json                                # fica, só ajusta extraPaths/include para src/
+docker/                                        # DOES NOT MOVE (internal structure already makes sense)
+docker-compose.yml                              # stays at the root (docker compose convention)
+.env.example                                     # stays at the root
+pytest.ini                                        # becomes [tool.pytest.ini_options] inside the root pyproject.toml
+pyrightconfig.json                                # stays, only adjusts extraPaths/include for src/
 ```
 
-### 2.1 Por que `games/` (dado), `lib/` e `tools/` não entram no `src/`
+### 2.1 Why `games/` (data), `lib/` and `tools/` do not go into `src/`
 
-Os três são lidos por **bash puro rodando fora de qualquer processo
-Python** (`provision-game-lxc.sh` no host Proxmox, `lib/ct-phases.sh` dentro do
-CT) ou são scripts de manutenção chamados manualmente, nunca importados por
-`gamepanel`/`gamebroker`. Colocá-los dentro de `src/` sugeriria que fazem
-parte do pacote Python, o que quebraria a expectativa de quem olha
-`provision-game-lxc.sh` e espera `games/*.env` no mesmo lugar de sempre.
-`gamebroker.services.catalog` continua **lendo** `games/*.env` do caminho
-configurado em `BROKER_GAMES_DIR` — isso não muda.
+All three are read by **pure bash running outside any Python
+process** (`provision-game-lxc.sh` on the Proxmox host, `lib/ct-phases.sh` inside the
+CT) or are maintenance scripts called by hand, never imported by
+`gamepanel`/`gamebroker`. Putting them inside `src/` would suggest they are part
+of the Python package, which would break the expectation of someone looking at
+`provision-game-lxc.sh` and expecting `games/*.env` in the same place as always.
+`gamebroker.services.catalog` keeps **reading** `games/*.env` from the path
+configured in `BROKER_GAMES_DIR` - that does not change.
 
-### 2.2 Por que `gamebroker` fica no mesmo repositório
+### 2.2 Why `gamebroker` stays in the same repository
 
-- Já está isolado onde importa (processo próprio, HTTP-only, zero import
-  cruzado — Fase 1, seção 2.3).
-- Os dois serviços **compartilham** `games/*.env`, `lib/ct-phases.sh` e os
-  scripts de deploy — versionar em repositórios separados criaria o problema
-  clássico de "qual commit do broker combina com qual commit do painel",
-  sem nenhum ganho de isolamento (o isolamento real já é o processo/CT, não
-  o repositório).
-- `uv` workspace é feito exatamente para "dois pacotes independentes, um
-  repo, dev tooling compartilhado" — o caso de uso bate.
-- Se um dia o time quiser cadência de release diferente para o broker (ex.:
-  um terceiro operando só o broker, sem acesso ao código do painel), separar
-  o repositório depois é fácil justamente porque o acoplamento já é zero —
-  não é uma decisão que fecha portas.
+- It is already isolated where it matters (its own process, HTTP-only, zero cross
+  imports - Phase 1, section 2.3).
+- The two services **share** `games/*.env`, `lib/ct-phases.sh` and the
+  deploy scripts - versioning them in separate repositories would create the
+  classic "which broker commit goes with which panel commit" problem, with no
+  isolation gain (the real isolation is already the process/CT, not the
+  repository).
+- A `uv` workspace is made exactly for "two independent packages, one
+  repo, shared dev tooling" - the use case matches.
+- If one day the team wants a different release cadence for the broker (e.g.
+  a third party operating only the broker, without access to the panel code),
+  splitting the repository later is easy precisely because the coupling is
+  already zero - it is not a decision that closes doors.
 
-### 2.3 Por que "adapter por jogo" vira **dois** catálogos, não um
+### 2.3 Why "adapter per game" becomes **two** catalogs, not one
 
-O projeto já tem dois catálogos de jogo, resolvendo problemas diferentes:
+The project already has two game catalogs, solving different problems:
 
-| | `gamebroker` (catálogo curado) | `gamepanel` (adapter de campo) |
+| | `gamebroker` (curated catalog) | `gamepanel` (field adapter) |
 |---|---|---|
-| Pergunta que responde | "como instalar/alocar porta pra esse jogo?" | "que campos mostrar na tela de edição rápida desse jogo?" |
-| Hoje | `games/*.env` (declarativo) + `catalogo.py` | `gamefields.py` (5 dicts: Enshrouded/Palworld/Icarus/DayZ/Dragonwilds) |
-| Cobertura | Todo jogo instalável pelo broker (curado + dinâmico da API) | Só os 5 jogos com tela de edição rápida — os demais caem no editor de arquivo genérico |
-| Roda em | Processo do broker (outro CT) | Processo do painel |
+| Question it answers | "how do I install/allocate ports for this game?" | "which fields do I show on this game's quick-edit screen?" |
+| Today | `games/*.env` (declarative) + `catalogo.py` | `gamefields.py` (5 dicts: Enshrouded/Palworld/Icarus/DayZ/Dragonwilds) |
+| Coverage | Every game installable by the broker (curated + dynamic from the API) | Only the 5 games with a quick-edit screen - the rest fall back to the generic file editor |
+| Runs in | Broker process (another CT) | Panel process |
 
-Forçar os dois em um `GameAdapter` só faria sentido se `gamepanel` e
-`gamebroker` compartilhassem código Python — e eles deliberadamente não
-compartilham (comunicam só por HTTP, cada um no seu processo/CT). Uma
-`games/` "universal" compartilhada exigiria ou (a) uma terceira dependência
-Python instalada nos dois lados (mais um pacote pra versionar e mais uma
-coisa que pode divergir entre painel e broker em produção), ou (b)
-duplicação do zero — nenhuma das duas é melhor que manter os dois catálogos
-que já existem, só formalizados como adapter em cada lado (seção 2, acima).
+Forcing both into a single `GameAdapter` would only make sense if `gamepanel` and
+`gamebroker` shared Python code - and they deliberately do not (they communicate
+only over HTTP, each in its own process/CT). A shared "universal" `games/` would
+require either (a) a third Python dependency installed on both sides (one more
+package to version and one more thing that can diverge between panel and broker
+in production), or (b) duplication from scratch - neither is better than keeping
+the two catalogs that already exist, just formalized as adapters on each side
+(section 2, above).
 
-O ganho real de "adicionar um jogo = só um adapter" já existe hoje do lado do
-broker (editar `games/*.env` não toca nenhum código Python) e passa a existir
-do lado do painel depois da Fase 4 (criar `adapters/novo_jogo.py` e registrar
-em `registry.py`, sem tocar nas rotas nem nos outros adapters) — mas
-continuam sendo dois pontos de extensão, não um.
+The real gain of "adding a game = just one adapter" already exists today on the
+broker side (editing `games/*.env` touches no Python code) and starts to exist
+on the panel side after Phase 4 (create `adapters/novo_jogo.py` and register it
+in `registry.py`, without touching the routes or the other adapters) - but they
+remain two extension points, not one.
 
 ---
 
-## 3. Tabela de mapeamento
+## 3. Mapping table
 
-### 3.1 `admin/` → `src/gamepanel/`
+### 3.1 `admin/` -> `src/gamepanel/`
 
-| Caminho atual | Caminho novo | Observação |
+| Current path | New path | Note |
 |---|---|---|
-| `admin/app.py` (seções 1–3, 42: config/factory/security headers) | `gamepanel/app.py`, `gamepanel/config.py`, `gamepanel/extensions.py` | quebra do bootstrap Flask |
-| `admin/app.py` (seção 4: SCHEMA/MIGRATIONS) | `gamepanel/persistence/schema.py` | |
-| `admin/app.py` (seção 4: hash de senha) | `gamepanel/security/passwords.py` | |
-| `admin/app.py` (seção 5: auth/csrf/2fa gate) | `gamepanel/services/auth_service.py` + `gamepanel/security/csrf.py` + `gamepanel/blueprints/auth.py` | |
-| `admin/app.py` (seção 5: contexto de navegação) + `admin/ui.py` | `gamepanel/navigation.py` | `ui.py` já é puro, só muda de lugar |
-| `admin/app.py` (seção 6: SSH) | `gamepanel/runtime/ssh.py` | |
-| `admin/app.py` (seção 7: A2S) | `gamepanel/runtime/a2s.py` | |
-| `admin/app.py` (seções 8–9: HTTP API contagem+ações) | `gamepanel/runtime/http_probe.py` + `gamepanel/services/player_service.py` + `gamepanel/blueprints/players.py` | |
-| `admin/app.py` (seções 10–11: log/porta) | `gamepanel/runtime/log_replay.py`, `gamepanel/runtime/port_probe.py` | |
-| `admin/app.py` (seção 12: fonte de contagem) | `gamepanel/services/player_service.py` | `FONTES_DE_CONTAGEM` vira registry no service |
-| `admin/app.py` (seção 13: métricas) | `gamepanel/runtime/metrics_probe.py` + `gamepanel/services/metrics_service.py` | |
-| `admin/app.py` (seção 14: status) | `gamepanel/services/status_service.py` | |
-| `admin/app.py` (seção 15: jobs/comandos) | `gamepanel/services/job_service.py` | `COMANDOS`/`ACTIONS` + o `assert` de sincronia com `ui.py` viram parte do registry |
-| `admin/app.py` (seções 16–17: alertas) | `gamepanel/services/alert_service.py` + `gamepanel/integrations/webhook_client.py` | `ALERTAS_DE_RECURSO` vira registry no service |
-| `admin/app.py` (seção 18: log stream) | `gamepanel/tasks/log_streams.py` | |
-| `admin/app.py` (seção 19: monitor) | `gamepanel/tasks/monitor.py` | `_ritmo_do_monitor`/`_alertas_do_servidor` já eram a exceção "boa" — vira o modelo pros outros services |
-| `admin/app.py` (seção 20: amostras) | `gamepanel/services/chart_service.py` | |
-| `admin/app.py` (seção 21: agendador) | `gamepanel/tasks/scheduler.py` + `gamepanel/services/schedule_service.py` | |
-| `admin/app.py` (seções 22–41, 43: rotas) | um `gamepanel/blueprints/*.py` por tela (tabela da seção 2) | camada fina — só valida e chama service |
-| `admin/app.py` (seção 26: validação de formulário) | `gamepanel/services/server_service.py` | `_form_server` e os ~10 helpers `_porta`/`_servico`/etc. |
-| `admin/app.py` (seção 29: terminal) | `gamepanel/runtime/terminal.py` (classe `TermSession`) + `gamepanel/blueprints/terminal.py` | |
-| `admin/app.py` (seções 30–32: arquivos/backup) | `gamepanel/runtime/files.py` + `gamepanel/services/file_service.py`/`backup_service.py` + blueprints correspondentes | os 9 scripts bash (`LIST_SCRIPT` etc.) migram para `runtime/files.py`/`runtime/backup.py` como constantes locais, não mais soltos no meio de rotas |
-| `admin/app.py` (seção 33: config rápida) | `gamepanel/blueprints/config_quick.py` + `gamepanel/games/` | liga `gameconf.py`+`gamefields.py` (agora `games/config_format.py`+`games/adapters/`) ao formulário |
-| `admin/app.py` (seção 35: broker) | `gamepanel/services/broker_service.py` + `gamepanel/tasks/broker_jobs.py` + `gamepanel/blueprints/broker.py` | |
-| `admin/app.py` (seção 37: gráficos) | `gamepanel/services/chart_service.py` + `gamepanel/blueprints/charts.py` | |
-| `admin/app.py` (seção 44: bootstrap CLI) | `gamepanel/cli.py` | `ensure_admin_user`, `DeployServer`, `ensure_server`, `argparse` |
-| `admin/gameconf.py` | `gamepanel/games/config_format.py` | puro hoje, só muda de nome/lugar |
-| `admin/gamefields.py` | `gamepanel/games/base.py` + `gamepanel/games/adapters/*.py` | 5 dicts → 5 arquivos + 1 `Protocol` |
-| `admin/broker_client.py` | `gamepanel/integrations/broker_client.py` | puro/stdlib hoje, só muda de lugar |
-| `admin/totp.py`, `admin/qr.py` | `gamepanel/security/totp.py`, `gamepanel/security/qr.py` | puros hoje, só mudam de lugar |
-| `admin/busca_de_jogos.py`, `admin/modelos_de_jogo.py`, `admin/sugestoes_de_jogos.py` | `gamepanel/games/catalog/search.py`, `templates.py`, `suggestions.py` | `sugestoes_de_jogos.py` continua **gerado**, só muda o caminho de saída de `tools/import-linuxgsm.py` |
-| `admin/templates/`, `admin/static/` | `gamepanel/templates/`, `gamepanel/static/` (dentro de `src/gamepanel/`) | Flask resolve por padrão relativo ao pacote |
-| `admin/test_*.py` (14 arquivos) | `tests/gamepanel/{unit,integration}/...` | reorganização **em etapas** — ver seção 6, não é 1:1 imediato |
-| `admin/conftest.py` | `tests/conftest.py` (+ specializations em `tests/gamepanel/conftest.py` se necessário) | |
+| `admin/app.py` (sections 1-3, 42: config/factory/security headers) | `gamepanel/app.py`, `gamepanel/config.py`, `gamepanel/extensions.py` | splitting the Flask bootstrap |
+| `admin/app.py` (section 4: SCHEMA/MIGRATIONS) | `gamepanel/persistence/schema.py` | |
+| `admin/app.py` (section 4: password hash) | `gamepanel/security/passwords.py` | |
+| `admin/app.py` (section 5: auth/csrf/2fa gate) | `gamepanel/services/auth_service.py` + `gamepanel/security/csrf.py` + `gamepanel/blueprints/auth.py` | |
+| `admin/app.py` (section 5: navigation context) + `admin/ui.py` | `gamepanel/navigation.py` | `ui.py` is already pure, only changes place |
+| `admin/app.py` (section 6: SSH) | `gamepanel/runtime/ssh.py` | |
+| `admin/app.py` (section 7: A2S) | `gamepanel/runtime/a2s.py` | |
+| `admin/app.py` (sections 8-9: HTTP API counting+actions) | `gamepanel/runtime/http_probe.py` + `gamepanel/services/player_service.py` + `gamepanel/blueprints/players.py` | |
+| `admin/app.py` (sections 10-11: log/port) | `gamepanel/runtime/log_replay.py`, `gamepanel/runtime/port_probe.py` | |
+| `admin/app.py` (section 12: counting source) | `gamepanel/services/player_service.py` | `FONTES_DE_CONTAGEM` becomes a registry in the service |
+| `admin/app.py` (section 13: metrics) | `gamepanel/runtime/metrics_probe.py` + `gamepanel/services/metrics_service.py` | |
+| `admin/app.py` (section 14: status) | `gamepanel/services/status_service.py` | |
+| `admin/app.py` (section 15: jobs/commands) | `gamepanel/services/job_service.py` | `COMANDOS`/`ACTIONS` + the sync `assert` with `ui.py` become part of the registry |
+| `admin/app.py` (sections 16-17: alerts) | `gamepanel/services/alert_service.py` + `gamepanel/integrations/webhook_client.py` | `ALERTAS_DE_RECURSO` becomes a registry in the service |
+| `admin/app.py` (section 18: log stream) | `gamepanel/tasks/log_streams.py` | |
+| `admin/app.py` (section 19: monitor) | `gamepanel/tasks/monitor.py` | `_ritmo_do_monitor`/`_alertas_do_servidor` were already the "good" exception - they become the model for the other services |
+| `admin/app.py` (section 20: samples) | `gamepanel/services/chart_service.py` | |
+| `admin/app.py` (section 21: scheduler) | `gamepanel/tasks/scheduler.py` + `gamepanel/services/schedule_service.py` | |
+| `admin/app.py` (sections 22-41, 43: routes) | one `gamepanel/blueprints/*.py` per screen (table in section 2) | thin layer - only validates and calls the service |
+| `admin/app.py` (section 26: form validation) | `gamepanel/services/server_service.py` | `_form_server` and the ~10 helpers `_porta`/`_servico`/etc. |
+| `admin/app.py` (section 29: terminal) | `gamepanel/runtime/terminal.py` (class `TermSession`) + `gamepanel/blueprints/terminal.py` | |
+| `admin/app.py` (sections 30-32: files/backup) | `gamepanel/runtime/files.py` + `gamepanel/services/file_service.py`/`backup_service.py` + matching blueprints | the 9 bash scripts (`LIST_SCRIPT` etc.) move to `runtime/files.py`/`runtime/backup.py` as local constants, no longer loose in the middle of routes |
+| `admin/app.py` (section 33: quick config) | `gamepanel/blueprints/config_quick.py` + `gamepanel/games/` | wires `gameconf.py`+`gamefields.py` (now `games/config_format.py`+`games/adapters/`) to the form |
+| `admin/app.py` (section 35: broker) | `gamepanel/services/broker_service.py` + `gamepanel/tasks/broker_jobs.py` + `gamepanel/blueprints/broker.py` | |
+| `admin/app.py` (section 37: charts) | `gamepanel/services/chart_service.py` + `gamepanel/blueprints/charts.py` | |
+| `admin/app.py` (section 44: CLI bootstrap) | `gamepanel/cli.py` | `ensure_admin_user`, `DeployServer`, `ensure_server`, `argparse` |
+| `admin/gameconf.py` | `gamepanel/games/config_format.py` | pure today, only changes name/place |
+| `admin/gamefields.py` | `gamepanel/games/base.py` + `gamepanel/games/adapters/*.py` | 5 dicts -> 5 files + 1 `Protocol` |
+| `admin/broker_client.py` | `gamepanel/integrations/broker_client.py` | pure/stdlib today, only changes place |
+| `admin/totp.py`, `admin/qr.py` | `gamepanel/security/totp.py`, `gamepanel/security/qr.py` | pure today, only change place |
+| `admin/busca_de_jogos.py`, `admin/modelos_de_jogo.py`, `admin/sugestoes_de_jogos.py` | `gamepanel/games/catalog/search.py`, `templates.py`, `suggestions.py` | `sugestoes_de_jogos.py` stays **generated**, only the output path of `tools/import-linuxgsm.py` changes |
+| `admin/templates/`, `admin/static/` | `gamepanel/templates/`, `gamepanel/static/` (inside `src/gamepanel/`) | Flask resolves them by default relative to the package |
+| `admin/test_*.py` (14 files) | `tests/gamepanel/{unit,integration}/...` | reorganization **in steps** - see section 6, not 1:1 right away |
+| `admin/conftest.py` | `tests/conftest.py` (+ specializations in `tests/gamepanel/conftest.py` if needed) | |
 
-### 3.2 `broker/` → `src/gamebroker/`
+### 3.2 `broker/` -> `src/gamebroker/`
 
-Mapeamento quase 1:1 — `broker/` já está bem dividido, é principalmente
-mudança de caminho + tradução de nome:
+An almost 1:1 mapping - `broker/` is already well divided, it is mainly a
+path change + name translation:
 
-| Caminho atual | Caminho novo |
+| Current path | New path |
 |---|---|
 | `broker/api.py` | `gamebroker/app.py` |
 | `broker/prod.py` | `gamebroker/wsgi.py` |
@@ -446,444 +451,445 @@ mudança de caminho + tradução de nome:
 | `broker/ssh_install.py` | `gamebroker/runtime/ssh_installer.py` |
 | `broker/rede.py` | `gamebroker/runtime/network.py` |
 | `broker/fakes.py` | `gamebroker/runtime/fakes.py` |
-| `broker/fake_http.py` | `gamebroker/runtime/http_fake_server.py` (só para teste) |
+| `broker/fake_http.py` | `gamebroker/runtime/http_fake_server.py` (test only) |
 | `broker/banco.py` | `gamebroker/persistence/db.py` |
 | `broker/conexao.py` | `gamebroker/integrations/http_client.py` |
 | `broker/config.py` | `gamebroker/config.py` |
-| `broker/test_*.py` (12 arquivos) | `tests/gamebroker/{unit,integration}/...` |
+| `broker/test_*.py` (12 files) | `tests/gamebroker/{unit,integration}/...` |
 
 ---
 
-## 4. Plano de refactor por módulo
+## 4. Refactor plan per module
 
-Ordem de execução recomendada para a Fase 4 (depois que a Fase 3 estabilizar
-a estrutura nova sem mudar comportamento):
+Recommended execution order for Phase 4 (after Phase 3 stabilizes the new
+structure without changing behavior):
 
-1. **`gamepanel/games/`** (era `gameconf.py`+`gamefields.py`) — já puro, sem
-   Flask/banco/SSH; menor risco, bom primeiro módulo pra validar o padrão de
-   "teste de comportamento antes de refatorar" com um módulo pequeno.
-2. **`gamepanel/security/`** (`totp.py`, `qr.py`) — idem, puro, baixo risco.
-3. **`gamepanel/runtime/`** — extrair a camada SSH/A2S/HTTP/log de dentro de
-   `app.py` para trás de uma interface (`RemoteControl` Protocol), com
-   `runtime/fakes.py` para os testes passarem a usar fake em vez de
-   `monkeypatch` de função solta. **Este é o módulo que desbloqueia o resto**
-   — sem ele, `services/` não tem como ficar livre de SSH direto.
-4. **`gamebroker/`** — só reorganizar/renomear (mapeamento 1:1 da seção 3.2);
-   quase não tem SRP pra corrigir, já está bem dividido. É o módulo de
-   "menor esforço, valida o padrão de migração" para o time.
-5. **`gamepanel/services/`**, um por vez, na ordem: `player_service` →
-   `metrics_service`/`status_service` → `alert_service` → `schedule_service`
-   → `server_service` → `broker_service` → `backup_service`/`file_service`
-   (nessa ordem porque `alert_service` já depende de `player`/`metrics`, e
-   `server_service` é o maior, com mais ramificação de validação).
-6. **`gamepanel/blueprints/`** por último, telas por telas — nesse ponto cada
-   rota já deve ser um repasse fino pro service correspondente.
-7. **`gamepanel/persistence/repositories/`** — trocar o SQL cru inline por
-   uma função por tabela, em paralelo com o item 5 (cada service ganha seu
-   repositório na hora de ser extraído, não numa passada separada).
+1. **`gamepanel/games/`** (was `gameconf.py`+`gamefields.py`) - already pure, no
+   Flask/database/SSH; lowest risk, a good first module to validate the
+   "behavior test before refactoring" pattern with a small module.
+2. **`gamepanel/security/`** (`totp.py`, `qr.py`) - same, pure, low risk.
+3. **`gamepanel/runtime/`** - extract the SSH/A2S/HTTP/log layer from inside
+   `app.py` behind an interface (`RemoteControl` Protocol), with
+   `runtime/fakes.py` so tests start using a fake instead of
+   `monkeypatch` of a loose function. **This is the module that unblocks the rest**
+   - without it, `services/` has no way to be free of direct SSH.
+4. **`gamebroker/`** - only reorganize/rename (the 1:1 mapping of section 3.2);
+   it has almost no SRP to fix, it is already well divided. It is the
+   "least effort, validates the migration pattern" module for the team.
+5. **`gamepanel/services/`**, one at a time, in this order: `player_service` ->
+   `metrics_service`/`status_service` -> `alert_service` -> `schedule_service`
+   -> `server_service` -> `broker_service` -> `backup_service`/`file_service`
+   (in this order because `alert_service` already depends on `player`/`metrics`, and
+   `server_service` is the largest, with the most validation branching).
+6. **`gamepanel/blueprints/`** last, screen by screen - by that point each
+   route should already be a thin pass-through to the corresponding service.
+7. **`gamepanel/persistence/repositories/`** - replace the inline raw SQL with
+   one function per table, in parallel with item 5 (each service gets its
+   repository at the moment it is extracted, not in a separate pass).
 
-**Problemas de Sonar/CLAUDE.md resolvidos por essa ordem**:
-- Complexidade cognitiva >15: a divisão em service+blueprint já resolve a
-  maioria — `app.py` inteiro colapsa de 8.175 linhas / 44 seções para ~25
-  arquivos de 100–300 linhas cada.
-- "13+ parâmetros → objeto": `broker/config.py`/`prod.py` já usam esse
-  padrão (`**dict` para `ConfigProxmox`/`ConfigBroker`) mas perdem tipo nessa
-  borda (achado do mypy, Fase 1 §6.2) — na Fase 4, ao tipar `gamebroker`,
-  trocar por `TypedDict` ou validação campo a campo resolve os dois de uma
-  vez (o smell de parâmetros E o erro de tipo).
-- `except Exception` sem `# noqa` correto: a config real de `ruff` (item
-  abaixo) precisa habilitar o rule set (`BLE001` etc.) que os comentários
-  `# noqa: BLE001` do código já assumem — sem isso, 9 supressões viram lixo
-  silencioso (achado da Fase 1 §6.1).
-- Padrão "rodar script remoto, converter erro" repetido 7× em `app.py` vira
-  um único método em `runtime/ssh.py`/`runtime/files.py`.
-- As três implementações quase idênticas de fan-out por thread (`all_status`/
-  `all_metrics`/`all_players`) viram uma função genérica em `runtime/base.py`
-  ou um utilitário compartilhado, usada pelos três services.
-- `subprocess`/`Popen` sem `check=`/com `preexec_fn` (achado do ruff, Fase 1
-  §6.1, `PLW1510`/`PLW1509`) — corrigidos ao mover para `runtime/ssh.py`,
-  onde ficam concentrados e revisáveis num lugar só.
+**Sonar/CLAUDE.md problems solved by this order**:
+- Cognitive complexity >15: the split into service+blueprint already solves
+  most of it - the whole `app.py` collapses from 8,175 lines / 44 sections into ~25
+  files of 100-300 lines each.
+- "13+ parameters -> object": `broker/config.py`/`prod.py` already use this
+  pattern (`**dict` for `ConfigProxmox`/`ConfigBroker`) but lose type at that
+  edge (mypy finding, Phase 1 section 6.2) - in Phase 4, when typing `gamebroker`,
+  switching to `TypedDict` or field-by-field validation solves both at
+  once (the parameter smell AND the type error).
+- `except Exception` without a correct `# noqa`: the real `ruff` config (item
+  below) needs to enable the rule set (`BLE001` etc.) that the
+  `# noqa: BLE001` comments in the code already assume - without it, 9 suppressions
+  become silent garbage (Phase 1 section 6.1 finding).
+- The "run remote script, convert error" pattern repeated 7x in `app.py` becomes
+  a single method in `runtime/ssh.py`/`runtime/files.py`.
+- The three nearly identical thread fan-out implementations (`all_status`/
+  `all_metrics`/`all_players`) become one generic function in `runtime/base.py`
+  or a shared utility, used by the three services.
+- `subprocess`/`Popen` without `check=`/with `preexec_fn` (ruff finding, Phase 1
+  section 6.1, `PLW1510`/`PLW1509`) - fixed when moving to `runtime/ssh.py`,
+  where they are concentrated and reviewable in a single place.
 
-**Configuração de `ruff`/`mypy` a criar** (no `pyproject.toml` raiz, Fase 3):
+**`ruff`/`mypy` configuration to create** (in the root `pyproject.toml`, Phase 3):
 ```toml
 [tool.ruff]
 line-length = 100
-extend-exclude = ["src/gamepanel/games/catalog/suggestions.py"]  # gerado
+extend-exclude = ["src/gamepanel/games/catalog/suggestions.py"]  # generated
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "BLE", "S", "SIM", "RUF", "PL"]
 
 [tool.mypy]
-platform = "linux"          # produção é sempre Linux — evita falso positivo
-                             # de ioctl/setsid/openpty no Windows (Fase 1 §6.2)
+platform = "linux"          # production is always Linux - avoids the false positive
+                             # of ioctl/setsid/openpty on Windows (Phase 1 section 6.2)
 disallow_untyped_defs = true
 ```
-(valores exatos de `select`/regras a ajustar com você antes de ligar `--fix`
-em qualquer coisa — isso também é decisão sua, não vou pré-aprovar regras
-novas de lint sem confirmar.)
+(exact `select`/rule values to be adjusted with the owner before turning on `--fix`
+for anything - that is also the owner's decision, I will not pre-approve new lint
+rules without confirming.)
 
 ---
 
-## 5. Breaking changes — decisão individual
+## 5. Breaking changes - individual decision
 
-Retomando a lista completa da Fase 1 (§7.3), organizada em **grupos de
-decisão** (mudar um item do grupo normalmente significa mudar o grupo
-inteiro, então faz mais sentido aprovar por grupo do que item a item):
+Picking up the full list from Phase 1 (section 7.3), organized into **decision
+groups** (changing one item of a group usually means changing the whole
+group, so it makes more sense to approve by group than item by item):
 
-> **Estado (atualizado na execucao):** **A**, **B** e **D** foram feitos — a API do
-> broker fala ingles com uma camada de fio propria (`gamebroker/domain/wire.py`), e os
-> dois bancos tem migration de rename com teste que monta o esquema antigo a mao
-> (`tests/gamebroker/test_migration.py`, `tests/gamepanel/test_schema.py`). Faltam **C**
-> (rotas do painel, que ainda depende da preferencia sobre redirect), **E** e **F**.
+> **Status (updated during execution):** **A**, **B** and **D** were done - the broker
+> API speaks English with its own wire layer (`gamebroker/domain/wire.py`), and both
+> databases have a rename migration with a test that builds the old schema by hand
+> (`tests/gamebroker/test_migration.py`, `tests/gamepanel/test_schema.py`). Still missing: **C**
+> (panel routes, which still depends on the redirect preference), **E** and **F**.
 
-| # | Grupo | O que muda | Quem consome | Risco | Minha recomendação |
+| # | Group | What changes | Who consumes it | Risk | My recommendation |
 |---|---|---|---|---|---|
-| **A** | Rotas + payload JSON do broker (`/v1/saude`, `/v1/catalogo`, `/v1/instancias`, `/v1/operacoes`, chaves `jogo`/`instancia_id`/`porta_jogo`/etc., códigos de erro `nao-encontrado`/`sem-recurso`/etc.) | Traduzir tudo pra inglês | **Só** `gamepanel/integrations/broker_client.py`, no mesmo repo, no mesmo deploy | Baixo — API 100% interna, sem consumidor externo, os dois lados mudam juntos no mesmo commit | **Traduzir agora** (Fase 4), é o breaking change mais barato da lista |
-| **B** | Colunas do banco do broker (schema inteiro: `ctid`, `estado`, `criado_em`...) | Traduzir + migração (banco recriado a cada deploy de CT novo, mas dado existente em CT já rodando precisa migrar) | Só `gamebroker` (processo único, dono do próprio banco) | Médio — precisa de migração real (o banco do broker tem estado: instâncias/portas/operações/auditoria ativas) | **Traduzir com migração**, mas só depois de confirmar com você se algum broker já em produção tem dado que não pode perder |
-| **C** | Rotas HTTP do painel (`/historico`, `/alertas`, `/usuarios`, `/agendamentos`, `/catalogo`, `/instancias`, `/graficos`) | Traduzir pra inglês | Navegadores de quem usa o painel (pode ter link salvo/favorito) | Baixo-médio — painel interno, não API pública, mas usuário humano pode ter bookmark | Traduzir, com um redirect 301 das rotas antigas por um tempo (barato de manter, evita quebrar bookmark) — **pergunto sua preferência abaixo** |
-| **D** | Colunas de banco do painel (`webhooks`, `alert_log`) | Traduzir + entrada em `MIGRATIONS` | Só o próprio `app.py`/`gamepanel` | Baixo — mecanismo de migração incremental já existe e é exatamente pra isso | **Traduzir**, é o padrão que o próprio projeto já usa pra evoluir esse schema |
-| **E** | `BROKER_MAX_CRIACOES_HORA` (única env var com palavra em português) | Renomear pra `BROKER_MAX_CREATIONS_PER_HOUR` | `provision-broker-lxc.sh`/`deploy-broker.ps1` (regeneram o `.env` a cada deploy — não é um valor que "persiste" como token/chave) | Baixo | **Renomear**, atualizando os scripts de deploy no mesmo commit |
-| **F** | Filtros Jinja (`"nivel"`, `"duracao"`, `"tamanho"`, `"ident"`) e nomes de endpoint Flask usados em `url_for()` | Traduzir | Só templates internos, atualizados no mesmo commit | Baixo | Traduzir junto com o blueprint correspondente na Fase 4 (não precisa de aprovação em separado — é puramente interno ao repo) |
+| **A** | Broker routes + JSON payload (`/v1/saude`, `/v1/catalogo`, `/v1/instancias`, `/v1/operacoes`, keys `jogo`/`instancia_id`/`porta_jogo`/etc., error codes `nao-encontrado`/`sem-recurso`/etc.) | Translate everything to English | **Only** `gamepanel/integrations/broker_client.py`, in the same repo, in the same deploy | Low - 100% internal API, no external consumer, both sides change together in the same commit | **Translate now** (Phase 4), it is the cheapest breaking change on the list |
+| **B** | Broker database columns (the whole schema: `ctid`, `estado`, `criado_em`...) | Translate + migration (the database is recreated on every new CT deploy, but existing data in a CT already running needs to migrate) | Only `gamebroker` (single process, owner of its own database) | Medium - needs a real migration (the broker database has state: active instances/ports/operations/audit) | **Translate with migration**, but only after confirming with the owner whether any broker already in production has data that cannot be lost |
+| **C** | Panel HTTP routes (`/historico`, `/alertas`, `/usuarios`, `/agendamentos`, `/catalogo`, `/instancias`, `/graficos`) | Translate to English | Browsers of panel users (may have saved links/bookmarks) | Low-medium - internal panel, not a public API, but a human user may have a bookmark | Translate, with a 301 redirect from the old routes for a while (cheap to keep, avoids breaking bookmarks) - **I ask for the owner's preference below** |
+| **D** | Panel database columns (`webhooks`, `alert_log`) | Translate + an entry in `MIGRATIONS` | Only `app.py`/`gamepanel` itself | Low - the incremental migration mechanism already exists and is exactly for this | **Translate**, it is the pattern the project itself already uses to evolve this schema |
+| **E** | `BROKER_MAX_CRIACOES_HORA` (the only env var with a Portuguese word) | Rename to `BROKER_MAX_CREATIONS_PER_HOUR` | `provision-broker-lxc.sh`/`deploy-broker.ps1` (they regenerate the `.env` on every deploy - it is not a value that "persists" like a token/key) | Low | **Rename**, updating the deploy scripts in the same commit |
+| **F** | Jinja filters (`"nivel"`, `"duracao"`, `"tamanho"`, `"ident"`) and Flask endpoint names used in `url_for()` | Translate | Only internal templates, updated in the same commit | Low | Translate together with the corresponding blueprint in Phase 4 (no separate approval needed - it is purely internal to the repo) |
 
-Grupos **E** e **F** não preciso de aprovação separada de verdade (risco
-baixo, tudo no mesmo commit, sem consumidor externo) — só listei pra
-completude. Os que realmente dependem da sua decisão são **A–D**, e
-principalmente a preferência de transição em **C** (rota do painel — corte
-seco vs. redirect temporário). Vou perguntar isso já a seguir nesta mensagem.
-
----
-
-## 6. Riscos e o que pode quebrar
-
-- **Produção não usa `pip install` — o `src/` layout muda como o Python
-  resolve `import gamepanel`.** Hoje `gunicorn ... app:app` funciona porque
-  o processo roda com `cwd=/opt/gamepanel` e os arquivos estão soltos ali
-  (sem pacote). **Validado na Fase 3, etapa 2**, contra a imagem real
-  (`debian:13-slim` + `apt-get install python3-flask gunicorn`, sem pip,
-  sem editable install — exatamente a restrição de produção): `gunicorn
-  --chdir /opt/gamepanel/src gamepanel.wsgi:app` resolve `import gamepanel`
-  sem precisar de `PYTHONPATH` nenhum (gunicorn insere o `cwd` resolvido pelo
-  `--chdir` em `sys.path`, o mesmo mecanismo que já faz `app:app` funcionar
-  hoje). Decisão: o deploy passa a copiar a árvore como
-  `/opt/gamepanel/src/gamepanel/...` e a unit systemd/`Dockerfile` ganham
-  `--chdir /opt/gamepanel/src` na linha do gunicorn — um parâmetro a mais,
-  nada de variável de ambiente nova. Isso entra na etapa 5 (mover `app.py`
-  de verdade), junto da atualização de `provision-admin-lxc.sh::render_service`,
-  `docker/panel/entrypoint.sh` e `docker/panel/Dockerfile*`.
-- **`provision-admin-lxc.sh`/`deploy-admin.ps1` e os equivalentes do broker
-  fazem `push_tree`/scp por caminho fixo** (`admin/*.py`, `templates/`,
-  `static/`) — todos os caminhos mudam e os dois scripts (mais
-  `docker/panel/Dockerfile*`, `docker/broker/Dockerfile`) precisam de
-  atualização na mesma etapa que move os arquivos (`git mv` + atualização de
-  script no mesmo commit, por etapa — não em separado).
-- **`docker-compose.yml` monta `admin/` como bind mount `:ro`** — vira bind
-  mount de `src/gamepanel/` (ou do repo inteiro com `--reload` apontando pro
-  caminho novo). Testar que o hot-reload continua funcionando é parte do
-  "passar por todas as telas" que o `CLAUDE.md` já pede depois de mexer em
-  rota.
-- **`pytest.ini` (`testpaths = admin broker`) e `pyrightconfig.json`
-  (`extraPaths`, `include`)** precisam apontar para os caminhos novos — sem
-  isso, os 851 testes documentados no `CLAUDE.md` simplesmente não são
-  coletados (silêncio, não erro — risco de "os testes passam" virar
-  mentira por coletar zero teste).
-- **O padrão de teste `monkeypatch.setattr(panel, "funcao", ...)`** (Fase 1
-  §2.1) só funciona enquanto a função trocada é chamada pelo módulo, nunca
-  importada por nome. Ao quebrar `app.py` em `services/`, cada extração
-  precisa trocar `monkeypatch.setattr(panel, "x", fake)` por
-  `monkeypatch.setattr(player_service, "x", fake)` (ou official DI via
-  `runtime/fakes.py`) **no mesmo commit** que move a função — nunca depois.
-  Isso é o maior risco de "teste verde mentiroso" da Fase 3/4.
-- **`entrypoint.sh` do painel roda um heredoc Python** que chama
-  `app.ensure_server(...)` diretamente (achado do `CLAUDE.md`: "grep só nos
-  `.py` não acha") — vira `gamepanel.cli.ensure_server`, e o heredoc precisa
-  do import corrigido no mesmo commit que move `cli.py`.
-- **`lib/ct-phases.sh` e `provision-game-lxc.sh` leem `games/*.env` por
-  caminho relativo fixo** — como `games/` não move (seção 2.1), isso não
-  quebra, mas vale confirmar que nenhum script novo tenta "arrumar" esse
-  caminho por engano durante a Fase 3.
-- **`admin/requirements-dev.txt` referenciado no `CLAUDE.md`** — se `uv` for
-  aprovado (seção 0), o `CLAUDE.md` precisa ser atualizado no mesmo commit
-  que remove esse arquivo (ele mesmo pede pra manter `CLAUDE.md` como fonte
-  de verdade dos comandos).
-- **`docker/ct-sandbox/compare.sh`** compara o instalador antes/depois
-  lendo `provision-game-lxc.sh`/`lib/ct-phases.sh` por caminho fixo — como
-  esses não movem, sem risco, mas é o primeiro lugar a rodar depois de
-  qualquer mudança em `lib/` (o próprio `CLAUDE.md` já pede isso).
+Groups **E** and **F** do not really need separate approval (low risk,
+everything in the same commit, no external consumer) - I only listed them for
+completeness. The ones that really depend on the owner's decision are **A-D**, and
+especially the transition preference in **C** (panel route - clean cut vs.
+temporary redirect). I will ask about that right after, in this message.
 
 ---
 
-## 7. Plano de migração em etapas pequenas (Fase 3)
+## 6. Risks and what can break
 
-Cada etapa = branch → `git mv` → atualizar imports/Dockerfile/compose →
-rodar testes → commit. Não mistura mudança de comportamento (isso é Fase 4).
-
-1. **Criar o esqueleto**: `pyproject.toml` raiz + dois sub-`pyproject.toml`,
-   `uv.lock`, pastas vazias `src/gamepanel/`, `src/gamebroker/`,
-   `tests/gamepanel/`, `tests/gamebroker/`. Validar `uv sync` funciona e
-   `pyrightconfig.json` resolve os pacotes.
-2. ✅ **Feito.** Validar a hipótese de risco do `src/` layout em produção
-   (seção 6, primeiro item), isoladamente, contra a imagem real do painel
-   (`debian:13-slim` + apt, sem pip), com um `gamepanel` "oco" (`app.py` +
-   `wsgi.py`, só rota `/health`) — antes de mover 8.175 linhas de verdade.
-   Confirmado: `gunicorn --chdir /opt/gamepanel/src gamepanel.wsgi:app`
-   resolve o import sem `PYTHONPATH` extra. `src/gamepanel/app.py` e
-   `wsgi.py` ficam como estão (viram a semente da etapa 5, não são
-   descartáveis).
-3. **Mover `gamebroker`** — mas em duas passadas, não uma, pra manter cada
-   commit de baixo risco: **(3a, Fase 3, esta etapa)** relocar `broker/` →
-   `src/gamebroker/` **de forma plana**, mesmos nomes de arquivo, mesmos
-   identificadores (`servico.py` continua `servico.py`, `Servico` continua
-   `Servico`) — só o caminho do pacote muda (`broker.X` → `gamebroker.X`
-   nos imports absolutos dos testes e nos scripts de deploy). Zero mudança
-   de comportamento, zero tradução ainda. **(3b, Fase 4)** a reorganização
-   em subpastas (`services/`, `runtime/`, `persistence/`, `domain/`,
-   `integrations/` — mapeamento da seção 3.2) acontece **junto** da tradução
-   pra inglês (grupos A/B aprovados), módulo por módulo — já que mover um
-   arquivo pra dentro de uma subpasta obriga a tocar em todo import mesmo,
-   faz mais sentido fazer as duas mudanças (caminho + nome) na mesma
-   passada por módulo, em vez de duas passadas mecânicas separadas tocando
-   os mesmos arquivos duas vezes.
-   Atualizar `docker/broker/Dockerfile`, `provision-broker-lxc.sh`,
-   `deploy-broker.ps1`, `docker-compose.yml`. Rodar as ~415 suítes do broker.
-4. **Mover os módulos puros de `admin/`** (`totp.py`→`security/totp.py`,
-   `qr.py`→`security/qr.py`, `gameconf.py`+`gamefields.py`→`games/`,
-   `ui.py`→`navigation.py`, `broker_client.py`→`integrations/`) — zero lógica
-   nova, só `git mv` + ajuste de import. Rodar as suítes correspondentes.
-5. **Mover `app.py` inteiro para `gamepanel/app.py`** SEM quebrar em módulos
-   ainda (só muda de endereço) — separa "onde as coisas moram" de "como as
-   coisas são organizadas", reduzindo o tamanho de cada commit de risco.
-   Atualizar `docker/panel/Dockerfile*`, `provision-admin-lxc.sh`,
-   `deploy-admin.ps1`, `docker-compose.yml`, `entrypoint.sh` (o heredoc).
-   Mover `templates/`/`static/`. Rodar as ~436 suítes do painel.
-6. **Mover `admin/test_*.py` para `tests/gamepanel/`** como estão (sem
-   dividir ainda) — a divisão em `unit/`+`integration/` e o espelhamento por
-   service só faz sentido módulo a módulo, à medida que a Fase 4 extrai cada
-   `services/*.py` (ver seção 4). Nesta etapa, só preservar 100% de
-   cobertura movendo os arquivos inteiros.
-7. **Atualizar `CLAUDE.md`/`README.md`** com os caminhos novos e os comandos
-   `uv run ...` — última etapa da Fase 3, antes de declarar a estrutura
-   estável e passar pra Fase 4.
-
-A partir daqui, a Fase 4 segue a ordem da seção 4 (games → security → runtime
-→ [gamebroker interno, se sobrar algo] → services, um por vez → blueprints →
-repositories), cada módulo com commit próprio, teste escrito antes se a
-cobertura hoje for insuficiente (backups/arquivos/terminal, achados da Fase 1
-§4.1, são os primeiros candidatos a precisar disso).
-
----
-
-## Decisões aprovadas (2026-09-22)
-
-- **Estrutura geral (seção 2)**: aprovada como está.
-- **Grupo A/B (broker)**: traduzir rotas `/v1/*`, chaves de JSON e colunas do
-  banco do broker para inglês. Confirmado que não há broker em produção com
-  instâncias/portas/operações reais ainda — migração de schema pode ser feita
-  sem plano de backup especial (não há dado real a perder).
-- **Grupo C (painel)**: traduzir rotas do painel para inglês, com redirect
-  301 temporário das rotas antigas em português (`/alertas`, `/usuarios`,
-  `/historico`, `/agendamentos`, `/catalogo`, `/instancias`, `/graficos`) —
-  os redirects entram na Fase 4, junto do blueprint correspondente, e podem
-  ser removidos depois de um período sem uso observado (a decidir quando
-  chegar lá).
-- **Grupos D/E/F**: seguem a recomendação da seção 5 (traduzir, sem risco
-  adicional).
-
-Fase 3 iniciada a seguir.
+- **Production does not use `pip install` - the `src/` layout changes how Python
+  resolves `import gamepanel`.** Today `gunicorn ... app:app` works because
+  the process runs with `cwd=/opt/gamepanel` and the files are loose there
+  (no package). **Validated in Phase 3, step 2**, against the real image
+  (`debian:13-slim` + `apt-get install python3-flask gunicorn`, no pip,
+  no editable install - exactly the production constraint): `gunicorn
+  --chdir /opt/gamepanel/src gamepanel.wsgi:app` resolves `import gamepanel`
+  without needing any `PYTHONPATH` (gunicorn inserts the `cwd` resolved by
+  `--chdir` into `sys.path`, the same mechanism that already makes `app:app` work
+  today). Decision: the deploy starts copying the tree as
+  `/opt/gamepanel/src/gamepanel/...` and the systemd unit/`Dockerfile` gain
+  `--chdir /opt/gamepanel/src` on the gunicorn line - one more parameter,
+  no new environment variable. This goes into step 5 (actually moving `app.py`),
+  together with updating `provision-admin-lxc.sh::render_service`,
+  `docker/panel/entrypoint.sh` and `docker/panel/Dockerfile*`.
+- **`provision-admin-lxc.sh`/`deploy-admin.ps1` and the broker equivalents
+  do `push_tree`/scp by fixed path** (`admin/*.py`, `templates/`,
+  `static/`) - every path changes and both scripts (plus
+  `docker/panel/Dockerfile*`, `docker/broker/Dockerfile`) need to be
+  updated in the same step that moves the files (`git mv` + script update in
+  the same commit, per step - not separately).
+- **`docker-compose.yml` mounts `admin/` as a `:ro` bind mount** - it becomes a
+  bind mount of `src/gamepanel/` (or of the whole repo with `--reload` pointing at
+  the new path). Testing that hot reload keeps working is part of the
+  "go through every screen" that `CLAUDE.md` already asks for after touching a
+  route.
+- **`pytest.ini` (`testpaths = admin broker`) and `pyrightconfig.json`
+  (`extraPaths`, `include`)** need to point at the new paths - without
+  that, the 851 tests documented in `CLAUDE.md` simply are not
+  collected (silence, not an error - risk of "the tests pass" becoming a
+  lie by collecting zero tests).
+- **The `monkeypatch.setattr(panel, "funcao", ...)` test pattern** (Phase 1
+  section 2.1) only works while the swapped function is called through the module, never
+  imported by name. When splitting `app.py` into `services/`, each extraction
+  needs to change `monkeypatch.setattr(panel, "x", fake)` to
+  `monkeypatch.setattr(player_service, "x", fake)` (or official DI via
+  `runtime/fakes.py`) **in the same commit** that moves the function - never later.
+  This is the biggest "lying green test" risk of Phases 3/4.
+- **The panel `entrypoint.sh` runs a Python heredoc** that calls
+  `app.ensure_server(...)` directly (a `CLAUDE.md` finding: "a grep only on the
+  `.py` files does not find it") - it becomes `gamepanel.cli.ensure_server`, and the
+  heredoc needs the import fixed in the same commit that moves `cli.py`.
+- **`lib/ct-phases.sh` and `provision-game-lxc.sh` read `games/*.env` by a fixed
+  relative path** - since `games/` does not move (section 2.1), this does not
+  break, but it is worth confirming that no new script tries to "fix" that
+  path by mistake during Phase 3.
+- **`admin/requirements-dev.txt` referenced in `CLAUDE.md`** - if `uv` is
+  approved (section 0), `CLAUDE.md` needs to be updated in the same commit
+  that removes that file (it asks itself to keep `CLAUDE.md` as the source
+  of truth for the commands).
+- **`docker/ct-sandbox/compare.sh`** compares the installer before/after
+  by reading `provision-game-lxc.sh`/`lib/ct-phases.sh` by fixed path - since
+  those do not move, no risk, but it is the first thing to run after
+  any change in `lib/` (`CLAUDE.md` itself already asks for this).
 
 ---
 
-## O que já foi executado (atualizado em 2026-09-23)
+## 7. Migration plan in small steps (Phase 3)
 
-Esta seção é o registro; o plano acima ficou como foi aprovado, inclusive onde a
-execução divergiu dele — está marcado.
+Each step = branch -> `git mv` -> update imports/Dockerfile/compose ->
+run tests -> commit. No behavior change mixed in (that is Phase 4).
 
-### Fase 3 — estrutura
+1. **Create the skeleton**: root `pyproject.toml` + two sub-`pyproject.toml`,
+   `uv.lock`, empty folders `src/gamepanel/`, `src/gamebroker/`,
+   `tests/gamepanel/`, `tests/gamebroker/`. Validate that `uv sync` works and
+   `pyrightconfig.json` resolves the packages.
+2. **Done.** Validate the risk hypothesis of the `src/` layout in production
+   (section 6, first item), in isolation, against the real panel image
+   (`debian:13-slim` + apt, no pip), with a "hollow" `gamepanel` (`app.py` +
+   `wsgi.py`, only the `/health` route) - before moving 8,175 real lines.
+   Confirmed: `gunicorn --chdir /opt/gamepanel/src gamepanel.wsgi:app`
+   resolves the import without extra `PYTHONPATH`. `src/gamepanel/app.py` and
+   `wsgi.py` stay as they are (they become the seed of step 5, they are not
+   throwaway).
+3. **Move `gamebroker`** - but in two passes, not one, to keep each
+   commit low-risk: **(3a, Phase 3, this step)** relocate `broker/` ->
+   `src/gamebroker/` **flat**, same file names, same
+   identifiers (`servico.py` stays `servico.py`, `Servico` stays
+   `Servico`) - only the package path changes (`broker.X` -> `gamebroker.X`
+   in the tests' absolute imports and in the deploy scripts). Zero behavior
+   change, zero translation yet. **(3b, Phase 4)** the reorganization
+   into subfolders (`services/`, `runtime/`, `persistence/`, `domain/`,
+   `integrations/` - the section 3.2 mapping) happens **together** with the
+   translation to English (groups A/B approved), module by module - since moving a
+   file into a subfolder forces touching every import anyway, it makes more
+   sense to do both changes (path + name) in the same pass per module,
+   instead of two separate mechanical passes touching the same files twice.
+   Update `docker/broker/Dockerfile`, `provision-broker-lxc.sh`,
+   `deploy-broker.ps1`, `docker-compose.yml`. Run the ~415 broker tests.
+4. **Move the pure modules of `admin/`** (`totp.py`->`security/totp.py`,
+   `qr.py`->`security/qr.py`, `gameconf.py`+`gamefields.py`->`games/`,
+   `ui.py`->`navigation.py`, `broker_client.py`->`integrations/`) - zero new
+   logic, only `git mv` + import adjustment. Run the corresponding suites.
+5. **Move the whole `app.py` to `gamepanel/app.py`** WITHOUT splitting it into modules
+   yet (only its address changes) - separates "where things live" from "how
+   things are organized", reducing the size of each risky commit.
+   Update `docker/panel/Dockerfile*`, `provision-admin-lxc.sh`,
+   `deploy-admin.ps1`, `docker-compose.yml`, `entrypoint.sh` (the heredoc).
+   Move `templates/`/`static/`. Run the ~436 panel tests.
+6. **Move `admin/test_*.py` to `tests/gamepanel/`** as they are (without
+   splitting yet) - the split into `unit/`+`integration/` and the mirroring per
+   service only makes sense module by module, as Phase 4 extracts each
+   `services/*.py` (see section 4). In this step, only preserve 100%
+   coverage by moving whole files.
+7. **Update `CLAUDE.md`/`README.md`** with the new paths and the
+   `uv run ...` commands - the last step of Phase 3, before declaring the structure
+   stable and moving on to Phase 4.
 
-Feita. `admin/` e `broker/` viraram `src/gamepanel/` e `src/gamebroker/`, com
-`tests/gamepanel/` e `tests/gamebroker/`, workspace `uv` e `pyrightconfig.json`.
+From here, Phase 4 follows the order in section 4 (games -> security -> runtime
+-> [internal gamebroker, if anything is left] -> services, one at a time -> blueprints ->
+repositories), each module with its own commit, with the test written first if
+coverage today is insufficient (backups/files/terminal, Phase 1 findings
+section 4.1, are the first candidates to need this).
 
-### Fase 4 — divisão de `app.py`
+---
 
-Feita, e mais do que a seção 4 previa. O `app.py` saiu de 4949 para ~3200 linhas:
+## Approved decisions (2026-09-22)
+
+- **Overall structure (section 2)**: approved as is.
+- **Group A/B (broker)**: translate the `/v1/*` routes, JSON keys and broker database
+  columns to English. Confirmed that there is no broker in production with
+  real instances/ports/operations yet - the schema migration can be done
+  without a special backup plan (there is no real data to lose).
+- **Group C (panel)**: translate the panel routes to English, with a temporary 301
+  redirect from the old Portuguese routes (`/alertas`, `/usuarios`,
+  `/historico`, `/agendamentos`, `/catalogo`, `/instancias`, `/graficos`) -
+  the redirects go in during Phase 4, together with the corresponding blueprint, and can
+  be removed after a period without observed use (to be decided when we
+  get there).
+- **Groups D/E/F**: follow the recommendation in section 5 (translate, no additional
+  risk).
+
+Phase 3 started right after.
+
+---
+
+## What has already been executed (updated on 2026-09-23)
+
+This section is the record; the plan above stayed as it was approved, including where
+the execution diverged from it - that is marked.
+
+### Phase 3 - structure
+
+Done. `admin/` and `broker/` became `src/gamepanel/` and `src/gamebroker/`, with
+`tests/gamepanel/` and `tests/gamebroker/`, a `uv` workspace and `pyrightconfig.json`.
+
+### Phase 4 - splitting `app.py`
+
+Done, and more than section 4 anticipated. `app.py` went from 4949 to ~3200 lines:
 `services/`, `runtime/`, `tasks/`, `persistence/`, `i18n/`, `security/`,
-`integrations/` e — no fim — `blueprints/`, com as 78 rotas em 19 arquivos, um por
-grupo de tela.
+`integrations/` and - at the end - `blueprints/`, with the 78 routes in 19 files, one per
+screen group.
 
-O que **não** foi feito da seção 4: `games/gamefields.py` continua um arquivo só (não
-virou adapter por jogo), e não existe `repositories/`.
+What was **not** done from section 4: `games/gamefields.py` remains a single file (it did
+not become an adapter per game), and there is no `repositories/`.
 
-**Regra que nasceu daí e não estava no plano:** blueprint acessa o `app.py` sempre pelo
-MÓDULO (`panel.server_status(...)`). Os testes trocam função por falsa com
-`monkeypatch.setattr(panel, ...)`; um import direto copiaria a referência no import e a
-troca deixaria de valer **em silêncio**.
+**A rule that came out of this and was not in the plan:** a blueprint always accesses
+`app.py` through the MODULE (`panel.server_status(...)`). The tests swap a function for a
+fake with `monkeypatch.setattr(panel, ...)`; a direct import would copy the reference at
+import time and the swap would **silently** stop having any effect.
 
-### Grupos de breaking change
+### Breaking-change groups
 
-| grupo | o que era | situação |
+| group | what it was | status |
 |---|---|---|
-| A | colunas e tabelas do banco (painel e broker) | feito, com migration de `RENAME` nos dois |
-| B | API do broker (rotas, corpo, resposta, cabeçalho) | feito, com `domain/wire.py` separando fio de coluna |
-| C | rotas do painel | feito, **sem redirect 301** — divergência da decisão aprovada |
-| D | i18n | feito: chaves em inglês nos dois catálogos, com teste de paridade |
-| E | variável de ambiente do broker | feito |
-| F | filtros Jinja | feito |
+| A | database columns and tables (panel and broker) | done, with a `RENAME` migration in both |
+| B | broker API (routes, body, response, header) | done, with `domain/wire.py` separating wire from column |
+| C | panel routes | done, **without a 301 redirect** - diverges from the approved decision |
+| D | i18n | done: English keys in both catalogs, with a parity test |
+| E | broker environment variable | done |
+| F | Jinja filters | done |
 
-**Divergência do grupo C.** O plano aprovado previa redirect 301 temporário das rotas
-em português. A execução foi corte limpo, a pedido: o painel não é público, não há link
-externo para preservar, e um redirect temporário sem data para sair vira permanente.
+**Group C divergence.** The approved plan called for a temporary 301 redirect from the
+Portuguese routes. The execution was a clean cut, on request: the panel is not public,
+there is no external link to preserve, and a temporary redirect with no removal date
+becomes permanent.
 
-### Tradução dos identificadores
+### Translating the identifiers
 
-Feita no repositório inteiro, além do que o plano pedia: além dos dois pacotes Python
-(incluindo variável local), também o contexto dos templates, os macros Jinja, as classes
-de CSS, os `data-*`, o JavaScript e os nomes de função e variável de bash e PowerShell.
-Nome de arquivo também (`catalogo.html` → `catalog.html`, `busca-de-jogo.js` →
-`game-search.js`, `components/servidor.html` → `components/server.html`).
+Done across the whole repository, beyond what the plan asked: besides the two Python
+packages (including local variables), also the template context, the Jinja macros, the CSS
+classes, the `data-*` attributes, the JavaScript and the bash and PowerShell function and
+variable names. File names too (`catalogo.html` -> `catalog.html`, `busca-de-jogo.js` ->
+`game-search.js`, `components/servidor.html` -> `components/server.html`).
 
-O que continua em português, de propósito e registrado no `CLAUDE.md`: comentário,
-docstring, texto de tela (que vive no `i18n/`), nome de teste e a saída dos sandboxes.
+What stays in Portuguese, on purpose and recorded in `CLAUDE.md`: comments,
+docstrings, screen text (which lives in `i18n/`), test names and the sandbox output.
 
-### Fora do plano, mas feito
+### Outside the plan, but done
 
-- **Versão da aplicação e deploy por release empacotado.** `VERSION` na raiz,
-  `tools/build-release.py` (tarball determinista + sha256), `lib/install-release.sh`
-  publicando em `releases/<versão>/` com symlink `current` e rollback automático. Isso
-  consertou um defeito que estava no ar: cada caminho de deploy tinha a sua lista
-  escrita à mão de quais subpastas apagar antes de copiar, e as duas pararam em
-  `templates/ games/ security/ integrations/` — `blueprints/`, `i18n/`, `persistence/`,
-  `runtime/`, `services/` e `tasks/` nunca entraram.
-- **API do painel versionada** (`/api/v1/...`), como a do broker.
-- **Quatro redes novas**, todas nascidas de defeito real encontrado durante a execução:
-  `test_template_contract.py` (kwarg de `render_template` sem leitor),
-  `test_frontend_contract.py` (classe x regra de CSS, `data-*` x leitor),
-  `test_javascript.py` (o JS parseia, importa e MONTA) e `docker/ct-sandbox/release.sh`.
+- **Application version and deploy by packaged release.** `VERSION` at the root,
+  `tools/build-release.py` (deterministic tarball + sha256), `lib/install-release.sh`
+  publishing into `releases/<version>/` with a `current` symlink and automatic rollback.
+  This fixed a defect that was live: each deploy path had its own hand-written list of
+  which subfolders to delete before copying, and both stopped at
+  `templates/ games/ security/ integrations/` - `blueprints/`, `i18n/`, `persistence/`,
+  `runtime/`, `services/` and `tasks/` never made it in.
+- **Versioned panel API** (`/api/v1/...`), like the broker's.
+- **Four new safety nets**, all born from a real defect found during execution:
+  `test_template_contract.py` (`render_template` kwarg with no reader),
+  `test_frontend_contract.py` (class vs CSS rule, `data-*` vs reader),
+  `test_javascript.py` (the JS parses, imports and MOUNTS) and `docker/ct-sandbox/release.sh`.
 
-### O que sobra
+### What is left
 
-- ~~`games/gamefields.py` dividido em adapter por jogo~~ — **feito**: `games/base.py`,
-  `games/registry.py` e `games/adapters/` (5 jogos), com `test_game_registry.py`
-  cobrando que nenhum adapter fique fora do registro.
-- ~~`repositories/`~~ — **feito**: as sete tabelas do painel (`servers`, `jobs`,
-  `schedules`, `webhooks`+`alert_log`, `samples`, `settings`, `users`) têm repositório,
-  e `.execute(` só aparece em `persistence/`. `test_sql_placement.py` guarda a regra
-  por tabela.
-- ~~`services/auth_service.py`~~ — **feito**, e menor do que a seção 5 previa: hash e
-  conferência de senha já tinham saído para `security/passwords.py`, e o portão de 2FA é
-  um decorador que precisa de `session`/`request`, então continua no `app.py`. O que
-  sobrou de política pura era a **trava de tentativas**, hoje a classe `Lockout` (relógio
-  injetável, `login_lockout` e `totp_lockout` no `app.py`, `test_auth_service.py` com 11
-  casos que não precisam de HTTP nem de relógio global).
-- **`services/backup_service.py` e `services/file_service.py` não serão criados.** O que
-  o plano pedia neles já existe, sob outro nome: `runtime/backups.py` (`backup_command`,
-  `backup_paths`, `list_backups`, `delete_backup`, `validate_backup_name`) e
-  `runtime/files.py` (`clean_path`, `_check_roots`, com as raízes injetadas). Criar uma
-  camada por cima só para bater com o desenho do papel seria um repasse a mais para ler.
-- ~~`tasks/monitor.py`~~ — **feito na parte que importava**: os seis relógios de fundo
-  (`global _last_monitor` e companhia) viraram instâncias de `tasks.ticker.Ticker`, com
-  `due()`/`mark()` separados e 9 testes que não precisam de banco nem de dormir. O corpo
-  de `monitor_servers` fica no `app.py`: ele só orquestra, e já está dividido em
-  `_monitor_rhythm` + `_server_alerts` desde antes (era o exemplo "bom" que o plano cita).
-- ~~`deploy/`~~ — **feito**: os 10 scripts da raiz foram para `deploy/{admin,broker,game}/`,
-  e a raiz ficou só com `CLAUDE.md`, `README.md`, `VERSION`, os arquivos de configuração e
-  as pastas. O item estava na seção 2 do plano aprovado e **não constava desta lista** —
-  junto com os dois abaixo, foram os três esquecidos.
+- ~~`games/gamefields.py` split into an adapter per game~~ - **done**: `games/base.py`,
+  `games/registry.py` and `games/adapters/` (5 games), with `test_game_registry.py`
+  enforcing that no adapter is left out of the registry.
+- ~~`repositories/`~~ - **done**: the seven panel tables (`servers`, `jobs`,
+  `schedules`, `webhooks`+`alert_log`, `samples`, `settings`, `users`) have a repository,
+  and `.execute(` only appears in `persistence/`. `test_sql_placement.py` guards the rule
+  per table.
+- ~~`services/auth_service.py`~~ - **done**, and smaller than section 5 anticipated: password
+  hashing and checking had already moved to `security/passwords.py`, and the 2FA gate is
+  a decorator that needs `session`/`request`, so it stays in `app.py`. What was left of
+  pure policy was the **attempt lockout**, today the `Lockout` class (injectable clock,
+  `login_lockout` and `totp_lockout` in `app.py`, `test_auth_service.py` with 11
+  cases that need neither HTTP nor a global clock).
+- **`services/backup_service.py` and `services/file_service.py` will not be created.** What
+  the plan asked of them already exists, under another name: `runtime/backups.py` (`backup_command`,
+  `backup_paths`, `list_backups`, `delete_backup`, `validate_backup_name`) and
+  `runtime/files.py` (`clean_path`, `_check_roots`, with injected roots). Creating a
+  layer on top just to match the paper design would be one more pass-through to read.
+- ~~`tasks/monitor.py`~~ - **done in the part that mattered**: the six background clocks
+  (`global _last_monitor` and friends) became instances of `tasks.ticker.Ticker`, with
+  separate `due()`/`mark()` and 9 tests that need neither a database nor sleeping. The body
+  of `monitor_servers` stays in `app.py`: it only orchestrates, and it has been split into
+  `_monitor_rhythm` + `_server_alerts` since before (it was the "good" example the plan cites).
+- ~~`deploy/`~~ - **done**: the 10 scripts at the root went to `deploy/{admin,broker,game}/`,
+  and the root kept only `CLAUDE.md`, `README.md`, `VERSION`, the configuration files and
+  the folders. The item was in section 2 of the approved plan and **was not on this list** -
+  together with the two below, they were the three forgotten ones.
 
-  O que a mudança obrigou, e que não estava previsto: **`$ScriptDir` não era "a pasta
-  deste script", era a raiz do repositório.** Na raiz os dois coincidiam, e os `.ps1`
-  usavam o mesmo nome para achar o `provision-*.sh` irmão E para achar `tools/`, `lib/`,
-  `games/` e o `.env`. Agora são `$ScriptDir` e `$RepoRoot`, e a diferença está escrita.
-  O `compare.sh` ganhou o mesmo tratamento que já dava ao `ct-fases.sh`: procura o script
-  no caminho de hoje e cai no antigo, para `BASE_REF` continuar apontando para commits
-  anteriores à mudança.
-- ~~`pytest.ini` dentro do `pyproject.toml`~~ — **feito**: a configuração virou
-  `[tool.pytest.ini_options]`, ao lado da de ruff e mypy, e a raiz perdeu mais um arquivo.
-  O pytest do apt no container (8.3) lê a seção; conferido rodando a suíte lá.
+  What the change forced, and was not anticipated: **`$ScriptDir` was not "this script's
+  folder", it was the repository root.** At the root the two coincided, and the `.ps1` files
+  used the same name to find the sibling `provision-*.sh` AND to find `tools/`, `lib/`,
+  `games/` and the `.env`. Now they are `$ScriptDir` and `$RepoRoot`, and the difference is
+  written down. `compare.sh` got the same treatment it already gave `ct-fases.sh`: it looks
+  for the script at today's path and falls back to the old one, so that `BASE_REF` keeps
+  pointing at commits from before the change.
+- ~~`pytest.ini` inside `pyproject.toml`~~ - **done**: the configuration became
+  `[tool.pytest.ini_options]`, next to the ruff and mypy ones, and the root lost one more file.
+  The apt pytest in the container (8.3) reads the section; checked by running the suite there.
 
-  De brinde, o `filterwarnings` apontava para **três módulos escritos à mão e um deles não
-  existia mais** (`gamepanel.games.gamefields`, dividido em `games/base.py` + `registry.py`
-  + `adapters/` há commits). Filtro apontando para módulo inexistente não avisa nada e
-  ninguém descobre. Virou o PREFIXO do pacote (`gamepanel`), que cobre qualquer módulo novo
-  — inclusive um adapter — e não apodrece. Conferido com uma sonda nos dois sentidos: aviso
-  atribuído a `gamepanel.*` vira erro, atribuído a `gamebroker.*` não.
-- ~~`tests/{unit,integration}/`~~ — **feito**, e a seção 2 tinha razão: 991 testes de unit
-  em **28 s** contra 910 de integration em **126 s**. Medi os dois buckets antes de mover
-  arquivo nenhum, justamente para não pagar o custo sem saber se o benefício existia.
+  As a bonus, `filterwarnings` pointed at **three hand-written modules and one of them no
+  longer existed** (`gamepanel.games.gamefields`, split into `games/base.py` + `registry.py`
+  + `adapters/` commits earlier). A filter pointing at a nonexistent module warns about nothing
+  and nobody finds out. It became the package PREFIX (`gamepanel`), which covers any new
+  module - including an adapter - and does not rot. Checked with a probe in both directions:
+  a warning attributed to `gamepanel.*` becomes an error, one attributed to `gamebroker.*` does not.
+- ~~`tests/{unit,integration}/`~~ - **done**, and section 2 was right: 991 unit tests
+  in **28 s** against 910 integration tests in **126 s**. I measured both buckets before
+  moving any file, precisely so as not to pay the cost without knowing whether the benefit existed.
 
-  O que a execução encontrou, medindo em vez de supondo:
+  What the execution found, measuring instead of assuming:
 
-  1. **Import por nome ATRAVESSA a subpasta** — era o que eu achava que quebraria, e não
-     quebra: com o `conftest.py` em `tests/<pacote>/`, um teste em `unit/` continua fazendo
-     `from fake_http import ...`, porque carregar o conftest põe aquela pasta no `sys.path`.
-  2. **O que quebra é o import entre BALDES**, e só quando se usa a divisão para o que ela
-     serve: um arquivo de `integration/` importando de `unit/` passa na suíte inteira
-     (`unit/` foi coletado primeiro) e dá `ModuleNotFoundError` rodando só `integration/`.
-     Eram dois casos, os dois puxando `FakeRunner` de dentro de `test_ssh_installer.py`;
-     o dobre saiu para `fake_ssh.py`, ao lado do `fake_http.py`. `test_suite_layout.py`
-     guarda a regra, com os dois lados conferidos quebrando de propósito.
-  3. **Um teste intermitente, pré-existente**, que só apareceu porque rodar um balde sozinho
-     é rápido o bastante para repetir cinco vezes: o do agendador contava
-     `threading.active_count()`, e importar o `gamepanel.app` já sobe uma thread própria.
-     Falhava 1 em 3. A thread do `Clock` ganhou nome e o teste conta só as dela.
-- `extensions.py`, `services/user_service.py` e `runtime/base.py`+`runtime/fakes.py` do
-  painel continuam abertos: são extração de orquestração, sem ganho de teste como os
-  anteriores. O `extensions.py` chega a contradizer a descrição do próprio `app.py` no
-  CLAUDE.md ("a montagem: banco, sessão, decoradores, tabelas"), que é exatamente o que
-  ele levaria embora.
+  1. **Import by name CROSSES the subfolder** - it was what I thought would break, and it
+     does not: with `conftest.py` in `tests/<package>/`, a test in `unit/` keeps doing
+     `from fake_http import ...`, because loading the conftest puts that folder on `sys.path`.
+  2. **What breaks is an import between BUCKETS**, and only when the split is used for what
+     it is for: a file in `integration/` importing from `unit/` passes in the whole suite
+     (`unit/` was collected first) and gives `ModuleNotFoundError` when running only
+     `integration/`. There were two cases, both pulling `FakeRunner` from inside
+     `test_ssh_installer.py`; the double moved out to `fake_ssh.py`, next to `fake_http.py`.
+     `test_suite_layout.py` guards the rule, with both sides checked by breaking them on purpose.
+  3. **A pre-existing flaky test**, which only showed up because running one bucket alone
+     is fast enough to repeat five times: the scheduler test counted
+     `threading.active_count()`, and importing `gamepanel.app` already starts its own thread.
+     It failed 1 in 3. The `Clock` thread got a name and the test counts only its threads.
+- `extensions.py`, `services/user_service.py` and the panel's `runtime/base.py`+`runtime/fakes.py`
+  remain open: they are orchestration extractions, with no test gain like the
+  previous ones. `extensions.py` even contradicts the description of `app.py` itself in
+  CLAUDE.md ("the assembly: database, session, decorators, tables"), which is exactly what
+  it would take away.
 
-### Lacunas da análise (Fase 1) que foram fechadas
+### Gaps from the analysis (Phase 1) that were closed
 
-- **Suíte de console.** A seção 4.1 da análise listou quatro rotas privilegiadas sem suíte
-  dedicada: arquivos, backups, terminal e console. As três primeiras ganharam suíte ao
-  longo da execução; o console — a que roda uma linha de shell como **root** no container —
-  era a última, e agora tem 25 casos: quem abre, o que vira job, como o comando chega
-  (`bash -lc` com um argumento só, para o shell local do ssh não interpretar pipe e aspas)
-  e o que o histórico mostra, inclusive que `?job=` de outro servidor não abre.
-- **As três funções de fan-out duplicadas** (`all_status`/`all_metrics`/`all_players`)
-  viraram `parallel.per_server`, e o padrão "roda script remoto e converte erro", que
-  estava sete vezes, virou `runtime/files.py`.
+- **Console suite.** Section 4.1 of the analysis listed four privileged routes without a
+  dedicated suite: files, backups, terminal and console. The first three got a suite over
+  the course of the execution; the console - the one that runs a shell line as **root** in
+  the container - was the last, and now has 25 cases: who opens it, what becomes a job, how
+  the command arrives (`bash -lc` with a single argument, so ssh's local shell does not
+  interpret pipes and quotes) and what the history shows, including that `?job=` from
+  another server does not open.
+- **The three duplicated fan-out functions** (`all_status`/`all_metrics`/`all_players`)
+  became `parallel.per_server`, and the "run remote script and convert error" pattern, which
+  was there seven times, became `runtime/files.py`.
 
-### O levantamento de qualidade (Fase 1, §6) — zerado
+### The quality survey (Phase 1, section 6) - zeroed
 
-A configuração de `ruff` e `mypy` que a seção 4 pedia existia desde a Fase 3, e **ninguém
-tinha agido sobre os achados**: 97 no ruff e 11 no mypy. Uma lista que nunca zera é uma
-lista que ninguém lê, então os dois estão em **zero** agora, e cada achado teve resposta em
-vez de supressão:
+The `ruff` and `mypy` configuration that section 4 asked for had existed since Phase 3, and
+**nobody had acted on the findings**: 97 in ruff and 11 in mypy. A list that never reaches zero
+is a list nobody reads, so both are at **zero** now, and every finding got an answer instead
+of a suppression:
 
-- **Dois `assert` guardavam invariante que `python -O` descarta.** Medi: com `-O`, a
-  divergência entre `ui.ACTIONS` e `app.COMMANDS` — a que o CLAUDE.md descreve como "500 no
-  clique" — passa calada. Viraram `raise`, e a invariante agora derruba o start, que é o
-  comportamento certo.
-- **Três `pytest.raises(match=...)` com um `.` não escapado**, casando texto que não era o
-  pretendido (`BROKER_SSH_KEY.pub` também casaria `BROKER_SSH_KEYXpub`). Os dois `.*`
-  deliberados viraram string crua, para a intenção ficar dita.
-- **Um `zip()` truncava em silêncio** no parser do `install.env`; hoje o descarte do pedaço
-  final é explícito e o `strict=True` estoura se a contagem ficar ímpar por outro motivo.
-- **Os limites de cor do medidor (92/80) estavam escritos duas vezes**, em Python e em
-  JavaScript, e nada os ligava: divergir fazia a barra mudar de cor no recarregamento e não
-  no medidor que se move. Viraram `GAUGE_HOT`/`GAUGE_WARN` com teste comparando os dois
-  arquivos.
-- **Seis `# noqa` não suprimiam nada** e quatro divisores de seção eram lidos como código
-  comentado — a mesma família do `# Palavra: coisa.ext` que o CLAUDE.md já registrava.
-- **`PLR2004` foi desligada NA CONFIG, com o motivo**, depois de olhar as 19 uma por uma: 3
-  viraram constante e as 13 restantes são número de protocolo (`200 <= status < 300`,
-  `<= 254`, `1024`), onde nomear piora a leitura. Religar é apagar uma linha.
+- **Two `assert`s guarded an invariant that `python -O` discards.** Measured: with `-O`, the
+  divergence between `ui.ACTIONS` and `app.COMMANDS` - the one CLAUDE.md describes as "500 on
+  click" - goes through silently. They became `raise`, and the invariant now brings down the
+  start, which is the right behavior.
+- **Three `pytest.raises(match=...)` with an unescaped `.`**, matching text that was not
+  intended (`BROKER_SSH_KEY.pub` would also match `BROKER_SSH_KEYXpub`). The two deliberate
+  `.*` became raw strings, so that the intent is stated.
+- **A `zip()` silently truncated** in the `install.env` parser; today discarding the final
+  piece is explicit and `strict=True` blows up if the count turns odd for another reason.
+- **The gauge color thresholds (92/80) were written twice**, in Python and in
+  JavaScript, and nothing tied them together: diverging made the bar change color on reload
+  and not on the gauge that moves. They became `GAUGE_HOT`/`GAUGE_WARN` with a test comparing
+  both files.
+- **Six `# noqa` suppressed nothing** and four section dividers were read as commented-out
+  code - the same family as the `# Palavra: coisa.ext` CLAUDE.md already recorded.
+- **`PLR2004` was turned off IN THE CONFIG, with the reason**, after looking at all 19 one by
+  one: 3 became constants and the remaining 13 are protocol numbers (`200 <= status < 300`,
+  `<= 254`, `1024`), where naming makes reading worse. Turning it back on is deleting one line.
 
-E uma correção de doc que saiu de medir: o CLAUDE.md afirmava que
-`# noqa: BLE001 - motivo` era "sintaxe inválida de supressão". **Não é** — o ruff honra o
-motivo no fim e mantém a supressão específica ao código. A preferência pelo motivo acima
-continua, mas como estilo, não como correção.
+And a doc correction that came out of measuring: CLAUDE.md claimed that
+`# noqa: BLE001 - motivo` was "invalid suppression syntax". **It is not** - ruff honors the
+reason at the end and keeps the suppression specific to the code. The preference for the
+reason above stays, but as style, not as a correction.
 
-### Defeitos reais encontrados depois do plano
+### Real defects found after the plan
 
-- **Toda página de erro estava em português na tela em inglês.** `abort(403, "frase")` +
-  `str(exc)` no handler: a frase literal passa pelo `translate` e volta igual, e o
-  `str(exc)` de uma `HTTPException` colapsa a `i18n.Message` no idioma do deploy. Eram 22
-  frases (barreiras, erros de formulário e flashes de validação), provadas contra o
-  container ao vivo e agora guardadas por `test_screen_text.py`.
-- **A doc mandava abrir oito arquivos que não existiam mais** (`conexao.py`,
+- **Every error page was in Portuguese on the English screen.** `abort(403, "frase")` +
+  `str(exc)` in the handler: the literal phrase goes through `translate` and comes back the
+  same, and the `str(exc)` of an `HTTPException` collapses the `i18n.Message` into the deploy
+  language. There were 22 phrases (barriers, form errors and validation flashes), proven
+  against the live container and now guarded by `test_screen_text.py`.
+- **The docs pointed to eight files that no longer existed** (`conexao.py`,
   `ssh_install.py`, `servico.py`, `backends.py`, `test_gamefields.py`, `instancias.html`,
-  `catalogo.html`, `gameconf.py`), mais `ui.py`, `prod.py` e um `pyroject.toml` digitado
-  errado. Passavam porque a rede de doc descartava qualquer coisa com extensão — o filtro
-  que evitava o falso positivo era o buraco. `test_docs_contract.py` agora confere nome de
-  arquivo também.
-- Uma criação REAL de instância de ponta a ponta pelo broker contra o Proxmox/OPNsense.
+  `catalogo.html`, `gameconf.py`), plus `ui.py`, `prod.py` and a mistyped `pyroject.toml`.
+  They got through because the doc safety net discarded anything with an extension - the
+  filter that avoided the false positive was the hole. `test_docs_contract.py` now checks
+  file names too.
+- A REAL end-to-end instance creation through the broker against Proxmox/OPNsense.

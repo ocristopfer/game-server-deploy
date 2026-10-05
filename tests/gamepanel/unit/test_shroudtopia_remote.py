@@ -1,7 +1,7 @@
-"""Shroudtopia, o carregador de mods do Enshrouded (games/mods/shroudtopia_remote.py).
+"""Shroudtopia, the Enshrouded mod loader (games/mods/shroudtopia_remote.py).
 
-Roda DENTRO do CT; aqui ele roda contra uma pasta temporaria e um GitHub falso, com o zip
-no mesmo formato da versao 0.1.1 que foi provada no CT 303.
+It runs INSIDE the CT; here it runs against a temporary folder and a fake GitHub, with the zip
+in the same format as version 0.1.1, which was proven on CT 303.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ RELEASE = {"tag_name": "0.1.1", "assets": [{
 
 
 def official_zip() -> bytes:
-    """O que o zip oficial traz: o carregador e os mods de EXEMPLO (com trapaca ligada)."""
+    """What the official zip ships: the loader and the EXAMPLE mods (with cheats on)."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("winmm.dll", b"MZ-proxy")
@@ -45,14 +45,14 @@ def game(tmp_path):
 
 
 def test_liga_o_winmm_sem_mexer_no_que_o_jogo_ja_tinha():
-    """Medido: sem winmm=n,b o Wine usa o winmm dele e o carregador nunca roda."""
+    """Measured: without winmm=n,b Wine uses its own winmm and the loader never runs."""
     assert sr.with_winmm("mscoree,mshtml=") == "mscoree,mshtml=;winmm=n,b"
     assert sr.with_winmm("mscoree,mshtml=;winmm=n,b") == "mscoree,mshtml=;winmm=n,b"
     assert sr.without_winmm("mscoree,mshtml=;winmm=n,b") == "mscoree,mshtml="
 
 
 def test_instala_o_carregador_e_nao_os_mods_de_exemplo(game):
-    """Os exemplos vem com trapaca ligada: instalar o carregador nao pode mudar o jogo."""
+    """The examples ship with cheats on: installing the loader must not change the game."""
     game_dir, env = game
     result = sr.install_loader(str(game_dir), fetcher=fetcher, env_path=str(env))
     assert result["version"] == "0.1.1"
@@ -96,7 +96,7 @@ def test_status_lista_os_mods_e_o_fim_do_log(game):
 
 
 def test_download_so_de_github(game):
-    """O link vem da resposta da API: um asset apontando para outro host e recusado."""
+    """The link comes from the API response: an asset pointing to another host is refused."""
     game_dir, env = game
     bad = {"tag_name": "x", "assets": [{"name": "Shroudtopia-9.zip",
                                         "browser_download_url": "https://evil.example/s.zip"}]}
@@ -114,7 +114,7 @@ def test_zip_sem_o_carregador_e_recusado(game):
                           fetcher=lambda u: json.dumps(RELEASE).encode() if u == sr.RELEASES else buf.getvalue())
 
 
-# ------------------------------------------------------------------ versao escolhida
+# ------------------------------------------------------------------ chosen version
 
 OLD_RELEASE = {"tag_name": "v0.1.0", "assets": [{
     "name": "Shroudtopia-0.1.0.zip",
@@ -123,7 +123,7 @@ OLD_RELEASE = {"tag_name": "v0.1.0", "assets": [{
 
 
 def tagged_fetcher(url: str) -> bytes:
-    """GitHub falso com a 0.1.1 sem "v" na tag e a 0.1.0 com: o autor nao foi consistente."""
+    """Fake GitHub with 0.1.1 without "v" in the tag and 0.1.0 with it: the author was not consistent."""
     if url == sr.RELEASE_TAG.format(tag="0.1.1"):
         return json.dumps(RELEASE).encode()
     if url == sr.RELEASE_TAG.format(tag="v0.1.0"):

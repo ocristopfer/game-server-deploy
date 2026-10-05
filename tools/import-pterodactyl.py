@@ -1,42 +1,44 @@
 #!/usr/bin/env python3
-"""Gera `src/gamepanel/games/catalog/pterodactyl_suggestions.py` a partir dos eggs do Pterodactyl.
+"""Generates `src/gamepanel/games/catalog/pterodactyl_suggestions.py` from the Pterodactyl eggs.
 
-Os eggs (MIT, https://github.com/pelican-eggs/games-steamcmd - o sucessor do parkervcp/eggs)
-sao a segunda fonte do formulario "Adicionar jogo". Existem por um motivo so: o LinuxGSM so
-conhece servidor com build Linux, e os eggs cobrem tambem os que so rodam no Windows (V Rising,
-Enshrouded, Abiotic Factor...) por imagens com Wine/Proton.
+The eggs (MIT, https://github.com/pelican-eggs/games-steamcmd - the successor of parkervcp/eggs)
+are the second source of the "Add game" form. They exist for a single reason: LinuxGSM only
+knows servers with a Linux build, and the eggs also cover the ones that only run on Windows
+(V Rising, Enshrouded, Abiotic Factor...) through images with Wine/Proton.
 
-    python tools/import-pterodactyl.py                  # baixa o repositorio do GitHub
-    python tools/import-pterodactyl.py --source PASTA   # usa um clone local
+    python tools/import-pterodactyl.py                  # downloads the repository from GitHub
+    python tools/import-pterodactyl.py --source PASTA   # uses a local clone
 
-Sai duas coisas, e as duas passam pelo validador do broker AQUI, na geracao: o painel em
-producao nao tem o pacote do broker para validar em tempo de uso.
+Two things come out, and both go through the broker's validator HERE, at generation time: the
+production panel does not have the broker package to validate at use time.
 
-- `SUGGESTIONS`: jogos que o LinuxGSM, a lista manual e os curados NAO tem. Quem ja tem o
-  jogo vence: o LinuxGSM diz protocolo de porta, o egg nao; a lista manual foi revisada a mao;
-  o curado a busca acha pelo catalogo da pagina.
-- `COMPLEMENTS`: por App ID do LinuxGSM, so os campos que la estao VAZIOS e o egg sabe (pasta
-  e arquivos de config; portas, quando o LinuxGSM nao achou nenhuma). A busca junta os dois e
-  diz de onde veio cada campo.
+- `SUGGESTIONS`: games that LinuxGSM, the manual list and the curated ones do NOT have. Whoever
+  already has the game wins: LinuxGSM states the port protocol, the egg does not; the manual list
+  was reviewed by hand; the curated ones the search finds through the page's catalog.
+- `COMPLEMENTS`: per LinuxGSM App ID, only the fields that are EMPTY there and the egg knows
+  (config folder and files; ports, when LinuxGSM found none). The search merges the two and
+  says where each field came from.
 
-De onde sai cada dado do egg:
+Where each piece of egg data comes from:
 
-- App ID: a variavel `SRCDS_APPID`. Egg sem ela nao e SteamCMD e fica de fora.
-- Portas: a tabela "Server Ports" do README da pasta do egg. A porta principal do egg e a
-  ALOCACAO do Pterodactyl, que nao tem numero no JSON; so o README diz o padrao.
-- Comando: o `startup`, sem o que e do container do Pterodactyl (`cd`, `export`, `xvfb-run`,
-  `proton run`, `wine`) e com `{{SERVER_PORT}}`/a variavel da query trocadas pelos marcadores.
-- Windows: `WINDOWS_INSTALL=1`, imagem de wine/proton ou `wine`/`proton` no comando. Sai com
-  `proton` (regra do repositorio: Proton primeiro), mais `xvfb` se o egg sobe um X virtual.
-- Config: as chaves de `config.files` (os arquivos que o Pterodactyl edita), sob /opt/game.
+- App ID: the `SRCDS_APPID` variable. An egg without it is not SteamCMD and is left out.
+- Ports: the "Server Ports" table in the README of the egg's folder. The egg's main port is the
+  Pterodactyl ALLOCATION, which has no number in the JSON; only the README states the default.
+- Command: the `startup`, without what belongs to the Pterodactyl container (`cd`, `export`,
+  `xvfb-run`, `proton run`, `wine`) and with `{{SERVER_PORT}}`/the query variable replaced by
+  the placeholders.
+- Windows: `WINDOWS_INSTALL=1`, a wine/proton image or `wine`/`proton` in the command. Comes out
+  with `proton` (repository rule: Proton first), plus `xvfb` if the egg starts a virtual X.
+- Config: the keys of `config.files` (the files Pterodactyl edits), under /opt/game.
 
-Regras de seguranca, as mesmas do LinuxGSM (cada uma com teste em test_import_pterodactyl.py):
+Security rules, the same as LinuxGSM's (each with a test in test_import_pterodactyl.py):
 
-- O script de instalacao do egg e SHELL e nunca e lido: o broker so aceita dado.
-- Porta de RCON, telnet, HTTP e afins NUNCA vira porta exposta.
-- Variavel de senha, nome, IP e token NUNCA e resolvida: o argumento sai, com aviso.
-- Tudo depois de `; | & $(` e cortado; o que nao cabe no charset do broker sai, nunca e escapado.
-- Egg que exige conta Steam fica de fora: jogo dinamico nao tem como levar a senha ao CT.
+- The egg's install script is SHELL and is never read: the broker only accepts data.
+- RCON, telnet, HTTP and similar ports NEVER become exposed ports.
+- Password, name, IP and token variables are NEVER resolved: the argument goes, with a warning.
+- Everything after `; | & $(` is cut; what does not fit the broker's charset goes, never escaped.
+- An egg that requires a Steam account is left out: a dynamic game has no way to carry the
+  password to the CT.
 """
 from __future__ import annotations
 
@@ -65,31 +67,31 @@ TARBALL_URL = "https://codeload.github.com/pelican-eggs/games-steamcmd/tar.gz/re
 SOURCE_NAME = "Pterodactyl eggs (MIT)"
 GAME_DIR = "/opt/game"
 CONTAINER_DIR = "/home/container"
-# Os marcadores que o broker troca pela porta alocada (ver catalog._PLACEHOLDERS).
+# The placeholders the broker replaces with the allocated port (see catalog._PLACEHOLDERS).
 PORT_MARKER, QUERY_MARKER, EXTRA_MARKER = "{PORT}", "{QUERY_PORT}", "{EXTRA_PORT}"
 
-# Nome de linha da tabela de portas que NUNCA vai para o NAT (a porta so fica nos argumentos).
+# Port table row names that NEVER go to the NAT (the port only stays in the arguments).
 INTERNAL_PORT_WORDS = ("rcon", "telnet", "http", "web", "api", "rest", "admin", "tv", "metric",
                        "console", "mod", "voice")
 SECRET_WORDS = ("PASS", "PW", "TOKEN", "KEY", "SECRET", "GSLT", "NAME", "IP", "LOGIN", "USER",
                 "RCON", "ADMIN", "PASSWORD", "HOSTNAME", "MOTD", "DESCRIPTION", "WEBHOOK")
-# Programas do container do Pterodactyl, e nao do jogo: somem antes de achar o executavel.
+# Programs of the Pterodactyl container, not of the game: dropped before finding the executable.
 LAUNCHERS = ("exec", "stdbuf", "xvfb-run", "wine", "wine64", "proton", "run", "env", "nice")
-# Interpretador no lugar do executavel: o START_SCRIPT do broker e um arquivo executado direto,
-# entao `java -jar` ou `dotnet X.dll` nao tem como virar comando aqui.
+# An interpreter in place of the executable: the broker's START_SCRIPT is a file executed directly,
+# so `java -jar` or `dotnet X.dll` has no way to become a command here.
 INTERPRETERS = ("java", "dotnet", "mono", "bash", "sh", "python", "python3", "node", "screen")
 VARIANT_WORDS = ("bepinex", "modded", "oxide", "umod", "carbon", "experimental", "beta",
                  "mod", "plus", "legacy", "tshock", "unstable", "staging", "sourcemod")
 CONFIG_EXTENSIONS = (".ini", ".json", ".properties", ".conf", ".cfg")
-# Primeira palavra de trecho que prepara o container e nao sobe o jogo (o X virtual em segundo
-# plano, o winetricks, o sed que reescreve config). Escolher um deles como "o servidor" dava
-# START_SCRIPT=xvfb na primeira versao deste conversor.
+# First word of a segment that prepares the container and does not start the game (the virtual X
+# in the background, winetricks, the sed that rewrites config). Picking one of them as "the server"
+# gave START_SCRIPT=xvfb in the first version of this converter.
 SETUP_WORDS = ("cd", "export", "unset", "rm", "touch", "mkdir", "echo", "chmod", "chown", "cp", "mv",
                "ln", "sed", "cat", "sleep", "if", "then", "else", "fi", "while", "do", "done", "for",
                "trap", "ulimit", "source", ".", "[", "test", "Xvfb", "xvfb", "wineboot", "winetricks", "wait",
                "kill", "true", "false", "printf", "clear", "curl", "wget")
-# App ID que nao e o jogo: o 1007 e o Steamworks SDK Redist, que egg de jogo instalado por git
-# baixa so pela biblioteca. Com ele o broker instalaria a biblioteca e nenhum servidor.
+# App ID that is not the game: 1007 is the Steamworks SDK Redist, which an egg for a game installed
+# via git downloads only for the library. With it the broker would install the library and no server.
 NOT_GAME_APPIDS = frozenset({1007})
 
 _VAR = re.compile(r"\{\{\s*(?:server\.build\.env\.)?([A-Z0-9_]+)\s*\}\}|\$\{([A-Z0-9_]+)\}")
@@ -101,7 +103,7 @@ _PORT_NUMBER = re.compile(r"\b(\d{4,5})\b")
 _TABLE_ROW = re.compile(r"^\s*\|(.+)\|\s*$")
 
 
-# ---------------------------------------------------------------- tabela de portas (README)
+# ---------------------------------------------------------------- port table (README)
 
 class PortRow(NamedTuple):
     name: str
@@ -116,8 +118,8 @@ def _protocols(cells: list[str]) -> tuple[str, ...]:
 
 
 def port_rows(readme: str) -> list[PortRow]:
-    """As linhas da tabela de portas do README: nome, numero padrao e protocolo. Sem coluna de
-    protocolo vale UDP, que e o de todo jogo Steam (e a sugestao avisa que foi presumido)."""
+    """The rows of the README's port table: name, default number and protocol. With no protocol
+    column it is UDP, which is that of every Steam game (and the suggestion warns it was presumed)."""
     rows: list[PortRow] = []
     in_ports = False
     for line in readme.splitlines():
@@ -167,7 +169,7 @@ def classify_ports(rows: list[PortRow]) -> Ports:
             query = row.number
         else:
             extras.append(row.number)
-        # Query da Steam e UDP em todo jogo, mesmo quando o README diz outra coisa.
+        # The Steam query is UDP in every game, even when the README says otherwise.
         protos = ("udp",) if role == "query" else row.protos
         exposed += [f"{row.number}/{p}" for p in protos if f"{row.number}/{p}" not in exposed]
     if not game:
@@ -176,15 +178,15 @@ def classify_ports(rows: list[PortRow]) -> Ports:
                  presumed_udp=all(len(r.protos) == 1 and r.protos[0] == "udp" for r in rows))
 
 
-# ---------------------------------------------------------------- comando de start
+# ---------------------------------------------------------------- start command
 
 def _is_secret(var: str) -> bool:
     return any(w in var for w in SECRET_WORDS)
 
 
 def _launch_segment(startup: str) -> tuple[str, str]:
-    """O trecho do `startup` que sobe o jogo, e a pasta em que ele roda (o `cd` antes dele)."""
-    # `&` sozinho tambem separa: `Xvfb :0 & ./server` sobe o X em segundo plano e o jogo depois.
+    """The segment of `startup` that starts the game, and the folder it runs in (the `cd` before it)."""
+    # A lone `&` also separates: `Xvfb :0 & ./server` starts X in the background and the game after.
     segments = [s.strip() for s in re.split(r";|&&|\|\||&|\||\n", startup) if s.strip()]
     cwd = chosen_cwd = chosen = ""
     best = 0
@@ -201,10 +203,10 @@ def _launch_segment(startup: str) -> tuple[str, str]:
     return chosen, chosen_cwd
 
 
-# Cara de "e aqui que o jogo sobe", do mais ao menos certo. A porta do jogo no comando e o
-# sinal mais forte; um executavel (./x, wine, proton, .exe) vem depois. Sem isso o primeiro
-# trecho que sobrava ganhava, e no Space Engineers ele era o pedaco de um `export` com `;`
-# dentro das aspas.
+# Signs of "this is where the game starts", from most to least certain. The game port in the
+# command is the strongest signal; an executable (./x, wine, proton, .exe) comes next. Without
+# this the first leftover segment won, and in Space Engineers that was a piece of an `export`
+# with a `;` inside the quotes.
 _LAUNCH_HINTS = (("SERVER_PORT", 4), ("./", 2), ("wine", 2), ("proton", 2), (".exe", 2),
                  (".x86_64", 2), (".sh", 1))
 
@@ -214,7 +216,7 @@ def _launch_score(segment: str) -> int:
 
 
 def _strip_launchers(tokens: list[str]) -> tuple[list[str], bool]:
-    """Tira env inline, `xvfb-run [opcoes]`, `wine`, `proton run`. Devolve (resto, usa xvfb)."""
+    """Strips inline env, `xvfb-run [options]`, `wine`, `proton run`. Returns (rest, uses xvfb)."""
     xvfb = False
     i = 0
     while i < len(tokens):
@@ -224,7 +226,7 @@ def _strip_launchers(tokens: list[str]) -> tuple[list[str], bool]:
         elif t in LAUNCHERS:
             xvfb = xvfb or t == "xvfb-run"
             i += 1
-            # As opcoes do xvfb-run (-a, -s "...", --server-args=...) nao sao do jogo.
+            # The xvfb-run options (-a, -s "...", --server-args=...) are not the game's.
             while t == "xvfb-run" and i < len(tokens) and tokens[i].startswith("-"):
                 i += 2 if tokens[i] in ("-s", "-n", "-e", "-f", "-p") else 1
         else:
@@ -233,7 +235,7 @@ def _strip_launchers(tokens: list[str]) -> tuple[list[str], bool]:
 
 
 def _script_path(exe: str, cwd: str) -> str:
-    """Caminho do executavel relativo a /opt/game, ou vazio se nao couber no broker."""
+    """Executable path relative to /opt/game, or empty if it does not fit the broker."""
     path = exe
     if cwd and not exe.startswith("/"):
         path = posixpath.join(cwd, exe)
@@ -247,16 +249,16 @@ def _script_path(exe: str, cwd: str) -> str:
 
 class Resolver(NamedTuple):
     defaults: dict[str, str]
-    markers: dict[str, str]      # variavel -> {PORT}/{QUERY_PORT}/{EXTRA_PORT}
+    markers: dict[str, str]      # variable -> {PORT}/{QUERY_PORT}/{EXTRA_PORT}
 
 
 def _is_option(token: str) -> bool:
-    """`-port`, `+map` e o `/port` do Bannerlord; `/Game/Maps/X` e caminho, nao opcao."""
+    """`-port`, `+map` and Bannerlord's `/port`; `/Game/Maps/X` is a path, not an option."""
     return token[:1] in "-+" or (token[:1] == "/" and "/" not in token[1:])
 
 
 def _resolve_token(token: str, res: Resolver) -> str | None:
-    """Troca as variaveis do token; None = o token (e a opcao que o pede) sai."""
+    """Replaces the token's variables; None = the token (and the option that asks for it) goes."""
     def swap(m: re.Match[str]) -> str:
         var = m.group(1) or m.group(2)
         if var in res.markers:
@@ -269,16 +271,16 @@ def _resolve_token(token: str, res: Resolver) -> str | None:
         out = _VAR.sub(swap, token)
     except LookupError:
         return None
-    # A pasta do jogo no Pterodactyl e /home/container; aqui e /opt/game.
+    # The game folder in Pterodactyl is /home/container; here it is /opt/game.
     out = out.replace(CONTAINER_DIR, GAME_DIR)
     return out if _ARGS_CHARSET.fullmatch(out) else None
 
 
 def clean_arguments(args: list[str], res: Resolver) -> tuple[str, list[str]]:
-    """Fica so com o que o broker aceita. Devolve (argumentos, nomes do que saiu)."""
+    """Keeps only what the broker accepts. Returns (arguments, names of what was dropped)."""
     resolved = [_resolve_token(t, res) for t in args]
     keep = [r is not None for r in resolved]
-    # Sem o valor, a opcao que o pedia ("-name") engoliria a proxima: sai junto.
+    # Without the value, the option that asked for it ("-name") would swallow the next one: it goes too.
     for i in range(1, len(args)):
         if not keep[i] and keep[i - 1] and _is_option(args[i - 1]) and "=" not in args[i - 1] \
                 and not _is_option(args[i]):
@@ -326,14 +328,14 @@ def parse_startup(startup: str, res: Resolver) -> Command:
     return Command(script, args, xvfb, tuple(warnings))
 
 
-# ---------------------------------------------------------------- o egg inteiro
+# ---------------------------------------------------------------- the whole egg
 
 def _ascii(text: str) -> str:
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
 
 
 def display_name(name: str) -> str:
-    # "Astroneer Dedicated Server" e o nome do EGG; na busca a pessoa procura pelo jogo.
+    # "Astroneer Dedicated Server" is the EGG's name; in the search the person looks for the game.
     name = re.sub(r"\s+(dedicated\s+)?server$", "", name.strip(), flags=re.IGNORECASE)
     clean =re.sub(r"[^A-Za-z0-9 ._:'&()!+-]", "", _ascii(name)).strip(" .-")
     return clean[:40].rstrip() or "Jogo"
@@ -367,7 +369,7 @@ def is_windows(egg: dict, defaults: dict[str, str]) -> bool:
 
 
 def config_files(egg: dict) -> list[str]:
-    """Os arquivos que o egg edita (`config.files`), sob /opt/game; so os que a tela Config le."""
+    """The files the egg edits (`config.files`), under /opt/game; only the ones the Config screen reads."""
     raw = (egg.get("config") or {}).get("files") or "{}"
     try:
         files = json.loads(raw) if isinstance(raw, str) else raw
@@ -375,8 +377,8 @@ def config_files(egg: dict) -> list[str]:
         return []
     out = []
     for name in files if isinstance(files, dict) else []:
-        # normpath, e NAO lstrip("./"): o lstrip comia o "../" e fazia "../../etc/x.ini" virar
-        # "etc/x.ini", um arquivo que o egg nunca citou. Com normpath o ".." sobra e e recusado.
+        # normpath, and NOT lstrip("./"): lstrip ate the "../" and turned "../../etc/x.ini" into
+        # "etc/x.ini", a file the egg never mentioned. With normpath the ".." remains and is rejected.
         rel = posixpath.normpath(str(name).replace("\\", "/"))
         parts = rel.split("/")
         if rel.lower().endswith(CONFIG_EXTENSIONS) and all(_PATH_PART.fullmatch(p) and p != ".." for p in parts):
@@ -385,8 +387,8 @@ def config_files(egg: dict) -> list[str]:
 
 
 def _markers(defaults: dict[str, str], ports: Ports) -> dict[str, str]:
-    """Variavel do egg -> marcador do broker. A porta principal e sempre SERVER_PORT; as outras
-    se reconhecem pelo VALOR padrao igual ao da tabela do README."""
+    """Egg variable -> broker placeholder. The main port is always SERVER_PORT; the others are
+    recognized by a default VALUE equal to the one in the README table."""
     markers = {"SERVER_PORT": PORT_MARKER}
     for var, value in defaults.items():
         if not value.isdigit():
@@ -429,7 +431,7 @@ def suggest(egg: Egg) -> dict | None:
     warnings += cmd.warnings
     files = config_files(data)
     args = cmd.args
-    # Marcador sem porta correspondente viraria "0" na linha de comando.
+    # A placeholder without a matching port would become "0" on the command line.
     if (QUERY_MARKER in args and not ports.query) or (EXTRA_MARKER in args and not ports.extra):
         args = ""
     return {
@@ -458,11 +460,11 @@ def _shiftable(args: str, ports: Ports) -> bool:
     return numbers <= {ports.game, ports.query, ports.extra} - {0}
 
 
-# ---------------------------------------------------------------- validacao pelo broker
+# ---------------------------------------------------------------- validation by the broker
 
 def as_panel_data(s: dict) -> dict:
-    """O que o formulario do painel mandaria ao broker. Sem porta (sugestao parcial) o
-    validador recebe uma qualquer: o que se confere aqui e o resto."""
+    """What the panel's form would send to the broker. Without a port (partial suggestion) the
+    validator gets an arbitrary one: what is checked here is the rest."""
     data: dict = {"key": s["key"], "name": s["name"], "app_id": s["appid"],
                   "ports": s["ports"].split() or ["27015/udp"], "game_port": s["game_port"] or 27015,
                   "recipes": list(s.get("recipes") or []), "config_files": list(s.get("config_files") or []),
@@ -480,8 +482,8 @@ def as_panel_data(s: dict) -> dict:
 
 
 def through_broker(s: dict) -> dict | None:
-    """Filtro final: o validador do broker. Campo opcional recusado sai (com aviso); identidade
-    ou porta recusada derruba a sugestao inteira."""
+    """Final filter: the broker's validator. A rejected optional field goes (with a warning); a
+    rejected identity or port drops the whole suggestion."""
     for _ in range(8):
         try:
             validate_dynamic(as_panel_data(s))
@@ -502,14 +504,14 @@ def through_broker(s: dict) -> dict | None:
     return None
 
 
-# ---------------------------------------------------------------- juntar com o LinuxGSM
+# ---------------------------------------------------------------- merging with LinuxGSM
 
 def complement(linuxgsm: dict, egg: dict) -> dict:
-    """Os campos VAZIOS do LinuxGSM que o egg sabe. Portas vao em bloco (e o jogo deixa de andar
-    de porta): misturar a porta de um com a consulta do outro nao corresponde a jogo nenhum."""
+    """The EMPTY LinuxGSM fields that the egg knows. Ports go as a block (and the game stops being
+    shiftable): mixing one's port with the other's query matches no game at all."""
     extra: dict = {}
-    # Campo a campo: o LinuxGSM que ja sabe a PASTA (Sven Co-op) continua com a dele, e o egg so
-    # traz os arquivos que ela nao listava.
+    # Field by field: a LinuxGSM entry that already knows the FOLDER (Sven Co-op) keeps its own,
+    # and the egg only brings the files it did not list.
     if not linuxgsm.get("config_files") and egg.get("config_files"):
         extra["config_files"] = egg["config_files"]
         if not linuxgsm.get("config_path"):
@@ -524,17 +526,17 @@ def complement(linuxgsm: dict, egg: dict) -> dict:
     return extra if through_broker(merged) is merged else {}
 
 
-# ---------------------------------------------------------------- leitura e escrita
+# ---------------------------------------------------------------- reading and writing
 
 def _readme_for(egg_path: pathlib.PurePosixPath, readmes: dict[str, str]) -> str:
-    """O README da pasta do egg; se ela nao tiver, o da pasta de cima (jogo com variantes)."""
+    """The README of the egg's folder; if it has none, the parent folder's (game with variants)."""
     folder = egg_path.parent
     return readmes.get(str(folder / "README.md")) or readmes.get(str(folder.parent / "README.md"), "")
 
 
 def _pick(paths: list[pathlib.PurePosixPath]) -> list[pathlib.PurePosixPath]:
-    """Um egg por pasta: cada uma traz o mesmo jogo exportado nos formatos do Pterodactyl e do
-    Pelican. Fica o do Pterodactyl, que e o formato do resto."""
+    """One egg per folder: each one carries the same game exported in the Pterodactyl and Pelican
+    formats. The Pterodactyl one stays, which is the format of the rest."""
     by_folder: dict[str, pathlib.PurePosixPath] = {}
     for p in sorted(paths):
         current = by_folder.get(str(p.parent))
@@ -544,7 +546,7 @@ def _pick(paths: list[pathlib.PurePosixPath]) -> list[pathlib.PurePosixPath]:
 
 
 def load_eggs(files: dict[str, str]) -> list[Egg]:
-    """`files`: caminho relativo (com /) -> texto, de um clone ou do tarball."""
+    """`files`: relative path (with /) -> text, from a clone or from the tarball."""
     readmes = {k: v for k, v in files.items() if k.endswith("/README.md")}
     paths = [pathlib.PurePosixPath(k) for k in files
              if pathlib.PurePosixPath(k).name.startswith("egg-") and k.endswith(".json")]
@@ -565,7 +567,7 @@ def _from_folder(folder: pathlib.Path) -> dict[str, str]:
 
 def _from_github() -> dict[str, str]:
     req = urllib.request.Request(TARBALL_URL, headers={"User-Agent": "gamepanel-importer"})
-    with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310 - URL fixa, https
+    with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310 - fixed URL, https
         raw = r.read()
     out = {}
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
@@ -584,7 +586,7 @@ def _variant_rank(s: dict) -> tuple[int, int]:
 
 
 def _known() -> tuple[dict[int, dict], set[int], set[str]]:
-    """O que ja existe: LinuxGSM (por App ID), App IDs da lista manual e dos curados, e as chaves."""
+    """What already exists: LinuxGSM (by App ID), App IDs of the manual list and the curated ones, and the keys."""
     catalog = ROOT / "src" / "gamepanel" / "games" / "catalog"
     ns: dict = {}
     exec(compile((catalog / "suggestions.py").read_text(encoding="utf-8"), "suggestions", "exec"), ns)  # noqa: S102
@@ -610,7 +612,7 @@ def collect(files: dict[str, str]) -> tuple[list[dict], dict[int, dict], list[st
         if s is None:
             skipped.append(egg.folder)
             continue
-        # Varias variantes do mesmo jogo (vanilla, BepInEx, oxide): fica a mais simples.
+        # Several variants of the same game (vanilla, BepInEx, oxide): the simplest one stays.
         current = by_appid.get(s["appid"])
         if current is None or _variant_rank(s) < _variant_rank(current):
             by_appid[s["appid"]] = s
@@ -645,11 +647,11 @@ def write(new: list[dict], complements: dict[int, dict], out: pathlib.Path) -> N
         '"""\n'
         f'SOURCE = "{SOURCE_NAME}, gerado em {datetime.date.today().isoformat()}"\n\n'
         f"SUGGESTIONS = (\n{body})\n\n"
-        # A anotacao vai no arquivo: sem ela o mypy deduz `dict[int, object]` pelo conteudo e
-        # recusa o `**extra` da busca.
+        # The annotation goes into the file: without it mypy infers `dict[int, object]` from the
+        # content and rejects the search's `**extra`.
         f"COMPLEMENTS: dict[int, dict] = {comp}\n"
     )
-    out.write_bytes(text.encode("utf-8"))  # bytes: no Windows o modo texto trocaria \n por \r\n
+    out.write_bytes(text.encode("utf-8"))  # bytes: on Windows text mode would turn \n into \r\n
 
 
 def main() -> None:

@@ -1,9 +1,9 @@
-"""Leitura e escrita da tabela `passkeys` (entrar com a biometria do aparelho)."""
+"""Reads and writes the `passkeys` table (signing in with the device's biometrics)."""
 from __future__ import annotations
 
 import sqlite3
 
-# O que a tela de conta lista: nunca a chave publica (nao e segredo, mas nao serve a ninguem ali).
+# What the account screen lists: never the public key (not a secret, but useless to anyone there).
 LIST_FIELDS = "id, label, created_at, last_used_at"
 
 
@@ -21,7 +21,7 @@ def ids_for_user(conn: sqlite3.Connection, uid: int) -> list[str]:
 
 
 def handle_for_user(conn: sqlite3.Connection, uid: int) -> str:
-    """O user handle que os aparelhos desta pessoa ja guardam ('' se nenhum ainda)."""
+    """The user handle this person's devices already store ('' if none yet)."""
     row = conn.execute("SELECT user_handle FROM passkeys WHERE user_id = ? LIMIT 1", (uid,)).fetchone()
     return row["user_handle"] if row else ""
 
@@ -40,5 +40,5 @@ def mark_used(conn: sqlite3.Connection, credential_id: str, sign_count: int, use
 
 
 def delete(conn: sqlite3.Connection, uid: int, credential_id: str) -> int:
-    """Apaga um aparelho DESTA pessoa; o `user_id` no WHERE impede apagar o de outra."""
+    """Delete a device of THIS person; the `user_id` in the WHERE prevents deleting another's."""
     return conn.execute("DELETE FROM passkeys WHERE id = ? AND user_id = ?", (credential_id, uid)).rowcount

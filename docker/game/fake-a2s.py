@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Servidor de query A2S de mentira, para o painel ter o que contar no ambiente local.
+"""Fake A2S query server, so the panel has something to count in the local environment.
 
-Responde o suficiente do protocolo da Steam para exercitar o caminho de verdade:
-o desafio (S2C_CHALLENGE), o A2S_INFO com a contagem e o A2S_PLAYER com a lista.
+Answers enough of the Steam protocol to exercise the real code path:
+the challenge (S2C_CHALLENGE), A2S_INFO with the count and A2S_PLAYER with the list.
 
-O numero de jogadores muda sozinho com o tempo, entao da para ver o painel atualizar.
-Um arquivo em /run/fake-players force um valor fixo (usado pelos testes).
+The player count changes by itself over time, so you can watch the panel update.
+A file at /run/fake-players forces a fixed value (used by the tests).
 """
 import os
 import socket
@@ -21,11 +21,11 @@ MAX_JOGADORES = int(os.environ.get("GAME_QUERY_MAX", "32"))
 ARQUIVO_FORCADO = "/run/fake-players"
 DESAFIO = b"\x11\x22\x33\x44"
 
-NOMES = ["Cristopfer", "Guilherme", "Ana", "Bea", "Caio", "Duda", "Edu", "Fefe"]
+NOMES = ["Alex", "Bruno", "Ana", "Bea", "Caio", "Duda", "Edu", "Fefe"]
 
 
 def quantos_agora() -> int:
-    """Valor fixo se alguem escreveu em /run/fake-players; senao oscila com o relogio."""
+    """Fixed value if someone wrote to /run/fake-players; otherwise it oscillates with the clock."""
     try:
         with open(ARQUIVO_FORCADO, "r", encoding="utf-8") as fh:
             return max(0, min(MAX_JOGADORES, int(fh.read().strip())))
@@ -40,12 +40,12 @@ def texto(valor: str) -> bytes:
 def resposta_info(quantos: int) -> bytes:
     corpo = b"I" + bytes([17])
     corpo += texto(NOME) + texto(MAPA) + texto("pal") + texto("Palworld")
-    # O campo do A2S e de 16 bits: o servidor de verdade manda o appid truncado aqui
-    # (o valor inteiro vem depois, no bloco opcional).
+    # The A2S field is 16 bits: the real server sends the truncated appid here
+    # (the full value comes later, in the optional block).
     corpo += struct.pack("<H", 2394010 & 0xFFFF)
     corpo += bytes([quantos, MAX_JOGADORES, 0])
-    corpo += b"d" + b"l" + b"\x00" + b"\x00"       # dedicado, linux, publico, sem VAC
-    corpo += texto("v0.5.2-fake")  # campo "version" do A2S, texto livre
+    corpo += b"d" + b"l" + b"\x00" + b"\x00"       # dedicated, linux, public, no VAC
+    corpo += texto("v0.5.2-fake")  # A2S "version" field, free text
     return HEADER + corpo
 
 
@@ -77,12 +77,12 @@ def main() -> None:
         try:
             responder(sock, addr, data[4:5], data[5:], quantos_agora())
         except (OSError, struct.error, ValueError) as exc:
-            # Um pedido estranho nao pode derrubar o servico inteiro.
+            # A weird request must not bring down the whole service.
             print(f"fake-a2s: pedido ignorado ({exc})", file=sys.stderr, flush=True)
 
 
 def responder(sock, addr, tipo: bytes, resto: bytes, quantos: int) -> None:
-    if tipo == b"T":  # A2S_INFO. Exige o desafio na primeira vez, como a Steam faz.
+    if tipo == b"T":  # A2S_INFO. Requires the challenge the first time, as Steam does.
         if resto[-4:] != DESAFIO:
             sock.sendto(HEADER + b"A" + DESAFIO, addr)
         else:

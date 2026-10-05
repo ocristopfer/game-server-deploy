@@ -7,7 +7,7 @@
 {{ ui.page_header(_('server.terminal') ~ ' — ' ~ server.name) }}
 {{ srv.tabs(server, 'terminal') }}
 
-{# Ver o comentario em console.html: um destino na navegacao, dois modos aqui. #}
+{# See the comment in console.html: one destination in the navigation, two modes here. #}
 <nav class="tabs" aria-label="{{ _('console.terminal_mode') }}">
   <span class="tabs__item" aria-current="page">
     <span class="icon" aria-hidden="true">⌨️</span>{{ _('console.interactive') }}</span>
@@ -16,16 +16,25 @@
 </nav>
 
 <div class="flash">
-  {{ _('terminal.ssh_session_as') }} <strong>{{ server.ssh_user }}</strong> em
-  <code>{{ server.host }}</code>. Tem TTY de verdade: <code>htop</code>, <code>nano</code>,
-  <code>vim</code> e prompts de confirmacao funcionam. A sessao cai sozinha depois de
-  {{ idle_timeout // 60 }} min sem uso.
+  {{ _h('terminal.session_intro', user=content_user(server), host=server.host, minutes=idle_timeout // 60) }}
 </div>
 
 <div class="term" id="term"
      data-csrf="{{ csrf_token() }}"
      data-open-url="{{ url_for('terminal.api_open', sid=server.id) }}"
-     data-api-base="/api/v1/term/">
+     data-api-base="/api/v1/term/"
+     data-label-fullscreen="{{ _('terminal.fullscreen') }}"
+     data-label-exit-fullscreen="{{ _('terminal.exit_fullscreen') }}"
+     data-label-expired="{{ _('terminal.expired') }}"
+     data-label-closed="{{ _('terminal.closed') }}"
+     data-label-ended="{{ _('terminal.ended') }}"
+     data-label-ended-exit="{{ _('terminal.ended_exit', code='{code}') }}"
+     data-label-reconnecting="{{ _('terminal.reconnecting') }}"
+     data-label-connecting="{{ _('terminal.connecting') }}"
+     data-label-connected="{{ _('terminal.connected') }}"
+     data-label-http-error="{{ _('terminal.http_error', status='{status}') }}"
+     data-label-open-failed="{{ _('terminal.open_failed', error='{error}') }}"
+     data-label-output-lost="{{ _('terminal.output_lost') }}">
   <div class="term-bar">
     <span class="badge cold" id="term-status">{{ _('terminal.starting') }}</span>
     <span class="muted small" id="term-size">80x24</span>
@@ -44,11 +53,11 @@
     <div id="term-screen"></div>
   </div>
   <textarea id="term-input" class="term-input" autocomplete="off" autocorrect="off"
-            autocapitalize="off" spellcheck="false" aria-label="entrada do terminal"></textarea>
+            autocapitalize="off" spellcheck="false" aria-label="{{ _('terminal.input') }}"></textarea>
 
-  {# Fileira de teclas que o teclado virtual do celular nao tem. Sem ela, vim, htop e
-     qualquer menu curses sao inoperaveis no telefone: nao ha Esc, nao ha Tab, nao ha
-     setas. Cada botao manda a MESMA sequencia que o teclado fisico mandaria. #}
+  {# Row of keys the phone's virtual keyboard does not have. Without it, vim, htop and
+     any curses menu are unusable on the phone: there is no Esc, no Tab, no
+     arrows. Each button sends the SAME sequence the physical keyboard would send. #}
   <div class="term-keys" role="toolbar" aria-label="{{ _('terminal.special_keys') }}">
     <button type="button" class="btn" id="term-teclado" title="{{ _('terminal.open_keyboard') }}">⌨</button>
     <button type="button" class="btn" data-key="Escape">Esc</button>
@@ -68,14 +77,10 @@
   </div>
 </div>
 
-<p class="muted small">
-  O teclado vai direto para o shell: <code>Tab</code> completa, <code>&uarr;</code> percorre o
-  historico do bash e <code>Ctrl+C</code> interrompe. Para copiar, selecione com o mouse
-  (com texto selecionado o <code>Ctrl+C</code> copia em vez de interromper); <code>Ctrl+V</code> cola.
-</p>
+<p class="muted small">{{ _h('terminal.keyboard_help') }}</p>
 {% endblock %}
 
 {% block scripts %}
-{# 28 KB de emulador VT100: carregados so por esta tela, nunca pelo resto do painel. #}
+{# 28 KB of VT100 emulator: loaded only by this screen, never by the rest of the panel. #}
 <script src="{{ static_url('js/terminal.js') }}" defer></script>
 {% endblock %}

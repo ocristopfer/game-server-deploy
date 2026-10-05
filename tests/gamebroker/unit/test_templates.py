@@ -1,6 +1,6 @@
-"""Os modelos do formulario 'Adicionar jogo' (admin/modelos_de_jogo.py) precisam passar no
-validador do broker. Vivem no painel, mas o unico juiz que importa e este: um modelo que o
-broker recusa e pior que nenhum, porque a pessoa acha que o erro foi dela."""
+"""The 'Add game' form templates (admin/modelos_de_jogo.py) must pass the broker's
+validator. They live in the panel, but the only judge that matters is this one: a template
+the broker rejects is worse than none, because the person thinks the mistake was theirs."""
 from __future__ import annotations
 
 import importlib.util
@@ -22,7 +22,7 @@ _spec.loader.exec_module(modelos)
 
 
 def _as_the_panel_builds(values: dict[str, str]) -> dict:
-    """Espelha `_jogo_do_form` do painel: so converte tipos, sem validar nada."""
+    """Mirrors the panel's `_jogo_do_form`: only converts types, validates nothing."""
     data: dict = {}
     for field in ("start_args", "start_script", "config_path", "join_re", "leave_re", "player_source",
                   "platform"):
@@ -34,15 +34,15 @@ def _as_the_panel_builds(values: dict[str, str]) -> dict:
     data["ports"] = [p for p in re.split(r"[\s,]+", values.get("ports", "").strip()) if p]
     for field in ("config_files", "backup_paths"):
         data[field] = [p.strip() for p in values.get(field, "").replace(",", "\n").splitlines() if p.strip()]
-    # Ignorar as receitas deixava o modelo de Windows passar sem runtime nenhum: o broker so
-    # recusa "windows sem proton/wine" se as duas coisas chegam juntas, como chegam da tela.
+    # Ignoring the recipes let the Windows template pass with no runtime at all: the broker only
+    # rejects "windows without proton/wine" if both arrive together, as they do from the screen.
     data["recipes"] = values.get("recipes", "").split()
     data["shiftable"] = values.get("shiftable") == "1"
     return data
 
 
 def _complete(modelo) -> dict:
-    """O que a pessoa acrescenta a mao: identidade e app id (o resto vem do modelo)."""
+    """What the person adds by hand: identity and app id (the rest comes from the template)."""
     data = _as_the_panel_builds(modelo.values)
     data.update(key="meujogo", name="Meu Jogo", app_id=123456)
     return data
@@ -69,15 +69,15 @@ def test_unreal_traz_o_padrao_de_log_dos_servidores_unreal():
 
 
 def test_unreal_deixa_o_nome_do_projeto_bem_visivel():
-    """Um chute silencioso (uma pasta que parece certa) esconderia o erro; um nome de mentira
-    obvio pede para ser trocado."""
+    """A silent guess (a folder that looks right) would hide the mistake; an obviously fake
+    name asks to be replaced."""
     values = modelos.UNREAL_LINUX.values
     assert modelos.PROJECT in values["config_path"]
     assert modelos.PROJECT in values["backup_paths"]
 
 
 def test_chaves_do_modelo_sao_campos_do_formulario_do_catalogo():
-    # Os campos moram no include, que o "adicionar" e o "editar" dividem.
+    # The fields live in the include, which "add" and "edit" share.
     templates = RAIZ / "src" / "gamepanel" / "templates"
     html = "".join((templates / name).read_text(encoding="utf-8")
                    for name in ("catalog.html", "components/game_form.html"))
@@ -88,8 +88,8 @@ def test_chaves_do_modelo_sao_campos_do_formulario_do_catalogo():
 
 @pytest.mark.parametrize("modelo", modelos.TEMPLATES, ids=lambda m: m.key)
 def test_modelo_de_windows_prefere_proton(modelo):
-    """Regra do repositorio: servidor so de Windows roda pelo Proton (fsync/ntsync); wine direto
-    so quando o Proton comprovadamente falha, e isso nao e decisao de modelo generico."""
+    """Repository rule: a Windows-only server runs under Proton (fsync/ntsync); plain wine only
+    when Proton provably fails, and that is not a decision for a generic template."""
     if modelo.values.get("platform") == "windows":
         assert "proton" in modelo.values["recipes"].split()
         assert "wine" not in modelo.values["recipes"].split()
@@ -97,7 +97,7 @@ def test_modelo_de_windows_prefere_proton(modelo):
 
 @pytest.mark.parametrize("modelo", modelos.TEMPLATES, ids=lambda m: m.key)
 def test_modelo_diz_todos_os_campos_para_limpar_o_anterior(modelo):
-    """Trocar do modelo Windows para um Linux tem de desmarcar o Proton e voltar a plataforma."""
+    """Switching from the Windows template to a Linux one must uncheck Proton and reset the platform."""
     assert {"platform", "recipes", "start_script", "query_port", "shiftable"} <= set(modelo.values)
 
 

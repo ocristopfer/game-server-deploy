@@ -1,12 +1,12 @@
-"""Escolha de CTID, IP e portas. Funcoes puras: quem sabe o que esta ocupado (banco,
-Proxmox, OPNsense, rede) monta os conjuntos e entrega aqui.
+"""Choice of CTID, IP and ports. Pure functions: whoever knows what is taken (database,
+Proxmox, OPNsense, network) builds the sets and hands them over here.
 
-A porta interna e a externa sao SEMPRE iguais. Jogo `shiftable` recebe um bloco de portas
-seguidas de uma FAIXA PROPRIA do broker (longe das portas padrao dos jogos, que os seus
-servidores antigos ja usam) e o instalador avisa o jogo (GAME_PORT/QUERY_PORT); jogo que nao
-desloca fica com as portas padrao e e recusado se houver conflito. Mapear porta externa
-diferente da interna pareceria mais flexivel, mas o jogo anuncia a propria porta na lista da
-Steam e o cliente tentaria uma porta que ninguem escuta.
+The internal and external ports are ALWAYS equal. A `shiftable` game gets a block of
+consecutive ports from the broker's OWN RANGE (away from the games' default ports, which your
+older servers already use) and the installer tells the game (GAME_PORT/QUERY_PORT); a game that
+does not shift keeps the default ports and is refused if there is a conflict. Mapping an
+external port different from the internal one would look more flexible, but the game announces
+its own port in the Steam list and the client would try a port nobody listens on.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class AllocatedPort:
 
 
 def ips_in_range(prefix: str, start: int, fim: int) -> tuple[str, ...]:
-    """`ips_da_faixa("192.168.2", 30, 99)`: os enderecos candidatos, validados como IPv4."""
+    """`ips_da_faixa("10.20.1", 30, 99)`: the candidate addresses, validated as IPv4."""
     if not 1 <= start <= fim <= 254:
         raise ValueError("faixa de IP invalida")
     return tuple(str(ipaddress.IPv4Address(f"{prefix}.{n}")) for n in range(start, fim + 1))
@@ -52,9 +52,9 @@ def pick_ctid(span: Iterable[int], taken: set[int]) -> int:
 
 
 def pick_ip(candidates: Iterable[str], taken: set[str], answers: Callable[[str], bool]) -> str:
-    """Primeiro IP fora do banco/Proxmox e que ninguem na rede responde.
+    """First IP that is not in the database/Proxmox and that nobody on the network answers for.
 
-    O ultimo teste pega o aparelho que tem IP fixo na mao e o Proxmox nunca soube.
+    The last check catches the device with a hand-assigned static IP that Proxmox never knew about.
     """
     for ip in candidates:
         if ip not in taken and not answers(ip):
@@ -64,11 +64,11 @@ def pick_ip(candidates: Iterable[str], taken: set[str], answers: Callable[[str],
 
 def pick_ip_and_ctid(candidates: Iterable[str], ctid_base: int, ctids_taken: set[int],
                        ips_taken: set[str], answers: Callable[[str], bool]) -> tuple[str, int]:
-    """IP e CTID juntos: o CTID e `ctid_base` + o ultimo numero do IP (.102 -> 302).
+    """IP and CTID together: the CTID is `ctid_base` + the last number of the IP (.102 -> 302).
 
-    Escolher os dois separados deixaria o CTID e o IP andarem em ritmos diferentes assim que
-    um container fosse apagado na mao, e a regra de cabeca (ver o IP, saber o CTID) deixaria
-    de valer. Aqui um IP so serve se o CTID dele tambem estiver livre.
+    Choosing the two separately would let CTID and IP drift apart as soon as a container was
+    deleted by hand, and the mental rule (see the IP, know the CTID) would stop holding. Here
+    an IP only qualifies if its CTID is free too.
     """
     for ip in candidates:
         ctid = ctid_base + int(ip.rsplit(".", 1)[1])
@@ -86,8 +86,8 @@ def _role_of(game: Game, base: int) -> str:
 
 
 def _as_block(game: Game, start: int) -> list[AllocatedPort]:
-    """Cada porta-base distinta do jogo vira um numero do bloco; a mesma base em UDP e TCP
-    (Satisfactory) fica com o mesmo numero nos dois protocolos."""
+    """Each distinct base port of the game becomes one number of the block; the same base in UDP
+    and TCP (Satisfactory) gets the same number in both protocols."""
     number_of: dict[int, int] = {}
     for port in game.ports:
         number_of.setdefault(port.number, start + len(number_of))
@@ -96,7 +96,7 @@ def _as_block(game: Game, start: int) -> list[AllocatedPort]:
 
 
 def allocate_ports(game: Game, busy: set[tuple[int, str]], span: range) -> list[AllocatedPort]:
-    """Jogo fixo: as portas padrao. Jogo `shiftable`: o primeiro bloco livre da `faixa`."""
+    """Fixed game: the default ports. `shiftable` game: the first free block of `faixa`."""
     if not game.shiftable:
         candidates = [AllocatedPort(p.number, p.number, p.proto, _role_of(game, p.number)) for p in game.ports]
         conflicts = [c for c in candidates if c.key in busy]
@@ -116,5 +116,5 @@ def port_with_role(ports: Iterable[AllocatedPort], role: str) -> int:
 
 
 def port_from_base(ports: Iterable[AllocatedPort], base: int) -> int:
-    """O numero alocado para a porta que o jogo chama de `base` (0 se nao houver)."""
+    """The number allocated for the port the game calls `base` (0 if there is none)."""
     return next((p.number for p in ports if p.base == base), 0)

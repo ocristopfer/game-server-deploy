@@ -1,0 +1,61 @@
+# Publishes a GitHub Release when a version tag is pushed:
+#
+#   echo 0.2.0 > VERSION && git commit -am "release 0.2.0" && git tag v0.2.0 && git push --tags
+#
+# The tag must match the VERSION file: the version shown in the panel footer and in
+# /health comes from VERSION, and a release whose tag says otherwise would lie about it.
+# Assets are the same deterministic tarballs the deploy scripts build locally
+# (tools/build-release.py), each with its .sha256, so a downloaded asset can be compared
+# byte for byte with a local build of the same commit.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # build-release.py reads the commit hash and date from git.
+          fetch-depth: 0
+
+      - name: Tag must match VERSION
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          file="$(tr -d '[:space:]' < VERSION)"
+          if [ "$tag" != "$file" ]; then
+            echo "::error::tag v$tag does not match VERSION ($file)"
+            exit 1
+          fi
+
+      - uses: astral-sh/setup-uv@v6
+      - run: uv python install 3.13
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: uv sync --locked
+      - run: uv run ruff check src tests
+      - run: uv run mypy src
+      - run: uv run pytest -q
+
+      - name: Build release tarballs
+        run: |
+          uv run python tools/build-release.py gamepanel --out dist
+          uv run python tools/build-release.py gamebroker --out dist
+          ls -l dist
+          # A ".dirty" build would not correspond to the tagged commit.
+          if ls dist | grep -q dirty; then echo "::error::dirty build"; exit 1; fi
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes

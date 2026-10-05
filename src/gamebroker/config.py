@@ -1,12 +1,12 @@
-"""Configuracao do broker em producao, lida do ambiente (systemd EnvironmentFile).
+"""Production broker configuration, read from the environment (systemd EnvironmentFile).
 
-Tudo que o broker precisa para falar com o Proxmox, o OPNsense e os CTs chega por variavel de
-ambiente. `carregar` valida TUDO e devolve TODOS os problemas de uma vez: um deploy que erra um
-campo por tentativa gasta minutos em cada volta, e um segredo que faltou nao pode virar um
-`KeyError` no meio de um pedido.
+Everything the broker needs to talk to Proxmox, OPNsense and the CTs arrives as an
+environment variable. `carregar` validates EVERYTHING and returns ALL problems at once: a
+deploy that fixes one field per attempt spends minutes on each round, and a missing secret
+must not become a `KeyError` in the middle of a request.
 
-Nomes iguais aos do `broker.secrets.env` (PROXMOX_*, OPNSENSE_*): o mesmo arquivo de teste vira o
-de producao. Segredo NUNCA entra em mensagem de erro; so o NOME da variavel.
+Names match those of `broker.secrets.env` (PROXMOX_*, OPNSENSE_*): the same test file becomes
+the production one. A secret NEVER goes into an error message; only the variable NAME does.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ TOKEN_MINIMO = 32
 
 
 class ConfigError(ValueError):
-    """Configuracao invalida. `problemas` traz uma linha por variavel, sem nenhum valor secreto."""
+    """Invalid configuration. `problemas` has one line per variable, without any secret value."""
 
     def __init__(self, problems: list[str]):
         super().__init__("configuracao do broker invalida:\n  - " + "\n  - ".join(problems))
@@ -60,7 +60,7 @@ class ConfigBroker:
 
 
 class _Reader:
-    """Le variaveis acumulando problemas em vez de parar no primeiro."""
+    """Reads variables accumulating problems instead of stopping at the first one."""
 
     def __init__(self, env: Mapping[str, str]):
         self._env = env
@@ -114,7 +114,7 @@ def _read_allowed_ips(reader: _Reader) -> tuple[str, ...]:
 
 
 def _read_firewall_sources(reader: _Reader) -> tuple[str, ...]:
-    """Quem pode abrir SSH nos CTs de jogo (painel e broker), para o firewall de dentro deles."""
+    """Who may open SSH to the game CTs (panel and broker), for the firewall inside them."""
     raw_text = reader.text("BROKER_FIREWALL_SOURCES", "")
     ips: list[str] = []
     for item in filter(None, (p.strip() for p in raw_text.split(","))):
@@ -130,7 +130,7 @@ def _ranges(reader: _Reader) -> tuple[range, int, tuple[str, ...]]:
     ctid_end = reader.integer("BROKER_CTID_FIM", 399, 100, 999_999_999)
     if ctid_end < ctid_start:
         reader.problems.append("BROKER_CTID_FIM: menor que BROKER_CTID_INICIO")
-    # 0 = CTID escolhido a parte, na faixa acima; senao o CTID e a base + o ultimo numero do IP.
+    # 0 = CTID chosen separately, in the range above; otherwise the CTID is base + last number of the IP.
     ctid_base = reader.integer("BROKER_CTID_BASE", 0, 0, 999_999_000)
     prefix = reader.text("BROKER_IP_PREFIX")
     ini = reader.integer("BROKER_IP_INICIO", 30, 1, 254)
@@ -142,8 +142,8 @@ def _ranges(reader: _Reader) -> tuple[range, int, tuple[str, ...]]:
 
 
 def _port_range(reader: _Reader) -> range:
-    """Faixa so do broker para jogos que andam de porta. Fica fora das portas padrao dos jogos
-    e abaixo das efemeras do Linux (32768+), que o proprio firewall usa em conexoes de saida."""
+    """Broker-only range for games that move ports. It stays away from the games' default ports
+    and below Linux's ephemeral ports (32768+), which the firewall itself uses for outgoing connections."""
     ini = reader.integer("BROKER_PORT_INICIO", 31000, 1024, 65535)
     end_at = reader.integer("BROKER_PORT_FIM", 31999, 1024, 65535)
     if end_at < ini:
@@ -153,10 +153,10 @@ def _port_range(reader: _Reader) -> range:
 
 
 def _steam_account(reader: _Reader) -> SteamAccount | None:
-    """Opcional: sem as duas, o jogo que exige conta (DayZ) so fica fora do catalogo criavel.
+    """Optional: without both, the game that requires an account (DayZ) just stays out of the creatable catalog.
 
-    Uma sem a outra e ERRO, e nao "sem conta": quem preencheu uma quis ligar o recurso, e
-    desliga-lo calado deixaria o DayZ "manual" sem ninguem saber por que.
+    One without the other is an ERROR, not "no account": whoever filled one in meant to turn the
+    feature on, and silently turning it off would leave DayZ "manual" with nobody knowing why.
     """
     user = reader.text("STEAM_USER", "")
     password = reader.text("STEAM_PASS", "")
@@ -169,7 +169,7 @@ def _steam_account(reader: _Reader) -> SteamAccount | None:
 
 
 def _check_url(reader: _Reader, name: str, url: str) -> None:
-    """https sempre; http so em loopback (testes). Token em texto puro pela rede nao existe aqui."""
+    """https always; http only on loopback (tests). A plain-text token over the network does not exist here."""
     parts = urlsplit(url)
     if not url:
         return
@@ -180,7 +180,7 @@ def _check_url(reader: _Reader, name: str, url: str) -> None:
 
 
 def load(env: Mapping[str, str]) -> ConfigBroker:
-    """Le e valida o ambiente. Levanta `ErroDeConfig` com todos os problemas."""
+    """Reads and validates the environment. Raises `ErroDeConfig` with all the problems."""
     reader = _Reader(env)
     token = reader.text("BROKER_TOKEN")
     if token and len(token) < TOKEN_MINIMO:
@@ -203,21 +203,24 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
     ports = _port_range(reader)
     gateway = reader.text("BROKER_GATEWAY")
     network_prefix = reader.integer("BROKER_PREFIXO_REDE", 24, 8, 30)
-    # Le TODAS as variaveis antes; so constroi o objeto se elas vieram completas. Senao a mesma
-    # falta apareceria duas vezes (a da variavel e a do construtor reclamando de texto vazio).
+    # Read ALL variables first; only build the object if they came complete. Otherwise the same
+    # gap would show up twice (the variable's and the constructor complaining about empty text).
     before = len(reader.problems)
-    # `dict[str, Any]` e o tipo HONESTO, e nao uma supressao: o dicionario e heterogeneo
-    # (texto, numero, tupla) e existe para ser aberto com `**` num construtor tipado. Sem a
-    # anotacao o verificador infere `dict[str, str]` a partir das primeiras chaves e acusa
-    # cada campo que nao e texto — e essa e a armadilha que o CLAUDE.md descreve: aqui o
-    # nome do campo viaja como TEXTO, e nenhuma ferramenta liga a chave ao parametro.
+    # `dict[str, Any]` is the HONEST type, not a suppression: the dict is heterogeneous
+    # (text, number, tuple) and exists to be unpacked with `**` into a typed constructor.
+    # Without the annotation the checker infers `dict[str, str]` from the first keys and flags
+    # every field that is not text - and that is the trap CLAUDE.md describes: here the
+    # field name travels as TEXT, and no tool links the key to the parameter.
     px: dict[str, Any] = {"node": reader.text("PROXMOX_NODE"), "pool": reader.text("PROXMOX_POOL", "games"),
           "storage": reader.text("PROXMOX_STORAGE"), "template": reader.text("PROXMOX_TEMPLATE"),
           "bridge": reader.text("PROXMOX_BRIDGE")}
     proxmox = None
     if len(reader.problems) == before and gateway and broker_key and panel_key:
         proxmox = reader.attempt("PROXMOX_*", lambda: ConfigProxmox(
-            **px, gateway=gateway, prefix=network_prefix, ssh_keys=(broker_key, panel_key)))
+            # ONLY the broker key goes into root: it is removed at the end of the install, and
+            # the panel key goes to the unprivileged `gamepanel` user through install.env
+            # (ConfigSsh.panel_public_key below), never to root.
+            **px, gateway=gateway, prefix=network_prefix, ssh_keys=(broker_key,)))
     missing_ones = [a for a in LIB_FILES if not (lib_dir / a).is_file()]
     if missing_ones:
         reader.problems.append(f"BROKER_LIB_DIR: faltam {', '.join(missing_ones)} em {lib_dir}")
@@ -227,7 +230,7 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
         firewall_sources = _read_firewall_sources(reader)
         ssh = reader.attempt("BROKER_SSH_*", lambda: ConfigSsh(
             private_key=ssh_key, public_key=broker_key, lib_dir=lib_dir, steam=steam,
-            firewall_sources=firewall_sources))
+            firewall_sources=firewall_sources, panel_public_key=panel_key))
 
     cfg_parcial: dict[str, Any] = {
         "proxmox_fingerprint": reader.fingerprint("PROXMOX_CERT_SHA256", px_https),

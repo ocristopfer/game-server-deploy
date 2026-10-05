@@ -1,10 +1,10 @@
-"""Estado do servico do jogo (gamepanel.services.status_service).
+"""Game service state (gamepanel.services.status_service).
 
-A LEITURA do `systemctl show` nao tinha teste antes da Fase 4: os testes de alerta
-montam o dicionario de estado a mao e trocam `server_status` inteiro por um falso, o
-que exercita a regra do alerta e nunca o que chega do container. E ai moram coisas que
-so aparecem em maquina de verdade — systemd antigo sem `NRestarts`, unidade que nao
-existe, container inalcancavel.
+READING `systemctl show` had no test before Phase 4: the alert tests build the state
+dictionary by hand and swap the whole `server_status` for a fake, which exercises the
+alert rule and never what comes from the container. And that is where things live that
+only show up on a real machine - old systemd without `NRestarts`, a unit that does not
+exist, an unreachable container.
 """
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def test_le_os_quatro_campos_do_systemctl():
 
 
 def test_pergunta_pelos_campos_que_distinguem_parada_de_queda():
-    """Sem Result e NRestarts nao da para separar 'eu parei' de 'quebrou em loop'."""
+    """Without Result and NRestarts there is no telling 'I stopped it' from 'crashing in a loop'."""
     record: list = []
     ss.server_status(ssh_that_answers(output_of(ActiveState="active"), record), SERVER, 5)
     command = record[0]
@@ -57,14 +57,14 @@ def test_pergunta_pelos_campos_que_distinguem_parada_de_queda():
 
 
 def test_unidade_inexistente_vira_inactive():
-    """`systemctl show` sai com 0 e ActiveState vazio para unidade que nao existe."""
+    """`systemctl show` exits 0 with an empty ActiveState for a unit that does not exist."""
     state = ss.server_status(ssh_that_answers(output_of(ActiveState="")), SERVER, 5)
     assert state["reachable"] is True
     assert state["service"] == "inactive"
 
 
 def test_systemd_antigo_sem_nrestarts_nao_quebra():
-    """NRestarts so existe no systemd >= 235; sem ele o painel so nao avisa desse evento."""
+    """NRestarts only exists in systemd >= 235; without it the panel just does not report that event."""
     state = ss.server_status(ssh_that_answers(output_of(ActiveState="active")), SERVER, 5)
     assert state["restarts"] == 0
 
@@ -75,7 +75,7 @@ def test_nrestarts_que_nao_e_numero_vira_zero():
 
 
 def test_container_inalcancavel_vira_estado_e_nao_excecao():
-    """A lista de servidores nao pode cair porque um container esta fora do ar."""
+    """The server list must not go down because one container is offline."""
     def explode(server, command, timeout=None):
         raise RemoteError("tempo esgotado (20s) executando no host 10.0.0.1")
 
@@ -110,7 +110,7 @@ def test_prazo_zero_nao_aproveita_nada():
 
 
 def test_invalidate_obriga_a_perguntar_de_novo():
-    """Depois de um start/stop o estado guardado esta velho na hora."""
+    """After a start/stop the stored state is immediately stale."""
     calls: list = []
     ssh = ssh_that_answers(output_of(ActiveState="active"), calls)
     ss.server_status(ssh, SERVER, 5)
@@ -120,7 +120,7 @@ def test_invalidate_obriga_a_perguntar_de_novo():
 
 
 def test_erro_tambem_fica_em_cache():
-    """Container fora do ar custa o timeout inteiro; repetir a cada tela nao se paga."""
+    """An offline container costs the whole timeout; repeating that on every screen does not pay off."""
     calls: list = []
 
     def explode(server, command, timeout=None):

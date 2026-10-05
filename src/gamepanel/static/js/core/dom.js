@@ -1,16 +1,16 @@
-/* Nucleo — atalhos de DOM.
+/* Core - DOM shortcuts.
  *
- * Nada de framework: sao quatro funcoes que tiram o ruido de querySelector das
- * features e centralizam o unico jeito seguro de mount uma celula de tabela com
- * texto que veio do container.
+ * No framework: four functions that remove the querySelector noise from the
+ * features and centralize the only safe way to mount a table cell with
+ * text that came from the container.
  */
 
 export const $ = (selector, root = document) => root.querySelector(selector);
 export const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
-/* Cria um elemento. `texto` entra sempre por textContent — nunca por innerHTML —
- * porque quase todo texto que o painel mostra (nome de jogador, caminho de arquivo,
- * linha de log) veio de fora e nao pode virar marcacao. */
+/* Creates an element. `text` always goes in through textContent - never through innerHTML -
+ * because almost every text the panel shows (player name, file path,
+ * log line) came from outside and must not become markup. */
 export function createEl(tag, { className = '', text = '', attrs = {} } = {}) {
   const el = document.createElement(tag);
   if (className) el.className = className;
@@ -19,19 +19,19 @@ export function createEl(tag, { className = '', text = '', attrs = {} } = {}) {
   return el;
 }
 
-/* Troca o conteudo de um elemento por uma lista de filhos, de uma vez so. */
+/* Replaces an element's content with a list of children, all at once. */
 export function reset(target, children) {
   target.replaceChildren(...children);
   return target;
 }
 
-/* Preenche campos de um formulario a partir de { nome: valor }. Caixa de marcar liga com
- * '1' e desliga com qualquer outra coisa; nome que o formulario nao tem e ignorado.
+/* Fills a form's fields from { name: value }. A checkbox is turned on with
+ * '1' and off with anything else; a name the form does not have is ignored.
  *
- * Varias caixas com o MESMO nome (as receitas) chegam como um grupo, e o valor e a lista das
- * marcadas separadas por espaco: 'proton xvfb'. O grupo nao tem `tagName` (e uma lista, nao
- * um elemento) - e o `select`, que tambem tem `length`, tem. Sem este caso o modelo "Unreal
- * Windows" deixava o Proton desmarcado, e o broker recusava o jogo de Windows sem runtime. */
+ * Several checkboxes with the SAME name (the recipes) arrive as a group, and the value is the list
+ * of checked ones separated by spaces: 'proton xvfb'. The group has no `tagName` (it is a list, not
+ * an element) - and the `select`, which also has `length`, does. Without this case the "Unreal
+ * Windows" template left Proton unchecked, and the broker rejected the Windows game with no runtime. */
 export function fillForm(form, values) {
   Object.entries(values).forEach(([name, value]) => {
     const field = form.elements[name];

@@ -1,14 +1,14 @@
-"""Contagem e acoes de jogador (gamepanel.services.player_service).
+"""Player counting and actions (gamepanel.services.player_service).
 
-O que este arquivo cobre nao tinha teste direto antes da Fase 4: `server_players`
-(cache, despacho por fonte, erro virando dado da tela), `http_login` (token gravado no
-banco), a renovacao de token do `chama_api_do_jogo` e o `all_players`. O que havia era
-teste de ROTA com `server_players` inteiro trocado por um falso — util para a tela,
-cego para a regra.
+What this file covers had no direct test before Phase 4: `server_players`
+(cache, dispatch by source, errors becoming screen data), `http_login` (token stored in
+the database), the token renewal of `chama_api_do_jogo` and `all_players`. What existed was
+ROUTE tests with the whole `server_players` swapped for a fake - useful for the screen,
+blind to the rule.
 
-Como o service recebe tudo por `PlayerDeps`, aqui nao ha Flask, SSH nem container: as
-quatro pecas sao falsas, e o banco e um sqlite de arquivo temporario com a unica tabela
-que o login precisa.
+Since the service receives everything through `PlayerDeps`, there is no Flask, SSH or
+container here: the four pieces are fake, and the database is a temporary sqlite file with
+the only table the login needs.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from gamepanel.services import player_service as ps
 
 @pytest.fixture(autouse=True)
 def clean_cache():
-    """O cache e do processo: sem isto um caso herdaria a contagem do anterior."""
+    """The cache is per process: without this one case would inherit the previous one's count."""
     ps._players_cache.clear()
     yield
     ps._players_cache.clear()
@@ -51,19 +51,19 @@ def deps(**trocas) -> ps.PlayerDeps:
     return ps.PlayerDeps(**{**fallback, **trocas})
 
 
-# ----------------------------------------------------------- fonte da contagem
+# ----------------------------------------------------------- count source
 
 def test_player_source_respeita_a_escolha_do_cadastro():
     assert ps.player_source(server(player_source="http")) == "http"
 
 
 def test_player_source_none_e_desligado_explicito():
-    """'none' e diferente de vazio: quem escolheu desligar nao pode cair no palpite."""
+    """'none' differs from empty: whoever chose to turn it off cannot fall into the guess."""
     assert ps.player_source(server(player_source="none", query_port=27015)) == ""
 
 
 def test_player_source_vazio_deduz_a2s_pela_porta_de_consulta():
-    """Cadastro anterior ao campo: porta de query preenchida quer dizer A2S."""
+    """Registration older than the field: a filled query port means A2S."""
     assert ps.player_source(server(query_port=27015)) == "a2s"
 
 
@@ -100,7 +100,7 @@ def test_a2s_usa_a_porta_de_consulta_e_marca_a_fonte():
 
 
 def test_a2s_sem_porta_vira_erro_na_tela_e_nao_excecao():
-    """A tela precisa dizer o que falta; estourar aqui derrubaria a lista inteira."""
+    """The screen must say what is missing; blowing up here would bring down the whole list."""
     out = ps.server_players(deps(), server(player_source="a2s"))
     assert out["configured"] is True
     assert out["players"] is None
@@ -167,7 +167,7 @@ def test_invalidate_esquece_o_servidor():
 
 
 def test_erro_tambem_fica_em_cache():
-    """Servidor fora do ar custa 3s de espera: repetir isso a cada tela nao se paga."""
+    """A server that is down costs a 3s wait: repeating that on every screen does not pay off."""
     calls = []
 
     def fake(host, port):
@@ -182,7 +182,7 @@ def test_erro_tambem_fica_em_cache():
     assert len(calls) == 1
 
 
-# ------------------------------------------------------- fontes combinadas
+# ------------------------------------------------------- combined sources
 
 JOIN = r"(?P<name>\w+) entrou"
 LEAVE = r"(?P<name>\w+) saiu"
@@ -203,13 +203,13 @@ def test_fonte_sem_campo_preenchido_nao_entra_na_combinacao():
 
 
 def test_none_desliga_ate_as_fontes_com_campo_preenchido():
-    """Calar um servidor sem apagar o cadastro: o regex do log nao pode religar a contagem."""
+    """Silencing a server without erasing its registration: the log regex cannot turn counting back on."""
     target = server(player_source="none", query_port=27015, join_re=JOIN)
     assert ps.configured_sources(target) == []
 
 
 def test_a2s_conta_e_o_log_da_os_nomes():
-    """O caso do Unreal: a consulta sabe QUANTOS, so o log sabe QUEM."""
+    """The Unreal case: the query knows HOW MANY, only the log knows WHO."""
     d = deps(query_players=lambda h, p: {"players": 2, "list": []},
              read_log_lines=log_lines("ana entrou", "bia entrou"))
     out = ps.server_players(d, server(player_source="a2s", query_port=27015,
@@ -222,7 +222,7 @@ def test_a2s_conta_e_o_log_da_os_nomes():
 
 
 def test_numero_e_da_consulta_mesmo_quando_o_log_lembra_de_mais_gente():
-    """Quem caiu sem linha de saida ficou no log; a lista e cortada nos ultimos a entrar."""
+    """Whoever dropped without a leave line stayed in the log; the list is cut to the last ones to join."""
     d = deps(query_players=lambda h, p: {"players": 1, "list": []},
              read_log_lines=log_lines("ana entrou", "bia entrou"))
     out = ps.server_players(d, server(player_source="a2s", query_port=27015, join_re=JOIN))
@@ -286,7 +286,7 @@ def test_log_que_falha_ao_completar_nomes_nao_estraga_a_contagem():
 
 
 def test_conexoes_ativas_contam_e_o_log_da_os_nomes():
-    """O Dragonwilds: sem consulta (EOS), o numero sai do firewall e os nomes do log."""
+    """Dragonwilds: no query (EOS), the number comes from the firewall and the names from the log."""
     d = deps(presence_players=lambda srv: {"players": 1, "list": []},
              read_log_lines=log_lines("ana entrou", "bia entrou"))
     out = ps.server_players(d, server(player_source="net", join_re=JOIN))
@@ -308,20 +308,20 @@ def test_conexoes_ativas_sem_firewall_caem_para_o_log():
 
 
 def test_conexoes_ativas_so_valem_quando_escolhidas():
-    """Nao ha campo que diga se o CT tem o conjunto: como reserva ela so geraria erro."""
+    """No field says whether the CT has the toolset: as a fallback it would only produce errors."""
     target = server(player_source="a2s", query_port=27015, join_re=JOIN)
     assert "net" not in ps.configured_sources(target)
 
 
 def test_total_de_vagas_vem_do_cadastro_quando_a_fonte_nao_sabe():
-    """Conexoes ativas e log nao sabem o limite: sem isto a tela dizia "0 jogadores", e nao "0/6"."""
+    """Active connections and the log do not know the limit: without this the screen said "0 jogadores", not "0/6"."""
     d = deps(presence_players=lambda srv: {"players": 0, "list": [], "max_players": None})
     out = ps.server_players(d, server(player_source="net", max_players=6))
     assert out["max_players"] == 6
 
 
 def test_total_da_consulta_vence_o_do_cadastro():
-    """A A2S diz o que o servidor esta usando AGORA; o cadastro pode ter ficado para tras."""
+    """A2S says what the server is using NOW; the registration may have fallen behind."""
     d = deps(query_players=lambda h, p: {"players": 1, "list": [], "max_players": 32})
     out = ps.server_players(d, server(player_source="a2s", query_port=27015, max_players=6))
     assert out["max_players"] == 32
@@ -337,7 +337,7 @@ def test_all_players_junta_por_id():
 
 
 def test_all_players_preenche_quem_nao_respondeu_a_tempo():
-    """Thread que nao voltou no prazo nao pode sumir da lista da tela."""
+    """A thread that did not return in time cannot vanish from the screen's list."""
     def lock_it(s):
         if int(s["id"]) == 2:
             import time
@@ -350,11 +350,11 @@ def test_all_players_preenche_quem_nao_respondeu_a_tempo():
     assert out[2]["configured"] is True
 
 
-# ------------------------------------------------------------ login e token
+# ------------------------------------------------------------ login and token
 
 @pytest.fixture
 def servers_database(tmp_path):
-    """sqlite com a unica coluna que o login escreve."""
+    """sqlite with the only column the login writes."""
     path = tmp_path / "painel.db"
     con = sqlite3.connect(path)
     con.execute("CREATE TABLE servers (id INTEGER PRIMARY KEY, http_token TEXT)")
@@ -387,7 +387,7 @@ def test_http_login_grava_o_token_no_cadastro(servers_database):
 
 
 def test_http_login_sem_configuracao_completa_recusa():
-    with pytest.raises(QueryError, match="login automatico incompleto"):
+    with pytest.raises(QueryError, match="login automático incompleto"):
         ps.http_login(deps(), server(http_login_url="http://x/login"))
 
 
@@ -399,7 +399,7 @@ def test_http_login_sem_token_na_resposta_diz_onde_procurou():
 
 
 def test_login_vai_sem_authorization():
-    """E ele quem PRODUZ a credencial: mandar a antiga junto so confunde a API."""
+    """It is the one that PRODUCES the credential: sending the old one along only confuses the API."""
     seen_ones = []
 
     def fake(server, url, auth, body, exigir_json=True):
@@ -409,7 +409,7 @@ def test_login_vai_sem_authorization():
     d = deps(http_json=fake, connect=lambda: sqlite3.connect(":memory:"))
     target = server(http_login_url="http://x/login", http_token_path="token")
     with pytest.raises(sqlite3.OperationalError):
-        ps.http_login(d, target)      # o :memory: nao tem a tabela; o que importa e o auth
+        ps.http_login(d, target)      # the :memory: has no table; what matters is the auth
     assert seen_ones == [""]
 
 
@@ -457,7 +457,7 @@ def test_token_vencido_renova_uma_vez_e_repete(servers_database):
 
 
 def test_sem_login_configurado_o_401_sobe():
-    """Sem como renovar, insistir so gasta chamada: o problema e a credencial."""
+    """With no way to renew, insisting only wastes calls: the problem is the credential."""
     def fake(*a, **k):
         raise AuthError("401")
 
@@ -470,10 +470,10 @@ def test_players_from_http_sem_url_recusa():
         ps.players_from_http(deps(), server())
 
 
-# ------------------------------------------------------------ contagem por log
+# ------------------------------------------------------------ count by log
 
 def test_players_from_log_sem_padrao_de_entrada_recusa():
-    with pytest.raises(QueryError, match="padrao da linha de entrada"):
+    with pytest.raises(QueryError, match="padrão da linha de entrada"):
         ps.players_from_log(deps(), server())
 
 
@@ -488,7 +488,7 @@ def test_players_from_log_conta_quem_ficou():
 
 
 def test_falha_de_ssh_no_log_vira_erro_de_consulta():
-    """QueryError e o que a tela sabe mostrar; RemoteError vazaria como erro interno."""
+    """QueryError is what the screen knows how to show; RemoteError would leak as an internal error."""
     def explode(*a, **k):
         raise RemoteError("sem rota para o host")
 
@@ -498,18 +498,18 @@ def test_falha_de_ssh_no_log_vira_erro_de_consulta():
         ps.players_from_log(d, target)
 
 
-# ------------------------------------------------------------------- acoes
+# ------------------------------------------------------------------- actions
 
 def test_acao_desconhecida_e_recusada():
     target = server(player_source="http", http_url="http://127.0.0.1:8212/v1/api/players")
-    with pytest.raises(QueryError, match="nao publica essa acao"):
+    with pytest.raises(QueryError, match="não publica essa ação"):
         ps.player_action(deps(), target, "explodir", "id", "")
 
 
 def test_expulsar_sem_identificador_e_recusado():
-    """Kick pelo nome nao serve: nome muda e repete, id nao."""
+    """Kicking by name does not work: names change and repeat, ids do not."""
     target = server(player_source="http", http_url="http://127.0.0.1:8212/v1/api/players")
-    with pytest.raises(QueryError, match="nao sei quem expulsar"):
+    with pytest.raises(QueryError, match="não sei quem expulsar"):
         ps.player_action(deps(), target, "kick", "", "tchau")
 
 
@@ -532,8 +532,8 @@ def test_kick_monta_rota_e_corpo_do_catalogo():
     assert url == "http://127.0.0.1:8212/v1/api/kick"
     assert '"userid": "steam_1"' in body
     assert '"message": "tchau"' in body
-    # As rotas de acao respondem 200 com corpo vazio.
+    # The action routes answer 200 with an empty body.
     assert require_json is False
-    # CHAVE de catalogo, nao a frase: o servico nao sabe em que idioma a tela esta
-    # aberta, e quem traduz e o `app.py`, que tem o pedido em maos.
+    # A catalog KEY, not the sentence: the service does not know which language the screen
+    # is open in, and the translator is `app.py`, which has the request at hand.
     assert label == "player_action.kick"

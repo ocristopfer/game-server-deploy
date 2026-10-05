@@ -1,7 +1,7 @@
-"""API HTTP do broker: so traduz HTTP <-> `Servico`. Sem regra de negocio aqui.
+"""Broker HTTP API: only translates HTTP <-> `Servico`. No business rules here.
 
-Nao existe endpoint de comando livre, de porta livre, de IP livre nem de CTID livre. O
-painel manda `jogo` (chave do catalogo) e `nome`; o resto o broker decide.
+There is no endpoint for a free-form command, port, IP or CTID. The panel sends `jogo`
+(catalog key) and `nome`; the broker decides the rest.
 """
 from __future__ import annotations
 
@@ -24,15 +24,15 @@ ACTOR_HEADER = "X-Actor"
 log = logging.getLogger("broker")
 
 
-def create_app(service: Service, token: str,  # noqa: C901 - ver a nota abaixo
+def create_app(service: Service, token: str,  # noqa: C901 - see the note below
                allowed_ips: tuple[str, ...] = ()) -> Flask:
-    """Monta o app: autenticacao, handlers de erro e as 11 rotas.
+    """Builds the app: authentication, error handlers and the 11 routes.
 
-    O `# noqa: C901` nao e desistencia. O mccabe conta cada `def` aninhado como ramo, e
-    uma factory Flask e uma LISTA de registros: 11 rotas de uma a tres linhas. O teto de 15
-    do repositorio existe para forcar 'separar decidir de fazer', e aqui nao ha decisao a
-    separar — quebrar em `_register_routes`/`_register_errors` trocaria um numero por tres
-    indirecoes e nada ficaria mais facil de ler.
+    The `# noqa: C901` is not giving up. mccabe counts every nested `def` as a branch, and
+    a Flask factory is a LIST of registrations: 11 routes of one to three lines. The
+    repository's limit of 15 exists to force 'separate deciding from doing', and here there
+    is no decision to separate - splitting into `_register_routes`/`_register_errors` would
+    trade one number for three indirections and nothing would get easier to read.
     """
     if len(token) < TOKEN_MINIMO:
         raise ValueError(f"o token do broker precisa ter ao menos {TOKEN_MINIMO} caracteres")
@@ -45,7 +45,7 @@ def create_app(service: Service, token: str,  # noqa: C901 - ver a nota abaixo
             return _error("origem nao permitida", "origem", 403)
         sent_value = request.headers.get("Authorization", "")
         expected = f"Bearer {token}"
-        # compare_digest: tempo constante, para o token nao ser descoberto byte a byte.
+        # compare_digest: constant time, so the token cannot be discovered byte by byte.
         if not hmac.compare_digest(sent_value.encode(), expected.encode()):
             return _error("token ausente ou invalido", "nao-autenticado", 401)
         return None
@@ -56,13 +56,13 @@ def create_app(service: Service, token: str,  # noqa: C901 - ver a nota abaixo
 
     @app.errorhandler(HTTPException)
     def on_http_error(error: HTTPException):
-        # 404, 405, 413...: sao do Flask, nao do broker. Sem este handler o catch-all
-        # abaixo os transformaria em 500 e esconderia rota errada como "erro interno".
+        # 404, 405, 413...: those belong to Flask, not to the broker. Without this handler the
+        # catch-all below would turn them into 500 and hide a wrong route as "internal error".
         return _error(error.name.lower(), "http", error.code or 500)
 
     @app.errorhandler(Exception)
     def on_unexpected(error: Exception):
-        # Detalhe so no log do broker: a mensagem do erro pode citar caminho ou endereco interno.
+        # Details only in the broker log: the error message may mention an internal path or address.
         log.exception("erro interno", exc_info=error)
         return _error("erro interno do broker", "interno", 500)
 
@@ -71,9 +71,9 @@ def create_app(service: Service, token: str,  # noqa: C901 - ver a nota abaixo
 
     @app.get("/v1/health")
     def health():
-        # A versao vem daqui, e nao do `Service`: ela e identidade do PROCESSO que
-        # respondeu, nao um fato sobre Proxmox ou OPNsense. O painel usa para dizer se o
-        # broker que ele alcanca e o que o ultimo deploy publicou.
+        # The version comes from here, not from `Service`: it is the identity of the PROCESS
+        # that answered, not a fact about Proxmox or OPNsense. The panel uses it to tell
+        # whether the broker it reaches is the one the last deploy published.
         return jsonify({**service.health(), **version.BUILD.as_public()})
 
     @app.get("/v1/catalog")

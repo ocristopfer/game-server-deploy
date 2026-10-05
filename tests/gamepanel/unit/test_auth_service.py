@@ -1,8 +1,8 @@
-"""A trava de tentativas, sozinha: sem HTTP, sem banco e sem dormir.
+"""The attempt lockout, on its own: no HTTP, no database and no sleeping.
 
-`test_2fa.py` e `test_login.py` provam que a trava esta LIGADA nas telas certas. Aqui se
-prova a regra em si — a janela deslizante, o arredondamento para cima, o isolamento entre
-chaves — que por HTTP custaria uma janela de 15 minutos de relogio falso por caso.
+`test_2fa.py` and `test_login.py` prove the lockout is WIRED on the right screens. Here the
+rule itself is proven - the sliding window, the rounding up, the isolation between keys -
+which over HTTP would cost a 15-minute window of fake clock per case.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from gamepanel.services.auth_service import Lockout
 
 
 class Clock:
-    """Relogio que so anda quando o teste manda."""
+    """A clock that only moves when the test says so."""
 
     def __init__(self) -> None:
         self.now = 1_000.0
@@ -41,7 +41,7 @@ def test_a_tentativa_que_estoura_o_limite_tranca():
 
 
 def test_a_espera_nunca_e_zero_segundos():
-    """`int()` de 0,4 s daria 0, e a tela mandaria tentar de novo para levar outro 429."""
+    """`int()` of 0.4 s would give 0, and the screen would say to try again only to get another 429."""
     clock = Clock()
     lock = Lockout(1, 60.0, clock)
     lock.record_failure("ana")
@@ -50,14 +50,14 @@ def test_a_espera_nunca_e_zero_segundos():
 
 
 def test_a_janela_desliza_pela_tentativa_mais_ANTIGA():
-    """Cinco erros bem espacados nao podem trancar a conta para sempre."""
+    """Five well-spaced mistakes must not lock the account forever."""
     clock = Clock()
     lock = Lockout(2, 60.0, clock)
     lock.record_failure("ana")
     clock.advance(59.0)
     lock.record_failure("ana")
     assert lock.remaining("ana") > 0
-    # A primeira sai da janela e sobra uma so: volta a haver tentativa.
+    # The first one leaves the window and only one is left: attempts are available again.
     clock.advance(2.0)
     assert lock.remaining("ana") == 0
 
@@ -80,8 +80,8 @@ def test_uma_conta_trancada_nao_tranca_a_outra():
 
 
 def test_duas_travas_nao_dividem_tentativa():
-    """A da senha e a do codigo sao objetos separados: errar a senha nao pode gastar as
-    tentativas de quem ja passou dela e esta digitando o codigo."""
+    """The password lockout and the code lockout are separate objects: mistyping the password
+    must not spend the attempts of someone who already got past it and is typing the code."""
     clock = Clock()
     password, code = Lockout(1, 60.0, clock), Lockout(1, 60.0, clock)
     password.record_failure("ana")
@@ -89,7 +89,7 @@ def test_duas_travas_nao_dividem_tentativa():
 
 
 def test_a_leitura_limpa_o_que_venceu():
-    """Sem a limpeza na passagem, a lista de uma conta sob ataque cresceria sem fim."""
+    """Without pruning on the way, the list of an account under attack would grow forever."""
     clock = Clock()
     lock = Lockout(5, 60.0, clock)
     for _ in range(4):
@@ -110,8 +110,8 @@ def test_reset_esquece_todas_as_chaves():
 
 
 def test_tentativas_simultaneas_nao_se_perdem():
-    """O painel serve varias abas ao mesmo tempo; sem o lock, dois `append` na mesma
-    lista podem virar um e a trava demoraria mais a fechar do que devia."""
+    """The panel serves several tabs at once; without the lock, two `append`s on the same
+    list can become one and the lockout would take longer to close than it should."""
     clock = Clock()
     lock = Lockout(1_000, 60.0, clock)
     threads = [threading.Thread(target=lambda: [lock.record_failure("ana")
@@ -125,8 +125,8 @@ def test_tentativas_simultaneas_nao_se_perdem():
 
 
 def test_sem_relogio_injetado_o_nome_e_resolvido_na_HORA(monkeypatch):
-    """`clock=time.time` como valor padrao da assinatura guardaria a funcao original e o
-    `monkeypatch` das suites de login deixaria de valer, em silencio."""
+    """`clock=time.time` as the default value in the signature would keep the original
+    function and the login suites' `monkeypatch` would silently stop taking effect."""
     import time as stdlib_time
 
     lock = Lockout(1, 60.0)

@@ -1,13 +1,13 @@
-/* Camada 2 — BASE.
+/* Layer 2 - BASE.
  *
- * Reset curto, tipografia e os elementos crus (a, p, table, input). Nada aqui sabe
- * o que e um "card" ou um "servidor": sao regras que valem para qualquer tela.
+ * Short reset, typography and the bare elements (a, p, table, input). Nothing here knows
+ * what a "card" or a "server" is: these are rules that apply to any screen.
  */
 *, *::before, *::after { box-sizing: border-box; }
 
 html {
-  /* 16px de base nao e escolha estetica: abaixo disso o Safari do iPhone da zoom
-     sozinho ao focar um campo, e a tela inteira sai do lugar. */
+  /* A 16px base is not an aesthetic choice: below that, iPhone Safari zooms in
+     on its own when a field gets focus, and the whole screen shifts. */
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
 }
@@ -18,8 +18,8 @@ body {
   background: var(--bg);
   color: var(--text);
   font: var(--fs-md)/1.55 var(--font);
-  /* No PWA, arrastar a pagina inteira para baixo parece um site quebrado, nao um
-     app — o "puxar para atualizar" fica a cargo do botao de recarregar do sistema. */
+  /* In the PWA, dragging the whole page down looks like a broken website, not an
+     app - "pull to refresh" is left to the system's reload button. */
   overscroll-behavior-y: none;
 }
 
@@ -33,8 +33,8 @@ p:last-child { margin-bottom: 0; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-/* Foco visivel so quando o foco veio do teclado: o anel em todo clique de mouse
-   vira ruido, e sem anel nenhum quem navega por Tab se perde. */
+/* Visible focus only when focus came from the keyboard: a ring on every mouse click
+   becomes noise, and with no ring at all whoever navigates with Tab gets lost. */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -55,8 +55,8 @@ hr { border: none; border-top: 1px solid var(--line); margin: var(--sp-4) 0; }
 
 ul, ol { margin: 0 0 var(--sp-3); padding-left: var(--sp-5); }
 
-/* ---------- campos ----------
-   Os campos herdam 1rem de proposito (ver o comentario do html acima). */
+/* ---------- fields ----------
+   Fields inherit 1rem on purpose (see the html comment above). */
 input, textarea, select, button {
   font: inherit;
   color: inherit;
@@ -79,7 +79,7 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--accent);
 }
 textarea { resize: vertical; line-height: 1.6; }
-/* 20px e o corpo do controle; o alvo de toque quem garante e o rotulo em volta. */
+/* 20px is the body of the control; the touch target is guaranteed by the label around it. */
 input[type="checkbox"], input[type="radio"] {
   width: 20px; height: 20px; min-width: 0; min-height: 0;
   accent-color: var(--accent);
@@ -87,18 +87,18 @@ input[type="checkbox"], input[type="radio"] {
 input[type="file"] { padding: var(--sp-2); }
 ::placeholder { color: var(--muted); opacity: .75; }
 
-/* ---------- tabelas ----------
-   A tabela nunca e responsavel pela propria rolagem: quem rola e o .table-wrap
-   da camada de layout. Assim a barra de rolagem fica na borda do cartao. */
+/* ---------- tables ----------
+   A table is never responsible for its own scrolling: what scrolls is the .table-wrap
+   from the layout layer. That way the scrollbar sits at the edge of the card. */
 table { width: 100%; border-collapse: collapse; }
 
-/* ---------- utilidades de texto ---------- */
+/* ---------- text utilities ---------- */
 .muted { color: var(--muted); }
 .small { font-size: var(--fs-sm); }
 .nowrap { white-space: nowrap; }
 .wrap-anywhere { overflow-wrap: anywhere; }
 
-/* Rotulo que existe so para o leitor de tela. */
+/* Label that exists only for the screen reader. */
 .sr-only {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;

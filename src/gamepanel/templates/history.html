@@ -46,7 +46,7 @@
       {% for j in jobs %}
       <tr>
         <td class="muted small nowrap">{{ j.created_at[:16] | replace('T', ' ') }}</td>
-        <td>{{ names.get(j.server_id, '(removido)') }}</td>
+        <td>{{ names.get(j.server_id, _('history.removed')) }}</td>
         <td>
           <a href="{{ url_for('jobs.detail', jid=j.id) }}">{{ job_label(j.action) }}</a>
           {% if j.command %} <code class="trunc">{{ j.command }}</code>{% endif %}
@@ -58,7 +58,7 @@
         <td>
           {% if j.status == 'ok' %}<span class="badge on">ok</span>
           {% elif j.status == 'running' %}<span class="badge">{{ _('history.running') }}</span>
-          {% else %}<span class="badge off">erro{% if j.exit_code is not none %} {{ j.exit_code }}{% endif %}</span>{% endif %}
+          {% else %}<span class="badge off">{{ _('history.error') }}{% if j.exit_code is not none %} {{ j.exit_code }}{% endif %}</span>{% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -79,15 +79,12 @@
   {% endif %}
   <p class="muted small mt-4">
     {% if keep_days %}
-      O painel guarda os ultimos <strong>{{ keep_days }} dias</strong>
-      (<code>GAMEPANEL_JOBS_KEEP_DAYS</code>) &mdash; cada registro carrega a saida inteira
-      do que rodou, e sem limpeza o banco so cresce.
+      {{ _h('history.keep_days', n=keep_days) }}
     {% else %}
-      A limpeza automatica esta desligada (<code>GAMEPANEL_JOBS_KEEP_DAYS=0</code>): o
-      historico cresce sem limite.
+      {{ _h('history.cleanup_off') }}
     {% endif %}
     {% if not is_admin %}
-      Terminal, console e arquivos nao aparecem aqui &mdash; sao acoes de administrador.
+      {{ _h('history.admin_actions_hidden') }}
     {% endif %}
   </p>
 </div>

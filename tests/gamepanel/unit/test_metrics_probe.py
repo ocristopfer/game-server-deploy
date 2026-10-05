@@ -1,10 +1,10 @@
-"""Leitor de metricas (gamepanel.runtime.metrics_probe): CPU, memoria, disco e rede a
-partir da saida crua do METRICS_SCRIPT.
+"""Metrics reader (gamepanel.runtime.metrics_probe): CPU, memory, disk and network from
+the raw output of METRICS_SCRIPT.
 
-Nao existia suite dedicada para isso antes da Fase 4 (mesmo achado do A2S: so
-exercitado indiretamente, e boa parte dos testes de alerta troca `server_metrics`
-inteiro por um fake, nunca chegando a `parse_metrics`). As linhas abaixo imitam
-exatamente o formato que o script remoto imprime.
+There was no dedicated suite for this before Phase 4 (same finding as A2S: only
+exercised indirectly, and many of the alert tests swap the whole `server_metrics` for a
+fake, never reaching `parse_metrics`). The lines below mimic exactly the format the
+remote script prints.
 """
 from __future__ import annotations
 
@@ -22,10 +22,10 @@ def _lines(*partes: str) -> str:
 
 
 def test_duas_amostras_calculam_cpu_pelo_cgroup():
-    """cpu.stat existe (cgroup v2): a conta usa usage_usec, nao /proc/stat."""
+    """cpu.stat exists (cgroup v2): the math uses usage_usec, not /proc/stat."""
     raw = _lines(
-        _sample(100.0, "1000000", "0|0", "0|0", 0),  # 1s de CPU usada
-        _sample(101.0, "1500000", "0|0", "0|0", 0),  # +0.5s num intervalo de 1s
+        _sample(100.0, "1000000", "0|0", "0|0", 0),  # 1s of CPU used
+        _sample(101.0, "1500000", "0|0", "0|0", 0),  # +0.5s in a 1s interval
         "cores|1",
     )
     out = mp.parse_metrics(raw)
@@ -33,14 +33,14 @@ def test_duas_amostras_calculam_cpu_pelo_cgroup():
 
 
 def test_cpu_cai_no_proc_stat_quando_cgroup_nao_tem_cpu_stat():
-    """Sem cpu.stat (containers antigos, cgroup v1 sem o arquivo): usa /proc/stat."""
+    """No cpu.stat (old containers, cgroup v1 without the file): uses /proc/stat."""
     raw = _lines(
         _sample(100.0, "-", "1000|200", "0|0", 0),
         _sample(101.0, "-", "1200|220", "0|0", 0),
         "cores|1",
     )
     out = mp.parse_metrics(raw)
-    # total subiu 200, idle subiu 20: 180/200 = 90% ocupado.
+    # total went up 200, idle went up 20: 180/200 = 90% busy.
     assert out["cpu_pct"] == pytest.approx(90.0)
 
 
@@ -70,14 +70,14 @@ def test_cpu_do_processo_usa_os_ticks_e_o_clk_tck():
         "proc|42|1024",
     )
     out = mp.parse_metrics(raw)
-    # 50 ticks a 100 ticks/s = 0.5s de CPU do processo, num intervalo de 1s = 50%.
+    # 50 ticks at 100 ticks/s = 0.5s of process CPU, in a 1s interval = 50%.
     assert out["proc"]["cpu_pct"] == pytest.approx(50.0)
     assert out["proc"]["pid"] == 42
-    assert out["proc"]["rss"] == 1024 * 1024  # rss vem em kB, sai em bytes
+    assert out["proc"]["rss"] == 1024 * 1024  # rss comes in kB, goes out in bytes
 
 
 def test_cpu_max_do_cgroup_dita_o_numero_de_cores_fracionario():
-    """cpu.max = '150000 100000' -> 1.5 cores, nao o nproc inteiro."""
+    """cpu.max = '150000 100000' -> 1.5 cores, not the whole nproc."""
     raw = _lines("cores|4", "cpumax|150000 100000")
     out = mp.parse_metrics(raw)
     assert out["cores"] == 1.5
@@ -98,7 +98,7 @@ def test_memoria_usa_meminfo_quando_nao_ha_cgroup():
 
 
 def test_memoria_do_cgroup_manda_quando_e_menor_que_a_da_maquina():
-    """Container com limite de RAM: o cgroup mostra o teto real, nao a RAM do host."""
+    """A container with a RAM limit: the cgroup shows the real ceiling, not the host's RAM."""
     raw = _lines(
         "meminfo|MemTotal:|16000000", "meminfo|MemAvailable:|10000000",
         "cgmem|1000000000|2000000000",
@@ -109,7 +109,7 @@ def test_memoria_do_cgroup_manda_quando_e_menor_que_a_da_maquina():
 
 
 def test_memoria_do_cgroup_sem_limite_maximo_nao_e_usada():
-    """cgmem com max=max (sem teto): quem manda continua sendo o /proc/meminfo."""
+    """cgmem with max=max (no ceiling): /proc/meminfo is still what counts."""
     raw = _lines(
         "meminfo|MemTotal:|16000000", "meminfo|MemAvailable:|10000000",
         "cgmem|500000000|max",
@@ -138,7 +138,7 @@ def test_disco_ordena_por_ponto_de_montagem():
 
 
 def test_disco_cheio_nao_estoura_100_por_cento():
-    """used > total (medida numa janela de corrida) nao pode virar 105%."""
+    """used > total (measured in a race window) must not become 105%."""
     raw = _lines("disk|/|1000|1200")
     out = mp.parse_metrics(raw)
     assert out["disks"][0]["pct"] == 100.0
@@ -151,7 +151,7 @@ def test_linha_desconhecida_e_ignorada_sem_quebrar():
 
 
 def test_linha_curta_demais_para_a_tag_e_ignorada():
-    """'disk' precisa de 4 campos; com so 2 a linha e descartada, nao derruba o parser."""
+    """'disk' needs 4 fields; with only 2 the line is discarded, it does not bring the parser down."""
     raw = _lines("disk|/", "cores|1")
     out = mp.parse_metrics(raw)
     assert out["disks"] == []

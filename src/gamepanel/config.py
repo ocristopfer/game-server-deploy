@@ -1,18 +1,18 @@
-"""Toda variavel `GAMEPANEL_*` lida e conferida num lugar so.
+"""Every `GAMEPANEL_*` variable, read and checked in one place.
 
-Antes disto eram ~45 chamadas de `os.environ.get` espalhadas pelo `app.py`, cada uma com
-a sua conversao inline. Duas consequencias, as duas em producao:
+Before this there were ~45 `os.environ.get` calls scattered across `app.py`, each with
+its own inline conversion. Two consequences, both in production:
 
-- **Um valor invalido derrubava o painel sem dizer qual era.** `int(os.environ.get(...))`
-  com lixo levanta `ValueError: invalid literal for int() with base 10: 'abc'`, e a
-  mensagem nao cita a variavel. Quem estava lendo o journal precisava adivinhar entre 45.
-- **Nao havia faixa.** `GAMEPANEL_MONITOR_EVERY=0` fazia o monitor girar sem parar, e
-  nada avisava.
+- **An invalid value took the panel down without saying which one.** `int(os.environ.get(...))`
+  with garbage raises `ValueError: invalid literal for int() with base 10: 'abc'`, and the
+  message does not name the variable. Whoever was reading the journal had to guess among 45.
+- **There were no ranges.** `GAMEPANEL_MONITOR_EVERY=0` made the monitor spin nonstop, and
+  nothing warned about it.
 
-O desenho segue o do broker (`gamebroker/config.py`): lista TODOS os problemas de uma
-vez, so pelo NOME da variavel — nunca o valor, porque isso vai para o journal e ha
-segredo entre elas. Config ruim derruba o START, e nao um pedido: um painel de pe com
-metade da configuracao e pior que um que nao sobe.
+The design follows the broker's (`gamebroker/config.py`): list ALL problems at
+once, only by the variable NAME, never the value, because this goes to the journal and some
+of them are secrets. Bad config fails the START, not a request: a panel that is up with
+half its configuration is worse than one that does not start.
 """
 from __future__ import annotations
 
@@ -28,14 +28,14 @@ FALSE_VALUES = ("0", "false", "no", "off")
 
 
 class ConfigError(ValueError):
-    """Um ou mais problemas de configuracao, ja com o nome de cada variavel."""
+    """One or more configuration problems, each already carrying its variable name."""
 
 
 class _Reader:
-    """Le e converte, juntando os problemas em vez de parar no primeiro.
+    """Read and convert, collecting the problems instead of stopping at the first.
 
-    Parar no primeiro faz quem configura descobrir um erro por deploy. Aqui a lista sai
-    inteira, e a proxima tentativa ja pode estar certa.
+    Stopping at the first makes whoever configures discover one error per deploy. Here the
+    whole list comes out, and the next attempt can already be right.
     """
 
     def __init__(self, env: Mapping[str, str]) -> None:
@@ -89,10 +89,10 @@ class _Reader:
         return value
 
     def origin(self, name: str) -> str:
-        """Endereco do painel para a passkey: `https://<dominio>[:porta]`, ou `http://localhost`.
+        """Panel address for the passkey: `https://<domain>[:port]`, or `http://localhost`.
 
-        O navegador so oferece WebAuthn em contexto seguro (https, ou localhost), e a passkey
-        fica presa ao DOMINIO: IP nao serve de RP ID. Vazio = recurso desligado.
+        The browser only offers WebAuthn in a secure context (https, or localhost), and the passkey
+        is bound to the DOMAIN: an IP does not work as RP ID. Empty = feature off.
         """
         raw = self.text(name).strip().rstrip("/")
         if not raw:
@@ -115,17 +115,21 @@ class _Reader:
         return tuple(p.strip() for p in raw.split(",") if p.strip())
 
 
-class Settings(NamedTuple):
-    """Tudo que o painel le do ambiente. Os nomes seguem os do `app.py`."""
+# Comma-separated, like every list option here.
+DEFAULT_FILE_ROOTS = "/opt/game,/home/steam"
 
-    # --- arquivos e acesso remoto ---
+
+class Settings(NamedTuple):
+    """Everything the panel reads from the environment. The names follow those in `app.py`."""
+
+    # --- files and remote access ---
     db_path: str
     secret_file: str
     ssh_key: str
     known_hosts: str
     ssh_control_dir: str
     ssh_control_persist: str
-    # --- execucao de comando ---
+    # --- command execution ---
     job_timeout: int
     shell_timeout: int
     allow_shell: bool
@@ -138,7 +142,7 @@ class Settings(NamedTuple):
     broker_poll: float
     allow_broker: bool
     dev: bool
-    # --- arquivos do container ---
+    # --- container files ---
     allow_files: bool
     file_max_bytes: int
     file_preview_bytes: int
@@ -152,13 +156,13 @@ class Settings(NamedTuple):
     backup_timeout: int
     panel_backup_dir: str
     panel_backup_keep: int
-    # --- agendador e limpeza ---
+    # --- scheduler and cleanup ---
     schedule_tick: float
     schedule_grace: int
     jobs_keep_days: int
     sample_every: float
     samples_keep_days: int
-    # --- alertas ---
+    # --- alerts ---
     webhook_url: str
     webhook_timeout: float
     webhook_ua: str
@@ -174,26 +178,26 @@ class Settings(NamedTuple):
     log_stream: bool
     log_stream_debounce: float
     log_stream_retry: float
-    # --- consultas ---
+    # --- queries ---
     metrics_ttl: float
     query_timeout: float
     players_ttl: float
     http_timeout: float
     http_probe_timeout: float
-    # --- tela ---
+    # --- screen ---
     lang: str
     require_2fa: bool
-    # Entrar com a biometria do aparelho (passkey): o endereco https do painel. Vazio = desligado.
+    # Sign in with the device biometrics (passkey): the panel's https address. Empty = off.
     webauthn_origin: str
-    # --- servidor de desenvolvimento (`python -m gamepanel.cli`) ---
+    # --- development server (`python -m gamepanel.cli`) ---
     port: int
 
 
 def load(env: Mapping[str, str] | None = None) -> Settings:
-    """Le o ambiente e devolve tudo pronto. Levanta `ConfigError` com a lista completa.
+    """Read the environment and return everything ready. Raises `ConfigError` with the full list.
 
-    Os minimos nao sao enfeite: um intervalo zero faz um laco girar sem parar, e um
-    `TERM_MAX=0` deixa o terminal inutilizavel sem dizer por que.
+    The minimums are not decoration: a zero interval makes a loop spin nonstop, and a
+    `TERM_MAX=0` leaves the terminal unusable without saying why.
     """
     reader = _Reader(os.environ if env is None else env)
 
@@ -204,8 +208,8 @@ def load(env: Mapping[str, str] | None = None) -> Settings:
         secret_file=reader.text("SECRET_FILE", "/etc/gamepanel/secret_key"),
         ssh_key=reader.text("SSH_KEY", "/etc/gamepanel/id_ed25519"),
         known_hosts=known_hosts,
-        # Ao lado do known_hosts por padrao: os dois sao estado do SSH e vivem no mesmo
-        # volume, entao um deploy que move um move o outro junto.
+        # Next to known_hosts by default: both are SSH state and live on the same
+        # volume, so a deploy that moves one moves the other along.
         ssh_control_dir=reader.text(
             "SSH_CONTROL_DIR", os.path.join(os.path.dirname(known_hosts), "ssh-control")),
         ssh_control_persist=reader.text("SSH_CONTROL_PERSIST", "60"),
@@ -228,14 +232,17 @@ def load(env: Mapping[str, str] | None = None) -> Settings:
         file_preview_bytes=reader.integer("FILE_PREVIEW", 256 * 1024, minimum=1),
         file_download_max=reader.integer("FILE_DOWNLOAD_MAX", 2 * 1024 * 1024 * 1024, minimum=1),
         file_upload_max=reader.integer("UPLOAD_MAX", 512 * 1024 * 1024, minimum=0),
-        file_roots=reader.path_list("FILE_ROOTS", "/"),
+        # The game install and steam's home: where every config, save and mod lives. Not `/`:
+        # the file manager writes as root on a legacy server, and the whole disk one form away
+        # is more than any game needs. An operator who really wants more lists it explicitly.
+        file_roots=reader.path_list("FILE_ROOTS", DEFAULT_FILE_ROOTS),
         file_default_path=reader.text("FILE_DEFAULT", "/opt/game"),
 
         backup_dir=reader.text("BACKUP_DIR", "/var/backups/gamepanel"),
         backup_keep=reader.integer("BACKUP_KEEP", 5, minimum=1),
         backup_timeout=reader.integer("BACKUP_TIMEOUT", 3600, minimum=1),
-        # A segunda copia, no PAINEL: ao lado do banco por padrao, no mesmo volume, que e o
-        # que o deploy ja trata como estado a preservar. 0 = nunca apagar por retencao.
+        # The second copy, on the PANEL: next to the database by default, on the same volume, which is
+        # what the deploy already treats as state to preserve. 0 = never delete by retention.
         panel_backup_dir=reader.text(
             "PANEL_BACKUP_DIR", os.path.join(os.path.dirname(db_path), "backups")),
         panel_backup_keep=reader.integer("PANEL_BACKUP_KEEP", 10, minimum=0),

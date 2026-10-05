@@ -1,18 +1,18 @@
-"""Linha de comando do painel: subir o servidor, criar usuario, destravar o 2FA e
-cadastrar servidor pelo deploy.
+"""Panel command line: start the server, create a user, unlock 2FA and
+register a server from the deploy.
 
-Mora fora de `app.py` mas continua acessivel pelo caminho de sempre: o rodape de
-`app.py` chama o `main()` daqui. Isso importa porque a saida de emergencia do segundo
-fator esta escrita no README e no CLAUDE.md como
+It lives outside `app.py` but is still reachable by the usual path: the bottom of
+`app.py` calls `main()` from here. That matters because the emergency exit for the second
+factor is written in the README and in CLAUDE.md as
 
-    python3 /opt/gamepanel/app.py --reset-2fa USUARIO
+    python3 /opt/gamepanel/app.py --reset-2fa USER
 
-e quem precisa dela esta, por definicao, trancado do lado de fora do painel — nao e
-hora de descobrir que o comando mudou de nome. `python3 -m gamepanel.cli` faz o mesmo.
+and whoever needs it is, by definition, locked out of the panel: not the time to
+find out the command was renamed. `python3 -m gamepanel.cli` does the same.
 
-As funcoes de cadastro (`ensure_admin_user`, `ensure_server`) NAO vieram junto: elas
-tambem sao chamadas de dentro do painel e do `docker/panel/entrypoint.sh`, entao
-continuam em `app.py` e chegam aqui por parametro.
+The registration functions (`ensure_admin_user`, `ensure_server`) did NOT come along: they
+are also called from inside the panel and from `docker/panel/entrypoint.sh`, so they
+stay in `app.py` and arrive here as parameters.
 """
 from __future__ import annotations
 
@@ -24,13 +24,13 @@ from typing import Any, NamedTuple
 from gamepanel import config
 from gamepanel.persistence.repositories import users as users_repo
 
-# A linha de comando nao aceita quebra de linha com conforto: as listas (arquivos de
-# config, caminhos de backup) vem separadas por virgula e viram uma por linha.
+# The command line does not take line breaks comfortably: the lists (config
+# files, backup paths) come comma-separated and become one per line.
 LIST_SEPARATOR = ","
 
 
 class CliDeps(NamedTuple):
-    """O painel, como a linha de comando precisa dele."""
+    """The panel, as the command line needs it."""
 
     init_db: Callable[[], None]
     connect: Callable[[], sqlite3.Connection]
@@ -50,20 +50,23 @@ def by_comma(raw: str) -> str:
 def build_parser(roles: Sequence[str]) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Painel de servidores de jogos")
     parser.add_argument("--create-user", metavar="USUARIO")
-    # Saida de emergencia: o unico admin perdeu o celular E os codigos de recuperacao.
+    # Emergency exit: the only admin lost the phone AND the recovery codes.
     parser.add_argument("--reset-2fa", metavar="USUARIO",
                         help="desliga o segundo fator de um usuario (roda no CT do painel)")
     parser.add_argument("--password", metavar="SENHA")
     parser.add_argument("--role", default="", choices=("", *roles),
                         help="papel do usuario (padrao: admin ao criar; manter ao redefinir)")
-    parser.add_argument("--host", default="0.0.0.0")  # noqa: S104  # NOSONAR - o painel serve a LAN
+    parser.add_argument("--host", default="0.0.0.0")  # noqa: S104  # NOSONAR - the panel serves the LAN
     parser.add_argument("--port", type=int, default=config.load().port)
-    # Usado pelo deploy (deploy-docker.ps1) para deixar o servidor ja cadastrado.
+    # Used by the deploy (deploy-docker.ps1) to leave the server already registered.
     parser.add_argument("--register-server", metavar="NOME")
     parser.add_argument("--server-host", default="")
     parser.add_argument("--service", default="")
     parser.add_argument("--ssh-port", type=int, default=22)
-    parser.add_argument("--ssh-user", default="root")
+    # No default here on purpose: unset means "new server = gamepanel, existing server keeps
+    # its user" (see `DeployServer.ssh_user`). A default would overwrite a legacy server's
+    # root on every redeploy.
+    parser.add_argument("--ssh-user", default="")
     parser.add_argument("--game-port", default="")
     parser.add_argument("--query-port", type=int, default=0)
     parser.add_argument("--config-path", default="")
@@ -79,7 +82,7 @@ def build_parser(roles: Sequence[str]) -> argparse.ArgumentParser:
 
 
 def reset_2fa(deps: CliDeps, user: str) -> None:
-    """Desliga o segundo fator de um usuario. Levanta SystemExit se ele nao existe."""
+    """Turn off a user's second factor. Raises SystemExit if the user does not exist."""
     deps.init_db()
     conn = deps.connect()
     with conn:
@@ -127,19 +130,19 @@ def main(deps: CliDeps, argv: Sequence[str] | None = None) -> None:
     elif opts.register_server:
         register_server(deps, opts)
     else:
-        # So o servidor de verdade sobe o relogio: pela linha de comando (cadastrar
-        # usuario, cadastrar servidor) ele nao pode comecar a mexer nos containers.
+        # Only the real server starts the clock: from the command line (registering a
+        # user, registering a server) it must not start touching the containers.
         deps.start_scheduler()
         deps.resume_broker_jobs()
         deps.app.run(host=opts.host, port=opts.port)
 
 
 def panel_deps() -> CliDeps:
-    """Monta as dependencias a partir do painel.
+    """Build the dependencies from the panel.
 
-    O import mora aqui dentro, e nao no topo: `app.py` importa ESTE modulo, e o
-    contrario no nivel do arquivo fecharia o circulo. Rodando por `-m gamepanel.cli`,
-    este modulo ja esta inteiro quando a linha abaixo executa.
+    The import lives in here, not at the top: `app.py` imports THIS module, and the
+    reverse at file level would close the loop. When run via `-m gamepanel.cli`,
+    this module is already complete when the line below executes.
     """
     from gamepanel import app as painel
 

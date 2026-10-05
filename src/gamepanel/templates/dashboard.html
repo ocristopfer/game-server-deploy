@@ -14,10 +14,8 @@
   <div class="card card--empty">
     <p>{{ _('dashboard.no_servers') }}</p>
     {% if is_admin %}
-      <p class="muted">Cadastre o IP de um container de jogo para controlar start, stop,
-        update e rodar comandos por aqui.</p>
-      <p class="muted small">O painel acessa cada container por SSH &mdash; antes autorize a
-        chave dele no container em <a href="{{ url_for('account.ssh_key') }}">{{ _('dashboard.ssh_access') }}</a>.</p>
+      <p class="muted">{{ _('dashboard.register_hint') }}</p>
+      <p class="muted small">{{ _h('dashboard.authorize_key_hint', url=url_for('account.ssh_key')) }}</p>
       <div class="form-actions">
         {{ ui.button(_('dashboard.add_the_first'), href=url_for('servers.new'), variant='primary') }}
       </div>
@@ -27,11 +25,14 @@
   </div>
 {% endif %}
 
-{# Uma leitura de medidores e uma de jogadores alimentam TODOS os cartoes: os dois
-   endereços ficam aqui, na lista, e nao um por cartao. #}
+{# One gauge reading and one player reading feed ALL the cards: the two
+   addresses live here, on the list, and not one per card. #}
 <div class="grid"
      data-meters-panel="{{ url_for('dashboard.api_metrics') }}"
-     data-players-panel="{{ url_for('dashboard.api_players') }}">
+     data-players-panel="{{ url_for('dashboard.api_players') }}"
+     data-label-players="{{ _('players.badge_players', count='{count}') }}"
+     data-label-disk="{{ _('metrics.disk') }}"
+     data-label-meters-unavailable="{{ _('metrics.meters_unavailable') }}">
   {% for s in servers %}
     {{ srv.card(s, status[s.id]) }}
   {% endfor %}

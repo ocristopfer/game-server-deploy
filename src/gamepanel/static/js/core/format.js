@@ -1,8 +1,8 @@
-/* Nucleo — formatacao.
+/* Core - formatting.
  *
- * Uma responsabilidade: transformar numero em texto do jeito que o painel fala.
- * Nao toca no DOM, nao busca nada na rede, nao guarda estado — por isso pode ser
- * usada por qualquer feature e testada sem navegador.
+ * One responsibility: turning a number into text the way the panel speaks.
+ * It does not touch the DOM, fetch anything from the network or keep state - which is why it
+ * can be used by any feature and tested without a browser.
  */
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -26,14 +26,14 @@ export function duration(seg) {
   if (d) return `${d}d ${h}h`;
   if (h) return `${h}h ${m}min`;
   if (m) return `${m}min`;
-  return `${t}s`;   // jogador que acabou de entrar
+  return `${t}s`;   // player who just joined
 }
 
 export function percentText(v) {
   return (v === null || v === undefined) ? '-' : Number(v).toFixed(1);
 }
 
-/* Perto do teto o medidor muda de cor: e o que se olha de relance. */
+/* Near the ceiling the gauge changes color: that is what you look at at a glance. */
 export function level(pct) {
   if (pct === null || pct === undefined) return '';
   if (pct >= 92) return ' hot';
@@ -41,8 +41,20 @@ export function level(pct) {
   return '';
 }
 
-/* Escapa texto que veio do jogo ou do container antes de virar HTML.
- * Onde der, prefira textContent; isto e para quando a marcacao e montada em bloco. */
+/* Fills `{name}` placeholders of a screen phrase.
+ *
+ * JavaScript has no catalog: the template hands the translated phrase over in a data-*
+ * attribute, with the placeholders still in it (`_('x', n='{n}')`), and this puts the
+ * values in. Same contract as the Python `translate`: a placeholder without a field stays. */
+export function fillText(template, fields = {}) {
+  return Object.entries(fields).reduce(
+    (text, [name, value]) => text.split(`{${name}}`).join(String(value)),
+    String(template),
+  );
+}
+
+/* Escapes text that came from the game or the container before it becomes HTML.
+ * Where possible, prefer textContent; this is for when the markup is built in one block. */
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',

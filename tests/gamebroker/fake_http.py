@@ -1,9 +1,9 @@
-"""Servidores HTTP falsos de Proxmox e OPNsense, para testar os backends reais sem rede.
+"""Fake Proxmox and OPNsense HTTP servers, to test the real backends without a network.
 
-Nao sao mocks "de mentira": reproduzem as REGRAS que o spike descobriu nos servidores
-verdadeiros (tag na criacao e keyctl sao 403, `WARNINGS` e sucesso, alias de porta so
-aparece no resumo em HTML). Se um backend voltar a mandar `tags` na criacao, o falso
-responde 403 como o Proxmox real - e o teste quebra.
+They are not "make-believe" mocks: they reproduce the RULES the spike found on the real
+servers (tag on creation and keyctl are 403, `WARNINGS` is success, a port alias only
+shows up in the HTML summary). If a backend goes back to sending `tags` on creation, the
+fake answers 403 like the real Proxmox - and the test breaks.
 """
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ Handler = Callable[[str, str, dict, dict, dict], tuple]
 
 
 class FakeServer:
-    """Sobe em 127.0.0.1:<porta livre>. `tratador(metodo, caminho, query, corpo, cabecalhos)`
-    devolve `(status, corpo, motivo)`; corpo dict/list vira JSON, texto vai como esta."""
+    """Listens on 127.0.0.1:<free port>. `tratador(metodo, caminho, query, corpo, cabecalhos)`
+    returns `(status, corpo, motivo)`; a dict/list body becomes JSON, text goes as is."""
 
     def __init__(self, handler: Handler):
         self.requests_seen: list[tuple[str, str, dict]] = []
@@ -58,8 +58,8 @@ class FakeServer:
 
         class Quiet(ThreadingHTTPServer):
             def handle_error(self, request, client_address) -> None:
-                # O cliente fecha a conexao no meio de uma resposta de proposito em alguns
-                # testes (resposta gigante); o traceback do servidor so confundiria o log.
+                # Some tests have the client close the connection mid-response on purpose
+                # (huge response); the server traceback would only muddle the log.
                 return None
 
         self._http = Quiet(("127.0.0.1", 0), RequestHandler)
@@ -95,7 +95,7 @@ class FakePve:
         self.authenticate = True
 
     def external(self, vmid: int, net0: str = "", name: str = "de-fora") -> None:
-        """CT que existe no Proxmox mas NAO esta no pool do broker."""
+        """CT that exists in Proxmox but is NOT in the broker pool."""
         self.cts[vmid] = {"hostname": name, "net0": net0, "features": "", "tags": "",
                           "status": "stopped", "pool": None}
 
@@ -105,7 +105,7 @@ class FakePve:
         return upid
 
     def handle(self, method: str, path: str, _query: dict, body: dict,
-               headers: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
+               headers: dict) -> tuple:  # NOSONAR - Handler contract: (status, body[, reason])
         if self.authenticate and headers.get("authorization") != f"PVEAPIToken={TOKEN_PVE}":
             return 401, "", "No ticket"
         route = path.removeprefix("/api2/json")
@@ -127,7 +127,7 @@ class FakePve:
             return self._ct(method, int(found.group(1)), found.group(2) or "", body)
         return 404, "", NOT_FOUND
 
-    def _create(self, body: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
+    def _create(self, body: dict) -> tuple:  # NOSONAR - Handler contract: (status, body[, reason])
         vmid = int(body["vmid"])
         if "tags" in body:
             return 403, "", f"Permission check failed (/vms/{vmid}, VM.Config.Options)"
@@ -147,7 +147,7 @@ class FakePve:
         return 200, {"data": self._upid("vzcreate", vmid, self.creation_output,
                                         ("Creating SSH host key", "WARN: Systemd 257 detected"))}
 
-    def _task(self, rest: str) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
+    def _task(self, rest: str) -> tuple:  # NOSONAR - Handler contract: (status, body[, reason])
         upid, _, action = rest.rpartition("/")
         task = self.tasks.get(upid)
         if task is None:
@@ -159,9 +159,9 @@ class FakePve:
             return 200, {"data": {"status": "running"}}
         return 200, {"data": {"status": "stopped", "exitstatus": task["saida"]}}
 
-    # Roteador por caminho: um return por rota le melhor que um if aninhado de 10 niveis.
+    # Router by path: one return per route reads better than an if nested 10 levels deep.
     def _ct(self, method: str, vmid: int, suffix: str,  # noqa: PLR0911
-            body: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
+            body: dict) -> tuple:  # NOSONAR - Handler contract: (status, body[, reason])
         ct = self.cts.get(vmid)
         if ct is None:
             return 500, "", f"Configuration file 'nodes/{self.node}/lxc/{vmid}.conf' does not exist"
@@ -198,7 +198,7 @@ SECRET_OPN = "segredo-de-teste"
 
 
 def alias_summary(descricao: str, ports: list[str]) -> str:
-    """O texto HTML que o d_nat/search_rule real devolve em alias_meta_destination.port."""
+    """The HTML text the real d_nat/search_rule returns in alias_meta_destination.port."""
     return f"<strong>{descricao}</strong><br/>" + "<br/>".join(ports)
 
 
@@ -211,10 +211,10 @@ class FakeIngressHttp:
         self._adds = 0
 
     def existing_rule(self, descr: str, port: str, protocol: str = "udp", interface: str = "wan",
-                        target: str = "192.168.2.21",  # NOSONAR - IP de fixture
+                        target: str = "10.20.1.21",  # NOSONAR - fixture IP
                         disabled: bool = False,
                         alias: list[str] | None = None, summary_text: str | None = None) -> str:
-        """Regra que o usuario ja tinha. `alias` = portas do alias quando `porta` e um nome."""
+        """Rule the user already had. `alias` = the alias ports when `porta` is a name."""
         uuid = str(uuidlib.uuid4())
         line = {"uuid": uuid, "descr": descr, "interface": interface, "protocol": protocol,
                  "destination.port": port, "target": target, "local-port": port,
@@ -228,7 +228,7 @@ class FakeIngressHttp:
         return uuid
 
     def handle(self, _method: str, path: str, _query: dict, body: dict,
-               headers: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
+               headers: dict) -> tuple:  # NOSONAR - Handler contract: (status, body[, reason])
         expected = "Basic " + base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()
         if headers.get("authorization") != expected:
             return 401, {"status": 401, "message": "Authentication Failed"}, "Unauthorized"
@@ -251,7 +251,7 @@ class FakeIngressHttp:
             return 200, {"status": "OK\n\n"}
         return 404, {"status": 404, "message": NOT_FOUND}, NOT_FOUND
 
-    def _add(self, body: dict) -> tuple:  # NOSONAR - contrato do Handler: (status, corpo[, motivo])
+    def _add(self, body: dict) -> tuple:  # NOSONAR - Handler contract: (status, body[, reason])
         self._adds += 1
         if self.fail_on_add_number == self._adds:
             return 200, {"result": "failed", "validations": {"rule.target": "Invalid target"}}

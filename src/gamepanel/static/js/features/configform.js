@@ -1,13 +1,13 @@
-/* Formulario de configuracao do jogo.
+/* Game configuration form.
  *
- * Tres comportamentos independentes, montados so se o elemento correspondente
- * existir na tela. Nenhum deles e a unica forma de fazer a coisa: sem JavaScript o
- * formulario continua listando, salvando e aceitando duas chaves novas.
+ * Three independent behaviors, mounted only if the matching element
+ * exists on the screen. None of them is the only way to do the thing: without JavaScript the
+ * form still lists, saves and accepts two new keys.
  */
 import { $, $$ } from '../core/dom.js';
 import { warnBeforeLeaving } from '../core/dirty.js';
 
-/* Filtro por nome: com o Palworld sao ~50 chaves numa linha so do .ini. */
+/* Filter by name: with Palworld there are ~50 keys on a single .ini line. */
 export const configFilter = {
   selector: '[data-config-filter]',
   mount(busca) {
@@ -32,7 +32,7 @@ export const configFilter = {
   },
 };
 
-/* "+ outra linha": clona a ultima linha de chave nova e renumera os campos. */
+/* "+ another row": clones the last new-key row and renumbers the fields. */
 export const moreConfigRows = {
   selector: '[data-config-more]',
   mount(button) {
@@ -48,9 +48,9 @@ export const moreConfigRows = {
         field.name = field.name.replace(/\.\d+$/, `.${i}`);
         if (field.tagName !== 'SELECT') field.value = '';
       });
-      // O id do bloco e o "for" do rotulo tem de andar junto com o indice: clonados
-      // como estao, a linha nova repetiria o id da anterior e o rotulo apontaria
-      // para o campo errado.
+      // The block id and the label's "for" must follow the index: cloned
+      // as they are, the new row would repeat the previous row's id and the label would point
+      // to the wrong field.
       const block = clone.querySelector('select');
       const label = clone.querySelector('label[for]');
       if (block) {
@@ -63,7 +63,7 @@ export const moreConfigRows = {
   },
 };
 
-/* Aviso de alteracao pendente, o mesmo do editor de texto. */
+/* Pending changes warning, the same as the text editor's. */
 export const dirtyConfig = {
   selector: '[data-config-form]',
   mount(form) {
@@ -73,7 +73,7 @@ export const dirtyConfig = {
 
     form.addEventListener('input', () => {
       dirty = true;
-      if (mark) mark.textContent = 'ha alteracoes nao salvas';
+      if (mark) mark.textContent = form.dataset.labelUnsaved || 'ha alteracoes nao salvas';
     });
     form.addEventListener('submit', release);
   },

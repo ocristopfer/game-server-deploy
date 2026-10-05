@@ -1,29 +1,29 @@
-"""Shroudtopia (carregador de mods do Enshrouded) - roda DENTRO do CT do jogo, nao no painel.
+"""Shroudtopia (Enshrouded mod loader) - runs INSIDE the game CT, not in the panel.
 
-Mesmo desenho do `thunderstore_remote.py`: o painel le este texto e o executa no container
-com `python3 -c`, por SSH, como root. So stdlib e sem import do `gamepanel` - la dentro o
-pacote nao existe -, e quem vai a internet e o CT, nunca o painel.
+Same design as `thunderstore_remote.py`: the panel reads this text and runs it in the container
+with `python3 -c`, over SSH, as root. Stdlib only and no import of `gamepanel` - the package
+does not exist in there -, and whoever goes to the internet is the CT, never the panel.
 
-O que foi MEDIDO no Enshrouded de verdade (CT 303, Proton GE 11) e cada item aqui existe
-por um desses:
-- o carregador entra pelo `winmm.dll` ao lado do `enshrouded_server.exe`, e o Wine so o
-  carrega com `winmm=n,b` no WINEDLLOVERRIDES (sem isso usa o winmm dele e nada acontece);
-- com isso ele sobe (`Running on server: 1`), le o `shroudtopia.json` e carrega as DLLs de
-  `mods/`; o servidor continua respondendo a A2S;
-- o pacote oficial traz mods de EXEMPLO com trapaca ligada (sem dano de queda, sem custo de
-  recurso). Eles NAO entram: instalar o carregador nao pode mudar o jogo de ninguem;
-- mod feito para outra versao do jogo nao derruba o servidor, mas some funcao em silencio
-  (`... not found` no log): por isso o status devolve o fim do `shroudtopia.log`.
+What was MEASURED on the real Enshrouded (CT 303, Proton GE 11), and each item here exists
+because of one of these:
+- the loader comes in through the `winmm.dll` next to `enshrouded_server.exe`, and Wine only
+  loads it with `winmm=n,b` in WINEDLLOVERRIDES (without it Wine uses its own winmm and nothing happens);
+- with that it starts (`Running on server: 1`), reads `shroudtopia.json` and loads the DLLs from
+  `mods/`; the server keeps answering A2S;
+- the official package ships EXAMPLE mods with cheats on (no fall damage, no resource cost).
+  They do NOT go in: installing the loader must not change anyone's game;
+- a mod made for another game version does not bring the server down, but silently loses
+  functionality (`... not found` in the log): that is why the status returns the tail of `shroudtopia.log`.
 
-Desligar e tirar o `winmm=n,b`: o Wine volta ao winmm dele e nenhum codigo do carregador
-roda. Mais seguro que confiar no `"active": false` do json, que ainda carrega a DLL.
+Disabling means removing `winmm=n,b`: Wine goes back to its own winmm and no loader code
+runs. Safer than trusting `"active": false` in the json, which still loads the DLL.
 
-Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable |
-loader-uninstall. Sem VERSAO
-vale a release mais recente do GitHub; com ela, a release daquela tag. Instalar exige
-`--scan` (o `antivirus.SCAN_SCRIPT` do painel): o zip e verificado antes de qualquer arquivo
-chegar a pasta do jogo. Toda acao imprime o
-progresso e termina com UMA linha JSON, que e o que o painel le.
+Actions (argv): [--scan SCRIPT] status | loader-install [VERSION] | loader-enable | loader-disable |
+loader-uninstall. Without VERSION
+the latest GitHub release applies; with it, the release of that tag. Installing requires
+`--scan` (the panel's `antivirus.SCAN_SCRIPT`): the zip is checked before any file
+reaches the game folder. Every action prints its
+progress and ends with ONE JSON line, which is what the panel reads.
 """
 from __future__ import annotations
 
@@ -41,11 +41,11 @@ import zipfile
 
 RELEASES = "https://api.github.com/repos/s0t7x/shroudtopia/releases/latest"
 RELEASE_TAG = "https://api.github.com/repos/s0t7x/shroudtopia/releases/tags/{tag}"
-# A versao vira parte da URL: so numero e ponto (o painel confere a mesma forma).
+# The version becomes part of the URL: digits and dots only (the panel checks the same shape).
 VERSION = re.compile(r"\d{1,9}\.\d{1,9}\.\d{1,9}")
-# O zip da versao: Shroudtopia-0.1.1.zip. Asset com outro nome nao e o carregador.
+# The release zip: Shroudtopia-0.1.1.zip. An asset with another name is not the loader.
 ASSET = re.compile(r"^Shroudtopia-[0-9][0-9A-Za-z.\-]*\.zip$")
-# O que sai do zip. O resto (mods/ de exemplo) fica de fora de proposito.
+# What comes out of the zip. The rest (example mods/) is left out on purpose.
 LOADER_FILES = ("winmm.dll", "shroudtopia.dll")
 CONFIG = "shroudtopia.json"
 LOG = "shroudtopia.log"
@@ -56,30 +56,30 @@ OVERRIDE = "winmm=n,b"
 OWNER = "steam"
 TIMEOUT = 120
 LOG_TAIL = 15
-# A config so liga o log e o carregador: os mods ficam vazios, cada um entra pela tela.
+# The config only turns on the log and the loader: mods start empty, each comes in through the screen.
 DEFAULT_CONFIG = {"active": True, "bootDelay": 3000, "enableLogging": True,
                   "logLevel": "INFO", "mods": {}, "updateDelay": 500}
 
 
 def fetch(url: str) -> bytes:
-    # So https do github.com chega aqui: a API e fixa (RELEASES) e o download vem da resposta
-    # dela, conferida contra github.com antes de baixar.
+    # Only github.com https gets here: the API is fixed (RELEASES) and the download comes from its
+    # response, checked against github.com before downloading.
     req = urllib.request.Request(url, headers={"User-Agent": "gamepanel"})  # noqa: S310
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310
         return r.read()
 
 
 # ------------------------------------------------------------------ antivirus
-# IGUAL em thunderstore_remote.py (ha teste comparando): os dois rodam soltos no CT e nao
-# importam um ao outro. A regra (o que conta como achado) nao mora aqui, e sim no script
-# que o painel manda; aqui so se escreve o que baixou numa pasta e se chama o script.
+# IDENTICAL in thunderstore_remote.py (a test compares them): both run standalone in the CT and
+# do not import each other. The rule (what counts as a finding) does not live here, but in the
+# script the panel sends; here we only write what was downloaded into a folder and call the script.
 
 def scanner(script: str):
-    """Funcao que verifica [(nome, bytes)] com o script do painel; ValueError = recusado."""
+    """Function that checks [(name, bytes)] with the panel's script; ValueError = rejected."""
     def scan(blobs: list[tuple[str, bytes]]) -> None:
-        # /var/tmp e nao /tmp: no Debian 13 o /tmp e tmpfs (memoria), e o pacote pode ter
-        # dezenas de MB. O prefixo e o que o script do antivirus aceita apagar. mkdtemp:
-        # nome imprevisivel e 0700.
+        # /var/tmp and not /tmp: on Debian 13 /tmp is tmpfs (memory), and the package can be
+        # tens of MB. The prefix is what the antivirus script agrees to delete. mkdtemp:
+        # unpredictable name and 0700.
         os.makedirs("/var/tmp", exist_ok=True)  # noqa: S108
         work = tempfile.mkdtemp(prefix="gamepanel-scan-", dir="/var/tmp")
         try:
@@ -99,7 +99,7 @@ def scanner(script: str):
 
 
 def _no_scan(blobs: list[tuple[str, bytes]]) -> None:
-    """So para teste e status: `main` recusa instalar sem `--scan`."""
+    """Only for tests and status: `main` refuses to install without `--scan`."""
 
 
 def _read_text(path: str, default: str = "") -> str:
@@ -117,14 +117,14 @@ def _read_json(path: str) -> dict:
     return {}
 
 
-# ------------------------------------------------------------------ o Wine
+# ------------------------------------------------------------------ Wine
 
 def _groups(value: str) -> list[str]:
     return [g.strip() for g in value.split(";") if g.strip()]
 
 
 def with_winmm(value: str) -> str:
-    """O WINEDLLOVERRIDES com o winmm nativo, sem mexer no resto do que o jogo decidiu."""
+    """WINEDLLOVERRIDES with the native winmm, without touching the rest of what the game decided."""
     return ";".join([g for g in _groups(value) if not g.startswith("winmm=")] + [OVERRIDE])
 
 
@@ -141,7 +141,7 @@ def _read_overrides(env_path: str) -> str:
 
 def _write_overrides(env_path: str, value: str) -> None:
     lines = _read_text(env_path).splitlines()
-    # O arquivo e lido com `source`: aspas simples, e o valor nunca tem aspa (so dll,=;).
+    # The file is read with `source`: single quotes, and the value never has a quote (only dll,=;).
     new = f"WINE_DLL_OVERRIDES='{value}'"
     lines = [new if ln.startswith("WINE_DLL_OVERRIDES=") else ln for ln in lines]
     if new not in lines:
@@ -159,7 +159,7 @@ def is_enabled(env_path: str) -> bool:
     return OVERRIDE in _groups(_read_overrides(env_path))
 
 
-# ------------------------------------------------------------------ o carregador
+# ------------------------------------------------------------------ the loader
 
 def _asset_url(release: dict) -> tuple[str, str]:
     for asset in release.get("assets", []):
@@ -170,13 +170,13 @@ def _asset_url(release: dict) -> tuple[str, str]:
 
 
 def release_for(version: str = "", fetcher=fetch) -> dict:
-    """A release pedida (vazio = a mais recente)."""
+    """The requested release (empty = the latest)."""
     if not version:
         return json.loads(fetcher(RELEASES))
     if not VERSION.fullmatch(version):
         raise ValueError(f"versao invalida: {version!r}")
-    # A tag pode ter sido criada com ou sem o "v" na frente: o painel so recebe o numero, e
-    # quem digita nao tem como saber qual dos dois o autor usou.
+    # The tag may have been created with or without the leading "v": the panel only receives the
+    # number, and whoever types it has no way of knowing which of the two the author used.
     last: OSError | None = None
     for tag in (f"v{version}", version):
         try:
@@ -192,7 +192,7 @@ def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, ve
     name, url = _asset_url(release)
     print(f"baixando {name}")
     data = fetcher(url)
-    # O zip inteiro, mods de exemplo inclusive: e o que veio da internet.
+    # The whole zip, example mods included: that is what came from the internet.
     scan([(name, data)])
     z = zipfile.ZipFile(io.BytesIO(data))
     by_base = {n.rsplit("/", 1)[-1].lower(): n for n in z.namelist() if not n.endswith("/")}
@@ -203,7 +203,7 @@ def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, ve
         with z.open(by_base[wanted]) as src, open(os.path.join(game_dir, wanted), "wb") as out:
             out.write(src.read())
     config_path = os.path.join(game_dir, CONFIG)
-    # Config que ja existe e do dono do servidor (os mods dele estao ali): so nasce se faltar.
+    # A config that already exists belongs to the server owner (their mods are there): only created if missing.
     if not os.path.exists(config_path):
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_CONFIG, f, indent=4)
@@ -218,10 +218,10 @@ def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, ve
 
 
 def uninstall_loader(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
-    """Tira o Shroudtopia e o winmm=n,b: o Enshrouded volta a subir sem nenhum codigo dele.
+    """Remove Shroudtopia and winmm=n,b: Enshrouded starts again without any of its code.
 
-    Os mods (DLLs em mods/) dependem dele e saem junto (a tela avisa antes). Sao nomes fixos do
-    carregador ao lado do executavel, nunca a pasta do jogo inteira.
+    The mods (DLLs in mods/) depend on it and go along (the screen warns first). These are the
+    loader's fixed names next to the executable, never the whole game folder.
     """
     if os.path.exists(env_path):
         set_enabled(env_path, False)
@@ -259,7 +259,7 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
 
 
 def _chown(game_dir: str) -> None:
-    """O jogo roda como 'steam' e precisa ler o carregador e escrever o log e a config."""
+    """The game runs as 'steam' and needs to read the loader and write the log and the config."""
     try:
         import pwd
         pw = pwd.getpwnam(OWNER)

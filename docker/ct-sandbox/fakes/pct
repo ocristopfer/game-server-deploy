@@ -1,9 +1,9 @@
 #!/bin/bash
-# pct de mentira: o "CT" e este proprio container, entao `pct exec CT -- cmd` roda cmd aqui.
+# Fake pct: the "CT" is this very container, so `pct exec CT -- cmd` runs cmd here.
 case "${1:-}" in
   status) echo "status: running" ;;
   exec)   shift 2; [ "${1:-}" = "--" ] && shift; exec "$@" ;;
-  push)   # pct push <ct> <origem> <destino> [--perms 0644]
+  push)   # pct push <ct> <source> <destination> [--perms 0644]
     origem="$3"; destino="$4"; modo="0644"
     [ "${5:-}" = "--perms" ] && modo="${6:-0644}"
     install -D -m "$modo" "$origem" "$destino" ;;

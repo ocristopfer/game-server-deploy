@@ -1,6 +1,6 @@
-"""Consulta jogadores pelo protocolo A2S da Steam — o mesmo que a lista de servidores
-do cliente usa. Vai por UDP direto do painel para a porta de query do jogo: nao passa
-por SSH, nao precisa de senha e nao exige nada instalado no container.
+"""Queries players over Steam's A2S protocol - the same one the client's server browser
+uses. It goes over UDP straight from the panel to the game's query port: no SSH, no
+password and nothing installed in the container.
 """
 from __future__ import annotations
 
@@ -22,17 +22,17 @@ class QueryError(RuntimeError):
 
 
 class AuthError(QueryError):
-    """A API recusou a credencial (401/403).
+    """The API rejected the credential (401/403).
 
-    Separada de QueryError para o caminho HTTP saber quando vale a pena refazer o
-    login: token expirado e o caso comum em API de jogo (a do Satisfactory emite
-    token com prazo), e ai o certo e renovar sozinho em vez de exigir que alguem
-    cole um token novo na mao.
+    Separate from QueryError so the HTTP path knows when logging in again is worth it:
+    an expired token is the common case in game APIs (Satisfactory issues tokens with
+    an expiry), and then the right thing is to renew it automatically instead of making
+    someone paste a new token by hand.
     """
 
 
 class _Buffer:
-    """Leitor sequencial do corpo da resposta (tudo little-endian)."""
+    """Sequential reader of the response body (all little-endian)."""
 
     def __init__(self, data: bytes):
         self.data = data
@@ -63,12 +63,12 @@ class _Buffer:
             raise QueryError(Message("a2s.unterminated_text"))
         out = self.data[self.pos:end]
         self.pos = end + 1
-        # Nome de servidor costuma vir com emoji e cor; nada disso pode derrubar a tela.
+        # Server names often carry emoji and color codes; none of that may break the screen.
         return out.decode("utf-8", "replace")
 
 
 def _udp_receive(sock: socket.socket) -> bytes:
-    """Le uma resposta, remontando quando o servidor divide em varios pacotes."""
+    """Reads one response, reassembling it when the server splits it into several packets."""
     data, _ = sock.recvfrom(8192)
     if data[:4] != A2S_SPLIT:
         return data
@@ -90,10 +90,10 @@ def _udp_receive(sock: socket.socket) -> bytes:
 
 
 def _ask(sock: socket.socket, addr: tuple[str, int], request: bytes, response_type: bytes) -> _Buffer:
-    """Manda o pedido e trata o desafio (challenge) que o servidor pode exigir."""
+    """Sends the request and handles the challenge the server may require."""
     sock.sendto(request, addr)
     data = _udp_receive(sock)
-    if data[4:5] == b"A":  # S2C_CHALLENGE: repete o pedido carregando o desafio
+    if data[4:5] == b"A":  # S2C_CHALLENGE: resend the request carrying the challenge
         challenge = data[5:9]
         if request == A2S_INFO_REQ:
             sock.sendto(request + challenge, addr)
@@ -108,15 +108,15 @@ def _ask(sock: socket.socket, addr: tuple[str, int], request: bytes, response_ty
 
 
 def query_players(host: str, port: int, timeout: float = 3.0) -> dict[str, Any]:
-    """Numero de jogadores (A2S_INFO) e, quando o jogo publica, a lista (A2S_PLAYER)."""
+    """Player count (A2S_INFO) and, when the game publishes it, the list (A2S_PLAYER)."""
     addr = (host, port)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.settimeout(timeout)
         try:
             buf = _ask(sock, addr, A2S_INFO_REQ, b"I")
-            buf.byte()  # versao do protocolo
-            # `dict` sem parametro de proposito: a resposta A2S mistura texto (nome do
-            # servidor, mapa) e numero (jogadores, teto) na mesma ficha.
+            buf.byte()  # protocol version
+            # `dict` without type parameters on purpose: the A2S reply mixes text (server
+            # name, map) and numbers (players, cap) in the same record.
             info: dict[str, Any] = {
                 "server_name": buf.string(),
                 "map": buf.string(),
@@ -134,19 +134,19 @@ def query_players(host: str, port: int, timeout: float = 3.0) -> dict[str, Any]:
             raise QueryError(Message("a2s.query_failed", host=host, port=port,
                                       reason=exc)) from exc
 
-        # A lista de nomes e opcional: varios servidores Unreal so respondem a contagem.
+        # The name list is optional: many Unreal servers only answer the count.
         players: list[dict[str, Any]] = []
         try:
             buf = _ask(sock, addr, A2S_HEADER + b"U" + b"\xff\xff\xff\xff", b"D")
             count = buf.byte()
             for _ in range(min(count, _MAX_PLAYERS_IN_RESPONSE)):
-                buf.byte()  # indice, que os servidores costumam zerar
+                buf.byte()  # index, which servers usually leave at zero
                 players.append({
                     "name": buf.string(),
                     "score": buf.long(),
                     "seconds": max(0.0, buf.float()),
                 })
-        except (QueryError, OSError, struct.error):  # TimeoutError ja e um OSError
+        except (QueryError, OSError, struct.error):  # TimeoutError is already an OSError
             players = []
 
     info["list"] = [p for p in players if p["name"]]

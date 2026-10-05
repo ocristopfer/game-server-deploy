@@ -1,31 +1,32 @@
-"""Idioma da tela: o painel fala portugues por padrao e pode falar outro.
+"""Screen language: the panel speaks Portuguese by default and can speak another one.
 
-Catalogo em dicionario Python, sem dependencia e sem passo de build. A alternativa
-padrao (Flask-Babel + gettext) existe no apt do Debian, mas pede compilar `.po` em
-`.mo` — e este repo nao tem build: o painel em producao so recebe arquivos e sobe. Pela
-mesma razao o TOTP e o QR code aqui sao codigo proprio (ver CLAUDE.md).
+The catalog is a Python dictionary, with no dependency and no build step. The standard
+alternative (Flask-Babel + gettext) is in Debian's apt, but it requires compiling `.po` into
+`.mo` - and this repo has no build: the production panel just receives files and starts. For
+the same reason TOTP and the QR code are our own code here (see CLAUDE.md).
 
-Cada frase tem uma CHAVE neutra (`nav.servers`, `action.start`) e um catalogo por
-idioma. Assim os dois idiomas sao simetricos — `pt.py` nao e "o original" e `en.py` a
-"traducao", os dois sao dados do mesmo jeito — e mudar a redacao em portugues nao
-obriga a mexer no catalogo ingles.
+Each phrase has a neutral KEY (`nav.servers`, `action.start`) and one catalog per language.
+That keeps the two languages symmetric - `pt.py` is not "the original" with `en.py` as "the
+translation", both are data in the same way - and rewording the Portuguese does not force a
+change in the English catalog.
 
-A busca cai em cascata: idioma pedido -> portugues -> a propria chave. O ultimo degrau
-e de proposito: chave que ninguem cadastrou aparece na tela como `nav.servers`, e isso
-e barulhento o suficiente para ser consertado — melhor do que sumir em silencio.
+Lookup cascades: requested language -> Portuguese -> the key itself. The last step is on
+purpose: a key nobody registered shows up on screen as `nav.servers`, and that is noisy enough
+to get fixed - better than vanishing silently.
 
-Traduz-se o que a PESSOA le. Log tecnico, nome de excecao e identificador de codigo sao
-ingles e ficam fora daqui.
+What gets translated is what the PERSON reads. Technical logs, exception names and code
+identifiers are English and stay out of here.
 
-Frase com NUMERO ou NOME no meio nao se parte em pedacos: `traduzir` aceita campos e
-os troca por `{nome}` dentro da frase. Partir era o caminho obvio e esta errado, porque
-a ordem das palavras muda de um idioma para o outro — "a cada {n}s" e "every {n}s" ainda
-combinam, mas nem sempre e assim, e um pedaco solto nao da contexto a quem traduz.
+A phrase with a NUMBER or NAME in the middle is not split into pieces: `translate` accepts
+fields and substitutes them for `{name}` inside the phrase. Splitting was the obvious path and
+it is wrong, because word order changes from one language to another - "a cada {n}s" and
+"every {n}s" still line up, but that is not always the case, and a loose fragment gives the
+translator no context.
 
-Pela mesma razao a frase pode trazer MARCACAO (`<strong>`, `<code>`): dividir o
-paragrafo em cada `<strong>` deixaria metade dele em portugues na tela em ingles. O
-catalogo e codigo deste repositorio, nao entrada de usuario, entao a frase e confiavel;
-os CAMPOS que entram nela e que nao sao, e o `traduzir_html` do `app.py` os escapa.
+For the same reason a phrase may carry MARKUP (`<strong>`, `<code>`): splitting the paragraph
+at each `<strong>` would leave half of it in Portuguese on the English screen. The catalog is
+code from this repository, not user input, so the phrase is trusted; the FIELDS that go into
+it are not, and `translate_html` in `app.py` escapes them.
 """
 from __future__ import annotations
 
@@ -38,18 +39,18 @@ CATALOGS: dict[str, dict[str, str]] = {
     "en": en.MESSAGES,
 }
 
-# O que a tela oferece, na ordem em que aparece no seletor.
+# What the screen offers, in the order it appears in the selector.
 LANGUAGES: tuple[tuple[str, str], ...] = (
     ("pt", "Portugues (Brasil)"),
     ("en", "English"),
 )
 
-# O que vai no `lang=` do `<html>`, que NAO e a mesma coisa que a chave do catalogo: o
-# atributo aceita regiao e a nossa e a do Brasil (`pt-BR`), enquanto a chave e so `pt`.
-# Quem le esse atributo e o leitor de tela (que escolhe a voz e a pronuncia por ele) e a
-# traducao automatica do navegador -- com ele fixo em `pt-BR`, como estava no base.html, a
-# tela em ingles era ANUNCIADA como portuguesa e o leitor de tela lia ingles com fonemas
-# portugueses. Nao aparece em teste de rota nenhum: a pagina responde 200 igual.
+# What goes into `<html>`'s `lang=`, which is NOT the same thing as the catalog key: the
+# attribute accepts a region and ours is Brazil's (`pt-BR`), while the key is just `pt`.
+# This attribute is read by the screen reader (which picks voice and pronunciation from it)
+# and by the browser's automatic translation -- with it hardcoded to `pt-BR`, as it was in
+# base.html, the English screen was ANNOUNCED as Portuguese and the screen reader read English
+# with Portuguese phonemes. No route test shows it: the page still answers 200.
 HTML_LANGS: dict[str, str] = {
     "pt": "pt-BR",
     "en": "en",
@@ -57,30 +58,30 @@ HTML_LANGS: dict[str, str] = {
 
 
 def html_lang(language: str) -> str:
-    """O `lang=` do `<html>` para um idioma do catalogo."""
+    """The `<html>` `lang=` for a catalog language."""
     return HTML_LANGS.get(language, HTML_LANGS[DEFAULT])
 
 
 def valid_language(raw: str | None) -> str:
-    """Devolve um idioma que existe; qualquer outra coisa vira o padrao."""
+    """Returns a language that exists; anything else becomes the default."""
     chosen = (raw or "").strip()
     return chosen if chosen in CATALOGS else DEFAULT
 
 
 class Message(str):
-    """Uma frase que lembra de QUE CHAVE ela veio.
+    """A phrase that remembers WHICH KEY it came from.
 
-    Existe para o texto que nasce longe da tela: o erro de validacao de
-    `services/server_service.py`, o `QueryError` de `runtime/a2s.py`. Esse texto acaba em
-    tres lugares com regras diferentes — a tela de quem clicou (idioma da pessoa), a
-    coluna de saida de um job (gravada, idioma do deploy) e o log do processo — e um
-    servico nao tem como saber em qual vai cair.
+    It exists for text born far from the screen: the validation error from
+    `services/server_service.py`, the `QueryError` from `runtime/a2s.py`. That text ends up in
+    three places with different rules - the screen of whoever clicked (that person's language),
+    a job's output column (stored, deploy language) and the process log - and a service has no
+    way of knowing which one it will land in.
 
-    E `str` de proposito, e nao um objeto a parte. Assim `str(exc)`, `f"{erro}"`,
-    `"pedaco" in erro` e o `logging` continuam funcionando exatamente como antes, sem
-    tocar em nenhum desses pontos; o que muda e que `traduzir` reconhece a classe e
-    refaz a frase no idioma certo quando alguem pede. Esquecer de traduzir nao quebra
-    nada: cai no idioma do deploy, que era o comportamento anterior.
+    It is a `str` on purpose, not a separate object. That way `str(exc)`, `f"{erro}"`,
+    `"pedaco" in erro` and `logging` keep working exactly as before, without touching any of
+    those spots; what changes is that `translate` recognizes the class and rebuilds the phrase
+    in the right language when someone asks. Forgetting to translate breaks nothing: it falls
+    back to the deploy language, which was the previous behavior.
     """
 
     key: str
@@ -97,28 +98,28 @@ class Message(str):
 
 
 def translate(key: str, language: str, **fields: object) -> str:
-    """A frase daquela chave, com queda para o portugues e depois para a chave.
+    """The phrase for that key, falling back to Portuguese and then to the key.
 
-    Campo que a frase nao usa e ignorado, e `{marcador}` sem campo correspondente fica
-    na tela como esta. Frase e campo vem de lugares diferentes (catalogo x rota), e
-    derrubar a tela inteira por causa de um `{n}` que alguem esqueceu de passar e caro
-    demais para o estrago: a frase truncada ja denuncia o defeito.
+    A field the phrase does not use is ignored, and a `{placeholder}` with no matching field stays
+    on screen as is. Phrase and field come from different places (catalog vs route), and taking
+    down the whole screen over a `{n}` someone forgot to pass costs far more than the damage:
+    the truncated phrase already gives the defect away.
     """
-    # Uma `Mensagem` ja traz consigo a chave e os campos de origem; traduzi-la de novo e
-    # so refazer a frase no idioma pedido. Sem isto, o texto dela (que ja e str) seria
-    # tratado como chave desconhecida e voltaria como esta, no idioma do deploy.
+    # A `Message` already carries its original key and fields; translating it again just
+    # rebuilds the phrase in the requested language. Without this, its text (already a str)
+    # would be treated as an unknown key and come back as is, in the deploy language.
     if isinstance(key, Message):
         return translate(key.key, language, **{**key.fields, **fields})
-    # `get(chave, padrao)` e nao `get(chave) or padrao`: frase traduzida como texto
-    # VAZIO e uma escolha (um rotulo que so existe em portugues, por exemplo) e tem de
-    # vencer o portugues, em vez de cair nele por parecer ausente.
+    # `get(key, default)` and not `get(key) or default`: a phrase translated as EMPTY text
+    # is a choice (a label that only exists in Portuguese, for example) and must win over the
+    # Portuguese, instead of falling back to it for looking absent.
     wanted = CATALOGS.get(language) or {}
     phrase = wanted.get(key, CATALOGS[DEFAULT].get(key, key))
     if not fields:
         return phrase
-    # Campo que TAMBEM e uma `Message` vai para o mesmo idioma da frase que o recebe.
-    # Sem isto ele entraria pelo `str`, que e sempre o idioma do deploy, e a frase sairia
-    # metade traduzida: "todo sabado at 03:00" foi exatamente o que apareceu na tela.
+    # A field that is ALSO a `Message` goes into the same language as the phrase receiving it.
+    # Without this it would go in through `str`, which is always the deploy language, and the
+    # phrase would come out half translated: "todo sabado at 03:00" is exactly what showed up.
     ready = {
         name: translate(value, language) if isinstance(value, Message) else value
         for name, value in fields.items()
@@ -130,11 +131,11 @@ def translate(key: str, language: str, **fields: object) -> str:
 
 
 def from_header(accept_language: str | None) -> str:
-    """Le o Accept-Language do navegador. So para quem ainda nao escolheu nada.
+    """Reads the browser's Accept-Language. Only for someone who has not chosen anything yet.
 
-    Implementacao curta de proposito: interessa saber se o navegador prefere um idioma
-    que o painel FALA, e nao ordenar a lista inteira com peso. `pt-BR` conta como
-    portugues; `en-US` conta como ingles.
+    A short implementation on purpose: what matters is whether the browser prefers a language
+    the panel SPEAKS, not ranking the whole weighted list. `pt-BR` counts as Portuguese;
+    `en-US` counts as English.
     """
     for part in (accept_language or "").split(","):
         tag = part.split(";")[0].strip().lower()
@@ -147,5 +148,5 @@ def from_header(accept_language: str | None) -> str:
 
 
 def missing_keys(language: str) -> list[str]:
-    """Chaves que o portugues tem e este idioma nao. Usado pelo teste."""
+    """Keys that Portuguese has and this language does not. Used by the test."""
     return sorted(set(CATALOGS[DEFAULT]) - set(CATALOGS.get(language, {})))

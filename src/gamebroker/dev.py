@@ -1,9 +1,9 @@
-"""Broker de brinquedo para o compose de desenvolvimento (docker compose up).
+"""Toy broker for the development compose (docker compose up).
 
-E o broker de VERDADE (catalogo, alocador, cotas, API, auditoria) com backends falsos: nada
-aqui toca Proxmox, OPNsense ou SSH. O instalador so finge demorar, para a tela do painel ter
-progresso para mostrar. O estado mora em /tmp de proposito: some junto com o container, e
-assim o Proxmox falso (em memoria) e o banco nunca ficam desencontrados.
+It is the REAL broker (catalog, allocator, quotas, API, audit) with fake backends: nothing
+here touches Proxmox, OPNsense or SSH. The installer only pretends to take time, so the panel
+screen has progress to show. The state lives in /tmp on purpose: it goes away with the
+container, so the fake Proxmox (in memory) and the database never get out of sync.
 
     python3 -m gamebroker.dev
 """
@@ -24,7 +24,7 @@ from gamebroker.services.instance_service import Config, Service
 
 
 class SlowInstaller:
-    """Finge a instalacao: uma etapa a cada `passo` segundos, com log."""
+    """Fakes the installation: one step every `passo` seconds, with a log."""
 
     def __init__(self, step: float):
         self._step = step
@@ -37,7 +37,7 @@ class SlowInstaller:
             "removendo a chave do broker do container",
         )
         for stage in stages:
-            # Espera cancelavel: e o que deixa testar o botao "cancelar" no compose de dev.
+            # Cancellable wait: this is what lets the "cancel" button be tested in the dev compose.
             if cancel is not None:
                 if cancel.wait(self._step):
                     raise RuntimeError("instalacao cancelada")
@@ -48,9 +48,9 @@ class SlowInstaller:
 
 def main() -> None:
     token = Path(os.environ["BROKER_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
-    # `/tmp` como padrao vale porque este modulo e o broker de BRINQUEDO do compose e nao
-    # entra no release (ver `SKIPPED_NAMES`). O de producao recebe `BROKER_STATE_DIR` do
-    # provisionamento, em /var/lib, com dono e modo proprios.
+    # `/tmp` as the default is fine because this module is the compose's TOY broker and is
+    # not part of the release (see `SKIPPED_NAMES`). The production one gets `BROKER_STATE_DIR`
+    # from provisioning, under /var/lib, with its own owner and mode.
     state_dir = Path(os.environ.get("BROKER_DEV_ESTADO", "/tmp/broker-dev"))  # noqa: S108
     state_dir.mkdir(parents=True, exist_ok=True)
     catalog = Catalog(Path(os.environ.get("BROKER_GAMES_DIR", "games")), state_dir / "dinamico")
@@ -59,10 +59,10 @@ def main() -> None:
         SlowInstaller(float(os.environ.get("BROKER_DEV_PASSO", "1.5"))), FakeNetwork(),
         Config(ctid_base=200, ips=ips_in_range("10.77.0", 102, 199)))
     app = create_app(service, token)
-    # Ouvir em todas as interfaces so vale aqui: este modulo e o broker de BRINQUEDO do
-    # compose de dev (backends falsos) e nao entra no pacote de release — ver
-    # `SKIPPED_NAMES` em tools/build-release.py. O de producao sobe por gunicorn com TLS.
-    app.run(host="0.0.0.0", port=int(os.environ.get("BROKER_PORT", "8090")), threaded=True)  # noqa: S104  # NOSONAR - so no compose de dev
+    # Listening on all interfaces is only acceptable here: this module is the TOY broker of
+    # the dev compose (fake backends) and is not part of the release package - see
+    # `SKIPPED_NAMES` in tools/build-release.py. The production one runs under gunicorn with TLS.
+    app.run(host="0.0.0.0", port=int(os.environ.get("BROKER_PORT", "8090")), threaded=True)  # noqa: S104  # NOSONAR - dev compose only
 
 
 if __name__ == "__main__":

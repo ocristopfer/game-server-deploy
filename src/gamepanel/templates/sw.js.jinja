@@ -1,48 +1,48 @@
-/* Service worker do Painel de Jogos.
+/* Game Panel service worker.
  *
- * Este arquivo e SERVIDO PELO FLASK (nao pelo /static/) por dois motivos:
+ * This file is SERVED BY FLASK (not from /static/) for two reasons:
  *
- *   1. o escopo de um service worker e a pasta em que ele mora — servido de
- *      /static/sw.js ele so enxergaria /static/, e nao a navegacao do painel;
- *   2. a VERSAO abaixo e carimbada no momento de servir, a partir do mtime dos
- *      arquivos estaticos. Byte novo no CSS = arquivo do worker diferente = o
- *      navegador instala a versao nova e joga fora o cache velho. Sem isso, um
- *      deploy chega ao celular de alguem como "a tela quebrou depois da atualizacao".
+ *   1. a service worker's scope is the folder it lives in - served from
+ *      /static/sw.js it would only see /static/, and not the panel navigation;
+ *   2. the VERSION below is stamped at serve time, from the mtime of the
+ *      static files. A new byte in the CSS = a different worker file = the
+ *      browser installs the new version and throws away the old cache. Without that, a
+ *      deploy reaches someone's phone as "the screen broke after the update".
  *
- * O QUE ESTE WORKER NAO FAZ, de proposito:
+ * WHAT THIS WORKER DOES NOT DO, on purpose:
  *
- *   - nao guarda HTML de pagina logada. O painel da poder de root nos containers e
- *     roda com varios usuarios; uma tela de servidores guardada em cache poderia
- *     reaparecer depois do logout, ou para a pessoa errada no mesmo aparelho. A
- *     navegacao e sempre rede, e a queda cai na pagina de "sem conexao".
- *   - nao guarda nada de /api/. Um medidor de CPU servido do cache mente sobre o
- *     estado de um servidor de verdade — e pior do que nao mostrar numero nenhum.
- *   - nao passa perto de download de arquivo nem de backup: sao respostas de varios
- *     GB em streaming, e atravessar o worker so as tornaria mais lentas.
+ *   - it does not store HTML of a logged-in page. The panel grants root power over the containers and
+ *     runs with several users; a server screen stored in the cache could
+ *     reappear after logout, or for the wrong person on the same device. The
+ *     navigation always goes to the network, and a failure falls to the "no connection" page.
+ *   - it stores nothing from /api/. A CPU gauge served from the cache lies about the
+ *     state of a real server - which is worse than showing no number at all.
+ *   - it does not go near file or backup downloads: those are multi-GB
+ *     streaming responses, and going through the worker would only make them slower.
  */
 const VERSION = '{{ version }}';
 const CACHE = `gamepanel-${VERSION}`;
 const OFFLINE = '{{ url_for("pwa.offline") }}';
 
-/* O casco do aplicativo: o que precisa estar no aparelho para a pagina de "sem
- * conexao" abrir inteira, com o mesmo visual do resto do painel. */
+/* The app shell: what needs to be on the device for the "no
+ * connection" page to open whole, with the same look as the rest of the panel. */
 const CASCO = [
   OFFLINE,
 {% for arquivo in precache %}  '{{ arquivo }}',
 {% endfor %}];
 
-/* Caminhos que o worker nao toca nem para repassar. */
+/* Paths the worker does not touch, not even to pass them along. */
 const FORA = ['/api/', '/files/download', '/backups/baixar', '/health'];
 
 self.addEventListener('install', (ev) => {
-  // Sem skipWaiting() de proposito: a versao nova fica ESPERANDO, e quem manda ela
-  // assumir e a pessoa, pelo botao "Atualizar agora". Trocar sozinho recarrega a
-  // pagina — e este painel tem uma tela de terminal com sessao SSH aberta. Perder um
-  // `nano` no meio da edicao porque o CSS mudou nao e uma troca aceitavel.
+  // No skipWaiting() on purpose: the new version stays WAITING, and whoever tells it
+  // to take over is the person, through the "Update now" button. Swapping on its own reloads the
+  // page - and this panel has a terminal screen with an open SSH session. Losing a
+  // `nano` in the middle of an edit because the CSS changed is not an acceptable trade.
   ev.waitUntil(
     caches.open(CACHE)
-      // allSettled, e nao addAll: este e tudo-ou-nada, e um arquivo que mudou de nome
-      // derrubaria a instalacao inteira, deixando o painel sem worker nenhum.
+      // allSettled, and not addAll: that one is all-or-nothing, and a file that was renamed
+      // would take down the whole install, leaving the panel with no worker at all.
       .then((cache) => Promise.allSettled(CASCO.map((url) => cache.add(url)))),
   );
 });
@@ -58,7 +58,7 @@ self.addEventListener('activate', (ev) => {
   );
 });
 
-/* A pagina pede para a versao nova assumir agora (botao "atualizar"). */
+/* The page asks for the new version to take over now ("update" button). */
 self.addEventListener('message', (ev) => {
   if (ev.data && ev.data.tipo === 'assumir') self.skipWaiting();
 });
@@ -81,11 +81,11 @@ self.addEventListener('fetch', (ev) => {
   }
 });
 
-/* Estatico: responde do cache na hora e busca a versao nova em segundo plano.
+/* Static: answers from the cache right away and fetches the new version in the background.
  *
- * Da para ser agressivo aqui porque o nome do cache carrega a versao: na virada de
- * deploy o cache inteiro e descartado, entao "velho" aqui significa no maximo
- * "da mesma versao". */
+ * It can be aggressive here because the cache name carries the version: at a deploy
+ * switch the whole cache is discarded, so "old" here means at most
+ * "from the same version". */
 async function estaticoDoCache(req) {
   const cache = await caches.open(CACHE);
   const guardado = await cache.match(req, { ignoreSearch: true });
@@ -97,11 +97,11 @@ async function estaticoDoCache(req) {
 
   if (guardado) return guardado;
   const fresco = await daRede;
-  // Sem rede e sem copia: devolve um erro de verdade, e nao uma promessa pendurada.
+  // No network and no copy: return a real error, not a hanging promise.
   return fresco || new Response('', { status: 504, statusText: 'sem conexao' });
 }
 
-/* Navegacao: sempre rede. Sem rede, a pagina de "sem conexao". */
+/* Navigation: always network. Without network, the "no connection" page. */
 async function navegacao(req) {
   try {
     return await fetch(req);
@@ -109,7 +109,7 @@ async function navegacao(req) {
     const cache = await caches.open(CACHE);
     const pagina = await cache.match(OFFLINE);
     return pagina || new Response(
-      '<h1>Sem conexao</h1><p>O painel nao respondeu.</p>',
+      {{ ('<h1>' ~ _('offline.heading') ~ '</h1><p>' ~ _('offline.no_answer') ~ '</p>') | tojson }},
       { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
     );
   }

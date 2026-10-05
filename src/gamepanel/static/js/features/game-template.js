@@ -1,11 +1,11 @@
-/* "Comecar de um modelo" no formulario de jogo novo.
+/* "Start from a template" in the new game form.
  *
- * Escolher um modelo preenche os campos de uma vez (os valores vem na propria marcacao,
- * em data-values, montados no servidor a partir de modelos_de_jogo.py). Nada aqui decide
- * o que e valido: o broker valida tudo de novo quando o formulario e enviado.
+ * Picking a template fills the fields at once (the values come in the markup itself,
+ * in data-values, built on the server from modelos_de_jogo.py). Nothing here decides
+ * what is valid: the broker validates everything again when the form is submitted.
  *
- * O selector nasce escondido: sem JavaScript ele nao teria o que fazer, e o formulario
- * continua completo sem ele.
+ * The selector is born hidden: without JavaScript it would have nothing to do, and the form
+ * stays complete without it.
  */
 import { fillForm } from '../core/dom.js';
 

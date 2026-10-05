@@ -1,12 +1,12 @@
-"""Linha de comando do painel (gamepanel.cli).
+"""The panel command line (gamepanel.cli).
 
-Nao tinha teste nenhum: o bloco morava dentro de um `if __name__ == "__main__"` no
-rodape do app.py, onde nada consegue chamar. E ali esta a saida de emergencia do
-segundo fator — o comando que alguem roda justamente quando perdeu o acesso ao painel,
-e que portanto nao pode falhar em silencio.
+It had no test at all: the block lived inside an `if __name__ == "__main__"` at the
+bottom of app.py, where nothing can call it. And that is where the second-factor emergency
+exit lives - the command someone runs precisely when they have lost access to the panel,
+and which therefore must not fail silently.
 
-As dependencias entram por `CliDeps`, entao aqui nao sobe Flask nem relogio: o banco e
-um sqlite de arquivo temporario e o resto sao dublês que so anotam o que foi chamado.
+Dependencies come in through `CliDeps`, so neither Flask nor the clock start here: the
+database is a temporary-file sqlite and the rest are doubles that only record what was called.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from gamepanel import cli
 
 @pytest.fixture
 def cli_database(tmp_path):
-    """Um banco com a tabela de usuarios e um admin com 2FA ligado."""
+    """A database with the users table and an admin with 2FA on."""
     path = tmp_path / "painel.db"
     con = sqlite3.connect(path)
     con.execute("""CREATE TABLE users (
@@ -66,7 +66,7 @@ class _FakeApp:
 # --------------------------------------------------------------- 2FA
 
 def test_reset_2fa_limpa_as_quatro_colunas(cli_database, capsys):
-    """Meia limpeza deixaria o usuario trancado do mesmo jeito."""
+    """A half cleanup would leave the user locked out all the same."""
     cli.main(deps(connect=cli_database), ["--reset-2fa", "chefe"])
     line = dict(cli_database().execute("SELECT * FROM users").fetchone())
     assert line["totp_secret"] == ""
@@ -94,14 +94,14 @@ def test_reset_2fa_nao_mexe_nos_outros_usuarios(cli_database):
 
 
 def test_reset_2fa_sobe_o_banco_antes(cli_database):
-    """Roda no CT logo depois do deploy: a tabela pode nem existir ainda."""
+    """It runs in the CT right after the deploy: the table may not even exist yet."""
     done_ones: list[str] = []
     d = deps(connect=cli_database, init_db=lambda: done_ones.append("init_db"))
     cli.main(d, ["--reset-2fa", "chefe"])
     assert done_ones == ["init_db"]
 
 
-# ------------------------------------------------------------ usuario
+# ------------------------------------------------------------ user
 
 def test_create_user_repassa_nome_senha_e_papel():
     seen_ones: list = []
@@ -120,7 +120,7 @@ def test_papel_fora_da_lista_e_recusado_pelo_parser():
         cli.main(deps(), ["--create-user", "ana", "--password", "x", "--role", "dono"])
 
 
-# ----------------------------------------------------- servidor pelo deploy
+# ----------------------------------------------------- server from the deploy
 
 def test_register_server_exige_host_e_servico():
     with pytest.raises(SystemExit, match="--server-host"):
@@ -140,7 +140,7 @@ def test_register_server_monta_o_cadastro():
 
 
 def test_listas_vem_por_virgula_e_saem_uma_por_linha():
-    """A linha de comando nao aceita quebra de linha com conforto."""
+    """The command line does not take line breaks comfortably."""
     seen_ones: list = []
     d = deps(ensure_server=lambda data: seen_ones.append(data) or True)
     cli.main(d, ["--register-server", "X", "--server-host", "h", "--service", "s",
@@ -156,7 +156,7 @@ def test_por_virgula(raw, expected):
     assert cli.by_comma(raw) == expected
 
 
-# ----------------------------------------------------------- servidor web
+# ----------------------------------------------------------- web server
 
 def test_sem_argumentos_sobe_o_painel_com_o_relogio():
     calls: dict = {}
@@ -170,7 +170,7 @@ def test_sem_argumentos_sobe_o_painel_com_o_relogio():
 
 
 def test_cadastrar_usuario_nao_sobe_o_relogio():
-    """Pela linha de comando o relogio NAO pode comecar a mexer nos containers."""
+    """From the command line the clock must NOT start touching the containers."""
     calls: dict = {}
     d = deps(_chamadas=calls,
              start_scheduler=lambda: calls.__setitem__("relogio", True),

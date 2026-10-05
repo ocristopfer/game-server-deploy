@@ -1,24 +1,25 @@
-"""Formulario de "jogo novo" do catalogo do broker.
+"""The "new game" form of the broker catalog.
 
-So converte tipos e recolhe as listas — quem VALIDA de verdade e o broker, que recusa
-campo desconhecido, caminho fora de /opt/game e comando escondido. Conferir aqui de
-novo seria manter duas listas do que vale, e uma delas ficaria para tras.
+It only converts types and gathers the lists: the real VALIDATION is done by the broker,
+which rejects unknown fields, paths outside /opt/game and hidden commands. Checking again
+here would mean keeping two lists of what is allowed, and one of them would fall behind.
 """
 from __future__ import annotations
 
 import re
 from typing import Any
 
-# Espelho do gamebroker.catalogo.RECEITAS: so para desenhar as caixas do formulario. Proton
-# vem antes do wine de proposito: e o runtime preferido para servidor sem build Linux (fsync e
-# ntsync; o wine da distro nao tem), e o wine fica para quando o Proton nao funcionar.
+# Mirror of gamebroker.catalogo.RECEITAS: only used to draw the form's checkboxes. Proton
+# comes before wine on purpose: it is the preferred runtime for a server without a Linux
+# build (fsync and ntsync, which the distro's wine lacks), and wine is for when Proton
+# does not work.
 BROKER_RECIPES = ("proton", "wine", "xvfb", "steamclient-sdk64")
 NUMBER_RE = re.compile(r"[0-9]{1,10}", re.ASCII)
 
-# Campos que entram como texto, se vierem preenchidos.
+# Fields that go in as text, when filled in.
 TEXT_FIELDS = ("key", "name", "platform", "start_script", "start_args",
                "config_path", "log_path", "join_re", "leave_re", "player_source")
-# Campos numericos, com o rotulo que aparece no erro.
+# Numeric fields, with the label that shows up in the error.
 NUMERIC_FIELDS = (
     ("app_id", "App ID"), ("game_port", "Porta do jogo"),
     ("query_port", "Porta de consulta"), ("extra_port", "Porta extra"),
@@ -27,12 +28,12 @@ NUMERIC_FIELDS = (
 
 
 def lines_of(text: str) -> list[str]:
-    """Uma entrada por linha (virgula tambem separa), sem vazios."""
+    """One entry per line (a comma also separates), without empty ones."""
     return [p.strip() for p in (text or "").replace(",", "\n").splitlines() if p.strip()]
 
 
 def game_from_form(form: Any) -> tuple[dict, list[str]]:
-    """Le o formulario de jogo novo: devolve o que mandar ao broker, e os erros de tipo."""
+    """Reads the new game form: returns what to send to the broker, and the type errors."""
     failures: list[str] = []
     payload: dict = {}
     for field in TEXT_FIELDS:

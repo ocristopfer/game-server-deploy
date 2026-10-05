@@ -1,54 +1,54 @@
 #!/usr/bin/env bash
-# Firewall de DENTRO do container (nftables), para o painel, o broker e os jogos.
+# Firewall INSIDE the container (nftables), for the panel, the broker and the games.
 #
-# Por que existe: o OPNsense so ve o que ATRAVESSA ele. Dentro da mesma sub-rede
-# (192.168.2.0/24) um CT fala com o outro direto, e um servidor de jogo invadido alcancaria o
-# SSH do painel, a API do broker, o Proxmox (:8006) e a API do OPNsense sem passar por regra
-# nenhuma. Aqui cada CT recusa por conta propria o que nao e dele.
+# Why it exists: OPNsense only sees what CROSSES it. Within the same subnet
+# (10.20.1.0/24) one CT talks to another directly, and a compromised game server would reach the
+# panel's SSH, the broker API, Proxmox (:8006) and the OPNsense API without going through any
+# rule at all. Here each CT refuses on its own whatever is not meant for it.
 #
-# Instalado em /usr/local/sbin/ct-firewall; a configuracao do CT mora em /etc/ct-firewall.env
-# (gravada pelo provisionamento). Um script so para os tres papeis, e o mesmo em todo caminho
-# de deploy - o deploy manual e o do broker nao podem divergir em regra de seguranca.
+# Installed at /usr/local/sbin/ct-firewall; the CT configuration lives in /etc/ct-firewall.env
+# (written by provisioning). One script for all three roles, and the same on every deploy
+# path - the manual deploy and the broker's cannot diverge on a security rule.
 #
-#   ct-firewall apply    confere, grava /etc/nftables.conf, carrega e liga no boot
-#   ct-firewall render   so imprime as regras (para conferir antes)
-#   ct-firewall status   o que esta carregado agora
-#   ct-firewall off      SAIDA DE EMERGENCIA: tira tudo e desliga no boot.
-#                        Pelo host: pct exec <CT> -- ct-firewall off
+#   ct-firewall apply    checks, writes /etc/nftables.conf, loads it and enables it at boot
+#   ct-firewall render   only prints the rules (to check them first)
+#   ct-firewall status   what is loaded right now
+#   ct-firewall off      EMERGENCY EXIT: removes everything and disables it at boot.
+#                        From the host: pct exec <CT> -- ct-firewall off
 #
-# Chaves de /etc/ct-firewall.env (listas separadas por espaco ou virgula):
+# Keys of /etc/ct-firewall.env (lists separated by spaces or commas):
 #   FW_ROLE             panel | broker | game
-#   panel:  FW_ADMIN_SOURCES   quem chega na web e no SSH (ex.: 192.168.0.0/16)
-#           FW_PANEL_PORT      porta da web (padrao 8080)
-#   broker: FW_PANEL_SOURCES   quem chega na API (o IP do painel)
-#           FW_BROKER_PORT     porta da API (padrao 8443)
-#           FW_API_ENDPOINTS   ip:porta que o broker pode chamar (Proxmox, OPNsense)
-#           FW_GAME_NET        faixa dos CTs de jogo (SSH e ping de instalacao)
-#   game:   FW_MGMT_SOURCES    quem pode abrir SSH e pingar (painel e broker)
-#           FW_GAME_PORTS      portas do jogo, abertas para qualquer origem ("7777/udp 8888/tcp")
-#           FW_PRESENCE_PORTS  porta(s) UDP do JOGO cujas conversas o painel conta como
-#                              jogadores ("7777"); vazio = sem contagem. Nunca a de consulta.
+#   panel:  FW_ADMIN_SOURCES   who reaches the web and SSH (e.g. 192.168.0.0/16)
+#           FW_PANEL_PORT      web port (default 8080)
+#   broker: FW_PANEL_SOURCES   who reaches the API (the panel IP)
+#           FW_BROKER_PORT     API port (default 8443)
+#           FW_API_ENDPOINTS   ip:port the broker may call (Proxmox, OPNsense)
+#           FW_GAME_NET        range of the game CTs (SSH and ping during installation)
+#   game:   FW_MGMT_SOURCES    who may open SSH and ping (panel and broker)
+#           FW_GAME_PORTS      game ports, open to any source ("7777/udp 8888/tcp")
+#           FW_PRESENCE_PORTS  UDP port(s) of the GAME whose conversations the panel counts as
+#                              players ("7777"); empty = no counting. Never the query port.
 set -Eeuo pipefail
 
 CONF="${CT_FIREWALL_CONF:-/etc/ct-firewall.env}"
 RULES="${CT_FIREWALL_RULES:-/etc/nftables.conf}"
 RESOLV="${CT_FIREWALL_RESOLV:-/etc/resolv.conf}"
 
-# Rede interna: o que um jogo nao pode alcancar e o que o broker so alcanca com regra propria.
-# 100.64/10 (CGNAT) e 169.254/16 (link-local, onde mora metadado de nuvem) entram pelo mesmo
-# motivo: nao sao internet.
+# Internal network: what a game cannot reach and what the broker only reaches with its own rule.
+# 100.64/10 (CGNAT) and 169.254/16 (link-local, where cloud metadata lives) are included for the
+# same reason: they are not the internet.
 PRIVATE_V4="10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16"
 PRIVATE_V6="fc00::/7, fe80::/10"
 
 die() { printf 'ct-firewall: %s\n' "$*" >&2; exit 1; }
 
-# --- conferencia do que entra nas regras ----------------------------------------------------
-# Todo valor vai parar DENTRO de um texto do nft. Conferir a forma aqui e o que impede um
-# valor torto de virar regra que ninguem pediu (ou uma regra que nao carrega no boot).
+# --- validation of what goes into the rules -------------------------------------------------
+# Every value ends up INSIDE nft text. Checking its shape here is what stops a malformed
+# value from becoming a rule nobody asked for (or a rule that does not load at boot).
 
 IPV4_RE='^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2}|-([0-9]{1,3}\.){3}[0-9]{1,3})?$'
 
-# "a, b c" -> "a, b, c", recusando o que nao for IPv4, CIDR ou faixa a-b.
+# "a, b c" -> "a, b, c", rejecting anything that is not IPv4, CIDR or an a-b range.
 addr_list() {
   local name="$1" raw="$2" item out=""
   for item in ${raw//,/ }; do
@@ -62,8 +62,8 @@ valid_port() {
   [[ "$1" =~ ^[0-9]{1,5}$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )) || die "$2: porta invalida '$1'"
 }
 
-# Servidores DNS que o CT usa: sem eles o jogo nao resolve o nome da Steam, e o resolvedor
-# pode ser um IP interno (o gateway, ou o host). So IPv4; loopback ja passa por `lo`.
+# DNS servers the CT uses: without them the game cannot resolve Steam's name, and the resolver
+# may be an internal IP (the gateway, or the host). IPv4 only; loopback already passes via `lo`.
 dns_servers() {
   local out="" ip key
   [[ -f "$RESOLV" ]] || { printf ''; return; }
@@ -86,10 +86,10 @@ load_conf() {
   esac
 }
 
-# --- regras ---------------------------------------------------------------------------------
+# --- rules ----------------------------------------------------------------------------------
 
-# Validade de uma conversa no conjunto de presenca. Cliente de jogo manda pacote varias vezes
-# por segundo (ate na tela de carregamento); 20 s sem nada e quem fechou o jogo ou caiu.
+# Lifetime of a conversation in the presence set. A game client sends packets several times
+# per second (even on the loading screen); 20 s of silence means someone closed the game or dropped.
 PRESENCE_TIMEOUT="20s"
 
 presence_ports() {
@@ -102,10 +102,11 @@ presence_ports() {
   printf '%s' "$out"
 }
 
-# O conjunto que o painel le (`runtime/presence_probe.py`): IP:porta de origem de quem conversa
-# com a porta do jogo. So entra conversa ESTABELECIDA - o servidor ja respondeu -, entao scanner
-# que manda um pacote solto nao vira jogador. Nao decide nada: so anota, e a regra roda ANTES do
-# `established accept` do common_head, senao o pacote de quem esta jogando nunca chegaria a ela.
+# The set the panel reads (`runtime/presence_probe.py`): source IP:port of whoever talks to the
+# game port. Only ESTABLISHED conversations go in - the server has already replied -, so a scanner
+# sending a stray packet does not become a player. It decides nothing: it only records, and the
+# rule runs BEFORE the `established accept` of common_head, otherwise the packets of someone
+# playing would never reach it.
 presence_set() {
   [[ "$FW_ROLE" == game && -n "$(presence_ports)" ]] || return 0
   printf '  set players {\n    type ipv4_addr . inet_service\n'
@@ -119,10 +120,10 @@ presence_rule() {
   printf '    udp dport { %s } ct state established update @players { ip saddr . udp sport }\n' "$ports"
 }
 
-# Comum aos tres: resposta de conexao ja aberta passa (e o que deixa o painel receber a volta
-# do A2S e o jogo responder ao jogador), loopback passa (as APIs de admin do Palworld e do
-# Satisfactory so escutam em 127.0.0.1), e o ICMPv6 de vizinhanca passa (sem ele o IPv6 do CT
-# nao acha nem o roteador).
+# Common to all three: replies on an already open connection pass (that is what lets the panel
+# receive the A2S answer and the game reply to the player), loopback passes (the Palworld and
+# Satisfactory admin APIs only listen on 127.0.0.1), and ICMPv6 neighbor discovery passes
+# (without it the CT's IPv6 cannot even find the router).
 common_head() {
   cat <<'EOF'
     ct state invalid drop
@@ -148,7 +149,7 @@ input_broker() {
   panel="$(addr_list FW_PANEL_SOURCES "${FW_PANEL_SOURCES:-}")"
   [[ -n "$panel" ]] || die "FW_PANEL_SOURCES vazio: o painel nao alcancaria o broker"
   valid_port "$port" FW_BROKER_PORT
-  # Sem SSH de proposito: o broker nao tem sshd, o codigo chega por `pct push`.
+  # No SSH on purpose: the broker has no sshd, the code arrives via `pct push`.
   printf '    ip saddr { %s } tcp dport %s accept\n' "$panel" "$port"
   printf '    ip saddr { %s } icmp type echo-request accept\n' "$panel"
 }
@@ -168,16 +169,17 @@ input_game() {
       *) die "FW_GAME_PORTS: protocolo invalido em '$spec'" ;;
     esac
   done
-  # As portas do jogo sao publicas: o jogador chega pelo NAT do OPNsense, de qualquer lugar.
+  # The game ports are public: the player arrives through the OPNsense NAT, from anywhere.
   [[ -n "$udp" ]] && printf '    udp dport { %s } accept\n' "$udp"
   [[ -n "$tcp" ]] && printf '    tcp dport { %s } accept\n' "$tcp"
   printf '    ip saddr { %s } tcp dport 22 accept\n' "$mgmt"
-  # UDP de quem administra, em QUALQUER porta: e por onde o painel faz a consulta A2S e o
-  # assistente sonda as portas do jogo. So com as do GAME_PORTS, uma porta de consulta que o
-  # .env nao declarou (a 27015 da Steam num jogo Unreal) era descartada aqui e a tela dizia
-  # "sem resposta" - parecia jogo sem A2S. Nao abre nada novo: essa origem ja tem root por SSH.
+  # UDP from the administrators, on ANY port: that is how the panel runs the A2S query and the
+  # wizard probes the game ports. With only the GAME_PORTS ones, a query port the .env did not
+  # declare (Steam's 27015 in an Unreal game) was dropped here and the screen said
+  # "sem resposta" - it looked like a game without A2S. It opens nothing new: that source
+  # already has root over SSH.
   printf '    ip saddr { %s } udp dport 1-65535 accept\n' "$mgmt"
-  # O broker pinga o IP antes de usa-lo; um jogo que nao responde pareceria endereco livre.
+  # The broker pings the IP before using it; a game that does not answer would look like a free address.
   printf '    ip saddr { %s } icmp type echo-request accept\n' "$mgmt"
 }
 
@@ -189,14 +191,14 @@ dns_rules() {
   printf '    ip daddr { %s } tcp dport 53 accept\n' "$dns"
 }
 
-# A RESPOSTA do SSH e do ping para quem administra, ANTES de tudo na saida do jogo - antes ate
-# do `ct state invalid drop`. Antes deste ruleset nada no CT pedia conntrack, entao a sessao SSH
-# do broker, aberta ANTES do apply, nao era acompanhada: o primeiro pacote de saida depois dele
-# chega ao conntrack no meio da conexao e sai como invalido ou como NOVO - e os dois caem (no
-# drop do invalido ou na recusa da rede interna). A instalacao do V Rising travou assim, com o
-# fim do log preso na fila do socket e a operacao "executando" para sempre. Medido no
-# docker/ct-sandbox/firewall.sh ("sessao anterior ao apply"): com a regra depois do
-# `invalid drop` o caso continua falhando.
+# The SSH and ping REPLY to the administrators, BEFORE everything else in the game's output -
+# even before `ct state invalid drop`. Before this ruleset nothing in the CT requested conntrack,
+# so the broker's SSH session, opened BEFORE the apply, was not tracked: the first outgoing packet
+# after it reaches conntrack in the middle of the connection and leaves as invalid or as NEW -
+# and both get dropped (by the invalid drop or by the internal network rejection). The V Rising
+# installation hung like that, with the end of the log stuck in the socket queue and the
+# operation "executando" forever. Measured in docker/ct-sandbox/firewall.sh ("sessao anterior
+# ao apply"): with the rule after `invalid drop` the case keeps failing.
 output_game_first() {
   local mgmt
   mgmt="$(addr_list FW_MGMT_SOURCES "${FW_MGMT_SOURCES:-}")"
@@ -205,8 +207,9 @@ output_game_first() {
 }
 
 output_game() {
-  # Internet liberada (Steam, apt, Proton do GitHub); rede interna nao. `reject` e nao `drop`:
-  # quem tentar ve o erro na hora, em vez de esperar um timeout que parece rede lenta.
+  # Internet allowed (Steam, apt, Proton from GitHub); internal network not. `reject`, not `drop`:
+  # whoever tries sees the error right away, instead of waiting for a timeout that looks like a
+  # slow network.
   dns_rules
   printf '    ip daddr { %s } reject with icmp type admin-prohibited\n' "$PRIVATE_V4"
   printf '    ip6 daddr { %s } reject with icmpv6 type admin-prohibited\n' "$PRIVATE_V6"
@@ -228,9 +231,9 @@ output_broker() {
   printf '    ip daddr . tcp dport { %s } accept\n' "$pairs"
   printf '    ip daddr { %s } tcp dport 22 accept\n' "$games"
   printf '    ip daddr { %s } icmp type echo-request accept\n' "$games"
-  # apt (atualizacao do proprio CT), so para a internet.
+  # apt (updates of the CT itself), only towards the internet.
   printf '    ip daddr != { %s } tcp dport { 80, 443 } accept\n' "$PRIVATE_V4"
-  # O resto sai com recusa visivel; a politica da cadeia e drop.
+  # Everything else leaves with a visible rejection; the chain policy is drop.
   printf '    reject with icmpx type admin-prohibited\n'
 }
 
@@ -247,7 +250,7 @@ render() {
   common_head iif
   "input_${FW_ROLE}"
   printf '  }\n\n'
-  # CT nao roteia nada: o que chegar para encaminhar e engano ou ataque.
+  # A CT routes nothing: anything arriving to be forwarded is a mistake or an attack.
   printf '  chain forward {\n    type filter hook forward priority filter; policy drop;\n  }\n\n'
   printf '  chain output {\n    type filter hook output priority filter; policy %s;\n' "$out_policy"
   [[ "$FW_ROLE" != game ]] || output_game_first
@@ -270,11 +273,11 @@ cmd_apply() {
   local tmp
   tmp="$(mktemp)"
   trap 'rm -f "$tmp"' RETURN
-  # Gera ANTES de mexer em qualquer coisa: valor torto para aqui, com a regra antiga intacta.
+  # Render BEFORE touching anything: a malformed value stops here, with the old rules intact.
   render > "$tmp"
   ensure_nft
-  # `nft -c` confere no kernel sem carregar: uma regra que nao entra nao pode virar o arquivo
-  # de boot, senao o CT subiria sem firewall nenhum da proxima vez.
+  # `nft -c` checks against the kernel without loading: a rule that does not go in cannot become
+  # the boot file, otherwise the CT would come up with no firewall at all next time.
   nft -c -f "$tmp" || die "o kernel recusou as regras; nada foi alterado"
   install -m 0644 "$tmp" "$RULES"
   nft -f "$RULES"

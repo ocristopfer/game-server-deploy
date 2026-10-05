@@ -1,18 +1,18 @@
-"""Contratos dos quatro mundos com que o broker conversa.
+"""Contracts for the four worlds the broker talks to.
 
-O servico so conhece estas interfaces. Quem responde sao `proxmox.py`/`opnsense.py` em
-producao e `fakes.py` nos testes.
+The service only knows these interfaces. Whoever answers is `proxmox.py`/`opnsense.py` in
+production and `fakes.py` in tests.
 
-Os nomes descrevem o PAPEL (`Compute`, `Ingress`) e nao o produto, e a instancia se
-identifica por um `handle` opaco em vez de um `ctid`. Ver `docs/docker-backend-plan.md`,
-secao 1: o substantivo do Proxmox tinha atravessado servico, banco e contrato da API, e
-isso e barato de desfazer com zero instancias e caro com dez. O que NAO foi feito junto
-esta na mesma secao, com o motivo: as secoes 1.5 a 1.7 desenham para um backend que ainda
-nao existe, e a secao 0 do proprio plano diz que abstracao antes da primeira criacao real
-codifica palpite.
+The names describe the ROLE (`Compute`, `Ingress`) and not the product, and the instance is
+identified by an opaque `handle` instead of a `ctid`. See `docs/docker-backend-plan.md`,
+section 1: the Proxmox noun had crossed the service, the database and the API contract, and
+that is cheap to undo with zero instances and expensive with ten. What was NOT done at the
+same time is in the same section, with the reason: sections 1.5 to 1.7 design for a backend
+that does not exist yet, and section 0 of the plan itself says that abstraction before the
+first real creation encodes a guess.
 
-Regra para toda implementacao real: mensagem de erro NAO pode carregar token, senha ou
-corpo de resposta bruto - o texto vai parar no log da operacao e o painel o exibe.
+Rule for every real implementation: an error message must NOT carry a token, password or raw
+response body - the text ends up in the operation log and the panel displays it.
 """
 from __future__ import annotations
 
@@ -27,8 +27,8 @@ from gamebroker.services.catalog import Game
 
 @dataclass(frozen=True)
 class InstanceSpec:
-    # Opaco de proposito: no Proxmox e o CTID em texto ("307"), no Docker seria o nome do
-    # container. Quem o escolhe e quem cria — o servico so o carrega.
+    # Opaque on purpose: on Proxmox it is the CTID as text ("307"), on Docker it would be the
+    # container name. Whoever creates it picks it - the service only carries it.
     handle: str
     hostname: str
     ip: str
@@ -39,15 +39,15 @@ class InstanceSpec:
 
 
 class Compute(Protocol):
-    """Onde a instancia RODA. Hoje so ha o Proxmox; o nome descreve o papel, e nao o
-    produto, porque `Proxmox` num Protocol e `ctid` num campo sao os dois substantivos
-    que ficam caros de tirar depois que houver instancia em producao."""
+    """Where the instance RUNS. Today there is only Proxmox; the name describes the role, not
+    the product, because `Proxmox` in a Protocol and `ctid` in a field are the two nouns that
+    become expensive to remove once there are instances in production."""
 
     def handles_and_ips(self) -> tuple[set[str], set[str]]:
-        """Handles e IPs que o compute ja usa (de qualquer dono, nao so do broker)."""
+        """Handles and IPs the compute already uses (by any owner, not just the broker)."""
 
     def create(self, spec: InstanceSpec) -> None:
-        """Cria a instancia no espaco do broker, a partir do modelo do jogo."""
+        """Creates the instance in the broker's space, from the game's template."""
 
     def start(self, handle: str) -> None: ...
 
@@ -56,22 +56,22 @@ class Compute(Protocol):
     def destroy(self, handle: str) -> None: ...
 
     def belongs_to_broker(self, handle: str) -> bool:
-        """So `True` para instancia que o broker criou (no Proxmox: o pool)."""
+        """`True` only for an instance the broker created (on Proxmox: the pool)."""
 
     def reachable(self) -> bool: ...
 
 
 class Ingress(Protocol):
-    """Quem abre a porta para a internet. Hoje so ha o OPNsense."""
+    """Who opens the port to the internet. Today there is only OPNsense."""
 
     def external_ports(self) -> set[tuple[int, str]]:
-        """Portas ja redirecionadas no WAN, por qualquer regra (nao so as do broker)."""
+        """Ports already forwarded on the WAN, by any rule (not just the broker's)."""
 
     def open_ports(self, handle: str, ip: str, ports: Sequence[AllocatedPort]) -> None:
-        """Cria as regras `gamepanel:<handle>` (destino = ip) e aplica. Idempotente."""
+        """Creates the `gamepanel:<handle>` rules (destination = ip) and applies. Idempotent."""
 
     def close_ports(self, handle: str) -> None:
-        """Apaga SO as regras `gamepanel:<handle>` e aplica. Idempotente."""
+        """Deletes ONLY the `gamepanel:<handle>` rules and applies. Idempotent."""
 
     def reachable(self) -> bool: ...
 
@@ -79,17 +79,18 @@ class Ingress(Protocol):
 class Installer(Protocol):
     def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],
                  log: Callable[[str], None], cancel: threading.Event | None = None) -> None:
-        """Instala o jogo dentro do CT por SSH e remove a chave do broker ao terminar.
+        """Installs the game inside the CT over SSH and removes the broker key when done.
 
-        `cancel` acionado no meio: para o que estiver rodando e levanta erro. Quem desfaz o
-        CT e o servico (`_undo`), como em qualquer outra falha.
+        `cancel` triggered midway: stops whatever is running and raises an error. Undoing the
+        CT is the service's job (`_undo`), as with any other failure.
 
-        Continua recebendo IP, e nao handle: quem instala fala SSH com a maquina, nao com
-        quem a criou. Tirar o instalador do servico e deixa-lo como detalhe do compute e a
-        secao 1.6 do plano do Docker, adiada com o resto (ver o cabecalho deste arquivo).
+        It still receives the IP, not the handle: the installer talks SSH to the machine, not
+        to whoever created it. Taking the installer out of the service and making it a detail
+        of the compute is section 1.6 of the Docker plan, postponed with the rest (see this
+        file's header).
         """
 
 
 class Network(Protocol):
     def answers(self, ip: str) -> bool:
-        """Alguem na LAN usa esse IP? (ping/ARP)"""
+        """Is anyone on the LAN using this IP? (ping/ARP)"""

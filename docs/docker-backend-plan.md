@@ -1,407 +1,412 @@
-# Plano: instâncias Docker no broker, e o vazamento do Proxmox
+# Plan: Docker instances in the broker, and the Proxmox leak
 
-> Escrito depois de ler `src/gamebroker/` inteiro (~2.9k linhas) e a camada
-> `src/gamepanel/runtime/`. Nada foi movido nem editado para produzir este documento.
-> Ele existe para ser aprovado antes de alguém mexer em arquivo.
+> **Status:** partially executed. Phase 1 items 1.1-1.4 (the `handle`/`backend` rename in
+> data and contract) are done; 1.5-1.7 and Phases 2-3 (the Docker backend itself) have not
+> started, and remain blocked on Phase 0 - a first real end-to-end creation against
+> Proxmox/OPNsense, which has not happened yet.
+
+> Written after reading all of `src/gamebroker/` (~2.9k lines) and the
+> `src/gamepanel/runtime/` layer. Nothing was moved or edited to produce this document.
+> It exists to be approved before anyone touches a file.
 >
-> Companheiro de [`architecture-analysis.md`](architecture-analysis.md) e
-> [`architecture-proposal.md`](architecture-proposal.md), que descrevem a reorganização
-> de pastas (Fases 1-4). Este aqui é sobre **o que o broker cria**, não sobre onde o
-> código mora.
+> Companion to [`architecture-analysis.md`](architecture-analysis.md) and
+> [`architecture-proposal.md`](architecture-proposal.md), which describe the folder
+> reorganization (Phases 1-4). This one is about **what the broker creates**, not about where
+> the code lives.
 
 ---
 
-## 0. A decisão, antes do plano
+## 0. The decision, before the plan
 
-A pergunta que originou isto foi "suporto todos os modos (Proxmox, Docker, Kubernetes)
-ou migro para um só?". A resposta é **nenhuma das duas**:
+The question that started this was "do I support every mode (Proxmox, Docker, Kubernetes)
+or migrate to just one?". The answer is **neither**:
 
-- **Não "suportar todos"**: ainda não houve UMA criação real de ponta a ponta contra o
-  Proxmox/OPNsense de verdade. Abstração desenhada antes da primeira execução real
-  codifica palpite — e o palpite depois tem que ser consertado em três implementações
-  em vez de uma. Três backends não testados é pior que um testado, ainda mais num
-  sistema em que o painel tem root dentro dos containers.
-- **Não "migrar para K8s"**: K8s vende agendamento entre nós. Há **um** host Proxmox e
-  **um** OPNsense. Num host só o custo de operação é alto e a rede piora: o invariante
-  "porta interna == externa, sempre" (correto — o jogo anuncia a própria porta na lista
-  da Steam) briga com NodePort, que vive em 30000-32767, em cima da faixa 31000-31999
-  do broker.
+- **Not "support every mode"**: there has not yet been ONE real end-to-end creation against
+  the real Proxmox/OPNsense. An abstraction designed before the first real run
+  encodes a guess - and the guess then has to be fixed in three implementations
+  instead of one. Three untested backends are worse than one tested, especially in a
+  system where the panel has root inside the containers.
+- **Not "migrate to K8s"**: K8s sells scheduling across nodes. There is **one** Proxmox host and
+  **one** OPNsense. On a single host the operating cost is high and networking gets worse: the
+  invariant "internal port == external port, always" (correct - the game announces its own port
+  in the Steam list) fights with NodePort, which lives in 30000-32767, right on top of the broker's
+  31000-31999 range.
 
-O que este plano faz: **mantém o Proxmox como único backend em produção, tira o
-vocabulário dele de onde é caro mudar depois, e acrescenta Docker como o SEGUNDO
-backend** — porque dois backends é o número que prova uma abstração. Um é chute, três é
-imposto.
+What this plan does: **keeps Proxmox as the only backend in production, takes its
+vocabulary out of the places where it is expensive to change later, and adds Docker as the
+SECOND backend** - because two backends is the number that proves an abstraction. One is a guess,
+three is a tax.
 
-### O que "escala" quer dizer aqui
+### What "scale" means here
 
-Vale registrar o que NÃO limita escala hoje, para o Docker não ser vendido como cura do
-que ele não cura:
+It is worth recording what does NOT limit scale today, so Docker is not sold as the cure for
+what it does not cure:
 
-| limite atual | onde |
+| current limit | where |
 |---|---|
-| 8 instâncias, 4 criações/hora | `instance_service.Config` |
-| uma operação por vez, global | `db.Db.operation_in_progress` |
-| 1 worker gunicorn (a trava de IP mora na memória) | `provision-broker-lxc.sh` |
-| ~1000 portas na faixa, 1 IP WAN | `BROKER_PORT_INICIO/FIM` |
-| disco cheio por instância (SteamCMD inteiro) | o `disk_gb` de cada jogo |
+| 8 instances, 4 creations/hour | `instance_service.Config` |
+| one operation at a time, global | `db.Db.operation_in_progress` |
+| 1 gunicorn worker (the IP lockout lives in memory) | `provision-broker-lxc.sh` |
+| ~1000 ports in the range, 1 WAN IP | `BROKER_PORT_INICIO/FIM` |
+| full disk per instance (the whole SteamCMD) | each game's `disk_gb` |
 
-Trocar de backend não mexe nos quatro primeiros. Mexe no quinto — e é aí que mora o
-**único argumento técnico bom** a favor do Docker: camadas compartilhadas, criação em
-segundos em vez de um SteamCMD completo, sem SO por instância.
-
----
-
-## 1. Fase 0 (bloqueio): a criação real no Proxmox
-
-**Nada deste plano começa antes disso.** É o item que já está listado como "o que sobra"
-no `architecture-proposal.md`. Motivo: a primeira criação de verdade é o que decide se o
-backend de compute precisa de mais um verbo, se o instalador precisa de retry, se a
-sonda de saúde precisa de outro prazo. Descobrir isso com dois backends escritos custa o
-dobro.
-
-Se a criação real revelar algo que muda a forma das interfaces, **este documento é
-atualizado antes da Fase 1 continuar**.
+Switching backend does not touch the first four. It touches the fifth - and that is where the
+**only good technical argument** for Docker lives: shared layers, creation in
+seconds instead of a full SteamCMD, no OS per instance.
 
 ---
 
-## 2. Qual Docker: "máquina pequena" ou "container idiomático"
+## 1. Phase 0 (blocker): the real creation on Proxmox
 
-Existem dois desenhos possíveis, e a diferença entre eles é a diferença entre um plano
-de dias e um de meses.
+**Nothing in this plan starts before this.** It is the item already listed as "what is left"
+in `architecture-proposal.md`. Reason: the first real creation is what decides whether the
+compute backend needs one more verb, whether the installer needs a retry, whether the
+health probe needs a different timeout. Finding that out with two backends written costs
+double.
 
-### Modelo A — container como máquina pequena (RECOMENDADO)
-
-O container roda `sshd` e tem um `systemctl` de verdade (ou o shim), o jogo é uma unit,
-e cada instância ganha um IP da LAN (rede `macvlan` ou bridge com IP fixo).
-
-Do ponto de vista do painel, **é indistinguível de um CT**:
-
-- a tabela de comandos do painel (`systemctl start/restart/stop`) continua valendo;
-- `status_service` (`systemctl show`), `metrics_probe` (o `MainPID`), `log_probe`,
-  `backups`, `files` e `terminal` continuam valendo;
-- a tabela `servers` (`host`, `ssh_port`, `ssh_user`, `service`) continua valendo;
-- porta interna == externa continua valendo, e o NAT do OPNsense continua apontando
-  para um IP da LAN.
-
-Isso não é teoria: `ssh.py` já abre dizendo que fala com o container de jogo "(LXC ou
-Docker)", e o `docker compose` de desenvolvimento já sobe dois containers de jogo com
-sshd e `systemctl` falso. **O painel não muda em nada** — zero dos 964 testes em risco.
-
-Onde está o ganho de escala: a instalação (`ct-phases.sh`) deixa de ser um passo
-pós-criação por SSH e vira o **build de uma imagem por jogo**. Instala-se o Palworld uma
-vez; a décima instância nasce em segundos e divide as camadas em disco.
-
-### Modelo B — container idiomático
-
-Uma imagem por jogo com PID 1 = o jogo, sem sshd, sem systemd, log por `docker logs`,
-shell por `docker exec`, arquivo por volume.
-
-Mais "correto" em espírito, e é o degrau obrigatório se um dia for K8s. Mas cobra o
-preço inteiro: as oito sondas de `gamepanel/runtime/` precisam de um segundo
-**transporte**, e a tabela de comandos precisa deixar de ser uma lista de linhas de
-`systemctl`. Isso é reescrever o lado de 964 testes do repositório, não o de 901.
-
-### Decisão
-
-**Modelo A agora. Modelo B fica registrado como uma decisão futura**, condicionada a
-"preciso de mais de um host" — e nesse dia o passo 1 é o transporte do painel, não o
-backend do broker.
-
-Consequência importante: **com o Modelo A, a alocação de IP, a alocação de portas e o
-OPNsense não mudam nada.** O backend Docker precisa apenas de: criar, iniciar, parar,
-destruir, dizer se um container é dele, e dizer o que já está ocupado.
+If the real creation reveals something that changes the shape of the interfaces, **this document is
+updated before Phase 1 continues**.
 
 ---
 
-## 3. Fase 1 — tirar o Proxmox do vocabulário (só broker)
+## 2. Which Docker: "small machine" or "idiomatic container"
 
-> **Estado: 1.1 a 1.4 feitos; 1.5 a 1.7 adiados, de propósito.** O corte não foi por
-> cansaço: 1.1–1.4 mudam **dado e contrato**, que é o que fica caro depois que houver
-> instância em produção. 1.5, 1.6 e 1.7 desenham interface para um backend que ainda não
-> existe — e a seção 0 deste documento diz, com razão, que abstração antes da primeira
-> criação real codifica palpite. `propose_handle`/`taken_handles` com uma implementação só
-> esconderia que o serviço continua sabendo de `ctid_base`; o `BROKER_BACKEND` seria uma
-> variável com um valor válido.
+There are two possible designs, and the difference between them is the difference between a plan
+of days and one of months.
+
+### Model A - container as a small machine (RECOMMENDED)
+
+The container runs `sshd` and has a real `systemctl` (or the shim), the game is a unit,
+and each instance gets a LAN IP (`macvlan` network or a bridge with a fixed IP).
+
+From the panel's point of view, **it is indistinguishable from a CT**:
+
+- the panel's command table (`systemctl start/restart/stop`) still holds;
+- `status_service` (`systemctl show`), `metrics_probe` (the `MainPID`), `log_probe`,
+  `backups`, `files` and `terminal` still hold;
+- the `servers` table (`host`, `ssh_port`, `ssh_user`, `service`) still holds;
+- internal port == external port still holds, and the OPNsense NAT keeps pointing
+  at a LAN IP.
+
+This is not theory: `ssh.py` already opens by saying it talks to the game container "(LXC or
+Docker)", and the development `docker compose` already starts two game containers with
+sshd and a fake `systemctl`. **The panel does not change at all** - zero of the 964 tests at risk.
+
+Where the scale gain is: installation (`ct-phases.sh`) stops being a
+post-creation step over SSH and becomes the **build of one image per game**. Palworld is installed
+once; the tenth instance is born in seconds and shares the layers on disk.
+
+### Model B - idiomatic container
+
+One image per game with PID 1 = the game, no sshd, no systemd, logs via `docker logs`,
+shell via `docker exec`, files via a volume.
+
+More "correct" in spirit, and it is the mandatory step if it is ever K8s. But it charges the
+full price: the eight probes in `gamepanel/runtime/` need a second
+**transport**, and the command table needs to stop being a list of
+`systemctl` lines. That means rewriting the 964-test side of the repository, not the 901 side.
+
+### Decision
+
+**Model A now. Model B stays recorded as a future decision**, conditioned on
+"I need more than one host" - and on that day step 1 is the panel transport, not the
+broker backend.
+
+Important consequence: **with Model A, IP allocation, port allocation and
+OPNsense do not change at all.** The Docker backend only needs to: create, start, stop,
+destroy, say whether a container is its own, and say what is already taken.
+
+---
+
+## 3. Phase 1 - taking Proxmox out of the vocabulary (broker only)
+
+> **Status: 1.1 to 1.4 done; 1.5 to 1.7 postponed, on purpose.** The cut was not out of
+> fatigue: 1.1-1.4 change **data and contract**, which is what becomes expensive once there is an
+> instance in production. 1.5, 1.6 and 1.7 design an interface for a backend that does not yet
+> exist - and section 0 of this document says, rightly, that an abstraction before the first
+> real creation encodes a guess. `propose_handle`/`taken_handles` with a single implementation would
+> hide that the service still knows about `ctid_base`; `BROKER_BACKEND` would be a
+> variable with one valid value.
 >
-> **Duas coisas que o plano não previu e que a execução encontrou:**
+> **Two things the plan did not anticipate and the execution found:**
 >
-> 1. **`ALTER TABLE ... RENAME COLUMN` preserva a AFINIDADE.** A coluna continua declarada
->    `INTEGER`, então num banco migrado o CTID antigo volta do `SELECT` como `int`, e um
->    `CAST(... AS TEXT)` não adianta — a afinidade converte de volta ao gravar (conferido
->    no sqlite3 desta máquina). Um handle não-numérico, como `palworld-1`, entra como texto
->    normalmente: a afinidade só converte o que *parece* número. Sem tratar isso a coluna
->    fica de tipo misto e `{"307"} | {307}` não se deduplica — a checagem de handle ocupado
->    passaria quando não devia. Reconstruir a tabela corrigiria a declaração e custa caro
->    (`ports` tem `ON DELETE CASCADE` para `instances`), então a saída é normalizar na
->    leitura, com `str()`, em `db.taken` e `wire.instance`. Há teste para os dois lados.
-> 2. **O `int(ctid)` do `instance_description` era um guard.** Era ele que recusava
->    `"300; drop"`, e com o handle opaco ele sairia junto — o teste da descrição pegou.
->    A descrição vai para o campo `descr` da regra e o `close_ports` a casa por IGUALDADE:
->    um handle estranho não viraria injeção de shell, mas quebraria o casamento e deixaria
->    **regra órfã no firewall**, que é o jeito silencioso de uma porta ficar aberta para um
->    container que não existe mais. Hoje há `HANDLE_RE` (token simples, `re.ASCII`).
+> 1. **`ALTER TABLE ... RENAME COLUMN` preserves the AFFINITY.** The column stays declared
+>    `INTEGER`, so in a migrated database the old CTID comes back from `SELECT` as an `int`, and a
+>    `CAST(... AS TEXT)` does not help - the affinity converts it back on write (checked
+>    in this machine's sqlite3). A non-numeric handle, like `palworld-1`, goes in as text
+>    normally: the affinity only converts what *looks* like a number. Without handling this the
+>    column has a mixed type and `{"307"} | {307}` does not deduplicate - the taken-handle check
+>    would pass when it should not. Rebuilding the table would fix the declaration but is expensive
+>    (`ports` has `ON DELETE CASCADE` to `instances`), so the way out is to normalize on
+>    read, with `str()`, in `db.taken` and `wire.instance`. There is a test for both sides.
+> 2. **The `int(ctid)` in `instance_description` was a guard.** It was what rejected
+>    `"300; drop"`, and with the opaque handle it would have gone away too - the description test caught it.
+>    The description goes into the rule's `descr` field and `close_ports` matches it by EQUALITY:
+>    a weird handle would not become shell injection, but it would break the matching and leave an
+>    **orphan rule in the firewall**, which is the silent way for a port to stay open for a
+>    container that no longer exists. Today there is `HANDLE_RE` (a simple token, `re.ASCII`).
 >
-> Provado contra o broker de brinquedo do compose, ao vivo: uma instância criada com o
-> esquema antigo (`ctid=302`, INTEGER) sobrevive à migration e volta no fio como
-> `handle: "302"` **str**, ao lado de uma nova `"303"`; e a tela mostra `proxmox 303` no
-> lugar do antigo `CT 300`.
+> Proven against the toy broker in the compose setup, live: an instance created with the
+> old schema (`ctid=302`, INTEGER) survives the migration and comes back over the wire as
+> `handle: "302"` **str**, next to a new `"303"`; and the screen shows `proxmox 303` in
+> place of the old `CT 300`.
 
-A camada de portas já existe e está limpa: `base.py` define quatro Protocols e
-`instance_service.py` não conhece mais nada. O problema não é a interface, é o
-**substantivo**: `ctid` atravessou o serviço, o banco e o contrato da API.
+The port layer already exists and is clean: `base.py` defines four Protocols and
+`instance_service.py` knows nothing else. The problem is not the interface, it is the
+**noun**: `ctid` went through the service, the database and the API contract.
 
-Cada item abaixo é caro depois e barato hoje (zero instâncias em produção).
+Each item below is expensive later and cheap today (zero instances in production).
 
-### 1.1 `base.py` — os nomes das interfaces
+### 1.1 `base.py` - the interface names
 
-| hoje | vira | por quê |
+| today | becomes | why |
 |---|---|---|
-| `Proxmox` | `Compute` | o Protocol descreve "onde a instância roda", não um produto |
-| `Opnsense` | `Ingress` | idem: "quem abre a porta para a internet" |
-| `CtSpec` | `InstanceSpec` | CT é LXC; Docker não tem CT |
-| o campo `ctid: int` | o campo `handle: str` | opaco: `"307"` no Proxmox, nome do container no Docker |
-| `Installer` | (ver 1.6) | é o único que não generaliza |
+| `Proxmox` | `Compute` | the Protocol describes "where the instance runs", not a product |
+| `Opnsense` | `Ingress` | same: "who opens the port to the internet" |
+| `CtSpec` | `InstanceSpec` | CT is LXC; Docker has no CT |
+| the `ctid: int` field | the `handle: str` field | opaque: `"307"` on Proxmox, the container name on Docker |
+| `Installer` | (see 1.6) | it is the only one that does not generalize |
 
-`Network` fica como está.
+`Network` stays as it is.
 
-### 1.2 O `handle` sobe pelo serviço inteiro
+### 1.2 The `handle` goes up through the whole service
 
-`instance_service` hoje escreve `inst["ctid"]` em oito lugares (criar, desfazer,
-desativar, remover, a checagem de dono e a destruição). Todos passam a `handle`.
+`instance_service` today writes `inst["ctid"]` in eight places (create, undo,
+deactivate, remove, the ownership check and the destruction). All of them become `handle`.
 
-A assinatura de abrir/fechar portas muda junto — e com ela a descrição da regra no
-OPNsense, que hoje é `gamepanel:<ctid>` e passa a ser `gamepanel:<handle>`.
+The open/close ports signature changes along with it - and with it the rule description in
+OPNsense, which today is `gamepanel:<ctid>` and becomes `gamepanel:<handle>`.
 
-> **Armadilha**: `opnsense.close_ports` casa a descrição por **igualdade** (de
-> propósito — por prefixo, apagar o 30 levaria o 300 junto). Mudar o formato da
-> descrição **órfã qualquer regra já criada**. Com zero instâncias isso é de graça;
-> com dez, é uma limpeza manual no OPNsense. É mais um motivo para fazer agora.
+> **Trap**: `opnsense.close_ports` matches the description by **equality** (on
+> purpose - by prefix, deleting 30 would take 300 with it). Changing the description
+> format **orphans any rule already created**. With zero instances that is free;
+> with ten, it is a manual cleanup in OPNsense. One more reason to do it now.
 
-### 1.3 Banco: `handle` e `backend`
+### 1.3 Database: `handle` and `backend`
 
-Em `db.py`:
+In `db.py`:
 
 ```sql
 ctid INTEGER NOT NULL UNIQUE   -->   handle  TEXT NOT NULL UNIQUE
                                      backend TEXT NOT NULL DEFAULT 'proxmox'
 ```
 
-Precisa de migration no mesmo espírito do `_migrate_names` que já existe (a pergunta
-dele é "a tabela ainda tem o nome velho?"; a nova é "ainda existe a coluna `ctid`?").
-SQLite faz `ALTER TABLE ... RENAME COLUMN`, que preserva os dados — tabela nova mais
-cópia é onde se perde linha.
+It needs a migration in the same spirit as the existing `_migrate_names` (its question
+is "does the table still have the old name?"; the new one is "does the `ctid` column still exist?").
+SQLite does `ALTER TABLE ... RENAME COLUMN`, which preserves the data - a new table plus
+copy is where rows get lost.
 
-`backend` tem default para que o banco de quem já rodava continue válido sem
-adivinhação.
+`backend` has a default so that the database of whoever was already running stays valid without
+guesswork.
 
-Teste: `test_migration.py` monta o esquema antigo à mão; ganha um caso novo. Os outros
-testes vivem num banco novo e não exercitam migration nenhuma.
+Test: `test_migration.py` builds the old schema by hand; it gets a new case. The other
+tests live in a fresh database and exercise no migration at all.
 
-### 1.4 `wire.py` — o contrato com o painel
+### 1.4 `wire.py` - the contract with the panel
 
-O formato de fio da instância passa a levar `handle` e `backend` **no lugar de** `ctid`.
+The instance wire format starts carrying `handle` and `backend` **instead of** `ctid`.
 
-O painel lê `ctid` em **um** lugar só: `instances.html`, na linha que mostra
-`{{ i.game }} · {{ i.ip }} · CT {{ i.ctid }}`. Por isso a troca pode ser limpa em vez de
-ter um período de compatibilidade com os dois campos — e um campo de compatibilidade que
-ninguém remove é como um `SELECT *` volta pela porta dos fundos.
+The panel reads `ctid` in **one** place only: `instances.html`, in the line that shows
+`{{ i.game }} · {{ i.ip }} · CT {{ i.ctid }}`. That is why the switch can be clean instead of
+having a compatibility period with both fields - and a compatibility field that
+nobody removes is how a `SELECT *` comes back through the back door.
 
-> É exatamente para isto que a camada de fio foi criada: o formato muda com o painel
-> junto, o esquema do banco muda com uma migration, e os dois não se arrastam.
+> This is exactly what the wire layer was created for: the format changes together with the
+> panel, the database schema changes with a migration, and neither drags the other.
 
-### 1.5 `allocator.py` — a regra "CTID = 300 + octeto" é do Proxmox
+### 1.5 `allocator.py` - the "CTID = 300 + octet" rule belongs to Proxmox
 
-`allocator.pick_ip_and_ctid` codifica uma convenção ótima e **específica do Proxmox**:
-ler o IP e saber o CTID de cabeça. No Docker não há número nenhum para derivar.
+`allocator.pick_ip_and_ctid` encodes a great and **Proxmox-specific** convention:
+read the IP and know the CTID by heart. On Docker there is no number to derive.
 
-Proposta: o allocator continua puro e ganha a forma genérica; quem decide o handle é o
-backend, por dois verbos novos no Protocol de compute:
+Proposal: the allocator stays pure and gains the generic form; the one that decides the handle is the
+backend, through two new verbs in the compute Protocol:
 
 ```
-propose_handle(ip)  ->  str     # proxmox: str(ctid_base + octeto); docker: o hostname
-taken_handles()     ->  set     # substitui a metade "ctids" do que hoje é ctids_and_ips
+propose_handle(ip)  ->  str     # proxmox: str(ctid_base + octet); docker: the hostname
+taken_handles()     ->  set     # replaces the "ctids" half of what is today ctids_and_ips
 ```
 
-`pick_ip_and_ctid` vira uma escolha de endereço genérica — mesma lógica ("um IP só serve
-se o handle dele também estiver livre"), sem a aritmética do CTID dentro. A aritmética
-mora em `proxmox.py`, que é de quem ela é.
+`pick_ip_and_ctid` becomes a generic address choice - same logic ("an IP is only usable
+if its handle is also free"), without the CTID arithmetic inside. The arithmetic
+lives in `proxmox.py`, which is where it belongs.
 
-`BROKER_CTID_BASE` / `BROKER_CTID_INICIO` / `BROKER_CTID_FIM` continuam com esses nomes:
-variável de ambiente é **dado gravado em disco**, e renomear exige mexer no
-`deploy-broker.ps1`, no `provision-broker-lxc.sh` e no `broker.env` de quem já fez
-deploy. Elas passam a ser lidas só pelo backend Proxmox.
+`BROKER_CTID_BASE` / `BROKER_CTID_INICIO` / `BROKER_CTID_FIM` keep those names:
+an environment variable is **data written to disk**, and renaming requires touching
+`deploy-broker.ps1`, `provision-broker-lxc.sh` and the `broker.env` of whoever already
+deployed. They start being read only by the Proxmox backend.
 
-### 1.6 O instalador é o Protocol que não generaliza
+### 1.6 The installer is the Protocol that does not generalize
 
-O `Installer` recebe um IP e fala SSH, porque o modelo é "sobe um CT vazio e instala
-dentro". No Modelo A de Docker **não existe etapa de instalação em runtime** — a imagem
-já é o jogo instalado.
+The `Installer` receives an IP and speaks SSH, because the model is "bring up an empty CT and install
+inside". In Docker Model A **there is no installation step at runtime** - the image
+already is the installed game.
 
-Proposta: ele deixa de ser um parâmetro do serviço e passa a ser detalhe de quem
-implementa o compute. Quem materializa a instância é quem sabe como o jogo chega lá:
+Proposal: it stops being a parameter of the service and becomes a detail of whoever
+implements compute. Whoever materializes the instance is whoever knows how the game gets there:
 
-- o backend Proxmox recebe o instalador por SSH no construtor e o chama dentro do
+- the Proxmox backend receives the SSH installer in its constructor and calls it inside
   `create`;
-- o backend Docker não recebe nada: a imagem já traz tudo.
+- the Docker backend receives nothing: the image already brings everything.
 
-O `_build` do serviço fica com um passo a menos (cria → inicia → abre firewall), e o
-`log` de progresso passa a ser argumento do `create`, para a tela continuar mostrando em
-que fase a instalação está.
+The service's `_build` gets one step fewer (create -> start -> open firewall), and the
+progress `log` becomes an argument of `create`, so the screen keeps showing which
+phase the installation is in.
 
-> Alternativa considerada e descartada: manter o Protocol e dar um no-op ao Docker.
-> Descartada porque um no-op é uma mentira barata que sobrevive por anos — e porque o
-> log de fases ficaria vazio no Docker sem ninguém entender por quê.
+> Alternative considered and discarded: keep the Protocol and give Docker a no-op.
+> Discarded because a no-op is a cheap lie that survives for years - and because the
+> phase log would be empty on Docker without anyone understanding why.
 
-### 1.7 `config.py` — escolher o backend
+### 1.7 `config.py` - choosing the backend
 
-Uma variável nova, `BROKER_BACKEND` (`proxmox` | `docker`, padrão `proxmox`), lida no
-mesmo desenho que já existe: **lista TODOS os problemas de uma vez, só pelo NOME da
-variável**, nunca o valor, e config ruim derruba o START (`SystemExit(2)`), nunca um
-pedido.
+A new variable, `BROKER_BACKEND` (`proxmox` | `docker`, default `proxmox`), read with the
+design that already exists: **list ALL problems at once, only by the variable NAME**,
+never the value, and bad config brings down the START (`SystemExit(2)`), never a
+request.
 
-Cada backend exige um conjunto próprio de variáveis. A validação tem que ser
-**condicional ao backend escolhido** — cobrar a URL do Proxmox de quem escolheu Docker
-transformaria a mensagem de erro em ruído, que é justamente o que esse desenho existe
-para evitar.
+Each backend requires its own set of variables. Validation has to be
+**conditional on the chosen backend** - demanding the Proxmox URL from someone who chose Docker
+would turn the error message into noise, which is exactly what that design exists
+to avoid.
 
 ---
 
-## 4. Fase 2 — o backend Docker
+## 4. Phase 2 - the Docker backend
 
-Arquivo novo: `src/gamebroker/runtime/docker.py`, implementando o Protocol de compute.
+New file: `src/gamebroker/runtime/docker.py`, implementing the compute Protocol.
 
-### 4.1 Como ele fala com o Docker
+### 4.1 How it talks to Docker
 
-**Por HTTP, reusando `http_client.Client`** — não pela CLI e não pela biblioteca `docker`
-do PyPI (o broker em produção também não baixa pacote de lugar nenhum; a regra de "só
-stdlib + o flask do apt" vale para os dois pacotes).
+**Over HTTP, reusing `http_client.Client`** - not through the CLI and not through the PyPI
+`docker` library (the broker in production also does not download packages from anywhere; the
+"stdlib only + apt's flask" rule applies to both packages).
 
-A API do Docker fala HTTP sobre um socket unix. O cliente hoje é HTTPS com impressão
-fixada; ele ganharia um modo "socket unix" — e aí a trava de segurança deixa de ser a
-impressão do certificado e passa a ser **a permissão do socket**, que é uma coisa
-diferente e precisa estar escrita no código.
+The Docker API speaks HTTP over a unix socket. The client today is HTTPS with a pinned
+fingerprint; it would gain a "unix socket" mode - and then the security lock stops being the
+certificate fingerprint and becomes **the socket permission**, which is a different
+thing and needs to be written in the code.
 
-> **Decisão de segurança a tomar ANTES de escrever o arquivo.** Acesso ao socket do
-> Docker é equivalente a root no host. Hoje o broker fala com um Proxmox REMOTO por token
-> com escopo de pool — o raio de ação é limitado pelo que o token enxerga. Com o socket
-> local não há escopo nenhum: um defeito no broker vira root no host inteiro, e o host é
-> onde o próprio broker mora.
+> **Security decision to make BEFORE writing the file.** Access to the Docker
+> socket is equivalent to root on the host. Today the broker talks to a REMOTE Proxmox with a
+> pool-scoped token - the blast radius is limited by what the token can see. With the local
+> socket there is no scope at all: a defect in the broker becomes root on the whole host, and the host is
+> where the broker itself lives.
 >
-> Opções, em ordem de preferência:
-> 1. **Docker num host separado**, por TCP com TLS e impressão fixada — que é exatamente
->    o que o `http_client` já sabe fazer, e mantém a simetria com o Proxmox.
-> 2. Proxy de socket com lista fechada de endpoints.
-> 3. Socket direto (só aceitável em desenvolvimento).
+> Options, in order of preference:
+> 1. **Docker on a separate host**, over TCP with TLS and a pinned fingerprint - which is exactly
+>    what `http_client` already knows how to do, and keeps the symmetry with Proxmox.
+> 2. A socket proxy with a closed list of endpoints.
+> 3. Direct socket (only acceptable in development).
 
-### 4.2 O que cada verbo faz
+### 4.2 What each verb does
 
-| verbo | Docker |
+| verb | Docker |
 |---|---|
-| `create` | `POST /containers/create`: imagem do jogo, rede macvlan com IP fixo, limites de memória/cpu, `restart=unless-stopped` |
+| `create` | `POST /containers/create`: game image, macvlan network with a fixed IP, memory/cpu limits, `restart=unless-stopped` |
 | `start` / `stop` / `destroy` | `POST /containers/{id}/start`, `/stop`, `DELETE /containers/{id}` |
-| `belongs_to_broker` | **label** `gamebroker=1` — o equivalente do pool do Proxmox |
-| `taken_handles` / endereços ocupados | `GET /containers/json?all=1` |
-| `propose_handle` | o hostname da instância (`<jogo>-<n>`), já único pelo índice do banco |
-| `reachable` | `GET /_ping`, com prazo curto |
+| `belongs_to_broker` | **label** `gamebroker=1` - the equivalent of the Proxmox pool |
+| `taken_handles` / taken addresses | `GET /containers/json?all=1` |
+| `propose_handle` | the instance hostname (`<game>-<n>`), already unique by the database index |
+| `reachable` | `GET /_ping`, with a short timeout |
 
-> **Armadilha herdada**: a identidade de um CT do broker é o **pool**, não a tag (a tag é
-> gravada depois; o token nem pode gravá-la na criação). No Docker a label pode ser
-> aplicada na criação, então a identidade é a label — mas ela é escrita por quem cria, e
-> um container feito à mão com a mesma label seria adotado. O `belongs_to_broker` do
-> Docker deve exigir **label E linha no banco**, que é o que o Proxmox já faz na prática.
+> **Inherited trap**: the identity of a broker CT is the **pool**, not the tag (the tag is
+> written later; the token cannot even write it at creation). On Docker the label can be
+> applied at creation, so the identity is the label - but it is written by whoever creates it, and
+> a container made by hand with the same label would be adopted. Docker's
+> `belongs_to_broker` must require **label AND a database row**, which is what Proxmox already does in practice.
 
-Prazo curto na sonda de saúde vale aqui também: um firewall que descarta pacote não pode
-fazer a saúde demorar 30 s.
+A short health probe timeout applies here too: a firewall that drops packets cannot
+make health take 30 s.
 
-### 4.3 A imagem do jogo
+### 4.3 The game image
 
-`ct-phases.sh` ganha um **terceiro consumidor**. Hoje são dois: `provision-game-lxc.sh`
-(no host, por `pct exec`) e `ct-install.sh` (dentro do CT, o que o broker roda por SSH).
-O terceiro é um `Dockerfile` que roda as mesmas fases num `RUN`.
+`ct-phases.sh` gets a **third consumer**. Today there are two: `provision-game-lxc.sh`
+(on the host, via `pct exec`) and `ct-install.sh` (inside the CT, what the broker runs over SSH).
+The third is a `Dockerfile` that runs the same phases in a `RUN`.
 
-Regras que continuam valendo e precisam de atenção:
+Rules that still apply and need attention:
 
-- `install.env` é sempre `shlex.quote`; receita desconhecida derruba a instalação;
-- hook (`PRE/POST_INSTALL_CMD`) só existe no catálogo curado, nunca em jogo da API;
-- escrever texto para o bash no Windows exige `newline="\n"` (o `\r` aparece depois como
+- `install.env` is always `shlex.quote`; an unknown recipe brings down the installation;
+- hooks (`PRE/POST_INSTALL_CMD`) only exist in the curated catalog, never in a game from the API;
+- writing text for bash on Windows requires `newline="\n"` (the `\r` shows up later as
   `WINDOWS_RUNTIME invalido: ''`).
 
-**A chave SSH do broker não entra na imagem.** No CT ela é removida no fim (a limpeza
-roda sempre, e se ela não sair a criação FALHA); numa imagem ela ficaria em camada,
-visível por `docker history` para sempre. O acesso do painel usa a chave do PAINEL,
-injetada na criação do container (`authorized_keys` por volume ou variável), nunca assada
-na imagem.
+**The broker's SSH key does not go into the image.** In the CT it is removed at the end (the cleanup
+always runs, and if the key does not come out the creation FAILS); in an image it would stay in a layer,
+visible through `docker history` forever. The panel's access uses the PANEL's key,
+injected at container creation (`authorized_keys` via volume or variable), never baked
+into the image.
 
-### 4.4 Prova
+### 4.4 Proof
 
-`docker/ct-sandbox/compare.sh` hoje compara "antes x depois" do instalador para 8 jogos
-com `pct`, `systemctl`, `apt-get` e SteamCMD falsos. Ele ganha um terceiro eixo: **host x
-broker x imagem Docker** — as três rotas têm que produzir o mesmo `install.env` e a mesma
-unit systemd. Sem isso a Fase 2 é no escuro: **não existe teste de shell no
-repositório**, a prova são os sandboxes.
+`docker/ct-sandbox/compare.sh` today compares the installer "before vs after" for 8 games
+with fake `pct`, `systemctl`, `apt-get` and SteamCMD. It gains a third axis: **host vs
+broker vs Docker image** - the three routes have to produce the same `install.env` and the same
+systemd unit. Without that Phase 2 is done in the dark: **there are no shell tests in the
+repository**, the proof is the sandboxes.
 
-Do lado Python: `fakes.py` ganha um dobrê de Docker (ao lado de `FakeProxmox`,
-`FakeOpnsense`, `FakeInstaller` e `FakeNetwork`), e `fake_http.py` ganha um servidor
-falso que responde a API do Docker — no mesmo desenho do falso do Proxmox, **repetindo as
-regras que o Docker real impõe**, para que regredir quebre teste.
-
----
-
-## 5. Fase 3 — o lado do painel
-
-Pequena, e só depois que a Fase 1 estiver no `main`.
-
-- `instances.html`: `CT {{ i.ctid }}` vira o par backend + handle. Lembrar da regra de
-  tabela no celular: **uma coluna** — com estado e ações em colunas próprias, as ações
-  saem da tela.
-- `i18n/pt.py` e `i18n/en.py`: chave nova para o rótulo do backend, **mesmas chaves nos
-  dois** (`test_i18n.py` cobra a paridade). Chave em inglês, no formato `area.assunto`,
-  nunca o português virado slug.
-- `broker_service.py`: repassar os campos novos. Nada além disso — quem decide é o
-  broker.
-- A tabela `servers` **não muda**. É o ponto todo do Modelo A.
+On the Python side: `fakes.py` gains a Docker double (next to `FakeProxmox`,
+`FakeOpnsense`, `FakeInstaller` and `FakeNetwork`), and `fake_http.py` gains a fake
+server that answers the Docker API - with the same design as the Proxmox fake, **repeating the
+rules the real Docker imposes**, so that regressing breaks a test.
 
 ---
 
-## 6. O que precisa passar antes de dizer que terminou
+## 5. Phase 3 - the panel side
 
-1. `uv run pytest` — a suíte inteira, da raiz (964 do painel + 901 do broker).
+Small, and only after Phase 1 is on `main`.
+
+- `instances.html`: `CT {{ i.ctid }}` becomes the backend + handle pair. Remember the
+  mobile table rule: **one column** - with state and actions in their own columns, the actions
+  go off screen.
+- `i18n/pt.py` and `i18n/en.py`: a new key for the backend label, **the same keys in
+  both** (`test_i18n.py` enforces parity). A key in English, in the `area.subject` format,
+  never the Portuguese text turned into a slug.
+- `broker_service.py`: pass the new fields through. Nothing beyond that - the broker is the one
+  that decides.
+- The `servers` table **does not change**. That is the whole point of Model A.
+
+---
+
+## 6. What needs to pass before saying it is done
+
+1. `uv run pytest` - the whole suite, from the root (964 from the panel + 901 from the broker).
 2. `MSYS_NO_PATHCONV=1 docker compose exec -T -w /workspace panel python3 -m pytest -q`
-   — no container, que é a verdade.
-3. `bash docker/ct-sandbox/compare.sh` — obrigatório, porque a Fase 2 mexe em fase de
-   instalação.
-4. `bash docker/ct-sandbox/broker.sh` — se `config.py` ou o provisionamento mudarem.
-5. A varredura de `curl` por todas as telas, como admin **e como operador** — template
-   quebrado não aparece em teste nenhum, e o 403 do operador mora ali.
-6. Uma criação real por backend, ponta a ponta. Backend que nunca criou nada de verdade
-   não está pronto, por mais verde que a suíte esteja.
+   - in the container, which is the truth.
+3. `bash docker/ct-sandbox/compare.sh` - mandatory, because Phase 2 touches an installation
+   phase.
+4. `bash docker/ct-sandbox/broker.sh` - if `config.py` or the provisioning change.
+5. The `curl` sweep through every screen, as admin **and as operator** - a broken
+   template does not show up in any test, and the operator's 403 lives there.
+6. One real creation per backend, end to end. A backend that never created anything for real
+   is not ready, however green the suite is.
 
 ---
 
-## 7. Fora do escopo, explicitamente
+## 7. Explicitly out of scope
 
-- **Kubernetes.** Volta à mesa quando houver mais de um host. O passo anterior a ele é o
-  Modelo B (transporte não-SSH no painel), não este plano.
-- **Modelo B de Docker** (PID 1 = jogo, sem sshd). Registrado na seção 2, com o motivo.
-- **Os limites de escala da seção 0** (uma operação por vez, 1 worker, faixa de portas).
-  São reais, mas independem de backend e merecem decisão própria.
-- **Migrar instâncias existentes entre backends.** Um CT não vira container; é criar de
-  novo e restaurar backup.
+- **Kubernetes.** Back on the table when there is more than one host. The step before it is
+  Model B (non-SSH transport in the panel), not this plan.
+- **Docker Model B** (PID 1 = game, no sshd). Recorded in section 2, with the reason.
+- **The scale limits from section 0** (one operation at a time, 1 worker, port range).
+  They are real, but independent of the backend and deserve their own decision.
+- **Migrating existing instances between backends.** A CT does not become a container; it is
+  creating again and restoring a backup.
 
 ---
 
-## 8. Coordenação
+## 8. Coordination
 
-Há outra sessão trabalhando na Fase 4 (`src/gamepanel/games/` — o catálogo de campos
-virando `adapters/` + `registry.py`). As áreas quase não se cruzam: este plano é
-`src/gamebroker/**` mais três arquivos do painel, e só na Fase 3.
+Another work stream is working on Phase 4 (`src/gamepanel/games/` - the field catalog
+becoming `adapters/` + `registry.py`). The areas barely cross: this plan is
+`src/gamebroker/**` plus three panel files, and only in Phase 3.
 
-Os dois pontos de encontro:
+The two meeting points:
 
-- **`src/gamepanel/app.py`** — as duas frentes mexem, por motivos diferentes. Rebase,
-  não merge cego.
-- **`i18n/pt.py` / `en.py`** — as duas acrescentam chave. Conflito de acréscimo é fácil,
-  desde que a paridade entre os dois catálogos continue.
+- **`src/gamepanel/app.py`** - both fronts touch it, for different reasons. Rebase,
+  not a blind merge.
+- **`i18n/pt.py` / `en.py`** - both add keys. An append conflict is easy,
+  as long as parity between the two catalogs holds.
 
-Por isso a Fase 1 e a Fase 2 são **só do broker** e podem entrar sozinhas; a Fase 3 (a
-única que toca o painel) fica para depois que a Fase 4 aterrissar.
+That is why Phase 1 and Phase 2 are **broker only** and can land on their own; Phase 3 (the
+only one that touches the panel) waits until Phase 4 lands.

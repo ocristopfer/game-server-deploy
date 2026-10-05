@@ -1,23 +1,23 @@
-"""Caminho do codigo VIVO no CT: sempre sob `current`, nunca o pacote direto em APP_DIR.
+"""Path of the LIVE code on the CT: always under `current`, never the package directly in APP_DIR.
 
-Desde que release virou pasta por versao, o codigo que o CT executa mora em
-`/opt/<pacote>/current/<pacote>/`. `/opt/<pacote>/<pacote>/` e o layout ANTERIOR, e depois
-da migracao ele simplesmente nao existe mais no CT.
+Since a release became one folder per version, the code the CT runs lives in
+`/opt/<pacote>/current/<pacote>/`. `/opt/<pacote>/<pacote>/` is the PREVIOUS layout, and after
+the migration it simply no longer exists on the CT.
 
-Isso ja envelheceu em tres lugares de uma vez, e nenhum deles falha de forma visivel:
+This had already gone stale in three places at once, and none of them fails visibly:
 
-- a sonda do atalho de `deploy-admin.ps1` (`test -f .../gamepanel/app.py`) passou a dar
-  errado SEMPRE, e todo deploy incremental virou um provisionamento completo em silencio --
-  que passa pelo Proxmox, roda apt e redefine a senha do admin a cada vez;
-- o cadastro do servidor no fim de `deploy-game.ps1` ficou apontando para um arquivo que
-  nao existe: o deploy imprime "painel nao encontrado" e segue SEM cadastrar (o comentario
-  de la registra que isso ja tinha acontecido uma vez, quando o codigo foi para `src/`);
-- a doc mandava rodar `python3 /opt/gamepanel/gamepanel/app.py --reset-2fa`, que e a saida
-  de emergencia de quem esta trancado FORA do painel -- a hora mais ruim para descobrir que
-  o caminho mudou.
+- the shortcut probe of `deploy-admin.ps1` (`test -f .../gamepanel/app.py`) started failing
+  ALWAYS, and every incremental deploy silently became a full provisioning --
+  which goes through Proxmox, runs apt and resets the admin password every time;
+- the server registration at the end of `deploy-game.ps1` kept pointing to a file that
+  does not exist: the deploy prints "painel nao encontrado" and moves on WITHOUT registering (the
+  comment there records that this had already happened once, when the code moved to `src/`);
+- the docs said to run `python3 /opt/gamepanel/gamepanel/app.py --reset-2fa`, which is the
+  emergency exit for whoever is locked OUT of the panel -- the worst time to find out that
+  the path changed.
 
-Nenhuma ferramenta liga um caminho escrito dentro de uma string de shell ao layout que o
-instalador produz, e nao ha sintaxe errada em nenhum dos tres.
+No tool links a path written inside a shell string to the layout the installer
+produces, and none of the three has a syntax error.
 """
 from __future__ import annotations
 
@@ -26,17 +26,17 @@ import re
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 
-# `/opt/gamepanel/gamepanel`, `/opt/gamebroker/gamebroker`: o pacote DIRETO em APP_DIR.
+# `/opt/gamepanel/gamepanel`, `/opt/gamebroker/gamebroker`: the package DIRECTLY in APP_DIR.
 OLD_LAYOUT = re.compile(r"/opt/(gamepanel|gamebroker)/\1(?:/|\b)")
 
 SCANNED = ("deploy/**/*.ps1", "deploy/**/*.sh", "lib/*.sh", "CLAUDE.md", "README.md")
 
-# O painel em DOCKER nao tem release por versao: o `Dockerfile.prod` copia o pacote para
-# dentro da imagem e o container e substituido inteiro em vez de ganhar uma pasta de versao.
-# Ali o layout anterior e o layout certo. O que isenta e FALAR de docker -- na linha ou no
-# nome do arquivo, e nao uma lista de arquivos escrita a mao, que envelheceria igual ao
-# caminho que este teste guarda. O nome conta porque a linha que invoca o container nao
-# repete a palavra (`"exec", $PanelContainer, ...`): quem a diz e o `deploy-docker.ps1`.
+# The panel in DOCKER has no per-version release: `Dockerfile.prod` copies the package into
+# the image and the container is replaced whole instead of gaining a version folder.
+# There the previous layout is the right one. What exempts a line is MENTIONING docker -- in the
+# line or in the file name, and not a hand-written list of files, which would go stale just like
+# the path this test guards. The name counts because the line that invokes the container does not
+# repeat the word (`"exec", $PanelContainer, ...`): the one that says it is `deploy-docker.ps1`.
 DOCKER_WORDS = ("docker", "compose", "dockerfile", "bind mount")
 
 
@@ -57,10 +57,10 @@ def _offenders() -> list[str]:
 
 
 def test_a_varredura_encontra_os_caminhos_do_docker():
-    """Se o padrao parar de casar, o teste acima passa sem conferir nada.
+    """If the pattern stops matching, the test above passes without checking anything.
 
-    O caminho antigo EXISTE de proposito no deploy em Docker, entao ele serve de controle:
-    achar zero ocorrencia em lugar nenhum significa que a expressao quebrou.
+    The old path EXISTS on purpose in the Docker deploy, so it serves as a control:
+    finding zero occurrences anywhere means the expression broke.
     """
     every = []
     for pattern in SCANNED:

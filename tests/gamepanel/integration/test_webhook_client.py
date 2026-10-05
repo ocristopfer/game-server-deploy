@@ -1,13 +1,13 @@
-"""Entrega de alerta em webhook (gamepanel.integrations.webhook_client).
+"""Alert delivery over webhook (gamepanel.integrations.webhook_client).
 
-So a recusa de URL invalida tinha teste antes da Fase 4 — o POST em si, nao. E ali
-moram coisas que importam quando o canal fica mudo: o corpo tem de agradar Discord E
-Slack, o motivo da recusa do destino tem de chegar a tela (senao um 400 por payload
-torto e um 403 do Cloudflare ficam com a mesma cara), e um destino pendurado nao pode
-segurar a volta do monitor.
+Only the refusal of an invalid URL had a test before Phase 4 - the POST itself did not. And
+that is where things live that matter when the channel goes quiet: the body has to please
+Discord AND Slack, the destination's reason for refusing has to reach the screen (otherwise
+a 400 for a malformed payload and a 403 from Cloudflare look the same), and a hanging
+destination must not hold up the monitor tick.
 
-O servidor aqui e um HTTP de verdade em loopback: a alternativa seria trocar o
-`urllib` por um falso, e ai o teste passaria a exercitar o falso.
+The server here is real HTTP on loopback: the alternative would be swapping `urllib` for a
+fake, and then the test would be exercising the fake.
 """
 from __future__ import annotations
 
@@ -24,14 +24,14 @@ UA = "GamePanel/teste"
 
 
 class _FakeServer:
-    """Guarda o que recebeu e responde o que o teste mandar responder."""
+    """Keeps what it received and answers whatever the test tells it to."""
 
     def __init__(self, status: int = 204, body: bytes = b"", expects: float = 0.0):
         self.recebidos: list[dict] = []
         server = self
 
         class Handler(BaseHTTPRequestHandler):
-            # Nome em maiusculas porque e o que o BaseHTTPRequestHandler procura.
+            # Uppercase name because that is what BaseHTTPRequestHandler looks for.
             def do_POST(self):
                 size = int(self.headers.get("Content-Length", "0"))
                 raw = self.rfile.read(size)
@@ -49,7 +49,7 @@ class _FakeServer:
                     self.wfile.write(body)
 
             def log_message(self, *_a):
-                pass  # sem ruido no relatorio do pytest
+                pass  # no noise in the pytest report
 
         self._http = HTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self._http.server_address[1]}/webhook"
@@ -78,12 +78,12 @@ def test_mascara_mostra_o_canal_e_esconde_o_token(url, expected):
 
 
 def test_mascara_nao_deixa_o_token_aparecer():
-    """A URL e uma credencial: um screenshot da tela nao pode dar escrita no canal."""
+    """The URL is a credential: a screenshot of the screen must not grant write access to the channel."""
     masked = wc.mask_url("https://discord.com/api/webhooks/123456/token-secreto")
     assert "token-secreto" not in masked
 
 
-# ------------------------------------------------------------------ envio
+# ------------------------------------------------------------------ sending
 
 @pytest.mark.parametrize("url", ["", "nao-e-url", "file:///etc/passwd", "ftp://x/y"])
 def test_url_invalida_e_recusada_antes_de_qualquer_socket(url):
@@ -97,7 +97,7 @@ def test_envio_que_da_certo_devolve_string_vazia():
 
 
 def test_o_corpo_agrada_discord_e_slack_ao_mesmo_tempo():
-    """'content' e o campo do Discord, 'text' o do Slack; cada um ignora o outro."""
+    """'content' is Discord's field, 'text' is Slack's; each ignores the other."""
     with _FakeServer() as srv:
         wc.send(srv.url, "**Palworld**\ncaiu", 5, UA)
     body = srv.recebidos[0]["corpo"]
@@ -113,7 +113,7 @@ def test_manda_o_user_agent_configurado():
 
 
 def test_recusa_do_destino_chega_com_codigo_e_motivo():
-    """Sem o corpo da resposta, um 400 por payload torto e um 403 por bloqueio ficam iguais."""
+    """Without the response body, a 400 for a malformed payload and a 403 for blocking look the same."""
     body = json.dumps({"message": "Invalid Webhook Token"}).encode()
     with _FakeServer(status=401, body=body) as srv:
         error = wc.send(srv.url, "oi", 5, UA)
@@ -135,14 +135,14 @@ def test_motivo_longo_demais_e_cortado():
 
 
 def test_destino_fora_do_ar_vira_motivo_e_nao_excecao():
-    """Um webhook quebrado nao pode derrubar o monitor junto."""
-    # Porta fechada em loopback: recusa na hora, sem esperar timeout.
+    """A broken webhook must not take the monitor down with it."""
+    # Closed port on loopback: refused immediately, without waiting for a timeout.
     error = wc.send("http://127.0.0.1:1/webhook", "oi", 1, UA)
     assert error.startswith("nao consegui chamar o webhook")
 
 
 def test_destino_pendurado_respeita_o_prazo():
-    """Sem prazo, um destino que nao responde seguraria a volta inteira do monitor."""
+    """Without a deadline, a destination that does not answer would hold up the whole monitor tick."""
     with _FakeServer(expects=3) as srv:
         beginning = time.monotonic()
         error = wc.send(srv.url, "oi", 0.3, UA)

@@ -1,14 +1,15 @@
-"""Backend Proxmox: cria, liga, para e destroi CTs do pool do broker pela API REST.
+"""Proxmox backend: creates, starts, stops and destroys CTs of the broker pool via the REST API.
 
-Tudo aqui foi validado contra um Proxmox VE 9.2 real (spike da Fase 0). Os fatos que
-moldam o codigo:
+Everything here was validated against a real Proxmox VE 9.2 (Phase 0 spike). The facts that
+shape the code:
 
-- `tags` NA CRIACAO exige VM.Config.Options em /vms/<id>, que ainda nao existe e nao herda
-  do pool: a tag e gravada DEPOIS, com o CT ja no pool. E se nem isso der certo nao e
-  fatal - a identidade do CT do broker e o pool (`pertence_ao_broker`), nao a tag.
-- `keyctl=1` so o root@pam pode. So `nesting=1` e enviado.
-- Tarefa que termina em `WARNINGS: n` e sucesso (ex.: "Systemd 257: pode precisar de nesting").
-- O motivo de um 403 vem na linha de status HTTP (o `conexao.Cliente` ja o devolve).
+- `tags` AT CREATION requires VM.Config.Options on /vms/<id>, which does not exist yet and does
+  not inherit from the pool: the tag is written AFTERWARDS, with the CT already in the pool. And
+  if even that fails it is not fatal - the identity of a broker CT is the pool
+  (`pertence_ao_broker`), not the tag.
+- `keyctl=1` is allowed only for root@pam. Only `nesting=1` is sent.
+- A task ending in `WARNINGS: n` is a success (e.g. "Systemd 257: pode precisar de nesting").
+- The reason for a 403 comes in the HTTP status line (`conexao.Cliente` already returns it).
 """
 from __future__ import annotations
 
@@ -27,12 +28,12 @@ _NAME_RE = re.compile(r"[A-Za-z0-9._-]{1,64}", re.ASCII)
 _VOLID_RE = re.compile(r"[A-Za-z0-9._-]+:vztmpl/[A-Za-z0-9._+-]+", re.ASCII)
 _NETWORK_IP_RE = re.compile(r"ip=(\d{1,3}(?:\.\d{1,3}){3})")
 MAX_ERRORS = 200
-# Sonda de saude: um servico que nao responde em poucos segundos ja e a resposta.
+# Health probe: a service that does not answer within a few seconds is already the answer.
 SONDA_TIMEOUT = 5.0
 
 
 class ProxmoxError(RuntimeError):
-    """Falha ao falar com o Proxmox. A mensagem nao carrega token nem cabecalho."""
+    """Failure talking to Proxmox. The message carries no token or header."""
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,7 @@ class Proxmox:
         self._cfg = config
         self._sleep = sleep
 
-    # --- chamadas -----------------------------------------------------------
+    # --- calls --------------------------------------------------------------
 
     def _api(self, method: str, path: str, action: str, *, form: dict | None = None) -> Response:
         response = self._c.request(method, "/api2/json" + path, form=form)
@@ -102,11 +103,11 @@ class Proxmox:
         last_ones = " | ".join(str(item.get("t", "")) for item in lines[-3:] if isinstance(item, dict))
         return f" ({_short(last_ones)})"
 
-    # --- leitura ---------------------------------------------------------------
+    # --- reading ---------------------------------------------------------------
 
     def handles_and_ips(self) -> tuple[set[str], set[str]]:
-        """CTIDs e IPs que o token enxerga. Com a role so no pool isso e SO o pool; para
-        ver os CTs de fora, o token precisa de VM.Audit em /vms (opcional)."""
+        """CTIDs and IPs the token sees. With the role only on the pool this is ONLY the pool; to
+        see CTs outside it, the token needs VM.Audit on /vms (optional)."""
         entries = self._payload(self._api("GET", "/cluster/resources?type=vm", "listar CTs"))
         ctids: set[int] = set()
         ips: set[str] = set()
@@ -116,8 +117,8 @@ class Proxmox:
             ctids.add(item["vmid"])
             if item.get("type") == "lxc":
                 ips |= self._ct_ips(item["vmid"])
-        # O handle do Proxmox e o CTID em TEXTO: a conversao mora aqui, na fronteira,
-        # e nao no servico — e a unica coisa que sabe que este backend numera instancias.
+        # The Proxmox handle is the CTID as TEXT: the conversion lives here, at the boundary,
+        # and not in the service - this is the only thing that knows this backend numbers instances.
         return {str(c) for c in ctids}, ips
 
     def _ct_ips(self, ctid: int) -> set[str]:
@@ -132,7 +133,7 @@ class Proxmox:
         return found
 
     def belongs_to_broker(self, handle: str) -> bool:
-        """Identidade = ser membro do pool do broker. Nao depende da tag."""
+        """Identity = being a member of the broker pool. Does not depend on the tag."""
         ctid = int(handle)
         data = self._payload(self._c.request("GET", f"/api2/json/pools/{self._cfg.pool}"))
         members = data.get("members", []) if isinstance(data, dict) else []
@@ -144,7 +145,7 @@ class Proxmox:
         except Exception:  # noqa: BLE001
             return False
 
-    # --- escrita ------------------------------------------------------------------
+    # --- writing ------------------------------------------------------------------
 
     def create(self, spec: InstanceSpec) -> None:
         cfg = self._cfg
@@ -158,9 +159,9 @@ class Proxmox:
             "ssh-public-keys": "\n".join(cfg.ssh_keys),
         }
         self._task(self._api("POST", f"/nodes/{cfg.node}/lxc", "criar CT", form=body), "criar CT")
-        # Tag e conforto (aparece na tela do Proxmox); a identidade e o pool, e o token
-        # nem sempre pode grava-la. `suppress` e nao `try/except/pass`: com um tipo so de
-        # erro ele diz a mesma coisa em uma linha.
+        # The tag is a convenience (it shows up on the Proxmox screen); the identity is the pool,
+        # and the token cannot always write it. `suppress` and not `try/except/pass`: with a
+        # single error type it says the same thing in one line.
         with contextlib.suppress(ProxmoxError):
             self._api("PUT", f"/nodes/{cfg.node}/lxc/{int(spec.handle)}/config", "gravar a tag",
                       form={"tags": BROKER_TAG})
@@ -188,8 +189,8 @@ class Proxmox:
             "destruir CT"), "destruir CT")
 
     def _require_in_pool(self, ctid: int) -> None:
-        # O token so tem permissao no pool, mas a checagem aqui vale por conta propria: se
-        # alguem alargar a role um dia, o broker continua so mexendo no que e dele.
+        # The token only has permission on the pool, but this check stands on its own: if
+        # someone widens the role one day, the broker still only touches what is its own.
         if not self.belongs_to_broker(str(ctid)):
             raise ProxmoxError(f"o CT {ctid} nao esta no pool '{self._cfg.pool}'; nada foi alterado")
 

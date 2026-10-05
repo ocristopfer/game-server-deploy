@@ -1,11 +1,11 @@
-"""Migration do banco do broker: tabelas e colunas que mudaram de nome.
+"""Broker database migration: tables and columns that were renamed.
 
-Migration so roda no banco de quem JA tinha o broker instalado, e os outros testes vivem
-num banco novo — onde ela nem acontece. A unica forma de exercita-la e montar o esquema
-antigo a mao, com dado dentro, e deixar o `Db()` passar por cima.
+A migration only runs on the database of whoever ALREADY had the broker installed, and the
+other tests live in a fresh database -- where it does not even happen. The only way to
+exercise it is to build the old schema by hand, with data inside, and let `Db()` run over it.
 
-O que esta em jogo aqui nao e uma tela: e a instancia de jogo que o broker criou, o
-CTID/IP que ela reserva e a auditoria de quem fez o que.
+What is at stake here is not a screen: it is the game instance the broker created, the
+CTID/IP it reserves and the audit trail of who did what.
 """
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ import pytest
 
 from gamebroker.persistence.db import Db
 
-# O esquema ANTES dos nomes em ingles, escrito por extenso. Copiar do `SCHEMA` de hoje
-# faria o teste concordar consigo mesmo.
+# The schema BEFORE the English names, written out in full. Copying from today's `SCHEMA`
+# would make the test agree with itself.
 OLD_SCHEMA = """
 CREATE TABLE instancias (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,7 +68,7 @@ BEGIN SELECT RAISE(ABORT, 'auditoria e append-only'); END;
 
 @pytest.fixture
 def old_database(tmp_path):
-    """Um broker como ele estava antes da traducao, com uma instancia de verdade."""
+    """A broker as it was before the translation, with a real instance."""
     path = tmp_path / "broker.db"
     con = sqlite3.connect(path)
     con.executescript(OLD_SCHEMA)
@@ -79,9 +79,9 @@ def old_database(tmp_path):
     con.executemany("INSERT INTO portas (instancia_id, base, numero, proto, papel)"
                     " VALUES (?, ?, ?, ?, ?)",
                     [(1, 8211, 31000, "udp", "jogo"), (1, 27015, 31001, "udp", "query")])
-    # O id vai por PARAMETRO: dentro do SQL, `'a' * 32` e multiplicacao de texto por
-    # numero, que no SQLite vale 0 — a operacao entraria com id zero e o teste procuraria
-    # outra coisa.
+    # The id goes as a PARAMETER: inside SQL, `'a' * 32` is text multiplied by a number,
+    # which in SQLite is 0 -- the operation would go in with id zero and the test would be
+    # looking for something else.
     con.execute("INSERT INTO operacoes (id, instancia_id, tipo, estado, log, resultado,"
                 " iniciada_em, terminada_em)"
                 " VALUES (?, 1, 'criar', 'ok', 'instalado\n', '{}',"
@@ -99,25 +99,25 @@ def test_a_instancia_sobrevive_ao_rename_de_tabela_e_coluna(old_database):
     assert inst["name"] == "Servidor do Zeca"
     assert inst["game"] == "palworld"
     assert inst["state"] == "ativa"
-    # `handle` e nao `ctid`, e o VALOR volta como numero: `RENAME COLUMN` preserva a
-    # afinidade INTEGER da coluna velha, entao num banco migrado o CTID antigo continua
-    # sendo int no SELECT. Quem normaliza sao `db.taken` e `wire.instance`, com `str()` —
-    # este teste olha para o cru de proposito, para a armadilha ficar registrada aqui.
+    # `handle` and not `ctid`, and the VALUE comes back as a number: `RENAME COLUMN` keeps
+    # the old column's INTEGER affinity, so in a migrated database the old CTID is still an
+    # int in the SELECT. `db.taken` and `wire.instance` normalize it with `str()` -- this test
+    # looks at the raw value on purpose, so the trap stays recorded here.
     assert (inst["handle"], inst["ip"]) == (302, "10.0.0.30")
     assert inst["backend"] == "proxmox", "coluna nova nasce com padrao, sem adivinhacao"
     assert inst["created_by"] == "zeca"
-    # As portas vem da OUTRA tabela, pela chave estrangeira que o rename teve de manter.
+    # The ports come from the OTHER table, through the foreign key the rename had to keep.
     assert [(p["number"], p["proto"], p["role"]) for p in inst["ports"]] == [
         (31000, "udp", "jogo"), (31001, "udp", "query")]
 
 
 def test_o_handle_novo_entra_como_TEXTO_no_banco_migrado(old_database):
-    """A afinidade INTEGER converte de volta o que PARECE numero, e so o que parece.
+    """INTEGER affinity converts back what LOOKS like a number, and only that.
 
-    E o que permite um backend futuro usar `palworld-1` sem reconstruir a tabela: a
-    coluna aceita texto normalmente; so o handle numerico e que volta como int. Sem esta
-    distincao, `{"307"} | {307}` nao se deduplicaria e a checagem de handle ocupado
-    passaria quando nao devia.
+    That is what lets a future backend use `palworld-1` without rebuilding the table: the
+    column accepts text normally; only the numeric handle comes back as int. Without this
+    distinction, `{"307"} | {307}` would not deduplicate and the taken-handle check would
+    pass when it should not.
     """
     import sqlite3
     db = Db(str(old_database))
@@ -139,9 +139,9 @@ def test_a_operacao_e_a_auditoria_sobrevivem(old_database):
 
 
 def test_a_chave_estrangeira_continua_valendo(old_database):
-    """O `RENAME TO` reescreve a `REFERENCES` de quem aponta para a tabela renomeada.
-    Se isso deixasse de valer, apagar a instancia deixaria porta orfa — e porta orfa no
-    banco vira porta que o alocador acha ocupada para sempre."""
+    """`RENAME TO` rewrites the `REFERENCES` of whoever points at the renamed table.
+    If that stopped holding, deleting the instance would leave an orphan port -- and an
+    orphan port in the database becomes a port the allocator considers taken forever."""
     db = Db(str(old_database))
     db.delete_instance(1)
     con = sqlite3.connect(old_database)
@@ -152,8 +152,8 @@ def test_a_chave_estrangeira_continua_valendo(old_database):
 
 
 def test_a_auditoria_continua_append_only(old_database):
-    """O trigger tem o nome da tabela dentro: renomear a tabela sem recria-lo deixaria
-    a auditoria editavel, que e o oposto do que ela existe para garantir."""
+    """The trigger has the table name inside it: renaming the table without recreating it
+    would leave the audit trail editable, the opposite of what it exists to guarantee."""
     Db(str(old_database))
     con = sqlite3.connect(old_database)
     try:
@@ -166,7 +166,7 @@ def test_a_auditoria_continua_append_only(old_database):
 
 
 def test_rodar_de_novo_nao_faz_nada(old_database):
-    """O broker instancia o `Db` em todo start."""
+    """The broker instantiates `Db` on every start."""
     Db(str(old_database))
     before = Db(str(old_database)).instances()
     assert Db(str(old_database)).instances() == before

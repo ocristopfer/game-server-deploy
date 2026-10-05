@@ -5,9 +5,9 @@
 {% block content %}
 {{ ui.page_header(_('nav.account')) }}
 
-{# Grade de duas colunas a partir de 900px: com um cartao estreito embaixo do outro,
-   metade da tela ficava vazia e a pagina rolava a toa. Quem e voce na linha toda;
-   idioma ao lado do 2FA, senha ao lado do sair. #}
+{# Two-column grid from 900px up: with one narrow card below the other,
+   half the screen sat empty and the page scrolled for nothing. "Who you are" takes the whole row;
+   language next to 2FA, password next to log out. #}
 <div class="card-grid">
 <div class="card card-grid__wide">
   <dl class="meta wide">
@@ -15,10 +15,7 @@
     <div><dt>{{ _('account.role') }}</dt><dd>{{ role_label }}</dd></div>
   </dl>
   {% if not is_admin %}
-  <p class="muted small">
-    Como operador voce liga, desliga, atualiza e edita a configuracao dos servidores ja
-    cadastrados. Cadastro de servidor, terminal, arquivos e usuarios sao do administrador.
-  </p>
+  <p class="muted small">{{ _('account.operator_scope') }}</p>
   {% endif %}
 </div>
 
@@ -42,7 +39,8 @@
   <h2>{{ _('account.two_factor') }}</h2>
   {% if two_factor.ativo %}
     <p><span class="badge on">{{ _('account.on') }}</span>
-       <span class="muted small">{{ two_factor.codigos_restantes }} codigo(s) de recuperacao restante(s)</span></p>
+       <span class="muted small">{{ _('account.recovery_codes_left_one' if two_factor.codigos_restantes == 1
+                                         else 'account.recovery_codes_left_many', n=two_factor.codigos_restantes) }}</span></p>
     <p class="muted small">{{ _('account.two_factor_on_hint') }}</p>
     <details class="stack--sm">
       <summary class="btn btn--ghost btn--sm">{{ _('account.new_recovery_codes') }}</summary>
@@ -79,12 +77,11 @@
   {% else %}
     <p><span class="badge cold">{{ _('account.off') }}</span></p>
     <p class="muted small">
-      Com ela, saber a senha nao basta para entrar: o painel tambem pede um codigo de 6 digitos
-      do seu celular.
+      {{ _('account.two_factor_off_hint') }}
       {% if is_admin and broker_enabled %}
         <strong>{{ _('account.two_factor_broker_hint') }}</strong>
       {% elif is_admin %}
-        Este painel da poder de root nos containers de jogo: ative.
+        {{ _('account.two_factor_root_hint') }}
       {% endif %}
     </p>
     <div class="form-actions">
@@ -108,8 +105,8 @@
   </div>
   {% endfor %}
   {% if passkeys_enabled %}
-  {# Escondido ate o modulo confirmar que este navegador tem WebAuthn: o formulario sozinho
-     (sem JavaScript) so devolveria JSON. #}
+  {# Hidden until the module confirms this browser has WebAuthn: the form alone
+     (without JavaScript) would only return JSON. #}
   <details class="stack--sm mt-4" hidden data-passkey-available>
     <summary class="btn btn--primary btn--sm">{{ _('passkey.add') }}</summary>
     <form method="post" action="{{ url_for('passkeys.register_options') }}" class="mt-4"
@@ -157,8 +154,8 @@
   </form>
 </div>
 
-{# O "sair" vivia so no canto da barra de cima. No celular, com a barra reduzida ao
-   menu, a Conta e onde as pessoas procuram por ele. #}
+{# "Log out" used to live only in the corner of the top bar. On the phone, with the bar reduced to
+   the menu, Account is where people look for it. #}
 <div class="card card--danger">
   <h2>{{ _('account.sign_out') }}</h2>
   <p class="muted small">{{ _('account.sign_out_hint') }}</p>

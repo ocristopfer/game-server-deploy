@@ -1,7 +1,7 @@
-"""Orquestracao: reserva, cria, instala, abre o firewall e desfaz se der errado.
+"""Orchestration: reserves, creates, installs, opens the firewall and undoes if something goes wrong.
 
-Aqui mora toda a regra de negocio; `api.py` so traduz HTTP e `backends.py` so fala com o
-mundo de fora. Trocar um backend nao muda nada deste arquivo.
+All the business rules live here; `api.py` only translates HTTP and `backends.py` only talks
+to the outside world. Swapping a backend changes nothing in this file.
 """
 from __future__ import annotations
 
@@ -37,9 +37,9 @@ CANCELLED = "instalacao cancelada a pedido"
 class Config:
     ctids: range = range(300, 400)
     ips: tuple[str, ...] = ()
-    # Diferente de 0: o CTID sai do IP (`ctid_base` + ultimo numero) e `ctids` nao e usado.
+    # Non-zero: the CTID comes from the IP (`ctid_base` + last number) and `ctids` is not used.
     ctid_base: int = 0
-    # Faixa so do broker para jogos `shiftable`; nao pode cruzar com as portas dos servidores antigos.
+    # Broker-only range for `shiftable` games; must not overlap the ports of the older servers.
     ports: range = range(31000, 32000)
     max_instances: int = 8
     max_creations_per_hour: int = 4
@@ -54,14 +54,14 @@ def _now_utc() -> datetime:
 
 
 def _actor_of(bruto: str) -> str:
-    # O painel diz quem clicou; o broker so confia o bastante para registrar, nunca para decidir.
+    # The panel says who clicked; the broker trusts it enough to record, never to decide.
     return bruto if _ACTOR_RE.fullmatch(bruto or "") else UNKNOWN_ACTOR
 
 
 class Service:
-    # Construtor de INJECAO: os 9 sao colaboradores, nao dados. Embrulha-los num objeto
-    # esconderia de quem le a lista do que o servico depende — que e a coisa que mais
-    # importa saber aqui. A regra do CLAUDE.md e 'mais de 13 parametros: passe um objeto'.
+    # INJECTION constructor: the 9 are collaborators, not data. Wrapping them in an object
+    # would hide from the reader the list of what the service depends on - which is the most
+    # important thing to know here. The CLAUDE.md rule is 'more than 13 parameters: pass an object'.
     def __init__(self, db: Db, catalog: Catalog, compute: Compute,  # noqa: PLR0913, PLR0917
                  ingress: Ingress,
                  installer: Installer, network: Network, config: Config,
@@ -76,15 +76,15 @@ class Service:
         self.config = config
         self._executar = run
         self._now = clock
-        # Duas criacoes ao mesmo tempo escolheriam o mesmo IP antes de qualquer uma gravar.
+        # Two simultaneous creations would pick the same IP before either one wrote it.
         self._trava = threading.Lock()
-        # Pedido de cancelamento de cada criacao EM ANDAMENTO NESTE PROCESSO. Memoria e nao
-        # banco de proposito: quem obedece ao pedido e a thread que esta instalando, e ela
-        # so existe aqui. Depois de um restart a operacao antiga nao tem thread nenhuma, e
-        # "cancelar" nao teria a quem avisar (o broker roda com um worker so).
+        # Cancellation request for each creation IN PROGRESS IN THIS PROCESS. Memory and not the
+        # database on purpose: whoever obeys the request is the thread doing the installation, and
+        # it only exists here. After a restart the old operation has no thread at all, and
+        # "cancel" would have nobody to tell (the broker runs with a single worker).
         self._cancels: dict[str, threading.Event] = {}
 
-    # --- consultas --------------------------------------------------------
+    # --- queries ----------------------------------------------------------
 
     def health(self) -> dict:
         return {"broker": True, "proxmox": self.compute.reachable(),
@@ -111,13 +111,13 @@ class Service:
         return game.as_public()
 
     def remove_game(self, key: str, actor: str) -> dict:
-        """Devolve o curado restaurado, ou `{}` quando o jogo deixou de existir."""
+        """Returns the restored curated game, or `{}` when the game no longer exists."""
         restored = self.catalog.remove(key)
         action = "catalogo-restaurar" if restored is not None else "catalogo-apagar"
         self.db.audit(_actor_of(actor), action, key, "ok")
         return restored.as_public() if restored is not None else {}
 
-    # --- criar ------------------------------------------------------------
+    # --- create -----------------------------------------------------------
 
     def create(self, game_key: str, name: str, actor: str) -> dict:
         actor = _actor_of(actor)
@@ -150,11 +150,11 @@ class Service:
             raise QuotaExceeded(f"limite de {self.config.max_creations_per_hour} criacoes por hora atingido")
 
     def preview(self, game_key: str) -> dict:
-        """O que uma criacao deste jogo receberia AGORA: CT, IP e portas. Nada e reservado.
+        """What a creation of this game would get NOW: CT, IP and ports. Nothing is reserved.
 
-        Mesma conta da criacao (`_choose`), e nao uma copia dela: uma previa que calcula de
-        outro jeito mente justamente no caso em que alguem a consulta — quando o numero
-        esperado nao e o que sai.
+        The same computation as the creation (`_choose`), not a copy of it: a preview that
+        computes differently lies exactly when someone looks at it - when the expected number
+        is not the one that comes out.
         """
         game = self.catalog.get(game_key)
         if not game.creatable:
@@ -170,14 +170,14 @@ class Service:
         return instance_id, ports
 
     def _choose(self, game: Game) -> tuple[str, str, list[AllocatedPort]]:
-        # Snapshot de fora (Proxmox, OPNsense) + o que o banco ja reservou: o CT pode ter
-        # sido criado na mao, e a regra de NAT tambem.
+        # Snapshot from outside (Proxmox, OPNsense) + what the database already reserved: the CT
+        # may have been created by hand, and so may the NAT rule.
         handles_px, ips_px = self.compute.handles_and_ips()
         handles_db, ips_db, ports_db = self.db.taken()
-        # A aritmetica do CTID e do Proxmox e continua aqui de proposito: leva-la para
-        # dentro do backend (secao 1.5 do plano do Docker) so paga quando houver um
-        # segundo backend, e a secao 0 do proprio plano diz que abstracao desenhada antes
-        # da primeira criacao real codifica palpite. O que sobe pelo servico ja e `handle`.
+        # The CTID arithmetic is Proxmox's and stays here on purpose: moving it into the
+        # backend (section 1.5 of the Docker plan) only pays off once there is a second
+        # backend, and section 0 of the plan itself says abstraction designed before the
+        # first real creation encodes a guess. What goes up through the service is already `handle`.
         taken_handles = handles_px | handles_db
         if self.config.ctid_base:
             ip, ctid = alocador.pick_ip_and_ctid(self.config.ips, self.config.ctid_base,
@@ -207,8 +207,8 @@ class Service:
         created = False
 
         def check() -> None:
-            # Entre uma fase e outra: criar o CT e liga-lo sao chamadas a API do Proxmox,
-            # que nao se interrompem no meio. A instalacao (a parte demorada) para sozinha.
+            # Between one phase and the next: creating the CT and starting it are Proxmox API
+            # calls, which cannot be interrupted midway. The installation (the slow part) stops on its own.
             if stop.is_set():
                 raise RuntimeError(CANCELLED)
 
@@ -224,12 +224,12 @@ class Service:
             check()
             self.installer.install(inst["ip"], game, ports, log, stop)
             check()
-            # O firewall abre por ultimo: o jogo nao fica exposto enquanto ainda instala.
+            # The firewall opens last: the game is not exposed while it is still installing.
             log("abrindo as portas no firewall")
             self.ingress.open_ports(str(inst["handle"]), inst["ip"], ports)
         except Exception as error:  # noqa: BLE001
-            # Cancelado, o erro que sobe e o do processo morto ("codigo -9"): o motivo de
-            # verdade e o pedido, e e ele que vai para o log e para a auditoria.
+            # When cancelled, the error that bubbles up is the killed process's ("codigo -9"): the
+            # real reason is the request, and that is what goes to the log and the audit.
             reason = CANCELLED if stop.is_set() else str(error)
             self._undo(op_id, inst, created, reason)
             self.db.audit(actor, "criar", inst["name"], "cancelado" if stop.is_set() else "falhou", reason)
@@ -239,8 +239,8 @@ class Service:
         self.db.audit(actor, "criar", inst["name"], "ok", f"handle {inst['handle']}")
 
     def cancel(self, op_id: str, actor: str) -> dict:
-        """Pede para a criacao em andamento parar. Quem para e desfaz e a propria thread
-        da criacao: o CT e apagado e IP, CTID e portas voltam a ficar livres."""
+        """Asks the creation in progress to stop. Stopping and undoing is done by the creation
+        thread itself: the CT is deleted and IP, CTID and ports become free again."""
         actor = _actor_of(actor)
         op = self.db.operation(op_id)
         if op is None:
@@ -249,8 +249,8 @@ class Service:
         if op["state"] != OP_RUNNING or stop is None:
             raise Conflict("essa operacao nao esta em andamento; nao ha o que cancelar")
         if not stop.is_set():
-            # Escreve ANTES de sinalizar: a thread da criacao reage na hora, e o pedido sairia
-            # no log depois do "reserva liberada" que ele mesmo causou.
+            # Write BEFORE signaling: the creation thread reacts immediately, and the request would
+            # show up in the log after the "reserva liberada" it caused.
             self.db.append_log(op_id, f"CANCELAMENTO pedido por {actor}: interrompendo e desfazendo")
             self.db.audit(actor, "cancelar", op_id, "aceito")
             stop.set()
@@ -260,8 +260,8 @@ class Service:
         return lambda line: self.db.append_log(op_id, line)
 
     def _undo(self, op_id: str, inst: dict, created: bool, error: str) -> None:
-        """Volta ao estado anterior. Se nem o desfazer der certo, a reserva fica marcada
-        como `falhou` (nao some): IP e portas continuam bloqueados ate alguem remover."""
+        """Goes back to the previous state. If even the undo fails, the reservation is marked
+        as `falhou` (it does not vanish): IP and ports stay blocked until someone removes it."""
         log = self._logger(op_id)
         log(f"ERRO: {error[:ERROR_MAX]}")
         cleaned = True
@@ -279,7 +279,7 @@ class Service:
             self.db.set_state(inst["id"], STATE_FAILED, error)
         self.db.finish_operation(op_id, OP_FAILED)
 
-    # --- desativar / remover ---------------------------------------------
+    # --- deactivate / remove ----------------------------------------------
 
     def deactivate(self, instance_id: int, actor: str) -> dict:
         actor = _actor_of(actor)
@@ -314,10 +314,10 @@ class Service:
             self.compute.destroy(handle)
             return
         if inst["state"] == STATE_FAILED:
-            return  # a criacao nem chegou a existir no pool: nao ha CT nosso para destruir
-        # "Nao esta no pool" pode ser CT apagado a mao OU CT movido/de outro dono, e o token
-        # so enxerga o pool: os dois casos sao indistinguiveis (ambos dao 403). Liberar o
-        # CTID/IP nesse caso poderia soltar um CT que ainda existe; entao so com pedido explicito.
+            return  # the creation never even made it into the pool: there is no CT of ours to destroy
+        # "Not in the pool" may be a CT deleted by hand OR a CT moved/owned by someone else, and the
+        # token only sees the pool: the two cases are indistinguishable (both give 403). Releasing
+        # the CTID/IP in that case could free a CT that still exists; so only on explicit request.
         raise Conflict(
             f"o CT {handle} nao pertence ao broker (nao esta no pool); nada foi alterado. Se ele nao "
             "existe mais no Proxmox, remova de novo com db_only para limpar so o registro")
@@ -329,21 +329,21 @@ class Service:
         return inst
 
     def _require_from_broker(self, handle: str) -> None:
-        # O token do Proxmox enxerga o pool inteiro; a tag e a linha no banco sao o que
-        # impede o broker de mexer num CT que nao e dele.
+        # The Proxmox token sees the whole pool; the tag and the database row are what stop
+        # the broker from touching a CT that is not its own.
         if not self.compute.belongs_to_broker(handle):
             raise Conflict(f"o CT {handle} nao pertence ao broker; nada foi alterado")
 
 
 def record_for_the_panel(inst: dict, game: Game, ports: list[AllocatedPort]) -> dict:
-    """Os campos de `DeployServer` do painel: com isso ele chama `ensure_server`."""
+    """The panel's `DeployServer` fields: with them it calls `ensure_server`."""
     return {
         "broker_id": inst["id"], "name": inst["name"], "host": inst["ip"],
         "service": f"{game.key}.service",
         "game_port": alocador.port_with_role(ports, alocador.ROLE_GAME),
-        # Pela BASE, e nao pelo papel: no Enshrouded a consulta e a propria porta do jogo
-        # (15637), que fica com o papel de jogo - pelo papel o painel recebia 0 e nascia sem
-        # contagem A2S.
+        # By BASE, not by role: in Enshrouded the query is the game port itself (15637), which
+        # gets the game role - by role the panel received 0 and the server was born without
+        # A2S counting.
         "query_port": (alocador.port_from_base(ports, game.query_port)
                        if game.query_port else 0),
         "ports": [str(p) for p in ports],

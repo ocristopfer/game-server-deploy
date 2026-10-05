@@ -1,12 +1,12 @@
-"""Leitura e escrita de `webhooks` (para onde o alerta vai) e `alert_log` (o diario)."""
+"""Reads and writes `webhooks` (where the alert goes) and `alert_log` (the journal)."""
 from __future__ import annotations
 
 import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
-# Cortes de tamanho: um alerta vai para um canal de chat, e detalhe alem disto e ruido
-# na tela de quem le. Cortar AQUI mantem o banco pequeno tambem.
+# Size cuts: an alert goes to a chat channel, and detail beyond this is noise on the
+# reader's screen. Cutting HERE keeps the database small too.
 TITLE_MAX = 200
 DETAIL_MAX = 500
 TARGET_MAX = 80
@@ -50,7 +50,7 @@ def delete_webhook(conn: sqlite3.Connection, hid: int) -> None:
     conn.execute("DELETE FROM webhooks WHERE id = ?", (hid,))
 
 
-# --- diario -------------------------------------------------------------------------
+# --- journal ------------------------------------------------------------------------
 
 def log(conn: sqlite3.Connection, at: str, event: str, title: str, detail: str,
         target: str, status: str, error: str) -> None:
@@ -67,9 +67,9 @@ def recent(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
 
 
 def trim_log(conn: sqlite3.Connection, keep: int) -> None:
-    """O diario se mede em LINHAS, nao em dias: o que se quer dele e "as ultimas N", e um
-    prazo em dias deixaria a tela vazia justo num painel quieto — que e quando a duvida
-    "sera que isso ainda funciona?" aparece."""
+    """The journal is measured in ROWS, not days: what is wanted from it is "the last N", and
+    a cutoff in days would leave the screen empty precisely on a quiet panel - which is when
+    the doubt "does this still work?" shows up."""
     conn.execute(
         "DELETE FROM alert_log WHERE id <= "
         "(SELECT MIN(id) FROM (SELECT id FROM alert_log ORDER BY id DESC LIMIT ?)) - 1",

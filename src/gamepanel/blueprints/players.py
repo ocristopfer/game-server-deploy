@@ -1,4 +1,4 @@
-"""Quem esta jogando: o assistente de contagem, a escolha da fonte e a moderacao."""
+"""Who is playing: the counting wizard, the choice of source and moderation."""
 from __future__ import annotations
 
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, session, url_for
@@ -21,13 +21,13 @@ def api_list(sid: int):
 @bp.route("/servers/<int:sid>/players/discover", methods=["GET", "POST"])
 @panel.admin_required
 def setup(sid: int):
-    """Assistente: acha a porta/API que responde e ajuda a achar o padrao no log."""
+    """Wizard: find the port/API that answers and help find the pattern in the log."""
     server = panel._server_or_404(sid)
-    # Os campos das tres abas precisam sobreviver ao botao "Testar", e entre eles esta a
-    # senha de admin do jogo (http_auth, http_login_body). Por isso o formulario e POST:
-    # na URL a senha ficaria no historico do navegador, no cabecalho Referer e no log de
-    # qualquer proxy na frente do painel. O GET continua servindo a navegacao entre abas,
-    # que so carrega o nome da aba.
+    # The fields of the three tabs need to survive the "Test" button, and among them is the
+    # game's admin password (http_auth, http_login_body). That is why the form is POST:
+    # in the URL the password would end up in the browser history, in the Referer header and in the log of
+    # any proxy in front of the panel. GET still serves navigation between tabs,
+    # which only carries the tab name.
     source_dir = request.form if request.method == "POST" else request.args
     tab = source_dir.get("tab", "port")
     should_test = bool(source_dir.get("test"))
@@ -57,8 +57,8 @@ def setup(sid: int):
 @bp.post("/servers/<int:sid>/players/use")
 @panel.admin_required
 def use(sid: int):
-    """Grava a forma de contagem escolhida no assistente."""
-    panel._server_or_404(sid)  # so pelo 404: daqui para baixo os UPDATE usam o proprio sid
+    """Save the counting method chosen in the wizard."""
+    panel._server_or_404(sid)  # only for the 404: from here on the UPDATEs use the sid itself
     links_to = panel.COUNT_SOURCES.get(request.form.get("player_source", ""))
     if links_to is None:
         flash(panel.translate("flash.bad_choice"), "error")
@@ -75,10 +75,10 @@ def use(sid: int):
 @bp.post("/servers/<int:sid>/players/action")
 @panel.login_required
 def action(sid: int):
-    """Expulsa, bane ou avisa, pela API do proprio jogo.
+    """Kick, ban or warn, through the game's own API.
 
-    E operacao, nao administracao: moderar quem esta jogando nao da acesso ao container,
-    entao o operador pode — do mesmo jeito que ele ja reinicia o servidor.
+    It is an operation, not administration: moderating who is playing gives no access to the container,
+    so the operator may do it, the same way they already restart the server.
     """
     server = panel._server_or_404(sid)
     action = (request.form.get("action", "") or "").strip()
@@ -101,7 +101,7 @@ def action(sid: int):
 
     panel.log_job("player-action", server, session.get("username", "?"),
             command=record, output="a API aceitou o pedido")
-    # A contagem fica alguns segundos em cache e ainda tem quem acabou de sair.
+    # The count stays cached for a few seconds and still includes whoever just left.
     panel.invalidate_players(sid)
     flash(panel.translate("flash.player_action_done", label=label, who=who)
           if action != "announce"

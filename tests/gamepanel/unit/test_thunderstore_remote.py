@@ -1,5 +1,5 @@
-"""O instalador do Thunderstore que roda DENTRO do CT, exercitado aqui com zips de mentira
-no formato dos pacotes reais (BepInExPack_V_Rising e VampireCommandFramework)."""
+"""The Thunderstore installer that runs INSIDE the CT, exercised here with fake zips in the
+format of the real packages (BepInExPack_V_Rising and VampireCommandFramework)."""
 from __future__ import annotations
 
 import io
@@ -50,7 +50,7 @@ PACKAGES = {
 }
 
 
-# Versoes antigas, servidas so pela rota de versao da API: a mais nova continua a de PACKAGES.
+# Old versions, served only by the API's version route: the newest is still the one in PACKAGES.
 VCF_OLD = "deca-VampireCommandFramework-0.10.4"
 KC_OLD = "odjit-KindredCommands-2.0.0"
 LOADER_OLD = "BepInEx-BepInExPack_V_Rising-1.691.3"
@@ -86,7 +86,7 @@ def game(tmp_path):
 
 
 def test_overrides_liga_o_winhttp_e_religa_o_mscoree():
-    """Medido: com mscoree desligado o Wine recusava toda DLL .NET do BepInEx."""
+    """Measured: with mscoree disabled, Wine rejected every .NET DLL of BepInEx."""
     assert ts.fix_overrides("mscoree,mshtml=") == "mshtml=;winhttp=n,b"
     assert ts.fix_overrides("mscoree=") == "winhttp=n,b"
     assert ts.fix_overrides("mscoree,mshtml=;steam.exe=b") == "mshtml=;steam.exe=b;winhttp=n,b"
@@ -107,7 +107,7 @@ def test_carregador_vai_para_a_raiz_do_jogo_ligado_e_sem_console(game):
     assert os.path.exists(os.path.join(game_dir, "BepInEx", "core", "BepInEx.Core.dll"))
     assert not os.path.exists(os.path.join(game_dir, "icon.png"))
     assert "enabled = true" in Path(os.path.join(game_dir, "doorstop_config.ini")).read_text()
-    # Medido: o console ligado travava o servidor sob o X virtual.
+    # Measured: the console turned on froze the server under the virtual X.
     cfg = Path(os.path.join(game_dir, "BepInEx", "config", "BepInEx.cfg")).read_text()
     assert "[Logging.Console]\nEnabled = false" in cfg
     assert "WINE_DLL_OVERRIDES='mshtml=;winhttp=n,b'" in Path(env).read_text()
@@ -205,7 +205,7 @@ def test_main_termina_com_uma_linha_json(game, capsys, monkeypatch):
     assert "error" in json.loads(capsys.readouterr().out.strip().splitlines()[-1])
 
 
-# ------------------------------------------------------------------ versao escolhida
+# ------------------------------------------------------------------ chosen version
 
 def test_sem_versao_continua_a_mais_nova_e_nao_fixa(game):
     game_dir, env = game
@@ -215,7 +215,7 @@ def test_sem_versao_continua_a_mais_nova_e_nao_fixa(game):
 
 
 def test_versao_fixada_traz_as_dependencias_na_versao_que_ela_pede(game):
-    """Quem fixa a 2.0.0 quer o conjunto que o autor testou, e nao a dependencia mais nova."""
+    """Whoever pins 2.0.0 wants the set the author tested, not the newest dependency."""
     game_dir, env = game
     result = ts.install_plugin(game_dir, "odjit", "KindredCommands", fake_fetch, version="2.0.0")
     assert [p["full_name"] for p in result["installed"]] == [KC_OLD, VCF_OLD]
@@ -225,13 +225,13 @@ def test_versao_fixada_traz_as_dependencias_na_versao_que_ela_pede(game):
 
 
 def test_trocar_a_versao_de_um_mod_ja_instalado_substitui_por_inteiro(game):
-    """O servidor que ja roda a 0.11.0 volta para a 0.10.4 sem sobrar arquivo da outra."""
+    """The server already running 0.11.0 goes back to 0.10.4 with no file left over from the other."""
     game_dir, env = game
     ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch)
     ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch, version="0.10.4")
     dll = Path(game_dir, "BepInEx", "plugins", "deca-VampireCommandFramework", "VampireCommandFramework.dll")
     assert dll.read_bytes() == b"vcf-velho"
-    # E de volta para a mais nova, sem versao.
+    # And back to the newest, with no version.
     ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch)
     assert dll.read_bytes() == b"vcf"
     assert not ts.status(game_dir, env_path=env)["plugins"][0]["pinned"]
@@ -245,7 +245,7 @@ def test_versao_que_nao_existe_falha_sem_instalar_nada(game):
 
 
 def test_api_que_devolve_outra_versao_e_recusada(game):
-    """Pediu a 0.10.4 e veio a 0.11.0: instalar assim mesmo mentiria na tela."""
+    """Asked for 0.10.4 and got 0.11.0: installing anyway would lie on the screen."""
     game_dir, _ = game
 
     def wrong(url):
@@ -297,7 +297,7 @@ def test_verifica_o_pacote_e_as_dependencias_de_uma_vez_antes_de_gravar(game):
 
 
 def test_dependencia_recusada_nao_deixa_nada_instalado(game):
-    """Gravar o mod principal e recusar a dependencia deixaria um mod pela metade."""
+    """Writing the main mod and rejecting the dependency would leave a half-installed mod."""
     game_dir, _ = game
 
     def refuse(blobs):
@@ -319,10 +319,10 @@ def test_carregador_recusado_nao_toca_no_jogo_nem_no_wine(game):
     assert "mscoree,mshtml=" in Path(env).read_text()
 
 
-# ------------------------------------------------------------------ Linux nativo (Valheim)
+# ------------------------------------------------------------------ native Linux (Valheim)
 
 def test_linux_nativo_liga_o_bepinex_por_drop_in_e_nao_mexe_no_wine(tmp_path, monkeypatch):
-    """As variaveis sao as do start_server_bepinex.sh do BepInExPack_Valheim, com caminho absoluto."""
+    """The variables are those of BepInExPack_Valheim's start_server_bepinex.sh, with absolute paths."""
     reloads: list[int] = []
     monkeypatch.setattr(ts, "SYSTEMD_DIR", str(tmp_path / "systemd"))
     monkeypatch.setattr(ts, "_daemon_reload", lambda: reloads.append(1))
@@ -334,7 +334,7 @@ def test_linux_nativo_liga_o_bepinex_por_drop_in_e_nao_mexe_no_wine(tmp_path, mo
     assert ts.status(str(tmp_path), unit="valheim.service")["enabled"] is True
     ts.set_linux_enabled("/opt/game", "valheim.service", False)
     assert ts.status(str(tmp_path), unit="valheim.service")["enabled"] is False
-    # Sem o daemon-reload o systemd segue com o ambiente antigo.
+    # Without daemon-reload, systemd keeps the old environment.
     assert reloads == [1, 1]
 
 
@@ -344,11 +344,11 @@ def test_servico_do_drop_in_e_conferido(unit):
         ts.dropin_path(unit)
 
 
-# ------------------------------------------------------------------ desinstalar
+# ------------------------------------------------------------------ uninstall
 
 def test_desinstalar_tira_so_o_que_o_pacote_criou_e_devolve_o_wine(game):
     game_dir, env = game
-    # Do jogo: existia antes, nao pode sair (nem o dotnet do proprio jogo, se ele tiver um).
+    # From the game: it existed before, it must not go (nor the game's own dotnet, if it has one).
     Path(game_dir, "VRisingServer.exe").write_bytes(b"jogo")
     Path(game_dir, "dotnet").mkdir()
     Path(game_dir, "dotnet", "do-jogo.dll").write_bytes(b"jogo")
@@ -356,10 +356,10 @@ def test_desinstalar_tira_so_o_que_o_pacote_criou_e_devolve_o_wine(game):
     ts.install_plugin(game_dir, "deca", "VampireCommandFramework", fake_fetch)
     result = ts.uninstall_loader(game_dir, env_path=env)
     assert sorted(result["removed"]) == ["BepInEx", "doorstop_config.ini", "winhttp.dll"]
-    assert not Path(game_dir, "BepInEx").exists()  # os plugins moram ali e saem junto
+    assert not Path(game_dir, "BepInEx").exists()  # the plugins live there and go along
     assert Path(game_dir, "VRisingServer.exe").read_bytes() == b"jogo"
     assert Path(game_dir, "dotnet", "do-jogo.dll").exists()
-    # O WINE_DLL_OVERRIDES volta ao de antes (com o mscoree desligado, como o .env do jogo pos).
+    # WINE_DLL_OVERRIDES goes back to what it was (with mscoree disabled, as the game's .env set it).
     assert "WINE_DLL_OVERRIDES='mscoree,mshtml='" in Path(env).read_text()
     assert "RUNTIME='proton'" in Path(env).read_text()
 
@@ -374,7 +374,7 @@ def test_desinstalar_instalacao_antiga_sem_lista_usa_os_nomes_do_bepinex(game):
     assert not Path(game_dir, "BepInEx").exists()
     assert not Path(game_dir, "winhttp.dll").exists()
     assert Path(game_dir, "VRisingServer.exe").exists()
-    # Sem o valor de antes anotado, so o winhttp sai.
+    # With no previous value recorded, only winhttp goes.
     assert "WINE_DLL_OVERRIDES='mshtml='" in Path(env).read_text()
 
 

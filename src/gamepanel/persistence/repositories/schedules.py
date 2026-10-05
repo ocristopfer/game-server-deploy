@@ -1,11 +1,11 @@
-"""Leitura e escrita da tabela `schedules` — reinicio e backup na hora marcada."""
+"""Reads and writes the `schedules` table - restart and backup at the set time."""
 from __future__ import annotations
 
 import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
-# As colunas que a tela preenche. A ordem e a mesma do INSERT.
+# The columns the screen fills in. The order is the same as the INSERT's.
 FIELDS = ("action", "kind", "hour", "minute", "weekday", "every_hours")
 
 
@@ -19,15 +19,15 @@ def of_server(conn: sqlite3.Connection, sid: int) -> list[sqlite3.Row]:
 
 
 def enabled(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """As que o relogio precisa olhar. Desligada nao entra: e o jeito de pausar uma
-    tarefa sem perder a configuracao dela."""
+    """The ones the clock needs to look at. A disabled one is left out: that is how a task
+    is paused without losing its configuration."""
     return conn.execute("SELECT * FROM schedules WHERE enabled = 1").fetchall()
 
 
 def insert(conn: sqlite3.Connection, sid: int, data: Mapping[str, Any],
            last_run: str, created_at: str) -> None:
-    """Nasce LIGADA e com `last_run` preenchido: sem isso a primeira volta do relogio
-    acharia que ela esta vencida desde sempre e dispararia na hora."""
+    """Born ENABLED and with `last_run` filled in: without that the clock's first round
+    would think it had been overdue forever and fire it immediately."""
     conn.execute(
         f"INSERT INTO schedules (server_id, {', '.join(FIELDS)},"  # noqa: S608
         " enabled, last_run, created_at)"
@@ -36,8 +36,8 @@ def insert(conn: sqlite3.Connection, sid: int, data: Mapping[str, Any],
 
 
 def mark_run(conn: sqlite3.Connection, aid: int, when: str) -> None:
-    """Marca ANTES de disparar: se o job demorar (um update leva quase uma hora), a
-    proxima volta do relogio nao pode achar que a tarefa ainda esta vencida."""
+    """Mark BEFORE firing: if the job takes long (an update takes almost an hour), the
+    clock's next round must not think the task is still overdue."""
     conn.execute("UPDATE schedules SET last_run = ? WHERE id = ?", (when, aid))
 
 

@@ -1,6 +1,6 @@
-"""tools/import-pterodactyl.py: o que sai dele vira sugestao no formulario, e um egg do Pterodactyl
-e arquivo de terceiros. Cada regra de seguranca do conversor tem um caso aqui, com trechos no
-formato real dos eggs (pelican-eggs/games-steamcmd)."""
+"""tools/import-pterodactyl.py: its output becomes a suggestion in the form, and a Pterodactyl egg
+is a third-party file. Every safety rule of the converter has a case here, with excerpts in the
+real egg format (pelican-eggs/games-steamcmd)."""
 from __future__ import annotations
 
 import importlib.util
@@ -49,7 +49,7 @@ def _suggest(egg: dict, readme: str = VRISING_README) -> dict:
 
 
 def test_tabela_de_portas_do_readme_da_a_porta_que_o_egg_nao_tem():
-    """A porta principal do egg e a ALOCACAO do Pterodactyl, sem numero no JSON."""
+    """The egg's main port is the Pterodactyl ALLOCATION, with no number in the JSON."""
     ports = imp.classify_ports(imp.port_rows(VRISING_README))
     assert (ports.game, ports.query) == (9876, 9877)
     assert ports.exposed == ("9876/udp", "9877/udp")
@@ -69,7 +69,7 @@ def test_tabela_sem_protocolo_presume_udp_e_avisa():
 
 
 def test_tabela_fora_da_secao_de_portas_e_ignorada():
-    """A de requisitos tem numero (3072 MiB) e nao e porta."""
+    """The requirements table has a number (3072 MiB) and it is not a port."""
     assert all(r.number != 3072 for r in imp.port_rows(VRISING_README))
 
 
@@ -105,7 +105,7 @@ def test_encadeamento_e_cortado_e_o_script_de_instalacao_nunca_e_lido():
 
 
 def test_preparacao_do_container_nao_vira_o_executavel():
-    """`Xvfb :0 ...; xvfb-run wine X.exe` - o primeiro trecho e o X virtual, nao o jogo."""
+    """`Xvfb :0 ...; xvfb-run wine X.exe` - the first part is the virtual X, not the game."""
     s = _suggest(_egg("xvfb :0 -screen 0 1024x768x16; DISPLAY=:0.0 xvfb-run wine /home/container/Srv.exe -log",
                       {"SRCDS_APPID": "123", "WINDOWS_INSTALL": "1"}, image="ghcr.io/parkervcp/yolks:wine_latest"))
     assert s["start_script"] == "Srv.exe"
@@ -120,7 +120,7 @@ def test_cd_antes_do_executavel_entra_no_caminho():
 
 
 def test_servidor_de_windows_sai_com_proton_e_xvfb_quando_o_egg_usa():
-    """Regra do repositorio: Proton primeiro, mesmo quando o egg usa wine."""
+    """Repository rule: Proton first, even when the egg uses wine."""
     s = _suggest(_egg("xvfb-run wine ./VRisingServer.exe -persistentDataPath save-data",
                       {"SRCDS_APPID": "1829350", "WINDOWS_INSTALL": "1"}, image="ghcr.io/parkervcp/yolks:wine_staging"))
     assert s["platform"] == "windows"

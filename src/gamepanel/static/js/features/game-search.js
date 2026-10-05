@@ -1,19 +1,19 @@
-/* Busca de jogo (nome ou App ID) no formulario "Adicionar jogo".
+/* Game search (name or App ID) in the "Add game" form.
  *
- * Tres respostas, nesta ordem:
- * 1. o jogo JA esta no catalogo (curado ou adicionado antes): nao ha o que preencher, e o
- *    atalho e criar a instancia. A lista vem na propria pagina (data-catalog), sem pedido.
- *    Era o buraco do V Rising: ele e curado, e a busca dizia "nada encontrado".
- * 2. sugestoes das listas do repositorio (LinuxGSM, eggs do Pterodactyl e a curadoria do
- *    painel), pela API.
- *    O painel nao vai a internet; clicar preenche os campos, e o broker valida no envio.
- * 3. nada: links para o NAVEGADOR procurar o App ID (SteamDB) e as portas. Quem abre e a
- *    pessoa, nunca o painel - continua sem SSRF e sem dependencia de terceiro.
+ * Three answers, in this order:
+ * 1. the game is ALREADY in the catalog (curated or added before): there is nothing to fill in, and
+ *    the shortcut is to create the instance. The list comes in the page itself (data-catalog), no request.
+ *    That was the V Rising hole: it is curated, and the search said "nothing found".
+ * 2. suggestions from the repository's lists (LinuxGSM, Pterodactyl eggs and the panel's
+ *    curation), through the API.
+ *    The panel does not go to the internet; clicking fills the fields, and the broker validates on submit.
+ * 3. nothing: links for the BROWSER to look up the App ID (SteamDB) and the ports. Whoever opens them is the
+ *    person, never the panel - still no SSRF and no third-party dependency.
  *
- * Texto de tela vem do template (data-msg-*), que ja passou pelo i18n: escrito aqui ele sairia
- * em portugues na tela em ingles.
+ * Screen text comes from the template (data-msg-*), which already went through i18n: written here it would
+ * come out in Portuguese on the English screen.
  *
- * Nasce escondido: sem JavaScript nao ha o que fazer, e o formulario continua completo.
+ * Born hidden: without JavaScript there is nothing to do, and the form stays complete.
  */
 import { readJSON } from '../core/http.js';
 import { createEl, reset, fillForm } from '../core/dom.js';
@@ -22,7 +22,7 @@ const DEBOUNCE_MS = 250;
 const STEAMDB_SEARCH = 'https://steamdb.info/search/?a=app&q=';
 const WEB_SEARCH = 'https://duckduckgo.com/?q=';
 
-/* O mesmo `_normalize` da busca do servidor: sem acento, minusculo, so letras e numeros. */
+/* The same `_normalize` as the server-side search: no accents, lowercase, only letters and digits. */
 const normalize = (text) => String(text).normalize('NFKD').replace(/[̀-ͯ]/g, '')
   .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -56,9 +56,9 @@ export const gameSearch = {
     const choose = (found) => {
       fillForm(form, found.values);
       const notice = createEl('p', { className: 'flash ok', text: `${found.name}: ${msg.msgFilled}` });
-      // `warnings`, que e o que a API manda. Com o nome antigo (`avisos`) o `.map` estourava
-      // DEPOIS de preencher os campos: a tela ficava sem o aviso de conferir e sem os
-      // avisos da sugestao (porta presumida, argumento cortado), e sem erro nenhum a vista.
+      // `warnings`, which is what the API sends. With the old name (`avisos`) the `.map` blew up
+      // AFTER filling the fields: the screen ended up without the "double check" notice and without the
+      // suggestion's warnings (assumed port, cut argument), and with no error in sight.
       show([notice, ...(found.warnings || []).map(small)]);
     };
 
@@ -107,9 +107,9 @@ export const gameSearch = {
       const known = inCatalog(text).map(catalogRow);
       try {
         const data = await readJSON(`${block.dataset.url}?q=${encodeURIComponent(text)}`);
-        if (self !== request) return; // chegou depois de uma consulta mais nova: descarta
-        // O que ja esta no catalogo nao aparece de novo como sugestao: adicionar outra vez
-        // criaria um segundo jogo com o mesmo App ID, ou sobreporia o curado.
+        if (self !== request) return; // arrived after a newer query: discard
+        // What is already in the catalog does not show up again as a suggestion: adding it again
+        // would create a second game with the same App ID, or override the curated one.
         const appids = new Set(catalog.map((g) => String(g.app_id)));
         const fresh = data.resultados.filter((found) => !appids.has(String(found.appid)));
         if (!known.length && !fresh.length) { show(nothingFound(text)); return; }
@@ -123,7 +123,7 @@ export const gameSearch = {
       clearTimeout(waitId);
       waitId = setTimeout(search, DEBOUNCE_MS);
     });
-    // Enter dentro do campo enviaria o formulario inteiro (e criaria um jogo pela metade).
+    // Enter inside the field would submit the whole form (and create a half-done game).
     field.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Enter') return;
       ev.preventDefault();

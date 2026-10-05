@@ -1,17 +1,17 @@
 param(
-    # Modo interativo: pergunta cada valor (o .env vira apenas default dos prompts)
+    # Interactive mode: asks for each value (the .env becomes just the prompts' defaults)
     [switch]$Interactive,
-    # Forca o caminho completo pelo Proxmox (criar/reconfigurar o CT). Sem isto, se o
-    # container do painel ja existe e responde por SSH, o codigo vai direto para ele.
+    # Forces the full path through Proxmox (create/reconfigure the CT). Without it, if the
+    # panel container already exists and answers over SSH, the code goes straight to it.
     [switch]$Full,
     [string]$ProxmoxHost = "",
-    # Senha do root do Proxmox. Sem isto (e sem chave autorizada) o deploy nao entra.
-    # O normal e deixar em PROXMOX_PASSWORD no .env.
+    # Proxmox root password. Without it (and without an authorized key) the deploy cannot get in.
+    # The usual thing is to keep it in PROXMOX_PASSWORD in the .env.
     [string]$ProxmoxPassword = "",
-    # Depois de entrar por senha, autoriza sua chave publica no Proxmox para os
-    # proximos deploys nao pedirem mais nada.
+    # After logging in by password, authorizes your public key on Proxmox so the
+    # next deploys ask for nothing else.
     [switch]$InstallKey,
-    # Endereco do CT do painel para o envio direto (vazio = deduz do .env)
+    # Address of the panel CT for the direct push (empty = deduced from the .env)
     [string]$PanelHost = "",
     [string]$EnvFile = "",
     [string]$RemoteBundleDir = "/root/game-admin-deploy"
@@ -19,9 +19,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-# `$ScriptDir` e a pasta DESTE script (onde mora o provision-*.sh irmao). `$RepoRoot` e a
-# raiz do repositorio, dois niveis acima, e e de la que saem tools/, lib/, games/ e .env.
-# Na raiz os dois eram a mesma coisa por acidente; aqui a diferenca precisa ser dita.
+# `$ScriptDir` is THIS script's folder (where the sibling provision-*.sh lives). `$RepoRoot`
+# is the repository root, two levels up, and that is where tools/, lib/, games/ and .env come from.
+# At the root the two were the same thing by accident; here the difference must be spelled out.
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 function Read-EnvFile([string]$Path) {
@@ -34,9 +34,9 @@ function Read-EnvFile([string]$Path) {
         if ($idx -lt 1) { continue }
         $key = $trimmed.Substring(0, $idx).Trim()
         $value = $trimmed.Substring($idx + 1).Trim()
-        # Valor vazio seguido de comentario ("CHAVE=   # nota"): apos o Trim acima o '#'
-        # fica no inicio e o split abaixo nao casa, fazendo o texto do comentario virar
-        # o valor. Tratar antes, senao "ADMIN_PASSWORD=  # nota" define a nota como senha.
+        # Empty value followed by a comment ("KEY=   # note"): after the Trim above the '#'
+        # is at the start and the split below does not match, so the comment text becomes
+        # the value. Handle it first, otherwise "ADMIN_PASSWORD=  # note" sets the note as the password.
         if ($value.StartsWith("#")) { $value = "" }
         $value = ($value -split '\s+#')[0].Trim().Trim('"').Trim("'")
         $map[$key] = $value
@@ -55,8 +55,8 @@ function Ask([string]$Label, [string]$Default) {
     return $answer
 }
 
-# Tudo que o bash do Proxmox le precisa ir em UTF-8 sem BOM e com LF - o CR do Windows
-# quebraria o shebang dos .sh e deixaria um \r no fim de cada valor do .env.
+# Everything the Proxmox bash reads must go as UTF-8 without BOM and with LF - the Windows CR
+# would break the shebang of the .sh files and leave a \r at the end of every .env value.
 function Write-LfFile([string]$Path, [string]$Content) {
     $normalized = $Content -replace "`r`n", "`n"
     $dir = Split-Path -Parent $Path
@@ -68,36 +68,36 @@ function Copy-AsLf([string]$Source, [string]$Dest) {
     Write-LfFile $Dest ([System.IO.File]::ReadAllText($Source))
 }
 
-# Copy-AsLf so serve para TEXTO, e hoje so sobrou texto para ela: os scripts .sh que vao
-# para o bash do outro lado. O codigo do painel viaja dentro do tar.gz do release, que e
-# copia de bytes.
+# Copy-AsLf is only for TEXT, and today only text is left for it: the .sh scripts that go
+# to the bash on the other side. The panel code travels inside the release tar.gz, which is
+# a byte copy.
 #
-# Existiu aqui uma lista de extensoes "de texto" e um Copy-ArquivoDoAdmin que escolhia
-# entre ela e uma copia binaria, porque o deploy passava CADA arquivo do pacote por este
-# caminho. O ReadAllText decodifica como UTF-8: todo byte fora do plano ASCII vira o
-# caractere de substituicao (U+FFFD), e a troca \r`n -> `n ainda come um 0x0D que por
-# acaso caia depois de um 0x0A. Foi assim que os icones do manifest chegaram corrompidos
-# no servidor - a assinatura de PNG (89 50 4E 47 0D 0A 1A 0A) virou EF BF BD 50 4E 47 0A
-# 1A 0A, e o Chrome parou de aceitar qualquer icone do app (erro "no-acceptable-icon").
-# Com o release em tar, nao ha mais arquivo do pacote passando por aqui, e a classe
-# inteira desse defeito deixou de existir. Nao devolva o loop.
+# There used to be a list of "text" extensions here and a Copy-ArquivoDoAdmin that chose
+# between it and a binary copy, because the deploy passed EVERY file of the package through this
+# path. ReadAllText decodes as UTF-8: every byte outside the ASCII plane becomes the
+# replacement character (U+FFFD), and the \r`n -> `n swap also eats a 0x0D that happened
+# to fall after a 0x0A. That is how the manifest icons arrived corrupted
+# on the server - the PNG signature (89 50 4E 47 0D 0A 1A 0A) became EF BF BD 50 4E 47 0A
+# 1A 0A, and Chrome stopped accepting any app icon (error "no-acceptable-icon").
+# With the release in a tar, no package file passes through here anymore, and the whole
+# class of that defect ceased to exist. Do not bring the loop back.
 
-# ----- Acesso ao Proxmox: chave quando existe, senha do .env quando nao -----
+# ----- Proxmox access: key when there is one, .env password when not -----
 
-# O ssh/scp do Windows nao aceita senha por parametro, mas o OpenSSH 8.4+ chama o
-# programa apontado por SSH_ASKPASS quando SSH_ASKPASS_REQUIRE=force. O arquivo abaixo
-# nao guarda a senha: ele so ecoa uma variavel de ambiente deste processo.
+# Windows ssh/scp does not accept a password as a parameter, but OpenSSH 8.4+ calls the
+# program pointed to by SSH_ASKPASS when SSH_ASKPASS_REQUIRE=force. The file below
+# does not store the password: it only echoes an environment variable of this process.
 $script:AskPassFile = ""
-# Opcoes extras aplicadas a todo ssh/scp do deploy. No modo senha elas desligam a
-# tentativa por chave: sem isso o ssh pode cair no prompt do console, que num deploy
-# nao-interativo simplesmente trava.
+# Extra options applied to every ssh/scp of the deploy. In password mode they turn off the
+# key attempt: without that ssh may fall into the console prompt, which in a
+# non-interactive deploy simply hangs.
 $script:SshOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
 
-# O .gitattributes guarda todo .ps1 em CRLF, entao toda here-string deste arquivo nasce
-# com um \r no fim de cada linha. Do outro lado quem le e o bash, e para ele o \r faz
-# parte do argumento: 'sleep 3' vira "intervalo invalido", 'gamepanel.service' vira um
-# servico que nao existe e ate o 'set -e' do topo falha - o script segue adiante quebrado
-# e o deploy termina dizendo que deu certo. Some com ele aqui, uma vez, em vez de em cada
+# The .gitattributes stores every .ps1 as CRLF, so every here-string in this file is born
+# with a \r at the end of each line. On the other side the reader is bash, and for it the \r is
+# part of the argument: 'sleep 3' becomes "invalid interval", 'gamepanel.service' becomes a
+# service that does not exist and even the 'set -e' at the top fails - the script goes on broken
+# and the deploy ends saying it succeeded. Strip it here, once, instead of in every
 # here-string.
 function ConvertTo-Lf([string]$Text) { return ($Text -replace "`r", "") }
 
@@ -124,7 +124,7 @@ function Enable-PasswordAuth([string]$Password) {
     $env:GAMEPANEL_SSH_PASSWORD = $Password
     $env:SSH_ASKPASS = $script:AskPassFile
     $env:SSH_ASKPASS_REQUIRE = "force"
-    # Alguns builds so consultam o askpass com DISPLAY definido.
+    # Some builds only consult askpass with DISPLAY set.
     if (-not $env:DISPLAY) { $env:DISPLAY = "localhost:0" }
     $script:SshOpts += @("-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password")
 }
@@ -139,7 +139,7 @@ function Disable-PasswordAuth {
 }
 
 function Test-KeyAuth([string]$Target) {
-    # "Nao entrou" e resposta esperada aqui; ver o comentario em Test-PanelReachable.
+    # "Did not get in" is an expected answer here; see the comment in Test-PanelReachable.
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
@@ -182,10 +182,10 @@ function Install-KeyOnProxmox([string]$Target, [string]$PubKey) {
     Write-Host "Pronto: os proximos deploys entram por chave, sem senha." -ForegroundColor Green
 }
 
-# ----- Envio direto para o CT do painel (sem passar pelo Proxmox) -----
+# ----- Direct push to the panel CT (without going through Proxmox) -----
 
-# Endereco do painel: parametro > ADMIN_HOST > o IP fixo do ADMIN_IP_CIDR.
-# Com ADMIN_IP_CIDR=dhcp nao da para deduzir - informe ADMIN_HOST ou -PanelHost.
+# Panel address: parameter > ADMIN_HOST > the fixed IP from ADMIN_IP_CIDR.
+# With ADMIN_IP_CIDR=dhcp it cannot be deduced - set ADMIN_HOST or -PanelHost.
 function Resolve-PanelHost($Map, [string]$Override) {
     if ($Override -ne "") { return $Override }
     $fromEnv = Get-Cfg $Map "ADMIN_HOST"
@@ -197,21 +197,21 @@ function Resolve-PanelHost($Map, [string]$Override) {
 
 function Test-PanelReachable([string]$Target) {
     if ($Target -eq "") { return $false }
-    # "Nao respondeu" e uma resposta valida aqui, nao um erro do deploy. No PowerShell
-    # 5.1 o stderr do ssh redirecionado vira excecao quando ErrorActionPreference e
-    # 'Stop', entao o modo estrito fica suspenso so nesta checagem.
+    # "Did not answer" is a valid answer here, not a deploy error. In PowerShell
+    # 5.1 redirected ssh stderr becomes an exception when ErrorActionPreference is
+    # 'Stop', so strict mode is suspended only for this check.
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        # BatchMode: sem chave autorizada, falha na hora em vez de pedir senha.
-        # O que se pergunta e "este CT ja tem o mecanismo de release?", e por isso a
-        # marca e o symlink `current` -- nao o pacote. Um CT anterior a esse mecanismo
-        # PRECISA do caminho completo: o atalho so empurra o tarball, e a unit de la
-        # ainda aponta para fora de `current`, entao o release entraria sem nunca ser
-        # servido. A sonda antiga testava o pacote DIRETO em /opt/gamepanel, que era o
-        # layout antigo: depois da migracao ela falhava SEMPRE, e todo deploy incremental
-        # virava um provisionamento completo em silencio -- que passa pelo Proxmox, roda
-        # apt e redefine a senha do admin a cada vez.
+        # BatchMode: without an authorized key, fail right away instead of asking for a password.
+        # The question is "does this CT already have the release mechanism?", which is why the
+        # marker is the `current` symlink -- not the package. A CT older than that mechanism
+        # NEEDS the full path: the shortcut only pushes the tarball, and the unit there
+        # still points outside `current`, so the release would land without ever being
+        # served. The old probe tested the package DIRECTLY in /opt/gamepanel, which was the
+        # old layout: after the migration it failed ALWAYS, and every incremental deploy
+        # silently turned into a full provisioning -- which goes through Proxmox, runs
+        # apt and resets the admin password every time.
         ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new `
             "root@$Target" "test -L /opt/gamepanel/current" 2>$null | Out-Null
         return ($LASTEXITCODE -eq 0)
@@ -222,7 +222,7 @@ function Test-PanelReachable([string]$Target) {
     }
 }
 
-# Chave publica do operador: com ela no CT, os proximos deploys vao direto.
+# Operator's public key: with it in the CT, the next deploys go direct.
 function Get-LocalPubKey([string]$Configured) {
     if ($Configured -ne "") { return $Configured }
     foreach ($name in @("id_ed25519.pub", "id_rsa.pub")) {
@@ -232,9 +232,9 @@ function Get-LocalPubKey([string]$Configured) {
     return ""
 }
 
-# Executavel nativo cujo stderr NAO e erro. O empacotador escreve o aviso de arvore suja
-# no stderr, e com ErrorActionPreference='Stop' isso viraria excecao em cima de um
-# sucesso. Quem decide aqui e o codigo de saida.
+# Native executable whose stderr is NOT an error. The packager writes the dirty-tree warning
+# to stderr, and with ErrorActionPreference='Stop' that would become an exception on top of a
+# success. What decides here is the exit code.
 function Invoke-Native([scriptblock]$Command, [string]$What) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -247,9 +247,9 @@ function Invoke-Native([scriptblock]$Command, [string]$What) {
 }
 
 function New-ReleaseBundle([string]$Package) {
-    # Empacota aqui, com o Python do repo. O artefato e determinista (ver
-    # tools/build-release.py), entao o sha256 que viaja com ele responde "o CT esta com
-    # ESTE codigo?", e nao so "o arquivo chegou inteiro?".
+    # Packages here, with the repo's Python. The artifact is deterministic (see
+    # tools/build-release.py), so the sha256 that travels with it answers "does the CT have
+    # THIS code?", and not just "did the file arrive whole?".
     $builder = Join-Path $RepoRoot "tools/build-release.py"
     if (-not (Test-Path $builder)) { throw "tools/build-release.py nao encontrado em $ScriptDir" }
     $dist = Join-Path ([System.IO.Path]::GetTempPath()) "gamepanel-release"
@@ -270,26 +270,26 @@ function Invoke-DirectDeploy([string]$Target, [string]$Port) {
     Invoke-Ssh $Target "rm -rf '$remoteTmp' && mkdir -p '$remoteTmp'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $remoteTmp em root@$Target" }
 
-    # DOIS arquivos, e so: o pacote e o instalador. O envio antigo copiava a arvore
-    # inteira e mantinha, do lado de la, uma lista escrita a mao de quais pastas apagar
-    # antes - lista que ficou para tras a cada pasta nova do pacote e deixava modulo
-    # renomeado vivo no container. Aqui o release e uma pasta nova: nao ha o que sobrar.
+    # TWO files, and that is all: the package and the installer. The old push copied the whole
+    # tree and kept, on the other side, a hand-written list of which folders to delete
+    # first - a list that fell behind with every new folder in the package and left a renamed
+    # module alive in the container. Here the release is a new folder: there is nothing to leave behind.
     #
-    # E copia de BYTES: o loop antigo passava cada arquivo por um normalizador de fim de
-    # linha, e o PNG que caisse nessa peneira chegava corrompido (o icone do PWA chegou).
+    # It is a BYTE copy: the old loop passed every file through a line-ending
+    # normalizer, and any PNG caught in that sieve arrived corrupted (the PWA icon did).
     Invoke-Scp @($release.Path, (Join-Path $RepoRoot "lib/install-release.sh")) "root@${Target}:$remoteTmp/"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o release do painel" }
 
-    # A sonda de saude e quem decide se o release fica: se ela nao responder, o
-    # instalador devolve o symlink para a versao anterior e sai com erro. A limpeza vem
-    # DEPOIS, num comando separado, para o codigo de saida que chega aqui ser o do
-    # instalador e nao o do 'rm'.
-    # wget e nao curl: o CT do painel NAO tem curl (o install_packages instala wget, e
-    # nem ele vinha antes -- estava ali por acaso, pelo template). Com `curl` aqui o
-    # `eval` do instalador falhava com "command not found" nas dez tentativas, e o
-    # rollback desfazia um release que tinha subido perfeitamente: o servico respondia,
-    # so a FERRAMENTA da sonda nao existia. Falso negativo e pior que sonda nenhuma.
-    # Sem aspas de proposito: este comando viaja dentro de um argumento ja entre apostrofos.
+    # The health probe decides whether the release stays: if it does not answer, the
+    # installer points the symlink back to the previous version and exits with an error. Cleanup comes
+    # AFTERWARDS, in a separate command, so that the exit code that reaches here is the
+    # installer's and not the 'rm''s.
+    # wget and not curl: the panel CT does NOT have curl (install_packages installs wget, and
+    # not even that was there before -- it was there by chance, from the template). With `curl` here the
+    # installer's `eval` failed with "command not found" in all ten attempts, and the
+    # rollback undid a release that had come up perfectly: the service answered,
+    # only the probe's TOOL did not exist. A false negative is worse than no probe at all.
+    # No quotes on purpose: this command travels inside an argument already in single quotes.
     $healthCmd = "wget -q -O /dev/null http://127.0.0.1:$Port/health"
     Invoke-Ssh $Target "bash '$remoteTmp/install-release.sh' gamepanel '$remoteTmp/$($release.Name)' '$($release.Sha)' /opt/gamepanel gamepanel.service '$healthCmd'"
     $installed = ($LASTEXITCODE -eq 0)
@@ -300,16 +300,16 @@ function Invoke-DirectDeploy([string]$Target, [string]$Port) {
         throw "gamepanel.service nao ficou ativo apos o envio direto"
     }
 
-    # Confirma pelo /health que o processo NO AR e o que acabou de ser publicado. Um
-    # "systemctl is-active" satisfeito e compativel com "o systemd reiniciou a versao
-    # velha": os dois dao verde, e so a versao separa os dois casos.
+    # Confirms via /health that the LIVE process is the one just published. A
+    # satisfied "systemctl is-active" is compatible with "systemd restarted the old
+    # version": both show green, and only the version tells the two cases apart.
     $live = (Invoke-Ssh $Target "wget -q -O - http://127.0.0.1:$Port/health").Trim()
     Write-Host "`nPainel atualizado em http://${Target}:$Port" -ForegroundColor Green
     Write-Host "  /health: $live" -ForegroundColor DarkGray
     Write-Host "Config (ADMIN_*), recursos do CT e usuario so mudam no modo completo: .\deploy-admin.ps1 -Full" -ForegroundColor DarkGray
 }
 
-# ----- Configuracao -----
+# ----- Configuration -----
 if ($EnvFile -eq "") { $EnvFile = Join-Path $RepoRoot ".env" }
 $cfg = Read-EnvFile $EnvFile
 
@@ -342,10 +342,10 @@ if ($Interactive) {
     throw "Modo automatico requer o arquivo .env ($EnvFile). Copie o .env.example ou use -Interactive."
 }
 
-# ----- Atalho: CT ja existe e responde? Manda o release direto para ele -----
-# Antes do bundle de proposito: este caminho nao usa o bundle, so o tarball que o
-# Invoke-DirectDeploy empacota. Montar a arvore inteira aqui era trabalho jogado fora em
-# todo deploy incremental - que e a maioria deles.
+# ----- Shortcut: CT already exists and answers? Send the release straight to it -----
+# Before the bundle on purpose: this path does not use the bundle, only the tarball that
+# Invoke-DirectDeploy packages. Assembling the whole tree here was wasted work on
+# every incremental deploy - which is most of them.
 if (-not $Interactive -and -not $Full) {
     $TargetPanel = Resolve-PanelHost $cfg $PanelHost
     if (Test-PanelReachable $TargetPanel) {
@@ -357,11 +357,11 @@ if (-not $Interactive -and -not $Full) {
     }
 }
 
-# ----- Monta o bundle do provisionamento completo -----
-# O caminho pelo Proxmox leva o script de provisionamento, o .env e o MESMO tarball de
-# release que o envio direto usa: um artefato so, publicado do mesmo jeito nos dois
-# caminhos. O loop que copiava arquivo por arquivo saiu junto com a lista escrita a mao
-# de quais pastas limpar do outro lado.
+# ----- Assembles the full-provisioning bundle -----
+# The Proxmox path carries the provisioning script, the .env and the SAME release
+# tarball the direct push uses: a single artifact, published the same way on both
+# paths. The loop that copied file by file went away together with the hand-written list
+# of which folders to clean on the other side.
 $BundleDir = Join-Path ([System.IO.Path]::GetTempPath()) "game-admin-bundle"
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 New-Item -ItemType Directory -Path $BundleDir | Out-Null
@@ -371,14 +371,14 @@ Copy-AsLf (Join-Path $RepoRoot "lib/install-release.sh") (Join-Path $BundleDir "
 Copy-AsLf (Join-Path $RepoRoot "lib/ct-firewall.sh") (Join-Path $BundleDir "ct-firewall.sh")
 
 $Release = New-ReleaseBundle "gamepanel"
-# Copy-Item, nunca Copy-AsLf: um tar.gz passado pelo normalizador de fim de linha e
-# decodificado como UTF-8 e chega do outro lado como lixo.
+# Copy-Item, never Copy-AsLf: a tar.gz passed through the line-ending normalizer is
+# decoded as UTF-8 and arrives on the other side as garbage.
 Copy-Item $Release.Path (Join-Path $BundleDir $Release.Name)
 Write-LfFile (Join-Path $BundleDir "release.env") (
     "RELEASE_TARBALL='$($Release.Name)'`nRELEASE_SHA256='$($Release.Sha)'`n")
 Write-Host "Release do painel: $($Release.Name)" -ForegroundColor DarkGray
 
-# ----- Caminho completo: cria/reconfigura o CT pelo host Proxmox -----
+# ----- Full path: create/reconfigure the CT through the Proxmox host -----
 if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido (parametro, .env ou modo interativo)." }
 foreach ($required in @("ADMIN_CTID", "STORAGE", "BRIDGE")) {
     if ((Get-Cfg $cfg $required) -eq "") {
@@ -393,7 +393,7 @@ if ((Get-Cfg $cfg "ADMIN_CTID") -eq (Get-Cfg $cfg "CTID")) {
     throw "ADMIN_CTID nao pode ser igual ao CTID usado pelos servidores de jogo ($($cfg['CTID']))"
 }
 
-# Chave do operador vai junto: e ela que habilita o envio direto nos proximos deploys.
+# The operator's key goes along: it is what enables the direct push on the next deploys.
 $cfg["ADMIN_SSH_PUBKEY"] = Get-LocalPubKey (Get-Cfg $cfg "ADMIN_SSH_PUBKEY")
 if ((Get-Cfg $cfg "ADMIN_SSH_PUBKEY") -eq "") {
     Write-Host "Sem chave publica SSH local: o CT nao vai aceitar envio direto (rode ssh-keygen)." -ForegroundColor DarkGray
@@ -423,15 +423,15 @@ foreach ($key in $adminKeys) {
 }
 Write-LfFile (Join-Path $BundleDir "admin.env") (($adminLines -join "`n") + "`n")
 
-# ----- Envia e executa no Proxmox -----
+# ----- Send and run on Proxmox -----
 try {
     Write-Host "`nEnviando bundle do painel para root@$ProxmoxHost..." -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
 
-    # Uma pasta rasa, sem subpasta nenhuma: seis arquivos, um deles o tarball. O envio
-    # recursivo da arvore saiu daqui - era o que exigia conferir, a cada pasta nova do
-    # pacote, se o -Recurse ainda alcancava tudo.
+    # A flat folder, no subfolders at all: six files, one of them the tarball. The recursive
+    # push of the tree left this place - it was what required checking, with every new folder
+    # in the package, whether -Recurse still reached everything.
     $topLevel = @(
         (Join-Path $BundleDir "provision-admin-lxc.sh"),
         (Join-Path $BundleDir "install-release.sh"),
@@ -452,6 +452,6 @@ try {
         Write-Host "Dica: rode com -InstallKey uma vez para autorizar sua chave e parar de usar senha." -ForegroundColor DarkGray
     }
 } finally {
-    # A senha some do ambiente mesmo se o deploy falhar no meio.
+    # The password leaves the environment even if the deploy fails midway.
     Disable-PasswordAuth
 }

@@ -1,14 +1,16 @@
-"""Quantos clientes estao conversando com o jogo AGORA, pelo firewall do proprio CT.
+"""How many clients are talking to the game RIGHT NOW, via the CT's own firewall.
 
-Para jogo que nao publica consulta nenhuma (o Dragonwilds usa EOS da Epic, e nao a Steam),
-o log da os nomes mas reconstroi a contagem de eventos: quem caiu sem linha de saida fica
-"online" ate o proximo restart. Este e o numero que nao depende do jogo escrever nada.
+For a game that publishes no query at all (Dragonwilds uses Epic's EOS, not Steam), the
+log gives the names but rebuilds the count from events: whoever dropped without a leave
+line stays "online" until the next restart. This is the number that does not depend on
+the game writing anything.
 
-O `lib/ct-firewall.sh` mantem, na tabela dele, o conjunto `players`: o par IP:porta de
-origem de quem mandou pacote para a porta UDP do jogo com a conversa ESTABELECIDA (o
-servidor ja respondeu), com validade de alguns segundos. Scanner que manda um pacote solto
-nao entra - o jogo nao responde a lixo -, e quem saiu some sozinho quando a validade
-vence. IP:porta e nao so IP: dois jogadores da mesma casa saem pelo mesmo IP publico.
+`lib/ct-firewall.sh` keeps, in its table, the `players` set: the source IP:port pair of
+whoever sent a packet to the game's UDP port with the conversation ESTABLISHED (the
+server already replied), with a lifetime of a few seconds. A scanner sending a stray
+packet does not get in - the game does not answer garbage - and whoever left disappears
+on their own when the lifetime expires. IP:port and not just IP: two players in the same
+house go out through the same public IP.
 """
 from __future__ import annotations
 
@@ -16,20 +18,24 @@ import json
 from collections.abc import Callable
 
 from gamepanel.i18n import Message
+from gamepanel.runtime import remote_cmd
 from gamepanel.runtime.a2s import QueryError
 from gamepanel.runtime.ssh import RemoteError, ServerLike
 
-# O nome da tabela e do conjunto sao os do ct-firewall.sh: mudar la e mudar aqui.
+# The table and set names are the ones in ct-firewall.sh: changing them there means
+# changing them here.
 PRESENCE_TABLE = "ct_firewall"
 PRESENCE_SET = "players"
-# `-j` e saida estavel para maquina; o texto do `nft list` muda de versao para versao.
+# `-j` is stable machine output; the `nft list` text changes from version to version.
+# The legacy-mode command; `remote_cmd.presence` builds it per server (helper mode goes
+# through the fixed sudo line).
 PRESENCE_COMMAND = f"nft -j list set inet {PRESENCE_TABLE} {PRESENCE_SET}"
 
 SshOutput = Callable[[ServerLike, str, int], str]
 
 
 def count_from_json(raw: str) -> int:
-    """Quantos elementos o conjunto tem, a partir do `nft -j`."""
+    """How many elements the set has, from `nft -j`."""
     try:
         data = json.loads(raw)
     except ValueError as exc:
@@ -43,12 +49,12 @@ def count_from_json(raw: str) -> int:
 
 def players_from_presence(ssh_output: SshOutput, server: ServerLike) -> dict:
     try:
-        raw = ssh_output(server, PRESENCE_COMMAND, 20)
+        raw = ssh_output(server, remote_cmd.presence(server), 20)
     except RemoteError as exc:
-        # Sem o conjunto o nft diz "No such file or directory": e o CT com o firewall antigo
-        # (ou sem firewall), e a tela precisa dizer o que fazer. Qualquer outra falha (SSH
-        # fora do ar) sobe como veio - chamar isso de "falta o firewall" mandaria a pessoa
-        # reaplicar regra num CT que so esta desligado.
+        # Without the set nft says "No such file or directory": it is a CT with the old
+        # firewall (or no firewall), and the screen needs to say what to do. Any other
+        # failure (SSH down) goes up as it came - calling it "firewall missing" would send
+        # the person to reapply rules on a CT that is merely powered off.
         if "no such file" in str(exc).lower():
             raise QueryError(Message("presence.missing")) from exc
         raise QueryError(str(exc)) from exc

@@ -1,4 +1,4 @@
-"""Cadastro e operacao de um servidor: criar, editar, remover e agir sobre ele."""
+"""Registering and operating a server: create, edit, remove and act on it."""
 from __future__ import annotations
 
 import sqlite3
@@ -8,6 +8,7 @@ from flask import Blueprint, abort, flash, jsonify, redirect, render_template, r
 from gamepanel import app as panel
 from gamepanel import i18n
 from gamepanel.persistence.repositories import servers as servers_repo
+from gamepanel.runtime import remote_cmd
 
 bp = Blueprint("servers", __name__)
 
@@ -16,7 +17,9 @@ bp = Blueprint("servers", __name__)
 @panel.admin_required
 def new():
     data: dict = dict.fromkeys(panel.SERVER_FIELDS, "")
-    data.update({"ssh_user": "root", "ssh_port": 22, "query_port": 0})
+    # New servers log in unprivileged: containers created from now on have the `gamepanel` user
+    # (docs/security-hardening-contract.md). The field stays editable for a legacy container.
+    data.update({"ssh_user": remote_cmd.HELPER_USER, "ssh_port": 22, "query_port": 0})
     if request.method == "POST":
         data, errors = panel._form_server(request.form)
         if not errors:
@@ -48,8 +51,8 @@ def edit(sid: int):
                 with conn:
                     servers_repo.update(conn, data, sid)
                 panel.invalidate_status(sid)
-                # A contagem fica em cache por alguns segundos: trocar a fonte pelo
-                # formulario tem que valer na hora, como vale pelo assistente.
+                # The count is cached for a few seconds: changing the source through the
+                # form has to take effect immediately, as it does through the wizard.
                 panel.invalidate_players(sid)
                 flash(panel.translate("flash.server_updated"), "ok")
                 return redirect(url_for("servers.detail", sid=sid))
@@ -57,9 +60,9 @@ def edit(sid: int):
                 errors.append(i18n.Message("flash.server_duplicate", host=data["host"]))
         for err in errors:
             flash(panel.translate(err), "error")
-    # `server` (a linha do banco, nao o formulario) vai junto: e dele que a barra de
-    # navegacao do servidor tira o id e o nome. Sem isso esta tela seria a unica do
-    # servidor sem a barra — e era exatamente assim que a navegacao ia divergindo.
+    # `server` (the database row, not the form) goes along: the server's navigation bar
+    # takes the id and name from it. Without it this screen would be the only server screen
+    # without the bar, and that was exactly how the navigation kept drifting apart.
     return render_template("server_form.html", data=data, mode="edit", sid=sid,
                            server=server)
 
@@ -85,16 +88,16 @@ def detail(sid: int):
     jobs = panel.server_jobs(conn, sid, 15)
     lines = panel._log_lines_arg(request.args.get("lines"))
 
-    # Status, medidores, jogadores e log sao quatro idas de SSH independentes. Em serie a
-    # tela custava a soma das quatro — e com o container fora do ar, a soma dos quatro
-    # timeouts antes de mostrar "inacessivel".
+    # Status, gauges, players and log are four independent SSH round trips. In series the
+    # screen cost the sum of the four, and with the container down, the sum of the four
+    # timeouts before showing "unreachable".
     read_value = panel.in_parallel({
         "status": lambda: panel.server_status(server),
         "metrics": lambda: panel.server_metrics(server),
         "players": lambda: panel.server_players(server),
         "logs": lambda: panel.read_logs(server, lines),
     })
-    # read_logs devolve (texto, cursor) — o par inteiro vem no lugar do "valor".
+    # read_logs returns (text, cursor): the whole pair comes in place of the "value".
     log_pair, log_error = read_value["logs"]
     logs, log_cursor = log_pair if log_pair else ("", "")
 
@@ -104,8 +107,8 @@ def detail(sid: int):
         status=read_value["status"][0] or {"reachable": False, "service": "desconhecido",
                                      "error": read_value["status"][1]},
         metrics=read_value["metrics"][0] or {"error": read_value["metrics"][1]},
-        # Mesma forma que o server_players devolve, para a tela nao precisar saber que
-        # houve erro na leitura em vez de erro na contagem.
+        # Same shape that server_players returns, so the screen does not need to know that
+        # the error was in reading rather than in counting.
         players=read_value["players"][0] or {"configured": True, "error": read_value["players"][1],
                                        "players": None, "list": [], "source": ""},
         jobs=jobs,
@@ -130,12 +133,12 @@ def api_metrics(sid: int):
 @bp.get("/api/v1/servers/<int:sid>/logs")
 @panel.login_required
 def api_logs(sid: int):
-    """Alimenta o "seguir log" da tela de detalhe."""
+    """Feed the detail screen's "follow log"."""
     server = servers_repo.by_id(panel.db(), sid)
     if not server:
         abort(404)
-    # Cursor recusado (adulterado, ou de um journalctl que nao os emite) vira leitura
-    # completa: sem isso o cliente anexaria o log inteiro por cima do que ja esta na tela.
+    # A rejected cursor (tampered with, or from a journalctl that does not emit them) becomes a full
+    # read: without this the client would append the whole log on top of what is already on screen.
     cursor = request.args.get("cursor", "")
     if not panel.CURSOR_RE.match(cursor or ""):
         cursor = ""
@@ -146,8 +149,8 @@ def api_logs(sid: int):
     return jsonify({
         "text": text,
         "cursor": new_cursor,
-        # Sem cursor (primeira volta, ou journalctl antigo) o cliente troca o bloco
-        # inteiro; com cursor ele so anexa as linhas novas.
+        # Without a cursor (first round, or an old journalctl) the client replaces the whole
+        # block; with a cursor it only appends the new lines.
         "append": bool(cursor and new_cursor),
     })
 

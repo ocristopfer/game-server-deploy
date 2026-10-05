@@ -1,19 +1,19 @@
-/* Confirmacao antes de uma acao sem volta.
+/* Confirmation before an irreversible action.
  *
- * Antes, cada tela escrevia `onsubmit="return confirm('Apagar {{ nome }}?')"` no
- * proprio HTML. Isso tem dois problemas: o nome (que vem do container ou do jogo)
- * entrava DENTRO de codigo JavaScript — um apostrofo no nome do arquivo quebrava a
- * pagina — e nada disso sobrevive a uma politica de CSP sem `unsafe-inline`.
+ * Before, each screen wrote `onsubmit="return confirm('Apagar {{ nome }}?')"` in its
+ * own HTML. That has two problems: the name (which comes from the container or the game)
+ * went INSIDE JavaScript code - an apostrophe in the file name broke the
+ * page - and none of it survives a CSP policy without `unsafe-inline`.
  *
- * Aqui a mensagem viaja em data-confirm, que o navegador ja entrega decodificada
- * e que nunca e interpretada como codigo.
+ * Here the message travels in data-confirm, which the browser already hands over decoded
+ * and which is never interpreted as code.
  */
 export const confirmAction = {
   selector: '[data-confirm]',
   mount(el) {
-    // No formulario a confirmacao vale para o envio inteiro; no botao, so para
-    // aquele botao — um formulario de alertas tem "Salvar", "Testar" e "Remover",
-    // e so o ultimo pergunta. O clique e cancelavel e acontece antes do submit.
+    // On a form the confirmation applies to the whole submission; on a button, only to
+    // that button - an alerts form has "Save", "Test" and "Remove",
+    // and only the last one asks. The click is cancelable and happens before the submit.
     const event = el.tagName === 'FORM' ? 'submit' : 'click';
 
     el.addEventListener(event, (ev) => {
@@ -22,8 +22,8 @@ export const confirmAction = {
         ev.stopPropagation();
         return;
       }
-      // Sair confirmado e uma saida deliberada: o editor de arquivos nao deve
-      // perguntar "voce tem alteracoes nao salvas" por cima desta confirmacao.
+      // A confirmed exit is a deliberate exit: the file editor must not
+      // ask "you have unsaved changes" on top of this confirmation.
       document.dispatchEvent(new CustomEvent('gp:saida-deliberada'));
     });
   },

@@ -1,13 +1,13 @@
-/* Camada 1 — TOKENS.
+/* Layer 1 - TOKENS.
  *
- * Nenhum valor de cor, espaco ou tamanho e escrito a mao nas outras camadas: tudo
- * passa por aqui. E o que permite trocar a pele do painel (ou nascer um tema claro)
- * sem abrir um arquivo de componente sequer.
+ * No color, spacing or size value is written by hand in the other layers: everything
+ * goes through here. That is what lets the panel be reskinned without opening a single
+ * component file - the light theme, at the end of this file, is just another list of values.
  */
 :root {
   color-scheme: dark;
 
-  /* ---- superficie e texto ---- */
+  /* ---- surface and text ---- */
   --bg: #0f1216;
   --panel: #171c22;
   --panel-2: #1e242c;
@@ -17,27 +17,31 @@
   --text: #e6eaef;
   --muted: #93a1b0;
   --black: #0a0d11;
+  /* The terminal background does NOT follow the theme: its foreground (pages.css) and the
+     ANSI palette of terminal.js are protocol, designed for a dark background. On a light
+     background half the colors of an `ls --color` would vanish. */
+  --term-bg: #0a0d11;
 
-  /* ---- intencao ---- */
+  /* ---- intent ---- */
   --accent: #4f9cf9;
   --accent-text: #06131f;
   --ok: #3fb950;
   --warn: #d29922;
   --err: #f85149;
-  /* Texto de estado e um tom CLARO do proprio estado, e nao o `--err`/`--ok` cru: sobre o
-     fundo escuro do painel a cor de borda nao tem contraste para ler frase. O `--ok-text`
-     nasceu de um `#8ce39a` solto no `.flash.ok`, que era o unico estado sem par. */
+  /* State text is a LIGHT shade of the state itself, not the raw `--err`/`--ok`: on the
+     panel's dark background the border color lacks the contrast to read a sentence. `--ok-text`
+     was born from a loose `#8ce39a` in `.flash.ok`, which was the only state without a pair. */
   --err-text: #ffb4ae;
   --ok-text: #8ce39a;
 
-  /* Misturas usadas em borda/fundo de estado. Calculadas uma vez aqui para os
-     componentes nao repetirem color-mix em vinte lugares. */
+  /* Mixes used in state borders/backgrounds. Computed once here so the
+     components do not repeat color-mix in twenty places. */
   --ok-line: color-mix(in srgb, var(--ok) 45%, transparent);
   --warn-line: color-mix(in srgb, var(--warn) 45%, transparent);
   --err-line: color-mix(in srgb, var(--err) 45%, transparent);
   --err-bg: color-mix(in srgb, var(--err) 12%, transparent);
 
-  /* ---- espaco (escala de 4) ---- */
+  /* ---- spacing (scale of 4) ---- */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
@@ -45,12 +49,12 @@
   --sp-5: 24px;
   --sp-6: 32px;
 
-  /* ---- forma ---- */
+  /* ---- shape ---- */
   --r-sm: 8px;
   --r-md: 12px;
   --r-pill: 999px;
 
-  /* ---- tipografia ---- */
+  /* ---- typography ---- */
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --fs-xs: .75rem;
@@ -60,37 +64,37 @@
   --fs-lg: 1.15rem;
   --fs-xl: 1.35rem;
 
-  /* ---- toque ----
-     44px e o minimo confortavel para o dedo. Todo controle clicavel do painel
-     encosta nesse piso, inclusive os "pequenos". */
+  /* ---- touch ----
+     44px is the comfortable minimum for a finger. Every clickable control in the panel
+     meets this floor, including the "small" ones. */
   --tap: 44px;
   --tap-sm: 36px;
 
-  /* ---- elevacao ---- */
+  /* ---- elevation ---- */
   --shadow-2: 0 6px 20px rgba(0, 0, 0, .45);
   --shadow-3: 0 12px 32px rgba(0, 0, 0, .55);
 
-  /* ---- camadas ---- */
-  /* O menu suspenso passa POR CIMA da barra de abas: no celular ele abre para baixo
-     e, mais baixo que a barra, metade dos itens ficava escondida atras dela. */
+  /* ---- layers ---- */
+  /* The dropdown menu goes ON TOP of the tab bar: on the phone it opens downward
+     and, when it was below the bar, half of its items were hidden behind it. */
   --z-bar: 40;
   --z-menu: 50;
   --z-fullscreen: 60;
 
-  /* ---- esqueleto do app ----
-     A altura das barras e um token porque tres camadas precisam dela: o main
-     reserva o espaco embaixo, o menu suspenso se ancora nela e o terminal
-     desconta ela da altura da tela. */
+  /* ---- app skeleton ----
+     The bar height is a token because three layers need it: main reserves the space
+     at the bottom, the dropdown menu anchors to it and the terminal subtracts it from
+     the screen height. */
   --appbar-h: 52px;
   --tabbar-h: 56px;
-  /* Largura da coluna de conteudo. Era 1120px, e num monitor comum sobrava um terco
-     da janela vazio dos dois lados enquanto os cartoes se espremiam em duas colunas. */
+  /* Width of the content column. It used to be 1120px, and on a regular monitor a third
+     of the window sat empty on both sides while the cards squeezed into two columns. */
   --max-width: 1440px;
-  /* Altura de um cartao na grade de altura fixa (visao geral): cabe o cartao de
-     informacoes inteiro com os dois grupos de botoes; o resto rola dentro dele. */
+  /* Height of a card in the fixed-height grid (overview): the whole info card fits,
+     with both button groups; the rest scrolls inside it. */
   --card-h: 26rem;
 
-  /* Recorte do aparelho (notch, barra de gestos). Fora do PWA todos valem 0. */
+  /* Device cutout (notch, gesture bar). Outside the PWA they are all 0. */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
@@ -99,8 +103,65 @@
   --transition: .18s ease;
 }
 
-/* Quem pediu menos movimento recebe menos movimento — inclusive nas barras dos
-   medidores, que animam a cada leitura. */
+/* ---- light theme ----
+   Two doors to the SAME values: the header button (data-theme="light", which
+   beats the system) and the device in light mode when nobody chose anything. CSS has
+   no way to reuse a block between a selector and a media query, so the list
+   appears twice; changing one color means changing both. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f5f8;
+  --panel: #ffffff;
+  --panel-2: #f2f4f7;
+  --panel-3: #e7ebf0;
+  --line: #d5dce4;
+  --line-strong: #b4bfcb;
+  --text: #18202a;
+  --muted: #586574;
+  /* Log/code block: a gray one shade below the card, not black. */
+  --black: #eef1f5;
+  --accent: #1d6ad1;
+  --accent-text: #ffffff;
+  --ok: #1e8636;
+  --warn: #a5690a;
+  --err: #cf2b21;
+  /* In light mode state text is a DARK shade of the state, for the same reason as in dark mode:
+     the border color lacks the contrast to read a sentence on a white background. */
+  --err-text: #a3170e;
+  --ok-text: #156b2b;
+  --shadow-2: 0 6px 20px rgba(16, 24, 40, .12);
+  --shadow-3: 0 12px 32px rgba(16, 24, 40, .18);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f3f5f8;
+    --panel: #ffffff;
+    --panel-2: #f2f4f7;
+    --panel-3: #e7ebf0;
+    --line: #d5dce4;
+    --line-strong: #b4bfcb;
+    --text: #18202a;
+    --muted: #586574;
+    /* Log/code block: a gray one shade below the card, not black. */
+    --black: #eef1f5;
+    --accent: #1d6ad1;
+    --accent-text: #ffffff;
+    --ok: #1e8636;
+    --warn: #a5690a;
+    --err: #cf2b21;
+    /* In light mode state text is a DARK shade of the state, for the same reason as in dark mode:
+       the border color lacks the contrast to read a sentence on a white background. */
+    --err-text: #a3170e;
+    --ok-text: #156b2b;
+    --shadow-2: 0 6px 20px rgba(16, 24, 40, .12);
+    --shadow-3: 0 12px 32px rgba(16, 24, 40, .18);
+  }
+}
+
+/* Whoever asked for less motion gets less motion - including the gauge
+   bars, which animate on every reading. */
 @media (prefers-reduced-motion: reduce) {
   :root { --transition: 0s; }
   *, *::before, *::after {

@@ -1,5 +1,5 @@
-"""Painel web (Flask) de administracao dos servidores dedicados de jogos.
+"""Web panel (Flask) for administering the dedicated game servers.
 
-A camada HTTP esta em `blueprints/`, a regra em `services/`, o acesso remoto em
-`runtime/` e a montagem (banco, sessao, decoradores, tabelas) em `app.py`.
+The HTTP layer is in `blueprints/`, the rules in `services/`, remote access in
+`runtime/` and the assembly (database, session, decorators, tables) in `app.py`.
 """

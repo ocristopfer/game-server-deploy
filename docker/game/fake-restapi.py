@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""API REST de mentira, no formato da do Palworld, para exercitar a contagem por HTTP.
+"""Fake REST API, in the Palworld format, to exercise the HTTP player count.
 
-Serve /v1/api/info, /v1/api/metrics e /v1/api/players com autenticacao Basic, igual
-a de verdade (usuario 'admin' + a AdminPassword do servidor). Escuta so em 127.0.0.1
-justamente para provar o ponto: o painel alcanca essa API porque a chamada sai de
-DENTRO do container, por SSH — de fora ela esta fechada.
+Serves /v1/api/info, /v1/api/metrics and /v1/api/players with Basic auth, just like
+the real one (user 'admin' + the server's AdminPassword). It listens only on 127.0.0.1
+precisely to prove the point: the panel reaches this API because the call leaves from
+INSIDE the container, over SSH -- from outside it is closed.
 
-O numero de jogadores acompanha o mesmo /run/fake-players que o fake-a2s usa, entao as
-duas fontes contam a mesma coisa e da para comparar uma com a outra.
+The player count follows the same /run/fake-players that fake-a2s uses, so both
+sources count the same thing and can be compared with each other.
 """
 import base64
 import json
@@ -21,12 +21,12 @@ NOME = os.environ.get("GAME_QUERY_NAME", "Servidor de teste do painel")
 MAX_JOGADORES = int(os.environ.get("GAME_QUERY_MAX", "32"))
 ARQUIVO_FORCADO = "/run/fake-players"
 
-NOMES = ["Cristopfer", "Guilherme", "Ana", "Bea", "Caio", "Duda", "Edu", "Fefe"]
+NOMES = ["Alex", "Bruno", "Ana", "Bea", "Caio", "Duda", "Edu", "Fefe"]
 ESPERADO = "Basic " + base64.b64encode(f"admin:{SENHA}".encode()).decode()
 
 
 def quantos_agora() -> int:
-    """Mesmo criterio do fake-a2s: valor forcado, ou oscilando com o relogio."""
+    """Same rule as fake-a2s: forced value, or oscillating with the clock."""
     try:
         with open(ARQUIVO_FORCADO, "r", encoding="utf-8") as fh:
             return max(0, min(MAX_JOGADORES, int(fh.read().strip())))
@@ -75,14 +75,14 @@ ROTAS = {
     "/v1/api/players": jogadores,
 }
 
-# Rotas de acao. Como as de verdade, elas respondem 200 com o corpo VAZIO - e justamente
-# esse detalhe que o painel precisa aguentar sem chamar de erro.
+# Action routes. Like the real ones, they answer 200 with an EMPTY body - and that is
+# exactly the detail the panel has to cope with without calling it an error.
 ROTAS_POST = ("/v1/api/announce", "/v1/api/kick", "/v1/api/ban")
 ARQUIVO_ACOES = "/run/fake-actions.log"
 
 
 def registra_acao(rota: str, corpo: dict) -> None:
-    """Deixa a acao num arquivo, para os testes conferirem o que chegou."""
+    """Writes the action to a file, so the tests can check what arrived."""
     linha = json.dumps({"rota": rota, "corpo": corpo}, ensure_ascii=False)
     print(f"fake-restapi: acao {linha}", flush=True)
     try:
@@ -95,7 +95,7 @@ def registra_acao(rota: str, corpo: dict) -> None:
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, formato, *args):  # noqa: A003 - assinatura da stdlib
+    def log_message(self, formato, *args):  # noqa: A003 - stdlib signature
         print(f"fake-restapi: {formato % args}", flush=True)
 
     def _responde(self, codigo: int, corpo: dict, extra: tuple = ()) -> None:
@@ -109,15 +109,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(dados)
 
     def _autorizado(self) -> bool:
-        # A de verdade exige Basic auth em tudo; e justamente o 401 que o assistente
-        # do painel usa para dizer "existe uma API aqui, ela so quer senha".
+        # The real one requires Basic auth on everything; that 401 is exactly what the
+        # panel assistant uses to say "there is an API here, it just wants a password".
         if self.headers.get("Authorization", "") == ESPERADO:
             return True
         self._responde(401, {"error": "unauthorized"},
                        (("WWW-Authenticate", 'Basic realm="palworld"'),))
         return False
 
-    def do_GET(self) -> None:  # noqa: N802 - nome exigido pela stdlib
+    def do_GET(self) -> None:  # noqa: N802 - name required by the stdlib
         rota = ROTAS.get(self.path.split("?")[0])
         if rota is None:
             self._responde(404, {"error": "not found"})
@@ -126,7 +126,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._responde(200, rota(quantos_agora()))
 
-    def do_POST(self) -> None:  # noqa: N802 - nome exigido pela stdlib
+    def do_POST(self) -> None:  # noqa: N802 - name required by the stdlib
         caminho = self.path.split("?")[0]
         if caminho not in ROTAS_POST:
             self._responde(404, {"error": "not found"})
@@ -144,7 +144,7 @@ class Handler(BaseHTTPRequestHandler):
             self._responde(400, {"error": "userid is required"})
             return
         registra_acao(caminho, corpo)
-        # 200 com corpo VAZIO, como a de verdade.
+        # 200 with an EMPTY body, like the real one.
         self.send_response(200)
         self.send_header("Content-Length", "0")
         self.end_headers()

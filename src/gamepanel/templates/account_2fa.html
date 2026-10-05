@@ -5,38 +5,30 @@
 {% block content %}
 {{ ui.page_header(_('account.two_factor')) }}
 
-{# Os dois passos lado a lado a partir de 900px: o QR fica a vista enquanto se digita o codigo. #}
+{# The two steps side by side from 900px up: the QR stays in view while the code is typed. #}
 <div class="card-grid">
 <div class="card">
-  <h2>1. Cadastre o painel no aplicativo</h2>
-  <p class="muted small">
-    Use um aplicativo autenticador (Google Authenticator, Authy, Microsoft Authenticator,
-    1Password, Bitwarden...). No celular, escolha <strong>{{ _('account_2fa.add_account') }}</strong> e
-    <strong>{{ _('account_2fa.scan_qr') }}</strong> — ou, sem camera, <strong>inserir chave
-    manualmente</strong> {{ _('account_2fa.with_text_below') }}
-  </p>
+  <h2>{{ _('account_2fa.step_register') }}</h2>
+  <p class="muted small">{{ _h('account_2fa.step_register_hint') }}</p>
   <div class="qr-2fa">{{ qr_svg | safe }}</div>
   <p><code id="segredo-2fa" class="secret">{{ secret }}</code></p>
   <div class="cluster">
     <button type="button" class="btn btn--ghost btn--sm" data-copy="#segredo-2fa" hidden>{{ _('account_2fa.copy_key') }}</button>
-    {# No celular sem camera a mao (ou testando no proprio aparelho), tocar aqui abre o
-       aplicativo ja com a conta pronta. #}
+    {# On a phone with no camera at hand (or when testing on the device itself), tapping here opens the
+       app with the account already set up. #}
     {{ ui.button(_('account_2fa.open_in_app'), href=address, variant='ghost', size='sm', icon='📲') }}
   </div>
-  <p class="muted small mt-4">
-    {{ _('account_2fa.type') }} <strong>{{ _('account_2fa.time_based') }}</strong>, 6 digitos, 30 segundos. Guarde esta chave e este
-    codigo apenas ate confirmar abaixo: depois de ativar eles nao aparecem mais.
-  </p>
+  <p class="muted small mt-4">{{ _h('account_2fa.key_details') }}</p>
 </div>
 
 <div class="card">
-  <h2>2. Confirme com um codigo</h2>
+  <h2>{{ _('account_2fa.step_confirm') }}</h2>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>{{ _('account_2fa.six_digit_code') }}
       <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7"
              spellcheck="false" autofocus required>
-      <small>Confira tambem se a hora do celular esta no automatico: e o que faz o codigo bater.</small>
+      <small>{{ _('account_2fa.clock_hint') }}</small>
     </label>
     <div class="form-actions">
       {{ ui.button(_('account.enable'), variant='primary', block=true) }}

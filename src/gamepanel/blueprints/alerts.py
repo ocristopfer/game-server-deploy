@@ -1,4 +1,4 @@
-"""Os destinos de webhook, os limites de recurso e o diario de alertas."""
+"""Webhook destinations, resource limits and the alert log."""
 from __future__ import annotations
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
@@ -17,7 +17,7 @@ def index():
         "alerts.html", cfg=panel.webhook_config(conn), events=panel.labels_of(panel.ALERT_EVENTS),
         defaults=panel.clean_events(panel.ALERT_DEFAULT), from_env=bool(panel.DEFAULT_WEBHOOK_URL),
         monitor=int(panel.MONITOR_EVERY), disk_every=int(panel.DISK_CHECK_EVERY / 60),
-        # O piso do relogio conta: o alerta nao pode chegar mais rapido que a volta dele.
+        # The clock floor matters: the alert cannot arrive faster than its own loop.
         players_every=int(max(panel.PLAYER_CHECK_EVERY, panel.SCHEDULE_TICK)),
         quiet=int(panel.ALERT_QUIET), hook_limit=panel.WEBHOOK_MAX,
         silent_rounds=panel.MUTE_ROUNDS, log_every=int(panel.LOG_CHECK_EVERY),
@@ -29,12 +29,12 @@ def index():
 @bp.post("/alerts")
 @panel.admin_required
 def save():
-    """So o que vale para todos os destinos: hoje, os limites de disco, memoria e CPU."""
+    """Only what applies to every destination: today, the disk, memory and CPU limits."""
     conn = panel.db()
     fresh_ones = []
     for field, key, name in panel.ALERT_LIMITS:
-        # Campo que nem veio no formulario fica como esta. Tratar ausencia como erro
-        # faria um formulario sem o campo derrubar um limite que ja estava certo.
+        # A field that did not even come in the form stays as it is. Treating absence as an error
+        # would make a form without the field knock down a limit that was already right.
         if field not in request.form:
             continue
         value = (request.form.get(field, "") or "").strip()
@@ -42,8 +42,8 @@ def save():
             flash(panel.translate("flash.threshold_range", name=name), "error")
             return redirect(url_for("alerts.index"))
         fresh_ones.append((key, value))
-    # So grava depois de validar todos: meio salvo e pior que nada salvo, porque a tela
-    # volta dizendo "recusado" enquanto um dos limites ja mudou por baixo.
+    # Only save after validating all of them: half saved is worse than nothing saved, because the
+    # screen comes back saying "rejected" while one of the limits has already changed underneath.
     for key, value in fresh_ones:
         panel.config_set(conn, key, value)
     panel._reset_baseline()
@@ -82,8 +82,8 @@ def hook_save(hid: int):
     if failure:
         flash(panel.translate(failure), "error")
         return redirect(url_for("alerts.index"))
-    # Campo de URL em branco quer dizer "mantem a que ja esta la". A tela mostra a URL
-    # mascarada, entao nao ha o que reenviar: so quem digitar uma nova a troca.
+    # A blank URL field means "keep the one already there". The screen shows the URL
+    # masked, so there is nothing to resend: only someone who types a new one replaces it.
     url = data["url"] or current_one["url"]
     with conn:
         alerts_repo.update_webhook(conn, hid, data["name"], url, data["events"],
@@ -106,14 +106,14 @@ def hook_delete(hid: int):
 @bp.post("/alerts/targets/<int:hid>/test")
 @panel.admin_required
 def hook_test(hid: int):
-    """Manda uma mensagem agora para UM destino, para conferir se a URL esta certa."""
+    """Send a message now to ONE destination, to check that the URL is right."""
     conn = panel.db()
     row = alerts_repo.webhook_by_id(conn, hid)
     if not row or not row["url"]:
         flash(panel.translate("flash.destination_not_found"), "error")
         return redirect(url_for("alerts.index"))
-    # Se ha uma URL digitada no formulario, testa ELA: o ponto do botao e conferir a URL
-    # nova antes de gravar, e nao repetir o teste da que ja estava salva.
+    # If a URL was typed in the form, test IT: the point of the button is to check the new URL
+    # before saving, not to repeat the test of the one already saved.
     typed = (request.form.get("url", "") or "").strip()[:400]
     if typed and not panel.URL_RE.match(typed):
         flash(panel.translate("flash.bad_url"), "error")

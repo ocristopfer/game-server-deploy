@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Provisiona um LXC no Proxmox com SteamCMD e instala um servidor dedicado de jogo.
-# Roda NO HOST PROXMOX (enviado pelo deploy-game.ps1).
+# Provisions an LXC on Proxmox with SteamCMD and installs a dedicated game server.
+# Runs ON THE PROXMOX HOST (sent by deploy-game.ps1).
 set -Eeuo pipefail
 IFS=$'\n\t'
 
@@ -24,7 +24,7 @@ die() { printf '\n[ERROR] %s\n' "$*" >&2; exit 1; }
 
 on_error() {
   local cmd="$2"
-  # O comando que falhou pode ser a linha do SteamCMD com a senha da conta Steam
+  # The failed command may be the SteamCMD line with the Steam account password
   [[ -n "${STEAM_PASS:-}" ]] && cmd="${cmd//${STEAM_PASS}/******}"
   die "Provisionamento falhou na linha ${1} executando: ${cmd}"
 }
@@ -56,9 +56,9 @@ push_file_to_ct() {
   run_ct "chmod ${mode} '$dest'"
 }
 
-# Instala um atalho em /usr/local/bin e cria symlink em /usr/bin.
-# `pct exec` nao usa shell de login e seu PATH nao inclui /usr/local/bin; o symlink
-# faz o atalho funcionar tanto logado no CT quanto via `pct exec <CTID> -- <atalho>`.
+# Installs a shortcut in /usr/local/bin and creates a symlink in /usr/bin.
+# `pct exec` does not use a login shell and its PATH does not include /usr/local/bin; the symlink
+# makes the shortcut work both logged into the CT and via `pct exec <CTID> -- <shortcut>`.
 install_helper() {
   local name="$1"
   local src="$2"
@@ -66,13 +66,15 @@ install_helper() {
   run_ct "ln -sfn /usr/local/bin/${name} /usr/bin/${name}"
 }
 
-# Fases que rodam DENTRO do CT (pacotes, SteamCMD, Wine/Proton, jogo, systemd). Vivem em
-# lib/ct-phases.sh porque o broker roda as MESMAS fases por outro transporte (ver o topo
-# daquele arquivo). Este script so define o transporte: `pct exec`.
-# O bundle do deploy-game.ps1 e uma pasta SEM subpastas (o scp leva so arquivos soltos),
-# entao la a lib vem ao lado do script; no repositorio ela mora em lib/.
+# Phases that run INSIDE the CT (packages, SteamCMD, Wine/Proton, game, systemd). They live in
+# lib/ct-phases.sh because the broker runs the SAME phases over another transport (see the top
+# of that file). This script only defines the transport: `pct exec`.
+# The deploy-game.ps1 bundle is a folder WITHOUT subfolders (scp only carries loose files),
+# so there the lib comes next to the script; in the repository it lives in lib/.
 FIREWALL_SCRIPT="${SCRIPT_DIR}/ct-firewall.sh"
 [[ -f "$FIREWALL_SCRIPT" ]] || FIREWALL_SCRIPT="${SCRIPT_DIR}/../../lib/ct-firewall.sh"
+PANEL_ACCESS_SCRIPT="${SCRIPT_DIR}/ct-panel-access.sh"
+[[ -f "$PANEL_ACCESS_SCRIPT" ]] || PANEL_ACCESS_SCRIPT="${SCRIPT_DIR}/../../lib/ct-panel-access.sh"
 LIB_FASES="${SCRIPT_DIR}/ct-phases.sh"
 [[ -f "$LIB_FASES" ]] || LIB_FASES="${SCRIPT_DIR}/lib/ct-phases.sh"
 [[ -f "$LIB_FASES" ]] || die "ct-phases.sh nao encontrado ao lado do script nem em lib/ (o bundle do deploy precisa leva-lo)"
@@ -91,7 +93,9 @@ resolve_variables() {
   BRIDGE="${BRIDGE:-vmbr0}"
   IP_CIDR="${IP_CIDR:-dhcp}"
   GATEWAY="${GATEWAY:-}"
-  CT_PASSWORD="${CT_PASSWORD:-changeme}"
+  # Without a password the CT root is LOCKED (you get in through `pct enter` or the SSH key).
+  # The default used to be "changeme": every CT was born with the same well-known console password.
+  CT_PASSWORD="${CT_PASSWORD:-}"
   TZ="${TZ:-America/Sao_Paulo}"
   RECREATE_CT="${RECREATE_CT:-0}"
 
@@ -156,7 +160,7 @@ ensure_container() {
       --unprivileged 1 \
       --features nesting=1,keyctl=1 \
       --net0 "$NET0" \
-      --password "$CT_PASSWORD" \
+      ${CT_PASSWORD:+--password "$CT_PASSWORD"} \
       --onboot 1 \
       --timezone "$TZ" \
       --tags "game;steam;${GAME_KEY}"
@@ -245,9 +249,9 @@ Exemplo a partir do host Proxmox:
 EOF
 }
 
-# O CT e unprivileged: ele usa o nftables, mas nao carrega modulo de kernel. O host carrega
-# (e deixa carregando no boot), senao o `ct-firewall apply` de dentro falha com "Operation not
-# supported" - ou pior, o CT sobe sem regra depois de um reboot do host.
+# The CT is unprivileged: it uses nftables, but cannot load kernel modules. The host loads it
+# (and keeps it loading at boot), otherwise the `ct-firewall apply` inside fails with "Operation not
+# supported" - or worse, the CT comes up without rules after a host reboot.
 load_nf_tables_on_host() {
   [[ "${CT_FIREWALL:-1}" == "0" || -z "${FW_MGMT_SOURCES:-}" ]] && return 0
   modprobe nf_tables 2>/dev/null || warn "nao consegui carregar o modulo nf_tables no host"
@@ -264,14 +268,14 @@ main() {
   ensure_container
   start_container
   install_base_packages_in_ct
-  setup_panel_access
   ensure_steam_user
+  setup_panel_access
   install_steamcmd_in_ct
   setup_windows_runtime
   run_pre_install
   install_game_in_ct
-  # post-install roda antes da deteccao porque um jogo pode CRIAR o proprio
-  # script de start ali (ex.: wrapper do Wine para builds sem versao Linux)
+  # post-install runs before detection because a game may CREATE its own
+  # start script there (e.g. a Wine wrapper for builds without a Linux version)
   run_post_install
   apply_recipes
   detect_start_script
@@ -282,6 +286,7 @@ main() {
   start_game_service
   load_nf_tables_on_host
   setup_firewall
+  lock_root_login
   print_summary
 }
 

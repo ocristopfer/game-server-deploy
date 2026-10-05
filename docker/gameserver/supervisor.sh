@@ -1,9 +1,9 @@
 #!/bin/bash
-# Faz o papel do systemd para UM servico: roda o jogo como 'steam' e o levanta de novo
-# se ele cair (o mesmo Restart=on-failure/RestartSec do unit do LXC).
+# Plays the role of systemd for ONE service: runs the game as 'steam' and brings it back up
+# if it crashes (the same Restart=on-failure/RestartSec as the LXC unit).
 #
-# Chamado pelo 'systemctl' do container; toda a saida (stdout+stderr) ja vem redirecionada
-# para /var/log/game/<unidade>.log, que e o que o 'journalctl' daqui le.
+# Called by the container's 'systemctl'; all output (stdout+stderr) is already redirected
+# to /var/log/game/<unit>.log, which is what the 'journalctl' here reads.
 set -u
 
 unit="${1:?uso: game-supervisor <unidade>}"
@@ -21,9 +21,9 @@ diga() { echo "$(carimbo) $(hostname) ${unit}: $*"; }
 
 while true; do
   diga "iniciando: ${GAME_EXEC}"
-  # O pid registrado tem de ser o do JOGO (o painel mede CPU/RAM dele). Por isso a
-  # cadeia so usa 'exec': subshell -> setpriv -> env -> sh -> binario do jogo, tudo
-  # no mesmo pid.
+  # The recorded pid has to be the GAME's (the panel measures its CPU/RAM). That is why
+  # the chain only uses 'exec': subshell -> setpriv -> env -> sh -> game binary, all
+  # in the same pid.
   (
     cd "$GAME_DIR" || exit 1
     exec setpriv --reuid="$GAME_USER" --regid="$GAME_USER" --init-groups \

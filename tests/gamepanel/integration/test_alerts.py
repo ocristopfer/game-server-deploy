@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Testes dos alertas por webhook.
+"""Tests for the webhook alerts.
 
     pytest admin/test_alerts.py
 
-O envio de verdade e trocado por um capturador (fixture `webhooks`, em conftest.py): o
-que se testa aqui e QUANDO o painel decide avisar, que e onde mora a chance de errar.
-Alerta a mais vira ruido e o canal deixa de ser lido; alerta a menos e um servidor caido
-as 3h que ninguem descobre.
+The real sending is swapped for a capturer (`webhooks` fixture, in conftest.py): what is
+tested here is WHEN the panel decides to notify, which is where the chance of error lives.
+One alert too many becomes noise and the channel stops being read; one alert too few is a
+server down at 3 AM that nobody finds out about.
 """
 import time
 from datetime import UTC, datetime, timedelta
@@ -19,7 +19,7 @@ URL = "http://exemplo.invalid/hook"
 
 
 def register_target(database, url, eventos, name="Teste", ativo=1) -> int:
-    """Cadastra um destino e devolve o id."""
+    """Registers a destination and returns its id."""
     with database:
         cur = database.execute(
             "INSERT INTO webhooks (name, url, events, enabled, created_at)"
@@ -29,7 +29,7 @@ def register_target(database, url, eventos, name="Teste", ativo=1) -> int:
 
 
 def enable(database, eventos, disco=90, memoria=90, cpu=90):
-    """Deixa UM destino cadastrado, com estes eventos. O padrao da maioria dos testes."""
+    """Leaves ONE destination registered, with these events. The default for most tests."""
     with database:
         database.execute("DELETE FROM webhooks")
     register_target(database, URL, eventos)
@@ -39,11 +39,11 @@ def enable(database, eventos, disco=90, memoria=90, cpu=90):
 
 
 def expired_clocks():
-    """Poe os relogios do monitor num passado que vence qualquer limite.
+    """Puts the monitor clocks in a past that beats any limit.
 
-    Zera-los nao serve: time.monotonic() conta desde o boot da MAQUINA, e num container
-    recem-subido o zero pode estar a menos de um minuto de distancia — ai o monitor sai
-    cedo e o teste falha por causa do uptime de quem rodou, nao do codigo.
+    Zeroing them does not work: time.monotonic() counts from the MACHINE's boot, and in a
+    freshly started container zero may be less than a minute away - then the monitor exits
+    early and the test fails because of the runner's uptime, not because of the code.
     """
     panel.monitor_tick.mark(time.monotonic() - 3600)
     panel.state_tick.mark(time.monotonic() - 3600)
@@ -54,17 +54,17 @@ def state(reachable=True, service="active", error="", restarts=0, result="", sub
             "restarts": restarts, "result": result, "sub": sub}
 
 
-# Servidor de exemplo SEM linha na tabela `servers`: as duas primeiras secoes so
-# exercitam `_alerta_de_estado`, que consulta `jobs` por `server_id` - uma tabela vazia
-# devolve "sem job recente" sem precisar de FK nenhuma satisfeita.
+# Sample server WITHOUT a row in the `servers` table: the first two sections only
+# exercise `_alerta_de_estado`, which queries `jobs` by `server_id` - an empty table
+# returns "no recent job" without needing any FK to be satisfied.
 SERVER = {"id": 1, "name": "Palworld", "host": "10.0.0.9", "ssh_user": "root",
             "service": "palworld.service"}
 
 
 @pytest.fixture
 def target(database):
-    """O servidor de teste, de fato cadastrado. Devolve o dict que as funcoes de
-    alerta usam, com o id real - para os testes que dependem de FK (jobs, streams)."""
+    """The test server, actually registered. Returns the dict the alert functions
+    use, with the real id - for the tests that depend on FKs (jobs, streams)."""
     with database:
         database.execute(
             "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"
@@ -74,7 +74,7 @@ def target(database):
     return dict(SERVER, id=sid)
 
 
-# ------------------------------------------------------------------- configuracao
+# ------------------------------------------------------------------- configuration
 
 def test_configuracao_le_destino_e_evento_do_banco(database):
     enable(database, ["caiu"])
@@ -84,7 +84,7 @@ def test_configuracao_le_destino_e_evento_do_banco(database):
 
 
 def test_evento_desconhecido_no_banco_e_descartado(database):
-    """Banco mexido a mao (ou versao antiga) nao pode virar chave desconhecida."""
+    """A database edited by hand (or an old version) must not turn into an unknown key."""
     enable(database, ["caiu"])
     with database:
         database.execute("UPDATE webhooks SET events = 'caiu,formatar-o-disco'")
@@ -103,11 +103,11 @@ def test_limites_tem_piso_e_padrao_para_valor_ilegivel(database):
     assert panel.webhook_config(database)["cpu"] == panel.CPU_PCT_DEFAULT
 
 
-# ---------------------------------------------------------------------- varios destinos
+# ---------------------------------------------------------------------- several destinations
 
 @pytest.fixture
 def three_targets(database):
-    """O ponto do recurso: dois canais ativos com listas diferentes, mais um desligado."""
+    """The point of the feature: two active channels with different lists, plus a disabled one."""
     with database:
         database.execute("DELETE FROM webhooks")
     team = register_target(database, "http://equipe.invalid/hook", ["caiu", "voltou"], "Equipe")
@@ -139,8 +139,8 @@ def test_uniao_dos_destinos_ligados_e_o_que_o_monitor_observa(database, three_ta
 
 
 def test_destino_quebrado_nao_impede_os_outros(database, three_targets, webhooks, monkeypatch):
-    """Um destino fora do ar nao pode calar os outros: o Discord de pe continua
-    recebendo mesmo com o Slack recusando a conexao."""
+    """A destination that is down must not silence the others: the Discord that is up keeps
+    receiving even with Slack refusing the connection."""
     def partial(url, text):
         if "equipe" in url:
             webhooks.append((url, text))
@@ -159,11 +159,11 @@ def test_todos_desligados_nada_sai(database, three_targets, webhooks):
     assert (did_send, len(webhooks)) == (False, 0)
 
 
-# --------------------------------------------------------- URL nao aparece na tela
+# --------------------------------------------------------- URL does not show on screen
 
 def test_mascara_url_esconde_o_token_mas_nao_o_canal():
-    """A URL e uma credencial: quem le a tela por cima do ombro nao pode sair de la
-    podendo escrever no canal."""
+    """The URL is a credential: whoever reads the screen over someone's shoulder must not
+    leave able to write to the channel."""
     masked = panel.mask_url(
         "https://discord.com/api/webhooks/1544786528700604457/segredo-que-nao-pode-vazar")
     assert "segredo-que-nao-pode-vazar" not in masked
@@ -175,7 +175,7 @@ def test_mascara_url_vazia_nao_vira_mascara():
     assert panel.mask_url("") == ""
 
 
-# ------------------------------------------------------ quando o painel decide avisar
+# ------------------------------------------------------ when the panel decides to notify
 
 def test_queda_avisa(database, webhooks):
     enable(database, ["caiu", "voltou", "inacessivel", "acessivel"])
@@ -209,8 +209,8 @@ def test_perder_contato_avisa_com_o_motivo(database, webhooks):
 
 
 def test_sem_contato_nao_acumula_alerta_de_servico(database, webhooks):
-    """O painel nao sabe o que o servico esta fazendo sem contato: avisar 'caiu' junto
-    seria inventar. Sai UMA mensagem, a do contato."""
+    """The panel does not know what the service is doing without contact: also reporting
+    'caiu' would be making it up. ONE message goes out, the contact one."""
     enable(database, ["caiu", "voltou", "inacessivel", "acessivel"])
     panel._state_alert(database, SERVER, state(reachable=False, service="inacessivel"),
                             state(reachable=True, service="active"))
@@ -237,7 +237,7 @@ def test_sem_destino_nao_sai_nada(database):
     assert panel.notify(database, "caiu", "titulo", "detalhe") is False
 
 
-# -------------------------------------------------------- acao do painel nao vira susto
+# -------------------------------------------------------- panel action is not a scare
 
 def test_sem_job_recente_a_queda_e_queda(database, target):
     assert not panel._recent_job(database, target["id"])
@@ -276,10 +276,10 @@ def test_job_velho_nao_segura_o_alerta_para_sempre(database, target, webhooks):
     assert len(webhooks) == 1, "passada a janela, a queda avisa"
 
 
-# ------------------------------------------------------- o jogo, nao o servico
-# O buraco que estas tres secoes cobrem: "servico rodando" nao e "jogo funcionando". Um
-# jogo pode estar travado, caindo em loop ou cuspindo erro no log com o systemd achando
-# que esta tudo bem — e ate aqui nada disso virava alerta.
+# ------------------------------------------------------- the game, not the service
+# The hole these three sections cover: "service running" is not "game working". A game
+# can be frozen, crashing in a loop or spitting errors into the log while systemd thinks
+# everything is fine - and until now none of that became an alert.
 
 def test_instance_service_em_failed_avisa_que_quebrou(database, target, webhooks):
     enable(database, ["caiu", "quebrou"])
@@ -291,9 +291,9 @@ def test_instance_service_em_failed_avisa_que_quebrou(database, target, webhooks
 
 
 def test_quebrar_logo_apos_a_acao_do_painel_ainda_avisa(database, target, webhooks):
-    """Parar pelo painel e 'inactive' e cai na janela de silencio. Terminar em 'failed'
-    logo depois de uma acao e outra coisa: foi a acao que quebrou o jogo, e e o caso em
-    que mais se quer saber."""
+    """Stopping from the panel is 'inactive' and falls inside the silence window. Ending in
+    'failed' right after an action is something else: the action broke the game, and that is
+    the case one most wants to know about."""
     enable(database, ["caiu", "quebrou"])
     with database:
         database.execute(
@@ -314,20 +314,20 @@ def test_loop_de_restart(database, target, webhooks):
     assert len(webhooks) == 1
     assert "3x" in webhooks[0][1], "a mensagem diz quantas vezes"
 
-    # Enquanto o contador continua subindo e o MESMO episodio: avisar a cada volta
-    # seria o spam que a regra da mudanca existe para evitar.
+    # While the counter keeps rising it is the SAME episode: notifying on every pass
+    # would be the spam the change rule exists to avoid.
     webhooks.clear()
     panel._restart_alert(database, target, state(restarts=8), previous)
     assert len(webhooks) == 0, "continua subindo, nao repete"
 
-    # Uma volta inteira sem restart novo fecha o episodio.
+    # A whole pass with no new restart closes the episode.
     panel._restart_alert(database, target, state(restarts=8), previous)
     assert not previous["loop_avisado"], "volta sem restart destrava o alerta"
     webhooks.clear()
     panel._restart_alert(database, target, state(restarts=11), previous)
     assert len(webhooks) == 1, "um loop novo volta a avisar"
 
-    # `systemctl restart` na mao zera o NRestarts. Isso e linha de base nova, nao um loop.
+    # A manual `systemctl restart` zeroes NRestarts. That is a new baseline, not a loop.
     webhooks.clear()
     panel._restart_alert(database, target, state(restarts=0), previous)
     assert len(webhooks) == 0, "contador zerado nao vira alerta"
@@ -335,7 +335,7 @@ def test_loop_de_restart(database, target, webhooks):
 
 
 def test_jogo_de_pe_mas_mudo(database, target, webhooks, monkeypatch):
-    """So quem responde a uma sondagem de verdade pode ficar mudo."""
+    """Only something that answers a real probe can go silent."""
     enable(database, ["travou", "respondeu"])
     probed = dict(target, player_source="a2s", query_port=27015)
     muteness = {"reachable": True, "service": "active", "restarts": 0}
@@ -347,7 +347,7 @@ def test_jogo_de_pe_mas_mudo(database, target, webhooks, monkeypatch):
     assert len(webhooks) == 0, "nao avisa no primeiro silencio (UDP perde pacote)"
     panel._mute_alert(database, probed, state(), muteness)
     assert len(webhooks) == 1, f"avisa na volta {panel.MUTE_ROUNDS}"
-    assert "nao responde" in webhooks[0][1], "a mensagem separa 'rodando' de 'respondendo'"
+    assert "não responde" in webhooks[0][1], "a mensagem separa 'rodando' de 'respondendo'"
 
     webhooks.clear()
     panel._mute_alert(database, probed, state(), muteness)
@@ -373,8 +373,8 @@ def test_voltar_a_responder_avisa_uma_vez(database, target, webhooks, monkeypatc
 
 
 def test_instance_service_subindo_nao_conta_como_mudez(database, target, webhooks, monkeypatch):
-    """Jogo carregando mapa nao responde e nao pode virar alerta: a contagem so comeca
-    com o servico ativo e fora da janela de silencio."""
+    """A game loading its map does not answer and must not become an alert: counting only
+    starts with the service active and outside the silence window."""
     enable(database, ["travou", "respondeu"])
     probed = dict(target, player_source="a2s", query_port=27015)
     response = {"configured": True, "error": "tempo esgotado", "players": None, "list": []}
@@ -386,7 +386,7 @@ def test_instance_service_subindo_nao_conta_como_mudez(database, target, webhook
 
 
 def test_contagem_por_log_nao_gera_alerta_de_mudez(database, target, webhooks):
-    """Contagem por log nao pergunta nada ao jogo: nao ha o que ficar mudo."""
+    """Counting by log asks the game nothing: there is nothing to go silent."""
     enable(database, ["travou", "respondeu"])
     by_log = dict(target, player_source="log", query_port=0)
     for _ in range(panel.MUTE_ROUNDS + 2):
@@ -394,7 +394,7 @@ def test_contagem_por_log_nao_gera_alerta_de_mudez(database, target, webhooks):
     assert len(webhooks) == 0
 
 
-# --------------------------------------------------------- entrada e saida de jogadores
+# --------------------------------------------------------- players joining and leaving
 
 @pytest.fixture
 def players_server(target):
@@ -422,7 +422,7 @@ def test_sem_mudanca_de_jogadores_nao_avisa(database, players_server, webhooks, 
     res = {"configured": True, "error": "", "players": 1, "list": [{"name": "Cristopfer"}]}
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: res)
     memory = {"reachable": True, "service": "active"}
-    panel._players_alert(database, players_server, "active", memory, cfg)  # linha de base
+    panel._players_alert(database, players_server, "active", memory, cfg)  # baseline
 
     webhooks.clear()
     panel._players_alert(database, players_server, "active", memory, cfg)
@@ -434,7 +434,7 @@ def test_jogador_novo_avisa_entrada(database, players_server, webhooks, monkeypa
     memory = {"reachable": True, "service": "active"}
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: {
         "configured": True, "error": "", "players": 1, "list": [{"name": "Cristopfer"}]})
-    panel._players_alert(database, players_server, "active", memory, cfg)  # linha de base
+    panel._players_alert(database, players_server, "active", memory, cfg)  # baseline
 
     webhooks.clear()
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: {
@@ -469,12 +469,12 @@ def test_ultimo_jogador_saindo_avisa(database, players_server, webhooks, monkeyp
 
 
 def test_contagem_numerica_sem_nomes_avisa_variacao(database, players_server, webhooks, monkeypatch):
-    """Servidor so com contagem (sem nomes)."""
+    """Server with count only (no names)."""
     cfg = _cfg(database, ["jogador-entrou", "jogador-saiu"])
     memory = {"reachable": True, "service": "active"}
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: {
         "configured": True, "error": "", "players": 0, "list": []})
-    panel._players_alert(database, players_server, "active", memory, cfg)  # linha de base
+    panel._players_alert(database, players_server, "active", memory, cfg)  # baseline
 
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: {
         "configured": True, "error": "", "players": 3, "list": []})
@@ -492,14 +492,14 @@ def test_instance_service_parado_nao_dispara_alerta_de_saida_e_reseta(database, 
     assert memory["jogadores_nomes"] is None, "a memoria reseta"
 
 
-# --------------------------------------------------- a volta rapida do monitor
-# Jogador entrando precisa chegar em segundos, nao no minuto seguinte: quem recebe o
-# aviso costuma querer entrar junto. A volta rapida existe para isso — e ela nao pode
-# custar SSH, senao acelerar o alerta multiplicaria a conta de todo o resto.
+# --------------------------------------------------- the monitor's fast pass
+# A player joining must arrive in seconds, not in the next minute: whoever gets the
+# notice usually wants to join too. The fast pass exists for that - and it must not
+# cost SSH, otherwise speeding up the alert would multiply the bill for everything else.
 
 @pytest.fixture
 def a2s_monitor(database, target, monkeypatch):
-    """O servidor cadastrado com A2S: consulta direta ao jogo, sem SSH."""
+    """The server registered with A2S: direct query to the game, no SSH."""
     enable(database, ["jogador-entrou", "jogador-saiu", "caiu"])
     with database:
         database.execute("UPDATE servers SET player_source = 'a2s', query_port = 27015")
@@ -519,8 +519,8 @@ def a2s_monitor(database, target, monkeypatch):
 
 def test_volta_completa_consulta_o_systemd(database, a2s_monitor):
     with panel.app.app_context():
-        # Relogios vencidos = volta COMPLETA. Sao precisas duas: a primeira anota o
-        # estado do servidor, a segunda a linha de base dos jogadores.
+        # Expired clocks = FULL pass. Two are needed: the first records the
+        # server state, the second the players baseline.
         expired_clocks()
         panel.monitor_servers()
         expired_clocks()
@@ -536,8 +536,8 @@ def test_entrada_chega_na_volta_rapida_sem_ssh(database, a2s_monitor, webhooks, 
         panel.monitor_servers()
     a2s_monitor.clear()
 
-    # Os relogios recuam 20s: o do estado (60s) ainda nao venceu, o dos jogadores (15s)
-    # sim — que e exatamente a situacao no meio de dois minutos.
+    # The clocks go back 20s: the state one (60s) has not expired yet, the players one (15s)
+    # has - which is exactly the situation in the middle of two minutes.
     indent = time.monotonic() - 20
     panel.monitor_tick.mark(indent)
     panel.state_tick.mark(indent)
@@ -550,9 +550,9 @@ def test_entrada_chega_na_volta_rapida_sem_ssh(database, a2s_monitor, webhooks, 
 
 
 def test_contagem_por_log_nao_entra_na_volta_curta(database, target, webhooks, monkeypatch):
-    """Cada leitura por log e uma ida de SSH que arrasta o arquivo inteiro; a 15s isso
-    viraria megabytes por minuto para achar duas linhas. Quem conta por log espera a
-    volta completa."""
+    """Each log read is an SSH trip that drags the whole file; at 15s that would
+    become megabytes per minute to find two lines. Counting by log waits for the
+    full pass."""
     enable(database, ["jogador-entrou", "jogador-saiu", "caiu"])
     with database:
         database.execute("UPDATE servers SET player_source = 'log', query_port = 0")
@@ -562,14 +562,14 @@ def test_contagem_por_log_nao_entra_na_volta_curta(database, target, webhooks, m
         "configured": True, "error": "", "players": 0, "list": []})
 
     with panel.app.app_context():
-        # Duas completas para ter linha de base: a primeira anota o estado, a segunda
-        # os jogadores (servidor vazio).
+        # Two full passes to get a baseline: the first records the state, the second
+        # the players (empty server).
         expired_clocks()
         panel.monitor_servers()
         expired_clocks()
         panel.monitor_servers()
 
-    # Chegou gente, mas so o relogio curto venceu: por log, o painel nao vai atras.
+    # People arrived, but only the short clock expired: by log, the panel does not go fetch.
     monkeypatch.setattr(panel, "server_players", lambda server, force=False: {
         "configured": True, "error": "", "players": 2,
         "list": [{"name": "Ana"}, {"name": "Bea"}]})
@@ -578,7 +578,7 @@ def test_contagem_por_log_nao_entra_na_volta_curta(database, target, webhooks, m
         panel.monitor_servers()
     assert len(webhooks) == 0
 
-    # ...mas na volta completa seguinte ela avisa normalmente.
+    # ...but on the next full pass it notifies normally.
     expired_clocks()
     with panel.app.app_context():
         panel.monitor_servers()
@@ -586,8 +586,8 @@ def test_contagem_por_log_nao_entra_na_volta_curta(database, target, webhooks, m
 
 
 def test_sem_alerta_de_jogador_20s_ainda_nao_e_hora(database, target, monkeypatch):
-    """O passo curto so existe por causa do evento de jogador. Sem ele os mesmos 20s
-    nao bastam, e o monitor continua no ritmo de antes — ninguem paga SSH a mais de graca."""
+    """The short step only exists because of the player event. Without it the same 20s
+    are not enough, and the monitor keeps its old pace - nobody pays extra SSH for nothing."""
     enable(database, ["caiu"])
     monkeypatch.setattr(panel, "server_status", lambda server, force=False: state())
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {"disks": []})
@@ -598,7 +598,7 @@ def test_sem_alerta_de_jogador_20s_ainda_nao_e_hora(database, target, monkeypatc
         assert panel.monitor_servers() == 0
 
 
-# ------------------------------------------------------------------- erro no log
+# ------------------------------------------------------------------- error in the log
 
 def test_erro_no_log_do_jogo(database, target, webhooks, monkeypatch):
     enable(database, ["erro-no-log"])
@@ -611,13 +611,13 @@ def test_erro_no_log_do_jogo(database, target, webhooks, monkeypatch):
     assert len(webhooks) == 1
     assert "world corrupted" in webhooks[0][1], "leva a linha inteira"
 
-    # A mesma linha continua no rabo do log na volta seguinte. Avisar de novo seria um
-    # alerta por minuto ate alguem arrumar.
+    # The same line is still at the tail of the log on the next pass. Notifying again would
+    # be one alert per minute until someone fixes it.
     webhooks.clear()
     panel._log_alert(database, with_regex, memory)
     assert len(webhooks) == 0, "a mesma linha nao avisa duas vezes"
 
-    # Cooldown: mesmo com linha nova, o canal nao leva uma enxurrada de uma expressao larga.
+    # Cooldown: even with a new line, the channel does not get flooded by a broad expression.
     monkeypatch.setattr(panel, "read_log_lines",
                         lambda server, limit=0: ["Fatal error: outra coisa"])
     webhooks.clear()
@@ -625,7 +625,7 @@ def test_erro_no_log_do_jogo(database, target, webhooks, monkeypatch):
     assert len(webhooks) == 0, "linha nova dentro da janela nao passa"
     assert "outra coisa" in memory["ultimo_erro"], "mas a memoria acompanha a linha nova"
 
-    # Passada a janela, um erro novo volta a avisar.
+    # Once the window has passed, a new error notifies again.
     memory["erro_em"] = 0
     monkeypatch.setattr(panel, "read_log_lines",
                         lambda server, limit=0: ["Fatal error: mais uma"])
@@ -647,12 +647,12 @@ def test_erro_no_log_servidor_sem_expressao_nem_le(database, target, webhooks):
 
 
 def test_erro_no_log_expressao_invalida_nao_estoura(database, target, webhooks):
-    """Expressao torta e problema de cadastro, nao motivo para derrubar a volta do monitor."""
+    """A broken expression is a registration problem, not a reason to bring down the monitor pass."""
     panel._log_alert(database, dict(target, error_re="("), {})
     assert len(webhooks) == 0
 
 
-# ------------------------------------------------------------------------ disco cheio
+# ------------------------------------------------------------------------ disk full
 
 def test_disco_cheio(database, target, webhooks, monkeypatch):
     enable(database, ["disco-cheio"], disco=90)
@@ -660,18 +660,18 @@ def test_disco_cheio(database, target, webhooks, monkeypatch):
                         {"mount": "/opt/game", "pct": 95.0, "used": 95, "total": 100}]}
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: disks)
 
-    # A memoria do monitor NAO pode ser zerada entre as chamadas: e justamente ela que
-    # guarda "este disco ja estava cheio da ultima vez".
+    # The monitor memory must NOT be reset between calls: it is precisely what
+    # remembers "this disk was already full last time".
     panel._disk_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 1
     assert "/opt/game" in webhooks[0][1], "avisa sobre o disco MAIS cheio, nao o primeiro"
 
-    # Um disco a 95% continua a 95% no minuto seguinte: avisar de novo seria spam.
+    # A disk at 95% is still at 95% the next minute: notifying again would be spam.
     webhooks.clear()
     panel._disk_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 0, "continua cheio, nao repete"
 
-    # Depois de liberar espaco a marca cai, e uma nova subida volta a avisar.
+    # After freeing space the mark drops, and a new rise notifies again.
     disks["disks"] = [{"mount": "/opt/game", "pct": 40.0, "used": 40, "total": 100}]
     panel._disk_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 0, "voltar ao normal nao avisa (esse evento nao existe)"
@@ -679,21 +679,21 @@ def test_disco_cheio(database, target, webhooks, monkeypatch):
     panel._disk_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 1, "encheu de novo, avisa de novo"
 
-    # Medidor que falhou nao pode virar alerta de disco vazio nem estourar.
+    # A meter that failed must not become an empty-disk alert nor blow up.
     monkeypatch.setattr(panel, "server_metrics",
                         lambda server, force=False: {"error": "tempo esgotado"})
     webhooks.clear()
     panel._disk_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 0, "medidor com erro nao avisa nada"
 
-    # ...e nao pode apagar a marca de que o disco estava cheio.
+    # ...and must not erase the mark that the disk was full.
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {
         "disks": [{"mount": "/opt/game", "pct": 97.0, "used": 97, "total": 100}]})
     panel._disk_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 0, "depois de um erro no medidor, o disco cheio nao repete"
 
 
-# ------------------------------------------------------------------- memoria quase cheia
+# ------------------------------------------------------------------- memory almost full
 
 GIB = 1024 ** 3
 
@@ -703,7 +703,7 @@ def test_memoria_quase_cheia(database, target, webhooks, monkeypatch):
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {
         "mem": {"pct": 95.0, "used": 3.8 * GIB, "total": 4.0 * GIB}})
 
-    # Como no disco, a memoria do monitor NAO pode ser zerada entre as chamadas.
+    # As with the disk, the monitor memory must NOT be reset between calls.
     panel._memory_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 1
     assert "95.0%" in webhooks[0][1]
@@ -714,7 +714,7 @@ def test_memoria_quase_cheia(database, target, webhooks, monkeypatch):
     panel._memory_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 0, "continua cheia, nao repete"
 
-    # Liberou memoria: a marca cai e uma nova subida volta a avisar.
+    # Memory freed: the mark drops and a new rise notifies again.
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {
         "mem": {"pct": 40.0, "used": 1.6 * GIB, "total": 4.0 * GIB}})
     panel._memory_alert(database, target, panel.webhook_config(database))
@@ -724,14 +724,14 @@ def test_memoria_quase_cheia(database, target, webhooks, monkeypatch):
     panel._memory_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 1, "encheu de novo, avisa de novo"
 
-    # Medidor que falhou nao pode virar alerta nem estourar...
+    # A meter that failed must not become an alert nor blow up...
     monkeypatch.setattr(panel, "server_metrics",
                         lambda server, force=False: {"error": "tempo esgotado"})
     webhooks.clear()
     panel._memory_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 0, "medidor com erro nao avisa nada"
 
-    # ...e nao pode apagar a marca de que a memoria estava cheia.
+    # ...and must not erase the mark that memory was full.
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {
         "mem": {"pct": 97.0, "used": 3.9 * GIB, "total": 4.0 * GIB}})
     panel._memory_alert(database, target, panel.webhook_config(database))
@@ -739,8 +739,8 @@ def test_memoria_quase_cheia(database, target, webhooks, monkeypatch):
 
 
 def test_memoria_sem_medida_valida_nao_avisa(database, target, webhooks, monkeypatch):
-    """Container sem teto de memoria legivel devolve pct None. Comparar None com o
-    limite estouraria a volta inteira do monitor, e tratar como 0 esconderia o problema."""
+    """A container without a readable memory ceiling returns pct None. Comparing None with the
+    limit would blow up the whole monitor pass, and treating it as 0 would hide the problem."""
     enable(database, ["memoria-alta"], memoria=90)
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {
         "mem": {"pct": None, "used": 0, "total": 0}})
@@ -748,7 +748,7 @@ def test_memoria_sem_medida_valida_nao_avisa(database, target, webhooks, monkeyp
     assert len(webhooks) == 0
 
 
-# ------------------------------------------------------------------------- CPU alta
+# ------------------------------------------------------------------------- high CPU
 
 def test_cpu_alta(database, target, webhooks, monkeypatch):
     enable(database, ["cpu-alta"], cpu=90)
@@ -757,10 +757,10 @@ def test_cpu_alta(database, target, webhooks, monkeypatch):
 
     panel._cpu_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 1
-    # Sem os nucleos, "94.5%" nao diz se e uma maquina afogada ou um nucleo de quatro; e
-    # sem a fatia do jogo nao da para saber se o culpado e o servidor ou outra coisa.
+    # Without the cores, "94.5%" does not say whether it is a drowning machine or one core of
+    # four; and without the game's share there is no telling if the culprit is the server or something else.
     assert "94.5%" in webhooks[0][1]
-    assert "4 nucleos" in webhooks[0][1]
+    assert "4 núcleos" in webhooks[0][1]
     assert "jogo: 92.1%" in webhooks[0][1]
 
     webhooks.clear()
@@ -776,11 +776,11 @@ def test_cpu_alta(database, target, webhooks, monkeypatch):
         "cpu_pct": 99.0, "cores": 1, "proc": {}})
     panel._cpu_alert(database, target, panel.webhook_config(database))
     assert len(webhooks) == 1, "subiu de novo, avisa de novo"
-    assert "em 1 nucleo" in webhooks[0][1], "um nucleo so nao vira plural"
+    assert "em 1 núcleo" in webhooks[0][1], "um nucleo so nao vira plural"
     assert "nucleos" not in webhooks[0][1]
     assert "jogo:" not in webhooks[0][1], "sem PID do jogo, a mensagem nao inventa a fatia"
 
-    # Duas amostras sao o minimo para calcular uso de CPU; com uma so o medidor devolve None.
+    # Two samples are the minimum to compute CPU usage; with only one the meter returns None.
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {
         "cpu_pct": None, "cores": 4, "proc": {}})
     webhooks.clear()
@@ -793,9 +793,9 @@ def test_cpu_alta(database, target, webhooks, monkeypatch):
     assert len(webhooks) == 0, "medidor com erro nao avisa nada"
 
 
-# ------------------------------------------------------- o monitor liga os tres medidores
-# Disco, memoria e CPU saem da mesma leitura e correm no mesmo relogio. E facil ligar o
-# evento na tela e esquecer o fio dentro da volta do monitor: entao a volta e testada.
+# ------------------------------------------------------- the monitor wires up the three meters
+# Disk, memory and CPU come from the same read and run on the same clock. It is easy to turn
+# the event on in the UI and forget the wire inside the monitor pass: so the pass is tested.
 
 @pytest.fixture
 def tight_meter(target, monkeypatch):
@@ -810,16 +810,16 @@ def tight_meter(target, monkeypatch):
 def test_a_volta_do_monitor_dispara_os_tres(database, tight_meter, webhooks):
     enable(database, ["disco-cheio", "memoria-alta", "cpu-alta"])
     with panel.app.app_context():
-        panel.monitor_servers(force=True)   # a primeira volta so anota
+        panel.monitor_servers(force=True)   # the first pass only records
         panel.monitor_servers(force=True)
     text = "\n".join(t for _, t in webhooks)
     assert "disco quase cheio" in text
-    assert "memoria quase cheia" in text
+    assert "memória quase cheia" in text
     assert "uso de CPU alto" in text
 
 
 def test_evento_desmarcado_nao_sai_de_carona(database, tight_meter, webhooks):
-    """O contrario: evento desmarcado na tela nao pode sair de carona nos outros."""
+    """The opposite: an event unchecked in the UI must not ride along with the others."""
     enable(database, ["disco-cheio"])
     with panel.app.app_context():
         panel.monitor_servers(force=True)
@@ -830,11 +830,11 @@ def test_evento_desmarcado_nao_sai_de_carona(database, tight_meter, webhooks):
     assert "uso de CPU alto" not in text
 
 
-# ------------------------------------------------------------------ log em tempo real
-# Contagem por log era o unico caso sem jeito de ficar rapida por consulta. A saida foi
-# parar de perguntar: uma conexao SSH longa ouvindo o log. O que se testa aqui e QUEM
-# ganha essa conexao e QUANDO ela e refeita — o resto e subprocesso, que so o servidor
-# de verdade exercita.
+# ------------------------------------------------------------------ real-time log
+# Counting by log was the only case with no way to get fast through querying. The way out
+# was to stop asking: a long-lived SSH connection listening to the log. What is tested here
+# is WHO gets that connection and WHEN it is redone - the rest is a subprocess, which only
+# the real server exercises.
 
 def test_linha_de_jogador_reconhece_entrada_e_saida():
     join_re = panel.compile_pattern(r"\[server\] Player '(?P<name>[^']+)' logged in",
@@ -847,8 +847,8 @@ def test_linha_de_jogador_reconhece_entrada_e_saida():
     assert not panel._player_line(
         "2026-09-08 10:00:01 [server] Saving world chunk 42", join_re, leave_re), \
         "ruido do log nao dispara nada"
-    # Log de jogo tem linha gigante (stack trace, dump de estado); o corte protege o
-    # regex de varrer megabytes por linha.
+    # Game logs have huge lines (stack traces, state dumps); the cut keeps the
+    # regex from scanning megabytes per line.
     assert not panel._player_line(
         "x" * 50000 + " [server] Player 'Ana' logged in", join_re, leave_re)
 
@@ -866,8 +866,8 @@ CFG_STREAM = {"events": {"jogador-entrou", "jogador-saiu"}}
 
 def test_streams_desejados_so_para_quem_conta_por_log():
     assert sorted(panel.wanted_streams([_srv(1)], CFG_STREAM)) == [1]
-    # A2S e HTTP ja respondem de graca na volta curta: abrir conexao permanente para
-    # eles seria pagar por nada.
+    # A2S and HTTP already answer for free on the short pass: opening a permanent connection
+    # for them would be paying for nothing.
     assert panel.wanted_streams(
         [_srv(1, player_source="a2s", query_port=27015)], CFG_STREAM) == {}
     assert panel.wanted_streams([_srv(1, join_re="")], CFG_STREAM) == {}, \
@@ -876,10 +876,10 @@ def test_streams_desejados_so_para_quem_conta_por_log():
 
 
 def test_assinatura_de_stream_muda_com_o_cadastro():
-    """A assinatura e o que decide refazer a conexao: trocar o regex tem de derrubar a
-    antiga, senao o painel segue ouvindo com o padrao velho ate o proximo restart."""
-    # Duas chamadas, dois dicts DISTINTOS (mas com o mesmo conteudo): o que se confere
-    # e que a assinatura depende dos dados do cadastro, nao da identidade do objeto.
+    """The signature is what decides to redo the connection: changing the regex has to drop
+    the old one, otherwise the panel keeps listening with the old pattern until the next restart."""
+    # Two calls, two DISTINCT dicts (but with the same content): what is checked
+    # is that the signature depends on the registration data, not on the object identity.
     again = panel._stream_signature(_srv(1))
     assert panel._stream_signature(_srv(1)) == again, "mesmo cadastro, mesma assinatura"
     assert panel._stream_signature(_srv(1)) != panel._stream_signature(
@@ -891,16 +891,16 @@ def test_assinatura_de_stream_muda_com_o_cadastro():
 
 
 def test_regex_que_nao_compila_faz_a_thread_desistir():
-    """Cadastro invalido nao pode virar laco: a thread desiste, e o supervisor tem de
-    respeitar isso em vez de recriar a cada volta para ela morrer igual."""
+    """An invalid registration must not become a loop: the thread gives up, and the supervisor
+    has to respect that instead of recreating it every pass just for it to die the same way."""
     dead_one = panel._LogStream(_srv(9, join_re="("), panel._stream_signature(_srv(9)))
     dead_one._follow()
     assert dead_one.gave_up, dead_one.error
     assert "entrada" in dead_one.error
 
 
-# --------------------------------------------------------- supervisor das conexoes de log
-# Nenhum SSH de verdade aqui: o que se mede e a decisao de abrir, trocar e fechar.
+# --------------------------------------------------------- log connection supervisor
+# No real SSH here: what is measured is the decision to open, swap and close.
 
 class _FakeStream:
     def __init__(self, server, signature, record):
@@ -920,7 +920,7 @@ class _FakeStream:
 
 @pytest.fixture
 def fake_supervisor(database, target, monkeypatch):
-    """Troca `_LogStream` por um dublê que so registra abrir/fechar - sem SSH nenhum."""
+    """Swaps `_LogStream` for a double that only records open/close - no SSH at all."""
     created_ones = []
     monkeypatch.setattr(
         panel, "_LogStream",
@@ -943,8 +943,8 @@ def test_supervisiona_streams_abre_uma_conexao_por_servidor(database, fake_super
 
 
 def test_regex_novo_derruba_a_conexao_antiga(database, fake_supervisor):
-    """Trocar o regex no cadastro tem de derrubar a conexao antiga: senao o painel
-    segue ouvindo com o padrao velho ate alguem reiniciar o painel."""
+    """Changing the regex in the registration has to drop the old connection: otherwise the
+    panel keeps listening with the old pattern until someone restarts the panel."""
     created_ones = fake_supervisor
     with panel.app.app_context():
         panel.supervise_streams()
@@ -957,7 +957,7 @@ def test_regex_novo_derruba_a_conexao_antiga(database, fake_supervisor):
 
 
 def test_http_client_morta_e_levantada_de_novo(database, fake_supervisor):
-    """Conexao que morreu sozinha (servidor reiniciou, rede caiu) volta na proxima volta."""
+    """A connection that died on its own (server restarted, network dropped) comes back next pass."""
     created_ones = fake_supervisor
     with panel.app.app_context():
         panel.supervise_streams()
@@ -968,8 +968,8 @@ def test_http_client_morta_e_levantada_de_novo(database, fake_supervisor):
 
 
 def test_quem_desistiu_por_cadastro_invalido_nao_vira_laco(database, fake_supervisor):
-    """Recriar nao conserta regex torto, e a cada volta seria uma thread nova morrendo
-    igual, enchendo o log de erro."""
+    """Recreating does not fix a broken regex, and every pass would be a new thread dying
+    the same way, filling the log with errors."""
     created_ones = fake_supervisor
     with panel.app.app_context():
         panel.supervise_streams()
@@ -988,11 +988,11 @@ def test_evento_de_jogador_desligado_fecha_tudo(database, fake_supervisor):
         assert panel.supervise_streams() == 0
 
 
-# ------------------------------------------------------------------ diario de alertas
+# ------------------------------------------------------------------ alert journal
 
 def test_o_envio_vira_uma_linha_no_diario(database, webhooks):
-    """O diario e a resposta para "nao chega nada no Discord": sem ele, alerta que nao
-    aconteceu e alerta que nao saiu sao a mesma tela vazia."""
+    """The journal is the answer to "nothing arrives on Discord": without it, an alert that did
+    not happen and an alert that did not go out are the same empty screen."""
     enable(database, ["caiu"])
     panel.notify(database, "caiu", "Palworld: parou", "detalhe")
     journal = panel.recent_alerts(database)
@@ -1001,8 +1001,8 @@ def test_o_envio_vira_uma_linha_no_diario(database, webhooks):
 
 
 def test_evento_sem_ninguem_escutando_e_registrado(database, webhooks):
-    """E o caso mais comum de canal mudo, e precisa ficar registrado com essa cara —
-    senao a pessoa procura defeito onde nao ha."""
+    """It is the most common case of a silent channel, and it has to be recorded looking like
+    that - otherwise the person hunts for a defect where there is none."""
     enable(database, ["caiu"])
     panel.notify(database, "cpu-alta", "Palworld: CPU alta", "99%")
     journal = panel.recent_alerts(database)
@@ -1021,7 +1021,7 @@ def test_envio_que_falhou_fica_marcado_com_o_motivo(database, monkeypatch):
 
 
 def test_limpeza_do_diario_segura_o_tamanho_e_guarda_os_novos(database, webhooks, monkeypatch):
-    """O diario nao pode crescer para sempre nem apagar o que interessa."""
+    """The journal must not grow forever nor delete what matters."""
     enable(database, ["caiu"])
     monkeypatch.setattr(panel, "ALERT_LOG_KEEP", 3)
     for i in range(6):
@@ -1033,10 +1033,10 @@ def test_limpeza_do_diario_segura_o_tamanho_e_guarda_os_novos(database, webhooks
     assert "alerta 5" in journal[0]["title"], "guarda os mais NOVOS"
 
 
-# ------------------------------------------------------- uma tarefa quebrada nao cala as outras
-# O bug que fez tudo emudecer: as quatro tarefas do relogio dividiam um try so, entao
-# uma excecao em roda_agendamentos matava o monitor no mesmo tique — para sempre, porque
-# a tarefa quebrada quebrava de novo a cada volta.
+# ------------------------------------------------------- one broken task does not silence the others
+# The bug that made everything go quiet: the four clock tasks shared a single try, so an
+# exception in roda_agendamentos killed the monitor on the same tick - forever, because
+# the broken task broke again on every pass.
 
 def test_tarefa_quebrada_nao_cala_o_monitor(database, target, webhooks, monkeypatch):
     enable(database, ["caiu"])
@@ -1048,10 +1048,10 @@ def test_tarefa_quebrada_nao_cala_o_monitor(database, target, webhooks, monkeypa
     monkeypatch.setattr(panel, "server_metrics", lambda server, force=False: {"disks": []})
     monkeypatch.setattr(panel, "server_status", lambda server, force=False: state())
 
-    # Relogios vencidos: cada tique vale uma volta COMPLETA, com consulta de estado.
+    # Expired clocks: every tick counts as a FULL pass, with a state query.
     expired_clocks()
     with panel.app.app_context():
-        panel._scheduler_tick()   # linha de base
+        panel._scheduler_tick()   # baseline
 
     monkeypatch.setattr(panel, "server_status",
                         lambda server, force=False: state(service="inactive"))
@@ -1066,7 +1066,7 @@ def test_tarefa_quebrada_nao_cala_o_monitor(database, target, webhooks, monkeypa
     assert "agendamentos" in failures_in_journal[0]["title"], "dizendo qual tarefa caiu"
 
 
-# ---------------------------------------------------------- linha de base ao subir o painel
+# ---------------------------------------------------------- baseline when the panel starts
 
 def test_primeira_olhada_do_monitor_so_anota(database, target, webhooks, monkeypatch):
     enable(database, ["caiu", "inacessivel"])
@@ -1109,21 +1109,21 @@ def test_servidor_removido_sai_da_memoria_do_monitor(database, target, monkeypat
     assert target["id"] not in panel._monitor_state
 
 
-# --------------------------------------------------------------- URL invalida nao sai
+# --------------------------------------------------------------- invalid URL does not go out
 
 def test_url_invalida_nao_chega_a_tentar_conexao():
-    """A checagem acontece ANTES de qualquer socket: URL torta nao vira tentativa de
-    conexao (nem espera de timeout) escondida atras de uma mensagem de rede."""
+    """The check happens BEFORE any socket: a malformed URL does not turn into a connection
+    attempt (nor a timeout wait) hidden behind a network message."""
     assert panel.send_webhook("nao-e-url", "oi").startswith("URL invalida")
     assert panel.send_webhook("", "oi").startswith("URL invalida")
     assert panel.send_webhook("file:///etc/passwd", "oi").startswith("URL invalida")
 
 
-# ------------------------------------------------------------------------ a tela
+# ------------------------------------------------------------------------ the screen
 
 @pytest.fixture
 def alerts_screen(database, webhooks):
-    """Um administrador logado, banco de webhooks vazio. Devolve (cliente, postar, tela)."""
+    """A logged-in administrator, empty webhooks database. Returns (client, post, screen)."""
     with database:
         database.execute("DELETE FROM webhooks")
     panel.ensure_admin_user("chefe", "senha-do-chefe")
@@ -1158,7 +1158,7 @@ SECRET_URL = "https://discord.com/api/webhooks/123/tok-que-nao-pode-vazar"
 
 @pytest.fixture
 def registered_target(database, alerts_screen):
-    """Um destino "Equipe" cadastrado pela tela, com a URL secreta acima."""
+    """An "Equipe" destination registered through the screen, with the secret URL above."""
     _cli, post, _screen = alerts_screen
     resp = post("/alerts/targets", {"name": "Equipe", "enabled": "1", "url": SECRET_URL,
                                         "events": ["caiu", "disco-cheio"]})
@@ -1183,8 +1183,8 @@ def test_destino_aparece_pelo_nome_sem_o_token(alerts_screen, registered_target)
 def test_salvar_com_url_vazia_mantem_a_url_e_muda_eventos(database, alerts_screen, registered_target):
     _cli, post, _screen = alerts_screen
     hid = registered_target
-    # O caminho normal e mexer so nos eventos: a URL fica mascarada e o campo de troca
-    # vem vazio, entao um POST sem URL NAO pode limpar a que esta salva.
+    # The normal path is to touch only the events: the URL is masked and the replacement
+    # field comes empty, so a POST without a URL must NOT clear the saved one.
     post(f"/alerts/targets/{hid}", {"name": "Equipe", "url": "", "enabled": "1",
                                         "events": ["caiu"]})
     current_one = panel.webhook_list(database)[0]
@@ -1209,15 +1209,15 @@ def test_dois_destinos_tem_grupos_de_caixas_separados(database, alerts_screen, r
     html = screen()
     assert "Equipe" in html
     assert "Geral" in html
-    # Cada destino precisa do seu proprio id de caixa: repetido, clicar no rotulo de um
-    # marcaria o evento do outro.
+    # Each destination needs its own checkbox id: if repeated, clicking the label of one
+    # would tick the other's event.
     assert f'id="h{hid}-caiu"' in html
     assert f'id="h{hid + 1}-caiu"' in html
 
 
 def test_testar_usa_a_url_digitada_ou_a_salva(alerts_screen, registered_target, webhooks):
-    """Testar serve para conferir uma URL ANTES de salvar: se ha uma digitada, e ela
-    que vai; sem nada digitado, testa a que esta salva."""
+    """Testing is for checking a URL BEFORE saving: if one was typed, that one is
+    used; with nothing typed, it tests the saved one."""
     _cli, post, _screen = alerts_screen
     hid = registered_target
 
@@ -1242,8 +1242,8 @@ def test_limites_de_recurso_pela_tela(database, alerts_screen):
     assert panel.webhook_config(database)["memory"] == 85
     assert panel.webhook_config(database)["cpu"] == 70
 
-    # Um limite recusado nao pode deixar os outros dois ja gravados: a tela volta
-    # dizendo "recusado" e o operador nao teria como saber que metade da mudanca passou.
+    # A rejected limit must not leave the other two already saved: the screen comes back
+    # saying "rejected" and the operator would have no way to know half the change went through.
     post("/alerts", {"disk_pct": "75", "mem_pct": "10", "cpu_pct": "95"})
     assert panel.webhook_config(database)["memory"] == 85, "fora da faixa, nada muda junto"
     assert panel.webhook_config(database)["disk"] == 80
@@ -1265,9 +1265,9 @@ def test_remover_tira_da_lista(database, alerts_screen, registered_target):
 
 
 def test_alerta_ligado_sem_onde_olhar_avisa_na_tela(database, alerts_screen):
-    """Evento ligado sem nenhum servidor onde olhar: a tela tem de dizer isso em voz
-    alta. Alerta ligado e mudo e pior que desligado — o canal calado passa por "esta
-    tudo bem"."""
+    """Event on with no server to watch: the screen has to say so out
+    loud. An alert that is on and mute is worse than off - the silent channel passes for
+    "all is well"."""
     _cli, _postar, screen = alerts_screen
     with database:
         database.execute(
@@ -1299,7 +1299,7 @@ def test_configurar_o_que_faltava_tira_o_aviso(database, alerts_screen):
 
 
 def test_cadastro_grava_e_valida_a_expressao_de_erro(database, alerts_screen):
-    """O cadastro precisa gravar a expressao de erro: sem isso o alerta de log nunca liga."""
+    """The registration must save the error expression: without it the log alert never turns on."""
     cli, post, _screen = alerts_screen
     with database:
         database.execute(
@@ -1327,7 +1327,7 @@ def test_cadastro_grava_e_valida_a_expressao_de_erro(database, alerts_screen):
 
 
 def test_operador_nao_chega_em_alertas(database, alerts_screen):
-    """A tela mexe em credenciais: operador nao entra."""
+    """The screen touches credentials: operators do not get in."""
     panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERATOR)
     other = panel.app.test_client()
     other.get("/login")

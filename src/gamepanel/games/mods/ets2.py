@@ -1,7 +1,7 @@
-"""O que esta dentro do `server_packages.sii` do Euro Truck Simulator 2 (e do American Truck).
+"""What is inside the `server_packages.sii` of Euro Truck Simulator 2 (and American Truck).
 
-E o arquivo que o jogo exporta (`export_server_packages`) e o servidor le para saber mapa,
-DLCs e mods. Formato proprio da SCS (SiiNunit), texto:
+It is the file the game exports (`export_server_packages`) and the server reads to learn the
+map, DLCs and mods. SCS's own format (SiiNunit), text:
 
     server_packages_info : _nameless.1fe.9af2.f648 {
      dlc_non_essential_list: 8
@@ -16,9 +16,9 @@ DLCs e mods. Formato proprio da SCS (SiiNunit), texto:
      optional_mod: true
     }
 
-Mod da Workshop traz o ID dele em `mod_id` (e em hexadecimal no `package_name`); mod
-instalado a mao (o Mapa BR) traz ali so uma assinatura interna, que nao e link de nada.
-As DLCs vem como codigos, nao nomes: da para contar, nao para listar.
+A Workshop mod carries its ID in `mod_id` (and in hexadecimal in `package_name`); a mod
+installed by hand (the BR Map) carries only an internal signature there, which links to nothing.
+DLCs come as codes, not names: they can be counted, not listed.
 """
 from __future__ import annotations
 
@@ -66,13 +66,13 @@ def _workshop_id(attrs: dict[str, str]) -> int:
         return 0
     if attrs.get("mod_id", "").isdigit():
         return int(attrs["mod_id"])
-    # Sem mod_id legivel, o do nome do pacote (hexadecimal) diz o mesmo.
+    # Without a readable mod_id, the one in the package name (hexadecimal) says the same.
     hex_id = _WORKSHOP_PACKAGE.search(attrs.get("package_name", ""))
     return int(hex_id.group(1), 16) if hex_id else 0
 
 
 def parse(text: str) -> Packages:
-    """Le o arquivo; o que nao reconhece fica de fora, sem erro (e SUGESTAO para a tela)."""
+    """Read the file; whatever is not recognized is left out, with no error (it is a SUGGESTION for the screen)."""
     map_name, dlcs, mods = "", 0, []
     for kind, body in _BLOCK.findall((text or "").removeprefix("﻿")):
         attrs = _attrs(body)

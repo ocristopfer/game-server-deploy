@@ -1,33 +1,36 @@
-"""Desenha os graficos de uso: das amostras para os pontos do SVG.
+"""Draws the usage charts: from the samples to the SVG points.
 
-Sao DOIS graficos e nao um: porcentagem e contagem de gente nao cabem no mesmo eixo, e
-forcar as duas escalas num plot so inventa uma relacao que nao existe nos dados.
+There are TWO charts and not one: a percentage and a head count do not fit on the same
+axis, and forcing both scales into a single plot invents a relation that does not exist
+in the data.
 
-Tudo aqui e puro — recebe amostras ja lidas do banco e devolve o que o template
-desenha. O SVG sai pronto do servidor de proposito: a tela tem de funcionar sem
-JavaScript (ver CLAUDE.md), e a tabela de numeros ao lado e o par acessivel do desenho.
+Everything here is pure: it takes samples already read from the database and returns
+what the template draws. The SVG comes ready from the server on purpose: the screen has
+to work without JavaScript (see CLAUDE.md), and the table of numbers beside it is the
+accessible counterpart of the drawing.
 """
 from __future__ import annotations
 
 from datetime import timedelta
 
-# Caixa do SVG e as margens (rotulo do eixo a esquerda, legenda a direita).
+# The SVG box and its margins (axis label on the left, legend on the right).
 CHART_W, CHART_H = 720, 220
 CHART_L, CHART_R, CHART_T, CHART_B = 44, 64, 12, 28
 CHART_GAP = 2.5
 CHART_TICKS = 5
-# Distancia minima entre dois rotulos de ponta para os dois continuarem legiveis.
+# Minimum distance between two end-of-line labels for both to stay readable.
 TIP_MIN = 16
 
-CHART_RANGES = ((6, "6 horas"), (24, "24 horas"), (168, "7 dias"))
+# The label is a catalog KEY: the route translates it for whoever is looking.
+CHART_RANGES = ((6, "charts.range_6h"), (24, "charts.range_24h"), (168, "charts.range_7d"))
 
-# Slots 1 e 2 do catalogo categorico (versao para fundo escuro), validados contra o fundo
-# do painel: separacao para daltonismo muito acima do minimo. A cor fica na LINHA; texto,
-# eixo e legenda usam as cores de texto do painel.
+# Slots 1 and 2 of the categorical palette (dark background version), validated against
+# the panel background: color-blind separation well above the minimum. The color goes on
+# the LINE; text, axis and legend use the panel's text colors.
 CHART_CPU = "#3987e5"
 CHART_MEM = "#d95926"
 
-# Tetos "limpos" para o eixo de jogadores: 3 jogadores nao merecem um eixo ate 3.
+# "Round" ceilings for the players axis: 3 players do not deserve an axis that stops at 3.
 CEILINGS = (1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 64, 80, 100,
          150, 200, 300, 500, 750, 1000)
 
@@ -41,12 +44,12 @@ def clean_ceiling(peak: float) -> int:
 
 def _series_segments(samples, key: str, px, py,
                         sample_step: float) -> tuple[list[list[str]], dict | None]:
-    """Uma serie vira uma lista de SEGMENTOS de coordenadas, mais a ponta.
+    """A series becomes a list of coordinate SEGMENTS, plus its end point.
 
-    Segmentos, e nao uma linha so, porque o grafico tem buracos de dois tipos: amostra
-    sem valor para esta serie (a contagem de jogadores desligada, por exemplo) e painel
-    que ficou fora do ar entre duas amostras (ver CHART_GAP). Emendar por cima dos dois
-    desenharia uma reta que afirma algo que ninguem mediu.
+    Segments, and not a single line, because the chart has two kinds of gaps: a sample
+    with no value for this series (player counting turned off, for example) and the panel
+    being down between two samples (see CHART_GAP). Joining across either would draw a
+    straight line claiming something nobody measured.
     """
     segments: list[list[str]] = []
     current: list[str] = []
@@ -77,10 +80,10 @@ def _series_segments(samples, key: str, px, py,
 
 def build_chart(samples, series, ceiling: float, start, end, time_format: str,
                   sample_step: float) -> dict:
-    """Transforma as amostras em coordenadas prontas para o SVG.
+    """Turns the samples into coordinates ready for the SVG.
 
-    `series` diz quais colunas desenhar; cada uma vira uma lista de SEGMENTOS, porque o
-    grafico pode ter buracos (ver CHART_GAP).
+    `series` says which columns to draw; each one becomes a list of SEGMENTS, because the
+    chart may have gaps (see CHART_GAP).
     """
     span = max(1.0, (end - start).total_seconds())
     width = CHART_W - CHART_L - CHART_R
@@ -104,17 +107,17 @@ def build_chart(samples, series, ceiling: float, start, end, time_format: str,
             "label": one_series["label"],
             "color": one_series["color"],
             "suffix": one_series.get("suffix", ""),
-            # Um segmento de um ponto so nao vira polyline (nao teria comprimento): vira
-            # um ponto desenhado, senao a amostra solta sumiria da tela.
+            # A one-point segment does not become a polyline (it would have no length): it
+            # becomes a drawn dot, otherwise the lone sample would vanish from the screen.
             "tracos": [" ".join(s) for s in segments if len(s) > 1],
             "pontos": [s[0] for s in segments if len(s) == 1],
             "ponta": edge,
         })
 
-    # Rotulo direto so vale enquanto as pontas nao se encostam. Quando as linhas
-    # convergem no canto direito, empurrar um rotulo para cima do outro os desgruda das
-    # linhas e vira ruido — melhor deixar a legenda, a mira e a tabela carregarem, que e
-    # o que elas ja fazem.
+    # A direct label only works while the end points do not touch. When the lines converge
+    # in the right corner, pushing one label above the other detaches them from their lines
+    # and turns into noise; better to let the legend, the crosshair and the table carry it,
+    # which they already do.
     edges = [line["ponta"]["y"] for line in lines_of if line["ponta"]]
     label_edge = all(
         abs(a - b) >= TIP_MIN
@@ -142,8 +145,8 @@ def build_chart(samples, series, ceiling: float, start, end, time_format: str,
         "rotula_ponta": label_edge,
         "w": CHART_W, "h": CHART_H,
         "l": CHART_L, "r": CHART_W - CHART_R, "t": CHART_T, "b": CHART_H - CHART_B,
-        # O que a mira precisa para converter uma coordenada de volta em valor e em hora,
-        # sem o painel ter de mandar os dados duas vezes (o SVG ja os carrega).
+        # What the crosshair needs to turn a coordinate back into a value and a time,
+        # without the panel sending the data twice (the SVG already carries it).
         "teto": ceiling,
         "inicio_ms": int(start.timestamp() * 1000),
         "span_s": span,

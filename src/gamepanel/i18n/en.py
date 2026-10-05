@@ -1,13 +1,13 @@
-"""Catalogo em ingles.
+"""English catalog.
 
-Mesmas chaves do `pt.py`; ver o docstring do pacote. Chave que faltar aqui cai no
-portugues em vez de sumir — e o teste `test_i18n.py` cobra a paridade, para a falta ser
-uma decisao e nao um esquecimento.
+Same keys as `pt.py`; see the package docstring. A key missing here falls back to Portuguese
+instead of disappearing - and `test_i18n.py` enforces parity, so that a gap is a decision
+and not an oversight.
 """
 from __future__ import annotations
 
 MESSAGES: dict[str, str] = {
-    # -------------------------------------------------------- navegacao
+    # -------------------------------------------------------- navigation
     "nav.servers": "Servers",
     "nav.history": "History",
     "nav.alerts": "Alerts",
@@ -37,13 +37,16 @@ MESSAGES: dict[str, str] = {
     "nav.ssh_key": "SSH access",
     "nav.logout": "Sign out",
     "nav.more": "More",
+    "prefs.theme": "Toggle light/dark theme",
+    "prefs.language": "Change the interface language",
+    "nav.account_of": "{name}'s account",
     "nav.main": "Main navigation",
 
-    # ------------------------------------------------------------ papeis
+    # ------------------------------------------------------------ roles
     "role.admin": "Administrator",
     "role.operator": "Operator",
 
-    # ------------------------------------------------ secoes do servidor
+    # ------------------------------------------------ server sections
     "server.overview": "Overview",
     "server.overview.help": "Status, players, resources and log",
     "server.config": "Configuration",
@@ -64,7 +67,7 @@ MESSAGES: dict[str, str] = {
     "server.edit": "Edit",
     "server.edit.help": "Host, service, ports and paths",
 
-    # ------------------------------------------------------------ acoes
+    # ------------------------------------------------------------ actions
     "action.start": "Start",
     "action.start.confirm": "Start server",
     "action.stop": "Stop",
@@ -76,7 +79,7 @@ MESSAGES: dict[str, str] = {
     "action.check_update": "Check for update",
     "action.save": "Save",
 
-    # ------------------------------------------------- base e aviso de versao
+    # ------------------------------------------------- base and version notice
     "app.name": "Game Panel",
     "app.new_version": "There is a new version of the panel.",
     "app.version": "Panel version {version}",
@@ -89,17 +92,17 @@ MESSAGES: dict[str, str] = {
     "login.username": "Username",
     "login.password": "Password",
 
-    # ------------------------------------------------------------ idioma
+    # ------------------------------------------------------------ language
     "account.language": "Language",
     "account.language.title": "Interface language",
     "account.language.changed": "Language changed.",
 
-    # -------------------------------------------------------- painel
+    # -------------------------------------------------------- dashboard
     "dashboard.no_servers": "No servers registered yet.",
     "dashboard.ssh_access": "SSH access",
     "dashboard.ask_an_admin": "Ask a panel administrator to register the server.",
 
-    # ----------------------------------------------------- historico
+    # ----------------------------------------------------- history
     "history.server": "Server",
     "history.any_server": "all",
     "history.action": "Action",
@@ -125,19 +128,17 @@ MESSAGES: dict[str, str] = {
     "offline.vpn_hint": "If you are away from home, check that the VPN is on.",
     "offline.retry": "Try again",
 
-    # ----------------------------------------------------- chave ssh
+    # ----------------------------------------------------- ssh key
     "ssh_key.public_key": "Panel public key",
     "ssh_key.not_found": "Key not found. Run the panel deploy again.",
     "ssh_key.authorize": "Authorize on a game container",
     "ssh_key.host_keys": "Host keys",
 
-    # ------------------------------------------------------ graficos
+    # ------------------------------------------------------ charts
     "charts.no_samples": "No samples for this period yet.",
     "charts.cpu_memory": "CPU and memory",
     "charts.no_readings": "No meter readings for this period.",
     "charts.players": "Players",
-    "charts.peak_of": "peak of",
-    "charts.in_period": "in the period",
     "charts.as_table": "See the numbers as a table",
     "charts.when": "When",
     "charts.cpu": "CPU",
@@ -146,11 +147,6 @@ MESSAGES: dict[str, str] = {
 
     # ------------------------------------------------------- backups
     "backups.what_is_saved": "What goes into the copy",
-    "backups.backup_paths": "backup paths",
-    "backups.nothing_to_save": "This server has nothing to save. Fill in the",
-    "backups.config_folder": "configuration folder",
-    "backups.or_the": "or the",
-    "backups.in_settings": "in the server settings",
     "backups.stored_copies": "Copies in the container",
     "backups.file": "File",
     "backups.when": "When",
@@ -160,7 +156,7 @@ MESSAGES: dict[str, str] = {
     "backups.none_yet": "No copies yet.",
     "backups.pre_restore_copy": "Taken by the panel right before a restore",
 
-    # -------------------------------------------------- agendamentos
+    # -------------------------------------------------- schedules
     "schedules.tasks_here": "Tasks for this server",
     "schedules.task": "Task",
     "schedules.when": "When",
@@ -169,13 +165,8 @@ MESSAGES: dict[str, str] = {
     "schedules.off": "off",
     "schedules.admin_only": "only an administrator can change it",
     "schedules.none_here": "Nothing scheduled for this server.",
-    "schedules.clock_is": "The clock is the one on the",
-    "schedules.panel": "panel",
-    "schedules.no_late_fire": "does not fire late",
     "schedules.new_task": "Schedule a task",
     "schedules.what_to_do": "What to do",
-    "schedules.backup": "Backup",
-    "schedules.update": "Update",
     "schedules.daily": "Every day, at a fixed time",
     "schedules.weekly": "Once a week",
     "schedules.every_n_hours": "Every N hours",
@@ -184,10 +175,7 @@ MESSAGES: dict[str, str] = {
     "schedules.weekday": "Day of the week",
     "schedules.every": "Every",
     "schedules.hours_from_now": "hours, counted from now",
-    "schedules.runs_show_in": "Every run shows up in the",
-    "schedules.history": "history",
-
-    # ---------------------------------------------------- instancias
+    # ---------------------------------------------------- instances
     "instances.new": "New instance",
     "instances.game": "Game",
     "instances.only_installable": "Only games the broker can install on its own are listed.",
@@ -209,8 +197,6 @@ MESSAGES: dict[str, str] = {
     # ------------------------------------------------------- console
     "console.interactive": "Interactive session",
     "console.single_command": "Single command",
-    "console.commands_run_as": "Commands run as",
-    "console.interactive_lower": "interactive session",
     "console.history_hint": "History: &uarr; and &darr; walk through previous commands.",
     "console.output": "Output",
     "console.previous_commands": "Previous commands",
@@ -222,38 +208,27 @@ MESSAGES: dict[str, str] = {
     "console.none_yet": "No command run on this server yet.",
     "console.terminal_mode": "Terminal mode",
 
-    # ------------------------------------------------------ arquivos
+    # ------------------------------------------------------ files
     "files.download": "download",
     "files.delete": "delete",
     "files.empty_folder": "empty folder",
     "files.listing_truncated": "Listing cut at the first items of this folder.",
-    "files.binary": "Binary file.",
-    "files.read_only": "Read-only:",
-    "files.opens_as_form": "opens this file as a form and pins it to the screen",
     "files.configuration": "Configuration",
     "files.editor": "Editor",
-    "files.any_file_downloadable": "Any file can be downloaded through the link",
-    "files.config_folder_hint": "Tip: fill in the \"Configuration folder\" under",
     "files.edit_server": "Edit server",
     "files.path_lower": "path",
     "files.file_to_upload": "file to upload",
     "files.path": "Path",
 
-    # ------------------------------------------------- segundo fator
+    # ------------------------------------------------- second factor
     "login_2fa.title": "Verification",
     "login_2fa.hint": "Enter the 6-digit code from your authenticator app.",
     "login_2fa.code": "Code",
-    "account_2fa.add_account": "add account",
-    "account_2fa.scan_qr": "scan QR code",
-    "account_2fa.with_text_below": "with the text below the code.",
     "account_2fa.copy_key": "Copy key",
-    "account_2fa.type": "Type",
-    "account_2fa.time_based": "time-based",
     "account_2fa.six_digit_code": "6-digit code",
-    "account_2fa_codes.save_them_now": "Save these codes now.",
     "account_2fa_codes.copy_codes": "Copy codes",
 
-    # ------------------------------------------------------ usuarios
+    # ------------------------------------------------------ users
     "users.user": "User",
     "users.role": "Role",
     "users.created_at": "Created",
@@ -262,7 +237,6 @@ MESSAGES: dict[str, str] = {
     "users.new_user": "New user",
     "users.initial_password": "Initial password",
     "users.confirm_password": "Confirm password",
-    "users.password_handoff": "You set the password and hand it over; they change it later under",
     "users.what_each_role_opens": "What each role opens",
     "users.screen": "Screen",
     "users.perm_overview": "Servers, status, players, log",
@@ -278,7 +252,7 @@ MESSAGES: dict[str, str] = {
     "users.new_password_lower": "new password",
     "users.confirm_lower": "confirm",
 
-    # ------------------------------------------ configuracao do jogo
+    # ------------------------------------------ game configuration
     "config.edit_as_text": "edit as text",
     "config.unpin": "remove from the list",
     "config.found_in_container": "Configuration files found in the container",
@@ -298,7 +272,6 @@ MESSAGES: dict[str, str] = {
     "config.new_setting_value": "value of the new setting",
 
     # ------------------------------------------------------ terminal
-    "terminal.ssh_session_as": "Interactive SSH session as",
     "terminal.starting": "starting...",
     "terminal.clear": "Clear",
     "terminal.fullscreen": "Full screen",
@@ -315,7 +288,7 @@ MESSAGES: dict[str, str] = {
     "terminal.arrow_left": "arrow left",
     "terminal.arrow_right": "arrow right",
 
-    # --------------------------------------------------------- conta
+    # --------------------------------------------------------- account
     "account.role": "Role",
     "account.change_password": "Change password",
     "account.current_password": "Current password",
@@ -336,16 +309,17 @@ MESSAGES: dict[str, str] = {
     "account.sign_out": "Sign out",
     "account.sign_out_hint": "Ends the session on this device.",
 
-    # ---------------------------------------------- tela do servidor
+    # ---------------------------------------------- server screen
     "server_detail.host": "Host",
+    "server_detail.access": "Access",
+    "server_detail.access_helper": "unprivileged ({user})",
+    "server_detail.access_legacy": "root (legacy, needs migration)",
     "server_detail.ssh_port": "SSH port",
     "server_detail.service": "Service",
     "server_detail.game_ports": "Game ports",
     "server_detail.config_folder": "Config folder",
     "server_detail.server": "Server",
     "server_detail.maintenance": "Maintenance",
-    "server_detail.count_off": "Counting is off. Use the",
-    "server_detail.wizard": "wizard",
     "server_detail.published_name": "Published name",
     "server_detail.world": "World",
     "server_detail.online": "Online",
@@ -353,9 +327,6 @@ MESSAGES: dict[str, str] = {
     "server_detail.connected_for": "Connected for",
     "server_detail.score": "Score",
     "server_detail.no_identifier": "no identifier",
-    "server_detail.count": "count",
-    "server_detail.count_right_names_wrong": "is right, but the",
-    "server_detail.names": "names",
     "server_form.max_players": "Slots",
     "server_form.max_players_hint": (
         "The server's player limit, so the screen shows 2/6. Only used when the "
@@ -393,7 +364,7 @@ MESSAGES: dict[str, str] = {
     "server_detail.broadcast": "Notice to everyone on the server",
     "server_detail.broadcast_message": "notice message",
 
-    # --------------------------------------------- alertas: destinos
+    # --------------------------------------------- alerts - destinations
     "alerts.destinations_on_one": "{n} destination on",
     "alerts.destinations_on_many": "{n} destinations on",
     "alerts.no_destination_on": "no destination on",
@@ -435,7 +406,7 @@ MESSAGES: dict[str, str] = {
         "The deploy brought a URL in <code>GAMEPANEL_WEBHOOK_URL</code>; it became the first "
         "destination in this list, and from here on only what is registered counts.",
 
-    # ----------------------------------------- alertas: preferencias
+    # ----------------------------------------- alerts - preferences
     "alerts.preferences": "Preferences",
     "alerts.warn_disk_over": "Warn when the disk goes over",
     "alerts.disk_hint":
@@ -451,7 +422,7 @@ MESSAGES: dict[str, str] = {
         "Since it is a short sample now and then, it catches a CPU stuck at the ceiling, not a "
         "one-second spike.",
 
-    # ----------------------------------------------- alertas: diario
+    # ----------------------------------------------- alerts - daily log
     "alerts.journal": "Alert journal",
     "alerts.journal_empty":
         "Nothing recorded yet. Every alert the panel decides to send shows up here &mdash; "
@@ -471,7 +442,7 @@ MESSAGES: dict[str, str] = {
         "<strong>internal error</strong> is a scheduler task that broke: while it shows up here, "
         "its alerts are not being checked at all.",
 
-    # ---------------------------------------- alertas: como funciona
+    # ---------------------------------------- alerts - how it works
     "alerts.how_it_works": "How it works",
     "alerts.rule_rhythm":
         "The panel checks each server's state every <strong>{monitor}s</strong>, and disk, memory "
@@ -596,6 +567,10 @@ MESSAGES: dict[str, str] = {
         "each player installs their own.",
     "mods.status_failed": "Could not read the server mods: {reason}",
     "mods.not_thunderstore": "This server does not use Thunderstore mods.",
+    "mods.needs_root":
+        "This server is accessed without root (user {user}), and this installer still needs root "
+        "to write the game service settings. That arrives in phase 6 of the security plan "
+        "(docs/security-hardening.md); until then it cannot be installed, enabled or removed from this screen.",
     "mods.bad_package":
         "Package not recognised. Paste the link to its Thunderstore page, or author/package.",
     "mods.loader_title": "BepInEx (mod loader)",
@@ -792,7 +767,7 @@ MESSAGES: dict[str, str] = {
         "to move the Lua mods into the ue4ss/ folder and remove its files.",
     "mods.bad_name": "{name} is not accepted here. Expected: {allowed}.",
 
-    # --------------------------------------------- catalogo de jogos
+    # --------------------------------------------- game catalog
     "catalog.title": "Game catalog",
     "catalog.game": "Game",
     "catalog.creatable": "creatable",
@@ -915,7 +890,7 @@ MESSAGES: dict[str, str] = {
     "catalog.save": "Save",
     "catalog.add_to_catalog": "Add to the catalog",
 
-    # ------------------------------------------ cadastro de servidor
+    # ------------------------------------------ server registration
     "server_form.title_new": "Add server",
     "server_form.title_edit": "Edit server",
     "server_form.optional": "(optional)",
@@ -1004,8 +979,8 @@ MESSAGES: dict[str, str] = {
     "server_form.remove_hint": "Deletes only the record. The container and the game files are left untouched.",
     "server_form.remove_confirm": "Remove this server from the panel?",
 
-    # ------------------------------------------ titulos e componente
-    # ------------------------- pagina de erro e barreira de permissao
+    # ------------------------------------------ titles and components
+    # ------------------------- error page and permission barrier
     "error.csrf_invalid": "Invalid or expired CSRF token — reload the page.",
     "error.terminal_session_gone": "Terminal session expired or closed.",
     "error.terminal_bad_input": "Invalid input.",
@@ -1030,7 +1005,7 @@ MESSAGES: dict[str, str] = {
         "container.",
     "error.content_too_large": "Content too large (the editor takes up to {kb} KB per file).",
 
-    # ------------------------------------- validacao de formulario
+    # ------------------------------------- form validation
     "flash.server_duplicate": "There is already a server registered at {host}.",
     "flash.username_invalid":
         "Invalid username: use 1 to 32 characters among lowercase letters, digits, '-' and '_', "
@@ -1050,7 +1025,7 @@ MESSAGES: dict[str, str] = {
     "server.measuring": "measuring resources...",
     "server.server": "Server",
 
-    # -------------------------------- rotulos de botao e confirmacao
+    # -------------------------------- button labels and confirmation
     "account.generate": "Generate",
     "account.enable": "Turn on",
     "account.disable_confirm": "Turn off two-step verification? Signing in will ask for the password only.",
@@ -1110,7 +1085,7 @@ MESSAGES: dict[str, str] = {
     "users.remove_confirm": "Remove the user {user}?",
     "users.create": "Create",
 
-    # ---------------------------------------- contagem de jogadores
+    # ---------------------------------------- player count
     "players_setup.intro":
         "Three ways to know how many are playing, from the best to the last resort: the "
         "<strong>game's API</strong> (gives the names), the <strong>direct query</strong> the "
@@ -1245,7 +1220,7 @@ MESSAGES: dict[str, str] = {
     "players_setup.no_line_matched": "No line matched the patterns — check the spelling.",
     "players_setup.use_these_patterns": "Use these patterns",
 
-    # --------------------------------------------- eventos de alerta
+    # --------------------------------------------- alert events
     "event.server_stopped": "Server stopped running",
     "event.server_back": "Server is running again",
     "event.game_failed": "Game crashed (service in 'failed')",
@@ -1262,7 +1237,7 @@ MESSAGES: dict[str, str] = {
     "event.memory_almost_full": "Memory almost full",
     "event.cpu_high": "High CPU usage",
 
-    # ----------------------------------- nome das acoes no historico
+    # ----------------------------------- action names in the history
     "job.shell": "Command in the container",
     "job.terminal": "Interactive terminal",
     "job.file_saved": "File saved",
@@ -1344,7 +1319,7 @@ MESSAGES: dict[str, str] = {
     "player_action.kick": "Kick",
     "player_action.ban": "Ban",
 
-    # ---------------------------------------- mensagens de flash
+    # ---------------------------------------- flash messages
     "flash.two_factor_required_here": "This panel requires two-step verification: turn it on to continue.",
     "flash.too_many_tries": "Too many attempts. Try again in {n}s.",
     "flash.bad_credentials": "Wrong username or password.",
@@ -1439,7 +1414,7 @@ MESSAGES: dict[str, str] = {
     "flash.cannot_remove_only_admin": "The panel's only administrator cannot be removed.",
     "flash.user_removed": "User '{user}' removed.",
 
-    # --------------------------------- erros do cadastro de servidor
+    # --------------------------------- server registration errors
     "form.need_name": "Enter a name.",
     "form.bad_host": "Invalid host (use the container's IP or hostname).",
     "form.bad_ssh_user": "Invalid SSH user.",
@@ -1469,7 +1444,7 @@ MESSAGES: dict[str, str] = {
     "pattern.leave": "leave",
     "pattern.error": "error",
 
-    # -------------------------------------------------- consulta A2S
+    # -------------------------------------------------- A2S query
     "a2s.truncated": "the server's answer ended sooner than expected",
     "a2s.unterminated_text": "unterminated text in the answer",
     "a2s.split_incomplete": "the split answer arrived incomplete",
@@ -1478,7 +1453,7 @@ MESSAGES: dict[str, str] = {
     "a2s.no_reply": "no answer within {seconds}s on port {port}/udp",
     "a2s.query_failed": "could not query {host}:{port} - {reason}",
 
-    # -------------------------------- caminho e arquivo no container
+    # -------------------------------- path and file in the container
     "path.outside_roots": "outside the allowed folders ({folders})",
     "path.not_absolute": "use an absolute path (starting with /)",
     "path.bad_character": "invalid character in the path",
@@ -1493,7 +1468,7 @@ MESSAGES: dict[str, str] = {
     "ssh.no_stdout": "I could not open ssh's output",
     "ssh.upload_timeout": "timed out ({seconds}s) uploading to {host}",
 
-    # ---------------------------------------------- api http do jogo
+    # ---------------------------------------------- game http api
     "http.bad_url": "invalid URL (e.g. http://127.0.0.1:8212/v1/api/players)",
     "http.auth_failed": "the API answered {status} - check the admin user and password",
     "http.bad_status": "the API answered HTTP {status}",
@@ -1508,13 +1483,13 @@ MESSAGES: dict[str, str] = {
     "api.write_the_notice": "write the notice",
     "api.no_player_id": "I do not know whom to kick: the API published no identifier for this player",
 
-    # ---------------------------------------- padrao de log e broker
+    # ---------------------------------------- log pattern and broker
     "pattern.too_long": "the {label} pattern is too long (the limit is {n} characters)",
     "pattern.invalid": "invalid {label} pattern: {reason}",
     "broker.bad_host_or_service": "the broker returned a host or service in an invalid format",
     "broker.server_not_saved": "the server was not saved",
 
-    # -------------------------- texto dos alertas (vai para o canal)
+    # -------------------------- alert text (goes to the channel)
     "alert.contact_back": "{name}: contact restored",
     "alert.lost_contact": "{name}: the panel lost contact",
     "alert.no_detail": "no detail",
@@ -1550,7 +1525,7 @@ MESSAGES: dict[str, str] = {
     "alert.restarts_total": " ({n} in total this boot)",
     "alert.mute_rounds": " {n} checks",
 
-    # ---------------------------------------- agendamento e dias da semana
+    # ---------------------------------------- scheduling and weekdays
     "schedule.daily": "every day at {time}",
     "schedule.weekly": "{weekday} at {time}",
     "schedule.every_hour": "every hour",
@@ -1590,4 +1565,298 @@ MESSAGES: dict[str, str] = {
     "passkey.registered": "Device registered: next time, sign in with biometrics.",
     "passkey.removed": "Device removed.",
     "passkey.not_found": "Device not found.",
+    # ------------------------------ screen text moved out of templates and scripts
+    "account.operator_scope":
+        "As an operator you start, stop, update and edit the configuration of servers already "
+        "registered. Server registration, terminal, files and users belong to the "
+        "administrator.",
+    "account.recovery_codes_left_one": "{n} recovery code left",
+    "account.recovery_codes_left_many": "{n} recovery codes left",
+    "account.two_factor_off_hint":
+        "With it, knowing the password is not enough to sign in: the panel also asks for a "
+        "6-digit code from your phone.",
+    "account.two_factor_root_hint":
+        "This panel has root power over the game containers: turn it on.",
+    "account_2fa.step_register": "1. Add the panel to the app",
+    "account_2fa.step_register_hint":
+        "Use an authenticator app (Google Authenticator, Authy, Microsoft Authenticator, "
+        "1Password, Bitwarden...). On the phone, choose <strong>add account</strong> and "
+        "<strong>scan QR code</strong> — or, without a camera, <strong>enter key "
+        "manually</strong> with the text below the code.",
+    "account_2fa.key_details":
+        "Type <strong>time based</strong>, 6 digits, 30 seconds. Keep this key and this code "
+        "only until you confirm below: after enabling they are not shown again.",
+    "account_2fa.step_confirm": "2. Confirm with a code",
+    "account_2fa.clock_hint":
+        "Also check that the phone's clock is set to automatic: that is what makes the code "
+        "match.",
+    "account_2fa_codes.save_them_now_html":
+        "<strong>Save these codes now.</strong> They are shown only this once. Each one "
+        "replaces the app code a single time — it is the way out if you lose your phone. Keep "
+        "them in a password manager or on paper, never on the same phone as the app.",
+    "backups.keep_newest":
+        "The <strong>{n}</strong> newest copies stay; older ones are removed on their own.",
+    "backups.keep_all": "No copy is deleted automatically.",
+    "backups.change_paths":
+        "To change what goes in, edit the <a href=\"{url}\">backup paths</a> in the server "
+        "settings.",
+    "backups.live_copy_hint":
+        "You can take the copy with the server running, that is the usual way. Just know that a "
+        "save written in the middle of the copy may go in half done &mdash; for a perfect copy, "
+        "stop the server first.",
+    "backups.nothing_to_save_admin":
+        "This server has nothing to save. Fill in the <strong>configuration folder</strong> or "
+        "the <strong>backup paths</strong> <a href=\"{url}\">in the server settings</a>.",
+    "backups.nothing_to_save_operator":
+        "This server has nothing to save. Fill in the <strong>configuration folder</strong> or "
+        "the <strong>backup paths</strong> (ask an administrator).",
+    "history.removed": "(removed)",
+    "history.error": "error",
+    "history.keep_days":
+        "The panel keeps the last <strong>{n} days</strong> "
+        "(<code>GAMEPANEL_JOBS_KEEP_DAYS</code>) &mdash; each record carries the full output of "
+        "what ran, and without cleanup the database only grows.",
+    "history.cleanup_off":
+        "Automatic cleanup is off (<code>GAMEPANEL_JOBS_KEEP_DAYS=0</code>): the history grows "
+        "without limit.",
+    "history.admin_actions_hidden":
+        "Terminal, console and files do not show up here &mdash; they are administrator "
+        "actions.",
+    "catalog.source_curated": "curated",
+    "catalog.source_dynamic": "dynamic",
+    "config.no_files": "No configuration file registered for this server yet.",
+    "config.ask_admin_to_register": "Ask a panel administrator to register the file.",
+    "config.format": "format {name}",
+    "config.pin_hint":
+        "&quot;Pin here&quot; keeps the file in the bar above (up to {n} per server); the link "
+        "opens it without pinning.",
+    "config.nothing_found":
+        "Nothing found in <code>{folder}</code>. Adjust the &quot;Config folder&quot; under <a "
+        "href=\"{url}\">Edit server</a> or enter the file's full path in the bar above.",
+    "config.settings_count": "Settings ({n})",
+    "config.on": "On",
+    "config.off": "Off",
+    "config.outside_catalog": "{value} (not in the catalog)",
+    "config.range": "{low} to {high}",
+    "config.add_setting_hint":
+        "For a key that does not exist in the file yet. It goes at the end of the chosen block, "
+        "without touching the rest.",
+    "config.save_hint":
+        "Writes only the changed keys, keeping comments and the rest of the file. A "
+        "<code>.bak</code> copy is kept next to it before any write. Most games only read their "
+        "configuration at startup &mdash; without a restart, the change does not take effect.",
+    "config.cannot_open_as_form": "Could not open <code>{path}</code> as a form.",
+    "config.ask_admin_text_edit":
+        "Let a panel administrator know &mdash; editing as text is restricted to them.",
+    "service_state.unknown": "unknown",
+    "service_state.unreachable": "unreachable",
+    "server.more_actions_on": "More actions on {name}",
+    "dashboard.register_hint":
+        "Register the IP of a game container to control start, stop, update and run commands "
+        "from here.",
+    "dashboard.authorize_key_hint":
+        "The panel reaches each container over SSH &mdash; first authorize its key in the "
+        "container under <a href=\"{url}\">SSH access</a>.",
+    "players.badge_online": "{count} online",
+    "players.badge_players": "{count} players",
+    "players.no_reading": "no reading",
+    "players.names_unpublished": "This game does not publish the list of names — only the count.",
+    "players.nobody_online": "Nobody connected right now.",
+    "server_detail.count_off_admin":
+        "Counting is off. Use the <a href=\"{url}\">wizard</a>: it tests the UDP and TCP ports "
+        "the game opened, builds the HTTP API call when there is one and, if nothing answers, "
+        "helps you count from the log.",
+    "server_detail.count_off_operator":
+        "Counting is off. A panel administrator turns it on in the counting wizard.",
+    "server_detail.query_failed": "Could not query: {error}",
+    "server_detail.query_failed_admin":
+        "Check in the <a href=\"{url}\">wizard</a> that the port/URL is right and that the "
+        "server is up.",
+    "server_detail.query_failed_operator":
+        "Check that the server is up; if it is, let a panel administrator know.",
+    "server_detail.log_only_games":
+        "A game that publishes nothing on the network (like RuneScape Dragonwilds) needs "
+        "counting from the log.",
+    "server_detail.online_of": "{n} of {total}",
+    "server_detail.player_action_confirm": "{action} {player} from {server}?",
+    "server_detail.approx_admin":
+        "The <strong>count</strong> is right, but the <strong>names</strong> are a guess: this "
+        "game's log says someone left without saying who, so the panel shows the last ones to "
+        "join. If your server's leave line has the name, put <code>(?P&lt;name&gt;...)</code> "
+        "in it in the <a href=\"{url}\">wizard</a> and the list becomes exact.",
+    "server_detail.approx_operator":
+        "The <strong>count</strong> is right, but the <strong>names</strong> are a guess: this "
+        "game's log says someone left without saying who, so the panel shows the last ones to "
+        "join. If your server's leave line has the name, put <code>(?P&lt;name&gt;...)</code> "
+        "in it and the list becomes exact.",
+    "server_detail.player_actions_note":
+        "Kick, ban and announce go through the game's own API &mdash; the same one that counts "
+        "players. Each one is recorded in the <a href=\"{url}\">history</a>.",
+    "server_detail.no_log_lines": "(no log lines)",
+    "server_detail.stop_following": "Stop following",
+    "server_detail.no_connection": "no connection",
+    "metrics.unavailable": "unavailable",
+    "metrics.refresh_every": "refreshes every {n}s",
+    "metrics.no_reading_now": "no reading right now",
+    "metrics.read_failed": "Could not read the gauges: {error}",
+    "metrics.meters_unavailable": "gauges unavailable",
+    "metrics.cores_load": "{cores} core(s) · load {load}",
+    "metrics.used_of_total": "{used} of {total}",
+    "metrics.disk_mount": "Disk {mount}",
+    "metrics.disk": "Disk",
+    "metrics.stopped": "stopped",
+    "files.upload_hint":
+        "The file is uploaded in chunks, straight to the container &mdash; mods or saves of "
+        "several GB are fine. If one with the same name already exists, it is replaced and a "
+        "<code>.bak</code> copy is kept next to it.",
+    "files.parent": ".. (up)",
+    "files.download_name": "Download {name}",
+    "files.delete_name": "Delete {name}",
+    "files.delete_dir_name": "Delete {name} (only if empty)",
+    "files.delete_entry_confirm": "Delete {path}?\n\nThis cannot be undone.",
+    "files.binary_notice":
+        "<strong>Binary file.</strong> The panel does not edit it so as not to corrupt the game "
+        "&mdash; but you can download the whole file.",
+    "files.download_size": "Download ({size})",
+    "files.truncated_notice":
+        "<strong>Read only:</strong> the file is {size} and exceeds the editing limit ({max_kb} "
+        "KB). Below are the last {shown} &mdash; download the file to work on all of it.",
+    "files.save_hint":
+        "Ctrl+S saves. Before writing, the panel keeps a <code>{name}.&lt;date&gt;.bak</code> "
+        "copy in the same folder, and keeps the original file's owner and permissions.",
+    "files.crlf_note": "This file uses CRLF line endings &mdash; it will be saved that way.",
+    "files.opens_as_form_html":
+        "opens this file as a form and pins it on the <strong>Configuration</strong> screen",
+    "files.delete_no_undo":
+        "removes <code>{name}</code> from the container right away &mdash; there is no "
+        "<code>.bak</code> copy here and no undo",
+    "files.editor_intro":
+        "Pick a file from the list to edit it &mdash; up to {max_kb} KB. Above that the panel "
+        "shows the last {preview_kb} KB, read only.",
+    "files.any_file_downloadable_html":
+        "Any file can be downloaded through the <em>download</em> link in the list, including "
+        "binaries (saves, .so, .pak) and files too large for the editor.",
+    "files.config_search_hint":
+        "Looking for the game's configuration file? The search for candidates is under <a "
+        "href=\"{url}\">Configuration</a> &mdash; that is where its result is useful (pinning "
+        "the file and editing it field by field).",
+    "files.config_folder_is": "This server's config folder: <code>{path}</code>",
+    "files.config_folder_hint_html":
+        "Tip: fill in the \"Config folder\" under <a href=\"{url}\">Edit server</a> so this "
+        "screen opens in the right place.",
+    "files.stop_before_editing":
+        "Stop the server before touching files it rewrites on exit &mdash; several games "
+        "overwrite the .ini on shutdown.",
+    "terminal.session_intro":
+        "Interactive SSH session as <strong>{user}</strong> on <code>{host}</code>. It has a "
+        "real TTY: <code>htop</code>, <code>nano</code>, <code>vim</code> and confirmation "
+        "prompts work. The session drops on its own after {minutes} min idle.",
+    "terminal.input": "terminal input",
+    "terminal.keyboard_help":
+        "The keyboard goes straight to the shell: <code>Tab</code> completes, "
+        "<code>&uarr;</code> walks the bash history and <code>Ctrl+C</code> interrupts. To "
+        "copy, select with the mouse (with text selected <code>Ctrl+C</code> copies instead of "
+        "interrupting); <code>Ctrl+V</code> pastes.",
+    "terminal.exit_fullscreen": "Exit full screen",
+    "terminal.expired": "session expired",
+    "terminal.closed": "session closed",
+    "terminal.ended": "ended",
+    "terminal.ended_exit": "ended (exit {code})",
+    "terminal.reconnecting": "reconnecting...",
+    "terminal.connecting": "connecting...",
+    "terminal.connected": "connected",
+    "terminal.http_error": "http error {status}",
+    "terminal.open_failed": "failed to open: {error}",
+    "terminal.output_lost": "[panel: old output discarded]",
+    "copy.done": "Copied!",
+    "copy.failed": "Could not copy",
+    "config.unsaved_changes": "there are unsaved changes",
+    "files.cursor_position": "line {line}, column {column}",
+    "files.changed_suffix": " - changed",
+    "http.no_connection": "no connection",
+    "app.short_name": "Games",
+    "app.description": "Starts, stops, updates and watches the game servers.",
+    "offline.no_answer": "The panel did not answer.",
+    "offline.no_answer_hint":
+        "The panel did not answer. It only works with access to the network where the "
+        "containers are &mdash; starting and stopping servers cannot happen offline.",
+    "console.run_as_intro":
+        "Commands run as <strong>{user}</strong> inside the container <code>{host}</code>, over "
+        "SSH. Each run is limited to {timeout}s and is recorded in the history below.",
+    "console.interactive_hint":
+        "For something interactive (nano, htop, confirmation prompts) use the <a "
+        "href=\"{url}\">interactive session</a>.",
+    "console.non_interactive_hint":
+        "Non-interactive: no TTY, no <code>vim</code>/<code>top</code>/<code>htop</code>. Use "
+        "<code>journalctl -n 50</code>, <code>ls</code>, <code>df -h</code>, <code>cat</code>, "
+        "<code>sed -i</code> etc. Ctrl+Enter runs it.",
+    "console.running_placeholder": "(running...)",
+    "console.running": "Running...",
+    "job.waiting_output": "(waiting for output...)",
+    "job.finished_exit": "Finished with exit code {code}.",
+    "job.running_hint":
+        "Running — the output below updates on its own. A game update can take several minutes.",
+    "login_2fa.recovery_hint":
+        "No phone? Use one of the recovery codes (<code class=\"nowrap\">abcde-12345</code>); "
+        "each one works once.",
+    "ssh_key.intro":
+        "The panel controls each server over SSH, using the key below. For a container to show "
+        "up as reachable, it needs <code>sshd</code> running and this key authorized for the "
+        "user given in the server settings (usually <code>root</code>).",
+    "ssh_key.from_proxmox":
+        "From the Proxmox host, replacing <code>&lt;CTID&gt;</code> with the container id:",
+    "ssh_key.provisioned_note":
+        "Containers provisioned by <code>deploy-game.ps1</code> with <code>PANEL_PUBKEY</code> "
+        "in <code>.env</code> come out ready &mdash; this step is only for the ones created "
+        "before that.",
+    "ssh_key.host_key_changed":
+        "On the first connection the panel learns and pins the container's host key "
+        "(<code>accept-new</code>). If the container is recreated, the key changes and the "
+        "connection starts failing with <code>REMOTE HOST IDENTIFICATION HAS CHANGED</code> "
+        "&mdash; in that case remove the old entry:",
+    "ssh_key.container_ip": "container-ip",
+    "ssh_key.run_as": "Run it inside the panel container, as the <code>gamepanel</code> user.",
+    "schedules.clock_note":
+        "The clock is the <strong>panel</strong>'s &mdash; it is now <strong>{now}</strong> "
+        "({zone}). If that does not match your time, adjust the panel container's "
+        "<code>TZ</code>. A task that came due while the panel was down <strong>does not fire "
+        "late</strong>: it waits for the next occurrence.",
+    "schedules.no_timezone": "no time zone set",
+    "schedules.what_to_do_hint":
+        "<strong>Backup</strong> uses the paths from the server settings, with the same "
+        "retention as the Backups screen. <strong>Update</strong> runs SteamCMD &mdash; the "
+        "server is down during the update.",
+    "schedules.daily_and_weekly": "(daily and weekly)",
+    "schedules.weekly_only": "(weekly)",
+    "schedules.interval_only": "(interval)",
+    "schedules.runs_note":
+        "Every run shows up in the <a href=\"{url}\">history</a> like any other action, with "
+        "<code>agendador</code> in place of the user.",
+    "users.role_of": "Role of {name}",
+    "users.username_hint":
+        "Lowercase letters, digits, <code>-</code> and <code>_</code>. E.g. <code>john</code>",
+    "users.roles_hint":
+        "<strong>{operator}</strong>: starts, stops, updates, edits the already registered "
+        "configuration, sees log and players. <strong>{admin}</strong>: all of that plus "
+        "registering servers, terminal, file browser and this screen.",
+    "users.password_handoff_html":
+        "You set the password and hand it to the person; they change it later under <a "
+        "href=\"{url}\">Account</a>. The panel does not send email.",
+    "users.cut_note":
+        "The split follows what gives root access to the container: terminal, file editor and "
+        "the server settings (which point the panel's SSH) stay with the administrator.",
+    "charts.over_time": "{title} over time",
+    "charts.samples_note":
+        "{n} sample(s) &middot; one every {every} min &middot; kept for {days} days",
+    "charts.no_samples_hint":
+        "The panel stores a reading every {every} minutes while it is up &mdash; come back in a "
+        "little while, or pick a longer period.",
+    "charts.peak_in_period": "peak of <strong>{n}</strong> in the period",
+    "charts.no_player_count":
+        "No player count in this period (counting must be turned on in the server settings).",
+    "charts.table_hint":
+        "The same values as the chart, without relying on color or hovering. Newest to oldest.",
+    "charts.range_6h": "6 hours",
+    "charts.range_24h": "24 hours",
+    "charts.range_7d": "7 days",
 }

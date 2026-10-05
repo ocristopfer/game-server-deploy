@@ -1,7 +1,7 @@
-"""UE4SS, o carregador de mods de jogo Unreal sob o Proton (games/mods/ue4ss_remote.py).
+"""UE4SS, the mod loader for Unreal games under Proton (games/mods/ue4ss_remote.py).
 
-Roda DENTRO do CT; aqui ele roda contra uma pasta temporaria e um GitHub falso, com o zip
-no formato da v3.0.1 (tudo solto, ao lado do executavel).
+It runs INSIDE the CT; here it runs against a temporary folder and a fake GitHub, with the zip
+in the v3.0.1 format (everything loose, next to the executable).
 """
 from __future__ import annotations
 
@@ -60,14 +60,14 @@ def game(tmp_path):
 
 
 def test_liga_a_dwmapi_sem_mexer_no_que_o_jogo_ja_tinha():
-    """Sem dwmapi=n,b o Wine usa a dwmapi dele e o UE4SS nunca roda."""
+    """Without dwmapi=n,b Wine uses its own dwmapi and UE4SS never runs."""
     assert ur.with_dwmapi("mscoree,mshtml=") == "mscoree,mshtml=;dwmapi=n,b"
     assert ur.with_dwmapi("mscoree,mshtml=;dwmapi=n,b") == "mscoree,mshtml=;dwmapi=n,b"
     assert ur.without_dwmapi("mscoree,mshtml=;dwmapi=n,b") == "mscoree,mshtml="
 
 
 def test_baixa_o_zip_normal_e_nunca_o_de_debug(game):
-    """O zDEV abre console e janela: num servidor sem tela, o console aberto ja travou o V Rising."""
+    """zDEV opens a console and a window: on a headless server, the open console already froze V Rising."""
     exe_dir, env = game
     urls: list[str] = []
     ur.install_loader(str(exe_dir), fetcher=fetched(urls), env_path=str(env))
@@ -120,7 +120,7 @@ def test_desligar_tira_a_dwmapi(game):
 
 
 def test_pasta_do_executavel_que_nao_existe_e_recusada(tmp_path):
-    """Perfil apontando para o lugar errado nao pode espalhar DLL numa pasta qualquer."""
+    """A profile pointing to the wrong place must not scatter DLLs in an arbitrary folder."""
     with pytest.raises(ValueError, match="nao existe"):
         ur.install_loader(str(tmp_path / "nada"), fetcher=fetched([]))
 
@@ -133,7 +133,7 @@ def test_download_so_de_github(game):
 
 
 def experimental_zip() -> bytes:
-    """O layout da experimental: so o proxy solto, o resto em ue4ss/ (e o mods.txt com BOM)."""
+    """The experimental layout: only the proxy loose, the rest in ue4ss/ (and mods.txt with a BOM)."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("dwmapi.dll", b"MZ-proxy")
@@ -146,7 +146,7 @@ def experimental_zip() -> bytes:
 
 
 def test_padrao_e_a_experimental_que_nao_quebra_a_steam(game):
-    """Medido no Icarus: com a v3.0.1 a Steam do servidor subia com AppId 0 e a A2S sumia."""
+    """Measured on Icarus: with v3.0.1 the server's Steam came up with AppId 0 and A2S disappeared."""
     exe_dir, env = game
     urls: list[str] = []
 
@@ -166,7 +166,7 @@ def test_padrao_e_a_experimental_que_nao_quebra_a_steam(game):
     assert not (exe_dir / "ue4ss" / "LICENSE").exists()
     assert "GuiConsoleEnabled = 0" in (exe_dir / "ue4ss" / "UE4SS-settings.ini").read_text(encoding="utf-8")
     mods_txt = (exe_dir / "ue4ss" / "Mods" / "mods.txt").read_text(encoding="utf-8")
-    # O BOM grudava no nome do primeiro mod: "﻿CheatManagerEnablerMod" nao e o mod de verdade.
+    # The BOM stuck to the first mod's name: "CheatManagerEnablerMod" preceded by U+FEFF is not the real mod.
     assert not mods_txt.startswith("﻿")
     assert ur.enabled_mods(mods_txt)["CheatManagerEnablerMod"] is False
     state = ur.status(str(exe_dir), env_path=str(env))
@@ -174,7 +174,7 @@ def test_padrao_e_a_experimental_que_nao_quebra_a_steam(game):
     assert [m["name"] for m in state["mods"]] == ["BPModLoaderMod"]
 
 
-# ------------------------------------------------------------------ desinstalar
+# ------------------------------------------------------------------ uninstall
 
 def test_desinstalar_tira_o_ue4ss_e_a_dwmapi_e_deixa_o_jogo(game):
     exe_dir, env = game

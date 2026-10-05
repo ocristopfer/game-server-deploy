@@ -1,12 +1,12 @@
-"""O console de comando unico: a rota mais poderosa do painel, e a que nao tinha suite.
+"""The single-command console: the most powerful route of the panel, and the one with no suite.
 
-Ela roda uma linha de shell como ROOT dentro do container do jogo. A analise da Fase 1
-(`docs/architecture-analysis.md`, secao 4.1) a listou entre as lacunas junto de arquivos,
-backups e terminal — as outras tres ganharam suite e esta ficou para tras.
+It runs a shell line as ROOT inside the game container. The Phase 1 analysis
+(`docs/architecture-analysis.md`, section 4.1) listed it among the gaps together with files,
+backups and terminal - the other three got a suite and this one was left behind.
 
-O que se testa aqui e o que o painel DECIDE, nao o que o bash faz: quem pode abrir, o que
-vira job, como o comando chega ao destino e o que a tela mostra de volta. O `start_job` e
-trocado por um espiao, porque disparar SSH de verdade num teste seria testar o sshd.
+What is tested here is what the panel DECIDES, not what bash does: who can open it, what
+becomes a job, how the command reaches its destination and what the screen shows back. `start_job`
+is swapped for a spy, because firing real SSH in a test would be testing sshd.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def server(database, admin) -> int:
 
 @pytest.fixture
 def spy(monkeypatch):
-    """Captura o que o console MANDARIA rodar, sem abrir SSH nenhum."""
+    """Captures what the console WOULD send to run, without opening any SSH."""
     seen: list[dict] = []
 
     def fake_start_job(action, target, username, remote_cmd=None, command="", timeout=None):
@@ -39,10 +39,10 @@ def spy(monkeypatch):
     return seen
 
 
-# ------------------------------------------------------------------ quem entra
+# ------------------------------------------------------------------ who gets in
 
 def test_operador_nao_abre_o_console(server, operator):
-    """Comando avulso como root e justamente o poder que separa admin de operador."""
+    """An ad-hoc command as root is exactly the power that separates admin from operator."""
     assert operator.get(f"/servers/{server}/console").status_code == 403
 
 
@@ -67,30 +67,30 @@ def test_servidor_que_nao_existe_e_404(admin):
 
 
 def test_desligado_por_configuracao_e_403(server, admin, monkeypatch):
-    """`GAMEPANEL_ALLOW_SHELL=0` e a chave que tira esse poder do painel inteiro."""
+    """`GAMEPANEL_ALLOW_SHELL=0` is the switch that takes this power away from the whole panel."""
     monkeypatch.setattr(panel, "ALLOW_SHELL", False)
     assert admin.get(f"/servers/{server}/console").status_code == 403
 
 
 def test_desligado_por_configuracao_nao_deixa_POSTAR(server, admin, post, monkeypatch):
-    """O 403 do GET nao basta: quem tem a URL do POST a chama direto."""
+    """The GET's 403 is not enough: whoever has the POST URL calls it directly."""
     monkeypatch.setattr(panel, "ALLOW_SHELL", False)
     response = post(admin, f"/servers/{server}/console", {"command": "rm -rf /"})
     assert response.status_code == 403
 
 
 def test_sem_csrf_nada_roda(server, admin, spy):
-    """O POST sem token e barrado ANTES de qualquer decisao sobre o comando."""
+    """A POST without a token is blocked BEFORE any decision about the command."""
     response = admin.post(f"/servers/{server}/console", data={"command": "id"})
     assert response.status_code == 400
     assert spy == []
 
 
-# ------------------------------------------------- o que chega ao container
+# ------------------------------------------------- what reaches the container
 
 def test_o_comando_vai_como_UM_argumento_de_bash_lc(server, admin, post, spy):
-    """Pipe, aspas e `&&` tem de chegar intactos: o shell LOCAL do ssh nao pode
-    interpreta-los. Por isso o comando inteiro vira um argumento so de `bash -lc`."""
+    """Pipes, quotes and `&&` must arrive intact: ssh's LOCAL shell must not interpret
+    them. That is why the whole command becomes a single argument of `bash -lc`."""
     typed = "ls -la /opt | grep 'jogo' && echo " + chr(34) + "fim" + chr(34)
     post(admin, f"/servers/{server}/console", {"command": typed})
     assert len(spy) == 1
@@ -102,13 +102,13 @@ def test_o_comando_vai_como_UM_argumento_de_bash_lc(server, admin, post, spy):
 
 
 def test_o_job_nasce_com_o_nome_de_quem_clicou(server, admin, post, spy):
-    """A saida do console cita o comando: o historico tem de dizer QUEM o rodou."""
+    """The console output quotes the command: the history has to say WHO ran it."""
     post(admin, f"/servers/{server}/console", {"command": "id"})
     assert spy[0]["username"] == "chefe"
 
 
 def test_depois_de_disparar_redireciona_para_o_job(server, admin, post, spy):
-    """Sem o `?job=`, a tela recarregaria sem mostrar a saida do que acabou de rodar."""
+    """Without `?job=`, the screen would reload without showing the output of what just ran."""
     response = post(admin, f"/servers/{server}/console", {"command": "id"})
     assert response.status_code == 302
     assert f"/servers/{server}/console?job=4242" in response.headers["Location"]
@@ -122,8 +122,8 @@ def test_comando_vazio_nao_vira_job(server, admin, post, spy, typed):
 
 
 def test_comando_comprido_demais_nao_vira_job(server, admin, post, spy):
-    """Teto de tamanho: a linha entra num argumento de `bash -lc` e de la na coluna de
-    comando do job."""
+    """Size cap: the line goes into a `bash -lc` argument and from there into the job's
+    command column."""
     post(admin, f"/servers/{server}/console", {"command": "x" * (panel.SHELL_MAX_LEN + 1)})
     assert spy == []
 
@@ -133,7 +133,7 @@ def test_no_limite_exato_ainda_roda(server, admin, post, spy):
     assert len(spy) == 1
 
 
-# --------------------------------------------------------------- o historico
+# --------------------------------------------------------------- the history
 
 def _shell_job(conn, sid: int, command: str, username: str = "chefe") -> int:
     with conn:
@@ -151,7 +151,7 @@ def test_o_historico_mostra_o_comando_avulso_daquele_servidor(server, admin, dat
 
 
 def test_o_historico_nao_mostra_job_que_nao_e_avulso(server, admin, database):
-    """A tela lista `action = 'shell'`: restart do mesmo servidor nao e comando avulso."""
+    """The screen lists `action = 'shell'`: a restart of the same server is not an ad-hoc command."""
     with database:
         database.execute(
             "INSERT INTO jobs (server_id, target, action, status, command, username,"
@@ -162,8 +162,8 @@ def test_o_historico_nao_mostra_job_que_nao_e_avulso(server, admin, database):
 
 
 def test_job_de_OUTRO_servidor_nao_abre_por_id(server, admin, database):
-    """`?job=` vem da URL. Sem casar o servidor, trocar o numero na barra de enderecos
-    mostraria a saida de um comando rodado em outro container."""
+    """`?job=` comes from the URL. Without matching the server, changing the number in the address
+    bar would show the output of a command run in another container."""
     with database:
         database.execute(
             "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"
@@ -177,5 +177,5 @@ def test_job_de_OUTRO_servidor_nao_abre_por_id(server, admin, database):
 
 @pytest.mark.parametrize("raw", ["abc", "-1", "9e9", "", "1;2", "../3"])
 def test_job_que_nao_e_numero_nao_derruba_a_tela(server, admin, raw):
-    """O `?job=` chega da barra de enderecos: lixo ali vira tela sem job, nao 500."""
+    """`?job=` comes from the address bar: garbage there becomes a screen with no job, not a 500."""
     assert admin.get(f"/servers/{server}/console?job={raw}").status_code == 200

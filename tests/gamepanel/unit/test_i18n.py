@@ -1,8 +1,8 @@
-"""Idioma da tela (gamepanel.i18n).
+"""Screen language (gamepanel.i18n).
 
-O que importa aqui nao e a traducao em si, e o comportamento em volta dela: chave que
-ninguem cadastrou nao pode sumir da tela, idioma desconhecido nao pode virar 500, e os
-catalogos nao podem sair de sincronia sem alguem perceber.
+What matters here is not the translation itself, but the behavior around it: a key that
+nobody registered cannot vanish from the screen, an unknown language cannot become a 500,
+and the catalogs cannot drift out of sync without anyone noticing.
 """
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ import pytest
 from gamepanel import app as panel
 from gamepanel import i18n
 
-# ------------------------------------------------------------ catalogos
+# ------------------------------------------------------------ catalogs
 
 def test_os_dois_catalogos_tem_as_mesmas_chaves():
-    """Chave so em portugues e uma tela meio traduzida esperando para acontecer."""
+    """A key only in Portuguese is a half-translated screen waiting to happen."""
     missing = i18n.missing_keys("en")
     assert missing == [], f"sem traducao em ingles: {missing}"
 
@@ -35,16 +35,16 @@ def test_nenhum_valor_vazio():
 
 
 def test_toda_chave_segue_a_convencao():
-    """`area.assunto`, minusculo: a chave e identificador, nao texto de tela."""
+    """`area.subject`, lowercase: the key is an identifier, not screen text."""
     outside = sorted(c for c in i18n.CATALOGS["pt"]
                   if c != c.lower() or "." not in c or " " in c)
     assert outside == [], f"chave fora da convencao: {outside}"
 
 
 def test_chave_com_marcacao_nao_passa_por_traducao_que_escapa():
-    """`_()` escapa: `&mdash;` saia na tela como o texto `&mdash;` (Config do ETS2, console).
+    """`_()` escapes: `&mdash;` showed up on screen as the text `&mdash;` (ETS2 Config, console).
 
-    Frase com entidade ou tag e para `_h()`, que confia no catalogo e so escapa os campos.
+    A sentence with an entity or tag is for `_h()`, which trusts the catalog and escapes only the fields.
     """
     markup = {k for k, v in i18n.CATALOGS["pt"].items() if re.search(r"&\w+;|<\w", v)}
     templates = Path(panel.__file__).parent / "templates"
@@ -64,7 +64,7 @@ def test_idiomas_oferecidos_tem_catalogo():
         assert label.strip()
 
 
-# ------------------------------------------------------------- traduzir
+# ------------------------------------------------------------- translate
 
 def test_traduz_para_o_idioma_pedido():
     assert i18n.translate("nav.servers", "en") == "Servers"
@@ -72,7 +72,7 @@ def test_traduz_para_o_idioma_pedido():
 
 
 def test_chave_desconhecida_volta_como_chave():
-    """Aparecer 'nav.inexistente' na tela e feio - e e exatamente o ponto: da para ver."""
+    """Showing 'nav.inexistente' on screen is ugly - and that is exactly the point: you can see it."""
     assert i18n.translate("nav.inexistente", "en") == "nav.inexistente"
 
 
@@ -85,7 +85,7 @@ def test_chave_sem_traducao_cai_no_portugues(monkeypatch):
     assert i18n.translate("nav.servers", "en") == "Servidores"
 
 
-# -------------------------------------------------------- idioma_valido
+# -------------------------------------------------------- valid language
 
 @pytest.mark.parametrize("raw", ["", "  ", None, "klingon", "pt-BR", "EN"])
 def test_idioma_invalido_vira_o_padrao(raw):
@@ -112,7 +112,7 @@ def test_le_a_preferencia_do_navegador(header, expected):
     assert i18n.from_header(header) == expected
 
 
-# ---------------------------------------------------------- campos na frase
+# ---------------------------------------------------------- fields in the sentence
 
 def test_campo_entra_no_lugar_do_marcador(monkeypatch):
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.ritmo", "a cada {n}s")
@@ -125,12 +125,12 @@ def test_campo_a_mais_e_ignorado(monkeypatch):
 
 
 @pytest.mark.parametrize("phrase", [
-    "faltou o {outro}",      # marcador sem campo: KeyError
-    "chave {} solta",        # posicional sem argumento: IndexError
-    "chave { torta",         # marcador mal formado: ValueError
+    "faltou o {outro}",      # placeholder without a field: KeyError
+    "chave {} solta",        # positional without an argument: IndexError
+    "chave { torta",         # malformed placeholder: ValueError
 ])
 def test_marcador_que_nao_casa_nao_derruba_a_tela(monkeypatch, phrase):
-    """Frase e campo vem de lugares diferentes; a tela inteira nao pode cair por isso."""
+    """Sentence and field come from different places; the whole screen cannot fall because of it."""
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.torta", phrase)
     assert i18n.translate("t.torta", "pt", n=15) == phrase
 
@@ -141,17 +141,17 @@ def test_a_frase_do_idioma_pedido_e_que_recebe_o_campo(monkeypatch):
     assert i18n.translate("t.ritmo", "en", n=15) == "every 15s"
 
 
-# ------------------------------------------------- frase com marcacao (_h)
+# ------------------------------------------------- sentence with markup (_h)
 
 def test_frase_com_marcacao_chega_inteira_na_tela(monkeypatch):
-    """A frase vem do catalogo, que e codigo daqui: a marcacao dela e para valer."""
+    """The sentence comes from the catalog, which is our own code: its markup is meant to render."""
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.rico", "avisa na <strong>mudanca</strong>")
     with panel.app.test_request_context("/"):
         assert str(panel.translate_html("t.rico")) == "avisa na <strong>mudanca</strong>"
 
 
 def test_campo_que_vem_de_fora_e_escapado(monkeypatch):
-    """O campo NAO e do catalogo; sem escape, um nome de servidor viraria marcacao."""
+    """The field is NOT from the catalog; without escaping, a server name would become markup."""
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.rico", "servidor <strong>{name}</strong>")
     with panel.app.test_request_context("/"):
         output = str(panel.translate_html("t.rico", name="<script>x</script>"))
@@ -159,7 +159,7 @@ def test_campo_que_vem_de_fora_e_escapado(monkeypatch):
 
 
 def test_frase_encaixada_noutra_passa_inteira(monkeypatch):
-    """Paragrafo que embute outro (`_h` dentro de `_h`) nao pode escapar duas vezes."""
+    """A paragraph that embeds another (`_h` inside `_h`) cannot be escaped twice."""
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.fora", "ouvindo ({dentro})")
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.dentro", "<strong>{n}</strong> agora")
     with panel.app.test_request_context("/"):
@@ -167,11 +167,11 @@ def test_frase_encaixada_noutra_passa_inteira(monkeypatch):
         assert str(panel.translate_html("t.fora", dentro=inside)) == "ouvindo (<strong>3</strong> agora)"
 
 
-# ---------------------------------------------- fora de pedido (monitor, relogio)
+# ---------------------------------------------- outside a request (monitor, clock)
 
 def test_traduzir_fora_de_pedido_usa_o_padrao_do_deploy():
-    """O monitor roda em thread propria: sem este caminho, um alerta traduzido
-    derrubaria a volta inteira com "Working outside of application context"."""
+    """The monitor runs in its own thread: without this path, a translated alert
+    would bring down the whole round with "Working outside of application context"."""
     assert panel.current_language() == panel.DEFAULT_LANG
     assert panel.translate("nav.servers") == i18n.CATALOGS[panel.DEFAULT_LANG]["nav.servers"]
 
@@ -181,10 +181,10 @@ def test_idioma_padrao_vem_da_variavel_de_ambiente(monkeypatch):
     assert panel.translate("nav.servers") == "Servers"
 
 
-# ---------------------------------------------- Mensagem (texto que sabe a chave)
+# ---------------------------------------------- Message (text that knows its key)
 
 def test_mensagem_e_uma_str_comum_no_idioma_do_deploy(monkeypatch):
-    """Todo consumidor de hoje (log, str(exc), f-string, `in`) tem de seguir valendo."""
+    """Every current consumer (log, str(exc), f-string, `in`) has to keep working."""
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.erro", "porta {n} invalida")
     m = i18n.Message("t.erro", n=70000)
     assert isinstance(m, str)
@@ -200,28 +200,28 @@ def test_mensagem_traduzida_refaz_a_frase_no_idioma_pedido(monkeypatch):
 
 
 def test_str_solta_nao_vira_frase_traduzida(monkeypatch):
-    """Texto que nao veio de uma chave passa inteiro, em vez de sumir na cascata."""
+    """Text that did not come from a key passes through whole, instead of vanishing in the cascade."""
     monkeypatch.setitem(i18n.CATALOGS["en"], "t.erro", "port is invalid")
     assert i18n.translate("porta 70000 invalida", "en") == "porta 70000 invalida"
 
 
 def test_repr_da_mensagem_mostra_a_chave(monkeypatch):
-    """Num assert que falha, ver a chave vale mais do que ver a frase."""
+    """In a failing assert, seeing the key is worth more than seeing the sentence."""
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.erro", "porta {n} invalida")
     assert repr(i18n.Message("t.erro", n=1)) == "Mensagem('t.erro', {'n': 1})"
 
 
-# ------------------------------------- o campo passado casa com o marcador da frase
+# ------------------------------------- the field passed matches the sentence's placeholder
 
 def _translation_calls(arvore: ast.AST) -> list[tuple[int, str, set[str]]]:
-    """(linha, chave, campos) de cada `_('x', a=1)` / `Mensagem('x', a=1)` do modulo."""
+    """(line, key, fields) of each `_('x', a=1)` / `Mensagem('x', a=1)` in the module."""
     found_ones = []
     for no in ast.walk(arvore):
         if not isinstance(no, ast.Call):
             continue
         target = no.func.id if isinstance(no.func, ast.Name) else getattr(no.func, "attr", "")
-        # Os nomes de HOJE: com os de antes da traducao (traduzir, Mensagem) toda chamada
-        # de `translate`/`Message` em Python passava ao largo deste teste.
+        # TODAY's names: with the ones from before the translation (traduzir, Mensagem) every
+        # call to `translate`/`Message` in Python slipped past this test.
         if target not in {"_", "_h", "translate", "translate_html", "Message",
                         "label_for_db"} or not no.args:
             continue
@@ -233,12 +233,12 @@ def _translation_calls(arvore: ast.AST) -> list[tuple[int, str, set[str]]]:
 
 
 def test_todo_campo_passado_existe_como_marcador_na_frase():
-    """O marcador e o kwarg tem de ter o mesmo nome, e nada avisa quando nao tem.
+    """The placeholder and the kwarg must have the same name, and nothing warns when they don't.
 
-    `traduzir` engole o `KeyError` de proposito (frase e campo vem de lugares diferentes,
-    e derrubar a tela por causa disso e caro demais) — o preco e que um campo com nome
-    errado some em silencio, deixando `{name}` cru na tela. Este teste e quem cobra.
-    Ja aconteceu tres vezes durante a traducao dos identificadores para ingles.
+    `traduzir` swallows the `KeyError` on purpose (sentence and field come from different places,
+    and bringing down the screen because of it is too costly) - the price is that a field with
+    the wrong name vanishes silently, leaving a raw `{name}` on screen. This test is what
+    enforces it. It already happened three times during the translation of identifiers to English.
     """
     problems = []
     for file_path in sorted(Path(panel.__file__).parent.rglob("*.py")):
@@ -248,7 +248,7 @@ def test_todo_campo_passado_existe_como_marcador_na_frase():
         for line, key, fields in _translation_calls(tree):
             phrase = i18n.CATALOGS["pt"].get(key)
             if phrase is None:
-                continue  # chave montada em tempo de execucao; outro teste cobre
+                continue  # key built at runtime; another test covers it
             markers = set(re.findall(r"\{([a-z_]+)\}", phrase))
             left_over = fields - markers
             if left_over:
@@ -259,10 +259,11 @@ def test_todo_campo_passado_existe_como_marcador_na_frase():
 
 
 def test_nenhum_marcador_tem_o_nome_de_um_parametro_da_traducao():
-    """`translate(key, language, **fields)`: um campo chamado `key` colide com o proprio
-    parametro e a tela morre com "got multiple values for argument 'key'". Foi o 500 de
-    Editar num jogo CURADO (`games/{key}.env`) - o teste da tela so abria um dinamico,
-    que usa outra frase. A regra mora na frase, entao vale para template e Python juntos.
+    """`translate(key, language, **fields)`: a field named `key` collides with the parameter
+    itself and the screen dies with "got multiple values for argument 'key'". It was the 500 of
+    Edit on a CURATED game (`games/{key}.env`) - the screen test only opened a dynamic one,
+    which uses another sentence. The rule lives in the sentence, so it applies to template and
+    Python alike.
     """
     reserved = {"key", "language"}
     clashes = [f"{key}: {{{marker}}}"
@@ -272,7 +273,7 @@ def test_nenhum_marcador_tem_o_nome_de_um_parametro_da_traducao():
 
 
 def test_os_dois_idiomas_usam_os_mesmos_marcadores():
-    """Traducao que troca `{n}` por `{numero}` quebra so naquele idioma."""
+    """A translation that swaps `{n}` for `{numero}` breaks only in that language."""
     outside = []
     for key, phrase in i18n.CATALOGS["pt"].items():
         de_pt = set(re.findall(r"\{([a-z_]+)\}", phrase))
@@ -283,17 +284,17 @@ def test_os_dois_idiomas_usam_os_mesmos_marcadores():
 
 
 def test_campo_que_e_mensagem_vai_para_o_mesmo_idioma_da_frase(monkeypatch):
-    """Frase montada de pedacos traduziveis nao pode sair metade em cada lingua.
+    """A sentence built from translatable pieces cannot come out half in each language.
 
-    Aconteceu no rotulo do agendamento: a tela em ingles mostrava "todo sabado at
-    03:00", porque o dia entrava pelo `str` da Message (sempre o idioma do deploy).
+    It happened in the schedule label: the English screen showed "todo sabado at
+    03:00", because the day came in through the Message's `str` (always the deploy language).
     """
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.when", "{day} as {time}")
     monkeypatch.setitem(i18n.CATALOGS["en"], "t.when", "{day} at {time}")
     monkeypatch.setitem(i18n.CATALOGS["pt"], "t.saturday", "todo sabado")
     monkeypatch.setitem(i18n.CATALOGS["en"], "t.saturday", "every Saturday")
-    # O nome do kwarg E o marcador da frase: sao a mesma coisa vista dos dois lados, e
-    # renomear um so faz a substituicao falhar CALADA (o `translate` engole o KeyError).
+    # The kwarg name IS the sentence's placeholder: they are the same thing seen from both sides,
+    # and renaming only one makes the substitution fail SILENTLY (`translate` swallows the KeyError).
     built = i18n.Message("t.when", day=i18n.Message("t.saturday"), time="03:00")
     assert str(built) == "todo sabado as 03:00"
     assert i18n.translate(built, "en") == "every Saturday at 03:00"

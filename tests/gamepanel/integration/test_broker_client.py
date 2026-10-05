@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Testes do cliente do broker (`broker_client`): o que vai no fio e o que NUNCA vaza.
+"""Tests for the broker client (`broker_client`): what goes on the wire and what NEVER leaks.
 
     pytest admin/test_broker_client.py
 
-Fala com um servidor HTTP de verdade em 127.0.0.1 (stdlib), nao com um mock: assim o que se
-confere e o pedido montado, e nao a chamada de uma funcao. O TLS fixado usa o binario
-`openssl` para gerar um certificado de teste; sem ele esses casos sao pulados.
+It talks to a real HTTP server on 127.0.0.1 (stdlib), not a mock: that way what is checked
+is the request as built, not a function call. Pinned TLS uses the `openssl` binary to
+generate a test certificate; without it those cases are skipped.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ TOKEN = "t" * 40
 
 
 class FakeServer:
-    """Servidor HTTP de teste: guarda cada pedido e responde o que o teste mandar."""
+    """Test HTTP server: stores each request and answers whatever the test says."""
 
     def __init__(self) -> None:
         self.pedidos: list[dict] = []
@@ -74,7 +74,7 @@ def server(monkeypatch):
     fake.stop_it()
 
 
-# --- o que vai no fio -------------------------------------------------------------------------
+# --- what goes on the wire --------------------------------------------------------------------
 
 def test_todo_pedido_leva_o_token_e_o_ator(server):
     bc.create("alfa", "Um", "chefe")
@@ -128,7 +128,7 @@ def test_prefixo_da_url_e_respeitado(monkeypatch):
         fake.stop_it()
 
 
-# --- erros ----------------------------------------------------------------------------------------
+# --- errors ---------------------------------------------------------------------------------------
 
 def test_recusa_do_broker_vira_erro_com_mensagem_status_e_codigo(server):
     server.resposta = (429, {"erro": "limite de 8 instancias atingido", "codigo": "cota"})
@@ -178,7 +178,7 @@ def test_sem_configurar_e_erro_claro(monkeypatch):
         bc.health()
 
 
-# --- configuracao ------------------------------------------------------------------------------------
+# --- configuration ------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("url", ["ftp://x", "sem-esquema", "https://", "http://broker.exemplo:8443"])
 def test_url_invalida_ou_sem_tls_fora_do_loopback(monkeypatch, url):
@@ -201,7 +201,7 @@ def test_token_curto_e_recusado(monkeypatch):
 
 @pytest.mark.parametrize("bad", ["9F:92", "zz" * 32, "9F" * 33])
 def test_impressao_invalida_e_erro_nao_ausencia(monkeypatch, bad):
-    """Impressao digitada errada NAO pode virar 'sem impressao' (desligaria o pin)."""
+    """A mistyped fingerprint must NOT become 'no fingerprint' (that would turn the pin off)."""
     monkeypatch.setattr(bc, "_config", {})
     with pytest.raises(ValueError, match="64 digitos"):
         bc.configure("https://broker:8443", TOKEN, bad)
@@ -212,7 +212,7 @@ def test_impressao_aceita_o_formato_do_script_de_verificacao():
     assert bc.normalize_fingerprint("") == ""
 
 
-# --- TLS fixado -----------------------------------------------------------------------------------------
+# --- pinned TLS -----------------------------------------------------------------------------------------
 
 @pytest.fixture
 def broker_tls(tmp_path):

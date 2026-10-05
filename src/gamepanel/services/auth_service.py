@@ -1,11 +1,11 @@
-"""Trava de tentativas: quantas erradas cabem numa janela, e quanto falta para liberar.
+"""Attempt lockout: how many wrong tries fit in a window, and how long until it unlocks.
 
-Sem Flask e sem banco. O estado vive na MEMORIA do processo de proposito — o painel roda
-com um worker so (ver `provision-admin-lxc.sh`), e guardar isso no banco custaria uma
-escrita por tentativa errada, que e exatamente o que um ataque produz em volume.
+No Flask and no database. The state lives in the process MEMORY on purpose: the panel
+runs with a single worker (see `provision-admin-lxc.sh`), and keeping this in the database
+would cost one write per wrong attempt, which is exactly what an attack produces in volume.
 
-Reiniciar o painel zera as travas. E aceitavel: quem reinicia e quem tem acesso ao
-container, e ja pode mais do que isso.
+Restarting the panel clears the lockouts. That is acceptable: whoever restarts it has
+access to the container, and can already do more than this.
 """
 from __future__ import annotations
 
@@ -15,35 +15,36 @@ from collections.abc import Callable
 
 
 class Lockout:
-    """Uma trava, com seu proprio limite e sua propria janela.
+    """One lockout, with its own limit and its own window.
 
-    Cada etapa do login tem a sua (senha e codigo), e nao uma so com dois limites: errar
-    a senha cinco vezes nao pode gastar as tentativas de quem ja passou dela e esta
-    digitando o codigo.
+    Each login step has its own (password and code), rather than a single one with two
+    limits: getting the password wrong five times must not use up the attempts of someone
+    who is already past it and typing the code.
     """
 
     def __init__(self, tries: int, window: float,
                  clock: Callable[[], float] | None = None) -> None:
         self._tries = tries
         self._window = window
-        # `clock=time.time` na assinatura pareceria mais direto e QUEBRARIA os testes: o
-        # valor padrao e avaliado uma vez, na definicao, e guardaria a funcao original —
-        # o `monkeypatch.setattr(time, "time", ...)` de `test_2fa.py` passaria a nao ter
-        # efeito nenhum. Guardando None, o nome e resolvido no modulo a cada chamada.
+        # `clock=time.time` in the signature would look more direct and would BREAK the
+        # tests: the default value is evaluated once, at definition time, and would keep the
+        # original function, so the `monkeypatch.setattr(time, "time", ...)` in `test_2fa.py`
+        # would have no effect at all. Storing None, the name is resolved in the module on
+        # every call.
         self._clock = clock
         self._failures: dict[str, list[float]] = {}
-        # O painel serve varias abas ao mesmo tempo, e duas tentativas simultaneas
-        # mexeriam na mesma lista.
+        # The panel serves several tabs at once, and two simultaneous attempts would touch
+        # the same list.
         self._lock = threading.Lock()
 
     def _now(self) -> float:
         return self._clock() if self._clock else time.time()
 
     def remaining(self, key: str) -> int:
-        """Segundos que faltam para liberar; 0 quando ainda ha tentativa.
+        """Seconds left until it unlocks; 0 while there are attempts left.
 
-        Limpa as tentativas vencidas na passagem: a janela e deslizante, e sem isso uma
-        conta ficaria trancada para sempre depois de cinco erros bem espacados.
+        Prunes expired attempts along the way: the window slides, and without this an
+        account would stay locked forever after five well-spaced mistakes.
         """
         with self._lock:
             now = self._now()
@@ -51,8 +52,8 @@ class Lockout:
             self._failures[key] = fresh
             if len(fresh) < self._tries:
                 return 0
-            # Arredonda para cima: dizer "faltam 0 segundos" e mandar tentar de novo para
-            # levar o mesmo 429.
+            # Round up: saying "0 seconds left" sends the person to try again only to get
+            # the same 429.
             return int(self._window - (now - fresh[0])) + 1
 
     def record_failure(self, key: str) -> None:
@@ -60,15 +61,15 @@ class Lockout:
             self._failures.setdefault(key, []).append(self._now())
 
     def clear(self, key: str) -> None:
-        """Acertou: as tentativas anteriores deixam de contar.
+        """Got it right: the previous attempts stop counting.
 
-        Sem isto, quem erra quatro vezes, acerta, e erra a quinta amanha ficaria trancado
-        por causa de erros de ontem.
+        Without this, someone who errs four times, gets it right, and errs a fifth time
+        tomorrow would be locked out because of yesterday's mistakes.
         """
         with self._lock:
             self._failures.pop(key, None)
 
     def reset(self) -> None:
-        """Esquece TODAS as chaves. So para o `conftest.py`, entre um teste e o outro."""
+        """Forgets ALL keys. Only for `conftest.py`, between one test and the next."""
         with self._lock:
             self._failures.clear()

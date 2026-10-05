@@ -1,8 +1,8 @@
-"""O repositorio de `servers`: cada consulta, contra um banco de verdade.
+"""The `servers` repository: each query, against a real database.
 
-Repositorio e o unico lugar onde nome de coluna aparece escrito. Um teste por funcao
-custa pouco e e o que faz uma coluna renomeada quebrar AQUI, em vez de na primeira
-visita a tela que usa a copia que ficou para tras.
+The repository is the only place where a column name is written out. One test per function
+is cheap, and it is what makes a renamed column break HERE, instead of on the first visit
+to the screen that uses the copy left behind.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _fresh(**extra) -> dict:
 
 
 def test_a_lista_de_colunas_bate_com_a_tabela(database):
-    """Coluna que existe no `EDITABLE_FIELDS` e nao na tabela so quebraria no INSERT."""
+    """A column that exists in `EDITABLE_FIELDS` but not in the table would only break on INSERT."""
     in_table = {r["name"] for r in database.execute("PRAGMA table_info(servers)")}
     assert set(repo.EDITABLE_FIELDS) <= in_table
     assert set(repo.DEPLOY_FIELDS) <= in_table
@@ -47,7 +47,7 @@ def test_a_lista_sai_ordenada_por_nome(database):
 
 
 def test_o_endereco_e_a_identidade(database):
-    """`(host, ssh_port)` e UNIQUE: e por ele que o redeploy reconhece o que ja existe."""
+    """`(host, ssh_port)` is UNIQUE: it is how a redeploy recognizes what already exists."""
     with database:
         repo.insert(database, _fresh(host="10.0.0.7", ssh_port=2222), panel.now_iso())
     assert repo.by_address(database, "10.0.0.7", 2222)["name"] == "Alfa"
@@ -90,8 +90,8 @@ def test_so_os_do_broker_aparecem_em_from_broker(database):
 
 
 def test_cada_fonte_de_contagem_liga_o_player_source_junto(database):
-    """Gravar os campos de uma fonte sem ligar a fonte deixa o servidor apontando para
-    uma contagem que ninguem preencheu."""
+    """Saving a source's fields without switching the source on leaves the server pointing at
+    a count nobody filled in."""
     with database:
         repo.insert(database, _fresh(player_source=""), panel.now_iso())
     sid = repo.all_ordered(database)[0]["id"]
@@ -114,8 +114,8 @@ def test_cada_fonte_de_contagem_liga_o_player_source_junto(database):
 
 
 def test_trocar_a_fonte_http_zera_o_token_guardado(database):
-    """Se a URL ou a credencial mudou, o token antigo nao vale mais — e a proxima
-    consulta faz login sozinha com o que ficou."""
+    """If the URL or the credential changed, the old token is no longer valid - and the next
+    query logs in by itself with what is left."""
     with database:
         repo.insert(database, _fresh(), panel.now_iso())
     sid = repo.all_ordered(database)[0]["id"]

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Painel administrativo dos servers de jogos.
+"""Admin panel for the game servers.
 
-Roda num container proprio e fala SSH *direto* com cada container de jogo — o host
-Proxmox nao entra no caminho, o painel nao tem acesso a ele nem conhece `pct`.
+Runs in its own container and talks SSH *directly* to each game container: the Proxmox
+host is not in the path, the panel has no access to it and does not know about `pct`.
 
-Cada servidor cadastrado e um destino SSH (host/porta/usuario). Para o painel alcancar
-um container, aquele container precisa ter sshd e a chave publica do painel autorizada
-(veja a pagina "Acesso SSH" do painel).
+Each registered server is an SSH destination (host/port/user). For the panel to reach
+a container, that container needs sshd and the panel's public key authorized
+(see the panel's "SSH access" page).
 
-Dependencias: python3-flask (apt). Hash de senha e sessao usam apenas a stdlib.
+Dependencies: python3-flask (apt). Password hashing and sessions use only the stdlib.
 """
 from __future__ import annotations
 
@@ -29,27 +29,27 @@ from datetime import UTC, datetime, timedelta
 from functools import wraps
 from typing import Any, NamedTuple
 
-# Rodando como SCRIPT (`python3 /opt/gamepanel/gamepanel/app.py --reset-2fa ...`), quem
-# entra no sys.path e a pasta do proprio pacote, e `import gamepanel` nao resolve. Isto
-# poe o pai dela na frente. Nao e detalhe: a saida de emergencia do segundo fator e o
-# cadastro de servidor do deploy-game.ps1 chamam o arquivo por caminho, e desde que o
-# codigo foi para src/ os dois quebravam com ModuleNotFoundError - o do deploy em
-# silencio, porque ele so avisa "painel nao encontrado" e segue.
-if __package__ in (None, ""):  # pragma: no cover - so vale fora do import normal
+# Running as a SCRIPT (`python3 /opt/gamepanel/gamepanel/app.py --reset-2fa ...`), what
+# goes into sys.path is the package's own folder, and `import gamepanel` does not resolve. This
+# puts its parent in front. It is not a detail: the second-factor emergency exit and the
+# server registration of deploy-game.ps1 call the file by path, and since the
+# code moved to src/ both broke with ModuleNotFoundError - the deploy one
+# silently, because it only warns "panel not found" and moves on.
+if __package__ in (None, ""):  # pragma: no cover - only applies outside a normal import
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Rodando como SCRIPT (`python -m gamepanel.app` ou pelo caminho do arquivo), este modulo
-# se chama `__main__` — e `gamepanel.app` nao esta em `sys.modules`. Quando um blueprint
-# faz `from gamepanel import app as panel`, o Python importa o arquivo DE NOVO, do zero;
-# essa segunda copia chega ao rodape, registra os blueprints outra vez e encontra o
-# primeiro deles ainda pela metade ("partially initialized module ... has no attribute
-# 'bp'"). Registrar o modulo sob o nome de import faz o blueprint achar esta copia, que e
-# a que tem o `app` de verdade.
-if __name__ == "__main__":  # pragma: no cover - so vale fora do import normal
+# Running as a SCRIPT (`python -m gamepanel.app` or by the file path), this module
+# is called `__main__`, and `gamepanel.app` is not in `sys.modules`. When a blueprint
+# does `from gamepanel import app as panel`, Python imports the file AGAIN, from scratch;
+# that second copy reaches the bottom, registers the blueprints again and finds the
+# first of them still half built ("partially initialized module ... has no attribute
+# 'bp'"). Registering the module under its import name makes the blueprint find this copy, which is
+# the one with the real `app`.
+if __name__ == "__main__":  # pragma: no cover - only applies outside a normal import
     sys.modules.setdefault("gamepanel.app", sys.modules[__name__])
 
-# markupsafe vem junto com o Jinja, que vem junto com o python3-flask do apt: nao e
-# dependencia nova. E o mesmo escape que o autoescape do template usa.
+# markupsafe comes with Jinja, which comes with the apt python3-flask: it is not a
+# new dependency. It is the same escaping the template autoescape uses.
 from markupsafe import Markup, escape
 
 from gamepanel import cli, config, i18n, version
@@ -67,12 +67,20 @@ from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.persistence.repositories import settings as settings_repo
 from gamepanel.persistence.repositories import users as users_repo
 
-# Apelido: ha uma rota `terminal()` neste mesmo modulo (a tela /servers/<id>/terminal),
-# e o nome `terminal` sem apelido acabaria REBATIZADO por ela — o import ficaria valendo
-# so ate a definicao da rota, silenciosamente (mypy pegou isso: "Name already defined").
-# Apelidos pelo mesmo motivo: ha rotas `files()` (`/servers/<id>/files`) e
-# `backups()` (`/servers/<id>/backups`) neste modulo.
-from gamepanel.runtime import a2s, backup_archive, http_probe, log_probe, port_probe, presence_probe
+# Alias: there is a `terminal()` route in this same module (the /servers/<id>/terminal screen),
+# and the name `terminal` without an alias would end up REBOUND by it: the import would only hold
+# until the route definition, silently (mypy caught this: "Name already defined").
+# Aliases for the same reason: there are `files()` (`/servers/<id>/files`) and
+# `backups()` (`/servers/<id>/backups`) routes in this module.
+from gamepanel.runtime import (
+    a2s,
+    backup_archive,
+    http_probe,
+    log_probe,
+    port_probe,
+    presence_probe,
+    remote_cmd,
+)
 from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import ssh as ssh_transport
@@ -93,17 +101,18 @@ from gamepanel.services import (
 )
 from gamepanel.tasks import broker_jobs, log_stream, scheduler, ticker
 
-# O terminal interativo depende de PTY (so existe em POSIX). Em outros sistemas o
-# resto do painel continua funcionando e a tela do terminal responde 503.
+# The interactive terminal depends on a PTY (only exists on POSIX). On other systems the
+# rest of the panel keeps working and the terminal screen answers 503.
 HAVE_PTY = term_runtime.HAVE_PTY
-# O import do flask vem DEPOIS de proposito: a linha acima le do `term_runtime` que acabou
-# de ser importado, e o comentario que a explica precisa ficar junto dela.
+# The flask import comes AFTER on purpose: the line above reads from `term_runtime`, which was just
+# imported, and the comment explaining it needs to stay next to it.
 from flask import (  # noqa: E402
     Flask,
     abort,
     flash,
     g,
     has_app_context,
+    has_request_context,
     jsonify,
     redirect,
     render_template,
@@ -112,80 +121,80 @@ from flask import (  # noqa: E402
     url_for,
 )
 
-# Um servidor cadastrado, como o resto do painel o enxerga.
+# A registered server, as the rest of the panel sees it.
 #
-# Ou e a linha do SQLite, ou uma COPIA dela em dict - e a copia nao e detalhe de
-# implementacao: uma `sqlite3.Row` pertence a conexao que a produziu, e conexao de
-# SQLite nao atravessa thread. Toda tarefa longa (um update de jogo leva quase uma hora)
-# roda com `dict(server)` em vez da Row; ver `start_job`. As duas formas respondem a
-# `server["host"]`, que e tudo o que estas funcoes precisam.
+# Either the SQLite row, or a dict COPY of it - and the copy is not an implementation
+# detail: a `sqlite3.Row` belongs to the connection that produced it, and a SQLite
+# connection does not cross threads. Every long task (a game update takes almost an hour)
+# runs with `dict(server)` instead of the Row; see `start_job`. Both forms answer
+# `server["host"]`, which is all these functions need.
 ServerRow = sqlite3.Row | Mapping[str, Any]
 
 
-# ---------------------------------------------------------------- configuracao
+# ---------------------------------------------------------------- configuration
 
-# Uma leitura so, no import, com TODOS os problemas listados de uma vez (ver
-# `config.py`). Os nomes de modulo abaixo continuam existindo porque os testes
-# trocam `panel.X` por falso: ler `settings.x` direto neles faria a troca deixar
-# de valer em silencio.
+# A single read, at import, with ALL problems listed at once (see
+# `config.py`). The module names below still exist because the tests
+# swap `panel.X` for fakes: reading `settings.x` directly in them would make the swap
+# silently stop taking effect.
 settings = config.load()
 
 DB_PATH = settings.db_path
 SECRET_FILE = settings.secret_file
 SSH_KEY = settings.ssh_key
-# Gravavel: as host keys dos containers sao aprendidas no primeiro acesso (accept-new).
+# Writable: the containers' host keys are learned on first access (accept-new).
 KNOWN_HOSTS = settings.known_hosts
-# Onde ficam os sockets de conexao reaproveitada do SSH. Ao lado do known_hosts, e nao no
-# /tmp: o socket da acesso a uma sessao ja autenticada nos containers de jogo, e /tmp e
-# espaco compartilhado — pasta do proprio painel, com 0700, fecha essa porta.
+# Where the SSH connection-reuse sockets live. Next to known_hosts, not in
+# /tmp: the socket gives access to an already authenticated session on the game containers, and /tmp is
+# shared space; the panel's own folder, with 0700, closes that door.
 SSH_CONTROL_DIR = settings.ssh_control_dir
-# Quanto a conexao mestre fica de pe depois que o comando dela termina. E o que faz a
-# volta seguinte do monitor pegar carona em vez de pagar outro aperto de mao; 60s cobre
-# com folga o ritmo do monitor (15s a 60s) sem deixar conexao ociosa pendurada por horas.
+# How long the master connection stays up after its command ends. It is what lets the
+# monitor's next round piggyback instead of paying for another handshake; 60s comfortably covers
+# the monitor's pace (15s to 60s) without leaving an idle connection hanging for hours.
 SSH_CONTROL_PERSIST = settings.ssh_control_persist
 
-# Comandos rapidos (status, logs) x comandos longos (update baixa o jogo inteiro).
+# Quick commands (status, logs) vs long commands (update downloads the whole game).
 QUICK_TIMEOUT = 20
 JOB_TIMEOUT = settings.job_timeout
 STATUS_TTL = 8.0
-# Medidores de CPU/memoria/disco/rede: cada leitura custa uma ida de SSH de ~1s.
+# CPU/memory/disk/network gauges: each reading costs an SSH round trip of ~1s.
 METRICS_TTL = settings.metrics_ttl
 
-# Console web: executa comandos como root DENTRO do container de jogo escolhido.
-# E a funcionalidade mais poderosa do painel — desligue com GAMEPANEL_ALLOW_SHELL=0.
+# Web console: runs commands as root INSIDE the chosen game container.
+# It is the most powerful feature of the panel; turn it off with GAMEPANEL_ALLOW_SHELL=0.
 ALLOW_SHELL = settings.allow_shell
 SHELL_TIMEOUT = settings.shell_timeout
 SHELL_MAX_LEN = 4000
-# 16 bits: a maior porta que existe em TCP/UDP.
+# 16 bits: the largest port that exists in TCP/UDP.
 MAX_PORT = 65535
 
-# Terminal interativo: sessao SSH viva com PTY, teclado ligado no shell do container.
-# Herda o ALLOW_SHELL (e o mesmo poder do console, so que interativo).
+# Interactive terminal: live SSH session with a PTY, keyboard wired to the container shell.
+# Inherits ALLOW_SHELL (it is the same power as the console, only interactive).
 TERM_MAX_SESSIONS = settings.term_max_sessions
 TERM_IDLE_TIMEOUT = settings.term_idle_timeout
 TERM_BUFFER_BYTES = 512 * 1024
-TERM_POLL_WAIT = 20.0  # long-poll: segura a resposta ate chegar saida nova
+TERM_POLL_WAIT = 20.0  # long-poll: holds the response until new output arrives
 
-# Broker de provisionamento: cria instancias de jogo e abre portas no firewall. O painel
-# nao guarda credencial de Proxmox/OPNsense, so o token do broker. DESLIGADO por padrao: quem
-# liga (GAMEPANEL_ALLOW_BROKER=1) precisa apontar URL, arquivo do token e, em https, a
-# impressao SHA-256 do certificado. Sem isso o recurso nao aparece em lugar nenhum.
+# Provisioning broker: creates game instances and opens ports on the firewall. The panel
+# does not keep Proxmox/OPNsense credentials, only the broker token. OFF by default: whoever
+# turns it on (GAMEPANEL_ALLOW_BROKER=1) needs to set the URL, the token file and, on https, the
+# certificate's SHA-256 fingerprint. Without that the feature does not appear anywhere.
 BROKER_URL = settings.broker_url
 BROKER_TOKEN_FILE = settings.broker_token_file
 BROKER_CERT_SHA256 = settings.broker_cert_sha256
 BROKER_POLL = settings.broker_poll
-# Voltas seguidas sem resposta do broker antes de dar o job por perdido.
+# Consecutive rounds without a broker response before giving the job up as lost.
 BROKER_FAILURES_MAX = 15
-# Nomes de MODULO, e nao `settings.x` direto dentro de `_configure_broker`: os testes
-# trocam `panel.X` por falso para exercitar cada configuracao ruim, e uma leitura do
-# `settings` ali dentro ignoraria a troca.
+# MODULE names, not `settings.x` directly inside `_configure_broker`: the tests
+# swap `panel.X` for fakes to exercise each bad configuration, and reading
+# `settings` in there would ignore the swap.
 BROKER_REQUESTED = settings.allow_broker
 DEV = settings.dev
 
 
 def _configure_broker() -> bool:
-    """Liga o cliente do broker. Qualquer configuracao ruim DESLIGA o recurso (e loga o
-    motivo) em vez de derrubar o painel: o resto dele nao depende disto."""
+    """Set up the broker client. Any bad configuration TURNS OFF the feature (and logs the
+    reason) instead of taking the panel down: the rest of it does not depend on this."""
     if not BROKER_REQUESTED:
         return False
     try:
@@ -201,134 +210,134 @@ def _configure_broker() -> bool:
 
 ALLOW_BROKER = _configure_broker()
 
-# Editor de arquivos: le/grava arquivos de configuracao do jogo pelo mesmo SSH.
+# File editor: reads/writes the game's configuration files over the same SSH.
 ALLOW_FILES = settings.allow_files
-# 1 = quem nao ativou o segundo fator so alcanca a tela de ativacao. Desligado por padrao: ligar
-# ANTES de cada admin ter o aplicativo no celular tranca todo mundo fora do painel.
+# 1 = whoever has not enabled the second factor only reaches the enable screen. Off by default: turning it on
+# BEFORE every admin has the app on their phone locks everyone out of the panel.
 REQUIRE_2FA = settings.require_2fa
-# Endereco https (com DOMINIO) por onde as pessoas abrem o painel; vazio = sem entrar por
-# biometria. O navegador so libera o WebAuthn em contexto seguro, e a chave do aparelho fica
-# presa ao dominio: trocar o endereco depois invalida todas as passkeys cadastradas.
+# https address (with a DOMAIN) through which people open the panel; empty = no biometric
+# sign-in. The browser only allows WebAuthn in a secure context, and the device key is
+# bound to the domain: changing the address later invalidates every registered passkey.
 WEBAUTHN_ORIGIN = settings.webauthn_origin
-# Limite para EDITAR (o arquivo inteiro vai para um textarea e volta num POST).
+# Limit for EDITING (the whole file goes into a textarea and comes back in a POST).
 FILE_MAX_BYTES = settings.file_max_bytes
-# Acima do limite de edicao o painel ainda mostra o fim do arquivo, so para leitura.
+# Above the edit limit the panel still shows the end of the file, read-only.
 FILE_PREVIEW_BYTES = settings.file_preview_bytes
-# Download nao passa por memoria (vai em streaming), entao o teto e bem maior.
-# 0 = sem limite.
+# Download does not go through memory (it streams), so the cap is much larger.
+# 0 = no limit.
 FILE_DOWNLOAD_MAX = settings.file_download_max
 DOWNLOAD_CHUNK = 256 * 1024
-# Teto do corpo de um request: o arquivo editado sobe percent-encoded (ate 3x) + folga.
+# Request body cap: the edited file is uploaded percent-encoded (up to 3x) + slack.
 REQUEST_LIMIT = max(4 * 1024 * 1024, FILE_MAX_BYTES * 4 + 65536)
-# Raizes onde o navegador de arquivos pode entrar. "/" = sem restricao.
+# Roots the file browser may enter. "/" = no restriction.
 FILE_ROOTS = settings.file_roots
 FILE_DEFAULT_PATH = settings.file_default_path
 FILE_LIST_MAX = 800
-# Upload: o arquivo sobe em multipart e desce por SSH em streaming, sem passar inteiro
-# pela memoria do painel — por isso o teto aqui e bem maior que o do editor, que carrega
-# tudo num textarea. 0 = sem limite.
+# Upload: the file comes up as multipart and goes down over SSH as a stream, without passing whole
+# through the panel's memory; that is why the cap here is much larger than the editor's, which loads
+# everything into a textarea. 0 = no limit.
 #
-# Cuidado ao aumentar: o Werkzeug guarda o corpo do multipart num arquivo temporario do
-# CONTAINER DO PAINEL antes de a view ver um byte. Subir 2 GB exige 2 GB livres la — e o
-# CT do painel costuma ser pequeno. 512 MB cobre mod e save sem esse risco.
+# Careful when raising it: Werkzeug stores the multipart body in a temporary file of the
+# PANEL CONTAINER before the view sees a single byte. Uploading 2 GB needs 2 GB free there, and the
+# panel CT is usually small. 512 MB covers mods and saves without that risk.
 FILE_UPLOAD_MAX = settings.file_upload_max
 UPLOAD_CHUNK = 256 * 1024
 
-# Backup: tar.gz das pastas que valem a pena guardar (o save), criado DENTRO do
-# container e guardado la — e, logo em seguida, puxado para o painel (ver
-# `runtime.backup_archive`). As duas copias existem porque a do container morre com ele:
-# remover a instancia pelo broker apaga o CT com os discos.
+# Backup: tar.gz of the folders worth keeping (the save), created INSIDE the
+# container and stored there, and right after pulled to the panel (see
+# `runtime.backup_archive`). Both copies exist because the container one dies with it:
+# removing the instance through the broker deletes the CT along with its disks.
 BACKUP_DIR = settings.backup_dir
-# Quantas copias manter por servidor, no container; as mais antigas saem sozinhas.
+# How many copies to keep per server, in the container; the oldest ones go away on their own.
 BACKUP_KEEP = settings.backup_keep
 BACKUP_TIMEOUT = settings.backup_timeout
 BACKUP_PATHS_MAX = 8
 BACKUP_LIST_MAX = 100
-# A copia do painel: por PREFIXO (o servico do jogo), nao por servidor, para sobreviver a
-# remover e cadastrar de novo. Retencao propria, 0 = nunca apagar.
+# The panel copy: by PREFIX (the game service), not by server, to survive
+# removing and registering again. Its own retention, 0 = never delete.
 PANEL_BACKUP_DIR = settings.panel_backup_dir
 PANEL_BACKUP_KEEP = settings.panel_backup_keep
 
-# Agendamento: tarefas que o painel dispara sozinho (reiniciar de madrugada, backup
-# diario). O relogio e o do CONTAINER DO PAINEL — se as horas nao baterem com as suas,
-# o que esta errado e o TZ dele.
-# Este e o piso de TODOS os avisos do painel: nada pode chegar mais rapido do que a volta
-# do relogio. Ele mesmo custa quase nada (as quatro tarefas tem cada uma o seu proprio
-# ritmo la dentro e saem na hora quando nao e a vez delas), entao 15s da folga para o
-# alerta de jogador sem multiplicar SSH de ninguem.
+# Scheduling: tasks the panel fires on its own (restart at dawn, daily
+# backup). The clock is the PANEL CONTAINER's: if the times do not match yours,
+# what is wrong is its TZ.
+# This is the floor for ALL panel notifications: nothing can arrive faster than the clock's
+# round. The clock itself costs almost nothing (the four tasks each have their own
+# pace inside it and return right away when it is not their turn), so 15s gives room for the
+# player alert without multiplying anyone's SSH.
 SCHEDULE_TICK = settings.schedule_tick
-# Tarefa atrasada demais nao dispara. Se o painel passou a noite fora do ar, ninguem quer
-# o "reiniciar as 5h" caindo as 14h, no meio da partida: ela espera a proxima ocorrencia.
+# A task that is too late does not fire. If the panel was down overnight, nobody wants
+# the "restart at 5am" landing at 2pm, in the middle of a match: it waits for the next occurrence.
 SCHEDULE_GRACE = settings.schedule_grace
-# Nome que aparece no historico no lugar do usuario, quando quem disparou foi o relogio.
+# Name shown in the history in place of the user, when the clock is what triggered it.
 SCHEDULE_USER = "agendador"
 
-# Retencao do historico: cada job guarda ate 200 KB de saida, e um backup diario sozinho
-# ja poe 365 linhas por ano no banco. 0 desliga a limpeza.
+# History retention: each job stores up to 200 KB of output, and a daily backup alone
+# already puts 365 rows a year in the database. 0 turns cleanup off.
 JOBS_KEEP_DAYS = settings.jobs_keep_days
 JOBS_PURGE_EVERY = 3600.0
 HISTORY_PAGE = 60
 
-# Amostras para os graficos de uso. Cada uma custa uma leitura de medidores — a chamada
-# mais cara do painel (o script remoto dorme 0,5s para tirar duas amostras de CPU) —,
-# entao o intervalo e generoso: 5 min dao 288 pontos por dia, de sobra para o grafico.
+# Samples for the usage charts. Each one costs a gauge reading (the most expensive call
+# in the panel: the remote script sleeps 0.5s to take two CPU samples),
+# so the interval is generous: 5 min gives 288 points a day, plenty for the chart.
 SAMPLE_EVERY = settings.sample_every
 SAMPLES_KEEP_DAYS = settings.samples_keep_days
 
-# Alertas: o painel avisa por webhook (Discord, Slack, o que aceitar um POST de JSON)
-# quando um servidor cai, some do SSH, enche o disco ou quando uma tarefa agendada falha.
-# A URL fica no banco (tela "Alertas"); esta variavel so serve de valor inicial, para o
-# deploy poder deixar tudo pronto.
+# Alerts: the panel notifies by webhook (Discord, Slack, anything that accepts a JSON POST)
+# when a server goes down, drops off SSH, fills its disk or when a scheduled task fails.
+# The URL lives in the database ("Alerts" screen); this variable only serves as the initial value, so the
+# deploy can leave everything ready.
 DEFAULT_WEBHOOK_URL = settings.webhook_url
 WEBHOOK_TIMEOUT = settings.webhook_timeout
-# O Cloudflare na frente do Discord devolve 403 (erro 1010) para o User-Agent padrao do
-# urllib ("Python-urllib/3.x"), antes mesmo do pedido chegar no webhook. Mandar um
-# User-Agent proprio resolve, e nenhum outro destino se incomoda com ele.
+# The Cloudflare in front of Discord returns 403 (error 1010) for urllib's default
+# User-Agent ("Python-urllib/3.x"), before the request even reaches the webhook. Sending our own
+# User-Agent fixes it, and no other destination minds it.
 WEBHOOK_UA = settings.webhook_ua
-# Teto de destinos. Cada alerta vira um POST por destino, em serie, dentro da volta do
-# monitor — uma lista sem fim faria a volta esperar por todos eles.
+# Cap on destinations. Each alert becomes one POST per destination, in series, inside the
+# monitor round: an endless list would make the round wait for all of them.
 WEBHOOK_MAX = settings.webhook_max
-# De quanto em quanto tempo o painel confere o estado de cada servidor. Cada volta custa
-# uma ida de SSH por servidor — nao adianta descer muito.
+# How often the panel checks the state of each server. Each round costs
+# one SSH round trip per server: going too low does not help.
 MONITOR_EVERY = settings.monitor_every
-# Jogador entrando e a unica coisa que alguem espera ver "agora" — quem recebe o aviso
-# costuma querer entrar junto, e um minuto depois ja e tarde. Por isso ele tem relogio
-# proprio, mais curto que o do estado.
+# A player joining is the only thing someone expects to see "now": whoever gets the notice
+# usually wants to join too, and a minute later is already too late. That is why it has its own
+# clock, shorter than the state one.
 PLAYER_CHECK_EVERY = settings.player_check_every
-# ...mas so vale para quem responde de graca. A2S e HTTP saem de dentro do container sem
-# nada extra; a contagem por LOG e outra historia: cada consulta e uma ida de SSH que
-# arrasta ate LOG_SCAN_MAX linhas para o painel aplicar o regex. Nesse ritmo curto isso
-# seriam megabytes por minuto por servidor, para achar duas linhas novas. Quem conta por
-# log fica no relogio do estado ate existir leitura incremental ou log em streaming.
+# ...but it only applies to sources that answer for free. A2S and HTTP come from inside the container with
+# nothing extra; counting by LOG is another story: each query is an SSH round trip that
+# drags up to LOG_SCAN_MAX lines to the panel to apply the regex. At this short pace that would
+# be megabytes per minute per server, to find two new lines. Whoever counts by
+# log stays on the state clock until there is incremental reading or log streaming.
 PLAYER_FAST_SOURCES = {"a2s", "http"}
-# Quem conta por log ganha tempo real por outro caminho: uma conexao SSH longa rodando
-# `journalctl -f`. Em vez de perguntar "tem alguem novo?" de minuto em minuto, o painel
-# fica ouvindo e reage a linha no instante em que ela sai.
+# Whoever counts by log gets real time another way: a long SSH connection running
+# `journalctl -f`. Instead of asking "is there anyone new?" every minute, the panel
+# keeps listening and reacts to the line the instant it comes out.
 LOG_STREAM = settings.log_stream
-# Uma entrada e uma saida no mesmo segundo (alguem trocando de servidor, um grupo
-# entrando junto) nao podem virar uma releitura do log cada. A primeira linha dispara,
-# as seguintes dessa janela pegam carona na mesma conferida.
+# A join and a leave in the same second (someone switching servers, a group
+# joining together) must not each turn into a log reread. The first line triggers,
+# the following ones in that window piggyback on the same check.
 LOG_STREAM_DEBOUNCE = settings.log_stream_debounce
-# Depois de a conexao cair, quanto esperar antes de tentar de novo. Servidor desligado
-# nao pode virar um laco de SSH a cada segundo.
+# After the connection drops, how long to wait before trying again. A server that is off
+# must not turn into an SSH loop every second.
 LOG_STREAM_RETRY = settings.log_stream_retry
-# O disco sai dos medidores, que custam bem mais caro (o script remoto dorme 0,5s para
-# tirar duas amostras). Ele nao enche em um minuto, entao a conferida e espacada.
+# Disk comes from the gauges, which cost a lot more (the remote script sleeps 0.5s to
+# take two samples). It does not fill up in a minute, so the check is spaced out.
 DISK_CHECK_EVERY = settings.disk_check_every
-# Uma acao do painel (parar, reiniciar, atualizar) derruba o servidor de proposito. Nesta
-# janela depois dela, queda nao vira alerta — senao todo restart pelo botao viraria susto.
+# A panel action (stop, restart, update) takes the server down on purpose. In this
+# window after it, a drop does not become an alert; otherwise every restart from the button would be a scare.
 ALERT_QUIET = settings.alert_quiet
 
-# Padroes usados pelo botao "procurar arquivos de config".
+# Patterns used by the "find config files" button.
 CONFIG_GLOBS = ("*.ini", "*.cfg", "*.conf", "*.json", "*.yaml", "*.yml", "*.properties", "*.txt")
-# Quantos arquivos de configuracao um servidor pode ter registrados para a tela "Config".
+# How many configuration files a server may have registered for the "Config" screen.
 CONFIG_FILES_MAX = 8
-# Teto de campos no formulario da tela "Config": acima disso o arquivo quase certamente
-# nao e configuracao (um log casa com "chave=valor" em varias linhas).
+# Cap on fields in the "Config" screen form: above this the file is almost certainly
+# not configuration (a log matches "key=value" on many lines).
 CONFIG_SETTINGS_MAX = 600
 
-# Formato de data curto do painel ("17/09 05:00"). Estava escrito a mao em tres
-# telas; uma delas com um espaco a mais bastaria para a lista parecer desalinhada.
+# The panel's short date format ("17/09 05:00"). It was handwritten on three
+# screens; one of them with an extra space was enough to make the list look misaligned.
 SHORT_DATE_FORMAT = "%d/%m %H:%M"
 
 TPL_ERROR = "error.html"
@@ -339,44 +348,44 @@ UNIT_RE = re.compile(r"^[A-Za-z0-9@._-]{1,80}\.service$")
 HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
 USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
-# Papeis do painel. A divisao segue o que da poder de root no container: shell, editor
-# de arquivos e cadastro de servidor sao de admin; operar quem ja esta cadastrado
-# (start/stop/update, configuracao do jogo, log, jogadores) e de operador.
+# Panel roles. The split follows what gives root power on the container: shell, file
+# editor and server registration are admin; operating what is already registered
+# (start/stop/update, game configuration, log, players) is operator.
 ROLE_ADMIN = "admin"
-# O VALOR e a coluna `role` no banco: mudar "operador" para "operator" rebaixaria todo
-# operador ja cadastrado a "papel desconhecido". So o nome da constante e traduzido.
+# The VALUE is the `role` column in the database: changing "operador" to "operator" would demote every
+# operator already registered to "unknown role". Only the constant name is translated.
 ROLE_OPERATOR = "operador"
 ROLES = (ROLE_ADMIN, ROLE_OPERATOR)
-# Chave de catalogo, nao o texto: quem le a tela escolhe o idioma (`i18n`).
+# Catalog key, not the text: whoever reads the screen picks the language (`i18n`).
 ROLE_LABELS = {
     ROLE_ADMIN: "role.admin",
     ROLE_OPERATOR: "role.operator",
 }
 PASSWORD_MIN = passwords.MIN_LENGTH
 
-# CSRF: o painel tem a propria protecao, e nao o Flask-WTF.
+# CSRF: the panel has its own protection, not Flask-WTF.
 #
-# Analisador estatico costuma marcar este `Flask(__name__)` como "CSRF desabilitado"
-# porque nao ve um `CSRFProtect(app)`. Aqui a protecao e o par `csrf_token()` (o
-# gerador que os templates chamam) e `_check_csrf` (um `before_request` que barra
-# qualquer metodo que mude estado sem o token da sessao) - procure pelos dois neste
-# arquivo. A escolha e a mesma do resto do painel: dependencia so a stdlib mais o
-# `python3-flask` do apt, porque o container do painel nao baixa pacote de lugar
-# nenhum. Nao remova `_check_csrf` achando que o Flask cobre isso sozinho: ele nao
-# cobre.
+# Static analyzers often flag this `Flask(__name__)` as "CSRF disabled"
+# because they do not see a `CSRFProtect(app)`. Here the protection is the pair `csrf_token()` (the
+# generator the templates call) and `_check_csrf` (a `before_request` that blocks
+# any state-changing method without the session token) - look for both in this
+# file. The choice is the same as the rest of the panel: dependencies are only the stdlib plus the
+# apt `python3-flask`, because the panel container does not download packages from
+# anywhere. Do not remove `_check_csrf` thinking Flask covers this on its own: it does not
+# cover it.
 #
-# A marca de supressao na linha abaixo e o "hotspot revisado" do proprio analisador
-# (regra python:S4502). Sem ela o aviso volta a cada analise e acaba virando ruido que
-# se aprende a ignorar - que e como um aviso de CSRF de verdade passaria batido um dia.
+# The suppression marker on the line below is the analyzer's own "reviewed hotspot"
+# (rule python:S4502). Without it the warning comes back on every analysis and ends up as noise that
+# one learns to ignore - which is how a real CSRF warning would slip by one day.
 #
-# Ela vai sozinha na linha, sem texto depois: a marca tem sintaxe propria, e explicacao
-# colada nela e uma supressao malformada (foi o que aconteceu aqui na primeira vez). O
-# porque fica neste bloco, que e onde se procura por ele.
+# It sits alone on the line, with no text after it: the marker has its own syntax, and an explanation
+# glued to it is a malformed suppression (that is what happened here the first time). The
+# why stays in this block, which is where one looks for it.
 app = Flask(__name__)  # NOSONAR
 
 
 def _load_secret_key() -> bytes:
-    """Le a chave de assinatura do cookie; gera na primeira execucao."""
+    """Read the cookie signing key; generate it on the first run."""
     try:
         with open(SECRET_FILE, "rb") as fh:
             data = fh.read().strip()
@@ -396,28 +405,32 @@ app.secret_key = _load_secret_key()
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    # The panel itself speaks http (TLS lives in a proxy in front). Whoever declared an https
+    # address for the passkey already said the panel is accessed over https: then the session
+    # cookie only travels encrypted, and a forgotten http link does not hand it over in clear text.
+    SESSION_COOKIE_SECURE=WEBAUTHN_ORIGIN.startswith("https://"),
     PERMANENT_SESSION_LIFETIME=60 * 60 * 12,
-    # O editor posta o arquivo como formulario: no pior caso cada byte vira %XX (3x),
-    # entao o limite do request tem de ser bem maior que o do arquivo em si.
+    # The editor posts the file as a form: in the worst case each byte becomes %XX (3x),
+    # so the request limit has to be much larger than the file's own.
     MAX_CONTENT_LENGTH=REQUEST_LIMIT,
-    # O Werkzeug 3.1 passou a cortar campo de formulario em 500 KB por padrao. Sem
-    # subir isto tambem, salvar um arquivo grande morre com 413 antes de chegar na view.
+    # Werkzeug 3.1 started cutting form fields at 500 KB by default. Without
+    # raising this too, saving a large file dies with 413 before reaching the view.
     MAX_FORM_MEMORY_SIZE=REQUEST_LIMIT,
 )
 
-# Modo desenvolvimento (docker compose): recarrega os templates sem reiniciar.
+# Development mode (docker compose): reloads templates without restarting.
 if DEV:
     app.jinja_env.auto_reload = True
     app.config["TEMPLATES_AUTO_RELOAD"] = True
 
-# ------------------------------------------------------------------- banco
+# ------------------------------------------------------------------- database
 
 SCHEMA = schema.SCHEMA
 MIGRATIONS = schema.MIGRATIONS
 
 
 def db() -> sqlite3.Connection:
-    """Conexao por request. WAL para o job em background nao travar a leitura da tela."""
+    """Connection per request. WAL so the background job does not block the screen's reads."""
     conn = getattr(g, "_db", None)
     if conn is None:
         conn = _connect()
@@ -436,10 +449,10 @@ def _close_db(_exc) -> None:
         conn.close()
 
 
-# Colunas acrescentadas depois da primeira versao: CREATE TABLE IF NOT EXISTS nao
-# altera tabelas que ja existem, entao cada uma precisa do seu ALTER aqui.
-# O terceiro item e um comando SQL ou uma tupla deles (o ALTER mais o conserto das
-# linhas antigas, quando o valor padrao da coluna nao serve para quem ja existia).
+# Columns added after the first version: CREATE TABLE IF NOT EXISTS does not
+# alter tables that already exist, so each one needs its own ALTER here.
+# The third item is a SQL command or a tuple of them (the ALTER plus the fix for the
+# old rows, when the column's default value does not suit the ones that already existed).
 def init_db() -> None:
     schema.init_db(DB_PATH, DEFAULT_WEBHOOK_URL, ALERT_DEFAULT, now_iso)
 
@@ -448,12 +461,12 @@ def now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
-# ------------------------------------------------------------------- senhas
+# ------------------------------------------------------------------- passwords
 
 
-# Apelidos: o algoritmo mora em `security/passwords.py`, mas os testes trocam
-# `panel.X` por falso e os templates chamam `csrf_token()` pelo nome — manter os dois
-# aqui e o que faz as duas coisas continuarem valendo.
+# Aliases: the algorithm lives in `security/passwords.py`, but the tests swap
+# `panel.X` for fakes and the templates call `csrf_token()` by name; keeping both
+# here is what keeps both of those working.
 hash_password = passwords.hash_password
 verify_password = passwords.verify_password
 
@@ -462,28 +475,28 @@ verify_password = passwords.verify_password
 
 LOCKOUT_TRIES = 5
 LOCKOUT_WINDOW = 300.0
-# O chute de 6 digitos tem 3 numeros validos em 10^6: por isso a trava do codigo e por
-# USUARIO (nao por IP, que um atacante troca) e mais longa que a da senha.
+# A 6-digit guess has 3 valid numbers in 10^6: that is why the code lock is per
+# USER (not per IP, which an attacker can change) and longer than the password one.
 LOCKOUT_2FA_TRIES = 5
 LOCKOUT_2FA_WINDOW = 900.0
 
-# A chave da trava da senha e `ip|usuario` e a do codigo e `2fa|usuario`: instancias
-# separadas porque os limites diferem, e nao porque as chaves colidiriam.
+# The password lock key is `ip|user` and the code one is `2fa|user`: separate
+# instances because the limits differ, not because the keys would collide.
 login_lockout = auth_service.Lockout(LOCKOUT_TRIES, LOCKOUT_WINDOW)
 totp_lockout = auth_service.Lockout(LOCKOUT_2FA_TRIES, LOCKOUT_2FA_WINDOW)
-# Desafios de passkey emitidos e ainda nao respondidos (uso unico, na memoria do worker).
+# Passkey challenges issued and not yet answered (single use, in the worker's memory).
 passkey_challenges = webauthn.Challenges()
 
 
 def logged_user() -> sqlite3.Row | None:
-    """Linha do usuario da sessao, lida do banco uma vez por request.
+    """The session user's row, read from the database once per request.
 
-    O papel NAO fica no cookie: tirar o admin de alguem tem de valer no proximo clique,
-    e nao so quando a sessao dele expirar. Uma consulta por id em SQLite local custa
-    menos que qualquer coisa que este painel faca em seguida.
+    The role does NOT live in the cookie: removing someone's admin has to take effect on the next click,
+    not only when their session expires. A lookup by id in local SQLite costs
+    less than anything this panel does next.
     """
-    # `in` e nao `getattr(..., sentinela)`: o cache guarda None de proposito (ninguem
-    # logado), entao "tem chave" e "tem valor" sao perguntas diferentes aqui.
+    # `in`, not `getattr(..., sentinel)`: the cache stores None on purpose (nobody
+    # signed in), so "has the key" and "has a value" are different questions here.
     if "_user" in g:
         return g._user
     uid = session.get("uid")
@@ -503,8 +516,8 @@ def login_required(view):
     @wraps(view)
     def wrapper(*args, **kwargs):
         if logged_user() is None:
-            # Conta apagada com a sessao ainda aberta: o cookie continua assinado e
-            # valido, entao sem conferir o banco ela seguiria funcionando ate expirar.
+            # Account deleted with the session still open: the cookie is still signed and
+            # valid, so without checking the database it would keep working until it expired.
             session.clear()
             return redirect(url_for("auth.login", next=request.path))
         return view(*args, **kwargs)
@@ -513,7 +526,7 @@ def login_required(view):
 
 
 def admin_required(view):
-    """Rotas que dao poder de root no container ou mexem em quem tem acesso."""
+    """Routes that give root power on the container or change who has access."""
 
     @wraps(view)
     def wrapper(*args, **kwargs):
@@ -528,14 +541,14 @@ def csrf_token() -> str:
     return csrf.token(session)
 
 
-# Rotas que recebem corpo grande. O teto geral (MAX_CONTENT_LENGTH) e apertado porque o
-# editor manda o arquivo percent-encoded dentro de um formulario; o upload precisa de bem
-# mais que isso.
+# Routes that receive a large body. The general cap (MAX_CONTENT_LENGTH) is tight because the
+# editor sends the file percent-encoded inside a form; the upload needs a lot
+# more than that.
 #
-# Este hook tem de vir ANTES do _check_csrf no arquivo: a ordem de registro e a ordem de
-# execucao, e e o _check_csrf quem toca em request.form primeiro — o teto e conferido na
-# hora em que o corpo e lido, entao ajustar so la dentro da view chegaria tarde (413).
-# O envio de mod tambem: um .pak ou um pacote de mapa passa facil do teto normal.
+# This hook has to come BEFORE _check_csrf in the file: registration order is execution
+# order, and _check_csrf is what touches request.form first. The cap is checked at the
+# moment the body is read, so adjusting it only inside the view would be too late (413).
+# The mod upload too: a .pak or a map package easily exceeds the normal cap.
 BIG_BODY_ENDPOINTS = {"files.upload", "mods.upload"}
 
 
@@ -554,12 +567,13 @@ def _check_csrf():
     return None
 
 
-# Com GAMEPANEL_REQUIRE_2FA=1 quem ainda nao ativou o segundo fator so alcanca isto.
+# With GAMEPANEL_REQUIRE_2FA=1 whoever has not enabled the second factor only reaches this.
 ENDPOINTS_WITHOUT_2FA = frozenset({
     "auth.login", "auth.login_2fa", "auth.logout", "account.two_factor",
     "passkeys.login_options", "passkeys.login",
     "health.health", "static",
     "pwa.manifest", "pwa.service_worker", "pwa.offline",
+    "preferences.theme", "preferences.language",
 })
 
 
@@ -577,14 +591,14 @@ def _requires_second_factor():
 
 
 def static_url(name: str) -> str:
-    """URL de um arquivo estatico com a marca do mtime.
+    """URL of a static file with the mtime mark.
 
-    Sem isto, um deploy que muda o css/components.css ou o js/terminal.js continua
-    servindo o que o navegador guardou — e o relato chega como "a tela quebrou depois
-    da atualizacao".
+    Without this, a deploy that changes css/components.css or js/terminal.js keeps
+    serving what the browser cached, and the report arrives as "the screen broke after
+    the update".
 
-    Aceita caminho com subpasta ("css/tokens.css"): a arvore de estaticos e organizada
-    em css/, js/ e icons/.
+    Accepts a path with a subfolder ("css/tokens.css"): the static tree is organized
+    into css/, js/ and icons/.
     """
     try:
         mark = int(os.path.getmtime(os.path.join(app.static_folder or "", name)))
@@ -597,18 +611,18 @@ DEFAULT_LANG = i18n.valid_language(settings.lang)
 
 
 def current_language() -> str:
-    """O idioma DESTE pedido, decidido uma vez e guardado no `g`.
+    """The language of THIS request, decided once and stored in `g`.
 
-    A ordem e de preferencia: o que a pessoa escolheu na Conta vence tudo; sem escolha
-    (ou sem ninguem logado, como na tela de login) vale o que o navegador pede; e o
-    ultimo recurso e o padrao do deploy.
+    The order is by preference: what the person chose in Account beats everything; with no choice
+    (or nobody signed in, as on the login screen) the header language button
+    (cookie) applies, then what the browser asks for; and the last resort is the deploy default.
 
-    FORA de pedido nao ha pessoa nem navegador, e o `g` nem existe: o monitor e o
-    agendador rodam em thread propria, e o alerta que sai dali e escrito para o canal da
-    equipe, nao para quem esta com a tela aberta. Ali vale o padrao do deploy. Sem este
-    portao, traduzir uma mensagem de alerta derrubaria a volta inteira do monitor com
-    "Working outside of application context" — e alerta que quebra e servidor caido que
-    ninguem fica sabendo.
+    OUTSIDE a request there is no person or browser, and `g` does not even exist: the monitor and the
+    scheduler run in their own thread, and the alert that comes out of there is written for the
+    team channel, not for whoever has the screen open. There the deploy default applies. Without this
+    gate, translating an alert message would take down the whole monitor round with
+    "Working outside of application context", and an alert that breaks is a server down that
+    nobody hears about.
     """
     if not has_app_context():
         return DEFAULT_LANG
@@ -619,6 +633,8 @@ def current_language() -> str:
     from_user = _stored_value(user, "lang") if user else ""
     if from_user:
         chosen_one = i18n.valid_language(from_user)
+    elif request and request.cookies.get("lang"):
+        chosen_one = i18n.valid_language(request.cookies.get("lang"))
     elif request:
         chosen_one = i18n.from_header(request.headers.get("Accept-Language"))
     else:
@@ -628,107 +644,120 @@ def current_language() -> str:
 
 
 def translate(key: str, **fields: object) -> str:
-    """O `_()` das telas e das mensagens: a frase daquela chave, no idioma
-    deste pedido."""
+    """The `_()` of screens and messages: the sentence for that key, in the language
+    of this request."""
     return i18n.translate(key, current_language(), **fields)
 
 
 def error_text(exc: BaseException) -> str:
-    """O que a excecao tem a dizer, preservando a CHAVE quando ela veio de uma.
+    """What the exception has to say, preserving the KEY when it came from one.
 
-    `str(exc)` colapsaria uma `i18n.Mensagem` em texto solto, e com ela a chance de
-    mostrar a frase no idioma de quem esta olhando. Um `except` pega qualquer excecao,
-    inclusive as que nascem fora daqui (`OSError`, `json`), e essas seguem por `str`.
+    `str(exc)` would collapse an `i18n.Message` into loose text, and with it the chance to
+    show the sentence in the language of whoever is looking. An `except` catches any exception,
+    including those born outside here (`OSError`, `json`), and those go through `str`.
     """
     if exc.args and isinstance(exc.args[0], i18n.Message):
         return exc.args[0]
     return str(exc)
 
 def label_for_db(key: str) -> str:
-    """A frase daquela chave no idioma do DEPLOY, nao no de quem esta com a tela aberta.
+    """The sentence for that key in the DEPLOY language, not in that of whoever has the screen open.
 
-    Para texto que vai ser GRAVADO (a coluna `command` de um job, por exemplo). O
-    historico e lido depois, por outra pessoa, talvez noutro idioma: se cada registro
-    saisse no idioma de quem clicou, a mesma acao apareceria escrita de tres jeitos na
-    mesma lista, e filtrar por ela deixaria de funcionar.
+    For text that is going to be STORED (the `command` column of a job, for example). The
+    history is read later, by someone else, maybe in another language: if each record
+    came out in the language of whoever clicked, the same action would appear written three ways in the
+    same list, and filtering by it would stop working.
     """
     return i18n.translate(key, DEFAULT_LANG)
 
 
 def translate_html(key: str, **fields: object) -> Markup:
-    """O `_h()` das telas: frase que TRAZ marcacao (`<strong>`, `<code>`).
+    """The screens' `_h()`: a sentence that CARRIES markup (`<strong>`, `<code>`).
 
-    Existe porque paragrafo de ajuda nao se parte: quebrar o texto em cada `<strong>`
-    deixaria metade do paragrafo em portugues na tela em ingles. A frase vem do catalogo,
-    que e codigo deste repositorio, entao ela pode conter marcacao; o que chega de fora
-    sao os CAMPOS, e cada um e escapado antes de entrar.
+    It exists because a help paragraph is not split: breaking the text at each `<strong>`
+    would leave half the paragraph in Portuguese on the English screen. The sentence comes from the catalog,
+    which is code from this repository, so it may contain markup; what comes from outside
+    are the FIELDS, and each one is escaped before going in.
 
-    `escape` e nao `escape(str(...))` de proposito: assim um campo que JA e marcacao
-    (o `_h` de outra frase, encaixado nesta) passa inteiro em vez de aparecer na tela
-    com os sinais de maior e menor a mostra.
+    `escape`, not `escape(str(...))`, on purpose: that way a field that ALREADY is markup
+    (the `_h` of another sentence, nested in this one) passes whole instead of showing up on screen
+    with its angle brackets exposed.
     """
-    # A frase vem de `i18n`, que e codigo deste repositorio, e todo campo passou por
-    # `escape` na linha de baixo: nao ha entrada de usuario chegando crua aqui.
+    # The sentence comes from `i18n`, which is code from this repository, and every field went through
+    # `escape` on the line below: there is no user input arriving raw here.
     return Markup(i18n.translate(  # noqa: S704
         key, current_language(), **{name: escape(value) for name, value in fields.items()}
     ))
 
 
 def labels_of(labels: dict[str, str]) -> dict[str, str]:
-    """Traduz uma tabela de rotulos de uma vez, para a tela receber texto pronto.
+    """Translate a table of labels at once, so the screen receives ready text.
 
-    As tabelas (`ALERT_EVENTS`, `JOB_LABELS`, `ROLE_LABELS`, ...) guardam a CHAVE do
-    catalogo e nao a frase: a chave e o que vai para o banco e para o `<option value=>`,
-    e ela nao pode mudar so porque alguem corrigiu uma virgula no texto.
+    The tables (`ALERT_EVENTS`, `JOB_LABELS`, `ROLE_LABELS`, ...) store the catalog KEY
+    and not the sentence: the key is what goes to the database and to `<option value=>`,
+    and it cannot change just because someone fixed a comma in the text.
     """
     return {key: translate(label) for key, label in labels.items()}
+
+def _chosen_theme() -> str:
+    raw = request.cookies.get("theme", "") if has_request_context() else ""
+    return raw if raw in ("light", "dark") else ""
+
 
 @app.context_processor
 def _inject():
     user = logged_user()
     return {
         "csrf_token": csrf_token,
-        # `_` e o nome de sempre para traduzir numa tela; `_h` e o irmao para a frase
-        # que traz marcacao (ver `traduzir_html`).
+        # `_` is the usual name for translating on a screen; `_h` is its sibling for a sentence
+        # that carries markup (see `translate_html`).
         "_": translate,
         "_h": translate_html,
         "current_language": current_language(),
         "html_lang": i18n.html_lang(current_language()),
         "languages": i18n.LANGUAGES,
+        # The language the header button offers: the other of the two.
+        "other_language": next(code for code, _name in i18n.LANGUAGES if code != current_language()),
+        # Empty = follow the system (prefers-color-scheme); only the button stores light/dark.
+        "current_theme": _chosen_theme(),
         "static_url": static_url,
         "current_user": user["username"] if user else None,
-        # As telas escondem o que o operador nao pode abrir. Quem manda e o
-        # @admin_required na rota; isto aqui e so para nao mostrar botao que da 403.
+        # The screens hide what the operator cannot open. The @admin_required on the route
+        # is what rules; this is only so as not to show a button that leads to 403.
         "is_admin": bool(user) and user["role"] == ROLE_ADMIN,
-        # O botao de biometria so aparece com o endereco configurado (sem ele nao ha RP ID).
+        # The biometrics button only appears with the address configured (without it there is no RP ID).
         "passkeys_enabled": bool(WEBAUTHN_ORIGIN),
         "role_label": translate(ROLE_LABELS[user["role"]]) if user else "",
         "job_label": job_label,
-        # Que codigo esta servindo esta tela. Vai no rodape, e nao so no /health, porque
-        # quem abre um chamado ("a tela nao atualizou") esta olhando a TELA — e a
-        # resposta cabe numa linha que ele consegue ler em voz alta.
+        # Which code is serving this screen. It goes in the footer, and not only in /health, because
+        # whoever opens a ticket ("the screen did not update") is looking at the SCREEN, and the
+        # answer fits in a line they can read out loud.
         "app_version": version.BUILD.version,
         "allow_shell": ALLOW_SHELL,
         "allow_term": ALLOW_SHELL and HAVE_PTY,
         "allow_files": ALLOW_FILES,
         "allow_broker": ALLOW_BROKER,
-        # A tela precisa saber se a contagem esta ligada, e ela pode vir da porta de
-        # consulta OU do log — nao da para olhar so o query_port.
+        # The screen needs to know whether counting is on, and it may come from the query
+        # port OR from the log: looking only at query_port is not enough.
         "player_source": player_source,
-        # Quais acoes a API daquele servidor aceita (vazio na maioria dos jogos).
+        # Which actions that server's API accepts (empty for most games).
         "player_actions": player_actions,
         "action_label": labels_of(PLAYER_ACTION_LABELS),
+        # Legacy (root) or helper (gamepanel) access: the server screen says which, so whoever
+        # looks after the servers sees at a glance which ones still have to be migrated.
+        "privileged_access": remote_cmd.privileged,
+        "content_user": remote_cmd.content_user,
         **_navigation_context(),
     }
 
 
 def _navigation_context() -> dict:
-    """O mapa da interface, ja filtrado para quem esta logado e para este deploy.
+    """The interface map, already filtered for whoever is signed in and for this deploy.
 
-    Os templates nao decidem mais o que existe no menu: eles desenham o que vier
-    daqui. Antes, a lista de telas de um servidor estava escrita a mao em seis
-    templates diferentes, cada um com um subconjunto proprio — e era por isso que
-    "Graficos" existia numa tela e nao na outra.
+    The templates no longer decide what exists in the menu: they draw whatever comes
+    from here. Before, a server's list of screens was handwritten in six
+    different templates, each with its own subset, and that was why
+    "Charts" existed on one screen and not on the other.
     """
     admin = is_admin()
     sections = ui.visible_sections(admin=admin, arquivos=ALLOW_FILES, shell=ALLOW_SHELL)
@@ -752,15 +781,15 @@ def _navigation_context() -> dict:
 
 # ------------------------------------------------------------------- ssh
 #
-# Implementacao real em gamepanel.runtime.ssh (extraida na Fase 4 - so a camada de
-# transporte, testada indiretamente pelas dezenas de testes que ja exercitam
-# server_status/server_players/etc.). Os nomes abaixo continuam existindo neste modulo
-# de proposito: e o que `monkeypatch.setattr(panel, "ssh_run", ...)` e chamadas diretas
-# como `panel.ssh_argv(...)` (ver test_players.py) esperam encontrar.
+# Real implementation in gamepanel.runtime.ssh (extracted in Phase 4 - only the transport
+# layer, tested indirectly by the dozens of tests that already exercise
+# server_status/server_players/etc.). The names below still exist in this module
+# on purpose: it is what `monkeypatch.setattr(panel, "ssh_run", ...)` and direct calls
+# like `panel.ssh_argv(...)` (see test_players.py) expect to find.
 
 def _ssh_config() -> ssh_transport.SshConfig:
-    # Funcao, nao valor: monkeypatch.setattr(panel, "SSH_KEY", ...) (e as demais
-    # variaveis abaixo) so tem efeito se isto reler os globais do modulo a cada chamada.
+    # A function, not a value: monkeypatch.setattr(panel, "SSH_KEY", ...) (and the other
+    # variables below) only take effect if this rereads the module globals on every call.
     return ssh_transport.SshConfig(
         key=SSH_KEY, known_hosts=KNOWN_HOSTS, control_dir=SSH_CONTROL_DIR,
         control_persist=SSH_CONTROL_PERSIST, quick_timeout=QUICK_TIMEOUT,
@@ -778,14 +807,14 @@ q = ssh_transport.quote_command
 
 
 def in_parallel(tasks: dict, timeout: float = 40.0) -> dict:
-    """Roda varias leituras remotas ao mesmo tempo; devolve {nome: (valor, erro)}.
+    """Run several remote reads at the same time; return {name: (value, error)}.
 
-    Cada uma custa a sua ida de SSH, e elas nao dependem umas das outras — em serie a
-    tela paga a soma, e com um servidor fora do ar paga a soma dos timeouts.
+    Each one costs its own SSH round trip, and they do not depend on each other: in series the
+    screen pays the sum, and with a server down it pays the sum of the timeouts.
 
-    Nada aqui pode tocar no `g` do Flask (a conexao por request nao atravessa thread).
-    As funcoes usadas na tela de detalhe ou nao falam com o banco, ou abrem conexao
-    propria — o `http_login` da contagem por API e o caso, e ele ja faz assim.
+    Nothing here may touch Flask's `g` (the per-request connection does not cross threads).
+    The functions used on the detail screen either do not talk to the database, or open their
+    own connection: the `http_login` of API counting is that case, and it already does so.
     """
     output: dict = {}
     lock = threading.Lock()
@@ -809,13 +838,13 @@ def in_parallel(tasks: dict, timeout: float = 40.0) -> dict:
     return output
 
 
-# --------------------------------------------------------- jogadores pelo protocolo A2S
+# --------------------------------------------------------- players via the A2S protocol
 #
-# Implementacao real em gamepanel.runtime.a2s (extraida na Fase 4). Os nomes abaixo
-# continuam existindo neste modulo de proposito - QueryError em particular e usado por
-# `raise`/`except` em todo o resto de app.py (HTTP, log, acoes de jogador), e
-# `pytest.raises(panel.QueryError)` em test_players.py precisa continuar achando a
-# MESMA classe.
+# Real implementation in gamepanel.runtime.a2s (extracted in Phase 4). The names below
+# still exist in this module on purpose - QueryError in particular is used by
+# `raise`/`except` all over the rest of app.py (HTTP, log, player actions), and
+# `pytest.raises(panel.QueryError)` in test_players.py needs to keep finding the
+# SAME class.
 QUERY_TIMEOUT = settings.query_timeout
 PLAYERS_TTL = settings.players_ttl
 
@@ -826,17 +855,17 @@ AuthError = a2s.AuthError
 
 
 def query_players(host: str, port: int) -> dict:
-    # Le QUERY_TIMEOUT na hora da chamada (nao um valor congelado no import): mesmo
-    # motivo do SshClient em runtime/ssh.py.
+    # Reads QUERY_TIMEOUT at call time (not a value frozen at import): same
+    # reason as SshClient in runtime/ssh.py.
     return a2s.query_players(host, port, timeout=QUERY_TIMEOUT)
 
 
-# ------------------------------------------- jogadores (API HTTP do proprio jogo)
+# ------------------------------------------- players (the game's own HTTP API)
 #
-# A parte pura (montar o pedido HTTP, interpretar a resposta, achar lista/contagem no
-# JSON) mora em gamepanel.runtime.http_probe; a que depende do banco (guardar o token
-# renovado) mora em gamepanel.services.player_service. Os nomes abaixo continuam aqui
-# porque o resto de app.py — e os testes — chamam por eles.
+# The pure part (building the HTTP request, interpreting the response, finding the list/count in the
+# JSON) lives in gamepanel.runtime.http_probe; the part that depends on the database (storing the renewed
+# token) lives in gamepanel.services.player_service. The names below stay here
+# because the rest of app.py, and the tests, call them.
 HTTP_TIMEOUT = settings.http_timeout
 HTTP_BODY_MAX = 2000
 HTTP_PATH_MAX = 120
@@ -853,8 +882,8 @@ _has_login = player_service._has_login
 
 
 def http_json(server: ServerRow, url: str, auth: str, body: str, exigir_json: bool = True):
-    # HTTP_TIMEOUT lido na hora da chamada, nao congelado - mesmo cuidado do SshClient
-    # (runtime/ssh.py) e do query_players (runtime/a2s.py).
+    # HTTP_TIMEOUT read at call time, not frozen - same care as SshClient
+    # (runtime/ssh.py) and query_players (runtime/a2s.py).
     return http_probe.http_json(ssh_output, server, url, auth, body, HTTP_TIMEOUT, exigir_json)
 
 
@@ -866,11 +895,11 @@ def _stored_value(server: ServerRow, coluna: str) -> str:
 
 
 def _player_deps() -> player_service.PlayerDeps:
-    """As pecas que a contagem pede, montadas na hora da chamada.
+    """The pieces that counting needs, assembled at call time.
 
-    Na hora, e nao no import: `http_json`, `read_log_lines` e `query_players` sao nomes
-    deste modulo que um teste pode trocar por falsos, e um bundle congelado no import
-    passaria por cima da troca sem ninguem perceber.
+    At call time, not at import: `http_json`, `read_log_lines` and `query_players` are names
+    in this module that a test may swap for fakes, and a bundle frozen at import
+    would bypass the swap without anyone noticing.
     """
     return player_service.PlayerDeps(
         http_json=http_json, connect=_connect, read_log_lines=read_log_lines,
@@ -896,10 +925,10 @@ def players_from_http(server: ServerRow) -> dict:
     return player_service.players_from_http(_player_deps(), server)
 
 
-# ------------------------------------------- acoes sobre quem esta jogando
+# ------------------------------------------- actions on who is playing
 #
-# Catalogo e regra em gamepanel.services.player_service; aqui ficam so os nomes que a
-# tela, as rotas e os testes ja usam.
+# Catalog and rules in gamepanel.services.player_service; here only the names that the
+# screen, the routes and the tests already use.
 
 PLAYER_MSG_MAX = player_service.PLAYER_MSG_MAX
 PLAYER_ACTION_LABELS = player_service.PLAYER_ACTION_LABELS
@@ -916,12 +945,12 @@ def run_player_action(server: ServerRow, action: str, player: str, message: str)
     return player_service.player_action(_player_deps(), server, action, player, message)
 
 
-# ------------------------------------------------------ jogadores (pelo log)
+# ------------------------------------------------------ players (from the log)
 #
-# Implementacao real em gamepanel.runtime.log_probe (Fase 4). Nomes preservados aqui
-# pelos mesmos dois motivos de sempre: teste direto por nome (`panel.compile_pattern`,
-# `panel._apply_log_events`) e uso pelo resto de app.py ainda nao extraido (LOG_FOLLOW_SCRIPT
-# alimenta o streaming de log em tempo real, mais adiante no arquivo).
+# Real implementation in gamepanel.runtime.log_probe (Phase 4). Names kept here
+# for the same two usual reasons: direct tests by name (`panel.compile_pattern`,
+# `panel._apply_log_events`) and use by the rest of app.py not yet extracted (LOG_FOLLOW_SCRIPT
+# feeds the real-time log streaming, further down in the file).
 LOG_SCAN_MAX = log_probe.LOG_SCAN_MAX
 RE_MAX_LEN = log_probe.RE_MAX_LEN
 LOG_HINT_WORDS = log_probe.LOG_HINT_WORDS
@@ -933,12 +962,12 @@ _apply_log_events = log_probe.apply_log_events
 valid_log_path = log_probe.valid_log_path
 
 
-# ------------------------------------------- descobrir como contar jogadores
+# ------------------------------------------- discovering how to count players
 #
-# Implementacao real em gamepanel.runtime.port_probe (Fase 4). Nomes preservados aqui
-# pelos mesmos dois motivos de sempre: teste direto por nome (`panel._portas_do_texto`,
-# `panel._sem_repetir`, `panel._com_dono`, `panel._resume_genericos`) e uso por rotas
-# que ainda nao foram extraidas.
+# Real implementation in gamepanel.runtime.port_probe (Phase 4). Names kept here
+# for the same two usual reasons: direct tests by name (`panel._ports_from_text`,
+# `panel._without_repeats`, `panel._with_owner`, `panel._summarize_generic`) and use by routes
+# that have not been extracted yet.
 QUERY_PORT_GUESSES = port_probe.QUERY_PORT_GUESSES
 API_PORT_GUESSES = port_probe.API_PORT_GUESSES
 HTTP_PROBE_TIMEOUT = settings.http_probe_timeout
@@ -971,9 +1000,9 @@ def players_from_log(server: ServerRow) -> dict:
     return player_service.players_from_log(_player_deps(), server)
 
 
-# O MESMO objeto do service (nao uma copia): a fixture `banco` dos testes limpa a
-# contagem guardada por este nome, e um dicionario diferente aqui deixaria o cache de
-# verdade intacto entre os casos.
+# The SAME object as the service's (not a copy): the tests' `database` fixture clears the
+# stored count by this name, and a different dictionary here would leave the real cache
+# intact between cases.
 _players_cache = player_service._players_cache
 invalidate_players = player_service.invalidate
 player_source = player_service.player_source
@@ -984,21 +1013,21 @@ def server_players(server: ServerRow, force: bool = False) -> dict:
 
 
 def all_players(servers) -> dict[int, dict]:
-    # `server_players` vai por dentro de um lambda, e nao direto: assim o nome e
-    # resolvido neste modulo a cada chamada, e a troca por um falso (monkeypatch nos
-    # testes de alerta e de grafico) continua valendo dentro do paralelo.
+    # `server_players` goes inside a lambda, not directly: that way the name is
+    # resolved in this module on every call, and swapping it for a fake (monkeypatch in the
+    # alert and chart tests) keeps taking effect inside the parallel run.
     return player_service.all_players(
         lambda srv: server_players(srv), servers, QUERY_TIMEOUT * 3 + 2, MSG_TIMEOUT,
     )
 
 
-# ------------------------------------------------------------------ recursos
+# ------------------------------------------------------------------ resources
 #
-# Script e leitura dos numeros em gamepanel.runtime.metrics_probe; cache e decisao em
-# gamepanel.services.metrics_service. `server_metrics` segue aqui porque o resto de
-# app.py — e o monkeypatch dos testes de alerta e de grafico — chama por ele.
+# Script and number parsing in gamepanel.runtime.metrics_probe; cache and decision in
+# gamepanel.services.metrics_service. `server_metrics` stays here because the rest of
+# app.py, and the monkeypatch of the alert and chart tests, call it.
 #
-# O MESMO dicionario do service: a fixture `banco` limpa o cache por este nome.
+# The SAME dictionary as the service's: the `database` fixture clears the cache by this name.
 _metrics_cache = metrics_service._metrics_cache
 
 
@@ -1008,8 +1037,8 @@ def server_metrics(server: ServerRow, force: bool = False) -> dict:
 
 
 def all_metrics(servers) -> dict[int, dict]:
-    # `server_metrics` entra por lambda para o nome ser resolvido neste modulo a cada
-    # chamada — e o que mantem a troca por um falso valendo dentro do paralelo.
+    # `server_metrics` goes in through a lambda so the name is resolved in this module on every
+    # call: that is what keeps the swap for a fake taking effect inside the parallel run.
     return parallel.per_server(
         lambda srv: server_metrics(srv), servers, 35, {"error": MSG_TIMEOUT})
 
@@ -1033,73 +1062,73 @@ def all_status(servers) -> dict[int, dict]:
 
 # ------------------------------------------------------------------- jobs
 
-# O que cada acao RODA no container. Como ela se apresenta (rotulo, icone, grupo,
-# peso visual) e outra responsabilidade, e mora no `ui.py` — aqui ficam so os
-# comandos, que e o que este modulo tem para dizer sobre elas.
+# What each action RUNS in the container. How it is presented (label, icon, group,
+# visual weight) is another responsibility, and lives in `navigation.py`; here there are only the
+# commands, which is what this module has to say about them.
+#
+# Each one is a ROOT action: `remote_cmd` turns it into `systemctl`/the update script for a
+# legacy (root) server and into the fixed `sudo -n` helper line for a `gamepanel` one.
 COMMANDS = {
-    "start": lambda s: q("systemctl", "start", s["service"]),
-    "restart": lambda s: q("systemctl", "restart", s["service"]),
-    "stop": lambda s: q("systemctl", "stop", s["service"]),
-    "update": lambda s: "/usr/local/bin/update-game",
-    "check-update": lambda s: "/usr/local/bin/check-game-update",
+    key: (lambda s, key=key: remote_cmd.as_root_action(s, key))
+    for key in ("start", "restart", "stop", "update", "check-update")
 }
 
-# As duas listas nao podem divergir em silencio: uma acao com botao e sem comando da
-# 500 no clique, e uma com comando e sem botao e codigo morto que ninguem percebe.
+# The two lists must not diverge silently: an action with a button and no command gives a
+# 500 on click, and one with a command and no button is dead code nobody notices.
 #
-# `raise` e nao `assert`: com `python -O` o assert e DESCARTADO, e medi que a divergencia
-# passa calada nesse modo — justo a coisa que esta linha existe para nao deixar passar.
-# Producao nao roda com -O hoje, mas uma invariante que depende disso nao e invariante.
-# No import, derrubar o START e o comportamento certo: melhor nao subir do que subir com
-# um botao que da 500 no primeiro clique.
+# `raise`, not `assert`: with `python -O` the assert is DISCARDED, and I measured that the divergence
+# goes unnoticed in that mode, exactly what this line exists to prevent.
+# Production does not run with -O today, but an invariant that depends on that is not an invariant.
+# At import, failing the START is the right behavior: better not to start than to start with
+# a button that gives a 500 on the first click.
 if set(COMMANDS) != set(ui.BY_KEY):
     difference = set(COMMANDS) ^ set(ui.BY_KEY)
     raise RuntimeError(f"ui.ACTIONS e app.COMMANDS fora de sincronia: {sorted(difference)}")
 
-# Forma antiga, montada a partir das duas: chave -> (rotulo, comando, confirma).
-# Continua sendo o que `start_job` e o historico consomem.
+# Old shape, built from the two: key -> (label, command, confirm).
+# Still what `start_job` and the history consume.
 ACTIONS = {
     key: (ui.BY_KEY[key].label, command, ui.BY_KEY[key].confirm)
     for key, command in COMMANDS.items()
 }
 
-# Os rotulos das acoes de botao vem do `ui`; os das acoes que nascem de outras telas
-# (console, editor, broker) vem do `job_service`, junto da lista de quem pode le-las.
+# The labels of button actions come from `ui`; those of actions born on other screens
+# (console, editor, broker) come from `job_service`, along with the list of who may read them.
 JOB_LABELS = job_service.labels(
     {key: label for key, (label, _cmd, _c) in ACTIONS.items()})
 JOB_ACTIONS_ADMIN = job_service.ADMIN_ONLY_ACTIONS
 
 
 def job_label(action: str) -> str:
-    """O nome da acao na tela. `JOB_LABELS` guarda CHAVE, nunca texto pronto:
-    o historico e uma tela como as outras e segue o idioma de quem a abriu.
+    """The action name on screen. `JOB_LABELS` stores a KEY, never ready text:
+    the history is a screen like the others and follows the language of whoever opened it.
     """
     return translate(JOB_LABELS.get(action, action))
 
 
 def job_or_403(job: sqlite3.Row) -> None:
-    """Barra o operador na saida de um job que ele nao teria permissao de disparar."""
+    """Block the operator from the output of a job they would not be allowed to trigger."""
     if job_service.is_restricted(job["action"]) and not is_admin():
         abort(403, i18n.Message("error.job_admin_only"))
 
 
 def role_filter() -> tuple[str, tuple]:
-    """Pedaco de WHERE que esconde do operador os jobs das acoes restritas."""
+    """WHERE fragment that hides the restricted actions' jobs from the operator."""
     return job_service.hidden_filter(is_admin())
 
 
 def server_jobs(conn: sqlite3.Connection, sid: int, limit: int) -> list:
-    """Historico do servidor ja filtrado pelo papel de quem esta olhando."""
+    """Server history already filtered by the role of whoever is looking."""
     cut, values = role_filter()
     return jobs_repo.of_server(conn, sid, limit, cut, values)
 
 
 def _inserted_id(cur: sqlite3.Cursor) -> int:
-    """O id da linha recem-inserida.
+    """The id of the row just inserted.
 
-    `lastrowid` e Optional no tipo porque um cursor pode nao ter inserido nada; depois
-    de um INSERT que deu certo, nunca. Falhar alto aqui e melhor do que espalhar um
-    `or 0` que viraria "job numero zero" no historico.
+    `lastrowid` is Optional in the type because a cursor may not have inserted anything; after
+    an INSERT that succeeded, never. Failing loudly here is better than spreading an
+    `or 0` that would become "job number zero" in the history.
     """
     if cur.lastrowid is None:
         raise RuntimeError("INSERT nao devolveu id da linha")
@@ -1114,17 +1143,17 @@ def log_job(
     output: str = "",
     status: str = "ok",
 ) -> int:
-    """Registra no historico algo que ja aconteceu (edicao de arquivo, sessao de
-    terminal). Diferente de start_job, nao dispara nada — so deixa o rastro."""
+    """Record in the history something that already happened (file edit, terminal
+    session). Unlike start_job, it triggers nothing: it only leaves the trail."""
     conn = db()
     with conn:
         return jobs_repo.record(conn, server, action, status, output, command,
                                 username, now_iso())
 
 
-# Um passo de job: comando remoto (texto, vai por SSH) ou funcao Python que recebe o
-# servidor e a saida ate ali e devolve o texto dela. Funcao e o que o SSH sozinho nao
-# faz: puxar o backup para o disco do painel, mandar a copia de volta, chamar o broker.
+# A job step: a remote command (text, goes over SSH) or a Python function that receives the
+# server and the output so far and returns its own text. A function is what SSH alone does not
+# do: pull the backup to the panel's disk, send the copy back, call the broker.
 JobStep = str | Callable[[dict, str], str]
 
 
@@ -1135,10 +1164,10 @@ def _join_output(before: str, text: str) -> str:
 
 
 def _run_steps(target: dict, steps: list[JobStep], timeout: int) -> tuple[str, str, int | None]:
-    """Roda os passos em ordem e para no primeiro que falha: (saida, status, codigo).
+    """Run the steps in order and stop at the first that fails: (output, status, code).
 
-    Parar e o ponto: o restore so extrai se a copia de seguranca saiu, e desativar a
-    instancia so acontece se o save ja esta no painel.
+    Stopping is the point: the restore only extracts if the safety copy came out, and deactivating the
+    instance only happens if the save is already on the panel.
     """
     output = ""
     for step in steps:
@@ -1146,9 +1175,9 @@ def _run_steps(target: dict, steps: list[JobStep], timeout: int) -> tuple[str, s
             if callable(step):
                 text, code = step(target, output), 0
             else:
-                # Conexao propria: um update leva quase uma hora, e a mestre compartilhada
-                # ficaria presa a ele — com o monitor inteiro dependendo de um comando que
-                # pode cair no meio.
+                # Its own connection: an update takes almost an hour, and the shared master
+                # would be stuck with it, with the whole monitor depending on a command that
+                # may drop halfway.
                 proc = ssh_run(target, step, timeout=timeout, multiplex=False)
                 text, code = (proc.stdout or "") + (proc.stderr or ""), proc.returncode
         except RemoteError as exc:
@@ -1168,8 +1197,8 @@ def start_job(
     timeout: int = JOB_TIMEOUT,
     steps: list[JobStep] | None = None,
 ) -> int:
-    # Resolvido AQUI, e nao dentro do `run()` la embaixo: o que a thread executa nao
-    # pode depender de um parametro opcional que alguem mude no meio do caminho.
+    # Resolved HERE, not inside `run()` down below: what the thread executes must not
+    # depend on an optional parameter someone changes along the way.
     if steps is None:
         steps = [remote_cmd if remote_cmd is not None else ACTIONS[action][1](server)]
     job_steps = list(steps)
@@ -1177,23 +1206,23 @@ def start_job(
     with conn:
         job_id = jobs_repo.start(conn, server, action, command, username, now_iso())
     server_id = int(server["id"])
-    # A thread nao pode usar a Row ligada a conexao do request: copia o que precisa.
+    # The thread cannot use the Row tied to the request connection: copy what it needs.
     target = dict(server)
 
     def run():
         output, status, code = _run_steps(target, job_steps, timeout)
-        # Conexao propria: esta thread vive fora do contexto do request.
+        # Its own connection: this thread lives outside the request context.
         conn2 = _connect()
         with conn2:
             jobs_repo.finish(conn2, job_id, status, code, output, now_iso())
-        # Falha de tarefa AGENDADA vira alerta: e a unica que ninguem esta olhando. Quem
-        # clicou o botao ja esta com o resultado na tela.
+        # Failure of a SCHEDULED task becomes an alert: it is the only one nobody is watching. Whoever
+        # clicked the button already has the result on screen.
         if status == "error" and username == SCHEDULE_USER:
             try:
                 notify(conn2, "job-falhou",
                          f"{target.get('name', '?')}: {job_label(action)} falhou",
                          (output or "").strip()[-500:])
-            # Alerta nunca derruba o job.
+            # An alert never takes down the job.
             except Exception:
                 app.logger.exception("falha ao avisar sobre o job %s", job_id)
         conn2.close()
@@ -1203,14 +1232,14 @@ def start_job(
     return job_id
 
 
-# ----------------------------------------------------------------- alertas
+# ----------------------------------------------------------------- alerts
 #
-# O painel ja sabe o estado de cada servidor (e a tela do dashboard pergunta isso o
-# tempo inteiro). O que faltava era ele CONTAR para alguem sem ninguem estar olhando: um
-# POST de JSON para a URL que o Discord ou o Slack dao de graca.
+# The panel already knows the state of each server (and the dashboard screen asks for it all
+# the time). What was missing was TELLING someone without anybody watching: a
+# JSON POST to the URL that Discord or Slack give for free.
 
-# O VALOR e chave de catalogo; a CHAVE e o que vai para o banco e para o webhook.
-# Trocar o texto de um evento nao pode mexer no que ja esta gravado em `alertas`.
+# The VALUE is a catalog key; the KEY is what goes to the database and to the webhook.
+# Changing an event's text must not touch what is already stored in `alert_log`.
 ALERT_EVENTS = {
     "caiu": "event.server_stopped",
     "voltou": "event.server_back",
@@ -1228,9 +1257,9 @@ ALERT_EVENTS = {
     "memoria-alta": "event.memory_almost_full",
     "cpu-alta": "event.cpu_high",
 }
-# Precisam de configuracao no cadastro do servidor para fazer alguma coisa. A tela avisa
-# quem esta marcado sem ter onde olhar — senao o alerta fica ligado e mudo, e a pessoa
-# conclui que o jogo nunca falha.
+# They need configuration in the server registration to do anything. The screen warns
+# about whoever is checked without having anywhere to look; otherwise the alert stays on and silent, and the person
+# concludes the game never fails.
 ALERT_PRECISA_CONFIG = {
     "travou": "contagem de jogadores por consulta (A2S) ou API HTTP",
     "respondeu": "contagem de jogadores por consulta (A2S) ou API HTTP",
@@ -1238,30 +1267,30 @@ ALERT_PRECISA_CONFIG = {
     "jogador-saiu": "contagem de jogadores (A2S, API HTTP ou log)",
     "erro-no-log": "uma expressao de erro no cadastro do servidor",
 }
-# O que vem ligado: as mas noticias que funcionam sem configurar nada. 'voltou',
-# 'acessivel' e 'respondeu' sao alivio, nao urgencia — quem quiser o par completo liga na
-# tela. 'erro-no-log' fica fora porque custa uma ida de SSH a mais por servidor e nao faz
-# nada sem uma expressao cadastrada.
+# What comes on by default: the bad news that works without configuring anything. 'voltou',
+# 'acessivel' and 'respondeu' are relief, not urgency; whoever wants the full pair turns it on in the
+# screen. 'erro-no-log' stays out because it costs one more SSH round trip per server and does
+# nothing without a registered expression.
 ALERT_DEFAULT = "caiu,quebrou,reiniciando,travou,inacessivel,job-falhou,disco-cheio"
 DISK_PCT_DEFAULT = 90
 MEM_PCT_DEFAULT = 90
 CPU_PCT_DEFAULT = 90
-# Os tres saem da MESMA leitura do medidor: com o cache de server_metrics no meio, olhar
-# os tres custa uma ida de SSH so, entao eles andam juntos no mesmo relogio.
+# The three come from the SAME gauge reading: with the server_metrics cache in between, looking at
+# all three costs a single SSH round trip, so they move together on the same clock.
 RESOURCE_EVENTS = {"disco-cheio", "memoria-alta", "cpu-alta"}
-# Quantas linhas do diario de alertas ficam guardadas.
+# How many lines of the alert log are kept.
 ALERT_LOG_KEEP = settings.alert_log_keep
 
-# Quantas voltas seguidas o jogo precisa ficar mudo antes do alerta. Uma consulta A2S e
-# UDP: um pacote perdido e rotina, e alertar no primeiro silencio encheria o canal de
-# susto falso.
+# How many consecutive rounds the game needs to stay silent before the alert. An A2S query is
+# UDP: a lost packet is routine, and alerting on the first silence would fill the channel with
+# false scares.
 MUTE_ROUNDS = settings.mute_rounds
-# O log e o unico destes que custa uma ida de SSH propria, entao tem o seu intervalo.
+# The log is the only one of these that costs its own SSH round trip, so it has its own interval.
 LOG_CHECK_EVERY = settings.log_check_every
-# Quantas linhas do fim do log olhar em cada passada.
+# How many lines from the end of the log to look at on each pass.
 LOG_ERR_LINES = 200
-# Teto de um alerta de log por servidor nesta janela. A expressao vem da tela e um '.'
-# distraido casa com tudo — sem esta trava, um engano de digitacao vira uma enxurrada.
+# Cap of one log alert per server in this window. The expression comes from the screen and a careless '.'
+# matches everything: without this lock, a typo becomes a flood.
 LOG_ERR_COOLDOWN = settings.log_err_cooldown
 
 
@@ -1275,12 +1304,12 @@ def config_set(conn: sqlite3.Connection, key: str, value: str) -> None:
 
 
 def clean_events(raw: str) -> set:
-    """Filtra pela lista conhecida: evento que saiu do codigo nao volta pelo banco."""
+    """Filter by the known list: an event that left the code does not come back through the database."""
     return {e for e in (raw or "").split(",") if e in ALERT_EVENTS}
 
 
 def webhook_list(conn: sqlite3.Connection) -> list:
-    """Todos os destinos, na ordem de cadastro, com os eventos ja como conjunto."""
+    """All destinations, in registration order, with the events already as a set."""
     lines_of = alerts_repo.all_webhooks(conn)
     return [
         {
@@ -1296,10 +1325,10 @@ def webhook_list(conn: sqlite3.Connection) -> list:
 
 
 def webhook_config(conn: sqlite3.Connection) -> dict:
-    """Estado dos alertas: os destinos, o que o conjunto deles cobre, e o limite do disco.
+    """Alert state: the destinations, what their union covers, and the disk limit.
 
-    'eventos' e a UNIAO dos destinos ligados — e o que o monitor usa para decidir se vale
-    a pena olhar alguma coisa. Quem recebe o que se resolve depois, destino a destino.
+    'events' is the UNION of the enabled destinations: it is what the monitor uses to decide whether it is
+    worth looking at anything. Who receives what is resolved later, destination by destination.
     """
     try:
         disk = int(config_get(conn, "webhook_disk_pct", str(DISK_PCT_DEFAULT)))
@@ -1332,25 +1361,25 @@ mask_url = webhook_client.mask_url
 
 
 def send_webhook(url: str, text: str) -> str:
-    # Nome proprio (e nao `webhook_client.envia` direto nas chamadas) porque a fixture
-    # `webhooks` do conftest troca ESTE nome por um capturador — todo teste de alerta
-    # depende disso para ver o que sairia por HTTP sem nada sair de verdade.
+    # Its own name (and not `webhook_client.send` directly in the calls) because the conftest's
+    # `webhooks` fixture swaps THIS name for a capturer: every alert test
+    # depends on it to see what would go out over HTTP without anything actually going out.
     return webhook_client.send(url, text, WEBHOOK_TIMEOUT, WEBHOOK_UA)
 
 
 def notify(conn: sqlite3.Connection, event: str, title: str, detail: str = "") -> bool:
-    """Manda o alerta para cada destino que pediu esse evento.
+    """Send the alert to each destination that asked for this event.
 
-    Devolve se saiu para ALGUEM. Um destino fora do ar (Discord de pe, Slack caido) nao
-    cala os outros: cada um e tentado e cada falha vai para o log com o nome do destino,
-    entao da para saber qual deles esta quebrado sem adivinhar.
+    Return whether it went out to ANYONE. A destination that is down (Discord up, Slack down) does not
+    silence the others: each one is tried and each failure goes to the log with the destination name,
+    so one can tell which of them is broken without guessing.
     """
     targets = [d for d in webhook_list(conn)
              if d["enabled"] and d["url"] and event in d["events"]]
     if not targets:
-        # Registrado de proposito: "o alerta disparou e ninguem pediu por ele" e a causa
-        # mais comum de canal mudo, e e indistinguivel de "nao aconteceu nada" para quem
-        # so olha o Discord. No diario as duas viram coisas diferentes.
+        # Recorded on purpose: "the alert fired and nobody asked for it" is the
+        # most common cause of a silent channel, and it is indistinguishable from "nothing happened" for whoever
+        # only looks at Discord. In the log the two become different things.
         _record_alert(conn, event, title, detail, "", "sem-destino")
         return False
     text = f"**{title}**"
@@ -1373,10 +1402,10 @@ def notify(conn: sqlite3.Connection, event: str, title: str, detail: str = "") -
 
 def _record_alert(conn: sqlite3.Connection, event: str, title: str, detail: str,
                      target: str, status: str, error: str = "") -> None:
-    """Grava uma linha do diario.
+    """Write one line to the alert log.
 
-    Engole o proprio erro de proposito: o diario existe para explicar o alerta, e seria
-    absurdo ele impedir o alerta de sair. No pior caso fica sem registro, nunca sem envio.
+    Swallows its own error on purpose: the log exists to explain the alert, and it would be
+    absurd for it to stop the alert from going out. At worst there is no record, never no delivery.
     """
     try:
         with conn:
@@ -1386,26 +1415,26 @@ def _record_alert(conn: sqlite3.Connection, event: str, title: str, detail: str,
 
 
 def recent_alerts(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:
-    """As ultimas linhas do diario, da mais nova para a mais velha."""
+    """The last lines of the alert log, newest to oldest."""
     return [dict(row) for row in alerts_repo.recent(conn, limit)]
 
 
 def _recent_job(conn: sqlite3.Connection, sid: int) -> bool:
-    """Teve acao do painel neste servidor ha pouco?
+    """Was there a panel action on this server a short while ago?
 
-    Reiniciar pelo botao derruba o servico por alguns segundos, e isso NAO e uma queda.
-    Sem esta janela, todo restart e todo update viraria alerta.
+    Restarting from the button takes the service down for a few seconds, and that is NOT a crash.
+    Without this window, every restart and every update would become an alert.
     """
     cut = (datetime.now(UTC) - timedelta(seconds=ALERT_QUIET)).isoformat()
     return jobs_repo.acted_since(conn, sid, cut)
 
 
-# server_id -> ultimo estado visto. Fica so na memoria de proposito: reiniciar o painel
-# refaz a linha de base, e ninguem recebe um alerta de algo que ja estava assim.
+# server_id -> last state seen. It stays only in memory on purpose: restarting the panel
+# rebuilds the baseline, and nobody gets an alert about something that was already like that.
 _monitor_state: dict[int, dict] = {}
-# Um relogio por ritmo (ver `tasks/ticker.py`). Instancia e nao variavel solta porque o
-# `conftest.py` precisa zerar todos entre um teste e o outro, e um `global` a mais e um
-# nome a mais para ele errar em silencio.
+# One clock per pace (see `tasks/ticker.py`). An instance and not a loose variable because
+# `conftest.py` needs to reset all of them between one test and the next, and one more `global` is
+# one more name for it to get wrong silently.
 monitor_tick = ticker.Ticker()
 state_tick = ticker.Ticker()
 resource_tick = ticker.Ticker()
@@ -1413,11 +1442,11 @@ log_tick = ticker.Ticker()
 
 
 def _alert_deps() -> alert_service.AlertDeps:
-    """As pecas que as regras de alerta pedem, montadas na hora da chamada.
+    """The pieces the alert rules need, assembled at call time.
 
-    Na hora, e nao no import: `server_players`, `server_metrics` e `notifica` sao nomes
-    deste modulo, e os testes de alerta trocam os dois primeiros por falsos a cada caso
-    — um bundle congelado no import passaria por cima da troca em silencio.
+    At call time, not at import: `server_players`, `server_metrics` and `notify` are names
+    in this module, and the alert tests swap the first two for fakes in each case;
+    a bundle frozen at import would bypass the swap silently.
     """
     return alert_service.AlertDeps(
         notify=notify, recent_job=_recent_job, player_source=player_source,
@@ -1457,12 +1486,12 @@ def _cpu_alert(conn, server, cfg) -> None:
     alert_service.cpu_alert(_alert_deps(), conn, server, cfg)
 
 
-# Evento de recurso -> quem confere. Os tres leem o MESMO medidor e andam no mesmo
-# relogio; como tabela, ligar um quarto (rede, por exemplo) e acrescentar uma linha,
-# nao mais um `if` dentro do laco do monitor.
+# Resource event -> who checks it. The three read the SAME gauge and move on the same
+# clock; as a table, enabling a fourth (network, for example) is adding a line,
+# not one more `if` inside the monitor loop.
 #
-# Aponta para as funcoes DESTE modulo, nao para as do service: a tabela captura o
-# objeto no import, e e por estes nomes que os testes chamam.
+# Points to the functions of THIS module, not the service's: the table captures the
+# object at import, and it is by these names that the tests call.
 RESOURCE_ALERTS = {
     "disco-cheio": _disk_alert,
     "memoria-alta": _memory_alert,
@@ -1478,20 +1507,20 @@ _players_reading = alert_service.players_reading
 _online_text = alert_service.online_text
 
 
-# ------------------------------------------------- log em tempo real
+# ------------------------------------------------- real-time log
 #
-# Contagem por log era o unico caso sem jeito de ficar rapida: cada conferida e uma ida de
-# SSH que arrasta o log inteiro, entao perguntar de 15 em 15 segundos custaria megabytes
-# por minuto para achar duas linhas. A saida e parar de perguntar: uma conexao SSH longa
-# com `journalctl -f` deixa o painel OUVINDO, e a linha chega no segundo em que sai.
+# Counting by log was the only case with no way to become fast: each check is an
+# SSH round trip that drags the whole log, so asking every 15 seconds would cost megabytes
+# per minute to find two lines. The way out is to stop asking: a long SSH connection
+# with `journalctl -f` leaves the panel LISTENING, and the line arrives the second it comes out.
 #
-# O ponto do desenho: o stream e um GATILHO, nao uma segunda contagem. Ele so diz "algo
-# aconteceu" e manda refazer a conta pelo caminho de sempre. Reproduzir aqui a maquina de
-# estados do log seria um segundo lugar para errar — e pior, um que divergiria em silencio
-# do numero que a tela mostra.
+# The point of the design: the stream is a TRIGGER, not a second count. It only says "something
+# happened" and asks for the count to be redone the usual way. Reproducing the log's state
+# machine here would be a second place to get it wrong, and worse, one that would silently diverge
+# from the number the screen shows.
 
-# Um alerta de jogador por servidor de cada vez: o stream e a volta do monitor mexem no
-# MESMO _monitor_state[sid], e sem isto os dois poderiam avisar a mesma entrada.
+# One player alert per server at a time: the stream and the monitor round touch the
+# SAME _monitor_state[sid], and without this the two could announce the same join.
 _players_locks: dict[int, threading.Lock] = {}
 _players_locks_lock = threading.Lock()
 
@@ -1512,11 +1541,11 @@ def _log_stream_deps() -> log_stream.LogStreamDeps:
 
 
 class _LogStream(log_stream.LogStream):
-    """A conexao de log com as pecas do painel ja ligadas.
+    """The log connection with the panel pieces already wired.
 
-    Subclasse (e nao `functools.partial`) para continuar sendo uma CLASSE de dois
-    argumentos: o supervisor a troca por um dublê nos testes, e ha teste que a constroi
-    direto para conferir que um regex torto faz a thread desistir.
+    A subclass (and not `functools.partial`) so it remains a two-argument
+    CLASS: the supervisor swaps it for a test double in the tests, and there is a test that builds it
+    directly to check that a malformed regex makes the thread give up.
     """
 
     def __init__(self, server, signature):
@@ -1536,10 +1565,10 @@ def wanted_streams(servers, cfg) -> dict[int, tuple]:
         servers, cfg, LOG_STREAM, player_source, _stored_value)
 
 
-# `_LogStream` vai por lambda: o nome e resolvido neste modulo a cada abertura, que e o
-# que deixa o teste do supervisor troca-lo por um dublê sem SSH.
+# `_LogStream` goes through a lambda: the name is resolved in this module on each open, which is
+# what lets the supervisor test swap it for a double without SSH.
 _supervisor = log_stream.Supervisor(lambda server, signature: _LogStream(server, signature))
-# O MESMO dicionario do supervisor: a fixture do teste o limpa por este nome.
+# The SAME dictionary as the supervisor's: the test fixture clears it by this name.
 _streams = _supervisor.open_ones
 
 
@@ -1548,20 +1577,20 @@ def live_streams() -> int:
 
 
 def supervise_streams() -> int:
-    """Liga, desliga e ressuscita as conexoes de log. Devolve quantas ficaram registradas."""
+    """Start, stop and revive the log connections. Return how many are registered."""
     conn = db()
     servers = servers_repo.all_ordered(conn)
     return _supervisor.sync(servers, wanted_streams(servers, webhook_config(conn)))
 
 
 class _Rhythm(NamedTuple):
-    """O que ESTA volta do monitor vai conferir.
+    """What THIS monitor round is going to check.
 
-    Nem tudo anda no mesmo passo, e a razao e custo: a contagem de jogadores pergunta
-    direto ao jogo (barato), estado/mudez/restart custam um SSH por servidor, disco,
-    memoria e CPU saem de um medidor caro que vale ler junto, e o log custa uma ida de
-    SSH so dele. Separar essa decisao do laco e o que fez a funcao de monitorar caber
-    na cabeca: aqui e "o que vence agora", la e "o que fazer com cada servidor".
+    Not everything moves at the same pace, and the reason is cost: player counting asks
+    the game directly (cheap), state/silence/restart cost one SSH per server, disk,
+    memory and CPU come from an expensive gauge worth reading together, and the log costs an
+    SSH round trip of its own. Separating this decision from the loop is what made the monitoring function fit
+    in one's head: here it is "what is due now", there it is "what to do with each server".
     """
 
     see_state: bool
@@ -1571,32 +1600,32 @@ class _Rhythm(NamedTuple):
 
 
 def _monitor_rhythm(cfg: dict, now: float, force: bool) -> _Rhythm | None:
-    """Decide o que vence nesta volta e adianta os relogios. None = ainda nao e hora."""
-    # O passo do monitor e o do alerta mais apressado que esteja LIGADO. Com jogadores
-    # ligados a volta fica curta; sem eles nada muda em relacao a antes.
+    """Decide what is due this round and advance the clocks. None = not time yet."""
+    # The monitor's pace is that of the most hurried alert that is ON. With players
+    # on, the round is short; without them nothing changes compared with before.
     wants_players = bool(cfg["events"] & {"jogador-entrou", "jogador-saiu"})
     step = min(MONITOR_EVERY, PLAYER_CHECK_EVERY) if wants_players else MONITOR_EVERY
     if not monitor_tick.due(now, step, force):
         return None
     monitor_tick.mark(now)
 
-    # ...mas so a contagem de jogadores anda nesse passo curto. Estado do servico, mudez
-    # e restart continuam no ritmo antigo: cada um deles custa SSH por servidor, e
-    # acelerar tudo junto multiplicaria essa conta por quatro sem necessidade.
+    # ...but only player counting moves at this short pace. Service state, silence
+    # and restart stay at the old pace: each of them costs SSH per server, and
+    # speeding everything up together would multiply that bill by four for no need.
     see_state = state_tick.due(now, MONITOR_EVERY, force)
     if see_state:
         state_tick.mark(now)
 
-    # Um relogio so para disco, memoria e CPU: os tres leem o mesmo medidor, e dar um
-    # ritmo proprio a cada um multiplicaria as idas de SSH sem enxergar nada novo.
+    # One clock for disk, memory and CPU only: the three read the same gauge, and giving each
+    # its own pace would multiply the SSH round trips without seeing anything new.
     resource_wins = resource_tick.due(now, DISK_CHECK_EVERY, force)
     resources = cfg["events"] & RESOURCE_EVENTS if resource_wins else set()
-    # Anota so quando ALGO foi lido: sem alerta de recurso ligado, deixar a janela correr
-    # faria a proxima volta com um deles ligado esperar o intervalo inteiro de novo.
+    # Mark only when SOMETHING was read: with no resource alert on, letting the window run
+    # would make the next round with one of them on wait the whole interval again.
     if resources:
         resource_tick.mark(now)
 
-    # O log e o unico que custa uma ida de SSH so dele, entao anda no seu proprio ritmo.
+    # The log is the only one that costs an SSH round trip of its own, so it moves at its own pace.
     see_log = "erro-no-log" in cfg["events"] and log_tick.due(now, LOG_CHECK_EVERY, force)
     if see_log:
         log_tick.mark(now)
@@ -1605,16 +1634,16 @@ def _monitor_rhythm(cfg: dict, now: float, force: bool) -> _Rhythm | None:
 
 
 def _short_round(conn, server, anterior, cfg, rhythm: _Rhythm) -> None:
-    """A volta de 15s: so jogadores, e sem tocar no SSH.
+    """The 15s round: players only, and without touching SSH.
 
-    O servico que interessa aqui e "estava de pe na ultima olhada de verdade", e isso
-    ja esta guardado. Se ele tiver caido desde entao, a consulta ao proprio jogo falha
-    e `_alerta_de_jogadores` sai sem avisar nada — o atraso de um estado velho nao
-    inventa alerta.
+    The service that matters here is "was up at the last real look", and that is
+    already stored. If it went down since then, the query to the game itself fails
+    and `_players_alert` returns without announcing anything: the delay of a stale state does not
+    invent an alert.
 
-    Contagem por log fica de fora: ela custa SSH, e pagar isso a cada 15s so para reler
-    o mesmo log inteiro nao se sustenta. Esses servers continuam avisando no ritmo
-    da volta completa.
+    Counting by log stays out: it costs SSH, and paying that every 15s just to reread
+    the same whole log does not hold up. Those servers keep notifying at the pace
+    of the full round.
     """
     if not rhythm.wants_players or anterior is None:
         return
@@ -1625,24 +1654,24 @@ def _short_round(conn, server, anterior, cfg, rhythm: _Rhythm) -> None:
 
 
 def _server_alerts(conn, server, state, anterior, cfg, rhythm: _Rhythm) -> None:
-    """Os alertas que so fazem sentido com o container ALCANCAVEL."""
+    """The alerts that only make sense with the container REACHABLE."""
     if "reiniciando" in cfg["events"]:
         _restart_alert(conn, server, state, anterior)
     else:
-        # Sem o evento ligado o contador ainda precisa acompanhar, senao ligar o alerta
-        # no meio do dia renderia um "loop" falso com tudo o que se acumulou enquanto
-        # ele estava desligado.
+        # With the event off the counter still needs to keep up, otherwise turning the alert on
+        # in the middle of the day would yield a false "loop" with everything that piled up while
+        # it was off.
         anterior["restarts"] = int(state.get("restarts") or 0)
 
-    # Este custa uma sondagem no jogo (UDP ou HTTP) — nao vale a pena pagar por ela com
-    # o evento desligado.
+    # This one costs a probe of the game (UDP or HTTP): not worth paying for it with
+    # the event off.
     if cfg["events"] & {"travou", "respondeu"}:
         _mute_alert(conn, server, state, anterior)
 
     if rhythm.wants_players:
-        # Com stream de log ligado esta chamada vira rede de seguranca: se ele tiver
-        # caido, ninguem fica sem aviso — so mais devagar. O lock e o que impede os dois
-        # de avisarem a mesma entrada.
+        # With the log stream on, this call becomes a safety net: if the stream has
+        # dropped, nobody is left without notice, only slower. The lock is what keeps the two
+        # from announcing the same join.
         with players_lock(int(server["id"])):
             _players_alert(conn, server, state["service"], anterior, cfg)
 
@@ -1655,11 +1684,11 @@ def _server_alerts(conn, server, state, anterior, cfg, rhythm: _Rhythm) -> None:
 
 
 def monitor_servers(force: bool = False) -> int:
-    """Confere o estado de todo mundo e dispara o que mudou. Devolve quantos olhou."""
+    """Check everyone's state and fire whatever changed. Return how many were checked."""
     conn = db()
     cfg = webhook_config(conn)
-    # Sem nenhum destino ligado pedindo algum evento, a volta inteira seria SSH gasto
-    # para produzir um alerta que ninguem receberia.
+    # With no enabled destination asking for any event, the whole round would be SSH spent
+    # producing an alert that nobody would receive.
     if not cfg["events"]:
         return 0
 
@@ -1678,9 +1707,9 @@ def monitor_servers(force: bool = False) -> int:
 
         state = server_status(server)
         if previous is None:
-            # Primeira olhada: so anota. Alertar aqui encheria o canal de "esta parado"
-            # toda vez que o painel reiniciasse. Vale para o contador de restarts do
-            # mesmo jeito: o que interessa e quanto ele sobe DAQUI para a frente.
+            # First look: only record. Alerting here would fill the channel with "is stopped"
+            # every time the panel restarted. The same goes for the restart counter:
+            # what matters is how much it goes up FROM HERE on.
             _monitor_state[sid] = {"reachable": state["reachable"],
                                     "service": state["service"],
                                     "restarts": int(state.get("restarts") or 0)}
@@ -1689,8 +1718,8 @@ def monitor_servers(force: bool = False) -> int:
         _state_alert(conn, server, state, previous)
         if state["reachable"]:
             _server_alerts(conn, server, state, previous, cfg, rhythm)
-        # Depois dos alertas: eles precisam comparar com o estado ANTERIOR, e atualizar
-        # antes faria toda mudanca desaparecer no meio do caminho.
+        # After the alerts: they need to compare against the PREVIOUS state, and updating
+        # before would make every change vanish halfway.
         previous.update(reachable=state["reachable"], service=state["service"])
 
     _forget_removed_servers(servers)
@@ -1698,19 +1727,19 @@ def monitor_servers(force: bool = False) -> int:
 
 
 def _forget_removed_servers(servers) -> None:
-    """Servidor removido do painel nao pode ficar guardando estado para sempre."""
+    """A server removed from the panel must not keep state forever."""
     alive_ids = {int(s["id"]) for s in servers}
     for dead_one in [k for k in _monitor_state if k not in alive_ids]:
         _monitor_state.pop(dead_one, None)
 
 
-# -------------------------------------------------------- amostras de uso
+# -------------------------------------------------------- usage samples
 
 sample_tick = ticker.Ticker()
 
 
 def collect_samples(force: bool = False) -> int:
-    """Guarda uma linha de CPU/memoria/jogadores por servidor. Devolve quantas gravou."""
+    """Store one CPU/memory/players row per server. Return how many were written."""
     now_ts = time.monotonic()
     if not sample_tick.due(now_ts, SAMPLE_EVERY, force):
         return 0
@@ -1722,8 +1751,8 @@ def collect_samples(force: bool = False) -> int:
     for server in servers_repo.all_ordered(conn):
         data = server_metrics(server)
         if data.get("error"):
-            # Container fora do ar nao vira linha: um buraco no grafico e a informacao
-            # certa, e zero seria mentira (nao foi "usou 0% de CPU").
+            # A container that is down does not become a row: a gap in the chart is the right
+            # information, and zero would be a lie (it was not "used 0% CPU").
             continue
         count = None
         if player_source(server):
@@ -1743,18 +1772,18 @@ def collect_samples(force: bool = False) -> int:
     return len(lines_of)
 
 
-# ------------------------------------------------------------- agendamento
+# ------------------------------------------------------------- scheduling
 #
-# Uma thread so, acordando a cada SCHEDULE_TICK, olha o que venceu e dispara pelo MESMO
-# start_job das telas — tarefa agendada aparece no historico como qualquer outra, com
-# 'agendador' no lugar do usuario.
+# A single thread, waking every SCHEDULE_TICK, looks at what is due and fires it through the SAME
+# start_job as the screens: a scheduled task shows up in the history like any other, with
+# 'agendador' in place of the user.
 #
-# Isto depende de o painel rodar com UM worker (e como o gunicorn e configurado aqui,
-# veja o provision-admin-lxc.sh): com dois processos, cada um teria a sua thread e a
-# mesma tarefa dispararia em dobro.
+# This depends on the panel running with ONE worker (which is how gunicorn is configured here,
+# see provision-admin-lxc.sh): with two processes, each would have its own thread and the
+# same task would fire twice.
 
-# Conta do relogio em gamepanel.services.schedule_service; os nomes seguem aqui porque
-# as rotas de agendamento, os templates e os testes chamam por eles.
+# Clock math in gamepanel.services.schedule_service; the names stay here because
+# the scheduling routes, the templates and the tests call them.
 SCHEDULE_KINDS = schedule_service.SCHEDULE_KINDS
 SCHEDULE_ACTIONS = schedule_service.SCHEDULE_ACTIONS
 WEEKDAYS = schedule_service.WEEKDAYS
@@ -1762,7 +1791,7 @@ EVERY_HOURS_MAX = schedule_service.EVERY_HOURS_MAX
 local_now = schedule_service.local_now
 schedule_label = schedule_service.schedule_label
 previous_occurrence = schedule_service.previous_occurrence
-# Usado tambem pelas rotas de agendamento e pelo grafico, fora desta secao.
+# Also used by the scheduling routes and by the chart, outside this section.
 _parse_dt = schedule_service._parse_dt
 
 
@@ -1771,7 +1800,7 @@ def is_due(sched, now: datetime) -> bool:
 
 
 def fire_schedule(conn: sqlite3.Connection, sched) -> int:
-    """Coloca a tarefa para rodar. Devolve o id do job (0 quando nao deu para disparar)."""
+    """Queue the task to run. Return the job id (0 when it could not be triggered)."""
     server = servers_repo.by_id(conn, sched["server_id"])
     if not server:
         return 0
@@ -1779,7 +1808,7 @@ def fire_schedule(conn: sqlite3.Connection, sched) -> int:
     if sched["action"] == "backup":
         paths = backup_paths(server)
         if not paths:
-            return 0  # sem o que guardar: nao adianta acordar o container
+            return 0  # nothing to store: no point waking the container
         steps, limit = backup_steps(server, paths), BACKUP_TIMEOUT
     else:
         steps, limit = [ACTIONS[sched["action"]][1](server)], JOB_TIMEOUT
@@ -1792,15 +1821,15 @@ def fire_schedule(conn: sqlite3.Connection, sched) -> int:
 
 
 def run_schedules() -> int:
-    """Uma passada do relogio. Devolve quantas tarefas disparou."""
+    """One pass of the clock. Return how many tasks it fired."""
     now_ts = local_now()
     conn = db()
     fired = 0
     for sched in schedules_repo.enabled(conn):
         if sched["action"] not in SCHEDULE_ACTIONS or not is_due(sched, now_ts):
             continue
-        # Marca ANTES de disparar: se o job demorar (um update leva quase uma hora), a
-        # proxima volta do relogio nao pode achar que a tarefa ainda esta vencida.
+        # Mark BEFORE firing: if the job takes long (an update takes almost an hour), the
+        # next clock round must not think the task is still due.
         with conn:
             schedules_repo.mark_run(conn, sched["id"], now_ts.isoformat())
         if fire_schedule(conn, sched):
@@ -1812,11 +1841,11 @@ cleanup_tick = ticker.Ticker()
 
 
 def clean_history(force: bool = False) -> int:
-    """Apaga o que envelheceu — jobs e amostras. Devolve quantos JOBS sairam.
+    """Delete what has aged: jobs and samples. Return how many JOBS went away.
 
-    As duas limpezas andam juntas porque tem a mesma razao de existir (o banco do painel
-    nao pode crescer para sempre) e o mesmo relogio de hora em hora; so os prazos mudam,
-    porque uma amostra e minuscula perto da saida de um job.
+    The two cleanups go together because they have the same reason to exist (the panel database
+    cannot grow forever) and the same hourly clock; only the deadlines change,
+    because a sample is tiny next to a job's output.
     """
     now_ts = time.monotonic()
     if not cleanup_tick.due(now_ts, JOBS_PURGE_EVERY, force):
@@ -1830,9 +1859,9 @@ def clean_history(force: bool = False) -> int:
         with conn:
             samples_repo.delete_older_than(conn, old_ones)
 
-    # O diario se mede em linhas, nao em dias: o que se quer dele e "as ultimas N", e um
-    # prazo em dias deixaria a tela vazia justo num painel quieto, que e quando a duvida
-    # "sera que isso ainda funciona?" aparece.
+    # The alert log is measured in lines, not days: what one wants from it is "the last N", and a
+    # deadline in days would leave the screen empty precisely on a quiet panel, which is when the doubt
+    # "is this still working?" shows up.
     with conn:
         alerts_repo.trim_log(conn, ALERT_LOG_KEEP)
 
@@ -1844,28 +1873,28 @@ def clean_history(force: bool = False) -> int:
 
 
 def _clock_failure(name: str) -> None:
-    """Anota no log do processo E no diario de alertas.
+    """Note it in the process log AND in the alert log.
 
-    O diario e o que a pessoa consegue ver: o traceback no stderr do gunicorn so aparece
-    para quem sabe procurar, e a queixa que traz alguem ate aqui e sempre a mesma — "nao
-    chega nada no Discord".
+    The alert log is what the person can see: the traceback in gunicorn's stderr only shows up
+    for whoever knows where to look, and the complaint that brings someone here is always the same:
+    "nothing arrives on Discord".
     """
     app.logger.exception("falha na tarefa '%s' do relogio", name)
-    try:  # noqa: SIM105 - ver o except
+    try:  # noqa: SIM105 - see the except
         _record_alert(db(), "", f"a tarefa '{name}' do relogio falhou",
                          traceback.format_exc(limit=4)[-500:], "", "erro-interno")
-    # Registrar a falha nao pode virar outra falha: este bloco JA esta tratando um erro,
-    # e logar de dentro dele seria circular. `pass` mudo e deliberado — o
-    # `logger.exception` da linha de cima ja registrou o que importa.
+    # Recording the failure must not become another failure: this block is ALREADY handling an error,
+    # and logging from inside it would be circular. A silent `pass` is deliberate: the
+    # `logger.exception` on the line above already recorded what matters.
     except Exception:  # noqa: BLE001, S110
         pass
 
 
 def _scheduler_tick() -> None:
-    """Uma volta do relogio. Precisa de contexto de aplicacao por causa do db().
+    """One round of the clock. Needs an application context because of db().
 
-    A lista e montada a cada volta, e nao guardada: cada nome e resolvido neste modulo
-    na hora, que e o que deixa o teste trocar uma tarefa por uma que explode.
+    The list is built on every round, not stored: each name is resolved in this module
+    at that moment, which is what lets the test swap a task for one that blows up.
     """
     scheduler.tick(
         (("agendamentos", run_schedules),
@@ -1878,8 +1907,8 @@ def _scheduler_tick() -> None:
 
 
 def _with_context() -> None:
-    # Contexto de aplicacao: e o que faz o db() desta thread funcionar como o das rotas
-    # (conexao propria, fechada no fim pelo teardown).
+    # Application context: it is what makes this thread's db() work like the routes' one
+    # (its own connection, closed at the end by the teardown).
     with app.app_context():
         _scheduler_tick()
 
@@ -1891,14 +1920,14 @@ def start_scheduler() -> None:
     _clock.start()
 
 
-# ------------------------------------------------------------------- rotas
+# ------------------------------------------------------------------- routes
 
 
 def safe_target(raw: str) -> str:
-    r"""Para onde voltar depois do login. Vazio quando o destino nao e do painel.
+    r"""Where to go back to after login. Empty when the destination is not on the panel.
 
-    Comecar com "/" nao basta: para o navegador "//evil.com" e "/\evil.com" sao enderecos
-    ABSOLUTOS, e mandariam quem acabou de digitar a senha para fora do painel.
+    Starting with "/" is not enough: for the browser "//evil.com" and "/\evil.com" are ABSOLUTE
+    addresses, and would send whoever just typed the password out of the panel.
     """
     target = (raw or "").strip()
     if not target.startswith("/") or target[:2] in ("//", "/\\"):
@@ -1908,7 +1937,7 @@ def safe_target(raw: str) -> str:
     return target
 
 
-# Tempo para digitar o codigo depois de acertar a senha.
+# Time to type the code after getting the password right.
 PRE_2FA_SECONDS = 300
 
 
@@ -1922,13 +1951,13 @@ def _open_session(row: sqlite3.Row, next_one: str = ""):
 
 
 def _check_second_factor(row: sqlite3.Row, typed: str) -> bool:
-    """Codigo do aplicativo OU um codigo de recuperacao (que se gasta). Vale so uma vez."""
+    """App code OR a recovery code (which gets used up). Valid only once."""
     conn = db()
     step = totp.verify(row["totp_secret"], typed, time.time(), row["totp_last_step"])
     if step is not None:
         with conn:
-            # O `WHERE` faz do UPDATE o portao: dois pedidos com o mesmo codigo ao mesmo tempo
-            # nao passam os dois (o segundo nao encontra a linha com passo menor).
+            # The `WHERE` makes the UPDATE the gate: two requests with the same code at the same time
+            # do not both pass (the second does not find the row with a smaller step).
             return users_repo.spend_step(conn, row["id"], step)
     try:
         stored = json.loads(row["totp_recovery"] or "[]")
@@ -1943,15 +1972,15 @@ def _check_second_factor(row: sqlite3.Row, typed: str) -> bool:
 
 
 def _port_tab(server: ServerRow) -> dict:
-    """Aba 1: dispara A2S em cada porta UDP que o container esta escutando."""
+    """Tab 1: fire A2S at each UDP port the container is listening on."""
     candidates, _tcp, owners, warning_text = candidate_ports(server)
     ports = _with_owner(probe_ports(server["host"], candidates[:12]), owners, "udp")
-    # Porta aberta pelo processo do jogo e que nao respondeu A2S e uma conclusao, nao um
-    # erro: o jogo simplesmente nao publica consulta. Sem essa contagem a tela so diria
-    # "sem resposta" e deixaria a duvida entre "porta errada" e "nao existe consulta".
+    # A port opened by the game process that did not answer A2S is a conclusion, not an
+    # error: the game simply does not publish a query. Without this count the screen would only say
+    # "no answer" and leave the doubt between "wrong port" and "no query exists".
     from_game = [p for p in ports if p["origem"] == "detectada" and not p["infra"]]
-    # As conversas ativas na porta do jogo valem para todo CT com o firewall atual, mesmo
-    # quando nenhuma porta responde A2S - e o caso do Dragonwilds (EOS, sem consulta).
+    # The active conversations on the game port apply to every CT with the current firewall, even
+    # when no port answers A2S - that is the case of Dragonwilds (EOS, no query).
     try:
         presence: dict[str, Any] = {"players": presence_players(server)["players"], "error": ""}
     except QueryError as exc:
@@ -1966,25 +1995,25 @@ def _port_tab(server: ServerRow) -> dict:
 
 
 def _http_tab(server: ServerRow, http: dict, should_test: bool) -> dict:
-    """Aba 2: quais portas TCP falam HTTP, e o teste da URL escolhida."""
+    """Tab 2: which TCP ports speak HTTP, and the test of the chosen URL."""
     _udp, candidates, owners, warning_text = candidate_ports(server)
     found, silent_ones, probe_failure = probe_http_ports(server, candidates)
     _with_owner(found, owners, "tcp")
-    # NOME NOVO, e nao o mesmo reaproveitado: o valor troca de significado (de lista de
-    # numero de porta para lista de dicionario com dono), e reusar o nome escondia isso de
-    # quem le — foi o verificador de tipo que apontou, recusando a reanotacao.
+    # A NEW NAME, not the same one reused: the value changes meaning (from a list of
+    # port numbers to a list of dicts with an owner), and reusing the name hid that from
+    # the reader; it was the type checker that pointed it out, rejecting the re-annotation.
     silent_with_owner: list[dict] = _with_owner(
         [{"port": p} for p in silent_ones], owners, "tcp")
     output = {"achados": found, "mudas": silent_with_owner, "aviso": warning_text or probe_failure,
-             # Achado que vale um clique: porta que respondeu numa rota conhecida. Sem
-             # nenhum, a tela explica que a API costuma vir desligada de fabrica.
+             # A finding worth a click: a port that answered on a known route. With
+             # none, the screen explains that the API usually comes disabled out of the box.
              "tem_api": any(not a.get("generico") for a in found),
              "teste_http": None, "erro_http": ""}
     if not should_test:
         return output
     try:
-        # O teste usa os valores do FORMULARIO, nao os do banco: e o unico jeito de
-        # conferir o login antes de salvar. Por isso monta-se uma linha temporaria.
+        # The test uses the FORM values, not the database ones: it is the only way to
+        # check the login before saving. That is why a temporary row is built.
         temporary_path = dict(server)
         temporary_path.update(http)
         if (http.get("http_login_url") or "").strip() and (http.get("http_token_path") or "").strip():
@@ -1994,7 +2023,7 @@ def _http_tab(server: ServerRow, http: dict, should_test: bool) -> dict:
             auth = http["http_auth"]
         data = http_json(server, http["http_url"], auth, http["http_body"])
         test_value = read_players_json(data, http["http_list_path"], http["http_count_path"])
-        # A resposta crua ajuda a preencher os caminhos quando a busca automatica erra.
+        # The raw response helps fill in the paths when the automatic search gets it wrong.
         test_value["amostra"] = json.dumps(data, indent=2, ensure_ascii=False)[:4000]
         output["teste_http"] = test_value
     except QueryError as exc:
@@ -2004,11 +2033,11 @@ def _http_tab(server: ServerRow, http: dict, should_test: bool) -> dict:
 
 def _log_tab(server: ServerRow, join_re: str, leave_re: str, log_path: str,
              should_test: bool) -> dict:
-    """Aba 3: linhas do log com cara de entrada/saida e o teste dos padroes."""
+    """Tab 3: log lines that look like join/leave and the test of the patterns."""
     output: dict[str, Any] = {"amostras": [], "teste": None, "erro_log": ""}
     try:
-        # O caminho vem do FORMULARIO, nao do banco: e o unico jeito de conferir um
-        # arquivo novo (o .ADM do DayZ, por exemplo) antes de salvar.
+        # The path comes from the FORM, not the database: it is the only way to check a
+        # new file (DayZ's .ADM, for example) before saving.
         temporary_path = dict(server)
         temporary_path["log_path"] = log_path
         lines_of = read_log_lines(temporary_path)
@@ -2033,7 +2062,7 @@ def _log_tab(server: ServerRow, join_re: str, leave_re: str, log_path: str,
 
 
 def _enable_a2s_count(conn, sid: int):
-    """Consulta UDP direta (A2S). Devolve um redirect quando o formulario esta errado."""
+    """Direct UDP query (A2S). Return a redirect when the form is wrong."""
     port = request.form.get("query_port", "0")
     if not port.isdigit() or not 1 <= int(port) <= MAX_PORT:
         flash(translate("flash.bad_port"), "error")
@@ -2045,14 +2074,14 @@ def _enable_a2s_count(conn, sid: int):
 
 
 def _enable_net_count(conn, sid: int):
-    """Conversas ativas na porta do jogo, pelo firewall do CT. Nao tem campo: so a escolha."""
+    """Active conversations on the game port, through the CT firewall. No field: only the choice."""
     with conn:
         servers_repo.use_presence(conn, sid)
     flash(translate("flash.count_on_by_net"), "ok")
 
 
 def _enable_http_count(conn, sid: int):
-    """API HTTP do proprio jogo."""
+    """The game's own HTTP API."""
     errors: list[str] = []
     fields = _http_fields(request.form, errors)
     if errors or not fields["http_url"]:
@@ -2068,7 +2097,7 @@ def _enable_http_count(conn, sid: int):
 
 
 def _enable_log_count(conn, sid: int):
-    """Ultimo recurso: as linhas de entrada e saida no log do servidor."""
+    """Last resort: the join and leave lines in the server log."""
     errors: list[str] = []
     entry = _pattern(request.form.get("join_re"), "entrada", errors)
     output = _pattern(request.form.get("leave_re"), "saida", errors)
@@ -2082,8 +2111,8 @@ def _enable_log_count(conn, sid: int):
     return None
 
 
-# Fonte de contagem -> quem grava a escolha. Uma fonte nova (RCON, por exemplo) e uma
-# funcao e uma linha aqui; a rota abaixo nao muda.
+# Counting source -> who stores the choice. A new source (RCON, for example) is one
+# function and one line here; the route below does not change.
 COUNT_SOURCES = {
     "a2s": _enable_a2s_count,
     "http": _enable_http_count,
@@ -2092,9 +2121,9 @@ COUNT_SOURCES = {
 }
 
 
-# Validacao do formulario em gamepanel.services.server_service. Os limites ficam aqui
-# (sao configuracao do painel) e viajam num bundle; `clean_path` vai junto porque ja
-# carrega as raizes permitidas (GAMEPANEL_FILE_ROOTS).
+# Form validation in gamepanel.services.server_service. The limits stay here
+# (they are panel configuration) and travel in a bundle; `clean_path` goes along because it already
+# carries the allowed roots (GAMEPANEL_FILE_ROOTS).
 UNIT_RE = server_service.UNIT_RE
 HOST_RE = server_service.HOST_RE
 USER_RE = server_service.USER_RE
@@ -2114,8 +2143,8 @@ def _form_server(form) -> tuple[dict, list[str]]:
     return server_service.form_server(form, clean_path, _form_limits())
 
 
-# Os tres tambem sao usados pelo assistente de contagem (abas HTTP e log), fora do
-# formulario de cadastro.
+# The three are also used by the counting wizard (HTTP and log tabs), outside the
+# registration form.
 _log_path = server_service._log_path
 
 
@@ -2127,15 +2156,15 @@ def _http_fields(form, errors: list[str]) -> dict:
     return server_service._http_fields(form, _form_limits(), errors)
 
 
-# Colunas que o formulario preenche, na mesma ordem do INSERT/UPDATE abaixo. Manter a
-# lista em um lugar so evita o classico "acrescentei a coluna e esqueci de um dos SQLs".
-# O nome das colunas mora no repositorio; aqui fica so o apelido que os blueprints
-# ja usavam (a troca por `panel.X` e o que faz o `monkeypatch` dos testes valer).
+# Columns the form fills, in the same order as the INSERT/UPDATE below. Keeping the
+# list in a single place avoids the classic "I added the column and forgot one of the SQLs".
+# The column names live in the repository; here there is only the alias the blueprints
+# already used (swapping through `panel.X` is what makes the tests' `monkeypatch` work).
 SERVER_FIELDS = servers_repo.EDITABLE_FIELDS
 
 
-# O cursor e uma chave opaca do journald ("s=...;i=...;b=..."): validada aqui porque
-# volta do navegador e entra num comando remoto.
+# The cursor is an opaque journald key ("s=...;i=...;b=..."): validated here because it
+# comes back from the browser and goes into a remote command.
 CURSOR_RE = re.compile(r"^[A-Za-z0-9=;:._-]{1,400}$")
 LOG_FOLLOW_MAX = 500
 
@@ -2148,18 +2177,19 @@ def _log_lines_arg(raw: str | None, default: int = 80) -> int:
 
 
 def read_logs(server: ServerRow, lines: int, cursor: str = "") -> tuple[str, str]:
-    """Le o log do servico. Com cursor, traz so o que entrou depois dele.
+    """Read the service log. With a cursor, bring only what came in after it.
 
-    Devolve (texto, novo_cursor). O cursor vem vazio quando o journalctl do container
-    nao souber emiti-lo — nesse caso a tela recarrega o bloco inteiro a cada volta.
+    Return (text, new_cursor). The cursor comes empty when the container's journalctl
+    cannot emit it; in that case the screen reloads the whole block on every round.
     """
     if cursor and CURSOR_RE.match(cursor):
-        cmd = q(
+        cmd = remote_cmd.unprivileged(
             "journalctl", "-u", server["service"], "--no-pager", "--show-cursor",
             "--after-cursor", cursor, "-n", str(LOG_FOLLOW_MAX),
         )
     else:
-        cmd = q(
+        # journalctl reads through the systemd-journal group: the same command in both modes.
+        cmd = remote_cmd.unprivileged(
             "journalctl", "-u", server["service"], "--no-pager", "--show-cursor",
             "-n", str(lines),
         )
@@ -2176,7 +2206,7 @@ def read_logs(server: ServerRow, lines: int, cursor: str = "") -> tuple[str, str
 # ------------------------------------------------------------------ console
 
 
-# ------------------------------------------------------- terminal interativo
+# ------------------------------------------------------- interactive terminal
 
 TERM_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
@@ -2196,17 +2226,17 @@ _reaper_started = False
 
 
 def _reap_terms() -> None:
-    """Mata sessoes ociosas — cada uma segura um processo ssh e um PTY."""
+    """Kill idle sessions: each one holds an ssh process and a PTY."""
     while True:
         time.sleep(30)
         now = time.time()
-        # Copia sob o lock: o laco remove sessoes do dicionario, e uma aba abrindo
-        # outra sessao ao mesmo tempo mudaria o dicionario no meio da iteracao.
+        # Copy under the lock: the loop removes sessions from the dictionary, and a tab opening
+        # another session at the same time would change the dictionary mid-iteration.
         with _terms_lock:
             open_ones = tuple(_terms.values())
         for term in open_ones:
             idle = now - term.last_seen
-            # Sessao encerrada fica um pouco no ar para o navegador ler a saida final.
+            # A finished session stays up for a while so the browser can read the final output.
             if idle > TERM_IDLE_TIMEOUT or (not term.alive and idle > 60):
                 term.close()
                 with _terms_lock:
@@ -2214,12 +2244,12 @@ def _reap_terms() -> None:
 
 
 def _ensure_reaper() -> None:
-    """Liga o coletor de sessoes ociosas na primeira vez que alguem abre um terminal.
+    """Start the idle session reaper the first time someone opens a terminal.
 
-    A trava de "so uma vez" mora aqui, e nao no blueprint, porque `_reaper_started` e
-    `_terms_lock` sao do mesmo estado: um `global` do outro lado do pacote leria a copia
-    do modulo do blueprint e ligaria uma thread nova a cada aba aberta. Quem chama ja
-    esta com `_terms_lock` na mao.
+    The "only once" lock lives here, not in the blueprint, because `_reaper_started` and
+    `_terms_lock` are the same state: a `global` on the other side of the package would read the copy
+    in the blueprint module and start a new thread for every tab opened. The caller already
+    holds `_terms_lock`.
     """
     global _reaper_started
     if not _reaper_started:
@@ -2232,7 +2262,7 @@ def _term_of_user(tid: str) -> TermSession:
         abort(404)
     with _terms_lock:
         term = _terms.get(tid)
-    # Sessao de outro usuario e tratada como inexistente.
+    # Another user's session is treated as nonexistent.
     if not term or term.uid != session.get("uid"):
         abort(404, i18n.Message("error.terminal_session_gone"))
     term.last_seen = time.time()
@@ -2246,7 +2276,7 @@ def _terminal_guard():
         abort(503, i18n.Message("error.terminal_no_pty"))
 
 
-# ------------------------------------------------- editor de configuracoes
+# ------------------------------------------------- configuration editor
 
 
 def clean_path(raw: str) -> str:
@@ -2257,18 +2287,18 @@ def parent_of(path: str) -> str:
     return files_rt.parent_of(path)
 
 
-# Quando a barra do medidor muda de cor. Os MESMOS numeros estao no `barLevel` do
-# `static/js/core/format.js`: a tela desenha a barra no servidor e o JS a atualiza ao vivo,
-# entao divergir aqui faria a cor mudar no recarregamento e nao no medidor que se move —
-# sem erro em lugar nenhum. Nao ha passo de build para compartilhar a constante, e por isso
-# ha teste comparando os dois arquivos (`test_frontend_contract.py`).
+# When the gauge bar changes color. The SAME numbers are in `barLevel` in
+# `static/js/core/format.js`: the screen draws the bar on the server and the JS updates it live,
+# so diverging here would make the color change on reload and not on the moving gauge,
+# with no error anywhere. There is no build step to share the constant, which is why
+# there is a test comparing the two files (`test_frontend_contract.py`).
 GAUGE_HOT = 92
 GAUGE_WARN = 80
 
 
 @app.template_filter("level")
 def _bar_level(pct: float | None) -> str:
-    """Classe da barra: perto do teto ela muda de cor (mesma regra do format.js)."""
+    """Bar class: near the ceiling it changes color (same rule as format.js)."""
     if pct is None:
         return ""
     if pct >= GAUGE_HOT:
@@ -2290,13 +2320,13 @@ def _human_uptime(seconds: float | None) -> str:
         return f"{hours}h {minutes}min"
     if minutes:
         return f"{minutes}min"
-    # Jogador que acabou de entrar: "0min" nao diz nada.
+    # A player who just joined: "0min" says nothing.
     return f"{total}s"
 
 
 @app.template_filter("filesize")
 def _human_size(num: int | None) -> str:
-    """1536 -> '1.5 KB'. Um save de jogo em bytes crus nao diz nada para ninguem."""
+    """1536 -> '1.5 KB'. A game save in raw bytes says nothing to anyone."""
     value = float(num or 0)
     for unit in ("B", "KB", "MB", "GB"):
         if value < 1024 or unit == "GB":
@@ -2333,8 +2363,8 @@ def read_file(server: ServerRow, path: str) -> dict:
 
 RESTORE_SCRIPT = backups_rt.RESTORE_SCRIPT
 
-# $1 = destino final. O conteudo vem CRU pela entrada padrao (sem base64: o arquivo pode
-# ter gigabytes, e codificar inflaria 33% a toa).
+# $1 = final destination. The content comes RAW through standard input (no base64: the file may
+# be gigabytes, and encoding would inflate it 33% for nothing).
 UPLOAD_SCRIPT = files_rt.UPLOAD_SCRIPT
 
 
@@ -2355,7 +2385,7 @@ def delete_file(server: ServerRow, path: str) -> str:
 
 
 def _attachment_header(name: str) -> str:
-    """Content-Disposition que aguenta acento e aspas no nome do arquivo."""
+    """Content-Disposition that copes with accents and quotes in the file name."""
     ascii_name = re.sub(r'[^A-Za-z0-9._-]', "_", name) or "arquivo"
     quoted = urllib.parse.quote(name, safe="")
     return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"
@@ -2370,10 +2400,10 @@ def stream_remote_file(server: ServerRow, path: str):
 
 # ------------------------------------------------------------------ backup
 #
-# O backup nasce DENTRO do container do jogo (um tar.gz das pastas do save) e e puxado
-# para o painel no mesmo job. O painel dispara, lista, baixa e restaura — e a restauracao
-# para o servidor, extrai e religa, porque o jogo com o mundo trocado embaixo dele grava
-# por cima do que acabou de voltar.
+# The backup is born INSIDE the game container (a tar.gz of the save folders) and is pulled
+# to the panel in the same job. The panel triggers, lists, downloads and restores, and the restore
+# stops the server, extracts and starts it again, because a game with the world swapped underneath it writes
+# over what was just brought back.
 
 
 def backup_paths(server: ServerRow) -> list[str]:
@@ -2385,7 +2415,7 @@ def backup_prefix(server: ServerRow) -> str:
 
 
 def _backup_or_400(name: str) -> str:
-    """Confere o nome que voltou da tela antes de ele entrar num comando remoto."""
+    """Check the name that came back from the screen before it goes into a remote command."""
     try:
         return backups_rt.validate_backup_name(name)
     except ValueError as exc:
@@ -2397,11 +2427,15 @@ def list_backups(server: ServerRow) -> list[dict]:
 
 
 def backup_command(server: ServerRow | dict, paths: list[str], suffix: str = "") -> str:
-    # A copia de seguranca do restore (a unica com sufixo) NAO aplica retencao: com as
-    # copias no limite, ela apagaria a mais antiga — que pode ser justo a que a pessoa
-    # escolheu restaurar. O proximo backup comum limpa o excedente.
+    # The restore's safety copy (the only one with a suffix) does NOT apply retention: with the
+    # copies at the limit, it would delete the oldest one, which may be exactly the one the person
+    # chose to restore. The next regular backup cleans up the excess.
     keep = 0 if suffix else BACKUP_KEEP
     return backups_rt.backup_command(server, BACKUP_DIR, keep, paths, suffix)
+
+
+def restore_command(server: ServerRow | dict, paths: list[str], name: str) -> str:
+    return backups_rt.restore_command(server, BACKUP_DIR, name, paths)
 
 
 def delete_backup(server: ServerRow, name: str) -> str:
@@ -2421,16 +2455,16 @@ def delete_panel_backup(server: ServerRow | dict, name: str) -> int:
 
 
 def _pull_to_panel(target: dict, remote_path: str, size: int | None) -> str:
-    """Traz um backup do container para o disco do painel. Texto vai para a saida do job."""
+    """Bring a backup from the container to the panel's disk. Text goes to the job output."""
     name = backups_rt.validate_backup_name(remote_path.rsplit("/", 1)[-1])
     try:
         written, removed = backup_archive.store(
             PANEL_BACKUP_DIR, backup_prefix(target), name,
             stream_remote_file(target, remote_path), size, PANEL_BACKUP_KEEP)
     except OSError as exc:
-        # O backup do container continua la; o que falhou foi so a segunda copia. E erro
-        # mesmo assim: quem conta com o painel para sobreviver a remocao do CT precisa
-        # saber agora, e nao no dia em que o container ja nao existir.
+        # The container backup is still there; what failed was only the second copy. It is an error
+        # anyway: whoever counts on the panel to survive the CT removal needs to
+        # know now, not on the day the container no longer exists.
         raise RemoteError(f"a copia no container saiu, mas a do painel falhou: {exc}") from exc
     lines = [f"copia guardada no painel: {name} ({written} bytes)"]
     lines += [f"retencao no painel: apagado {old}" for old in removed]
@@ -2438,7 +2472,7 @@ def _pull_to_panel(target: dict, remote_path: str, size: int | None) -> str:
 
 
 def pull_new_backup_step(target: dict, output: str) -> str:
-    """Passo de job: puxa para o painel o backup que o passo anterior acabou de criar."""
+    """Job step: pull to the panel the backup the previous step just created."""
     try:
         found = backup_archive.created_file(output, BACKUP_DIR)
     except ValueError as exc:
@@ -2449,7 +2483,7 @@ def pull_new_backup_step(target: dict, output: str) -> str:
 
 
 def pull_existing_backup_step(name: str) -> JobStep:
-    """Passo de job: puxa para o painel um backup que ja estava no container."""
+    """Job step: pull to the panel a backup that was already in the container."""
     def step(target: dict, _output: str) -> str:
         path = f"{BACKUP_DIR.rstrip('/')}/{name}"
         return _pull_to_panel(target, path, int(stat_file(target, path)["size"]))
@@ -2457,37 +2491,37 @@ def pull_existing_backup_step(name: str) -> JobStep:
 
 
 def push_panel_backup_step(name: str) -> JobStep:
-    """Passo de job: devolve ao container uma copia guardada no painel."""
+    """Job step: return to the container a copy stored on the panel."""
     def step(target: dict, _output: str) -> str:
         try:
             path = panel_backup_path(target, name)
         except FileNotFoundError as exc:
             raise RemoteError(f"a copia {name} nao esta mais no painel") from exc
         with open(path, "rb") as source:
-            remote = q("bash", "-lc", backups_rt.BACKUP_RECEIVE_SCRIPT, "gp", BACKUP_DIR, name)
+            remote = backups_rt.receive_command(target, BACKUP_DIR, name)
             return ssh_stream_in(target, remote, source, BACKUP_TIMEOUT) + "\n"
     return step
 
 
 def backup_steps(server: ServerRow | dict, paths: list[str], suffix: str = "") -> list[JobStep]:
-    """Backup completo: cria no container e guarda a segunda copia no painel."""
+    """Full backup: create it in the container and store the second copy on the panel."""
     return [backup_command(server, paths, suffix), pull_new_backup_step]
 
 
-# ------------------------------------------------- edicao rapida de config
+# ------------------------------------------------- quick config editing
 #
-# Mesmo motor de leitura/gravacao da tela "Arquivos", so que o arquivo chega na tela
-# como formulario: um campo por chave. Quem sabe o que quer mudar (nome do servidor,
-# senha de admin, numero de jogadores) nao precisa achar o arquivo nem contar virgula.
+# Same read/write engine as the "Files" screen, except the file reaches the screen
+# as a form: one field per key. Whoever knows what they want to change (server name,
+# admin password, number of players) does not need to find the file or count commas.
 
 
 def config_paths(server: ServerRow) -> list[str]:
-    """Arquivos de configuracao registrados no cadastro do servidor."""
+    """Configuration files registered in the server's record."""
     return [line.strip() for line in (server["config_files"] or "").splitlines() if line.strip()]
 
 
 def load_config_doc(server: ServerRow, path: str) -> tuple[gameconf.ConfigFile, dict]:
-    """Le o arquivo no container e o interpreta campo a campo."""
+    """Read the file in the container and interpret it field by field."""
     info = read_file(server, path)
     if info["binary"]:
         raise gameconf.ConfigError(
@@ -2499,7 +2533,7 @@ def load_config_doc(server: ServerRow, path: str) -> tuple[gameconf.ConfigFile, 
             f" ({FILE_MAX_BYTES // 1024} KB) — arquivo de configuracao nao costuma"
             " chegar a esse tamanho, confira se e o arquivo certo"
         )
-    # O parser trabalha so com \n; se o arquivo usava CRLF ele volta assim na gravacao.
+    # The parser works with \n only; if the file used CRLF it goes back that way on write.
     doc = gameconf.load(info["name"], info["text"].replace("\r\n", "\n"))
     if len(doc.settings) > CONFIG_SETTINGS_MAX:
         raise gameconf.ConfigError(
@@ -2516,7 +2550,7 @@ def _save_config_files(sid: int, paths: list[str]) -> None:
 
 
 def _target_config(arquivos: list[str], errors: list[str]) -> str:
-    """Qual arquivo a tela Config abre: o pedido na URL, ou o primeiro registrado."""
+    """Which file the Config screen opens: the one requested in the URL, or the first registered."""
     request_body = (request.args.get("file") or "").strip()
     if not request_body:
         return arquivos[0] if arquivos else ""
@@ -2525,9 +2559,9 @@ def _target_config(arquivos: list[str], errors: list[str]) -> str:
     except ValueError as exc:
         errors.append(str(exc))
         return arquivos[0] if arquivos else ""
-    # O caminho vem da URL: sem esta trava a tela Config seria um leitor de arquivo
-    # qualquer do container (como root), justo o que o operador nao tem permissao de
-    # abrir. Para ele valem so os arquivos que um admin ja registrou no servidor.
+    # The path comes from the URL: without this guard the Config screen would be a reader of any
+    # file in the container (as root), exactly what the operator is not allowed to
+    # open. For them only the files an admin already registered on the server count.
     if target not in arquivos and not is_admin():
         abort(403, i18n.Message("error.operator_reads_registered_only"))
     return target
@@ -2535,19 +2569,19 @@ def _target_config(arquivos: list[str], errors: list[str]) -> str:
 
 def _suggestion_config(server: ServerRow, arquivos: list[str], alvo: str,
                       errors: list[str]) -> list | None:
-    """Candidatos a arquivo de configuracao no container; None = nem vale procurar.
+    """Configuration file candidates in the container; None = not even worth searching.
 
-    Sem nenhum arquivo registrado a tela ja chega com a lista pronta: e o caminho de
-    "informar qual e o arquivo" sem sair navegando por pastas. Procurar e listar pasta
-    do container, entao so admin faz.
+    With no file registered the screen already arrives with the list ready: it is the way of
+    "telling which file it is" without browsing through folders. Searching lists folders
+    of the container, so only an admin does it.
     """
     if not is_admin():
         return None
     if request.args.get("discover") != "1" and (arquivos or alvo):
         return None
-    # `pasta` deixa procurar noutro lugar que nao a pasta de config do cadastro. E o
-    # que a tela de Arquivos oferecia com um botao proprio; agora e um parametro
-    # desta busca, que e a unica que existe.
+    # `folder` allows searching somewhere other than the registered config folder. It is
+    # what the Files screen offered with a button of its own; now it is a parameter
+    # of this search, which is the only one that exists.
     fallback = server["config_path"] or FILE_DEFAULT_PATH
     try:
         root = clean_path(request.args.get("folder", "") or fallback)
@@ -2563,19 +2597,19 @@ def _suggestion_config(server: ServerRow, arquivos: list[str], alvo: str,
 
 @app.template_filter("ident")
 def _ident(value: str) -> str:
-    """Identificador de secao/chave dentro do formulario.
+    """Section/key identifier inside the form.
 
-    Os ids do gameconf usam \\x1f para separar niveis; percent-encoded eles atravessam
-    o HTML sem virar caractere de controle solto no meio de um atributo.
+    gameconf ids use \\x1f to separate levels; percent-encoded they go through
+    the HTML without becoming a loose control character in the middle of an attribute.
     """
     return urllib.parse.quote(value or "", safe="")
 
 
 def enrich_settings(doc: gameconf.ConfigFile, file_name: str) -> None:
-    """Anexa a descricao do catalogo a cada campo lido do arquivo.
+    """Attach the catalog description to each field read from the file.
 
-    Campo sem entrada no catalogo fica exatamente como antes (texto livre): o objetivo
-    e melhorar o que da para melhorar, nunca esconder chave que o jogo passou a usar.
+    A field with no catalog entry stays exactly as before (free text): the goal
+    is to improve what can be improved, never to hide a key the game started using.
     """
     for section in doc.sections:
         for s in section.settings:
@@ -2585,12 +2619,12 @@ def enrich_settings(doc: gameconf.ConfigFile, file_name: str) -> None:
 
 
 def _edits_from_form(form, file_name: str = "") -> tuple[list[gameconf.Edit], list[str]]:
-    """Monta a lista de alteracoes: so o que o usuario realmente mexeu.
+    """Build the list of changes: only what the user actually touched.
 
-    Devolve tambem os erros de validacao. O valor chega na unidade da TELA (minutos,
-    multiplicador) e e convertido para a unidade do ARQUIVO (nanossegundos) aqui - por
-    isso a conferencia acontece antes da conversao, para a mensagem falar a lingua de
-    quem digitou.
+    Also return the validation errors. The value arrives in the SCREEN unit (minutes,
+    multiplier) and is converted to the FILE unit (nanoseconds) here - that is
+    why the check happens before the conversion, so the message speaks the language of
+    whoever typed it.
     """
     total = form.get("n", "0")
     total = int(total) if total.isdigit() else 0
@@ -2604,12 +2638,12 @@ def _edits_from_form(form, file_name: str = "") -> tuple[list[gameconf.Edit], li
 
 
 def _edit_from_row(form, i: int, file_name: str, errors: list[str]) -> gameconf.Edit | None:
-    """Uma linha do formulario vira uma alteracao — ou nada.
+    """One form row becomes a change, or nothing.
 
-    Nada acontece em tres casos: linha de "adicionar configuracao" deixada em branco,
-    campo que ninguem tocou (comparado com o `orig.N` escondido) e valor que o catalogo
-    recusou. Os tres estao aqui juntos porque sao a mesma pergunta: "esta linha tem algo
-    para gravar?".
+    Nothing happens in three cases: an "add configuration" row left blank,
+    a field nobody touched (compared with the hidden `orig.N`) and a value the catalog
+    rejected. The three are together here because they are the same question: "does this row have anything
+    to write?".
     """
     key = (form.get(f"key.{i}", "") or "").strip()
     if not key:
@@ -2618,7 +2652,7 @@ def _edit_from_row(form, i: int, file_name: str, errors: list[str]) -> gameconf.
     value = (form.get(f"val.{i}", "") or "").replace("\r", "")
     ident = urllib.parse.unquote((form.get(f"id.{i}", "") or "").strip())
     if ident and value == (form.get(f"orig.{i}", "") or "").replace("\r", ""):
-        return None  # campo intocado: nao reescreve a linha
+        return None  # untouched field: does not rewrite the line
 
     spec = game_fields.describe(file_name, key) if file_name else None
     if spec:
@@ -2641,24 +2675,24 @@ def _edit_from_row(form, i: int, file_name: str, errors: list[str]) -> gameconf.
 
 # ------------------------------------------------------------------- broker
 #
-# Criar instancia de jogo e abrir porta no firewall. Quem tem as credenciais de Proxmox e
-# OPNsense e o broker (broker/); aqui o painel so PEDE, acompanha e cadastra o resultado.
+# Create a game instance and open a port on the firewall. The broker is what holds the Proxmox and
+# OPNsense credentials (gamebroker/); here the panel only ASKS, follows and registers the result.
 
-# Formulario de jogo novo em gamepanel.services.broker_service; acompanhamento da
-# operacao em gamepanel.tasks.broker_jobs.
+# New-game form in gamepanel.services.broker_service; following the
+# operation in gamepanel.tasks.broker_jobs.
 BROKER_RECIPES = broker_service.BROKER_RECIPES
 
 
 def broker_required(view):
-    """Rota que so existe quando o deploy ligou o broker. Empilha DEPOIS de
-    `admin_required`: o operador leva o 403 de administrador, e so o admin descobre que o
-    recurso esta desligado.
+    """Route that only exists when the deploy turned the broker on. Stacks AFTER
+    `admin_required`: the operator gets the administrator 403, and only the admin finds out the
+    feature is off.
 
-    Exige tambem o segundo fator DA PESSOA, sempre — independente de `GAMEPANEL_REQUIRE_2FA`
-    (que e sobre o painel inteiro). O broker cria e apaga container no Proxmox e abre porta
-    no OPNsense; se a sessao de um admin for roubada (XSS, proxy malicioso, celular
-    destravado), o 2FA e a unica coisa que ainda separa "ver a tela" de "destruir
-    infraestrutura". Sem ele o pedido nem chega a `broker_client`."""
+    It also requires the PERSON's second factor, always, regardless of `GAMEPANEL_REQUIRE_2FA`
+    (which is about the whole panel). The broker creates and deletes containers on Proxmox and opens ports
+    on OPNsense; if an admin's session is stolen (XSS, malicious proxy, unlocked
+    phone), 2FA is the only thing that still separates "seeing the screen" from "destroying
+    infrastructure". Without it the request never even reaches `broker_client`."""
 
     @wraps(view)
     def wrapper(*args, **kwargs):
@@ -2677,13 +2711,13 @@ def broker_required(view):
 
 
 def _fire(task) -> None:
-    """Roda `tarefa` numa thread. Existe para os testes trocarem por uma execucao direta."""
+    """Run `task` in a thread. Exists so the tests can swap it for a direct execution."""
     threading.Thread(target=task, daemon=True).start()
 
 
 def _update_job(job_id: int, **fields) -> None:
-    # Conexao propria: quem chama esta vivo numa thread fora do contexto do request. Os
-    # NOMES das colunas vem dos chamadores (fixos); so os valores viajam como parametro.
+    # Its own connection: the caller lives in a thread outside the request context. The
+    # column NAMES come from the callers (fixed); only the values travel as parameters.
     conn = _connect()
     try:
         with conn:
@@ -2702,8 +2736,8 @@ def _finish_job(job_id: int, status: str, output: str, exit_code: int | None = N
 
 
 def _broker_job_deps() -> broker_jobs.BrokerJobDeps:
-    """Montado na chamada: `BROKER_POLL` e `BROKER_FAILURES_MAX` sao trocados pelos testes
-    antes de acompanhar a operacao, e um bundle congelado no import nao veria a troca."""
+    """Built at call time: `BROKER_POLL` and `BROKER_FAILURES_MAX` are swapped by the tests
+    before following the operation, and a bundle frozen at import would not see the swap."""
     return broker_jobs.BrokerJobDeps(
         update_job=_update_job, close_job=_finish_job, ensure_server=ensure_server,
         deploy_server=DeployServer, connect=_connect, forget_host_key=forget_host_key,
@@ -2729,9 +2763,9 @@ def start_broker_job(action: str, username: str, op_id: str, command: str) -> in
 
 
 def resume_broker_jobs() -> int:
-    """Depois de um restart do painel, volta a acompanhar as operacoes que ainda estavam
-    rodando no broker. Sem isto o job ficaria 'running' para sempre, e o servidor recem
-    criado nunca seria cadastrado."""
+    """After a panel restart, resume following the operations that were still
+    running on the broker. Without this the job would stay 'running' forever, and the newly
+    created server would never be registered."""
     if not ALLOW_BROKER:
         return 0
     conn = _connect()
@@ -2746,7 +2780,7 @@ def resume_broker_jobs() -> int:
 
 def _log_broker_action(action: str, username: str, command: str, output: str,
                              status: str = "ok") -> int:
-    """Deixa no historico uma acao curta do broker (desativar, remover, jogo novo)."""
+    """Leave a short broker action in the history (deactivate, remove, new game)."""
     conn = db()
     with conn:
         return jobs_repo.record_broker(
@@ -2760,7 +2794,7 @@ def _actor() -> str:
 _game_from_form = broker_service.game_from_form
 
 
-# ------------------------------------------------------------- agendamentos
+# ------------------------------------------------------------- schedules
 
 
 def _bounded_int(value, minimum: int, maximum: int, default: int) -> int:
@@ -2806,12 +2840,12 @@ def _schedule_or_404(aid: int) -> sqlite3.Row:
 
 
 def _next_occurrence(sched, now: datetime) -> datetime:
-    """Quando esta tarefa roda da proxima vez.
+    """When this task runs next.
 
-    'intervalo' conta a partir da ultima execucao; diario e semanal somam um passo a
-    ocorrencia anterior. `ocorrencia_anterior` so devolve None para 'intervalo', que
-    nunca chega na segunda metade - mas a checagem fica explicita, porque a alternativa
-    e um `TypeError` numa tela que so quebra para quem tem agendamento cadastrado.
+    'intervalo' counts from the last run; daily and weekly add one step to the
+    previous occurrence. `previous_occurrence` only returns None for 'intervalo', which
+    never reaches the second half - but the check stays explicit, because the alternative
+    is a `TypeError` on a screen that only breaks for whoever has a schedule registered.
     """
     if sched["kind"] == "intervalo":
         last_one = _parse_dt(sched["last_run"]) or now
@@ -2821,16 +2855,16 @@ def _next_occurrence(sched, now: datetime) -> datetime:
     return previous + timedelta(days=7 if sched["kind"] == "semanal" else 1)
 
 
-# ---------------------------------------------------------- graficos de uso
+# ---------------------------------------------------------- usage charts
 #
-# As amostras viram COORDENADAS aqui, no servidor: a tela recebe um SVG ja pronto e
-# continua legivel sem JavaScript. O JS por cima so acrescenta a mira e o balaozinho —
-# nenhum valor depende dele (a ponta de cada linha tem rotulo, e ha a tabela embaixo).
+# The samples become COORDINATES here, on the server: the screen receives a ready SVG and
+# stays readable without JavaScript. The JS on top only adds the crosshair and the tooltip;
+# no value depends on it (the end of each line has a label, and there is the table below).
 
-# Duas amostras separadas por mais que isto viram um BURACO na linha, nao um traco reto
-# atravessando: servidor que passou duas horas fora do ar nao "andou em linha reta".
-# Desenho dos graficos em gamepanel.services.chart_service; os nomes seguem aqui porque
-# a rota, o template e os testes chamam por eles.
+# Two samples further apart than this become a GAP in the line, not a straight stroke
+# across: a server that was down for two hours did not "move in a straight line".
+# Chart drawing in gamepanel.services.chart_service; the names stay here because
+# the route, the template and the tests call them.
 CHART_TICKS = chart_service.CHART_TICKS
 CHART_RANGES = chart_service.CHART_RANGES
 CHART_CPU = chart_service.CHART_CPU
@@ -2839,23 +2873,23 @@ _clean_ceiling = chart_service.clean_ceiling
 
 
 def build_chart(amostras, series, teto: float, start, fim, time_format: str) -> dict:
-    # `SAMPLE_EVERY` entra aqui porque e configuracao do painel: e ele que diz a partir
-    # de que buraco entre duas amostras a linha do grafico deve ser cortada.
+    # `SAMPLE_EVERY` comes in here because it is panel configuration: it is what says from
+    # which gap between two samples the chart line should be cut.
     return chart_service.build_chart(
         amostras, series, teto, start, fim, time_format, SAMPLE_EVERY)
 
 
-# --------------------------------------------------------------- historico
+# --------------------------------------------------------------- history
 
 
-# ------------------------------------------------------------- acesso / conta
+# ------------------------------------------------------------- access / account
 
 
 def _two_factor_state() -> dict:
     row = users_repo.two_factor_state(db(), session["uid"])
-    # Sessao de um usuario que foi APAGADO enquanto ela estava aberta. Dizer "desligado"
-    # e o certo: nao ha o que desligar, e o `login_required` manda a pessoa para o login
-    # na proxima volta. Antes daqui a linha estourava com TypeError.
+    # Session of a user who was DELETED while it was open. Saying "off"
+    # is right: there is nothing to turn off, and `login_required` sends the person to the login
+    # on the next round. Before this the line blew up with TypeError.
     if row is None:
         return {"ativo": False, "codigos_restantes": 0}
     try:
@@ -2866,7 +2900,7 @@ def _two_factor_state() -> dict:
 
 
 def _store_second_factor(uid: int, secret: str, step: int) -> list[str]:
-    """Liga o 2FA e devolve os codigos de recuperacao EM TEXTO, a unica vez em que existem."""
+    """Enable 2FA and return the recovery codes IN PLAIN TEXT, the only time they exist."""
     codes = totp.new_recovery_codes()
     conn = db()
     with conn:
@@ -2877,11 +2911,11 @@ def _store_second_factor(uid: int, secret: str, step: int) -> list[str]:
 
 
 def _password_and_code_ok(uid: int) -> tuple[sqlite3.Row | None, str]:
-    """Para desligar o 2FA ou pedir codigos novos: a senha E um codigo. Quem esta logado ja
-    provou os dois no login, mas uma sessao esquecida aberta nao pode desligar a protecao."""
+    """To turn 2FA off or ask for new codes: the password AND a code. Whoever is signed in already
+    proved both at login, but a session left open must not be able to turn off the protection."""
     row = users_repo.by_id(db(), uid)
     if row is None:
-        # Mesma sessao orfa do `_two_factor_state`: sem usuario nao ha senha a conferir.
+        # Same orphan session as in `_two_factor_state`: without a user there is no password to check.
         return None, "Senha incorreta."
     key = f"2fa|{row['username'].lower()}"
     if totp_lockout.remaining(key):
@@ -2902,15 +2936,15 @@ def _delete_second_factor(uid: int) -> None:
         users_repo.disable_two_factor(conn, uid)
 
 
-# ------------------------------------------------------------------ alertas
+# ------------------------------------------------------------------ alerts
 
 
 def alerts_without_baseline(conn: sqlite3.Connection) -> dict:
-    """Eventos ligados que nao tem em quais servers olhar.
+    """Enabled events that have no servers to look at.
 
-    Alerta ligado e mudo e pior do que alerta desligado: a pessoa marca 'jogo nao
-    responde', nenhum servidor tem consulta configurada, e o silencio do canal passa a
-    ser lido como "esta tudo bem".
+    An alert that is on and silent is worse than an alert that is off: the person checks 'game not
+    answering', no server has a query configured, and the channel's silence comes to
+    be read as "everything is fine".
     """
     bound = webhook_config(conn)["events"]
     if not bound & set(ALERT_PRECISA_CONFIG):
@@ -2929,8 +2963,8 @@ def alerts_without_baseline(conn: sqlite3.Connection) -> dict:
     return missing_ones
 
 
-# Os limites em porcentagem da tela de Alertas: campo do formulario, chave no banco e
-# como o aviso de recusa chama a coisa.
+# The percentage limits of the Alerts screen: form field, database key and
+# how the rejection notice names the thing.
 ALERT_LIMITS = (
     ("disk_pct", "webhook_disk_pct", "disco cheio"),
     ("mem_pct", "webhook_mem_pct", "memoria cheia"),
@@ -2939,16 +2973,16 @@ ALERT_LIMITS = (
 
 
 def _reset_baseline() -> None:
-    """A memoria do monitor fica velha quando a configuracao muda.
+    """The monitor's memory goes stale when the configuration changes.
 
-    Zerando, a proxima volta so ANOTA o estado atual em vez de disparar um alerta sobre
-    o que ja estava daquele jeito antes da mudanca.
+    Resetting it, the next round only RECORDS the current state instead of firing an alert about
+    what was already like that before the change.
     """
     _monitor_state.clear()
 
 
 def _read_webhook_form() -> tuple:
-    """Valida o formulario de um destino. Devolve (dados, erro)."""
+    """Validate a destination's form. Return (data, error)."""
     name = (request.form.get("name", "") or "").strip()[:60]
     url = (request.form.get("url", "") or "").strip()[:400]
     events = [e for e in request.form.getlist("events") if e in ALERT_EVENTS]
@@ -2958,14 +2992,14 @@ def _read_webhook_form() -> tuple:
     return {"name": name, "url": url, "events": ",".join(events), "enabled": enabled}, ""
 
 
-# ------------------------------------------------------------------ usuarios
+# ------------------------------------------------------------------ users
 
 
 validate_password = passwords.validate_password
 
 
 def count_admins(excluding: int = 0) -> int:
-    """Quantos administradores sobrariam sem o usuario `excluding`."""
+    """How many administrators would remain without the user `excluding`."""
     return users_repo.count_admins_besides(db(), ROLE_ADMIN, excluding)
 
 
@@ -2978,12 +3012,12 @@ def _user_or_404(uid: int) -> sqlite3.Row:
 
 @app.after_request
 def _security_headers(resp):
-    """O painel da poder de root nos containers: nao pode ser embutido em outra pagina.
+    """The panel gives root power on the containers: it must not be embedded in another page.
 
-    Sem X-Frame-Options um site qualquer poe o painel num iframe invisivel e captura os
-    cliques de quem esta logado (clickjacking) — e os botoes daqui param servidor.
-    O Referrer-Policy impede que o endereco de uma tela do painel saia junto com um
-    clique para fora.
+    Without X-Frame-Options any site can put the panel in an invisible iframe and capture the
+    clicks of whoever is signed in (clickjacking), and the buttons here stop servers.
+    Referrer-Policy keeps the address of a panel screen from leaking along with a
+    click to the outside.
     """
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -2991,23 +3025,23 @@ def _security_headers(resp):
     return resp
 
 
-# ------------------------------------------------- aplicativo instalavel (PWA)
+# ------------------------------------------------- installable app (PWA)
 
-# Pastas cujo conteudo o painel consegue servir sem rede depois de instalado.
+# Folders whose content the panel can serve offline after being installed.
 SHELL_FOLDERS = ("css", "js", "icons")
 
 
 def _shell_files() -> tuple[list[str], str]:
-    """URLs do casco do aplicativo e a marca de versao dele.
+    """URLs of the app shell and its version mark.
 
-    E o que faz um deploy chegar ao celular: marca nova -> arquivo do service worker
-    diferente -> o navegador instala e descarta o cache velho. Sem isso, quem instalou
-    o painel continuaria vendo a tela da semana passada.
+    It is what makes a deploy reach the phone: new mark -> different service worker
+    file -> the browser installs it and discards the old cache. Without this, whoever installed
+    the panel would keep seeing last week's screen.
 
-    Num release empacotado a marca e a VERSAO — ela responde "qual codigo este celular
-    esta servindo?", que o mtime nao responde. Rodando do repositorio nao ha versao para
-    marcar, entao vale o mtime mais recente dos estaticos: e o unico sinal que muda
-    quando se salva um CSS sem empacotar nada.
+    In a packaged release the mark is the VERSION: it answers "which code is this phone
+    serving?", which the mtime does not. Running from the repository there is no version to
+    mark, so the most recent mtime of the static files applies: it is the only signal that changes
+    when one saves a CSS file without packaging anything.
     """
     urls: list[str] = []
     newest = 0
@@ -3024,11 +3058,11 @@ def _shell_files() -> tuple[list[str], str]:
 
 
 def _error_page(exc, code: int):
-    """A descricao do `abort(...)` no idioma de quem esta olhando.
+    """The description of the `abort(...)` in the language of whoever is looking.
 
-    `exc.description` e nao `str(exc)`: o segundo poe "403 Forbidden: " na frente (o
-    template ja mostra o codigo em cima) e colapsa a `i18n.Message` numa `str` comum,
-    que e o idioma do DEPLOY — a tela em ingles mostrava portugues.
+    `exc.description`, not `str(exc)`: the latter prepends "403 Forbidden: " (the
+    template already shows the code above) and collapses the `i18n.Message` into a plain `str`,
+    which is the DEPLOY language: the English screen showed Portuguese.
     """
     return render_template(TPL_ERROR, code=code, message=translate(exc.description)), code
 
@@ -3051,8 +3085,8 @@ def _not_found(_exc):
 
 @app.errorhandler(413)
 def _too_large(_exc):
-    # Os dois tetos sao bem diferentes, e cair no 413 sem saber em qual deles nao ajuda
-    # ninguem: o editor carrega o arquivo inteiro num textarea, o upload nao.
+    # The two caps are very different, and landing on a 413 without knowing which of them does not help
+    # anyone: the editor loads the whole file into a textarea, the upload does not.
     if request.endpoint in BIG_BODY_ENDPOINTS:
         message = translate("error.upload_too_large", limit=_human_size(FILE_UPLOAD_MAX))
     else:
@@ -3069,11 +3103,11 @@ def _unavailable(exc):
 
 
 def ensure_admin_user(username: str, password: str, role: str = "") -> None:
-    """Cria o usuario inicial, ou reseta a senha se ele ja existir.
+    """Create the initial user, or reset the password if it already exists.
 
-    Continua sendo a saida de emergencia quando ninguem consegue entrar: e por aqui
-    que se devolve o papel de admin a alguem sem passar pela tela (`--role admin`).
-    Sem `--role`, um usuario que ja existe mantem o papel que tinha.
+    It is still the emergency exit when nobody can get in: this is how
+    the admin role is given back to someone without going through the screen (`--role admin`).
+    Without `--role`, a user that already exists keeps the role it had.
     """
     if role and role not in ROLES:
         raise SystemExit(f"papel invalido: {role} (use {' ou '.join(ROLES)})")
@@ -3088,8 +3122,8 @@ def ensure_admin_user(username: str, password: str, role: str = "") -> None:
             users_repo.set_password(conn, row["id"], hash_password(password))
             print(f"Senha do usuario '{username}' redefinida.")
         else:
-            # Usuario criado pela linha de comando e admin por padrao: e o do deploy,
-            # que precisa cadastrar servidor e criar os demais na tela.
+            # A user created from the command line is admin by default: it is the deploy one,
+            # which needs to register servers and create the others on the screen.
             papel = role or ROLE_ADMIN
             users_repo.insert(conn, username, hash_password(password), papel, now_iso())
             print(f"Usuario '{username}' criado ({papel}).")
@@ -3097,19 +3131,23 @@ def ensure_admin_user(username: str, password: str, role: str = "") -> None:
 
 
 class DeployServer(NamedTuple):
-    """Os dados de um servidor vindos do deploy, num objeto so.
+    """A server's data coming from the deploy, in a single object.
 
-    Eram quinze parametros soltos. Quinze posicoes e o tipo de assinatura em que um
-    `join_re` vai parar no lugar do `leave_re` e ninguem percebe ate a contagem de
-    jogadores comecar a mentir. Como tupla nomeada, o campo tem nome no ponto de
-    chamada e o objeto viaja inteiro entre as funcoes abaixo.
+    It used to be fifteen loose parameters. Fifteen positions is the kind of signature where a
+    `join_re` ends up in place of the `leave_re` and nobody notices until the player
+    count starts lying. As a named tuple, the field has a name at the call
+    site and the object travels whole between the functions below.
     """
 
     name: str
     host: str
     service: str
     ssh_port: int = 22
-    ssh_user: str = "root"
+    # Empty = the deploy did not say. A NEW server is then registered with the unprivileged
+    # login user (`remote_cmd.HELPER_USER`); an EXISTING one keeps whatever it has - a redeploy
+    # must not flip a legacy (root) server to a user its container may not have yet. A caller
+    # that knows the container (the broker, a deploy that created `gamepanel`) says so explicitly.
+    ssh_user: str = ""
     game_port: str = ""
     notes: str = ""
     config_path: str = ""
@@ -3120,13 +3158,14 @@ class DeployServer(NamedTuple):
     log_path: str = ""
     query_port: int = 0
     player_source: str = ""
-    # Instancia do broker que originou este servidor (0 = cadastro manual/deploy antigo).
+    # The broker instance this server came from (0 = manual registration/old deploy).
     broker_id: int = 0
-    # Vagas, do MAX_PLAYERS do .env do jogo (0 = a fonte de contagem informa, ou ninguem sabe).
+    # Slots, from MAX_PLAYERS in the game's .env (0 = the counting source reports it, or nobody knows).
     max_players: int = 0
 
 
 def _insert_server(conn: sqlite3.Connection, data: DeployServer) -> None:
+    data = data._replace(ssh_user=data.ssh_user or remote_cmd.HELPER_USER)
     servers_repo.deploy_insert(
         conn,
         [getattr(data, c) for c in servers_repo.DEPLOY_FIELDS],
@@ -3135,7 +3174,7 @@ def _insert_server(conn: sqlite3.Connection, data: DeployServer) -> None:
 
 
 def _merge_config_files(stored: str, incoming: str) -> str:
-    """Os arquivos ja cadastrados mais os do deploy, sem repetir e sem perder nenhum."""
+    """The files already registered plus the deploy ones, without repeating or losing any."""
     listing = [p for p in (stored or "").splitlines() if p.strip()]
     for fresh in incoming.splitlines():
         if fresh.strip() and fresh.strip() not in listing:
@@ -3144,18 +3183,18 @@ def _merge_config_files(stored: str, incoming: str) -> str:
 
 
 def _update_server(conn: sqlite3.Connection, current, data: DeployServer) -> None:
-    """Redeploy: o container manda no que e dele, o painel manda no que e escolha.
+    """Redeploy: the container rules over what is its own, the panel rules over what is a choice.
 
-    Nome, servico, portas e caminho de config vem do deploy — sao fatos do container.
-    Ja caminhos de backup, forma de contar jogadores e padroes do log costumam ser
-    afinados na tela, e um redeploy nao pode apaga-los.
+    Name, service, ports and config path come from the deploy: they are facts about the container.
+    Backup paths, the way to count players and log patterns, on the other hand, are usually
+    tuned on the screen, and a redeploy must not erase them.
     """
-    # A ordem SEGUE `servers_repo.DEPLOY_UPDATE_FIELDS`: ali esta a lista de colunas, e
-    # aqui so a decisao de quem vence em cada uma.
+    # The order FOLLOWS `servers_repo.DEPLOY_UPDATE_FIELDS`: the column list is there, and
+    # here only the decision of who wins on each one.
     servers_repo.deploy_update(
         conn,
         [
-            data.name, data.ssh_user, data.service, data.game_port,
+            data.name, data.ssh_user or current["ssh_user"], data.service, data.game_port,
             data.notes or current["notes"],
             data.config_path or current["config_path"],
             _merge_config_files(current["config_files"], data.config_files),
@@ -3172,10 +3211,10 @@ def _update_server(conn: sqlite3.Connection, current, data: DeployServer) -> Non
 
 
 def ensure_server(data: DeployServer) -> bool:
-    """Cadastra (ou atualiza) um servidor sem passar pela tela. Devolve True se criou.
+    """Register (or update) a server without going through the screen. Return True if it created one.
 
-    E por aqui que o deploy registra o container recem-criado no painel — inclusive o
-    arquivo de configuracao do jogo, para a tela "Configuracao" ja abrir pronta.
+    This is how the deploy registers the newly created container in the panel, including the
+    game's configuration file, so the "Configuration" screen opens ready.
     """
     init_db()
     conn = _connect()
@@ -3193,24 +3232,24 @@ def ensure_server(data: DeployServer) -> bool:
 
 init_db()
 
-# Sob o gunicorn este modulo e IMPORTADO — e o momento certo de subir o relogio. Pela
-# linha de comando ele e o __main__ e isto nao roda: um `--register-server` no meio de um
-# deploy nao pode disparar a tarefa agendada de passagem (e o processo morre em seguida,
-# deixando o job pendurado em 'running').
+# Under gunicorn this module is IMPORTED, which is the right moment to start the clock. From the
+# command line it is __main__ and this does not run: a `--register-server` in the middle of a
+# deploy must not fire the scheduled task in passing (and the process dies right after,
+# leaving the job hanging in 'running').
 if __name__ != "__main__":
     start_scheduler()
     resume_broker_jobs()
 
 
-# No fim do arquivo de proposito: cada blueprint faz `from gamepanel import app as
-# panel` e chama `panel.X`, entao ela so pode ser importada depois que `X` existe.
+# At the end of the file on purpose: each blueprint does `from gamepanel import app as
+# panel` and calls `panel.X`, so it can only be imported after `X` exists.
 register_all(app)
 
 
 if __name__ == "__main__":
-    # A linha de comando mora em gamepanel/cli.py; o rodape aqui continua existindo
-    # porque o README e o CLAUDE.md documentam `python3 .../app.py --reset-2fa USUARIO`,
-    # e quem precisa desse comando esta trancado do lado de fora do painel.
+    # The command line lives in gamepanel/cli.py; the bottom here still exists
+    # because the README and CLAUDE.md document `python3 .../app.py --reset-2fa USER`,
+    # and whoever needs that command is locked out of the panel.
     cli.main(cli.CliDeps(
         init_db=init_db, connect=_connect, ensure_admin_user=ensure_admin_user,
         ensure_server=ensure_server, deploy_server=DeployServer,

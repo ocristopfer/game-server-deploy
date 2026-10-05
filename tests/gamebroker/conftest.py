@@ -1,7 +1,7 @@
-"""Cenario compartilhado das suites do broker.
+"""Shared setup for the broker suites.
 
-Tudo aqui e falso: Proxmox, OPNsense, SSH e rede sao os backends de `fakes.py`, e o
-relogio e uma variavel que o teste avanca. Nenhum teste toca a rede de verdade.
+Everything here is fake: Proxmox, OPNsense, SSH and network are the backends from `fakes.py`,
+and the clock is a variable the test advances. No test touches the real network.
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ GAME_PORTS="8001/udp 8002/udp"
 QUERY_PORT=8002
 PORTS_SHIFTABLE=1
 """
-# Usa a mesma porta de query que o alfa: a colisao e entre JOGOS diferentes.
+# Uses the same query port as alfa: the collision is between DIFFERENT games.
 ENV_DELTA = """GAME_KEY=delta
 STEAM_APP_ID=1003
 GAME_PORT=7100
@@ -73,7 +73,7 @@ class Clock:
 
 @pytest.fixture
 def game_data() -> dict:
-    """Um jogo dinamico valido. Cada teste recebe uma copia nova para estragar a vontade."""
+    """A valid dynamic game. Each test gets a fresh copy to break as it likes."""
     return {
         "key": "meujogo", "name": "Meu Jogo", "app_id": 123456,
         "ports": ["7777/udp", "27016/udp"], "game_port": 7777, "query_port": 27016,
@@ -107,8 +107,8 @@ def clock() -> Clock:
 
 @pytest.fixture
 def environment(tmp_path: Path, catalog: Catalog, clock: Clock):
-    """Servico completo com backends falsos e execucao SINCRONA (a criacao termina dentro
-    de `criar`). `ambiente.pendentes` guarda as tarefas quando `adiar` esta ligado."""
+    """Full service with fake backends and SYNCHRONOUS execution (creation finishes inside
+    `criar`). `ambiente.pendentes` holds the tasks when `adiar` is on."""
     db = Db(str(tmp_path / "broker.db"), clock=lambda: clock().isoformat(timespec="seconds"))
     env = SimpleNamespace(
         db=db, catalog=catalog, clock=clock, defer=False, pending=[],
@@ -132,17 +132,17 @@ def environment(tmp_path: Path, catalog: Catalog, clock: Clock):
     return env
 
 
-# --- servidores HTTP falsos + backends reais apontados para eles ----------------------
+# --- fake HTTP servers + real backends pointed at them --------------------------------
 
 @pytest.fixture
 def pve():
-    """Proxmox falso em 127.0.0.1 e o backend REAL `gamebroker.proxmox.Proxmox` falando com ele."""
+    """Fake Proxmox on 127.0.0.1 and the REAL `gamebroker.proxmox.Proxmox` backend talking to it."""
     fake = FakePve()
     server = FakeServer(fake.handle)
     waits: list[float] = []
     config = ConfigProxmox(
-        node="pve", pool="games", storage="vm-pool", bridge="vmbr1", gateway="192.168.2.1",
-        template="vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
+        node="pve", pool="games", storage="local-lvm", bridge="vmbr0", gateway="10.20.1.1",
+        template="local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
         ssh_keys=("ssh-ed25519 AAAAC3Nza-chave-de-teste broker@teste",))
     client = Client(server.url, {"Authorization": f"PVEAPIToken={TOKEN_PVE}"})
     yield SimpleNamespace(fake=fake, server=server, config=config, waits=waits,
@@ -152,7 +152,7 @@ def pve():
 
 @pytest.fixture
 def opn():
-    """OPNsense falso em 127.0.0.1 e o backend REAL `gamebroker.opnsense.Opnsense`."""
+    """Fake OPNsense on 127.0.0.1 and the REAL `gamebroker.opnsense.Opnsense` backend."""
     fake = FakeIngressHttp()
     server = FakeServer(fake.handle)
     basic = base64.b64encode(f"{KEY_OPN}:{SECRET_OPN}".encode()).decode()

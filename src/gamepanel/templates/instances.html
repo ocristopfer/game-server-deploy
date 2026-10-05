@@ -7,8 +7,8 @@
   {{ ui.button(_('nav.catalog'), href=url_for('broker.catalog'), variant='ghost', icon='📚') }}
 {% endcall %}
 
-{# A criacao continua quando a pessoa sai da tela; sem este bloco, o log so era alcancavel
-   pelo redirect logo depois do clique (ou garimpando o historico). #}
+{# Creation continues when the person leaves the screen; without this block, the log was only reachable
+   through the redirect right after the click (or by digging through the history). #}
 {% for job in installing %}
 <div class="card">
   <h2>{{ _('instances.installing') }}</h2>
@@ -23,7 +23,7 @@
 </div>
 {% endfor %}
 
-{# Formulario a esquerda, instancias a direita no desktop; uma coluna no celular. #}
+{# Form on the left, instances on the right on the desktop; a single column on the phone. #}
 <div class="card-grid">
 <div class="card">
   <h2>{{ _('instances.new') }}</h2>
@@ -45,8 +45,8 @@
       <small>{{ _('instances.name_hint') }}</small>
     </label>
     <div class="form-actions">
-      {# Sem confirmacao aqui: o botao leva a tela que mostra CT, IP e portas, e e ela que
-         pergunta. #}
+      {# No confirmation here: the button leads to the screen that shows CT, IP and ports, and that screen is the one that
+         asks. #}
       {{ ui.button(_('instances.create'), variant='primary', block=true) }}
     </div>
   </form>
@@ -59,8 +59,8 @@
 
 <div class="card">
   <div class="table-wrap"><table class="jobs">
-    {# UMA coluna, um bloco por instancia: com estado e acoes em colunas proprias, as ACOES
-       (Desativar, Remover) saiam da tela do celular, atras de uma rolagem lateral. #}
+    {# ONE column, one block per instance: with state and actions in columns of their own, the ACTIONS
+       (Deactivate, Remove) went off the phone screen, behind a horizontal scroll. #}
     <thead><tr><th>{{ _('instances.instance') }}</th></tr></thead>
     <tbody>
       {% for i in instances %}

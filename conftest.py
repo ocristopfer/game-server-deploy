@@ -1,10 +1,10 @@
-"""Bootstrap de import para o pytest.
+"""Import bootstrap for pytest.
 
-Insere src/ no sys.path ANTES de qualquer teste importar `gamepanel`/`gamebroker`,
-sem depender de `uv sync` (instalacao editavel). O container de dev do painel
-(docker/panel/Dockerfile) so tem python3 e python3-pytest do apt - nem pip, nem uv -
-entao esse import precisa resolver so por sys.path, do mesmo jeito nos dois lugares
-(a maquina de dev com `.venv` e o container).
+Inserts src/ into sys.path BEFORE any test imports `gamepanel`/`gamebroker`, without
+depending on `uv sync` (editable install). The panel dev container
+(docker/panel/Dockerfile) only has python3 and python3-pytest from apt - neither pip nor
+uv - so this import has to resolve through sys.path alone, the same way in both places
+(the dev machine with `.venv` and the container).
 """
 from __future__ import annotations
 

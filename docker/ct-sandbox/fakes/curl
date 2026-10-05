@@ -1,5 +1,5 @@
 #!/bin/bash
-# curl de mentira: gera os tarballs que o instalador espera, sem tocar na rede.
+# Fake curl: generates the tarballs the installer expects, without touching the network.
 url=""; out=""
 while [ $# -gt 0 ]; do
   case "$1" in -o) out="$2"; shift ;; -*) ;; *) url="$1" ;; esac

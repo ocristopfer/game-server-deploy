@@ -1,12 +1,12 @@
-"""Migrations do banco do painel: coluna nova e coluna que mudou de nome.
+"""Panel database migrations: a new column and a column that changed name.
 
-Este arquivo existe porque migration e o unico codigo aqui que so roda UMA vez, no
-banco de quem ja tinha o painel instalado — e num banco novo, que e onde os outros
-testes vivem, ela nem e exercitada. O jeito de testa-la e construir o esquema ANTIGO a
-mao, com dado dentro, e mandar o `init_db` passar por cima.
+This file exists because a migration is the only code here that runs just ONCE, on the
+database of someone who already had the panel installed - and on a new database, which is
+where the other tests live, it is not even exercised. The way to test it is to build the
+OLD schema by hand, with data in it, and have `init_db` run over it.
 
-O que se perde quando ela esta errada nao e uma tela: e o historico de alertas e a lista
-de destinos de quem ja usava o painel.
+What is lost when it is wrong is not a screen: it is the alert history and the list of
+destinations of whoever was already using the panel.
 """
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ import pytest
 
 from gamepanel.persistence import schema
 
-# O esquema das duas tabelas ANTES dos nomes em ingles. Escrito por extenso de
-# proposito: copiar do `SCHEMA` de hoje faria o teste concordar consigo mesmo.
+# The schema of both tables BEFORE the English names. Written out in full on purpose:
+# copying from today's `SCHEMA` would make the test agree with itself.
 OLD_SCHEMA = """
 CREATE TABLE webhooks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +43,7 @@ CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 @pytest.fixture
 def old_database(tmp_path):
-    """Um painel como ele estava antes da traducao, com uma linha em cada tabela."""
+    """A panel as it was before the translation, with one row in each table."""
     path = tmp_path / "panel.db"
     con = sqlite3.connect(path)
     con.executescript(OLD_SCHEMA)
@@ -52,8 +52,8 @@ def old_database(tmp_path):
     con.execute("INSERT INTO alert_log (criado_em, evento, titulo, detalhe, destino, status, erro)"
                 " VALUES ('2026-01-01T10:00:00', 'caiu', 'Servidor parou', 'o detalhe',"
                 " 'Canal da equipe', 'enviado', '')")
-    # Sem esta marca o `_migrate_single_webhook` criaria um destino extra e o teste passaria
-    # a falar de outra coisa.
+    # Without this mark `_migrate_single_webhook` would create an extra destination and the
+    # test would end up being about something else.
     con.execute("INSERT INTO settings (key, value) VALUES ('webhooks_migrado', '1')")
     con.commit()
     con.close()
@@ -70,7 +70,7 @@ def _line(path, table: str) -> dict:
 
 
 def test_a_coluna_muda_de_nome_e_o_dado_fica(old_database):
-    """`RENAME COLUMN` preserva o conteudo; recriar a tabela e copiar, nao."""
+    """`RENAME COLUMN` keeps the content; recreating the table and copying does not."""
     schema.init_db(str(old_database), "", "", lambda: "2026-01-02")
 
     hook = _line(old_database, "webhooks")
@@ -88,7 +88,7 @@ def test_a_coluna_muda_de_nome_e_o_dado_fica(old_database):
 
 
 def test_rodar_de_novo_nao_faz_nada(old_database):
-    """O painel chama `init_db` em todo start: a segunda volta nao pode quebrar."""
+    """The panel calls `init_db` on every start: the second pass must not break."""
     schema.init_db(str(old_database), "", "", lambda: "2026-01-02")
     before = _line(old_database, "webhooks")
     schema.init_db(str(old_database), "", "", lambda: "2026-01-03")
@@ -96,7 +96,7 @@ def test_rodar_de_novo_nao_faz_nada(old_database):
 
 
 def test_banco_novo_ja_nasce_com_o_nome_novo(tmp_path):
-    """Instalacao nova nao passa por migration nenhuma: o SCHEMA ja esta certo."""
+    """A fresh install goes through no migration at all: SCHEMA is already right."""
     path = tmp_path / "novo.db"
     schema.init_db(str(path), "", "", lambda: "2026-01-02")
     con = sqlite3.connect(path)
@@ -113,7 +113,7 @@ def test_banco_novo_ja_nasce_com_o_nome_novo(tmp_path):
 
 
 def test_toda_renomeacao_aponta_para_uma_coluna_que_o_schema_tem():
-    """Nome novo com erro de digitacao viraria coluna orfa, e so apareceria em producao."""
+    """A new name with a typo would become an orphan column, and would only show up in production."""
     for table, _old, fresh in schema.RENAMES:
         assert f"  {fresh} " in schema.SCHEMA or f"  {fresh}\n" in schema.SCHEMA, \
             f"{table}.{fresh} nao existe no SCHEMA"

@@ -1,9 +1,9 @@
 <#
-Confere, SO COM LEITURA, se o token do Proxmox e a chave do OPNsense do broker
-funcionam e tem as permissoes esperadas. Nao cria, altera nem apaga nada.
+Checks, READ-ONLY, whether the broker's Proxmox token and OPNsense key
+work and have the expected permissions. Creates, changes and deletes nothing.
 
-Le broker.secrets.env (fora do git) e nunca imprime segredo.
-Uso:  .\check-broker-access.ps1
+Reads broker.secrets.env (outside git) and never prints a secret.
+Usage:  .\check-broker-access.ps1
 #>
 param(
     [string]$EnvFile = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "broker.secrets.env")
@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-# ----- Saida -----
+# ----- Output -----
 $script:Falhas = 0
 function Say([string]$Status, [string]$Text) {
     $colors = @{ OK = "Green"; FALHA = "Red"; AVISO = "Yellow"; INFO = "Gray" }
@@ -30,7 +30,7 @@ function Explain-Status([int]$Status) {
     }
 }
 
-# ----- Segredos -----
+# ----- Secrets -----
 function Read-Secrets([string]$Path) {
     if (-not (Test-Path $Path)) {
         throw "Nao achei $Path. Copie broker.secrets.env.example para broker.secrets.env e preencha."
@@ -42,7 +42,7 @@ function Read-Secrets([string]$Path) {
         $i = $t.IndexOf("=")
         if ($i -lt 1) { continue }
         $value = $t.Substring($i + 1).Trim()
-        # So corta comentario quando ha espaco antes do '#': um segredo pode conter '#'.
+        # Only strips a comment when there is a space before the '#': a secret may contain '#'.
         $c = $value.IndexOf(" #")
         if ($c -ge 0) { $value = $value.Substring(0, $c).Trim() }
         $cfg[$t.Substring(0, $i).Trim()] = $value.Trim('"').Trim("'")
@@ -62,11 +62,11 @@ function Test-Filled([hashtable]$Cfg, [string[]]$Keys) {
 }
 
 # ----- TLS -----
-# Proxmox e OPNsense usam certificado autoassinado. Aqui (so leitura, so este teste) o
-# certificado e aceito, mas a impressao digital SHA-256 e guardada e mostrada no fim: e
-# ela que o broker vai FIXAR em producao, em vez de confiar em qualquer certificado.
-# Precisa ser classe C#: um scriptblock do PowerShell chamado pelo .NET em outra thread
-# falha com "There is no Runspace available".
+# Proxmox and OPNsense use self-signed certificates. Here (read-only, this test only) the
+# certificate is accepted, but its SHA-256 fingerprint is kept and shown at the end: that is
+# what the broker will PIN in production, instead of trusting any certificate.
+# It has to be a C# class: a PowerShell scriptblock called by .NET on another thread
+# fails with "There is no Runspace available".
 if (-not ("GuardaCert" -as [type])) {
     Add-Type @"
 using System.Collections.Generic;
@@ -164,7 +164,7 @@ function Test-ProxmoxPrivileges($Perms, [string]$Pool, [string[]]$Storages) {
         else { Say "FALHA" "faltam em ${scopePath}: $($absent -join ', ')" }
     }
 
-    # Minimo privilegio tambem e nao ter a MAIS: acusa poder de alterar fora do pool.
+    # Least privilege also means not having MORE: flags power to change things outside the pool.
     $dangerous = @("VM.Allocate", "Sys.Modify", "Permissions.Modify", "User.Modify", "Realm.AllocateUser")
     foreach ($prop in $Perms.PSObject.Properties) {
         if ($needed.Contains($prop.Name)) { continue }
@@ -181,7 +181,7 @@ function Test-Opnsense([hashtable]$Cfg) {
     $pair = [Text.Encoding]::ASCII.GetBytes($Cfg["OPNSENSE_KEY"] + ":" + $Cfg["OPNSENSE_SECRET"])
     $h = @{ Authorization = "Basic " + [Convert]::ToBase64String($pair) }
 
-    # search_rule e so consulta. A escrita (add/del/apply) fica para o proximo teste.
+    # search_rule is query-only. Writing (add/del/apply) is left for the next test.
     $r = Invoke-Api "POST" "$url/api/firewall/d_nat/search_rule" $h '{"current":1,"rowCount":-1}'
     if ($r.Status -ne 200) { Say "FALHA" "d_nat/search_rule: $(Explain-Status $r.Status)"; return }
     $lines = @($r.Json.rows)
@@ -194,7 +194,7 @@ function Test-Opnsense([hashtable]$Cfg) {
     }
 }
 
-# ----- Execucao -----
+# ----- Run -----
 try {
     $cfg = Read-Secrets $EnvFile
 } catch {

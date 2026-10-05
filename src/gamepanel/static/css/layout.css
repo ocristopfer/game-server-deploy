@@ -1,13 +1,13 @@
-/* Camada 3 — LAYOUT.
+/* Layer 3 - LAYOUT.
  *
- * O esqueleto do aplicativo e as primitivas de arranjo (.stack, .cluster, .grid).
- * Mobile primeiro: o que esta fora de media query e a tela do celular; as media
- * queries so acrescentam espaco quando ele existe.
+ * The app skeleton and the arrangement primitives (.stack, .cluster, .grid).
+ * Mobile first: whatever is outside a media query is the phone screen; media
+ * queries only add space when it exists.
  */
 
-/* ---------- barra de cima ----------
-   No celular ela carrega marca + conta. A navegacao mora na barra de baixo, ao
-   alcance do polegar; a partir de 900px as duas viram uma so, aqui em cima. */
+/* ---------- top bar ----------
+   On the phone it carries brand + account. Navigation lives in the bottom bar, within
+   thumb reach; from 900px up the two become one, up here. */
 .appbar {
   position: sticky;
   top: 0;
@@ -19,10 +19,10 @@
   border-bottom: 1px solid var(--line);
 }
 
-/* O fundo vai de ponta a ponta, mas o CONTEUDO da barra tem a largura e o recuo do
-   corpo da pagina (.wrap). Sem isso, numa janela larga a marca ficava colada no canto
-   esquerdo e o menu no direito, com uma coluna de conteudo no meio que nao alinhava
-   com nenhum dos dois. */
+/* The background runs edge to edge, but the bar's CONTENT has the width and inset of
+   the page body (.wrap). Without that, in a wide window the brand stuck to the left
+   corner and the menu to the right one, with a content column in the middle that lined
+   up with neither. */
 .appbar__inner {
   display: flex;
   align-items: center;
@@ -40,15 +40,24 @@
 }
 .appbar__brand:hover { text-decoration: none; }
 .appbar__brand .logo { font-size: 1.25rem; line-height: 1; }
-/* No celular a marca inteira nao cabe ao lado de dois botoes: fica so o icone. */
+/* On the phone the full brand does not fit next to two buttons: only the icon stays. */
 .appbar__name { display: none; }
 
 .appbar__spacer { flex: 1; }
 
-/* Navegacao principal dentro da barra de cima: escondida no celular. */
+/* Theme and language: two icon buttons, always in the top right corner. */
+.prefs { display: flex; align-items: center; gap: var(--sp-1); }
+/* Without the top bar (login screen), the same pair sits in the same corner, on its own. */
+.prefs-corner {
+  display: flex;
+  justify-content: flex-end;
+  padding: calc(var(--sp-2) + var(--safe-top)) calc(var(--sp-3) + var(--safe-right)) 0 var(--sp-3);
+}
+
+/* Main navigation inside the top bar: hidden on the phone. */
 .appbar__nav { display: none; }
 
-/* ---------- barra de baixo (celular) ---------- */
+/* ---------- bottom bar (phone) ---------- */
 .tabbar {
   position: fixed;
   left: 0; right: 0; bottom: 0;
@@ -73,21 +82,21 @@
 .tabbar__item .icon { font-size: 1.15rem; line-height: 1; }
 .tabbar__item[aria-current="page"] { color: var(--accent); }
 
-/* ---------- corpo ---------- */
+/* ---------- body ---------- */
 .wrap {
   max-width: var(--max-width);
   margin: 0 auto;
   padding: var(--sp-4) calc(var(--sp-4) + var(--safe-right)) var(--sp-5) calc(var(--sp-4) + var(--safe-left));
 }
-/* Com barra de baixo, o ultimo cartao precisa caber acima dela. */
-/* So o conteudo reserva o espaco da barra de baixo. Se a regra pegasse qualquer
-   .wrap, a faixa de "ha uma versao nova" (que e um .wrap proprio, acima do main)
-   abriria um vao de 80px no meio da tela. */
+/* With a bottom bar, the last card has to fit above it. */
+/* Only the content reserves the bottom bar's space. If the rule matched any
+   .wrap, the "there is a new version" strip (which is a .wrap of its own, above main)
+   would open an 80px gap in the middle of the screen. */
 body.has-tabbar main.wrap {
   padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-5));
 }
 
-/* ---------- cabecalho de pagina ---------- */
+/* ---------- page header ---------- */
 .page-head {
   display: flex;
   flex-direction: column;
@@ -97,13 +106,13 @@ body.has-tabbar main.wrap {
 .page-head__title { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
 .page-head__title h1, .page-head__title h2 { min-width: 0; overflow-wrap: anywhere; }
 
-/* ---------- primitivas de arranjo ---------- */
+/* ---------- arrangement primitives ---------- */
 .stack { display: flex; flex-direction: column; gap: var(--sp-3); }
 .stack--sm { gap: var(--sp-2); }
-/* O espacamento de uma pilha e o gap; a margem propria do paragrafo somava por cima dele. */
+/* A stack's spacing is the gap; the paragraph's own margin added on top of it. */
 .stack > p { margin: 0; }
 
-/* Fila que quebra. E o arranjo de quase todo grupo de botoes do painel. */
+/* A row that wraps. It is the arrangement of almost every button group in the panel. */
 .cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .cluster__spacer { flex: 1; }
 
@@ -113,10 +122,10 @@ body.has-tabbar main.wrap {
   grid-template-columns: 1fr;
 }
 
-/* Cartoes de uma tela lado a lado. Uma coluna no celular; duas a partir de 900px, com
-   `.card-grid__wide` ocupando a linha inteira (log, tabela comprida). Os dois cartoes
-   de uma linha ESTICAM ate o mais alto: com a altura de cada um, o menor deixava um
-   buraco embaixo dele e a tela parecia desalinhada. */
+/* A screen's cards side by side. One column on the phone; two from 900px up, with
+   `.card-grid__wide` taking the whole row (log, long table). The two cards of a row
+   STRETCH to the tallest one: with each at its own height, the smaller left a hole
+   below it and the screen looked misaligned. */
 .card-grid {
   display: grid;
   gap: var(--sp-4);
@@ -128,27 +137,27 @@ body.has-tabbar main.wrap {
   .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5); }
   .card-grid__wide { grid-column: 1 / -1; }
 
-  /* Variante de altura FIXA (visao geral do servidor): todo cartao tem a mesma altura,
-     e o que passar dela rola DENTRO do `.card__body`, com o titulo parado. Esticar so
-     ate o vizinho nao bastava ali: a tabela de acoes recentes cresce com o historico e
-     puxava a linha inteira junto. So a partir de 900px: no celular, rolagem dentro de
-     rolagem prende o dedo e a pagina para de descer. */
+  /* FIXED-height variant (server overview): every card has the same height, and
+     whatever exceeds it scrolls INSIDE the `.card__body`, with the title staying put.
+     Stretching only to the neighbor was not enough there: the recent actions table grows
+     with the history and pulled the whole row along. Only from 900px up: on the phone,
+     scrolling inside scrolling traps the finger and the page stops going down. */
   .card-grid--fixed > .card {
     display: flex;
     flex-direction: column;
     height: var(--card-h);
     min-height: 0;
   }
-  /* O log e o bloco que cresce: fica com a largura toda e a altura que sobra da tela. */
+  /* The log is the block that grows: it gets the full width and the height left on the screen. */
   .card-grid--fixed > .card-grid__fill {
     height: calc(100dvh - var(--appbar-h) - var(--sp-6) * 2);
     min-height: var(--card-h);
   }
 }
 
-/* Miolo de cartao que rola sozinho. As margens negativas devolvem o recuo do cartao
-   ao miolo: sem elas o `.table-wrap` (que ja sai para dentro do recuo) seria cortado
-   pelo `overflow` e toda tabela ganharia rolagem lateral. */
+/* Card body that scrolls on its own. The negative margins give the card's inset back to
+   the body: without them the `.table-wrap` (which already reaches into the inset) would be
+   clipped by the `overflow` and every table would get horizontal scrolling. */
 .card__body {
   flex: 1;
   min-height: 0;
@@ -160,14 +169,15 @@ body.has-tabbar main.wrap {
 @media (min-width: 600px) {
   .card__body { margin: 0 calc(var(--sp-5) * -1); padding: 0 var(--sp-5); }
 }
-/* Na grade fixa o log ocupa a altura toda do miolo em vez do teto de 55vh. So ali: no
-   celular o miolo nao tem altura, e sem o teto o log empurrava a pagina por 80 linhas. */
+/* In the fixed grid the log takes the body's full height instead of the 55vh cap. Only
+   there: on the phone the body has no height, and without the cap the log pushed the page
+   down by 80 lines. */
 @media (min-width: 900px) {
   .card-grid--fixed .card__body > pre.log { height: 100%; max-height: none; }
 }
 
-/* ---------- tabela com rolagem propria ----------
-   Tabela larga nao pode empurrar a pagina: quem rola de lado e esta caixa. */
+/* ---------- table with its own scrolling ----------
+   A wide table must not push the page: what scrolls sideways is this box. */
 .table-wrap {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -176,7 +186,7 @@ body.has-tabbar main.wrap {
 }
 .table-wrap > table { min-width: 34rem; }
 
-/* ---------- respiro em telas maiores ---------- */
+/* ---------- breathing room on bigger screens ---------- */
 @media (min-width: 600px) {
   .wrap { padding: var(--sp-5) calc(var(--sp-5) + var(--safe-right)) var(--sp-6) calc(var(--sp-5) + var(--safe-left)); }
   body.has-tabbar main.wrap { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-6)); }
@@ -191,7 +201,7 @@ body.has-tabbar main.wrap {
   .grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
 }
 
-/* A partir daqui cabe tudo em cima: a barra de baixo sai de cena. */
+/* From here on everything fits up top: the bottom bar leaves the stage. */
 @media (min-width: 900px) {
   .tabbar { display: none; }
   body.has-tabbar main.wrap { padding-bottom: var(--sp-6); }
@@ -211,7 +221,7 @@ body.has-tabbar main.wrap {
   }
 }
 
-/* O nome ao lado da marca so cabe quando sobra espaco depois dos sete destinos. */
+/* The name next to the brand only fits when there is room left after the seven destinations. */
 @media (min-width: 1100px) {
   .appbar__name { display: inline; }
 }
@@ -219,8 +229,8 @@ body.has-tabbar main.wrap {
   .appbar__name { display: inline; }
 }
 
-/* Ultima linha da coluna de conteudo: informacao de suporte, nao conteudo. O respiro
-   em cima e o que a separa do ultimo cartao; sem ele parece legenda do cartao. */
+/* Last line of the content column: supporting information, not content. The space
+   above it is what separates it from the last card; without it, it looks like the card's caption. */
 .app-version {
   margin-top: var(--sp-6);
   padding-top: var(--sp-3);
@@ -228,9 +238,9 @@ body.has-tabbar main.wrap {
   text-align: center;
 }
 
-/* ---------- utilidades ----------
-   Deliberadamente poucas: sao as tres que evitam um atributo style solto no meio de
-   um template. Qualquer coisa alem disso pertence a um componente. */
+/* ---------- utilities ----------
+   Deliberately few: they are the three that avoid a loose style attribute in the middle of
+   a template. Anything beyond that belongs to a component. */
 .mt-4 { margin-top: var(--sp-4); }
 .mb-4 { margin-bottom: var(--sp-4); }
 .field-short { width: 6rem; min-height: var(--tap-sm); }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Atualiza o jogo pelo SteamCMD e reinicia o servidor. Mesmo atalho do LXC, para o
-# painel poder chamar "Atualizar jogo" sem saber onde o servidor esta rodando.
+# Updates the game through SteamCMD and restarts the server. Same shortcut as the LXC, so
+# the panel can call "Atualizar jogo" without knowing where the server is running.
 set -Eeuo pipefail
 
 # shellcheck disable=SC1091
@@ -8,7 +8,7 @@ set -Eeuo pipefail
 
 systemctl stop "$GAME_UNIT" || true
 
-# </dev/null: o timer/painel nao tem quem responda se o SteamCMD resolver perguntar algo.
+# </dev/null: the timer/panel has no one to answer if SteamCMD decides to ask something.
 ${STEAM_TIMEOUT_UPDATE:-}setpriv --reuid=steam --regid=steam --init-groups \
   /usr/bin/env HOME=/home/steam \
   /opt/steamcmd/steamcmd.sh ${STEAMCMD_PLATFORM_ARG:-}+force_install_dir "$GAME_DIR" \

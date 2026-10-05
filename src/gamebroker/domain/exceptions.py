@@ -1,9 +1,9 @@
-"""Recusas que o broker sabe explicar. Todo o resto e erro interno (500, sem detalhe)."""
+"""Refusals the broker knows how to explain. Everything else is an internal error (500, no details)."""
 from __future__ import annotations
 
 
 class Refusal(Exception):
-    """Pedido que o broker entendeu e nao vai atender. A mensagem e para o usuario."""
+    """A request the broker understood and will not fulfill. The message is meant for the user."""
 
     http = 400
     code = "pedido-invalido"
@@ -32,7 +32,7 @@ class Conflict(Refusal):
 
 
 class OutOfResources(Conflict):
-    """Faixa de CTID/IP esgotada ou porta ocupada."""
+    """CTID/IP range exhausted or port taken."""
 
     code = "sem-recurso"
 

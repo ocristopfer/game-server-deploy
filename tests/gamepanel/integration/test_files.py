@@ -1,12 +1,11 @@
-"""Editor de arquivos e upload/download (gamepanel.runtime.files): scripts SSH + parsing.
+"""File editor and upload/download (gamepanel.runtime.files): SSH scripts + parsing.
 
-Nao existia suite dedicada antes da Fase 4 (mesmo achado dos modulos anteriores: so
-exercitado indiretamente, pelo sweep de rotas em test_users.py, que nunca chega a
-chamar `list_dir`/`read_file`/etc. de verdade). `ssh_run`/`ssh_argv` entram por
-injecao, como em todo modulo de runtime/: a maioria dos testes aqui usa uma saida
-FABRICADA (sem SSH nenhum); os dois que streamam de um PROCESSO de verdade
-(`ssh_stream_in`/`stream_remote_file`) usam `cat`/`sh` locais no lugar do ssh - por
-isso so rodam em POSIX, mesmo motivo do test_terminal.py.
+There was no dedicated suite before Phase 4 (same finding as the earlier modules: only
+exercised indirectly, by the route sweep in test_users.py, which never actually gets to
+call `list_dir`/`read_file`/etc.). `ssh_run`/`ssh_argv` come in by injection, as in every
+runtime/ module: most tests here use FABRICATED output (no SSH at all); the two that
+stream from a real PROCESS (`ssh_stream_in`/`stream_remote_file`) use local `cat`/`sh`
+in place of ssh - which is why they only run on POSIX, same reason as test_terminal.py.
 """
 from __future__ import annotations
 
@@ -35,7 +34,7 @@ def _ssh_run_of(stdout: str = "", returncode: int = 0, stderr: str = "", captura
     return ssh_run
 
 
-# ------------------------------------------------------------ caminho
+# ------------------------------------------------------------ path
 
 def test_clean_path_resolve_pontos():
     assert filesmod.clean_path("/a/b/../c", ()) == "/a/c"
@@ -47,7 +46,7 @@ def test_clean_path_exige_absoluto():
 
 
 def test_clean_path_rejeita_caractere_de_controle():
-    with pytest.raises(ValueError, match="invalido"):
+    with pytest.raises(ValueError, match="inválido"):
         filesmod.clean_path("/a\nb", ())
 
 
@@ -66,7 +65,7 @@ def test_clean_path_fora_das_raizes_e_recusado():
 
 
 def test_clean_path_prefixo_parecido_nao_engana_a_raiz():
-    # /opt/gamex nao pode passar so porque comeca com o texto "/opt/game".
+    # /opt/gamex must not pass just because it starts with the text "/opt/game".
     with pytest.raises(ValueError, match="fora das pastas"):
         filesmod.clean_path("/opt/gamex/save", ("/opt/game",))
 
@@ -76,7 +75,7 @@ def test_parent_of():
     assert filesmod.parent_of("/a") == "/"
 
 
-# ------------------------------------------------------------- listar
+# ------------------------------------------------------------- listing
 
 def test_list_dir_parseia_entradas_e_ordena_pastas_primeiro():
     output = (
@@ -115,7 +114,7 @@ def test_list_dir_retorno_diferente_de_zero_vira_remote_error():
         filesmod.list_dir(ssh_run, SERVER, "/x", 10)
 
 
-# -------------------------------------------------- busca de config
+# -------------------------------------------------- config search
 
 def test_find_config_files_parseia_linhas():
     output = "120\t2024-01-01 10:00\t/opt/game/server.cfg\n"
@@ -124,7 +123,7 @@ def test_find_config_files_parseia_linhas():
 
 
 def test_find_config_files_linha_malformada_e_ignorada():
-    # Menos de duas tabs - falta pelo menos o caminho.
+    # Fewer than two tabs - at least the path is missing.
     output = "so isso\n"
     results = filesmod.find_config_files(_ssh_run_of(output), SERVER, "/opt/game", ("*.cfg",))
     assert results == []
@@ -136,7 +135,7 @@ def test_find_config_files_erro_vira_remote_error():
         filesmod.find_config_files(ssh_run, SERVER, "/x", ("*.cfg",))
 
 
-# ----------------------------------------------------------- metadados
+# ----------------------------------------------------------- metadata
 
 def test_stat_file_le_metadados():
     output = "META|4096|2024-01-01 10:00:00.123456|644|steam|steam\n"
@@ -159,7 +158,7 @@ def test_stat_file_meta_mal_formada_vira_remote_error():
         filesmod.stat_file(_ssh_run_of("nao-e-meta\n"), SERVER, "/x")
 
 
-# --------------------------------------------------------- ler arquivo
+# --------------------------------------------------------- reading a file
 
 def test_read_file_texto_simples():
     payload = base64.b64encode(b"ola mundo").decode()
@@ -208,7 +207,7 @@ def test_read_file_erro_vira_remote_error():
         filesmod.read_file(ssh_run, SERVER, "/x", 1000, 100)
 
 
-# -------------------------------------------------- gravar e apagar
+# -------------------------------------------------- writing and deleting
 
 def test_write_file_manda_base64_por_stdin_e_devolve_confirmacao():
     captured: list = []
@@ -276,8 +275,8 @@ def test_stream_remote_file_le_a_saida_em_pedacos():
 
 @posix_apenas
 def test_stream_remote_file_cancelado_no_meio_nao_trava():
-    # Simula o navegador desistindo no meio do download: o generator so precisa
-    # fechar sem travar, sem deixar o processo remoto orfao.
+    # Simulates the browser giving up in the middle of the download: the generator only
+    # needs to close without hanging and without leaving the remote process orphaned.
     generator = filesmod.stream_remote_file(
         _argv_sh_c("printf abcdefghij; sleep 5"), SERVER, "/qualquer", chunk_size=2,
     )

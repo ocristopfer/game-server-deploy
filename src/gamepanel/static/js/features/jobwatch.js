@@ -1,8 +1,8 @@
-/* Acompanha uma acao que ainda esta rodando.
+/* Follows an action that is still running.
  *
- * A tela da acao e a do console tinham a mesma rotina escrita duas vezes, com
- * textos e intervalos levemente diferentes. Aqui ela e uma so: o que muda entre as
- * duas telas vem por data-* (a mensagem de "em execucao" e a de conclusao).
+ * The action screen and the console screen had the same routine written twice, with
+ * slightly different texts and intervals. Here it is a single one: what changes between the
+ * two screens comes through data-* (the "running" message and the completion one).
  */
 import { Poller } from '../core/poll.js';
 import { readJSON } from '../core/http.js';

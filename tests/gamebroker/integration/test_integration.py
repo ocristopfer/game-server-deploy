@@ -1,7 +1,7 @@
-"""Servico completo com os backends REAIS (Proxmox e OPNsense) falando com servidores falsos.
+"""Full service with the REAL backends (Proxmox and OPNsense) talking to fake servers.
 
-E o caminho que roda em producao; so o instalador (SSH) e a rede (ping) continuam falsos ate
-as proximas fases.
+This is the path that runs in production; only the installer (SSH) and the network (ping) stay
+fake until the next phases.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from gamebroker.services.instance_service import Config, Service
 
 @pytest.fixture
 def real(environment, pve, opn):
-    """O `ambiente` (banco, catalogo, relogio) com Proxmox e OPNsense reais no lugar dos falsos."""
+    """The `ambiente` (db, catalog, clock) with real Proxmox and OPNsense in place of the fakes."""
     installer = FakeInstaller()
     service = Service(environment.db, environment.catalog, pve.backend, opn.backend, installer,
                       FakeNetwork(), Config(ctids=range(300, 310), ips=ips_in_range("10.0.0", 30, 40)),
@@ -52,7 +52,7 @@ def test_falha_na_instalacao_desfaz_no_proxmox_e_no_opnsense(real):
 
 
 def test_porta_ocupada_por_alias_do_usuario_barra_a_criacao(real):
-    """A regra 'palworld' do user usa alias e esta DESATIVADA - ainda assim ocupa a porta."""
+    """The user's 'palworld' rule uses an alias and is DISABLED - it still takes the port."""
     real.opn.fake.existing_rule("palworld", "JOGO_PALWORLD", alias=["7001", "27015"], disabled=True)
     with pytest.raises(OutOfResources, match="7001/udp"):
         real.real_service.create("alfa", "x", "zeca")
@@ -60,7 +60,7 @@ def test_porta_ocupada_por_alias_do_usuario_barra_a_criacao(real):
 
 
 def test_regra_que_o_broker_nao_entende_impede_criar(real):
-    """Falha fechada de ponta a ponta: sem entender o firewall, nao cria nada."""
+    """Fail closed end to end: without understanding the firewall, nothing is created."""
     real.opn.fake.existing_rule("misteriosa", "ALIAS_X", summary_text="<strong>?</strong>")
     with pytest.raises(Exception, match="misteriosa"):
         real.real_service.create("alfa", "x", "zeca")
@@ -69,8 +69,8 @@ def test_regra_que_o_broker_nao_entende_impede_criar(real):
 
 
 def test_criar_com_o_instalador_ssh_de_verdade(real, tmp_path):
-    """Proxmox e OPNsense reais (contra falsos HTTP) + InstaladorSsh real (com executor que
-    grava os comandos): e o caminho de criacao inteiro, exceto o SSH em si."""
+    """Real Proxmox and OPNsense (against HTTP fakes) + real InstaladorSsh (with a runner that
+    records the commands): the whole creation path, except SSH itself."""
     from fake_ssh import PUBLIC_KEY, FakeRunner
 
     from gamebroker.runtime.ssh_installer import LIB_FILES, ConfigSsh, SshInstaller
@@ -108,7 +108,7 @@ def test_desativar_e_remover_de_ponta_a_ponta(real):
 def test_ct_de_fora_do_pool_nunca_e_destruido_pelo_remover(real):
     created_one = real.real_service.create("alfa", "Um", "zeca")
     real.real_service.deactivate(created_one["instance_id"], "zeca")
-    # Alguem move o CT para fora do pool do broker (ou o id passa a ser de outro dono).
+    # Someone moves the CT out of the broker pool (or the id comes to belong to another owner).
     real.pve.fake.cts[300]["pool"] = None
     with pytest.raises(Exception, match="nao pertence ao broker"):
         real.real_service.remove(created_one["instance_id"], "Um", "zeca")

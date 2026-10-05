@@ -7,12 +7,12 @@
   {{ ui.button(_('nav.instances'), href=url_for('broker.instances'), variant='ghost', icon='🧩') }}
 {% endcall %}
 
-{# Lista a esquerda, formulario a direita no desktop; uma coluna no celular. #}
+{# List on the left, form on the right on the desktop; a single column on the phone. #}
 <div class="card-grid">
 <div class="card">
   <div class="table-wrap"><table class="jobs">
-    {# UMA coluna, um bloco por jogo. Com duas ou tres, a de "criavel" (que e a resposta
-       desta tela) ficava atras de uma rolagem lateral no celular. #}
+    {# ONE column, one block per game. With two or three, the "creatable" one (which is the answer
+       of this screen) ended up behind a horizontal scroll on the phone. #}
     <thead><tr><th>{{ _('catalog.game') }}</th></tr></thead>
     <tbody>
       {% for j in games %}
@@ -22,14 +22,14 @@
           {% if j.creatable %}<span class="badge on">{{ _('catalog.creatable') }}</span>
           {% else %}<span class="badge cold">{{ _('catalog.manual') }}</span>{% endif %}
           <div class="muted small">
-            app {{ j.app_id or '—' }} · {{ j.memory_mb }} MB · {{ j.cores }} CPU · {{ j.disk_gb }} GB · {{ j.source }}
+            app {{ j.app_id or '—' }} · {{ j.memory_mb }} MB · {{ j.cores }} CPU · {{ j.disk_gb }} GB · {{ {'curado': _('catalog.source_curated'), 'dinamico': _('catalog.source_dynamic')}.get(j.source, j.source) }}
           </div>
           <div class="small">
             {{ _('catalog.ports') }}: {{ j.ports | join(', ') }}{% if j.shiftable %} <span class="badge cold" title="{{ _('catalog.shifted_port_help') }}">{{ _('catalog.shifted_port') }}</span>{% endif %}
           </div>
           {% if not j.creatable %}<div class="muted small">{{ j.reason }}</div>{% endif %}
-          {# Curado que o broker nao cria (conta Steam, instalador proprio) nao se edita
-             daqui: quem o instala e o deploy-game.ps1, que le o .env do git. #}
+          {# A curated game the broker does not create (Steam account, own installer) is not edited
+             from here: what installs it is deploy-game.ps1, which reads the .env from git. #}
           {% if j.creatable %}
           <div class="cluster mt-4">
             {{ ui.button(_('instances.create'), href=url_for('broker.instances', game=j.key), size='sm', variant='primary') }}
@@ -59,7 +59,7 @@
   <p class="muted small">{{ _h('catalog.data_only') }}</p>
   <form method="post" action="{{ url_for('broker.catalog_new') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    {# Busca por nome ou App ID (features/game-search.js). Sem `name`: nao vai no envio. #}
+    {# Search by name or App ID (features/game-search.js). No `name`: it is not submitted. #}
     <div class="mb-4" data-game-search data-url="{{ url_for('broker.api_suggestions') }}" hidden
          data-catalog="{{ catalog_index | tojson | forceescape }}"
          data-instances-url="{{ url_for('broker.instances') }}"
@@ -77,8 +77,8 @@
       </label>
       <div class="stack stack--sm" data-search-results aria-live="polite"></div>
     </div>
-    {# Sem `name`: nao vai no envio, so preenche os campos abaixo (features/game-template.js).
-       Nasce escondido porque sem JavaScript ele nao faria nada. #}
+    {# No `name`: it is not submitted, it only fills the fields below (features/game-template.js).
+       Born hidden because without JavaScript it would do nothing. #}
     {% if game_templates %}
     <label hidden>{{ _('catalog.start_from_template') }}
       <select data-game-template>

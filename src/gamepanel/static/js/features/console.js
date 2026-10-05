@@ -1,9 +1,9 @@
-/* Caixa de comando unico.
+/* Single-command box.
  *
- * Ctrl+Enter envia (Enter sozinho quebra linha: comando multilinha e valido) e as
- * setas percorrem o que ja foi rodado neste servidor. O historico chega num bloco
- * <script type="application/json"> — expressao de template no meio do codigo quebra
- * qualquer ferramenta que leia o arquivo como JavaScript de verdade.
+ * Ctrl+Enter sends (Enter alone breaks the line: a multiline command is valid) and the
+ * arrows walk through what was already run on this server. The history arrives in a
+ * <script type="application/json"> block - a template expression in the middle of code breaks
+ * any tool that reads the file as real JavaScript.
  */
 import { $ } from '../core/dom.js';
 

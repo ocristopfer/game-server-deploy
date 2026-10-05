@@ -1,12 +1,13 @@
-"""Broker de producao: monta o `Servico` com Proxmox, OPNsense e SSH DE VERDADE.
+"""Production broker: builds the `Servico` with REAL Proxmox, OPNsense and SSH.
 
-O systemd sobe assim (ver provision-broker-lxc.sh):
+systemd starts it like this (see provision-broker-lxc.sh):
 
     gunicorn --workers 1 --threads 8 --certfile ... --keyfile ... 'gamebroker.prod:criar_app_de_ambiente()'
 
-UM worker de proposito: a trava que impede duas criacoes escolherem o mesmo IP vive na memoria
-do processo (o banco tem UNIQUE como segunda defesa, mas a experiencia do usuario e melhor sem
-depender dele). Configuracao ruim derruba o START com a lista de problemas, nunca um pedido.
+ONE worker on purpose: the lock that prevents two creations from picking the same IP lives in
+the process memory (the database has UNIQUE as a second defense, but the user experience is
+better without depending on it). Bad configuration brings down the START with the list of
+problems, never a request.
 """
 from __future__ import annotations
 
@@ -39,9 +40,9 @@ def build_service(cfg: ConfigBroker, executor: Executor | None = None, network: 
     basic = base64.b64encode(f"{cfg.opnsense_key}:{cfg.opnsense_secret}".encode()).decode()
     opnsense = Opnsense(Client(cfg.opnsense_url, {"Authorization": f"Basic {basic}"},
                                 cfg.opnsense_fingerprint), cfg.opnsense_wan)
-    # `dict[str, Any]`: o dicionario existe para virar `**` num construtor cujos parametros
-    # tem tipos diferentes. Sem a anotacao o verificador o estreita ao tipo do `run` e acusa
-    # todos os outros — ver o mesmo padrao, com o mesmo motivo, em `config.py`.
+    # `dict[str, Any]`: the dict exists to become `**` in a constructor whose parameters have
+    # different types. Without the annotation the checker narrows it to the type of `run` and
+    # flags all the others - see the same pattern, with the same reason, in `config.py`.
     extra: dict[str, Any] = {} if run is None else {"run": run}
     return Service(
         Db(str(cfg.state_dir / "broker.db")),

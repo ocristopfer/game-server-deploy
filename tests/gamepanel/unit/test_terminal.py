@@ -1,13 +1,13 @@
-"""Sessao de terminal interativo (gamepanel.runtime.terminal): PTY + processo real.
+"""Interactive terminal session (gamepanel.runtime.terminal): PTY + real process.
 
-Nao existia suite dedicada para isso antes da Fase 4 (mesmo achado do A2S e do
-metrics_probe: so exercitado indiretamente, e so pela tela `/servers/1/terminal`
-carregando, nunca pela sessao em si). `TermSession` recebe o `ssh_argv` por injecao
-(assim como `SshClient` recebe a config por funcao) - aqui ele vira um processo local
-qualquer (`sh -c ...`), o que prova o buffer/offset/EOF/erro sem precisar de SSH nenhum.
+There was no dedicated suite for this before Phase 4 (same finding as A2S and
+metrics_probe: only exercised indirectly, and only by the `/servers/1/terminal` screen
+loading, never by the session itself). `TermSession` receives `ssh_argv` by injection
+(just as `SshClient` receives its config through a function) - here it becomes any local
+process (`sh -c ...`), which proves buffer/offset/EOF/error without needing any SSH.
 
-So roda em POSIX: PTY nao existe no Windows (ver `terminal.HAVE_PTY`), e e onde o
-terminal do painel roda de verdade (o container do painel e Debian).
+POSIX only: PTY does not exist on Windows (see `terminal.HAVE_PTY`), and POSIX is where
+the panel terminal really runs (the panel container is Debian).
 """
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def test_offset_ja_lido_nao_volta_na_proxima_leitura():
     term = _open_term(["sh", "-c", "printf abc"])
     try:
         _data, offset, _lost = term.read(0, wait=2.0)
-        # Sem novidade depois do que ja foi lido: o long-poll espera e devolve vazio.
+        # Nothing new after what was already read: the long-poll waits and returns empty.
         data2, offset2, lost2 = term.read(offset, wait=0.2)
         assert data2 == b""
         assert offset2 == offset
@@ -79,8 +79,8 @@ def test_fim_do_processo_marca_morto_com_o_exit_code():
 
 
 def test_buffer_cheio_descarta_o_mais_antigo_e_avisa_perda():
-    # 100 bytes de 'A' seguidos de 100 de 'B', com um buffer que so guarda 60: quem
-    # pedir desde o offset 0 tem de saber que perdeu coisa, nao so receber menos dado.
+    # 100 bytes of 'A' followed by 100 of 'B', with a buffer that keeps only 60: whoever
+    # asks from offset 0 has to know they lost something, not just receive less data.
     script = "printf 'A%.0s' $(seq 1 100); printf 'B%.0s' $(seq 1 100)"
     term = _open_term(["sh", "-c", script], buffer_bytes=60)
     try:
@@ -94,8 +94,8 @@ def test_buffer_cheio_descarta_o_mais_antigo_e_avisa_perda():
 
 
 def test_write_chega_ate_o_processo():
-    # 'cat' devolve cada linha; o eco do proprio PTY tambem aparece no buffer, entao a
-    # prova e so que o texto escrito aparece na saida, nao a saida exata.
+    # 'cat' echoes each line back; the PTY's own echo also lands in the buffer, so the
+    # proof is only that the written text appears in the output, not the exact output.
     term = _open_term(["cat"])
     try:
         term.write(b"ping\n")

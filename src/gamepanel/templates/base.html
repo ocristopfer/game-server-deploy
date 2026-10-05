@@ -1,54 +1,63 @@
-{# Casco do aplicativo.
+{# App shell.
 
-   No celular: barra fina em cima (marca + menu) e barra de abas embaixo, ao alcance
-   do polegar. A partir de 900px as duas viram uma so, em cima — quem cuida disso e
-   o CSS, nao um segundo template.
+   On the phone: thin bar at the top (brand + menu) and tab bar at the bottom, within
+   thumb reach. From 900px up the two become one, at the top - that is handled by
+   the CSS, not by a second template.
 
-   A navegacao vem do `ui.py` (NAV_PRINCIPAL / NAV_SECUNDARIA), nao esta escrita aqui:
-   e o mesmo motivo de sempre — menu escrito a mao em varios lugares vira menus
-   diferentes em lugares diferentes. #}
+   Navigation comes from `ui.py` (NAV_PRINCIPAL / NAV_SECUNDARIA), it is not written here:
+   the usual reason - a menu written by hand in several places becomes different
+   menus in different places. #}
 {% import "components/ui.html" as ui with context %}
 <!doctype html>
-<html lang="{{ html_lang }}">
+<html lang="{{ html_lang }}"{% if current_theme %} data-theme="{{ current_theme }}"{% endif %}>
 <head>
   <meta charset="utf-8">
-  {# viewport-fit=cover entrega a tela inteira no aparelho com recorte; quem devolve
-     o espaco seguro sao as variaveis --safe-* dos tokens. #}
+  {# viewport-fit=cover hands over the whole screen on a device with a cutout; what gives
+     the safe area back are the --safe-* token variables. #}
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}{{ _('app.name') }}{% endblock %}</title>
 
-  <meta name="theme-color" content="#171c22">
-  <meta name="color-scheme" content="dark">
-  <meta name="description" content="Liga, desliga, atualiza e acompanha os servidores de jogos.">
-  {# Um painel com poder de root nos containers nao tem o que fazer num buscador. #}
+  {# The system bar color follows the theme: the one chosen with the button, or the device's. #}
+  {% if current_theme %}
+  <meta name="theme-color" content="{{ '#ffffff' if current_theme == 'light' else '#171c22' }}">
+  <meta name="color-scheme" content="{{ current_theme }}">
+  {% else %}
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171c22" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="dark light">
+  {% endif %}
+  <meta name="description" content="{{ _('app.description') }}">
+  {# A panel with root power over the containers has no business in a search engine. #}
   <meta name="robots" content="noindex, nofollow">
 
-  {# --- aplicativo instalado --- #}
+  {# --- installed app --- #}
   <link rel="manifest" href="{{ url_for('pwa.manifest') }}">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Jogos">
+  <meta name="apple-mobile-web-app-title" content="{{ _('app.short_name') }}">
   <link rel="apple-touch-icon" href="{{ static_url('icons/apple-touch-icon.png') }}">
   <link rel="icon" href="{{ static_url('icons/favicon.svg') }}" type="image/svg+xml">
   <link rel="icon" href="{{ static_url('icons/icon-192.png') }}" sizes="192x192" type="image/png">
 
-  {# --- estilo, em camadas ---
-     A ordem importa: tokens definem os valores, base aplica aos elementos crus,
-     layout monta o esqueleto, components desenha as pecas, pages ajusta o que e de
-     uma tela so. Cada camada so pode depender das anteriores. #}
+  {# --- style, in layers ---
+     Order matters: tokens define the values, base applies them to bare elements,
+     layout builds the skeleton, components draws the pieces, pages adjusts what belongs
+     to a single screen. Each layer may only depend on the previous ones. #}
   <link rel="stylesheet" href="{{ static_url('css/tokens.css') }}">
   <link rel="stylesheet" href="{{ static_url('css/base.css') }}">
   <link rel="stylesheet" href="{{ static_url('css/layout.css') }}">
   <link rel="stylesheet" href="{{ static_url('css/components.css') }}">
   <link rel="stylesheet" href="{{ static_url('css/pages.css') }}">
 </head>
-<body class="{{ 'has-tabbar' if current_user }}" data-sw="{{ url_for('pwa.service_worker') }}">
+<body class="{{ 'has-tabbar' if current_user }}" data-sw="{{ url_for('pwa.service_worker') }}"
+      data-label-copied="{{ _('copy.done') }}" data-label-copy-failed="{{ _('copy.failed') }}"
+      data-label-no-connection="{{ _('http.no_connection') }}">
 
 {% if current_user %}
-{# O conteudo da barra vive num miolo com a MESMA largura e o MESMO recuo do corpo da pagina: em
-   tela larga a marca fica alinhada com o titulo da pagina, e nao presa no canto da janela
-   enquanto o resto da tela e uma coluna no meio. #}
+{# The bar content lives in an inner box with the SAME width and the SAME inset as the page body: on
+   a wide screen the brand lines up with the page title, instead of being stuck in the window corner
+   while the rest of the screen is a column in the middle. #}
 <header class="appbar">
  <div class="appbar__inner">
   <a class="appbar__brand" href="{{ url_for('dashboard.index') }}">
@@ -56,10 +65,10 @@
     <span class="appbar__name">{{ _('app.name') }}</span>
   </a>
 
-  {# Em tela larga TODOS os destinos de uso diario sobem para ca (a lista vem do ui.py);
-     no celular eles vivem na barra de baixo e este bloco esta escondido por CSS. Sem
-     icone de proposito: seis rotulos com icone nao cabem na coluna do conteudo e o
-     texto sozinho ja diz onde cada um leva. #}
+  {# On a wide screen ALL everyday destinations move up here (the list comes from ui.py);
+     on the phone they live in the bottom bar and this block is hidden by CSS. No
+     icon on purpose: six labels with icons do not fit in the content column and the
+     text alone already says where each one goes. #}
   <nav class="appbar__nav" aria-label="{{ _('nav.main') }}">
     {% for item in nav_desktop_bar %}
       <a href="{{ url_for(item.endpoint) }}"
@@ -69,10 +78,12 @@
 
   <span class="appbar__spacer"></span>
 
+  {{ ui.preferences() }}
+
   {{ ui.button(_('app.install'), icon='⬇', size='sm', type='button',
               extra='data-install hidden') }}
 
-  {# Celular: o "⋯" com o que nao coube nas abas de baixo. #}
+  {# Phone: the "..." with whatever did not fit in the bottom tabs. #}
   {% call ui.menu('', icon='⋯', title=_('nav.more'), css_class='menu--mobile') %}
     <span class="menu__title">{{ current_user }} &middot; {{ role_label }}</span>
     {% for item in nav_secondary %}
@@ -84,9 +95,9 @@
     {{ ui.menu_action(url_for('auth.logout'), _('nav.logout'), icon='🚪') }}
   {% endcall %}
 
-  {# Desktop: o menu da pessoa, com o nome no botao (quem esta logado e o que ela
-     e, sem abrir nada). Os dois menus existem na pagina; o CSS mostra um por vez. #}
-  {% call ui.menu(current_user, icon='👤', title='Conta de ' ~ current_user, css_class='menu--account') %}
+  {# Desktop: the person's menu, with the name on the button (who is logged in and what they
+     are, without opening anything). Both menus exist on the page; CSS shows one at a time. #}
+  {% call ui.menu(current_user, icon='👤', title=_('nav.account_of', name=current_user), css_class='menu--account') %}
     <span class="menu__title">{{ role_label }}</span>
     {% for item in nav_desktop_account %}
       <a class="menu__item" role="menuitem" href="{{ url_for(item.endpoint) }}"
@@ -99,12 +110,15 @@
   {% endcall %}
  </div>
 </header>
+{% else %}
+{# No account (login, error before signing in): only the preferences, in the same corner. #}
+<div class="prefs-corner">{{ ui.preferences() }}</div>
 {% endif %}
 
 <main class="wrap">
-  {# Versao nova esperando para assumir: aparece so quando o service worker avisa.
-     Fica DENTRO do main, junto dos outros avisos — como um bloco proprio antes dele,
-     o espaco reservado para a barra de abas abria um vao no meio da tela. #}
+  {# New version waiting to take over: shows up only when the service worker says so.
+     It stays INSIDE main, with the other notices - as a block of its own before it,
+     the space reserved for the tab bar opened a gap in the middle of the screen. #}
   <div class="flash cluster" data-new-version hidden>
     <span>{{ _('app.new_version') }}</span>
     <span class="cluster__spacer"></span>
@@ -118,8 +132,8 @@
   {% endwith %}
   {% block content %}{% endblock %}
 
-  {# Discreto de proposito: e informacao de suporte, nao conteudo. Fica dentro do
-     `main` para herdar a mesma coluna do resto, senao encosta na borda do celular. #}
+  {# Discreet on purpose: it is supporting information, not content. It stays inside
+     `main` to inherit the same column as the rest, otherwise it touches the phone's edge. #}
   <p class="app-version muted small">{{ _('app.version', version=app_version) }}</p>
 </main>
 
@@ -135,13 +149,13 @@
 </nav>
 {% endif %}
 
-{# Um modulo so, que monta as features pedidas pela marcacao desta pagina.
-   Nenhum template do painel tem tag de script com logica dentro.
+{# A single module, which mounts the features requested by this page's markup.
+   No panel template has a script tag with logic inside.
 
-   "tag de script" por extenso de proposito: uma tag literal dentro de um comentario
-   Jinja e invisivel para o Jinja, mas nao para quem le o arquivo como HTML - o editor
-   abre uma tag que nunca fecha, passa a ler o resto do arquivo como JavaScript e marca
-   tudo como erro de sintaxe. Vale para qualquer marcacao dentro de comentario. #}
+   "script tag" spelled out on purpose: a literal tag inside a Jinja
+   comment is invisible to Jinja, but not to whoever reads the file as HTML - the editor
+   opens a tag that never closes, starts reading the rest of the file as JavaScript and flags
+   everything as a syntax error. The same goes for any markup inside a comment. #}
 <script type="module" src="{{ static_url('js/app.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>

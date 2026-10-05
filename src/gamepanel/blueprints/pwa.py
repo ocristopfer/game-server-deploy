@@ -1,4 +1,4 @@
-"""O que faz o painel instalar no celular: manifest, service worker e a tela sem rede."""
+"""What makes the panel installable on a phone: manifest, service worker and the offline screen."""
 from __future__ import annotations
 
 from flask import Blueprint, render_template
@@ -10,10 +10,10 @@ bp = Blueprint("pwa", __name__)
 
 @bp.get("/manifest.webmanifest")
 def manifest():
-    """Ficha do aplicativo: nome, icones, cor e tela inicial.
+    """App sheet: name, icons, color and start screen.
 
-    Sai de um template (e nao de um arquivo estatico) para os caminhos dos icones
-    virem do proprio Flask — inclusive a marca de versao do `static_url`.
+    It comes from a template (not a static file) so the icon paths
+    come from Flask itself, including the version mark of `static_url`.
     """
     resp = panel.app.response_class(
         render_template("manifest.webmanifest.jinja"),
@@ -25,19 +25,19 @@ def manifest():
 
 @bp.get("/sw.js")
 def service_worker():
-    """O service worker, servido da RAIZ de proposito.
+    """The service worker, served from the ROOT on purpose.
 
-    O escopo de um service worker e a pasta em que ele mora: em /static/sw.js ele so
-    enxergaria /static/ e nao veria a navegacao do painel. Por isso ele nao e um
-    arquivo estatico — e uma rota.
+    A service worker's scope is the folder it lives in: at /static/sw.js it would only
+    see /static/ and would not see the panel's navigation. That is why it is not a
+    static file: it is a route.
     """
     precache, version_mark = panel._shell_files()
     resp = panel.app.response_class(
         render_template("sw.js.jinja", version=version_mark, precache=precache),
         mimetype="text/javascript",
     )
-    # Sem isto o proprio arquivo do worker ficaria em cache e o painel nunca
-    # descobriria que existe uma versao nova dele.
+    # Without this the worker file itself would be cached and the panel would never
+    # find out that a new version of it exists.
     resp.headers["Cache-Control"] = "no-cache"
     resp.headers["Service-Worker-Allowed"] = "/"
     return resp
@@ -45,9 +45,9 @@ def service_worker():
 
 @bp.get("/offline")
 def offline():
-    """Tela de "sem conexao", guardada no aparelho junto com o casco.
+    """The "no connection" screen, stored on the device along with the shell.
 
-    Nao exige login: ela e servida do cache, sem passar pelo servidor, e nao mostra
-    dado nenhum — so explica o que aconteceu e oferece "tentar de novo".
+    It does not require login: it is served from the cache, without going through the server, and shows
+    no data at all; it only explains what happened and offers "try again".
     """
     return render_template("offline.html")

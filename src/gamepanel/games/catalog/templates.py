@@ -1,34 +1,34 @@
 #!/usr/bin/env python3
-"""Modelos para o formulario "Adicionar jogo" do catalogo.
+"""Templates for the catalog's "Add game" form.
 
-Um modelo NAO e um jogo: e um conjunto de valores que o formulario preenche de uma vez,
-para a pessoa so completar o que muda (nome, app id, nome da pasta do projeto). Quem
-valida de verdade continua sendo o broker — o modelo nao da poder nenhum, so poupa
-digitacao e o erro de esquecer um marcador.
+A template is NOT a game: it is a set of values the form fills in at once, so the person
+only completes what changes (name, app id, project folder name). The one that really
+validates is still the broker - the template grants no power at all, it only saves typing
+and the mistake of forgetting a placeholder.
 
-E o caminho de quem busca um jogo que nao esta em fonte nenhuma: a busca nao acha, mas a
-MOTOR do jogo quase sempre se sabe (Unreal, Unity, Source), e cada motor tem o seu jeito
-de receber porta, escrever log e guardar save.
+It is the path for someone looking for a game that is in no source: the search finds
+nothing, but the game ENGINE is almost always known (Unreal, Unity, Source), and each engine
+has its own way of receiving a port, writing a log and keeping a save.
 
-Puro de proposito (sem Flask, sem banco), como `navigation.py`: e dado, e o
-`tests/gamebroker/unit/test_templates.py` carrega este arquivo e confere que cada modelo
-passa no validador do broker.
+Pure on purpose (no Flask, no database), like `navigation.py`: it is data, and
+`tests/gamebroker/unit/test_templates.py` loads this file and checks that each template
+passes the broker validator.
 
-Os nomes das chaves de `values` sao os `name=` dos campos do formulario. `recipes` e a
-lista de caixas marcadas, separadas por espaco. Rotulo e descricao sao CHAVES do catalogo
-de i18n: texto escrito aqui sairia em portugues na tela em ingles.
+The key names in `values` are the `name=` of the form fields. `recipes` is the list of
+checked boxes, separated by spaces. Label and description are i18n catalog KEYS: text
+written here would come out in Portuguese on the English screen.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# O projeto da Unreal e a pasta que aparece dentro de /opt/game depois da instalacao
-# (Pal, RSDragonwilds, FactoryGame). Nao ha como saber sem instalar; por isso o modelo
-# traz um nome de mentira bem visivel em vez de um chute silencioso.
+# The Unreal project is the folder that shows up inside /opt/game after installation
+# (Pal, RSDragonwilds, FactoryGame). There is no way to know without installing; that is why
+# the template carries a very visible fake name instead of a silent guess.
 PROJECT = "NomeDoProjeto"
-# O mesmo para o executavel de um jogo Unity (VRisingServer.exe, CoreKeeperServer).
+# The same for the executable of a Unity game (VRisingServer.exe, CoreKeeperServer).
 EXECUTABLE = "NomeDoExecutavel"
-# E para a pasta do mod de um jogo Source (-game cstrike, -game tf).
+# And for the mod folder of a Source game (-game cstrike, -game tf).
 MOD = "pasta_do_jogo"
 
 
@@ -40,9 +40,9 @@ class Template:
     values: dict[str, str] = field(default_factory=dict)
 
 
-# Todo modelo diz TODOS os campos que conhece, inclusive os vazios: trocar de modelo tem de
-# limpar o que o anterior deixou (a plataforma Windows e o Proton de um, no jogo Linux do
-# outro, virariam uma instalacao de Wine que ninguem pediu).
+# Every template lists ALL the fields it knows, including the empty ones: switching templates
+# has to clear what the previous one left (one's Windows platform and Proton, on the other's
+# Linux game, would turn into a Wine install nobody asked for).
 _BLANK = {
     "start_script": "", "start_args": "", "ports": "", "game_port": "", "query_port": "",
     "extra_port": "", "memory_mb": "", "cores": "", "disk_gb": "", "config_path": "",
@@ -50,8 +50,8 @@ _BLANK = {
     "leave_re": "", "platform": "", "recipes": "", "shiftable": "",
 }
 
-# As duas linhas saem do log real do Satisfactory. A de saida nao traz o nome de quem saiu,
-# entao a lista de jogadores fica aproximada (a contagem certa).
+# Both lines come from the real Satisfactory log. The leave line does not carry the name of
+# who left, so the player list is approximate (the count is right).
 _UNREAL_JOIN = "LogNet: Join succeeded: (?P<name>.+)"
 _UNREAL_LEAVE = "LogNet: UNetConnection::Close:"
 
@@ -62,15 +62,15 @@ UNREAL_LINUX = Template(
     description_key="catalog.template.unreal_linux_help",
     values={
         **_BLANK,
-        # `-log` manda o log para o stdout (o journald guarda e o painel le); `-Port` e o
-        # padrao da Unreal para a porta de jogo (UDP).
+        # `-log` sends the log to stdout (journald keeps it and the panel reads it); `-Port` is
+        # the Unreal default for the game port (UDP).
         "start_args": "-log -Port={PORT}",
         "ports": "7777/udp",
         "game_port": "7777",
         "memory_mb": "8192",
         "cores": "4",
         "disk_gb": "30",
-        # Todo servidor Unreal guarda config e save sob <Projeto>/Saved.
+        # Every Unreal server keeps config and save under <Project>/Saved.
         "config_path": f"/opt/game/{PROJECT}/Saved/Config/LinuxServer",
         "config_files": (
             f"/opt/game/{PROJECT}/Saved/Config/LinuxServer/Game.ini\n"
@@ -79,7 +79,7 @@ UNREAL_LINUX = Template(
         "backup_paths": f"/opt/game/{PROJECT}/Saved/SaveGames",
         "join_re": _UNREAL_JOIN,
         "leave_re": _UNREAL_LEAVE,
-        # Os argumentos acima recebem {PORT}: o broker pode sortear a porta.
+        # The arguments above receive {PORT}: the broker may pick the port.
         "shiftable": "1",
     },
 )
@@ -90,11 +90,11 @@ UNREAL_WINDOWS = Template(
     description_key="catalog.template.unreal_windows_help",
     values={
         **_BLANK,
-        # O .exe da raiz de um servidor Unreal e so o bootstrap: sem interface ele fica de pe
-        # sem nunca gerar o servidor (foi o caso do Icarus). O Shipping e o que abre porta.
+        # The .exe at the root of an Unreal server is only the bootstrap: without a UI it stays
+        # up without ever spawning the server (that was the case with Icarus). Shipping is what opens the port.
         "start_script": f"{PROJECT}/Binaries/Win64/{PROJECT}Server-Win64-Shipping.exe",
-        # -log abriria uma JANELA de console, presa num X que ninguem ve; o par -stdout
-        # -FullStdOutLogOutput e o que faz o log chegar ao journal (ver games/icarus.env).
+        # -log would open a console WINDOW, stuck in an X display nobody sees; the pair -stdout
+        # -FullStdOutLogOutput is what makes the log reach the journal (see games/icarus.env).
         "start_args": "-stdout -FullStdOutLogOutput -Port={PORT} -QueryPort={QUERY_PORT}",
         "ports": "7777/udp 27015/udp",
         "game_port": "7777",
@@ -108,11 +108,11 @@ UNREAL_WINDOWS = Template(
             f"/opt/game/{PROJECT}/Saved/Config/WindowsServer/GameUserSettings.ini"
         ),
         "backup_paths": f"/opt/game/{PROJECT}/Saved/SaveGames",
-        # A query da Steam ja esta aberta para a lista de servidores; e mais confiavel que o
-        # log, que muda de jogo para jogo.
+        # The Steam query is already open for the server list; it is more reliable than the
+        # log, which changes from game to game.
         "player_source": "a2s",
-        # Proton, e nao wine: fsync/ntsync, que o wine da distro nao tem. Wine so se o
-        # Proton comprovadamente nao funcionar com o jogo.
+        # Proton, not wine: fsync/ntsync, which the distro wine does not have. Wine only if
+        # Proton has been proven not to work with the game.
         "platform": "windows",
         "recipes": "proton",
         "shiftable": "1",
@@ -126,8 +126,8 @@ UNITY_LINUX = Template(
     values={
         **_BLANK,
         "start_script": f"{EXECUTABLE}.x86_64",
-        # -batchmode -nographics: sem isso a Unity tenta abrir placa de video. `-logFile -`
-        # manda o log para o stdout (journal), e nao para ~/.config/unity3d/.../Player.log.
+        # -batchmode -nographics: without it Unity tries to open a video card. `-logFile -`
+        # sends the log to stdout (journal), and not to ~/.config/unity3d/.../Player.log.
         "start_args": "-batchmode -nographics -logFile -",
         "ports": "7777/udp",
         "game_port": "7777",
@@ -153,8 +153,8 @@ UNITY_WINDOWS = Template(
         "disk_gb": "20",
         "config_path": "/opt/game",
         "platform": "windows",
-        # O X virtual custa pouco e poupa o erro mais comum de servidor Unity sob Proton:
-        # criar janela na largada e morrer sem display (o V Rising faz isso).
+        # The virtual X costs little and avoids the most common failure of a Unity server under
+        # Proton: creating a window at startup and dying without a display (V Rising does that).
         "recipes": "proton xvfb",
     },
 )
@@ -166,18 +166,18 @@ SOURCE = Template(
     values={
         **_BLANK,
         "start_script": "srcds_run",
-        # -strictportbind: sem ele o srcds pula para a proxima porta livre em silencio, e o
-        # firewall fica aberto numa porta onde o jogo nao esta.
+        # -strictportbind: without it srcds silently jumps to the next free port, and the
+        # firewall stays open on a port where the game is not.
         "start_args": f"-game {MOD} -console -strictportbind -port {{PORT}} +map MAPA +maxplayers 16",
         "ports": "27015/udp 27015/tcp",
         "game_port": "27015",
         "memory_mb": "2048",
         "cores": "2",
         "disk_gb": "20",
-        # Sem config_files: o server.cfg do Source e uma lista de comandos de console, nao um
-        # .ini, e o formulario campo a campo o leria errado. A pasta abre no editor de arquivo.
+        # No config_files: Source's server.cfg is a list of console commands, not an .ini,
+        # and the field-by-field form would read it wrong. The folder opens in the file editor.
         "config_path": f"/opt/game/{MOD}/cfg",
-        # O que o console do srcds escreve ao entrar e ao sair, com o nome nos dois lados.
+        # What the srcds console writes on join and on leave, with the name on both.
         "join_re": 'Client "(?P<name>.+?)" connected',
         "leave_re": "Dropped (?P<name>.+?) from server",
         "recipes": "steamclient-sdk64",

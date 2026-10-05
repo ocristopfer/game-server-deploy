@@ -1,4 +1,4 @@
-"""TOTP e codigos de recuperacao (totp.py): a conta em si, contra os vetores do RFC 6238."""
+"""TOTP and recovery codes (totp.py): the math itself, against the RFC 6238 vectors."""
 from __future__ import annotations
 
 import base64
@@ -7,8 +7,8 @@ import pytest
 
 from gamepanel.security import totp
 
-# Apendice B do RFC 6238: o segredo ASCII "12345678901234567890" e os codigos de 8 digitos para
-# SHA-1; os de 6 digitos sao os 6 ultimos (o resto da divisao por 10^6).
+# RFC 6238 Appendix B: the ASCII secret "12345678901234567890" and the 8-digit codes for
+# SHA-1; the 6-digit ones are the last 6 digits (the remainder of dividing by 10^6).
 RFC_SECRET = base64.b32encode(b"12345678901234567890").decode().rstrip("=")
 VECTORS = [(59, "287082"), (1111111109, "081804"), (1111111111, "050471"),
            (1234567890, "005924"), (2000000000, "279037"), (20000000000, "353130")]
@@ -32,9 +32,9 @@ def test_aceita_o_codigo_do_passo_atual_e_devolve_o_passo():
 
 def test_tolera_um_passo_para_cada_lado_e_nao_mais():
     code = totp.code(RFC_SECRET, 10)
-    assert totp.verify(RFC_SECRET, code, now=9 * 30) == 10       # 1 passo antes
-    assert totp.verify(RFC_SECRET, code, now=11 * 30) == 10      # 1 passo depois
-    assert totp.verify(RFC_SECRET, code, now=13 * 30) is None    # 3 passos: fora
+    assert totp.verify(RFC_SECRET, code, now=9 * 30) == 10       # 1 step before
+    assert totp.verify(RFC_SECRET, code, now=11 * 30) == 10      # 1 step after
+    assert totp.verify(RFC_SECRET, code, now=13 * 30) is None    # 3 steps: outside
     assert totp.verify(RFC_SECRET, code, now=7 * 30) is None
 
 
@@ -44,7 +44,7 @@ def test_codigo_ja_usado_nao_vale_de_novo():
 
 
 def test_codigo_de_passo_mais_antigo_que_o_ultimo_usado_tambem_e_recusado():
-    """Sem isto, usar o codigo NOVO e depois repetir o ANTIGO (ainda na janela) funcionaria."""
+    """Without this, using the NEW code and then repeating the OLD one (still in the window) would work."""
     old_one = totp.code(RFC_SECRET, 9)
     assert totp.verify(RFC_SECRET, old_one, now=10 * 30, last_step=10) is None
 
@@ -71,7 +71,7 @@ def test_uri_carrega_o_que_o_aplicativo_precisa():
         assert chunk_of in address
 
 
-# --- recuperacao -------------------------------------------------------------------------------
+# --- recovery ----------------------------------------------------------------------------------
 
 def test_codigos_de_recuperacao_tem_o_formato_e_sao_todos_diferentes():
     codes = totp.new_recovery_codes()

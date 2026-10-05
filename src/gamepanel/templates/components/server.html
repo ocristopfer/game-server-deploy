@@ -1,22 +1,32 @@
-{# Componentes que falam de servidor.
+{# Components that talk about servers.
 
-   Separados de ui.html porque conhecem o dominio: status de servico, acoes de
-   energia, as telas de um servidor. Qualquer tela do painel pode usa-los, e e por
-   isso que a barra de navegacao de um servidor e IGUAL em todas — antes cada
-   template listava o seu proprio subconjunto de links, na sua propria ordem. #}
+   Separate from ui.html because they know the domain: service status, power
+   actions, a server's screens. Any panel screen can use them, and that is
+   why a server's navigation bar is the SAME on all of them - before, each
+   template listed its own subset of links, in its own order. #}
 {% import "components/ui.html" as ui with context %}
 
 
-{# Selo de estado do servico. Uma regra so, num lugar so: antes esta expressao
-   ternaria de tres niveis estava copiada em tres templates. #}
+{# Service state badge. A single rule, in a single place: before, this three-level
+   ternary expression was copied into three templates. #}
 {% macro state(status) -%}
-  {{ ui.badge(status.service, 'on' if status.service == 'active' else ('off' if status.reachable else 'cold')) }}
+  {{ ui.badge(state_text(status.service), 'on' if status.service == 'active' else ('off' if status.reachable else 'cold')) }}
 {%- endmacro %}
 
 
-{# ------------------------------------------------------------- navegacao
-   A fita de abas das telas de um servidor. As secoes vem do `ui.py`; este macro so
-   sabe desenhar o que vier — e por isso uma tela nova aparece aqui sozinha. #}
+{# The service state is systemd's own word (active, inactive, failed), shown as is in both
+   languages. Only the two values the PANEL writes when it could not ask systemd are
+   Portuguese data (alerts compare them), so they are translated here, at render time. #}
+{% macro state_text(service) -%}
+  {%- if service == 'desconhecido' -%}{{ _('service_state.unknown') }}
+  {%- elif service == 'inacessivel' -%}{{ _('service_state.unreachable') }}
+  {%- else -%}{{ service }}{%- endif -%}
+{%- endmacro %}
+
+
+{# ------------------------------------------------------------- navigation
+   The tab strip of a server's screens. The sections come from `ui.py`; this macro only
+   knows how to draw whatever comes - which is why a new screen shows up here on its own. #}
 {% macro tabs(server, active) %}
 <nav class="tabs" aria-label="{{ _('server.sections_of_this_server') }}">
   {% for s in server_sections %}
@@ -30,9 +40,9 @@
 {% endmacro %}
 
 
-{# ---------------------------------------------------------------- acoes
-   Os botoes de ligar/desligar. `compacto` e a versao do cartao do painel: rotulo
-   curto e botao esticado, porque ali eles dividem uma linha de celular. #}
+{# ---------------------------------------------------------------- actions
+   The power on/off buttons. `compacto` is the dashboard card version: short label
+   and stretched button, because there they share a phone row. #}
 {% macro power(server, actions, compact=false) %}
 <div class="cluster power">
   {% for a in actions %}
@@ -48,9 +58,9 @@
 {% endmacro %}
 
 
-{# Manutencao e um grupo a parte de proposito: "Atualizar" derruba o servidor por
-   varios minutos e nao pode ficar encostado no "Reiniciar" como se fosse do mesmo
-   peso. Quem so queria reiniciar nao tropeca num update de 30 GB. #}
+{# Maintenance is a separate group on purpose: "Update" takes the server down for
+   several minutes and must not sit right next to "Restart" as if it carried the same
+   weight. Whoever only wanted to restart does not stumble into a 30 GB update. #}
 {% macro maintenance(server, actions) %}
 <div class="cluster">
   {% for a in actions %}
@@ -65,11 +75,11 @@
 {% endmacro %}
 
 
-{# ------------------------------------------------------------ cartao do painel
-   Um servidor na lista. O cartao inteiro leva para a tela do servidor (o nome e o
-   link); a linha de baixo tem so o controle de energia que faz sentido agora e um
-   menu com o resto. Antes eram oito botoes por cartao, um deles ("Detalhes")
-   apontando para o mesmo lugar que o titulo logo acima. #}
+{# ------------------------------------------------------------ dashboard card
+   A server in the list. The whole card leads to the server screen (the name is the
+   link); the bottom row only has the power control that makes sense right now and a
+   menu with the rest. There used to be eight buttons per card, one of them ("Details")
+   pointing to the same place as the title right above. #}
 {% macro card(server, status) %}
 <article class="card server">
   <div class="server__head">
@@ -91,7 +101,7 @@
 
   <div class="server__actions">
     {{ power(server, card_power(status.service), compact=true) }}
-    {% call ui.menu('', icon='⋯', title='Mais acoes em ' ~ server.name) %}
+    {% call ui.menu('', icon='⋯', title=_('server.more_actions_on', name=server.name)) %}
       <span class="menu__title">{{ server.name }}</span>
       {% for s in server_sections %}
         <a class="menu__item" role="menuitem" href="{{ url_for(section_endpoint(s), sid=server.id) }}">

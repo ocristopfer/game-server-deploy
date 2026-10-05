@@ -1,17 +1,17 @@
 #!/bin/bash
-# 'systemctl' do container: nao existe systemd dentro de um container Docker, entao
-# quem liga/desliga o jogo e este script — com a mesma interface que o painel usa.
+# The container's 'systemctl': there is no systemd inside a Docker container, so the one
+# that starts/stops the game is this script -- with the same interface the panel uses.
 #
-# Comandos atendidos: start | stop | restart | status | is-active [--quiet] |
-#                     show -p MainPID|ActiveEnterTimestamp [--value] |
-#                     enable | disable | daemon-reload (sem efeito, so nao falham)
+# Commands handled: start | stop | restart | status | is-active [--quiet] |
+#                   show -p MainPID|ActiveEnterTimestamp [--value] |
+#                   enable | disable | daemon-reload (no effect, they just do not fail)
 #
-# Estado em /run/game/<unidade>.*:
-#   .pid     pid do supervisor (game-supervisor), que reinicia o jogo se ele cair
-#   .main    pid do processo do jogo (o painel mede CPU/RAM DELE, nao do container)
-#   .started quando o servico entrou no ar (equivale ao ActiveEnterTimestamp)
-#   .stop    marca que a parada foi pedida (o supervisor nao deve reiniciar)
-#   .offset  byte do log onde este start comecou (usado pelo journalctl --since)
+# State in /run/game/<unit>.*:
+#   .pid     pid of the supervisor (game-supervisor), which restarts the game if it crashes
+#   .main    pid of the game process (the panel measures ITS CPU/RAM, not the container's)
+#   .started when the service came up (equivalent to ActiveEnterTimestamp)
+#   .stop    marks that a stop was requested (the supervisor must not restart)
+#   .offset  log byte where this start began (used by journalctl --since)
 set -u
 
 STATE_DIR=/run/game
@@ -56,18 +56,23 @@ stopfile="$STATE_DIR/${unit}.stop"
 offsetfile="$STATE_DIR/${unit}.offset"
 log="$LOG_DIR/${unit}.log"
 
+# /proc and not `kill -0`: the panel asks for status as gamepanel, and `kill -0` on the
+# supervisor (owned by root) fails with EPERM - the server would always show as stopped.
 vivo() {
-  [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile" 2>/dev/null)" 2>/dev/null
+  local pid
+  [ -f "$pidfile" ] || return 1
+  pid="$(cat "$pidfile" 2>/dev/null)"
+  [ -n "$pid" ] && [ -d "/proc/$pid" ]
 }
 
 start_unit() {
   vivo && return 0
   rm -f "$stopfile"
   touch "$log"
-  # O journalctl usa este offset para o painel so contar jogadores desta execucao.
+  # journalctl uses this offset so the panel only counts players from this run.
   wc -c <"$log" | tr -d ' ' >"$offsetfile"
-  # setsid: o supervisor precisa sobreviver ao fim da sessao ssh que o iniciou, e
-  # ganhar um grupo de processos proprio (a parada mata o grupo inteiro).
+  # setsid: the supervisor has to outlive the end of the ssh session that started it, and
+  # get its own process group (the stop kills the whole group).
   setsid nohup /usr/local/bin/game-supervisor "$unit" >>"$log" 2>&1 &
   echo $! >"$pidfile"
   date '+%a %Y-%m-%d %H:%M:%S %Z' >"$startedfile"
@@ -80,7 +85,7 @@ stop_unit() {
   if vivo; then
     local grupo esperou
     grupo="$(cat "$pidfile")"
-    # Mata o grupo: o jogo precisa receber o TERM para salvar o mundo antes de sair.
+    # Kill the group: the game has to receive the TERM to save the world before exiting.
     kill -TERM -- "-$grupo" 2>/dev/null || kill -TERM "$grupo" 2>/dev/null || true
     esperou=0
     while vivo && [ "$esperou" -lt "$STOP_TIMEOUT" ]; do
@@ -137,8 +142,8 @@ case "$cmd" in
     tail -n 10 "$log" 2>/dev/null || true
     vivo || exit 3
     ;;
-  # Sem systemd nao ha o que habilitar: o entrypoint sobe o jogo em todo start do
-  # container, que e o equivalente ao 'enable' daqui.
+  # Without systemd there is nothing to enable: the entrypoint starts the game on every
+  # container start, which is the equivalent of 'enable' here.
   enable|disable|daemon-reload|reset-failed|mask|unmask) : ;;
   list-units) ls -1 "$STATE_DIR"/*.pid 2>/dev/null | sed 's|.*/||; s|\.pid$|.service|' ;;
   *) echo "systemctl (container): comando nao suportado: $cmd" >&2; exit 1 ;;

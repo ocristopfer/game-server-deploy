@@ -1,6 +1,6 @@
-"""O que o painel sugere no formulario "Adicionar jogo" (admin/sugestoes_de_jogos.py, gerado do
-LinuxGSM) tem de ser aceito pelo broker: sugestao que ele recusa faria a pessoa achar que o erro
-foi dela. Tambem trava o que nunca pode aparecer nela (segredo, encadeamento de shell)."""
+"""What the panel suggests in the "Add game" form (admin/sugestoes_de_jogos.py, generated from
+LinuxGSM) must be accepted by the broker: a suggestion it refuses would make the user think the
+mistake was theirs. Also locks down what must never appear in it (secrets, shell chaining)."""
 from __future__ import annotations
 
 import importlib.util
@@ -24,7 +24,7 @@ SUGGESTIONS = data.SUGGESTIONS
 
 def _as_the_panel_sends(s: dict) -> dict:
     sending = {"key": s["key"], "name": s["name"], "app_id": s["appid"],
-             "ports": s["ports"].split() or ["27015/udp"],   # parcial: a pessoa preenche depois
+             "ports": s["ports"].split() or ["27015/udp"],   # partial: the user fills it in later
              "game_port": s["game_port"] or 27015, "recipes": [], "config_files": [],
              "backup_paths": [], "shiftable": s["shiftable"]}
     for field in ("start_script", "start_args"):
@@ -79,15 +79,15 @@ def test_satisfactory_traz_a_porta_confiavel_em_tcp():
 
 
 def test_porta_de_administracao_nunca_e_exposta():
-    """Rust guarda o RCON em 28016: vai no comando, nunca no firewall."""
+    """Rust keeps RCON on 28016: it goes in the command, never in the firewall."""
     rust = next(s for s in SUGGESTIONS if s["appid"] == 258550)
     assert "28016" not in rust["ports"]
     assert "+rcon.port 28016" in rust["start_args"]
 
 
 def test_quase_toda_sugestao_traz_porta_e_protocolo():
-    """Regerar sem o info_game.sh/info_messages.sh nao da erro nenhum: so volta a sair ~30
-    jogos sem porta e tudo como UDP presumido. Isto e o que acusa."""
+    """Regenerating without info_game.sh/info_messages.sh raises no error at all: ~30 games
+    just come out without a port again, and everything as presumed UDP. This is what flags it."""
     without_port = [s["key"] for s in SUGGESTIONS if not s["game_port"]]
     presumed = [s["key"] for s in SUGGESTIONS if any("presumido" in w for w in s["warnings"])]
     assert len(without_port) <= 5, without_port
@@ -101,7 +101,7 @@ def test_project_zomboid_e_terraria_saem_com_a_porta_de_verdade():
 
 
 # ----------------------------------------------------------------------------
-# A lista escrita a mao (manual_suggestions.py): servidor so de Windows, que o LinuxGSM nao tem
+# The hand-written list (manual_suggestions.py): Windows-only servers that LinuxGSM lacks
 # ----------------------------------------------------------------------------
 
 _spec_manual = importlib.util.spec_from_file_location(
@@ -131,7 +131,7 @@ def test_sugestao_manual_passa_no_validador_do_broker(s):
 
 @pytest.mark.parametrize("s", MANUAL, ids=lambda s: s["key"])
 def test_sugestao_manual_de_windows_usa_proton(s):
-    """Regra do repositorio: Proton primeiro; wine so com o motivo escrito num curado."""
+    """Repository rule: Proton first; wine only with the reason written in a curated game."""
     if s["platform"] == "windows":
         assert "proton" in s["recipes"]
         assert "wine" not in s["recipes"]
@@ -144,14 +144,14 @@ def test_sugestao_manual_nao_carrega_segredo_nem_encadeia_comando(s):
 
 
 def test_lista_manual_nao_repete_o_linuxgsm():
-    """Repetir um jogo nas duas listas daria dois botoes com dados diferentes para o mesmo App ID."""
+    """Repeating a game in both lists would give two buttons with different data for the same App ID."""
     assert not {s["appid"] for s in MANUAL} & {s["appid"] for s in SUGGESTIONS}
     assert not {s["key"] for s in MANUAL} & {s["key"] for s in SUGGESTIONS}
 
 
 def test_lista_manual_nao_repete_um_curado():
-    """Chave de um curado num jogo dinamico vira sobreposicao POR CIMA do .env (ver o Valheim).
-    Curado ja aparece na busca pelo catalogo da pagina; aqui ele nao entra."""
+    """A curated key on a dynamic game becomes an override ON TOP of the .env (see Valheim).
+    Curated games already show up in the search through the page catalog; they do not go here."""
     curated_keys, curated_appids = set(), set()
     for env in (RAIZ / "games").glob("[!_]*.env"):
         text = env.read_text(encoding="utf-8")
@@ -164,7 +164,7 @@ def test_lista_manual_nao_repete_um_curado():
 
 
 # ----------------------------------------------------------------------------
-# A lista gerada dos eggs do Pterodactyl (pterodactyl_suggestions.py)
+# The list generated from the Pterodactyl eggs (pterodactyl_suggestions.py)
 # ----------------------------------------------------------------------------
 
 _spec_ptero = importlib.util.spec_from_file_location(
@@ -211,8 +211,8 @@ def test_sugestao_do_pterodactyl_nao_carrega_segredo_nem_caminho_do_container(s)
 
 
 def test_nenhum_app_id_ou_chave_aparece_em_duas_fontes():
-    """Dois botoes para o mesmo jogo, com dados diferentes, e a pessoa nao sabe qual vale. Dentro
-    do LinuxGSM o App ID se repete de proposito (os mods do HLDS sao todos o 90): conta o CRUZAMENTO."""
+    """Two buttons for the same game, with different data, and the user cannot tell which one counts.
+    Within LinuxGSM the App ID repeats on purpose (the HLDS mods are all 90): what counts is the CROSSOVER."""
     linuxgsm = {s["appid"] for s in SUGGESTIONS}
     manual_ids = {s["appid"] for s in MANUAL}
     ptero_ids = [s["appid"] for s in PTERO]

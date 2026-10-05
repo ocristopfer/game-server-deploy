@@ -1,21 +1,21 @@
-"""O JavaScript do painel parseia, importa e MONTA.
+"""The panel's JavaScript parses, imports and MOUNTS.
 
-Ate aqui o front nao tinha rede nenhuma. Um `const` renomeado pela metade, um import
-apontando para arquivo que mudou de nome, um metodo que virou outro nome so de um lado:
-nada disso aparece no servidor. A pagina responde 200, o HTML chega inteiro, e o erro
-fica no console de quem abriu a tela — e o `app.js` ainda o engole de proposito, para
-uma feature quebrada nao levar as outras junto.
+Until now the front end had no safety net at all. A half-renamed `const`, an import pointing
+to a file that changed name, a method that got a new name on one side only: none of that
+shows up on the server. The page answers 200, the HTML arrives whole, and the error stays in
+the console of whoever opened the screen - and `app.js` even swallows it on purpose, so one
+broken feature does not take the others down with it.
 
-Tres defeitos reais que este arquivo pegou, todos nascidos de renomeacao:
+Three real defects this file caught, all born from renaming:
 
-- o `Poller` passou a expor `start()` e as features continuaram chamando `.iniciar()`;
-- `readJSON(url, opcoes)` ficou lendo `options.headers` — uma troca atravessou a
-  fronteira de uma aspa e reescreveu codigo;
-- `shortList` usava `rotulo` numa linha e `label` na seguinte.
+- `Poller` started exposing `start()` and the features kept calling `.iniciar()`;
+- `readJSON(url, opcoes)` kept reading `options.headers` - a replacement crossed the
+  boundary of a quote and rewrote code;
+- `shortList` used `rotulo` on one line and `label` on the next.
 
-Isto nao testa comportamento: testa que o modulo carrega e que o `mount` nao estoura.
-Precisa do `node` no PATH; sem ele os testes sao PULADOS, porque producao nao tem node
-e o painel nao depende dele para nada.
+This does not test behavior: it tests that the module loads and that `mount` does not blow
+up. It needs `node` on PATH; without it the tests are SKIPPED, because production has no
+node and the panel does not depend on it for anything.
 """
 from __future__ import annotations
 
@@ -31,9 +31,9 @@ JS_DIR = Path(panel.__file__).parent / "static" / "js"
 NODE = shutil.which("node")
 sem_node = pytest.mark.skipif(NODE is None, reason="node nao esta no PATH")
 
-# O bastante do navegador para um modulo CHEGAR ao fim do arquivo e um `mount` rodar.
-# Nao pretende simular o DOM: se um modulo precisar de mais que isto no escopo do
-# modulo, ele esta fazendo trabalho no import em vez de no `mount`, que e o contrato.
+# Just enough browser for a module to REACH the end of the file and for a `mount` to run.
+# It does not try to simulate the DOM: if a module needs more than this at module scope,
+# it is doing work at import time instead of in `mount`, which is the contract.
 STUBS = r"""
 function makeEl(tag = 'div') {
   const node = {
@@ -135,7 +135,7 @@ def _run_node(tmp_path: Path, name: str, script: str) -> subprocess.CompletedPro
 
 
 def test_a_varredura_encontra_os_modulos():
-    """Zero arquivos e o jeito silencioso de este teste parar de valer."""
+    """Zero files is the silent way for this test to stop meaning anything."""
     assert len(_js_files()) > 15
 
 
@@ -149,7 +149,7 @@ def test_o_modulo_parseia(path: Path):
 
 @sem_node
 def test_todo_modulo_importa_sem_referencia_solta(tmp_path):
-    """Import quebrado nao da erro no servidor: a tela abre e o comportamento some."""
+    """A broken import raises no error on the server: the screen opens and the behavior vanishes."""
     urls = [p.resolve().as_uri() for p in _js_files()]
     script = STUBS + "const URLS = " + repr(urls).replace("'", '"') + ";\n" + IMPORT_BODY
     done = _run_node(tmp_path, "import-all.mjs", script)
@@ -158,7 +158,7 @@ def test_todo_modulo_importa_sem_referencia_solta(tmp_path):
 
 @sem_node
 def test_toda_feature_monta_sem_estourar(tmp_path):
-    """Feature que estoura no `mount` deixa a tela viva e MUDA: o `app.js` loga e segue."""
+    """A feature that blows up in `mount` leaves the screen alive and MUTE: `app.js` logs and moves on."""
     app_url = (JS_DIR / "app.js").resolve().as_uri()
     script = STUBS + 'const APP_URL = "' + app_url + '";\n' + MOUNT_BODY
     done = _run_node(tmp_path, "mount-all.mjs", script)

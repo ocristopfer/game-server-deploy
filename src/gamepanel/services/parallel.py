@@ -1,9 +1,9 @@
-"""Perguntar a mesma coisa a varios servidores ao mesmo tempo.
+"""Asking several servers the same thing at the same time.
 
-Estado, medidores e contagem de jogadores custam, cada um, uma ida de rede por
-servidor. Em serie a tela paga a soma — e com um container fora do ar, a soma dos
-tempos esgotados. Esta era a mesma trinta linhas escrita tres vezes (status, recursos,
-jogadores), cada copia com um detalhe diferente.
+State, gauges and player count each cost one network trip per server. In series the
+screen pays the sum, and with a container down, the sum of the timeouts. This used to be
+the same thirty lines written three times (status, resources, players), each copy with a
+different detail.
 """
 from __future__ import annotations
 
@@ -19,11 +19,11 @@ def per_server(
     timeout: float,
     fallback: dict,
 ) -> dict[int, dict]:
-    """Roda `consulta` para cada servidor em paralelo; devolve {id do servidor: resposta}.
+    """Runs `query` for each server in parallel; returns {server id: answer}.
 
-    Quem nao voltou dentro de `timeout` entra com uma COPIA de `fallback` — copia, e nao
-    o mesmo objeto em varias chaves: a tela e o monitor escrevem em cima do que recebem,
-    e um dicionario compartilhado faria a anotacao de um servidor aparecer no outro.
+    Whoever did not come back within `timeout` gets a COPY of `fallback`: a copy, and not
+    the same object under several keys, because the screen and the monitor write on top
+    of what they receive, and a shared dict would make one server's note show up on another.
     """
     results: dict[int, dict] = {}
     lock = threading.Lock()

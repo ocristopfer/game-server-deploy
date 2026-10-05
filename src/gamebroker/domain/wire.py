@@ -1,14 +1,14 @@
-"""O formato de FIO da API do broker, num lugar so.
+"""The WIRE format of the broker API, in one place.
 
-Existe porque antes nao existia: `/v1/instancias` devolvia `SELECT * FROM instancias`, e
-com isso o nome de cada COLUNA virava, sem ninguem decidir, o nome de cada campo do
-JSON. Renomear uma coluna quebrava o painel; renomear um campo do JSON exigia uma
-migration. As duas coisas ficaram amarradas uma na outra por acidente.
+It exists because before it did not: `/v1/instancias` returned `SELECT * FROM instancias`,
+and so the name of each COLUMN became, without anyone deciding it, the name of each JSON
+field. Renaming a column broke the panel; renaming a JSON field required a migration. The
+two ended up tied to each other by accident.
 
-Aqui a traducao e explicita: de um lado a linha do banco (que pode mudar com uma
-migration), do outro o contrato com quem consome a API (que so muda com o painel junto).
-Uma funcao por recurso, e nada alem de renomear campo — se aparecer regra de negocio
-nestas funcoes, ela esta no lugar errado.
+Here the translation is explicit: on one side the database row (which may change with a
+migration), on the other the contract with the API consumer (which only changes together
+with the panel). One function per resource, and nothing beyond renaming fields - if business
+rules show up in these functions, they are in the wrong place.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from typing import Any
 
 
 def port(row: Any) -> dict:
-    """Uma porta alocada, como a API a mostra."""
+    """An allocated port, as the API shows it."""
     return {
         "base": row["base"],
         "number": row["number"],
@@ -26,19 +26,19 @@ def port(row: Any) -> dict:
 
 
 def instance(row: Any) -> dict:
-    """Uma instancia de jogo, como a API a mostra.
+    """A game instance, as the API shows it.
 
-    Hoje os nomes batem com os da coluna, porque o banco foi traduzido logo depois desta
-    camada nascer. O valor dela nao e a traducao: e a LISTA ser fixa. Um `SELECT *` leva
-    para o JSON qualquer coluna nova no dia em que ela for criada, e ai ela e contrato
-    sem ninguem ter decidido — foi assim que o formato de fio e o esquema do banco
-    ficaram amarrados um no outro da primeira vez.
+    Today the names match the column names, because the database was translated right after
+    this layer was born. Its value is not the translation: it is the list being FIXED. A
+    `SELECT *` carries any new column into the JSON the day it is created, and then it is
+    contract without anyone having decided it - that is how the wire format and the database
+    schema got tied to each other the first time.
     """
     return {
         "id": row["id"],
-        # `str()` pelo mesmo motivo do `db.taken`: num banco migrado a coluna guarda o
-        # CTID antigo como numero, e o fio tem de ser texto sempre — o painel compara
-        # e concatena, e um tipo que oscila com a idade do banco e defeito esperando.
+        # `str()` for the same reason as in `db.taken`: in a migrated database the column holds
+        # the old CTID as a number, and the wire must always be text - the panel compares and
+        # concatenates, and a type that varies with the database's age is a defect waiting to happen.
         "handle": str(row["handle"]),
         "backend": row["backend"],
         "ip": row["ip"],
@@ -54,10 +54,10 @@ def instance(row: Any) -> dict:
 
 
 def operation(row: Any) -> dict:
-    """Uma operacao em andamento ou terminada, como a API a mostra.
+    """An operation in progress or finished, as the API shows it.
 
-    O `log` vai inteiro: e ele que o painel mostra enquanto a criacao acontece, e cortar
-    aqui deixaria a tela sem dizer em que fase a instalacao parou.
+    The `log` goes in full: it is what the panel shows while the creation happens, and
+    cutting it here would leave the screen unable to say at which phase the installation stopped.
     """
     return {
         "id": row["id"],

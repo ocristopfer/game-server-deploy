@@ -1,9 +1,9 @@
-"""A segunda copia do backup, no painel: o job que a guarda, a tela e a restauracao.
+"""The second backup copy, on the panel: the job that stores it, the screen and the restore.
 
-As rotas trocam `start_job` por um capturador (sem thread), e os passos capturados rodam
-depois por `_run_steps` com SSH falso — e assim que se ve a ORDEM dos passos, que e o
-que importa aqui: a copia de seguranca antes de extrair, a copia do painel antes de
-desativar a instancia.
+The routes swap `start_job` for a capturer (no thread), and the captured steps run later
+through `_run_steps` with fake SSH - that is how the ORDER of the steps is visible, which
+is what matters here: the safety copy before extracting, the panel copy before
+deactivating the instance.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def jobs_started(monkeypatch):
 
 
 class FakeContainer:
-    """Um container que responde aos comandos pela ordem de chegada e guarda o que viu."""
+    """A container that answers commands in order of arrival and keeps what it saw."""
 
     def __init__(self, backup_name="valheim-20260101-120000.tar.gz", content=b"save-do-mundo"):
         self.backup_name = backup_name
@@ -52,7 +52,7 @@ class FakeContainer:
 
     def ssh_run(self, server, remote_cmd, timeout=None, stdin_data=None, multiplex=True):
         self.commands.append(remote_cmd)
-        if "backup pronto" in remote_cmd:  # e o BACKUP_SCRIPT
+        if "backup pronto" in remote_cmd:  # it is the BACKUP_SCRIPT
             name = self.backup_name
             if "antes-de-restaurar" in remote_cmd:
                 name = name.replace(".tar.gz", "-antes-de-restaurar.tar.gz")
@@ -87,7 +87,7 @@ def _run(job):
     return panel._run_steps(job["server"], job["steps"], 60)
 
 
-# ------------------------------------------------------------- passos de job
+# ------------------------------------------------------------- job steps
 
 def test_passos_param_no_primeiro_que_falha(monkeypatch):
     seen = []
@@ -145,14 +145,14 @@ def test_copia_que_nao_chega_inteira_faz_o_job_falhar(admin, post, server, archi
 
 
 def test_copia_de_seguranca_do_restore_nao_aplica_retencao(server):
-    # Com as copias no limite, a retencao apagaria a mais antiga — justo a escolhida.
+    # With the copies at the limit, retention would delete the oldest - precisely the chosen one.
     assert " gp /var/backups/gamepanel valheim 0 -antes-de-restaurar " in panel.backup_command(
         server, [SAVE], "-antes-de-restaurar")
     assert f" valheim {panel.BACKUP_KEEP} '' " in panel.backup_command(server, [SAVE])
 
 
 def test_restaurar_copia_do_container_le_o_campo_name(admin, post, server, archive, jobs_started, container):
-    # O template mandava 'nome' e a rota le 'name': restaurar dava 400 sempre.
+    # The template sent 'nome' and the route reads 'name': restoring always gave 400.
     response = post(admin, f"/servers/{server['id']}/backups/restore", {"name": container.backup_name})
     assert response.status_code == 302
     output, status, _ = _run(jobs_started[0])
@@ -171,7 +171,7 @@ def test_formularios_da_tela_mandam_o_campo_que_as_rotas_leem(admin, server, arc
     assert f'name="name" value="{container.backup_name}"' in html
 
 
-# ------------------------------------------------------ copias do painel
+# ------------------------------------------------------ panel copies
 
 def _keep_in_panel(archive, name="valheim-20250101-000000.tar.gz", data=b"save-antigo"):
     folder = archive / "valheim"
@@ -181,7 +181,7 @@ def _keep_in_panel(archive, name="valheim-20250101-000000.tar.gz", data=b"save-a
 
 
 def test_servidor_recriado_enxerga_a_copia_do_anterior(admin, server, archive, monkeypatch):
-    # Mesmo servico, id novo: e o prefixo que liga os dois.
+    # Same service, new id: the prefix is what links the two.
     name = _keep_in_panel(archive)
     monkeypatch.setattr(panel, "list_backups", lambda s: [])
     html = admin.get(f"/servers/{server['id']}/backups").get_data(as_text=True)
@@ -237,10 +237,10 @@ def test_operador_nao_mexe_nas_copias_do_painel(operator, post, server, archive,
     assert post(operator, f"/servers/{server['id']}/backups/{url}", {"name": "valheim-1.tar.gz"}).status_code == 403
 
 
-# ----------------------------------------------- tela geral: /backups
+# ----------------------------------------------- overall screen: /backups
 
 def test_copia_de_jogo_sem_servidor_aparece_na_tela_geral(admin, archive, database):
-    # O caso que faltava: o servidor foi removido e a copia ficou sem tela nenhuma.
+    # The missing case: the server was removed and the copy was left with no screen at all.
     name = _keep_in_panel(archive)
     html = admin.get("/backups").get_data(as_text=True)
     assert name in html
@@ -257,8 +257,8 @@ def test_tela_geral_baixa_e_apaga_sem_servidor(admin, post, archive, database):
     name = _keep_in_panel(archive)
     response = admin.get(f"/backups/valheim/download?name={name}")
     assert (response.status_code, response.data) == (200, b"save-antigo")
-    # send_file segura o arquivo aberto ate a resposta fechar (e o Windows nao apaga
-    # arquivo aberto).
+    # send_file holds the file open until the response closes (and Windows does not delete
+    # an open file).
     response.close()
     post(admin, "/backups/valheim/delete", {"name": name})
     assert not (archive / "valheim" / name).exists()

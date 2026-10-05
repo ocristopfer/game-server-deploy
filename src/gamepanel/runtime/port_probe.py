@@ -1,28 +1,28 @@
-"""Descobre como contar jogadores: o jogo abre os sockets dele dentro do container, e em
-vez de chutar a porta de consulta, o painel pergunta ao proprio container quais portas
-estao escutando, QUEM as abriu, e testa uma a uma. UDP vira consulta A2S; TCP vira
-sondagem HTTP (e onde moram as APIs de administracao).
+"""Discovers how to count players: the game opens its sockets inside the container, and
+instead of guessing the query port, the panel asks the container itself which ports are
+listening, WHO opened them, and tests them one by one. UDP becomes an A2S query; TCP
+becomes an HTTP probe (that is where admin APIs live).
 """
 from __future__ import annotations
 
 import re
-import shlex
 import threading
 from collections.abc import Callable
 from typing import Any
 
+from gamepanel.runtime import remote_cmd
 from gamepanel.runtime.a2s import QueryError, query_players
 from gamepanel.runtime.ssh import RemoteError, ServerLike
 
-# Tudo sai de /proc: 'ss', 'netstat' e 'lsof' nao vem instalados em todo container.
-# O caminho e o mesmo que o `ss -p` faz: /proc/net/* da porta + inode do socket, e os
-# descritores abertos de cada processo (/proc/PID/fd) dizem de quem e aquele inode.
-# Saber o dono e o que separa a porta do jogo do ruido (sshd, DNS do Docker, um HTTP
-# qualquer numa porta alta).
+# Everything comes from /proc: 'ss', 'netstat' and 'lsof' are not installed in every
+# container. The approach is the same as `ss -p`: /proc/net/* gives port + socket inode,
+# and each process's open descriptors (/proc/PID/fd) say who owns that inode. Knowing the
+# owner is what separates the game's port from the noise (sshd, Docker's DNS, some random
+# HTTP on a high port).
 LISTEN_PORTS_SCRIPT = r"""
 set -u
 
-# inode do socket -> pid. Como o painel entra como root, enxerga todos os processos.
+# socket inode -> pid. Since the panel logs in as root, it sees every process.
 donos() {
   for dir in /proc/[0-9]*; do
     [ -d "$dir/fd" ] || continue
@@ -33,8 +33,8 @@ donos() {
   done
 }
 
-# Coluna 2 = endereco local (IP:PORTA em hex), 4 = estado, 10 = inode. Em TCP so
-# interessa 0A (LISTEN); em UDP o socket ligado ja e a porta aberta.
+# Column 2 = local address (IP:PORT in hex), 4 = state, 10 = inode. For TCP only
+# 0A (LISTEN) matters; for UDP a bound socket already is the open port.
 sockets() {
   arquivo=$1 proto=$2 estado=$3
   [ -r "$arquivo" ] || return 0
@@ -59,16 +59,16 @@ mapa=$(donos)
 done
 """
 
-# Portas de consulta que a maioria dos jogos Steam usa quando nao ha nada declarado.
+# Query ports most Steam games use when nothing is declared.
 QUERY_PORT_GUESSES = (27015, 27016, 27005)
-# Portas de API de administracao mais comuns: 8212 (REST do Palworld), 7777 (HTTPS do
-# Satisfactory), 8080 (padrao de quem escreve um painelzinho proprio).
+# Most common admin API ports: 8212 (Palworld REST), 7777 (Satisfactory HTTPS), 8080
+# (the default for anyone writing their own little panel).
 API_PORT_GUESSES = (8212, 7777, 8080)
-# O sshd e o proprio painel entrando no container: sondar essa porta so gera ruido.
+# sshd is the panel itself getting into the container: probing that port only adds noise.
 IGNORED_PORTS = (22,)
 
-# Processos que sempre abrem porta num container e nunca sao o jogo: marca-los deixa a
-# lista legivel sem esconder nada de quem esta procurando.
+# Processes that always open ports in a container and are never the game: flagging them
+# keeps the list readable without hiding anything from whoever is searching.
 INFRA_PROCESSES = frozenset({
     "sshd", "sshd-session", "systemd", "systemd-resolve", "systemd-resolved", "dockerd",
     "containerd", "dnsmasq", "cron", "rsyslogd", "chronyd", "ntpd",
@@ -80,12 +80,10 @@ _PARSED_LINE_FIELDS = 4
 SshOutput = Callable[[ServerLike, str, int], str]
 
 
-def _remote_script(script: str, *args: str) -> str:
-    return " ".join(shlex.quote(p) for p in ("bash", "-lc", script, "gp", *args))
 
 
 def _ports_from_text(text: str) -> list[int]:
-    """Tira numeros de porta do campo livre 'Portas do jogo' (ex.: '8211/udp 27015/udp')."""
+    """Extracts port numbers from the free-form 'Game ports' field (e.g. '8211/udp 27015/udp')."""
     return [int(n) for n in re.findall(r"\d{2,5}", text or "") if 1 <= int(n) <= MAX_TCP_PORT]
 
 
@@ -98,12 +96,12 @@ def _without_repeats(ports: list[int]) -> list[int]:
 
 
 def _read_open_ports(raw: str, listening: dict[str, list[int]], owners: dict[tuple[str, int], dict]) -> None:
-    """Preenche `listening` e `owners` com o que o LISTEN_PORTS_SCRIPT devolveu.
+    """Fills `listening` and `owners` with what LISTEN_PORTS_SCRIPT returned.
 
-    Cada linha e "<proto> <porta> <pid> <nome do processo>". Linha que nao tiver essa
-    forma e ignorada sem reclamar: o script le /proc a unha, e um container estranho
-    pode devolver algo que nao casa - deixar de listar uma porta e melhor do que
-    derrubar o assistente inteiro.
+    Each line is "<proto> <port> <pid> <process name>". A line without that shape is
+    silently ignored: the script parses /proc by hand, and an odd container may return
+    something that does not match - missing a port in the list is better than bringing
+    down the whole wizard.
     """
     for line in raw.splitlines():
         fields = line.split(None, 3)
@@ -111,7 +109,7 @@ def _read_open_ports(raw: str, listening: dict[str, list[int]], owners: dict[tup
             continue
         proto, port, pid, name = fields[0], int(fields[1]), fields[2], fields[3]
         listening[proto].append(port)
-        # Mesma porta em IPv4 e IPv6: fica a primeira que soube dizer o dono.
+        # Same port on IPv4 and IPv6: keep the first one that could tell the owner.
         if owners.get((proto, port), {}).get("proc", "?") == "?":
             owners[(proto, port)] = {
                 "pid": int(pid) if pid.isdigit() else 0,
@@ -123,26 +121,30 @@ def _read_open_ports(raw: str, listening: dict[str, list[int]], owners: dict[tup
 def candidate_ports(
     ssh_output: SshOutput, server: ServerLike, game_port_field: str,
 ) -> tuple[list[int], list[int], dict[tuple[str, int], dict], str]:
-    """Portas a testar (UDP, TCP), quem abriu cada uma, e o aviso se a leitura falhou.
+    """Ports to test (UDP, TCP), who opened each one, and the warning if reading failed.
 
-    A lista vem do container (portas realmente abertas, com o processo dono) e so entao
-    recebe as portas declaradas no cadastro e os chutes conhecidos, como rede de seguranca
-    para quando o servidor esta parado — nessa hora nao ha socket nenhum para detectar.
+    The list comes from the container (ports actually open, with the owning process) and
+    only then gets the ports declared in the server record and the known guesses, as a
+    safety net for when the server is stopped - at that point there is no socket to detect.
     """
     listening: dict[str, list[int]] = {"udp": [], "tcp": []}
     owners: dict[tuple[str, int], dict] = {}
     warning = ""
     try:
-        raw = ssh_output(server, _remote_script(LISTEN_PORTS_SCRIPT), 60)
+        # As steam in helper mode: /proc/<pid>/fd of the game is steam's, so the game's own
+        # sockets still get their owner; a root-owned one shows up without it, which is the
+        # honest answer for a user that cannot look at root's processes.
+        raw = ssh_output(server, remote_cmd.as_steam(server, "bash", "-lc", LISTEN_PORTS_SCRIPT, "gp"), 60)
         _read_open_ports(raw, listening, owners)
     except (RemoteError, ValueError) as exc:
         warning = f"nao consegui listar as portas abertas do container: {exc}"
 
     def priority(proto: str, port: int) -> int:
-        """Porta com processo dono de verdade primeiro; infra por ultimo.
+        """Ports with a real owning process first; infra last.
 
-        No meio ficam as sem dono: existe socket, mas nenhum processo DESTE container o
-        abriu (o resolvedor DNS do Docker, por exemplo, que vive fora do namespace).
+        In between are the ownerless ones: a socket exists, but no process in THIS
+        container opened it (Docker's DNS resolver, for example, which lives outside the
+        namespace).
         """
         owner = owners.get((proto, port))
         if owner is None or owner["proc"] == "?":
@@ -159,12 +161,12 @@ def candidate_ports(
 
 
 def _with_owner(items: list[dict], owners: dict[tuple[str, int], dict], proto: str) -> list[dict]:
-    """Anexa o processo dono a cada porta sondada, para a tela poder mostrar.
+    """Attaches the owning process to each probed port, so the screen can show it.
 
-    Tres estados diferentes, e a tela precisa saber qual e qual:
-    'detectada'  - o socket existe e o processo dono foi identificado;
-    'sem-dono'   - o socket existe, mas nenhum processo deste container o abriu;
-    'nao-vista'  - a porta nem estava aberta (veio do cadastro ou da lista de chutes).
+    Three different states, and the screen needs to know which is which:
+    'detectada'  - the socket exists and the owning process was identified;
+    'sem-dono'   - the socket exists, but no process in this container opened it;
+    'nao-vista'  - the port was not even open (it came from the record or the guess list).
     """
     for item in items:
         owner = owners.get((proto, item["port"]))
@@ -178,13 +180,13 @@ def _with_owner(items: list[dict], owners: dict[tuple[str, int], dict], proto: s
     return items
 
 
-# Sondagem HTTP das portas TCP. Roda dentro do container (uma unica ida de SSH para
-# todas as portas) porque API de administracao costuma escutar so em 127.0.0.1 — de
-# fora do container ela pareceria fechada.
+# HTTP probe of the TCP ports. Runs inside the container (a single SSH round trip for
+# all ports) because admin APIs usually listen only on 127.0.0.1 - from outside the
+# container they would look closed.
 #
-# Duas etapas por porta: primeiro um GET em "/" so para saber se ali fala HTTP; so
-# quem responde alguma coisa leva os caminhos conhecidos. Assim uma porta que nao e
-# HTTP custa uma tentativa, nao seis.
+# Two stages per port: first a GET on "/" just to learn whether it speaks HTTP; only
+# ports that answer something get the known paths. That way a non-HTTP port costs one
+# attempt, not six.
 HTTP_PROBE_PORTS_MAX = 12
 HTTP_PROBE_SCRIPT = r"""
 set -u
@@ -229,7 +231,7 @@ for porta in "$@"; do
   raiz=$(pega "http://127.0.0.1:${porta}/")
   case "$raiz" in
     000*)
-      # Nada em HTTP: pode ser uma API que so aceita TLS (o Satisfactory e assim).
+      # Nothing over HTTP: it may be an API that only accepts TLS (Satisfactory is like that).
       raiz=$(pega "https://127.0.0.1:${porta}/")
       esquema=https
       ;;
@@ -248,24 +250,26 @@ done
 exit 0
 """
 
-# Status que indicam "achei alguma coisa": 200 e resposta, 401/403 e "existe API aqui,
-# ela so quer senha". Qualquer outra coisa e um servidor HTTP que nao conhece a rota.
+# Statuses meaning "found something": 200 is a reply, 401/403 is "there is an API here,
+# it just wants a password". Anything else is an HTTP server that does not know the route.
 USEFUL_STATUSES = (200, 401, 403)
 
 
 def probe_http_ports(
     ssh_output: SshOutput, server: ServerLike, ports: list[int], probe_timeout: float = 2.0,
 ) -> tuple[list[dict], list[int], str]:
-    """Sonda as portas TCP com HTTP. Devolve (o que respondeu, portas mudas, aviso)."""
+    """Probes the TCP ports with HTTP. Returns (what answered, silent ports, warning)."""
     ports = ports[:HTTP_PROBE_PORTS_MAX]
     if not ports:
         return [], [], ""
-    # Pior caso: 2 tentativas na raiz + 6 caminhos, por porta.
+    # Worst case: 2 attempts at the root + 6 paths, per port.
     limit = int(probe_timeout * 8 * len(ports)) + 20
     try:
         raw = ssh_output(
             server,
-            _remote_script(HTTP_PROBE_SCRIPT, f"{probe_timeout:g}", *(str(p) for p in ports)),
+            # Plain HTTP requests from inside the container: no right needed, in either mode.
+            remote_cmd.unprivileged(
+                "bash", "-lc", HTTP_PROBE_SCRIPT, "gp", f"{probe_timeout:g}", *(str(p) for p in ports)),
             limit,
         )
     except RemoteError as exc:
@@ -292,7 +296,7 @@ def probe_http_ports(
         })
 
     found = _summarize_generic(found)
-    # JSON primeiro, depois quem pediu senha (401/403 = "existe API aqui").
+    # JSON first, then those that asked for a password (401/403 = "there is an API here").
     found.sort(key=lambda a: (
         0 if "json" in a["content_type"] else 1,
         0 if a["status"] in USEFUL_STATUSES else 1,
@@ -303,11 +307,11 @@ def probe_http_ports(
 
 
 def _summarize_generic(found: list[dict]) -> list[dict]:
-    """Porta que respondeu 404 em tudo vira UMA linha, nao sete.
+    """A port that answered 404 to everything becomes ONE line, not seven.
 
-    Um processo qualquer subindo um HTTP numa porta alta (o cliente da Steam faz isso)
-    enche a tela de linhas inuteis e some com o achado de verdade. Aqui ele fica como
-    uma nota so, marcada para a tela nao oferecer "usar esta URL".
+    Some random process running HTTP on a high port (the Steam client does this) fills
+    the screen with useless lines and buries the real finding. Here it stays as a single
+    note, flagged so the screen does not offer "use this URL".
     """
     by_port: dict[int, list[dict]] = {}
     for item in found:
@@ -324,7 +328,7 @@ def _summarize_generic(found: list[dict]) -> list[dict]:
 
 
 def probe_ports(host: str, ports: list[int], query_timeout: float = 3.0) -> list[dict]:
-    """Dispara um A2S_INFO em cada porta candidata, todas ao mesmo tempo."""
+    """Fires an A2S_INFO at each candidate port, all at the same time."""
     results: dict[int, dict] = {}
     lock = threading.Lock()
 

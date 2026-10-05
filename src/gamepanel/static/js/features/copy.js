@@ -1,7 +1,7 @@
-/* Copiar para a area de transferencia.
+/* Copy to the clipboard.
  *
- * O alvo vem por selector em data-copy. No celular, marcar uma chave SSH de 80
- * caracteres com o dedo e um suplicio — este botao e o caminho normal, nao um luxo.
+ * The target comes as a selector in data-copy. On the phone, selecting an 80-character
+ * SSH key with a finger is torture - this button is the normal path, not a luxury.
  */
 export const copyToClipboard = {
   selector: '[data-copy]',
@@ -14,11 +14,11 @@ export const copyToClipboard = {
     button.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(target.textContent.trim());
-        button.textContent = 'Copiado!';
+        button.textContent = document.body.dataset.labelCopied || 'Copiado!';
       } catch {
-        // Sem permissao (http sem TLS, por exemplo): o texto continua na tela para
-        // ser selecionado a mao, entao isto e um aviso, nao um erro.
-        button.textContent = 'Nao consegui copyToClipboard';
+        // No permission (http without TLS, for example): the text stays on the screen to
+        // be selected by hand, so this is a warning, not an error.
+        button.textContent = document.body.dataset.labelCopyFailed || 'Nao consegui copiar';
       }
       setTimeout(() => { button.textContent = label; }, 2000);
     });

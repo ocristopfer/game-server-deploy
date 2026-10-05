@@ -1,10 +1,10 @@
 #!/bin/sh
-# O "servidor de jogo": so despeja linhas no log para o painel ter o que mostrar.
+# The "game server": it only dumps lines into the log so the panel has something to show.
 #
-# Com GAME_LOG_PLAYERS=1 tambem simula entradas e saidas no formato da Unreal Engine
-# (que e o que sobra para contar jogadores em jogo sem consulta A2S). O arquivo
-# /run/fake-join e /run/fake-leave permitem forcar um evento na hora, para teste:
-#   echo Cristopfer > /run/fake-join
+# With GAME_LOG_PLAYERS=1 it also simulates joins and leaves in the Unreal Engine format
+# (which is what is left for counting players in a game without an A2S query). The files
+# /run/fake-join and /run/fake-leave let you force an event right away, for testing:
+#   echo Alex > /run/fake-join
 set -u
 unit="${1:-game}"
 

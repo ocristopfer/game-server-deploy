@@ -1,7 +1,7 @@
-"""Mods do Satisfactory pelo ficsit.app (games/mods/sml_remote.py).
+"""Satisfactory mods via ficsit.app (games/mods/sml_remote.py).
 
-Roda DENTRO do CT; aqui ele roda contra uma pasta temporaria e uma API falsa, no formato que
-a api.ficsit.app devolveu de verdade para o SML 3.12.0 (alvos, sha256, dependencias).
+It runs INSIDE the CT; here it runs against a temporary folder and a fake API, in the format
+that api.ficsit.app really returned for SML 3.12.0 (targets, sha256, dependencies).
 """
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def test_condicao_de_dependencia(have, cond, ok):
 
 
 def test_dependencia_na_versao_que_a_condicao_pede_e_opcional_fica_de_fora():
-    """^3.12.0 nao aceita o SML 4.0.0, mesmo sendo o mais novo."""
+    """^3.12.0 does not accept SML 4.0.0, even though it is the newest."""
     plan = dict((name, v["version"]) for name, v in sr.resolve("RefinedPower", fetcher=api(CATALOG, [])))
     assert plan == {"RefinedPower": "2026.3.28", "RefinedRDLib": "2026.3.44", "SML": "3.12.0"}
 

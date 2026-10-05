@@ -1,73 +1,75 @@
-"""Catalogo em portugues (o idioma padrao do painel).
+"""Portuguese catalog (the panel's default language).
 
-A chave e neutra e a mesma em todos os catalogos; ver o docstring do pacote. Chave nova
-entra AQUI primeiro — e este arquivo que o teste usa como referencia para cobrar as
-outras linguas.
+The key is neutral and the same in every catalog; see the package docstring. A new key goes
+in HERE first - this is the file the test uses as the reference to check the other languages.
 
-Convencao da chave: `area.assunto`, tudo minusculo, em ingles (e identificador de
-codigo, nao texto de tela).
+Key convention: `area.subject`, all lowercase, in English (it is a code identifier, not
+screen text).
 """
 from __future__ import annotations
 
 MESSAGES: dict[str, str] = {
-    # -------------------------------------------------------- navegacao
+    # -------------------------------------------------------- navigation
     "nav.servers": "Servidores",
-    "nav.history": "Historico",
+    "nav.history": "Histórico",
     "nav.alerts": "Alertas",
     "nav.account": "Conta",
-    "nav.users": "Usuarios",
+    "nav.users": "Usuários",
     "nav.backups": "Backups",
-    "nav.backups.help": "Copias do save guardadas no painel",
+    "nav.backups.help": "Cópias do save guardadas no painel",
     "archive.title": "Backups no painel",
     "archive.intro":
-        "Todas as copias do save que o painel guardou, por jogo — inclusive as de um jogo cujo "
-        "servidor ja foi removido. Elas ficam em <code>{dir}</code>.",
-    "archive.keep": "De cada jogo ficam as {n} copias mais novas.",
-    "archive.keep_all": "Nenhuma copia e apagada automaticamente.",
+        "Todas as cópias do save que o painel guardou, por jogo — inclusive as de um jogo cujo "
+        "servidor já foi removido. Elas ficam em <code>{dir}</code>.",
+    "archive.keep": "De cada jogo ficam as {n} cópias mais novas.",
+    "archive.keep_all": "Nenhuma cópia é apagada automaticamente.",
     "archive.none":
-        "O painel ainda nao guardou nenhuma copia. Todo backup novo vem para ca; os antigos, que so "
-        "estao no container, podem ser enviados pela aba Backups do servidor.",
+        "O painel ainda não guardou nenhuma cópia. Todo backup novo vem para cá; os antigos, que só "
+        "estão no container, podem ser enviados pela aba Backups do servidor.",
     "archive.restore_on": "Restaurar em",
     "archive.no_server":
-        "Nenhum servidor deste jogo no painel. Crie a instancia (ou cadastre o servidor) de novo: "
-        "a copia aparece na aba Backups dele, com o botao restaurar.",
+        "Nenhum servidor deste jogo no painel. Crie a instância (ou cadastre o servidor) de novo: "
+        "a cópia aparece na aba Backups dele, com o botão restaurar.",
     "archive.game": "Jogo",
-    "nav.instances": "Instancias",
-    "nav.instances.help": "Instancias de jogo",
-    "nav.catalog": "Catalogo",
-    "nav.catalog.help": "Catalogo de jogos",
+    "nav.instances": "Instâncias",
+    "nav.instances.help": "Instâncias de jogo",
+    "nav.catalog": "Catálogo",
+    "nav.catalog.help": "Catálogo de jogos",
     "nav.add_server": "Adicionar servidor",
     "nav.ssh_key": "Acesso SSH",
     "nav.logout": "Sair",
     "nav.more": "Mais",
-    "nav.main": "Navegacao principal",
+    "prefs.theme": "Alternar tema claro/escuro",
+    "prefs.language": "Mudar o idioma da tela",
+    "nav.account_of": "Conta de {name}",
+    "nav.main": "Navegação principal",
 
-    # ------------------------------------------------------------ papeis
+    # ------------------------------------------------------------ roles
     "role.admin": "Administrador",
     "role.operator": "Operador",
 
-    # ------------------------------------------------ secoes do servidor
-    "server.overview": "Visao geral",
+    # ------------------------------------------------ server sections
+    "server.overview": "Visão geral",
     "server.overview.help": "Estado, jogadores, recursos e log",
-    "server.config": "Configuracao",
+    "server.config": "Configuração",
     "server.config.help": "As chaves do jogo, campo a campo",
     "server.mods": "Mods",
     "server.mods.help": "O que o servidor carrega de mod, e enviar mod para ele",
     "server.files": "Arquivos",
     "server.files.help": "Navegar, editar como texto, enviar e baixar",
-    "server.charts": "Graficos",
-    "server.charts.help": "CPU, memoria e jogadores ao longo do tempo",
+    "server.charts": "Gráficos",
+    "server.charts.help": "CPU, memória e jogadores ao longo do tempo",
     "server.backups": "Backups",
-    "server.backups.help": "Copias do save, e como restaurar",
+    "server.backups.help": "Cópias do save, e como restaurar",
     "server.schedules": "Agendamentos",
-    "server.schedules.help": "Reinicio e backup na hora marcada",
+    "server.schedules.help": "Reinício e backup na hora marcada",
     "server.terminal": "Terminal",
     "server.terminal.help": "Linha de comando dentro do container",
     "server.console": "Console",
     "server.edit": "Editar",
-    "server.edit.help": "Host, servico, portas e caminhos",
+    "server.edit.help": "Host, serviço, portas e caminhos",
 
-    # ------------------------------------------------------------ acoes
+    # ------------------------------------------------------------ actions
     "action.start": "Iniciar",
     "action.start.confirm": "Iniciar servidor",
     "action.stop": "Parar",
@@ -79,33 +81,33 @@ MESSAGES: dict[str, str] = {
     "action.check_update": "Checar update",
     "action.save": "Salvar",
 
-    # ------------------------------------------------- base e aviso de versao
+    # ------------------------------------------------- base and version notice
     "app.name": "Painel de Jogos",
-    "app.new_version": "Ha uma versao nova do painel.",
-    "app.version": "Painel versao {version}",
+    "app.new_version": "Há uma versão nova do painel.",
+    "app.version": "Painel versão {version}",
     "app.update_now": "Atualizar agora",
     "app.install": "Instalar",
 
     # ------------------------------------------------------------- login
     "login.title": "Entrar",
     "login.subtitle": "Entre para gerenciar os servidores.",
-    "login.username": "Usuario",
+    "login.username": "Usuário",
     "login.password": "Senha",
 
-    # ------------------------------------------------------------ idioma
+    # ------------------------------------------------------------ language
     "account.language": "Idioma",
     "account.language.title": "Idioma da tela",
     "account.language.changed": "Idioma alterado.",
 
-    # -------------------------------------------------------- painel
+    # -------------------------------------------------------- dashboard
     "dashboard.no_servers": "Nenhum servidor cadastrado ainda.",
     "dashboard.ssh_access": "Acesso SSH",
-    "dashboard.ask_an_admin": "Peca a um administrador do painel para cadastrar o servidor.",
+    "dashboard.ask_an_admin": "Peça a um administrador do painel para cadastrar o servidor.",
 
-    # ----------------------------------------------------- historico
+    # ----------------------------------------------------- history
     "history.server": "Servidor",
     "history.any_server": "todos",
-    "history.action": "Acao",
+    "history.action": "Ação",
     "history.any_action": "todas",
     "history.who": "Quem",
     "history.anyone": "qualquer um",
@@ -113,8 +115,8 @@ MESSAGES: dict[str, str] = {
     "history.result": "Resultado",
     "history.auto": "auto",
     "history.running": "rodando",
-    "history.empty": "Nada no historico com esses filtros.",
-    "history.by_scheduler": "Disparado pelo relogio do painel",
+    "history.empty": "Nada no histórico com esses filtros.",
+    "history.by_scheduler": "Disparado pelo relógio do painel",
 
     # ----------------------------------------------------------- job
     "job.target": "Destino",
@@ -123,62 +125,50 @@ MESSAGES: dict[str, str] = {
     "job.result": "Resultado",
 
     # ------------------------------------------------------- offline
-    "offline.title": "Sem conexao — Painel de Jogos",
-    "offline.heading": "Sem conexao",
-    "offline.vpn_hint": "Se voce esta fora de casa, confira se a VPN esta ligada.",
+    "offline.title": "Sem conexão — Painel de Jogos",
+    "offline.heading": "Sem conexão",
+    "offline.vpn_hint": "Se você está fora de casa, confira se a VPN está ligada.",
     "offline.retry": "Tentar de novo",
 
-    # ----------------------------------------------------- chave ssh
-    "ssh_key.public_key": "Chave publica do painel",
-    "ssh_key.not_found": "Chave nao encontrada. Rode o deploy do painel novamente.",
+    # ----------------------------------------------------- ssh key
+    "ssh_key.public_key": "Chave pública do painel",
+    "ssh_key.not_found": "Chave não encontrada. Rode o deploy do painel novamente.",
     "ssh_key.authorize": "Autorizar num container de jogo",
     "ssh_key.host_keys": "Host keys",
 
-    # ------------------------------------------------------ graficos
-    "charts.no_samples": "Ainda nao ha amostras deste periodo.",
-    "charts.cpu_memory": "CPU e memoria",
-    "charts.no_readings": "Sem leitura de medidores neste periodo.",
+    # ------------------------------------------------------ charts
+    "charts.no_samples": "Ainda não há amostras deste período.",
+    "charts.cpu_memory": "CPU e memória",
+    "charts.no_readings": "Sem leitura de medidores neste período.",
     "charts.players": "Jogadores",
-    "charts.peak_of": "pico de",
-    "charts.in_period": "no periodo",
-    "charts.as_table": "Ver os numeros em tabela",
+    "charts.as_table": "Ver os números em tabela",
     "charts.when": "Quando",
     "charts.cpu": "CPU",
-    "charts.memory": "Memoria",
-    "charts.period": "Periodo",
+    "charts.memory": "Memória",
+    "charts.period": "Período",
 
     # ------------------------------------------------------- backups
-    "backups.what_is_saved": "O que entra na copia",
-    "backups.backup_paths": "caminhos de backup",
-    "backups.nothing_to_save": "Este servidor nao tem o que guardar. Preencha a",
-    "backups.config_folder": "pasta de configuracao",
-    "backups.or_the": "ou os",
-    "backups.in_settings": "no cadastro",
-    "backups.stored_copies": "Copias no container",
+    "backups.what_is_saved": "O que entra na cópia",
+    "backups.stored_copies": "Cópias no container",
     "backups.file": "Arquivo",
     "backups.when": "Quando",
     "backups.size": "Tamanho",
     "backups.before_restore": "antes de restaurar",
-    "backups.admin_only": "baixar, restaurar e apagar sao de administrador",
-    "backups.none_yet": "Nenhuma copia ainda.",
-    "backups.pre_restore_copy": "Tirada pelo painel logo antes de uma restauracao",
+    "backups.admin_only": "baixar, restaurar e apagar são de administrador",
+    "backups.none_yet": "Nenhuma cópia ainda.",
+    "backups.pre_restore_copy": "Tirada pelo painel logo antes de uma restauração",
 
-    # -------------------------------------------------- agendamentos
+    # -------------------------------------------------- schedules
     "schedules.tasks_here": "Tarefas deste servidor",
     "schedules.task": "Tarefa",
     "schedules.when": "Quando",
-    "schedules.next_run": "Proxima",
-    "schedules.last_run": "Ultima vez",
+    "schedules.next_run": "Próxima",
+    "schedules.last_run": "Última vez",
     "schedules.off": "desligada",
-    "schedules.admin_only": "so administrador altera",
+    "schedules.admin_only": "só administrador altera",
     "schedules.none_here": "Nada agendado para este servidor.",
-    "schedules.clock_is": "O relogio e o do",
-    "schedules.panel": "painel",
-    "schedules.no_late_fire": "nao dispara atrasada",
     "schedules.new_task": "Agendar uma tarefa",
     "schedules.what_to_do": "O que fazer",
-    "schedules.backup": "Backup",
-    "schedules.update": "Atualizar",
     "schedules.daily": "Todo dia, numa hora fixa",
     "schedules.weekly": "Uma vez por semana",
     "schedules.every_n_hours": "A cada N horas",
@@ -187,35 +177,30 @@ MESSAGES: dict[str, str] = {
     "schedules.weekday": "Dia da semana",
     "schedules.every": "A cada",
     "schedules.hours_from_now": "horas, contadas a partir de agora",
-    "schedules.runs_show_in": "Cada disparo aparece no",
-    "schedules.history": "historico",
-
-    # ---------------------------------------------------- instancias
-    "instances.new": "Nova instancia",
+    # ---------------------------------------------------- instances
+    "instances.new": "Nova instância",
     "instances.game": "Jogo",
-    "instances.only_installable": "So aparecem os jogos que o broker sabe instalar sozinho.",
+    "instances.only_installable": "Só aparecem os jogos que o broker sabe instalar sozinho.",
     "instances.name": "Nome",
-    "instances.none_creatable": "Nenhum jogo criavel no catalogo (ou o broker nao respondeu).",
-    "instances.game_not_listed": "O jogo nao esta aqui? Adicione ao catalogo.",
+    "instances.none_creatable": "Nenhum jogo criável no catálogo (ou o broker não respondeu).",
+    "instances.game_not_listed": "O jogo não está aqui? Adicione ao catálogo.",
     "instances.name_hint":
-        "Como a instancia aparece no painel. Letras, numeros, espaco, ponto, "
-        "hifen e sublinhado.",
+        "Como a instância aparece no painel. Letras, números, espaço, ponto, "
+        "hífen e sublinhado.",
     "instances.how_it_works":
-        "O broker escolhe o IP e as portas livres, cria o container, instala o jogo e so entao "
-        "abre o firewall. Voce acompanha o progresso na tela da acao.",
-    "instances.instance": "Instancia",
+        "O broker escolhe o IP e as portas livres, cria o container, instala o jogo e só então "
+        "abre o firewall. Você acompanha o progresso na tela da ação.",
+    "instances.instance": "Instância",
     "instances.remove": "Remover",
     "instances.type_name_to_confirm": "Digite o nome para confirmar",
-    "instances.forget_record_only": "Esquecer so o registro (o container ja nao existe mais no Proxmox)",
-    "instances.none_yet": "Nenhuma instancia criada pelo broker ainda.",
+    "instances.forget_record_only": "Esquecer só o registro (o container já não existe mais no Proxmox)",
+    "instances.none_yet": "Nenhuma instância criada pelo broker ainda.",
 
     # ------------------------------------------------------- console
-    "console.interactive": "Sessao interativa",
-    "console.single_command": "Comando unico",
-    "console.commands_run_as": "Os comandos rodam como",
-    "console.interactive_lower": "sessao interativa",
-    "console.history_hint": "Historico: &uarr; e &darr; percorrem os comandos anteriores.",
-    "console.output": "Saida",
+    "console.interactive": "Sessão interativa",
+    "console.single_command": "Comando único",
+    "console.history_hint": "Histórico: &uarr; e &darr; percorrem os comandos anteriores.",
+    "console.output": "Saída",
     "console.previous_commands": "Comandos anteriores",
     "console.when": "Quando",
     "console.command": "Comando",
@@ -225,83 +210,70 @@ MESSAGES: dict[str, str] = {
     "console.none_yet": "Nenhum comando executado neste servidor ainda.",
     "console.terminal_mode": "Modo do terminal",
 
-    # ------------------------------------------------------ arquivos
+    # ------------------------------------------------------ files
     "files.download": "baixar",
     "files.delete": "apagar",
     "files.empty_folder": "pasta vazia",
     "files.listing_truncated": "Listagem cortada nos primeiros itens desta pasta.",
-    "files.binary": "Arquivo binario.",
-    "files.read_only": "Somente leitura:",
-    "files.opens_as_form": "abre este arquivo como formulario e o fixa na tela",
-    "files.configuration": "Configuracao",
+    "files.configuration": "Configuração",
     "files.editor": "Editor",
-    "files.any_file_downloadable": "Qualquer arquivo pode ser baixado pelo link",
-    "files.config_folder_hint": "Dica: preencha a \"Pasta de configuracao\" em",
     "files.edit_server": "Editar servidor",
     "files.path_lower": "caminho",
     "files.file_to_upload": "arquivo para enviar",
     "files.path": "Caminho",
 
-    # ------------------------------------------------- segundo fator
-    "login_2fa.title": "Verificacao",
-    "login_2fa.hint": "Digite o codigo de 6 digitos do aplicativo autenticador.",
-    "login_2fa.code": "Codigo",
-    "account_2fa.add_account": "adicionar conta",
-    "account_2fa.scan_qr": "escanear codigo QR",
-    "account_2fa.with_text_below": "com o texto abaixo do codigo.",
+    # ------------------------------------------------- second factor
+    "login_2fa.title": "Verificação",
+    "login_2fa.hint": "Digite o código de 6 dígitos do aplicativo autenticador.",
+    "login_2fa.code": "Código",
     "account_2fa.copy_key": "Copiar chave",
-    "account_2fa.type": "Tipo",
-    "account_2fa.time_based": "baseado em tempo",
-    "account_2fa.six_digit_code": "Codigo de 6 digitos",
-    "account_2fa_codes.save_them_now": "Guarde estes codigos agora.",
-    "account_2fa_codes.copy_codes": "Copiar codigos",
+    "account_2fa.six_digit_code": "Código de 6 dígitos",
+    "account_2fa_codes.copy_codes": "Copiar códigos",
 
-    # ------------------------------------------------------ usuarios
-    "users.user": "Usuario",
+    # ------------------------------------------------------ users
+    "users.user": "Usuário",
     "users.role": "Papel",
     "users.created_at": "Criado em",
-    "users.you": "voce",
+    "users.you": "você",
     "users.reset_password": "Redefinir senha",
-    "users.new_user": "Novo usuario",
+    "users.new_user": "Novo usuário",
     "users.initial_password": "Senha inicial",
     "users.confirm_password": "Confirmar senha",
-    "users.password_handoff": "Voce define a senha e passa para a pessoa; ela troca depois em",
     "users.what_each_role_opens": "O que cada papel abre",
     "users.screen": "Tela",
     "users.perm_overview": "Servidores, status, jogadores, log",
     "users.yes": "sim",
-    "users.no": "nao",
+    "users.no": "não",
     "users.perm_actions": "Start / stop / restart / update",
-    "users.perm_config": "Configuracao (arquivos ja registrados)",
-    "users.perm_charts": "Graficos, backups e agendamentos",
+    "users.perm_config": "Configuração (arquivos já registrados)",
+    "users.perm_charts": "Gráficos, backups e agendamentos",
     "users.perm_manage_servers": "Cadastrar / editar / remover servidor",
     "users.perm_register_config": "Registrar novo arquivo de config",
     "users.perm_terminal": "Terminal e navegador de arquivos",
-    "users.two_factor_on": "Verificacao em duas etapas ativada",
+    "users.two_factor_on": "Verificação em duas etapas ativada",
     "users.new_password_lower": "nova senha",
     "users.confirm_lower": "confirmar",
 
-    # ------------------------------------------ configuracao do jogo
+    # ------------------------------------------ game configuration
     "config.edit_as_text": "editar como texto",
     "config.unpin": "tirar da lista",
-    "config.found_in_container": "Arquivos de configuracao encontrados no container",
+    "config.found_in_container": "Arquivos de configuração encontrados no container",
     "config.pin_here": "fixar aqui",
-    "config.empty_block": "Bloco vazio &mdash; use &quot;adicionar configuracao&quot; abaixo.",
-    "config.no_match": "Nenhuma configuracao com esse nome.",
-    "config.add_setting": "Adicionar configuracao",
-    "config.new_setting_block": "Bloco da configuracao nova",
+    "config.empty_block": "Bloco vazio &mdash; use &quot;adicionar configuração&quot; abaixo.",
+    "config.no_match": "Nenhuma configuração com esse nome.",
+    "config.add_setting": "Adicionar configuração",
+    "config.new_setting_block": "Bloco da configuração nova",
     "config.restart_after_save": "reiniciar o servidor depois de salvar",
     "config.edit_as_text_title": "Edite como texto",
-    "config.file_path": "caminho do arquivo de configuracao",
+    "config.file_path": "caminho do arquivo de configuração",
     "config.filter_placeholder": "filtrar por nome...",
-    "config.filter_label": "filtrar configuracoes",
+    "config.filter_label": "filtrar configurações",
     "config.name_example": "Nome (ex.: ServerPassword)",
-    "config.new_setting_name": "nome da configuracao nova",
+    "config.new_setting_name": "nome da configuração nova",
     "config.value": "Valor",
-    "config.new_setting_value": "valor da configuracao nova",
+    "config.new_setting_value": "valor da configuração nova",
 
     # ------------------------------------------------------ terminal
-    "terminal.ssh_session_as": "Sessao SSH interativa como",
     "terminal.starting": "iniciando...",
     "terminal.clear": "Limpar",
     "terminal.fullscreen": "Tela cheia",
@@ -318,67 +290,65 @@ MESSAGES: dict[str, str] = {
     "terminal.arrow_left": "seta para a esquerda",
     "terminal.arrow_right": "seta para a direita",
 
-    # --------------------------------------------------------- conta
+    # --------------------------------------------------------- account
     "account.role": "Papel",
     "account.change_password": "Trocar senha",
     "account.current_password": "Senha atual",
     "account.new_password": "Nova senha",
-    "account.min_length": "Minimo de 8 caracteres.",
+    "account.min_length": "Mínimo de 8 caracteres.",
     "account.confirm_new_password": "Confirmar nova senha",
-    "account.two_factor": "Verificacao em duas etapas",
+    "account.two_factor": "Verificação em duas etapas",
     "account.on": "ativada",
     "account.off": "desativada",
-    "account.two_factor_on_hint": "Alem da senha, o login pede o codigo do aplicativo autenticador.",
-    "account.new_recovery_codes": "Gerar codigos de recuperacao novos",
-    "account.app_code": "Codigo do aplicativo",
-    "account.old_codes_expire": "Os codigos antigos deixam de valer.",
+    "account.two_factor_on_hint": "Além da senha, o login pede o código do aplicativo autenticador.",
+    "account.new_recovery_codes": "Gerar códigos de recuperação novos",
+    "account.app_code": "Código do aplicativo",
+    "account.old_codes_expire": "Os códigos antigos deixam de valer.",
     "account.disable": "Desativar",
-    "account.app_or_recovery_code": "Codigo do aplicativo (ou de recuperacao)",
-    "account.two_factor_required": "Este painel exige o segundo fator: nao da para desativar.",
+    "account.app_or_recovery_code": "Código do aplicativo (ou de recuperação)",
+    "account.two_factor_required": "Este painel exige o segundo fator: não dá para desativar.",
     "account.two_factor_broker_hint": "Este painel cria e apaga containers pelo broker: ative.",
     "account.sign_out": "Sair",
-    "account.sign_out_hint": "Encerra a sessao neste aparelho.",
+    "account.sign_out_hint": "Encerra a sessão neste aparelho.",
 
-    # ---------------------------------------------- tela do servidor
+    # ---------------------------------------------- server screen
     "server_detail.host": "Host",
+    "server_detail.access": "Acesso",
+    "server_detail.access_helper": "sem root ({user})",
+    "server_detail.access_legacy": "root (legado, falta migrar)",
     "server_detail.ssh_port": "Porta SSH",
-    "server_detail.service": "Servico",
+    "server_detail.service": "Serviço",
     "server_detail.game_ports": "Portas do jogo",
     "server_detail.config_folder": "Pasta de config",
     "server_detail.server": "Servidor",
-    "server_detail.maintenance": "Manutencao",
-    "server_detail.count_off": "Contagem desligada. Use o",
-    "server_detail.wizard": "assistente",
+    "server_detail.maintenance": "Manutenção",
     "server_detail.published_name": "Nome publicado",
     "server_detail.world": "Mundo",
     "server_detail.online": "Online",
     "server_detail.player": "Jogador",
-    "server_detail.connected_for": "Conectado ha",
+    "server_detail.connected_for": "Conectado há",
     "server_detail.score": "Pontos",
     "server_detail.no_identifier": "sem identificador",
-    "server_detail.count": "contagem",
-    "server_detail.count_right_names_wrong": "esta certa, mas os",
-    "server_detail.names": "nomes",
     "server_form.max_players": "Vagas",
     "server_form.max_players_hint": (
-        "Total de jogadores do servidor, para a tela mostrar 2/6. So conta "
-        "quando a contagem nao informa (log, conexoes ativas)."),
-    "form.bad_max_players": "Vagas: um numero de 0 a 1000.",
-    "player_source.net": "conexoes ativas",
-    "server_form.count_net": "Conexoes ativas na porta do jogo (firewall do CT)",
-    "flash.count_on_by_net": "Contagem ligada pelas conexoes ativas na porta do jogo.",
+        "Total de jogadores do servidor, para a tela mostrar 2/6. Só conta "
+        "quando a contagem não informa (log, conexões ativas)."),
+    "form.bad_max_players": "Vagas: um número de 0 a 1000.",
+    "player_source.net": "conexões ativas",
+    "server_form.count_net": "Conexões ativas na porta do jogo (firewall do CT)",
+    "flash.count_on_by_net": "Contagem ligada pelas conexões ativas na porta do jogo.",
     "presence.missing": (
-        "O firewall deste CT nao conta conexoes ainda: reaplique o firewall "
+        "O firewall deste CT não conta conexões ainda: reaplique o firewall "
         "(deploy/firewall/apply-firewall.ps1)."),
-    "presence.unreadable": "Nao consegui ler as conexoes ativas do firewall do CT.",
-    "players_setup.presence_title": "Conexoes ativas na porta do jogo",
+    "presence.unreadable": "Não consegui ler as conexões ativas do firewall do CT.",
+    "players_setup.presence_title": "Conexões ativas na porta do jogo",
     "players_setup.presence_help": (
-        "Quem esta trocando pacotes com o servidor agora, contado pelo firewall do CT. Serve para "
-        "jogo sem consulta (o Dragonwilds usa EOS): o numero nao depende do log, e os nomes "
+        "Quem está trocando pacotes com o servidor agora, contado pelo firewall do CT. Serve para "
+        "jogo sem consulta (o Dragonwilds usa EOS): o número não depende do log, e os nomes "
         "continuam vindo dele."),
     "server_detail.names_from": "Contagem por: {source}. Nomes por: {names_from}.",
-    "server_detail.names_partial": "Os nomes nao batem com a contagem: a lista mostra os ultimos a entrar.",
-    "server_detail.fallback": "A fonte escolhida nao respondeu ({error}). Contando por: {source}.",
+    "server_detail.names_partial": "Os nomes não batem com a contagem: a lista mostra os últimos a entrar.",
+    "server_detail.fallback": "A fonte escolhida não respondeu ({error}). Contando por: {source}.",
     "player_source.a2s": "consulta A2S",
     "player_source.http": "API do jogo",
     "player_source.log": "log do servidor",
@@ -387,39 +357,39 @@ MESSAGES: dict[str, str] = {
     "server_detail.network": "Rede",
     "server_detail.uptime": "Uptime",
     "server_detail.game_process": "Processo do jogo",
-    "server_detail.recent_actions": "Acoes recentes",
-    "server_detail.no_actions_yet": "Nenhuma acao executada por aqui ainda.",
-    "server_detail.service_log": "Log do servico",
+    "server_detail.recent_actions": "Ações recentes",
+    "server_detail.no_actions_yet": "Nenhuma ação executada por aqui ainda.",
+    "server_detail.service_log": "Log do serviço",
     "server_detail.live": "ao vivo",
     "server_detail.follow_log": "Seguir log",
     "server_detail.lines": "linhas",
     "server_detail.broadcast": "Aviso para todo mundo no servidor",
     "server_detail.broadcast_message": "mensagem do aviso",
 
-    # --------------------------------------------- alertas: destinos
+    # --------------------------------------------- alerts - destinations
     "alerts.destinations_on_one": "{n} destino ligado",
     "alerts.destinations_on_many": "{n} destinos ligados",
     "alerts.no_destination_on": "nenhum destino ligado",
     "alerts.intro":
-        "O painel avisa por <strong>webhook</strong> quando algo acontece sem ninguem estar "
-        "olhando. Cada destino tem a sua propria lista de eventos &mdash; da para mandar tudo para "
-        "o canal da equipe e so as quedas para o canal geral. Serve para <strong>Discord</strong> "
-        "(Editar canal &rarr; Integracoes &rarr; Webhooks &rarr; Copiar URL), "
-        "<strong>Slack</strong> (Incoming Webhook) ou qualquer endereco que aceite um "
+        "O painel avisa por <strong>webhook</strong> quando algo acontece sem ninguém estar "
+        "olhando. Cada destino tem a sua própria lista de eventos &mdash; dá para mandar tudo para "
+        "o canal da equipe e só as quedas para o canal geral. Serve para <strong>Discord</strong> "
+        "(Editar canal &rarr; Integrações &rarr; Webhooks &rarr; Copiar URL), "
+        "<strong>Slack</strong> (Incoming Webhook) ou qualquer endereço que aceite um "
         "<code>POST</code> de JSON &mdash; a chamada leva os campos <code>content</code> e "
-        "<code>text</code>, entao cada um le o seu.",
+        "<code>text</code>, então cada um lê o seu.",
     "alerts.destinations": "Destinos",
-    "alerts.no_destination_yet": "Nenhum destino cadastrado — os alertas estao desligados. Adicione o primeiro abaixo.",
+    "alerts.no_destination_yet": "Nenhum destino cadastrado — os alertas estão desligados. Adicione o primeiro abaixo.",
     "alerts.pending_intro":
-        "<strong>Ligado, mas sem onde olhar.</strong> Estes eventos nunca vao disparar do jeito "
-        "que o painel esta hoje &mdash; e canal em silencio parece \"esta tudo bem\":",
+        "<strong>Ligado, mas sem onde olhar.</strong> Estes eventos nunca vão disparar do jeito "
+        "que o painel está hoje &mdash; e canal em silêncio parece \"está tudo bem\":",
     "alerts.pending_item": "<em>{event}</em>: nenhum servidor tem {missing}.",
     "alerts.pending_fix": "Ajuste no <a href=\"{url}\">cadastro de cada servidor</a>.",
     "alerts.destination_name": "Nome do destino",
     "alerts.team_channel": "Canal da equipe",
     "alerts.on": "Ligado",
     "alerts.off": "Desligado",
-    "alerts.url_is_a_secret": "A URL fica escondida: e uma credencial",
+    "alerts.url_is_a_secret": "A URL fica escondida: é uma credencial",
     "alerts.change_url": "Trocar a URL",
     "alerts.leave_blank_to_keep": "deixe em branco para manter a atual",
     "alerts.notify_about": "Avisar sobre",
@@ -430,148 +400,148 @@ MESSAGES: dict[str, str] = {
     "alerts.limit_reached": "Limite de {n} destinos atingido — remova um para cadastrar outro.",
     "alerts.add_destination": "Adicionar destino",
     "alerts.name": "Nome",
-    "alerts.name_hint": "So para voce se achar nesta lista.",
+    "alerts.name_hint": "Só para você se achar nesta lista.",
     "alerts.webhook_url": "URL do webhook",
-    "alerts.webhook_url_hint": "E um segredo: quem a tiver escreve no seu canal.",
+    "alerts.webhook_url_hint": "É um segredo: quem a tiver escreve no seu canal.",
     "alerts.add": "Adicionar",
     "alerts.came_from_env":
         "O deploy trouxe uma URL em <code>GAMEPANEL_WEBHOOK_URL</code>; ela virou o primeiro "
-        "destino desta lista e a partir daqui so vale o que estiver cadastrado.",
+        "destino desta lista e a partir daqui só vale o que estiver cadastrado.",
 
-    # ----------------------------------------- alertas: preferencias
-    "alerts.preferences": "Preferencias",
+    # ----------------------------------------- alerts - preferences
+    "alerts.preferences": "Preferências",
     "alerts.warn_disk_over": "Avisar quando o disco passar de",
     "alerts.disk_hint":
         "No disco mais cheio do container. Avisa uma vez, na virada: um disco a 95% continua a 95% "
-        "na volta seguinte e ninguem merece o mesmo alerta a cada minuto.",
-    "alerts.warn_memory_over": "Avisar quando a memoria passar de",
+        "na volta seguinte e ninguém merece o mesmo alerta a cada minuto.",
+    "alerts.warn_memory_over": "Avisar quando a memória passar de",
     "alerts.memory_hint":
-        "Memoria do container, contra o limite dele (nao o da maquina inteira). Avisa uma vez, na "
+        "Memória do container, contra o limite dele (não o da máquina inteira). Avisa uma vez, na "
         "virada, do mesmo jeito que o disco.",
     "alerts.warn_cpu_over": "Avisar quando a CPU passar de",
     "alerts.cpu_hint":
-        "Uso do container sobre os nucleos que ele tem, medido junto com o disco (a cada {n} min). "
-        "Como e uma amostra curta de vez em quando, serve para pegar CPU presa no teto, nao pico "
+        "Uso do container sobre os núcleos que ele tem, medido junto com o disco (a cada {n} min). "
+        "Como é uma amostra curta de vez em quando, serve para pegar CPU presa no teto, não pico "
         "de um segundo.",
 
-    # ----------------------------------------------- alertas: diario
-    "alerts.journal": "Diario de alertas",
+    # ----------------------------------------------- alerts - daily log
+    "alerts.journal": "Diário de alertas",
     "alerts.journal_empty":
         "Nada registrado ainda. Cada alerta que o painel decidir mandar aparece aqui &mdash; "
-        "inclusive os que <strong>nao</strong> sairam.",
+        "inclusive os que <strong>não</strong> saíram.",
     "alerts.when_utc": "Quando (UTC)",
     "alerts.event": "Evento",
     "alerts.what": "O que",
     "alerts.destination": "Destino",
-    "alerts.outcome": "Saida",
+    "alerts.outcome": "Saída",
     "alerts.sent": "enviado",
     "alerts.failed": "falhou",
     "alerts.no_destination": "sem destino",
     "alerts.internal_error": "erro interno",
     "alerts.journal_legend":
         "<strong>sem destino</strong> quer dizer que o alerta aconteceu de verdade e nenhum "
-        "destino ativo tinha esse evento marcado &mdash; o canal fica mudo por escolha, nao por "
-        "defeito. <strong>erro interno</strong> e uma tarefa do relogio que quebrou: enquanto ela "
-        "aparecer aqui, os alertas dela nao estao sendo checados.",
+        "destino ativo tinha esse evento marcado &mdash; o canal fica mudo por escolha, não por "
+        "defeito. <strong>erro interno</strong> é uma tarefa do relógio que quebrou: enquanto ela "
+        "aparecer aqui, os alertas dela não estão sendo checados.",
 
-    # ---------------------------------------- alertas: como funciona
+    # ---------------------------------------- alerts - how it works
     "alerts.how_it_works": "Como funciona",
     "alerts.rule_rhythm":
         "O painel confere o estado de cada servidor a cada <strong>{monitor}s</strong> e disco, "
-        "memoria e CPU a cada <strong>{meter} min</strong> (o medidor custa bem mais caro que o "
-        "status, e as tres leituras saem de uma vez so).",
+        "memória e CPU a cada <strong>{meter} min</strong> (o medidor custa bem mais caro que o "
+        "status, e as três leituras saem de uma vez só).",
     "alerts.rule_joining":
-        "<strong>Jogador entrando e a excecao:</strong> esse o painel confere a cada "
+        "<strong>Jogador entrando é a exceção:</strong> esse o painel confere a cada "
         "<strong>{n}s</strong>, porque quem recebe o aviso costuma querer entrar junto e um minuto "
-        "depois ja e tarde. Essa volta curta pergunta direto ao jogo, sem SSH &mdash; por isso ela "
+        "depois já é tarde. Essa volta curta pergunta direto ao jogo, sem SSH &mdash; por isso ela "
         "cabe sem encarecer o resto. Vale para quem conta por <strong>A2S ou API HTTP</strong>.",
     "alerts.streams_now": "<strong>{n}</strong> agora",
     "alerts.streams_none": "nenhuma no momento",
     "alerts.rule_log_listen":
-        "Quem conta por <strong>log</strong> nao e perguntado: o painel deixa uma conexao aberta "
+        "Quem conta por <strong>log</strong> não é perguntado: o painel deixa uma conexão aberta "
         "<em>ouvindo</em> o log ({listening}) e reage a linha no segundo em que ela sai. Perguntar "
-        "de 15 em 15 segundos custaria uma leitura do log inteiro a cada vez; assim so se le "
-        "quando alguem de fato entrou ou saiu. Se a conexao cair, o aviso volta a sair pela volta "
-        "de {monitor}s ate ela se restabelecer.",
+        "de 15 em 15 segundos custaria uma leitura do log inteiro a cada vez; assim só se lê "
+        "quando alguém de fato entrou ou saiu. Se a conexão cair, o aviso volta a sair pela volta "
+        "de {monitor}s até ela se restabelecer.",
     "alerts.rule_on_change":
-        "Ele avisa na <strong>mudanca</strong>, nunca em repeticao: o alerta sai quando o servidor "
-        "cai, nao a cada volta enquanto ele estiver caido.",
+        "Ele avisa na <strong>mudança</strong>, nunca em repetição: o alerta sai quando o servidor "
+        "cai, não a cada volta enquanto ele estiver caído.",
     "alerts.rule_all_destinations":
         "Cada evento vai para <strong>todos os destinos</strong> que o marcaram. Um destino fora "
-        "do ar nao impede os outros de receber.",
+        "do ar não impede os outros de receber.",
     "alerts.rule_service_up_is_not_game_up":
-        "<strong>Servico de pe nao quer dizer jogo de pe.</strong> Alem da queda, o painel olha "
-        "tres coisas que passariam batido:",
+        "<strong>Serviço de pé não quer dizer jogo de pé.</strong> Além da queda, o painel olha "
+        "três coisas que passariam batido:",
     "alerts.rule_game_failed":
-        "<em>Jogo quebrou</em> &mdash; o systemd marcou o servico como <code>failed</code>. E "
-        "diferente de \"parou\": alguem parar pelo painel nao gera este alerta, e este aqui sai "
-        "mesmo dentro da janela de silencio.",
+        "<em>Jogo quebrou</em> &mdash; o systemd marcou o serviço como <code>failed</code>. É "
+        "diferente de \"parou\": alguém parar pelo painel não gera este alerta, e este aqui sai "
+        "mesmo dentro da janela de silêncio.",
     "alerts.rule_restart_loop":
         "<em>Loop de restart</em> &mdash; o jogo morre e o systemd levanta de novo, sem parar. "
-        "Entre uma queda e outra o servico responde <code>active</code>, e o alerta de queda nunca "
-        "dispara. Sai uma vez por episodio.",
+        "Entre uma queda e outra o serviço responde <code>active</code>, e o alerta de queda nunca "
+        "dispara. Sai uma vez por episódio.",
     "alerts.rule_game_mute":
-        "<em>Jogo nao responde</em> &mdash; o processo esta vivo mas mudo na consulta do proprio "
-        "jogo, por {n} verificacoes seguidas. So vale para quem conta jogadores por <strong>A2S ou "
-        "API HTTP</strong>: contagem por log nao pergunta nada ao jogo.",
+        "<em>Jogo não responde</em> &mdash; o processo está vivo mas mudo na consulta do próprio "
+        "jogo, por {n} verificações seguidas. Só vale para quem conta jogadores por <strong>A2S ou "
+        "API HTTP</strong>: contagem por log não pergunta nada ao jogo.",
     "alerts.rule_log_error":
-        "<em>Erro no log do jogo</em> le o fim do log a cada <strong>{n}s</strong> e procura a "
-        "expressao cadastrada em cada servidor. Sem expressao, nem a leitura acontece. A mesma "
-        "linha nao avisa duas vezes.",
+        "<em>Erro no log do jogo</em> lê o fim do log a cada <strong>{n}s</strong> e procura a "
+        "expressão cadastrada em cada servidor. Sem expressão, nem a leitura acontece. A mesma "
+        "linha não avisa duas vezes.",
     "alerts.rule_quiet_window":
-        "Parar, reiniciar, atualizar ou restaurar <strong>pelo painel</strong> nao vira alerta "
-        "&mdash; nos {n}s seguintes a uma dessas acoes a queda e esperada.",
+        "Parar, reiniciar, atualizar ou restaurar <strong>pelo painel</strong> não vira alerta "
+        "&mdash; nos {n}s seguintes a uma dessas ações a queda é esperada.",
     "alerts.rule_on_boot":
-        "Ao subir, o painel so <strong>anota</strong> o estado de todo mundo. Reiniciar o painel "
-        "nao dispara um alerta por servidor que ja estava parado.",
+        "Ao subir, o painel só <strong>anota</strong> o estado de todo mundo. Reiniciar o painel "
+        "não dispara um alerta por servidor que já estava parado.",
     "alerts.rule_scheduled_only":
-        "De tarefa que falha, so a <strong>agendada</strong> vira alerta: quem clicou o botao ja "
-        "esta com o erro na tela.",
+        "De tarefa que falha, só a <strong>agendada</strong> vira alerta: quem clicou o botão já "
+        "está com o erro na tela.",
     "alerts.rule_editing_resets":
-        "Mexer nesta tela zera a linha de base do monitor, para a volta seguinte nao avisar sobre "
-        "o que ja estava assim antes da mudanca.",
+        "Mexer nesta tela zera a linha de base do monitor, para a volta seguinte não avisar sobre "
+        "o que já estava assim antes da mudança.",
 
-    # --------------------------------------------- gestor de mods
+    # --------------------------------------------- mod manager
     "mods.no_profile":
-        "Este jogo ainda nao tem gestor de mods. Os arquivos de mod podem ir pela tela Arquivos.",
+        "Este jogo ainda não tem gestor de mods. Os arquivos de mod podem ir pela tela Arquivos.",
     "mods.help_ets2":
-        "No Euro Truck Simulator 2 o servidor <strong>nao carrega arquivo de mod</strong>: mapa, "
-        "DLCs e mods vem dentro dos <code>server_packages</code>, exportados do JOGO com os mods "
+        "No Euro Truck Simulator 2 o servidor <strong>não carrega arquivo de mod</strong>: mapa, "
+        "DLCs e mods vêm dentro dos <code>server_packages</code>, exportados do JOGO com os mods "
         "ativos no perfil (console, com o mapa carregado: <code>export_server_packages</code>). "
         "Cada jogador precisa ter os MESMOS mods. Trocou a lista? Exporte e envie os pacotes de novo.",
     "mods.help_unreal_linux":
-        "Os mods <code>.pak</code> do servidor ficam em <code>{folder}</code>. Mod que mexe so no "
+        "Os mods <code>.pak</code> do servidor ficam em <code>{folder}</code>. Mod que mexe só no "
         "visual e do cliente; mod de regra de jogo precisa estar aqui E, em geral, nos jogadores. "
         "Mods de script (UE4SS) rodam pelo UE4SS oficial compilado para Linux, logo abaixo: os mods "
-        "Lua ficam na pasta <code>ue4ss/Mods</code> ao lado do executavel do jogo. Instalar gera os "
-        "arquivos deste servidor (o motor de cada jogo tem mudancas do estudio); depois de um update "
+        "Lua ficam na pasta <code>ue4ss/Mods</code> ao lado do executável do jogo. Instalar gera os "
+        "arquivos deste servidor (o motor de cada jogo tem mudanças do estúdio); depois de um update "
         "do jogo, instale de novo.",
     "mods.help_palworld":
-        "Os mods <code>.pak</code> do servidor ficam em <code>{folder}</code>. Mod que mexe so no "
+        "Os mods <code>.pak</code> do servidor ficam em <code>{folder}</code>. Mod que mexe só no "
         "visual e do cliente; mod de regra de jogo precisa estar aqui E, em geral, nos jogadores. "
         "Mods de script (UE4SS) rodam pelo UE4SS oficial compilado para Linux, logo abaixo: os mods "
-        "Lua ficam na pasta <code>ue4ss/Mods</code> ao lado do executavel do jogo.",
+        "Lua ficam na pasta <code>ue4ss/Mods</code> ao lado do executável do jogo.",
     "mods.packages_title": "O que o servidor carrega",
     "mods.no_packages":
         "Nenhum pacote em <code>{folder}</code> ainda: exporte do jogo e envie o "
         "<code>server_packages.sii</code> e o <code>server_packages.dat</code> abaixo.",
-    "mods.packages_unreadable": "O server_packages.sii do servidor nao pode ser lido como texto.",
+    "mods.packages_unreadable": "O server_packages.sii do servidor não pode ser lido como texto.",
     "mods.summary": "Mapa {map} - {dlcs} DLCs - {n} mods",
     "mods.col_mod": "Mod",
     "mods.col_origin": "Origem",
     "mods.workshop": "Workshop",
-    "mods.manual": "instalado a mao (fora da Workshop)",
+    "mods.manual": "instalado à mão (fora da Workshop)",
     "mods.optional": "opcional",
     "mods.players_list_title": "Links para os jogadores",
     "mods.players_list_help":
-        "Copie e mande para quem vai jogar: sao os mods da Workshop que o servidor usa. Os "
-        "instalados a mao (como um mapa baixado de site) nao estao aqui.",
+        "Copie e mande para quem vai jogar: são os mods da Workshop que o servidor usa. Os "
+        "instalados à mão (como um mapa baixado de site) não estão aqui.",
     "mods.expected_title": "Lista de mods que o servidor deveria ter",
     "mods.missing": "Faltam {n} mods da lista nos pacotes do servidor:",
     "mods.missing_help":
-        "Nao estavam ativos no perfil de quem exportou. Ative-os no jogo, exporte de novo e envie "
+        "Não estavam ativos no perfil de quem exportou. Ative-os no jogo, exporte de novo e envie "
         "os pacotes.",
-    "mods.all_present": "Todos os mods da lista estao nos pacotes do servidor.",
+    "mods.all_present": "Todos os mods da lista estão nos pacotes do servidor.",
     "mods.extra": "No servidor, mas fora da lista: {names}",
     "mods.expected_label": "Links ou IDs da Workshop, um por linha",
     "mods.expected_help":
@@ -587,23 +557,27 @@ MESSAGES: dict[str, str] = {
     "mods.upload_title": "Enviar para o servidor",
     "mods.files_to_send": "Arquivos",
     "mods.upload_accepts":
-        "Aceita {allowed}. Vai para {folder}; um arquivo de mesmo nome e substituido (fica uma "
-        "copia .bak).",
-    "mods.restart_after": "Reiniciar o servidor depois (mod so entra quando ele sobe de novo)",
+        "Aceita {allowed}. Vai para {folder}; um arquivo de mesmo nome é substituído (fica uma "
+        "cópia .bak).",
+    "mods.restart_after": "Reiniciar o servidor depois (mod só entra quando ele sobe de novo)",
     "mods.upload_button": "Enviar",
     "mods.help_vrising":
-        "Mods do V Rising vem do <strong>Thunderstore</strong> e rodam no <strong>BepInEx</strong>, "
+        "Mods do V Rising vêm do <strong>Thunderstore</strong> e rodam no <strong>BepInEx</strong>, "
         "que precisa estar instalado e ligado no servidor. O painel baixa tudo DE DENTRO do "
-        "container. Mod de servidor so precisa estar aqui; se o mod mexe no cliente, cada jogador "
+        "container. Mod de servidor só precisa estar aqui; se o mod mexe no cliente, cada jogador "
         "instala o seu.",
-    "mods.status_failed": "Nao consegui ler os mods do servidor: {reason}",
-    "mods.not_thunderstore": "Este servidor nao usa mods do Thunderstore.",
+    "mods.status_failed": "Não consegui ler os mods do servidor: {reason}",
+    "mods.not_thunderstore": "Este servidor não usa mods do Thunderstore.",
+    "mods.needs_root":
+        "Este servidor é acessado sem root (usuário {user}), e este instalador ainda precisa de root "
+        "para gravar o ajuste do serviço do jogo. Isso chega na fase 6 do plano de segurança "
+        "(docs/security-hardening.md); até lá, ele não pode ser instalado, ligado nem removido por esta tela.",
     "mods.bad_package":
-        "Nao reconheci o pacote. Cole o link da pagina dele no Thunderstore, ou autor/pacote.",
+        "Não reconheci o pacote. Cole o link da página dele no Thunderstore, ou autor/pacote.",
     "mods.loader_title": "BepInEx (carregador de mods)",
     "mods.loader_on": "ligado",
     "mods.loader_off": "desligado",
-    "mods.loader_missing": "O BepInEx ainda nao esta instalado neste servidor.",
+    "mods.loader_missing": "O BepInEx ainda não está instalado neste servidor.",
     "mods.loader_install": "Instalar o BepInEx",
     "mods.loader_update": "Reinstalar / atualizar",
     "mods.loader_enable": "Ligar",
@@ -616,40 +590,40 @@ MESSAGES: dict[str, str] = {
         "O ajuste do Wine que o BepInEx precisa foi desfeito (um redeploy do jogo reescreve esse "
         "arquivo). Instale o BepInEx de novo para reaplicar.",
     "mods.low_memory":
-        "Este servidor tem {have} MB de memoria, e a primeira subida com o BepInEx pede uns "
-        "{need} MB (medido: 9,4 GB). Com menos, o servidor cai por falta de memoria em laco. "
-        "Aumente a memoria do container antes de instalar.",
+        "Este servidor tem {have} MB de memória, e a primeira subida com o BepInEx pede uns "
+        "{need} MB (medido: 9,4 GB). Com menos, o servidor cai por falta de memória em laço. "
+        "Aumente a memória do container antes de instalar.",
     "mods.loader_first_run":
-        "A primeira subida depois de instalar o BepInEx demora varios minutos: ele gera o codigo "
-        "do jogo antes de abrir o servidor. As seguintes sao normais.",
+        "A primeira subida depois de instalar o BepInEx demora vários minutos: ele gera o código "
+        "do jogo antes de abrir o servidor. As seguintes são normais.",
     "mods.plugins_title": "Mods (plugins)",
-    "mods.col_version": "Versao",
+    "mods.col_version": "Versão",
     "mods.plugin_add_label": "Instalar mod do Thunderstore",
     "mods.plugin_add_help":
-        "Link da pagina do mod, ou autor/pacote (ex.: deca/VampireCommandFramework). As "
-        "dependencias vem junto. Sem versao, vem a mais nova; com versao (no campo abaixo ou "
-        "no nome colado, deca-VampireCommandFramework-0.11.0), vem aquela e as dependencias "
-        "na versao que ela pede.",
-    "mods.version_label": "Versao (opcional)",
+        "Link da página do mod, ou autor/pacote (ex.: deca/VampireCommandFramework). As "
+        "dependências vêm junto. Sem versão, vem a mais nova; com versão (no campo abaixo ou "
+        "no nome colado, deca-VampireCommandFramework-0.11.0), vem aquela e as dependências "
+        "na versão que ela pede.",
+    "mods.version_label": "Versão (opcional)",
     "mods.version_help": "Vazio = a mais nova. Ex.: 1.2.3",
-    "mods.bad_version": "Versao invalida. Use numeros no formato 1.2.3, ou deixe vazio para a mais nova.",
-    "mods.pinned": "versao fixada",
-    "mods.change_version_title": "Trocar a versao de um mod instalado",
+    "mods.bad_version": "Versão inválida. Use números no formato 1.2.3, ou deixe vazio para a mais nova.",
+    "mods.pinned": "versão fixada",
+    "mods.change_version_title": "Trocar a versão de um mod instalado",
     "mods.change_version_help":
-        "A versao escolhida substitui a instalada por inteiro, junto com as dependencias que "
-        "ela pede (uma dependencia dividida com outro mod pode voltar para uma versao mais "
-        "velha). A config do mod e mantida. Vazio atualiza para a mais nova.",
-    "mods.change_version_button": "Trocar versao",
+        "A versão escolhida substitui a instalada por inteiro, junto com as dependências que "
+        "ela pede (uma dependência dividida com outro mod pode voltar para uma versão mais "
+        "velha). A config do mod é mantida. Vazio atualiza para a mais nova.",
+    "mods.change_version_button": "Trocar versão",
     "mods.antivirus_note":
-        "Todo mod passa pelo <strong>antivirus (ClamAV)</strong> dentro do container antes de "
-        "chegar ao jogo; se ele achar algo, ou nao conseguir verificar, o mod NAO entra e o "
-        "servidor nao reinicia. Na primeira vez o container instala o ClamAV (uns minutos a "
-        "mais). Ele acha o que ja e conhecido: continue baixando so de fonte em que confia.",
+        "Todo mod passa pelo <strong>antivírus (ClamAV)</strong> dentro do container antes de "
+        "chegar ao jogo; se ele achar algo, ou não conseguir verificar, o mod NÃO entra e o "
+        "servidor não reinicia. Na primeira vez o container instala o ClamAV (uns minutos a "
+        "mais). Ele acha o que já é conhecido: continue baixando só de fonte em que confia.",
     "mods.audit_button": "Verificar mods instalados",
     "mods.audit_help":
-        "Passa o antivirus no que ja esta instalado neste servidor, inclusive o que entrou antes "
-        "da verificacao existir. So le: nada e apagado, e o resultado sai no log da tarefa. Usa "
-        "uns 1 GB de memoria por alguns segundos, ao lado do jogo.",
+        "Passa o antivírus no que já está instalado neste servidor, inclusive o que entrou antes "
+        "da verificação existir. Só lê: nada é apagado, e o resultado sai no log da tarefa. Usa "
+        "uns 1 GB de memória por alguns segundos, ao lado do jogo.",
     "mods.plugin_install": "Instalar",
     "mods.where_to_find": "Onde achar mods",
     "mods.source_workshop": "Steam Workshop",
@@ -657,195 +631,195 @@ MESSAGES: dict[str, str] = {
     "mods.source_thunderstore": "Thunderstore",
     "mods.source_shroudtopia": "Shroudtopia (carregador)",
     "mods.help_dragonwilds":
-        "Os mods do servidor sao os <strong>.pak</strong> (com os <code>.utoc</code> e "
-        "<code>.ucas</code> de mesmo nome, que a Unreal 5 exige - mande os tres juntos) e ficam em "
+        "Os mods do servidor são os <strong>.pak</strong> (com os <code>.utoc</code> e "
+        "<code>.ucas</code> de mesmo nome, que a Unreal 5 exige - mande os três juntos) e ficam em "
         "<code>{folder}</code>. Mods de script (UE4SS) rodam pelo UE4SS oficial compilado para Linux, "
-        "logo abaixo; o jogo marca a sessao como modificada enquanto ele estiver ligado. O Nexus "
-        "Mods nao deixa baixar por automacao sem conta Premium: baixe la e envie aqui. A "
-        "pagina de cada mod diz se os jogadores tambem precisam dele.",
+        "logo abaixo; o jogo marca a sessão como modificada enquanto ele estiver ligado. O Nexus "
+        "Mods não deixa baixar por automação sem conta Premium: baixe lá e envie aqui. A "
+        "página de cada mod diz se os jogadores também precisam dele.",
     "mods.help_enshrouded":
         "Mods do Enshrouded precisam de um <strong>carregador</strong> no servidor: o Shroudtopia, que "
-        "o painel baixa do GitHub e poe ao lado do <code>enshrouded_server.exe</code>. Os mods sao DLLs "
+        "o painel baixa do GitHub e põe ao lado do <code>enshrouded_server.exe</code>. Os mods são DLLs "
         "(Nexus Mods) que entram em <code>{folder}</code>. Provado num servidor de verdade sob o Proton. "
-        "A pagina de cada mod diz se ele e so do servidor ou tambem dos jogadores.",
+        "A página de cada mod diz se ele é só do servidor ou também dos jogadores.",
     "mods.shroudtopia_title": "Shroudtopia (carregador de mods)",
-    "mods.shroudtopia_missing": "O Shroudtopia ainda nao esta instalado neste servidor.",
+    "mods.shroudtopia_missing": "O Shroudtopia ainda não está instalado neste servidor.",
     "mods.shroudtopia_install": "Instalar o Shroudtopia",
     "mods.shroudtopia_folder_mod": "pasta (com mod.json)",
     "mods.shroudtopia_log": "Fim do log do carregador",
     "mods.shroudtopia_log_help":
-        "Mod feito para outra versao do jogo nao derruba o servidor, mas perde a funcao "
-        "em silencio: aqui aparece como \"not found\".",
+        "Mod feito para outra versão do jogo não derruba o servidor, mas perde a função "
+        "em silêncio: aqui aparece como \"not found\".",
     "mods.shroudtopia_config_help":
-        "Os mods de exemplo do pacote oficial NAO sao instalados: eles trazem trapaca "
-        "ligada. Opcoes de cada mod ficam no <code>shroudtopia.json</code>, "
+        "Os mods de exemplo do pacote oficial NÃO são instalados: eles trazem trapaça "
+        "ligada. Opções de cada mod ficam no <code>shroudtopia.json</code>, "
         "na <a href=\"{url}\">tela Arquivos</a>.",
     "mods.help_icarus":
-        "Mods de script do Icarus rodam no <strong>UE4SS</strong>, que o painel baixa do GitHub e poe "
+        "Mods de script do Icarus rodam no <strong>UE4SS</strong>, que o painel baixa do GitHub e põe "
         "ao lado do <code>IcarusServer-Win64-Shipping.exe</code>. Os mods ficam em <code>{folder}</code>, "
         "uma pasta por mod.",
     "mods.ue4ss_title": "UE4SS (carregador de mods)",
-    "mods.ue4ss_missing": "O UE4SS ainda nao esta instalado neste servidor.",
+    "mods.ue4ss_missing": "O UE4SS ainda não está instalado neste servidor.",
     "mods.ue4ss_install": "Instalar o UE4SS",
     "mods.ue4ss_log": "Fim do log do UE4SS",
     "mods.ue4ss_config_help":
-        "Instalado sem console e sem os mods de trapaca que vem com ele: so os carregadores de mod "
-        "de blueprint ficam ligados. Cada mod e uma pasta em <code>{folder}</code>, ligada no "
+        "Instalado sem console e sem os mods de trapaça que vêm com ele: só os carregadores de mod "
+        "de blueprint ficam ligados. Cada mod é uma pasta em <code>{folder}</code>, ligada no "
         "<code>mods.txt</code> da mesma pasta, pela <a href=\"{url}\">tela Arquivos</a>.",
     "mods.source_ue4ss": "UE4SS (carregador)",
     "mods.not_proven":
-        "Este instalador ainda NAO foi testado num servidor de verdade. Faca backup do mundo antes "
+        "Este instalador ainda NÃO foi testado num servidor de verdade. Faça backup do mundo antes "
         "(tela Backups) e confira o servidor depois de instalar.",
     "mods.help_satisfactory":
         "Mods do Satisfactory rodam no <strong>SML</strong> (Satisfactory Mod Loader). O painel "
-        "baixa do ficsit.app o pacote de servidor Linux de cada mod e das dependencias dele, "
-        "confere o sha256 e o antivirus, e poe cada um numa pasta em <code>{folder}</code>. "
+        "baixa do ficsit.app o pacote de servidor Linux de cada mod e das dependências dele, "
+        "confere o sha256 e o antivírus, e põe cada um numa pasta em <code>{folder}</code>. "
         "Todo jogador precisa dos MESMOS mods no jogo (pelo Satisfactory Mod Manager).",
     "mods.help_valheim":
         "Mods do Valheim rodam no <strong>BepInEx</strong>, instalado do Thunderstore. No servidor "
-        "Linux ele entra por variaveis do systemd (um drop-in), sem trocar o script de partida.",
+        "Linux ele entra por variáveis do systemd (um drop-in), sem trocar o script de partida.",
     "mods.help_rust":
         "Plugins do Rust rodam no <strong>Oxide</strong> (uMod). Ele SOBRESCREVE arquivos do jogo, "
-        "e o painel guarda os originais para poder desligar. <strong>Toda atualizacao do Rust "
-        "apaga o Oxide</strong>: reinstale depois de atualizar. Os plugins sao <code>.cs</code> "
+        "e o painel guarda os originais para poder desligar. <strong>Toda atualização do Rust "
+        "apaga o Oxide</strong>: reinstale depois de atualizar. Os plugins são <code>.cs</code> "
         "em <code>{folder}</code>, e entram sem reiniciar.",
     "mods.sml_title": "SML (Satisfactory Mod Loader)",
-    "mods.sml_missing": "O SML ainda nao esta instalado. Ele tambem vem sozinho com o primeiro mod.",
+    "mods.sml_missing": "O SML ainda não está instalado. Ele também vem sozinho com o primeiro mod.",
     "mods.sml_install": "Instalar o SML",
     "mods.sml_mod_label": "Instalar mod do ficsit.app",
     "mods.sml_mod_help": (
-        "A referencia do mod (RefinedPower) ou o link da pagina dele no ficsit.app. As dependencias "
-        "vem junto."),
-    "mods.sml_bad_ref": "Nao reconheci o mod: use a referencia (RefinedPower) ou o link ficsit.app/mod/...",
+        "A referência do mod (RefinedPower) ou o link da página dele no ficsit.app. As dependências "
+        "vêm junto."),
+    "mods.sml_bad_ref": "Não reconheci o mod: use a referência (RefinedPower) ou o link ficsit.app/mod/...",
     "mods.oxide_title": "Oxide (carregador de plugins)",
-    "mods.oxide_missing": "O Oxide ainda nao esta instalado neste servidor.",
+    "mods.oxide_missing": "O Oxide ainda não está instalado neste servidor.",
     "mods.oxide_install": "Instalar o Oxide",
     "mods.oxide_wiped": "Parte dos arquivos do Oxide foi trocada (o Rust foi atualizado?): reinstale.",
     "mods.oxide_log": "Fim do log do Oxide",
     "mods.source_ficsit": "ficsit.app",
     "mods.source_reforger_workshop": "Workshop do Arma Reforger",
     "mods.help_workshop_dst":
-        "No Don't Starve Together quem baixa os mods e o <strong>proprio servidor</strong>, da Steam "
+        "No Don't Starve Together quem baixa os mods é o <strong>próprio servidor</strong>, da Steam "
         "Workshop, na subida. O painel escreve a lista no <code>dedicated_server_mods_setup.lua</code> "
-        "(o que baixar) e no <code>modoverrides.lua</code> de cada shard (o que ligar); as opcoes que "
-        "voce ja deu a um mod ficam. Todo jogador recebe os mods sozinho ao entrar.",
+        "(o que baixar) e no <code>modoverrides.lua</code> de cada shard (o que ligar); as opções que "
+        "você já deu a um mod ficam. Todo jogador recebe os mods sozinho ao entrar.",
     "mods.help_workshop_zomboid":
-        "No Project Zomboid quem baixa os mods e o <strong>proprio servidor</strong>, da Steam Workshop, "
-        "na subida. Sao duas listas no <code>.ini</code> do servidor: os IDs da Workshop (o que baixar) "
-        "e os IDs de mod (o que ligar). Um item da Workshop pode trazer varios mods: depois de baixar, "
+        "No Project Zomboid quem baixa os mods é o <strong>próprio servidor</strong>, da Steam Workshop, "
+        "na subida. São duas listas no <code>.ini</code> do servidor: os IDs da Workshop (o que baixar) "
+        "e os IDs de mod (o que ligar). Um item da Workshop pode trazer vários mods: depois de baixar, "
         "a tela mostra os que ele trouxe.",
     "mods.help_workshop_unturned":
-        "No Unturned quem baixa os mods e o <strong>proprio servidor</strong>, da Steam Workshop, na "
-        "subida, pelo <code>WorkshopDownloadConfig.json</code> da pasta do servidor. Mapa e mod vem "
-        "com as dependencias. O comando do jogo precisa de <code>+InternetServer/&lt;nome&gt;</code>.",
+        "No Unturned quem baixa os mods é o <strong>próprio servidor</strong>, da Steam Workshop, na "
+        "subida, pelo <code>WorkshopDownloadConfig.json</code> da pasta do servidor. Mapa e mod vêm "
+        "com as dependências. O comando do jogo precisa de <code>+InternetServer/&lt;nome&gt;</code>.",
     "mods.help_workshop_reforger":
-        "No Arma Reforger quem baixa os mods e o <strong>proprio servidor</strong>, do workshop da "
+        "No Arma Reforger quem baixa os mods é o <strong>próprio servidor</strong>, do workshop da "
         "Bohemia, na subida, pela lista <code>game.mods</code> do JSON passado em <code>-config</code>. "
-        "O ID e o GUID de 16 caracteres da pagina do mod. Versao fixada a mao na config fica.",
+        "O ID é o GUID de 16 caracteres da página do mod. Versão fixada à mão na config fica.",
     "mods.workshop_antivirus_note":
-        "Aqui o antivirus NAO verifica antes: quem baixa e o servidor do jogo, na subida. Use o "
+        "Aqui o antivírus NÃO verifica antes: quem baixa é o servidor do jogo, na subida. Use o "
         "<strong>Verificar mods instalados</strong> depois, que passa o ClamAV na pasta onde o jogo "
         "guarda o que baixou.",
     "mods.workshop_title": "Mods da Workshop",
     "mods.workshop_config": "Config: <code>{path}</code>",
     "mods.workshop_problem_no_cluster":
-        "Nenhum cluster com server.ini: suba o servidor uma vez para ele criar a configuracao.",
+        "Nenhum cluster com server.ini: suba o servidor uma vez para ele criar a configuração.",
     "mods.workshop_problem_no_config":
-        "A config do servidor ainda nao existe: suba o servidor uma vez para ele cria-la.",
+        "A config do servidor ainda não existe: suba o servidor uma vez para ele criá-la.",
     "mods.workshop_problem_no_server_name":
         "Sem o nome do servidor: ponha +InternetServer/<nome> no comando do jogo (tela Editar) e suba "
         "uma vez.",
     "mods.workshop_problem_no_config_arg":
-        "O servidor nao recebe -config no comando: crie o config.json e passe -config no comando do "
+        "O servidor não recebe -config no comando: crie o config.json e passe -config no comando do "
         "jogo (tela Editar).",
-    "mods.workshop_problem_bad_json": "A config do servidor nao e um JSON valido: corrija na tela Arquivos.",
+    "mods.workshop_problem_bad_json": "A config do servidor não é um JSON válido: corrija na tela Arquivos.",
     "mods.workshop_dst_setup_missing":
-        "Estes mods nao estao no dedicated_server_mods_setup.lua (um update do jogo o reescreve) e "
-        "nao serao baixados: salve a lista de novo. {ids}",
+        "Estes mods não estão no dedicated_server_mods_setup.lua (um update do jogo o reescreve) e "
+        "não serão baixados: salve a lista de novo. {ids}",
     "mods.workshop_zomboid_found": "Mods neste item: {mods}",
     "mods.workshop_downloaded": "baixado",
-    "mods.workshop_pending": "baixa na proxima subida",
+    "mods.workshop_pending": "baixa na próxima subida",
     "mods.workshop_ids_label": "Mods (um por linha)",
     "mods.workshop_ids_help":
-        "O link da pagina do mod na Steam Workshop ou so o numero. Tirar uma linha remove o mod.",
+        "O link da página do mod na Steam Workshop ou só o número. Tirar uma linha remove o mod.",
     "mods.workshop_reforger_help":
-        "O link da pagina do mod no workshop do Reforger, ou o GUID seguido do nome. Tirar uma linha "
+        "O link da página do mod no workshop do Reforger, ou o GUID seguido do nome. Tirar uma linha "
         "remove o mod.",
     "mods.zomboid_mods_label": "Mods ligados (Mods=)",
     "mods.zomboid_mods_help":
-        "Os IDs de mod separados por ponto e virgula, como na lista que a tela mostra depois de baixar.",
+        "Os IDs de mod separados por ponto e vírgula, como na lista que a tela mostra depois de baixar.",
     "mods.workshop_save": "Salvar a lista",
-    "mods.workshop_bad_ids": "Nao achei nenhum ID de mod no que foi colado: nada foi mudado.",
-    "mods.zomboid_bad_mods": "A lista Mods= so aceita letras, numeros, _ . - e ponto e virgula.",
+    "mods.workshop_bad_ids": "Não achei nenhum ID de mod no que foi colado: nada foi mudado.",
+    "mods.zomboid_bad_mods": "A lista Mods= só aceita letras, números, _ . - e ponto e vírgula.",
     "mods.source_umod": "uMod (plugins)",
     "mods.ue4ss_linux_config_help":
-        "Port Linux do UE4SS, ligado por LD_PRELOAD no servico, sem console "
-        "nem janela. Cada mod e uma pasta em <code>{folder}</code>, ligada no <code>mods.txt</code> "
-        "dali, pela <a href=\"{url}\">tela Arquivos</a>. So mods em Lua ou <code>.so</code> de Linux: "
-        "<code>.dll</code> de Windows nao carrega.",
+        "Port Linux do UE4SS, ligado por LD_PRELOAD no serviço, sem console "
+        "nem janela. Cada mod é uma pasta em <code>{folder}</code>, ligada no <code>mods.txt</code> "
+        "dali, pela <a href=\"{url}\">tela Arquivos</a>. Só mods em Lua ou <code>.so</code> de Linux: "
+        "<code>.dll</code> de Windows não carrega.",
     "mods.source_ue4ss_linux": "UE4SS para Linux (jogos testados)",
     "mods.ue4ss_release":
-        "Versao fixa do UE4SS para Linux: {tag}. Se o servidor traz o .sym, o layout do jogo e "
-        "gerado dele a cada instalacao - depois de um update do jogo, instale de novo.",
+        "Versão fixa do UE4SS para Linux: {tag}. Se o servidor traz o .sym, o layout do jogo é "
+        "gerado dele a cada instalação - depois de um update do jogo, instale de novo.",
     "mods.ue4ss_old_layout":
-        "Ainda ha a instalacao antiga do UE4SS (o fork anterior) ao lado do executavel: instale de "
+        "Ainda há a instalação antiga do UE4SS (o fork anterior) ao lado do executável: instale de "
         "novo para passar os mods Lua para a pasta ue4ss/ e tirar os arquivos dela.",
-    "mods.bad_name": "{name} nao e aceito aqui. Esperado: {allowed}.",
+    "mods.bad_name": "{name} não é aceito aqui. Esperado: {allowed}.",
 
-    # --------------------------------------------- catalogo de jogos
-    "catalog.title": "Catalogo de jogos",
+    # --------------------------------------------- game catalog
+    "catalog.title": "Catálogo de jogos",
     "catalog.game": "Jogo",
-    "catalog.creatable": "criavel",
+    "catalog.creatable": "criável",
     "catalog.manual": "manual",
     "catalog.ports": "Portas",
     "catalog.shifted_port": "porta sorteada",
     "catalog.shifted_port_help":
-        "O broker sorteia as portas numa faixa propria dele; as listadas aqui sao so as padrao do "
+        "O broker sorteia as portas numa faixa própria dele; as listadas aqui são só as padrão do "
         "jogo",
-    "catalog.empty": "Catalogo vazio (ou o broker nao respondeu).",
+    "catalog.empty": "Catálogo vazio (ou o broker não respondeu).",
     "catalog.curated_vs_dynamic":
-        "<strong>curado</strong>: vem dos arquivos <code>games/*.env</code> do repositorio. "
-        "<strong>dinamico</strong>: adicionado por aqui. Jogo que exige conta Steam ou instalador "
-        "proprio continua sendo criado pelo <code>deploy-game.ps1</code>.",
+        "<strong>curado</strong>: vem dos arquivos <code>games/*.env</code> do repositório. "
+        "<strong>dinâmico</strong>: adicionado por aqui. Jogo que exige conta Steam ou instalador "
+        "próprio continua sendo criado pelo <code>deploy-game.ps1</code>.",
     "catalog.add_game": "Adicionar jogo",
     "catalog.data_only":
-        "So dados: o broker <strong>nao aceita comandos</strong>. O que precisa de instalacao "
+        "Só dados: o broker <strong>não aceita comandos</strong>. O que precisa de instalação "
         "especial (Wine, Proton, symlink do Steam) entra pelas receitas abaixo.",
     "catalog.search_game": "Buscar jogo",
     "catalog.by_name_or_app_id": "(nome ou App ID)",
     "catalog.search_hint":
         "Preenche App ID, portas e comando de start a partir do LinuxGSM, dos eggs do Pterodactyl "
-        "e de uma lista do painel. E so sugestao: confira antes de enviar.",
-    "catalog.start_from_template": "Comecar de um modelo",
+        "e de uma lista do painel. É só sugestão: confira antes de enviar.",
+    "catalog.start_from_template": "Começar de um modelo",
     "catalog.blank": "Em branco",
     "catalog.template_hint":
-        "Jogo que a busca nao acha? Escolha o motor dele: o modelo preenche portas, caminhos, "
-        "argumentos e o padrao do log de uma vez.",
+        "Jogo que a busca não acha? Escolha o motor dele: o modelo preenche portas, caminhos, "
+        "argumentos e o padrão do log de uma vez.",
     "catalog.search_filled": "campos preenchidos. Confira antes de enviar.",
-    "catalog.search_in_catalog": "ja esta no catalogo",
+    "catalog.search_in_catalog": "já está no catálogo",
     "catalog.search_none":
-        "Nenhuma sugestao para esse nome. Comece de um modelo abaixo (pelo motor do jogo) e "
+        "Nenhuma sugestão para esse nome. Comece de um modelo abaixo (pelo motor do jogo) e "
         "procure o App ID do servidor dedicado e as portas:",
     "catalog.search_steamdb": "App ID no SteamDB",
     "catalog.search_web_ports": "Portas na web",
-    "catalog.search_failed": "Nao consegui buscar:",
+    "catalog.search_failed": "Não consegui buscar:",
     "catalog.recipes_hint":
-        "Servidor so de Windows: marque <strong>proton</strong> (o preferido; <strong>wine</strong> "
-        "so se o Proton nao funcionar) e <strong>xvfb</strong> se ele criar janela ao subir.",
+        "Servidor só de Windows: marque <strong>proton</strong> (o preferido; <strong>wine</strong> "
+        "só se o Proton não funcionar) e <strong>xvfb</strong> se ele criar janela ao subir.",
     "catalog.template.unreal_linux": "Unreal Engine (servidor nativo Linux)",
     "catalog.template.unreal_linux_help":
         "Palworld, Satisfactory, Dragonwilds e a maioria dos jogos Unreal com build Linux. Troque "
         "{project} pela pasta do projeto (a que aparece em /opt/game depois de instalar) e ponha "
         "o App ID do servidor dedicado.",
-    "catalog.template.unreal_windows": "Unreal Engine (so Windows, via Proton)",
+    "catalog.template.unreal_windows": "Unreal Engine (só Windows, via Proton)",
     "catalog.template.unreal_windows_help":
         "Servidor Unreal sem build Linux (Icarus, Abiotic Factor, Conan). Troque {project} pela "
-        "pasta do projeto nos caminhos e no executavel Shipping, que e o que abre a porta.",
+        "pasta do projeto nos caminhos e no executável Shipping, que é o que abre a porta.",
     "catalog.template.unity_linux": "Unity (servidor nativo Linux)",
     "catalog.template.unity_linux_help":
-        "Troque {executable} pelo executavel .x86_64 da raiz do jogo. Confira no guia do jogo "
-        "como ele recebe a porta: a Unity nao tem um argumento padrao para isso.",
-    "catalog.template.unity_windows": "Unity (so Windows, via Proton)",
+        "Troque {executable} pelo executável .x86_64 da raiz do jogo. Confira no guia do jogo "
+        "como ele recebe a porta: a Unity não tem um argumento padrão para isso.",
+    "catalog.template.unity_windows": "Unity (só Windows, via Proton)",
     "catalog.template.unity_windows_help":
         "Servidor Unity sem build Linux (V Rising, Sons of the Forest). Troque {executable} pelo "
         ".exe da raiz. Vem com X virtual (xvfb): servidor Unity costuma criar janela ao subir.",
@@ -855,12 +829,12 @@ MESSAGES: dict[str, str] = {
         "e MAPA por um mapa que exista.",
     "catalog.key": "Chave",
     "catalog.key_example": "meujogo",
-    "catalog.key_hint": "Minusculas, numeros e hifen. Vira o nome do container e do servico.",
+    "catalog.key_hint": "Minúsculas, números e hífen. Vira o nome do container e do serviço.",
     "catalog.name": "Nome",
     "catalog.name_example": "Meu Jogo",
     "catalog.app_id": "App ID do servidor dedicado (Steam)",
-    "catalog.app_id_hint": "O do <strong>servidor dedicado</strong>, nao o do jogo. Consulte o SteamDB.",
-    "catalog.ports_hint": "Porta/protocolo, separadas por espaco. Abaixo de 1024 nao e permitido.",
+    "catalog.app_id_hint": "O do <strong>servidor dedicado</strong>, não o do jogo. Consulte o SteamDB.",
+    "catalog.ports_hint": "Porta/protocolo, separadas por espaço. Abaixo de 1024 não é permitido.",
     "catalog.game_port": "Porta do jogo",
     "catalog.query_port": "Porta de consulta",
     "catalog.extra_port": "Porta extra",
@@ -871,12 +845,12 @@ MESSAGES: dict[str, str] = {
     "catalog.start_args_hint":
         "Use <code>{PORT}</code>, <code>{QUERY_PORT}</code> e <code>{EXTRA_PORT}</code>. Nada de "
         "<code>; | &amp; $</code>.",
-    "catalog.memory_mb": "Memoria (MB)",
+    "catalog.memory_mb": "Memória (MB)",
     "catalog.cpus": "CPUs",
     "catalog.disk_gb": "Disco (GB)",
-    "catalog.config_folder": "Pasta de configuracao",
+    "catalog.config_folder": "Pasta de configuração",
     "catalog.config_folder_hint": "Caminho absoluto sob <code>/opt/game</code> ou <code>/home/steam</code>.",
-    "catalog.config_files": "Arquivos de configuracao",
+    "catalog.config_files": "Arquivos de configuração",
     "catalog.one_per_line": "(um por linha)",
     "catalog.one_per_line_f": "(uma por linha)",
     "catalog.backup_paths": "Pastas de backup",
@@ -884,38 +858,38 @@ MESSAGES: dict[str, str] = {
     "catalog.by_server_log": "Pelo log do servidor",
     "catalog.by_steam_query": "Consulta Steam (A2S)",
     "catalog.platform": "Plataforma",
-    "catalog.linux_default": "Linux (padrao)",
+    "catalog.linux_default": "Linux (padrão)",
     "catalog.windows_needs_wine": "Windows (exige Proton ou Wine)",
     "catalog.log_join_line": "Log: linha de entrada",
-    "catalog.log_leave_line": "Log: linha de saida",
-    "catalog.install_recipes": "Receitas de instalacao",
-    "catalog.broker_picks_ports": "O broker sorteia as portas (varias instancias do mesmo jogo)",
+    "catalog.log_leave_line": "Log: linha de saída",
+    "catalog.install_recipes": "Receitas de instalação",
+    "catalog.broker_picks_ports": "O broker sorteia as portas (várias instâncias do mesmo jogo)",
     "catalog.broker_picks_ports_hint":
-        "So marque se o jogo aceita as portas pelos argumentos: os argumentos de start precisam "
+        "Só marque se o jogo aceita as portas pelos argumentos: os argumentos de start precisam "
         "ter {PORT} (e {QUERY_PORT} e {EXTRA_PORT}, se houver porta de consulta e porta extra) e o "
-        "jogo so pode ter essas tres portas.",
+        "jogo só pode ter essas três portas.",
     "catalog.key_fixed_hint":
-        "A chave nao muda: ela e o nome do jogo no broker. Para trocar, apague e adicione de "
+        "A chave não muda: ela é o nome do jogo no broker. Para trocar, apague e adicione de "
         "novo.",
     "catalog.edited": "editado",
     "catalog.edited_help":
         "Os dados foram editados pelo painel e valem por cima do arquivo games/*.env do "
-        "repositorio.",
+        "repositório.",
     "catalog.edit": "Editar",
     "catalog.delete": "Apagar",
-    "catalog.delete_confirm": "Apagar {name} do catalogo? As instancias ja criadas continuam.",
-    "catalog.undo_edit": "Desfazer edicao",
-    "catalog.undo_edit_confirm": "Descartar a edicao de {name} e voltar ao arquivo do repositorio?",
+    "catalog.delete_confirm": "Apagar {name} do catálogo? As instâncias já criadas continuam.",
+    "catalog.undo_edit": "Desfazer edição",
+    "catalog.undo_edit_confirm": "Descartar a edição de {name} e voltar ao arquivo do repositório?",
     "catalog.edit_title": "Editar {name}",
     "catalog.curated_edit_note": (
-        "Jogo <strong>curado</strong>: a edicao fica guardada no broker, por cima de "
-        "<code>games/{game}.env</code>. Os comandos de instalacao continuam os do arquivo; "
-        "para voltar a ele, use <strong>Desfazer edicao</strong> no catalogo."),
-    "catalog.edit_instances_note": "Vale para as proximas instancias. As ja criadas nao mudam.",
+        "Jogo <strong>curado</strong>: a edição fica guardada no broker, por cima de "
+        "<code>games/{game}.env</code>. Os comandos de instalação continuam os do arquivo; "
+        "para voltar a ele, use <strong>Desfazer edição</strong> no catálogo."),
+    "catalog.edit_instances_note": "Vale para as próximas instâncias. As já criadas não mudam.",
     "catalog.save": "Salvar",
-    "catalog.add_to_catalog": "Adicionar ao catalogo",
+    "catalog.add_to_catalog": "Adicionar ao catálogo",
 
-    # ------------------------------------------ cadastro de servidor
+    # ------------------------------------------ server registration
     "server_form.title_new": "Adicionar servidor",
     "server_form.title_edit": "Editar servidor",
     "server_form.optional": "(opcional)",
@@ -925,11 +899,11 @@ MESSAGES: dict[str, str] = {
     "server_form.name_hint": "Como o servidor aparece no painel. Ex.: <code>Dragonwilds</code>",
     "server_form.host": "Host",
     "server_form.host_hint": "IP ou hostname do container do jogo. O painel se conecta nele por SSH.",
-    "server_form.ssh_user": "Usuario SSH",
+    "server_form.ssh_user": "Usuário SSH",
     "server_form.ssh_port": "Porta SSH",
-    "server_form.systemd_service": "Servico systemd",
+    "server_form.systemd_service": "Serviço systemd",
     "server_form.service_hint":
-        "Normalmente <code>&lt;nome-do-jogo&gt;.service</code>. O <code>.service</code> e "
+        "Normalmente <code>&lt;nome-do-jogo&gt;.service</code>. O <code>.service</code> é "
         "adicionado se faltar.",
     "server_form.game_ports": "Portas do jogo",
     "server_form.game_ports_hint": "Apenas informativo, para lembrar o que redirecionar no roteador.",
@@ -938,134 +912,134 @@ MESSAGES: dict[str, str] = {
     "server_form.player_count": "Contagem de jogadores",
     "server_form.count_off": "Desligada",
     "server_form.count_a2s": "Consulta Steam (A2S) na porta acima",
-    "server_form.count_http": "API HTTP do jogo (da os nomes)",
+    "server_form.count_http": "API HTTP do jogo (dá os nomes)",
     "server_form.count_log": "Pelo log do servidor",
     "server_form.player_count_hint":
-        "Jogo que nao publica nada na rede (RuneScape Dragonwilds, por exemplo) so da para contar "
+        "Jogo que não publica nada na rede (RuneScape Dragonwilds, por exemplo) só dá para contar "
         "pelo log.",
     "server_form.player_count_wizard":
         "O <a href=\"{url}\">assistente</a> testa as portas UDP e TCP, monta a chamada da API e "
-        "acha os padroes do log para voce.",
+        "acha os padrões do log para você.",
     "server_form.log_join": "Log: linha de entrada",
-    "server_form.log_leave": "Log: linha de saida",
+    "server_form.log_leave": "Log: linha de saída",
     "server_form.log_file": "Log: arquivo",
     "server_form.log_file_hint":
-        "Em branco le a saida do servico. Preenchido, le esse arquivo &mdash; e como se alcanca o "
-        "nome do jogador em jogos que so o escrevem em log proprio (DayZ).",
+        "Em branco lê a saída do serviço. Preenchido, lê esse arquivo &mdash; é como se alcança o "
+        "nome do jogador em jogos que só o escrevem em log próprio (DayZ).",
     "server_form.log_error": "Log: linha de erro",
     "server_form.log_error_hint":
         "Liga o alerta <strong>Erro no log do jogo</strong> em <a href=\"{url}\">Alertas</a>: o "
-        "painel procura esta expressao no fim do log e avisa quando ela aparece. Em branco, nem a "
-        "leitura acontece. Comece estreito &mdash; um padrao largo demais transforma o canal em "
-        "copia do log.",
+        "painel procura esta expressão no fim do log e avisa quando ela aparece. Em branco, nem a "
+        "leitura acontece. Comece estreito &mdash; um padrão largo demais transforma o canal em "
+        "cópia do log.",
     "server_form.api_url": "API: URL",
     "server_form.api_url_hint": "Chamada de dentro do container, por SSH. Palworld: porta <code>8212</code>.",
-    "server_form.api_auth": "API: autenticacao",
+    "server_form.api_auth": "API: autenticação",
     "server_form.api_auth_hint":
         "<code>basic:usuario:senha</code>, <code>bearer:token</code> ou <code>header:Nome: "
         "valor</code> (TeamSpeak: <code>header:x-api-key: SUA-CHAVE</code>). Fica em texto puro no "
         "banco.",
     "server_form.api_body": "API: corpo JSON",
-    "server_form.api_body_hint": "Preenchido vira <code>POST</code>; vazio e <code>GET</code>.",
+    "server_form.api_body_hint": "Preenchido vira <code>POST</code>; vazio é <code>GET</code>.",
     "server_form.api_paths": "API: caminho da lista / da contagem",
     "server_form.api_paths_hint": "Vazios: o painel procura sozinho na resposta.",
-    "server_form.config_folder": "Pasta de configuracao",
+    "server_form.config_folder": "Pasta de configuração",
     "server_form.config_folder_hint":
-        "Onde a tela <strong>Arquivos</strong> abre por padrao. Ex.: "
+        "Onde a tela <strong>Arquivos</strong> abre por padrão. Ex.: "
         "<code>/opt/game/Pal/Saved/Config/LinuxServer</code>",
-    "server_form.config_files": "Arquivos de configuracao",
+    "server_form.config_files": "Arquivos de configuração",
     "server_form.config_files_hint":
-        "Informe aqui o arquivo que voce edita de verdade: a tela <strong>Config</strong> abre ele "
-        "direto como formulario (um campo por chave, com botao para acrescentar chave nova) "
-        "&mdash; sem navegar por pastas. Em branco, a propria tela ajuda a procurar os candidatos "
+        "Informe aqui o arquivo que você edita de verdade: a tela <strong>Config</strong> abre ele "
+        "direto como formulário (um campo por chave, com botão para acrescentar chave nova) "
+        "&mdash; sem navegar por pastas. Em branco, a própria tela ajuda a procurar os candidatos "
         "no container.",
     "server_form.config_files_hint_link":
-        "Informe aqui o arquivo que voce edita de verdade: a tela <a "
-        "href=\"{url}\"><strong>Config</strong></a> abre ele direto como formulario (um campo por "
-        "chave, com botao para acrescentar chave nova) &mdash; sem navegar por pastas. Em branco, "
-        "a propria tela ajuda a procurar os candidatos no container.",
+        "Informe aqui o arquivo que você edita de verdade: a tela <a "
+        "href=\"{url}\"><strong>Config</strong></a> abre ele direto como formulário (um campo por "
+        "chave, com botão para acrescentar chave nova) &mdash; sem navegar por pastas. Em branco, "
+        "a própria tela ajuda a procurar os candidatos no container.",
     "server_form.backup_paths": "Caminhos de backup",
     "server_form.backup_paths_hint":
         "O que a tela <strong>Backups</strong> guarda no <code>.tar.gz</code>. Em branco vale a "
-        "<strong>pasta de configuracao</strong> acima. Aponte a pasta do <strong>save</strong>, "
-        "nao a raiz do jogo: <code>/opt/game</code> inteiro leva dezenas de GB de binario que o "
-        "SteamCMD rebaixa de graca.",
+        "<strong>pasta de configuração</strong> acima. Aponte a pasta do <strong>save</strong>, "
+        "não a raiz do jogo: <code>/opt/game</code> inteiro leva dezenas de GB de binário que o "
+        "SteamCMD rebaixa de graça.",
     "server_form.backup_paths_hint_link":
         "O que a tela <a href=\"{url}\"><strong>Backups</strong></a> guarda no "
-        "<code>.tar.gz</code>. Em branco vale a <strong>pasta de configuracao</strong> acima. "
-        "Aponte a pasta do <strong>save</strong>, nao a raiz do jogo: <code>/opt/game</code> "
-        "inteiro leva dezenas de GB de binario que o SteamCMD rebaixa de graca.",
+        "<code>.tar.gz</code>. Em branco vale a <strong>pasta de configuração</strong> acima. "
+        "Aponte a pasta do <strong>save</strong>, não a raiz do jogo: <code>/opt/game</code> "
+        "inteiro leva dezenas de GB de binário que o SteamCMD rebaixa de graça.",
     "server_form.notes": "Notas",
     "server_form.cancel": "Cancelar",
     "server_form.sshd_note":
         "O container precisa ter <code>sshd</code> rodando e a chave do painel autorizada — veja "
         "<a href=\"{url}\">Acesso SSH</a>.",
     "server_form.remove": "Remover do painel",
-    "server_form.remove_hint": "Apaga apenas o cadastro. O container e os arquivos do jogo nao sao tocados.",
+    "server_form.remove_hint": "Apaga apenas o cadastro. O container e os arquivos do jogo não são tocados.",
     "server_form.remove_confirm": "Remover este servidor do painel?",
 
-    # ------------------------------------------ titulos e componente
-    # ------------------------- pagina de erro e barreira de permissao
-    # Texto que ate aqui era literal dentro de `abort(...)` e de `errors.append(...)`:
-    # passava pelo `translate` e voltava igual, entao a tela em ingles mostrava
-    # portugues. Ver "Texto fixo devolvido por funcao nao traduz", no CLAUDE.md.
-    "error.csrf_invalid": "Token CSRF invalido ou expirado — recarregue a pagina.",
-    "error.terminal_session_gone": "Sessao de terminal expirada ou encerrada.",
-    "error.terminal_bad_input": "Entrada invalida.",
-    "error.terminal_bad_size": "Tamanho invalido.",
+    # ------------------------------------------ titles and components
+    # ------------------------- error page and permission barrier
+    # Text that used to be a literal inside `abort(...)` and `errors.append(...)`: it went
+    # through `translate` and came back unchanged, so the English screen showed Portuguese.
+    # See "Texto fixo devolvido por funcao nao traduz" in CLAUDE.md.
+    "error.csrf_invalid": "Token CSRF inválido ou expirado — recarregue a página.",
+    "error.terminal_session_gone": "Sessão de terminal expirada ou encerrada.",
+    "error.terminal_bad_input": "Entrada inválida.",
+    "error.terminal_bad_size": "Tamanho inválido.",
     "error.download_too_large":
         "Arquivo de {size} bytes acima do limite de download ({limit} bytes) — use scp para este.",
-    "error.not_found": "Pagina nao encontrada.",
-    "error.admin_only": "Esta tela e restrita a administradores do painel.",
-    "error.job_admin_only": "Este registro e de uma acao restrita a administradores do painel.",
-    "error.terminal_disabled": "O terminal esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).",
-    "error.terminal_no_pty": "Terminal indisponivel: este sistema nao tem PTY.",
-    "error.console_disabled": "O console esta desabilitado (GAMEPANEL_ALLOW_SHELL=0).",
-    "error.files_disabled": "O editor de arquivos esta desabilitado (GAMEPANEL_ALLOW_FILES=0).",
-    "error.broker_disabled": "O broker esta desligado neste painel (GAMEPANEL_ALLOW_BROKER=0).",
+    "error.not_found": "Página não encontrada.",
+    "error.admin_only": "Esta tela é restrita a administradores do painel.",
+    "error.job_admin_only": "Este registro é de uma ação restrita a administradores do painel.",
+    "error.terminal_disabled": "O terminal está desabilitado (GAMEPANEL_ALLOW_SHELL=0).",
+    "error.terminal_no_pty": "Terminal indisponível: este sistema não tem PTY.",
+    "error.console_disabled": "O console está desabilitado (GAMEPANEL_ALLOW_SHELL=0).",
+    "error.files_disabled": "O editor de arquivos está desabilitado (GAMEPANEL_ALLOW_FILES=0).",
+    "error.broker_disabled": "O broker está desligado neste painel (GAMEPANEL_ALLOW_BROKER=0).",
     "error.operator_reads_registered_only":
-        "Operador so abre os arquivos de configuracao ja registrados neste servidor.",
+        "Operador só abre os arquivos de configuração já registrados neste servidor.",
     "error.operator_saves_registered_only":
-        "Operador so salva os arquivos de configuracao ja registrados neste servidor.",
+        "Operador só salva os arquivos de configuração já registrados neste servidor.",
     "error.upload_too_large":
         "Arquivo grande demais para o envio (limite de {limit}). Para mandar um maior, suba o "
-        "GAMEPANEL_UPLOAD_MAX do painel — conferindo antes se ha esse espaco livre no container "
+        "GAMEPANEL_UPLOAD_MAX do painel — conferindo antes se há esse espaço livre no container "
         "do painel.",
-    "error.content_too_large": "Conteudo grande demais (o editor aceita ate {kb} KB por arquivo).",
+    "error.content_too_large": "Conteúdo grande demais (o editor aceita até {kb} KB por arquivo).",
 
-    # ------------------------------------- validacao de formulario
-    "flash.server_duplicate": "Ja existe um servidor cadastrado em {host}.",
+    # ------------------------------------- form validation
+    "flash.server_duplicate": "Já existe um servidor cadastrado em {host}.",
     "flash.username_invalid":
-        "Nome de usuario invalido: use de 1 a 32 caracteres entre letras minusculas, numeros, "
-        "'-' e '_', comecando por letra ou '_'.",
-    "flash.role_invalid": "Papel invalido.",
+        "Nome de usuário inválido: use de 1 a 32 caracteres entre letras minúsculas, números, "
+        "'-' e '_', começando por letra ou '_'.",
+    "flash.role_invalid": "Papel inválido.",
     "flash.schedule_pick_action": "Escolha o que a tarefa deve fazer.",
     "flash.schedule_pick_kind": "Escolha quando a tarefa deve rodar.",
-    "flash.schedule_bad_time": "Horario invalido (use hora 0-23 e minuto 0-59).",
-    "flash.schedule_bad_interval": "Intervalo invalido (de 1 a {max} horas).",
-    "account_2fa.qr_label": "QR code da verificacao em duas etapas",
+    "flash.schedule_bad_time": "Horário inválido (use hora 0-23 e minuto 0-59).",
+    "flash.schedule_bad_interval": "Intervalo inválido (de 1 a {max} horas).",
+    "account_2fa.qr_label": "QR code da verificação em duas etapas",
 
     "error.title": "Erro {code}",
-    "job.title": "Acao #{id}",
-    "account_2fa_codes.title": "Codigos de recuperacao",
+    "job.title": "Ação #{id}",
+    "account_2fa_codes.title": "Códigos de recuperação",
     "players_setup.title": "Contagem de jogadores",
     "server.sections_of_this_server": "Telas deste servidor",
     "server.measuring": "medindo recursos...",
     "server.server": "Servidor",
 
-    # -------------------------------- rotulos de botao e confirmacao
+    # -------------------------------- button labels and confirmation
     "account.generate": "Gerar",
     "account.enable": "Ativar",
-    "account.disable_confirm": "Desativar a verificacao em duas etapas? O login volta a pedir so a senha.",
+    "account.disable_confirm": "Desativar a verificação em duas etapas? O login volta a pedir só a senha.",
     "account.sign_out_of_panel": "Sair do painel",
     "account_2fa.open_in_app": "Abrir no aplicativo",
-    "account_2fa_codes.saved_them": "Ja guardei",
+    "account_2fa_codes.saved_them": "Já guardei",
     "backups.back_up_now": "Fazer backup agora",
     "backups.restore": "restaurar",
     "backups.restore_confirm":
-        "Restaurar {file} em {server}?\n\nO servidor sera PARADO, os arquivos de agora serao "
-        "substituidos e ele volta a subir. Uma copia do estado atual e guardada antes.",
-    "backups.delete_confirm": "Apagar {file}? Nao tem volta.",
+        "Restaurar {file} em {server}?\n\nO servidor será PARADO, os arquivos de agora serão "
+        "substituídos e ele volta a subir. Uma cópia do estado atual é guardada antes.",
+    "backups.delete_confirm": "Apagar {file}? Não tem volta.",
     "config.use_this_file": "Usar este arquivo",
     "config.search_container": "Procurar no container",
     "config.another_line": "outra linha",
@@ -1078,19 +1052,19 @@ MESSAGES: dict[str, str] = {
     "files.download_title": "Baixar",
     "files.edit_field_by_field": "Editar campo a campo",
     "files.delete_file": "Apagar arquivo",
-    "files.delete_confirm": "Apagar {path}? Isto nao tem volta.",
+    "files.delete_confirm": "Apagar {path}? Isto não tem volta.",
     "history.filter": "Filtrar",
     "history.clear": "limpar",
     "history.newer": "mais recentes",
     "history.older": "mais antigas",
-    "instances.create": "Criar instancia",
+    "instances.create": "Criar instância",
     "instances.create_confirm":
-        "Criar o container, instalar o jogo e abrir as portas no firewall? Isso pode levar varios "
+        "Criar o container, instalar o jogo e abrir as portas no firewall? Isso pode levar vários "
         "minutos.",
     "instances.deactivate_confirm":
-        "Desativar {name}? Primeiro o save e copiado para o painel; "
-        "depois o servidor sera PARADO e as portas fecham no firewall.",
-    "instances.remove_confirm": "Remover {name}? O container e o jogo serao APAGADOS.",
+        "Desativar {name}? Primeiro o save é copiado para o painel; "
+        "depois o servidor será PARADO e as portas fecham no firewall.",
+    "instances.remove_confirm": "Remover {name}? O container e o jogo serão APAGADOS.",
     "login_2fa.confirm": "Confirmar",
     "login_2fa.back": "Voltar",
     "schedules.run_now": "rodar agora",
@@ -1108,16 +1082,16 @@ MESSAGES: dict[str, str] = {
     "users.change": "Trocar",
     "users.two_factor_off": "Desligar 2FA",
     "users.two_factor_off_confirm":
-        "Desligar a verificacao em duas etapas de {user}? Ele entra so com a senha ate ativar "
+        "Desligar a verificação em duas etapas de {user}? Ele entra só com a senha até ativar "
         "de novo.",
-    "users.remove_confirm": "Remover o usuario {user}?",
+    "users.remove_confirm": "Remover o usuário {user}?",
     "users.create": "Criar",
 
-    # ---------------------------------------- contagem de jogadores
+    # ---------------------------------------- player count
     "players_setup.intro":
-        "Tres formas de saber quantos estao jogando, da melhor para a ultima: a <strong>API do "
-        "jogo</strong> (da os nomes), a <strong>consulta direta</strong> que o navegador de "
-        "servidores usa (da a contagem) e, quando o jogo nao publica nada na rede, o <strong>log "
+        "Três formas de saber quantos estão jogando, da melhor para a última: a <strong>API do "
+        "jogo</strong> (dá os nomes), a <strong>consulta direta</strong> que o navegador de "
+        "servidores usa (dá a contagem) e, quando o jogo não publica nada na rede, o <strong>log "
         "do servidor</strong>.",
     "players_setup.how_to_count": "Como contar",
     "players_setup.tab_udp": "1. Consulta direta (UDP)",
@@ -1125,99 +1099,99 @@ MESSAGES: dict[str, str] = {
     "players_setup.tab_log": "3. Pelo log",
     "players_setup.ports_tested": "Portas testadas",
     "players_setup.ports_tested_hint":
-        "O painel leu de <code>/proc</code> quais portas UDP estao abertas dentro do container e "
+        "O painel leu de <code>/proc</code> quais portas UDP estão abertas dentro do container e "
         "<strong>qual processo abriu cada uma</strong>, e mandou um <code>A2S_INFO</code> em "
-        "todas. As detectadas vem primeiro; as marcadas como <em>chute</em> nao estavam abertas e "
-        "so servem para quando o servidor esta parado.",
+        "todas. As detectadas vêm primeiro; as marcadas como <em>chute</em> não estavam abertas e "
+        "só servem para quando o servidor está parado.",
     "players_setup.port": "Porta",
     "players_setup.opened_by": "Aberta por",
     "players_setup.answer": "Resposta",
     "players_setup.server": "Servidor",
-    "players_setup.address": "Endereco",
+    "players_setup.address": "Endereço",
     "players_setup.status": "Status",
     "players_setup.kind": "Tipo",
-    "players_setup.infra_not_the_game": "infra, nao e o jogo",
+    "players_setup.infra_not_the_game": "infra, não é o jogo",
     "players_setup.open_no_owner": "aberta, sem processo dono neste container",
-    "players_setup.was_not_open": "nao estava aberta (chute)",
+    "players_setup.was_not_open": "não estava aberta (chute)",
     "players_setup.no_answer": "sem resposta",
     "players_setup.use_this": "Usar esta",
     "players_setup.no_port_to_test": "Nenhuma porta para testar.",
     "players_setup.no_udp_query_one":
-        "<strong>Este jogo nao publica consulta UDP.</strong> O processo do servidor abriu {n} "
-        "porta UDP e ela nao respondeu ao <code>A2S_INFO</code> &mdash; nao e porta errada nem "
-        "firewall: e porta do proprio jogo, e ela nao fala o protocolo. A contagem que aparece no "
-        "navegador do jogo, quando existe, vem do servico da Steam/Epic e nao do servidor. Confira "
-        "a aba <a href=\"{url_http}\">API HTTP</a> (varios jogos trocaram a query UDP por uma API "
-        "em TCP) e, se ali tambem nao houver nada, a contagem so pode sair do <a "
+        "<strong>Este jogo não publica consulta UDP.</strong> O processo do servidor abriu {n} "
+        "porta UDP e ela não respondeu ao <code>A2S_INFO</code> &mdash; não é porta errada nem "
+        "firewall: é porta do próprio jogo, e ela não fala o protocolo. A contagem que aparece no "
+        "navegador do jogo, quando existe, vem do serviço da Steam/Epic e não do servidor. Confira "
+        "a aba <a href=\"{url_http}\">API HTTP</a> (vários jogos trocaram a query UDP por uma API "
+        "em TCP) e, se ali também não houver nada, a contagem só pode sair do <a "
         "href=\"{url_log}\">log</a>.",
     "players_setup.no_udp_query_many":
-        "<strong>Este jogo nao publica consulta UDP.</strong> O processo do servidor abriu {n} "
-        "portas UDP e nenhuma respondeu ao <code>A2S_INFO</code> &mdash; nao e porta errada nem "
-        "firewall: sao as portas do proprio jogo, e elas nao falam o protocolo. A contagem que "
-        "aparece no navegador do jogo, quando existe, vem do servico da Steam/Epic e nao do "
-        "servidor. Confira a aba <a href=\"{url_http}\">API HTTP</a> (varios jogos trocaram a "
-        "query UDP por uma API em TCP) e, se ali tambem nao houver nada, a contagem so pode sair "
+        "<strong>Este jogo não publica consulta UDP.</strong> O processo do servidor abriu {n} "
+        "portas UDP e nenhuma respondeu ao <code>A2S_INFO</code> &mdash; não é porta errada nem "
+        "firewall: são as portas do próprio jogo, e elas não falam o protocolo. A contagem que "
+        "aparece no navegador do jogo, quando existe, vem do serviço da Steam/Epic e não do "
+        "servidor. Confira a aba <a href=\"{url_http}\">API HTTP</a> (vários jogos trocaram a "
+        "query UDP por uma API em TCP) e, se ali também não houver nada, a contagem só pode sair "
         "do <a href=\"{url_log}\">log</a>.",
     "players_setup.none_answered":
-        "Nenhuma respondeu? Veja a aba <a href=\"{url}\">API HTTP</a> &mdash; varios jogos "
-        "trocaram a query UDP por uma API de administracao em TCP.",
+        "Nenhuma respondeu? Veja a aba <a href=\"{url}\">API HTTP</a> &mdash; vários jogos "
+        "trocaram a query UDP por uma API de administração em TCP.",
     "players_setup.tcp_answered_http": "Portas TCP que responderam HTTP",
     "players_setup.tcp_hint":
         "O painel leu de <code>/proc</code> as portas TCP em <code>LISTEN</code> dentro do "
         "container e <strong>qual processo abriu cada uma</strong>, e bateu nelas por HTTP "
-        "<strong>de dentro do proprio container</strong> &mdash; essas APIs costumam escutar so em "
-        "<code>127.0.0.1</code>, e e assim que elas devem continuar. Um <code>401</code> tambem e "
-        "um bom sinal: existe API ali, ela so quer senha. Confira a coluna &quot;Aberta por&quot;: "
-        "se nao for o processo do jogo, nao e a API dele.",
+        "<strong>de dentro do próprio container</strong> &mdash; essas APIs costumam escutar só em "
+        "<code>127.0.0.1</code>, e é assim que elas devem continuar. Um <code>401</code> também é "
+        "um bom sinal: existe API ali, ela só quer senha. Confira a coluna &quot;Aberta por&quot;: "
+        "se não for o processo do jogo, não é a API dele.",
     "players_setup.same_on_everything": "{status} em tudo",
     "players_setup.asks_for_password": "{status} pede senha",
-    "players_setup.http_but_not_a_game_api": "fala HTTP, mas nao e API de jogo",
+    "players_setup.http_but_not_a_game_api": "fala HTTP, mas não é API de jogo",
     "players_setup.use_this_url": "Usar esta URL",
     "players_setup.no_tcp_answered_http": "Nenhuma porta TCP respondeu HTTP.",
     "players_setup.no_http_answer_on": "Sem resposta HTTP em:",
     "players_setup.no_game_api":
-        "<strong>Nenhuma API de jogo respondeu.</strong> Quase sempre e porque ela vem "
-        "<em>desligada</em> de fabrica e precisa ser ligada na configuracao do servidor &mdash; a "
-        "porta so passa a existir depois disso. No <strong>Palworld</strong>, no "
+        "<strong>Nenhuma API de jogo respondeu.</strong> Quase sempre é porque ela vem "
+        "<em>desligada</em> de fábrica e precisa ser ligada na configuração do servidor &mdash; a "
+        "porta só passa a existir depois disso. No <strong>Palworld</strong>, no "
         "<code>PalWorldSettings.ini</code> (dentro de <code>OptionSettings=(...)</code>): "
         "<code>RESTAPIEnabled=True</code>, <code>RESTAPIPort=8212</code> e uma "
         "<code>AdminPassword</code> forte. Pare o servidor, edite, suba de novo e recarregue esta "
-        "pagina. Se o jogo simplesmente nao tem API (RuneScape Dragonwilds nao tem), use a aba <a "
+        "página. Se o jogo simplesmente não tem API (RuneScape Dragonwilds não tem), use a aba <a "
         "href=\"{url}\">Pelo log</a>.",
     "players_setup.test_the_call": "Testar a chamada",
     "players_setup.url": "URL",
     "players_setup.url_hint":
         "Sempre <code>127.0.0.1</code>: a chamada sai de dentro do container, pelo mesmo SSH do "
-        "resto do painel. Nao precisa abrir nada no roteador.",
-    "players_setup.auth": "Autenticacao",
+        "resto do painel. Não precisa abrir nada no roteador.",
+    "players_setup.auth": "Autenticação",
     "players_setup.auth_hint":
-        "<code>basic:usuario:senha</code>, <code>bearer:token</code> ou um cabecalho "
+        "<code>basic:usuario:senha</code>, <code>bearer:token</code> ou um cabeçalho "
         "<code>Authorization</code> pronto. Palworld: <code>basic:admin:</code> + a "
         "<code>AdminPassword</code> do <code>PalWorldSettings.ini</code>. Para API que autentica "
-        "por outro cabecalho, use <code>header:Nome: valor</code> &mdash; o TeamSpeak pede "
+        "por outro cabeçalho, use <code>header:Nome: valor</code> &mdash; o TeamSpeak pede "
         "<code>header:x-api-key: SUA-CHAVE</code>.",
     "players_setup.json_body": "Corpo JSON",
-    "players_setup.json_body_hint": "Preenchido, a chamada vira <code>POST</code>. Vazio, e um <code>GET</code>.",
+    "players_setup.json_body_hint": "Preenchido, a chamada vira <code>POST</code>. Vazio, é um <code>GET</code>.",
     "players_setup.list_path": "Caminho da lista",
     "players_setup.count_path": "Caminho da contagem",
-    "players_setup.auto_login": "Login automatico",
+    "players_setup.auto_login": "Login automático",
     "players_setup.auto_login_hint":
-        "Para APIs cujo token <strong>expira</strong> — a do Satisfactory e assim. Preenchendo "
-        "estes tres campos, o painel troca a senha por um token sozinho, guarda, e quando a API "
+        "Para APIs cujo token <strong>expira</strong> — a do Satisfactory é assim. Preenchendo "
+        "estes três campos, o painel troca a senha por um token sozinho, guarda, e quando a API "
         "responder <code>401</code> ele refaz o login e repete a consulta. Deixe a "
-        "<em>Autenticacao</em> acima vazia: quem manda o cabecalho passa a ser o token obtido "
+        "<em>Autenticação</em> acima vazia: quem manda o cabeçalho passa a ser o token obtido "
         "aqui.",
     "players_setup.login_url": "URL de login",
     "players_setup.token_path": "Caminho do token",
     "players_setup.login_json_body": "Corpo JSON do login",
     "players_setup.login_json_body_hint":
-        "Satisfactory: a senha e a de <strong>admin</strong> definida no cliente ao reivindicar o "
-        "servidor. O corpo vai para a mesma API, sem cabecalho de autenticacao.",
+        "Satisfactory: a senha é a de <strong>admin</strong> definida no cliente ao reivindicar o "
+        "servidor. O corpo vai para a mesma API, sem cabeçalho de autenticação.",
     "players_setup.leave_paths_empty":
         "Deixe os dois caminhos vazios primeiro: o painel procura sozinho uma lista de jogadores "
-        "e, se nao achar, um numero em chaves conhecidas (<code>currentplayernum</code>, "
-        "<code>numPlayers</code>, ...). So preencha se ele errar &mdash; a resposta crua aparece "
-        "abaixo para voce ver o nome certo do campo.",
+        "e, se não achar, um número em chaves conhecidas (<code>currentplayernum</code>, "
+        "<code>numPlayers</code>, ...). Só preencha se ele errar &mdash; a resposta crua aparece "
+        "abaixo para você ver o nome certo do campo.",
     "players_setup.test": "Testar",
     "players_setup.result": "Resultado:",
     "players_setup.players_count": "jogador(es)",
@@ -1226,34 +1200,34 @@ MESSAGES: dict[str, str] = {
     "players_setup.use_this_api": "Usar esta API",
     "players_setup.password_in_plain_text":
         "A senha da API fica guardada no banco do painel em texto puro (e ela precisa ir no "
-        "cabecalho de cada chamada). Trate <code>panel.db</code> como segredo.",
-    "players_setup.log_lines_that_look_like": "Linhas do log que parecem de entrada/saida",
+        "cabeçalho de cada chamada). Trate <code>panel.db</code> como segredo.",
+    "players_setup.log_lines_that_look_like": "Linhas do log que parecem de entrada/saída",
     "players_setup.find_the_lines":
-        "Ache a linha que aparece quando alguem entra e a que aparece quando alguem sai, e escreva "
-        "os padroes abaixo. Use <code>(?P&lt;name&gt;.+)</code> onde estiver o nome do jogador "
-        "&mdash; com o nome nos dois padroes o painel lista quem esta online; sem ele, mostra so a "
+        "Ache a linha que aparece quando alguém entra e a que aparece quando alguém sai, e escreva "
+        "os padrões abaixo. Use <code>(?P&lt;name&gt;.+)</code> onde estiver o nome do jogador "
+        "&mdash; com o nome nos dois padrões o painel lista quem está online; sem ele, mostra só a "
         "contagem.",
-    "players_setup.no_join_leave_lines": "Nenhuma linha com palavras de entrada/saida no log desta execucao.",
-    "players_setup.test_the_pattern": "Testar o padrao",
+    "players_setup.no_join_leave_lines": "Nenhuma linha com palavras de entrada/saída no log desta execução.",
+    "players_setup.test_the_pattern": "Testar o padrão",
     "players_setup.log_file": "Arquivo de log",
     "players_setup.log_file_hint":
-        "Em branco, o painel le a saida do servico (<code>journalctl</code>) &mdash; e onde a "
-        "maioria dos jogos anuncia. Alguns so escrevem o <strong>nome</strong> de quem entra num "
-        "arquivo proprio: o <strong>DayZ</strong> e assim (<code>/opt/game/profiles/*.ADM</code>, "
-        "ja ligado pelo <code>-adminlog</code> do nosso deploy). O <code>*</code> vale, e o painel "
+        "Em branco, o painel lê a saída do serviço (<code>journalctl</code>) &mdash; é onde a "
+        "maioria dos jogos anuncia. Alguns só escrevem o <strong>nome</strong> de quem entra num "
+        "arquivo próprio: o <strong>DayZ</strong> é assim (<code>/opt/game/profiles/*.ADM</code>, "
+        "já ligado pelo <code>-adminlog</code> do nosso deploy). O <code>*</code> vale, e o painel "
         "pega sempre o arquivo mais novo.",
     "players_setup.join_line": "Linha de entrada",
-    "players_setup.leave_line": "Linha de saida",
-    "players_setup.last_matching_lines": "Ultimas linhas que casaram com os padroes:",
-    "players_setup.no_line_matched": "Nenhuma linha casou com os padroes — confira a grafia.",
-    "players_setup.use_these_patterns": "Usar estes padroes",
+    "players_setup.leave_line": "Linha de saída",
+    "players_setup.last_matching_lines": "Últimas linhas que casaram com os padrões:",
+    "players_setup.no_line_matched": "Nenhuma linha casou com os padrões — confira a grafia.",
+    "players_setup.use_these_patterns": "Usar estes padrões",
 
-    # --------------------------------------------- eventos de alerta
+    # --------------------------------------------- alert events
     "event.server_stopped": "Servidor parou de rodar",
     "event.server_back": "Servidor voltou a rodar",
-    "event.game_failed": "Jogo quebrou (servico em 'failed')",
+    "event.game_failed": "Jogo quebrou (serviço em 'failed')",
     "event.restart_loop": "Jogo caindo em loop de restart",
-    "event.game_mute": "Jogo nao responde (de pe, mas mudo)",
+    "event.game_mute": "Jogo não responde (de pé, mas mudo)",
     "event.game_answering": "Jogo voltou a responder",
     "event.player_joined": "Jogador conectou",
     "event.player_left": "Jogador desconectou",
@@ -1262,20 +1236,20 @@ MESSAGES: dict[str, str] = {
     "event.contact_back": "Contato restabelecido",
     "event.scheduled_task_failed": "Tarefa agendada falhou",
     "event.disk_almost_full": "Disco quase cheio",
-    "event.memory_almost_full": "Memoria quase cheia",
+    "event.memory_almost_full": "Memória quase cheia",
     "event.cpu_high": "Uso de CPU alto",
 
-    # ----------------------------------- nome das acoes no historico
+    # ----------------------------------- action names in the history
     "job.shell": "Comando no container",
     "job.terminal": "Terminal interativo",
     "job.file_saved": "Arquivo salvo",
     "job.file_deleted": "Arquivo apagado",
-    "job.config_changed": "Configuracao alterada",
+    "job.config_changed": "Configuração alterada",
     "job.file_downloaded": "Arquivo baixado",
     "job.mod_loader": "Carregador de mods",
     "job.mod_installed": "Mod instalado",
     "job.mod_workshop": "Lista de mods da Workshop trocada",
-    "job.mod_audited": "Mods verificados (antivirus)",
+    "job.mod_audited": "Mods verificados (antivírus)",
     "job.mod_removed_plugin": "Mod desinstalado",
     "job.mod_uploaded": "Mod enviado",
     "job.mod_deleted": "Mod removido",
@@ -1284,39 +1258,39 @@ MESSAGES: dict[str, str] = {
     "job.backup_restored": "Backup restaurado",
     "job.backup_deleted": "Backup apagado",
     "backups.stored_both_html":
-        "Guardado como <code>.tar.gz</code> em <code>{dir}</code>, dentro do proprio container, "
-        "e uma segunda copia vai para o painel.",
-    "backups.panel_copies": "Copias no painel",
+        "Guardado como <code>.tar.gz</code> em <code>{dir}</code>, dentro do próprio container, "
+        "e uma segunda cópia vai para o painel.",
+    "backups.panel_copies": "Cópias no painel",
     "backups.panel_copies_help":
-        "Ficam no painel mesmo que o servidor ou a instancia seja removido. Um servidor novo do "
-        "mesmo jogo enxerga estas copias e pode restaurar a partir delas.",
+        "Ficam no painel mesmo que o servidor ou a instância seja removido. Um servidor novo do "
+        "mesmo jogo enxerga estas cópias e pode restaurar a partir delas.",
     "backups.panel_keep": "As {n} mais novas ficam; as antigas saem sozinhas.",
-    "backups.panel_keep_all": "Nenhuma copia e apagada automaticamente.",
+    "backups.panel_keep_all": "Nenhuma cópia é apagada automaticamente.",
     "backups.panel_none":
-        "Nenhuma copia no painel ainda. Os proximos backups vem para ca sozinhos; os antigos do "
-        "container podem ser enviados pelo botao \"enviar ao painel\".",
+        "Nenhuma cópia no painel ainda. Os próximos backups vêm para cá sozinhos; os antigos do "
+        "container podem ser enviados pelo botão \"enviar ao painel\".",
     "backups.in_panel": "no painel",
-    "backups.in_panel_title": "Ja existe uma copia deste arquivo no painel",
+    "backups.in_panel_title": "Já existe uma cópia deste arquivo no painel",
     "backups.send_to_panel": "enviar ao painel",
     "backups.panel_restore_confirm":
-        "Restaurar {file} (copia do painel) em {server}? O servidor sera PARADO, a copia volta ao "
-        "container e substitui o save atual. Uma copia de seguranca e tirada antes.",
+        "Restaurar {file} (cópia do painel) em {server}? O servidor será PARADO, a cópia volta ao "
+        "container e substitui o save atual. Uma cópia de segurança é tirada antes.",
     "backups.panel_delete_confirm":
         "Apagar {file} do painel? Se o container "
-        "ja nao existir, esta pode ser a unica copia.",
-    "instances.installing": "Instalacao em andamento",
+        "já não existir, esta pode ser a única cópia.",
+    "instances.installing": "Instalação em andamento",
     "instances.installing_help":
-        "A criacao continua mesmo que voce saia "
-        "desta tela; o log mostra em que fase ela esta.",
+        "A criação continua mesmo que você saia "
+        "desta tela; o log mostra em que fase ela está.",
     "instances.view_log": "Ver log",
-    "instances.cancel_install": "Cancelar instalacao",
+    "instances.cancel_install": "Cancelar instalação",
     "instances.cancel_confirm":
-        "Cancelar a instalacao de {name}? O container criado sera APAGADO e o IP, o CT e as portas "
+        "Cancelar a instalação de {name}? O container criado será APAGADO e o IP, o CT e as portas "
         "voltam a ficar livres.",
-    "instances.confirm_title": "Confirmar a nova instancia",
+    "instances.confirm_title": "Confirmar a nova instância",
     "instances.confirm_intro":
-        "Conferido agora no Proxmox e no OPNsense. Nada foi reservado ainda: se outra criacao "
-        "acontecer antes de voce confirmar, os numeros podem mudar.",
+        "Conferido agora no Proxmox e no OPNsense. Nada foi reservado ainda: se outra criação "
+        "acontecer antes de você confirmar, os números podem mudar.",
     "instances.confirm_game": "Jogo",
     "instances.confirm_name": "Nome",
     "instances.confirm_ct": "Container (CT)",
@@ -1324,155 +1298,155 @@ MESSAGES: dict[str, str] = {
     "instances.confirm_ports": "Portas",
     "instances.confirm_create": "Criar agora",
     "instances.back": "Voltar",
-    "flash.install_cancelling": "Cancelamento pedido: a instalacao para e o container e apagado. Acompanhe no log.",
-    "flash.install_already_finished": "Essa instalacao ja terminou; nao ha o que cancelar.",
+    "flash.install_cancelling": "Cancelamento pedido: a instalação para e o container é apagado. Acompanhe no log.",
+    "flash.install_already_finished": "Essa instalação já terminou; não há o que cancelar.",
     "instances.deactivate_no_backup": "Desativar sem backup",
     "instances.deactivate_no_backup_confirm": "Desativar {name} SEM copiar o save para o painel?",
-    "instances.panel_copies": "Copias do save no painel: {n} (a mais nova em {when}).",
-    "instances.panel_copies_none": "Nenhuma copia do save no painel: remover apaga o jogo sem volta.",
-    "flash.panel_backup_deleted": "Copia {file} apagada do painel.",
+    "instances.panel_copies": "Cópias do save no painel: {n} (a mais nova em {when}).",
+    "instances.panel_copies_none": "Nenhuma cópia do save no painel: remover apaga o jogo sem volta.",
+    "flash.panel_backup_deleted": "Cópia {file} apagada do painel.",
     "flash.deactivate_without_backup":
-        "Esta instancia nao tem servidor no painel com caminhos de backup: foi desativada SEM copia do save.",
+        "Esta instância não tem servidor no painel com caminhos de backup: foi desativada SEM cópia do save.",
     "job.backup_sent_to_panel": "Backup enviado ao painel",
-    "job.player_action": "Acao sobre jogador",
-    "job.instance_created": "Instancia criada (broker)",
-    "job.instance_deactivated": "Instancia desativada (broker)",
-    "job.instance_removed": "Instancia removida (broker)",
-    "job.game_edited": "Jogo do catalogo editado",
-    "job.game_removed": "Jogo apagado do catalogo (ou edicao desfeita)",
-    "job.game_added": "Jogo adicionado ao catalogo",
+    "job.player_action": "Ação sobre jogador",
+    "job.instance_created": "Instância criada (broker)",
+    "job.instance_deactivated": "Instância desativada (broker)",
+    "job.instance_removed": "Instância removida (broker)",
+    "job.game_edited": "Jogo do catálogo editado",
+    "job.game_removed": "Jogo apagado do catálogo (ou edição desfeita)",
+    "job.game_added": "Jogo adicionado ao catálogo",
     "player_action.announce": "Avisar todo mundo",
     "player_action.kick": "Expulsar",
     "player_action.ban": "Banir",
 
-    # ---------------------------------------- mensagens de flash
-    "flash.two_factor_required_here": "Este painel exige a verificacao em duas etapas: ative-a para continuar.",
+    # ---------------------------------------- flash messages
+    "flash.two_factor_required_here": "Este painel exige a verificação em duas etapas: ative-a para continuar.",
     "flash.too_many_tries": "Muitas tentativas. Tente de novo em {n}s.",
-    "flash.bad_credentials": "Usuario ou senha invalidos.",
-    "flash.verification_expired": "A verificacao expirou. Entre de novo.",
-    "flash.code_invalid_or_used": "Codigo invalido ou ja usado.",
-    "flash.bad_port": "Porta invalida.",
+    "flash.bad_credentials": "Usuário ou senha inválidos.",
+    "flash.verification_expired": "A verificação expirou. Entre de novo.",
+    "flash.code_invalid_or_used": "Código inválido ou já usado.",
+    "flash.bad_port": "Porta inválida.",
     "flash.count_on_by_query": "Contagem de jogadores ligada pela consulta na porta {port}/udp.",
     "flash.need_api_url": "Informe a URL da API.",
-    "flash.count_on_by_api_login": "Contagem ligada pela API, com login automatico (o token renova sozinho).",
+    "flash.count_on_by_api_login": "Contagem ligada pela API, com login automático (o token renova sozinho).",
     "flash.count_on_by_api": "Contagem de jogadores ligada pela API HTTP do servidor.",
-    "flash.need_join_pattern": "Informe o padrao da linha de entrada.",
+    "flash.need_join_pattern": "Informe o padrão da linha de entrada.",
     "flash.count_on_by_log": "Contagem de jogadores ligada pelo log do servidor.",
-    "flash.bad_choice": "Escolha invalida.",
-    "flash.could_not": "Nao consegui: {reason}",
+    "flash.bad_choice": "Escolha inválida.",
+    "flash.could_not": "Não consegui: {reason}",
     "flash.player_action_done": "{label}: {who}.",
     "flash.notice_sent": "Aviso enviado: {message}",
     "flash.server_added": "Servidor {name} cadastrado.",
     "flash.server_updated": "Servidor atualizado.",
-    "flash.server_removed": "Servidor removido do painel (o container nao foi tocado).",
+    "flash.server_removed": "Servidor removido do painel (o container não foi tocado).",
     "flash.type_a_command": "Digite um comando.",
     "flash.command_too_long": "Comando muito longo (limite de {n} caracteres).",
     "flash.file_too_big": "Arquivo grande demais para salvar (limite de {kb} KB).",
     "flash.file_over_edit_limit":
-        "{path} tem {size} KB e passou do limite de edicao ({kb} KB). Nada foi gravado — baixe o "
+        "{path} tem {size} KB e passou do limite de edição ({kb} KB). Nada foi gravado — baixe o "
         "arquivo para mexer nele.",
-    "flash.file_saved": "{path} salvo ({bytes} bytes). Uma copia .bak foi guardada ao lado.",
-    "flash.is_a_root_folder": "{path} e uma pasta raiz do editor — nao da para apagar por aqui.",
-    "flash.deleted_no_bak": "{output} (sem copia .bak — apagar nao tem volta).",
-    "flash.also_left_config": "{path} tambem saiu dos arquivos da tela Config.",
-    "flash.could_not_delete": "Nao consegui apagar: {reason}",
+    "flash.file_saved": "{path} salvo ({bytes} bytes). Uma cópia .bak foi guardada ao lado.",
+    "flash.is_a_root_folder": "{path} é uma pasta raiz do editor — não dá para apagar por aqui.",
+    "flash.deleted_no_bak": "{output} (sem cópia .bak — apagar não tem volta).",
+    "flash.also_left_config": "{path} também saiu dos arquivos da tela Config.",
+    "flash.could_not_delete": "Não consegui apagar: {reason}",
     "flash.pick_a_file": "Escolha um arquivo para enviar.",
-    "flash.bad_file_name": "Nome de arquivo invalido.",
-    "flash.could_not_upload": "Nao consegui enviar: {reason}",
-    "flash.uploaded": "{output}. Se o arquivo ja existia, uma copia .bak ficou ao lado.",
+    "flash.bad_file_name": "Nome de arquivo inválido.",
+    "flash.could_not_upload": "Não consegui enviar: {reason}",
+    "flash.uploaded": "{output}. Se o arquivo já existia, uma cópia .bak ficou ao lado.",
     "flash.nothing_to_back_up":
-        "Este servidor nao tem o que guardar: preencha a pasta de configuracao ou os caminhos de "
+        "Este servidor não tem o que guardar: preencha a pasta de configuração ou os caminhos de "
         "backup no cadastro.",
-    "flash.left_config_screen": "{path} saiu da tela de configuracao (o arquivo nao foi tocado).",
+    "flash.left_config_screen": "{path} saiu da tela de configuração (o arquivo não foi tocado).",
     "flash.config_files_limit": "Limite de {n} arquivos por servidor.",
     "flash.now_opens_in_config": "{path} agora abre direto na tela Config.",
-    "flash.value_out_of_range": "Nao salvei nada porque ha valor fora do limite - {errors}",
+    "flash.value_out_of_range": "Não salvei nada porque há valor fora do limite - {errors}",
     "flash.no_field_changed": "Nenhum campo foi alterado.",
-    "flash.could_not_save": "Nao consegui salvar: {reason}",
+    "flash.could_not_save": "Não consegui salvar: {reason}",
     "flash.settings_saved":
-        "{n} configuracao(oes) salva(s) em {path}: {keys}. Uma copia .bak foi guardada ao "
+        "{n} configuração(ões) salva(s) em {path}: {keys}. Uma cópia .bak foi guardada ao "
         "lado.",
     "flash.broker_needs_two_factor":
-        "O broker so pode ser usado por quem tem a verificacao em duas etapas ativa: ative-a em "
+        "O broker só pode ser usado por quem tem a verificação em duas etapas ativa: ative-a em "
         "Conta.",
     "flash.broker_error": "Broker: {reason}",
     "flash.game_updated": "Jogo {name} atualizado.",
-    "flash.game_restored": "Edicao de {name} desfeita: vale de novo o arquivo do repositorio.",
-    "flash.game_removed": "Jogo {name} apagado do catalogo.",
-    "flash.game_added": "Jogo {name} adicionado ao catalogo.",
-    "flash.broker_no_operation_id": "Broker: resposta sem identificador de operacao.",
-    "flash.instance_deactivated": "Instancia desativada: portas fechadas e container parado.",
-    "flash.instance_removed": "Instancia removida.",
+    "flash.game_restored": "Edição de {name} desfeita: vale de novo o arquivo do repositório.",
+    "flash.game_removed": "Jogo {name} apagado do catálogo.",
+    "flash.game_added": "Jogo {name} adicionado ao catálogo.",
+    "flash.broker_no_operation_id": "Broker: resposta sem identificador de operação.",
+    "flash.instance_deactivated": "Instância desativada: portas fechadas e container parado.",
+    "flash.instance_removed": "Instância removida.",
     "flash.task_scheduled": "{task} agendado.",
     "flash.task_off": "Tarefa desligada.",
     "flash.task_on": "Tarefa ligada.",
     "flash.task_removed": "Tarefa removida.",
-    "flash.could_not_trigger": "Nao consegui disparar (servidor sem caminhos de backup?).",
+    "flash.could_not_trigger": "Não consegui disparar (servidor sem caminhos de backup?).",
     "flash.wrong_current_password": "Senha atual incorreta.",
     "flash.password_changed": "Senha alterada.",
     "flash.password_too_short": "A senha precisa ter ao menos {n} caracteres.",
-    "flash.password_mismatch": "A confirmacao nao confere.",
-    "flash.wrong_code": "Codigo incorreto. Confira o horario do celular e tente de novo.",
-    "flash.two_factor_on": "Verificacao em duas etapas ativada.",
-    "flash.two_factor_off": "Verificacao em duas etapas desativada.",
-    "flash.new_codes": "Codigos novos gerados: os antigos deixaram de valer.",
+    "flash.password_mismatch": "A confirmação não confere.",
+    "flash.wrong_code": "Código incorreto. Confira o horário do celular e tente de novo.",
+    "flash.two_factor_on": "Verificação em duas etapas ativada.",
+    "flash.two_factor_off": "Verificação em duas etapas desativada.",
+    "flash.new_codes": "Códigos novos gerados: os antigos deixaram de valer.",
     "flash.threshold_range": "O aviso de {name} vale de 50% a 100%.",
-    "flash.preferences_saved": "Preferencias salvas.",
+    "flash.preferences_saved": "Preferências salvas.",
     "flash.destination_limit": "Limite de {n} destinos atingido.",
     "flash.need_webhook_url": "Informe a URL do webhook.",
     "flash.destination_added": "Destino adicionado.",
-    "flash.destination_not_found": "Destino nao encontrado.",
+    "flash.destination_not_found": "Destino não encontrado.",
     "flash.destination_saved": "Destino salvo.",
     "flash.destination_removed": "Destino removido.",
-    "flash.bad_url": "URL invalida (comece com http:// ou https://).",
+    "flash.bad_url": "URL inválida (comece com http:// ou https://).",
     "flash.destination_test_failed": "{name}: {reason}",
     "flash.destination_test_sent": "Mensagem enviada para {name} - confira o canal.",
-    "flash.user_exists": "Ja existe um usuario chamado '{user}'.",
+    "flash.user_exists": "Já existe um usuário chamado '{user}'.",
     "flash.user_created":
-        "Usuario '{user}' criado como {role}. Passe a senha para ele e peca para troca-la na "
+        "Usuário '{user}' criado como {role}. Passe a senha para ele e peça para trocá-la na "
         "tela Conta.",
-    "flash.cannot_change_own_role": "Voce nao pode mudar o proprio papel — peca a outro administrador.",
-    "flash.user_already_is": "'{user}' ja e {role}.",
-    "flash.only_admin_demote": "Este e o unico administrador: promova outra pessoa antes de rebaixa-lo.",
-    "flash.user_now_is": "'{user}' agora e {role}.",
+    "flash.cannot_change_own_role": "Você não pode mudar o próprio papel — peça a outro administrador.",
+    "flash.user_already_is": "'{user}' já é {role}.",
+    "flash.only_admin_demote": "Este é o único administrador: promova outra pessoa antes de rebaixá-lo.",
+    "flash.user_now_is": "'{user}' agora é {role}.",
     "flash.password_reset": "Senha de '{user}' redefinida.",
-    "flash.own_two_factor_in_account": "Para desligar o seu proprio 2FA use a tela Conta.",
-    "flash.user_two_factor_off": "Verificacao em duas etapas de '{user}' desligada.",
-    "flash.cannot_remove_self": "Voce nao pode remover a propria conta.",
-    "flash.cannot_remove_only_admin": "Nao da para remover o unico administrador do painel.",
-    "flash.user_removed": "Usuario '{user}' removido.",
+    "flash.own_two_factor_in_account": "Para desligar o seu próprio 2FA use a tela Conta.",
+    "flash.user_two_factor_off": "Verificação em duas etapas de '{user}' desligada.",
+    "flash.cannot_remove_self": "Você não pode remover a própria conta.",
+    "flash.cannot_remove_only_admin": "Não dá para remover o único administrador do painel.",
+    "flash.user_removed": "Usuário '{user}' removido.",
 
-    # --------------------------------- erros do cadastro de servidor
+    # --------------------------------- server registration errors
     "form.need_name": "Informe um nome.",
-    "form.bad_host": "Host invalido (use o IP ou hostname do container).",
-    "form.bad_ssh_user": "Usuario SSH invalido.",
-    "form.bad_ssh_port": "Porta SSH invalida.",
-    "form.bad_query_port": "Porta de consulta invalida (use 0 para desligar).",
-    "form.bad_service": "Servico invalido (ex.: dragonwilds.service).",
-    "form.bad_player_source": "Forma de contar jogadores invalida.",
-    "form.bad_config_folder": "Pasta de configuracao invalida: {reason}",
-    "form.bad_config_file": "Arquivo de configuracao invalido ({path}): {reason}",
-    "form.too_many_config_files": "No maximo {n} arquivos de configuracao por servidor.",
-    "form.bad_backup_path": "Caminho de backup invalido ({path}): {reason}",
-    "form.no_root_backup": "Backup da raiz nao: aponte a pasta do save ou da configuracao.",
-    "form.too_many_backup_paths": "No maximo {n} caminhos de backup por servidor.",
-    "form.bad_api_url": "URL da API invalida (ex.: http://127.0.0.1:8212/v1/api/players).",
-    "form.bad_login_url": "URL de login invalida (ex.: https://127.0.0.1:7787/api/v1).",
-    "form.bad_json": "{label} nao e JSON valido: {reason}.",
-    "form.request_body": "Corpo da requisicao",
+    "form.bad_host": "Host inválido (use o IP ou hostname do container).",
+    "form.bad_ssh_user": "Usuário SSH inválido.",
+    "form.bad_ssh_port": "Porta SSH inválida.",
+    "form.bad_query_port": "Porta de consulta inválida (use 0 para desligar).",
+    "form.bad_service": "Serviço inválido (ex.: dragonwilds.service).",
+    "form.bad_player_source": "Forma de contar jogadores inválida.",
+    "form.bad_config_folder": "Pasta de configuração inválida: {reason}",
+    "form.bad_config_file": "Arquivo de configuração inválido ({path}): {reason}",
+    "form.too_many_config_files": "No máximo {n} arquivos de configuração por servidor.",
+    "form.bad_backup_path": "Caminho de backup inválido ({path}): {reason}",
+    "form.no_root_backup": "Backup da raiz não: aponte a pasta do save ou da configuração.",
+    "form.too_many_backup_paths": "No máximo {n} caminhos de backup por servidor.",
+    "form.bad_api_url": "URL da API inválida (ex.: http://127.0.0.1:8212/v1/api/players).",
+    "form.bad_login_url": "URL de login inválida (ex.: https://127.0.0.1:7787/api/v1).",
+    "form.bad_json": "{label} não é JSON válido: {reason}.",
+    "form.request_body": "Corpo da requisição",
     "form.login_body": "Corpo do login",
     "form.path_list": "lista",
     "form.path_count": "contagem",
     "form.path_token": "token",
-    "form.bad_json_path": "Caminho da {label} invalido (use algo como 'data.players').",
+    "form.bad_json_path": "Caminho da {label} inválido (use algo como 'data.players').",
     "form.login_needs_token_path":
-        "Para o login automatico, informe tambem o caminho do token (ex.: "
+        "Para o login automático, informe também o caminho do token (ex.: "
         "data.authenticationToken).",
     "pattern.join": "entrada",
-    "pattern.leave": "saida",
+    "pattern.leave": "saída",
     "pattern.error": "erro",
 
-    # -------------------------------------------------- consulta A2S
+    # -------------------------------------------------- A2S query
     "a2s.truncated": "resposta do servidor terminou antes do esperado",
     "a2s.unterminated_text": "texto sem terminador na resposta",
     "a2s.split_incomplete": "resposta dividida veio incompleta",
@@ -1481,64 +1455,64 @@ MESSAGES: dict[str, str] = {
     "a2s.no_reply": "sem resposta em {seconds}s na porta {port}/udp",
     "a2s.query_failed": "falha ao consultar {host}:{port} - {reason}",
 
-    # -------------------------------- caminho e arquivo no container
+    # -------------------------------- path and file in the container
     "path.outside_roots": "fora das pastas permitidas ({folders})",
-    "path.not_absolute": "use um caminho absoluto (comecando com /)",
-    "path.bad_character": "caractere invalido no caminho",
+    "path.not_absolute": "use um caminho absoluto (começando com /)",
+    "path.bad_character": "caractere inválido no caminho",
     "path.too_long": "caminho longo demais",
     "file.unexpected_reply": "resposta inesperada do container ao ler o arquivo",
-    "file.corrupted": "conteudo do arquivo chegou corrompido",
-    "backup.bad_name": "nome de backup invalido",
+    "file.corrupted": "conteúdo do arquivo chegou corrompido",
+    "backup.bad_name": "nome de backup inválido",
 
     # ----------------------------------------------------------- ssh
     "ssh.failed_to_run": "falha ao executar ssh: {reason}",
-    "ssh.no_stdin": "nao consegui abrir a entrada do ssh",
-    "ssh.no_stdout": "nao consegui abrir a saida do ssh",
+    "ssh.no_stdin": "não consegui abrir a entrada do ssh",
+    "ssh.no_stdout": "não consegui abrir a saída do ssh",
     "ssh.upload_timeout": "tempo esgotado ({seconds}s) enviando para {host}",
 
-    # ---------------------------------------------- api http do jogo
-    "http.bad_url": "URL invalida (ex.: http://127.0.0.1:8212/v1/api/players)",
-    "http.auth_failed": "a API respondeu {status} - confira o usuario/senha de admin",
+    # ---------------------------------------------- game http api
+    "http.bad_url": "URL inválida (ex.: http://127.0.0.1:8212/v1/api/players)",
+    "http.auth_failed": "a API respondeu {status} - confira o usuário/senha de admin",
     "http.bad_status": "a API respondeu HTTP {status}",
     "http.reply_too_big": "resposta da API grande demais para ser lida aqui",
-    "http.not_json": "a resposta nao e JSON: {sample}",
-    "api.login_incomplete": "login automatico incompleto (falta URL de login ou caminho do token)",
-    "api.no_token_at": "o login respondeu, mas nao achei um token em '{path}'",
+    "http.not_json": "a resposta não é JSON: {sample}",
+    "api.login_incomplete": "login automático incompleto (falta URL de login ou caminho do token)",
+    "api.no_token_at": "o login respondeu, mas não achei um token em '{path}'",
     "api.need_url": "informe a URL da API do jogo",
-    "api.need_join_pattern": "informe o padrao da linha de entrada de jogador",
+    "api.need_join_pattern": "informe o padrão da linha de entrada de jogador",
     "api.need_query_port": "informe a porta de consulta (query Steam) do servidor",
-    "api.action_not_published": "este servidor nao publica essa acao",
+    "api.action_not_published": "este servidor não publica essa ação",
     "api.write_the_notice": "escreva o aviso",
-    "api.no_player_id": "nao sei quem expulsar: a API nao publicou o identificador deste jogador",
+    "api.no_player_id": "não sei quem expulsar: a API não publicou o identificador deste jogador",
 
-    # ---------------------------------------- padrao de log e broker
-    "pattern.too_long": "padrao de {label} longo demais (limite de {n} caracteres)",
-    "pattern.invalid": "padrao de {label} invalido: {reason}",
-    "broker.bad_host_or_service": "o broker devolveu host ou servico com formato invalido",
-    "broker.server_not_saved": "o servidor nao foi gravado",
+    # ---------------------------------------- log pattern and broker
+    "pattern.too_long": "padrão de {label} longo demais (limite de {n} caracteres)",
+    "pattern.invalid": "padrão de {label} inválido: {reason}",
+    "broker.bad_host_or_service": "o broker devolveu host ou serviço com formato inválido",
+    "broker.server_not_saved": "o servidor não foi gravado",
 
-    # -------------------------- texto dos alertas (vai para o canal)
+    # -------------------------- alert text (goes to the channel)
     "alert.contact_back": "{name}: contato restabelecido",
     "alert.lost_contact": "{name}: painel perdeu contato",
     "alert.no_detail": "sem detalhe",
     "alert.server_back": "{name}: servidor voltou a rodar",
     "alert.server_stopped": "{name}: servidor parou de rodar",
     "alert.game_failed": "{name}: o jogo quebrou",
-    "alert.service_is_failed": "servico {service} esta 'failed'",
-    "alert.service_is": "servico {service} esta '{state}'",
-    "alert.restart_loop": "{name}: o jogo esta caindo em loop",
-    "alert.systemd_restarted": "o systemd reiniciou {service} {times}x desde a ultima olhada",
+    "alert.service_is_failed": "serviço {service} está 'failed'",
+    "alert.service_is": "serviço {service} está '{state}'",
+    "alert.restart_loop": "{name}: o jogo está caindo em loop",
+    "alert.systemd_restarted": "o systemd reiniciou {service} {times}x desde a última olhada",
     "alert.game_answering": "{name}: o jogo voltou a responder",
-    "alert.game_mute": "{name}: o jogo nao responde",
-    "alert.service_up_game_mute": "o servico {service} esta rodando, mas o jogo nao responde ha",
+    "alert.game_mute": "{name}: o jogo não responde",
+    "alert.service_up_game_mute": "o serviço {service} está rodando, mas o jogo não responde há",
     "alert.log_error": "{name}: erro no log do jogo",
     "alert.disk_almost_full": "{name}: disco quase cheio",
     "alert.disk_detail": "{mount} em {pct}% ({used} de {total})",
-    "alert.memory_almost_full": "{name}: memoria quase cheia",
+    "alert.memory_almost_full": "{name}: memória quase cheia",
     "alert.memory_detail": "{pct}% ({used} de {total})",
     "alert.cpu_high": "{name}: uso de CPU alto",
-    "alert.cpu_detail_one": "{pct}% em {cores} nucleo",
-    "alert.cpu_detail_many": "{pct}% em {cores} nucleos",
+    "alert.cpu_detail_one": "{pct}% em {cores} núcleo",
+    "alert.cpu_detail_many": "{pct}% em {cores} núcleos",
     "alert.cpu_game_part": " (jogo: {pct}%)",
     "alert.nobody_online": "nenhum jogador online",
     "alert.players_online_one": "{n} jogador online",
@@ -1549,34 +1523,34 @@ MESSAGES: dict[str, str] = {
     "alert.joined_one": "{name}: um jogador conectou",
     "alert.joined_many": "{name}: {n} jogadores conectaram",
     "alert.left_one": "{name}: um jogador saiu",
-    "alert.left_many": "{name}: {n} jogadores sairam",
+    "alert.left_many": "{name}: {n} jogadores saíram",
     "alert.restarts_total": " ({n} no total desta subida)",
-    "alert.mute_rounds": " {n} verificacoes",
+    "alert.mute_rounds": " {n} verificações",
 
-    # ---------------------------------------- agendamento e dias da semana
-    "schedule.daily": "todo dia as {time}",
-    "schedule.weekly": "{weekday} as {time}",
+    # ---------------------------------------- scheduling and weekdays
+    "schedule.daily": "todo dia às {time}",
+    "schedule.weekly": "{weekday} às {time}",
     "schedule.every_hour": "a cada hora",
     "schedule.every_n_hours": "a cada {n}h",
     "weekday.monday": "segunda",
-    "weekday.tuesday": "terca",
+    "weekday.tuesday": "terça",
     "weekday.wednesday": "quarta",
     "weekday.thursday": "quinta",
     "weekday.friday": "sexta",
-    "weekday.saturday": "sabado",
+    "weekday.saturday": "sábado",
     "weekday.sunday": "domingo",
     "weekday.on_monday": "toda segunda",
-    "weekday.on_tuesday": "toda terca",
+    "weekday.on_tuesday": "toda terça",
     "weekday.on_wednesday": "toda quarta",
     "weekday.on_thursday": "toda quinta",
     "weekday.on_friday": "toda sexta",
-    "weekday.on_saturday": "todo sabado",
+    "weekday.on_saturday": "todo sábado",
     "weekday.on_sunday": "todo domingo",
     "passkey.sign_in": "Entrar com biometria",
     "passkey.title": "Biometria do aparelho",
     "passkey.hint": (
         "Entre com a digital, o rosto ou o PIN do celular, sem digitar a senha. Vale como senha e "
-        "codigo juntos: cadastre so aparelhos que sao seus."),
+        "código juntos: cadastre só aparelhos que são seus."),
     "passkey.created": "cadastrado em {when}",
     "passkey.last_used": "usado em {when}",
     "passkey.remove": "Remover",
@@ -1584,13 +1558,310 @@ MESSAGES: dict[str, str] = {
     "passkey.add": "Cadastrar este aparelho",
     "passkey.label": "Nome do aparelho",
     "passkey.label_example": "ex.: celular",
-    "passkey.disabled": "Entrar por biometria esta desligado neste painel (precisa de um endereco https).",
+    "passkey.disabled": "Entrar por biometria está desligado neste painel (precisa de um endereço https).",
     "passkey.cancelled": "Cancelado ou o tempo acabou. Tente de novo.",
-    "passkey.login_failed": "Nao consegui confirmar a biometria. Entre com a senha.",
-    "passkey.register_failed": "O aparelho nao foi cadastrado. Tente de novo.",
-    "passkey.already_registered": "Este aparelho ja esta cadastrado.",
+    "passkey.login_failed": "Não consegui confirmar a biometria. Entre com a senha.",
+    "passkey.register_failed": "O aparelho não foi cadastrado. Tente de novo.",
+    "passkey.already_registered": "Este aparelho já está cadastrado.",
     "passkey.default_label": "Aparelho",
-    "passkey.registered": "Aparelho cadastrado: da proxima vez, entre com a biometria.",
+    "passkey.registered": "Aparelho cadastrado: da próxima vez, entre com a biometria.",
     "passkey.removed": "Aparelho removido.",
-    "passkey.not_found": "Aparelho nao encontrado.",
+    "passkey.not_found": "Aparelho não encontrado.",
+    # ------------------------------ screen text moved out of templates and scripts
+    "account.operator_scope":
+        "Como operador você liga, desliga, atualiza e edita a configuração dos servidores já "
+        "cadastrados. Cadastro de servidor, terminal, arquivos e usuários são do administrador.",
+    "account.recovery_codes_left_one": "{n} código de recuperação restante",
+    "account.recovery_codes_left_many": "{n} códigos de recuperação restantes",
+    "account.two_factor_off_hint":
+        "Com ela, saber a senha não basta para entrar: o painel também pede um código de 6 "
+        "dígitos do seu celular.",
+    "account.two_factor_root_hint": "Este painel dá poder de root nos containers de jogo: ative.",
+    "account_2fa.step_register": "1. Cadastre o painel no aplicativo",
+    "account_2fa.step_register_hint":
+        "Use um aplicativo autenticador (Google Authenticator, Authy, Microsoft Authenticator, "
+        "1Password, Bitwarden...). No celular, escolha <strong>adicionar conta</strong> e "
+        "<strong>escanear código QR</strong> — ou, sem câmera, <strong>inserir chave "
+        "manualmente</strong> com o texto abaixo do código.",
+    "account_2fa.key_details":
+        "Tipo <strong>baseado em tempo</strong>, 6 dígitos, 30 segundos. Guarde esta chave e "
+        "este código apenas até confirmar abaixo: depois de ativar eles não aparecem mais.",
+    "account_2fa.step_confirm": "2. Confirme com um código",
+    "account_2fa.clock_hint":
+        "Confira também se a hora do celular está no automático: é o que faz o código bater.",
+    "account_2fa_codes.save_them_now_html":
+        "<strong>Guarde estes códigos agora.</strong> Eles aparecem só esta vez. Cada um entra "
+        "no lugar do código do aplicativo uma única vez — é a saída se você perder o celular. "
+        "Guarde num gerenciador de senhas ou impresso, nunca no mesmo celular do aplicativo.",
+    "backups.keep_newest":
+        "As <strong>{n}</strong> cópias mais novas ficam; as antigas saem sozinhas.",
+    "backups.keep_all": "Nenhuma cópia é apagada automaticamente.",
+    "backups.change_paths":
+        "Para mudar o que entra, edite os <a href=\"{url}\">caminhos de backup</a> do cadastro.",
+    "backups.live_copy_hint":
+        "Dá para tirar a cópia com o servidor ligado, é o normal. Só saiba que um save gravado "
+        "no meio da cópia pode entrar pela metade &mdash; para uma cópia perfeita, pare o "
+        "servidor antes.",
+    "backups.nothing_to_save_admin":
+        "Este servidor não tem o que guardar. Preencha a <strong>pasta de configuração</strong> "
+        "ou os <strong>caminhos de backup</strong> <a href=\"{url}\">no cadastro</a>.",
+    "backups.nothing_to_save_operator":
+        "Este servidor não tem o que guardar. Preencha a <strong>pasta de configuração</strong> "
+        "ou os <strong>caminhos de backup</strong> (peça a um administrador).",
+    "history.removed": "(removido)",
+    "history.error": "erro",
+    "history.keep_days":
+        "O painel guarda os últimos <strong>{n} dias</strong> "
+        "(<code>GAMEPANEL_JOBS_KEEP_DAYS</code>) &mdash; cada registro carrega a saída inteira "
+        "do que rodou, e sem limpeza o banco só cresce.",
+    "history.cleanup_off":
+        "A limpeza automática está desligada (<code>GAMEPANEL_JOBS_KEEP_DAYS=0</code>): o "
+        "histórico cresce sem limite.",
+    "history.admin_actions_hidden":
+        "Terminal, console e arquivos não aparecem aqui &mdash; são ações de administrador.",
+    "catalog.source_curated": "curado",
+    "catalog.source_dynamic": "dinâmico",
+    "config.no_files": "Nenhum arquivo de configuração informado ainda para este servidor.",
+    "config.ask_admin_to_register": "Peça a um administrador do painel para registrar o arquivo.",
+    "config.format": "formato {name}",
+    "config.pin_hint":
+        "&quot;Fixar aqui&quot; deixa o arquivo na barra acima (até {n} por servidor); o link "
+        "abre sem fixar.",
+    "config.nothing_found":
+        "Nada encontrado em <code>{folder}</code>. Ajuste a &quot;Pasta de configuração&quot; "
+        "em <a href=\"{url}\">Editar servidor</a> ou informe o caminho completo do arquivo na "
+        "barra acima.",
+    "config.settings_count": "Configurações ({n})",
+    "config.on": "Ligado",
+    "config.off": "Desligado",
+    "config.outside_catalog": "{value} (fora do catálogo)",
+    "config.range": "{low} a {high}",
+    "config.add_setting_hint":
+        "Para chave que ainda não existe no arquivo. Ela entra no fim do bloco escolhido, sem "
+        "mexer no resto.",
+    "config.save_hint":
+        "Grava só as chaves alteradas, mantendo comentários e o resto do arquivo. Uma cópia "
+        "<code>.bak</code> fica ao lado antes de qualquer gravação. A maioria dos jogos só lê a "
+        "configuração ao iniciar &mdash; sem reiniciar, a mudança não vale.",
+    "config.cannot_open_as_form": "Não consegui abrir <code>{path}</code> como formulário.",
+    "config.ask_admin_text_edit":
+        "Avise um administrador do painel &mdash; a edição como texto é restrita a ele.",
+    "service_state.unknown": "desconhecido",
+    "service_state.unreachable": "inacessível",
+    "server.more_actions_on": "Mais ações em {name}",
+    "dashboard.register_hint":
+        "Cadastre o IP de um container de jogo para controlar start, stop, update e rodar "
+        "comandos por aqui.",
+    "dashboard.authorize_key_hint":
+        "O painel acessa cada container por SSH &mdash; antes autorize a chave dele no "
+        "container em <a href=\"{url}\">Acesso SSH</a>.",
+    "players.badge_online": "{count} online",
+    "players.badge_players": "{count} jogadores",
+    "players.no_reading": "sem leitura",
+    "players.names_unpublished": "Este jogo não publica a lista de nomes — só a contagem.",
+    "players.nobody_online": "Ninguém conectado agora.",
+    "server_detail.count_off_admin":
+        "Contagem desligada. Use o <a href=\"{url}\">assistente</a>: ele testa as portas UDP e "
+        "TCP que o jogo abriu, monta a chamada da API HTTP quando existe uma e, se nada "
+        "responder, ajuda a contar pelo log.",
+    "server_detail.count_off_operator":
+        "Contagem desligada. Um administrador do painel liga isso no assistente de contagem.",
+    "server_detail.query_failed": "Não consegui consultar: {error}",
+    "server_detail.query_failed_admin":
+        "Confira no <a href=\"{url}\">assistente</a> se a porta/URL está certa e se o servidor "
+        "está no ar.",
+    "server_detail.query_failed_operator":
+        "Confira se o servidor está no ar; se estiver, avise um administrador do painel.",
+    "server_detail.log_only_games":
+        "Jogo que não publica nada na rede (como o RuneScape Dragonwilds) precisa da contagem "
+        "pelo log.",
+    "server_detail.online_of": "{n} de {total}",
+    "server_detail.player_action_confirm": "{action} {player} de {server}?",
+    "server_detail.approx_admin":
+        "A <strong>contagem</strong> está certa, mas os <strong>nomes</strong> são um palpite: "
+        "o log deste jogo avisa que alguém saiu sem dizer quem, então o painel mostra os "
+        "últimos a entrar. Se a linha de saída do seu servidor tiver o nome, ponha "
+        "<code>(?P&lt;name&gt;...)</code> nela no <a href=\"{url}\">assistente</a> e a lista "
+        "passa a ser exata.",
+    "server_detail.approx_operator":
+        "A <strong>contagem</strong> está certa, mas os <strong>nomes</strong> são um palpite: "
+        "o log deste jogo avisa que alguém saiu sem dizer quem, então o painel mostra os "
+        "últimos a entrar. Se a linha de saída do seu servidor tiver o nome, ponha "
+        "<code>(?P&lt;name&gt;...)</code> nela e a lista passa a ser exata.",
+    "server_detail.player_actions_note":
+        "Expulsar, banir e avisar saem pela API do próprio jogo &mdash; a mesma que conta os "
+        "jogadores. Cada uma fica no <a href=\"{url}\">histórico</a>.",
+    "server_detail.no_log_lines": "(sem linhas de log)",
+    "server_detail.stop_following": "Parar de seguir",
+    "server_detail.no_connection": "sem conexão",
+    "metrics.unavailable": "indisponível",
+    "metrics.refresh_every": "atualiza a cada {n}s",
+    "metrics.no_reading_now": "sem leitura no momento",
+    "metrics.read_failed": "Não consegui ler os medidores: {error}",
+    "metrics.meters_unavailable": "medidores indisponíveis",
+    "metrics.cores_load": "{cores} núcleo(s) · load {load}",
+    "metrics.used_of_total": "{used} de {total}",
+    "metrics.disk_mount": "Disco {mount}",
+    "metrics.disk": "Disco",
+    "metrics.stopped": "parado",
+    "files.upload_hint":
+        "O arquivo sobe em pedaços, direto para o container &mdash; dá para mandar mod ou save "
+        "de vários GB. Se já existir um com o mesmo nome, ele é substituído e uma cópia "
+        "<code>.bak</code> fica ao lado.",
+    "files.parent": ".. (subir)",
+    "files.download_name": "Baixar {name}",
+    "files.delete_name": "Apagar {name}",
+    "files.delete_dir_name": "Apagar {name} (só se estiver vazia)",
+    "files.delete_entry_confirm": "Apagar {path}?\n\nIsto não tem volta.",
+    "files.binary_notice":
+        "<strong>Arquivo binário.</strong> O painel não edita isso para não corromper o jogo "
+        "&mdash; mas dá para baixar o arquivo inteiro.",
+    "files.download_size": "Baixar ({size})",
+    "files.truncated_notice":
+        "<strong>Somente leitura:</strong> o arquivo tem {size} e passa do limite de edição "
+        "({max_kb} KB). Abaixo estão os últimos {shown} &mdash; baixe o arquivo para trabalhar "
+        "nele inteiro.",
+    "files.save_hint":
+        "Ctrl+S salva. Antes de gravar, o painel guarda uma cópia "
+        "<code>{name}.&lt;data&gt;.bak</code> na mesma pasta, e mantém dono e permissão do "
+        "arquivo original.",
+    "files.crlf_note": "Este arquivo usa fim de linha CRLF &mdash; será salvo assim.",
+    "files.opens_as_form_html":
+        "abre este arquivo como formulário e o fixa na tela <strong>Configuração</strong>",
+    "files.delete_no_undo":
+        "tira <code>{name}</code> do container na hora &mdash; aqui não há cópia "
+        "<code>.bak</code> nem como desfazer",
+    "files.editor_intro":
+        "Escolha um arquivo na lista ao lado para editar &mdash; até {max_kb} KB. Acima disso o "
+        "painel mostra os últimos {preview_kb} KB só para leitura.",
+    "files.any_file_downloadable_html":
+        "Qualquer arquivo pode ser baixado pelo link <em>baixar</em> da lista, inclusive "
+        "binários (saves, .so, .pak) e arquivos grandes demais para o editor.",
+    "files.config_search_hint":
+        "Procurando o arquivo de configuração do jogo? A busca por candidatos fica em <a "
+        "href=\"{url}\">Configuração</a> &mdash; é lá que o resultado dela serve para alguma "
+        "coisa (fixar o arquivo e editá-lo campo a campo).",
+    "files.config_folder_is": "Pasta de config deste servidor: <code>{path}</code>",
+    "files.config_folder_hint_html":
+        "Dica: preencha a \"Pasta de configuração\" em <a href=\"{url}\">Editar servidor</a> "
+        "para esta tela já abrir no lugar certo.",
+    "files.stop_before_editing":
+        "Pare o servidor antes de mexer nos arquivos que ele reescreve ao sair &mdash; vários "
+        "jogos sobrescrevem o .ini no shutdown.",
+    "terminal.session_intro":
+        "Sessão SSH interativa como <strong>{user}</strong> em <code>{host}</code>. Tem TTY de "
+        "verdade: <code>htop</code>, <code>nano</code>, <code>vim</code> e prompts de "
+        "confirmação funcionam. A sessão cai sozinha depois de {minutes} min sem uso.",
+    "terminal.input": "entrada do terminal",
+    "terminal.keyboard_help":
+        "O teclado vai direto para o shell: <code>Tab</code> completa, <code>&uarr;</code> "
+        "percorre o histórico do bash e <code>Ctrl+C</code> interrompe. Para copiar, selecione "
+        "com o mouse (com texto selecionado o <code>Ctrl+C</code> copia em vez de interromper); "
+        "<code>Ctrl+V</code> cola.",
+    "terminal.exit_fullscreen": "Sair da tela cheia",
+    "terminal.expired": "sessão expirada",
+    "terminal.closed": "sessão fechada",
+    "terminal.ended": "encerrado",
+    "terminal.ended_exit": "encerrado (exit {code})",
+    "terminal.reconnecting": "reconectando...",
+    "terminal.connecting": "conectando...",
+    "terminal.connected": "conectado",
+    "terminal.http_error": "erro http {status}",
+    "terminal.open_failed": "falha ao abrir: {error}",
+    "terminal.output_lost": "[painel: saída antiga descartada]",
+    "copy.done": "Copiado!",
+    "copy.failed": "Não consegui copiar",
+    "config.unsaved_changes": "há alterações não salvas",
+    "files.cursor_position": "linha {line}, coluna {column}",
+    "files.changed_suffix": " - alterado",
+    "http.no_connection": "sem conexão",
+    "app.short_name": "Jogos",
+    "app.description": "Liga, desliga, atualiza e acompanha os servidores de jogos.",
+    "offline.no_answer": "O painel não respondeu.",
+    "offline.no_answer_hint":
+        "O painel não respondeu. Ele só funciona com acesso à rede onde os containers estão "
+        "&mdash; ligar e desligar servidor não tem como acontecer offline.",
+    "console.run_as_intro":
+        "Os comandos rodam como <strong>{user}</strong> dentro do container "
+        "<code>{host}</code>, via SSH. Cada execução tem limite de {timeout}s e fica registrada "
+        "no histórico abaixo.",
+    "console.interactive_hint":
+        "Para algo interativo (nano, htop, prompts de confirmação) use a <a "
+        "href=\"{url}\">sessão interativa</a>.",
+    "console.non_interactive_hint":
+        "Não interativo: sem TTY, sem <code>vim</code>/<code>top</code>/<code>htop</code>. Use "
+        "<code>journalctl -n 50</code>, <code>ls</code>, <code>df -h</code>, <code>cat</code>, "
+        "<code>sed -i</code> etc. Ctrl+Enter executa.",
+    "console.running_placeholder": "(executando...)",
+    "console.running": "Em execução...",
+    "job.waiting_output": "(aguardando saída...)",
+    "job.finished_exit": "Concluído com exit code {code}.",
+    "job.running_hint":
+        "Em execução — a saída abaixo atualiza sozinha. Um update de jogo pode levar vários "
+        "minutos.",
+    "login_2fa.recovery_hint":
+        "Sem o celular? Use um dos códigos de recuperação (<code "
+        "class=\"nowrap\">abcde-12345</code>); cada um serve uma vez.",
+    "ssh_key.intro":
+        "O painel controla cada servidor por SSH, usando a chave abaixo. Para um container "
+        "aparecer como acessível, ele precisa de <code>sshd</code> rodando e desta chave "
+        "autorizada no usuário informado no cadastro (normalmente <code>root</code>).",
+    "ssh_key.from_proxmox":
+        "A partir do host Proxmox, trocando <code>&lt;CTID&gt;</code> pelo id do container:",
+    "ssh_key.provisioned_note":
+        "Containers provisionados pelo <code>deploy-game.ps1</code> com "
+        "<code>PANEL_PUBKEY</code> no <code>.env</code> já saem prontos &mdash; este passo é só "
+        "para os criados antes disso.",
+    "ssh_key.host_key_changed":
+        "Na primeira conexão o painel aprende e fixa a host key do container "
+        "(<code>accept-new</code>). Se o container for recriado, a chave muda e a conexão passa "
+        "a falhar com <code>REMOTE HOST IDENTIFICATION HAS CHANGED</code> &mdash; nesse caso "
+        "remova a entrada antiga:",
+    "ssh_key.container_ip": "ip-do-container",
+    "ssh_key.run_as": "Rode dentro do container do painel, como o usuário <code>gamepanel</code>.",
+    "schedules.clock_note":
+        "O relógio é o do <strong>painel</strong> &mdash; agora são <strong>{now}</strong> "
+        "({zone}). Se não bater com a sua hora, ajuste o <code>TZ</code> do container do "
+        "painel. Tarefa que venceu enquanto o painel estava fora do ar <strong>não dispara "
+        "atrasada</strong>: ela espera a próxima ocorrência.",
+    "schedules.no_timezone": "sem fuso definido",
+    "schedules.what_to_do_hint":
+        "<strong>Backup</strong> usa os caminhos do cadastro, com a mesma retenção da tela "
+        "Backups. <strong>Atualizar</strong> roda o SteamCMD &mdash; o servidor fica fora do ar "
+        "durante a atualização.",
+    "schedules.daily_and_weekly": "(diário e semanal)",
+    "schedules.weekly_only": "(semanal)",
+    "schedules.interval_only": "(intervalo)",
+    "schedules.runs_note":
+        "Cada disparo aparece no <a href=\"{url}\">histórico</a> como qualquer outra ação, com "
+        "<code>agendador</code> no lugar do usuário.",
+    "users.role_of": "Papel de {name}",
+    "users.username_hint":
+        "Letras minúsculas, números, <code>-</code> e <code>_</code>. Ex.: <code>joao</code>",
+    "users.roles_hint":
+        "<strong>{operator}</strong>: liga, desliga, atualiza, edita a configuração já "
+        "registrada, vê log e jogadores. <strong>{admin}</strong>: tudo isso mais cadastrar "
+        "servidor, terminal, navegador de arquivos e esta tela.",
+    "users.password_handoff_html":
+        "Você define a senha e passa para a pessoa; ela troca depois em <a "
+        "href=\"{url}\">Conta</a>. O painel não envia e-mail.",
+    "users.cut_note":
+        "O corte segue o que dá acesso de root ao container: terminal, editor de arquivos e o "
+        "cadastro do servidor (que aponta o SSH do painel) ficam com o administrador.",
+    "charts.over_time": "{title} ao longo do tempo",
+    "charts.samples_note":
+        "{n} amostra(s) &middot; uma a cada {every} min &middot; guardadas por {days} dias",
+    "charts.no_samples_hint":
+        "O painel guarda uma leitura a cada {every} minutos enquanto está no ar &mdash; volte "
+        "daqui a pouco, ou escolha um período maior.",
+    "charts.peak_in_period": "pico de <strong>{n}</strong> no período",
+    "charts.no_player_count":
+        "Sem contagem de jogadores neste período (a contagem precisa estar ligada no cadastro "
+        "do servidor).",
+    "charts.table_hint":
+        "Os mesmos valores do gráfico, sem depender de cor nem de passar o dedo por cima. Do "
+        "mais recente para o mais antigo.",
+    "charts.range_6h": "6 horas",
+    "charts.range_24h": "24 horas",
+    "charts.range_7d": "7 dias",
 }

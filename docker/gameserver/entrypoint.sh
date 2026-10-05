@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Sobe o servidor de jogo dentro do container: instala/atualiza pelo SteamCMD, prepara
-# o acesso do painel por SSH, liga o jogo e fica de pe com o sshd em primeiro plano.
+# Brings up the game server inside the container: installs/updates through SteamCMD,
+# prepares the panel's SSH access, starts the game and stays up with sshd in the foreground.
 #
-# E a versao Docker do provision-game-lxc.sh: le o MESMO games/<jogo>.env (copiado para
-# /etc/game/game.env na build), roda os mesmos PRE/POST_INSTALL_CMD e deixa os mesmos
-# atalhos disponiveis. O que muda e so quem faz o papel do systemd (veja systemctl.sh).
+# It is the Docker version of provision-game-lxc.sh: it reads the SAME games/<game>.env
+# (copied to /etc/game/game.env at build), runs the same PRE/POST_INSTALL_CMD and leaves the
+# same shortcuts available. The only difference is who plays the role of systemd (see
+# systemctl.sh).
 set -Eeuo pipefail
 
 GAME_ENV_FILE=/etc/game/game.env
@@ -34,12 +35,12 @@ carregar_definicao() {
   START_ARGS="${START_ARGS:-}"
   PRE_INSTALL_CMD="${PRE_INSTALL_CMD:-}"
   POST_INSTALL_CMD="${POST_INSTALL_CMD:-}"
-  # 1 = valida os arquivos do jogo a cada start do container (mais lento, mais seguro).
+  # 1 = validate the game files on every container start (slower, safer).
   UPDATE_ON_START="${UPDATE_ON_START:-0}"
   AUTO_UPDATE="${AUTO_UPDATE:-1}"
   UPDATE_TIME="${UPDATE_TIME:-06:00}"
 
-  # Jogo sem build nativo Linux (Enshrouded) baixa o build Windows e roda via Wine.
+  # A game without a native Linux build (Enshrouded) downloads the Windows build and runs via Wine.
   STEAM_PLATFORM="${STEAM_PLATFORM:-}"
   if [[ -n "$STEAM_PLATFORM" ]]; then
     STEAMCMD_PLATFORM_ARG="+@sSteamCmdForcePlatformType ${STEAM_PLATFORM} "
@@ -47,8 +48,9 @@ carregar_definicao() {
     STEAMCMD_PLATFORM_ARG=""
   fi
 
-  # Quase todo servidor dedicado baixa com login anonimo; DayZ e a excecao e le a conta
-  # das variaveis de ambiente do container (nunca do games/<jogo>.env, que vai pro git).
+  # Almost every dedicated server downloads with anonymous login; DayZ is the exception and
+  # reads the account from the container's environment variables (never from
+  # games/<game>.env, which goes into git).
   STEAM_ANONYMOUS="${STEAM_ANONYMOUS:-1}"
   STEAM_USER="${STEAM_USER:-}"
   STEAM_PASS="${STEAM_PASS:-}"
@@ -68,8 +70,8 @@ carregar_definicao() {
     local guarda=""
     [[ -n "$STEAM_GUARD_CODE" ]] && guarda=" ${STEAM_GUARD_CODE}"
     STEAMCMD_LOGIN="+login ${STEAM_USER} ${STEAM_PASS}${guarda}"
-    # Depois do primeiro login o token fica em /home/steam (volume): a senha nao
-    # precisa mais ficar no ambiente do container.
+    # After the first login the token stays in /home/steam (volume): the password no
+    # longer needs to stay in the container's environment.
     STEAMCMD_LOGIN_CACHED="+login ${STEAM_USER}"
     STEAM_TIMEOUT_UPDATE="timeout 7200 "
     STEAM_TIMEOUT_INFO="timeout 300 "
@@ -79,30 +81,40 @@ carregar_definicao() {
 preparar_pastas() {
   install -d -m 0755 "$LOG_DIR" /run/game /etc/game
   install -d -o steam -g steam "$GAME_DIR" /home/steam
-  # O volume nasce vazio e pertencendo ao root; o jogo roda como steam.
+  # The volume is born empty and owned by root; the game runs as steam.
   chown steam:steam "$GAME_DIR" /home/steam
 }
 
-liberar_painel() {
-  # O painel entra por SSH com a chave publica dele. Ela chega pelo ambiente
-  # (PANEL_PUBKEY, o jeito do deploy-docker.ps1) ou por um arquivo montado.
-  local chave="${PANEL_PUBKEY:-}"
-  if [[ -z "$chave" && -f /keys/panel.pub ]]; then
-    chave="$(cat /keys/panel.pub)"
-  fi
-  install -d -m 700 /root/.ssh
-  touch /root/.ssh/authorized_keys
-  chmod 600 /root/.ssh/authorized_keys
-  if [[ -n "$chave" ]]; then
-    grep -qF "$chave" /root/.ssh/authorized_keys || echo "$chave" >>/root/.ssh/authorized_keys
-    msg "Chave do painel autorizada"
-  else
-    warn "Sem PANEL_PUBKEY: o painel nao vai conseguir entrar neste container ainda."
-    warn "Pegue a chave na tela 'Acesso SSH' do painel e recrie o container com ela."
+grant_panel_access() {
+  # The panel logs in over SSH with its public key, as the unprivileged `gamepanel` user - never
+  # as root (docs/security-hardening-contract.md). The key arrives through the environment
+  # (PANEL_PUBKEY, the deploy-docker.ps1 way) or through a mounted file.
+  local key="${PANEL_PUBKEY:-}"
+  if [[ -z "$key" && -f /keys/panel.pub ]]; then
+    key="$(cat /keys/panel.pub)"
   fi
   ssh-keygen -A >/dev/null
   install -d /run/sshd
-  sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+  # Root is never authorized here. A container recreated from an older image version may still
+  # have the key in /root (the /root folder is not a volume, but a restart keeps it).
+  rm -f /root/.ssh/authorized_keys
+  # Belt and braces: the drop-in written by `lock` already says this, and wins (Debian's
+  # sshd_config includes sshd_config.d at the top), but without a key there is no drop-in.
+  sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+  if [[ -z "$key" ]]; then
+    warn "Sem PANEL_PUBKEY: o painel nao vai conseguir entrar neste container ainda."
+    warn "Pegue a chave na tela 'Acesso SSH' do painel e recrie o container com ela."
+    return 0
+  fi
+  # The same piece a real CT gets: gamepanel user, sudo rules, gp-service (which here calls the
+  # container's systemctl, the supervisor) and the key. `lock` checks that gamepanel reaches steam
+  # and the helpers BEFORE writing the sshd drop-in; if it does not, the container fails here,
+  # instead of coming up with a panel that cannot get in.
+  bash /usr/local/lib/gamepanel/ct-panel-access.sh install "$UNIT" "$key" \
+    || die "nao consegui preparar o acesso do painel (usuario gamepanel)"
+  bash /usr/local/lib/gamepanel/ct-panel-access.sh lock \
+    || die "o acesso pelo gamepanel nao passou na verificacao"
+  msg "Chave do painel autorizada (usuario gamepanel; root recusado no SSH)"
 }
 
 instalar_jogo() {
@@ -157,8 +169,8 @@ detectar_start() {
 escrever_service_env() {
   local args="${START_ARGS//\{PORT\}/${GAME_PORT}}"
   cat >"$SERVICE_ENV_FILE" <<EOF
-# Gerado pelo entrypoint a cada start do container. E daqui que o systemctl/journalctl
-# do container, o update-game e os atalhos game-* tiram o que precisam saber.
+# Generated by the entrypoint on every container start. This is where the container's
+# systemctl/journalctl, update-game and the game-* shortcuts get what they need to know.
 GAME_UNIT="${UNIT}"
 GAME_NAME="${GAME_DISPLAY_NAME}"
 GAME_DIR="${GAME_DIR}"
@@ -197,7 +209,7 @@ subir_autoupdate() {
 }
 
 parada_limpa() {
-  # 'docker stop' manda TERM para o PID 1: o mundo precisa ser salvo antes de sair.
+  # 'docker stop' sends TERM to PID 1: the world has to be saved before exiting.
   msg "Recebi o pedido de parada; desligando ${UNIT}"
   systemctl stop "$UNIT" || true
   exit 0
@@ -206,11 +218,11 @@ parada_limpa() {
 main() {
   carregar_definicao
   preparar_pastas
-  liberar_painel
+  grant_panel_access
   rodar_etapa "PRE_INSTALL_CMD" "$PRE_INSTALL_CMD"
   instalar_jogo
-  # O post-install roda antes da deteccao porque um jogo pode CRIAR ali o proprio
-  # script de start (o wrapper do Wine do Enshrouded e assim).
+  # The post-install runs before the detection because a game may CREATE its own start
+  # script there (the Enshrouded Wine wrapper is like that).
   rodar_etapa "POST_INSTALL_CMD" "$POST_INSTALL_CMD"
   detectar_start
   escrever_service_env
@@ -219,8 +231,8 @@ main() {
 
   trap parada_limpa TERM INT
   msg "Container pronto: sshd em $(hostname) (o painel entra por aqui)"
-  # O sshd fica em primeiro plano, mas em background do shell: sem isso o trap acima
-  # so seria processado quando o sshd terminasse.
+  # sshd stays in the foreground, but in the shell's background: without that the trap
+  # above would only be processed when sshd exited.
   /usr/sbin/sshd -D -e &
   wait $!
 }

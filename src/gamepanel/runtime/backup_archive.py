@@ -1,16 +1,19 @@
-"""A segunda copia do backup, guardada no PAINEL alem da que fica no container do jogo.
+"""The second backup copy, kept on the PANEL in addition to the one in the game container.
 
-A copia de dentro do container morre com ele: remover uma instancia pelo broker apaga o
-CT com os discos (`purge=1`), e o save ia junto. A daqui sobrevive a isso.
+The copy inside the container dies with it: removing an instance through the broker
+deletes the CT with its disks (`purge=1`), and the save went along. The one here
+survives that.
 
-Ela e organizada pelo PREFIXO do backup (o nome do servico: `valheim`), e nao pelo id do
-servidor no painel. O servidor recriado ganha outro id, mas o jogo do catalogo sobe com o
-mesmo servico — e e so por isso que o Valheim novo enxerga o save do Valheim que foi
-removido. Os caminhos dentro do tar sao absolutos (`-C /`), e o jogo recriado pelo mesmo
-catalogo usa os mesmos, entao restaurar aqui e o mesmo `RESTORE_SCRIPT` de sempre.
+It is organized by the backup PREFIX (the service name: `valheim`), not by the server's
+id on the panel. The recreated server gets another id, but the catalog game comes up
+with the same service - and that is the only reason the new Valheim sees the save of the
+Valheim that was removed. Paths inside the tar are absolute (`-C /`), and the game
+recreated from the same catalog uses the same ones, so restoring here is the usual
+`RESTORE_SCRIPT`.
 
-So disco local e stdlib: nada aqui fala SSH. Quem puxa e quem devolve e o `app.py`,
-que passa os pedacos (`stream_remote_file`) ou le o arquivo daqui para a entrada do ssh.
+Only local disk and stdlib: nothing here speaks SSH. Fetching and sending back is done by
+`app.py`, which passes the chunks (`stream_remote_file`) or reads the file from here into
+ssh's input.
 """
 from __future__ import annotations
 
@@ -22,9 +25,10 @@ from collections.abc import Iterable
 
 from gamepanel.runtime.backups import validate_backup_name
 
-# A linha que o `BACKUP_SCRIPT` escreve ao terminar. E ela que diz ao painel QUAL arquivo
-# puxar: o nome leva a hora do container, que o painel nao tem como adivinhar. Mudar a
-# frase la sem mudar aqui deixa o backup sem segunda copia — o teste compara os dois.
+# The line `BACKUP_SCRIPT` writes when it finishes. It is what tells the panel WHICH file
+# to fetch: the name carries the container's time, which the panel cannot guess. Changing
+# the sentence there without changing it here leaves the backup without a second copy -
+# the test compares the two.
 DONE_RE = re.compile(r"^backup pronto: (.+) \((\d+) bytes\)$", re.MULTILINE)
 PREFIX_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$", re.ASCII)
 PARTIAL_SUFFIX = ".parcial"
@@ -34,10 +38,10 @@ _CHMOD_FILE = 0o600
 
 
 def created_file(output: str, backup_dir: str) -> tuple[str, int] | None:
-    """Caminho e tamanho do ULTIMO backup que a saida anuncia, se ele mora na pasta certa.
+    """Path and size of the LAST backup the output announces, if it lives in the right folder.
 
-    A pasta e conferida porque o caminho vem do texto de um comando remoto: sem isto, uma
-    linha forjada na saida faria o painel puxar qualquer arquivo do container.
+    The folder is checked because the path comes from a remote command's text: without
+    this, a forged line in the output would make the panel fetch any file in the container.
     """
     found = DONE_RE.findall(output or "")
     if not found:
@@ -56,7 +60,7 @@ def _folder(root: str, prefix: str) -> str:
 
 
 def path_of(root: str, prefix: str, name: str) -> str:
-    """O arquivo guardado, conferido. `FileNotFoundError` quando nao existe."""
+    """The stored file, checked. `FileNotFoundError` when it does not exist."""
     path = os.path.join(_folder(root, prefix), validate_backup_name(name))
     if not os.path.isfile(path):
         raise FileNotFoundError(name)
@@ -65,11 +69,12 @@ def path_of(root: str, prefix: str, name: str) -> str:
 
 def store(root: str, prefix: str, name: str, chunks: Iterable[bytes],
           expected_size: int | None, keep: int) -> tuple[int, list[str]]:
-    """Grava a copia e aplica a retencao. Devolve (bytes gravados, nomes apagados).
+    """Write the copy and apply retention. Returns (bytes written, names deleted).
 
-    Grava num `.parcial` e so renomeia no fim, com o tamanho conferido: o `cat` remoto
-    que cai no meio NAO da erro para quem le os pedacos, so para de mandar — e uma copia
-    truncada com o nome certo seria pior que nenhuma, porque ninguem desconfiaria dela.
+    Writes to a `.parcial` and only renames at the end, with the size checked: a remote
+    `cat` that dies midway does NOT raise for whoever reads the chunks, it just stops
+    sending - and a truncated copy with the right name would be worse than none, because
+    nobody would suspect it.
     """
     folder = _folder(root, prefix)
     os.makedirs(folder, mode=_CHMOD_PRIVATE, exist_ok=True)
@@ -85,7 +90,7 @@ def store(root: str, prefix: str, name: str, chunks: Iterable[bytes],
             os.fsync(out.fileno())
         if expected_size is not None and written != expected_size:
             raise OSError(f"copia incompleta: chegaram {written} de {expected_size} bytes")
-        # Save e dado de quem joga, e o painel nao e o unico servico da maquina.
+        # A save is the players' data, and the panel is not the only service on the machine.
         os.chmod(partial, _CHMOD_FILE)
         os.replace(partial, final)
     finally:
@@ -95,7 +100,7 @@ def store(root: str, prefix: str, name: str, chunks: Iterable[bytes],
 
 
 def prune(root: str, prefix: str, keep: int) -> list[str]:
-    """Mantem as `keep` copias mais novas deste prefixo. 0 = nunca apagar."""
+    """Keep the `keep` newest copies of this prefix. 0 = never delete."""
     if keep <= 0:
         return []
     removed = []
@@ -106,7 +111,7 @@ def prune(root: str, prefix: str, keep: int) -> list[str]:
 
 
 def list_copies(root: str, prefix: str) -> list[dict]:
-    """As copias deste prefixo, a mais nova primeiro (mesmo formato da lista do container)."""
+    """This prefix's copies, newest first (same format as the container's list)."""
     folder = _folder(root, prefix)
     try:
         entries = list(os.scandir(folder))
@@ -124,7 +129,7 @@ def list_copies(root: str, prefix: str) -> list[dict]:
             "seguranca": entry.name.endswith(SAFETY_SUFFIX),
             "_ts": info.st_mtime,
         })
-    # Empate de mtime (duas copias no mesmo segundo) cai no nome, que comeca pela data.
+    # A mtime tie (two copies in the same second) falls back to the name, which starts with the date.
     copies.sort(key=lambda c: (c["_ts"], c["name"]), reverse=True)
     for c in copies:
         del c["_ts"]
@@ -132,7 +137,7 @@ def list_copies(root: str, prefix: str) -> list[dict]:
 
 
 def delete(root: str, prefix: str, name: str) -> int:
-    """Apaga uma copia. Devolve o tamanho que ela tinha."""
+    """Delete a copy. Returns the size it had."""
     path = path_of(root, prefix, name)
     size = os.path.getsize(path)
     os.remove(path)
@@ -140,10 +145,10 @@ def delete(root: str, prefix: str, name: str) -> int:
 
 
 def list_games(root: str) -> list[str]:
-    """Os prefixos (jogos) que tem copia no painel, com ou sem servidor cadastrado.
+    """The prefixes (games) that have a copy on the panel, with or without a registered server.
 
-    E a lista que faltava: a aba Backups de um servidor so mostra o prefixo DELE, entao a
-    copia de um jogo removido ficava guardada e sem tela nenhuma que a mostrasse.
+    It is the missing list: a server's Backups tab only shows ITS prefix, so the copy of a
+    removed game stayed stored with no screen at all to show it.
     """
     try:
         entries = list(os.scandir(root))

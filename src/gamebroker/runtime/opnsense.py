@@ -1,16 +1,16 @@
-"""Backend OPNsense: abre e fecha redirects de porta (d_nat) do WAN.
+"""OPNsense backend: opens and closes WAN port forwards (d_nat).
 
-Fatos validados num OPNsense 26.7.4 real (spike da Fase 0):
+Facts validated against a real OPNsense 26.7.4 (Phase 0 spike):
 
-- As regras de jogo que ja existem usam ALIASES de porta (`JOGO_PALWORLD`...), nao numeros.
-  `search_rule` traz o conteudo do alias em `alias_meta_destination.port`, num texto HTML
-  (`<strong>descricao</strong><br/>8211<br/>27015`). E daqui que o broker descobre quais
-  portas ja estao ocupadas - `alias/search_item` da 403 para a chave do broker.
-- Se uma regra do WAN usa um formato que nao entendemos, o broker RECUSA abrir porta nova
-  (`ErroDeLeitura`) em vez de supor que a porta esta livre: errar para o lado de nao abrir.
-- Regra desativada continua contando como ocupada (o usuario liga e desliga as dele).
-- `filter/apply` so e autorizado pelo privilegio "Firewall: Rules [new]".
-- `pass=pass` grava e `associated-rule-id` fica vazio, igual as regras existentes.
+- The existing game rules use port ALIASES (`JOGO_PALWORLD`...), not numbers.
+  `search_rule` returns the alias content in `alias_meta_destination.port`, as HTML text
+  (`<strong>descricao</strong><br/>8211<br/>27015`). That is where the broker finds out which
+  ports are already taken - `alias/search_item` returns 403 for the broker's key.
+- If a WAN rule uses a format we do not understand, the broker REFUSES to open a new port
+  (`ErroDeLeitura`) instead of assuming the port is free: err on the side of not opening.
+- A disabled rule still counts as taken (users turn their own rules on and off).
+- `filter/apply` is only authorized by the "Firewall: Rules [new]" privilege.
+- `pass=pass` saves and `associated-rule-id` stays empty, just like the existing rules.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from gamebroker.services.catalog import MAX_PORT
 
 DESCRIPTION_PREFIX = "gamepanel:"
 RANGE_LIMIT = 5000
-# Sonda de saude: um servico que nao responde em poucos segundos ja e a resposta.
+# Health probe: a service that does not answer within a few seconds is already the answer.
 SONDA_TIMEOUT = 5.0
 _UUID_RE = re.compile(r"[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 _PORT_RE = re.compile(r"\d{1,5}")
@@ -34,35 +34,35 @@ _SEARCH_ARGS = {"current": 1, "rowCount": -1}
 
 
 class OpnsenseError(RuntimeError):
-    """Falha ao falar com o OPNsense. A mensagem nao carrega chave nem segredo."""
+    """Failure talking to OPNsense. The message carries no key or secret."""
 
 
 class ReadError(OpnsenseError):
-    """Regra existente que o broker nao soube interpretar: nao abre porta nova."""
+    """An existing rule the broker could not interpret: no new port is opened."""
 
 
-# O handle entrava aqui por `int()`, e era ISSO que recusava `"300; drop"`. Com o handle
-# opaco (texto) o `int()` saiu e a recusa teria saido com ele — o teste da descricao pegou.
-# A descricao vai para o campo `descr` da regra do OPNsense, e o `close_ports` a casa por
-# IGUALDADE: um handle com caractere estranho nao viraria injecao de shell, mas quebraria
-# o casamento e deixaria regra orfa no firewall, que e o jeito silencioso de uma porta
-# ficar aberta para um container que nao existe mais.
+# The handle used to come in through `int()`, and THAT was what rejected `"300; drop"`. With the
+# opaque (text) handle the `int()` went away and the rejection would have gone with it - the
+# description test caught it. The description goes into the OPNsense rule's `descr` field, and
+# `close_ports` matches it by EQUALITY: a handle with an odd character would not become shell
+# injection, but it would break the match and leave an orphan rule in the firewall, which is the
+# silent way for a port to stay open for a container that no longer exists.
 HANDLE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,62}", re.ASCII)
 
 
 def instance_description(handle: str) -> str:
-    """`gamepanel:<handle>`, recusando handle que nao seja um token simples.
+    """`gamepanel:<handle>`, rejecting a handle that is not a simple token.
 
-    `re.ASCII` de proposito: sem a flag, o atalho de "palavra" casa acento e mais uns 900 caracteres
-    Unicode, e o que se quer aqui e o conjunto estreito que sobrevive a ida e volta pela
-    API do OPNsense.
+    `re.ASCII` on purpose: without the flag, the "word" shorthand matches accented letters and
+    some 900 other Unicode characters, and what is wanted here is the narrow set that survives
+    the round trip through the OPNsense API.
     """
     if not HANDLE_RE.fullmatch(handle):
         raise ValueError("handle invalido para descricao de regra")
     return f"{DESCRIPTION_PREFIX}{handle}"
 
 
-# --- leitura das portas ocupadas ---------------------------------------------------
+# --- reading the taken ports ------------------------------------------------------
 
 def _number_of(text: str) -> int:
     value = int(text)
@@ -72,7 +72,7 @@ def _number_of(text: str) -> int:
 
 
 def _expand_ports(item: str, rule: str) -> set[int]:
-    """`7660` ou `8000-8010` (ou `8000:8010`) -> conjunto de portas."""
+    """`7660` or `8000-8010` (or `8000:8010`) -> set of ports."""
     item = item.strip()
     try:
         if _PORT_RE.fullmatch(item):
@@ -98,7 +98,7 @@ def _ports_of_alias(meta: object, rule: str) -> set[int]:
         read_lines = 0
         for chunk_of in _LINE_BREAK_RE.split(summary):
             chunk_of = chunk_of.strip()
-            # O primeiro pedaco costuma ser a descricao do alias, em HTML: nao e porta.
+            # The first piece is usually the alias description, in HTML: not a port.
             if not chunk_of or "<" in chunk_of or ">" in chunk_of:
                 continue
             ports |= _expand_ports(chunk_of, rule)
@@ -109,7 +109,7 @@ def _ports_of_alias(meta: object, rule: str) -> set[int]:
 
 
 def _protocols_of(protocol: str) -> tuple[str, ...]:
-    # tcp/udp (ou qualquer coisa que nao seja so tcp ou so udp) ocupa os dois: errar por excesso.
+    # tcp/udp (or anything that is not only tcp or only udp) takes both: err on the side of excess.
     protocol = protocol.strip().lower()
     return (protocol,) if protocol in ("tcp", "udp") else ("tcp", "udp")
 
@@ -171,7 +171,7 @@ class Opnsense:
 
     def open_ports(self, handle: str, ip: str, ports: Sequence[AllocatedPort]) -> None:
         target = str(ipaddress.IPv4Address(ip))
-        self.close_ports(handle)  # idempotente: recomecar nao deixa regra duplicada
+        self.close_ports(handle)  # idempotent: starting over does not leave a duplicate rule
         created_ones: list[str] = []
         try:
             for port in ports:

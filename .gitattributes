@@ -1,9 +1,12 @@
-# Scripts que rodam no Linux precisam manter LF mesmo em checkout no Windows
+# Scripts that run on Linux must keep LF even in a Windows checkout
 *.sh text eol=lf
-# Dockerfile com CRLF quebra a continuacao de linha (RUN ... \) na build
+# A Dockerfile with CRLF breaks line continuation (RUN ... \) during the build
 Dockerfile* text eol=lf
 *.py text eol=lf
 *.env text eol=lf
 .env.example text eol=lf
+# The sandbox fakes (pct, nft, curl, dpkg...) have no extension, so *.sh does not catch them;
+# with CRLF bash dies with "required file not found" and the sandbox fails for no visible reason.
+docker/ct-sandbox/fakes/* text eol=lf
 
 *.ps1 text eol=crlf

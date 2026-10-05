@@ -1,9 +1,13 @@
-"""Editor de arquivos e upload/download do container de jogo - tudo por SSH.
+"""File editor and upload/download for the game container - all over SSH.
 
-Nao ha SFTP nem biblioteca de transferencia: cada operacao e um script POSIX pequeno
-(`bash -lc`) executado no destino, com o conteudo indo e vindo pela entrada/saida
-padrao (texto em base64 para caber num comando; bytes crus, em streaming, para upload
-e download - ver `ssh_stream_in`/`stream_remote_file`).
+There is no SFTP and no transfer library: each operation is a small POSIX script
+(`bash -lc`) run on the target, with the content going back and forth over standard
+input/output (base64 text so it fits in a command; raw bytes, streamed, for upload
+and download - see `ssh_stream_in`/`stream_remote_file`).
+
+Every script goes through `remote_cmd.as_steam`: in helper mode it runs as `steam`, so the
+editor and the upload never write through a link the game planted with more rights than the
+game itself has.
 """
 from __future__ import annotations
 
@@ -15,18 +19,19 @@ from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
 from gamepanel.i18n import Message
-from gamepanel.runtime.ssh import RemoteError, ServerLike, quote_command
+from gamepanel.runtime import remote_cmd
+from gamepanel.runtime.ssh import RemoteError, ServerLike
 
 SshRun = Callable[..., subprocess.CompletedProcess]
 SshArgv = Callable[..., list[str]]
 
-# ------------------------------------------------------------- caminho
+# ---------------------------------------------------------------- path
 
 FILE_PATH_MAX = 400
 
 
 def _resolve_segments(path: str) -> str:
-    """Resolve '..' e '.' sem tocar no destino (nao segue link nem consulta o disco)."""
+    """Resolve '..' and '.' without touching the target (follows no link, reads no disk)."""
     parts: list[str] = []
     for seg in path.split("/"):
         if seg in ("", "."):
@@ -40,16 +45,16 @@ def _resolve_segments(path: str) -> str:
 
 
 def _check_roots(path: str, roots: tuple[str, ...]) -> None:
-    if not roots or "/" in roots:  # "/" configurado = sem restricao
+    if not roots or "/" in roots:  # "/" configured = no restriction
         return
-    # rstrip + "/" para /opt/game nao liberar /opt/gamex sem querer.
+    # rstrip + "/" so that /opt/game does not accidentally allow /opt/gamex.
     if any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots):
         return
     raise ValueError(Message("path.outside_roots", folders=", ".join(roots)))
 
 
 def clean_path(raw: str, roots: tuple[str, ...]) -> str:
-    """Normaliza um caminho absoluto vindo da tela (resolve '..' de forma lexica)."""
+    """Normalize an absolute path coming from the screen (resolves '..' lexically)."""
     path = (raw or "").strip()
     if not path.startswith("/"):
         raise ValueError(Message("path.not_absolute"))
@@ -66,7 +71,7 @@ def parent_of(path: str) -> str:
     return path.rsplit("/", 1)[0] or "/"
 
 
-# ------------------------------------------------------- scripts remotos
+# -------------------------------------------------------- remote scripts
 
 LIST_SCRIPT = r"""
 set -e
@@ -76,8 +81,8 @@ find "$d" -maxdepth 1 -mindepth 1 -printf '%y\t%Y\t%s\t%TY-%Tm-%Td %TH:%TM\t%M\t
   2>/dev/null | head -n "$2"
 """
 
-# $2 = limite de edicao, $3 = quanto trazer do fim quando o arquivo passa do limite.
-# Arquivo grande nao e mais um erro: vem so o fim dele, marcado como 'tail'.
+# $2 = edit limit, $3 = how much to bring from the end when the file is over the limit.
+# A large file is no longer an error: only its end comes back, marked as 'tail'.
 READ_SCRIPT = r"""
 set -e
 f=$1
@@ -93,7 +98,7 @@ else
 fi
 """
 
-# Usado antes do download: confere que da para baixar e quanto tem para vir.
+# Used before a download: checks that it can be downloaded and how much is coming.
 STAT_SCRIPT = r"""
 set -e
 f=$1
@@ -103,8 +108,8 @@ f=$1
 stat -Lc 'META|%s|%y|%a|%U|%G' -- "$f"
 """
 
-# Grava por cima do arquivo existente (cat >) em vez de trocar o inode: assim dono,
-# grupo e permissao continuam os do jogo — o servidor roda como 'steam', nao root.
+# Writes over the existing file (cat >) instead of swapping the inode: that way owner,
+# group and permissions stay the game's - the server runs as 'steam', not root.
 WRITE_SCRIPT = r"""
 set -e
 f=$1
@@ -120,16 +125,16 @@ if [ -e "$f" ]; then
 else
   cat "$t" > "$f"
   chmod 0644 "$f"
-  # Arquivo novo herda o dono da pasta: o jogo roda como 'steam' e precisa continuar
-  # conseguindo reescrever o proprio config.
+  # A new file inherits the folder owner: the game runs as 'steam' and must still be
+  # able to rewrite its own config.
   chown --reference="$d" "$f" 2>/dev/null || true
 fi
 echo "gravado: $(stat -Lc %s -- "$f") bytes"
 """
 
-# Apagar nao tem .bak: um save de varios GB nao cabe numa copia de seguranca, e quem
-# manda apagar quer o espaco de volta. Por isso o escopo e estreito: arquivo comum,
-# link, ou pasta VAZIA (rmdir) — nada de remocao recursiva a partir da tela.
+# Deleting has no .bak: a multi-GB save does not fit in a safety copy, and whoever
+# deletes wants the space back. That is why the scope is narrow: regular file, link,
+# or EMPTY folder (rmdir) - no recursive removal from the screen.
 DELETE_SCRIPT = r"""
 set -e
 f=$1
@@ -139,15 +144,15 @@ if [ -d "$f" ] && [ ! -L "$f" ]; then
   echo "pasta apagada: $f"
 else
   sz=$(stat -Lc %s -- "$f" 2>/dev/null || echo 0)
-  # -f para o rm nunca parar perguntando por arquivo sem permissao de escrita; o erro
-  # que importa (pasta somente leitura) continua vindo.
+  # -f so rm never stops to ask about a write-protected file; the error
+  # that matters (read-only folder) still comes through.
   rm -f -- "$f"
   echo "apagado: $f ($sz bytes)"
 fi
 """
 
-# $1 = destino final. O conteudo vem CRU pela entrada padrao (sem base64: o arquivo pode
-# ter gigabytes, e codificar inflaria 33% a toa).
+# $1 = final destination. The content arrives RAW on standard input (no base64: the file
+# may be gigabytes, and encoding would inflate it by 33% for nothing).
 UPLOAD_SCRIPT = r"""
 set -e
 f=$1
@@ -160,25 +165,25 @@ cat > "$t"
 if [ -e "$f" ]; then
   [ -f "$f" ] || { echo "o destino nao e um arquivo comum" >&2; exit 4; }
   cp -a -- "$f" "$f.$(date +%Y%m%d-%H%M%S).bak"
-  # cat > por cima em vez de mv: preserva dono e permissao do arquivo que ja estava la.
+  # cat > over it instead of mv: keeps the owner and mode of the file that was already there.
   cat "$t" > "$f"
 else
   cat "$t" > "$f"
   chmod 0644 -- "$f"
-  # Arquivo novo herda o dono da pasta: o jogo roda como 'steam' e precisa poder ler.
+  # A new file inherits the folder owner: the game runs as 'steam' and must be able to read it.
   chown --reference="$d" -- "$f" 2>/dev/null || true
 fi
 echo "enviado: $f ($(stat -Lc %s -- "$f") bytes)"
 """
 
 
-# --------------------------------------------------------------- listar
+# ----------------------------------------------------------------- list
 
 _LIST_LINE_FIELDS = 6
 
 
 def list_dir(ssh_run: SshRun, server: ServerLike, path: str, limit: int) -> tuple[list[dict], bool]:
-    proc = ssh_run(server, quote_command("bash", "-lc", LIST_SCRIPT, "gp", path, str(limit)), timeout=40)
+    proc = ssh_run(server, remote_cmd.as_steam(server, "bash", "-lc", LIST_SCRIPT, "gp", path, str(limit)), timeout=40)
     if proc.returncode != 0:
         raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao listar a pasta")
     entries: list[dict] = []
@@ -205,7 +210,7 @@ _FIND_LINE_FIELDS = 3
 
 
 def find_config_files(ssh_run: SshRun, server: ServerLike, root: str, globs: Iterable[str]) -> list[dict]:
-    """Varre a pasta do jogo atras dos arquivos de configuracao mais provaveis."""
+    """Scan the game folder for the most likely configuration files."""
     names = " -o ".join(f"-name {shlex.quote(g)}" for g in globs)
     script = (
         "set -e\n"
@@ -215,7 +220,7 @@ def find_config_files(ssh_run: SshRun, server: ServerLike, root: str, globs: Ite
         r"-printf '%s\t%TY-%Tm-%Td %TH:%TM\t%p\n' 2>/dev/null | LC_ALL=C sort -k3 | head -n 300"
         "\n"
     )
-    proc = ssh_run(server, quote_command("bash", "-lc", script, "gp", root), timeout=90)
+    proc = ssh_run(server, remote_cmd.as_steam(server, "bash", "-lc", script, "gp", root), timeout=90)
     if proc.returncode != 0:
         raise RemoteError((proc.stderr or proc.stdout).strip() or "falha na busca")
     found: list[dict] = []
@@ -231,7 +236,7 @@ def find_config_files(ssh_run: SshRun, server: ServerLike, root: str, globs: Ite
     return found
 
 
-# ----------------------------------------------------------- ler/gravar
+# ----------------------------------------------------------- read/write
 
 def _parse_meta(head: str, fields: int) -> list[str]:
     meta = head.split("|")
@@ -241,8 +246,8 @@ def _parse_meta(head: str, fields: int) -> list[str]:
 
 
 def stat_file(ssh_run: SshRun, server: ServerLike, path: str) -> dict:
-    """Metadados sem trazer o conteudo — usado antes de comecar um download."""
-    proc = ssh_run(server, quote_command("bash", "-lc", STAT_SCRIPT, "gp", path), timeout=40)
+    """Metadata without fetching the content - used before starting a download."""
+    proc = ssh_run(server, remote_cmd.as_steam(server, "bash", "-lc", STAT_SCRIPT, "gp", path), timeout=40)
     if proc.returncode != 0:
         raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao ler o arquivo")
     meta = _parse_meta(proc.stdout.strip(), 6)
@@ -259,14 +264,14 @@ def stat_file(ssh_run: SshRun, server: ServerLike, path: str) -> dict:
 def read_file(
     ssh_run: SshRun, server: ServerLike, path: str, max_bytes: int, preview_bytes: int,
 ) -> dict:
-    """Le o arquivo para o editor.
+    """Read the file for the editor.
 
-    Arquivo dentro do limite vem inteiro e editavel. Acima do limite vem so o fim
-    (somente leitura) — quem precisa do arquivo completo usa o download.
+    A file within the limit comes whole and editable. Above the limit only the end
+    comes (read-only) - whoever needs the complete file uses the download.
     """
     proc = ssh_run(
         server,
-        quote_command("bash", "-lc", READ_SCRIPT, "gp", path, str(max_bytes), str(preview_bytes)),
+        remote_cmd.as_steam(server, "bash", "-lc", READ_SCRIPT, "gp", path, str(max_bytes), str(preview_bytes)),
         timeout=180,
     )
     if proc.returncode != 0:
@@ -275,7 +280,7 @@ def read_file(
     meta = _parse_meta(head, 7)
     try:
         raw = base64.b64decode(payload.strip() or "", validate=True)
-    except ValueError as exc:  # binascii.Error e uma subclasse de ValueError
+    except ValueError as exc:  # binascii.Error is a subclass of ValueError
         raise RemoteError(Message("file.corrupted")) from exc
     binary = b"\x00" in raw
     truncated = meta[6] == "tail"
@@ -288,20 +293,20 @@ def read_file(
         "mode": meta[3],
         "owner": f"{meta[4]}:{meta[5]}",
         "binary": binary,
-        # Fim do arquivo apenas: editar e salvar daqui apagaria todo o resto.
+        # Only the end of the file: editing and saving from here would wipe everything else.
         "truncated": truncated,
         "shown": len(raw),
         "editable": not binary and not truncated,
         "text": text,
-        # \r\n vira \n no textarea; guardamos para devolver o arquivo como estava.
+        # \r\n becomes \n in the textarea; we keep this to write the file back as it was.
         "crlf": b"\r\n" in raw,
     }
 
 
 def write_file(ssh_run: SshRun, server: ServerLike, path: str, data: bytes) -> str:
-    """Grava o arquivo no container (com .bak, dono e permissao preservados)."""
+    """Write the file in the container (with .bak, owner and permissions preserved)."""
     proc = ssh_run(
-        server, quote_command("bash", "-lc", WRITE_SCRIPT, "gp", path), timeout=120,
+        server, remote_cmd.as_steam(server, "bash", "-lc", WRITE_SCRIPT, "gp", path), timeout=120,
         stdin_data=base64.b64encode(data),
     )
     if proc.returncode != 0:
@@ -310,8 +315,8 @@ def write_file(ssh_run: SshRun, server: ServerLike, path: str, data: bytes) -> s
 
 
 def delete_file(ssh_run: SshRun, server: ServerLike, path: str) -> str:
-    """Apaga um arquivo (ou pasta vazia) no container. Nao tem volta."""
-    proc = ssh_run(server, quote_command("bash", "-lc", DELETE_SCRIPT, "gp", path), timeout=60)
+    """Delete a file (or empty folder) in the container. There is no undo."""
+    proc = ssh_run(server, remote_cmd.as_steam(server, "bash", "-lc", DELETE_SCRIPT, "gp", path), timeout=60)
     if proc.returncode != 0:
         raise RemoteError((proc.stderr or proc.stdout).strip() or "falha ao apagar")
     return proc.stdout.strip()
@@ -320,25 +325,25 @@ def delete_file(ssh_run: SshRun, server: ServerLike, path: str) -> str:
 # --------------------------------------------------------- streaming
 
 def ssh_stream_in(
-    ssh_argv: SshArgv, server: ServerLike, remote_cmd: str, source: Any, timeout: int, chunk_size: int,
+    ssh_argv: SshArgv, server: ServerLike, command: str, source: Any, timeout: int, chunk_size: int,
 ) -> str:
-    """Executa um comando remoto alimentando a entrada dele a partir de `source`.
+    """Run a remote command, feeding its input from `source`.
 
-    Diferente de rodar com o conteudo todo na memoria: aqui os bytes passam em
-    pedacos, do arquivo que o navegador enviou direto para o `cat` do outro lado. E o
-    que permite subir um mod ou um save de varios GB.
+    Unlike running with the whole content in memory: here the bytes pass in chunks,
+    from the file the browser sent straight to the `cat` on the other side. That is
+    what makes it possible to upload a multi-GB mod or save.
     """
-    argv = [*ssh_argv(server, connect_timeout=10), remote_cmd]
+    argv = [*ssh_argv(server, connect_timeout=10), command]
     try:
-        proc = subprocess.Popen(  # noqa: S603  # NOSONAR - argv vem do SshClient, nunca cru de formulario
+        proc = subprocess.Popen(  # noqa: S603  # NOSONAR - argv comes from SshClient, never raw from a form
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
     except OSError as exc:
         raise RemoteError(Message("ssh.failed_to_run", reason=exc)) from exc
 
-    # Numa variavel local porque `Popen.stdin` e Optional no tipo (Popen sem PIPE nao
-    # tem entrada) e porque ela e zerada no `finally` la embaixo - o `close()` de la
-    # precisa falar do MESMO objeto que o laco usou.
+    # In a local variable because `Popen.stdin` is Optional in the type (Popen without PIPE
+    # has no input) and because it is cleared in the `finally` below - the `close()` there
+    # must refer to the SAME object the loop used.
     entry = proc.stdin
     if entry is None:
         raise RemoteError(Message("ssh.no_stdin"))
@@ -350,14 +355,14 @@ def ssh_stream_in(
                 break
             entry.write(chunk)
     except OSError:
-        # O outro lado desistiu (sem espaco, sem permissao): o motivo esta no stderr,
-        # entao nao adianta reclamar do cano quebrado aqui. BrokenPipeError - o caso
-        # tipico - ja e um OSError, entao listar os dois nao pegava nada a mais.
+        # The other side gave up (no space, no permission): the reason is in stderr, so
+        # complaining about the broken pipe here is pointless. BrokenPipeError - the
+        # typical case - is already an OSError, so listing both caught nothing extra.
         pass
     finally:
-        # Fechar a entrada e o que faz o `cat` remoto terminar. A referencia tem de ir
-        # junto: o communicate() abaixo daria flush num arquivo ja fechado e estouraria
-        # ValueError com o arquivo JA gravado do outro lado — erro na tela, upload feito.
+        # Closing the input is what makes the remote `cat` finish. The reference must go
+        # too: communicate() below would flush an already closed file and raise ValueError
+        # with the file ALREADY written on the other side - error on screen, upload done.
         with contextlib.suppress(OSError):
             entry.close()
         proc.stdin = None
@@ -378,14 +383,14 @@ def ssh_stream_in(
 def stream_remote_file(
     ssh_argv: SshArgv, server: ServerLike, path: str, chunk_size: int,
 ) -> Iterator[bytes]:
-    """Joga o arquivo do container direto para o navegador, sem passar por disco.
+    """Send the container's file straight to the browser, without touching disk.
 
-    E `cat` na outra ponta lido em pedacos: um save de varios GB desce sem o painel
-    guardar nada em memoria.
+    It is `cat` on the other end read in chunks: a multi-GB save comes down without the
+    panel holding anything in memory.
     """
-    argv = [*ssh_argv(server), quote_command("cat", "--", path)]
-    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # noqa: S603  # NOSONAR - argv vem do SshClient
-    # `Popen.stdout` e Optional no tipo; aqui ele existe porque o PIPE foi pedido acima.
+    argv = [*ssh_argv(server), remote_cmd.as_steam(server, "cat", "--", path)]
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # noqa: S603  # NOSONAR - argv comes from SshClient
+    # `Popen.stdout` is Optional in the type; here it exists because PIPE was requested above.
     out_text = proc.stdout
     if out_text is None:
         raise RemoteError(Message("ssh.no_stdout"))
@@ -398,7 +403,7 @@ def stream_remote_file(
                     break
                 yield chunk
         finally:
-            # Navegador que cancela no meio nao pode deixar um ssh orfao segurando fd.
+            # A browser that cancels midway must not leave an orphan ssh holding an fd.
             if proc.poll() is None:
                 proc.kill()
             for pipe in (proc.stdout, proc.stderr):

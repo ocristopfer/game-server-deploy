@@ -1,10 +1,11 @@
-"""Navegar, editar, enviar e baixar os arquivos do container."""
+"""Browse, edit, upload and download the container's files."""
 from __future__ import annotations
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, stream_with_context, url_for
 
 from gamepanel import app as panel
 from gamepanel import i18n
+from gamepanel.runtime import remote_cmd
 
 bp = Blueprint("files", __name__)
 
@@ -41,7 +42,7 @@ def index(sid: int):
     except panel.RemoteError as exc:
         errors.append(str(exc))
 
-    # Migalhas de pao: /opt/game/Pal -> [/, /opt, /opt/game, /opt/game/Pal]
+    # Breadcrumbs: /opt/game/Pal -> [/, /opt, /opt/game, /opt/game/Pal]
     crumbs, walked = [{"name": "/", "path": "/"}], ""
     for seg in current.strip("/").split("/"):
         if not seg:
@@ -71,7 +72,7 @@ def save(sid: int):
         flash(panel.translate(panel.error_text(exc)), "error")
         return redirect(url_for("files.index", sid=sid))
 
-    # O navegador manda \r\n; so devolvemos assim se o arquivo original ja usava CRLF.
+    # The browser sends \r\n; we only give it back that way if the original file already used CRLF.
     text = content.replace("\r\n", "\n")
     if keep_crlf:
         text = text.replace("\n", "\r\n")
@@ -80,8 +81,8 @@ def save(sid: int):
         flash(panel.translate("flash.file_too_big", kb=panel.FILE_MAX_BYTES // 1024), "error")
         return redirect(url_for("files.index", sid=sid, file=path))
 
-    # O arquivo pode ter crescido desde que a tela abriu (log, save do jogo). Gravar o
-    # que esta no textarea agora apagaria tudo o que nao coube nele.
+    # The file may have grown since the screen opened (log, game save). Writing
+    # what is in the textarea now would erase everything that did not fit in it.
     try:
         current_one = panel.stat_file(server, path)
         if current_one["size"] > panel.FILE_MAX_BYTES:
@@ -89,7 +90,7 @@ def save(sid: int):
                               size=current_one["size"] // 1024, kb=panel.FILE_MAX_BYTES // 1024), "error")
             return redirect(url_for("files.index", sid=sid, file=path))
     except panel.RemoteError:
-        pass  # arquivo novo, ou stat falhou: o proprio gravar reporta o erro
+        pass  # new file, or stat failed: the write itself reports the error
 
     try:
         output = panel.write_file(server, path, data)
@@ -120,8 +121,8 @@ def delete(sid: int):
         flash(panel.translate(panel.error_text(exc)), "error")
         return redirect(url_for("files.index", sid=sid))
 
-    # Raiz permitida nao se apaga: sem isso um clique errado poderia levar /opt/game
-    # inteiro (a pasta so cai vazia, mas nem esse caso vale a pena permitir).
+    # An allowed root is never deleted: without this a wrong click could take the whole of
+    # /opt/game (the folder only goes when empty, but not even that case is worth allowing).
     roots = {"/"} | {r.rstrip("/") or "/" for r in panel.FILE_ROOTS}
     if path in roots:
         flash(panel.translate("flash.is_a_root_folder", path=path), "error")
@@ -132,8 +133,8 @@ def delete(sid: int):
         output = panel.delete_file(server, path)
         panel.log_job("delete-file", server, session.get("username", "?"), command=path, output=output)
         flash(panel.translate("flash.deleted_no_bak", output=output), "ok")
-        # Arquivo fixado na tela Config que deixou de existir: tirar do cadastro evita
-        # que a tela abra sempre num erro de leitura.
+        # A file pinned on the Config screen that no longer exists: removing it from the registry keeps
+        # the screen from always opening on a read error.
         registered = panel.config_paths(server)
         if path in registered:
             panel._save_config_files(sid, [p for p in registered if p != path])
@@ -151,7 +152,7 @@ def delete(sid: int):
 @bp.get("/servers/<int:sid>/files/download")
 @panel.admin_required
 def download(sid: int):
-    """Baixa qualquer arquivo do container — inclusive binario ou grande demais para o editor."""
+    """Download any file from the container, including binary ones or ones too big for the editor."""
     panel._files_guard()
     server = panel._server_or_404(sid)
     try:
@@ -182,10 +183,10 @@ def download(sid: int):
 @bp.post("/servers/<int:sid>/files/upload")
 @panel.admin_required
 def upload(sid: int):
-    """Manda um arquivo do computador para dentro do container (mod, save, config)."""
+    """Send a file from the computer into the container (mod, save, config)."""
     panel._files_guard()
     server = panel._server_or_404(sid)
-    # O teto deste request ja foi levantado no _teto_do_corpo (BIG_BODY_ENDPOINTS).
+    # This request's cap was already raised in _body_cap (BIG_BODY_ENDPOINTS).
     target_dir = request.form.get("path", "") or panel.FILE_DEFAULT_PATH
     go_back = url_for("files.index", sid=sid, path=target_dir)
     sent_value = request.files.get("file")
@@ -193,8 +194,8 @@ def upload(sid: int):
         flash(panel.translate("flash.pick_a_file"), "error")
         return redirect(go_back)
 
-    # O navegador manda o nome como o disco de origem o tinha: fica so a ultima parte,
-    # para "../../etc/passwd" nao virar caminho.
+    # The browser sends the name as the source disk had it: only the last part is kept,
+    # so "../../etc/passwd" does not become a path.
     name = sent_value.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not name or name in (".", ".."):
         flash(panel.translate("flash.bad_file_name"), "error")
@@ -209,7 +210,7 @@ def upload(sid: int):
 
     try:
         output = panel.ssh_stream_in(
-            server, panel.q("bash", "-lc", panel.UPLOAD_SCRIPT, "gp", target),
+            server, remote_cmd.as_steam(server, "bash", "-lc", panel.UPLOAD_SCRIPT, "gp", target),
             sent_value.stream, timeout=panel.JOB_TIMEOUT,
         )
     except panel.RemoteError as exc:

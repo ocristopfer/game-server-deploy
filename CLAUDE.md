@@ -1,162 +1,180 @@
-# CLAUDE.md — como mexer neste repositorio
+# CLAUDE.md — how to work in this repository
 
-Deploy de servidores dedicados de jogos (Proxmox LXC ou Docker) mais um **painel web**
-em `src/gamepanel/`. Este arquivo e sobre **como escrever codigo aqui**. O que o projeto
-faz, e como usar, esta no [README.md](README.md) — nao duplique conteudo entre os dois.
+Deployment of dedicated game servers (Proxmox LXC or Docker) plus a **web panel** in
+`src/gamepanel/`. This file is about **how to write code here**. What the project does,
+and how to use it, is in the [README.md](README.md) — do not duplicate content between
+the two.
 
-## Regra numero um: TODO identificador e TODO nome de arquivo em INGLES
+## Rule number one: EVERY identifier, EVERY file name and EVERY comment in ENGLISH
 
-Vale para o repositorio inteiro e para toda linguagem daqui — Python, bash, PowerShell,
-JavaScript, CSS, Jinja, YAML. Funcao, variavel (inclusive local e de laco), classe,
-constante, parametro, campo, nome de arquivo e de pasta: **ingles**. Nao existe "e so um
-script de apoio" nem "e so uma variavel temporaria"; um arquivo novo em portugues nasce
-como divida que alguem vai ter de renomear depois, com o teste e o deploy no meio.
+It applies to the whole repository and to every language in it — Python, bash,
+PowerShell, JavaScript, CSS, Jinja, YAML, `.env`. Function, variable (including locals
+and loop variables), class, constant, parameter, field, file and folder name: **English**.
+Comments and docstrings: **English** too. There is no "it's just a helper script" or
+"it's just a temporary variable"; a new file in Portuguese is born as debt that someone
+will have to rename later, with the tests and the deploy in the way.
 
-O que **nao** e identificador continua em **portugues sem acento**:
+Comments still follow the house standard: explain WHY the line is the way it is,
+preferably with the consequence of doing it differently (see the "Writing" section at
+the end).
 
-- comentario e docstring — e o padrao daqui explicar POR QUE a linha e assim, de
-  preferencia com a consequencia de fazer diferente (ver a secao "Escrita", no fim);
-- texto de tela, que vive no catalogo de `i18n/` (portugues e ingles, mesmas chaves);
-- nome de TESTE (`def test_a_versao_aparece_no_rodape...`) e a saida dos sandboxes: sao
-  frases descritivas, lidas como relatorio, nao nomes chamados de outro lugar;
-- chave que ja esta gravada em banco, em disco ou numa API (`"chave"`, `"jogos"`,
-  `GAMES_DIR`): mudar ali e mudar DADO, e exige migration — ver os grupos de contrato.
+What **stays in Portuguese**, because it is not an identifier or a comment:
 
-> **Reorganizacao de arquitetura em andamento** (ver `docs/architecture-analysis.md` e
-> `docs/architecture-proposal.md`): o codigo saiu de `admin/`/`broker/` para
-> `src/gamepanel/`/`src/gamebroker/` (Fase 3), os identificadores estao **em ingles** nos
-> dois pacotes, e os dois grupos de mudanca de contrato ja foram: a API do broker (rotas,
-> corpo, resposta, cabecalho) e as colunas do banco, cada um com a sua migration. A
-> divisao de `app.py` em `services/`/`runtime/`/`tasks/`/`blueprints/` tambem ja foi: as
-> 81 rotas moram em `blueprints/`, um arquivo por grupo de tela, e o `app.py` ficou com a
-> montagem (banco, sessao, decoradores, tabelas).
+- TEST function names (`def test_a_versao_aparece_no_rodape...`): they are descriptive
+  sentences, read as a report, not names called from anywhere else (ASCII, no accents:
+  they are still Python identifiers);
+- screen text, which lives in the `i18n/` catalog (Portuguese and English, same keys).
+  Portuguese screen text is written as proper Brazilian Portuguese, **with accents and
+  cedilla** (UTF-8: "Usuários", "não", "é", "configuração"); code, comments and
+  identifiers stay English/ASCII. The same goes for the few visible labels that still live
+  in Python (the field labels of `games/adapters/`, `config_format.NO_SECTION`, the notes
+  of `catalog/manual_suggestions.py`). A test that asserts screen text asserts it WITH the
+  accents; a stored key or a value compared in code (`inacessivel`, `agendador`) is data,
+  not screen text, and stays as it is;
+- keys already stored in a database, on disk or in an API (`"chave"`, `"jogos"`,
+  `GAMES_DIR`): changing them changes DATA, and requires a migration — see the contract
+  groups;
+- existing script output messages that the sandboxes grep for (`die "sha256 nao
+  confere"`): the sandbox looks for that exact text, and translating it makes the check
+  stop matching in silence.
 
-O painel roda com poder de **root nos containers de jogo**. Isso muda o peso de tudo:
-um botao errado para um servidor de verdade, um cache errado mostra um servidor caido
-como se estivesse de pe.
+> **Architecture reorganization in progress** (see `docs/architecture-analysis.md` and
+> `docs/architecture-proposal.md`): the code moved from `admin/`/`broker/` to
+> `src/gamepanel/`/`src/gamebroker/` (Phase 3), the identifiers are **in English** in
+> both packages, and both contract-change groups are done: the broker API (routes, body,
+> response, headers) and the database columns, each with its own migration. Splitting
+> `app.py` into `services/`/`runtime/`/`tasks/`/`blueprints/` is done too: the 81 routes
+> live in `blueprints/`, one file per screen group, and `app.py` kept the assembly
+> (database, session, decorators, tables).
+
+The panel runs with **root power inside the game containers**. That changes the weight of
+everything: a wrong button stops a real server, a wrong cache shows a dead server as if
+it were up.
 
 ---
 
-## Verificar antes de dizer que terminou
+## Verify before saying you are done
 
-O ambiente de desenvolvimento e um `docker compose` completo: painel + dois containers
-de jogo falsos (com sshd, `systemctl` de mentira, query A2S, API REST e log).
+The development environment is a complete `docker compose`: panel + two fake game
+containers (with sshd, a fake `systemctl`, A2S query, REST API and log).
 
 ```bash
-docker compose up --build -d          # painel em http://localhost:8080 (admin/admin12345)
-docker compose restart panel          # depois de mexer em app.py/navigation.py
+docker compose up --build -d          # panel at http://localhost:8080 (admin/admin12345)
+docker compose restart panel          # after touching app.py/navigation.py
 ```
 
-As suites do painel (em `tests/gamepanel/`: `test_game_fields.py`, `test_config_format.py`,
+The panel suites (in `tests/gamepanel/`: `test_game_fields.py`, `test_config_format.py`,
 `test_charts.py`, `test_schedules.py`, `test_users.py`, `test_players.py`,
 `test_alerts.py`, `test_broker.py`, `test_broker_client.py`, `test_i18n.py`,
 `test_template_contract.py`, `test_frontend_contract.py`, `test_javascript.py`,
-`test_schema.py`, `test_docs_contract.py` e mais uma duzia) sao **pytest** — 999
-testes ao todo (mais 901 do pacote `gamebroker`, em `tests/gamebroker/`), com
-fixtures compartilhadas em `tests/gamepanel/conftest.py`
-(`database`: tabelas limpas a cada teste; `webhooks`: captura o que sairia por HTTP;
-`admin`/`operator`: um admin e um operador ja logados; `login`/`post`: entrar e POST com
-CSRF). **Rode a suite inteira** depois de mexer em `app.py` — elas cobrem exatamente as
-partes onde e facil quebrar algo sem perceber (quando o painel decide avisar, quem ve o
-que, o que conta como jogador). Os arquivos ja NAO rodam como script solto
-(`python3 test_alerts.py` nao faz nada) — passam sempre por `pytest`.
+`test_schema.py`, `test_docs_contract.py` and a dozen more) are **pytest** — 999 tests
+in total (plus 901 from the `gamebroker` package, in `tests/gamebroker/`), with fixtures
+shared in `tests/gamepanel/conftest.py` (`database`: tables cleaned for each test;
+`webhooks`: captures what would go out over HTTP; `admin`/`operator`: an admin and an
+operator already logged in; `login`/`post`: log in and POST with CSRF). **Run the whole
+suite** after touching `app.py` — it covers exactly the parts where it is easy to break
+something without noticing (when the panel decides to alert, who sees what, what counts
+as a player). The files do NOT run as loose scripts anymore (`python3 test_alerts.py`
+does nothing) — they always go through `pytest`.
 
-### Os dois baldes: `unit/` e `integration/`
+### The two buckets: `unit/` and `integration/`
 
-A divisao e por CRITERIO, nao por gosto: **integration = o teste atravessa uma fronteira**
-(cliente HTTP do Flask, servidor HTTP falso, sqlite em arquivo, `subprocess`); **unit = so
-chamada de funcao**. Medido: 991 testes de unit em 28 s contra 910 de integration em 126 s
-— e por isso que editar com `uv run pytest tests/gamepanel/unit` vale a pena, e a suite
-inteira fica para antes de publicar.
+The split is by CRITERION, not taste: **integration = the test crosses a boundary**
+(Flask HTTP client, fake HTTP server, sqlite in a file, `subprocess`); **unit = only
+function calls**. Measured: 991 unit tests in 28 s against 910 integration tests in
+126 s — which is why editing with `uv run pytest tests/gamepanel/unit` pays off, and the
+whole suite is left for before publishing.
 
-- **Cada balde tem de RODAR SOZINHO, e isso e o que quebra em silencio.** Um arquivo de
-  `integration/` que importe por NOME um de `unit/` passa na suite inteira — o pytest poe
-  no `sys.path` a pasta de cada arquivo que coleta, e `unit/` foi coletado primeiro — e
-  estoura com `ModuleNotFoundError` na hora em que alguem roda so `integration/`, que e
-  justo para isso que a divisao existe. Medido num experimento a parte antes de mover
-  arquivo nenhum. `test_suite_layout.py` guarda a regra.
-- **Dobre compartilhado por mais de um arquivo mora ao lado do `conftest.py`**, que e a
-  unica pasta que o pytest sempre insere no `sys.path`. `FakeRunner` morava dentro de
-  `test_ssh_installer.py` e dois outros arquivos o importavam de la; saiu para `fake_ssh.py`,
-  ao lado do `fake_http.py`, que ja era esse padrao.
-- **Import por nome ATRAVESSA a subpasta**, isso sim funciona: com o `conftest.py` em
-  `tests/<pacote>/`, um teste em `unit/` continua fazendo `from fake_http import ...`.
-  Tambem medido — era o que eu achava que quebraria, e nao quebra.
-- **Contar thread do processo em teste e receita de intermitencia.** O teste do agendador
-  usava `threading.active_count()` e falhou 1 em 3 rodando o balde sozinho: importar o
-  `gamepanel.app` ja sobe uma thread de agendador, e qualquer thread alheia entre as duas
-  leituras fecha a conta errado. Hoje a thread do `Clock` tem NOME
-  (`Clock.THREAD_NAME`) e o teste conta so as dela — e o nome tambem serve a quem le um
-  dump de pilha, que antes via `Thread-1 (_loop)`.
+- **Each bucket must RUN ON ITS OWN, and that is what breaks silently.** A file in
+  `integration/` that imports one from `unit/` by NAME passes in the whole suite — pytest
+  puts the folder of every file it collects on `sys.path`, and `unit/` was collected
+  first — and blows up with `ModuleNotFoundError` the moment someone runs only
+  `integration/`, which is exactly what the split exists for. Measured in a separate
+  experiment before moving any file. `test_suite_layout.py` guards the rule.
+- **A test double shared by more than one file lives next to `conftest.py`**, which is
+  the only folder pytest always inserts in `sys.path`. `FakeRunner` lived inside
+  `test_ssh_installer.py` and two other files imported it from there; it moved to
+  `fake_ssh.py`, next to `fake_http.py`, which already followed that pattern.
+- **Import by name DOES cross subfolders**, that works: with `conftest.py` in
+  `tests/<package>/`, a test in `unit/` still does `from fake_http import ...`. Also
+  measured — it was what I thought would break, and it does not.
+- **Counting process threads in a test is a recipe for flakiness.** The scheduler test
+  used `threading.active_count()` and failed 1 in 3 when running the bucket alone:
+  importing `gamepanel.app` already starts a scheduler thread, and any unrelated thread
+  between the two readings makes the count wrong. Today the `Clock` thread has a NAME
+  (`Clock.THREAD_NAME`) and the test counts only its own — and the name also helps whoever
+  reads a stack dump, which used to show `Thread-1 (_loop)`.
 
-**Rapido, na maquina** (segundos, e o ciclo normal enquanto se edita):
+**Fast, on the machine** (seconds, the normal loop while editing):
 
 ```powershell
-uv sync                          # cria .venv e instala gamepanel/gamebroker editaveis + dev (pytest/ruff/mypy)
-uv run pytest tests\gamepanel\unit    # 28 s - o ciclo de quem esta editando
-uv run pytest                    # a suite inteira, da raiz do repo
+uv sync                          # creates .venv and installs gamepanel/gamebroker editable + dev (pytest/ruff/mypy)
+uv run pytest tests\gamepanel\unit    # 28 s - the loop while editing
+uv run pytest                    # the whole suite, from the repo root
 uv run pytest tests\gamepanel\integration\test_alerts.py -k test_loop_de_restart
-uv run ruff check src tests      # ZERO e o estado atual: qualquer achado e novo
-uv run mypy src                  # idem
+uv run ruff check src tests      # ZERO is the current state: any finding is new
+uv run mypy src                  # same
 ```
 
-**`ruff check` e `mypy` estao em ZERO, e e isso que faz os dois valerem.** Eles ficaram em
-97 e 11 durante boa parte da reorganizacao, e uma lista que nunca zera e uma lista que
-ninguem le. Cada achado que sobrava teve resposta: `MAX_PORT` e `GAUGE_HOT`/`GAUGE_WARN`
-viraram constante (regra do proprio repositorio), tres `pytest.raises(match=...)` tinham um
-ponto nao escapado que casava texto errado, um `zip` truncava em silencio, dois `assert`
-guardavam invariante que `python -O` descarta, e o que sobrou de verdade foi desligado NA
-CONFIG com o motivo escrito, nunca com um `# noqa` solto. Achado novo, portanto, e achado
-de verdade.
+**`ruff check` and `mypy` are at ZERO, and that is what makes them worth anything.** They
+sat at 97 and 11 for a good part of the reorganization, and a list that never reaches
+zero is a list nobody reads. Each remaining finding got an answer: `MAX_PORT` and
+`GAUGE_HOT`/`GAUGE_WARN` became constants (the repository's own rule), three
+`pytest.raises(match=...)` had an unescaped dot that matched the wrong text, a `zip`
+truncated silently, two `assert`s guarded an invariant that `python -O` drops, and what
+was genuinely left was disabled IN THE CONFIG with the reason written down, never with a
+loose `# noqa`. A new finding, therefore, is a real finding.
 
-`uv` (https://docs.astral.sh/uv/) gerencia SO o `.venv` de desenvolvimento —
-`pyproject.toml`, na raiz, declara `flask` (versao que acompanha o apt do Debian 13) mais
-o grupo `dev` (pytest/ruff/mypy), e `uv.lock` fixa as versoes exatas. Isso e ferramenta
-de desenvolvimento, nunca dependencia do painel em producao (ver abaixo). A configuracao
-do pytest mora no proprio `pyproject.toml`, em `[tool.pytest.ini_options]`: onde procurar
-os testes (`tests/`), o resumo de falhas e o cache em disco desligado (ver o comentario
-la — o motivo e o mount read-only do container, nao o venv). O `.venv` tambem
-e o que faz o editor resolver `import flask`/`import gamepanel`/`import gamebroker`, via
-`pyrightconfig.json`.
+`uv` (https://docs.astral.sh/uv/) manages ONLY the development `.venv` —
+`pyproject.toml`, at the root, declares `flask` (the version that tracks Debian 13's apt)
+plus the `dev` group (pytest/ruff/mypy), and `uv.lock` pins the exact versions. This is a
+development tool, never a dependency of the panel in production (see below). The pytest
+configuration lives in `pyproject.toml` itself, under `[tool.pytest.ini_options]`: where
+to look for tests (`tests/`), the failure summary and the on-disk cache turned off (see
+the comment there — the reason is the container's read-only mount, not the venv). The
+`.venv` is also what lets the editor resolve `import flask`/`import gamepanel`/`import
+gamebroker`, via `pyrightconfig.json`.
 
-**No container, que e a verdade** (mais lento; rode antes de publicar):
+**In the container, which is the truth** (slower; run before publishing):
 
 ```bash
 MSYS_NO_PATHCONV=1 docker compose exec -T -w /workspace panel python3 -m pytest -q
 ```
 
-O servico `panel` do compose tem DOIS bind mounts: `src/gamepanel` -> `/opt/gamepanel/gamepanel`
-(o codigo que o gunicorn de fato serve, mimetizando o layout de producao) e o repositorio
-inteiro -> `/workspace` (so para achar `pyproject.toml`, `tests/` e `src/` juntos e rodar
-a suite completa). Sem pip nem uv ali dentro (so `python3-pytest` do apt — ver
-`docker/panel/Dockerfile`), o `conftest.py` da raiz insere `src/` no `sys.path` na mao
-para que `import gamepanel`/`import gamebroker` resolvam sem instalacao. **Rode com
-`-p no:cacheprovider`** se quiser o mesmo silencio do venv; sem a flag os testes passam
-igual, só com um aviso de cache que nao escreve (sistema de arquivos read-only).
-**Rebuild a imagem** (`docker compose build panel`) se `pytest` não for encontrado ali
-dentro. Um teste sensivel a `GAMEPANEL_DEV=1` (que o servico `panel` sempre sobe com) —
+The compose `panel` service has TWO bind mounts: `src/gamepanel` -> `/opt/gamepanel/gamepanel`
+(the code gunicorn actually serves, mimicking the production layout) and the whole
+repository -> `/workspace` (only to find `pyproject.toml`, `tests/` and `src/` together
+and run the full suite). With no pip or uv in there (only `python3-pytest` from apt — see
+`docker/panel/Dockerfile`), the root `conftest.py` inserts `src/` into `sys.path` by hand
+so that `import gamepanel`/`import gamebroker` resolve without installation. **Run with
+`-p no:cacheprovider`** if you want the same silence as the venv; without the flag the
+tests pass the same, just with a warning about a cache that cannot be written (read-only
+file system). **Rebuild the image** (`docker compose build panel`) if `pytest` is not
+found in there. One test sensitive to `GAMEPANEL_DEV=1` (which the `panel` service always
+starts with) —
 `test_broker.py::test_config_ruim_desliga_o_recurso_sem_derrubar_o_painel[http-fora-do-loopback]`
-— so falha rodando desse jeito, contra o container AO VIVO; no `.venv` (sem essa
-variavel) ele passa. Conhecido, nao e regressao de teste nenhum.
+— only fails when run this way, against the LIVE container; in the `.venv` (without that
+variable) it passes. Known, not a regression of any test.
 
-**O que cada lado pula e diferente, e e por isso que os dois valem.** No `.venv` do
-Windows: 14 pulados, sendo **2 de `test_players.py`** (`@posix_apenas`, no proprio
-arquivo) — os que conferem que a pasta do socket SSH so e visivel pelo dono (`0700`). E
-permissao POSIX pura: nao existe no Windows, e o resultado so vale no container. No
-container: **23 pulados, todos de `test_javascript.py`** (nao ha node na imagem), e os 2
-de POSIX finalmente RODAM. Numeros de hoje: 1900 passam no `.venv`, 1888 no container
-mais o 1 conhecido do `GAMEPANEL_DEV` acima — o total coletado e o mesmo (1912) nos dois.
+**What each side skips is different, and that is why both are worth running.** In the
+Windows `.venv`: 14 skipped, **2 of them from `test_players.py`** (`@posix_apenas`, in
+the file itself) — the ones checking that the SSH socket folder is visible only to its
+owner (`0700`). That is pure POSIX permission: it does not exist on Windows, and the
+result only counts in the container. In the container: **23 skipped, all from
+`test_javascript.py`** (there is no node in the image), and the 2 POSIX ones finally RUN.
+Today's numbers: 1900 pass in the `.venv`, 1888 in the container plus the 1 known
+`GAMEPANEL_DEV` one above — the total collected is the same (1912) in both.
 
-**`test_javascript.py` precisa do `node` no PATH** e e PULADO sem ele. Producao nao
-tem node e o painel nao depende dele para nada: o teste so confere que cada modulo
-parseia e importa, que e o degrau que faltava — ate aqui um `const` renomeado pela
-metade so aparecia no console de quem abrisse a tela.
+**`test_javascript.py` needs `node` on the PATH** and is SKIPPED without it. Production
+has no node and the panel does not depend on it for anything: the test only checks that
+each module parses and imports, which was the missing step — until then a `const`
+renamed halfway only showed up in the console of whoever opened the screen.
 
-Templates e estaticos entram por bind mount: recarregar a pagina basta. `app.py` e
-`navigation.py` sao recarregados pelo `--reload` do gunicorn, mas **rota nova ou mudanca
-de decorador exige `docker compose restart panel`**.
+Templates and static files come in through a bind mount: reloading the page is enough.
+`app.py` and `navigation.py` are reloaded by gunicorn's `--reload`, but **a new route or a
+decorator change requires `docker compose restart panel`**.
 
-Depois de mexer em template ou rota, passe por todas as telas:
+After touching a template or a route, walk through every screen:
 
 ```bash
 J=/tmp/p.jar; rm -f $J
@@ -171,1345 +189,1563 @@ for p in / /servers/1 /servers/1/config /servers/1/files /servers/1/charts \
 done
 ```
 
-Um `500` aqui e quase sempre template quebrado — e template quebrado **nao aparece em
-teste nenhum**. Confira tambem como **operador** (papel nao-admin): o menu e as telas
-mudam, e e ali que mora o 403 que ninguem tinha visto.
+A `500` here is almost always a broken template — and a broken template **does not show
+up in any test**. Also check as an **operator** (the non-admin role): the menu and the
+screens change, and that is where the 403 nobody had seen lives. And check both themes
+and both languages (see "Theme" and "Screen language").
 
 ---
 
-## Onde cada coisa mora
+## Where each thing lives
 
 ```
-VERSION                  a versao do repositorio (semver, a mao); tools/build-release.py a carimba no pacote
-pyproject.toml          workspace uv: dependencias de dev (pytest/ruff/mypy) e a config de pytest,
-                        ruff e mypy; so gamepanel/gamebroker editaveis
-conftest.py              insere src/ no sys.path antes de qualquer teste (funciona sem `uv sync`)
-games/                   catalogo curado de jogos (um *.env por jogo), lido pelo gamebroker E pelos
-                        scripts de provisionamento em bash - por isso fica na raiz, fora de src/
-lib/                     fases de instalacao de jogo (bash) + install-release.sh (publica um release no CT)
-                        + ct-firewall.sh (o firewall nftables de DENTRO de cada CT; ver "Firewall dos CTs")
-deploy/                  infra fora do codigo Python, um grupo por alvo:
+VERSION                  the repository version (semver, by hand); tools/build-release.py stamps it into the package
+pyproject.toml          uv workspace: dev dependencies (pytest/ruff/mypy) and the pytest,
+                        ruff and mypy config; only gamepanel/gamebroker editable
+conftest.py              inserts src/ in sys.path before any test (works without `uv sync`)
+games/                   curated game catalog (one *.env per game), read by gamebroker AND by the
+                        bash provisioning scripts - that is why it sits at the root, outside src/
+lib/                     game install phases (bash) + install-release.sh (publishes a release in the CT)
+                        + ct-firewall.sh (the nftables firewall INSIDE each CT; see "CT firewall")
+deploy/                  infra outside the Python code, one group per target:
   admin/                  deploy-admin.ps1 + provision-admin-lxc.sh
-  broker/                 deploy-broker.ps1 + provision-broker-lxc.sh, mais as duas
-                         ferramentas manuais (check-broker-access.ps1, spike-broker-write.ps1)
-  game/                   deploy-game.ps1, deploy-docker.ps1 e os dois provision-*-lxc.sh de jogo
-  firewall/               apply-firewall.ps1 + .sh: poe o firewall nos CTs que ja existiam
+  broker/                 deploy-broker.ps1 + provision-broker-lxc.sh, plus the two
+                         manual tools (check-broker-access.ps1, spike-broker-write.ps1)
+  game/                   deploy-game.ps1, deploy-docker.ps1 and the two game provision-*-lxc.sh
+  firewall/               apply-firewall.ps1 + .sh: puts the firewall on CTs that already existed
 src/
-  gamepanel/             o painel (era admin/)
-    app.py               a montagem: banco, sessao, decoradores, tabelas, SSH, alertas, agendador
-    config.py            TODA variavel GAMEPANEL_*, lida e conferida num lugar so
-    version.py           a versao que esta rodando (le o _build.py do release, ou cai no VERSION+dev)
-    blueprints/          a camada HTTP, um arquivo por grupo de tela (ver a secao propria)
+  gamepanel/             the panel (was admin/)
+    app.py               the assembly: database, session, decorators, tables, SSH, alerts, scheduler
+    config.py            EVERY GAMEPANEL_* variable, read and checked in one place
+    version.py           the running version (reads the release's _build.py, or falls back to VERSION+dev)
+    blueprints/          the HTTP layer, one file per screen group (see its own section)
     persistence/
-      schema.py          esquema, MIGRATIONS e RENAMES
-      repositories/      uma funcao por consulta; TODO o SQL do painel mora aqui
+      schema.py          schema, MIGRATIONS and RENAMES
+      repositories/      one function per query; ALL of the panel's SQL lives here
                          (servers, jobs, schedules, alerts, samples, settings, users)
-    wsgi.py              entry point do gunicorn (`gamepanel.wsgi:app`)
-    cli.py               bootstrap: --create-user, --reset-2fa, --register-server (o rodape de app.py chama o main() daqui)
-    navigation.py        mapa da interface: navegacao e acoes   (puro, sem Flask; era ui.py)
+    wsgi.py              gunicorn entry point (`gamepanel.wsgi:app`)
+    cli.py               bootstrap: --create-user, --reset-2fa, --register-server (the footer of app.py calls main() from here)
+    navigation.py        map of the interface: navigation and actions   (pure, no Flask; was ui.py)
     games/
-      config_format.py   leitor/gravador de .ini/.json/.cfg do jogo (nao conhece jogo nenhum)
-      base.py             o que um campo E: tipo, limite, unidade, rotulo
-      registry.py          qual adapter vale para qual arquivo
-      adapters/            um arquivo por jogo com tela de edicao rapida
-      mods/                gestor de mods: um perfil por jogo (profiles.py), o leitor dos
-                           server_packages do ETS2 (ets2.py), os IDs da Workshop (workshop.py) e o
-                           Thunderstore/BepInEx (thunderstore.py no painel, thunderstore_remote.py
-                           que RODA NO CT)
+      config_format.py   reader/writer of the game's .ini/.json/.cfg (knows no game at all)
+      base.py             what a field IS: type, limit, unit, label
+      registry.py          which adapter applies to which file
+      adapters/            one file per game with a quick-edit screen
+      mods/                mod manager: one profile per game (profiles.py), the reader of ETS2's
+                           server_packages (ets2.py), Workshop IDs (workshop.py) and
+                           Thunderstore/BepInEx (thunderstore.py in the panel, thunderstore_remote.py
+                           which RUNS IN THE CT)
       catalog/
-        search.py          busca por nome/App ID sobre suggestions.py (era busca_de_jogos.py)
-        templates.py        modelos do formulario "Adicionar jogo", um por motor (Unreal/Unity Linux
-                           e Windows via Proton, Source); puro, so dado
-                           (era modelos_de_jogo.py; `tests/gamebroker/test_templates.py` confere
-                           que passam no validador do broker)
-        suggestions.py      GERADO por tools/import-linuxgsm.py, nao edite (era sugestoes_de_jogos.py)
-        manual_suggestions.py  escrita A MAO: servidor so de Windows que o LinuxGSM nao cobre (mesmo
-                           formato + platform/recipes); curado nao entra (a busca o acha no catalogo)
-        pterodactyl_suggestions.py  GERADO por tools/import-pterodactyl.py, nao edite: jogos novos
-                           (SUGGESTIONS) e campos que faltam no LinuxGSM (COMPLEMENTS, por App ID)
+        search.py          search by name/App ID over suggestions.py (was busca_de_jogos.py)
+        templates.py        "Add game" form templates, one per engine (Unreal/Unity Linux
+                           and Windows via Proton, Source); pure, data only
+                           (was modelos_de_jogo.py; `tests/gamebroker/test_templates.py` checks
+                           that they pass the broker's validator)
+        suggestions.py      GENERATED by tools/import-linuxgsm.py, do not edit (was sugestoes_de_jogos.py)
+        manual_suggestions.py  written BY HAND: Windows-only servers LinuxGSM does not cover (same
+                           format + platform/recipes); curated ones stay out (search finds them in the catalog)
+        pterodactyl_suggestions.py  GENERATED by tools/import-pterodactyl.py, do not edit: new games
+                           (SUGGESTIONS) and fields missing in LinuxGSM (COMPLEMENTS, by App ID)
     i18n/
-      __init__.py         cascata idioma->pt->chave, campos na frase, `Mensagem`; ver a secao propria
-      pt.py               catalogo em portugues (o padrao)
-      en.py               catalogo em ingles, MESMAS chaves (test_i18n.py cobra a paridade)
+      __init__.py         cascade language->pt->key, fields in the sentence, `Mensagem`; see its own section
+      pt.py               Portuguese catalog (the default)
+      en.py               English catalog, SAME keys (test_i18n.py enforces parity)
     security/
-      totp.py             2FA, so stdlib
-      webauthn.py         passkey (biometria do aparelho): CBOR, ES256 e RS256, so stdlib
-      qr.py               gerador de QR, so stdlib
-      passwords.py        scrypt (hash, conferencia e a regra de senha boa)
-      csrf.py             o token da sessao e a conferencia do POST
-    services/            decisao pura (sem Flask, sem SQL): alerta, grafico, jogador,
-                         historico, trava de tentativas (auth_service), ...
+      totp.py             2FA, stdlib only
+      webauthn.py         passkey (device biometrics): CBOR, ES256 and RS256, stdlib only
+      qr.py               QR generator, stdlib only
+      passwords.py        scrypt (hash, check and the good-password rule)
+      csrf.py             the session token and the POST check
+    services/            pure decisions (no Flask, no SQL): alert, chart, player,
+                         history, attempt lockout (auth_service), ...
     integrations/
-      broker_client.py    cliente do broker (so stdlib, TLS fixado por impressao); ver "Broker"
+      broker_client.py    broker client (stdlib only, TLS pinned by fingerprint); see "Broker"
     templates/
-      components/         macros: ui.html (generico) e servidor.html (dominio)
-      *.html              uma tela cada
-      sw.js.jinja         service worker    (template, nao estatico: tem versao dentro)
+      components/         macros: ui.html (generic) and servidor.html (domain)
+      *.html              one screen each
+      sw.js.jinja         service worker    (a template, not static: it has the version inside)
       manifest.webmanifest.jinja
     static/
       css/                tokens -> base -> layout -> components -> pages
-      js/core/            format, http, poll, dom, dirty   (sem DOM de tela, reutilizavel)
-      js/features/        um modulo por comportamento
-      js/app.js           liga features aos elementos da pagina
+      js/core/            format, http, poll, dom, dirty   (no screen DOM, reusable)
+      js/features/        one module per behavior
+      js/app.js           wires features to the page's elements
       icons/
-  gamebroker/             servico que cria instancias de jogo (Proxmox) e abre portas (OPNsense);
-                         pacote Python, ver a secao "Broker" abaixo (era broker/)
+  gamebroker/             service that creates game instances (Proxmox) and opens ports (OPNsense);
+                         Python package, see the "Broker" section below (was broker/)
 tests/
-  gamepanel/              conftest.py (fixtures) e os dois baldes
-    unit/                  so chamada de funcao — 28 s, e o ciclo de quem esta editando
-    integration/           atravessa fronteira (cliente Flask, sqlite em arquivo, subprocess) — 126 s
-  gamebroker/             conftest.py + os dobres compartilhados (fake_http.py, fake_ssh.py)
+  gamepanel/              conftest.py (fixtures) and the two buckets
+    unit/                  function calls only — 28 s, the loop while editing
+    integration/           crosses a boundary (Flask client, sqlite in a file, subprocess) — 126 s
+  gamebroker/             conftest.py + the shared doubles (fake_http.py, fake_ssh.py)
     unit/                  3 s
-    integration/           servidor HTTP falso, servico montado, subprocess
+    integration/           fake HTTP server, assembled service, subprocess
 tools/
-  build-release.py       empacota um release: dist/<pacote>-<versao>.tar.gz + .sha256 (so stdlib, determinista)
-  import-linuxgsm.py   gera src/gamepanel/games/catalog/suggestions.py a partir do LinuxGSM (precisa de internet)
-  import-pterodactyl.py  gera pterodactyl_suggestions.py dos eggs (pelican-eggs/games-steamcmd, MIT)
-  verify-qr.py        verificacao manual do QR contra um leitor de verdade (venv descartavel)
+  build-release.py       packages a release: dist/<package>-<version>.tar.gz + .sha256 (stdlib only, deterministic)
+  import-linuxgsm.py   generates src/gamepanel/games/catalog/suggestions.py from LinuxGSM (needs internet)
+  import-pterodactyl.py  generates pterodactyl_suggestions.py from the eggs (pelican-eggs/games-steamcmd, MIT)
+  verify-qr.py        manual check of the QR against a real reader (throwaway venv)
 ```
 
-### Gestor de mods: o que "mod" significa muda por jogo
+### Mod manager: what "mod" means changes per game
 
-A tela Mods (`blueprints/mods.py`) nao trata todo mod como "arquivo numa pasta", porque nao
-e: no ETS2 o servidor NAO carrega arquivo de mod nenhum (mapa, DLCs e mods vem dentro dos
-`server_packages`, exportados do jogo), e mandar um `.scs` para o CT nao faria nada. Quem
-diz o que o jogo entende por mod e o perfil em `games/mods/profiles.py`, escolhido pelo NOME
-DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo servidor tem.
+The Mods screen (`blueprints/mods.py`) does not treat every mod as "a file in a folder",
+because it is not: in ETS2 the server loads NO mod file at all (map, DLCs and mods come
+inside the `server_packages`, exported from the game), and sending a `.scs` to the CT
+would do nothing. What a game means by mod is said by the profile in
+`games/mods/profiles.py`, chosen by the SERVICE NAME (`profiles.profile_for`) - it is the
+only game identity every server has.
 
-- **Dois tipos**: `KIND_PACKAGES` (ETS2: a tela le o que os pacotes carregam, gera os links
-  da Workshop para os jogadores e confronta com o gabarito colado) e `KIND_FOLDER` (Palworld:
-  lista, recebe e remove os arquivos da pasta de mods). Perfil novo = uma entrada em
-  `PROFILES`; um teste cobra que dois perfis nao disputem o mesmo servico.
-- **O envio so aceita o que o perfil declara** (`accepts`): nome exato ou extensao, e so a
-  ultima parte do nome que o navegador mandou. Remover e pelo NOME, dentro da pasta do perfil
-  - o formulario nunca manda caminho.
-- **O gabarito e a coluna `mods_expected` da tabela de servidores** (IDs da Workshop, um por linha). O leitor
-  (`workshop.parse_ids`) aceita a lista do jeito que circula no chat, com hora e nome na
-  frente; numero com menos de 6 digitos nao e ID.
-- **Thunderstore (V Rising) e o CT quem baixa.** `thunderstore_remote.py` vai para o container
-  como TEXTO e roda la (`python3 -c`, por SSH): o painel nao vai a internet, o CT vai. Por isso
-  ele e so stdlib e nao importa nada do `gamepanel` - la dentro o pacote nao existe. Instalar e
-  remover viram JOB (baixar o BepInEx sao 33 MB), com o reinicio como PASSO seguinte do mesmo
-  job: instalacao que falha nao reinicia o servidor. Tres coisas MEDIDAS num V Rising de verdade
-  sob o Proton, e cada uma tem teste: o `mscoree=` dos .env de Windows impede o BepInEx (.NET)
-  de carregar, e sai da lista (`fix_overrides`); o `winhttp=n,b` e por onde ele entra; e o
-  console do BepInEx TRAVAVA o servidor sob o X virtual (parado, sem CPU e sem log), e fica
-  desligado. A primeira subida com ele chegou a 9,4 GB (`min_memory_mb` do perfil; a tela
-  avisa antes de instalar). Um redeploy do jogo reescreve o `/etc/game-runtime.env` e desfaz o
-  ajuste do Wine: o status acusa (`overrides_ok`) e reinstalar reaplica.
-- **A versao do mod e escolhida na tela, nunca fixada no codigo.** BepInEx, plugin do
-  Thunderstore e Shroudtopia aceitam uma versao `x.y.z` (vazio = a mais nova), conferida no
-  painel (`thunderstore.parse_version`) e de novo no CT, porque vira parte da URL da API. O
-  plugin fixado traz as dependencias na versao que ELE declara: e o conjunto que o autor
-  testou, e a mais nova e justo o que quebra o mod que se quis segurar (preco: dependencia
-  dividida com outro mod pode voltar para uma mais velha). Trocar a versao de um servidor que
-  ja roda e o mesmo POST de instalar, pela pasta do instalador; a marca do instalador (`MARK`) grava
-  `pinned`, e marca antiga sem o campo conta como "a mais nova". A tag do Shroudtopia no
-  GitHub aparece com e sem `v`, e o instalador tenta as duas.
-- **Todo mod passa pelo antivirus antes de chegar ao jogo** (`games/mods/antivirus.py`). O
-  `SCAN_SCRIPT` e a regra num lugar so: o upload o roda como passo de job (o arquivo vai antes
-  para `INCOMING_PREFIX`, fora da pasta do jogo, e o `PLACE_SCRIPT` so move depois), e os
-  instaladores remotos o recebem por `--scan` e baixam TUDO (pacote e dependencias) antes de
-  verificar de uma vez - dependencia recusada nao deixa o mod principal pela metade. O
-  `scanner` dos dois instaladores e uma copia (rodam soltos no CT), e um teste cobra que seja
-  igual. **Falha fechada**: sem ClamAV, sem assinatura de ate 7 dias ou com erro, nada entra;
-  instalar sem `--scan` e recusado no proprio CT. O ClamAV so chega ao CT no primeiro mod
-  (`apt`), entao servidor que ja roda ganha a verificacao sem redeploy. O script so aceita
-  (e so apaga) caminho sob `STAGING_PREFIX`. O ClamAV carrega ~1 GB ao verificar, ao lado do
-  jogo, e so acha o que ja e conhecido: e camada, nao barreira.
-- **"Verificar mods instalados" (`AUDIT_SCRIPT`) so LE**: acusa no log e nao apaga nada,
-  porque apagar sozinho por um falso positivo derrubaria um mod de que o servidor depende. Ele
-  divide com o `SCAN_SCRIPT` a instalacao do ClamAV e as opcoes do `clamscan` (`_ENSURE`), e
-  verifica `profile.scan_paths` - as pastas de mod e o carregador, nunca `/opt/game` inteiro.
-  Sem nada instalado ele nem instala o ClamAV.
-- **Desinstalar o carregador (`loader-uninstall`) devolve o jogo ao original**, e cada instalador
-  so apaga o que ELE pos: BepInEx e UE4SS de Windows anotam na marca os nomes de raiz que CRIARAM
-  (o que ja existia era do jogo e fica; instalacao antiga sem a lista cai nos nomes conhecidos do
-  carregador); Shroudtopia e UE4SS Linux tem nomes fixos. O ajuste do Wine volta ao de antes
-  (o BepInEx guarda o WINE_DLL_OVERRIDES original, porque religar o mscoree nao se desfaz sem ele)
-  e o drop-in do systemd sai. O Oxide devolve as DLLs do jogo ARQUIVO A ARQUIVO, so onde a pasta
-  ainda tem a do Oxide: depois de um update do Rust o backup e da versao velha, e copia-lo de volta
-  estragaria o servidor. Os mods que vivem dentro do carregador (plugins, Lua) saem junto, e a tela
-  confirma antes; os `.pak` da pasta do jogo ficam. O SML nao tem o botao: e mod, e ja tem remover.
-- **`KIND_GUIDE` e perfil sem botao, e isso e decisao**: carregador que ninguem provou num
-  servidor de verdade fica so com instrucao - o V Rising mostrou tres armadilhas que so
-  apareceram la. Botao que "instala" sem prova e pior que instrucao clara. Todo perfil tem
-  `sources` (onde achar), e o Nexus e so LINK: a API dele so entrega arquivo para conta
-  Premium, e automatizar sem ela viola os termos.
-- **Enshrouded e `KIND_SHROUDTOPIA`, provado no CT 303** (Proton GE 11): o carregador entra
-  pelo `winmm.dll` ao lado do `.exe` e so roda com `winmm=n,b` no Wine; com isso ele sobe e
-  carrega a DLL de `mods/`, e o servidor segue respondendo a A2S. `shroudtopia_remote.py` roda
-  no CT como o do Thunderstore. Os mods de EXEMPLO do zip oficial ficam de fora (trapaca
-  ligada), desligar e tirar o `winmm=n,b` (nenhum codigo do carregador roda), e o status traz
-  o fim do `shroudtopia.log`: mod de outra versao do jogo perde funcao calado (`not found`).
-- **UE4SS e `KIND_UE4SS`, so para servidor Unreal que e o `.exe` de Windows sob o Proton**
-  (hoje o Icarus). `ue4ss_remote.py` roda no CT como os outros dois. MEDIDO num Icarus de teste:
-  a v3.0.1 ESTAVEL carrega e roda Lua, mas a Steam do servidor sobe com `AppId: 0` e a A2S
-  some; a `experimental-latest` (proxy `dwmapi.dll` solto, o resto em `ue4ss/`) mantem a Steam
-  e a A2S. Por isso o padrao e a experimental, e o perfil tem `loader_dir` (a pasta do `.exe`),
-  porque os mods ficam dois niveis abaixo. Instalar desliga console, janela e os mods de
-  trapaca de fabrica (so `BPModLoaderMod`/`BPML_GenericFunctions` ficam ligados), e o
-  `mods.txt` oficial vem com BOM, que gruda no nome do primeiro mod. Servidor Linux nativo
-  (Dragonwilds, Palworld daqui) e o item "UE4SS para Linux", abaixo. Cuidado ao medir travamento
-  no Dragonwilds: a saida dele chega ao journal em blocos atrasados; o sinal certo e o
-  `Saved/Logs/RSDragonwilds.log` (o `HeartbeatSession` de 30 em 30 s).
-- **`proven=False` e instalador escrito sem CT de teste, e a tela AVISA** (`mods.not_proven`). Foi
-  pedido assim para o Satisfactory, o Valheim e o Rust: implementar tudo e provar depois. Quem
-  provar num CT real troca para `True` e escreve no perfil o que mediu - a mesma regra do
-  `KIND_GUIDE`, so que com o botao ja pronto. Um teste cobra que os quatro (com o Dragonwilds,
-  abaixo) continuem marcados.
-- **Satisfactory e `KIND_SML`, pela API do ficsit.app** (`sml_remote.py`), e nao pelo
-  ficsit-cli: a v0.7.1 nao tem comando para ADICIONAR mod (so a interface interativa). A API e
-  publica, diz o pacote `LinuxServer` de cada versao com o sha256 e as dependencias; o sha256 e
-  conferido ANTES do antivirus, e a dependencia vem na versao que a condicao pede (`^3.12.0` nao
-  aceita o SML 4.0.0). Cada mod numa pasta em `FactoryGame/Mods`, trocada por inteiro.
-- **Valheim e Thunderstore em modo Linux** (`linux_bepinex`): o BepInEx entra por um drop-in do
-  systemd com as variaveis do script de partida que vem DENTRO do pacote do BepInEx (start_server_bepinex, fora do repo) (`DOORSTOP_*`, `LD_PRELOAD` do
-  `libdoorstop_x64.so`), com caminho absoluto, sem trocar o wrapper do jogo. Desligar apaga o
-  drop-in; sem `daemon-reload` o systemd seguiria com o ambiente antigo.
-- **UE4SS para Linux (15 servidores Unreal Linux, 4.26 a 5.7) e `KIND_UE4SS_LINUX`: o UE4SS
-  OFICIAL compilado para Linux**, no nosso fork (github.com/ocristopfer/RE-UE4SS, branch `linux`,
-  release `linux-v2`; o README do fork, docs/linux.md, lista os jogos testados). Nao e mais port: sao os
-  mecanismos oficiais (patternsleuth, UE4SS_Signatures, VTableLayout.ini, mods Lua) com o que o
-  Linux pede - e o que o Linux pede foi MEDIDO, cada item no gdb: o runtime C++ e o unwinder
-  ligados dentro da biblioteca (o jogo exporta os dele, e todo `throw` do UE4SS morria neles); o
-  layout de vtable e de membro de cada versao do motor GERADO a partir do codigo da Epic
-  (`tools/linux-layouts` do fork: o Itanium ordena vtable diferente do MSVC, reaproveita o fim
-  de uma classe-base e o `FRWLock` tem 56 bytes no Linux, contra 8); e o lock do estado Lua nos
-  callbacks do `RegisterHook` (o Palworld chama funcao hookada de thread de animacao). Provado
-  nos dois servidores de verdade em Docker com um mod de prova: Lua, `FindFirstOf`,
-  `RegisterHook` de Blueprint e nativo, `ExecuteInGameThread` - o Palworld 10 minutos de pe. Os
-  ports antigos (XarminaEu e o nosso ocristopfer/ue4ss-linux) sairam: derrubavam o Palworld.
-  - **`ue4ss_linux_remote.py`** baixa a tag FIXA do perfil (`ue4ss_release`), confere cada arquivo
-    contra o SHA256SUMS ANTES do antivirus, e instala no layout oficial: `ue4ss/` ao lado do
-    executavel (o UE4SS acha config, mods e log na pasta da propria biblioteca), `.so` trocado por
-    `rename` (copiar por cima com o servidor rodando corrompe o mapeamento), config e `mods.txt` do
-    dono preservados, `Mods/shared` (UEHelpers) trocado inteiro, `LD_PRELOAD` num drop-in do
-    systemd. A biblioteca so inicia em executavel com `-Linux-` no nome: o script de partida fica
-    de fora.
-  - **Motor modificado pede o `.sym`.** O layout embutido e o do motor da Epic; o Dragonwilds e um
-    5.6.1 da Jagex com virtuais a mais na AActor (o BeginPlay caia em
-    RemoveTickPrerequisiteComponent). Servidor que traz o `.sym` (300 MB, o arquivo de crash do
-    Unreal) ganha, gerados NO CT por `ue_sym_layout.py` (vai como texto, por isso mora no pacote e
-    nao em `tools/`), o VTableLayout.ini deste build e as UE4SS_Signatures das quatro funcoes que o
-    patternsleuth nao acha em codigo do Clang (FName::ToString, construtor de FName,
-    StaticConstructObject, GNatives). Refeitos a cada instalacao (update do jogo muda tudo); sem
-    `.sym` (Palworld) nao ha nada a gerar. Conferido: o gerador produz byte a byte os arquivos
-    testados no Dragonwilds.
-  - **Migra a instalacao do fork antigo** (tudo ao lado do executavel, com a marca
-    .gamepanel-ue4ss-linux.json): os mods Lua vao para `ue4ss/Mods` e so os arquivos que o fork
-    escrevia saem. Sem a marca nada ao lado do executavel e tocado.
-  - **Todo estudio mexe no motor, e sem simbolo o layout sai de um jogo de REFERENCIA.** MEDIDO
-    nos servidores 4.27: o Soulmask tem 62 virtuais a mais no AGameModeBase, o The Front 0x18 bytes
-    a mais no FUObjectArray, o proprio Squad 44 uma virtual na AActor. Um layout por versao derrubava
-    mais da metade deles. O que passa de um jogo a outro da mesma versao e o CODIGO de cada funcao
-    do motor e as vtables do proprio alvo, que os servidores exportam no `.dynsym` (_ZTV*). O release
-    traz um pacote por versao (LinuxReferencePacks.tar.gz, feito pelo ue_reference_pack.py do fork
-    a partir de um jogo com `.sym` e `.debug`: o DWARF da o layout completo), e `ue_linux_layout.py`
-    (texto para o CT, como o `ue_sym_layout.py`) gera deste executavel: as assinaturas pelo menor
-    prefixo do codigo da referencia que casa aqui (e nunca menor que o unico NA referencia: curto
-    demais casa unico no lugar errado), o VTableLayout.ini alinhando as vtables pelo codigo, e o
-    MemberVariableLayout.ini do FUObjectArray quando o historico de acessos do codigo esta deslocado.
-    Servidor COM `.sym` usa o `ue_sym_layout.py` como antes e o pacote so para os globais.
-  - **GMalloc e console manager sao conferidos NA HORA, no Lua**: candidatos sao globais lidos pelas
-    funcoes mais chamadas, e vale o que aponta para um objeto com a vtable de um alocador (ou do
-    FConsoleManager). Um padrao de bytes pegou o console manager no lugar do GMalloc no Smalland.
-    O `DerefToInt32` do UE4SS devolve nil ao LER zero (a metade alta de toda vtable nao-PIE): sem o
-    `or 0`, o erro de Lua derruba a passada inteira de assinaturas.
-  - **O scanner do UE4SS recusa padrao que COMECA com coringa**, e uma recusa leva as outras
-    assinaturas junto: o gerador poe na frente os bytes da instrucao, tirados deste executavel.
-  - **Binario sem `-Linux-` no nome** (TheFrontServer, SquadGameServer, AstroColonyServer): o drop-in
-    leva `UE4SS_TARGET_EXE`, senao o UE4SS nunca inicia. O drop-in vai no servico DO SERVIDOR (o
-    perfil serve a mais de um nome: o curado e a chave da sugestao do LinuxGSM).
-  - **`proven=False` em todos** ate a primeira instalacao por esta tela num CT de verdade (a prova foi
-    em Docker). O jogo ACUSA o `.so` (o Dragonwilds marca a sessao como modificada, `CheckForMods`):
-    e so aviso. Sem pacote: 4.18, 4.22, 4.25, 5.2 e 5.4 (nenhum servidor do catalogo traz simbolos
-    dessas versoes para servir de referencia); 5.1 nao precisa (layout embutido, Palworld e Pavlov).
-  - **Hook em funcao chamada fora da thread do jogo e caro**: o lock serializa as threads de
-    animacao com a do jogo. Mod que hookeia `KismetMathLibrary` funciona, mas pesa.
-- **Rust e `KIND_OXIDE`** (`oxide_remote.py`): o pacote SOBRESCREVE DLLs do jogo, entao o
-  instalador guarda o original (so o que NAO e dele, comparando sha256: reinstalar com o Oxide
-  ligado nao pode virar "original") e desligar o devolve. Toda atualizacao do Rust pela Steam
-  apaga o Oxide: o status compara os arquivos e acusa (`wiped`). Plugins sao `.cs` pelo envio.
-- **Dragonwilds (Unreal 5) aceita `.pak`, `.utoc` e `.ucas`**, e o envio confere TODOS os nomes
-  antes de mandar qualquer um (`_checked_name`): o mod vem em tres arquivos, e dois de tres na
-  pasta e um mod quebrado.
-- **No ETS2 o `mod_id` so e ID da Workshop quando `workshop_mod: true`.** No mod instalado a
-  mao (o Mapa BR) ele e uma assinatura interna, e virar link apontaria para um item qualquer.
-- **`KIND_WORKSHOP` e Workshop pela CONFIG do jogo** (DST, Zomboid, Unturned, Reforger): quem
-  baixa e o proprio servidor, na subida, e `workshop_remote.py` (no CT, como os outros) so le e
-  escreve a lista no arquivo de cada jogo (`workshop_format`). Cada formato foi MEDIDO num servidor
-  de verdade em Docker, com o mod baixado e carregado no log, e cada um tem uma armadilha:
-  - **DST precisa dos DOIS arquivos**: `ServerModSetup` no `dedicated_server_mods_setup.lua` BAIXA,
-    o `modoverrides.lua` de cada shard LIGA. O cluster sai do comando (`-cluster`, `-conf_dir`,
-    `-persistent_storage_root`): o primeiro start so cria `<shard>/server.ini`, e o cluster.ini
-    so existe depois de alguem configurar o cluster - procurar por ele nao achava nada. O bloco de
-    opcoes de cada mod sai inteiro como TEXTO (`workshop_remote.lua_entries`, que pula string e
-    comentario: `scale = "1}"` cortaria o bloco no meio). Update do jogo reescreve o setup:
+- **Two kinds**: `KIND_PACKAGES` (ETS2: the screen reads what the packages load, builds
+  the Workshop links for the players and compares against the pasted reference list) and
+  `KIND_FOLDER` (Palworld: lists, receives and removes the files in the mods folder). New
+  profile = one entry in `PROFILES`; a test ensures two profiles do not claim the same
+  service.
+- **Upload only accepts what the profile declares** (`accepts`): exact name or extension,
+  and only the last part of the name the browser sent. Removal is by NAME, inside the
+  profile's folder - the form never sends a path.
+- **The reference list is the `mods_expected` column of the servers table** (Workshop
+  IDs, one per line). The reader (`workshop.parse_ids`) accepts the list the way it
+  circulates in chat, with time and name in front; a number with fewer than 6 digits is
+  not an ID.
+- **Thunderstore (V Rising): the CT does the download.** `thunderstore_remote.py` goes to
+  the container as TEXT and runs there (`python3 -c`, over SSH): the panel does not go to
+  the internet, the CT does. That is why it is stdlib only and imports nothing from
+  `gamepanel` - the package does not exist in there. Install and remove become a JOB
+  (downloading BepInEx is 33 MB), with the restart as the NEXT STEP of the same job: an
+  install that fails does not restart the server. Three things MEASURED on a real V Rising
+  under Proton, each with a test: the `mscoree=` of the Windows .env files prevents BepInEx
+  (.NET) from loading, and is removed from the list (`fix_overrides`); `winhttp=n,b` is how
+  it gets in; and the BepInEx console FROZE the server under the virtual X (stopped, no
+  CPU and no log), so it stays off. The first start with it reached 9.4 GB (the profile's
+  `min_memory_mb`; the screen warns before installing). A game redeploy rewrites
+  `/etc/game-runtime.env` and undoes the Wine adjustment: the status flags it
+  (`overrides_ok`) and reinstalling reapplies it.
+- **The mod version is chosen on screen, never pinned in code.** BepInEx, Thunderstore
+  plugins and Shroudtopia accept an `x.y.z` version (empty = the newest), checked in the
+  panel (`thunderstore.parse_version`) and again in the CT, because it becomes part of the
+  API URL. A pinned plugin brings its dependencies at the version IT declares: that is the
+  set the author tested, and the newest is exactly what breaks the mod one wanted to hold
+  (cost: a dependency shared with another mod may go back to an older one). Changing the
+  version of a server that already runs is the same install POST, through the installer
+  folder; the installer marker (`MARK`) records `pinned`, and an old marker without the
+  field counts as "the newest". The Shroudtopia tag on GitHub appears with and without
+  `v`, and the installer tries both.
+- **Every mod goes through the antivirus before reaching the game**
+  (`games/mods/antivirus.py`). `SCAN_SCRIPT` is the rule in one place: the upload runs it
+  as a job step (the file first goes to `INCOMING_PREFIX`, outside the game folder, and
+  `PLACE_SCRIPT` only moves it afterwards), and the remote installers receive it via
+  `--scan` and download EVERYTHING (package and dependencies) before scanning it all at
+  once - a rejected dependency does not leave the main mod half installed. The `scanner`
+  of the two installers is a copy (they run standalone in the CT), and a test ensures they
+  stay equal. **Fails closed**: without ClamAV, without signatures up to 7 days old, or on
+  error, nothing gets in; installing without `--scan` is refused in the CT itself. ClamAV
+  only reaches the CT on the first mod (`apt`), so a server that already runs gains the
+  scan without a redeploy. The script only accepts (and only deletes) paths under
+  `STAGING_PREFIX`. ClamAV loads ~1 GB while scanning, next to the game, and only finds
+  what is already known: it is a layer, not a barrier.
+- **"Scan installed mods" (`AUDIT_SCRIPT`) only READS**: it reports in the log and deletes
+  nothing, because deleting on its own on a false positive would take down a mod the
+  server depends on. It shares with `SCAN_SCRIPT` the ClamAV install and the `clamscan`
+  options (`_ENSURE`), and scans `profile.scan_paths` - the mod folders and the loader,
+  never the whole `/opt/game`. With nothing installed it does not even install ClamAV.
+- **Uninstalling the loader (`loader-uninstall`) returns the game to the original**, and
+  each installer only deletes what IT put there: BepInEx and Windows UE4SS record in the
+  marker the root names they CREATED (whatever already existed belonged to the game and
+  stays; an old install without the list falls back to the loader's known names);
+  Shroudtopia and UE4SS Linux have fixed names. The Wine adjustment goes back to what it
+  was (BepInEx keeps the original WINE_DLL_OVERRIDES, because re-enabling mscoree cannot
+  be undone without it) and the systemd drop-in goes away. Oxide restores the game DLLs
+  FILE BY FILE, only where the folder still has Oxide's: after a Rust update the backup is
+  from the old version, and copying it back would break the server. The mods that live
+  inside the loader (plugins, Lua) go with it, and the screen asks for confirmation first;
+  the `.pak` files in the game folder stay. SML has no such button: it is a mod, and it
+  already has remove.
+- **`KIND_GUIDE` is a profile without a button, and that is a decision**: a loader nobody
+  has proven on a real server gets instructions only - V Rising showed three traps that
+  only appeared there. A button that "installs" without proof is worse than clear
+  instructions. Every profile has `sources` (where to find mods), and Nexus is LINK only:
+  its API only delivers files to Premium accounts, and automating without it violates the
+  terms.
+- **Enshrouded is `KIND_SHROUDTOPIA`, proven on CT 303** (Proton GE 11): the loader gets
+  in through `winmm.dll` next to the `.exe` and only runs with `winmm=n,b` in Wine; with
+  that it starts and loads the DLL from `mods/`, and the server keeps answering A2S.
+  `shroudtopia_remote.py` runs in the CT like the Thunderstore one. The EXAMPLE mods from
+  the official zip are left out (cheats enabled), disabling means removing `winmm=n,b` (no
+  loader code runs), and the status shows the tail of `shroudtopia.log`: a mod for another
+  game version silently loses function (`not found`).
+- **UE4SS is `KIND_UE4SS`, only for Unreal servers that are the Windows `.exe` under
+  Proton** (today, Icarus). `ue4ss_remote.py` runs in the CT like the other two. MEASURED
+  on a test Icarus: the STABLE v3.0.1 loads and runs Lua, but the server's Steam comes up
+  with `AppId: 0` and A2S disappears; `experimental-latest` (loose `dwmapi.dll` proxy, the
+  rest in `ue4ss/`) keeps Steam and A2S. That is why the default is experimental, and the
+  profile has `loader_dir` (the `.exe` folder), because the mods sit two levels below.
+  Installing turns off the console, the window and the factory cheat mods (only
+  `BPModLoaderMod`/`BPML_GenericFunctions` stay on), and the official `mods.txt` comes with
+  a BOM, which sticks to the name of the first mod. Native Linux servers (Dragonwilds,
+  Palworld here) are the "UE4SS for Linux" item below. Careful when measuring freezes on
+  Dragonwilds: its output reaches the journal in delayed blocks; the right signal is
+  `Saved/Logs/RSDragonwilds.log` (the `HeartbeatSession` every 30 s).
+- **`proven=False` is an installer written without a test CT, and the screen WARNS**
+  (`mods.not_proven`). It was requested this way for Satisfactory, Valheim and Rust:
+  implement everything and prove it later. Whoever proves it on a real CT switches it to
+  `True` and writes in the profile what was measured - the same rule as `KIND_GUIDE`, just
+  with the button already built. A test ensures the four (with Dragonwilds, below) stay
+  marked.
+- **Satisfactory is `KIND_SML`, through the ficsit.app API** (`sml_remote.py`), and not
+  through ficsit-cli: v0.7.1 has no command to ADD a mod (only the interactive UI). The
+  API is public, and gives the `LinuxServer` package of each version with its sha256 and
+  dependencies; the sha256 is checked BEFORE the antivirus, and a dependency comes at the
+  version the constraint asks for (`^3.12.0` does not accept SML 4.0.0). Each mod in its
+  own folder under `FactoryGame/Mods`, replaced as a whole.
+- **Valheim is Thunderstore in Linux mode** (`linux_bepinex`): BepInEx gets in through a
+  systemd drop-in with the variables of the start script that comes INSIDE the BepInEx
+  package (start_server_bepinex, outside the repo) (`DOORSTOP_*`, `LD_PRELOAD` of
+  `libdoorstop_x64.so`), with absolute paths, without replacing the game's wrapper.
+  Disabling deletes the drop-in; without `daemon-reload` systemd would keep the old
+  environment.
+- **UE4SS for Linux (15 Linux Unreal servers, 4.26 to 5.7) is `KIND_UE4SS_LINUX`: the
+  OFFICIAL UE4SS compiled for Linux**, in our fork (github.com/ocristopfer/RE-UE4SS,
+  branch `linux`, release `linux-v2`; the fork's README, docs/linux.md, lists the tested
+  games). It is no longer a port: it is the official mechanisms (patternsleuth,
+  UE4SS_Signatures, VTableLayout.ini, Lua mods) with what Linux needs - and what Linux
+  needs was MEASURED, each item in gdb: the C++ runtime and the unwinder linked inside the
+  library (the game exports its own, and every UE4SS `throw` died in them); the vtable and
+  member layout of each engine version GENERATED from Epic's code (the fork's
+  `tools/linux-layouts`: Itanium orders vtables differently from MSVC, reuses the tail of
+  a base class, and `FRWLock` is 56 bytes on Linux, against 8); and the Lua state lock in
+  `RegisterHook` callbacks (Palworld calls hooked functions from an animation thread).
+  Proven on the two real servers in Docker with a test mod: Lua, `FindFirstOf`,
+  `RegisterHook` on Blueprint and native, `ExecuteInGameThread` - Palworld 10 minutes up.
+  The old ports (XarminaEu and our own ocristopfer/ue4ss-linux) are gone: they crashed
+  Palworld.
+  - **`ue4ss_linux_remote.py`** downloads the profile's FIXED tag (`ue4ss_release`),
+    checks each file against SHA256SUMS BEFORE the antivirus, and installs in the official
+    layout: `ue4ss/` next to the executable (UE4SS finds config, mods and log in its own
+    library's folder), `.so` replaced by `rename` (copying over it with the server running
+    corrupts the mapping), the owner's config and `mods.txt` preserved, `Mods/shared`
+    (UEHelpers) replaced as a whole, `LD_PRELOAD` in a systemd drop-in. The library only
+    starts in an executable with `-Linux-` in the name: the start script is left out.
+  - **A modified engine needs the `.sym`.** The built-in layout is Epic's engine;
+    Dragonwilds is a Jagex 5.6.1 with extra virtuals in AActor (BeginPlay landed in
+    RemoveTickPrerequisiteComponent). A server that ships the `.sym` (300 MB, Unreal's
+    crash file) gets, generated IN THE CT by `ue_sym_layout.py` (it goes as text, which is
+    why it lives in the package and not in `tools/`), the VTableLayout.ini of this build
+    and the UE4SS_Signatures of the four functions patternsleuth cannot find in Clang code
+    (FName::ToString, the FName constructor, StaticConstructObject, GNatives). Regenerated
+    on every install (a game update changes everything); without a `.sym` (Palworld) there
+    is nothing to generate. Verified: the generator produces, byte for byte, the files
+    tested on Dragonwilds.
+  - **Migrates the old fork's install** (everything next to the executable, with the
+    marker .gamepanel-ue4ss-linux.json): Lua mods go to `ue4ss/Mods` and only the files
+    the fork wrote are removed. Without the marker nothing next to the executable is
+    touched.
+  - **Every studio modifies the engine, and without symbols the layout comes from a
+    REFERENCE game.** MEASURED on the 4.27 servers: Soulmask has 62 extra virtuals in
+    AGameModeBase, The Front 0x18 extra bytes in FUObjectArray, Squad itself 44 one virtual
+    in AActor. One layout per version crashed more than half of them. What carries over
+    from one game to another of the same version is the CODE of each engine function and
+    the target's own vtables, which the servers export in `.dynsym` (_ZTV*). The release
+    ships one pack per version (LinuxReferencePacks.tar.gz, made by the fork's
+    ue_reference_pack.py from a game with `.sym` and `.debug`: DWARF gives the full
+    layout), and `ue_linux_layout.py` (text for the CT, like `ue_sym_layout.py`) generates
+    from this executable: the signatures by the shortest prefix of the reference code that
+    matches here (and never shorter than the unique one IN the reference: too short
+    matches uniquely in the wrong place), the VTableLayout.ini aligning vtables by code,
+    and the FUObjectArray MemberVariableLayout.ini when the code's access history is
+    shifted. A server WITH `.sym` uses `ue_sym_layout.py` as before and the pack only for
+    the globals.
+  - **GMalloc and the console manager are checked AT RUNTIME, in Lua**: candidates are
+    globals read by the most called functions, and the one that points to an object with
+    an allocator's vtable (or FConsoleManager's) wins. A byte pattern caught the console
+    manager instead of GMalloc on Smalland. UE4SS's `DerefToInt32` returns nil when it
+    READS zero (the high half of every non-PIE vtable): without the `or 0`, the Lua error
+    kills the whole signature pass.
+  - **The UE4SS scanner refuses a pattern that STARTS with a wildcard**, and one refusal
+    takes the other signatures with it: the generator puts the instruction bytes in front,
+    taken from this executable.
+  - **Binary without `-Linux-` in the name** (TheFrontServer, SquadGameServer,
+    AstroColonyServer): the drop-in carries `UE4SS_TARGET_EXE`, otherwise UE4SS never
+    starts. The drop-in goes on the SERVER's service (the profile serves more than one
+    name: the curated one and the LinuxGSM suggestion key).
+  - **`proven=False` on all of them** until the first install through this screen on a
+    real CT (the proof was in Docker). The game DETECTS the `.so` (Dragonwilds marks the
+    session as modified, `CheckForMods`): it is only a warning. No pack: 4.18, 4.22, 4.25,
+    5.2 and 5.4 (no server in the catalog ships symbols of those versions to serve as a
+    reference); 5.1 does not need one (built-in layout, Palworld and Pavlov).
+  - **Hooking a function called outside the game thread is expensive**: the lock
+    serializes the animation threads with the game thread. A mod that hooks
+    `KismetMathLibrary` works, but weighs.
+- **Rust is `KIND_OXIDE`** (`oxide_remote.py`): the package OVERWRITES game DLLs, so the
+  installer keeps the original (only what is NOT Oxide's, comparing sha256: reinstalling
+  with Oxide on cannot become "original") and disabling restores it. Every Rust update
+  through Steam wipes Oxide: the status compares the files and flags it (`wiped`). Plugins
+  are `.cs` files through upload.
+- **Dragonwilds (Unreal 5) accepts `.pak`, `.utoc` and `.ucas`**, and the upload checks
+  ALL names before sending any of them (`_checked_name`): the mod comes in three files,
+  and two out of three in the folder is a broken mod.
+- **In ETS2, `mod_id` is only a Workshop ID when `workshop_mod: true`.** In a mod
+  installed by hand (the BR Map) it is an internal signature, and turning it into a link
+  would point to some random item.
+- **`KIND_WORKSHOP` is Workshop through the game's CONFIG** (DST, Zomboid, Unturned,
+  Reforger): the server itself downloads, on start, and `workshop_remote.py` (in the CT,
+  like the others) only reads and writes the list in each game's file
+  (`workshop_format`). Each format was MEASURED on a real server in Docker, with the mod
+  downloaded and loaded in the log, and each one has a trap:
+  - **DST needs BOTH files**: `ServerModSetup` in `dedicated_server_mods_setup.lua`
+    DOWNLOADS, each shard's `modoverrides.lua` ENABLES. The cluster comes from the command
+    line (`-cluster`, `-conf_dir`, `-persistent_storage_root`): the first start only
+    creates `<shard>/server.ini`, and cluster.ini only exists after someone configures the
+    cluster - looking for it found nothing. Each mod's options block comes out whole as
+    TEXT (`workshop_remote.lua_entries`, which skips strings and comments: `scale = "1}"`
+    would cut the block in the middle). A game update rewrites the setup:
     `setup_missing`.
-  - **Zomboid tem duas listas e elas NAO sao a mesma**: `WorkshopItems=` (ID da Workshop) e
-    `Mods=` (o `id=` do `mod.info`). Um item pode trazer varios mods, e ligar todos e o que quebra;
-    por isso o painel nao deduz o `Mods=`, so mostra o que cada item baixado trouxe. O Build 42
-    carregou `Mods=BB_CommonSense` sem a barra invertida que alguns guias poem.
-  - **Unturned precisa de `+InternetServer/<nome>`** (a pasta do servidor) e da `steamclient.so`
-    no `~/.steam/sdk64` (a receita `steamclient-sdk64`): sem ela sai "GameServer API
-    initialization failed" antes de chegar a Workshop. As dependencias (mapa + assets) vem sozinhas.
-  - **Reforger nao e Steam**: GUID de 16 hex do workshop da Bohemia, `game.mods` do JSON do
-    `-config` (`workshop.parse_guids` le o link da pagina, que traz o nome no fim). Sem `-config` no
-    comando nao ha onde escrever, e o catalogo do LinuxGSM o tira.
-  - **O antivirus nao verifica ANTES**: o download e do jogo. O `audit_paths` de cada perfil e onde
-    o jogo guarda o que baixou, e a tela manda usar o "Verificar mods instalados".
-  - **Lista que nao rendeu ID nenhum e recusada**; so o campo VAZIO limpa a lista. Uma colagem
-    errada apagaria todos os mods do servidor.
+  - **Zomboid has two lists and they are NOT the same**: `WorkshopItems=` (Workshop ID)
+    and `Mods=` (the `id=` from `mod.info`). One item can bring several mods, and enabling
+    all of them is what breaks; that is why the panel does not infer `Mods=`, it only shows
+    what each downloaded item brought. Build 42 loaded `Mods=BB_CommonSense` without the
+    backslash some guides add.
+  - **Unturned needs `+InternetServer/<nome>`** (the server folder) and `steamclient.so`
+    in `~/.steam/sdk64` (the `steamclient-sdk64` recipe): without it you get "GameServer
+    API initialization failed" before reaching the Workshop. Dependencies (map + assets)
+    come on their own.
+  - **Reforger is not Steam**: a 16-hex GUID from Bohemia's workshop, `game.mods` in the
+    JSON of `-config` (`workshop.parse_guids` reads the page link, which has the name at
+    the end). Without `-config` in the command there is nowhere to write, and the LinuxGSM
+    catalog removes it.
+  - **The antivirus does not scan BEFORE**: the download is the game's. Each profile's
+    `audit_paths` is where the game keeps what it downloaded, and the screen tells you to
+    use "Scan installed mods".
+  - **A list that yielded no ID at all is refused**; only an EMPTY field clears the list.
+    A wrong paste would delete all of the server's mods.
 
-### Jogo novo com tela propria = um arquivo e uma linha
+### A new game with its own screen = one file and one line
 
-`games/adapters/<jogo>.py` declara `FILENAME` (que arquivo ele reconhece) e `FIELDS` (o
-que ele sabe sobre cada chave), e `registry.ADAPTERS` ganha uma linha. Nada de rota, de
-template nem dos outros jogos e tocado.
+`games/adapters/<jogo>.py` declares `FILENAME` (which file it recognizes) and `FIELDS`
+(what it knows about each key), and `registry.ADAPTERS` gets one line. No route,
+template or other game is touched.
 
-- **Jogo sem adapter nao fica de fora**: ele cai no editor de arquivo generico, que nao
-  conhece jogo nenhum. E por isso que esquecer a linha no registro nao da erro — a tela
-  continua funcionando, so generica. `test_game_registry.py` cobra que nenhum modulo da
-  pasta fique fora, e que dois adapters nao disputem o mesmo arquivo (o primeiro da lista
-  venceria e o segundo viraria codigo morto silencioso).
-- **A lista e explicita, e nao uma varredura da pasta**: quem le sabe, sem rodar nada,
-  quais jogos tem tela propria. O teste e que garante que ela nao fique para tras.
-- **A escolha e pelo NOME do arquivo**, e nao pelo jogo cadastrado no servidor: e o
-  mesmo criterio que o painel ja usa para escolher o leitor, e funciona inclusive num
-  servidor cujo jogo ninguem declarou.
+- **A game without an adapter is not left out**: it falls into the generic file editor,
+  which knows no game at all. That is why forgetting the registry line does not raise an
+  error — the screen keeps working, just generic. `test_game_registry.py` ensures no module
+  in the folder is left out, and that two adapters do not claim the same file (the first
+  in the list would win and the second would become silent dead code).
+- **The list is explicit, not a folder scan**: whoever reads it knows, without running
+  anything, which games have their own screen. The test is what guarantees it does not
+  fall behind.
+- **The choice is by the file NAME**, not by the game registered on the server: it is the
+  same criterion the panel already uses to choose the reader, and it works even on a
+  server whose game nobody declared.
 
-### As rotas moram em `blueprints/`, e chamam o `app.py` pelo MODULO
+### Routes live in `blueprints/`, and call `app.py` through the MODULE
 
-Cada arquivo de `src/gamepanel/blueprints/` e um grupo de tela (`servers.py`, `files.py`,
-`alerts.py`, ...) e so faz trabalho de HTTP: ler o pedido, chamar quem decide, escolher o
-template. O `app.py` registra todos no rodape, por `register_all(app)` — no FIM do
-arquivo, quando tudo o que eles chamam ja existe.
+Each file in `src/gamepanel/blueprints/` is a screen group (`servers.py`, `files.py`,
+`alerts.py`, ...) and only does HTTP work: read the request, call whoever decides, pick
+the template. `app.py` registers all of them at the bottom, via `register_all(app)` — at
+the END of the file, when everything they call already exists.
 
-- **Todo acesso ao `app.py` e `panel.X`**, nunca `from gamepanel.app import X`. Os testes
-  trocam funcao por falsa com `monkeypatch.setattr(panel, "server_status", ...)`, que
-  substitui o nome NO MODULO: um import direto copiaria a referencia na hora do import e
-  a troca deixaria de valer **em silencio** — os testes passariam sem testar nada.
-- **O que e da stdlib o blueprint importa sozinho** (`import time`, `import sqlite3`).
-  `panel.time` funciona, mas so alonga e esconde de quem le de onde o nome vem.
-- **Estado de modulo com `global` fica no `app.py`.** Um `global _reaper_started` dentro
-  de um blueprint escreveria na copia do modulo DELE, e o painel ligaria uma thread nova
-  a cada aba aberta. Por isso `_ensure_reaper()` mora no `app.py` e o blueprint so chama.
-- **O endpoint e `grupo.view`**, entao repetir o grupo no nome da funcao so alonga:
-  `servers.detail`, nao `servers.server_detail`. Em `url_for`, em `endpoint=` e nas
-  tabelas de `navigation.py` o nome e sempre o completo, com ponto.
-- **Blueprint novo** = um arquivo aqui e um nome nas duas listas de `register_all`. Se a
-  rota precisa pular o segundo fator, tambem uma linha em `app.ENDPOINTS_WITHOUT_2FA`.
+- **Every access to `app.py` is `panel.X`**, never `from gamepanel.app import X`. Tests
+  swap a function for a fake with `monkeypatch.setattr(panel, "server_status", ...)`,
+  which replaces the name IN THE MODULE: a direct import would copy the reference at
+  import time and the swap would stop applying **silently** — the tests would pass
+  without testing anything.
+- **Whatever is stdlib, the blueprint imports itself** (`import time`, `import sqlite3`).
+  `panel.time` works, but it only lengthens the code and hides from the reader where the
+  name comes from.
+- **Module state with `global` stays in `app.py`.** A `global _reaper_started` inside a
+  blueprint would write to ITS module's copy, and the panel would start a new thread for
+  every open tab. That is why `_ensure_reaper()` lives in `app.py` and the blueprint only
+  calls it.
+- **The endpoint is `grupo.view`**, so repeating the group in the function name only
+  lengthens it: `servers.detail`, not `servers.server_detail`. In `url_for`, in
+  `endpoint=` and in the `navigation.py` tables the name is always the full one, with the
+  dot.
+- **New blueprint** = one file here and one name in the two lists of `register_all`. If
+  the route must skip the second factor, also one line in `app.ENDPOINTS_WITHOUT_2FA`.
 
-### Texto fixo devolvido por funcao nao traduz
+### Fixed text returned by a function does not translate
 
-Uma funcao que devolve `"A senha precisa ter ao menos 8 caracteres."` passa pelo
-`translate` e sai IGUAL: a cascata nao acha a chave, entao devolve a propria string. A
-tela em ingles mostrava portugues, e nenhum teste reclamava — nem o `test_i18n.py`, que
-confere as CHAMADAS de `_()`, nao o valor de retorno de uma funcao qualquer.
+A function that returns `"A senha precisa ter ao menos 8 caracteres."` goes through
+`translate` and comes out UNCHANGED: the cascade does not find the key, so it returns the
+string itself. The English screen showed Portuguese, and no test complained — not even
+`test_i18n.py`, which checks the CALLS to `_()`, not the return value of an arbitrary
+function.
 
-Foram tres, achadas ao extrair codigo do `app.py`: as duas de senha
-(`validate_password`) e o rotulo `broker-jogo` do historico, que era `"Jogo adicionado
-ao catalogo"` escrito a mao dentro do dicionario de rotulos.
+There were three, found while extracting code from `app.py`: the two password ones
+(`validate_password`) and the history label `broker-jogo`, which was `"Jogo adicionado
+ao catalogo"` written by hand inside the label dictionary.
 
-Depois foram mais dezesseis, achadas contra o container AO VIVO: com a tela em ingles, o
-403 de operador dizia "restrita" e a rota inexistente dizia "Pagina nao encontrada". Todas
-as barreiras (`abort`), os erros de formulario (`errors.append`) e os flashes de validacao
-eram literais. `tests/gamepanel/test_screen_text.py` guarda as tres portas por onde texto
-entra na tela — `abort`, `flash` e `errors.append` — e recusa literal com espaco: uma chave
-de catalogo (`error.admin_only`) nunca tem espaco, uma frase sempre tem.
+Then sixteen more, found against the LIVE container: with the screen in English, the
+operator 403 said "restrita" and the missing route said "Pagina nao encontrada". All the
+barriers (`abort`), the form errors (`errors.append`) and the validation flashes were
+literals. `tests/gamepanel/test_screen_text.py` guards the three doors through which text
+reaches the screen — `abort`, `flash` and `errors.append` — and refuses a literal with a
+space: a catalog key (`error.admin_only`) never has a space, a sentence always does.
 
-- **Erro que vai para a tela sai como `i18n.Message`**, e nao como texto. `Message` E
-  uma `str`, entao `str(exc)`, f-string e `in` continuam funcionando — e `translate`
-  reconhece a classe e refaz a frase no idioma de quem esta olhando.
-- **A pagina de erro le `exc.description`, nao `str(exc)`.** O segundo poe
-  "403 Forbidden: " na frente (o template ja mostra o codigo em cima) e, pior, colapsa a
-  `Message` numa `str` comum — que e o idioma do DEPLOY. Era so isso que fazia a tela em
-  ingles mostrar portugues em todo 400/403/404/413/503.
-- **Texto que vai para a SAIDA DE UM JOB continua literal, de proposito**
-  (`_log_broker_action`, `notify`): o historico e lido depois, por outra pessoa, e a mesma
-  acao escrita de tres jeitos quebraria o filtro. O guard nao olha para essas duas portas.
-- **`test_job_service.py` cobra que todo rotulo do historico seja chave de catalogo**,
-  e que os dois idiomas a tenham. Foi ele que teria pego o `broker-jogo`.
+- **An error that goes to the screen leaves as an `i18n.Message`**, not as text.
+  `Message` IS a `str`, so `str(exc)`, f-strings and `in` keep working — and `translate`
+  recognizes the class and rebuilds the sentence in the viewer's language.
+- **The error page reads `exc.description`, not `str(exc)`.** The latter prepends
+  "403 Forbidden: " (the template already shows the code above) and, worse, collapses the
+  `Message` into a plain `str` — which is the DEPLOY's language. That alone was what made
+  the English screen show Portuguese on every 400/403/404/413/503.
+- **Text that goes to a JOB's OUTPUT stays literal, on purpose** (`_log_broker_action`,
+  `notify`): the history is read later, by someone else, and the same action written three
+  ways would break the filter. The guard does not look at those two doors.
+- **`test_job_service.py` ensures every history label is a catalog key**, and that both
+  languages have it. It is the one that would have caught `broker-jogo`.
 
-### Opcao do painel: uma leitura so, no `config.py`
+### Panel option: one single read, in `config.py`
 
-Toda `GAMEPANEL_*` e lida por `config.load()`, no import, e o `app.py` guarda o resultado
-em `settings`. Antes eram ~45 `os.environ.get` espalhados, cada um com a sua conversao
-inline — e duas consequencias, as duas em producao:
+Every `GAMEPANEL_*` is read by `config.load()`, at import, and `app.py` keeps the result
+in `settings`. Before, there were ~45 scattered `os.environ.get` calls, each with its own
+inline conversion — and two consequences, both in production:
 
-- **valor invalido derrubava o painel sem dizer qual era.** `int(os.environ.get(...))`
-  com lixo levanta `ValueError: invalid literal for int() with base 10: 'abc'`, e a
-  mensagem nao cita a variavel: quem lia o journal adivinhava entre 45;
-- **nao havia faixa.** `GAMEPANEL_MONITOR_EVERY=0` fazia o monitor girar sem parar.
+- **an invalid value took the panel down without saying which one.**
+  `int(os.environ.get(...))` with garbage raises `ValueError: invalid literal for int()
+  with base 10: 'abc'`, and the message does not mention the variable: whoever read the
+  journal had to guess among 45;
+- **there were no ranges.** `GAMEPANEL_MONITOR_EVERY=0` made the monitor spin nonstop.
 
-O desenho e o do broker: lista TODOS os problemas de uma vez, so pelo NOME da variavel —
-nunca o valor, porque isso vai para o journal e ha segredo entre elas.
+The design is the broker's: list ALL problems at once, only by the variable NAME — never
+the value, because that goes to the journal and there are secrets among them.
 
-- **Opcao nova** = um campo em `Settings`, uma linha em `load()` e (se for do deploy) o
-  nome em `$adminKeys` do `deploy-admin.ps1` mais o `render_panel_config`.
-- **O `app.py` mantem os nomes de modulo** (`JOB_TIMEOUT = settings.job_timeout`). Nao e
-  redundancia: os testes trocam `panel.X` por falso, e ler o `settings` direto faria a
-  troca deixar de valer em silencio. `BROKER_REQUESTED` e `DEV` existem pelo mesmo
-  motivo — sao lidos DENTRO de `_configure_broker`, que os testes reexecutam.
-- **`test_settings.py` cobra que ninguem leia o ambiente por fora**, varrendo o pacote
-  atras de `GAMEPANEL_` junto de `environ`. Uma leitura solta escapa da conferencia de
-  faixa e some do lugar onde alguem procuraria a lista de opcoes.
-- **Basename de teste e unico entre as duas suites.** Nao ha `__init__.py` em `tests/`,
-  entao dois `test_config.py` quebram a COLETA inteira com "import file mismatch" — e o
-  arquivo do painel virou `test_settings.py` por isso.
+- **New option** = one field in `Settings`, one line in `load()` and (if it belongs to the
+  deploy) the name in `$adminKeys` of `deploy-admin.ps1` plus `render_panel_config`.
+- **`app.py` keeps the module names** (`JOB_TIMEOUT = settings.job_timeout`). It is not
+  redundancy: tests swap `panel.X` for a fake, and reading `settings` directly would make
+  the swap stop applying silently. `BROKER_REQUESTED` and `DEV` exist for the same reason
+  — they are read INSIDE `_configure_broker`, which the tests re-run.
+- **`test_settings.py` ensures nobody reads the environment on the side**, scanning the
+  package for `GAMEPANEL_` next to `environ`. A loose read escapes the range check and
+  disappears from the place where someone would look for the list of options.
+- **Test basenames are unique across the two suites.** There is no `__init__.py` in
+  `tests/`, so two `test_config.py` break the whole COLLECTION with "import file
+  mismatch" — and the panel's file became `test_settings.py` because of that.
 
-### SQL de uma tabela mora no repositorio dela
+### A table's SQL lives in its repository
 
-`persistence/repositories/` tem uma funcao por consulta, e toda funcao recebe a conexao
-como PRIMEIRO parametro — nunca chama `db()`. A conexao e por requisicao e mora no `g`
-do Flask: um repositorio que a buscasse sozinho nao serviria ao monitor nem ao agendador,
-que rodam em thread propria sem `g`. Passar a conexao tambem e o que permite testar uma
-consulta sem subir aplicacao nenhuma.
+`persistence/repositories/` has one function per query, and every function receives the
+connection as its FIRST parameter — it never calls `db()`. The connection is per request
+and lives in Flask's `g`: a repository that fetched it on its own would not serve the
+monitor or the scheduler, which run in their own thread without `g`. Passing the
+connection is also what makes it possible to test a query without starting any
+application.
 
-O motivo de existir: o mesmo `SELECT * FROM servers WHERE id = ?` estava escrito em oito
-arquivos e a lista de colunas do `UPDATE` em mais quatro. Nada disso quebra ao renomear
-uma coluna — quebra na PRIMEIRA VISITA a tela que usa a copia que ficou para tras, em
-runtime, sem lint nem teste acusando.
+Why it exists: the same `SELECT * FROM servers WHERE id = ?` was written in eight files
+and the column list of the `UPDATE` in four more. None of that breaks when renaming a
+column — it breaks on the FIRST VISIT to the screen that uses the copy left behind, at
+runtime, with no lint or test complaining.
 
-- **`tests/gamepanel/test_sql_placement.py` guarda a regra**, por TABELA e nao em bloco:
-  a tabela que ainda nao tem repositorio segue com SQL onde esta, e entra na lista
-  `OWNED` quando for extraida. Uma lista que ja nasce completa e mentira.
-- **Instrucao montada a partir da lista de colunas**, nunca escrita a mao quatro vezes.
-  O `# noqa: S608` que isso exige tem o motivo na linha acima: nada vem de fora, e todo
-  VALOR continua parametrizado.
-- **O repositorio nao decide.** Sem `flash`, sem `abort`, sem traducao, sem regra de quem
-  ve o que: isso e de quem chama. Ele so sabe ler e escrever linha.
-- **Quem liga uma fonte de contagem grava os campos dela E o `player_source` na MESMA
-  instrucao** (`use_query_port`, `use_http`, `use_log`). Separar deixaria um servidor
-  apontando para uma fonte sem os campos dela preenchidos.
-- **As sete tabelas estao extraidas**, e `.execute(` so aparece em `persistence/`. O
-  guard cobre todas; tabela nova entra na lista `OWNED` ao ser criada.
-- **O tipo honesto do repositorio encontra o que o SQL cru escondia.** `fetchone()`
-  devolve `Any`, entao `row["x"]` com `row` nulo nao era erro para ninguem; uma funcao
-  que declara `-> Row | None` faz o mypy apontar. Foram tres, todas com o mesmo desenho:
-  sessao de um usuario APAGADO enquanto ela estava aberta.
+- **`tests/gamepanel/test_sql_placement.py` guards the rule**, per TABLE and not as a
+  block: a table that has no repository yet keeps its SQL where it is, and enters the
+  `OWNED` list when it is extracted. A list that is born complete is a lie.
+- **Statements built from the column list**, never written by hand four times. The
+  `# noqa: S608` this requires has its reason on the line above: nothing comes from
+  outside, and every VALUE stays parameterized.
+- **The repository does not decide.** No `flash`, no `abort`, no translation, no rule
+  about who sees what: that belongs to the caller. It only knows how to read and write
+  rows.
+- **Whoever enables a counting source writes its fields AND `player_source` in the SAME
+  statement** (`use_query_port`, `use_http`, `use_log`). Splitting would leave a server
+  pointing at a source without its fields filled in.
+- **All seven tables are extracted**, and `.execute(` only appears in `persistence/`. The
+  guard covers all of them; a new table enters the `OWNED` list when it is created.
+- **The repository's honest type finds what raw SQL hid.** `fetchone()` returns `Any`, so
+  `row["x"]` with a null `row` was nobody's error; a function that declares
+  `-> Row | None` makes mypy point at it. There were three, all with the same shape: the
+  session of a user DELETED while it was open.
 
-### Politica que guarda estado sai do `app.py` com relogio injetavel
+### A policy that holds state leaves `app.py` with an injectable clock
 
-A trava de tentativas (senha e codigo) mora em `services/auth_service.py`, como a classe
-`Lockout`: limite, janela e um dicionario de chave -> horarios das falhas. O `app.py` so
-tem duas instancias (`login_lockout`, `totp_lockout`) e os blueprints chamam
+The attempt lockout (password and code) lives in `services/auth_service.py`, as the
+`Lockout` class: limit, window and a dictionary of key -> failure times. `app.py` only
+has two instances (`login_lockout`, `totp_lockout`) and the blueprints call
 `panel.login_lockout.remaining(key)`.
 
-- **Sao DUAS instancias, nao uma com dois limites.** Errar a senha cinco vezes nao pode
-  gastar as tentativas de quem ja passou dela e esta digitando o codigo. As chaves ate
-  seriam distintas (`ip|usuario` x `2fa|usuario`), mas os limites diferem (5/5min contra
-  5/15min) e o `remaining()` de uma trava so sabe o limite dela.
-- **O relogio entra pelo construtor, e `clock=time.time` na assinatura seria um BUG.**
-  Valor padrao e avaliado uma vez, na definicao do metodo: ele guardaria a funcao
-  original, e o `monkeypatch.setattr(time, "time", ...)` de `test_2fa.py` passaria a nao
-  ter efeito nenhum — os testes de trava continuariam verdes sem exercitar a janela. Por
-  isso o padrao e `None` e `_now()` resolve o nome no modulo a cada chamada. Ha um teste
-  so para isso.
-- **`reset()` existe para o `conftest.py`**, que limpa as duas travas entre um teste e
-  outro: sem isso um teste que erra a senha cinco vezes trancaria o proximo.
-- O estado e de MEMORIA de proposito: o painel roda com um worker so, e gravar no banco
-  custaria uma escrita por tentativa errada — que e exatamente o que um ataque produz em
-  volume.
+- **There are TWO instances, not one with two limits.** Getting the password wrong five
+  times cannot spend the attempts of someone who already got past it and is typing the
+  code. The keys would even be distinct (`ip|usuario` x `2fa|usuario`), but the limits
+  differ (5/5min against 5/15min) and a lockout's `remaining()` only knows its own limit.
+- **The clock comes in through the constructor, and `clock=time.time` in the signature
+  would be a BUG.** A default value is evaluated once, at method definition: it would keep
+  the original function, and the `monkeypatch.setattr(time, "time", ...)` in
+  `test_2fa.py` would have no effect at all — the lockout tests would stay green without
+  exercising the window. That is why the default is `None` and `_now()` resolves the name
+  in the module on every call. There is a test just for that.
+- **`reset()` exists for `conftest.py`**, which clears both lockouts between tests:
+  without it, a test that gets the password wrong five times would lock out the next one.
+- The state is IN MEMORY on purpose: the panel runs with a single worker, and writing to
+  the database would cost one write per wrong attempt — which is exactly what an attack
+  produces in volume.
 
-### Ritmo de tarefa de fundo: um `Ticker`, nao um `global` por relogio
+### Background task rhythm: a `Ticker`, not a `global` per clock
 
-Monitor, estado do servico, medidor de recurso, log, amostra e limpeza do historico tem
-seis passos diferentes na mesma thread. Cada um era uma variavel de modulo com `global`
-em cima; hoje sao seis instancias de `tasks.ticker.Ticker` (`monitor_tick`, `state_tick`,
+Monitor, service state, resource gauge, log, sample and history cleanup have six
+different steps in the same thread. Each was a module variable with `global` on top;
+today they are six instances of `tasks.ticker.Ticker` (`monitor_tick`, `state_tick`,
 `resource_tick`, `log_tick`, `sample_tick`, `cleanup_tick`).
 
-- **`due()` NAO anota a passagem, e isso e de proposito.** O relogio do medidor de
-  recurso so avanca quando algum alerta de recurso esta ligado: se perguntar consumisse a
-  janela, uma volta sem nenhum deles gastaria o intervalo e a volta seguinte — ja com um
-  ligado — esperaria tudo de novo. Perguntar e anotar sao `due()` e `mark()`.
-- **O intervalo vai na CHAMADA, nao no construtor.** O passo do monitor encurta quando ha
-  alerta de jogador ligado: o mesmo relogio responde a 60s e a 15s conforme a volta.
-- **O `conftest.py` zera a lista de instancias, e nao seis nomes.** Com `global`, uma
-  renomeada em silencio deixava um teste herdando o relogio do anterior — sem erro, so
-  com um alerta que nao dispara. E `monkeypatch.setattr(panel, "_last_monitor", ...)`,
-  que cinco testes de `test_alerts.py` faziam, virou `panel.monitor_tick.mark(...)`.
-- **O zero inicial e proposital**: a primeira volta depois de subir o painel sempre vale.
+- **`due()` does NOT record the pass, and that is on purpose.** The resource gauge clock
+  only advances when some resource alert is on: if asking consumed the window, a round
+  with none of them would spend the interval and the next round — already with one on —
+  would wait all over again. Asking and recording are `due()` and `mark()`.
+- **The interval goes in the CALL, not in the constructor.** The monitor step shortens
+  when there is a player alert on: the same clock answers at 60s and at 15s depending on
+  the round.
+- **`conftest.py` resets the list of instances, not six names.** With `global`, one
+  silently renamed variable left a test inheriting the previous test's clock — no error,
+  just an alert that does not fire. And `monkeypatch.setattr(panel, "_last_monitor", ...)`,
+  which five tests in `test_alerts.py` did, became `panel.monitor_tick.mark(...)`.
+- **The initial zero is intentional**: the first round after the panel starts always
+  counts.
 
-### A regra que sustenta o resto: uma lista, um lugar
+### The rule that holds up the rest: one list, one place
 
-Antes, a lista de telas de um servidor estava escrita a mao em **seis templates**. Cada
-um tinha um subconjunto diferente, e era por isso que "Graficos" existia numa tela e nao
-na outra. Hoje ela esta em `navigation.py`.
+Before, the list of a server's screens was written by hand in **six templates**. Each had
+a different subset, and that was why "Charts" existed on one screen and not on another.
+Today it is in `navigation.py`.
 
-- **Tela nova de servidor** = uma linha em `ui.SERVER_SECTIONS`. Nao edite template
-  de navegacao; nao existe mais.
-- **Acao nova** (start/stop/...) = uma entrada em `ui.ACTIONS` (como aparece) + uma em
-  `app.COMMANDS` (o que roda). Um `assert` no import quebra se as duas divergirem.
-- **Fonte de contagem de jogadores nova** = uma funcao + uma linha em
-  `app.COUNT_SOURCES`.
-- **Alerta de recurso novo** = uma linha em `app.RESOURCE_ALERTS`.
+- **New server screen** = one line in `ui.SERVER_SECTIONS`. Do not edit a navigation
+  template; it does not exist anymore.
+- **New action** (start/stop/...) = one entry in `ui.ACTIONS` (how it looks) + one in
+  `app.COMMANDS` (what runs). An `assert` at import breaks if the two diverge.
+- **New player counting source** = one function + one line in `app.COUNT_SOURCES`.
+- **New resource alert** = one line in `app.RESOURCE_ALERTS`.
 
-Se voce se pegar escrevendo a mesma lista pela segunda vez, pare: ela pertence a uma
-dessas tabelas.
+If you catch yourself writing the same list a second time, stop: it belongs in one of
+those tables.
 
 ---
 
 ## Python (`app.py`, `navigation.py`)
 
-- **Dependencias do PAINEL EM PRODUCAO: so a stdlib mais o `python3-flask` do apt.** O
-  container nao baixa pacote de lugar nenhum. Nada de `pip install`, nada de CDN. Isso
-  nao muda com o `uv` — `uv` so gerencia o `.venv` de desenvolvimento (`pyproject.toml`
-  na raiz), nunca entra em Dockerfile de producao nem em `provision-*-lxc.sh`. Se
-  `import gamepanel`/`import flask` nao resolve no editor, rode `uv sync` (cria o
-  `.venv` e instala os dois pacotes do repo como editaveis, mais o Flask que a
-  producao usa e as ferramentas de dev — ver a secao de testes, no topo).
-- **QR code e codigo proprio, so stdlib** (`security/qr.py`: modo byte, correcao M, versoes
-  1-10 da ISO 18004). Existe pela mesma razao do TOTP: sem pip em producao, nao ha
-  biblioteca de QR ali. A suite (`test_qr.py`) prova a matematica sem precisar de um
-  leitor de verdade — Reed-Solomon com resto zero nas raizes do gerador, e a distancia
-  minima 7 do BCH(15,5) dos bits de formato — porque `opencv-python-headless` (o
-  decodificador de verdade) passa de 60 MB e nao entra no `.venv` de dev nem no painel.
-  **Depois de mexer em `qr.py`, rode `tools/verify-qr.py`** numa venv DESCARTAVEL
-  com `opencv-python-headless` e `segno` (nunca no `pyproject.toml` do repo): ele
-  desenha o QR e confere que a camera (via OpenCV) le de volta o texto certo.
-- **Segundo fator (2FA) e TOTP proprio, so stdlib** (`totp.py`, testado contra os vetores do RFC
-  6238). Regras que os testes de `test_2fa.py` guardam: senha certa com 2FA NAO abre sessao (so grava
-  `pre2fa`, sem `uid`, por 5 min); codigo usado nao vale de novo (`totp_last_step`, e o `UPDATE ... WHERE
-  totp_last_step < ?` e o portao contra dois pedidos simultaneos); a trava do codigo e por USUARIO
-  (5 em 15 min), nao por IP; desativar ou pedir codigos novos exige senha E codigo; recuperacao =
-  8 codigos de uso unico, so o hash no banco. `GAMEPANEL_REQUIRE_2FA=1` (`ADMIN_REQUIRE_2FA` no `.env`)
-  tranca quem nao ativou na tela de ativacao: so ligue DEPOIS de todo admin ter ativado. Saida de
-  emergencia: `cd /opt/gamepanel/current && python3 -m gamepanel.cli --reset-2fa USUARIO` no CT do
-  painel (o caminho por arquivo, `python3 /opt/gamepanel/current/gamepanel/app.py --reset-2fa`, faz o mesmo), ou "Desligar 2FA"
-  em Usuarios. A tela de ativacao mostra um QR code (`qr.py`, ver acima) para escanear, a chave em
-  texto para digitar a mao e um link `otpauth://` que abre o aplicativo no proprio celular.
-- **Passkey (biometria do aparelho) e WebAuthn proprio, so stdlib** (`security/webauthn.py`,
-  rotas em `blueprints/passkeys.py`). Pelo mesmo motivo do TOTP: sem `cryptography` em producao,
-  a conta da curva P-256 (ES256: Android/iPhone) e o RSA (RS256: Windows Hello) moram ali, com o
-  vetor do RFC 6979 no teste. Regras que `test_passkeys.py` guarda: o desafio e de uso unico e
-  mora NA MEMORIA do servidor (`webauthn.Challenges`, o `panel.passkey_challenges`), e nao na
-  sessao - o cookie e do cliente, e um cookie antigo traria de volta um desafio ja gasto; so
-  vale com UV (o aparelho conferiu a pessoa), e por isso a passkey substitui senha E 2FA, e
-  cadastrar pede a senha (mais o codigo, se o 2FA esta ligado); o desafio de cadastro guarda o
-  `uid` de quem o pediu. Desligado sem `GAMEPANEL_WEBAUTHN_ORIGIN` (`ADMIN_WEBAUTHN_ORIGIN` no
-  `.env`), que tem de ser https com DOMINIO (IP e recusado no start): o navegador so libera o
-  WebAuthn em contexto seguro, e a chave do aparelho fica presa ao dominio. O login de passkey
-  nao diz o usuario antes de conferir a assinatura, entao a trava e por IP (`passkey|ip`), na
-  mesma `login_lockout`. O aparelho falso dos testes e o `fake_passkey.py`, ao lado do
-  `conftest.py` (os dois baldes o usam).
-- **`broker_required` (app.py) tambem exige o 2FA DA PESSOA, sempre** — independente de
-  `GAMEPANEL_REQUIRE_2FA` (que e sobre o painel inteiro). O broker cria/apaga CT e abre porta no
-  OPNsense; e a unica barreira que sobra se uma sessao de admin for roubada. GET normal sem 2FA
-  redireciona para `/account/2fa`; POST idem (nada e executado); `/api/...` responde 403 em JSON.
-  A ordem importa: `GAMEPANEL_ALLOW_BROKER=0` ainda vence e mostra a mensagem dele, mesmo para
-  quem nao tem 2FA (`test_allow_broker_desligado_vence_mesmo_para_quem_nao_tem_2fa`). Por isso,
-  **em `test_broker.py` (so nele) a fixture `admin` ja vem com 2FA ativo** (override local que
-  usa `admin_2fa` do `conftest.py`) — sem isso quase todo teste do arquivo cairia na tela de
-  ativacao em vez de exercitar o que quer testar; `admin_without_2fa` e o admin sem 2FA, para provar a
-  exigencia em si.
-- **`provision-admin-lxc.sh` reescreve o `panel.env` INTEIRO**; as linhas `GAMEPANEL_BROKER_*` e
-  `GAMEPANEL_ALLOW_BROKER` que o `deploy-broker.ps1 -ConfigurePanel` grava sao preservadas de
-  proposito (antes um `-Full` do painel desligava o broker em silencio). Opcao nova de painel =
-  variavel `ADMIN_*` no `.env`, uma linha no `render_panel_config` e o nome em `$adminKeys` do
-  `deploy-admin.ps1`.
-- **CSRF e do painel, nao do Flask-WTF.** `csrf_token()` gera, `_check_csrf`
-  (`before_request`) barra todo metodo que muda estado. Analisador estatico marca isso
-  como "CSRF desabilitado" — e falso positivo, e ha um comentario no `Flask(__name__)`
-  explicando. **Nao remova `_check_csrf`.**
-- **Complexidade cognitiva: teto de 15** (regra do Sonar). Quando estourar, o corte
-  quase sempre e o mesmo: separar *decidir* de *fazer*. `monitor_servers` virou
-  `_monitor_rhythm` (o que vence agora) + `_server_alerts` (o que fazer com cada
-  um) e caiu de 48 para menos de 10.
-- **Literal repetido tres vezes vira constante.** `SHORT_DATE_FORMAT`, `PLAYER_MARK`,
-  `_online_text()` nasceram assim — e o ultimo corrigiu um bug de brinde: uma das
-  quatro copias dizia "0 jogadores online".
-- **Mais de 13 parametros: passe um objeto.** `ensure_server` tinha 15; virou
-  `DeployServer(NamedTuple)`. Quinze posicoes e onde um `join_re` vai parar no lugar
-  do `leave_re` sem ninguem notar.
-- **Parametro que ninguem usa sai da assinatura**, mesmo que quebre a simetria com as
-  funcoes irmas. Simetria falsa engana quem le.
-- **`except` sem `Exception` redundante**: `BrokenPipeError` ja e `OSError`.
-- **Suprimir aviso de lint**: o motivo vai na linha ACIMA, e o comentario fica limpo.
+- **Dependencies of the PANEL IN PRODUCTION: only the stdlib plus `python3-flask` from
+  apt.** The container downloads packages from nowhere. No `pip install`, no CDN. That
+  does not change with `uv` — `uv` only manages the development `.venv`
+  (`pyproject.toml` at the root), and never goes into a production Dockerfile or into
+  `provision-*-lxc.sh`. If `import gamepanel`/`import flask` does not resolve in the
+  editor, run `uv sync` (creates the `.venv` and installs the repo's two packages as
+  editable, plus the Flask production uses and the dev tools — see the testing section,
+  at the top).
+- **QR code is our own code, stdlib only** (`security/qr.py`: byte mode, M correction,
+  versions 1-10 of ISO 18004). It exists for the same reason as TOTP: without pip in
+  production, there is no QR library there. The suite (`test_qr.py`) proves the math
+  without needing a real reader — Reed-Solomon with zero remainder at the generator's
+  roots, and the minimum distance 7 of the BCH(15,5) format bits — because
+  `opencv-python-headless` (the real decoder) is over 60 MB and goes neither into the dev
+  `.venv` nor into the panel. **After touching `qr.py`, run `tools/verify-qr.py`** in a
+  THROWAWAY venv with `opencv-python-headless` and `segno` (never in the repo's
+  `pyproject.toml`): it draws the QR and checks that the camera (via OpenCV) reads back
+  the right text.
+- **Second factor (2FA) is our own TOTP, stdlib only** (`totp.py`, tested against the RFC
+  6238 vectors). Rules the `test_2fa.py` tests guard: a correct password with 2FA does NOT
+  open a session (it only records `pre2fa`, without `uid`, for 5 min); a used code does
+  not work again (`totp_last_step`, and the `UPDATE ... WHERE totp_last_step < ?` is the
+  gate against two simultaneous requests); the code lockout is per USER (5 in 15 min), not
+  per IP; disabling or requesting new codes requires password AND code; recovery = 8
+  single-use codes, only the hash in the database. `GAMEPANEL_REQUIRE_2FA=1`
+  (`ADMIN_REQUIRE_2FA` in `.env`) locks whoever has not enabled it into the activation
+  screen: only turn it on AFTER every admin has enabled it. Emergency exit:
+  `cd /opt/gamepanel/current && python3 -m gamepanel.cli --reset-2fa USUARIO` in the
+  panel's CT (the file path, `python3 /opt/gamepanel/current/gamepanel/app.py --reset-2fa`,
+  does the same), or "Disable 2FA" in Users. The activation screen shows a QR code
+  (`qr.py`, see above) to scan, the key as text to type by hand, and an `otpauth://` link
+  that opens the app on the phone itself.
+- **Passkey (device biometrics) is our own WebAuthn, stdlib only**
+  (`security/webauthn.py`, routes in `blueprints/passkeys.py`). For the same reason as
+  TOTP: without `cryptography` in production, the P-256 curve math (ES256:
+  Android/iPhone) and RSA (RS256: Windows Hello) live there, with the RFC 6979 vector in
+  the test. Rules `test_passkeys.py` guards: the challenge is single-use and lives IN THE
+  server's MEMORY (`webauthn.Challenges`, `panel.passkey_challenges`), not in the session
+  - the cookie belongs to the client, and an old cookie would bring back an already spent
+  challenge; it only counts with UV (the device verified the person), and that is why the
+  passkey replaces password AND 2FA, and registering asks for the password (plus the code,
+  if 2FA is on); the registration challenge keeps the `uid` of whoever requested it.
+  Disabled without `GAMEPANEL_WEBAUTHN_ORIGIN` (`ADMIN_WEBAUTHN_ORIGIN` in `.env`), which
+  must be https with a DOMAIN (an IP is refused at start): the browser only allows
+  WebAuthn in a secure context, and the device key is bound to the domain. The passkey
+  login does not say the user before checking the signature, so the lockout is per IP
+  (`passkey|ip`), in the same `login_lockout`. The tests' fake device is
+  `fake_passkey.py`, next to `conftest.py` (both buckets use it).
+- **`broker_required` (app.py) also requires THE PERSON's 2FA, always** — regardless of
+  `GAMEPANEL_REQUIRE_2FA` (which is about the whole panel). The broker creates/deletes CTs
+  and opens ports on OPNsense; it is the only barrier left if an admin session is stolen.
+  A normal GET without 2FA redirects to `/account/2fa`; POST too (nothing is executed);
+  `/api/...` answers 403 in JSON. The order matters: `GAMEPANEL_ALLOW_BROKER=0` still wins
+  and shows its message, even for someone without 2FA
+  (`test_allow_broker_desligado_vence_mesmo_para_quem_nao_tem_2fa`). That is why, **in
+  `test_broker.py` (only there) the `admin` fixture already comes with 2FA on** (a local
+  override that uses `admin_2fa` from `conftest.py`) — without it almost every test in the
+  file would land on the activation screen instead of exercising what it wants to test;
+  `admin_without_2fa` is the admin without 2FA, to prove the requirement itself.
+- **`provision-admin-lxc.sh` rewrites the WHOLE `panel.env`**; the `GAMEPANEL_BROKER_*`
+  and `GAMEPANEL_ALLOW_BROKER` lines that `deploy-broker.ps1 -ConfigurePanel` writes are
+  preserved on purpose (before, a panel `-Full` silently turned the broker off). New panel
+  option = an `ADMIN_*` variable in `.env`, one line in `render_panel_config` and the name
+  in `$adminKeys` of `deploy-admin.ps1`.
+- **CSRF is the panel's own, not Flask-WTF.** `csrf_token()` generates, `_check_csrf`
+  (`before_request`) blocks every state-changing method. Static analyzers flag this as
+  "CSRF disabled" — it is a false positive, and there is a comment on `Flask(__name__)`
+  explaining it. **Do not remove `_check_csrf`.**
+- **Cognitive complexity: ceiling of 15** (Sonar rule). When it overflows, the cut is
+  almost always the same: separate *deciding* from *doing*. `monitor_servers` became
+  `_monitor_rhythm` (what is due now) + `_server_alerts` (what to do with each one) and
+  dropped from 48 to under 10.
+- **A literal repeated three times becomes a constant.** `SHORT_DATE_FORMAT`,
+  `PLAYER_MARK`, `_online_text()` were born that way — and the last one fixed a bonus bug:
+  one of the four copies said "0 jogadores online".
+- **More than 13 parameters: pass an object.** `ensure_server` had 15; it became
+  `DeployServer(NamedTuple)`. Fifteen positions is where a `join_re` ends up in the place
+  of `leave_re` without anyone noticing.
+- **A parameter nobody uses leaves the signature**, even if it breaks the symmetry with
+  sibling functions. False symmetry misleads the reader.
+- **`except` without a redundant `Exception`**: `BrokenPipeError` already is an
+  `OSError`.
+- **Suppressing a lint warning**: the reason goes on the line ABOVE, and the comment stays
+  clean.
   ```python
-  # Alerta nunca derruba o job.
+  # An alert never takes the job down.
   except Exception:  # noqa: BLE001
   ```
-  Isto e ESTILO, e nao correcao: por muito tempo esta linha dizia que
-  `# noqa: BLE001 - motivo` era "sintaxe invalida de supressao", e **medi que nao e** — o
-  ruff honra o motivo no fim E mantem a supressao especifica ao codigo (um
-  `# noqa: BLE001 - x` numa linha com E741 nao esconde o E741; um `# noqa` pelado esconde
-  os dois). A preferencia pelo motivo acima e porque um motivo de uma frase nao cabe no
-  fim da linha sem estourar as 120 colunas, e quando ele cabe e porque foi encurtado ate
-  nao explicar mais nada.
-- **Dicionario de funcoes** (`RESOURCE_ALERTS`, `COUNT_SOURCES`) captura o objeto
-  no import. Se um teste precisar trocar a funcao por uma falsa, ele vai ter de trocar a
-  entrada da tabela — nao o nome no modulo. Verifique antes de transformar `if/elif` em
-  tabela.
-- **`\w` em Python NAO e `[A-Za-z0-9_]`** — sem `re.ASCII` ele casa acento e mais uns 900
-  caracteres Unicode. O analisador pede a forma curta; se a expressao valida algo que vai
-  parar num arquivo ou num comando remoto, a troca so vale **com a flag**. `KEY_RE` no
-  `games/config_format.py` e o exemplo, e ha teste guardando isso.
-- **Nao comece comentario com "todo".** O detector de `TODO` do Sonar casa a palavra
-  portuguesa: `# todo). O que faltava...` e `# TODO metodo que muda estado` viraram dois
-  falsos positivos. No meio da frase nao dispara; no comeco da linha, sim.
-- **Comentario no formato `# Palavra: coisa.ext` e lido como codigo comentado**
-  (`nome: tipo` e anotacao valida em Python). Escreva `# Enshrouded (le
-  enshrouded_server.json)`, nao `# Arquivo: enshrouded_server.json`.
-- **Falso positivo que nao tem como sumir vai de `# NOSONAR` com o motivo ao lado**, e
-  nao de um comentario esperando que alguem leia. Aviso repetido que se aprende a ignorar
-  e como um aviso de verdade passa batido. Hoje ha dois, ambos revisados: o `python:S4502`
-  do `Flask(__name__)` (CSRF proprio) e o `Web:S6845` do SVG do grafico (tabindex e a
-  navegacao por teclado; tirar so silencia o aviso e cega quem depende dele).
+  This is STYLE, not correctness: for a long time this line said that
+  `# noqa: BLE001 - motivo` was "invalid suppression syntax", and **I measured that it is
+  not** — ruff honors the trailing reason AND keeps the suppression specific to the code
+  (a `# noqa: BLE001 - x` on a line with E741 does not hide the E741; a bare `# noqa`
+  hides both). The preference for the reason above is because a one-sentence reason does
+  not fit at the end of the line without blowing the 120 columns, and when it fits it is
+  because it was shortened until it no longer explains anything.
+- **Dictionaries of functions** (`RESOURCE_ALERTS`, `COUNT_SOURCES`) capture the object at
+  import. If a test needs to swap the function for a fake, it will have to swap the table
+  entry — not the name in the module. Check before turning an `if/elif` into a table.
+- **`\w` in Python is NOT `[A-Za-z0-9_]`** — without `re.ASCII` it matches accented
+  letters and some 900 more Unicode characters. The analyzer asks for the short form; if
+  the expression validates something that will end up in a file or a remote command, the
+  swap is only valid **with the flag**. `KEY_RE` in `games/config_format.py` is the
+  example, and there is a test guarding it.
+- **Do not start a comment with "todo".** Sonar's `TODO` detector matches the word in any
+  case, including the Portuguese "todo" (= "every"), which is how these two came about:
+  `# todo). O que faltava...` and `# TODO metodo que muda estado` became two false
+  positives. In the middle of a sentence it does not fire; at the start of the line, it
+  does.
+- **A comment in the form `# Word: thing.ext` is read as commented-out code**
+  (`name: type` is a valid annotation in Python). Write `# Enshrouded (reads
+  enshrouded_server.json)`, not `# File: enshrouded_server.json`.
+- **A false positive that cannot go away gets a `# NOSONAR` with the reason next to it**,
+  not a comment hoping someone reads it. A repeated warning one learns to ignore is how a
+  real warning slips by. Today there are two, both reviewed: `python:S4502` on
+  `Flask(__name__)` (our own CSRF) and `Web:S6845` on the chart SVG (tabindex is keyboard
+  navigation; removing it only silences the warning and blinds whoever depends on it).
 
-### Os testes sao a rede de seguranca — nao os enfraqueca
+### The tests are the safety net — do not weaken them
 
-`test_alerts.py` (81 testes) troca funcoes do modulo por falsas via
-`monkeypatch.setattr(panel, "server_status", ...)`, que desfaz sozinho no fim de cada
-teste — antes disso era uma atribuicao direta (`panel.server_status = ...`) sem `finally`
-nenhum, e a suite so nao vazava estado porque cada arquivo era um processo Python
-separado. Hoje as suites dividem um processo (pytest as importa todas juntas), e
-sao o `monkeypatch` e a fixture `database` (tabelas limpas a cada teste, em
-`tests/gamepanel/conftest.py`) que garantem o isolamento.
+`test_alerts.py` (81 tests) swaps module functions for fakes via
+`monkeypatch.setattr(panel, "server_status", ...)`, which undoes itself at the end of each
+test — before that it was a direct assignment (`panel.server_status = ...`) without any
+`finally`, and the suite only did not leak state because each file was a separate Python
+process. Today the suites share one process (pytest imports them all together), and it
+is `monkeypatch` and the `database` fixture (tables cleaned for each test, in
+`tests/gamepanel/conftest.py`) that guarantee isolation.
 
-Essa troca **so alcanca quem chama pelo modulo**. E por isso que os blueprints fazem
-`panel.server_status(...)` e nunca `from gamepanel.app import server_status`: o import
-direto copia a referencia na hora do import, a troca do teste deixa de valer em silencio
-e os testes passam sem testar nada. Vale para qualquer arquivo novo fora do `app.py`.
+That swap **only reaches whoever calls through the module**. That is why the blueprints
+do `panel.server_status(...)` and never `from gamepanel.app import server_status`: the
+direct import copies the reference at import time, the test's swap silently stops
+applying and the tests pass without testing anything. It applies to any new file outside
+`app.py`.
 
-### `GAMEPANEL_DB` no `conftest.py` e atribuicao direta, nunca `setdefault`
+### `GAMEPANEL_DB` in `conftest.py` is a direct assignment, never `setdefault`
 
-`docker/panel/Dockerfile` fixa `ENV GAMEPANEL_DB=/var/lib/gamepanel/panel.db`. Essa
-variavel **ja existe** quando o processo de teste comeca dentro do container, entao um
-`os.environ.setdefault("GAMEPANEL_DB", tmp)` no `conftest.py` e um no-op ali — os testes
-rodariam contra o banco de VERDADE do painel de dev. Ja aconteceu: uma suite inteira
-apagou o usuario `admin` e encheu a lista de servidores com nomes de teste ("alvo",
-"outro"). O `conftest.py` usa `os.environ["GAMEPANEL_DB"] = ...` (atribuicao, nao
-`setdefault`) exatamente por isso — nao troque essa linha achando que esta so deixando
-uma configuracao externa vencer. Se um dia isso vazar de novo, o conserto e
-`docker compose down -v && docker compose up -d` (o painel de dev e descartavel, os
-volumes sao regenerados por `PANEL_SEED_DEMO=1`).
+`docker/panel/Dockerfile` sets `ENV GAMEPANEL_DB=/var/lib/gamepanel/panel.db`. That
+variable **already exists** when the test process starts inside the container, so an
+`os.environ.setdefault("GAMEPANEL_DB", tmp)` in `conftest.py` is a no-op there — the tests
+would run against the REAL database of the dev panel. It has happened: a whole suite
+deleted the `admin` user and filled the server list with test names ("alvo", "outro").
+`conftest.py` uses `os.environ["GAMEPANEL_DB"] = ...` (assignment, not `setdefault`)
+exactly for that reason — do not change that line thinking you are just letting an
+external configuration win. If this ever leaks again, the fix is
+`docker compose down -v && docker compose up -d` (the dev panel is disposable, the
+volumes are regenerated by `PANEL_SEED_DEMO=1`).
 
-### Mexeu numa assinatura? Procure fora do `app.py`
+### Changed a signature? Search outside `app.py`
 
-`ensure_server` tambem e chamado de `docker/panel/entrypoint.sh` (dentro de um
-heredoc Python) — um `grep` so nos `.py` nao acha. Procure no repositorio inteiro, e
-lembre que **`entrypoint.sh` esta dentro da imagem**: exige
-`docker compose up -d --build panel`, nao um `restart`.
-
----
-
-## Idioma da tela (`src/gamepanel/i18n/`)
-
-O painel fala portugues e ingles. Dicionario Python, sem Babel e sem `.mo`: **este repo
-nao tem passo de build** — producao so recebe arquivos e sobe (mesma razao do TOTP e do
-QR serem codigo proprio). `pt.py` e `en.py` tem as MESMAS chaves, e `test_i18n.py`
-cobra a paridade; a busca cai em cascata `idioma pedido -> pt -> a propria chave`, entao
-chave que ninguem cadastrou aparece na tela como `nav.servers` em vez de sumir calada.
-
-- **Texto novo de tela = uma linha em `pt.py` e uma em `en.py`.** A chave e
-  `area.assunto`, **em ingles** (e identificador de codigo, nao texto de tela), e nunca
-  o portugues transformado em slug: amarrar o nome da chave ao texto de UMA lingua faz
-  corrigir uma virgula virar renomear em tres arquivos.
-- **Frase com numero ou nome no meio nao se parte**: `_('flash.too_many_tries', n=30)`.
-  Partir parece obvio e quebra na hora em que a outra lingua muda a ordem das palavras.
-- **Frase com marcacao (`<strong>`, `<code>`) usa `_h()`**, nao `_()`. Um paragrafo de
-  ajuda quebrado em uma chave por `<strong>` aparece metade em portugues na tela em
-  ingles — o comeco da frase, que nao esta entre tags, nao entra em chave nenhuma. A
-  frase vem do catalogo (codigo daqui, confiavel); os CAMPOS e que sao escapados.
-- **Plural leva duas chaves** (`alert.players_online_one` / `_many`). Colar um `s` no
-  fim funciona em portugues e ja falhava aqui.
-- **Rotulo em tabela (`ALERT_EVENTS`, `JOB_LABELS`, `ROLE_LABELS`) guarda CHAVE**, nunca
-  o texto: a chave do dicionario (`caiu`, `edit-config`) vai para o banco e para o
-  `<option value=>`, e nao pode mudar porque alguem mexeu na redacao. Quem traduz e o
-  `labels_of()` na hora de renderizar.
-- **Texto que nasce em `services/`/`runtime/` usa `i18n.Message`**, que e uma `str` de
-  proposito: carrega a chave e os campos, mas `str(exc)`, `f"{erro}"`, `"pedaco" in
-  erro` e o `logging` continuam funcionando sem mudanca. Quem quer o idioma da pessoa
-  chama `translate`; esquecer cai no idioma do deploy, que era o comportamento antigo.
-- **Fora de pedido vale `GAMEPANEL_LANG`, nao a pessoa.** Monitor e agendador rodam em
-  thread propria, sem `g` nem `request` — `current_language()` tem um portao para isso, e
-  sem ele traduzir um alerta derruba a volta inteira do monitor com "Working outside of
-  application context". Pelo mesmo motivo o alerta que vai para o canal e o texto
-  GRAVADO num job usam o idioma do deploy (`label_for_db`): o historico e lido
-  depois, por outra pessoa, e a mesma acao escrita de tres jeitos quebraria o filtro.
-- Conferir uma tela nos dois idiomas: `POST /account/language` com `lang=pt|en`. Sem
-  sessao (tela de login) vale o `Accept-Language` do navegador.
+`ensure_server` is also called from `docker/panel/entrypoint.sh` (inside a Python
+heredoc) — a `grep` over `.py` files alone will not find it. Search the whole repository,
+and remember that **`entrypoint.sh` is inside the image**: it requires
+`docker compose up -d --build panel`, not a `restart`.
 
 ---
 
-## Renomear identificador aqui: o que nao esta em nenhum linter
+## Screen language (`src/gamepanel/i18n/`)
 
-Traduzir os dois pacotes para ingles derrubou codigo seis vezes, sempre pelo mesmo
-motivo: **o nome existe tambem como TEXTO em algum lugar**, e nenhuma ferramenta liga
-os dois. Renomeie por `tokenize` (so token NAME) e nunca por `re` — `portas` aparece
-dentro de frase em prosa e como chave de dicionario. Depois, procure cada um destes:
+The panel speaks Portuguese and English. A Python dictionary, no Babel and no `.mo`:
+**this repo has no build step** — production only receives files and starts (the same
+reason TOTP and QR are our own code). `pt.py` and `en.py` have the SAME keys, and
+`test_i18n.py` enforces parity; lookup cascades `idioma pedido -> pt -> a propria chave`
+(requested language -> pt -> the key itself), so a key nobody registered shows on screen
+as `nav.servers` instead of silently disappearing.
 
-- **Chave de dado que parece identificador.** `d.update(porta_extra=8888)` e kwarg na
-  sintaxe e campo do JSON na pratica; `ConfigBroker(**cfg_parcial)` e `CliDeps(**base)`
-  recebem o nome do campo por texto. Formato de API, de disco e de banco nao muda junto
-  com o codigo.
-- **Campo de formulario e parametro de consulta sao um par com o template.** `request.
-  form.get("acao")` casa com `name="acao"` num `.html`, e o `fields={...}` dos macros
-  esconde a outra ponta num dicionario Jinja que nenhum teste de HTTP enxerga — ele so
-  aparece no HTML renderizado. Renomear a rota sem o template deixa o campo VAZIO: foi
-  assim que expulsar/banir parou, com os dois testes que existiam (so 302, de permissao)
-  passando do mesmo jeito. `test_players.py` compara os dois lados agora.
-- **VALOR comparado como texto no Jinja e pior**, porque nem parece identificador. O
-  padrao da rota (`get("tab", "port")`) e o `{% if tab == 'porta' %}` do template sao a
-  mesma decisao escrita duas vezes: trocar um deixou a aba de portas sem conteudo e sem
-  destaque para quem abre a tela SEM query string — 200, HTML inteiro, nada no log. Ha
-  teste comparando as abas que a rota conhece com as que o template manda.
-- **`@pytest.mark.parametrize("nome", ...)`.** O argname e uma string; o pytest so
-  reclama na COLETA, depois que o rename ja passou por tudo.
-- **`monkeypatch.setattr(panel, "nome")`.** Pior que o anterior: se o nome nao existir
-  mais, o teste pode PASSAR sem testar nada.
-- **Captura de rota do Flask.** `<int:instancia_id>` casa com o parametro do handler pelo
-  nome — renomear so o parametro da 500 em toda chamada. O nome da captura nao aparece
-  na URL, entao ele pode acompanhar; o da ROTA nao, que o `url_for` dos templates usa.
-- **Colisao com nome que ja existe.** `LogStream` ja tinha `stop()` e o Event `parar`
-  caiu em cima; `acao_de_jogador` virou `player_action` e passou a chamar a rota de mesmo
-  nome, recursivamente. Foi o mesmo motivo do apelido `term_runtime`, no topo do `app.py`.
-- **Marcador de frase do i18n.** O catalogo diz `{name}` e o chamador passa `name=`: sao
-  a mesma coisa. Renomear um so quebra a substituicao, e `translate` engole o `KeyError`
-  de proposito — o defeito sai CALADO. `test_i18n.py` cobra isso lendo o AST de cada
-  `_()`/`_h()`/`Message()`.
-
-- **Kwarg de `url_for` e um par com quem LE aquela chave.** O que nao e captura de rota
-  vira query string, e alguem tem de `request.args.get` com o mesmo nome. Renomear com um
-  lado so deixa o link respondendo 200 e o valor nao chega: `aba="http"` depois de a rota
-  passar a ler `tab` mandava o botao "usar esta API" para a aba de portas, e um
-  `{"pasta": ...}` num `**extras` perdia a pasta escolhida na busca de arquivos. Os tres
-  casos eram `url_for` montado em PYTHON, que e por onde a conferencia de template nao
-  olha. `test_url_contract.py` cobre o kwarg direto E o dict que alimenta o `**`.
-- **Nome de endpoint em `navigation.py` tambem apodrece.** Ele e texto, nada o liga a rota,
-  e um nome que sobrou depois de a rota morrer nao quebra nada — a aba so nunca acende por
-  ele. O files.search ficou anos assim (sem crase de proposito: o teste de doc cobra que todo nome entre crases exista). O mesmo teste cobre.
-
-E o que nenhum teste pegava antes: **kwarg de `render_template`**. Trocar
-`instancias=` por `instances=` deixa a tela VAZIA — 200, sem erro, sem log, porque o
-Jinja trata variavel ausente como indefinida. Agora `tests/gamepanel/test_template_contract.py`
-confere cada kwarg contra o que os templates de fato leem. Ainda assim, **passe pelas
-telas a mao** (a varredura de `curl` abaixo): foi so ali que apareceram o eixo de
-grafico sem numero e a macro `energia` chamada pelo nome velho.
+- **New screen text = one line in `pt.py` and one in `en.py`.** The key is
+  `area.assunto` (area.subject), **in English** (it is a code identifier, not screen
+  text), and never the Portuguese turned into a slug: tying the key name to the text of
+  ONE language turns fixing a comma into a rename across three files.
+- **A sentence with a number or name in the middle is not split**:
+  `_('flash.too_many_tries', n=30)`. Splitting looks obvious and breaks the moment the
+  other language changes the word order.
+- **A sentence with markup (`<strong>`, `<code>`) uses `_h()`**, not `_()`. A help
+  paragraph broken into one key per `<strong>` shows up half in Portuguese on the English
+  screen — the start of the sentence, which is not between tags, does not go into any key.
+  The sentence comes from the catalog (our code, trusted); the FIELDS are what get
+  escaped.
+- **Plurals take two keys** (`alert.players_online_one` / `_many`). Gluing an `s` at the
+  end works in Portuguese and had already failed here.
+- **Labels in tables (`ALERT_EVENTS`, `JOB_LABELS`, `ROLE_LABELS`) store the KEY**, never
+  the text: the dictionary key (`caiu`, `edit-config`) goes to the database and to the
+  `<option value=>`, and cannot change because someone touched the wording. Translation is
+  done by `labels_of()` at render time.
+- **Text born in `services/`/`runtime/` uses `i18n.Message`**, which is a `str` on
+  purpose: it carries the key and the fields, but `str(exc)`, `f"{erro}"`, `"pedaco" in
+  erro` and `logging` keep working unchanged. Whoever wants the person's language calls
+  `translate`; forgetting falls back to the deploy's language, which was the old behavior.
+- **Outside a request, `GAMEPANEL_LANG` applies, not the person.** Monitor and scheduler
+  run in their own thread, without `g` or `request` — `current_language()` has a gate for
+  that, and without it translating an alert takes down the whole monitor round with
+  "Working outside of application context". For the same reason the alert that goes to the
+  channel and the text RECORDED in a job use the deploy's language (`label_for_db`): the
+  history is read later, by someone else, and the same action written three ways would
+  break the filter.
+- Checking a screen in both languages: the language button in the top-right corner
+  (`POST /preferences/language`), or `POST /account/language` with `lang=pt|en`. Without a
+  chosen language, the browser's `Accept-Language` applies.
 
 ---
 
-## O contrato do front: template, CSS e JavaScript
+## Renaming an identifier here: what no linter covers
 
-O mesmo defeito do contrato de template, em mais tres pares. Em todos, o nome existe
-como TEXTO dos dois lados e nenhuma ferramenta liga os dois; em todos, a pagina continua
-respondendo 200.
+Translating the two packages to English broke code six times, always for the same reason:
+**the name also exists as TEXT somewhere**, and no tool links the two. Rename via
+`tokenize` (NAME tokens only) and never via `re` — `portas` appears inside prose sentences
+and as a dictionary key. Afterwards, look for each of these:
 
-- classe so no `class=` = estilo que nunca chega, e a tela abre torta;
-- classe so no `.css` = regra morta, que a proxima pessoa le como se estivesse em uso;
-- `data-*` so no template = comportamento que nao monta, sem nada no console;
-- `data-*` so no JavaScript = feature que nunca encontra elemento nenhum.
+- **A data key that looks like an identifier.** `d.update(porta_extra=8888)` is a kwarg
+  in syntax and a JSON field in practice; `ConfigBroker(**cfg_parcial)` and
+  `CliDeps(**base)` receive the field name as text. API, disk and database formats do not
+  change along with the code.
+- **A form field and a query parameter are a pair with the template.** `request.
+  form.get("acao")` matches `name="acao"` in an `.html`, and the macros' `fields={...}`
+  hides the other end in a Jinja dictionary no HTTP test sees — it only appears in the
+  rendered HTML. Renaming the route without the template leaves the field EMPTY: that is
+  how kick/ban stopped, with the two tests that existed (only 302, permission) passing
+  just the same. `test_players.py` compares both sides now.
+- **A VALUE compared as text in Jinja is worse**, because it does not even look like an
+  identifier. The route's default (`get("tab", "port")`) and the template's
+  `{% if tab == 'porta' %}` are the same decision written twice: changing one left the
+  ports tab without content and without highlight for whoever opens the screen WITHOUT a
+  query string — 200, full HTML, nothing in the log. There is a test comparing the tabs
+  the route knows with the ones the template sends.
+- **`@pytest.mark.parametrize("nome", ...)`.** The argname is a string; pytest only
+  complains at COLLECTION, after the rename has already gone through everything.
+- **`monkeypatch.setattr(panel, "nome")`.** Worse than the previous one: if the name no
+  longer exists, the test may PASS without testing anything.
+- **Flask route captures.** `<int:instancia_id>` matches the handler's parameter by name —
+  renaming only the parameter gives a 500 on every call. The capture name does not appear
+  in the URL, so it can follow along; the ROUTE's name cannot, because the templates'
+  `url_for` uses it.
+- **Collision with a name that already exists.** `LogStream` already had `stop()` and the
+  Event `parar` landed on top of it; `acao_de_jogador` became `player_action` and started
+  calling the route of the same name, recursively. It was the same reason for the
+  `term_runtime` alias at the top of `app.py`.
+- **i18n sentence placeholders.** The catalog says `{name}` and the caller passes
+  `name=`: they are the same thing. Renaming only one breaks the substitution, and
+  `translate` swallows the `KeyError` on purpose — the defect comes out SILENT.
+  `test_i18n.py` enforces it by reading the AST of every `_()`/`_h()`/`Message()`.
 
-`tests/gamepanel/test_frontend_contract.py` cobra os quatro, mais o contrato de LEITURA
-do medidor (`metrics.X` no `server_detail.html` contra o que o `parse_metrics` entrega —
-a lista sai do proprio codigo, nao de uma copia escrita a mao). Achados reais dele, na
-primeira execucao: tres classes sem regra e sete regras mortas.
+- **A `url_for` kwarg is a pair with whoever READS that key.** What is not a route
+  capture becomes a query string, and someone has to `request.args.get` with the same
+  name. Renaming one side only leaves the link answering 200 and the value never arrives:
+  `aba="http"` after the route started reading `tab` sent the "use this API" button to the
+  ports tab, and a `{"pasta": ...}` in a `**extras` lost the folder chosen in the file
+  search. The three cases were `url_for` built in PYTHON, which is where the template
+  check does not look. `test_url_contract.py` covers the direct kwarg AND the dict that
+  feeds the `**`.
+- **Endpoint names in `navigation.py` also rot.** They are text, nothing ties them to
+  the route, and a name left over after the route died breaks nothing — the tab just
+  never lights up for it. The files.search one stayed like that for ages (without
+  backticks on purpose: the docs test requires every backticked name to exist). The same
+  test covers it.
 
-- **Regra de CSS que ninguem usa SAI.** Grandfathering uma lista de excecoes deixaria o
-  teste fraco desde o primeiro dia — e a lista e que envelheceria em silencio.
-- **Classe montada em runtime** (`{% set classes = classes + ['btn--' ~ variant] %}`)
-  entra pelo PREFIXO: o teste junta `btn--` e aceita qualquer `btn--*`. Sem isso toda
-  variacao pareceria morta.
-- **Nome COMPLETO dentro de um `{% set %}` e conferido, e essa era a brecha.** O macro
-  emitia `['btn--bloco']` e o CSS tinha `.btn--block`: todo botao `block=true` do painel
-  (entrar, salvar, adicionar — umas vinte telas) deixou de ocupar a largura do cartao, e
-  nada acusou. A classe nao esta num `class=`, entao o `JINJA_EXPR.sub` a apagava junto
-  com o resto da expressao, e o prefixo `btn--` a absolvia do outro lado. Hoje `SET_CLASS`
-  a colhe e o teste falha.
-- **Token de CSS (`--nome`) tem os DOIS lados conferidos**, como classe: definido e nunca
-  usado, e `var(--x)` sem definicao. `var()` de nome inexistente nao e erro para navegador
-  nenhum — a propriedade so nao aplica, e a tela abre sem a cor ou sem o espaco. Achou tres
-  tokens mortos de uma vez (`--sombra-1`, `--r-lg`, `--sp-7`), todos removidos: manter uma
-  lista de excecoes deixaria o teste fraco desde o primeiro dia.
-- **`cores` e a palavra que colide**: nucleo de CPU em ingles, cor em portugues. Uma
-  renomeacao automatica ja trocou uma pela outra nos dois lados e o numero de nucleos
-  sumiu da tela. Ha um teste so para ela.
+And what no test caught before: **`render_template` kwargs**. Changing `instancias=` to
+`instances=` leaves the screen EMPTY — 200, no error, no log, because Jinja treats a
+missing variable as undefined. Now `tests/gamepanel/test_template_contract.py` checks
+each kwarg against what the templates actually read. Even so, **walk through the screens
+by hand** (the `curl` sweep above): only there did the chart axis without numbers and the
+`energia` macro called by its old name show up.
 
-**Renomear JavaScript com um dicionario? use `Map`, nao objeto.** `MAP['constructor']`
-num objeto comum devolve `Object.prototype.constructor` em vez de `undefined`, e o
-renomeador troca a palavra `constructor` de toda classe pelo TEXTO de uma funcao nativa
-(`function Object() { [native code] }`). O `test_javascript.py` pegou na primeira
-execucao — sem ele, o terminal e o grafico teriam quebrado so no navegador de quem
-abrisse a tela.
+---
 
-### A doc tambem tem rede
+## The front-end contract: template, CSS and JavaScript
 
-`tests/gamepanel/test_docs_contract.py` cobra que todo `modulo.nome` citado entre crases
-NESTE arquivo ainda exista no codigo. Doc que envelhece nao e doc faltando: e doc que
-MENTE, e manda a proxima pessoa procurar um nome que nao existe. Achou quatro de uma vez
-na primeira execucao: a doc mandava procurar taken_ports no opnsense (o nome e
-`busy_ports`), _limpar no instalador por SSH (e `_cleanup`) e somente_banco no broker
-(e `db_only`), alem dos tres do `navigation.py` que ja estavam em ingles ha commits.
+The same defect as the template contract, in three more pairs. In all of them, the name
+exists as TEXT on both sides and no tool links the two; in all of them, the page keeps
+answering 200.
 
-O escopo e estreito porque tres coisas tem o MESMO formato e nao sao referencia a codigo:
-chave de i18n (`charts.players`), nome de arquivo (`compare.sh`) e modulo de fora
-(`flask.g`). As duas primeiras saem por reconhecimento — a chave existe no catalogo, o
-arquivo tem extensao —, e nao por lista. As quatro colisoes que sobram estao em
-`NOT_CODE`, cada uma com o motivo ao lado.
+- class only in `class=` = a style that never arrives, and the screen opens crooked;
+- class only in the `.css` = a dead rule, which the next person reads as if it were in
+  use;
+- `data-*` only in the template = behavior that never mounts, with nothing in the
+  console;
+- `data-*` only in the JavaScript = a feature that never finds any element.
 
-### O JavaScript tem rede agora
+`tests/gamepanel/test_frontend_contract.py` enforces all four, plus the gauge's READ
+contract (`metrics.X` in `server_detail.html` against what `parse_metrics` delivers —
+the list comes from the code itself, not from a hand-written copy). Its real findings on
+the first run: three classes without a rule and seven dead rules.
 
-`tests/gamepanel/test_javascript.py` (precisa do `node`; PULADO sem ele) faz tres
-perguntas: cada modulo parseia, cada modulo IMPORTA, e cada feature MONTA contra um DOM
-de mentira. Producao nao tem node e o painel nao depende dele para nada.
+- **A CSS rule nobody uses GOES.** Grandfathering an exception list would leave the test
+  weak from day one — and it is the list that would silently age.
+- **A class built at runtime** (`{% set classes = classes + ['btn--' ~ variant] %}`)
+  enters by PREFIX: the test collects `btn--` and accepts any `btn--*`. Without that every
+  variant would look dead.
+- **A FULL name inside a `{% set %}` is checked, and that was the gap.** The macro emitted
+  `['btn--bloco']` and the CSS had `.btn--block`: every `block=true` button in the panel
+  (log in, save, add — some twenty screens) stopped taking the card's width, and nothing
+  complained. The class is not in a `class=`, so `JINJA_EXPR.sub` erased it along with the
+  rest of the expression, and the `btn--` prefix absolved it on the other side. Today
+  `SET_CLASS` collects it and the test fails.
+- **A CSS token (`--nome`) has BOTH sides checked**, like a class: defined and never used,
+  and `var(--x)` without a definition. `var()` of a nonexistent name is not an error for
+  any browser — the property simply does not apply, and the screen opens without the color
+  or without the spacing. It found three dead tokens at once (`--sombra-1`, `--r-lg`,
+  `--sp-7`), all removed: keeping an exception list would leave the test weak from day
+  one.
+- **`cores` is the colliding word**: CPU cores in English, colors in Portuguese. An
+  automatic rename once swapped one for the other on both sides and the number of cores
+  disappeared from the screen. There is a test just for it.
 
-O terceiro e o que importa. Tres defeitos reais nasceram de renomeacao e nenhum apareceu
-no servidor — 200 na pagina, HTML inteiro, e o erro no console de quem abriu a tela (o
-`app.js` ainda o engole de proposito, para uma feature quebrada nao levar as outras):
+**Renaming JavaScript with a dictionary? Use `Map`, not an object.** `MAP['constructor']`
+on a plain object returns `Object.prototype.constructor` instead of `undefined`, and the
+renamer replaces the word `constructor` of every class with the TEXT of a native function
+(`function Object() { [native code] }`). `test_javascript.py` caught it on the first run
+— without it, the terminal and the chart would have broken only in the browser of
+whoever opened the screen.
 
-- o `Poller` passou a expor `start()` e as features continuaram chamando `.iniciar()`;
-- `readJSON(url, opcoes)` ficou lendo `options.headers`;
-- `shortList` usava `rotulo` numa linha e `label` na seguinte.
+### The docs have a net too
 
-**`app.js` exporta `FEATURES` so para este teste.** Sem a lista exportada nao ha como
-montar cada feature sem um navegador.
+`tests/gamepanel/test_docs_contract.py` ensures that every `modulo.nome` cited in
+backticks in THIS file still exists in the code. Docs that age are not missing docs: they
+are docs that LIE, and send the next person looking for a name that does not exist. It
+found four at once on the first run: the docs said to look for taken_ports in opnsense
+(the name is `busy_ports`), _limpar in the SSH installer (it is `_cleanup`) and
+somente_banco in the broker (it is `db_only`), besides the three in `navigation.py` that
+had already been in English for several commits.
 
-### Renomear JavaScript: `${...}` e codigo, e metodo mora depois do ponto
+The scope is narrow because three things have the SAME shape and are not references to
+code: an i18n key (`charts.players`), a file name (`compare.sh`) and an external module
+(`flask.g`). The first two are filtered out by recognition — the key exists in the
+catalog, the file has an extension —, not by a list. The four remaining collisions are in
+`NOT_CODE`, each with its reason next to it.
 
-- **Template literal nao e string inteira.** O trecho entre crases tem CODIGO dentro das
-  chaves. Um renomeador que pula a crase deixa de fora exatamente o identificador que so
-  aparece ali — foi assim que `rotulo` sobreviveu a tres passadas.
-- **Membro de objeto precisa da posicao APOS o ponto**, que e justamente a que se exclui
-  ao renomear variavel local. Meia-troca ali nao da erro de sintaxe nem de import.
-- **Regex de seletor nao pode atravessar aspas.** Um padrao para `'.classe'` que aceita
-  qualquer coisa ate a proxima aspa casou com `...opcoes.headers` no meio do codigo e o
-  reescreveu.
+### JavaScript has a net now
 
-### Renomear bash e PowerShell: comentario e mensagem ficam em portugues
+`tests/gamepanel/test_javascript.py` (needs `node`; SKIPPED without it) asks three
+questions: each module parses, each module IMPORTS, and each feature MOUNTS against a
+fake DOM. Production has no node and the panel does not depend on it for anything.
 
-So IDENTIFICADOR muda. A primeira tentativa trocou a palavra solta no arquivo e entrou
-na prosa: `# e o caso de um release que quebra` virou `# e o run_case de...`, e o
-`die "sha256 nao confere"` virou `"nao check"` — texto que o sandbox procura, e que
-deixou de casar.
+The third is the one that matters. Three real defects were born from renames and none of
+them showed up on the server — 200 on the page, full HTML, and the error in the console of
+whoever opened the screen (`app.js` still swallows it on purpose, so one broken feature
+does not take the others with it):
 
-- **Uma posicao, uma troca.** `local origem="$1"` casa como declaracao E como
-  atribuicao; aplicar as duas produziu `source_dir_dir` e `local extra_limits""` (sem o
-  `=`). Os dois passaram no `bash -n` e so quebraram rodando.
-- **`$(funcao)` dentro de aspas duplas e CODIGO.** Pular toda a aspa deixou `$(qual)`
-  chamando uma funcao que ja tinha virado `host_path`.
-- **`$(( ))` usa o nome SEM cifrao**: `falhas=$((falhas + 1))` precisa dos dois lados.
-- **Prove com os quatro sandboxes**: `compare.sh` (instalador de jogo, byte a byte),
-  `broker.sh`, `release.sh` e a suite. Foi o `compare.sh` que pegou a unit systemd que
-  deixou de ser escrita.
+- `Poller` started exposing `start()` and the features kept calling `.iniciar()`;
+- `readJSON(url, opcoes)` kept reading `options.headers`;
+- `shortList` used `rotulo` on one line and `label` on the next.
 
-### Renomear no front: cada nome no SEU escopo
+**`app.js` exports `FEATURES` only for this test.** Without the exported list there is no
+way to mount each feature without a browser.
 
-- **Classe** troca no seletor do `.css` (com o ponto), dentro de `class="..."` e do
-  argumento `css_class=` dos macros, e no `classList`/seletor/`class="..."` do JS.
-  Trocar a palavra solta no arquivo mudaria dado: `key` tambem e variavel de template e
-  chave de dicionario.
-- **Seletor composto nao tem fronteira a esquerda.** Em `body.has-tabbar` o caractere
-  antes do ponto e uma letra, entao um `(?<![\w-])` recusa o casamento e a regra fica
-  para tras enquanto o template ja usa o nome novo. O ponto JA e a fronteira.
-- **O hifen conta como fronteira para o `\b`**, entao `icon` casaria dentro de
-  `btn--icon` e as duas trocas se atropelam. Use `(?<![\w-])x(?![\w-])`.
-- **`data-x` tem duas formas**: o atributo no template e `dataset.xCamel` no JavaScript.
-- **Parametro de macro Jinja vive em dois lugares**: a assinatura e o CORPO. Trocar so a
-  assinatura da `'campos' is undefined` na primeira tela que usa o macro.
-- **Macro chama macro sem prefixo** dentro do proprio arquivo (`{{ state(status) }}`, e
-  nao `srv.state`): uma troca que so procura `ui.`/`srv.` deixa essas para tras.
+### Renaming JavaScript: `${...}` is code, and methods live after the dot
 
-## Templates Jinja
+- **A template literal is not a whole string.** The part between backticks has CODE
+  inside the braces. A renamer that skips backticks leaves out exactly the identifier that
+  only appears there — that is how `rotulo` survived three passes.
+- **An object member needs the position AFTER the dot**, which is precisely the one
+  excluded when renaming a local variable. A half-rename there gives neither a syntax nor
+  an import error.
+- **A selector regex must not cross quotes.** A pattern for `'.classe'` that accepted
+  anything up to the next quote matched `...opcoes.headers` in the middle of the code and
+  rewrote it.
 
-- **Zero `<script>` com logica e zero `onsubmit="return confirm(...)"`.** Comportamento
-  vem de `static/js/features/` por `data-*`. Confirmacao e `data-confirmar="mensagem"` —
-  o nome do arquivo vem do container, e dentro de codigo JavaScript um apostrofo no nome
-  quebra a pagina inteira.
-- **Nunca escreva uma tag literal dentro de um comentario `{# ... #}`.** O Jinja ignora,
-  o editor nao: ele abre uma tag que nunca fecha e passa a ler o resto do arquivo como
-  JavaScript. Escreva "tag de script" por extenso.
-- **Nada de `style="...{{ valor }}..."`.** Valor de template dentro de um atributo
-  `style` nao e CSS valido para ferramenta nenhuma, e o arquivo inteiro passa a acusar
-  erro. Quando a cor vem do servidor, use **atributo** (`fill=`, `stroke=`) num SVG — e o
-  que a legenda dos graficos faz.
-- **Template que nao e HTML leva sufixo `.jinja`** (`sw.js.jinja`,
-  `manifest.webmanifest.jinja`), senao o editor tenta parsear `{% for %}` como JavaScript.
-- **`{% import %}` sempre `with context`.** Sem isso o macro nao enxerga `csrf_token()`
-  nem `url_for`, e a tela morre com `'csrf_token' is undefined`.
-- **`aria-label` so quando nao ha rotulo visivel.** Dentro de um `<label>Servidor`, um
-  `aria-label="filtrar por servidor"` SUBSTITUI o texto visivel para o leitor de tela.
-- **Toda tabela dentro de `<div class="table-wrap">`**, senao ela empurra a pagina para
-  fora da tela no celular.
-- Todo POST usa os macros `ui.action` / `ui.menu_action`, que montam o CSRF sozinhos.
+### Renaming bash and PowerShell: prose is not an identifier
+
+A rename pass changes only IDENTIFIERS. The first attempt replaced the loose word across
+the file and got into the prose: `# e o caso de um release que quebra` became
+`# e o run_case de...`, and `die "sha256 nao confere"` became `"nao check"` — text the
+sandbox looks for, and which stopped matching. Translating comments is a separate,
+deliberate pass, by hand; output messages the sandboxes grep for are not translated at
+all.
+
+- **One position, one replacement.** `local origem="$1"` matches as a declaration AND as
+  an assignment; applying both produced `source_dir_dir` and `local extra_limits""`
+  (without the `=`). Both passed `bash -n` and only broke when run.
+- **`$(funcao)` inside double quotes is CODE.** Skipping the whole quoted string left
+  `$(qual)` calling a function that had already become `host_path`.
+- **`$(( ))` uses the name WITHOUT the dollar sign**: `falhas=$((falhas + 1))` needs both
+  sides.
+- **Prove it with the four sandboxes**: `compare.sh` (game installer, byte for byte),
+  `broker.sh`, `release.sh` and the suite. It was `compare.sh` that caught the systemd
+  unit that stopped being written.
+
+### Renaming in the front end: each name in ITS scope
+
+- **A class** changes in the `.css` selector (with the dot), inside `class="..."` and the
+  macros' `css_class=` argument, and in the JS `classList`/selector/`class="..."`.
+  Replacing the loose word across the file would change data: `key` is also a template
+  variable and a dictionary key.
+- **A compound selector has no left boundary.** In `body.has-tabbar` the character before
+  the dot is a letter, so a `(?<![\w-])` refuses the match and the rule is left behind
+  while the template already uses the new name. The dot ALREADY is the boundary.
+- **The hyphen counts as a boundary for `\b`**, so `icon` would match inside `btn--icon`
+  and the two replacements trample each other. Use `(?<![\w-])x(?![\w-])`.
+- **`data-x` has two forms**: the attribute in the template and `dataset.xCamel` in
+  JavaScript.
+- **A Jinja macro parameter lives in two places**: the signature and the BODY. Changing
+  only the signature gives `'campos' is undefined` on the first screen that uses the
+  macro.
+- **A macro calls a macro without a prefix** inside its own file (`{{ state(status) }}`,
+  not `srv.state`): a replacement that only looks for `ui.`/`srv.` leaves those behind.
+
+## Jinja templates
+
+- **Zero `<script>` with logic and zero `onsubmit="return confirm(...)"`.** Behavior comes
+  from `static/js/features/` through `data-*`. Confirmation is
+  `data-confirmar="mensagem"` — the file name comes from the container, and inside
+  JavaScript code an apostrophe in the name breaks the whole page.
+- **Never write a literal tag inside a `{# ... #}` comment.** Jinja ignores it, the editor
+  does not: it opens a tag that never closes and starts reading the rest of the file as
+  JavaScript. Write "script tag" in words.
+- **No `style="...{{ valor }}..."`.** A template value inside a `style` attribute is not
+  valid CSS for any tool, and the whole file starts reporting errors. When the color comes
+  from the server, use an **attribute** (`fill=`, `stroke=`) in an SVG — that is what the
+  chart legend does.
+- **A template that is not HTML gets the `.jinja` suffix** (`sw.js.jinja`,
+  `manifest.webmanifest.jinja`), otherwise the editor tries to parse `{% for %}` as
+  JavaScript.
+- **`{% import %}` always `with context`.** Without it the macro does not see
+  `csrf_token()` or `url_for`, and the screen dies with `'csrf_token' is undefined`.
+- **`aria-label` only when there is no visible label.** Inside a `<label>Servidor`, an
+  `aria-label="filtrar por servidor"` REPLACES the visible text for the screen reader.
+- **Every table inside `<div class="table-wrap">`**, otherwise it pushes the page off the
+  screen on a phone.
+- Every POST uses the `ui.action` / `ui.menu_action` macros, which add the CSRF on their
+  own.
 
 ---
 
 ## CSS
 
-Cinco camadas, e cada uma **so pode depender das anteriores**:
+Five layers, and each one **may only depend on the previous ones**:
 
-| camada | o que entra |
+| layer | what goes in |
 |---|---|
-| `tokens.css` | cor, espaco, raio, fonte, alvo de toque, z-index. Nenhum seletor. |
-| `base.css` | reset e elementos crus (`a`, `input`, `table`) |
-| `layout.css` | esqueleto do app (`.appbar`, `.tabbar`, `.wrap`) e primitivas (`.stack`, `.cluster`) |
-| `components.css` | pecas reutilizaveis (`.btn`, `.card`, `.badge`, `.menu`, `.tabs`) |
-| `pages.css` | o que e de uma tela so |
+| `tokens.css` | color, spacing, radius, font, tap target, z-index. No selectors (except the theme blocks, below). |
+| `base.css` | reset and raw elements (`a`, `input`, `table`) |
+| `layout.css` | app skeleton (`.appbar`, `.tabbar`, `.wrap`) and primitives (`.stack`, `.cluster`) |
+| `components.css` | reusable pieces (`.btn`, `.card`, `.badge`, `.menu`, `.tabs`) |
+| `pages.css` | what belongs to a single screen |
 
-- **Mobile primeiro**: o que esta fora de `@media` e a tela do celular; as media queries
-  so **acrescentam** quando ha espaco (`min-width`, nunca `max-width`).
-- **Nenhum valor cru fora de `tokens.css`.** Sem `#4f9cf9`, sem `16px` solto. Ha teste
-  (`test_frontend_contract.py`), e a excecao nao e uma lista de nomes: `color-mix(...,
-  #fff)` se reconhece pela FORMA (e "clareia isto", nao uma cor), e sobram duas cores com
-  motivo fisico escrito no proprio CSS — o branco do QR (um token seguiria o modo escuro e
-  a camera nao acharia o codigo, justo quando a pessoa esta trancada fora) e o primeiro
-  plano do terminal, que acompanha a paleta ANSI do `terminal.js`, que e protocolo.
-- **Estado tem PAR de token: `--x-line` e `--x-text`.** `--ok` tinha so a borda, e o
-  `.flash.ok` resolvia com um `#8ce39a` solto — a mensagem de sucesso era a unica cor do
-  painel fora da paleta. Texto de estado e um tom claro do proprio estado: sobre o fundo
-  escuro daqui, a cor de borda nao tem contraste para ler frase.
-- **Variacao entra por modificador** (`.btn--danger`), nunca por "esse botao dentro
-  daquela tela" — regra de descendente e o que faz um CSS deixar de ser reutilizavel.
-- **Apareceu duas vezes? Subiu de camada.** Se esta em `pages.css` e serve a duas telas,
-  pertence a `components.css`.
-- **Alvo de toque `>= var(--tap)` (44px)** em tudo que se clica.
-- **Campo de formulario com `font-size >= 16px`**, senao o Safari do iPhone da zoom
-  sozinho ao focar.
-- **Esconder por `hover` sempre junto com largura**: `@media (hover: hover) and
-  (pointer: fine) and (min-width: 900px)`. Navegador de celular que se declara
-  `hover: hover` existe, e ali nao ha como revelar o que se escondeu.
-- **`--safe-*` (notch/barra de gestos)** em tudo que encosta na borda da tela.
-- **Cabecalho e corpo dividem a mesma coluna.** O fundo da barra vai de ponta a ponta, mas o
-  conteudo (`.appbar__miolo`) tem a `--largura-max` e o recuo do `.wrap`: sem isso a marca
-  fica no canto da janela e o conteudo no meio, sem alinhar com nada. A partir de 900px a barra
-  mostra TODOS os destinos (`ui.NAV_DESKTOP_BAR`, sem icone e com rotulo `curto` onde ha, para
-  caberem sete - medido a 900px, e o limite: um oitavo nao cabe sem mexer no CSS) e o menu do NOME da pessoa leva conta, chave SSH e sair (`NAV_DESKTOP_ACCOUNT`).
-  No celular nada mudou: abas embaixo e o "⋯". Item aceso: `active_desktop_nav_for` (cada destino
-  acende o proprio) x `active_nav_for` (as quatro abas do celular).
-- **Cartoes lado a lado usam `.grid-cartoes`** (uma coluna no celular, duas a partir de 900px;
-  `.grid-cartoes__largo` ocupa a linha inteira). Bloco comprido (log, tabela) vai no `__largo`,
-  senao empurra o vizinho.
-- **A classe da caixa de marcar e `.checkbox`**, nao `.check` (que nao existe e deixava a caixa
-  em cima do texto). Grupo de campos com titulo: `fieldset.grupo`.
+- **Mobile first**: what is outside `@media` is the phone screen; media queries only
+  **add** when there is room (`min-width`, never `max-width`).
+- **No raw value outside `tokens.css`.** No `#4f9cf9`, no loose `16px`. There is a test
+  (`test_frontend_contract.py`), and the exception is not a list of names:
+  `color-mix(..., #fff)` is recognized by its SHAPE (it means "lighten this", not a
+  color), and two colors remain with a physical reason written in the CSS itself — the QR
+  white (a token would follow dark mode and the camera would not find the code, exactly
+  when the person is locked out) and the terminal foreground, which follows the ANSI
+  palette of `terminal.js`, which is protocol.
+- **State has a PAIR of tokens: `--x-line` and `--x-text`.** `--ok` had only the border,
+  and `.flash.ok` resolved it with a loose `#8ce39a` — the success message was the only
+  color in the panel outside the palette. State text is a lighter tone of the state itself
+  on the dark theme (and a darker one on the light theme): the border color does not have
+  enough contrast to read a sentence on either background.
+- **Variation comes in through a modifier** (`.btn--danger`), never through "that button
+  inside that screen" — descendant rules are what make a CSS stop being reusable.
+- **Showed up twice? It moves up a layer.** If it is in `pages.css` and serves two
+  screens, it belongs in `components.css`.
+- **Tap target `>= var(--tap)` (44px)** on everything clickable.
+- **Form fields with `font-size >= 16px`**, otherwise iPhone Safari zooms in on its own
+  on focus.
+- **Hiding by `hover` always together with width**: `@media (hover: hover) and
+  (pointer: fine) and (min-width: 900px)`. Phone browsers that declare `hover: hover`
+  exist, and there is no way to reveal what was hidden there.
+- **`--safe-*` (notch/gesture bar)** on everything that touches the screen edge.
+- **Header and body share the same column.** The bar's background goes edge to edge, but
+  the content (`.appbar__miolo`) has the `--largura-max` and the `.wrap` padding: without
+  that the brand sits in the window's corner and the content in the middle, aligned with
+  nothing. From 900px the bar shows ALL destinations (`ui.NAV_DESKTOP_BAR`, without icons
+  and with the `curto` label where there is one, so that seven fit - measured at 900px,
+  and it is the limit: an eighth does not fit without touching the CSS) and the menu under
+  the person's NAME holds account, SSH key and log out (`NAV_DESKTOP_ACCOUNT`). On the
+  phone nothing changed: tabs at the bottom and the "⋯". Highlighted item:
+  `active_desktop_nav_for` (each destination lights up its own) x `active_nav_for` (the
+  four phone tabs).
+- **Side-by-side cards use `.grid-cartoes`** (one column on the phone, two from 900px;
+  `.grid-cartoes__largo` takes the whole row). A long block (log, table) goes in
+  `__largo`, otherwise it pushes its neighbor.
+- **The checkbox class is `.checkbox`**, not `.check` (which does not exist and left the
+  box on top of the text). A group of fields with a title: `fieldset.grupo`.
+
+### Theme: light and dark, by tokens only
+
+The panel has a dark theme (the default) and a light one, and both are ONLY token values
+in `static/css/tokens.css` — no other layer knows which theme is on. The dark values are
+the defaults on `:root`; the light values come in through two doors:
+`:root[data-theme="light"]` (the person chose light with the button, which beats the
+system) and `@media (prefers-color-scheme: light)` with `:root:not([data-theme="dark"])`
+(the device is in light mode and nobody chose anything). CSS has no way to reuse one
+block between a selector and a media query, so **the light list appears twice by
+necessity**: changing a light color means changing both.
+
+- **A new color goes into BOTH the dark defaults and the light block** (both copies of
+  it). A token defined only for dark keeps the dark value on the light theme — a dark
+  stripe on a white page, or text without contrast — and no test sees it: the page
+  answers 200 and `var()` resolves.
+- **`--term-bg` keeps the terminal dark in both themes**, on purpose: its foreground
+  follows the ANSI palette of `terminal.js` (protocol, see above), which was designed for
+  a dark background. That is why the light block does not redefine it.
+- **Theme and language are chosen by the two buttons in the top-right corner**, served by
+  `blueprints/preferences.py` (`POST /preferences/theme`, `POST /preferences/language`).
+  They are COOKIES, not session or database, because the login screen respects them too,
+  and there is no user there yet. For a logged-in user the language is ALSO stored on the
+  account (the `lang` column of the users table): that is what follows the person to
+  another device, and the cookie only covers the way to the login. The `next` the form
+  sends back is validated with the same `app.safe_target` the login uses: accepting
+  anything there would turn the button into an open redirect.
+- Check every screen you touched in both themes (and both languages): a color that only
+  works on one background is the usual defect.
 
 ---
 
 ## JavaScript
 
-Modulos ES, sem build, sem dependencia externa.
+ES modules, no build, no external dependency.
 
-- **`core/` nao conhece tela nenhuma.** `format` (numero -> texto), `http` (ler JSON),
-  `poll` (quando rodar), `dom`, `dirty`. Testavel, reutilizavel.
-- **`features/` tem UM contrato**: `export const x = { seletor, montar(el) }`. O
-  `app.js` so liga cada feature aos elementos que a pagina trouxe — feature nova nao
-  muda o `app.js` alem de uma linha no registro.
-- **Nao chame `fetch` nem `setInterval` direto numa feature.** Use `lerJSON` e `Poller`:
-  e ali que moram o `cache: 'no-store'`, o "aba escondida nao gasta SSH" e o recuo
-  quando o painel cai. Isso ja foi seis copias com um detalhe a menos cada.
-- **Texto que veio do jogo ou do container entra por `textContent`**, nunca por
-  `innerHTML`. Nome de jogador e nome de arquivo sao dados, nao marcacao.
-- **A tela tem de funcionar sem JavaScript.** O grafico ja vem desenhado do servidor, a
-  tabela de numeros esta na pagina, o menu e um `<details>`. Controle que so existe com
-  JS (o "+ outra linha") nasce `hidden` e o proprio modulo o revela.
-- Preferencias do linter: `Number.parseFloat` (nao `parseFloat`), `el.dataset.x` (nao
-  `getAttribute('data-x')`), `a?.b` (nao `a && a.b`).
+- **`core/` knows no screen at all.** `format` (number -> text), `http` (read JSON),
+  `poll` (when to run), `dom`, `dirty`. Testable, reusable.
+- **`features/` has ONE contract**: `export const x = { seletor, montar(el) }`. `app.js`
+  only wires each feature to the elements the page brought — a new feature changes
+  `app.js` by no more than one line in the registry.
+- **Do not call `fetch` or `setInterval` directly in a feature.** Use `lerJSON` and
+  `Poller`: that is where `cache: 'no-store'`, the "hidden tab does not spend SSH" and the
+  backoff when the panel goes down live. This was once six copies, each missing one
+  detail.
+- **Text that came from the game or the container goes in through `textContent`**, never
+  through `innerHTML`. Player names and file names are data, not markup.
+- **The screen must work without JavaScript.** The chart already comes drawn from the
+  server, the table of numbers is on the page, the menu is a `<details>`. A control that
+  only exists with JS (the "+ another line") is born `hidden` and the module itself
+  reveals it.
+- Linter preferences: `Number.parseFloat` (not `parseFloat`), `el.dataset.x` (not
+  `getAttribute('data-x')`), `a?.b` (not `a && a.b`).
+
+---
+
+## PWA and service worker
+
+- **`/sw.js` is served by Flask, from the root.** A service worker's scope is the folder
+  where it lives: at `/static/sw.js` it would not see the panel's navigation.
+- **The version is the mtime of the files in `static/`**, stamped when serving. New CSS =
+  different worker = old cache discarded.
+- **Never cache logged-in page HTML or `/api/`.** The panel has several users and gives
+  root in the containers: a cached servers screen could reappear after logout, and a
+  cached gauge lies about a real server.
+- **The worker does not take over on its own** (no `skipWaiting()` on install): there may
+  be a terminal session open in the middle of an edit. The "Update now" button does the
+  swap.
+- **Checking layout through screenshots? Bypass the service worker.** It serves the old
+  CSS/JS from cache until someone clicks "Update now": the picture comes out with the
+  previous version's style and it looks like the change "did not take" (the "There is a
+  new version" banner showing in the picture is the sign). When capturing via DevTools use
+  `Network.setBypassServiceWorker` + `Network.setCacheDisabled`, and restart the local
+  server after touching `app.py` (`app.run` does not reload Python code).
+- **Do not name an application route after telemetry.** `/api/metrics` is a common
+  blocker rule (uBlock, AdGuard, filtered DNS): the browser returns a pixel with status
+  499 and the request never reaches the server. The route here is `/api/v1/resources`.
+  When debugging "the request disappears", compare **curl x browser** before looking for a
+  bug in the code.
 
 ---
 
-## PWA e service worker
+## Access to game containers: `gamepanel`, not root
 
-- **`/sw.js` e servido pelo Flask, da raiz.** O escopo de um service worker e a pasta
-  onde ele mora: em `/static/sw.js` ele nao enxergaria a navegacao do painel.
-- **A versao e o mtime dos arquivos de `static/`**, carimbada ao servir. CSS novo =
-  worker diferente = cache velho descartado.
-- **Nunca cacheie HTML de pagina logada nem `/api/`.** O painel tem varios usuarios e da
-  root nos containers: tela de servidores em cache poderia reaparecer depois do logout, e
-  medidor em cache mente sobre um servidor de verdade.
-- **O worker nao assume sozinho** (sem `skipWaiting()` no install): pode haver uma sessao
-  de terminal aberta no meio de uma edicao. Quem troca e o botao "Atualizar agora".
-- **Conferir layout por captura de tela? Ignore o service worker.** Ele serve o CSS/JS antigo do
-  cache ate alguem clicar em "Atualizar agora": a foto sai com o estilo da versao anterior e
-  parece que a mudanca "nao pegou" (o banner "Ha uma versao nova" aparecendo na foto e o sinal).
-  Na captura via DevTools use `Network.setBypassServiceWorker` + `Network.setCacheDisabled`, e
-  reinicie o servidor local depois de mexer no `app.py` (o `app.run` nao recarrega codigo Python).
-- **Nao batize rota de aplicacao com nome de telemetria.** `/api/metrics` e regra
-  corriqueira de bloqueador (uBlock, AdGuard, DNS filtrado): o navegador devolve um pixel
-  com status 499 e o pedido nem chega ao servidor. A rota daqui e `/api/v1/resources`. Ao
-  depurar "a requisicao some", compare **curl x navegador** antes de procurar bug no
-  codigo.
+The contract is [docs/security-hardening-contract.md](docs/security-hardening-contract.md) and
+the reasoning is [docs/security-hardening.md](docs/security-hardening.md). In short:
 
----
+- **Two modes per server, decided by the `ssh_user` column of the servers table**: `root` is legacy mode (commands go out
+  exactly as before), anything else is helper mode. There is no schema migration; new servers
+  default to `gamepanel`, existing rows keep their user.
+- **Every remote command goes through `runtime/remote_cmd.py`**, which states the intent
+  (`as_root_action`, `as_steam`, `unprivileged`, `interactive_shell`, `presence`,
+  `clamav_ensure`). Never write `sudo` or `systemctl` by hand at a call site: in root mode the
+  builder must return byte-identical strings to the old ones, and that is what the existing suite
+  proves.
+- **Content runs as `steam`, never as root** (files, backups, console, terminal, folder/workshop
+  mods, antivirus scan). Root writing inside folders the game can write is a path from a
+  compromised game to root: a planted symlink is followed by `cat >`, `cp -a`, `chown` or `tar`.
+  The `cd /` before `sudo -u steam` exists because the session starts in the 0700 home of
+  `gamepanel`, which `steam` cannot enter.
+- **Root helpers take no free argument.** `gp-service` reads the unit from the root-owned
+  `/etc/gamepanel/ct.env`; helpers without arguments are written with `""` in sudoers, because a
+  command written without arguments accepts ANY arguments.
+- **Loader installers that write systemd drop-ins or `/etc/game-runtime.env` are refused in
+  helper mode** (`mods.needs_root`) until phase 6 moves their environment to a file owned by
+  `steam`.
+- **`lib/ct-panel-access.sh` is the one place that creates the user, helpers, sudoers and the
+  root lock**, used by `ct-phases.sh` (host and broker), both Docker images and the future
+  migration. `lock` only runs after `verify` passes, so a broken sudo never locks anyone out.
+  Prove it with `bash docker/ct-sandbox/panel-access.sh` (real sudo and sshd of Debian 13).
+- **In the dev compose `game-palworld` is helper mode and `game-dragonwilds` is root**, so both
+  paths run every day. Rebuilding the game images changes their SSH host keys: the panel refuses
+  them (as it should) until you remove the old keys from `/var/lib/gamepanel/known_hosts` in the
+  panel container.
 
 ## Broker (`src/gamebroker/`)
 
-O painel nao guarda credencial de Proxmox nem de OPNsense: quem guarda e o broker, que
-expoe verbos fixos (criar/desativar/remover instancia, catalogo). Pronto: nucleo,
-backends REAIS de Proxmox (`proxmox.py`) e OPNsense (`opnsense.py`) e o cliente HTTP
-(`integrations/http_client.py`), todos testados contra servidores falsos (`fake_http.py`), o instalador por
-SSH (`runtime/ssh_installer.py` + `lib/ct-install.sh`), a tela no painel e o DEPLOY do broker
-(`config.py`, `wsgi.py`, `provision-broker-lxc.sh`, `deploy-broker.ps1`). Falta so uma criacao
-REAL de ponta a ponta (nada disto rodou contra o seu Proxmox/OPNsense ainda). Segredos de
-teste e de deploy ficam em `broker.secrets.env` (fora do git);
-`check-broker-access.ps1` confere so leitura e `spike-broker-write.ps1` cria e
-apaga um CT/regra de teste.
+The panel does not keep Proxmox or OPNsense credentials: the broker does, and exposes
+fixed verbs (create/deactivate/remove instance, catalog). Done: the core, REAL Proxmox
+(`proxmox.py`) and OPNsense (`opnsense.py`) backends and the HTTP client
+(`integrations/http_client.py`), all tested against fake servers (`fake_http.py`), the
+SSH installer (`runtime/ssh_installer.py` + `lib/ct-install.sh`), the screen in the panel
+and the broker DEPLOY (`config.py`, `wsgi.py`, `provision-broker-lxc.sh`,
+`deploy-broker.ps1`). Only a REAL end-to-end creation is missing (none of this has run
+against your Proxmox/OPNsense yet). Test and deploy secrets live in `broker.secrets.env`
+(outside git); `check-broker-access.ps1` checks read-only access and
+`spike-broker-write.ps1` creates and deletes a test CT/rule.
 
-**Lado do painel** (`src/gamepanel/`): telas `/catalog` e `/instances`, flag
-`GAMEPANEL_ALLOW_BROKER` (desligada por padrao; config ruim DESLIGA o recurso em vez de
-derrubar o painel), `servers.broker_id` e `jobs.broker_op`. No compose de dev sobe um
-broker de brinquedo (`gamebroker/dev.py`, backends falsos): `docker compose up --build`.
+**Panel side** (`src/gamepanel/`): the `/catalog` and `/instances` screens, the
+`GAMEPANEL_ALLOW_BROKER` flag (off by default; a bad config TURNS THE FEATURE OFF instead
+of taking the panel down), `servers.broker_id` and `jobs.broker_op`. The dev compose
+starts a toy broker (`gamebroker/dev.py`, fake backends): `docker compose up --build`.
 
-- **Um instalador de jogo, dois transportes.** As fases que rodam DENTRO do CT (SteamCMD,
-  Wine/Proton, systemd) moram em `lib/ct-phases.sh`, lido por `provision-game-lxc.sh` (host:
-  `pct exec`) e por `lib/ct-install.sh` (dentro do CT, o que o broker roda por SSH). O
-  bundle do `deploy-game.ps1` e uma pasta SEM subpastas: a lib viaja como `ct-phases.sh` ao
-  lado do script. **Mexeu numa fase? Rode `bash docker/ct-sandbox/compare.sh`** (precisa do
-  Docker): roda o instalador ANTES e DEPOIS para 8 jogos com `pct`, `systemctl`, `apt-get` e
-  SteamCMD falsos e faz diff de arquivos, conteudo e linhas de comando; tambem compara host x
-  broker e confere o `install.env` que o Python gera. Sem isso a refatoracao e no escuro: nao
-  existe teste de shell no repositorio.
-- **Conta Steam do broker so vai para jogo CURADO que a exige** (`Game.needs_account`, vindo de
-  `STEAM_ANONYMOUS=0`; hoje o DayZ). Sem `STEAM_USER`/`STEAM_PASS` no broker esse jogo sai "manual"
-  do catalogo; com uma so, o broker nao sobe. `validate_dynamic` nunca a pede: jogo da API nao tem
-  como levar a senha para um CT. Ela entra no `install.env` (apagado pelo `_cleanup`), o log da
-  operacao a troca por `******` (`_masking`) e `SteamAccount` a tira do `repr`. A conta tem de
-  estar SEM Steam Guard: o primeiro login de cada CT novo e minutos depois do pedido.
-- **Servidor sem build Linux: Proton primeiro, SEMPRE.** Todo `games/*.env`, modelo e sugestao
-  manual de jogo so de Windows nasce com `proton`; `wine` direto so depois de o Proton ter sido
-  tentado e falhado com aquele jogo, com o motivo escrito no `.env`. O preco do Proton e o appid:
-  a API de game server da Steam precisa do REAL (UMU_ID/SteamAppId), senao a query nunca abre -
-  ver `icarus.env` e `vrising.env`. `test_templates.py` e `test_suggestions.py` cobram a regra.
-- **X virtual e a receita `xvfb`**, que so vale junto de `proton`/`wine`. O curado com
-  `WINDOWS_RUNTIME_XVFB=1` a ganha em `catalog._curated_recipes`: antes so o runtime ia para o
-  `install.env` do broker, e um Icarus criado pelo painel subia SEM o X virtual que o `.env` pede.
-- **`.exe` no `START_SCRIPT` vira `win-run` no `ExecStart`** (`render_systemd_unit`). Jogo
-  dinamico nao tem `POST_INSTALL_CMD` para escrever um wrapper `.sh`, e sem isso o servico morria
-  com "Exec format error". Curado continua com o wrapper dele (o `compare.sh` prova que nada mudou).
-- **O `WINE_DLL_OVERRIDES` do curado vai para o `install.env`** (`Game.wine_overrides`). Antes
-  so o runtime ia, e o V Rising criado pelo painel nascia com o padrao do `ct-phases.sh`, que
-  desliga o mscoree de que o BepInEx precisa. Jogo da API nao escolhe DLL do Wine.
-- **`install.env` e sempre `shlex.quote`.** Hook (`PRE/POST_INSTALL_CMD`) so existe no catalogo
-  curado; jogo da API escolhe **receitas** (`apply_recipes`, lista fechada), nunca escreve shell.
-  Receita desconhecida derruba a instalacao. A chave do broker sai do CT ao fim
-  (`_cleanup`, roda SEMPRE) e se ela nao sair a criacao FALHA.
-- **`games/*.env` tem de passar no `source` do bash.** Regex de log (`JOIN_RE`) com parenteses
-  precisa de aspas: sem elas 5 dos 8 jogos quebravam o deploy pelo Proxmox (o
-  `provision-game-lxc.sh` da `source` no arquivo cru). Conferir:
+- **One game installer, two transports.** The phases that run INSIDE the CT (SteamCMD,
+  Wine/Proton, systemd) live in `lib/ct-phases.sh`, read by `provision-game-lxc.sh` (host:
+  `pct exec`) and by `lib/ct-install.sh` (inside the CT, what the broker runs over SSH).
+  The `deploy-game.ps1` bundle is a folder WITHOUT subfolders: the lib travels as
+  `ct-phases.sh` next to the script. **Touched a phase? Run
+  `bash docker/ct-sandbox/compare.sh`** (needs Docker): it runs the installer BEFORE and
+  AFTER for 8 games with fake `pct`, `systemctl`, `apt-get` and SteamCMD and diffs files,
+  content and command lines; it also compares host x broker and checks the `install.env`
+  the Python side generates. Without it the refactoring is done in the dark: there are no
+  shell tests in the repository.
+- **The broker's Steam account only goes to a CURATED game that requires it**
+  (`Game.needs_account`, from `STEAM_ANONYMOUS=0`; today, DayZ). Without
+  `STEAM_USER`/`STEAM_PASS` on the broker that game shows as "manual" in the catalog; with
+  only one of them, the broker does not start. `validate_dynamic` never asks for it: an
+  API game has no way to carry the password to a CT. It goes into `install.env` (deleted
+  by `_cleanup`), the operation log replaces it with `******` (`_masking`) and
+  `SteamAccount` strips it from the `repr`. The account must have NO Steam Guard: the
+  first login of each new CT happens minutes after the request.
+- **Server without a Linux build: Proton first, ALWAYS.** Every `games/*.env`, template
+  and manual suggestion of a Windows-only game is born with `proton`; `wine` directly only
+  after Proton has been tried and failed with that game, with the reason written in the
+  `.env`. The price of Proton is the appid: Steam's game server API needs the REAL one
+  (UMU_ID/SteamAppId), otherwise the query never opens - see `icarus.env` and
+  `vrising.env`. `test_templates.py` and `test_suggestions.py` enforce the rule.
+- **Virtual X is the `xvfb` recipe**, which only applies together with `proton`/`wine`.
+  A curated game with `WINDOWS_RUNTIME_XVFB=1` gets it in `catalog._curated_recipes`:
+  before, only the runtime went to the broker's `install.env`, and an Icarus created by
+  the panel started WITHOUT the virtual X its `.env` asks for.
+- **An `.exe` in `START_SCRIPT` becomes `win-run` in `ExecStart`**
+  (`render_systemd_unit`). A dynamic game has no `POST_INSTALL_CMD` to write a `.sh`
+  wrapper, and without this the service died with "Exec format error". A curated game
+  keeps its wrapper (`compare.sh` proves nothing changed).
+- **The curated `WINE_DLL_OVERRIDES` goes to `install.env`** (`Game.wine_overrides`).
+  Before, only the runtime went, and a V Rising created by the panel was born with the
+  `ct-phases.sh` default, which disables the mscoree BepInEx needs. An API game does not
+  choose Wine DLLs.
+- **`install.env` is always `shlex.quote`.** Hooks (`PRE/POST_INSTALL_CMD`) only exist in
+  the curated catalog; an API game chooses **recipes** (`apply_recipes`, a closed list),
+  never writes shell. An unknown recipe aborts the install. The broker's key leaves the
+  CT at the end (`_cleanup`, runs ALWAYS) and if it does not leave, the creation FAILS.
+- **`games/*.env` must pass bash `source`.** A log regex (`JOIN_RE`) with parentheses
+  needs quotes: without them 5 of the 8 games broke the deploy through Proxmox
+  (`provision-game-lxc.sh` does `source` on the raw file). To check:
   `for f in games/*.env; do bash -c "set -a; source $f"; done`.
-- **Escrever texto para o bash no Windows:** `print()`/stdout em modo texto troca `\n` por
-  `\r\n` e o `source` le cada valor com um `\r` (o erro sai como `WINDOWS_RUNTIME invalido: ''`).
-  Grave com `newline="\n"` ou bytes.
-- **Deploy do broker** (`deploy-broker.ps1` -> `provision-broker-lxc.sh`, no host Proxmox): CT
-  unprivileged proprio, FORA do pool `games`, com gunicorn+TLS (1 worker, a trava de IP mora na
-  memoria) e systemd endurecido. **Token, chave SSH e certificado PERSISTEM entre deploys**
-  (regenerar quebraria o painel); so mudam com `-RotateToken` / `-RotateCert`. Os segredos
-  chegam em `broker.secrets.env` (0600, apagado no fim) e vao para `/etc/gamebroker/broker.env`;
-  nada de segredo na unit. O deploy **nao liga o recurso no painel**: `-ConfigurePanel` grava
-  URL/token/impressao com `GAMEPANEL_ALLOW_BROKER=0`, e `-EnableOnPanel` pede confirmacao.
-  Os nomes antigos (`-ConfigurarPainel`, `-LigarNoPainel`, e `-SoProxmox`/`-SoOpnsense`/
-  `-ComSsh` no spike) continuam valendo por `[Alias(...)]`: a linha de comando e a unica
-  coisa daqui que alguem tem salva em outro lugar, e traduzir o identificador nao pode
-  quebrar o que ja esta anotado num README ou num historico de shell.
-  **Prove com `bash docker/ct-sandbox/broker.sh`** (modo/dono, env relido pelo `config.load` real,
-  segredo com aspas/barra/cifrao/crase, idempotencia, rotacao).
-- **`set -e` + `pipefail` + `$(...)` = saida CALADA.** Falha dentro de uma substituicao encerra o
-  script antes do `[[ -n "$x" ]] || die "..."` que a explicaria (foi o que o primeiro deploy real
-  fez quando o host Proxmox nao alcancou o OPNsense: parou sem mensagem). Todo script de
-  provisionamento tem `trap ERR` (linha + comando, sem segredo) e usa `|| true` dentro do `$(...)`
-  que alimenta um `die`. O sandbox tem casos para os dois.
-- **ssh/scp no PowerShell 5.1:** o stderr do remoto (ate um `systemctl enable` que da certo imprime
-  "Created symlink") vira excecao com `$ErrorActionPreference = "Stop"` e saida redirecionada.
-  `Invoke-Native` (deploy-broker.ps1) relaxa a preferencia so durante o comando; o que decide e o
-  `$LASTEXITCODE`.
-- **Teste de saude de dentro do CT usa `127.0.0.1`, que entra em `BROKER_ALLOW_IPS`** junto do IP do
-  painel (lista vazia = qualquer origem, entao ali o loopback NAO e acrescentado). Sonda de saude tem
-  prazo curto (`SONDA_TIMEOUT`): um firewall que descarta pacote nao pode fazer a saude demorar 30 s.
-- **A API do Proxmox e a do OPNsense precisam de regra de firewall do CT do broker** (o resumo do
-  deploy lista). Sem elas o broker sobe, mas a saude mostra "NAO RESPONDE" e nada e criado.
-- **`gamebroker/config.py` valida TUDO e lista TODOS os problemas de uma vez**, so pelo NOME da
-  variavel (nunca o valor). Config ruim derruba o START (`SystemExit(2)`), nunca um pedido.
-  https exige impressao SHA-256; http so em loopback.
-- **Valor no `EnvironmentFile` do systemd:** `NOME="valor"` com `\` e `"` escapados (`$` nao
-  expande ali). Teste com parser caractere a caractere: um regex guloso engole uma aspa sem
-  escape e esconde o defeito.
-- **Impressao dos certificados do Proxmox/OPNsense e lida do servidor no deploy (TOFU) e
-  IMPRESSA para voce conferir.** Se ja souber a impressao, ponha em `*_CERT_SHA256`.
-- **`gamebroker` e `gamepanel` sao os dois pacotes do workspace uv** (`src/gamebroker/`,
-  `src/gamepanel/`), instalados editaveis no `.venv` por `uv sync` — e por isso que
-  `import gamebroker.X` funciona em qualquer lugar do repo sem manipular `sys.path`.
-  As suites de cada um vivem em `tests/gamebroker/`/`tests/gamepanel/`, testando o
-  pacote instalado, nao um caminho relativo. Rode so o broker da raiz:
+- **Writing text for bash on Windows:** `print()`/stdout in text mode turns `\n` into
+  `\r\n` and `source` reads each value with a `\r` (the error comes out as
+  `WINDOWS_RUNTIME invalido: ''`). Write with `newline="\n"` or bytes.
+- **Broker deploy** (`deploy-broker.ps1` -> `provision-broker-lxc.sh`, on the Proxmox
+  host): its own unprivileged CT, OUTSIDE the `games` pool, with gunicorn+TLS (1 worker,
+  the IP lockout lives in memory) and hardened systemd. **Token, SSH key and certificate
+  PERSIST across deploys** (regenerating would break the panel); they only change with
+  `-RotateToken` / `-RotateCert`. The secrets arrive in `broker.secrets.env` (0600,
+  deleted at the end) and go to `/etc/gamebroker/broker.env`; no secrets in the unit. The
+  deploy **does not turn the feature on in the panel**: `-ConfigurePanel` writes
+  URL/token/fingerprint with `GAMEPANEL_ALLOW_BROKER=0`, and `-EnableOnPanel` asks for
+  confirmation. The old names (`-ConfigurarPainel`, `-LigarNoPainel`, and
+  `-SoProxmox`/`-SoOpnsense`/`-ComSsh` in the spike) keep working through `[Alias(...)]`:
+  the command line is the only thing here someone has saved somewhere else, and
+  translating the identifier cannot break what is already written down in a README or a
+  shell history. **Prove it with `bash docker/ct-sandbox/broker.sh`** (mode/owner, env
+  re-read by the real `config.load`, secrets with quotes/backslash/dollar/backtick,
+  idempotency, rotation).
+- **`set -e` + `pipefail` + `$(...)` = SILENT exit.** A failure inside a substitution ends
+  the script before the `[[ -n "$x" ]] || die "..."` that would explain it (that is what
+  the first real deploy did when the Proxmox host could not reach OPNsense: it stopped
+  with no message). Every provisioning script has `trap ERR` (line + command, no secret)
+  and uses `|| true` inside the `$(...)` that feeds a `die`. The sandbox has cases for
+  both.
+- **ssh/scp in PowerShell 5.1:** the remote stderr (even a successful `systemctl enable`
+  prints "Created symlink") becomes an exception with `$ErrorActionPreference = "Stop"`
+  and redirected output. `Invoke-Native` (deploy-broker.ps1) relaxes the preference only
+  during the command; what decides is `$LASTEXITCODE`.
+- **The health check from inside the CT uses `127.0.0.1`, which goes into
+  `BROKER_ALLOW_IPS`** along with the panel's IP (empty list = any origin, so there the
+  loopback is NOT added). The health probe has a short deadline (`SONDA_TIMEOUT`): a
+  firewall that drops packets cannot make the health check take 30 s.
+- **The Proxmox API and the OPNsense API need a firewall rule for the broker's CT** (the
+  deploy summary lists them). Without them the broker starts, but health shows
+  "NAO RESPONDE" and nothing gets created.
+- **`gamebroker/config.py` validates EVERYTHING and lists ALL problems at once**, only by
+  the variable NAME (never the value). A bad config kills the START (`SystemExit(2)`),
+  never a request. https requires a SHA-256 fingerprint; http only on loopback.
+- **Values in a systemd `EnvironmentFile`:** `NOME="valor"` with `\` and `"` escaped (`$`
+  does not expand there). Test with a character-by-character parser: a greedy regex
+  swallows an unescaped quote and hides the defect.
+- **The Proxmox/OPNsense certificate fingerprint is read from the server at deploy time
+  (TOFU) and PRINTED for you to check.** If you already know the fingerprint, put it in
+  `*_CERT_SHA256`.
+- **`gamebroker` and `gamepanel` are the two packages of the uv workspace**
+  (`src/gamebroker/`, `src/gamepanel/`), installed editable in the `.venv` by `uv sync` —
+  that is why `import gamebroker.X` works anywhere in the repo without touching
+  `sys.path`. Each one's suites live in `tests/gamebroker/`/`tests/gamepanel/`, testing
+  the installed package, not a relative path. Run only the broker from the root:
   `uv run pytest tests/gamebroker`.
-- **`services/instance_service.py` so conhece as interfaces de `runtime/base.py`.** Proxmox, OPNsense, SSH e rede
-  reais entram depois sem mexer nele; os testes usam `runtime/fakes.py`.
-- **Catalogo em dois niveis**: `games/*.env` (curado, pode ter `PRE/POST_INSTALL_CMD`) e
-  jogos cadastrados pela API (**so dado**). O `.env` e lido por `catalog.read_env`, nunca por
-  `source`, e campo que o broker nao conhece e RECUSADO — e assim que `pre_install_cmd`
-  deixa de entrar de contrabando. Campo novo em jogo dinamico = regex propria em
-  `services/catalog.py` e um caso em `INVALID_CASES` do teste.
-- **Editar um jogo CURADO pelo painel grava uma sobreposicao, nunca o `.env`.** A edicao vai
-  para `<chave>.json` na pasta dos dinamicos, passa pelo mesmo `validate_dynamic` e so troca
-  DADOS: o `PRE/POST_INSTALL_CMD` e o motivo de nao ser criavel continuam os do arquivo
-  (`catalog._as_override`). "Apagar" num curado editado DESFAZ a edicao; num curado sem
-  edicao e recusado (ele vem do git). Consequencia que pega: um `.json` antigo com a chave
-  de um curado novo passa a valer POR CIMA dele — foi o caso do Valheim, cadastrado pela
-  sugestao do LinuxGSM antes de existir `games/valheim.env`.
-- **Porta interna == externa, sempre.** Jogo `deslocavel` (`PORTS_SHIFTABLE=1`) recebe um bloco
-  de portas seguidas da FAIXA do broker (`BROKER_PORT_INICIO/FIM`, padrao 31000-31999, abaixo das
-  efemeras 32768+ e longe das portas padrao dos jogos), nunca as portas padrao; os demais ficam
-  nas portas padrao e sao recusados se estiverem ocupadas. Isso e ir para a faixa mesmo com a
-  porta padrao livre: mistura de "servidor antigo na porta padrao" com "servidor do broker na
-  faixa" e o que impede um dia colidir. O jogo so e `deslocavel` se o broker consegue AVISA-LO de
-  todas as portas: `START_ARGS` com `{PORT}` (e `{QUERY_PORT}` se ha query, `{EXTRA_PORT}` se ha
-  porta extra) e nenhuma porta alem dessas tres (`catalog.shiftable_problem`, validado no
-  carregamento). A porta extra (`EXTRA_PORT=`/`porta_extra`) existe por causa do Satisfactory: alem
-  da principal (UDP+TCP) ele abre a 8888/TCP de mensagens confiaveis, que sem `-ReliablePort=` fica
-  fixa e impede uma segunda instancia. O `ct-phases.sh` troca `{EXTRA_PORT}` como os outros dois; o
-  marcador sem porta extra e recusado (viraria `0`). **Nenhum curado usa a faixa, por decisao**
-  (`PORTS_SHIFTABLE=0` com o motivo escrito em cada `.env`): o servidor fica na porta que todo
-  mundo conhece, e uma segunda instancia do mesmo jogo e recusada. Os marcadores continuam no
-  `START_ARGS` (recebem a porta padrao), entao voltar e trocar um numero. Jogo dinamico ainda pode
-  andar de porta. Ver `services/allocator.py`.
-  No `compare.sh` o Satisfactory "antes x depois" roda sem o marcador (`satisfactory-legado.env`):
-  o instalador de referencia nao o conhece e deixaria `{EXTRA_PORT}` literal no ExecStart.
-- **Enderecos: o IP diz o CTID.** Painel `.100` (CT 300), broker `.101` (CT 301), jogos do
-  broker `.102-.199` (CT 302-399): `CTID = BROKER_CTID_BASE (200) + ultimo numero do IP`, ou
-  seja "3" + os dois ultimos digitos do IP (`allocator.pick_ip_and_ctid`; um IP so serve se o
-  CTID dele tambem esta livre). Tudo em 300-399 e deste sistema; os CTs 2xx sao os antigos, feitos
-  a mao ou pelo `deploy-game.ps1`, e ficam onde estao. As VMs 100-111 do Proxmox nao colidem. Com
-  `BROKER_CTID_BASE=0` o CTID volta a ser escolhido a parte, na faixa `BROKER_CTID_INICIO/FIM`.
-  **O DHCP do OPNsense nao pode cobrir `.100-.199`**: a checagem por ping nao pega um aparelho
-  que ainda vai chegar.
-- **Sugestoes de jogo (formulario "Adicionar jogo")** vem do LinuxGSM (MIT), convertidas por
-  `python tools/import-linuxgsm.py` e commitadas em
-  `src/gamepanel/games/catalog/suggestions.py` (110 jogos): o painel em producao NAO vai
-  a internet (a API oficial da loja Steam nem serve: servidor dedicado e app do tipo
-  "Tool" e volta `success:false`). Regras do conversor, cada uma com teste em
-  `tests/gamebroker/test_import_linuxgsm.py` e `tests/gamebroker/test_suggestions.py`: so sai o que o
-  `validate_dynamic` aceita; porta de RCON/telnet/HTTP vai so no argumento e NUNCA no NAT; variavel
-  de senha/nome/IP/token nunca e resolvida (o argumento sai, com aviso); tudo depois de `; | & \`
-  `$(` e cortado; variavel vazia derruba a opcao junto (senao ela engole a proxima).
-  **Tres fontes alem do `_default.cfg`**, e sem elas o conversor nao da erro, so sai mais pobre
-  (`test_suggestions.py` acusa): o info_game.sh do LinuxGSM diz em que CHAVE do config do jogo mora a porta
-  dos ~30 que nao a tem no `_default.cfg`, e o arquivo padrao do `Game-Server-Configs` da o valor
-  (`ports_from_game_config`) - sem isso o formulario mostrava o EXEMPLO do campo (7777) como se
-  fosse a porta; o info_messages.sh da o protocolo de cada porta (Terraria e so TCP), menos a
-  consulta da Steam, que e UDP sempre embora ele liste TCP em jogos Unreal. Consulta que o jogo
-  abre sozinho (`queryport="$((port + 1))"` do Valheim) entra no firewall e tira o jogo do
-  sorteio de portas: o broker nao tem como avisa-la. Enshrouded, Icarus e Dragonwilds nao estao
-  no LinuxGSM: continuam manuais. E a busca e SEMPRE sugestao: quem valida e o broker no envio.
-- **Segunda fonte: os eggs do Pterodactyl** (`python tools/import-pterodactyl.py`, ou `--source`
-  com um clone de pelican-eggs/games-steamcmd). Ordem de quem vence o mesmo App ID: catalogo da
-  pagina, lista manual, LinuxGSM, egg - o gerador PULA o que as outras ja tem, e
-  `test_suggestions.py` cobra que nenhum App ID cruze fontes. O egg so COMPLETA uma sugestao do
-  LinuxGSM campo a campo, no que la esta vazio (arquivos de config; portas quando o LinuxGSM nao
-  achou nenhuma, e ai em bloco e sem andar de porta), e a juncao passa pelo `validate_dynamic` NA
-  GERACAO: o painel em producao nao tem o pacote do broker para validar em tempo de uso. Tres
-  coisas que o egg nao diz e o conversor NAO chuta: o numero da porta principal (e a alocacao do
-  Pterodactyl; vem da tabela "Server Ports" do README da pasta), o protocolo (sem coluna, UDP com
-  aviso) e o executavel quando o egg sobe por `java`/`dotnet` (fica em branco com aviso). O
-  `install` do egg e shell e nunca e lido. Servidor de Windows do egg sai com `proton`, mesmo
-  quando o egg usa wine.
-- **Desfazer nao pode mentir**: se a limpeza falha, a reserva vira `falhou` e continua
-  bloqueando IP/CTID/portas ate alguem remover (`instance_service._undo`).
-- **TLS e por IMPRESSAO, nunca `verify=False`.** Proxmox e OPNsense sao autoassinados;
-  `http_client.Client` aceita so o certificado cuja SHA-256 e a configurada (o
-  `check-broker-access.ps1` a imprime), e recusa `http://` fora de loopback. Impressao
-  digitada errada e ERRO, nao "sem pin" (ja foi um bug: lixo virava string vazia).
-- **Regras que o Proxmox real impoe** (o `PveFalso` as repete, entao regredir quebra teste):
-  tag na criacao e `keyctl` sao 403 para o token; tarefa `WARNINGS: n` e sucesso; a tag e
-  gravada DEPOIS. A identidade de um CT do broker e o **pool**, nao a tag.
-- **O OPNsense guarda porta em ALIAS.** `opnsense.busy_ports` le o alias do resumo em
-  HTML do `search_rule` e **falha fechada**: regra do WAN que nao entende => `ErroDeLeitura`
-  e nada novo e aberto. Regra desativada continua ocupando a porta. `fechar` casa a
-  descricao `gamepanel:<ctid>` por IGUALDADE (por prefixo, o 30 apagaria o 300).
-- **`remover` nao libera CTID/IP de CT que talvez exista.** O token so enxerga o pool, e
-  "apagado a mao" e "movido de pool" dao o mesmo 403; so `db_only` limpa o registro.
-- **Job do broker nao e `start_job`.** Criar instancia demora minutos e nao tem servidor SSH
-  ainda: `start_broker_job` grava um job SEM servidor e `follow_operation` faz polling no
-  broker gravando o log a cada volta (o `start_job` comum so grava no fim). No fim
-  cadastra o servidor pelo `ensure_server`; se isso falhar o job diz que **a instancia
-  existe** no Proxmox. `resume_broker_jobs` religa o acompanhamento depois de um restart.
-- **Tudo do broker e so de admin**, inclusive a saida dos jobs (`JOB_ACTIONS_ADMIN`): ela cita
-  IP, CTID e portas. A rota empilha `@admin_required` e depois `@broker_required`.
-- **`broker_client` e chamado sempre pelo modulo** (`broker_client.create(...)`): e assim que os
-  testes o trocam por um falso. Nao faca `from broker_client import create`.
-- **Tabela no celular: uma coluna.** Com estado e acoes em colunas proprias, as ACOES saiam
-  da tela (rolagem lateral). Ver `instances.html` e `catalog.html`. E o servidor local so
-  recarrega template com `GAMEPANEL_DEV=1`: sem ele voce testa o template ANTIGO.
-- **Handler `Exception` do Flask engole 404/405** se nao houver um de `HTTPException` antes
-  (ja aconteceu aqui: rota errada virava "erro interno").
-- **O formato de FIO da API mora em `domain/wire.py`, e nao no `SELECT`.** Antes,
-  `/v1/instancias` devolvia `SELECT * FROM instancias`: o nome de cada coluna era, sem
-  ninguem ter decidido, o nome de cada campo do JSON — renomear coluna quebrava o painel,
-  e renomear campo pedia migration. Hoje ha uma funcao por recurso, com a lista de campos
-  FIXA. O valor nao e traduzir nome (eles ate coincidem agora): e um `SELECT *` nao levar
-  a proxima coluna para o contrato no dia em que ela nascer.
-- **Coluna que muda de NOME tem mecanismo proprio.** No painel e `schema.RENAMES`
-  (a pergunta do `MIGRATIONS` e "a coluna existe?"; aqui e "ela ainda tem o nome
-  velho?"); no broker e `_migrate_names`, que renomeia tabela tambem. As duas usam
-  `ALTER TABLE ... RENAME`, que preserva os dados — tabela nova mais copia e onde se
-  perde linha. Renomear TABELA pede duas coisas a mais: a migration corre ANTES do
-  `CREATE TABLE IF NOT EXISTS` (senao ele cria as novas vazias ao lado) e os indices e
-  triggers velhos sao derrubados, porque carregam o nome antigo no corpo — um trigger
-  de append-only apontando para tabela que nao existe mais e o mesmo que nao existir.
-  Migration so roda no banco de quem JA tinha o sistema, e os outros testes vivem num
-  banco novo: quem a exercita sao `tests/gamepanel/test_schema.py` e
-  `tests/gamebroker/test_migration.py`, que montam o esquema antigo a mao.
+- **`services/instance_service.py` only knows the interfaces in `runtime/base.py`.** Real
+  Proxmox, OPNsense, SSH and network come in later without touching it; the tests use
+  `runtime/fakes.py`.
+- **Two-level catalog**: `games/*.env` (curated, may have `PRE/POST_INSTALL_CMD`) and
+  games registered through the API (**data only**). The `.env` is read by
+  `catalog.read_env`, never by `source`, and a field the broker does not know is REFUSED
+  — that is how `pre_install_cmd` stops getting smuggled in. New field in a dynamic game =
+  its own regex in `services/catalog.py` and a case in the test's `INVALID_CASES`.
+- **Editing a CURATED game from the panel writes an overlay, never the `.env`.** The edit
+  goes to `<chave>.json` in the dynamic games folder, passes through the same
+  `validate_dynamic` and only changes DATA: the `PRE/POST_INSTALL_CMD` and the reason for
+  not being creatable stay those of the file (`catalog._as_override`). "Delete" on an
+  edited curated game UNDOES the edit; on an unedited curated game it is refused (it
+  comes from git). A consequence that bites: an old `.json` with the key of a new curated
+  game starts applying ON TOP of it — that was the case of Valheim, registered from the
+  LinuxGSM suggestion before `games/valheim.env` existed.
+- **Internal port == external port, always.** A `deslocavel` (shiftable) game
+  (`PORTS_SHIFTABLE=1`) gets a block of consecutive ports from the broker's RANGE
+  (`BROKER_PORT_INICIO/FIM`, default 31000-31999, below the ephemeral 32768+ and far from
+  the games' default ports), never the default ports; the others stay on the default
+  ports and are refused if those are taken. That means going to the range even with the
+  default port free: a mix of "old server on the default port" and "broker server in the
+  range" is what prevents a collision one day. A game is only `deslocavel` if the broker
+  can TELL it about all of its ports: `START_ARGS` with `{PORT}` (and `{QUERY_PORT}` if
+  there is a query, `{EXTRA_PORT}` if there is an extra port) and no port beyond those
+  three (`catalog.shiftable_problem`, validated at load). The extra port
+  (`EXTRA_PORT=`/`porta_extra`) exists because of Satisfactory: besides the main one
+  (UDP+TCP) it opens 8888/TCP for reliable messages, which without `-ReliablePort=` is
+  fixed and prevents a second instance. `ct-phases.sh` replaces `{EXTRA_PORT}` like the
+  other two; the placeholder without an extra port is refused (it would become `0`).
+  **No curated game uses the range, by decision** (`PORTS_SHIFTABLE=0` with the reason
+  written in each `.env`): the server stays on the port everybody knows, and a second
+  instance of the same game is refused. The placeholders stay in `START_ARGS` (they
+  receive the default port), so going back is changing one number. A dynamic game can
+  still move ports. See `services/allocator.py`. In `compare.sh` the "before x after"
+  Satisfactory runs without the placeholder (`satisfactory-legado.env`): the reference
+  installer does not know it and would leave `{EXTRA_PORT}` literal in the ExecStart.
+- **Addresses: the IP tells the CTID.** Panel `.100` (CT 300), broker `.101` (CT 301),
+  broker games `.102-.199` (CT 302-399): `CTID = BROKER_CTID_BASE (200) + ultimo numero do
+  IP` (the last number of the IP), that is, "3" + the IP's last two digits
+  (`allocator.pick_ip_and_ctid`; an IP only works if its CTID is also free). Everything in
+  300-399 belongs to this system; the 2xx CTs are the old ones, made by hand or by
+  `deploy-game.ps1`, and stay where they are. The Proxmox VMs 100-111 do not collide. With
+  `BROKER_CTID_BASE=0` the CTID goes back to being chosen separately, in the
+  `BROKER_CTID_INICIO/FIM` range. **OPNsense's DHCP must not cover `.100-.199`**: the ping
+  check cannot catch a device that has yet to arrive.
+- **Game suggestions (the "Add game" form)** come from LinuxGSM (MIT), converted by
+  `python tools/import-linuxgsm.py` and committed in
+  `src/gamepanel/games/catalog/suggestions.py` (110 games): the panel in production does
+  NOT go to the internet (the official Steam store API does not even help: a dedicated
+  server is a "Tool" type app and returns `success:false`). Converter rules, each with a
+  test in `tests/gamebroker/test_import_linuxgsm.py` and
+  `tests/gamebroker/test_suggestions.py`: only what `validate_dynamic` accepts comes out;
+  an RCON/telnet/HTTP port goes only into the argument and NEVER into NAT; a
+  password/name/IP/token variable is never resolved (the argument is dropped, with a
+  warning); everything after `; | & \` `$(` is cut; an empty variable drops the option
+  with it (otherwise it swallows the next one). **Three sources besides `_default.cfg`**,
+  and without them the converter does not error, it just comes out poorer
+  (`test_suggestions.py` flags it): LinuxGSM's info_game.sh says in which KEY of the
+  game's config the port lives for the ~30 that do not have it in `_default.cfg`, and the
+  default file from `Game-Server-Configs` gives the value (`ports_from_game_config`) -
+  without that the form showed the field's EXAMPLE (7777) as if it were the port;
+  info_messages.sh gives each port's protocol (Terraria is TCP only), except the Steam
+  query, which is always UDP even though it lists TCP for Unreal games. A query port the
+  game opens on its own (Valheim's `queryport="$((port + 1))"`) goes into the firewall and
+  takes the game out of port shifting: the broker has no way to tell it. Enshrouded,
+  Icarus and Dragonwilds are not in LinuxGSM: they stay manual. And search is ALWAYS a
+  suggestion: the broker validates on submission.
+- **Second source: Pterodactyl eggs** (`python tools/import-pterodactyl.py`, or
+  `--source` with a clone of pelican-eggs/games-steamcmd). Order of who wins the same App
+  ID: the page's catalog, the manual list, LinuxGSM, egg - the generator SKIPS what the
+  others already have, and `test_suggestions.py` ensures no App ID crosses sources. The
+  egg only COMPLETES a LinuxGSM suggestion field by field, where it is empty (config
+  files; ports when LinuxGSM found none, and then as a block and without shifting), and
+  the merge passes through `validate_dynamic` AT GENERATION: the panel in production does
+  not have the broker package to validate at use time. Three things the egg does not say
+  and the converter does NOT guess: the main port number (it is Pterodactyl's allocation;
+  it comes from the "Server Ports" table in the folder's README), the protocol (no column,
+  UDP with a warning) and the executable when the egg starts through `java`/`dotnet` (left
+  blank with a warning). The egg's `install` is shell and is never read. A Windows server
+  from an egg comes out with `proton`, even when the egg uses wine.
+- **Undo cannot lie**: if the cleanup fails, the reservation becomes `falhou` (failed) and
+  keeps blocking IP/CTID/ports until someone removes it (`instance_service._undo`).
+- **TLS is by FINGERPRINT, never `verify=False`.** Proxmox and OPNsense are self-signed;
+  `http_client.Client` only accepts the certificate whose SHA-256 is the configured one
+  (`check-broker-access.ps1` prints it), and refuses `http://` outside loopback. A
+  mistyped fingerprint is an ERROR, not "no pin" (it was a bug once: garbage became an
+  empty string).
+- **Rules the real Proxmox imposes** (`PveFalso` repeats them, so regressing breaks a
+  test): a tag at creation and `keyctl` are 403 for the token; a `WARNINGS: n` task is a
+  success; the tag is written AFTERWARDS. The identity of a broker CT is the **pool**, not
+  the tag.
+- **OPNsense keeps ports in an ALIAS.** `opnsense.busy_ports` reads the alias from the
+  HTML summary of `search_rule` and **fails closed**: a WAN rule it does not understand
+  => `ErroDeLeitura` and nothing new is opened. A disabled rule still occupies the port.
+  `fechar` matches the `gamepanel:<ctid>` description by EQUALITY (by prefix, 30 would
+  delete 300).
+- **`remover` does not release the CTID/IP of a CT that may exist.** The token only sees
+  the pool, and "deleted by hand" and "moved out of the pool" give the same 403; only
+  `db_only` clears the record.
+- **A broker job is not `start_job`.** Creating an instance takes minutes and has no SSH
+  server yet: `start_broker_job` records a job WITHOUT a server and `follow_operation`
+  polls the broker writing the log on each round (the regular `start_job` only writes at
+  the end). At the end it registers the server through `ensure_server`; if that fails the
+  job says that **the instance exists** in Proxmox. `resume_broker_jobs` reattaches the
+  follow-up after a restart.
+- **Everything about the broker is admin-only**, including the jobs' output
+  (`JOB_ACTIONS_ADMIN`): it mentions IP, CTID and ports. The route stacks
+  `@admin_required` and then `@broker_required`.
+- **`broker_client` is always called through the module** (`broker_client.create(...)`):
+  that is how the tests swap it for a fake. Do not do `from broker_client import create`.
+- **Table on the phone: one column.** With state and actions in their own columns, the
+  ACTIONS went off screen (horizontal scrolling). See `instances.html` and
+  `catalog.html`. And the local server only reloads templates with `GAMEPANEL_DEV=1`:
+  without it you are testing the OLD template.
+- **Flask's `Exception` handler swallows 404/405** if there is no `HTTPException` one
+  before it (it happened here: a wrong route became "internal error").
+- **The API's WIRE format lives in `domain/wire.py`, not in the `SELECT`.** Before,
+  `/v1/instancias` returned `SELECT * FROM instancias`: the name of each column was,
+  without anyone having decided it, the name of each JSON field — renaming a column broke
+  the panel, and renaming a field required a migration. Today there is one function per
+  resource, with a FIXED field list. The value is not translating names (they even match
+  now): it is a `SELECT *` not carrying the next column into the contract the day it is
+  born.
+- **A column that changes NAME has its own mechanism.** In the panel it is
+  `schema.RENAMES` (the question for `MIGRATIONS` is "does the column exist?"; here it is
+  "does it still have the old name?"); in the broker it is `_migrate_names`, which renames
+  tables too. Both use `ALTER TABLE ... RENAME`, which preserves the data — new table plus
+  copy is where rows get lost. Renaming a TABLE needs two more things: the migration runs
+  BEFORE `CREATE TABLE IF NOT EXISTS` (otherwise it creates the new ones empty next to
+  them) and the old indexes and triggers are dropped, because they carry the old name in
+  their body — an append-only trigger pointing to a table that no longer exists is the
+  same as not existing. A migration only runs on the database of someone who ALREADY had
+  the system, and the other tests live in a new database: what exercises it is
+  `tests/gamepanel/test_schema.py` and `tests/gamebroker/test_migration.py`, which build
+  the old schema by hand.
 
 ---
 
-## Firewall dos CTs (`lib/ct-firewall.sh`)
+## CT firewall (`lib/ct-firewall.sh`)
 
-Um script so, com tres papeis (`panel`, `broker`, `game`), instalado em cada CT como
-`/usr/local/sbin/ct-firewall`; a configuracao do CT mora em `/etc/ct-firewall.env`. Existe
-porque o OPNsense nao ve o trafego DENTRO da sub-rede. O README tem a tabela de regras.
+A single script, with three roles (`panel`, `broker`, `game`), installed in each CT as
+`/usr/local/sbin/ct-firewall`; the CT's configuration lives in `/etc/ct-firewall.env`. It
+exists because OPNsense does not see traffic INSIDE the subnet. The README has the rule
+table.
 
-- **Todo caminho de deploy chama o MESMO script**: `provision-admin-lxc.sh`,
-  `provision-broker-lxc.sh`, `setup_firewall` no `ct-phases.sh` (host e broker) e o
-  `deploy/firewall/apply-firewall.sh`. Regra de seguranca escrita em dois lugares diverge.
-- **Todo valor e conferido antes de virar regra** (IPv4/CIDR/faixa, porta 1-65535): ele vai
-  parar dentro de um texto do nft. Valor torto para o `apply` com a regra antiga intacta.
-- **`nft -c` antes de gravar o arquivo de boot**: uma regra que o kernel recusa nao pode virar
-  `/etc/nftables.conf`, senao o CT sobe sem firewall no proximo boot.
-- **Sem saber quem administra, NAO aplica** (jogo sem `FW_MGMT_SOURCES`, painel sem IP): o
-  erro que tranca o painel fora de um servidor e pior que o CT ficar sem firewall.
-- **Aplicou, testa; o teste falhou, desliga.** O deploy do broker repete a sonda de saude sem
-  as regras; o do painel testa a web a partir do host; o `apply-firewall.sh` testa cada CT.
-  Tudo passa por `pct`, entao uma regra errada nunca tranca o deploy fora do CT.
-- **O jogo aplica o firewall por ULTIMO** (`setup_firewall` depois de `start_game_service`): as
-  fases anteriores baixam da internet, e uma regra de saida errada quebraria a instalacao sem
-  dizer por que. Pelo broker, a limpeza da chave vem depois e precisa do IP DELE em
-  `BROKER_FIREWALL_SOURCES`, que o provision grava a partir do IP do CT.
-- **`established` NAO segura a sessao que ja estava aberta antes do apply.** Num CT do Proxmox
-  nada pede conntrack antes do firewall, entao a sessao SSH do broker (a que roda a instalacao)
-  nao e acompanhada; com `tcp_loose=1` o primeiro pacote de saida depois do apply vira conexao
-  NOVA e cai na recusa da rede interna. A criacao do V Rising travou assim, "executando" para
-  sempre com o fim do log preso no socket. Por isso a saida do papel `game` aceita a RESPOSTA
-  do SSH e do ping para `FW_MGMT_SOURCES` antes de tudo, antes ate do `invalid drop`
-  (`output_game_first`). O sandbox (kernel do WSL2) NAO reproduz a falha - la o conntrack ja
-  acompanha a sessao -, e o comentario do caso diz isso; a prova foi no CT real.
-- **O host carrega o `nf_tables`** (e o deixa em `/etc/modules-load.d`): CT unprivileged usa o
-  nftables, mas nao carrega modulo de kernel.
-- **Prove com `bash docker/ct-sandbox/firewall.sh`** (nftables DE VERDADE, com `CAP_NET_ADMIN`:
-  um container por papel mais um intruso na mesma LAN, testando cada conexao que deve abrir e
-  cada uma que deve fechar). O `compare.sh` prova que host e broker geram o mesmo firewall, e
-  o `broker.sh` as regras do broker; os dois usam um `nft` falso.
+- **Every deploy path calls the SAME script**: `provision-admin-lxc.sh`,
+  `provision-broker-lxc.sh`, `setup_firewall` in `ct-phases.sh` (host and broker) and
+  `deploy/firewall/apply-firewall.sh`. A security rule written in two places diverges.
+- **Every value is checked before becoming a rule** (IPv4/CIDR/range, port 1-65535): it
+  ends up inside nft text. A crooked value stops the `apply` with the old rule intact.
+- **`nft -c` before writing the boot file**: a rule the kernel refuses cannot become
+  `/etc/nftables.conf`, otherwise the CT boots without a firewall next time.
+- **Without knowing who administers it, it does NOT apply** (a game without
+  `FW_MGMT_SOURCES`, a panel without an IP): the mistake that locks the panel out of a
+  server is worse than the CT staying without a firewall.
+- **Applied, test; the test failed, turn it off.** The broker deploy repeats the health
+  probe without the rules; the panel's tests the web from the host; `apply-firewall.sh`
+  tests each CT. Everything goes through `pct`, so a wrong rule never locks the deploy out
+  of the CT.
+- **The game applies the firewall LAST** (`setup_firewall` after `start_game_service`):
+  the earlier phases download from the internet, and a wrong egress rule would break the
+  install without saying why. Through the broker, the key cleanup comes afterwards and
+  needs ITS IP in `BROKER_FIREWALL_SOURCES`, which the provision writes from the CT's IP.
+- **`established` does NOT hold the session that was already open before the apply.** In
+  a Proxmox CT nothing asks for conntrack before the firewall, so the broker's SSH session
+  (the one running the install) is not tracked; with `tcp_loose=1` the first outgoing
+  packet after the apply becomes a NEW connection and falls into the internal network
+  refusal. The V Rising creation froze that way, "running" forever with the end of the log
+  stuck in the socket. That is why the `game` role's output accepts the REPLY of SSH and
+  ping to `FW_MGMT_SOURCES` before anything else, even before `invalid drop`
+  (`output_game_first`). The sandbox (WSL2 kernel) does NOT reproduce the failure - there
+  conntrack already tracks the session -, and the case's comment says so; the proof was on
+  the real CT.
+- **The host loads `nf_tables`** (and leaves it in `/etc/modules-load.d`): an unprivileged
+  CT uses nftables, but cannot load kernel modules.
+- **Prove it with `bash docker/ct-sandbox/firewall.sh`** (REAL nftables, with
+  `CAP_NET_ADMIN`: one container per role plus an intruder on the same LAN, testing every
+  connection that must open and every one that must close). `compare.sh` proves that host
+  and broker generate the same firewall, and `broker.sh` the broker's rules; both use a
+  fake `nft`.
 
-## Versao e deploy — um artefato, publicado por symlink
+## Version and deploy — one artifact, published by symlink
 
-A versao do repositorio esta no `VERSION` da raiz (semver, editado a mao). Quem a
-transforma em identidade de um artefato e `tools/build-release.py`:
+The repository version is in the root `VERSION` (semver, edited by hand). What turns it
+into an artifact's identity is `tools/build-release.py`:
 
 ```bash
 python tools/build-release.py gamepanel    # dist/gamepanel-0.1.0+abc1234.tar.gz + .sha256
 python tools/build-release.py gamebroker
 ```
 
-- **`_build.py` (versao, commit, data) e gravado DENTRO do tarball, nunca na arvore.**
-  `git status` continua limpo depois de empacotar, e o `.gitignore` guarda `src/*/_build.py`
-  caso um dia escape. Sem esse arquivo (rodando do repositorio) a versao vira `X.Y.Z+dev`,
-  e a marca `+dev` e o que impede confundir "o painel do CT esta na 0.1.0" com "estou
-  olhando a minha maquina".
-- **O tarball e determinista**: nomes ordenados, dono/grupo zerados, mtime do commit e
-  `mtime=0` no cabecalho do gzip. Dois empacotamentos do mesmo commit dao o MESMO sha256 —
-  e e isso que faz o hash responder "o CT esta com este codigo?" em vez de so "o arquivo
-  chegou inteiro?". **Sem git a data cai fora** (`built_at` vazio, mtime 0) de proposito:
-  cair no relogio ali custaria o determinismo.
-- **Arvore suja sai marcada `.dirty`** no nome do arquivo e na tela. Um release que nao
-  corresponde a commit nenhum nao pode se parecer com um que corresponde.
-- **Modulo que nao vai para producao sai por `SKIPPED_NAMES`/`SKIPPED_PREFIXES`**
-  (`dev.py`, `conftest.py`, `fakes.py`, `fake_http.py`, `test_*`). O caso que importa e o
-  `gamebroker/dev.py`: ele cria instancia contra backends falsos, e no CT de verdade seria
-  um jeito de o broker mentir sobre o que existe.
-- **A versao aparece em tres lugares**: o rodape de toda tela (`app.version`), o `/health`
-  (`{"status","version","commit","built_at"}`) e a marca do service worker. Num release a
-  marca do worker E a versao; rodando do repositorio ela volta a ser o mtime dos estaticos,
-  porque so o mtime muda quando se salva um CSS sem empacotar nada.
+- **`_build.py` (version, commit, date) is written INSIDE the tarball, never in the
+  tree.** `git status` stays clean after packaging, and `.gitignore` guards
+  `src/*/_build.py` in case it ever escapes. Without that file (running from the
+  repository) the version becomes `X.Y.Z+dev`, and the `+dev` mark is what prevents
+  confusing "the CT's panel is on 0.1.0" with "I am looking at my machine".
+- **The tarball is deterministic**: sorted names, zeroed owner/group, the commit's mtime
+  and `mtime=0` in the gzip header. Two packagings of the same commit give the SAME
+  sha256 — and that is what makes the hash answer "is the CT running this code?" instead
+  of just "did the file arrive whole?". **Without git the date is dropped** (empty
+  `built_at`, mtime 0) on purpose: falling back to the clock there would cost the
+  determinism.
+- **A dirty tree comes out marked `.dirty`** in the file name and on screen. A release
+  that matches no commit cannot look like one that does.
+- **Modules that do not go to production are dropped via
+  `SKIPPED_NAMES`/`SKIPPED_PREFIXES`** (`dev.py`, `conftest.py`, `fakes.py`,
+  `fake_http.py`, `test_*`). The case that matters is `gamebroker/dev.py`: it creates
+  instances against fake backends, and on a real CT it would be a way for the broker to
+  lie about what exists.
+- **The version shows up in three places**: the footer of every screen (`app.version`),
+  `/health` (`{"status","version","commit","built_at"}`) and the service worker mark. In a
+  release the worker mark IS the version; running from the repository it goes back to
+  being the mtime of the static files, because only the mtime changes when a CSS is saved
+  without packaging anything.
 
-O que o deploy manda e esse tarball mais `lib/install-release.sh`, e o instalador e **o
-mesmo** nos dois caminhos:
+What the deploy sends is that tarball plus `lib/install-release.sh`, and the installer is
+**the same** in both paths:
 
-| caminho | quando |
+| path | when |
 |---|---|
-| `deploy/admin/deploy-admin.ps1` | envio direto por SSH (empacota, manda 2 arquivos e reinicia) |
-| `deploy/admin/provision-admin-lxc.sh` | provisionamento completo pelo Proxmox (`pct push` do tarball) |
-| `deploy/broker/deploy-broker.ps1` + `provision-broker-lxc.sh` | o broker (CT proprio); ver a secao "Broker" |
+| `deploy/admin/deploy-admin.ps1` | direct push over SSH (packages, sends 2 files and restarts) |
+| `deploy/admin/provision-admin-lxc.sh` | full provisioning through Proxmox (`pct push` of the tarball) |
+| `deploy/broker/deploy-broker.ps1` + `provision-broker-lxc.sh` | the broker (its own CT); see the "Broker" section |
 
-**`$ScriptDir` nao e mais a raiz do repositorio.** Na raiz os dois coincidiam por
-acidente, e os `.ps1` usavam `$ScriptDir` tanto para achar o `provision-*.sh` irmao
-quanto para achar `tools/`, `lib/`, `games/` e o `.env`. Dentro de `deploy/<grupo>/` sao
-duas coisas: `$ScriptDir` e a pasta do script, `$RepoRoot` (dois niveis acima) e o
-repositorio. Caminho novo num `.ps1` de deploy escolhe um dos dois de proposito.
+**`$ScriptDir` is no longer the repository root.** At the root the two coincided by
+accident, and the `.ps1` files used `$ScriptDir` both to find the sibling
+`provision-*.sh` and to find `tools/`, `lib/`, `games/` and the `.env`. Inside
+`deploy/<grupo>/` they are two things: `$ScriptDir` is the script's folder, `$RepoRoot`
+(two levels up) is the repository. A new path in a deploy `.ps1` picks one of the two on
+purpose.
 
 ```
 /opt/gamepanel/releases/0.1.0+abc1234/gamepanel/...
-/opt/gamepanel/current -> releases/0.1.0+abc1234     # WorkingDirectory da unit
+/opt/gamepanel/current -> releases/0.1.0+abc1234     # the unit's WorkingDirectory
 ```
 
-- **Release e PASTA NOVA, nunca copia por cima.** Antes cada caminho tinha a sua lista
-  escrita a mao de quais subpastas apagar antes de copiar (`templates/ games/ security/
-  integrations/`), e as duas ficaram para tras a cada pasta nova do pacote — `blueprints/`,
-  `i18n/`, `persistence/`, `runtime/`, `services/` e `tasks/` nunca entraram. Resultado:
-  modulo renomeado continuava vivo no container, importavel, sem ninguem ver. Com pasta por
-  versao nao existe o que sobrar. **Nao devolva a lista.**
-- **Voltar uma versao = mover o symlink.** `install-release.sh` guarda 5 releases, e faz o
-  rollback sozinho quando o servico nao sobe ou a sonda de saude nao responde.
-- **A troca do symlink e `ln -sfn` ao lado + `mv -T`**, nunca `ln -sfn` direto: num symlink
-  que ja existe o `ln` cria o link DENTRO da pasta apontada. O `mv -T` e atomico.
-- **O deploy confirma pelo `/health`**, nao por `systemctl is-active`: "o servico esta de
-  pe" e compativel com "o systemd reiniciou a versao velha", e os dois dao verde.
-- **Tarball vai por `Copy-Item`/`pct push`, nunca por `Copy-AsLf`/`tee`.** O normalizador de
-  fim de linha decodifica como UTF-8 e corrompe binario (foi como os icones do PWA
-  chegaram quebrados). `Copy-AsLf` hoje so ve `.sh`.
-- **Mexeu no `install-release.sh` ou no empacotador? Rode `bash docker/ct-sandbox/release.sh`**
-  (21 verificacoes: sha errado, pasta da versao, virada do symlink, remocao do layout
-  antigo, rollback) e `bash docker/ct-sandbox/broker.sh`. Nao existe teste de shell no
-  repositorio; a prova e o sandbox.
+- **A release is a NEW FOLDER, never a copy on top.** Before, each path had its own
+  hand-written list of which subfolders to delete before copying (`templates/ games/
+  security/ integrations/`), and both fell behind with every new folder in the package —
+  `blueprints/`, `i18n/`, `persistence/`, `runtime/`, `services/` and `tasks/` never got
+  in. Result: a renamed module stayed alive in the container, importable, without anyone
+  seeing it. With one folder per version there is nothing to leave behind. **Do not bring
+  the list back.**
+- **Going back a version = moving the symlink.** `install-release.sh` keeps 5 releases,
+  and rolls back on its own when the service does not start or the health probe does not
+  answer.
+- **The symlink swap is `ln -sfn` alongside + `mv -T`**, never `ln -sfn` directly: on a
+  symlink that already exists, `ln` creates the link INSIDE the folder it points to.
+  `mv -T` is atomic.
+- **The deploy confirms through `/health`**, not through `systemctl is-active`: "the
+  service is up" is compatible with "systemd restarted the old version", and both show
+  green.
+- **The tarball goes through `Copy-Item`/`pct push`, never through `Copy-AsLf`/`tee`.**
+  The line-ending normalizer decodes as UTF-8 and corrupts binaries (that is how the PWA
+  icons arrived broken). `Copy-AsLf` today only sees `.sh`.
+- **Touched `install-release.sh` or the packager? Run
+  `bash docker/ct-sandbox/release.sh`** (21 checks: wrong sha, version folder, symlink
+  flip, removal of the old layout, rollback) and `bash docker/ct-sandbox/broker.sh`.
+  There are no shell tests in the repository; the proof is the sandbox.
 
-**`ADMIN_HOST` do `.env` vence `ADMIN_IP_CIDR`** no atalho de envio direto do `deploy-admin.ps1`
-(sem `-Full`): ao mudar o painel de CT/IP, troque os DOIS, senao o deploy cai no CT antigo e o
-publica la (foi assim que o painel publico velho recebeu codigo novo sem ninguem pedir). `-Full`
-segue o `ADMIN_CTID`. O deploy do broker tambem deduz o IP permitido a partir do `ADMIN_HOST`.
+**`ADMIN_HOST` from `.env` beats `ADMIN_IP_CIDR`** in the direct-push shortcut of
+`deploy-admin.ps1` (without `-Full`): when moving the panel to another CT/IP, change BOTH,
+otherwise the deploy lands on the old CT and publishes there (that is how the old public
+panel received new code without anyone asking). `-Full` follows `ADMIN_CTID`. The broker
+deploy also derives the allowed IP from `ADMIN_HOST`.
 
-`lib/` e `games/` do broker continuam viajando soltos: nao sao o pacote Python, e sim
-scripts de instalacao e o catalogo curado, lidos em caminho absoluto. O provisionamento
-troca os dois por inteiro.
+The broker's `lib/` and `games/` keep traveling loose: they are not the Python package,
+but install scripts and the curated catalog, read from an absolute path. Provisioning
+replaces both as a whole.
 
 ### PowerShell (`.ps1`)
 
-Regras que ja custaram caro aqui (ver tambem a memoria do projeto):
+Rules that have already cost dearly here:
 
-- **ASCII puro.** O PowerShell 5.1 le `.ps1` sem BOM como ANSI; um travessao quebra o
-  parse com erro enganoso. Confira: `[IO.File]::ReadAllBytes($p) | ? { $_ -gt 127 }`.
-- **Variavel nao tem caixa**: `$x` e `$X` sao a mesma. Local com nome de parametro
-  `[switch]` quebra em runtime.
-- **stderr de executavel** (docker, ssh) precisa de wrapper com `ErrorActionPreference`
-  relaxado, senao o script morre em cima de um sucesso.
-- **Here-string que vai por ssh** leva `\r` do CRLF e quebra o bash do outro lado —
-  normalize no `Invoke-Ssh`.
-- **`Copy-AsLf` (ReadAllText + normaliza fim de linha) so serve para texto.** Aplicado a
-  um `.png` ele decodifica o arquivo como UTF-8: todo byte fora do plano ASCII vira o
-  caractere de substituicao (U+FFFD), e a assinatura de PNG (`89 50 4E 47 0D 0A 1A 0A`)
-  chega no servidor como `EF BF BD 50 4E 47 0A 1A 0A` — arquivo corrompido, e o Chrome
-  recusa o icone do PWA (`no-acceptable-icon`) sem avisar em lugar nenhum do deploy. Foi
-  o que aconteceu: o loop que monta o bundle em `deploy-admin.ps1` passava todo arquivo
-  de `admin/` por `Copy-AsLf`, exceto `__pycache__`. O fix e uma lista de extensoes de
-  texto (`Copy-ArquivoDoAdmin`) — qualquer coisa fora dela vai por `Copy-Item` (copia de
-  bytes, sem decodificar nada). Extensao binaria nova em `static/` (fonte, imagem)
-  **entra binaria por padrao** — so vira texto se voce adicionar a extensao na lista.
+- **Pure ASCII.** PowerShell 5.1 reads a `.ps1` without a BOM as ANSI; an em dash breaks
+  the parse with a misleading error. Check: `[IO.File]::ReadAllBytes($p) | ? { $_ -gt 127 }`.
+- **Variables have no case**: `$x` and `$X` are the same. A local with the name of a
+  `[switch]` parameter breaks at runtime.
+- **stderr of an executable** (docker, ssh) needs a wrapper with a relaxed
+  `ErrorActionPreference`, otherwise the script dies on top of a success.
+- **A here-string that goes over ssh** carries the `\r` from CRLF and breaks bash on the
+  other side — normalize in `Invoke-Ssh`.
+- **`Copy-AsLf` (ReadAllText + normalizes line endings) is only for text.** Applied to a
+  `.png` it decodes the file as UTF-8: every byte outside the ASCII plane becomes the
+  replacement character (U+FFFD), and the PNG signature (`89 50 4E 47 0D 0A 1A 0A`)
+  reaches the server as `EF BF BD 50 4E 47 0A 1A 0A` — a corrupted file, and Chrome
+  refuses the PWA icon (`no-acceptable-icon`) without a warning anywhere in the deploy.
+  That is what happened: the loop that builds the bundle in `deploy-admin.ps1` passed
+  every file in `admin/` through `Copy-AsLf`, except `__pycache__`. The fix is a list of
+  text extensions (`Copy-ArquivoDoAdmin`) — anything outside it goes through `Copy-Item`
+  (a byte copy, decoding nothing). A new binary extension in `static/` (font, image)
+  **goes in as binary by default** — it only becomes text if you add the extension to the
+  list.
 
 ---
 
-## Escrita: comentarios, mensagens e texto de tela
+## Writing: comments, messages and screen text
 
-O codigo aqui e comentado em **portugues sem acento**, e o padrao nao e descrever o que
-a linha faz — e **por que ela e assim**, de preferencia com a consequencia de fazer
-diferente:
+Code here is commented **in English** — in every language of the repository. The reason
+is the same as for identifiers: the repository is public, and a comment is the part of
+the code that exists to be read by the next person; in a language they cannot read, it
+explains nothing, and the trap it was guarding against gets "simplified" right back in.
+Mixing languages also makes code search unreliable: the explanation you are looking for
+is under a word you did not think to grep for. The whole repository was translated in one
+pass before going public; a Portuguese comment that turns up now is a leftover and is
+translated by hand, never by a word-replacing script (see "Renaming bash and PowerShell").
+The exceptions are deliberate: script OUTPUT that the sandboxes grep for, and the
+`; Gerado pelo painel` mark that the mod installers match to know which files are theirs.
+
+The standard is not to describe what the line does — it is **why it is that way**,
+preferably with the consequence of doing it differently:
 
 ```python
-# Aba escondida nao gasta conexao ssh a toa; ao voltar, puxa na hora.
+# A hidden tab does not spend an ssh connection for nothing; when it comes back, it fetches right away.
 ```
 
 ```css
-/* 16px de base nao e escolha estetica: abaixo disso o Safari do iPhone da zoom
-   sozinho ao focar um campo, e a tela inteira sai do lugar. */
+/* A 16px base is not an aesthetic choice: below that, iPhone Safari zooms in on its
+   own when a field gets focus, and the whole screen shifts. */
 ```
 
-Comentario que so repete o nome da funcao e ruido. Comentario que explica a armadilha
-que voce acabou de desviar e o que impede a proxima pessoa (ou voce em tres meses) de
-"simplificar" de volta para o bug.
+A comment that only repeats the function name is noise. A comment that explains the trap
+you just avoided is what stops the next person (or you, three months from now) from
+"simplifying" it back into the bug.
 
-Texto de tela: portugues direto, sem jargao de infraestrutura onde der. "O servidor
-sera PARADO" e melhor que "o servico sera interrompido".
+Screen text lives in the i18n catalog, in Portuguese and English with the same keys:
+plain, direct language, without infrastructure jargon where possible, and the Portuguese
+side with its accents. "O servidor será PARADO" / "The server will be STOPPED" is better
+than "o serviço será interrompido" / "the service will be interrupted".

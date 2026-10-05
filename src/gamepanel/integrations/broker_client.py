@@ -1,18 +1,18 @@
-"""Cliente do broker de provisionamento (painel -> broker). So stdlib.
+"""Client for the provisioning broker (panel -> broker). Stdlib only.
 
-O painel NAO guarda credencial de Proxmox nem de OPNsense; ele guarda so o token do
-broker. Quem esta por tras dele (broker/) valida tudo de novo, entao este modulo e fino de
-proposito: monta o pedido, fixa o certificado e devolve o JSON.
+The panel does NOT store Proxmox or OPNsense credentials; it only stores the broker's
+token. Whatever sits behind it (broker/) validates everything again, so this module is thin
+on purpose: it builds the request, pins the certificate and returns the JSON.
 
-Duas regras de seguranca, iguais as do lado do broker (broker/conexao.py):
+Two security rules, the same as on the broker side (gamebroker/integrations/http_client.py):
 
-- **TLS fixado por impressao SHA-256** (`GAMEPANEL_BROKER_CERT_SHA256`), nunca verify=False.
-  Sem impressao vale a validacao normal da cadeia. Sem TLS so em loopback, ou com
-  `permitir_http` (o compose de desenvolvimento).
-- **Nenhuma mensagem de erro carrega o token ou o corpo enviado.**
+- **TLS pinned by SHA-256 fingerprint** (`GAMEPANEL_BROKER_CERT_SHA256`), never verify=False.
+  Without a fingerprint the normal chain validation applies. No TLS only on loopback, or
+  with `allow_http` (the development compose).
+- **No error message carries the token or the request body.**
 
-As funcoes publicas sao chamadas SEMPRE pelo modulo (`broker_client.create(...)`), nunca
-importadas por nome: e assim que os testes as trocam por falsas com `monkeypatch`.
+The public functions are ALWAYS called through the module (`broker_client.create(...)`),
+never imported by name: that is how the tests swap them for fakes with `monkeypatch`.
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ TOKEN_MINIMO = 32
 
 
 class BrokerError(Exception):
-    """O broker recusou o pedido (mensagem explicavel) ou nao foi possivel falar com ele."""
+    """The broker refused the request (explainable message) or it could not be reached."""
 
     def __init__(self, message: str, status: int = 0, code: str = ""):
         super().__init__(message)
@@ -48,8 +48,8 @@ def normalize_fingerprint(text: str) -> str:
     if not text.strip():
         return ""
     clean = re.sub(r"[^0-9a-fA-F]", "", text).lower()
-    # Texto nao vazio que nao vira 64 digitos e erro de digitacao: aceitar como "sem
-    # impressao" desligaria o pin em silencio.
+    # Non-empty text that does not become 64 digits is a typo: accepting it as "no
+    # fingerprint" would silently turn the pin off.
     if not _IMPRESSAO_RE.fullmatch(clean):
         raise ValueError("impressao SHA-256 invalida: esperados 64 digitos hexadecimais")
     return clean
@@ -84,7 +84,7 @@ class _PinnedConnection(http.client.HTTPSConnection):
     def connect(self) -> None:
         super().connect()
         der = self.sock.getpeercert(binary_form=True) or b""  # type: ignore[union-attr]
-        # compare_digest: tempo constante, como para qualquer comparacao de segredo.
+        # compare_digest: constant time, as for any secret comparison.
         if not hmac.compare_digest(hashlib.sha256(der).hexdigest(), self._impressao):
             self.close()
             raise BrokerError("o certificado do broker nao confere com a impressao fixada")
@@ -97,13 +97,13 @@ def _connection() -> http.client.HTTPConnection:
     if not c["fingerprint"]:
         return http.client.HTTPSConnection(c["host"], c["porta"], timeout=TIMEOUT,
                                            context=ssl.create_default_context())
-    # A cadeia nao e validada porque o certificado do broker e autoassinado; quem o autentica
-    # e a comparacao da impressao em _ConexaoFixada.connect. Os avisos abaixo sao falsos
-    # positivos revisados (o teste com pin errado e sem pin prova).
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)  # NOSONAR - TLS >= 1.2 na linha seguinte
+    # The chain is not validated because the broker's certificate is self-signed; what
+    # authenticates it is the fingerprint comparison in _PinnedConnection.connect. The warnings
+    # below are reviewed false positives (the tests with a wrong pin and with no pin prove it).
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)  # NOSONAR - TLS >= 1.2 on the next line
     context.minimum_version = ssl.TLSVersion.TLSv1_2
-    context.check_hostname = False  # NOSONAR - identidade por impressao fixada
-    context.verify_mode = ssl.CERT_NONE  # NOSONAR - identidade por impressao fixada
+    context.check_hostname = False  # NOSONAR - identity via pinned fingerprint
+    context.verify_mode = ssl.CERT_NONE  # NOSONAR - identity via pinned fingerprint
     return _PinnedConnection(c["host"], c["porta"], timeout=TIMEOUT, context=context,
                           fingerprint=c["fingerprint"])
 
@@ -127,7 +127,7 @@ def _request(method: str, path: str, body: object = None, actor: str = ""):
     except BrokerError:
         raise
     except (OSError, http.client.HTTPException) as failure:
-        # So o tipo do erro: nunca cabecalho (token) nem corpo enviado.
+        # Only the error type: never a header (token) nor the request body.
         raise BrokerError(f"nao consegui falar com o broker ({type(failure).__name__})") from None
     finally:
         connection.close()
@@ -156,7 +156,7 @@ def _as_object(data: object) -> dict:
     return data
 
 
-# --- verbos (o broker nao tem nenhum outro) ---------------------------------------------
+# --- verbs (the broker has no others) -------------------------------------------------
 
 def health() -> dict:
     return _as_object(_request("GET", "/v1/health"))
@@ -179,7 +179,7 @@ def update_game(key: str, data: dict, actor: str) -> dict:
 
 
 def remove_game(key: str, actor: str) -> dict:
-    """Apaga um dinamico; num curado editado, desfaz a edicao (devolve o curado)."""
+    """Delete a dynamic game; on an edited curated one, undo the edit (restores the curated)."""
     return _as_object(_request("DELETE", f"/v1/catalog/{quote(key, safe='')}", {}, actor))
 
 
@@ -192,7 +192,7 @@ def create(game: str, name: str, actor: str) -> dict:
 
 
 def preview(game: str) -> dict:
-    """CT, IP e portas que uma criacao deste jogo receberia agora. Nao reserva nada."""
+    """CT, IP and ports a creation of this game would get right now. Reserves nothing."""
     return _as_object(_request("GET", f"/v1/instances/preview?game={quote(game, safe='')}"))
 
 

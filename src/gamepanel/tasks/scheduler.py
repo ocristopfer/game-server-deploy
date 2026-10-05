@@ -1,12 +1,12 @@
-"""O relogio do painel: uma thread que acorda de tempos em tempos e chama as tarefas.
+"""The panel's clock: a thread that wakes up from time to time and calls the tasks.
 
-Sao cinco (agendamentos, monitor, log em tempo real, amostras e limpeza) e elas moram
-em `app.py`, cada uma com o seu proprio relogio interno — aqui nao ha regra nenhuma
-sobre QUANDO cada uma deve rodar, so a batida.
+There are five (schedules, monitor, live log, samples and cleanup) and they live in
+`app.py`, each with its own internal clock - there is no rule here about WHEN each one
+should run, only the beat.
 
-Depende de o painel rodar com UM worker (e como o gunicorn e configurado aqui, veja o
-provision-admin-lxc.sh): com dois processos, cada um teria a sua thread e a mesma
-tarefa dispararia em dobro.
+It relies on the panel running with ONE worker (that is how gunicorn is configured here,
+see provision-admin-lxc.sh): with two processes, each would have its own thread and the
+same task would fire twice.
 """
 from __future__ import annotations
 
@@ -15,29 +15,29 @@ import threading
 from collections.abc import Callable, Iterable
 from typing import Any
 
-# (nome para o log, o que rodar).
+# (name for the log, what to run).
 Task = tuple[str, Callable[[], Any]]
 
 
 def tick(tasks: Iterable[Task], on_failure: Callable[[str], None]) -> None:
-    """Uma volta do relogio.
+    """One round of the clock.
 
-    Cada tarefa vai no SEU try. Dividindo um try so, uma agenda quebrada levava junto o
-    monitor e as amostras: a excecao subia na primeira tarefa e as outras tres nunca
-    rodavam — para sempre, porque a tarefa quebrada quebrava de novo a cada volta. Por
-    fora o painel parecia inteiro, e o botao de testar webhook (que nao passa por aqui)
-    continuava funcionando e afastando a suspeita do lugar certo.
+    Each task gets ITS OWN try. Sharing a single try, a broken schedule took the monitor
+    and the samples down with it: the exception rose from the first task and the other
+    three never ran - forever, because the broken task broke again every round. From the
+    outside the panel looked whole, and the test-webhook button (which does not go through
+    here) kept working and steering suspicion away from the right place.
     """
     for name, task in tasks:
         try:
             task()
-        # Uma tarefa nao derruba as outras.
+        # One task does not take down the others.
         except Exception:  # noqa: BLE001
             on_failure(name)
 
 
 class Clock:
-    """A thread em si. `start()` e idempotente: duas chamadas nao dao duas threads."""
+    """The thread itself. `start()` is idempotent: two calls do not make two threads."""
 
     def __init__(self, interval: float, one_round: Callable[[], None],
                  logger: logging.Logger) -> None:
@@ -49,19 +49,20 @@ class Clock:
         self._stop_event = threading.Event()
 
     def _loop(self) -> None:
-        # Event.wait no lugar de sleep: assim o `stop()` corta a espera na hora em vez
-        # de deixar a thread pendurada ate o fim do intervalo.
+        # Event.wait instead of sleep: this way `stop()` cuts the wait immediately instead
+        # of leaving the thread hanging until the end of the interval.
         while not self._stop_event.wait(self._interval):
             try:
                 self._one_round()
-            # A thread nao pode morrer por causa de um tick.
+            # The thread must not die because of one tick.
             except Exception:
                 self._logger.exception("falha no agendador")
 
-    # A thread tem NOME, e nao e enfeite: sem ele um dump de pilha (`faulthandler`,
-    # `py-spy`) mostra `Thread-1 (_loop)` e nao se sabe qual das threads de fundo do painel
-    # travou. E e o nome que deixa um teste contar as threads DESTE relogio em vez de
-    # `threading.active_count()`, que conta as alheias — importar o `app.py` ja sobe uma.
+    # The thread has a NAME, and it is not decoration: without it a stack dump
+    # (`faulthandler`, `py-spy`) shows `Thread-1 (_loop)` and nobody can tell which of the
+    # panel's background threads is stuck. The name is also what lets a test count the
+    # threads of THIS clock instead of `threading.active_count()`, which counts unrelated
+    # ones - importing `app.py` already starts one.
     THREAD_NAME = "gamepanel-scheduler"
 
     def start(self) -> None:
@@ -72,6 +73,6 @@ class Clock:
         threading.Thread(target=self._loop, daemon=True, name=self.THREAD_NAME).start()
 
     def stop(self) -> None:
-        """Encerra a thread. O painel nao usa (o processo inteiro morre junto); existe
-        para o teste nao deixar relogio batendo pelo resto da suite."""
+        """Stop the thread. The panel does not use it (the whole process dies with it); it
+        exists so a test does not leave a clock ticking for the rest of the suite."""
         self._stop_event.set()

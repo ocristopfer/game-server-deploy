@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Atalhos game-start / game-stop / game-restart / game-status / game-logs.
-# Cada um chama este script com a acao no primeiro argumento; a unidade sai do
-# service.env, entao nao e preciso lembrar o nome do servico.
+# Shortcuts game-start / game-stop / game-restart / game-status / game-logs.
+# Each one calls this script with the action as the first argument; the unit comes from
+# service.env, so there is no need to remember the service name.
 set -u
 
 # shellcheck disable=SC1091

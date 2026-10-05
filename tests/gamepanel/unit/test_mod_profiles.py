@@ -1,12 +1,12 @@
-"""Gestor de mods: leitura dos server_packages do ETS2, IDs da Workshop e perfil por jogo."""
+"""Mod manager: reading ETS2's server_packages, Workshop IDs and the per-game profile."""
 from __future__ import annotations
 
 import pytest
 
 from gamepanel.games.mods import ets2, profiles, thunderstore, workshop, workshop_remote
 
-# Trecho no formato real de um server_packages.sii exportado pelo ETS2 1.61 (o de um servidor
-# com o Mapa BR e mods da Workshop).
+# Excerpt in the real format of a server_packages.sii exported by ETS2 1.61 (the one from a
+# server with the Mapa BR and Workshop mods).
 PACKAGES = """﻿SiiNunit
 {
 server_packages_info : _nameless.1fe.9af2.f648 {
@@ -58,8 +58,8 @@ def test_le_mapa_dlcs_e_mods_dos_pacotes():
 
 
 def test_mod_manual_nao_vira_link_da_workshop():
-    """O mod_id de um mod instalado a mao e assinatura interna: virar link apontaria para
-    um item qualquer da Workshop."""
+    """The mod_id of a hand-installed mod is an internal signature: turning it into a link would
+    point to some random Workshop item."""
     mapa = ets2.parse(PACKAGES).mods[0]
     assert mapa.workshop_id == 0
 
@@ -67,7 +67,7 @@ def test_mod_manual_nao_vira_link_da_workshop():
 def test_id_da_workshop_vem_do_mod_id_ou_do_hexadecimal_do_pacote():
     mods = ets2.parse(PACKAGES).mods
     assert mods[1].workshop_id == 3288898685
-    # 0xDA084B17, o hexadecimal do package_name, e o 3657976599 da lista dos jogadores.
+    # 0xDA084B17, the hex of the package_name, is the 3657976599 in the players' list.
     assert mods[2].workshop_id == 3657976599
     assert ets2.parse(PACKAGES).workshop_ids == [3288898685, 3657976599]
 
@@ -137,21 +137,21 @@ def test_todo_perfil_diz_para_onde_vai_e_o_que_aceita():
                           profiles.KIND_SHROUDTOPIA, profiles.KIND_UE4SS, profiles.KIND_SML,
                           profiles.KIND_OXIDE, profiles.KIND_UE4SS_LINUX, profiles.KIND_GUIDE,
                           profiles.KIND_WORKSHOP)
-        # Toda tela de mods diz onde procurar: era a pergunta que ficava sem resposta.
+        # Every mods screen says where to look: that was the question left unanswered.
         assert p.sources, p.key
         if p.kind == profiles.KIND_GUIDE:
             assert not p.upload_names and not p.extensions, p.key
             continue
         if p.kind == profiles.KIND_WORKSHOP:
-            # Nada entra por envio: quem baixa e o servidor do jogo, pela lista da config.
+            # Nothing comes in by upload: the game server downloads it, from the config list.
             assert not p.upload_names and not p.extensions, p.key
             continue
         if p.kind == profiles.KIND_THUNDERSTORE:
-            # Nada entra por envio: o CT baixa do Thunderstore.
+            # Nothing comes in by upload: the CT downloads from Thunderstore.
             assert not p.upload_names and not p.extensions, p.key
             assert p.community and all(p.loader) and p.min_memory_mb, p.key
         elif p.kind in (profiles.KIND_UE4SS, profiles.KIND_SML):
-            # Mod do UE4SS e uma PASTA (Scripts/main.lua): arquivo solto nao seria mod nenhum.
+            # A UE4SS mod is a FOLDER (Scripts/main.lua): a loose file would be no mod at all.
             assert not p.upload_names and not p.extensions, p.key
             assert p.loader_dir, p.key
         else:
@@ -192,7 +192,7 @@ def test_pacote_irreconhecivel_nao_vira_nada(text):
     ("1.2", None), ("1.2.3.4", None), ("latest", None), ("1.2.3/../x", None), ("1.2.3;rm", None),
 ])
 def test_versao_do_formulario(text, expected):
-    """Vazio = a mais nova; o que nao e x.y.z nao chega ao CT (vira parte de uma URL la)."""
+    """Empty = the newest; anything not x.y.z never reaches the CT (it becomes part of a URL there)."""
     assert thunderstore.parse_version(text) == expected
 
 
@@ -213,19 +213,19 @@ def test_dragonwilds_aceita_os_tres_arquivos_do_mod_da_unreal_5():
 
 
 def test_enshrouded_usa_o_shroudtopia_provado_no_ct():
-    """Provado no CT 303 sob o Proton: o carregador sobe e carrega a DLL de mods/."""
+    """Proven on CT 303 under Proton: the loader starts and loads the DLL from mods/."""
     en = profiles.profile_for("enshrouded.service")
     assert en.kind == profiles.KIND_SHROUDTOPIA
     assert en.folder == "/opt/game/mods"
     assert en.accepts("flight_mod.dll")
-    # O carregador entra pelo botao, nunca por envio: um winmm.dll qualquer na pasta de mods
-    # nao faria nada, e um na pasta do jogo trocaria o que o Wine carrega.
+    # The loader comes in through the button, never by upload: some winmm.dll in the mods folder
+    # would do nothing, and one in the game folder would change what Wine loads.
     assert not en.accepts("shroudtopia.json")
 
 
 def test_nexus_e_so_link_nunca_download():
-    """A API do Nexus so entrega arquivo para conta Premium, e automatizar sem ela viola os
-    termos: nenhum perfil pode depender de baixar de la."""
+    """The Nexus API only hands out files to Premium accounts, and automating without it breaks
+    the terms: no profile may depend on downloading from there."""
     for p in profiles.PROFILES:
         for _, url in p.sources:
             assert url.startswith("https://")
@@ -233,18 +233,18 @@ def test_nexus_e_so_link_nunca_download():
 
 
 def test_icarus_usa_o_ue4ss_provado_no_ct():
-    """Provado num Icarus de verdade sob o Proton: com a experimental a Steam sobe e o Lua roda."""
+    """Proven on a real Icarus under Proton: with the experimental build Steam starts and Lua runs."""
     ic = profiles.profile_for("icarus.service")
     assert ic.kind == profiles.KIND_UE4SS
-    # Layout da experimental: o proxy ao lado do .exe, os mods em ue4ss/Mods.
+    # Experimental layout: the proxy next to the .exe, the mods in ue4ss/Mods.
     assert ic.loader_dir == "/opt/game/Icarus/Binaries/Win64"
     assert ic.folder == ic.loader_dir + "/ue4ss/Mods"
     assert set(ic.scan_paths) == {ic.loader_dir + "/ue4ss", ic.loader_dir + "/dwmapi.dll"}
 
 
 def test_instalador_sem_prova_e_marcado_na_tela():
-    """Satisfactory, Valheim e Rust foram escritos sem CT de teste, e o fork do UE4SS no
-    Dragonwilds so rodou no testbed em Docker: a tela tem de avisar."""
+    """Satisfactory, Valheim and Rust were written without a test CT, and the UE4SS fork on
+    Dragonwilds only ran on the Docker testbed: the screen has to warn."""
     for key in ("satisfactory", "valheim", "rust", "dragonwilds"):
         assert not profiles.profile_for(f"{key}.service").proven, key
     for p in (profiles.ENSHROUDED, profiles.ICARUS, profiles.VRISING):
@@ -260,7 +260,7 @@ def test_workshop_pela_config_escolhe_o_formato_pelo_servico(service, fmt):
     assert p.kind == profiles.KIND_WORKSHOP
     assert p.workshop_format == fmt
     assert p.workshop_format in workshop_remote.FORMATS
-    # O antivirus passa onde o JOGO guarda o que baixou: o download nao e do painel.
+    # The antivirus scans where the GAME keeps what it downloaded: the download is not the panel's.
     assert p.audit_paths
     assert not p.proven
 

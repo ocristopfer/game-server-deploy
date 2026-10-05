@@ -1,27 +1,28 @@
-"""Mods do Thunderstore (BepInEx) - roda DENTRO do CT do jogo, nao no painel.
+"""Thunderstore mods (BepInEx) - runs INSIDE the game CT, not in the panel.
 
-O painel le o texto deste arquivo e o executa no container com `python3 -c`, por SSH, como
-root. E assim porque o painel nao vai a internet (regra do repositorio: sem SSRF, sem
-dependencia de terceiro em producao) e o CT do jogo vai: o firewall dele libera a saida
-para a internet. So stdlib, e sem import do `gamepanel`: la dentro nao existe o pacote.
+The panel reads the text of this file and runs it in the container with `python3 -c`, over SSH,
+as root. It is this way because the panel does not go to the internet (repository rule: no
+SSRF, no third-party dependency in production) and the game CT does: its firewall allows
+outbound internet. Stdlib only, and no import of `gamepanel`: the package does not exist in there.
 
-O que foi MEDIDO num servidor V Rising de verdade sob o Proton, e cada item aqui existe por
-um desses:
-- o BepInEx e todo .NET, e o `mscoree=` (desligado) que os .env de Windows usam fazia o
-  Wine recusar cada DLL dele ("IL-only binary ... cannot be loaded"): sai da lista;
-- o BepInEx entra pelo `winhttp.dll` do doorstop, que so e carregado com `winhttp=n,b`;
-- o console do BepInEx (ligado por padrao) TRAVAVA o servidor sob o X virtual, parado sem
-  CPU e sem log: fica desligado;
-- a primeira subida gera o codigo do jogo inteiro e chegou a 9,4 GB de memoria.
+What was MEASURED on a real V Rising server under Proton, and each item here exists because
+of one of these:
+- BepInEx is all .NET, and the `mscoree=` (disabled) that the Windows .env files use made
+  Wine reject each of its DLLs ("IL-only binary ... cannot be loaded"): it comes off the list;
+- BepInEx comes in through the doorstop `winhttp.dll`, which is only loaded with `winhttp=n,b`;
+- the BepInEx console (on by default) FROZE the server under the virtual X, stuck with no
+  CPU and no log: it stays off;
+- the first startup generates the code of the whole game and reached 9.4 GB of memory.
 
-Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable |
-loader-uninstall | plugin-install NS NOME [VERSAO] | plugin-remove NS NOME. Sem VERSAO vale a mais nova; com ela,
-o pacote e as dependencias vem nas versoes que ELE declara (ver `install_plugin`). Toda acao
-imprime o progresso e termina com UMA linha JSON, que e o que o painel le.
+Actions (argv): [--scan SCRIPT] status | loader-install [VERSION] | loader-enable | loader-disable |
+loader-uninstall | plugin-install NS NAME [VERSION] | plugin-remove NS NAME. Without VERSION the newest
+applies; with it, the package and its dependencies come in the versions IT declares (see
+`install_plugin`). Every action prints its progress and ends with ONE JSON line, which is what
+the panel reads.
 
-Instalar exige `--scan` (o `antivirus.SCAN_SCRIPT` do painel): tudo o que vai ser instalado
-- o pacote e TODAS as dependencias - e baixado primeiro, verificado de uma vez e so entao
-gravado na pasta do jogo. Achado ou verificacao que nao roda = nada e instalado.
+Installing requires `--scan` (the panel's `antivirus.SCAN_SCRIPT`): everything that is going to
+be installed - the package and ALL dependencies - is downloaded first, checked at once and only
+then written into the game folder. A finding or a check that does not run = nothing is installed.
 """
 from __future__ import annotations
 
@@ -40,12 +41,12 @@ import zipfile
 
 API = "https://thunderstore.io/api/experimental/package/{ns}/{name}/"
 API_VERSION = "https://thunderstore.io/api/experimental/package/{ns}/{name}/{version}/"
-# Namespace e nome de pacote do Thunderstore: letras, numeros e sublinhado. Conferido aqui
-# de novo (o painel ja confere): isto vira caminho de pasta e URL.
+# Thunderstore package namespace and name: letters, digits and underscore. Checked here
+# again (the panel already checks): this becomes a folder path and a URL.
 PART = re.compile(r"[A-Za-z0-9_]{1,64}")
-# A mesma forma de versao que o painel confere (thunderstore.VERSION): vira parte da URL.
+# The same version shape the panel checks (thunderstore.VERSION): it becomes part of the URL.
 VERSION = re.compile(r"\d{1,9}\.\d{1,9}\.\d{1,9}")
-# O que vem no zip de todo pacote e nao e do jogo.
+# What comes in every package zip and does not belong to the game.
 SKIP = {"icon.png", "readme.md", "manifest.json", "changelog.md", "license", "license.md",
         "license.txt"}
 MARK = ".gamepanel.json"
@@ -57,24 +58,24 @@ TIMEOUT = 120
 
 
 def fetch(url: str) -> bytes:
-    # So https do thunderstore.io chega aqui: a API e fixa (API, acima) e o download vem da
-    # resposta dela, nunca de quem pediu no painel.
+    # Only thunderstore.io https gets here: the API is fixed (API, above) and the download comes
+    # from its response, never from whoever asked in the panel.
     req = urllib.request.Request(url, headers={"User-Agent": "gamepanel"})  # noqa: S310
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310
         return r.read()
 
 
 # ------------------------------------------------------------------ antivirus
-# IGUAL em shroudtopia_remote.py (ha teste comparando): os dois rodam soltos no CT e nao
-# importam um ao outro. A regra (o que conta como achado) nao mora aqui, e sim no script
-# que o painel manda; aqui so se escreve o que baixou numa pasta e se chama o script.
+# IDENTICAL in shroudtopia_remote.py (a test compares them): both run standalone in the CT and
+# do not import each other. The rule (what counts as a finding) does not live here, but in the
+# script the panel sends; here we only write what was downloaded into a folder and call the script.
 
 def scanner(script: str):
-    """Funcao que verifica [(nome, bytes)] com o script do painel; ValueError = recusado."""
+    """Function that checks [(name, bytes)] with the panel's script; ValueError = rejected."""
     def scan(blobs: list[tuple[str, bytes]]) -> None:
-        # /var/tmp e nao /tmp: no Debian 13 o /tmp e tmpfs (memoria), e o pacote pode ter
-        # dezenas de MB. O prefixo e o que o script do antivirus aceita apagar. mkdtemp:
-        # nome imprevisivel e 0700.
+        # /var/tmp and not /tmp: on Debian 13 /tmp is tmpfs (memory), and the package can be
+        # tens of MB. The prefix is what the antivirus script agrees to delete. mkdtemp:
+        # unpredictable name and 0700.
         os.makedirs("/var/tmp", exist_ok=True)  # noqa: S108
         work = tempfile.mkdtemp(prefix="gamepanel-scan-", dir="/var/tmp")
         try:
@@ -94,7 +95,7 @@ def scanner(script: str):
 
 
 def _no_scan(blobs: list[tuple[str, bytes]]) -> None:
-    """So para teste e status: `main` recusa instalar sem `--scan`."""
+    """Only for tests and status: `main` refuses to install without `--scan`."""
 
 
 def _read_text(path: str, default: str = "") -> str:
@@ -106,7 +107,7 @@ def _read_text(path: str, default: str = "") -> str:
 
 
 def _read_json(path: str) -> dict:
-    """O JSON do arquivo, ou vazio: arquivo que falta ou esta torto nao derruba o status."""
+    """The JSON of the file, or empty: a missing or malformed file does not break the status."""
     with contextlib.suppress(ValueError):
         data = json.loads(_read_text(path) or "{}")
         return data if isinstance(data, dict) else {}
@@ -131,19 +132,19 @@ def latest(ns: str, name: str, fetcher=fetch) -> dict:
 
 
 def package_meta(ns: str, name: str, version: str = "", fetcher=fetch) -> dict:
-    """Os dados de UMA versao do pacote; versao vazia = a mais nova."""
+    """The data of ONE version of the package; empty version = the newest."""
     if not version:
         return latest(ns, name, fetcher)
     url = API_VERSION.format(ns=check_part(ns), name=check_part(name), version=check_version(version))
     meta = json.loads(fetcher(url))
-    # Pediu a 1.2.0 e veio outra coisa: instalar assim mesmo seria mentir na tela.
+    # Asked for 1.2.0 and got something else: installing anyway would be lying on the screen.
     if meta.get("version_number") != version:
         raise ValueError(f"o Thunderstore nao tem {ns}-{name}-{version}")
     return meta
 
 
 def _dependency(dep: str) -> tuple[str, str, str]:
-    """`ns-nome-1.2.3` como vem na lista de dependencias de um pacote."""
+    """`ns-name-1.2.3` as it comes in a package's dependency list."""
     parts = dep.split("-")
     if len(parts) != 3:
         raise ValueError(f"dependencia que nao entendi: {dep!r}")
@@ -151,20 +152,20 @@ def _dependency(dep: str) -> tuple[str, str, str]:
 
 
 def _safe_rel(path: str) -> str:
-    """Caminho de dentro do zip, relativo e sem subir de pasta; vazio = recusado."""
+    """A path inside the zip, relative and never going up a folder; empty = rejected."""
     rel = posixpath.normpath(path.replace("\\", "/")).lstrip("/")
     if rel in (".", "") or rel.startswith("..") or "/../" in f"/{rel}/":
         return ""
     return rel
 
 
-# ------------------------------------------------------------------ o carregador (BepInEx)
+# ------------------------------------------------------------------ the loader (BepInEx)
 
 def fix_overrides(value: str) -> str:
-    """O WINEDLLOVERRIDES que o BepInEx precisa, a partir do que o jogo ja tinha.
+    """The WINEDLLOVERRIDES BepInEx needs, based on what the game already had.
 
-    `mscoree,mshtml=` vira `mshtml=;winhttp=n,b`: tira so o mscoree da lista DESLIGADA
-    (o resto continua como o .env do jogo decidiu) e poe o winhttp nativo.
+    `mscoree,mshtml=` becomes `mshtml=;winhttp=n,b`: it removes only mscoree from the DISABLED
+    list (the rest stays as the game .env decided) and adds the native winhttp.
     """
     groups = []
     for group in filter(None, (g.strip() for g in value.split(";"))):
@@ -191,7 +192,7 @@ def _read_overrides(env_path: str) -> str:
 
 def _write_overrides(env_path: str, value: str) -> None:
     lines = _read_text(env_path).splitlines()
-    # O arquivo e lido com `source`: aspas simples, e o valor nunca tem aspa (so dll,=;).
+    # The file is read with `source`: single quotes, and the value never has a quote (only dll,=;).
     new = f"WINE_DLL_OVERRIDES='{value}'"
     lines = [new if ln.startswith("WINE_DLL_OVERRIDES=") else ln for ln in lines]
     if new not in lines:
@@ -201,7 +202,7 @@ def _write_overrides(env_path: str, value: str) -> None:
 
 
 def _set_ini(path: str, section: str, key: str, value: str) -> None:
-    """Troca `key = x` dentro de `[section]`; cria a secao se o arquivo nao a tem."""
+    """Replace `key = x` inside `[section]`; create the section if the file does not have it."""
     text = _read_text(path)
     pattern = re.compile(rf"(\[{re.escape(section)}\][^\[]*?\n{re.escape(key)}\s*=\s*)[^\n]*", re.S)
     if pattern.search(text):
@@ -218,13 +219,13 @@ def set_enabled(game_dir: str, enabled: bool) -> None:
              "true" if enabled else "false")
 
 
-# ------------------------------------------------------------------ servidor Linux nativo
-# O Valheim (e todo Unity Linux) carrega o BepInEx pelo doorstop .so, por LD_PRELOAD, e nao por
-# DLL do Wine. As variaveis sao as do start_server_bepinex.sh do BepInExPack_Valheim 5.4.2351,
-# lidas do pacote; aqui elas vao num drop-in do systemd, com caminho ABSOLUTO (o script usa
-# ./, relativo a pasta do jogo), para nao precisar trocar o wrapper de partida do jogo.
-# Desligar e apagar o drop-in: o servidor sobe sem nenhum codigo do BepInEx.
-# NAO TESTADO num servidor de verdade ainda.
+# ------------------------------------------------------------------ native Linux server
+# Valheim (and every Unity Linux game) loads BepInEx through the doorstop .so, via LD_PRELOAD, and
+# not through a Wine DLL. The variables are the ones from start_server_bepinex.sh in
+# BepInExPack_Valheim 5.4.2351, read from the package; here they go into a systemd drop-in, with
+# an ABSOLUTE path (the script uses ./, relative to the game folder), so the game startup wrapper
+# does not need to be replaced. Disabling means deleting the drop-in: the server starts without
+# any BepInEx code. NOT TESTED on a real server yet.
 SYSTEMD_DIR = "/etc/systemd/system"
 DROPIN = "gamepanel-bepinex.conf"
 UNIT = re.compile(r"[A-Za-z0-9_.@-]{1,120}\.service")
@@ -247,8 +248,8 @@ def dropin_text(game_dir: str) -> str:
 
 
 def set_linux_enabled(game_dir: str, unit: str, enabled: bool) -> None:
-    # SYSTEMD_DIR e _daemon_reload lidos na hora, pelo nome do modulo: e o que deixa o teste
-    # troca-los sem um parametro a mais em cada funcao do caminho.
+    # SYSTEMD_DIR and _daemon_reload are read at call time, by the module name: that is what lets
+    # the test replace them without an extra parameter in every function along the path.
     path = dropin_path(unit, SYSTEMD_DIR)
     if enabled:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -257,7 +258,7 @@ def set_linux_enabled(game_dir: str, unit: str, enabled: bool) -> None:
     else:
         with contextlib.suppress(FileNotFoundError):
             os.remove(path)
-    # Sem o daemon-reload o systemd segue com o ambiente antigo ate o proximo boot.
+    # Without daemon-reload systemd keeps the old environment until the next boot.
     _daemon_reload()
 
 
@@ -266,10 +267,11 @@ def _daemon_reload() -> None:
 
 
 def _extract_pack(z: zipfile.ZipFile, prefix: str, game_dir: str, created: set[str]) -> tuple[int, set[str]]:
-    """Grava na raiz do jogo o que esta sob `prefix`; devolve (arquivos, nomes de raiz CRIADOS).
+    """Write to the game root what is under `prefix`; return (files, root names CREATED).
 
-    So o que o pacote cria e anotado - e so isso o desinstalar apaga: o que ja existia antes da
-    primeira instalacao e do jogo, e o que uma instalacao anterior criou (`created`) segue nosso.
+    Only what the package creates is recorded - and only that is deleted on uninstall: what
+    already existed before the first install belongs to the game, and what a previous install
+    created (`created`) is still ours.
     """
     created = set(created)
     count = 0
@@ -295,8 +297,8 @@ def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: s
     data = fetcher(meta["download_url"])
     scan([(meta["full_name"], data)])
     z = zipfile.ZipFile(io.BytesIO(data))
-    # O pacote traz uma pasta (BepInExPack_V_Rising/) com o que vai na RAIZ do jogo: e a
-    # que contem BepInEx/core. O resto do zip (icone, README) fica de fora.
+    # The package carries a folder (BepInExPack_V_Rising/) with what goes at the game ROOT: it
+    # is the one containing BepInEx/core. The rest of the zip (icon, README) is left out.
     core = next((n for n in z.namelist() if "BepInEx/core/" in n), "")
     if not core:
         raise ValueError("o pacote nao tem BepInEx/core: nao e um carregador BepInEx")
@@ -305,11 +307,11 @@ def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: s
     count, created = _extract_pack(z, prefix, game_dir, set(previous.get("files", [])))
     set_enabled(game_dir, True)
     _set_ini(os.path.join(game_dir, "BepInEx", "config", "BepInEx.cfg"), "Logging.Console", "Enabled", "false")
-    # O WINE_DLL_OVERRIDES de antes do BepInEx, para o desinstalar devolver (o fix_overrides tira
-    # o mscoree da lista desligada, e isso nao se desfaz sem saber como estava).
+    # The WINE_DLL_OVERRIDES from before BepInEx, so uninstall can restore it (fix_overrides
+    # removes mscoree from the disabled list, and that cannot be undone without knowing how it was).
     overrides_before = previous.get("overrides_before")
     if unit:
-        # Linux nativo: nada de Wine; o carregador entra pelo drop-in do systemd.
+        # Native Linux: no Wine; the loader comes in through the systemd drop-in.
         set_linux_enabled(game_dir, unit, True)
     else:
         old = _read_overrides(env_path)
@@ -325,8 +327,8 @@ def install_loader(game_dir: str, ns: str, name: str, fetcher=fetch, env_path: s
     return {"loader": meta["full_name"], "files": count}
 
 
-# O que um pacote do BepInEx poe na raiz do jogo, para instalacao feita antes de o painel anotar
-# a lista (o .gamepanel.json sem "files"). So nomes do proprio BepInEx/doorstop.
+# What a BepInEx package puts at the game root, for installs made before the panel recorded
+# the list (a .gamepanel.json without "files"). Only BepInEx/doorstop's own names.
 BEPINEX_ROOT = ("BepInEx", DOORSTOP_CONFIG, "winhttp.dll", ".doorstop_version", "doorstop_libs",
                 "dotnet", "start_server_bepinex.sh")
 
@@ -342,11 +344,11 @@ def set_loader(game_dir: str, unit: str, enabled: bool) -> None:
 
 
 def uninstall_loader(game_dir: str, env_path: str = RUNTIME_ENV, unit: str = "") -> dict:
-    """Tira o BepInEx e o que ele mudou no jogo: o jogo volta a subir sem nenhum codigo dele.
+    """Remove BepInEx and what it changed in the game: the game starts again without any of its code.
 
-    Os plugins moram dentro de BepInEx/ e saem junto (a tela avisa antes). O WINE_DLL_OVERRIDES
-    volta ao de antes da instalacao; sem ele anotado, so o winhttp=n,b sai (o mscoree que o
-    BepInEx religou fica - inofensivo sem o BepInEx).
+    The plugins live inside BepInEx/ and go along (the screen warns first). WINE_DLL_OVERRIDES
+    goes back to what it was before the install; without it recorded, only winhttp=n,b is removed
+    (the mscoree that BepInEx re-enabled stays - harmless without BepInEx).
     """
     mark = _read_json(os.path.join(game_dir, "BepInEx", MARK))
     names = mark.get("files") or BEPINEX_ROOT
@@ -357,7 +359,7 @@ def uninstall_loader(game_dir: str, env_path: str = RUNTIME_ENV, unit: str = "")
         _write_overrides(env_path, before if isinstance(before, str) else without_winhttp(_read_overrides(env_path)))
     removed = []
     for name in names:
-        # So um nome da raiz, nunca um caminho: o que vem da marca nao pode sair da pasta do jogo.
+        # Only a root name, never a path: what comes from the mark must not leave the game folder.
         if not name or name in (".", "..") or "/" in name or "\\" in name:
             continue
         path = os.path.join(game_dir, name)
@@ -379,7 +381,7 @@ def _plugins_dir(game_dir: str) -> str:
 
 
 def _plugin_rel(entry: str) -> tuple[str, str]:
-    """Para onde vai um arquivo do zip de um plugin: ('plugins'|'config', caminho relativo)."""
+    """Where a file from a plugin zip goes: ('plugins'|'config', relative path)."""
     rel = _safe_rel(entry)
     if not rel or posixpath.basename(rel).lower() in SKIP:
         return "", ""
@@ -393,7 +395,7 @@ def _plugin_rel(entry: str) -> tuple[str, str]:
 def _install_one(game_dir: str, meta: dict, data: bytes, pinned: bool) -> int:
     ns, name = meta["full_name"].split("-")[0], meta["name"]
     target = os.path.join(_plugins_dir(game_dir), f"{check_part(ns)}-{check_part(name)}")
-    shutil.rmtree(target, ignore_errors=True)  # versao nova substitui a velha por inteiro
+    shutil.rmtree(target, ignore_errors=True)  # the new version replaces the old one entirely
     os.makedirs(target, exist_ok=True)
     z = zipfile.ZipFile(io.BytesIO(data))
     count = 0
@@ -405,7 +407,7 @@ def _install_one(game_dir: str, meta: dict, data: bytes, pinned: bool) -> int:
             continue
         base = target if kind == "plugins" else os.path.join(game_dir, "BepInEx", "config")
         dest = os.path.join(base, rel)
-        # Config que ja existe e do dono do servidor: o pacote so traz o padrao.
+        # A config that already exists belongs to the server owner: the package only brings the default.
         if kind == "config" and os.path.exists(dest):
             continue
         os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -420,15 +422,15 @@ def _install_one(game_dir: str, meta: dict, data: bytes, pinned: bool) -> int:
 
 def install_plugin(game_dir: str, ns: str, name: str, fetcher=fetch, loader_ns: str = "BepInEx",
                    version: str = "", scan=_no_scan) -> dict:
-    """O pacote e as dependencias dele (menos o proprio BepInEx, que tem botao proprio).
+    """The package and its dependencies (except BepInEx itself, which has its own button).
 
-    Com versao fixada, as dependencias vem na versao que AQUELA versao declara, e nao na mais
-    nova: quem fixa uma versao quer o conjunto que o autor testou, e uma dependencia nova
-    demais e justamente o tipo de coisa que quebra o mod que se quis segurar. A consequencia:
-    uma dependencia dividida com outro mod pode voltar para uma versao mais velha.
+    With a pinned version, the dependencies come in the version THAT version declares, and not
+    the newest: whoever pins a version wants the set the author tested, and a dependency that is
+    too new is exactly the kind of thing that breaks the mod one wanted to hold back. The
+    consequence: a dependency shared with another mod may go back to an older version.
 
-    Baixa TUDO antes de gravar qualquer coisa: a verificacao e uma so, e uma dependencia
-    recusada nao deixa o mod principal instalado pela metade.
+    Downloads EVERYTHING before writing anything: there is a single check, and a rejected
+    dependency does not leave the main mod half installed.
     """
     pinned = bool(version)
     queue = [(check_part(ns), check_part(name), check_version(version) if pinned else "")]
@@ -468,8 +470,8 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV, unit: str = "") -> dict:
     plugins = []
     pdir = _plugins_dir(game_dir)
     for entry in sorted(os.listdir(pdir)) if os.path.isdir(pdir) else []:
-        # Pasta posta a mao, sem a marca do instalador: aparece pelo nome.
-        # Marca de antes da versao fixavel nao tem `pinned`: foi a mais nova, entao False.
+        # A folder placed by hand, without the installer mark: it shows up by name.
+        # A mark from before pinnable versions has no `pinned`: it was the newest, so False.
         plugins.append({"dir": entry, "full_name": entry, "version": "", "pinned": False,
                         **_read_json(os.path.join(pdir, entry, MARK))})
     loader = _read_json(os.path.join(game_dir, "BepInEx", MARK))
@@ -487,7 +489,7 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV, unit: str = "") -> dict:
         "loader": loader.get("full_name", ""), "loader_version": loader.get("version", ""),
         "loader_pinned": bool(loader.get("pinned")),
         "enabled": enabled,
-        # Linux nativo nao tem Wine: nao ha ajuste dele para conferir.
+        # Native Linux has no Wine: there is no Wine setting to check.
         "overrides_ok": bool(unit) or not os.path.exists(env_path) or overrides_ok(_read_overrides(env_path)),
         "memory_mb": mem_kb // 1024,
         "plugins": plugins,
@@ -495,7 +497,7 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV, unit: str = "") -> dict:
 
 
 def _chown(path: str) -> None:
-    """O jogo roda como 'steam' e precisa ler (e o BepInEx, escrever) o que entrou."""
+    """The game runs as 'steam' and needs to read (and BepInEx, to write) what came in."""
     try:
         import pwd
         pw = pwd.getpwnam(OWNER)
@@ -511,7 +513,7 @@ INSTALL_ACTIONS = ("loader-install", "plugin-install")
 
 
 def run(action: str, game_dir: str, loader: tuple[str, str], rest: list[str], unit: str, scan) -> dict:
-    """Executa uma acao; o `main` so le o argv e transforma erro em JSON."""
+    """Run one action; `main` only reads argv and turns errors into JSON."""
     loader_ns, loader_name = loader
     if action == "status":
         return status(game_dir, unit=unit)
@@ -535,7 +537,7 @@ def main(argv: list[str]) -> int:
     script = unit = ""
     if argv[:1] == ["--scan"]:
         script, argv = argv[1], argv[2:]
-    # Servidor Linux nativo (Valheim): o carregador entra por drop-in do systemd deste servico.
+    # Native Linux server (Valheim): the loader comes in through a systemd drop-in of this service.
     if argv[:1] == ["--unit"]:
         unit, argv = argv[1], argv[2:]
     action, game_dir, loader_ns, loader_name, *rest = argv

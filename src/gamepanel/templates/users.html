@@ -22,7 +22,7 @@
           {% else %}
           <form method="post" action="{{ url_for('users.role', uid=u.id) }}" class="users-role">
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <label class="sr-only" for="papel-{{ u.id }}">Papel de {{ u.username }}</label>
+            <label class="sr-only" for="papel-{{ u.id }}">{{ _('users.role_of', name=u.username) }}</label>
             <select name="role" id="papel-{{ u.id }}">
               {% for r in roles %}
                 <option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ role_labels[r] }}</option>
@@ -62,7 +62,7 @@
   </table></div>
 </div>
 
-{# Criar usuario ao lado do quadro de papeis: e ali que se decide qual papel dar. #}
+{# Create user next to the roles table: that is where you decide which role to give. #}
 <div class="card-grid">
 <div class="card">
   <h2>{{ _('users.new_user') }}</h2>
@@ -71,19 +71,14 @@
     <label>{{ _('users.user') }}
       <input name="username" pattern="[a-z_][a-z0-9_-]{0,31}" required autofocus
              spellcheck="false" autocomplete="off" autocapitalize="none">
-      <small>Letras minusculas, numeros, <code>-</code> e <code>_</code>. Ex.: <code>joao</code></small>
+      <small>{{ _h('users.username_hint') }}</small>
     </label>
     <label>{{ _('users.role') }}
       <select name="role">
         <option value="operador" selected>{{ _('role.operator') }}</option>
         <option value="admin">{{ _('role.admin') }}</option>
       </select>
-      <small>
-        <strong>{{ _('role.operator') }}</strong>: liga, desliga, atualiza, edita a configuracao ja
-        registrada, ve log e jogadores.
-        <strong>{{ _('role.admin') }}</strong>: tudo isso mais cadastrar servidor, terminal,
-        navegador de arquivos e esta tela.
-      </small>
+      <small>{{ _h('users.roles_hint', operator=_('role.operator'), admin=_('role.admin')) }}</small>
     </label>
     <div class="row">
       <label>{{ _('users.initial_password') }}
@@ -100,8 +95,7 @@
     </div>
   </form>
   <p class="muted small mt-4">
-    {{ _('users.password_handoff') }}
-    <a href="{{ url_for('account.index') }}">{{ _('nav.account') }}</a>. O painel nao envia e-mail.
+    {{ _h('users.password_handoff_html', url=url_for('account.index')) }}
   </p>
 </div>
 
@@ -120,10 +114,7 @@
       <tr><td>{{ _('nav.users') }}</td><td class="muted">{{ _('users.no') }}</td><td>{{ _('users.yes') }}</td></tr>
     </tbody>
   </table></div>
-  <p class="muted small mt-4">
-    O corte segue o que da acesso de root ao container: terminal, editor de arquivos e o
-    cadastro do servidor (que aponta o SSH do painel) ficam com o administrador.
-  </p>
+  <p class="muted small mt-4">{{ _('users.cut_note') }}</p>
 </div>
 </div>
 {% endblock %}

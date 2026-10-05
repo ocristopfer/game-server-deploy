@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Verificacao MANUAL do codificador QR (src/gamepanel/security/qr.py) contra um leitor de verdade.
+"""MANUAL check of the QR encoder (src/gamepanel/security/qr.py) against a real reader.
 
-Nao roda no pytest: opencv-python-headless e segno juntos passam de 60 MB, e o painel (e o
-.venv de desenvolvimento) ficam so com Flask, de proposito (ver CLAUDE.md). Rode isto a mao
-sempre que mexer em `qr.py`, numa venv descartavel:
+It does not run under pytest: opencv-python-headless and segno together exceed 60 MB, and the
+panel (and the development .venv) stay with Flask only, on purpose (see CLAUDE.md). Run this by
+hand whenever you touch `qr.py`, in a throwaway venv:
 
     python -m venv /tmp/verifica-qr
-    /tmp/verifica-qr/Scripts/pip install opencv-python-headless segno   # so aqui, nunca no .venv do repo
+    /tmp/verifica-qr/Scripts/pip install opencv-python-headless segno   # only here, never in the repo .venv
     /tmp/verifica-qr/Scripts/python tools/verify-qr.py
 
-O que confere: o SVG desenhado por `qr.matrix()` decodifica de volta ao texto original pelo
-`cv2.QRCodeDetector` (o mesmo motor de uma camera de celular) em textos curtos, longos, com
-acento e no limite de cada versao; e que a versao escolhida bate com a do `segno` (referencia)
-para texto que nao e so digito (o `qr.py` so faz modo byte, entao numero puro usa uma versao
-maior que o otimo — nao e bug, esta documentado no modulo).
+What it checks: the SVG drawn by `qr.matrix()` decodes back to the original text through
+`cv2.QRCodeDetector` (the same engine as a phone camera) for short texts, long texts, accented
+texts and texts at the limit of each version; and that the chosen version matches `segno`'s
+(the reference) for text that is not digits only (`qr.py` only does byte mode, so a pure number
+uses a larger version than optimal -- not a bug, it is documented in the module).
 """
 from __future__ import annotations
 

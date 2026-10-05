@@ -1,7 +1,7 @@
-"""Oxide (uMod) no Rust (games/mods/oxide_remote.py).
+"""Oxide (uMod) on Rust (games/mods/oxide_remote.py).
 
-Roda DENTRO do CT; aqui contra uma pasta temporaria e um GitHub falso, com o zip no formato
-da 2.0.7801 (so RustDedicated_Data/Managed/, sobrescrevendo DLL do jogo).
+It runs INSIDE the CT; here against a temporary folder and a fake GitHub, with the zip in the
+2.0.7801 format (only RustDedicated_Data/Managed/, overwriting game DLLs).
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def test_desligar_devolve_o_jogo_original_e_religar_poe_o_oxide(rust):
     ox.install_loader(str(rust), fetcher=fetcher_for())
     ox.set_enabled(str(rust), False)
     assert (rust / MANAGED / "Assembly-CSharp.dll").read_bytes() == b"JOGO ORIGINAL"
-    # Arquivo que o jogo nao tinha (o Oxide.Rust.dll) sai.
+    # A file the game did not have (Oxide.Rust.dll) goes away.
     assert not (rust / MANAGED / "Oxide.Rust.dll").exists()
     assert ox.status(str(rust))["enabled"] is False
     ox.set_enabled(str(rust), True)
@@ -66,7 +66,7 @@ def test_desligar_devolve_o_jogo_original_e_religar_poe_o_oxide(rust):
 
 
 def test_reinstalar_com_o_oxide_ligado_nao_perde_o_original(rust):
-    """Com o Oxide ligado, o que esta na pasta e o Oxide: ele nao pode virar o 'original'."""
+    """With Oxide on, what is in the folder is Oxide: it must not become the 'original'."""
     ox.install_loader(str(rust), fetcher=fetcher_for())
     ox.install_loader(str(rust), fetcher=fetcher_for("2.0.7802"))
     ox.set_enabled(str(rust), False)
@@ -75,12 +75,12 @@ def test_reinstalar_com_o_oxide_ligado_nao_perde_o_original(rust):
 
 def test_atualizacao_do_rust_que_apaga_parte_do_oxide_aparece(rust):
     ox.install_loader(str(rust), fetcher=fetcher_for())
-    # O SteamCMD devolve a DLL do jogo (versao nova) e deixa o resto.
+    # SteamCMD restores the game DLL (new version) and leaves the rest.
     (rust / MANAGED / "Assembly-CSharp.dll").write_bytes(b"JOGO NOVO")
     state = ox.status(str(rust))
     assert state["wiped"] is True
     assert state["enabled"] is False
-    # Reinstalar guarda o jogo NOVO como original.
+    # Reinstalling keeps the NEW game as the original.
     ox.install_loader(str(rust), fetcher=fetcher_for())
     ox.set_enabled(str(rust), False)
     assert (rust / MANAGED / "Assembly-CSharp.dll").read_bytes() == b"JOGO NOVO"
@@ -115,7 +115,7 @@ def test_desinstalar_devolve_o_jogo_e_apaga_oxide_e_estado(rust):
 
 
 def test_desinstalar_depois_de_update_do_rust_nao_volta_a_dll_velha(rust):
-    """O backup e da versao velha do jogo: devolve-lo por cima da nova estragaria o servidor."""
+    """The backup is of the old game version: putting it back over the new one would break the server."""
     ox.install_loader(str(rust), fetcher=fetcher_for())
     (rust / MANAGED / "Assembly-CSharp.dll").write_bytes(b"JOGO NOVO")
     result = ox.uninstall_loader(str(rust))

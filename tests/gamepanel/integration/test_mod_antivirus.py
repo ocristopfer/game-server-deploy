@@ -1,8 +1,8 @@
-"""O antivirus dos mods (games/mods/antivirus.py), rodando os scripts DE VERDADE no bash.
+"""The mod antivirus (games/mods/antivirus.py), running the REAL scripts in bash.
 
-O ClamAV nao esta aqui: `clamscan`, `freshclam` e `apt-get` sao falsos, num PATH proprio.
-O que se prova e a DECISAO do script - quando recusa, o que apaga, que nada passa calado -,
-e nao a deteccao, que e do ClamAV.
+ClamAV is not here: `clamscan`, `freshclam` and `apt-get` are fakes, on a PATH of their own.
+What is proven is the script's DECISION - when it refuses, what it deletes, that nothing gets
+through silently - and not the detection, which is ClamAV's job.
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ pytestmark = [
     pytest.mark.skipif(shutil.which("bash") is None, reason="sem bash"),
 ]
 
-# O clamscan falso: "MALWARE" no conteudo = achado (codigo 1), arquivo "quebrado" = erro (2).
+# The fake clamscan: "MALWARE" in the content = found (exit 1), a "broken" file = error (2).
 FAKE_CLAMSCAN = """#!/bin/sh
 for last; do :; done
 if grep -rl MALWARE -- "$last" >/dev/null 2>&1; then echo "$last/x: Fake.Malware FOUND"; exit 1; fi
@@ -65,7 +65,7 @@ def env(tmp_path):
 
 @pytest.fixture
 def staging():
-    """Uma pasta sob o prefixo que o script aceita (/var/tmp/gamepanel-...)."""
+    """A folder under the prefix the script accepts (/var/tmp/gamepanel-...)."""
     os.makedirs("/var/tmp", exist_ok=True)
     path = tempfile.mkdtemp(prefix="gamepanel-test-", dir="/var/tmp")
     yield Path(path)
@@ -95,7 +95,7 @@ def test_achado_recusa_e_apaga_a_espera(env, staging):
 
 
 def test_verificacao_que_nao_roda_tambem_recusa(env, staging):
-    """Falha FECHADA: "nao consegui verificar" nao pode deixar passar."""
+    """Fails CLOSED: "could not verify" must not let anything through."""
     (staging / "quebrado.pak").write_bytes(b"x")
     proc = _scan(env, staging)
     assert proc.returncode == 2
@@ -103,7 +103,7 @@ def test_verificacao_que_nao_roda_tambem_recusa(env, staging):
 
 
 def test_arquivo_grande_ou_zip_com_senha_conta_como_achado(env, staging):
-    """Sem as duas opcoes o ClamAV PULA o que passa do limite, calado."""
+    """Without both options ClamAV SKIPS whatever goes over the limit, silently."""
     (staging / "Mod.pak").write_bytes(b"limpo")
     assert _scan(env, staging).returncode == 0
     args = Path(env["CLAMSCAN_ARGS"]).read_text()
@@ -121,7 +121,7 @@ def test_sem_assinatura_recente_e_sem_atualizacao_recusa(env, staging):
 
 
 def test_atualizacao_que_falha_ainda_aceita_assinatura_de_poucos_dias(env, staging):
-    """O CDN do ClamAV limita pedidos: uma falha de atualizacao nao pode travar todo mod."""
+    """The ClamAV CDN rate-limits requests: an update failure must not block every mod."""
     _tool(env["bin"], "freshclam", FAKE_FRESHCLAM_FAIL)
     db_file = env["db"] / "daily.cld"
     db_file.write_bytes(b"sig")
@@ -147,13 +147,13 @@ def test_sem_clamav_instala_e_se_o_apt_falha_recusa(env, staging):
 
 @pytest.mark.parametrize("bad", ["/opt/game", "/var/tmp", "/var/tmp/gamepanel-x/../../../opt/game", "/tmp/gamepanel-x"])
 def test_caminho_fora_da_area_de_verificacao_nao_e_tocado(env, tmp_path, bad):
-    """O script APAGA o que recusa: um caminho errado nao pode virar rm -rf na pasta do jogo."""
+    """The script DELETES what it refuses: a wrong path must not become rm -rf on the game folder."""
     proc = _scan(env, bad)
     assert proc.returncode == 2
     assert "caminho" in proc.stderr
 
 
-# ------------------------------------------------------------------ mover para a pasta de mods
+# ------------------------------------------------------------------ moving into the mods folder
 
 def test_espera_verificada_vai_para_a_pasta_com_backup_do_que_existia(tmp_path):
     os.makedirs("/var/tmp", exist_ok=True)
@@ -182,10 +182,10 @@ def test_token_de_envio_so_hex(token):
         antivirus.incoming_dir(token)
 
 
-# ------------------------------------------------------------------ os instaladores remotos
+# ------------------------------------------------------------------ the remote installers
 
 def test_os_instaladores_remotos_verificam_do_mesmo_jeito():
-    """Eles rodam soltos no CT e nao importam um ao outro: a copia tem de ser igual."""
+    """They run standalone in the CT and do not import each other: the copy has to be identical."""
     source = inspect.getsource(thunderstore_remote.scanner)
     for other in (shroudtopia_remote, ue4ss_remote, sml_remote, oxide_remote, ue4ss_linux_remote):
         assert source == inspect.getsource(other.scanner), other.__name__
@@ -203,7 +203,7 @@ def test_instalador_remoto_recusa_pacote_com_achado_e_nao_deixa_rastro(env, monk
 
 
 def test_instalador_remoto_sem_antivirus_nao_instala(tmp_path, capsys):
-    """O painel sempre manda --scan; sem ele, instalar e recusado no proprio CT."""
+    """The panel always sends --scan; without it, installing is refused in the CT itself."""
     assert thunderstore_remote.main(["plugin-install", str(tmp_path), "BepInEx", "BepInExPack_V_Rising",
                                      "deca", "VampireCommandFramework"]) == 1
     assert "antivirus" in capsys.readouterr().out
@@ -211,7 +211,7 @@ def test_instalador_remoto_sem_antivirus_nao_instala(tmp_path, capsys):
     assert ue4ss_remote.main(["loader-install", str(tmp_path)]) == 1
 
 
-# ------------------------------------------------------------------ verificar o que ja esta instalado
+# ------------------------------------------------------------------ checking what is already installed
 
 def _audit(env: dict, *paths) -> subprocess.CompletedProcess:
     run_env = {k: v for k, v in env.items() if isinstance(v, str)}
@@ -220,7 +220,7 @@ def _audit(env: dict, *paths) -> subprocess.CompletedProcess:
 
 
 def test_verificar_instalados_acusa_e_nao_apaga_nada(env, tmp_path):
-    """So le: apagar sozinho por um falso positivo derrubaria um mod de que o servidor depende."""
+    """Read-only: deleting on its own over a false positive would take down a mod the server depends on."""
     mods = tmp_path / "mods"
     mods.mkdir()
     (mods / "Bom.dll").write_bytes(b"limpo")
@@ -245,7 +245,7 @@ def test_verificar_instalados_limpo_e_caminho_que_falta_e_pulado(env, tmp_path):
 
 
 def test_servidor_sem_mod_nenhum_nem_instala_o_clamav(env, tmp_path):
-    """Nada para verificar = nada para instalar: servidor sem mod nao paga o ClamAV."""
+    """Nothing to check = nothing to install: a server without mods does not pay for ClamAV."""
     (env["bin"] / "clamscan").unlink()
     _tool(env["bin"], "apt-get", "#!/bin/sh\necho apt chamado >&2\nexit 100\n")
     proc = _audit(env, tmp_path / "nao-existe")

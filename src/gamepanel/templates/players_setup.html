@@ -60,7 +60,7 @@
     </tbody>
   </table></div>
   {% if udp_mudas %}
-  {# Plural e por idioma: duas chaves, e nao um 's' colado no fim do numero. #}
+  {# Plural depends on the language: two keys, and not an 's' glued at the end of the number. #}
   <p class="flash">{{ _h('players_setup.no_udp_query_one' if udp_do_jogo == 1
                          else 'players_setup.no_udp_query_many', n=udp_do_jogo,
                          url_http=url_for('players.setup', sid=server.id, tab='http'),
@@ -117,9 +117,9 @@
           {% if a.generico %}
             <span class="muted small">{{ _('players_setup.http_but_not_a_game_api') }}</span>
           {% else %}
-            {# POST, e nao um link: entre os campos que precisam sobreviver ao clique
-               esta a senha de admin do jogo, e na URL ela ficaria no historico do
-               navegador e no log de qualquer proxy na frente do painel. #}
+            {# POST, and not a link: among the fields that need to survive the click
+               is the game's admin password, and in the URL it would stay in the browser
+               history and in the log of any proxy in front of the panel. #}
             <form method="post" action="{{ url_for('players.setup', sid=server.id) }}" class="inline">
               <input type="hidden" name="csrf" value="{{ csrf_token() }}">
               <input type="hidden" name="tab" value="http">
@@ -153,8 +153,8 @@
 
 <div class="card">
   <h2>{{ _('players_setup.test_the_call') }}</h2>
-  {# POST de proposito: este formulario carrega a senha de admin do jogo (Autenticacao e
-     Corpo JSON do login). Num GET ela iria na barra de enderecos. #}
+  {# POST on purpose: this form carries the game's admin password (Authentication and
+     login JSON body). With a GET it would go in the address bar. #}
   <form method="post" action="{{ url_for('players.setup', sid=server.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="tab" value="http">

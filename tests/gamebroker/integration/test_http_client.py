@@ -1,4 +1,4 @@
-"""Cliente HTTP: TLS fixado, loopback e mensagens de erro sem segredo."""
+"""HTTP client: pinned TLS, loopback, and error messages without secrets."""
 from __future__ import annotations
 
 import hashlib
@@ -42,7 +42,7 @@ def test_impressao_invalida(bad):
         normalize_fingerprint(bad)
 
 
-@pytest.mark.parametrize("url", ["http://192.168.1.254:8006", "http://proxmox.local", "ftp://x", "sem-esquema", "https://"])
+@pytest.mark.parametrize("url", ["http://10.20.0.2:8006", "http://proxmox.local", "ftp://x", "sem-esquema", "https://"])
 def test_url_insegura_ou_invalida_e_recusada(url):
     with pytest.raises(ValueError):
         Client(url, {})
@@ -100,7 +100,7 @@ def test_resposta_que_nao_e_json_vira_texto():
     assert response.text == "oi, sou texto"
 
 
-# --- TLS fixado (precisa do binario openssl para gerar um certificado de teste) ----------
+# --- pinned TLS (needs the openssl binary to generate a test certificate) ----------------
 
 @pytest.fixture
 def tls_server(tmp_path):
@@ -151,13 +151,13 @@ def test_tls_com_impressao_errada_e_recusado(tls_server):
 
 
 def test_tls_autoassinado_sem_impressao_nao_e_aceito(tls_server):
-    """Sem impressao vale a validacao normal: certificado autoassinado NAO passa."""
+    """Without a fingerprint the normal validation applies: a self-signed certificate does NOT pass."""
     url, _ = tls_server
     with pytest.raises(ConnectionFailed):
         Client(url, {}).request("GET", "/")
 
 
-# --- prazo por chamada -----------------------------------------------------------------------------
+# --- per-call timeout ---------------------------------------------------------------------------
 
 def _slow(seconds: float):
     def handler(*_a):

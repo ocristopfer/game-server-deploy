@@ -1,6 +1,6 @@
-# Painel administrativo - imagem de desenvolvimento.
-# Mesmas dependencias do container LXC de producao (provision-admin-lxc.sh), so que
-# o codigo entra por bind mount em vez de copia.
+# Admin panel - development image.
+# Same dependencies as the production LXC container (provision-admin-lxc.sh), except
+# that the code comes in by bind mount instead of being copied.
 FROM debian:13-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -9,10 +9,10 @@ RUN apt-get update \
       python3 python3-flask gunicorn openssh-client ca-certificates \
       python3-pytest \
  && rm -rf /var/lib/apt/lists/*
-# python3-pytest e SO desta imagem de desenvolvimento: as sete suites de teste do
-# painel (admin/test_*.py) usam pytest, e este e o container onde elas rodam contra
-# Python de verdade. O painel em si nunca importa pytest - por isso ele fica de fora
-# do Dockerfile.prod e do provision-admin-lxc.sh, que sao a imagem que roda de fato.
+# python3-pytest is ONLY in this development image: the panel's seven test suites
+# (admin/test_*.py) use pytest, and this is the container where they run against
+# real Python. The panel itself never imports pytest - that is why it is left out
+# of Dockerfile.prod and provision-admin-lxc.sh, which are the image that actually runs.
 
 ENV GAMEPANEL_DB=/var/lib/gamepanel/panel.db \
     GAMEPANEL_SECRET_FILE=/etc/gamepanel/secret_key \

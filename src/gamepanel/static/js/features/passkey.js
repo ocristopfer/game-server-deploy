@@ -1,12 +1,12 @@
-/* Entrar com a biometria do aparelho (passkey) e cadastrar o aparelho.
+/* Sign in with the device's biometrics (passkey) and register the device.
  *
- * Quem fala com o leitor de digital ou com o rosto e o `navigator.credentials` do
- * navegador; o painel so manda o desafio e confere a assinatura. O WebAuthn so existe em
- * contexto seguro (https), entao sem ele os dois controles continuam escondidos - e a
- * senha segue funcionando como sempre.
+ * What talks to the fingerprint or face reader is the browser's `navigator.credentials`;
+ * the panel only sends the challenge and checks the signature. WebAuthn only exists in a
+ * secure context (https), so without it both controls stay hidden - and the
+ * password keeps working as always.
  *
- * O WebAuthn fala ArrayBuffer e o painel fala JSON: os campos binarios viajam em
- * base64url, nos dois sentidos.
+ * WebAuthn speaks ArrayBuffer and the panel speaks JSON: the binary fields travel as
+ * base64url, in both directions.
  */
 import { postJSON } from '../core/http.js';
 
@@ -30,8 +30,8 @@ function csrfToken() {
   return document.querySelector('input[name="csrf"]')?.value || '';
 }
 
-/* Erro do proprio aparelho (a pessoa cancelou, o tempo acabou) nao e falha do painel:
- * a frase vem do template, no idioma da tela. */
+/* An error from the device itself (the person canceled, time ran out) is not a panel failure:
+ * the sentence comes from the template, in the screen's language. */
 function explain(status, err) {
   if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
     return status.dataset.passkeyCancelled || err.message;
@@ -85,7 +85,7 @@ export const passkeyRegister = {
       button.disabled = true;
       status.textContent = '';
       try {
-        // A senha (e o codigo) vao no formulario; o painel so devolve o desafio se conferirem.
+        // The password (and the code) go in the form; the panel only returns the challenge if they check out.
         const options = (await postJSON(form.action, new FormData(form))).publicKey;
         options.challenge = toBuffer(options.challenge);
         options.user.id = toBuffer(options.user.id);

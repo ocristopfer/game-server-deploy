@@ -1,6 +1,6 @@
-{#- Campos do jogo, os mesmos para adicionar e para editar. Quem inclui passa `form`
-    (dict ou request.form), `recipes`, `checked_recipes` e `editing`. Na edicao a chave
-    fica so leitura: ela e o nome do arquivo no broker e o do container das instancias. -#}
+{#- Game fields, the same for adding and editing. The includer passes `form`
+    (dict or request.form), `recipes`, `checked_recipes` and `editing`. When editing, the key
+    is read-only: it is the file name on the broker and the container name of the instances. -#}
 <div class="row">
   <label>{{ _('catalog.key') }}
     <input name="key" value="{{ form.get('key', '') }}" required maxlength="24" spellcheck="false"

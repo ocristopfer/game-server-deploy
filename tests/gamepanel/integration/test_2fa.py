@@ -1,7 +1,7 @@
-"""Segundo fator do login (TOTP): ativar, entrar, recuperar, travar, exigir e resetar.
+"""Login second factor (TOTP): enable, log in, recover, lock out, require and reset.
 
-O que mais importa aqui e o que NAO pode acontecer: senha certa abrindo sessao quando ha 2FA,
-codigo servindo duas vezes, chute ilimitado, e uma sessao esquecida desligando a protecao.
+What matters most here is what must NOT happen: a correct password opening a session when there
+is 2FA, a code working twice, unlimited guessing, and a forgotten session turning protection off.
 """
 from __future__ import annotations
 
@@ -20,9 +20,9 @@ from gamepanel.security import qr, totp
 
 ADMIN = Path(__file__).resolve().parent.parent
 RAIZ = ADMIN.parent.parent
-# O subprocesso e um Python novo, sem o sys.path.insert do conftest.py da raiz nem a
-# instalacao editavel do `uv sync` necessariamente presente (o container de dev do painel
-# so tem python3-pytest do apt) - precisa do PYTHONPATH explicito pra achar `gamepanel`.
+# The subprocess is a fresh Python, without the root conftest.py's sys.path.insert and without
+# the `uv sync` editable install necessarily present (the panel's dev container only has
+# python3-pytest from apt) - it needs an explicit PYTHONPATH to find `gamepanel`.
 ENV_COM_SRC = os.environ | {"PYTHONPATH": str(RAIZ / "src")}
 CODE_RE = re.compile(r"\b[0-9a-f]{5}-[0-9a-f]{5}\b")
 
@@ -37,7 +37,7 @@ class Clock:
 
 @pytest.fixture
 def clock_at(monkeypatch):
-    """Relogio controlado: o TOTP depende do instante, e o teste precisa andar de 30 em 30 s."""
+    """Controlled clock: TOTP depends on the instant, and the test needs to step 30 s at a time."""
     clock_of = Clock()
     monkeypatch.setattr(panel.time, "time", lambda: clock_of.now)
     return clock_of
@@ -48,7 +48,7 @@ def _code(secret: str, clock: Clock) -> str:
 
 
 def _enable_2fa(cli, post, clock: Clock) -> tuple[str, list[str]]:
-    """Ativa o 2FA da conta logada em `cli`. Devolve (segredo, codigos de recuperacao)."""
+    """Enables 2FA for the account logged in on `cli`. Returns (secret, recovery codes)."""
     assert cli.get("/account/2fa").status_code == 200
     with cli.session_transaction() as sess:
         secret = sess["totp_pendente"]
@@ -64,13 +64,13 @@ def _password(cli, post, user="chefe", password="senha-do-chefe", next_one=""):
 
 
 def _with_2fa(admin, post, clock_at):
-    """Chefe logado ativa o 2FA; devolve (segredo, codigos)."""
+    """Logged-in boss enables 2FA; returns (secret, codes)."""
     secret, codes = _enable_2fa(admin, post, clock_at)
-    clock_at.advance(31)     # o codigo da ativacao ja foi gasto: o proximo login usa outro passo
+    clock_at.advance(31)     # the enabling code is already spent: the next login uses another step
     return secret, codes
 
 
-# --- ativar ----------------------------------------------------------------------------------------
+# --- enable ----------------------------------------------------------------------------------------
 
 def test_tela_de_ativacao_mostra_a_chave_e_o_endereco_para_o_aplicativo(admin, clock_at):
     html = admin.get("/account/2fa").get_data(as_text=True)
@@ -82,15 +82,15 @@ def test_tela_de_ativacao_mostra_a_chave_e_o_endereco_para_o_aplicativo(admin, c
 
 
 def test_tela_de_ativacao_tem_o_qr_code_do_mesmo_endereco_mostrado(admin, clock_at):
-    """Nao testa a matematica do QR (isso e `test_qr.py` + `tools/verify-qr.py`, contra um
-    leitor de verdade): so que a ROTA liga o SVG ao mesmo `otpauth://` que a chave e o link
-    representam - um bug aqui deixaria a camera cadastrar uma conta diferente da que a
-    pessoa confirma logo abaixo."""
+    """Does not test the QR math (that is `test_qr.py` + `tools/verify-qr.py`, against a
+    real reader): only that the ROUTE ties the SVG to the same `otpauth://` that the key and the
+    link represent - a bug here would let the camera register an account different from the one
+    the person confirms right below."""
     html = admin.get("/account/2fa").get_data(as_text=True)
     with admin.session_transaction() as sess:
         secret = sess["totp_pendente"]
     address = totp.uri(secret, "chefe", "Painel de Jogos")
-    assert qr.svg(address, label="QR code da verificacao em duas etapas") in html
+    assert qr.svg(address, label="QR code da verificação em duas etapas") in html
 
 
 def test_usuario_no_limite_de_32_caracteres_nao_quebra_a_tela(post, clock_at):
@@ -115,7 +115,7 @@ def test_codigo_errado_nao_liga_o_2fa(admin, post, clock_at):
     admin.get("/account/2fa")
     response = post(admin, "/account/2fa", {"code": "000000"})
     assert response.status_code == 200
-    assert "Codigo incorreto" in response.get_data(as_text=True)
+    assert "Código incorreto" in response.get_data(as_text=True)
     assert panel._connect().execute("SELECT totp_enabled FROM users").fetchone()[0] == 0
 
 
@@ -127,10 +127,10 @@ def test_codigo_certo_liga_e_mostra_os_codigos_de_recuperacao_uma_vez(admin, pos
     assert line["totp_secret"] == secret
     with admin.session_transaction() as sess:
         assert "totp_pendente" not in sess
-    # Nada em texto no banco: so os hashes.
+    # Nothing in plain text in the database: only the hashes.
     assert not any(c.replace("-", "") in line["totp_recovery"] for c in codes)
     assert len(json.loads(line["totp_recovery"])) == totp.RECOVERY_CODES
-    # E a tela de conta nunca mais mostra a chave nem os codigos.
+    # And the account screen never shows the key or the codes again.
     account = admin.get("/account").get_data(as_text=True)
     assert secret not in account
     assert not CODE_RE.search(account)
@@ -142,7 +142,7 @@ def test_ja_ativado_a_tela_de_ativacao_volta_para_a_conta(admin, post, clock_at)
     assert admin.get("/account/2fa").headers["Location"].endswith("/account")
 
 
-# --- entrar ------------------------------------------------------------------------------------------
+# --- log in ------------------------------------------------------------------------------------------
 
 def test_senha_certa_com_2fa_nao_abre_a_sessao(admin, post, clock_at, client):
     _with_2fa(admin, post, clock_at)
@@ -185,7 +185,7 @@ def test_codigo_usado_nao_serve_de_novo(admin, post, clock_at, client):
 
 
 def test_codigo_da_ativacao_tambem_nao_serve_no_primeiro_login(admin, post, clock_at, client):
-    """O codigo que ligou o 2FA foi visto na tela de ativacao: nao pode abrir a porta depois."""
+    """The code that enabled 2FA was seen on the enabling screen: it cannot open the door later."""
     secret, _ = _enable_2fa(admin, post, clock_at)
     _password(client, post)
     assert post(client, "/login/2fa", {"code": _code(secret, clock_at)}).status_code == 401
@@ -236,7 +236,7 @@ def test_trava_por_usuario_bloqueia_ate_o_codigo_certo(admin, post, clock_at, cl
 
 
 def test_a_trava_e_do_usuario_e_nao_do_ip(admin, post, clock_at):
-    """Trocar de IP nao devolve as tentativas: a chave e o nome do usuario."""
+    """Changing IP does not give the attempts back: the key is the username."""
     _with_2fa(admin, post, clock_at)
     for _ in range(panel.LOCKOUT_2FA_TRIES):
         other = panel.app.test_client()
@@ -247,7 +247,7 @@ def test_a_trava_e_do_usuario_e_nao_do_ip(admin, post, clock_at):
     assert post(fresh, "/login/2fa", {"code": "000000"}).status_code == 429
 
 
-# --- recuperacao --------------------------------------------------------------------------------------
+# --- recovery --------------------------------------------------------------------------------------
 
 def test_codigo_de_recuperacao_entra_uma_vez_so(admin, post, clock_at, client):
     _, codes = _with_2fa(admin, post, clock_at)
@@ -260,7 +260,7 @@ def test_codigo_de_recuperacao_entra_uma_vez_so(admin, post, clock_at, client):
     assert post(other, "/login/2fa", {"code": codes[1].upper().replace("-", " ")}).status_code == 302
 
 
-# --- desativar e trocar codigos ---------------------------------------------------------------------
+# --- disable and replace codes ---------------------------------------------------------------------
 
 def test_desativar_pede_senha_e_codigo(admin, post, clock_at):
     secret, _ = _with_2fa(admin, post, clock_at)
@@ -297,10 +297,10 @@ def test_codigos_novos_pedem_senha(admin, post, clock_at):
     assert totp.hash_recovery_code(old_ones[0]) in json.loads(line[0])
 
 
-# --- admin e linha de comando -------------------------------------------------------------------------
+# --- admin and command line -------------------------------------------------------------------------
 
 def _two_users(post, clock_at):
-    """Admin logado e uma operadora `ana` com 2FA ativo. Devolve (admin, id da ana)."""
+    """Logged-in admin and an operator `ana` with 2FA enabled. Returns (admin, ana's id)."""
     panel.ensure_admin_user("chefe", "senha-do-chefe")
     panel.ensure_admin_user("ana", "senha-da-ana", panel.ROLE_OPERATOR)
     ana = panel.app.test_client()
@@ -352,7 +352,7 @@ def test_linha_de_comando_recusa_usuario_que_nao_existe(database):
     assert "nao existe" in output.stderr
 
 
-# --- exigir para todos ---------------------------------------------------------------------------------
+# --- require for everyone ---------------------------------------------------------------------------------
 
 def test_com_2fa_obrigatorio_quem_nao_ativou_so_alcanca_a_ativacao(admin, monkeypatch):
     monkeypatch.setattr(panel, "REQUIRE_2FA", True)

@@ -1,4 +1,4 @@
-"""A conta de quem esta logado: senha, idioma, segundo fator e a chave SSH."""
+"""The signed-in person's account: password, language, second factor and the SSH key."""
 from __future__ import annotations
 
 import json
@@ -23,16 +23,16 @@ def ssh_key():
 @bp.post("/account/language")
 @panel.login_required
 def language():
-    """Guarda o idioma da tela para ESTA pessoa.
+    """Store the screen language for THIS person.
 
-    Por usuario, e nao por sessao: quem trabalha em ingles nao quer reescolher a cada
-    login, e duas pessoas no mesmo painel podem preferir idiomas diferentes.
+    Per user, not per session: someone who works in English does not want to pick it again
+    at every login, and two people on the same panel may prefer different languages.
     """
     chosen_one = panel.i18n.valid_language(request.form.get("lang"))
     with panel.db() as conn:
         users_repo.set_language(conn, session["uid"], chosen_one)
-    # O `g` desta requisicao ja guardou o idioma antigo, e o flash abaixo e lido na
-    # PROXIMA (depois do redirect) — entao ele ja sai no idioma novo.
+    # This request's `g` already stored the old language, and the flash below is read on
+    # the NEXT one (after the redirect), so it already comes out in the new language.
     g._language = chosen_one
     flash(panel.translate("account.language.changed"), "ok")
     return redirect(url_for("account.index"))
@@ -65,7 +65,7 @@ def index():
 @bp.route("/account/2fa", methods=["GET", "POST"])
 @panel.login_required
 def two_factor():
-    """Ativar o segundo fator: mostra o segredo, confere UM codigo do aplicativo e so entao liga."""
+    """Enable the second factor: show the secret, check ONE code from the app and only then turn it on."""
     if panel._two_factor_state()["ativo"]:
         return redirect(url_for("account.index"))
     if request.method == "POST":
@@ -78,8 +78,8 @@ def two_factor():
             session.pop("totp_pendente", None)
             flash(panel.translate("flash.two_factor_on"), "ok")
             return render_template("account_2fa_codes.html", codes=codes)
-    # O segredo fica na SESSAO (cookie assinado) ate ser confirmado; recarregar a pagina mostra
-    # o mesmo, e abandonar a tela nao deixa nada meio ligado no banco.
+    # The secret stays in the SESSION (signed cookie) until confirmed; reloading the page shows
+    # the same one, and leaving the screen does not leave anything half-enabled in the database.
     secret = session.get("totp_pendente") or panel.totp.new_secret()
     session["totp_pendente"] = secret
     address = panel.totp.uri(secret, session.get("username", ""), "Painel de Jogos")
@@ -106,7 +106,7 @@ def two_factor_off():
 @bp.post("/account/2fa/codes")
 @panel.login_required
 def two_factor_codes():
-    """Codigos de recuperacao novos: os antigos deixam de valer."""
+    """New recovery codes: the old ones stop working."""
     row, failure = panel._password_and_code_ok(session["uid"])
     if failure:
         flash(panel.translate(failure), "error")

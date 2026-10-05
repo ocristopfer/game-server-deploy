@@ -1,20 +1,20 @@
 param(
-    # Host do Proxmox (vazio = PROXMOX_HOST do .env)
+    # Proxmox host (empty = PROXMOX_HOST from the .env)
     [string]$ProxmoxHost = "",
     [string]$EnvFile = "",
-    # So estes CTs (ex.: "302,303"). Vazio = painel, broker e todos os jogos do broker.
+    # Only these CTs (e.g. "302,303"). Empty = panel, broker and all the broker's games.
     [string]$Only = "",
-    # CTs de jogo feitos pelo deploy-game.ps1 (fora do broker), ex.: "210,211".
+    # Game CTs made by deploy-game.ps1 (outside the broker), e.g. "210,211".
     [string]$ExtraGameCts = "",
-    # So mostra as regras que cada CT receberia; nao aplica nada.
+    # Only shows the rules each CT would get; applies nothing.
     [switch]$DryRun,
     [string]$RemoteBundleDir = "/root/ct-firewall-deploy"
 )
 
-# Aplica o firewall de dentro do CT (lib/ct-firewall.sh) nos containers que ja existem.
-# Os CTs novos ja nascem com ele; este script e para os de antes. Quem faz o trabalho e o
-# apply-firewall.sh, no host: tudo por `pct`, cada CT testado depois, e desligado sozinho se
-# o teste falhar. Emergencia em qualquer CT: pct exec <CT> -- ct-firewall off
+# Applies the in-CT firewall (lib/ct-firewall.sh) to containers that already exist.
+# New CTs are already born with it; this script is for the older ones. The work is done by
+# apply-firewall.sh, on the host: everything through `pct`, each CT tested afterwards, and turned
+# off automatically if the test fails. Emergency on any CT: pct exec <CT> -- ct-firewall off
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -43,7 +43,7 @@ function Get-Cfg($Map, [string]$Key, [string]$Default = "") {
     return $Default
 }
 
-# O bash do Proxmox le tudo isto: UTF-8 sem BOM e LF, senao o \r entra em cada valor.
+# The Proxmox bash reads all of this: UTF-8 without BOM and LF, otherwise the \r gets into every value.
 function Write-LfFile([string]$Path, [string]$Content) {
     $normalized = $Content -replace "`r`n", "`n"
     $dir = Split-Path -Parent $Path
@@ -59,8 +59,8 @@ $script:SshOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTime
 
 function ConvertTo-Lf([string]$Text) { return ($Text -replace "`r", "") }
 
-# ssh/scp escrevem no stderr mesmo dando certo; no PowerShell 5.1 isso viraria excecao.
-# Quem decide e o $LASTEXITCODE.
+# ssh/scp write to stderr even when they succeed; in PowerShell 5.1 that would become an exception.
+# What decides is $LASTEXITCODE.
 function Invoke-Native([scriptblock]$Block) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -76,14 +76,14 @@ function Invoke-Scp([string[]]$Sources, [string]$Destination, [switch]$Recurse) 
     else { Invoke-Native { scp @script:SshOpts @Sources $Destination } }
 }
 
-# Lista "302, 303" -> "302,303", recusando o que nao for numero de CT.
+# List "302, 303" -> "302,303", rejecting anything that is not a CT number.
 function ConvertTo-CtList([string]$Raw, [string]$Name) {
     $items = @($Raw -split '[,\s]+' | Where-Object { $_ -ne "" })
     foreach ($i in $items) { if ($i -notmatch '^\d{2,9}$') { throw "${Name}: '$i' nao e um numero de CT." } }
     return ($items -join ",")
 }
 
-# ----- Configuracao -----
+# ----- Configuration -----
 $cfg = Read-EnvFile $EnvFile
 if ($ProxmoxHost -eq "") { $ProxmoxHost = Get-Cfg $cfg "PROXMOX_HOST" }
 if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido no .env (ou use -ProxmoxHost)." }
@@ -110,13 +110,13 @@ if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 New-Item -ItemType Directory -Path $BundleDir | Out-Null
 Copy-AsLf (Join-Path $ScriptDir "apply-firewall.sh") (Join-Path $BundleDir "apply-firewall.sh")
 Copy-AsLf (Join-Path $RepoRoot "lib/ct-firewall.sh") (Join-Path $BundleDir "ct-firewall.sh")
-# games/*.env: as portas dos jogos legados, que nao estao no banco do broker.
+# games/*.env: the ports of the legacy games, which are not in the broker's database.
 foreach ($f in Get-ChildItem -Path (Join-Path $RepoRoot "games") -Filter "*.env") {
     Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "games") $f.Name)
 }
 Write-LfFile (Join-Path $BundleDir "fw.env") (($fwLines -join "`n") + "`n")
 
-# ----- Envia e executa -----
+# ----- Send and run -----
 try {
     Write-Host "`nEnviando para root@$ProxmoxHost..." -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"

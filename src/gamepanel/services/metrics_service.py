@@ -1,12 +1,12 @@
-"""CPU, memoria, disco e rede do container, com cache curto.
+"""The container's CPU, memory, disk and network, with a short cache.
 
-O script remoto e a leitura dos numeros moram em `runtime.metrics_probe`; aqui fica o
-que sobra de decisao: quando vale reaproveitar a leitura anterior e o que a tela recebe
-quando o container nao responde.
+The remote script and the parsing of the numbers live in `runtime.metrics_probe`; what
+is left here is the decision: when it is worth reusing the previous reading, and what the
+screen gets when the container does not answer.
 
-Cada leitura custa uma ida de SSH de ~1s (sao duas amostras espacadas dentro do
-container). Sem o cache, tres abas abertas na mesma tela viram tres sessoes de SSH por
-segundo no mesmo servidor.
+Each reading costs an SSH trip of ~1s (two samples spaced apart inside the container).
+Without the cache, three tabs open on the same screen become three SSH sessions per
+second on the same server.
 """
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ import threading
 import time
 from collections.abc import Callable
 
-from gamepanel.runtime import metrics_probe
-from gamepanel.runtime.ssh import RemoteError, ServerLike, quote_command
+from gamepanel.runtime import metrics_probe, remote_cmd
+from gamepanel.runtime.ssh import RemoteError, ServerLike
 
-# (server, comando, timeout) -> saida; RemoteError quando a ida de SSH falha.
+# (server, command, timeout) -> output; RemoteError when the SSH trip fails.
 SshOutput = Callable[..., str]
 
 _metrics_cache: dict[int, tuple[float, dict]] = {}
@@ -31,7 +31,7 @@ def invalidate(server_id: int) -> None:
 
 def server_metrics(ssh_output: SshOutput, server: ServerLike, dir_padrao: str, ttl: float,
                    force: bool = False) -> dict:
-    """Uso de CPU, memoria, disco e rede do container."""
+    """The container's CPU, memory, disk and network usage."""
     key = int(server["id"])
     now_ts = time.monotonic()
     if not force:
@@ -44,7 +44,8 @@ def server_metrics(ssh_output: SshOutput, server: ServerLike, dir_padrao: str, t
     try:
         raw = ssh_output(
             server,
-            quote_command("bash", "-lc", metrics_probe.METRICS_SCRIPT, "gp", server["service"], target),
+            # /proc, the cgroup files and `df` are world-readable: no right needed in either mode.
+            remote_cmd.unprivileged("bash", "-lc", metrics_probe.METRICS_SCRIPT, "gp", server["service"], target),
             timeout=30,
         )
         data = metrics_probe.parse_metrics(raw)

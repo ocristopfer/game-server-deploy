@@ -1,4 +1,4 @@
-"""Entrar, sair e o segundo fator na hora do login."""
+"""Sign in, sign out and the second factor at login time."""
 from __future__ import annotations
 
 import time
@@ -28,8 +28,9 @@ def login():
             panel.login_lockout.clear(key)
             next_one = panel.safe_target(request.args.get("next", ""))
             if row["totp_enabled"]:
-                # Senha certa NAO abre a sessao: so guarda "esta pessoa passou da senha, falta o
-                # codigo". Sem `uid` na sessao, nenhuma rota do painel a reconhece como logada.
+                # The right password does NOT open the session: it only records "this person
+                # passed the password, the code is still missing". Without `uid` in the
+                # session, no panel route treats it as signed in.
                 session.clear()
                 session["pre2fa"] = {"uid": row["id"], "until": time.time() + panel.PRE_2FA_SECONDS,
                                      "next": next_one}

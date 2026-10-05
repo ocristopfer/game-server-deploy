@@ -1,16 +1,16 @@
-"""O `.env.example` tem de passar no `source` do bash.
+"""`.env.example` has to pass bash `source`.
 
-Ele nao e lido so pelo PowerShell: os tres `provision-*-lxc.sh` fazem `source` de um
-arquivo de ambiente no `load_env_file`, e quem roda o provisionamento a mao passa o
-proprio `.env` (copiado deste exemplo) direto.
+It is not read only by PowerShell: the three `provision-*-lxc.sh` `source` an environment
+file in `load_env_file`, and whoever runs provisioning by hand passes their own `.env`
+(copied from this example) directly.
 
-O defeito que motivou este arquivo: `UPDATE_SCHEDULE=*-*-* 06:00:00`, sem aspas. Para o
-bash isso nao e um valor com espaco -- e a atribuicao `UPDATE_SCHEDULE=*-*-*` seguida do
-COMANDO `06:00:00`. Duas consequencias, as duas caladas: a variavel fica com metade do
-valor (um agendamento do systemd sem horario), e o comando inexistente devolve 127 --
-que com o `set -Eeuo pipefail` dos provisionamentos aborta o deploy no PRIMEIRO passo.
+The defect that prompted this file: `UPDATE_SCHEDULE=*-*-* 06:00:00`, unquoted. To bash
+that is not a value with a space -- it is the assignment `UPDATE_SCHEDULE=*-*-*` followed
+by the COMMAND `06:00:00`. Two consequences, both silent: the variable gets half the value
+(a systemd schedule with no time), and the nonexistent command returns 127 -- which, with
+the provisioning scripts' `set -Eeuo pipefail`, aborts the deploy at the FIRST step.
 
-E a mesma regra que o CLAUDE.md ja cobra de `games/*.env`, aqui na raiz.
+It is the same rule CLAUDE.md already enforces for `games/*.env`, here at the root.
 """
 from __future__ import annotations
 
@@ -19,15 +19,15 @@ import re
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 
-# KEY=valor, so o que o bash leria como atribuicao no comeco da linha.
+# KEY=value, only what bash would read as an assignment at the start of the line.
 ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 
 
 def _value_as_bash_sees_it(raw: str) -> str:
-    """Tira o comentario de fim de linha, que o bash descarta antes de tudo.
+    """Strips the end-of-line comment, which bash discards before anything else.
 
-    So conta como comentario o `#` precedido de espaco (ou no comeco): `VALOR#1` e valor,
-    e nao valor com comentario -- e por isso que a checagem nao pode ser um `split('#')`.
+    Only a `#` preceded by a space (or at the start) counts as a comment: `VALOR#1` is a
+    value, not a value with a comment -- which is why the check cannot be a `split('#')`.
     """
     without_comment = re.split(r"(?:^|\s)#", raw, maxsplit=1)[0]
     return without_comment.strip()

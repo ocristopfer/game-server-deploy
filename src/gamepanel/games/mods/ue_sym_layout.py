@@ -1,32 +1,32 @@
-"""Arquivos do UE4SS de um servidor Unreal LINUX tirados do .sym dele - roda DENTRO do CT.
+"""UE4SS files for a LINUX Unreal server taken from its .sym - runs INSIDE the CT.
 
-Mesmo desenho dos instaladores remotos: o ue4ss_linux_remote recebe este texto do painel e o
-executa com `python3 -c`, e por isso e so stdlib e nao importa nada do `gamepanel`.
+Same design as the remote installers: ue4ss_linux_remote receives this text from the panel and
+runs it with `python3 -c`, which is why it is stdlib only and imports nothing from `gamepanel`.
 
-O UE4SS oficial (o nosso fork Linux, ocristopfer/RE-UE4SS) ja traz embutido o layout de cada
-versao do MOTOR (5.1, 5.6), gerado a partir do codigo da Epic. Isso basta para um motor sem
-modificacao (Palworld). Um estudio pode mexer nas classes do motor - o Dragonwilds acrescenta
-virtuais na AActor -, e ai so o que se mede no proprio executavel vale. Servidor que traz o
-`.sym` (o arquivo de crash do Unreal, com nome e endereco de cada funcao) da para medir:
+The official UE4SS (our Linux fork, ocristopfer/RE-UE4SS) already has the layout of each ENGINE
+version (5.1, 5.6) built in, generated from Epic's code. That is enough for an unmodified engine
+(Palworld). A studio may tweak the engine classes - Dragonwilds adds virtuals to AActor -, and
+then only what is measured on the executable itself holds. A server that ships the `.sym` (the
+Unreal crash file, with the name and address of every function) can be measured:
 
-- VTableLayout.ini: a vtable de cada classe e achada nos dados do executavel (sem RTTI ela e
-  {0, 0, destrutor completo, destrutor de apagar, ...}), cada posicao recebe o nome do .sym e cada
-  entrada do template oficial da versao e casada por nome e assinatura. O MSVC agrupa as
-  sobrecargas em ordem invertida e o Itanium nao, entao deslocamento fixo nenhum resolve - medido:
-  no Dragonwilds o BeginPlay caia em RemoveTickPrerequisiteComponent.
-- UE4SS_Signatures/*.lua: o patternsleuth so conhece o codigo que o MSVC gera; FName::ToString, o
-  construtor de FName, StaticConstructObject e GNatives saem daqui, como um AOB unico no
-  executavel, com o operando de call/jmp/rip-relativo coringa (sobrevive a codigo que so mudou
-  de lugar). O GNatives vem da instrucao do FFrame::Step que le a tabela.
+- VTableLayout.ini: each class's vtable is found in the executable data (without RTTI it is
+  {0, 0, complete destructor, deleting destructor, ...}), each slot gets its name from the .sym and
+  each entry of the version's official template is matched by name and signature. MSVC groups
+  overloads in reverse order and Itanium does not, so no fixed offset works - measured: on
+  Dragonwilds BeginPlay landed on RemoveTickPrerequisiteComponent.
+- UE4SS_Signatures/*.lua: patternsleuth only knows the code MSVC generates; FName::ToString, the
+  FName constructor, StaticConstructObject and GNatives come from here, as an AOB unique in the
+  executable, with the call/jmp/rip-relative operand wildcarded (it survives code that only moved).
+  GNatives comes from the FFrame::Step instruction that reads the table.
 
-Duas armadilhas do executavel, as duas vistas no Dragonwilds: o linker junta funcoes identicas
-(ICF), entao o .sym da a uma funcao vazia o nome de um destrutor de outra classe qualquer - so vale
-um nome da hierarquia da propria secao; e o destrutor completo da UObject aparece como
-`UObjectBase::~UObjectBase()` - a vtable e achada por QUALQUER uma das duas posicoes de destrutor.
+Two executable traps, both seen on Dragonwilds: the linker merges identical functions (ICF), so
+the .sym gives an empty function the name of a destructor of some unrelated class - only a name
+from the section's own hierarchy counts; and UObject's complete destructor shows up as
+`UObjectBase::~UObjectBase()` - the vtable is found by EITHER of the two destructor slots.
 
-Uso: ue_sym_layout.py <executavel> <VTableLayout_X_Y_Template.ini> -> UMA linha JSON
-{"files": {"VTableLayout.ini": texto, "UE4SS_Signatures/FName_ToString.lua": texto, ...},
- "report": [...]}. O executavel tem de ser nao-PIE (o endereco do .sym soma a base de carga).
+Usage: ue_sym_layout.py <executable> <VTableLayout_X_Y_Template.ini> -> ONE JSON line
+{"files": {"VTableLayout.ini": text, "UE4SS_Signatures/FName_ToString.lua": text, ...},
+ "report": [...]}. The executable must be non-PIE (the .sym address is added to the load base).
 """
 from __future__ import annotations
 
@@ -45,12 +45,12 @@ MAX_SLOTS = 1500
 OBJECT_CHAIN = ("UObjectBase", "UObjectBaseUtility", "UObject")
 VTABLE_INI = "VTableLayout.ini"
 SIGNATURES_DIR = "UE4SS_Signatures"
-# Teto do AOB: comprido demais vira o proprio codigo, que muda a cada update do jogo.
+# AOB cap: too long and it becomes the code itself, which changes on every game update.
 MAX_AOB = 96
 STEP_BYTES = 512
 
-# Secao do ini -> (classes cuja vtable a contem, a primeira achada vale; bases como o leitor do
-# UE4SS as soma). Espelha o UE4SSProgram; o FMalloc tem o "fexec_size" fixo do leitor.
+# Ini section -> (classes whose vtable contains it, the first one found wins; bases, as the UE4SS
+# reader sums them). Mirrors UE4SSProgram; FMalloc has the reader's fixed "fexec_size".
 SECTIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...] | int]] = {
     "UObjectBase": (("UObject",), ()),
     "UObjectBaseUtility": (("UObject",), ("UObjectBase",)),
@@ -75,19 +75,19 @@ SECTIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...] | int]] = {
     "ULocalPlayer": (("ULocalPlayer",), (*OBJECT_CHAIN, "UPlayer")),
     "UDataTable": (("UDataTable",), OBJECT_CHAIN),
 }
-# Quem mais pode implementar uma posicao da secao (um override no meio, uma interface).
+# Who else may implement a slot of the section (an override in the middle, an interface).
 EXTRA_OWNERS = {
     "UEngine": ("UEngine", "UGameEngine"),
     "FMalloc": ("FMalloc", "FExec", "FUseSystemMallocForNew"),
     "FOutputDevice": ("FOutputDevice",),
     "UPlayer": ("UPlayer", "ULocalPlayer"),
 }
-# Entradas que template nenhum do MSVC tem: no Itanium o override de uma virtual da base
-# SECUNDARIA ganha posicao tambem na vtable principal. E por ela que o UE4SS Linux acha o
-# ULocalPlayer::Exec (o console do jogador): o offset do MSVC caia num destrutor.
+# Entries no MSVC template has: in Itanium the override of a virtual from the SECONDARY base also
+# gets a slot in the primary vtable. That is how UE4SS Linux finds ULocalPlayer::Exec (the player
+# console): the MSVC offset landed on a destructor.
 EXTRA_ENTRIES = {"UPlayer": [("Exec", "Exec(UWorld*, const wchar_t*, FOutputDevice&)")]}
 
-# Grafia do template (MSVC) -> grafia do .sym (demangler do Itanium), comparadas sem espaco.
+# Template spelling (MSVC) -> .sym spelling (Itanium demangler), compared without spaces.
 TYPE_WORDS = [
     (r"\bwchar_t\b", "char16_t"), (r"\bTCHAR\b", "char16_t"), (r"\buint8\b", "unsignedchar"),
     (r"\buint16\b", "unsignedshort"), (r"\buint32\b", "unsignedint"), (r"\buint64\b", "unsignedlong"),
@@ -96,7 +96,7 @@ TYPE_WORDS = [
 ]
 METHOD = re.compile(r"(~?[A-Za-z_]\w*|operator\s*\S+)$")
 
-# Funcoes de cada assinatura do UE4SS (arquivo .lua -> nomes possiveis no .sym).
+# Functions of each UE4SS signature (.lua file -> possible names in the .sym).
 SIGNATURE_FUNCTIONS = {
     "FName_ToString": ("FName::ToString(FString&) const",),
     "FName_Constructor": ("FName::FName(char16_t const*, EFindName)", "FName::FName(wchar_t const*, EFindName)"),
@@ -106,9 +106,9 @@ FRAME_STEP = "FFrame::Step(UObject*, void*)"
 
 
 class Signature(NamedTuple):
-    owner: str      # "UObject" em "UObject::Serialize(FArchive&)"; vazio no template
+    owner: str      # "UObject" in "UObject::Serialize(FArchive&)"; empty in the template
     method: str
-    params: str     # normalizado
+    params: str     # normalized
     const: bool
 
 
@@ -119,7 +119,7 @@ def normalize(params: str) -> str:
 
 
 def parse(text: str) -> Signature | None:
-    """'UObject::Serialize(FArchive&) const' ou 'const FName& GetX() const' -> Signature."""
+    """'UObject::Serialize(FArchive&) const' or 'const FName& GetX() const' -> Signature."""
     close = text.rfind(")")
     if close < 0:
         return None
@@ -138,13 +138,13 @@ def parse(text: str) -> Signature | None:
     if not match:
         return None
     qualified = head[:match.start()]
-    # O demangler escreve "void *FMalloc::Malloc(...)": o * do retorno gruda no dono.
+    # The demangler writes "void *FMalloc::Malloc(...)": the return type's * sticks to the owner.
     owner = re.split(r"[\s*&]", qualified[:-2])[-1] if qualified.endswith("::") else ""
     return Signature(owner, match.group(1).replace(" ", ""), normalize(params), "const" in tail)
 
 
 def read_template(text: str) -> dict[str, list[tuple[str, Signature | None]]]:
-    """Secao -> [(nome no ini, assinatura)] na ordem do template (o indice 0 e o destrutor)."""
+    """Section -> [(name in the ini, signature)] in template order (index 0 is the destructor)."""
     sections: dict[str, list[tuple[str, Signature | None]]] = {}
     current: list[tuple[str, Signature | None]] | None = None
     signature = ""
@@ -161,10 +161,10 @@ def read_template(text: str) -> dict[str, list[tuple[str, Signature | None]]]:
 
 
 class Image:
-    """O executavel ELF, por mmap: so os segmentos LOAD."""
+    """The ELF executable, via mmap: only the LOAD segments."""
 
     def __init__(self, path: str) -> None:
-        self.file = open(path, "rb")  # noqa: SIM115 - aberto enquanto o mmap viver
+        self.file = open(path, "rb")  # noqa: SIM115 - kept open while the mmap lives
         self.data = mmap.mmap(self.file.fileno(), 0, access=mmap.ACCESS_READ)
         if self.data[:4] != b"\x7fELF":
             raise ValueError(f"{path} nao e um ELF")
@@ -192,7 +192,7 @@ class Image:
         return struct.unpack("<Q", chunk)[0] if len(chunk) == 8 else None
 
     def occurrences(self, values: dict[int, str]) -> dict[str, list[int]]:
-        """Por nome: todo endereco de DADOS que guarda um qword com esse nome."""
+        """By name: every DATA address holding a qword with that name."""
         hits: dict[str, list[int]] = {}
         for vaddr, offset, filesz, executable in self.segments:
             if executable:
@@ -209,11 +209,11 @@ class Image:
 
 
 class Symbols:
-    """O .sym: contagem, registros de 20 bytes {u64 endereco, u32 linha, u32 arquivo, u32 nome}
-    e a tabela de textos separados por quebra de linha. Endereco relativo a base de carga."""
+    """The .sym: count, 20-byte records {u64 address, u32 line, u32 file, u32 name} and the
+    table of newline-separated strings. Addresses are relative to the load base."""
 
     def __init__(self, path: str, base: int) -> None:
-        self.file = open(path, "rb")  # noqa: SIM115 - aberto enquanto o mmap viver
+        self.file = open(path, "rb")  # noqa: SIM115 - kept open while the mmap lives
         self.data = mmap.mmap(self.file.fileno(), 0, access=mmap.ACCESS_READ)
         (self.count,) = struct.unpack_from("<I", self.data, 0)
         self.strings = 4 + self.count * RECORD.size
@@ -224,7 +224,7 @@ class Symbols:
         return self.data[self.strings + offset:end].decode("utf-8", "replace")
 
     def addresses_of(self, names: set[str]) -> dict[str, set[int]]:
-        """Todo endereco (ja com a base) dos registros com cada nome - uma funcao tem um por linha."""
+        """Every address (base already added) of the records with each name - a function has one per line."""
         offsets: dict[int, str] = {}
         for name in names:
             needle = b"\n" + name.encode() + b"\n"
@@ -259,7 +259,7 @@ class Symbols:
 # ------------------------------------------------------------------ VTableLayout.ini
 
 def address_point(image: Image, hit: int, names: dict[int, str]) -> int | None:
-    """O comeco da vtable para um destrutor achado em `hit` (o completo ou o de apagar)."""
+    """The start of the vtable for a destructor found at `hit` (the complete or the deleting one)."""
     for start in (hit, hit - 8):
         first, second = image.qword(start), image.qword(start + 8)
         top, rtti = image.qword(start - 16), image.qword(start - 8)
@@ -286,7 +286,7 @@ def find_vtables(image: Image, symbols: Symbols, classes: list[str]) -> dict[str
 
 
 def read_slots(image: Image, symbols: Symbols) -> dict[str, list[Signature | None]]:
-    """Classe -> a assinatura de cada posicao da vtable dela (None = o .sym nao nomeia)."""
+    """Class -> the signature of each slot of its vtable (None = the .sym does not name it)."""
     classes = sorted({c for candidates, _b in SECTIONS.values() for c in candidates})
     slots: dict[str, list[int]] = {}
     for owner, start in find_vtables(image, symbols, classes).items():
@@ -303,7 +303,7 @@ def read_slots(image: Image, symbols: Symbols) -> dict[str, list[Signature | Non
 
 def match_section(entries: list[tuple[str, Signature | None]], live: dict[int, Signature],
                   owners: set[str], base: int) -> dict[int, str]:
-    """Indice na secao (posicao - base) -> nome do template, para cada entrada achada na vtable."""
+    """Index in the section (slot - base) -> template name, for each entry found in the vtable."""
     taken: set[int] = set()
     placed: dict[int, str] = {}
     for ini_name, wanted in entries:
@@ -312,7 +312,7 @@ def match_section(entries: list[tuple[str, Signature | None]], live: dict[int, S
         found = [s for s, sig in live.items()
                  if s not in taken and sig.method == wanted.method and sig.owner.rsplit("::", 1)[-1] in owners]
         if len(found) > 1:
-            # Sobrecarga: a assinatura desempata, e o const separa o par const/nao-const.
+            # Overload: the signature breaks the tie, and const separates the const/non-const pair.
             exact = [s for s in found if live[s].params == wanted.params and live[s].const == wanted.const]
             found = exact or [s for s in found if live[s].params == wanted.params] or found
         if found:
@@ -337,12 +337,12 @@ def vtable_ini(image: Image, symbols: Symbols, template_text: str) -> tuple[str,
         base = bases if isinstance(bases, int) else sum(sizes.get(b, 0) for b in bases)
         owners = {section, cls, *(() if isinstance(bases, int) else bases), *EXTRA_OWNERS.get(section, ())}
         owners |= {o.rsplit("::", 1)[-1] for o in owners}
-        # So as posicoes que o .sym nomeou, da secao em diante.
+        # Only the slots the .sym named, from the section onwards.
         live = {s: sig for s, sig in enumerate(live_by_class[cls]) if sig and s > base}
         extra = [(name, parse(signature)) for name, signature in EXTRA_ENTRIES.get(section, [])]
         placed = match_section(entries[1:] + extra, live, owners, base)
-        # O leitor empilha cada secao sobre o tamanho das bases: terminar a secao na ultima
-        # posicao achada mantem a soma igual a posicao real do que vem depois.
+        # The reader stacks each section on top of the size of its bases: ending the section at the
+        # last slot found keeps the sum equal to the real position of what comes next.
         size = max(placed, default=0)
         sizes[section] = size
         out += [f"[{section}]", DTOR]
@@ -355,7 +355,7 @@ def vtable_ini(image: Image, symbols: Symbols, template_text: str) -> tuple[str,
 # ------------------------------------------------------------------ UE4SS_Signatures
 
 def wildcard_mask(code: bytes) -> list[bool]:
-    """True = byte fixo do AOB; operando de call/jmp/jcc rel32 e de [rip+disp32] vira coringa."""
+    """True = fixed AOB byte; the operand of call/jmp/jcc rel32 and of [rip+disp32] becomes a wildcard."""
     keep = [True] * len(code)
     i = 0
     while i < len(code):
@@ -375,7 +375,7 @@ def wildcard_mask(code: bytes) -> list[bool]:
 
 
 def unique_aob(image: Image, code: bytes) -> str | None:
-    """O menor AOB a partir do comeco de `code` que casa UMA vez no executavel inteiro."""
+    """The shortest AOB from the start of `code` that matches ONCE in the whole executable."""
     keep = wildcard_mask(code)
     for n in range(12, min(MAX_AOB, len(code)) + 1, 4):
         pattern = b"".join(re.escape(code[k:k + 1]) if keep[k] else b"." for k in range(n))
@@ -390,8 +390,8 @@ def unique_aob(image: Image, code: bytes) -> str | None:
 
 
 def gnatives_offset(code: bytes) -> int | None:
-    """`mov r64, [disp32 + reg*8]` sem base (REX.W 8B, ModRM mod=00 rm=100, SIB escala 8 base=101):
-    no FFrame::Step e a leitura da tabela da VM de Blueprint; o disp32 E o GNatives (nao-PIE)."""
+    """`mov r64, [disp32 + reg*8]` with no base (REX.W 8B, ModRM mod=00 rm=100, SIB scale 8 base=101):
+    in FFrame::Step it is the read of the Blueprint VM table; the disp32 IS GNatives (non-PIE)."""
     for i in range(len(code) - 7):
         rex, opcode, modrm, sib = code[i:i + 4]
         if rex & 0xF8 == 0x48 and opcode == 0x8B and modrm & 0xC7 == 0x04 and sib & 0xC7 == 0xC5:

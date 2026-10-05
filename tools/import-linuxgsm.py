@@ -1,36 +1,36 @@
 #!/usr/bin/env python3
-"""Gera `src/gamepanel/games/catalog/suggestions.py` a partir do catalogo do LinuxGSM.
+"""Generates `src/gamepanel/games/catalog/suggestions.py` from the LinuxGSM catalog.
 
-O LinuxGSM (MIT, https://github.com/GameServerManagers/LinuxGSM) mantem, para ~140 jogos, o
-App ID do servidor dedicado, as portas padrao, o executavel e os parametros de start. O painel
-usa isso como SUGESTAO no formulario "Adicionar jogo": a pessoa escolhe o jogo, confere e
-envia — quem decide o que e valido continua sendo o broker.
+LinuxGSM (MIT, https://github.com/GameServerManagers/LinuxGSM) maintains, for ~140 games, the
+dedicated server App ID, the default ports, the executable and the start parameters. The panel
+uses this as a SUGGESTION in the "Add game" form: the person picks the game, reviews it and
+submits -- the one who decides what is valid is still the broker.
 
-Roda na maquina de desenvolvimento (precisa de internet); o painel em producao NAO baixa nada:
-le o arquivo gerado, que vai no repositorio.
+Runs on the development machine (needs internet); the production panel downloads NOTHING:
+it reads the generated file, which ships in the repository.
 
-    python tools/import-linuxgsm.py                    # baixa do GitHub
-    python tools/import-linuxgsm.py --de PASTA         # usa uma copia local (ver `coletar`)
+    python tools/import-linuxgsm.py                    # downloads from GitHub
+    python tools/import-linuxgsm.py --de PASTA         # uses a local copy (see `coletar`)
 
-Tres fontes do LinuxGSM, e cada uma responde uma pergunta:
+Three LinuxGSM sources, and each one answers one question:
 
-- `config-lgsm/<servidor>/_default.cfg`: App ID, executavel, parametros e (quase sempre) as
-  portas. Tambem a pasta e o arquivo de config e o tipo de consulta.
-- `lgsm/modules/info_game.sh`: para os ~30 jogos que guardam a porta no PROPRIO arquivo de
-  configuracao, em que CHAVE dele ela mora ("port" em `DefaultPort` do server.ini do Project
-  Zomboid), e as portas derivadas (`queryport="$((port + 1))"` do Valheim).
-- `Game-Server-Configs/<jogo>/<arquivo>`: o arquivo de config padrao, de onde sai o VALOR
-  daquela chave. Sem as duas ultimas, esses jogos saiam sem porta, e o formulario mostrava o
-  exemplo do campo (7777) como se fosse a porta do jogo.
+- `config-lgsm/<server>/_default.cfg`: App ID, executable, parameters and (almost always) the
+  ports. Also the config folder and file and the query type.
+- `lgsm/modules/info_game.sh`: for the ~30 games that keep the port in their OWN config file,
+  which KEY of it holds the port ("port" in `DefaultPort` of Project Zomboid's server.ini),
+  and the derived ports (Valheim's `queryport="$((port + 1))"`).
+- `Game-Server-Configs/<game>/<file>`: the default config file, where the VALUE of that key
+  comes from. Without the last two, those games came out with no port, and the form showed
+  the field's example (7777) as if it were the game's port.
 
-Regras de seguranca (cada uma tem teste em broker/test_import_linuxgsm.py):
+Security rules (each one has a test in broker/test_import_linuxgsm.py):
 
-- So sai sugestao que o broker aceitaria: o filtro final e o proprio `validate_dynamic`.
-- Porta de RCON, telnet, HTTP e SourceTV NUNCA vira porta exposta: o valor padrao vai so nos
-  argumentos, para o jogo subir, e ela continua atras do firewall.
-- Variavel de senha, nome do servidor, IP e token NUNCA e resolvida: o argumento que a usa e
-  removido e a sugestao avisa. Nada de "CHANGE_ME" do LinuxGSM indo parar num servidor real.
-- O que nao cabe no charset de argumentos do broker (aspas, `$`, `;`...) e removido, nunca escapado.
+- Only suggestions the broker would accept come out: the final filter is `validate_dynamic` itself.
+- RCON, telnet, HTTP and SourceTV ports NEVER become exposed ports: the default value goes only
+  into the arguments, so the game starts, and the port stays behind the firewall.
+- Password, server name, IP and token variables are NEVER resolved: the argument that uses one
+  is removed and the suggestion warns. No LinuxGSM "CHANGE_ME" ending up on a real server.
+- Whatever does not fit the broker's argument charset (quotes, `$`, `;`...) is removed, never escaped.
 """
 from __future__ import annotations
 
@@ -63,13 +63,13 @@ FONTE_URL = "https://raw.githubusercontent.com/GameServerManagers/LinuxGSM/maste
 GAME_CONFIGS_URL = "https://raw.githubusercontent.com/GameServerManagers/Game-Server-Configs/main/"
 GAME_FOLDER = "/opt/game"
 
-# Portas que o jogo anuncia para o cliente e por isso precisam existir no NAT.
+# Ports the game announces to the client, and that therefore must exist in the NAT.
 EXPOSED_PORTS = ("clientport", "beaconport", "reliableport", "modserverport")
-# Portas de administracao: o numero vai nos argumentos, mas NUNCA sai do container.
+# Administration ports: the number goes into the arguments, but NEVER leaves the container.
 INTERNAL_PORTS = ("rconport", "telnetport", "httpport", "sourcetvport", "appport")
-# Protocolo que nao e UDP. O resto e presumido UDP (e o aviso da sugestao diz isso).
+# Protocols that are not UDP. The rest is presumed UDP (and the suggestion's warning says so).
 VARIABLE_PROTOCOL = {"reliableport": "tcp", "httpport": "tcp"}
-# Variavel cujo nome contem qualquer um destes trechos nunca e resolvida.
+# A variable whose name contains any of these fragments is never resolved.
 SEGREDOS = ("pass", "gslt", "token", "key", "secret", "servername", "selfname", "ip", "rcon")
 
 _ATRIBUICAO = re.compile(r"""^([a-z_][a-z0-9_]*)=(?:"(.*)"|'(.*)'|([^\s#"']*))\s*(?:#.*)?$""", re.M)
@@ -79,7 +79,7 @@ _ENCADEAMENTO = re.compile(r"[;|&`<>]|\$\(")
 
 
 def ler_atribuicoes(texto: str) -> dict[str, str]:
-    """`nome="valor"` de um _default.cfg. A ultima atribuicao vence, como no shell."""
+    """`name="value"` from a _default.cfg. The last assignment wins, as in the shell."""
     valores: dict[str, str] = {}
     for m in _ATRIBUICAO.finditer(texto):
         valores[m.group(1)] = next(g for g in m.groups()[1:] if g is not None)
@@ -92,9 +92,9 @@ def _e_segredo(name: str) -> bool:
 
 def resolver(valor: str, variaveis: dict[str, str], extras: dict[str, str] | None = None,
              fundo: int = 6) -> str:
-    """Troca ${nome} pelo que der; o que sobra fica como esta (e depois vira aviso).
+    """Replaces ${name} with whatever it can; what is left stays as is (and later becomes a warning).
 
-    `extras` (portas e pastas) vence `variaveis`. Variavel de segredo nunca e trocada.
+    `extras` (ports and folders) wins over `variaveis`. A secret variable is never replaced.
     """
     extras = extras or {}
     for _ in range(fundo):
@@ -103,8 +103,9 @@ def resolver(valor: str, variaveis: dict[str, str], extras: dict[str, str] | Non
             if name in extras:
                 return extras[name]
             if name in variaveis and not _e_segredo(name):
-                # Valor vazio ("+server.seed ${seed}" com seed="") deixaria a opcao sem valor, e
-                # ela engoliria a proxima da linha. Fica marcado como nao resolvido: sai junto.
+                # An empty value ("+server.seed ${seed}" with seed="") would leave the option without
+                # a value, and it would swallow the next one on the line. It stays marked as
+                # unresolved: it is removed along with it.
                 return variaveis[name] or "${vazio}"
             return m.group(0)
         novo = _VARIAVEL.sub(troca, valor)
@@ -143,16 +144,17 @@ def _dividir(args: str) -> list[str]:
 
 
 def _clean_arguments(args: str) -> tuple[str, list[str]]:
-    """Fica so com o que o broker aceita. Devolve (argumentos, nomes do que foi removido)."""
-    # `;`, `|`, `&`, crase, `$(` e redirecionamento encadeiam OUTRO comando no shell: o que vem
-    # depois nao e argumento do jogo e nao entra, nem como palavras soltas.
+    """Keeps only what the broker accepts. Returns (arguments, names of what was removed)."""
+    # `;`, `|`, `&`, backtick, `$(` and redirection chain ANOTHER command in the shell: what comes
+    # after is not a game argument and does not go in, not even as loose words.
     corte = _ENCADEAMENTO.search(args)
     encadeado = corte is not None
     if corte:
         args = args[:corte.start()]
     tokens = _dividir(args)
     manter = [bool(_CHARSET_ARGS.fullmatch(t)) and "${" not in t for t in tokens]
-    # Sem o valor, a opcao que o pedia ("-name") engoliria a proxima opcao da linha: sai junto.
+    # Without the value, the option that asked for it ("-name") would swallow the next option on
+    # the line: it is removed too.
     for i, ok in enumerate(manter):
         if not ok and i > 0 and manter[i - 1] and tokens[i - 1][0] in "-+" \
                 and "=" not in tokens[i - 1] and tokens[i][:1] not in ("-", "+"):
@@ -170,8 +172,8 @@ def _game_port(v: dict[str, str], from_config: dict[str, int], warnings: list[st
         port = from_config["port"]
         warnings.append(f"Porta lida do arquivo de configuracao padrao do LinuxGSM "
                         f"({v.get('servercfgdefault', '')}): o jogo a le desse arquivo, e nao do comando.")
-    # Mesmo sem porta o App ID (a parte que ninguem sabe de cor) vale a sugestao: fica sem
-    # porta e avisa.
+    # Even without a port, the App ID (the part nobody knows by heart) makes the suggestion
+    # worth it: it goes out with no port and a warning.
     if not port:
         warnings.append("Este jogo guarda as portas no proprio arquivo de configuracao: preencha "
                         "as portas depois de instalar e ver o que ele abre.")
@@ -179,10 +181,11 @@ def _game_port(v: dict[str, str], from_config: dict[str, int], warnings: list[st
 
 
 def _silent_query(port: int, from_config: dict[str, int], warnings: list[str]) -> int:
-    """Consulta que o jogo abre sozinho (porta+1 do Valheim, a do arquivo de config).
+    """Query port the game opens on its own (Valheim's port+1, the one from the config file).
 
-    Ela tem de estar no firewall, senao o servidor nao aparece na lista. Sem marcador no
-    comando o broker nao consegue avisa-la ao jogo, entao o jogo deixa de andar de porta.
+    It has to be in the firewall, otherwise the server does not show up in the list. With no
+    placeholder in the command the broker cannot tell the game about it, so the game stops
+    being shiftable.
     """
     query = from_config.get("queryport", port)
     if not port or query == port:
@@ -210,24 +213,24 @@ def _no_config(_name: str) -> str | None:
 
 
 class GameExtras(NamedTuple):
-    """O que o LinuxGSM diz sobre o jogo FORA do `_default.cfg`. Tudo opcional: sem isto sai o
-    que o `_default.cfg` sozinho diz (portas UDP presumidas, e sem porta onde ele nao tem)."""
+    """What LinuxGSM says about the game OUTSIDE `_default.cfg`. All optional: without it, what
+    comes out is what `_default.cfg` alone says (presumed UDP ports, and no port where it has none)."""
 
-    info_body: str = ""        # corpo de fn_info_game_<jogo>, do info_game.sh
-    messages_body: str = ""    # corpo de fn_info_messages_<jogo>, do info_messages.sh
-    read_config: Callable[[str], str | None] = _no_config  # arquivo do Game-Server-Configs
+    info_body: str = ""        # body of fn_info_game_<game>, from info_game.sh
+    messages_body: str = ""    # body of fn_info_messages_<game>, from info_messages.sh
+    read_config: Callable[[str], str | None] = _no_config  # file from Game-Server-Configs
 
 
 def _port_list(entries: list[tuple[int, str, str]], protocols: dict[str, list[str]],
                warnings: list[str]) -> list[str]:
-    """`numero/protocolo` de cada porta. O protocolo vem do info_messages.sh quando ele lista
-    aquela variavel (o Terraria e so TCP); senao, UDP, e a sugestao avisa que presumiu."""
+    """`number/protocol` of each port. The protocol comes from info_messages.sh when it lists
+    that variable (Terraria is TCP only); otherwise UDP, and the suggestion warns it presumed."""
     ports: list[str] = []
     presumed = False
     for number, variable, default in entries:
-        # A consulta da Steam e UDP, sempre. O info_messages.sh lista "Query ... tcp" em
-        # varios jogos Unreal (Pavlov, Hypercharge): abrir TCP ali deixaria a porta que o
-        # navegador de servidores consulta FECHADA, e uma aberta que ninguem usa.
+        # The Steam query is UDP, always. info_messages.sh lists "Query ... tcp" for several
+        # Unreal games (Pavlov, Hypercharge): opening TCP there would leave the port the server
+        # browser queries CLOSED, and one open that nobody uses.
         listed = ["udp"] if variable in STEAM_QUERY_VARIABLES else protocols.get(variable)
         presumed = presumed or not listed
         ports += [f"{number}/{proto}" for proto in listed or [default]]
@@ -237,7 +240,7 @@ def _port_list(entries: list[tuple[int, str, str]], protocols: dict[str, list[st
 
 
 def sugerir(gamename: str, texto_do_cfg: str, extras: GameExtras = GameExtras()) -> dict | None:  # noqa: B008
-    """Uma sugestao de jogo, ou None se nao da para montar uma que o broker aceite."""
+    """One game suggestion, or None if it is not possible to build one the broker accepts."""
     v = ler_atribuicoes(texto_do_cfg)
     appid = int(v["appid"]) if v.get("appid", "").isdigit() else 0
     if not appid:
@@ -257,12 +260,13 @@ def sugerir(gamename: str, texto_do_cfg: str, extras: GameExtras = GameExtras())
         trocas["port"] = "{PORT}"
     if var_query:
         trocas[var_query] = "{QUERY_PORT}"
-    # O broker avisa ao jogo UMA porta extra. Com duas ou mais (Satisfactory antigo tem beacon e
-    # confiavel) elas ficam com o numero padrao e o jogo nao anda de porta.
+    # The broker tells the game about ONE extra port. With two or more (old Satisfactory has beacon
+    # and reliable) they keep the default number and the game is not shiftable.
     var_extra = extras_da_rede[0] if len(extras_da_rede) == 1 else ""
     if var_extra:
         trocas[var_extra] = "{EXTRA_PORT}"
-    # Toda outra porta vira o NUMERO padrao: o jogo sobe com ela, e so as expostas vao ao NAT.
+    # Every other port becomes the default NUMBER: the game starts with it, and only the exposed
+    # ones go to the NAT.
     for name in EXPOSED_PORTS + INTERNAL_PORTS + ("queryport", "steamport", "clientport"):
         if name not in trocas and _numero(v.get(name, "")):
             trocas[name] = v[name]
@@ -307,7 +311,8 @@ def sugerir(gamename: str, texto_do_cfg: str, extras: GameExtras = GameExtras())
 
 
 def _as_panel_data(s: dict) -> dict:
-    # Sem porta (sugestao parcial) o validador recebe uma qualquer: o que se confere aqui e o resto.
+    # Without a port (partial suggestion) the validator gets an arbitrary one: what is checked
+    # here is the rest.
     dados: dict = {"key": s["key"], "name": s["name"], "app_id": s["appid"],
                    "ports": s["ports"].split() or ["27015/udp"], "game_port": s["game_port"] or 27015,
                    "recipes": [], "config_files": s.get("config_files", []), "backup_paths": [],
@@ -324,14 +329,14 @@ def _as_panel_data(s: dict) -> dict:
     return dados
 
 
-# ---------------------------------------------------- porta e dados fora do _default.cfg
+# ---------------------------------------------------- ports and data outside _default.cfg
 
-# Tipo de consulta do LinuxGSM que e A2S, a que o painel sabe fazer.
+# LinuxGSM query type that is A2S, the one the panel knows how to do.
 A2S_QUERY_TYPES = ("protocol-valve",)
-# Extensoes que a tela Config do painel abre campo a campo (ver games/config_format.py). As
-# outras (.xml, .lua, .sii...) ficam so na pasta: o editor de arquivo generico serve.
+# Extensions the panel's Config screen opens field by field (see games/config_format.py). The
+# others (.xml, .lua, .sii...) only get the folder: the generic file editor is enough.
 CONFIG_EXTENSIONS = (".ini", ".json", ".properties", ".conf", ".cfg")
-# Variaveis que o LinuxGSM usa para a consulta da Steam (A2S), que e UDP em todo jogo.
+# Variables LinuxGSM uses for the Steam query (A2S), which is UDP in every game.
 STEAM_QUERY_VARIABLES = ("queryport", "steamport")
 
 _INFO_CALL = re.compile(r'fn_info_game_(\w+) "(port|queryport)" "([^"]+)"(?: "([^"]+)")?')
@@ -339,7 +344,7 @@ _DERIVED_PORT = re.compile(r'^\s*(queryport)="\$\(\(port \+ (\d{1,3})\)\)"', re.
 
 
 def info_function(info_text: str, shortname: str, prefix: str = "fn_info_game_") -> str:
-    """O corpo de `<prefixo><jogo>` num modulo do LinuxGSM (vazio se o jogo nao tem)."""
+    """The body of `<prefix><game>` in a LinuxGSM module (empty if the game has none)."""
     m = re.search(rf"^{prefix}{re.escape(shortname)}\(\) \{{\n(.*?)^\}}", info_text, re.M | re.S)
     return m.group(1) if m else ""
 
@@ -348,9 +353,9 @@ _PORT_LINE = re.compile(r'fn_port "[^"]*" (\w+) (tcp|udp)\b')
 
 
 def port_protocols(messages_body: str) -> dict[str, list[str]]:
-    """Variavel -> protocolos, de `fn_port "Game" port tcp` (info_messages.sh).
+    """Variable -> protocols, from `fn_port "Game" port tcp` (info_messages.sh).
 
-    Uma mesma variavel pode aparecer duas vezes (a porta do Assetto Corsa e UDP e TCP).
+    The same variable can appear twice (Assetto Corsa's port is UDP and TCP).
     """
     found: dict[str, list[str]] = {}
     for variable, proto in _PORT_LINE.findall(messages_body):
@@ -361,8 +366,8 @@ def port_protocols(messages_body: str) -> dict[str, list[str]]:
 
 
 def _line_value(text: str, key: str, separator: str, anywhere: bool = False) -> str:
-    """O `sed` dos leitores do LinuxGSM: primeira linha que comeca pela chave, valor depois do
-    ULTIMO separador, sem aspas. `anywhere` e o do quakec (`set net_port "27960"`)."""
+    """The `sed` of LinuxGSM's readers: first line starting with the key, value after the LAST
+    separator, without quotes. `anywhere` is quakec's (`set net_port "27960"`)."""
     start = r"(?:^|\s)" if anywhere else r"^\s*"
     for line in text.splitlines():
         if re.match(start + re.escape(key) + r"\b", line) or (anywhere and re.search(
@@ -385,11 +390,12 @@ def _json_value(text: str, path: str) -> str:
 
 
 def _xml_value(text: str, xpath: str) -> str:
-    """Os tres formatos de xpath que o info_game.sh usa para porta: `/a/@b`, `/a/b` e
-    `/a/b[@name='x']/@value`. O ElementTree entende o predicado; o atributo final e a parte."""
+    """The three xpath formats info_game.sh uses for ports: `/a/@b`, `/a/b` and
+    `/a/b[@name='x']/@value`. ElementTree understands the predicate; the final attribute is separate."""
     try:
-        # O arquivo e o do repositorio do LinuxGSM, lido na maquina de quem gera as sugestoes
-        # (nunca no painel), e a stdlib nao expande entidade externa desde o Python 3.7.8.
+        # The file is the one from the LinuxGSM repository, read on the machine of whoever generates
+        # the suggestions (never on the panel), and the stdlib does not expand external entities
+        # since Python 3.7.8.
         root = ET.fromstring(text)  # noqa: S314
     except ET.ParseError:
         return ""
@@ -404,7 +410,7 @@ def _xml_value(text: str, xpath: str) -> str:
 
 
 def config_value(kind: str, key: str, text: str) -> str:
-    """O valor de `key` num arquivo de config, lido como o `fn_info_game_<kind>` le."""
+    """The value of `key` in a config file, read the way `fn_info_game_<kind>` reads it."""
     if kind in ("ini", "keyvalue_pairs_equals", "java_properties", "sqf", "lua"):
         return _line_value(text, key, r"=").rstrip(";")
     if kind in ("keyvalue_pairs_space", "valve_keyvalues"):
@@ -422,11 +428,11 @@ def config_value(kind: str, key: str, text: str) -> str:
 
 def ports_from_game_config(info_body: str, v: dict[str, str],
                            read_config: Callable[[str], str | None]) -> dict[str, int]:
-    """Portas lidas do arquivo de config PADRAO do jogo, onde o info_game.sh diz que elas estao.
+    """Ports read from the game's DEFAULT config file, where info_game.sh says they are.
 
-    So o arquivo que o LinuxGSM publica (`servercfgdefault`) ou o que a chamada nomeia: e o
-    unico que existe fora de uma instalacao. 7 Days to Die usa o que vem com o proprio jogo,
-    que nao da para ler daqui, e continua sem porta.
+    Only the file LinuxGSM publishes (`servercfgdefault`) or the one the call names: it is the
+    only one that exists outside an installation. 7 Days to Die uses the one that ships with
+    the game itself, which cannot be read from here, and stays without a port.
     """
     found: dict[str, int] = {}
     for kind, name, key, other_file in _INFO_CALL.findall(info_body):
@@ -447,15 +453,15 @@ def ports_from_game_config(info_body: str, v: dict[str, str],
 
 
 def player_source(v: dict[str, str], query_port: int) -> str:
-    """A2S so com porta de consulta propria: e ela que o painel consulta."""
+    """A2S only with its own query port: that is the one the panel queries."""
     return "a2s" if query_port and v.get("querytype") in A2S_QUERY_TYPES else "log"
 
 
 def config_location(v: dict[str, str]) -> tuple[str, list[str]]:
-    """Pasta e arquivo de config, quando os dois moram na pasta do jogo.
+    """Config folder and file, when both live in the game folder.
 
-    A pasta do LinuxGSM fora de /opt/game (lgsm/config-lgsm, o HOME) nao existe na instalacao
-    do broker, e um arquivo com o nome da instancia (`${selfname}.xml`) tampouco.
+    The LinuxGSM folder outside /opt/game (lgsm/config-lgsm, the HOME) does not exist in the
+    broker's installation, and neither does a file named after the instance (`${selfname}.xml`).
     """
     folder = resolver(v.get("servercfgdir", ""), v, {"serverfiles": GAME_FOLDER})
     name = resolver(v.get("servercfg", ""), v, {"serverfiles": GAME_FOLDER})
@@ -468,15 +474,16 @@ def config_location(v: dict[str, str]) -> tuple[str, list[str]]:
 
 
 def _passar_pelo_broker(s: dict) -> dict | None:
-    """Filtro final: o validador do broker. Campo opcional recusado e removido (com aviso);
-    identidade ou porta recusada derruba a sugestao inteira."""
+    """Final filter: the broker's validator. A rejected optional field is removed (with a warning);
+    a rejected identity or port drops the whole suggestion."""
     for _ in range(6):
         try:
             validate_dynamic(_as_panel_data(s))
             return s
         except ValidationError as erro:
-            # `field`, e nao `campo`: com o nome antigo o atributo nunca existia, e toda sugestao
-            # com argumento recusado era DESCARTADA em vez de sair com o campo em branco.
+            # `field`, not `campo`: with the old name the attribute never existed, and every
+            # suggestion with a rejected argument was DISCARDED instead of coming out with the
+            # field blank.
             campo = getattr(erro, "field", "")
             if campo in ("start_script", "start_args"):
                 s = {**s, campo: "", "shiftable": False,
@@ -490,7 +497,7 @@ def _passar_pelo_broker(s: dict) -> dict | None:
     return None
 
 
-# ---------------------------------------------------------------- download e escrita
+# ---------------------------------------------------------------- download and writing
 
 def _baixar(url: str, tentativas: int = 3) -> str | None:
     for i in range(tentativas):
@@ -517,12 +524,12 @@ class Sources(NamedTuple):
     default_cfg: Callable[[str], str | None]           # gameservername -> _default.cfg
     info_text: str                                     # lgsm/modules/info_game.sh
     messages_text: str                                 # lgsm/modules/info_messages.sh
-    game_config: Callable[[str, str], str | None]      # (shortname, arquivo) -> config padrao
+    game_config: Callable[[str, str], str | None]      # (shortname, file) -> default config
 
 
 def _sources(pasta_local: pathlib.Path | None) -> Sources:
-    """Copia local: serverlist.csv, <servidor>.cfg, info_game.sh, info_messages.sh e
-    config-game/<shortname>/<arquivo> (os tres ultimos opcionais)."""
+    """Local copy: serverlist.csv, <server>.cfg, info_game.sh, info_messages.sh and
+    config-game/<shortname>/<file> (the last three optional)."""
     if pasta_local:
         folder = pasta_local
         return Sources(
@@ -540,8 +547,8 @@ def _sources(pasta_local: pathlib.Path | None) -> Sources:
 
 
 def _messages_body(messages_text: str, shortname: str, cfg_text: str) -> str:
-    """A lista de portas do jogo; sem uma propria, a do motor (`engine="source"` cobre ~30
-    jogos numa funcao so), que e a ordem do despacho do proprio info_messages.sh."""
+    """The game's port list; without its own, the engine's (`engine="source"` covers ~30
+    games in a single function), which is the dispatch order of info_messages.sh itself."""
     own = info_function(messages_text, shortname, prefix="fn_info_messages_")
     engine = ler_atribuicoes(cfg_text).get("engine", "")
     return own or (info_function(messages_text, engine, prefix="fn_info_messages_") if engine else "")
@@ -552,7 +559,8 @@ def coletar(pasta_local: pathlib.Path | None) -> tuple[list[dict], list[str]]:
     jogos = list(csv.DictReader(io.StringIO(src.server_list)))
     if not jogos:
         raise SystemExit("serverlist.csv vazio ou inacessivel")
-    # Sem os modulos a sugestao continua valendo, so mais pobre: avisa quem gera, e nao para.
+    # Without the modules the suggestion is still valid, just poorer: warn whoever generates it,
+    # and do not stop.
     if not src.info_text:
         print("aviso: sem info_game.sh - jogos com porta no proprio config saem sem porta", file=sys.stderr)
     if not src.messages_text:
@@ -573,7 +581,7 @@ def coletar(pasta_local: pathlib.Path | None) -> tuple[list[dict], list[str]]:
     sugestoes, pulados = [], []
     for j, s in zip(jogos, resultados):
         (sugestoes if s else pulados).append(s or j["gamename"])
-    # Dois jogos com o mesmo nome (ou chave) tornariam a busca ambigua: fica o primeiro.
+    # Two games with the same name (or key) would make the search ambiguous: the first one stays.
     vistos: set[str] = set()
     unicas = []
     for s in sorted(sugestoes, key=lambda s: s["name"].lower()):
@@ -596,7 +604,7 @@ def escrever(sugestoes: list[dict], saida: pathlib.Path) -> None:
         f'SOURCE = "LinuxGSM (MIT), gerado em {datetime.date.today().isoformat()}"\n\n'
         f"SUGGESTIONS = (\n{corpo})\n"
     )
-    saida.write_bytes(texto.encode("utf-8"))  # bytes: no Windows o modo texto trocaria \n por \r\n
+    saida.write_bytes(texto.encode("utf-8"))  # bytes: on Windows text mode would turn \n into \r\n
 
 
 def main() -> None:

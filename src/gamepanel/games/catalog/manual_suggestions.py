@@ -1,24 +1,25 @@
-"""Sugestoes de jogo mantidas A MAO, para o que o LinuxGSM nao cobre.
+"""Game suggestions maintained BY HAND, for what LinuxGSM does not cover.
 
-O LinuxGSM (suggestions.py, gerado) so conhece servidor com build Linux, entao todo jogo
-cujo servidor e so de Windows ficava de fora da busca, e a pessoa ficava sem App ID, sem
-portas e sem nada para comecar. Esta lista fecha esse buraco com o mesmo formato, mais o
-que so jogo de Windows precisa (`platform` e `recipes`).
+LinuxGSM (suggestions.py, generated) only knows servers with a Linux build, so every game
+whose server is Windows-only was left out of the search, and the person ended up with no App
+ID, no ports and nothing to start from. This list closes that gap with the same format, plus
+what only a Windows game needs (`platform` and `recipes`).
 
-Diferente do suggestions.py, este arquivo SE EDITA: cada entrada foi escrita a partir da
-documentacao do proprio jogo ou das imagens Docker da comunidade, e o motivo de cada escolha
-vai nos `warnings`, que a tela mostra ao escolher. Jogo que ja virou curado (games/*.env,
-como V Rising, Enshrouded e Icarus) NAO entra aqui: a busca ja o acha no catalogo, e uma
-sugestao com a mesma chave viraria uma sobreposicao por cima do curado.
+Unlike suggestions.py, this file IS EDITED: each entry was written from the game's own
+documentation or from the community Docker images, and the reason for each choice goes into
+the `warnings`, which the screen shows when it is picked. A game that has already become
+curated (games/*.env, like V Rising, Enshrouded and Icarus) does NOT go here: the search
+already finds it in the catalog, and a suggestion with the same key would become an override
+on top of the curated one.
 
-Regras (tests/gamebroker/unit/test_suggestions.py cobra as mesmas do gerado):
-- tem de passar no `validate_dynamic` do broker;
-- servidor so de Windows usa `proton`; `wine` so quando o Proton comprovadamente falha;
-- sem segredo e sem encadeamento de shell no `start_args`.
+Rules (tests/gamebroker/unit/test_suggestions.py checks the same ones as for the generated file):
+- it has to pass the broker's `validate_dynamic`;
+- a Windows-only server uses `proton`; `wine` only when Proton has been proven to fail;
+- no secrets and no shell chaining in `start_args`.
 """
 SOURCE = "curadoria do painel"
 
-_PROTON_NOTE = ("Servidor so de Windows: roda pelo Proton (receita proton). Se nao subir, "
+_PROTON_NOTE = ("Servidor só de Windows: roda pelo Proton (receita proton). Se não subir, "
                 "troque para wine e anote o motivo.")
 
 SUGGESTIONS = (
@@ -41,10 +42,10 @@ SUGGESTIONS = (
      'player_source': 'log',
      'memory_mb': 16384, 'cores': 4, 'disk_gb': 50,
      'warnings': [_PROTON_NOTE,
-                  'O ASA nao publica query da Steam (a lista e pela Epic): a contagem vem do log.',
-                  'O mapa e o primeiro argumento (TheIsland_WP). Nome e senha do servidor ficam no '
-                  'GameUserSettings.ini, nao no comando.',
-                  'Precisa de ~13 GB de RAM so para subir o mapa padrao.']},
+                  'O ASA não publica query da Steam (a lista é pela Epic): a contagem vem do log.',
+                  'O mapa é o primeiro argumento (TheIsland_WP). Nome e senha do servidor ficam no '
+                  'GameUserSettings.ini, não no comando.',
+                  'Precisa de ~13 GB de RAM só para subir o mapa padrão.']},
     {'appid': 2857200,
      'name': 'Abiotic Factor',
      'key': 'abiotic-factor',
@@ -64,7 +65,7 @@ SUGGESTIONS = (
      'player_source': 'a2s',
      'memory_mb': 8192, 'cores': 4, 'disk_gb': 20,
      'warnings': [_PROTON_NOTE,
-                  'As regras do mundo ficam no SandboxSettings.ini de cada mundo, que so nasce no '
+                  'As regras do mundo ficam no SandboxSettings.ini de cada mundo, que só nasce no '
                   'primeiro start (Saved/SaveGames/Server/Worlds/<mundo>/).']},
     {'appid': 443030,
      'name': 'Conan Exiles',
@@ -85,9 +86,9 @@ SUGGESTIONS = (
      'player_source': 'a2s',
      'memory_mb': 8192, 'cores': 4, 'disk_gb': 40,
      'warnings': [_PROTON_NOTE,
-                  'A 7778/UDP e a porta do jogo + 1, aberta sozinha pelo servidor: por isso ele nao '
-                  'anda de porta (o broker nao tem como avisa-la).',
-                  'O save inteiro e o game.db em ConanSandbox/Saved.']},
+                  'A 7778/UDP é a porta do jogo + 1, aberta sozinha pelo servidor: por isso ele não '
+                  'anda de porta (o broker não tem como avisá-la).',
+                  'O save inteiro é o game.db em ConanSandbox/Saved.']},
     {'appid': 2465200,
      'name': 'Sons of the Forest',
      'key': 'sons-of-the-forest',
@@ -107,7 +108,7 @@ SUGGESTIONS = (
      'memory_mb': 8192, 'cores': 4, 'disk_gb': 20,
      'warnings': [_PROTON_NOTE,
                   'As portas (GamePort, QueryPort, BlobSyncPort) moram no dedicatedserver.cfg, que o '
-                  'servidor cria em /opt/game/userdata no primeiro start: nao ha como passa-las pelo '
-                  'comando, entao ele fica nas portas padrao.',
+                  'servidor cria em /opt/game/userdata no primeiro start: não há como passá-las pelo '
+                  'comando, então ele fica nas portas padrão.',
                   'O servidor cria janela na largada: por isso a receita xvfb.']},
 )

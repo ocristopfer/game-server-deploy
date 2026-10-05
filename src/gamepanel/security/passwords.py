@@ -1,9 +1,9 @@
-"""Hash e conferencia de senha. So stdlib, como o resto de `security/`.
+"""Password hashing and verification. Stdlib only, like the rest of `security/`.
 
-`scrypt` e nao PBKDF2 nem bcrypt: e o que a stdlib oferece com custo de MEMORIA, e custo
-de memoria e o que encarece o ataque em GPU. Producao nao tem pip (ver CLAUDE.md), entao
-`argon2` esta fora de alcance — e trocar de algoritmo depois nao invalida as senhas
-guardadas, porque o formato carrega os parametros.
+`scrypt` and not PBKDF2 or bcrypt: it is what the stdlib offers with a MEMORY cost, and memory
+cost is what makes a GPU attack expensive. Production has no pip (see CLAUDE.md), so `argon2`
+is out of reach - and switching algorithms later does not invalidate stored passwords,
+because the format carries the parameters.
 """
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ import secrets
 
 from gamepanel.i18n import Message
 
-# Formato guardado: `scrypt$N$r$p$salt$digest`. Os parametros vao JUNTO com o hash de
-# proposito — subir o custo no futuro nao invalida as senhas ja gravadas, porque cada
-# uma e conferida com os parametros com que foi criada.
+# Stored format is `scrypt$N$r$p$salt$digest`. The parameters travel WITH the hash on
+# purpose - raising the cost in the future does not invalidate passwords already stored,
+# because each one is checked with the parameters it was created with.
 ALGORITHM = "scrypt"
 COST_N = 2 ** 14
 BLOCK_R = 8
@@ -34,10 +34,10 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, stored: str) -> bool:
-    """Nunca levanta: um hash corrompido no banco e "senha errada", nao um 500.
+    """Never raises: a corrupted hash in the database is "wrong password", not a 500.
 
-    A comparacao final e `compare_digest` — tempo constante. Um `==` aqui vazaria, pelo
-    tempo de resposta, quantos bytes do inicio batem.
+    The final comparison is `compare_digest` - constant time. A `==` here would leak, through
+    the response time, how many leading bytes match.
     """
     try:
         algorithm, cost, block, parallel, salt_hex, digest_hex = stored.split("$")
@@ -57,11 +57,11 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def validate_password(new: str, confirm: str) -> str:
-    """Devolve a mensagem de erro; string vazia quando a senha serve.
+    """Returns the error message; an empty string when the password is acceptable.
 
-    A mensagem e uma `i18n.Message` (que E uma `str`), e nao texto fixo: estas duas
-    apareciam em portugues tambem na tela em ingles, porque o texto cru nao e chave de
-    catalogo nenhuma e a cascata do `translate` o devolvia inteiro.
+    The message is an `i18n.Message` (which IS a `str`), not fixed text: these two used to
+    show up in Portuguese on the English screen too, because the raw text is not a catalog
+    key and the `translate` cascade returned it whole.
     """
     if len(new) < MIN_LENGTH:
         return Message("flash.password_too_short", n=MIN_LENGTH)

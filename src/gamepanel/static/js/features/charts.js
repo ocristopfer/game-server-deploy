@@ -1,12 +1,12 @@
-/* Mira e balaozinho dos graficos de uso.
+/* Crosshair and tooltip for the usage charts.
  *
- * O SVG ja vem desenhado do servidor; este arquivo so acrescenta a camada de leitura.
- * Nada aqui e a UNICA forma de ver um valor: cada linha tem o rotulo na ponta e a
- * pagina traz a tabela com os mesmos numeros — se o JS nao carregar, nada se perde.
+ * The SVG already comes drawn from the server; this file only adds the reading layer.
+ * Nothing here is the ONLY way to see a value: each line has its label at the end and the
+ * page carries the table with the same numbers - if the JS does not load, nothing is lost.
  *
- * Os pontos nao sao mandados duas vezes: eles sao lidos de volta do proprio
- * <polyline>, e o valor sai da coordenada usando o teto e a moldura que o servidor
- * deixou no data-*.
+ * The points are not sent twice: they are read back from the
+ * <polyline> itself, and the value comes from the coordinate using the ceiling and frame the server
+ * left in the data-*.
  */
 import { createEl } from '../core/dom.js';
 
@@ -51,8 +51,8 @@ export const chart = {
     }));
     if (!crosshair || !series.length) return;
 
-    // Um X so por instante, vindo de todas as series: o leitor mira numa hora, nunca
-    // numa linha de 2px.
+    // A single X per instant, taken from all series: the reader aims at a time, never
+    // at a 2px line.
     const xs = [...new Set(series.flatMap((s) => s.points.map((p) => p.x)))]
       .sort((a, b) => a - b);
     if (!xs.length) return;
@@ -76,8 +76,8 @@ export const chart = {
       crosshair.setAttribute('x2', x);
       crosshair.classList.add('active');
 
-      // Titulo e depois uma linha por serie. Tudo por textContent: o rotulo da serie
-      // e dado, nao marcacao.
+      // Title and then one line per series. All through textContent: the series label
+      // is data, not markup.
       const lines = [createEl('div', { className: 'bubble-time', text: timeAt(svg, x) })];
       series.forEach((s) => {
         const found = s.points.find((p) => p.x === x);
@@ -87,7 +87,7 @@ export const chart = {
         key.style.background = s.color;
         line.append(
           key,
-          // O valor lidera; o nome da serie e secundario.
+          // The value leads; the series name is secondary.
           createEl('strong', {
             text: valueAt(svg, found.y).toFixed(s.suffix === '%' ? 1 : 0) + s.suffix,
           }),
@@ -100,7 +100,7 @@ export const chart = {
       const box = svg.getBoundingClientRect();
       const scale = box.width / (svg.viewBox.baseVal.width || 1);
       bubble.hidden = false;
-      // Vira para o outro lado perto da borda direita, para nao sair do cartao.
+      // Flips to the other side near the right edge, so it does not leave the card.
       const loose = x * scale;
       bubble.style.left = `${loose > box.width * 0.6 ? loose - bubble.offsetWidth - 12 : loose + 12}px`;
     }
@@ -117,9 +117,9 @@ export const chart = {
     }
 
     svg.addEventListener('pointermove', atPosition);
-    svg.addEventListener('pointerdown', atPosition);   // no toque nao existe "passar por cima"
+    svg.addEventListener('pointerdown', atPosition);   // on touch there is no "hovering"
     svg.addEventListener('pointerleave', hide);
-    // Teclado ve o mesmo que o mouse: seta anda de amostra em amostra.
+    // The keyboard sees the same as the mouse: arrow keys move sample by sample.
     svg.addEventListener('focus', () => showAt(index < 0 ? xs.length - 1 : index));
     svg.addEventListener('blur', hide);
     svg.addEventListener('keydown', (ev) => {

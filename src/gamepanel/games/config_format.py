@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Le e grava os arquivos de configuracao dos jogos campo a campo.
+"""Reads and writes game configuration files field by field.
 
-A tela "Arquivos" resolve tudo, mas exige achar o arquivo, achar a linha e nao errar a
-virgula. Aqui o arquivo vira uma lista de configuracoes (secao, chave, valor) que a tela
-"Config" mostra como formulario — e a gravacao volta mexendo APENAS nas chaves que o
-usuario alterou, preservando comentarios, ordem e todo o resto do arquivo.
+The "Files" screen handles everything, but it requires finding the file, finding the line and
+not getting a comma wrong. Here the file becomes a list of settings (section, key, value) that
+the "Config" screen shows as a form - and saving touches ONLY the keys the user changed,
+preserving comments, order and everything else in the file.
 
-Formatos (detectados pelo nome + conteudo):
-  ini   - .ini/.conf/.properties comuns. Valores no formato da Unreal
-          (OptionSettings=(Chave=Valor,...), do Palworld) viram sub-configuracoes.
+Formats (detected by name + content):
+  ini   - common .ini/.conf/.properties. Values in the Unreal format
+          (OptionSettings=(Key=Value,...), from Palworld) become sub-settings.
   json  - Enshrouded (enshrouded_server.json)
-  dayz  - serverDZ.cfg: 'chave = valor;' e blocos 'class X { ... };'
-  sii   - server_config.sii do ETS2/ATS: 'SiiNunit { classe : nome { chave: valor } }'
+  dayz  - serverDZ.cfg: 'key = value;' and 'class X { ... };' blocks
+  sii   - ETS2/ATS server_config.sii: 'SiiNunit { class : name { key: value } }'
 
-Este modulo nao fala SSH nem HTTP: recebe texto, devolve texto. E o que permite testa-lo
-sozinho (test_config_format.py).
+This module speaks neither SSH nor HTTP: it takes text and returns text. That is what allows
+testing it on its own (test_config_format.py).
 """
 from __future__ import annotations
 
@@ -23,26 +23,26 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-# Separa os niveis do identificador de uma configuracao ("secao\x1fchave"). Nao aparece
-# em arquivo de config nenhum, entao serve de separador sem escape.
+# Separates the levels of a setting's identifier ("section\x1fkey"). It does not appear in
+# any config file, so it works as a separator without escaping.
 SEP = "\x1f"
 
-# Rotulo do bloco sem nome: chave solta no topo de um .ini, ou o nivel de cima de um
-# .json. Vira titulo de secao na tela de Configuracao, e os tres formatos precisam
-# dizer a MESMA coisa - nao "(sem secao)" num e "(raiz)" no outro para a mesma ideia.
-NO_SECTION = "(sem secao)"
+# Label of the unnamed block: a loose key at the top of an .ini, or the top level of a
+# .json. It becomes a section title on the Configuration screen, and the three formats must
+# say the SAME thing - not "(sem secao)" in one and "(raiz)" in another for the same idea.
+NO_SECTION = "(sem seção)"
 ROOT = "(raiz)"
 
-# Marca de ordem de bytes do UTF-8, ja decodificada: e como ela chega aqui (o texto vem lido).
+# UTF-8 byte order mark, already decoded: that is how it arrives here (the text comes in already read).
 BOM = "﻿"
 
 VALUE_MAX = 4000
-# Nome de chave aceito num arquivo de configuracao de jogo.
+# Key name accepted in a game configuration file.
 #
-# O `re.ASCII` nao e detalhe: sem ele, `\w` em Python casa letra acentuada, digito
-# arabe-indico e mais uns 900 caracteres Unicode - e este nome vai parar dentro do
-# arquivo do jogo, escrito por SSH. Com a flag, `\w` e exatamente `[A-Za-z0-9_]`, que
-# era a forma antiga desta expressao.
+# The `re.ASCII` is not a detail: without it, `\w` in Python matches accented letters,
+# Arabic-Indic digits and some 900 more Unicode characters - and this name ends up inside
+# the game file, written over SSH. With the flag, `\w` is exactly `[A-Za-z0-9_]`, which
+# was the old form of this expression.
 KEY_RE = re.compile(r"^\w[\w.\- ]{0,79}$", re.ASCII)
 BOOL_WORDS = {"true": True, "false": False, "1": True, "0": False,
               "sim": True, "nao": False, "yes": True, "no": False}
@@ -50,28 +50,28 @@ NUM_RE = re.compile(r"^-?\d+(\.\d+)?$")
 
 
 class ConfigError(ValueError):
-    """Erro de forma: arquivo que nao da para interpretar, chave/valor invalido."""
+    """Shape error: a file that cannot be interpreted, an invalid key/value."""
 
 
 @dataclass
 class Setting:
-    """Uma linha do formulario: uma chave de configuracao do jogo."""
+    """One line of the form: one game configuration key."""
 
-    id: str                 # identificador estavel, usado para reencontrar a chave
-    section: str            # bloco onde ela mora (id opaco)
+    id: str                 # stable identifier, used to find the key again
+    section: str            # block where it lives (opaque id)
     key: str
     value: str
     kind: str = "text"      # text | bool | number
-    comment: str = ""       # comentario vizinho no arquivo, vira ajuda na tela
-    # Preenchidos depois da leitura, pelo catalogo de campos (`games/registry.py`). Ficam
-    # aqui e nao no parser de proposito: o parser continua sem saber que jogo e esse.
-    spec: object = None     # games.base.FieldSpec, quando o campo e conhecido
-    display_value: str = ""  # valor na unidade da tela (minutos em vez de nanossegundos)
+    comment: str = ""       # neighboring comment in the file, becomes help on the screen
+    # Filled in after reading, by the field catalog (`games/registry.py`). They live here
+    # and not in the parser on purpose: the parser still does not know which game this is.
+    spec: object = None     # games.base.FieldSpec, when the field is known
+    display_value: str = ""  # value in the screen unit (minutes instead of nanoseconds)
 
 
 @dataclass
 class Section:
-    """Bloco de configuracoes ([secao] do ini, class do DayZ, objeto do JSON)."""
+    """Block of settings ([section] of the ini, DayZ class, JSON object)."""
 
     id: str
     label: str
@@ -80,10 +80,10 @@ class Section:
 
 @dataclass
 class Edit:
-    """Uma alteracao vinda do formulario.
+    """A change coming from the form.
 
-    `id` vazio (ou que nao existe mais no arquivo) significa configuracao nova: ela e
-    procurada por secao+chave e, se nao existir, acrescentada no fim do bloco.
+    An empty `id` (or one that no longer exists in the file) means a new setting: it is
+    looked up by section+key and, if it does not exist, appended at the end of the block.
     """
 
     section: str
@@ -102,7 +102,7 @@ def check_key(key: str) -> str:
 def check_value(value: str) -> str:
     value = (value or "").replace("\r", "")
     if "\n" in value or "\x00" in value:
-        raise ConfigError("o valor nao pode ter quebra de linha")
+        raise ConfigError("o valor não pode ter quebra de linha")
     if len(value) > VALUE_MAX:
         raise ConfigError(f"valor longo demais (limite de {VALUE_MAX} caracteres)")
     return value.strip()
@@ -127,27 +127,28 @@ def _as_bool(value: str) -> bool:
 
 
 class ConfigFile:
-    """Contrato comum: parse no construtor, `apply` devolve o arquivo novo."""
+    """Common contract: parse in the constructor, `apply` returns the new file."""
 
     format_id = "texto"
     label = "Texto"
-    # Como o formato escreve verdadeiro/falso. A tela usa isto no seletor dos campos
-    # booleanos: com a grafia certa, abrir e salvar sem mexer em nada nao "altera" nada.
+    # How the format writes true/false. The screen uses this in the selector of boolean
+    # fields: with the right spelling, opening and saving without touching anything "changes" nothing.
     bool_words = ("True", "False")
 
     def __init__(self, text: str) -> None:
-        # O BOM (U+FEFF no comeco) sai antes de qualquer leitor ver o texto e volta no `apply`.
-        # Os padroes do V Rising vem com ele, e o `json.loads` o recusa ("Unexpected UTF-8 BOM"):
-        # a tela Config nao abria o ServerHostSettings.json. Devolver ao gravar e para o arquivo
-        # sair igual ao que o jogo escreveu, e nao trocar a codificacao de um arquivo alheio.
+        # The BOM (U+FEFF at the start) is removed before any reader sees the text and comes back
+        # in `apply`. The V Rising defaults ship with it, and `json.loads` rejects it ("Unexpected
+        # UTF-8 BOM"): the Config screen would not open ServerHostSettings.json. Putting it back on
+        # save makes the file come out the same as the game wrote it, without changing the
+        # encoding of someone else's file.
         self.bom = text.startswith(BOM)
         self.text = text[len(BOM):] if self.bom else text
         self.settings: list[Setting] = []
         self._sections: dict[str, Section] = {}
         self.parse()
 
-    # -- leitura -------------------------------------------------------
-    def parse(self) -> None:  # pragma: no cover - implementado nas subclasses
+    # -- reading -------------------------------------------------------
+    def parse(self) -> None:  # pragma: no cover - implemented in subclasses
         raise NotImplementedError
 
     def _section(self, sid: str, label: str) -> Section:
@@ -164,7 +165,7 @@ class ConfigFile:
 
     @property
     def sections(self) -> list[Section]:
-        """Blocos com conteudo. Um arquivo sem nenhuma chave devolve o que houver."""
+        """Blocks with content. A file without any key returns whatever there is."""
         non_empty = [s for s in self._sections.values() if s.settings]
         return non_empty or list(self._sections.values())
 
@@ -181,9 +182,9 @@ class ConfigFile:
                 return s
         return None
 
-    # -- escrita -------------------------------------------------------
+    # -- writing -------------------------------------------------------
     def apply(self, edits: list[Edit]) -> str:
-        """O arquivo novo, com o BOM de volta se o original tinha."""
+        """The new file, with the BOM back if the original had it."""
         out = self._apply(edits)
         return BOM + out if self.bom else out
 
@@ -191,7 +192,7 @@ class ConfigFile:
         raise NotImplementedError
 
     def _resolve(self, edit: Edit) -> Setting | None:
-        """Acha a configuracao que o formulario quer mudar (por id, depois por nome)."""
+        """Find the setting the form wants to change (by id, then by name)."""
         if edit.id:
             found = self.get(edit.id)
             if found is not None:
@@ -208,14 +209,14 @@ def _insert_after(lines: list[str], index: int, new_lines: list[str]) -> None:
 
 _SECTION_RE = re.compile(r"^\s*\[([^\]]*)\]\s*$")
 _COMMENT_RE = re.compile(r"^\s*[#;]")
-# Corta so no primeiro '='; o espaco em volta e separado no codigo. Grupos "opcionais"
-# disputando o mesmo texto (\s* ao lado de [^=]*?) fazem o motor de regex voltar atras
-# muitas vezes numa linha longa - e a linha do Palworld tem alguns milhares de bytes.
+# Split only at the first '='; the surrounding whitespace is separated in code. "Optional"
+# groups competing for the same text (\s* next to [^=]*?) make the regex engine backtrack
+# many times on a long line - and the Palworld line has a few thousand bytes.
 _PAIR_RE = re.compile(r"^(\s*)([^=\s\[#;][^=]*)=(.*)$")
 
 
 def _nesting_depth(ch: str, depth: int) -> int:
-    """Quanto este caractere mexe no aninhamento de parenteses/colchetes."""
+    """How much this character changes the parenthesis/bracket nesting."""
     if ch in "([":
         return depth + 1
     if ch in ")]":
@@ -224,9 +225,9 @@ def _nesting_depth(ch: str, depth: int) -> int:
 
 
 def _split_tuple(inner: str) -> list[str] | None:
-    """Quebra 'A=1,B="x,y",C=(D=2)' nos pares de primeiro nivel.
+    """Split 'A=1,B="x,y",C=(D=2)' into its top-level pairs.
 
-    Devolve None se o texto nao parecer uma lista de pares (ai o valor fica como texto).
+    Return None if the text does not look like a list of pairs (then the value stays as text).
     """
     parts: list[str] = []
     buf = ""
@@ -243,7 +244,7 @@ def _split_tuple(inner: str) -> list[str] | None:
             continue
         depth = _nesting_depth(ch, depth)
         if depth < 0:
-            return None  # fechou um parentese que nunca abriu: nao e lista de pares
+            return None  # closed a parenthesis that was never opened: not a list of pairs
         if ch == "," and depth == 0:
             parts.append(buf)
             buf = ""
@@ -257,11 +258,11 @@ def _split_tuple(inner: str) -> list[str] | None:
 
 
 def _tuple_pairs(value: str) -> list[str] | None:
-    """Os pares de um valor no formato da Unreal, ou None se nao for um.
+    """The pairs of a value in the Unreal format, or None if it is not one.
 
-    `OptionSettings=(Difficulty=None,ExpRate=1.0)` - onde o Palworld guarda TODA a
-    configuracao - nao e um valor: e uma configuracao inteira dentro de uma linha. O
-    `=` no meio e o que separa isso de um valor comum entre parenteses.
+    `OptionSettings=(Difficulty=None,ExpRate=1.0)` - where Palworld keeps ALL of its
+    configuration - is not a value: it is a whole configuration inside one line. The
+    `=` in the middle is what sets it apart from a regular value in parentheses.
     """
     inner = value.strip()
     if not (inner.startswith("(") and inner.endswith(")") and "=" in inner):
@@ -269,7 +270,7 @@ def _tuple_pairs(value: str) -> list[str] | None:
     return _split_tuple(inner[1:-1])
 
 
-_MIN_QUOTED_LENGTH = 2  # abre e fecha aspas: '""' e o menor valor entre aspas possivel
+_MIN_QUOTED_LENGTH = 2  # opening and closing quotes: '""' is the shortest possible quoted value
 
 
 def _unquote(value: str) -> tuple[str, bool]:
@@ -280,9 +281,9 @@ def _unquote(value: str) -> tuple[str, bool]:
 
 
 def _requote(value: str, was_quoted: bool) -> str:
-    """Devolve o valor no formato do arquivo: com aspas se ja tinha, ou se precisa."""
+    """Return the value in the file format: quoted if it already was, or if it needs to be."""
     if '"' in value:
-        raise ConfigError('o valor nao pode conter aspas duplas (")')
+        raise ConfigError('o valor não pode conter aspas duplas (")')
     needs_quotes = any(ch in value for ch in ',()= ') or value == ""
     if was_quoted or needs_quotes:
         return f'"{value}"'
@@ -291,7 +292,7 @@ def _requote(value: str, was_quoted: bool) -> str:
 
 @dataclass
 class _Pair:
-    """Par de dentro de um valor no formato da Unreal: Chave=Valor."""
+    """A pair inside a value in the Unreal format: Key=Value."""
 
     key: str
     value: str
@@ -300,7 +301,7 @@ class _Pair:
 
 @dataclass
 class _TupleLine:
-    """Linha 'Chave=(A=1,B=2)' de um .ini da Unreal (Palworld)."""
+    """A 'Key=(A=1,B=2)' line of an Unreal .ini (Palworld)."""
 
     line: int
     prefix: str
@@ -315,11 +316,11 @@ class _TupleLine:
 
 
 class IniConfig(ConfigFile):
-    """.ini/.conf/.properties, com ou sem [secoes].
+    """.ini/.conf/.properties, with or without [sections].
 
-    Valores no formato da Unreal — `OptionSettings=(Difficulty=None,ExpRate=1.0,...)`,
-    que e onde o Palworld guarda TODA a configuracao — sao abertos em sub-configuracoes,
-    cada par virando um campo do formulario.
+    Values in the Unreal format - `OptionSettings=(Difficulty=None,ExpRate=1.0,...)`,
+    which is where Palworld keeps ALL of its configuration - are opened into sub-settings,
+    each pair becoming a form field.
     """
 
     format_id = "ini"
@@ -327,10 +328,10 @@ class IniConfig(ConfigFile):
 
     def parse(self) -> None:
         self._lines = self.text.split("\n")
-        self._plain: dict[str, tuple[int, str, str, str]] = {}  # id -> (linha, prefixo, nome, sep)
-        self._tuples: dict[str, _TupleLine] = {}                # id da secao -> linha
-        self._pairs: dict[str, int] = {}                        # id -> posicao dentro da tupla
-        self._section_end: dict[str, int] = {}                  # id -> ultima linha util
+        self._plain: dict[str, tuple[int, str, str, str]] = {}  # id -> (line, prefix, name, sep)
+        self._tuples: dict[str, _TupleLine] = {}                # section id -> line
+        self._pairs: dict[str, int] = {}                        # id -> position inside the tuple
+        self._section_end: dict[str, int] = {}                  # id -> last useful line
         section = ""
         self._section(section, NO_SECTION)
         comment_lines: list[str] = []
@@ -354,23 +355,23 @@ class IniConfig(ConfigFile):
             pair_match = _PAIR_RE.match(line)
             if pair_match:
                 self._read_pair(i, pair_match, section, comment_lines, seen)
-            # Comentario so vale para a linha seguinte: qualquer outra coisa o descarta.
+            # A comment only applies to the next line: anything else discards it.
             comment_lines = []
 
     def _read_pair(self, i: int, pair_match: re.Match[str], section: str,
                     comment_lines: list[str], seen: dict[str, int]) -> None:
-        """Uma linha `chave = valor` do .ini vira um campo (ou varios, se for tupla)."""
+        """A `key = value` line of the .ini becomes a field (or several, if it is a tuple)."""
         prefix, raw_key, rest = pair_match.groups()
         name = raw_key.rstrip()
         value = rest.strip()
-        # sep e sufixo guardam o espacamento original: gravar de volta nao pode
-        # reformatar uma linha que o usuario nem tocou.
+        # sep and suffix keep the original spacing: writing back must not reformat
+        # a line the user did not even touch.
         sep = raw_key[len(name):] + "=" + rest[:len(rest) - len(rest.lstrip())]
         suffix = rest[len(rest.rstrip()):]
         self._section_end[section] = i
 
-        # Ids repetem quando a mesma chave aparece duas vezes na secao (comum na
-        # Unreal): o sufixo mantem cada ocorrencia com identidade propria.
+        # Ids repeat when the same key shows up twice in the section (common in
+        # Unreal): the suffix gives each occurrence its own identity.
         base = f"{section}{SEP}{name}"
         seen[base] = seen.get(base, 0) + 1
         sid = base if seen[base] == 1 else f"{base}{SEP}#{seen[base]}"
@@ -388,7 +389,7 @@ class IniConfig(ConfigFile):
 
     def _parse_tuple(self, sid: str, section: str, name: str, line: int, prefix: str,
                       sep: str, suffix: str, pairs: list[str]) -> None:
-        target = sid  # a secao das sub-configuracoes e o proprio id da linha
+        target = sid  # the section of the sub-settings is the line's own id
         self._section(target, f"[{section}] {name}" if section else name)
         items: list[_Pair] = []
         seen: dict[str, int] = {}
@@ -412,7 +413,7 @@ class IniConfig(ConfigFile):
         if not items:
             self._section(target, f"[{section}] {name}" if section else name)
 
-    # -- escrita -------------------------------------------------------
+    # -- writing -------------------------------------------------------
     def _apply(self, edits: list[Edit]) -> str:
         lines = list(self._lines)
         new_by_section: dict[str, list[str]] = {}
@@ -431,11 +432,11 @@ class IniConfig(ConfigFile):
     def _apply_edit(self, edit: Edit, lines: list[str],
                      new_by_section: dict[str, list[str]],
                      changed_tuples: set[str]) -> None:
-        """Grava UMA alteracao. Sao quatro destinos possiveis, nesta ordem:
+        """Write ONE change. There are four possible destinations, in this order:
 
-        a linha que ja existe, um par dentro de uma tupla da Unreal, uma chave nova
-        dentro dessa tupla, ou uma chave nova no fim da secao (esta ultima fica
-        pendente: inserir linha aqui deslocaria tudo o que vem depois).
+        the existing line, a pair inside an Unreal tuple, a new key inside that tuple,
+        or a new key at the end of the section (this last one stays pending: inserting a
+        line here would shift everything that comes after).
         """
         value = check_value(edit.value)
         current = self._resolve(edit)
@@ -452,7 +453,7 @@ class IniConfig(ConfigFile):
             return
 
         key = check_key(edit.key)
-        if edit.section in self._tuples:  # configuracao nova dentro do OptionSettings
+        if edit.section in self._tuples:  # new setting inside OptionSettings
             group = self._tuples[edit.section]
             group.pairs.append(_Pair(key=key, value=value, quoted=False))
             changed_tuples.add(edit.section)
@@ -461,10 +462,10 @@ class IniConfig(ConfigFile):
         new_by_section.setdefault(edit.section, []).append(f"{key}={value}")
 
     def _insert_new_settings(self, lines: list[str], new_by_section: dict[str, list[str]]) -> None:
-        """Acrescenta as chaves novas no fim de cada secao.
+        """Append the new keys at the end of each section.
 
-        De tras para frente: inserir no fim de uma secao nao pode deslocar as linhas
-        das secoes ainda por inserir.
+        Back to front: inserting at the end of one section must not shift the lines of
+        the sections still to be inserted.
         """
         pending = sorted(
             new_by_section.items(),
@@ -474,7 +475,7 @@ class IniConfig(ConfigFile):
         for section, new_lines in pending:
             end = self._section_end.get(section)
             if end is None:
-                # Secao que nao existia no arquivo: nasce no fim, com cabecalho.
+                # A section that did not exist in the file: created at the end, with a header.
                 if section:
                     lines.append(f"[{section}]")
                 lines.extend(new_lines)
@@ -486,10 +487,10 @@ class IniConfig(ConfigFile):
 
 
 def _json_text(value: Any) -> str:
-    """Valor do JSON como a tela o mostra.
+    """A JSON value as the screen shows it.
 
-    `null` vira campo vazio, e booleano vira a grafia do JSON ("true"/"false") e nao a
-    do Python ("True"): o que sai daqui volta para o arquivo, e `True` quebraria o JSON.
+    `null` becomes an empty field, and a boolean becomes the JSON spelling ("true"/"false"),
+    not Python's ("True"): what comes out of here goes back to the file, and `True` would break the JSON.
     """
     if value is None:
         return ""
@@ -501,10 +502,10 @@ def _json_text(value: Any) -> str:
 
 
 def _json_kind(value: Any) -> str:
-    """Que campo o formulario desenha para este valor: caixa, numero ou texto.
+    """Which field the form draws for this value: checkbox, number or text.
 
-    `bool` antes de `(int, float)` de proposito: em Python `True` e um `int`, e na
-    ordem contraria toda caixa de marcar viraria um campo de numero.
+    `bool` before `(int, float)` on purpose: in Python `True` is an `int`, and in the
+    opposite order every checkbox would become a number field.
     """
     if isinstance(value, bool):
         return "bool"
@@ -514,11 +515,11 @@ def _json_kind(value: Any) -> str:
 
 
 class JsonConfig(ConfigFile):
-    """Config em JSON (Enshrouded). Objetos aninhados viram secoes.
+    """JSON config (Enshrouded). Nested objects become sections.
 
-    O JSON e reescrito inteiro pelo `json.dumps` — o arquivo sai indentado com 2
-    espacos, que e como a Keen Games publica o exemplo. JSON nao tem comentario, entao
-    nao ha nada a preservar alem dos valores.
+    The JSON is rewritten whole by `json.dumps` - the file comes out indented with 2
+    spaces, which is how Keen Games publishes the example. JSON has no comments, so
+    there is nothing to preserve besides the values.
     """
 
     format_id = "json"
@@ -533,7 +534,7 @@ class JsonConfig(ConfigFile):
         except ValueError as exc:
             raise ConfigError(f"JSON invalido: {exc}") from exc
         if not isinstance(self.data, (dict, list)):
-            raise ConfigError("JSON precisa ser um objeto ou lista para virar formulario")
+            raise ConfigError("JSON precisa ser um objeto ou lista para virar formulário")
         self._section("", ROOT)
         self._walk(self.data, "")
 
@@ -582,7 +583,7 @@ class JsonConfig(ConfigFile):
                 raise ConfigError(f"{value!r} nao e um numero") from None
         if isinstance(previous, str):
             return value
-        # Chave nova (ou nula): o tipo sai do proprio texto digitado.
+        # New (or null) key: the type comes from the typed text itself.
         text = value.strip()
         if text.lower() in ("true", "false"):
             return text.lower() == "true"
@@ -600,7 +601,7 @@ class JsonConfig(ConfigFile):
             else:
                 key = check_key(edit.key)
                 if "." in key:
-                    raise ConfigError("ponto (.) nao e aceito no nome de uma chave JSON")
+                    raise ConfigError("ponto (.) não é aceito no nome de uma chave JSON")
                 parent = self._parent(edit.section)
             if isinstance(parent, list):
                 if not key.isdigit() or int(key) >= len(parent):
@@ -617,16 +618,16 @@ class JsonConfig(ConfigFile):
 
 
 _CLASS_RE = re.compile(r"^\s*class\s+([A-Za-z_]\w*)", re.M)
-# Como no _PAIR_RE: nenhum grupo disputa texto com o vizinho ([^;]* para no primeiro
-# ponto-e-virgula e o espaco depois do '=' sai do valor no codigo).
+# As in _PAIR_RE: no group competes for text with its neighbor ([^;]* stops at the first
+# semicolon and the space after '=' is taken out of the value in code).
 _DZ_PAIR_RE = re.compile(r"^([ \t]*)([A-Za-z_]\w*)([ \t]*=)([^;]*);[ \t]*(//.*)?$", re.M)
 
 
 class DayzConfig(ConfigFile):
-    """serverDZ.cfg: 'chave = valor;' com blocos 'class X { ... };' e comentario '//'.
+    """serverDZ.cfg: 'key = value;' with 'class X { ... };' blocks and '//' comments.
 
-    Cada class vira uma secao (Missions.DayZ.template), e o comentario no fim da linha
-    vira a ajuda do campo — e o unico lugar onde o formato documenta o que cada chave faz.
+    Each class becomes a section (Missions.DayZ.template), and the end-of-line comment
+    becomes the field help - it is the only place where the format documents what each key does.
     """
 
     format_id = "dayz"
@@ -659,13 +660,13 @@ class DayzConfig(ConfigFile):
             pair_match = _DZ_PAIR_RE.match(line)
             if pair_match:
                 self._read_pair(i, pair_match, ".".join(stack), comment)
-            # Comentario so vale para a linha seguinte: qualquer outra coisa o descarta.
+            # A comment only applies to the next line: anything else discards it.
             comment = ""
 
     def _read_pair(self, i: int, pair_match: re.Match[str], section: str, comment: str) -> None:
-        """Uma linha `chave = valor;` do serverDZ.cfg vira um campo."""
+        """A `key = value;` line of serverDZ.cfg becomes a field."""
         prefix, name, equals, raw, note = pair_match.groups()
-        # O espaco depois do '=' fica no separador, para a linha voltar igualzinha.
+        # The space after '=' stays in the separator, so the line comes back exactly the same.
         sep = equals + raw[:len(raw) - len(raw.lstrip())]
         text, quoted = _unquote(raw.strip())
         self._section_end[section] = i
@@ -673,8 +674,8 @@ class DayzConfig(ConfigFile):
         self._pos[sid] = (i, prefix, name, sep, quoted, note or "")
         self._add(Setting(
             id=sid, section=section, key=name, value=text, kind=_kind_of(text),
-            # O comentario no fim da linha ganha do que veio na linha de cima: ele fala
-            # desta chave, e e o unico lugar onde o formato documenta o que ela faz.
+            # The end-of-line comment wins over the one from the line above: it talks about
+            # this key, and it is the only place where the format documents what it does.
             comment=(note or "").lstrip("/").strip() or comment,
         ), label=section or ROOT)
 
@@ -682,7 +683,7 @@ class DayzConfig(ConfigFile):
     def _format(value: str, quoted: bool) -> str:
         if quoted or not NUM_RE.match(value.strip()):
             if '"' in value:
-                raise ConfigError('o valor nao pode conter aspas duplas (")')
+                raise ConfigError('o valor não pode conter aspas duplas (")')
             return f'"{value}"'
         return value.strip()
 
@@ -712,8 +713,8 @@ class DayzConfig(ConfigFile):
             if end is None:
                 lines.extend(new_lines)
                 continue
-            # O recuo da linha de referencia, sem regex: `^\s*` casa sempre, mas o tipo
-            # de `re.match` continua sendo Optional e o analisador tem razao em cobrar.
+            # The indentation of the reference line, without regex: `^\s*` always matches, but the
+            # type of `re.match` is still Optional and the analyzer is right to complain.
             reference = lines[end]
             indent = reference[:len(reference) - len(reference.lstrip())]
             _insert_after(lines, end, [f"{indent}{item}" for item in new_lines])
@@ -724,21 +725,21 @@ class DayzConfig(ConfigFile):
 # ---------------------------------------------------------------------- sii
 
 
-# `server_config : _nameless.39bc.86a0 {` - classe, nome da unidade e a chave que abre.
+# `server_config : _nameless.39bc.86a0 {` - class, unit name and the opening brace.
 _SII_UNIT_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*:\s*([\w.]+)\s*\{\s*$", re.ASCII)
-# ` lobby_name: "x"` / ` moderator_list[0]: 7656...` - a lista vem com o indice no nome.
+# ` lobby_name: "x"` / ` moderator_list[0]: 7656...` - a list carries the index in the name.
 _SII_PAIR_RE = re.compile(r"^([ \t]*)([A-Za-z_]\w*(?:\[\d*\])?)(:[ \t]*)(.*?)[ \t]*$", re.ASCII)
-# Valor que o formato aceita sem aspas: palavra, numero, true/false.
+# A value the format accepts without quotes: word, number, true/false.
 _SII_BARE_RE = re.compile(r"^[\w.\-]+$", re.ASCII)
 
 
 class SiiConfig(ConfigFile):
-    """server_config.sii do ETS2/ATS: 'SiiNunit { classe : nome { chave: valor } }'.
+    """ETS2/ATS server_config.sii: 'SiiNunit { class : name { key: value } }'.
 
-    Cada unidade vira uma secao pelo nome da CLASSE (`server_config`), e nao pelo nome da
-    unidade: o `_nameless.39bc.86a0` e sorteado, e o servidor reescreve o arquivo ao subir.
-    Com ele no id, uma edicao feita com a tela aberta durante um reinicio nao acharia mais a
-    chave e a acrescentaria em duplicata.
+    Each unit becomes a section by its CLASS name (`server_config`), and not by the unit
+    name: `_nameless.39bc.86a0` is random, and the server rewrites the file on startup.
+    With it in the id, an edit made with the screen open during a restart would no longer
+    find the key and would append it as a duplicate.
     """
 
     format_id = "sii"
@@ -781,12 +782,12 @@ class SiiConfig(ConfigFile):
 
     @staticmethod
     def _format(value: str, quoted: bool) -> str:
-        # Aspas e barra invertida sao escape no .sii; recusar e mais seguro que adivinhar a
-        # regra de escape do leitor da SCS e deixar o servidor sem subir.
+        # Quotes and backslashes are escapes in .sii; refusing is safer than guessing the
+        # escape rule of the SCS reader and leaving the server unable to start.
         if '"' in value or "\\" in value:
-            raise ConfigError('o valor nao pode conter aspas (") nem barra invertida (\\)')
-        # Palavra solta pode ficar sem aspas (o servidor grava `description: discordia`
-        # assim), mas frase com espaco ou valor vazio sem aspas o leitor da SCS nao entende.
+            raise ConfigError('o valor não pode conter aspas (") nem barra invertida (\\)')
+        # A single word may go without quotes (the server writes `description: discordia`
+        # like that), but a phrase with spaces or an empty value without quotes the SCS reader does not understand.
         if quoted or not _SII_BARE_RE.match(value):
             return f'"{value}"'
         return value
@@ -803,14 +804,14 @@ class SiiConfig(ConfigFile):
                 lines[i] = f"{prefix}{name}{sep}{self._format(value, quoted)}"
                 continue
             if edit.section not in self._section_end:
-                raise ConfigError("no .sii a configuracao nova precisa ir dentro de um bloco")
+                raise ConfigError("no .sii a configuração nova precisa ir dentro de um bloco")
             key = check_key(edit.key)
             if " " in key or "." in key or "-" in key:
                 raise ConfigError(f"nome de configuracao invalido no .sii: {key!r}")
             new_by_section.setdefault(edit.section, []).append(
                 f"{key}: {self._format(value, quoted=False)}")
 
-        # De baixo para cima: inserir num bloco nao desloca a posicao dos de cima.
+        # Bottom up: inserting into a block does not shift the position of the ones above.
         for section, new_lines in sorted(new_by_section.items(),
                                          key=lambda item: self._section_end[item[0]], reverse=True):
             end = self._section_end[section]
@@ -821,18 +822,18 @@ class SiiConfig(ConfigFile):
         return "\n".join(lines)
 
 
-# ------------------------------------------------------------------ deteccao
+# ------------------------------------------------------------------ detection
 
 
 def load(name: str, text: str) -> ConfigFile:
-    """Escolhe o formato pelo nome do arquivo + conteudo e devolve o documento lido."""
+    """Pick the format by file name + content and return the parsed document."""
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    # Sem o BOM: `lstrip` nao o tira (nao e espaco), e um JSON com BOM e extensao estranha
-    # deixaria de ser reconhecido pelo "{" do comeco.
+    # Without the BOM: `lstrip` does not remove it (it is not whitespace), and a JSON with a BOM
+    # and an odd extension would no longer be recognized by the leading "{".
     start = text.removeprefix(BOM).lstrip()[:1]
 
-    # Antes do ini: o .sii caia no leitor de ini, que nao acha `=` nenhum e mostrava um
-    # formulario vazio ("Configuracoes (0)") para o server_config.sii do ETS2.
+    # Before ini: .sii used to fall into the ini reader, which finds no `=` at all and showed an
+    # empty form ("Configuracoes (0)") for the ETS2 server_config.sii.
     if ext == "sii" or text.removeprefix(BOM).lstrip().startswith("SiiNunit"):
         return SiiConfig(text)
     if ext == "json" or (start in ("{", "[") and ext not in ("ini", "cfg", "conf", "properties")):

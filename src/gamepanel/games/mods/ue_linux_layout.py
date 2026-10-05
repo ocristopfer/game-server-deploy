@@ -1,36 +1,37 @@
-"""Arquivos do UE4SS de um servidor Unreal LINUX sem simbolo - roda DENTRO do CT.
+"""UE4SS files for a LINUX Unreal server without symbols - runs INSIDE the CT.
 
-Mesmo desenho do ue_sym_layout: o ue4ss_linux_remote recebe este texto do painel e o executa com
-`python3 -c`; por isso e so stdlib e nao importa nada do `gamepanel`.
+Same design as ue_sym_layout: ue4ss_linux_remote receives this text from the panel and runs it
+with `python3 -c`; that is why it is stdlib only and imports nothing from `gamepanel`.
 
-Um servidor sem .sym nao da para medir pelo proprio executavel, e um layout por versao do motor
-tambem nao basta: os estudios mexem nas classes do motor. MEDIDO em servidores 4.27: o The Front
-acrescenta 0x18 bytes no FUObjectArray, o Soulmask 62 virtuais no AGameModeBase, e o proprio Squad 44
-(a referencia) uma na AActor. O que passa de um jogo para outro da mesma versao e o CODIGO de cada
-funcao do motor (mesmo compilador, mesmo fonte) e as vtables do proprio alvo, que os servidores
-exportam no .dynsym (_ZTV*). O pacote de referencia da versao (ue_reference_pack.py do fork, no
-release) traz isso de um jogo COM simbolos; daqui sai, para este executavel:
+A server without a .sym cannot be measured from its own executable, and one layout per engine
+version is not enough either: studios tweak the engine classes. MEASURED on 4.27 servers: The Front
+adds 0x18 bytes to FUObjectArray, Soulmask 62 virtuals to AGameModeBase, and Squad 44 itself
+(the reference) one to AActor. What carries over from one game to another of the same version is
+the CODE of each engine function (same compiler, same source) and the target's own vtables, which
+the servers export in .dynsym (_ZTV*). The version's reference pack (the fork's
+ue_reference_pack.py, in the release) carries that from a game WITH symbols; from it, for this
+executable, we get:
 
-- UE4SS_Signatures/*.lua das funcoes e globais que o patternsleuth nao acha no codigo do Clang:
-  de cada trecho de codigo da referencia (operando relocavel coringa), o MENOR prefixo que casa
-  uma vez neste executavel - ou varias vezes, desde que todas deem o mesmo endereco (o mesmo
-  codigo copiado, como o FMemory::Free e o operator delete);
-- GMalloc.lua e ConsoleManager.lua conferidos NA HORA: os candidatos sao os globais que as funcoes
-  mais chamadas leem, e vale o que aponta para um objeto com a vtable de um alocador (ou do
-  FConsoleManager) - um padrao de bytes pegou o console manager no lugar do GMalloc no Smalland;
-- GUObjectHashTables.lua com 0 (ausente): sem simbolo nao ha como achar o singleton, e o UE4SS
-  cai na varredura do GUObjectArray;
-- VTableLayout.ini: cada vtable exportada deste jogo alinhada com a da referencia pelo codigo de
-  cada funcao (ancoras unicas; entre duas de mesmo deslocamento, interpola; onde o deslocamento
-  muda, o proprio codigo decide), e cada nome do layout completo da referencia vai para a posicao
-  dele AQUI;
-- MemberVariableLayout.ini do FUObjectArray quando o histograma de acessos deste jogo esta
-  deslocado em relacao ao da referencia (membros a mais antes das listas de listeners: sem isso o
-  UE4SS grava o listener dele em outro campo e o jogo cai no carregamento assincrono).
+- UE4SS_Signatures/*.lua for the functions and globals patternsleuth does not find in Clang code:
+  from each piece of reference code (relocatable operand wildcarded), the SHORTEST prefix that
+  matches once in this executable - or several times, as long as all give the same address (the
+  same code copied, like FMemory::Free and operator delete);
+- GMalloc.lua and ConsoleManager.lua checked AT RUNTIME: the candidates are the globals read by the
+  most-called functions, and the winner is the one pointing to an object with an allocator vtable
+  (or FConsoleManager's) - a byte pattern picked the console manager instead of GMalloc on Smalland;
+- GUObjectHashTables.lua with 0 (absent): without symbols there is no way to find the singleton,
+  and UE4SS falls back to scanning GUObjectArray;
+- VTableLayout.ini: each exported vtable of this game aligned with the reference one by the code of
+  each function (unique anchors; between two with the same offset, interpolate; where the offset
+  changes, the code itself decides), and each name from the reference's full layout goes to its
+  slot HERE;
+- MemberVariableLayout.ini for FUObjectArray when this game's access histogram is shifted relative
+  to the reference one (extra members before the listener lists: without this UE4SS writes its
+  listener into another field and the game crashes during async loading).
 
-Uso: ue_linux_layout.py <executavel> <pack.json> [--com-sym] -> UMA linha JSON
-{"files": {"VTableLayout.ini": texto, ...}, "report": [...]}. Com --com-sym (o servidor traz .sym e
-o ue_sym_layout ja gera o ini e as quatro funcoes dele), so os globais e o FUObjectArray.
+Usage: ue_linux_layout.py <executable> <pack.json> [--com-sym] -> ONE JSON line
+{"files": {"VTableLayout.ini": text, ...}, "report": [...]}. With --com-sym (the server ships a .sym
+and ue_sym_layout already generates the ini and its four functions), only the globals and FUObjectArray.
 """
 from __future__ import annotations
 
@@ -54,7 +55,7 @@ MIN_PATTERN = 12
 MAX_HITS = 4096
 FUNCTION_SIGNATURES = ("FName_ToString", "FName_Constructor", "StaticConstructObject", "GNatives")
 GLOBAL_SIGNATURES = ("GUObjectArray", "ConsoleManager")
-# Secao -> bases somadas pelo leitor do UE4SS (UE4SSProgram), ou o tamanho fixo do FExec no FMalloc.
+# Section -> bases summed by the UE4SS reader (UE4SSProgram), or the fixed FExec size in FMalloc.
 OBJECT_CHAIN = ("UObjectBase", "UObjectBaseUtility", "UObject")
 SECTION_BASES: dict[str, tuple[str, ...] | int] = {
     "UObjectBase": (), "UObjectBaseUtility": ("UObjectBase",), "UObject": ("UObjectBase", "UObjectBaseUtility"),
@@ -66,10 +67,10 @@ SECTION_BASES: dict[str, tuple[str, ...] | int] = {
     "AGameModeBase": (*OBJECT_CHAIN, "AActor"), "AGameMode": (*OBJECT_CHAIN, "AActor", "AGameModeBase"),
     "UPlayer": OBJECT_CHAIN, "ULocalPlayer": (*OBJECT_CHAIN, "UPlayer"), "UDataTable": OBJECT_CHAIN,
 }
-# Membros do FUObjectArray que andam juntos quando o estudio acrescenta campos antes das listas.
+# FUObjectArray members that move together when the studio adds fields before the lists.
 FUOBJECTARRAY_SHIFTED_FROM = 0x50
 MEMBER_SPAN = 0xC0
-# Opcodes com ModRM que, sem REX, ainda podem ler [rip+disp32].
+# Opcodes with ModRM that, without REX, can still read [rip+disp32].
 RIP_OPCODES = frozenset((0x80, 0x81, 0x83, 0xC6, 0xC7, 0x8B, 0x89, 0x8D, 0x3B, 0x39, 0x3A, 0x38, 0x84, 0x85,
                          0xF6, 0xF7, 0xFF, 0x03, 0x01, 0x2B, 0x29, 0x33, 0x31, 0x0B, 0x09, 0x23, 0x21))
 IDIOM = re.compile(rb"([\x48\x4c])\x8b([\x05\x0d\x15\x1d\x25\x2d\x35\x3d])(....)\1\x85.\x75.\xe8....\1\x8b\2(....)",
@@ -87,10 +88,10 @@ MATCH_FORMS = (
 
 
 class Image:
-    """O executavel ELF, por mmap: segmentos LOAD e o .dynsym."""
+    """The ELF executable, via mmap: LOAD segments and .dynsym."""
 
     def __init__(self, path: str) -> None:
-        self.file = open(path, "rb")  # noqa: SIM115 - aberto enquanto o mmap viver
+        self.file = open(path, "rb")  # noqa: SIM115 - kept open while the mmap lives
         self.data = mmap.mmap(self.file.fileno(), 0, access=mmap.ACCESS_READ)
         if self.data[:4] != b"\x7fELF":
             raise ValueError(f"{path} nao e um ELF")
@@ -149,10 +150,10 @@ class Image:
         return out
 
 
-# ------------------------------------------------------------------ assinaturas
+# ------------------------------------------------------------------ signatures
 
 def wildcard_mask(code: bytes) -> list[bool]:
-    """True = byte fixo; operando de call/jmp/jcc rel32 e de [rip+disp32] vira coringa."""
+    """True = fixed byte; the operand of call/jmp/jcc rel32 and of [rip+disp32] becomes a wildcard."""
     keep = [True] * len(code)
     i = 0
     while i < len(code):
@@ -167,7 +168,7 @@ def wildcard_mask(code: bytes) -> list[bool]:
             keep[i + 2:i + 6] = [False] * 4
             i += 6
         elif b in RIP_OPCODES and i + 6 <= len(code) and code[i + 1] & 0xC7 == 0x05:
-            # [rip+disp32] sem prefixo REX (cmpb $0,[rip+d] e afins): o deslocamento muda por jogo.
+            # [rip+disp32] without a REX prefix (cmpb $0,[rip+d] and the like): the offset changes per game.
             keep[i + 2:i + 6] = [False] * 4
             i += 6
         else:
@@ -200,14 +201,14 @@ Resolved = tuple[tuple[str, str], int]
 
 
 def resolve(image: Image, tokens: list[int | None], match_body: str, minimum: int) -> Resolved | None:
-    """(menor AOB que serve, endereco) - unico, ou todos os casamentos dando o mesmo endereco."""
+    """(shortest AOB that works, address) - unique, or every match giving the same address."""
     decode = decoder(match_body)
     start = max(MIN_PATTERN, minimum)
     hits: list[int] | None = None
     for n in range(start, len(tokens) + 1, 4):
         if hits is None:
-            # Prefixo curto que e o comeco de mil funcoes (o prologo push/push/sub): alonga ate a
-            # lista caber, em vez de desistir.
+            # A short prefix that is the start of a thousand functions (the push/push/sub prologue):
+            # lengthen it until the list fits, instead of giving up.
             found = []
             for m in re.finditer(pattern(tokens[:n]), image.data, re.DOTALL):
                 found.append(m.start())
@@ -234,10 +235,10 @@ LEAD = 3
 
 
 def anchored(image: Image, hits: list[int], tokens: list[int | None], match_body: str) -> tuple[str, str]:
-    """(AOB, OnMatchFound) que o scanner do UE4SS aceita: ele recusa padrao que COMECA com coringa,
-    e uma assinatura recusada derruba a passada inteira (as outras saem como nao achadas). Um padrao
-    de global comeca no operando; ganha na frente os bytes da instrucao, tirados deste executavel
-    (iguais em todos os casamentos), e o MatchAddress anda o mesmo tanto."""
+    """(AOB, OnMatchFound) that the UE4SS scanner accepts: it rejects a pattern that STARTS with a
+    wildcard, and one rejected signature brings down the whole pass (the others come out as not
+    found). A global pattern starts at the operand; it gets the instruction bytes in front, taken
+    from this executable (equal in every match), and MatchAddress moves by the same amount."""
     if tokens[0] is not None:
         return " ".join("??" if t is None else f"{t:02X}" for t in tokens), match_body
     lead = {bytes(image.data[h - LEAD:h]) for h in hits}
@@ -249,13 +250,13 @@ def anchored(image: Image, hits: list[int], tokens: list[int | None], match_body
 
 
 def lua_signature(aob: str, on_match: str) -> str:
-    return (f"-- Gerado pelo painel (ue_linux_layout.py) para este executavel.\nfunction Register()\n"
+    return (f"-- Generated by the panel (ue_linux_layout.py) for this executable.\nfunction Register()\n"
             f'    return "{aob}"\nend\n\nfunction OnMatchFound(MatchAddress)\n    {on_match}\nend\n')
 
 
 def plausible(image: Image, name: str, address: int) -> bool:
-    """Funcao cai em codigo; global, num segmento gravavel. Um prefixo pode ser unico aqui e mesmo
-    assim estar no lugar errado - o endereco que ele da tem de ao menos ser do tipo certo."""
+    """A function lands in code; a global, in a writable segment. A prefix may be unique here and
+    still be in the wrong place - the address it yields must at least be of the right kind."""
     if name in FUNCTION_SIGNATURES and name != "GNatives":
         return image.is_code(address)
     return any(not x and v <= address < v + n + 0x1000000 for v, _o, n, x in image.segments)
@@ -266,8 +267,8 @@ def pack_signatures(image: Image, pack: dict,
     files, addresses, report = {}, {}, []
     for name in names:
         value = pack.get("signatures", {}).get(name)
-        # Um global pode vir com varias ancoras (o codigo de uma delas mudou neste jogo): vale a
-        # primeira que casa e da um endereco do tipo certo.
+        # A global may come with several anchors (the code of one of them changed in this game): the
+        # first one that matches and yields an address of the right kind wins.
         found, entry = None, None
         entries = value if isinstance(value, list) else [value] if value else []
         for entry in entries:
@@ -276,9 +277,9 @@ def pack_signatures(image: Image, pack: dict,
                 break
             found = None
         if not found and name in GLOBAL_SIGNATURES:
-            # O trecho unico NA referencia pode ja ter mudado aqui (o GUObjectArray do Hypercharge casa
-            # com 12 bytes, que no Mordhau nao sao unicos): um prefixo mais curto vale se for unico aqui
-            # E der um global num segmento gravavel - o que recusa o casamento no lugar errado.
+            # The piece that is unique IN the reference may have changed here already (Hypercharge's
+            # GUObjectArray matches with 12 bytes, which are not unique on Mordhau): a shorter prefix counts if
+            # it is unique here AND yields a global in a writable segment - which rejects a match in the wrong place.
             for entry in entries:
                 found = resolve(image, parse_masked(entry["code"]), entry["match"], 0)
                 if found and plausible(image, name, found[1]):
@@ -292,10 +293,10 @@ def pack_signatures(image: Image, pack: dict,
     return files, addresses, report
 
 
-# ------------------------------------------------------------------ GMalloc e console, conferidos na hora
+# ------------------------------------------------------------------ GMalloc and console, checked at runtime
 
 def idiom_globals(image: Image) -> collections.Counter:
-    """Globais do idioma inline mov r,[G]; test r,r; jne; call cria; mov r,[G] - por frequencia."""
+    """Globals of the inline idiom mov r,[G]; test r,r; jne; call create; mov r,[G] - by frequency."""
     tally: collections.Counter = collections.Counter()
     for vaddr, view in image.code_views():
         for m in IDIOM.finditer(view):
@@ -317,7 +318,7 @@ def most_called(image: Image, count: int = 4) -> list[int]:
 
 
 def globals_read(image: Image, va: int, size: int = 96) -> list[int]:
-    """Globais de 8 bytes lidos no comeco da funcao (mov r64,[rip+d] e cmpq $i8,[rip+d])."""
+    """8-byte globals read at the start of the function (mov r64,[rip+d] and cmpq $i8,[rip+d])."""
     code = image.read(va, size)
     found = []
     for i in range(len(code) - 8):
@@ -331,13 +332,13 @@ def globals_read(image: Image, va: int, size: int = 96) -> list[int]:
 def runtime_lua(candidates: list[int], vtables: list[int], what: str) -> str:
     cands = ", ".join(f"0x{g:X}" for g in candidates)
     vts = ", ".join(f"[0x{v:X}] = true" for v in sorted(vtables))
-    return f"""-- Gerado pelo painel (ue_linux_layout.py) para este executavel: {what} sem simbolo. Cada
--- candidato e um global; vale o primeiro que aponta para um objeto com uma das vtables abaixo.
+    return f"""-- Generated by the panel (ue_linux_layout.py) for this executable: {what} without symbols. Each
+-- candidate is a global; the first one pointing to an object with one of the vtables below wins.
 local Candidates = {{ {cands} }}
 local VTables = {{ {vts} }}
 
 local function ReadPointer(Address)
-    -- DerefToInt32 devolve nil quando le 0 (e quando o endereco nao e legivel): os dois contam como 0.
+    -- DerefToInt32 returns nil when it reads 0 (and when the address is not readable): both count as 0.
     local Low = (DerefToInt32(Address) or 0) & 0xFFFFFFFF
     local High = (DerefToInt32(Address + 4) or 0) & 0xFFFFFFFF
     return (High << 32) | Low
@@ -350,7 +351,7 @@ end
 function OnMatchFound(MatchAddress)
     for _, Global in ipairs(Candidates) do
         local Object = ReadPointer(Global)
-        -- So o que parece ponteiro de usuario alinhado: um contador ou flag nao e lido como objeto.
+        -- Only what looks like an aligned user-space pointer: a counter or flag is not read as an object.
         if Object > 0x10000 and Object < 0x7FFFFFFFFFFF and Object % 8 == 0 and VTables[ReadPointer(Object)] then
             return Global
         end
@@ -389,7 +390,8 @@ def mangled_vtable(cls: str) -> str:
 
 
 def vtable_slots(image: Image, address_point: int) -> list[int]:
-    slots, at = [], address_point
+    slots: list[int] = []
+    at = address_point
     while True:
         value = image.qword(at)
         if value is None or not image.is_code(value):
@@ -399,8 +401,8 @@ def vtable_slots(image: Image, address_point: int) -> list[int]:
 
 
 def slot_mapping(reference: list[str], target: list[str]):
-    """ref slot -> alvo slot: ancoras por codigo unico; entre duas de mesmo deslocamento, interpola;
-    onde o deslocamento muda, so um casamento unico de codigo dentro da janela vale."""
+    """ref slot -> target slot: anchors by unique code; between two with the same offset, interpolate;
+    where the offset changes, only a unique code match within the window counts."""
     tcount = collections.defaultdict(list)
     for j, s in enumerate(target):
         tcount[s].append(j)
@@ -479,10 +481,11 @@ def member_counts(image: Image, address: int) -> dict[int, int]:
 
 
 def fuobjectarray_shift(reference: dict[int, int], target: dict[int, int]) -> int:
-    """Deslocamento (multiplo de 8) que melhor leva os acessos da referencia aos deste jogo, contando
-    so a regiao das listas de listeners. 0 quando nada convence."""
+    """Offset (multiple of 8) that best maps the reference accesses onto this game's, counting only
+    the region of the listener lists. 0 when nothing is convincing."""
     ref = {o: c for o, c in reference.items() if o >= FUOBJECTARRAY_SHIFTED_FROM}
-    # Normaliza so na regiao comparada: o ObjObjects (+0x10) e lido milhares de vezes e achataria o resto.
+    # Normalize only within the compared region: ObjObjects (+0x10) is read thousands of times and
+    # would flatten the rest.
     near = [c for o, c in target.items() if o >= FUOBJECTARRAY_SHIFTED_FROM - 0x20]
     if not ref or not near:
         return 0
@@ -522,7 +525,7 @@ def main(argv: list[str]) -> int:
     files.update(runtime)
     report += runtime_report
     files[f"{SIGNATURES_DIR}/GUObjectHashTables.lua"] = (
-        "-- Gerado pelo painel: 0 = ausente, e o UE4SS usa a varredura do GUObjectArray.\nreturn 0\n")
+        "-- Generated by the panel: 0 = absent, and UE4SS uses the GUObjectArray scan.\nreturn 0\n")
     if not with_sym:
         missing = [n for n in ("FName_ToString", "FName_Constructor", "GNatives") if n not in addresses]
         if missing:

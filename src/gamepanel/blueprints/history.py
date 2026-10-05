@@ -1,4 +1,4 @@
-"""O historico do painel: tudo o que aconteceu, de todos os servidores."""
+"""The panel history: everything that happened, across all servers."""
 from __future__ import annotations
 
 from flask import Blueprint, render_template, request
@@ -13,10 +13,10 @@ bp = Blueprint("history", __name__)
 @bp.get("/history")
 @panel.login_required
 def index():
-    """Tudo o que aconteceu no painel, de todos os servidores.
+    """Everything that happened on the panel, across all servers.
 
-    O historico por servidor mostra os ultimos 15; e aqui que se responde "quem mexeu
-    nisso" e "o que o agendador andou fazendo".
+    The per-server history shows the last 15; this is where "who touched
+    this" and "what has the scheduler been doing" get answered.
     """
     conn = panel.db()
     servers = servers_repo.all_ordered(conn)
@@ -45,8 +45,8 @@ def index():
     sql_where = " AND ".join(where_clause) + cut
     values.extend(hidden_ones)
 
-    # Pede um a mais que o tamanho da pagina: e como se sabe se existe proxima sem contar
-    # a tabela inteira.
+    # Ask for one more than the page size: that is how we know whether there is a next page
+    # without counting the whole table.
     lines_of = jobs_repo.page(conn, sql_where, values,
                               panel.HISTORY_PAGE + 1, page * panel.HISTORY_PAGE)
     has_more = len(lines_of) > panel.HISTORY_PAGE

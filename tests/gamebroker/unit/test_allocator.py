@@ -1,4 +1,4 @@
-"""Alocador: CTID, IP e portas escolhidos a partir do que ja esta ocupado."""
+"""Allocator: CTID, IP and ports picked based on what is already taken."""
 from __future__ import annotations
 
 import pytest
@@ -34,11 +34,11 @@ def test_ip_esgotado():
 
 
 def test_faixa_de_ips_valida():
-    assert alocador.ips_in_range("192.168.2", 30, 32) == ("192.168.2.30", "192.168.2.31", "192.168.2.32")
+    assert alocador.ips_in_range("10.20.1", 30, 32) == ("10.20.1.30", "10.20.1.31", "10.20.1.32")
 
 
 @pytest.mark.parametrize(("prefix", "start", "end"), [
-    ("192.168.2", 0, 5), ("192.168.2", 9, 3), ("192.168.2", 1, 255), ("nao-ip", 1, 5)])
+    ("10.20.1", 0, 5), ("10.20.1", 9, 3), ("10.20.1", 1, 255), ("nao-ip", 1, 5)])
 def test_faixa_de_ips_invalida(prefix, start, end):
     with pytest.raises(ValueError):
         alocador.ips_in_range(prefix, start, end)
@@ -53,7 +53,7 @@ def test_ctid_acompanha_o_ultimo_numero_do_ip():
 
 
 def test_ip_e_pulado_se_o_ctid_dele_esta_ocupado():
-    # O CTID 302 existe (criado na mao): o .102 nao serve, mesmo com o IP livre.
+    # CTID 302 exists (created by hand): .102 is unusable, even with the IP free.
     ip, ctid = alocador.pick_ip_and_ctid(("10.0.0.102", "10.0.0.103"), 200, {302}, set(), lambda _ip: False)
     assert (ip, ctid) == ("10.0.0.103", 303)
 
@@ -82,7 +82,7 @@ def test_jogo_fixo_com_porta_ocupada_e_recusado(game_data):
 
 
 def test_jogo_deslocavel_ignora_as_portas_padrao_e_usa_a_faixa(game_data):
-    # As portas padrao nem estao ocupadas: mesmo assim o jogo anda para a faixa do broker.
+    # The default ports are not even taken: the game still moves to the broker's range.
     ports = alocador.allocate_ports(_game(game_data, shiftable=True), set(), FAIXA)
     assert [(p.number, p.role) for p in ports] == [(31000, "jogo"), (31001, "query")]
     assert [p.base for p in ports] == [7777, 27016]
@@ -108,7 +108,7 @@ def test_faixa_cheia_e_recusada_com_a_faixa_na_mensagem(game_data):
 
 
 def test_bloco_nao_atravessa_o_fim_da_faixa(game_data):
-    # So sobra a ultima porta da faixa: um bloco de duas portas nao cabe.
+    # Only the last port of the range is left: a two-port block does not fit.
     taken = {(n, "udp") for n in range(31000, 31009)}
     with pytest.raises(OutOfResources, match="cheia"):
         alocador.allocate_ports(_game(game_data, shiftable=True), taken, FAIXA)

@@ -1,10 +1,10 @@
-"""Backup do container de jogo (gamepanel.runtime.backups): comando, listagem, apagar.
+"""Game container backup (gamepanel.runtime.backups): command, listing, deleting.
 
-Nao existia suite dedicada antes da Fase 4 (mesmo achado dos modulos de runtime/
-anteriores: so exercitado pelo sweep de rotas e pelos testes de agendamento, que
-trocam o modulo inteiro por um fake em vez de chegar nestas funcoes). `ssh_run` entra
-por injecao, como no resto de runtime/: os testes aqui usam uma saida fabricada, sem
-SSH nenhum.
+There was no dedicated suite before Phase 4 (same finding as the earlier runtime/
+modules: only exercised by the route sweep and by the scheduling tests, which swap the
+whole module for a fake instead of reaching these functions). `ssh_run` comes in by
+injection, like the rest of runtime/: the tests here use fabricated output, with no SSH
+at all.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def _ssh_run_of(stdout: str = "", returncode: int = 0, stderr: str = ""):
     return ssh_run
 
 
-# --------------------------------------------------------- caminhos e prefixo
+# --------------------------------------------------------- paths and prefix
 
 def test_backup_paths_sem_cadastro_usa_a_pasta_de_configuracao():
     assert backupsmod.backup_paths(UNKNOWN_SERVER, 8) == ["/opt/game/config"]
@@ -65,28 +65,28 @@ def test_backup_prefix_sem_servico_cai_no_padrao():
     assert backupsmod.backup_prefix({"service": ""}) == "jogo"
 
 
-# ---------------------------------------------------------- nome do backup
+# ---------------------------------------------------------- backup name
 
 def test_validate_backup_name_aceita_nome_valido():
     assert backupsmod.validate_backup_name("jogo1-20240101-1200.tar.gz") == "jogo1-20240101-1200.tar.gz"
 
 
 def test_validate_backup_name_rejeita_sem_extensao():
-    with pytest.raises(ValueError, match="invalido"):
+    with pytest.raises(ValueError, match="inválido"):
         backupsmod.validate_backup_name("jogo1-20240101-1200")
 
 
 def test_validate_backup_name_rejeita_barra():
-    with pytest.raises(ValueError, match="invalido"):
+    with pytest.raises(ValueError, match="inválido"):
         backupsmod.validate_backup_name("../outro/arquivo.tar.gz")
 
 
 def test_validate_backup_name_rejeita_vazio():
-    with pytest.raises(ValueError, match="invalido"):
+    with pytest.raises(ValueError, match="inválido"):
         backupsmod.validate_backup_name("")
 
 
-# ------------------------------------------------------------ comando
+# ------------------------------------------------------------ command
 
 def test_comando_de_backup_inclui_prefixo_limite_e_caminhos():
     cmd = backupsmod.backup_command(REGISTERED_SERVER, "/var/backups/gamepanel", 5, ["/opt/game/save"])
@@ -102,7 +102,7 @@ def test_comando_de_backup_leva_o_sufixo_quando_passado():
     assert "antes-de-restaurar" in cmd
 
 
-# ------------------------------------------------------------- listar
+# ------------------------------------------------------------- listing
 
 def test_list_backups_parseia_linhas():
     output = "jogo1-20240101-1200.tar.gz\t1024\t2024-01-01 12:00\n"
@@ -130,7 +130,7 @@ def test_list_backups_erro_vira_remote_error():
         backupsmod.list_backups(ssh_run, REGISTERED_SERVER, "/var/backups/gamepanel", 100)
 
 
-# -------------------------------------------------------------- apagar
+# -------------------------------------------------------------- deleting
 
 def test_delete_backup_devolve_confirmacao():
     output = backupsmod.delete_backup(

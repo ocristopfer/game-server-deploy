@@ -16,28 +16,20 @@
     </ul>
     <p class="muted small">
       {{ _h('backups.stored_both_html', dir=backup_dir) }}
-      {% if keep %}As <strong>{{ keep }}</strong> copias mais novas ficam; as
-      antigas saem sozinhas.{% else %}Nenhuma copia e apagada automaticamente.{% endif %}
+      {% if keep %}{{ _h('backups.keep_newest', n=keep) }}{% else %}{{ _('backups.keep_all') }}{% endif %}
       {% if is_admin %}
-        Para mudar o que entra, edite os
-        <a href="{{ url_for('servers.edit', sid=server.id) }}">{{ _('backups.backup_paths') }}</a> do cadastro.
+        {{ _h('backups.change_paths', url=url_for('servers.edit', sid=server.id)) }}
       {% endif %}
     </p>
     <div class="form-actions">
       {{ ui.action(url_for('backups.create', sid=server.id), _('backups.back_up_now'),
                  variant='primary', icon='💾', block=true) }}
     </div>
-    <p class="muted small mt-4">
-      Da para tirar a copia com o servidor ligado, e o normal. So saiba que um save
-      gravado no meio da copia pode entrar pela metade &mdash; para uma copia perfeita,
-      pare o servidor antes.
-    </p>
+    <p class="muted small mt-4">{{ _h('backups.live_copy_hint') }}</p>
   {% else %}
     <p class="flash error">
-      {{ _('backups.nothing_to_save') }} <strong>{{ _('backups.config_folder') }}</strong>
-      {{ _('backups.or_the') }} <strong>{{ _('backups.backup_paths') }}</strong>
-      {% if is_admin %}<a href="{{ url_for('servers.edit', sid=server.id) }}">{{ _('backups.in_settings') }}</a>{% else %}
-      (peca a um administrador){% endif %}.
+      {% if is_admin %}{{ _h('backups.nothing_to_save_admin', url=url_for('servers.edit', sid=server.id)) }}
+      {% else %}{{ _h('backups.nothing_to_save_operator') }}{% endif %}
     </p>
   {% endif %}
 </div>

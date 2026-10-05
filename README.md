@@ -1,1760 +1,1831 @@
-# Game Server Deploy (Proxmox LXC ou Docker + SteamCMD)
+# Game Server Deploy and Panel
 
-Deploy simplificado de servidores dedicados de jogos, inspirado no
-[LinuxGSM](https://github.com/GameServerManagers/LinuxGSM) porem muito mais simples: um
-comando cria o container, instala o SteamCMD, baixa o jogo, cria o servico e no final
-mostra **quais portas redirecionar no roteador**.
+**The goal: deploying a dedicated game server on Proxmox or Docker should be one command,
+with nothing left to do by hand.** The project automates the whole path - container,
+SteamCMD, the game itself (Linux build or Windows build under Proton), the systemd service,
+the firewall inside the container, the port forward on the router, registration in the
+panel - and then gives you a mobile-first **web panel** to run all of it day to day: start
+and stop, updates, players, config, files, mods, backups, schedules and alerts.
 
-Dois destinos, a mesma definicao de jogo (`games/<jogo>.env`) nos dois:
+It is inspired by [LinuxGSM](https://github.com/GameServerManagers/LinuxGSM) but built
+around containers: each game lives in its own Proxmox LXC (or Docker container), and an
+optional **broker** lets the panel create and remove those containers on Proxmox and open
+the ports on the router (**OPNsense** today) without the panel ever holding the
+credentials. Generic port forwarding for common home routers is on the
+[roadmap](#roadmap).
 
-| Destino | Comando | Quando usar |
-|---------|---------|-------------|
-| **LXC no Proxmox** | `.\deploy\game\deploy-game.ps1 -Game palworld` | voce tem um Proxmox e quer o jogo num container proprio, com systemd de verdade |
-| **Docker** | `.\deploy\game\deploy-docker.ps1 -Game palworld` | qualquer maquina com Docker (ate o seu PC), sem Proxmox no caminho |
+[![CI](https://github.com/ocristopfer/games/actions/workflows/ci.yml/badge.svg)](https://github.com/ocristopfer/games/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-No caminho Proxmox o `.ps1` roda no Windows, envia o bundle via SSH para o host e executa
-o `provision-game-lxc.sh` la (que usa `pct`). No caminho Docker o mesmo `.ps1` gera a
-stack, constroi a imagem e sobe o container. Nos dois, o servidor termina o deploy **ja
-cadastrado no painel**.
+## Screenshots
 
-## Pre-requisitos
+| | |
+|---|---|
+| ![Dashboard, dark theme](docs/screenshots/dashboard.png) | ![Dashboard, light theme](docs/screenshots/dashboard-light.png) |
+| Dashboard (dark theme) | Dashboard (light theme) |
+| ![Server detail](docs/screenshots/server.png) | ![Usage charts](docs/screenshots/charts.png) |
+| Server page: status, players, resources, actions | Charts: CPU, memory and players over 6h / 24h / 7 days |
+| ![Mod manager](docs/screenshots/mods.png) | <img src="docs/screenshots/mobile.png" alt="Phone layout" width="300"> |
+| Mod manager (per game) | Phone layout, installable as a PWA |
 
-- Acesso SSH como `root` ao host Proxmox (por chave de preferencia — com senha o
-  script pede a senha 3x, uma por etapa)
-- `ssh` e `scp` disponiveis no Windows (nativos no Windows 10/11)
+## Features
 
-## Uso
+- **One-command deploy** of a game to its own Proxmox LXC container or Docker container, from
+  a single game definition (`games/<game>.env`); Windows-only servers run under **Proton**
+  (or Wine) inside the container.
+- **Web panel** (Flask, stdlib only plus `python3-flask` from apt; no pip, no CDN, no build
+  step in production):
+  - start / stop / restart / update (SteamCMD), live logs, per-server **resource meters**
+    (CPU, memory, swap, disk, network, game process) read over SSH, no agent;
+  - **charts** of CPU, memory and players over 6h / 24h / 7 days;
+  - **players online** through Steam A2S query, the game's HTTP API, the server log or
+    active connections on the game port, with **kick / ban / broadcast** where the game API
+    supports it (Palworld);
+  - **quick config editor** that opens the game's `.ini` / `.json` / `.cfg` as a form, plus a
+    full **file manager** (browse, edit, upload, download, delete);
+  - **interactive terminal** (real TTY over SSH) and one-shot commands;
+  - **backups** stored in the game container and copied to the panel, with restore;
+  - **schedules** (daily, weekly, every N hours) for restart, stop, start, update and backup;
+  - **alerts** to Discord, Slack or any JSON webhook (server down, crashed, restart loop,
+    not responding, lost contact, disk almost full, errors in the log...);
+  - **mod manager per game** (BepInEx/Thunderstore, UE4SS, UE4SS for Linux, Shroudtopia,
+    Oxide, SML, Steam Workshop through the game config, ETS2 server packages), with every
+    downloaded or uploaded mod scanned by ClamAV first;
+  - **history** of every action, with filters;
+  - **users and roles** (administrator and operator);
+  - **2FA (TOTP)** with QR code and recovery codes, and **passkeys** (device biometrics,
+    WebAuthn);
+  - **light / dark theme toggle** and **Portuguese / English language toggle** in the top
+    right corner;
+  - **PWA**: installable on the phone home screen, phone-first layout.
+- **Broker** (optional): a separate service that holds the Proxmox and OPNsense credentials
+  and exposes fixed verbs (create / disable / remove instance, catalog). The panel's
+  **Catalog** and **Instances** screens use it to create game servers with one click.
+- **Per-container firewall** (nftables) on the panel, broker and every game container.
+- **Deterministic releases**: the same commit always produces the same tarball and sha256,
+  installed by folder with a symlink and automatic rollback.
 
-### Modo automatico (tudo via .env)
+## How it works
+
+```mermaid
+flowchart LR
+    you(["You<br/>(browser / phone)"])
+    subgraph lan["Your network"]
+        panel["Panel CT<br/>Flask web UI"]
+        broker["Broker CT<br/>holds Proxmox and<br/>OPNsense credentials"]
+        subgraph pve["Proxmox host"]
+            g1["Game CT<br/>Palworld"]
+            g2["Game CT<br/>Valheim"]
+            g3["Game CT<br/>..."]
+        end
+        router["Router<br/>OPNsense"]
+    end
+    players(["Players<br/>(internet)"])
+
+    you -- "HTTPS (via reverse proxy)" --> panel
+    panel -- "SSH: start/stop, files,<br/>backups, mods, metrics" --> g1 & g2 & g3
+    panel -- "HTTPS + token<br/>create / remove instance" --> broker
+    broker -- "Proxmox API:<br/>create CT" --> pve
+    broker -- "SSH: install game" --> g3
+    broker -- "OPNsense API:<br/>port forward" --> router
+    players -- "game ports" --> router --> g1 & g2 & g3
+```
+
+What happens when a game is created (from the panel through the broker, or with
+`deploy-game.ps1` from your machine - both run the same install phases):
+
+```mermaid
+flowchart TD
+    a["Pick a game<br/>(curated, suggestion or Steam App ID)"] --> b["Allocate IP, CTID and ports"]
+    b --> c["Create the LXC<br/>(Debian 13, unprivileged)"]
+    c --> d["Install SteamCMD and the game<br/>(Proton/Wine for Windows-only servers)"]
+    d --> e["Write the systemd service<br/>and update helpers"]
+    e --> f["Start the game and<br/>wait until it answers"]
+    f --> g["Firewall inside the CT<br/>(nftables, applied last)"]
+    g --> h["Port forward on the router<br/>(OPNsense)"]
+    h --> i["Register the server in the panel<br/>(config, backups, player counting ready)"]
+```
+
+The panel never talks to Proxmox or to the router directly: if the panel is compromised,
+the broker only exposes a few fixed verbs (create, disable, remove an instance; catalog),
+and every broker action requires the admin's second factor.
+
+## Quick start (local, development only)
+
+To try the panel without Proxmox, you only need Docker:
+
+```bash
+docker compose up --build -d          # panel at http://localhost:8080 (admin / admin12345)
+```
+
+This starts the panel plus two **fake** game containers (Debian with `sshd`, a simulated
+`systemctl`/`journalctl`, an A2S query responder, a REST API and a log) that are already
+registered in the panel, plus a toy broker with fake backends. Everything works end to end:
+start/stop/update, terminal, file editor, Config screen, player counting.
+
+> **This is a development environment.** The login `admin` / `admin12345` is fixed, the code
+> is bind-mounted and reloaded on change, and the containers are not hardened. It is bound to
+> `localhost`; never expose it to a network. See [Local development](#local-development) for
+> details.
+
+## Installation
+
+### Downloading a release
+
+Releases are published on [GitHub Releases](../../releases) whenever a `vX.Y.Z` tag is pushed
+(`.github/workflows/release.yml`). Each release has:
+
+| Asset | What it is |
+|-------|------------|
+| `gamepanel-<version>.tar.gz` + `.sha256` | the panel Python package |
+| `gamebroker-<version>.tar.gz` + `.sha256` | the broker Python package |
+| Source code (zip / tar.gz) | the whole repository at that tag: deploy scripts, `lib/`, `games/`, `tools/` |
+
+The tarballs are built by `tools/build-release.py`, which is **deterministic**: sorted
+names, owner/group zeroed, the commit's mtime, and `mtime=0` in the gzip header. Two builds of
+the same commit give the **same sha256**, so the hash answers "is this container running this
+exact code?", not just "did the file arrive intact?". You can rebuild it yourself and compare:
+
+```bash
+python tools/build-release.py gamepanel    # dist/gamepanel-0.1.0+abc1234.tar.gz + .sha256
+python tools/build-release.py gamebroker
+```
+
+There are two ways to install:
+
+1. **Run the deploy scripts from the release source archive** (the normal path). Extract the
+   source archive on a Windows machine, copy `.env.example` to `.env`, fill it in and run the
+   scripts under `deploy/` (described below). The scripts package the panel/broker themselves
+   and ship the tarball plus `lib/install-release.sh` to the container.
+2. **Install a release tarball by hand** inside a container that already has the service set
+   up, with the same installer the deploy scripts use:
+
+   ```bash
+   sha256sum -c gamepanel-<version>.tar.gz.sha256
+   bash lib/install-release.sh <package> <tarball> <sha256> <app_dir> <service> [health_command]
+   # e.g.
+   bash lib/install-release.sh gamepanel gamepanel-0.1.0+abc1234.tar.gz <sha256> /opt/gamepanel gamepanel.service
+   ```
+
+   The installer checks the sha256, extracts the release into a **new folder**, flips the
+   `current` symlink atomically, restarts the service, waits for the health probe and **rolls
+   back by itself** if the service does not come up. It keeps the last 5 releases.
+
+Without git (e.g. a source archive), a self-built package has no commit and an empty build
+date; its version shows as `X.Y.Z+dev`. A dirty tree is marked `.dirty` in the file name and
+on screen.
+
+### Prerequisites
+
+- A Windows machine to run the `.ps1` deploy scripts (Windows PowerShell 5.1 is enough), with
+  `ssh` and `scp` (built into Windows 10/11).
+- For the Proxmox path: SSH as `root` to the Proxmox host (preferably by key; with a password
+  see [Proxmox access by password](#proxmox-access-by-password)).
+- For the Docker path: Docker on the target machine (local or remote).
+
+### Deploy paths at a glance
+
+| What | Command | Where it lands |
+|------|---------|----------------|
+| Panel | `.\deploy\admin\deploy-admin.ps1` (`-Full` to create/reconfigure the CT) | a Proxmox LXC |
+| Broker | `.\deploy\broker\deploy-broker.ps1` | its own Proxmox LXC |
+| Game on Proxmox | `.\deploy\game\deploy-game.ps1 -Game palworld` | its own LXC, with real systemd |
+| Game on Docker | `.\deploy\game\deploy-docker.ps1 -Game palworld` | any machine with Docker |
+| Panel on Docker | `.\deploy\game\deploy-docker.ps1 -Panel` | `http://localhost:8080` |
+| Firewall for existing CTs | `.\deploy\firewall\apply-firewall.ps1` | panel, broker and game CTs |
+
+Recommended order on Proxmox: panel first (games read its SSH key), then the games or the
+broker.
+
+## Deploying games
+
+The same game definition (`games/<game>.env`) is used by both targets:
+
+| Target | Command | When to use |
+|--------|---------|-------------|
+| **Proxmox LXC** | `.\deploy\game\deploy-game.ps1 -Game palworld` | you have Proxmox and want each game in its own container with real systemd |
+| **Docker** | `.\deploy\game\deploy-docker.ps1 -Game palworld` | any machine with Docker (even your PC), no Proxmox involved |
+
+On the Proxmox path the `.ps1` runs on Windows, sends the bundle over SSH to the host and
+runs `provision-game-lxc.sh` there (which uses `pct`). On the Docker path the same kind of
+`.ps1` generates the stack, builds the image and starts the container. Either way the server
+ends the deploy **already registered in the panel**.
+
+### Automatic mode (everything from .env)
 
 ```powershell
-Copy-Item .env.example .env   # edite CTID, storage, rede, memoria, cores, disco...
+Copy-Item .env.example .env   # edit CTID, storage, network, memory, cores, disk...
 .\deploy\game\deploy-game.ps1 -Game dragonwilds
 ```
 
-### Modo interativo (pergunta cada valor)
+### Interactive mode (asks for each value)
 
 ```powershell
 .\deploy\game\deploy-game.ps1 -Game dragonwilds -Interactive
 ```
 
-Os valores do `.env` (se existir) viram os defaults dos prompts — Enter aceita.
+Values from `.env` (if it exists) become the prompt defaults; Enter accepts.
 
-### Deploy generico por App ID da Steam
+### Generic deploy by Steam App ID
 
 ```powershell
 .\deploy\game\deploy-game.ps1 -AppId 4019830
 ```
 
-Use o App ID do **servidor dedicado** (consulte no [SteamDB](https://steamdb.info)).
-O script tenta detectar automaticamente o script de start (`*.sh` na raiz da instalacao).
-Se o jogo precisar de argumentos ou tiver portas conhecidas, crie um `games/<nome>.env`
-a partir do `games/_template.env`.
+Use the App ID of the **dedicated server** (look it up on [SteamDB](https://steamdb.info)).
+The script tries to detect the start script (`*.sh` at the root of the install). If the game
+needs arguments or has known ports, create a `games/<name>.env` from `games/_template.env`.
 
-## O que o script faz
+### What the script does
 
-1. Baixa o template Debian (se necessario) e cria o LXC (`pct create`) com os recursos
-   definidos no `.env` — ou os recomendados do jogo, se voce deixar em branco
-2. Instala dependencias (`lib32gcc-s1` etc.), cria o usuario `steam` e instala o SteamCMD
-   em `/opt/steamcmd` (pula se ja existir)
-3. Instala/valida o jogo em `/opt/game` via `app_update <id> validate` (login anonimo)
-4. Cria o servico systemd `<jogo>.service` (start no boot, restart em falha) e os
-   atalhos `update-game`, `game-restart` etc. dentro do CT
-5. Sobe o servidor, valida que ficou ativo e imprime o resumo com **as portas a redirecionar**
-6. **Cadastra o servidor no painel** (`--register-server`), com IP do CT, unit systemd,
-   portas, forma de contar jogadores e arquivos de configuracao — a tela **Config** ja
-   abre pronta. `-NoRegister` pula esta etapa
+1. Downloads the Debian template (if needed) and creates the LXC (`pct create`) with the
+   resources from `.env`, or the game's recommended ones if left blank.
+2. Installs dependencies (`lib32gcc-s1` etc.), creates the `steam` user and installs SteamCMD
+   in `/opt/steamcmd` (skipped if present).
+3. Installs/validates the game in `/opt/game` with `app_update <id> validate` (anonymous login).
+4. Creates the systemd service `<game>.service` (start on boot, restart on failure) and the
+   shortcuts `update-game`, `game-restart` etc. inside the CT.
+5. Starts the server, checks it is active and prints the summary with **the ports to forward**.
+6. **Registers the server in the panel** (`--register-server`) with the CT IP, systemd unit,
+   ports, player counting method and config files, so the **Config** screen opens ready.
+   `-NoRegister` skips this step.
 
-O passo 2 tambem instala o `sshd` no CT e autoriza a chave do
-[painel administrativo](#painel-administrativo-web) — sem ela o servidor apareceria
-cadastrado na tela mas sem responder. A chave e lida do proprio painel (`ADMIN_CTID`, ou
-`ADMIN_HOST`/`ADMIN_IP_CIDR` quando ele nao mora neste Proxmox); `PANEL_PUBKEY` no `.env`
-continua valendo e tem prioridade.
+Step 2 also installs `sshd` in the CT and authorizes the key of the
+[web panel](#web-panel); without it the server would show up registered but would not
+respond. The key is read from the panel itself (`ADMIN_CTID`, or `ADMIN_HOST`/`ADMIN_IP_CIDR`
+when it does not live on this Proxmox); `PANEL_PUBKEY` in `.env` still works and takes
+precedence.
 
-Rodar de novo e idempotente: atualiza config do CT e revalida o jogo. `RECREATE_CT=1` destroi e recria.
+Running it again is idempotent: it updates the CT config and revalidates the game.
+`RECREATE_CT=1` destroys and recreates the container.
 
-## Um container por jogo
+### One container per game
 
-Cada jogo mora no proprio CT, com IP proprio. No `.env`, qualquer chave da secao
-"Container LXC" pode ser especializada por jogo com o sufixo `_<GAME_KEY em maiusculas>`:
+Each game lives in its own CT with its own IP. In `.env`, any key from the "LXC container"
+section can be specialized per game with the suffix `_<GAME_KEY in uppercase>`:
 
 ```ini
 CTID_DRAGONWILDS=210
-IP_CIDR_DRAGONWILDS=192.168.2.20/24
+IP_CIDR_DRAGONWILDS=10.20.1.20/24
 
 CTID_PALWORLD=211
-IP_CIDR_PALWORLD=192.168.2.21/24
-MEMORY_PALWORLD=16384        # vale para qualquer chave: CORES_, ROOTFS_SIZE_GB_, SWAP_...
+IP_CIDR_PALWORLD=10.20.1.21/24
+MEMORY_PALWORLD=16384        # works for any key: CORES_, ROOTFS_SIZE_GB_, SWAP_...
 ```
 
-O `CTID`/`IP_CIDR` sem sufixo continuam existindo como **fallback**: valem para o deploy
-generico (`-AppId`) e para jogos sem bloco proprio. O hostname do CT ja e o nome do jogo,
-entao nao precisa de `HOSTNAME_OVERRIDE`.
+The unsuffixed `CTID`/`IP_CIDR` remain as a **fallback**: they apply to the generic deploy
+(`-AppId`) and to games without their own block. The CT hostname is already the game name, so
+`HOSTNAME_OVERRIDE` is not needed.
 
-Como o deploy e idempotente **por CTID**, apontar dois jogos para o mesmo id nao criaria um
-container novo — reconfiguraria o que ja existe e trocaria o jogo que roda la dentro. Por
-isso o `deploy-game.ps1` para antes de enviar qualquer coisa se o CTID ou o IP resolvido ja
-for de outro jogo ou do painel:
+Because the deploy is idempotent **per CTID**, pointing two games at the same id would not
+create a new container; it would reconfigure the existing one and swap the game running in
+it. So `deploy-game.ps1` stops before sending anything if the resolved CTID or IP already
+belongs to another game or to the panel:
 
 ```
 THROW: CTID 210 ja pertence ao jogo DRAGONWILDS (CTID_DRAGONWILDS no .env).
        Defina CTID_SATISFACTORY com um id livre.
 ```
 
-No inicio de cada deploy o script imprime o alvo resolvido — confira antes de deixar rodar:
+At the start of each deploy the script prints the resolved target; check it before letting it
+run:
 
 ```
 Valores especificos de SATISFACTORY: CTID, IP_CIDR
-Alvo: CT 212 (satisfactory) em 192.168.2.22/24
+Alvo: CT 212 (satisfactory) em 10.20.1.22/24
 ```
 
-Layout de referencia (o do `.env.example`):
+(The scripts' console messages are in Portuguese.)
 
-| CTID | Jogo | IP |
+Reference layout for games deployed this way (the one in `.env.example`):
+
+| CTID | Game | IP |
 |------|------|-----|
-| 209 | gamepanel (painel) | 192.168.2.19 |
-| 210 | dragonwilds | 192.168.2.20 |
-| 211 | palworld | 192.168.2.21 |
-| 212 | satisfactory | 192.168.2.22 |
-| 213 | enshrouded | 192.168.2.23 |
-| 214 | dayz | 192.168.2.24 |
-| 215 | icarus | 192.168.2.25 |
-| 219 | fallback / `-AppId` | 192.168.2.29 |
+| 209 | gamepanel (panel) | 10.20.1.19 |
+| 210 | dragonwilds | 10.20.1.20 |
+| 211 | palworld | 10.20.1.21 |
+| 212 | satisfactory | 10.20.1.22 |
+| 213 | enshrouded | 10.20.1.23 |
+| 214 | dayz | 10.20.1.24 |
+| 215 | icarus | 10.20.1.25 |
+| 219 | fallback / `-AppId` | 10.20.1.29 |
 
-## Jogos definidos
+Containers created by the broker use a different range; see [Addresses](#addresses-the-ip-tells-the-ctid).
 
-| Jogo | Comando | Portas |
-|------|---------|--------|
-| RuneScape: Dragonwilds | `.\deploy\game\deploy-game.ps1 -Game dragonwilds` | 7777/udp |
-| Palworld | `.\deploy\game\deploy-game.ps1 -Game palworld` | 8211/udp, 27015/udp |
-| Satisfactory | `.\deploy\game\deploy-game.ps1 -Game satisfactory` | 7787/udp, 7787/tcp |
-| Enshrouded | `.\deploy\game\deploy-game.ps1 -Game enshrouded` | 15636/udp, 15637/udp |
-| DayZ | `.\deploy\game\deploy-game.ps1 -Game dayz` | 2302-2304/udp, 27016/udp |
-| Icarus | `.\deploy\game\deploy-game.ps1 -Game icarus` | 17777/udp, 27017/udp |
-| Valheim | `.\deploy\game\deploy-game.ps1 -Game valheim` | 2456/udp, 2457/udp |
-| V Rising | `.\deploy\game\deploy-game.ps1 -Game vrising` | 9876/udp, 9877/udp |
-| Euro Truck Simulator 2 | `.\deploy\game\deploy-game.ps1 -Game ets2` | 27018 e 27019, TCP e UDP |
+### Shortcuts inside the container
 
-Troque `deploy-game.ps1` por `deploy-docker.ps1` para rodar em Docker. Alem da
-instalacao, cada `games/<jogo>.env` diz ao painel onde fica a configuracao
-(`CONFIG_PATH`/`CONFIG_FILES`), o que guardar no backup (`BACKUP_PATHS`) e como contar
-jogadores (`QUERY_PORT`/`PLAYER_SOURCE`) — e o que faz o servidor nascer cadastrado, com
-a tela **Config** pronta e o **Backup** apontado para o save certo.
+The deploy installs shortcuts in the container. They work **both ways**: logged in as root
+inside the CT (`pct enter <CTID>` or SSH) or from the Proxmox host with `pct exec`.
 
-### Jogos sem build Linux: wine ou Proton
-
-Enshrouded, Icarus e V Rising so publicam servidor para Windows. O deploy baixa o build Windows
-(`STEAM_PLATFORM=windows`) e roda o `.exe` dentro do CT com o runtime escolhido em
-`games/<jogo>.env`:
-
-| Variavel | Para que serve |
-|----------|----------------|
-| `WINDOWS_RUNTIME` | `wine` (pacote da distro), `proton` (Proton-GE baixado do GitHub) ou vazio para jogo nativo |
-| `PROTON_VERSION` | tag fixa do Proton-GE, ex. `GE-Proton11-5` |
-| `WINE_DLL_OVERRIDES` | vai para `WINEDLLOVERRIDES`; padrao `mscoree,mshtml=` |
-| `WINDOWS_RUNTIME_XVFB` | `1` quando o `.exe` cria janela mesmo headless |
-
-O `provision-game-lxc.sh` instala o runtime, grava `/etc/game-runtime.env` e cria o comando
-**`win-run`** dentro do CT. O script de start do jogo vira uma linha:
+| Shortcut | What it does |
+|----------|--------------|
+| `game-restart` | restarts the server |
+| `game-stop` | stops the server |
+| `game-start` | starts the server |
+| `game-status` | service status |
+| `game-logs` | live log (accepts journalctl args, e.g. `game-logs -n 50`) |
+| `update-game` | updates the game via SteamCMD (stop / update / restart) |
+| `check-game-update` | checks for an update without touching anything unnecessarily |
 
 ```bash
-exec win-run /opt/game/servidor.exe "$@"
+# inside the container
+game-restart
+game-logs
+
+# from the Proxmox host
+pct exec <CTID> -- game-restart
+pct exec <CTID> -- game-status
+pct exec <CTID> -- update-game
 ```
 
-Trocar de runtime e mudar `WINDOWS_RUNTIME` e redeployar - nenhum script de jogo muda.
+> The shortcuts live in `/usr/local/bin` with a symlink in `/usr/bin`. The symlink exists
+> because `pct exec` does not use a login shell and its PATH does not include
+> `/usr/local/bin`; without it, `pct exec <CTID> -- update-game` fails with `Failed to exec`.
+>
+> In containers created before this version the symlinks do not exist; recreate them with
+> `pct exec <CTID> -- bash -lc 'for f in update-game check-game-update; do ln -sfn /usr/local/bin/$f /usr/bin/$f; done'`
+> or run the deploy again.
 
-**Por que Proton e nao o wine da distro.** O wine do Debian nao tem esync nem fsync: cada
-mutex/evento/semaforo do Windows vira syscall cara, e em servidor muito multi-thread isso
-vira gargalo de CPU. O Proton-GE traz o proprio wine com **fsync** (`futex_waitv`, kernel
->= 5.16) ligado por padrao. Por isso o Enshrouded usa `proton`.
+### Automatic updates
 
-**Regra para jogo novo sem build Linux: Proton primeiro.** Todo `games/*.env`, modelo e
-sugestao de servidor so de Windows nasce com `proton`; `wine` direto so quando o Proton ja
-foi tentado e nao funciona com aquele jogo, e o motivo fica escrito no `.env`.
-
-**O `UMU_ID` tem que ser o appid REAL do jogo.** Esta e a segunda armadilha do Proton fora
-do Steam, e ela e silenciosa: com um `UMU_ID` qualquer (0, por exemplo) o Proton propaga
-`SteamAppId=0` e a **API de game server da Steam falha**. O log do jogo mostra
-`[AppId: 0] Game Server API initialized 0` em vez de `[AppId: 1149460] ... 1`, a porta de
-query nunca abre, e o servidor fica de pe, invisivel no navegador e sem contagem no painel.
-
-O `win-run` resolve sozinho: le o `steam_appid.txt` que acompanha o executavel e exporta
-`UMU_ID`/`SteamAppId`/`SteamGameId` com esse valor. Se o jogo nao tiver o arquivo, cai em
-`0` - o que e correto para quem nao usa Steam (Enshrouded).
-
-Os dois jogos rodam em `proton`: Enshrouded porque nao depende da Steam, Icarus porque com
-o appid certo a Steam inicializa normalmente **e** ele ainda ganha o ntsync.
-
-**O detalhe que faz servidor dedicado funcionar sob Proton.** Por padrao o Proton lanca o
-jogo atraves do shim `steam.exe`, que espera um **cliente Steam vivo** para completar um
-handshake. Num servidor dedicado nao existe cliente Steam, e o resultado e um deadlock
-silencioso: processo de pe, RSS parado em ~34MB, **zero CPU**, nenhuma porta aberta e nem o
-log do proprio jogo criado. O `systemd` reporta `active` o tempo todo.
-
-O diagnostico que fecha isso: a thread principal fica em `wchan=pipe_read`, com o processo
-segurando as duas pontas do mesmo pipe.
-
-A saida esta no proprio `proton`: com **`UMU_ID` definido** e o executavel passado em
-**caminho Windows** (`Z:\opt\game\servidor.exe`), ele segue por
-`"Executable is inside wine prefix, launching normally"` e chama o wine direto, sem shim.
-O `win-run` faz as duas coisas automaticamente. Depois disso o mesmo servidor carrega em
-menos de 20s, com 35 threads e a thread principal em `ntsync_schedule`.
-
-Coisas que **nao** eram o problema, ja testadas e descartadas (para ninguem repetir):
-`LimitNOFILE`, diretorio de trabalho, prefixo corrompido, systemd vs execucao manual, e
-desligar o `lsteamclient` (ele chega desligado ao processo e o travamento continua).
-
-**Cuidado com os overrides.** Desligar `explorer.exe`/`services.exe`/`wbemprox.dll` parece
-economia obvia em servidor headless, mas foi **medido e reprovado**: sob Proton, cada um dos
-tres trava o Enshrouded na largada. No Icarus, sem `explorer.exe` o servidor morre com
-`nodrv_CreateWindow`. Por isso o padrao e conservador. Lembre que o Proton ja injeta os
-proprios overrides por cima do seu (`steam.exe=b`, `winebth.sys=d`, `d3d11=n`...).
-
-A unit systemd ganha `LimitNOFILE=1048576` quando ha runtime de Windows: esync/fsync criam um
-descritor por objeto de sincronizacao e o limite padrao (1024) derruba o servidor sob carga.
-
-**Ganho extra opcional - `ntsync`.** O kernel do Proxmox 6.14 traz o modulo `ntsync`
-(`/lib/modules/$(uname -r)/kernel/drivers/misc/ntsync.ko`), que implementa as primitivas do
-NT dentro do kernel e e mais rapido que fsync. Ele **nao vem carregado**. Para usar, no host:
+The deploy installs a systemd timer (`game-update-check.timer`) that runs every day at 06:00
+(configurable with `UPDATE_SCHEDULE` in `.env`, OnCalendar format). It compares the installed
+buildid with the latest one on Steam and **only stops/updates/restarts the server when there
+really is an update**; otherwise nothing is touched. Disable it with `AUTO_UPDATE=0`.
 
 ```bash
-modprobe ntsync && echo ntsync > /etc/modules-load.d/ntsync.conf
-ls -l /dev/ntsync
-pct set <CTID> -dev0 /dev/ntsync,mode=0666   # expoe o device ao container
-pct reboot <CTID>
+pct exec <CTID> -- systemctl list-timers game-update-check.timer   # next run
+pct exec <CTID> -- check-game-update                                # check now
+pct exec <CTID> -- journalctl -u game-update-check.service -n 20   # check log
 ```
 
-Sem `/dev/ntsync` dentro do CT o Proton usa fsync normalmente - nao quebra nada, so nao
-aproveita o caminho mais rapido.
+### Games that require a Steam account
 
-### Mapa de portas e NAT
-
-Cada jogo tem CT e IP proprios, entao **na LAN nao existe conflito**: dois servidores
-poderiam usar a mesma porta em IPs diferentes sem se atrapalhar. O conflito aparece no
-**roteador**, onde existe um IP publico so e cada porta externa aponta para um unico
-destino. Por isso as portas abaixo sao unicas entre si — nao por exigencia dos jogos,
-mas para que todo redirecionamento seja **1:1** (porta externa = porta interna).
-
-| Jogo | Destino | Redirecionar no roteador | Nunca redirecionar |
-|------|---------|--------------------------|--------------------|
-| Dragonwilds | 192.168.2.20 | `7777/udp` (+ `7778`, `7779` se criar mundos extras) | — |
-| Palworld | 192.168.2.21 | `8211/udp`, `27015/udp` | REST `8212/tcp`, RCON `25575/tcp` |
-| Satisfactory | 192.168.2.22 | `7787/udp`, `7787/tcp` | — |
-| Enshrouded | 192.168.2.23 | `15636/udp`, `15637/udp` | — |
-| DayZ | 192.168.2.24 | `2302/udp`, `2303/udp`, `2304/udp`, `27016/udp` | — |
-| Icarus | 192.168.2.25 | `17777/udp`, `27017/udp` | — |
-| V Rising | (CT do broker) | `9876/udp`, `9877/udp` | RCON `25575/tcp` |
-| Euro Truck Simulator 2 | (CT do broker) | `27018`, `27019` (TCP e UDP) | — |
-
-**O 1:1 nao e preferencia estetica** nos jogos que publicam query A2S — Palworld, DayZ e
-Icarus. Esses servidores anunciam a *propria* porta ao master server da Steam; se o NAT
-traduzir `27020` externo para `27015` interno, a Steam divulga uma porta que nao existe do
-lado de fora e o servidor fica invisivel no navegador, mesmo respondendo. Nos jogos de IP
-direto (Dragonwilds, Satisfactory, Enshrouded) uma traducao assimetrica funcionaria, mas
-manter tudo 1:1 evita ter uma porta na LAN e outra na internet.
-
-**Regra de desempate: antiguidade.** Quando dois jogos querem a mesma porta, ela fica com
-o que foi configurado primeiro (a ordem dos CTIDs conta essa historia: 210 dragonwilds,
-211 palworld, 212 satisfactory, 213 enshrouded, 214 dayz, 215 icarus). Quem chega depois
-muda. Isso evita mexer em servidor com gente jogando e em bookmark ja salvo no cliente —
-o custo cai sempre no jogo mais novo, que ainda nao tem historico.
-
-As duas colisoes resolvidas por essa regra:
-
-- **`7777`** — disputada por Dragonwilds (CT 210) e Satisfactory (CT 212). Ficou com o
-  **Dragonwilds**, mais antigo, que ainda reserva 7778/7779 para mundos extras. O
-  Satisfactory foi para **7787**, levando junto o TCP da API de gerenciamento
-- **`27015`** — query padrao da Steam, disputada por Palworld (CT 211) e Icarus (CT 215).
-  Ficou com o **Palworld**; o Icarus foi para **27017** (a 27016 e do DayZ)
-
-Nada de painel, SSH ou API de jogo vai para a internet. O painel (192.168.2.19) e acessado
-pela LAN ou por VPN; o SSH dos containers so responde a partir do painel.
-
-#### Como isso vira regra no OPNsense
-
-Existe um alias de porta por jogo (`JOGO_<Nome>`), versionado em
-[`aliases.json`](aliases.json), e uma regra de port forward por jogo, em
-[`download_rules.csv`](download_rules.csv). O molde da regra e sempre o mesmo:
-
-| Campo | Valor |
-|-------|-------|
-| Interface | WAN |
-| Protocol | UDP (so o Satisfactory usa **TCP/UDP**) |
-| Destination | WAN address |
-| Destination port range | o alias do jogo |
-| Redirect target IP | o IP do CT do jogo |
-| Redirect target port | **o mesmo alias** |
-
-O mesmo alias nos dois campos de porta e o que produz o mapeamento 1:1 — sem isso, os
-jogos com query A2S somem do navegador da Steam. Alias de porta no OPNsense **nao guarda
-protocolo**: ele vem da regra, e por isso o Satisfactory precisa de TCP/UDP explicito
-(UDP e o jogo, TCP e a API de gerenciamento, ambos na mesma porta).
-
-O CSV exportado **nao traz as colunas de destination nem de destination port**, entao ele
-serve como referencia e backup, nao como fonte de importacao: reimportar pode deixar esses
-campos vazios, e uma regra sem porta de destino casa *qualquer* porta para aquele host.
-
-### RuneScape: Dragonwilds — notas
-
-- App do servidor dedicado: `4019830` (build Linux nativo, `RSDragonwildsServer.sh`)
-- Porta padrao **7777/UDP**; cada mundo adicional usa a seguinte (7778, 7779...), entao a
-  faixa 7777-7779 fica reservada a este jogo — veja [Mapa de portas e NAT](#mapa-de-portas-e-nat)
-- Config criada no primeiro start (localize com `find /opt/game -name DedicatedServer.ini`):
-  nome do servidor, senha do mundo, senha de admin, OwnerID. Pare o servidor antes de editar!
-- Limite de jogadores: fixo em 6 (travado pela Jagex, nao configuravel)
-- **Nao publica nada consultavel**: nem query A2S da Steam, nem RCON, nem API HTTP. O
-  servidor usa **EOS** (Epic Online Services), nao a Steam - o mundo e achado no jogo pelo
-  nome exato, pelas sessoes da Epic. Medido num CT de verdade: abre so `7777`, `8888` e uma
-  porta alta, e nenhuma responde A2S, nem por loopback; a doc da Jagex nao tem query port nem
-  argumento para isso. Guias de hosting que mandam abrir `27015` estao copiando texto de
-  outros jogos Unreal. O painel conta pelas **conexoes ativas** na porta do jogo (o
-  firewall do CT anota quem conversa com a 7777) e tira os nomes do log
-- Saves: `/opt/game/RSDragonwilds/Saved/SaveGames/`
-
-### Palworld — notas
-
-- App do servidor dedicado: `2394010` (build Linux nativo, `PalServer.sh`)
-- Portas: **8211/UDP** (jogo) e **27015/UDP** (query da Steam, necessaria para aparecer
-  na lista da comunidade). A **API REST (8212/TCP)** e o RCON (25575/TCP) so existem se
-  habilitados no `.ini` — nao redirecione nenhum dos dois no roteador
-- Tres formas de contar jogadores, da melhor para a pior: **API REST** (`8212/tcp`, da os
-  nomes, o level e o ping), **A2S** (`27015/udp`, so a contagem — o Palworld nao responde
-  `A2S_PLAYER`) e o log. Para ligar a REST: `RESTAPIEnabled=True`, `RESTAPIPort=8212` e
-  uma `AdminPassword` forte; no painel, **Configurar contagem > API HTTP** com
-  `http://127.0.0.1:8212/v1/api/players` e `basic:admin:<a senha>`.
-  O RCON foi marcado como *deprecated* pela Pocketpair em favor da REST
-- O deploy cria o symlink `~steam/.steam/sdk64/steamclient.so` (exigido pelo `PalServer.sh`)
-  e semeia o `PalWorldSettings.ini` a partir do `DefaultPalWorldSettings.ini`
-- Config: `/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini` — tudo fica dentro
-  de `OptionSettings=(...)`, em uma unica linha: `ServerName`, `ServerPassword`,
-  `AdminPassword`, `ServerPlayerMaxNum` (max 32), `PublicPort`, taxas de XP/captura etc.
-  Pare o servidor antes de editar (`systemctl stop palworld`)
-- Memoria: o servidor cresce com o mundo/jogadores — recomendado 16GB (8GB e o minimo pratico)
-- Saves: `/opt/game/Pal/Saved/SaveGames/0/`
-
-### Satisfactory — notas
-
-- App do servidor dedicado: `1690800` (build Linux nativo, `FactoryServer.sh`)
-- Portas: uma so, em dois protocolos — **7787/UDP** (jogo) e **7787/TCP** (API HTTPS de
-  gerenciamento que o cliente usa para adotar e configurar o servidor). Abra as duas.
-  O padrao do jogo e 7777, cedida ao Dragonwilds por antiguidade
-  ([Mapa de portas e NAT](#mapa-de-portas-e-nat)). As portas antigas 15000/15777 sairam na 1.0
-- O deploy cria o symlink `~steam/.steam/sdk64/steamclient.so` (sem ele o servidor sobe
-  mas nao registra na Steam)
-- Config: nao ha `.ini` para preencher antes — no cliente, **Servidores > Adicionar servidor**
-  com `IP:7787`, defina a senha de admin e reivindique o servidor. Ajustes finos depois em
-  `/home/steam/.config/Epic/FactoryGame/Saved/Config/LinuxServer/`
-  (`ServerSettings.ini`, `GameUserSettings.ini`), com o servidor parado
-- Nao publica query A2S da Steam — a contagem de jogadores no painel vem do log
-- Memoria: 12GB e o recomendado oficial; fabricas grandes passam disso, por isso 16GB
-- Saves: `/home/steam/.config/Epic/FactoryGame/Saved/SaveGames/server/`
-
-### Enshrouded — notas
-
-- App do servidor dedicado: `2278520` — **sem build Linux**. O deploy baixa o build Windows
-  (`STEAM_PLATFORM=windows`) e roda o `enshrouded_server.exe` via **Wine**, igual ao que o
-  LinuxGSM e as imagens Docker da comunidade fazem
-- Portas: **15637/UDP** e a principal (`queryPort`) — e o que o jogador digita no cliente.
-  A `15636/UDP` (`gamePort`) saiu de uso no Content Update #2; abrir as duas nao atrapalha.
-  Tudo UDP, nada de TCP
-- A porta **nao** vai por linha de comando: o servidor le tudo do `enshrouded_server.json`.
-  Se mudar a porta la, ajuste tambem `GAME_PORT`/`GAME_PORTS` em `games/enshrouded.env`
-- Config: `/opt/game/enshrouded_server.json` — o deploy cria um modelo no primeiro run.
-  **Troque as senhas** de `userGroups` (Admin / Friend / Guest): cada jogador entra com a
-  senha do grupo dele, nao existe senha unica de servidor. `slotCount` vai ate 16.
-  Pare o servidor antes de editar (`systemctl stop enshrouded`)
-- A `15637` tambem responde a consulta **A2S** da Steam: ela conta, o log da os nomes
-  (e assume a contagem se a consulta nao responder)
-- Memoria: 16GB (recomendacao oficial para 16 slots, mais a folga do Wine).
-  Disco: o build Windows passa de 12GB, por isso 40GB
-- O primeiro start demora mais que o normal: o Wine monta o prefixo e o jogo gera o mundo.
-  Acompanhe com `game-logs`
-- Saves: `/opt/game/savegame/` (prefixo do Wine em `/home/steam/.wine-enshrouded`)
-
-### Icarus — notas
-
-- App do servidor dedicado: `2089300` — **sem build Linux**. Igual ao Enshrouded, o deploy
-  baixa o build Windows (`STEAM_PLATFORM=windows`) e roda o `IcarusServer.exe` via **Wine**
-- Portas: **17777/UDP** (jogo) e **27017/UDP** (query da Steam, usada pelo navegador de
-  servidores do proprio Icarus). As duas vao por linha de comando (`-PORT=` / `-QueryPort=`),
-  entao mudar `GAME_PORT` no `.env` basta. Tudo UDP. A query nao fica na 27015 padrao
-  porque o Palworld ja a ocupa — veja [Mapa de portas e NAT](#mapa-de-portas-e-nat)
-- Publica **A2S** na 27017 — a contagem de jogadores no painel vem da query, nao do log.
-  Nao ha RCON nem API HTTP: a administracao e feita dentro do jogo, com o `AdminPassword`
-- Config: `/opt/game/Icarus/Saved/Config/WindowsServer/ServerSettings.ini` — o jogo so o
-  cria ao gerar o primeiro prospect, entao o deploy semeia um modelo. **Troque o
-  `AdminPassword`**; ajuste `SessionName`, `MaxPlayers` e `JoinPassword` (vazio = aberto).
-  Pare o servidor antes de editar (`systemctl stop icarus`): o jogo reescreve esse arquivo
-  ao sair (`LastProspectName` etc.)
-- `ShutdownIfEmptyFor` / `ShutdownIfNotJoinedFor` vem em 300s (o servidor se desliga sozinho
-  quando ninguem entra). O systemd reinicia logo depois; se preferir o servidor sempre de pe,
-  aumente os dois valores
-- O mundo nao nasce com o servidor: quem cria o **prospect** e um jogador conectado, pelo
-  menu do jogo (ou preencha `CreateProspect`/`LoadProspect` no `.ini`)
-- **`vm.max_map_count`**: a Unreal sob Wine morre com `Freeing X bytes from backup pool` se
-  o valor for o padrao. Em CT nao privilegiado o `sysctl` de dentro nao pega — ajuste no
-  **host Proxmox**: `sysctl -w vm.max_map_count=262144` e
-  `echo "vm.max_map_count=262144" > /etc/sysctl.d/99-icarus.conf`
-- **Precisa de X virtual (`xvfb`)**, e essa e a diferenca em relacao ao Enshrouded: o
-  build de servidor do Icarus tenta criar uma *janela* na largada, mesmo sem renderizar
-  nada. Sem display o Wine morre em ~1s com `nodrv_CreateWindow: Application tried to
-  create a window, but no driver could be loaded` e **exit 41**, antes de sequer criar
-  `Saved/Logs/`. Por isso o `PRE_INSTALL_CMD` instala o `xvfb` e o wrapper roda o Wine
-  sob `xvfb-run -a`. O **`xauth` vai explicito** na mesma linha do `apt-get`: ele e so um
-  *Recommends* do `xvfb`, entao com `--no-install-recommends` nao vem junto e o `xvfb-run`
-  morre com `error: xauth command not found` (exit 3) antes de chegar no Wine
-- **O wrapper chama o binario `Shipping` direto**, nao o `IcarusServer.exe` da raiz. Aquele
-  tem so 256KB e e o *bootstrap* da Unreal: headless ele sobe, fica vivo gastando ~1s de CPU
-  e **nunca gera o processo do servidor** — sem porta, sem log, e com o systemd reportando
-  `active` o tempo todo. O binario real e `Icarus/Binaries/Win64/IcarusServer-Win64-Shipping.exe`
-  (~108MB). No `ps`, um servidor sadio mostra ESSE binario, com RSS na casa dos GB;
-  se aparecer so o `IcarusServer.exe` com ~17MB, e o bootstrap travado
-- No journal aparece `XDG_RUNTIME_DIR is invalid or not set`: e ruido do `libwayland-client`
-  em servico systemd ([bug 1093464](https://lists.debian.org/debian-wine/2025/12/msg00004.html)),
-  nao e a causa de falha nenhuma. O wrapper define a variavel so para calar a mensagem
-- Nao use `WINEDEBUG=-all` no wrapper: ele silencia as linhas `err:` do Wine, que sao a
-  unica pista quando o `.exe` morre antes de gerar log proprio. O padrao aqui e `fixme-all`
-- `START_ARGS` leva `-stdout -FullStdOutLogOutput` para a Unreal escrever no stdout do
-  processo, e nao so no arquivo. Sem isso o `game-logs` fica **mudo com o servidor
-  saudavel** (o unico stderr seria o do Wine), o que confunde na hora de diagnosticar.
-  Nao use `-log`: ele abre uma janela de console que fica presa dentro do X virtual
-- Memoria: 16GB (recomendacao oficial, mais a folga do Wine); o jogo e pesado em
-  single-thread, entao core rapido vale mais que muitos cores.
-  Disco: a instalacao ocupa ~10,5GB (1,1GB so de `.pdb`), por isso 32GB com folga
-- O primeiro start demora mais que o normal: o Wine monta o prefixo. Acompanhe com `game-logs`
-- Saves: `/opt/game/Icarus/Saved/PlayerData/` e `/opt/game/Icarus/Saved/Prospects/`
-  (prefixo do Wine em `/home/steam/.wine-icarus`)
-
-### V Rising — notas
-
-- App do servidor dedicado: `1829350` — **sem build Linux**, e **fora do LinuxGSM** (por isso a
-  busca do painel nao o achava). Roda pelo **Proton** com X virtual (`WINDOWS_RUNTIME_XVFB=1`):
-  o servidor e Unity e cria janela na largada
-- Portas: **9876/UDP** (jogo, a do Direct Connect) e **9877/UDP** (query da Steam). As duas vao
-  por linha de comando (`-gamePort` / `-queryPort`) e vencem o que estiver no `.json`
-- **Appid sob Proton**: o wrapper fixa `SteamAppId=1604030` (o do jogo) quando o depot nao traz
-  `steam_appid.txt` — com 0 a query nunca abre, como aconteceu com o Icarus
-- Config: `/opt/game/save-data/Settings/ServerHostSettings.json` (nome, senha, lista publica em
-  `ListOnSteam`/`ListOnEOS`) e `ServerGameSettings.json` (regras do mundo). O deploy semeia os
-  dois a partir dos padroes do proprio servidor. Admins: SteamID64 em `adminlist.txt`, na mesma
-  pasta. Pare o servidor antes de editar (`systemctl stop vrising`)
-- Log: o servidor so escreve em `/opt/game/logs/VRisingServer.log`; o wrapper o repete no
-  journal com `tail -F`, e e dali que a tela de logs do painel le
-- Saves: `/opt/game/save-data/Saves/` (o Backup do painel guarda Saves e Settings)
-- Pelo painel: e curado e criavel, entao sai direto pela tela **Instancias**. **Nao foi testado
-  ainda contra um CT de verdade** - se o Proton nao subir, `WINDOWS_RUNTIME=wine` e redeploy
-
-### Euro Truck Simulator 2 — notas
-
-- App do servidor dedicado: `1948160`, build nativo Linux. Documentacao oficial:
-  modding.scssoft.com/wiki/Documentation/Tools/Dedicated_Server
-- **O servidor nao sobe sem `server_packages.sii` e `server_packages.dat`**, que so o JOGO gera:
-  com um mapa carregado, abra o console e rode `export_server_packages`. Envie os dois arquivos
-  para `/opt/game/server-home` pela tela **Arquivos**; o servidor sobe sozinho em ate 30 s. Ate
-  la o servico fica de pe, dizendo no log o que esta esperando (a criacao pelo painel precisa
-  do servico ativo, e os arquivos so podem ser enviados depois que o CT existe)
-- **Mods e DLCs vao dentro desses pacotes.** O servidor nao baixa mod nenhum (roda sem o cliente
-  Steam e nao ve a Workshop): ele aplica o que estava ativo no perfil de quem exportou. Para jogar
-  com mods, ative-os no perfil ANTES de exportar, e cada jogador precisa ter os MESMOS mods
-  inscritos na Workshop. Trocou a lista de mods? Exporte e envie os pacotes de novo
-- Portas: **27018** (conexao) e **27019** (consulta), TCP e UDP nas duas - fora das padrao
-  27015/27016, que no roteador ja sao do Palworld e do DayZ. O script de start as grava no
-  `server_config.sii` a cada subida; as portas virtuais 100/101 nao precisam de NAT
-- Config: `/opt/game/server-home/server_config.sii` (nasce na primeira subida): `lobby_name`,
-  `password`, `max_players`. Opcional: `server_logon_token`, gerado em
-  steamcommunity.com/dev/managegameservers com o App ID do JOGO (227300), para o servidor manter
-  a mesma identidade entre reinicios
-
-### DayZ — notas
-
-- App do servidor dedicado: `223350` (build **nativo Linux**, binario `DayZServer`)
-- **Unico jogo daqui que nao baixa com login anonimo.** O depot do servidor exige uma
-  conta Steam que **possua o DayZ** — veja [Jogos que exigem conta Steam](#jogos-que-exigem-conta-steam)
-- Portas: **2302/UDP** (jogo), **2303** e **2304/UDP** (engine/Steam) e **27016/UDP**
-  (`steamQueryPort`). Sem a 27016 o servidor nao aparece no navegador do cliente.
-  Tudo UDP. No painel, cadastre **27016** como porta de consulta — o DayZ publica A2S
-- O deploy cria o symlink `~steam/.steam/sdk64/steamclient.so`, as pastas `profiles/` e
-  `battleye/`, e semeia o `serverDZ.cfg` (o exemplo que vem no pacote nao tras `steamQueryPort`)
-- Config: `/opt/game/serverDZ.cfg` — `hostname`, `password` (entrada), `passwordAdmin`,
-  `maxPlayers`, e o `template` da missao (`dayzOffline.chernarusplus` ou `dayzOffline.enoch`
-  para Livonia). Pare o servidor antes de editar (`systemctl stop dayz`)
-- Persistencia: `/opt/game/mpmissions/dayzOffline.chernarusplus/storage_1/` — o numero segue
-  o `instanceId` do `serverDZ.cfg`. Logs e stats em `/opt/game/profiles/`
-- Memoria: 8GB (vanilla com ~20 jogadores fica perto de 4GB; mods passam disso)
-
-## Jogos que exigem conta Steam
-
-Quase todo servidor dedicado baixa com `+login anonymous`. O DayZ nao: o depot esta atras
-de uma conta que possua o jogo. Esses jogos marcam `STEAM_ANONYMOUS=0` no `games/<jogo>.env`,
-e o deploy le as credenciais do `.env` — **nunca do `games/*.env`, que vai para o git**:
+Almost every dedicated server downloads with `+login anonymous`. DayZ does not: the depot is
+behind an account that owns the game. Such games set `STEAM_ANONYMOUS=0` in
+`games/<game>.env`, and the deploy reads the credentials from `.env`, **never from
+`games/*.env`, which is in git**:
 
 ```ini
-STEAM_USER=conta-dedicada
-STEAM_PASS=senha-da-conta
+STEAM_USER=dedicated-account
+STEAM_PASS=account-password
 ```
 
-Se a conta usa Steam Guard, o codigo vale poucos segundos — passe na hora do deploy em vez
-de deixar no `.env`:
+If the account uses Steam Guard, the code is valid for a few seconds; pass it at deploy time
+instead of leaving it in `.env`:
 
 ```powershell
 .\deploy\game\deploy-game.ps1 -Game dayz -SteamGuardCode 12345
 ```
 
-Sem credencial nenhuma, o deploy para antes de enviar qualquer coisa:
+With no credentials at all, the deploy stops before sending anything:
 
 ```
 THROW: O servidor de dayz nao esta disponivel por login anonimo na Steam.
        Preencha STEAM_USER e STEAM_PASS no .env (conta que POSSUA o jogo) ou use -Interactive.
 ```
 
-**Pelo painel (broker).** O DayZ tambem sai pela tela **Instancias** quando o broker tem uma
-conta: `STEAM_USER`/`STEAM_PASS` no `broker.secrets.env` e `.\deploy\broker\deploy-broker.ps1`.
-Ai nao ha como digitar codigo nenhum (o login acontece minutos depois do clique, dentro do CT
-novo), entao a conta tem de estar **sem Steam Guard** — por isso uma conta DEDICADA a
-servidores, que possua o jogo, e nunca a sua pessoal. Sem a conta o DayZ continua "manual"
-no catalogo, com o motivo escrito ali.
+How the password is handled:
 
-**Adicionar ao catalogo um jogo que nao esta em lugar nenhum.** A tela **Catalogo** busca
-por nome ou App ID em quatro lugares: os jogos que ja estao no catalogo (com um atalho para
-**Criar instancia**), o LinuxGSM, os eggs do Pterodactyl (~40 jogos que o LinuxGSM nao tem,
-metade so de Windows: Astroneer, Bannerlord, Space Engineers, Myth of Empires...) e uma lista
-mantida a mao no painel (`manual_suggestions.py`: ARK: Survival Ascended, Abiotic Factor,
-Conan Exiles, Sons of the Forest). Cada sugestao diz de qual fonte veio; quando o egg completa
-um campo que o LinuxGSM deixou vazio (arquivos de config, portas), o aviso diz qual. Para
-atualizar as duas listas geradas: `python tools/import-linuxgsm.py` e
-`python tools/import-pterodactyl.py` (precisam de internet; o painel nao). Se nada casar, a tela
-oferece links para o SteamDB (App ID do servidor dedicado) e uma busca das portas na web.
-Quem abre esses links e o seu navegador; o painel continua sem ir a internet. Dai o caminho
-e **Comecar de um modelo** pelo motor do jogo: Unreal (Linux ou Windows via Proton), Unity
-(Linux ou Windows via Proton) e Source/srcds. Servidor de Windows cadastrado assim roda com
-`.exe` direto no "Script de start": o instalador o chama pelo `win-run`. As receitas
-`proton`/`wine` escolhem o runtime e `xvfb` liga o X virtual.
+- It is only used on the **first** install. After that SteamCMD keeps the token in
+  `~steam/Steam/config/config.vdf` inside the CT, and `update-game`/`check-game-update` use
+  only `+login <user>`; the password is **not** stored in the container scripts.
+- The `deploy.env` sent to Proxmox goes to `/root/game-deploy` with `chmod 600`, and the local
+  copy in `%TEMP%` is deleted at the end of the deploy.
+- If the token expires, the automatic update fails (it does not hang: it runs with `timeout`
+  and no stdin). Run the deploy again with `-SteamGuardCode` to renew it.
+- Use an account **dedicated** to the server, not your main one.
 
-Detalhes de como a senha e tratada:
+> Recommended: `-Interactive` asks for the password without echoing it, instead of keeping it
+> in `.env`.
 
-- Ela so aparece na **primeira** instalacao. Depois disso o SteamCMD guarda o token em
-  `~steam/Steam/config/config.vdf` dentro do CT, e o `update-game`/`check-game-update`
-  usam so `+login <usuario>` — a senha **nao** fica gravada nos scripts do container
-- O `deploy.env` enviado ao Proxmox vai para `/root/game-deploy` com `chmod 600`, e a
-  copia local em `%TEMP%` e apagada no fim do deploy
-- Se o token expirar, o update automatico falha (nao trava: roda com `timeout` e sem stdin).
-  Rode o deploy de novo com `-SteamGuardCode` para renovar
-- Use uma conta **dedicada** ao servidor, nao a sua principal
+**Through the panel (broker).** DayZ can also be created from the **Instances** screen when
+the broker has an account: `STEAM_USER`/`STEAM_PASS` in `broker.secrets.env` and
+`.\deploy\broker\deploy-broker.ps1`. There is no way to type a code there (the login happens
+minutes after the click, inside the new CT), so the account must have **no Steam Guard**;
+use an account DEDICATED to servers that owns the game, never your personal one. Without the
+account DayZ stays "manual" in the catalog, with the reason shown.
 
-> Recomendado: `-Interactive` pergunta a senha sem ecoar na tela, em vez de deixa-la no `.env`.
+### Deploying on Docker (no Proxmox)
 
-## Comandos uteis
-
-O deploy instala atalhos no container. Eles funcionam **dos dois jeitos**: logado como root
-dentro do CT (`pct enter <CTID>` ou SSH) ou direto do host Proxmox com `pct exec`.
-
-| Atalho | O que faz |
-|--------|-----------|
-| `game-restart` | reinicia o servidor |
-| `game-stop` | para o servidor |
-| `game-start` | sobe o servidor |
-| `game-status` | status do servico |
-| `game-logs` | log ao vivo (aceita args do journalctl, ex.: `game-logs -n 50`) |
-| `update-game` | atualiza o jogo via SteamCMD (para/atualiza/reinicia) |
-| `check-game-update` | checa se ha update sem aplicar nada desnecessario |
-
-```bash
-# dentro do container
-game-restart
-game-logs
-
-# a partir do host Proxmox
-pct exec <CTID> -- game-restart
-pct exec <CTID> -- game-status
-pct exec <CTID> -- update-game
-```
-
-> Os atalhos ficam em `/usr/local/bin` com symlink em `/usr/bin`. O symlink existe porque
-> `pct exec` nao usa shell de login e o PATH dele nao inclui `/usr/local/bin` — sem ele,
-> `pct exec <CTID> -- update-game` falha com `Failed to exec`.
->
-> Em containers criados antes desta versao os symlinks nao existem; recrie-os com
-> `pct exec <CTID> -- bash -lc 'for f in update-game check-game-update; do ln -sfn /usr/local/bin/$f /usr/bin/$f; done'`
-> ou rode o deploy novamente.
-
-## Update automatico
-
-O deploy instala um timer systemd (`game-update-check.timer`) que roda todo dia as 06:00
-(configuravel via `UPDATE_SCHEDULE` no `.env`, formato OnCalendar). Ele compara o buildid
-instalado com o mais recente da Steam e **so para/atualiza/reinicia o servidor quando ha
-update de verdade** — sem update, nada e tocado. Desative com `AUTO_UPDATE=0`.
-
-```bash
-pct exec <CTID> -- systemctl list-timers game-update-check.timer   # proximo horario
-pct exec <CTID> -- check-game-update                                # checar agora
-pct exec <CTID> -- journalctl -u game-update-check.service -n 20   # log das checagens
-```
-
-## Deploy em Docker (sem Proxmox)
-
-Mesmos jogos, mesma definicao em `games/<jogo>.env`, mesmo painel — so que em containers
-Docker. Serve para rodar tudo no seu proprio PC, num NUC, num servidor qualquer com
-Docker instalado, ou num Docker remoto.
+Same games, same `games/<game>.env` definitions, same panel, but in Docker containers. Use it
+to run everything on your own PC, a NUC, any server with Docker, or a remote Docker host.
 
 ```powershell
-.\deploy\game\deploy-docker.ps1 -Panel                  # sobe o painel (http://localhost:8080)
-.\deploy\game\deploy-docker.ps1 -Game palworld          # sobe o jogo e o cadastra no painel
+.\deploy\game\deploy-docker.ps1 -Panel                  # starts the panel (http://localhost:8080)
+.\deploy\game\deploy-docker.ps1 -Game palworld          # starts the game and registers it in the panel
 .\deploy\game\deploy-docker.ps1 -Game dayz -SteamGuardCode 12345
-.\deploy\game\deploy-docker.ps1 -Game palworld -Down    # para o servidor (o mundo fica no volume)
+.\deploy\game\deploy-docker.ps1 -Game palworld -Down    # stops the server (the world stays in the volume)
 .\deploy\game\deploy-docker.ps1 -Game palworld -Recreate
 ```
 
-Suba o painel **antes** do primeiro jogo: e dele que sai a chave SSH que o container do
-jogo autoriza. Depois disso cada deploy de jogo ja nasce gerenciavel e **cadastrado**,
-com o arquivo de configuracao apontado — a tela **Config** abre pronta.
+Start the panel **before** the first game: the game container authorizes the panel's SSH key.
+After that every game deploy is born manageable and **registered**, with its config file
+pointed out, so the **Config** screen opens ready.
 
-### O que o deploy faz
+What the deploy does:
 
-1. Cria a rede `games` (e por ela que o painel fala com os jogos, por nome de container)
-2. Gera a stack em `docker/stacks/<jogo>.yml` — da para ler antes de subir (o arquivo e
-   regerado a cada deploy, entao ajuste o `.env`, nao o `.yml`)
-3. Constroi a imagem `gamesrv-<jogo>` (Debian + SteamCMD + `sshd` + os atalhos do painel)
-4. Sobe o container `game-<jogo>` com as portas do jogo publicadas e limites de
-   memoria/CPU vindos de `MEMORY`/`CORES` do `.env` (ou do recomendado do jogo)
-5. Cadastra o servidor no painel (`--register-server`), com portas, forma de contar
-   jogadores e arquivos de configuracao
+1. Creates the `games` network (the panel talks to the games over it, by container name).
+2. Generates the stack in `docker/stacks/<game>.yml`, which you can read before starting it
+   (it is regenerated on every deploy, so adjust `.env`, not the `.yml`).
+3. Builds the `gamesrv-<game>` image (Debian + SteamCMD + `sshd` + the panel shortcuts).
+4. Starts the `game-<game>` container with the game ports published and memory/CPU limits
+   from `MEMORY`/`CORES` in `.env` (or the game's recommendation).
+5. Registers the server in the panel (`--register-server`) with ports, player counting method
+   and config files.
 
-O container faz o mesmo que o `provision-game-lxc.sh` faz no LXC: instala o jogo pelo
-SteamCMD, roda os `PRE_INSTALL_CMD`/`POST_INSTALL_CMD` do jogo, detecta o script de start
-e sobe o servidor. Como nao ha systemd dentro de um container, o papel dele e feito por um
-`systemctl`/`journalctl` proprios (em `docker/gameserver/`) com **a mesma interface** que o
-painel usa — por isso start/stop/restart, logs ao vivo, medidores e contagem de jogadores
-funcionam igual nos dois destinos.
+The container does what `provision-game-lxc.sh` does in LXC: installs the game through
+SteamCMD, runs the game's `PRE_INSTALL_CMD`/`POST_INSTALL_CMD`, detects the start script and
+starts the server. Since there is no systemd inside a container, its role is played by custom
+`systemctl`/`journalctl` scripts (in `docker/gameserver/`) with **the same interface** the
+panel uses, so start/stop/restart, live logs, meters and player counting work the same on both
+targets.
 
-### Dados e atualizacoes
+**Data and updates**
 
-- Dois volumes por jogo: `game-<jogo>-data` (o jogo e os saves, em `/opt/game`) e
-  `game-<jogo>-steam` (token da Steam e prefixo do Wine). **Recriar o container nao
-  baixa o jogo de novo nem perde o mundo.**
-- `restart: unless-stopped` e `stop_grace_period: 120s`: no `docker stop` o servidor
-  recebe o TERM e tem tempo de salvar antes de morrer.
-- Update automatico diario dentro do container (`UPDATE_TIME`, padrao 06:00), com a mesma
-  regra do LXC: so atualiza se o buildid da Steam mudou. `AUTO_UPDATE=0` desliga.
-- `UPDATE_ON_START=1` (ou `-UpdateOnStart`) revalida os arquivos do jogo a cada start.
+- Two volumes per game: `game-<game>-data` (the game and saves, in `/opt/game`) and
+  `game-<game>-steam` (Steam token and Wine prefix). **Recreating the container does not
+  download the game again or lose the world.**
+- `restart: unless-stopped` and `stop_grace_period: 120s`: on `docker stop` the server gets
+  TERM and has time to save before dying.
+- Daily automatic update inside the container (`UPDATE_TIME`, default 06:00), with the same
+  rule as LXC: it only updates if the Steam buildid changed. `AUTO_UPDATE=0` turns it off.
+- `UPDATE_ON_START=1` (or `-UpdateOnStart`) revalidates the game files on every start.
 
 ```bash
-docker logs -f game-palworld            # acompanhar o download/instalacao
+docker logs -f game-palworld            # follow the download/install
 docker exec game-palworld game-status
 docker exec game-palworld game-logs -n 50
 docker exec game-palworld update-game
 docker exec -it game-palworld bash
 ```
 
-### Docker remoto
-
-`DOCKER_HOST` no `.env` (ou `-DockerHost`) manda o deploy para outra maquina, sem instalar
-nada la alem do Docker:
+**Remote Docker.** `DOCKER_HOST` in `.env` (or `-DockerHost`) sends the deploy to another
+machine, with nothing installed there except Docker:
 
 ```
-DOCKER_HOST=ssh://root@192.168.1.50
+DOCKER_HOST=ssh://root@10.20.0.50
 ```
 
-A imagem e construida no destino (o contexto sobe pela conexao), entao nao ha bind mount
-de caminho local — o que roda no seu PC roda igual no servidor.
+The image is built on the target (the context goes over the connection), so there is no bind
+mount of a local path; what runs on your PC runs the same on the server.
 
-### Portas e acesso
+**Ports and access.** The ports in `GAME_PORTS` are published on the host (`8211:8211/udp`...);
+those are what you forward on the router. The container's SSH is **not** published: the panel
+connects through the internal `games` network. To reach it from outside, set
+`SSH_PORT_<GAME>` in `.env`.
 
-As portas de `GAME_PORTS` sao publicadas no host (`8211:8211/udp`...) — e o que voce
-redireciona no roteador. O SSH do container **nao** e publicado: o painel entra pela rede
-interna `games`. Se quiser entrar de fora, defina `SSH_PORT_<JOGO>` no `.env`.
+Games that require a Steam account (DayZ) read `STEAM_USER`/`STEAM_PASS` from `.env`; the
+deploy writes them to `docker/stacks/<game>.secret.env` (outside git) instead of the stack.
 
-Jogos que exigem conta Steam (DayZ) leem `STEAM_USER`/`STEAM_PASS` do `.env`; o deploy
-escreve essas variaveis em `docker/stacks/<jogo>.secret.env` (fora do git) em vez de
-deixa-las na stack.
+## Games
 
-## Painel administrativo (web)
+Nine games are **curated** (tested end to end, with config screen, backups and player
+counting ready): RuneScape: Dragonwilds, Palworld, Satisfactory, Enshrouded, DayZ, Icarus,
+Valheim, V Rising and Euro Truck Simulator 2. More than 100 others can be added from the
+panel through suggestions imported from LinuxGSM and Pterodactyl eggs, or by Steam App ID.
 
-Um container separado sobe um painel web para gerenciar todos os servidores: cadastrar,
-ver status, **jogadores conectados** e **uso de CPU/memoria/disco/rede**,
-start/stop/restart, atualizar pelo SteamCMD, ler logs (com modo ao vivo), **abrir um
-terminal interativo** e **editar, baixar ou apagar os arquivos dos jogos** — tudo direto
-dentro de cada container.
+The full list with commands and ports, how to add a game, Proton/Wine for Windows-only
+servers, the port map and per-game notes are in **[docs/games.md](docs/games.md)**.
+
+## Web panel
+
+A separate container runs a web panel to manage all servers: register them, see status,
+**connected players** and **CPU/memory/disk/network usage**, start/stop/restart, update through
+SteamCMD, read logs (with live mode), **open an interactive terminal** and **edit, download or
+delete game files**, all directly inside each container.
 
 ```powershell
-.\deploy\admin\deploy-admin.ps1                # usa as chaves ADMIN_* do .env
-.\deploy\admin\deploy-admin.ps1 -Interactive   # pergunta cada valor
+.\deploy\admin\deploy-admin.ps1                # uses the ADMIN_* keys from .env
+.\deploy\admin\deploy-admin.ps1 -Interactive   # asks for each value
 ```
 
-No fim o deploy mostra a URL (`http://<ip-do-ct>:8080`), o usuario e a senha.
+At the end the deploy shows the URL (`http://<ct-ip>:8080`), the user and the password.
 
-### No celular: instalar como aplicativo
+### Fast deploy: straight to the CT, without Proxmox
 
-O painel e um **PWA**: da para instalar na tela inicial do celular e abrir sem barra de
-navegador. A interface e desenhada **para o telefone primeiro** &mdash; e dali que se
-reinicia um servidor as onze da noite, nao da mesa do escritorio.
+With the panel container **already created and reachable over SSH**, `deploy-admin.ps1`
+packages the panel, sends the release tarball and `lib/install-release.sh` directly to it and
+installs it, without even connecting to Proxmox. This is the normal day-to-day path: seconds
+instead of minutes.
 
-- **Instalar**: no Android/Chrome aparece um botao **Instalar** na barra de cima assim
-  que o navegador reconhece o painel como instalavel. No iPhone/Safari e
-  _Compartilhar &rarr; Adicionar a Tela de Inicio_.
-- **Navegacao**: no celular as quatro secoes principais (Servidores, Historico, Alertas,
-  Conta) ficam numa **barra de abas embaixo**, ao alcance do polegar; o resto
-  (adicionar servidor, usuarios, acesso SSH, sair) esta no menu **⋯** da barra de cima.
-  A partir de 900px de largura tudo isso sobe para a barra de cima e a de baixo some.
-- **Terminal no telefone**: a tela do terminal ganha uma fileira com as teclas que o
-  teclado virtual nao tem &mdash; `Esc`, `Tab`, `^C`, setas, `Home/End`, `PgUp/PgDn`,
-  `/`, `|`, `~`. Sem ela, `vim` e `htop` sao inoperaveis no celular.
-- **Sem conexao**: o aplicativo guarda so o proprio casco (CSS, JS, icones) e uma tela de
-  &quot;sem conexao&quot;. **Nenhuma pagina logada e nenhuma leitura de `/api/` vai para
-  o cache**: um painel com poder de root nos containers nao pode reexibir a tela de
-  servidores depois do logout, nem mostrar o uso de CPU de uma hora atras como se fosse
-  de agora.
-- **Entrar com a biometria**: em _Conta &rarr; Biometria do aparelho_, cadastre o celular
-  (pede a senha, e o codigo se o 2FA estiver ligado); dali em diante a tela de login mostra
-  **Entrar com biometria**, que usa a digital, o rosto ou o PIN do aparelho (passkey/WebAuthn).
-  So funciona com o painel aberto por **https com um nome de dominio** (o navegador nao libera
-  isso em `http://IP`): ponha esse endereco em `ADMIN_WEBAUTHN_ORIGIN` no `.env`
-  (`https://painel.seudominio.com`) e refaca o deploy do painel. Vazio, o botao nao aparece.
-  A passkey vale como senha **e** segundo fator juntos, porque o aparelho so assina depois de
-  conferir a pessoa; trocar o endereco depois invalida as passkeys cadastradas.
-- **Versao nova**: quando o deploy troca os arquivos, o painel mostra uma faixa
-  _&quot;Ha uma versao nova&quot;_ com um botao. Ele nao se recarrega sozinho de
-  proposito &mdash; pode haver uma sessao de terminal aberta no meio de uma edicao.
-
-O que decide &quot;versao nova&quot; e o mtime dos arquivos de `static/`, carimbado no
-`/sw.js` na hora de servir. Um deploy que muda o CSS gera um service worker diferente, o
-navegador instala e descarta o cache velho.
-
-### Deploy rapido: direto no CT, sem passar pelo Proxmox
-
-Com o container do painel **ja criado e alcancavel por SSH**, o `deploy-admin.ps1` manda
-o codigo direto para ele (`scp` + `systemctl restart`) e nem abre conexao com o Proxmox.
-E o caminho normal do dia a dia: leva segundos em vez de minutos.
-
-- O endereco vem de `-PanelHost`, de `ADMIN_HOST` no `.env` ou do IP fixo em
-  `ADMIN_IP_CIDR`. Com `ADMIN_IP_CIDR=dhcp` e sem `ADMIN_HOST`, nao da para deduzir e o
-  deploy segue pelo Proxmox.
-- O provisionamento instala `openssh-server` no CT do painel e autoriza a **sua** chave
-  publica (`ADMIN_SSH_PUBKEY`, detectada automaticamente do seu `~/.ssh`). E isso que
-  habilita o envio direto; sem chave, o painel so aceita deploy pelo Proxmox.
-- O envio direto troca os `.py`, `templates/` e `static/` inteiros &mdash; subpastas
-  incluidas (`templates/components/`, `static/css`, `static/js`, `static/icons`),
-  removendo o que saiu do repo &mdash; e reinicia o servico, abortando com as ultimas
-  linhas do log se ele nao voltar. A pasta `static/maps` fica de fora da limpeza: ela e
-  criada dentro do container e nao existe aqui para ser reenviada.
-- **Config nao vai por ai**: mudar `ADMIN_*` (portas, limites, senha do painel) ou os
-  recursos do CT exige o caminho completo:
+- The address comes from `-PanelHost`, from `ADMIN_HOST` in `.env`, or from the fixed IP in
+  `ADMIN_IP_CIDR`. With `ADMIN_IP_CIDR=dhcp` and no `ADMIN_HOST`, it cannot be deduced and the
+  deploy goes through Proxmox.
+- **`ADMIN_HOST` wins over `ADMIN_IP_CIDR`.** When you move the panel to another CT/IP, change
+  BOTH, or the deploy lands on the old CT and publishes there. `-Full` follows `ADMIN_CTID`.
+- Provisioning installs `openssh-server` in the panel CT and authorizes **your** public key
+  (`ADMIN_SSH_PUBKEY`, detected automatically from your `~/.ssh`). That is what enables the
+  direct path; without a key, the panel only accepts deploys through Proxmox.
+- A release is a **new folder**, never a copy on top: nothing from an old version can survive.
+  The deploy confirms through `/health` (version and commit), not just `systemctl is-active`,
+  and the installer rolls back on failure.
+- **Configuration does not go this way**: changing `ADMIN_*` (ports, limits, panel password)
+  or the CT resources requires the full path:
 
 ```powershell
-.\deploy\admin\deploy-admin.ps1 -Full          # cria/reconfigura o CT pelo Proxmox
+.\deploy\admin\deploy-admin.ps1 -Full          # creates/reconfigures the CT through Proxmox
 ```
 
-### Acesso ao Proxmox por senha
+`provision-admin-lxc.sh` rewrites the whole `panel.env`, but preserves the
+`GAMEPANEL_BROKER_*` and `GAMEPANEL_ALLOW_BROKER` lines written by
+`deploy-broker.ps1 -ConfigurePanel`.
 
-O ideal e ter sua chave publica autorizada no Proxmox. Quando nao ha chave, preencha
-`PROXMOX_PASSWORD` no `.env` (ou passe `-ProxmoxPassword`) e o deploy entra por senha.
-Vale para os **dois** scripts — `deploy-admin.ps1` e `deploy-game.ps1`:
+Forgot the password? Run `deploy-admin.ps1` again with `ADMIN_PASSWORD` filled in; it resets
+that user's password without touching registered servers (or the user's role). For other
+users, an administrator resets the password on the **Users** screen.
+
+### Proxmox access by password
+
+Ideally your public key is authorized on Proxmox. When there is no key, fill
+`PROXMOX_PASSWORD` in `.env` (or pass `-ProxmoxPassword`) and the deploy logs in by password.
+This works for **both** `deploy-admin.ps1` and `deploy-game.ps1`:
 
 ```powershell
-.\deploy\admin\deploy-admin.ps1 -Full -InstallKey        # painel: entra por senha e autoriza sua chave
-.\deploy\game\deploy-game.ps1 -Game icarus -InstallKey  # jogo: idem, no mesmo host Proxmox
+.\deploy\admin\deploy-admin.ps1 -Full -InstallKey        # panel: log in by password and authorize your key
+.\deploy\game\deploy-game.ps1 -Game icarus -InstallKey  # game: same, on the same Proxmox host
 ```
 
-- O deploy tenta a chave primeiro e so cai para a senha se ela nao for aceita.
-- A senha nunca vai para disco: ela e passada ao `ssh` pelo mecanismo `SSH_ASKPASS`
-  atraves de uma variavel de ambiente deste processo, e some do ambiente no fim (mesmo
-  se o deploy falhar no meio).
-- `-InstallKey` autoriza sua chave publica no Proxmox uma unica vez; dai em diante nao
-  precisa mais da senha no `.env`.
-- **Chave com passphrase precisa do `ssh-agent`.** Sem ele, o deploy continua caindo na
-  senha mesmo com a chave autorizada: o `ssh` oferece a chave publica, o servidor aceita
-  (`Server accepts key` no `ssh -v`) e a autenticacao falha logo depois, porque assinar
-  exige a passphrase e um deploy nao tem onde perguntar. O sintoma engana - parece chave
-  recusada, e na verdade e chave nao assinada. Habilite o agent uma vez, num PowerShell
-  **como administrador**:
+- The deploy tries the key first and only falls back to the password if the key is not
+  accepted.
+- The password never touches disk: it is handed to `ssh` through `SSH_ASKPASS` via an
+  environment variable of this process, and removed from the environment at the end (even if
+  the deploy fails midway).
+- `-InstallKey` authorizes your public key on Proxmox once; after that you no longer need the
+  password in `.env`.
+- **A key with a passphrase needs `ssh-agent`.** Without it the deploy keeps falling back to the
+  password even with the key authorized: `ssh` offers the public key, the server accepts it
+  (`Server accepts key` in `ssh -v`) and authentication fails right after, because signing
+  needs the passphrase and a deploy has nowhere to ask. The symptom is misleading: it looks like
+  a rejected key, but it is an unsigned key. Enable the agent once, in a PowerShell **as
+  administrator**:
 
   ```powershell
   Set-Service ssh-agent -StartupType Automatic
   Start-Service ssh-agent
-  ssh-add $env:USERPROFILE\.ssh\id_ed25519   # janela normal, digite a passphrase
+  ssh-add $env:USERPROFILE\.ssh\id_ed25519   # normal window, type the passphrase
   ```
 
-  Confira com `ssh -o BatchMode=yes root@<proxmox> "echo ok"`: respondeu `ok`, o deploy
-  para de usar senha.
-- A autenticacao e resolvida **uma vez por deploy**, antes do primeiro `ssh`, e vale para
-  todas as chamadas seguintes (envio do bundle, provisionamento, consultas). Um deploy
-  chama `ssh`/`scp` meia duzia de vezes; sem isso cada chamada abriria seu proprio prompt.
-- O modo senha se aplica **so ao host Proxmox**. O CT do painel e outra maquina, com outra
-  senha de root: as consultas a ele continuam exigindo chave (`BatchMode`), para uma senha
-  errada falhar na hora em vez de travar o deploy num prompt.
+  Check with `ssh -o BatchMode=yes root@<proxmox> "echo ok"`: once it answers `ok`, the deploy
+  stops using the password.
+- Authentication is resolved **once per deploy**, before the first `ssh`, and applies to all
+  following calls (bundle upload, provisioning, queries). A deploy calls `ssh`/`scp` half a
+  dozen times; otherwise each call would open its own prompt.
+- Password mode applies **only to the Proxmox host**. The panel CT is another machine with
+  another root password: queries to it still require a key (`BatchMode`), so a wrong password
+  fails immediately instead of hanging the deploy at a prompt.
 
-### Contagem de jogadores por servidor (valores testados)
+### On the phone: install as an app
 
-Estes valores ficam no banco do painel, nao no repo - se o painel for recriado, e daqui
-que eles voltam. Todos foram validados contra o log/API real de cada servidor.
+The panel is a **PWA**: you can install it on the phone's home screen and open it without the
+browser bar. The interface is designed **phone first**: that is where you restart a server at
+eleven at night, not from the office desk.
 
-| Jogo | Fonte | Nomes? |
-|------|-------|--------|
-| Palworld | A2S `27015` + nomes pelo log; ou API REST `http://127.0.0.1:8212/v1/api/players`, auth `basic:admin:<AdminPassword>`, caminho da lista `players` | **sim** |
-| Dragonwilds | conexoes ativas na `7777` + nomes pelo log (regex abaixo; o jogo nao tem A2S) | **sim** |
-| DayZ | A2S `27016` + nomes pelo log **em arquivo**: `/opt/game/profiles/*.ADM` (regex abaixo) | **sim** |
-| Satisfactory | log do servico (regex abaixo) | **aproximado** |
-| Icarus | A2S na porta de query | so contagem |
-| Enshrouded | A2S `15637` + nomes pelo log | **sim** |
+- **Install**: on Android/Chrome an **Install** button appears in the top bar as soon as the
+  browser recognizes the panel as installable. On iPhone/Safari use _Share > Add to Home
+  Screen_.
+- **Navigation**: on the phone the four main sections (Servers, History, Alerts, Account) sit
+  in a **bottom tab bar**, within thumb reach; the rest (add server, users, SSH access, sign
+  out) is in the **...** menu of the top bar. From 900px wide, every destination moves to the
+  top bar and the bottom bar disappears; account, SSH key and sign out go to the menu under the
+  person's name.
+- **Theme and language**: the top right corner has a **light/dark theme** toggle and a
+  **PT/EN language** toggle. Both work on the login screen too (they are stored in a cookie);
+  without a choice, the theme follows the device.
+- **Terminal on the phone**: the terminal screen gets a row with the keys the virtual keyboard
+  lacks: `Esc`, `Tab`, `^C`, arrows, `Home/End`, `PgUp/PgDn`, `/`, `|`, `~`. Without it,
+  `vim` and `htop` are unusable on a phone.
+- **Offline**: the app caches only its own shell (CSS, JS, icons) and an "offline" page. **No
+  logged-in page and no `/api/` response is cached**: a panel with root over the containers
+  must not redisplay the servers screen after logout, nor show CPU usage from an hour ago as if
+  it were current.
+- **Sign in with biometrics**: in _Account > Device biometrics_, register the phone (asks for
+  the password, and the code if 2FA is on); from then on the login screen shows **Sign in with
+  biometrics**, using the device's fingerprint, face or PIN (passkey/WebAuthn). It only works
+  with the panel opened over **https with a domain name** (the browser does not allow it on
+  `http://IP`): set that address in `ADMIN_WEBAUTHN_ORIGIN` in `.env`
+  (`https://panel.yourdomain.com`) and redeploy the panel. Empty, the button does not appear.
+  The passkey counts as password **and** second factor together, because the device only signs
+  after verifying the person; changing the address later invalidates registered passkeys.
+- **New version**: when a deploy changes the files, the panel shows a _"There is a new
+  version"_ banner with a button. It does not reload by itself on purpose: there may be a
+  terminal session open in the middle of an edit.
 
-As tres formas de contar ja vem preenchidas pelo deploy (`JOIN_RE`, `LEAVE_RE`,
-`LOG_PATH` no `games/<jogo>.env`); o assistente do painel serve para ajustar.
+What decides "new version" is the service worker's version mark: in a release it is the
+release version; running from the repository it is the mtime of the `static/` files, stamped
+into `/sw.js` when it is served. A deploy that changes the CSS produces a different service
+worker; the browser installs it and discards the old cache.
 
-**Como o painel decide o que mostrar**, pelos `(?P<name>...)` dos padroes:
+### How the panel talks to the servers
 
-| Onde ha o nome | O que sai na tela |
-|----------------|-------------------|
-| entrada **e** saida | quem esta online, exato |
-| so na **entrada** | contagem exata + os ultimos a entrar, marcados como palpite |
-| em nenhuma | so a contagem |
-
-**As fontes se combinam.** A escolhida no cadastro (`player_source`) conta; as outras que
-tiverem campo preenchido entram atras dela: se a contagem saiu SEM nomes (A2S de jogo
-Unreal, DayZ), os nomes vem da proxima que os tiver - a API e depois o log -, cortados nos
-ultimos a entrar quando o log lembra de mais gente que a consulta. Se a escolhida nao
-responder, a seguinte conta no lugar e a tela diz por que. `nenhuma` desliga todas.
-
-**Dragonwilds** - os padroes do log (que dao os nomes):
-
-```
-entrada: PlayerChar entered world \[Account\[[^\]]*\] Character Name\[(?P<name>[^\]]+)\]
-saida:   Player Removed from session \[[^\]]*\]-\[(?P<name>[^\]]+)\]
-```
-
-**DayZ** - os nomes **nao** saem da consulta A2S (o jogo responde a contagem e devolve os
-nomes em branco). Eles estao no log de administracao `.ADM`, que o `-adminlog` do nosso
-`START_ARGS` ja liga. Como o jogo abre um `.ADM` por sessao, o caminho leva `*` e o painel
-pega sempre o mais novo:
-
-```
-arquivo: /opt/game/profiles/*.ADM
-entrada: Player "(?P<name>[^"]+)" is connected
-saida:   Player "(?P<name>[^"]+)"\(id=[^)]*\) has been disconnected
-```
-
-**Satisfactory** - a API so devolve a contagem (`numConnectedPlayers`); nao ha rota de
-lista de jogadores. Pelo log da para ter os nomes, mas so **por aproximacao**: a linha de
-entrada traz o nome e a de saida **nao**, entao o painel acerta *quantos* estao online e
-mostra os *ultimos a entrar* como palpite - avisando na tela que e isso. Se um dia a linha
-de saida passar a trazer o nome, basta por o `(?P<name>...)` nela e a lista vira exata.
-
-```
-entrada: LogNet: Join succeeded: (?P<name>.+)
-saida:   LogNet: UNetConnection::Close:
-```
-
-**Icarus e Enshrouded** - por enquanto so a contagem. O Icarus responde `A2S_INFO` mas nao
-`A2S_PLAYER` (o painel tenta os dois em toda consulta); o log do Enshrouded anuncia
-conexoes sem nomear ninguem. Se o log do seu servidor tiver o nome, o assistente
-(`Configurar contagem > Pelo log`) mostra as linhas de verdade do container e da para
-montar o padrao ali mesmo - inclusive apontando um arquivo, como no DayZ.
-
-**Palworld** - alternativa por log, caso a REST caia:
-
-```
-entrada: \[LOG\] (?P<name>.+?) joined the server\.
-saida:   \[LOG\] (?P<name>.+?) left the server\.
-```
-
-Notas que economizam tempo depois:
-
-- O token do Satisfactory sai de `PasswordLogin` com a senha de admin do jogo e **nao tem
-  validade** (o payload e so `{"pl":"Administrator"}`). Ele e admin pleno na API - trate
-  como senha. Se um dia responder 401/`insufficient_scope`, gere outro pelo mesmo caminho.
-- A REST do Palworld so sobe com as chaves **dentro** do `OptionSettings=(...)`, numa unica
-  linha, sob `[/Script/Pal.PalGameWorldSettings]`. Chave solta no arquivo e silenciosamente
-  ignorada, e o servidor roda no padrao sem avisar.
-- A contagem por log le do **start do servico** para ca (`journalctl --since ActiveEnterTimestamp`)
-  e casa so os primeiros 500 caracteres de cada linha. Reiniciar o servidor zera a contagem
-  ate alguem entrar de novo - limitacao inerente da fonte log, nao bug do painel.
-
-### Como ele fala com os servidores
-
-O painel **nao tem acesso ao host Proxmox** — ele nao usa `pct` e nao tem chave para o
-hipervisor. Cada servidor cadastrado e um destino SSH, e o painel se conecta direto no
-container do jogo:
+The panel **has no access to the Proxmox host**: it does not use `pct` and has no key to the
+hypervisor. Each registered server is an SSH target, and the panel connects directly to the
+game container:
 
 ```
 [ CT gamepanel ] --ssh--> [ CT dragonwilds ]  systemctl / journalctl / update-game
                  --ssh--> [ CT palworld    ]
 ```
 
-Para um container ser gerenciavel ele precisa de `sshd` e da chave publica do painel
-autorizada. Ha tres formas de conseguir isso:
+To be manageable, a container needs `sshd` and the panel's public key authorized. There are
+three ways to get that:
 
-| Situacao | O que fazer |
-|----------|-------------|
-| CT de jogo novo | nada: o `deploy-game.ps1` le a chave do painel e ja deixa o CT pronto (ou preencha `PANEL_PUBKEY` no `.env` para fixar uma) |
-| CTs de jogo existentes | preencha `ADMIN_AUTHORIZE_CTIDS=210,211,212,213` e rode o `deploy-admin.ps1` |
-| Caso a caso | copie o comando pronto da tela **Acesso SSH** do painel |
+| Situation | What to do |
+|-----------|------------|
+| New game CT | nothing: `deploy-game.ps1` reads the panel key and leaves the CT ready (or set `PANEL_PUBKEY` in `.env` to pin one) |
+| Existing game CTs | set `ADMIN_AUTHORIZE_CTIDS=210,211,212,213` and run `deploy-admin.ps1` |
+| Case by case | copy the ready-made command from the panel's **SSH access** screen |
 
-A chave publica aparece no resumo do deploy do painel e na tela "Acesso SSH".
+The public key appears in the panel deploy summary and on the "SSH access" screen.
 
-### Cadastrando um servidor
+### Registering a server
 
-Servidor implantado pelo `deploy-game.ps1` ou pelo `deploy-docker.ps1` **ja chega
-cadastrado** — a tela abaixo serve para um container que voce criou por fora, ou para
-ajustar o que veio do deploy. Um redeploy nao duplica: o painel casa pelo par host+porta
-SSH e atualiza o servidor existente, preservando o que voce mudou pela tela (arquivos de
-config acrescentados a mao, forma de contar jogadores).
+A server deployed by `deploy-game.ps1` or `deploy-docker.ps1` **arrives already registered**;
+this form is for a container you created yourself, or to adjust what the deploy filled. A
+redeploy does not duplicate: the panel matches by SSH host+port and updates the existing
+server, keeping what you changed in the UI (config files added by hand, player counting
+method).
 
-Em **Adicionar**, informe:
+In **Add**, provide:
 
-- **Host** — IP do container do jogo (ex.: `192.168.2.20`)
-- **Servico** — a unit systemd (ex.: `dragonwilds.service`)
-- **Usuario/porta SSH** — normalmente `root` e `22`
-- **Pasta de configuracao** (opcional) — onde a tela **Arquivos** abre por padrao
-  (ex.: `/opt/game/Pal/Saved/Config/LinuxServer`)
-- **Arquivos de configuracao** (opcional, um por linha) — o arquivo que voce edita de
-  verdade (ex.: `/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini`). E ele que
-  a tela **Config** abre como formulario, campo a campo
-- **Porta de consulta** (opcional) — porta de query Steam/A2S para contar os jogadores
-  online (Palworld: `27015`)
+- **Host**: IP of the game container (e.g. `10.20.1.20`).
+- **Service**: the systemd unit (e.g. `dragonwilds.service`).
+- **SSH user/port**: usually `root` and `22`.
+- **Config folder** (optional): where the **Files** screen opens by default (e.g.
+  `/opt/game/Pal/Saved/Config/LinuxServer`).
+- **Config files** (optional, one per line): the file you actually edit (e.g.
+  `/opt/game/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini`). The **Config** screen opens
+  it as a form, field by field.
+- **Query port** (optional): Steam/A2S query port to count online players (Palworld: `27015`).
 
-Start, stop, restart, update, terminal e editor rodam a partir dai. Acoes demoradas
-(update) viram um job com a saida atualizando ao vivo na tela.
+Start, stop, restart, update, terminal and editor work from there. Long actions (update) become
+a job whose output updates live on screen.
 
-### Jogadores conectados
+### Connected players
 
-Ha quatro formas, e a tela **Configurar contagem** (botao no card "Jogadores") descobre
-qual serve para cada jogo.
+There are four sources, and the **Configure counting** screen (button on the "Players" card)
+finds which one works for each game.
 
-**1. Consulta direta (A2S da Steam)** — a mesma consulta que o navegador de servidores
-do jogo faz: UDP do painel para a porta de query. Nao passa por SSH, nao precisa de
-senha nem RCON, e nao exige nada instalado no container. Palworld responde na
-`27015/udp`.
+**1. Direct query (Steam A2S).** The same query the game's server browser makes: UDP from the
+panel to the query port. It does not go through SSH, needs no password or RCON, and needs
+nothing installed in the container. Palworld answers on `27015/udp`.
 
-O assistente **descobre as portas sozinho, e descobre tambem quem as abriu**. Ele le
-`/proc/net/{udp,udp6,tcp,tcp6}` pelo SSH (porta + inode do socket) e cruza com os
-descritores abertos de cada processo em `/proc/PID/fd` — o mesmo caminho que o `ss -p`
-faz, mas sem depender de `ss`, `netstat` ou `lsof` estarem instalados. Cada porta aparece
-na tela com o processo dono, em um de tres estados:
+The wizard **discovers the ports by itself, and also who opened them**. It reads
+`/proc/net/{udp,udp6,tcp,tcp6}` over SSH (port + socket inode) and matches them with each
+process's open descriptors in `/proc/PID/fd`, the same path `ss -p` takes, without depending on
+`ss`, `netstat` or `lsof` being installed. Each port appears with its owner process, in one of
+these states:
 
-| Estado | O que significa |
-|--------|-----------------|
-| `PalServer-Linu (pid 40)` | socket aberto e processo dono identificado — e essa que interessa |
-| `sshd (pid 1) — infra` | processo que sempre abre porta e nunca e o jogo; vai para o fim da fila |
-| `aberta, sem processo dono neste container` | o socket existe mas nenhum processo daqui o abriu (o resolvedor DNS do Docker, por exemplo) |
-| `nao estava aberta (chute)` | nao foi detectada: veio do cadastro ou da lista de portas conhecidas |
+| State | Meaning |
+|-------|---------|
+| `PalServer-Linu (pid 40)` | open socket with an identified owner process; this is the interesting one |
+| `sshd (pid 1) - infra` | a process that always opens ports and is never the game; goes to the end of the list |
+| `open, no owner process in this container` | the socket exists but no process here opened it (Docker's DNS resolver, for example) |
+| `was not open (guess)` | not detected: it came from the registration or the list of known ports |
 
-As portas com dono real sao testadas primeiro. A lista de chutes (`27015`, `8212`,
-`7777`...) entra so no fim, como rede de seguranca para quando o servidor esta **parado**
-— nessa hora nao ha socket nenhum para detectar. Se alguma responder, um clique em
-"Usar esta" ja liga a contagem.
+Ports with a real owner are tested first. The list of guesses (`27015`, `8212`, `7777`...)
+comes only at the end, as a safety net for when the server is **stopped** and there is no
+socket to detect. If one answers, a click on "Use this" turns counting on.
 
-**2. API HTTP do jogo** — a melhor das tres quando existe, porque devolve os **nomes** e
-nao so a contagem. Cada vez mais jogo troca a query UDP por uma API de administracao em
-TCP: Palworld (REST em `8212/tcp`), Satisfactory (HTTPS em `7787/tcp`), Minecraft com
-plugin, Factorio.
+**2. The game's HTTP API.** The best source when it exists, because it returns **names** and
+not just the count. More and more games replace the UDP query with a TCP admin API: Palworld
+(REST on `8212/tcp`), Satisfactory (HTTPS on `7787/tcp`), Minecraft with a plugin, Factorio.
 
-Nada aqui e codificado por jogo. Voce aponta uma URL e o painel:
+Nothing here is game-specific. You point to a URL and the panel:
 
-- chama **de dentro do container, pelo mesmo SSH** do resto do painel. Essas APIs sao
-  feitas para escutar em `127.0.0.1` (a documentacao do Palworld pede explicitamente
-  para nao expor a porta na internet) e assim continuam fechadas para fora — nada de
-  abrir porta no roteador;
-- aceita `GET` ou `POST` (basta preencher o corpo JSON), com autenticacao
-  `basic:usuario:senha`, `bearer:token` ou um cabecalho `Authorization` pronto;
-- **acha a lista de jogadores sozinho** na resposta, procurando chaves conhecidas
-  (`players`, `onlinePlayers`, `name`, `playerName`, `currentplayernum`, `numPlayers`,
-  `maxPlayers`...). Quando ele erra, voce aponta o caminho a mao
-  (`data.serverGameState.numConnectedPlayers`) — a resposta crua aparece na tela para
-  voce ver o nome certo do campo.
+- calls it **from inside the container, over the same SSH** as the rest of the panel. These
+  APIs are meant to listen on `127.0.0.1` (Palworld's docs explicitly ask you not to expose the
+  port to the internet) and so they stay closed to the outside; no router port is opened;
+- accepts `GET` or `POST` (just fill the JSON body), with authentication
+  `basic:user:password`, `bearer:token` or a ready `Authorization` header;
+- **finds the player list by itself** in the response, looking for known keys (`players`,
+  `onlinePlayers`, `name`, `playerName`, `currentplayernum`, `numPlayers`, `maxPlayers`...).
+  When it gets it wrong, you point to the path by hand
+  (`data.serverGameState.numConnectedPlayers`); the raw response is shown so you can see the
+  right field name.
 
-O assistente lista as portas TCP em `LISTEN` dentro do container e bate nelas por HTTP
-(e, se nao houver resposta, por HTTPS). Um `401` ja e um bom achado: existe API ali, ela
-so quer senha.
+The wizard lists the TCP ports in `LISTEN` inside the container and probes them over HTTP (and,
+without an answer, HTTPS). A `401` is already a good finding: there is an API, it just wants a
+password.
 
-No Palworld, ligue a API no `PalWorldSettings.ini` (`RESTAPIEnabled=True`,
-`RESTAPIPort=8212`) e use `http://127.0.0.1:8212/v1/api/players` com
-`basic:admin:` + a `AdminPassword`.
+On Palworld, enable the API in `PalWorldSettings.ini` (`RESTAPIEnabled=True`,
+`RESTAPIPort=8212`) and use `http://127.0.0.1:8212/v1/api/players` with `basic:admin:` + the
+`AdminPassword`.
 
-> A senha da API fica guardada em texto puro no `panel.db` (ela precisa ir no cabecalho
-> de cada chamada). O banco ja guarda o caminho da chave SSH que da root nos containers,
-> entao trate o arquivo como segredo de qualquer forma.
+> The API password is stored in plain text in `panel.db` (it has to go in the header of every
+> call). The database already stores the path of the SSH key that gives root on the
+> containers, so treat the file as a secret anyway.
 
-**3. Pelo log do servidor** — para jogo que nao publica nada na rede (Dragonwilds, que
-usa EOS e nao a Steam; Satisfactory), e para dar os NOMES a quem conta por A2S sem lista
-(DayZ, Palworld, Enshrouded:
-ver "As fontes se combinam" acima). Num jogo Unreal com `-log` no `START_ARGS`, o log vai
-para o stdout e o journald guarda — da para contar reproduzindo as entradas e saidas desde
-o ultimo start do servico.
+**3. The server log.** For games that publish nothing on the network (Dragonwilds, which uses
+EOS and not Steam; Satisfactory), and to give NAMES to games that count through A2S without a
+list (DayZ, Palworld, Enshrouded; see "Sources combine" below). On an Unreal game with `-log`
+in `START_ARGS`, the log goes to stdout and journald keeps it; the panel counts by replaying
+joins and leaves since the last service start.
 
-**4. Conexoes ativas na porta do jogo** — para jogo sem consulta nenhuma. O firewall do CT
-(`ct-firewall.sh`, `FW_PRESENCE_PORTS`, que o instalador preenche com o `GAME_PORT`) anota
-num conjunto o `IP:porta` de quem conversa com a porta do jogo, por 20 s depois do ultimo
-pacote. So entra conversa que o servidor ja respondeu, entao scanner nao vira jogador, e
-dois jogadores da mesma casa contam como dois (portas de origem diferentes). O numero nao
-depende do log; os nomes, sim. CT criado antes disso: reaplique o firewall
-(`deploy/firewall/apply-firewall.ps1`) - ate la a tela avisa e a contagem cai para o log.
-Nao vale quando a consulta divide a porta do jogo (Enshrouded): ali todo navegador de
-servidores contaria como jogador, e esse jogo ja tem A2S.
+**4. Active connections on the game port.** For games with no query at all. The CT firewall
+(`ct-firewall.sh`, `FW_PRESENCE_PORTS`, which the installer fills with `GAME_PORT`) records in
+a set the `IP:port` of whoever talks to the game port, for 20 s after the last packet. Only
+conversations the server already answered count, so a scanner does not become a player, and
+two players from the same house count as two (different source ports). The number does not
+depend on the log; the names do. For a CT created before this: reapply the firewall
+(`deploy/firewall/apply-firewall.ps1`); until then the screen warns and counting falls back to
+the log. It does not apply when the query shares the game port (Enshrouded): every server
+browser there would count as a player, and that game has A2S anyway.
 
-O firewall do CT de jogo aceita UDP **do painel** em qualquer porta (`ct-firewall.sh`): e
-o que deixa a consulta e o assistente chegarem a uma porta de query que o `.env` nao
-declarou. Antes, so as do `GAME_PORTS` passavam, e um jogo com A2S parecia mudo.
+The game CT firewall accepts UDP **from the panel** on any port (`ct-firewall.sh`); that is what
+lets the query and the wizard reach a query port the `.env` did not declare.
 
-Como nenhum jogo escreve o log igual ao outro, os padroes sao configuraveis e o
-assistente ajuda a achar: ele mostra as linhas do log que parecem de entrada/saida, deixa
-testar dois regex e ver o resultado antes de salvar.
+Since no two games write the log the same way, the patterns are configurable and the wizard
+helps find them: it shows log lines that look like joins/leaves, lets you test two regexes and
+see the result before saving.
 
-- Com `(?P<name>...)` nos dois padroes, o painel lista **quem** esta online e desde
-  quando. Sem o nome na saida (comum na Unreal, que so avisa que a conexao caiu), ele
-  soma entradas e subtrai saidas e mostra so a contagem.
-- So conta o que aconteceu depois do ultimo start do servico, entao jogador de uma
-  execucao anterior nao fica preso na conta.
+- With `(?P<name>...)` in both patterns, the panel lists **who** is online and since when.
+  Without the name on the leave line (common in Unreal, which only says the connection
+  dropped), it adds joins, subtracts leaves and shows only the count.
+- It only counts what happened after the last service start, so a player from a previous run
+  does not stay stuck in the count.
 
-Nas duas formas:
+In every case:
 
-- **Tela do servidor**: contagem `3/32 online` e a tabela de jogadores. Atualiza a cada 10s.
-- **Lista de servidores**: selo com a contagem em cada card.
-- Servidor fora do ar ou porta errada nao trava a tela: a consulta desiste em
-  `ADMIN_QUERY_TIMEOUT` segundos (padrao 3) e a pagina abre com o aviso. O resultado
-  fica em cache por `ADMIN_PLAYERS_TTL` segundos (padrao 5).
+- **Server screen**: the `3/32 online` count and the players table. Refreshes every 10s.
+- **Server list**: a badge with the count on each card.
+- A server that is down or a wrong port does not hang the screen: the query gives up after
+  `ADMIN_QUERY_TIMEOUT` seconds (default 3) and the page opens with a notice. The result is
+  cached for `ADMIN_PLAYERS_TTL` seconds (default 5).
 
-### Expulsar, banir e avisar
+**How the panel decides what to show**, from the `(?P<name>...)` groups in the patterns:
 
-Quando a contagem de jogadores esta ligada **pela API do jogo**, a lista de quem esta
-online ganha os botoes **Expulsar** e **Banir**, e abaixo dela um campo para **avisar todo
-mundo**. Sai tudo pela mesma API que ja conta os jogadores — outra rota, mesma senha, e o
-mesmo token com prazo (que o painel renova sozinho).
+| Where the name is | What appears |
+|-------------------|--------------|
+| join **and** leave | exactly who is online |
+| join only | exact count + the last ones to join, marked as a guess |
+| neither | count only |
 
-O painel reconhece a API pela URL de contagem ja cadastrada. Dos jogos que este repo
-instala, **so o Palworld** publica essas acoes (o Satisfactory nao tem kick na API dele).
-Jogo novo entra como mais uma entrada no catalogo `API_ACOES` do `app.py`, sem tocar no
-resto. Sem API reconhecida, os botoes simplesmente nao aparecem.
+**Sources combine.** The one chosen at registration (`player_source`) counts; the others that
+have fields filled in come after it: if the count came WITHOUT names (A2S on Unreal games,
+DayZ), the names come from the next source that has them (the API, then the log), trimmed to
+the last ones to join when the log remembers more people than the query. If the chosen source
+does not answer, the next one counts instead and the screen says why. `nenhuma` (none) turns
+all of them off.
 
-- **Kick e ban precisam do identificador** que a API publica (`userId` no Palworld), nunca
-  do nome: nome muda e repete. Jogador que a API listar sem identificador aparece com
-  "sem identificador" no lugar dos botoes.
-- A mensagem (ate 200 caracteres) e a que o jogo mostra a quem foi expulso, ou a todos no
-  caso do aviso.
-- Estas rotas respondem **200 com o corpo vazio** — o painel aceita isso como sucesso em
-  vez de reclamar que "a resposta nao e JSON".
-- Cada acao fica no [Historico](#historico) com quem fez, quem levou e a mensagem.
-- **Papel**: e de **operador**. Moderar quem esta jogando nao da acesso ao container, e
-  quem ja pode reiniciar o servidor pode tirar alguem de dentro dele.
+#### Tested values per game
 
-### Medidores de recursos
+These values live in the panel database, not in the repo; if the panel is recreated, this is
+where they come back from. All were validated against the real log/API of each server.
 
-Cada servidor mostra quanto do container esta em uso, lido por SSH direto de `/proc` e
-dos cgroups &mdash; sem agente, sem instalar nada no container do jogo.
+| Game | Source | Names? |
+|------|--------|--------|
+| Palworld | A2S `27015` + names from the log; or REST API `http://127.0.0.1:8212/v1/api/players`, auth `basic:admin:<AdminPassword>`, list path `players` | **yes** |
+| Dragonwilds | active connections on `7777` + names from the log (regex below; the game has no A2S) | **yes** |
+| DayZ | A2S `27016` + names from the log **file**: `/opt/game/profiles/*.ADM` (regex below) | **yes** |
+| Satisfactory | service log (regex below) | **approximate** |
+| Icarus | A2S on the query port | count only |
+| Enshrouded | A2S `15637` + names from the log | **yes** |
 
-- **Tela do servidor**: barras de CPU, memoria, swap e disco (por ponto de montagem),
-  mais taxa de rede (rx/tx), load average, uptime e o **processo do jogo** (PID, RAM
-  residente e CPU dele, separado do resto do container). Atualiza a cada 5s.
-- **Lista de servidores**: tres barras compactas (CPU, RAM, disco) por card, carregadas
-  depois da pagina para nao atrasar a abertura. Atualiza a cada 10s.
-- A barra fica amarela em 80% e vermelha em 92%.
-- A medicao respeita os limites do container: usa `cpu.max` e `memory.max` do cgroup
-  quando existem (o `cpulimit`/`memory` do LXC), entao um CT limitado a 2 nucleos chega
-  a 100% com 2 nucleos ocupados &mdash; e nao a 16% dos 12 do host. Sem limite definido,
-  cai para `/proc` (com lxcfs, que o Proxmox usa por padrao, os valores ja sao por CT).
-- CPU e rede sao medidos por duas amostras espacadas em 0,5s dentro do container, numa
-  unica ida de SSH. O resultado fica em cache por `ADMIN_METRICS_TTL` segundos (padrao 4)
-  para varias abas abertas nao virarem varias conexoes por segundo.
+The deploy already fills these in (`JOIN_RE`, `LEAVE_RE`, `LOG_PATH` in `games/<game>.env`);
+the panel wizard is for adjustments.
 
-### Graficos de uso
+**Dragonwilds**, log patterns (they give the names):
 
-Os medidores mostram o **agora**; a aba **Graficos** mostra o que aconteceu. O painel
-guarda uma amostra de CPU, memoria e jogadores a cada **5 minutos**
-(`GAMEPANEL_SAMPLE_EVERY`) enquanto esta no ar, e a tela desenha as ultimas **6h / 24h /
-7 dias**. E o que responde "por que travou ontem a noite" depois que a noite passou.
-
-- **Sao dois graficos, nao um.** Porcentagem e quantidade de gente nao dividem eixo:
-  sobrepor as duas escalas num plot so inventaria uma relacao que os dados nao tem. CPU e
-  memoria ficam juntos (as duas sao %), jogadores vai separado.
-- **Buraco continua buraco.** Servidor fora do ar nao vira amostra (zero seria mentira:
-  nao foi "usou 0% de CPU"), e a linha **parte** em vez de atravessar reto. Uma leitura
-  solta entre dois buracos vira um ponto, para nao sumir.
-- **O SVG vem pronto do servidor.** Sem JavaScript a tela continua inteira: cada linha
-  tem o valor na ponta e ha a tabela com os mesmos numeros. O JS so acrescenta a mira e
-  o balaozinho — e some com o rotulo de ponta quando as duas linhas se encontram no canto
-  direito, porque dois rotulos empilhados se desgrudam das linhas e viram ruido.
-- **Retencao propria**: as amostras saem depois de **7 dias**
-  (`GAMEPANEL_SAMPLES_KEEP_DAYS`), na mesma limpeza de hora em hora do historico.
-
-O custo esta na coleta: cada amostra e uma leitura de medidores, a chamada mais cara do
-painel (o script remoto dorme 0,5s para tirar duas amostras de CPU). Por isso o intervalo
-e de 5 minutos e nao de um — 288 pontos por dia ja sao mais do que o grafico mostra.
-
-### Terminal interativo
-
-A aba **Terminal** abre uma sessao SSH de verdade dentro do container, com TTY: `htop`,
-`nano`, `vi`, `tail -f` e prompts de confirmacao funcionam como num terminal local.
-
-- Emulador proprio (`src/gamepanel/static/js/terminal.js`), sem dependencia externa: cores 16/256/RGB,
-  tela alternativa, regiao de rolagem e as teclas especiais (setas, F1-F12, Ctrl+letra).
-- Transporte por HTTP (long-poll para a saida, POST para as teclas) — o painel roda em
-  gunicorn sync, que nao suporta WebSocket.
-- Botoes de Ctrl+C / Ctrl+D / Ctrl+Z, tela cheia e `Ctrl+V` para colar. Com texto
-  selecionado, `Ctrl+C` copia em vez de interromper.
-- Limites: `ADMIN_TERM_MAX` sessoes simultaneas (padrao 4) e `ADMIN_TERM_IDLE` segundos
-  sem uso ate a sessao ser derrubada (padrao 900).
-- Cada sessao aberta fica registrada no historico do servidor (quem abriu e quando).
-
-### Edicao rapida de configuracao (tela Config)
-
-Mudar o nome do servidor ou o numero maximo de jogadores nao devia significar procurar o
-arquivo, achar a linha certa e nao errar a virgula. **Informe qual e o arquivo de
-configuracao do jogo e a tela `Config` o abre como formulario**: um campo por chave, com
-o valor atual preenchido.
-
-- O arquivo vem do cadastro do servidor, campo **Arquivos de configuracao** (um caminho
-  por linha, ate 8). No deploy em Docker ele ja vem preenchido a partir de
-  `CONFIG_FILES` do `games/<jogo>.env`.
-- Nao sabe o caminho? A tela chega com **Procurar**: ela varre a pasta do jogo e lista os
-  candidatos com um botao *fixar aqui*. Na tela **Arquivos**, o botao *Editar campo a
-  campo* fixa o arquivo aberto. Nos dois casos o arquivo passa a abrir direto dali em diante.
-- **Adicionar configuracao** cria uma chave que ainda nao existe no arquivo, no bloco
-  escolhido — sem precisar saber a sintaxe do formato.
-- Campo de filtro no topo: o `PalWorldSettings.ini` tem ~50 chaves numa unica linha.
-- Marque **reiniciar o servidor depois de salvar**: quase todo jogo so le a configuracao
-  ao iniciar.
-
-Formatos entendidos (detectados pelo nome + conteudo):
-
-| Formato | Exemplo | Detalhe |
-|---------|---------|---------|
-| `.ini`/`.conf`/`.properties` | Satisfactory, Dragonwilds | secoes `[...]`, comentarios preservados |
-| `.ini` da Unreal | Palworld | as ~50 chaves de `OptionSettings=(A=1,B=2,...)` viram campos individuais |
-| `.json` | Enshrouded | objetos aninhados viram secoes (`userGroups.0.password`); tipo do valor preservado |
-| `serverDZ.cfg` | DayZ | `chave = valor;`, blocos `class X { }` e o comentario `//` da linha vira a ajuda do campo |
-
-O que ele **nao** faz: reescrever o arquivo inteiro. A gravacao aplica **so os campos que
-voce alterou**, procurando cada um pela chave (nao pela linha) num arquivo relido na hora
-de salvar — comentarios, ordem, formatacao e chaves desconhecidas ficam como estavam. Como
-no editor de texto, sai um `.bak` antes de qualquer gravacao e o dono/permissao do arquivo
-sao preservados. Se o formato nao for reconhecido, a tela manda voce para o editor de texto.
-
-O motor fica em `src/gamepanel/games/config_format.py`, isolado do resto do painel (nao fala SSH nem HTTP),
-com testes proprios:
-
-```bash
-docker compose exec -w /workspace panel python3 -m pytest tests/gamepanel/test_config_format.py -q
+```
+join:  PlayerChar entered world \[Account\[[^\]]*\] Character Name\[(?P<name>[^\]]+)\]
+leave: Player Removed from session \[[^\]]*\]-\[(?P<name>[^\]]+)\]
 ```
 
-### Editor de configuracoes
+**DayZ**: the names do **not** come from the A2S query (the game answers the count and returns
+blank names). They are in the `.ADM` admin log, which `-adminlog` in our `START_ARGS` turns on.
+Since the game opens one `.ADM` per session, the path has a `*` and the panel always takes the
+newest:
 
-A aba **Arquivos** navega pelo sistema de arquivos do container e edita os `.ini`/`.cfg`
-do jogo direto no navegador — e a saida para tudo que a tela **Config** nao cobre
-(formato exotico, arquivo binario, log grande, download).
+```
+file:  /opt/game/profiles/*.ADM
+join:  Player "(?P<name>[^"]+)" is connected
+leave: Player "(?P<name>[^"]+)"\(id=[^)]*\) has been disconnected
+```
 
-- **Procurar arquivos de config** varre a pasta do jogo (ate 5 niveis) atras de `.ini`,
-  `.cfg`, `.conf`, `.json`, `.yaml`, `.properties` e `.txt`.
-- Ao salvar, o painel guarda `<arquivo>.<data>.bak` na mesma pasta e grava **por cima do
-  arquivo existente**, preservando dono e permissao (o jogo roda como `steam`, nao root).
-- `Ctrl+S` salva; sair com alteracoes pendentes pede confirmacao. Da para baixar o
-  arquivo antes de mexer.
-- **Download**: todo arquivo tem um link `baixar` na lista — inclusive binarios (saves,
-  `.pak`, `.so`) e arquivos grandes demais para o editor. O download vai em streaming
-  (`cat` pelo SSH lido em blocos), entao um save de varios GB desce sem o painel
-  guardar nada em memoria. Teto em `ADMIN_FILE_DOWNLOAD_MAX_MB` (padrao 2048; `0` = sem
-  limite) e cada download fica no historico do servidor.
-- Edicao ate `ADMIN_FILE_MAX_KB` (padrao 4096 KB). Acima disso o arquivo abre em
-  **somente leitura** mostrando os ultimos `ADMIN_FILE_PREVIEW_KB` (padrao 256 KB) —
-  util para espiar um log grande — com o botao de baixar ao lado. Salvar fica bloqueado
-  ai (inclusive no servidor), senao gravar o preview truncaria o arquivo.
-- Binarios nao sao editaveis (so baixaveis): o painel detecta pelo byte nulo.
-- **Apagar**: cada linha da lista tem um `apagar` (e o arquivo aberto tem o botao
-  **Apagar arquivo**, que vale ate para binario e para o modo somente leitura). Pede
-  confirmacao com o caminho na tela e **nao tem volta**: aqui nao ha `.bak` nem lixeira —
-  seria inutil num save de varios GB. So apaga arquivo, link ou **pasta vazia** (`rmdir`):
-  a tela nao faz remocao recursiva, e as raizes de `ADMIN_FILE_ROOTS` sao intocaveis.
-  Cada exclusao fica no historico do servidor, e se o arquivo estava fixado na tela
-  **Config** ele sai do cadastro junto.
-- **Enviar arquivo**: acima da lista ha um campo de upload que grava na pasta aberta no
-  momento — e como entra um mod, um `.ini` pronto ou um save vindo de outro servidor. O
-  arquivo sobe em pedacos e vai direto para o container, sem passar inteiro pela memoria
-  do painel; se ja existir um com o mesmo nome, ele e substituido e uma copia `.bak` fica
-  ao lado. O caminho que o navegador manda no nome e descartado (so a ultima parte vale),
-  entao `../../etc/cron.d/x` vira `x` na pasta aberta.
-  Limite padrao de **512 MB** (`GAMEPANEL_UPLOAD_MAX`). Antes de aumentar, lembre que o
-  corpo do envio e guardado num arquivo temporario **do container do painel** antes de a
-  aplicacao ver um byte — o teto precisa caber no disco de la, nao no do jogo.
-- `ADMIN_FILE_ROOTS` restringe onde o navegador de arquivos pode entrar (padrao: tudo).
-- Pare o servidor antes de editar o que ele reescreve ao sair — varios jogos sobrescrevem
-  o `.ini` no shutdown.
+**Satisfactory**: the API only returns the count (`numConnectedPlayers`); there is no player
+list endpoint. The log gives names, but only **approximately**: the join line has the name and
+the leave line does **not**, so the panel gets *how many* are online right and shows the *last
+to join* as a guess, saying so on screen. If the leave line ever carries the name, adding
+`(?P<name>...)` to it makes the list exact.
+
+```
+join:  LogNet: Join succeeded: (?P<name>.+)
+leave: LogNet: UNetConnection::Close:
+```
+
+**Icarus and Enshrouded**: count only for now. Icarus answers `A2S_INFO` but not `A2S_PLAYER`
+(the panel tries both on every query); Enshrouded's log announces connections without naming
+anyone. If your server's log has the name, the wizard (`Configure counting > From the log`)
+shows the container's real lines and you can build the pattern right there, including pointing
+to a file, as with DayZ.
+
+**Palworld**: log alternative, in case REST goes down:
+
+```
+join:  \[LOG\] (?P<name>.+?) joined the server\.
+leave: \[LOG\] (?P<name>.+?) left the server\.
+```
+
+Notes that save time later:
+
+- Satisfactory's token comes from `PasswordLogin` with the game's admin password and **does not
+  expire** (the payload is just `{"pl":"Administrator"}`). It is full admin on the API; treat it
+  as a password. If it ever answers 401/`insufficient_scope`, generate another the same way.
+- Palworld's REST only starts with the keys **inside** `OptionSettings=(...)`, on a single line,
+  under `[/Script/Pal.PalGameWorldSettings]`. A loose key in the file is silently ignored and
+  the server runs with defaults without a warning.
+- Log counting reads from the **service start** onward (`journalctl --since
+  ActiveEnterTimestamp`) and matches only the first 500 characters of each line. Restarting the
+  server resets the count until someone joins again; that is a limitation of the log source, not
+  a panel bug.
+
+### Kick, ban and broadcast
+
+When player counting is on **through the game's API**, the online list gets **Kick** and
+**Ban** buttons, and below it a field to **message everyone**. Everything goes through the same
+API that counts the players: another route, the same password, and the same expiring token
+(which the panel renews by itself).
+
+The panel recognizes the API by the counting URL already registered. Of the games this repo
+installs, **only Palworld** publishes these actions (Satisfactory has no kick in its API). A new
+game is one more entry in the `API_ACTIONS` catalog, without touching the rest. Without a
+recognized API, the buttons simply do not appear.
+
+- **Kick and ban need the identifier** the API publishes (`userId` on Palworld), never the name:
+  names change and repeat. A player listed without an identifier shows "no identifier" instead
+  of the buttons.
+- The message (up to 200 characters) is what the game shows to whoever was kicked, or to
+  everyone for a broadcast.
+- These routes answer **200 with an empty body**; the panel accepts that as success instead of
+  complaining that "the response is not JSON".
+- Each action goes to [History](#history) with who did it, who was affected and the message.
+- **Role**: **operator**. Moderating who is playing gives no access to the container, and
+  whoever can already restart the server can take someone out of it.
+
+### Resource meters
+
+Each server shows how much of its container is in use, read over SSH straight from `/proc` and
+the cgroups, with no agent and nothing installed in the game container.
+
+- **Server screen**: bars for CPU, memory, swap and disk (per mount point), plus network rate
+  (rx/tx), load average, uptime and the **game process** (PID, resident RAM and its CPU,
+  separate from the rest of the container). Refreshes every 5s.
+- **Server list**: three compact bars (CPU, RAM, disk) per card, loaded after the page so they
+  do not delay it. Refreshes every 10s.
+- A bar turns yellow at 80% and red at 92%.
+- Measurement respects the container limits: it uses the cgroup's `cpu.max` and `memory.max`
+  when present (LXC's `cpulimit`/`memory`), so a CT limited to 2 cores reaches 100% with 2 busy
+  cores, not 16% of the host's 12. Without a limit it falls back to `/proc` (with lxcfs, which
+  Proxmox uses by default, values are already per CT).
+- CPU and network are measured from two samples 0.5s apart inside the container, in a single
+  SSH round trip. The result is cached for `ADMIN_METRICS_TTL` seconds (default 4) so several
+  open tabs do not become several connections per second.
+
+### Usage charts
+
+The meters show **now**; the **Charts** tab shows what happened. The panel stores a CPU,
+memory and players sample every **5 minutes** (`GAMEPANEL_SAMPLE_EVERY`) while it is up, and the
+screen draws the last **6h / 24h / 7 days**. It answers "why did it lag last night" after the
+night is over.
+
+- **Two charts, not one.** Percentages and head counts do not share an axis: overlaying both
+  scales would invent a relationship the data does not have. CPU and memory go together (both
+  %), players separately.
+- **A gap stays a gap.** A server that is down produces no sample (zero would be a lie: it did
+  not "use 0% CPU"), and the line **breaks** instead of crossing straight. A single reading
+  between two gaps becomes a dot so it does not vanish.
+- **The SVG comes ready from the server.** Without JavaScript the screen is complete: each line
+  has its value at the end and there is a table with the same numbers. JS only adds the
+  crosshair and tooltip.
+- **Own retention**: samples are removed after **7 days** (`GAMEPANEL_SAMPLES_KEEP_DAYS`), in
+  the same hourly cleanup as the history.
+
+The cost is in collection: each sample is a meter reading, the most expensive call in the panel
+(the remote script sleeps 0.5s to take two CPU samples). That is why the interval is 5 minutes
+and not one; 288 points a day are already more than the chart shows.
+
+### Interactive terminal
+
+The **Terminal** tab opens a real SSH session inside the container, with a TTY: `htop`,
+`nano`, `vi`, `tail -f` and confirmation prompts work as in a local terminal.
+
+- Custom emulator (`src/gamepanel/static/js/terminal.js`), no external dependency: 16/256/RGB
+  colors, alternate screen, scroll region and special keys (arrows, F1-F12, Ctrl+letter).
+- Transport over HTTP (long-poll for output, POST for keys); the panel runs on sync gunicorn,
+  which does not support WebSocket.
+- Ctrl+C / Ctrl+D / Ctrl+Z buttons, full screen and `Ctrl+V` to paste. With text selected,
+  `Ctrl+C` copies instead of interrupting.
+- Limits: `ADMIN_TERM_MAX` concurrent sessions (default 4) and `ADMIN_TERM_IDLE` idle seconds
+  before the session is dropped (default 900).
+- Each opened session is recorded in the server history (who opened it and when).
+
+**One-shot command.** The Terminal screen has a second mode, **One-shot command**: you type a
+command, it runs as `root` **inside that game container**, and the output stays on screen with
+the history recorded (who ran it, what, exit code). Useful for a single command without opening
+a session.
+
+- No TTY: for `vim`/`htop` and prompts, use the **interactive session**.
+- Ctrl+Enter runs; the up/down arrows walk the history.
+- Time limit per command: 600s (`GAMEPANEL_SHELL_TIMEOUT`).
+- Without a PTY (panel running outside Linux), the "Terminal" destination opens directly in
+  this mode, still as a single menu entry.
+
+Console and terminal are remote command execution exposed on a web page: whoever logs into the
+panel has root on the game containers. If you do not want that capability, turn it off with
+`ADMIN_ALLOW_SHELL=0` in `.env` (both screens disappear and the routes answer 403); the file
+editor has its own switch, `ADMIN_ALLOW_FILES=0`.
+
+### Quick config editing (Config screen)
+
+Changing the server name or the max player count should not mean hunting for the file, finding
+the right line and not missing a comma. **Tell the panel which file is the game config and the
+`Config` screen opens it as a form**: one field per key, with the current value filled in.
+
+- The file comes from the server registration, field **Config files** (one path per line, up
+  to 8). In the Docker deploy it is already filled from `CONFIG_FILES` in `games/<game>.env`.
+- Do not know the path? The screen has **Search**: it scans the game folder and lists the
+  candidates with a *pin here* button. On the **Files** screen, the *Edit field by field*
+  button pins the open file. Either way the file opens directly from then on.
+- **Add setting** creates a key that does not exist yet in the file, in the chosen block,
+  without needing to know the format's syntax.
+- Filter field at the top: `PalWorldSettings.ini` has ~50 keys on a single line.
+- Tick **restart the server after saving**: almost every game only reads its config on start.
+
+Understood formats (detected by name + content):
+
+| Format | Example | Detail |
+|--------|---------|--------|
+| `.ini`/`.conf`/`.properties` | Satisfactory, Dragonwilds | `[...]` sections, comments preserved |
+| Unreal `.ini` | Palworld | the ~50 keys of `OptionSettings=(A=1,B=2,...)` become individual fields |
+| `.json` | Enshrouded | nested objects become sections (`userGroups.0.password`); value type preserved |
+| `serverDZ.cfg` | DayZ | `key = value;`, `class X { }` blocks, and the line's `//` comment becomes the field help |
+
+What it does **not** do: rewrite the whole file. Saving applies **only the fields you changed**,
+looking each one up by key (not by line) in a file re-read at save time; comments, order,
+formatting and unknown keys stay as they were. As in the text editor, a `.bak` is written before
+any save and the file's owner/permissions are preserved. If the format is not recognized, the
+screen sends you to the text editor.
+
+Game-specific screens are one file each in `src/gamepanel/games/adapters/`; a game without an
+adapter falls back to the generic editor. The engine lives in
+`src/gamepanel/games/config_format.py`, isolated from the rest of the panel (no SSH, no HTTP),
+with its own tests.
+
+### File manager
+
+The **Files** tab browses the container's file system and edits the game's `.ini`/`.cfg`
+directly in the browser; it is the way out for anything the **Config** screen does not cover
+(exotic format, binary file, big log, download).
+
+- **Search config files** scans the game folder (up to 5 levels) for `.ini`, `.cfg`, `.conf`,
+  `.json`, `.yaml`, `.properties` and `.txt`.
+- On save, the panel keeps `<file>.<date>.bak` in the same folder and writes **over the existing
+  file**, preserving owner and permissions (the game runs as `steam`, not root).
+- `Ctrl+S` saves; leaving with pending changes asks for confirmation. You can download the file
+  before touching it.
+- **Download**: every file has a `download` link in the list, including binaries (saves, `.pak`,
+  `.so`) and files too big for the editor. Downloads are streamed (`cat` over SSH read in
+  chunks), so a multi-GB save comes down without the panel holding it in memory. Cap in
+  `ADMIN_FILE_DOWNLOAD_MAX_MB` (default 2048; `0` = no limit) and every download is recorded in
+  the server history.
+- Editing up to `ADMIN_FILE_MAX_KB` (default 4096 KB). Above that the file opens **read-only**
+  showing the last `ADMIN_FILE_PREVIEW_KB` (default 256 KB), handy to peek at a big log, with
+  the download button next to it. Saving is blocked there (on the server too), otherwise saving
+  the preview would truncate the file.
+- Binaries are not editable (download only): the panel detects them by the null byte.
+- **Delete**: each line has a `delete` (and the open file has a **Delete file** button, which
+  works even for binaries and read-only mode). It asks for confirmation with the path on screen
+  and **cannot be undone**: there is no `.bak` or trash here, which would be useless for a
+  multi-GB save. It only deletes a file, a link or an **empty folder** (`rmdir`): the screen
+  does no recursive removal, and the `ADMIN_FILE_ROOTS` roots are untouchable. Each deletion is
+  recorded in the server history, and if the file was pinned on the **Config** screen it leaves
+  the registration too.
+- **Upload**: above the list there is an upload field that writes into the open folder; that is
+  how a mod, a ready `.ini` or a save from another server gets in. The file goes up in chunks
+  straight into the container, without passing whole through the panel's memory; if one with the
+  same name exists, it is replaced and a `.bak` copy stays next to it. The path the browser sends
+  in the name is discarded (only the last part counts), so `../../etc/cron.d/x` becomes `x` in
+  the open folder. Default limit **512 MB** (`GAMEPANEL_UPLOAD_MAX`). Before raising it, remember
+  the request body is stored in a temporary file **in the panel container** before the
+  application sees a byte; the cap has to fit on that disk, not the game's.
+- `ADMIN_FILE_ROOTS` restricts where the file browser can go (comma-separated; default:
+  `/opt/game,/home/steam`, the game install and steam's home, where every config, save and mod
+  lives). Backup and config paths in the server form must be inside these roots too. To reach
+  anything else, list it explicitly (`/` turns the restriction off).
+- Stop the server before editing what it rewrites on exit; several games overwrite the `.ini`
+  on shutdown.
 
 ### Mods
 
-A tela **Mods** de cada servidor mostra o que ele carrega e recebe mod, do jeito que CADA
-jogo entende mod:
+Each server's **Mods** screen shows what it loads and accepts mods the way EACH game
+understands mods:
 
-- **Euro Truck Simulator 2**: o servidor nao carrega arquivo de mod - mapa, DLCs e mods vem
-  dentro do `server_packages.sii`/`.dat`, exportados do jogo (console, com o mapa carregado:
-  `export_server_packages`) com os mods ativos no perfil. A tela le esses pacotes e lista
-  mapa, quantidade de DLCs e cada mod (Workshop ou instalado a mao), com os links da Workshop
-  prontos para mandar aos jogadores. Cole a lista de mods combinada (links ou IDs, pode ser a
-  conversa do jeito que veio) e ela aponta os que ficaram de fora do pacote - o caso tipico e
-  um mod que nao estava ativo no perfil de quem exportou. O envio aceita so os dois pacotes.
-- **Palworld**: lista, envia e remove os `.pak` de `Pal/Content/Paks/~mods`.
-- **V Rising**: mods do **Thunderstore**, sobre o **BepInEx**. O primeiro botao instala o
-  BepInEx; depois e colar o link do mod (ou `autor/pacote`) e instalar - as dependencias vem
-  junto. Quem baixa e o proprio container do jogo, e cada instalacao vira uma tarefa com log.
-  A primeira subida depois do BepInEx demora varios minutos (ele gera o codigo do jogo) e pede
-  uns **10 GB de memoria** (medido: 9,4 GB). O V Rising curado ja nasce com 12 GB e com o
-  ajuste do Wine que o BepInEx precisa; num servidor criado antes disso, aumente a memoria do
-  CT antes de instalar (`pct set <ctid> --memory 12288` no Proxmox), senao ele cai por falta
-  de memoria em laco - a tela avisa.
-- **RuneScape: Dragonwilds**: os `.pak` de mod (com o `.utoc` e o `.ucas` de mesmo nome, que a
-  Unreal 5 exige - mande os tres juntos) vao em `RSDragonwilds/Content/Paks/~mods`.
-- **Enshrouded**: botao **Instalar o Shroudtopia** (o carregador). O container baixa do
-  GitHub a versao mais recente (ou a que voce escolher), poe o `winmm.dll` e o `shroudtopia.dll` ao lado do `.exe` e liga o
-  `winmm=n,b` do Wine; os mods de exemplo do pacote oficial NAO entram (trazem trapaca ligada).
-  Os mods sao `.dll` (Nexus) enviados pela tela para `/opt/game/mods`, e as opcoes de cada um
-  ficam no `shroudtopia.json`. Desligar tira o ajuste do Wine. A tela mostra o fim do
-  `shroudtopia.log`: mod feito para outra versao do jogo aparece ali como `not found`.
-- **Satisfactory**, **Valheim** e **Rust** tem instalador, mas **ainda nao testado num servidor de
-  verdade** (a tela avisa; faca backup antes):
-  - Satisfactory: **SML** e mods do ficsit.app pela referencia (`RefinedPower`) ou pelo link da
-    pagina, com as dependencias. O pacote de servidor Linux de cada mod e conferido pelo sha256
-    e pelo antivirus. Todo jogador precisa dos mesmos mods (Satisfactory Mod Manager).
-  - Valheim: **BepInEx** e mods do Thunderstore, como no V Rising; no servidor Linux ele entra
-    por um drop-in do systemd.
-  - Rust: **Oxide** (uMod). Ele sobrescreve arquivos do jogo (o painel guarda os originais para
-    desligar), e **toda atualizacao do Rust o apaga**: reinstale depois. Plugins `.cs` pela tela.
-- **Servidores Unreal Linux** - Palworld, Dragonwilds, Soulmask, The Front, Smalland, Insurgency:
-  Sandstorm, Astro Colony, Squad, Squad 44, Mordhau, HYPERCHARGE, Pavlov VR, The Bus, VEIN e QANGA:
-  alem dos `.pak` (em `<Projeto>/Content/Paks/~mods`; na Unreal 5 com o `.utoc` e o `.ucas`), botao
-  **Instalar o UE4SS Linux**: o UE4SS oficial compilado para Linux (o nosso fork, release
-  `linux-v2`). Ele entra por `LD_PRELOAD` no servico, e os mods Lua ficam em `ue4ss/Mods` ao lado
-  do executavel. Cada estudio mexe no motor do seu jogo, entao a instalacao gera no container os
-  arquivos daquele servidor (leva um ou dois minutos); depois de um update do jogo, instale de novo.
-  Todos foram provados num servidor de verdade em Docker (Lua, busca de objetos, hooks), mas ainda
-  nao por esta tela num container de producao: a tela avisa. Mods `.dll` de Windows nao servem.
-- **Icarus**: botao **Instalar o UE4SS** (o carregador de mods de script). O container baixa a
-  versao experimental do GitHub - a estavel (v3.0.1) quebra a Steam do servidor sob o Proton e
-  ele some do navegador -, verifica no antivirus, poe o `dwmapi.dll` ao lado do `.exe` e o resto
-  em `Binaries/Win64/ue4ss/`, e liga o `dwmapi=n,b` do Wine. Console, janela e os mods de
-  trapaca que vem com ele ficam desligados. Cada mod e uma pasta em `ue4ss/Mods`, ligada no
-  `mods.txt` dali (tela Arquivos).
-- **Don't Starve Together, Project Zomboid, Unturned e Arma Reforger**: mods da **Workshop pela
-  config do jogo**. Quem baixa e o proprio servidor, na subida; a tela so mantem a lista na config
-  dele (cole links ou IDs, um por linha; tirar a linha remove o mod) e reinicia. O resto da config
-  fica como estava, inclusive as opcoes de cada mod, e o arquivo de antes fica ao lado com
-  `.gamepanel.bak`. Onde fica a config sai do comando do servico:
-  - DST: `mods/dedicated_server_mods_setup.lua` (o que baixar) e o `modoverrides.lua` de cada
-    shard (o que ligar). Um update do jogo reescreve o setup; a tela acusa, e salvar de novo resolve.
-  - Zomboid: `WorkshopItems=` e `Mods=` no `<servername>.ini`. O segundo e o ID de mod, nao o da
-    Workshop: depois de baixar, a tela mostra os que cada item trouxe.
-  - Unturned: `File_IDs` do `Servers/<nome>/WorkshopDownloadConfig.json`. O comando do jogo
-    precisa de `+InternetServer/<nome>`.
-  - Reforger: `game.mods` do JSON do `-config`, pelo GUID do workshop da Bohemia (o link da
-    pagina serve). Sem `-config` no comando a tela explica o que falta.
+- **Euro Truck Simulator 2**: the server loads no mod files; map, DLCs and mods come inside
+  `server_packages.sii`/`.dat`, exported from the game (console, with the map loaded:
+  `export_server_packages`) with the mods active in the profile. The screen reads those packages
+  and lists the map, the number of DLCs and each mod (Workshop or hand-installed), with Workshop
+  links ready to send to players. Paste the agreed mod list (links or IDs, even the chat as it
+  came) and it points out the ones missing from the package; the typical case is a mod that was
+  not active in the exporter's profile. Upload accepts only the two packages.
+- **Palworld**: lists, uploads and removes the `.pak` files in `Pal/Content/Paks/~mods`.
+- **V Rising**: **Thunderstore** mods on top of **BepInEx**. The first button installs BepInEx;
+  then paste the mod link (or `author/package`) and install; dependencies come along. The game
+  container itself does the download, and each install becomes a job with a log. The first start
+  after BepInEx takes several minutes (it generates the game code) and needs about **10 GB of
+  memory** (measured: 9.4 GB). The curated V Rising is created with 12 GB and the Wine tweak
+  BepInEx needs; on a server created before that, raise the CT memory before installing
+  (`pct set <ctid> --memory 12288` on Proxmox), or it crash-loops for lack of memory; the screen
+  warns.
+- **RuneScape: Dragonwilds**: mod `.pak` files (with the same-named `.utoc` and `.ucas`, which
+  Unreal 5 requires; send all three together) go in `RSDragonwilds/Content/Paks/~mods`.
+- **Enshrouded**: **Install Shroudtopia** button (the loader). The container downloads the latest
+  version from GitHub (or the one you choose), places `winmm.dll` and `shroudtopia.dll` next to
+  the `.exe` and sets Wine's `winmm=n,b`; the official package's example mods are NOT installed
+  (they ship with cheats on). Mods are `.dll` files (Nexus) uploaded through the screen to
+  `/opt/game/mods`, and each one's options live in `shroudtopia.json`. Turning it off removes
+  the Wine tweak. The screen shows the tail of `shroudtopia.log`: a mod built for another game
+  version shows up there as `not found`.
+- **Satisfactory**, **Valheim** and **Rust** have installers, but **not yet tested on a real
+  server** (the screen warns; back up first):
+  - Satisfactory: **SML** and mods from ficsit.app by reference (`RefinedPower`) or page link,
+    with dependencies. Each mod's Linux server package is checked by sha256 and by the
+    antivirus. Every player needs the same mods (Satisfactory Mod Manager).
+  - Valheim: **BepInEx** and Thunderstore mods, as on V Rising; on the Linux server it goes in
+    through a systemd drop-in.
+  - Rust: **Oxide** (uMod). It overwrites game files (the panel keeps the originals to turn it
+    off), and **every Rust update wipes it**: reinstall afterwards. `.cs` plugins through the
+    screen.
+- **Unreal Linux servers** (Palworld, Dragonwilds, Soulmask, The Front, Smalland, Insurgency:
+  Sandstorm, Astro Colony, Squad, Squad 44, Mordhau, HYPERCHARGE, Pavlov VR, The Bus, VEIN and
+  QANGA): besides `.pak` files (in `<Project>/Content/Paks/~mods`; on Unreal 5 with `.utoc` and
+  `.ucas`), an **Install UE4SS Linux** button: the official UE4SS compiled for Linux (our fork,
+  release `linux-v2`). It goes in through `LD_PRELOAD` on the service, and Lua mods live in
+  `ue4ss/Mods` next to the executable. Each studio modifies its engine, so the install generates
+  that server's files in the container (takes a minute or two); after a game update, install
+  again. All were proven on a real server in Docker (Lua, object lookup, hooks), but not yet
+  through this screen on a production container: the screen warns. Windows `.dll` mods do not
+  work.
+- **Icarus**: **Install UE4SS** button (the script mod loader). The container downloads the
+  experimental version from GitHub (the stable v3.0.1 breaks the server's Steam under Proton and
+  it disappears from the browser), scans it, places `dwmapi.dll` next to the `.exe` and the rest
+  in `Binaries/Win64/ue4ss/`, and sets Wine's `dwmapi=n,b`. Console, window and the bundled cheat
+  mods are turned off. Each mod is a folder in `ue4ss/Mods`, enabled in `mods.txt` there (Files
+  screen).
+- **Don't Starve Together, Project Zomboid, Unturned and Arma Reforger**: **Workshop mods
+  through the game config**. The server downloads them itself on start; the screen only keeps
+  the list in its config (paste links or IDs, one per line; removing a line removes the mod) and
+  restarts. The rest of the config stays as it was, including each mod's options, and the
+  previous file stays alongside as `.gamepanel.bak`. Where the config is comes from the service
+  command:
+  - DST: `mods/dedicated_server_mods_setup.lua` (what to download) and each shard's
+    `modoverrides.lua` (what to enable). A game update rewrites the setup; the screen flags it
+    and saving again fixes it.
+  - Zomboid: `WorkshopItems=` and `Mods=` in `<servername>.ini`. The second is the mod ID, not
+    the Workshop one: after downloading, the screen shows which ones each item brought.
+  - Unturned: `File_IDs` in `Servers/<name>/WorkshopDownloadConfig.json`. The game command needs
+    `+InternetServer/<name>`.
+  - Reforger: `game.mods` in the `-config` JSON, by Bohemia workshop GUID (the page link works).
+    Without `-config` in the command the screen explains what is missing.
 
-  Provados em servidor de verdade em Docker (o jogo baixou e carregou o mod), ainda nao por esta
-  tela num container de producao: a tela avisa. **O antivirus nao verifica antes**, porque o
-  download e do jogo: use **Verificar mods instalados** depois.
+  Proven on real servers in Docker (the game downloaded and loaded the mod), not yet through this
+  screen on a production container: the screen warns. **The antivirus does not scan beforehand**,
+  because the game does the download: use **Scan installed mods** afterwards. A list that yields
+  no IDs is rejected; only an EMPTY field clears the list.
+- Game without a manager yet: the screen sends you to **Files**.
 
-Toda tela Mods tem os links de **onde achar mods** daquele jogo. O **Nexus Mods** e sempre
-link, nunca download automatico: a API dele so entrega arquivo para conta Premium, e automatizar
-sem ela viola os termos de uso - baixe la e envie pela tela.
-- Jogo sem gestor ainda: a tela manda para **Arquivos**.
+Every Mods screen has links to **where to find mods** for that game. **Nexus Mods** is always a
+link, never an automatic download: its API only serves files to Premium accounts, and automating
+without it violates the terms of use. Download there and upload through the screen.
 
-**Versao.** BepInEx, mod do Thunderstore e Shroudtopia aceitam uma versao (`1.2.3`); vazio
-instala a mais nova. Colar o nome com versao (`deca-VampireCommandFramework-0.11.0`) tambem
-vale. Mod com versao escolhida traz as dependencias na versao que ele pede e aparece como
-**versao fixada**. Num servidor que ja roda, **Trocar a versao de um mod instalado** substitui
-a versao por inteiro (a config do mod fica); o carregador troca pelo **Reinstalar / atualizar**.
+**Version.** BepInEx, Thunderstore mods and Shroudtopia accept a version (`1.2.3`); empty
+installs the latest. Pasting the name with a version (`deca-VampireCommandFramework-0.11.0`)
+also works. A mod with a chosen version brings its dependencies at the versions it asks for and
+shows as **pinned version**. On a running server, **Change the version of an installed mod**
+replaces the version entirely (the mod config stays); the loader changes through **Reinstall /
+update**.
 
-**Antivirus.** Todo mod passa pelo **ClamAV dentro do container do jogo** antes de chegar a
-pasta do jogo: o que o container baixa (Thunderstore, Shroudtopia - o pacote e todas as
-dependencias, verificados juntos) e o que voce envia pela tela (que vai primeiro para uma
-pasta de espera, e so e movido depois de limpo). Na primeira vez o container instala o ClamAV
-(`apt`, ~300 MB, mais o servico que atualiza as assinaturas); servidor sem mod nao recebe nada.
-A verificacao **falha fechada**: achado, arquivo grande demais, zip com senha, assinaturas com
-mais de 7 dias ou o ClamAV que nao instala - o mod NAO entra, o servidor nao reinicia e o log da
-tarefa diz por que. Durante a verificacao o ClamAV usa ~1 GB de memoria por alguns segundos, ao
-lado do jogo. Ele acha o que ja e conhecido: mod malicioso feito sob medida passa - e uma camada
-a mais, nao a garantia.
+**Uninstall the loader.** Each loader can be removed, returning the game to its original state:
+each installer removes only what IT added, restores the Wine overrides it changed, and removes
+its systemd drop-in. Oxide restores the game DLLs file by file, only where the folder still has
+Oxide's. Mods that live inside the loader (plugins, Lua) go with it, and the screen confirms
+first.
 
-**Verificar mods instalados.** O que entrou antes do antivirus nunca foi verificado: o botao
-**Verificar mods instalados** da tela Mods passa o ClamAV no que ja esta no servidor (so as
-pastas de mod e o carregador, nunca o jogo inteiro) e mostra o resultado no log da tarefa. Ele
-so LE: se achar algo, nada e apagado - remova pela tela Mods e reinicie o servidor.
+**Antivirus.** Every mod goes through **ClamAV inside the game container** before reaching the
+game folder: what the container downloads (Thunderstore, Shroudtopia: the package and all
+dependencies, scanned together) and what you upload through the screen (which goes first to a
+staging folder and is only moved after it is clean). The first time, the container installs
+ClamAV (`apt`, ~300 MB, plus the signature update service); a server without mods gets nothing.
+The scan **fails closed**: a detection, a file too big, a password-protected zip, signatures older
+than 7 days or ClamAV failing to install, and the mod does NOT go in, the server does not
+restart and the job log says why. During the scan ClamAV uses ~1 GB of memory for a few seconds,
+next to the game. It finds what is already known: a tailor-made malicious mod passes. It is an
+extra layer, not a guarantee.
 
-O envio pode reiniciar o servidor no fim (mod so entra quando ele sobe de novo), e fica no
-historico como "Mod enviado". A tela e so de admin, como Arquivos.
+**Scan installed mods.** What went in before the antivirus was never scanned: the **Scan
+installed mods** button on the Mods screen runs ClamAV over what is already on the server (only
+the mod folders and the loader, never the whole game) and shows the result in the job log. It
+only READS: if it finds something, nothing is deleted; remove it through the Mods screen and
+restart the server.
+
+An upload can restart the server at the end (a mod only loads when it starts again), and it is
+recorded in the history as "Mod uploaded". The screen is admin only, like Files.
 
 ### Backups
 
-Cada servidor tem uma aba **Backups**: um `.tar.gz` das pastas do save, criado **dentro
-do proprio container do jogo** (`/var/backups/gamepanel` por padrao) e, no mesmo job,
-**copiado para o painel** (`/var/lib/gamepanel/backups/<jogo>/`). O painel dispara, lista,
-baixa, restaura e apaga as duas.
+Each server has a **Backups** tab: a `.tar.gz` of the save folders, created **inside the game
+container itself** (`/var/backups/gamepanel` by default) and, in the same job, **copied to the
+panel** (`/var/lib/gamepanel/backups/<game>/`). The panel triggers, lists, downloads, restores
+and deletes both.
 
-**Por que duas copias.** A do container morre com ele: remover uma instancia pelo broker
-apaga o CT com os discos, e o save ia junto. A do painel sobrevive, e e organizada pelo
-**jogo** (o nome do servico, `valheim.service` -> `valheim/`), nao pelo servidor. Remover e
-criar de novo o mesmo jogo da um servidor com outro id, mas o mesmo servico — e a aba
-Backups dele ja mostra as **Copias no painel** do anterior, com o botao **restaurar**: a
-copia volta ao container e e extraida como qualquer outra.
+**Why two copies.** The container copy dies with the container: removing an instance through
+the broker deletes the CT with its disks, and the save would go with it. The panel copy
+survives, and it is organized by **game** (the service name, `valheim.service` -> `valheim/`),
+not by server. Removing and recreating the same game gives a server with another id but the same
+service, and its Backups tab already shows the previous one's **Copies on the panel**, with a
+**restore** button: the copy goes back to the container and is extracted like any other.
 
-- **Todo backup vai para os dois lugares**, manual ou agendado. Se a copia do painel
-  falhar (disco cheio, conexao caiu no meio), o job sai com **erro** — a do container
-  continua la, mas quem conta com o painel precisa saber agora. Copia que chega truncada
-  nao fica com o nome certo: o tamanho e conferido.
-- **Desativar uma instancia do broker tira o backup antes**: desativar para o CT, e depois
-  disso nao ha SSH para copiar nada — e a ultima hora. Se o backup falhar, a instancia
-  continua ativa; o botao **Desativar sem backup** desativa assim mesmo. Na hora de remover, a tela
-  mostra quantas copias do save o painel tem (ou avisa que nao tem nenhuma).
-- **Copias antigas, de antes desta versao**, so existem no container: cada uma tem o botao
-  **enviar ao painel**.
-- **Jogo que ja nao tem servidor**: a tela **Backups** do menu (`/backups`, so admin) lista
-  tudo o que o painel guardou, por jogo, com baixar e apagar. Para restaurar, crie a
-  instancia (ou cadastre o servidor) do mesmo jogo de novo — a copia aparece na aba
-  Backups dele. So o servidor do MESMO jogo recebe a copia: o tar guarda caminho absoluto,
-  e o save de um jogo extraido no container de outro so espalharia arquivo.
+- **Every backup goes to both places**, manual or scheduled. If the panel copy fails (disk full,
+  connection dropped), the job ends with an **error**; the container copy is still there, but
+  whoever relies on the panel needs to know now. A copy that arrives truncated does not get the
+  right name: the size is checked.
+- **Disabling a broker instance takes a backup first**: disabling stops the CT, and after that
+  there is no SSH to copy anything; it is the last chance. If the backup fails, the instance
+  stays active; the **Disable without backup** button disables anyway. When removing, the screen
+  shows how many save copies the panel has (or warns there are none).
+- **Old copies, from before this version**, exist only in the container: each has a **send to
+  panel** button.
+- **A game that no longer has a server**: the **Backups** screen in the menu (`/backups`, admin
+  only) lists everything the panel kept, by game, with download and delete. To restore, create the
+  instance (or register the server) of the same game again; the copy shows up in its Backups tab.
+  Only a server of the SAME game receives the copy: the tar stores absolute paths, and one game's
+  save extracted into another's container would just scatter files.
 
-O que entra na copia sai do campo **Caminhos de backup** do cadastro do servidor, e o
-deploy ja o preenche: cada `games/<jogo>.env` tem um `BACKUP_PATHS` que o
-`deploy-game.ps1` / `deploy-docker.ps1` passa para o painel no cadastro. Nao precisa
-mexer em nada para ter backup do save certo — e num redeploy o painel **mantem** o que
-voce tiver ajustado pela tela.
+What goes into the copy comes from the **Backup paths** field of the server registration, and the
+deploy fills it: each `games/<game>.env` has a `BACKUP_PATHS` that `deploy-game.ps1` /
+`deploy-docker.ps1` passes to the panel. You do not need to touch anything to back up the right
+save, and on a redeploy the panel **keeps** what you adjusted in the UI.
 
-| Jogo | `BACKUP_PATHS` |
+| Game | `BACKUP_PATHS` |
 |------|----------------|
 | Palworld | `/opt/game/Pal/Saved/SaveGames` |
 | Dragonwilds | `/opt/game/RSDragonwilds/Saved/SaveGames` |
 | Enshrouded | `/opt/game/savegame` |
 | Icarus | `/opt/game/Icarus/Saved/PlayerData`, `/opt/game/Icarus/Saved/Prospects` |
-| DayZ | `/opt/game/mpmissions/dayzOffline.chernarusplus/storage_1`, `/opt/game/profiles` (o numero segue o `instanceId`) |
+| DayZ | `/opt/game/mpmissions/dayzOffline.chernarusplus/storage_1`, `/opt/game/profiles` (the number follows `instanceId`) |
 | Satisfactory | `/home/steam/.config/Epic/FactoryGame/Saved/SaveGames/server` |
 
-Servidor cadastrado a mao (ou antes desta versao) fica com o campo vazio e cai na **pasta
-de configuracao** — funciona, mas aponte o save para nao guardar so o `.ini`. E aponte o
-*save*, nunca a raiz do jogo: `/opt/game` inteiro leva dezenas de GB de binario que o
-SteamCMD rebaixa de graca.
+A server registered by hand (or before this version) has the field empty and falls back to the
+**config folder**; it works, but point it at the save so you do not keep only the `.ini`. And
+point at the *save*, never the game root: all of `/opt/game` is tens of GB of binaries that
+SteamCMD downloads again for free.
 
-Detalhes que importam:
+Details that matter:
 
-- **Caminho que ainda nao existe e ignorado com um aviso**, nao e erro: a pasta de save so
-  nasce quando alguem entra no servidor pela primeira vez, e as outras continuam entrando
-  na copia. O backup so falha se nenhum dos caminhos existir.
+- **A path that does not exist yet is skipped with a warning**, not an error: the save folder
+  only appears when someone joins for the first time, and the other paths still go in. The backup
+  only fails if none of the paths exist.
+- **Retention**: the container keeps the newest `GAMEPANEL_BACKUP_KEEP` copies (default **5**);
+  the panel keeps the newest `GAMEPANEL_PANEL_BACKUP_KEEP` per game (default **10**, `0` = never
+  delete). Older ones are removed automatically. The `-antes-de-restaurar` (before-restore) copy
+  does not apply container retention: with copies at the limit, it would delete the oldest, which
+  may be exactly the one chosen for the restore.
+- **It works with the server running**, which is the normal use. `tar` warns when a file changed
+  during the copy; the backup is still valid, but a save written at that very moment may be
+  incomplete. For a perfect copy, stop the server first.
+- Before writing, the panel compares the target size with the free space and **refuses** the
+  backup if it does not fit: filling the container disk would take the game down with it.
+- **Restore stops the server, extracts and starts it again**, putting each file back exactly
+  where it came from (`tar` stores paths relative to `/`). A server that was already stopped
+  stays stopped. Before extracting, the panel automatically takes a copy of the current state,
+  marked `-antes-de-restaurar`: the way out for whoever picked the wrong backup.
+- **Restore only puts back the server's backup paths, and checks the archive first.** The copies
+  live in a folder the game can write to, so before stopping anything the panel lists every member
+  and refuses the WHOLE restore on an absolute path, a `..`, a link pointing outside the backup
+  paths, a device or a setuid file; members outside the backup paths are left out. On a server
+  in unprivileged mode (`gamepanel`) the archive is extracted as `steam`, without keeping owners
+  or permission bits from it. A server with no backup paths cannot restore.
+- **Roles**: taking a copy is an operation, and an **operator** can trigger it. Download, restore,
+  delete and send to panel are **administrator** only: restore and delete destroy data, and
+  download takes the whole save out of the container.
+- **Space on the panel CT**: saves are usually a few MB, but 10 copies of each game add up. A
+  DayZ with a big world is the case to check the panel's disk.
 
-- **Retencao**: no container ficam as `GAMEPANEL_BACKUP_KEEP` copias mais novas (padrao
-  **5**); no painel, as `GAMEPANEL_PANEL_BACKUP_KEEP` mais novas de cada jogo (padrao
-  **10**, `0` = nunca apagar). As antigas saem sozinhas. A copia `-antes-de-restaurar` nao
-  aplica a retencao do container: com as copias no limite, ela apagaria a mais antiga —
-  que pode ser justo a escolhida para restaurar.
-- **Com o servidor ligado funciona** e e o uso normal. O `tar` avisa quando um arquivo
-  mudou durante a copia — o backup continua valendo, mas um save gravado bem nessa hora
-  pode entrar pela metade. Para uma copia perfeita, pare o servidor antes.
-- Antes de gravar, o painel compara o tamanho do alvo com o espaco livre e **recusa** o
-  backup se nao couber: encher o disco do container derruba o jogo junto.
-- **Restaurar para o servidor, extrai e religa** — e devolve cada arquivo exatamente de
-  onde ele saiu (o `tar` guarda os caminhos relativos a `/`). Servidor que ja estava
-  parado continua parado. Antes de extrair, o painel tira **sozinho** uma copia do estado
-  atual, marcada `-antes-de-restaurar`: e a saida de quem escolheu o backup errado.
-- **Papeis**: tirar copia e operacao, e o **operador** pode dispara-la. Baixar, restaurar,
-  apagar e enviar ao painel sao de **administrador** — restaurar e apagar destroem dado, e
-  baixar tira o save inteiro do container.
-- **Espaco no CT do painel**: save costuma ter poucos MB, mas 10 copias de cada jogo somam.
-  Um DayZ com mundo grande e o caso de conferir o disco do painel.
-
-Variaveis: `GAMEPANEL_BACKUP_DIR`, `GAMEPANEL_BACKUP_KEEP`, `GAMEPANEL_BACKUP_TIMEOUT`,
-`GAMEPANEL_PANEL_BACKUP_DIR` (padrao: `backups/` ao lado do banco),
+Variables: `GAMEPANEL_BACKUP_DIR`, `GAMEPANEL_BACKUP_KEEP`, `GAMEPANEL_BACKUP_TIMEOUT`,
+`GAMEPANEL_PANEL_BACKUP_DIR` (default: `backups/` next to the database),
 `GAMEPANEL_PANEL_BACKUP_KEEP`.
 
-### Agendamentos
+### Schedules
 
-Cada servidor tem uma aba **Agendamentos**: o painel dispara sozinho **reiniciar, parar,
-iniciar, atualizar (SteamCMD)** ou **backup**, em tres formatos —
+Each server has a **Schedules** tab: the panel triggers **restart, stop, start, update
+(SteamCMD)** or **backup** by itself, in three formats:
 
-- **todo dia** numa hora fixa (o classico "reiniciar as 5h");
-- **uma vez por semana**, num dia e hora ("backup completo todo domingo as 3h");
-- **a cada N horas**, contadas a partir do momento em que a tarefa foi salva.
+- **every day** at a fixed time (the classic "restart at 5am");
+- **once a week**, on a day and time ("full backup every Sunday at 3am");
+- **every N hours**, counted from the moment the task was saved.
 
-Cada disparo entra no historico como qualquer outra acao, com `agendador` no lugar do
-usuario — da para conferir tudo em [Historico](#historico) filtrando por esse nome. O
-botao **rodar agora** dispara na hora, sem esperar o horario: e como se testa uma tarefa
-recem-criada sem ficar acordado ate as 5h.
+Each run goes to the history like any other action, with `agendador` (scheduler) in place of the
+user; you can check everything in [History](#history) by filtering on that name. The **run now**
+button fires immediately, which is how you test a new task without staying up until 5am.
 
-Detalhes que importam:
+Details that matter:
 
-- **O relogio e o do container do painel.** A propria tela mostra que horas sao para ele e
-  qual o fuso; se nao bater com a sua hora, o que esta errado e o `TZ` do container (o
-  padrao dos containers e **UTC**).
-- **Tarefa atrasada nao dispara.** Se o painel passou a noite fora do ar, o "reiniciar as
-  5h" **nao** cai as 14h no meio da partida: ele espera a proxima ocorrencia. A tolerancia
-  e de 1h (`GAMEPANEL_SCHEDULE_GRACE`).
-- **Nao roda duas vezes.** O horario do ultimo disparo fica gravado e e marcado *antes* de
-  a tarefa comecar — um `update` que leva 40 minutos nao e disparado de novo no meio.
-- **Um worker so.** O relogio e uma thread dentro do processo do painel, e o `gunicorn`
-  aqui roda com `--workers 1` justamente por isso (a sessao do terminal tem o mesmo
-  motivo). Com dois processos, cada um teria a sua thread e toda tarefa dispararia em
-  dobro.
-- Pela linha de comando (`--register-server`, `--create-user`) o relogio **nao sobe**: um
-  deploy nao pode disparar tarefa de passagem.
-- **Papeis**: qualquer um ve a lista; criar, ligar/desligar, remover e "rodar agora" sao de
-  administrador. Remover o servidor do painel leva as tarefas dele junto.
+- **The clock is the panel container's.** The screen shows what time it is for the panel and
+  which time zone; if it does not match yours, the container's `TZ` is wrong (containers default
+  to **UTC**).
+- **A late task does not fire.** If the panel was down overnight, "restart at 5am" does **not**
+  fire at 2pm in the middle of a match: it waits for the next occurrence. The tolerance is 1h
+  (`GAMEPANEL_SCHEDULE_GRACE`).
+- **It does not run twice.** The last run time is stored and marked *before* the task starts; an
+  `update` that takes 40 minutes is not fired again midway.
+- **A single worker.** The clock is a thread inside the panel process, and `gunicorn` runs with
+  `--workers 1` precisely because of that (the terminal session has the same reason). With two
+  processes, each would have its own thread and every task would fire twice.
+- From the command line (`--register-server`, `--create-user`) the clock does **not** start: a
+  deploy must not fire tasks in passing.
+- **Roles**: anyone sees the list; create, enable/disable, remove and "run now" are administrator
+  only. Removing the server from the panel removes its tasks too.
 
-### Alertas
+### Alerts
 
-O menu tem **Alertas** (so administrador): **webhooks** e o painel avisa quando algo
-acontece sem ninguem estar olhando. Serve para **Discord** (Editar canal &rarr;
-Integracoes &rarr; Webhooks &rarr; Copiar URL), **Slack** (Incoming Webhook) ou qualquer
-endereco que aceite `POST` de JSON — a chamada leva os campos `content` **e** `text`, e
-cada servico le o seu.
+The menu has **Alerts** (administrator only): **webhooks**, and the panel tells you when
+something happens while nobody is watching. It works with **Discord** (Edit channel >
+Integrations > Webhooks > Copy URL), **Slack** (Incoming Webhook) or any address that accepts a
+JSON `POST`; the call carries both `content` **and** `text` fields, and each service reads its
+own.
 
-Da para cadastrar **varios destinos** (ate 10, `GAMEPANEL_WEBHOOK_MAX`), cada um com a
-**sua** lista de eventos e um interruptor de ligado/desligado: o canal da equipe recebe
-tudo, o canal geral so as quedas, e o webhook do servidor de testes fica desligado sem
-precisar ser apagado. Cada evento sai para todos os destinos que o marcaram, um POST por
-destino — se um estiver fora do ar, os outros recebem do mesmo jeito e a falha vai para o
-log do painel com o nome do destino. O botao **Testar** de cada linha manda uma mensagem
-na hora; se voce digitou uma URL nova, ele testa a nova, antes de salvar.
+You can register **several destinations** (up to 10, `GAMEPANEL_WEBHOOK_MAX`), each with **its
+own** event list and an on/off switch: the team channel gets everything, the general channel only
+outages, and the test server's webhook stays off without being deleted. Each event goes to every
+destination that selected it, one POST per destination; if one is down, the others still receive
+it and the failure goes to the panel log with the destination name. Each line's **Test** button
+sends a message right away; if you typed a new URL, it tests the new one before saving.
 
-Na tela a URL aparece **mascarada** (`discord.com/.../1544786528700604457/********`) —
-ela e uma credencial, e um screenshot da tela nao deveria entregar o canal. Para trocar,
-digite a nova no campo abaixo dela; em branco, mantem a que ja esta la.
+On screen the URL is **masked** (`discord.com/.../1544786528700604457/********`): it is a
+credential, and a screenshot should not give away the channel. To change it, type the new one in
+the field below; left blank, the current one is kept.
 
-O que da para avisar:
+What it can alert on:
 
-| Evento | Padrao | Precisa configurar |
-|--------|--------|--------------------|
-| Servidor parou de rodar | ligado | — |
-| Jogo quebrou (servico em `failed`) | ligado | — |
-| Jogo caindo em loop de restart | ligado | — |
-| Jogo nao responde (de pe, mas mudo) | ligado | contagem por A2S ou API HTTP |
-| Painel perdeu contato (SSH) | ligado | — |
-| Tarefa **agendada** falhou | ligado | — |
-| Disco quase cheio (limite ajustavel, 50-100%) | ligado | — |
-| Servidor voltou a rodar | desligado | — |
-| Contato restabelecido | desligado | — |
-| Jogo voltou a responder | desligado | contagem por A2S ou API HTTP |
-| Erro no log do jogo | desligado | expressao de erro no cadastro |
+| Event | Default | Requires |
+|-------|---------|----------|
+| Server stopped running | on | - |
+| Game crashed (service `failed`) | on | - |
+| Game in a restart loop | on | - |
+| Game not responding (up, but silent) | on | counting by A2S or HTTP API |
+| Panel lost contact (SSH) | on | - |
+| A **scheduled** task failed | on | - |
+| Disk almost full (adjustable threshold, 50-100%) | on | - |
+| Server running again | off | - |
+| Contact restored | off | - |
+| Game responding again | off | counting by A2S or HTTP API |
+| Error in the game log | off | error pattern in the registration |
 
-#### Servico de pe nao e jogo de pe
+#### A running service is not a running game
 
-O alerta de queda so enxerga o systemd: se a unidade responde `active`, para ele esta tudo
-bem. Isso deixa passar justamente as falhas mais chatas, em que o painel fica verde e
-ninguem consegue jogar. Os quatro eventos abaixo cobrem esse buraco:
+The outage alert only sees systemd: if the unit answers `active`, everything is fine as far as
+it knows. That misses the most annoying failures, where the panel is green and nobody can play.
+These four events cover that gap:
 
-- **Jogo quebrou** — o systemd marcou a unidade como `failed` (saiu com erro, estourou o
-  limite de restarts, levou OOM). E diferente de "parou": parar pelo painel nao dispara
-  este alerta, e este aqui e o unico que **sai mesmo dentro da janela de silencio** — se
-  voce mandou reiniciar e o resultado foi `failed`, e exatamente o que voce precisa saber.
-- **Loop de restart** — com `Restart=always` o jogo pode morrer a cada 20 segundos que o
-  `ActiveState` responde `active` quase sempre: a queda nunca "acontece" e o canal fica
-  mudo. Quem denuncia e o `NRestarts` do systemd, que so sobe. Sai **uma vez por
-  episodio**; uma volta inteira sem restart novo fecha o episodio. Precisa de systemd
-  >= 235; sem isso o painel simplesmente nao avisa desse evento.
-- **Jogo nao responde** — o processo esta vivo mas mudo na consulta do proprio jogo, por
-  3 verificacoes seguidas (`GAMEPANEL_MUTE_ROUNDS`). Uma consulta A2S e UDP e perder um
-  pacote e rotina, por isso a insistencia. Nao conta enquanto o servico esta subindo nem
-  dentro da janela de silencio — jogo carregando mapa nao responde e isso e normal. So
-  vale para quem conta jogadores por **A2S ou API HTTP**: contagem por log nao pergunta
-  nada ao jogo, entao nao tem o que ficar mudo.
-- **Erro no log do jogo** — o painel le as ultimas 200 linhas do log (o mesmo da
-  contagem: `journalctl` ou o `log_path`) a cada 120s (`GAMEPANEL_LOG_CHECK_EVERY`) e
-  procura a **expressao de erro** cadastrada no servidor (campo *Log: linha de erro*).
-  Em branco, nem a leitura acontece. A mesma linha nao avisa duas vezes, e ha um teto de
-  um alerta destes por servidor a cada 10 min (`GAMEPANEL_LOG_ERR_COOLDOWN`) — a
-  expressao vem da tela, e um `.` distraido casa com tudo.
+- **Game crashed**: systemd marked the unit `failed` (exited with an error, exceeded the restart
+  limit, got OOM-killed). It is different from "stopped": stopping through the panel does not
+  trigger it, and it is the only alert that **fires even inside the quiet window**; if you asked
+  for a restart and the result was `failed`, that is exactly what you need to know.
+- **Restart loop**: with `Restart=always` the game can die every 20 seconds while `ActiveState`
+  answers `active` almost all the time: the outage never "happens" and the channel stays silent.
+  systemd's `NRestarts`, which only grows, gives it away. It fires **once per episode**; a full
+  round without a new restart closes the episode. Needs systemd >= 235; without it the panel just
+  does not alert on this event.
+- **Game not responding**: the process is alive but silent on the game's own query, for 3
+  consecutive checks (`GAMEPANEL_MUTE_ROUNDS`). A2S is UDP and losing a packet is routine, hence
+  the insistence. It does not count while the service is starting or inside the quiet window; a
+  game loading a map does not answer and that is normal. Only for servers counting players by
+  **A2S or HTTP API**: log counting asks the game nothing, so there is nothing to go silent.
+- **Error in the game log**: the panel reads the last 200 log lines (the same as for counting:
+  `journalctl` or `log_path`) every 120s (`GAMEPANEL_LOG_CHECK_EVERY`) and looks for the **error
+  pattern** registered on the server (field *Log: error line*). Empty, no reading happens. The
+  same line does not alert twice, and there is a cap of one such alert per server every 10 min
+  (`GAMEPANEL_LOG_ERR_COOLDOWN`): the pattern comes from the UI, and a careless `.` matches
+  everything.
 
-A tela de Alertas avisa quando um evento esta **ligado sem ter onde olhar** (marcou "jogo
-nao responde" e nenhum servidor tem consulta configurada, por exemplo). Alerta ligado e
-mudo e pior que alerta desligado: o silencio do canal passa a ser lido como "esta tudo
-bem".
+The Alerts screen warns when an event is **on with nowhere to look** (you ticked "game not
+responding" and no server has a query configured, for example). An alert that is on and silent
+is worse than one that is off: the channel's silence gets read as "all good".
 
-As regras que evitam o alerta virar ruido — que e o que faz um canal deixar de ser lido:
+The rules that keep alerts from turning into noise (which is what makes a channel stop being
+read):
 
-- **Avisa na mudanca, nunca em repeticao.** O alerta sai quando o servidor cai, e nao a
-  cada minuto enquanto ele estiver caido. Vale igual para o disco.
-- **Acao pelo painel nao vira susto.** Parar, reiniciar, atualizar ou restaurar derruba o
-  servico de proposito; nos 180s seguintes (`GAMEPANEL_ALERT_QUIET`) a queda e esperada e
-  nao gera alerta. A excecao e o **jogo quebrou**: terminar em `failed` nunca e esperado.
-- **Ao subir, o painel so anota.** Reiniciar o painel nao dispara um alerta por servidor
-  que ja estava parado.
-- **Sem contato, ele nao opina sobre o servico.** Se o SSH caiu, sai o alerta de contato e
-  so — dizer que o jogo parou seria invencao.
-- **De tarefa que falha, so a agendada avisa.** Quem clicou o botao ja esta com o erro na
-  tela.
+- **Alert on change, never on repetition.** The alert fires when the server goes down, not every
+  minute while it is down. Same for the disk.
+- **Panel actions do not cause scares.** Stop, restart, update or restore take the service down on
+  purpose; for the next 180s (`GAMEPANEL_ALERT_QUIET`) an outage is expected and produces no
+  alert. The exception is **game crashed**: ending in `failed` is never expected.
+- **On startup, the panel only takes note.** Restarting the panel does not fire one alert per
+  server that was already stopped.
+- **Without contact, it has no opinion on the service.** If SSH is down, the contact alert fires
+  and that is all; saying the game stopped would be made up.
+- **For failed tasks, only scheduled ones alert.** Whoever clicked the button already has the
+  error on screen.
 
-O estado do servidor e conferido a cada **60s** (`GAMEPANEL_MONITOR_EVERY`) e o disco a
-cada **10 min** (`GAMEPANEL_DISK_CHECK_EVERY`) — o medidor custa uma ida de SSH bem mais
-cara que o status. Sem nenhum destino ligado pedindo algum evento, a volta nem acontece.
-Os destinos ficam no banco (nao exige redeploy para mudar); `GAMEPANEL_WEBHOOK_URL` serve
-so de valor inicial do **primeiro** destino, para o deploy ja deixar pronto.
-**Trate a URL como senha**: quem a tiver escreve no seu canal.
+Server state is checked every **60s** (`GAMEPANEL_MONITOR_EVERY`) and the disk every **10 min**
+(`GAMEPANEL_DISK_CHECK_EVERY`); the meter costs a much more expensive SSH round trip than the
+status. With no enabled destination asking for an event, the round does not even run.
+Destinations live in the database (no redeploy needed to change them); `GAMEPANEL_WEBHOOK_URL`
+only seeds the **first** destination so the deploy leaves it ready. **Treat the URL as a
+password**: whoever has it can write to your channel.
 
-> **403 do Discord?** O Cloudflare na frente dele recusa o `User-Agent` padrao do Python
-> (`Python-urllib/3.x`) antes do pedido chegar no webhook. O painel manda um proprio
-> (`GAMEPANEL_WEBHOOK_UA`), entao isso ja esta resolvido — se voce vir 403 mesmo assim, a
-> mensagem de erro na tela agora traz a resposta do destino, que diz o motivo.
+> **403 from Discord?** The Cloudflare in front of it rejects Python's default `User-Agent`
+> (`Python-urllib/3.x`) before the request reaches the webhook. The panel sends its own
+> (`GAMEPANEL_WEBHOOK_UA`), so this is already handled; if you still see 403, the error message on
+> screen now carries the destination's response, which says why.
 
-### Historico
+### History
 
-O menu do topo tem **Historico**: tudo o que aconteceu, em todos os servidores, com filtro
-por servidor, acao e quem fez. E onde se responde "quem parou o servidor ontem" e "o
-agendador rodou o backup essa semana?". A tela de cada servidor continua mostrando so os
-15 ultimos.
+The top menu has **History**: everything that happened, on every server, filterable by server,
+action and who did it. It answers "who stopped the server yesterday" and "did the scheduler run
+the backup this week?". Each server's screen still shows only the last 15.
 
-O operador nao ve ali (nem em `/jobs/<id>`) o que ele nao pode fazer — terminal, console e
-arquivos; veja [Usuarios e papeis](#usuarios-e-papeis).
+Operators do not see there (nor in `/jobs/<id>`) what they cannot do: terminal, console and
+files; see [Users and roles](#users-and-roles).
 
-**Retencao**: cada registro guarda a saida inteira do que rodou (ate 200 KB), e um backup
-diario sozinho poe 365 linhas por ano no banco. O painel apaga o que passa de
-**60 dias** (`GAMEPANEL_JOBS_KEEP_DAYS`, `0` desliga), numa limpeza que roda de hora em
-hora junto com o relogio do agendamento.
+**Retention**: each record keeps the full output of what ran (up to 200 KB), and a daily backup
+alone adds 365 rows a year. The panel deletes what is older than **60 days**
+(`GAMEPANEL_JOBS_KEEP_DAYS`, `0` disables), in a cleanup that runs hourly with the scheduler
+clock.
 
-### Comando unico (dentro do Terminal)
+### Users and roles
 
-A tela **Terminal** tem dois modos, e o segundo e o **Comando unico**: voce digita um
-comando, ele executa como `root` **dentro daquele container de jogo**, e a saida fica na
-tela com o historico registrado (quem rodou, o que rodou, exit code). Util para um
-comando so, sem abrir sessao.
+The panel starts with a single user, the one `deploy-admin.ps1` creates (`ADMIN_USER`). The
+**Users** screen (administrator only) creates the others: you pick the name and role and set an
+initial password, which the person changes later in **Account**. No e-mail or invite link is
+involved.
 
-Os dois modos ficam na mesma tela de proposito. Eles ja foram dois destinos separados no
-menu (&quot;Terminal&quot; e &quot;Console&quot;), com nomes que ninguem conseguia
-distinguir de fora &mdash; e cada tela do painel oferecia um subconjunto diferente dos
-dois. Hoje a navegacao tem **um** lugar para linha de comando; a escolha entre sessao
-interativa e comando avulso e feita la dentro.
+There are two roles:
 
-- Sem TTY: para `vim`/`htop` e prompts, use a **sessao interativa**.
-- Ctrl+Enter executa; as setas ↑/↓ percorrem o historico.
-- Limite de tempo por comando: 600s (`GAMEPANEL_SHELL_TIMEOUT`).
-- Sem PTY (painel rodando fora de Linux), o destino &quot;Terminal&quot; abre direto
-  neste modo &mdash; e continua sendo uma entrada so no menu.
+| Screen | Operator | Administrator |
+|--------|----------|---------------|
+| Servers, status, players, log | yes | yes |
+| Start / stop / restart / update | yes | yes |
+| **Config** (already registered files) | yes | yes |
+| Kick, ban and message players | yes | yes |
+| Add / edit / remove a server | no | yes |
+| Register a new file on the Config screen | no | yes |
+| Terminal, Console and **Files** browser | no | yes |
+| Upload a file to the container | no | yes |
+| See the **Backups** list and take a copy | yes | yes |
+| Download, restore, delete or send a backup to the panel | no | yes |
+| Global and per-server **History** | yes | yes |
+| Usage **Charts** | yes | yes |
+| Terminal, console and file history | no | yes |
+| See **Schedules** | yes | yes |
+| Create, enable/disable or remove a schedule | no | yes |
+| **Alerts** (webhook) | no | yes |
+| **Users** | no | yes |
+| **Mods** | no | yes |
+| **Catalog** and **Instances** (broker) | no | yes |
 
-Console e terminal sao execucao remota de comandos exposta numa pagina web — quem entrar
-no painel tem root nos containers de jogo. Se nao quiser essa capacidade, desligue com
-`ADMIN_ALLOW_SHELL=0` no `.env` (as duas telas somem e as rotas respondem 403); o editor
-de arquivos tem o proprio interruptor, `ADMIN_ALLOW_FILES=0`.
+The split follows what gives **root in the container**: terminal, console and file editor stay
+with the administrator, and with them the server registration (which points the panel's SSH) and
+the choice of which file the Config screen opens; otherwise an operator could point the Config
+screen at `/etc/shadow` and bypass the restriction.
 
-### Usuarios e papeis
+The split also applies to **history**: a job keeps the full output of what ran, and a console
+command's output carries everything that appeared on screen. So `shell`, `terminal`,
+`edit-file`, `delete-file` and `download-file` records disappear from the server screen list for
+operators and answer **403** at `/jobs/<id>` and `/api/jobs/<id>`; otherwise someone denied the
+console could read its result by job id. `edit-config` is left out of the restriction on purpose:
+changing the game config is operator work.
 
-O painel comeca com um usuario so — o que o `deploy-admin.ps1` cria (`ADMIN_USER`). A
-tela **Usuarios** (visivel so para administrador) cria os demais: voce escolhe o nome, o
-papel e define a senha inicial, que a pessoa troca depois em **Conta**. Nao ha e-mail nem
-link de convite envolvido.
+The role is read from the database on every click, so revoking someone's access takes effect
+immediately, and deleting an account ends its session. The panel never runs out of
+administrators: you cannot remove or demote the last one, or change your own role.
 
-Sao dois papeis:
-
-| Tela | Operador | Administrador |
-|------|----------|---------------|
-| Servidores, status, jogadores, log | sim | sim |
-| Start / stop / restart / update | sim | sim |
-| **Config** (arquivos ja registrados) | sim | sim |
-| Expulsar, banir e avisar jogadores | sim | sim |
-| Cadastrar / editar / remover servidor | nao | sim |
-| Registrar um novo arquivo na tela Config | nao | sim |
-| Terminal, Console e navegador de **Arquivos** | nao | sim |
-| Enviar arquivo para o container | nao | sim |
-| Ver a lista de **Backups** e tirar copia | sim | sim |
-| Baixar, restaurar, apagar ou enviar ao painel um backup | nao | sim |
-| **Historico** global e por servidor | sim | sim |
-| **Graficos** de uso | sim | sim |
-| Historico de terminal, console e arquivos | nao | sim |
-| Ver os **Agendamentos** | sim | sim |
-| Criar, ligar/desligar ou remover agendamento | nao | sim |
-| **Alertas** (webhook) | nao | sim |
-| **Usuarios** | nao | sim |
-
-O corte segue o que da **root no container**: terminal, console e editor de arquivos
-ficam com o administrador, e junto com eles o cadastro do servidor (que aponta o SSH do
-painel) e o registro de qual arquivo a tela Config abre — sem isso o operador poderia
-apontar a tela Config para `/etc/shadow` e contornar a restricao.
-
-O corte vale tambem para o **historico**: um job guarda a saida inteira do que rodou, e a
-de um comando no console carrega tudo o que apareceu na tela. Por isso os registros de
-`shell`, `terminal`, `edit-file`, `delete-file` e `download-file` somem da lista da tela
-do servidor para o operador e respondem **403** em `/jobs/<id>` e `/api/jobs/<id>` — sem
-isso, quem leva 403 no console leria o resultado dele pelo id do job. `edit-config` fica
-de fora da restricao de proposito: mexer na configuracao do jogo e trabalho de operador.
-
-O papel e lido do banco a cada clique, entao tirar o acesso de alguem vale na hora, e
-apagar uma conta derruba a sessao dela. O painel nunca fica sem administrador: nao da
-para remover nem rebaixar o ultimo, nem mexer no proprio papel.
-
-Esqueceu a senha de todo mundo, ou perdeu o acesso de administrador? A linha de comando
-continua sendo a saida de emergencia (roda dentro do CT do painel):
+Forgot everyone's password, or lost administrator access? The command line remains the emergency
+exit (run it inside the panel CT):
 
 ```bash
 cd /opt/gamepanel/current && python3 -m gamepanel.cli --create-user chefe --password nova-senha --role admin
 ```
 
-O caminho antigo (`python3 /opt/gamepanel/current/gamepanel/app.py --create-user ...`) continua
-valendo; os dois chamam o mesmo `gamepanel/cli.py`.
+The old path (`python3 /opt/gamepanel/current/gamepanel/app.py --create-user ...`) still works;
+both call the same `gamepanel/cli.py`.
 
-### Idioma da tela
+### Two-factor authentication and passkeys
 
-O painel fala **portugues** e **ingles**. Cada pessoa escolhe o seu em **Conta** — a
-escolha fica no cadastro dela, entao vale em qualquer aparelho em que ela entrar, e nao
-muda o de mais ninguem.
+- **TOTP 2FA** (any authenticator app), set up in **Account** with a QR code, the key in text and
+  an `otpauth://` link that opens the app on the phone itself. A correct password with 2FA does
+  not open a session until the code is entered; a used code is not valid again; the code lockout
+  is per user (5 attempts in 15 min); disabling 2FA or generating new codes asks for password and
+  code. Recovery: 8 single-use codes, only their hash stored.
+- `ADMIN_REQUIRE_2FA=1` in `.env` (`GAMEPANEL_REQUIRE_2FA`) locks anyone who has not enabled 2FA
+  on the setup screen: turn it on only AFTER every admin has enabled it.
+- Everything related to the **broker** (creating/removing containers, opening ports) always
+  requires the person to have 2FA, regardless of `ADMIN_REQUIRE_2FA`.
+- **Passkeys**: see [On the phone](#on-the-phone-install-as-an-app).
+- Emergency exit if someone loses the second factor, inside the panel CT:
+  `cd /opt/gamepanel/current && python3 -m gamepanel.cli --reset-2fa USER`, or "Turn off 2FA" on
+  the **Users** screen.
 
-Quem ainda nao escolheu ve o idioma que o **navegador** pede (o `Accept-Language`), o
-que vale tambem para a tela de login, onde ainda nao ha ninguem logado. Se o navegador
-pedir um idioma que o painel nao fala, vale o padrao do deploy — `ADMIN_LANG` no `.env`
-(`GAMEPANEL_LANG` dentro do container), que e `pt` quando nao se diz nada.
+### Interface language
 
-Duas coisas seguem **sempre** o padrao do deploy, de proposito:
+The panel speaks **Portuguese** and **English**. The **PT/EN** toggle is in the top right corner;
+logged-in users can also choose in **Account**. The choice is stored on the user, so it follows
+them to any device and does not change anyone else's.
 
-- **O aviso que vai para o webhook** (Discord, Slack). O canal e um so e e lido por
-  varias pessoas; mensagem que trocasse de lingua conforme quem clicou seria pior do que
-  uma so.
-- **O texto gravado no Historico.** Ele e lido depois, por outra pessoa: se cada linha
-  saisse no idioma de quem apertou o botao, a mesma acao apareceria escrita de tres
-  jeitos na mesma lista, e o filtro por acao deixaria de fazer sentido.
+Whoever has not chosen sees the language the **browser** asks for (`Accept-Language`), which also
+applies to the login screen. If the browser asks for a language the panel does not speak, the
+deploy default applies: `ADMIN_LANG` in `.env` (`GAMEPANEL_LANG` inside the container), which is
+`pt` when unset.
 
-Traduzir o painel para outra lingua e acrescentar um arquivo em
-`src/gamepanel/i18n/` — nao ha passo de compilacao, nem dependencia nova.
+Two things **always** follow the deploy default, on purpose:
 
-### Testando o painel localmente (docker compose)
+- **The webhook alert** (Discord, Slack). The channel is one and read by several people; a
+  message that changed language depending on who clicked would be worse than a single one.
+- **The text stored in History.** It is read later by someone else: if each line came out in the
+  language of whoever pressed the button, the same action would appear written three ways in the
+  same list, and filtering by action would stop making sense.
 
-Para mexer no painel sem depender do Proxmox:
+Translating the panel to another language means adding a file in `src/gamepanel/i18n/`; there is
+no compile step and no new dependency.
 
-```bash
-docker compose up --build         # http://localhost:8080 - admin / admin12345
-```
+### Panel files
 
-Sobem tres containers: o painel e dois "servidores de jogo" falsos (Debian com `sshd`, um
-`systemctl`/`journalctl` simulados e os `.ini` que o jogo teria). Os dois ja vem
-cadastrados no painel — com o `.ini` apontado, entao a tela **Config** tambem da para
-testar de ponta a ponta, junto com start/stop/update, terminal e editor. O codigo entra
-por bind mount com `--reload`: editar `src/gamepanel/app.py` ou os templates e recarregar a
-pagina basta.
+| Path (in the panel CT) | What it is |
+|------------------------|------------|
+| `/opt/gamepanel/releases/<version>/` | one folder per installed release (the last 5 are kept) |
+| `/opt/gamepanel/current` | symlink to the running release (the unit's `WorkingDirectory`) |
+| `/var/lib/gamepanel/panel.db` | SQLite: users, servers, history |
+| `/var/lib/gamepanel/known_hosts` | host keys learned from the containers |
+| `/var/lib/gamepanel/backups/<game>/` | the second copy of each backup (`GAMEPANEL_PANEL_BACKUP_DIR`) |
+| `/etc/gamepanel/id_ed25519` | the panel's SSH key |
+| `/etc/gamepanel/panel.env` | configuration read by systemd |
 
-Nao confunda com o deploy de verdade: aqui os containers se chamam `game-palworld-dev` e
-a imagem em `docker/game/` **nao instala jogo nenhum** (a de verdade e a de
-`docker/gameserver/`, usada pelo `deploy-docker.ps1`).
-
-Os dois containers falsos sao propositalmente diferentes, para cobrir as tres formas de
-contar jogadores: o `game-palworld` tem query A2S (`27015/udp`) **e** uma API REST no
-formato da do Palworld (`127.0.0.1:8212`, `admin`/`troque-me`); o `game-dragonwilds` nao
-tem nenhuma das duas — so anuncia entradas e saidas no log, como o jogo real. A imagem de
-teste tambem nao tem `curl` de proposito: assim o ambiente local exercita o caminho
-alternativo da chamada HTTP (o container de jogo de verdade tem `curl`).
-
-```bash
-docker compose logs -f panel
-docker compose exec -w /opt/gamepanel panel python3 -m pytest -q          # as 7 suites (323 testes)
-docker compose exec -w /opt/gamepanel panel python3 -m pytest test_alerts.py -q  # so uma
-docker compose exec game-palworld sh -c 'echo 7 > /run/fake-players' # fixa a contagem
-docker compose down -v            # zera banco, chaves e arquivos de teste
-```
-
-As suites (`test_config_format.py` o parser, `test_gamefields.py` o catalogo,
-`test_players.py` a contagem, `test_users.py` papeis/backup/upload, `test_schedules.py`
-agendamento e historico, `test_alerts.py` alertas por webhook, `test_charts.py` os
-graficos) sao pytest — nao rodam mais como script solto. Veja o
-[CLAUDE.md](CLAUDE.md) para rodar fora do Docker, num `.venv` local.
-
-### Seguranca
-
-- Login por usuario, senha com hash **scrypt** no SQLite, sessao em cookie assinado
-  (HttpOnly, SameSite=Lax) e bloqueio apos 5 tentativas erradas em 5 minutos
-- Dois papeis (**administrador** e **operador**): shell, editor de arquivos, cadastro de
-  servidor, gestao de usuarios **e o historico dessas acoes** sao so do administrador —
-  veja [Usuarios e papeis](#usuarios-e-papeis)
-- Todos os POSTs exigem token **CSRF**
-- **Passkey** (biometria do aparelho) so com verificacao do usuario (biometria/PIN), desafio
-  de uso unico guardado no servidor, origem e dominio exatos e contador contra chave clonada;
-  cadastrar exige a senha (e o codigo, com 2FA). Ver [No celular](#no-celular-instalar-como-aplicativo)
-- Respostas levam `X-Frame-Options: DENY` (o painel nao pode ser embutido em iframe),
-  `X-Content-Type-Options: nosniff` e `Referrer-Policy: same-origin`
-- A volta do `?next=` do login so aceita caminho interno — `//host` e `/\host` sao
-  absolutos para o navegador e ficariam de fora do painel
-- O assistente de contagem de jogadores envia por **POST**: a senha de admin do jogo
-  (`Autenticacao`, `Corpo JSON do login`) nao pode passar pela barra de enderecos, pelo
-  `Referer` nem pelo log de um proxy reverso
-- O painel serve **HTTP puro** — pensado para LAN. Nao exponha na internet sem um proxy
-  reverso com TLS na frente
-- As URLs dos webhooks de [Alertas](#alertas) sao segredos (quem as tiver escreve no seu
-  canal) e ficam em texto puro no `panel.db`, como a senha da API de contagem. Na tela
-  elas aparecem mascaradas, mas quem tem o arquivo do banco tem as URLs inteiras — se uma
-  vazar, apague o webhook no Discord/Slack e cadastre outro aqui
-- Comprometer o painel da acesso root aos **containers de jogo**, nao ao Proxmox
-- Cada container tem **firewall proprio** (nftables), inclusive contra quem esta na mesma
-  rede — veja [Firewall dentro dos containers](#firewall-dentro-dos-containers)
-
-### Firewall dentro dos containers
-
-O OPNsense so filtra o que **atravessa** ele. Dentro da mesma sub-rede um CT fala com o
-outro direto, e um servidor de jogo invadido alcancaria o SSH do painel, a API do broker, o
-Proxmox e a API do OPNsense sem passar por regra nenhuma. Por isso cada CT tem o seu firewall
-(`lib/ct-firewall.sh`, instalado como `ct-firewall`), que **nega tudo o que entra** e so abre
-o que aquele CT precisa:
-
-| CT | Entrada | Saida |
-|----|---------|-------|
-| Painel | web (`ADMIN_PORT`) e SSH so de `ADMIN_FIREWALL_SOURCES` (padrao `192.168.0.0/16`) | livre (jogos, broker, webhook) |
-| Broker | API `:8443` so do painel; sem SSH (ele nao tem sshd) | so Proxmox e OPNsense (das URLs), SSH e ping na faixa dos jogos, DNS e apt |
-| Jogo | portas do jogo de qualquer origem; SSH e ping so do painel e do broker | internet sim; **rede interna nao** (so o DNS) |
-
-Em todos, o loopback passa (as APIs de admin do Palworld e do Satisfactory so escutam em
-`127.0.0.1`) e a resposta de conexao ja aberta passa.
-
-- **CT novo ja nasce com ele**: painel (`deploy-admin.ps1 -Full`), broker
-  (`deploy-broker.ps1`), jogo pelo broker e jogo pelo `deploy-game.ps1`. O jogo so ganha
-  firewall se o deploy sabe o IP do painel (`ADMIN_HOST`/`ADMIN_IP_CIDR`): aplicar sem ele
-  trancaria o painel fora do servidor que acabou de nascer.
-- **CTs que ja existiam**: `.\deploy\firewall\apply-firewall.ps1`. Ele acha os jogos pelo
-  banco do broker (com as portas que cada um recebeu), aplica, **testa** cada CT (o painel
-  ainda abre SSH no jogo? o broker ainda fala com o Proxmox?) e **desliga sozinho** o
-  firewall do CT cujo teste falhar. `-DryRun` so mostra as regras; `-Only 302` limita a um CT;
-  `-ExtraGameCts 210,211` inclui jogos feitos pelo `deploy-game.ps1`.
-- **Emergencia** (sempre funciona, porque passa pelo Proxmox e nao pela rede):
-  `pct exec <CT> -- ct-firewall off`. Religar: `pct exec <CT> -- ct-firewall apply`.
-  Conferir: `pct exec <CT> -- ct-firewall status`.
-- **Porta a mais num jogo** (ex.: os mundos extras do Dragonwilds em `7778`/`7779`): edite
-  `FW_GAME_PORTS` em `/etc/ct-firewall.env` do CT e rode `ct-firewall apply`.
-- O painel so e alcancavel da rede local. Acesso de fora tem de chegar por um tunel ou proxy
-  **de dentro** da LAN (ou incluido em `ADMIN_FIREWALL_SOURCES`).
-- `CT_FIREWALL=0` no `.env` desliga tudo isso nos proximos deploys.
-
-### Arquivos
-
-| Caminho (no CT do painel) | O que e |
-|---------------------------|---------|
-| `/opt/gamepanel/` | aplicacao: `app.py`, `ui.py`, `templates/` (com `components/`) e `static/` (`css/`, `js/`, `icons/`) |
-| `/var/lib/gamepanel/panel.db` | SQLite: usuarios, servidores, historico |
-| `/var/lib/gamepanel/known_hosts` | host keys aprendidas dos containers |
-| `/var/lib/gamepanel/backups/<jogo>/` | a segunda copia de cada backup (`GAMEPANEL_PANEL_BACKUP_DIR`) |
-| `/etc/gamepanel/id_ed25519` | chave SSH do painel |
-| `/etc/gamepanel/panel.env` | configuracao lida pelo systemd |
-
-Cada backup existe em **dois lugares**: no container do jogo, em `/var/backups/gamepanel`
-(`GAMEPANEL_BACKUP_DIR`), e aqui, em `/var/lib/gamepanel/backups/` — a copia daqui e a que
-sobrevive a remover a instancia. Veja [Backups](#backups).
-
-### Como a interface e montada
-
-Tres decisoes explicam a organizacao do `src/gamepanel/`, e as tres nasceram do mesmo
-problema: a mesma coisa escrita em varios lugares acaba virando coisas diferentes.
-
-**`navigation.py` &mdash; o mapa da interface.** Quais telas um servidor tem, em que ordem, com
-que icone, e quem pode abrir cada uma. A lista de telas ja esteve escrita a mao em seis
-templates, cada um com um subconjunto proprio: era por isso que &quot;Graficos&quot;
-aparecia numa tela e nao na outra. Hoje **tela nova = uma linha nessa tupla**, e ela
-aparece sozinha na barra do servidor e no menu do cartao do painel. O modulo e puro (nao
-importa Flask); quem liga isso ao pedido em curso e o `app.py`.
-
-O mesmo vale para as acoes: `ui.ACOES` diz como cada uma se apresenta (rotulo, icone,
-grupo, peso visual) e `app.COMANDOS` diz o que ela roda. Uma `assert` no import garante
-que as duas listas nao divirjam &mdash; acao com botao e sem comando da 500 no clique,
-acao com comando e sem botao e codigo morto.
-
-**`templates/components/` &mdash; as pecas.** `ui.html` tem o que e generico (botao,
-selo, menu, cabecalho, tabela) e `servidor.html` o que conhece o dominio (estado do
-servico, barra de navegacao, controles de energia, cartao do painel). Toda acao que muda
-alguma coisa monta o proprio campo de CSRF: era uma linha copiada em ~40 formularios, e
-basta esquece-la uma vez para ter um botao que da 400 so em producao.
-
-**`static/css/` e `static/js/` &mdash; camadas.** O CSS vai de `tokens` (valores) a
-`pages` (o que e de uma tela so), cada camada podendo depender so das anteriores. O JS e
-um modulo por comportamento, com o mesmo contrato &mdash; `{ seletor, montar(el) }` — e o
-`app.js` so liga cada um aos elementos que a pagina trouxe. **Nenhum template tem
-`<script>` com logica dentro**, nem `onsubmit="return confirm(...)"`: a mensagem de
-confirmacao viaja em `data-confirmar`, e o nome do arquivo (que vem do container) nunca
-mais entra dentro de codigo JavaScript.
+Each backup exists in **two places**: in the game container, in `/var/backups/gamepanel`
+(`GAMEPANEL_BACKUP_DIR`), and here, in `/var/lib/gamepanel/backups/`; the copy here is the one that
+survives removing the instance. See [Backups](#backups).
 
 ```bash
 pct exec <ADMIN_CTID> -- systemctl status gamepanel.service --no-pager
 pct exec <ADMIN_CTID> -- journalctl -u gamepanel.service -f
 ```
 
-Esqueceu a senha? Rode o `deploy-admin.ps1` de novo com `ADMIN_PASSWORD` preenchido —
-ele redefine a senha do usuario sem tocar nos servidores cadastrados (nem no papel dele).
-Para os demais usuarios, um administrador redefine a senha na tela **Usuarios**.
+The running version appears in the footer of every screen and at `/health`
+(`{"status","version","commit","built_at"}`).
+
+## Configuration
+
+All deploy settings live in `.env` (copy it from `.env.example`, which documents every key).
+Secrets for the broker live in `broker.secrets.env` (from `broker.secrets.env.example`). Both are
+outside git.
+
+The main groups:
+
+| Group | Keys |
+|-------|------|
+| Proxmox access | `PROXMOX_PASSWORD` (optional, see [Proxmox access by password](#proxmox-access-by-password)) |
+| Game LXC | `CTID`, `IP_CIDR`, `MEMORY`, `CORES`, `ROOTFS_SIZE_GB`, `SWAP`... with optional `_<GAME>` suffix; `RECREATE_CT` |
+| Updates | `AUTO_UPDATE`, `UPDATE_SCHEDULE` (LXC), `UPDATE_TIME`, `UPDATE_ON_START` (Docker) |
+| Steam account | `STEAM_USER`, `STEAM_PASS` |
+| Docker | `DOCKER_HOST`, `SSH_PORT_<GAME>` |
+| Panel CT | `ADMIN_CTID`, `ADMIN_HOSTNAME`, `ADMIN_IP_CIDR`, `ADMIN_HOST`, `ADMIN_GATEWAY`, `ADMIN_MEMORY`, `ADMIN_CORES`, `ADMIN_DISK_GB`, `ADMIN_SWAP`, `ADMIN_PORT`, `ADMIN_SSH_PUBKEY` |
+| Panel login | `ADMIN_USER`, `ADMIN_PASSWORD`, `ADMIN_REQUIRE_2FA`, `ADMIN_WEBAUTHN_ORIGIN`, `ADMIN_LANG` |
+| Panel features | `ADMIN_ALLOW_SHELL`, `ADMIN_TERM_MAX`, `ADMIN_TERM_IDLE`, `ADMIN_ALLOW_FILES`, `ADMIN_FILE_MAX_KB`, `ADMIN_FILE_PREVIEW_KB`, `ADMIN_FILE_DOWNLOAD_MAX_MB`, `ADMIN_FILE_DEFAULT`, `ADMIN_FILE_ROOTS` |
+| Panel timing | `ADMIN_METRICS_TTL`, `ADMIN_QUERY_TIMEOUT`, `ADMIN_PLAYERS_TTL` |
+| Panel SSH reach | `PANEL_PUBKEY`, `ADMIN_AUTHORIZE_CTIDS` |
+| Firewall | `CT_FIREWALL`, `ADMIN_FIREWALL_SOURCES` |
+| Broker CT | `BROKER_CTID`, `BROKER_HOSTNAME`, `BROKER_IP_CIDR`, `BROKER_GATEWAY`, `BROKER_PORT`, `BROKER_IP_PREFIX`, `BROKER_IP_INICIO`/`BROKER_IP_FIM`, `BROKER_CTID_BASE`, `BROKER_PORT_INICIO`/`BROKER_PORT_FIM`, `BROKER_MAX_INSTANCIAS`, `BROKER_MAX_CREATIONS_PER_HOUR`, `BROKER_ALLOW_IPS`, `RECREATE_BROKER_CT` |
+
+Each `ADMIN_*` key becomes a `GAMEPANEL_*` variable in `/etc/gamepanel/panel.env`. Some panel
+options have no `ADMIN_*` key and are set as `GAMEPANEL_*` directly; the ones referenced in this
+README:
+
+| Variable | Default | What it does |
+|----------|---------|--------------|
+| `GAMEPANEL_SAMPLE_EVERY` | 5 min | chart sample interval |
+| `GAMEPANEL_SAMPLES_KEEP_DAYS` | 7 | chart sample retention |
+| `GAMEPANEL_UPLOAD_MAX` | 512 MB | file upload limit |
+| `GAMEPANEL_SHELL_TIMEOUT` | 600 s | one-shot command time limit |
+| `GAMEPANEL_BACKUP_DIR` | `/var/backups/gamepanel` | backup folder in the game container |
+| `GAMEPANEL_BACKUP_KEEP` | 5 | copies kept in the container |
+| `GAMEPANEL_BACKUP_TIMEOUT` | | backup job time limit |
+| `GAMEPANEL_PANEL_BACKUP_DIR` | `backups/` next to the database | backup folder on the panel |
+| `GAMEPANEL_PANEL_BACKUP_KEEP` | 10 | copies kept per game on the panel (`0` = never delete) |
+| `GAMEPANEL_SCHEDULE_GRACE` | 1 h | tolerance for a late scheduled task |
+| `GAMEPANEL_JOBS_KEEP_DAYS` | 60 | history retention (`0` disables) |
+| `GAMEPANEL_WEBHOOK_MAX` | 10 | max alert destinations |
+| `GAMEPANEL_WEBHOOK_URL` | | seeds the first alert destination |
+| `GAMEPANEL_WEBHOOK_UA` | | User-Agent of webhook calls |
+| `GAMEPANEL_MONITOR_EVERY` | 60 s | server state check interval |
+| `GAMEPANEL_DISK_CHECK_EVERY` | 10 min | disk check interval |
+| `GAMEPANEL_MUTE_ROUNDS` | 3 | silent checks before "not responding" |
+| `GAMEPANEL_LOG_CHECK_EVERY` | 120 s | log error scan interval |
+| `GAMEPANEL_LOG_ERR_COOLDOWN` | 10 min | min gap between log error alerts per server |
+| `GAMEPANEL_ALERT_QUIET` | 180 s | quiet window after a panel action |
+| `GAMEPANEL_ALLOW_BROKER` | 0 | turns on the broker screens |
+
+Every `GAMEPANEL_*` variable is read and validated in one place (`src/gamepanel/config.py`). An
+invalid value is reported by variable **name** (never its value, since some are secrets), with
+all problems listed at once.
+
+## Broker (Proxmox and OPNsense)
+
+The panel holds no Proxmox or OPNsense credentials. The **broker** (`src/gamebroker/`) does, in
+its own unprivileged CT, and exposes fixed verbs: create / disable / remove an instance, and the
+game catalog. The panel's **Catalog** and **Instances** screens (admin only, with 2FA) use it to
+create a game server with one click: the broker creates the CT on Proxmox, installs the game over
+SSH (`lib/ct-install.sh`, the same phases as `provision-game-lxc.sh`), opens the ports on
+OPNsense and the panel registers the new server.
+
+Status: core, real Proxmox and OPNsense backends, the HTTP client, the SSH installer, the panel
+screens and the broker deploy are done and tested against fake servers. A full end-to-end
+creation against your own Proxmox/OPNsense is the step to verify on your side.
+
+### Deploying the broker
+
+```powershell
+Copy-Item broker.secrets.env.example broker.secrets.env   # Proxmox and OPNsense tokens, optional Steam account
+.\deploy\broker\deploy-broker.ps1
+.\deploy\broker\deploy-broker.ps1 -ConfigurePanel   # writes URL/token/fingerprint to the panel, broker still OFF
+.\deploy\broker\deploy-broker.ps1 -EnableOnPanel    # turns it on in the panel (asks for confirmation)
+```
+
+- `deploy-broker.ps1` runs `provision-broker-lxc.sh` on the Proxmox host: its own unprivileged CT,
+  **outside** the `games` pool, with gunicorn + TLS (1 worker) and a hardened systemd unit.
+- **Token, SSH key and certificate persist between deploys** (regenerating them would break the
+  panel); they only change with `-RotateToken` / `-RotateCert`. `-RecreateCt` recreates the CT.
+- The secrets arrive in `broker.secrets.env` (mode 0600, deleted at the end) and go to
+  `/etc/gamebroker/broker.env`; nothing secret goes into the unit.
+- The deploy **does not turn the feature on in the panel**: `-ConfigurePanel` writes the URL,
+  token and fingerprint with `GAMEPANEL_ALLOW_BROKER=0`, and `-EnableOnPanel` asks for
+  confirmation. The old Portuguese names (`-ConfigurarPainel`, `-LigarNoPainel`) still work as
+  aliases.
+- The Proxmox and OPNsense APIs need **firewall rules for the broker CT** (the deploy summary
+  lists them). Without them the broker starts, but health shows "NAO RESPONDE" (not responding)
+  and nothing is created.
+- **TLS is pinned by fingerprint, never `verify=False`.** Proxmox and OPNsense are self-signed;
+  the broker only accepts the certificate whose SHA-256 is configured. The deploy reads the
+  fingerprint from the server (TOFU) and **prints it for you to check**; if you already know it,
+  set `*_CERT_SHA256`. `http://` is refused outside loopback.
+- The broker's configuration is validated on start, listing ALL problems at once by variable
+  name; a bad config stops the start, never a request. On the panel side, a bad broker config
+  turns the feature OFF instead of taking the panel down.
+- Manual tools: `deploy/broker/check-broker-access.ps1` checks read access only;
+  `deploy/broker/spike-broker-write.ps1` creates and deletes a test CT/rule.
+
+### How the broker allocates
+
+- **Internal port == external port, always.** A game marked shiftable (`PORTS_SHIFTABLE=1`) gets
+  a block of consecutive ports from the broker range (`BROKER_PORT_INICIO/FIM`, default
+  31000-31999, below the ephemeral 32768+ and away from the games' defaults); the others stay on
+  their default ports and are refused if those are taken. **No curated game uses the range, by
+  decision** (`PORTS_SHIFTABLE=0` with the reason in each `.env`): the server stays on the port
+  everyone knows, and a second instance of the same game is refused.
+- **Desfazer (undo) does not lie**: if cleanup fails, the reservation becomes `falhou` (failed)
+  and keeps blocking IP/CTID/ports until someone removes it.
+- Removing does not free the CTID/IP of a CT that may still exist (the token only sees the pool);
+  only the database-only removal clears the record.
+- OPNsense stores ports in **aliases**; reading the rules **fails closed**: a WAN rule the broker
+  does not understand means nothing new is opened.
+
+#### Addresses: the IP tells the CTID
+
+Panel `.100` (CT 300), broker `.101` (CT 301), broker game CTs `.102-.199` (CT 302-399):
+`CTID = BROKER_CTID_BASE (200) + last octet of the IP`, i.e. "3" + the last two digits of the IP.
+An IP is only used if its CTID is also free. Everything in 300-399 belongs to this system; the 2xx
+CTs are the old ones, made by hand or by `deploy-game.ps1`, and stay where they are. With
+`BROKER_CTID_BASE=0` the CTID is chosen separately, in the `BROKER_CTID_INICIO/FIM` range.
+
+**The OPNsense DHCP must not cover `.100-.199`**: the ping check cannot catch a device that has
+not arrived yet.
+
+### Curated and dynamic catalog
+
+- `games/*.env` is the curated catalog (may contain `PRE/POST_INSTALL_CMD`). It is read by a
+  parser, never with `source`, and unknown fields are refused.
+- Games registered through the API are **data only**: they pick from a closed list of
+  **recipes** (`proton`, `wine`, `xvfb`, `steamclient-sdk64`...), never write shell. An unknown
+  recipe aborts the install. Values in `install.env` are always shell-quoted.
+- Editing a CURATED game from the panel saves an override (`<key>.json` in the dynamic games
+  folder), never the `.env`. It only changes data; the hooks stay those of the file. "Delete" on
+  an edited curated game UNDOES the edit; on an unedited one it is refused (it comes from git).
+- The broker's Steam account only goes to curated games that need it (`STEAM_ANONYMOUS=0`,
+  today DayZ). It goes into `install.env` (deleted at the end), and the operation log masks it as
+  `******`.
+- The broker's key leaves the game CT at the end of the install; if it cannot be removed, the
+  creation FAILS.
+
+## Firewall inside the containers
+
+OPNsense only filters what **crosses** it. Inside the same subnet one CT talks to another
+directly, and a compromised game server would reach the panel's SSH, the broker API, Proxmox and
+the OPNsense API without hitting any rule. So each CT has its own firewall
+(`lib/ct-firewall.sh`, installed as `ct-firewall`, configured in `/etc/ct-firewall.env`), which
+**denies all inbound traffic** and only opens what that CT needs:
+
+| CT | Inbound | Outbound |
+|----|---------|----------|
+| Panel | web (`ADMIN_PORT`) and SSH only from `ADMIN_FIREWALL_SOURCES` (default `192.168.0.0/16`) | free (games, broker, webhook) |
+| Broker | API `:8443` only from the panel; no SSH (it has no sshd) | only Proxmox and OPNsense (from the URLs), SSH and ping to the games range, DNS and apt |
+| Game | game ports from anywhere; SSH and ping only from the panel and the broker | internet yes; **internal network no** (DNS only) |
+
+In all of them loopback passes (the Palworld and Satisfactory admin APIs only listen on
+`127.0.0.1`) and replies to already-open connections pass.
+
+- **A new CT is born with it**: panel (`deploy-admin.ps1 -Full`), broker (`deploy-broker.ps1`),
+  games through the broker and games through `deploy-game.ps1`. A game only gets a firewall if
+  the deploy knows the panel IP (`ADMIN_HOST`/`ADMIN_IP_CIDR`): applying without it would lock the
+  panel out of the server that was just created.
+- **Existing CTs**: `.\deploy\firewall\apply-firewall.ps1`. It finds the games through the
+  broker database (with the ports each one got), applies, **tests** each CT (can the panel still
+  SSH into the game? can the broker still talk to Proxmox?) and **turns off by itself** the
+  firewall of any CT whose test fails. `-DryRun` only shows the rules; `-Only 302` limits it to
+  one CT; `-ExtraGameCts 210,211` includes games made by `deploy-game.ps1`.
+- **Emergency** (always works, because it goes through Proxmox and not the network):
+  `pct exec <CT> -- ct-firewall off`. Turn back on: `pct exec <CT> -- ct-firewall apply`. Check:
+  `pct exec <CT> -- ct-firewall status`.
+- **An extra port on a game** (e.g. Dragonwilds' extra worlds on `7778`/`7779`): edit
+  `FW_GAME_PORTS` in the CT's `/etc/ct-firewall.env` and run `ct-firewall apply`.
+- Values are validated before becoming rules, and `nft -c` checks the ruleset before it is saved
+  as the boot config; a broken value keeps the old rules.
+- The host loads `nf_tables` (and keeps it in `/etc/modules-load.d`): an unprivileged CT uses
+  nftables but cannot load kernel modules.
+- The panel is only reachable from the local network. Access from outside must come through a
+  tunnel or proxy **inside** the LAN (or be included in `ADMIN_FIREWALL_SOURCES`).
+- `CT_FIREWALL=0` in `.env` disables all of this on the next deploys.
+
+## Security
+
+- **The panel does not log in to game containers as root.** Containers created from now on (by the
+  broker, `deploy-game.ps1` or the Docker image) get a dedicated `gamepanel` user: it acts as
+  `steam` (the user that runs SteamCMD and the game) for files, backups, console and terminal, and
+  can run only a fixed set of root helpers through sudo (start/stop/restart the game service,
+  update, ClamAV install, player presence), none of which takes a free argument. Root SSH login
+  is then disabled in the container. Servers registered before this change keep working as root
+  ("legacy", shown on the server page) until migrated; see
+  [docs/security-hardening.md](docs/security-hardening.md). The panel never has access to the
+  Proxmox host; the broker, which holds the Proxmox/OPNsense credentials, is a separate service
+  with fixed verbs.
+- **Restores are checked before anything stops**: an archive with absolute paths, `..`, links
+  pointing outside the backup paths, devices or setuid files is refused as a whole, and only the
+  server's backup paths are extracted.
+- The file manager only browses `/opt/game` and `/home/steam` by default
+  (`GAMEPANEL_FILE_ROOTS`).
+- **The panel serves plain HTTP**, designed for the LAN. Do not expose it to the internet; put it
+  behind a **TLS reverse proxy** or reach it through a **VPN**. Passkeys require HTTPS with a
+  domain anyway.
+- **Never expose the development compose** (`docker compose up`): it has a fixed
+  `admin` / `admin12345` login and is meant for `localhost` only.
+- If you do not need remote shell or file editing, turn them off: `ADMIN_ALLOW_SHELL=0`,
+  `ADMIN_ALLOW_FILES=0`.
+- Enable **2FA** for every admin, then `ADMIN_REQUIRE_2FA=1`. Broker actions always require 2FA.
+
+What the panel does:
+
+- Login by user, password hashed with **scrypt** in SQLite, session in a signed cookie (HttpOnly,
+  SameSite=Lax) and lockout after 5 wrong attempts in 5 minutes.
+- Two roles (**administrator** and **operator**): shell, file editor, server registration, user
+  management **and the history of those actions** are administrator only; see
+  [Users and roles](#users-and-roles).
+- Every POST requires a **CSRF** token.
+- **Passkeys** only with user verification (biometrics/PIN), a single-use challenge kept on the
+  server, exact origin and domain, and a counter against cloned keys; registering requires the
+  password (and the code, with 2FA).
+- Responses carry `X-Frame-Options: DENY` (the panel cannot be embedded in an iframe),
+  `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`.
+- The login's `?next=` redirect only accepts internal paths; `//host` and `/\host` are absolute
+  for the browser and would leave the panel.
+- The player counting wizard sends over **POST**: the game's admin password must not go through
+  the address bar, the `Referer` or a reverse proxy log.
+- Alert webhook URLs are secrets (whoever has them writes to your channel) and are stored in plain
+  text in `panel.db`, like the counting API password. They are masked on screen, but whoever has
+  the database file has the full URLs; if one leaks, delete the webhook in Discord/Slack and
+  register another here.
+- Each container has its **own firewall** (nftables), even against hosts on the same network; see
+  [Firewall inside the containers](#firewall-inside-the-containers).
+- The PWA never caches logged-in pages or `/api/` responses.
+
+**Reporting vulnerabilities**: please report them privately, as described in
+[SECURITY.md](SECURITY.md). Do not open a public issue.
+
+## Architecture
+
+```
+src/gamepanel/    the panel (Flask): app.py (assembly), blueprints/ (one file per screen group),
+                  services/ (pure decisions), persistence/ (schema + repositories, all SQL),
+                  games/ (config formats, per-game adapters, mods, catalog), i18n/, security/
+                  (TOTP, WebAuthn, QR, scrypt, CSRF - stdlib only), templates/, static/
+src/gamebroker/   the broker: Proxmox/OPNsense backends, SSH installer, catalog, allocator
+games/            curated game catalog (one *.env per game), read by both the broker and bash
+lib/              in-container install phases (ct-phases.sh, ct-install.sh), install-release.sh,
+                  ct-firewall.sh
+deploy/           admin/, broker/, game/, firewall/ - the .ps1 entry points and provision-*.sh
+docker/           dev compose images, Docker game image (gameserver/), shell sandboxes (ct-sandbox/)
+tools/            build-release.py, import-linuxgsm.py, import-pterodactyl.py, verify-qr.py
+tests/            pytest suites for both packages, split into unit/ and integration/
+```
+
+How the interface is built, in short:
+
+- **`navigation.py` is the map of the interface**: which screens a server has, in which order,
+  with which icon, and who may open each one. A new server screen is one line in
+  `SERVER_SECTIONS`, and it appears in the server bar and the dashboard card menu. Actions are
+  described there (`ACTIONS`: label, icon, group) and their commands live in `app.COMMANDS`; an
+  assert at import time keeps both lists in sync.
+- **`templates/components/` holds the pieces**: `ui.html` is generic (button, badge, menu,
+  header, table) and `server.html` knows the domain (service state, navigation bar, power
+  controls, dashboard card). Every action that changes something builds its own CSRF field.
+- **CSS and JS are layered**: CSS goes from `tokens` (values) to `pages` (single-screen rules),
+  each layer depending only on the previous ones, mobile first. JS is one ES module per behavior
+  with the same contract, and `app.js` only wires each one to the elements the page has. **No
+  template has a `<script>` with logic**, and confirmation messages travel in `data-confirm`.
+  Every screen works without JavaScript.
+- **Production dependencies are the Python stdlib plus `python3-flask` from apt.** No pip, no CDN,
+  no build step: 2FA, WebAuthn, QR codes and the terminal emulator are written here.
+
+The broker deploy, releases and both packages are described further in [CLAUDE.md](CLAUDE.md)
+and `docs/`.
+
+## Local development
+
+```bash
+docker compose up --build -d          # panel at http://localhost:8080 - admin / admin12345
+docker compose restart panel          # after adding a route or changing a decorator
+```
+
+Three containers come up (plus the toy broker): the panel and two fake "game servers" (Debian
+with `sshd`, a simulated `systemctl`/`journalctl` and the `.ini` files the game would have). Both
+are already registered in the panel with the `.ini` pointed out, so the **Config** screen can be
+tested end to end, along with start/stop/update, terminal and editor. The code is bind-mounted:
+templates and static files only need a page reload, and `app.py` is reloaded by gunicorn's
+`--reload`.
+
+Do not confuse it with the real deploy: here the containers are called `game-palworld-dev`, and
+the image in `docker/game/` **installs no game** (the real one is `docker/gameserver/`, used by
+`deploy-docker.ps1`).
+
+The two fake containers are deliberately different, to cover the counting sources: `game-palworld`
+has an A2S query (`27015/udp`) **and** a REST API in Palworld's format (`127.0.0.1:8212`,
+`admin`/`troque-me`); `game-dragonwilds` has neither, it only announces joins and leaves in the
+log, like the real game. The test image also has no `curl` on purpose, so the local environment
+exercises the fallback path for HTTP calls (the real game container has `curl`).
+
+```bash
+docker compose logs -f panel
+docker compose exec game-palworld sh -c 'echo 7 > /run/fake-players' # pins the count
+docker compose down -v            # wipes the database, keys and test files
+```
+
+### Tests
+
+The test suites are **pytest**, for both packages (`tests/gamepanel/`, `tests/gamebroker/`), each
+split into `unit/` (function calls only, fast) and `integration/` (crosses a boundary: Flask
+client, fake HTTP server, sqlite file, subprocess).
+
+```powershell
+uv sync                              # creates .venv with both packages editable + pytest/ruff/mypy
+uv run pytest                        # everything
+uv run pytest tests\gamepanel\unit   # the quick loop while editing
+uv run ruff check src tests
+uv run mypy src
+```
+
+Inside the dev container (closer to production):
+
+```bash
+MSYS_NO_PATHCONV=1 docker compose exec -T -w /workspace panel python3 -m pytest -q
+```
+
+`test_javascript.py` needs `node` on the PATH and is skipped without it. Shell scripts are
+proven by the sandboxes in `docker/ct-sandbox/` (`compare.sh`, `broker.sh`, `release.sh`,
+`firewall.sh`).
+
+## Roadmap
+
+- **Port forwarding on common routers.** Today the broker opens ports on OPNsense only. The
+  next step is a generic backend: UPnP IGD / NAT-PMP / PCP (what most home routers already
+  speak), plus API backends for the usual self-hosted ones (pfSense, MikroTik RouterOS,
+  OpenWrt, UniFi). The broker keeps the same contract - "open these ports for this CT",
+  "close them" - so the panel does not change.
+- **Finish the move away from root** ([docs/security-hardening.md](docs/security-hardening.md)):
+  new containers already use the unprivileged `gamepanel` user; what is left is running the mod
+  loader installers without root, a one-click migration for existing containers, and sandboxing
+  the game service itself. These need validation on a real Proxmox CT.
+- **First real end-to-end creation through the broker** against a live Proxmox and OPNsense,
+  and a published release built by the release workflow.
+
+## Contributing
+
+Contributions are welcome. Before changing code, read [CLAUDE.md](CLAUDE.md): it holds the
+contributor and coding conventions (English identifiers, where each kind of code lives, the
+contracts between templates, CSS and JavaScript, how to rename safely, and what to verify before
+calling a change done). The test suite is pytest:
+
+```bash
+uv sync && uv run pytest
+```
+
+`ruff check` and `mypy` are at zero findings; keep them there.
+
+## License
+
+MIT; see [LICENSE](LICENSE).

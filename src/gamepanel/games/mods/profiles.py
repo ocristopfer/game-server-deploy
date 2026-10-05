@@ -1,50 +1,50 @@
-"""Qual gestor de mods vale para qual servidor.
+"""Which mod manager applies to which server.
 
-A escolha e pelo NOME DO SERVICO (`ets2.service`): e a identidade que todo servidor do
-painel tem, venha do broker, do deploy-game.ps1 ou do cadastro a mao - o painel nao guarda
-"qual jogo e este" em outro lugar. Servidor sem perfil nao fica sem saida: a tela diz que o
-jogo ainda nao tem gestor e manda para a tela Arquivos.
+The choice is by the SERVICE NAME (`ets2.service`): it is the identity every panel server has,
+whether it came from the broker, from deploy-game.ps1 or was registered by hand - the panel
+does not keep "which game is this" anywhere else. A server without a profile is not left
+stranded: the screen says the game has no manager yet and points to the Files screen.
 
-Perfil novo = uma entrada em `PROFILES`. Um teste cobra que dois perfis nao disputem o
-mesmo servico (o primeiro venceria e o segundo viraria codigo morto calado).
+New profile = one entry in `PROFILES`. A test makes sure two profiles do not claim the same
+service (the first would win and the second would silently become dead code).
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
-# O servidor LE os pacotes exportados do jogo; mod nenhum e copiado para ele.
+# The server READS the packages exported from the game; no mod is copied to it.
 KIND_PACKAGES = "packages"
-# O servidor precisa do arquivo do mod numa pasta dele.
+# The server needs the mod file in one of its folders.
 KIND_FOLDER = "folder"
-# Mods do Thunderstore com o BepInEx: o CT baixa e instala (games/mods/thunderstore_remote.py).
+# Thunderstore mods with BepInEx: the CT downloads and installs (games/mods/thunderstore_remote.py).
 KIND_THUNDERSTORE = "thunderstore"
-# Carregador nativo do Enshrouded (Shroudtopia): o CT baixa o carregador, o Wine passa a usar
-# o winmm.dll dele, e os mods sao DLLs que entram pela tela (games/mods/shroudtopia_remote.py).
+# Enshrouded native loader (Shroudtopia): the CT downloads the loader, Wine starts using its
+# winmm.dll, and the mods are DLLs that come in through the screen (games/mods/shroudtopia_remote.py).
 KIND_SHROUDTOPIA = "shroudtopia"
-# UE4SS (jogo Unreal cujo servidor e o .exe de Windows sob o Proton): o CT baixa o carregador, o
-# Wine passa a usar o dwmapi.dll dele, e os mods moram em Mods/ ao lado do executavel
-# (games/mods/ue4ss_remote.py). A pasta do perfil e a Mods/; o carregador mora na de cima.
+# UE4SS (Unreal game whose server is the Windows .exe under Proton): the CT downloads the loader,
+# Wine starts using its dwmapi.dll, and the mods live in Mods/ next to the executable
+# (games/mods/ue4ss_remote.py). The profile folder is Mods/; the loader lives in the one above.
 KIND_UE4SS = "ue4ss"
-# Satisfactory: SML e os mods do ficsit.app, pela API dele (games/mods/sml_remote.py).
+# Satisfactory: SML and the ficsit.app mods, through its API (games/mods/sml_remote.py).
 KIND_SML = "sml"
-# Rust: o Oxide (uMod) sobrescreve DLLs do jogo e os plugins sao .cs (games/mods/oxide_remote.py).
+# Rust: Oxide (uMod) overwrites game DLLs and the plugins are .cs (games/mods/oxide_remote.py).
 KIND_OXIDE = "oxide"
-# Unreal LINUX nativo (Palworld, Dragonwilds): o UE4SS oficial compilado para Linux, por LD_PRELOAD
-# num drop-in do systemd (games/mods/ue4ss_linux_remote.py). A pasta do perfil continua a dos
-# .pak (envio); o UE4SS e os mods Lua ficam em <loader_dir>/ue4ss.
+# Native LINUX Unreal (Palworld, Dragonwilds): the official UE4SS built for Linux, via LD_PRELOAD
+# in a systemd drop-in (games/mods/ue4ss_linux_remote.py). The profile folder is still the .pak
+# one (upload); UE4SS and the Lua mods live in <loader_dir>/ue4ss.
 KIND_UE4SS_LINUX = "ue4ss-linux"
-# Workshop pela CONFIG do jogo: o proprio servidor baixa os mods na subida, a partir da lista de
-# IDs que o painel escreve no arquivo dele (games/mods/workshop_remote.py). `workshop_format` diz
-# qual arquivo e qual formato (dst, zomboid, unturned, reforger).
+# Workshop through the game CONFIG: the server itself downloads the mods on startup, from the
+# list of IDs the panel writes into its file (games/mods/workshop_remote.py). `workshop_format`
+# says which file and which format (dst, zomboid, unturned, reforger).
 KIND_WORKSHOP = "workshop"
-# So o guia (onde achar, como instalar), sem acao: o caminho existe mas ainda nao foi provado
-# num servidor de verdade, e botao que "instala" sem prova e pior que instrucao clara.
+# Guide only (where to find, how to install), no action: the path exists but has not been proven
+# on a real server yet, and a button that "installs" without proof is worse than clear instructions.
 KIND_GUIDE = "guide"
 
-# Onde se acha mod de cada jogo. O Nexus Mods fica como LINK, nunca como download automatico:
-# a API dele so entrega arquivo para conta Premium, e automatizar sem ela viola os termos de
-# uso. Quem baixa do Nexus e a pessoa; o painel recebe o arquivo pela tela.
+# Where each game's mods are found. Nexus Mods stays as a LINK, never as an automatic download:
+# its API only serves files to Premium accounts, and automating without one violates the terms
+# of use. The person downloads from Nexus; the panel receives the file through the screen.
 NEXUS = "https://www.nexusmods.com/"
 
 
@@ -52,44 +52,44 @@ NEXUS = "https://www.nexusmods.com/"
 class ModProfile:
     key: str
     kind: str
-    # Nomes de servico (sem o `.service`) que usam este perfil: o do catalogo curado e o que
-    # a busca do painel sugere (LinuxGSM/Pterodactyl), que vira outro nome de servico.
+    # Service names (without `.service`) that use this profile: the one from the curated catalog
+    # and the one the panel search suggests (LinuxGSM/Pterodactyl), which becomes another service name.
     services: tuple[str, ...]
-    # Pasta do container para onde o envio vai.
+    # Container folder the upload goes to.
     folder: str
-    # Chave de i18n do paragrafo que explica como os mods funcionam NESTE jogo.
+    # i18n key of the paragraph that explains how mods work in THIS game.
     help_key: str
-    # Envio aceito: nomes exatos (os pacotes do ETS2) ou extensoes (.pak). Um dos dois.
+    # Accepted upload: exact names (the ETS2 packages) or extensions (.pak). One of the two.
     upload_names: tuple[str, ...] = ()
     extensions: tuple[str, ...] = ()
-    # App ID do JOGO na Steam, para o link da Workshop que vai para os jogadores.
+    # The GAME's Steam App ID, for the Workshop link that goes to the players.
     workshop_appid: int = 0
-    # Thunderstore: a comunidade (parte da URL), o carregador (namespace, nome) e a memoria
-    # que a PRIMEIRA subida com ele pede - medida, e nao chutada (ver VRISING).
+    # Thunderstore: the community (part of the URL), the loader (namespace, name) and the memory
+    # the FIRST startup with it needs - measured, not guessed (see VRISING).
     community: str = ""
     loader: tuple[str, str] = ("", "")
     min_memory_mb: int = 0
-    # (chave de i18n do rotulo, URL) de onde os mods deste jogo sao encontrados.
+    # (i18n key of the label, URL) where this game's mods are found.
     sources: tuple[tuple[str, str], ...] = ()
-    # O que o "Verificar mods instalados" passa pelo antivirus, quando nao e so `folder`: o
-    # carregador mora fora da pasta de mods, e na pasta do jogo inteira (V Rising) seriam gigas
-    # de arquivo do proprio jogo para nada.
+    # What "Check installed mods" runs through the antivirus, when it is not just `folder`: the
+    # loader lives outside the mods folder, and the whole game folder (V Rising) would be gigabytes
+    # of the game's own files for nothing.
     audit_paths: tuple[str, ...] = ()
-    # Carregador nativo: a pasta do executavel do jogo, onde o carregador entra. Vazio = um nivel
-    # acima da pasta de mods (Shroudtopia); o UE4SS experimental poe os mods DOIS niveis abaixo.
+    # Native loader: the folder of the game executable, where the loader goes. Empty = one level
+    # above the mods folder (Shroudtopia); experimental UE4SS puts the mods TWO levels below.
     loader_dir: str = ""
-    # False = o instalador existe mas ainda nao rodou num servidor de verdade: a tela avisa.
-    # Quem provar num CT real troca para True, com o que foi medido escrito no perfil.
+    # False = the installer exists but has not run on a real server yet: the screen warns.
+    # Whoever proves it on a real CT switches to True, with what was measured written in the profile.
     proven: bool = True
-    # Thunderstore num servidor Linux NATIVO (Valheim): o BepInEx entra por drop-in do systemd
-    # (LD_PRELOAD do doorstop), e nao pelo winhttp do Wine.
+    # Thunderstore on a NATIVE Linux server (Valheim): BepInEx comes in through a systemd drop-in
+    # (the doorstop LD_PRELOAD), and not through Wine's winhttp.
     linux_bepinex: bool = False
-    # UE4SS Linux: o oficial compilado para Linux (ocristopfer/RE-UE4SS), nesta tag de release
-    # (fixa: trocar e decisao, nao "a mais nova"). `engine_version` escolhe o template com que o
-    # CT gera o VTableLayout.ini a partir do .sym, quando o servidor traz um.
+    # UE4SS Linux: the official one built for Linux (ocristopfer/RE-UE4SS), at this release tag
+    # (pinned: changing it is a decision, not "the newest"). `engine_version` picks the template the
+    # CT uses to generate VTableLayout.ini from the .sym, when the server ships one.
     ue4ss_release: str = ""
     engine_version: str = ""
-    # Workshop pela config: o formato que o workshop_remote sabe escrever.
+    # Workshop through the config: the format workshop_remote knows how to write.
     workshop_format: str = ""
 
     @property
@@ -97,10 +97,10 @@ class ModProfile:
         return self.audit_paths or (self.folder,)
 
     def accepts(self, name: str) -> bool:
-        """O nome de arquivo que pode entrar pela tela Mods deste jogo."""
+        """The file name that may come in through this game's Mods screen."""
         if self.upload_names:
             return name in self.upload_names
-        # Sem extensao declarada (Thunderstore) nada entra por envio: `endswith(())` e False.
+        # With no declared extension (Thunderstore) nothing comes in by upload: `endswith(())` is False.
         return name.lower().endswith(self.extensions)
 
 
@@ -108,8 +108,8 @@ ETS2 = ModProfile(
     key="ets2",
     kind=KIND_PACKAGES,
     services=("ets2", "euro-truck-simulator-2"),
-    # O wrapper do games/ets2.env liga a pasta padrao do servidor a esta (ele ignora o
-    # -homedir): e aqui que os pacotes precisam estar.
+    # The wrapper in games/ets2.env links the server's default folder to this one (it ignores
+    # -homedir): this is where the packages need to be.
     folder="/opt/game/server-home",
     help_key="mods.help_ets2",
     upload_names=("server_packages.sii", "server_packages.dat"),
@@ -120,16 +120,16 @@ ETS2 = ModProfile(
 
 PALWORLD = ModProfile(
     key="palworld",
-    # UE4SS oficial para Linux (release linux-v1), provado no servidor de verdade em Docker
-    # (2026-10-04): Lua, FindFirstOf, RegisterHook de Blueprint e nativo - inclusive em funcao
-    # que os Blueprints de animacao chamam de outra thread - e 10 minutos de pe. Sem .sym, e nem
-    # precisa: o motor e o 5.1.1 da Epic, e o layout dele vem embutido no UE4SS. Os ports antigos
-    # (XarminaEu e o nosso fork deles) derrubavam este servidor. proven=False ate a primeira
-    # instalacao por esta tela num CT de verdade.
+    # Official UE4SS for Linux (release linux-v1), proven on the real server in Docker
+    # (2026-10-04): Lua, FindFirstOf, RegisterHook on Blueprint and native - even on a function
+    # that the animation Blueprints call from another thread - and 10 minutes up. No .sym, and it
+    # is not needed: the engine is Epic's 5.1.1, and its layout is built into UE4SS. The old ports
+    # (XarminaEu and our fork of it) brought this server down. proven=False until the first
+    # install through this screen on a real CT.
     kind=KIND_UE4SS_LINUX,
     services=("palworld",),
-    # A Unreal carrega de ~mods os .pak que nao vieram com o jogo; o servidor e o cliente
-    # tem cada um a sua copia, e mod de servidor so vale se estiver aqui.
+    # Unreal loads from ~mods the .pak files that did not ship with the game; server and client
+    # each have their own copy, and a server mod only counts if it is here.
     folder="/opt/game/Pal/Content/Paks/~mods",
     help_key="mods.help_palworld",
     extensions=(".pak",),
@@ -146,18 +146,18 @@ DRAGONWILDS = ModProfile(
     key="dragonwilds",
     kind=KIND_UE4SS_LINUX,
     services=("dragonwilds",),
-    # O servidor e Unreal 5 nativo Linux: le de ~mods o que nao veio com o jogo. Conferido no
-    # CT de producao (os proprios arquivos do jogo em Paks/ sao .pak + .ucas + .utoc).
+    # The server is native Linux Unreal 5: it reads from ~mods whatever did not ship with the
+    # game. Checked on the production CT (the game's own files in Paks/ are .pak + .ucas + .utoc).
     folder="/opt/game/RSDragonwilds/Content/Paks/~mods",
     help_key="mods.help_dragonwilds",
-    # Unreal 5 (IoStore): um mod costuma vir em TRES arquivos com o mesmo nome, e o .pak sozinho
-    # nao carrega. Os tres entram juntos.
+    # Unreal 5 (IoStore): a mod usually comes in THREE files with the same name, and the .pak alone
+    # does not load. The three go in together.
     extensions=(".pak", ".utoc", ".ucas"),
-    # UE4SS oficial para Linux (release linux-v1), provado no servidor de verdade em Docker:
-    # Lua, FindFirstOf, RegisterHook de Blueprint e nativo, ExecuteInGameThread, e cada hook de
-    # vtable conferido pelo nome no .sym. O motor e um 5.6.1 MODIFICADO pela Jagex (virtuais a
-    # mais na AActor): o CT gera do .sym o VTableLayout.ini e as UE4SS_Signatures deste build. Um
-    # update do jogo pede reinstalar. proven=False ate a primeira instalacao por esta tela num CT.
+    # Official UE4SS for Linux (release linux-v1), proven on the real server in Docker:
+    # Lua, FindFirstOf, RegisterHook on Blueprint and native, ExecuteInGameThread, and every vtable
+    # hook checked by name in the .sym. The engine is a 5.6.1 MODIFIED by Jagex (extra virtuals
+    # in AActor): the CT generates VTableLayout.ini and the UE4SS_Signatures of this build from the
+    # .sym. A game update requires reinstalling. proven=False until the first install through this screen on a CT.
     loader_dir="/opt/game/RSDragonwilds/Binaries/Linux",
     ue4ss_release="linux-v2",
     engine_version="5.6",
@@ -171,9 +171,9 @@ ENSHROUDED = ModProfile(
     key="enshrouded",
     kind=KIND_SHROUDTOPIA,
     services=("enshrouded",),
-    # A pasta dos MODS; o carregador mora na de cima, ao lado do enshrouded_server.exe. Provado
-    # no CT 303 (Proton GE 11) em 2026-10-03: com winmm=n,b o Shroudtopia sobe, carrega a DLL
-    # de mods/ e o servidor segue respondendo a A2S. Ver shroudtopia_remote.py.
+    # The MODS folder; the loader lives in the one above, next to enshrouded_server.exe. Proven
+    # on CT 303 (Proton GE 11) on 2026-10-03: with winmm=n,b Shroudtopia starts, loads the DLL
+    # from mods/ and the server keeps answering A2S. See shroudtopia_remote.py.
     folder="/opt/game/mods",
     help_key="mods.help_enshrouded",
     extensions=(".dll",),
@@ -186,9 +186,9 @@ ICARUS = ModProfile(
     key="icarus",
     kind=KIND_UE4SS,
     services=("icarus",),
-    # O servidor e o IcarusServer-Win64-Shipping.exe sob o Proton (UE 4.27): o proxy do UE4SS
-    # (dwmapi.dll) entra ao lado dele, e o resto - mods inclusive - em ue4ss/ (layout da
-    # experimental, a que nao quebra a Steam: ver ue4ss_remote.py). Provado num Icarus de teste.
+    # The server is IcarusServer-Win64-Shipping.exe under Proton (UE 4.27): the UE4SS proxy
+    # (dwmapi.dll) goes next to it, and the rest - mods included - in ue4ss/ (the experimental
+    # layout, the one that does not break Steam: see ue4ss_remote.py). Proven on a test Icarus.
     folder="/opt/game/Icarus/Binaries/Win64/ue4ss/Mods",
     loader_dir="/opt/game/Icarus/Binaries/Win64",
     help_key="mods.help_icarus",
@@ -201,15 +201,15 @@ VRISING = ModProfile(
     key="vrising",
     kind=KIND_THUNDERSTORE,
     services=("vrising", "v-rising"),
-    # A pasta do JOGO: o BepInExPack vai na raiz dele, e os plugins em BepInEx/plugins.
+    # The GAME folder: BepInExPack goes at its root, and the plugins in BepInEx/plugins.
     folder="/opt/game",
     help_key="mods.help_vrising",
     community="v-rising",
     loader=("BepInEx", "BepInExPack_V_Rising"),
-    # O BepInEx inteiro (core, plugins, a pasta do .NET) e o winhttp.dll do doorstop.
+    # All of BepInEx (core, plugins, the .NET folder) and the doorstop winhttp.dll.
     audit_paths=("/opt/game/BepInEx", "/opt/game/winhttp.dll", "/opt/game/dotnet"),
-    # Medido num CT de teste: a primeira subida com o BepInEx gera o codigo do jogo inteiro
-    # e chegou a 9,4 GB; com 6 GB o OOM killer derrubava o servidor em laco. O curado tem 8.
+    # Measured on a test CT: the first startup with BepInEx generates the code of the whole game
+    # and reached 9.4 GB; with 6 GB the OOM killer brought the server down in a loop. The curated one has 8.
     min_memory_mb=10240,
     sources=(("mods.source_thunderstore", "https://thunderstore.io/c/v-rising/"),),
 )
@@ -218,7 +218,7 @@ SATISFACTORY = ModProfile(
     key="satisfactory",
     kind=KIND_SML,
     services=("satisfactory",),
-    # Servidor Linux nativo: cada mod numa pasta em FactoryGame/Mods, o SML inclusive.
+    # Native Linux server: each mod in a folder under FactoryGame/Mods, SML included.
     folder="/opt/game/FactoryGame/Mods",
     loader_dir="/opt/game",
     help_key="mods.help_satisfactory",
@@ -235,7 +235,7 @@ VALHEIM = ModProfile(
     help_key="mods.help_valheim",
     community="valheim",
     loader=("denikson", "BepInExPack_Valheim"),
-    # Chute, nao medida: o Valheim pede bem menos que o V Rising. Medir ao provar.
+    # A guess, not measured: Valheim needs much less than V Rising. Measure when proving it.
     min_memory_mb=4096,
     audit_paths=("/opt/game/BepInEx", "/opt/game/doorstop_libs"),
     sources=(("mods.source_thunderstore", "https://thunderstore.io/c/valheim/"),),
@@ -247,7 +247,7 @@ RUST = ModProfile(
     key="rust",
     kind=KIND_OXIDE,
     services=("rust",),
-    # A pasta dos PLUGINS (.cs); o Oxide entra na do jogo (RustDedicated_Data/Managed).
+    # The PLUGINS folder (.cs); Oxide goes into the game folder (RustDedicated_Data/Managed).
     folder="/opt/game/oxide/plugins",
     loader_dir="/opt/game",
     help_key="mods.help_rust",
@@ -261,15 +261,15 @@ UE4SS_LINUX_DOCS = "https://github.com/ocristopfer/RE-UE4SS/blob/linux/docs/linu
 
 
 def _unreal_linux(key: str, services: tuple[str, ...], project: str, engine: str) -> ModProfile:
-    """Servidor Unreal Linux nativo com o UE4SS do release linux-v2, provado em servidor de verdade
-    em Docker (2026-10-04/05) com a prova completa: Lua, FindFirstOf achando o GameState do mapa,
-    RegisterHook nativo e de Blueprint, ExecuteInGameThread. O CT gera os arquivos deste jogo a partir
-    do pacote de referencia da versao (ue_linux_layout): todo estudio mexe no motor, e o layout
-    embutido sozinho derrubava mais da metade destes servidores. proven=False ate a primeira
-    instalacao por esta tela num CT de verdade."""
+    """Native Linux Unreal server with UE4SS from release linux-v2, proven on a real server
+    in Docker (2026-10-04/05) with the full proof: Lua, FindFirstOf finding the map's GameState,
+    native and Blueprint RegisterHook, ExecuteInGameThread. The CT generates this game's files from
+    the version's reference pack (ue_linux_layout): every studio tweaks the engine, and the built-in
+    layout alone brought down more than half of these servers. proven=False until the first
+    install through this screen on a real CT."""
     paks = f"/opt/game/{project}/Content/Paks/~mods"
     loader = f"/opt/game/{project}/Binaries/Linux"
-    # Unreal 5 (IoStore): o mod vem em tres arquivos de mesmo nome, e o .pak sozinho nao carrega.
+    # Unreal 5 (IoStore): the mod comes in three files with the same name, and the .pak alone does not load.
     extensions = (".pak", ".utoc", ".ucas") if engine.startswith("5.") else (".pak",)
     return ModProfile(
         key=key, kind=KIND_UE4SS_LINUX, services=services, folder=paks, help_key="mods.help_unreal_linux",
@@ -278,11 +278,11 @@ def _unreal_linux(key: str, services: tuple[str, ...], project: str, engine: str
         proven=False)
 
 
-# Os nomes de servico sao o do catalogo curado (quando ha) e a chave da sugestao do LinuxGSM ou do
-# Pterodactyl, que vira o nome do servico de um jogo criado pelo painel.
+# The service names are the curated catalog one (when there is one) and the key of the LinuxGSM or
+# Pterodactyl suggestion, which becomes the service name of a game created by the panel.
 SOULMASK = _unreal_linux("soulmask", ("soulmask",), "WS", "4.27")
-# The Front: caiu UMA vez em quatro subidas com o UE4SS (sem rastro no log; nas outras tres a prova
-# passou inteira). Conhecido e nao explicado: se acontecer num CT, o servico sobe de novo sozinho.
+# The Front: crashed ONCE in four startups with UE4SS (no trace in the log; in the other three the
+# proof passed in full). Known and unexplained: if it happens on a CT, the service comes back on its own.
 THE_FRONT = _unreal_linux("the-front", ("the-front", "thefront"), "ProjectWar", "4.27")
 SMALLAND = _unreal_linux("smalland", ("smalland", "smalland-survive-the-wil"), "SMALLAND", "4.27")
 SANDSTORM = _unreal_linux("insurgency-sandstorm", ("insurgency-sandstorm", "sandstorm"), "Insurgency", "4.27")
@@ -298,12 +298,12 @@ QANGA = _unreal_linux("qanga", ("qanga",), "Qanga", "5.7")
 UNREAL_LINUX = (SOULMASK, THE_FRONT, SMALLAND, SANDSTORM, ASTRO_COLONY, SQUAD_44, MORDHAU, HYPERCHARGE, PAVLOV,
                 THE_BUS, VEIN, SQUAD, QANGA)
 
-# Workshop pela config. Os quatro provados em servidor de verdade (Docker, 2026-10-05) com o
-# workshop_remote escrevendo a lista e o jogo baixando e carregando o mod na subida seguinte:
-# DST (Global Positions, Show Me), Zomboid Build 42 (Common Sense), Unturned (Hawaii + os assets,
-# dependencia que ele baixa sozinho) e Reforger (Where Am I). proven=False ate a primeira vez por
-# esta tela num CT. O audit_paths e onde CADA jogo guarda o que baixou: e por ali que o antivirus
-# passa, ja que o download e do jogo e nao do painel.
+# Workshop through the config. All four proven on a real server (Docker, 2026-10-05) with
+# workshop_remote writing the list and the game downloading and loading the mod on the next start:
+# DST (Global Positions, Show Me), Zomboid Build 42 (Common Sense), Unturned (Hawaii + the assets,
+# a dependency it downloads on its own) and Reforger (Where Am I). proven=False until the first time
+# through this screen on a CT. audit_paths is where EACH game keeps what it downloaded: that is
+# where the antivirus goes, since the download is done by the game and not by the panel.
 DST = ModProfile(
     key="dst", kind=KIND_WORKSHOP, services=("don-t-starve-together", "dst", "dontstarve"),
     folder="/opt/game", help_key="mods.help_workshop_dst", workshop_appid=322330, workshop_format="dst",
@@ -347,8 +347,8 @@ def profile_for(service: str) -> ModProfile | None:
     return next((p for p in PROFILES if stem in p.services), None)
 
 
-# Referencia de mod do ficsit.app, solta ou dentro do link da pagina (ficsit.app/mod/<ref>).
-# A mesma forma que o sml_remote confere de novo no CT: ela vira nome de pasta.
+# A ficsit.app mod reference, bare or inside the page link (ficsit.app/mod/<ref>).
+# The same shape sml_remote checks again in the CT: it becomes a folder name.
 _FICSIT_REF = re.compile(r"^(?:https?://(?:www\.)?ficsit\.app/mod/)?([A-Za-z0-9_]{1,64})/?(?:[?#].*)?$", re.ASCII)
 
 

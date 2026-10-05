@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Prova o lib/ct-firewall.sh com nftables DE VERDADE: nao so que as regras carregam no kernel,
-# mas que bloqueiam e liberam o que devem. Precisa do Docker.
+# Proves lib/ct-firewall.sh with REAL nftables: not only that the rules load into the kernel,
+# but that they block and allow what they should. Needs Docker.
 #
-# Monta uma rede isolada com um container por papel (e um intruso na mesma LAN) e testa cada
-# conexao que importa. O intruso e o caso que o OPNsense nao cobre: uma maquina da mesma
-# sub-rede, que fala direto com os CTs.
+# Builds an isolated network with one container per role (and an intruder on the same LAN) and
+# tests every connection that matters. The intruder is the case OPNsense does not cover: a machine
+# on the same subnet, talking directly to the CTs.
 #
 #   docker/ct-sandbox/firewall.sh
 set -euo pipefail
@@ -18,7 +18,7 @@ PANEL=$PREFIX.100
 BROKER=$PREFIX.101
 GAME=$PREFIX.102
 INTRUDER=$PREFIX.50
-API=$PREFIX.254      # faz o papel do Proxmox (:8006)
+API=$PREFIX.254      # plays the role of Proxmox (:8006)
 names=(ctfw-panel ctfw-broker ctfw-game ctfw-intruder ctfw-api)
 
 cleanup() {
@@ -34,7 +34,7 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends nftable
 EOF
 docker network create --subnet "$PREFIX.0/24" "$NET" >/dev/null
 
-start() {  # nome ip
+start() {  # name ip
   MSYS_NO_PATHCONV=1 docker run -d --name "$1" --network "$NET" --ip "$2" --cap-add NET_ADMIN --cap-add NET_RAW \
     -v "$(host_path)/lib:/src:ro" ctfw-sandbox sleep infinity >/dev/null
   MSYS_NO_PATHCONV=1 docker exec "$1" install -m 0755 /src/ct-firewall.sh /usr/local/sbin/ct-firewall
@@ -44,29 +44,29 @@ for pair in "ctfw-panel $PANEL" "ctfw-broker $BROKER" "ctfw-game $GAME" "ctfw-in
   start $pair
 done
 
-# Um "servico" escutando em cada porta que interessa (nc em laco: aceita varias conexoes).
-listen() {  # container porta
+# A "service" listening on each port that matters (nc in a loop: accepts several connections).
+listen() {  # container port
   docker exec -d "$1" sh -c "while true; do nc -l -p $2 </dev/null >/dev/null 2>&1; done"
 }
 listen ctfw-panel 8080; listen ctfw-panel 22
 listen ctfw-broker 8443
-# O SSH do jogo responde 4s DEPOIS de aceitar: e a instalacao do broker, que continua
-# escrevendo na sessao ja aberta depois que o firewall entra (ver "sessao anterior" abaixo).
-# So a PRIMEIRA conexao (a do broker) espera; depois o laco normal, senao a porta ficaria 4s
-# fechada entre um teste e outro e os casos seguintes dariam "fecha" por acaso.
+# The game's SSH answers 4s AFTER accepting: that is the broker install, which keeps
+# writing on the already open session after the firewall goes in (see "sessao anterior" below).
+# Only the FIRST connection (the broker's) waits; then the normal loop, otherwise the port would
+# be closed for 4s between one test and the next and the following cases would give "fecha" by chance.
 docker exec -d ctfw-game sh -c "(sleep 4; echo fim-da-instalacao) | nc -l -p 22 >/dev/null 2>&1; while true; do nc -l -p 22 </dev/null >/dev/null 2>&1; done"
 listen ctfw-game 8888; listen ctfw-game 9999
-# UDP nao tem "conectou": quem prova que o pacote passou e o arquivo do lado do jogo.
-# -W 1 = um datagrama por volta, para o laco anotar cada remetente numa linha.
+# UDP has no "connected": what proves the packet got through is the file on the game side.
+# -W 1 = one datagram per iteration, so the loop records each sender on its own line.
 docker exec -d ctfw-game sh -c "while true; do nc -u -l -p 27015 -W 1 >> /tmp/udp.txt 2>/dev/null; done"
-# O "jogo" na 7777 RESPONDE (como um servidor de verdade): e a resposta que torna a conversa
-# estabelecida, e so conversa estabelecida entra na contagem de jogadores.
+# The "game" on 7777 ANSWERS (like a real server): the answer is what makes the conversation
+# established, and only an established conversation enters the player count.
 docker exec -d ctfw-game sh -c "while true; do (sleep 1; echo pong) | nc -u -l -p 7777 -w 3 >/dev/null 2>&1; done"
 listen ctfw-intruder 22
 listen ctfw-api 8006; listen ctfw-api 3306
 sleep 1
 
-configure() {  # container conteudo-do-env
+configure() {  # container env-contents
   MSYS_NO_PATHCONV=1 docker exec "$1" sh -c "printf '%s\n' \"\$0\" > /etc/ct-firewall.env && echo 'nameserver $PREFIX.1' > /etc/resolv.conf && ct-firewall apply" "$2" >/dev/null
 }
 configure ctfw-panel "FW_ROLE=panel
@@ -77,14 +77,15 @@ FW_PANEL_SOURCES=\"$PANEL\"
 FW_BROKER_PORT=8443
 FW_API_ENDPOINTS=\"$API:8006\"
 FW_GAME_NET=\"$PREFIX.102-$PREFIX.199\""
-# A sessao do broker abre ANTES do apply, como a do instalador real, e tem de continuar
-# recebendo depois dele. AVISO de quem escreveu: este caso NAO reproduz a falha do V Rising. La,
-# no CT do Proxmox, nada pedia conntrack antes do apply, e o primeiro pacote de saida depois
-# dele virava conexao NOVA (tcp_loose=1) e caia na recusa da rede interna. Aqui, no kernel do
-# WSL2/Docker, o conntrack ja acompanha a sessao desde o inicio, e o caso passa ate sem a regra
-# de resposta do SSH (medido; nem um `notrack` antes do apply mudou isso). A prova da correcao
-# foi no CT real: a regra de resposta destravou a sessao presa e a criacao terminou. O caso fica
-# como guarda contra o grosseiro (uma saida que derrube TODA sessao aberta).
+# The broker session opens BEFORE the apply, like the real installer's, and must keep
+# receiving after it. WARNING from the author: this case does NOT reproduce the V Rising failure.
+# There, in the Proxmox CT, nothing requested conntrack before the apply, and the first outgoing
+# packet after it became a NEW connection (tcp_loose=1) and fell into the internal-network reject.
+# Here, on the WSL2/Docker kernel, conntrack already tracks the session from the start, and the
+# case passes even without the SSH reply rule (measured; not even a `notrack` before the apply
+# changed that). The proof of the fix was on the real CT: the reply rule unblocked the stuck
+# session and the creation finished. The case stays as a guard against the gross failure (an
+# output rule that kills EVERY open session).
 MSYS_NO_PATHCONV=1 docker exec -d ctfw-broker sh -c "nc -w 15 $GAME 22 </dev/null > /tmp/late.txt 2>&1"
 sleep 1
 configure ctfw-game "FW_ROLE=game
@@ -93,7 +94,7 @@ FW_GAME_PORTS=\"8888/tcp 7777/udp\"
 FW_PRESENCE_PORTS=\"7777\""
 
 failures=0
-tcp() {  # esperado(abre|fecha) origem destino porta descricao
+tcp() {  # expected(abre|fecha) source destination port description
   local got=fecha
   docker exec "$2" nc -z -w 2 "$3" "$4" >/dev/null 2>&1 && got=abre
   if [[ "$got" == "$1" ]]; then
@@ -104,7 +105,7 @@ tcp() {  # esperado(abre|fecha) origem destino porta descricao
   fi
 }
 
-udp() {  # esperado(abre|fecha) origem descricao
+udp() {  # expected(abre|fecha) source description
   local got=fecha mark="udp-de-$2"
   docker exec "$2" sh -c "echo $mark | nc -u -w 1 $GAME 27015" >/dev/null 2>&1 || true
   sleep 1
@@ -130,13 +131,13 @@ tcp abre  ctfw-broker   "$GAME" 22   "broker -> SSH do jogo (instalacao)"
 tcp fecha ctfw-intruder "$GAME" 22   "intruso da LAN -> SSH do jogo"
 tcp abre  ctfw-intruder "$GAME" 8888 "qualquer um -> porta publica do jogo"
 tcp fecha ctfw-intruder "$GAME" 9999 "qualquer um -> porta que o jogo nao declarou"
-# A consulta A2S do painel numa porta que o .env nao declarou (a 27015 de um jogo Unreal).
+# The panel's A2S query on a port the .env did not declare (27015 of an Unreal game).
 udp abre  ctfw-panel    "painel -> UDP nao declarado do jogo (consulta A2S)"
 udp fecha ctfw-intruder "intruso da LAN -> UDP nao declarado do jogo"
 
-# Contagem de jogadores pelo firewall: quem conversa com a 7777 (o jogo respondeu) entra no
-# conjunto `players`; pacote solto numa porta que nao responde, nao.
-presence() {  # esperado(conta|nao-conta) origem ip-da-origem porta descricao
+# Player count through the firewall: whoever talks to 7777 (the game answered) enters the
+# `players` set; a stray packet on a port that does not answer does not.
+presence() {  # expected(conta|nao-conta) source source-ip port description
   local got=nao-conta
   docker exec "$2" sh -c "(echo ping; sleep 2; echo de-novo; sleep 1) | nc -u -w 4 $GAME $4" >/dev/null 2>&1 || true
   MSYS_NO_PATHCONV=1 docker exec ctfw-game nft list set inet ct_firewall players 2>/dev/null \

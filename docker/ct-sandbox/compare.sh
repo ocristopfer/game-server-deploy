@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# Prova que uma mudanca no instalador de jogo nao altera o que ele GERA. Dois testes:
+# Proves that a change to the game installer does not alter what it GENERATES. Two tests:
 #
-#  1. ANTES x DEPOIS: roda o provision-game-lxc.sh da referencia (BASE_REF, padrao HEAD) e o
-#     da arvore de trabalho, para cada jogo, e faz diff de arquivos criados, conteudo,
-#     chamadas aos comandos falsos e saida.
-#  2. HOST x BROKER: para cada jogo compara o que o provision-game-lxc.sh (`pct exec`) gera
-#     com o que o lib/ct-install.sh (transporte local, o do broker) gera. Sao as MESMAS fases;
-#     se divergirem, o deploy manual e o do broker deixaram de ser equivalentes.
+#  1. BEFORE x AFTER: runs the provision-game-lxc.sh from the reference (BASE_REF, default HEAD)
+#     and the one from the working tree, for each game, and diffs the created files, contents,
+#     calls to the fake commands and output.
+#  2. HOST x BROKER: for each game compares what provision-game-lxc.sh (`pct exec`) generates
+#     with what lib/ct-install.sh (local transport, the broker's) generates. They are the SAME
+#     phases; if they diverge, the manual deploy and the broker's are no longer equivalent.
 #
 #   docker/ct-sandbox/compare.sh
 #   BASE_REF=main docker/ct-sandbox/compare.sh
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo_root"
-host_path() { pwd -W 2>/dev/null || pwd; }   # caminho que o Docker enxerga (Git Bash no Windows)
+host_path() { pwd -W 2>/dev/null || pwd; }   # path as Docker sees it (Git Bash on Windows)
 BASE_REF="${BASE_REF:-HEAD}"
 work="$repo_root/docker/ct-sandbox/.work"
 cd "$repo_root"; rm -rf "$work"; mkdir -p "$work/orig/lib" "$work/novo" "$work/inst" "$work/games" "$work/out"
 
-# O script mudou de LUGAR (raiz -> deploy/game/), e a referencia pode ser de antes disso.
-# Mesmo cuidado do `ct-fases.sh` logo abaixo: procura no caminho de hoje e cai no antigo.
-# O `>` criaria o arquivo vazio antes de o git falhar, entao o teste vem primeiro.
+# The script changed LOCATION (root -> deploy/game/), and the reference may predate that.
+# Same care as with `ct-fases.sh` just below: look in today's path and fall back to the old one.
+# The `>` would create the empty file before git fails, so the check comes first.
 for candidate in deploy/game/provision-game-lxc.sh provision-game-lxc.sh; do
   if git cat-file -e "$BASE_REF:${candidate}" 2>/dev/null; then
     git show "$BASE_REF:${candidate}" > "$work/orig/provision-game-lxc.sh"
@@ -28,12 +28,12 @@ for candidate in deploy/game/provision-game-lxc.sh provision-game-lxc.sh; do
   fi
 done
 [[ -s "$work/orig/provision-game-lxc.sh" ]] || { echo "FALHA: nao achei o provision-game-lxc.sh em $BASE_REF" >&2; exit 1; }
-# A referencia pode ser anterior a lib/ (o `>` criaria o arquivo vazio antes do git
-# falhar) e, se for anterior a traducao dos nomes, a lib ainda se chamava `ct-fases.sh`.
-# O nome ANTIGO tambem e procurado: sem isso, comparar contra um commit de antes do
-# rename rodaria a referencia sem lib nenhuma e acusaria diferenca em todos os jogos.
-# E o arquivo e gravado com o nome que a REFERENCIA usa, nao com o de hoje: quem o le
-# la e o provision-game-lxc.sh daquele commit, e ele procura pelo nome que conhecia.
+# The reference may predate lib/ (the `>` would create the empty file before git
+# fails) and, if it predates the name translation, the lib was still called `ct-fases.sh`.
+# The OLD name is looked up too: without it, comparing against a commit from before the
+# rename would run the reference with no lib at all and flag a difference in every game.
+# And the file is written under the name the REFERENCE uses, not today's: whoever reads it
+# there is that commit's provision-game-lxc.sh, and it looks for the name it knew.
 for candidate in ct-phases.sh ct-fases.sh; do
   if git cat-file -e "$BASE_REF:lib/${candidate}" 2>/dev/null; then
     git show "$BASE_REF:lib/${candidate}" > "$work/orig/${candidate}"
@@ -42,17 +42,18 @@ for candidate in ct-phases.sh ct-fases.sh; do
 done
 rmdir "$work/orig/lib"
 cp deploy/game/provision-game-lxc.sh "$work/novo/"
-# Layout REAL do bundle do deploy-game.ps1: sem subpastas, a lib solta ao lado do script.
-cp lib/ct-phases.sh lib/ct-firewall.sh "$work/novo/"
-cp lib/ct-install.sh lib/ct-phases.sh lib/ct-firewall.sh "$work/inst/"
+# REAL layout of the deploy-game.ps1 bundle: no subfolders, the lib loose next to the script.
+cp lib/ct-phases.sh lib/ct-firewall.sh lib/ct-panel-access.sh "$work/novo/"
+cp lib/ct-install.sh lib/ct-phases.sh lib/ct-firewall.sh lib/ct-panel-access.sh "$work/inst/"
 cp games/*.env "$work/games/"
-# O script da referencia (antes desta mudanca) nao conhece {EXTRA_PORT}: com o games/satisfactory.env
-# de hoje ele deixaria o marcador literal no ExecStart. Para o guarda "antes x depois" continuar
-# provando que o RESTO do instalador nao mudou, o Satisfactory legado roda sem o marcador.
+# The reference script (before this change) does not know {EXTRA_PORT}: with today's
+# games/satisfactory.env it would leave the placeholder literal in ExecStart. For the "before x after"
+# guard to keep proving that the REST of the installer did not change, legacy Satisfactory runs
+# without the placeholder.
 sed -e 's/ -ReliablePort={EXTRA_PORT}//' -e '/^EXTRA_PORT=/d' games/satisfactory.env > "$work/games/satisfactory-legado.env"
-# Wine puro: nenhum jogo do repo usa, mas o caminho existe no instalador.
+# Plain Wine: no game in the repo uses it, but the path exists in the installer.
 { cat games/dragonwilds.env; echo 'WINDOWS_RUNTIME=wine'; } > "$work/games/sintetico-wine.env"
-# Receita nomeada + porta de consulta deslocada: o que um jogo cadastrado pelo broker usa.
+# Named recipe + shifted query port: what a game registered through the broker uses.
 cat > "$work/games/sintetico-receita.env" <<'ENV'
 GAME_KEY=receita
 GAME_DISPLAY_NAME="Jogo com receita"
@@ -65,8 +66,8 @@ GAME_PORTS="7778/udp 27017/udp"
 RECIPES="steamclient-sdk64"
 ENV
 
-# O install.env que o BROKER gera (src/gamebroker/ssh_install.py:montar_env), com portas da faixa do broker e uma
-# receita: prova a costura entre o Python e o ct-install.sh de verdade.
+# The install.env the BROKER generates (src/gamebroker/ssh_install.py:montar_env), with ports from the broker
+# range and a recipe: proves the seam between the Python and the real ct-install.sh.
 PYBIN="$repo_root/.venv/Scripts/python.exe"; [ -x "$PYBIN" ] || PYBIN=python3
 "$PYBIN" - > "$work/games/gerado-pelo-broker.env" <<'PY'
 from gamebroker.services.allocator import AllocatedPort
@@ -80,8 +81,8 @@ game = validate_dynamic({
     "receitas": ["steamclient-sdk64"], "deslocavel": True})
 ports = [AllocatedPort(7777, 31000, "udp", "jogo"), AllocatedPort(27016, 31001, "udp", "query"),
          AllocatedPort(8888, 31002, "tcp", "extra")]
-# Bytes, nao print(): no Windows o stdout em modo texto troca \n por \r\n, e o bash
-# do CT leria cada valor com um \r no fim (o instalador de verdade grava com newline).
+# Bytes, not print(): on Windows text-mode stdout turns \n into \r\n, and the CT's bash
+# would read each value with a \r at the end (the real installer writes with newline).
 import sys
 sys.stdout.buffer.write(build_env(game, ports).encode())
 PY
@@ -89,7 +90,7 @@ PY
 docker build -q -t ct-sandbox "$repo_root/docker/ct-sandbox" >/dev/null
 W="$(cd "$work" && host_path)"
 
-# rodar <saida> <pasta-do-script> <jogo.env> [DEPLOY_EXTRA] [FAKE_EXTRA_FILES] [RUNNER]
+# run <output> <script-folder> <game.env> [DEPLOY_EXTRA] [FAKE_EXTRA_FILES] [RUNNER]
 run_one() {
   MSYS_NO_PATHCONV=1 docker run --rm -v "$W:/w" -e DEPLOY_EXTRA="${4:-}" -e FAKE_EXTRA_FILES="${5:-}" \
     -e RUNNER="${6:-provision}" ct-sandbox bash /usr/local/lib/run-provision.sh "/w/$2" "/w/games/$3" "/w/out/$1" \
@@ -98,7 +99,7 @@ run_one() {
 strip_time() { sed -Ei 's/\[[0-9]{2}:[0-9]{2}:[0-9]{2}\]/[T]/' "$1" 2>/dev/null || true; }
 
 failures=0
-run_case() {  # nome jogo.env [DEPLOY_EXTRA] [FAKE_EXTRA_FILES]
+run_case() {  # name game.env [DEPLOY_EXTRA] [FAKE_EXTRA_FILES]
   local name="$1"; shift
   run_one "$name-orig" orig "$@"; run_one "$name-novo" novo "$@"
   strip_time "$work/out/$name-orig/saida.log"; strip_time "$work/out/$name-novo/saida.log"
@@ -109,7 +110,7 @@ run_case() {  # nome jogo.env [DEPLOY_EXTRA] [FAKE_EXTRA_FILES]
     printf 'DIFERENTE antes x depois  %-20s (veja %s)\n' "$name" "$work/out/$name.diff"; failures=$((failures + 1))
   fi
 }
-run_broker_case() {  # nome jogo.env [DEPLOY_EXTRA] [FAKE_EXTRA_FILES]
+run_broker_case() {  # name game.env [DEPLOY_EXTRA] [FAKE_EXTRA_FILES]
   local name="$1"; shift
   run_one "$name-inst" inst "$1" "${2:-}" "${3:-}" install
   [ -d "$work/out/$name-novo" ] || run_one "$name-novo" novo "$@"
@@ -135,7 +136,8 @@ run_case enshrouded      enshrouded.env
 run_case icarus          icarus.env
 run_case dayz-conta      dayz.env             "$DAYZ_CONTA"
 run_case wine            sintetico-wine.env
-run_case painel-pubkey   palworld.env         "PANEL_PUBKEY='ssh-ed25519 AAAAteste painel@x'" "$PAL_ARQ"
+PANEL_KEY_EXTRA="PANEL_PUBKEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainelDoSandbox painel@x'"
+run_case painel-pubkey   palworld.env         "$PANEL_KEY_EXTRA" "$PAL_ARQ"
 
 run_broker_case palworld      palworld.env      ""             "$PAL_ARQ"
 run_broker_case dragonwilds   dragonwilds.env
@@ -145,12 +147,46 @@ run_broker_case icarus        icarus.env
 run_broker_case dayz-conta    dayz.env          "$DAYZ_CONTA"
 run_broker_case wine          sintetico-wine.env
 run_broker_case receita       sintetico-receita.env
-# Com o IP do painel/broker o CT ganha o firewall - e os dois transportes tem de gerar o MESMO.
-FW_EXTRA="FW_MGMT_SOURCES='192.168.2.100 192.168.2.101'"
+# With the panel/broker IP the CT gets the firewall - and both transports must generate the SAME one.
+FW_EXTRA="FW_MGMT_SOURCES='10.20.1.100 10.20.1.101'"
 run_broker_case firewall      dragonwilds.env   "$FW_EXTRA"
 
-# Recursos NOVOS (o script da referencia nao os conhece, entao nao ha "antes" para comparar):
-# {EXTRA_PORT} no Satisfactory de hoje: o instalador troca pelo padrao do jogo (a confiavel, 8888).
+# With the panel key: gamepanel user, sudo rules and helpers, and root locked at the end. The host
+# locks in its last phase, the broker in its cleanup (emulated by run-provision.sh) - same CT.
+run_broker_case painel-pubkey palworld.env      "$PANEL_KEY_EXTRA" "$PAL_ARQ"
+
+# NEW features (the reference script does not know them, so there is no "before" to compare):
+# Unprivileged panel access (docs/security-hardening-contract.md), on both transports.
+for side in novo inst; do
+  p="$work/out/painel-pubkey-$side"
+  expected=1
+  [ "$(cat "$p/exit" 2>/dev/null)" = 0 ] || expected=0
+  grep -q '^/etc/sudoers.d/gamepanel 440 root:root' "$p/arquivos.txt" || expected=0
+  grep -q '^/usr/local/sbin/gp-service 755 root:root' "$p/arquivos.txt" || expected=0
+  grep -q '^/usr/local/sbin/gp-clamav-ensure 755 root:root' "$p/arquivos.txt" || expected=0
+  grep -q '^/var/lib/gamepanel-agent 700 gamepanel:gamepanel' "$p/arquivos.txt" || expected=0
+  grep -q '^gamepanel:/var/lib/gamepanel-agent:/bin/bash$' "$p/arquivos.txt" || expected=0
+  grep -q '^GAME_UNIT=palworld.service$' "$p/conteudo.txt" || expected=0
+  grep -q '^gamepanel ALL=(steam) NOPASSWD: ALL$' "$p/conteudo.txt" || expected=0
+  grep -q '^no-agent-forwarding,no-port-forwarding,no-X11-forwarding ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainelDoSandbox' "$p/conteudo.txt" || expected=0
+  grep -q '^PermitRootLogin no$' "$p/conteudo.txt" || expected=0
+  grep -q '^AllowUsers gamepanel$' "$p/conteudo.txt" || expected=0
+  # The panel key never goes into root any more.
+  grep -A2 '^=== /root/.ssh/authorized_keys' "$p/conteudo.txt" | grep -q PainelDoSandbox && expected=0
+  if [ "$expected" = 1 ]; then
+    printf 'OK        recursos novos  %-20s (gamepanel, sudoers, helpers e root trancado: %s)\n' painel-pubkey "$side"
+  else
+    printf 'FALHOU    recursos novos  %-20s (veja %s)\n' painel-pubkey "$p"; failures=$((failures + 1))
+  fi
+done
+# Without the panel key nothing of it exists, and root is NOT locked (nobody else could get in).
+if grep -q 'gamepanel\|10-gamepanel' "$work/out/dragonwilds-inst/arquivos.txt"; then
+  printf 'FALHOU    recursos novos  %-20s (gamepanel sem PANEL_PUBKEY)\n' sem-chave; failures=$((failures + 1))
+else
+  printf 'OK        recursos novos  %-20s (sem PANEL_PUBKEY: nem gamepanel nem trava)\n' sem-chave
+fi
+
+# {EXTRA_PORT} in today's Satisfactory: the installer replaces it with the game default (the reliable one, 8888).
 s="$work/out/satisfactory-novo"
 if grep -q -- 'ExecStart=/opt/game/FactoryServer.sh -Port=7787 -ReliablePort=8888 -log -unattended' "$s/conteudo.txt"; then
   printf 'OK        recursos novos  %-20s ({EXTRA_PORT} -> -ReliablePort=8888)\n' satisfactory
@@ -158,7 +194,7 @@ else
   printf 'FALHOU    recursos novos  %-20s (veja %s)\n' satisfactory "$s"; failures=$((failures + 1))
 fi
 
-# confere direto o resultado esperado da receita e do marcador {QUERY_PORT}.
+# Checks the expected result of the recipe and of the {QUERY_PORT} placeholder directly.
 r="$work/out/receita-inst"
 expected=1
 grep -q -- '-port=7778 -queryport=27017' "$r/conteudo.txt" || expected=0
@@ -170,15 +206,15 @@ else
   printf 'FALHOU    recursos novos  %-20s (veja %s)\n' receita "$r"; failures=$((failures + 1))
 fi
 
-# Firewall do CT: regras de jogo (porta publica, SSH so da administracao) e carregadas.
+# CT firewall: game rules (public port, SSH only from the administration) and loaded.
 f="$work/out/firewall-inst"
 expected=1
 grep -q '^FW_ROLE=game$' "$f/conteudo.txt" || expected=0
-grep -q '^FW_MGMT_SOURCES="192.168.2.100 192.168.2.101"$' "$f/conteudo.txt" || expected=0
+grep -q '^FW_MGMT_SOURCES="10.20.1.100 10.20.1.101"$' "$f/conteudo.txt" || expected=0
 grep -q 'udp dport { 7777 } accept' "$f/conteudo.txt" || expected=0
-grep -q 'ip saddr { 192.168.2.100, 192.168.2.101 } tcp dport 22 accept' "$f/conteudo.txt" || expected=0
+grep -q 'ip saddr { 10.20.1.100, 10.20.1.101 } tcp dport 22 accept' "$f/conteudo.txt" || expected=0
 grep -q '^nft -f /etc/nftables.conf' "$f/chamadas.log" || expected=0
-# Sem o IP do painel, NADA de firewall (aplicar trancaria o painel fora): e o caso de todos os outros.
+# Without the panel IP, NO firewall (applying it would lock the panel out): that is the case for all the others.
 grep -q 'ct-firewall' "$work/out/dragonwilds-inst/arquivos.txt" && expected=0
 if [ "$expected" = 1 ]; then
   printf 'OK        recursos novos  %-20s (regras de jogo aplicadas; sem IP do painel, nenhuma)\n' firewall
@@ -186,7 +222,7 @@ else
   printf 'FALHOU    recursos novos  %-20s (veja %s)\n' firewall "$f"; failures=$((failures + 1))
 fi
 
-# Costura Python -> ct-install.sh: o install.env gerado pelo broker, com portas 31000/31001/31002.
+# Python -> ct-install.sh seam: the install.env generated by the broker, with ports 31000/31001/31002.
 run_one gerado-inst inst gerado-pelo-broker.env "" "" install
 g="$work/out/gerado-inst"
 expected=1

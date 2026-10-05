@@ -1,4 +1,4 @@
-"""Configuracao de producao (env -> ConfigBroker), montagem do servico real e ping."""
+"""Production config (env -> ConfigBroker), assembly of the real service, and ping."""
 from __future__ import annotations
 
 import subprocess
@@ -21,7 +21,7 @@ SECRETS = (TOKEN_BROKER, TOKEN_PVE, SECRET_OPN)
 
 @pytest.fixture
 def env(tmp_path: Path, games_dir: Path) -> dict[str, str]:
-    """Um ambiente COMPLETO e valido (Proxmox/OPNsense em https com impressao)."""
+    """A COMPLETE, valid environment (Proxmox/OPNsense over https with a fingerprint)."""
     ssh = tmp_path / "ssh"
     ssh.mkdir()
     (ssh / "id_ed25519.pub").write_text(PUBLIC_KEY + "\n", encoding="utf-8")
@@ -30,31 +30,32 @@ def env(tmp_path: Path, games_dir: Path) -> dict[str, str]:
     for name in LIB_FILES:
         (lib / name).write_text("#!/bin/bash\n")
     return {
-        "BROKER_TOKEN": TOKEN_BROKER, "BROKER_ALLOW_IPS": "192.168.2.19",
+        "BROKER_TOKEN": TOKEN_BROKER, "BROKER_ALLOW_IPS": "10.20.1.19",
         "BROKER_STATE_DIR": str(tmp_path / "state"), "BROKER_GAMES_DIR": str(games_dir),
         "BROKER_LIB_DIR": str(lib), "BROKER_SSH_KEY": str(ssh / "id_ed25519"),
-        "BROKER_PANEL_PUBKEY": PANEL_KEY, "BROKER_GATEWAY": "192.168.2.1",
-        "BROKER_IP_PREFIX": "192.168.2", "BROKER_IP_INICIO": "30", "BROKER_IP_FIM": "40",
-        "PROXMOX_URL": "https://192.168.1.254:8006", "PROXMOX_TOKEN": TOKEN_PVE,
+        "BROKER_PANEL_PUBKEY": PANEL_KEY, "BROKER_GATEWAY": "10.20.1.1",
+        "BROKER_IP_PREFIX": "10.20.1", "BROKER_IP_INICIO": "30", "BROKER_IP_FIM": "40",
+        "PROXMOX_URL": "https://10.20.0.2:8006", "PROXMOX_TOKEN": TOKEN_PVE,
         "PROXMOX_CERT_SHA256": ":".join(["9F"] * 32), "PROXMOX_NODE": "pve", "PROXMOX_POOL": "games",
-        "PROXMOX_STORAGE": "vm-pool", "PROXMOX_BRIDGE": "vmbr1",
-        "PROXMOX_TEMPLATE": "vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
-        "OPNSENSE_URL": "https://192.168.1.1:8443", "OPNSENSE_KEY": KEY_OPN, "OPNSENSE_SECRET": SECRET_OPN,
+        "PROXMOX_STORAGE": "local-lvm", "PROXMOX_BRIDGE": "vmbr0",
+        "PROXMOX_TEMPLATE": "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
+        "OPNSENSE_URL": "https://10.20.0.1:8443", "OPNSENSE_KEY": KEY_OPN, "OPNSENSE_SECRET": SECRET_OPN,
         "OPNSENSE_CERT_SHA256": "ab" * 32, "OPNSENSE_WAN": "wan",
     }
 
 
-# --- carregar ------------------------------------------------------------------------------
+# --- load ---------------------------------------------------------------------------------
 
 def test_ambiente_completo_carrega(env):
     cfg = load(env)
     assert cfg.token == TOKEN_BROKER
-    assert cfg.allowed_ips == ("192.168.2.19",)
-    assert cfg.ips[0] == "192.168.2.30"
-    assert cfg.ips[-1] == "192.168.2.40"
+    assert cfg.allowed_ips == ("10.20.1.19",)
+    assert cfg.ips[0] == "10.20.1.30"
+    assert cfg.ips[-1] == "10.20.1.40"
     assert (cfg.ctids.start, cfg.ctids.stop - 1) == (300, 399)
     assert cfg.proxmox_fingerprint == "9f" * 32, "normalizada (sem dois-pontos, minuscula)"
-    assert cfg.proxmox.ssh_keys == (PUBLIC_KEY, PANEL_KEY), "as DUAS chaves entram no CT novo"
+    assert cfg.proxmox.ssh_keys == (PUBLIC_KEY,), "so a chave do broker entra no root do CT novo"
+    assert cfg.ssh.panel_public_key == PANEL_KEY, "a do painel vai pelo install.env, para o gamepanel"
     assert cfg.ssh.blob == BLOB
     assert (cfg.max_instances, cfg.max_creations_per_hour) == (8, 10)
     assert cfg.opnsense_wan == "wan"
@@ -80,7 +81,7 @@ def test_ctid_base_e_faixa_de_portas_configuraveis(env):
     cfg = load(env)
     assert cfg.ctid_base == 200
     assert (cfg.ports.start, cfg.ports.stop - 1) == (40000, 40099)
-    assert (cfg.ips[0], cfg.ips[-1]) == ("192.168.2.102", "192.168.2.110")
+    assert (cfg.ips[0], cfg.ips[-1]) == ("10.20.1.102", "10.20.1.110")
 
 
 @pytest.mark.parametrize(("name", "value"), [
@@ -100,7 +101,7 @@ def test_faixa_de_portas_invertida(env):
 
 
 def test_ctid_base_pequena_demais_deixaria_o_ctid_abaixo_de_100(env):
-    # Base 10 + primeiro IP .30 = CTID 40: o Proxmox nao aceita CTID abaixo de 100.
+    # Base 10 + first IP .30 = CTID 40: Proxmox does not accept a CTID below 100.
     env["BROKER_CTID_BASE"] = "10"
     with pytest.raises(ConfigError, match="BROKER_CTID_BASE"):
         load(env)
@@ -131,7 +132,7 @@ def test_todos_os_problemas_de_uma_vez_sem_duplicar(env):
 
 @pytest.mark.parametrize(("name", "value", "chunk"), [
     ("BROKER_TOKEN", "curto", "ao menos 32"),
-    ("BROKER_ALLOW_IPS", "192.168.2.19, nao-e-ip", "nao e um IPv4"),
+    ("BROKER_ALLOW_IPS", "10.20.1.19, nao-e-ip", "nao e um IPv4"),
     ("BROKER_IP_INICIO", "abc", "inteiro"),
     ("BROKER_IP_INICIO", "0", "inteiro"),
     ("BROKER_IP_FIM", "255", "inteiro"),
@@ -141,11 +142,12 @@ def test_todos_os_problemas_de_uma_vez_sem_duplicar(env):
     ("PROXMOX_CERT_SHA256", "isto-nao-e-hex", "invalida"),
     ("OPNSENSE_CERT_SHA256", "9F:92", "invalida"),
     ("PROXMOX_URL", "ftp://x", r"http\(s\)://"),
-    ("PROXMOX_URL", "http://192.168.1.254:8006", "so em loopback"),
-    ("OPNSENSE_URL", "http://192.168.1.1", "so em loopback"),
+    ("PROXMOX_URL", "http://10.20.0.2:8006", "so em loopback"),
+    ("OPNSENSE_URL", "http://10.20.0.1", "so em loopback"),
     ("PROXMOX_POOL", "pool com espaco", "PROXMOX_*"),
     ("PROXMOX_TEMPLATE", "debian.tar.zst", "template"),
-    ("BROKER_PANEL_PUBKEY", "nao-e-chave", "PROXMOX_*"),
+    # The panel key now goes to install.env (gamepanel user), and ConfigSsh is who checks it.
+    ("BROKER_PANEL_PUBKEY", "nao-e-chave", "panel_public_key"),
 ])
 def test_valor_invalido(env, name, value, chunk):
     env[name] = value
@@ -189,7 +191,7 @@ def test_pasta_lib_incompleta(env):
 
 @pytest.mark.parametrize("name", ["BROKER_TOKEN", "PROXMOX_TOKEN", "OPNSENSE_SECRET", "OPNSENSE_KEY"])
 def test_nenhuma_mensagem_de_erro_carrega_segredo(env, name):
-    """Erro de config vai para o journal: o NOME da variavel pode aparecer, o VALOR nunca."""
+    """A config error goes to the journal: the variable NAME may show up, the VALUE never."""
     env[name] = "curto"
     env["BROKER_IP_INICIO"] = "abc"
     env["PROXMOX_CERT_SHA256"] = "lixo"
@@ -199,13 +201,13 @@ def test_nenhuma_mensagem_de_erro_carrega_segredo(env, name):
         assert secret not in str(error.value)
 
 
-# --- montagem do servico real (contra os falsos HTTP) ---------------------------------------------
+# --- assembling the real service (against the HTTP fakes) ------------------------------------------
 
 @pytest.fixture
 def env_local(env, pve, opn):
-    """O mesmo ambiente, mas com Proxmox e OPNsense apontando para os falsos em 127.0.0.1."""
+    """The same environment, but with Proxmox and OPNsense pointing at the fakes on 127.0.0.1."""
     env.update(PROXMOX_URL=pve.server.url, OPNSENSE_URL=opn.server.url,
-               BROKER_ALLOW_IPS="127.0.0.1")  # o test_client do Flask chega de 127.0.0.1
+               BROKER_ALLOW_IPS="127.0.0.1")  # Flask's test_client comes from 127.0.0.1
     del env["PROXMOX_CERT_SHA256"], env["OPNSENSE_CERT_SHA256"]
     return env
 
@@ -224,8 +226,10 @@ def test_criar_de_ponta_a_ponta_pela_api_de_producao(env_local, pve, opn):
     assert operation["state"] == "ok"
     ct = pve.fake.cts[300]
     assert PUBLIC_KEY in ct["keys"], "chave do broker: para instalar"
-    assert PANEL_KEY in ct["keys"], "chave do painel: para operar depois"
-    assert ct["net0"].endswith("ip=192.168.2.30/24,gw=192.168.2.1,type=veth")
+    assert PANEL_KEY not in ct["keys"], "a chave do painel nunca entra no root"
+    assert f"PANEL_PUBKEY='{PANEL_KEY}'" in executor.env_visto, "ela vai para o gamepanel pelo install.env"
+    assert "ct-panel-access.sh lock" in executor.commands()[-1], "e o root e trancado na limpeza"
+    assert ct["net0"].endswith("ip=10.20.1.30/24,gw=10.20.1.1,type=veth")
     assert sorted(r["destination.port"] for r in opn.fake.rules.values()) == ["7001", "7002"]
     assert any("bash ct-install.sh" in c for c in executor.commands())
     assert (Path(env_local["BROKER_STATE_DIR"]) / "broker.db").exists()
@@ -269,20 +273,20 @@ def _ping(monkeypatch, retorno=None, error=None):
 
 def test_ping_que_responde_significa_ip_em_uso(monkeypatch):
     calls = _ping(monkeypatch, retorno=0)
-    assert RealNetwork().answers("192.168.2.30") is True
+    assert RealNetwork().answers("10.20.1.30") is True
     assert calls[0][:4] == ["ping", "-c", "1", "-W"]
-    assert calls[0][-1] == "192.168.2.30"
+    assert calls[0][-1] == "10.20.1.30"
 
 
 def test_ping_sem_resposta_significa_livre(monkeypatch):
     _ping(monkeypatch, retorno=1)
-    assert RealNetwork().answers("192.168.2.30") is False
+    assert RealNetwork().answers("10.20.1.30") is False
 
 
 @pytest.mark.parametrize("error", [OSError("sem ping"), subprocess.TimeoutExpired("ping", 4)])
 def test_ping_que_nao_roda_nao_derruba_a_criacao(monkeypatch, error):
     _ping(monkeypatch, error=error)
-    assert RealNetwork().answers("192.168.2.30") is False
+    assert RealNetwork().answers("10.20.1.30") is False
 
 
 @pytest.mark.parametrize("ip", ["10.0.0.300", "nao-e-ip", "10.0.0.30; rm -rf /", "-f", ""])
@@ -293,7 +297,7 @@ def test_ip_estranho_nunca_chega_ao_ping(monkeypatch, ip):
     assert calls == []
 
 
-# --- conta Steam (opcional) -----------------------------------------------------------------
+# --- Steam account (optional) --------------------------------------------------------------
 
 def test_sem_conta_steam_o_jogo_que_exige_conta_fica_manual(env):
     cfg = load(env)
@@ -326,8 +330,8 @@ def test_senha_invalida_e_nomeada_sem_o_valor(env):
 
 
 def test_ips_do_firewall_dos_jogos_vao_para_o_instalador(env):
-    env["BROKER_FIREWALL_SOURCES"] = "192.168.2.100, 192.168.2.101"
-    assert load(env).ssh.firewall_sources == ("192.168.2.100", "192.168.2.101")
+    env["BROKER_FIREWALL_SOURCES"] = "10.20.1.100, 10.20.1.101"
+    assert load(env).ssh.firewall_sources == ("10.20.1.100", "10.20.1.101")
 
 
 def test_sem_ips_do_firewall_os_jogos_nascem_sem_ele(env):
@@ -335,6 +339,6 @@ def test_sem_ips_do_firewall_os_jogos_nascem_sem_ele(env):
 
 
 def test_ip_torto_no_firewall_derruba_a_subida_pelo_nome(env):
-    env["BROKER_FIREWALL_SOURCES"] = "192.168.2.100; rm -rf /"
+    env["BROKER_FIREWALL_SOURCES"] = "10.20.1.100; rm -rf /"
     with pytest.raises(ConfigError, match="BROKER_FIREWALL_SOURCES"):
         load(env)

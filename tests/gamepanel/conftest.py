@@ -1,16 +1,16 @@
-"""Cenario compartilhado pelas suites do painel.
+"""Scenario shared by the panel suites.
 
-Duas coisas acontecem aqui que nao dariam para fazer dentro de um arquivo de teste:
+Two things happen here that could not be done inside a test file:
 
-1. **O banco e escolhido antes de qualquer import.** O `app.py` le `GAMEPANEL_DB` e
-   chama `init_db()` na hora em que e importado. Como o pytest carrega este arquivo
-   antes de colecionar os testes, e aqui - e so aqui - que da para apontar o painel
-   para um banco descartavel. Errar isso significa rodar os testes contra o
-   `/var/lib/gamepanel/panel.db` de verdade.
+1. **The database is chosen before any import.** `app.py` reads `GAMEPANEL_DB` and
+   calls `init_db()` at import time. Since pytest loads this file before collecting
+   the tests, this is the place - the only place - to point the panel at a throwaway
+   database. Getting it wrong means running the tests against the real
+   `/var/lib/gamepanel/panel.db`.
 
-2. **Cada modulo comeca com o banco limpo.** Antes da migracao para pytest cada suite
-   era um processo com o seu proprio banco temporario; agora todas dividem um processo
-   so. A fixture `banco` devolve o mesmo isolamento esvaziando as tabelas.
+2. **Every module starts with a clean database.** Before the move to pytest each suite
+   was a process with its own temporary database; now they all share one process. The
+   `banco` fixture restores the same isolation by emptying the tables.
 """
 from __future__ import annotations
 
@@ -18,19 +18,19 @@ import os
 import sys
 import tempfile
 
-# Atribuicao direta, NUNCA setdefault - antes do `import app`, sempre. Ver o item 1 do
-# docstring.
+# Direct assignment, NEVER setdefault - and always before `import app`. See item 1 of
+# the docstring.
 #
-# O container do painel (docker/panel/Dockerfile) fixa `ENV GAMEPANEL_DB=/var/lib/
-# gamepanel/panel.db`: essa variavel JA esta definida quando este processo comeca, e
-# `setdefault` teria sido um no-op ali. Foi exatamente isso que aconteceu numa versao
-# anterior deste arquivo: os testes rodaram contra o banco de verdade do container de
-# dev, apagando o usuario 'admin' e enchendo a tela de servidores com "alvo", "outro"
-# e "Sem consulta". Atribuicao direta garante um banco descartavel em QUALQUER
-# ambiente, container ou maquina local, independente do que veio no environment.
+# The panel container (docker/panel/Dockerfile) pins `ENV GAMEPANEL_DB=/var/lib/
+# gamepanel/panel.db`: that variable is ALREADY set when this process starts, and
+# `setdefault` would have been a no-op there. That is exactly what happened in an
+# earlier version of this file: the tests ran against the dev container's real
+# database, deleting the 'admin' user and filling the servers screen with "alvo",
+# "outro" and "Sem consulta". Direct assignment guarantees a throwaway database in ANY
+# environment, container or local machine, whatever came in the environment.
 os.environ["GAMEPANEL_DB"] = os.path.join(tempfile.mkdtemp(), "teste.db")
-# Alertas nunca saem para a rede a partir daqui: quem quiser exercitar o envio troca
-# `panel.envia_webhook` por um capturador (ver a fixture `webhooks`).
+# Alerts never go out to the network from here: a test that wants to exercise sending
+# swaps `panel.envia_webhook` for a capturer (see the `webhooks` fixture).
 os.environ["GAMEPANEL_WEBHOOK_URL"] = ""
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -41,15 +41,15 @@ import pytest
 from gamepanel import app as panel
 from gamepanel.security import totp
 
-# Toda tabela do SCHEMA. Esvaziar e melhor que recriar: `init_db()` tambem roda as
-# migracoes, e repeti-las a cada teste mediria o tempo delas, nao o do teste.
+# Every table in SCHEMA. Emptying beats recreating: `init_db()` also runs the
+# migrations, and repeating them on every test would measure their time, not the test's.
 TABLES = ("alert_log", "jobs", "samples", "schedules", "servers", "settings",
            "users", "webhooks")
 
 
 @pytest.fixture
 def database():
-    """Conexao propria com o banco vazio. Fecha sozinha no fim do teste."""
+    """Own connection to the empty database. Closes by itself at the end of the test."""
     conn = panel._connect()
     with conn:
         for table in TABLES:
@@ -62,12 +62,12 @@ def database():
 
 
 def _reset_module_state() -> None:
-    """Limpa os caches e relogios que o `app.py` guarda em variaveis de modulo.
+    """Clears the caches and clocks that `app.py` keeps in module variables.
 
-    Sem isto um teste herda a leitura do anterior: o monitor acha que ja viu aquele
-    servidor (e nao alerta), o cache de status devolve o estado de outro cenario, e a
-    volta do relogio acha que ainda nao e hora. Foi o motivo de cada suite ser um
-    processo separado antes; agora e uma funcao.
+    Without this a test inherits the previous one's reading: the monitor thinks it has
+    already seen that server (and does not alert), the status cache returns another
+    scenario's state, and the clock tick thinks it is not time yet. That was why each
+    suite used to be a separate process; now it is a function.
     """
     panel._monitor_state.clear()
     panel._status_cache.clear()
@@ -83,17 +83,17 @@ def _reset_module_state() -> None:
 
 @pytest.fixture
 def webhooks(database, monkeypatch):
-    """Captura o que o painel MANDARIA, sem tocar na rede.
+    """Captures what the panel WOULD send, without touching the network.
 
-    Devolve a lista de `(url, texto)`. O que se testa nas suites de alerta e QUANDO o
-    painel decide avisar - alerta a mais vira ruido e o canal deixa de ser lido; alerta
-    a menos e um servidor caido as 3h que ninguem descobre.
+    Returns the list of `(url, text)`. What the alert suites test is WHEN the panel
+    decides to notify - one alert too many becomes noise and the channel stops being
+    read; one too few is a server down at 3 a.m. that nobody finds out about.
     """
     sent_ones: list[tuple[str, str]] = []
 
     def capture(url, text):
         sent_ones.append((url, text))
-        return ""      # string vazia = enviado com sucesso
+        return ""      # empty string = sent successfully
 
     monkeypatch.setattr(panel, "send_webhook", capture)
     return sent_ones
@@ -101,16 +101,16 @@ def webhooks(database, monkeypatch):
 
 @pytest.fixture
 def client(database):
-    """Cliente HTTP do Flask, sem ninguem logado."""
+    """Flask HTTP client, with nobody logged in."""
     panel.app.config["TESTING"] = True
     return panel.app.test_client()
 
 
 def _login(cli, username: str, password: str):
-    """Loga `username` no cliente de teste `cli`. Devolve o proprio `cli`, logado.
+    """Logs `username` into the test client `cli`. Returns the same `cli`, logged in.
 
-    Falhar alto (nao 302) e sempre um erro de FIXTURE, nao do teste que a usa - por
-    isso o `assert` aqui, e nao um `check()` que so anotaria mais uma falha na lista.
+    Failing loudly (not a 302) is always a FIXTURE error, not one of the test using it -
+    hence the `assert` here, and not a `check()` that would just record one more failure.
     """
     cli.get("/login")
     with cli.session_transaction() as sess:
@@ -122,7 +122,7 @@ def _login(cli, username: str, password: str):
 
 
 def _post(cli, url, data=None):
-    """POST com o CSRF da sessao ja preenchido - e o que todo POST do painel exige."""
+    """POST with the session's CSRF already filled in - what every panel POST requires."""
     data = dict(data or {})
     with cli.session_transaction() as sess:
         data["csrf"] = sess.get("csrf", "")
@@ -131,16 +131,16 @@ def _post(cli, url, data=None):
 
 @pytest.fixture
 def post():
-    """`postar(cli, url, dados)`: POST com CSRF, sem redirecionar."""
+    """`postar(cli, url, dados)`: POST with CSRF, without following redirects."""
     return _post
 
 
 @pytest.fixture
 def login(database):
-    """`entrar(username, senha)`: devolve um cliente NOVO, ja logado.
+    """`entrar(username, senha)`: returns a NEW client, already logged in.
 
-    Cada chamada cria seu proprio `test_client()` - dois logins na mesma suite (chefe e
-    peao, por exemplo) nao podem compartilhar sessao.
+    Each call creates its own `test_client()` - two logins in the same suite (boss and
+    worker, for example) must not share a session.
     """
     def _do(username: str, password: str):
         return _login(panel.app.test_client(), username, password)
@@ -149,27 +149,27 @@ def login(database):
 
 @pytest.fixture
 def admin(login):
-    """Um administrador cadastrado e logado - o caso mais comum nas suites da web."""
+    """A registered, logged-in administrator - the most common case in the web suites."""
     panel.ensure_admin_user("chefe", "senha-do-chefe")
     return login("chefe", "senha-do-chefe")
 
 
 @pytest.fixture
 def operator(login):
-    """Um operador cadastrado e logado, para os testes de permissao."""
+    """A registered, logged-in operator, for the permission tests."""
     panel.ensure_admin_user("peao", "senha-do-peao", panel.ROLE_OPERATOR)
     return login("peao", "senha-do-peao")
 
 
 @pytest.fixture
 def admin_2fa(admin):
-    """O mesmo `chefe`, com o segundo fator ATIVO.
+    """The same `chefe`, with the second factor ACTIVE.
 
-    `broker_required` exige 2FA da PESSOA sempre, nao so quando `GAMEPANEL_REQUIRE_2FA`
-    esta ligado — sem esta fixture, todo teste de rota do broker cairia na tela de
-    ativacao em vez do que quer exercitar. Ativar 2FA na sessao ja logada nao a
-    derruba (`_store_second_factor` nao mexe na sessao), entao o mesmo cliente
-    continua servindo depois.
+    `broker_required` always requires the PERSON's 2FA, not only when
+    `GAMEPANEL_REQUIRE_2FA` is on - without this fixture, every broker route test would
+    land on the activation screen instead of what it wants to exercise. Enabling 2FA in
+    an already logged-in session does not drop it (`_store_second_factor` does not touch
+    the session), so the same client keeps working afterwards.
     """
     admin.get("/account/2fa")
     with admin.session_transaction() as sess:

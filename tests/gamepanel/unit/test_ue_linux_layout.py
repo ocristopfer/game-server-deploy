@@ -1,8 +1,8 @@
-"""Gerador dos arquivos do UE4SS de um servidor Unreal Linux sem simbolo (games/mods/ue_linux_layout.py).
+"""Generator of the UE4SS files for a Linux Unreal server without symbols (games/mods/ue_linux_layout.py).
 
-Roda DENTRO do CT; aqui contra um ELF minimo montado no proprio teste (um segmento de codigo e um
-de dados) e contra os numeros MEDIDOS nos servidores de verdade: o deslocamento do FUObjectArray do
-The Front e a forma das vtables exportadas.
+It runs INSIDE the CT; here against a minimal ELF built in the test itself (one code segment and one
+data segment) and against the numbers MEASURED on the real servers: The Front's FUObjectArray
+offset and the shape of the exported vtables.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ DATA_VA = 0x600000
 
 
 def elf(path, code: bytes, data: bytes = b"\0" * 64) -> str:
-    """ELF64 com um PT_LOAD de codigo (R+X) e um de dados (RW). Sem tabela de secoes."""
+    """ELF64 with one code PT_LOAD (R+X) and one data PT_LOAD (RW). No section table."""
     code_off, data_off = 0x1000, 0x1000 + len(code) + (-len(code)) % 0x1000
     header = b"\x7fELF" + bytes([2, 1, 1, 0]) + b"\0" * 8
     header += struct.pack("<HHIQQQIHHHHHH", 2, 0x3E, 1, CODE_VA, 64, 0, 0, 64, 56, 2, 64, 0, 0)
@@ -37,8 +37,8 @@ def tokens(text: str) -> list[int | None]:
 
 
 def test_mascara_tambem_o_rip_sem_prefixo_rex():
-    """cmpb $0,[rip+d] (80 3D d32 00) nao tem REX: sem esta regra o deslocamento, que muda de jogo
-    para jogo, entrava fixo no padrao (foi assim que o FName::ToString do pacote 4.27 nao casava)."""
+    """cmpb $0,[rip+d] (80 3D d32 00) has no REX: without this rule the displacement, which changes from
+    game to game, went into the pattern as fixed (that is why the 4.27 pack's FName::ToString did not match)."""
     code = bytes.fromhex("80 3D 12 2A DA 03 00 48 8B 05 11 22 33 44 E8 01 02 03 04")
     assert ull.masked(code) == "80 3D ?? ?? ?? ?? 00 48 8B 05 ?? ?? ?? ?? E8 ?? ?? ?? ??"
 
@@ -54,8 +54,8 @@ def test_resolve_alonga_ate_ficar_unico(tmp_path):
 
 
 def test_prologo_comum_demais_alonga_em_vez_de_desistir(tmp_path, monkeypatch):
-    """Com 12 bytes o padrao era o push/push/sub de milhares de funcoes: o gerador desistia no teto de
-    casamentos e o FName::ToString nao saia em jogo nenhum."""
+    """With 12 bytes the pattern was the push/push/sub of thousands of functions: the generator gave up at
+    the match ceiling and FName::ToString came out in no game at all."""
     monkeypatch.setattr(ull, "MAX_HITS", 1)
     prologue = bytes.fromhex("55 41 57 41 56 41 55 41 54 53 48 81")
     code = (prologue + b"\xAA" * 4) * 3 + prologue + b"\xBB" * 4
@@ -65,8 +65,8 @@ def test_prologo_comum_demais_alonga_em_vez_de_desistir(tmp_path, monkeypatch):
 
 
 def test_copias_identicas_valem_se_dao_o_mesmo_endereco(tmp_path):
-    """O FMemory::Free e o operator delete sao o mesmo codigo: dois casamentos, um global so."""
-    # mov rdi,[rip+d] apontando para DATA_VA; o padrao comeca no operando.
+    """FMemory::Free and operator delete are the same code: two matches, a single global."""
+    # mov rdi,[rip+d] pointing to DATA_VA; the pattern starts at the operand.
     def load(at: int) -> bytes:
         rel = struct.pack("<i", DATA_VA - (CODE_VA + at + 7))
         return bytes.fromhex("48 8B 3D") + rel + bytes.fromhex("48 85 FF 75 0C C3")
@@ -80,8 +80,8 @@ def test_copias_identicas_valem_se_dao_o_mesmo_endereco(tmp_path):
 
 
 def test_padrao_que_comeca_em_coringa_ganha_os_bytes_da_instrucao(tmp_path):
-    """O scanner do UE4SS recusa padrao que comeca com ??, e a recusa derrubava a passada inteira (as
-    outras assinaturas saiam como nao achadas). Medido no Smalland com o GUObjectArray."""
+    """The UE4SS scanner refuses a pattern that starts with ??, and the refusal took down the whole pass
+    (the other signatures came out as not found). Measured on Smalland with GUObjectArray."""
     code = bytes.fromhex("90 90 74 1B BF") + struct.pack("<I", DATA_VA) + bytes.fromhex("58 E9 01 02 03 04 80 3D")
     image = ull.Image(elf(tmp_path, code))
     (aob, body), address = ull.resolve(image, tokens("?? ?? ?? ?? 58 E9 ?? ?? ?? ?? 80 3D"),
@@ -100,22 +100,22 @@ def test_endereco_do_tipo_errado_e_recusado(tmp_path):
 
 
 def test_alinhamento_por_codigo_com_virtuais_a_mais_no_alvo():
-    """O Soulmask tem 62 virtuais a mais no AGameModeBase: as ancoras (codigo unico dos dois lados)
-    levam cada nome para a posicao dele no alvo, e entre ancoras de mesmo deslocamento interpola."""
+    """Soulmask has 62 extra virtuals in AGameModeBase: the anchors (code unique on both sides) take each
+    name to its position in the target, and between anchors with the same offset it interpolates."""
     ref = [f"f{i}" for i in range(10)]
     target = [*ref[:4], "novo1", "novo2", *ref[4:]]
     resolve_slot, anchors = ull.slot_mapping(ref, target)
     assert anchors == 10
     assert [resolve_slot(i) for i in (0, 3, 4, 9)] == [0, 3, 6, 11]
-    # Codigo repetido (duas funcoes vazias iguais) nao vira ancora; interpola entre as vizinhas.
+    # Repeated code (two identical empty functions) does not become an anchor; it interpolates between neighbors.
     ref2 = ["a", "x", "x", "b", "c"]
     resolve2, _ = ull.slot_mapping(ref2, ["a", "x", "x", "b", "c"])
     assert resolve2(2) == 2
 
 
 def test_deslocamento_do_fuobjectarray_medido_no_the_front():
-    """Histogramas de verdade (acessos do codigo a cada membro do GUObjectArray): Squad 44 (a
-    referencia), The Front (+0x18) e Smalland (igual)."""
+    """Real histograms (code accesses to each GUObjectArray member): Squad 44 (the reference),
+    The Front (+0x18) and Smalland (same)."""
     squad44 = {0x0: 8, 0x4: 51, 0x10: 5913, 0x20: 5936, 0x24: 558, 0x2C: 11793, 0x78: 9, 0x80: 27, 0xB8: 1}
     the_front = {0x0: 8, 0x4: 50, 0x10: 2013, 0x20: 2, 0x24: 422, 0x70: 1, 0x78: 2, 0x7C: 1, 0x90: 14,
                  0x98: 37, 0x9C: 5}
@@ -127,8 +127,8 @@ def test_deslocamento_do_fuobjectarray_medido_no_the_front():
 
 
 def test_gmalloc_conferido_na_hora_le_zero_como_zero():
-    """DerefToInt32 devolve nil quando le 0 - a metade alta de toda vtable de executavel nao-PIE.
-    Sem o `or 0` o Lua dava erro e levava a passada inteira de assinaturas junto."""
+    """DerefToInt32 returns nil when it reads 0 - the high half of every vtable in a non-PIE executable.
+    Without the `or 0` Lua raised an error and took the whole signature pass down with it."""
     lua = ull.runtime_lua([0x7E207B8, 0x7FFB928], [0x1718F18], "GMalloc")
     assert "0x7E207B8, 0x7FFB928" in lua
     assert "[0x1718F18] = true" in lua

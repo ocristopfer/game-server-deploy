@@ -1,52 +1,52 @@
-"""Leitura e escrita da tabela `jobs` — o historico de tudo que o painel executou."""
+"""Reads and writes the `jobs` table - the history of everything the panel ran."""
 from __future__ import annotations
 
 import sqlite3
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-# Um servidor chega como linha do SQLite (leitura normal) ou como dict (a thread de um
-# job copia a linha, porque a Row esta presa a conexao do request).
+# A server arrives as an SQLite row (normal read) or as a dict (a job's thread copies the
+# row, because the Row is bound to the request's connection).
 ServerLike = sqlite3.Row | Mapping[str, Any]
 
-# O painel guarda a saida inteira de um comando; um `apt upgrade` passa facil de um mega
-# e enche o banco por linha. O corte e aqui, e nao na tela, para o disco nao crescer.
+# The panel stores a command's whole output; an `apt upgrade` easily passes a megabyte and
+# bloats the database per row. The cut is here, not on the screen, so the disk does not grow.
 OUTPUT_MAX = 200_000
 BROKER_TARGET = "broker"
 
-# Acoes que DERRUBAM o servico de proposito. Uma queda logo depois de uma
-# delas nao e queda: e o botao que a pessoa acabou de clicar.
+# Actions that bring the service DOWN on purpose. A drop right after one of them is not an
+# outage: it is the button the person just clicked.
 DISRUPTIVE_ACTIONS = ("start", "stop", "restart", "update", "restore-backup")
 
 
 def _row_id(cur: sqlite3.Cursor) -> int:
-    """O id da linha recem-inserida.
+    """The id of the row just inserted.
 
-    `lastrowid` e Optional no tipo porque um cursor pode nao ter inserido nada; depois de
-    um INSERT que deu certo, nunca. Falhar alto aqui e melhor do que devolver 0 e deixar
-    o job apontando para uma linha que nao existe.
+    `lastrowid` is Optional in the type because a cursor may not have inserted anything;
+    after a successful INSERT, never. Failing loudly here beats returning 0 and leaving the
+    job pointing at a row that does not exist.
     """
     if cur.lastrowid is None:
         raise RuntimeError("INSERT em jobs nao devolveu id")
     return cur.lastrowid
 
 
-# --- leitura ------------------------------------------------------------------------
+# --- reading ------------------------------------------------------------------------
 
 def by_id(conn: sqlite3.Connection, jid: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM jobs WHERE id = ?", (jid,)).fetchone()
 
 
 def by_id_and_server(conn: sqlite3.Connection, jid: int, sid: int) -> sqlite3.Row | None:
-    """O id sozinho nao basta: a tela do console so pode mostrar job DAQUELE servidor."""
+    """The id alone is not enough: the console screen may only show jobs of THAT server."""
     return conn.execute(
         "SELECT * FROM jobs WHERE id = ? AND server_id = ?", (jid, sid)).fetchone()
 
 
 def of_server(conn: sqlite3.Connection, sid: int, limit: int,
               role_cut: str = "", role_values: Sequence[Any] = ()) -> list[sqlite3.Row]:
-    """Historico de um servidor. `role_cut` e o pedaco de WHERE que esconde do operador
-    as acoes restritas — vem pronto de quem sabe o papel de quem esta olhando."""
+    """A server's history. `role_cut` is the WHERE fragment that hides restricted actions
+    from the operator - it comes ready-made from whoever knows the viewer's role."""
     return conn.execute(
         f"SELECT * FROM jobs WHERE server_id = ?{role_cut} ORDER BY id DESC LIMIT ?",  # noqa: S608
         (sid, *role_values, limit),
@@ -54,7 +54,7 @@ def of_server(conn: sqlite3.Connection, sid: int, limit: int,
 
 
 def shell_history(conn: sqlite3.Connection, sid: int, limit: int) -> list[sqlite3.Row]:
-    """Os comandos avulsos mais recentes daquele servidor (tela Console)."""
+    """The most recent ad hoc commands of that server (Console screen)."""
     return conn.execute(
         "SELECT * FROM jobs WHERE server_id = ? AND action = 'shell'"
         " ORDER BY id DESC LIMIT ?", (sid, limit)).fetchall()
@@ -62,8 +62,8 @@ def shell_history(conn: sqlite3.Connection, sid: int, limit: int) -> list[sqlite
 
 def page(conn: sqlite3.Connection, where: str, values: Sequence[Any],
          limit: int, offset: int) -> list[sqlite3.Row]:
-    """Uma pagina do historico geral. O `where` e montado por quem aplica os filtros da
-    tela; aqui so a paginacao."""
+    """One page of the general history. The `where` is built by whoever applies the
+    screen's filters; here only the pagination."""
     return conn.execute(
         f"SELECT * FROM jobs WHERE {where} ORDER BY id DESC LIMIT ? OFFSET ?",  # noqa: S608
         (*values, limit, offset),
@@ -72,7 +72,7 @@ def page(conn: sqlite3.Connection, where: str, values: Sequence[Any],
 
 def usernames(conn: sqlite3.Connection, role_cut: str = "",
               role_values: Sequence[Any] = ()) -> list[str]:
-    """Quem aparece no historico — alimenta o filtro da tela."""
+    """Who appears in the history - feeds the screen's filter."""
     return [r[0] for r in conn.execute(
         f"SELECT DISTINCT username FROM jobs WHERE username <> '' {role_cut}"  # noqa: S608
         " ORDER BY username",
@@ -82,10 +82,10 @@ def usernames(conn: sqlite3.Connection, role_cut: str = "",
 
 def acted_since(conn: sqlite3.Connection, sid: int, since: str,
                 actions: Sequence[str] = DISRUPTIVE_ACTIONS) -> bool:
-    """Houve acao do painel neste servidor depois de `since`?
+    """Did the panel act on this server after `since`?
 
-    Reiniciar pelo botao derruba o servico por alguns segundos, e isso NAO e uma queda.
-    Sem esta janela, todo restart e todo update viraria alerta.
+    Restarting through the button takes the service down for a few seconds, and that is
+    NOT an outage. Without this window, every restart and every update would become an alert.
     """
     marks = ", ".join("?" * len(actions))
     return conn.execute(
@@ -96,32 +96,32 @@ def acted_since(conn: sqlite3.Connection, sid: int, since: str,
 
 
 def running_broker_ops(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Operacoes do broker que ficaram 'running' — o painel reiniciou no meio delas."""
+    """Broker operations left 'running' - the panel restarted in the middle of them."""
     return conn.execute(
         "SELECT id, broker_op FROM jobs WHERE status = 'running' AND broker_op != ''"
     ).fetchall()
 
 
 def running_creations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Criacoes de instancia em andamento: a tela de instancias as mostra com o caminho de
-    volta para o log, que antes so existia no redirect logo depois do clique."""
+    """Instance creations in progress: the instances screen shows them with the way back to
+    the log, which used to exist only in the redirect right after the click."""
     return conn.execute(
         "SELECT id, command, username, created_at FROM jobs"
         " WHERE status = 'running' AND action = 'broker-criar' AND broker_op != '' ORDER BY id DESC"
     ).fetchall()
 
 
-# --- escrita ------------------------------------------------------------------------
+# --- writing ------------------------------------------------------------------------
 
 def target_of(server: ServerLike) -> str:
-    """Como um job identifica o que ele mexeu. O formato e um so, aqui: escrito em cada
-    chamador, um deles um dia fica sem a porta ou com o usuario errado."""
+    """How a job identifies what it touched. There is one format, here: written in each
+    caller, one of them would someday lose the port or get the wrong user."""
     return f"{server['ssh_user']}@{server['host']}"
 
 
 def start(conn: sqlite3.Connection, server: ServerLike, action: str,
           command: str, username: str, created_at: str) -> int:
-    """Job que COMECOU: fica 'running' ate alguem chamar `finish`."""
+    """A job that STARTED: stays 'running' until someone calls `finish`."""
     cur = conn.execute(
         "INSERT INTO jobs (server_id, target, action, status, command, username,"
         " created_at) VALUES (?,?,?,?,?,?,?)",
@@ -131,7 +131,7 @@ def start(conn: sqlite3.Connection, server: ServerLike, action: str,
 
 def record(conn: sqlite3.Connection, server: ServerLike, action: str, status: str,
            output: str, command: str, username: str, at: str) -> int:
-    """Job que JA ACONTECEU (edicao de arquivo, sessao de terminal): nasce terminado."""
+    """A job that ALREADY HAPPENED (file edit, terminal session): born finished."""
     cur = conn.execute(
         "INSERT INTO jobs (server_id, target, action, status, exit_code, output,"
         " command, username, created_at, finished_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -142,7 +142,7 @@ def record(conn: sqlite3.Connection, server: ServerLike, action: str, status: st
 
 def start_broker(conn: sqlite3.Connection, action: str, command: str, username: str,
                  created_at: str, op_id: str) -> int:
-    """Sem servidor: a instancia ainda nao existe quando a criacao comeca."""
+    """No server: the instance does not exist yet when the creation starts."""
     cur = conn.execute(
         "INSERT INTO jobs (server_id, target, action, status, command, username,"
         " created_at, broker_op) VALUES (NULL, ?, ?, 'running', ?, ?, ?, ?)",
@@ -152,7 +152,7 @@ def start_broker(conn: sqlite3.Connection, action: str, command: str, username: 
 
 def record_broker(conn: sqlite3.Connection, action: str, status: str, output: str,
                   command: str, username: str, at: str) -> int:
-    """Acao curta do broker (desativar, remover, jogo novo): nasce terminada."""
+    """A short broker action (deactivate, remove, new game): born finished."""
     cur = conn.execute(
         "INSERT INTO jobs (server_id, target, action, status, exit_code, output, command,"
         " username, created_at, finished_at) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -169,9 +169,9 @@ def finish(conn: sqlite3.Connection, jid: int, status: str, exit_code: int | Non
 
 
 def set_fields(conn: sqlite3.Connection, jid: int, fields: Mapping[str, Any]) -> None:
-    """Escreve so as colunas dadas — usado pelo acompanhamento do broker, que grava o
-    log a cada volta. Os NOMES vem de quem chama (fixos no codigo); os VALORES viajam
-    como parametro."""
+    """Write only the given columns - used by the broker follow-up, which writes the log
+    every round. The NAMES come from the caller (fixed in code); the VALUES travel as
+    parameters."""
     if not fields:
         return
     columns = ", ".join(f"{c}=?" for c in fields)

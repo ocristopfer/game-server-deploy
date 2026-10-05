@@ -1,8 +1,8 @@
 #!/bin/sh
-# journalctl de mentira: le o log do processo criado pelo fake-systemctl.
-# Suporta o que o painel usa: -u <unit> --no-pager -n <N> [-f] [--show-cursor]
-# [--after-cursor <cursor>]. O cursor aqui e so a contagem de linhas ja entregues
-# ("n=123") - suficiente para exercitar o "seguir log" da tela.
+# Fake journalctl: reads the log of the process created by fake-systemctl.
+# Supports what the panel uses: -u <unit> --no-pager -n <N> [-f] [--show-cursor]
+# [--after-cursor <cursor>]. The cursor here is just the count of lines already delivered
+# ("n=123") - enough to exercise the screen's "follow log".
 set -u
 
 unit=""
@@ -18,8 +18,8 @@ while [ $# -gt 0 ]; do
     -f|--follow) follow=1 ;;
     --show-cursor) show_cursor=1 ;;
     --after-cursor) after="${2:-}"; shift ;;
-    # O log falso e curto e some a cada start, entao --since nao muda nada aqui;
-    # -o so escolhe formato, e as linhas ja saem prontas do fake-game-loop.
+    # The fake log is short and vanishes on every start, so --since changes nothing here;
+    # -o only picks a format, and the lines already come out ready from fake-game-loop.
     --since|--until|-o|--output) shift ;;
     --no-pager|-e|-x) ;;
     *) ;;

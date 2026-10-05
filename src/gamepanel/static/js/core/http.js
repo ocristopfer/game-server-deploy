@@ -1,8 +1,8 @@
-/* Nucleo — conversa com o painel.
+/* Core - talking to the panel.
  *
- * Toda leitura de JSON do painel passa por aqui. As features nao chamam `fetch`
- * direto: assim o cabecalho Accept, o tratamento de erro e o "isto nunca vem do
- * cache" ficam num lugar so, e trocar o transporte nao mexe em nenhuma tela.
+ * Every JSON read from the panel goes through here. Features do not call `fetch`
+ * directly: that way the Accept header, error handling and the "this never comes from
+ * the cache" live in one place, and swapping the transport touches no screen.
  */
 
 export class NetworkError extends Error {
@@ -13,11 +13,11 @@ export class NetworkError extends Error {
   }
 }
 
-/* Le JSON de uma rota do painel.
+/* Reads JSON from a panel route.
  *
- * `cache: 'no-store'` importa de verdade aqui: com o service worker instalado, uma
- * leitura de medidores servida do cache mostraria o servidor como estava ha uma hora
- * — pior do que nao mostrar nada. */
+ * `cache: 'no-store'` really matters here: with the service worker installed, a
+ * gauge reading served from the cache would show the server as it was an hour ago
+ * - worse than showing nothing. */
 export async function readJSON(url, options = {}) {
   return request(url, {
     headers: { Accept: 'application/json', ...options.headers },
@@ -25,10 +25,10 @@ export async function readJSON(url, options = {}) {
   });
 }
 
-/* Manda um POST e le o JSON da resposta.
+/* Sends a POST and reads the JSON response.
  *
- * `FormData` vai como formulario (o token CSRF ja esta num campo dele); objeto vai como
- * JSON, e ai o token tem de ir no cabecalho, que e o outro lugar onde o painel o procura. */
+ * `FormData` goes as a form (the CSRF token is already in one of its fields); an object goes as
+ * JSON, and then the token has to go in the header, which is the other place the panel looks for it. */
 export async function postJSON(url, body, { csrf = '' } = {}) {
   const form = body instanceof FormData;
   const headers = { Accept: 'application/json' };
@@ -42,7 +42,9 @@ async function request(url, init) {
   try {
     resp = await fetch(url, { ...init, cache: 'no-store', credentials: 'same-origin' });
   } catch (err) {
-    throw new NetworkError(err.message || 'sem conexao');
+    // Read at call time, from the page: the module has no catalog of its own.
+    const fallback = document.body?.dataset.labelNoConnection || 'sem conexao';
+    throw new NetworkError(err.message || fallback);
   }
 
   let data = null;

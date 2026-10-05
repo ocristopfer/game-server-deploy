@@ -1,10 +1,10 @@
-"""Um arquivo por jogo com tela de edicao rapida.
+"""One file per game that has a quick-edit screen.
 
-Acrescentar um jogo e criar um modulo aqui (com `FILENAME` e `FIELDS`) e uma linha em
-`registry.ADAPTERS` — sem tocar em rota, em template nem nos outros jogos. O jogo que
-nao tem adapter nao fica de fora do painel: ele cai no editor de arquivo generico, que
-nao conhece jogo nenhum.
+Adding a game means creating a module here (with `FILENAME` and `FIELDS`) and one line in
+`registry.ADAPTERS` - without touching any route, template or the other games. A game
+without an adapter is not left out of the panel: it falls back to the generic file editor,
+which knows no game at all.
 
-`test_game_registry.py` cobra que nenhum modulo daqui fique fora do registro: criar o
-arquivo e esquecer a linha nao daria erro, so uma tela que continua generica.
+`test_game_registry.py` checks that no module here is left out of the registry: creating the
+file and forgetting the line would raise no error, just leave a screen that stays generic.
 """

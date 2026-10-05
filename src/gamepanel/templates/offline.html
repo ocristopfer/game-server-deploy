@@ -1,11 +1,11 @@
-{# Tela de "sem conexao".
+{# "No connection" screen.
 
-   NAO estende o base.html de proposito: esta pagina fica guardada no aparelho, e o
-   base traz o nome de quem esta logado na barra de cima. Uma copia disso em cache
-   poderia reaparecer depois do logout, ou para outra pessoa no mesmo celular. Aqui
-   nao ha nada para vazar — so o que aconteceu e o botao de tentar de novo. #}
+   It does NOT extend base.html on purpose: this page stays stored on the device, and
+   base carries the logged-in person's name in the top bar. A cached copy of that
+   could reappear after logout, or for another person on the same phone. Here
+   there is nothing to leak - only what happened and the try again button. #}
 <!doctype html>
-<html lang="pt-BR">
+<html lang="{{ html_lang }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -21,15 +21,12 @@
 <main class="wrap">
   <div class="card card--empty card--login">
     <h1><span aria-hidden="true">📡</span> {{ _('offline.heading') }}</h1>
-    <p class="muted">
-      O painel nao respondeu. Ele so funciona com acesso a rede onde os containers
-      estao &mdash; ligar e desligar servidor nao tem como acontecer offline.
-    </p>
+    <p class="muted">{{ _h('offline.no_answer_hint') }}</p>
     <p class="muted small">
       {{ _('offline.vpn_hint') }}
     </p>
-    {# Um link, e nao um botao com onclick: assim esta pagina nao precisa de uma
-       linha de JavaScript para funcionar. #}
+    {# A link, and not a button with onclick: that way this page does not need a single
+       line of JavaScript to work. #}
     <div class="form-actions">
       <a class="btn btn--primary btn--block" href="{{ url_for('dashboard.index') }}">{{ _('offline.retry') }}</a>
     </div>

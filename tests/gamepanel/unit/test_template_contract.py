@@ -1,13 +1,13 @@
-"""O contrato entre o `app.py` e os templates: quem passa e quem le.
+"""The contract between `app.py` and the templates: who passes and who reads.
 
-Este arquivo existe por causa de um defeito real. Durante a traducao dos identificadores
-para ingles, um `render_template(instancias=...)` virou `instances=...` e o
-`instances.html` passou a renderizar uma lista VAZIA -- sem erro, sem 500, sem nada no
-log. Jinja trata variavel ausente como indefinida e segue em frente, entao a unica pista
-era a tela em branco.
+This file exists because of a real defect. While translating the identifiers into
+English, a `render_template(instancias=...)` became `instances=...` and
+`instances.html` started rendering an EMPTY list -- no error, no 500, nothing in the
+log. Jinja treats a missing variable as undefined and moves on, so the only clue
+was the blank screen.
 
-Nenhum teste de rota pegava isso (a pagina responde 200), e nem o mypy, porque o nome so
-existe como texto dos dois lados.
+No route test caught it (the page answers 200), nor did mypy, because the name only
+exists as text on both sides.
 """
 from __future__ import annotations
 
@@ -21,15 +21,15 @@ from gamepanel import app as panel
 
 
 def _read_by_templates() -> dict[str, str]:
-    """Nome -> primeiro template que o le. Usa o ambiente DE VERDADE do painel.
+    """Name -> first template that reads it. Uses the panel's REAL environment.
 
-    Um `Environment()` cru nem parseia estes arquivos: eles usam os filtros proprios
-    (`filesize`, `duration`, `level`, `ident`), e o Jinja falha na compilacao ao nao
-    reconhece-los.
+    A bare `Environment()` does not even parse these files: they use the panel's own filters
+    (`filesize`, `duration`, `level`, `ident`), and Jinja fails at compile time when it does
+    not recognise them.
     """
     read_ones: dict[str, str] = {}
-    # `app.template_folder` e relativo ("templates"): resolvido a partir do diretorio
-    # de trabalho ele nao acha nada, e o teste passaria achando que ninguem le nada.
+    # `app.template_folder` is relative ("templates"): resolved from the working
+    # directory it finds nothing, and the test would pass believing nobody reads anything.
     root = Path(panel.__file__).parent / panel.app.template_folder
     for file_path in sorted(root.rglob("*.html")):
         source = file_path.read_text(encoding="utf-8")
@@ -39,18 +39,18 @@ def _read_by_templates() -> dict[str, str]:
 
 
 def _files_that_render() -> list[Path]:
-    """`app.py` mais todo blueprint — e ali que os `render_template` moram hoje.
+    """`app.py` plus every blueprint - that is where the `render_template` calls live today.
 
-    Varrer so o `app.py`, como este teste fazia, deixou de cobrir coisa alguma no dia em
-    que as rotas sairam dele: o teste continuava verde com zero chamadas encontradas.
-    Por isso a lista e derivada da PASTA, e nao escrita a mao.
+    Scanning only `app.py`, as this test used to, stopped covering anything the day the
+    routes moved out of it: the test stayed green with zero calls found.
+    That is why the list is derived from the FOLDER, and not written by hand.
     """
     root = Path(panel.__file__).parent
     return [root / "app.py", *sorted((root / "blueprints").glob("*.py"))]
 
 
 def _passed_by_the_app() -> list[tuple[str, str, str]]:
-    """(template, nome do kwarg, onde) de cada `render_template` do painel."""
+    """(template, kwarg name, where) of every `render_template` in the panel."""
     passed = []
     for file_path in _files_that_render():
         for no in ast.walk(ast.parse(file_path.read_text(encoding="utf-8"))):
@@ -66,7 +66,7 @@ def _passed_by_the_app() -> list[tuple[str, str, str]]:
 
 
 def test_a_varredura_encontra_os_render_template_de_verdade():
-    """Guarda do proprio teste: zero chamadas e o jeito silencioso de ele parar de valer."""
+    """Guard for the test itself: zero calls is the silent way for it to stop meaning anything."""
     passed = _passed_by_the_app()
     assert len(passed) > 50, f"so {len(passed)} kwargs encontrados - a varredura quebrou?"
     assert len({where_clause.split(":")[0] for _t, _n, where_clause in passed}) > 10
@@ -77,7 +77,7 @@ def test_todo_kwarg_de_render_template_tem_quem_o_leia():
     orphans = [
         f"{where_clause} {template} passa '{name}', que nenhum template le"
         for template, name, where_clause in _passed_by_the_app()
-        # O `.jinja` (service worker, manifest) nao entra na varredura de `*.html`.
+        # The `.jinja` ones (service worker, manifest) are not part of the `*.html` scan.
         if name not in read_ones and not template.endswith(".jinja")
     ]
     assert orphans == [], "kwarg sem leitor (a tela fica vazia, sem erro):\n" + "\n".join(orphans)
@@ -85,8 +85,8 @@ def test_todo_kwarg_de_render_template_tem_quem_o_leia():
 
 @pytest.mark.parametrize("name", ["csrf_token", "_", "_h", "url_for", "is_admin"])
 def test_o_contexto_global_cobre_o_que_todo_template_usa(name):
-    """Estes vem do `context_processor`, nao de um `render_template` — e a falta de um
-    deles nao aparece numa tela so: aparece em todas."""
+    """These come from the `context_processor`, not from a `render_template` - and missing one
+    of them does not show up on a single screen: it shows up on all of them."""
     with panel.app.test_request_context("/"):
         assert name in panel.app.jinja_env.globals or name in _context()
 

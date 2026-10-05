@@ -16,7 +16,7 @@
   <p class="muted small">{{ _('catalog.edit_instances_note') }}</p>
   <form method="post" action="{{ url_for('broker.catalog_update', key=key) }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    {# So para a tela de erro repetir o aviso certo; o broker decide pela chave, nao por isto. #}
+    {# Only so the error screen repeats the right notice; the broker decides by the key, not by this. #}
     <input type="hidden" name="source" value="{{ source }}">
     {% include "components/game_form.html" %}
     <div class="form-actions">

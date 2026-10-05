@@ -1,4 +1,4 @@
-"""Catalogo: leitura do .env sem shell e validacao dos jogos cadastrados pela API."""
+"""Catalog: reading the .env without a shell, and validation of the games registered through the API."""
 from __future__ import annotations
 
 import json
@@ -12,7 +12,7 @@ from gamebroker.domain.exceptions import Conflict, NotFound, ValidationError
 RAIZ = Path(__file__).resolve().parents[3]
 
 
-# --- parser do .env -------------------------------------------------------
+# --- .env parser ----------------------------------------------------------
 
 def test_env_le_valores_simples_e_ignora_comentarios():
     data = cat.read_env('# cabecalho\nA=1\nB="dois palavras"  # nota\nC=tres # nota\n\nD=\n')
@@ -40,7 +40,7 @@ def test_env_aspas_sem_fechar_e_erro():
         cat.read_env("A='abc\nB=1\n")
 
 
-# --- catalogo curado (arquivos reais do repositorio) -----------------------
+# --- curated catalog (real repository files) -------------------------------
 
 def test_todos_os_env_do_repo_sao_lidos_sem_erro():
     games, errors = cat.load_curated(RAIZ / "games")
@@ -57,8 +57,8 @@ def test_palworld_e_criavel_e_dayz_nao():
 
 
 def test_instalador_proprio_nao_sai_pelo_broker():
-    """Nenhum jogo do repositorio usa PROVISION_SCRIPT hoje (o TeamSpeak saiu), mas a regra
-    continua: um instalador que nao e SteamCMD nao roda pelo ct-install.sh do broker."""
+    """No repository game uses PROVISION_SCRIPT today (TeamSpeak is gone), but the rule
+    stands: an installer that is not SteamCMD does not run through the broker's ct-install.sh."""
     game = cat.game_from_env("voz", {"GAME_KEY": "voz", "STEAM_APP_ID": "1", "GAME_PORT": "9987",
                                     "GAME_PORTS": "9987/udp", "PROVISION_SCRIPT": "provision-voz.sh"})
     assert not game.creatable
@@ -83,7 +83,7 @@ def test_arquivo_ruim_vira_erro_e_nao_derruba_o_resto(tmp_path):
     assert "ruim.env" in errors[0]
 
 
-# --- validacao do jogo dinamico --------------------------------------------
+# --- dynamic game validation -----------------------------------------------
 
 def test_jogo_dinamico_valido(game_data):
     game = cat.validate_dynamic(game_data)
@@ -99,22 +99,22 @@ def test_ida_e_volta_pelo_formato_gravado(game_data):
 
 
 INVALID_CASES = [
-    # comando de shell escondido em argumento
+    # shell command hidden in an argument
     ("start_args", "-x; rm -rf /"), ("start_args", "$(id)"), ("start_args", "`id`"),
     ("start_args", "a | b"), ("start_args", "a && b"), ("start_args", "-p {OUTRO}"),
     ("start_args", "a\nb"), ("start_args", "x" * 301),
-    # caminhos
+    # paths
     ("start_script", "../../bin/sh"), ("start_script", "/bin/sh"), ("start_script", "a b"),
     ("config_path", "/etc"), ("config_path", "/opt/game/../../etc"),
     ("config_files", ["/etc/passwd"]), ("config_files", "nao-e-lista"),
     ("backup_paths", ["/opt/game/.."]), ("log_path", "/var/log/x"),
-    # identidade
+    # identity
     ("key", "Bad_Key"), ("key", "a"), ("key", "x" * 30), ("key", "a;b"),
     ("name", "x;y"), ("name", ""), ("name", "n" * 41),
-    # numeros
+    # numbers
     ("app_id", "123"), ("app_id", True), ("app_id", 0), ("app_id", 2**31),
     ("memory_mb", 10**9), ("cores", True), ("disk_gb", 1),
-    # portas
+    # ports
     ("ports", []), ("ports", ["80/tcp"]), ("ports", ["1023/udp"]), ("ports", ["8080/tcp"]),
     ("ports", ["8006/tcp"]), ("ports", ["25575/tcp"]), ("ports", ["99999/udp"]),
     ("ports", ["7777/udp", "7777/udp"]), ("ports", ["7777"]), ("ports", ["7777/icmp"]),
@@ -122,7 +122,7 @@ INVALID_CASES = [
     # enums
     ("platform", "freebsd"), ("player_source", "http"), ("recipes", ["rm -rf /"]),
     ("shiftable", "sim"),
-    # regex do log
+    # log regex
     ("join_re", "(a+)+$"), ("join_re", "(.*)*x"), ("join_re", "(a|b*)+"), ("join_re", "x" * 201),
     ("join_re", "("),
 ]
@@ -142,7 +142,7 @@ def test_campo_invalido_e_recusado(game_data, field, value):
     ({"start_args": "-port={PORT}"}, "{QUERY_PORT}"),
 ])
 def test_deslocavel_exige_que_o_jogo_receba_todas_as_portas(game_data, changes, chunk):
-    """Sem isso o firewall abriria uma porta que o jogo nao escuta (ou uma que ele ignora)."""
+    """Without this the firewall would open a port the game does not listen on (or one it ignores)."""
     game_data.update(changes)
     with pytest.raises(ValidationError, match="shiftable") as error:
         cat.validate_dynamic(game_data)
@@ -193,7 +193,7 @@ def test_jogo_de_windows_exige_receita_de_windows(game_data):
 
 
 def test_xvfb_so_vale_junto_de_um_runtime_de_windows(game_data):
-    """Sozinho ele instalaria o X virtual num CT que nunca o chama."""
+    """On its own it would install the virtual X in a CT that never calls it."""
     game_data["recipes"] = ["xvfb"]
     with pytest.raises(ValidationError, match="xvfb"):
         cat.validate_dynamic(game_data)
@@ -202,8 +202,8 @@ def test_xvfb_so_vale_junto_de_um_runtime_de_windows(game_data):
 
 
 def test_curado_com_x_virtual_leva_a_receita_xvfb():
-    """Era um buraco: so o runtime chegava ao install.env do broker, e o Icarus criado pelo
-    painel subia sem o X virtual que o .env pede."""
+    """This was a hole: only the runtime reached the broker's install.env, and an Icarus created
+    by the panel came up without the virtual X that the .env asks for."""
     games, _ = cat.load_curated(RAIZ / "games")
     assert games["icarus"].recipes == ("proton", "xvfb")
     assert games["enshrouded"].recipes == ("proton",)
@@ -224,8 +224,8 @@ def test_v_rising_e_curado_criavel_pelo_proton():
 
 
 def test_v_rising_ja_nasce_pronto_para_mods():
-    """Medido: a primeira subida com o BepInEx chegou a 9,4 GB, e o BepInEx (.NET) so carrega
-    com o mscoree ligado e o winhttp nativo. Com isso no .env, um redeploy nao desfaz nada."""
+    """Measured: the first start with BepInEx reached 9.4 GB, and BepInEx (.NET) only loads
+    with mscoree enabled and native winhttp. With that in the .env, a redeploy undoes nothing."""
     text = (RAIZ / "games" / "vrising.env").read_text(encoding="utf-8")
     values = cat.read_env(text)
     assert int(values["RECOMMENDED_MEMORY"]) >= 10240
@@ -233,7 +233,7 @@ def test_v_rising_ja_nasce_pronto_para_mods():
 
 
 def test_ets2_e_curado_criavel_fora_das_portas_do_palworld_e_do_dayz():
-    """27015/27016 sao do Palworld e do DayZ no roteador; o ETS2 fica em 27018/27019."""
+    """27015/27016 belong to Palworld and DayZ on the router; ETS2 stays on 27018/27019."""
     games, _ = cat.load_curated(RAIZ / "games")
     ets2 = games["ets2"]
     assert ets2.creatable, ets2.reason
@@ -252,7 +252,7 @@ def test_so_o_minimo_basta(game_data):
     assert game.player_source == "log"
 
 
-# --- Catalogo (curado + dinamico) -------------------------------------------
+# --- Catalog (curated + dynamic) --------------------------------------------
 
 def test_catalogo_lista_curados_menos_o_template(catalog):
     assert [j.key for j in catalog.list_all()] == ["alfa", "beta", "conta", "delta"]
@@ -309,7 +309,7 @@ def test_jogo_desconhecido(catalog):
         catalog.get("nao-existe")
 
 
-# --- Editar e apagar ------------------------------------------------------------------
+# --- Edit and delete ------------------------------------------------------------------
 
 def test_editar_dinamico_troca_os_dados_e_sobrevive_a_recarga(catalog, game_data, tmp_path):
     catalog.add_dynamic(game_data)
@@ -389,9 +389,9 @@ def test_chave_que_nao_e_chave_nao_vira_caminho(catalog, key, game_data):
 
 
 def test_todo_curado_editavel_salva_do_jeito_que_abre(tmp_path):
-    """Abrir a edicao e salvar sem mudar nada tem de passar. O Dragonwilds nao passava:
-    "RuneScape: Dragonwilds" tem dois-pontos, e o validador de jogo usava a regex do nome
-    de INSTANCIA ("name: formato invalido")."""
+    """Opening the edit form and saving without changes must pass. Dragonwilds did not:
+    "RuneScape: Dragonwilds" has a colon, and the game validator used the INSTANCE name
+    regex ("name: formato invalido")."""
     catalog = cat.Catalog(RAIZ / "games", tmp_path / "dinamico")
     for game in catalog.list_all():
         if game.creatable:
@@ -399,7 +399,7 @@ def test_todo_curado_editavel_salva_do_jeito_que_abre(tmp_path):
 
 
 def test_nenhum_curado_anda_de_porta():
-    """Decisao: curado fica na porta padrao do jogo. Os marcadores continuam no START_ARGS."""
+    """Decision: a curated game stays on its default port. The placeholders remain in START_ARGS."""
     games, _ = cat.load_curated(RAIZ / "games")
     assert [k for k, g in games.items() if g.shiftable] == []
 
@@ -411,12 +411,12 @@ def test_nome_de_jogo_aceita_pontuacao_de_titulo(game_data, name):
 
 @pytest.mark.parametrize("name", ["100% Orange", 'Aspas "x"', "Custa $5", "a`b", "a\b", "linha\nnova"])
 def test_nome_de_jogo_recusa_o_que_quebra_systemd_ou_shell(game_data, name):
-    """O nome vai para o Description= da unit (% e especificador do systemd) e para o install.env."""
+    """The name goes into the unit's Description= (% is a systemd specifier) and into install.env."""
     with pytest.raises(ValidationError, match="name"):
         cat.validate_dynamic({**game_data, "name": name})
 
 
-# --- jogo que exige conta Steam (DayZ) --------------------------------------------------
+# --- game that requires a Steam account (DayZ) -----------------------------------------
 
 def test_jogo_com_conta_so_e_criavel_quando_o_broker_tem_a_conta(tmp_path, games_dir):
     without_account = cat.Catalog(games_dir, tmp_path / "a").get("conta")
@@ -439,7 +439,7 @@ def test_o_dayz_do_repositorio_sai_criavel_com_conta():
 
 
 def test_jogo_da_api_nunca_pede_a_conta(game_data):
-    """So o curado, revisado no git, leva a senha da conta Steam para dentro de um CT."""
+    """Only a curated game, reviewed in git, carries the Steam account password into a CT."""
     assert not cat.validate_dynamic(game_data).needs_account
     with pytest.raises(ValidationError):
         cat.validate_dynamic({**game_data, "needs_account": True})
@@ -451,15 +451,15 @@ def test_edicao_do_curado_mantem_a_exigencia_da_conta(tmp_path, games_dir):
     assert catalog.update("conta", data).needs_account
 
 
-# --- o que o painel recebe para contar jogadores ----------------------------
+# --- what the panel receives to count players --------------------------------
 
 def test_curado_com_a2s_nasce_no_painel_com_a_porta_de_consulta():
-    """Todo curado que declara consulta A2S tem de chegar ao painel com ela preenchida.
+    """Every curated game that declares an A2S query must reach the panel with it filled in.
 
-    O Enshrouded e o caso que pega: a consulta e a propria porta do jogo, que fica com o
-    papel de jogo no alocador - procurada pelo PAPEL de consulta, chegava 0 e o servidor
-    nascia sem A2S. Os outros pegam o oposto: porta de consulta fora do GAME_PORTS nao
-    vira porta alocada, e tambem chegaria 0.
+    Enshrouded is the tricky case: the query is the game port itself, which gets the game
+    role in the allocator - looked up by the query ROLE, it arrived as 0 and the server was
+    born without A2S. The others hit the opposite: a query port outside GAME_PORTS does not
+    become an allocated port, and would also arrive as 0.
     """
     from gamebroker.services import allocator
     from gamebroker.services.instance_service import record_for_the_panel
@@ -476,7 +476,7 @@ def test_curado_com_a2s_nasce_no_painel_com_a_porta_de_consulta():
 
 
 def test_vagas_do_curado_chegam_ao_painel():
-    """O Dragonwilds conta por conexoes ativas, que nao sabem o total: o "/6" vem do .env."""
+    """Dragonwilds counts by active connections, which do not know the total: the "/6" comes from the .env."""
     from gamebroker.services import allocator
     from gamebroker.services.instance_service import record_for_the_panel
 

@@ -1,17 +1,17 @@
-{# Componentes de interface do painel.
+{# Panel interface components.
 
-   Regra deste arquivo: nada aqui sabe o que e um servidor, um backup ou um alerta.
-   Sao pecas genericas — botao, selo, menu, cabecalho — e e por isso que podem ser
-   usadas por qualquer tela sem arrastar junto o contexto de outra.
+   This file's rule: nothing here knows what a server, a backup or an alert is.
+   They are generic pieces - button, badge, menu, header - which is why they can be
+   used by any screen without dragging along another screen's context.
 
-   Toda peca que dispara um POST monta o proprio campo de CSRF. Antes isso era uma
-   linha copiada em ~40 formularios; um esquecimento ali e um botao que da 400 em
-   producao e em nenhum teste. #}
+   Every piece that fires a POST builds its own CSRF field. Before, that was a
+   line copied into ~40 forms; forgetting it there is a button that returns 400 in
+   production and in no test. #}
 
 
-{# --------------------------------------------------------------- botao / link
-   Um so componente para os dois, porque para quem usa o painel nao ha diferenca:
-   com `href` sai uma ancora, sem `href` sai um botao. #}
+{# --------------------------------------------------------------- button / link
+   A single component for both, because for whoever uses the panel there is no difference:
+   with `href` an anchor comes out, without `href` a button comes out. #}
 {% macro button(label, href='', variant='', size='', icon='', type='submit', title='', confirm='', block=false, extra='') -%}
   {%- set classes = ['btn'] -%}
   {%- if variant %}{% set classes = classes + ['btn--' ~ variant] %}{% endif -%}
@@ -31,10 +31,10 @@
 {%- endmacro %}
 
 
-{# ------------------------------------------------------------------ acao POST
-   Um formulario de um botao so. Existe porque toda acao que muda alguma coisa no
-   painel e um POST com CSRF — e escrever isso a mao trinta vezes e como esse campo
-   acaba faltando em uma delas. #}
+{# ------------------------------------------------------------------ POST action
+   A single-button form. It exists because every action that changes something in the
+   panel is a POST with CSRF - and writing that by hand thirty times is how that field
+   ends up missing in one of them. #}
 {% macro action(url, label, variant='', confirm='', icon='', size='', fields={}, block=false, title='') -%}
 <form method="post" action="{{ url }}" class="{{ 'action-block' if block else 'inline' }}">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -47,19 +47,19 @@
 {%- endmacro %}
 
 
-{# ---------------------------------------------------------------------- selo #}
+{# ---------------------------------------------------------------------- badge #}
 {% macro badge(text, tone='', title='') -%}
 <span class="badge {{ tone }}"{% if title %} title="{{ title }}"{% endif %}>{{ text }}</span>
 {%- endmacro %}
 
 
 {# --------------------------------------------------------------------- menu
-   Elemento `details` puro: abre no clique e no teclado sem JavaScript nenhum. O JS so
-   acrescenta "fecha ao clicar fora" (features/menu.js).
+   Plain `details` element: opens on click and by keyboard without any JavaScript. The JS only
+   adds "close on outside click" (features/menu.js).
 
-   Uso:
+   Usage:
      {% call ui.menu('Mais', align='dir') %}
-       ancora com class="menu__item" para cada destino
+       an anchor with class="menu__item" for each destination
      {% endcall %} #}
 {% macro menu(label, icon='⋯', align='dir', title='', css_class='') -%}
 <details class="menu{{ ' ' ~ css_class if css_class }}">
@@ -74,7 +74,7 @@
 {%- endmacro %}
 
 
-{# Item de menu que dispara um POST (com CSRF), e nao uma navegacao. #}
+{# Menu item that fires a POST (with CSRF), not a navigation. #}
 {% macro menu_action(url, label, icon='', confirm='', danger=false, fields={}) -%}
 <form method="post" action="{{ url }}">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -88,9 +88,9 @@
 {%- endmacro %}
 
 
-{# ------------------------------------------------------------- cabecalho
-   Titulo a esquerda, acoes a direita. No celular vira duas linhas empilhadas —
-   quem cuida disso e o .page-head do CSS, nao um segundo template. #}
+{# ------------------------------------------------------------- header
+   Title on the left, actions on the right. On the phone it becomes two stacked rows -
+   that is handled by the CSS .page-head, not by a second template. #}
 {% macro page_header(title, badge_text='', badge_tone='') %}
 <div class="page-head">
   <div class="page-head__title">
@@ -100,3 +100,23 @@
 </div>
 {% endmacro %}
 
+
+
+{# ------------------------------------------------------------ preferences
+   Theme and language, in the top right corner of every screen - including the login one, where
+   there is no account yet to store any choice (which is why they go in a cookie).
+
+   Without JavaScript the theme button offers light when the person has not chosen yet: the
+   server does not know the system theme. features/theme.js fixes the target and the icon
+   based on the theme actually on the screen. #}
+{% macro preferences() -%}
+{%- set back = request.full_path if request.method == 'GET' else request.path -%}
+<div class="prefs">
+  {{ action(url_for('preferences.theme'), '', variant='ghost', size='sm',
+            icon='🌙' if current_theme == 'light' else '☀️', title=_('prefs.theme'),
+            fields={'theme': 'dark' if current_theme == 'light' else 'light', 'next': back}) }}
+  {{ action(url_for('preferences.language'), other_language | upper, variant='ghost', size='sm',
+            icon='🌐', title=_('prefs.language'),
+            fields={'lang': other_language, 'next': back}) }}
+</div>
+{%- endmacro %}

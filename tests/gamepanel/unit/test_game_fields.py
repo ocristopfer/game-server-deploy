@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Testes do catalogo de campos por jogo.
+"""Tests for the per-game field catalog.
 
     pytest tests/gamepanel/test_game_fields.py
 
-O que estes testes protegem e a promessa do recurso: o valor que a pessoa digita na
-tela (minutos, multiplicador) e o valor que vai para o arquivo (nanossegundos) sao
-unidades diferentes, e a conversao tem que ser reversivel. Um erro aqui grava
-silenciosamente uma noite de 1 segundo - foi exatamente o que motivou o recurso.
+What these tests protect is the feature's promise: the value the person types on screen
+(minutes, multiplier) and the value that goes into the file (nanoseconds) are different
+units, and the conversion has to be reversible. A mistake here silently writes a 1-second
+night - which is exactly what prompted the feature.
 """
 import pytest
 
@@ -14,10 +14,10 @@ from gamepanel.games import registry as game_fields
 
 
 def field(arquivo: str, key: str) -> game_fields.FieldSpec:
-    """O campo do catalogo, falhando alto se ele sumir.
+    """The catalog field, failing loudly if it disappears.
 
-    Sem isto, uma chave removida do catalogo faria os testes abaixo estourarem com
-    `AttributeError: 'NoneType'` - erro que nao diz nada sobre o que se perdeu.
+    Without this, a key removed from the catalog would make the tests below blow up with
+    `AttributeError: 'NoneType'` - an error that says nothing about what was lost.
     """
     spec = game_fields.describe(arquivo, key)
     assert spec is not None, f"{key} sumiu do catalogo de {arquivo}"
@@ -32,10 +32,10 @@ def test_duracao_arquivo_em_ns_tela_em_minutos():
 
 
 @pytest.mark.parametrize("minutes, accepted", [
-    ("1", False),    # abaixo do minimo de 2 min
+    ("1", False),    # below the 2 min minimum
     ("2", True),
     ("60", True),
-    ("61", False),   # acima do maximo
+    ("61", False),   # above the maximum
 ])
 def test_duracao_respeita_os_limites_do_jogo(minutes, accepted):
     day = field("enshrouded_server.json", "dayTimeDuration")
@@ -43,10 +43,10 @@ def test_duracao_respeita_os_limites_do_jogo(minutes, accepted):
 
 
 def test_o_caso_real_noite_de_um_segundo_no_arquivo():
-    """1e9 ns = 1 segundo = 0,0167 min, bem abaixo do minimo de 2 min.
+    """1e9 ns = 1 second = 0.0167 min, well below the 2 min minimum.
 
-    E o bug que originou o catalogo: quem digitava "1" achando que era um minuto
-    gravava 1 nanossegundo, e o jogo passava a noite inteira num piscar de olhos.
+    It is the bug that gave rise to the catalog: whoever typed "1" thinking it was one minute
+    wrote 1 nanosecond, and the game went through the whole night in the blink of an eye.
     """
     night = field("enshrouded_server.json", "nightTimeDuration")
     assert night.to_display("1000000000") == "0.0166667"
@@ -64,9 +64,9 @@ def test_enum_so_aceita_valor_que_o_jogo_entende():
 @pytest.mark.parametrize("value, accepted", [
     ("1", True),
     ("4", True),
-    ("5", False),       # acima do teto
-    ("0", False),       # abaixo do piso
-    ("muito", False),   # nem numero e
+    ("5", False),       # above the ceiling
+    ("0", False),       # below the floor
+    ("muito", False),   # not even a number
 ])
 def test_fator_e_multiplicador_com_limite(value, accepted):
     lifetime = field("enshrouded_server.json", "playerHealthFactor")
@@ -74,7 +74,7 @@ def test_fator_e_multiplicador_com_limite(value, accepted):
 
 
 def test_fator_nao_converte_unidade():
-    """O que se digita e o que vai para o arquivo - diferente da duracao."""
+    """What is typed is what goes into the file - unlike the duration."""
     assert field("enshrouded_server.json", "playerHealthFactor").from_display("1.5") == "1.5"
 
 
@@ -98,7 +98,7 @@ def test_o_catalogo_e_achado_pelo_nome_do_arquivo_no_caminho_completo():
 
 
 def test_o_que_nao_esta_no_catalogo_nao_e_inventado():
-    """Campo sem descricao continua editavel como texto livre - nunca some da tela."""
+    """A field without a description stays editable as free text - it never disappears from the screen."""
     assert game_fields.describe("enshrouded_server.json", "campoQueNaoExiste") is None
     assert game_fields.describe("qualquer.ini", "name") is None
 

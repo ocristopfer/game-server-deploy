@@ -1,34 +1,34 @@
 <#
-Spike da Fase 0 (ESCRITA): responde, com o token e a chave reais, o que o broker
-precisa saber antes de existir.
+Phase 0 spike (WRITE): answers, with the real token and key, what the broker
+needs to know before it exists.
 
-  Proxmox : o token de privilegio minimo consegue criar um CT no pool com
-            features nesting/keyctl, tag e chave SSH? E destruir depois?
-  OPNsense: a chave consegue criar, aplicar e apagar um redirect (d_nat)?
+  Proxmox : can the least-privilege token create a CT in the pool with
+            nesting/keyctl features, a tag and an SSH key? And destroy it afterwards?
+  OPNsense: can the key create, apply and delete a redirect (d_nat)?
 
-Tudo que cria e apagado no fim (try/finally), e SO apaga o que ele mesmo criou,
-conferindo o nome/descricao antes. O CT nunca e iniciado; a regra nasce DESATIVADA.
-Le broker.secrets.env e nunca imprime segredo.
+Everything it creates is deleted at the end (try/finally), and it ONLY deletes what it created
+itself, checking the name/description first. The CT is never started; the rule is born DISABLED.
+Reads broker.secrets.env and never prints a secret.
 
-Uso:  .\spike-broker-write.ps1 [-ProxmoxOnly] [-OpnsenseOnly]
+Usage:  .\spike-broker-write.ps1 [-ProxmoxOnly] [-OpnsenseOnly]
 #>
 param(
     [string]$EnvFile = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "broker.secrets.env"),
     [int]$Ctid = 399,
-    [string]$Ip = "192.168.2.250",
-    [string]$Gateway = "192.168.2.1",
+    [string]$Ip = "10.20.1.250",
+    [string]$Gateway = "10.20.1.1",
     [int]$Port = 65001,
-    # O nome antigo `-SoProxmox` continua valendo pelo Alias: quem ja tem a linha de
-    # comando salva nao a perde.
+    # The old name `-SoProxmox` still works through the Alias: whoever already has the command
+    # line saved somewhere does not lose it.
     [Alias('SoProxmox')]
     [switch]$ProxmoxOnly,
-    # O nome antigo `-SoOpnsense` continua valendo pelo Alias: quem ja tem a linha de
-    # comando salva nao a perde.
+    # The old name `-SoOpnsense` still works through the Alias: whoever already has the command
+    # line saved somewhere does not lose it.
     [Alias('SoOpnsense')]
     [switch]$OpnsenseOnly,
-    # Liga o CT de teste e entra por SSH (confere sshd, rede, apt e keyctl) antes de destruir.
-    # O nome antigo `-ComSsh` continua valendo pelo Alias: quem ja tem a linha de
-    # comando salva nao a perde.
+    # Starts the test CT and logs in over SSH (checks sshd, network, apt and keyctl) before destroying it.
+    # The old name `-ComSsh` still works through the Alias: whoever already has the command
+    # line saved somewhere does not lose it.
     [Alias('ComSsh')]
     [switch]$WithSsh
 )
@@ -39,7 +39,7 @@ $ProgressPreference = "SilentlyContinue"
 $TestHostname = "spike-broker"
 $TestDescription = "gamepanel:spike"
 
-# ----- Saida -----
+# ----- Output -----
 $script:Falhas = 0
 function Say([string]$Status, [string]$Text) {
     $cores = @{ OK = "Green"; FALHA = "Red"; AVISO = "Yellow"; INFO = "Gray" }
@@ -47,7 +47,7 @@ function Say([string]$Status, [string]$Text) {
     Write-Host ("[{0,-5}] {1}" -f $Status, $Text) -ForegroundColor $cores[$Status]
 }
 
-# ----- Segredos -----
+# ----- Secrets -----
 function Read-Secrets([string]$Path) {
     if (-not (Test-Path $Path)) { throw "Nao achei $Path." }
     $cfg = @{}
@@ -64,7 +64,7 @@ function Read-Secrets([string]$Path) {
     return $cfg
 }
 
-# ----- TLS (certificado autoassinado aceito SO neste teste; ver check-broker-access.ps1) -----
+# ----- TLS (self-signed certificate accepted ONLY in this test; see check-broker-access.ps1) -----
 if (-not ("GuardaCert" -as [type])) {
     Add-Type @"
 using System.Collections.Generic;
@@ -87,7 +87,7 @@ public class GuardaCert : ICertificatePolicy {
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # ----- HTTP -----
-# Body: hashtable (formulario, o que o Proxmox espera) ou texto JSON (o que o OPNsense espera).
+# Body: hashtable (form, what Proxmox expects) or JSON text (what OPNsense expects).
 function Invoke-Api([string]$Method, [string]$Url, [hashtable]$Headers, $Body = $null) {
     $p = @{ Method = $Method; Uri = $Url; Headers = $Headers; UseBasicParsing = $true; TimeoutSec = 30 }
     if ($null -ne $Body) {
@@ -104,8 +104,8 @@ function Invoke-Api([string]$Method, [string]$Url, [hashtable]$Headers, $Body = 
             $reader = New-Object IO.StreamReader($resp.GetResponseStream())
             $text = $reader.ReadToEnd()
         } catch { $text = "" }
-        # O Proxmox devolve o motivo ("Permission check failed (/vms/399, VM.Allocate)") na
-        # linha de status HTTP, nao no corpo.
+        # Proxmox returns the reason ("Permission check failed (/vms/399, VM.Allocate)") in the
+        # HTTP status line, not in the body.
         if ([string]::IsNullOrWhiteSpace($text)) { $text = [string]$resp.StatusDescription }
         return @{ Status = [int]$resp.StatusCode; Json = $null; Texto = $text }
     }
@@ -127,7 +127,7 @@ function Wait-PveTask([string]$Base, [hashtable]$H, [string]$Node, [string]$Upid
     for ($i = 0; $i -lt 90; $i++) {
         $r = Invoke-Api "GET" "$Base/nodes/$Node/tasks/$enc/status" $H
         if ($r.Status -eq 200 -and $r.Json.data.status -eq "stopped") {
-            # "WARNINGS: 1" e sucesso com avisos (ex.: "Systemd 257: pode precisar de nesting").
+            # "WARNINGS: 1" is success with warnings (e.g. "Systemd 257: may need nesting").
             $output = [string]$r.Json.data.exitstatus
             if ($output -like "WARNINGS*") { return "OK" }
             return $output
@@ -149,14 +149,14 @@ function New-TestKey {
     $dir = Join-Path ([IO.Path]::GetTempPath()) ("spike-key-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $dir | Out-Null
     $keyFile = Join-Path $dir "id"
-    # ssh-keygen escreve no stderr mesmo com sucesso; -N '""' porque o PS 5.1 descarta argumento vazio.
+    # ssh-keygen writes to stderr even on success; -N '""' because PS 5.1 drops an empty argument.
     $before = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & ssh-keygen -q -t ed25519 -N '""' -f $keyFile 2>&1 | Out-Null
     $ErrorActionPreference = $before
     if (-not (Test-Path "$keyFile.pub")) { throw "ssh-keygen nao gerou a chave de teste" }
     $pub = (Get-Content "$keyFile.pub" -Raw).Trim()
-    # A pasta fica de pe (a chave privada e usada no teste de SSH); quem chama a apaga no finally.
+    # The folder stays (the private key is used in the SSH test); the caller deletes it in the finally.
     return @{ Pub = $pub; Dir = $dir; Priv = $keyFile }
 }
 
@@ -186,8 +186,8 @@ function Test-ProxmoxWrite([hashtable]$Cfg) {
         net0 = "name=eth0,bridge=$($Cfg['PROXMOX_BRIDGE']),ip=$Ip/24,gw=$Gateway,type=veth"
         pool = $pool; start = 0; onboot = 0
     }
-    # Ja sabido (rodadas anteriores): tag na criacao exige VM.Config.Options em /vms/<id> e
-    # keyctl=1 so o root@pam pode. Aqui a variante realista do broker: nesting + chave SSH.
+    # Already known (earlier runs): a tag at creation requires VM.Config.Options on /vms/<id> and
+    # keyctl=1 only root@pam can set. Here the realistic broker variant: nesting + SSH key.
     $variants = @(
         @{ Nome = "nesting + chave SSH"; Extra = @{ features = "nesting=1"; "ssh-public-keys" = $key } },
         @{ Nome = "so chave SSH"; Extra = @{ "ssh-public-keys" = $key } }
@@ -234,7 +234,7 @@ function Test-SshDoCt([string]$Base, [hashtable]$H, [string]$Node, [string]$Priv
     if ($output -ne "OK") { Say "FALHA" "iniciar o CT: tarefa terminou com '$output'"; return }
     Say "OK" "CT iniciado"
 
-    # Espera a porta 22 abrir (boot + sshd). 90 s e folga de sobra para um Debian de CT.
+    # Waits for port 22 to open (boot + sshd). 90 s is plenty of slack for a CT Debian.
     $isOpen = $false
     for ($i = 0; $i -lt 30 -and -not $isOpen; $i++) {
         $tcp = New-Object Net.Sockets.TcpClient
@@ -245,12 +245,12 @@ function Test-SshDoCt([string]$Base, [hashtable]$H, [string]$Node, [string]$Priv
         if (-not $isOpen) { Start-Sleep -Seconds 1 }
     }
     if (-not $isOpen) {
-        Say "FALHA" "a porta 22 de $Ip nao abriu em ~90 s (o CT nao tem sshd, ou esta maquina nao alcanca a rede 192.168.2.x)"
+        Say "FALHA" "a porta 22 de $Ip nao abriu em ~90 s (o CT nao tem sshd, ou esta maquina nao alcanca a rede 10.20.1.x)"
         return
     }
     Say "OK" "porta 22 de $Ip aberta a partir desta maquina"
 
-    # Sem aspas duplas de proposito: o PowerShell 5.1 as estraga ao passar argumento para o ssh.exe.
+    # No double quotes on purpose: PowerShell 5.1 mangles them when passing arguments to ssh.exe.
     $remoteLine = 'echo SSH_OK; id -u; grep PRETTY_NAME /etc/os-release; systemctl is-active ssh; dpkg -s openssh-server | grep ^Status; getent hosts deb.debian.org && echo DNS_OK || echo DNS_FALHOU; timeout 90 apt-get update -qq >/dev/null 2>&1 && echo APT_OK || echo APT_FALHOU; timeout 90 apt-get install -y -qq keyutils >/dev/null 2>&1; keyctl show @s >/dev/null 2>&1 && echo KEYCTL_OK || echo KEYCTL_BLOQUEADO'
     $before = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -277,8 +277,8 @@ function Confirm-TestCt([string]$Base, [hashtable]$H, [string]$Node, [string]$Po
         $no_pool = @($p.Json.data.members | Where-Object { $_.vmid -eq $Ctid }).Count -gt 0
         if ($no_pool) { Say "OK" "o CT aparece como membro do pool '$Pool'" } else { Say "FALHA" "o CT nao entrou no pool '$Pool'" }
     }
-    # Com o CT ja dentro do pool, as permissoes do pool passam a valer para /vms/<id>:
-    # e o momento em que a tag (identidade do broker) pode ser gravada.
+    # With the CT already inside the pool, the pool permissions start applying to /vms/<id>:
+    # that is when the tag (the broker identity) can be written.
     $t = Invoke-Api "PUT" "$Base/nodes/$Node/lxc/$Ctid/config" $H @{ tags = "gamepanel-broker" }
     if ($t.Status -eq 200) { Say "OK" "tag gravada DEPOIS da criacao (o CT ja esta no pool)" }
     else { Say "AVISO" "tag depois da criacao: HTTP $($t.Status) - $(Short $t.Texto) (o pool basta como identidade)" }
@@ -323,8 +323,8 @@ function Test-OpnsenseWrite([hashtable]$Cfg) {
         disabled = "1"; interface = $wan; protocol = "udp"; ipprotocol = "inet"
         destination = @{ network = "wanip"; port = "$Port" }
         target = $Ip; "local-port" = "$Port"; descr = $TestDescription
-        # Igual as regras de jogo que ja existem: "pass" libera o trafego no filtro tambem.
-        # Sem isso o redirect existiria, mas o WAN barraria o pacote.
+        # Same as the existing game rules: "pass" also lets the traffic through the filter.
+        # Without it the redirect would exist, but the WAN would block the packet.
         pass = "pass"
     } } | ConvertTo-Json -Depth 5 -Compress
 
@@ -351,8 +351,8 @@ function Test-OpnsenseWrite([hashtable]$Cfg) {
     }
 }
 
-# A leitura e pelo search_rule (campos planos), nao pelo get_rule: o get_rule devolve listas
-# com nome de campo vazio e o ConvertFrom-Json do PowerShell 5.1 nao as le.
+# Reading goes through search_rule (flat fields), not get_rule: get_rule returns lists
+# with an empty field name and PowerShell 5.1's ConvertFrom-Json cannot read them.
 function Get-TestRule([string]$Base, [hashtable]$H, [string]$Uuid) {
     $r = Invoke-Api "POST" "$Base/d_nat/search_rule" $H '{"current":1,"rowCount":-1}'
     if ($r.Status -ne 200) { return $null }
@@ -375,7 +375,7 @@ function Remove-TestRule([string]$Base, [hashtable]$H, [string]$Uuid) {
     else { Say "FALHA" "limpeza incompleta (apply HTTP $($ap.Status), restam $remains). CONFIRA no OPNsense" }
 }
 
-# ============================== Execucao ==============================
+# ============================== Run ==============================
 try { $cfg = Read-Secrets $EnvFile } catch { Say "FALHA" $_.Exception.Message; exit 1 }
 
 if (-not $OpnsenseOnly) { Test-ProxmoxWrite $cfg }

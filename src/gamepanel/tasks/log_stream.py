@@ -1,14 +1,14 @@
-"""Ouvir o log do jogo ao vivo, para a contagem por log nao ficar lenta.
+"""Listen to the game log live, so that log-based counting is not slow.
 
-Contagem por log era o unico caso sem jeito de ficar rapida: cada conferida e uma ida de
-SSH que arrasta o log inteiro, entao perguntar de 15 em 15 segundos custaria megabytes
-por minuto para achar duas linhas. A saida e parar de perguntar: uma conexao SSH longa
-com `journalctl -f` deixa o painel OUVINDO, e a linha chega no segundo em que sai.
+Log-based counting was the only case with no way to be fast: each check is an SSH round
+trip that drags the whole log, so asking every 15 seconds would cost megabytes per minute
+to find two lines. The way out is to stop asking: a long SSH connection with
+`journalctl -f` leaves the panel LISTENING, and the line arrives the second it is written.
 
-O ponto do desenho: o stream e um GATILHO, nao uma segunda contagem. Ele so diz "algo
-aconteceu" e manda refazer a conta pelo caminho de sempre. Reproduzir aqui a maquina de
-estados do log seria um segundo lugar para errar — e pior, um que divergiria em silencio
-do numero que a tela mostra.
+The point of the design: the stream is a TRIGGER, not a second count. It only says
+"something happened" and asks for the count to be redone the usual way. Reproducing the
+log state machine here would be a second place to get it wrong - and worse, one that
+would silently diverge from the number the screen shows.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any, NamedTuple
 
+from gamepanel.runtime import remote_cmd
 from gamepanel.runtime.a2s import QueryError
 from gamepanel.runtime.log_probe import (
     LOG_FOLLOW_SCRIPT,
@@ -29,21 +30,21 @@ from gamepanel.runtime.log_probe import (
     compile_pattern,
     valid_log_path,
 )
-from gamepanel.runtime.ssh import ServerLike, quote_command
+from gamepanel.runtime.ssh import ServerLike
 
 PLAYER_EVENTS = frozenset({"jogador-entrou", "jogador-saiu"})
 SHUTDOWN_WAIT = 5
 
 
 class LogStreamDeps(NamedTuple):
-    """O que uma conexao de log precisa do resto do painel.
+    """What a log connection needs from the rest of the panel.
 
-    A thread vive FORA do contexto do request, entao nada aqui pode vir do `g` do
-    Flask: a conexao de banco e aberta por `connect` e fechada na mesma volta.
+    The thread lives OUTSIDE the request context, so nothing here can come from Flask's
+    `g`: the database connection is opened by `connect` and closed in the same round.
     """
 
     ssh_argv: Callable[..., list[str]]
-    # O MESMO dicionario do monitor: os dois anotam no estado do mesmo servidor.
+    # The SAME dict as the monitor's: both write to the same server's state.
     monitor_state: dict[int, dict]
     invalidate_players: Callable[[int], None]
     connect: Callable[[], sqlite3.Connection]
@@ -57,7 +58,7 @@ class LogStreamDeps(NamedTuple):
 
 def player_line(line: str, enter: re.Pattern[str] | None,
                      leave: re.Pattern[str] | None) -> bool:
-    """Esta linha do log e uma entrada ou saida de jogador?"""
+    """Is this log line a player joining or leaving?"""
     short_label = line[:LOG_LINE_MAX]
     if enter and enter.search(short_label):
         return True
@@ -66,7 +67,7 @@ def player_line(line: str, enter: re.Pattern[str] | None,
 
 def stream_signature(server: ServerLike,
                          stored_value: Callable[[ServerLike, str], str]) -> tuple:
-    """O que, mudando, obriga a refazer a conexao (regex nova, log em outro lugar...)."""
+    """What, when it changes, forces the connection to be redone (new regex, log moved...)."""
     return (
         server["host"], int(server["ssh_port"] or 22), server["ssh_user"],
         server["service"], stored_value(server, "log_path"),
@@ -77,21 +78,21 @@ def stream_signature(server: ServerLike,
 def wanted_streams(servers: Iterable[ServerLike], cfg: dict, enabled: bool,
                       player_source: Callable[[ServerLike], str],
                       stored_value: Callable[[ServerLike, str], str]) -> dict[int, tuple]:
-    """Quais servidores merecem uma conexao de log aberta, e com que assinatura."""
+    """Which servers deserve an open log connection, and with which signature."""
     if not (enabled and cfg["events"] & PLAYER_EVENTS):
         return {}
-    # So quem conta por log: A2S e HTTP ja respondem de graca na volta curta, e abrir uma
-    # conexao permanente para eles seria pagar por nada.
+    # Only those counting by log: A2S and HTTP already answer for free on the short round,
+    # and opening a permanent connection for them would be paying for nothing.
     return {int(s["id"]): stream_signature(s, stored_value) for s in servers
             if player_source(s) == "log" and stored_value(s, "join_re")}
 
 
 class LogStream:
-    """Uma conexao SSH longa ouvindo o log de UM servidor."""
+    """A long SSH connection listening to the log of ONE server."""
 
     def __init__(self, deps: LogStreamDeps, server: ServerLike, signature: tuple) -> None:
         self.deps = deps
-        # Row nao atravessa thread (ela pertence a conexao do request): copia.
+        # A Row does not cross threads (it belongs to the request's connection): copy it.
         self.data = dict(server)
         self.sid = int(server["id"])
         self.signature = signature
@@ -99,9 +100,9 @@ class LogStream:
         self._stop_signal = threading.Event()
         self.last_fire = 0.0
         self.error = ""
-        # Erro de configuracao (regex que nao compila, caminho de log invalido) nao se
-        # resolve tentando de novo. Sem esta marca o supervisor recriaria a thread a cada
-        # volta, para ela morrer igual — um laco que so enche o log de erro.
+        # A configuration error (regex that does not compile, invalid log path) is not
+        # fixed by retrying. Without this flag the supervisor would recreate the thread every
+        # round only for it to die the same way - a loop that just fills the log with errors.
         self.gave_up = False
         self.thread = threading.Thread(target=self._run, daemon=True)
 
@@ -122,12 +123,12 @@ class LogStream:
         while not self._stop_signal.is_set():
             try:
                 self._follow()
-            # A thread nao morre por um tropeco.
+            # The thread does not die from one stumble.
             except Exception as exc:
                 self.error = str(exc)
                 self.deps.logger.exception("o acompanhamento de log de '%s' caiu",
                                            self.data.get("name"))
-            # Servidor desligado nao pode virar um laco de SSH por segundo.
+            # A server that is off must not turn into one SSH loop per second.
             if self._stop_signal.wait(self.deps.retry):
                 return
 
@@ -137,7 +138,8 @@ class LogStream:
         self._stop_signal.set()
 
     def _follow(self) -> None:
-        # Cadastro torto para aqui: nao adianta reconectar contra um regex que nao compila.
+        # A broken registration stops here: reconnecting against a regex that does not
+        # compile is pointless.
         try:
             enter = compile_pattern(self.data.get("join_re"), "pattern.join")
             leave = compile_pattern(self.data.get("leave_re"), "pattern.leave")
@@ -146,21 +148,23 @@ class LogStream:
             return self._give_up(str(exc))
         if not enter:
             return self._give_up("sem padrao de entrada, nao ha o que ouvir")
-        # Sem multiplexar: esta conexao fica de pe por horas, e a mestre compartilhada
-        # existe justamente para as chamadas curtas do monitor.
+        # No multiplexing: this connection stays up for hours, and the shared master exists
+        # precisely for the monitor's short calls.
         argv = [
             *self.deps.ssh_argv(
                 self.data, connect_timeout=10,
                 extra=("-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"),
             ),
-            quote_command("bash", "-lc", LOG_FOLLOW_SCRIPT, "gp", self.data["service"], target),
+            # The journal is read through the systemd-journal group, the log file is the game's
+            # (world-readable): the same command in both modes.
+            remote_cmd.unprivileged("bash", "-lc", LOG_FOLLOW_SCRIPT, "gp", self.data["service"], target),
         ]
-        self.proc = subprocess.Popen(  # noqa: S603  # NOSONAR - argv vem do SshClient
+        self.proc = subprocess.Popen(  # noqa: S603  # NOSONAR - argv comes from SshClient
             argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, errors="replace", bufsize=1,
         )
-        # Guardado numa variavel local: `self.proc.stdout` e Optional (Popen sem PIPE
-        # nao tem saida), e e daqui que sai o laco que fica horas lendo.
+        # Kept in a local variable: `self.proc.stdout` is Optional (Popen without PIPE has
+        # no output), and this is where the loop that reads for hours comes from.
         output = self.proc.stdout
         if output is None:
             return self._give_up("nao consegui abrir a saida do ssh")
@@ -187,22 +191,22 @@ class LogStream:
             with contextlib.suppress(OSError):
                 proc.terminate()
         try:
-            proc.wait(timeout=SHUTDOWN_WAIT)  # sem isto sobra zumbi a cada reconexao
+            proc.wait(timeout=SHUTDOWN_WAIT)  # without this a zombie is left on each reconnect
         except subprocess.TimeoutExpired:
             proc.kill()
 
     def _check(self) -> None:
-        """A linha chegou: refaz a contagem pelo caminho normal e avisa se mudou."""
+        """The line arrived: redo the count the normal way and alert if it changed."""
         now_ts = time.monotonic()
         if now_ts - self.last_fire < self.deps.debounce:
-            return                     # um grupo entrando junto e UMA conferida
+            return                     # a group joining together is ONE check
         self.last_fire = now_ts
         previous = self.deps.monitor_state.get(self.sid)
         if previous is None:
-            return                     # sem linha de base ainda: a volta do monitor faz
-        # O cache guarda o numero de ANTES da linha que acabou de chegar.
+            return                     # no baseline yet: the monitor round does it
+        # The cache holds the number from BEFORE the line that just arrived.
         self.deps.invalidate_players(self.sid)
-        conn = self.deps.connect()     # esta thread vive fora do contexto do request
+        conn = self.deps.connect()     # this thread lives outside the request context
         try:
             cfg = self.deps.webhook_config(conn)
             with self.deps.players_lock(self.sid):
@@ -213,10 +217,10 @@ class LogStream:
 
 
 class Supervisor:
-    """O registro das conexoes abertas: liga, desliga e ressuscita.
+    """The registry of open connections: starts, stops and revives them.
 
-    `create` vem de fora (e nao e `LogStream` direto) porque o teste do supervisor troca
-    a classe por um dublê que so anota abrir/fechar — sem SSH nenhum.
+    `create` comes from outside (instead of being `LogStream` directly) because the
+    supervisor test swaps the class for a double that only records open/close - no SSH.
     """
 
     def __init__(self, create: Callable[[ServerLike, tuple], Any]) -> None:
@@ -225,23 +229,23 @@ class Supervisor:
         self._lock = threading.Lock()
 
     def alive_ids(self) -> int:
-        """Quantas conexoes estao mesmo ouvindo agora (para a tela nao mentir)."""
+        """How many connections are really listening now (so the screen does not lie)."""
         with self._lock:
             return sum(1 for s in self.open_ones.values() if s.alive())
 
     def sync(self, servers: Sequence[ServerLike],
                    desejados: dict[int, tuple]) -> int:
-        """Deixa o que esta aberto igual ao `desejados`. Devolve quantos ficaram."""
+        """Make what is open match `desejados`. Returns how many remain."""
         by_id = {int(s["id"]): s for s in servers}
 
         with self._lock:
             current_ones = list(self.open_ones.items())
         for sid, stream in current_ones:
-            # Sai quem deixou de ser desejado e quem mudou de configuracao (regex nova,
-            # log em outro caminho). Thread morta tambem sai, para o passo abaixo
-            # levantar de novo — menos quando ela desistiu por cadastro invalido, que
-            # recriar nao conserta: essa fica de lapide ate alguem arrumar o cadastro e
-            # a assinatura mudar.
+            # Drop those no longer wanted and those whose configuration changed (new regex,
+            # log at another path). A dead thread is dropped too, so the step below brings
+            # it back up - except when it gave up over an invalid registration, which
+            # recreating does not fix: that one stays as a tombstone until someone fixes
+            # the registration and the signature changes.
             swapped = sid not in desejados or desejados[sid] != stream.signature
             if swapped or (not stream.alive() and not stream.gave_up):
                 stream.stop()

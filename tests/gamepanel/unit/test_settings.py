@@ -1,8 +1,8 @@
-"""A leitura das `GAMEPANEL_*`: defaults, conversao e o que ela recusa.
+"""Reading the `GAMEPANEL_*` variables: defaults, conversion and what gets refused.
 
-Antes de existir um lugar so, um valor invalido derrubava o painel com
-`ValueError: invalid literal for int() with base 10: 'abc'` — sem citar QUAL das ~45
-variaveis era. Quem estava lendo o journal precisava adivinhar.
+Before there was a single place, an invalid value brought the panel down with
+`ValueError: invalid literal for int() with base 10: 'abc'` - without saying WHICH of the
+~45 variables it was. Whoever was reading the journal had to guess.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from gamepanel import config
 
 
 def test_ambiente_vazio_da_os_padroes():
-    """O painel sobe sem nenhuma variavel definida: e o caso do `docker run` cru."""
+    """The panel starts with no variable set at all: the case of a bare `docker run`."""
     settings = config.load({})
     assert settings.db_path == "/var/lib/gamepanel/panel.db"
     assert settings.job_timeout == 5400
@@ -21,8 +21,8 @@ def test_ambiente_vazio_da_os_padroes():
 
 
 def test_o_ssh_control_dir_acompanha_o_known_hosts():
-    """Os dois sao estado do SSH e vivem no mesmo volume: um deploy que move um move o
-    outro junto, sem precisar lembrar de duas variaveis."""
+    """Both are SSH state and live on the same volume: a deploy that moves one moves the
+    other along, without having to remember two variables."""
     settings = config.load({"GAMEPANEL_KNOWN_HOSTS": "/dados/known_hosts"})
     assert settings.ssh_control_dir.replace("\\", "/") == "/dados/ssh-control"
 
@@ -44,7 +44,7 @@ def test_valor_invalido_diz_qual_variavel_e():
 
 
 def test_todos_os_problemas_saem_de_uma_vez():
-    """Parar no primeiro faz quem configura descobrir um erro por deploy."""
+    """Stopping at the first one makes whoever configures it discover one error per deploy."""
     with pytest.raises(config.ConfigError) as erro:
         config.load({
             "GAMEPANEL_JOB_TIMEOUT": "abc",
@@ -57,21 +57,21 @@ def test_todos_os_problemas_saem_de_uma_vez():
 
 
 def test_intervalo_zero_e_recusado():
-    """`MONITOR_EVERY=0` fazia o monitor girar sem parar, e nada avisava."""
+    """`MONITOR_EVERY=0` made the monitor spin nonstop, and nothing warned about it."""
     with pytest.raises(config.ConfigError, match="minimo 1"):
         config.load({"GAMEPANEL_MONITOR_EVERY": "0"})
 
 
 def test_a_mensagem_nunca_carrega_o_VALOR():
-    """Erro de config vai para o journal, e ha segredo entre estas variaveis."""
+    """Config errors go to the journal, and there are secrets among these variables."""
     with pytest.raises(config.ConfigError) as erro:
         config.load({"GAMEPANEL_WEBHOOK_TIMEOUT": "senha-secreta-no-lugar-errado"})
     assert "senha-secreta" not in str(erro.value)
 
 
 def test_vazio_vale_como_ausente():
-    """Um `.env` com `GAMEPANEL_JOB_TIMEOUT=` nao pode derrubar o painel: linha em branco
-    e o jeito normal de comentar uma opcao."""
+    """A `.env` with `GAMEPANEL_JOB_TIMEOUT=` must not bring the panel down: an empty value
+    is the normal way to comment an option out."""
     assert config.load({"GAMEPANEL_JOB_TIMEOUT": ""}).job_timeout == 5400
 
 
@@ -81,8 +81,8 @@ def test_a_lista_de_raizes_ignora_espaco_e_vazio():
 
 
 def test_o_app_le_a_configuracao_uma_vez_so():
-    """`app.settings` existe e e o mesmo objeto o tempo todo — ler o ambiente a cada uso
-    faria metade do painel enxergar um valor e metade outro."""
+    """`app.settings` exists and is the same object all the time - reading the environment on
+    every use would make half the panel see one value and half another."""
     from gamepanel import app as panel
 
     assert isinstance(panel.settings, config.Settings)
@@ -90,8 +90,8 @@ def test_o_app_le_a_configuracao_uma_vez_so():
 
 
 def test_nenhum_modulo_le_o_ambiente_por_fora():
-    """Toda `GAMEPANEL_*` passa pelo `config.py`. Uma leitura solta escapa da conferencia
-    de faixa e some do lugar onde alguem procuraria a lista de opcoes."""
+    """Every `GAMEPANEL_*` goes through `config.py`. A stray read escapes the range check and
+    disappears from the place where someone would look for the list of options."""
     from pathlib import Path
 
     from gamepanel import app as panel

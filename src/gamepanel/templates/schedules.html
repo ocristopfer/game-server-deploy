@@ -40,11 +40,8 @@
     <p class="muted">{{ _('schedules.none_here') }}</p>
   {% endif %}
   <p class="muted small mt-4">
-    {{ _('schedules.clock_is') }} <strong>{{ _('schedules.panel') }}</strong> &mdash; agora sao
-    <strong>{{ now.strftime('%d/%m %H:%M') }}</strong> ({{ now.strftime('%Z') or 'sem fuso definido' }}).
-    Se nao bater com a sua hora, ajuste o <code>TZ</code> do container do painel.
-    Tarefa que venceu enquanto o painel estava fora do ar <strong>{{ _('schedules.no_late_fire') }}</strong>:
-    ela espera a proxima ocorrencia.
+    {{ _h('schedules.clock_note', now=now.strftime('%d/%m %H:%M'),
+          zone=now.strftime('%Z') or _('schedules.no_timezone')) }}
   </p>
 </div>
 
@@ -58,11 +55,7 @@
         <select name="action">
           {% for a in actions %}<option value="{{ a }}">{{ job_labels.get(a, a) }}</option>{% endfor %}
         </select>
-        <small>
-          <strong>{{ _('schedules.backup') }}</strong> usa os caminhos do cadastro, com a mesma retencao da tela
-          Backups. <strong>{{ _('schedules.update') }}</strong> roda o SteamCMD &mdash; o servidor fica fora
-          do ar durante a atualizacao.
-        </small>
+        <small>{{ _h('schedules.what_to_do_hint') }}</small>
       </label>
       <label>{{ _('schedules.when') }}
         <select name="kind">
@@ -73,7 +66,7 @@
       </label>
     </div>
     <div class="row">
-      <label>{{ _('schedules.hour') }} <span class="muted">(diario e semanal)</span>
+      <label>{{ _('schedules.hour') }} <span class="muted">{{ _('schedules.daily_and_weekly') }}</span>
         <input name="hour" type="number" min="0" max="23" value="5" inputmode="numeric">
       </label>
       <label>{{ _('schedules.minute') }}
@@ -81,12 +74,12 @@
       </label>
     </div>
     <div class="row">
-      <label>{{ _('schedules.weekday') }} <span class="muted">(semanal)</span>
+      <label>{{ _('schedules.weekday') }} <span class="muted">{{ _('schedules.weekly_only') }}</span>
         <select name="weekday">
           {% for d in days %}<option value="{{ loop.index0 }}">{{ d }}</option>{% endfor %}
         </select>
       </label>
-      <label>{{ _('schedules.every') }} <span class="muted">(intervalo)</span>
+      <label>{{ _('schedules.every') }} <span class="muted">{{ _('schedules.interval_only') }}</span>
         <input name="every_hours" type="number" min="1" max="{{ max_hours }}" value="6" inputmode="numeric">
         <small>{{ _('schedules.hours_from_now') }}</small>
       </label>
@@ -95,10 +88,7 @@
       {{ ui.button(_('schedules.schedule_it'), variant='primary', icon='⏰', block=true) }}
     </div>
   </form>
-  <p class="muted small mt-4">
-    {{ _('schedules.runs_show_in') }} <a href="{{ url_for('history.index') }}">{{ _('schedules.history') }}</a> como qualquer
-    outra acao, com <code>agendador</code> no lugar do usuario.
-  </p>
+  <p class="muted small mt-4">{{ _h('schedules.runs_note', url=url_for('history.index')) }}</p>
 </div>
 {% endif %}
 {% endblock %}

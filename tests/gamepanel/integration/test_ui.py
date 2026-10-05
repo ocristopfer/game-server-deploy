@@ -1,4 +1,4 @@
-"""Mapa da interface (ui.py): quem ve o que na barra larga, e o que acende em cada rota."""
+"""Interface map (ui.py): who sees what in the wide bar, and what lights up on each route."""
 from __future__ import annotations
 
 from gamepanel import navigation as ui
@@ -27,7 +27,7 @@ def test_operador_so_ve_o_que_pode_abrir():
 
 
 def test_toda_chave_da_barra_larga_existe_nas_listas_de_itens():
-    """Uma chave digitada errada em NAV_DESKTOP_* explodiria so em runtime, na primeira pagina."""
+    """A mistyped key in NAV_DESKTOP_* would only blow up at runtime, on the first page."""
     for key in ui.NAV_DESKTOP_BAR + ui.NAV_DESKTOP_ACCOUNT:
         assert key in ui._ALL_ITEMS
 
@@ -41,7 +41,7 @@ def test_no_desktop_cada_destino_acende_o_proprio_item():
 
 
 def test_no_celular_a_aba_de_cima_continua_acesa():
-    """So ha quatro abas embaixo: 'Instancias' acende 'Servidores' e 'Usuarios' acende 'Conta'."""
+    """There are only four tabs at the bottom: 'Instancias' lights 'Servidores' and 'Usuarios' lights 'Conta'."""
     assert ui.active_nav_for("broker.instances") == "servidores"
     assert ui.active_nav_for("users.index") == "conta"
 
@@ -58,23 +58,23 @@ def test_barra_larga_usa_rotulo_curto_quando_ha(admin, monkeypatch):
     html = admin.get("/").get_data(as_text=True)
     start = html.index('class="appbar__nav"')
     slash = html[start:html.index("</nav>", start)]
-    assert ">Instancias</a>" in slash
-    assert ">Catalogo</a>" in slash
+    assert ">Instâncias</a>" in slash
+    assert ">Catálogo</a>" in slash
     assert "Instancias de jogo" not in slash
 
 
-# --------------------------------------------- o idioma DECLARADO da pagina
+# --------------------------------------------- the page's DECLARED language
 
 def test_a_pagina_declara_o_idioma_que_ela_esta_falando(admin, post):
-    """O `lang=` do `<html>` acompanha o idioma escolhido, e nao fica fixo.
+    """The `lang=` of `<html>` follows the chosen language instead of being fixed.
 
-    Era `<html lang="pt-BR">` escrito a mao no `base.html`: com a tela em ingles a
-    pagina continuava se ANUNCIANDO como portuguesa. Quem le esse atributo nao e a
-    pessoa -- e o leitor de tela, que escolhe voz e pronuncia por ele, e a traducao
-    automatica do navegador. Nenhum teste de rota pega isso: a pagina responde 200 e o
-    texto visivel ate esta correto.
+    It was `<html lang="pt-BR">` hand-written in `base.html`: with the screen in English
+    the page still ANNOUNCED itself as Portuguese. Whoever reads that attribute is not the
+    person -- it is the screen reader, which picks voice and pronunciation by it, and the
+    browser's automatic translation. No route test catches this: the page answers 200 and
+    even the visible text is correct.
 
-    Achado na varredura do painel AO VIVO, que e o unico lugar onde ele aparecia.
+    Found in the sweep of the LIVE panel, which is the only place where it showed up.
     """
     assert 'lang="pt-BR"' in admin.get("/").get_data(as_text=True)
 

@@ -17,8 +17,8 @@
       {{ ui.button(_('files.go')) }}
     </form>
   </div>
-  {# O upload vai para a pasta que esta aberta agora — por isso ele mora aqui, ao lado
-     das migalhas, e nao numa tela propria. #}
+  {# The upload goes to the folder that is open right now - which is why it lives here, next to
+     the breadcrumbs, and not on a screen of its own. #}
   <form method="post" action="{{ url_for('files.upload', sid=server.id) }}"
         enctype="multipart/form-data" class="filebar upload-form">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -26,11 +26,7 @@
     <input type="file" name="file" required aria-label="{{ _('files.file_to_upload') }}">
     {{ ui.button(_('files.upload_here'), icon='⬆') }}
   </form>
-  <p class="muted small">
-    O arquivo sobe em pedacos, direto para o container &mdash; da para mandar mod ou save
-    de varios GB. Se ja existir um com o mesmo nome, ele e substituido e uma copia
-    <code>.bak</code> fica ao lado.
-  </p>
+  <p class="muted small">{{ _h('files.upload_hint') }}</p>
   <nav class="crumbs" aria-label="{{ _('files.path') }}">
     {% for c in crumbs %}<a href="{{ url_for('files.index', sid=server.id, path=c.path) }}">{{ c.name }}</a>{% if not loop.last %}<span class="sep">/</span>{% endif %}{% endfor %}
   </nav>
@@ -41,7 +37,7 @@
     <h2 class="wrap-anywhere">{{ current }}</h2>
     <ul class="filelist">
       {% if current != '/' %}
-      <li><a href="{{ url_for('files.index', sid=server.id, path=current.rsplit('/', 1)[0] or '/') }}">.. (subir)</a></li>
+      <li><a href="{{ url_for('files.index', sid=server.id, path=current.rsplit('/', 1)[0] or '/') }}">{{ _('files.parent') }}</a></li>
       {% endif %}
       {% for e in entries %}
       <li class="{{ 'dir' if e.dir else 'file' }}{{ ' open' if opened and opened.path == e.path }}">
@@ -53,18 +49,18 @@
         <span class="muted small">
           <span class="nowrap">{{ '-' if e.dir else e.size | filesize }} &middot; {{ e.mtime }}</span>
           {% if not e.dir %}
-            <a class="dl" title="Baixar {{ e.name }}"
+            <a class="dl" title="{{ _('files.download_name', name=e.name) }}"
                href="{{ url_for('files.download', sid=server.id, path=e.path) }}">{{ _('files.download') }}</a>
           {% endif %}
-          {# O nome vem do container: ele viaja por data-confirm (escapado como
-             HTML) e nunca dentro de codigo JavaScript. #}
+          {# The name comes from the container: it travels through data-confirm (escaped as
+             HTML) and never inside JavaScript code. #}
           <form method="post" action="{{ url_for('files.delete', sid=server.id) }}"
                 class="inline-del">
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
             <input type="hidden" name="path" value="{{ e.path }}">
             <button class="btn-link btn-link--danger" type="submit"
-                    data-confirm="Apagar {{ e.path }}?&#10;&#10;Isto nao tem volta."
-                    title="Apagar {{ e.name }}{{ ' (so se estiver vazia)' if e.dir else '' }}">{{ _('files.delete') }}</button>
+                    data-confirm="{{ _('files.delete_entry_confirm', path=e.path) }}"
+                    title="{{ _('files.delete_dir_name', name=e.name) if e.dir else _('files.delete_name', name=e.name) }}">{{ _('files.delete') }}</button>
           </form>
         </span>
       </li>
@@ -84,28 +80,28 @@
 
       {% if opened.binary %}
         <div class="flash">
-          <strong>{{ _('files.binary') }}</strong> O painel nao edita isso para nao corromper o
-          jogo &mdash; mas da para baixar o arquivo inteiro.
+          {{ _h('files.binary_notice') }}
         </div>
         <div class="form-actions">
-          {{ ui.button('Baixar (' ~ opened.size | filesize ~ ')',
+          {{ ui.button(_('files.download_size', size=opened.size | filesize),
                       href=url_for('files.download', sid=server.id, path=opened.path),
                       variant='primary', icon='⬇', block=true) }}
         </div>
       {% elif opened.truncated %}
         <div class="flash">
-          <strong>{{ _('files.read_only') }}</strong> o arquivo tem {{ opened.size | filesize }} e passa do
-          limite de edicao ({{ max_kb }} KB). Abaixo estao os ultimos
-          {{ opened.shown | filesize }} &mdash; baixe o arquivo para trabalhar nele inteiro.
+          {{ _h('files.truncated_notice', size=opened.size | filesize, max_kb=max_kb,
+                shown=opened.shown | filesize) }}
         </div>
         <div class="form-actions">
-          {{ ui.button('Baixar (' ~ opened.size | filesize ~ ')',
+          {{ ui.button(_('files.download_size', size=opened.size | filesize),
                       href=url_for('files.download', sid=server.id, path=opened.path),
                       variant='primary', icon='⬇', block=true) }}
         </div>
         <pre class="log">{{ opened.text }}</pre>
       {% else %}
-      <form method="post" action="{{ url_for('files.save', sid=server.id) }}" data-editor>
+      <form method="post" action="{{ url_for('files.save', sid=server.id) }}" data-editor
+            data-label-position="{{ _('files.cursor_position', line='{line}', column='{column}') }}"
+            data-label-changed="{{ _('files.changed_suffix') }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="path" value="{{ opened.path }}">
         <input type="hidden" name="crlf" value="{{ '1' if opened.crlf else '0' }}">
@@ -119,60 +115,49 @@
           <span class="muted small" id="editor-pos"></span>
         </div>
         <p class="muted small mt-4">
-          Ctrl+S salva. Antes de gravar, o painel guarda uma copia
-          <code>{{ opened.name }}.&lt;data&gt;.bak</code> na mesma pasta, e mantem
-          dono e permissao do arquivo original.
-          {% if opened.crlf %} Este arquivo usa fim de linha CRLF &mdash; sera salvo assim.{% endif %}
+          {{ _h('files.save_hint', name=opened.name) }}
+          {% if opened.crlf %} {{ _h('files.crlf_note') }}{% endif %}
         </p>
       </form>
       <div class="form-actions">
         {{ ui.action(url_for('config_quick.register_file', sid=server.id), _('files.edit_field_by_field'),
                    variant='ghost', size='sm', icon='⚙️', fields={'path': opened.path}) }}
         <span class="muted small">
-          {{ _('files.opens_as_form') }} <strong>{{ _('files.configuration') }}</strong>
+          {{ _h('files.opens_as_form_html') }}
         </span>
       </div>
       {% endif %}
 
-      {# Vale para os tres casos acima (binario, so leitura e editavel): o que nao da
-         para editar ainda da para apagar. #}
+      {# Applies to the three cases above (binary, read-only and editable): what cannot
+         be edited can still be deleted. #}
       <div class="form-actions">
         {{ ui.action(url_for('files.delete', sid=server.id), _('files.delete_file'),
                    variant='danger', size='sm', fields={'path': opened.path},
                    confirm=_('files.delete_confirm', path=opened.path)) }}
         <span class="muted small">
-          tira <code>{{ opened.name }}</code> do container na hora &mdash; aqui nao ha
-          copia <code>.bak</code> nem como desfazer
+          {{ _h('files.delete_no_undo', name=opened.name) }}
         </span>
       </div>
     {% else %}
       <h2>{{ _('files.editor') }}</h2>
       <p class="muted">
-        Escolha um arquivo na lista ao lado para editar &mdash; ate {{ max_kb }} KB.
-        Acima disso o painel mostra os ultimos {{ preview_kb }} KB so para leitura.
+        {{ _h('files.editor_intro', max_kb=max_kb, preview_kb=preview_kb) }}
       </p>
       <p class="muted small">
-        {{ _('files.any_file_downloadable') }} <em>{{ _('files.download') }}</em> da lista, inclusive
-        binarios (saves, .so, .pak) e arquivos grandes demais para o editor.
+        {{ _h('files.any_file_downloadable_html') }}
       </p>
       <p class="muted small">
-        Procurando o arquivo de configuracao do jogo? A busca por candidatos fica em
-        <a href="{{ url_for('config_quick.index', sid=server.id, discover=1) }}">{{ _('files.configuration') }}</a>
-        &mdash; e la que o resultado dela serve para alguma coisa (fixar o arquivo e
-        edita-lo campo a campo).
+        {{ _h('files.config_search_hint', url=url_for('config_quick.index', sid=server.id, discover=1)) }}
       </p>
       {% if server.config_path %}
-        <p class="muted small">Pasta de config deste servidor: <code>{{ server.config_path }}</code></p>
+        <p class="muted small">{{ _h('files.config_folder_is', path=server.config_path) }}</p>
       {% else %}
         <p class="muted small">
-          {{ _('files.config_folder_hint') }}
-          <a href="{{ url_for('servers.edit', sid=server.id) }}">{{ _('files.edit_server') }}</a> para
-          esta tela ja abrir no lugar certo.
+          {{ _h('files.config_folder_hint_html', url=url_for('servers.edit', sid=server.id)) }}
         </p>
       {% endif %}
       <p class="muted small">
-        Pare o servidor antes de mexer nos arquivos que ele reescreve ao sair &mdash;
-        varios jogos sobrescrevem o .ini no shutdown.
+        {{ _h('files.stop_before_editing') }}
       </p>
     {% endif %}
   </div>

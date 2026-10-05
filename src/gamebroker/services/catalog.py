@@ -1,16 +1,16 @@
-"""Catalogo de jogos que o broker sabe criar.
+"""Catalog of games the broker knows how to create.
 
-Duas origens, um so tipo (`Game`):
+Two sources, a single type (`Game`):
 
-- **curado**: `games/*.env` do repositorio. Voce revisou no git, entao pode trazer
-  `PRE/POST_INSTALL_CMD`. E a mesma lista que o `deploy-game.ps1` usa - nao existe um
-  segundo catalogo para manter em paralelo.
-- **dinamico**: cadastrado pela API. E so dado: cada campo tem uma regex propria e nenhum
-  vira comando. Campo que o broker nao conhece e recusado, senao `pre_install_cmd` entraria
-  de contrabando.
+- **curated**: the repository's `games/*.env`. You reviewed it in git, so it may carry
+  `PRE/POST_INSTALL_CMD`. It is the same list `deploy-game.ps1` uses - there is no second
+  catalog to keep in parallel.
+- **dynamic**: registered via the API. It is only data: each field has its own regex and none
+  becomes a command. A field the broker does not know is refused, otherwise `pre_install_cmd`
+  would be smuggled in.
 
-O `.env` NUNCA passa por `source` aqui. Ele e lido por um parser proprio que nao expande
-`$VAR`, `$(...)` nem crase: o que esta no arquivo e o texto, ponto.
+The `.env` NEVER goes through `source` here. It is read by its own parser that does not expand
+`$VAR`, `$(...)` or backticks: what is in the file is the text, period.
 """
 from __future__ import annotations
 
@@ -28,43 +28,43 @@ from gamebroker.domain.exceptions import Conflict, NotFound, ValidationError
 SOURCE_CURATED = "curado"
 SOURCE_DYNAMIC = "dinamico"
 
-# Receitas: lista FECHADA no codigo. Jogo dinamico escolhe daqui, nunca escreve shell.
+# Recipes: a CLOSED list in the code. A dynamic game picks from here, never writes shell.
 RECIPES = ("wine", "proton", "xvfb", "steamclient-sdk64")
 RECIPES_WINDOWS = ("wine", "proton")
-# X virtual para o .exe que cria janela mesmo headless (Icarus, V Rising). E uma receita, e nao
-# um campo, porque so faz sentido junto de um runtime de Windows: sozinho ele instalaria o
-# xvfb num CT que nunca o chama.
+# Virtual X for the .exe that creates a window even headless (Icarus, V Rising). It is a recipe,
+# not a field, because it only makes sense together with a Windows runtime: on its own it would
+# install xvfb on a CT that never calls it.
 RECIPE_XVFB = "xvfb"
 
-# Portas que nunca podem ser expostas por jogo nenhum: painel, Proxmox, API REST e RCON
-# (ver PORT_NOTES do palworld.env - o painel fala com eles por dentro do container).
+# Ports no game may ever expose: panel, Proxmox, REST API and RCON
+# (see PORT_NOTES in palworld.env - the panel talks to them from inside the container).
 FORBIDDEN_PORTS = frozenset({22, 80, 443, 8006, 8080, 8212, 25575})
 
 KEY_RE = re.compile(r"[a-z][a-z0-9-]{1,23}", re.ASCII)
 NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}", re.ASCII)
-# Nome de JOGO, e nao de instancia: "RuneScape: Dragonwilds" tem dois-pontos, e com o
-# NAME_RE a edicao do curado era recusada ("name: formato invalido"). O nome vai para o
-# install.env (por shlex.quote) e para o `Description=` da unit do systemd, entao `%`
-# (especificador do systemd), aspas duplas, `$`, crase, barra invertida e quebra de linha
-# continuam de fora. O nome da instancia segue no NAME_RE: ele vira nome de CT.
+# A GAME name, not an instance name: "RuneScape: Dragonwilds" has a colon, and with NAME_RE
+# editing the curated game was refused ("name: formato invalido"). The name goes into
+# install.env (via shlex.quote) and into the systemd unit's `Description=`, so `%` (systemd
+# specifier), double quotes, `$`, backtick, backslash and line break stay out. The instance
+# name still uses NAME_RE: it becomes a CT name.
 GAME_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._:'&()!+-]{0,39}", re.ASCII)
 _PORT_RE = re.compile(r"(\d{1,5})/(tcp|udp)", re.ASCII)
 _SCRIPT_RE = re.compile(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*", re.ASCII)
 _PATH_RE = re.compile(r"/(opt/game|home/steam)(/[A-Za-z0-9._-]+)*", re.ASCII)
-# Sem ; | & $ ` ( ) < > \ aspas e quebra de linha: o START_ARGS acaba numa linha de comando
-# dentro do CT. {PORT} e {QUERY_PORT} sao os unicos marcadores: as chaves entram no
-# charset, e `_args_de_start` recusa qualquer chave que sobre depois de tirar os dois.
+# No ; | & $ ` ( ) < > \ quotes or line breaks: START_ARGS ends up in a command line inside
+# the CT. {PORT} and {QUERY_PORT} are the only placeholders: braces are in the charset, and
+# `_args_de_start` rejects any brace left over after removing those two.
 _ARGS_RE = re.compile(r"[A-Za-z0-9 ._=:,/+@?{}-]{0,300}", re.ASCII)
 _PLACEHOLDERS = ("{PORT}", "{QUERY_PORT}", "{EXTRA_PORT}")
 _REGEX_MAX_LEN = 200
-# (a+)+ , (.*)* , (a|b*)+ : repeticao dentro de grupo que repete. O `re` do Python nao tem
-# timeout, entao esse formato e recusado antes de existir. A busca so roda em texto de ate
-# _REGEX_TAMANHO_MAX caracteres (checado antes), o que limita o custo do backtracking.
+# (a+)+ , (.*)* , (a|b*)+ : repetition inside a repeating group. Python's `re` has no
+# timeout, so this shape is refused before it exists. The search only runs on text of up to
+# _REGEX_TAMANHO_MAX characters (checked beforehand), which bounds the backtracking cost.
 _NESTED_REPETITION = re.compile(r"\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)[+*{]")  # NOSONAR
 _ASSIGN_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]*)=(.*)$", re.ASCII)
 
-# 'net' = conversas ativas na porta do jogo, contadas pelo firewall que o proprio broker poe
-# no CT (FW_PRESENCE_PORTS no ct-phases.sh); nao precisa de nada do jogo.
+# 'net' = active conversations on the game port, counted by the firewall the broker itself puts
+# in the CT (FW_PRESENCE_PORTS in ct-phases.sh); it needs nothing from the game.
 PLAYER_SOURCES_DYNAMIC = ("a2s", "net", "log")
 PLATFORMS = ("", "linux", "windows")
 
@@ -104,25 +104,26 @@ class Game:
     source: str
     creatable: bool
     reason: str
-    # Shell revisado por voce (so o catalogo curado tem). Nunca sai pela API.
+    # Shell reviewed by you (only the curated catalog has it). Never leaves through the API.
     pre_install: str = ""
     post_install: str = ""
-    # Terceira porta que o jogo aceita pelos argumentos ({EXTRA_PORT}): a "confiavel" do
-    # Satisfactory (-ReliablePort), por exemplo. 0 = o jogo nao tem.
+    # Third port the game accepts through its arguments ({EXTRA_PORT}): Satisfactory's
+    # "reliable" one (-ReliablePort), for example. 0 = the game has none.
     extra_port: int = 0
-    # Jogo curado com os DADOS editados pela API (ver `Catalog.update`). O shell continua o
-    # do .env: e isso que deixa editar um curado sem abrir porta para comando.
+    # Curated game with its DATA edited via the API (see `Catalog.update`). The shell stays the
+    # one from the .env: that is what allows editing a curated game without opening a door to commands.
     edited: bool = False
-    # O servidor nao baixa com login anonimo (DayZ): so existe no curado, e o instalador leva
-    # a conta Steam do broker para o CT. Jogo da API nunca a pede (`validate_dynamic`).
+    # The server does not download with anonymous login (DayZ): it only exists in the curated
+    # catalog, and the installer takes the broker's Steam account to the CT. An API game never
+    # asks for it (`validate_dynamic`).
     needs_account: bool = False
-    # WINE_DLL_OVERRIDES do .env curado. Vazio = o padrao do instalador (ct-phases.sh). Antes ele
-    # nao ia para o install.env do broker: o V Rising pedia o mscoree ligado (e o que deixa o
-    # BepInEx, .NET, carregar) e o CT criado pelo painel nascia com o padrao, que o desliga. So
-    # existe no curado, como o shell: jogo da API nao escolhe DLL do Wine.
+    # WINE_DLL_OVERRIDES from the curated .env. Empty = the installer's default (ct-phases.sh).
+    # It used not to go into the broker's install.env: V Rising needed mscoree enabled (it is what
+    # lets BepInEx, .NET, load) and the CT created by the panel was born with the default, which
+    # disables it. It only exists in the curated catalog, like the shell: an API game does not pick Wine DLLs.
     wine_overrides: str = ""
-    # Vagas do servidor (MAX_PLAYERS do .env). O painel so o usa quando a contagem nao traz o
-    # total - log ou conexoes ativas; a A2S traz o dela. 0 = nao se sabe.
+    # Server slots (MAX_PLAYERS from the .env). The panel only uses it when the count does not
+    # bring the total - log or active connections; A2S brings its own. 0 = unknown.
     max_players: int = 0
 
     @property
@@ -130,7 +131,7 @@ class Game:
         return bool(self.pre_install or self.post_install)
 
     def as_public(self) -> dict:
-        """O que a API mostra: nada de comando, nada de caminho de instalador."""
+        """What the API shows: no command, no installer path."""
         return {
             "key": self.key, "name": self.name, "app_id": self.app_id,
             "ports": [str(p) for p in self.ports], "game_port": self.game_port,
@@ -143,7 +144,7 @@ class Game:
         }
 
     def as_stored(self) -> dict:
-        """Forma gravada em disco; `validate_dynamic` a aceita de volta."""
+        """Form written to disk; `validate_dynamic` accepts it back."""
         return {
             "key": self.key, "name": self.name, "app_id": self.app_id,
             "platform": self.platform, "start_script": self.start_script,
@@ -160,11 +161,11 @@ class Game:
 
 
 # ----------------------------------------------------------------------------
-# Leitura segura do .env (sem shell)
+# Safe reading of the .env (no shell)
 # ----------------------------------------------------------------------------
 
 def read_env(text: str) -> dict[str, str]:
-    """Le `CHAVE=valor` sem executar nada. Aspas simples/duplas podem abrir varias linhas."""
+    """Reads `CHAVE=valor` without executing anything. Single/double quotes may span several lines."""
     lines = text.splitlines()
     out: dict[str, str] = {}
     i = 0
@@ -194,7 +195,7 @@ def _quoted_value(key: str, rest: str, lines: list[str], start: int) -> tuple[st
             pieces.append(nxt if nxt in '"\\$`' else c + nxt)
             k += 2
         elif c == quote and quote == "'" and body.startswith("\\''", k + 1):
-            # 'abc'\''def' : o jeito do shell de escrever um apostrofo dentro de aspas simples.
+            # 'abc'\''def' : the shell's way of writing an apostrophe inside single quotes.
             pieces.append("'")
             k += 4
         elif c == quote:
@@ -206,7 +207,7 @@ def _quoted_value(key: str, rest: str, lines: list[str], start: int) -> tuple[st
 
 
 # ----------------------------------------------------------------------------
-# Jogo curado (games/*.env)
+# Curated game (games/*.env)
 # ----------------------------------------------------------------------------
 
 def _port(text: str) -> Port:
@@ -220,10 +221,10 @@ def _parts(value: str, separator: str) -> tuple[str, ...]:
     return tuple(p.strip() for p in re.split(separator, value) if p.strip())
 
 
-# A maior porta que existe em TCP/UDP: o campo tem 16 bits. Aparece em quatro checagens do
-# broker, e a constante diz o que o numero E — `65535` solto parece limite arbitrario.
-# Mora AQUI, e nao no `allocator`, porque o allocator importa `Game` daqui: o contrario
-# seria ciclo.
+# The largest port that exists in TCP/UDP: the field has 16 bits. It shows up in four broker
+# checks, and the constant says what the number IS - a bare `65535` looks like an arbitrary
+# limit. It lives HERE, and not in `allocator`, because the allocator imports `Game` from here:
+# the other way around would be a cycle.
 MAX_PORT = 65535
 
 
@@ -234,11 +235,12 @@ def _env_int(data: dict[str, str], key: str, default: int) -> int:
 
 def shiftable_problem(ports: tuple[Port, ...], game_port: int, query_port: int,
                            start_args: str, extra_port: int = 0) -> str:
-    """Um jogo so anda de porta se o broker consegue AVISAR o jogo de todas elas.
+    """A game only moves ports if the broker can TELL the game about all of them.
 
-    O broker entrega ao jogo ate tres portas ({PORT}, {QUERY_PORT} e {EXTRA_PORT}). Uma
-    quarta (DayZ tem 2303/2304) ficaria aberta no firewall num numero que o jogo nao escuta, e
-    o cliente conectaria em vazio. Sem o marcador no START_ARGS o jogo ignora o numero sorteado.
+    The broker hands the game up to three ports ({PORT}, {QUERY_PORT} and {EXTRA_PORT}). A
+    fourth (DayZ has 2303/2304) would be open in the firewall on a number the game does not
+    listen on, and the client would connect to nothing. Without the placeholder in START_ARGS
+    the game ignores the drawn number.
     """
     tellable = {game_port, query_port, extra_port} - {0}
     if any(p.number not in tellable for p in ports):
@@ -254,7 +256,7 @@ def shiftable_problem(ports: tuple[Port, ...], game_port: int, query_port: int,
 
 
 def extra_port_problem(start_args: str, extra_port: int) -> str:
-    """{EXTRA_PORT} sem porta extra viraria "0" na linha de comando do jogo."""
+    """{EXTRA_PORT} without an extra port would become "0" on the game's command line."""
     if "{EXTRA_PORT}" in start_args and not extra_port:
         return "start_args usa {EXTRA_PORT}, mas o jogo nao tem porta extra (EXTRA_PORT / porta_extra)"
     return ""
@@ -320,17 +322,17 @@ def game_from_env(file_name: str, data: dict[str, str], steam_account: bool = Fa
 
 
 def _curated_recipes(runtime: str, xvfb: bool) -> tuple[str, ...]:
-    """O runtime e o X virtual de um curado, na mesma forma das receitas de um dinamico: e
-    por elas que o `install.env` do broker chega ao CT. Antes so o runtime ia, e um Icarus
-    criado pelo painel subia SEM o X virtual que o .env pede (o deploy-game.ps1, que le o
-    arquivo cru, nunca teve o problema)."""
+    """The runtime and virtual X of a curated game, in the same shape as a dynamic game's
+    recipes: that is how the broker's `install.env` reaches the CT. It used to be only the
+    runtime, and an Icarus created by the panel came up WITHOUT the virtual X the .env asks for
+    (deploy-game.ps1, which reads the raw file, never had the problem)."""
     if runtime not in RECIPES_WINDOWS:
         return ()
     return (runtime, RECIPE_XVFB) if xvfb else (runtime,)
 
 
 def load_curated(directory: Path, steam_account: bool = False) -> tuple[dict[str, Game], list[str]]:
-    """Le `games/*.env` (menos os que comecam com `_`). Arquivo ruim vira erro, nao excecao."""
+    """Reads `games/*.env` (except those starting with `_`). A bad file becomes an error, not an exception."""
     games: dict[str, Game] = {}
     errors: list[str] = []
     for file in sorted(Path(directory).glob("*.env")):
@@ -346,7 +348,7 @@ def load_curated(directory: Path, steam_account: bool = False) -> tuple[dict[str
 
 
 # ----------------------------------------------------------------------------
-# Jogo dinamico (API)
+# Dynamic game (API)
 # ----------------------------------------------------------------------------
 
 _DYNAMIC_FIELDS = frozenset({
@@ -364,7 +366,7 @@ def _int_field(data: dict, field: str, minimum: int, maximum: int, default: int 
             raise ValidationError(field, "obrigatorio")
         return default
     value = data[field]
-    # bool e subclasse de int em Python: `true` nao pode passar por 1.
+    # bool is a subclass of int in Python: `true` must not pass as 1.
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValidationError(field, "deve ser um numero inteiro")
     if not minimum <= value <= maximum:
@@ -377,7 +379,7 @@ def _text_field(data: dict, field: str, regex: re.Pattern[str], default: str = "
     value = data.get(field, default)
     if not isinstance(value, str):
         raise ValidationError(field, "deve ser texto")
-    # Vazio so vale para campo opcional: chave/nome vazios passariam por "ausente".
+    # Empty only counts for an optional field: an empty key/name would pass as "absent".
     if (value or required) and not regex.fullmatch(value):
         raise ValidationError(field, "formato invalido")
     return value
@@ -469,11 +471,11 @@ def _recipes_field(data: dict, platform: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(items))
 
 
-# Os nomes de campo que esta API usava antes de falar ingles. Existe so para o jogo que
-# ja estava GRAVADO em `<estado>/dinamico/*.json` quando o broker foi atualizado: sem
-# isto ele viraria "campo desconhecido" na primeira releitura e sumiria do catalogo,
-# levando junto a instancia que dependia dele. O arquivo e reescrito no formato novo na
-# proxima gravacao; a tabela e fechada, entao campo de contrabando continua sendo recusado.
+# The field names this API used before it spoke English. It exists only for the game that was
+# already SAVED in `<estado>/dinamico/*.json` when the broker was updated: without this it
+# would become an "unknown field" on the first reload and vanish from the catalog, taking with
+# it the instance that depended on it. The file is rewritten in the new format on the next
+# save; the table is closed, so a smuggled field is still refused.
 _LEGACY_FIELDS = {
     "chave": "key", "nome": "name", "plataforma": "platform", "portas": "ports",
     "porta_jogo": "game_port", "porta_query": "query_port", "porta_extra": "extra_port",
@@ -483,7 +485,7 @@ _LEGACY_FIELDS = {
 
 
 def _without_legacy_names(data: dict) -> dict:
-    """Traduz os nomes antigos; um campo dado NOS DOIS jeitos e recusado."""
+    """Translates the old names; a field given BOTH ways is refused."""
     repeated = sorted(v for k, v in _LEGACY_FIELDS.items() if k in data and v in data)
     if repeated:
         raise ValidationError(repeated[0], "informado duas vezes (nome antigo e novo)")
@@ -491,7 +493,7 @@ def _without_legacy_names(data: dict) -> dict:
 
 
 def validate_dynamic(data: object) -> Game:
-    """Valida um jogo vindo da API. Qualquer duvida e recusa: aqui nada vira comando."""
+    """Validates a game coming from the API. Any doubt means refusal: nothing here becomes a command."""
     if not isinstance(data, dict):
         raise ValidationError("corpo", "esperado um objeto JSON")
     data = _without_legacy_names(data)
@@ -559,27 +561,27 @@ def _single_path(data: dict, field: str) -> str:
 
 
 # ----------------------------------------------------------------------------
-# Catalogo curado, mais o dinamico
+# Curated catalog, plus the dynamic one
 # ----------------------------------------------------------------------------
 
 def _as_override(curated: Game, edited: Game) -> Game:
-    """Os DADOS vem da edicao; o que so o git pode dizer vem do .env.
+    """The DATA comes from the edit; what only git can say comes from the .env.
 
-    O shell (`pre_install`/`post_install`) e o motivo de o jogo ser ou nao criavel ficam
-    os do arquivo: a edicao passou pelo `validate_dynamic`, que nunca aceita comando, e
-    nao pode transformar em criavel um jogo que exige conta Steam ou instalador proprio.
+    The shell (`pre_install`/`post_install`) and the reason the game is creatable or not stay
+    those of the file: the edit went through `validate_dynamic`, which never accepts a command,
+    and it cannot turn into creatable a game that requires a Steam account or its own installer.
     """
     return dataclasses.replace(
         edited, source=SOURCE_CURATED, creatable=curated.creatable, reason=curated.reason,
         pre_install=curated.pre_install, post_install=curated.post_install,
         needs_account=curated.needs_account, wine_overrides=curated.wine_overrides, edited=True,
-        # A tela de edicao do catalogo nao tem o campo: sem isto, editar o Dragonwilds zeraria
-        # as 6 vagas que so o .env sabe.
+        # The catalog edit screen does not have this field: without this, editing Dragonwilds
+        # would zero the 6 slots that only the .env knows.
         max_players=edited.max_players or curated.max_players)
 
 
 def _checked_key(key: str) -> str:
-    # A chave vira nome de ARQUIVO em `_dynamic_dir`: sem a regex, `../x` sairia da pasta.
+    # The key becomes a FILE name in `_dynamic_dir`: without the regex, `../x` would leave the folder.
     if not KEY_RE.fullmatch(key or ""):
         raise ValidationError("key", "formato invalido")
     return key
@@ -589,11 +591,11 @@ class Catalog:
     def __init__(self, curated_dir: Path, dynamic_dir: Path, steam_account: bool = False):
         self._curated_dir = Path(curated_dir)
         self._dynamic_dir = Path(dynamic_dir)
-        # O broker tem conta Steam configurada? Decide se o curado que exige conta e criavel.
+        # Does the broker have a Steam account configured? Decides whether the curated game that needs one is creatable.
         self._steam_account = steam_account
         self._lock = threading.Lock()
         self._games: dict[str, Game] = {}
-        # O curado como o git o descreve, para desfazer uma edicao sem reler a pasta.
+        # The curated game as git describes it, to undo an edit without rereading the folder.
         self._curated: dict[str, Game] = {}
         self.errors: list[str] = []
         self.reload()
@@ -604,7 +606,7 @@ class Catalog:
         self._dynamic_dir.mkdir(parents=True, exist_ok=True)
         for file in sorted(self._dynamic_dir.glob("*.json")):
             try:
-                # Revalida ao ler: arquivo adulterado em disco nao vira jogo criavel.
+                # Revalidate on read: a file tampered with on disk does not become a creatable game.
                 game = validate_dynamic(json.loads(file.read_text(encoding="utf-8")))
             except (ValueError, OSError, ValidationError) as error:
                 errors.append(f"{file.name}: {error}")
@@ -616,7 +618,7 @@ class Catalog:
             if base is None:
                 games[game.key] = game
             elif base.creatable:
-                # Mesma chave de um curado = a edicao dele (ver `update`).
+                # Same key as a curated game = its edit (see `update`).
                 games[game.key] = _as_override(base, game)
             else:
                 errors.append(f"{file.name}: edita um jogo curado que nao pode ser editado pela API")
@@ -644,17 +646,17 @@ class Catalog:
         return game
 
     def stored(self, key: str) -> dict:
-        """O jogo inteiro, para o formulario de edicao. Nunca o shell do curado."""
+        """The whole game, for the edit form. Never the curated game's shell."""
         game = self.get(key)
         return {**game.as_stored(), "source": game.source, "edited": game.edited,
                 "creatable": game.creatable, "reason": game.reason}
 
     def update(self, key: str, data: object) -> Game:
-        """Troca os dados de um jogo. Num curado, grava a edicao POR CIMA do .env.
+        """Replaces a game's data. On a curated game, writes the edit ON TOP of the .env.
 
-        A edicao mora no mesmo lugar dos dinamicos (`<chave>.json`) e o arquivo do git nao
-        e tocado: o broker nem tem como escrever no repositorio, e o proximo deploy
-        sobrescreveria. Por isso existe `remove`, que num curado DESFAZ a edicao.
+        The edit lives in the same place as the dynamic games (`<chave>.json`) and the git file is
+        not touched: the broker cannot even write to the repository, and the next deploy would
+        overwrite it. That is why `remove` exists, which on a curated game UNDOES the edit.
         """
         game = validate_dynamic(data)
         if game.key != _checked_key(key):
@@ -670,9 +672,9 @@ class Catalog:
             return self._games[key]
 
     def remove(self, key: str) -> Game | None:
-        """Apaga um dinamico, ou desfaz a edicao de um curado (devolve o curado de volta).
+        """Deletes a dynamic game, or undoes the edit of a curated one (restores the curated game).
 
-        Instancia ja criada nao depende do catalogo: ela guarda o que precisa na criacao.
+        An instance already created does not depend on the catalog: it stores what it needs at creation.
         """
         _checked_key(key)
         with self._lock:
@@ -693,7 +695,7 @@ class Catalog:
     def _store(self, game: Game) -> None:
         self._dynamic_dir.mkdir(parents=True, exist_ok=True)
         target = self._dynamic_dir / f"{game.key}.json"
-        # Escreve num temporario e troca: um corte de luz nao deixa JSON pela metade.
+        # Write to a temp file and swap: a power cut does not leave half-written JSON.
         fd, temporary = tempfile.mkstemp(dir=self._dynamic_dir, suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as out:

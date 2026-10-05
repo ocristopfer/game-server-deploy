@@ -1,486 +1,486 @@
-# Análise de arquitetura — estado atual
+# Architecture analysis - current state
 
-> Levantamento read-only (Fase 1). Nenhum arquivo do projeto foi alterado para
-> produzir este documento. Gerado em 2026-09-22, contra o `main` em `ee44d90`.
-> Este documento é o insumo para a proposta de reorganização (Fase 2) — não é,
-> em si, um plano de mudança.
+> **Historical:** this Phase 1 analysis drove the Phase 3 reorganization (`admin/`/`broker/` ->
+> `src/gamepanel/`/`src/gamebroker/`, English identifiers, `app.py` split into blueprints),
+> which is done. Paths and names below describe the code as it was when this was written.
 
-## Sumário executivo
+> Read-only survey (Phase 1). No project file was changed to produce this
+> document. Generated on 2026-09-22, against `main` at `ee44d90`.
+> This document is the input for the reorganization proposal (Phase 2) - it is
+> not, in itself, a plan of change.
 
-- **~17.100 linhas** de Python em `admin/` (das quais **8.175 só em `app.py`**,
-  um monólito com rotas + regra de negócio + SSH/subprocess + SQL cru no mesmo
-  arquivo) e **~5.750 linhas** em `broker/` (pacote menor, já com boa separação
-  por interfaces).
-- **Todos os testes passam** hoje: suíte inteira (`admin/` + `broker/`) verde,
-  2 pulados no Windows (esperado, ver `CLAUDE.md`). Não há nenhum teste
-  quebrado para "consertar antes de reorganizar".
-- **Não existe CI/CD** no repositório (nenhum `.gitlab-ci.yml`, `Jenkinsfile`
-  ou `.github/workflows` — só `docker-compose.yml` como `.yml`). Isso é
-  trabalho novo, não integração com algo existente.
-- **Não existem `ruff`, `mypy` nem Sonar configurados** hoje. Rodei os dois
-  primeiros manualmente contra o código (ver seção 6): o resultado é
-  **surpreendentemente limpo** para um código sem essas ferramentas — a
-  esmagadora maioria dos achados de `ruff` vem de um único arquivo **gerado**
-  (`sugestoes_de_jogos.py`), e `mypy` sem tipos ainda encontra poucas dezenas
-  de problemas reais em ~23 mil linhas.
-- **`broker/` já segue boa parte dos princípios que a Fase 2 vai pedir**
-  (inversão de dependência via `typing.Protocol`, camada HTTP fina, acoplamento
-  com `admin/` só por HTTP). **`admin/app.py` é o oposto**: um único arquivo
-  com 44 seções funcionais diferentes, sem camada de serviço, sem DAO, com
-  scripts bash como constantes de módulo ao lado de rotas Flask.
-- **Existem DOIS runtimes de produção reais e documentados** — Proxmox LXC
-  (`provision-game-lxc.sh`) e Docker puro (`deploy-docker.ps1` +
-  `docker/gameserver/`) — o que já valida, na prática, a ideia de uma camada
-  `runtime/` abstrata pedida na Fase 2 (não é solução para um problema
-  hipotético; o projeto já tem dois runtimes concretos hoje).
-- **Nomenclatura em português está em toda parte** — não é um desvio isolado,
-  é a convenção predominante do projeto (identificadores Python, ~metade das
-  rotas HTTP, duas tabelas do banco do painel, todos os módulos do broker,
-  parâmetros de scripts `.ps1`). Isso torna a tradução para inglês um projeto
-  do tamanho de uma reescrita parcial, não um rename mecânico — ver seção 7.
+## Executive summary
+
+- **~17,100 lines** of Python in `admin/` (of which **8,175 in `app.py` alone**,
+  a monolith with routes + business rules + SSH/subprocess + raw SQL in the same
+  file) and **~5,750 lines** in `broker/` (a smaller package, already well
+  separated by interfaces).
+- **All tests pass** today: the whole suite (`admin/` + `broker/`) is green,
+  2 skipped on Windows (expected, see `CLAUDE.md`). There is no broken test
+  to "fix before reorganizing".
+- **There is no CI/CD** in the repository (no `.gitlab-ci.yml`, `Jenkinsfile`
+  or `.github/workflows` - `docker-compose.yml` is the only `.yml`). This is
+  new work, not integration with something existing.
+- **There is no `ruff`, `mypy` or Sonar configured** today. I ran the first
+  two manually against the code (see section 6): the result is
+  **surprisingly clean** for code without those tools - the vast majority of
+  `ruff` findings come from a single **generated** file
+  (`sugestoes_de_jogos.py`), and `mypy` without types still finds only a few
+  dozen real problems in ~23 thousand lines.
+- **`broker/` already follows a good part of the principles Phase 2 will ask for**
+  (dependency inversion via `typing.Protocol`, thin HTTP layer, coupling
+  with `admin/` only over HTTP). **`admin/app.py` is the opposite**: a single file
+  with 44 different functional sections, no service layer, no DAO, with
+  bash scripts as module constants next to Flask routes.
+- **There are TWO real, documented production runtimes** - Proxmox LXC
+  (`provision-game-lxc.sh`) and plain Docker (`deploy-docker.ps1` +
+  `docker/gameserver/`) - which already validates, in practice, the idea of an
+  abstract `runtime/` layer requested for Phase 2 (it is not a solution to a
+  hypothetical problem; the project already has two concrete runtimes today).
+- **Portuguese naming is everywhere** - it is not an isolated deviation,
+  it is the project's predominant convention (Python identifiers, ~half of the
+  HTTP routes, two tables of the panel database, every broker module,
+  `.ps1` script parameters). That makes translating to English a project
+  the size of a partial rewrite, not a mechanical rename - see section 7.
 
 ---
 
-## 1. O que cada pasta/módulo faz hoje
+## 1. What each folder/module does today
 
-| Caminho | O que é |
+| Path | What it is |
 |---|---|
-| `admin/` | Painel Flask. Um processo Python só, servido por gunicorn. Interface web completa: autenticação+2FA, CRUD de servidores, SSH remoto, terminal PTY, editor de arquivos, backups, monitor/alertas, agendador, gráficos, integração com o broker. |
-| `broker/` | Serviço HTTP separado (pacote Python próprio, `__init__.py`). Cria/desativa/remove instâncias de jogo via API do Proxmox e abre/fecha portas via API do OPNsense. Guarda as credenciais que o painel nunca vê. |
-| `games/` | Catálogo **curado** de jogos: um `.env` declarativo por jogo (`dayz.env`, `palworld.env`, ...), lido por `broker/catalogo.py` com parser próprio (nunca `source`/shell). |
-| `docker/` | Seis subpastas, com papéis bem diferentes entre si (ver seção 3): ambiente de **dev** (`panel/`, `broker/`, `game/`), runtime de **produção alternativa** (`gameserver/`, usada por `deploy-docker.ps1`), e ambiente de **teste** (`ct-sandbox/`, compara o instalador antes/depois de mudanças). |
-| `lib/` | Duas fases de instalação de jogo (`ct-phases.sh`, `ct-install.sh`) compartilhadas entre o caminho Proxmox (host, via `pct exec`) e o caminho broker (dentro do CT, via SSH). |
-| `tools/` | Scripts manuais de desenvolvimento: `import-linuxgsm.py` (gera `admin/sugestoes_de_jogos.py`) e `verify-qr.py` (valida `admin/qr.py` contra um leitor real de QR). Nenhum dos dois roda em produção nem no pytest. |
-| `*.ps1` na raiz (`deploy-*.ps1`, `check-broker-access.ps1`, `spike-broker-write.ps1`) | Scripts de deploy (Proxmox e Docker) e duas ferramentas manuais de diagnóstico/prova de acesso — nenhuma delas chamada pelo deploy automatizado. |
-| `*.sh` na raiz (`provision-*.sh`) | Scripts que rodam **no host Proxmox** (enviados por `pct push`/scp pelos `.ps1`) para provisionar CTs: painel, broker, jogo (via Steam) e TeamSpeak (caminho próprio, não vem da Steam). |
-| `pytest.ini`, `pyrightconfig.json` | Config de teste (raiz, cobre `admin/` e `broker/`) e config do editor (Pylance/Pyright) — não afetam o runtime. |
-| `.env` / `.env.example` (raiz) | Config de **deploy-time** (Proxmox/Docker) — não é o que o processo Python lê em produção (ver seção 3 e 7). |
+| `admin/` | Flask panel. A single Python process, served by gunicorn. Full web interface: authentication+2FA, server CRUD, remote SSH, PTY terminal, file editor, backups, monitor/alerts, scheduler, charts, broker integration. |
+| `broker/` | Separate HTTP service (its own Python package, `__init__.py`). Creates/deactivates/removes game instances through the Proxmox API and opens/closes ports through the OPNsense API. Holds the credentials the panel never sees. |
+| `games/` | **Curated** game catalog: one declarative `.env` per game (`dayz.env`, `palworld.env`, ...), read by `broker/catalogo.py` with its own parser (never `source`/shell). |
+| `docker/` | Six subfolders, with very different roles (see section 3): the **dev** environment (`panel/`, `broker/`, `game/`), an **alternative production** runtime (`gameserver/`, used by `deploy-docker.ps1`), and a **test** environment (`ct-sandbox/`, compares the installer before/after changes). |
+| `lib/` | Two game installation phases (`ct-phases.sh`, `ct-install.sh`) shared between the Proxmox path (host, via `pct exec`) and the broker path (inside the CT, via SSH). |
+| `tools/` | Manual development scripts: `import-linuxgsm.py` (generates `admin/sugestoes_de_jogos.py`) and `verify-qr.py` (checks `admin/qr.py` against a real QR reader). Neither runs in production or in pytest. |
+| `*.ps1` at the root (`deploy-*.ps1`, `check-broker-access.ps1`, `spike-broker-write.ps1`) | Deploy scripts (Proxmox and Docker) and two manual diagnostic/access-proof tools - none of them called by the automated deploy. |
+| `*.sh` at the root (`provision-*.sh`) | Scripts that run **on the Proxmox host** (sent via `pct push`/scp by the `.ps1` files) to provision CTs: panel, broker, game (via Steam) and TeamSpeak (its own path, it does not come from Steam). |
+| `pytest.ini`, `pyrightconfig.json` | Test config (root, covers `admin/` and `broker/`) and editor config (Pylance/Pyright) - they do not affect the runtime. |
+| `.env` / `.env.example` (root) | **Deploy-time** config (Proxmox/Docker) - not what the Python process reads in production (see sections 3 and 7). |
 
-`services/` aparece como diretório vazio no disco, mas **não está rastreado
-pelo git** (não há nenhum arquivo dentro) — não é um módulo em uso, é resíduo
-local; não precisa entrar no mapeamento da Fase 2.
+`services/` shows up as an empty directory on disk, but **it is not tracked
+by git** (there is no file inside) - it is not a module in use, it is local
+residue; it does not need to enter the Phase 2 mapping.
 
-### 1.1 `admin/` — arquivo por arquivo
+### 1.1 `admin/` - file by file
 
-| Arquivo | Linhas | Responsabilidade |
+| File | Lines | Responsibility |
 |---|---|---|
-| `app.py` | 8.175 | Rotas Flask, schema/migrações SQLite, auth+CSRF+2FA, SSH/subprocess, A2S, HTTP de API de jogo, parsing de log, monitor/alertas, agendador, terminal PTY, editor de arquivos, backups, integração com broker, gráficos SVG, bootstrap CLI. **Tudo em um módulo.** |
-| `ui.py` | 292 | Mapa de navegação (`NAV_PRINCIPAL`, `SECOES_DO_SERVIDOR`) e ações de energia (`ACOES`). Puro — zero Flask, zero banco. |
-| `gameconf.py` | 715 | Parser/gravador de texto de config de jogo (ini/json/serverDZ.cfg), preservando formatação. Puro. |
-| `gamefields.py` | 419 | Catálogo estático (`ENSHROUDED`, `PALWORLD`, `ICARUS`, `DAYZ`, `DRAGONWILDS`) que dá semântica às chaves que `gameconf.py` lê. |
-| `broker_client.py` | 191 | Cliente HTTP stdlib-only do broker, TLS fixado por SHA-256. Único ponto de contato do painel com o processo broker. |
-| `totp.py` | 122 | TOTP RFC 6238 + códigos de recuperação, stdlib puro. |
-| `qr.py` | 301 | Gerador de QR code (ISO 18004) implementado do zero, sem libs externas. |
-| `busca_de_jogos.py` | 62 | Busca por nome/App ID sobre o catálogo gerado. |
-| `modelos_de_jogo.py` | 68 | Modelo estático "Unreal Linux" para pré-preencher o formulário de catálogo. |
-| `sugestoes_de_jogos.py` | 1.811 | **Gerado** por `tools/import-linuxgsm.py` — dado estático, não editar à mão. |
+| `app.py` | 8,175 | Flask routes, SQLite schema/migrations, auth+CSRF+2FA, SSH/subprocess, A2S, game API HTTP, log parsing, monitor/alerts, scheduler, PTY terminal, file editor, backups, broker integration, SVG charts, CLI bootstrap. **All in one module.** |
+| `ui.py` | 292 | Navigation map (`NAV_PRINCIPAL`, `SECOES_DO_SERVIDOR`) and power actions (`ACOES`). Pure - zero Flask, zero database. |
+| `gameconf.py` | 715 | Text parser/writer for game config (ini/json/serverDZ.cfg), preserving formatting. Pure. |
+| `gamefields.py` | 419 | Static catalog (`ENSHROUDED`, `PALWORLD`, `ICARUS`, `DAYZ`, `DRAGONWILDS`) that gives meaning to the keys `gameconf.py` reads. |
+| `broker_client.py` | 191 | Stdlib-only HTTP client for the broker, TLS pinned by SHA-256. The panel's single point of contact with the broker process. |
+| `totp.py` | 122 | TOTP RFC 6238 + recovery codes, pure stdlib. |
+| `qr.py` | 301 | QR code generator (ISO 18004) implemented from scratch, no external libs. |
+| `busca_de_jogos.py` | 62 | Search by name/App ID over the generated catalog. |
+| `modelos_de_jogo.py` | 68 | Static "Unreal Linux" template to pre-fill the catalog form. |
+| `sugestoes_de_jogos.py` | 1,811 | **Generated** by `tools/import-linuxgsm.py` - static data, do not edit by hand. |
 
-### 1.2 `broker/` — arquivo por arquivo
+### 1.2 `broker/` - file by file
 
-| Arquivo | Linhas | Responsabilidade |
+| File | Lines | Responsibility |
 |---|---|---|
-| `__init__.py` | 5 | Docstring do pacote. |
-| `api.py` | 113 | Camada HTTP pura (Flask): registra as 7 rotas `/v1/*`, autentica, traduz exceções de domínio em JSON. **Nenhuma regra de negócio aqui** (comentário explícito no código). |
-| `servico.py` | 252 | Orquestração/regra de negócio: criar/desativar/remover instância, cotas, reserva atômica de CTID/IP/porta, execução assíncrona em thread, desfazer em falha. Único módulo que conhece banco+catálogo+backends ao mesmo tempo. |
-| `backends.py` | 71 | Quatro `Protocol` (`Proxmox`, `Opnsense`, `Instalador`, `Rede`) — as interfaces que `servico.py` conhece. |
-| `proxmox.py` | 192 | Backend real do Proxmox (API REST). |
-| `opnsense.py` | 218 | Backend real do OPNsense (portas via alias/HTML, falha fechada). |
-| `ssh_install.py` | 253 | Implementação real de `Instalador`: `ssh`/`scp`, `install.env` sempre `shlex.quote`, remove a própria chave ao final. |
-| `rede.py` | 25 | Implementação real de `Rede` (ping). |
-| `fakes.py` | 101 | Os quatro backends falsos (testes e `dev.py`). |
-| `fake_http.py` | 259 | Servidores HTTP falsos que reproduzem regras reais do Proxmox/OPNsense descobertas em spike. |
-| `catalogo.py` | 546 | O maior arquivo do pacote. Parser de `.env` sem shell, catálogo curado + dinâmico, persistência JSON atômica. |
-| `alocador.py` | 120 | Funções puras: escolher CTID/IP, alocar portas. |
-| `conexao.py` | 144 | Cliente HTTP stdlib com TLS pinado por SHA-256 — usado por `proxmox.py` e `opnsense.py`. |
-| `banco.py` | 223 | Schema SQLite e toda a persistência — acessado **só** por `servico.py`. |
-| `config.py` | 207 | Lê/valida todas as env vars `BROKER_*`/`PROXMOX_*`/`OPNSENSE_*`, acumulando todos os erros antes de recusar subir. |
-| `erros.py` | 42 | Hierarquia de exceções HTTP-aware (`Recusa` → `ErroDeValidacao`, `NaoEncontrado`, `Conflito` → `SemRecurso`, `CotaExcedida`). |
-| `dev.py` | 57 | Entry point de dev (`python3 -m broker.dev`) — backends 100% falsos, Flask dev server. |
-| `prod.py` | 60 | Entry point de produção — factory WSGI para gunicorn, backends reais. |
+| `__init__.py` | 5 | Package docstring. |
+| `api.py` | 113 | Pure HTTP layer (Flask): registers the 7 `/v1/*` routes, authenticates, translates domain exceptions into JSON. **No business rule here** (explicit comment in the code). |
+| `servico.py` | 252 | Orchestration/business rules: create/deactivate/remove instance, quotas, atomic reservation of CTID/IP/port, asynchronous execution in a thread, undo on failure. The only module that knows database+catalog+backends at the same time. |
+| `backends.py` | 71 | Four `Protocol`s (`Proxmox`, `Opnsense`, `Instalador`, `Rede`) - the interfaces `servico.py` knows. |
+| `proxmox.py` | 192 | Real Proxmox backend (REST API). |
+| `opnsense.py` | 218 | Real OPNsense backend (ports via alias/HTML, fails closed). |
+| `ssh_install.py` | 253 | Real implementation of `Instalador`: `ssh`/`scp`, `install.env` always `shlex.quote`, removes its own key at the end. |
+| `rede.py` | 25 | Real implementation of `Rede` (ping). |
+| `fakes.py` | 101 | The four fake backends (tests and `dev.py`). |
+| `fake_http.py` | 259 | Fake HTTP servers that reproduce real Proxmox/OPNsense rules discovered in a spike. |
+| `catalogo.py` | 546 | The largest file in the package. Shell-free `.env` parser, curated + dynamic catalog, atomic JSON persistence. |
+| `alocador.py` | 120 | Pure functions: pick CTID/IP, allocate ports. |
+| `conexao.py` | 144 | Stdlib HTTP client with TLS pinned by SHA-256 - used by `proxmox.py` and `opnsense.py`. |
+| `banco.py` | 223 | SQLite schema and all persistence - accessed **only** by `servico.py`. |
+| `config.py` | 207 | Reads/validates every `BROKER_*`/`PROXMOX_*`/`OPNSENSE_*` env var, accumulating every error before refusing to start. |
+| `erros.py` | 42 | HTTP-aware exception hierarchy (`Recusa` -> `ErroDeValidacao`, `NaoEncontrado`, `Conflito` -> `SemRecurso`, `CotaExcedida`). |
+| `dev.py` | 57 | Dev entry point (`python3 -m broker.dev`) - 100% fake backends, Flask dev server. |
+| `prod.py` | 60 | Production entry point - WSGI factory for gunicorn, real backends. |
 
 ---
 
-## 2. Como os módulos se comunicam
+## 2. How the modules communicate
 
-### 2.1 `admin/` — grafo em estrela, sem ciclo
+### 2.1 `admin/` - star graph, no cycle
 
 ```
-app.py  →  broker_client.py, busca_de_jogos.py, gameconf.py, gamefields.py,
+app.py  ->  broker_client.py, busca_de_jogos.py, gameconf.py, gamefields.py,
            qr.py, totp.py, ui.py, modelos_de_jogo.py
-busca_de_jogos.py → sugestoes_de_jogos.py (dado gerado)
+busca_de_jogos.py -> sugestoes_de_jogos.py (generated data)
 ```
 
 `ui.py`, `gameconf.py`, `gamefields.py`, `totp.py`, `qr.py`, `modelos_de_jogo.py`
-são folhas puras — zero import entre si, zero import de `app.py`. Não há
-import circular. Isso é bom, mas é também **a única coisa boa a nível de
-import** — a ausência de ciclos não impede que 44 responsabilidades diferentes
-morem no mesmo arquivo (`app.py`).
+are pure leaves - zero imports among themselves, zero imports of `app.py`. There
+is no circular import. That is good, but it is also **the only good thing at the
+import level** - the absence of cycles does not prevent 44 different
+responsibilities from living in the same file (`app.py`).
 
-Este grafo em estrela é também o que sustenta o padrão de teste do projeto
-(`monkeypatch.setattr(panel, "funcao", ...)`, documentado no `CLAUDE.md`):
-qualquer refactor que mova uma função de `app.py` para um submódulo importado
-por referência de função (em vez de por nome do módulo) quebra esse padrão
-em silêncio. Isso é uma restrição real para a Fase 3/4, não só um detalhe.
+This star graph is also what supports the project's test pattern
+(`monkeypatch.setattr(panel, "funcao", ...)`, documented in `CLAUDE.md`):
+any refactor that moves a function from `app.py` into a submodule imported
+by function reference (instead of by module name) silently breaks that
+pattern. That is a real constraint for Phases 3/4, not just a detail.
 
-### 2.2 `broker/` — inversão de dependência de fato
+### 2.2 `broker/` - dependency inversion in practice
 
 ```
-erros.py, catalogo.py     — módulos de fundo, importados por quase tudo
-alocador.py                → catalogo.py, erros.py
-backends.py                → alocador.py, catalogo.py      (as 4 interfaces)
-banco.py                   → alocador.py, erros.py
-fakes.py                   → alocador.py, backends.py, catalogo.py
-proxmox.py, opnsense.py    → conexao.py (+ alocador.py no opnsense)
-ssh_install.py              → alocador.py, catalogo.py
-config.py                  → alocador.py, conexao.py, proxmox.py, ssh_install.py
-servico.py                  → alocador.py, backends.py, banco.py, catalogo.py, erros.py
-api.py                      → erros.py, servico.py
-dev.py                       → alocador.py, api.py, banco.py, catalogo.py, fakes.py, servico.py
-prod.py                      → api.py, backends.py, banco.py, catalogo.py, config.py,
+erros.py, catalogo.py     - base modules, imported by almost everything
+alocador.py                -> catalogo.py, erros.py
+backends.py                -> alocador.py, catalogo.py      (the 4 interfaces)
+banco.py                   -> alocador.py, erros.py
+fakes.py                   -> alocador.py, backends.py, catalogo.py
+proxmox.py, opnsense.py    -> conexao.py (+ alocador.py in opnsense)
+ssh_install.py              -> alocador.py, catalogo.py
+config.py                  -> alocador.py, conexao.py, proxmox.py, ssh_install.py
+servico.py                  -> alocador.py, backends.py, banco.py, catalogo.py, erros.py
+api.py                      -> erros.py, servico.py
+dev.py                       -> alocador.py, api.py, banco.py, catalogo.py, fakes.py, servico.py
+prod.py                      -> api.py, backends.py, banco.py, catalogo.py, config.py,
                                 conexao.py, opnsense.py, proxmox.py, rede.py,
                                 servico.py, ssh_install.py
 ```
 
-Ponto central: **`servico.py` (a regra de negócio) nunca importa `proxmox.py`,
-`opnsense.py`, `ssh_install.py`, `rede.py`, `config.py` nem `conexao.py`** — só
-as interfaces em `backends.py`. Quem liga a implementação concreta ao serviço
-são os entry points (`dev.py` com falsos, `prod.py` com reais). Isso já é o
-desenho de inversão de dependência que a Fase 2 vai pedir para `admin/` —
-`broker/` serve de referência de "como já fizemos isso aqui dentro".
+Key point: **`servico.py` (the business rules) never imports `proxmox.py`,
+`opnsense.py`, `ssh_install.py`, `rede.py`, `config.py` or `conexao.py`** - only
+the interfaces in `backends.py`. What wires the concrete implementation into the
+service are the entry points (`dev.py` with fakes, `prod.py` with real ones). This
+is already the dependency inversion design that Phase 2 will ask for `admin/` -
+`broker/` serves as the reference for "how we already did this in here".
 
-### 2.3 Acoplamento entre `admin/` e `broker/`
+### 2.3 Coupling between `admin/` and `broker/`
 
-**Confirmado por dois agentes independentes, por grep em todo o repo**: não
-existe nenhum `import broker` / `from broker import` em `admin/`. A única
-menção a "broker" em `app.py` é `import broker_client`, que é o módulo do
-**próprio painel** (`admin/broker_client.py`), não o pacote `broker/`. A
-comunicação é **só HTTP**, com TLS pinado por SHA-256 nos dois sentidos
-(`admin/broker_client.py` e `broker/conexao.py` implementam,
-independentemente, o mesmo padrão de pinagem — duplicação **intencional**:
-cada lado da fronteira de confiança tem seu próprio pino, não compartilham
-código de validação).
+**Confirmed by two independent agents, by grep across the whole repo**: there
+is no `import broker` / `from broker import` in `admin/`. The only mention of
+"broker" in `app.py` is `import broker_client`, which is the **panel's own**
+module (`admin/broker_client.py`), not the `broker/` package. Communication is
+**HTTP only**, with TLS pinned by SHA-256 in both directions
+(`admin/broker_client.py` and `broker/conexao.py` implement the same pinning
+pattern independently - **intentional** duplication: each side of the trust
+boundary has its own pin, they do not share validation code).
 
-Isso significa que, arquitetonicamente, **`broker/` já poderia ser hoje um
-serviço/processo totalmente separado do painel** (na prática, já é — mora em
-outro CT Proxmox em produção) — a questão da Fase 2 não é "separar", é "em
-que repositório/pacote ele deveria morar daqui pra frente" (ver a pergunta
-explícita da Fase 2 sobre isso, e a recomendação na próxima seção).
+This means that, architecturally, **`broker/` could already be today a service/
+process fully separate from the panel** (in practice it already is - it lives in
+another Proxmox CT in production) - the Phase 2 question is not "separate it", it
+is "which repository/package should it live in from now on" (see the explicit
+Phase 2 question about this, and the recommendation in the next section).
 
-### 2.4 Acoplamento problemático dentro de `admin/app.py`
+### 2.4 Problematic coupling inside `admin/app.py`
 
-Esta é a parte que mais importa para o plano de refactor:
+This is the part that matters most for the refactor plan:
 
-- **Rotas chamando SSH/subprocess direto, sem camada intermediária.**
-  Praticamente toda rota de arquivo/backup/config chama `ssh_run`/`ssh_output`
-  inline (`console()`, `files()`, `config_quick()` → `load_config_doc()` →
-  `read_file()`, `backup_create()`). Não há repositório/DAO nem service layer
-  — a view Flask **é** a camada de infraestrutura.
-- **Scripts bash como constantes de módulo, ao lado de rotas Flask no mesmo
+- **Routes calling SSH/subprocess directly, with no intermediate layer.**
+  Virtually every file/backup/config route calls `ssh_run`/`ssh_output`
+  inline (`console()`, `files()`, `config_quick()` -> `load_config_doc()` ->
+  `read_file()`, `backup_create()`). There is no repository/DAO or service layer
+  - the Flask view **is** the infrastructure layer.
+- **Bash scripts as module constants, next to Flask routes in the same
   namespace**: `HTTP_FETCH_SCRIPT`, `LOG_FOLLOW_SCRIPT`, `LISTEN_PORTS_SCRIPT`,
   `METRICS_SCRIPT`, `LIST_SCRIPT`/`READ_SCRIPT`/`WRITE_SCRIPT`/`DELETE_SCRIPT`,
   `BACKUP_SCRIPT`/`RESTORE_SCRIPT`/`BACKUP_DELETE_SCRIPT`, `UPLOAD_SCRIPT`,
-  `HTTP_PROBE_SCRIPT` — nove blocos de shell multi-linha (30–100 linhas cada)
-  misturados com funções Python. Não há separação "infra remota" vs "lógica
-  do painel".
-- **Funções de "negócio" que decidem HTTP diretamente**: `_liga_contagem_a2s`,
-  `_liga_contagem_http`, `_liga_contagem_log` fazem validação + `UPDATE` no
-  banco + retornam `redirect(...)` (erro) ou `None` (sucesso) — a rota só
-  repassa o retorno. Mistura camada HTTP com regra de negócio na mesma função.
-- **Sete mecanismos de cache/lock ad-hoc**, sem abstração comum:
+  `HTTP_PROBE_SCRIPT` - nine multi-line shell blocks (30-100 lines each)
+  mixed with Python functions. There is no separation of "remote infra" vs
+  "panel logic".
+- **"Business" functions that decide HTTP directly**: `_liga_contagem_a2s`,
+  `_liga_contagem_http`, `_liga_contagem_log` do validation + `UPDATE` in the
+  database + return `redirect(...)` (error) or `None` (success) - the route just
+  passes the return value through. Mixes the HTTP layer with business rules in
+  the same function.
+- **Seven ad-hoc cache/lock mechanisms**, with no common abstraction:
   `_players_cache`/`_metrics_cache`/`_status_cache`/`_estado_monitor`/
-  `_streams`/`_terms`/`_login_fails`, cada um com seu próprio lock.
-- **SQL cru espalhado por toda rota**, sem DAO — dezenas de
-  `conn.execute("UPDATE ...")`/`SELECT` inline dentro das próprias funções de
-  rota.
-- **Exceção que já mostra o caminho certo**: `_ritmo_do_monitor` /
-  `_alertas_do_servidor` (comentado no próprio `CLAUDE.md` como o exemplo de
-  "separar decidir de fazer", cognitive complexity 48→<10) é a prova de que o
-  padrão certo já foi aplicado uma vez neste arquivo — só que numa ilha; o
-  resto de `app.py` não segue.
+  `_streams`/`_terms`/`_login_fails`, each with its own lock.
+- **Raw SQL scattered across every route**, no DAO - dozens of inline
+  `conn.execute("UPDATE ...")`/`SELECT` inside the route functions themselves.
+- **The exception that already shows the right path**: `_ritmo_do_monitor` /
+  `_alertas_do_servidor` (cited in `CLAUDE.md` itself as the example of
+  "separate deciding from doing", cognitive complexity 48 -> <10) is proof that
+  the right pattern was already applied once in this file - only on an island;
+  the rest of `app.py` does not follow it.
 
-Isso confirma, com evidência concreta, a premissa da Fase 2 do pedido
-original: `admin/app.py` precisa de uma camada HTTP fina + `services/` com a
-regra de negócio + isolamento do runtime (SSH/subprocess) atrás de uma
-interface — exatamente os quatro princípios listados no pedido.
+This confirms, with concrete evidence, the premise of Phase 2 in the original
+request: `admin/app.py` needs a thin HTTP layer + `services/` with the business
+rules + isolation of the runtime (SSH/subprocess) behind an interface - exactly
+the four principles listed in the request.
 
 ---
 
-## 3. Pontos de entrada
+## 3. Entry points
 
-### 3.1 Painel (`admin/`)
+### 3.1 Panel (`admin/`)
 
-| Ambiente | Como sobe |
+| Environment | How it starts |
 |---|---|
-| **Dev** (`docker compose up`) | `docker/panel/Dockerfile` (Debian 13 + `python3-flask`, `gunicorn`, `python3-pytest`) → `entrypoint.sh` gera chave SSH, cria usuário admin, semeia dados demo, sobe `gunicorn --workers 1 --threads 16 --timeout 120 --reload app:app`. Código entra por bind mount (`admin/` é `:ro` no compose). |
-| **Produção via Proxmox LXC** | `deploy-admin.ps1 -Full` envia `provision-admin-lxc.sh` para o host Proxmox (scp+ssh). O script: cria/inicia o CT unprivileged, instala pacotes via apt (sem `python3-pytest`), cria usuário de sistema `gamepanel`, copia a árvore inteira (`pct push`, recursivo — não usa `tar` por ser menos determinístico), gera `/etc/gamepanel/panel.env` (**preservando** as linhas `GAMEPANEL_BROKER_*`/`GAMEPANEL_ALLOW_BROKER` de um deploy anterior do broker), gera a unit systemd (`gunicorn --workers 1 --threads 16 --timeout 120`, com `NoNewPrivileges`/`ProtectSystem=full`/`ProtectHome`) e inicia o serviço. |
-| **Produção via envio direto** (`deploy-admin.ps1`, sem `-Full`) | Se o CT já responde por SSH: copia só `*.py`+`templates/`+`static/` (recursivo), limpa o destino, `chown`, apaga `__pycache__`, `systemctl restart gamepanel.service`. Decide o CT/IP de destino por `-PanelHost` > `ADMIN_HOST` do `.env` > `ADMIN_IP_CIDR` — **`ADMIN_HOST` vence `ADMIN_IP_CIDR`**, os dois precisam mudar juntos ao trocar o painel de CT. |
+| **Dev** (`docker compose up`) | `docker/panel/Dockerfile` (Debian 13 + `python3-flask`, `gunicorn`, `python3-pytest`) -> `entrypoint.sh` generates an SSH key, creates the admin user, seeds demo data, starts `gunicorn --workers 1 --threads 16 --timeout 120 --reload app:app`. Code comes in via bind mount (`admin/` is `:ro` in the compose file). |
+| **Production via Proxmox LXC** | `deploy-admin.ps1 -Full` sends `provision-admin-lxc.sh` to the Proxmox host (scp+ssh). The script: creates/starts the unprivileged CT, installs packages via apt (without `python3-pytest`), creates the `gamepanel` system user, copies the whole tree (`pct push`, recursive - does not use `tar` because it is less deterministic), generates `/etc/gamepanel/panel.env` (**preserving** the `GAMEPANEL_BROKER_*`/`GAMEPANEL_ALLOW_BROKER` lines from a previous broker deploy), generates the systemd unit (`gunicorn --workers 1 --threads 16 --timeout 120`, with `NoNewPrivileges`/`ProtectSystem=full`/`ProtectHome`) and starts the service. |
+| **Production via direct push** (`deploy-admin.ps1`, without `-Full`) | If the CT already answers over SSH: copies only `*.py`+`templates/`+`static/` (recursive), cleans the destination, `chown`, deletes `__pycache__`, `systemctl restart gamepanel.service`. Picks the target CT/IP by `-PanelHost` > `ADMIN_HOST` from `.env` > `ADMIN_IP_CIDR` - **`ADMIN_HOST` beats `ADMIN_IP_CIDR`**, both need to change together when moving the panel to another CT. |
 
-O processo Python em si **nunca lê `ADMIN_*`** — só `GAMEPANEL_*` (ver seção
-1.2 do relatório do agente de `admin/`, confirmado por grep completo em
-`app.py`). A conversão `ADMIN_*` → `GAMEPANEL_*` acontece só dentro de
-`provision-admin-lxc.sh::render_panel_config`. Isso é importante para a Fase
-2: renomear uma `GAMEPANEL_*` é breaking change de runtime; renomear uma
-`ADMIN_*` é breaking change só de deploy-time.
+The Python process itself **never reads `ADMIN_*`** - only `GAMEPANEL_*` (see
+section 1.2 of the `admin/` agent's report, confirmed by a full grep of
+`app.py`). The `ADMIN_*` -> `GAMEPANEL_*` conversion happens only inside
+`provision-admin-lxc.sh::render_panel_config`. This matters for Phase 2:
+renaming a `GAMEPANEL_*` is a runtime breaking change; renaming an `ADMIN_*`
+is a deploy-time-only breaking change.
 
 ### 3.2 Broker (`broker/`)
 
-| Ambiente | Como sobe |
+| Environment | How it starts |
 |---|---|
-| **Dev** | `python3 -m broker.dev` — Flask dev server (`app.run`, `threaded=True`), backends 100% falsos, estado efêmero em `/tmp`. O próprio código marca isso com `# NOSONAR - so no compose de dev`. |
-| **Produção** | `deploy-broker.ps1` → `provision-broker-lxc.sh`, CT **dedicado**, fora do pool `games`, **sem `openssh-server`** (nada entra por SSH; só `pct push`). Gera certificado autoassinado (TOFU, impressão SHA-256), token persistente entre deploys, `/etc/gamebroker/broker.env`. Unit systemd mais endurecida que a do painel (`ProtectSystem=strict`+`ReadWritePaths`, `ProtectKernelTunables`, `ProtectControlGroups`, `RestrictSUIDSGID`). Entry point WSGI: `broker.prod:criar_app_de_ambiente()`, gunicorn com TLS embutido (`--certfile`/`--keyfile`, 1 worker — a trava de IP mora em memória). |
+| **Dev** | `python3 -m broker.dev` - Flask dev server (`app.run`, `threaded=True`), 100% fake backends, ephemeral state in `/tmp`. The code itself marks this with `# NOSONAR - so no compose de dev`. |
+| **Production** | `deploy-broker.ps1` -> `provision-broker-lxc.sh`, a **dedicated** CT, outside the `games` pool, **without `openssh-server`** (nothing enters over SSH; only `pct push`). Generates a self-signed certificate (TOFU, SHA-256 fingerprint), a token that persists across deploys, `/etc/gamebroker/broker.env`. A systemd unit more hardened than the panel's (`ProtectSystem=strict`+`ReadWritePaths`, `ProtectKernelTunables`, `ProtectControlGroups`, `RestrictSUIDSGID`). WSGI entry point: `broker.prod:criar_app_de_ambiente()`, gunicorn with built-in TLS (`--certfile`/`--keyfile`, 1 worker - the IP lockout lives in memory). |
 
-### 3.3 Jogo — dois runtimes de produção paralelos
+### 3.3 Game - two parallel production runtimes
 
-Isto é o achado mais relevante para o desenho da Fase 2:
+This is the most relevant finding for the Phase 2 design:
 
-1. **Proxmox LXC** (`deploy-game.ps1` → `provision-game-lxc.sh`, no host, via
-   `pct exec`) — caminho "principal", cria um CT de verdade por jogo.
-2. **Docker puro** (`deploy-docker.ps1` → `docker/gameserver/Dockerfile`) —
-   caminho **documentado e ativo** no README ("Deploy em Docker, sem
-   Proxmox"), para rodar em qualquer máquina com Docker (até PC pessoal, ou
-   `DOCKER_HOST` remoto). Implementa `systemctl`/`journalctl` próprios
-   (`docker/gameserver/systemctl.sh`, `supervisor.sh`) com a **mesma
-   interface** que o caminho Proxmox usa de verdade — ou seja, já existe hoje
-   uma camada de abstração de "como controlar o processo do jogo" com duas
-   implementações.
+1. **Proxmox LXC** (`deploy-game.ps1` -> `provision-game-lxc.sh`, on the host, via
+   `pct exec`) - the "main" path, creates a real CT per game.
+2. **Plain Docker** (`deploy-docker.ps1` -> `docker/gameserver/Dockerfile`) -
+   a path **documented and active** in the README ("Deploy on Docker, without
+   Proxmox"), to run on any machine with Docker (even a personal PC, or a remote
+   `DOCKER_HOST`). It implements its own `systemctl`/`journalctl`
+   (`docker/gameserver/systemctl.sh`, `supervisor.sh`) with the **same
+   interface** the Proxmox path really uses - that is, there already is today
+   an abstraction layer for "how to control the game process" with two
+   implementations.
 
-As duas compartilham as fases de instalação via `lib/ct-phases.sh` /
-`lib/ct-install.sh` (rodadas por `provision-game-lxc.sh` no host e por
-`ssh_install.py` do broker dentro do CT). TeamSpeak é o único jogo com
-provisionamento **totalmente à parte** (`provision-teamspeak-lxc.sh`, porque
-não vem da Steam) — deliberadamente não reaproveita `provision-game-lxc.sh`
-(comentário explícito no próprio arquivo), com ~150 linhas de boilerplate
-duplicado entre os dois (`msg`/`warn`/`die`, `ensure_container`,
-`push_file_to_ct`, etc.) — candidato natural a uma lib compartilhada de
-"boilerplate de CT" se a duplicação virar problema de manutenção, mas hoje é
-isolamento de risco deliberado, não descuido.
+Both share the installation phases via `lib/ct-phases.sh` /
+`lib/ct-install.sh` (run by `provision-game-lxc.sh` on the host and by the
+broker's `ssh_install.py` inside the CT). TeamSpeak is the only game with
+**fully separate** provisioning (`provision-teamspeak-lxc.sh`, because it does
+not come from Steam) - it deliberately does not reuse `provision-game-lxc.sh`
+(explicit comment in the file itself), with ~150 lines of duplicated
+boilerplate between the two (`msg`/`warn`/`die`, `ensure_container`,
+`push_file_to_ct`, etc.) - a natural candidate for a shared "CT boilerplate"
+lib if the duplication becomes a maintenance problem, but today it is
+deliberate risk isolation, not carelessness.
 
-**Não confunda `docker/game/` com `docker/gameserver/`** — são coisas
-diferentes apesar do nome parecido:
-- `docker/game/` = servidor de jogo **falso** (sshd + `systemctl`/`journalctl`
-  falsos + A2S falso + API REST falsa), usado só pelo `docker-compose.yml` de
-  dev.
-- `docker/gameserver/` = servidor de jogo **real** rodando em Docker puro
-  (SteamCMD de verdade, supervisor próprio), usado por `deploy-docker.ps1` em
-  produção.
+**Do not confuse `docker/game/` with `docker/gameserver/`** - they are different
+things despite the similar name:
+- `docker/game/` = **fake** game server (sshd + fake `systemctl`/`journalctl`
+  + fake A2S + fake REST API), used only by the dev `docker-compose.yml`.
+- `docker/gameserver/` = **real** game server running on plain Docker
+  (real SteamCMD, its own supervisor), used by `deploy-docker.ps1` in
+  production.
 
-Nenhum dos dois é código morto.
+Neither is dead code.
 
 ### 3.4 CI/CD
 
-Confirmado por três buscas independentes (minha e dois agentes): **não existe
-nenhum arquivo de CI no repositório** — nem `.gitlab-ci.yml`, nem
-`.github/workflows`, nem `Jenkinsfile`. O único `.yml` é `docker-compose.yml`.
-Isso significa que "adicionar ruff/mypy/Sonar ao pipeline do GitLab" (pedido
-na Fase 1) é **criar do zero**, não integrar com algo existente — vale
-confirmar com você se o alvo é GitLab CI mesmo (não há remoto GitLab
-configurado que eu tenha visto; só uso local de git) ou se é outro CI.
+Confirmed by three independent searches (mine and two agents): **there is no CI
+file in the repository** - no `.gitlab-ci.yml`, no `.github/workflows`, no
+`Jenkinsfile`. The only `.yml` is `docker-compose.yml`. This means that "add
+ruff/mypy/Sonar to the GitLab pipeline" (requested in Phase 1) is **creating it
+from scratch**, not integrating with something existing - worth confirming with
+the owner whether the target really is GitLab CI (there is no GitLab remote
+configured that I have seen; only local git use) or another CI.
 
 ---
 
-## 4. Estado dos testes
+## 4. State of the tests
 
-Rodei a suíte inteira (`\.venv\Scripts\python.exe -m pytest`, da raiz,
-conforme o `CLAUDE.md`): **todos os testes passam**, 2 pulados no Windows
-(marcados `@posix_apenas` em `test_players.py`, checam permissão POSIX
-`0700` do socket SSH — comportamento esperado e documentado, só vale no
-container Linux). Não rodei a suíte também dentro do container Docker nesta
-passada (evitar o tempo de build só para reconfirmar o que o `CLAUDE.md` já
-garante); vale rodar lá antes de qualquer merge real da Fase 3/4, como o
-próprio `CLAUDE.md` pede.
+I ran the whole suite (`\.venv\Scripts\python.exe -m pytest`, from the root,
+as per `CLAUDE.md`): **all tests pass**, 2 skipped on Windows
+(marked `@posix_apenas` in `test_players.py`, they check the POSIX `0700`
+permission of the SSH socket - expected and documented behavior, only valid in
+the Linux container). I did not also run the suite inside the Docker container
+in this pass (to avoid the build time just to reconfirm what `CLAUDE.md` already
+guarantees); it is worth running it there before any real merge of Phases 3/4, as
+`CLAUDE.md` itself asks.
 
-| Suíte | Testes | Cobre |
+| Suite | Tests | Covers |
 |---|---|---|
-| `admin/test_alerts.py` | 81 | Quando o painel decide avisar (queda/volta, loop de restart, jogo mudo, recurso, diário) |
-| `admin/test_players.py` | 49 | Contagem via API HTTP e descoberta de porta |
-| `admin/test_broker.py` | 57 | Integração do painel com o broker (jobs assíncronos, cadastro) |
-| `admin/test_users.py` | 31 | Papéis admin/operador |
-| `admin/test_2fa.py` | 36 | Fluxo de login com TOTP |
-| `admin/test_broker_client.py` | 21 | O que trafega/nunca vaza no cliente HTTP do broker |
-| `admin/test_qr.py` | 21 | Propriedades matemáticas do QR (Reed-Solomon) |
-| `admin/test_charts.py` | 20 | Amostras/retenção/matemática do SVG |
-| `admin/test_schedules.py` | 18 | Agendamento e histórico |
-| `admin/test_config_format.py` | 15 | Parser/gravador de config |
-| `admin/test_totp.py` | 15 | TOTP isolado |
-| `admin/test_search.py` | 12 | Busca de jogo |
-| `admin/test_gamefields.py` | 11 | Catálogo de campos |
-| `admin/test_ui.py` | 8 | Mapa de navegação |
-| `broker/test_*.py` (12 arquivos) | ~415 | Alocação, config, catálogo, conexão, integração, Proxmox/OPNsense reais contra HTTP falso, importação do LinuxGSM, instalador SSH, modelos, porta extra, serviço, sugestões |
+| `admin/test_alerts.py` | 81 | When the panel decides to alert (down/up, restart loop, silent game, resource, daily) |
+| `admin/test_players.py` | 49 | Counting via HTTP API and port discovery |
+| `admin/test_broker.py` | 57 | Panel integration with the broker (async jobs, registration) |
+| `admin/test_users.py` | 31 | Admin/operator roles |
+| `admin/test_2fa.py` | 36 | Login flow with TOTP |
+| `admin/test_broker_client.py` | 21 | What goes over / never leaks in the broker HTTP client |
+| `admin/test_qr.py` | 21 | Mathematical properties of the QR (Reed-Solomon) |
+| `admin/test_charts.py` | 20 | Samples/retention/SVG math |
+| `admin/test_schedules.py` | 18 | Scheduling and history |
+| `admin/test_config_format.py` | 15 | Config parser/writer |
+| `admin/test_totp.py` | 15 | TOTP in isolation |
+| `admin/test_search.py` | 12 | Game search |
+| `admin/test_gamefields.py` | 11 | Field catalog |
+| `admin/test_ui.py` | 8 | Navigation map |
+| `broker/test_*.py` (12 files) | ~415 | Allocation, config, catalog, connection, integration, real Proxmox/OPNsense against fake HTTP, LinuxGSM import, SSH installer, templates, extra port, service, suggestions |
 
-### 4.1 Lacunas de cobertura identificadas
+### 4.1 Coverage gaps identified
 
-Inferido pelos nomes/escopo dos testes (não confirmado linha a linha) — **não
-há suíte dedicada a**:
-- Editor de arquivos (`files`, `files/save|delete|upload|download`)
+Inferred from test names/scope (not confirmed line by line) - **there is no
+dedicated suite for**:
+- File editor (`files`, `files/save|delete|upload|download`)
 - Backups (`backups/criar|restaurar|remover|baixar`)
-- Console de comando único (`console`)
-- Terminal PTY interativo (`terminal`, `api_term_*`)
+- Single-command console (`console`)
+- Interactive PTY terminal (`terminal`, `api_term_*`)
 
-Essas são justamente as rotas mais privilegiadas (escrita/remoção arbitrária
-de arquivo no container, shell interativo como root) e são exatamente onde a
-Fase 4 pede para escrever teste de comportamento **antes** de refatorar — este
-é o primeiro lugar onde essa regra vai se aplicar na prática.
+These are precisely the most privileged routes (arbitrary file write/removal in
+the container, interactive shell as root) and are exactly where Phase 4 asks to
+write behavior tests **before** refactoring - this is the first place where that
+rule will apply in practice.
 
-Também não há teste isolado da máquina de estados de contagem **por log**
-(`_events_by_name`/`_by_count`/`_meio_nome`, `_LogStream`) nem suíte dedicada
-ao CRUD de servidor (`server_new`/`server_edit`/`server_delete`,
-`_form_server`) — possivelmente cobertos de forma indireta por
-`test_alerts.py`, mas sem teste direto.
+There is also no isolated test of the **log-based** counting state machine
+(`_events_by_name`/`_by_count`/`_meio_nome`, `_LogStream`) nor a dedicated suite
+for server CRUD (`server_new`/`server_edit`/`server_delete`,
+`_form_server`) - possibly covered indirectly by `test_alerts.py`, but with no
+direct test.
 
 ---
 
-## 5. Código morto, duplicado ou abandonado
+## 5. Dead, duplicated or abandoned code
 
-**Nada que eu classificaria como "abandonado"** — o achado mais parecido com
-isso (`docker/gameserver/` vs `docker/game/`) na verdade **não é** duplicação
-morta; são dois runtimes ativos e documentados (ver seção 3.3). Da mesma
-forma, `check-broker-access.ps1` e `spike-broker-write.ps1` parecem à
-primeira vista "scripts soltos", mas são **ferramentas manuais de diagnóstico
-intencionais**, referenciadas no texto de erro do `provision-broker-lxc.sh` e
-não chamadas pelo deploy automatizado — não são código morto, são scripts de
-operação.
+**Nothing I would classify as "abandoned"** - the finding closest to that
+(`docker/gameserver/` vs `docker/game/`) actually **is not** dead duplication;
+they are two active, documented runtimes (see section 3.3). Likewise,
+`check-broker-access.ps1` and `spike-broker-write.ps1` look at first glance like
+"loose scripts", but they are **intentional manual diagnostic tools**, referenced
+in the error text of `provision-broker-lxc.sh` and not called by the automated
+deploy - they are not dead code, they are operations scripts.
 
-Achados reais de duplicação/pontos de atenção:
+Real duplication findings/points of attention:
 
-- **`admin/app.py`, padrão "rodar script remoto e converter erro" repetido 7
-  vezes** quase idêntico, nunca extraído em helper comum: `list_dir`,
+- **`admin/app.py`, the "run remote script and convert the error" pattern repeated 7
+  times** almost identically, never extracted into a common helper: `list_dir`,
   `stat_file`, `read_file`, `find_config_files`, `write_file`, `delete_file`,
   `list_backups`.
-- **`admin/app.py`, três funções de fan-out por thread quase idênticas**:
-  `all_status`, `all_metrics`, `all_players` implementam o mesmo padrão
-  (spawn por servidor + `join(timeout=...)` + `setdefault` de erro), sem
-  reaproveitar `em_paralelo` nem uma à outra.
-- ~~**Rota vestigial documentada como tal**: `files_search`~~ — **removida.** Nada no
-  painel apontava para ela (só o `_ACTIVE_EXTRA` do `navigation.py`, que a citava sem
-  nunca acender por ela), e o painel não é público — a mesma razão pela qual o grupo C de
-  breaking change foi corte limpo. O argumento decisivo, porém, é que ela estava
-  **quebrada**: mandava `pasta=` para uma rota que passou a ler `folder`, então quem
-  tivesse o link antigo perdia a pasta escolhida em silêncio. Um redirect que perde o
-  argumento é pior que 404.
-- **Duplicação intencional de pinagem TLS** entre `admin/broker_client.py` e
-  `broker/conexao.py` — não é redundância acidental (cada lado da fronteira de
-  confiança tem seu próprio pino), mas vale registrar como candidato a NÃO
-  unificar na Fase 2, justamente por ser isolamento de segurança deliberado.
-- **~150 linhas de boilerplate de CT duplicadas** entre
-  `provision-game-lxc.sh` e `provision-teamspeak-lxc.sh` (também presente com
-  variações em `lib/ct-phases.sh`) — deliberado (isolamento de risco), mas é o
-  maior bloco de duplicação real do repositório.
-- **Nenhum `TODO`/`FIXME`/`XXX`/`HACK`** encontrado em `admin/*.py` nem em
-  `broker/*.py` (grep vazio nos dois). Nenhum bloco de código comentado
-  identificado na leitura completa de `admin/`.
+- **`admin/app.py`, three nearly identical thread fan-out functions**:
+  `all_status`, `all_metrics`, `all_players` implement the same pattern
+  (spawn per server + `join(timeout=...)` + `setdefault` of an error), without
+  reusing `em_paralelo` or each other.
+- ~~**Vestigial route documented as such**: `files_search`~~ - **removed.** Nothing in
+  the panel pointed to it (only `_ACTIVE_EXTRA` in `navigation.py`, which cited it without
+  ever lighting up because of it), and the panel is not public - the same reason why
+  breaking-change group C was a clean cut. The decisive argument, however, is that it was
+  **broken**: it sent `pasta=` to a route that started reading `folder`, so whoever
+  had the old link silently lost the chosen folder. A redirect that loses the
+  argument is worse than a 404.
+- **Intentional duplication of TLS pinning** between `admin/broker_client.py` and
+  `broker/conexao.py` - not accidental redundancy (each side of the trust boundary
+  has its own pin), but worth recording as a candidate NOT to unify in Phase 2,
+  precisely because it is deliberate security isolation.
+- **~150 lines of CT boilerplate duplicated** between
+  `provision-game-lxc.sh` and `provision-teamspeak-lxc.sh` (also present with
+  variations in `lib/ct-phases.sh`) - deliberate (risk isolation), but it is the
+  largest real duplication block in the repository.
+- **No `TODO`/`FIXME`/`XXX`/`HACK`** found in `admin/*.py` or in
+  `broker/*.py` (empty grep in both). No commented-out code block identified in
+  the full read of `admin/`.
 
 ---
 
-## 6. Levantamento de qualidade
+## 6. Quality survey
 
-Não havia `ruff`, `mypy` nem Sonar instalados/configurados neste repositório.
-Instalei os dois primeiros **só no `.venv` de desenvolvimento** (ferramenta
-local, não dependência do painel — mesmo espírito do `requirements-dev.txt`
-existente) e rodei contra `admin/` e `broker/`, sem criar nenhum arquivo de
-config (rule set default de cada ferramenta). Nenhum arquivo do projeto foi
-alterado.
+There was no `ruff`, `mypy` or Sonar installed/configured in this repository.
+I installed the first two **only in the development `.venv`** (a local tool, not
+a panel dependency - same spirit as the existing `requirements-dev.txt`) and ran
+them against `admin/` and `broker/`, without creating any config file (each tool's
+default rule set). No project file was changed.
 
-### 6.1 `ruff check admin broker` (regras default, sem config)
+### 6.1 `ruff check admin broker` (default rules, no config)
 
-**329 ocorrências, mas 267 delas (81%) são um único falso positivo em um
-único arquivo GERADO**: `admin/sugestoes_de_jogos.py` — `ISC004`
-("implicit string concatenation"), disparado pelas listas de avisos em
-múltiplas linhas do catálogo importado do LinuxGSM. Esse arquivo é gerado por
-`tools/import-linuxgsm.py` e o próprio `CLAUDE.md` já diz "não edite" —
-qualquer config de lint real precisa excluí-lo (ou excluir o gerador de rodar
-lint nele).
+**329 occurrences, but 267 of them (81%) are a single false positive in a single
+GENERATED file**: `admin/sugestoes_de_jogos.py` - `ISC004`
+("implicit string concatenation"), triggered by the multi-line warning lists of
+the catalog imported from LinuxGSM. That file is generated by
+`tools/import-linuxgsm.py` and `CLAUDE.md` itself already says "do not edit" -
+any real lint config needs to exclude it (or keep the generator from running
+lint on it).
 
-**Excluindo esse arquivo, sobram ~62 ocorrências em todo o resto do
-repositório** (~23 mil linhas), concentradas em poucos arquivos:
+**Excluding that file, ~62 occurrences remain in the whole rest of the
+repository** (~23 thousand lines), concentrated in a few files:
 
-| Arquivo | Ocorrências |
+| File | Occurrences |
 |---|---|
 | `admin/app.py` | 12 |
 | `admin/gamefields.py` | 6 |
 | `admin/conftest.py` | 5 |
 | `admin/test_2fa.py` | 4 |
 | `admin/qr.py` | 4 |
-| `broker/test_proxmox.py`, `broker/test_opnsense.py` | 2 cada |
+| `broker/test_proxmox.py`, `broker/test_opnsense.py` | 2 each |
 | `broker/ssh_install.py` | 2 |
-| demais | 1 cada |
+| others | 1 each |
 
-Regras mais relevantes (fora o ruído do arquivo gerado): `I001`
-(imports não ordenados, 27×, mecânico), `FURB167` (alias de flag de regex,
-10× — pode tocar o caso `\w`/`re.ASCII` que o próprio `CLAUDE.md` já discute),
-`RUF100` (**9 `# noqa: BLE001` sem efeito** — o projeto usa esse padrão de
-supressão em vários `except Exception` "que não deve derrubar o job", mas o
-rule set default do `ruff` não tem `BLE001` habilitado; **uma config real de
-ruff precisa habilitar o rule set que o `CLAUDE.md` já assume**, senão esses
-comentários viram lixo silencioso), `S110` (1× `try/except/pass`),
-`PLW1510`/`PLW1509` (subprocess sem `check=`, `Popen` com `preexec_fn` — vale
-olhar de perto, é exatamente a categoria "uso inseguro de subprocess" citada
-no pedido original).
+Most relevant rules (outside the generated-file noise): `I001`
+(unsorted imports, 27x, mechanical), `FURB167` (regex flag alias,
+10x - may touch the `\w`/`re.ASCII` case `CLAUDE.md` already discusses),
+`RUF100` (**9 `# noqa: BLE001` with no effect** - the project uses this
+suppression pattern in several `except Exception` blocks "that must not bring down
+the job", but the default `ruff` rule set does not enable `BLE001`; **a real ruff
+config needs to enable the rule set `CLAUDE.md` already assumes**, otherwise those
+comments become silent garbage), `S110` (1x `try/except/pass`),
+`PLW1510`/`PLW1509` (subprocess without `check=`, `Popen` with `preexec_fn` - worth
+a close look, it is exactly the "insecure subprocess use" category cited in the
+original request).
 
-### 6.2 `mypy admin broker` (sem tipos ainda, `--ignore-missing-imports`)
+### 6.2 `mypy admin broker` (no types yet, `--ignore-missing-imports`)
 
-Rodei duas vezes: sem flag de plataforma (`53` linhas de saída) e com
-`--platform linux` (`31` linhas). A diferença confirma um **falso positivo já
-conhecido no próprio `pyrightconfig.json`**: sem indicar Linux, o mypy analisa
-`app.py` contra a stdlib do Windows e acusa `fcntl.ioctl`, `os.setsid`,
-`pty.openpty`, `signal.SIGHUP`, `os.killpg`/`getpgid` como inexistentes — é
-exatamente o bloco que `app.py` já protege com `try/except ImportError` para
-funcionar fora do Linux. **Qualquer config real de mypy neste projeto precisa
-fixar `platform = "linux"`**, senão o CI vai reportar ~20 erros que não são
-erros.
+I ran it twice: without a platform flag (`53` lines of output) and with
+`--platform linux` (`31` lines). The difference confirms a **false positive already
+known in `pyrightconfig.json` itself**: without stating Linux, mypy analyzes
+`app.py` against the Windows stdlib and reports `fcntl.ioctl`, `os.setsid`,
+`pty.openpty`, `signal.SIGHUP`, `os.killpg`/`getpgid` as nonexistent - which is
+exactly the block `app.py` already guards with `try/except ImportError` to work
+outside Linux. **Any real mypy config in this project needs to pin
+`platform = "linux"`**, otherwise CI will report ~20 errors that are not
+errors.
 
-Com `--platform linux`, os **~31 erros restantes** (sem tipos declarados em
-lugar nenhum ainda) se agrupam em:
+With `--platform linux`, the **~31 remaining errors** (no types declared
+anywhere yet) group into:
 
-- `attr-defined`/`arg-type`/`union-attr` (a maioria): principalmente onde uma
-  função retorna `Any`/`object` implícito e o chamador usa como se fosse
-  `str` (`busca_de_jogos.py:43-44`) ou onde um `sqlite3.Row | None` é indexado
-  sem checar `None` antes (`app.py:709`).
-- **`broker/config.py:184,207` — `**dict` passado para construir
-  `ConfigProxmox`/`ConfigBroker`**: o padrão de "montar um objeto a partir de
-  um dict genérico" (o mesmo padrão que o `CLAUDE.md` recomenda para evitar
-  15 parâmetros posicionais) perde tipo nessa borda. Isso é um sinal concreto
-  para a Fase 4: ao tipar esse código, vale considerar `TypedDict` ou
-  validação explícita campo a campo em vez de `**dict[str, object]`.
-  Mesmo padrão em `broker/prod.py:47`.
-- `test_suggestions.py`/`test_templates.py`/`test_import_linuxgsm.py` — erros
-  em torno de `importlib.util.module_from_spec(...)` sem checar `None`; é um
-  idiom comum de teste (import dinâmico de módulo por path) e provavelmente
-  fica melhor com um `# type: ignore` pontual do que reescrito.
-- 13 ocorrências de `annotation-unchecked` (nota informativa, não erro — corpo
-  de função sem tipo não é checado por padrão; some assim que a Fase 4 tipar
-  as assinaturas).
+- `attr-defined`/`arg-type`/`union-attr` (the majority): mainly where a
+  function returns implicit `Any`/`object` and the caller uses it as if it were
+  `str` (`busca_de_jogos.py:43-44`) or where a `sqlite3.Row | None` is indexed
+  without checking `None` first (`app.py:709`).
+- **`broker/config.py:184,207` - `**dict` passed to build
+  `ConfigProxmox`/`ConfigBroker`**: the "build an object from a generic dict"
+  pattern (the same pattern `CLAUDE.md` recommends to avoid 15 positional
+  parameters) loses type at that edge. This is a concrete signal for Phase 4:
+  when typing this code, consider `TypedDict` or explicit field-by-field
+  validation instead of `**dict[str, object]`.
+  Same pattern in `broker/prod.py:47`.
+- `test_suggestions.py`/`test_templates.py`/`test_import_linuxgsm.py` - errors
+  around `importlib.util.module_from_spec(...)` without checking `None`; it is a
+  common test idiom (dynamic module import by path) and probably better served by
+  a targeted `# type: ignore` than rewritten.
+- 13 occurrences of `annotation-unchecked` (informational note, not an error -
+  the body of an untyped function is not checked by default; it goes away as
+  soon as Phase 4 types the signatures).
 
-**Conclusão prática**: o código já é "type-safe na prática" mesmo sem
-anotação nenhuma — poucas dezenas de problemas reais em 23 mil linhas é uma
-base muito mais fácil de tipar do que a média. A maior parte do trabalho da
-Fase 4 aqui vai ser *escrever* as anotações, não *corrigir comportamento*.
+**Practical conclusion**: the code is already "type-safe in practice" even
+without any annotation - a few dozen real problems in 23 thousand lines is a
+base much easier to type than average. Most of the Phase 4 work here will be
+*writing* the annotations, not *fixing behavior*.
 
 ### 6.3 Sonar
 
-Não há `sonar-project.properties` nem config de Sonar em lugar nenhum do
-repositório, e não há CI para rodar um `sonar-scanner` contra. Não tentei
-rodar um scanner local sem saber que servidor Sonar (SonarCloud/SonarQube
-self-hosted) o projeto deveria usar — isso é uma decisão sua para a Fase 2
-(qual servidor, qual `sonar-project.properties`, quais quality gates).
+There is no `sonar-project.properties` or Sonar config anywhere in the
+repository, and no CI to run a `sonar-scanner` against. I did not try to run a
+local scanner without knowing which Sonar server (SonarCloud/self-hosted
+SonarQube) the project should use - that is the owner's decision for Phase 2
+(which server, which `sonar-project.properties`, which quality gates).
 
 ---
 
-## 7. Levantamento de idioma
+## 7. Language survey
 
-### 7.1 O tamanho real do problema
+### 7.1 The real size of the problem
 
-Nomenclatura em português **não é exceção, é a convenção predominante** deste
-projeto — em código, comentários (intencionalmente, por `CLAUDE.md`), rotas
-HTTP, duas tabelas inteiras do banco do painel, praticamente todo `broker/`
-(módulos, classes, funções), e a maioria dos parâmetros dos scripts `.ps1`.
-Traduzir para inglês, seguindo o padrão pedido, é um trabalho do tamanho de
-uma reescrita parcial guiada por testes — não um `rename` mecânico. Abaixo, a
-lista separada por "custo de mudar".
+Portuguese naming **is not the exception, it is the predominant convention** of
+this project - in code, comments (intentionally, per `CLAUDE.md`), HTTP routes,
+two whole tables of the panel database, virtually all of `broker/` (modules,
+classes, functions), and most of the `.ps1` script parameters. Translating to
+English, following the requested standard, is work the size of a test-guided
+partial rewrite - not a mechanical `rename`. Below, the list split by "cost of
+changing".
 
-### 7.2 Internos (sem contrato externo — renomear é seguro para fora, mas
-quebra testes que usam `monkeypatch.setattr(panel, "nome", ...)` por string)
+### 7.2 Internal (no external contract - renaming is safe from the outside, but
+breaks tests that use `monkeypatch.setattr(panel, "nome", ...)` by string)
 
-**`admin/app.py`** — a maior parte da lógica de domínio: `em_paralelo`,
+**`admin/app.py`** - most of the domain logic: `em_paralelo`,
 `players_from_http`/`_log`, `server_players`, `all_players`/`_metrics`/
 `_status`, `candidate_ports`, `probe_ports`/`_http_ports`, `notifica`,
 `envia_webhook`, `mascara_url`, `webhooks_lista`, `webhook_config`,
@@ -495,7 +495,7 @@ quebra testes que usam `monkeypatch.setattr(panel, "nome", ...)` por string)
 `_confere_segundo_fator`, `valida_senha`, `conta_admins`,
 `_liga_contagem_a2s`/`_http`/`_log`, `_form_server`, `_form_agendamento`,
 `_campos_http`, `_caminhos_json`, `_caminho_log`, `_jogo_do_form`, `_ator`,
-`job_ou_403`, `filtro_de_papel`, `jobs_do_servidor`. Tabelas de módulo:
+`job_ou_403`, `filtro_de_papel`, `jobs_do_servidor`. Module tables:
 `COMANDOS`, `FONTES_DE_CONTAGEM`, `ALERTAS_DE_RECURSO`, `MARCA_BASE`/
 `_JOGADOR`/`_MENSAGEM`, `ROLE_LABELS`, `DIAS_SEMANA`. Classes: `_LogStream`,
 `_Ritmo`, `DeployServer`.
@@ -515,7 +515,7 @@ quebra testes que usam `monkeypatch.setattr(panel, "nome", ...)` por string)
 `PROJETO`, `novo_segredo`, `codigo`, `passo_de`, `verificar`, `agrupar`,
 `novos_codigos`, `hash_do_codigo`, `consumir`.
 
-**`broker/` inteiro** (a esmagadora maioria do pacote): módulos
+**All of `broker/`** (the vast majority of the package): modules
 `alocador.py`, `servico.py`, `catalogo.py`, `conexao.py`, `rede.py`,
 `erros.py`, `fakes.py`, `fake_http.py`; classes `Servico`, `Catalogo`,
 `Jogo`, `Porta`, `PortaAlocada`, `EspecificacaoDeCt`, `ConfigBroker`,
@@ -523,122 +523,122 @@ quebra testes que usam `monkeypatch.setattr(panel, "nome", ...)` por string)
 `ProxmoxFalso`, `OpnsenseFalso`, `InstaladorFalso`/`Ssh`/`Lento`,
 `ErroDeConexao`/`DoOpnsense`/`DeLeitura`/`DoProxmox`/`DeInstalacao`/
 `DeConfig`/`DeValidacao`, `NaoEncontrado`, `Conflito`, `SemRecurso`,
-`CotaExcedida`, `Recusa`; funções `escolher_ctid`/`_ip`/`_ip_e_ctid`,
+`CotaExcedida`, `Recusa`; functions `escolher_ctid`/`_ip`/`_ip_e_ctid`,
 `alocar_portas`, `montar_env`, `montar_servico`, `carregar`,
 `carregar_curado`, `jogo_de_env`, `ler_env`, `validar_dinamico`,
 `pertence_ao_broker`, `reservar`, `mudar_estado`.
 
-### 7.3 Expostos externamente — mudar exige migration/breaking change
+### 7.3 Externally exposed - changing requires a migration/breaking change
 
-Esta é a lista que precisa da sua decisão explícita, item a item, na Fase 2.
+This is the list that needs the owner's explicit decision, item by item, in Phase 2.
 
-**Rotas HTTP do painel** (path — metade português, metade inglês, já
-inconsistente hoje): `/historico`, `/alertas` (+`/destinos`, `/testar`),
+**Panel HTTP routes** (path - half Portuguese, half English, already
+inconsistent today): `/historico`, `/alertas` (+`/destinos`, `/testar`),
 `/usuarios` (+`/papel`, `/senha`), `/agendamentos` (+`/alternar`, `/remover`,
 `/rodar`), `/catalogo` (+`/novo`), `/instancias` (+`/nova`, `/desativar`,
 `/remover`), `/servers/<id>/graficos`, `/servers/<id>/players/descobrir`
 (+`/usar`, `/acao`), `/servers/<id>/backups` (+`/criar`, `/restaurar`,
 `/remover`, `/baixar`).
 
-**Rotas HTTP do broker** (todo o namespace `/v1/*` é português):
+**Broker HTTP routes** (the whole `/v1/*` namespace is Portuguese):
 `/v1/saude`, `/v1/catalogo`, `/v1/instancias`, `/v1/instancias/<id>/desativar`,
 `/v1/operacoes/<id>`.
 
-**Chaves de JSON do contrato do broker** (payload/resposta, consumidas por
+**JSON keys of the broker contract** (payload/response, consumed by
 `admin/broker_client.py`): `jogo`, `nome`, `operacao_id`, `instancia_id`,
-`confirma`, `somente_banco`, `removida`; em `Jogo.publico()`: `chave`,
+`confirma`, `somente_banco`, `removida`; in `Jogo.publico()`: `chave`,
 `app_id`, `porta_jogo`/`_query`/`_extra`, `memoria_mb`, `cores`, `disco_gb`,
-`receitas`, `deslocavel`, `origem`, `criavel`, `motivo`; em `/v1/saude`:
-`broker`, `proxmox`, `opnsense`, `catalogo_erros`. **Códigos de erro** (parte
-do contrato JSON, `erros.py`): `pedido-invalido`, `validacao`,
+`receitas`, `deslocavel`, `origem`, `criavel`, `motivo`; in `/v1/saude`:
+`broker`, `proxmox`, `opnsense`, `catalogo_erros`. **Error codes** (part of the
+JSON contract, `erros.py`): `pedido-invalido`, `validacao`,
 `nao-encontrado`, `conflito`, `sem-recurso`, `cota`, `nao-autenticado`,
 `origem`, `interno`, `http`. Header `X-Ator`.
 
-**Colunas de banco**:
-- Painel — tabela `webhooks` inteira (`nome`, `url`, `eventos`, `ativo`,
-  `criado_em`) e `alert_log` inteira (`criado_em`, `evento`, `titulo`,
-  `detalhe`, `destino`, `status`, `erro`). As demais tabelas (`servers`,
-  `users`, `jobs`, `schedules`, `samples`) já são majoritariamente inglês.
-- Broker — schema inteiro é português: `ctid`, `ip`, `jogo`, `nome`,
+**Database columns**:
+- Panel - the whole `webhooks` table (`nome`, `url`, `eventos`, `ativo`,
+  `criado_em`) and the whole `alert_log` (`criado_em`, `evento`, `titulo`,
+  `detalhe`, `destino`, `status`, `erro`). The other tables (`servers`,
+  `users`, `jobs`, `schedules`, `samples`) are already mostly English.
+- Broker - the whole schema is Portuguese: `ctid`, `ip`, `jogo`, `nome`,
   `hostname`, `estado`, `criado_por`, `criado_em`, `detalhe`, `base`,
   `numero`, `proto`, `papel`, `tipo`, `log`, `resultado`, `iniciada_em`,
-  `terminada_em`, `quando`, `ator`, `verbo`, `alvo`, e os valores de estado
+  `terminada_em`, `quando`, `ator`, `verbo`, `alvo`, and the state values
   `reservada`/`ativa`/`desativada`/`falhou`/`executando`/`ok`/`erro`.
 
-**Variáveis de ambiente**: a única com palavra em português confirmada é
-`BROKER_MAX_CRIACOES_HORA` (`.env.example`, `broker/config.py:199`) — o resto
-do namespace `BROKER_*`/`GAMEPANEL_*`/`ADMIN_*` já é inglês, com prefixos
-mistos só nos sufixos (`BROKER_IP_INICIO`/`_FIM`, `BROKER_PREFIXO_REDE`).
-Também vale registrar: **`GAMEPANEL_*` (a config real de runtime do painel)
-já é 100% inglês** — são ~55 chaves, nenhuma em português — o que restringe
-bastante o escopo de breaking change de env var no lado do painel.
+**Environment variables**: the only one with a confirmed Portuguese word is
+`BROKER_MAX_CRIACOES_HORA` (`.env.example`, `broker/config.py:199`) - the rest
+of the `BROKER_*`/`GAMEPANEL_*`/`ADMIN_*` namespace is already English, with mixed
+naming only in suffixes (`BROKER_IP_INICIO`/`_FIM`, `BROKER_PREFIXO_REDE`).
+Also worth recording: **`GAMEPANEL_*` (the panel's real runtime config)
+is already 100% English** - about 55 keys, none in Portuguese - which narrows
+the scope of env var breaking changes on the panel side considerably.
 
-**Filtros Jinja registrados** (usados em todo template — quebrar sem
-atualizar os templates quebra a tela inteira): `"nivel"`, `"duracao"`,
+**Registered Jinja filters** (used in every template - breaking them without
+updating the templates breaks the whole screen): `"nivel"`, `"duracao"`,
 `"tamanho"`, `"ident"`.
 
-**Endpoints Flask usados em `url_for()`**: mistura inconsistente já hoje —
-os *paths* tendem a português mas os *nomes de endpoint* tendem a inglês
-(`alerts`, `schedules`, `catalog`, `instances_list`, `instance_new` — nomes em
-inglês para rotas de path em português). Renomear função de rota sem
-atualizar todo `url_for()` correspondente quebra a navegação.
+**Flask endpoints used in `url_for()`**: already an inconsistent mix today -
+the *paths* lean Portuguese but the *endpoint names* lean English
+(`alerts`, `schedules`, `catalog`, `instances_list`, `instance_new` - English
+names for Portuguese-path routes). Renaming a route function without updating
+every matching `url_for()` breaks navigation.
 
-**Nomes de template que são caminho de arquivo**: `catalogo.html`,
-`instancias.html` (português) vs `alerts.html`, `schedules.html`,
-`users.html`, `history.html` (inglês) — já inconsistente com o nome da rota
-correspondente hoje.
+**Template names that are file paths**: `catalogo.html`,
+`instancias.html` (Portuguese) vs `alerts.html`, `schedules.html`,
+`users.html`, `history.html` (English) - already inconsistent with the
+corresponding route name today.
 
-**Nomes de arquivo/módulo**: `admin/busca_de_jogos.py`,
+**File/module names**: `admin/busca_de_jogos.py`,
 `admin/modelos_de_jogo.py`, `admin/sugestoes_de_jogos.py`,
 `tools/import-linuxgsm.py`, `tools/verify-qr.py`,
 `check-broker-access.ps1`, `spike-broker-write.ps1`,
-`broker.secrets.env`, `docker/ct-sandbox/compare.sh`, e praticamente todo
-módulo de `broker/` (seção 7.2). Renomear arquivo referenciado por scripts de
-deploy (`provision-*.sh` copiam por nome, `NAO_ENVIAR` filtra por regex de
-nome) exige atualizar os dois lados.
+`broker.secrets.env`, `docker/ct-sandbox/compare.sh`, and virtually every
+module in `broker/` (section 7.2). Renaming a file referenced by deploy scripts
+(`provision-*.sh` copy by name, `NAO_ENVIAR` filters by name regex) requires
+updating both sides.
 
-**Boa notícia**: as chaves de JSON das rotas `/api/*` do **painel** (não do
-broker) já são majoritariamente inglês (`reachable`, `service`, `error`,
-`players`, `cpu_pct`, `mem_pct`, `max_players`, `server_name`) — não é
-breaking change generalizado, é concentrado nas áreas listadas acima.
+**Good news**: the JSON keys of the **panel's** `/api/*` routes (not the
+broker's) are already mostly English (`reachable`, `service`, `error`,
+`players`, `cpu_pct`, `mem_pct`, `max_players`, `server_name`) - it is not a
+generalized breaking change, it is concentrated in the areas listed above.
 
 ---
 
-## 8. O que falta para a Fase 2
+## 8. What is missing for Phase 2
 
-Este documento não propõe estrutura nova — isso é a Fase 2, e só deve
-acontecer depois que você validar este levantamento. Pontos que a Fase 2 vai
-precisar decidir, já adiantados aqui porque a evidência apareceu durante a
-análise:
+This document does not propose a new structure - that is Phase 2, and it should
+only happen after the owner validates this survey. Points Phase 2 will need to
+decide, brought forward here because the evidence showed up during the
+analysis:
 
-1. **`admin/app.py` é o item de maior risco/maior retorno do projeto.** 44
-   seções funcionais em 8.175 linhas, sem service layer, sem DAO, com scripts
-   bash misturados a rotas Flask. `broker/` não precisa do mesmo nível de
-   cirurgia — já segue boa parte dos princípios pedidos.
-2. **A pergunta "broker deveria ser pacote separado ou serviço à parte" já
-   tem uma resposta parcial pela evidência**: ele já É operacionalmente um
-   serviço à parte (roda em outro CT, fala só HTTP com o painel, nunca é
-   importado pelo pacote do painel). A decisão real da Fase 2 é só sobre
-   *onde no repositório* ele deve morar daqui pra frente (mesmo repo, pasta
-   irmã de `admin/`, vs. repositório próprio) — não sobre a arquitetura em
-   si, que já está separada.
-3. **A camada `runtime/` (Docker vs processo local) não é hipotética** — já
-   existem dois runtimes reais e documentados (Proxmox LXC, Docker puro) com
-   scripts (`systemctl.sh`/`journalctl.sh` fake vs real) que já imitam a
-   mesma interface. A Fase 2 pode formalizar isso em vez de inventar.
-   TeamSpeak (não-Steam) precisa entrar nesse desenho também.
-   `games/*.env` já é, na prática, o formato de "definição do que rodar"
-   citado no pedido — a Fase 2 decide se ele vira o formato de adapter Python
-   ou continua `.env` lido por um adapter genérico.
-4. **Toda coluna/rota listada na seção 7.3 precisa da sua aprovação
-   individual antes de entrar no plano de breaking changes** — o pedido
-   original já exige isso; esta análise só concentra a lista para facilitar
-   a decisão.
-5. **Config de `ruff`/`mypy` real precisa, no mínimo**: excluir
-   `admin/sugestoes_de_jogos.py` do lint (ou do fluxo, já que é gerado),
-   habilitar o rule set que os `# noqa: BLE001` do `CLAUDE.md` já assumem,
-   fixar `platform = "linux"` no mypy. Sem isso, a primeira rodada de CI vai
-   reportar ~280 "problemas" que na verdade são 3 ajustes de configuração.
-6. **Nenhum teste está quebrado hoje** — a Fase 3 (mover arquivo) não tem
-   nenhuma dívida pré-existente para carregar; qualquer teste que quebrar
-   durante o `git mv` é causado pela própria Fase 3, não algo herdado.
+1. **`admin/app.py` is the highest-risk/highest-return item of the project.** 44
+   functional sections in 8,175 lines, no service layer, no DAO, with bash
+   scripts mixed with Flask routes. `broker/` does not need the same level of
+   surgery - it already follows a good part of the requested principles.
+2. **The question "should the broker be a separate package or a separate service"
+   already has a partial answer from the evidence**: it already IS operationally a
+   separate service (runs in another CT, talks only HTTP to the panel, is never
+   imported by the panel package). The real Phase 2 decision is only about
+   *where in the repository* it should live from now on (same repo, sibling
+   folder of `admin/`, vs. its own repository) - not about the architecture
+   itself, which is already separate.
+3. **The `runtime/` layer (Docker vs local process) is not hypothetical** - there
+   already are two real, documented runtimes (Proxmox LXC, plain Docker) with
+   scripts (fake vs real `systemctl.sh`/`journalctl.sh`) that already mimic the
+   same interface. Phase 2 can formalize this instead of inventing it.
+   TeamSpeak (non-Steam) needs to fit into that design too.
+   `games/*.env` already is, in practice, the "definition of what to run" format
+   cited in the request - Phase 2 decides whether it becomes the Python adapter
+   format or stays a `.env` read by a generic adapter.
+4. **Every column/route listed in section 7.3 needs individual approval from the
+   owner before entering the breaking-change plan** - the original request already
+   requires that; this analysis just concentrates the list to make the decision
+   easier.
+5. **A real `ruff`/`mypy` config needs, at a minimum**: excluding
+   `admin/sugestoes_de_jogos.py` from lint (or from the flow, since it is generated),
+   enabling the rule set the `# noqa: BLE001` in `CLAUDE.md` already assume,
+   pinning `platform = "linux"` in mypy. Without that, the first CI run will
+   report ~280 "problems" that are actually 3 configuration tweaks.
+6. **No test is broken today** - Phase 3 (moving files) carries no pre-existing
+   debt; any test that breaks during the `git mv` is caused by Phase 3 itself,
+   not something inherited.

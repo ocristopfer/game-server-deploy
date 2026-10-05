@@ -1,7 +1,7 @@
-"""Entrar com a biometria do aparelho: as rotas de `blueprints/passkeys.py`, de ponta a ponta.
+"""Signing in with the device biometrics: the routes of `blueprints/passkeys.py`, end to end.
 
-O aparelho e o `fake_passkey` (mesma matematica do celular); o painel e o de verdade, com
-banco, sessao, CSRF e trava de tentativas.
+The device is `fake_passkey` (same math as the phone); the panel is the real one, with
+database, session, CSRF and the attempt lockout.
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def _csrf(cli) -> str:
 
 
 def _uid(cli) -> int:
-    # O id nao e sempre 1: a limpeza entre testes apaga as linhas, mas nao zera a sequencia.
+    # The id is not always 1: cleanup between tests deletes the rows but does not reset the sequence.
     with cli.session_transaction() as sess:
         return sess["uid"]
 
@@ -62,8 +62,8 @@ def _assertion(cli, count=1, handle=None):
 
 
 def test_desligado_as_rotas_nao_existem_e_o_botao_nao_aparece(client, monkeypatch):
-    # Desligado de proposito: o compose de dev liga a biometria (http://localhost:8080), e no
-    # container este teste herdaria o endereco dele.
+    # Turned off on purpose: the dev compose turns biometrics on (http://localhost:8080), and in
+    # the container this test would inherit that address.
     monkeypatch.setattr(panel, "WEBAUTHN_ORIGIN", "")
     assert _post_json(client, "/login/passkey/options", {}).status_code == 404
     assert b"data-passkey-login" not in client.get("/login").data

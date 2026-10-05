@@ -1,57 +1,60 @@
-# Ambiente local para mexer no painel sem precisar do Proxmox.
+# Local environment for working on the panel without needing Proxmox.
 #
-#   docker compose up --build        (painel em http://localhost:8080, admin/admin12345)
+#   docker compose up --build        (panel at http://localhost:8080, admin/admin12345)
 #
-# Sobe o painel + dois "containers de jogo" falsos: Debian com sshd, um systemctl de
-# mentira que liga/desliga um processo, journalctl que le o log desse processo, um
-# servidor de query A2S que reporta jogadores, uma API REST no formato da do Palworld e
-# os arquivos que o jogo de verdade teria (.ini, save binario, log grande). Da para
-# testar start/stop/update, medidores de recursos, as tres formas de contar jogadores,
-# terminal interativo, backup/restauracao, agendamento, alertas e o editor/upload/download
-# de ponta a ponta. A API REST tambem aceita kick/ban/announce (respondendo 200 com corpo
-# vazio, como a de verdade) e registra o que recebeu em /run/fake-actions.log.
+# Starts the panel + two fake "game containers": Debian with sshd, a fake systemctl
+# that starts/stops a process, a journalctl that reads that process's log, an A2S
+# query server that reports players, a REST API shaped like Palworld's, and the files
+# the real game would have (.ini, binary save, big log). It lets you test
+# start/stop/update, resource gauges, the three ways of counting players, the
+# interactive terminal, backup/restore, scheduling, alerts and the editor/upload/download
+# end to end. The REST API also accepts kick/ban/announce (answering 200 with an empty
+# body, like the real one) and records what it received in /run/fake-actions.log.
 #
-# Os dois containers sao propositalmente diferentes: o palworld tem query A2S e API REST,
-# o dragonwilds nao tem nenhum dos dois (como o jogo real) e so anuncia no log.
+# The two containers are different on purpose: palworld has A2S query and the REST API,
+# dragonwilds has neither (like the real game) and only announces in the log.
 #
-# O numero de jogadores oscila sozinho; para fixar um valor:
+# The player count fluctuates on its own; to pin a value:
 #   docker compose exec game-palworld sh -c 'echo 7 > /run/fake-players'
 #
-# A chave SSH do painel e gerada na primeira subida e publicada no volume 'panel-keys';
-# cada container de jogo a instala no authorized_keys do root ao iniciar.
+# The panel's SSH key is generated on first start and published in the 'panel-keys' volume;
+# each game container installs it when it starts: game-palworld for the unprivileged gamepanel
+# user (helper mode, root SSH refused), game-dragonwilds in root's authorized_keys (legacy mode).
 
 services:
   panel:
     build: ./docker/panel
     container_name: gamepanel-dev
     ports:
-      - "8080:8080"
+      # Loopback only: this is the DEV panel, with admin/admin12345 and Flask reloading
+      # code. Published on every interface, anyone on the same network could get in.
+      - "127.0.0.1:8080:8080"
     environment:
-      GAMEPANEL_DEV: "1"              # recarrega templates e codigo a cada save
-      PANEL_SEED_DEMO: "1"            # cadastra os dois containers falsos abaixo
+      GAMEPANEL_DEV: "1"              # reloads templates and code on every save
+      PANEL_SEED_DEMO: "1"            # registers the two fake containers below
       GAMEPANEL_ALLOW_SHELL: "1"
       GAMEPANEL_ALLOW_FILES: "1"
       GAMEPANEL_FILE_DEFAULT: "/opt/game"
-      # localhost e contexto seguro para o navegador: da para testar a biometria (Windows Hello,
-      # Touch ID) sem https. Abra por http://localhost:8080, nao pelo IP, senao a origem nao confere.
+      # localhost is a secure context for the browser: biometrics (Windows Hello, Touch ID) can be
+      # tested without https. Open http://localhost:8080, not the IP, or the origin will not match.
       GAMEPANEL_WEBAUTHN_ORIGIN: "http://localhost:8080"
-      # Broker de brinquedo abaixo (backends falsos). Em producao isto fica DESLIGADO ate
-      # o painel ter uma camada extra na frente (ver o plano do broker).
+      # Toy broker below (fake backends). In production this stays OFF until the panel
+      # has an extra layer in front of it (see the broker plan).
       GAMEPANEL_ALLOW_BROKER: "1"
-      GAMEPANEL_BROKER_URL: "http://broker:8090"   # http so vale aqui: GAMEPANEL_DEV=1
+      GAMEPANEL_BROKER_URL: "http://broker:8090"   # http is only allowed here: GAMEPANEL_DEV=1
       GAMEPANEL_BROKER_TOKEN_FILE: /run/secrets/broker-token
       PANEL_USER: admin
       PANEL_PASSWORD: admin12345
     secrets:
       - broker-token
     volumes:
-      - ./src/gamepanel:/opt/gamepanel/gamepanel:ro   # o codigo vem do repo: edite e recarregue a pagina
-      # Sem isto o painel de desenvolvimento se apresenta como 0.0.0+dev: a versao sai do
-      # VERSION da raiz, e aqui o pacote esta montado longe dele.
+      - ./src/gamepanel:/opt/gamepanel/gamepanel:ro   # code comes from the repo: edit and reload the page
+      # Without this the dev panel reports itself as 0.0.0+dev: the version comes from the
+      # root VERSION file, and here the package is mounted far away from it.
       - ./VERSION:/opt/gamepanel/VERSION:ro
-      # Repo inteiro, so para `docker compose exec -w /workspace panel python3 -m pytest -q`
-      # (ver CLAUDE.md) - pytest.ini, tests/ e src/ precisam estar juntos pro pytest achar
-      # a config e os dois pacotes; o mount de cima e so o que o processo do painel serve.
+      # Whole repo, only for `docker compose exec -w /workspace panel python3 -m pytest -q`
+      # (see CLAUDE.md) - pytest.ini, tests/ and src/ must be together for pytest to find
+      # the config and both packages; the mount above is only what the panel process serves.
       - .:/workspace:ro
       - panel-keys:/keys
       - panel-conf:/etc/gamepanel
@@ -61,10 +64,10 @@ services:
       - game-dragonwilds
       - broker
 
-  # Broker de mentira: o de verdade (catalogo, alocador, cotas, API), mas com Proxmox,
-  # OPNsense e instalador falsos. A criacao de uma instancia leva ~10 s, com progresso.
-  # As instancias "criadas" ganham IPs 10.77.0.x que nao existem: o painel vai acusar
-  # "sem contato" para elas, e isso e esperado.
+  # Fake broker: the real one (catalog, allocator, quotas, API), but with fake Proxmox,
+  # OPNsense and installer. Creating an instance takes ~10 s, with progress.
+  # The "created" instances get 10.77.0.x IPs that do not exist: the panel will report
+  # "sem contato" (no contact) for them, and that is expected.
   broker:
     build: ./docker/broker
     container_name: gamebroker-dev
@@ -80,35 +83,48 @@ services:
       - ./games:/opt/gamebroker/games:ro
 
   game-palworld:
-    build: ./docker/game
-    # O sufixo -dev evita colidir com o container real do deploy-docker.ps1, que se
-    # chama game-palworld. Dentro da rede do compose o nome do servico continua
-    # respondendo por DNS, entao o painel acha o container como game-palworld.
+    build:
+      context: ./docker/game
+      # lib/ct-panel-access.sh, the piece that sets up helper mode (see docker/game/Dockerfile).
+      additional_contexts:
+        lib: ./lib
+    # The -dev suffix avoids colliding with the real container from deploy-docker.ps1,
+    # which is called game-palworld. Inside the compose network the service name still
+    # resolves over DNS, so the panel finds the container as game-palworld.
     container_name: game-palworld-dev
     environment:
       GAME_KIND: palworld
       GAME_SERVICE: palworld.service
-      # API REST em 127.0.0.1:8212, como a do Palworld de verdade (admin/troque-me).
-      # E o que exercita a contagem de jogadores por HTTP no assistente do painel.
+      # Helper mode: the panel logs in as gamepanel and uses sudo for gp-service, update-game
+      # and as steam for files; root SSH is refused. Dragonwilds below stays root (legacy
+      # mode), so both paths of the panel are exercised every day.
+      GAME_SSH_USER: gamepanel
+      # REST API on 127.0.0.1:8212, like the real Palworld one (admin/troque-me).
+      # This is what exercises the HTTP player count in the panel's wizard.
       GAME_API: "1"
       GAME_API_PORT: "8212"
       GAME_API_PASSWORD: troque-me
     volumes:
       - panel-keys:/keys:ro
-    # Limites como os de um LXC: sem eles o cgroup nao tem teto e os medidores do
-    # painel mostrariam a memoria e a CPU da maquina inteira.
+    # Limits like an LXC's: without them the cgroup has no ceiling and the panel's
+    # gauges would show the memory and CPU of the whole machine.
     mem_limit: 1g
     cpus: 2
 
   game-dragonwilds:
-    build: ./docker/game
+    build:
+      context: ./docker/game
+      # lib/ct-panel-access.sh, the piece that sets up helper mode (see docker/game/Dockerfile).
+      additional_contexts:
+        lib: ./lib
     container_name: game-dragonwilds-dev
     environment:
       GAME_KIND: dragonwilds
       GAME_SERVICE: dragonwilds.service
-      # Imita o jogo real: abre a 7777/udp mas NAO responde consulta A2S, e so anuncia
-      # entradas e saidas no log. E o caso em que o assistente do painel tem que concluir
-      # "o processo do jogo abriu a porta e nao respondeu" e mandar para a aba do log.
+      # Mimics the real game: opens 7777/udp but does NOT answer A2S queries, and only
+      # announces joins and leaves in the log. This is the case where the panel's wizard
+      # must conclude "the game process opened the port and did not answer" and send you
+      # to the log tab.
       GAME_QUERY_A2S: "0"
       GAME_UDP_PORT: "7777"
       GAME_LOG_PLAYERS: "1"
@@ -118,8 +134,8 @@ services:
     cpus: 1
 
 secrets:
-  # Token de DESENVOLVIMENTO (nao e segredo, so passa da checagem de tamanho). Em producao
-  # o token nasce dentro do CT do broker e nunca entra no repositorio.
+  # DEVELOPMENT token (not a secret, it only passes the length check). In production
+  # the token is born inside the broker CT and never enters the repository.
   broker-token:
     file: ./docker/broker/dev-token
 

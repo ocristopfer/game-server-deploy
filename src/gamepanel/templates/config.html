@@ -17,8 +17,8 @@
          title="{{ arquivo }}">{{ arquivo.rsplit('/', 1)[-1] }}</a>
     {% else %}
       <span class="muted">
-        Nenhum arquivo de configuracao informado ainda para este servidor.
-        {% if not is_admin %}Peca a um administrador do painel para registrar o arquivo.{% endif %}
+        {{ _('config.no_files') }}
+        {% if not is_admin %}{{ _('config.ask_admin_to_register') }}{% endif %}
       </span>
     {% endfor %}
   </div>
@@ -32,9 +32,9 @@
              autocapitalize="none" aria-label="{{ _('config.file_path') }}">
       {{ ui.button(_('config.use_this_file')) }}
     </span>
-    {# Procurar candidatos existe SO aqui. Antes havia um segundo botao "Procurar
-       arquivos de config" na tela de Arquivos, rodando a mesma varredura e devolvendo
-       a mesma lista — so que la o resultado nao dava para fixar em lugar nenhum. #}
+    {# Looking for candidates exists ONLY here. There used to be a second "Find
+       config files" button on the Files screen, running the same scan and returning
+       the same list - except that there the result could not be pinned anywhere. #}
     {{ ui.button(_('config.search_container'), variant='ghost', size='sm', icon='🔎',
                 href=url_for('config_quick.index', sid=server.id, discover=1, file=target)) }}
   </form>
@@ -44,7 +44,7 @@
     <p class="muted small conf-path">
       <code>{{ target }}</code>
       {% if info %} &middot; {{ info.size | filesize }} &middot; {{ info.owner }} &middot; {{ info.mtime }}{% endif %}
-      {% if doc %} &middot; formato {{ doc.label }}{% endif %}
+      {% if doc %} &middot; {{ _('config.format', name=doc.label) }}{% endif %}
       {% if is_admin %}
       &middot; <a href="{{ url_for('files.index', sid=server.id, file=target) }}">{{ _('config.edit_as_text') }}</a>
       {% endif %}
@@ -80,30 +80,25 @@
     </li>
     {% endfor %}
   </ul>
-  <p class="muted small">
-    &quot;Fixar aqui&quot; deixa o arquivo na barra acima (ate {{ max_files }} por servidor);
-    o link abre sem fixar.
-  </p>
+  <p class="muted small">{{ _h('config.pin_hint', n=max_files) }}</p>
   {% else %}
-  <p class="muted">
-    Nada encontrado em <code>{{ request.args.get('folder') or server.config_path or '/opt/game' }}</code>.
-    Ajuste a &quot;Pasta de configuracao&quot; em
-    <a href="{{ url_for('servers.edit', sid=server.id) }}">{{ _('files.edit_server') }}</a> ou informe o
-    caminho completo do arquivo na barra acima.
-  </p>
+  <p class="muted">{{ _h('config.nothing_found',
+                            folder=request.args.get('folder') or server.config_path or '/opt/game',
+                            url=url_for('servers.edit', sid=server.id)) }}</p>
   {% endif %}
 </div>
 {% endif %}
 
 {% if doc %}
-<form method="post" action="{{ url_for('config_quick.save', sid=server.id) }}" data-config-form>
+<form method="post" action="{{ url_for('config_quick.save', sid=server.id) }}" data-config-form
+      data-label-unsaved="{{ _('config.unsaved_changes') }}">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <input type="hidden" name="path" value="{{ target }}">
   {% set ns = namespace(i=0) %}
 
   <div class="card">
     <div class="card__head">
-      <h2>Configuracoes ({{ doc.settings | length }})</h2>
+      <h2>{{ _('config.settings_count', n=doc.settings | length) }}</h2>
       <input class="conf-search" placeholder="{{ _('config.filter_placeholder') }}" data-config-filter
              spellcheck="false" autocomplete="off" aria-label="{{ _('config.filter_label') }}">
     </div>
@@ -126,28 +121,28 @@
           <input type="hidden" name="sec.{{ ns.i }}" value="{{ s.section | ident }}">
           <input type="hidden" name="key.{{ ns.i }}" value="{{ s.key }}">
           {% if s.kind == 'bool' %}
-            {# O "valor original" segue a grafia do formato (True no ini, true no json):
-               assim abrir e salvar sem mexer em nada nao conta como alteracao. #}
+            {# The "original value" follows the format's spelling (True in ini, true in json):
+               that way opening and saving without touching anything does not count as a change. #}
             {% set ligado = s.value | lower == 'true' %}
             <input type="hidden" name="orig.{{ ns.i }}"
                    value="{{ doc.bool_words[0] if ligado else doc.bool_words[1] }}">
             <select name="val.{{ ns.i }}">
               <option value="{{ doc.bool_words[0] }}" {{ 'selected' if ligado }}>
-                {{ 'Ligado' if s.spec else doc.bool_words[0] }}</option>
+                {{ _('config.on') if s.spec else doc.bool_words[0] }}</option>
               <option value="{{ doc.bool_words[1] }}" {{ 'selected' if not ligado }}>
-                {{ 'Desligado' if s.spec else doc.bool_words[1] }}</option>
+                {{ _('config.off') if s.spec else doc.bool_words[1] }}</option>
             </select>
           {% elif s.spec and s.spec.kind == 'enum' %}
-            {# Lista fechada: acaba o erro de digitar um valor que o jogo descarta em
-               silencio. Valor fora da lista (versao nova do jogo) entra como opcao
-               extra para nao ser perdido ao salvar. #}
+            {# Closed list: ends the mistake of typing a value the game silently
+               discards. A value outside the list (new game version) comes in as an extra
+               option so it is not lost on save. #}
             <input type="hidden" name="orig.{{ ns.i }}" value="{{ s.value }}">
             <select name="val.{{ ns.i }}">
               {% for valor, rotulo in s.spec.options.items() %}
                 <option value="{{ valor }}" {{ 'selected' if s.value == valor }}>{{ rotulo }}</option>
               {% endfor %}
               {% if s.value and s.value not in s.spec.options %}
-                <option value="{{ s.value }}" selected>{{ s.value }} (fora do catalogo)</option>
+                <option value="{{ s.value }}" selected>{{ _('config.outside_catalog', value=s.value) }}</option>
               {% endif %}
             </select>
           {% elif s.spec and s.spec.kind in ('number', 'factor', 'duration') %}
@@ -172,7 +167,7 @@
             <small class="conf-help">{{ s.spec.help }}
               {%- if s.spec.kind in ('number', 'factor', 'duration')
                      and (s.spec.minimum is not none or s.spec.maximum is not none) %}
-                <em>({{ s.spec.minimum }}{{ ' a ' ~ s.spec.maximum if s.spec.maximum is not none }}{{ ' ' ~ s.spec.unit if s.spec.unit }})</em>
+                <em>({{ _('config.range', low=s.spec.minimum, high=s.spec.maximum) if s.spec.maximum is not none else s.spec.minimum }}{{ ' ' ~ s.spec.unit if s.spec.unit }})</em>
               {%- endif %}
             </small>
           {% elif s.comment %}<small>{{ s.comment }}</small>{% endif %}
@@ -189,10 +184,7 @@
 
   <div class="card">
     <h2>{{ _('config.add_setting') }}</h2>
-    <p class="muted small">
-      Para chave que ainda nao existe no arquivo. Ela entra no fim do bloco escolhido,
-      sem mexer no resto.
-    </p>
+    <p class="muted small">{{ _('config.add_setting_hint') }}</p>
     <div id="conf-new-rows">
       {% for extra in range(2) %}
       <div class="conf-new">
@@ -210,8 +202,8 @@
       {% set ns.i = ns.i + 1 %}
       {% endfor %}
     </div>
-    {# Nasce escondido: sem JavaScript ele nao faria nada, e as duas linhas acima
-       continuam funcionando. #}
+    {# Born hidden: without JavaScript it would do nothing, and the two rows above
+       keep working. #}
     <div class="form-actions">
       {{ ui.button('+ ' ~ _('config.another_line'), variant='ghost', size='sm', type='button',
                   extra='data-config-more hidden') }}
@@ -228,21 +220,17 @@
       </label>
       <span class="muted small" id="conf-changed"></span>
     </div>
-    <p class="muted small mt-4">
-      Grava so as chaves alteradas, mantendo comentarios e o resto do arquivo. Uma copia
-      <code>.bak</code> fica ao lado antes de qualquer gravacao. A maioria dos jogos so le
-      a configuracao ao iniciar &mdash; sem reiniciar, a mudanca nao vale.
-    </p>
+    <p class="muted small mt-4">{{ _h('config.save_hint') }}</p>
   </div>
 </form>
 {% elif target and not errors %}
 <div class="card">
   <p class="muted">
-    Nao consegui abrir <code>{{ target }}</code> como formulario.
+    {{ _h('config.cannot_open_as_form', path=target) }}
     {% if is_admin %}
       <a href="{{ url_for('files.index', sid=server.id, file=target) }}">{{ _('config.edit_as_text_title') }}</a>.
     {% else %}
-      Avise um administrador do painel &mdash; a edicao como texto e restrita a ele.
+      {{ _h('config.ask_admin_text_edit') }}
     {% endif %}
   </p>
 </div>

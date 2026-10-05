@@ -1,52 +1,52 @@
-"""Conta jogadores lendo o log do jogo por SSH, para quem nao publica A2S nem API HTTP
-(o RuneScape Dragonwilds, por exemplo). O painel reproduz os eventos de entrada/saida
-desde o ultimo start do servico e ve quem sobrou.
+"""Counts players by reading the game log over SSH, for games that publish neither A2S nor
+an HTTP API (RuneScape Dragonwilds, for example). The panel replays the join/leave
+events since the service's last start and sees who is left.
 """
 from __future__ import annotations
 
 import re
-import shlex
 from collections.abc import Callable
 from typing import Any
 
 from gamepanel.i18n import Message
+from gamepanel.runtime import remote_cmd
 from gamepanel.runtime.a2s import QueryError
 from gamepanel.runtime.ssh import ServerLike
 
 LOG_SCAN_MAX = 20000
 RE_MAX_LEN = 300
-# Palavras que costumam aparecer na linha de entrada/saida — usadas so pelo assistente
-# que ajuda a descobrir o padrao do jogo.
+# Words that commonly appear in join/leave lines - used only by the wizard that helps
+# discover the game's pattern.
 LOG_HINT_WORDS = (
     "join", "joined", "left", "leave", "connect", "disconnect", "login", "logout",
     "player", "jogador", "entrou", "saiu",
 )
 TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})")
-# Linha gigante (stack trace) nao pode custar caro no regex.
+# A giant line (stack trace) must not get expensive in the regex.
 LOG_LINE_MAX = 500
 
-# Caminho do arquivo de log. O '*' e permitido (o DayZ abre um .ADM por sessao), mas
-# nada que o shell do container interprete como outra coisa: sem espaco, aspas, $, ; ou &.
+# Path of the log file. The '*' is allowed (DayZ opens one .ADM per session), but nothing
+# the container's shell would interpret as something else: no spaces, quotes, $, ; or &.
 LOG_PATH_RE = re.compile(r"^/[A-Za-z0-9._*?/-]{1,200}$")
 
-# Le do start do servico para ca: eventos de execucoes anteriores contariam jogador
-# que ja foi embora ha muito tempo.
-# $3 = caminho do arquivo de log (pode ter *). Vazio cai no journalctl do servico.
-# Acompanha o log e vai cuspindo linha nova enquanto o SSH estiver de pe. `-n 0`/`tail -n
-# 0` de proposito: o passado nao interessa aqui: quem sabe dizer quem esta online agora e
-# a contagem normal, e este script so avisa que ACONTECEU alguma coisa. Assim o painel nao
-# precisa reproduzir a maquina de estados do log em dois lugares diferentes.
+# Reads from the service start onward: events from earlier runs would count players
+# who left long ago.
+# $3 = log file path (may contain *). Empty falls back to the service's journalctl.
+# Follows the log and keeps emitting new lines while the SSH session is up. `-n 0`/`tail -n
+# 0` on purpose: the past does not matter here: the regular count is what says who is
+# online now, and this script only signals that something HAPPENED. That way the panel
+# does not have to replicate the log state machine in two different places.
 LOG_FOLLOW_SCRIPT = r"""
 set -u
 unit=$1
 alvo=${2:-}
 
 if [ -n "$alvo" ]; then
-  # Sem aspas para o shell expandir o '*' — o LOG_PATH_RE do painel e quem garante que
-  # nao ha espaco, aspas, $ ou ';' aqui dentro.
+  # Unquoted so the shell expands the '*' - the panel LOG_PATH_RE guarantees there is
+  # no space, quote, $ or ';' in here.
   arq=$(ls -1t $alvo 2>/dev/null | head -n 1)
   [ -n "$arq" ] || { echo "nenhum arquivo de log casa com $alvo" >&2; exit 3; }
-  # -F (e nao -f) para sobreviver a rotacao do arquivo.
+  # -F (not -f) to survive log rotation.
   exec tail -n 0 -F -- "$arq"
 fi
 
@@ -60,9 +60,9 @@ max=$2
 alvo=${3:-}
 
 if [ -n "$alvo" ]; then
-  # $alvo vai SEM aspas de proposito, para o shell do container expandir o '*'. Quem
-  # garante que isso e seguro e o LOG_PATH_RE do painel, que so deixa passar caminho
-  # absoluto com letras, numeros, . _ - / * ? — nada de espaco, aspas, $ ou ;.
+  # $alvo is UNQUOTED on purpose, so the container shell expands the '*'. What makes
+  # this safe is the panel LOG_PATH_RE, which only lets through an absolute path
+  # with letters, digits, . _ - / * ? - no spaces, quotes, $ or ;.
   arq=$(ls -1t $alvo 2>/dev/null | head -n 1)
   [ -n "$arq" ] || { echo "nenhum arquivo de log casa com $alvo" >&2; exit 3; }
   [ -r "$arq" ] || { echo "sem permissao de leitura em $arq" >&2; exit 4; }
@@ -80,7 +80,7 @@ fi
 
 
 def compile_pattern(raw: str | None, label: str) -> re.Pattern[str] | None:
-    """Compila um padrao vindo da tela; devolve None quando esta vazio."""
+    """Compiles a pattern coming from the screen; returns None when it is empty."""
     text = (raw or "").strip()
     if not text:
         return None
@@ -100,7 +100,7 @@ def _log_timestamp(line: str) -> str:
 
 
 def _events_by_name(lines: list[str], enter: re.Pattern[str], leave: re.Pattern[str] | None) -> dict[str, Any]:
-    """Os dois padroes capturam (?P<name>...): da para dizer QUEM esta online."""
+    """Both patterns capture (?P<name>...): it is possible to tell WHO is online."""
     online: dict[str, str] = {}
     for line in lines:
         short = line[:LOG_LINE_MAX]
@@ -120,8 +120,8 @@ def _events_by_name(lines: list[str], enter: re.Pattern[str], leave: re.Pattern[
 
 
 def _events_by_count(lines: list[str], enter: re.Pattern[str], leave: re.Pattern[str] | None) -> dict[str, Any]:
-    """Sem nome na saida (varios servidores Unreal so avisam que alguem saiu):
-    sobra somar as entradas e subtrair as saidas."""
+    """No name on leave (many Unreal servers only report that someone left):
+    all that is left is adding the joins and subtracting the leaves."""
     total = 0
     for line in lines:
         short = line[:LOG_LINE_MAX]
@@ -133,12 +133,12 @@ def _events_by_count(lines: list[str], enter: re.Pattern[str], leave: re.Pattern
 
 
 def _events_half_named(lines: list[str], enter: re.Pattern[str], leave: re.Pattern[str] | None) -> dict[str, Any]:
-    """Entrada com nome, saida sem — o caso do Satisfactory.
+    """Named join, unnamed leave - the Satisfactory case.
 
-    O log diz que alguem saiu, mas nao diz quem. A CONTAGEM continua sendo a mesma de
-    antes (entradas menos saidas, exata); a lista passa a mostrar os ultimos a entrar,
-    tantos quantos a conta disser. E um palpite, e a tela avisa que e — mas jogar os
-    nomes fora, que era o que o painel fazia, nao ajudava ninguem.
+    The log says someone left, but not who. The COUNT stays the same as before (joins
+    minus leaves, exact); the list shows the most recent joiners, as many as the count
+    says. It is a guess, and the screen says so - but throwing the names away, which is
+    what the panel used to do, helped nobody.
     """
     total = 0
     order: list[tuple[str, str]] = []
@@ -149,14 +149,14 @@ def _events_half_named(lines: list[str], enter: re.Pattern[str], leave: re.Patte
             total += 1
             name = (entered.groupdict().get("name") or "").strip()
             if name:
-                # Reconexao volta para o fim da fila em vez de duplicar.
+                # A reconnect goes back to the end of the queue instead of duplicating.
                 order = [p for p in order if p[0] != name]
                 order.append((name, _log_timestamp(line)))
             continue
         if leave and leave.search(short):
             total = max(0, total - 1)
             if order:
-                order.pop(0)  # sai quem esta ha mais tempo: o chute menos ruim
+                order.pop(0)  # the longest-present one leaves: the least bad guess
     approximate_list = order[-total:] if total else []
     return {
         "players": total,
@@ -166,11 +166,10 @@ def _events_half_named(lines: list[str], enter: re.Pattern[str], leave: re.Patte
 
 
 def apply_log_events(lines: list[str], enter: re.Pattern[str], leave: re.Pattern[str] | None) -> dict[str, Any]:
-    """Reproduz os eventos do log em ordem e devolve quem ficou.
+    """Replays the log events in order and returns who is left.
 
-    Tres casos, do melhor para o pior: nome nos dois lados (sabe-se quem esta online),
-    nome so na entrada (sabe-se quantos, e quem provavelmente), nome em lugar nenhum
-    (so a contagem).
+    Three cases, from best to worst: name on both sides (we know who is online), name
+    only on join (we know how many, and probably who), name nowhere (only the count).
     """
     if not enter.groupindex.get("name"):
         return _events_by_count(lines, enter, leave)
@@ -180,7 +179,7 @@ def apply_log_events(lines: list[str], enter: re.Pattern[str], leave: re.Pattern
 
 
 def valid_log_path(raw: str | None) -> str:
-    """Confere o caminho do log antes de ele entrar num comando remoto."""
+    """Checks the log path before it goes into a remote command."""
     path = (raw or "").strip()
     if not path:
         return ""
@@ -198,18 +197,17 @@ SshOutput = Callable[[ServerLike, str, int], str]
 def read_log_lines(
     ssh_output: SshOutput, server: ServerLike, service: str, log_path: str, limit: int = LOG_SCAN_MAX,
 ) -> list[str]:
-    """Linhas do log: de um arquivo, quando o servidor tem um; senao do journalctl.
+    """Log lines: from a file, when the server has one; otherwise from journalctl.
 
-    O limite e parametro porque os dois usos pedem tamanhos bem diferentes: a contagem de
-    jogadores precisa do historico inteiro da subida (quem entrou e nao saiu), e a
-    varredura de erro so quer o rabo do log, de minuto em minuto.
+    The limit is a parameter because the two uses need very different sizes: the player
+    count needs the whole history since startup (who joined and did not leave), and the
+    error scan only wants the tail of the log, minute by minute.
     """
     try:
         target = valid_log_path(log_path)
     except ValueError as exc:
         raise QueryError(str(exc)) from exc
-    remote_cmd = " ".join(shlex.quote(p) for p in (
-        "bash", "-lc", LOG_PLAYERS_SCRIPT, "gp", service, str(limit), target,
-    ))
-    raw = ssh_output(server, remote_cmd, 60)
+    # journalctl through the systemd-journal group, the log file is world-readable: no right needed.
+    command = remote_cmd.unprivileged("bash", "-lc", LOG_PLAYERS_SCRIPT, "gp", service, str(limit), target)
+    raw = ssh_output(server, command, 60)
     return raw.splitlines()

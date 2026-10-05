@@ -1,46 +1,49 @@
-"""UE4SS de jogo Unreal LINUX nativo (o nosso fork do oficial) - roda DENTRO do CT do jogo.
+"""UE4SS for native LINUX Unreal games (our fork of the official one) - runs INSIDE the game CT.
 
-Mesmo desenho dos outros instaladores remotos: o painel le este texto e o executa no
-container com `python3 -c`, por SSH, como root. So stdlib e sem import do `gamepanel`.
+Same design as the other remote installers: the panel reads this text and runs it in the
+container with `python3 -c`, over SSH, as root. Stdlib only and no import of `gamepanel`.
 
-O carregador e o UE4SS OFICIAL compilado para Linux (ocristopfer/RE-UE4SS, branch `linux`), e
-nao mais um port: os mesmos mecanismos (varredura do patternsleuth, UE4SS_Signatures,
-VTableLayout.ini, mods Lua), com o que o Linux pede e os layouts de cada versao do motor gerados
-a partir do codigo da Epic. Provado em servidor de verdade (Docker) no Dragonwilds (UE 5.6.1) e no
-Palworld (UE 5.1.1): Lua, FindFirstOf, RegisterHook de Blueprint e nativo, ExecuteInGameThread.
-O antigo modo "fork" (ocristopfer/ue4ss-linux, UE4SS_Addresses.ini) e o port XarminaEu sairam:
-os dois derrubavam o Palworld.
+The loader is the OFFICIAL UE4SS built for Linux (ocristopfer/RE-UE4SS, branch `linux`), and
+no longer a port: the same mechanisms (patternsleuth scan, UE4SS_Signatures, VTableLayout.ini,
+Lua mods), with what Linux requires and the layouts of each engine version generated from Epic's
+code. Proven on a real server (Docker) with Dragonwilds (UE 5.6.1) and Palworld (UE 5.1.1): Lua,
+FindFirstOf, RegisterHook on Blueprint and native, ExecuteInGameThread.
+The old "fork" mode (ocristopfer/ue4ss-linux, UE4SS_Addresses.ini) and the XarminaEu port are
+gone: both brought Palworld down.
 
-O que a instalacao faz, cada passo com o motivo:
-- **Tag fixa do perfil** (`--release`), e cada arquivo conferido contra o SHA256SUMS do release
-  ANTES do antivirus.
-- **O layout oficial: `ue4ss/` ao lado do executavel** (libUE4SS.so, UE4SS-settings.ini, Mods/).
-  O UE4SS acha a config, os mods e o log na pasta da propria biblioteca.
-- **O .so e trocado ao lado e movido por cima** (`rename`): copiar sobre o arquivo com o servidor
-  rodando corrompe o mapeamento na memoria.
-- **Arquivos do .sym, quando o servidor traz um** (`--symfiles`, o texto do ue_sym_layout do
-  painel): VTableLayout.ini e UE4SS_Signatures/*.lua deste executavel. Um motor modificado pelo
-  estudio (o Dragonwilds acrescenta virtuais na AActor) so roda certo com eles. Sao refeitos a
-  cada instalacao: um update do jogo muda os enderecos, e os velhos derrubariam o servidor.
-- **Sem .sym, o pacote de referencia da versao** (`--layout`, o texto do ue_linux_layout do
-  painel, mais o pack-<versao>.json do release): todo estudio mexe nas classes do motor (o
-  Soulmask tem 62 virtuais a mais no AGameModeBase, o The Front 0x18 bytes a mais no
-  FUObjectArray), e o layout embutido por versao nao basta. O gerador alinha as vtables
-  exportadas deste jogo com as de um jogo de referencia da mesma versao, pelo codigo de cada
-  funcao, e acha as assinaturas pelo menor trecho de codigo da referencia que casa aqui. Com .sym
-  ele roda tambem, so para os globais (GMalloc, console manager, GUObjectArray) e o FUObjectArray.
-  Versao sem pacote no release e sem .sym fica com o layout embutido (o Palworld, 5.1).
-- **Config e mods.txt do dono preservados**; o `Mods/shared` (as bibliotecas Lua que muitos mods
-  pedem, UEHelpers) vem do release e e trocado por inteiro.
-- **Migra a instalacao do fork antigo** (tudo ao lado do executavel): os mods Lua vao para
-  `ue4ss/Mods`, e so os arquivos que o fork antigo escrevia saem.
-- **LD_PRELOAD num drop-in do systemd**, sem trocar o script de partida do jogo. A biblioteca so
-  inicia num processo cujo executavel tem `-Linux-` no nome: o script e o que ele chama ficam de
-  fora. Desligar e apagar o drop-in (nenhum codigo do UE4SS roda, sem apagar mod nenhum).
+What the install does, each step with its reason:
+- **The profile's pinned tag** (`--release`), and each file checked against the release
+  SHA256SUMS BEFORE the antivirus.
+- **The official layout: `ue4ss/` next to the executable** (libUE4SS.so, UE4SS-settings.ini, Mods/).
+  UE4SS finds the config, the mods and the log in its own library's folder.
+- **The .so is written alongside and moved over** (`rename`): copying over the file while the
+  server is running corrupts the in-memory mapping.
+- **Files from the .sym, when the server ships one** (`--symfiles`, the text of the panel's
+  ue_sym_layout): VTableLayout.ini and UE4SS_Signatures/*.lua for this executable. An engine
+  modified by the studio (Dragonwilds adds virtuals to AActor) only runs right with them. They are
+  regenerated on every install: a game update changes the addresses, and the old ones would bring
+  the server down.
+- **Without a .sym, the version's reference pack** (`--layout`, the text of the panel's
+  ue_linux_layout, plus the release's pack-<version>.json): every studio tweaks the engine classes
+  (Soulmask has 62 extra virtuals in AGameModeBase, The Front 0x18 extra bytes in
+  FUObjectArray), and the per-version built-in layout is not enough. The generator aligns this
+  game's exported vtables with those of a reference game of the same version, by the code of each
+  function, and finds the signatures by the shortest piece of reference code that matches here.
+  With a .sym it runs too, only for the globals (GMalloc, console manager, GUObjectArray) and
+  FUObjectArray. A version with no pack in the release and no .sym keeps the built-in layout
+  (Palworld, 5.1).
+- **The owner's config and mods.txt are preserved**; `Mods/shared` (the Lua libraries many mods
+  require, UEHelpers) comes from the release and is replaced entirely.
+- **Migrates the old fork's install** (everything next to the executable): the Lua mods go to
+  `ue4ss/Mods`, and only the files the old fork wrote are removed.
+- **LD_PRELOAD in a systemd drop-in**, without replacing the game startup script. The library
+  only starts in a process whose executable has `-Linux-` in its name: the script and whatever it
+  calls are left out. Disabling means deleting the drop-in (no UE4SS code runs, without deleting
+  any mod).
 
-Acoes (argv): [--scan SCRIPT] --unit SERVICO [--release TAG --engine X.Y --symfiles SCRIPT --layout SCRIPT]
-status|loader-install|loader-enable|loader-disable|loader-uninstall, seguidas da pasta do executavel
-(Binaries/Linux). Termina com UMA linha JSON.
+Actions (argv): [--scan SCRIPT] --unit SERVICE [--release TAG --engine X.Y --symfiles SCRIPT --layout SCRIPT]
+status|loader-install|loader-enable|loader-disable|loader-uninstall, followed by the executable folder
+(Binaries/Linux). Ends with ONE JSON line.
 """
 from __future__ import annotations
 
@@ -77,13 +80,13 @@ SHARED_DIR = "shared"
 VTABLE_INI = "VTableLayout.ini"
 MEMBER_INI = "MemberVariableLayout.ini"
 SIGNATURES_DIR = "UE4SS_Signatures"
-# Cabecalho que o ue_sym_layout poe no ini: so o que tem ele e apagado ao reinstalar sem .sym.
+# Header ue_sym_layout puts in the ini: only files carrying it are deleted on a reinstall without .sym.
 GENERATED_MARK = "; Gerado pelo painel"
 SIGNATURE_FILES = ("FName_ToString.lua", "FName_Constructor.lua", "StaticConstructObject.lua", "GNatives.lua",
                    "GMalloc.lua", "ConsoleManager.lua", "GUObjectArray.lua", "GUObjectHashTables.lua")
 GENERATED_FILES = frozenset({VTABLE_INI, MEMBER_INI} | {f"{SIGNATURES_DIR}/{n}" for n in SIGNATURE_FILES})
 MARK = ".gamepanel-ue4ss-linux.json"
-# O que o fork antigo (ocristopfer/ue4ss-linux) deixava ao lado do executavel.
+# What the old fork (ocristopfer/ue4ss-linux) left next to the executable.
 OLD_FILES = (LIB, SETTINGS, LOG, "UE4SS_Addresses.ini", VTABLE_INI, "MemberVariableLayout.ini", MARK)
 SYSTEMD_DIR = "/etc/systemd/system"
 DROPIN = "gamepanel-ue4ss.conf"
@@ -91,30 +94,30 @@ UNIT = re.compile(r"[A-Za-z0-9_.@-]{1,120}\.service")
 EXE_NAME = re.compile(r"[A-Za-z0-9_.-]{1,120}")
 OWNER = "steam"
 TIMEOUT = 120
-# Varrer o .sym (300 MB, ~12 milhoes de registros) e o executavel leva da ordem de um minuto.
+# Scanning the .sym (300 MB, ~12 million records) and the executable takes on the order of a minute.
 SYMFILES_TIMEOUT = 900
 LOG_TAIL = 15
 
 
 def fetch(url: str) -> bytes:
-    # So https do github.com chega aqui: a API e fixa (RELEASE) e o download vem da resposta
-    # dela, conferida contra github.com antes de baixar.
+    # Only github.com https gets here: the API is fixed (RELEASE) and the download comes from its
+    # response, checked against github.com before downloading.
     req = urllib.request.Request(url, headers={"User-Agent": "gamepanel"})  # noqa: S310
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310
         return r.read()
 
 
 # ------------------------------------------------------------------ antivirus
-# IGUAL nos outros instaladores remotos (ha teste comparando): rodam soltos no CT e nao importam
-# um ao outro. A regra (o que conta como achado) nao mora aqui, e sim no script que o painel
-# manda; aqui so se escreve o que baixou numa pasta e se chama o script.
+# IDENTICAL in the other remote installers (a test compares them): they run standalone in the CT
+# and do not import each other. The rule (what counts as a finding) does not live here, but in the
+# script the panel sends; here we only write what was downloaded into a folder and call the script.
 
 def scanner(script: str):
-    """Funcao que verifica [(nome, bytes)] com o script do painel; ValueError = recusado."""
+    """Function that checks [(name, bytes)] with the panel's script; ValueError = rejected."""
     def scan(blobs: list[tuple[str, bytes]]) -> None:
-        # /var/tmp e nao /tmp: no Debian 13 o /tmp e tmpfs (memoria), e o pacote pode ter
-        # dezenas de MB. O prefixo e o que o script do antivirus aceita apagar. mkdtemp:
-        # nome imprevisivel e 0700.
+        # /var/tmp and not /tmp: on Debian 13 /tmp is tmpfs (memory), and the package can be
+        # tens of MB. The prefix is what the antivirus script agrees to delete. mkdtemp:
+        # unpredictable name and 0700.
         os.makedirs("/var/tmp", exist_ok=True)  # noqa: S108
         work = tempfile.mkdtemp(prefix="gamepanel-scan-", dir="/var/tmp")
         try:
@@ -134,7 +137,7 @@ def scanner(script: str):
 
 
 def _no_scan(blobs: list[tuple[str, bytes]]) -> None:
-    """So para teste e status: `main` recusa instalar sem `--scan`."""
+    """Only for tests and status: `main` refuses to install without `--scan`."""
 
 
 def _read_text(path: str) -> str:
@@ -176,11 +179,11 @@ def set_enabled(exe_dir: str, unit: str, enabled: bool, executable: str = "") ->
     if enabled:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if not executable:
-            # Religar sem reinstalar: o executavel e o que a instalacao anotou na marca.
+            # Re-enabling without reinstalling: the executable is the one the install recorded in the mark.
             executable = _read_json(os.path.join(exe_dir, UE4SS_DIR, MARK)).get("executable", "")
         lines = ["[Service]", f"Environment=LD_PRELOAD={posixpath.join(exe_dir, UE4SS_DIR, LIB)}"]
-        # A biblioteca so inicia num executavel com -Linux- no nome; TheFrontServer, SquadGameServer e
-        # AstroColonyServer nao tem, e sem o nome aqui o UE4SS nunca sobe neles.
+        # The library only starts in an executable with -Linux- in its name; TheFrontServer,
+        # SquadGameServer and AstroColonyServer do not have it, and without the name here UE4SS never starts in them.
         if executable and "-Linux-" not in executable and EXE_NAME.fullmatch(executable):
             lines.append(f"Environment=UE4SS_TARGET_EXE={executable}")
         with open(path, "w", encoding="utf-8") as f:
@@ -188,15 +191,15 @@ def set_enabled(exe_dir: str, unit: str, enabled: bool, executable: str = "") ->
     else:
         with contextlib.suppress(FileNotFoundError):
             os.remove(path)
-    # Sem o daemon-reload o systemd segue com o ambiente antigo ate o proximo boot.
+    # Without daemon-reload systemd keeps the old environment until the next boot.
     _daemon_reload()
 
 
-# ------------------------------------------------------------------ o release
+# ------------------------------------------------------------------ the release
 
 class Release:
-    """O que a instalacao precisa saber do perfil: a tag do release, a versao do motor e o
-    gerador dos arquivos do .sym."""
+    """What the install needs to know from the profile: the release tag, the engine version and
+    the generator of the .sym files."""
 
     def __init__(self, tag: str, engine: str, symfiles_script: str, layout_script: str = "") -> None:
         if not RELEASE_TAG.fullmatch(tag or ""):
@@ -208,7 +211,7 @@ class Release:
 
     @property
     def pack_name(self) -> str:
-        """pack-4.27.json para o motor 4.27 (os pacotes de referencia do release)."""
+        """pack-4.27.json for engine 4.27 (the release's reference packs)."""
         found = ENGINE.fullmatch(self.engine)
         if not found:
             raise ValueError(f"versao do motor invalida: {self.engine!r}")
@@ -216,7 +219,7 @@ class Release:
 
     @property
     def template_name(self) -> str:
-        """VTableLayout_5_06_Template.ini para o motor 5.6 (o nome dos templates do UE4SS)."""
+        """VTableLayout_5_06_Template.ini for engine 5.6 (the UE4SS template names)."""
         found = ENGINE.fullmatch(self.engine)
         if not found:
             raise ValueError(f"versao do motor invalida: {self.engine!r}")
@@ -225,7 +228,7 @@ class Release:
 
 
 def parse_sums(text: str) -> dict[str, str]:
-    """`sha256sum` -> {nome: hash}. Linha torta e ignorada: arquivo sem hash e recusado depois."""
+    """`sha256sum` -> {name: hash}. A malformed line is ignored: a file without a hash is rejected later."""
     sums = {}
     for line in text.splitlines():
         parts = line.split()
@@ -235,8 +238,8 @@ def parse_sums(text: str) -> dict[str, str]:
 
 
 def release_files(release: Release, fetcher=fetch) -> dict[str, bytes]:
-    """Os arquivos do release, cada um conferido contra o SHA256SUMS dele. Os pacotes de
-    referencia chegaram no linux-v2: um release que nao os traz instala como antes."""
+    """The release files, each checked against its SHA256SUMS. The reference packs arrived in
+    linux-v2: a release that does not ship them installs as before."""
     data = json.loads(fetcher(RELEASE.format(tag=release.tag)))
     urls = {a.get("name", ""): a.get("browser_download_url", "") for a in data.get("assets", [])}
     wanted = [n for n in RELEASE_FILES if n != PACKS or n in urls]
@@ -255,7 +258,7 @@ def release_files(release: Release, fetcher=fetch) -> dict[str, bytes]:
 
 
 def _safe_members(tar: tarfile.TarFile, root: str) -> list[tarfile.TarInfo]:
-    """So arquivo e pasta comuns, dentro de `root/`: nada de caminho absoluto, `..` ou link."""
+    """Only regular files and folders, inside `root/`: no absolute path, `..` or link."""
     members = []
     for member in tar.getmembers():
         name = posixpath.normpath(member.name)
@@ -268,7 +271,7 @@ def _safe_members(tar: tarfile.TarFile, root: str) -> list[tarfile.TarInfo]:
 
 
 def install_shared(mods_dir: str, data: bytes) -> None:
-    """Troca o Mods/shared inteiro pelo do release (as bibliotecas Lua; mod do dono nao mora ali)."""
+    """Replace the whole Mods/shared with the release one (the Lua libraries; owner mods do not live there)."""
     target = os.path.join(mods_dir, SHARED_DIR)
     staged = target + ".new"
     shutil.rmtree(staged, ignore_errors=True)
@@ -287,7 +290,7 @@ def install_shared(mods_dir: str, data: bytes) -> None:
 
 
 def template_text(release: Release, data: bytes) -> str:
-    """O template de VTableLayout desta versao do motor, de dentro do pacote do release."""
+    """The VTableLayout template for this engine version, from inside the release package."""
     wanted = f"VTableLayoutTemplates/{release.template_name}"
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         for member in _safe_members(tar, "VTableLayoutTemplates"):
@@ -298,7 +301,7 @@ def template_text(release: Release, data: bytes) -> str:
 
 
 def pack_text(release: Release, data: bytes | None) -> str:
-    """O pacote de referencia desta versao do motor ('' quando o release nao tem um para ela)."""
+    """The reference pack for this engine version ('' when the release has none for it)."""
     if not data:
         return ""
     wanted = f"LinuxReferencePacks/{release.pack_name}"
@@ -310,11 +313,11 @@ def pack_text(release: Release, data: bytes | None) -> str:
     return ""
 
 
-# ------------------------------------------------------------------ arquivos do .sym e do pacote
+# ------------------------------------------------------------------ files from the .sym and the pack
 
 def find_executable(exe_dir: str) -> str:
-    """O executavel do servidor: o que tem um `.sym` ao lado, senao o maior ELF da pasta (o script
-    de partida, as .so e os arquivos de simbolo ficam de fora). '' se nao ha nenhum."""
+    """The server executable: the one with a `.sym` next to it, otherwise the largest ELF in the folder
+    (the startup script, the .so files and the symbol files are left out). '' if there is none."""
     best, size = "", -1
     for name in sorted(os.listdir(exe_dir)):
         path = os.path.join(exe_dir, name)
@@ -331,14 +334,14 @@ def find_executable(exe_dir: str) -> str:
 
 
 def generate_symfiles(executable: str, script: str, template: str) -> dict[str, str]:
-    """{caminho relativo a ue4ss/: texto} pelo gerador do painel, a partir do .sym."""
+    """{path relative to ue4ss/: text} from the panel generator, based on the .sym."""
     print(f"gerando VTableLayout.ini e UE4SS_Signatures a partir de {posixpath.basename(executable)}.sym")
     sys.stdout.flush()
     with tempfile.NamedTemporaryFile("w", suffix=".ini", encoding="utf-8", delete=False) as f:
         f.write(template)
         template_path = f.name
     try:
-        # O script e o gerador do painel (texto fixo dele); o caminho foi achado nesta pasta.
+        # The script is the panel generator (its fixed text); the path was found in this folder.
         proc = subprocess.run(["python3", "-c", script, executable, template_path],  # noqa: S603, S607
                               capture_output=True, text=True, check=False, timeout=SYMFILES_TIMEOUT)
     finally:
@@ -355,7 +358,7 @@ def generate_symfiles(executable: str, script: str, template: str) -> dict[str, 
 
 
 def generate_layout(executable: str, script: str, pack: str, with_sym: bool) -> dict[str, str]:
-    """{caminho relativo a ue4ss/: texto} pelo gerador do pacote de referencia (ue_linux_layout)."""
+    """{path relative to ue4ss/: text} from the reference pack generator (ue_linux_layout)."""
     print(f"gerando os arquivos de {posixpath.basename(executable)} a partir do pacote de referencia")
     sys.stdout.flush()
     with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as f:
@@ -363,7 +366,7 @@ def generate_layout(executable: str, script: str, pack: str, with_sym: bool) -> 
         pack_path = f.name
     try:
         args = [executable, pack_path] + (["--com-sym"] if with_sym else [])
-        # O script e o gerador do painel (texto fixo dele); o executavel foi achado nesta pasta.
+        # The script is the panel generator (its fixed text); the executable was found in this folder.
         proc = subprocess.run(["python3", "-c", script, *args],  # noqa: S603, S607
                               capture_output=True, text=True, check=False, timeout=SYMFILES_TIMEOUT)
     finally:
@@ -380,7 +383,7 @@ def generate_layout(executable: str, script: str, pack: str, with_sym: bool) -> 
 
 
 def remove_generated(ue4ss_dir: str) -> None:
-    """Apaga o que um .sym gerou antes - so os arquivos do painel, nunca um ini escrito a mao."""
+    """Delete what a .sym generated before - only the panel files, never a hand-written ini."""
     for name in (VTABLE_INI, MEMBER_INI):
         ini = os.path.join(ue4ss_dir, name)
         if _read_text(ini).startswith(GENERATED_MARK):
@@ -390,11 +393,11 @@ def remove_generated(ue4ss_dir: str) -> None:
             os.remove(os.path.join(ue4ss_dir, SIGNATURES_DIR, name))
 
 
-# ------------------------------------------------------------------ instalacao
+# ------------------------------------------------------------------ installation
 
 def migrate_old_layout(exe_dir: str, ue4ss_dir: str) -> None:
-    """O fork antigo deixava tudo ao lado do executavel: os mods Lua vem para ue4ss/Mods e os
-    arquivos dele saem. So age se a marca dele estiver la (instalacao do proprio painel)."""
+    """The old fork left everything next to the executable: the Lua mods come to ue4ss/Mods and
+    its files are removed. Only acts if its mark is there (an install made by the panel itself)."""
     if not os.path.exists(os.path.join(exe_dir, MARK)):
         return
     old_mods, new_mods = os.path.join(exe_dir, MODS), os.path.join(ue4ss_dir, MODS)
@@ -409,14 +412,14 @@ def migrate_old_layout(exe_dir: str, ue4ss_dir: str) -> None:
 def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, scan=_no_scan) -> dict:
     if not os.path.isdir(exe_dir):
         raise ValueError(f"a pasta do executavel nao existe: {exe_dir}")
-    dropin_path(unit)  # confere o servico antes de baixar qualquer coisa
+    dropin_path(unit)  # check the service before downloading anything
     files = release_files(release, fetcher)
     scan(sorted(files.items()))
     executable = find_executable(exe_dir)
     with_sym = bool(executable) and os.path.isfile(executable + ".sym")
     symfiles: dict[str, str] = {}
-    # ANTES de mexer na pasta: um .sym ou um executavel que o gerador nao entende para tudo, sem
-    # meia instalacao.
+    # BEFORE touching the folder: a .sym or an executable the generator does not understand stops
+    # everything, with no half install.
     if with_sym:
         if not release.symfiles_script:
             raise ValueError("o servidor traz .sym, mas o painel nao mandou o gerador dos arquivos dele")
@@ -424,7 +427,7 @@ def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, sca
     pack = pack_text(release, files.get(PACKS))
     if executable and pack and release.layout_script:
         layout = generate_layout(executable, release.layout_script, pack, with_sym)
-        # O que veio do .sym deste executavel vale mais que o transposto da referencia.
+        # What came from this executable's .sym is worth more than what was transposed from the reference.
         symfiles = {**layout, **symfiles}
     elif executable and not with_sym:
         print(f"sem pacote de referencia do motor {release.engine} neste release: layout embutido")
@@ -436,7 +439,7 @@ def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, sca
     with open(staged, "wb") as f:
         f.write(files[LIB])
     os.chmod(staged, 0o755)  # noqa: S103
-    # Por cima com rename: o servidor pode estar com o .so velho mapeado na memoria.
+    # Over it with rename: the server may have the old .so mapped in memory.
     os.replace(staged, target)
     settings = os.path.join(ue4ss_dir, SETTINGS)
     if not os.path.exists(settings):
@@ -462,11 +465,11 @@ def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, sca
 
 
 def uninstall_loader(exe_dir: str, unit: str) -> dict:
-    """Tira o UE4SS: o drop-in (o jogo volta a subir sem LD_PRELOAD) e a pasta ue4ss/ inteira.
+    """Remove UE4SS: the drop-in (the game starts again without LD_PRELOAD) and the whole ue4ss/ folder.
 
-    Os mods Lua moram em ue4ss/Mods e saem junto (a tela avisa antes); os .pak do jogo nao sao
-    do UE4SS e ficam. Sobra da instalacao do fork antigo (ao lado do executavel, com a marca
-    dele) sai tambem, com o Mods/ dele - so os nomes que o fork escrevia.
+    The Lua mods live in ue4ss/Mods and go along (the screen warns first); the game's .pak files
+    are not UE4SS's and stay. Leftovers from the old fork's install (next to the executable, with
+    its mark) are removed too, with its Mods/ - only the names the fork used to write.
     """
     set_enabled(exe_dir, unit, False)
     removed = []
@@ -503,7 +506,7 @@ def status(exe_dir: str, unit: str) -> dict:
     flags = enabled_mods(_read_text(os.path.join(mods_dir, MODS_TXT)))
     mods = []
     for entry in sorted(os.listdir(mods_dir)) if os.path.isdir(mods_dir) else []:
-        # `shared` e biblioteca, nao mod: nao entra na lista nem tem liga/desliga.
+        # `shared` is a library, not a mod: it is not listed and has no on/off switch.
         if entry != SHARED_DIR and os.path.isdir(os.path.join(mods_dir, entry)):
             mods.append({"name": entry, "enabled": flags.get(
                 entry, os.path.exists(os.path.join(mods_dir, entry, "enabled.txt")))})
@@ -514,7 +517,7 @@ def status(exe_dir: str, unit: str) -> dict:
         "loader_pinned": False,
         "sym_files": mark.get("sym_files", []),
         "enabled": os.path.exists(dropin_path(unit)),
-        # A instalacao do fork antigo ainda no lugar: reinstalar migra.
+        # The old fork's install is still in place: reinstalling migrates it.
         "old_layout": os.path.exists(os.path.join(exe_dir, MARK)),
         "mods": mods,
         "log": _read_text(os.path.join(ue4ss_dir, LOG)).splitlines()[-LOG_TAIL:],
@@ -527,7 +530,7 @@ def _chown(exe_dir: str) -> None:
         pw = pwd.getpwnam(OWNER)
     except (ImportError, KeyError):
         return
-    # O jogo roda como steam e o UE4SS escreve o log e as configs dentro de ue4ss/.
+    # The game runs as steam and UE4SS writes the log and the configs inside ue4ss/.
     for root, dirs, files in os.walk(os.path.join(exe_dir, UE4SS_DIR)):
         for n in (root, *[os.path.join(root, d) for d in dirs], *[os.path.join(root, f) for f in files]):
             with contextlib.suppress(OSError):

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Compara o buildid instalado com o publicado na Steam e so atualiza se houver versao
-# nova — assim o servidor nao cai a toa. Igual ao check-game-update do LXC.
+# Compares the installed buildid with the one published on Steam and only updates if
+# there is a new version -- so the server does not go down for nothing. Same as the LXC's
+# check-game-update.
 set -Eeuo pipefail
 
 # shellcheck disable=SC1091

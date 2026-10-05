@@ -7,10 +7,10 @@
 {{ ui.page_header(_('server.terminal') ~ ' — ' ~ server.name) }}
 {{ srv.tabs(server, 'terminal') }}
 
-{# Interativo e comando unico sao dois MODOS da mesma coisa, nao duas telas
-   concorrentes na navegacao. Antes cada uma era um botao proprio no cabecalho de
-   quatro telas diferentes, com nomes ("Terminal", "Console", "Comando unico",
-   "Terminal interativo") que ninguem conseguia distinguir de fora. #}
+{# Interactive and single command are two MODES of the same thing, not two screens
+   competing in the navigation. Before, each one was a button of its own in the header of
+   four different screens, with names ("Terminal", "Console", "Single command",
+   "Interactive terminal") nobody could tell apart from the outside. #}
 {% if allow_term %}
 <nav class="tabs" aria-label="{{ _('console.terminal_mode') }}">
   <a class="tabs__item" href="{{ url_for('terminal.index', sid=server.id) }}">
@@ -21,25 +21,18 @@
 {% endif %}
 
 <div class="flash">
-  {{ _('console.commands_run_as') }} <strong>{{ server.ssh_user }}</strong> dentro do container
-  <code>{{ server.host }}</code>, via SSH. Cada execucao tem limite de
-  {{ shell_timeout }}s e fica registrada no historico abaixo.
-  {% if allow_term %}Para algo interativo (nano, htop, prompts de confirmacao) use a
-  <a href="{{ url_for('terminal.index', sid=server.id) }}">{{ _('console.interactive_lower') }}</a>.{% endif %}
+  {{ _h('console.run_as_intro', user=content_user(server), host=server.host, timeout=shell_timeout) }}
+  {% if allow_term %}{{ _h('console.interactive_hint', url=url_for('terminal.index', sid=server.id)) }}{% endif %}
 </div>
 
 <div class="card">
   <form method="post" data-console>
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label>Comando
+    <label>{{ _('console.command') }}
       <textarea name="command" id="command" rows="3" spellcheck="false" autofocus
                 autocapitalize="off" autocorrect="off"
                 placeholder="systemctl status dragonwilds.service"></textarea>
-      <small>
-        Nao-interativo: sem TTY, sem <code>vim</code>/<code>top</code>/<code>htop</code>.
-        Use <code>journalctl -n 50</code>, <code>ls</code>, <code>df -h</code>,
-        <code>cat</code>, <code>sed -i</code> etc. Ctrl+Enter executa.
-      </small>
+      <small>{{ _h('console.non_interactive_hint') }}</small>
     </label>
     <div class="form-actions">
       {{ ui.button(_('console.run'), variant='primary', icon='▶') }}
@@ -51,15 +44,15 @@
 {% if job %}
 <div class="card"
      {% if job.status == 'running' %}data-job-url="{{ url_for('jobs.api_detail', jid=job.id) }}"
-     data-job-running="(executando...)" data-job-end="exit code {codigo}"{% endif %}>
+     data-job-running="{{ _('console.running_placeholder') }}" data-job-end="exit code {codigo}"{% endif %}>
   <div class="card__head">
     <h2>{{ _('console.output') }}</h2>
     <span class="badge {{ {'ok':'on','error':'off','running':'cold'}[job.status] }}" data-job-badge>{{ job.status }}</span>
   </div>
   <pre class="log cmd">$ {{ job.command }}</pre>
-  <pre class="log" data-job-output>{{ job.output or '(executando...)' }}</pre>
+  <pre class="log" data-job-output>{{ job.output or _('console.running_placeholder') }}</pre>
   <p class="muted" data-job-hint>
-    {% if job.status == 'running' %}Em execucao...
+    {% if job.status == 'running' %}{{ _('console.running') }}
     {% else %}exit code {{ job.exit_code if job.exit_code is not none else '—' }}{% endif %}
   </p>
 </div>
@@ -89,8 +82,8 @@
 {% endblock %}
 
 {% block scripts %}
-{# Os comandos anteriores viajam como JSON num bloco separado: expressao Jinja no
-   meio do codigo quebra qualquer ferramenta que leia o arquivo como JavaScript. #}
+{# The previous commands travel as JSON in a separate block: a Jinja expression in the
+   middle of code breaks any tool that reads the file as JavaScript. #}
 <script id="historico-comandos" type="application/json">
   {{ history | map(attribute='command') | list | tojson }}
 </script>

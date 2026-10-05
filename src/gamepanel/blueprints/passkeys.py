@@ -1,14 +1,15 @@
-"""Entrar com a biometria do aparelho (passkey / WebAuthn) e cadastrar os aparelhos.
+"""Sign in with the device biometrics (passkey / WebAuthn) and register devices.
 
-A verificacao mora em `security/webauthn.py`; aqui so o HTTP. As duas cerimonias tem dois
-passos cada: o navegador pede as OPCOES (com um desafio novo), o aparelho assina, e a resposta
-volta para ser conferida. Tudo e JSON porque e o `navigator.credentials` do navegador quem fala
-com o aparelho - sem JavaScript nao ha passkey, e as telas escondem o botao nesse caso.
+The verification lives in `security/webauthn.py`; here only the HTTP. Both ceremonies have two
+steps each: the browser asks for the OPTIONS (with a fresh challenge), the device signs, and the
+response comes back to be checked. Everything is JSON because the browser's `navigator.credentials`
+is what talks to the device - without JavaScript there is no passkey, and the screens hide the button
+in that case.
 
-**A passkey substitui a senha E o segundo fator.** Ela so e aceita com UV (a biometria ou o PIN
-do aparelho conferiu a pessoa), entao ja sao dois fatores: o aparelho que se tem e o dedo ou o
-rosto. Por isso cadastrar exige a senha, e tambem o codigo quando o 2FA esta ligado: uma sessao
-esquecida aberta nao pode ganhar um jeito de entrar sem nenhum dos dois.
+**The passkey replaces the password AND the second factor.** It is only accepted with UV (the device
+biometrics or PIN verified the person), so it already is two factors: the device one holds and the
+finger or face. That is why registering requires the password, and also the code when 2FA is on: a
+session left open must not gain a way to sign in without either of them.
 """
 from __future__ import annotations
 
@@ -24,8 +25,8 @@ from gamepanel.security import webauthn
 
 bp = Blueprint("passkeys", __name__)
 
-# Quanto tempo um desafio vale (servidor) e quanto o navegador espera o aparelho (ms). O do
-# servidor e maior: a pessoa ainda precisa achar o dedo certo depois de o aparelho abrir.
+# How long a challenge is valid (server) and how long the browser waits for the device (ms). The
+# server one is longer: the person still needs to find the right finger after the device prompt opens.
 CHALLENGE_SECONDS = 180
 CEREMONY_MS = 120_000
 KIND_LOGIN = "login"
@@ -34,12 +35,12 @@ LABEL_MAX = 60
 
 
 def _rp_id() -> str:
-    """O dominio a que a chave do aparelho fica presa: o host do endereco configurado."""
+    """The domain the device key is bound to: the host of the configured address."""
     return urlsplit(panel.WEBAUTHN_ORIGIN).hostname or ""
 
 
 def _enabled() -> None:
-    # 404 e nao 403: sem o endereco configurado a rota simplesmente nao existe para ninguem.
+    # 404, not 403: without the configured address the route simply does not exist for anyone.
     if not panel.WEBAUTHN_ORIGIN:
         abort(404)
 
@@ -66,8 +67,8 @@ def _field(body: dict, name: str) -> bytes:
 @bp.post("/login/passkey/options")
 def login_options():
     _enabled()
-    # Lista de credenciais VAZIA de proposito: o aparelho oferece as passkeys que ele tem para
-    # este dominio, e o painel nao precisa (nem deve) dizer a quem pergunta quais usuarios existem.
+    # EMPTY credential list on purpose: the device offers the passkeys it has for
+    # this domain, and the panel does not need to (and must not) tell whoever asks which users exist.
     challenge = panel.passkey_challenges.issue(KIND_LOGIN, CHALLENGE_SECONDS)
     return jsonify({"publicKey": {
         "challenge": challenge, "rpId": _rp_id(), "timeout": CEREMONY_MS,
@@ -76,7 +77,7 @@ def login_options():
 
 
 def _verified_login(body: dict):
-    """A linha do usuario dono da passkey, ou WebAuthnError com o motivo (vai so para o log)."""
+    """The row of the user who owns the passkey, or WebAuthnError with the reason (goes only to the log)."""
     client = _field(body, "clientDataJSON")
     if panel.passkey_challenges.take(KIND_LOGIN, webauthn.client_challenge(client)) is None:
         raise webauthn.WebAuthnError("desafio desconhecido, vencido ou ja usado")
@@ -85,7 +86,7 @@ def _verified_login(body: dict):
     if stored is None:
         raise webauthn.WebAuthnError("passkey nao cadastrada")
     handle = body.get("userHandle")
-    # O aparelho devolve o user handle que recebeu no cadastro; outro valor e outra conta.
+    # The device returns the user handle it received at registration; any other value is another account.
     if handle and handle != stored["user_handle"]:
         raise webauthn.WebAuthnError("user handle nao confere")
     count = webauthn.verify_assertion(
@@ -103,7 +104,7 @@ def _verified_login(body: dict):
 @bp.post("/login/passkey")
 def login():
     _enabled()
-    # Por IP: o pedido nao diz o usuario antes de a assinatura ser conferida.
+    # By IP: the request does not say the user before the signature is checked.
     key = f"passkey|{request.remote_addr}"
     remaining = panel.login_lockout.remaining(key)
     if remaining:
@@ -120,11 +121,11 @@ def login():
     return jsonify({"redirect": response.location})
 
 
-# ------------------------------------------------------------------ cadastro
+# ------------------------------------------------------------------ registration
 
 
 def _password_and_code_error(row) -> str:
-    """Chave do erro, ou '' quando a senha (e o codigo, se o 2FA estiver ligado) confere."""
+    """Error key, or '' when the password (and the code, if 2FA is on) checks out."""
     key = f"2fa|{row['username'].lower()}"
     if panel.totp_lockout.remaining(key):
         return "flash.too_many_tries"
@@ -149,8 +150,8 @@ def register_options():
     failure = _password_and_code_error(row)
     if failure:
         return _error(failure, 403, n=panel.totp_lockout.remaining(f"2fa|{row['username'].lower()}"))
-    # Um user handle por PESSOA, aleatorio e nunca o id: o aparelho o guarda junto da chave, e
-    # um numero sequencial diria quantas contas o painel tem.
+    # One user handle per PERSON, random and never the id: the device stores it next to the key, and
+    # a sequential number would reveal how many accounts the panel has.
     handle = passkeys_repo.handle_for_user(conn, row["id"]) or webauthn.b64url(secrets.token_bytes(16))
     label = request.form.get("label", "").strip()[:LABEL_MAX]
     challenge = panel.passkey_challenges.issue(
@@ -162,12 +163,12 @@ def register_options():
         "pubKeyCredParams": [{"type": "public-key", "alg": webauthn.ALG_ES256},
                              {"type": "public-key", "alg": webauthn.ALG_RS256}],
         "timeout": CEREMONY_MS,
-        # `platform`: a biometria do PROPRIO aparelho, que e o pedido. Chave residente: o login
-        # nao pergunta o usuario antes, entao o aparelho tem de lembrar de quem e a chave.
+        # `platform`: the biometrics of the device ITSELF, which is what is asked for. Resident key: the login
+        # does not ask for the user first, so the device has to remember whose key it is.
         "authenticatorSelection": {"authenticatorAttachment": "platform", "residentKey": "required",
                                    "requireResidentKey": True, "userVerification": "required"},
         "attestation": "none",
-        # O mesmo aparelho duas vezes so criaria uma linha a mais para apagar depois.
+        # The same device twice would only create one more row to delete later.
         "excludeCredentials": [{"type": "public-key", "id": cid}
                                for cid in passkeys_repo.ids_for_user(conn, row["id"])],
     }})
@@ -182,7 +183,7 @@ def register():
         client = _field(body, "clientDataJSON")
         challenge = webauthn.client_challenge(client)
         pending = panel.passkey_challenges.take(KIND_REGISTER, challenge)
-        # O desafio guarda QUEM o pediu: a resposta tem de voltar na sessao da mesma pessoa.
+        # The challenge stores WHO asked for it: the response has to come back in the same person's session.
         if pending is None or pending.get("uid") != session["uid"]:
             raise webauthn.WebAuthnError("desafio desconhecido, vencido ou de outra sessao")
         credential = webauthn.verify_registration(
@@ -205,8 +206,8 @@ def register():
 @bp.post("/account/passkey/delete")
 @panel.login_required
 def delete():
-    # Sem `_enabled()`: apagar continua valendo com o recurso desligado, que e justo quando
-    # sobram aparelhos de um endereco antigo para limpar.
+    # No `_enabled()`: deleting still works with the feature off, which is exactly when
+    # devices from an old address are left over to clean up.
     conn = panel.db()
     with conn:
         removed = passkeys_repo.delete(conn, session["uid"], request.form.get("id", ""))

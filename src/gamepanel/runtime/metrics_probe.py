@@ -1,9 +1,10 @@
-"""Le CPU, memoria, disco e rede do container a partir da saida do METRICS_SCRIPT
-(rodado por SSH por quem chama - este modulo so sabe interpretar o texto que volta).
+"""Reads the container's CPU, memory, disk and network from the output of METRICS_SCRIPT
+(run over SSH by the caller - this module only knows how to interpret the text that
+comes back).
 
-Duas amostras espacadas dentro do proprio container: CPU e rede so fazem sentido como
-variacao no tempo, e medir com uma unica ida de SSH sai mais barato do que guardar a
-amostra anterior aqui e torcer para o intervalo entre telas ser regular.
+Two spaced samples inside the container itself: CPU and network only make sense as a
+change over time, and measuring in a single SSH round trip is cheaper than keeping the
+previous sample here and hoping the interval between screens is regular.
 """
 from __future__ import annotations
 
@@ -22,10 +23,10 @@ cpu_usec() {
     echo -
   fi
 }
-# Cada numero sai no seu proprio campo (separador '|'): dois valores num campo so
-# fariam o painel ler o total da CPU como texto e zerar a conta.
+# Each number goes in its own field ('|' separator): two values in one field
+# would make the panel read the CPU total as text and zero the math.
 proc_stat() { awk '/^cpu /{ t=0; for (i=2; i<=NF; i++) t+=$i; printf "%d|%d", t, $5+$6; exit }' /proc/stat; }
-# Soma todas as interfaces menos a loopback (rx = campo 2, tx = campo 10 apos o ':').
+# Sums every interface except loopback (rx = field 2, tx = field 10 after the ':').
 net_bytes() {
   awk 'NR>2 { sub(/:/, " "); if ($1 != "lo") { rx += $2; tx += $10 } }
        END { printf "%d|%d", rx+0, tx+0 }' /proc/net/dev
@@ -52,14 +53,14 @@ sleep 0.5
 amostra
 
 printf 'cores|%s\n' "$(nproc 2>/dev/null || echo 1)"
-# cpu.max = "<quota> <periodo>" (ou "max"): e o teto real quando o container tem
-# limite de CPU (cpulimit no Proxmox), que o nproc sozinho nao mostra.
+# cpu.max = "<quota> <period>" (or "max"): the real ceiling when the container has
+# a CPU limit (cpulimit in Proxmox), which nproc alone does not show.
 [ -r "$CG/cpu.max" ] && printf 'cpumax|%s\n' "$(cat "$CG/cpu.max")"
 printf 'tick|%s\n' "$(getconf CLK_TCK 2>/dev/null || echo 100)"
 printf 'load|%s\n' "$(cut -d' ' -f1-3 /proc/loadavg)"
 printf 'boot|%s\n' "$(awk '{ print $1; exit }' /proc/uptime)"
 awk '/^MemTotal:|^MemAvailable:|^SwapTotal:|^SwapFree:/ { printf "meminfo|%s|%s\n", $1, $2 }' /proc/meminfo
-# Em container o cgroup e mais honesto que o /proc/meminfo quando nao ha lxcfs.
+# In a container the cgroup is more honest than /proc/meminfo when there is no lxcfs.
 [ -r "$CG/memory.current" ] && printf 'cgmem|%s|%s\n' \
   "$(cat "$CG/memory.current")" "$(cat "$CG/memory.max" 2>/dev/null || echo max)"
 df -P -B1 / "$dir" 2>/dev/null | awk 'NR>1 { printf "disk|%s|%s|%s\n", $6, $2, $3 }'
@@ -81,10 +82,10 @@ def _pct(part: float, whole: float) -> float | None:
     return round(max(0.0, min(100.0, part * 100.0 / whole)), 1)
 
 
-# Uma funcao por linha que o script remoto emite. A chave e a etiqueta da linha e o
-# numero e quantos campos ela precisa ter para valer (linha curta e descartada).
+# One function per line the remote script emits. The key is the line's tag and the
+# number is how many fields it needs to count (a short line is discarded).
 def _tag_sample(data: dict[str, Any], parts: list[str]) -> None:
-    # uptime | cpu_usec | stat_total | stat_idle | rx | tx | ticks do processo
+    # uptime | cpu_usec | stat_total | stat_idle | rx | tx | process ticks
     data["samples"].append(parts[1:])
 
 
@@ -111,7 +112,7 @@ def _tag_boot(data: dict[str, Any], parts: list[str]) -> None:
 
 
 def _tag_meminfo(data: dict[str, Any], parts: list[str]) -> None:
-    data["meminfo"][parts[1].rstrip(":")] = _num(parts[2]) * 1024  # vem em kB
+    data["meminfo"][parts[1].rstrip(":")] = _num(parts[2]) * 1024  # comes in kB
 
 
 def _tag_cgmem(data: dict[str, Any], parts: list[str]) -> None:
@@ -148,7 +149,7 @@ METRIC_TAGS: dict[str, tuple[int, Any]] = {
 
 
 def _collect_metrics(raw: str) -> dict[str, Any]:
-    """Primeira passada: cada linha do script vira uma entrada crua, sem contas."""
+    """First pass: each script line becomes a raw entry, with no math."""
     data: dict[str, Any] = {
         "samples": [], "meminfo": {}, "disks": {},
         "cores": 1.0, "clk_tck": 100.0, "load": "", "uptime": 0.0,
@@ -163,7 +164,7 @@ def _collect_metrics(raw: str) -> dict[str, Any]:
 
 
 def _rates_from_samples(data: dict[str, Any]) -> dict[str, Any]:
-    """CPU e rede saem da diferenca entre as duas amostras."""
+    """CPU and network come from the difference between the two samples."""
     out: dict[str, Any] = {"cpu_pct": None, "net_rx": None, "net_tx": None, "proc_cpu_pct": None}
     samples = data["samples"]
     if len(samples) < _SAMPLES_FOR_RATE:
@@ -175,7 +176,7 @@ def _rates_from_samples(data: dict[str, Any]) -> dict[str, Any]:
         return out
 
     cores = data["cores"]
-    # cpu.stat do cgroup mede o container; /proc/stat so acerta com lxcfs no meio.
+    # The cgroup's cpu.stat measures the container; /proc/stat is only right with lxcfs in between.
     if a[1] != "-" and b[1] != "-":
         out["cpu_pct"] = _pct((_num(b[1]) - _num(a[1])) / 1e6, dt * cores)
     else:
@@ -194,8 +195,8 @@ def _memory_from(data: dict[str, Any]) -> dict[str, Any]:
     total = data["meminfo"].get("MemTotal", 0.0)
     used = max(0.0, total - data["meminfo"].get("MemAvailable", 0.0))
     current, ceiling = data["cg_current"], data["cg_max"]
-    # Limite do cgroup manda quando existe e e menor que a RAM da maquina: e o teto real
-    # do container, e o /proc/meminfo sem lxcfs mostraria a memoria do host inteiro.
+    # The cgroup limit wins when it exists and is smaller than the machine's RAM: it is the
+    # container's real ceiling, and /proc/meminfo without lxcfs would show the whole host's memory.
     if current is not None and ceiling and (not total or ceiling < total):
         total, used = ceiling, current
     elif current is not None and not total:
@@ -204,14 +205,14 @@ def _memory_from(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def parse_metrics(raw: str) -> dict[str, Any]:
-    """Transforma a saida do METRICS_SCRIPT em numeros prontos para a tela."""
+    """Turns the METRICS_SCRIPT output into numbers ready for the screen."""
     data = _collect_metrics(raw)
     rates = _rates_from_samples(data)
     cores = data["cores"]
     meminfo = data["meminfo"]
 
     out: dict[str, Any] = {
-        # Pode ser fracionario quando o container tem limite de CPU (ex.: 1.5 nucleos).
+        # May be fractional when the container has a CPU limit (e.g. 1.5 cores).
         "cores": int(cores) if cores == int(cores) else round(cores, 1),
         "load": data["load"], "uptime": data["uptime"],
         "disks": sorted(data["disks"].values(), key=lambda d: d["mount"]),

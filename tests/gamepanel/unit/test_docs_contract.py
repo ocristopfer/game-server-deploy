@@ -1,30 +1,30 @@
-"""O `CLAUDE.md` cita nome de codigo; este teste cobra que ele ainda exista.
+"""`CLAUDE.md` cites code names; this test checks that they still exist.
 
-A doc deste repositorio e densa de nomes proprios: `app.COMMANDS`, `ui.ACTIONS`,
-`opnsense.busy_ports`. Cada renomeacao deixa alguns para tras, e o resultado e pior que
-doc faltando — e doc que MENTE, e manda a proxima pessoa procurar um nome que nao existe
-mais. Quatro casos assim foram encontrados de uma vez ao escrever isto: a doc mandava
-procurar taken_ports no opnsense, _limpar no instalador por SSH, somente_banco no broker
-e menu_acao nos macros. Os nomes mortos ficam SEM crase aqui de proposito — com ela, a
-propria doc deste teste viraria uma citacao que o teste reprova.
+This repository's doc is dense with proper names: `app.COMMANDS`, `ui.ACTIONS`,
+`opnsense.busy_ports`. Every rename leaves a few behind, and the result is worse than a
+missing doc - it is a doc that LIES, and sends the next person looking for a name that no
+longer exists. Four such cases were found at once while writing this: the doc said to
+look for taken_ports in opnsense, _limpar in the SSH installer, somente_banco in the broker
+and menu_acao in the macros. The dead names are WITHOUT backticks here on purpose - with
+them, this test's own doc would become a citation the test rejects.
 
-O escopo e estreito de proposito: so `modulo.nome` dentro de crase, onde `modulo` e de
-fato um modulo destes pacotes. Tres formas tem o MESMO formato e nao sao referencia a
-codigo, entao saem:
+The scope is narrow on purpose: only `module.name` inside backticks, where `module` really
+is a module of these packages. Three forms have the SAME shape and are not references to
+code, so they are left out:
 
-- chave de i18n (`charts.players`) — reconhecida por existir no catalogo, nao por lista;
-- nome de arquivo (`compare.sh`, `components/ui.html`) — pela extensao, e conferido
-  a parte: ver `test_todo_arquivo_citado_existe`, abaixo;
-- modulo de fora (`re.ASCII`, `flask.g`) — pela ausencia de um modulo com esse nome aqui.
+- i18n key (`charts.players`) - recognized by existing in the catalog, not by a list;
+- file name (`compare.sh`, `components/ui.html`) - by the extension, and checked
+  separately: see `test_todo_arquivo_citado_existe`, below;
+- outside module (`re.ASCII`, `flask.g`) - by the absence of a module with that name here.
 
-Variavel de ambiente, funcao de bash e chave de dado nao entram porque nao tem ponto.
+Environment variables, bash functions and data keys do not count because they have no dot.
 
-O NOME DE ARQUIVO tem conferencia propria, e ela nasceu de oito nomes mortos de uma vez:
-a doc mandava abrir conexao.py, ssh_install.py, servico.py, backends.py, test_gamefields.py,
-instancias.html, catalogo.html e gameconf.py, todos renomeados ha commits. Todos passavam
-justamente porque a regra acima os DESCARTA pela extensao — o filtro que evita o falso
-positivo virou o buraco. E de quebra o teste achou `pyroject.toml`, um erro de digitacao
-que estava ali desde que a secao foi escrita.
+FILE NAMES have their own check, and it was born from eight dead names at once: the doc
+said to open conexao.py, ssh_install.py, servico.py, backends.py, test_gamefields.py,
+instancias.html, catalogo.html and gameconf.py, all renamed commits ago. They all passed
+precisely because the rule above DISCARDS them by extension - the filter that avoids the
+false positive became the hole. And as a bonus the test found `pyroject.toml`, a typo that
+had been there since the section was written.
 """
 from __future__ import annotations
 
@@ -38,40 +38,40 @@ ROOT = Path(__file__).resolve().parents[3]
 DOC = ROOT / "CLAUDE.md"
 PACKAGES = ("src/gamepanel", "src/gamebroker")
 
-# `modulo.nome` ou `modulo.nome()`, dentro de crase. O modulo minusculo de proposito:
-# `Classe.metodo` pode vir de biblioteca, e nao ha o que conferir.
+# `module.name` or `module.name()`, inside backticks. Lowercase module on purpose:
+# `Class.method` may come from a library, and there is nothing to check.
 CITATION = re.compile(r"`([a-z_][a-z_0-9]*)\.([A-Za-z_][\w]*)(?:\(\))?`")
 EXTENSIONS = {"py", "sh", "ps1", "html", "jinja", "js", "css", "md", "env", "ini",
               "toml", "json", "yml", "service", "timer", "webmanifest", "db", "pub",
               "pem", "gz", "zst", "lock", "example", "txt", "log", "webp", "png", "svg"}
 
-# So as extensoes de coisa que MORA no repositorio. `.env`, `.db`, `.pem` e `.gz` ficam de
-# fora de proposito: sao arquivo de deploy, de dado ou de saida, criados fora daqui.
+# Only extensions of things that LIVE in the repository. `.env`, `.db`, `.pem` and `.gz` are
+# left out on purpose: they are deploy, data or output files, created outside of here.
 REPO_EXTENSIONS = ("py", "sh", "ps1", "html", "jinja", "js", "css", "md", "ini",
                    "toml", "json", "webmanifest", "service", "timer")
 FILENAME = re.compile(r"`([A-Za-z0-9_./-]+\.(?:" + "|".join(REPO_EXTENSIONS) + r"))`")
 
-# Arquivo citado que NAO existe na arvore, cada um por um motivo diferente.
+# Cited files that do NOT exist in the tree, each for a different reason.
 NOT_A_FILE = {
-    # Escrito DENTRO do tarball pelo empacotador; a doc explica isso na secao de versao,
-    # e o `.gitignore` guarda o caso de ele escapar para a arvore.
+    # Written INSIDE the tarball by the packager; the doc explains this in the version section,
+    # and `.gitignore` guards the case of it escaping into the tree.
     "_build.py",
 }
 
-# Colisoes de FORMATO, nao de nome. Cada uma tem um motivo diferente, e por isso a lista
-# e curta e escrita a mao em vez de uma regra generica que deixaria passar outras coisas.
+# SHAPE collisions, not name collisions. Each one has a different reason, which is why the list
+# is short and hand-written instead of a generic rule that would let other things through.
 NOT_CODE = {
-    # `servers` e `jobs` sao tabela do banco alem de modulo de blueprint.
+    # `servers` and `jobs` are database tables as well as blueprint modules.
     "servers.broker_id", "jobs.broker_op",
-    # `app` e o objeto Flask; `run` e metodo dele, nao do modulo.
+    # `app` is the Flask object; `run` is its method, not the module's.
     "app.run",
-    # A doc cita este como CONTRA-exemplo ("servers.detail, nao servers.server_detail").
+    # The doc cites this one as a COUNTER-example ("servers.detail, not servers.server_detail").
     "servers.server_detail",
 }
 
 
 def _defined_names() -> dict[str, set[str]]:
-    """modulo -> nomes que ele define no topo (funcao, classe, constante)."""
+    """module -> names it defines at the top level (function, class, constant)."""
     found: dict[str, set[str]] = {}
     for package in PACKAGES:
         for path in sorted((ROOT / package).rglob("*.py")):
@@ -79,8 +79,8 @@ def _defined_names() -> dict[str, set[str]]:
                 continue
             names: set[str] = set()
             tree = ast.parse(path.read_text(encoding="utf-8"))
-            # Metodo de classe entra junto: a doc cita `instance_service._undo`, que e
-            # metodo do `Service` e nao nome de topo.
+            # Class methods are included too: the doc cites `instance_service._undo`, which is
+            # a method of `Service` and not a top-level name.
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                     names.add(node.name)
@@ -110,22 +110,22 @@ def _checkable() -> list[tuple[str, str]]:
 
 
 def test_a_varredura_encontra_citacoes_de_codigo():
-    """Zero citacoes conferiveis e o jeito silencioso de este teste parar de valer.
+    """Zero checkable citations is the silent way for this test to stop meaning anything.
 
-    O piso e baixo porque o filtro e severo: das ~90 citacoes com ponto do CLAUDE.md,
-    a maioria e chave de i18n, nome de arquivo ou modulo de fora. O que sobra e o que
-    de fato aponta para codigo daqui.
+    The floor is low because the filter is strict: of the ~90 dotted citations in CLAUDE.md,
+    most are i18n keys, file names or outside modules. What is left is what actually
+    points to code from here.
     """
     assert len(_checkable()) >= 12
 
 
 def _repo_files() -> set[str]:
-    """Todo caminho do repositorio, pelo caminho completo E pelo nome do arquivo.
+    """Every repository path, by the full path AND by the file name.
 
-    Pelos dois porque a doc cita das duas formas: `lib/ct-install.sh` com o caminho e
-    `compare.sh` sozinho. Exigir o caminho completo obrigaria a reescrever a doc; aceitar
-    so o nome deixaria passar um caminho errado. Aceitar os dois pega o que importa — o
-    arquivo que deixou de existir.
+    Both because the doc cites in both forms: `lib/ct-install.sh` with the path and
+    `compare.sh` alone. Requiring the full path would force rewriting the doc; accepting
+    only the name would let a wrong path through. Accepting both catches what matters - the
+    file that no longer exists.
     """
     found: set[str] = set()
     for path in ROOT.rglob("*"):
@@ -141,8 +141,8 @@ def _cited_files() -> list[str]:
     text = DOC.read_text(encoding="utf-8")
     return sorted({
         m.group(1) for m in FILENAME.finditer(text)
-        # `/sw.js` e `/static/sw.js` sao ROTA, nao caminho de arquivo; `src/*/_build.py` e
-        # `provision-*-lxc.sh` sao padrao, e conferir glob so ensinaria a escrever glob.
+        # `/sw.js` and `/static/sw.js` are ROUTES, not file paths; `src/*/_build.py` and
+        # `provision-*-lxc.sh` are patterns, and checking globs would only teach writing globs.
         if not m.group(1).startswith("/") and "*" not in m.group(1)
         and m.group(1) not in NOT_A_FILE
     })
@@ -171,18 +171,18 @@ def test_todo_nome_citado_ainda_existe():
         "existe):\n  " + "\n  ".join(missing))
 
 
-# --------------------------------------------------------------- rota citada
+# --------------------------------------------------------------- cited routes
 
-# `POST /account/language`, `GET /health`: a doc mandando CHAMAR uma rota. O metodo na
-# frente e o que torna a citacao inequivoca -- sem ele, `/opt/gamepanel/gamepanel` e
-# `/etc/gamebroker/broker.env` (caminho de disco) e `/v1/instancias` (rota do broker,
-# citada como o nome ANTIGO numa frase historica) entrariam na conta e a lista de
-# excecoes cresceria mais que a checagem.
+# `POST /account/language`, `GET /health`: the doc telling you to CALL a route. The method in
+# front is what makes the citation unambiguous -- without it, `/opt/gamepanel/gamepanel` and
+# `/etc/gamebroker/broker.env` (disk paths) and `/v1/instancias` (broker route, cited by its
+# OLD name in a historical sentence) would be counted and the exception list would grow
+# bigger than the check.
 CITED_ROUTE = re.compile(r"`(GET|POST|PUT|DELETE) (/[A-Za-z0-9/_.<>:-]*)`")
 
 
 def _panel_rules() -> set[tuple[str, str]]:
-    """(metodo, regra) de tudo que o painel serve, como o Flask registrou."""
+    """(method, rule) of everything the panel serves, as Flask registered it."""
     from gamepanel import app as panel
 
     found = set()
@@ -193,12 +193,12 @@ def _panel_rules() -> set[tuple[str, str]]:
 
 
 def test_toda_rota_citada_com_metodo_ainda_existe():
-    """Doc que manda chamar uma rota que nao existe mais custa uma sessao de depuracao.
+    """A doc telling you to call a route that no longer exists costs a debugging session.
 
-    Foi o caso do `POST /account/idioma`: a rota virou `/account/language` na traducao
-    dos identificadores, e a instrucao de "conferir uma tela nos dois idiomas" passou a
-    devolver 404 calado -- quem a seguia concluia que o seletor de idioma tinha quebrado.
-    A checagem de `modulo.nome` nao alcanca URL, e nenhuma outra olhava para ela.
+    That was the case of `POST /account/idioma`: the route became `/account/language` in the
+    identifier translation, and the instruction to "check a screen in both languages" started
+    returning a silent 404 -- whoever followed it concluded that the language selector was broken.
+    The `module.name` check does not reach URLs, and no other check looked at them.
     """
     rules = _panel_rules()
     text = DOC.read_text(encoding="utf-8")
@@ -213,6 +213,6 @@ def test_toda_rota_citada_com_metodo_ainda_existe():
 
 
 def test_a_varredura_encontra_rotas_citadas():
-    """Se o formato da citacao mudar, o teste acima passa a nao conferir nada."""
+    """If the citation format changes, the test above stops checking anything."""
     found = CITED_ROUTE.findall(DOC.read_text(encoding="utf-8"))
     assert found, "nenhuma rota `METODO /caminho` encontrada no CLAUDE.md"

@@ -1,23 +1,24 @@
 # shellcheck shell=bash
-# Fases de instalacao que rodam DENTRO do container do jogo.
+# Installation phases that run INSIDE the game container.
 #
-# NAO e um script executavel: e uma biblioteca lida com `source` por dois chamadores, e cada
-# um define o TRANSPORTE das fases (como um comando chega ao CT):
+# This is NOT an executable script: it is a library loaded with `source` by two callers, and each
+# one defines the TRANSPORT of the phases (how a command reaches the CT):
 #
-#   provision-game-lxc.sh  (host Proxmox)  run_ct = `pct exec CT -- bash -lc`
-#   lib/ct-install.sh      (dentro do CT)  run_ct = `bash -lc` local  (usado pelo broker)
+#   provision-game-lxc.sh  (Proxmox host)  run_ct = `pct exec CT -- bash -lc`
+#   lib/ct-install.sh      (inside the CT) run_ct = local `bash -lc`  (used by the broker)
 #
-# Um instalador so, com dois transportes: mexer numa fase vale para os dois caminhos, e o
-# deploy manual e o do broker nao divergem em silencio.
+# One installer, two transports: changing a phase applies to both paths, and the manual
+# deploy and the broker's deploy do not silently diverge.
 #
-# O chamador precisa fornecer, ANTES do source:
-#   funcoes   msg warn die run_ct push_file_to_ct install_helper
-#   constantes STEAMCMD_URL STEAMCMD_DIR GAME_DIR FIREWALL_SCRIPT (o lib/ct-firewall.sh do lado dele)
-#   variaveis  as do game.env (GAME_KEY, STEAM_APP_ID, START_*, PRE/POST_INSTALL_CMD...)
-# e chamar `resolve_game_variables` antes de qualquer fase.
+# The caller must provide, BEFORE the source:
+#   functions  msg warn die run_ct push_file_to_ct install_helper
+#   constants  STEAMCMD_URL STEAMCMD_DIR GAME_DIR FIREWALL_SCRIPT (the lib/ct-firewall.sh on its side)
+#              PANEL_ACCESS_SCRIPT (the lib/ct-panel-access.sh on its side)
+#   variables  those of game.env (GAME_KEY, STEAM_APP_ID, START_*, PRE/POST_INSTALL_CMD...)
+# and call `resolve_game_variables` before any phase.
 
-# Le o que o game.env define e calcula o que as fases derivam dele. So decisoes do JOGO:
-# nada de CTID, rede ou storage (isso e do host, ver resolve_variables no provision).
+# Reads what game.env defines and computes what the phases derive from it. Only GAME decisions:
+# no CTID, network or storage (that belongs to the host, see resolve_variables in the provision).
 resolve_game_variables() {
   [[ -n "${GAME_KEY:-}" ]] || die "GAME_KEY nao definido no game.env"
   [[ -n "${STEAM_APP_ID:-}" ]] || die "STEAM_APP_ID nao definido no game.env"
@@ -30,8 +31,8 @@ resolve_game_variables() {
   GAME_PORTS="${GAME_PORTS:-}"
   QUERY_PORT="${QUERY_PORT:-0}"
   EXTRA_PORT="${EXTRA_PORT:-0}"
-  # Receitas nomeadas (lista FECHADA em apply_recipes) - o jeito de um jogo cadastrado pela
-  # API pedir uma instalacao especial sem escrever shell. Vazio para os games/*.env de sempre.
+  # Named recipes (CLOSED list in apply_recipes) - the way a game registered through the
+  # API asks for a special installation without writing shell. Empty for the usual games/*.env.
   RECIPES="${RECIPES:-}"
   START_SCRIPT="${START_SCRIPT:-}"
   START_ARGS="${START_ARGS:-}"
@@ -39,8 +40,8 @@ resolve_game_variables() {
   POST_INSTALL_CMD="${POST_INSTALL_CMD:-}"
   SERVICE_NAME="${GAME_KEY}.service"
 
-  # Jogos sem build nativo Linux (ex.: Enshrouded) precisam baixar o build Windows
-  # e rodar via Wine. O flag tem que vir ANTES do +login no SteamCMD.
+  # Games without a native Linux build (e.g. Enshrouded) must download the Windows build
+  # and run it through Wine. The flag has to come BEFORE +login in SteamCMD.
   STEAM_PLATFORM="${STEAM_PLATFORM:-}"
   if [[ -n "$STEAM_PLATFORM" ]]; then
     STEAMCMD_PLATFORM_ARG="+@sSteamCmdForcePlatformType ${STEAM_PLATFORM} "
@@ -48,39 +49,39 @@ resolve_game_variables() {
     STEAMCMD_PLATFORM_ARG=""
   fi
 
-  # ----- Runtime para .exe de Windows (vazio = jogo nativo Linux) -----
-  # wine   = pacote da distro. Simples, mas sem esync/fsync: cada primitiva de
-  #          sincronizacao do Windows vira syscall cara, e isso aparece como gargalo
-  #          em jogo com muitas threads.
-  # proton = build do Proton-GE baixado do GitHub. Traz o proprio wine com fsync
-  #          (futex_waitv, kernel >= 5.16) ligado por padrao, que e o ganho real.
-  # Os dois expoem o mesmo comando dentro do CT: win-run <exe> [args].
+  # ----- Runtime for Windows .exe files (empty = native Linux game) -----
+  # wine   = the distro package. Simple, but without esync/fsync: every Windows
+  #          synchronization primitive becomes an expensive syscall, and that shows up
+  #          as a bottleneck in games with many threads.
+  # proton = Proton-GE build downloaded from GitHub. Ships its own wine with fsync
+  #          (futex_waitv, kernel >= 5.16) on by default, which is the real gain.
+  # Both expose the same command inside the CT: win-run <exe> [args].
   WINDOWS_RUNTIME="${WINDOWS_RUNTIME:-}"
   case "$WINDOWS_RUNTIME" in
     ""|wine|proton) ;;
     *) die "WINDOWS_RUNTIME invalido: '${WINDOWS_RUNTIME}' (use wine, proton ou deixe vazio)" ;;
   esac
-  # Versao FIXA de proposito: 'latest' faria o servidor trocar de runtime sozinho
-  # num redeploy qualquer, e regressao de Proton e dificil de diagnosticar depois.
+  # PINNED version on purpose: 'latest' would make the server switch runtime on its own
+  # in any redeploy, and a Proton regression is hard to diagnose afterwards.
   PROTON_VERSION="${PROTON_VERSION:-GE-Proton11-5}"
   PROTON_DIR="/opt/proton/${PROTON_VERSION}"
-  # Padrao conservador. Desligar explorer.exe/services.exe economiza processo em
-  # servidor headless, mas quebra jogo que abre janela (ex.: Icarus) - por isso e
-  # decisao de cada games/<jogo>.env, nao um default.
+  # Conservative default. Disabling explorer.exe/services.exe saves processes on a
+  # headless server, but breaks games that open a window (e.g. Icarus) - so it is
+  # a decision for each games/<game>.env, not a default.
   WINE_DLL_OVERRIDES="${WINE_DLL_OVERRIDES:-mscoree,mshtml=}"
-  # O valor e gravado entre aspas simples no /etc/game-runtime.env; uma aspa
-  # simples aqui quebraria o arquivo e so apareceria como erro no start do jogo.
+  # The value is written between single quotes in /etc/game-runtime.env; a single
+  # quote here would break the file and only show up as an error when the game starts.
   case "$WINE_DLL_OVERRIDES" in
     *\'*) die "WINE_DLL_OVERRIDES nao pode conter aspa simples (')." ;;
   esac
-  # 1 quando o .exe insiste em criar janela mesmo sendo servidor.
+  # 1 when the .exe insists on creating a window even though it is a server.
   WINDOWS_RUNTIME_XVFB="${WINDOWS_RUNTIME_XVFB:-0}"
   WINE_PREFIX_DIR="${WINE_PREFIX_DIR:-/home/steam/.wine-${GAME_KEY}}"
   PROTON_PREFIX_DIR="${PROTON_PREFIX_DIR:-/home/steam/.proton-${GAME_KEY}}"
 
-  # Quase todo servidor dedicado baixa com login anonimo. Alguns (DayZ) tem o depot
-  # do servidor atras de uma conta que possua o jogo - o game.env marca com
-  # STEAM_ANONYMOUS=0 e as credenciais vem do .env (deploy.env), nunca do game.env.
+  # Almost every dedicated server downloads with an anonymous login. Some (DayZ) keep the
+  # server depot behind an account that owns the game - game.env flags it with
+  # STEAM_ANONYMOUS=0 and the credentials come from .env (deploy.env), never from game.env.
   STEAM_ANONYMOUS="${STEAM_ANONYMOUS:-1}"
   STEAM_USER="${STEAM_USER:-}"
   STEAM_PASS="${STEAM_PASS:-}"
@@ -95,18 +96,18 @@ resolve_game_variables() {
   else
     [[ -n "$STEAM_USER" ]] || die "${GAME_DISPLAY_NAME} nao aceita login anonimo na Steam. Preencha STEAM_USER e STEAM_PASS no .env com uma conta que POSSUA o jogo."
     [[ -n "$STEAM_PASS" ]] || die "STEAM_PASS vazio (necessario para o primeiro login de ${STEAM_USER} na Steam)."
-    # Os valores entram num `su - steam -c '...'`; uma aspa simples quebraria a linha
+    # The values go into a `su - steam -c '...'`; a single quote would break the line
     case "${STEAM_USER}${STEAM_PASS}${STEAM_GUARD_CODE}" in
       *\'*) die "STEAM_USER/STEAM_PASS/STEAM_GUARD_CODE nao podem conter aspa simples (')." ;;
     esac
     STEAMCMD_GUARD=""
     [[ -n "$STEAM_GUARD_CODE" ]] && STEAMCMD_GUARD=" ${STEAM_GUARD_CODE}"
     STEAMCMD_LOGIN="+login ${STEAM_USER} ${STEAM_PASS}${STEAMCMD_GUARD}"
-    # Depois do primeiro login o SteamCMD guarda o token em ~steam/Steam/config/config.vdf.
-    # Os helpers dentro do CT usam so o usuario - a senha nao fica gravada la dentro.
+    # After the first login SteamCMD keeps the token in ~steam/Steam/config/config.vdf.
+    # The helpers inside the CT use only the user - the password is not stored in there.
     STEAMCMD_LOGIN_CACHED="+login ${STEAM_USER}"
-    # Sem token valido o SteamCMD pediria a senha e ficaria parado; o timer nao tem
-    # quem responda, entao os helpers rodam com prazo e sem stdin.
+    # Without a valid token SteamCMD would ask for the password and hang; the timer has
+    # no one to answer, so the helpers run with a deadline and without stdin.
     STEAMCMD_TIMEOUT_UPDATE="timeout 7200 "
     STEAMCMD_TIMEOUT_INFO="timeout 300 "
   fi
@@ -117,10 +118,13 @@ install_base_packages_in_ct() {
   run_ct "
     export DEBIAN_FRONTEND=noninteractive
     missing=''
-    # libatomic1: o servidor do Euro Truck Simulator 2 (e o do American Truck, mesmo motor) nao
-    # carrega sem ele ('libatomic.so.1: cannot open shared object file'), e jogo cadastrado pelo
-    # painel nao tem como pedir pacote. E pequeno e do proprio Debian, entao vai em todo CT.
-    for pkg in ca-certificates curl lib32gcc-s1 lib32stdc++6 libatomic1 locales; do
+    # libatomic1: the Euro Truck Simulator 2 server (and American Truck's, same engine) does not
+    # load without it ('libatomic.so.1: cannot open shared object file'), and a game registered
+    # through the panel has no way to ask for a package. It is small and from Debian itself, so
+    # it goes into every CT.
+    # sudo: the panel logs in as gamepanel and reaches steam and the root helpers through it
+    # (lib/ct-panel-access.sh). The Debian 13 template does not ship it.
+    for pkg in ca-certificates curl lib32gcc-s1 lib32stdc++6 libatomic1 locales sudo; do
       dpkg -s \"\$pkg\" >/dev/null 2>&1 || missing=\"\$missing \$pkg\"
     done
     if [[ -n \"\$missing\" ]]; then
@@ -132,11 +136,21 @@ install_base_packages_in_ct() {
   "
 }
 
+# Where the access piece lives inside the CT. It stays there (root-only, not a sudo helper): the
+# broker's final cleanup runs its `lock`, and the future migration/helper update reuses it.
+PANEL_ACCESS_IN_CT=/usr/local/lib/gamepanel/ct-panel-access.sh
+
 setup_panel_access() {
-  # Deixa o CT pronto para ser controlado pelo painel administrativo (deploy-admin.ps1),
-  # que fala SSH direto com cada container de jogo. Sem PANEL_PUBKEY, nada e instalado.
+  # Gets the CT ready to be controlled by the admin panel, which talks SSH directly to each game
+  # container - as the unprivileged `gamepanel` user, never as root (lib/ct-panel-access.sh).
+  # Without PANEL_PUBKEY, nothing is installed. Runs AFTER ensure_steam_user: the sudo rule
+  # "gamepanel may act as steam" points at that user.
   [[ -n "${PANEL_PUBKEY:-}" ]] || return 0
-  msg "Habilitando acesso do painel administrativo via SSH"
+  case "$PANEL_PUBKEY" in
+    *\'*) die "PANEL_PUBKEY nao pode conter aspa simples (')." ;;
+  esac
+  [[ -f "${PANEL_ACCESS_SCRIPT:-}" ]] || die "ct-panel-access.sh nao encontrado (${PANEL_ACCESS_SCRIPT:-vazio})"
+  msg "Habilitando acesso do painel administrativo via SSH (usuario gamepanel)"
   run_ct "
     set -e
     if ! command -v sshd >/dev/null 2>&1; then
@@ -144,11 +158,22 @@ setup_panel_access() {
       apt-get update -qq && apt-get install -y -qq openssh-server
     fi
     systemctl enable --now ssh >/dev/null 2>&1 || systemctl enable --now sshd
-    install -d -m 700 /root/.ssh
-    touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
-    grep -qF '${PANEL_PUBKEY}' /root/.ssh/authorized_keys \
-      || echo '${PANEL_PUBKEY}' >> /root/.ssh/authorized_keys
   "
+  push_file_to_ct "$PANEL_ACCESS_SCRIPT" "$PANEL_ACCESS_IN_CT" 0755
+  run_ct "bash ${PANEL_ACCESS_IN_CT} install '${SERVICE_NAME}' '${PANEL_PUBKEY}'" \
+    || die "Falha preparando o acesso do painel (usuario gamepanel, sudo e helpers)"
+}
+
+# Refuses root over SSH: from here on the panel only gets in as gamepanel. LAST phase of the host
+# path (`pct exec` does not need SSH, so nothing after this depends on root login). The broker
+# does NOT call this from ct-install.sh: its own SSH session is root, and it locks in the same
+# final command that removes its key (gamebroker/runtime/ssh_installer.py, _cleanup).
+# The piece verifies first that gamepanel really reaches steam and the helpers; if not, nothing is
+# locked and the deploy fails here, with root still open for whoever fixes it.
+lock_root_login() {
+  [[ -n "${PANEL_PUBKEY:-}" ]] || return 0
+  msg "Trancando o login do root por SSH (o painel entra como gamepanel)"
+  run_ct "bash ${PANEL_ACCESS_IN_CT} lock" || die "Nao tranquei o root: o acesso pelo gamepanel nao passou na verificacao"
 }
 
 ensure_steam_user() {
@@ -169,21 +194,21 @@ install_steamcmd_in_ct() {
   "
 }
 
-# Instala o runtime de Windows (wine ou proton) e o comando win-run, que e o que
-# os scripts de start dos jogos chamam. Roda ANTES do PRE_INSTALL_CMD para o jogo
-# poder contar com o runtime pronto e so cuidar do que e especifico dele.
+# Installs the Windows runtime (wine or proton) and the win-run command, which is what
+# the games' start scripts call. Runs BEFORE PRE_INSTALL_CMD so the game can count on
+# the runtime being ready and only take care of what is specific to it.
 setup_windows_runtime() {
   [[ -n "$WINDOWS_RUNTIME" ]] || return 0
   msg "Preparando runtime de Windows: ${WINDOWS_RUNTIME}"
 
   local packages="xz-utils"
   [[ "$WINDOWS_RUNTIME" == "wine" ]] && packages="wine"
-  # libvulkan1: o launcher do Proton importa vulkan.py, que faz CDLL('libvulkan.so.1')
-  # na carga. Sem o loader ele nem comeca - morre em OSError antes de rodar o jogo,
-  # mesmo em servidor headless que nunca vai renderizar nada.
+  # libvulkan1: the Proton launcher imports vulkan.py, which does CDLL('libvulkan.so.1')
+  # on load. Without the loader it does not even start - it dies with OSError before running
+  # the game, even on a headless server that will never render anything.
   [[ "$WINDOWS_RUNTIME" == "proton" ]] && packages="python3 xz-utils libvulkan1"
-  # xvfb-run precisa do xauth, que e apenas Recommends do xvfb: com
-  # --no-install-recommends ele nao viria, e o start morreria com
+  # xvfb-run needs xauth, which is only a Recommends of xvfb: with
+  # --no-install-recommends it would not come along, and the start would die with
   # "xvfb-run: error: xauth command not found".
   [[ "$WINDOWS_RUNTIME_XVFB" == "1" ]] && packages="${packages} xvfb xauth"
 
@@ -219,9 +244,9 @@ setup_windows_runtime() {
       tmp=\$(mktemp -d)
       echo 'Baixando ${PROTON_VERSION} (~450MB)...'
       curl -fsSL '${url}' -o \"\$tmp/proton.tar.gz\"
-      # --strip-components=1: o tarball tem um diretorio raiz cujo nome nao segue a
-      # tag (GE-Proton11-5 vira GE-Proton11-5-x86_64). Extrair o conteudo direto no
-      # PROTON_DIR deixa o caminho previsivel qualquer que seja esse nome.
+      # --strip-components=1: the tarball has a root directory whose name does not follow
+      # the tag (GE-Proton11-5 becomes GE-Proton11-5-x86_64). Extracting the contents straight
+      # into PROTON_DIR keeps the path predictable whatever that name is.
       tar -xzf \"\$tmp/proton.tar.gz\" -C '${PROTON_DIR}' --strip-components=1
       rm -rf \"\$tmp\"
       [ -x '${PROTON_DIR}/proton' ] || { echo 'ERRO: ${PROTON_DIR}/proton nao existe apos extrair'; ls -la '${PROTON_DIR}'; exit 1; }
@@ -230,15 +255,15 @@ setup_windows_runtime() {
     " || die "Falha instalando o Proton ${PROTON_VERSION}"
   fi
 
-  # Configuracao lida pelo win-run. Fica fora do script para trocar runtime sem
-  # reescrever o executavel.
+  # Configuration read by win-run. It lives outside the script so the runtime can be
+  # switched without rewriting the executable.
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
-# Gerado pelo deploy - nao edite a mao (o proximo deploy sobrescreve).
-# Os valores vao entre aspas simples porque este arquivo e lido com 'source': o
-# WINE_DLL_OVERRIDES usa ';' como separador, e sem aspas o shell trataria cada
-# trecho depois do ';' como um comando ("services.exe=d: command not found").
+# Generated by the deploy - do not edit by hand (the next deploy overwrites it).
+# Values are single-quoted because this file is read with 'source': the
+# WINE_DLL_OVERRIDES uses ';' as separator, and unquoted the shell would treat each
+# piece after the ';' as a command ("services.exe=d: command not found").
 RUNTIME='${WINDOWS_RUNTIME}'
 GAME_KEY='${GAME_KEY}'
 PROTON_DIR='${PROTON_DIR}'
@@ -253,8 +278,8 @@ EOF
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<'EOF'
 #!/usr/bin/env bash
-# win-run <exe> [args...] - roda um .exe de Windows com o runtime configurado
-# no deploy (wine ou proton). Instalado por provision-game-lxc.sh.
+# win-run <exe> [args...] - runs a Windows .exe with the runtime configured
+# at deploy time (wine or proton). Installed by provision-game-lxc.sh.
 set -Eeuo pipefail
 
 [ -r /etc/game-runtime.env ] || { echo "win-run: /etc/game-runtime.env ausente"; exit 1; }
@@ -267,46 +292,46 @@ exe="$1"; shift
 
 export HOME="${HOME:-/home/steam}"
 
-# Servico systemd nao passa por PAM, entao ninguem cria o XDG_RUNTIME_DIR e o
-# libwayland-client polui o journal com "XDG_RUNTIME_DIR is invalid or not set".
+# A systemd service does not go through PAM, so nobody creates XDG_RUNTIME_DIR and
+# libwayland-client floods the journal with "XDG_RUNTIME_DIR is invalid or not set".
 export XDG_RUNTIME_DIR="/tmp/.xdg-${GAME_KEY}-$(id -u)"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
-# fixme-all e nao -all: as linhas "err:" sao a unica pista quando o .exe morre
-# antes de gerar log proprio.
+# fixme-all and not -all: the "err:" lines are the only clue when the .exe dies
+# before writing a log of its own.
 export WINEDEBUG="${WINEDEBUG:-fixme-all}"
 export WINEDLLOVERRIDES="${WINE_DLL_OVERRIDES:-mscoree,mshtml=}"
 
-# ntsync implementa as primitivas do NT dentro do kernel e e mais rapido que o
-# fsync. Nao basta o device existir: no Proton ele e opt-in por variavel. Quando o
-# /dev/ntsync nao esta exposto ao container, segue no fsync sem reclamar.
+# ntsync implements the NT primitives in the kernel and is faster than
+# fsync. The device existing is not enough: in Proton it is opt-in via a variable. When
+# /dev/ntsync is not exposed to the container, it stays on fsync without complaining.
 if [ -e /dev/ntsync ] && [ -w /dev/ntsync ]; then
   export PROTON_USE_NTSYNC="${PROTON_USE_NTSYNC:-1}"
   export WINE_NTSYNC="${WINE_NTSYNC:-1}"
 fi
 
 if [ "${RUNTIME}" = "proton" ]; then
-  # O Proton espera o layout do Steam: um diretorio de compat (onde nasce o pfx) e
-  # um "client install path". O segundo so precisa existir.
+  # Proton expects the Steam layout: a compat directory (where the pfx is created) and
+  # a "client install path". The second one only needs to exist.
   export STEAM_COMPAT_DATA_PATH="${PROTON_PREFIX}"
   export STEAM_COMPAT_CLIENT_INSTALL_PATH="${HOME}/.steam/steam"
   mkdir -p "$STEAM_COMPAT_DATA_PATH" "$STEAM_COMPAT_CLIENT_INSTALL_PATH"
   [ -x "${PROTON_DIR}/proton" ] || { echo "win-run: ${PROTON_DIR}/proton ausente"; exit 1; }
 
-  # ESTAS DUAS LINHAS SAO O QUE FAZ SERVIDOR DEDICADO FUNCIONAR SOB PROTON.
-  # Por padrao o Proton injeta o shim steam.exe, que espera um cliente Steam vivo
-  # para completar um handshake. Sem cliente (o caso aqui), o servidor trava para
-  # sempre bloqueado em pipe_read: processo de pe, 34MB, zero CPU, sem porta, sem
-  # nem chegar a escrever o log do jogo.
-  # O proprio proton tem o desvio: com UMU_ID definido e o executavel em caminho
-  # WINDOWS, ele segue por "Executable is inside wine prefix, launching normally"
-  # e chama o wine direto, sem shim nenhum.
-  # O UMU_ID precisa ser o appid REAL do jogo, nao um valor qualquer: o Proton o
-  # propaga como SteamAppId, e com 0 a API de game server da Steam falha. O Icarus
-  # registrava "[AppId: 0] Game Server API initialized 0" e nunca abria a porta de
-  # query - servidor de pe, invisivel no navegador e sem contagem no painel.
-  # O appid vem do steam_appid.txt que acompanha o executavel.
+  # THESE TWO LINES ARE WHAT MAKES A DEDICATED SERVER WORK UNDER PROTON.
+  # By default Proton injects the steam.exe shim, which waits for a live Steam client
+  # to complete a handshake. Without a client (our case), the server hangs
+  # forever blocked on pipe_read: process up, 34MB, zero CPU, no port, without
+  # even writing the game log.
+  # Proton itself has the bypass: with UMU_ID set and the executable on a
+  # WINDOWS path, it goes through "Executable is inside wine prefix, launching normally"
+  # and calls wine directly, with no shim at all.
+  # UMU_ID must be the game's REAL appid, not any value: Proton
+  # propagates it as SteamAppId, and with 0 the Steam game server API fails. Icarus
+  # logged "[AppId: 0] Game Server API initialized 0" and never opened the query
+  # port - server up, invisible in the browser and with no count in the panel.
+  # The appid comes from the steam_appid.txt shipped next to the executable.
   if [ -z "${UMU_ID:-}" ]; then
     arq_appid="$(dirname "$exe")/steam_appid.txt"
     if [ -r "$arq_appid" ]; then
@@ -325,8 +350,8 @@ else
 fi
 
 if [ "${USE_XVFB:-0}" = "1" ]; then
-  # Alguns servidores criam janela mesmo headless; -a escolhe um display livre,
-  # o que importa quando o systemd reinicia rapido e o lock anterior ainda existe.
+  # Some servers create a window even headless; -a picks a free display,
+  # which matters when systemd restarts quickly and the previous lock still exists.
   exec xvfb-run -a -s "-screen 0 640x480x24 -nolisten tcp" "$@"
 fi
 exec "$@"
@@ -336,10 +361,10 @@ EOF
 
   run_ct "install -d -o steam -g steam ${WINE_PREFIX_DIR} ${PROTON_PREFIX_DIR} /home/steam/.steam/steam"
 
-  # A camada lsteamclient do Proton procura a steamclient.so NATIVA nos caminhos do
-  # cliente Steam. Sem ela o processo aborta em assert. O SteamCMD ja traz essa
-  # biblioteca, entao aponta-se para ela - mesmo truque que palworld/satisfactory
-  # usam com o sdk64.
+  # Proton's lsteamclient layer looks for the NATIVE steamclient.so in the Steam client
+  # paths. Without it the process aborts on an assert. SteamCMD already ships that
+  # library, so we point to it - the same trick palworld/satisfactory use with
+  # sdk64.
   if [[ "$WINDOWS_RUNTIME" == "proton" ]]; then
     run_ct "
       set -e
@@ -405,9 +430,9 @@ run_post_install() {
   run_ct "$POST_INSTALL_CMD" || die "POST_INSTALL_CMD falhou (veja a saida acima)"
 }
 
-# Receitas nomeadas: a lista e FECHADA aqui, de proposito. Um jogo cadastrado pela API escolhe
-# receitas, nunca escreve shell (o PRE/POST_INSTALL_CMD so existe nos games/*.env revisados
-# no git). Receita desconhecida derruba a instalacao em vez de ser ignorada em silencio.
+# Named recipes: the list is CLOSED here, on purpose. A game registered through the API picks
+# recipes, it never writes shell (PRE/POST_INSTALL_CMD only exists in the games/*.env reviewed
+# in git). An unknown recipe fails the installation instead of being silently ignored.
 apply_recipes() {
   local recipes r
   IFS=' ' read -ra recipes <<<"${RECIPES:-}"
@@ -417,14 +442,14 @@ apply_recipes() {
         msg "Receita steamclient-sdk64: ligando a steamclient.so do SteamCMD ao SDK do jogo"
         run_ct "
           set -e
-          # O pai (.steam) tambem e do steam: `install -d` so da o dono ao ultimo nivel, e um
-          # ~/.steam de root deixaria o proprio SteamCMD sem poder escrever ali.
+          # The parent (.steam) also belongs to steam: `install -d` only sets the owner of the last
+          # level, and a root-owned ~/.steam would leave SteamCMD itself unable to write there.
           install -d -o steam -g steam /home/steam/.steam /home/steam/.steam/sdk64
           ln -sf ${STEAMCMD_DIR}/linux64/steamclient.so /home/steam/.steam/sdk64/steamclient.so
           chown -h steam:steam /home/steam/.steam/sdk64/steamclient.so
         "
         ;;
-      wine|proton|xvfb) ;;  # runtime de Windows e X virtual: quem trata e o setup_windows_runtime
+      wine|proton|xvfb) ;;  # Windows runtime and virtual X: setup_windows_runtime handles them
       *) die "Receita desconhecida: ${r}" ;;
     esac
   done
@@ -436,7 +461,7 @@ render_update_helper() {
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
 #!/usr/bin/env bash
-# Atualiza ${GAME_DISPLAY_NAME} e reinicia o servico.
+# Updates ${GAME_DISPLAY_NAME} and restarts the service.
 set -Eeuo pipefail
 systemctl stop ${SERVICE_NAME} || true
 ${STEAMCMD_TIMEOUT_UPDATE}su - steam -c "${STEAMCMD_DIR}/steamcmd.sh ${STEAMCMD_PLATFORM_ARG}+force_install_dir ${GAME_DIR} ${STEAMCMD_LOGIN_CACHED} +app_update ${STEAM_APP_ID} validate +quit" </dev/null
@@ -453,8 +478,8 @@ render_update_checker() {
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<EOF
 #!/usr/bin/env bash
-# Compara o buildid instalado com o mais recente da Steam.
-# So para/atualiza/reinicia o servidor quando ha update de verdade.
+# Compares the installed buildid with the latest one on Steam.
+# Only stops/updates/restarts the server when there is a real update.
 set -Eeuo pipefail
 
 MANIFEST="${GAME_DIR}/steamapps/appmanifest_${STEAM_APP_ID}.acf"
@@ -537,7 +562,7 @@ render_service_helpers() {
     esac
     cat > "$tmp_file" <<EOF
 #!/usr/bin/env bash
-# Controle do servidor de ${GAME_DISPLAY_NAME} (${SERVICE_NAME}).
+# Control of the ${GAME_DISPLAY_NAME} server (${SERVICE_NAME}).
 set -Eeuo pipefail
 ${body}
 EOF
@@ -549,20 +574,20 @@ EOF
 render_systemd_unit() {
   msg "Criando servico systemd ${SERVICE_NAME}"
   local rendered_args="${START_ARGS//\{PORT\}/${GAME_PORT}}"
-  # {QUERY_PORT}: um jogo que anda de porta (varias instancias) precisa avisar as DUAS ao
-  # servidor. Nenhum games/*.env usa o marcador, entao o deploy antigo nao muda.
+  # {QUERY_PORT}: a game that shifts ports (several instances) must tell the server BOTH.
+  # No games/*.env uses the marker, so the old deploy does not change.
   rendered_args="${rendered_args//\{QUERY_PORT\}/${QUERY_PORT}}"
-  # {EXTRA_PORT}: a terceira porta que o jogo aceita por argumento (a "confiavel" do
-  # Satisfactory, -ReliablePort). Sem porta extra o marcador nao existe no START_ARGS.
+  # {EXTRA_PORT}: the third port the game accepts as an argument (Satisfactory's "reliable"
+  # one, -ReliablePort). Without an extra port the marker does not exist in START_ARGS.
   rendered_args="${rendered_args//\{EXTRA_PORT\}/${EXTRA_PORT}}"
-  # esync/fsync do Proton criam um descritor por objeto de sincronizacao; com o
-  # limite padrao (1024) o servidor cai com "failed to create eventfd" sob carga.
+  # Proton's esync/fsync create one descriptor per synchronization object; with the
+  # default limit (1024) the server dies with "failed to create eventfd" under load.
   local extra_limits=""
   [[ -n "$WINDOWS_RUNTIME" ]] && extra_limits=$'LimitNOFILE=1048576\n'
-  # Um .exe no START_SCRIPT (jogo de Windows cadastrado pelo painel, que nao tem
-  # POST_INSTALL_CMD para escrever um wrapper .sh como os curados) passa pelo win-run.
-  # Sem isto o ExecStart apontava o proprio .exe: o kernel nao sabe executa-lo, e o
-  # servico morria com "Exec format error" logo depois de uma instalacao "com sucesso".
+  # A .exe in START_SCRIPT (a Windows game registered through the panel, which has no
+  # POST_INSTALL_CMD to write a .sh wrapper like the curated ones) goes through win-run.
+  # Without this ExecStart pointed at the .exe itself: the kernel cannot execute it, and the
+  # service died with "Exec format error" right after a "successful" installation.
   local exec_start="${GAME_DIR}/${START_SCRIPT}"
   if [[ -n "$WINDOWS_RUNTIME" && "${START_SCRIPT,,}" == *.exe ]]; then
     exec_start="/usr/local/bin/win-run ${GAME_DIR}/${START_SCRIPT}"
@@ -594,18 +619,18 @@ EOF
   run_ct "systemctl daemon-reload && systemctl enable ${SERVICE_NAME}"
 }
 
-# Firewall de dentro do CT (lib/ct-firewall.sh, papel "game"): portas do jogo abertas para
-# qualquer um, SSH e ping so do painel/broker, e nenhuma saida para a rede interna.
+# Firewall inside the CT (lib/ct-firewall.sh, role "game"): game ports open to anyone,
+# SSH and ping only from the panel/broker, and no outbound traffic to the internal network.
 #
-# Por ULTIMO de proposito: as fases anteriores baixam da internet (apt, SteamCMD, Proton), e
-# uma regra de saida errada quebraria a instalacao no meio, sem dizer por que. Pelo broker a
-# sessao SSH que roda isto ja esta aberta, e o `established` NAO a mantem: ela nasceu antes de
-# o conntrack acompanhar qualquer coisa no CT. Quem a mantem e a regra de resposta do SSH para
-# FW_MGMT_SOURCES no ct-firewall.sh (sem ela a instalacao do V Rising travou aqui). A limpeza
-# da chave que vem depois precisa do IP do broker em FW_MGMT_SOURCES - o install.env garante.
+# LAST on purpose: the earlier phases download from the internet (apt, SteamCMD, Proton), and
+# a wrong outbound rule would break the installation halfway, without saying why. Through the
+# broker, the SSH session running this is already open, and `established` does NOT keep it: it
+# was born before conntrack tracked anything in the CT. What keeps it is the SSH reply rule for
+# FW_MGMT_SOURCES in ct-firewall.sh (without it the V Rising installation hung here). The key
+# cleanup that comes afterwards needs the broker IP in FW_MGMT_SOURCES - install.env ensures it.
 #
-# Sem FW_MGMT_SOURCES o firewall NAO e aplicado (com aviso): aplicar sem saber quem e o painel
-# trancaria o proprio painel fora do servidor que acabou de nascer.
+# Without FW_MGMT_SOURCES the firewall is NOT applied (with a warning): applying it without
+# knowing who the panel is would lock the panel itself out of the server that was just born.
 setup_firewall() {
   if [[ "${CT_FIREWALL:-1}" == "0" ]]; then
     warn "CT_FIREWALL=0: firewall do CT NAO configurado"
@@ -623,9 +648,9 @@ setup_firewall() {
     printf 'FW_ROLE=game\n'
     printf 'FW_MGMT_SOURCES="%s"\n' "$FW_MGMT_SOURCES"
     printf 'FW_GAME_PORTS="%s"\n' "$GAME_PORTS"
-    # A porta do JOGO, para o painel contar quem esta conversando com ele. Fica de fora
-    # quando a consulta divide a porta (Enshrouded): ali todo navegador de servidores que
-    # pergunta pelo jogo contaria como jogador - e esse jogo ja conta pela consulta.
+    # The GAME port, so the panel can count who is talking to it. Left out when the query
+    # shares the port (Enshrouded): there every server browser asking about the game would
+    # count as a player - and that game already counts through the query.
     if [[ -n "$GAME_PORT" && "$GAME_PORT" != "$QUERY_PORT" ]]; then
       printf 'FW_PRESENCE_PORTS="%s"\n' "$GAME_PORT"
     fi

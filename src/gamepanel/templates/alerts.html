@@ -3,8 +3,8 @@
 {% block title %}{{ _('nav.alerts') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% macro caixas(prefixo, marcados) %}
-  {# A lista de eventos e a mesma nos destinos e no formulario de cadastro; o prefixo so
-     serve para o `for` do rotulo nao apontar para o id de outro destino. #}
+  {# The event list is the same in the destinations and in the registration form; the prefix only
+     exists so the label's `for` does not point to another destination's id. #}
   <div class="options">
     {% for chave, rotulo in events.items() %}
     <label class="checkbox" for="{{ prefixo }}-{{ chave }}">
@@ -19,7 +19,7 @@
 {% block content %}
 {% call ui.page_header(_('nav.alerts')) %}
   {% if cfg.active %}
-    {# Plural e por idioma, entao sao duas chaves e nao um 's' colado no fim. #}
+    {# Plural depends on the language, so there are two keys and not an 's' glued at the end. #}
     {{ ui.badge(_('alerts.destinations_on_one' if cfg.active | length == 1
                  else 'alerts.destinations_on_many', n=cfg.active | length), 'on') }}
   {% else %}

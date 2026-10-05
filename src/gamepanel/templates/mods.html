@@ -8,6 +8,7 @@
 {{ srv.tabs(server, 'mods.index') }}
 
 {% for e in errors %}<p class="flash error">{{ e }}</p>{% endfor %}
+{% if needs_root %}<p class="flash error">{{ _('mods.needs_root', user=server.ssh_user) }}</p>{% endif %}
 
 {% if not profile %}
 <div class="card">
@@ -26,8 +27,8 @@
   {% elif profile.kind == kind_workshop %}
   <p class="muted small">{{ _h('mods.workshop_antivirus_note') }}</p>
   {% endif %}
-  {# O que entrou ANTES do antivirus nunca foi verificado: este botao passa por ele o que ja
-     esta no servidor. So le, e o resultado sai no log da tarefa. #}
+  {# What came in BEFORE the antivirus was never scanned: this button runs it over what is already
+     on the server. It only reads, and the result goes to the task log. #}
   <p class="muted small">{{ _('mods.audit_help') }}</p>
   <div class="cluster">
     {{ ui.action(url_for('mods.audit', sid=server.id), _('mods.audit_button'), icon='🛡') }}
@@ -184,8 +185,8 @@
       <div class="form-actions">{{ ui.button(_('mods.plugin_install'), variant='primary', icon='⬇', block=true) }}</div>
     </form>
     {% if st.plugins %}
-    {# O mesmo POST de instalar: o pacote vem da pasta do instalador, e a versao nova
-       substitui a velha por inteiro. E por aqui que um servidor que ja roda troca de versao. #}
+    {# The same POST as installing: the package comes from the installer's folder, and the new version
+       fully replaces the old one. This is how a server that is already running switches versions. #}
     <h3 class="mt-4">{{ _('mods.change_version_title') }}</h3>
     <form method="post" action="{{ url_for('mods.plugin_install', sid=server.id) }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -569,8 +570,8 @@
   </div>
 {% endif %}
 
-{# Envio so para quem declara o que aceita: o Thunderstore baixa sozinho, e o guia (Enshrouded)
-   ainda nao tem caminho provado para o arquivo ir parar. #}
+{# Upload only for profiles that declare what they accept: Thunderstore downloads on its own, and the guide (Enshrouded)
+   does not yet have a proven path for where the file should land. #}
 {% if profile.upload_names or profile.extensions %}
 <div class="card">
   <h2>{{ _('mods.upload_title') }}</h2>

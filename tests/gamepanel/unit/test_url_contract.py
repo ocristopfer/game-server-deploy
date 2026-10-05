@@ -1,18 +1,18 @@
-"""`url_for(..., chave=valor)` e um par com quem LE aquela chave do outro lado.
+"""`url_for(..., key=value)` is a pair with whoever READS that key on the other side.
 
-O kwarg de `url_for` que nao e captura de rota vira QUERY STRING, e alguem tem de
-`request.args.get` com o mesmo nome. Os dois lados vivem como texto em arquivos diferentes
-e nenhuma ferramenta os liga: se o nome divergir, o link continua respondendo 200 e o valor
-simplesmente nao chega.
+A `url_for` kwarg that is not a route capture becomes a QUERY STRING, and someone has to
+`request.args.get` it with the same name. The two sides live as text in different files
+and no tool links them: if the name diverges, the link keeps answering 200 and the value
+simply never arrives.
 
-Ja aconteceu tres vezes de uma vez, todas por renomear o nome de fio com um lado so — e
-todas em `url_for` montado em PYTHON, que e por onde a conferencia de template nao olha:
+It already happened three times at once, all from renaming the wire name on one side only -
+and all in `url_for` built in PYTHON, which is where the template check does not look:
 
-- `url_for("players.setup", sid=sid, aba="http")` depois de a rota passar a ler `tab`:
-  o botao "usar esta API" voltava para a aba de portas em vez da de HTTP;
-- o mesmo com `aba="log"`;
-- `{"pasta": request.args["path"]}` no redirect da busca de arquivos, com a rota lendo
-  `folder`: a pasta escolhida era perdida e a busca ia para a pasta de config do cadastro.
+- `url_for("players.setup", sid=sid, aba="http")` after the route started reading `tab`:
+  the "usar esta API" button went back to the ports tab instead of the HTTP one;
+- the same with `aba="log"`;
+- `{"pasta": request.args["path"]}` in the file search redirect, with the route reading
+  `folder`: the chosen folder was lost and the search went to the registration's config folder.
 """
 from __future__ import annotations
 
@@ -24,17 +24,17 @@ import gamepanel.app as panel
 PANEL = Path(panel.__file__).parent
 PY_FILES = [PANEL / "app.py", *sorted((PANEL / "blueprints").glob("*.py"))]
 
-# Kwarg que NAO e query string: captura de rota (o Flask a consome na URL) e os nomes que
-# o proprio Flask define. Reconhecidos pela lista de capturas das rotas, nao a mao.
+# Kwargs that are NOT query strings: route captures (Flask consumes them in the URL) and the names
+# Flask itself defines. Recognized from the routes' list of captures, not by hand.
 FLASK_OWN = {"_external", "_anchor", "_method", "_scheme", "filename"}
-# `v=` no `url_for("static", ...)` existe para MUDAR a URL, nao para ser lido: e a marca
-# que descarta o cache do navegador quando um estatico muda. Ninguem a le no servidor, e e
-# isso mesmo.
+# `v=` in `url_for("static", ...)` exists to CHANGE the URL, not to be read: it is the mark
+# that busts the browser cache when a static file changes. Nobody reads it on the server, and
+# that is intended.
 NOT_READ_ON_PURPOSE = {"v"}
 
 
 def _route_captures() -> set[str]:
-    """Todo `<int:sid>`/`<tid>` declarado nas rotas registradas: esses somem na URL."""
+    """Every `<int:sid>`/`<tid>` declared in the registered routes: those vanish into the URL."""
     found: set[str] = set()
     for rule in panel.app.url_map.iter_rules():
         found |= set(rule.arguments)
@@ -42,7 +42,7 @@ def _route_captures() -> set[str]:
 
 
 def _read_keys() -> set[str]:
-    """Nome que algum `request.args/form/files.get(...)` le."""
+    """A name that some `request.args/form/files.get(...)` reads."""
     found: set[str] = set()
     for path in sorted(PANEL.rglob("*.py")):
         if "__pycache__" in path.parts:
@@ -57,7 +57,7 @@ def _read_keys() -> set[str]:
 
 
 def _dict_keys_named(tree: ast.AST, name: str, filename: str) -> list[tuple[str, int, str]]:
-    """Chaves do dict literal atribuido a `name` (inclui `x: dict = {...}`)."""
+    """Keys of the literal dict assigned to `name` (includes `x: dict = {...}`)."""
     found: list[tuple[str, int, str]] = []
     for node in ast.walk(tree):
         target = None
@@ -68,7 +68,7 @@ def _dict_keys_named(tree: ast.AST, name: str, filename: str) -> list[tuple[str,
         if getattr(target, "id", None) != name:
             continue
         value = node.value
-        # `{...} if cond else {...}`: os dois lados contam.
+        # `{...} if cond else {...}`: both sides count.
         options = ([value.body, value.orelse] if isinstance(value, ast.IfExp) else [value])
         for option in options:
             if isinstance(option, ast.Dict):
@@ -79,7 +79,7 @@ def _dict_keys_named(tree: ast.AST, name: str, filename: str) -> list[tuple[str,
 
 
 def _url_for_kwargs() -> list[tuple[str, int, str]]:
-    """(arquivo, linha, chave) de cada kwarg de `url_for` e de cada dict que o alimenta."""
+    """(file, line, key) of each `url_for` kwarg and of each dict that feeds it."""
     found: list[tuple[str, int, str]] = []
     for path in PY_FILES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -90,10 +90,10 @@ def _url_for_kwargs() -> list[tuple[str, int, str]]:
             for kw in node.keywords:
                 if kw.arg:
                     found.append((path.name, node.lineno, kw.arg))
-                # `**extras`, onde `extras` e um dict literal atribuido no arquivo: o nome
-                # da chave vive numa string, que e justo o caso que passou batido. Resolve o
-                # NOME, e nao todo dict do arquivo — a primeira versao disto colheu os
-                # dicionarios de cabecalho HTTP e o teste acusou `Content-Length=`.
+                # `**extras`, where `extras` is a literal dict assigned in the file: the key
+                # name lives in a string, which is exactly the case that slipped by. Resolves the
+                # NAME, and not every dict in the file - the first version of this collected the
+                # HTTP header dicts and the test flagged `Content-Length=`.
                 elif isinstance(kw.value, ast.Name):
                     found += _dict_keys_named(tree, kw.value.id, path.name)
     return found
@@ -114,21 +114,20 @@ def test_todo_kwarg_de_url_for_e_captura_de_rota_ou_alguem_o_LE():
         "responde 200 e o valor nao chega:\n  " + "\n  ".join(orphans))
 
 
-# ---------------------------------------------- nome de endpoint na navegacao
+# ---------------------------------------------- endpoint names in the navigation
 
 def test_todo_endpoint_citado_na_navegacao_existe():
-    """`navigation.py` escreve o nome do endpoint como TEXTO, e nada o liga a rota.
+    """`navigation.py` writes the endpoint name as TEXT, and nothing links it to the route.
 
-    Um nome que sobrou depois de a rota morrer nao quebra nada — a aba so nunca acende por
-    ele — e fica ali para sempre. Foi o caso de `files.search`, uma rota vestigial que
-    redirecionava para a busca de configuracao: nenhum link do painel a chamava, e o
-    `_ACTIVE_EXTRA` continuava citando-a. De quebra, ela estava QUEBRADA — mandava
-    `pasta=` para uma rota que passou a ler `folder`, entao quem tivesse o link antigo
-    perdia a pasta escolhida em silencio.
+    A name left over after the route died breaks nothing - the tab just never lights up for
+    it - and stays there forever. That was the case of `files.search`, a vestigial route that
+    redirected to the config search: no panel link called it, and `_ACTIVE_EXTRA` kept
+    citing it. On top of that, it was BROKEN - it sent `pasta=` to a route that had started
+    reading `folder`, so whoever had the old link silently lost the chosen folder.
 
-    O contrario tambem e defeito, mas de outro tipo: rota nova que ninguem poe na
-    navegacao abre com a aba errada acesa. Esse fica de fora de proposito — ha rota que
-    NAO e tela (`/api/...`, `/health`, `/sw.js`) e a lista viraria uma excecao por rota.
+    The opposite is also a defect, but of another kind: a new route nobody adds to the
+    navigation opens with the wrong tab lit. That one is left out on purpose - some routes are
+    NOT screens (`/api/...`, `/health`, `/sw.js`) and the list would become one exception per route.
     """
     from gamepanel import navigation as ui
 

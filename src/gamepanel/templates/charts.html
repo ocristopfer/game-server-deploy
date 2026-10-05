@@ -11,23 +11,23 @@
 {%- endmacro %}
 
 {% macro grafico(g, titulo) %}
-  {# O SVG chega pronto do servidor: sem JavaScript a tela continua inteira. O JS so
-     acrescenta a mira e o balaozinho por cima.
+  {# The SVG arrives ready from the server: without JavaScript the screen stays whole. The JS only
+     adds the crosshair and the tooltip on top.
 
-     EXCECAO ACEITA (Sonar Web:S6845, "tabIndex so em elemento interativo"): o
-     tabindex aqui e deliberado. Este SVG responde a seta esquerda/direita e a Esc
-     (features/charts.js) - e por ele que quem navega por teclado le valor a valor,
-     sem mouse. A regra le o `role="img"` e conclui que o elemento e passivo; nao ha
-     role em ARIA que diga "figura que se explora pelo teclado". Para leitor de tela o
-     caminho e outro e ja existe: a tabela "Ver os numeros em tabela" logo abaixo, com
-     os mesmos valores. Nao tire o tabindex sem por outra coisa no lugar - tirar so
-     silencia o aviso e cega quem depende dele.
+     ACCEPTED EXCEPTION (Sonar Web:S6845, "tabIndex only on interactive elements"): the
+     tabindex here is deliberate. This SVG responds to the left/right arrows and Esc
+     (features/charts.js) - it is how keyboard users read value by value,
+     without a mouse. The rule reads `role="img"` and concludes the element is passive; there is no
+     ARIA role that says "figure explored by keyboard". For screen readers the
+     path is a different one and already exists: the "See the numbers in a table" table right below, with
+     the same values. Do not remove the tabindex without putting something else in its place - removing it only
+     silences the warning and blinds whoever depends on it.
 
-     Marca de supressao aqui nao adianta: foi testada como comentario HTML na linha de
-     cima e na mesma linha da tag, e o aviso continua nas duas. Esta regra so se cala
-     pela configuracao do SonarLint/SonarQube, fora do repositorio. #}
+     A suppression marker does not help here: it was tested as an HTML comment on the line
+     above and on the same line as the tag, and the warning stays in both. This rule can only be silenced
+     through the SonarLint/SonarQube configuration, outside the repository. #}
   <svg class="chart" viewBox="0 0 {{ g.w }} {{ g.h }}" role="img" tabindex="0"
-       aria-label="{{ titulo }} ao longo do tempo"
+       aria-label="{{ _('charts.over_time', title=titulo) }}"
        data-ceiling="{{ g.teto }}" data-top="{{ g.t }}" data-base="{{ g.b }}"
        data-left="{{ g.l }}" data-dir="{{ g.r }}"
        data-start="{{ g.inicio_ms }}" data-span="{{ g.span_s }}">
@@ -50,9 +50,9 @@
         <circle cx="{{ ponto.split(',')[0] }}" cy="{{ ponto.split(',')[1] }}" r="2.5" fill="{{ s.color }}"/>
       {% endfor %}
       {% if s.ponta %}
-        {# Rotulo direto na ponta: e o que faz o valor nao depender do balaozinho.
-           Some quando as duas pontas se encostam (ver rotula_ponta) — ali a legenda,
-           a mira e a tabela e que carregam o numero. #}
+        {# Direct label at the line's end: it is what keeps the value from depending on the tooltip.
+           It disappears when the two ends touch (see rotula_ponta) - there the legend,
+           the crosshair and the table carry the number. #}
         <circle cx="{{ s.ponta.x }}" cy="{{ s.ponta.y }}" r="4" fill="{{ s.color }}"/>
         {% if g.rotula_ponta %}
         <text class="tip" x="{{ s.ponta.x + 9 }}" y="{{ s.ponta.y + 4 }}">{{ '%g' % s.ponta.valor }}{{ s.suffix }}</text>
@@ -66,8 +66,8 @@
 {{ ui.page_header(_('server.charts') ~ ' — ' ~ server.name) }}
 {{ srv.tabs(server, 'charts') }}
 
-{# Um filtro so, acima de tudo o que ele governa: os dois graficos e a tabela mostram
-   sempre a mesma fatia de tempo, entao os numeros nunca se contradizem. #}
+{# A single filter, above everything it governs: both charts and the table always show
+   the same slice of time, so the numbers never contradict each other. #}
 <nav class="tabs" aria-label="{{ _('charts.period') }}">
   {% for h, rotulo in ranges %}
     <a class="tabs__item" href="{{ url_for('charts.index', sid=server.id, h=h) }}"
@@ -75,60 +75,55 @@
   {% endfor %}
 </nav>
 <p class="muted small">
-  {{ total }} amostra(s) &middot; uma a cada {{ every }} min &middot; guardadas por {{ keep_days }} dias
+  {{ _h('charts.samples_note', n=total, every=every, days=keep_days) }}
 </p>
 
 {% if usage.vazio and players.vazio %}
 <div class="card card--empty">
   <p>{{ _('charts.no_samples') }}</p>
-  <p class="muted">O painel guarda uma leitura a cada {{ every }} minutos enquanto esta no ar
-    &mdash; volte daqui a pouco, ou escolha um periodo maior.</p>
+  <p class="muted">{{ _h('charts.no_samples_hint', every=every) }}</p>
 </div>
 {% else %}
 
 <div class="card" data-chart="uso">
   <div class="card__head">
     <h2>{{ _('charts.cpu_memory') }}</h2>
-    {# Duas series: legenda sempre presente, e a identidade vem do traco colorido ao
-       lado do texto (o texto em si nunca veste a cor da serie).
+    {# Two series: the legend is always present, and identity comes from the colored dash next to
+       the text (the text itself never wears the series color).
 
-       O tracinho e um SVG com `fill`, e nao um quadrado com `style="background: ..."`:
-       a cor vem do servidor, e valor de template dentro de um atributo `style` nao e
-       CSS valido para ferramenta nenhuma - o arquivo inteiro passa a acusar erro. Como
-       atributo de SVG ela e so um atributo, igual ao `stroke` das linhas do grafico. #}
+       The dash is an SVG with `fill`, and not a square with `style="background: ..."`:
+       the color comes from the server, and a template value inside a `style` attribute is not
+       valid CSS for any tool - the whole file starts flagging errors. As an
+       SVG attribute it is just an attribute, like the `stroke` of the chart lines. #}
     <div class="legend">
       {{ chave_da_legenda(colors.cpu, 'CPU') }}
-      {{ chave_da_legenda(colors.mem, 'Memoria') }}
+      {{ chave_da_legenda(colors.mem, _('charts.memory')) }}
     </div>
   </div>
-  {{ grafico(usage, 'CPU e memoria') }}
+  {{ grafico(usage, _('charts.cpu_memory')) }}
   {% if usage.vazio %}<p class="muted">{{ _('charts.no_readings') }}</p>{% endif %}
 </div>
 
-{# Grafico separado, e nao um segundo eixo no de cima: "por cento" e "quantidade de
-   gente" nao dividem escala, e sobrepor as duas inventaria uma relacao que os dados
-   nao tem. #}
+{# A separate chart, and not a second axis on the one above: "percent" and "number of
+   people" do not share a scale, and overlaying the two would invent a relationship the data
+   does not have. #}
 <div class="card" data-chart="jogadores">
   <div class="card__head">
     <h2>{{ _('charts.players') }}</h2>
-    {# Uma serie so: o titulo ja a nomeia, entao nao ha legenda. O espaco vai para o
-       numero que se procura num grafico de jogadores. #}
-    <span class="muted small">{{ _('charts.peak_of') }} <strong>{{ peak }}</strong> {{ _('charts.in_period') }}</span>
+    {# A single series: the title already names it, so there is no legend. The space goes to the
+       number you look for in a player chart. #}
+    <span class="muted small">{{ _h('charts.peak_in_period', n=peak) }}</span>
   </div>
-  {{ grafico(players, 'Jogadores') }}
+  {{ grafico(players, _('charts.players')) }}
   {% if players.vazio %}
-    <p class="muted">Sem contagem de jogadores neste periodo
-      (a contagem precisa estar ligada no cadastro do servidor).</p>
+    <p class="muted">{{ _('charts.no_player_count') }}</p>
   {% endif %}
 </div>
 
 <div class="card">
   <details>
     <summary>{{ _('charts.as_table') }}</summary>
-    <p class="muted small">
-      Os mesmos valores do grafico, sem depender de cor nem de passar o dedo por cima.
-      Do mais recente para o mais antigo.
-    </p>
+    <p class="muted small">{{ _('charts.table_hint') }}</p>
     <div class="table-wrap"><table class="jobs numeric">
       <thead><tr><th>{{ _('charts.when') }}</th><th>{{ _('charts.cpu') }}</th><th>{{ _('charts.memory') }}</th><th>{{ _('charts.players') }}</th></tr></thead>
       <tbody>

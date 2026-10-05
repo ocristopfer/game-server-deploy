@@ -1,4 +1,4 @@
-"""Backend OPNsense: leitura de portas taken (aliases!) e abrir/fechar redirects."""
+"""OPNsense backend: reading taken ports (aliases!) and opening/closing redirects."""
 from __future__ import annotations
 
 import pytest
@@ -16,15 +16,15 @@ def _line(**fields):
     return {**base, **fields}
 
 
-# --- leitura de portas taken (o parser que decide se uma porta esta livre) ------------------
+# --- reading taken ports (the parser that decides whether a port is free) ------------------
 
 def test_porta_numerica_simples():
     assert busy_ports([_line(protocol="tcp", **{"destination.port": "7660"})], "wan") == {(7660, "tcp")}
 
 
 def test_alias_do_jeito_que_o_opnsense_de_verdade_devolve():
-    """Formato copiado do d_nat/search_rule real (regra 'palworld')."""
-    summary = ("<strong>UDP -> 192.168.2.21 (CT 211). 8211 jogo, 27015 query A2S (mapear 1:1). "
+    """Format copied from the real d_nat/search_rule (the 'palworld' rule)."""
+    summary = ("<strong>UDP -> 10.20.1.21 (CT 211). 8211 jogo, 27015 query A2S (mapear 1:1). "
               "NAO inclua a REST 8212/tcp nem o RCON 25575/tcp.</strong><br/>8211<br/>27015")
     rule = _line(**{"destination.port": "JOGO_PALWORLD",
                       "alias_meta_destination.port": [{"value": "JOGO_PALWORLD", "isAlias": True, "summary": summary}]})
@@ -32,7 +32,7 @@ def test_alias_do_jeito_que_o_opnsense_de_verdade_devolve():
 
 
 def test_descricao_do_alias_com_numeros_nao_vira_porta():
-    """A descricao cita 8212/tcp e 25575/tcp so como aviso: nao sao portas do alias."""
+    """The description mentions 8212/tcp and 25575/tcp only as a warning: they are not alias ports."""
     summary = alias_summary("nao inclua 8212 nem 25575", ["8211"])
     rule = _line(**{"destination.port": "A", "alias_meta_destination.port": [{"summary": summary}]})
     assert busy_ports([rule], "wan") == {(8211, "udp")}
@@ -80,7 +80,7 @@ def test_porta_fora_do_intervalo_e_erro_e_nao_livre(port):
                                   [{"summary": alias_summary("x", ["8211", "OUTRO_ALIAS"])}],
                                   [{"summary": alias_summary("x", ["8211", "rm -rf"])}]])
 def test_alias_que_nao_entendo_faz_o_broker_recusar(meta):
-    """Falha FECHADA: na duvida o broker nao abre porta nova (nunca supoe que esta livre)."""
+    """Fail CLOSED: when in doubt the broker opens no new port (it never assumes the port is free)."""
     rule = _line(**{"destination.port": "ALIAS_ESTRANHO", "alias_meta_destination.port": meta})
     with pytest.raises(ReadError, match="regra"):
         busy_ports([rule], "wan")
@@ -96,7 +96,7 @@ def test_faixa_gigante_e_erro():
         busy_ports([_line(**{"destination.port": "1000-60000"})], "wan")
 
 
-# --- backend contra o OPNsense falso ---------------------------------------------------------------
+# --- backend against the fake OPNsense ------------------------------------------------------------
 
 def test_portas_externas_via_http_inclui_aliases_e_desativadas(opn):
     opn.fake.existing_rule("palworld", "JOGO_PALWORLD", alias=["8211", "27015"], disabled=True)

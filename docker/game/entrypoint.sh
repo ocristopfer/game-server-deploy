@@ -1,10 +1,14 @@
 #!/bin/bash
-# Prepara o container de jogo falso: autoriza a chave do painel, cria os arquivos de
-# configuracao que o jogo teria, liga o "servidor" e sobe o sshd.
+# Prepares the fake game container: authorizes the panel key, creates the config files
+# the game would have, starts the "server" and brings up sshd.
 set -Eeuo pipefail
 
 GAME_KIND="${GAME_KIND:-palworld}"
 GAME_SERVICE="${GAME_SERVICE:-game.service}"
+# root = legacy mode (the panel logs in as root); gamepanel = helper mode (docs/security-hardening-
+# contract.md). docker-compose.yml runs one container of each, so both paths are exercised daily.
+GAME_SSH_USER="${GAME_SSH_USER:-root}"
+PANEL_ACCESS=/usr/local/lib/gamepanel/ct-panel-access.sh
 
 authorize_panel_key() {
   install -d -m 700 /root/.ssh
@@ -13,13 +17,35 @@ authorize_panel_key() {
     [ -f /keys/panel.pub ] && break
     sleep 1
   done
-  if [ -f /keys/panel.pub ]; then
-    cat /keys/panel.pub >/root/.ssh/authorized_keys
-    chmod 600 /root/.ssh/authorized_keys
-    echo "==> chave do painel autorizada"
-  else
+  if [ ! -f /keys/panel.pub ]; then
     echo "[aviso] a chave do painel nao apareceu; o painel nao vai conseguir entrar" >&2
+    return 0
   fi
+  case "$GAME_SSH_USER" in
+    root)
+      cat /keys/panel.pub >/root/.ssh/authorized_keys
+      chmod 600 /root/.ssh/authorized_keys
+      echo "==> chave do painel autorizada (root, modo legado)"
+      ;;
+    gamepanel)
+      # The same piece a real CT gets: gamepanel user, sudo rules, gp-service (which here calls
+      # the fake systemctl) and the key. Root gets no key at all; lock_root, further down, refuses
+      # root over SSH once sshd has its host keys.
+      bash "$PANEL_ACCESS" install "$GAME_SERVICE" "$(cat /keys/panel.pub)"
+      rm -f /root/.ssh/authorized_keys
+      echo "==> chave do painel autorizada (gamepanel, modo helper)"
+      ;;
+    *) echo "[erro] GAME_SSH_USER invalido: $GAME_SSH_USER (use root ou gamepanel)" >&2; exit 1 ;;
+  esac
+}
+
+# Helper mode only. After `ssh-keygen -A` because the piece runs `sshd -t`, which needs the host
+# keys. It verifies first that gamepanel reaches steam and gp-service; if not, the container
+# fails to start instead of coming up with a panel that cannot get in.
+lock_root() {
+  [ "$GAME_SSH_USER" = gamepanel ] || return 0
+  [ -f /keys/panel.pub ] || return 0
+  bash "$PANEL_ACCESS" lock
 }
 
 seed_palworld() {
@@ -61,8 +87,8 @@ INI
   chmod 0755 /opt/game/RSDragonwildsServer.sh
 }
 
-# Um save binario e um log grande: e com eles que da para testar o download e o modo
-# somente-leitura do editor sem instalar jogo nenhum.
+# A binary save and a big log: they are what lets us test the download and the editor's
+# read-only mode without installing any game.
 seed_arquivos_grandes() {
   local saves="$1" log="$2"
   install -d -o steam -g steam "$(dirname "$saves")" "$(dirname "$log")"
@@ -87,30 +113,34 @@ seed_game_files() {
       ;;
     *) echo "[aviso] GAME_KIND desconhecido: $GAME_KIND" >&2 ;;
   esac
-  # Dono igual ao do jogo de verdade: e assim que da para ver se o editor do painel
-  # preserva o dono ao salvar (ele grava como root).
+  # Same owner as the real game: that is how we can check that the panel editor keeps
+  # the owner when saving (it writes as root).
   chown -R steam:steam /opt/game
 }
 
 main() {
   authorize_panel_key
   seed_game_files
-  install -d /run/sshd /run/fakesystemd /var/log/fakegame
+  # 0755: in helper mode the panel reads the fake journal (these logs) as gamepanel, without sudo.
+  install -d -m 0755 /run/sshd /run/fakesystemd /var/log/fakegame
   ssh-keygen -A >/dev/null
+  # Legacy mode's setting. In helper mode the drop-in written by lock_root wins: Debian's
+  # sshd_config includes sshd_config.d/*.conf at the TOP, and sshd keeps the first value it reads.
   sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+  lock_root
   echo "==> iniciando ${GAME_SERVICE} (simulado)"
   systemctl start "$GAME_SERVICE" || true
 
-  # Porta de query da Steam. GAME_QUERY_A2S=0 imita um jogo que NAO publica consulta
-  # (o RuneScape Dragonwilds e assim): ai so sobra contar pelo log.
+  # Steam query port. GAME_QUERY_A2S=0 mimics a game that does NOT publish a query
+  # (RuneScape Dragonwilds is like that): then counting by the log is all that is left.
   if [ "${GAME_QUERY_A2S:-1}" = "1" ]; then
     echo "==> subindo o query A2S falso na porta ${GAME_QUERY_PORT:-27015}/udp"
     setsid nohup python3 /usr/local/bin/fake-a2s >/var/log/fake-a2s.log 2>&1 &
   else
-    # O jogo sem query A2S NAO fica sem porta: ele abre a porta do jogo e simplesmente
-    # nao responde a consulta (o RuneScape Dragonwilds e assim). Abrir um socket UDP mudo
-    # aqui reproduz isso, e e o que faz o assistente do painel concluir "o processo do
-    # jogo abriu a porta e nao respondeu" em vez de "nao achei porta nenhuma".
+    # A game without an A2S query is NOT without a port: it opens the game port and simply
+    # does not answer the query (RuneScape Dragonwilds is like that). Opening a mute UDP
+    # socket here reproduces that, and it is what makes the panel assistant conclude "the
+    # game process opened the port and did not answer" instead of "found no port at all".
     echo "==> sem query A2S: abrindo ${GAME_UDP_PORT:-7777}/udp mudo (como o jogo real)"
     setsid nohup python3 -c "
 import socket, time
@@ -121,9 +151,9 @@ while True:
 " >/var/log/fake-udp-mudo.log 2>&1 &
   fi
 
-  # API REST de administracao, no formato da do Palworld. GAME_API=0 imita o jogo que
-  # nao tem API nenhuma (o RuneScape Dragonwilds e assim). Escuta so em 127.0.0.1: o
-  # painel chega nela por SSH, de dentro do container.
+  # Admin REST API, in the Palworld format. GAME_API=0 mimics a game that has no API at
+  # all (RuneScape Dragonwilds is like that). It listens only on 127.0.0.1: the panel
+  # reaches it over SSH, from inside the container.
   if [ "${GAME_API:-0}" = "1" ]; then
     echo "==> subindo a API REST falsa em 127.0.0.1:${GAME_API_PORT:-8212}/tcp"
     setsid nohup python3 /usr/local/bin/fake-restapi >/var/log/fake-restapi.log 2>&1 &

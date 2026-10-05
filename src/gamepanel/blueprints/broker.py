@@ -1,4 +1,4 @@
-"""Catalogo de jogos e instancias criadas pelo broker."""
+"""Game catalog and the instances created by the broker."""
 from __future__ import annotations
 
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
@@ -25,16 +25,16 @@ def catalog():
 
 
 def _catalog_page(games: list, form, checked_recipes: list, status: int = 200):
-    """A tela do catalogo, igual no GET e na volta de um envio recusado."""
-    # O que a busca precisa para dizer "ja esta no catalogo" sem pedir nada ao servidor: e o
-    # que faltava para o V Rising (curado) nao aparecer como "nada encontrado".
+    """The catalog screen, the same on GET and when coming back from a rejected submission."""
+    # What the search needs to say "already in the catalog" without asking the server: it is
+    # what was missing for V Rising (curated) not to show up as "nothing found".
     index = [{"key": g.get("key", ""), "name": g.get("name", ""), "app_id": g.get("app_id") or 0,
               "creatable": bool(g.get("creatable"))} for g in games]
     return render_template("catalog.html", games=games, recipes=panel.BROKER_RECIPES, form=form,
                            checked_recipes=checked_recipes, editing=False,
                            game_templates=game_templates.TEMPLATES, catalog_index=index,
-                           # Os nomes de mentira que cada modelo pede para trocar, citados na
-                           # descricao: a frase vem do catalogo de i18n, o nome daqui.
+                           # The placeholder names each template asks to replace, mentioned in the
+                           # description: the sentence comes from the i18n catalog, the name from here.
                            template_project=game_templates.PROJECT,
                            template_executable=game_templates.EXECUTABLE,
                            template_mod=game_templates.MOD), status
@@ -44,8 +44,8 @@ def _catalog_page(games: list, form, checked_recipes: list, status: int = 200):
 @panel.admin_required
 @panel.broker_required
 def api_suggestions():
-    """Busca por nome ou App ID em listas FIXAS do repositorio (LinuxGSM, Pterodactyl, curadoria):
-    nada aqui vai a internet, e a consulta so seleciona entre entradas conhecidas."""
+    """Search by name or App ID in FIXED lists from the repository (LinuxGSM, Pterodactyl, curation):
+    nothing here goes to the internet, and the query only selects among known entries."""
     found = catalog_search.search(request.args.get("q", ""))
     return jsonify({"resultados": [catalog_search.result(s) for s in found],
                     "fonte": catalog_search.SOURCE})
@@ -70,22 +70,22 @@ def catalog_new():
             games = []
         return _catalog_page(games, form=request.form,
                              checked_recipes=request.form.getlist("recipes"), status=400)
-    # "key"/"name", e nao "chave"/"nome": o formulario ja manda os nomes em ingles, e com os
-    # antigos o historico gravava a acao sem dizer qual jogo e o aviso saia sem o nome.
+    # "key"/"name", not "chave"/"nome": the form already sends the names in English, and with the
+    # old ones the history recorded the action without saying which game and the notice came out without the name.
     panel._log_broker_action("broker-jogo", panel._actor(), data.get("key", ""), "Jogo adicionado ao catalogo.")
     flash(panel.translate("flash.game_added", name=data.get("name", data.get("key", ""))), "ok")
     return redirect(url_for("broker.catalog"))
 
 
 def _form_of(game: dict) -> dict:
-    """O jogo como o broker o guarda, no formato dos campos do formulario (texto)."""
+    """The game as the broker stores it, in the format of the form fields (text)."""
     form = {k: "" if v is None else str(v) for k, v in game.items()
             if not isinstance(v, list | bool)}
     form["ports"] = " ".join(game.get("ports") or [])
     form["config_files"] = "\n".join(game.get("config_files") or [])
     form["backup_paths"] = "\n".join(game.get("backup_paths") or [])
     form["shiftable"] = "1" if game.get("shiftable") else ""
-    # Porta 0 e "nao tem": no formulario ela e o campo vazio, que e como foi cadastrada.
+    # Port 0 means "none": in the form it is the empty field, which is how it was registered.
     for field in ("query_port", "extra_port"):
         if form.get(field) == "0":
             form[field] = ""
@@ -114,8 +114,8 @@ def catalog_edit(key: str):
 @panel.broker_required
 def catalog_update(key: str):
     data, failures = panel._game_from_form(request.form)
-    # A chave vem da URL, e nao do campo: ela e o que se esta editando, e o campo so leitura
-    # ainda pode ser adulterado no envio.
+    # The key comes from the URL, not from the field: it is what is being edited, and the read-only
+    # field can still be tampered with on submit.
     data["key"] = key
     if not failures:
         try:
@@ -166,7 +166,7 @@ def instances():
         r["broker_id"]: r
         for r in servers_repo.from_broker(panel.db())
     }
-    # ?game= vem do atalho "Criar instancia" do catalogo: o jogo ja chega escolhido.
+    # ?game= comes from the catalog's "Create instance" shortcut: the game arrives already chosen.
     return render_template("instances.html", instances=instances, games=games, servers=bound,
                            selected_game=request.args.get("game", ""),
                            panel_copies=_panel_copies(instances, bound),
@@ -174,11 +174,11 @@ def instances():
 
 
 def _panel_copies(instances: list, bound: dict) -> dict:
-    """Quantas copias do save o PAINEL tem de cada instancia, e a mais nova.
+    """How many save copies the PANEL has of each instance, and the newest one.
 
-    E o que a tela mostra na hora de remover: remover apaga o container e as copias de
-    dentro dele, e so o que esta no painel sobrevive. Instancia sem servidor no painel
-    cai no nome do jogo, que e o servico que o broker da a ela.
+    It is what the screen shows at removal time: removing deletes the container and the copies
+    inside it, and only what is on the panel survives. An instance without a server on the panel
+    falls back to the game name, which is the service the broker gives it.
     """
     summary = {}
     for inst in instances:
@@ -195,8 +195,8 @@ def _panel_copies(instances: list, bound: dict) -> dict:
 @panel.admin_required
 @panel.broker_required
 def instance_new():
-    """Dois passos: primeiro mostra CT, IP e portas que a instancia vai receber, e so cria
-    quando a pessoa confirma. Sem JavaScript: a confirmacao e uma tela, nao um alerta."""
+    """Two steps: first show the CT, IP and ports the instance will get, and only create
+    when the person confirms. No JavaScript: the confirmation is a screen, not an alert."""
     game = (request.form.get("game") or "").strip()
     name = (request.form.get("name") or "").strip()
     if request.form.get("confirmed") != "1":
@@ -229,8 +229,8 @@ def _confirm_instance(game: str, name: str):
 @panel.admin_required
 @panel.broker_required
 def instance_cancel(jid: int):
-    """Cancela a criacao que este job acompanha. Quem para e desfaz e o broker: o CT criado e
-    apagado, e o job termina sozinho quando a operacao dele terminar."""
+    """Cancel the creation this job follows. The broker is what stops and undoes it: the created CT is
+    deleted, and the job finishes on its own when its operation finishes."""
     job = jobs_repo.by_id(panel.db(), jid)
     if job is None or job["action"] != "broker-criar" or not job["broker_op"]:
         abort(404)
@@ -250,12 +250,12 @@ def instance_cancel(jid: int):
 @panel.admin_required
 @panel.broker_required
 def instance_deactivate(iid: int):
-    """Backup no painel, e SO ENTAO desativa.
+    """Backup on the panel, and ONLY THEN deactivate.
 
-    Desativar e o passo que antecede remover, e remover apaga o CT com os discos. Depois
-    de desativado o container esta parado e nao ha SSH para tirar copia nenhuma: esta e a
-    ultima hora em que o save ainda pode ser guardado. Se o backup falhar, a instancia
-    continua ativa — quem quiser mesmo assim usa "sem backup".
+    Deactivating is the step before removing, and removing deletes the CT with its disks. Once
+    deactivated the container is stopped and there is no SSH to take any copy: this is the
+    last moment when the save can still be stored. If the backup fails, the instance
+    stays active; whoever wants to go ahead anyway uses "without backup".
     """
     server = servers_repo.by_broker_id(panel.db(), iid)
     paths = panel.backup_paths(server) if server else []
@@ -311,7 +311,7 @@ def instance_remove(iid: int):
         return redirect(url_for("broker.instances"))
     conn = panel.db()
     with conn:
-        # O servidor do painel aponta para um container que deixou de existir.
+        # The panel's server points at a container that no longer exists.
         servers_repo.delete_by_broker_id(conn, iid)
     panel._log_broker_action(
         "broker-remover", panel._actor(), f"instancia {iid}",

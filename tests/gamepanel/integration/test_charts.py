@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Testes dos graficos de uso: coleta, retencao e a matematica das coordenadas.
+"""Tests for the usage charts: collection, retention and the coordinate math.
 
     pytest admin/test_charts.py
 
-A parte que erra num grafico nao e o desenho, e a conta: um buraco virando linha reta faz
-o grafico MENTIR (diz que o servidor rodou liso enquanto estava fora do ar), e um valor
-fora da moldura vaza por cima do resto da tela. E isso que esta testado aqui.
+The part that goes wrong in a chart is not the drawing, it is the arithmetic: a gap turned into
+a straight line makes the chart LIE (it says the server ran smoothly while it was down), and a
+value outside the frame leaks over the rest of the screen. That is what is tested here.
 """
 import re
 from datetime import UTC, datetime, timedelta
@@ -22,7 +22,7 @@ DUAS_SERIES = [*SERIE_CPU,
 
 
 def samples(values, min_step=5, start=None):
-    """Lista de (quando, {cpu: v}) espacada de `passo_min`; None vira buraco."""
+    """List of (when, {cpu: v}) spaced `passo_min` apart; None becomes a gap."""
     base = start or START
     return [(base + timedelta(minutes=min_step * i), {"cpu": v})
             for i, v in enumerate(values)]
@@ -33,24 +33,24 @@ def chart_of(data, series=None, teto=100):
 
 
 def ys_of(g):
-    """Todo y desenhado, de tracos e de pontos soltos."""
+    """Every y drawn, from strokes and from isolated points."""
     all_of = [p for line in g["linhas"] for s in (line["tracos"] + line["pontos"]) for p in s.split()]
     return [float(p.split(",")[1]) for p in all_of]
 
 
-# ------------------------------------------------------------------ o eixo
+# ------------------------------------------------------------------ the axis
 
 @pytest.mark.parametrize("pico, teto", [
-    (11, 12),      # pico 11 nao merece um eixo que vai ate 20
-    (0, 1),        # servidor parado ainda precisa de eixo
-    (10, 10),      # pico exato usa o proprio degrau
-    (5000, 5001),  # acima do maior degrau conhecido, sem quebrar
+    (11, 12),      # a peak of 11 does not deserve an axis going up to 20
+    (0, 1),        # a stopped server still needs an axis
+    (10, 10),      # an exact peak uses its own step
+    (5000, 5001),  # above the largest known step, without breaking
 ])
 def test_teto_do_eixo(pico, teto):
     assert panel._clean_ceiling(pico) == teto
 
 
-# ------------------------------------------------------------ coordenadas
+# ------------------------------------------------------------ coordinates
 
 def test_valor_vira_altura_dentro_da_moldura():
     g = chart_of(samples([0, 50, 100]))
@@ -62,7 +62,7 @@ def test_valor_vira_altura_dentro_da_moldura():
 
 
 def test_valor_acima_do_teto_e_preso_na_moldura():
-    """Sem isso a linha sai por cima do cartao e invade o resto da tela."""
+    """Without this the line goes over the card and invades the rest of the screen."""
     g = chart_of(samples([250]))
     assert all(g["t"] <= y <= g["b"] for y in ys_of(g))
 
@@ -73,10 +73,10 @@ def test_x_fica_dentro_da_moldura():
     assert all(g["l"] - 0.5 <= x <= g["r"] + 0.5 for x in xs), f"x de {min(xs)} a {max(xs)}"
 
 
-# ------------------------------------------- buracos nao viram linha reta
+# ------------------------------------------- gaps do not become straight lines
 
 def test_painel_fora_do_ar_parte_a_linha():
-    """Sem amostra a linha tem de PARTIR: ligar as pontas diria que rodou liso na queda."""
+    """Without a sample the line has to BREAK: joining the ends would say it ran smoothly during the outage."""
     far = samples([10, 20], min_step=5)
     far += [(START + timedelta(hours=6), {"cpu": 30}),
               (START + timedelta(hours=6, minutes=5), {"cpu": 40})]
@@ -88,14 +88,14 @@ def test_amostras_seguidas_ficam_num_traco_so():
 
 
 def test_leitura_que_falhou_tambem_e_buraco():
-    """None no meio = o medidor nao respondeu naquela volta."""
+    """None in the middle = the meter did not answer on that round."""
     with_failure = [(START + timedelta(minutes=5 * i), {"cpu": v})
                  for i, v in enumerate([10, 20, None, 40, 50])]
     assert len(chart_of(with_failure)["linhas"][0]["tracos"]) == 2
 
 
 def test_amostra_sozinha_vira_ponto_em_vez_de_sumir():
-    """Um segmento de um ponto so nao tem comprimento para virar polyline."""
+    """A one-point segment has no length to become a polyline."""
     alone = [(START, {"cpu": 10}),
                 (START + timedelta(hours=5), {"cpu": 55}),
                 (START + timedelta(hours=10), {"cpu": 20})]
@@ -109,7 +109,7 @@ def test_grafico_sem_dado_se_declara_vazio():
     assert chart_of([(START, {"cpu": None})])["vazio"] is True, "serie so com buraco"
 
 
-# ----------------------------------------------------- rotulo das pontas
+# ----------------------------------------------------- end labels
 
 def series_pair(cpu_end, mem_end):
     return [(START + timedelta(minutes=5 * i), {"cpu": c, "mem": m})
@@ -121,13 +121,13 @@ def test_pontas_separadas_ganham_rotulo():
 
 
 def test_pontas_coladas_perdem_o_rotulo_mas_nao_o_ponto():
-    """Dois rotulos que se tocam se desgrudam das linhas e viram ruido: melhor nenhum."""
+    """Two labels touching each other come loose from their lines and become noise: better none."""
     g = chart_of(series_pair(50, 51), DUAS_SERIES)
     assert not g["rotula_ponta"]
     assert all(line["ponta"] for line in g["linhas"]), "o ponto da ponta continua la"
 
 
-# ------------------------------------------------------ grade e eixo do tempo
+# ------------------------------------------------------ grid and time axis
 
 def test_grade_leva_o_sufixo_da_serie():
     g = chart_of(samples([10, 20]))
@@ -141,7 +141,7 @@ def test_grade_sem_sufixo_quando_a_serie_nao_tem():
     assert [line["label"] for line in g["grade"]] == ["0", "6", "12"]
 
 
-# ------------------------------------------------------- coleta e retencao
+# ------------------------------------------------------- collection and retention
 
 def register_server(conn, name="alvo", host="nao-existe.invalid") -> int:
     with conn:
@@ -153,7 +153,7 @@ def register_server(conn, name="alvo", host="nao-existe.invalid") -> int:
 
 
 def test_medidor_com_erro_nao_grava_amostra(database, monkeypatch):
-    """Zero seria mentira ("usou 0% de CPU"); o buraco e a informacao certa."""
+    """Zero would be a lie ("used 0% CPU"); the gap is the right information."""
     register_server(database)
     monkeypatch.setattr(panel, "server_metrics", lambda *a, **k: {"error": "tempo esgotado"})
     monkeypatch.setattr(panel, "server_players", lambda *a, **k: {"error": "", "players": 3})
@@ -197,7 +197,7 @@ def test_amostra_velha_sai_na_limpeza(database, monkeypatch):
 
 
 def test_apagar_o_servidor_leva_as_amostras_dele(database):
-    """CASCADE: sem isso o banco acumularia amostra de servidor que nao existe mais."""
+    """CASCADE: without it the database would pile up samples of servers that no longer exist."""
     sid = register_server(database)
     with database:
         database.execute("INSERT INTO samples (server_id, taken_at, cpu_pct, mem_pct, players)"
@@ -206,8 +206,8 @@ def test_apagar_o_servidor_leva_as_amostras_dele(database):
     assert database.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 0
 
 
-# ------------------------------------------------------------------- a tela
-# (a fixture `chefe` - administrador cadastrado e logado - vem do conftest.py)
+# ------------------------------------------------------------------- the screen
+# (the `chefe` fixture - an admin registered and logged in - comes from conftest.py)
 
 def test_a_tela_abre_sem_amostra_nenhuma(database, admin):
     sid = register_server(database, "alvo2", "outro.invalid")
@@ -216,7 +216,7 @@ def test_a_tela_abre_sem_amostra_nenhuma(database, admin):
 
 @pytest.mark.parametrize("faixa", ["6", "24", "168", "999", "abc"])
 def test_faixa_de_tempo_nunca_quebra_a_tela(database, admin, faixa):
-    """Faixa inventada cai na de 24h em vez de estourar."""
+    """A made-up range falls back to 24h instead of blowing up."""
     sid = register_server(database, "alvo2", "outro.invalid")
     assert admin.get(f"/servers/{sid}/charts?h={faixa}").status_code == 200
 
@@ -226,13 +226,13 @@ def test_servidor_que_nao_existe_da_404(admin):
 
 
 def test_o_svg_desenhado_traz_os_rotulos_dos_eixos(database, admin):
-    """Renderiza a TELA, e nao so o dicionario que a alimenta.
+    """Renders the SCREEN, and not just the dictionary that feeds it.
 
-    Havia teste de sobra para `build_chart` e nenhum para o `charts.html`, e foi por ali
-    que passou um defeito de verdade: renomear a chave `rotulo` do dicionario sem mexer
-    no template deixou todo `<text class="tick">` VAZIO. A pagina continuou respondendo
-    200, o SVG continuou no lugar, e nenhum teste piscou -- o eixo e que ficou sem
-    numero. E o caso que o CLAUDE.md descreve: template quebrado nao aparece em teste.
+    There were plenty of tests for `build_chart` and none for `charts.html`, and that is
+    where a real defect got through: renaming the `rotulo` key of the dictionary without
+    touching the template left every `<text class="tick">` EMPTY. The page kept answering
+    200, the SVG stayed in place, and no test blinked -- the axis just lost its numbers.
+    It is the case CLAUDE.md describes: a broken template does not show up in any test.
     """
     sid = register_server(database, "alvo3", "outro3.invalid")
     now_at = datetime.now(UTC)

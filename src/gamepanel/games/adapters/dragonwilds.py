@@ -1,35 +1,35 @@
-"""Campos de configuracao de RuneScape: Dragonwilds (le DedicatedServer.ini)."""
+"""Configuration fields for RuneScape: Dragonwilds (reads DedicatedServer.ini)."""
 from __future__ import annotations
 
 import re
 
 from gamepanel.games.base import LABEL_ADMIN_PASSWORD, LABEL_JOIN_PASSWORD, LABEL_NAME, FieldSpec
 
-# O painel escolhe o catalogo pelo NOME do arquivo, que e o mesmo criterio
-# que ele ja usa para escolher o leitor.
+# The panel picks the catalog by the file NAME, which is the same criterion
+# it already uses to pick the reader.
 FILENAME = re.compile(r"^DedicatedServer\.ini$", re.I)
 
-# ------------------------------ RuneScape: Dragonwilds (le DedicatedServer.ini)
-# O .ini so cuida de identidade e acesso do servidor. As regras do MUNDO (capacidade de
-# carga, estabilidade e custo de construcao, PvP, dificuldade...) NAO estao aqui: moram
-# no save do mundo (.sav), e mods como o "No Carry Capacity" so as expoem no menu
-# "Edit Settings" do jogo. Nao inventar chave dessas neste catalogo: o jogo ignora.
+# ------------------------------ RuneScape: Dragonwilds (reads DedicatedServer.ini)
+# The .ini only handles the server identity and access. The WORLD rules (carry capacity,
+# building stability and cost, PvP, difficulty...) are NOT here: they live in the world
+# save (.sav), and mods like "No Carry Capacity" only expose them in the game's "Edit
+# Settings" menu. Do not invent such keys in this catalog: the game ignores them.
 FIELDS = {
     "OwnerId": FieldSpec("ID do dono",
-                         "Seu Player ID, no rodape do menu de Configuracoes do jogo (nao e "
-                         "o Steam ID de 17 digitos). Sem ele o servidor NAO sobe."),
+                         "Seu Player ID, no rodapé do menu de Configurações do jogo (não é "
+                         "o Steam ID de 17 dígitos). Sem ele o servidor NÃO sobe."),
     "ServerName": FieldSpec(LABEL_NAME, "Como ele aparece para quem entra."),
-    "DefaultWorldName": FieldSpec("Nome do mundo padrao",
+    "DefaultWorldName": FieldSpec("Nome do mundo padrão",
                                   "Nome do mundo criado no primeiro start. "
-                                  "Trocar depois nao renomeia um mundo que ja existe."),
+                                  "Trocar depois não renomeia um mundo que já existe."),
     "AdminPassword": FieldSpec(LABEL_ADMIN_PASSWORD,
                                "Quem souber esta senha abre a aba Server Management no menu "
                                "do jogo e vira admin. TROQUE antes de expor o servidor.",
                                kind="password"),
     "WorldPassword": FieldSpec(LABEL_JOIN_PASSWORD, "Vazio = qualquer um entra.",
                                kind="password"),
-    "ServerGuid": FieldSpec("GUID do servidor", "Gerado pelo proprio jogo. Nao edite a mao."),
+    "ServerGuid": FieldSpec("GUID do servidor", "Gerado pelo próprio jogo. Não edite à mão."),
     "KnownPlayerList": FieldSpec("Jogadores conhecidos",
-                                 "Preenchido pelo proprio jogo (quem ja entrou, privilegios "
-                                 "e banimentos). Nao edite a mao."),
+                                 "Preenchido pelo próprio jogo (quem já entrou, privilégios "
+                                 "e banimentos). Não edite à mão."),
 }

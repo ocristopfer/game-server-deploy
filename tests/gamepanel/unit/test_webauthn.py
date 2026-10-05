@@ -1,7 +1,7 @@
-"""WebAuthn proprio (security/webauthn.py): CBOR, ES256, RS256 e as regras das cerimonias.
+"""Home-grown WebAuthn (security/webauthn.py): CBOR, ES256, RS256 and the ceremony rules.
 
-O aparelho e simulado aqui com a mesma matematica (assinar ECDSA so precisa da curva): cada
-teste monta a resposta que um celular mandaria e confere o que o painel aceita ou recusa.
+The device is simulated here with the same math (signing ECDSA only needs the curve): each
+test builds the response a phone would send and checks what the panel accepts or refuses.
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def assertion(stored: int = 0, count: int = 0, flags: int = wa.FLAG_UP | wa.FLAG
     return wa.verify_assertion(**args)
 
 
-# ------------------------------------------------------------------ testes
+# ------------------------------------------------------------------ tests
 
 def test_cbor_le_o_que_o_webauthn_usa():
     value = {"a": [1, -7, b"\x00\xff", True, None], 3: -257, "grande": 2**40}
@@ -71,8 +71,8 @@ def test_es256_confere_assinatura_certa_e_recusa_a_errada():
 
 
 def test_es256_vetor_conhecido():
-    """Vetor de teste do RFC 6979, A.2.5 (P-256, SHA-256, mensagem 'sample'): confere a
-    matematica contra uma assinatura que NAO foi feita por este arquivo."""
+    """RFC 6979 test vector, A.2.5 (P-256, SHA-256, message 'sample'): checks the math
+    against a signature that was NOT made by this file."""
     x = 0x60FED4BA255A9D31C961EB74C6356D68C049B8923B61FA6CE669622E60F29FB6
     y = 0x7903FE1008B8BC99A41AE9E95628BC64F2F1B20C2D7E9F5177A3C294D4462299
     r = 0xEFD48B2AACB6A8FD1140DD9CD45E81D69D2C877B56AAF991C34D0EA84EAF3716
@@ -84,7 +84,7 @@ def test_es256_vetor_conhecido():
 
 
 def test_rs256_confere_e_recusa():
-    # Chave RSA de 2048 bits so para teste (e = 65537), assinatura PKCS#1 v1.5 feita a mao.
+    # 2048-bit RSA key for testing only (e = 65537), PKCS#1 v1.5 signature built by hand.
     n, e, d = RSA_TEST_KEY
     message = b"windows hello"
     size = (n.bit_length() + 7) // 8
@@ -117,7 +117,7 @@ def test_cadastro_recusado(over, reason):
 
 
 def test_login_confere_e_devolve_o_contador():
-    assert assertion(stored=0, count=0) == 0  # passkey sincronizada: sempre 0
+    assert assertion(stored=0, count=0) == 0  # synced passkey: always 0
     assert assertion(stored=5, count=6) == 6
 
 
@@ -142,8 +142,8 @@ def test_desafio_novo_a_cada_vez():
     assert len(wa.unb64url(wa.new_challenge())) == wa.CHALLENGE_BYTES
 
 
-# Chave RSA de teste (2048 bits), gerada uma vez e colada aqui: gerar primos a cada rodada
-# gastaria segundos para provar a mesma coisa. Nao protege nada.
+# Test RSA key (2048 bits), generated once and pasted here: generating primes on every run
+# would spend seconds to prove the same thing. It protects nothing.
 RSA_TEST_KEY = (
     int(
         "c3749fa92dbabf34977e0e1616f288df9b63f9a7f4cb2273ba4e5ff8b5a5fdb99fc32d897b1db74664899d8d482f13c5"
@@ -167,7 +167,7 @@ def test_desafio_e_de_uso_unico_e_vence():
     now = [100.0]
     store = wa.Challenges(clock=lambda: now[0])
     first = store.issue("login", 10, {"uid": 1})
-    assert store.take("register", first) is None  # tipo errado tambem gasta
+    assert store.take("register", first) is None  # the wrong type also consumes it
     second = store.issue("login", 10)
     assert store.take("login", second) == {}
     assert store.take("login", second) is None

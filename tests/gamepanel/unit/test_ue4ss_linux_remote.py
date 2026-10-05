@@ -1,7 +1,7 @@
-"""UE4SS de jogo Unreal Linux nativo (games/mods/ue4ss_linux_remote.py): o oficial para Linux.
+"""UE4SS for native Linux Unreal games (games/mods/ue4ss_linux_remote.py): the official one for Linux.
 
-Roda DENTRO do CT; aqui contra uma pasta temporaria, um GitHub falso com os arquivos do release
-(no formato do linux-v1) e o systemd trocado por uma pasta.
+It runs INSIDE the CT; here against a temporary folder, a fake GitHub with the release files
+(in the linux-v1 format) and systemd replaced by a folder.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def release_assets(**overrides: bytes) -> dict[str, bytes]:
 
 
 def gh(files: dict[str, bytes] | None = None, sums: dict[str, bytes] | None = None):
-    """GitHub falso do release; `sums` permite um SHA256SUMS que nao bate."""
+    """Fake release GitHub; `sums` allows a SHA256SUMS that does not match."""
     files = files if files is not None else release_assets()
     sums_of = sums if sums is not None else files
     sums_text = "".join(f"{hashlib.sha256(d).hexdigest()}  {n}\n" for n, d in sums_of.items()).encode()
@@ -86,9 +86,9 @@ def test_instala_no_layout_oficial_com_ld_preload_no_drop_in(game):
     dropin = (root / "systemd" / "palworld.service.d" / "gamepanel-ue4ss.conf").read_text(encoding="utf-8")
     assert f"Environment=LD_PRELOAD={exe_dir.as_posix()}/ue4ss/libUE4SS.so" in dropin.replace("\\", "/")
     assert reloads == [1]
-    # O antivirus ve o release INTEIRO de uma vez, antes de qualquer coisa ser gravada.
+    # The antivirus sees the WHOLE release at once, before anything is written.
     assert scanned == [sorted(release_assets())]
-    # Sem .sym (o Palworld): nenhum arquivo gerado - o layout do motor vem embutido.
+    # No .sym (Palworld): no generated file - the engine layout comes built in.
     assert not (ue4ss / "VTableLayout.ini").exists()
 
 
@@ -170,7 +170,7 @@ def test_template_tem_o_nome_do_ue4ss():
     assert ul.Release("linux-v1", "5.1", "").template_name == "VTableLayout_5_01_Template.ini"
 
 
-# ------------------------------------------------------------------ servidor com .sym (Dragonwilds)
+# ------------------------------------------------------------------ server with .sym (Dragonwilds)
 
 GENERATED = {
     "VTableLayout.ini": "; Gerado pelo painel (ue_sym_layout.py) ...\n[AActor]\n__vecDelDtor\nBeginPlay\n",
@@ -199,7 +199,7 @@ def test_com_sym_grava_o_layout_e_as_assinaturas_deste_executavel(dragonwilds):
     ue4ss = exe_dir / "ue4ss"
     assert (ue4ss / "VTableLayout.ini").read_text(encoding="utf-8") == GENERATED["VTableLayout.ini"]
     assert (ue4ss / "UE4SS_Signatures" / "GNatives.lua").exists()
-    # O gerador recebe o executavel que tem o .sym e o template DA VERSAO do motor do perfil.
+    # The generator receives the executable that has the .sym and the template FOR THE profile's engine VERSION.
     assert calls[0][0].endswith("RSDragonwildsServer-Linux-Shipping")
     assert calls[0][1] == TEMPLATE
     state = ul.status(str(exe_dir), "dragonwilds.service")
@@ -236,7 +236,7 @@ def test_reinstalar_sem_sym_apaga_so_o_que_o_painel_gerou(dragonwilds, monkeypat
     ul.install_loader(str(exe_dir), "dragonwilds.service", RELEASE, fetcher=gh())
     assert not (exe_dir / "ue4ss" / "VTableLayout.ini").exists()
     assert not (exe_dir / "ue4ss" / "UE4SS_Signatures" / "GNatives.lua").exists()
-    # Um ini escrito a mao (sem o cabecalho do painel) fica.
+    # A hand-written ini (without the panel header) stays.
     (exe_dir / "ue4ss" / "VTableLayout.ini").write_text("[UObject]\nMeu\n", encoding="utf-8")
     ul.install_loader(str(exe_dir), "dragonwilds.service", RELEASE, fetcher=gh())
     assert (exe_dir / "ue4ss" / "VTableLayout.ini").exists()
@@ -257,7 +257,7 @@ def test_migra_a_instalacao_do_fork_antigo(dragonwilds):
     for name in ("libUE4SS.so", "UE4SS_Addresses.ini", "MemberVariableLayout.ini", "UE4SS-settings.ini",
                  ".gamepanel-ue4ss-linux.json"):
         assert not (exe_dir / name).exists(), name
-    # O executavel e o .sym do jogo nao sao do fork: ficam.
+    # The game's executable and .sym are not from the fork: they stay.
     assert (exe_dir / "RSDragonwildsServer-Linux-Shipping").exists()
     assert ul.status(str(exe_dir), "dragonwilds.service")["old_layout"] is False
 
@@ -292,7 +292,7 @@ def test_desinstalar_tambem_limpa_a_sobra_do_fork_antigo(game):
     assert sorted(p.name for p in exe_dir.iterdir()) == ["PalServer-Linux-Shipping"]
 
 
-# ------------------------------------------------------------------ servidor sem .sym, com o pacote de referencia
+# ------------------------------------------------------------------ server without .sym, with the reference pack
 
 PACK = '{"version": "4.27", "reference": "Squad 44", "signatures": {}, "sections": {}}'
 LAYOUT = {
@@ -310,7 +310,7 @@ def with_packs(**packs: str) -> dict[str, bytes]:
 
 @pytest.fixture
 def the_front(game, monkeypatch):
-    """O The Front: binario sem -Linux- no nome, sem .sym, motor 4.27."""
+    """The Front: binary without -Linux- in its name, no .sym, engine 4.27."""
     exe_dir, root, _ = game
     (exe_dir / "PalServer-Linux-Shipping").unlink()
     (exe_dir / "TheFrontServer").write_bytes(b"\x7fELF" + b"\0" * 4096)
@@ -329,15 +329,15 @@ def test_sem_sym_gera_pelo_pacote_da_versao_e_o_drop_in_nomeia_o_executavel(the_
     exe_dir, root, calls = the_front
     release = ul.Release("linux-v1", "4.27", "gerador-sym", "gerador-pacote")
     ul.install_loader(str(exe_dir), "the-front.service", release, fetcher=gh(with_packs(**{"pack-4.27.json": PACK})))
-    # O executavel e o maior ELF da pasta: nem a .so (maior) nem o script de partida contam.
+    # The executable is the largest ELF in the folder: neither the .so (larger) nor the start script count.
     assert calls == [(str(exe_dir / "TheFrontServer"), PACK, False)]
     ue4ss = exe_dir / "ue4ss"
     assert (ue4ss / "MemberVariableLayout.ini").read_text(encoding="utf-8") == LAYOUT["MemberVariableLayout.ini"]
     assert (ue4ss / "UE4SS_Signatures" / "GMalloc.lua").exists()
-    # Sem -Linux- no nome o UE4SS nao iniciaria: o drop-in diz qual e o processo do jogo.
+    # Without -Linux- in the name UE4SS would not start: the drop-in says which process is the game.
     dropin = (root / "systemd" / "the-front.service.d" / "gamepanel-ue4ss.conf").read_text(encoding="utf-8")
     assert "Environment=UE4SS_TARGET_EXE=TheFrontServer" in dropin
-    # Religar depois de desligar mantem o nome (vem da marca da instalacao).
+    # Re-enabling after disabling keeps the name (it comes from the install mark).
     ul.set_enabled(str(exe_dir), "the-front.service", False)
     ul.set_enabled(str(exe_dir), "the-front.service", True)
     assert "UE4SS_TARGET_EXE=TheFrontServer" in (
@@ -372,7 +372,7 @@ def test_com_sym_e_pacote_o_que_veio_do_sym_vence(dragonwilds, monkeypatch):
     release = ul.Release("linux-v1", "5.6", "gerador-sym", "gerador-pacote")
     ul.install_loader(str(exe_dir), "dragonwilds.service", release, fetcher=gh(with_packs(**{"pack-5.6.json": PACK})))
     ue4ss = exe_dir / "ue4ss"
-    assert layout_calls == [True]   # com .sym o gerador do pacote so faz os globais
+    assert layout_calls == [True]   # with .sym the pack generator only does the globals
     assert (ue4ss / "VTableLayout.ini").read_text(encoding="utf-8") == GENERATED["VTableLayout.ini"]
     assert (ue4ss / "UE4SS_Signatures" / "GMalloc.lua").read_text(encoding="utf-8") == "-- do pacote\n"
 

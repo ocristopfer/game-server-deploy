@@ -1,14 +1,14 @@
-"""O contrato entre template, CSS e JavaScript: quem escreve e quem le.
+"""The contract between template, CSS and JavaScript: who writes and who reads.
 
-Mesma familia de defeito que o `test_template_contract.py` guarda, e pelo mesmo motivo:
-o nome existe como TEXTO dos dois lados e nenhuma ferramenta liga os dois.
+Same family of defect that `test_template_contract.py` guards, and for the same reason:
+the name exists as TEXT on both sides and no tool links the two.
 
-- uma classe so no `class=` e estilo que nunca chega — a tela abre torta, com 200;
-- uma classe so no `.css` e regra morta, que a proxima pessoa tenta "usar";
-- um `data-*` so no template e comportamento que nao monta, sem erro no console;
-- um `data-*` so no JavaScript e uma feature que nunca encontra elemento nenhum.
+- a class only in `class=` is a style that never arrives - the screen opens crooked, with 200;
+- a class only in the `.css` is a dead rule, which the next person tries to "use";
+- a `data-*` only in the template is behavior that never mounts, with no error in the console;
+- a `data-*` only in the JavaScript is a feature that never finds any element.
 
-Nenhum dos quatro aparece em teste de rota (a pagina responde 200) nem no lint.
+None of the four shows up in a route test (the page answers 200) nor in the lint.
 """
 from __future__ import annotations
 
@@ -25,23 +25,23 @@ CSS_DIR = PANEL / "static" / "css"
 JS_DIR = PANEL / "static" / "js"
 
 CLASS_ATTR = re.compile(r"""class=["']([^"']*)["']""")
-# `{{ 'x' if cond }}` dentro do class=: o que sobra depois de tirar as chaves do Jinja.
+# `{{ 'x' if cond }}` inside class=: what is left after removing the Jinja braces.
 JINJA_EXPR = re.compile(r"\{\{.*?\}\}|\{%.*?%\}", re.DOTALL)
 CSS_RULE = re.compile(r"\.(-?[_a-zA-Z][\w-]*)")
 DATA_ATTR = re.compile(r"data-([a-z][a-z0-9-]*)")
 
-# Classes que nascem no JavaScript ou vem de um valor do servidor, entao nao aparecem
-# literais em nenhum `class=`. Cada uma e uma decisao, nao uma excecao generica.
+# Classes born in JavaScript or coming from a server value, so they never appear
+# literally in any `class=`. Each one is a decision, not a generic exception.
 CLASSES_SEM_TEMPLATE = {
-    # Estado que o JS liga e desliga.
+    # State that the JS turns on and off.
     "on", "off", "ok", "warn", "hot", "cold", "open", "js",
-    # Utilitarias do reset, aplicadas a elemento cru.
+    # Reset utilities, applied to raw elements.
     "html",
 }
 
 
-# `{% set classes = classes + ['btn--block'] %}` — nome COMPLETO, e nao um prefixo
-# montado com `~`: este o teste consegue conferir contra o CSS.
+# `{% set classes = classes + ['btn--block'] %}` - the FULL name, and not a prefix
+# built with `~`: this one the test can check against the CSS.
 SET_CLASS = re.compile(r"""\+\s*\[["']([\w-]+)["']\]""")
 
 
@@ -50,11 +50,11 @@ def _templates() -> list[Path]:
 
 
 def classes_in_templates() -> dict[str, str]:
-    """Classe -> primeiro template que a usa.
+    """Class -> first template that uses it.
 
-    O Jinja sai ANTES de procurar o `class=`: `class="menu{{ ' ' ~ classe if classe }}"`
-    tem aspa simples dentro do atributo, e um regex que so conta aspas fecharia no meio
-    da expressao e colheria `menu{{` como se fosse uma classe.
+    The Jinja goes out BEFORE looking for `class=`: `class="menu{{ ' ' ~ classe if classe }}"`
+    has a single quote inside the attribute, and a regex that only counts quotes would close
+    in the middle of the expression and collect `menu{{` as if it were a class.
     """
     found: dict[str, str] = {}
     for path in _templates():
@@ -63,23 +63,23 @@ def classes_in_templates() -> dict[str, str]:
         for attr in CLASS_ATTR.findall(clean):
             for name in attr.split():
                 found.setdefault(name, path.name)
-        # Classe montada por LISTA no proprio Jinja: `{% set classes = classes +
-        # ['btn--block'] %}`. Ela nunca aparece num `class=`, entao o `JINJA_EXPR.sub`
-        # acima a apaga junto com o resto da expressao — e era assim que `btn--bloco`
-        # sobrevivia sem nenhuma regra de CSS. Todo botao `block=true` do painel (login,
-        # conta, formularios) deixou de ocupar a largura inteira do cartao e nada
-        # acusou: o HTML sai inteiro, a pagina responde 200 e a classe simplesmente
-        # nao casa com regra nenhuma.
+        # Class built as a LIST in the Jinja itself: `{% set classes = classes +
+        # ['btn--block'] %}`. It never appears in a `class=`, so the `JINJA_EXPR.sub`
+        # above erases it along with the rest of the expression - and that is how `btn--bloco`
+        # survived without any CSS rule. Every `block=true` button in the panel (login,
+        # account, forms) stopped filling the full width of the card and nothing
+        # flagged it: the HTML comes out whole, the page answers 200 and the class simply
+        # matches no rule.
         for name in SET_CLASS.findall(text):
             found.setdefault(name, path.name)
     return found
 
 
 def class_prefixes_in_templates() -> set[str]:
-    """Prefixos de classe MONTADA em runtime: `'btn--' ~ variante` vira `btn--`.
+    """Prefixes of classes BUILT at runtime: `'btn--' ~ variante` becomes `btn--`.
 
-    Sem isto, toda variacao (`btn--danger`, `btn--sm`, ...) pareceria regra morta: o
-    nome completo nao existe em lugar nenhum do template.
+    Without this, every variation (`btn--danger`, `btn--sm`, ...) would look like a dead
+    rule: the full name exists nowhere in the template.
     """
     prefixes: set[str] = set()
     for path in _templates():
@@ -90,11 +90,11 @@ def class_prefixes_in_templates() -> set[str]:
 
 
 def names_seen_anywhere() -> set[str]:
-    """Todo identificador solto de template e JavaScript.
+    """Every loose identifier in templates and JavaScript.
 
-    Para a direcao "regra morta" basta o nome APARECER: ele pode chegar ao `class=` por
-    um argumento de macro, por um `{% set %}` ou por um `classList.add`. Ser rigoroso
-    aqui so produziria excecao escrita a mao, que e o que este teste existe para evitar.
+    For the "dead rule" direction it is enough for the name to APPEAR: it can reach `class=`
+    through a macro argument, a `{% set %}` or a `classList.add`. Being strict here would
+    only produce hand-written exceptions, which is what this test exists to avoid.
     """
     names: set[str] = set()
     for path in [*_templates(), *sorted(JS_DIR.rglob("*.js"))]:
@@ -142,7 +142,7 @@ def data_in_js() -> set[str]:
 
 
 def test_toda_classe_usada_num_template_tem_regra_no_css():
-    """Classe sem regra e estilo que nunca chega: a tela abre torta, e responde 200."""
+    """A class without a rule is a style that never arrives: the screen opens crooked, and answers 200."""
     styled = classes_in_css() | classes_in_js()
     orphans = sorted(
         f"{name} (em {where})"
@@ -153,7 +153,7 @@ def test_toda_classe_usada_num_template_tem_regra_no_css():
 
 
 def test_toda_regra_de_css_tem_quem_a_use():
-    """Regra morta e pior que inutil: a proxima pessoa a le como se estivesse em uso."""
+    """A dead rule is worse than useless: the next person reads it as if it were in use."""
     used = names_seen_anywhere() | CLASSES_SEM_TEMPLATE
     prefixes = tuple(class_prefixes_in_templates())
     dead = sorted(
@@ -164,7 +164,7 @@ def test_toda_regra_de_css_tem_quem_a_use():
 
 
 def test_todo_data_lido_pelo_javascript_existe_em_algum_template():
-    """Feature que procura um `data-*` inexistente nunca monta, e nao diz nada."""
+    """A feature looking for a nonexistent `data-*` never mounts, and says nothing."""
     written = set(data_in_templates())
     orphans = sorted(name for name in data_in_js() if name not in written)
     assert orphans == [], "data-* que o JS procura e nenhum template escreve:\n  " + "\n  ".join(orphans)
@@ -174,18 +174,18 @@ def test_todo_data_lido_pelo_javascript_existe_em_algum_template():
     "confirmAction", "dropdownMenu", "chart", "followLog", "watchJob",
 ])
 def test_o_app_js_registra_a_feature_que_o_modulo_exporta(feature):
-    """`app.js` liga feature a elemento pelo NOME: exportar e nao registrar e o mesmo
-    que nao existir."""
+    """`app.js` links a feature to an element by NAME: exporting without registering is the
+    same as not existing."""
     app_js = (JS_DIR / "app.js").read_text(encoding="utf-8")
     assert feature in app_js
 
 
-# O `server_detail.html` le `metrics.X` direto. `X` que o medidor nao entrega nao levanta
-# nada: some da tela e a pagina responde 200. Foi assim que `metrics.cores` virou
-# `metrics.colors` numa renomeacao e o numero de nucleos sumiu sem quebrar teste nenhum.
+# `server_detail.html` reads `metrics.X` directly. An `X` the meter does not deliver raises
+# nothing: it vanishes from the screen and the page answers 200. That is how `metrics.cores`
+# became `metrics.colors` in a rename and the core count vanished without breaking any test.
 #
-# A lista de campos NAO e escrita aqui: sai do proprio `parse_metrics`, para nao virar
-# mais uma copia que envelhece em silencio.
+# The list of fields is NOT written here: it comes from `parse_metrics` itself, so it does
+# not become one more copy that ages silently.
 METRICS_SAMPLE = """sample|1000|100000|0|0|0|0|0|0
 sample|2000|200000|0|0|0|0|0|0
 cores|4
@@ -211,27 +211,27 @@ def _meter_fields() -> set[str]:
 def test_a_tela_de_servidor_le_so_campos_que_o_medidor_entrega():
     html = (TEMPLATES / "server_detail.html").read_text(encoding="utf-8")
     read_ones = set(re.findall(r"metrics\.([a-z_]+)", html))
-    # `error` nasce quando a leitura FALHA, entao nao esta na amostra boa.
+    # `error` appears when the reading FAILS, so it is not in the good sample.
     missing = sorted(read_ones - _meter_fields() - {"error"})
     assert missing == [], f"a tela le campo que o medidor nao entrega: {missing}"
 
 
 def test_o_medidor_ainda_entrega_o_numero_de_nucleos():
-    """`cores` e a palavra que colide: nucleos em ingles, cores em portugues. Uma
-    renomeacao automatica ja trocou uma pela outra nos dois lados."""
+    """`cores` is the colliding word: CPU cores in English, colors in Portuguese. An
+    automatic rename once swapped one for the other on both sides."""
     assert "cores" in _meter_fields()
 
 
-# ---------------------------------------------------- tokens de CSS (custom properties)
+# ---------------------------------------------------- CSS tokens (custom properties)
 
 CSS_VAR_DEF = re.compile(r"^\s*(--[\w-]+)\s*:", re.M)
 CSS_VAR_USE = re.compile(r"var\(\s*(--[\w-]+)")
 
-# Nome que NASCE fora do CSS. `--safe-*` vem do `env(safe-area-inset-*)` por um `@supports`
-# que monta o nome; as duas telas cheias (terminal e console) escrevem a altura pelo JS.
+# Names BORN outside the CSS. `--safe-*` comes from `env(safe-area-inset-*)` via an `@supports`
+# that builds the name; the two full screens (terminal and console) write the height from JS.
 VARS_SEM_DEFINICAO: set[str] = set()
 VARS_SEM_USO = {
-    # Definida so para o `@supports` de notch trocar o valor; o uso e o proprio fallback.
+    # Defined only so the notch `@supports` can swap the value; the usage is the fallback itself.
     "--safe-top", "--safe-bottom", "--safe-left", "--safe-right",
 }
 
@@ -252,45 +252,45 @@ def css_vars_used() -> set[str]:
 
 
 def test_todo_token_de_css_definido_e_usado():
-    """Token morto e a mesma armadilha da regra morta, e escapava deste arquivo.
+    """A dead token is the same trap as a dead rule, and it escaped this file.
 
-    `--sombra-1` ficou definida em `tokens.css` sem um unico `var(--sombra-1)` no
-    repositorio: quem lesse a lista de sombras acharia que ha tres degraus disponiveis.
+    `--sombra-1` stayed defined in `tokens.css` without a single `var(--sombra-1)` in the
+    repository: whoever read the list of shadows would think three levels were available.
     """
     dead = sorted(css_vars_defined() - css_vars_used() - VARS_SEM_USO)
     assert dead == [], "token de CSS definido e nunca usado:\n  " + "\n  ".join(dead)
 
 
 def test_todo_token_de_css_usado_esta_definido():
-    """`var(--nome-que-nao-existe)` nao e erro para navegador nenhum: a propriedade
-    simplesmente nao aplica, e a tela abre sem a cor, sem o espaco ou sem o raio."""
+    """`var(--name-that-does-not-exist)` is not an error for any browser: the property
+    simply does not apply, and the screen opens without the color, the spacing or the radius."""
     orphans = sorted(css_vars_used() - css_vars_defined() - VARS_SEM_DEFINICAO)
     assert orphans == [], "var(--x) sem definicao em tokens.css:\n  " + "\n  ".join(orphans)
 
 
-# ---------------------------------------------------------- valor cru fora de tokens.css
+# ---------------------------------------------------------- raw values outside tokens.css
 
 RAW_COLOR = re.compile(r"#[0-9a-fA-F]{3,8}\b")
-# `color-mix(... , #fff)` e `#000` sao OPERANDO de mistura — "clareia isto", nao uma cor
-# de tema. Reconhecidos pela forma, e nao por uma lista que envelheceria.
+# `color-mix(... , #fff)` and `#000` are mixing OPERANDS - "lighten this", not a theme
+# color. Recognized by their shape, and not by a list that would age.
 MIX_OPERAND = {"#fff", "#000", "#ffffff", "#000000"}
-# Cor crua que e REQUISITO FISICO, com o motivo no proprio CSS. Sao duas, e cada uma
-# quebraria de um jeito diferente se virasse token.
+# Raw colors that are a PHYSICAL REQUIREMENT, with the reason in the CSS itself. There are
+# two, and each would break in a different way if it became a token.
 COLOR_OUTSIDE_TOKENS = {
-    # O QR precisa de fundo branco para a camera travar nele; um token seguiria o modo
-    # escuro e nenhum leitor acharia o codigo.
+    # The QR needs a white background for the camera to lock onto it; a token would follow
+    # dark mode and no reader would find the code.
     "components.css": {"#fff"},
-    # Primeiro plano do terminal, que acompanha a paleta ANSI do `terminal.js` (protocolo,
-    # nao tema).
+    # Terminal foreground, which follows the ANSI palette of `terminal.js` (protocol,
+    # not theme).
     "pages.css": {"#c9d3de"},
 }
 
 
 def test_cor_crua_so_em_tokens_css():
-    """Cor escrita a mao num componente nao acompanha o tema e nao aparece na paleta.
+    """A color hand-written in a component does not follow the theme and is not in the palette.
 
-    A excecao nao e uma lista de nomes que envelhece: e `color-mix(..., #fff)`, que se
-    reconhece pela forma, mais duas cores com motivo FISICO escrito no proprio arquivo.
+    The exception is not a list of names that ages: it is `color-mix(..., #fff)`, recognized
+    by its shape, plus two colors with a PHYSICAL reason written in the file itself.
     """
     leftover = []
     for path in sorted(CSS_DIR.rglob("*.css")):
@@ -307,23 +307,23 @@ def test_cor_crua_so_em_tokens_css():
 
 
 def test_todo_estado_tem_o_par_de_cor_de_texto():
-    """`--ok` tinha borda e nao tinha texto, e o `.flash.ok` resolvia com um hex solto."""
+    """`--ok` had a border and no text, and `.flash.ok` made do with a loose hex."""
     tokens = (CSS_DIR / "tokens.css").read_text(encoding="utf-8")
     for state in ("ok", "err"):
         assert f"--{state}-text:" in tokens, f"falta --{state}-text em tokens.css"
         assert f"--{state}-line:" in tokens, f"falta --{state}-line em tokens.css"
 
 
-# ------------------------------------------- os limites do medidor, nos DOIS lugares
+# ------------------------------------------- the meter thresholds, in BOTH places
 
 def test_o_limite_de_cor_da_barra_e_o_mesmo_no_python_e_no_javascript():
-    """A barra e desenhada no SERVIDOR e atualizada pelo JS: dois donos do mesmo numero.
+    """The bar is drawn on the SERVER and updated by JS: two owners of the same number.
 
-    O painel renderiza a barra com o filtro `level` do `app.py` e depois o `format.js` a
-    reescreve a cada leitura de medidor. Se os limites divergirem, a cor muda no
-    recarregamento e nao no medidor que se move (ou o contrario) — sem erro, sem log, so
-    uma tela que se contradiz. Nao ha passo de build neste repositorio para compartilhar a
-    constante entre Python e JavaScript, entao a ligacao e este teste.
+    The panel renders the bar with the `level` filter from `app.py` and then `format.js`
+    rewrites it on every meter reading. If the thresholds diverge, the color changes on
+    reload and not on the moving meter (or the opposite) - no error, no log, just a screen
+    that contradicts itself. There is no build step in this repository to share the
+    constant between Python and JavaScript, so the link is this test.
     """
     js = (JS_DIR / "core" / "format.js").read_text(encoding="utf-8")
     found = [int(n) for n in re.findall(r"pct >= (\d+)\)", js)]

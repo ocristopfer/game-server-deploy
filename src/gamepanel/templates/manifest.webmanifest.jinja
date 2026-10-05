@@ -1,9 +1,9 @@
 {
   "id": "/",
-  "name": "Painel de Jogos",
-  "short_name": "Jogos",
-  "description": "Liga, desliga, atualiza e acompanha os servidores de jogos.",
-  "lang": "pt-BR",
+  "name": {{ _('app.name') | tojson }},
+  "short_name": {{ _('app.short_name') | tojson }},
+  "description": {{ _('app.description') | tojson }},
+  "lang": {{ html_lang | tojson }},
   "dir": "ltr",
   "start_url": "/?fonte=pwa",
   "scope": "/",
@@ -35,12 +35,12 @@
   ],
   "shortcuts": [
     {
-      "name": "Servidores",
+      "name": {{ _('nav.servers') | tojson }},
       "url": "{{ url_for('dashboard.index') }}",
       "icons": [{ "src": "{{ url_for('static', filename='icons/icon-192.png') }}", "sizes": "192x192" }]
     },
     {
-      "name": "Historico",
+      "name": {{ _('nav.history') | tojson }},
       "url": "{{ url_for('history.index') }}"
     }
   ]

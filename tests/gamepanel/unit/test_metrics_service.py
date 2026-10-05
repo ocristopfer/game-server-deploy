@@ -1,9 +1,9 @@
-"""Medidores do container (gamepanel.services.metrics_service).
+"""Container gauges (gamepanel.services.metrics_service).
 
-A leitura dos numeros ja tem suite propria (test_metrics_probe.py). O que falta e o
-que este modulo acrescenta: quando vale reaproveitar a leitura anterior — cada uma
-custa ~1s de SSH, e a tela de detalhe pergunta a cada poucos segundos — e o que a tela
-recebe quando o container nao responde.
+Reading the numbers already has its own suite (test_metrics_probe.py). What is missing is
+what this module adds: when it is worth reusing the previous reading - each one costs ~1s
+of SSH, and the detail screen asks every few seconds - and what the screen gets when the
+container does not respond.
 """
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def test_container_fora_do_ar_vira_erro_e_nao_excecao():
 
     data = ms.server_metrics(explode, SERVER, "/opt/padrao", 5)
     assert "tempo esgotado" in data["error"]
-    # Sem os medidores: a tela mostra o erro no lugar das barras, e nao barras zeradas.
+    # No gauges: the screen shows the error in place of the bars, not zeroed bars.
     assert "cpu_pct" not in data
 
 

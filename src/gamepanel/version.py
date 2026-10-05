@@ -1,13 +1,13 @@
-"""Que versao do painel esta rodando, e de que commit ela saiu.
+"""Which version of the panel is running, and which commit it came from.
 
-O valor de verdade e gravado por `tools/build-release.py` num `_build.py` que existe SO
-dentro do tarball — nunca na arvore de trabalho. Assim `git status` continua limpo
-depois de empacotar, e o que roda em producao carrega a identidade do artefato que foi
-publicado, em vez de uma que alguem se lembrou de editar a mao.
+The real value is written by `tools/build-release.py` into a `_build.py` that exists ONLY
+inside the tarball, never in the working tree. That way `git status` stays clean after
+packaging, and what runs in production carries the identity of the artifact that was
+published, instead of one somebody remembered to edit by hand.
 
-Sem esse arquivo (ou seja: rodando do repositorio), a versao e a do `VERSION` da raiz
-com a marca `+dev`. A marca importa — ela e o que diferencia "o painel do CT esta na
-0.1.0" de "alguem esta olhando a propria maquina".
+Without that file (that is: running from the repository), the version is the one in the
+root `VERSION` with the `+dev` mark. The mark matters: it is what tells "the panel on the
+CT is at 0.1.0" apart from "someone is looking at their own machine".
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ SEARCH_LEVELS = 4
 
 
 class Build(NamedTuple):
-    """A identidade do que esta rodando."""
+    """The identity of what is running."""
 
     version: str
     commit: str
@@ -36,12 +36,12 @@ class Build(NamedTuple):
 
 
 def version_from_repo(start: str, levels: int = SEARCH_LEVELS) -> str:
-    """Le o `VERSION` da raiz do repositorio, subindo pastas a partir de `start`.
+    """Read the repository root `VERSION`, walking up folders from `start`.
 
-    Sobe em vez de fixar `../../VERSION` porque o pacote tambem e montado em
-    `/opt/gamepanel/gamepanel` no container de desenvolvimento, onde a raiz do
-    repositorio esta em outro lugar. Nao achar nao e erro: e so um painel sem versao
-    declarada, e o `UNKNOWN` diz exatamente isso.
+    It walks up instead of hardcoding `../../VERSION` because the package is also mounted at
+    `/opt/gamepanel/gamepanel` in the development container, where the repository root
+    is somewhere else. Not finding it is not an error: it is just a panel with no declared
+    version, and `UNKNOWN` says exactly that.
     """
     folder = os.path.dirname(os.path.abspath(start))
     for _ in range(levels):
@@ -60,10 +60,10 @@ def version_from_repo(start: str, levels: int = SEARCH_LEVELS) -> str:
 
 
 def _current() -> Build:
-    # `_build` guarda texto puro, e nao um `Build` pronto: importar o tipo daqui faria
-    # este modulo depender de quem depende dele, e o import ficaria circular.
+    # `_build` holds plain text, not a ready `Build`: importing the type from here would make
+    # this module depend on what depends on it, and the import would become circular.
     try:
-        # Nao existe na arvore: o empacotador o escreve dentro do tarball.
+        # Not in the tree: the packager writes it inside the tarball.
         from gamepanel import _build  # type: ignore[attr-defined]
     except ImportError:
         return Build(version_from_repo(__file__) + DEV_SUFFIX, "", "")

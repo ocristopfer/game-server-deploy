@@ -1,13 +1,13 @@
-/* Contagem de jogadores.
+/* Player count.
  *
- * Fica separada dos medidores por um motivo de custo: a contagem sai de uma consulta
- * direta ao jogo (rapida), os medidores saem de um SSH por container (lento). Junta-
- * las faria o selo de jogadores esperar o SSH mais devagar da lista.
+ * It stays apart from the gauges for a cost reason: the count comes from a direct
+ * query to the game (fast), the gauges come from one SSH per container (slow). Joining
+ * them would make the player badge wait for the slowest SSH in the list.
  */
 import { Poller } from '../core/poll.js';
 import { readJSON } from '../core/http.js';
 import { $, createEl, reset } from '../core/dom.js';
-import { duration } from '../core/format.js';
+import { duration, fillText } from '../core/format.js';
 
 function paint(badge, data) {
   const ceiling = data.max_players ? '/' + data.max_players : '';
@@ -15,13 +15,15 @@ function paint(badge, data) {
   badge.className = `badge ${data.players ? 'on' : 'cold'}`;
 }
 
-/* Painel de servidores: um selo por cartao, todos de uma leitura so. */
+/* Server dashboard: one badge per card, all from a single reading. */
 export const panelPlayers = {
   selector: '[data-players-panel]',
   mount(root) {
     const url = root.dataset.playersPanel;
     const badges = Array.from(root.querySelectorAll('[data-players]'));
     if (!url || !badges.length) return;
+    // The phrase comes translated from the template, with `{count}` still in it.
+    const phrase = root.dataset.labelPlayers || '{count} jogadores';
 
     new Poller(async () => {
       const all = await readJSON(url);
@@ -29,14 +31,14 @@ export const panelPlayers = {
         const data = all[badge.dataset.players];
         if (!data?.configured || data.error || data.players === null) return;
         paint(badge, data);
-        badge.textContent += ' jogadores';
+        badge.textContent = fillText(phrase, { count: badge.textContent });
         badge.hidden = false;
       });
     }, { interval: Number(root.dataset.interval) || 10000 }).start();
   },
 };
 
-/* Tela de um servidor: selo mais a tabela de quem esta online. */
+/* A server's screen: badge plus the table of who is online. */
 export const serverPlayers = {
   selector: '[data-players-server]',
   mount(card) {
@@ -47,14 +49,16 @@ export const serverPlayers = {
 
     const body = table.querySelector('tbody');
     const columnCount = table.querySelectorAll('thead th').length;
+    const online = card.dataset.labelOnline || '{count} online';
+    const unpublished = card.dataset.labelNamesUnpublished
+      || 'Este jogo nao publica a lista de nomes — so a contagem.';
+    const nobody = card.dataset.labelNobody || 'Ninguem conectado agora.';
 
     function nobodyText(quantos) {
       const tr = createEl('tr');
       tr.append(createEl('td', {
         className: 'muted',
-        text: quantos
-          ? 'Este jogo nao publica a lista de nomes - so a contagem.'
-          : 'Ninguem conectado agora.',
+        text: quantos ? unpublished : nobody,
         attrs: { colspan: String(columnCount) },
       }));
       return [tr];
@@ -62,14 +66,14 @@ export const serverPlayers = {
 
     function line(p) {
       const tr = createEl('tr');
-      // Nome vem do jogo: entra por textContent, nunca como marcacao.
+      // The name comes from the game: it goes in through textContent, never as markup.
       tr.append(
         createEl('td', { text: p.name }),
         createEl('td', { className: 'muted', text: duration(p.seconds) }),
         createEl('td', { className: 'muted', text: String(Number(p.score) || 0) }),
       );
-      // A coluna de acoes (expulsar/banir) e desenhada pelo servidor com CSRF; ao
-      // repintar, ela fica vazia ate a proxima carga da pagina.
+      // The actions column (kick/ban) is drawn by the server with CSRF; on
+      // repaint, it stays empty until the next page load.
       if (columnCount > 3) tr.append(createEl('td'));
       return tr;
     }
@@ -79,7 +83,7 @@ export const serverPlayers = {
       if (data.error) return;
       if (badge) {
         paint(badge, data);
-        badge.textContent += ' online';
+        badge.textContent = fillText(online, { count: badge.textContent });
       }
       reset(body, (data.list?.length)
         ? data.list.map(line)

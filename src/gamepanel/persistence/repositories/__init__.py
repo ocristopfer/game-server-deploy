@@ -1,16 +1,17 @@
-"""Uma funcao por consulta, em vez de SQL cru espalhado por quem chama.
+"""One function per query, instead of raw SQL scattered across the callers.
 
-Antes disto o mesmo `SELECT * FROM servers WHERE id = ?` aparecia em oito lugares, e um
-`UPDATE servers SET ...` com a lista de colunas escrita a mao em mais quatro. Nada disso
-quebra ao renomear uma coluna: quebra na PRIMEIRA VISITA a tela que usa a copia que
-ficou para tras, em runtime, sem lint nem teste acusando — foi assim que as migrations
-de rename precisaram ser escritas com tanto cuidado.
+Before this, the same `SELECT * FROM servers WHERE id = ?` appeared in eight places, and
+an `UPDATE servers SET ...` with a hand-written column list in four more. None of that
+breaks when a column is renamed: it breaks on the FIRST VISIT to the screen that uses the
+copy left behind, at runtime, with no lint or test complaining - which is why the rename
+migrations had to be written so carefully.
 
-**Toda funcao daqui recebe a conexao como PRIMEIRO parametro.** Nunca chama `db()`: a
-conexao e por requisicao e mora no `g` do Flask, e um repositorio que a buscasse sozinho
-nao serviria ao monitor nem ao agendador, que rodam em thread propria sem `g`. Passar a
-conexao tambem e o que permite testar uma consulta sem subir aplicacao nenhuma.
+**Every function here takes the connection as its FIRST parameter.** It never calls
+`db()`: the connection is per request and lives in Flask's `g`, and a repository that
+fetched it by itself would not serve the monitor or the scheduler, which run on their own
+thread without `g`. Passing the connection is also what lets a query be tested without
+starting any application.
 
-**Nada aqui decide.** Sem `flash`, sem `abort`, sem traducao, sem regra de quem pode ver
-o que: isso e de quem chama. O repositorio so sabe ler e escrever linha.
+**Nothing here decides.** No `flash`, no `abort`, no translation, no rule about who may see
+what: that belongs to the caller. The repository only knows how to read and write rows.
 """

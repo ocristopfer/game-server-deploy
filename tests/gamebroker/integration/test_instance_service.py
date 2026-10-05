@@ -1,4 +1,4 @@
-"""Servico: reserva, criacao, desfazer em falha, cotas, desativar e remover."""
+"""Service: reservation, creation, undo on failure, quotas, deactivate and remove."""
 from __future__ import annotations
 
 import sqlite3
@@ -14,7 +14,7 @@ def _create(amb, game="alfa", name="Meu servidor", actor="admin"):
     return amb.servico.create(game, name, actor)
 
 
-# --- caminho feliz ----------------------------------------------------------
+# --- happy path -------------------------------------------------------------
 
 def test_criar_percorre_o_fluxo_inteiro(environment):
     response = _create(environment)
@@ -77,7 +77,7 @@ def test_faixa_do_broker_pula_porta_que_o_opnsense_ja_redireciona(environment):
     assert [p["number"] for p in ports] == [9001, 9002]
 
 
-# --- CTID que acompanha o IP ---------------------------------------------------
+# --- CTID that follows the IP --------------------------------------------------
 
 def test_ctid_sai_do_ip_quando_ha_base(environment):
     environment.with_config(ctid_base=200, ips=ips_in_range("10.0.0", 102, 110))
@@ -100,7 +100,7 @@ def test_com_base_ctid_ocupado_no_proxmox_pula_o_ip_inteiro(environment):
     assert (inst["ip"], inst["handle"]) == ("10.0.0.103", "303")
 
 
-# --- ocupacao vinda de fora do broker ----------------------------------------
+# --- occupation coming from outside the broker -------------------------------
 
 def test_pula_ctid_e_ip_que_o_proxmox_ja_usa(environment):
     environment.compute.outside_handles = {"300", "301"}
@@ -133,7 +133,7 @@ def test_sem_ip_livre(environment):
         _create(environment)
 
 
-# --- validacao do pedido ------------------------------------------------------
+# --- request validation -------------------------------------------------------
 
 @pytest.mark.parametrize("name", ["", "a;b", "$(id)", "x" * 41, None, 7, "../x"])
 def test_nome_invalido(environment, name):
@@ -157,7 +157,7 @@ def test_nome_repetido_e_conflito(environment):
         _create(environment, "beta", "igual")
 
 
-# --- cotas ----------------------------------------------------------------------
+# --- quotas ---------------------------------------------------------------------
 
 def test_limite_de_instancias(environment):
     environment.with_config(max_instances=1)
@@ -192,7 +192,7 @@ def test_falha_de_validacao_nao_gasta_cota(environment):
     _create(environment, "beta", "ok")
 
 
-# --- desfazer em caso de falha ---------------------------------------------------
+# --- undo on failure -------------------------------------------------------------
 
 def test_falha_na_instalacao_destroi_o_ct_e_libera_a_reserva(environment):
     environment.installer.failure = True
@@ -233,13 +233,13 @@ def test_se_nem_o_desfazer_funciona_a_reserva_fica_como_falhou(environment):
     inst = environment.db.instance(response["instance_id"])
     assert inst["state"] == STATE_FAILED
     assert "nao consegui desfazer" in environment.servico.operation(response["operation_id"])["log"]
-    # IP e portas continuam bloqueados: um novo pedido nao pode pisar em cima.
+    # IP and ports stay blocked: a new request must not step on them.
     environment.network.taken = set()
     fresh = environment.db.instance(_create(environment, "beta", "outro")["instance_id"])
     assert fresh["ip"] != inst["ip"]
 
 
-# --- desativar e remover ------------------------------------------------------------
+# --- deactivate and remove ----------------------------------------------------------
 
 def test_desativar_fecha_o_firewall_e_para_o_ct(environment):
     response = _create(environment)
@@ -289,7 +289,7 @@ def test_remover_recusa_ct_que_nao_e_do_broker(environment):
 
 
 def test_ct_que_sumiu_do_pool_nao_e_esquecido_sem_pedido_explicito(environment):
-    """Sumido e movido de pool sao indistinguiveis para o token: nao libera CTID/IP sozinho."""
+    """Gone and moved to another pool look the same to the token: CTID/IP are not freed on their own."""
     response = _create(environment)
     environment.servico.deactivate(response["instance_id"], "admin")
     environment.compute.cts.clear()
@@ -334,7 +334,7 @@ def test_instancia_desconhecida(environment):
         environment.servico.remove(999, "x", "admin")
 
 
-# --- auditoria ------------------------------------------------------------------------
+# --- audit ----------------------------------------------------------------------------
 
 def test_auditoria_registra_quem_fez_o_que(environment):
     response = _create(environment, actor="zeca")
@@ -360,13 +360,13 @@ def test_auditoria_e_append_only(environment):
 
 
 def test_banco_recusa_reserva_duplicada_mesmo_sem_a_trava(environment):
-    """UNIQUE e a segunda linha de defesa: dois processos poderiam ignorar a trava."""
+    """UNIQUE is the second line of defense: two processes could ignore the lock."""
     _create(environment, "beta", "um")
     with pytest.raises(Conflict):
         environment.db.reserve(300, "10.0.0.99", "beta", "outro", "beta-300", "x", [])
 
 
-# --- cancelar ----------------------------------------------------------------
+# --- cancel ------------------------------------------------------------------
 
 def test_cancelar_no_meio_da_instalacao_desfaz_tudo(environment):
     environment.defer = True
@@ -412,7 +412,7 @@ def test_cancelar_operacao_desconhecida(environment):
         environment.servico.cancel("0" * 32, "zeca")
 
 
-# --- previa -------------------------------------------------------------------
+# --- preview ------------------------------------------------------------------
 
 def test_previa_mostra_o_que_a_criacao_vai_receber_sem_reservar(environment):
     environment.with_config(ctid_base=270)  # .30 -> 300

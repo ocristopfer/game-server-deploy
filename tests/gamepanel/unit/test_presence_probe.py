@@ -1,7 +1,7 @@
-"""Contagem pelas conversas ativas na porta do jogo (gamepanel.runtime.presence_probe).
+"""Counting by the active conversations on the game port (gamepanel.runtime.presence_probe).
 
-O numero sai do conjunto `players` que o lib/ct-firewall.sh mantem. O formato do `nft -j`
-e o contrato, e o nome da tabela e do conjunto sao a outra ponta do script de shell.
+The number comes from the `players` set that lib/ct-firewall.sh maintains. The `nft -j` format
+is the contract, and the table and set names are the other end of the shell script.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def test_conta_cada_ip_e_porta_do_conjunto():
 
 
 def test_conjunto_vazio_e_zero_jogadores():
-    """O nft omite `elem` quando nao ha ninguem - nao e erro, e servidor vazio."""
+    """nft omits `elem` when nobody is there - not an error, it is an empty server."""
     assert pp.count_from_json(nft_json(None)) == 0
 
 
@@ -51,7 +51,7 @@ def test_ct_sem_o_conjunto_diz_para_reaplicar_o_firewall():
 
 
 def test_ssh_fora_do_ar_nao_vira_falta_de_firewall():
-    """Mandar reaplicar regra num CT que so esta desligado faria a pessoa procurar no lugar errado."""
+    """Telling to reapply the rule on a CT that is merely stopped would send the person looking in the wrong place."""
     def ssh(*a):
         raise RemoteError("ssh: connect to host x port 22: Connection timed out")
 
@@ -60,7 +60,7 @@ def test_ssh_fora_do_ar_nao_vira_falta_de_firewall():
 
 
 def test_nomes_da_tabela_e_do_conjunto_batem_com_o_firewall():
-    """Os dois lados sao texto: renomear o conjunto no shell calaria a contagem em silencio."""
+    """Both sides are text: renaming the set in the shell would silence the count without a word."""
     script = (ROOT / "lib" / "ct-firewall.sh").read_text(encoding="utf-8")
     assert f"table inet {pp.PRESENCE_TABLE} " in script
     assert f"set {pp.PRESENCE_SET} " in script

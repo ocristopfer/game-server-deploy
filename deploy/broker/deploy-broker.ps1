@@ -1,25 +1,25 @@
 param(
-    # Host do Proxmox (vazio = PROXMOX_HOST do .env)
+    # Proxmox host (empty = PROXMOX_HOST from .env)
     [string]$ProxmoxHost = "",
-    # Senha do root do Proxmox. O normal e chave SSH autorizada; sem ela, PROXMOX_PASSWORD do .env.
+    # Proxmox root password. The normal path is an authorized SSH key; without one, PROXMOX_PASSWORD from .env.
     [string]$ProxmoxPassword = "",
     [string]$EnvFile = "",
-    # Tokens do Proxmox e do OPNsense (fora do git). Copie broker.secrets.env.example.
+    # Proxmox and OPNsense tokens (outside git). Copy broker.secrets.env.example.
     [string]$SecretsFile = "",
-    # Apaga e recria o CT do broker (perde o token, a chave e o certificado).
+    # Deletes and recreates the broker CT (loses the token, the key and the certificate).
     [switch]$RecreateCt,
-    # Gera um token novo para o painel (o painel precisa receber o novo: use -ConfigurePanel).
+    # Generates a new token for the panel (the panel must receive the new one: use -ConfigurePanel).
     [switch]$RotateToken,
-    # Gera um certificado novo (muda a impressao que o painel fixa: use -ConfigurePanel).
+    # Generates a new certificate (changes the fingerprint the panel pins: use -ConfigurePanel).
     [switch]$RotateCert,
-    # Grava URL, token e impressao do broker no painel (o recurso continua DESLIGADO la).
-    # O nome antigo `-ConfigurarPainel` continua valendo pelo Alias: quem ja tem a linha de
-    # comando salva nao a perde.
+    # Writes the broker URL, token and fingerprint into the panel (the feature stays OFF there).
+    # The old name `-ConfigurarPainel` still works through the Alias: whoever already has the command
+    # line saved somewhere does not lose it.
     [Alias('ConfigurarPainel')]
     [switch]$ConfigurePanel,
-    # Alem de -ConfigurePanel, LIGA o recurso no painel. So depois de proteger o painel.
-    # O nome antigo `-LigarNoPainel` continua valendo pelo Alias: quem ja tem a linha de
-    # comando salva nao a perde.
+    # On top of -ConfigurePanel, TURNS the feature ON in the panel. Only after protecting the panel.
+    # The old name `-LigarNoPainel` still works through the Alias: whoever already has the command
+    # line saved somewhere does not lose it.
     [Alias('LigarNoPainel')]
     [switch]$EnableOnPanel,
     [string]$RemoteBundleDir = "/root/game-broker-deploy"
@@ -27,9 +27,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-# `$ScriptDir` e a pasta DESTE script (onde mora o provision-*.sh irmao). `$RepoRoot` e a
-# raiz do repositorio, dois niveis acima, e e de la que saem tools/, lib/, games/ e .env.
-# Na raiz os dois eram a mesma coisa por acidente; aqui a diferenca precisa ser dita.
+# `$ScriptDir` is THIS script's folder (where the sibling provision-*.sh lives). `$RepoRoot` is
+# the repository root, two levels up, and tools/, lib/, games/ and .env come from there.
+# At the root the two were the same thing by accident; here the difference has to be spelled out.
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 if ($EnvFile -eq "") { $EnvFile = Join-Path $RepoRoot ".env" }
 if ($SecretsFile -eq "") { $SecretsFile = Join-Path $RepoRoot "broker.secrets.env" }
@@ -56,8 +56,8 @@ function Get-Cfg($Map, [string]$Key, [string]$Default = "") {
     return $Default
 }
 
-# Tudo que o bash do Proxmox le precisa ir em UTF-8 sem BOM e com LF - o CR do Windows
-# quebraria o shebang dos .sh e deixaria um \r no fim de cada valor.
+# Everything the Proxmox bash reads must go as UTF-8 without BOM and with LF - the Windows CR
+# would break the shebang of the .sh files and leave a \r at the end of every value.
 function Write-LfFile([string]$Path, [string]$Content) {
     $normalized = $Content -replace "`r`n", "`n"
     $dir = Split-Path -Parent $Path
@@ -65,32 +65,32 @@ function Write-LfFile([string]$Path, [string]$Content) {
     [System.IO.File]::WriteAllText($Path, $normalized, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-# Tudo que este deploy leva para o Proxmox e texto (.py, .sh, .env): nao ha binario aqui. Se um
-# dia houver, NAO passe por aqui - ReadAllText decodifica como UTF-8 e corrompe (ver o
-# comentario em deploy-admin.ps1, foi assim que os icones do painel chegaram quebrados).
+# Everything this deploy takes to Proxmox is text (.py, .sh, .env): there is no binary here. If
+# one day there is, do NOT pass it through here - ReadAllText decodes as UTF-8 and corrupts it (see
+# the comment in deploy-admin.ps1, that is how the panel icons arrived broken).
 function Copy-AsLf([string]$Source, [string]$Dest) {
     Write-LfFile $Dest ([System.IO.File]::ReadAllText($Source))
 }
 
-# Valor para o `source` do bash: entre aspas simples, com ' escapado. Sem isto um segredo com
-# $, crase ou aspas seria interpretado, e o erro so apareceria como um token "invalido".
+# Value for bash `source`: in single quotes, with ' escaped. Without this a secret containing
+# $, a backtick or quotes would be interpreted, and the error would only show up as an "invalid" token.
 function ConvertTo-BashQuoted([string]$Value) {
     if ($Value -match "[\r\n]") { throw "Um valor de configuracao tem quebra de linha (nao suportado)." }
     return "'" + ($Value -replace "'", "'\''") + "'"
 }
 
-# ----- Acesso ao Proxmox (mesmo padrao do deploy-admin.ps1) -----
+# ----- Proxmox access (same pattern as deploy-admin.ps1) -----
 $script:AskPassFile = ""
 $script:SshOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
 
-# O .gitattributes guarda todo .ps1 em CRLF: toda here-string nasce com \r no fim de cada
-# linha, e para o bash do outro lado o \r faz parte do argumento.
+# .gitattributes stores every .ps1 as CRLF: every here-string is born with \r at the end of each
+# line, and for the bash on the other side the \r is part of the argument.
 function ConvertTo-Lf([string]$Text) { return ($Text -replace "`r", "") }
 
-# O ssh/scp escrevem no stderr mesmo quando dao certo (o `systemctl enable` do Proxmox, por
-# exemplo, imprime "Created symlink ..." la). No Windows PowerShell 5.1, com a saida redirecionada
-# e $ErrorActionPreference = "Stop", essa linha vira excecao e derruba o deploy em cima de um
-# sucesso. O que decide e o codigo de saida ($LASTEXITCODE), que os chamadores conferem.
+# ssh/scp write to stderr even when they succeed (Proxmox's `systemctl enable`, for
+# example, prints "Created symlink ..." there). In Windows PowerShell 5.1, with output redirected
+# and $ErrorActionPreference = "Stop", that line becomes an exception and kills the deploy on top
+# of a success. What decides is the exit code ($LASTEXITCODE), which the callers check.
 function Invoke-Native([scriptblock]$Block) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -128,7 +128,7 @@ function Disable-PasswordAuth {
 }
 
 function Test-KeyAuth([string]$Target) {
-    # "Nao entrou" e resposta esperada aqui, nao erro do deploy.
+    # "Could not get in" is an expected answer here, not a deploy error.
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
@@ -154,7 +154,7 @@ function Initialize-ProxmoxAuth([string]$Target, [string]$Password) {
     Write-Host "Proxmox: sem chave autorizada, usando a senha do .env." -ForegroundColor DarkGray
 }
 
-# ----- Configuracao -----
+# ----- Configuration -----
 if (-not (Test-Path $SecretsFile)) {
     throw ("Nao achei $SecretsFile. Copie broker.secrets.env.example para broker.secrets.env e preencha " +
            "(token do Proxmox, chave do OPNsense).")
@@ -179,7 +179,7 @@ foreach ($k in @("PROXMOX_URL", "PROXMOX_TOKEN", "PROXMOX_NODE", "PROXMOX_STORAG
 }
 if ($absent.Count -gt 0) { throw ("Faltam valores:`n  - " + ($absent -join "`n  - ")) }
 
-# Endereco do painel: so ele pode falar com o broker.
+# Panel address: only it may talk to the broker.
 $panelIp = Get-Cfg $cfg "ADMIN_HOST"
 if ($panelIp -eq "") {
     $adminCidr = Get-Cfg $cfg "ADMIN_IP_CIDR"
@@ -187,7 +187,7 @@ if ($panelIp -eq "") {
 }
 if ($panelIp -eq "") { Write-Host "ADMIN_HOST/ADMIN_IP_CIDR vazios: o broker aceitara qualquer origem (so o token). Defina para restringir ao IP do painel." -ForegroundColor Yellow }
 
-# ----- Confirmacao para ligar o recurso num painel exposto -----
+# ----- Confirmation before turning the feature on in an exposed panel -----
 if ($EnableOnPanel) {
     Write-Host "`nATENCAO: ligar o broker no painel da a quem entrar nele o poder de CRIAR containers e ABRIR portas no firewall." -ForegroundColor Yellow
     Write-Host "Se o painel esta na internet (Cloudflare), proteja-o antes: Cloudflare Access ou 2FA." -ForegroundColor Yellow
@@ -196,9 +196,9 @@ if ($EnableOnPanel) {
 }
 
 function New-ReleaseBundle([string]$Package) {
-    # Empacota aqui, com o Python do repo. O artefato e determinista (ver
-    # tools/build-release.py), entao o sha256 que viaja com ele responde "o CT esta com
-    # ESTE codigo?", e nao so "o arquivo chegou inteiro?".
+    # Packages here, with the repo's Python. The artifact is deterministic (see
+    # tools/build-release.py), so the sha256 that travels with it answers "does the CT have
+    # THIS code?", and not just "did the file arrive whole?".
     $builder = Join-Path $RepoRoot "tools/build-release.py"
     if (-not (Test-Path $builder)) { throw "tools/build-release.py nao encontrado em $ScriptDir" }
     $dist = Join-Path ([System.IO.Path]::GetTempPath()) "gamebroker-release"
@@ -211,7 +211,7 @@ function New-ReleaseBundle([string]$Package) {
     return [pscustomobject]@{ Path = $tarball.FullName; Name = $tarball.Name; Sha = $sha }
 }
 
-# ----- Monta o bundle -----
+# ----- Build the bundle -----
 $BundleDir = Join-Path ([System.IO.Path]::GetTempPath()) "game-broker-bundle"
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 New-Item -ItemType Directory -Path $BundleDir | Out-Null
@@ -219,13 +219,13 @@ New-Item -ItemType Directory -Path $BundleDir | Out-Null
 Copy-AsLf (Join-Path $ScriptDir "provision-broker-lxc.sh") (Join-Path $BundleDir "provision-broker-lxc.sh")
 Copy-AsLf (Join-Path $RepoRoot "lib/install-release.sh") (Join-Path $BundleDir "install-release.sh")
 
-# O CODIGO do broker viaja num tar.gz de release; lib/ e games/ continuam soltos porque
-# nao sao o pacote Python - sao dados e scripts que o CT le, e o provisionamento ja troca
-# os dois por inteiro. O loop que copiava cada .py saiu daqui: era ele que precisava ser
-# revisto a cada subpasta nova do pacote, e que deixava modulo renomeado vivo no CT.
+# The broker CODE travels in a release tar.gz; lib/ and games/ still go loose because
+# they are not the Python package - they are data and scripts the CT reads, and provisioning
+# already replaces both entirely. The loop that copied each .py is gone: it was the one that had
+# to be revisited for every new subfolder of the package, and that left renamed modules alive in the CT.
 $Release = New-ReleaseBundle "gamebroker"
-# Copy-Item, nunca Copy-AsLf: um tar.gz passado pelo normalizador de fim de linha e
-# decodificado como UTF-8 e chega do outro lado como lixo.
+# Copy-Item, never Copy-AsLf: a tar.gz passed through the line-ending normalizer is
+# decoded as UTF-8 and arrives on the other side as garbage.
 Copy-Item $Release.Path (Join-Path $BundleDir $Release.Name)
 Write-LfFile (Join-Path $BundleDir "release.env") (
     "RELEASE_TARBALL='$($Release.Name)'`nRELEASE_SHA256='$($Release.Sha)'`n")
@@ -238,7 +238,7 @@ foreach ($f in (Get-ChildItem (Join-Path $RepoRoot "games") -Filter "*.env" -Fil
     Copy-AsLf $f.FullName (Join-Path (Join-Path $BundleDir "games") $f.Name)
 }
 
-# Configuracao NAO secreta: vem do .env, com o padrao que o provisionamento tambem usaria.
+# NON-secret configuration: comes from .env, with the default provisioning would also use.
 $conf = [ordered]@{
     BROKER_CTID = (Get-Cfg $cfg "BROKER_CTID"); BROKER_HOSTNAME = (Get-Cfg $cfg "BROKER_HOSTNAME" "gamebroker")
     BROKER_IP_CIDR = (Get-Cfg $cfg "BROKER_IP_CIDR"); BROKER_GATEWAY = (Get-Cfg $cfg "BROKER_GATEWAY" (Get-Cfg $cfg "GATEWAY"))
@@ -265,7 +265,7 @@ $lines = @()
 foreach ($k in $conf.Keys) { if ($conf[$k] -ne "") { $lines += "$k=" + (ConvertTo-BashQuoted $conf[$k]) } }
 Write-LfFile (Join-Path $BundleDir "broker.conf.env") (($lines -join "`n") + "`n")
 
-# Segredos: so as chaves que o provisionamento conhece (nada de lixo do arquivo vai junto).
+# Secrets: only the keys provisioning knows about (no junk from the file goes along).
 $lines = @()
 foreach ($k in @("PROXMOX_URL", "PROXMOX_TOKEN", "PROXMOX_NODE", "PROXMOX_POOL", "PROXMOX_STORAGE",
                  "PROXMOX_TEMPLATE_STORAGE", "PROXMOX_TEMPLATE", "PROXMOX_BRIDGE", "PROXMOX_CERT_SHA256",
@@ -276,26 +276,26 @@ foreach ($k in @("PROXMOX_URL", "PROXMOX_TOKEN", "PROXMOX_NODE", "PROXMOX_POOL",
 }
 Write-LfFile (Join-Path $BundleDir "broker.secrets.env") (($lines -join "`n") + "`n")
 
-# ----- Envia e executa no Proxmox -----
+# ----- Send and run on Proxmox -----
 try {
     Initialize-ProxmoxAuth $ProxmoxHost $ProxmoxPassword
     Write-Host "`nEnviando bundle para root@$ProxmoxHost..." -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
 
-    # scp -r: gamebroker/, lib/ e games/ sao pastas; os arquivos soltos vao junto.
+    # scp -r: gamebroker/, lib/ and games/ are folders; the loose files go along.
     $items = @(Get-ChildItem -Path $BundleDir | ForEach-Object { $_.FullName })
     Invoke-Scp $items "root@${ProxmoxHost}:$RemoteBundleDir/" -Recurse
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o bundle para root@$ProxmoxHost" }
 
-    # O bundle leva tokens do Proxmox e do OPNsense: so o root le, e o provisionamento apaga.
+    # The bundle carries Proxmox and OPNsense tokens: only root reads it, and provisioning deletes it.
     Invoke-Ssh $ProxmoxHost "chmod 700 '$RemoteBundleDir' && chmod 600 '$RemoteBundleDir/broker.secrets.env'" | Out-Null
 
     Write-Host "Executando o provisionamento no Proxmox...`n" -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./provision-broker-lxc.sh"
     if ($LASTEXITCODE -ne 0) { throw "Provisionamento do broker falhou no host Proxmox (veja a saida acima)" }
 } finally {
-    # O bundle local tem copia dos segredos: nao deixa sobrando no %TEMP%, nem o remoto.
+    # The local bundle holds a copy of the secrets: do not leave it lying in %TEMP%, nor the remote one.
     if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
     try { Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir'" | Out-Null } catch { }
     Disable-PasswordAuth

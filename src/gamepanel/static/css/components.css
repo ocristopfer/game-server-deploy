@@ -1,12 +1,12 @@
-/* Camada 4 — COMPONENTES.
+/* Layer 4 - COMPONENTS.
  *
- * Cada bloco aqui e uma peca fechada, com uma responsabilidade so, desenhada para
- * ser usada por qualquer tela. Variacao entra por modificador (.btn--danger), nunca
- * por "esse botao dentro daquela tela" — regra de descendente e o que faz um CSS
- * parar de poder ser reaproveitado.
+ * Each block here is a closed piece, with a single responsibility, designed to be
+ * used by any screen. Variation comes in through a modifier (.btn--danger), never
+ * through "this button inside that screen" - descendant rules are what make a CSS
+ * stop being reusable.
  */
 
-/* ============================================================ botao */
+/* ============================================================ button */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -23,7 +23,7 @@
   line-height: 1.2;
   text-align: center;
   cursor: pointer;
-  /* Toque nao tem "hover": sem isto o iOS deixa o botao aceso depois do clique. */
+  /* Touch has no "hover": without this, iOS leaves the button lit after the tap. */
   -webkit-tap-highlight-color: transparent;
   transition: background var(--transition), border-color var(--transition), opacity var(--transition);
 }
@@ -39,13 +39,13 @@
 .btn--ghost:hover { background: var(--panel-2); }
 
 .btn--sm { min-height: var(--tap-sm); padding: 6px 12px; font-size: var(--fs-sm); }
-/* No celular quase todo botao principal de formulario ocupa a linha inteira: alvo
-   maior, e a coluna de acoes deixa de ser um amontoado. */
+/* On the phone almost every primary form button takes the whole row: a bigger
+   target, and the action column stops being a jumble. */
 .btn--block { width: 100%; }
 .btn--icon { padding: 10px; min-width: var(--tap); }
 .btn .icon { font-size: 1.05em; line-height: 1; }
 
-/* Botao que se apresenta como link (sair, apagar dentro de uma lista). */
+/* Button that presents itself as a link (log out, delete inside a list). */
 .btn-link {
   display: inline-flex; align-items: center;
   min-height: var(--tap-sm);
@@ -56,12 +56,12 @@
 .btn-link--danger { color: var(--err-text); }
 .btn-link--danger:hover { color: color-mix(in srgb, var(--err-text) 80%, #fff); }
 
-/* Formulario de um botao so: existe para carregar o CSRF, nao para ocupar linha. */
+/* Single-button form: it exists to carry the CSRF token, not to take up a row. */
 form.inline { display: inline; }
-/* O mesmo formulario quando o botao dentro dele ocupa a largura toda (celular). */
+/* The same form when the button inside it takes the full width (phone). */
 form.action-block { display: block; flex: 1; min-width: 0; }
 
-/* ============================================================ cartao */
+/* ============================================================ card */
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -87,7 +87,7 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   .card { padding: var(--sp-5); }
 }
 
-/* ============================================================ selo */
+/* ============================================================ badge */
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 10px;
@@ -104,7 +104,7 @@ form.action-block { display: block; flex: 1; min-width: 0; }
 .badge.cold { color: var(--warn); border-color: var(--warn-line); }
 .badges { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
 
-/* ============================================================ aviso */
+/* ============================================================ notice */
 .flash {
   padding: var(--sp-3) var(--sp-4);
   border: 1px solid var(--line);
@@ -112,6 +112,10 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   background: var(--panel-2);
   margin-bottom: var(--sp-3);
   font-size: var(--fs-md);
+  /* Errors come verbatim from ssh/systemd and can carry an unbroken run of 70 characters
+     (the "@@@@" banner of a changed host key): without this the text spills out of the
+     card and over its neighbour. */
+  overflow-wrap: anywhere;
 }
 .flash:last-child { margin-bottom: 0; }
 .flash.error { border-color: var(--err-line); color: var(--err-text); background: var(--err-bg); }
@@ -120,10 +124,10 @@ form.action-block { display: block; flex: 1; min-width: 0; }
 .flash.pending ul { margin: var(--sp-2) 0; }
 .flash em { font-style: normal; color: var(--text); }
 
-/* ============================================================ abas rolaveis
-   A navegacao interna de um servidor tem oito destinos. Empilhados viram uma
-   parede; numa fita que rola de lado eles cabem no celular e continuam todos
-   visiveis no desktop. */
+/* ============================================================ scrollable tabs
+   A server's inner navigation has eight destinations. Stacked, they become a
+   wall; on a strip that scrolls sideways they fit on the phone and stay all
+   visible on the desktop. */
 .tabs {
   display: flex;
   gap: var(--sp-2);
@@ -156,9 +160,9 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   .tabs { margin: 0 calc(var(--sp-5) * -1) var(--sp-4); padding: 0 var(--sp-5) var(--sp-2); }
 }
 
-/* ============================================================ menu suspenso
-   <details> puro: abre sem JavaScript, fecha no Esc e no clique fora por um
-   punhado de linhas em menu.js. E o que tira de cena os botoes secundarios. */
+/* ============================================================ dropdown menu
+   Plain <details>: opens without JavaScript, closes on Esc and on an outside click
+   thanks to a handful of lines in menu.js. It is what takes the secondary buttons off stage. */
 .menu { position: relative; }
 .menu > summary {
   list-style: none;
@@ -183,8 +187,8 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   top: calc(100% + var(--sp-1));
   z-index: var(--z-menu);
   min-width: 13rem;
-  /* O menu de um servidor lista oito telas mais as acoes: num celular deitado isso
-     passa da altura da tela. Ele rola dentro de si em vez de sair pela borda. */
+  /* A server's menu lists eight screens plus the actions: on a phone in landscape this
+     exceeds the screen height. It scrolls inside itself instead of running off the edge. */
   max-height: min(70vh, 30rem);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -212,9 +216,9 @@ form.action-block { display: block; flex: 1; min-width: 0; }
 .menu__item[aria-current="page"] { background: var(--panel-3); color: var(--accent); }
 .menu__sep { height: 1px; margin: var(--sp-1) 0; background: var(--line); border: none; }
 
-/* Dois menus no mesmo cabecalho: o "⋯" do celular e o da conta, no desktop. Cada um so
-   existe na largura em que faz sentido (o `display: none` tira o outro da ordem de
-   tabulacao tambem). */
+/* Two menus in the same header: the phone's "..." and the account one, on the desktop. Each
+   only exists at the width where it makes sense (the `display: none` also removes the other
+   from the tab order). */
 .menu--account { display: none; }
 .menu--account > summary::after { content: "▾"; color: var(--muted); font-size: var(--fs-xs); }
 @media (min-width: 900px) {
@@ -227,7 +231,7 @@ form.action-block { display: block; flex: 1; min-width: 0; }
   text-transform: uppercase; letter-spacing: .04em;
 }
 
-/* ============================================================ lista de dados */
+/* ============================================================ data list */
 dl.meta {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
@@ -242,15 +246,15 @@ dl.meta dt {
 }
 dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 
-/* O QR code de ativacao do 2FA: fundo branco fixo (o SVG ja nasce assim) porque e o que a
-   camera do celular espera, mesmo com o resto da tela no tema escuro. Tamanho fixo e nao
-   "100%" - um QR esticado pela largura do celular vira grande demais e sai da tela. */
+/* The 2FA activation QR code: fixed white background (the SVG is born that way) because that
+   is what the phone camera expects, even with the rest of the screen in the dark theme. Fixed
+   size and not "100%" - a QR stretched to the phone width gets too big and leaves the screen. */
 .qr-2fa {
   display: inline-block;
-  /* Os dois valores crus aqui sao requisito FISICO, nao escolha de tema: o QR precisa
-     de fundo branco e de uns 200px para a camera de um celular travar nele. Trocar o
-     branco por um token faria o modo escuro inverte-lo e nenhum leitor acharia o
-     codigo — que e justo a hora em que a pessoa esta trancada fora do painel. */
+  /* The two raw values here are a PHYSICAL requirement, not a theme choice: the QR needs
+     a white background and about 200px for a phone camera to lock on it. Swapping the
+     white for a token would make dark mode invert it and no reader would find the
+     code - which is exactly when the person is locked out of the panel. */
   width: 220px;
   max-width: 100%;
   padding: var(--sp-3);
@@ -260,7 +264,7 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 }
 .qr-2fa svg { display: block; width: 100%; height: auto; }
 
-/* A chave do segundo fator: grande, em fonte de largura fixa e selecionavel com um toque. */
+/* The second factor key: large, in a fixed-width font and selectable with one tap. */
 .secret {
   display: inline-block;
   padding: var(--sp-2) var(--sp-3);
@@ -276,14 +280,14 @@ dl.meta dd { margin: 0; overflow-wrap: anywhere; }
 .notes { white-space: pre-wrap; color: var(--muted); border-left: 2px solid var(--line); padding-left: var(--sp-3); }
 .intro { max-width: 70ch; margin: 0 0 var(--sp-4); font-size: var(--fs-md); }
 
-/* ============================================================ formulario */
+/* ============================================================ form */
 label { display: block; margin-bottom: var(--sp-4); font-size: var(--fs-sm); color: var(--muted); }
 label > input, label > textarea, label > select, label > .with-unit { margin-top: var(--sp-1); }
 label small { display: block; margin-top: var(--sp-1); color: var(--muted); font-size: var(--fs-xs); line-height: 1.5; }
 label.inline-label { display: inline-flex; align-items: center; gap: var(--sp-2); margin: 0; }
 label.inline-label input { margin-top: 0; }
 
-/* Rotulo de um grupo, nao de um campo: mesma voz dos titulos de dl.meta. */
+/* Label of a group, not of a field: same voice as the dl.meta titles. */
 .label {
   display: block; color: var(--muted); font-size: var(--fs-xs);
   text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-1);
@@ -306,8 +310,8 @@ label.inline-label input { margin-top: 0; }
 .checkbox input { flex: none; margin: 0; }
 .checkbox span { color: var(--text); }
 
-/* Grupo de campos com titulo (as receitas de instalacao): a moldura do navegador, sem
-   estilo, sai branca e grossa num painel escuro. */
+/* Field group with a title (the install recipes): the browser's frame, unstyled,
+   comes out white and thick on a dark panel. */
 fieldset.fieldgroup {
   min-width: 0;
   margin: 0 0 var(--sp-4);
@@ -347,10 +351,10 @@ label.short { max-width: 34ch; }
   .options { grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
 }
 
-/* Formulario comprido em duas colunas: cada campo (ou `.row`) e uma celula, e o que
-   precisa da linha toda leva `.form-grid__wide`. So a partir de 900px; abaixo disso o
-   formulario e a pilha de sempre. `align-items: start` para um campo com dica longa
-   nao esticar o vizinho e afastar o rotulo dele do campo. */
+/* Long form in two columns: each field (or `.row`) is a cell, and whatever needs the
+   whole row gets `.form-grid__wide`. Only from 900px up; below that the form is the
+   usual stack. `align-items: start` so a field with a long hint does not stretch its
+   neighbor and pull that neighbor's label away from its field. */
 @media (min-width: 900px) {
   .form-grid {
     display: grid;
@@ -362,7 +366,7 @@ label.short { max-width: 34ch; }
   .form-grid > .form-actions { grid-column: 1 / -1; }
 }
 
-/* ============================================================ tabela de dados */
+/* ============================================================ data table */
 table.jobs { font-size: var(--fs-sm); }
 table.jobs th, table.jobs td {
   text-align: left; padding: var(--sp-2) var(--sp-3);
@@ -383,7 +387,7 @@ code.trunc {
 }
 @media (min-width: 900px) { code.trunc { max-width: 46ch; } }
 
-/* ============================================================ bloco de log */
+/* ============================================================ log block */
 pre.log {
   background: var(--black);
   border: 1px solid var(--line);
@@ -399,16 +403,16 @@ pre.log {
 }
 pre.log.cmd { color: var(--accent); margin-bottom: var(--sp-2); max-height: 8rem; }
 
-/* ============================================================ medidores */
+/* ============================================================ gauges */
 .meters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
   gap: var(--sp-3) var(--sp-5);
   margin-bottom: var(--sp-4);
 }
-/* Celula do grid de medidores. `min-width: 0` nao e enfeite: item de grid nasce com
-   `min-width: auto`, e um nome de disco comprido empurraria a coluna para fora da tela
-   em vez de truncar. */
+/* Gauge grid cell. `min-width: 0` is not decoration: a grid item is born with
+   `min-width: auto`, and a long disk name would push the column off the screen
+   instead of truncating. */
 .meter { min-width: 0; }
 .meter-head {
   display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2);
@@ -429,14 +433,14 @@ pre.log.cmd { color: var(--accent); margin-bottom: var(--sp-2); max-height: 8rem
 .bar.warn > i { background: var(--warn); }
 .bar.hot > i { background: var(--err); }
 
-/* Versao de uma linha, usada nos cartoes do painel. */
+/* Single-line version, used on the dashboard cards. */
 .mini-meters { display: flex; flex-direction: column; gap: var(--sp-1); }
 .mini { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--muted); }
 .mini-label { width: 2.6rem; flex: none; }
 .mini .bar { flex: 1; margin-top: 0; height: 6px; }
 .mini-val { width: 3rem; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
 
-/* ============================================================ fichas e migalhas */
+/* ============================================================ chips and breadcrumbs */
 .chip {
   display: inline-flex; align-items: center;
   min-height: var(--tap-sm);

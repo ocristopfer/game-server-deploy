@@ -1,15 +1,15 @@
-"""Cada balde da suite tem de RODAR SOZINHO. E isso que da o ciclo curto.
+"""Each bucket of the suite has to RUN ON ITS OWN. That is what gives the short cycle.
 
-`unit/` leva 28 s e `integration/` leva 126 s: a divisao existe para editar com o balde
-rapido e deixar o lento para antes de publicar. Se um arquivo de `integration/` importar
-por NOME um arquivo de `unit/`, isso funciona na suite inteira — o pytest poe no `sys.path`
-a pasta de cada arquivo que coleta, e `unit/` foi coletado primeiro — e estoura com
-`ModuleNotFoundError` na hora em que alguem roda so `integration/`. Medido antes da
-divisao, num experimento a parte; e a razao de `FakeRunner` ter saido de dentro de
-`test_ssh_installer.py` para o `fake_ssh.py`.
+`unit/` takes 28 s and `integration/` takes 126 s: the split exists so you edit with the
+fast bucket and leave the slow one for before publishing. If an `integration/` file imports
+a `unit/` file by NAME, that works in the full suite - pytest puts the folder of every file
+it collects on `sys.path`, and `unit/` was collected first - and blows up with
+`ModuleNotFoundError` as soon as someone runs only `integration/`. Measured before the
+split, in a separate experiment; it is why `FakeRunner` moved out of
+`test_ssh_installer.py` into `fake_ssh.py`.
 
-Dobre compartilhado por mais de um arquivo mora ao lado do `conftest.py`, que e a pasta que
-o pytest sempre insere no `sys.path`. E o que `fake_http.py` e `fake_ssh.py` fazem.
+A double shared by more than one file lives next to `conftest.py`, which is the folder
+pytest always inserts into `sys.path`. That is what `fake_http.py` and `fake_ssh.py` do.
 """
 from __future__ import annotations
 
@@ -26,10 +26,10 @@ def _test_modules() -> set[str]:
 
 
 def _imports_of(path: Path) -> set[str]:
-    """Todo `import X` / `from X import ...` de nome SOLTO (sem ponto), em qualquer nivel.
+    """Every `import X` / `from X import ...` of a BARE name (no dot), at any level.
 
-    Inclui import dentro de funcao: `test_integration.py` fazia exatamente isso, e um
-    import preguicoso estoura na hora do teste em vez da coleta — mais tarde e mais confuso.
+    Includes imports inside functions: `test_integration.py` did exactly that, and a lazy
+    import blows up at test time instead of at collection - later and more confusing.
     """
     found: set[str] = set()
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -60,7 +60,7 @@ def test_nenhum_teste_importa_outro_arquivo_de_teste():
 
 
 def test_o_dobre_compartilhado_mora_ao_lado_do_conftest():
-    """Se um `fake_*.py` cair dentro de um balde, so aquele balde o alcanca."""
+    """If a `fake_*.py` lands inside a bucket, only that bucket can reach it."""
     misplaced = [f"{b.parent.name}/{b.name}/{p.name}"
                  for b in BUCKETS for p in b.glob("fake_*.py")]
     assert misplaced == [], "dobre dentro de um balde:\n  " + "\n  ".join(misplaced)

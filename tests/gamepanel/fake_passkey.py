@@ -1,8 +1,8 @@
-"""Um "aparelho" de passkey de mentira: monta as respostas que um celular mandaria.
+"""A fake passkey "device": builds the responses a phone would send.
 
-Assinar ECDSA so precisa da conta da curva, que o proprio `security/webauthn.py` ja tem. Mora
-ao lado do `conftest.py` porque e dividido entre `unit/` (a verificacao) e `integration/` (as
-rotas), e cada balde tem de rodar sozinho.
+Signing ECDSA only needs the curve arithmetic, which `security/webauthn.py` already has. It
+lives next to `conftest.py` because it is shared by `unit/` (the verification) and
+`integration/` (the routes), and each bucket has to run on its own.
 """
 from __future__ import annotations
 

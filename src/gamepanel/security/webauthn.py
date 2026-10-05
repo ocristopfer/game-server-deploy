@@ -1,28 +1,28 @@
-"""WebAuthn (passkey): entrar com a biometria do aparelho - so stdlib.
+"""WebAuthn (passkey): log in with the device's biometrics - stdlib only.
 
-Mesma razao do TOTP e do QR serem codigo proprio: producao so tem stdlib mais o Flask do apt,
-entao nao ha `cryptography` nem `webauthn` para instalar. Aqui mora so o lado do SERVIDOR, que
-e verificacao: o aparelho gera a chave e assina; o painel guarda a chave publica e confere.
+Same reason TOTP and QR are our own code: production only has the stdlib plus apt's Flask, so
+there is no `cryptography` or `webauthn` to install. Only the SERVER side lives here, which is
+verification: the device generates the key and signs; the panel stores the public key and checks.
 
-O que entra, e por que:
-- **CBOR** (RFC 8949, o subconjunto que o WebAuthn usa): e o formato da resposta do aparelho.
-- **ES256** (ECDSA na curva P-256, alg -7): Android, iPhone e as chaves de seguranca. A conta
-  da curva e a do SEC 1, em coordenadas jacobianas (sem divisao a cada soma de ponto).
-- **RS256** (RSA PKCS#1 v1.5 com SHA-256, alg -257): o Windows Hello.
-- **Atestado nao e conferido** (pedimos `attestation: "none"`): ele diz o MODELO do aparelho,
-  e o painel nao tem lista de modelos confiaveis para comparar - conferir sem lista e teatro.
+What is included, and why:
+- **CBOR** (RFC 8949, the subset WebAuthn uses): it is the format of the device's response.
+- **ES256** (ECDSA on the P-256 curve, alg -7): Android, iPhone and security keys. The curve
+  math is SEC 1's, in Jacobian coordinates (no division on every point addition).
+- **RS256** (RSA PKCS#1 v1.5 with SHA-256, alg -257): Windows Hello.
+- **Attestation is not checked** (we ask for `attestation: "none"`): it states the device MODEL,
+  and the panel has no list of trusted models to compare against - checking without one is theater.
 
-Regras que a verificacao cobra, cada uma contra um ataque:
-- desafio de uso unico guardado NO SERVIDOR (`Challenges`): sem ele, uma assinatura capturada
-  valeria de novo. Na sessao nao serve: o cookie e do cliente, e um cookie antigo guardado
-  traria de volta o desafio que o pedido seguinte ja tinha gasto;
-- origem exata (`GAMEPANEL_WEBAUTHN_ORIGIN`): uma pagina falsa pede assinatura com OUTRA origem,
-  e o aparelho a escreve no clientDataJSON assinado;
-- hash do RP ID no authenticatorData: o aparelho so assina para o dominio da chave;
-- UP (usuario presente) e UV (verificado - a biometria ou o PIN do aparelho): sem o UV, a
-  passkey seria so "algo que voce tem", e ela substitui senha E segundo fator;
-- contador de assinaturas: valor que nao sobe denuncia uma chave clonada (quando o aparelho
-  conta; passkey sincronizada manda sempre 0, e 0 nao prova nada).
+Rules the verification enforces, each one against an attack:
+- single-use challenge kept ON THE SERVER (`Challenges`): without it, a captured signature
+  would be valid again. The session will not do: the cookie belongs to the client, and an old
+  saved cookie would bring back the challenge the following request had already spent;
+- exact origin (`GAMEPANEL_WEBAUTHN_ORIGIN`): a fake page requests a signature with ANOTHER
+  origin, and the device writes it into the signed clientDataJSON;
+- RP ID hash in authenticatorData: the device only signs for the key's domain;
+- UP (user present) and UV (verified - the device's biometrics or PIN): without UV, the passkey
+  would only be "something you have", and it replaces the password AND the second factor;
+- signature counter: a value that does not increase exposes a cloned key (when the device
+  counts; a synced passkey always sends 0, and 0 proves nothing).
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ FLAG_AT = 0x40
 
 
 class WebAuthnError(ValueError):
-    """Resposta recusada. A mensagem e para o log, nunca para a tela (nao ajuda quem ataca)."""
+    """Response rejected. The message is for the log, never for the screen (it does not help an attacker)."""
 
 
 def b64url(data: bytes) -> str:
@@ -64,13 +64,14 @@ def new_challenge() -> str:
 
 
 class Challenges:
-    """Desafios emitidos e ainda nao usados, na memoria (o painel roda com um worker so).
+    """Challenges issued and not yet used, in memory (the panel runs with a single worker).
 
-    `take` TIRA o desafio: o segundo pedido com a mesma resposta nao o encontra. O teto existe
-    porque pedir desafio para entrar nao exige login, e sem ele um laco de pedidos encheria a
-    memoria; passando do teto, sai o mais antigo (quem estava no meio de um login tenta de novo).
-    O relogio entra pelo construtor pelo mesmo motivo do `Lockout`: `clock=time.monotonic` na
-    assinatura guardaria a funcao original e um teste que troca o relogio nao a alcancaria.
+    `take` REMOVES the challenge: a second request with the same response does not find it. The
+    cap exists because asking for a login challenge does not require being logged in, and without
+    it a loop of requests would fill memory; past the cap, the oldest goes (whoever was in the
+    middle of a login tries again). The clock comes in through the constructor for the same reason
+    as `Lockout`: `clock=time.monotonic` in the signature would keep the original function, and a
+    test that swaps the clock would not reach it.
     """
 
     LIMIT = 500
@@ -107,9 +108,9 @@ class Challenges:
 
 
 def client_challenge(raw: bytes) -> str:
-    """O desafio que a resposta diz responder, para achar o que foi emitido.
+    """The challenge the response claims to answer, to find the one that was issued.
 
-    So LOCALIZA: a conferencia de verdade (tipo, origem, desafio) continua em `_client_data`.
+    It only LOCATES: the real check (type, origin, challenge) still happens in `_client_data`.
     """
     try:
         client = json.loads(raw)
@@ -124,7 +125,7 @@ def client_challenge(raw: bytes) -> str:
 # ------------------------------------------------------------------ CBOR
 
 def _cbor_head(data: bytes, offset: int) -> tuple[int, int, int]:
-    """Cabecalho de um item: (tipo maior, argumento, onde comeca o conteudo)."""
+    """An item's header: (major type, argument, where the content starts)."""
     if offset >= len(data):
         raise WebAuthnError("CBOR truncado")
     major, info = data[offset] >> 5, data[offset] & 0x1F
@@ -140,8 +141,8 @@ def _cbor_head(data: bytes, offset: int) -> tuple[int, int, int]:
 
 
 def cbor_decode(data: bytes, offset: int = 0) -> tuple[Any, int]:
-    """Um item CBOR a partir de `offset` -> (valor, onde ele termina). So o que o WebAuthn usa:
-    inteiros, bytes, texto, lista, mapa e true/false/null. Tamanho indefinido e float nao."""
+    """One CBOR item starting at `offset` -> (value, where it ends). Only what WebAuthn uses:
+    integers, bytes, text, list, map and true/false/null. No indefinite length and no float."""
     major, arg, offset = _cbor_head(data, offset)
     if major == 0:
         return arg, offset
@@ -169,7 +170,7 @@ def cbor_decode(data: bytes, offset: int = 0) -> tuple[Any, int]:
     raise WebAuthnError("CBOR fora do subconjunto do WebAuthn")
 
 
-# ------------------------------------------------------------------ ES256 na curva P-256
+# ------------------------------------------------------------------ ES256 on the P-256 curve
 
 P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
 A = P - 3
@@ -219,7 +220,7 @@ def _affine(p: Jacobian) -> tuple[int, int] | None:
 
 
 def _mul_add(k1: int, p1: tuple[int, int], k2: int, p2: tuple[int, int]) -> Jacobian:
-    """k1*p1 + k2*p2 de uma vez (truque de Shamir): metade das duplicacoes de duas contas."""
+    """k1*p1 + k2*p2 in one go (Shamir's trick): half the doublings of two separate products."""
     j1, j2 = (p1[0], p1[1], 1), (p2[0], p2[1], 1)
     both = _add(j1, j2)
     acc: Jacobian = (0, 1, 0)
@@ -240,7 +241,7 @@ def on_curve(x: int, y: int) -> bool:
 
 
 def _der_signature(der: bytes) -> tuple[int, int]:
-    """SEQUENCE { INTEGER r, INTEGER s } - o formato da assinatura ES256 do WebAuthn."""
+    """SEQUENCE { INTEGER r, INTEGER s } - the format of the WebAuthn ES256 signature."""
     def integer(at: int) -> tuple[int, int]:
         if der[at] != 0x02 or at + 2 > len(der):
             raise WebAuthnError("assinatura DER invalida")
@@ -282,10 +283,10 @@ def verify_rs256(n: int, e: int, message: bytes, signature: bytes) -> bool:
     return hmac.compare_digest(em, expected)
 
 
-# ------------------------------------------------------------------ chave COSE
+# ------------------------------------------------------------------ COSE key
 
 def check_cose_key(cose: bytes) -> int:
-    """Confere que a chave publica e uma das que o painel sabe verificar; devolve o alg."""
+    """Checks that the public key is one the panel knows how to verify; returns the alg."""
     key, end = cbor_decode(cose)
     if not isinstance(key, dict) or end != len(cose):
         raise WebAuthnError("chave COSE invalida")
@@ -313,14 +314,14 @@ def verify_signature(cose: bytes, message: bytes, signature: bytes) -> bool:
     return False
 
 
-# ------------------------------------------------------------------ cerimonias
+# ------------------------------------------------------------------ ceremonies
 
 class AuthData(NamedTuple):
     rp_id_hash: bytes
     flags: int
     sign_count: int
     credential_id: bytes
-    public_key: bytes   # a chave COSE como veio (so no cadastro)
+    public_key: bytes   # the COSE key as received (registration only)
 
 
 def parse_auth_data(data: bytes) -> AuthData:
@@ -385,7 +386,7 @@ def verify_registration(*, challenge: str, origin: str, rp_id: str, client_data_
 
 def verify_assertion(*, challenge: str, origin: str, rp_id: str, public_key: bytes, stored_count: int,
                      client_data_json: bytes, authenticator_data: bytes, signature: bytes) -> int:
-    """Confere o login; devolve o contador novo para gravar."""
+    """Checks the login; returns the new counter to store."""
     _client_data(client_data_json, "webauthn.get", challenge, origin)
     auth = parse_auth_data(authenticator_data)
     _flags_and_rp(auth, rp_id)

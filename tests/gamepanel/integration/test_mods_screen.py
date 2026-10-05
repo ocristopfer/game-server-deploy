@@ -1,4 +1,4 @@
-"""A tela Mods pelo cliente HTTP, com o container trocado por falsos (nada de SSH)."""
+"""The Mods screen through the HTTP client, with the container swapped for fakes (no SSH)."""
 from __future__ import annotations
 
 import io
@@ -91,7 +91,7 @@ class _Done:
 
 @pytest.fixture
 def mkdir_ok(monkeypatch):
-    """O `mkdir -p` da pasta de mods, que roda antes do envio, sempre da certo."""
+    """The `mkdir -p` of the mods folder, which runs before the upload, always succeeds."""
     monkeypatch.setattr(panel, "ssh_run", lambda *a, **k: _Done())
 
 
@@ -120,7 +120,7 @@ def upload_jobs(monkeypatch):
 
 def test_envio_vai_para_a_espera_e_o_job_verifica_antes_de_por_na_pasta(admin, ets2_server, monkeypatch,
                                                                        mkdir_ok, upload_jobs):
-    """O arquivo nunca cai direto na pasta do jogo: espera, antivirus, e so entao a pasta."""
+    """The file never lands directly in the game folder: staging, antivirus, and only then the folder."""
     sent: list = []
     monkeypatch.setattr(panel, "ssh_stream_in", lambda server, cmd, source, timeout: sent.append(cmd) or "enviado")
     response = _upload(admin, ets2_server, "server_packages.sii")
@@ -137,7 +137,7 @@ def test_envio_vai_para_a_espera_e_o_job_verifica_antes_de_por_na_pasta(admin, e
 
 
 def test_reiniciar_e_o_ultimo_passo_do_envio(admin, ets2_server, monkeypatch, mkdir_ok, upload_jobs):
-    """Se o antivirus recusa, o job para antes: o servidor nao reinicia por um mod que nao entrou."""
+    """If the antivirus rejects, the job stops early: the server does not restart for a mod that never got in."""
     monkeypatch.setattr(panel, "ssh_stream_in", lambda *a, **k: "enviado")
     with admin.session_transaction() as sess:
         token = sess.get("csrf", "")
@@ -184,7 +184,7 @@ def _status(**over):
     return state
 
 
-# O que o `status` do instalador remoto responde no teste atual (a fixture zera).
+# What the remote installer's `status` answers in the current test (the fixture resets it).
 REMOTE_STATE: dict = {}
 
 
@@ -213,7 +213,7 @@ def test_tela_do_v_rising_mostra_bepinex_e_plugins(admin, vrising):
     assert "BepInEx-BepInExPack_V_Rising-1.733.2" in html
     assert "deca-VampireCommandFramework" in html
     assert "https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/" in html
-    # O status e lido rodando o instalador no CT, e nao por um caminho que o painel adivinha.
+    # The status is read by running the installer on the CT, not from a path the panel guesses.
     assert "python3" in calls[0]
     assert "status" in calls[0]
 
@@ -290,7 +290,7 @@ def test_operador_nao_instala(operator, post, vrising):
     assert jobs == []
 
 
-# ------------------------------------------------------------------ guia e "onde achar"
+# ------------------------------------------------------------------ guide and "where to find"
 
 def test_toda_tela_de_mods_diz_onde_achar(admin, ets2_server, packages_on_server):
     html = admin.get(f"/servers/{ets2_server}/mods").get_data(as_text=True)
@@ -320,7 +320,7 @@ def test_enshrouded_oferece_instalar_o_shroudtopia(admin, enshrouded):
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
     assert "https://github.com/s0t7x/shroudtopia/releases" in html
     assert "value=install" in html
-    # O status sai do instalador do Shroudtopia, rodando na pasta do JOGO (acima de mods/).
+    # The status comes from the Shroudtopia installer, running in the GAME folder (above mods/).
     assert "shroudtopia" in calls[0]
     assert "/opt/game" in calls[0]
     assert "/opt/game/mods" not in calls[0]
@@ -356,8 +356,8 @@ def test_enshrouded_nao_recebe_plugin_do_thunderstore(admin, post, enshrouded):
 
 
 def test_lote_com_um_nome_errado_nao_manda_nada(admin, database, monkeypatch):
-    """Mod de Unreal 5 vem em tres arquivos: mandar dois e recusar o terceiro deixaria um mod
-    pela metade na pasta. Os nomes sao conferidos ANTES de qualquer coisa ir ao container."""
+    """An Unreal 5 mod comes in three files: sending two and rejecting the third would leave a
+    half mod in the folder. The names are checked BEFORE anything goes to the container."""
     sid = _server(database, "dragonwilds.service")
     touched: list = []
     monkeypatch.setattr(panel, "ssh_run", lambda *a, **k: touched.append(a) or _Done())
@@ -382,12 +382,12 @@ def test_lote_do_dragonwilds_vai_inteiro_para_mods(admin, database, monkeypatch,
         "file": [(io.BytesIO(b"p"), "Mod_P.pak"), (io.BytesIO(b"u"), "Mod_P.utoc"), (io.BytesIO(b"c"), "Mod_P.ucas")],
     })
     assert len(sent) == 3
-    # Os tres na MESMA espera: verificados juntos e movidos juntos.
+    # All three in the SAME staging: scanned together and moved together.
     assert len({c.split("/var/tmp/", 1)[1].split("/", 1)[0] for c in sent}) == 1
     assert "/opt/game/RSDragonwilds/Content/Paks/~mods" in upload_jobs[0][1]["steps"][1]
 
 
-# ------------------------------------------------------------------ versao escolhida
+# ------------------------------------------------------------------ chosen version
 
 def test_instalar_mod_em_versao_escolhida(admin, post, vrising):
     sid, _, jobs = vrising
@@ -429,13 +429,13 @@ def test_carregador_em_versao_escolhida_e_ligar_ignora_versao(admin, post, vrisi
 
 
 def test_servidor_que_ja_roda_pode_trocar_a_versao_de_um_mod(admin, vrising):
-    """A tela oferece trocar a versao de cada mod instalado, e mostra qual esta fixada."""
+    """The screen offers to change the version of each installed mod, and shows which one is pinned."""
     sid, _, _ = vrising
     REMOTE_STATE["plugins"][0]["pinned"] = True
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
     assert '<option value="deca-VampireCommandFramework">deca-VampireCommandFramework (0.11.0)</option>' in html
     assert html.count('name="version"') == 3, "carregador, instalar e trocar"
-    assert "versao fixada" in html
+    assert "versão fixada" in html
 
 
 def test_shroudtopia_em_versao_escolhida(admin, post, enshrouded):
@@ -454,7 +454,7 @@ def test_enshrouded_tambem_avisa_do_antivirus(admin, enshrouded):
     assert "ClamAV" in admin.get(f"/servers/{enshrouded[0]}/mods").get_data(as_text=True)
 
 
-# ------------------------------------------------------------------ verificar mods instalados
+# ------------------------------------------------------------------ scan installed mods
 
 @pytest.mark.parametrize(("service", "expected"), [
     ("vrising.service", ["/opt/game/BepInEx", "/opt/game/winhttp.dll", "/opt/game/dotnet"]),
@@ -462,7 +462,7 @@ def test_enshrouded_tambem_avisa_do_antivirus(admin, enshrouded):
     ("palworld.service", ["/opt/game/Pal/Content/Paks/~mods"]),
 ])
 def test_verificar_instalados_vira_job_so_nas_pastas_de_mod(admin, post, database, upload_jobs, service, expected):
-    """Nunca a pasta do jogo inteira: seriam gigas de arquivo do proprio jogo para nada."""
+    """Never the whole game folder: that would be gigabytes of the game's own files for nothing."""
     sid = _server(database, service)
     response = post(admin, f"/servers/{sid}/mods/audit", {})
     assert "/jobs/77" in response.headers["Location"]
@@ -503,7 +503,7 @@ def test_icarus_instala_o_ue4ss_na_pasta_do_executavel(admin, post, database, mo
     monkeypatch.setattr(panel, "start_job", lambda action, server, user, **kw: jobs.append((action, kw)) or 99)
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
     assert "value=install" in html
-    # O instalador recebe a pasta do EXECUTAVEL, e nao a de mods (dois niveis abaixo).
+    # The installer receives the EXECUTABLE's folder, not the mods one (two levels below).
     assert calls[0].endswith("status /opt/game/Icarus/Binaries/Win64")
     post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "restart": "1"})
     install, restart = jobs[0][1]["steps"]
@@ -512,11 +512,11 @@ def test_icarus_instala_o_ue4ss_na_pasta_do_executavel(admin, post, database, mo
     assert restart.endswith("restart icarus.service")
 
 
-# ------------------------------------------------------------- instaladores ainda sem prova
+# ------------------------------------------------------------- installers not yet proven
 
 @pytest.fixture
 def remote(database, monkeypatch):
-    """Servidor qualquer cujo instalador remoto responde `state`; guarda comandos e jobs."""
+    """Any server whose remote installer answers `state`; records commands and jobs."""
     calls: list[str] = []
     jobs: list[tuple] = []
     state: dict = {"loader_installed": False, "loader": "", "loader_version": "", "loader_pinned": False,
@@ -537,7 +537,7 @@ def remote(database, monkeypatch):
 def test_instalador_sem_prova_avisa_na_tela(admin, database, remote, service):
     sid = _server(database, service)
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
-    assert "NAO foi testado" in html
+    assert "NÃO foi testado" in html
 
 
 def test_satisfactory_instala_mod_do_ficsit_app_com_antivirus(admin, post, database, remote):
@@ -589,14 +589,14 @@ def test_rust_recebe_plugin_cs_e_instala_o_oxide(admin, post, database, remote):
     ("soulmask.service", "/opt/game/WS/Binaries/Linux", "4.27", ".pak"),
     ("the-front.service", "/opt/game/ProjectWar/Binaries/Linux", "4.27", ".pak"),
     ("squad.service", "/opt/game/SquadGame/Binaries/Linux", "5.7", ".pak,.utoc,.ucas"),
-    # O segundo nome do perfil (a chave da sugestao, cortada): o drop-in vai no servico DESTE servidor.
+    # The profile's second name (the suggestion key, trimmed): the drop-in goes on THIS server's service.
     ("smalland-survive-the-wil.service", "/opt/game/SMALLAND/Binaries/Linux", "4.27", ".pak"),
 ])
 def test_unreal_linux_instala_o_ue4ss_do_release_e_continua_recebendo_pak(
         admin, post, database, remote, monkeypatch, case):
-    """Os servidores Unreal Linux: o UE4SS oficial para Linux, numa tag fixa do release, com a versao do
-    motor e os DOIS geradores (o do .sym e o do pacote de referencia) - so ao INSTALAR, que o status
-    nao precisa deles."""
+    """The Unreal Linux servers: the official UE4SS for Linux, at a fixed release tag, with the engine
+    version and BOTH generators (the .sym one and the reference pack one) - only when INSTALLING, since
+    the status does not need them."""
     service, exe_dir, engine, accept = case
     calls, jobs, _ = remote
     monkeypatch.setattr(panel, "list_dir", lambda *a, **k: ([{"name": "MeuMod_P.pak", "dir": False, "size": 10}], None))
@@ -606,7 +606,7 @@ def test_unreal_linux_instala_o_ue4ss_do_release_e_continua_recebendo_pak(
     assert f'accept="{accept}"' in html
     assert "value=install" in html
     assert "linux-v2" in html
-    # Tag fixa: o campo de versao (x.y.z do UE4SS de Windows) nao vale aqui.
+    # Fixed tag: the version field (x.y.z of the Windows UE4SS) does not apply here.
     assert 'name="version"' not in html
     assert "--release linux-v2" not in calls[0]
     assert calls[0].endswith(f"--unit {service} status {exe_dir}")
@@ -615,13 +615,13 @@ def test_unreal_linux_instala_o_ue4ss_do_release_e_continua_recebendo_pak(
     assert "--scan" in install
     assert f"--unit {service} " in install
     assert f"--release linux-v2 --engine {engine} --symfiles" in install
-    assert "UE4SS_Signatures" in install  # o texto dos geradores foi junto
+    assert "UE4SS_Signatures" in install  # the generators' text went along
     assert "ue_linux_layout" in install
     assert install.endswith(f"loader-install {exe_dir}")
     assert restart.endswith(f"restart {service}")
 
 
-# ------------------------------------------------------------- Workshop pela config do jogo
+# ------------------------------------------------------------- Workshop through the game config
 
 @pytest.mark.parametrize(("service", "fmt"), [
     ("don-t-starve-together.service", "dst"), ("project-zomboid.service", "zomboid"),
@@ -636,10 +636,10 @@ def test_workshop_mostra_a_lista_da_config_do_jogo(admin, database, remote, serv
                   "available": {"2875848298": ["BB_CommonSense"]}})
     sid = _server(database, service)
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
-    # A config sai do servico DESTE servidor, e o formato do perfil.
+    # The config comes from THIS server's service, and the format from the profile.
     assert f"--unit {service} {fmt} status /opt/game" in calls[0]
     assert "/x/cfg" in html
-    assert "NAO verifica antes" in html
+    assert "NÃO verifica antes" in html
     if fmt == "reforger":
         assert "https://reforger.armaplatform.com/workshop/5965550F24A0C152" in html
         assert "5965550F24A0C152 Where Am I</textarea>" in html

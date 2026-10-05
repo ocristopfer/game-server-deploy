@@ -1,40 +1,41 @@
-"""Mods da Workshop pela CONFIG do jogo - roda DENTRO do CT do jogo.
+"""Workshop mods through the game CONFIG - runs INSIDE the game CT.
 
-Mesmo desenho dos outros instaladores remotos: o painel le este texto e o executa no
-container com `python3 -c`, por SSH, como root. So stdlib e sem import do `gamepanel`.
+Same design as the other remote installers: the panel reads this text and runs it in the
+container with `python3 -c`, over SSH, as root. Stdlib only and no import of `gamepanel`.
 
-Aqui ninguem baixa nada: quem baixa e o PROPRIO servidor do jogo, na subida, a partir da lista
-de IDs da config dele. O script so le e escreve essa lista, no formato de cada jogo - e cada um
-foi provado num servidor de verdade (Docker, 2026-10-05), com o mod baixado e carregado no log:
+Nobody downloads anything here: the downloader is the game server ITSELF, on startup, from the
+list of IDs in its config. The script only reads and writes that list, in each game's format - and
+each one was proven on a real server (Docker, 2026-10-05), with the mod downloaded and loaded in the log:
 
-- **dst** (Don't Starve Together): `ServerModSetup("<id>")` no `mods/dedicated_server_mods_setup.lua`
-  da pasta do jogo (e o que manda BAIXAR) e `["workshop-<id>"] = { enabled = true }` no
-  `modoverrides.lua` de cada shard (e o que manda CARREGAR). Sem o primeiro o mod nao chega; sem
-  o segundo ele chega e fica desligado. Um update do jogo pela Steam devolve o setup ao original:
-  o status acusa (`setup_missing`) e salvar de novo reescreve.
-- **zomboid** (Project Zomboid): `WorkshopItems=` (IDs da Workshop, o que baixa) e `Mods=` (os
-  IDs de mod do `mod.info`, o que carrega) no `<servername>.ini`. Sao listas diferentes: um item
-  da Workshop pode trazer varios mods, e ligar todos e justo o que quebra servidor.
-- **unturned**: `File_IDs` do `Servers/<nome>/WorkshopDownloadConfig.json`. O servidor baixa
-  tambem as dependencias (um mapa e os assets dele).
-- **reforger** (Arma Reforger): `game.mods` do JSON do `-config`, com o GUID do workshop da
-  Bohemia (nao e Steam) e um nome.
+- **dst** (Don't Starve Together): `ServerModSetup("<id>")` in the game folder's
+  `mods/dedicated_server_mods_setup.lua` (that is what tells it to DOWNLOAD) and
+  `["workshop-<id>"] = { enabled = true }` in each shard's `modoverrides.lua` (that is what tells it
+  to LOAD). Without the first the mod never arrives; without the second it arrives and stays off. A
+  game update through Steam restores the setup to the original: the status flags it
+  (`setup_missing`) and saving again rewrites it.
+- **zomboid** (Project Zomboid): `WorkshopItems=` (Workshop IDs, what gets downloaded) and `Mods=`
+  (the mod IDs from `mod.info`, what gets loaded) in `<servername>.ini`. They are different lists:
+  one Workshop item may bring several mods, and enabling all of them is exactly what breaks a server.
+- **unturned**: `File_IDs` in `Servers/<name>/WorkshopDownloadConfig.json`. The server also
+  downloads the dependencies (a map and its assets).
+- **reforger** (Arma Reforger): `game.mods` in the `-config` JSON, with the GUID from Bohemia's
+  workshop (it is not Steam) and a name.
 
-O que vale para os quatro, cada um com o motivo:
-- **O que a pessoa ja configurou fica.** As opcoes de cada mod no `modoverrides.lua` (o bloco
-  inteiro do mod, copiado como texto), as outras chaves do JSON e as outras linhas do .ini: o
-  painel so troca a LISTA. Mod que saiu da lista perde o bloco dele, e e isso que "remover" quer.
-- **Escrita atomica com copia de antes** (`<arquivo>.gamepanel.bak`): um arquivo escrito pela
-  metade e um servidor que nao sobe, e a copia e o caminho de volta a mao.
-- **O dono continua o do arquivo** (ou o `User=` do servico, para arquivo novo): o servidor roda
-  como steam, e um arquivo de root que ele nao consegue reescrever trava a proxima subida.
-- **Onde fica a config sai do ExecStart do servico** (`-servername`, `-cachedir`, `-config`,
-  `+InternetServer/`), e nao de um palpite: e o mesmo comando que o jogo recebe.
-- **Nada passa pelo antivirus antes de entrar**, porque quem baixa e o jogo, na subida. O
-  "Verificar mods instalados" do painel passa o ClamAV na pasta onde cada jogo os guarda.
+What applies to all four, each with its reason:
+- **What the person already configured stays.** Each mod's options in `modoverrides.lua` (the
+  mod's whole block, copied as text), the other JSON keys and the other .ini lines: the panel only
+  replaces the LIST. A mod that left the list loses its block, and that is what "remove" means.
+- **Atomic write with a copy of the previous version** (`<file>.gamepanel.bak`): a half-written
+  file is a server that does not start, and the copy is the manual way back.
+- **The owner stays the file's owner** (or the service `User=`, for a new file): the server runs
+  as steam, and a root-owned file it cannot rewrite blocks the next startup.
+- **Where the config lives comes from the service ExecStart** (`-servername`, `-cachedir`,
+  `-config`, `+InternetServer/`), and not from a guess: it is the same command the game receives.
+- **Nothing goes through the antivirus before getting in**, because the downloader is the game,
+  on startup. The panel's "Check installed mods" runs ClamAV over the folder where each game keeps them.
 
-Acoes (argv): --unit SERVICO FORMATO status|set PASTA_DO_JOGO [ITENS...] [--mods LISTA]
-ITEM e o ID (Steam) ou `GUID=Nome` (reforger). Termina com UMA linha JSON.
+Actions (argv): --unit SERVICE FORMAT status|set GAME_FOLDER [ITEMS...] [--mods LIST]
+ITEM is the ID (Steam) or `GUID=Name` (reforger). Ends with ONE JSON line.
 """
 from __future__ import annotations
 
@@ -55,10 +56,10 @@ BACKUP_SUFFIX = ".gamepanel.bak"
 
 STEAM_ID = re.compile(r"^\d{6,20}$", re.ASCII)
 GUID = re.compile(r"^[0-9A-F]{16}$", re.ASCII)
-# O nome do mod do Reforger vai para o JSON e para o log do servidor: texto curto e imprimivel.
+# The Reforger mod name goes into the JSON and into the server log: short, printable text.
 REFORGER_NAME = re.compile(r"^[^\x00-\x1f\x7f]{1,80}$")
-# Mods= do Zomboid: IDs de mod separados por ';'. A barra invertida e o prefixo que o Build 42
-# aceita em alguns guias (`\BB_CommonSense`); sem ela tambem carrega (medido).
+# Zomboid Mods=: mod IDs separated by ';'. The backslash is the prefix that Build 42 accepts in
+# some guides (`\BB_CommonSense`); it also loads without it (measured).
 ZOMBOID_MODS = re.compile(r"^[A-Za-z0-9_.\-\\ ;]{0,4000}$", re.ASCII)
 
 DST_SETUP = "mods/dedicated_server_mods_setup.lua"
@@ -66,13 +67,13 @@ DST_SETUP_LINE = re.compile(r'^\s*ServerModSetup\(\s*"(?:workshop-)?(\d+)"\s*\)'
 DST_KEY = re.compile(r'\[\s*"([^"]+)"\s*\]\s*=\s*\{')
 
 
-# --- servico e dono ---------------------------------------------------------------------------
+# --- service and owner ------------------------------------------------------------------------
 
 def unit_text(unit: str) -> str:
-    """O texto da unit (com os drop-ins), ou vazio se o systemctl nao responde."""
+    """The unit text (with drop-ins), or empty if systemctl does not answer."""
     if not unit:
         return ""
-    # O nome da unit vem do painel (o servico do proprio servidor), e vai como argumento, sem shell.
+    # The unit name comes from the panel (the server's own service), and goes as an argument, no shell.
     try:
         proc = subprocess.run(["systemctl", "cat", unit], capture_output=True, text=True,  # noqa: S603, S607
                               timeout=20, check=False)
@@ -82,7 +83,7 @@ def unit_text(unit: str) -> str:
 
 
 def exec_args(text: str) -> list[str]:
-    """As palavras do ULTIMO ExecStart (um drop-in que o troca vem depois do original)."""
+    """The words of the LAST ExecStart (a drop-in that replaces it comes after the original)."""
     lines = [ln.split("=", 1)[1] for ln in text.splitlines() if ln.strip().startswith("ExecStart=")]
     lines = [ln for ln in lines if ln.strip()]
     if not lines:
@@ -99,7 +100,7 @@ def unit_value(text: str, key: str) -> str:
 
 
 def arg_after(args: list[str], flag: str) -> str:
-    """O valor de `-flag valor` ou `-flag=valor`, ignorando a caixa (o Zomboid aceita as duas)."""
+    """The value of `-flag value` or `-flag=value`, ignoring case (Zomboid accepts both)."""
     low = flag.lower()
     for i, a in enumerate(args):
         if a.lower() == low and i + 1 < len(args):
@@ -127,7 +128,7 @@ def _ids_of(user: str) -> tuple[int, int] | None:
 
 
 def _chown(path: str, owner: tuple[int, int] | None) -> None:
-    # Sem chown (o Windows dos testes) ou sem permissao, o arquivo fica com o dono que tiver.
+    # Without chown (the Windows the tests run on) or without permission, the file keeps whatever owner it has.
     chown = getattr(os, "chown", None)
     if owner and chown:
         with contextlib.suppress(OSError):
@@ -135,7 +136,7 @@ def _chown(path: str, owner: tuple[int, int] | None) -> None:
 
 
 def write_atomic(path: str, text: str, user: str) -> None:
-    """Grava ao lado e move por cima, guardando a copia de antes e o dono de antes."""
+    """Write alongside and move over, keeping the previous copy and the previous owner."""
     owner = None
     if os.path.exists(path):
         st = os.stat(path)
@@ -172,10 +173,10 @@ LUA_LONG = re.compile(r"(--)?\[(=*)\[")
 
 
 def _lua_skip(text: str, i: int) -> int:
-    """Se em `i` comeca comentario ou string, a posicao logo depois dele; senao, o proprio `i`.
+    """If a comment or a string starts at `i`, the position right after it; otherwise `i` itself.
 
-    Chave dentro de string (`scale = "1}"`) ou de comentario nao conta: e assim que o bloco de
-    opcoes de cada mod sai inteiro, e nao cortado no primeiro `}` que aparece.
+    A brace inside a string (`scale = "1}"`) or a comment does not count: that is how each mod's
+    options block comes out whole, and not cut at the first `}` that shows up.
     """
     n = len(text)
     long = LUA_LONG.match(text, i)
@@ -195,7 +196,7 @@ def _lua_skip(text: str, i: int) -> int:
 
 
 def _lua_block_end(text: str, start: int) -> int:
-    """Posicao logo depois do `}` que fecha o `{` em `start`."""
+    """Position right after the `}` that closes the `{` at `start`."""
     depth, i = 0, start
     while i < len(text):
         j = _lua_skip(text, i)
@@ -213,7 +214,7 @@ def _lua_block_end(text: str, start: int) -> int:
 
 
 def lua_entries(text: str) -> dict[str, str]:
-    """`["chave"] = { ... }` do nivel de cima da tabela, como TEXTO (as opcoes vao inteiras)."""
+    """`["key"] = { ... }` at the top level of the table, as TEXT (the options go whole)."""
     i, start = 0, -1
     while i < len(text):
         j = _lua_skip(text, i)
@@ -252,11 +253,11 @@ def render_overrides(entries: dict[str, str]) -> str:
 
 
 def dst_shards(ctx: dict) -> list[str]:
-    """As pastas de shard (as que tem server.ini) do cluster deste servidor.
+    """The shard folders (the ones with server.ini) of this server's cluster.
 
-    O cluster sai do comando do jogo (-persistent_storage_root, -conf_dir, -cluster, com os
-    padroes do DST): o cluster.ini so existe depois de alguem configurar o cluster, e o primeiro
-    start so cria <shard>/server.ini. A varredura e o recurso de quem nao passa nada disso.
+    The cluster comes from the game command (-persistent_storage_root, -conf_dir, -cluster, with
+    the DST defaults): cluster.ini only exists after someone configures the cluster, and the first
+    start only creates <shard>/server.ini. The scan is the fallback for whoever passes none of that.
     """
     args = ctx["args"]
     root = arg_after(args, "-persistent_storage_root") or os.path.join(ctx["home"], ".klei")
@@ -265,8 +266,8 @@ def dst_shards(ctx: dict) -> list[str]:
     found = sorted(os.path.dirname(s) for s in glob.glob(os.path.join(cluster, "*", "server.ini")))
     if found:
         return found
-    # Profundidade fixa, e nao `**`: na pasta do jogo seriam gigas de arquivo a cada abertura da
-    # tela. O egg do Pterodactyl usa /opt/game/DoNotStarveTogether/config/server.
+    # Fixed depth, and not `**`: in the game folder that would be gigabytes of files every time the
+    # screen opens. The Pterodactyl egg uses /opt/game/DoNotStarveTogether/config/server.
     for base in (os.path.join(ctx["home"], ".klei"), ctx["game_dir"]):
         for depth in range(1, 5):
             for ini in sorted(glob.glob(os.path.join(base, *["*"] * depth, "cluster.ini"))):
@@ -283,7 +284,7 @@ def dst_status(ctx: dict) -> dict:
         for key in lua_entries(read_text(os.path.join(shard, "modoverrides.lua"))):
             if key.startswith("workshop-") and key[9:] not in ids:
                 ids.append(key[9:])
-    # O DST atual baixa para ugc_mods/<cluster>/<shard>/content/322330/<id>; o antigo, mods/workshop-<id>.
+    # Current DST downloads to ugc_mods/<cluster>/<shard>/content/322330/<id>; the old one, mods/workshop-<id>.
     installed = [i for i in ids
                  if glob.glob(os.path.join(ctx["game_dir"], "ugc_mods", "*", "*", "content", "*", i))
                  or os.path.isdir(os.path.join(ctx["game_dir"], "mods", f"workshop-{i}"))]
@@ -298,7 +299,7 @@ def dst_set(ctx: dict, items: list[str]) -> dict:
         raise ValueError("nenhum cluster do DST com server.ini: suba o servidor uma vez antes")
     setup_path = os.path.join(ctx["game_dir"], DST_SETUP)
     old = read_text(setup_path)
-    # Tira as linhas ServerModSetup de antes e poe as da lista; comentario e o resto ficam.
+    # Remove the previous ServerModSetup lines and put in the ones from the list; comments and the rest stay.
     kept = [ln for ln in old.splitlines() if not DST_SETUP_LINE.match(ln)]
     new_setup = "\n".join([*kept, *[f'ServerModSetup("{i}")' for i in items]]) + "\n"
     write_atomic(setup_path, new_setup, ctx["user"])
@@ -334,7 +335,7 @@ def ini_set(text: str, key: str, value: str) -> str:
 
 
 def zomboid_mod_ids(game_dir: str, workshop_id: str) -> list[str]:
-    """Os `id=` dos mod.info que o item da Workshop trouxe: o que pode ir no `Mods=`."""
+    """The `id=` of the mod.info files the Workshop item brought: what may go into `Mods=`."""
     root = os.path.join(game_dir, "steamapps", "workshop", "content", "108600", workshop_id)
     found: list[str] = []
     for info in sorted(glob.glob(os.path.join(root, "mods", "*", "**", "mod.info"), recursive=True)):
@@ -368,7 +369,7 @@ def zomboid_set(ctx: dict, items: list[str], mods: str) -> dict:
 # --- Unturned ---------------------------------------------------------------------------------
 
 def unturned_dir(ctx: dict) -> str:
-    """A pasta do servidor: a do `+InternetServer/<nome>`, ou a unica que existe."""
+    """The server folder: the one from `+InternetServer/<name>`, or the only one that exists."""
     for a in ctx["args"]:
         m = re.match(r"^\+(?:Internet|Lan)Server/(.+)$", a, re.IGNORECASE)
         if m:
@@ -440,7 +441,7 @@ def reforger_set(ctx: dict, items: list[tuple[str, str]]) -> dict:
     data = json.loads(read_text(path) or "null")
     if not isinstance(data, dict) or not isinstance(data.get("game"), dict):
         raise ValueError(f"{path} nao tem o objeto game: crie a config do servidor antes")
-    # Versao fixada e o que mais a pessoa tenha posto em cada mod fica; so a lista muda.
+    # A pinned version and whatever else the person put in each mod stays; only the list changes.
     before = {str(m.get("modId", "")).upper(): m for m in data["game"].get("mods") or [] if isinstance(m, dict)}
     mods = []
     for guid, name in items:
@@ -453,10 +454,10 @@ def reforger_set(ctx: dict, items: list[tuple[str, str]]) -> dict:
     return {"ids": [g for g, _ in items], "config": path}
 
 
-# --- entrada ----------------------------------------------------------------------------------
+# --- entry point ------------------------------------------------------------------------------
 
 def parse_items(fmt: str, raw: list[str]) -> list:
-    """Os itens do argv, conferidos de novo aqui: o painel confere, e o CT nao confia."""
+    """The argv items, checked again here: the panel checks, and the CT does not trust it."""
     if fmt == "reforger":
         out: list[tuple[str, str]] = []
         for item in raw:

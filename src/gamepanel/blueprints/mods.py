@@ -1,9 +1,9 @@
-"""A tela Mods: o que o servidor carrega de mod, e como mandar mod para ele.
+"""The Mods screen: what mods the server loads, and how to send mods to it.
 
-O que "mod" significa muda por jogo, e quem sabe e o perfil (`games/mods/profiles.py`):
-no ETS2 a tela le os `server_packages` e diz o que cada jogador precisa ter; no Palworld
-ela lista e recebe os `.pak` da pasta de mods. Tudo e de admin, como a tela Arquivos: o
-envio grava dentro do container.
+What "mod" means changes per game, and the profile is what knows (`games/mods/profiles.py`):
+in ETS2 the screen reads the `server_packages` and says what each player needs to have; in Palworld
+it lists and receives the `.pak` files of the mods folder. Everything is admin-only, like the Files
+screen: the upload writes inside the container.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from pathlib import Path
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
+from gamepanel import i18n
 from gamepanel.games.mods import (
     antivirus,
     oxide_remote,
@@ -32,31 +33,32 @@ from gamepanel.games.mods import (
 )
 from gamepanel.games.mods import ets2 as ets2_mods
 from gamepanel.persistence.repositories import servers as servers_repo
+from gamepanel.runtime import remote_cmd
 
 bp = Blueprint("mods", __name__)
 
-# O instalador do Thunderstore vai para o CT como TEXTO e roda la com `python3 -c`: o CT nao
-# tem o pacote do painel, e e ele (nao o painel) quem pode ir a internet.
+# The Thunderstore installer goes to the CT as TEXT and runs there with `python3 -c`: the CT does not
+# have the panel package, and it (not the panel) is the one that can reach the internet.
 REMOTE_SOURCE = Path(thunderstore_remote.__file__).read_text(encoding="utf-8")
 SHROUDTOPIA_SOURCE = Path(shroudtopia_remote.__file__).read_text(encoding="utf-8")
 UE4SS_SOURCE = Path(ue4ss_remote.__file__).read_text(encoding="utf-8")
 OXIDE_SOURCE = Path(oxide_remote.__file__).read_text(encoding="utf-8")
 SML_SOURCE = Path(sml_remote.__file__).read_text(encoding="utf-8")
 UE4SS_LINUX_SOURCE = Path(ue4ss_linux_remote.__file__).read_text(encoding="utf-8")
-# O gerador do VTableLayout.ini e das UE4SS_Signatures: vai como texto para o CT, que o roda
-# contra o .sym do jogo (so servidor que traz um; motor modificado, como o Dragonwilds, pede).
+# The generator of VTableLayout.ini and UE4SS_Signatures: goes as text to the CT, which runs it
+# against the game's .sym (only servers that ship one; a modified engine, like Dragonwilds, needs it).
 UE_SYM_SOURCE = Path(ue_sym_layout.__file__).read_text(encoding="utf-8")
-# O gerador que usa o pacote de referencia da versao (servidor SEM .sym, e os globais de quem tem).
+# The generator that uses the version's reference pack (servers WITHOUT .sym, and the globals of those with one).
 UE_LINUX_LAYOUT_SOURCE = Path(ue_linux_layout.__file__).read_text(encoding="utf-8")
-# Workshop pela config: o script so le e escreve a lista de mods na config do jogo, no CT.
+# Workshop through the config: the script only reads and writes the mod list in the game config, on the CT.
 WORKSHOP_SOURCE = Path(workshop_remote.__file__).read_text(encoding="utf-8")
-# Baixar o BepInEx (33 MB) e as dependencias leva minutos: vira job, com log e prazo proprio.
+# Downloading BepInEx (33 MB) and the dependencies takes minutes: it becomes a job, with its own log and deadline.
 INSTALL_TIMEOUT = 1800
 LOADER_ACTIONS = ("install", "enable", "disable", "uninstall")
-# O endpoint da propria tela, para onde toda acao volta.
+# The screen's own endpoint, where every action returns to.
 INDEX = "mods.index"
 
-# Teto do texto colado como gabarito: a lista e de mods, nao um arquivo.
+# Cap on the text pasted as the reference list: it is a list of mods, not a file.
 EXPECTED_MAX_CHARS = 20000
 
 
@@ -69,12 +71,12 @@ def _expected_ids(server) -> list[int]:
 
 
 def _packages_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
-    """O que os server_packages dizem, e o confronto com o gabarito."""
+    """What the server_packages say, and the comparison with the reference list."""
     try:
         opened = panel.read_file(server, f"{profile.folder}/server_packages.sii")
     except panel.RemoteError:
-        # Sem pacote ainda e o estado normal de um servidor novo, e nao erro: a tela
-        # explica o que exportar.
+        # No package yet is the normal state of a new server, not an error: the screen
+        # explains what to export.
         return {"packages": None, "missing": [], "extra": []}
     if opened["binary"] or opened["truncated"]:
         errors.append(panel.translate("mods.packages_unreadable"))
@@ -85,7 +87,7 @@ def _packages_view(server, profile: profiles.ModProfile, errors: list[str]) -> d
     return {
         "packages": packages,
         "missing": [i for i in expected if i not in present],
-        # So faz sentido falar em "a mais" quando alguem disse o que era para ter.
+        # Talking about "extra" only makes sense when someone said what was supposed to be there.
         "extra": [m for m in packages.mods if m.workshop_id and expected and m.workshop_id not in expected],
     }
 
@@ -94,58 +96,86 @@ def _folder_view(server, profile: profiles.ModProfile) -> dict:
     try:
         entries, _ = panel.list_dir(server, profile.folder)
     except panel.RemoteError:
-        # Pasta que ainda nao existe = nenhum mod; ela nasce no primeiro envio.
+        # A folder that does not exist yet = no mods; it is created on the first upload.
         return {"files": []}
     return {"files": [e for e in entries if not e["dir"] and profile.accepts(e["name"])]}
 
 
-# Carregador nativo (DLL ao lado do .exe sob o Proton) -> o instalador que roda no CT.
+# Native loader (DLL next to the .exe under Proton) -> the installer that runs on the CT.
 NATIVE_LOADERS = {profiles.KIND_SHROUDTOPIA: SHROUDTOPIA_SOURCE, profiles.KIND_UE4SS: UE4SS_SOURCE,
                   profiles.KIND_OXIDE: OXIDE_SOURCE}
-# Nome do carregador no historico de tarefas.
+# Loader name in the task history.
 LOADER_NAMES = {profiles.KIND_SHROUDTOPIA: "Shroudtopia", profiles.KIND_UE4SS: "UE4SS",
                 profiles.KIND_OXIDE: "Oxide", profiles.KIND_SML: "SML",
                 profiles.KIND_UE4SS_LINUX: "UE4SS Linux"}
 
-# Toda acao que BAIXA algo leva o antivirus junto; o instalador remoto recusa instalar sem ele.
+# Every action that DOWNLOADS something brings the antivirus along; the remote installer refuses to install without it.
 SCANNED_ACTIONS = ("loader-install", "plugin-install", "mod-install")
 
+# Installers that write a systemd drop-in or /etc/game-runtime.env (and install ClamAV inline):
+# they need root, and a server in helper mode has no root to give them. Moving what they write to
+# steam's own overlay is phase 6 of docs/security-hardening.md; until then every action of theirs
+# except the read-only `status` is refused, with the reason on screen, instead of failing halfway.
+ROOT_INSTALLER_KINDS = (profiles.KIND_THUNDERSTORE, profiles.KIND_SHROUDTOPIA, profiles.KIND_UE4SS,
+                        profiles.KIND_OXIDE, profiles.KIND_SML, profiles.KIND_UE4SS_LINUX)
 
-def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str, service: str = "") -> str:
+
+def needs_root(server, profile: profiles.ModProfile | None) -> bool:
+    """True when this profile's installer cannot run on this server (helper mode, root installer)."""
+    return profile is not None and profile.kind in ROOT_INSTALLER_KINDS and not remote_cmd.privileged(server)
+
+
+def _root_refusal(server) -> i18n.Message:
+    return i18n.Message("mods.needs_root", user=remote_cmd.ssh_user(server))
+
+
+def _remote_cmd(server, profile: profiles.ModProfile, action: str, *args: str, service: str = "") -> str:
+    """The installer command for this server: as root in legacy mode, as steam in helper mode.
+
+    Raises ValueError for a root installer in helper mode (anything but `status`): the routes
+    already refuse before getting here, and this is the line that keeps a new route from
+    forgetting to.
+    """
+    if action != "status" and needs_root(server, profile):
+        raise ValueError(_root_refusal(server))
+    return remote_cmd.as_steam(server, *_installer_argv(profile, action, *args, service=service))
+
+
+def _installer_argv(profile: profiles.ModProfile, action: str, *args: str, service: str = "") -> tuple[str, ...]:
     scan = ("--scan", antivirus.SCAN_SCRIPT) if action in SCANNED_ACTIONS else ()
-    # O drop-in vai no servico DESTE servidor: o perfil serve a mais de um nome (o do catalogo
-    # curado e o da sugestao do LinuxGSM), e o primeiro da lista pode nem existir neste CT.
+    # The drop-in goes on THIS server's service: the profile serves more than one name (the curated
+    # catalog's and the LinuxGSM suggestion's), and the first in the list may not even exist on this CT.
     unit_name = profiles.service_stem(service) or profile.services[0]
     if profile.kind == profiles.KIND_WORKSHOP:
-        # A config sai do ExecStart DESTE servico (-servername, -config, +InternetServer/...).
-        return panel.q("python3", "-c", WORKSHOP_SOURCE, "--unit", f"{unit_name}.service",
-                       profile.workshop_format, action, profile.folder, *args)
+        # The config comes from THIS service's ExecStart (-servername, -config, +InternetServer/...).
+        return ("python3", "-c", WORKSHOP_SOURCE, "--unit", f"{unit_name}.service",
+                profile.workshop_format, action, profile.folder, *args)
     if profile.kind == profiles.KIND_SML:
-        return panel.q("python3", "-c", SML_SOURCE, *scan, action, profile.loader_dir, *args)
+        return ("python3", "-c", SML_SOURCE, *scan, action, profile.loader_dir, *args)
     if profile.kind == profiles.KIND_UE4SS_LINUX:
-        # LD_PRELOAD num drop-in deste servico; o nome sai do perfil (escolhido por ele).
+        # LD_PRELOAD in a drop-in of this service; the name comes from the profile (chosen by it).
         unit = ("--unit", f"{unit_name}.service")
-        # O release so importa ao instalar (os geradores sao ~40 KB de texto a toa no status).
+        # The release only matters when installing (the generators are ~40 KB of wasted text in the status).
         release = ("--release", profile.ue4ss_release, "--engine", profile.engine_version,
                    "--symfiles", UE_SYM_SOURCE, "--layout", UE_LINUX_LAYOUT_SOURCE,
                    ) if action == "loader-install" else ()
-        return panel.q("python3", "-c", UE4SS_LINUX_SOURCE, *scan, *unit, *release, action, profile.loader_dir,
-                       *args)
+        return ("python3", "-c", UE4SS_LINUX_SOURCE, *scan, *unit, *release, action, profile.loader_dir,
+                *args)
     if profile.kind in NATIVE_LOADERS:
-        # O carregador mora um nivel acima da pasta de mods: ao lado do executavel do jogo.
+        # The loader lives one level above the mods folder: next to the game executable.
         source = NATIVE_LOADERS[profile.kind]
         game_dir = profile.loader_dir or posixpath.dirname(profile.folder)
-        return panel.q("python3", "-c", source, *scan, action, game_dir, *args)
-    # Servidor Linux nativo (Valheim): o instalador escreve o drop-in deste servico. O nome sai
-    # do perfil, que foi escolhido justamente pelo nome do servico.
-    unit = ("--unit", f"{unit_name}.service") if profile.linux_bepinex else ()
-    return panel.q("python3", "-c", REMOTE_SOURCE, *scan, *unit, action, profile.folder, *profile.loader, *args)
+        return ("python3", "-c", source, *scan, action, game_dir, *args)
+    # Native Linux server (Valheim): the installer writes this service's drop-in. The name comes
+    # from the profile, which was chosen precisely by the service name.
+    unit_args: tuple[str, ...] = ("--unit", f"{unit_name}.service") if profile.linux_bepinex else ()
+    return ("python3", "-c", REMOTE_SOURCE, *scan, *unit_args, action, profile.folder, *profile.loader, *args)
 
 
 def _remote_state(server, profile: profiles.ModProfile, errors: list[str]) -> dict | None:
-    """A ultima linha JSON do instalador remoto, ou None (com o motivo em `errors`)."""
+    """The last JSON line from the remote installer, or None (with the reason in `errors`)."""
     try:
-        proc = panel.ssh_run(server, _remote_cmd(profile, "status", service=server["service"]), timeout=40)
+        proc = panel.ssh_run(server, _remote_cmd(server, profile, "status", service=server["service"]), timeout=40)
         lines = (proc.stdout or "").strip().splitlines()
         state = json.loads(lines[-1]) if lines else {}
     except (panel.RemoteError, ValueError) as exc:
@@ -158,7 +188,7 @@ def _remote_state(server, profile: profiles.ModProfile, errors: list[str]) -> di
 
 
 def _workshop_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
-    """A lista da config do jogo, cada mod com o link e se o jogo ja o baixou."""
+    """The list from the game config, each mod with its link and whether the game already downloaded it."""
     state = _remote_state(server, profile, errors)
     if state is None:
         return {"state": None}
@@ -173,7 +203,7 @@ def _workshop_view(server, profile: profiles.ModProfile, errors: list[str]) -> d
         "installed": i in installed,
         "mod_ids": available.get(i, []),
     } for i in state.get("ids", [])]
-    # O que vai no campo: a mesma lista, um por linha (com o nome, no Reforger).
+    # What goes in the field: the same list, one per line (with the name, in Reforger).
     state["text"] = "\n".join(f"{i} {names.get(i, '')}".strip() if reforger else i for i in state.get("ids", []))
     return {"state": state}
 
@@ -183,7 +213,7 @@ def _shroudtopia_view(server, profile: profiles.ModProfile, errors: list[str]) -
 
 
 def _thunderstore_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
-    """O estado do BepInEx e dos plugins, lido na hora (so lista pastas: e rapido)."""
+    """The state of BepInEx and the plugins, read on the spot (it only lists folders: it is fast)."""
     state = _remote_state(server, profile, errors)
     if state is None:
         return {"state": None}
@@ -213,10 +243,12 @@ def index(sid: int):
     elif profile and profile.kind == profiles.KIND_WORKSHOP:
         view = _workshop_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_UE4SS_LINUX:
-        # Os dois: o carregador (status no CT) e os .pak da pasta do perfil.
+        # Both: the loader (status on the CT) and the .pak files of the profile folder.
         view = {**_shroudtopia_view(server, profile, errors), **_folder_view(server, profile)}
     return render_template(
         "mods.html", server=server, profile=profile, view=view, errors=errors,
+        # Said up front: the loader buttons would only be refused on click (helper mode, phase 6).
+        needs_root=needs_root(server, profile),
         expected_text="\n".join(str(i) for i in _expected_ids(server)),
         workshop_url=workshop.url, kind_packages=profiles.KIND_PACKAGES,
         kind_thunderstore=profiles.KIND_THUNDERSTORE, kind_folder=profiles.KIND_FOLDER,
@@ -233,11 +265,11 @@ def _loader_url(profile: profiles.ModProfile | None) -> str:
 
 
 def _thunderstore_job(sid: int, action: str, step: str, label: str):
-    """Dispara o job do Thunderstore (e o reinicio, se pedido) e manda para a tela dele."""
+    """Trigger the Thunderstore job (and the restart, if asked) and go to its screen."""
     server = panel._server_or_404(sid)
     steps: list[panel.JobStep] = [step]
-    # Plugin e BepInEx so entram quando o servidor sobe de novo. O reinicio e um PASSO do mesmo
-    # job: se a instalacao falhar, o servidor nao reinicia no meio de uma instalacao quebrada.
+    # Plugin and BepInEx only take effect when the server starts again. The restart is a STEP of the same
+    # job: if the install fails, the server does not restart in the middle of a broken install.
     if request.form.get("restart") == "1":
         steps.append(panel.COMMANDS["restart"](server))
     job_id = panel.start_job(action, server, session.get("username", "?"), command=label,
@@ -246,7 +278,7 @@ def _thunderstore_job(sid: int, action: str, step: str, label: str):
     return redirect(url_for("jobs.detail", jid=job_id))
 
 
-# Perfis em que o painel instala o CARREGADOR (o botao "Instalar/Ligar/Desligar").
+# Profiles where the panel installs the LOADER (the "Install/Enable/Disable" button).
 LOADER_KINDS = (profiles.KIND_THUNDERSTORE, *NATIVE_LOADERS, profiles.KIND_SML, profiles.KIND_UE4SS_LINUX)
 
 
@@ -257,11 +289,15 @@ def _loader_profile_or_back(sid: int):
     if not profile or profile.kind not in LOADER_KINDS:
         flash(panel.translate("mods.not_thunderstore"), "error")
         return None
+    return _unless_root_needed(server, profile)
+
+
+def _unless_root_needed(server, profile: profiles.ModProfile) -> profiles.ModProfile | None:
+    """The profile, or None (with the reason on screen) when its installer needs root here."""
+    if needs_root(server, profile):
+        flash(panel.translate(_root_refusal(server)), "error")
+        return None
     return profile
-
-
-def _service_of(sid: int) -> str:
-    return panel._server_or_404(sid)["service"] or ""
 
 
 def _thunderstore_profile_or_back(sid: int):
@@ -271,11 +307,11 @@ def _thunderstore_profile_or_back(sid: int):
     if not profile or profile.kind != profiles.KIND_THUNDERSTORE:
         flash(panel.translate("mods.not_thunderstore"), "error")
         return None
-    return profile
+    return _unless_root_needed(server, profile)
 
 
 def _form_version() -> str | None:
-    """A versao do campo do formulario: vazia = a mais nova; None = invalida (e ja avisou)."""
+    """The version from the form field: empty = the newest; None = invalid (and it already warned)."""
     version = thunderstore.parse_version(request.form.get("version", ""))
     if version is None:
         flash(panel.translate("mods.bad_version"), "error")
@@ -293,19 +329,20 @@ def loader(sid: int):
     action = request.form.get("action", "")
     if not profile or action not in LOADER_ACTIONS:
         return redirect(url_for(INDEX, sid=sid))
-    # A versao so vale para instalar: ligar e desligar nao baixam nada.
+    # The version only applies to installing: enabling and disabling download nothing.
     version = _form_version() if action == "install" else ""
     if version is None:
         return redirect(url_for(INDEX, sid=sid))
+    server = panel._server_or_404(sid)
     name = LOADER_NAMES.get(profile.kind) or "-".join(profile.loader)
     args = (version,) if version else ()
     if profile.kind == profiles.KIND_SML:
-        # O SML e um mod do ficsit.app como os outros: so se instala ou atualiza, nao se desliga.
+        # SML is a ficsit.app mod like the others: it is only installed or updated, never disabled.
         if action != "install":
             return redirect(url_for(INDEX, sid=sid))
-        return _thunderstore_job(sid, "mod-loader", _remote_cmd(profile, "mod-install", "SML", *args),
+        return _thunderstore_job(sid, "mod-loader", _remote_cmd(server, profile, "mod-install", "SML", *args),
                                  _with_version("SML: install", version))
-    command = _remote_cmd(profile, f"loader-{action}", *args, service=_service_of(sid))
+    command = _remote_cmd(server, profile, f"loader-{action}", *args, service=server["service"] or "")
     return _thunderstore_job(sid, "mod-loader", command, _with_version(f"{name}: {action}", version))
 
 
@@ -320,14 +357,15 @@ def plugin_install(sid: int):
         flash(panel.translate("mods.bad_package"), "error")
         return redirect(url_for(INDEX, sid=sid))
     ns, name, pasted_version = parsed
-    # O campo de versao vence a versao que veio colada no nome: e o que a pessoa escolheu por
-    # ultimo. E e por ele que se troca a versao de um mod ja instalado (a linha da tabela).
+    # The version field wins over the version pasted into the name: it is what the person chose
+    # last. And it is how the version of an already installed mod is changed (the table row).
     version = _form_version()
     if version is None:
         return redirect(url_for(INDEX, sid=sid))
     version = version or pasted_version
     args = (ns, name, version) if version else (ns, name)
-    return _thunderstore_job(sid, "mod-install", _remote_cmd(profile, "plugin-install", *args),
+    command = _remote_cmd(panel._server_or_404(sid), profile, "plugin-install", *args)
+    return _thunderstore_job(sid, "mod-install", command,
                              _with_version(f"{ns}/{name}", version))
 
 
@@ -339,7 +377,8 @@ def plugin_remove(sid: int):
     if not profile or not parsed:
         return redirect(url_for(INDEX, sid=sid))
     ns, name = parsed
-    return _thunderstore_job(sid, "mod-remove", _remote_cmd(profile, "plugin-remove", ns, name), f"{ns}/{name}")
+    command = _remote_cmd(panel._server_or_404(sid), profile, "plugin-remove", ns, name)
+    return _thunderstore_job(sid, "mod-remove", command, f"{ns}/{name}")
 
 
 def _sml_profile_or_back(sid: int):
@@ -349,13 +388,13 @@ def _sml_profile_or_back(sid: int):
     if not profile or profile.kind != profiles.KIND_SML:
         flash(panel.translate("mods.not_thunderstore"), "error")
         return None
-    return profile
+    return _unless_root_needed(server, profile)
 
 
 @bp.post("/servers/<int:sid>/mods/sml/install")
 @panel.admin_required
 def sml_install(sid: int):
-    """Um mod do ficsit.app (e as dependencias dele), pela referencia ou pelo link da pagina."""
+    """A ficsit.app mod (and its dependencies), by reference or by the page link."""
     profile = _sml_profile_or_back(sid)
     if not profile:
         return redirect(url_for(INDEX, sid=sid))
@@ -367,7 +406,8 @@ def sml_install(sid: int):
     if version is None:
         return redirect(url_for(INDEX, sid=sid))
     args = (ref, version) if version else (ref,)
-    return _thunderstore_job(sid, "mod-install", _remote_cmd(profile, "mod-install", *args),
+    command = _remote_cmd(panel._server_or_404(sid), profile, "mod-install", *args)
+    return _thunderstore_job(sid, "mod-install", command,
                              _with_version(ref, version))
 
 
@@ -378,13 +418,14 @@ def sml_remove(sid: int):
     ref = profiles.ficsit_ref(request.form.get("mod", ""))
     if not profile or not ref:
         return redirect(url_for(INDEX, sid=sid))
-    return _thunderstore_job(sid, "mod-remove", _remote_cmd(profile, "mod-remove", ref), ref)
+    command = _remote_cmd(panel._server_or_404(sid), profile, "mod-remove", ref)
+    return _thunderstore_job(sid, "mod-remove", command, ref)
 
 
 @bp.post("/servers/<int:sid>/mods/workshop")
 @panel.admin_required
 def workshop_save(sid: int):
-    """Troca a lista de mods da Workshop na config do jogo; o jogo baixa na proxima subida."""
+    """Replace the Workshop mod list in the game config; the game downloads it on the next start."""
     panel._files_guard()
     server = panel._server_or_404(sid)
     profile = _profile_or_none(server)
@@ -397,8 +438,8 @@ def workshop_save(sid: int):
         items = [f"{guid}={name}" if name else guid for guid, name in workshop.parse_guids(text)]
     else:
         items = [str(i) for i in workshop.parse_ids(text)]
-    # Lista vazia so vale se o campo veio vazio: texto que nao rendeu ID nenhum e erro de colagem,
-    # e grava-lo apagaria todos os mods do servidor.
+    # An empty list only counts if the field came empty: text that yielded no ID is a paste error,
+    # and saving it would erase every mod on the server.
     if text.strip() and not items:
         flash(panel.translate("mods.workshop_bad_ids"), "error")
         return redirect(go_back)
@@ -409,14 +450,14 @@ def workshop_save(sid: int):
             flash(panel.translate("mods.zomboid_bad_mods"), "error")
             return redirect(go_back)
         extra = ("--mods", mods)
-    command = _remote_cmd(profile, "set", *items, *extra, service=server["service"])
+    command = _remote_cmd(server, profile, "set", *items, *extra, service=server["service"])
     label = f"workshop: {len(items)}"
     return _thunderstore_job(sid, "mod-workshop", command, label)
 
 
 def _checked_name(profile: profiles.ModProfile, sent) -> str:
-    """O nome que o arquivo tera no container, ou ValueError se o perfil nao o aceita."""
-    # So a ultima parte do nome: "../../etc/passwd" nao vira caminho.
+    """The name the file will have in the container, or ValueError if the profile does not accept it."""
+    # Only the last part of the name: "../../etc/passwd" does not become a path.
     name = sent.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not name or not profile.accepts(name):
         allowed = ", ".join(profile.upload_names or profile.extensions)
@@ -425,9 +466,9 @@ def _checked_name(profile: profiles.ModProfile, sent) -> str:
 
 
 def _upload_one(server, incoming: str, sent, name: str) -> str:
-    """Manda UM arquivo (ja conferido) para a pasta de ESPERA. Devolve a saida do container."""
-    return panel.ssh_stream_in(server, panel.q("bash", "-lc", panel.UPLOAD_SCRIPT, "gp", f"{incoming}/{name}"),
-                               sent.stream, timeout=panel.JOB_TIMEOUT)
+    """Send ONE file (already checked) to the STAGING folder. Return the container's output."""
+    command = remote_cmd.as_steam(server, "bash", "-lc", panel.UPLOAD_SCRIPT, "gp", f"{incoming}/{name}")
+    return panel.ssh_stream_in(server, command, sent.stream, timeout=panel.JOB_TIMEOUT)
 
 
 @bp.post("/servers/<int:sid>/mods/upload")
@@ -443,15 +484,15 @@ def upload(sid: int):
         return redirect(go_back)
 
     user = session.get("username", "?")
-    # O arquivo NUNCA vai direto para a pasta de mods: vai para a espera, fora da pasta do
-    # jogo, e um job verifica com o antivirus e so entao move. Verificacao que acha algo ou
-    # nao roda apaga a espera, e o servidor nao reinicia (o reinicio e o ultimo passo).
+    # The file NEVER goes straight to the mods folder: it goes to staging, outside the game
+    # folder, and a job scans it with the antivirus and only then moves it. A scan that finds something or
+    # does not run deletes the staging, and the server does not restart (the restart is the last step).
     incoming = antivirus.incoming_dir(secrets.token_hex(16))
     try:
-        # TODOS os nomes antes de qualquer coisa ir ao container: um mod de Unreal 5 vem em tres
-        # arquivos, e mandar dois e recusar o terceiro deixaria um mod pela metade na pasta.
+        # ALL the names before anything goes to the container: an Unreal 5 mod comes in three
+        # files, and sending two and rejecting the third would leave a half mod in the folder.
         names = [_checked_name(profile, f) for f in sent]
-        proc = panel.ssh_run(server, panel.q("bash", "-c", antivirus.INCOMING_SCRIPT, "gp", incoming), timeout=40)
+        proc = panel.ssh_run(server, antivirus.incoming_command(server, incoming), timeout=40)
         if proc.returncode != 0:
             raise panel.RemoteError((proc.stderr or proc.stdout).strip() or incoming)
         for f, n in zip(sent, names, strict=True):
@@ -462,10 +503,10 @@ def upload(sid: int):
         return redirect(go_back)
 
     steps: list[panel.JobStep] = [
-        panel.q("bash", "-c", antivirus.SCAN_SCRIPT, "gp", incoming),
-        panel.q("bash", "-c", antivirus.PLACE_SCRIPT, "gp", incoming, profile.folder),
+        *antivirus.scan_steps(server, incoming),
+        antivirus.place_command(server, incoming, profile.folder),
     ]
-    # Mod so entra quando o servidor sobe de novo: o reiniciar mora aqui, como na tela Config.
+    # A mod only takes effect when the server starts again: restart lives here, as on the Config screen.
     if request.form.get("restart") == "1":
         steps.append(panel.COMMANDS["restart"](server))
     job_id = panel.start_job("upload-mod", server, user, command=f"{profile.folder}: {', '.join(names)}",
@@ -477,7 +518,7 @@ def upload(sid: int):
 @bp.post("/servers/<int:sid>/mods/audit")
 @panel.admin_required
 def audit(sid: int):
-    """Passa o antivirus no que JA esta instalado (o que entrou antes dele). So le."""
+    """Run the antivirus over what is ALREADY installed (what came in before it). Read-only."""
     panel._files_guard()
     server = panel._server_or_404(sid)
     profile = _profile_or_none(server)
@@ -486,7 +527,7 @@ def audit(sid: int):
     paths = profile.scan_paths
     job_id = panel.start_job("mod-audit", server, session.get("username", "?"), command=" ".join(paths),
                              timeout=INSTALL_TIMEOUT,
-                             steps=[panel.q("bash", "-c", antivirus.AUDIT_SCRIPT, "gp", *paths)])
+                             steps=list(antivirus.audit_steps(server, paths)))
     return redirect(url_for("jobs.detail", jid=job_id))
 
 
@@ -498,8 +539,8 @@ def delete(sid: int):
     profile = _profile_or_none(server)
     go_back = url_for(INDEX, sid=sid)
     name = (request.form.get("name") or "").strip()
-    # So o arquivo de mod da pasta do perfil, pelo nome: nada de caminho vindo do formulario.
-    # Pasta de mods com arquivo solto: a dos .pak e a das DLLs do Shroudtopia.
+    # Only the mod file in the profile folder, by name: no path coming from the form.
+    # Mods folder with loose files: the one for .pak files and the one for Shroudtopia DLLs.
     deletable = (profiles.KIND_FOLDER, profiles.KIND_SHROUDTOPIA, profiles.KIND_OXIDE, profiles.KIND_UE4SS_LINUX)
     if not profile or profile.kind not in deletable or "/" in name or not profile.accepts(name):
         flash(panel.translate("mods.bad_name", name=name or "?",
@@ -521,7 +562,7 @@ def delete(sid: int):
 @bp.post("/servers/<int:sid>/mods/expected")
 @panel.admin_required
 def expected(sid: int):
-    """Guarda o gabarito: os IDs da Workshop que o servidor deveria ter."""
+    """Store the reference list: the Workshop IDs the server should have."""
     panel._server_or_404(sid)
     ids = workshop.parse_ids((request.form.get("expected") or "")[:EXPECTED_MAX_CHARS])
     conn = panel.db()

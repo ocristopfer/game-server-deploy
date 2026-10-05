@@ -1,5 +1,5 @@
-"""tools/import-linuxgsm.py: o que sai dele vira sugestao no formulario, e o LinuxGSM e um
-arquivo de terceiros. Cada regra de seguranca do conversor tem um caso aqui."""
+"""tools/import-linuxgsm.py: its output becomes a suggestion in the form, and LinuxGSM is a
+third-party file. Every safety rule of the converter has a case here."""
 from __future__ import annotations
 
 import importlib.util
@@ -17,7 +17,7 @@ imp = importlib.util.module_from_spec(_spec)
 sys.modules["importar_linuxgsm"] = imp
 _spec.loader.exec_module(imp)
 
-# Trechos reais do LinuxGSM (sfserver e pwserver).
+# Real LinuxGSM excerpts (sfserver and pwserver).
 SATISFACTORY = '''
 appid="1690800"
 port="7777"
@@ -52,7 +52,7 @@ def test_satisfactory_reproduz_as_portas_e_o_protocolo_de_cada_uma():
 
 
 def test_jogo_com_duas_portas_extras_nao_anda_de_porta():
-    """O broker avisa ao jogo UMA porta extra. Com beacon E confiavel elas ficam fixas."""
+    """The broker tells the game about ONE extra port. With beacon AND reliable, they stay fixed."""
     s = imp.sugerir("Satisfactory", SATISFACTORY)
     assert s["shiftable"] is False
     assert s["extra_port"] == 0
@@ -156,9 +156,9 @@ def test_resolver_nao_entra_em_laco_com_variavel_que_se_refere_a_si_mesma():
     assert re.fullmatch(r".*\$\{a\}.*", imp.resolver("x ${a}", {"a": "${a}"}))
 
 
-# --- dados fora do _default.cfg ---------------------------------------------------------
-# Trechos reais: fn_info_game_pz / fn_info_game_vh (info_game.sh), fn_info_messages_terraria
-# (info_messages.sh) e o server.ini padrao do Project Zomboid (Game-Server-Configs).
+# --- data outside _default.cfg ----------------------------------------------------------
+# Real excerpts: fn_info_game_pz / fn_info_game_vh (info_game.sh), fn_info_messages_terraria
+# (info_messages.sh) and the default Project Zomboid server.ini (Game-Server-Configs).
 
 INFO_GAME = '''
 fn_info_game_pz() {
@@ -219,7 +219,7 @@ def _extras(short: str, configs: dict[str, str] | None = None, messages: str = "
 
 
 def test_porta_que_mora_no_config_do_jogo_sai_da_config_padrao():
-    """Era o caso do 7777: sem porta, o formulario mostrava o EXEMPLO do campo como se fosse ela."""
+    """This was the 7777 case: without a port, the form showed the field's EXAMPLE as if it were the port."""
     s = imp.sugerir("Project Zomboid", PZ_CFG, _extras("pz", {"server.ini": PZ_SERVER_INI}))
     assert (s["game_port"], s["ports"]) == (16261, "16261/udp")
     assert any("server.ini" in w for w in s["warnings"]), "diz de onde a porta veio"
@@ -233,7 +233,7 @@ def test_sem_a_config_padrao_continua_parcial_e_avisa():
 
 
 def test_consulta_derivada_da_porta_entra_no_firewall_e_o_jogo_para_de_andar():
-    """Valheim: sem a 2457 o servidor nao aparece na lista, e o broker nao sabe avisa-la."""
+    """Valheim: without 2457 the server does not show up in the list, and the broker cannot tell the game about it."""
     s = imp.sugerir("Valheim", VALHEIM, _extras("vh"))
     assert s["ports"] == "2456/udp 2457/udp"
     assert s["query_port"] == 2457
@@ -295,15 +295,15 @@ def test_pasta_de_config_so_dentro_da_pasta_do_jogo():
            "servercfg": "GameUserSettings.ini"}
     folder = "/opt/game/ShooterGame/Saved/Config/LinuxServer"
     assert imp.config_location(ark) == (folder, [f"{folder}/GameUserSettings.ini"])
-    # Fora de /opt/game (pasta do LinuxGSM) ou com o nome da instancia: nada.
+    # Outside /opt/game (a LinuxGSM folder) or using the instance name: nothing.
     assert imp.config_location({"servercfgdir": "${HOME}/Zomboid/Server", "servercfg": "${selfname}.ini"}) == ("", [])
     assert imp.config_location({"servercfgdir": "${serverfiles}", "servercfg": "${selfname}.xml"}) == ("/opt/game", [])
-    # Formato que a tela Config nao abre fica so na pasta.
+    # A format the Config screen cannot open stays as the folder only.
     assert imp.config_location({"servercfgdir": "${serverfiles}", "servercfg": "config.lua"}) == ("/opt/game", [])
 
 
 def test_argumento_recusado_pelo_broker_esvazia_o_campo_e_nao_descarta_a_sugestao(monkeypatch):
-    """O importador lia `erro.campo`, que nao existe: a sugestao inteira sumia."""
+    """The importer read `erro.campo`, which does not exist: the whole suggestion vanished."""
     real = imp.validate_dynamic
 
     def refuse_args(data):

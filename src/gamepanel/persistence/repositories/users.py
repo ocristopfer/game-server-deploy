@@ -1,10 +1,10 @@
-"""Leitura e escrita da tabela `users`, incluindo o estado do segundo fator."""
+"""Reads and writes the `users` table, including the second-factor state."""
 from __future__ import annotations
 
 import sqlite3
 
-# O que a sessao precisa saber de quem esta logado. Nunca o hash da senha nem o segredo
-# do 2FA: eles so saem da tabela nas funcoes que de fato os conferem.
+# What the session needs to know about who is logged in. Never the password hash nor the
+# 2FA secret: those only leave the table in the functions that actually check them.
 SESSION_FIELDS = "id, username, role, created_at, totp_enabled, lang"
 LIST_FIELDS = "id, username, role, created_at, totp_enabled"
 
@@ -22,7 +22,7 @@ def id_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | Non
 
 
 def for_session(conn: sqlite3.Connection, uid: int) -> sqlite3.Row | None:
-    """So os campos que a sessao usa — sem hash de senha nem segredo do 2FA."""
+    """Only the fields the session uses - no password hash or 2FA secret."""
     return conn.execute(
         f"SELECT {SESSION_FIELDS} FROM users WHERE id = ?", (uid,)).fetchone()  # noqa: S608
 
@@ -43,14 +43,14 @@ def two_factor_state(conn: sqlite3.Connection, uid: int) -> sqlite3.Row | None:
 
 
 def count_admins_besides(conn: sqlite3.Connection, admin_role: str, uid: int) -> int:
-    """Quantos administradores sobram se este sair. Zero e o caminho para um painel
-    sem ninguem que possa administra-lo."""
+    """How many administrators remain if this one leaves. Zero is the road to a panel with
+    nobody able to administer it."""
     return conn.execute(
         "SELECT COUNT(*) FROM users WHERE role = ? AND id <> ?", (admin_role, uid),
     ).fetchone()[0]
 
 
-# --- escrita ------------------------------------------------------------------------
+# --- writing ------------------------------------------------------------------------
 
 def insert(conn: sqlite3.Connection, username: str, password_hash: str, role: str,
            created_at: str) -> None:
@@ -81,14 +81,14 @@ def delete(conn: sqlite3.Connection, uid: int) -> None:
     conn.execute("DELETE FROM users WHERE id = ?", (uid,))
 
 
-# --- segundo fator --------------------------------------------------------------------
+# --- second factor --------------------------------------------------------------------
 
 def spend_step(conn: sqlite3.Connection, uid: int, step: int) -> bool:
-    """Gasta um passo do TOTP, e devolve se ELE conseguiu.
+    """Spend a TOTP step, and return whether THIS call got it.
 
-    O `WHERE totp_last_step < ?` faz do UPDATE o portao: dois pedidos com o MESMO codigo
-    ao mesmo tempo nao passam os dois — o segundo nao encontra linha com passo menor.
-    Conferir antes e gravar depois deixaria a janela aberta entre as duas.
+    The `WHERE totp_last_step < ?` makes the UPDATE the gate: two requests with the SAME
+    code at the same time do not both pass - the second finds no row with a lower step.
+    Checking first and writing afterwards would leave the window open between the two.
     """
     return conn.execute(
         "UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?",
@@ -97,8 +97,8 @@ def spend_step(conn: sqlite3.Connection, uid: int, step: int) -> bool:
 
 def spend_recovery(conn: sqlite3.Connection, uid: int, remaining: str,
                    previous: str) -> bool:
-    """Mesmo portao, para os codigos de recuperacao: so grava se a lista ainda for a que
-    foi lida, entao dois pedidos nao gastam o mesmo codigo."""
+    """Same gate, for the recovery codes: only writes if the list is still the one that was
+    read, so two requests cannot spend the same code."""
     return conn.execute(
         "UPDATE users SET totp_recovery = ? WHERE id = ? AND totp_recovery = ?",
         (remaining, uid, previous)).rowcount == 1
@@ -116,8 +116,9 @@ def set_recovery(conn: sqlite3.Connection, uid: int, recovery: str) -> None:
 
 
 def disable_two_factor(conn: sqlite3.Connection, uid: int) -> None:
-    """Zera TUDO do segundo fator, inclusive o passo e os codigos de recuperacao: deixar
-    o segredo para tras faria um app antigo continuar gerando codigo valido ao religar."""
+    """Clear EVERYTHING of the second factor, including the step and the recovery codes:
+    leaving the secret behind would let an old app keep generating valid codes once 2FA is
+    turned back on."""
     conn.execute(
         "UPDATE users SET totp_secret = '', totp_enabled = 0, totp_last_step = 0,"
         " totp_recovery = '' WHERE id = ?", (uid,))

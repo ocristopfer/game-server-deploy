@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Cria/atualiza o container do BROKER (cria instancias de jogo no Proxmox e abre portas no OPNsense).
-# Executado NO HOST PROXMOX pelo deploy-broker.ps1 (que envia este bundle via scp).
+# Creates/updates the BROKER container (creates game instances on Proxmox and opens ports on OPNsense).
+# Run ON THE PROXMOX HOST by deploy-broker.ps1 (which sends this bundle via scp).
 #
-# Bundle (pasta sem subpastas de config, so o que o scp leva):
-#   broker.conf.env      configuracao NAO secreta (CT, rede, faixas, cotas)
-#   broker.secrets.env   Proxmox e OPNsense (token, chave, segredo)  -> 0600, apagado no fim
-#   gamebroker/  lib/  games/   o codigo, os instaladores e o catalogo curado
+# Bundle (folder without config subfolders, only what scp carries):
+#   broker.conf.env      NON-secret configuration (CT, network, ranges, quotas)
+#   broker.secrets.env   Proxmox and OPNsense (token, key, secret)  -> 0600, deleted at the end
+#   gamebroker/  lib/  games/   the code, the installers and the curated catalog
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,16 +19,16 @@ INSTALLER="${INSTALLER:-$SCRIPT_DIR/install-release.sh}"
 CONF_DIR=/etc/gamebroker
 DATA_DIR=/var/lib/gamebroker
 APP_USER=gamebroker
-# Modulos que ficam FORA do CT de producao: dobles de teste e o broker de brinquedo do compose.
+# Modules kept OUT of the production CT: test doubles and the compose toy broker.
 DO_NOT_SHIP='^(test_.*|conftest|fakes|fake_http|dev)\.py$'
 
 msg() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m[aviso]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[erro]\033[0m %s\n' "$*" >&2; exit 1; }
 
-# Sem isto uma falha dentro de $(...) encerra o script em silencio (set -e + pipefail): o `die`
-# com a explicacao, logo depois, nunca chega a rodar. BASH_COMMAND e o texto do comando ANTES da
-# expansao, entao nenhum segredo aparece aqui.
+# Without this a failure inside $(...) ends the script silently (set -e + pipefail): the `die`
+# with the explanation, right after it, never gets to run. BASH_COMMAND is the command text BEFORE
+# expansion, so no secret shows up here.
 on_error() { die "Provisionamento falhou na linha ${1} executando: ${2}"; }
 trap 'on_error "${LINENO}" "${BASH_COMMAND}"' ERR
 
@@ -51,8 +51,8 @@ load_env_file() {
   set +a
 }
 
-# Uma linha NOME="valor" para o EnvironmentFile do systemd. So `\` e `"` precisam de escape
-# ali ($ nao e expandido); quebra de linha nao tem como ser representada, entao e recusada.
+# One NAME="value" line for the systemd EnvironmentFile. Only `\` and `"` need escaping
+# there ($ is not expanded); a line break cannot be represented, so it is refused.
 env_line() {
   local name="$1" value="$2"
   [[ "$value" != *$'\n'* ]] || die "O valor de $name tem quebra de linha"
@@ -70,12 +70,14 @@ resolve_variables() {
   TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
   TEMPLATE_PATTERN="${TEMPLATE_PATTERN:-debian-13-standard_.*_amd64\.tar\.zst}"
   BRIDGE="${BRIDGE:-vmbr0}"
-  CT_PASSWORD="${CT_PASSWORD:-changeme}"
+  # Without a password the CT root stays LOCKED (you get in with `pct enter` or the SSH key).
+  # The default used to be "changeme": every CT was born with the same well-known console password.
+  CT_PASSWORD="${CT_PASSWORD:-}"
   TZ="${TZ:-America/Sao_Paulo}"
   RECREATE_CT="${RECREATE_BROKER_CT:-0}"
 
   IP_CIDR="${BROKER_IP_CIDR:-}"
-  [[ -n "$IP_CIDR" && "$IP_CIDR" != "dhcp" ]] || die "BROKER_IP_CIDR precisa ser um IP fixo (ex.: 192.168.2.18/24): o certificado e a regra de firewall dependem dele"
+  [[ -n "$IP_CIDR" && "$IP_CIDR" != "dhcp" ]] || die "BROKER_IP_CIDR precisa ser um IP fixo (ex.: 10.20.1.18/24): o certificado e a regra de firewall dependem dele"
   CT_IP="${IP_CIDR%%/*}"
   GATEWAY="${BROKER_GATEWAY:-${GATEWAY:-}}"
   [[ -n "$GATEWAY" ]] || die "BROKER_GATEWAY (ou GATEWAY) obrigatorio"
@@ -86,7 +88,7 @@ resolve_variables() {
   SWAP="${BROKER_SWAP:-256}"
   BROKER_PORT="${BROKER_PORT:-8443}"
 
-  # Sem isto o broker nem sobe (config.py recusa); melhor falhar aqui, no deploy, com o nome.
+  # Without these the broker does not even start (config.py refuses); better to fail here, at deploy, with the name.
   local var
   for var in PROXMOX_URL PROXMOX_TOKEN PROXMOX_NODE PROXMOX_STORAGE PROXMOX_BRIDGE OPNSENSE_URL \
              OPNSENSE_KEY OPNSENSE_SECRET BROKER_IP_PREFIX; do
@@ -103,18 +105,19 @@ validate_bundle() {
   need_cmd pct
   need_cmd pveam
   need_cmd openssl
-  # Havia aqui uma lista de arquivos do pacote (app.py, services/catalog.py, ...) que
-  # precisava crescer junto com o codigo e nunca crescia. O codigo agora chega num
-  # tarball unico e quem confere o conteudo e o sha256 dele.
+  # There used to be a list of package files here (app.py, services/catalog.py, ...) that
+  # had to grow along with the code and never did. The code now arrives in a single
+  # tarball and its sha256 is what checks the content.
   [[ -f "$RELEASE_ENV_FILE" ]] || die "release.env nao encontrado: $RELEASE_ENV_FILE (rode pelo deploy-broker.ps1)"
   [[ -f "$INSTALLER" ]] || die "install-release.sh nao encontrado: $INSTALLER"
   load_env_file "$RELEASE_ENV_FILE"
   [[ -n "${RELEASE_TARBALL:-}" ]] || die "RELEASE_TARBALL vazio em $RELEASE_ENV_FILE"
   [[ -n "${RELEASE_SHA256:-}" ]] || die "RELEASE_SHA256 vazio em $RELEASE_ENV_FILE"
   [[ -f "$SCRIPT_DIR/$RELEASE_TARBALL" ]] || die "release nao encontrado no bundle: $RELEASE_TARBALL"
-  # lib/ e games/ continuam soltos no bundle: sao dados, nao o pacote Python.
-  [[ -f "$SCRIPT_DIR/lib/ct-install.sh" && -f "$SCRIPT_DIR/lib/ct-phases.sh" && -f "$SCRIPT_DIR/lib/ct-firewall.sh" ]] \
-    || die "lib/ct-install.sh, lib/ct-phases.sh e lib/ct-firewall.sh sao obrigatorios no bundle"
+  # lib/ and games/ still go loose in the bundle: they are data, not the Python package.
+  [[ -f "$SCRIPT_DIR/lib/ct-install.sh" && -f "$SCRIPT_DIR/lib/ct-phases.sh" && -f "$SCRIPT_DIR/lib/ct-firewall.sh" \
+     && -f "$SCRIPT_DIR/lib/ct-panel-access.sh" ]] \
+    || die "lib/ct-install.sh, lib/ct-phases.sh, lib/ct-firewall.sh e lib/ct-panel-access.sh sao obrigatorios no bundle"
   compgen -G "$SCRIPT_DIR/games/*.env" >/dev/null || die "games/*.env nao encontrado no bundle"
 }
 
@@ -132,8 +135,8 @@ ensure_debian_template() {
   fi
 }
 
-# O template que o broker vai usar para os CTs de JOGO (nao o do proprio broker). Sem
-# PROXMOX_TEMPLATE no secrets, pega o Debian 13 mais novo do storage.
+# The template the broker will use for GAME CTs (not the broker's own). Without
+# PROXMOX_TEMPLATE in the secrets, takes the newest Debian 13 in the storage.
 resolve_game_template() {
   [[ -z "${PROXMOX_TEMPLATE:-}" ]] || return 0
   local name
@@ -155,8 +158,8 @@ ensure_container() {
     ct_exists=0
   fi
 
-  # O CT do broker NAO entra no pool dos jogos: o token do Proxmox so enxerga o pool, e o
-  # broker nao pode nem listar (muito menos destruir) o proprio container.
+  # The broker CT does NOT join the games pool: the Proxmox token only sees the pool, and the
+  # broker must not even list (let alone destroy) its own container.
   if [[ "$ct_exists" -eq 0 ]]; then
     msg "Criando CT $CTID ($CT_HOSTNAME) - ${CORES} core(s), ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB"
     pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" \
@@ -169,7 +172,7 @@ ensure_container() {
       --ostype debian \
       --unprivileged 1 \
       --net0 "$NET0" \
-      --password "$CT_PASSWORD" \
+      ${CT_PASSWORD:+--password "$CT_PASSWORD"} \
       --onboot 1 \
       --timezone "$TZ" \
       --tags "broker;gamepanel"
@@ -207,9 +210,9 @@ start_container() {
 }
 
 install_packages() {
-  # iputils-ping: o broker confere se um IP ja responde na rede antes de escolhe-lo.
-  # openssh-client: e ele que entra nos CTs de jogo. NAO instala openssh-server: nada entra
-  # no broker por SSH (o codigo chega por `pct push`, do Proxmox).
+  # iputils-ping: the broker checks whether an IP already answers on the network before picking it.
+  # openssh-client: it is what logs into the game CTs. Does NOT install openssh-server: nothing gets
+  # into the broker over SSH (the code arrives via `pct push`, from Proxmox).
   msg "Instalando dependencias no CT (python3-flask, gunicorn, openssh-client, openssl, ping)"
   run_ct "export DEBIAN_FRONTEND=noninteractive && apt-get update -qq && \
     apt-get install -y -qq python3 python3-flask gunicorn openssh-client openssl iputils-ping \
@@ -224,7 +227,7 @@ ensure_app_user() {
   run_ct "install -d -o root -g root -m 0755 ${APP_DIR}"
 }
 
-# `pct push` nao cria diretorio e nao e recursivo: cria as pastas conforme aparecem.
+# `pct push` does not create directories and is not recursive: create the folders as they show up.
 push_tree() {
   local source_dir="$1" dest_dir="$2" src rel
   while IFS= read -r src; do
@@ -240,35 +243,35 @@ push_tree() {
 publish_application() {
   msg "Publicando o broker em ${APP_DIR}"
 
-  # lib/ e games/ nao sao o pacote Python: sao os scripts de instalacao de jogo e o
-  # catalogo curado, lidos pelo broker em caminho absoluto. Continuam indo soltos, e
-  # trocados por INTEIRO - nao ha lista de subpasta para ficar para tras.
+  # lib/ and games/ are not the Python package: they are the game install scripts and the
+  # curated catalog, read by the broker at an absolute path. They still go loose, and are
+  # replaced ENTIRELY - there is no subfolder list to fall behind.
   run_ct "rm -rf ${APP_DIR}/lib ${APP_DIR}/games"
   run_ct "install -d ${APP_DIR}/lib ${APP_DIR}/games"
   push_tree "$SCRIPT_DIR/lib" "${APP_DIR}/lib"
   push_tree "$SCRIPT_DIR/games" "${APP_DIR}/games"
 
-  # O CODIGO vem no tarball de release, verificado pelo sha256 e instalado numa pasta
-  # propria com o symlink `current` apontando para ela.
+  # The CODE comes in the release tarball, verified by its sha256 and installed in its own
+  # folder with the `current` symlink pointing to it.
   local remote_tmp=/tmp/gamebroker-release
   run_ct "rm -rf '$remote_tmp' && install -d '$remote_tmp'"
-  # pct push, e nao o `tee` do push_file_to_ct: o tarball e binario e tem de chegar byte
-  # a byte - e o sha256 do outro lado nao perdoa um unico byte trocado.
+  # pct push, and not the `tee` of push_file_to_ct: the tarball is binary and must arrive byte
+  # for byte - and the sha256 on the other side does not forgive a single changed byte.
   pct push "$CTID" "$SCRIPT_DIR/$RELEASE_TARBALL" "${remote_tmp}/${RELEASE_TARBALL}" --perms 0644
   pct push "$CTID" "$INSTALLER" "${remote_tmp}/install-release.sh" --perms 0755
 
-  # Sem sonda de saude aqui, e o motivo nao e mais a ordem (a unit ja foi escrita): o
-  # /health do broker e HTTPS com certificado proprio e lista de IPs, e sondar isso de
-  # dentro do CT com wget pediria --no-check-certificate, justo o que este projeto nao
-  # faz em lugar nenhum. A sonda de verdade mora no start_broker, que fixa a impressao
-  # do certificado; o preco e o rollback do instalador nao valer aqui, e e por isso que
-  # o start_broker falha ALTO quando a saude nao responde.
+  # No health probe here, and the reason is no longer the ordering (the unit is already written):
+  # the broker's /health is HTTPS with its own certificate and an IP list, and probing it from
+  # inside the CT with wget would need --no-check-certificate, exactly what this project does
+  # nowhere. The real probe lives in start_broker, which pins the certificate fingerprint;
+  # the price is that the installer's rollback does not apply here, and that is why
+  # start_broker fails LOUDLY when health does not answer.
   run_ct "bash '${remote_tmp}/install-release.sh' gamebroker '${remote_tmp}/${RELEASE_TARBALL}' '${RELEASE_SHA256}' ${APP_DIR} ${SERVICE_NAME}" \
     || die "A instalacao do release falhou dentro do CT (veja a saida acima)"
   run_ct "rm -rf '$remote_tmp'"
   run_ct "chown -R root:root ${APP_DIR}/lib ${APP_DIR}/games"
 
-  # Falhar aqui e melhor do que o servico cair no start com ModuleNotFoundError.
+  # Failing here is better than the service dying at start with ModuleNotFoundError.
   run_ct "cd ${APP_DIR}/current && python3 -c 'import gamebroker.wsgi'" \
     || die "O pacote do broker nao importa no CT a partir de ${APP_DIR}/current"
 }
@@ -279,8 +282,8 @@ ensure_ssh_key() {
   run_ct "chown ${APP_USER}:${APP_USER} ${CONF_DIR}/ssh/id_ed25519 ${CONF_DIR}/ssh/id_ed25519.pub && chmod 0600 ${CONF_DIR}/ssh/id_ed25519 && chmod 0644 ${CONF_DIR}/ssh/id_ed25519.pub"
 }
 
-# Certificado autoassinado do PROPRIO broker. O painel o fixa pela impressao SHA-256 (nao ha CA
-# nenhuma), entao ele so e trocado quando pedido: trocar invalida a configuracao do painel.
+# Self-signed certificate of the broker ITSELF. The panel pins it by SHA-256 fingerprint (there is
+# no CA at all), so it is only replaced on request: replacing it invalidates the panel configuration.
 ensure_tls() {
   msg "Certificado TLS do broker"
   if [[ "${BROKER_ROTATE_CERT:-0}" == "1" ]]; then
@@ -295,8 +298,8 @@ ensure_tls() {
   [[ -n "$BROKER_CERT_SHA256" ]] || die "Nao consegui calcular a impressao do certificado do broker"
 }
 
-# Token que o PAINEL usa para falar com o broker. Persiste entre deploys (regenerar quebraria
-# o painel), e so muda com BROKER_ROTATE_TOKEN=1.
+# Token the PANEL uses to talk to the broker. Persists across deploys (regenerating would break
+# the panel), and only changes with BROKER_ROTATE_TOKEN=1.
 ensure_token() {
   msg "Token do painel para o broker"
   if [[ "${BROKER_ROTATE_TOKEN:-0}" == "1" ]]; then
@@ -309,8 +312,8 @@ ensure_token() {
 }
 
 resolve_panel_pubkey() {
-  # A chave do painel entra em todo CT novo (junto com a do broker), para o painel operar o
-  # servidor depois. Vem do proprio painel, como o deploy-game.ps1 ja faz.
+  # The panel key goes into every new CT (along with the broker's), so the panel can operate the
+  # server afterwards. It comes from the panel itself, as deploy-game.ps1 already does.
   BROKER_PANEL_PUBKEY="${BROKER_PANEL_PUBKEY:-}"
   if [[ -z "$BROKER_PANEL_PUBKEY" && -n "$ADMIN_CTID" ]]; then
     BROKER_PANEL_PUBKEY="$(pct exec "$ADMIN_CTID" -- cat /etc/gamepanel/id_ed25519.pub 2>/dev/null | head -n1 | tr -d '\r\n' || true)"
@@ -318,16 +321,16 @@ resolve_panel_pubkey() {
   [[ -n "$BROKER_PANEL_PUBKEY" ]] || die "Chave publica do painel nao encontrada: defina ADMIN_CTID (o CT do painel) ou BROKER_PANEL_PUBKEY no .env"
 }
 
-# Impressao SHA-256 do certificado de um servidor https, lida do host. TOFU: confia no que o
-# servidor apresenta AGORA e fixa. O resumo imprime as duas para voce conferir com o que o
-# navegador mostra (ou com o check-broker-access.ps1).
+# SHA-256 fingerprint of an https server's certificate, read from the host. TOFU: trusts what the
+# server presents NOW and pins it. The summary prints both so you can compare them with what the
+# browser shows (or with check-broker-access.ps1).
 fingerprint_of() {
   local url="$1" hostport host port
   hostport="${url#*://}"; hostport="${hostport%%/*}"
   host="${hostport%%:*}"; port="${hostport##*:}"
   [[ "$port" != "$hostport" ]] || port=443
-  # timeout: um firewall que descarta o pacote deixaria o openssl esperando por minutos. O `|| true`
-  # devolve texto vazio em vez de derrubar o $(...): quem chama explica o que fazer.
+  # timeout: a firewall that drops the packet would leave openssl waiting for minutes. The `|| true`
+  # returns empty text instead of killing the $(...): the caller explains what to do.
   { echo | timeout 15 openssl s_client -connect "${host}:${port}" -servername "$host" 2>/dev/null \
       | openssl x509 -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2 | tr -d '\r\n'; } || true
 }
@@ -355,17 +358,17 @@ render_broker_config() {
   {
     echo "# Gerado pelo provision-broker-lxc.sh - o proximo deploy sobrescreve."
     env_line BROKER_TOKEN "$BROKER_TOKEN"
-    # Loopback junto do painel: o teste de saude do proprio deploy roda de dentro do CT. So
-    # processo do CT alcanca 127.0.0.1, e quem esta la dentro ja tem o token. Lista VAZIA = qualquer
-    # origem (so o token), e ai o loopback nao entra: restringiria em vez de acrescentar.
+    # Loopback next to the panel: the deploy's own health check runs from inside the CT. Only a
+    # process in the CT reaches 127.0.0.1, and whoever is in there already has the token. EMPTY list = any
+    # source (token only), and then loopback is not added: it would restrict instead of adding.
     if [[ -n "${BROKER_ALLOW_IPS:-}" ]]; then
       env_line BROKER_ALLOW_IPS "${BROKER_ALLOW_IPS},127.0.0.1"
     else
       env_line BROKER_ALLOW_IPS ""
     fi
-    # Quem pode abrir SSH nos CTs de jogo depois de instalados (o firewall de dentro deles,
-    # lib/ct-firewall.sh): o painel, que administra, e este broker, que instala e limpa a chave.
-    # Sem o IP do painel os jogos nascem SEM firewall interno - com ele errado, trancados.
+    # Who may open SSH to the game CTs after they are installed (the firewall inside them,
+    # lib/ct-firewall.sh): the panel, which manages them, and this broker, which installs and removes the key.
+    # Without the panel IP the games are born WITHOUT an internal firewall - with it wrong, locked out.
     if [[ -n "${PANEL_IP:-}" && "${CT_FIREWALL:-1}" != "0" ]]; then
       env_line BROKER_FIREWALL_SOURCES "${PANEL_IP},${CT_IP}"
     fi
@@ -379,8 +382,8 @@ render_broker_config() {
     env_line BROKER_IP_PREFIX "$BROKER_IP_PREFIX"
     env_line BROKER_IP_INICIO "${BROKER_IP_INICIO:-102}"
     env_line BROKER_IP_FIM "${BROKER_IP_FIM:-199}"
-    # O CTID de cada jogo e a base + o ultimo numero do IP (.102 -> 302): "3" + os dois ultimos
-    # digitos do IP. 0 = CTID escolhido a parte (BROKER_CTID_INICIO/FIM, so nesse modo).
+    # Each game's CTID is the base + the last number of the IP (.102 -> 302): "3" + the last two
+    # digits of the IP. 0 = CTID chosen separately (BROKER_CTID_INICIO/FIM, only in that mode).
     env_line BROKER_CTID_BASE "${BROKER_CTID_BASE:-200}"
     env_line BROKER_PORT_INICIO "${BROKER_PORT_INICIO:-31000}"
     env_line BROKER_PORT_FIM "${BROKER_PORT_FIM:-31999}"
@@ -399,8 +402,8 @@ render_broker_config() {
     env_line OPNSENSE_SECRET "$OPNSENSE_SECRET"
     env_line OPNSENSE_CERT_SHA256 "$OPNSENSE_CERT_SHA256"
     env_line OPNSENSE_WAN "$OPNSENSE_WAN"
-    # Conta Steam: opcional (so jogo que nao baixa anonimo, o DayZ). Vazia = esse jogo fica
-    # manual; o broker recusa subir com so uma das duas, e diz qual falta.
+    # Steam account: optional (only for a game that cannot download anonymously, DayZ). Empty = that game
+    # stays manual; the broker refuses to start with only one of the two, and says which one is missing.
     env_line STEAM_USER "${STEAM_USER:-}"
     env_line STEAM_PASS "${STEAM_PASS:-}"
   } > "$tmp_file"
@@ -423,13 +426,13 @@ Wants=network-online.target
 Type=simple
 User=${APP_USER}
 Group=${APP_USER}
-# A release corrente, por symlink: trocar de versao (ou voltar) e mover o link e
-# reiniciar. O systemd resolve o caminho no start, entao cada restart pega o que o
-# link aponta AGORA.
+# The current release, via symlink: switching versions (or rolling back) is moving the link and
+# restarting. systemd resolves the path at start, so every restart picks up what the
+# link points to NOW.
 WorkingDirectory=${APP_DIR}/current
 EnvironmentFile=${CONF_DIR}/broker.env
-# UM worker de proposito: a trava que impede duas criacoes escolherem o mesmo IP mora na
-# memoria do processo. As threads atendem o polling do painel enquanto uma criacao roda.
+# ONE worker on purpose: the lock that stops two creations from picking the same IP lives in
+# process memory. The threads serve the panel's polling while a creation runs.
 ExecStart=/usr/bin/gunicorn --workers 1 --threads 8 --timeout 120 \\
   --certfile ${CONF_DIR}/tls/cert.pem --keyfile ${CONF_DIR}/tls/key.pem \\
   --bind 0.0.0.0:${BROKER_PORT} --access-logfile - 'gamebroker.wsgi:create_app_from_env()'
@@ -452,7 +455,7 @@ EOF
   run_ct "systemctl daemon-reload && systemctl enable gamebroker.service"
 }
 
-# "https://192.168.2.1:8443/" -> "192.168.2.1:8443" (porta padrao do esquema quando falta).
+# "https://10.20.1.1:8443/" -> "10.20.1.1:8443" (the scheme's default port when missing).
 endpoint_of() {
   local url="$1" rest host port
   rest="${url#*://}"
@@ -465,13 +468,13 @@ endpoint_of() {
   printf '%s:%s' "$host" "$port"
 }
 
-# Firewall de dentro do CT do broker (lib/ct-firewall.sh, papel "broker"): a API so atende o
-# painel, e o broker so sai para o Proxmox, o OPNsense, o SSH/ping dos jogos, DNS e apt. Um
-# broker invadido nao vira ponte para o resto da rede.
+# Firewall inside the broker CT (lib/ct-firewall.sh, role "broker"): the API only serves the
+# panel, and the broker only goes out to Proxmox, OPNsense, the games' SSH/ping, DNS and apt. A
+# compromised broker does not become a bridge to the rest of the network.
 #
-# Roda ANTES de subir o servico: a sonda de saude de `start_broker` e o que prova, com as
-# regras novas ja valendo, que Proxmox e OPNsense continuam alcancaveis. Se nao estiverem, o
-# firewall sai (fica o broker funcionando e o aviso), em vez de um broker cego.
+# Runs BEFORE starting the service: the `start_broker` health probe is what proves, with the
+# new rules already in force, that Proxmox and OPNsense are still reachable. If they are not, the
+# firewall comes off (the broker keeps working, with the warning), instead of a blind broker.
 apply_broker_firewall() {
   if [[ "${CT_FIREWALL:-1}" == "0" ]]; then
     warn "CT_FIREWALL=0: o CT do broker fica SEM firewall interno"
@@ -513,7 +516,7 @@ start_broker() {
     die "gamebroker.service nao subiu (a lista de problemas de configuracao esta no log acima)"
   fi
   [[ "${BROKER_SKIP_HEALTHCHECK:-0}" != "1" ]] || return 0
-  # Pede /v1/health de dentro do CT: prova o TLS, o token e que Proxmox e OPNsense respondem.
+  # Requests /v1/health from inside the CT: proves TLS, the token, and that Proxmox and OPNsense answer.
   local tmp_file
   tmp_file="$(mktemp)"
   cat > "$tmp_file" <<PY
@@ -537,8 +540,8 @@ PY
   local unhealthy="O broker esta de pe, mas nem tudo respondeu (veja 'saude' acima). Se for a API do Proxmox ou do OPNsense, falta a regra de firewall do CT ${CT_IP} para ela (ver REGRAS DE FIREWALL no fim)"
   if ! run_ct "python3 /root/saude-do-broker.py"; then
     if [[ "${BROKER_FIREWALL_APPLIED:-0}" == "1" ]]; then
-      # Com as regras novas algo nao respondeu: testa sem elas. Se ai responde, a culpa e das
-      # regras, e o broker fica funcionando SEM firewall (com o aviso) em vez de cego.
+      # With the new rules something did not answer: test without them. If it answers then, the rules
+      # are to blame, and the broker keeps working WITHOUT a firewall (with the warning) instead of blind.
       warn "Com o firewall do CT ligado nem tudo respondeu; testando sem ele"
       run_ct "/usr/local/sbin/ct-firewall off"
       if run_ct "python3 /root/saude-do-broker.py"; then
@@ -554,9 +557,9 @@ PY
   run_ct "rm -f /root/saude-do-broker.py"
 }
 
-# Opcional (BROKER_CONFIGURE_PANEL=1): grava no painel a URL, o token e a impressao do broker.
-# O recurso continua DESLIGADO la (GAMEPANEL_ALLOW_BROKER=0) ate BROKER_ENABLE_IN_PANEL=1: ligar
-# num painel exposto a internet exige uma camada extra de autenticacao antes.
+# Optional (BROKER_CONFIGURE_PANEL=1): writes the broker URL, token and fingerprint into the panel.
+# The feature stays OFF there (GAMEPANEL_ALLOW_BROKER=0) until BROKER_ENABLE_IN_PANEL=1: turning it on
+# in a panel exposed to the internet requires an extra authentication layer first.
 configure_panel() {
   [[ "${BROKER_CONFIGURE_PANEL:-0}" == "1" ]] || return 0
   [[ -n "$ADMIN_CTID" ]] || die "BROKER_CONFIGURE_PANEL=1 exige ADMIN_CTID"
@@ -635,7 +638,7 @@ EOF
 }
 
 cleanup_secrets() {
-  # O bundle no host tem copia dos segredos: nao deixa sobrando em /root.
+  # The bundle on the host holds a copy of the secrets: do not leave it lying in /root.
   rm -f "$SECRETS_ENV_FILE"
 }
 
@@ -657,20 +660,20 @@ main() {
   resolve_upstream_fingerprints
   render_broker_config
   render_service
-  # A config e a unit vao ANTES de publicar, e a ordem importa: e o `install-release.sh`
-  # que reinicia o servico e faz a sonda de saude, e ele roda dentro do publish. Com a
-  # unit escrita depois, a sonda testava o binomio ERRADO -- unit velha com codigo novo --
-  # e o resultado dela nao queria dizer nada:
+  # The config and the unit go BEFORE publishing, and the order matters: it is `install-release.sh`
+  # that restarts the service and runs the health probe, and it runs inside the publish. With the
+  # unit written afterwards, the probe tested the WRONG pair -- old unit with new code --
+  # and its result meant nothing:
   #
-  #   - se a unit velha chamava algo que o codigo novo nao tem mais (foi o caso, com
-  #     `gamebroker.wsgi:criar_app_de_ambiente()`), a sonda falha, o install-release faz
-  #     rollback e o script morre AQUI, justamente antes do passo que consertaria a unit.
-  #     O deploy fica sem saida: nao ha como chegar na unit nova;
-  #   - e se o layout velho ainda estivesse importavel, a sonda PASSA contra o codigo
-  #     velho e o deploy se declara bem-sucedido sem ter trocado nada.
+  #   - if the old unit called something the new code no longer has (that was the case, with
+  #     `gamebroker.wsgi:criar_app_de_ambiente()`), the probe fails, install-release rolls
+  #     back and the script dies HERE, right before the step that would fix the unit.
+  #     The deploy is stuck: there is no way to reach the new unit;
+  #   - and if the old layout were still importable, the probe PASSES against the old
+  #     code and the deploy declares success without having changed anything.
   #
-  # Nesta ordem a sonda ve unit nova, env novo e codigo novo, e o rollback dela volta
-  # para um estado que de fato funcionava.
+  # In this order the probe sees the new unit, new env and new code, and its rollback goes back
+  # to a state that actually worked.
   publish_application
   apply_broker_firewall
   start_broker

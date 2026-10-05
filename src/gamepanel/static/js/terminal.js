@@ -1,17 +1,17 @@
-/* Terminal do painel: emulador VT100/xterm minimo + transporte por HTTP.
+/* Panel terminal: minimal VT100/xterm emulator + HTTP transport.
  *
- * Por que escrever um emulador em vez de usar xterm.js: o container do painel nao
- * baixa pacote de CDN (e nao tem npm), entao tudo aqui e servido pelo proprio painel.
- * O suficiente esta implementado para rodar bash, vim, htop, top e menus curses:
- * buffer de tela, regiao de rolagem, tela alternativa, cores (16/256/RGB) e o teclado.
+ * Why write an emulator instead of using xterm.js: the panel container does not
+ * download packages from a CDN (and has no npm), so everything here is served by the panel itself.
+ * Enough is implemented to run bash, vim, htop, top and curses menus:
+ * screen buffer, scroll region, alternate screen, colors (16/256/RGB) and the keyboard.
  *
- * Transporte: nada de WebSocket (o painel roda em gunicorn sync). A saida vem de um
- * long-poll com offset em bytes; as teclas sobem num POST por vez, em ordem.
+ * Transport: no WebSocket (the panel runs on sync gunicorn). Output comes from a
+ * long-poll with a byte offset; keystrokes go up one POST at a time, in order.
  */
 (function () {
   'use strict';
 
-  // ------------------------------------------------------------------ cores
+  // ------------------------------------------------------------------ colors
   function buildPalette() {
     var p = [
       '#0c0c0c', '#cd3131', '#0dbc79', '#e5e510', '#2472c8', '#bc3fbc', '#11a8cd', '#cccccc',
@@ -28,8 +28,8 @@
 
   var BOLD = 1, DIM = 2, ITALIC = 4, UNDER = 8, INVERSE = 16;
 
-  // Larguras duplas mais comuns (CJK, emoji). Sem isso as bordas de menus curses
-  // em japones/emoji saem deslocadas.
+  // Most common double widths (CJK, emoji). Without this the borders of curses menus
+  // in Japanese/emoji come out shifted.
   function isWide(cp) {
     return (cp >= 0x1100 && cp <= 0x115f) || (cp >= 0x2e80 && cp <= 0xa4cf) ||
       (cp >= 0xac00 && cp <= 0xd7a3) || (cp >= 0xf900 && cp <= 0xfaff) ||
@@ -53,15 +53,15 @@
     this.wrapNext = false;
     this.autowrap = true;
     this.cursorVisible = true;
-    this.appCursor = false;      // DECCKM: setas mandam ESC O A em vez de ESC [ A
+    this.appCursor = false;      // DECCKM: arrows send ESC O A instead of ESC [ A
     this.bracketedPaste = false;
-    this.alt = null;             // buffer normal guardado enquanto a tela alternativa roda
+    this.alt = null;             // normal buffer kept while the alternate screen runs
     this.saved = null;
     this.state = 'ground';
     this.params = '';
     this.prefix = '';
     this.oscBuf = '';
-    this.pending = '';           // sobra de sequencia cortada entre dois poll
+    this.pending = '';           // leftover of a sequence cut between two polls
     this.reply = function () {};
     this.lines = [];
     this.reset(true);
@@ -93,7 +93,7 @@
       else for (j = line.length; j < cols; j++) line.push(blank());
     }
     while (this.lines.length > rows) {
-      // Some linha de cima primeiro, como faz um terminal de verdade.
+      // The top line goes away first, like a real terminal does.
       if (this.y > 0 && this.lines.length - 1 >= this.y) { this.lines.pop(); }
       else { this.pushScrollback(this.lines.shift()); if (this.y > 0) this.y--; }
     }
@@ -105,9 +105,9 @@
     this.render();
   };
 
-  // ------------------------------------------------------------- rolagem
+  // ------------------------------------------------------------- scrolling
   Term.prototype.pushScrollback = function (line) {
-    if (!this.scrollEl || this.alt) return;  // tela alternativa nao vai pro historico
+    if (!this.scrollEl || this.alt) return;  // the alternate screen does not go to the history
     var div = document.createElement('div');
     div.className = 'tl';
     div.innerHTML = renderLine(line, -1);
@@ -142,7 +142,7 @@
     else if (this.y > 0) this.y--;
   };
 
-  // ------------------------------------------------------------ escrita
+  // ------------------------------------------------------------ writing
   Term.prototype.putChar = function (ch, wide) {
     if (this.wrapNext) { this.x = 0; this.newLine(); this.wrapNext = false; }
     if (this.x >= this.cols) { this.x = this.cols - 1; }
@@ -165,7 +165,7 @@
       var code = ch.codePointAt(0);
 
       if (this.state === 'osc') {
-        // Titulo da janela e afins: consome ate BEL ou ST (ESC \).
+        // Window title and the like: consume up to BEL or ST (ESC \).
         if (code === 7) { this.state = 'ground'; this.oscBuf = ''; }
         else if (ch === '\x1b' && chars[i + 1] === '\\') { i++; this.state = 'ground'; this.oscBuf = ''; }
         else this.oscBuf += ch;
@@ -196,7 +196,7 @@
           this.putChar(ch, isWide(code));
       }
     }
-    // Sequencia cortada no fim do bloco: guarda para o proximo pedaco.
+    // Sequence cut at the end of the block: keep it for the next chunk.
     if (this.state === 'escapeHtml' || this.state === 'csi') {
       this.pending = '\x1b' + (this.state === 'csi' ? '[' + this.prefix + this.params : '');
       this.state = 'ground'; this.params = ''; this.prefix = '';
@@ -221,7 +221,7 @@
         }
         break;
       case 'c': this.reset(true); break;
-      default: break;  // '=', '>', charsets e afins nao mudam nada aqui
+      default: break;  // '=', '>', charsets and the like change nothing here
     }
     return i;
   };
@@ -274,22 +274,22 @@
         else if (n === 1) this.eraseInLine(0, this.x);
         else this.eraseInLine(0, this.cols - 1);
         break;
-      case 'L':  // insere linhas na regiao de rolagem
+      case 'L':  // inserts lines in the scroll region
         for (i = 0; i < one && this.y <= this.bottom; i++) {
           this.lines.splice(this.bottom, 1);
           this.lines.splice(this.y, 0, this.blankLine());
         }
         break;
-      case 'M':  // remove linhas
+      case 'M':  // removes lines
         for (i = 0; i < one && this.y <= this.bottom; i++) {
           this.lines.splice(this.y, 1);
           this.lines.splice(this.bottom, 0, this.blankLine());
         }
         break;
-      case 'P':  // apaga caracteres puxando o resto da linha
+      case 'P':  // deletes characters pulling in the rest of the line
         for (i = 0; i < one; i++) { this.lines[this.y].splice(this.x, 1); this.lines[this.y].push(blank()); }
         break;
-      case '@':  // abre espaco na linha
+      case '@':  // opens space in the line
         for (i = 0; i < one; i++) { this.lines[this.y].splice(this.x, 0, blank()); this.lines[this.y].pop(); }
         break;
       case 'X': this.eraseInLine(this.x, this.x + one - 1); break;
@@ -311,7 +311,7 @@
         if (n === 6) this.reply('\x1b[' + (this.y + 1) + ';' + (this.x + 1) + 'R');
         else if (n === 5) this.reply('\x1b[0n');
         break;
-      case 'c': this.reply('\x1b[?6c'); break;  // "sou um VT102"
+      case 'c': this.reply('\x1b[?6c'); break;  // "I am a VT102"
       default: break;
     }
     this.params = ''; this.prefix = '';
@@ -341,7 +341,7 @@
       this.x = this.alt.x; this.y = this.alt.y;
       this.top = this.alt.top; this.bottom = this.alt.bottom;
       this.alt = null;
-      // A tela guardada pode ter outro fileSize se a janela mudou durante o htop.
+      // The saved screen may have another size if the window changed during htop.
       this.resizeLinesTo(this.rows, this.cols);
     }
   };
@@ -390,7 +390,7 @@
     }
   };
 
-  // ---------------------------------------------------------- renderizacao
+  // ---------------------------------------------------------- rendering
   function escapeHtml(s) {
     return s.replace(/[&<>]/g, function (c) {
       return c === '&' ? '&amp;' : (c === '<' ? '&lt;' : '&gt;');
@@ -411,8 +411,8 @@
 
   function sigOf(c) { return (c.f || '') + '|' + (c.b || '') + '|' + c.l; }
 
-  // Agrupa celulas consecutivas de mesmo estilo num unico span: uma linha de 200
-  // colunas costuma virar 3 ou 4 elementos.
+  // Groups consecutive cells with the same style into a single span: a 200-column
+  // line usually becomes 3 or 4 elements.
   function renderLine(line, cursorX) {
     var html = '', run = '', sig = null, style = '', i;
     function flush() {
@@ -438,8 +438,8 @@
 
   Term.prototype.render = function () {
     var out = [], showCursor = this.cursorVisible && this.focused;
-    // Na tela alternativa (htop, vi) o historico some, como num terminal de verdade:
-    // deixa-lo visivel empurraria a tela cheia para fora da area util.
+    // On the alternate screen (htop, vi) the history goes away, as in a real terminal:
+    // leaving it visible would push the full screen out of the usable area.
     if (this.scrollEl && this.scrollEl.style) {
       this.scrollEl.style.display = this.alt ? 'none' : '';
     }
@@ -450,18 +450,41 @@
     this.screenEl.innerHTML = out.join('');
   };
 
-  // O emulador acima nao depende de DOM nem de rede: exportado assim, da para
-  // exercita-lo com a saida real de um htop/vim sem abrir navegador (test/terminal-emulator.js).
+  // The emulator above depends on neither DOM nor network: exported like this, it can
+  // be exercised with the real output of htop/vim without opening a browser (test/terminal-emulator.js).
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = { Term: Term, renderLine: renderLine, PALETTE: PALETTE };
   }
 
-  // ------------------------------------------------------------- transporte
+  // ------------------------------------------------------------- transport
   if (typeof document === 'undefined') return;
   var el = document.getElementById('term');
   if (!el) return;
 
   var CSRF = el.dataset.csrf;
+  // Screen text comes from the template (the catalog lives in Python); the Portuguese
+  // fallback keeps the terminal readable if an attribute goes missing.
+  var LABELS = {
+    fullscreen: el.dataset.labelFullscreen || 'Tela cheia',
+    exitFullscreen: el.dataset.labelExitFullscreen || 'Sair da tela cheia',
+    expired: el.dataset.labelExpired || 'sessao expirada',
+    closed: el.dataset.labelClosed || 'sessao fechada',
+    ended: el.dataset.labelEnded || 'encerrado',
+    endedExit: el.dataset.labelEndedExit || 'encerrado (exit {code})',
+    reconnecting: el.dataset.labelReconnecting || 'reconectando...',
+    connecting: el.dataset.labelConnecting || 'conectando...',
+    connected: el.dataset.labelConnected || 'conectado',
+    httpError: el.dataset.labelHttpError || 'erro http {status}',
+    openFailed: el.dataset.labelOpenFailed || 'falha ao abrir: {error}',
+    outputLost: el.dataset.labelOutputLost || '[painel: saida antiga descartada]'
+  };
+  function label(name, fields) {
+    var text = LABELS[name];
+    Object.keys(fields || {}).forEach(function (k) {
+      text = text.split('{' + k + '}').join(String(fields[k]));
+    });
+    return text;
+  }
   var URLS = {
     open: el.dataset.openUrl,
     api: el.dataset.apiBase, // /api/term/<id>/...
@@ -510,7 +533,7 @@
     }).then(function (r) {
       if (!r.ok) throw new Error('http ' + r.status);
     }).catch(function () {
-      outQueue = data + outQueue;   // devolve a ordem original na proxima tentativa
+      outQueue = data + outQueue;   // puts back the original order on the next attempt
     }).finally(function () {
       sending = false;
       if (outQueue) setTimeout(flushKeys, 120);
@@ -547,25 +570,25 @@
       try {
         var res = await fetch(URLS.api + sessionId + '/read?offset=' + offset,
           { headers: { 'Accept': 'application/json' } });
-        if (res.status === 404) { finish('sessao expirada'); return; }
+        if (res.status === 404) { finish(label('expired')); return; }
         if (!res.ok) throw new Error('http ' + res.status);
         var data = await res.json();
         offset = data.offset;
         if (data.data) {
           var stick = atBottom();
-          if (data.lost) term.write('\r\n[painel: saida antiga descartada]\r\n');
+          if (data.lost) term.write('\r\n' + label('outputLost') + '\r\n');
           term.write(decoder.decode(b64bytes(data.data), { stream: true }));
           if (stick) scrollToBottom();
         }
         if (!data.alive) {
-          finish('encerrado' + (data.exit_code === null ? '' : ' (exit ' + data.exit_code + ')'));
+          finish(data.exit_code === null ? label('ended') : label('endedExit', { code: data.exit_code }));
           return;
         }
         backoff = 0;
       } catch (err) {
         if (!running) return;
         backoff = Math.min(5000, backoff + 750);
-        setStatus('reconectando...', 'cold');
+        setStatus(label('reconnecting'), 'cold');
         await new Promise(function (r) { setTimeout(r, backoff); });
       }
     }
@@ -583,23 +606,23 @@
     var size = measure();
     term.resize(size.cols, size.rows);
     sizeEl.textContent = size.cols + 'x' + size.rows;
-    setStatus('conectando...', 'cold');
+    setStatus(label('connecting'), 'cold');
     try {
       var res = await fetch(URLS.open, {
         method: 'POST', headers: jsonHeaders(),
         body: JSON.stringify({ cols: size.cols, rows: size.rows })
       });
       var data = await res.json().catch(function () { return {}; });
-      if (!res.ok) { setStatus(data.error || ('erro http ' + res.status), 'off'); document.getElementById('term-reconnect').hidden = false; return; }
+      if (!res.ok) { setStatus(data.error || label('httpError', { status: res.status }), 'off'); document.getElementById('term-reconnect').hidden = false; return; }
       sessionId = data.id;
       offset = data.offset || 0;
       running = true;
       document.getElementById('term-reconnect').hidden = true;
-      setStatus('conectado', 'on');
+      setStatus(label('connected'), 'on');
       inputEl.focus();
       pump();
     } catch (err) {
-      setStatus('falha ao abrir: ' + err.message, 'off');
+      setStatus(label('openFailed', { error: err.message }), 'off');
       document.getElementById('term-reconnect').hidden = false;
     }
   }
@@ -613,7 +636,7 @@
     }).catch(function () {});
   }
 
-  // ------------------------------------------------------------- teclado
+  // ------------------------------------------------------------- keyboard
   var CTRL_KEYS = {
     Enter: '\r', Tab: '\t', Backspace: '\x7f', Escape: '\x1b',
     Delete: '\x1b[3~', Insert: '\x1b[2~', PageUp: '\x1b[5~', PageDown: '\x1b[6~'
@@ -634,9 +657,9 @@
     if (!sessionId) return;
     var key = ev.key;
 
-    // Ctrl+C com texto selecionado copia (como no xterm); sem selecao vira SIGINT.
+    // Ctrl+C with selected text copies (as in xterm); without a selection it becomes SIGINT.
     if ((ev.ctrlKey || ev.metaKey) && (key === 'c' || key === 'C') && !window.getSelection().isCollapsed) return;
-    if ((ev.ctrlKey || ev.metaKey) && (key === 'v' || key === 'V')) return;  // deixa o evento paste
+    if ((ev.ctrlKey || ev.metaKey) && (key === 'v' || key === 'V')) return;  // lets the paste event through
     if (ev.altKey && key.length === 1) { ev.preventDefault(); send('\x1b' + key); return; }
 
     var seq = arrow(key) || CTRL_KEYS[key] || FN[key];
@@ -664,22 +687,22 @@
   inputEl.addEventListener('focus', function () { term.focused = true; term.render(); });
   inputEl.addEventListener('blur', function () { term.focused = false; term.render(); });
   viewEl.addEventListener('mouseup', function () {
-    // Clicar para focar sem atrapalhar quem esta selecionando texto para copyToClipboard.
+    // Clicking to focus without getting in the way of someone selecting text to copy.
     if (window.getSelection().isCollapsed) inputEl.focus();
   });
 
-  // ------------------------------------------------------- barra de acoes
-  // Botoes Ctrl+X da barra: data-ctrl="C" vira o byte 0x03, como faria o teclado.
+  // ------------------------------------------------------- action bar
+  // Ctrl+X buttons of the bar: data-ctrl="C" becomes byte 0x03, as the keyboard would.
   document.querySelectorAll('[data-ctrl]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       send(String.fromCharCode(btn.dataset.ctrl.toUpperCase().charCodeAt(0) - 64));
       inputEl.focus();
     });
   });
-  // Teclas que o teclado virtual do celular simplesmente nao tem. Sem esta fileira,
-  // vim, htop e qualquer menu curses sao inoperaveis no telefone: nao ha Esc, nao ha
-  // Tab e nao ha setas. Cada botao manda a MESMA sequencia que o teclado fisico
-  // mandaria, entao nada aqui e um caminho paralelo ao do keydown.
+  // Keys the phone's virtual keyboard simply does not have. Without this row,
+  // vim, htop and any curses menu are unusable on the phone: there is no Esc, no
+  // Tab and no arrows. Each button sends the SAME sequence the physical keyboard
+  // would send, so nothing here is a path parallel to the keydown one.
   var SEQUENCES = {
     Escape: '\x1b',
     Tab: '\t',
@@ -704,7 +727,7 @@
     });
   });
 
-  // No celular o teclado so aparece se um campo receber foco por um gesto do usuario.
+  // On the phone the keyboard only appears if a field gets focus from a user gesture.
   var keyboardBtn = document.getElementById('term-teclado');
   if (keyboardBtn) {
     keyboardBtn.addEventListener('click', function () { inputEl.focus(); });
@@ -712,7 +735,7 @@
 
   document.getElementById('term-clear').addEventListener('click', function () {
     scrollEl.innerHTML = '';
-    send('\x0c');  // Ctrl+L: deixa o shell redesenhar o prompt
+    send('\x0c');  // Ctrl+L: lets the shell redraw the prompt
     inputEl.focus();
   });
   document.getElementById('term-reconnect').addEventListener('click', function () {
@@ -722,12 +745,12 @@
   var fsBtn = document.getElementById('term-fullscreen');
   fsBtn.addEventListener('click', function () {
     el.classList.toggle('full');
-    fsBtn.textContent = el.classList.contains('full') ? 'Sair da tela cheia' : 'Tela cheia';
+    fsBtn.textContent = el.classList.contains('full') ? label('exitFullscreen') : label('fullscreen');
     setTimeout(applyResize, 60);
     inputEl.focus();
   });
 
-  // ------------------------------------------------------------ dimensoes
+  // ------------------------------------------------------------ dimensions
   var resizeTimer = null;
   function applyResize() {
     var size = measure();
@@ -745,16 +768,16 @@
     resizeTimer = setTimeout(applyResize, 200);
   }
   window.addEventListener('resize', scheduleResize);
-  // No celular, abrir o teclado nao dispara 'resize' da janela em todo navegador —
-  // quem encolhe e a viewport visual. Sem isto o shell continua achando que tem 24
-  // linhas enquanto metade da tela virou teclado.
+  // On the phone, opening the keyboard does not fire the window 'resize' in every browser -
+  // what shrinks is the visual viewport. Without this the shell keeps thinking it has 24
+  // lines while half the screen turned into keyboard.
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', scheduleResize);
   }
   window.addEventListener('beforeunload', function () { closeSession(true); });
   document.getElementById('term-close').addEventListener('click', function () {
     closeSession(false);
-    finish('sessao fechada');
+    finish(label('closed'));
   });
 
   open();

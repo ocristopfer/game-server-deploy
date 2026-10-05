@@ -1,31 +1,31 @@
-"""Mods do Satisfactory (SML e o que roda nele) - roda DENTRO do CT do jogo, nao no painel.
+"""Satisfactory mods (SML and what runs on it) - runs INSIDE the game CT, not in the panel.
 
-Mesmo desenho dos outros instaladores remotos: o painel le este texto e o executa no
-container com `python3 -c`, por SSH, como root. So stdlib e sem import do `gamepanel`.
+Same design as the other remote installers: the panel reads this text and runs it in the
+container with `python3 -c`, over SSH, as root. Stdlib only and no import of `gamepanel`.
 
-Por que a API do ficsit.app, e nao o ficsit-cli: o ficsit-cli (v0.7.1, conferido) nao tem
-comando para ADICIONAR mod - so a interface interativa ou editar o profiles.json dele a mao.
-A API e a mesma que ele usa por baixo, publica e sem login, e diz para cada versao o pacote
-de cada alvo (Windows, WindowsServer, LinuxServer), o sha256 e as dependencias.
+Why the ficsit.app API, and not ficsit-cli: ficsit-cli (v0.7.1, checked) has no command to ADD
+a mod - only the interactive UI or editing its profiles.json by hand. The API is the same one
+it uses underneath, public and without login, and for each version it gives the package of
+each target (Windows, WindowsServer, LinuxServer), the sha256 and the dependencies.
 
-Decisoes, cada uma com o motivo:
-- **So o alvo `LinuxServer`.** O servidor daqui e o Linux nativo; versao sem esse alvo nao
-  roda nele e e pulada.
-- **O sha256 da API e conferido ANTES do antivirus.** Um pacote trocado no caminho nao chega
-  nem a ser verificado.
-- **Dependencias junto, na versao que a condicao do mod pede** (`^3.12.0`, `>=1.2.0`): a mais
-  nova que satisfaz. Tudo e baixado e verificado de uma vez antes de qualquer arquivo entrar,
-  como no Thunderstore: dependencia recusada nao deixa o mod pela metade.
-- **Cada mod numa pasta propria, trocada por inteiro** (`FactoryGame/Mods/<referencia>`): a
-  versao nova nao herda arquivo que a velha tinha e a nova nao tem.
-- **O SML e um mod como os outros** (a referencia `SML`): instalar qualquer mod o traz como
-  dependencia, e o botao do carregador so o instala sozinho.
+Decisions, each with its reason:
+- **Only the `LinuxServer` target.** The server here is native Linux; a version without that
+  target does not run on it and is skipped.
+- **The API sha256 is checked BEFORE the antivirus.** A package swapped along the way does not
+  even get to be scanned.
+- **Dependencies come along, in the version the mod's condition asks for** (`^3.12.0`, `>=1.2.0`):
+  the newest that satisfies it. Everything is downloaded and checked at once before any file
+  goes in, as with Thunderstore: a rejected dependency does not leave the mod half installed.
+- **Each mod in its own folder, replaced entirely** (`FactoryGame/Mods/<reference>`): the new
+  version does not inherit a file the old one had and the new one does not.
+- **SML is a mod like the others** (the `SML` reference): installing any mod brings it as a
+  dependency, and the loader button just installs it on its own.
 
-NAO TESTADO num servidor de verdade ainda: o layout do pacote (a raiz do zip e a pasta do
-plugin, com `SML.uplugin`) foi conferido baixando o SML 3.12.0 pela API, e mais nada.
+NOT TESTED on a real server yet: the package layout (the zip root is the plugin folder, with
+`SML.uplugin`) was checked by downloading SML 3.12.0 through the API, and nothing else.
 
-Acoes (argv): [--scan SCRIPT] status | mod-install REF [VERSAO] | mod-remove REF, seguidas da
-pasta do jogo (onde mora o FactoryServer.sh). Toda acao termina com UMA linha JSON.
+Actions (argv): [--scan SCRIPT] status | mod-install REF [VERSION] | mod-remove REF, followed by the
+game folder (where FactoryServer.sh lives). Every action ends with ONE JSON line.
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ import zipfile
 API = "https://api.ficsit.app"
 QUERY = API + "/v2/query"
 TARGET = "LinuxServer"
-# Referencia de mod do ficsit.app: vira nome de pasta e parte de consulta.
+# A ficsit.app mod reference: it becomes a folder name and part of a query.
 REF = re.compile(r"[A-Za-z0-9_]{1,64}")
 VERSION = re.compile(r"\d{1,9}\.\d{1,9}\.\d{1,9}")
 MODS = os.path.join("FactoryGame", "Mods")
@@ -69,8 +69,8 @@ GRAPHQL = """query($ref: ModReference!, $limit: Int!) {
 
 
 def fetch(url: str, body: bytes | None = None) -> bytes:
-    # So o ficsit.app: a consulta e fixa (QUERY) e o link do pacote vem da resposta dela,
-    # sempre relativo ao mesmo host.
+    # Only ficsit.app: the query is fixed (QUERY) and the package link comes from its response,
+    # always relative to the same host.
     headers = {"User-Agent": "gamepanel"}
     if body is not None:
         headers["Content-Type"] = "application/json"
@@ -80,16 +80,16 @@ def fetch(url: str, body: bytes | None = None) -> bytes:
 
 
 # ------------------------------------------------------------------ antivirus
-# IGUAL nos outros instaladores remotos (ha teste comparando): rodam soltos no CT e nao importam
-# um ao outro. A regra (o que conta como achado) nao mora aqui, e sim no script que o painel
-# manda; aqui so se escreve o que baixou numa pasta e se chama o script.
+# IDENTICAL in the other remote installers (a test compares them): they run standalone in the CT
+# and do not import each other. The rule (what counts as a finding) does not live here, but in the
+# script the panel sends; here we only write what was downloaded into a folder and call the script.
 
 def scanner(script: str):
-    """Funcao que verifica [(nome, bytes)] com o script do painel; ValueError = recusado."""
+    """Function that checks [(name, bytes)] with the panel's script; ValueError = rejected."""
     def scan(blobs: list[tuple[str, bytes]]) -> None:
-        # /var/tmp e nao /tmp: no Debian 13 o /tmp e tmpfs (memoria), e o pacote pode ter
-        # dezenas de MB. O prefixo e o que o script do antivirus aceita apagar. mkdtemp:
-        # nome imprevisivel e 0700.
+        # /var/tmp and not /tmp: on Debian 13 /tmp is tmpfs (memory), and the package can be
+        # tens of MB. The prefix is what the antivirus script agrees to delete. mkdtemp:
+        # unpredictable name and 0700.
         os.makedirs("/var/tmp", exist_ok=True)  # noqa: S108
         work = tempfile.mkdtemp(prefix="gamepanel-scan-", dir="/var/tmp")
         try:
@@ -109,7 +109,7 @@ def scanner(script: str):
 
 
 def _no_scan(blobs: list[tuple[str, bytes]]) -> None:
-    """So para teste e status: `main` recusa instalar sem `--scan`."""
+    """Only for tests and status: `main` refuses to install without `--scan`."""
 
 
 def check_ref(value: str) -> str:
@@ -118,7 +118,7 @@ def check_ref(value: str) -> str:
     return value
 
 
-# ------------------------------------------------------------------ versoes
+# ------------------------------------------------------------------ versions
 
 def _parse(version: str) -> tuple[int, int, int] | None:
     found = re.match(r"^\s*v?(\d+)\.(\d+)\.(\d+)", version or "")
@@ -131,25 +131,25 @@ _COMPARE = {
     ">": lambda have, want: have > want,
     "<": lambda have, want: have < want,
     "=": lambda have, want: have == want,
-    # ^ fixa o primeiro numero que nao e zero (semver): ^3.1.0 aceita 3.x, ^0.4.0 aceita 0.4.x.
+    # ^ pins the first non-zero number (semver): ^3.1.0 accepts 3.x, ^0.4.0 accepts 0.4.x.
     "^": lambda have, want: have >= want and (have[0] == want[0] if want[0] else have[:2] == want[:2]),
     "~": lambda have, want: have >= want and have[:2] == want[:2],
 }
 
 
 def _meets(have: tuple[int, int, int], part: str) -> bool:
-    """Uma parte da condicao (`^3.12.0`, `>=1.2.0`, `1.0.0`)."""
-    # O grupo e opcional: o match nunca falha, e sem operador vale a versao exata.
+    """One part of the condition (`^3.12.0`, `>=1.2.0`, `1.0.0`)."""
+    # The group is optional: the match never fails, and without an operator the exact version applies.
     found_op = re.match(r"^(\^|~|>=|<=|>|<|=)?", part)
     written = found_op.group(0) if found_op else ""
-    # Corta o que estava ESCRITO: com o "=" implicito, cortar len("=") comia o primeiro digito.
+    # Cut what was WRITTEN: with the implicit "=", cutting len("=") ate the first digit.
     op = written or "="
     want = _parse(part[len(written):])
     return want is not None and _COMPARE[op](have, want)
 
 
 def satisfies(version: str, condition: str) -> bool:
-    """A versao atende a condicao de dependencia? (`^x.y.z`, `>=x.y.z`, `~x.y.z`, exata, vazia)."""
+    """Does the version meet the dependency condition? (`^x.y.z`, `>=x.y.z`, `~x.y.z`, exact, empty)."""
     have = _parse(version)
     if have is None:
         return False
@@ -173,7 +173,7 @@ def _target(version: dict) -> dict | None:
 
 
 def pick(versions: list[dict], condition: str = "", exact: str = "") -> dict:
-    """A versao mais nova com pacote de servidor Linux que atende o pedido."""
+    """The newest version with a Linux server package that meets the request."""
     for v in versions:
         if not _target(v):
             continue
@@ -186,7 +186,7 @@ def pick(versions: list[dict], condition: str = "", exact: str = "") -> dict:
 
 
 def resolve(ref: str, version: str = "", fetcher=fetch) -> list[tuple[str, dict]]:
-    """O mod e as dependencias obrigatorias: [(referencia, versao escolhida)]."""
+    """The mod and its mandatory dependencies: [(reference, chosen version)]."""
     if version and not VERSION.fullmatch(version):
         raise ValueError(f"versao invalida: {version!r}")
     queue: list[tuple[str, str, str]] = [(check_ref(ref), "", version)]
@@ -205,7 +205,7 @@ def resolve(ref: str, version: str = "", fetcher=fetch) -> list[tuple[str, dict]
     return list(chosen.items())
 
 
-# ------------------------------------------------------------------ instalar
+# ------------------------------------------------------------------ install
 
 def _safe_rel(path: str) -> str:
     rel = posixpath.normpath(path.replace("\\", "/")).lstrip("/")
@@ -215,7 +215,7 @@ def _safe_rel(path: str) -> str:
 
 
 def _download(plan: list[tuple[str, dict]], fetcher) -> list[tuple[str, bytes]]:
-    """O pacote de cada mod do plano, conferido contra o sha256 que a API publicou."""
+    """Each mod package in the plan, checked against the sha256 the API published."""
     blobs: list[tuple[str, bytes]] = []
     for name, picked in plan:
         target = _target(picked) or {}
@@ -231,7 +231,7 @@ def _download(plan: list[tuple[str, dict]], fetcher) -> list[tuple[str, bytes]]:
 
 
 def _extract(dest: str, data: bytes) -> int:
-    """Troca a pasta do mod por inteiro pelo conteudo do pacote. Devolve quantos arquivos."""
+    """Replace the mod folder entirely with the package contents. Return how many files."""
     shutil.rmtree(dest, ignore_errors=True)
     os.makedirs(dest, exist_ok=True)
     count = 0
@@ -253,7 +253,7 @@ def install(game_dir: str, ref: str, version: str = "", fetcher=fetch, scan=_no_
         raise ValueError(f"a pasta do jogo nao existe: {game_dir}")
     plan = resolve(ref, version, fetcher)
     blobs = _download(plan, fetcher)
-    # Tudo verificado de uma vez: dependencia recusada nao deixa o mod principal pela metade.
+    # Everything checked at once: a rejected dependency does not leave the main mod half installed.
     scan(blobs)
     installed = []
     for (name, picked), (_, data) in zip(plan, blobs, strict=True):
@@ -290,7 +290,7 @@ def status(game_dir: str) -> dict:
         if not os.path.isdir(path):
             continue
         mark = _read_json(os.path.join(path, MARK))
-        # Mod posto a mao (sem a marca): a versao sai do .uplugin, que todo plugin tem.
+        # A mod placed by hand (without the mark): the version comes from the .uplugin, which every plugin has.
         version = mark.get("version") or _read_json(os.path.join(path, f"{entry}.uplugin")).get("VersionName", "")
         mods.append({"name": entry, "version": version, "pinned": bool(mark.get("pinned"))})
     sml = next((m for m in mods if m["name"] == "SML"), None)

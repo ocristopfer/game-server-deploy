@@ -12,8 +12,7 @@
     <label>{{ _('login_2fa.code') }}
       <input name="code" inputmode="numeric" autocomplete="one-time-code"
              autocapitalize="none" spellcheck="false" maxlength="14" autofocus required>
-      <small>Sem o celular? Use um dos codigos de recuperacao (<code class="nowrap">abcde-12345</code>);
-        cada um serve uma vez.</small>
+      <small>{{ _h('login_2fa.recovery_hint') }}</small>
     </label>
     <div class="form-actions">
       {{ ui.button(_('login_2fa.confirm'), variant='primary', block=true) }}

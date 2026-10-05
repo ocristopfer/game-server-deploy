@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
-"""Mapa da interface: o que existe para clicar no painel, e onde.
+"""Interface map: what there is to click in the panel, and where.
 
-Este modulo e de proposito *puro* — nao importa Flask, nao abre banco, nao fala SSH.
-Ele so descreve a navegacao e as acoes. Quem liga isso ao pedido em curso (papel de
-quem esta logado, recursos ligados no deploy) e o `app.py`, passando os valores como
-argumento.
+This module is *pure* on purpose: it does not import Flask, does not open the database, does not
+talk SSH. It only describes navigation and actions. What ties it to the current request (role of
+whoever is signed in, features enabled in the deploy) is `app.py`, passing the values as
+arguments.
 
-Por que existir:
+Why it exists:
 
-- Antes, a lista de telas de um servidor estava escrita a mao em SEIS templates
-  diferentes, cada um com um subconjunto arbitrario e uma ordem propria. Acrescentar
-  uma tela significava lembrar de editar os seis; ninguem lembrava, e por isso um
-  lugar oferecia "Console" e outro nao, um oferecia "Gráficos" e outro nao.
-- Agora a lista esta aqui. O template pergunta quais secoes existem e desenha o que
-  vier. Tela nova = uma linha nesta tupla; nenhum template muda.
+- Before, a server's list of screens was written by hand in SIX different
+  templates, each with an arbitrary subset and its own order. Adding
+  a screen meant remembering to edit all six; nobody remembered, and that is why one
+  place offered "Console" and another did not, one offered "Charts" and another did not.
+- Now the list is here. The template asks which sections exist and draws whatever
+  comes. New screen = one line in this tuple; no template changes.
 
-O mesmo vale para as acoes (iniciar, parar, atualizar): o rotulo, o icone, o grupo e
-o peso visual de cada uma sao dados, nao marcacao espalhada.
+The same goes for the actions (start, stop, update): the label, the icon, the group and
+the visual weight of each one are data, not markup scattered around.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-# ---------------------------------------------------------------- recursos
-# Um "recurso" e um interruptor do deploy (GAMEPANEL_ALLOW_FILES, ALLOW_SHELL).
-# A secao que depende de um recurso desligado nao aparece em lugar nenhum.
+# ---------------------------------------------------------------- features
+# A "feature" is a deploy switch (GAMEPANEL_ALLOW_FILES, ALLOW_SHELL).
+# A section that depends on a disabled feature does not appear anywhere.
 FEATURE_FILES = "files.index"
 FEATURE_SHELL = "shell"
 FEATURE_BROKER = "broker"
@@ -32,10 +32,10 @@ FEATURE_BROKER = "broker"
 
 @dataclass(frozen=True)
 class Item:
-    """Um destino de navegacao.
+    """A navigation destination.
 
-    `endpoint` e o nome da rota Flask; quem resolve a URL e o template, porque so ele
-    sabe de qual servidor esta falando.
+    `endpoint` is the Flask route name; the template is what resolves the URL, because only it
+    knows which server it is talking about.
     """
 
     key: str
@@ -44,17 +44,17 @@ class Item:
     endpoint: str
     admin: bool = False
     feature: str = ""
-    # Descricao curta para o menu suspenso — onde o rotulo sozinho nao basta para
-    # separar duas telas parecidas (e o caso de Configuracao x Arquivos).
+    # Short description for the dropdown menu, where the label alone is not enough to
+    # tell two similar screens apart (the case of Configuration vs Files).
     help: str = ""
-    # Rotulo da barra larga, onde sete destinos dividem uma linha so.
+    # Label for the wide bar, where seven destinations share a single line.
     short: str = ""
 
 
-# ------------------------------------------------------- navegacao principal
-# Sao os destinos da barra de baixo no celular. Quatro e o teto pratico de uma barra
-# de abas; por isso "Adicionar servidor", "Usuarios" e "Acesso SSH" ficam no menu da
-# barra de cima — sao coisas que se faz uma vez, nao todo dia.
+# ------------------------------------------------------- main navigation
+# These are the destinations of the bottom bar on the phone. Four is the practical ceiling of a tab
+# bar; that is why "Add server", "Users" and "SSH access" live in the menu of the
+# top bar: they are things done once, not every day.
 NAV_MAIN = (
     Item("servidores", "nav.servers", "🎮", "dashboard.index"),
     Item("historico", "nav.history", "🕘", "history.index"),
@@ -62,27 +62,27 @@ NAV_MAIN = (
     Item("conta", "nav.account", "👤", "account.index"),
 )
 
-# Menu do canto da barra de cima: o resto.
+# Menu in the corner of the top bar: the rest.
 NAV_SECONDARY = (
-    # O caractere e o sinal de mais PESADO (U+2795), que e o icone do botao — nao o
-    # operador `+`. O linter pergunta porque os dois se parecem; aqui a parecenca e o ponto.
+    # The character is the HEAVY plus sign (U+2795), which is the button icon, not the
+    # `+` operator. The linter asks because the two look alike; here the likeness is the point.
     Item("novo", "nav.add_server", "➕", "servers.new", admin=True),  # noqa: RUF001
-    # Os dois do broker so existem no deploy que ligou GAMEPANEL_ALLOW_BROKER.
+    # The two broker items only exist in a deploy that turned on GAMEPANEL_ALLOW_BROKER.
     Item("instancias", "nav.instances.help", "🧩", "broker.instances", admin=True,
          feature=FEATURE_BROKER, short="nav.instances"),
     Item("catalogo", "nav.catalog.help", "📚", "broker.catalog", admin=True,
          feature=FEATURE_BROKER, short="nav.catalog"),
     Item("usuarios", "nav.users", "👥", "users.index", admin=True),
-    # Todas as copias do save guardadas no painel, inclusive as de jogo que ja nao tem
-    # servidor: sem esta tela, a copia de um servidor removido ficava sem onde aparecer.
+    # Every save copy stored on the panel, including those of games that no longer have a
+    # server: without this screen, the copy of a removed server had nowhere to show up.
     Item("backups", "nav.backups.help", "💾", "backups.archive", admin=True, short="nav.backups"),
     Item("ssh", "nav.ssh_key", "🔑", "account.ssh_key"),
 )
 
 
-# Qual aba da barra principal fica acesa em cada rota. Uma tela de servidor (log,
-# backups, terminal) continua sendo "Servidores": quem esta la chegou pelo painel e
-# espera ver a barra dizendo isso.
+# Which tab of the main bar lights up on each route. A server screen (log,
+# backups, terminal) is still "Servers": whoever is there came through the panel and
+# expects the bar to say so.
 _ACTIVE_EXTRA = {
     "servidores": (
         "dashboard.index", "servers.detail", "servers.new", "servers.edit", "servers.action",
@@ -115,28 +115,28 @@ _BY_ENDPOINT = {
 
 
 def active_nav_for(endpoint: str | None) -> str:
-    """Qual item da navegacao principal esta ativo, dada a rota em curso.
+    """Which main navigation item is active, given the current route.
 
-    Calculado aqui, uma vez, em vez de cada template declarar o seu: o jeito antigo
-    de fazer isso e uma variavel que vinte telas precisam lembrar de passar, e tres
-    delas esquecem.
+    Computed here, once, instead of each template declaring its own: the old way
+    of doing this is a variable that twenty screens need to remember to pass, and three
+    of them forget.
     """
     return _BY_ENDPOINT.get(endpoint or "", "")
 
 
-# ------------------------------------------------------- navegacao no desktop
-# A partir de 900px cabe tudo numa barra so, entao nada precisa se esconder atras do
-# "⋯": os destinos de uso diario ficam na barra e os da pessoa (conta, chave SSH)
-# no menu do nome dela. Sao CHAVES dos itens acima, nao copias deles: o rotulo, o
-# icone, a regra de admin e o recurso continuam definidos num lugar so.
+# ------------------------------------------------------- desktop navigation
+# From 900px everything fits in a single bar, so nothing needs to hide behind the
+# "more" menu: the everyday destinations stay on the bar and the person's own (account, SSH key)
+# go in the menu under their name. These are KEYS of the items above, not copies of them: the label, the
+# icon, the admin rule and the feature stay defined in one place.
 NAV_DESKTOP_BAR = ("servidores", "instancias", "catalogo", "historico", "backups", "alertas", "usuarios")
 NAV_DESKTOP_ACCOUNT = ("conta", "ssh")
 
 _ALL_ITEMS = {i.key: i for i in NAV_MAIN + NAV_SECONDARY}
 
-# No celular "Instancias" e "Usuarios" acendem a aba de cima delas ("Servidores",
-# "Conta"), porque so ha quatro abas. Na barra larga cada destino e o seu proprio
-# item, entao a rota acende ele mesmo — senao "Instancias" apareceria como "Servidores".
+# On the phone "Instances" and "Users" light up the tab above them ("Servers",
+# "Account"), because there are only four tabs. On the wide bar each destination is its own
+# item, so the route lights up itself; otherwise "Instances" would show up as "Servers".
 _ACTIVE_ON_DESKTOP = {
     "instancias": ("broker.instances", "broker.instance_new", "broker.instance_deactivate",
                    "broker.instance_remove", "broker.instance_cancel"),
@@ -156,7 +156,7 @@ _BY_ENDPOINT_ON_DESKTOP = {
 
 
 def nav_desktop(*, admin: bool, broker: bool) -> tuple[tuple[Item, ...], tuple[Item, ...]]:
-    """(itens da barra, itens do menu da conta) que esta pessoa pode abrir no desktop."""
+    """(bar items, account menu items) that this person can open on desktop."""
     def resolve(keys: tuple[str, ...]) -> tuple[Item, ...]:
         return visible_items(tuple(_ALL_ITEMS[c] for c in keys), admin=admin, broker=broker)
 
@@ -164,13 +164,13 @@ def nav_desktop(*, admin: bool, broker: bool) -> tuple[tuple[Item, ...], tuple[I
 
 
 def active_desktop_nav_for(endpoint: str | None) -> str:
-    """Item aceso na barra larga: o proprio destino quando ele existe, senao o do celular."""
+    """Item lit on the wide bar: the destination itself when it exists, otherwise the phone one."""
     return _BY_ENDPOINT_ON_DESKTOP.get(endpoint or "") or active_nav_for(endpoint)
 
 
-# ------------------------------------------------------- telas de um servidor
-# A ordem aqui e a ordem na tela, e ela segue a frequencia de uso real: o que se
-# olha todo dia primeiro, o que se mexe uma vez por mes no fim.
+# ------------------------------------------------------- screens of a server
+# The order here is the order on screen, and it follows real usage frequency: what one
+# looks at every day first, what one touches once a month at the end.
 SERVER_SECTIONS = (
     Item("visao", "server.overview", "📊", "servers.detail",
          help="server.overview.help"),
@@ -182,17 +182,17 @@ SERVER_SECTIONS = (
          help="server.backups.help"),
     Item("schedules.index", "server.schedules", "⏰", "schedules.index",
          help="server.schedules.help"),
-    # Mods: o que o servidor carrega e o envio de mod. De admin como "Arquivos", porque o
-    # envio grava dentro do container.
+    # Mods: what the server loads and the mod upload. Admin-only like "Files", because the
+    # upload writes inside the container.
     Item("mods.index", "server.mods", "🧩", "mods.index", admin=True, feature=FEATURE_FILES,
          help="server.mods.help"),
-    # "Arquivos" e o irmao bruto de "Configuracao": mesma pasta, sem formulario.
-    # Os dois so aparecem juntos para quem pode navegar pelo container.
+    # "Files" is the raw sibling of "Configuration": same folder, no form.
+    # The two only appear together for whoever may browse the container.
     Item("files.index", "server.files", "📁", "files.index", admin=True, feature=FEATURE_FILES,
          help="server.files.help"),
-    # UM destino de linha de comando, nao dois. Qual das duas telas ele abre e
-    # detalhe de implementacao (ver `endpoint_do_terminal`): para quem usa, "Terminal"
-    # e um lugar so, e la dentro se escolhe entre sessao interativa e comando unico.
+    # ONE command-line destination, not two. Which of the two screens it opens is an
+    # implementation detail (see `terminal_endpoint`): for the user, "Terminal"
+    # is a single place, and inside it one picks between an interactive session and a single command.
     Item("terminal.index", "server.terminal", "⌨️", "terminal.index", admin=True, feature=FEATURE_SHELL,
          help="server.terminal.help"),
     Item("editar", "server.edit", "✏️", "servers.edit", admin=True,
@@ -201,9 +201,9 @@ SERVER_SECTIONS = (
 
 
 def visible_items(items: tuple[Item, ...], *, admin: bool, broker: bool) -> tuple[Item, ...]:
-    """Itens de navegacao que esta pessoa, neste deploy, pode abrir.
+    """Navigation items that this person, in this deploy, can open.
 
-    Um item com `recurso` desligado some do menu: nada de link que leva a 403.
+    An item whose `feature` is off disappears from the menu: no link that leads to a 403.
     """
     allowed = {FEATURE_BROKER: broker, "": True}
     return tuple(
@@ -213,10 +213,10 @@ def visible_items(items: tuple[Item, ...], *, admin: bool, broker: bool) -> tupl
 
 
 def visible_sections(*, admin: bool, arquivos: bool, shell: bool) -> tuple[Item, ...]:
-    """As secoes que esta pessoa, neste deploy, pode de fato abrir.
+    """The sections that this person, in this deploy, can actually open.
 
-    Quem barra de verdade e o decorador da rota; isto existe para nao desenhar botao
-    que leva a 403 — um menu que mente e pior que um menu curto.
+    The route decorator is what really blocks; this exists so as not to draw a button
+    that leads to a 403: a menu that lies is worse than a short menu.
     """
     allowed = {FEATURE_FILES: arquivos, FEATURE_SHELL: shell, "": True}
     return tuple(
@@ -226,12 +226,12 @@ def visible_sections(*, admin: bool, arquivos: bool, shell: bool) -> tuple[Item,
 
 
 def terminal_endpoint(*, tem_pty: bool) -> str:
-    """Para onde o destino "Terminal" aponta.
+    """Where the "Terminal" destination points.
 
-    Com PTY (todo Linux) e a sessao interativa. Sem PTY o painel ainda roda — em
-    Windows, por exemplo — e ai o mesmo destino abre a caixa de comando unico, que
-    nao precisa de terminal de verdade. Em nenhum dos dois casos aparecem duas
-    entradas de menu para "rodar comando".
+    With a PTY (any Linux) it is the interactive session. Without a PTY the panel still runs (on
+    Windows, for example), and then the same destination opens the single-command box, which
+    does not need a real terminal. In neither case do two menu
+    entries for "run a command" appear.
     """
     return "terminal.index" if tem_pty else "console.index"
 
@@ -242,25 +242,25 @@ def section_endpoint(section: Item, *, tem_pty: bool) -> str:
     return section.endpoint
 
 
-# --------------------------------------------------------------- acoes
+# --------------------------------------------------------------- actions
 GROUP_POWER = "energia"
 GROUP_MAINTENANCE = "manutencao"
 
 
 @dataclass(frozen=True)
 class Action:
-    """Uma acao sobre o servico do jogo.
+    """An action on the game service.
 
-    O comando remoto NAO mora aqui: ele depende de `shlex` e do formato do servico, e
-    e responsabilidade do `app.py`. Este modulo responde por como a acao se apresenta.
+    The remote command does NOT live here: it depends on `shlex` and on the service format, and
+    is `app.py`'s responsibility. This module answers for how the action is presented.
     """
 
     key: str
-    label: str      # nome completo, usado no historico e na confirmacao
-    short: str       # o que cabe num botao de celular
+    label: str      # full name, used in the history and in the confirmation
+    short: str       # what fits on a phone button
     icon: str
     group: str
-    variant: str = ""     # "primary", "danger" ou vazio
+    variant: str = ""     # "primary", "danger" or empty
     confirm: bool = False
 
 
@@ -280,17 +280,17 @@ def actions_in_group(group: str) -> list[Action]:
     return [a for a in ACTIONS if a.group == group]
 
 
-# Estas funcoes devolvem LISTA, e nao tupla, de proposito: o tamanho varia com o
-# estado do servidor. Tupla de comprimento variavel e uma promessa que o tipo nao
-# cumpre - quem le `tuple[Acao, ...]` espera uma forma fixa, e a analise estatica
-# reclama com razao.
+# These functions return a LIST, not a tuple, on purpose: the size varies with the
+# server state. A variable-length tuple is a promise the type does not
+# keep - whoever reads `tuple[Action, ...]` expects a fixed shape, and static analysis
+# rightly complains.
 def card_power(service: str) -> list[Action]:
-    """Os botoes de energia que fazem sentido no cartao do painel, dado o estado.
+    """The power buttons that make sense on the panel card, given the state.
 
-    O cartao mostra DOIS controles, nao quatro. Um servidor de pe nao precisa de um
-    botao "Iniciar", e um parado nao precisa de "Parar" — oferecer os quatro sempre e
-    o que transformava cinco cartoes numa parede de quarenta alvos de toque no
-    celular. O que sobra continua a um toque de distancia, no menu do cartao.
+    The card shows TWO controls, not four. A running server does not need a
+    "Start" button, and a stopped one does not need "Stop": offering all four always is
+    what turned five cards into a wall of forty touch targets on the
+    phone. The rest stays one tap away, in the card menu.
     """
     if service == "active":
         return [BY_KEY["restart"], BY_KEY["stop"]]
@@ -298,11 +298,11 @@ def card_power(service: str) -> list[Action]:
 
 
 def remaining_power(service: str) -> list[Action]:
-    """As acoes de energia que o cartao nao mostrou — vao para o menu dele.
+    """The power actions the card did not show: they go into its menu.
 
-    Nada some: o que sai da linha de botoes reaparece a um toque. O que nao pode
-    acontecer e a MESMA acao aparecer nos dois lugares, e e esta funcao que garante
-    isso a partir de `energia_do_cartao`, em vez de uma segunda lista escrita a mao.
+    Nothing disappears: what leaves the button row reappears one tap away. What must not
+    happen is the SAME action showing up in both places, and this function guarantees
+    that from `card_power`, instead of a second hand-written list.
     """
     ahead = {a.key for a in card_power(service)}
     return [a for a in actions_in_group(GROUP_POWER) if a.key not in ahead]

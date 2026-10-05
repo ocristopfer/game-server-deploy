@@ -1,13 +1,13 @@
-"""Dobre do executor de SSH, ao lado do `fake_http.py`.
+"""Test double for the SSH runner, next to `fake_http.py`.
 
-Estava DENTRO de `test_ssh_installer.py`, e dois outros arquivos o importavam por nome
-(`from test_ssh_installer import FakeRunner`). Isso passa enquanto a suite roda inteira —
-o pytest pos a pasta do arquivo coletado no `sys.path` — e QUEBRA na hora em que alguem
-roda so uma parte dela. Medido: com os testes divididos em `unit/` e `integration/`, rodar
-so `integration/` da `ModuleNotFoundError`, e e justo para isso que a divisao existe.
+It used to live INSIDE `test_ssh_installer.py`, and two other files imported it by name
+(`from test_ssh_installer import FakeRunner`). That passes while the whole suite runs -
+pytest put the collected file's folder on `sys.path` - and BREAKS as soon as someone runs
+only part of it. Measured: with the tests split into `unit/` and `integration/`, running
+only `integration/` gives `ModuleNotFoundError`, and that is exactly what the split is for.
 
-Dobre compartilhado por mais de um arquivo mora ao lado do `conftest.py`, que e a pasta que
-o pytest sempre poe no `sys.path` — e o que o `fake_http.py` ja fazia.
+A double shared by more than one file lives next to `conftest.py`, the folder pytest always
+puts on `sys.path` - which is what `fake_http.py` already did.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ PUBLIC_KEY = f"ssh-ed25519 {BLOB} broker@teste"
 
 
 class FakeRunner:
-    """Registra cada command. `saidas` mapeia um trecho do command remoto a (codigo, linhas)."""
+    """Records each command. `saidas` maps a chunk of the remote command to (code, lines)."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[list[str], float]] = []
@@ -30,7 +30,7 @@ class FakeRunner:
         self.calls.append((list(argv), timeout))
         self.cancel_seen = cancel
         if argv[0] == "scp":
-            self.env_visto = Path(argv[-2]).read_text(encoding="utf-8")  # o arquivo existe AGORA
+            self.env_visto = Path(argv[-2]).read_text(encoding="utf-8")  # the file exists NOW
         command = argv[-1] if argv[0] == "ssh" else " ".join(argv)
         if argv[0] == "ssh" and command == "true" and self.first_ssh_failures > 0:
             self.first_ssh_failures -= 1

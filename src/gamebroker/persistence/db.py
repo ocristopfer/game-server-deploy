@@ -1,8 +1,8 @@
-"""Estado do broker em SQLite: instancias, portas, operacoes e auditoria.
+"""Broker state in SQLite: instances, ports, operations and audit.
 
-O banco e a fonte de verdade de quem ocupa qual CTID/IP/porta. UNIQUE nas tres colunas
-faz o proprio SQLite recusar uma reserva concorrente, mesmo se a trava em memoria do
-servico falhar (por exemplo, dois processos apontando para o mesmo arquivo).
+The database is the source of truth for who holds which CTID/IP/port. UNIQUE on the three
+columns makes SQLite itself refuse a concurrent reservation, even if the service's in-memory
+lock fails (for example, two processes pointing at the same file).
 """
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from datetime import UTC, datetime
 from gamebroker.domain.exceptions import Conflict
 from gamebroker.services.allocator import AllocatedPort
 
-# Os VALORES sao o que esta gravado na coluna `state` e o que o painel recebe no JSON:
-# traduzi-los renomearia o estado de toda instancia ja criada. So os nomes sao ingleses.
+# The VALUES are what is stored in the `state` column and what the panel receives in the JSON:
+# translating them would rename the state of every instance already created. Only the names are English.
 STATE_RESERVED = "reservada"
 STATE_ACTIVE = "ativa"
 STATE_DEACTIVATED = "desativada"
@@ -32,11 +32,11 @@ LOG_MAX = 20000
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS instances (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  -- Opaco de proposito: no Proxmox e o CTID em texto ("307"), e um backend futuro pode
-  -- usar outra coisa. TEXT e nao INTEGER pelo mesmo motivo.
+  -- Opaque on purpose: on Proxmox it is the CTID as text ("307"), and a future backend may
+  -- use something else. TEXT and not INTEGER for the same reason.
   handle TEXT NOT NULL UNIQUE,
-  -- Quem criou esta instancia. Tem padrao para o banco de quem ja rodava continuar valido
-  -- sem adivinhacao: tudo que existia foi criado no Proxmox.
+  -- Which backend created this instance. It has a default so existing databases stay valid
+  -- without guessing: everything that existed was created on Proxmox.
   backend TEXT NOT NULL DEFAULT 'proxmox',
   ip TEXT NOT NULL UNIQUE,
   game TEXT NOT NULL,
@@ -82,12 +82,12 @@ CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit
 BEGIN SELECT RAISE(ABORT, 'a auditoria e append-only'); END;
 """
 
-# O banco do broker ANTES de falar ingles. A migration corre no start, uma vez.
+# The broker database BEFORE it spoke English. The migration runs at startup, once.
 #
-# Aqui as TABELAS tambem mudam de nome. A ordem NAO importa: o `RENAME TO` do SQLite
-# reescreve a `REFERENCES` de quem aponta para a tabela renomeada, venha antes ou depois
-# (conferido nos dois sentidos, e ha teste para a chave estrangeira continuar valendo).
-# Isso so e verdade com `legacy_alter_table` desligado, que e o padrao desde o 3.25.
+# Here the TABLES also change names. The order does NOT matter: SQLite's `RENAME TO`
+# rewrites the `REFERENCES` of whoever points at the renamed table, before or after it
+# (checked in both directions, and there is a test for the foreign key to keep working).
+# This only holds with `legacy_alter_table` off, which is the default since 3.25.
 _RENAME_TABLES = (
     ("instancias", "instances"),
     ("portas", "ports"),
@@ -117,8 +117,8 @@ _RENAME_COLUMNS = (
     ("audit", "resultado", "result"),
     ("audit", "detalhe", "detail"),
 )
-# Indices e triggers carregam o nome velho no corpo: renomear a tabela nao os reescreve
-# por inteiro, e deixar os dois lados vivos daria indice duplicado.
+# Indexes and triggers carry the old name in their body: renaming the table does not rewrite
+# them entirely, and keeping both alive would give a duplicate index.
 _DROP_OLD = (
     "DROP INDEX IF EXISTS instancias_nome",
     "DROP INDEX IF EXISTS portas_externas",
@@ -127,28 +127,28 @@ _DROP_OLD = (
 )
 
 
-# A segunda migration: `ctid` (numero do Proxmox) vira `handle` (texto opaco), e nasce a
-# coluna que diz QUEM criou a instancia. A pergunta do `_migrate_names` e "a tabela ainda
-# tem o nome velho?"; a daqui e "ainda existe a coluna `ctid`?".
+# The second migration: `ctid` (Proxmox number) becomes `handle` (opaque text), and the column
+# saying WHO created the instance is born. The question for `_migrate_names` is "does the table
+# still have the old name?"; the one here is "does the `ctid` column still exist?".
 def _migrate_handle(conn: sqlite3.Connection) -> None:
-    """`instances.ctid` -> `instances.handle`, mais a coluna `backend`.
+    """`instances.ctid` -> `instances.handle`, plus the `backend` column.
 
-    **`RENAME COLUMN` preserva a AFINIDADE, e isso morde.** A coluna continua declarada
-    `INTEGER`, entao num banco migrado o CTID antigo volta do SELECT como `int` e nao como
-    `str` — e um `CAST(... AS TEXT)` nao adianta, a afinidade converte de volta na hora de
-    gravar (conferido no sqlite3 desta maquina). Um handle nao-numerico, como
-    `palworld-1`, entra como texto normalmente: a afinidade so converte o que PARECE
-    numero. O resultado seria uma coluna de tipo misto, e `{"307"} | {307}` nao se
-    deduplica — a checagem de handle ocupado passaria quando nao devia.
+    **`RENAME COLUMN` keeps the AFFINITY, and that bites.** The column stays declared
+    `INTEGER`, so in a migrated database the old CTID comes back from SELECT as `int` and not
+    as `str` - and a `CAST(... AS TEXT)` does not help, the affinity converts it back on write
+    (checked in this machine's sqlite3). A non-numeric handle, like `palworld-1`, goes in as
+    text normally: the affinity only converts what LOOKS like a number. The result would be a
+    mixed-type column, and `{"307"} | {307}` does not deduplicate - the taken-handle check
+    would pass when it should not.
 
-    Reconstruir a tabela corrigiria a declaracao e custa caro: `ports` tem
-    `REFERENCES instances(id) ON DELETE CASCADE`, entao derrubar `instances` leva as portas
-    junto. A saida e normalizar na LEITURA (ver `taken` e `instance`), que e uma linha e
-    nao perde dado. Banco novo ja nasce com a coluna `TEXT`.
+    Rebuilding the table would fix the declaration, and it is expensive: `ports` has
+    `REFERENCES instances(id) ON DELETE CASCADE`, so dropping `instances` takes the ports
+    with it. The way out is normalizing on READ (see `taken` and `instance`), which is one
+    line and loses no data. A new database is born with the column as `TEXT`.
     """
     cols = {r[1] for r in conn.execute("PRAGMA table_info(instances)")}
     if not cols:
-        return                      # banco novo: o SCHEMA cria tudo certo logo abaixo
+        return                      # new database: the SCHEMA creates everything right below
     if "ctid" in cols and "handle" not in cols:
         conn.execute("ALTER TABLE instances RENAME COLUMN ctid TO handle")
     if "backend" not in cols:
@@ -156,7 +156,7 @@ def _migrate_handle(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_names(conn: sqlite3.Connection) -> None:
-    """Leva um banco antigo para os nomes em ingles. Nao faz nada num banco novo."""
+    """Moves an old database to the English names. Does nothing on a new database."""
     tables = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'")}
     if not tables & {old_one for old_one, _ in _RENAME_TABLES}:
@@ -181,17 +181,17 @@ class Db:
         self._path = path
         self._clock = clock
         with self._connection() as conn:
-            # A migration vem ANTES do SCHEMA: com as tabelas velhas ainda de pe, o
-            # `CREATE TABLE IF NOT EXISTS` criaria as novas VAZIAS ao lado, e o rename
-            # depois nao teria para onde ir.
+            # The migration comes BEFORE the SCHEMA: with the old tables still up, the
+            # `CREATE TABLE IF NOT EXISTS` would create the new ones EMPTY alongside, and the
+            # rename afterwards would have nowhere to go.
             _migrate_names(conn)
             _migrate_handle(conn)
             conn.executescript(SCHEMA)
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        # isolation_level=None: as transacoes sao explicitas (BEGIN IMMEDIATE), nao as
-        # que o modulo abre por conta propria antes de cada INSERT.
+        # isolation_level=None: transactions are explicit (BEGIN IMMEDIATE), not the ones
+        # the module opens on its own before each INSERT.
         conn = sqlite3.connect(self._path, timeout=10, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
@@ -211,12 +211,12 @@ class Db:
                 raise
             conn.execute("COMMIT")
 
-    # --- ocupacao ---------------------------------------------------------
+    # --- occupancy --------------------------------------------------------
 
     def taken(self) -> tuple[set[str], set[str], set[tuple[int, str]]]:
         with self._connection() as conn:
-            # `str()` e nao o valor cru: num banco migrado a coluna ainda tem afinidade
-            # INTEGER e devolve o CTID antigo como numero (ver `_migrate_handle`).
+            # `str()` and not the raw value: in a migrated database the column still has INTEGER
+            # affinity and returns the old CTID as a number (see `_migrate_handle`).
             handles = {str(r["handle"]) for r in conn.execute("SELECT handle FROM instances")}
             ips = {r["ip"] for r in conn.execute("SELECT ip FROM instances")}
             ports = {(r["number"], r["proto"]) for r in conn.execute("SELECT number, proto FROM ports")}
@@ -238,7 +238,7 @@ class Db:
             raise Conflict(f"reserva recusada pelo banco (nome, CTID, IP ou porta ja em uso): {error}") from None
         return instance_id
 
-    # --- instancias -------------------------------------------------------
+    # --- instances --------------------------------------------------------
 
     def instance(self, instance_id: int) -> dict | None:
         with self._connection() as conn:
@@ -270,7 +270,7 @@ class Db:
         with self._connection() as conn:
             return int(conn.execute("SELECT COUNT(*) FROM instances").fetchone()[0])
 
-    # --- operacoes --------------------------------------------------------
+    # --- operations -------------------------------------------------------
 
     def create_operation(self, instance_id: int | None, kind: str) -> str:
         op_id = uuid.uuid4().hex
@@ -285,7 +285,7 @@ class Db:
             current_one = conn.execute("SELECT log FROM operations WHERE id = ?", (op_id,)).fetchone()
             if current_one is None:
                 return
-            # Cauda: instalacao de jogo pode gerar MB de saida, e o painel so precisa do fim.
+            # Tail: a game installation can produce MBs of output, and the panel only needs the end.
             fresh = (current_one["log"] + row.rstrip("\n") + "\n")[-LOG_MAX:]
             conn.execute("UPDATE operations SET log = ? WHERE id = ?", (fresh, op_id))
 
@@ -313,7 +313,7 @@ class Db:
             return int(conn.execute("SELECT COUNT(*) FROM operations WHERE kind = 'criar' AND started_at >= ?",
                                     (since,)).fetchone()[0])
 
-    # --- auditoria --------------------------------------------------------
+    # --- audit ------------------------------------------------------------
 
     def audit(self, actor: str, verb: str, target: str, result: str, detail: str = "") -> None:
         with self._transaction() as conn:

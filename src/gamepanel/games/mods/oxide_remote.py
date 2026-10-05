@@ -1,26 +1,26 @@
-"""Oxide (uMod), o carregador de plugins do Rust - roda DENTRO do CT do jogo, nao no painel.
+"""Oxide (uMod), the Rust plugin loader - runs INSIDE the game CT, not in the panel.
 
-Mesmo desenho dos outros instaladores remotos: o painel le este texto e o executa no
-container com `python3 -c`, por SSH, como root. So stdlib e sem import do `gamepanel`.
+Same design as the other remote installers: the panel reads this text and runs it in the
+container with `python3 -c`, over SSH, as root. Stdlib only and no import of `gamepanel`.
 
-O pacote (`Oxide.Rust-linux.zip`, release do GitHub OxideMod/Oxide.Rust) e so a pasta
-`RustDedicated_Data/Managed/` - conferido baixando a 2.0.7801 -, e ele SOBRESCREVE DLLs do
-proprio jogo. Daqui saem as decisoes:
-- **O que vai ser sobrescrito e guardado antes** (`.gamepanel-oxide/original/`). Desligar
-  devolve o original; religar poe o Oxide de novo, sem baixar nada. Sem a copia, "desligar"
-  so seria possivel validando o jogo inteiro pela Steam.
-- **Atualizacao do Rust pela Steam APAGA o Oxide** (o SteamCMD devolve as DLLs do jogo), e
-  o Rust atualiza toda primeira quinta do mes, alem dos hotfixes. O status compara o que esta
-  na pasta com o que o instalador pos, e a tela pede para reinstalar quando nao bate. A copia
-  do original tambem fica velha nessa hora: reinstalar a refaz.
-- **Plugins sao `.cs` em `oxide/plugins`**, enviados pela tela (o envio passa pelo antivirus).
-  O Oxide compila e carrega plugin novo sem reiniciar o servidor.
+The package (`Oxide.Rust-linux.zip`, GitHub release of OxideMod/Oxide.Rust) is only the
+`RustDedicated_Data/Managed/` folder - checked by downloading 2.0.7801 -, and it OVERWRITES DLLs
+of the game itself. The decisions follow from that:
+- **What is going to be overwritten is saved first** (`.gamepanel-oxide/original/`). Disabling
+  restores the original; re-enabling puts Oxide back, without downloading anything. Without the
+  copy, "disabling" would only be possible by validating the whole game through Steam.
+- **A Rust update through Steam WIPES Oxide** (SteamCMD restores the game DLLs), and Rust
+  updates every first Thursday of the month, plus hotfixes. The status compares what is in the
+  folder with what the installer put there, and the screen asks to reinstall when they do not
+  match. The copy of the original also goes stale at that point: reinstalling redoes it.
+- **Plugins are `.cs` files in `oxide/plugins`**, uploaded through the screen (the upload goes
+  through the antivirus). Oxide compiles and loads a new plugin without restarting the server.
 
-NAO TESTADO num servidor de verdade ainda.
+NOT TESTED on a real server yet.
 
-Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable |
+Actions (argv): [--scan SCRIPT] status | loader-install [VERSION] | loader-enable | loader-disable |
 loader-uninstall,
-seguidas da pasta do jogo (onde mora o RustDedicated). Toda acao termina com UMA linha JSON.
+followed by the game folder (where RustDedicated lives). Every action ends with ONE JSON line.
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ import zipfile
 
 RELEASES = "https://api.github.com/repos/OxideMod/Oxide.Rust/releases/latest"
 RELEASE_TAG = "https://api.github.com/repos/OxideMod/Oxide.Rust/releases/tags/{tag}"
-# As versoes do Oxide sao x.y.zzzz (2.0.7801).
+# Oxide versions are x.y.zzzz (2.0.7801).
 VERSION = re.compile(r"\d{1,9}\.\d{1,9}\.\d{1,9}")
 ASSET = "Oxide.Rust-linux.zip"
 PREFIX = "RustDedicated_Data/Managed/"
@@ -55,24 +55,24 @@ LOG_TAIL = 15
 
 
 def fetch(url: str) -> bytes:
-    # So https do github.com chega aqui: a API e fixa (RELEASES) e o download vem da resposta
-    # dela, conferida contra github.com antes de baixar.
+    # Only github.com https gets here: the API is fixed (RELEASES) and the download comes from its
+    # response, checked against github.com before downloading.
     req = urllib.request.Request(url, headers={"User-Agent": "gamepanel"})  # noqa: S310
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310
         return r.read()
 
 
 # ------------------------------------------------------------------ antivirus
-# IGUAL nos outros instaladores remotos (ha teste comparando): rodam soltos no CT e nao importam
-# um ao outro. A regra (o que conta como achado) nao mora aqui, e sim no script que o painel
-# manda; aqui so se escreve o que baixou numa pasta e se chama o script.
+# IDENTICAL in the other remote installers (a test compares them): they run standalone in the CT
+# and do not import each other. The rule (what counts as a finding) does not live here, but in the
+# script the panel sends; here we only write what was downloaded into a folder and call the script.
 
 def scanner(script: str):
-    """Funcao que verifica [(nome, bytes)] com o script do painel; ValueError = recusado."""
+    """Function that checks [(name, bytes)] with the panel's script; ValueError = rejected."""
     def scan(blobs: list[tuple[str, bytes]]) -> None:
-        # /var/tmp e nao /tmp: no Debian 13 o /tmp e tmpfs (memoria), e o pacote pode ter
-        # dezenas de MB. O prefixo e o que o script do antivirus aceita apagar. mkdtemp:
-        # nome imprevisivel e 0700.
+        # /var/tmp and not /tmp: on Debian 13 /tmp is tmpfs (memory), and the package can be
+        # tens of MB. The prefix is what the antivirus script agrees to delete. mkdtemp:
+        # unpredictable name and 0700.
         os.makedirs("/var/tmp", exist_ok=True)  # noqa: S108
         work = tempfile.mkdtemp(prefix="gamepanel-scan-", dir="/var/tmp")
         try:
@@ -92,7 +92,7 @@ def scanner(script: str):
 
 
 def _no_scan(blobs: list[tuple[str, bytes]]) -> None:
-    """So para teste e status: `main` recusa instalar sem `--scan`."""
+    """Only for tests and status: `main` refuses to install without `--scan`."""
 
 
 def _read_json(path: str) -> dict:
@@ -153,9 +153,9 @@ def install_loader(game_dir: str, version: str = "", fetcher=fetch, scan=_no_sca
     for entry in files:
         rel = _safe_rel(entry)
         dest = os.path.join(game_dir, rel)
-        # Entra no backup o arquivo que NAO e o que o instalador pos: o do jogo. Com o Oxide
-        # ligado, o que esta na pasta e o Oxide, e o backup de antes continua valendo; depois
-        # de uma atualizacao do Rust, o que esta na pasta e o jogo NOVO, e substitui o velho.
+        # What goes into the backup is the file that is NOT what the installer put there: the
+        # game's. With Oxide enabled, what is in the folder is Oxide, and the earlier backup still
+        # holds; after a Rust update, what is in the folder is the NEW game, and it replaces the old one.
         if os.path.exists(dest) and _sha(dest) != ours.get(rel):
             os.makedirs(os.path.dirname(os.path.join(original, rel)), exist_ok=True)
             shutil.copy2(dest, os.path.join(original, rel))
@@ -194,7 +194,7 @@ def set_enabled(game_dir: str, enabled: bool) -> dict:
     if enabled:
         count = _copy_tree(os.path.join(state, PACKAGE), game_dir)
     else:
-        # Arquivo que o Oxide trouxe e o jogo nao tinha sai; o que o jogo tinha volta.
+        # A file Oxide brought and the game did not have is removed; what the game had comes back.
         for rel in mark.get("files", {}):
             if not os.path.exists(os.path.join(state, ORIGINAL, rel)):
                 with contextlib.suppress(FileNotFoundError):
@@ -204,12 +204,12 @@ def set_enabled(game_dir: str, enabled: bool) -> dict:
 
 
 def uninstall_loader(game_dir: str) -> dict:
-    """Tira o Oxide: devolve as DLLs do jogo e apaga oxide/ (plugins, dados, logs) e o estado.
+    """Remove Oxide: restore the game DLLs and delete oxide/ (plugins, data, logs) and the state.
 
-    Arquivo a arquivo, e nao copiando o backup inteiro de volta: depois de uma atualizacao do
-    Rust a pasta ja tem as DLLs NOVAS do jogo e o backup e da versao velha - devolve-lo
-    estragaria o servidor. So o que ainda e o arquivo do Oxide (mesmo sha256) volta ao original
-    (ou sai, se o jogo nao o tinha); o que a Steam ja trocou fica.
+    File by file, and not by copying the whole backup back: after a Rust update the folder
+    already has the game's NEW DLLs and the backup is from the old version - restoring it would
+    break the server. Only what is still the Oxide file (same sha256) goes back to the original
+    (or is removed, if the game did not have it); what Steam has already replaced stays.
     """
     state = os.path.join(game_dir, STATE_DIR)
     files = _read_json(os.path.join(state, MARK)).get("files", {})
@@ -253,7 +253,7 @@ def status(game_dir: str) -> dict:
         "loader_installed": bool(files),
         "loader": "Oxide", "loader_version": mark.get("version", ""),
         "loader_pinned": bool(mark.get("pinned")),
-        # Tudo no lugar = ligado; nada = desligado (ou o jogo foi atualizado); parte = quebrado.
+        # Everything in place = enabled; nothing = disabled (or the game was updated); some = broken.
         "enabled": bool(files) and matching == len(files),
         "wiped": bool(files) and 0 < matching < len(files),
         "mods": plugins, "log": log,

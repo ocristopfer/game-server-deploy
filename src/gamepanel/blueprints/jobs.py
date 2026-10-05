@@ -1,4 +1,4 @@
-"""Uma acao do painel em detalhe, e o que o JavaScript le enquanto ela roda."""
+"""A panel action in detail, and what the JavaScript reads while it runs."""
 from __future__ import annotations
 
 from flask import Blueprint, abort, jsonify, render_template

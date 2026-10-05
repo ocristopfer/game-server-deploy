@@ -1,4 +1,4 @@
-"""API HTTP: autenticacao, formato das respostas e o mapeamento erro -> status."""
+"""HTTP API: authentication, response format, and the error -> status mapping."""
 from __future__ import annotations
 
 import pytest
@@ -12,7 +12,7 @@ AUTH = {"Authorization": f"Bearer {TOKEN}", "X-Actor": "admin"}
 @pytest.fixture
 def http(environment):
     app = create_app(environment.servico, TOKEN)
-    app.config["TESTING"] = False  # queremos o handler de 500, nao a excecao propagada
+    app.config["TESTING"] = False  # we want the 500 handler, not the propagated exception
     return app.test_client()
 
 

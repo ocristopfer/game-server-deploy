@@ -1,25 +1,25 @@
-/* Nucleo — cadencia.
+/* Core - cadence.
  *
- * Seis telas do painel faziam a mesma coisa a mao: setInterval, um `if
- * (document.hidden) return`, um try/catch mudo e um ouvinte de visibilitychange
- * para puxar na volta. Cada copia tinha um detalhe a menos que a anterior — uma
- * seguia gastando SSH com a aba escondida, outra nao recuava quando o painel caia.
+ * Six panel screens did the same thing by hand: setInterval, an `if
+ * (document.hidden) return`, a silent try/catch and a visibilitychange listener
+ * to fetch on return. Each copy had one detail fewer than the previous one - one
+ * kept spending SSH with the tab hidden, another did not back off when the panel went down.
  *
- * Aqui isso e uma peca so, com uma responsabilidade: decidir QUANDO a tarefa roda.
- * Quem usa passa a tarefa e nao sabe nada sobre temporizadores — e por isso da para
- * trocar esta implementacao (por SSE, por exemplo) sem tocar em nenhuma feature.
+ * Here that is a single piece, with one responsibility: deciding WHEN the task runs.
+ * The caller passes the task and knows nothing about timers - which is why this
+ * implementation can be swapped (for SSE, for example) without touching any feature.
  */
 
-const MAX_BACKOFF = 4;   // 4 voltas puladas e o teto do castigo por falha
+const MAX_BACKOFF = 4;   // 4 skipped rounds is the ceiling of the failure penalty
 
 export class Poller {
   /**
-   * @param {() => Promise<void>} tarefa  o que rodar a cada volta; deixe o erro subir
-   *                                      para o recuo entrar em acao
-   * @param {object}   opcoes
-   * @param {number}   opcoes.intervalo   milissegundos entre voltas
-   * @param {boolean}  opcoes.aoVoltar    puxar na hora quando a aba reaparece
-   * @param {Function} opcoes.aoErro      chamado com o erro de cada volta que falhou
+   * @param {() => Promise<void>} task  what to run each round; let the error bubble up
+   *                                    so the backoff kicks in
+   * @param {object}   options
+   * @param {number}   options.interval   milliseconds between rounds
+   * @param {boolean}  options.onReturn   fetch right away when the tab reappears
+   * @param {Function} options.onError    called with the error of each round that failed
    */
   constructor(task, { interval = 10000, onReturn = true, onError = null } = {}) {
     this.task = task;
@@ -27,7 +27,7 @@ export class Poller {
     this.onReturn = onReturn;
     this.onError = onError;
     this.timer = null;
-    this.running = false;   // trava de reentrada: volta lenta nao empilha sobre a proxima
+    this.running = false;   // reentrancy lock: a slow round does not pile onto the next one
     this.failures = 0;
     this.skipped = 0;
     this._onVisibilityChange = () => {
@@ -55,11 +55,11 @@ export class Poller {
 
   toggle() { return this.active ? this.stop() : this.start(); }
 
-  /* Roda a tarefa agora, se for a hora dela.
+  /* Runs the task now, if it is its time.
    *
-   * Aba escondida nao gasta conexao SSH a toa. Depois de uma falha, as voltas
-   * seguintes sao puladas em numero crescente: com o painel fora do ar, dez abas
-   * abertas deixam de bater nele de tres em tres segundos cada uma. */
+   * A hidden tab does not waste an SSH connection for nothing. After a failure, the
+   * following rounds are skipped in growing numbers: with the panel down, ten open
+   * tabs stop hitting it every three seconds each. */
   async now() {
     if (this.running || document.hidden) return;
     if (this.failures && this.skipped < Math.min(this.failures, MAX_BACKOFF)) {

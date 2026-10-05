@@ -1,36 +1,36 @@
 param(
-    # Nome do jogo (arquivo games/<nome>.env), ex: dragonwilds
+    # Game name (file games/<name>.env), e.g. dragonwilds
     [string]$Game = "",
-    # OU: App ID do servidor dedicado na Steam (deploy generico)
+    # OR: Steam App ID of the dedicated server (generic deploy)
     [string]$AppId = "",
-    # Sobe/atualiza o painel administrativo em Docker
+    # Brings up/updates the admin panel in Docker
     [switch]$Panel,
-    # Para e remove o container do alvo (os volumes com o jogo NAO sao apagados)
+    # Stops and removes the target container (the volumes with the game are NOT deleted)
     [switch]$Down,
-    # Recria o container do zero (equivale a -Down seguido do deploy)
+    # Recreates the container from scratch (same as -Down followed by the deploy)
     [switch]$Recreate,
-    # Nao cadastra o servidor no painel ao final
+    # Do not register the server in the panel at the end
     [switch]$NoRegister,
-    # Revalida os arquivos do jogo pelo SteamCMD neste deploy
+    # Revalidates the game files through SteamCMD in this deploy
     [switch]$UpdateOnStart,
-    # Codigo do Steam Guard (jogos cujo servidor exige conta Steam, ex: dayz)
+    # Steam Guard code (games whose server requires a Steam account, e.g. dayz)
     [string]$SteamGuardCode = "",
-    # Docker de destino. Vazio = o daemon local. Remoto: "ssh://root@192.168.1.50"
+    # Target Docker. Empty = the local daemon. Remote: "ssh://root@10.20.0.50"
     [string]$DockerHost = "",
     [string]$EnvFile = ""
 )
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-# `$ScriptDir` e a pasta DESTE script (onde mora o provision-*.sh irmao). `$RepoRoot` e a
-# raiz do repositorio, dois niveis acima, e e de la que saem tools/, lib/, games/ e .env.
-# Na raiz os dois eram a mesma coisa por acidente; aqui a diferenca precisa ser dita.
+# `$ScriptDir` is the folder of THIS script (where the sibling provision-*.sh lives). `$RepoRoot`
+# is the repository root, two levels up, and tools/, lib/, games/ and .env come from there.
+# At the root the two were the same thing by accident; here the difference must be explicit.
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 $StackDir = Join-Path $RepoRoot "docker\stacks"
 $Network = "games"
 $PanelContainer = "gamepanel"
 
-# ---------------------------------------------------------------- utilidades
+# ----------------------------------------------------------------- utilities
 
 function Read-EnvFile([string]$Path) {
     $map = @{}
@@ -54,41 +54,41 @@ function Get-Cfg($Map, [string]$Key, [string]$Default = "") {
     return $Default
 }
 
-# Sufixo das chaves por jogo do .env: dragonwilds -> MEMORY_DRAGONWILDS
+# Suffix of the per-game keys of the .env: dragonwilds -> MEMORY_DRAGONWILDS
 function Get-GameSuffix([string]$Key) {
     return (($Key.ToUpper()) -replace '[^A-Z0-9]', '_')
 }
 
-# Le a chave do .env preferindo a versao especifica do jogo (CHAVE_<JOGO>)
+# Reads the .env key preferring the game-specific version (KEY_<GAME>)
 function Get-Scoped($Map, [string]$Key, [string]$Suffix, [string]$Default = "") {
     $scopedKey = "${Key}_${Suffix}"
     if ($Map.ContainsKey($scopedKey) -and $Map[$scopedKey] -ne "") { return $Map[$scopedKey] }
     return (Get-Cfg $Map $Key $Default)
 }
 
-# Os arquivos sao lidos pelo docker/bash: UTF-8 sem BOM e com LF
+# The files are read by docker/bash: UTF-8 without BOM and with LF
 function Write-LfFile([string]$Path, [string]$Content) {
     $normalized = $Content -replace "`r`n", "`n"
     [System.IO.File]::WriteAllText($Path, $normalized, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-# O docker escreve progresso no stderr, e o PowerShell 5.1 transforma stderr de
-# executavel em erro terminante sempre que a saida esta sendo redirecionada (basta o
-# usuario fazer "... | Tee-Object log.txt"). Por isso toda chamada ao docker passa por
-# aqui, com a preferencia relaxada: o erro de verdade e o codigo de saida.
-# Nao devolve nada de proposito: a saida do docker vai direto para a tela (build e
-# download sao demorados) e quem chama confere o $LASTEXITCODE, que e global.
+# docker writes progress to stderr, and PowerShell 5.1 turns an executable's stderr
+# into a terminating error whenever the output is being redirected (it is enough for the
+# user to do "... | Tee-Object log.txt"). So every docker call goes through
+# here, with the preference relaxed: the real error is the exit code.
+# Returns nothing on purpose: docker output goes straight to the screen (build and
+# download are slow) and the caller checks $LASTEXITCODE, which is global.
 function Invoke-DockerLive([string[]]$Arguments) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    try { & docker @Argumentos } finally { $ErrorActionPreference = $previous }
+    try { & docker @Arguments } finally { $ErrorActionPreference = $previous }
 }
 
-# Consulta silenciosa (a saida volta como texto, o stderr e descartado).
+# Silent query (the output comes back as text, stderr is discarded).
 function Invoke-DockerQuery([string[]]$Arguments) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    try { $output = & docker @Argumentos 2>$null } finally { $ErrorActionPreference = $previous }
+    try { $output = & docker @Arguments 2>$null } finally { $ErrorActionPreference = $previous }
     return $output
 }
 
@@ -104,8 +104,8 @@ function Assert-Docker {
     }
 }
 
-# As consultas de existencia usam 'ls --filter' em vez de 'inspect' porque um 'inspect'
-# que nao acha o objeto sai com erro - e aqui "nao existe" e resposta esperada.
+# Existence queries use 'ls --filter' instead of 'inspect' because an 'inspect'
+# that does not find the object exits with an error - and here "does not exist" is an expected answer.
 function Test-Network([string]$Name) {
     $found = Invoke-DockerQuery @("network", "ls", "--filter", "name=^$Name$", "--format", "{{.Name}}")
     return ($found -contains $Name)
@@ -132,7 +132,7 @@ function Invoke-Compose([string]$File, [string]$Project, [string[]]$ComposeArgs)
     }
 }
 
-# Chave publica do painel: sem ela o container do jogo nasce sem deixar o painel entrar
+# Panel public key: without it the game container is born without letting the panel in
 function Get-PanelPubKey($Map) {
     if (Test-Container $PanelContainer) {
         $fromContainer = Invoke-DockerQuery @("exec", $PanelContainer, "cat", "/etc/gamepanel/id_ed25519.pub")
@@ -141,7 +141,7 @@ function Get-PanelPubKey($Map) {
     return (Get-Cfg $Map "PANEL_PUBKEY")
 }
 
-# ------------------------------------------------------------------ contexto
+# ------------------------------------------------------------------- context
 
 if ($EnvFile -eq "") { $EnvFile = Join-Path $RepoRoot ".env" }
 $cfg = Read-EnvFile $EnvFile
@@ -171,7 +171,7 @@ Assert-Docker
 if (-not (Test-Path $StackDir)) { New-Item -ItemType Directory -Path $StackDir | Out-Null }
 Ensure-Network
 
-# ------------------------------------------------------------------- painel
+# -------------------------------------------------------------------- panel
 
 if ($Panel) {
     $port = Get-Cfg $cfg "ADMIN_PORT" "8080"
@@ -185,7 +185,7 @@ if ($Panel) {
 
     $file = Join-Path $StackDir "panel.yml"
     Write-LfFile $file @"
-# Gerado por deploy-docker.ps1 - edite o .env e rode de novo em vez de mexer aqui.
+# Generated by deploy-docker.ps1 - edit the .env and run it again instead of changing this.
 services:
   panel:
     build:
@@ -203,7 +203,7 @@ services:
       GAMEPANEL_ALLOW_SHELL: "$(Get-Cfg $cfg 'ADMIN_ALLOW_SHELL' '1')"
       GAMEPANEL_ALLOW_FILES: "$(Get-Cfg $cfg 'ADMIN_ALLOW_FILES' '1')"
       GAMEPANEL_FILE_DEFAULT: "$(Get-Cfg $cfg 'ADMIN_FILE_DEFAULT' '/opt/game')"
-      GAMEPANEL_FILE_ROOTS: "$(Get-Cfg $cfg 'ADMIN_FILE_ROOTS' '/')"
+      GAMEPANEL_FILE_ROOTS: "$(Get-Cfg $cfg 'ADMIN_FILE_ROOTS' '/opt/game,/home/steam')"
     volumes:
       - gamepanel-conf:/etc/gamepanel
       - gamepanel-data:/var/lib/gamepanel
@@ -242,7 +242,7 @@ networks:
 
 if ($Game -eq "" -and $AppId -eq "") { exit 0 }
 
-# --------------------------------------------------------------------- jogo
+# --------------------------------------------------------------------- game
 
 if ($Game -ne "") {
     $GameEnvPath = Join-Path $RepoRoot "games\$Game.env"
@@ -250,13 +250,13 @@ if ($Game -ne "") {
     $GameEnvRel = "games/$Game.env"
 } else {
     if ($AppId -notmatch '^\d+$') { throw "AppId invalido: $AppId" }
-    # Deploy generico: gera um games/app<id>.env minimo para a imagem ter o que copiar.
+    # Generic deploy: generates a minimal games/app<id>.env so the image has something to copy.
     $Game = "app$AppId"
     $GameEnvPath = Join-Path $RepoRoot "games\$Game.env"
     $GameEnvRel = "games/$Game.env"
     if (-not (Test-Path $GameEnvPath)) {
         Write-LfFile $GameEnvPath @"
-# Gerado por deploy-docker.ps1 -AppId $AppId (script de start detectado automaticamente).
+# Generated by deploy-docker.ps1 -AppId $AppId (start script detected automatically).
 GAME_KEY=$Game
 GAME_DISPLAY_NAME="Steam App $AppId"
 STEAM_APP_ID=$AppId
@@ -288,7 +288,7 @@ if ($Down) {
     exit 0
 }
 
-# ----- portas -----
+# ----- ports -----
 $portLines = @()
 $portList = Get-Cfg $game "GAME_PORTS"
 foreach ($entry in ($portList -split '\s+')) {
@@ -299,19 +299,19 @@ foreach ($entry in ($portList -split '\s+')) {
     if ($portNumber -notmatch '^\d+$') { continue }
     $portLines += "      - `"${portNumber}:${portNumber}/${proto}`""
 }
-# Porta SSH publicada so quando pedida: por padrao o painel entra pela rede interna.
+# SSH port published only when requested: by default the panel gets in through the internal network.
 $sshPort = Get-Scoped $cfg "SSH_PORT" $GameSuffix
 if ($sshPort -ne "") { $portLines += "      - `"${sshPort}:22`"" }
 if ($portLines.Count -eq 0) { $portLines += "      []" }
 
-# ----- recursos e opcoes -----
+# ----- resources and options -----
 $memory = Get-Scoped $cfg "MEMORY" $GameSuffix (Get-Cfg $game "RECOMMENDED_MEMORY" "4096")
 $cores = Get-Scoped $cfg "CORES" $GameSuffix (Get-Cfg $game "RECOMMENDED_CORES" "2")
 $tz = Get-Cfg $cfg "TZ" "America/Sao_Paulo"
 $autoUpdate = Get-Scoped $cfg "AUTO_UPDATE" $GameSuffix "1"
 $updateTime = Get-Cfg $cfg "UPDATE_TIME" "06:00"
-# Nome diferente do parametro -UpdateOnStart: no PowerShell $x e $X sao a MESMA
-# variavel, e atribuir texto por cima de um [switch] quebra na hora.
+# Name differs from the -UpdateOnStart parameter: in PowerShell $x and $X are the SAME
+# variable, and assigning text over a [switch] breaks immediately.
 $revalidate = Get-Cfg $cfg "UPDATE_ON_START" "0"
 if ($UpdateOnStart) { $revalidate = "1" }
 
@@ -322,7 +322,7 @@ if ($pub -eq "") {
     Write-Host "  sem ela o painel nao consegue entrar neste container." -ForegroundColor Yellow
 }
 
-# ----- conta Steam (jogos com STEAM_ANONYMOUS=0, hoje o dayz) -----
+# ----- Steam account (games with STEAM_ANONYMOUS=0, today dayz) -----
 $anon = (Get-Cfg $game "STEAM_ANONYMOUS" "1") -ne "0"
 $secretLines = @()
 if (-not $anon) {
@@ -341,14 +341,14 @@ if (-not $anon) {
     $secretLines += "STEAM_PASS=$steamPass"
     if ($steamGuard -ne "") { $secretLines += "STEAM_GUARD_CODE=$steamGuard" }
 }
-# O arquivo existe sempre (o compose exige o env_file declarado), mas so tem conteudo
-# quando o jogo precisa de conta. Ele esta no .gitignore.
+# The file always exists (compose requires the declared env_file), but it only has content
+# when the game needs an account. It is in .gitignore.
 Write-LfFile $secretsPath (($secretLines -join "`n") + "`n")
 
 # ----- stack -----
 Write-LfFile $file @"
-# Gerado por deploy-docker.ps1 para $Display - edite o .env/games/$GameKey.env e rode de
-# novo em vez de mexer aqui.
+# Generated by deploy-docker.ps1 for $Display - edit the .env/games/$GameKey.env and run it
+# again instead of changing this.
 services:
   game:
     build:
@@ -360,7 +360,7 @@ services:
     container_name: $Container
     hostname: $GameKey
     restart: unless-stopped
-    # O jogo precisa receber o TERM e ter tempo de salvar o mundo antes do KILL.
+    # The game must receive the TERM and have time to save the world before the KILL.
     stop_grace_period: 120s
     ports:
 $($portLines -join "`n")
@@ -397,28 +397,31 @@ Invoke-Compose $file $composeProject @("up", "-d", "--build")
 Write-Host "`nAcompanhe a instalacao com:" -ForegroundColor DarkGray
 Write-Host "  docker logs -f $Container"
 
-# ----- cadastro no painel -----
+# ----- registration in the panel -----
 $registered = $false
 if (-not $NoRegister) {
     if (Test-Container $PanelContainer) {
         $cmdArgs = @(
-            # /opt/gamepanel/gamepanel: e para la que o Dockerfile.prod copia o pacote.
+            # /opt/gamepanel/gamepanel: that is where Dockerfile.prod copies the package.
             "exec", $PanelContainer, "python3", "/opt/gamepanel/gamepanel/app.py",
             "--register-server", $Display,
             "--server-host", $Container,
             "--service", "$GameKey.service",
+            # The gameserver image refuses root over SSH: the panel logs in as gamepanel and
+            # reaches steam and the root helpers through sudo (lib/ct-panel-access.sh).
+            "--ssh-user", "gamepanel",
             "--game-port", (Get-Cfg $game "GAME_PORTS"),
             "--query-port", (Get-Cfg $game "QUERY_PORT" "0"),
             "--config-path", (Get-Cfg $game "CONFIG_PATH"),
             "--config-files", (Get-Cfg $game "CONFIG_FILES"),
-            # Pastas de save que a tela Backups do painel guarda. Num redeploy o painel
-            # mantem o que ja estava la: quem ajustou pela tela nao perde o ajuste.
+            # Save folders that the panel's Backups screen keeps. On a redeploy the panel
+            # keeps what was already there: whoever adjusted it on screen does not lose it.
             "--backup-paths", (Get-Cfg $game "BACKUP_PATHS"),
             "--player-source", (Get-Cfg $game "PLAYER_SOURCE"),
-            # Vagas: o painel mostra "2/6" quando a contagem nao traz o total (log, conexoes).
+            # Slots: the panel shows "2/6" when the count does not bring the total (log, connections).
             "--max-players", $(if ((Get-Cfg $game "MAX_PLAYERS") -match '^\d+$') { (Get-Cfg $game "MAX_PLAYERS") } else { "0" }),
-            # Contagem pelo log: padroes e, quando o nome so existe em arquivo proprio
-            # (o .ADM do DayZ), o caminho dele.
+            # Counting by log: patterns and, when the name only exists in a separate file
+            # (DayZ's .ADM), its path.
             "--join-re", (Get-Cfg $game "JOIN_RE"),
             "--leave-re", (Get-Cfg $game "LEAVE_RE"),
             "--log-path", (Get-Cfg $game "LOG_PATH"),
@@ -435,7 +438,7 @@ if (-not $NoRegister) {
     }
 }
 
-# ----- resumo -----
+# ----- summary -----
 $portasTexto = if ($portList -ne "") { $portList } else { "(nao definidas para este jogo)" }
 Write-Host ""
 Write-Host "========================================================================"

@@ -1,4 +1,4 @@
-"""Busca de jogo por nome ou App ID (busca_de_jogos.py) sobre a lista gerada do LinuxGSM."""
+"""Game search by name or App ID (busca_de_jogos.py) over the list generated from LinuxGSM."""
 from __future__ import annotations
 
 from gamepanel.games.catalog import manual_suggestions, pterodactyl_suggestions
@@ -63,7 +63,7 @@ def test_valores_do_formulario_sempre_trazem_todas_as_chaves():
 
 
 def test_sugestao_sem_porta_limpa_os_campos_de_porta_do_jogo_anterior():
-    """Escolher um jogo sem porta depois de um com porta nao pode deixar a porta velha no campo."""
+    """Picking a game without a port after one with a port must not leave the old port in the field."""
     partial = next(s for s in sugestoes_de_jogos.SUGGESTIONS if not s["ports"])
     values = busca.to_form(partial)
     assert values["ports"] == ""
@@ -79,7 +79,7 @@ def test_deslocavel_vira_um_ou_vazio():
 
 
 def test_jogo_so_de_windows_que_o_linuxgsm_nao_tem_e_achado():
-    """Era o buraco: servidor sem build Linux nao existe no LinuxGSM, e a busca voltava vazia."""
+    """This was the gap: a server without a Linux build does not exist in LinuxGSM, and the search came back empty."""
     found = busca.search("abiotic")
     assert _names(found) == ["Abiotic Factor"]
     values = busca.to_form(found[0])
@@ -93,7 +93,7 @@ def test_app_id_da_lista_manual_tambem_casa():
 
 
 def test_sugestao_do_linuxgsm_limpa_windows_e_proton_da_anterior():
-    """Escolher Palworld depois do Abiotic Factor nao pode deixar o Proton marcado."""
+    """Picking Palworld after Abiotic Factor must not leave Proton checked."""
     values = busca.to_form(busca.search("2394010")[0])
     assert values["platform"] == ""
     assert values["recipes"] == ""

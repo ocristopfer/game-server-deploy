@@ -1,4 +1,4 @@
-"""Quem entra no painel e com que papel."""
+"""Who gets into the panel and with which role."""
 from __future__ import annotations
 
 import sqlite3
@@ -44,8 +44,8 @@ def new():
             users_repo.insert(conn, username, panel.hash_password(new_password),
                               role, panel.now_iso())
     except sqlite3.IntegrityError:
-        # username e UNIQUE: e o unico jeito de dois admins criarem o mesmo nome ao
-        # mesmo tempo sem um sobrescrever o outro.
+        # username is UNIQUE: it is the only way for two admins creating the same name at the
+        # same time not to overwrite each other.
         flash(panel.translate("flash.user_exists", user=username), "error")
         return redirect(url_for("users.index"))
     flash(panel.translate("flash.user_created", user=username,
@@ -61,7 +61,7 @@ def role(uid: int):
     if role not in panel.ROLES:
         abort(400, i18n.Message("flash.role_invalid"))
     if uid == session.get("uid"):
-        # Rebaixar a si mesmo tranca a pessoa fora desta tela no mesmo clique.
+        # Demoting yourself locks you out of this screen in the same click.
         flash(panel.translate("flash.cannot_change_own_role"), "error")
     elif role == target["role"]:
         flash(panel.translate("flash.user_already_is", user=target["username"],
@@ -80,7 +80,7 @@ def role(uid: int):
 @bp.post("/users/<int:uid>/password")
 @panel.admin_required
 def password(uid: int):
-    """Reset feito pelo admin — sem a senha atual, que e justamente a esquecida."""
+    """Reset done by the admin, without the current password, which is exactly the forgotten one."""
     target = panel._user_or_404(uid)
     failure = panel.validate_password(request.form.get("new", ""), request.form.get("confirm", ""))
     if failure:
@@ -96,8 +96,8 @@ def password(uid: int):
 @bp.post("/users/<int:uid>/2fa/off")
 @panel.admin_required
 def two_factor_off(uid: int):
-    """Celular perdido e codigos de recuperacao perdidos: o admin desliga o 2FA da pessoa, que
-    entra so com a senha e ativa de novo. Nao vale para si mesmo (use a tela Conta)."""
+    """Lost phone and lost recovery codes: the admin turns off the person's 2FA, who then
+    signs in with just the password and enables it again. Not for yourself (use the Account screen)."""
     target = panel._user_or_404(uid)
     if uid == session.get("uid"):
         flash(panel.translate("flash.own_two_factor_in_account"), "error")
@@ -119,6 +119,6 @@ def delete(uid: int):
         conn = panel.db()
         with conn:
             users_repo.delete(conn, uid)
-        # A sessao dele morre no proximo clique: o login_required confere o banco.
+        # Their session dies on the next click: login_required checks the database.
         flash(panel.translate("flash.user_removed", user=target["username"]), "ok")
     return redirect(url_for("users.index"))

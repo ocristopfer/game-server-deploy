@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Cria/atualiza o container do painel administrativo dos servidores de jogos.
-# Executado NO HOST PROXMOX pelo deploy-admin.ps1 (que envia este bundle via scp).
+# Creates/updates the container of the game servers' admin panel.
+# Run ON THE PROXMOX HOST by deploy-admin.ps1 (which sends this bundle via scp).
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,7 +49,9 @@ resolve_variables() {
   BRIDGE="${BRIDGE:-vmbr0}"
   IP_CIDR="${ADMIN_IP_CIDR:-dhcp}"
   GATEWAY="${ADMIN_GATEWAY:-${GATEWAY:-}}"
-  CT_PASSWORD="${CT_PASSWORD:-changeme}"
+  # Without a password the CT root stays LOCKED (you get in via `pct enter` or the SSH key).
+  # The default used to be "changeme": every CT was born with the same well-known console password.
+  CT_PASSWORD="${CT_PASSWORD:-}"
   TZ="${TZ:-America/Sao_Paulo}"
 
   MEMORY="${ADMIN_MEMORY:-512}"
@@ -61,21 +63,21 @@ resolve_variables() {
   PANEL_USER="${ADMIN_USER:-admin}"
   PANEL_PASSWORD="${ADMIN_PASSWORD:-}"
   ALLOW_SHELL="${ADMIN_ALLOW_SHELL:-1}"
-  # Terminal interativo (usa o mesmo ALLOW_SHELL) e editor de arquivos de config.
+  # Interactive terminal (uses the same ALLOW_SHELL) and config file editor.
   ALLOW_FILES="${ADMIN_ALLOW_FILES:-1}"
-  # 1 = todo usuario precisa ter o segundo fator (2FA) para usar o painel. Ligue DEPOIS de cada
-  # admin ativar o dele em Conta: ligar antes tranca todo mundo fora.
+  # 1 = every user must have the second factor (2FA) to use the panel. Turn it on AFTER every
+  # admin has enabled theirs in Account: turning it on before locks everyone out.
   REQUIRE_2FA="${ADMIN_REQUIRE_2FA:-0}"
-  # Endereco https (com dominio) por onde o painel e aberto; vazio = sem entrar por biometria.
-  # O painel confere o formato no start e, se for ruim, recusa subir dizendo o nome da variavel.
+  # https address (with a domain) the panel is opened through; empty = no biometric login.
+  # The panel checks the format at start and, if it is bad, refuses to start, naming the variable.
   WEBAUTHN_ORIGIN="${ADMIN_WEBAUTHN_ORIGIN:-}"
-  # Idioma da tela para quem ainda nao escolheu na Conta E para o que sai pelo webhook
-  # (o canal e um so: a mensagem nao pode trocar de lingua conforme quem clicou).
+  # Screen language for whoever has not chosen one in Account YET, AND for what goes out through
+  # the webhook (there is a single channel: the message cannot switch language based on who clicked).
   LANG_PADRAO="${ADMIN_LANG:-pt}"
   FILE_MAX_KB="${ADMIN_FILE_MAX_KB:-4096}"
   FILE_PREVIEW_KB="${ADMIN_FILE_PREVIEW_KB:-256}"
   FILE_DOWNLOAD_MAX_MB="${ADMIN_FILE_DOWNLOAD_MAX_MB:-2048}"
-  FILE_ROOTS="${ADMIN_FILE_ROOTS:-/}"
+  FILE_ROOTS="${ADMIN_FILE_ROOTS:-/opt/game,/home/steam}"
   FILE_DEFAULT="${ADMIN_FILE_DEFAULT:-/opt/game}"
   TERM_MAX="${ADMIN_TERM_MAX:-4}"
   TERM_IDLE="${ADMIN_TERM_IDLE:-900}"
@@ -95,11 +97,11 @@ resolve_variables() {
 validate_host_requirements() {
   need_cmd pct
   need_cmd pveam
-  # O bundle traz UM tarball de release e o instalador que o abre do lado de la. Antes
-  # aqui havia uma lista de arquivos do pacote (app.py, templates/base.html, static/js/
-  # app.js...) que precisava crescer junto com o codigo e nunca crescia: ela conferia o
-  # primeiro nivel e deixava passar pasta nova inteira. Quem confere o conteudo agora e o
-  # sha256 do artefato.
+  # The bundle carries ONE release tarball and the installer that unpacks it on the other side.
+  # There used to be a list of package files here (app.py, templates/base.html, static/js/
+  # app.js...) that had to grow along with the code and never did: it checked the
+  # first level and let a whole new folder slip by. What checks the content now is the
+  # artifact's sha256.
   [[ -f "$RELEASE_ENV_FILE" ]] || die "release.env nao encontrado: $RELEASE_ENV_FILE (rode pelo deploy-admin.ps1)"
   [[ -f "$INSTALLER" ]] || die "install-release.sh nao encontrado: $INSTALLER"
   load_env_file "$RELEASE_ENV_FILE"
@@ -146,7 +148,7 @@ ensure_container() {
       --unprivileged 1 \
       --features nesting=1 \
       --net0 "$NET0" \
-      --password "$CT_PASSWORD" \
+      ${CT_PASSWORD:+--password "$CT_PASSWORD"} \
       --onboot 1 \
       --timezone "$TZ" \
       --tags "admin;gamepanel"
@@ -175,7 +177,7 @@ start_container() {
     waited=$((waited + 2))
     [[ "$waited" -lt 120 ]] || die "CT $CTID nao respondeu em 120s"
   done
-  # Sem rede o apt falha com um erro bem menos claro do que este.
+  # Without network apt fails with an error far less clear than this one.
   waited=0
   until run_ct "getent hosts deb.debian.org >/dev/null 2>&1"; do
     sleep 2
@@ -185,8 +187,8 @@ start_container() {
 }
 
 install_packages() {
-  # openssh-server e do painel para fora: e ele que permite atualizar o codigo direto
-  # do Windows (deploy-admin.ps1 sem -Full), sem passar pelo Proxmox.
+  # openssh-server is for reaching the panel from outside: it is what allows updating the code
+  # straight from Windows (deploy-admin.ps1 without -Full), without going through Proxmox.
   msg "Instalando dependencias no CT (python3-flask, gunicorn, openssh-client/server)"
   run_ct "export DEBIAN_FRONTEND=noninteractive && apt-get update -qq && \
     apt-get install -y -qq python3 python3-flask gunicorn openssh-client openssh-server \
@@ -205,39 +207,39 @@ publish_release() {
   local remote_tmp=/tmp/gamepanel-release
 
   run_ct "rm -rf '$remote_tmp' && install -d '$remote_tmp'"
-  # pct push, e nao o `tee` do push_file_to_ct: o tarball e binario e tem de chegar byte
-  # a byte — e o sha256 do outro lado nao perdoa um unico byte trocado.
+  # pct push, and not push_file_to_ct's `tee`: the tarball is binary and has to arrive byte
+  # for byte -- and the sha256 on the other side does not forgive a single swapped byte.
   pct push "$CTID" "$SCRIPT_DIR/$RELEASE_TARBALL" "${remote_tmp}/${RELEASE_TARBALL}" --perms 0644
   pct push "$CTID" "$INSTALLER" "${remote_tmp}/install-release.sh" --perms 0755
 
-  # A sonda VAI aqui: a unit e o panel.env ja foram escritos (ver o comentario no main),
-  # entao o restart que o instalador faz sobe o codigo NOVO e a resposta dela quer dizer
-  # algo. Enquanto a unit vinha depois, o instalador so encontrava servico inexistente e
-  # se limitava a deixar o release no lugar -- o rollback dele nunca era exercitado. Num
-  # CT novo o banco ainda esta sem usuario neste ponto, e isso nao atrapalha: o /health
-  # nao depende de sessao.
+  # The probe GOES here: the unit and panel.env have already been written (see the comment in main),
+  # so the restart the installer does brings up the NEW code and the probe's answer means
+  # something. While the unit came afterwards, the installer only found a nonexistent service and
+  # just left the release in place -- its rollback was never exercised. On a
+  # new CT the database still has no user at this point, and that does not get in the way: /health
+  # does not depend on a session.
   run_ct "bash '${remote_tmp}/install-release.sh' gamepanel \
 '${remote_tmp}/${RELEASE_TARBALL}' '${RELEASE_SHA256}' ${APP_DIR} ${SERVICE_NAME} \
 'wget -q -O /dev/null http://127.0.0.1:${PANEL_PORT}/health'" \
     || die "A instalacao do release falhou dentro do CT (veja a saida acima)"
   run_ct "rm -rf '$remote_tmp'"
 
-  # Falhar aqui e melhor do que o servico cair no start com ModuleNotFoundError.
+  # Failing here is better than the service dying at start with ModuleNotFoundError.
   run_ct "cd ${APP_DIR}/current && python3 -c 'import gamepanel.app'" \
     || die "O pacote do painel nao importa no CT a partir de ${APP_DIR}/current"
-  # || true dentro do $(...): sem ele o `set -e` derruba o script aqui e o motivo
-  # nunca chega a ser impresso.
+  # || true inside the $(...): without it `set -e` kills the script here and the reason
+  # never gets printed.
   msg "No ar: $(run_ct "readlink ${APP_DIR}/current" | tr -d '\r' || true)"
 }
 
 ensure_ssh_key() {
   msg "Preparando a chave SSH do painel"
-  # A chave e do painel para os CONTAINERS DE JOGO. O painel nao recebe nenhuma chave
-  # para o host Proxmox: ele nao fala com o hipervisor em momento algum.
+  # The key is from the panel to the GAME CONTAINERS. The panel gets no key at all
+  # for the Proxmox host: it never talks to the hypervisor.
   run_ct "test -f ${CONF_DIR}/id_ed25519 || ssh-keygen -t ed25519 -N '' -C 'gamepanel@${CT_HOSTNAME}' -f ${CONF_DIR}/id_ed25519 >/dev/null"
   run_ct "chown ${APP_USER}:${APP_USER} ${CONF_DIR}/id_ed25519 ${CONF_DIR}/id_ed25519.pub && chmod 0600 ${CONF_DIR}/id_ed25519"
-  # known_hosts fica em DATA_DIR porque precisa ser gravavel: as host keys dos
-  # containers sao aprendidas no primeiro acesso (StrictHostKeyChecking=accept-new).
+  # known_hosts lives in DATA_DIR because it must be writable: the containers' host keys
+  # are learned on first access (StrictHostKeyChecking=accept-new).
   run_ct "touch ${DATA_DIR}/known_hosts && chown ${APP_USER}:${APP_USER} ${DATA_DIR}/known_hosts && chmod 0644 ${DATA_DIR}/known_hosts"
 
   PANEL_PUBKEY="$(pct exec "$CTID" -- cat "${CONF_DIR}/id_ed25519.pub" | tr -d '\r\n')"
@@ -245,11 +247,11 @@ ensure_ssh_key() {
 }
 
 enable_direct_deploy() {
-  # Autoriza a chave do operador no CT do painel. Com ela, o proximo deploy manda os
-  # arquivos direto por scp e nem toca no Proxmox.
+  # Authorizes the operator's key on the panel CT. With it, the next deploy sends the
+  # files straight over scp and does not even touch Proxmox.
   local pubkey="${ADMIN_SSH_PUBKEY:-}"
   run_ct "systemctl enable --now ssh >/dev/null 2>&1 || systemctl enable --now sshd >/dev/null 2>&1 || true"
-  # So por chave: o CT nasce com senha de root conhecida do .env.
+  # Key only: the CT is born with a root password known from the .env.
   run_ct "sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config && \
     systemctl reload ssh >/dev/null 2>&1 || true"
 
@@ -267,9 +269,9 @@ render_panel_config() {
   msg "Gravando configuracao do painel"
   local tmp_file preserved
   tmp_file="$(mktemp)"
-  # O broker grava as linhas GAMEPANEL_*BROKER* neste arquivo (deploy-broker.ps1
-  # -ConfigurePanel), e este script reescreve o arquivo INTEIRO: sem guardar essas linhas antes,
-  # cada deploy completo do painel desligava o broker em silencio.
+  # The broker writes the GAMEPANEL_*BROKER* lines into this file (deploy-broker.ps1
+  # -ConfigurePanel), and this script rewrites the WHOLE file: without saving those lines first,
+  # every full panel deploy silently turned the broker off.
   preserved="$(pct exec "$CTID" -- sh -c "grep -E '^GAMEPANEL_(BROKER_|ALLOW_BROKER)' ${CONF_DIR}/panel.env 2>/dev/null || true" | tr -d '\r')"
   cat > "$tmp_file" <<EOF
 GAMEPANEL_DB=${DATA_DIR}/panel.db
@@ -306,13 +308,13 @@ bootstrap_admin_user() {
     warn "ADMIN_PASSWORD nao definido - uma senha foi gerada e sera exibida no resumo"
   fi
   msg "Criando/atualizando o usuario '${PANEL_USER}' do painel"
-  # A raiz de import e ${APP_DIR}/current, nunca ${APP_DIR}: desde que release virou
-  # pasta por versao o pacote mora em releases/<versao>/gamepanel, e ${APP_DIR} guarda
-  # so o symlink. Apontado para ${APP_DIR} o import falha e o set -e mata o script AQUI
-  # - ja com o release publicado e ANTES do render_service, ou seja o painel volta a
-  # subir pela unit VELHA com o codigo velho, e o resumo nem chega a dizer que faltou
-  # metade do deploy.
-  # A senha vai por stdin (nao pela linha de comando) para nao vazar no ps do CT.
+  # The import root is ${APP_DIR}/current, never ${APP_DIR}: since releases became one
+  # folder per version the package lives in releases/<version>/gamepanel, and ${APP_DIR} holds
+  # only the symlink. Pointed at ${APP_DIR} the import fails and set -e kills the script HERE
+  # - with the release already published and BEFORE render_service, meaning the panel comes back
+  # up through the OLD unit with the old code, and the summary never even says that half
+  # of the deploy was missing.
+  # The password goes through stdin (not the command line) so it does not leak in the CT's ps.
   printf '%s' "$PANEL_PASSWORD" | pct exec "$CTID" -- env \
     GAMEPANEL_DB="${DATA_DIR}/panel.db" \
     GAMEPANEL_SECRET_FILE="${CONF_DIR}/secret_key" \
@@ -339,14 +341,14 @@ Wants=network-online.target
 Type=simple
 User=${APP_USER}
 Group=${APP_USER}
-# A release corrente, por symlink: trocar de versao (ou voltar) e mover o link e
-# reiniciar. O systemd resolve o caminho no start, entao cada restart pega o que o
-# link aponta AGORA.
+# The current release, via symlink: switching versions (or going back) is moving the link and
+# restarting. systemd resolves the path at start, so every restart picks up what the
+# link points to NOW.
 WorkingDirectory=${APP_DIR}/current
 EnvironmentFile=${CONF_DIR}/panel.env
-# Um worker so: as sessoes de terminal vivem na memoria do processo, e com dois
-# workers metade dos pedidos cairia no processo que nao tem a sessao. As threads
-# sustentam os long-polls do terminal (um por aba aberta) alem das telas normais.
+# A single worker: terminal sessions live in the process memory, and with two
+# workers half of the requests would land on the process that does not have the session. The threads
+# sustain the terminal long-polls (one per open tab) on top of the normal screens.
 ExecStart=/usr/bin/gunicorn --workers 1 --threads 16 --timeout 120 \\
   --bind 0.0.0.0:${PANEL_PORT} --access-logfile - gamepanel.wsgi:app
 Restart=on-failure
@@ -376,9 +378,9 @@ start_panel() {
 }
 
 authorize_in_game_cts() {
-  # Bootstrap opcional: prepara os containers de jogo para receber o painel.
-  # Roda aqui (no host, durante o deploy) porque so o host consegue entrar nos CTs sem
-  # SSH previo - o painel em si nunca tem acesso ao hipervisor.
+  # Optional bootstrap: prepares the game containers to accept the panel.
+  # Runs here (on the host, during the deploy) because only the host can get into the CTs without
+  # prior SSH - the panel itself never has access to the hypervisor.
   local raw="${ADMIN_AUTHORIZE_CTIDS:-}"
   [[ -n "$raw" ]] || return 0
 
@@ -467,7 +469,7 @@ EOF
   cat <<EOF
 
 Proximo passo: entre no painel e cadastre seus servidores em "Adicionar", informando o
-IP do container e o servico (ex.: 192.168.2.20, dragonwilds.service). Preencha tambem a
+IP do container e o servico (ex.: 10.20.1.20, dragonwilds.service). Preencha tambem a
 "Pasta de configuracao" (ex.: /opt/game) para a tela Arquivos abrir no lugar certo, e a
 "Porta de consulta" (Palworld: 27015) para o painel contar os jogadores online.
 
@@ -487,13 +489,13 @@ ele por SSH (segundos, sem tocar no Proxmox). Use -Full para mexer no CT em si
 EOF
 }
 
-# Firewall de dentro do CT do painel (lib/ct-firewall.sh, papel "panel"): a web e o SSH so
-# atendem a rede de administracao (ADMIN_FIREWALL_SOURCES, padrao a rede local inteira). A
-# saida fica livre: o painel fala com os jogos, com o broker e com o webhook (Discord).
+# Firewall inside the panel CT (lib/ct-firewall.sh, role "panel"): the web and SSH only
+# serve the administration network (ADMIN_FIREWALL_SOURCES, default the whole local network).
+# Outbound stays open: the panel talks to the games, the broker and the webhook (Discord).
 #
-# Depois do `start_panel`: a sonda de saude dele usa 127.0.0.1, que o firewall sempre deixa
-# passar. A prova de que a REDE ainda chega e feita aqui, do host - e se nao chegar, o
-# firewall sai, em vez de um painel no ar que ninguem alcanca.
+# After `start_panel`: its health probe uses 127.0.0.1, which the firewall always lets
+# through. The proof that the NETWORK still gets in is done here, from the host - and if it does not,
+# the firewall comes off, instead of a live panel that nobody can reach.
 apply_panel_firewall() {
   if [[ "${CT_FIREWALL:-1}" == "0" ]]; then
     warn "CT_FIREWALL=0: o CT do painel fica SEM firewall interno"
@@ -516,8 +518,8 @@ apply_panel_firewall() {
   run_ct "/usr/local/sbin/ct-firewall apply" || die "o firewall do painel nao carregou (nada foi alterado nele)"
   ip="$(run_ct "hostname -I | awk '{print \$1}'" | tr -d '\r \n' || true)"
   [[ -n "$ip" ]] || return 0
-  # O host costuma estar na rede de administracao. Se ele nao alcanca a web do painel, ou a
-  # lista esta errada ou o host esta fora dela: nos dois casos, melhor aberto e avisado.
+  # The host is usually on the administration network. If it cannot reach the panel web, either the
+  # list is wrong or the host is outside it: in both cases, better open and warned.
   if ! timeout 5 bash -c "</dev/tcp/${ip}/${PANEL_PORT}" 2>/dev/null; then
     run_ct "/usr/local/sbin/ct-firewall off"
     warn "O host nao alcancou ${ip}:${PANEL_PORT} com o firewall ligado: ele foi DESLIGADO. Confira ADMIN_FIREWALL_SOURCES (${sources}) e religue com: pct exec ${CTID} -- ct-firewall apply"
@@ -537,26 +539,26 @@ main() {
   enable_direct_deploy
   render_panel_config
   render_service
-  # A config e a unit vao ANTES de publicar, e a ordem importa: e o `install-release.sh`
-  # que reinicia o servico e faz a sonda de saude, e ele roda dentro do publish. Com a
-  # unit escrita depois, a sonda testava o binomio ERRADO -- unit velha com codigo novo --
-  # e o resultado dela nao queria dizer nada:
+  # The config and the unit go BEFORE publishing, and the order matters: it is `install-release.sh`
+  # that restarts the service and runs the health probe, and it runs inside the publish. With the
+  # unit written afterwards, the probe tested the WRONG pair -- old unit with new code --
+  # and its result meant nothing:
   #
-  #   - se a unit velha chamava algo que o codigo novo nao tem mais (foi o caso, com
-  #     `gamebroker.wsgi:criar_app_de_ambiente()`), a sonda falha, o install-release faz
-  #     rollback e o script morre AQUI, justamente antes do passo que consertaria a unit.
-  #     O deploy fica sem saida: nao ha como chegar na unit nova;
-  #   - e se o layout velho ainda estivesse importavel, a sonda PASSA contra o codigo
-  #     velho e o deploy se declara bem-sucedido sem ter trocado nada.
+  #   - if the old unit called something the new code no longer has (that was the case, with
+  #     `gamebroker.wsgi:criar_app_de_ambiente()`), the probe fails, install-release
+  #     rolls back and the script dies HERE, right before the step that would fix the unit.
+  #     The deploy is stuck: there is no way to reach the new unit;
+  #   - and if the old layout were still importable, the probe PASSES against the old
+  #     code and the deploy declares itself successful without having changed anything.
   #
-  # Nesta ordem a sonda ve unit nova, env novo e codigo novo, e o rollback dela volta
-  # para um estado que de fato funcionava.
+  # In this order the probe sees new unit, new env and new code, and its rollback goes back
+  # to a state that actually worked.
   publish_release
-  # Depois do publish de proposito: importa `gamepanel` de ${APP_DIR}/current, que so
-  # existe a partir dali. As migrations de esquema correm neste import -- e com a unit
-  # ja certa, quem as roda e o processo NOVO, que ja esta servindo. Na ordem antiga o
-  # processo velho continuava no ar com SQL em portugues enquanto o banco ja tinha sido
-  # renomeado, e ele despejava `no such column: nome` por alguns segundos.
+  # After the publish on purpose: imports `gamepanel` from ${APP_DIR}/current, which only
+  # exists from that point on. The schema migrations run on this import -- and with the unit
+  # already right, whoever runs them is the NEW process, which is already serving. In the old order the
+  # old process stayed up with SQL in Portuguese while the database had already been
+  # renamed, and it spewed `no such column: nome` for a few seconds.
   bootstrap_admin_user
   start_panel
   apply_panel_firewall

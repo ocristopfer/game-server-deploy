@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
-"""Empacota um release: um tar.gz, um sha256, e nada mais.
+"""Packages a release: one tar.gz, one sha256, and nothing else.
 
     python tools/build-release.py gamepanel
     python tools/build-release.py gamebroker --out dist
 
-O que sai e o que o deploy manda pela rede: `dist/gamepanel-0.1.0+abc1234.tar.gz` mais o
-`.sha256` ao lado. Do outro lado ele vira `/opt/gamepanel/releases/<versao>/`, e o
-symlink `current` passa a apontar para a pasta nova — trocar de versao (ou voltar) e
-mover um symlink, nao copiar arquivo por cima de arquivo.
+The output is what the deploy sends over the network: `dist/gamepanel-0.1.0+abc1234.tar.gz`
+plus the `.sha256` next to it. On the other side it becomes `/opt/gamepanel/releases/<version>/`,
+and the `current` symlink starts pointing at the new folder -- switching versions (or going
+back) is moving a symlink, not copying files over files.
 
-Tres decisoes que parecem detalhe e nao sao:
+Three decisions that look like details and are not:
 
-- **`tarfile`, da stdlib, e nao um pacote Python de verdade.** Producao so tem stdlib e o
-  `python3-flask` do apt: nao ha pip para instalar um wheel, e um binario de PyInstaller
-  traria Python e Flask proprios, jogando fora justamente essa garantia.
-- **Um arquivo so, com hash.** O envio antigo copiava a arvore inteira arquivo a arquivo,
-  com uma lista escrita a mao de quais pastas apagar antes — lista que ficou para tras a
-  cada pasta nova do pacote, deixando modulo renomeado vivo no container. Aqui nao existe
-  o que sobrar: release nova e pasta nova.
-- **Byte a byte.** O envio antigo passava cada arquivo por um normalizador de fim de
-  linha, e um PNG que caisse nessa peneira chegava corrompido do outro lado (o icone do
-  PWA ja chegou). Um tar nao interpreta conteudo.
+- **`tarfile`, from the stdlib, and not a real Python package.** Production only has the
+  stdlib and apt's `python3-flask`: there is no pip to install a wheel, and a PyInstaller
+  binary would bring its own Python and Flask, throwing away exactly that guarantee.
+- **A single file, with a hash.** The old upload copied the whole tree file by file, with
+  a hand-written list of which folders to delete first -- a list that fell behind with
+  every new folder in the package, leaving renamed modules alive in the container. Here
+  there is nothing left over: a new release is a new folder.
+- **Byte for byte.** The old upload passed every file through a line-ending normalizer,
+  and a PNG caught in that sieve arrived corrupted on the other side (the PWA icon already
+  did). A tar does not interpret content.
 
-O conteudo e determinista: nomes ordenados, dono/grupo zerados e a data do commit no
-lugar do mtime de cada arquivo. Duas chamadas no mesmo commit dao o MESMO sha256, o que
-faz o hash responder "o CT esta com este codigo?" e nao so "o arquivo chegou inteiro?".
+The content is deterministic: sorted names, zeroed owner/group and the commit date in
+place of each file's mtime. Two calls on the same commit give the SAME sha256, which makes
+the hash answer "is the CT running this code?" and not just "did the file arrive intact?".
 """
 from __future__ import annotations
 
@@ -43,9 +43,9 @@ ROOT = Path(__file__).resolve().parent.parent
 PACKAGES = ("gamepanel", "gamebroker")
 SKIPPED_DIRS = ("__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache")
 SKIPPED_SUFFIXES = (".pyc", ".pyo")
-# O que NAO vai para producao: dobres de teste e o broker de brinquedo que o docker
-# compose sobe. `dev.py` e o caso que importa — ele cria instancia contra backends falsos,
-# e no CT de verdade seria um jeito de fazer o broker mentir sobre o que existe.
+# What does NOT go to production: test doubles and the toy broker that docker compose
+# brings up. `dev.py` is the case that matters -- it creates instances against fake
+# backends, and on a real CT it would be a way to make the broker lie about what exists.
 SKIPPED_NAMES = ("dev.py", "conftest.py", "fakes.py", "fake_http.py")
 SKIPPED_PREFIXES = ("test_",)
 FILE_MODE = 0o644
@@ -59,10 +59,10 @@ BUILT_AT = {built_at!r}
 
 
 def _git(*args: str) -> str:
-    """Roda um git na raiz do repositorio; devolve vazio se nao der (arvore sem .git)."""
+    """Runs git at the repository root; returns empty if it fails (tree without .git)."""
     try:
-        # Argumentos fixos, nenhum vem de fora; e `git` pelo PATH de proposito, porque
-        # esta e ferramenta de desenvolvimento e o caminho muda em cada maquina.
+        # Fixed arguments, none come from outside; and `git` from PATH on purpose, because
+        # this is a development tool and the path changes on every machine.
         done = subprocess.run(("git", *args), cwd=ROOT, capture_output=True,  # noqa: S603, S607
                               text=True, check=False)
     except OSError:
@@ -71,7 +71,7 @@ def _git(*args: str) -> str:
 
 
 class Release(NamedTuple):
-    """Versao, commit e data — o que vai para dentro do pacote e para o nome do arquivo."""
+    """Version, commit and date -- what goes inside the package and into the file name."""
 
     version: str
     commit: str
@@ -80,19 +80,20 @@ class Release(NamedTuple):
 
 
 def describe() -> Release:
-    """`0.1.0+abc1234`, ou `0.1.0+abc1234.dirty` se ha mudanca nao commitada.
+    """`0.1.0+abc1234`, or `0.1.0+abc1234.dirty` if there are uncommitted changes.
 
-    O `.dirty` e de proposito visivel no nome do arquivo e na tela: um release que nao
-    corresponde a nenhum commit nao pode ser confundido com um que corresponde, senao
-    "voltei para a 0.1.0" um dia devolve outro codigo.
+    The `.dirty` is visible on purpose in the file name and on screen: a release that
+    matches no commit must not be confused with one that does, otherwise "I went back to
+    0.1.0" one day brings back different code.
     """
     base = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     commit = _git("rev-parse", "--short=7", "HEAD")
     if not commit:
-        # Sem git nao ha commit nem data de commit. Cair no relogio aqui custaria o
-        # determinismo — a data entra no carimbo E no mtime de cada arquivo do tar, entao
-        # dois empacotamentos do mesmo codigo dariam sha256 diferentes e o hash deixaria
-        # de responder "o CT esta com este codigo?". Sem data e a resposta honesta.
+        # Without git there is no commit and no commit date. Falling back to the clock here
+        # would cost determinism -- the date goes into the stamp AND into the mtime of every
+        # file in the tar, so two packagings of the same code would give different sha256s
+        # and the hash would stop answering "is the CT running this code?". No date is the
+        # honest answer.
         return Release(base, "", "", False)
     dirty = bool(_git("status", "--porcelain"))
     built_at = _git("show", "-s", "--format=%cI", "HEAD")
@@ -114,7 +115,7 @@ def _files_of(folder: Path) -> list[Path]:
 
 
 def _entry(name: str, data: bytes, when: int) -> tarfile.TarInfo:
-    """Cabecalho sem dono, sem grupo e com data fixa: dois builds iguais, hash igual."""
+    """Header with no owner, no group and a fixed date: two equal builds, equal hash."""
     info = tarfile.TarInfo(name)
     info.size = len(data)
     info.mtime = when
@@ -132,9 +133,9 @@ def build(package: str, out_dir: Path, release: Release) -> Path:
     target = out_dir / f"{package}-{release.version}.tar.gz"
     when = int(datetime.fromisoformat(release.built_at).timestamp()) if release.built_at else 0
 
-    # O gzip e montado a mao so por causa do `mtime=0`: o `mode="w:gz"` do tarfile carimba
-    # a hora do empacotamento no cabecalho do gzip, e o mesmo commit daria um sha256
-    # diferente a cada chamada — o hash deixaria de responder "o CT esta com este codigo?".
+    # The gzip is assembled by hand only because of `mtime=0`: tarfile's `mode="w:gz"` stamps
+    # the packaging time into the gzip header, and the same commit would give a different
+    # sha256 on every call -- the hash would stop answering "is the CT running this code?".
     with target.open("wb") as raw, gzip.GzipFile(
         fileobj=raw, mode="wb", mtime=0, compresslevel=9,
     ) as packed, tarfile.open(
@@ -172,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
         out_dir = ROOT / out_dir
     target = build(args.package, out_dir, release)
     checksum = _sha256(target)
-    # O formato e o que o `sha256sum -c` do outro lado espera ler.
+    # The format is what `sha256sum -c` on the other side expects to read.
     (target.parent / (target.name + ".sha256")).write_text(
         f"{checksum}  {target.name}\n", encoding="utf-8", newline="\n",
     )

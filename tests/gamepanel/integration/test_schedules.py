@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Testes do agendamento, da retencao do historico e da tela de historico global.
+"""Tests for scheduling, history retention and the global history screen.
 
     pytest admin/test_schedules.py
 
-O que estes testes garantem: uma tarefa dispara na hora certa, NAO dispara duas vezes na
-mesma ocorrencia, nao dispara atrasada quando o painel passou a noite fora do ar, e o
-historico nao cresce para sempre. A conta do relogio e testada aqui como funcao pura -
-sem thread, sem esperar o tempo passar.
+What these tests guarantee: a task fires at the right time, does NOT fire twice for the
+same occurrence, does not fire late when the panel was down overnight, and the history
+does not grow forever. The clock arithmetic is tested here as a pure function -
+no thread, no waiting for time to pass.
 """
 from datetime import UTC, datetime, timedelta
 
@@ -18,7 +18,7 @@ TZ = UTC
 
 
 def when_at(day, clock_at, minute=0):
-    """Uma quarta-feira (2026-08-19) as HH:MM, para as contas terem um chao fixo."""
+    """A Wednesday (2026-08-19) at HH:MM, so the arithmetic has fixed ground."""
     return datetime(2026, 8, day, clock_at, minute, tzinfo=TZ)
 
 
@@ -29,19 +29,19 @@ def task(**kw):
     return base
 
 
-# --------------------------------------------------------- ocorrencia anterior
+# --------------------------------------------------------- previous occurrence
 
 @pytest.mark.parametrize("label,sched,now,expected", [
     ("diario, ja passou hoje", task(hour=5), when_at(19, 14), when_at(19, 5)),
     ("diario, ainda nao chegou hoje -> foi ontem",
      task(hour=23), when_at(19, 2), when_at(18, 23)),
-    # weekday 0 = segunda; de quarta olhando para tras, a segunda foi 17/08.
+    # weekday 0 = Monday; looking back from Wednesday, Monday was 17/08.
     ("semanal, dia ja passou nesta semana",
      task(kind="semanal", weekday=0, hour=4), when_at(19, 10), when_at(17, 4)),
-    # weekday 4 = sexta; de quarta, a sexta anterior foi 14/08.
+    # weekday 4 = Friday; from Wednesday, the previous Friday was 14/08.
     ("semanal, dia ainda nao chegou -> semana passada",
      task(kind="semanal", weekday=4, hour=4), when_at(19, 10), when_at(14, 4)),
-    # No proprio dia, antes da hora, tem de recuar uma semana inteira.
+    # On the same day, before the time, it must go back a whole week.
     ("semanal, hoje e o dia mas a hora nao chegou",
      task(kind="semanal", weekday=2, hour=23), when_at(19, 1), when_at(12, 23)),
     ("intervalo nao tem ocorrencia fixa", task(kind="intervalo"), when_at(19, 10), None),
@@ -50,7 +50,7 @@ def test_ocorrencia_anterior(label, sched, now, expected):
     assert panel.previous_occurrence(sched, now) == expected, label
 
 
-# ------------------------------------------------------------- quando vence
+# ------------------------------------------------------------- when it is due
 
 def test_diario_dispara_na_hora_e_nao_antes():
     assert panel.is_due(task(hour=5), when_at(19, 5, 0))
@@ -58,15 +58,15 @@ def test_diario_dispara_na_hora_e_nao_antes():
 
 
 def test_nao_repete_a_mesma_ocorrencia():
-    """O relogio acorda a cada 30s e nao pode repetir um disparo ja feito."""
+    """The clock wakes every 30s and must not repeat a firing already done."""
     already_ran = task(hour=5, last_run=when_at(19, 5, 0).isoformat())
     assert not panel.is_due(already_ran, when_at(19, 5, 30))
     assert panel.is_due(already_ran, when_at(20, 5, 1)), "no dia seguinte volta a valer"
 
 
 def test_atraso_alem_da_tolerancia_nao_dispara():
-    """Painel fora do ar a noite inteira: as 14h ninguem quer o restart das 5h no meio
-    da partida. A tolerancia e GRACE (1h por padrao)."""
+    """Panel down the whole night: at 14h nobody wants the 5h restart in the middle
+    of a match. The tolerance is GRACE (1h by default)."""
     assert not panel.is_due(task(hour=5), when_at(19, 14))
     assert panel.is_due(task(hour=5), when_at(19, 5, 30)), "dentro da tolerancia ainda dispara"
 
@@ -80,22 +80,22 @@ def test_intervalo_conta_a_partir_do_ultimo_disparo():
 
 
 def test_last_run_ilegivel_nao_trava_a_tarefa():
-    """Banco mexido a mao nao pode fazer uma tarefa nunca mais disparar."""
+    """A database edited by hand must not make a task never fire again."""
     crooked = task(hour=5, last_run="isto nao e uma data")
     assert panel.is_due(crooked, when_at(19, 5))
 
 
-# -------------------------------------------------------------------- rotulos
+# -------------------------------------------------------------------- labels
 
 @pytest.mark.parametrize("label,sched,expected", [
-    ("diario", task(hour=5, minute=30), "todo dia as 05:30"),
-    # Concordancia: "toda segunda" (de segunda-feira) mas "todo domingo".
+    ("diario", task(hour=5, minute=30), "todo dia às 05:30"),
+    # Portuguese gender agreement: "toda segunda" (segunda-feira is feminine) but "todo domingo".
     ("semanal, dia feminino",
-     task(kind="semanal", weekday=0, hour=3), "toda segunda as 03:00"),
+     task(kind="semanal", weekday=0, hour=3), "toda segunda às 03:00"),
     ("semanal, dia masculino",
-     task(kind="semanal", weekday=6, hour=3), "todo domingo as 03:00"),
+     task(kind="semanal", weekday=6, hour=3), "todo domingo às 03:00"),
     ("semanal, sabado tambem",
-     task(kind="semanal", weekday=5, hour=3), "todo sabado as 03:00"),
+     task(kind="semanal", weekday=5, hour=3), "todo sábado às 03:00"),
     ("intervalo", task(kind="intervalo", every_hours=6), "a cada 6h"),
     ("intervalo de uma hora", task(kind="intervalo", every_hours=1), "a cada hora"),
 ])
@@ -103,7 +103,7 @@ def test_rotulo_agendamento(label, sched, expected):
     assert panel.schedule_label(sched) == expected, label
 
 
-# --------------------------------------------------------- retencao do historico
+# --------------------------------------------------------- history retention
 
 def test_jobs_antigos_saem_na_limpeza(database):
     with database:
@@ -128,7 +128,7 @@ def test_jobs_antigos_saem_na_limpeza(database):
     assert database.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 3
 
 
-# ------------------------------------------------------------ agendar pelas telas
+# ------------------------------------------------------------ scheduling through the screens
 
 @pytest.fixture
 def server(database) -> int:
@@ -158,7 +158,7 @@ def test_admin_agenda_uma_tarefa_diaria(server, admin, database, post):
 
 
 def test_intervalo_nasce_com_o_relogio_zerado(server, admin, database, post):
-    """Sem isto 'a cada 6h' dispararia no instante em que fosse salvo."""
+    """Without this, 'every 6h' would fire the instant it was saved."""
     post(admin, f"/servers/{server}/schedules",
            {"action": "backup", "kind": "intervalo", "every_hours": "6"})
     inter = database.execute("SELECT * FROM schedules WHERE kind = 'intervalo'").fetchone()
@@ -182,7 +182,7 @@ def test_valores_fora_da_faixa_nao_entram_no_banco(server, admin, database, post
 
 @pytest.fixture
 def scheduled_task(server, admin, database, post) -> int:
-    """Uma tarefa diaria ja salva, para os testes de alternar/rodar/remover."""
+    """A daily task already saved, for the toggle/run/remove tests."""
     post(admin, f"/servers/{server}/schedules",
            {"action": "restart", "kind": "diario", "hour": "5", "minute": "0"})
     return database.execute(
@@ -201,7 +201,7 @@ def test_admin_desliga_e_ela_some_do_laco_do_relogio(scheduled_task, admin, data
         "SELECT enabled FROM schedules WHERE id = ?", (scheduled_task,)
     ).fetchone()[0] == 0
 
-    # Tarefa desligada some do laco do relogio: e o que 'desligar' tem de significar.
+    # A disabled task drops out of the clock loop: that is what 'disable' has to mean.
     with panel.app.app_context():
         enabled_ones = panel.db().execute(
             "SELECT COUNT(*) FROM schedules WHERE enabled = 1").fetchone()[0]
@@ -216,7 +216,7 @@ def test_admin_remove_a_tarefa(scheduled_task, admin, database, post):
 
 
 def test_apagar_o_servidor_leva_as_tarefas_dele(server, scheduled_task, database):
-    """ON DELETE CASCADE: senao o relogio tentaria disparar para um servidor sumido."""
+    """ON DELETE CASCADE: otherwise the clock would try to fire for a server that is gone."""
     with database:
         database.execute("DELETE FROM servers WHERE id = ?", (server,))
     assert database.execute(
@@ -224,7 +224,7 @@ def test_apagar_o_servidor_leva_as_tarefas_dele(server, scheduled_task, database
     ).fetchone()[0] == 0
 
 
-# ------------------------------------------------------------------ historico global
+# ------------------------------------------------------------------ global history
 
 @pytest.mark.parametrize("qs", ["", "?usuario=chefe", "?acao=start", "?servidor=abc",
                                 "?p=-5", "?acao=formatar"])
@@ -233,7 +233,7 @@ def test_historico_global_nunca_quebra(admin, qs):
 
 
 def test_console_nao_aparece_no_historico_global_para_operador(database, admin, operator):
-    """O corte de papel do historico por servidor vale igual no global."""
+    """The role cut of the per-server history applies the same way to the global one."""
     with database:
         database.execute(
             "INSERT INTO servers (name, host, ssh_port, ssh_user, service, created_at)"

@@ -1,8 +1,8 @@
-"""O registro de adapters de jogo: nenhum fica de fora, nenhum colide.
+"""The game adapter registry: none left out, none colliding.
 
-Acrescentar um jogo e criar um modulo em `games/adapters/` e uma linha em
-`registry.ADAPTERS`. Esquecer a linha nao da erro: a tela do jogo continua caindo no
-editor generico, que funciona — e por isso ninguem percebe. Este teste percebe.
+Adding a game means creating a module in `games/adapters/` and a line in
+`registry.ADAPTERS`. Forgetting the line raises no error: the game screen keeps falling back
+to the generic editor, which works - and that is why nobody notices. This test notices.
 """
 from __future__ import annotations
 
@@ -29,13 +29,13 @@ def test_todo_adapter_da_pasta_esta_no_registro():
 
 
 def test_a_varredura_encontra_adapters():
-    """Zero adapters e o jeito silencioso de este teste parar de valer."""
+    """Zero adapters is the silent way for this test to stop meaning anything."""
     assert len(_modules_on_disk()) >= 5
 
 
 @pytest.mark.parametrize("name", _modules_on_disk())
 def test_o_adapter_expoe_o_contrato(name: str):
-    """`FILENAME` (que arquivo ele reconhece) e `FIELDS` (o que ele sabe sobre ele)."""
+    """`FILENAME` (which file it recognizes) and `FIELDS` (what it knows about that file)."""
     module = importlib.import_module(f"gamepanel.games.adapters.{name}")
     assert hasattr(module, "FILENAME"), f"{name} nao declara FILENAME"
     assert hasattr(module, "FIELDS"), f"{name} nao declara FIELDS"
@@ -44,7 +44,7 @@ def test_o_adapter_expoe_o_contrato(name: str):
 
 
 def test_dois_adapters_nao_disputam_o_mesmo_arquivo():
-    """O primeiro da lista venceria, e o segundo viraria codigo morto silencioso."""
+    """The first in the list would win, and the second would become silent dead code."""
     conflitos = []
     for i, first in enumerate(registry.ADAPTERS):
         for second in registry.ADAPTERS[i + 1:]:
@@ -55,11 +55,11 @@ def test_dois_adapters_nao_disputam_o_mesmo_arquivo():
 
 
 def test_arquivo_desconhecido_cai_no_editor_generico():
-    """Jogo sem adapter nao fica de fora do painel: ele edita o arquivo como texto."""
+    """A game without an adapter is not left out of the panel: it edits the file as text."""
     assert registry.catalog_for("config_de_um_jogo_novo.ini") == {}
     assert registry.describe("config_de_um_jogo_novo.ini", "qualquer") is None
 
 
 def test_o_caminho_completo_resolve_pelo_nome_do_arquivo():
-    """O painel passa o caminho como o container o devolveu."""
+    """The panel passes the path as the container returned it."""
     assert registry.describe("/opt/game/Config/serverDZ.cfg", "hostname") is not None

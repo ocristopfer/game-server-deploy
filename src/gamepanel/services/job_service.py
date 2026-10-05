@@ -1,19 +1,19 @@
-"""A POLITICA do historico: como cada acao se chama e quem pode ler a saida dela.
+"""The history POLICY: what each action is called and who may read its output.
 
-Sem Flask e sem SQL. O que dispara um job (thread, SSH, banco) fica no `app.py`, porque
-depende da conexao por requisicao e do `g`; o que esta aqui e a decisao, que e pura e
-por isso testavel sem subir nada.
+No Flask and no SQL. What starts a job (thread, SSH, database) stays in `app.py`, because
+it depends on the per-request connection and on `g`; what lives here is the decision,
+which is pure and therefore testable without starting anything.
 
-Duas listas moram aqui porque as tres telas que as usam (historico do servidor,
-historico geral e a rota de API) TEM de concordar. Escritas em cada consulta, uma delas
-um dia deixa passar o que as outras escondem.
+Two lists live here because the three screens that use them (server history, global
+history and the API route) MUST agree. Written out in each query, one of them would
+someday let through what the others hide.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
 
-# Acao -> chave de catalogo. CHAVE e nunca texto pronto: o historico e uma tela como as
-# outras e segue o idioma de quem a abriu (ver `i18n`).
+# Action -> catalog key. A KEY and never ready-made text: the history is a screen like the
+# others and follows the language of whoever opened it (see `i18n`).
 EXTRA_LABELS: Mapping[str, str] = {
     "shell": "job.shell",
     "terminal": "job.terminal",
@@ -33,7 +33,8 @@ EXTRA_LABELS: Mapping[str, str] = {
     "restore-backup": "job.backup_restored",
     "delete-backup": "job.backup_deleted",
     "backup-to-panel": "job.backup_sent_to_panel",
-    # Moderacao nao da root em container nenhum: e operacao, e fica visivel ao operador.
+    # Moderation gives no root on any container: it is an operation, and stays visible to
+    # the operator.
     "player-action": "job.player_action",
     "broker-criar": "job.instance_created",
     "broker-desativar": "job.instance_deactivated",
@@ -43,30 +44,31 @@ EXTRA_LABELS: Mapping[str, str] = {
     "broker-jogo-apagar": "job.game_removed",
 }
 
-# O historico guarda a saida INTEIRA do que rodou. Estas acoes so um admin consegue
-# disparar (console, terminal, editor de arquivos), entao a saida delas — que carrega o
-# comando digitado, o conteudo do arquivo e o que mais tenha passado pela tela — tambem
-# so ele pode ler. Sem esta lista, o operador que leva 403 no console leria o resultado
-# do console abrindo o job pelo id.
+# The history keeps the WHOLE output of what ran. Only an admin can trigger these actions
+# (console, terminal, file editor), so their output, which carries the typed command, the
+# file contents and whatever else went across the screen, is also readable only by an
+# admin. Without this list, an operator who gets a 403 on the console could read the
+# console's result by opening the job by id.
 ADMIN_ONLY_ACTIONS = frozenset({
     "shell", "terminal", "edit-file", "delete-file", "download-file",
-    # 'backup' fica de fora: criar copia e operacao, e o operador pode dispara-la. Ja
-    # restaurar e apagar destroem dado, e baixar tira o save do container — sao de admin,
-    # e o registro delas acompanha.
+    # 'backup' is left out: making a copy is an operation, and the operator may trigger it.
+    # Restoring and deleting, however, destroy data, and downloading takes the save out of
+    # the container: those are admin actions, and their records follow suit.
     "upload-file", "restore-backup", "delete-backup",
-    # Mod entra e sai de dentro do container, como o envio da tela Arquivos.
+    # Mods go in and out of the container, like the upload on the Files screen.
     "upload-mod", "delete-mod", "mod-loader", "mod-install", "mod-remove", "mod-audit",
     "mod-workshop",
-    # Tudo do broker e de admin: a saida cita IP, CTID e portas da infraestrutura.
+    # Everything from the broker is admin-only: the output names IPs, CTIDs and ports of
+    # the infrastructure.
     "broker-criar", "broker-desativar", "broker-remover", "broker-jogo",
     "broker-jogo-editar", "broker-jogo-apagar",
-    # 'edit-config' fica de fora de proposito: mexer na configuracao do jogo e coisa de
-    # operador, e a saida dela nao passa disso.
+    # 'edit-config' is left out on purpose: changing the game configuration is an operator
+    # task, and its output goes no further than that.
 })
 
 
 def labels(action_labels: Mapping[str, str]) -> dict[str, str]:
-    """Junta os rotulos das acoes de botao com os das que nascem de outras telas."""
+    """Merges the labels of the button actions with those born on other screens."""
     return {**action_labels, **EXTRA_LABELS}
 
 
@@ -75,10 +77,10 @@ def is_restricted(action: str) -> bool:
 
 
 def hidden_filter(is_admin: bool) -> tuple[str, tuple[str, ...]]:
-    """Pedaco de WHERE que esconde do operador os jobs das acoes restritas.
+    """WHERE fragment that hides the jobs of restricted actions from the operator.
 
-    Devolve `("", ())` para o admin: sem clausula nenhuma, e nao uma que aceita tudo —
-    assim a consulta do admin nao paga por um `NOT IN` com doze valores.
+    Returns `("", ())` for the admin: no clause at all, rather than one that accepts
+    everything, so the admin's query does not pay for a `NOT IN` with a dozen values.
     """
     if is_admin:
         return "", ()

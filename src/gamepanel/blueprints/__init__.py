@@ -1,16 +1,16 @@
-"""A camada HTTP do painel, uma tela por arquivo.
+"""The panel's HTTP layer, one screen per file.
 
-Cada modulo aqui so faz o trabalho de HTTP: ler o pedido, chamar quem decide e escolher
-o template. A regra continua em `services/`, o acesso remoto em `runtime/` e a montagem
-(banco, sessao, decoradores, tabelas) no `app.py`, que e o ponto onde tudo e ligado.
+Each module here only does the HTTP work: read the request, call whoever decides and pick
+the template. The rules stay in `services/`, remote access in `runtime/` and the assembly
+(database, session, decorators, tables) in `app.py`, which is where everything gets wired.
 
-**Por que os blueprints chamam `panel.X` e nao importam a funcao direto.** Os testes
-trocam funcao por falsa com `monkeypatch.setattr(panel, "server_status", ...)`, que
-substitui o nome NO MODULO `gamepanel.app`. Um `from gamepanel.app import server_status`
-aqui copiaria a referencia na hora do import, e a troca do teste deixaria de valer **em
-silencio** — os testes passariam sem testar nada. Por isso todo acesso e
-`panel.server_status(...)`, e por isso o `app.py` registra os blueprints no FIM do
-arquivo, quando tudo o que eles chamam ja existe.
+**Why the blueprints call `panel.X` instead of importing the function directly.** The tests
+swap functions for fakes with `monkeypatch.setattr(panel, "server_status", ...)`, which
+replaces the name IN THE `gamepanel.app` MODULE. A `from gamepanel.app import server_status`
+here would copy the reference at import time, and the test's swap would stop taking effect
+**silently**: the tests would pass without testing anything. That is why every access is
+`panel.server_status(...)`, and why `app.py` registers the blueprints at the END of the
+file, when everything they call already exists.
 """
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from flask import Flask
 
 
 def register_all(app: Flask) -> None:
-    """Liga cada blueprint ao app. Chamado no rodape do `app.py`.
+    """Attach each blueprint to the app. Called at the bottom of `app.py`.
 
-    O import mora DENTRO da funcao de proposito: no topo ele rodaria enquanto o
-    `gamepanel.app` ainda esta sendo executado, e cada blueprint faria `import
-    gamepanel.app` de um modulo pela metade.
+    The import lives INSIDE the function on purpose: at the top it would run while
+    `gamepanel.app` is still executing, and each blueprint would `import
+    gamepanel.app` from a half-built module.
     """
     from gamepanel.blueprints import (
         account,
@@ -41,6 +41,7 @@ def register_all(app: Flask) -> None:
         mods,
         passkeys,
         players,
+        preferences,
         pwa,
         schedules,
         servers,
@@ -50,7 +51,7 @@ def register_all(app: Flask) -> None:
 
     for module in (
         account, alerts, auth, backups, broker, charts, config_quick, console,
-        dashboard, files, health, history, jobs, mods, passkeys, players, pwa, schedules,
+        dashboard, files, health, history, jobs, mods, passkeys, players, preferences, pwa, schedules,
         servers, terminal, users,
     ):
         app.register_blueprint(module.bp)

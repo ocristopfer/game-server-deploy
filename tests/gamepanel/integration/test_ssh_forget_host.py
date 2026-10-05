@@ -1,5 +1,5 @@
-"""`SshClient.forget_host` contra o `ssh-keygen` de verdade: e ele que entende a linha
-com hash (`HashKnownHosts yes`, padrao do Debian), que uma edicao a mao nao acharia."""
+"""`SshClient.forget_host` against the real `ssh-keygen`: it is what understands the hashed
+line (`HashKnownHosts yes`, the Debian default), which a hand-made edit would not find."""
 import shutil
 import subprocess
 

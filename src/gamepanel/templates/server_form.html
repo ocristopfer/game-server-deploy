@@ -6,9 +6,9 @@
 {{ ui.page_header(_('server_form.title_new') if mode == 'new' else _('server_form.title_edit')) }}
 {% if mode == "edit" %}{{ srv.tabs(server, "editar") }}{% endif %}
 
-{# O formulario vira duas colunas a partir de 900px (`form-grid`): numa so, estreita,
-   sobrava metade da tela vazia e o Salvar ficava tres rolagens abaixo. Os grupos com
-   tres campos (log) e os da API ocupam a linha toda. #}
+{# The form becomes two columns from 900px up (`form-grid`): in a single narrow one,
+   half the screen sat empty and Save was three scrolls down. The groups with
+   three fields (log) and the API ones take the whole row. #}
 <div class="card">
   <form method="post" class="form-grid">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -17,12 +17,12 @@
       <small>{{ _h('server_form.name_hint') }}</small>
     </label>
     <label>{{ _('server_form.host') }}
-      <input name="host" value="{{ data.host }}" placeholder="192.168.2.20" required>
+      <input name="host" value="{{ data.host }}" placeholder="10.20.1.20" required>
       <small>{{ _('server_form.host_hint') }}</small>
     </label>
     <div class="row">
       <label>{{ _('server_form.ssh_user') }}
-        <input name="ssh_user" value="{{ data.ssh_user }}" placeholder="root" required>
+        <input name="ssh_user" value="{{ data.ssh_user }}" placeholder="gamepanel" required>
       </label>
       <label>{{ _('server_form.ssh_port') }}
         <input name="ssh_port" value="{{ data.ssh_port }}" inputmode="numeric" required>

@@ -1,15 +1,15 @@
-"""Quando vale a pena avisar — as regras de cada alerta do painel.
+"""When an alert is worth sending: the rules behind each of the panel's alerts.
 
-O que NAO esta aqui: a entrega (`integrations.webhook_client`), e o diario/leitura de
-configuracao no banco (`notifica`, `_registra_alerta`, `webhook_config` e companhia
-seguem em `app.py` ate a camada de repositorios existir — ver a ordem da secao 4 de
-docs/architecture-proposal.md). Aqui fica so a decisao: com este estado, esta leitura e
-o que se viu da ultima vez, sai alerta ou nao?
+What is NOT here: the delivery (`integrations.webhook_client`), and the alert log and the
+reading of the alert settings from the database (`notify`, `_record_alert`, `webhook_config`
+and friends stay in `app.py` until the repository layer exists; see the order in section 4
+of docs/architecture-proposal.md). Only the decision lives here: given this state, this
+reading and what was seen last time, does an alert go out or not?
 
-O fio condutor de quase toda regra abaixo e o mesmo: **avisar na virada, nao no
-estado**. Disco a 95% continua a 95% no minuto seguinte, e um alerta por minuto ate
-alguem arrumar e como se ensina uma equipe a ignorar o canal. Por isso quase todas
-escrevem no `anterior` (a memoria daquele servidor) alem de avisar.
+The thread running through almost every rule below is the same: **alert on the change,
+not on the state**. A disk at 95% is still at 95% a minute later, and one alert per
+minute until someone fixes it is how you teach a team to ignore the channel. That is why
+almost all of them write to `previous` (that server's memory) besides alerting.
 """
 from __future__ import annotations
 
@@ -23,25 +23,26 @@ from gamepanel.runtime.a2s import QueryError
 from gamepanel.runtime.log_probe import compile_pattern
 from gamepanel.runtime.ssh import RemoteError, ServerLike
 
-# (conn, evento, titulo, detalhe) -> saiu para alguem?
+# (conn, event, title, detail) -> did it reach anyone?
 Notifica = Callable[..., bool]
-# (conn, server_id) -> houve acao do painel neste servidor ha pouco?
+# (conn, server_id) -> did the panel act on this server a moment ago?
 RecentJob = Callable[..., bool]
 
-# Quem responde a uma sondagem de verdade pode ficar MUDO; contagem por log nao
-# pergunta nada ao jogo, entao nao tem o que travar.
+# A source that answers an actual probe can go SILENT; counting from the log asks the
+# game nothing, so there is nothing that can hang.
 ANSWERING_SOURCES = ("a2s", "http")
 
 DETALHE_MAX = 300
 
 
 class AlertDeps(NamedTuple):
-    """O resto do painel, como as regras precisam enxerga-lo.
+    """The rest of the panel, as the rules need to see it.
 
-    Bundle e nao parametros soltos porque sao treze pecas e elas andam juntas; por
-    funcao, e a diferenca entre cinco argumentos e um. Todas entram por injecao pelo
-    motivo de sempre: `app.py` importa este modulo, e varios destes nomes sao trocados
-    por falsos nos testes (`server_players`, `server_metrics`, `notifica`).
+    A bundle rather than loose parameters because there are thirteen pieces and they
+    travel together; per function, it is the difference between five arguments and one.
+    All of them are injected for the usual reason: `app.py` imports this module, and
+    several of these names are swapped for fakes in the tests (`server_players`,
+    `server_metrics`, `notify`).
     """
 
     notify: Notifica
@@ -52,8 +53,8 @@ class AlertDeps(NamedTuple):
     read_log_lines: Callable[..., list[str]]
     stored_value: Callable[[ServerLike, str], str]
     human_size: Callable[..., str]
-    # O MESMO dicionario de `app.py`: o monitor, o stream de log e os alertas de recurso
-    # anotam no estado do mesmo servidor.
+    # The SAME dict as in `app.py`: the monitor, the log stream and the resource alerts
+    # write to the state of the same server.
     monitor_state: dict[int, dict]
     logger: logging.Logger
     mute_rounds: int
@@ -65,15 +66,15 @@ def _target(server: ServerLike) -> str:
     return f"{server['ssh_user']}@{server['host']}"
 
 
-# ------------------------------------------------------- contato e servico
+# ------------------------------------------------------- contact and service
 
 def state_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
                      previous: dict) -> None:
-    """Contato com o container e estado do servico.
+    """Contact with the container and the state of the service.
 
-    NAO recebe a configuracao dos alertas: quem decide se um evento sai e o `notifica`,
-    que a le por conta propria. Um parametro que ninguem usa vira ruido na assinatura e
-    mentira na leitura ("ah, entao aqui olha a config").
+    Does NOT receive the alert settings: whether an event goes out is decided by
+    `notify`, which reads them on its own. A parameter nobody uses is noise in the
+    signature and a lie to the reader ("oh, so this looks at the config").
     """
     sid, name = int(server["id"]), server["name"]
     target = _target(server)
@@ -84,7 +85,7 @@ def state_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
         else:
             deps.notify(conn, "inacessivel", Message("alert.lost_contact", name=name),
                           f"{target}\n{state.get('error') or Message('alert.no_detail')}")
-        return  # sem contato nao da para falar do servico com honestidade
+        return  # without contact there is no honest way to talk about the service
 
     if not state["reachable"]:
         return
@@ -96,9 +97,9 @@ def state_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
     if previous["service"] != "active":
         return
 
-    # 'failed' e o systemd dizendo que o jogo quebrou (saiu com erro, estourou o limite de
-    # restarts, foi morto pelo OOM). Nao passa pela janela de silencio: se alguem mandou
-    # reiniciar e o resultado foi 'failed', isso e exatamente o que a pessoa precisa saber.
+    # 'failed' is systemd saying the game broke (exited with an error, hit the restart
+    # limit, was killed by the OOM killer). It skips the quiet window: if someone asked for
+    # a restart and the result was 'failed', that is exactly what the person needs to know.
     if state["service"] == "failed":
         deps.notify(conn, "quebrou", Message("alert.game_failed", name=name),
                       f"{target}\n"
@@ -113,33 +114,33 @@ def state_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
 
 def restart_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
                       previous: dict) -> None:
-    """Loop de crash: o systemd ressuscitando o jogo sem parar.
+    """Crash loop: systemd bringing the game back to life over and over.
 
-    E o buraco que o alerta de queda nao cobre. Com `Restart=always` o jogo pode morrer a
-    cada 20 segundos que o `ActiveState` responde 'active' quase sempre — a queda nunca
-    'acontece' aos olhos do painel, e o canal fica em silencio enquanto ninguem consegue
-    jogar. Quem denuncia e o NRestarts, que so sobe.
+    This is the hole the down alert does not cover. With `Restart=always` the game can die
+    every 20 seconds and `ActiveState` still answers 'active' almost all the time: the
+    outage never 'happens' as far as the panel can see, and the channel stays silent while
+    nobody can play. What gives it away is NRestarts, which only goes up.
     """
     sid, name = int(server["id"]), server["name"]
     now_ts = int(state.get("restarts") or 0)
     before = int(previous.get("restarts") or 0)
 
-    # O contador zera quando alguem reinicia a unidade na mao (e ao recarregar o daemon).
-    # Isso nao e um loop: e so uma linha de base nova.
+    # The counter resets when someone restarts the unit by hand (and on a daemon reload).
+    # That is not a loop: just a new baseline.
     if now_ts < before:
         previous["restarts"] = now_ts
         previous["loop_avisado"] = False
         return
     if now_ts == before:
-        # Uma volta inteira sem nenhum restart novo: o loop passou, e o proximo pode
-        # voltar a avisar.
+        # A whole round with no new restart: the loop is over, and the next one may
+        # alert again.
         previous["loop_avisado"] = False
         return
 
     how_many = now_ts - before
     previous["restarts"] = now_ts
-    # Enquanto o contador sobe volta apos volta, o alerta sai UMA vez. Repetir a cada
-    # minuto seria o mesmo spam que a regra da mudanca existe para evitar.
+    # While the counter keeps climbing round after round, the alert goes out ONCE.
+    # Repeating it every minute would be the very spam the on-change rule exists to avoid.
     if previous.get("loop_avisado") or deps.recent_job(conn, sid):
         return
     previous["loop_avisado"] = True
@@ -154,18 +155,18 @@ def restart_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
 
 def mute_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
                     previous: dict) -> None:
-    """Servico de pe, jogo mudo: nao responde mais a consulta do proprio jogo.
+    """Service up, game mute: it no longer answers the game's own query.
 
-    E o caso que mais engana. O processo continua vivo, o systemd continua feliz, o
-    dashboard continua verde — e ninguem consegue entrar.
+    This is the most deceptive case. The process is still alive, systemd is still happy,
+    the dashboard is still green, and nobody can get in.
     """
     sid, name = int(server["id"]), server["name"]
     if deps.player_source(server) not in ANSWERING_SOURCES:
         return
 
-    # Jogo que acabou de subir ainda esta carregando mapa e nao responde: contar essas
-    # voltas transformaria toda partida do zero num alerta. O mesmo para a janela de
-    # silencio depois de uma acao pelo painel.
+    # A game that has just started is still loading the map and does not answer: counting
+    # those rounds would turn every cold start into an alert. The same goes for the quiet
+    # window after an action through the panel.
     if state["service"] != "active" or deps.recent_job(conn, sid):
         previous["mudo"] = 0
         return
@@ -196,13 +197,14 @@ def mute_alert(deps: AlertDeps, conn: Any, server: ServerLike, state: dict,
     )
 
 
-# ----------------------------------------------------------- erro no log
+# ----------------------------------------------------------- error in the log
 
 def log_alert(deps: AlertDeps, conn: Any, server: ServerLike, previous: dict) -> None:
-    """Procura a expressao de erro do servidor no rabo do log do jogo.
+    """Looks for the server's error expression in the tail of the game log.
 
-    E o unico alerta que depende de configuracao: cada jogo grita de um jeito, entao a
-    expressao vem do cadastro. Sem ela, nem a ida de SSH acontece.
+    It is the only alert that depends on configuration: every game screams in its own way,
+    so the expression comes from the server's record. Without one, not even the SSH trip
+    happens.
     """
     default = deps.stored_value(server, "error_re")
     if not default:
@@ -214,29 +216,30 @@ def log_alert(deps: AlertDeps, conn: Any, server: ServerLike, previous: dict) ->
         deps.logger.warning("expressao de erro de '%s' invalida: %s", name, exc)
         return
     if regex is None:
-        return  # padrao so de espacos: nao ha o que procurar
+        return  # whitespace-only pattern: nothing to look for
     try:
         lines_of = deps.read_log_lines(server, deps.log_err_lines)
     except (RemoteError, QueryError) as exc:
-        # Log ilegivel nao e erro DO JOGO. Se o servidor sumiu, quem avisa e o
-        # 'inacessivel'; inventar um alerta de log aqui seria contar a mesma coisa duas
-        # vezes, com o nome errado.
+        # An unreadable log is not an error OF THE GAME. If the server is gone, the
+        # 'inacessivel' alert reports it; inventing a log alert here would say the same
+        # thing twice, under the wrong name.
         deps.logger.info("nao consegui ler o log de '%s' para procurar erro: %s", name, exc)
         return
 
     found = [line.strip() for line in lines_of if regex.search(line)]
     if not found:
-        # A linha saiu do rabo do log: se o erro voltar, e um erro novo e avisa de novo.
+        # The line left the tail of the log: if the error comes back, it is a new error and
+        # alerts again.
         previous["ultimo_erro"] = ""
         return
 
     last_one = found[-1][:DETALHE_MAX]
-    # Mesma linha da volta passada: um jogo que repete o erro a cada segundo renderia um
-    # alerta por minuto ate alguem desligar o webhook.
+    # Same line as last round: a game that repeats the error every second would produce
+    # one alert per minute until someone turned off the webhook.
     if last_one == previous.get("ultimo_erro"):
         return
-    # Trava de seguranca para expressao larga demais (um `.` casa tudo): mesmo com linhas
-    # sempre diferentes, o canal nao leva mais de um alerta destes por janela.
+    # Safety catch for an expression that is too broad (a `.` matches everything): even
+    # with lines that always differ, the channel gets no more than one of these per window.
     now_ts = time.monotonic()
     last_sent = float(previous.get("erro_em") or 0)
     if last_sent and now_ts - last_sent < deps.log_err_cooldown:
@@ -249,7 +252,7 @@ def log_alert(deps: AlertDeps, conn: Any, server: ServerLike, previous: dict) ->
                   f"{_target(server)}{how_many}\n{last_one}")
 
 
-# -------------------------------------------------------------- recursos
+# -------------------------------------------------------------- resources
 
 def disk_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> None:
     sid = int(server["id"])
@@ -262,8 +265,8 @@ def disk_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> Non
         return
     full = worst["pct"] >= cfg["disk"]
     mark = deps.monitor_state.setdefault(sid, {})
-    # So avisa na VIRADA: um disco a 95% continua a 95% na volta seguinte, e ninguem
-    # merece o mesmo alerta a cada minuto ate arrumar.
+    # Alerts only on the CHANGE: a disk at 95% is still at 95% the next round, and nobody
+    # deserves the same alert every minute until it is fixed.
     if full and not mark.get("disco_cheio"):
         deps.notify(conn, "disco-cheio",
                       Message("alert.disk_almost_full", name=server["name"]),
@@ -284,7 +287,7 @@ def memory_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> N
         return
     full = mem["pct"] >= cfg["memory"]
     mark = deps.monitor_state.setdefault(sid, {})
-    # So avisa na virada
+    # Alerts only on the change
     if full and not mark.get("memoria_alta"):
         deps.notify(
             conn, "memoria-alta",
@@ -305,7 +308,7 @@ def cpu_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> None
         return
     tall = cpu >= cfg["cpu"]
     mark = deps.monitor_state.setdefault(sid, {})
-    # So avisa na virada
+    # Alerts only on the change
     if tall and not mark.get("cpu_alta"):
         cores = data.get("cores", 1)
         proc = data.get("proc", {})
@@ -319,26 +322,26 @@ def cpu_alert(deps: AlertDeps, conn: Any, server: ServerLike, cfg: dict) -> None
     mark["cpu_alta"] = tall
 
 
-# ------------------------------------------------------------- jogadores
+# ------------------------------------------------------------- players
 
 def players_alert(deps: AlertDeps, conn: Any, server: ServerLike, service: str,
                         previous: dict, cfg: dict) -> None:
-    """Avisa quando jogadores entram ou saem do servidor.
+    """Alerts when players join or leave the server.
 
-    Compara a lista de jogadores atual com a da verificacao anterior. Se o jogo
-    tiver nomes (pelo log com (?P<name>...), API HTTP ou A2S), cita o nome de quem
-    entrou ou saiu. Se o jogo so devolver a contagem, avisa a variacao numerica.
+    Compares the current player list with the one from the previous check. If the game
+    gives names (through the log with (?P<name>...), the HTTP API or A2S), it names who
+    joined or left. If the game only returns the count, it reports the change in number.
 
-    Recebe o `servico` (string) em vez do estado inteiro de proposito: a volta rapida do
-    monitor nao consulta o systemd, e passa aqui o ultimo estado ja conhecido. Pedir o
-    dicionario obrigaria a pagar um SSH so para preencher um campo que ja se sabe.
+    Takes the `service` (a string) instead of the whole state on purpose: the monitor's
+    fast round does not query systemd, and passes in the last known state. Asking for the
+    dict would force paying for an SSH trip just to fill in a field that is already known.
     """
     sid, name = int(server["id"]), server["name"]
     if not deps.player_source(server):
         return
 
-    # Se o servico nao estiver ativo ou tiver job recente (restart, update),
-    # reseta o estado para nao disparar alertas falsos de desconexao.
+    # If the service is not active or there was a recent job (restart, update), reset
+    # the state so no false disconnect alerts fire.
     if service != "active" or deps.recent_job(conn, sid):
         previous["jogadores_nomes"] = None
         previous["jogadores_count"] = None
@@ -350,7 +353,7 @@ def players_alert(deps: AlertDeps, conn: Any, server: ServerLike, service: str,
 
     current_names, current_count = players_reading(data)
 
-    # Primeira olhada deste servidor: so estabelece a linha de base
+    # First look at this server: just set the baseline
     if previous.get("jogadores_nomes") is None and previous.get("jogadores_count") is None:
         previous["jogadores_nomes"] = current_names
         previous["jogadores_count"] = current_count
@@ -360,10 +363,10 @@ def players_alert(deps: AlertDeps, conn: Any, server: ServerLike, service: str,
     previous_count = int(previous.get("jogadores_count") or 0)
 
     if current_names or previous_names:
-        # O jogo da os nomes (exatos ou aproximados): o aviso cita quem foi.
+        # The game gives names (exact or approximate): the alert says who it was.
         _warn_by_name(deps, conn, name, cfg, current_names, previous_names, current_count)
     else:
-        # So a contagem: o aviso fala da variacao.
+        # Only the count: the alert reports the change.
         _warn_by_count(deps, conn, name, cfg, current_count, previous_count)
 
     previous["jogadores_nomes"] = current_names
@@ -371,11 +374,11 @@ def players_alert(deps: AlertDeps, conn: Any, server: ServerLike, service: str,
 
 
 def players_reading(data: dict) -> tuple[set, int]:
-    """Normaliza a resposta da consulta em (nomes, contagem).
+    """Normalizes the query answer into (names, count).
 
-    Jogo que so devolve numero vem com a lista vazia; jogo que so devolve nomes vem
-    sem contagem. Os dois casos saem daqui com a mesma forma, e e isso que permite ao
-    resto da funcao nao repetir `or 0` e `or []` a cada linha.
+    A game that only returns a number comes with an empty list; a game that only returns
+    names comes without a count. Both cases leave here in the same shape, and that is what
+    lets the rest of the function avoid repeating `or 0` and `or []` on every line.
     """
     listing = data.get("list") or []
     names = {p["name"].strip() for p in listing if p.get("name") and p["name"].strip()}
@@ -386,10 +389,10 @@ def players_reading(data: dict) -> tuple[set, int]:
 
 
 def online_text(count: int) -> str:
-    """"3 jogadores online", "1 jogador online", "nenhum jogador online".
+    """"3 players online", "1 player online", "no players online".
 
-    Existia em quatro lugares desta tela, com uma diferenca sutil entre eles: um dos
-    quatro nao tratava o zero e podia dizer "0 jogadores online". Um lugar so.
+    It used to exist in four places on this screen, with a subtle difference between them:
+    one of the four did not handle zero and could say "0 players online". One place only.
     """
     if count == 0:
         return Message("alert.nobody_online")
@@ -399,7 +402,7 @@ def online_text(count: int) -> str:
 
 def _warn_by_name(deps: AlertDeps, conn: Any, name: str, cfg: dict, current_names: set,
                     previous_names: set, count: int) -> None:
-    """Um aviso por pessoa que entrou ou saiu."""
+    """One alert per person who joined or left."""
     detail = online_text(count)
     if "jogador-entrou" in cfg["events"]:
         for player in sorted(current_names - previous_names):
@@ -415,7 +418,7 @@ def _warn_by_name(deps: AlertDeps, conn: Any, name: str, cfg: dict, current_name
 
 def _warn_by_count(deps: AlertDeps, conn: Any, name: str, cfg: dict, current: int,
                         previous: int) -> None:
-    """Um aviso por variacao, para o jogo que nao publica nomes."""
+    """One alert per change, for a game that does not publish names."""
     if current == previous:
         return
     detail = online_text(current)

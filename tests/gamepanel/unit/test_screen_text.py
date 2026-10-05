@@ -1,19 +1,19 @@
-"""Texto de tela nao pode nascer literal: `translate` devolveria a frase como esta.
+"""Screen text must not be born a literal: `translate` would return the sentence as is.
 
-A cascata do `i18n` e "idioma pedido -> pt -> a propria chave". Uma frase inteira passada
-ao `translate` nao e chave de nada, entao ela sai IGUAL — e a tela em ingles mostra
-portugues, sem erro, sem log e sem nenhum outro teste reclamando: o `test_i18n.py` confere
-as CHAMADAS de `_()`/`_h()`, nao o que uma funcao devolveu.
+The `i18n` cascade is "requested language -> pt -> the key itself". A whole sentence passed
+to `translate` is not a key of anything, so it comes out UNCHANGED - and the English screen
+shows Portuguese, with no error, no log and no other test complaining: `test_i18n.py` checks
+the CALLS of `_()`/`_h()`, not what a function returned.
 
-Ja aconteceu duas vezes. Primeiro nas duas frases de senha e no rotulo `broker-jogo` do
-historico. Depois em mais dezesseis, achadas contra o container ao vivo: com a tela em
-ingles, o 403 de operador dizia "restrita" e a rota inexistente dizia "Pagina nao
-encontrada". As barreiras (`abort`), os erros de formulario (`errors.append`) e os flashes
-eram todos literais.
+It has already happened twice. First in the two password sentences and the history label
+`broker-jogo`. Then in sixteen more, found against the live container: with the screen in
+English, the operator 403 said "restrita" and the nonexistent route said "Pagina nao
+encontrada". The barriers (`abort`), the form errors (`errors.append`) and the flashes were
+all literals.
 
-O teste olha para as tres portas por onde texto entra na tela e cobra CHAVE, nunca frase:
-`abort(codigo, ...)`, `errors.append(...)` e `flash(...)`. Chamada com `Message(...)`,
-`translate(...)` ou variavel passa; literal com espaco, nao.
+The test looks at the three doors through which text reaches the screen and demands a KEY,
+never a sentence: `abort(codigo, ...)`, `errors.append(...)` and `flash(...)`. A call with
+`Message(...)`, `translate(...)` or a variable passes; a literal with a space does not.
 """
 from __future__ import annotations
 
@@ -28,15 +28,15 @@ ROOT = Path(__file__).resolve().parents[3]
 SCREEN_FILES = [ROOT / "src/gamepanel/app.py",
                 *sorted((ROOT / "src/gamepanel/blueprints").glob("*.py"))]
 
-# Onde o texto chega a PESSOA. `_log_broker_action` e `notify` ficam de fora: o primeiro
-# grava a saida de um job (idioma do deploy, de proposito — ver `label_for_db`) e o
-# segundo monta o aviso do canal, que segue a mesma regra.
+# Where the text reaches the PERSON. `_log_broker_action` and `notify` are left out: the first
+# writes a job's output (in the deploy language, on purpose - see `label_for_db`) and the
+# second builds the channel notice, which follows the same rule.
 DOORS = {"abort", "flash", "append"}
 
 
 def _sentences() -> list[tuple[str, int, str]]:
-    """Literais com espaco que entram por uma das portas. Espaco e o sinal: uma chave de
-    catalogo (`error.admin_only`) nunca tem, uma frase sempre tem."""
+    """Literals with a space that come in through one of the doors. The space is the signal: a
+    catalog key (`error.admin_only`) never has one, a sentence always does."""
     found: list[tuple[str, int, str]] = []
     for path in SCREEN_FILES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -46,16 +46,16 @@ def _sentences() -> list[tuple[str, int, str]]:
             name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
             if name not in DOORS:
                 continue
-            # `errors.append` e a porta; `log.append`/`lines.append` nao sao tela.
+            # `errors.append` is the door; `log.append`/`lines.append` are not screen.
             if name == "append" and getattr(node.func, "value", None) is not None:
                 target = getattr(node.func.value, "id", "")
                 if target not in ("errors", "failures"):
                     continue
             for arg in node.args:
-                # `abort(403, ...)`: o codigo e o primeiro argumento e nao e texto.
+                # `abort(403, ...)`: the code is the first argument and is not text.
                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and " " in arg.value:
                     found.append((path.name, node.lineno, arg.value))
-                # f-string com frase dentro conta igual: ela tambem nao e chave.
+                # An f-string with a sentence inside counts the same: it is not a key either.
                 if isinstance(arg, ast.JoinedStr):
                     text = "".join(v.value for v in arg.values
                                    if isinstance(v, ast.Constant) and isinstance(v.value, str))
@@ -72,7 +72,7 @@ def test_nenhuma_frase_literal_chega_a_tela():
 
 
 def test_a_varredura_olha_para_os_arquivos_de_tela():
-    """Zero arquivos e o jeito silencioso de este teste parar de valer."""
+    """Zero files is the silent way for this test to stop meaning anything."""
     assert len(SCREEN_FILES) >= 15
 
 
@@ -82,6 +82,6 @@ def test_a_varredura_olha_para_os_arquivos_de_tela():
     "flash.schedule_bad_interval", "error.upload_too_large",
 ])
 def test_as_chaves_das_barreiras_existem_nos_DOIS_idiomas(key: str):
-    """Chave sem par sai na tela como `error.admin_only`, que e barulhento mas feio."""
+    """A key without its pair shows on screen as `error.admin_only`, which is loud but ugly."""
     assert key in i18n.CATALOGS["pt"]
     assert key in i18n.CATALOGS["en"]

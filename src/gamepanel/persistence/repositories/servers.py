@@ -1,13 +1,13 @@
-"""Leitura e escrita da tabela `servers`."""
+"""Reads and writes the `servers` table."""
 from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-# As colunas que o formulario de servidor preenche. A MESMA lista serve ao INSERT, ao
-# UPDATE e a leitura do formulario: escrever as tres a mao e onde uma coluna nova entra
-# em duas e some da terceira.
+# The columns the server form fills in. The SAME list serves the INSERT, the UPDATE and
+# reading the form: writing all three by hand is where a new column lands in two and goes
+# missing from the third.
 HTTP_FIELDS = ("http_url", "http_auth", "http_body", "http_list_path", "http_count_path",
                "http_login_url", "http_login_body", "http_token_path")
 EDITABLE_FIELDS = (
@@ -17,25 +17,25 @@ EDITABLE_FIELDS = (
     *HTTP_FIELDS,
 )
 
-# Colunas que o DEPLOY traz — subconjunto das editaveis, mais `broker_id`. O deploy nao
-# conhece as de contagem por HTTP nem o `error_re`: quem as preenche e a tela.
+# Columns the DEPLOY brings - a subset of the editable ones, plus `broker_id`. The deploy
+# knows neither the HTTP count columns nor `error_re`: the screen fills those in.
 DEPLOY_FIELDS = (
     "name", "host", "ssh_port", "ssh_user", "service", "game_port", "notes",
     "config_path", "config_files", "backup_paths", "query_port", "player_source",
     "join_re", "leave_re", "log_path", "broker_id", "max_players",
 )
-# O que um redeploy NAO sobrescreve esta fora desta lista (`host` e `ssh_port` sao a
-# identidade; `error_re` e as de HTTP sao afinadas na tela).
+# What a redeploy does NOT overwrite is left out of this list (`host` and `ssh_port` are
+# the identity; `error_re` and the HTTP ones are tuned on the screen).
 DEPLOY_UPDATE_FIELDS = (
     "name", "ssh_user", "service", "game_port", "notes", "config_path", "config_files",
     "backup_paths", "query_port", "player_source", "join_re", "leave_re", "log_path",
     "max_players",
 )
 
-# As quatro instrucoes sao MONTADAS a partir das listas acima, e nao escritas a mao: a
-# alternativa e repetir os nomes das colunas quatro vezes e descobrir a divergencia em
-# runtime. Nada aqui vem de fora — sao as constantes deste arquivo —, e todo VALOR
-# continua parametrizado.
+# The four statements are BUILT from the lists above, not written by hand: the
+# alternative is repeating the column names four times and finding the divergence at
+# runtime. Nothing here comes from outside - these are this file's constants - and every
+# VALUE stays parameterized.
 _INSERT = (
     f"INSERT INTO servers ({', '.join(EDITABLE_FIELDS)}, created_at)"  # noqa: S608
     f" VALUES ({', '.join('?' * (len(EDITABLE_FIELDS) + 1))})"
@@ -50,7 +50,7 @@ _DEPLOY_UPDATE = (
 )
 
 
-# --- leitura ------------------------------------------------------------------------
+# --- reading ------------------------------------------------------------------------
 
 def by_id(conn: sqlite3.Connection, sid: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM servers WHERE id = ?", (sid,)).fetchone()
@@ -61,19 +61,19 @@ def all_ordered(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def by_address(conn: sqlite3.Connection, host: str, ssh_port: int) -> sqlite3.Row | None:
-    """O endereco e a identidade de um servidor: `(host, ssh_port)` e UNIQUE no esquema."""
+    """The address is a server's identity: `(host, ssh_port)` is UNIQUE in the schema."""
     return conn.execute(
         "SELECT * FROM servers WHERE host = ? AND ssh_port = ?", (host, ssh_port)).fetchone()
 
 
 def id_by_host(conn: sqlite3.Connection, host: str) -> sqlite3.Row | None:
-    """O servidor na porta SSH padrao daquele endereco — o que o broker acabou de criar."""
+    """The server on that address's default SSH port - the one the broker just created."""
     return conn.execute(
         "SELECT id FROM servers WHERE host = ? AND ssh_port = 22", (host,)).fetchone()
 
 
 def from_broker(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Os que o broker criou: os unicos com `broker_id` preenchido."""
+    """The ones the broker created: the only ones with `broker_id` filled in."""
     return conn.execute(
         "SELECT id, name, broker_id, service FROM servers WHERE broker_id > 0").fetchall()
 
@@ -82,7 +82,7 @@ def by_broker_id(conn: sqlite3.Connection, broker_id: int) -> sqlite3.Row | None
     return conn.execute("SELECT * FROM servers WHERE broker_id = ?", (broker_id,)).fetchone()
 
 
-# --- escrita pela tela ---------------------------------------------------------------
+# --- writes from the screen ---------------------------------------------------------------
 
 def insert(conn: sqlite3.Connection, data: Mapping[str, Any], created_at: str) -> None:
     conn.execute(_INSERT, (*[data[c] for c in EDITABLE_FIELDS], created_at))
@@ -100,11 +100,11 @@ def delete_by_broker_id(conn: sqlite3.Connection, broker_id: int) -> None:
     conn.execute("DELETE FROM servers WHERE broker_id = ?", (broker_id,))
 
 
-# --- escrita pelo assistente de contagem de jogadores ---------------------------------
+# --- writes from the player-count wizard ---------------------------------
 #
-# Cada fonte grava o que so ela usa E liga o `player_source` na mesma instrucao: sao a
-# mesma decisao, e separa-las deixaria um servidor apontando para uma fonte sem os
-# campos dela preenchidos.
+# Each source writes what only it uses AND sets `player_source` in the same statement:
+# they are the same decision, and splitting them would leave a server pointing at a
+# source without its fields filled in.
 
 def use_query_port(conn: sqlite3.Connection, sid: int, port: int) -> None:
     conn.execute(
@@ -112,16 +112,16 @@ def use_query_port(conn: sqlite3.Connection, sid: int, port: int) -> None:
 
 
 def use_presence(conn: sqlite3.Connection, sid: int) -> None:
-    # Sem campo proprio: a fonte le o conjunto que o firewall do CT mantem.
+    # No field of its own: the source reads the set that the CT's firewall maintains.
     conn.execute("UPDATE servers SET player_source = 'net' WHERE id = ?", (sid,))
 
 
 def use_http(conn: sqlite3.Connection, sid: int, fields: Mapping[str, Any]) -> None:
-    """O token guardado ZERA ao salvar: se a URL ou a credencial mudou, o antigo nao vale
-    mais, e a proxima consulta ja faz login com o que ficou."""
+    """The stored token is CLEARED on save: if the URL or the credential changed, the old
+    one is no longer valid, and the next query logs in with what was saved."""
     columns = ", ".join(f"{c}=?" for c in HTTP_FIELDS)
-    # Sao os nomes de coluna deste arquivo, nunca um valor de fora; os VALORES seguem
-    # parametrizados.
+    # These are this file's column names, never an outside value; the VALUES stay
+    # parameterized.
     conn.execute(
         f"UPDATE servers SET {columns}, http_token='', player_source='http'"  # noqa: S608
         " WHERE id=?",
@@ -148,7 +148,7 @@ def set_mods_expected(conn: sqlite3.Connection, sid: int, workshop_ids: Iterable
                  ("\n".join(str(i) for i in workshop_ids), sid))
 
 
-# --- escrita pelo deploy (sem tela) ---------------------------------------------------
+# --- writes from the deploy (no screen) ---------------------------------------------------
 
 def deploy_insert(conn: sqlite3.Connection, values: Sequence[Any], created_at: str) -> None:
     conn.execute(_DEPLOY_INSERT, (*values, created_at))

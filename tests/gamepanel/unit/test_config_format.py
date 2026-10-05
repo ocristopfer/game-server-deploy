@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Testes do leitor/gravador de configuracao (gameconf.py).
+"""Tests for the configuration reader/writer (gameconf.py).
 
     pytest admin/test_config_format.py
 
-O que cada teste garante e o combinado da tela "Configuracao": mexer numa chave nao
-pode reescrever o arquivo inteiro, perder comentario nem estragar as chaves vizinhas.
+What each test guarantees is the promise of the "Configuracao" screen: touching one key must
+not rewrite the whole file, lose comments or damage the neighbouring keys.
 """
 import json
 
@@ -14,7 +14,7 @@ from gamepanel.games import config_format as gc
 
 
 def field(doc: gc.ConfigFile, section: str, key: str) -> gc.Setting:
-    """A chave pedida, falhando alto se o parser tiver deixado de enxerga-la."""
+    """The requested key, failing loudly if the parser has stopped seeing it."""
     found = doc.find(section, key)
     assert found is not None, f"{key!r} nao foi lido da secao {section!r}"
     return found
@@ -27,7 +27,7 @@ def by_id(doc: gc.ConfigFile, ident: str) -> gc.Setting:
 
 
 def apply_failure(doc: gc.ConfigFile, edit: gc.Edit) -> str:
-    """A mensagem de recusa, ou string vazia se o gravador tiver aceitado."""
+    """The rejection message, or an empty string if the writer accepted it."""
     try:
         doc.apply([edit])
     except gc.ConfigError as exc:
@@ -43,7 +43,7 @@ OptionSettings=(Difficulty=None,DayTimeSpeedRate=1.000000,bIsPvP=False,DeathPena
 
 
 def test_palworld_abre_a_tupla_da_unreal_como_campos():
-    """`OptionSettings=(...)` nao e um valor: e a configuracao inteira numa linha."""
+    """`OptionSettings=(...)` is not a value: it is the whole configuration on one line."""
     doc = gc.load("PalWorldSettings.ini", PALWORLD)
     assert doc.format_id == "ini"
     assert len([s.key for s in doc.settings]) == 8
@@ -153,7 +153,7 @@ def test_json_le_objeto_aninhado_como_secao():
 
 
 def test_json_preserva_o_tipo_de_cada_valor():
-    """O arquivo e reescrito inteiro pelo dumps: o que nao pode mudar e o TIPO."""
+    """The file is rewritten whole by dumps: what must not change is the TYPE."""
     doc = gc.load("enshrouded_server.json", ENSHROUDED)
     data = json.loads(doc.apply([
         gc.Edit(id="name", section="", key="name", value="Servidor do Cris"),
@@ -225,14 +225,14 @@ def test_dayz_grava_dentro_da_class_sem_estragar_a_estrutura():
     assert by_id(reread, ID_TEMPLATE).value == "dayzOffline.enoch"
 
 
-# -------------------------------------------------------------------- limites
+# -------------------------------------------------------------------- limits
 
 @pytest.mark.parametrize("label,key,value,chunk", [
     ("chave vazia", "", "1", "invalido"),
     ("chave com = no nome", "x=y", "1", "invalido"),
-    # O nome da chave vai para dentro do arquivo do jogo, gravado por SSH: ele e ASCII e
-    # ponto final. Isto aqui guarda o `re.ASCII` do KEY_RE - sem a flag, `\w` em Python
-    # aceitaria acento e mais uns 900 caracteres Unicode.
+    # The key name goes into the game's file, written over SSH: it is ASCII, period.
+    # This guards the `re.ASCII` of KEY_RE - without the flag, `\w` in Python would
+    # accept accented letters and some 900 other Unicode characters.
     ("chave com acento", "opção", "1", "invalido"),
     ("chave com ; no nome", "a;b", "1", "invalido"),
     ("chave comecando com ponto", ".x", "1", "invalido"),
@@ -251,7 +251,7 @@ def test_chave_e_valor_sao_aparados():
 
 
 def test_aspas_no_meio_do_valor_sao_recusadas():
-    """No formato da Unreal a aspa fecha o valor: deixar passar corromperia a linha."""
+    """In the Unreal format the quote closes the value: letting it through would corrupt the line."""
     doc = gc.load("PalWorldSettings.ini", PALWORLD)
     target = field(doc, doc.settings[0].section, "ServerName")
     error = apply_failure(
@@ -266,16 +266,16 @@ def test_aspas_no_meio_do_valor_sao_recusadas():
     ("x.json", ENSHROUDED),
 ])
 def test_sem_edicao_o_arquivo_volta_igual(name, text):
-    """Abrir a tela e salvar sem mexer em nada nao pode reformatar o arquivo do jogo."""
+    """Opening the screen and saving without touching anything must not reformat the game's file."""
     assert gc.load(name, text).apply([]) == text
 
 
 @pytest.mark.parametrize("name, text, file_format", [
     ("x.json", "{}", "json"),
-    ("config", '{"a": 1}', "json"),        # pelo conteudo, sem extensao
-    ("serverDZ.cfg", DAYZ, "dayz"),        # pelo `class`
-    ("s.cfg", 'a = "b";\n', "dayz"),       # cfg simples tambem e dayz
-    ("qualquer.txt", "a=1\n", "ini"),      # ini e o padrao
+    ("config", '{"a": 1}', "json"),        # by content, no extension
+    ("serverDZ.cfg", DAYZ, "dayz"),        # by the `class`
+    ("s.cfg", 'a = "b";\n', "dayz"),       # a simple cfg is dayz too
+    ("qualquer.txt", "a=1\n", "ini"),      # ini is the default
 ])
 def test_deteccao_de_formato(name, text, file_format):
     assert gc.load(name, text).format_id == file_format
@@ -287,7 +287,7 @@ VRISING_HOST = '﻿{\n  "Name": "V Rising Server",\n  "Port": 9876,\n  "ListOnSt
 
 
 def test_json_com_bom_abre_no_formulario():
-    """Os padroes do V Rising vem com BOM, e o json.loads o recusava: a tela Config nao abria."""
+    """The V Rising defaults ship with a BOM, and json.loads rejected it: the Config screen would not open."""
     doc = gc.load("ServerHostSettings.json", VRISING_HOST)
     assert isinstance(doc, gc.JsonConfig)
     assert doc.find(doc.settings[0].section, "Name").value == "V Rising Server"
@@ -324,8 +324,8 @@ def test_json_com_bom_e_extensao_estranha_ainda_e_json():
 
 # ---------------------------------------------------------------------- sii
 
-# Copia do server_config.sii de um ETS2 de verdade (senha e token trocados). O
-# `description: discordia` sem aspas e como o proprio servidor grava.
+# Copy of the server_config.sii of a real ETS2 (password and token swapped). The
+# unquoted `description: discordia` is how the server itself writes it.
 ETS2_SII = """SiiNunit
 {
 server_config : _nameless.39bc.86a0 {
@@ -344,7 +344,7 @@ server_config : _nameless.39bc.86a0 {
 
 
 def test_sii_abre_o_server_config_do_ets2_como_campos():
-    """Antes caia no leitor de ini, sem `=` nenhum: "Configuracoes (0)" na tela."""
+    """It used to fall into the ini reader, with no `=` at all: "Configuracoes (0)" on screen."""
     doc = gc.load("server_config.sii", ETS2_SII)
     assert isinstance(doc, gc.SiiConfig)
     assert [s.label for s in doc.sections] == ["server_config"]
@@ -364,7 +364,7 @@ def test_sii_grava_so_a_linha_alterada_e_respeita_as_aspas():
         edits.append(gc.Edit(id=s.id, section=s.section, key=key, value=value))
     out = doc.apply(edits)
     assert " max_players: 16\n" in out
-    # Palavra solta podia ficar sem aspas; frase com espaco, nao.
+    # A single word could go unquoted; a phrase with a space, not.
     assert ' description: "dois termos"\n' in out
     assert ' lobby_name: "Caminhoneiros"\n' in out
     assert " player_damage: false\n" in out

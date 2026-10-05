@@ -1,42 +1,45 @@
-"""UE4SS (carregador de mods de jogo Unreal) - roda DENTRO do CT do jogo, nao no painel.
+"""UE4SS (Unreal game mod loader) - runs INSIDE the game CT, not in the panel.
 
-Mesmo desenho do `shroudtopia_remote.py`: o painel le este texto e o executa no container
-com `python3 -c`, por SSH, como root. So stdlib e sem import do `gamepanel` - la dentro o
-pacote nao existe -, e quem vai a internet e o CT, nunca o painel.
+Same design as `shroudtopia_remote.py`: the panel reads this text and runs it in the container
+with `python3 -c`, over SSH, as root. Stdlib only and no import of `gamepanel` - the package
+does not exist in there -, and whoever goes to the internet is the CT, never the panel.
 
-Vale para jogo Unreal cujo servidor e o executavel WINDOWS rodando sob o Proton: o UE4SS
-entra injetando uma DLL nesse executavel. Servidor Linux nativo (Dragonwilds, Palworld daqui)
-nao carrega isto - os ports Linux sao outra coisa, e nenhum tem binario confiavel.
+It applies to Unreal games whose server is the WINDOWS executable running under Proton: UE4SS
+gets in by injecting a DLL into that executable. A native Linux server (Dragonwilds, Palworld here)
+does not load this - the Linux ports are something else, and none has a trustworthy binary.
 
-Decisoes, cada uma com o motivo:
-- **A `experimental-latest`, e nao a v3.0.1 estavel.** MEDIDO no Icarus de verdade (CT de teste,
-  Proton GE 11, 2026-10-03): com a v3.0.1 o UE4SS carrega e roda Lua, mas a Steam do servidor
-  sobe com `AppId: 0` e "Steam API failed to initialize" - sem ela a consulta A2S nunca abre e
-  o servidor some do navegador. Desligado, volta `AppId: 1149460`. Com a experimental (o
-  `dwmapi.dll` solto e o resto em `ue4ss/`), a Steam sobe, a A2S responde e os mods rodam. A
-  versao ainda pode ser fixada numa estavel pela tela, para quem souber o que esta fazendo.
-- **O zip normal, nunca o zDEV.** O `zDEV-UE4SS_*.zip` abre console e janela de debug por
-  padrao; num servidor sem tela isso no minimo gasta, e no V Rising um console aberto sob o X
-  virtual TRAVOU o servidor.
-- **Entra pelo `dwmapi.dll` ao lado do `*-Win64-Shipping.exe`**, e o Wine so o usa com
-  `dwmapi=n,b` no WINEDLLOVERRIDES (o padrao dele e a dwmapi embutida, e o UE4SS nunca roda).
-  Desligar e tirar o ajuste: nenhum codigo do UE4SS roda, sem apagar mod nenhum.
-- **Console e janela desligados** (`ConsoleEnabled`, `GuiConsoleEnabled`, `GuiConsoleVisible`).
-- **Dos mods que vem no zip, so os carregadores de mod de blueprint ficam ligados**
-  (`BPModLoaderMod`, `BPML_GenericFunctions`): sao eles que fazem mod `.pak` de logica rodar.
-  O resto vem ligado de fabrica e e de cliente ou de trapaca (`CheatManagerEnablerMod`,
-  `ConsoleEnablerMod`, `Keybinds`...): instalar o carregador nao pode mudar o jogo de ninguem.
-- **Reinstalar preserva o `UE4SS-settings.ini` e o `mods.txt` do dono** - e o que o proprio
-  UE4SS manda fazer ao atualizar - e os mods dele em `Mods/`.
-- **O `mods.txt` oficial vem com BOM**, que gruda no nome do primeiro mod: sai na leitura.
-- **Dois layouts**: a experimental poe tudo menos o proxy em `ue4ss/`; a v3.0.x estavel deixa
-  tudo solto ao lado do `.exe`. O instalador segue o que o zip trouxer, e o status acha os dois.
+Decisions, each with its reason:
+- **`experimental-latest`, and not the stable v3.0.1.** MEASURED on the real Icarus (test CT,
+  Proton GE 11, 2026-10-03): with v3.0.1 UE4SS loads and runs Lua, but the server's Steam
+  starts with `AppId: 0` and "Steam API failed to initialize" - without it the A2S query never
+  opens and the server vanishes from the browser. Disabled, `AppId: 1149460` comes back. With
+  the experimental one (the loose `dwmapi.dll` and the rest in `ue4ss/`), Steam starts, A2S
+  answers and the mods run. The version can still be pinned to a stable one through the screen,
+  for whoever knows what they are doing.
+- **The normal zip, never zDEV.** `zDEV-UE4SS_*.zip` opens a console and a debug window by
+  default; on a headless server that is at the very least wasteful, and on V Rising an open
+  console under the virtual X FROZE the server.
+- **It comes in through the `dwmapi.dll` next to `*-Win64-Shipping.exe`**, and Wine only uses it
+  with `dwmapi=n,b` in WINEDLLOVERRIDES (its default is the built-in dwmapi, and UE4SS never runs).
+  Disabling means removing that setting: no UE4SS code runs, without deleting any mod.
+- **Console and window off** (`ConsoleEnabled`, `GuiConsoleEnabled`, `GuiConsoleVisible`).
+- **Of the mods that come in the zip, only the blueprint mod loaders stay enabled**
+  (`BPModLoaderMod`, `BPML_GenericFunctions`): they are what makes logic `.pak` mods run.
+  The rest comes enabled out of the box and is client-side or cheats (`CheatManagerEnablerMod`,
+  `ConsoleEnablerMod`, `Keybinds`...): installing the loader must not change anyone's game.
+- **Reinstalling preserves the owner's `UE4SS-settings.ini` and `mods.txt`** - which is what
+  UE4SS itself says to do when updating - and their mods in `Mods/`.
+- **The official `mods.txt` comes with a BOM**, which sticks to the first mod's name: it is
+  stripped on read.
+- **Two layouts**: the experimental one puts everything but the proxy in `ue4ss/`; the stable
+  v3.0.x leaves everything loose next to the `.exe`. The installer follows whatever the zip
+  brings, and the status finds both.
 
-Acoes (argv): [--scan SCRIPT] status | loader-install [VERSAO] | loader-enable | loader-disable |
+Actions (argv): [--scan SCRIPT] status | loader-install [VERSION] | loader-enable | loader-disable |
 loader-uninstall,
-seguidas da pasta do executavel (Binaries/Win64). Instalar exige `--scan` (o
-`antivirus.SCAN_SCRIPT` do painel): o zip e verificado antes de qualquer arquivo chegar ao
-jogo. Toda acao imprime o progresso e termina com UMA linha JSON, que e o que o painel le.
+followed by the executable folder (Binaries/Win64). Installing requires `--scan` (the panel's
+`antivirus.SCAN_SCRIPT`): the zip is checked before any file reaches the game. Every action
+prints its progress and ends with ONE JSON line, which is what the panel reads.
 """
 from __future__ import annotations
 
@@ -53,19 +56,19 @@ import tempfile
 import urllib.request
 import zipfile
 
-# A experimental e reconstruida pelo projeto a cada mudanca, sempre com esta tag.
+# The experimental one is rebuilt by the project on every change, always with this tag.
 RELEASES = "https://api.github.com/repos/UE4SS-RE/RE-UE4SS/releases/tags/experimental-latest"
 RELEASE_TAG = "https://api.github.com/repos/UE4SS-RE/RE-UE4SS/releases/tags/{tag}"
-# A versao vira parte da URL: so numero e ponto (o painel confere a mesma forma).
+# The version becomes part of the URL: digits and dots only (the panel checks the same shape).
 VERSION = re.compile(r"\d{1,9}\.\d{1,9}\.\d{1,9}")
-# O zip normal (UE4SS_v3.0.1.zip). O zDEV comeca com "z" e nao casa: e o de debug.
+# The normal zip (UE4SS_v3.0.1.zip). zDEV starts with "z" and does not match: it is the debug one.
 ASSET = re.compile(r"^UE4SS_v[0-9][0-9A-Za-z.\-]*\.zip$")
 PROXY = "dwmapi.dll"
 CORE = "UE4SS.dll"
 SETTINGS = "UE4SS-settings.ini"
 LOG = "UE4SS.log"
 MODS = "Mods"
-# Pasta do carregador no layout da experimental; vazio = solto ao lado do .exe (v3.0.x).
+# Loader folder in the experimental layout; empty = loose next to the .exe (v3.0.x).
 SUBDIR = "ue4ss"
 MODS_TXT = "mods.txt"
 MARK = ".gamepanel-ue4ss.json"
@@ -74,34 +77,35 @@ OVERRIDE = "dwmapi=n,b"
 OWNER = "steam"
 TIMEOUT = 120
 LOG_TAIL = 15
-# Os unicos mods de fabrica que ficam ligados: carregam mod .pak de logica, sem trapaca.
+# The only out-of-the-box mods that stay enabled: they load logic .pak mods, no cheats.
 KEEP_ENABLED = ("BPModLoaderMod", "BPML_GenericFunctions")
 HEADLESS = (("Debug", "ConsoleEnabled", "0"), ("Debug", "GuiConsoleEnabled", "0"),
             ("Debug", "GuiConsoleVisible", "0"), ("General", "EnableHotReloadSystem", "0"))
-# Arquivo do zip que mora debaixo de um destes vai para a pasta do executavel; o resto (docs,
-# readme) fica de fora.
+# A zip file that lives under one of these goes to the executable folder; the rest (docs,
+# readme) is left out.
 SKIP = {"readme.md", "readme.txt", "license", "license.md", "license.txt", "changelog.md"}
 
 
 def fetch(url: str) -> bytes:
-    # So https do github.com chega aqui: a API e fixa (RELEASES) e o download vem da resposta
-    # dela, conferida contra github.com antes de baixar.
+    # Only github.com https gets here: the API is fixed (RELEASES) and the download comes from its
+    # response, checked against github.com before downloading.
     req = urllib.request.Request(url, headers={"User-Agent": "gamepanel"})  # noqa: S310
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310
         return r.read()
 
 
 # ------------------------------------------------------------------ antivirus
-# IGUAL em thunderstore_remote.py e shroudtopia_remote.py (ha teste comparando): os tres rodam
-# soltos no CT e nao importam um ao outro. A regra (o que conta como achado) nao mora aqui, e
-# sim no script que o painel manda; aqui so se escreve o que baixou numa pasta e se chama o script.
+# IDENTICAL in thunderstore_remote.py and shroudtopia_remote.py (a test compares them): the three
+# run standalone in the CT and do not import each other. The rule (what counts as a finding) does
+# not live here, but in the script the panel sends; here we only write what was downloaded into a
+# folder and call the script.
 
 def scanner(script: str):
-    """Funcao que verifica [(nome, bytes)] com o script do painel; ValueError = recusado."""
+    """Function that checks [(name, bytes)] with the panel's script; ValueError = rejected."""
     def scan(blobs: list[tuple[str, bytes]]) -> None:
-        # /var/tmp e nao /tmp: no Debian 13 o /tmp e tmpfs (memoria), e o pacote pode ter
-        # dezenas de MB. O prefixo e o que o script do antivirus aceita apagar. mkdtemp:
-        # nome imprevisivel e 0700.
+        # /var/tmp and not /tmp: on Debian 13 /tmp is tmpfs (memory), and the package can be
+        # tens of MB. The prefix is what the antivirus script agrees to delete. mkdtemp:
+        # unpredictable name and 0700.
         os.makedirs("/var/tmp", exist_ok=True)  # noqa: S108
         work = tempfile.mkdtemp(prefix="gamepanel-scan-", dir="/var/tmp")
         try:
@@ -121,7 +125,7 @@ def scanner(script: str):
 
 
 def _no_scan(blobs: list[tuple[str, bytes]]) -> None:
-    """So para teste e status: `main` recusa instalar sem `--scan`."""
+    """Only for tests and status: `main` refuses to install without `--scan`."""
 
 
 def _read_text(path: str, default: str = "") -> str:
@@ -139,14 +143,14 @@ def _read_json(path: str) -> dict:
     return {}
 
 
-# ------------------------------------------------------------------ o Wine
+# ------------------------------------------------------------------ Wine
 
 def _groups(value: str) -> list[str]:
     return [g.strip() for g in value.split(";") if g.strip()]
 
 
 def with_dwmapi(value: str) -> str:
-    """O WINEDLLOVERRIDES com a dwmapi nativa, sem mexer no resto do que o jogo decidiu."""
+    """WINEDLLOVERRIDES with the native dwmapi, without touching the rest of what the game decided."""
     return ";".join([g for g in _groups(value) if not g.startswith("dwmapi=")] + [OVERRIDE])
 
 
@@ -163,7 +167,7 @@ def _read_overrides(env_path: str) -> str:
 
 def _write_overrides(env_path: str, value: str) -> None:
     lines = _read_text(env_path).splitlines()
-    # O arquivo e lido com `source`: aspas simples, e o valor nunca tem aspa (so dll,=;).
+    # The file is read with `source`: single quotes, and the value never has a quote (only dll,=;).
     new = f"WINE_DLL_OVERRIDES='{value}'"
     lines = [new if ln.startswith("WINE_DLL_OVERRIDES=") else ln for ln in lines]
     if new not in lines:
@@ -181,10 +185,10 @@ def is_enabled(env_path: str) -> bool:
     return OVERRIDE in _groups(_read_overrides(env_path))
 
 
-# ------------------------------------------------------------------ configuracao
+# ------------------------------------------------------------------ configuration
 
 def set_ini(text: str, section: str, key: str, value: str) -> str:
-    """`key = value` dentro de `[section]`, trocando o que houver ou acrescentando."""
+    """`key = value` inside `[section]`, replacing whatever is there or appending."""
     lines = text.splitlines()
     head = re.compile(rf"^\s*\[{re.escape(section)}\]\s*$", re.I)
     entry = re.compile(rf"^\s*{re.escape(key)}\s*=", re.I)
@@ -201,7 +205,7 @@ def set_ini(text: str, section: str, key: str, value: str) -> str:
 
 
 def server_mods_txt(text: str) -> str:
-    """O mods.txt de fabrica com tudo desligado, menos os carregadores de blueprint."""
+    """The factory mods.txt with everything off, except the blueprint loaders."""
     out = []
     for line in text.lstrip("\ufeff").splitlines():
         name, sep, _ = line.partition(":")
@@ -222,7 +226,7 @@ def enabled_mods(text: str) -> dict[str, bool]:
     return result
 
 
-# ------------------------------------------------------------------ o carregador
+# ------------------------------------------------------------------ the loader
 
 def _asset_url(release: dict) -> tuple[str, str]:
     for asset in release.get("assets", []):
@@ -233,7 +237,7 @@ def _asset_url(release: dict) -> tuple[str, str]:
 
 
 def loader_dir(exe_dir: str) -> str:
-    """Onde mora o UE4SS.dll (e a config, o log e Mods/) deste servidor."""
+    """Where this server's UE4SS.dll lives (and the config, the log and Mods/)."""
     sub = os.path.join(exe_dir, SUBDIR)
     if os.path.exists(os.path.join(sub, CORE)) or not os.path.exists(os.path.join(exe_dir, CORE)):
         return sub
@@ -241,7 +245,7 @@ def loader_dir(exe_dir: str) -> str:
 
 
 def release_for(version: str = "", fetcher=fetch) -> dict:
-    """A release pedida (vazio = a experimental, a que funciona sob o Proton)."""
+    """The requested release (empty = the experimental one, the one that works under Proton)."""
     if not version:
         return json.loads(fetcher(RELEASES))
     if not VERSION.fullmatch(version):
@@ -256,7 +260,7 @@ def release_for(version: str = "", fetcher=fetch) -> dict:
 
 
 def _safe_rel(path: str) -> str:
-    """Caminho de dentro do zip, relativo e sem subir de pasta; vazio = recusado."""
+    """A path inside the zip, relative and never going up a folder; empty = rejected."""
     rel = posixpath.normpath(path.replace("\\", "/")).lstrip("/")
     if rel in (".", "") or rel.startswith("..") or "/../" in f"/{rel}/":
         return ""
@@ -265,10 +269,11 @@ def _safe_rel(path: str) -> str:
 
 def _extract_zip(z: zipfile.ZipFile, names: list[str], prefix: str, exe_dir: str,
                  created: set[str]) -> tuple[int, set[str]]:
-    """Grava ao lado do .exe o que esta sob `prefix`; devolve (arquivos, nomes de raiz CRIADOS).
+    """Write next to the .exe what is under `prefix`; return (files, root names CREATED).
 
-    So o que o zip cria e anotado - e so isso o desinstalar apaga: o que ja existia antes da
-    primeira instalacao e do jogo, e o que uma instalacao anterior criou (`created`) segue nosso.
+    Only what the zip creates is recorded - and only that is deleted on uninstall: what already
+    existed before the first install belongs to the game, and what a previous install created
+    (`created`) is still ours.
     """
     keep = {SETTINGS.lower(), MODS_TXT.lower()}
     created = set(created)
@@ -281,7 +286,7 @@ def _extract_zip(z: zipfile.ZipFile, names: list[str], prefix: str, exe_dir: str
         if not os.path.exists(os.path.join(exe_dir, top)):
             created.add(top)
         dest = os.path.join(exe_dir, rel)
-        # Configuracao que ja existe e do dono do servidor: so nasce se faltar.
+        # A config that already exists belongs to the server owner: only created if missing.
         if posixpath.basename(rel).lower() in keep and os.path.exists(dest):
             continue
         os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -292,8 +297,8 @@ def _extract_zip(z: zipfile.ZipFile, names: list[str], prefix: str, exe_dir: str
 
 
 def _tidy_config(exe_dir: str, first_install: bool) -> None:
-    """BOM fora do mods.txt sempre; console, janela e mods de fabrica so na primeira instalacao
-    (numa reinstalacao a config e do dono)."""
+    """BOM out of mods.txt always; console, window and factory mods only on the first install
+    (on a reinstall the config belongs to the owner)."""
     base = loader_dir(exe_dir)
     mods_txt = os.path.join(base, MODS, MODS_TXT)
     if os.path.exists(mods_txt):
@@ -325,7 +330,7 @@ def install_loader(exe_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, ver
     proxy = next((n for n in names if posixpath.basename(n).lower() == PROXY), "")
     if not proxy or not any(posixpath.basename(n) == CORE for n in names):
         raise ValueError(f"o zip nao tem {PROXY} e {CORE}: nao e o UE4SS")
-    # Tudo e relativo a pasta do dwmapi.dll dentro do zip: e ela que vai ao lado do .exe.
+    # Everything is relative to the dwmapi.dll folder inside the zip: that is what goes next to the .exe.
     prefix = proxy[: -len(posixpath.basename(proxy))]
     previous = _read_json(os.path.join(exe_dir, MARK))
     count, created = _extract_zip(z, names, prefix, exe_dir, set(previous.get("files", [])))
@@ -340,8 +345,8 @@ def install_loader(exe_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, ver
 
 
 def _fallback_names(exe_dir: str) -> tuple[str, ...]:
-    """O que o UE4SS poe ao lado do .exe, para instalacao feita antes de o painel anotar a lista:
-    a experimental poe tudo em ue4ss/, a estavel v3.0.x deixa solto (Mods/ junto do UE4SS.dll)."""
+    """What UE4SS puts next to the .exe, for installs made before the panel recorded the list:
+    the experimental one puts everything in ue4ss/, the stable v3.0.x leaves it loose (Mods/ next to UE4SS.dll)."""
     if os.path.isdir(os.path.join(exe_dir, SUBDIR)):
         return (PROXY, SUBDIR)
     loose = (PROXY, CORE, SETTINGS, LOG, "UE4SS_Signatures", "UE4SS.pdb")
@@ -349,17 +354,17 @@ def _fallback_names(exe_dir: str) -> tuple[str, ...]:
 
 
 def uninstall_loader(exe_dir: str, env_path: str = RUNTIME_ENV) -> dict:
-    """Tira o UE4SS e o ajuste do Wine: o jogo volta a subir sem nenhum codigo dele.
+    """Remove UE4SS and the Wine setting: the game starts again without any of its code.
 
-    Os mods do UE4SS moram na pasta dele e saem junto (a tela avisa antes); os .pak do jogo
-    nao sao dele e ficam.
+    The UE4SS mods live in its folder and go along (the screen warns first); the game's .pak
+    files are not its own and stay.
     """
     if os.path.exists(env_path):
         set_enabled(env_path, False)
     names = _read_json(os.path.join(exe_dir, MARK)).get("files") or _fallback_names(exe_dir)
     removed = []
     for name in (*names, MARK):
-        # So um nome da pasta, nunca um caminho: o que vem da marca nao pode sair dela.
+        # Only a name inside the folder, never a path: what comes from the mark must not leave it.
         if not name or name in (".", "..") or "/" in name or "\\" in name:
             continue
         path = os.path.join(exe_dir, name)
@@ -395,7 +400,7 @@ def status(exe_dir: str, env_path: str = RUNTIME_ENV) -> dict:
 
 
 def _chown(exe_dir: str) -> None:
-    """O jogo roda como 'steam': precisa ler a DLL e escrever o log e a config."""
+    """The game runs as 'steam': it needs to read the DLL and write the log and the config."""
     try:
         import pwd
         pw = pwd.getpwnam(OWNER)
@@ -404,7 +409,7 @@ def _chown(exe_dir: str) -> None:
     for name in (PROXY, MARK):
         with contextlib.suppress(OSError):
             os.chown(os.path.join(exe_dir, name), pw.pw_uid, pw.pw_gid)
-    # A pasta do carregador inteira: na experimental e `ue4ss/`; no layout solto, so o que e dele.
+    # The whole loader folder: in the experimental one it is `ue4ss/`; in the loose layout, only what is its own.
     base = loader_dir(exe_dir)
     if base != exe_dir:
         walk_roots = [base]

@@ -1,6 +1,6 @@
 #!/bin/sh
-# check-game-update de mentira: alterna entre "atualizado" e "ha versao nova" para dar
-# para testar os dois caminhos na tela.
+# Fake check-game-update: alternates between "up to date" and "new version available" so
+# both paths can be tested on screen.
 set -u
 STAMP=/run/fakesystemd/check-count
 mkdir -p "$(dirname "$STAMP")"

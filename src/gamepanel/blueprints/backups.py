@@ -1,8 +1,8 @@
-"""Copias do save: tirar, listar, restaurar e apagar — no container e no painel.
+"""Save copies: take, list, restore and delete, in the container and on the panel.
 
-Cada backup existe em dois lugares: no container do jogo e no disco do painel (ver
-`runtime.backup_archive`). A copia do painel e a que sobrevive a remover a instancia, e
-e por ela que um servidor recriado recupera o save do anterior.
+Each backup exists in two places: in the game container and on the panel's disk (see
+`runtime.backup_archive`). The panel copy is the one that survives removing the instance, and
+it is how a recreated server recovers the previous one's save.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def index(sid: int):
 @bp.post("/servers/<int:sid>/backups/create")
 @panel.login_required
 def create(sid: int):
-    """Dispara o backup. E operacao, nao administracao: o operador pode tirar copia."""
+    """Trigger the backup. It is an operation, not administration: the operator may take a copy."""
     server = panel._server_or_404(sid)
     paths = panel.backup_paths(server)
     if not paths:
@@ -63,7 +63,7 @@ def create(sid: int):
 @bp.post("/servers/<int:sid>/backups/restore")
 @panel.admin_required
 def restore(sid: int):
-    """Volta o servidor para uma copia. Para o jogo, extrai e religa."""
+    """Roll the server back to a copy. Stops the game, extracts and starts it again."""
     server = panel._server_or_404(sid)
     name = panel._backup_or_400(request.form.get("name", ""))
     paths = panel.backup_paths(server)
@@ -79,19 +79,21 @@ def restore(sid: int):
 
 
 def _restore_steps(server, paths: list[str], name: str, from_panel: bool = False) -> list:
-    """Copia de seguranca, (a copia do painel volta ao container,) extrai, e guarda a de
-    seguranca no painel tambem.
+    """Safety copy, (the panel copy goes back to the container,) extract, and store the
+    safety copy on the panel too.
 
-    A copia de seguranca vem ANTES de extrair: restaurar e a operacao mais destrutiva do
-    painel, e sem ela quem escolhe o backup errado nao tem para onde voltar. Os passos
-    param no primeiro que falha — sem a copia de seguranca, nada e extraido.
+    The safety copy comes BEFORE extracting: restoring is the most destructive operation in
+    the panel, and without it whoever picks the wrong backup has nowhere to go back to. The steps
+    stop at the first one that fails: without the safety copy, nothing is extracted.
     """
     steps: list = []
     if paths:
         steps.append(panel.backup_command(server, paths, "-antes-de-restaurar"))
     if from_panel:
         steps.append(panel.push_panel_backup_step(name))
-    steps.append(panel.q("bash", "-lc", panel.RESTORE_SCRIPT, "gp", panel.BACKUP_DIR, name, server["service"]))
+    # The backup paths travel along: the restore only extracts what is under them, and refuses
+    # the whole archive if a member points anywhere else.
+    steps.append(panel.restore_command(server, paths, name))
     if paths:
         steps.append(panel.pull_new_backup_step)
     return steps
@@ -100,7 +102,7 @@ def _restore_steps(server, paths: list[str], name: str, from_panel: bool = False
 @bp.post("/servers/<int:sid>/backups/send-to-panel")
 @panel.admin_required
 def send_to_panel(sid: int):
-    """Guarda no painel uma copia que so existia no container (as de antes desta funcao)."""
+    """Store on the panel a copy that only existed in the container (the ones from before this function)."""
     server = panel._server_or_404(sid)
     name = panel._backup_or_400(request.form.get("name", ""))
     job_id = panel.start_job(
@@ -115,8 +117,8 @@ def send_to_panel(sid: int):
 @bp.post("/servers/<int:sid>/backups/panel/restore")
 @panel.admin_required
 def panel_restore(sid: int):
-    """Restaura a partir da copia do PAINEL: o caso do servidor removido e criado de novo,
-    em que o container novo nao tem copia nenhuma."""
+    """Restore from the PANEL copy: the case of a server removed and created again,
+    where the new container has no copy at all."""
     server = panel._server_or_404(sid)
     name = panel._backup_or_400(request.form.get("name", ""))
     try:
@@ -181,7 +183,7 @@ def delete(sid: int):
 @bp.get("/servers/<int:sid>/backups/download")
 @panel.admin_required
 def download(sid: int):
-    """Tira a copia do container. Mesmo streaming do download de arquivo."""
+    """Fetch the copy from the container. Same streaming as the file download."""
     server = panel._server_or_404(sid)
     name = panel._backup_or_400(request.args.get("name", ""))
     path = f"{panel.BACKUP_DIR.rstrip('/')}/{name}"
@@ -203,15 +205,15 @@ def download(sid: int):
     )
 
 
-# ------------------------------------------------ todas as copias do painel
+# ------------------------------------------------ every copy on the panel
 #
-# A aba Backups de um servidor so mostra o jogo DELE. Esta tela mostra tudo o que o painel
-# guardou, inclusive o jogo cujo servidor ja foi removido — que e justo o caso em que a
-# copia do painel mais importa.
+# A server's Backups tab only shows ITS game. This screen shows everything the panel
+# stored, including the game whose server has already been removed, which is exactly the case
+# where the panel copy matters most.
 
 def _archive_target(prefix: str) -> dict:
-    """O "servidor" do historico para a copia de um jogo que talvez ja nao tenha servidor:
-    sem id, e o alvo diz que a acao foi no painel (`painel@valheim`)."""
+    """The history "server" for the copy of a game that may no longer have a server:
+    no id, and the target says the action was on the panel (`painel@valheim`)."""
     return {"id": None, "ssh_user": "painel", "host": prefix}
 
 
@@ -231,9 +233,9 @@ def archive():
         games.append({
             "prefix": prefix,
             "copies": panel.backup_archive.list_copies(panel.PANEL_BACKUP_DIR, prefix),
-            # Onde da para restaurar: o servidor do MESMO jogo. O tar guarda caminho
-            # absoluto, entao o save de um jogo extraido no container de outro so espalharia
-            # arquivo onde ninguem le.
+            # Where it can be restored: the server of the SAME game. The tar stores absolute
+            # paths, so one game's save extracted into another's container would only scatter
+            # files where nobody reads them.
             "servers": [s for s in servers if panel.backup_prefix(s) == prefix],
         })
     return render_template("backup_archive.html", games=games, keep=panel.PANEL_BACKUP_KEEP,

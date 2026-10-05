@@ -1,4 +1,4 @@
-"""Reinicio e backup na hora marcada."""
+"""Restart and backup at the scheduled time."""
 from __future__ import annotations
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
@@ -16,8 +16,8 @@ def index(sid: int):
     conn = panel.db()
     tasks = schedules_repo.of_server(conn, sid)
     now_ts = panel.local_now()
-    # A tela mostra a proxima vez que cada tarefa roda: sem isso "todo dia as 5h" nao
-    # deixa claro se ela ja rodou hoje ou se ainda vai rodar.
+    # The screen shows the next time each task runs: without it "every day at 5am" does not
+    # make clear whether it already ran today or is still going to run.
     next_ones = {}
     for t in tasks:
         next_ones[t["id"]] = panel._next_occurrence(t, now_ts).strftime(panel.SHORT_DATE_FORMAT)
@@ -40,8 +40,8 @@ def new(sid: int):
             flash(panel.translate(err), "error")
         return redirect(url_for("schedules.index", sid=sid))
 
-    # 'intervalo' comeca a contar de agora: sem isto, "a cada 6h" dispararia no instante
-    # em que fosse salvo, o que ninguem espera de um agendamento.
+    # 'intervalo' starts counting from now: without this, "every 6h" would fire the instant
+    # it was saved, which nobody expects from a schedule.
     start = panel.local_now().isoformat() if data["kind"] == "intervalo" else ""
     conn = panel.db()
     with conn:
@@ -75,7 +75,7 @@ def delete(aid: int):
 @bp.post("/schedules/<int:aid>/run")
 @panel.admin_required
 def run(aid: int):
-    """Roda a tarefa agora, sem esperar a hora — e como se confere se ela funciona."""
+    """Run the task now, without waiting for its time: that is how one checks that it works."""
     sched = panel._schedule_or_404(aid)
     job_id = panel.fire_schedule(panel.db(), sched)
     if not job_id:

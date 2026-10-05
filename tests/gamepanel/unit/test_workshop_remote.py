@@ -1,7 +1,7 @@
-"""Workshop pela config: o script que roda no CT, contra pastas de mentira com o layout de cada jogo.
+"""Workshop via the config: the script that runs in the CT, against fake folders with each game's layout.
 
-Os formatos foram medidos em servidores de verdade (Docker): aqui se prova que a escrita troca so
-a LISTA e deixa o resto da config como estava.
+The formats were measured on real servers (Docker): here it is proven that writing replaces only
+the LIST and leaves the rest of the config as it was.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def _ctx(tmp_path, *args: str, workdir: str = "") -> dict:
             "home": str(tmp_path / "home"), "workdir": workdir}
 
 
-# ------------------------------------------------------------------------------- servico
+# ------------------------------------------------------------------------------- service
 
 def test_exec_args_le_o_ultimo_execstart_e_tira_o_prefixo():
     unit = ("[Service]\nExecStart=/opt/game/a -x 1\n# drop-in\n[Service]\nExecStart=\n"
@@ -85,7 +85,7 @@ def test_dst_troca_a_lista_e_guarda_as_opcoes_de_quem_fica(tmp_path):
     ctx = _dst(tmp_path)
     wr.dst_set(ctx, ["666155465", "378160973"])
     setup = _read(tmp_path / "game" / "mods" / "dedicated_server_mods_setup.lua")
-    # A linha de exemplo comentada fica; a do mod que saiu nao.
+    # The commented example line stays; the line of the removed mod does not.
     assert '--ServerModSetup("350811795")' in setup
     assert 'ServerModSetup("999999")' not in setup
     assert setup.endswith('ServerModSetup("666155465")\nServerModSetup("378160973")\n')
@@ -94,7 +94,7 @@ def test_dst_troca_a_lista_e_guarda_as_opcoes_de_quem_fica(tmp_path):
     assert '["localmod"] = { enabled = false }' in master
     assert "999999" not in master
     assert '["workshop-666155465"] = { enabled = true }' in master
-    # O shard que nao tinha modoverrides ganha um, senao o mod nao liga nas cavernas.
+    # The shard that had no modoverrides gets one, otherwise the mod is not enabled in the caves.
     caves = _read(_cluster(tmp_path) / "Caves" / "modoverrides.lua")
     assert '["workshop-378160973"] = { enabled = true }' in caves
     assert os.path.exists(str(_cluster(tmp_path) / "Master"
@@ -136,7 +136,7 @@ def test_zomboid_escreve_as_duas_listas_no_ini_do_servername(tmp_path):
 
 
 def test_zomboid_status_mostra_os_mods_que_o_item_trouxe(tmp_path):
-    ctx = _ctx(tmp_path)  # sem -servername: servertest, o padrao do jogo
+    ctx = _ctx(tmp_path)  # no -servername: servertest, the game's default
     _write(tmp_path / "home" / "Zomboid" / "Server" / "servertest.ini", "WorkshopItems=2875848298\nMods=\n")
     content = tmp_path / "game" / "steamapps" / "workshop" / "content" / "108600" / "2875848298" / "mods"
     _write(content / "CommonSense" / "mod.info", "name=Common Sense\nid=BB_CommonSense\n")
@@ -200,7 +200,7 @@ def test_reforger_sem_config_no_comando_nao_tem_onde_escrever(tmp_path):
         wr.reforger_set(ctx, [("5965550F24A0C152", "")])
 
 
-# ------------------------------------------------------------------------------- entrada
+# ------------------------------------------------------------------------------- input
 
 @pytest.mark.parametrize(("fmt", "item"), [
     ("dst", "12345"), ("dst", "1234567; rm -rf /"), ("zomboid", "../1234567"),
@@ -225,7 +225,7 @@ def test_main_recusa_mods_do_zomboid_com_caractere_de_shell(tmp_path, capsys, mo
     assert _read(tmp_path / "home" / "Zomboid" / "Server" / "servertest.ini") == INI
 
 
-# ------------------------------------------------------------------------------- painel
+# ------------------------------------------------------------------------------- panel
 
 def test_guid_colado_de_varios_jeitos():
     text = ("5965550F24A0C152 Where Am I\n"

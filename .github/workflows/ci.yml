@@ -1,0 +1,49 @@
+# Runs on every push and pull request: lint, types and the whole test suite.
+# The production panel needs only the stdlib plus python3-flask from apt; uv here manages
+# the development virtualenv only (see pyproject.toml).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      # Node is only used by tests/gamepanel/integration/test_javascript.py (parse/import/mount
+      # of every ES module). Without it those tests are skipped, not failed.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dev environment
+        run: uv sync --locked
+
+      - name: Ruff
+        run: uv run ruff check src tests
+
+      - name: Mypy
+        run: uv run mypy src
+
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Game catalog files must pass bash `source`
+        run: for f in games/*.env; do bash -c "set -a; source $f" || exit 1; done
+
+      - name: Shell syntax
+        run: for f in $(git ls-files '*.sh'); do bash -n "$f" || exit 1; done

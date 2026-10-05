@@ -1,44 +1,49 @@
-"""Antivirus (ClamAV) para mod, rodando DENTRO do CT do jogo, antes de o mod chegar ao jogo.
+"""Antivirus (ClamAV) for mods, running INSIDE the game CT, before the mod reaches the game.
 
-Os scripts aqui sao texto: o painel os manda por SSH, como o resto do que roda no CT. A
-regra de seguranca mora num lugar so - o upload pela tela e os instaladores remotos
-(Thunderstore, Shroudtopia) chamam o MESMO `SCAN_SCRIPT`; os instaladores o recebem por
-argumento, ja que la dentro o pacote do painel nao existe.
+The scripts here are text: the panel sends them over SSH, like everything else that runs in
+the CT. The security rule lives in a single place - the upload through the screen and the
+remote installers (Thunderstore, Shroudtopia) call the SAME `SCAN_SCRIPT`; the installers get
+it as an argument, since the panel package does not exist in there.
 
-Decisoes, cada uma com o motivo:
-- **O ClamAV so entra no CT no primeiro mod** (`apt-get`, na hora): servidor sem mod nao paga
-  o disco (~300 MB) nem o daemon de atualizacao, e servidor que ja roda ganha a verificacao
-  sem redeploy. O CT de jogo vai a internet; o painel, nao.
-- **Falha FECHADA.** Sem ClamAV, sem assinatura recente ou com erro de leitura, o mod NAO
-  entra: um "nao consegui verificar" que deixa passar e o mesmo que nao ter verificacao,
-  so que com cara de ter.
-- **Arquivo grande demais ou zip com senha conta como achado** (`--alert-exceeds-max`,
-  `--alert-encrypted`): sem isso o ClamAV PULA o que passa do limite, calado, e um zip com
-  senha seria o jeito obvio de passar qualquer coisa.
-- **O ClamAV acha o que ja e conhecido.** Mod malicioso feito sob medida passa. Isto e uma
-  camada a mais, nao a barreira: o jogo continua rodando como 'steam' e o firewall do CT
-  continua isolando a rede interna.
-- **A varredura carrega o banco de assinaturas na memoria (~1 GB por uns segundos)**, ao lado
-  do servidor que esta rodando. Num CT no limite, isso pode derrubar o jogo por falta de
-  memoria: e o mesmo aviso de memoria da tela vale aqui.
+Decisions, each with its reason:
+- **ClamAV only enters the CT with the first mod** (`apt-get`, on the spot): a server without
+  mods pays neither the disk (~300 MB) nor the update daemon, and a server that is already
+  running gains the check without a redeploy. The game CT goes to the internet; the panel does not.
+- **Fail CLOSED.** Without ClamAV, without recent signatures or with a read error, the mod does
+  NOT get in: an "I could not check" that lets it through is the same as having no check,
+  except that it looks like one.
+- **A file that is too large or a password-protected zip counts as a finding**
+  (`--alert-exceeds-max`, `--alert-encrypted`): without that ClamAV SKIPS whatever is over the
+  limit, silently, and a password-protected zip would be the obvious way to sneak anything in.
+- **ClamAV finds what is already known.** A tailor-made malicious mod gets through. This is one
+  more layer, not the barrier: the game still runs as 'steam' and the CT firewall still
+  isolates the internal network.
+- **The scan loads the signature database into memory (~1 GB for a few seconds)**, next to
+  the running server. In a CT at its limit, that can bring the game down for lack of memory:
+  the same memory warning from the screen applies here.
 """
 from __future__ import annotations
 
-# Tudo o que o antivirus verifica ou apaga mora debaixo deste prefixo. O script RECUSA outro
-# caminho: ele apaga a pasta quando acha algo, e um caminho errado vindo de um bug nao pode
-# virar `rm -rf` na pasta do jogo. Em /var/tmp porque o /tmp do Debian 13 e tmpfs (memoria);
-# a pasta de cada envio leva um token aleatorio de 128 bits e nasce 0700.
+from collections.abc import Sequence
+
+from gamepanel.runtime import remote_cmd
+from gamepanel.runtime.ssh import ServerLike
+
+# Everything the antivirus checks or deletes lives under this prefix. The script REFUSES any
+# other path: it deletes the folder when it finds something, and a wrong path coming from a bug
+# must not turn into `rm -rf` on the game folder. In /var/tmp because Debian 13's /tmp is tmpfs
+# (memory); each upload's folder carries a random 128-bit token and is created 0700.
 STAGING_PREFIX = "/var/tmp/gamepanel-"  # noqa: S108
-# A pasta de espera do upload: so vai para a pasta de mods depois de verificada.
+# The upload holding folder: it only goes to the mods folder after being checked.
 INCOMING_PREFIX = STAGING_PREFIX + "incoming-"
-# Assinatura com menos de um dia nao pede atualizacao; ate sete, uma atualizacao que falha
-# (espelho fora do ar, limite de pedidos do CDN do ClamAV) ainda deixa verificar. Mais velha
-# que isso, o mod e recusado: assinatura de semanas atras nao conhece o que circula hoje.
+# Signatures less than a day old need no update; up to seven, a failed update (mirror down,
+# ClamAV CDN rate limit) still allows checking. Older than that, the mod is refused: signatures
+# from weeks ago do not know what circulates today.
 FRESH_DAYS = 1
 MAX_AGE_DAYS = 7
 
-# Instala o ClamAV se faltar e garante assinaturas recentes. Parte COMUM dos dois scripts
-# abaixo: quem inclui define `refuse MENSAGEM CODIGO`, que diz a consequencia e sai.
+# Install ClamAV if missing and ensure recent signatures. COMMON part of the two scripts
+# below: the includer defines `refuse MESSAGE CODE`, which states the consequence and exits.
 _ENSURE = r"""
 if ! command -v clamscan >/dev/null 2>&1; then
   echo "antivirus: instalando o ClamAV (so na primeira vez neste servidor)..."
@@ -47,12 +52,12 @@ if ! command -v clamscan >/dev/null 2>&1; then
     || refuse "nao consegui instalar o ClamAV (apt)" 2
 fi
 
-# Trocavel so para o teste do script; no CT e sempre o padrao do pacote do Debian.
+# Overridable only for the script test; in the CT it is always the Debian package default.
 db=${CLAMAV_DB_DIR:-/var/lib/clamav}
 newest() { find "$db" -maxdepth 1 \( -name '*.cvd' -o -name '*.cld' \) -mtime "-$1" 2>/dev/null | head -n 1; }
 if [ -z "$(newest __FRESH_DAYS__)" ]; then
   echo "antivirus: atualizando as assinaturas..."
-  # O daemon do freshclam segura a trava do log: rodar o freshclam com ele de pe falha.
+  # The freshclam daemon holds the log lock: running freshclam while it is up fails.
   systemctl stop clamav-freshclam >/dev/null 2>&1 || true
   freshclam --quiet >/dev/null 2>&1 || echo "antivirus: a atualizacao falhou; usando as assinaturas que ja havia"
   systemctl start clamav-freshclam >/dev/null 2>&1 || true
@@ -62,7 +67,7 @@ CLAMSCAN_OPTS="--recursive --infected --stdout --alert-exceeds-max=yes --alert-e
 CLAMSCAN_OPTS="$CLAMSCAN_OPTS --max-filesize=512M --max-scansize=1024M"
 """.replace("__FRESH_DAYS__", str(FRESH_DAYS)).replace("__MAX_AGE_DAYS__", str(MAX_AGE_DAYS))
 
-# Antes de instalar: verifica a pasta de espera e, se nao passar, APAGA a espera.
+# Before installing: check the holding folder and, if it does not pass, DELETE it.
 SCAN_SCRIPT = r"""
 set -u
 target=${1:?}
@@ -71,11 +76,11 @@ case "$target" in
   *) echo "ANTIVIRUS: caminho fora da area de verificacao: $target" >&2; exit 2 ;;
 esac
 case "$target" in *..*) echo "ANTIVIRUS: caminho invalido: $target" >&2; exit 2 ;; esac
-# Achou algo ou nao conseguiu verificar: o que esta na espera nao serve para nada, e sai.
+# Found something or could not check: what is in the holding folder is useless, and it goes.
 refuse() { rm -rf -- "$target"; echo "ANTIVIRUS: $1; o mod NAO foi instalado" >&2; exit "$2"; }
 """ + _ENSURE + r"""
 echo "antivirus: verificando..."
-# shellcheck disable=SC2086 # as opcoes sao uma lista de palavras de proposito
+# shellcheck disable=SC2086 # the options are a word list on purpose
 out=$(clamscan $CLAMSCAN_OPTS --no-summary -- "$target" 2>&1)
 rc=$?
 case $rc in
@@ -85,9 +90,9 @@ case $rc in
 esac
 """
 
-# Depois de instalado: verifica o que JA esta no servidor (o que entrou antes do antivirus).
-# So LE - nada e apagado nem movido. Mod de servidor que roda e decisao de quem cuida dele:
-# apagar sozinho por um falso positivo derrubaria um mod de que o servidor depende.
+# After installing: check what is ALREADY on the server (what got in before the antivirus).
+# It only READS - nothing is deleted or moved. A mod on a running server is the call of whoever
+# looks after it: deleting on its own over a false positive would break a mod the server depends on.
 AUDIT_SCRIPT = r"""
 set -u
 refuse() { echo "ANTIVIRUS: $1; nada foi verificado" >&2; exit "$2"; }
@@ -102,7 +107,7 @@ if [ ${#present[@]} -eq 0 ]; then
 fi
 """ + _ENSURE + r"""
 echo "antivirus: verificando ${present[*]}"
-# shellcheck disable=SC2086 # as opcoes sao uma lista de palavras de proposito
+# shellcheck disable=SC2086 # the options are a word list on purpose
 clamscan $CLAMSCAN_OPTS -- "${present[@]}" 2>&1
 rc=$?
 case $rc in
@@ -114,8 +119,39 @@ case $rc in
 esac
 """
 
-# Cria a pasta de espera do upload (so root le) e varre as que sobraram de um envio que nao
-# chegou a virar job - o navegador fechado no meio, por exemplo.
+# Helper mode: the scan runs as steam, which can neither `apt-get` nor stop the freshclam
+# daemon. Installing and refreshing become the step BEFORE it, through the fixed root helper
+# (`remote_cmd.clamav_ensure`, which runs the same steps as `_ENSURE`), and the scan itself
+# only CHECKS that what that step left is usable. Still fail closed: no ClamAV or signatures
+# older than the limit = no mod.
+_CHECK = r"""
+command -v clamscan >/dev/null 2>&1 || refuse "o ClamAV nao esta instalado neste servidor" 2
+db=${CLAMAV_DB_DIR:-/var/lib/clamav}
+newest() { find "$db" -maxdepth 1 \( -name '*.cvd' -o -name '*.cld' \) -mtime "-$1" 2>/dev/null | head -n 1; }
+[ -n "$(newest __MAX_AGE_DAYS__)" ] || refuse "sem assinaturas dos ultimos __MAX_AGE_DAYS__ dias" 2
+CLAMSCAN_OPTS="--recursive --infected --stdout --alert-exceeds-max=yes --alert-encrypted=yes"
+CLAMSCAN_OPTS="$CLAMSCAN_OPTS --max-filesize=512M --max-scansize=1024M"
+""".replace("__MAX_AGE_DAYS__", str(MAX_AGE_DAYS))
+
+
+def _as_steam_variant(script: str) -> str:
+    """The same script with the inline install swapped for the check-only block.
+
+    Derived, not written twice: the scan rule (what counts as a finding, what is deleted) has to
+    stay ONE text for both modes. `raise` if the swap did not happen - a variant that still
+    carries the apt-get would fail as steam on every mod, and one without any block would scan
+    with no options at all.
+    """
+    if script.count(_ENSURE) != 1:
+        raise RuntimeError("o bloco de instalacao do ClamAV nao esta no script")
+    return script.replace(_ENSURE, _CHECK)
+
+
+SCAN_SCRIPT_AS_STEAM = _as_steam_variant(SCAN_SCRIPT)
+AUDIT_SCRIPT_AS_STEAM = _as_steam_variant(AUDIT_SCRIPT)
+
+# Create the upload holding folder (only root reads it) and sweep the ones left over from an
+# upload that never became a job - a browser closed halfway, for example.
 INCOMING_SCRIPT = r"""
 set -e
 d=${1:?}
@@ -124,9 +160,9 @@ find /var/tmp -maxdepth 1 -name 'gamepanel-incoming-*' -mmin +1440 -exec rm -rf 
 mkdir -p -m 0700 -- "$d"
 """
 
-# Leva o que ja foi verificado da espera para a pasta de mods, com as mesmas regras do envio
-# comum (UPLOAD_SCRIPT): arquivo que ja existe ganha copia .bak e mantem dono e permissao; o
-# novo herda o dono da pasta, porque o jogo roda como 'steam' e precisa ler.
+# Move what has already been checked from the holding folder to the mods folder, with the same
+# rules as the regular upload (UPLOAD_SCRIPT): an existing file gets a .bak copy and keeps owner
+# and permissions; a new one inherits the folder owner, because the game runs as 'steam' and needs to read it.
 PLACE_SCRIPT = r"""
 set -e
 src=${1:?}
@@ -154,7 +190,43 @@ done
 
 
 def incoming_dir(token: str) -> str:
-    """A pasta de espera de UM envio. O token vem do painel (hex), nunca do formulario."""
+    """The holding folder of ONE upload. The token comes from the panel (hex), never from the form."""
     if not token or not all(c in "0123456789abcdef" for c in token):
         raise ValueError("token de envio invalido")
     return INCOMING_PREFIX + token
+
+
+# ------------------------------------------------- commands, per access mode
+#
+# Every script above deals with mod CONTENT, so it goes through `remote_cmd.as_steam`: in
+# helper mode the holding folder belongs to steam, and the move into the game folder never
+# writes through a link with more rights than the game has. Only the ClamAV install needs
+# root, and in helper mode it is a separate step through the fixed helper.
+
+def incoming_command(server: ServerLike, incoming: str) -> str:
+    return remote_cmd.as_steam(server, "bash", "-c", INCOMING_SCRIPT, "gp", incoming)
+
+
+def place_command(server: ServerLike, incoming: str, folder: str) -> str:
+    return remote_cmd.as_steam(server, "bash", "-c", PLACE_SCRIPT, "gp", incoming, folder)
+
+
+def scan_steps(server: ServerLike, incoming: str) -> list[str]:
+    """Job steps that scan the holding folder (and delete it if it does not pass)."""
+    if remote_cmd.privileged(server):
+        return [remote_cmd.as_steam(server, "bash", "-c", SCAN_SCRIPT, "gp", incoming)]
+    return [remote_cmd.clamav_ensure(),
+            remote_cmd.as_steam(server, "bash", "-c", SCAN_SCRIPT_AS_STEAM, "gp", incoming)]
+
+
+def audit_steps(server: ServerLike, paths: Sequence[str]) -> list[str]:
+    """Job steps that scan what is already installed (read-only).
+
+    In helper mode ClamAV is ensured even when nothing turns out to be installed: knowing what
+    exists means reading the game folders, which only steam may do, and steam cannot install
+    anything. The cost is an install on a server with no mods, on an explicit click.
+    """
+    if remote_cmd.privileged(server):
+        return [remote_cmd.as_steam(server, "bash", "-c", AUDIT_SCRIPT, "gp", *paths)]
+    return [remote_cmd.clamav_ensure(),
+            remote_cmd.as_steam(server, "bash", "-c", AUDIT_SCRIPT_AS_STEAM, "gp", *paths)]

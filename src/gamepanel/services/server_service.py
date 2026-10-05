@@ -1,15 +1,15 @@
-"""Validacao do formulario de servidor: o que chega da tela vira cadastro, ou erro.
+"""Validation of the server form: what arrives from the screen becomes a record, or an error.
 
-Um lugar so para uma razao pratica: quase todo campo daqui acaba dentro de um comando
-remoto (a unidade do systemd, a pasta do save, o regex do log) ou de uma chamada HTTP
-com credencial. Espalhar essa conferencia pelas rotas e como se perde uma delas.
+One single place for a practical reason: almost every field here ends up inside a remote
+command (the systemd unit, the save folder, the log regex) or an HTTP call carrying a
+credential. Spreading these checks across the routes is how one of them gets lost.
 
-A convencao das funcoes abaixo e sempre a mesma: devolvem o valor JA limpo e anotam o
-problema na lista `errors` que recebem — nao levantam. E o que permite a tela mostrar
-TODOS os erros do formulario de uma vez, em vez de um por vez a cada envio.
+The functions below always follow the same convention: they return the value ALREADY
+cleaned and note the problem in the `errors` list they receive; they do not raise. That
+is what lets the screen show ALL the form errors at once, instead of one per submission.
 
-Campo vazio quase nunca e erro: significa "nao uso esse recurso". Quem exige
-preenchimento diz isso explicitamente (nome, host, usuario e servico).
+An empty field is almost never an error: it means "I do not use this feature". Fields
+that require a value say so explicitly (name, host, user and service).
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, NamedTuple
 
 from gamepanel.i18n import Message
+from gamepanel.runtime import remote_cmd
 from gamepanel.runtime.a2s import QueryError
 from gamepanel.runtime.http_probe import URL_RE
 from gamepanel.runtime.log_probe import compile_pattern, valid_log_path
@@ -34,14 +35,14 @@ GAME_PORT_MAX = 120
 CONFIG_PATH_MAX = 400
 HTTP_AUTH_MAX = 300
 
-# Qualquer coisa com `.get(nome, padrao)` serve: o formulario do Flask, ou um dict no teste.
+# Anything with `.get(name, default)` will do: the Flask form, or a dict in the test.
 Form = Mapping[str, Any]
-# Caminho absoluto ja normalizado; levanta ValueError no que nao presta.
+# An absolute, already normalized path; raises ValueError on anything that is no good.
 CleanPath = Callable[[str], str]
 
 
 class FormLimits(NamedTuple):
-    """Os tetos que valem para este cadastro. Vem de fora porque sao configuracao."""
+    """The caps that apply to this record. They come from outside because they are configuration."""
 
     config_files_max: int
     backup_paths_max: int
@@ -53,13 +54,13 @@ class FormLimits(NamedTuple):
 
 
 def _field(form: Form, name: str, cap: int) -> str:
-    """Um campo de texto do formulario: sem espacos nas pontas e com teto de tamanho."""
+    """A text field of the form: no whitespace at the ends and with a length cap."""
     return (form.get(name, "") or "").strip()[:cap]
 
 
 def _port_field(value: str | None, default: int, minimum: int, error: Message,
            errors: list[str]) -> int:
-    """Le uma porta do formulario; `minimo` 0 permite desligar o recurso."""
+    """Reads a port from the form; `minimum` 0 allows turning the feature off."""
     raw = (value or "").strip() or str(default)
     if raw.isdigit() and minimum <= int(raw) <= MAX_PORT:
         return int(raw)
@@ -67,12 +68,12 @@ def _port_field(value: str | None, default: int, minimum: int, error: Message,
     return default
 
 
-# Vagas de um servidor: acima disto e digito a mais, nao jogo de verdade.
+# A server's slots: above this it is an extra digit, not a real game.
 MAX_PLAYERS_LIMIT = 1000
 
 
 def _count_field(value: str | None, errors: list[str]) -> int:
-    """Vagas do servidor; vazio = 0 (nao se sabe, ou a fonte de contagem informa)."""
+    """The server's slots; empty = 0 (unknown, or the counting source reports it)."""
     raw = (value or "").strip() or "0"
     if raw.isdigit() and int(raw) <= MAX_PLAYERS_LIMIT:
         return int(raw)
@@ -83,7 +84,7 @@ def _count_field(value: str | None, errors: list[str]) -> int:
 def _service_field(value: str | None, errors: list[str]) -> str:
     service = (value or "").strip()
     if service and not service.endswith(".service"):
-        service = f"{service}.service"  # o sufixo e o de sempre: nao vale incomodar
+        service = f"{service}.service"  # the suffix is always the same: not worth bothering
     if not UNIT_RE.match(service):
         errors.append(Message("form.bad_service"))
     return service
@@ -102,7 +103,7 @@ def _config_folder(value: str | None, clean_path: CleanPath, errors: list[str]) 
 
 def _config_files(value: str | None, clean_path: CleanPath, maximum: int,
                      errors: list[str]) -> str:
-    """Le a lista de arquivos de configuracao (um caminho absoluto por linha)."""
+    """Reads the list of configuration files (one absolute path per line)."""
     paths: list[str] = []
     for line in (value or "").replace(",", "\n").splitlines():
         raw = line.strip()
@@ -123,10 +124,10 @@ def _config_files(value: str | None, clean_path: CleanPath, maximum: int,
 
 def _backup_paths(value: str | None, clean_path: CleanPath, maximum: int,
                      errors: list[str]) -> str:
-    """Le a lista do que entra no backup (um caminho absoluto por linha).
+    """Reads the list of what goes into the backup (one absolute path per line).
 
-    Vazio e a resposta certa para a maioria dos cadastros: sem nada aqui o backup leva a
-    pasta de configuracao do servidor, que e onde o save costuma morar.
+    Empty is the right answer for most records: with nothing here the backup takes the
+    server's configuration folder, which is where the save usually lives.
     """
     paths: list[str] = []
     for line in (value or "").replace(",", "\n").splitlines():
@@ -150,7 +151,7 @@ def _backup_paths(value: str | None, clean_path: CleanPath, maximum: int,
 
 
 def _url_or_error(raw: str, error: Message, errors: list[str]) -> str:
-    """URL valida, ou string vazia com o erro anotado. Vazio nao e erro: e "nao usa"."""
+    """A valid URL, or an empty string with the error noted. Empty is not an error: it means "not used"."""
     if raw and not URL_RE.match(raw):
         errors.append(error)
         return ""
@@ -158,7 +159,7 @@ def _url_or_error(raw: str, error: Message, errors: list[str]) -> str:
 
 
 def _json_or_error(raw: str, label: str, errors: list[str]) -> str:
-    """Corpo JSON valido, ou string vazia com o erro anotado."""
+    """A valid JSON body, or an empty string with the error noted."""
     if not raw:
         return ""
     try:
@@ -170,7 +171,7 @@ def _json_or_error(raw: str, label: str, errors: list[str]) -> str:
 
 
 def _json_paths(form: Form, cap: int, errors: list[str]) -> dict:
-    """Os tres caminhos de navegacao na resposta (lista, contagem, token)."""
+    """The three navigation paths into the response (list, count, token)."""
     paths = {}
     for field, label in (("http_list_path", "form.path_list"),
                           ("http_count_path", "form.path_count"),
@@ -184,7 +185,7 @@ def _json_paths(form: Form, cap: int, errors: list[str]) -> dict:
 
 
 def _http_fields(form: Form, limits: FormLimits, errors: list[str]) -> dict:
-    """Le e confere os campos da chamada HTTP (URL, autenticacao, corpo, caminhos)."""
+    """Reads and checks the HTTP call fields (URL, authentication, body, paths)."""
     url = _url_or_error(
         _field(form, "http_url", limits.http_url_max),
         Message("form.bad_api_url"), errors,
@@ -195,8 +196,8 @@ def _http_fields(form: Form, limits: FormLimits, errors: list[str]) -> dict:
     )
     paths = _json_paths(form, limits.http_path_max, errors)
 
-    # Login automatico: os tres campos andam juntos. Preencher so parte deles quase
-    # sempre e engano, e falhar aqui e melhor do que descobrir na hora da consulta.
+    # Automatic login: the three fields go together. Filling in only some of them is
+    # almost always a mistake, and failing here beats finding out at query time.
     login_url = _url_or_error(
         _field(form, "http_login_url", limits.http_url_max),
         Message("form.bad_login_url"), errors,
@@ -212,9 +213,9 @@ def _http_fields(form: Form, limits: FormLimits, errors: list[str]) -> dict:
         "http_url": url,
         "http_login_url": login_url,
         "http_login_body": login_body,
-        # Guarda a senha da API como ela precisa ser mandada. O banco do painel ja da
-        # acesso de root aos containers, entao isso nao amplia o estrago de um vazamento
-        # — mas trate o arquivo panel.db como segredo.
+        # Stores the API password the way it has to be sent. The panel database already
+        # grants root access to the containers, so this does not widen the damage of a
+        # leak, but treat the panel.db file as a secret.
         "http_auth": _field(form, "http_auth", HTTP_AUTH_MAX),
         "http_body": body,
         **paths,
@@ -230,7 +231,7 @@ def _log_path(value: str | None, errors: list[str]) -> str:
 
 
 def _pattern(value: str | None, label: str, cap: int, errors: list[str]) -> str:
-    """Guarda o regex so depois de conferir que ele compila."""
+    """Stores the regex only after checking that it compiles."""
     text = (value or "").strip()[:cap]
     if not text:
         return ""
@@ -247,7 +248,9 @@ def form_server(form: Form, clean_path: CleanPath,
     errors: list[str] = []
     name = form.get("name", "").strip()
     host = form.get("host", "").strip()
-    ssh_user = form.get("ssh_user", "").strip() or "root"
+    # An empty field means the default for a new server - the unprivileged login user. An
+    # existing server always posts its own value back, so editing never flips it by itself.
+    ssh_user = form.get("ssh_user", "").strip() or remote_cmd.HELPER_USER
     source = (form.get("player_source", "") or "").strip()
     if source and source not in limits.player_sources:
         errors.append(Message("form.bad_player_source"))

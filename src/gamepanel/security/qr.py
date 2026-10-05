@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""QR code (ISO/IEC 18004) so com a stdlib: modo byte, correcao de erro M, versoes 1 a 10.
+"""QR code (ISO/IEC 18004) with the stdlib only: byte mode, error correction M, versions 1 to 10.
 
-Existe para a tela de ativacao do segundo fator: o painel nao baixa nada e nao tem pip, entao
-nao ha biblioteca de QR. O `otpauth://` de um usuario tem uns 130 bytes, o que cabe na versao 8
-(correcao M leva ate 213 bytes na versao 10 — de sobra para o que o painel gera).
+It exists for the second-factor activation screen: the panel downloads nothing and has no pip,
+so there is no QR library. A user's `otpauth://` is about 130 bytes, which fits in version 8
+(correction M holds up to 213 bytes in version 10 - plenty for what the panel generates).
 
-Puro (sem Flask), como `navigation.py` e `totp.py`. A saida e um SVG proprio, so de numeros:
-pode entrar na pagina sem escape. Preto sobre branco com a zona de silencio de 4 modulos,
-mesmo no tema escuro: e o contraste que o leitor da camera espera.
+Pure (no Flask), like `navigation.py` and `totp.py`. The output is our own SVG, made only of
+numbers: it can go into the page unescaped. Black on white with a 4-module quiet zone, even in
+the dark theme: that is the contrast the camera reader expects.
 
-Foi conferido contra um leitor de verdade (OpenCV) e contra a biblioteca `segno` — ver
-`test_qr.py` para o que fica travado no repositorio.
+It was checked against a real reader (OpenCV) and against the `segno` library - see
+`test_qr.py` for what is locked down in the repository.
 """
 from __future__ import annotations
 
 import itertools
 
-# versao -> (bytes de correcao por bloco, [(quantidade de blocos, bytes de dados por bloco), ...])
-# Nivel M (~15% de perda tolerada). Tabela da ISO 18004, secao 7.5.1.
+# version -> (correction bytes per block, [(number of blocks, data bytes per block), ...])
+# Level M (~15% loss tolerated). Table from ISO 18004, section 7.5.1.
 _BLOCKS_M = {
     1: (10, [(1, 16)]),
     2: (16, [(1, 28)]),
@@ -34,21 +34,21 @@ _ALIGNMENT = {
     1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34],
     7: [6, 22, 38], 8: [6, 24, 42], 9: [6, 26, 46], 10: [6, 28, 50],
 }
-_FORMAT_BITS_M = 0b00           # nivel de correcao M
+_FORMAT_BITS_M = 0b00           # correction level M
 _PAD = (0xEC, 0x11)
-_LARGE_VERSION = 10             # a partir daqui a contagem de caracteres usa 16 bits, nao 8
-_VERSIONED_FORMAT = 7           # a partir daqui o QR carrega os proprios bits de versao
-_TIMING_COLUMN = 6              # coluna/linha reservada ao padrao de temporizacao
+_LARGE_VERSION = 10             # from here on the character count uses 16 bits, not 8
+_VERSIONED_FORMAT = 7           # from here on the QR carries its own version bits
+_TIMING_COLUMN = 6              # column/row reserved for the timing pattern
 
 
 class TextTooLarge(ValueError):
-    """Nao cabe na versao 10 com correcao M (213 bytes)."""
+    """Does not fit in version 10 with correction M (213 bytes)."""
 
 
 def capacity(version: int) -> int:
-    """Bytes de texto que a versao comporta em modo byte."""
+    """Bytes of text the version holds in byte mode."""
     data = sum(n * d for n, d in _BLOCKS_M[version][1])
-    return data - (2 if version < _LARGE_VERSION else 3)   # 4 bits de modo + 8 ou 16 de contagem
+    return data - (2 if version < _LARGE_VERSION else 3)   # 4 mode bits + 8 or 16 count bits
 
 
 def _version_for(size: int) -> int:
@@ -58,7 +58,7 @@ def _version_for(size: int) -> int:
     raise TextTooLarge(f"{size} bytes: o maximo e {capacity(10)}")
 
 
-# --------------------------------------------------------------------- Reed-Solomon no campo de Galois de 256 elementos
+# --------------------------------------------------------------------- Reed-Solomon over the 256-element Galois field
 
 _EXP = [0] * 512
 _LOG = [0] * 256
@@ -99,7 +99,7 @@ def _correction(data: list[int], count: int) -> list[int]:
     return remainder[len(data):]
 
 
-# ------------------------------------------------------------------- dados -> palavras-codigo
+# ------------------------------------------------------------------- data -> codewords
 
 def _codewords(data: bytes, version: int) -> list[int]:
     bits: list[int] = []
@@ -107,12 +107,12 @@ def _codewords(data: bytes, version: int) -> list[int]:
     def write(value: int, how_many: int) -> None:
         bits.extend((value >> i) & 1 for i in range(how_many - 1, -1, -1))
 
-    write(0b0100, 4)                                    # modo byte
+    write(0b0100, 4)                                    # byte mode
     write(len(data), 8 if version < _LARGE_VERSION else 16)
     for byte in data:
         write(byte, 8)
     total_bits = sum(n * d for n, d in _BLOCKS_M[version][1]) * 8
-    bits.extend([0] * min(4, total_bits - len(bits)))  # terminador
+    bits.extend([0] * min(4, total_bits - len(bits)))  # terminator
     bits.extend([0] * (-len(bits) % 8))
     words = [int("".join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
     i = 0
@@ -139,7 +139,7 @@ def _interleave(codewords: list[int], version: int) -> list[int]:
     return output
 
 
-# ----------------------------------------------------------------------------- matriz
+# ----------------------------------------------------------------------------- matrix
 
 def _bch(data: int, generator: int, correction_bits: int) -> int:
     remainder = data
@@ -165,7 +165,7 @@ class _Matrix:
         self.fixed = [[False] * self.n for _ in range(self.n)]
         self._draw_patterns()
 
-    def _set(self, x: int, y: int, dark: bool) -> None:      # x e a coluna; y, a linha
+    def _set(self, x: int, y: int, dark: bool) -> None:      # x is the column; y, the row
         self.m[y][x] = dark
         self.fixed[y][x] = True
 
@@ -173,7 +173,7 @@ class _Matrix:
         self._draw_timing_pattern()
         self._draw_finder_patterns()
         self._draw_alignment_patterns()
-        self._format(0)                                            # reserva a area (o valor vem depois)
+        self._format(0)                                            # reserves the area (the value comes later)
         self._draw_version_info()
 
     def _draw_timing_pattern(self) -> None:
@@ -183,7 +183,7 @@ class _Matrix:
 
     def _draw_finder_patterns(self) -> None:
         n = self.n
-        for cx, cy in ((3, 3), (n - 4, 3), (3, n - 4)):             # tres localizadores + separadores
+        for cx, cy in ((3, 3), (n - 4, 3), (3, n - 4)):             # three finder patterns + separators
             for dy in range(-4, 5):
                 for dx in range(-4, 5):
                     x, y = cx + dx, cy + dy
@@ -196,7 +196,7 @@ class _Matrix:
         for i, cy in enumerate(positions):
             for j, cx in enumerate(positions):
                 if self._overlaps_finder_pattern(i, j, len(positions)):
-                    continue                                        # cai em cima de um localizador
+                    continue                                        # falls on top of a finder pattern
                 self._draw_one_alignment_pattern(cx, cy)
 
     @staticmethod
@@ -236,7 +236,7 @@ class _Matrix:
             self._set(n - 1 - i, 8, bit(i))
         for i in range(8, 15):
             self._set(8, n - 15 + i, bit(i))
-        self._set(8, n - 8, True)                                # o modulo escuro fixo
+        self._set(8, n - 8, True)                                # the fixed dark module
 
     def place(self, codewords: list[int]) -> None:
         bits = [(p >> i) & 1 for p in codewords for i in range(7, -1, -1)]
@@ -244,11 +244,11 @@ class _Matrix:
             self.m[y][x] = bool(bits[k]) if k < len(bits) else False
 
     def _free_positions_zigzag(self):
-        """As posicoes ainda livres (nao fixas), na ordem de ziguezague do QR.
+        """The positions still free (not fixed), in the QR zigzag order.
 
-        Sobe e desce em pares de colunas, da direita para a esquerda, pulando a
-        coluna de temporizacao (6) - e assim que o padrao preenche a matriz inteira
-        sem se sobrepor aos padroes ja fixos.
+        Goes up and down in pairs of columns, right to left, skipping the timing
+        column (6) - that is how the standard fills the whole matrix without
+        overlapping the patterns already fixed.
         """
         n = self.n
         for right in range(n - 1, 0, -2):
@@ -286,7 +286,7 @@ _FINDER_LIKE_PATTERNS = ("10111010000", "00001011101")
 
 
 def _run_penalty(line: list[bool]) -> int:
-    """N1: sequencias de 5+ modulos da mesma cor em seguida."""
+    """N1: runs of 5+ consecutive modules of the same color."""
     total = 0
     run = 1
     for a, b in itertools.pairwise(line):
@@ -299,7 +299,7 @@ def _run_penalty(line: list[bool]) -> int:
 
 
 def _finder_like_penalty(line: list[bool]) -> int:
-    """N3: trecho parecido demais com o padrao localizador (falso positivo pro leitor)."""
+    """N3: a stretch too similar to the finder pattern (a false positive for the reader)."""
     text = "".join("1" if c else "0" for c in line)
     return sum(
         40 * sum(text.startswith(pattern, i) for i in range(len(text) - 10))
@@ -308,7 +308,7 @@ def _finder_like_penalty(line: list[bool]) -> int:
 
 
 def _block_penalty(m: list[list[bool]]) -> int:
-    """N2: blocos 2x2 da mesma cor."""
+    """N2: 2x2 blocks of the same color."""
     n = len(m)
     total = 0
     for y in range(n - 1):
@@ -319,7 +319,7 @@ def _block_penalty(m: list[list[bool]]) -> int:
 
 
 def _balance_penalty(m: list[list[bool]]) -> int:
-    """N4: equilibrio entre modulos claros e escuros (quanto mais longe de 50%, pior)."""
+    """N4: balance between light and dark modules (the farther from 50%, the worse)."""
     n = len(m)
     dark_count = sum(map(sum, m))
     return 10 * (((abs(dark_count * 20 - n * n * 10) + n * n - 1) // (n * n)) - 1)
@@ -334,7 +334,7 @@ def _penalty(m: list[list[bool]]) -> int:
 
 
 def matrix(text: str) -> list[list[bool]]:
-    """A matriz de modulos (True = escuro), sem a zona de silencio."""
+    """The module matrix (True = dark), without the quiet zone."""
     data = text.encode("utf-8")
     version = _version_for(len(data))
     codewords = _interleave(_codewords(data, version), version)
@@ -354,7 +354,7 @@ def matrix(text: str) -> list[list[bool]]:
 
 
 def svg(text: str, label: str = "QR code", border: int = 4) -> str:
-    """O QR como SVG inline. So digitos e letras fixas: seguro para `|safe` no template."""
+    """The QR as inline SVG. Only digits and fixed letters: safe for `|safe` in the template."""
     m = matrix(text)
     side = len(m) + 2 * border
     path = "".join(f"M{x + border},{y + border}h1v1h-1z"

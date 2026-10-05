@@ -1,5 +1,5 @@
 #!/bin/bash
-# SteamCMD de mentira: registra os argumentos e cria o que um app_update criaria.
+# Fake SteamCMD: records the arguments and creates what an app_update would create.
 echo "steamcmd $*" >> /var/log/fake-steamcmd.log
 dir=""; app=""
 while [ $# -gt 0 ]; do
@@ -9,7 +9,7 @@ done
 [ -n "$dir" ] && [ -n "$app" ] || exit 0
 mkdir -p "$dir/steamapps"
 printf '"AppState"\n{\n\t"buildid"\t\t"4242"\n}\n' > "$dir/steamapps/appmanifest_${app}.acf"
-# Arquivos que o "jogo baixado" precisa ter (lista escrita pelo driver, um por linha).
+# Files the "downloaded game" must have (list written by the driver, one per line).
 if [ -r /etc/fake-game-files ]; then
   while IFS= read -r f; do
     [ -n "$f" ] || continue

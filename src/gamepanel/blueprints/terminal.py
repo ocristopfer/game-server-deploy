@@ -1,4 +1,4 @@
-"""Terminal interativo por SSH, e as rotas que o JavaScript usa para toca-lo."""
+"""Interactive terminal over SSH, and the routes the JavaScript uses to drive it."""
 from __future__ import annotations
 
 import base64
@@ -36,7 +36,7 @@ def api_open(sid: int):
     rows = max(5, min(150, int(body.get("rows") or 24)))
 
     with panel._terms_lock:
-        # Uma aba esquecida nao pode impedir a proxima de abrir: derruba as mortas.
+        # A forgotten tab must not keep the next one from opening: kill the dead ones.
         for dead in [t for t in panel._terms.values() if not t.alive]:
             panel._terms.pop(dead.id, None)
         if len(panel._terms) >= panel.TERM_MAX_SESSIONS:

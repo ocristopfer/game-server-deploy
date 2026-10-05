@@ -1,12 +1,12 @@
-# Painel administrativo - imagem de producao (o Dockerfile ao lado e o de
-# desenvolvimento, que recebe o codigo por bind mount).
+# Admin panel - production image (the Dockerfile next to it is the development
+# one, which receives the code by bind mount).
 #
-# O contexto de build e a RAIZ do repositorio, porque o codigo do painel entra na imagem:
+# The build context is the repository ROOT, because the panel code goes into the image:
 #   docker build -f docker/panel/Dockerfile.prod -t gamepanel .
 #
-# O pacote fica em /opt/gamepanel/gamepanel (WORKDIR e o pai dele) para que
-# `import gamepanel` resolva sem PYTHONPATH: e o mesmo mecanismo que ja fazia
-# `app:app` funcionar antes da reorganizacao em src/ (ver docs/architecture-proposal.md).
+# The package lives in /opt/gamepanel/gamepanel (WORKDIR is its parent) so that
+# `import gamepanel` resolves without PYTHONPATH: it is the same mechanism that already
+# made `app:app` work before the reorganization into src/ (see docs/architecture-proposal.md).
 FROM debian:13-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -25,8 +25,8 @@ COPY docker/panel/entrypoint.sh /usr/local/bin/panel-entrypoint
 COPY src/gamepanel /opt/gamepanel/gamepanel
 RUN chmod 0755 /usr/local/bin/panel-entrypoint
 
-# A chave SSH e o banco ficam em volumes: recriar o container nao pode invalidar o
-# acesso aos containers de jogo nem perder os cadastros.
+# The SSH key and the database live in volumes: recreating the container must not invalidate
+# access to the game containers nor lose the registered servers.
 VOLUME ["/etc/gamepanel", "/var/lib/gamepanel"]
 WORKDIR /opt/gamepanel
 EXPOSE 8080

@@ -1,4 +1,4 @@
-"""Backend Proxmox real contra um Proxmox falso que repete as regras do servidor de verdade."""
+"""Real Proxmox backend against a fake Proxmox that repeats the rules of the real server."""
 from __future__ import annotations
 
 import pytest
@@ -17,8 +17,8 @@ def test_criar_envia_o_que_o_proxmox_aceita(pve):
     ct = pve.fake.cts[300]
     assert ct["features"] == "nesting=1", "sem keyctl: so o root@pam pode"
     assert ct["pool"] == "games"
-    assert ct["net0"] == "name=eth0,bridge=vmbr1,ip=10.0.0.30/24,gw=192.168.2.1,type=veth"
-    assert ct["rootfs"] == "vm-pool:20"
+    assert ct["net0"] == "name=eth0,bridge=vmbr0,ip=10.0.0.30/24,gw=10.20.1.1,type=veth"
+    assert ct["rootfs"] == "local-lvm:20"
     assert (ct["memory"], ct["cores"], ct["unprivileged"]) == ("4096", "2", "1")
     assert "AAAAC3Nza-chave-de-teste" in ct["keys"]
 
@@ -101,7 +101,7 @@ def test_destruir_ct_parado(pve):
 
 
 def test_nao_mexe_em_ct_fora_do_pool(pve):
-    pve.fake.external(210, net0="name=eth0,ip=192.168.2.20/24")
+    pve.fake.external(210, net0="name=eth0,ip=10.20.1.20/24")
     for action in (pve.backend.destroy, pve.backend.stop):
         with pytest.raises(ProxmoxError, match="nao esta no pool"):
             action(210)
@@ -119,7 +119,7 @@ def test_pertence_ao_broker(pve):
 
 def test_handles_e_ips_do_que_o_token_enxerga(pve):
     pve.backend.create(ESPEC)
-    pve.fake.external(210, net0="name=eth0,ip=192.168.2.20/24")
+    pve.fake.external(210, net0="name=eth0,ip=10.20.1.20/24")
     handles, ips = pve.backend.handles_and_ips()
     assert handles == {"300"}, "CT fora do pool nao aparece: o token nao o enxerga"
     assert ips == {"10.0.0.30"}
@@ -138,10 +138,10 @@ def test_espera_usa_o_upid_codificado(pve):
     assert all(c.startswith("/api2/json/nodes/pve/tasks/UPID:pve:") for c in paths)
 
 
-# --- validacao da config ---------------------------------------------------------------
+# --- config validation ----------------------------------------------------------------
 
-BASE = dict(node="pve", pool="games", storage="vm-pool", bridge="vmbr1", gateway="192.168.2.1",
-            template="vm-pool-data:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
+BASE = dict(node="pve", pool="games", storage="local-lvm", bridge="vmbr0", gateway="10.20.1.1",
+            template="local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
             ssh_keys=("ssh-ed25519 AAAA x",))
 
 
@@ -175,8 +175,8 @@ def test_backend_sem_servidor_e_erro_de_conexao_nao_excecao_solta():
 
 
 def test_sonda_de_saude_nao_espera_o_prazo_inteiro(monkeypatch):
-    """Firewall que descarta o pacote deixaria a sonda esperando 30 s: a saude responderia lenta
-    justo quando esta quebrada."""
+    """A firewall that drops the packet would leave the probe waiting 30 s: health would answer
+    slowly exactly when it is broken."""
     import time
 
     import gamebroker.runtime.proxmox as modulo

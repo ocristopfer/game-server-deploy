@@ -1,9 +1,9 @@
-"""Leitura em paralelo por servidor (gamepanel.services.parallel).
+"""Parallel reading per server (gamepanel.services.parallel).
 
-Era a mesma trinta linhas escrita tres vezes (status, recursos, jogadores) antes da
-Fase 4 — e nenhuma das tres tinha teste proprio. O que importa aqui e o que so aparece
-com servidor lento ou fora do ar: quem nao volta a tempo nao pode sumir da tela, e o
-valor de reserva nao pode ser o MESMO objeto em varias chaves.
+It was the same thirty lines written three times (status, resources, players) before
+Phase 4 - and none of the three had its own test. What matters here is what only shows
+up with a slow or downed server: whoever does not come back in time must not disappear
+from the screen, and the fallback value must not be the SAME object under several keys.
 """
 from __future__ import annotations
 
@@ -39,16 +39,16 @@ def test_quem_nao_volta_a_tempo_entra_com_a_reserva():
 
 
 def test_a_reserva_e_uma_copia_por_servidor():
-    """Escrever no resultado de um servidor nao pode aparecer no do outro."""
+    """Writing into one server's result must not show up in another's."""
     out = parallel.per_server(lambda s: time.sleep(0.5), servers(1, 2), 0.05, SPARE)
     out[1]["error"] = "mexido"
     assert out[2]["error"] == "tempo esgotado"
-    # E nem no dicionario original de reserva.
+    # Nor in the original fallback dictionary.
     assert SPARE["error"] == "tempo esgotado"
 
 
 def test_roda_de_verdade_em_paralelo():
-    """Em serie, tres esperas de 0.2s nao caberiam num prazo de 0.5s."""
+    """In series, three 0.2s waits would not fit in a 0.5s deadline."""
     def wait_for(s):
         time.sleep(0.2)
         return {"ok": True}

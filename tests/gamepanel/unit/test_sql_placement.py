@@ -1,15 +1,15 @@
-"""SQL de uma tabela mora no repositorio dela, e em lugar nenhum mais.
+"""A table's SQL lives in its repository, and nowhere else.
 
-Este teste existe para o que ja aconteceu: o mesmo `SELECT * FROM servers WHERE id = ?`
-estava em oito arquivos e a lista de colunas do `UPDATE` em mais quatro. Nada disso
-quebra ao renomear uma coluna — quebra na PRIMEIRA VISITA a tela que usa a copia que
-ficou para tras, em runtime, sem lint nem teste acusando. Foi por isso que as migrations
-de rename precisaram ser escritas com tanto cuidado.
+This test exists for what already happened: the same `SELECT * FROM servers WHERE id = ?`
+was in eight files and the `UPDATE` column list in four more. None of that breaks when a
+column is renamed - it breaks on the FIRST VISIT to the screen that uses the copy left
+behind, at runtime, with no lint or test flagging it. That is why the rename migrations
+had to be written so carefully.
 
-A regra e por TABELA, e nao "nenhum SQL fora de persistence": uma tabela nova que ainda
-nao ganhou repositorio segue com SQL onde esta, e entra aqui quando for extraida. Uma
-lista que comeca completa e mentira; esta cresce junto com o trabalho — hoje ela cobre
-as sete tabelas do painel.
+The rule is per TABLE, not "no SQL outside persistence": a new table that has not got a
+repository yet keeps its SQL where it is, and enters here when it is extracted. A list that
+starts out complete is a lie; this one grows along with the work - today it covers the
+panel's seven tables.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from gamepanel import app as panel
 PANEL = Path(panel.__file__).parent
 REPOSITORIES = PANEL / "persistence" / "repositories"
 
-# Tabela -> modulo que passa a ser o unico lugar com SQL dela.
+# Table -> the module that becomes the only place with SQL for it.
 OWNED = {
     "servers": "servers.py",
     "jobs": "jobs.py",
@@ -48,11 +48,11 @@ def _python_files() -> list[Path]:
 
 
 def _code_only(source: str) -> str:
-    """A fonte sem comentario e sem docstring.
+    """The source without comments and without docstrings.
 
-    Sem isto o teste acusa a propria prosa que o explica: o `__init__.py` dos
-    repositorios cita `SELECT * FROM servers WHERE id = ?` como exemplo do problema, e
-    para um regex isso e SQL igual ao de verdade.
+    Without this the test flags the very prose that explains it: the repositories'
+    `__init__.py` quotes `SELECT * FROM servers WHERE id = ?` as an example of the problem,
+    and to a regex that is SQL just like the real thing.
     """
     tree = ast.parse(source)
     docstrings = {
@@ -83,7 +83,7 @@ def _tables_in(path: Path) -> set[str]:
 
 
 def test_a_varredura_encontra_sql():
-    """Zero tabelas encontradas e o jeito silencioso de este teste parar de valer."""
+    """Zero tables found is the silent way for this test to stop meaning anything."""
     achadas = set()
     for path in _python_files():
         achadas |= _tables_in(path)
@@ -98,7 +98,7 @@ def test_a_tabela_so_tem_sql_no_repositorio_dela(table: str, module: str):
         p.relative_to(PANEL).as_posix()
         for p in _python_files()
         if p != owner and table in _tables_in(p)
-        # O esquema e as migrations falam de TODA tabela por definicao.
+        # The schema and the migrations talk about EVERY table by definition.
         and p.parent.name != "persistence"
     )
     assert fora == [], (

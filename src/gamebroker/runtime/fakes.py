@@ -1,8 +1,7 @@
-"""Backends falsos: testes do broker e o broker de brinquedo do compose de dev.
+"""Fake backends: broker tests and the toy broker of the dev compose.
 
-Os nomes dos PASSOS (`create`, `start`, `open`, ...) sao o que um teste poe em `fail_on`
-para provocar a falha de uma etapa: sao contrato com `test_instance_service.py`, nao texto
-de tela.
+The STEP names (`create`, `start`, `open`, ...) are what a test puts in `fail_on` to make a
+step fail: they are a contract with `test_instance_service.py`, not screen text.
 """
 from __future__ import annotations
 
@@ -89,8 +88,8 @@ class FakeInstaller:
     def __init__(self) -> None:
         self.installed: list[tuple[str, str]] = []
         self.failure = False
-        # Roda no MEIO da instalacao: e por onde um teste pede o cancelamento enquanto ela
-        # acontece, sem thread nenhuma.
+        # Runs in the MIDDLE of the installation: this is how a test requests cancellation while
+        # it is happening, without any thread.
         self.during: Callable[[], None] | None = None
 
     def install(self, ip: str, game: Game, ports: Sequence[AllocatedPort],

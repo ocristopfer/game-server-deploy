@@ -1,9 +1,9 @@
-"""O relogio do painel (gamepanel.tasks.scheduler).
+"""The panel clock (gamepanel.tasks.scheduler).
 
-A regra de ouro aqui ja tinha teste pelo lado do painel (uma agenda quebrada nao pode
-levar o monitor junto — test_alerts.py); estes sao os mesmos invariantes vistos de
-perto, mais o que a classe `Relogio` acrescentou: `start()` duas vezes nao pode virar
-duas threads, senao cada tarefa dispararia em dobro.
+The golden rule here was already tested from the panel side (a broken schedule must not
+take the monitor down with it - test_alerts.py); these are the same invariants seen up
+close, plus what the `Relogio` class added: calling `start()` twice must not turn into two
+threads, or every task would fire twice.
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def test_uma_tarefa_que_explode_nao_impede_as_outras():
 
 
 def test_a_falha_e_anunciada_com_o_nome_da_tarefa():
-    """Sem o nome, "alguma coisa do relogio caiu" nao ajuda ninguem a procurar."""
+    """Without the name, "something in the clock died" helps nobody look for it."""
     failed: list[str] = []
 
     def explode():
@@ -43,17 +43,17 @@ def test_a_falha_e_anunciada_com_o_nome_da_tarefa():
 
 
 def test_start_duas_vezes_nao_vira_duas_threads():
-    """Duas threads fariam cada tarefa agendada disparar em dobro."""
+    """Two threads would make every scheduled task fire twice."""
     rounds = threading.Semaphore(0)
     clock_of = scheduler.Clock(0.01, rounds.release, logging.getLogger("teste"))
 
     def ours() -> int:
-        """So as threads DESTE relogio, pelo nome.
+        """Only THIS clock's threads, by name.
 
-        Era `threading.active_count()` antes e passava a maior parte das vezes: o numero e
-        do PROCESSO inteiro, e importar o `gamepanel.app` ja sobe uma thread de agendador
-        propria — qualquer thread alheia nascendo ou morrendo entre as duas leituras fazia
-        a conta fechar errado. Falhou 1 em 3 rodando este balde sozinho.
+        It used to be `threading.active_count()` and passed most of the time: the number is
+        for the whole PROCESS, and importing `gamepanel.app` already starts a scheduler thread
+        of its own - any unrelated thread starting or dying between the two readings made the
+        count come out wrong. It failed 1 in 3 when running this bucket alone.
         """
         return sum(1 for t in threading.enumerate() if t.name == scheduler.Clock.THREAD_NAME)
 
@@ -69,7 +69,7 @@ def test_start_duas_vezes_nao_vira_duas_threads():
 
 
 def test_a_thread_sobrevive_a_um_tique_que_explode():
-    """Se a volta derrubasse a thread, o painel ficaria sem relogio ate reiniciar."""
+    """If the tick killed the thread, the panel would be without a clock until restarted."""
     beats: list[int] = []
 
     def round_trip():

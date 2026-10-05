@@ -1,19 +1,19 @@
 param(
-    # Nome do jogo (arquivo games/<nome>.env), ex: dragonwilds
+    # Game name (file games/<name>.env), e.g. dragonwilds
     [string]$Game = "",
-    # OU: App ID do servidor dedicado na Steam (deploy generico)
+    # OR: Steam App ID of the dedicated server (generic deploy)
     [string]$AppId = "",
-    # Modo interativo: pergunta cada valor (o .env vira apenas default dos prompts)
+    # Interactive mode: asks for each value (the .env becomes just the prompts' default)
     [switch]$Interactive,
-    # Codigo do Steam Guard (jogos cujo servidor exige conta Steam, ex: dayz).
-    # O codigo expira rapido - passe na hora do deploy em vez de deixar no .env.
+    # Steam Guard code (games whose server requires a Steam account, e.g. dayz).
+    # The code expires quickly - pass it at deploy time instead of leaving it in the .env.
     [string]$SteamGuardCode = "",
-    # Nao cadastra o servidor no painel ao final do deploy
+    # Do not register the server in the panel at the end of the deploy
     [switch]$NoRegister,
     [string]$ProxmoxHost = "",
-    # Senha do root do Proxmox. O normal e deixar em PROXMOX_PASSWORD no .env.
+    # Proxmox root password. Normally it lives in PROXMOX_PASSWORD in the .env.
     [string]$ProxmoxPassword = "",
-    # Autoriza sua chave publica no Proxmox e para de depender de senha nos proximos deploys
+    # Authorizes your public key on Proxmox and stops depending on a password in later deploys
     [switch]$InstallKey,
     [string]$EnvFile = "",
     [string]$RemoteBundleDir = "/root/game-deploy"
@@ -21,9 +21,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-# `$ScriptDir` e a pasta DESTE script (onde mora o provision-*.sh irmao). `$RepoRoot` e a
-# raiz do repositorio, dois niveis acima, e e de la que saem tools/, lib/, games/ e .env.
-# Na raiz os dois eram a mesma coisa por acidente; aqui a diferenca precisa ser dita.
+# `$ScriptDir` is the folder of THIS script (where the sibling provision-*.sh lives). `$RepoRoot`
+# is the repository root, two levels up, and tools/, lib/, games/ and .env come from there.
+# At the root the two were the same thing by accident; here the difference must be explicit.
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 function Read-EnvFile([string]$Path) {
@@ -31,8 +31,8 @@ function Read-EnvFile([string]$Path) {
     return (Read-EnvLines (Get-Content $Path))
 }
 
-# Mesmo parser para o texto do games/<jogo>.env, que no deploy generico (-AppId) e
-# gerado em memoria e nunca chega a existir como arquivo.
+# Same parser for the text of games/<game>.env, which in the generic deploy (-AppId) is
+# generated in memory and never exists as a file.
 function Read-EnvText([string]$Text) {
     return (Read-EnvLines ($Text -split "`r?`n"))
 }
@@ -46,9 +46,9 @@ function Read-EnvLines([string[]]$Lines) {
         if ($idx -lt 1) { continue }
         $key = $trimmed.Substring(0, $idx).Trim()
         $value = $trimmed.Substring($idx + 1).Trim()
-        # remove comentario inline e aspas. O caso "CHAVE=   # nota" precisa vir antes:
-        # apos o Trim acima o '#' fica no inicio e o split nao casa, fazendo o texto do
-        # comentario virar o valor.
+        # strip inline comment and quotes. The "KEY=   # note" case must come first:
+        # after the Trim above the '#' is at the start and the split does not match, making the
+        # comment text become the value.
         if ($value.StartsWith("#")) { $value = "" }
         $value = ($value -split '\s+#')[0].Trim().Trim('"').Trim("'")
         $map[$key] = $value
@@ -56,19 +56,19 @@ function Read-EnvLines([string[]]$Lines) {
     return $map
 }
 
-# Le uma chave do mapa com fallback (compativel com Windows PowerShell 5.1, sem '??')
+# Reads a key from the map with a fallback (compatible with Windows PowerShell 5.1, no '??')
 function Get-Cfg($Map, [string]$Key, [string]$Default = "") {
     if ($Map.ContainsKey($Key) -and $Map[$Key] -ne "" -and $null -ne $Map[$Key]) { return $Map[$Key] }
     return $Default
 }
 
-# Sufixo usado nas chaves por jogo do .env: dragonwilds -> CTID_DRAGONWILDS
+# Suffix used in the per-game keys of the .env: dragonwilds -> CTID_DRAGONWILDS
 function Get-GameSuffix([string]$Key) {
     return (($Key.ToUpper()) -replace '[^A-Z0-9]', '_')
 }
 
-# {valor -> sufixo} das chaves <Key>_<JOGO> que pertencem a OUTROS jogos.
-# Serve para detectar que o CTID/IP resolvido ja e o container de outro jogo.
+# {value -> suffix} of the <Key>_<GAME> keys that belong to OTHER games.
+# Used to detect that the resolved CTID/IP is already another game's container.
 function Get-ScopedOwners($Map, [string]$Key, [string]$SelfSuffix) {
     $owners = @{}
     $prefix = "${Key}_"
@@ -80,12 +80,12 @@ function Get-ScopedOwners($Map, [string]$Key, [string]$SelfSuffix) {
     return $owners
 }
 
-# "192.168.2.20/24" -> "192.168.2.20" (compara IP ignorando a mascara)
+# "10.20.1.20/24" -> "10.20.1.20" (compares IPs ignoring the mask)
 function Get-IpOnly([string]$Cidr) {
     return (($Cidr -split "/")[0]).Trim()
 }
 
-# Pergunta sem ecoar na tela (senha da conta Steam). Vazio = mantem o default.
+# Asks without echoing to the screen (Steam account password). Empty = keeps the default.
 function AskSecret([string]$Label, [string]$Default) {
     $mark = ""
     if ($Default -ne "") { $mark = " [Enter mantem o valor do .env]" }
@@ -109,18 +109,18 @@ function Ask([string]$Label, [string]$Default) {
     return $answer
 }
 
-# ----- Acesso ao Proxmox: chave quando existe, senha do .env quando nao -----
-# Mesmo mecanismo do deploy-admin.ps1. O ssh/scp do Windows nao aceita senha por
-# parametro, mas o OpenSSH 8.4+ chama o programa apontado por SSH_ASKPASS quando
-# SSH_ASKPASS_REQUIRE=force. O arquivo criado abaixo nao guarda a senha: ele so ecoa
-# uma variavel de ambiente deste processo.
+# ----- Proxmox access: key when there is one, the .env password when not -----
+# Same mechanism as deploy-admin.ps1. Windows ssh/scp does not accept a password as a
+# parameter, but OpenSSH 8.4+ calls the program pointed to by SSH_ASKPASS when
+# SSH_ASKPASS_REQUIRE=force. The file created below does not store the password: it only echoes
+# an environment variable of this process.
 $script:AskPassFile = ""
-# Opcoes aplicadas a TODO ssh/scp do deploy. No modo senha elas desligam a tentativa
-# por chave: sem isso o ssh pode cair no prompt do console, que num deploy longo
-# significa parar no meio esperando alguem digitar.
+# Options applied to EVERY ssh/scp of the deploy. In password mode they turn off the key
+# attempt: without that ssh may fall back to the console prompt, which in a long deploy
+# means stopping halfway waiting for someone to type.
 $script:SshOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
-# Host a que a autenticacao acima se aplica (o Proxmox). O CT do painel e outra maquina,
-# com outra senha de root - mandar a senha do Proxmox para ele so geraria falha de auth.
+# Host the authentication above applies to (the Proxmox). The panel CT is another machine,
+# with another root password - sending it the Proxmox password would only cause an auth failure.
 $script:AuthTarget = ""
 
 function Get-SshOptsFor([string]$Target) {
@@ -139,7 +139,7 @@ function Enable-PasswordAuth([string]$Password) {
     $env:GAMEDEPLOY_SSH_PASSWORD = $Password
     $env:SSH_ASKPASS = $script:AskPassFile
     $env:SSH_ASKPASS_REQUIRE = "force"
-    # Alguns builds so consultam o askpass com DISPLAY definido.
+    # Some builds only consult the askpass when DISPLAY is set.
     if (-not $env:DISPLAY) { $env:DISPLAY = "localhost:0" }
     $script:SshOpts += @("-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password")
 }
@@ -154,8 +154,8 @@ function Disable-PasswordAuth {
 }
 
 function Test-KeyAuth([string]$Target) {
-    # "Nao entrou" e resposta esperada aqui, nao erro do deploy - por isso a preferencia
-    # relaxada (ver o comentario do bloco de ssh auxiliar mais abaixo).
+    # "Could not log in" is an expected answer here, not a deploy error - hence the relaxed
+    # preference (see the comment of the auxiliary ssh block further down).
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
@@ -185,8 +185,8 @@ function Initialize-ProxmoxAuth([string]$Target, [string]$Password) {
     return $true
 }
 
-# Chave publica do operador: com ela autorizada no Proxmox, os deploys seguintes nao
-# pedem senha nenhuma - nem uma vez por chamada de ssh.
+# Operator's public key: once it is authorized on Proxmox, the following deploys do not
+# ask for any password - not even once per ssh call.
 function Get-LocalPubKey {
     foreach ($name in @("id_ed25519.pub", "id_rsa.pub")) {
         $path = Join-Path $env:USERPROFILE ".ssh\$name"
@@ -210,25 +210,25 @@ function Install-KeyOnProxmox([string]$Target) {
     Write-Host "Pronto: os proximos deploys entram por chave, sem senha." -ForegroundColor Green
 }
 
-# ----- ssh auxiliar (consultas e cadastro no painel) -----
-# No PowerShell 5.1 o stderr de um executavel nativo vira excecao quando
-# ErrorActionPreference e 'Stop' - inclusive quando o comando termina com sucesso.
-# Por isso toda chamada daqui relaxa a preferencia: o erro de verdade e o $LASTEXITCODE.
+# ----- auxiliary ssh (queries and registration in the panel) -----
+# In PowerShell 5.1 the stderr of a native executable becomes an exception when
+# ErrorActionPreference is 'Stop' - even when the command finishes successfully.
+# So every call here relaxes the preference: the real error is $LASTEXITCODE.
 
-# O .gitattributes guarda todo .ps1 em CRLF, entao toda here-string deste arquivo nasce
-# com um \r no fim de cada linha. Quem le do outro lado e o bash, e para ele o \r faz
-# parte do argumento: 'sleep 3' vira "intervalo invalido" e um nome de servico ganha um
-# \x0d no fim. Toda entrada de comando remoto passa por aqui primeiro.
+# .gitattributes stores every .ps1 as CRLF, so every here-string in this file is born
+# with a \r at the end of each line. The reader on the other side is bash, and for it the \r is
+# part of the argument: 'sleep 3' becomes "invalid interval" and a service name gains a
+# \x0d at the end. Every remote command input goes through here first.
 function ConvertTo-Lf([string]$Text) { return ($Text -replace "`r", "") }
 
-# ssh/scp do fluxo principal: carregam o $script:SshOpts, que e onde vive a
-# autenticacao (chave ou senha via askpass).
+# ssh/scp of the main flow: they carry $script:SshOpts, which is where the
+# authentication lives (key or password via askpass).
 function Invoke-Ssh([string]$Target, [string]$Command) {
     $sshOptions = Get-SshOptsFor $Target
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        ssh @opcoes "root@$Target" (ConvertTo-Lf $Command)
+        ssh @sshOptions "root@$Target" (ConvertTo-Lf $Command)
     } finally {
         $ErrorActionPreference = $previous
     }
@@ -244,41 +244,41 @@ function Invoke-Scp([string[]]$Sources, [string]$Destination) {
     }
 }
 
-# -Batch para destinos que so valem a pena por chave (o CT do painel): sem chave
-# autorizada a consulta falha na hora em vez de parar o deploy num prompt de senha.
+# -Batch for targets that are only worth trying by key (the panel CT): without an authorized
+# key the query fails right away instead of stalling the deploy on a password prompt.
 function Invoke-SshQuery([string]$Target, [string]$Command, [switch]$Batch) {
     $sshOptions = @(Get-SshOptsFor $Target) + @("-o", "ConnectTimeout=10")
     if ($Batch) { $sshOptions += @("-o", "BatchMode=yes") }
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $output = ssh @opcoes "root@$Target" (ConvertTo-Lf $Command) 2>$null
+        $output = ssh @sshOptions "root@$Target" (ConvertTo-Lf $Command) 2>$null
     } finally {
         $ErrorActionPreference = $previous
     }
     return $output
 }
 
-# Igual a de cima, mas com a saida indo para a tela (o cadastro no painel responde
+# Same as above, but with the output going to the screen (the panel registration replies
 # "servidor 'X' cadastrado").
 function Invoke-SshLive([string]$Target, [string]$Command) {
     $sshOptions = Get-SshOptsFor $Target
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        ssh @opcoes "root@$Target" (ConvertTo-Lf $Command)
+        ssh @sshOptions "root@$Target" (ConvertTo-Lf $Command)
     } finally {
         $ErrorActionPreference = $previous
     }
 }
 
-# Primeira linha util de uma saida que pode vir como array de linhas
+# First useful line of an output that may come as an array of lines
 function Get-FirstLine($Output) {
     if ($null -eq $Output) { return "" }
     return (($Output | Select-Object -First 1) -as [string]).Trim()
 }
 
-# ----- Selecao do jogo -----
+# ----- Game selection -----
 if ($Game -eq "" -and $AppId -eq "") {
     $available = Get-ChildItem (Join-Path $RepoRoot "games") -Filter "*.env" |
         Where-Object { $_.Name -ne "_template.env" } |
@@ -309,15 +309,15 @@ GAME_PORTS=""
 "@
 }
 
-# ----- Configuracao da infra (.env / interativo) -----
+# ----- Infra configuration (.env / interactive) -----
 if ($EnvFile -eq "") { $EnvFile = Join-Path $RepoRoot ".env" }
 $cfg = Read-EnvFile $EnvFile
 
-# ----- Valores por jogo (CTID_<JOGO>, IP_CIDR_<JOGO>, MEMORY_<JOGO>...) -----
-# Cada jogo mora no proprio container. Sem essas chaves, todo deploy cairia no CTID/IP
-# generico do .env e o segundo jogo sobrescreveria o container do primeiro.
-# O mesmo texto que vai no bundle, ja como mapa: dele saem GAME_KEY e, no fim do
-# deploy, os dados do cadastro no painel (portas, config, contagem de jogadores).
+# ----- Per-game values (CTID_<GAME>, IP_CIDR_<GAME>, MEMORY_<GAME>...) -----
+# Each game lives in its own container. Without these keys, every deploy would land on the
+# generic CTID/IP of the .env and the second game would overwrite the first one's container.
+# The same text that goes into the bundle, already as a map: GAME_KEY comes from it and, at the
+# end of the deploy, the panel registration data (ports, config, player counting).
 $game = Read-EnvText $GameEnvContent
 $GameKey = Get-Cfg $game "GAME_KEY" $Game
 $GameSuffix = Get-GameSuffix $GameKey
@@ -344,8 +344,8 @@ if ($ProxmoxHost -eq "") {
     $ProxmoxHost = if ($cfg.ContainsKey("PROXMOX_HOST")) { $cfg["PROXMOX_HOST"] } else { "" }
 }
 
-# Jogos cujo depot do servidor exige conta Steam (STEAM_ANONYMOUS=0 no games/<jogo>.env).
-# As credenciais vivem no .env/prompt - nunca no games/*.env, que vai para o git.
+# Games whose server depot requires a Steam account (STEAM_ANONYMOUS=0 in games/<game>.env).
+# The credentials live in the .env/prompt - never in games/*.env, which goes into git.
 $SteamAnon = (Get-Cfg $game "STEAM_ANONYMOUS" "1") -ne "0"
 if ($SteamGuardCode -ne "") { $cfg["STEAM_GUARD_CODE"] = $SteamGuardCode }
 
@@ -380,9 +380,9 @@ if ($Interactive) {
 
 if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido (parametro, .env ou modo interativo)." }
 
-# Autenticacao decidida UMA vez, antes de qualquer ssh/scp: por chave se ela ja estiver
-# autorizada, senao pela senha do .env via askpass. Sem isso cada ssh do deploy abre seu
-# proprio prompt - e este script chama ssh meia duzia de vezes por jogo.
+# Authentication is decided ONCE, before any ssh/scp: by key if it is already
+# authorized, otherwise by the .env password via askpass. Without that every ssh of the deploy
+# opens its own prompt - and this script calls ssh half a dozen times per game.
 if ($ProxmoxPassword -eq "") { $ProxmoxPassword = Get-Cfg $cfg "PROXMOX_PASSWORD" }
 $UsandoSenha = Initialize-ProxmoxAuth $ProxmoxHost $ProxmoxPassword
 if ($InstallKey) {
@@ -414,9 +414,9 @@ if (-not $SteamAnon) {
     }
 }
 
-# ----- Guarda contra colisao de container -----
-# Deploy e idempotente por CTID: apontar para o CTID de outro jogo NAO cria um container
-# novo, reconfigura o que ja existe e troca o jogo que roda la dentro.
+# ----- Guard against container collision -----
+# Deploy is idempotent per CTID: pointing at another game's CTID does NOT create a new
+# container, it reconfigures the existing one and swaps the game running inside it.
 $ctidOwners = Get-ScopedOwners $cfg "CTID" $GameSuffix
 if ($ctidOwners.ContainsKey($cfg["CTID"])) {
     throw ("CTID $($cfg['CTID']) ja pertence ao jogo $($ctidOwners[$cfg['CTID']]) (CTID_$($ctidOwners[$cfg['CTID']]) no .env). " +
@@ -442,21 +442,21 @@ if ($cfg["IP_CIDR"] -ne "dhcp") {
 
 Write-Host ("Alvo: CT $($cfg['CTID']) ($GameKey) em $($cfg['IP_CIDR'])") -ForegroundColor Cyan
 
-# ----- Painel: onde ele roda e qual e a chave publica dele -----
-# Caminhos fixos do CT do painel (provision-admin-lxc.sh). O cadastro roda como o
-# usuario do painel, nao como root: o sqlite cria os arquivos -wal/-shm ao lado do
-# banco, e criados por root o painel (que roda como gamepanel) perderia a escrita.
-# O pacote mora sob o symlink `current` (release por versao; ver install-release.sh). O
-# `test -f` abaixo falha CALADO quando este caminho envelhece: o deploy so diz "painel
-# nao encontrado" e segue SEM cadastrar o servidor. Ja aconteceu duas vezes, primeiro
-# quando o codigo foi para src/ e de novo quando o release virou pasta por versao.
-# Rodar o arquivo direto funciona porque o app.py poe a pasta pai no sys.path.
+# ----- Panel: where it runs and what its public key is -----
+# Fixed paths of the panel CT (provision-admin-lxc.sh). Registration runs as the
+# panel user, not as root: sqlite creates the -wal/-shm files next to the
+# database, and if root created them the panel (which runs as gamepanel) would lose write access.
+# The package lives under the `current` symlink (one release per version; see install-release.sh).
+# The `test -f` below fails SILENTLY when this path goes stale: the deploy only says "painel
+# nao encontrado" and goes on WITHOUT registering the server. It happened twice already, first
+# when the code moved to src/ and again when the release became a folder per version.
+# Running the file directly works because app.py puts the parent folder on sys.path.
 $PanelApp = "/opt/gamepanel/current/gamepanel/app.py"
 $PanelUser = "gamepanel"
 $PanelPubKeyPath = "/etc/gamepanel/id_ed25519.pub"
 $AdminCtid = Get-Cfg $cfg "ADMIN_CTID"
 
-# Endereco do painel para falar direto com ele (painel fora deste Proxmox).
+# Panel address to talk to it directly (panel outside this Proxmox).
 function Resolve-PanelHost($Map) {
     $fromEnv = Get-Cfg $Map "ADMIN_HOST"
     if ($fromEnv -ne "") { return $fromEnv }
@@ -466,9 +466,9 @@ function Resolve-PanelHost($Map) {
 }
 $PanelHost = Resolve-PanelHost $cfg
 
-# Sem PANEL_PUBKEY o CT nasce sem deixar o painel entrar, e o cadastro do fim do deploy
-# apareceria na tela como um servidor que nao responde. A chave e do proprio painel,
-# entao da para busca-la em vez de exigir que ela esteja copiada no .env.
+# Without PANEL_PUBKEY the CT is born without letting the panel in, and the registration at the
+# end of the deploy would show up as a server that does not respond. The key belongs to the panel,
+# so we can fetch it instead of requiring it to be copied into the .env.
 if ((Get-Cfg $cfg "PANEL_PUBKEY") -eq "") {
     $readBack = ""
     if ($AdminCtid -ne "") {
@@ -488,29 +488,31 @@ if ((Get-Cfg $cfg "PANEL_PUBKEY") -eq "") {
     }
 }
 
-# ----- Monta o bundle -----
+# ----- Build the bundle -----
 $BundleDir = Join-Path ([System.IO.Path]::GetTempPath()) "game-deploy-bundle"
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 New-Item -ItemType Directory -Path $BundleDir | Out-Null
 
-# Os arquivos sao lidos pelo bash no Proxmox: gravar sempre em UTF-8 sem BOM e com LF
-# (Set-Content usa CRLF e deixaria um \r no fim de cada valor do .env)
+# The files are read by bash on Proxmox: always write them as UTF-8 without BOM and with LF
+# (Set-Content uses CRLF and would leave a \r at the end of each .env value)
 function Write-LfFile([string]$Path, [string]$Content) {
     $normalized = $Content -replace "`r`n", "`n"
     [System.IO.File]::WriteAllText($Path, $normalized, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-# Qual .sh mandar pro Proxmox: provision-game-lxc.sh (SteamCMD) pra quase todo jogo, ou o
-# que o proprio games/<jogo>.env pedir em PROVISION_SCRIPT (instalador que nao depende da
-# Steam; hoje nenhum jogo usa). Sem a chave, comportamento identico ao de sempre.
+# Which .sh to send to Proxmox: provision-game-lxc.sh (SteamCMD) for almost every game, or the
+# one games/<game>.env itself asks for in PROVISION_SCRIPT (an installer that does not depend on
+# Steam; no game uses it today). Without the key, behavior is identical to before.
 $ProvisionScript = Get-Cfg $game "PROVISION_SCRIPT" "provision-game-lxc.sh"
 Copy-Item (Join-Path $ScriptDir $ProvisionScript) (Join-Path $BundleDir $ProvisionScript)
-# As fases que rodam dentro do CT (SteamCMD, Wine/Proton, systemd) moram em lib/ct-phases.sh,
-# que o provision-game-lxc.sh le com `source`. O bundle e uma pasta sem subpastas (o scp leva
-# so arquivos soltos), entao ela viaja ao lado do script. LF garantido: e lida pelo bash.
+# The phases that run inside the CT (SteamCMD, Wine/Proton, systemd) live in lib/ct-phases.sh,
+# which provision-game-lxc.sh reads with `source`. The bundle is a folder without subfolders (scp
+# carries only loose files), so it travels next to the script. LF guaranteed: bash reads it.
 if ($ProvisionScript -eq "provision-game-lxc.sh") {
     Write-LfFile (Join-Path $BundleDir "ct-phases.sh") ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "lib\ct-phases.sh")))
     Write-LfFile (Join-Path $BundleDir "ct-firewall.sh") ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "lib\ct-firewall.sh")))
+    # The gamepanel user, sudo rules and root helpers (the panel no longer logs in as root).
+    Write-LfFile (Join-Path $BundleDir "ct-panel-access.sh") ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "lib\ct-panel-access.sh")))
 }
 Write-LfFile (Join-Path $BundleDir "game.env") $GameEnvContent
 
@@ -520,45 +522,45 @@ foreach ($key in @("CTID","HOSTNAME_OVERRIDE","STORAGE","TEMPLATE_STORAGE","TEMP
         $deployLines += "$key=`"$($cfg[$key])`""
     }
 }
-# Firewall do CT: so o painel abre SSH neste servidor (o broker nao mexe em CT feito por aqui).
-# Sem o endereco do painel o firewall NAO e aplicado - aplicar trancaria o painel fora.
+# CT firewall: only the panel opens SSH on this server (the broker does not touch CTs made here).
+# Without the panel address the firewall is NOT applied - applying it would lock the panel out.
 if ($PanelHost -ne "") { $deployLines += "FW_MGMT_SOURCES=`"$PanelHost`"" }
 else { Write-Host "ADMIN_HOST/ADMIN_IP_CIDR vazios: o CT sobe SEM firewall interno." -ForegroundColor Yellow }
 if ((Get-Cfg $cfg "CT_FIREWALL") -eq "0") { $deployLines += "CT_FIREWALL=`"0`"" }
 Write-LfFile (Join-Path $BundleDir "deploy.env") (($deployLines -join "`n") + "`n")
 
-# ----- Envia e executa no Proxmox -----
+# ----- Send and run on Proxmox -----
 Write-Host "`nEnviando bundle para root@$ProxmoxHost..." -ForegroundColor Cyan
 Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
 if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
 
-# scp em vez de 'tar -czf - | ssh tar -xzf -': o PowerShell converte para texto o que
-# passa por um pipe entre dois executaveis nativos, o que corrompe o stream do tar.gz.
+# scp instead of 'tar -czf - | ssh tar -xzf -': PowerShell converts to text whatever
+# goes through a pipe between two native executables, which corrupts the tar.gz stream.
 $bundleFiles = @(Get-ChildItem -Path $BundleDir -File | ForEach-Object { $_.FullName })
 Invoke-Scp $bundleFiles "root@${ProxmoxHost}:$RemoteBundleDir/"
 if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos do bundle para root@$ProxmoxHost" }
 
-# deploy.env leva senha do CT e, em jogos como o dayz, a senha da conta Steam
+# deploy.env carries the CT password and, in games like dayz, the Steam account password
 Invoke-Ssh $ProxmoxHost "chmod 700 '$RemoteBundleDir' && chmod 600 '$RemoteBundleDir/deploy.env'" | Out-Null
 
 Write-Host "Executando provisionamento no Proxmox (o download do jogo pode demorar)...`n" -ForegroundColor Cyan
 Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./$ProvisionScript"
 if ($LASTEXITCODE -ne 0) { throw "Provisionamento falhou no host Proxmox (veja a saida acima)" }
 
-# O bundle local tem copia do deploy.env (senhas) - nao deixa sobrando no %TEMP%
+# The local bundle has a copy of deploy.env (passwords) - do not leave it lying in %TEMP%
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
 
-# ----- Cadastro no painel -----
-# Mesmo caminho do deploy em Docker: o painel se cadastra pela propria CLI
-# (app.py --register-server), que e idempotente - num redeploy ele atualiza o
-# servidor existente em vez de duplicar.
+# ----- Registration in the panel -----
+# Same path as the Docker deploy: the panel registers it through its own CLI
+# (app.py --register-server), which is idempotent - on a redeploy it updates the
+# existing server instead of duplicating it.
 
-# Escapa um valor para virar um argumento entre aspas simples no shell remoto.
+# Escapes a value to become a single-quoted argument in the remote shell.
 function ConvertTo-ShQuoted([string]$Value) {
     return "'" + ($Value -replace "'", "'\''") + "'"
 }
 
-# Endereco do CT do jogo: com IP fixo ja sabemos; com dhcp so o CT sabe.
+# Address of the game CT: with a fixed IP we already know it; with dhcp only the CT knows.
 function Get-CtIp([string]$Cidr, [string]$Ctid) {
     if ($Cidr -ne "dhcp") { return (Get-IpOnly $Cidr) }
     $output = Get-FirstLine (Invoke-SshQuery $ProxmoxHost "pct exec $Ctid -- hostname -I")
@@ -577,18 +579,22 @@ if (-not $NoRegister) {
             "--register-server", $Display,
             "--server-host", $CtIp,
             "--service", "$GameKey.service",
+            # With the panel key the provisioning created the gamepanel user and LOCKED root
+            # login over SSH: registering as root would leave the panel knocking on a closed door.
+            # On a redeploy this also switches an old root-mode server to gamepanel.
+            "--ssh-user", $(if ((Get-Cfg $cfg "PANEL_PUBKEY") -ne "") { "gamepanel" } else { "root" }),
             "--game-port", (Get-Cfg $game "GAME_PORTS"),
             "--query-port", (Get-Cfg $game "QUERY_PORT" "0"),
             "--config-path", (Get-Cfg $game "CONFIG_PATH"),
             "--config-files", (Get-Cfg $game "CONFIG_FILES"),
-            # Pastas de save que a tela Backups do painel guarda. Num redeploy o painel
-            # mantem o que ja estava la: quem ajustou pela tela nao perde o ajuste.
+            # Save folders that the panel's Backups screen keeps. On a redeploy the panel
+            # keeps what was already there: whoever adjusted it on screen does not lose it.
             "--backup-paths", (Get-Cfg $game "BACKUP_PATHS"),
             "--player-source", (Get-Cfg $game "PLAYER_SOURCE"),
-            # Vagas: o painel mostra "2/6" quando a contagem nao traz o total (log, conexoes).
+            # Slots: the panel shows "2/6" when the count does not bring the total (log, connections).
             "--max-players", $(if ((Get-Cfg $game "MAX_PLAYERS") -match '^\d+$') { (Get-Cfg $game "MAX_PLAYERS") } else { "0" }),
-            # Contagem pelo log: padroes e, quando o nome so existe em arquivo proprio
-            # (o .ADM do DayZ), o caminho dele.
+            # Counting by log: patterns and, when the name only exists in a separate file
+            # (DayZ's .ADM), its path.
             "--join-re", (Get-Cfg $game "JOIN_RE"),
             "--leave-re", (Get-Cfg $game "LEAVE_RE"),
             "--log-path", (Get-Cfg $game "LOG_PATH"),
@@ -598,8 +604,8 @@ if (-not $NoRegister) {
         foreach ($value in $cmdArgs) { $parts += (ConvertTo-ShQuoted $value) }
         $registerCmd = ($parts -join " ")
 
-        # 1) Pelo proprio host Proxmox, que e o caminho que sempre existe num deploy LXC:
-        #    o painel mora num CT do mesmo host e nao precisa aceitar SSH de fora.
+        # 1) Through the Proxmox host itself, which is the path that always exists in an LXC deploy:
+        #    the panel lives in a CT on the same host and does not need to accept SSH from outside.
         if ($AdminCtid -ne "") {
             Invoke-SshQuery $ProxmoxHost "pct exec $AdminCtid -- test -f $PanelApp" | Out-Null
             if ($LASTEXITCODE -eq 0) {
@@ -610,7 +616,7 @@ if (-not $NoRegister) {
                 Write-Host "Painel nao encontrado no CT $AdminCtid ($PanelApp)." -ForegroundColor DarkGray
             }
         }
-        # 2) Painel fora deste Proxmox (ADMIN_HOST/ADMIN_IP_CIDR), falando direto com ele.
+        # 2) Panel outside this Proxmox (ADMIN_HOST/ADMIN_IP_CIDR), talking to it directly.
         if (-not $registered -and $PanelHost -ne "") {
             Invoke-SshQuery $PanelHost "test -f $PanelApp" -Batch | Out-Null
             if ($LASTEXITCODE -eq 0) {
@@ -625,8 +631,8 @@ if (-not $NoRegister) {
     }
 }
 
-# Tira a senha do ambiente e apaga o askpass do %TEMP%. Nao fica para o proximo comando
-# desta mesma janela do PowerShell.
+# Removes the password from the environment and deletes the askpass from %TEMP%. It does not
+# linger for the next command in this same PowerShell window.
 Disable-PasswordAuth
 
 Write-Host "Deploy finalizado." -ForegroundColor Green

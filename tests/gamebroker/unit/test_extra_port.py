@@ -1,5 +1,6 @@
-"""Terceira porta que o broker avisa ao jogo ({EXTRA_PORT}): a "confiavel" do Satisfactory
-(-ReliablePort), que ate entao ficava fixa em 8888 e impedia duas instancias no mesmo firewall."""
+"""Third port the broker tells the game about ({EXTRA_PORT}): Satisfactory's "reliable" one
+(-ReliablePort), which until then stayed fixed at 8888 and prevented two instances behind the same
+firewall."""
 from __future__ import annotations
 
 import dataclasses
@@ -29,10 +30,10 @@ def _real_satisfactory() -> cat.Game:
 
 @pytest.fixture
 def satisfactory():
-    """O Satisfactory do repositorio, ANDANDO de porta. O curado fica na porta padrao por
-    decisao (PORTS_SHIFTABLE=0), mas o mecanismo da porta extra continua valendo para quem
-    ligar a faixa (um jogo dinamico, ou o curado se a decisao mudar): e ele que se testa aqui,
-    com os dados reais do jogo que o motivou."""
+    """The repository's Satisfactory, SHIFTING ports. The curated one stays on the default port
+    by decision (PORTS_SHIFTABLE=0), but the extra-port mechanism still applies to whoever turns
+    the range on (a dynamic game, or the curated one if the decision changes): that is what is
+    tested here, with the real data of the game that motivated it."""
     game = _real_satisfactory()
     problem = cat.shiftable_problem(game.ports, game.game_port, game.query_port,
                                     game.start_args, game.extra_port)
@@ -40,7 +41,7 @@ def satisfactory():
     return dataclasses.replace(game, shiftable=True)
 
 
-# --- o Satisfactory de verdade (games/satisfactory.env) ----------------------------------------
+# --- the real Satisfactory (games/satisfactory.env) --------------------------------------------
 
 def test_satisfactory_declara_a_porta_confiavel_e_fica_na_porta_padrao():
     game = _real_satisfactory()
@@ -82,7 +83,7 @@ def test_jogo_sem_porta_extra_recebe_extra_zero(game_data):
     assert _values(build_env(game, ports))["EXTRA_PORT"] == "0"
 
 
-# --- jogo cadastrado pela API ---------------------------------------------------------------------
+# --- game registered through the API -------------------------------------------------------------
 
 @pytest.fixture
 def with_extra(game_data):
@@ -102,11 +103,11 @@ def test_publico_mostra_a_porta_extra(with_extra):
 
 
 @pytest.mark.parametrize(("changes", "field"), [
-    ({"extra_port": 9999}, "extra_port"),               # nao esta entre as portas expostas
-    ({"extra_port": 7777}, "extra_port"),               # igual a porta do jogo
-    ({"extra_port": 27016}, "extra_port"),              # igual a de consulta
-    ({"extra_port": "8888"}, "extra_port"),             # tem de ser numero
-    ({"start_args": "-port={PORT} -queryport={QUERY_PORT}"}, "shiftable"),   # falta o marcador
+    ({"extra_port": 9999}, "extra_port"),               # not among the exposed ports
+    ({"extra_port": 7777}, "extra_port"),               # same as the game port
+    ({"extra_port": 27016}, "extra_port"),              # same as the query port
+    ({"extra_port": "8888"}, "extra_port"),             # must be a number
+    ({"start_args": "-port={PORT} -queryport={QUERY_PORT}"}, "shiftable"),   # placeholder missing
 ])
 def test_extra_port_invalida_e_recusada(with_extra, changes, field):
     with_extra.update(changes)
@@ -116,7 +117,7 @@ def test_extra_port_invalida_e_recusada(with_extra, changes, field):
 
 
 def test_marcador_extra_sem_porta_extra_e_recusado(game_data):
-    """Sem porta extra o marcador viraria "0" na linha de comando do jogo."""
+    """Without an extra port the placeholder would become "0" on the game's command line."""
     game_data["start_args"] = "-port={PORT} -queryport={QUERY_PORT} -x={EXTRA_PORT}"
     with pytest.raises(ValidationError, match="EXTRA_PORT"):
         cat.validate_dynamic(game_data)
@@ -134,7 +135,7 @@ def test_jogo_fixo_pode_ter_porta_extra_sem_andar_de_porta(with_extra):
     assert [p.number for p in ports] == [7777, 27016, 8888]
 
 
-# --- .env curado --------------------------------------------------------------------------------------
+# --- curated .env -------------------------------------------------------------------------------------
 
 def test_env_curado_com_marcador_extra_e_sem_porta_extra_vira_erro_do_catalogo(tmp_path):
     (tmp_path / "ruim.env").write_text(

@@ -1,17 +1,17 @@
-"""O ponto de entrada da unit systemd contra o que o pacote de fato exporta.
+"""The systemd unit's entry point checked against what the package actually exports.
 
-O gunicorn recebe o callable como TEXTO (`gamebroker.wsgi:create_app_from_env()`), escrito
-dentro de um heredoc de shell. Nada liga esse texto a funcao: renomear a funcao deixa a
-unit apontando para um nome que nao existe, e quem descobre e o gunicorn no CT, com
-`Failed to find attribute` e exit 4.
+gunicorn receives the callable as TEXT (`gamebroker.wsgi:create_app_from_env()`), written
+inside a shell heredoc. Nothing ties that text to the function: renaming the function leaves
+the unit pointing at a name that does not exist, and whoever finds out is gunicorn in the CT,
+with `Failed to find attribute` and exit 4.
 
-O custo nao e "o deploy falha". A unit e reescrita ANTES de qualquer teste de saude, entao
-o deploy derruba um servico que estava no ar e nao consegue mais levanta-lo -- e, se o
-provisionamento aborta antes de chegar na unit, nem o deploy seguinte sobe.
+The cost is not "the deploy fails". The unit is rewritten BEFORE any health check, so the
+deploy takes down a service that was running and can no longer bring it back -- and, if
+provisioning aborts before reaching the unit, not even the next deploy comes up.
 
-O sandbox (`docker/ct-sandbox/broker.sh`) tambem confere isso, mas pede Docker; este roda
-sempre. E a checagem de la fazia `grep` de uma COPIA literal do nome: ela concordava com o
-script e ficava verde com os dois errados. Aqui a pergunta e feita ao codigo.
+The sandbox (`docker/ct-sandbox/broker.sh`) also checks this, but needs Docker; this one
+always runs. And the check there did a `grep` of a literal COPY of the name: it agreed with
+the script and stayed green with both wrong. Here the question is asked of the code.
 """
 from __future__ import annotations
 
@@ -21,12 +21,12 @@ import re
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 
-# `pacote.modulo:funcao` ou `'pacote.modulo:funcao()'`: o gunicorn aceita as duas formas e o
-# repo usa uma em cada servico (o painel expoe o objeto pronto, o broker uma fabrica).
+# `package.module:function` or `'package.module:function()'`: gunicorn accepts both forms and
+# the repo uses one per service (the panel exposes the ready object, the broker a factory).
 APP_SPEC = re.compile(
     r"'?([a-z_][a-z_0-9]*(?:\.[a-z_][a-z_0-9]*)+):([A-Za-z_]\w*)(?:\(\))?'?\s*$")
 
-# provisionamento -> a pasta onde o pacote dele mora na arvore
+# provisioning script -> the folder where its package lives in the tree
 PROVISIONERS = {
     "deploy/broker/provision-broker-lxc.sh": "src",
     "deploy/admin/provision-admin-lxc.sh": "src",
@@ -34,18 +34,19 @@ PROVISIONERS = {
 
 
 def _exec_start_entry_points(text: str) -> list[tuple[str, str]]:
-    """(modulo pontilhado, nome) de cada `ExecStart=` do arquivo.
+    """(dotted module, name) of each `ExecStart=` in the file.
 
-    A varredura e amarrada ao ExecStart de proposito: `modulo:nome` solto aparece tambem
-    em COMENTARIO -- este arquivo e o proprio provisionamento citam o nome velho ao
-    explicar o defeito --, e conferir citacao em prosa faria o guard reclamar de texto.
+    The scan is tied to ExecStart on purpose: a loose `module:name` also shows up in
+    COMMENTS -- this file and the provisioning script itself cite the old name when
+    explaining the defect --, and checking a citation in prose would make the guard
+    complain about text.
     """
     lines = text.splitlines()
     found: list[tuple[str, str]] = []
     for number, line in enumerate(lines):
         if not line.startswith("ExecStart="):
             continue
-        # A unit continua a linha com uma barra invertida no fim; junta tudo antes de ler.
+        # The unit continues the line with a trailing backslash; join everything before reading.
         pieces, index = [line], number
         while lines[index].rstrip().endswith("\\") and index + 1 < len(lines):
             index += 1
@@ -58,10 +59,10 @@ def _exec_start_entry_points(text: str) -> list[tuple[str, str]]:
 
 
 def _top_level_names(module: pathlib.Path) -> set[str]:
-    """Nomes que o modulo define no topo, pelo AST.
+    """Names the module defines at top level, via the AST.
 
-    Pelo AST e nao importando: `gamepanel.app` abre banco e sobe thread no import, e o
-    que se quer saber aqui e so se o NOME existe.
+    Via the AST and not by importing: `gamepanel.app` opens the database and starts a thread
+    on import, and all we want to know here is whether the NAME exists.
     """
     tree = ast.parse(module.read_text(encoding="utf-8"))
     names: set[str] = set()
@@ -87,8 +88,8 @@ def test_o_callable_da_unit_existe_no_pacote():
                 missing.append(f"{script}: o modulo {dotted} nao existe ({module})")
             elif name not in _top_level_names(module):
                 missing.append(f"{script}: {dotted}:{name} nao existe em {module.name}")
-    # Os DOIS servicos tem de aparecer: o do painel nao tem parenteses nem aspas, e uma
-    # regex pensada so para o broker o deixava de fora sem que nada reclamasse.
+    # BOTH services must show up: the panel's has neither parentheses nor quotes, and a
+    # regex designed only for the broker left it out without anything complaining.
     assert len(checked) == len(PROVISIONERS), (
         f"esperava um ponto de entrada por provisionamento, achei {checked}")
     assert not missing, ("ponto de entrada da unit que o pacote nao tem:\n  "

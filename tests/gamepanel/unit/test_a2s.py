@@ -1,10 +1,10 @@
-"""Protocolo A2S (gamepanel.runtime.a2s): consulta de jogadores por UDP.
+"""A2S protocol (gamepanel.runtime.a2s): player query over UDP.
 
-Nao existia suite dedicada para isso antes da Fase 4 (achado da propria analise de
-arquitetura) - o codigo so era exercitado indiretamente, pela tela cheia via docker
-compose. Aqui um servidor UDP falso, em loopback, fala o protocolo de verdade (cabecalho,
-desafio/resposta, pacote dividido) para provar o comportamento ANTES de qualquer
-reorganizacao futura poder mudar ele sem ninguem perceber.
+There was no dedicated suite for this before Phase 4 (a finding of the architecture
+analysis itself) - the code was only exercised indirectly, by the full screen via docker
+compose. Here a fake UDP server, on loopback, speaks the real protocol (header,
+challenge/response, split packet) to prove the behavior BEFORE any future reorganization
+can change it without anyone noticing.
 """
 from __future__ import annotations
 
@@ -27,9 +27,9 @@ def _info_payload(
     game: str = "Jogo de Teste", appid: int = 1234, players: int = 3, max_players: int = 10,
     bots: int = 0,
 ) -> bytes:
-    """O corpo de uma resposta A2S_INFO, a partir do byte de versao do protocolo."""
+    """The body of an A2S_INFO response, starting at the protocol version byte."""
     return (
-        bytes([17])  # versao do protocolo, ignorada pelo leitor
+        bytes([17])  # protocol version, ignored by the reader
         + _string(name) + _string(mapa) + _string(pasta) + _string(game)
         + struct.pack("<h", appid)
         + bytes([players, max_players, bots])
@@ -44,11 +44,12 @@ def _player_payload(players: list[tuple[str, int, float]]) -> bytes:
 
 
 class _FakeA2sServer:
-    """Servidor UDP falso em 127.0.0.1: responde conforme o roteiro dado ao construir.
+    """Fake UDP server on 127.0.0.1: answers according to the script given at construction.
 
-    `roteiro` mapeia o PRIMEIRO byte do pedido (depois do cabecalho 0xFFFFFFFF) para
-    uma funcao que recebe os bytes do pedido inteiro e devolve a lista de respostas a
-    enviar em sequencia (mais de uma resposta simula desafio ou pacote dividido).
+    `roteiro` maps the FIRST byte of the request (after the 0xFFFFFFFF header) to a
+    function that receives the bytes of the whole request and returns the list of
+    responses to send in sequence (more than one response simulates a challenge or a split
+    packet).
     """
 
     def __init__(self, roteiro: dict[bytes, Callable[[bytes], list[bytes]]]):
@@ -95,7 +96,7 @@ def a2s_server():
 
 
 def test_resposta_simples_sem_lista_de_jogadores(a2s_server):
-    """Muitos servidores Unreal so respondem A2S_INFO - a lista e opcional."""
+    """Many Unreal servers only answer A2S_INFO - the list is optional."""
     server = a2s_server({
         b"T": lambda _req: [a2s.A2S_HEADER + b"I" + _info_payload(players=7, max_players=32)],
     })
@@ -121,7 +122,7 @@ def test_lista_de_jogadores_quando_o_jogo_publica(a2s_server):
 
 
 def test_jogador_sem_nome_e_descartado_da_lista(a2s_server):
-    """Nome vazio e como algumas implementacoes marcam slot livre - nao e jogador."""
+    """An empty name is how some implementations mark a free slot - it is not a player."""
     server = a2s_server({
         b"T": lambda _req: [a2s.A2S_HEADER + b"I" + _info_payload(players=1)],
         b"U": lambda _req: [a2s.A2S_HEADER + b"D" + _player_payload([("", 0, 0.0), ("Carla", 5, 1.0)])],
@@ -131,7 +132,7 @@ def test_jogador_sem_nome_e_descartado_da_lista(a2s_server):
 
 
 def test_desafio_e_respondido_antes_da_resposta_valer(a2s_server):
-    """S2C_CHALLENGE ('A'): o servidor pede pra repetir o pedido com um desafio."""
+    """S2C_CHALLENGE ('A'): the server asks for the request to be repeated with a challenge."""
     challenge = b"\x01\x02\x03\x04"
 
     def answers_info(pedido: bytes) -> list[bytes]:
@@ -145,7 +146,7 @@ def test_desafio_e_respondido_antes_da_resposta_valer(a2s_server):
 
 
 def test_resposta_dividida_em_varios_pacotes_e_remontada(a2s_server):
-    """Resposta grande (varios jogadores) pode vir em pacotes 0xFFFFFFFE separados."""
+    """A large response (several players) can come in separate 0xFFFFFFFE packets."""
     body = a2s.A2S_HEADER + b"I" + _info_payload(players=1)
     middle = len(body) // 2
     package1 = body[:middle]
@@ -162,8 +163,8 @@ def test_resposta_dividida_em_varios_pacotes_e_remontada(a2s_server):
 
 
 def test_sem_resposta_da_erro_de_consulta_nao_trava(a2s_server):
-    """Servidor que nunca responde: estoura o timeout, nao trava o teste."""
-    server = a2s_server({})  # roteiro vazio: recebe o pedido e nunca responde
+    """A server that never answers: the timeout fires, the test does not hang."""
+    server = a2s_server({})  # empty script: receives the request and never answers
     with pytest.raises(a2s.QueryError, match="sem resposta"):
         a2s.query_players("127.0.0.1", server.port, timeout=0.2)
 
@@ -175,7 +176,7 @@ def test_tipo_de_resposta_inesperado_e_recusado(a2s_server):
 
 
 def test_resposta_truncada_nao_trava_so_recusa(a2s_server):
-    """Corpo cortado no meio de uma string: `_Buffer` tem que recusar, nao travar."""
+    """Body cut in the middle of a string: `_Buffer` has to refuse, not hang."""
     server = a2s_server({b"T": lambda _req: [a2s.A2S_HEADER + b"I" + bytes([17]) + b"sem terminador"]})
     with pytest.raises(a2s.QueryError):
         a2s.query_players("127.0.0.1", server.port, timeout=1)

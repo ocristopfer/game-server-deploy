@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Segundo fator do login: TOTP (RFC 6238) e codigos de recuperacao, so com a stdlib.
+"""Second login factor: TOTP (RFC 6238) and recovery codes, stdlib only.
 
-Puro de proposito (sem Flask, sem banco), como `navigation.py`: o `app.py` guarda o
-segredo e decide quando pedir o codigo; aqui so existe a conta. Compativel com Google
-Authenticator, Authy, Microsoft Authenticator, 1Password, Bitwarden e afins (SHA-1, 6
-digitos, 30 s).
+Pure on purpose (no Flask, no database), like `navigation.py`: `app.py` stores the secret and
+decides when to ask for the code; only the math lives here. Compatible with Google
+Authenticator, Authy, Microsoft Authenticator, 1Password, Bitwarden and the like (SHA-1, 6
+digits, 30 s).
 
-Duas decisoes que valem um comentario:
+Two decisions worth a comment:
 
-- **Codigo usado nao vale de novo.** `verify` so aceita um passo MAIOR que o ultimo ja
-  usado: quem espiou o codigo por cima do ombro (ou no rastro de um proxy) nao entra com ele
-  nos 30 s seguintes.
-- **Janela de +-1 passo** (90 s no total) para relogio de celular levemente fora de hora. E o
-  mesmo que os aplicativos toleram; uma janela maior so aumenta a chance de acerto no chute.
+- **A used code is not valid again.** `verify` only accepts a step GREATER than the last one
+  used: someone who peeked at the code over a shoulder (or in a proxy's trail) cannot log in
+  with it during the next 30 s.
+- **A +-1 step window** (90 s in total) for a phone clock that is slightly off. It is what the
+  apps tolerate; a wider window only raises the odds of a lucky guess.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from urllib.parse import quote
 STEP_SECONDS = 30
 DIGITS = 6
 WINDOW = 1
-SECRET_BYTES = 20          # 160 bits, o tamanho do SHA-1 (RFC 4226)
+SECRET_BYTES = 20          # 160 bits, the SHA-1 size (RFC 4226)
 RECOVERY_CODES = 8
 
 _SIX_DIGITS = re.compile(r"\d{6}")
@@ -35,7 +35,7 @@ _RECOVERY_CODE = re.compile(r"[0-9a-f]{10}")
 
 
 def new_secret() -> str:
-    """Segredo novo em base32 sem preenchimento (32 caracteres): o que o aplicativo digita."""
+    """A new unpadded base32 secret (32 characters): what gets typed into the app."""
     return base64.b32encode(secrets.token_bytes(SECRET_BYTES)).decode().rstrip("=")
 
 
@@ -45,9 +45,9 @@ def _secret_bytes(secret: str) -> bytes:
 
 
 def code(secret: str, step: int) -> str:
-    """O codigo de 6 digitos de um passo de 30 s (HOTP de RFC 4226 com o passo como contador)."""
-    # SHA-1 e exigido pelo RFC 6238/4226 (HOTP/TOTP), nao escolha nossa - trocar o hash
-    # quebraria compatibilidade com todo aplicativo autenticador que existe.
+    """The 6-digit code for a 30 s step (RFC 4226 HOTP with the step as the counter)."""
+    # SHA-1 is required by RFC 6238/4226 (HOTP/TOTP), not our choice - changing the hash
+    # would break compatibility with every authenticator app in existence.
     mac = hmac.new(_secret_bytes(secret), struct.pack(">Q", step), hashlib.sha1).digest()  # NOSONAR
     offset = mac[-1] & 0x0F
     number = struct.unpack(">I", mac[offset:offset + 4])[0] & 0x7FFFFFFF
@@ -59,13 +59,13 @@ def step_of(now: float) -> int:
 
 
 def verify(secret: str, entered: str, now: float, last_step: int = 0) -> int | None:
-    """O passo que `entered` confirma, ou None. Nunca devolve um passo <= `last_step`."""
+    """The step that `entered` confirms, or None. Never returns a step <= `last_step`."""
     clean = re.sub(r"[\s-]", "", entered or "")
     if not _SIX_DIGITS.fullmatch(clean):
         return None
     current = step_of(now)
     found: int | None = None
-    # Testa os tres passos SEM parar no primeiro acerto: o tempo gasto nao conta qual foi.
+    # Tries all three steps WITHOUT stopping at the first match: the time taken does not tell which.
     for step in range(current - WINDOW, current + WINDOW + 1):
         matches = hmac.compare_digest(code(secret, step), clean)
         if matches and step > last_step and found is None:
@@ -74,18 +74,18 @@ def verify(secret: str, entered: str, now: float, last_step: int = 0) -> int | N
 
 
 def uri(secret: str, username: str, issuer: str = "Painel de Jogos") -> str:
-    """O endereco otpauth:// que o aplicativo abre (no celular, tocar nele ja cadastra)."""
+    """The otpauth:// address the app opens (on a phone, tapping it registers right away)."""
     label = quote(f"{issuer}:{username}", safe="")
     return (f"otpauth://totp/{label}?secret={secret}&issuer={quote(issuer, safe='')}"
             f"&algorithm=SHA1&digits={DIGITS}&period={STEP_SECONDS}")
 
 
 def group(secret: str, size: int = 4) -> str:
-    """`ABCD EFGH ...`: mais facil de ler e de digitar. O aplicativo ignora os espacos."""
+    """`ABCD EFGH ...`: easier to read and to type. The app ignores the spaces."""
     return " ".join(secret[i:i + size] for i in range(0, len(secret), size))
 
 
-# ------------------------------------------------------------ codigos de recuperacao
+# ------------------------------------------------------------ recovery codes
 
 def _normalize(text: str) -> str:
     return re.sub(r"[\s-]", "", text or "").lower()
@@ -96,7 +96,7 @@ def looks_like_recovery_code(entered: str) -> bool:
 
 
 def new_recovery_codes(count: int = RECOVERY_CODES) -> list[str]:
-    """`abcde-12345`: 40 bits cada. Servem uma vez, para quem perdeu o celular."""
+    """`abcde-12345`: 40 bits each. Single use, for someone who lost their phone."""
     codes: list[str] = []
     while len(codes) < count:
         raw = secrets.token_hex(5)
@@ -105,12 +105,12 @@ def new_recovery_codes(count: int = RECOVERY_CODES) -> list[str]:
 
 
 def hash_recovery_code(recovery_code: str) -> str:
-    """So o hash vai para o banco: quem ler o arquivo nao sai com codigos utilizaveis."""
+    """Only the hash goes to the database: whoever reads the file gets no usable codes."""
     return hashlib.sha256(_normalize(recovery_code).encode()).hexdigest()
 
 
 def consume(entered: str, hashes: list[str]) -> list[str] | None:
-    """Os hashes que sobram depois de gastar `entered`, ou None se ele nao serve."""
+    """The hashes left after spending `entered`, or None if it is not valid."""
     if not looks_like_recovery_code(entered):
         return None
     target = hash_recovery_code(entered)

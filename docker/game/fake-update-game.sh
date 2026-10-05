@@ -1,6 +1,6 @@
 #!/bin/sh
-# update-game de mentira: demora alguns segundos e vai imprimindo, para dar para ver o
-# job em execucao acompanhando a saida no painel.
+# Fake update-game: takes a few seconds and keeps printing, so you can watch the running
+# job follow the output in the panel.
 set -u
 echo "Simulando SteamCMD: validando arquivos do jogo..."
 i=0

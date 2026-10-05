@@ -1,24 +1,24 @@
-"""Cada vez mais jogo publica uma API HTTP de administracao em vez de (ou alem de) uma
-query UDP: Palworld (REST em 8212/tcp), Satisfactory (HTTPS em 7777/tcp), Minecraft
-com plugin, Factorio... E a melhor fonte de todas, porque devolve os NOMES e nao so
-a contagem. Nada aqui e especifico de um jogo: o painel busca uma URL, le o JSON e
-acha a lista/contagem sozinho — ou pelo caminho que voce apontar.
+"""More and more games publish an HTTP admin API instead of (or alongside) a UDP query:
+Palworld (REST on 8212/tcp), Satisfactory (HTTPS on 7777/tcp), Minecraft with a
+plugin, Factorio... It is the best source of all, because it returns the NAMES and not
+just the count. Nothing here is game-specific: the panel fetches a URL, reads the JSON
+and finds the list/count by itself - or via the path you point it to.
 
-A chamada sai de DENTRO do container, por SSH (recebido por injecao - este modulo nao
-sabe como falar SSH, so pede pra alguem fazer isso), e nao do painel: essas APIs sao
-feitas para escutar em localhost (a documentacao do Palworld pede explicitamente para
-NAO expor a porta na internet) e assim continuam fechadas para fora.
+The call is made from INSIDE the container, over SSH (injected - this module does not
+know how to speak SSH, it only asks someone else to), and not from the panel: these
+APIs are meant to listen on localhost (the Palworld docs explicitly say NOT to expose
+the port to the internet), and this way they stay closed to the outside.
 """
 from __future__ import annotations
 
 import base64
 import json
 import re
-import shlex
 from collections.abc import Callable
 from typing import Any
 
 from gamepanel.i18n import Message
+from gamepanel.runtime import remote_cmd
 from gamepanel.runtime.a2s import AuthError, QueryError
 from gamepanel.runtime.ssh import RemoteError, ServerLike
 
@@ -28,8 +28,8 @@ HTTP_ERROR_STATUS = 400
 URL_RE = re.compile(r"^https?://[A-Za-z0-9._\-]{1,253}(:\d{1,5})?(/[^\s]*)?$")
 STATUS_MARK = "__HTTP_STATUS__"
 
-# curl e a primeira opcao; python3 cobre os containers que so tem o interpretador
-# (a imagem de teste do painel, por exemplo, nao traz curl).
+# curl is the first choice; python3 covers containers that only have the interpreter
+# (the panel's test image, for example, does not ship curl).
 HTTP_FETCH_SCRIPT = r"""
 set -u
 url=$1
@@ -38,7 +38,7 @@ corpo=$3
 tmo=$4
 
 if command -v curl >/dev/null 2>&1; then
-  # -k: essas APIs usam certificado autoassinado (o Satisfactory, por exemplo).
+  # -k: these APIs use self-signed certificates (Satisfactory, for example).
   if [ -n "$corpo" ] && [ -n "$auth" ]; then
     curl -sS -k -m "$tmo" -w "\n__HTTP_STATUS__%{http_code}" \
       -H "$auth" -H 'Content-Type: application/json' \
@@ -66,7 +66,7 @@ req = urllib.request.Request(url, data=corpo.encode() if corpo else None)
 if corpo:
     req.add_header("Content-Type", "application/json")
 if auth:
-    # Vem 'Nome: valor' pronto (nem toda API autentica por Authorization).
+    # Arrives as a ready 'Name: value' (not every API authenticates via Authorization).
     nome, _, valor = auth.partition(":")
     req.add_header(nome.strip(), valor.strip())
 ctx = None
@@ -79,10 +79,10 @@ try:
     resp = urllib.request.urlopen(req, timeout=float(tmo), context=ctx)
     dados, codigo = resp.read(), resp.getcode()
 except urllib.error.HTTPError as exc:
-    # 401/404/500 sao respostas, nao falhas: o painel quer ver o codigo.
+    # 401/404/500 are answers, not failures: the panel wants to see the code.
     dados, codigo = exc.read(), exc.code
 except Exception as exc:
-    # Porta fechada, DNS, timeout: uma linha para o painel mostrar, nao um traceback.
+    # Closed port, DNS, timeout: one line for the panel to show, not a traceback.
     sys.stderr.write("nao consegui chamar %s: %s\n" % (url, exc))
     raise SystemExit(1)
 sys.stdout.write(dados.decode("utf-8", "replace"))
@@ -97,16 +97,18 @@ exit 127
 
 
 def auth_header(stored: str) -> str:
-    """Transforma o que esta no banco no cabecalho HTTP INTEIRO ('Nome: valor').
+    """Turns what is stored in the database into the WHOLE HTTP header ('Name: value').
 
-    Formatos: 'basic:usuario:senha', 'bearer:token', 'header:Nome: valor' e o valor solto.
+    Formats: 'basic:user:password', 'bearer:token', 'header:Name: value' and a bare value.
 
-    Devolve o cabecalho com nome e tudo, e nao so o valor, por causa das APIs que nao
-    autenticam por Authorization — o WebQuery do TeamSpeak quer 'x-api-key'. Com so o
-    valor na mao, o unico nome possivel seria o fixo no script remoto.
+    Returns the header with its name and all, not just the value, because of APIs that do
+    not authenticate via Authorization - TeamSpeak's WebQuery wants 'x-api-key'. With only
+    the value in hand, the only possible name would be the one hardcoded in the remote
+    script.
 
-    O valor solto (cadastro antigo, de quando isto devolvia so o valor) continua saindo
-    como Authorization: mudar isso calaria a contagem de quem ja tinha um token gravado.
+    A bare value (old records, from when this returned only the value) still goes out as
+    Authorization: changing that would silence the count for anyone who already had a
+    token stored.
     """
     text = (stored or "").strip()
     if not text:
@@ -116,15 +118,15 @@ def auth_header(stored: str) -> str:
         return "Authorization: Basic " + base64.b64encode(rest.encode()).decode()
     if kind.lower() == "bearer":
         return "Authorization: Bearer " + rest
-    # 'header:' e a saida para o resto do mundo. O que vem depois vai cru, com nome e
-    # tudo, porque so quem cadastrou sabe como a API dela chama esse cabecalho.
+    # 'header:' is the escape hatch for everything else. What follows goes out raw, name
+    # and all, because only whoever registered it knows what their API calls that header.
     if kind.lower() == "header" and ":" in rest:
         return rest.strip()
     return "Authorization: " + text
 
 
 def _split_status(raw: str) -> tuple[str, int]:
-    """Separa o corpo do marcador de status que o script anexa no fim."""
+    """Splits the body from the status marker the script appends at the end."""
     pos = raw.rfind(STATUS_MARK)
     if pos < 0:
         return raw, 0
@@ -147,29 +149,31 @@ def http_json(
     timeout: float,
     require_json: bool = True,
 ) -> Any:
-    """Chama a URL de dentro do container e devolve o JSON ja interpretado.
+    """Calls the URL from inside the container and returns the already parsed JSON.
 
-    `ssh_output` e quem sabe falar SSH de verdade (injetado por quem chama - este modulo
-    so pede pra rodar um comando e devolver a saida). `require_json=False` para quem so
-    quer saber se deu certo: expulsar, banir e avisar respondem 200 com o corpo VAZIO, e
-    ai "a resposta nao e JSON" seria um erro inventado em cima de uma acao que funcionou.
+    `ssh_output` is what actually speaks SSH (injected by the caller - this module only
+    asks for a command to be run and its output returned). `require_json=False` is for
+    callers that only want to know whether it worked: kick, ban and broadcast answer 200
+    with an EMPTY body, and then "the reply is not JSON" would be an invented error on
+    top of an action that succeeded.
     """
     url = (url or "").strip()
     if len(url) > HTTP_URL_MAX or not URL_RE.match(url):
         raise QueryError(Message("http.bad_url"))
-    remote_cmd = " ".join(shlex.quote(p) for p in (
+    # An HTTP call from inside the container needs no right at all, in either mode.
+    command = remote_cmd.unprivileged(
         "bash", "-lc", HTTP_FETCH_SCRIPT, "gp", url,
         auth_header(auth), (body or "").strip(), f"{timeout:g}",
-    ))
+    )
     try:
-        raw = ssh_output(server, remote_cmd, int(timeout) + 15)
+        raw = ssh_output(server, command, int(timeout) + 15)
     except RemoteError as exc:
         raise QueryError(str(exc)) from exc
 
     text, status = _split_status(raw)
     if status in (401, 403):
-        # AuthError e uma QueryError especializada: quem tem login configurado usa
-        # isso como gatilho para renovar o token em vez de so reportar o erro.
+        # AuthError is a specialized QueryError: callers with a login configured use it
+        # as the trigger to renew the token instead of just reporting the error.
         raise AuthError(Message("http.auth_failed", status=status))
     if status >= HTTP_ERROR_STATUS:
         raise QueryError(Message("http.bad_status", status=status))
@@ -184,8 +188,8 @@ def http_json(
         raise QueryError(Message("http.not_json", sample=sample)) from None
 
 
-# Chaves que os jogos costumam usar. Comparadas sem maiusculas nem separadores, entao
-# 'numConnectedPlayers', 'num_connected_players' e 'NUMCONNECTEDPLAYERS' sao a mesma.
+# Keys games commonly use. Compared ignoring case and separators, so
+# 'numConnectedPlayers', 'num_connected_players' and 'NUMCONNECTEDPLAYERS' are the same.
 LIST_KEYS = {"players", "playerlist", "onlineplayers", "connectedplayers", "clients"}
 NAME_KEYS = ("name", "playername", "accountname", "username", "displayname", "nick", "clientnickname")
 COUNT_KEYS = {"players", "playercount", "numplayers", "onlineplayers", "currentplayernum",
@@ -203,7 +207,7 @@ def _slug(key: Any) -> str:
 
 
 def _json_walk(data: Any, path: str) -> Any:
-    """Anda um caminho estilo 'a.b[0].c'. Caminho vazio devolve o objeto inteiro."""
+    """Walks a path like 'a.b[0].c'. An empty path returns the whole object."""
     current = data
     for part in PATH_RE.findall(path or ""):
         if part.startswith("["):
@@ -230,12 +234,13 @@ def _name_of(item: Any) -> str:
 
 
 def _is_query_client(item: Any) -> bool:
-    """Conexao de ServerQuery, nao gente no canal.
+    """A ServerQuery connection, not a person in the channel.
 
-    O TeamSpeak devolve na MESMA lista quem esta no voz (client_type 0) e as conexoes de
-    consulta (client_type 1) — e uma delas e a do proprio painel, que acabou de perguntar.
-    Sem tirar essas, o painel se contaria como usuario online e mandaria "entrou no jogo"
-    sobre si mesmo a cada volta. Jogo que nao publica client_type nao e afetado.
+    TeamSpeak returns in the SAME list both those in voice (client_type 0) and query
+    connections (client_type 1) - and one of them is the panel itself, which just asked.
+    Without removing those, the panel would count itself as an online user and send
+    "joined the game" about itself every round. Games that do not publish client_type
+    are not affected.
     """
     if not isinstance(item, dict):
         return False
@@ -243,18 +248,18 @@ def _is_query_client(item: Any) -> bool:
     if kind is None:
         return False
     try:
-        # O WebQuery manda tudo como string ("client_type": "1").
+        # WebQuery sends everything as strings ("client_type": "1").
         return int(kind) != 0
     except (TypeError, ValueError):
         return False
 
 
-# Kick e ban pedem um identificador, nunca o nome: nome muda, repete e nao e chave.
+# Kick and ban take an identifier, never the name: names change, repeat and are not keys.
 ID_KEYS = ("userid", "playeruid", "playerid", "steamid", "accountid", "uid")
 
 
 def _id_of(item: Any) -> str:
-    """Identificador do jogador, quando a API publica um. Vazio quando nao publica."""
+    """The player's identifier, when the API publishes one. Empty when it does not."""
     if not isinstance(item, dict):
         return ""
     by_slug = {_slug(k): v for k, v in item.items()}
@@ -268,20 +273,20 @@ def _id_of(item: Any) -> str:
 
 
 def _looks_like_player_list(item: Any) -> bool:
-    """Uma lista so vale se for de objetos — e, se tiver alguem, com cara de jogador."""
+    """A list only counts if it holds objects - and, if not empty, ones that look like players."""
     if not isinstance(item, list) or not all(isinstance(i, dict) for i in item):
         return False
     return not item or bool(_name_of(item[0]))
 
 
 def _find_list(data: Any, depth: int = 0) -> list | None:
-    """Primeira lista de jogadores da resposta, procurando pelo nome da chave e pela forma."""
+    """The first player list in the reply, searched by key name and by shape."""
     if _looks_like_player_list(data):
         return data
     if not isinstance(data, dict) or depth >= JSON_MAX_DEPTH:
         return None
-    # A chave manda: {"players": []} com ninguem online e resposta valida, e pela
-    # forma (lista vazia) nao daria para reconhecer.
+    # The key wins: {"players": []} with nobody online is a valid reply, and by shape
+    # alone (an empty list) it could not be recognized.
     for key, value in data.items():
         if _slug(key) in LIST_KEYS and isinstance(value, list):
             return value if all(isinstance(i, dict) for i in value) else None
@@ -293,7 +298,7 @@ def _find_list(data: Any, depth: int = 0) -> list | None:
 
 
 def _find_value(data: Any, keys: set, types: tuple, depth: int = 0) -> Any:
-    """Primeiro valor do tipo pedido guardado em uma das chaves conhecidas."""
+    """The first value of the requested type stored under one of the known keys."""
     if not isinstance(data, dict) or depth >= JSON_MAX_DEPTH:
         return None
     for key, value in data.items():
@@ -307,10 +312,10 @@ def _find_value(data: Any, keys: set, types: tuple, depth: int = 0) -> Any:
 
 
 def _list_from_json(data: Any, list_path: str, count_path: str) -> list | None:
-    """A lista de jogadores da resposta, ou None quando a API nao publica uma.
+    """The player list from the reply, or None when the API does not publish one.
 
-    Com o caminho da contagem preenchido e sem o da lista, nem se procura: quem
-    informou onde esta o numero esta dizendo que lista nao ha.
+    With the count path filled in and no list path, there is no search at all: whoever
+    said where the number is is saying there is no list.
     """
     if list_path:
         found_list = _json_walk(data, list_path)
@@ -323,14 +328,15 @@ def _list_from_json(data: Any, list_path: str, count_path: str) -> list | None:
 
     if not isinstance(found_list, list):
         return None
-    # Antes de contar e de tirar nomes: o que sai daqui nao e jogador, e contaria como um.
+    # Before counting and extracting names: what is dropped here is not a player and would
+    # count as one.
     return [item for item in found_list if not _is_query_client(item)]
 
 
 def _count_from_json(data: Any, count_path: str, player_list: list | None) -> int | None:
-    """Quantos estao online, pelo caminho informado ou por chave conhecida.
+    """How many are online, via the given path or a known key.
 
-    Devolve None quando ha lista: nesse caso quem conta e o tamanho dela.
+    Returns None when there is a list: in that case its length is the count.
     """
     if count_path:
         raw = _json_walk(data, count_path)
@@ -346,7 +352,7 @@ def _count_from_json(data: Any, count_path: str, player_list: list | None) -> in
 
 
 def _names_from_json(player_list: list | None) -> list[dict]:
-    """A lista no formato que as telas do painel esperam. Teto de 128 por resposta."""
+    """The list in the format the panel's screens expect. Capped at 128 per reply."""
     if player_list is None:
         return []
     out = []
@@ -359,10 +365,10 @@ def _names_from_json(player_list: list | None) -> list[dict]:
 
 
 def read_players_json(data: Any, list_path: str = "", count_path: str = "") -> dict[str, Any]:
-    """Tira jogadores de um JSON qualquer.
+    """Extracts players from arbitrary JSON.
 
-    Sem caminhos preenchidos o painel procura sozinho uma lista de jogadores e, se nao
-    houver, um numero em alguma chave conhecida (currentplayernum, numplayers, ...).
+    With no paths filled in, the panel looks for a player list by itself and, if there
+    is none, for a number under some known key (currentplayernum, numplayers, ...).
     """
     player_list = _list_from_json(data, list_path, count_path)
     count = _count_from_json(data, count_path, player_list)

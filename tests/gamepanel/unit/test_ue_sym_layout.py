@@ -1,7 +1,7 @@
-"""Gerador dos arquivos do UE4SS a partir do .sym (games/mods/ue_sym_layout.py).
+"""Generator of the UE4SS files from the .sym (games/mods/ue_sym_layout.py).
 
-A ponta a ponta (executavel e .sym de 300 MB do Dragonwilds) foi conferida a mao contra os
-arquivos testados no servidor; aqui ficam as regras que nao precisam do jogo.
+The end-to-end path (Dragonwilds' executable and 300 MB .sym) was checked by hand against
+the files tested on the server; here are the rules that do not need the game.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def test_le_a_assinatura_do_template_e_a_do_sym_do_mesmo_jeito():
 
 
 def test_retorno_ponteiro_nao_gruda_no_dono():
-    """O demangler escreve 'void *FMalloc::Malloc(...)': o dono e FMalloc, nao '*FMalloc'."""
+    """The demangler writes 'void *FMalloc::Malloc(...)': the owner is FMalloc, not '*FMalloc'."""
     sig = sl.parse("void *FMalloc::Malloc(unsigned long, unsigned int)")
     assert sig.owner == "FMalloc"
     assert sig.method == "Malloc"
@@ -40,7 +40,7 @@ def test_template_por_secao_com_o_destrutor_primeiro():
 
 
 def test_operando_relativo_vira_coringa():
-    # call rel32, depois mov rax, [rip+disp32] (48 8B 05 ...), depois um byte comum.
+    # call rel32, then mov rax, [rip+disp32] (48 8B 05 ...), then an ordinary byte.
     code = bytes([0xE8, 1, 2, 3, 4, 0x48, 0x8B, 0x05, 9, 9, 9, 9, 0xC3])
     keep = sl.wildcard_mask(code)
     assert keep == [True, False, False, False, False, True, True, True, False, False, False, False, True]
@@ -53,7 +53,7 @@ def test_gnatives_e_a_leitura_da_tabela_no_fframe_step():
 
 
 def test_extra_do_uplayer_casa_o_exec_da_vtable_principal():
-    """O Exec do FExec ganha posicao na vtable principal no Itanium; o UE4SS Linux o acha por ela."""
+    """FExec's Exec gets a slot in the primary vtable under Itanium; UE4SS Linux finds it there."""
     (name, signature), = sl.EXTRA_ENTRIES["UPlayer"]
     wanted = sl.parse(signature)
     game = sl.parse("UPlayer::Exec(UWorld*, char16_t const*, FOutputDevice&)")

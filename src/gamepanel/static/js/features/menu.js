@@ -1,8 +1,8 @@
-/* Menu suspenso.
+/* Dropdown menu.
  *
- * O elemento e um <details>: ele abre, fecha e navega pelo teclado sem uma linha de
- * JavaScript. O que falta para parecer um menu de aplicativo e so isto — fechar ao
- * clicar fora, fechar no Esc e nunca deixar dois abertos ao mesmo tempo.
+ * The element is a <details>: it opens, closes and navigates by keyboard without a line of
+ * JavaScript. What is missing to feel like an app menu is just this - closing on an
+ * outside click, closing on Esc and never leaving two open at the same time.
  */
 import { $$ } from '../core/dom.js';
 

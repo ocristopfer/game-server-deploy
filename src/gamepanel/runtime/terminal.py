@@ -1,10 +1,10 @@
-"""Sessao de terminal interativo: um `ssh -tt` preso a um PTY local.
+"""Interactive terminal session: an `ssh -tt` attached to a local PTY.
 
-O navegador nao fala com o PTY direto - empurra teclas por POST e puxa a saida por
-long-poll, dizendo por um offset em bytes o que ja leu. Sem WebSocket de proposito: o
-painel roda em gunicorn com workers sync, que nao os suporta.
+The browser does not talk to the PTY directly - it pushes keys by POST and pulls the
+output by long-poll, stating with a byte offset what it has already read. No WebSocket on
+purpose: the panel runs on gunicorn with sync workers, which do not support them.
 
-So existe em POSIX (o PTY nao tem equivalente no Windows); `HAVE_PTY` avisa quem chama.
+Only exists on POSIX (the PTY has no Windows equivalent); `HAVE_PTY` tells the caller.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import threading
 import time
 from collections.abc import Callable
 
+from gamepanel.runtime import remote_cmd
 from gamepanel.runtime.ssh import RemoteError, ServerLike
 
 try:
@@ -29,7 +30,7 @@ try:
 except ImportError:  # pragma: no cover - Windows
     HAVE_PTY = False
 
-# server, extra=(...) -> argv do ssh (ver SshClient.argv).
+# server, extra=(...) -> ssh argv (see SshClient.argv).
 SshArgv = Callable[..., list[str]]
 
 
@@ -39,17 +40,17 @@ def _set_winsize(fd: int, cols: int, rows: int) -> None:
 
 
 def _become_tty_leader() -> None:
-    """Roda no filho, entre fork e exec: sessao nova + PTY como terminal de controle.
+    """Runs in the child, between fork and exec: new session + PTY as controlling terminal.
 
-    Sem o TIOCSCTTY o ssh enxerga um terminal que nao e o dele e recusa o modo raw, e o
-    teclado passa a chegar em blocos de linha em vez de tecla a tecla.
+    Without TIOCSCTTY ssh sees a terminal that is not its own and refuses raw mode, and
+    keyboard input starts arriving in line blocks instead of key by key.
     """
     os.setsid()
     fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
 
 class TermSession:
-    """Uma sessao SSH interativa viva: um `ssh -tt` amarrado a um PTY local."""
+    """A live interactive SSH session: an `ssh -tt` tied to a local PTY."""
 
     def __init__(
         self,
@@ -78,7 +79,7 @@ class TermSession:
         self._write_lock = threading.Lock()
         self._wake = threading.Event()
         self._buf = bytearray()
-        self._base = 0  # offset absoluto do primeiro byte ainda guardado
+        self._base = 0  # absolute offset of the first byte still kept
 
         self.master, slave = pty.openpty()
         try:
@@ -87,17 +88,22 @@ class TermSession:
                 server,
                 extra=("-tt", "-o", "ServerAliveInterval=20", "-o", "ServerAliveCountMax=3"),
             )
-            # Ambiente minimo e explicito: e o TERM daqui que decide os codigos que o
-            # emulador do navegador vai ter de entender.
+            # Legacy mode: no command, ssh opens root's login shell as it always did. Helper
+            # mode: a login shell of steam - the login user itself has nothing to do in there.
+            shell = remote_cmd.interactive_shell(server)
+            if shell is not None:
+                argv = [*argv, shell]
+            # Minimal, explicit environment: the TERM here decides which codes the
+            # browser's emulator will have to understand.
             env = {
                 "TERM": "xterm-256color",
                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                # O ssh so usa o HOME para procurar ~/.ssh, e aqui a chave e o
-                # known_hosts vao explicitos; a pasta de dados serve de porto seguro.
+                # ssh only uses HOME to look for ~/.ssh, and here the key and the
+                # known_hosts are passed explicitly; the data folder is a safe fallback.
                 "HOME": os.environ.get("HOME") or os.path.dirname(known_hosts),
                 "LANG": "C.UTF-8",
             }
-            self.proc = subprocess.Popen(  # noqa: S603  # NOSONAR - argv vem do SshClient, nunca cru de formulario
+            self.proc = subprocess.Popen(  # noqa: S603  # NOSONAR - argv comes from SshClient, never raw from a form
                 argv, stdin=slave, stdout=slave, stderr=slave,
                 close_fds=True, preexec_fn=_become_tty_leader, env=env,
             )
@@ -109,14 +115,14 @@ class TermSession:
 
         threading.Thread(target=self._reader, daemon=True).start()
 
-    # -- saida ------------------------------------------------------------
+    # -- output ------------------------------------------------------------
     def _reader(self) -> None:
         while True:
             try:
                 chunk = os.read(self.master, 65536)
             except (OSError, ValueError):
                 chunk = b""
-            if not chunk:  # PTY fechou = ssh terminou
+            if not chunk:  # PTY closed = ssh finished
                 break
             with self._lock:
                 self._buf += chunk
@@ -133,7 +139,7 @@ class TermSession:
         self._wake.set()
 
     def read(self, offset: int, wait: float) -> tuple[bytes, int, bool]:
-        """Devolve (dados, novo_offset, perdeu_bytes) esperando ate `wait` por novidade."""
+        """Return (data, new_offset, lost_bytes), waiting up to `wait` for something new."""
         deadline = time.monotonic() + wait
         while True:
             with self._lock:
@@ -142,15 +148,15 @@ class TermSession:
                 if start < end:
                     data = bytes(self._buf[start - self._base:])
                     return data, start + len(data), start > offset
-                # Sem novidade: limpa o sinal ainda com o lock para nao perder um
-                # append que aconteca entre a checagem e o wait().
+                # Nothing new: clear the signal while still holding the lock so an append
+                # happening between the check and wait() is not lost.
                 self._wake.clear()
             remaining = deadline - time.monotonic()
             if not self.alive or remaining <= 0:
                 return b"", max(offset, self._base), False
             self._wake.wait(timeout=min(1.0, remaining))
 
-    # -- entrada e controle ------------------------------------------------
+    # -- input and control -------------------------------------------------
     def write(self, data: bytes) -> None:
         with self._write_lock:
             while data:
@@ -167,7 +173,7 @@ class TermSession:
 
     def close(self) -> None:
         self.alive = False
-        # ProcessLookupError (subclasse de OSError) quando o ssh ja morreu sozinho.
+        # ProcessLookupError (an OSError subclass) when ssh already died on its own.
         with contextlib.suppress(OSError):
             os.killpg(os.getpgid(self.proc.pid), signal.SIGHUP)
         with contextlib.suppress(OSError):

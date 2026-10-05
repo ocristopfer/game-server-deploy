@@ -1,7 +1,8 @@
-"""Entrega de alerta em webhook (Discord, Slack, ou qualquer coisa que aceite JSON).
+"""Alert delivery via webhook (Discord, Slack, or anything that accepts JSON).
 
-So o envio: quem decide QUE avisar, e a quem, e o `services.alert_service`. Aqui nao
-ha banco nem regra — e um POST e o motivo da falha em portugues, para a tela.
+Only the sending: what to alert about, and to whom, is decided by
+`services.alert_service`. There is no database or rule here - just a POST and the failure
+reason in Portuguese, for the screen.
 """
 from __future__ import annotations
 
@@ -11,20 +12,20 @@ import urllib.request
 
 from gamepanel.runtime.http_probe import URL_RE
 
-# Quanto do corpo da resposta de erro vale a pena ler: o destino diz o que nao gostou
-# nas primeiras linhas, e guardar mais que isso so enche a tela de alerta.
+# How much of the error response body is worth reading: the destination says what it
+# disliked in the first lines, and keeping more than that only fills the alert screen.
 ERROR_MAX = 300
 RESPONSE_MAX = 2048
-# Caminho no formato .../<id>/<token>: com os dois da para mostrar o id e esconder so
-# o token. Com menos que isso nao ha o que separar, e tudo vira asterisco.
+# Path shaped .../<id>/<token>: with both, the id can be shown and only the token hidden.
+# With fewer than that there is nothing to split, and everything becomes asterisks.
 PARTS_WITH_ID_AND_TOKEN = 2
 
 
 def mask_url(url: str) -> str:
-    """Deixa so o bastante para reconhecer o destino, sem expor o token.
+    """Keep only enough to recognize the destination, without exposing the token.
 
-    A URL de webhook e uma credencial: quem le a tela por cima do ombro (ou num
-    screenshot colado num chat) nao deveria sair de la podendo escrever no canal.
+    A webhook URL is a credential: whoever reads the screen over someone's shoulder (or in a
+    screenshot pasted into a chat) should not walk away able to post to the channel.
     """
     if not url:
         return ""
@@ -34,22 +35,22 @@ def mask_url(url: str) -> str:
         return host
     parts = [p for p in rest.split("/") if p]
     if len(parts) >= PARTS_WITH_ID_AND_TOKEN:
-        # Discord: .../webhooks/<id>/<token>. O id identifica, o token e que e segredo.
+        # Discord: .../webhooks/<id>/<token>. The id identifies, the token is the secret.
         return f"{host}/.../{parts[-2]}/{'*' * 8}"
     return f"{host}/.../{'*' * 8}"
 
 
 def send(url: str, text: str, timeout: float, user_agent: str) -> str:
-    """Faz o POST. Devolve "" quando deu certo, ou o motivo da falha.
+    """Do the POST. Returns "" on success, or the failure reason.
 
-    O corpo leva 'content' E 'text': o primeiro e o campo do Discord, o segundo o do
-    Slack. Cada um le o seu e ignora o outro, entao a mesma chamada serve para os dois
-    (e para qualquer coisa que aceite JSON).
+    The body carries 'content' AND 'text': the first is Discord's field, the second
+    Slack's. Each reads its own and ignores the other, so the same call serves both (and
+    anything else that accepts JSON).
     """
     if not URL_RE.match(url or ""):
         return "URL invalida (use http:// ou https://)"
     body = json.dumps({"content": text, "text": text}).encode("utf-8")
-    request_body = urllib.request.Request(  # noqa: S310  # NOSONAR - URL_RE ja recusou o que nao for http(s)
+    request_body = urllib.request.Request(  # noqa: S310  # NOSONAR - URL_RE already rejected anything not http(s)
         url,
         data=body,
         headers={"Content-Type": "application/json", "User-Agent": user_agent},
@@ -59,15 +60,15 @@ def send(url: str, text: str, timeout: float, user_agent: str) -> str:
             resp.read(RESPONSE_MAX)
         return ""
     except urllib.error.HTTPError as exc:
-        # O corpo da resposta e onde o destino diz o que nao gostou (o Discord manda um
-        # JSON com 'message'). Sem ele, um 400 por payload torto e um 403 por bloqueio
-        # do Cloudflare ficam com a mesma cara na tela.
+        # The response body is where the destination says what it disliked (Discord sends
+        # a JSON with 'message'). Without it, a 400 for a malformed payload and a 403 from a
+        # Cloudflare block look the same on the screen.
         try:
             reason = exc.read(ERROR_MAX).decode("utf-8", "replace").strip().replace("\n", " ")
-        # Resposta ja consumida/fechada.
+        # Response already consumed/closed.
         except Exception:  # noqa: BLE001
             reason = ""
         return f"o webhook respondeu HTTP {exc.code}" + (f": {reason}" if reason else "")
-    # Rede: DNS, TLS, timeout, recusa...
+    # Network: DNS, TLS, timeout, refused...
     except Exception as exc:  # noqa: BLE001
         return f"nao consegui chamar o webhook: {exc}"

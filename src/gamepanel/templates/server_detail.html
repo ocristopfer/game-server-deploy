@@ -4,23 +4,25 @@
 {% block title %}{{ server.name }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
-{{ ui.page_header(server.name, badge_text=status.service,
+{{ ui.page_header(server.name, badge_text=srv.state_text(status.service),
                 badge_tone='on' if status.service == 'active' else ('off' if status.reachable else 'cold')) }}
 {{ srv.tabs(server, 'visao') }}
 
 {% if status.error %}<div class="flash error">{{ status.error }}</div>{% endif %}
 
-{# Duas colunas a partir de 900px (informacoes ao lado de jogadores, recursos ao lado das
-   acoes recentes) e o log, que e comprido, na largura toda. No celular e uma coluna so,
-   na mesma ordem. As acoes recentes vem ANTES do log: o log e o bloco que cresce, e
-   empurrava o historico para o fim da tela.
-   `card-grid--fixed`: os quatro cartoes tem a MESMA altura e o excesso rola dentro do
-   `card__body` de cada um (o titulo fica parado); o log ocupa o resto da tela. #}
+{# Two columns from 900px up (info next to players, resources next to
+   recent actions) and the log, which is long, at full width. On the phone it is a single column,
+   in the same order. Recent actions come BEFORE the log: the log is the block that grows, and
+   it pushed the history to the end of the screen.
+   `card-grid--fixed`: the four cards have the SAME height and the overflow scrolls inside each one's
+   `card__body` (the title stays put); the log takes the rest of the screen. #}
 <div class="card-grid card-grid--fixed">
 <div class="card">
  <div class="card__body">
   <dl class="meta wide">
     <div><dt>{{ _('server_detail.host') }}</dt><dd>{{ server.ssh_user }}@{{ server.host }}</dd></div>
+    <div><dt>{{ _('server_detail.access') }}</dt>
+      <dd>{% if privileged_access(server) %}<span class="badge cold">{{ _('server_detail.access_legacy') }}</span>{% else %}<span class="badge on">{{ _('server_detail.access_helper', user=server.ssh_user) }}</span>{% endif %}</dd></div>
     <div><dt>{{ _('server_detail.ssh_port') }}</dt><dd>{{ server.ssh_port }}</dd></div>
     <div><dt>{{ _('server_detail.service') }}</dt><dd>{{ server.service }}</dd></div>
     {% if server.game_port %}<div><dt>{{ _('server_detail.game_ports') }}</dt><dd>{{ server.game_port }}</dd></div>{% endif %}
@@ -45,8 +47,8 @@
   </dl>
   {% if server.notes %}<p class="notes">{{ server.notes }}</p>{% endif %}
 
-  {# Dois grupos, e nao uma fila de cinco botoes iguais: "Atualizar" derruba o jogo
-     por varios minutos e nao pode ter o mesmo peso de "Reiniciar". #}
+  {# Two groups, and not a row of five identical buttons: "Update" takes the game down
+     for several minutes and must not carry the same weight as "Restart". #}
   <div class="stack mt-4">
     <div>
       <span class="label">{{ _('server_detail.server') }}</span>
@@ -60,15 +62,18 @@
  </div>
 </div>
 
-<div class="card" data-players-server="{{ url_for('players.api_list', sid=server.id) }}">
+<div class="card" data-players-server="{{ url_for('players.api_list', sid=server.id) }}"
+     data-label-online="{{ _('players.badge_online', count='{count}') }}"
+     data-label-names-unpublished="{{ _('players.names_unpublished') }}"
+     data-label-nobody="{{ _('players.nobody_online') }}">
   <div class="card__head">
     <h2>{{ _('charts.players') }}</h2>
     <div class="cluster">
       <span class="badge {{ 'on' if players.players else 'cold' }}" id="players-badge">
         {%- if players.players is not none -%}
-          {{ players.players }}{% if players.max_players %}/{{ players.max_players }}{% endif %} online
+          {{ _('players.badge_online', count=players.players ~ ('/' ~ players.max_players if players.max_players else '')) }}
         {%- else -%}
-          sem leitura
+          {{ _('players.no_reading') }}
         {%- endif -%}
       </span>
       {% if is_admin %}
@@ -82,34 +87,25 @@
  <div class="card__body">
   {% if not players.configured %}
     {% if is_admin %}
-    <p class="muted">
-      {{ _('server_detail.count_off') }}
-      <a href="{{ url_for('players.setup', sid=server.id) }}">{{ _('server_detail.wizard') }}</a>: ele testa as
-      portas UDP e TCP que o jogo abriu, monta a chamada da API HTTP quando existe uma e,
-      se nada responder, ajuda a contar pelo log.
-    </p>
+    <p class="muted">{{ _h('server_detail.count_off_admin', url=url_for('players.setup', sid=server.id)) }}</p>
     {% else %}
-    <p class="muted">
-      Contagem desligada. Um administrador do painel liga isso no assistente de contagem.
-    </p>
+    <p class="muted">{{ _('server_detail.count_off_operator') }}</p>
     {% endif %}
   {% elif players.error %}
-    <p class="muted">Nao consegui consultar: {{ players.error }}</p>
+    <p class="muted">{{ _('server_detail.query_failed', error=players.error) }}</p>
     <p class="muted small">
       {% if is_admin %}
-      Confira no <a href="{{ url_for('players.setup', sid=server.id) }}">{{ _('server_detail.wizard') }}</a> se a
-      porta/URL esta certa e se o servidor esta no ar.
+      {{ _h('server_detail.query_failed_admin', url=url_for('players.setup', sid=server.id)) }}
       {% else %}
-      Confira se o servidor esta no ar; se estiver, avise um administrador do painel.
+      {{ _('server_detail.query_failed_operator') }}
       {% endif %}
-      Jogo que nao publica nada na rede (como o RuneScape Dragonwilds) precisa da
-      contagem pelo log.
+      {{ _('server_detail.log_only_games') }}
     </p>
   {% else %}
     <dl class="meta wide">
       {% if players.server_name %}<div><dt>{{ _('server_detail.published_name') }}</dt><dd>{{ players.server_name }}</dd></div>{% endif %}
       {% if players.map %}<div><dt>{{ _('server_detail.world') }}</dt><dd>{{ players.map }}</dd></div>{% endif %}
-      <div><dt>{{ _('server_detail.online') }}</dt><dd>{{ players.players }}{% if players.max_players %} de {{ players.max_players }}{% endif %}</dd></div>
+      <div><dt>{{ _('server_detail.online') }}</dt><dd>{% if players.max_players %}{{ _('server_detail.online_of', n=players.players, total=players.max_players) }}{% else %}{{ players.players }}{% endif %}</dd></div>
     </dl>
 
     {% set actions = player_actions(server) %}
@@ -129,7 +125,8 @@
                            action_label.get(a, a),
                            variant='danger' if a == 'ban' else 'ghost',
                            size='sm',
-                           confirm=action_label.get(a, a) ~ ' ' ~ p.name ~ ' de ' ~ server.name ~ '?',
+                           confirm=_('server_detail.player_action_confirm', action=action_label.get(a, a),
+                                     player=p.name, server=server.name),
                            fields={'action': a, 'player': p.id, 'name': p.name}) }}
               {% endfor %}
             {% else %}
@@ -140,8 +137,8 @@
         </tr>
         {% else %}
         <tr><td colspan="{{ 4 if actions else 3 }}" class="muted">
-          {% if players.players %}Este jogo nao publica a lista de nomes &mdash; so a contagem.
-          {% else %}Ninguem conectado agora.{% endif %}
+          {% if players.players %}{{ _('players.names_unpublished') }}
+          {% else %}{{ _('players.nobody_online') }}{% endif %}
         </td></tr>
         {% endfor %}
       </tbody>
@@ -159,12 +156,8 @@
 
     {% if players.aproximado %}
     <p class="muted small">
-      A <strong>{{ _('server_detail.count') }}</strong> {{ _('server_detail.count_right_names_wrong') }} <strong>{{ _('server_detail.names') }}</strong> sao um palpite:
-      o log deste jogo avisa que alguem saiu sem dizer quem, entao o painel mostra os
-      ultimos a entrar. Se a linha de saida do seu servidor tiver o nome, ponha
-      <code>(?P&lt;name&gt;...)</code> nela{% if is_admin %} no
-      <a href="{{ url_for('players.setup', sid=server.id, tab='log') }}">{{ _('server_detail.wizard') }}</a>{% endif %}
-      e a lista passa a ser exata.
+      {% if is_admin %}{{ _h('server_detail.approx_admin', url=url_for('players.setup', sid=server.id, tab='log')) }}
+      {% else %}{{ _h('server_detail.approx_operator') }}{% endif %}
     </p>
     {% endif %}
 
@@ -178,49 +171,53 @@
         {{ ui.button(_('server_detail.announce'), icon='📣') }}
       </span>
     </form>
-    <p class="muted small">
-      Expulsar, banir e avisar saem pela API do proprio jogo &mdash; a mesma que conta os
-      jogadores. Cada uma fica no <a href="{{ url_for('history.index') }}">{{ _('schedules.history') }}</a>.
-    </p>
+    <p class="muted small">{{ _h('server_detail.player_actions_note', url=url_for('history.index')) }}</p>
     {% endif %}
   {% endif %}
  </div>
 </div>
 
-<div class="card" data-meters-server="{{ url_for('servers.api_metrics', sid=server.id) }}">
+<div class="card" data-meters-server="{{ url_for('servers.api_metrics', sid=server.id) }}"
+     data-label-refresh="{{ _('metrics.refresh_every', n=5) }}"
+     data-label-no-reading="{{ _('metrics.no_reading_now') }}"
+     data-label-memory="{{ _('charts.memory') }}"
+     data-label-cores="{{ _('metrics.cores_load', cores='{cores}', load='{load}') }}"
+     data-label-used-of="{{ _('metrics.used_of_total', used='{used}', total='{total}') }}"
+     data-label-disk-mount="{{ _('metrics.disk_mount', mount='{mount}') }}"
+     data-label-stopped="{{ _('metrics.stopped') }}">
   <div class="card__head">
     <h2>{{ _('server_detail.resources') }}</h2>
     <span class="muted small" id="recursos-info">
-      {% if metrics.error %}indisponivel{% else %}atualiza a cada 5s{% endif %}
+      {% if metrics.error %}{{ _('metrics.unavailable') }}{% else %}{{ _('metrics.refresh_every', n=5) }}{% endif %}
     </span>
   </div>
  <div class="card__body">
   {% if metrics.error %}
-    <p class="muted">Nao consegui ler os medidores: {{ metrics.error }}</p>
+    <p class="muted">{{ _('metrics.read_failed', error=metrics.error) }}</p>
   {% else %}
   <div class="meters" id="meters">
     <div class="meter" data-key="cpu">
       <div class="meter-head"><span>{{ _('charts.cpu') }}</span><span class="val">{{ '%.1f'|format(metrics.cpu_pct) if metrics.cpu_pct is not none else '-' }}%</span></div>
       <div class="bar{{ metrics.cpu_pct | level }}"><i data-pct="{{ metrics.cpu_pct or 0 }}"></i></div>
-      <div class="meter-foot">{{ metrics.cores }} nucleo(s) &middot; load {{ metrics.load or '-' }}</div>
+      <div class="meter-foot">{{ _('metrics.cores_load', cores=metrics.cores, load=metrics.load or '-') }}</div>
     </div>
     <div class="meter" data-key="mem">
       <div class="meter-head"><span>{{ _('charts.memory') }}</span><span class="val">{{ '%.1f'|format(metrics.mem.pct) if metrics.mem.pct is not none else '-' }}%</span></div>
       <div class="bar{{ metrics.mem.pct | level }}"><i data-pct="{{ metrics.mem.pct or 0 }}"></i></div>
-      <div class="meter-foot">{{ metrics.mem.used | filesize }} de {{ metrics.mem.total | filesize }}</div>
+      <div class="meter-foot">{{ _('metrics.used_of_total', used=metrics.mem.used | filesize, total=metrics.mem.total | filesize) }}</div>
     </div>
     {% if metrics.swap.total %}
     <div class="meter" data-key="swap">
       <div class="meter-head"><span>{{ _('server_detail.swap') }}</span><span class="val">{{ '%.1f'|format(metrics.swap.pct) if metrics.swap.pct is not none else '-' }}%</span></div>
       <div class="bar{{ metrics.swap.pct | level }}"><i data-pct="{{ metrics.swap.pct or 0 }}"></i></div>
-      <div class="meter-foot">{{ metrics.swap.used | filesize }} de {{ metrics.swap.total | filesize }}</div>
+      <div class="meter-foot">{{ _('metrics.used_of_total', used=metrics.swap.used | filesize, total=metrics.swap.total | filesize) }}</div>
     </div>
     {% endif %}
     {% for d in metrics.disks %}
     <div class="meter" data-key="disk:{{ d.mount }}">
-      <div class="meter-head"><span>Disco {{ d.mount }}</span><span class="val">{{ '%.1f'|format(d.pct) if d.pct is not none else '-' }}%</span></div>
+      <div class="meter-head"><span>{{ _('metrics.disk_mount', mount=d.mount) }}</span><span class="val">{{ '%.1f'|format(d.pct) if d.pct is not none else '-' }}%</span></div>
       <div class="bar{{ d.pct | level }}"><i data-pct="{{ d.pct or 0 }}"></i></div>
-      <div class="meter-foot">{{ d.used | filesize }} de {{ d.total | filesize }}</div>
+      <div class="meter-foot">{{ _('metrics.used_of_total', used=d.used | filesize, total=d.total | filesize) }}</div>
     </div>
     {% endfor %}
   </div>
@@ -233,7 +230,7 @@
       {% if metrics.proc.pid %}
         PID {{ metrics.proc.pid }} &middot; {{ metrics.proc.rss | filesize }} RAM
         {%- if metrics.proc.cpu_pct is not none %} &middot; {{ '%.1f'|format(metrics.proc.cpu_pct) }}% CPU{% endif %}
-      {% else %}parado{% endif %}
+      {% else %}{{ _('metrics.stopped') }}{% endif %}
     </dd></div>
   </dl>
   {% endif %}
@@ -264,7 +261,12 @@
  </div>
 </div>
 
-<div class="card card-grid__wide card-grid__fill" {% if not log_error %}data-log-feed{% endif %}>
+<div class="card card-grid__wide card-grid__fill" {% if not log_error %}data-log-feed{% endif %}
+     data-label-live="{{ _('server_detail.live') }}"
+     data-label-no-connection="{{ _('server_detail.no_connection') }}"
+     data-label-follow="{{ _('server_detail.follow_log') }}"
+     data-label-stop-following="{{ _('server_detail.stop_following') }}"
+     data-label-empty="{{ _('server_detail.no_log_lines') }}">
   <div class="card__head">
     <h2>{{ _('server_detail.service_log') }}</h2>
     <div class="cluster">
@@ -287,7 +289,7 @@
   {% if log_error %}
     <p class="flash error">{{ log_error }}</p>
   {% else %}
-    <pre class="log" id="log-box">{{ logs or '(sem linhas de log)' }}</pre>
+    <pre class="log" id="log-box">{{ logs or _('server_detail.no_log_lines') }}</pre>
   {% endif %}
   </div>
 </div>

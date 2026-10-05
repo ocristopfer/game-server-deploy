@@ -1,10 +1,10 @@
-"""Camada de transporte SSH: fala com o container de jogo (LXC ou Docker) rodando o
-`ssh` do sistema, nunca uma biblioteca Python de SSH - o container do painel so tem
-`openssh-client` do apt, sem pip.
+"""SSH transport layer: talks to the game container (LXC or Docker) by running the
+system's `ssh`, never a Python SSH library - the panel container only has
+`openssh-client` from apt, no pip.
 
-Root nos containers de jogo passa por aqui. `SshClient.run` e o unico caminho: recebe
-o comando ja montado (com `shlex.quote` de quem chamou), nunca um argumento cru vindo
-de formulario.
+Every remote command goes through here. `SshClient.run` is the only path: it receives the
+command already built by `runtime.remote_cmd` (which decides, per server, whether it runs as
+root, through a fixed sudo helper or as steam), never a raw argument coming from a form.
 """
 from __future__ import annotations
 
@@ -17,9 +17,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-# Um servidor cadastrado, como esta camada precisa enxerga-lo: ou a linha do SQLite, ou
-# uma copia dela em dict (usada pelas tarefas longas, que nao podem levar uma conexao de
-# outra thread). As duas respondem a `server["host"]`, que e tudo o que importa aqui.
+# A registered server, as this layer needs to see it: either the SQLite row, or a dict
+# copy of it (used by long tasks, which cannot carry a connection from another thread).
+# Both answer `server["host"]`, which is all that matters here.
 ServerLike = sqlite3.Row | Mapping[str, Any]
 
 
@@ -33,7 +33,7 @@ def quote_command(*parts: str) -> str:
 
 @dataclass(frozen=True)
 class SshConfig:
-    """O que o cliente precisa saber para falar com QUALQUER container de jogo."""
+    """What the client needs to know to talk to ANY game container."""
 
     key: str
     known_hosts: str
@@ -43,12 +43,12 @@ class SshConfig:
 
 
 class SshClient:
-    """Uma instancia por painel (a chave e a mesma para todo container de jogo).
+    """One instance per panel (the key is the same for every game container).
 
-    Recebe a config por FUNCAO, nao por valor: os testes trocam `SSH_CONTROL_DIR` etc.
-    via `monkeypatch.setattr(panel, "SSH_CONTROL_DIR", ...)` a qualquer momento, e cada
-    chamada aqui precisa enxergar o valor mais recente - uma config capturada uma vez
-    no import deixaria essa troca de teste sem efeito nenhum (silenciosamente).
+    Takes the config as a FUNCTION, not a value: tests swap `SSH_CONTROL_DIR` etc. via
+    `monkeypatch.setattr(panel, "SSH_CONTROL_DIR", ...)` at any moment, and every call
+    here must see the latest value - a config captured once at import would leave that
+    test swap with no effect at all (silently).
     """
 
     def __init__(self, config: Callable[[], SshConfig]) -> None:
@@ -59,19 +59,19 @@ class SshClient:
         return self._config_provider()
 
     def _mux_argv(self) -> list[str]:
-        """Opcoes que fazem varias chamadas dividirem UMA conexao TCP.
+        """Options that make several calls share ONE TCP connection.
 
-        Sem isto cada leitura do monitor paga TCP + troca de chaves + autenticacao + um
-        processo novo — uns 100ms na LAN para depois rodar um `systemctl show` de 5ms. Com a
-        conexao mestre de pe, a segunda chamada em diante custa quase nada.
+        Without this every monitor read pays TCP + key exchange + authentication + a new
+        process - about 100ms on the LAN just to then run a 5ms `systemctl show`. With the
+        master connection up, the second call onward costs almost nothing.
 
-        %C e o hash de (host, porta, usuario): nome curto e unico por destino, que importa
-        porque socket de unix tem limite baixo de caminho.
+        %C is the hash of (host, port, user): a short, unique name per target, which
+        matters because unix sockets have a low path length limit.
         """
         try:
             os.makedirs(self._config.control_dir, mode=0o700, exist_ok=True)
         except OSError:
-            # Sem onde por o socket, seguir sem reaproveitar e melhor do que nao falar SSH.
+            # With nowhere to put the socket, going on without reuse beats not speaking SSH.
             return []
         return ["-o", "ControlMaster=auto",
                 "-o", f"ControlPath={os.path.join(self._config.control_dir, '%C')}",
@@ -79,12 +79,12 @@ class SshClient:
 
     def argv(self, server: ServerLike, connect_timeout: int = 10,
               extra: tuple[str, ...] = (), multiplex: bool = False) -> list[str]:
-        """Argumentos comuns do cliente ssh (usados pelos comandos e pelo terminal).
+        """Common ssh client arguments (used by the commands and by the terminal).
 
-        `multiplex` so para as chamadas CURTAS e frequentes do monitor. Fica desligado por
-        padrao porque as outras tres nao querem dividir conexao: o terminal segura a sessao
-        por horas, e subir/baixar arquivo de varios GB entupiria o TCP compartilhado e
-        travaria toda leitura do monitor atras da transferencia.
+        `multiplex` only for the monitor's SHORT, frequent calls. It is off by default
+        because the other three do not want to share a connection: the terminal holds the
+        session for hours, and uploading/downloading a multi-GB file would clog the shared
+        TCP and stall every monitor read behind the transfer.
         """
         return [
             "ssh",
@@ -92,7 +92,7 @@ class SshClient:
             "-p", str(server["ssh_port"]),
             "-o", "BatchMode=yes",
             "-o", f"UserKnownHostsFile={self._config.known_hosts}",
-            # accept-new: aprende a host key no primeiro acesso, mas alerta se ela mudar.
+            # accept-new: learns the host key on first access, but warns if it changes.
             "-o", "StrictHostKeyChecking=accept-new",
             "-o", f"ConnectTimeout={connect_timeout}",
             *(self._mux_argv() if multiplex else ()),
@@ -108,27 +108,26 @@ class SshClient:
         stdin_data: bytes | None = None,
         multiplex: bool = True,
     ) -> subprocess.CompletedProcess:
-        """Executa um comando no container de jogo via SSH.
+        """Run a command in the game container over SSH.
 
-        `remote_cmd` ja vem montado com shlex.quote pelos helpers de quem chama; o SSH o
-        entrega inteiro para o shell do destino, entao nada aqui pode vir cru de um
-        formulario. `stdin_data` alimenta a entrada do comando remoto (usado para gravar
-        arquivos).
+        `remote_cmd` comes already built with shlex.quote by the caller's helpers; SSH
+        hands it whole to the target's shell, so nothing here may come raw from a form.
+        `stdin_data` feeds the remote command's input (used to write files).
 
-        `multiplex=False` para o que demora: um update de uma hora seguraria a conexao
-        mestre o tempo todo, e qualquer soluco nele derrubaria junto as leituras do
-        monitor que estivessem pegando carona.
+        `multiplex=False` for slow work: a one-hour update would hold the master
+        connection the whole time, and any hiccup in it would also take down the monitor
+        reads riding along.
         """
         timeout = self._config.quick_timeout if timeout is None else timeout
         cmd = [*self.argv(server, connect_timeout=min(timeout, 10), multiplex=multiplex), remote_cmd]
-        # Lista de argumentos (nunca shell=True) e `remote_cmd` sempre pre-quotado por
-        # shlex.quote de quem chama (ver docstring) - nao e comando cru de formulario.
+        # Argument list (never shell=True) and `remote_cmd` always pre-quoted by the
+        # caller's shlex.quote (see docstring) - it is not a raw command from a form.
         try:
             if stdin_data is not None:
                 proc = subprocess.run(  # noqa: S603  # NOSONAR
                     cmd, input=stdin_data, capture_output=True, timeout=timeout, check=False
                 )
-                # Binario na entrada, texto na saida: as mensagens de erro sao sempre texto.
+                # Binary on input, text on output: error messages are always text.
                 return subprocess.CompletedProcess(
                     proc.args,
                     proc.returncode,
@@ -151,24 +150,25 @@ class SshClient:
         return proc.stdout.strip()
 
     def forget_host(self, host: str, port: int = 22) -> None:
-        """Apaga do known_hosts a chave que o painel aprendeu para `host`.
+        """Remove from known_hosts the key the panel learned for `host`.
 
-        So para quem SABE que a maquina naquele endereco e outra: o broker acabou de criar
-        um CT num IP que ja foi de um CT removido. Sem isto o `accept-new` guarda a chave
-        do CT antigo e recusa a do novo como ataque, e o servidor recem-criado nasce sem
-        status, sem console e sem nada que passe por SSH.
+        Only for a caller that KNOWS the machine at that address is a different one: the
+        broker just created a CT on an IP that used to belong to a removed CT. Without this,
+        `accept-new` keeps the old CT's key and rejects the new one as an attack, and the
+        freshly created server is born with no status, no console and nothing that goes
+        over SSH.
 
-        `ssh-keygen -R` e nao uma edicao do arquivo aqui: com `HashKnownHosts yes` (o
-        padrao do Debian) a linha nao tem o IP em texto, so um hash dele.
+        `ssh-keygen -R` rather than editing the file here: with `HashKnownHosts yes` (the
+        Debian default) the line does not hold the IP in plain text, only a hash of it.
 
-        Nunca levanta: quem chama esta cadastrando um servidor, e nao ter o que apagar (ou
-        nao ter o arquivo ainda) e o caso comum.
+        Never raises: the caller is registering a server, and having nothing to delete (or
+        no file yet) is the common case.
         """
         target = host if port == 22 else f"[{host}]:{port}"
-        # Pelo PATH, como o `ssh` do `argv`: os dois vem do mesmo openssh-client do apt.
+        # Via PATH, like the `ssh` in `argv`: both come from the same openssh-client from apt.
         cmd = ["ssh-keygen", "-f", self._config.known_hosts, "-R", target]
         with contextlib.suppress(OSError, subprocess.TimeoutExpired):
-            # Lista de argumentos, e `host` ja passou pelo HOST_RE de quem chama.
+            # Argument list, and `host` already went through the caller's HOST_RE.
             subprocess.run(  # noqa: S603  # NOSONAR
                 cmd, capture_output=True, timeout=self._config.quick_timeout, check=False)
 

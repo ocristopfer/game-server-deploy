@@ -1,4 +1,4 @@
-"""Instalador por SSH: o que vai no install.env, a ordem dos comandos e a limpeza da chave."""
+"""SSH installer: what goes into install.env, the order of the commands and the key cleanup."""
 from __future__ import annotations
 
 import shutil
@@ -64,7 +64,7 @@ def _install(installer, game, ports, log=None):
 # --- install.env -------------------------------------------------------------------------------
 
 def _values(env: str) -> dict[str, str]:
-    """Le o install.env do jeito que o CT le: com o `source` de um bash de verdade."""
+    """Read install.env the way the CT reads it: with the `source` of a real bash."""
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("bash nao esta no PATH")
@@ -73,11 +73,11 @@ def _values(env: str) -> dict[str, str]:
         f'printf "%s\\0" "{n}" "${{{n}}}"\n' for n in names)
     output = subprocess.run([bash, "-c", script], capture_output=True, check=True, text=True,
                            encoding="utf-8").stdout.split("\0")
-    # O `printf` termina cada pedaco com um NUL, entao o `split` devolve um pedaco vazio no
-    # fim; sem descarta-lo, o `zip` o comeria em silencio (era `zip` sem `strict`, e o
-    # B905 do ruff foi quem apontou). Explicito aqui, `strict` logo abaixo: se a contagem
-    # ficar impar por outro motivo, o teste ESTOURA em vez de comparar contra um dicionario
-    # menor do que o install.env de verdade.
+    # `printf` ends each piece with a NUL, so `split` returns an empty piece at the end;
+    # without dropping it, `zip` would swallow it silently (it was `zip` without `strict`,
+    # and ruff's B905 pointed it out). Explicit here, `strict` right below: if the count
+    # turns odd for some other reason, the test BLOWS UP instead of comparing against a
+    # dictionary smaller than the real install.env.
     if output and output[-1] == "":
         output.pop()
     return dict(zip(output[0::2], output[1::2], strict=True))
@@ -142,14 +142,14 @@ def test_wine_e_proton_juntos_sao_recusados(game_data, ports):
         build_env(validate_dynamic(game_data), ports)
 
 
-# Texto que, se o quoting falhasse, executaria algo ou quebraria o `source`.
+# Text that, if quoting failed, would execute something or break the `source`.
 HARMFUL = ["'; touch /tmp/pwned; '", "$(touch /tmp/pwned)", "`touch /tmp/pwned`", "a\nb\nc", "aspas ' e \" juntas",
            "\\[LOG\\] (?P<name>.+?) joined", "sem-nada", "${HOME}", "; rm -rf /", "espaco  duplo  "]
 
 
 @pytest.mark.parametrize("text", HARMFUL)
 def test_nenhum_valor_e_interpretado_como_shell(game, ports, text, tmp_path):
-    """Hooks do catalogo curado podem ter QUALQUER texto: o que chega ao CT e exatamente ele."""
+    """Curated catalog hooks may hold ANY text: what reaches the CT is exactly that text."""
     curated = replace(game, pre_install=text, post_install=text[::-1], source="curado")
     values = _values(build_env(curated, ports))
     assert values["PRE_INSTALL_CMD"] == text
@@ -157,7 +157,7 @@ def test_nenhum_valor_e_interpretado_como_shell(game, ports, text, tmp_path):
     assert not Path("/tmp/pwned").exists()
 
 
-# --- fluxo -------------------------------------------------------------------------------------
+# --- flow --------------------------------------------------------------------------------------
 
 def test_ordem_dos_comandos(installer, game, ports):
     executor, _ = _install(installer, game, ports)
@@ -166,7 +166,7 @@ def test_ordem_dos_comandos(installer, game, ports):
         f"install -d -m 700 {REMOTE_DEST}",
         "scp",
         f"cd {REMOTE_DEST} && bash ct-install.sh install.env",
-        executor.commands()[-1],  # limpeza
+        executor.commands()[-1],  # cleanup
     ]
     assert f"rm -rf {REMOTE_DEST}" in executor.commands()[-1]
 
@@ -174,7 +174,8 @@ def test_ordem_dos_comandos(installer, game, ports):
 def test_scp_leva_a_lib_e_o_env_e_o_env_existe_na_hora(installer, game, ports):
     executor, _ = _install(installer, game, ports)
     scp = next(a for a, _ in executor.calls if a[0] == "scp")
-    assert [Path(f).name for f in scp[-5:-1]] == ["ct-install.sh", "ct-phases.sh", "ct-firewall.sh", "install.env"]
+    assert [Path(f).name for f in scp[-6:-1]] == ["ct-install.sh", "ct-phases.sh", "ct-firewall.sh",
+                                                  "ct-panel-access.sh", "install.env"]
     assert scp[-1] == f"root@10.0.0.30:{REMOTE_DEST}/"
     assert "GAME_KEY=meujogo" in executor.env_visto
     assert not Path(scp[-2]).exists(), "o env temporario nao fica no disco do broker"
@@ -214,7 +215,7 @@ def test_timeouts_sao_repassados(installer, game, ports, config):
     assert install_run == config.install_timeout
 
 
-# --- falhas ------------------------------------------------------------------------------------------
+# --- failures ----------------------------------------------------------------------------------------
 
 def test_instalador_que_falha_traz_a_cauda_e_ainda_limpa_a_chave(installer, game, ports):
     inst, executor = installer
@@ -241,7 +242,7 @@ def test_falha_no_envio_tambem_limpa(installer, game, ports):
 
 
 def test_chave_que_nao_sai_faz_a_criacao_falhar(installer, game, ports):
-    """Um CT novo nao pode nascer com acesso permanente do broker."""
+    """A new CT must not be born with permanent broker access."""
     inst, executor = installer
     executor.outputs["grep -vF"] = (1, [])
     with pytest.raises(InstallError, match="remover a chave do broker"):
@@ -283,7 +284,7 @@ def test_ip_invalido_nao_gera_comando(installer, game, ports, ip):
     assert executor.calls == []
 
 
-# --- saida em lote ----------------------------------------------------------------------------------------
+# --- batched output ---------------------------------------------------------------------------------------
 
 def test_saida_volumosa_vira_poucas_gravacoes_e_linhas_longas_sao_cortadas(installer, game, ports):
     inst, executor = installer
@@ -296,7 +297,7 @@ def test_saida_volumosa_vira_poucas_gravacoes_e_linhas_longas_sao_cortadas(insta
     assert "progresso 99%" in "\n".join(writes)
 
 
-# --- configuracao --------------------------------------------------------------------------------------------
+# --- configuration --------------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("key", ["", "ssh-ed25519", "ssh-ed25519 curta", "ssh-ed25519 " + "A" * 30 + "; rm -rf /"])
 def test_chave_publica_invalida(tmp_path, lib_dir, key):
@@ -316,7 +317,7 @@ def test_lib_incompleta_e_recusada(tmp_path):
         SshInstaller(cfg, FakeRunner())
 
 
-# --- executor real (com o proprio Python como "processo") ------------------------------------------------------
+# --- real executor (with Python itself as the "process") -------------------------------------------------------
 
 def test_executor_real_repassa_linhas_e_devolve_o_codigo():
     lines: list[str] = []
@@ -336,13 +337,13 @@ def test_executor_real_binario_inexistente_e_erro_claro():
 
 
 def test_executor_real_nao_le_do_teclado():
-    """stdin fechado: um ssh que pedisse senha/confirmacao falharia em vez de travar o broker."""
+    """Closed stdin: an ssh asking for a password/confirmation would fail instead of hanging the broker."""
     probe = "import sys; sys.exit(0 if sys.stdin.read() == '' else 1)"
     code = ExecutorReal().run([sys.executable, "-c", probe], None, 30)
     assert code == 0
 
 
-# --- conta Steam (jogo curado que nao baixa anonimo) ---------------------------------------
+# --- Steam account (curated game that cannot download anonymously) -------------------------
 
 STEAM = SteamAccount("conta_servidor", "S3nha!forte")
 
@@ -392,7 +393,7 @@ def test_conta_que_quebraria_a_linha_do_steamcmd_e_recusada_sem_mostrar_o_valor(
 
 
 def test_cancelar_mata_o_processo_que_esta_calado():
-    # O SteamCMD passa minutos sem escrever nada: o pedido nao pode esperar a proxima linha.
+    # SteamCMD goes minutes without writing anything: the request cannot wait for the next line.
     import threading
     import time
     cancel = threading.Event()
@@ -404,13 +405,13 @@ def test_cancelar_mata_o_processo_que_esta_calado():
 
 
 def test_quem_pode_abrir_ssh_vai_no_install_env_para_o_firewall_do_ct(game, ports):
-    env = build_env(game, ports, None, ("192.168.2.100", "192.168.2.101"))
-    assert "FW_MGMT_SOURCES='192.168.2.100 192.168.2.101'" in env
+    env = build_env(game, ports, None, ("10.20.1.100", "10.20.1.101"))
+    assert "FW_MGMT_SOURCES='10.20.1.100 10.20.1.101'" in env
 
 
 def test_sem_ips_de_administracao_o_install_env_nao_pede_firewall(game, ports):
-    # Sem a chave o ct-phases.sh PULA o firewall: aplica-lo sem saber quem e o painel
-    # trancaria o painel fora do servidor recem-criado.
+    # Without the key ct-phases.sh SKIPS the firewall: applying it without knowing who the
+    # panel is would lock the panel out of the freshly created server.
     assert "FW_MGMT_SOURCES" not in build_env(game, ports)
 
 
@@ -420,8 +421,8 @@ def test_a_lib_real_tem_o_script_do_firewall():
 
 
 def test_ajuste_do_wine_do_curado_chega_ao_ct(ports):
-    """O V Rising pede o mscoree LIGADO (o BepInEx e .NET); antes o install.env do broker nao
-    levava o WINE_DLL_OVERRIDES do .env, e o CT nascia com o padrao, que o desliga."""
+    """V Rising needs mscoree ENABLED (BepInEx is .NET); the broker's install.env used to not
+    carry the .env's WINE_DLL_OVERRIDES, and the CT was born with the default, which disables it."""
     from gamebroker.services.catalog import load_curated
     games, _ = load_curated(Path(__file__).resolve().parents[3] / "games")
     values = _values(build_env(games["vrising"], ports))
@@ -430,3 +431,60 @@ def test_ajuste_do_wine_do_curado_chega_ao_ct(ports):
 
 def test_jogo_da_api_nao_escolhe_dll_do_wine(game, ports):
     assert "WINE_DLL_OVERRIDES" not in build_env(game, ports)
+
+
+# --- panel access: gamepanel instead of root -------------------------------------------------------
+
+PANEL_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainelPainelPainelPainelPainel painel@gp"
+
+
+@pytest.fixture
+def panel_installer(config):
+    executor = FakeRunner()
+    cfg = replace(config, panel_public_key=PANEL_KEY)
+    return SshInstaller(cfg, executor, sleep=lambda _s: None), executor
+
+
+def test_a_chave_do_painel_vai_no_install_env_para_o_gamepanel(game, ports):
+    values = _values(build_env(game, ports, panel_public_key=PANEL_KEY))
+    assert values["PANEL_PUBKEY"] == PANEL_KEY
+
+
+def test_sem_chave_do_painel_o_install_env_nao_cria_o_gamepanel(game, ports):
+    assert "PANEL_PUBKEY" not in build_env(game, ports)
+
+
+def test_root_e_trancado_no_mesmo_comando_que_tira_a_chave_do_broker(panel_installer, game, ports):
+    """The cleanup is the last root SSH session: a lock in a later command would have no way in."""
+    executor, lines = _install(panel_installer, game, ports)
+    cleanup = executor.commands()[-1]
+    assert cleanup.index("ct-panel-access.sh lock") < cleanup.index(f"grep -vF -- {BLOB}")
+    assert "/usr/local/lib/gamepanel/ct-panel-access.sh" in cleanup
+    assert lines[-1] == "chave do broker removida do container"
+
+
+def test_trava_que_falha_derruba_a_criacao_mas_a_chave_sai(panel_installer, game, ports):
+    inst, executor = panel_installer
+    executor.outputs["ct-panel-access.sh lock"] = (3, ["ct-panel-access.sh: ERRO: o root NAO foi trancado"])
+    lines: list[str] = []
+    with pytest.raises(InstallError, match="trancar o root"):
+        inst.install("10.0.0.30", game, ports, lines.append)
+    assert f"grep -vF -- {BLOB}" in executor.commands()[-1], "a chave do broker sai do mesmo jeito"
+    assert any("NAO foi trancado" in line for line in lines), "o motivo vai para o log da operacao"
+
+
+def test_instalacao_que_falha_nao_tranca_o_root(panel_installer, game, ports):
+    """A failed install may not even have created gamepanel: locking would close the only way in."""
+    inst, executor = panel_installer
+    executor.outputs["bash ct-install.sh"] = (1, ["deu ruim"])
+    with pytest.raises(InstallError, match="a instalacao falhou"):
+        inst.install("10.0.0.30", game, ports, lambda _l: None)
+    assert "ct-panel-access.sh" not in executor.commands()[-1]
+    assert f"grep -vF -- {BLOB}" in executor.commands()[-1]
+
+
+@pytest.mark.parametrize("bad", ["nao e chave", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainel x'y",
+                                 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPainel\nssh-rsa AAAA"])
+def test_chave_do_painel_torta_e_recusada(tmp_path, lib_dir, bad):
+    with pytest.raises(ValueError, match="panel_public_key"):
+        ConfigSsh(private_key=tmp_path / "k", public_key=PUBLIC_KEY, lib_dir=lib_dir, panel_public_key=bad)
