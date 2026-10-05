@@ -436,6 +436,31 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   pasta e um mod quebrado.
 - **No ETS2 o `mod_id` so e ID da Workshop quando `workshop_mod: true`.** No mod instalado a
   mao (o Mapa BR) ele e uma assinatura interna, e virar link apontaria para um item qualquer.
+- **`KIND_WORKSHOP` e Workshop pela CONFIG do jogo** (DST, Zomboid, Unturned, Reforger): quem
+  baixa e o proprio servidor, na subida, e `workshop_remote.py` (no CT, como os outros) so le e
+  escreve a lista no arquivo de cada jogo (`workshop_format`). Cada formato foi MEDIDO num servidor
+  de verdade em Docker, com o mod baixado e carregado no log, e cada um tem uma armadilha:
+  - **DST precisa dos DOIS arquivos**: `ServerModSetup` no `dedicated_server_mods_setup.lua` BAIXA,
+    o `modoverrides.lua` de cada shard LIGA. O cluster sai do comando (`-cluster`, `-conf_dir`,
+    `-persistent_storage_root`): o primeiro start so cria `<shard>/server.ini`, e o cluster.ini
+    so existe depois de alguem configurar o cluster - procurar por ele nao achava nada. O bloco de
+    opcoes de cada mod sai inteiro como TEXTO (`workshop_remote.lua_entries`, que pula string e
+    comentario: `scale = "1}"` cortaria o bloco no meio). Update do jogo reescreve o setup:
+    `setup_missing`.
+  - **Zomboid tem duas listas e elas NAO sao a mesma**: `WorkshopItems=` (ID da Workshop) e
+    `Mods=` (o `id=` do `mod.info`). Um item pode trazer varios mods, e ligar todos e o que quebra;
+    por isso o painel nao deduz o `Mods=`, so mostra o que cada item baixado trouxe. O Build 42
+    carregou `Mods=BB_CommonSense` sem a barra invertida que alguns guias poem.
+  - **Unturned precisa de `+InternetServer/<nome>`** (a pasta do servidor) e da `steamclient.so`
+    no `~/.steam/sdk64` (a receita `steamclient-sdk64`): sem ela sai "GameServer API
+    initialization failed" antes de chegar a Workshop. As dependencias (mapa + assets) vem sozinhas.
+  - **Reforger nao e Steam**: GUID de 16 hex do workshop da Bohemia, `game.mods` do JSON do
+    `-config` (`workshop.parse_guids` le o link da pagina, que traz o nome no fim). Sem `-config` no
+    comando nao ha onde escrever, e o catalogo do LinuxGSM o tira.
+  - **O antivirus nao verifica ANTES**: o download e do jogo. O `audit_paths` de cada perfil e onde
+    o jogo guarda o que baixou, e a tela manda usar o "Verificar mods instalados".
+  - **Lista que nao rendeu ID nenhum e recusada**; so o campo VAZIO limpa a lista. Uma colagem
+    errada apagaria todos os mods do servidor.
 
 ### Jogo novo com tela propria = um arquivo e uma linha
 

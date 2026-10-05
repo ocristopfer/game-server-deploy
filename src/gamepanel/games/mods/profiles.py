@@ -34,6 +34,10 @@ KIND_OXIDE = "oxide"
 # num drop-in do systemd (games/mods/ue4ss_linux_remote.py). A pasta do perfil continua a dos
 # .pak (envio); o UE4SS e os mods Lua ficam em <loader_dir>/ue4ss.
 KIND_UE4SS_LINUX = "ue4ss-linux"
+# Workshop pela CONFIG do jogo: o proprio servidor baixa os mods na subida, a partir da lista de
+# IDs que o painel escreve no arquivo dele (games/mods/workshop_remote.py). `workshop_format` diz
+# qual arquivo e qual formato (dst, zomboid, unturned, reforger).
+KIND_WORKSHOP = "workshop"
 # So o guia (onde achar, como instalar), sem acao: o caminho existe mas ainda nao foi provado
 # num servidor de verdade, e botao que "instala" sem prova e pior que instrucao clara.
 KIND_GUIDE = "guide"
@@ -85,6 +89,8 @@ class ModProfile:
     # CT gera o VTableLayout.ini a partir do .sym, quando o servidor traz um.
     ue4ss_release: str = ""
     engine_version: str = ""
+    # Workshop pela config: o formato que o workshop_remote sabe escrever.
+    workshop_format: str = ""
 
     @property
     def scan_paths(self) -> tuple[str, ...]:
@@ -292,7 +298,44 @@ QANGA = _unreal_linux("qanga", ("qanga",), "Qanga", "5.7")
 UNREAL_LINUX = (SOULMASK, THE_FRONT, SMALLAND, SANDSTORM, ASTRO_COLONY, SQUAD_44, MORDHAU, HYPERCHARGE, PAVLOV,
                 THE_BUS, VEIN, SQUAD, QANGA)
 
-PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED, ICARUS, SATISFACTORY, VALHEIM, RUST, *UNREAL_LINUX)
+# Workshop pela config. Os quatro provados em servidor de verdade (Docker, 2026-10-05) com o
+# workshop_remote escrevendo a lista e o jogo baixando e carregando o mod na subida seguinte:
+# DST (Global Positions, Show Me), Zomboid Build 42 (Common Sense), Unturned (Hawaii + os assets,
+# dependencia que ele baixa sozinho) e Reforger (Where Am I). proven=False ate a primeira vez por
+# esta tela num CT. O audit_paths e onde CADA jogo guarda o que baixou: e por ali que o antivirus
+# passa, ja que o download e do jogo e nao do painel.
+DST = ModProfile(
+    key="dst", kind=KIND_WORKSHOP, services=("don-t-starve-together", "dst", "dontstarve"),
+    folder="/opt/game", help_key="mods.help_workshop_dst", workshop_appid=322330, workshop_format="dst",
+    audit_paths=("/opt/game/ugc_mods", "/opt/game/mods"),
+    sources=(("mods.source_workshop", "https://steamcommunity.com/app/322330/workshop/"),),
+    proven=False,
+)
+ZOMBOID = ModProfile(
+    key="zomboid", kind=KIND_WORKSHOP, services=("project-zomboid", "zomboid", "pz"),
+    folder="/opt/game", help_key="mods.help_workshop_zomboid", workshop_appid=108600, workshop_format="zomboid",
+    audit_paths=("/opt/game/steamapps/workshop/content/108600",),
+    sources=(("mods.source_workshop", "https://steamcommunity.com/app/108600/workshop/"),),
+    proven=False,
+)
+UNTURNED = ModProfile(
+    key="unturned", kind=KIND_WORKSHOP, services=("unturned",),
+    folder="/opt/game", help_key="mods.help_workshop_unturned", workshop_appid=304930, workshop_format="unturned",
+    audit_paths=("/opt/game/Servers",),
+    sources=(("mods.source_workshop", "https://steamcommunity.com/app/304930/workshop/"),),
+    proven=False,
+)
+REFORGER = ModProfile(
+    key="arma-reforger", kind=KIND_WORKSHOP, services=("arma-reforger", "reforger"),
+    folder="/opt/game", help_key="mods.help_workshop_reforger", workshop_format="reforger",
+    audit_paths=("/opt/game/profiles",),
+    sources=(("mods.source_reforger_workshop", "https://reforger.armaplatform.com/workshop"),),
+    proven=False,
+)
+WORKSHOP_BY_CONFIG = (DST, ZOMBOID, UNTURNED, REFORGER)
+
+PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED, ICARUS, SATISFACTORY, VALHEIM, RUST, *UNREAL_LINUX,
+            *WORKSHOP_BY_CONFIG)
 
 
 def service_stem(service: str) -> str:

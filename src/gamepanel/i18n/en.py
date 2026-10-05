@@ -722,6 +722,61 @@ MESSAGES: dict[str, str] = {
     "mods.oxide_wiped": "Some Oxide files were replaced (was Rust updated?): reinstall.",
     "mods.oxide_log": "End of the Oxide log",
     "mods.source_ficsit": "ficsit.app",
+    "mods.source_reforger_workshop": "Arma Reforger Workshop",
+    "mods.help_workshop_dst":
+        "In Don't Starve Together the <strong>server itself</strong> downloads the mods from the Steam "
+        "Workshop when it starts. The panel writes the list to <code>dedicated_server_mods_setup.lua</code> "
+        "(what to download) and to each shard's <code>modoverrides.lua</code> (what to enable); the "
+        "options you already gave a mod are kept. Players get the mods automatically when they join.",
+    "mods.help_workshop_zomboid":
+        "In Project Zomboid the <strong>server itself</strong> downloads the mods from the Steam "
+        "Workshop when it starts. There are two lists in the server <code>.ini</code>: Workshop IDs "
+        "(what to download) and mod IDs (what to enable). One Workshop item can carry several mods: "
+        "once downloaded, the screen shows which ones it brought.",
+    "mods.help_workshop_unturned":
+        "In Unturned the <strong>server itself</strong> downloads the mods from the Steam Workshop "
+        "when it starts, through the server folder's <code>WorkshopDownloadConfig.json</code>. Maps "
+        "and mods come with their dependencies. The game command needs "
+        "<code>+InternetServer/&lt;name&gt;</code>.",
+    "mods.help_workshop_reforger":
+        "In Arma Reforger the <strong>server itself</strong> downloads the mods from the Bohemia "
+        "workshop when it starts, through the <code>game.mods</code> list of the JSON passed with "
+        "<code>-config</code>. The ID is the 16-character GUID on the mod page. A version pinned by "
+        "hand in the config is kept.",
+    "mods.workshop_antivirus_note":
+        "Here the antivirus does NOT check first: the game server does the download when it starts. "
+        "Use <strong>Scan installed mods</strong> afterwards, which runs ClamAV on the folder where "
+        "the game keeps what it downloaded.",
+    "mods.workshop_title": "Workshop mods",
+    "mods.workshop_config": "Config: <code>{path}</code>",
+    "mods.workshop_problem_no_cluster":
+        "No cluster with a server.ini: start the server once so it creates its configuration.",
+    "mods.workshop_problem_no_config":
+        "The server config does not exist yet: start the server once so it creates it.",
+    "mods.workshop_problem_no_server_name":
+        "No server name: add +InternetServer/<name> to the game command (Edit screen) and start it once.",
+    "mods.workshop_problem_no_config_arg":
+        "The server does not get -config in its command: create config.json and pass -config in the "
+        "game command (Edit screen).",
+    "mods.workshop_problem_bad_json": "The server config is not valid JSON: fix it on the Files screen.",
+    "mods.workshop_dst_setup_missing":
+        "These mods are missing from dedicated_server_mods_setup.lua (a game update rewrites it) and "
+        "will not be downloaded: save the list again. {ids}",
+    "mods.workshop_zomboid_found": "Mods in this item: {mods}",
+    "mods.workshop_downloaded": "downloaded",
+    "mods.workshop_pending": "downloads on next start",
+    "mods.workshop_ids_label": "Mods (one per line)",
+    "mods.workshop_ids_help":
+        "The mod page link on the Steam Workshop, or just the number. Removing a line removes the mod.",
+    "mods.workshop_reforger_help":
+        "The mod page link on the Reforger workshop, or the GUID followed by the name. Removing a line "
+        "removes the mod.",
+    "mods.zomboid_mods_label": "Enabled mods (Mods=)",
+    "mods.zomboid_mods_help":
+        "Mod IDs separated by semicolons, as listed on this screen after the download.",
+    "mods.workshop_save": "Save the list",
+    "mods.workshop_bad_ids": "No mod ID found in what was pasted: nothing was changed.",
+    "mods.zomboid_bad_mods": "The Mods= list only takes letters, digits, _ . - and semicolons.",
     "mods.source_umod": "uMod (plugins)",
     "mods.ue4ss_linux_config_help":
         "Linux port of UE4SS, loaded by LD_PRELOAD on the service, with no "
@@ -1216,6 +1271,7 @@ MESSAGES: dict[str, str] = {
     "job.file_downloaded": "File downloaded",
     "job.mod_loader": "Mod loader",
     "job.mod_installed": "Mod installed",
+    "job.mod_workshop": "Workshop mod list changed",
     "job.mod_audited": "Mods scanned (antivirus)",
     "job.mod_removed_plugin": "Mod uninstalled",
     "job.mod_uploaded": "Mod uploaded",

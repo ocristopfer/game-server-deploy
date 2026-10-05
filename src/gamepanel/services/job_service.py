@@ -28,6 +28,7 @@ EXTRA_LABELS: Mapping[str, str] = {
     "mod-install": "job.mod_installed",
     "mod-remove": "job.mod_removed_plugin",
     "mod-audit": "job.mod_audited",
+    "mod-workshop": "job.mod_workshop",
     "backup": "job.backup",
     "restore-backup": "job.backup_restored",
     "delete-backup": "job.backup_deleted",
@@ -55,6 +56,7 @@ ADMIN_ONLY_ACTIONS = frozenset({
     "upload-file", "restore-backup", "delete-backup",
     # Mod entra e sai de dentro do container, como o envio da tela Arquivos.
     "upload-mod", "delete-mod", "mod-loader", "mod-install", "mod-remove", "mod-audit",
+    "mod-workshop",
     # Tudo do broker e de admin: a saida cita IP, CTID e portas da infraestrutura.
     "broker-criar", "broker-desativar", "broker-remover", "broker-jogo",
     "broker-jogo-editar", "broker-jogo-apagar",

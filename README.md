@@ -1228,6 +1228,23 @@ jogo entende mod:
   em `Binaries/Win64/ue4ss/`, e liga o `dwmapi=n,b` do Wine. Console, janela e os mods de
   trapaca que vem com ele ficam desligados. Cada mod e uma pasta em `ue4ss/Mods`, ligada no
   `mods.txt` dali (tela Arquivos).
+- **Don't Starve Together, Project Zomboid, Unturned e Arma Reforger**: mods da **Workshop pela
+  config do jogo**. Quem baixa e o proprio servidor, na subida; a tela so mantem a lista na config
+  dele (cole links ou IDs, um por linha; tirar a linha remove o mod) e reinicia. O resto da config
+  fica como estava, inclusive as opcoes de cada mod, e o arquivo de antes fica ao lado com
+  `.gamepanel.bak`. Onde fica a config sai do comando do servico:
+  - DST: `mods/dedicated_server_mods_setup.lua` (o que baixar) e o `modoverrides.lua` de cada
+    shard (o que ligar). Um update do jogo reescreve o setup; a tela acusa, e salvar de novo resolve.
+  - Zomboid: `WorkshopItems=` e `Mods=` no `<servername>.ini`. O segundo e o ID de mod, nao o da
+    Workshop: depois de baixar, a tela mostra os que cada item trouxe.
+  - Unturned: `File_IDs` do `Servers/<nome>/WorkshopDownloadConfig.json`. O comando do jogo
+    precisa de `+InternetServer/<nome>`.
+  - Reforger: `game.mods` do JSON do `-config`, pelo GUID do workshop da Bohemia (o link da
+    pagina serve). Sem `-config` no comando a tela explica o que falta.
+
+  Provados em servidor de verdade em Docker (o jogo baixou e carregou o mod), ainda nao por esta
+  tela num container de producao: a tela avisa. **O antivirus nao verifica antes**, porque o
+  download e do jogo: use **Verificar mods instalados** depois.
 
 Toda tela Mods tem os links de **onde achar mods** daquele jogo. O **Nexus Mods** e sempre
 link, nunca download automatico: a API dele so entrega arquivo para conta Premium, e automatizar

@@ -25,5 +25,31 @@ def parse_ids(text: str) -> list[int]:
     return list(dict.fromkeys(found))[:MAX_IDS]
 
 
+# Arma Reforger: o workshop e da Bohemia, e o ID e um GUID de 16 hex. O link da pagina traz o
+# nome depois do GUID (`/workshop/5965550F24A0C152-WhereAmI`); a linha colada pode trazer o nome
+# depois dele (`5965550F24A0C152 Where Am I`), que e como ele aparece na config.
+_GUID = re.compile(r"(?<![0-9A-Fa-f])([0-9A-Fa-f]{16})(?![0-9A-Fa-f])(?:-([A-Za-z0-9_]+))?(.*)$", re.ASCII)
+# Nome vai para o JSON e para o log do servidor: texto curto, sem caractere de controle.
+_NAME_JUNK = re.compile(r"[\x00-\x1f\x7f=]")
+NAME_MAX = 80
+
+
+def parse_guids(text: str) -> list[tuple[str, str]]:
+    """(GUID em maiusculas, nome) de cada linha, na ordem e sem repetir o GUID."""
+    found: dict[str, str] = {}
+    for line in (text or "").splitlines():
+        m = _GUID.search(line)
+        if not m:
+            continue
+        guid, slug, rest = m.group(1).upper(), m.group(2) or "", m.group(3)
+        name = _NAME_JUNK.sub("", rest).strip(" -:\t") or slug
+        found.setdefault(guid, name[:NAME_MAX].strip())
+    return list(found.items())[:MAX_IDS]
+
+
+def reforger_url(guid: str) -> str:
+    return f"https://reforger.armaplatform.com/workshop/{guid}"
+
+
 def url(workshop_id: int) -> str:
     return f"https://steamcommunity.com/sharedfiles/filedetails/?id={workshop_id}"

@@ -28,6 +28,7 @@ from gamepanel.games.mods import (
     ue_linux_layout,
     ue_sym_layout,
     workshop,
+    workshop_remote,
 )
 from gamepanel.games.mods import ets2 as ets2_mods
 from gamepanel.persistence.repositories import servers as servers_repo
@@ -47,6 +48,8 @@ UE4SS_LINUX_SOURCE = Path(ue4ss_linux_remote.__file__).read_text(encoding="utf-8
 UE_SYM_SOURCE = Path(ue_sym_layout.__file__).read_text(encoding="utf-8")
 # O gerador que usa o pacote de referencia da versao (servidor SEM .sym, e os globais de quem tem).
 UE_LINUX_LAYOUT_SOURCE = Path(ue_linux_layout.__file__).read_text(encoding="utf-8")
+# Workshop pela config: o script so le e escreve a lista de mods na config do jogo, no CT.
+WORKSHOP_SOURCE = Path(workshop_remote.__file__).read_text(encoding="utf-8")
 # Baixar o BepInEx (33 MB) e as dependencias leva minutos: vira job, com log e prazo proprio.
 INSTALL_TIMEOUT = 1800
 LOADER_ACTIONS = ("install", "enable", "disable", "uninstall")
@@ -113,6 +116,10 @@ def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str, service: 
     # O drop-in vai no servico DESTE servidor: o perfil serve a mais de um nome (o do catalogo
     # curado e o da sugestao do LinuxGSM), e o primeiro da lista pode nem existir neste CT.
     unit_name = profiles.service_stem(service) or profile.services[0]
+    if profile.kind == profiles.KIND_WORKSHOP:
+        # A config sai do ExecStart DESTE servico (-servername, -config, +InternetServer/...).
+        return panel.q("python3", "-c", WORKSHOP_SOURCE, "--unit", f"{unit_name}.service",
+                       profile.workshop_format, action, profile.folder, *args)
     if profile.kind == profiles.KIND_SML:
         return panel.q("python3", "-c", SML_SOURCE, *scan, action, profile.loader_dir, *args)
     if profile.kind == profiles.KIND_UE4SS_LINUX:
@@ -150,6 +157,27 @@ def _remote_state(server, profile: profiles.ModProfile, errors: list[str]) -> di
     return state
 
 
+def _workshop_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
+    """A lista da config do jogo, cada mod com o link e se o jogo ja o baixou."""
+    state = _remote_state(server, profile, errors)
+    if state is None:
+        return {"state": None}
+    reforger = profile.workshop_format == "reforger"
+    installed = set(state.get("installed", []))
+    names = state.get("names", {})
+    available = state.get("available", {})
+    state["items"] = [{
+        "id": i,
+        "url": workshop.reforger_url(i) if reforger else workshop.url(int(i)),
+        "name": names.get(i, ""),
+        "installed": i in installed,
+        "mod_ids": available.get(i, []),
+    } for i in state.get("ids", [])]
+    # O que vai no campo: a mesma lista, um por linha (com o nome, no Reforger).
+    state["text"] = "\n".join(f"{i} {names.get(i, '')}".strip() if reforger else i for i in state.get("ids", []))
+    return {"state": state}
+
+
 def _shroudtopia_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
     return {"state": _remote_state(server, profile, errors)}
 
@@ -182,6 +210,8 @@ def index(sid: int):
         view = _shroudtopia_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_FOLDER:
         view = _folder_view(server, profile)
+    elif profile and profile.kind == profiles.KIND_WORKSHOP:
+        view = _workshop_view(server, profile, errors)
     elif profile and profile.kind == profiles.KIND_UE4SS_LINUX:
         # Os dois: o carregador (status no CT) e os .pak da pasta do perfil.
         view = {**_shroudtopia_view(server, profile, errors), **_folder_view(server, profile)}
@@ -192,7 +222,7 @@ def index(sid: int):
         kind_thunderstore=profiles.KIND_THUNDERSTORE, kind_folder=profiles.KIND_FOLDER,
         kind_shroudtopia=profiles.KIND_SHROUDTOPIA, kind_ue4ss=profiles.KIND_UE4SS,
         kind_sml=profiles.KIND_SML, kind_oxide=profiles.KIND_OXIDE, kind_ue4ss_linux=profiles.KIND_UE4SS_LINUX,
-        loader_url=_loader_url(profile),
+        kind_workshop=profiles.KIND_WORKSHOP, loader_url=_loader_url(profile),
     )
 
 
@@ -349,6 +379,39 @@ def sml_remove(sid: int):
     if not profile or not ref:
         return redirect(url_for(INDEX, sid=sid))
     return _thunderstore_job(sid, "mod-remove", _remote_cmd(profile, "mod-remove", ref), ref)
+
+
+@bp.post("/servers/<int:sid>/mods/workshop")
+@panel.admin_required
+def workshop_save(sid: int):
+    """Troca a lista de mods da Workshop na config do jogo; o jogo baixa na proxima subida."""
+    panel._files_guard()
+    server = panel._server_or_404(sid)
+    profile = _profile_or_none(server)
+    go_back = url_for(INDEX, sid=sid)
+    if not profile or profile.kind != profiles.KIND_WORKSHOP:
+        flash(panel.translate("mods.not_thunderstore"), "error")
+        return redirect(go_back)
+    text = (request.form.get("ids") or "")[:EXPECTED_MAX_CHARS]
+    if profile.workshop_format == "reforger":
+        items = [f"{guid}={name}" if name else guid for guid, name in workshop.parse_guids(text)]
+    else:
+        items = [str(i) for i in workshop.parse_ids(text)]
+    # Lista vazia so vale se o campo veio vazio: texto que nao rendeu ID nenhum e erro de colagem,
+    # e grava-lo apagaria todos os mods do servidor.
+    if text.strip() and not items:
+        flash(panel.translate("mods.workshop_bad_ids"), "error")
+        return redirect(go_back)
+    extra: tuple[str, ...] = ()
+    if profile.workshop_format == "zomboid":
+        mods = " ".join((request.form.get("mods") or "").split())
+        if not workshop_remote.ZOMBOID_MODS.match(mods):
+            flash(panel.translate("mods.zomboid_bad_mods"), "error")
+            return redirect(go_back)
+        extra = ("--mods", mods)
+    command = _remote_cmd(profile, "set", *items, *extra, service=server["service"])
+    label = f"workshop: {len(items)}"
+    return _thunderstore_job(sid, "mod-workshop", command, label)
 
 
 def _checked_name(profile: profiles.ModProfile, sent) -> str:

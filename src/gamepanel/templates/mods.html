@@ -23,6 +23,8 @@
   {% if not profile.proven %}<p class="flash error">{{ _('mods.not_proven') }}</p>{% endif %}
   {% if profile.upload_names or profile.extensions or profile.kind in (kind_thunderstore, kind_shroudtopia, kind_ue4ss, kind_sml, kind_ue4ss_linux) %}
   <p class="muted small">{{ _h('mods.antivirus_note') }}</p>
+  {% elif profile.kind == kind_workshop %}
+  <p class="muted small">{{ _h('mods.workshop_antivirus_note') }}</p>
   {% endif %}
   {# O que entrou ANTES do antivirus nunca foi verificado: este botao passa por ele o que ja
      esta no servidor. So le, e o resultado sai no log da tarefa. #}
@@ -499,6 +501,51 @@
     {% endif %}
   </div>
   {% endif %}
+{% elif profile.kind == kind_workshop %}
+  {% set st = view.state %}
+  {% set reforger = profile.workshop_format == 'reforger' %}
+  <div class="card">
+    <h2>{{ _('mods.workshop_title') }}</h2>
+    {% if st %}
+      {% if st.problem %}<p class="flash error">{{ _('mods.workshop_problem_' ~ st.problem) }}</p>{% endif %}
+      {% if st.config %}<p class="muted small">{{ _h('mods.workshop_config', path=st.config) }}</p>{% endif %}
+      {% if st.setup_missing %}<p class="flash error">{{ _('mods.workshop_dst_setup_missing', ids=st.setup_missing | join(', ')) }}</p>{% endif %}
+      {% if st['items'] %}
+      <div class="table-wrap"><table class="jobs">
+        <thead><tr><th>{{ _('mods.col_mod') }}</th><th></th></tr></thead>
+        <tbody>
+          {% for m in st['items'] %}
+          <tr>
+            <td><a href="{{ m.url }}" target="_blank" rel="noopener noreferrer">{{ m.name or m.id }}</a>
+              {% if m.name %}<span class="muted small">{{ m.id }}</span>{% endif %}
+              {% if m.mod_ids %}<br><span class="muted small">{{ _('mods.workshop_zomboid_found', mods=m.mod_ids | join(';')) }}</span>{% endif %}</td>
+            <td class="nowrap">{% if m.installed %}<span class="badge on">{{ _('mods.workshop_downloaded') }}</span>{% else %}<span class="badge cold">{{ _('mods.workshop_pending') }}</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}
+        <p class="muted">{{ _('mods.no_files') }}</p>
+      {% endif %}
+      {% if not st.problem %}
+      <form method="post" action="{{ url_for('mods.workshop_save', sid=server.id) }}" class="mt-4">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <label>{{ _('mods.workshop_ids_label') }}
+          <textarea name="ids" rows="6" spellcheck="false" autocomplete="off">{{ st.text }}</textarea>
+          <small>{% if reforger %}{{ _('mods.workshop_reforger_help') }}{% else %}{{ _('mods.workshop_ids_help') }}{% endif %}</small>
+        </label>
+        {% if profile.workshop_format == 'zomboid' %}
+        <label>{{ _('mods.zomboid_mods_label') }}
+          <input name="mods" value="{{ st.mods }}" spellcheck="false" autocomplete="off" placeholder="BB_CommonSense;Other_Mod">
+          <small>{{ _('mods.zomboid_mods_help') }}</small>
+        </label>
+        {% endif %}
+        <label class="checkbox"><input type="checkbox" name="restart" value="1" checked> {{ _('mods.restart_after') }}</label>
+        <div class="form-actions">{{ ui.button(_('mods.workshop_save'), variant='primary', icon='💾', block=true) }}</div>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
 {% elif profile.kind == kind_folder %}
   <div class="card">
     <h2>{{ _('mods.files_title') }}</h2>

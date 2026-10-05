@@ -723,6 +723,60 @@ MESSAGES: dict[str, str] = {
     "mods.oxide_wiped": "Parte dos arquivos do Oxide foi trocada (o Rust foi atualizado?): reinstale.",
     "mods.oxide_log": "Fim do log do Oxide",
     "mods.source_ficsit": "ficsit.app",
+    "mods.source_reforger_workshop": "Workshop do Arma Reforger",
+    "mods.help_workshop_dst":
+        "No Don't Starve Together quem baixa os mods e o <strong>proprio servidor</strong>, da Steam "
+        "Workshop, na subida. O painel escreve a lista no <code>dedicated_server_mods_setup.lua</code> "
+        "(o que baixar) e no <code>modoverrides.lua</code> de cada shard (o que ligar); as opcoes que "
+        "voce ja deu a um mod ficam. Todo jogador recebe os mods sozinho ao entrar.",
+    "mods.help_workshop_zomboid":
+        "No Project Zomboid quem baixa os mods e o <strong>proprio servidor</strong>, da Steam Workshop, "
+        "na subida. Sao duas listas no <code>.ini</code> do servidor: os IDs da Workshop (o que baixar) "
+        "e os IDs de mod (o que ligar). Um item da Workshop pode trazer varios mods: depois de baixar, "
+        "a tela mostra os que ele trouxe.",
+    "mods.help_workshop_unturned":
+        "No Unturned quem baixa os mods e o <strong>proprio servidor</strong>, da Steam Workshop, na "
+        "subida, pelo <code>WorkshopDownloadConfig.json</code> da pasta do servidor. Mapa e mod vem "
+        "com as dependencias. O comando do jogo precisa de <code>+InternetServer/&lt;nome&gt;</code>.",
+    "mods.help_workshop_reforger":
+        "No Arma Reforger quem baixa os mods e o <strong>proprio servidor</strong>, do workshop da "
+        "Bohemia, na subida, pela lista <code>game.mods</code> do JSON passado em <code>-config</code>. "
+        "O ID e o GUID de 16 caracteres da pagina do mod. Versao fixada a mao na config fica.",
+    "mods.workshop_antivirus_note":
+        "Aqui o antivirus NAO verifica antes: quem baixa e o servidor do jogo, na subida. Use o "
+        "<strong>Verificar mods instalados</strong> depois, que passa o ClamAV na pasta onde o jogo "
+        "guarda o que baixou.",
+    "mods.workshop_title": "Mods da Workshop",
+    "mods.workshop_config": "Config: <code>{path}</code>",
+    "mods.workshop_problem_no_cluster":
+        "Nenhum cluster com server.ini: suba o servidor uma vez para ele criar a configuracao.",
+    "mods.workshop_problem_no_config":
+        "A config do servidor ainda nao existe: suba o servidor uma vez para ele cria-la.",
+    "mods.workshop_problem_no_server_name":
+        "Sem o nome do servidor: ponha +InternetServer/<nome> no comando do jogo (tela Editar) e suba "
+        "uma vez.",
+    "mods.workshop_problem_no_config_arg":
+        "O servidor nao recebe -config no comando: crie o config.json e passe -config no comando do "
+        "jogo (tela Editar).",
+    "mods.workshop_problem_bad_json": "A config do servidor nao e um JSON valido: corrija na tela Arquivos.",
+    "mods.workshop_dst_setup_missing":
+        "Estes mods nao estao no dedicated_server_mods_setup.lua (um update do jogo o reescreve) e "
+        "nao serao baixados: salve a lista de novo. {ids}",
+    "mods.workshop_zomboid_found": "Mods neste item: {mods}",
+    "mods.workshop_downloaded": "baixado",
+    "mods.workshop_pending": "baixa na proxima subida",
+    "mods.workshop_ids_label": "Mods (um por linha)",
+    "mods.workshop_ids_help":
+        "O link da pagina do mod na Steam Workshop ou so o numero. Tirar uma linha remove o mod.",
+    "mods.workshop_reforger_help":
+        "O link da pagina do mod no workshop do Reforger, ou o GUID seguido do nome. Tirar uma linha "
+        "remove o mod.",
+    "mods.zomboid_mods_label": "Mods ligados (Mods=)",
+    "mods.zomboid_mods_help":
+        "Os IDs de mod separados por ponto e virgula, como na lista que a tela mostra depois de baixar.",
+    "mods.workshop_save": "Salvar a lista",
+    "mods.workshop_bad_ids": "Nao achei nenhum ID de mod no que foi colado: nada foi mudado.",
+    "mods.zomboid_bad_mods": "A lista Mods= so aceita letras, numeros, _ . - e ponto e virgula.",
     "mods.source_umod": "uMod (plugins)",
     "mods.ue4ss_linux_config_help":
         "Port Linux do UE4SS, ligado por LD_PRELOAD no servico, sem console "
@@ -1220,6 +1274,7 @@ MESSAGES: dict[str, str] = {
     "job.file_downloaded": "Arquivo baixado",
     "job.mod_loader": "Carregador de mods",
     "job.mod_installed": "Mod instalado",
+    "job.mod_workshop": "Lista de mods da Workshop trocada",
     "job.mod_audited": "Mods verificados (antivirus)",
     "job.mod_removed_plugin": "Mod desinstalado",
     "job.mod_uploaded": "Mod enviado",

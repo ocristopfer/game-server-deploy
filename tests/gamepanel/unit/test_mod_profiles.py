@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from gamepanel.games.mods import ets2, profiles, thunderstore, workshop
+from gamepanel.games.mods import ets2, profiles, thunderstore, workshop, workshop_remote
 
 # Trecho no formato real de um server_packages.sii exportado pelo ETS2 1.61 (o de um servidor
 # com o Mapa BR e mods da Workshop).
@@ -135,10 +135,15 @@ def test_todo_perfil_diz_para_onde_vai_e_o_que_aceita():
         assert p.folder == "/opt/game" or p.folder.startswith("/opt/game/")
         assert p.kind in (profiles.KIND_PACKAGES, profiles.KIND_FOLDER, profiles.KIND_THUNDERSTORE,
                           profiles.KIND_SHROUDTOPIA, profiles.KIND_UE4SS, profiles.KIND_SML,
-                          profiles.KIND_OXIDE, profiles.KIND_UE4SS_LINUX, profiles.KIND_GUIDE)
+                          profiles.KIND_OXIDE, profiles.KIND_UE4SS_LINUX, profiles.KIND_GUIDE,
+                          profiles.KIND_WORKSHOP)
         # Toda tela de mods diz onde procurar: era a pergunta que ficava sem resposta.
         assert p.sources, p.key
         if p.kind == profiles.KIND_GUIDE:
+            assert not p.upload_names and not p.extensions, p.key
+            continue
+        if p.kind == profiles.KIND_WORKSHOP:
+            # Nada entra por envio: quem baixa e o servidor do jogo, pela lista da config.
             assert not p.upload_names and not p.extensions, p.key
             continue
         if p.kind == profiles.KIND_THUNDERSTORE:
@@ -244,6 +249,20 @@ def test_instalador_sem_prova_e_marcado_na_tela():
         assert not profiles.profile_for(f"{key}.service").proven, key
     for p in (profiles.ENSHROUDED, profiles.ICARUS, profiles.VRISING):
         assert p.proven, p.key
+
+
+@pytest.mark.parametrize(("service", "fmt"), [
+    ("don-t-starve-together.service", "dst"), ("project-zomboid.service", "zomboid"),
+    ("unturned.service", "unturned"), ("arma-reforger.service", "reforger"),
+])
+def test_workshop_pela_config_escolhe_o_formato_pelo_servico(service, fmt):
+    p = profiles.profile_for(service)
+    assert p.kind == profiles.KIND_WORKSHOP
+    assert p.workshop_format == fmt
+    assert p.workshop_format in workshop_remote.FORMATS
+    # O antivirus passa onde o JOGO guarda o que baixou: o download nao e do painel.
+    assert p.audit_paths
+    assert not p.proven
 
 
 def test_valheim_e_bepinex_de_linux_nativo():

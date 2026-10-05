@@ -619,3 +619,95 @@ def test_unreal_linux_instala_o_ue4ss_do_release_e_continua_recebendo_pak(
     assert "ue_linux_layout" in install
     assert install.endswith(f"loader-install {exe_dir}")
     assert restart.endswith(f"restart {service}")
+
+
+# ------------------------------------------------------------- Workshop pela config do jogo
+
+@pytest.mark.parametrize(("service", "fmt"), [
+    ("don-t-starve-together.service", "dst"), ("project-zomboid.service", "zomboid"),
+    ("unturned.service", "unturned"), ("arma-reforger.service", "reforger"),
+])
+def test_workshop_mostra_a_lista_da_config_do_jogo(admin, database, remote, service, fmt):
+    calls, _, state = remote
+    state.clear()
+    ids = ["5965550F24A0C152"] if fmt == "reforger" else ["2875848298"]
+    state.update({"format": fmt, "config": "/x/cfg", "ids": ids, "installed": ids, "problem": "",
+                  "names": {"5965550F24A0C152": "Where Am I"}, "mods": "BB_CommonSense",
+                  "available": {"2875848298": ["BB_CommonSense"]}})
+    sid = _server(database, service)
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    # A config sai do servico DESTE servidor, e o formato do perfil.
+    assert f"--unit {service} {fmt} status /opt/game" in calls[0]
+    assert "/x/cfg" in html
+    assert "NAO verifica antes" in html
+    if fmt == "reforger":
+        assert "https://reforger.armaplatform.com/workshop/5965550F24A0C152" in html
+        assert "5965550F24A0C152 Where Am I</textarea>" in html
+    else:
+        assert "https://steamcommunity.com/sharedfiles/filedetails/?id=2875848298" in html
+    assert ('name="mods"' in html) == (fmt == "zomboid")
+
+
+def test_workshop_com_problema_explica_e_nao_oferece_salvar(admin, database, remote):
+    _, _, state = remote
+    state.clear()
+    state.update({"format": "unturned", "config": "", "ids": [], "installed": [], "problem": "no_server_name"})
+    sid = _server(database, "unturned.service")
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert "+InternetServer/&lt;nome&gt;" in html
+    assert "/mods/workshop" not in html
+
+
+def test_workshop_salvar_vira_job_com_reinicio_no_fim(admin, post, database, remote):
+    _, jobs, _ = remote
+    sid = _server(database, "project-zomboid.service")
+    post(admin, f"/servers/{sid}/mods/workshop", {
+        "ids": "[14:00] fulano: https://steamcommunity.com/sharedfiles/filedetails/?id=2875848298\n2169435993",
+        "mods": "BB_CommonSense;modoptions", "restart": "1"})
+    action, kw = jobs[0]
+    assert action == "mod-workshop"
+    save, restart = kw["steps"]
+    assert save.endswith("zomboid set /opt/game 2875848298 2169435993 --mods 'BB_CommonSense;modoptions'")
+    assert restart.endswith("restart project-zomboid.service")
+
+
+def test_workshop_do_reforger_leva_guid_e_nome(admin, post, database, remote):
+    _, jobs, _ = remote
+    sid = _server(database, "arma-reforger.service")
+    post(admin, f"/servers/{sid}/mods/workshop",
+         {"ids": "https://reforger.armaplatform.com/workshop/5965550F24A0C152-WhereAmI\n59727DAE364DEADB"})
+    (save,) = jobs[0][1]["steps"]
+    assert save.endswith("reforger set /opt/game 5965550F24A0C152=WhereAmI 59727DAE364DEADB")
+
+
+@pytest.mark.parametrize("form", [
+    {"ids": "isto nao tem id nenhum"},
+    {"ids": "2875848298", "mods": "a$(reboot)"},
+])
+def test_workshop_lista_ruim_nao_chega_ao_container(admin, post, database, remote, form):
+    _, jobs, _ = remote
+    sid = _server(database, "project-zomboid.service")
+    post(admin, f"/servers/{sid}/mods/workshop", form)
+    assert jobs == []
+
+
+def test_workshop_lista_vazia_remove_todos(admin, post, database, remote):
+    _, jobs, _ = remote
+    sid = _server(database, "unturned.service")
+    post(admin, f"/servers/{sid}/mods/workshop", {"ids": ""})
+    (save,) = jobs[0][1]["steps"]
+    assert save.endswith("unturned set /opt/game")
+
+
+def test_workshop_recusa_outro_jogo(admin, post, database, remote):
+    _, jobs, _ = remote
+    sid = _server(database, "vrising.service")
+    post(admin, f"/servers/{sid}/mods/workshop", {"ids": "2875848298"})
+    assert jobs == []
+
+
+def test_operador_nao_troca_a_lista(operator, post, database, remote):
+    _, jobs, _ = remote
+    sid = _server(database, "unturned.service")
+    assert post(operator, f"/servers/{sid}/mods/workshop", {"ids": "1753134636"}).status_code == 403
+    assert jobs == []
