@@ -15,7 +15,7 @@
 # Steps 1-3 change nothing the panel uses: if any of them fails, the server stays in legacy
 # (root) mode exactly as before. Reads migrate.env (next to it): CTID SERVICE PANEL_CTID LOCK
 set -Eeuo pipefail
-trap 'printf "\n[ERROR] linha %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
+trap 'printf "\n[ERROR] line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ACCESS="$SCRIPT_DIR/ct-panel-access.sh"
@@ -28,19 +28,19 @@ msg() { printf '\n[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 ok() { printf '  OK  %s\n' "$*"; }
 die() { printf '\n[ERROR] %s\n' "$*" >&2; exit 1; }
 
-[[ -f "$SCRIPT_DIR/migrate.env" ]] || die "migrate.env nao encontrado ao lado do script"
-[[ -f "$ACCESS" ]] || die "ct-panel-access.sh nao encontrado ao lado do script"
+[[ -f "$SCRIPT_DIR/migrate.env" ]] || die "migrate.env not found next to the script"
+[[ -f "$ACCESS" ]] || die "ct-panel-access.sh not found next to the script"
 set -a
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/migrate.env"
 set +a
 
 CTID="${CTID:-}"; SERVICE="${SERVICE:-}"; PANEL_CTID="${PANEL_CTID:-}"; LOCK="${LOCK:-1}"
-[[ "$CTID" =~ ^[0-9]+$ ]] || die "CTID invalido: '$CTID'"
-[[ "$PANEL_CTID" =~ ^[0-9]+$ ]] || die "PANEL_CTID invalido (ADMIN_CTID no .env)"
-[[ "$CTID" != "$PANEL_CTID" ]] || die "CT $CTID e o proprio painel: so CTs de jogo migram"
-pct status "$CTID" 2>/dev/null | grep -q running || die "CT $CTID nao esta rodando"
-pct status "$PANEL_CTID" 2>/dev/null | grep -q running || die "CT do painel ($PANEL_CTID) nao esta rodando"
+[[ "$CTID" =~ ^[0-9]+$ ]] || die "invalid CTID: '$CTID'"
+[[ "$PANEL_CTID" =~ ^[0-9]+$ ]] || die "invalid PANEL_CTID (ADMIN_CTID in .env)"
+[[ "$CTID" != "$PANEL_CTID" ]] || die "CT $CTID is the panel itself: only game CTs are migrated"
+pct status "$CTID" 2>/dev/null | grep -q running || die "CT $CTID is not running"
+pct status "$PANEL_CTID" 2>/dev/null | grep -q running || die "the panel CT ($PANEL_CTID) is not running"
 
 in_ct() { pct exec "$CTID" -- bash -c "$1"; }
 in_panel() { pct exec "$PANEL_CTID" -- bash -c "$1"; }
@@ -50,24 +50,24 @@ in_panel() { pct exec "$PANEL_CTID" -- bash -c "$1"; }
 if [[ -z "$SERVICE" ]]; then
   SERVICE="$(in_ct "grep -l '^User=steam' /etc/systemd/system/*.service 2>/dev/null | xargs -r -n1 basename" || true)"
   [[ "$(printf '%s\n' "$SERVICE" | grep -c .)" == 1 ]] \
-    || die "Nao consegui deduzir o servico do jogo no CT $CTID (achei: '${SERVICE//$'\n'/ }'). Use -Service."
+    || die "Could not work out the game service in CT $CTID (found: '${SERVICE//$'\n'/ }'). Use -Service."
 fi
-[[ "$SERVICE" =~ ^[A-Za-z0-9@._-]+$ ]] || die "SERVICE invalido: '$SERVICE'"
+[[ "$SERVICE" =~ ^[A-Za-z0-9@._-]+$ ]] || die "invalid SERVICE: '$SERVICE'"
 [[ "$SERVICE" == *.service ]] || SERVICE="${SERVICE}.service"
 
 CT_IP="$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}' || true)"
-[[ -n "$CT_IP" ]] || die "CT $CTID sem IP"
+[[ -n "$CT_IP" ]] || die "CT $CTID has no IP"
 PANEL_PUBKEY="$(in_panel "cat ${PANEL_KEY}.pub" 2>/dev/null | head -n1 | tr -d '\r\n' || true)"
-[[ -n "$PANEL_PUBKEY" ]] || die "Chave publica do painel nao encontrada em ${PANEL_KEY}.pub no CT $PANEL_CTID"
-in_ct "id steam >/dev/null 2>&1" || die "CT $CTID nao tem o usuario steam: nao e um CT de jogo deste projeto"
+[[ -n "$PANEL_PUBKEY" ]] || die "Panel public key not found at ${PANEL_KEY}.pub in CT $PANEL_CTID"
+in_ct "id steam >/dev/null 2>&1" || die "CT $CTID has no steam user: it is not a game CT of this project"
 
-msg "CT $CTID ($CT_IP), servico $SERVICE"
+msg "CT $CTID ($CT_IP), service $SERVICE"
 
-msg "1/5 Instalando o usuario gamepanel, os helpers e o sudoers"
+msg "1/5 Installing the gamepanel user, the helpers and the sudoers"
 in_ct "install -d -m 0755 $(dirname "$ACCESS_IN_CT")"
 pct push "$CTID" "$ACCESS" "$ACCESS_IN_CT" --perms 0755
 in_ct "bash $ACCESS_IN_CT install '$SERVICE' '$PANEL_PUBKEY'"
-ok "instalado"
+ok "installed"
 
 # `install` also prepared the mod environment overlay (phase 6) and converted what the ROOT mod
 # installers had left: loader drop-ins -> service.env, the loader's WINE_DLL_OVERRIDES ->
@@ -76,49 +76,49 @@ ok "instalado"
 # What could not be converted (a drop-in written by hand) stays, and is listed here.
 leftover="$(in_ct "ls /etc/systemd/system/${SERVICE}.d/ 2>/dev/null | grep '^gamepanel-' | grep -vxE 'gamepanel-(env|sandbox).conf' || true")"
 if [[ -n "$leftover" ]]; then
-  printf '  AVISO drop-in que ficou como estava (%s): o painel sem root nao consegue muda-lo.\n' "${leftover//$'\n'/ }"
+  printf '  WARNING drop-in left as it was (%s): the panel without root cannot change it.\n' "${leftover//$'\n'/ }"
 fi
 in_ct "grep -v '^#' /etc/gamepanel/game-env/service.env /etc/gamepanel/game-env/runtime.env || true" \
-  | sed 's/^/  ambiente dos mods: /'
+  | sed 's/^/  mod environment: /'
 
-msg "2/5 Conferindo o sudo dentro do CT"
-in_ct "bash $ACCESS_IN_CT verify" || die "verify falhou - o CT continua em modo root, nada foi trancado"
-ok "sudo conferido"
+msg "2/5 Checking sudo inside the CT"
+in_ct "bash $ACCESS_IN_CT verify" || die "verify failed - the CT stays in root mode, nothing was locked"
+ok "sudo checked"
 
-msg "3/5 Testando o caminho novo A PARTIR DO PAINEL (SSH real como gamepanel)"
+msg "3/5 Testing the new path FROM THE PANEL (real SSH as gamepanel)"
 ssh_as_gamepanel() {
   in_panel "ssh -i $PANEL_KEY -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
     -o UserKnownHostsFile=$PANEL_KNOWN_HOSTS gamepanel@$CT_IP $(printf '%q' "$1")"
 }
 version="$(ssh_as_gamepanel 'sudo -n /usr/local/sbin/gp-service --version' || true)"
-[[ "$version" == gp-helpers* ]] || die "gp-service pelo SSH respondeu '$version' - nada foi trancado"
+[[ "$version" == gp-helpers* ]] || die "gp-service over SSH answered '$version' - nothing was locked"
 ok "gp-service: $version"
-ssh_as_gamepanel 'cd / && sudo -n -u steam -- true' || die "sudo -u steam pelo SSH falhou - nada foi trancado"
-ok "conteudo como steam"
+ssh_as_gamepanel 'cd / && sudo -n -u steam -- true' || die "sudo -u steam over SSH failed - nothing was locked"
+ok "content as steam"
 state="$(ssh_as_gamepanel "systemctl show -p ActiveState --value $SERVICE" || true)"
-[[ -n "$state" ]] || die "status do servico pelo SSH veio vazio - nada foi trancado"
-ok "status do servico sem sudo: $state"
+[[ -n "$state" ]] || die "service status over SSH came back empty - nothing was locked"
+ok "service status without sudo: $state"
 
-msg "4/5 Trocando o cadastro do servidor no painel para gamepanel"
+msg "4/5 Switching the server record in the panel to gamepanel"
 in_panel "runuser -u gamepanel -- bash -c 'set -a; . /etc/gamepanel/panel.env; set +a; \
   cd $PANEL_APP && python3 -m gamepanel.cli --set-ssh-user gamepanel --server-host $CT_IP'" \
-  || die "o painel nao aceitou a troca (servidor cadastrado em $CT_IP? painel atualizado?). Root NAO foi trancado."
-ok "painel usa gamepanel@$CT_IP"
+  || die "the panel refused the switch (is a server registered at $CT_IP? is the panel up to date?). Root was NOT locked."
+ok "panel uses gamepanel@$CT_IP"
 
 if [[ "$LOCK" != "1" ]]; then
-  msg "5/5 Root NAO trancado (-NoLock). O painel ja entra como gamepanel."
+  msg "5/5 Root NOT locked (-NoLock). The panel already logs in as gamepanel."
   exit 0
 fi
 
-msg "5/5 Trancando o login de root"
-in_ct "bash $ACCESS_IN_CT lock" || die "lock falhou - root continua liberado (o painel ja usa gamepanel)"
+msg "5/5 Locking root login"
+in_ct "bash $ACCESS_IN_CT lock" || die "lock failed - root is still allowed (the panel already uses gamepanel)"
 if in_panel "ssh -i $PANEL_KEY -o BatchMode=yes -o ConnectTimeout=10 -o UserKnownHostsFile=$PANEL_KNOWN_HOSTS \
      root@$CT_IP true" 2>/dev/null; then
-  die "root AINDA entra por SSH no CT $CTID - confira /etc/ssh/sshd_config.d/10-gamepanel.conf"
+  die "root STILL gets in over SSH on CT $CTID - check /etc/ssh/sshd_config.d/10-gamepanel.conf"
 fi
-ok "root recusado por SSH"
+ok "root refused over SSH"
 version="$(ssh_as_gamepanel 'sudo -n /usr/local/sbin/gp-service --version' || true)"
-[[ "$version" == gp-helpers* ]] || die "depois do lock o gamepanel nao entra mais! Volte por: pct enter $CTID"
-ok "gamepanel continua entrando"
+[[ "$version" == gp-helpers* ]] || die "after the lock gamepanel no longer gets in! Get back in with: pct enter $CTID"
+ok "gamepanel still gets in"
 
-msg "Pronto: CT $CTID migrado. Emergencia: pct enter $CTID"
+msg "Done: CT $CTID migrated. Emergency: pct enter $CTID"

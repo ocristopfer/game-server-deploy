@@ -46,22 +46,22 @@ MAX_AGE_DAYS = 7
 # below: the includer defines `refuse MESSAGE CODE`, which states the consequence and exits.
 _ENSURE = r"""
 if ! command -v clamscan >/dev/null 2>&1; then
-  echo "antivirus: instalando o ClamAV (so na primeira vez neste servidor)..."
+  echo "antivirus: installing ClamAV (only the first time on this server)..."
   export DEBIAN_FRONTEND=noninteractive
   { apt-get update -qq && apt-get install -y -qq --no-install-recommends clamav clamav-freshclam; } >/dev/null 2>&1 \
-    || refuse "nao consegui instalar o ClamAV (apt)" 2
+    || refuse "could not install ClamAV (apt)" 2
 fi
 
 # Overridable only for the script test; in the CT it is always the Debian package default.
 db=${CLAMAV_DB_DIR:-/var/lib/clamav}
 newest() { find "$db" -maxdepth 1 \( -name '*.cvd' -o -name '*.cld' \) -mtime "-$1" 2>/dev/null | head -n 1; }
 if [ -z "$(newest __FRESH_DAYS__)" ]; then
-  echo "antivirus: atualizando as assinaturas..."
+  echo "antivirus: updating the signatures..."
   # The freshclam daemon holds the log lock: running freshclam while it is up fails.
   systemctl stop clamav-freshclam >/dev/null 2>&1 || true
-  freshclam --quiet >/dev/null 2>&1 || echo "antivirus: a atualizacao falhou; usando as assinaturas que ja havia"
+  freshclam --quiet >/dev/null 2>&1 || echo "antivirus: the update failed; using the signatures already here"
   systemctl start clamav-freshclam >/dev/null 2>&1 || true
-  [ -n "$(newest __MAX_AGE_DAYS__)" ] || refuse "sem assinaturas dos ultimos __MAX_AGE_DAYS__ dias" 2
+  [ -n "$(newest __MAX_AGE_DAYS__)" ] || refuse "no signatures from the last __MAX_AGE_DAYS__ days" 2
 fi
 CLAMSCAN_OPTS="--recursive --infected --stdout --alert-exceeds-max=yes --alert-encrypted=yes"
 CLAMSCAN_OPTS="$CLAMSCAN_OPTS --max-filesize=512M --max-scansize=1024M"
@@ -73,20 +73,20 @@ set -u
 target=${1:?}
 case "$target" in
   /var/tmp/gamepanel-*) ;;
-  *) echo "ANTIVIRUS: caminho fora da area de verificacao: $target" >&2; exit 2 ;;
+  *) echo "ANTIVIRUS: path outside the scan area: $target" >&2; exit 2 ;;
 esac
-case "$target" in *..*) echo "ANTIVIRUS: caminho invalido: $target" >&2; exit 2 ;; esac
+case "$target" in *..*) echo "ANTIVIRUS: invalid path: $target" >&2; exit 2 ;; esac
 # Found something or could not check: what is in the holding folder is useless, and it goes.
-refuse() { rm -rf -- "$target"; echo "ANTIVIRUS: $1; o mod NAO foi instalado" >&2; exit "$2"; }
+refuse() { rm -rf -- "$target"; echo "ANTIVIRUS: $1; the mod was NOT installed" >&2; exit "$2"; }
 """ + _ENSURE + r"""
-echo "antivirus: verificando..."
+echo "antivirus: scanning..."
 # shellcheck disable=SC2086 # the options are a word list on purpose
 out=$(clamscan $CLAMSCAN_OPTS --no-summary -- "$target" 2>&1)
 rc=$?
 case $rc in
-  0) echo "antivirus: nada encontrado" ;;
-  1) printf '%s\n' "$out" >&2; refuse "o ClamAV encontrou algo" 1 ;;
-  *) printf '%s\n' "$out" >&2; refuse "a verificacao nao rodou (codigo $rc)" 2 ;;
+  0) echo "antivirus: nothing found" ;;
+  1) printf '%s\n' "$out" >&2; refuse "ClamAV found something" 1 ;;
+  *) printf '%s\n' "$out" >&2; refuse "the scan did not run (code $rc)" 2 ;;
 esac
 """
 
@@ -95,27 +95,27 @@ esac
 # looks after it: deleting on its own over a false positive would break a mod the server depends on.
 AUDIT_SCRIPT = r"""
 set -u
-refuse() { echo "ANTIVIRUS: $1; nada foi verificado" >&2; exit "$2"; }
+refuse() { echo "ANTIVIRUS: $1; nothing was scanned" >&2; exit "$2"; }
 present=()
 for p in "$@"; do
-  case "$p" in *..*) refuse "caminho invalido: $p" 2 ;; esac
-  if [ -e "$p" ]; then present+=("$p"); else echo "antivirus: nao existe (pulado): $p"; fi
+  case "$p" in *..*) refuse "invalid path: $p" 2 ;; esac
+  if [ -e "$p" ]; then present+=("$p"); else echo "antivirus: does not exist (skipped): $p"; fi
 done
 if [ ${#present[@]} -eq 0 ]; then
-  echo "antivirus: nenhum mod instalado para verificar"
+  echo "antivirus: no installed mod to scan"
   exit 0
 fi
 """ + _ENSURE + r"""
-echo "antivirus: verificando ${present[*]}"
+echo "antivirus: scanning ${present[*]}"
 # shellcheck disable=SC2086 # the options are a word list on purpose
 clamscan $CLAMSCAN_OPTS -- "${present[@]}" 2>&1
 rc=$?
 case $rc in
-  0) echo "antivirus: nada encontrado" ;;
-  1) echo "ANTIVIRUS: o ClamAV encontrou algo (linhas FOUND acima)." >&2
-     echo "Nada foi apagado: remova pela tela Mods e reinicie o servidor." >&2
+  0) echo "antivirus: nothing found" ;;
+  1) echo "ANTIVIRUS: ClamAV found something (FOUND lines above)." >&2
+     echo "Nothing was deleted: remove it on the Mods screen and restart the server." >&2
      exit 1 ;;
-  *) echo "ANTIVIRUS: a verificacao nao rodou (codigo $rc)" >&2; exit 2 ;;
+  *) echo "ANTIVIRUS: the scan did not run (code $rc)" >&2; exit 2 ;;
 esac
 """
 
@@ -125,10 +125,10 @@ esac
 # only CHECKS that what that step left is usable. Still fail closed: no ClamAV or signatures
 # older than the limit = no mod.
 _CHECK = r"""
-command -v clamscan >/dev/null 2>&1 || refuse "o ClamAV nao esta instalado neste servidor" 2
+command -v clamscan >/dev/null 2>&1 || refuse "ClamAV is not installed on this server" 2
 db=${CLAMAV_DB_DIR:-/var/lib/clamav}
 newest() { find "$db" -maxdepth 1 \( -name '*.cvd' -o -name '*.cld' \) -mtime "-$1" 2>/dev/null | head -n 1; }
-[ -n "$(newest __MAX_AGE_DAYS__)" ] || refuse "sem assinaturas dos ultimos __MAX_AGE_DAYS__ dias" 2
+[ -n "$(newest __MAX_AGE_DAYS__)" ] || refuse "no signatures from the last __MAX_AGE_DAYS__ days" 2
 CLAMSCAN_OPTS="--recursive --infected --stdout --alert-exceeds-max=yes --alert-encrypted=yes"
 CLAMSCAN_OPTS="$CLAMSCAN_OPTS --max-filesize=512M --max-scansize=1024M"
 """.replace("__MAX_AGE_DAYS__", str(MAX_AGE_DAYS))
@@ -155,7 +155,7 @@ AUDIT_SCRIPT_AS_STEAM = _as_steam_variant(AUDIT_SCRIPT)
 INCOMING_SCRIPT = r"""
 set -e
 d=${1:?}
-case "$d" in /var/tmp/gamepanel-incoming-*) ;; *) echo "pasta de espera invalida: $d" >&2; exit 2 ;; esac
+case "$d" in /var/tmp/gamepanel-incoming-*) ;; *) echo "invalid holding folder: $d" >&2; exit 2 ;; esac
 find /var/tmp -maxdepth 1 -name 'gamepanel-incoming-*' -mmin +1440 -exec rm -rf -- {} + 2>/dev/null || true
 mkdir -p -m 0700 -- "$d"
 """
@@ -167,7 +167,7 @@ PLACE_SCRIPT = r"""
 set -e
 src=${1:?}
 dest=${2:?}
-case "$src" in /var/tmp/gamepanel-incoming-*) ;; *) echo "pasta de espera invalida: $src" >&2; exit 2 ;; esac
+case "$src" in /var/tmp/gamepanel-incoming-*) ;; *) echo "invalid holding folder: $src" >&2; exit 2 ;; esac
 trap 'rm -rf -- "$src"' EXIT
 mkdir -p -- "$dest"
 chown --reference="$(dirname -- "$dest")" -- "$dest" 2>/dev/null || true
@@ -176,7 +176,7 @@ for f in "$src"/*; do
   name=$(basename -- "$f")
   t="$dest/$name"
   if [ -e "$t" ]; then
-    [ -f "$t" ] || { echo "o destino nao e um arquivo comum: $t" >&2; exit 4; }
+    [ -f "$t" ] || { echo "the destination is not a regular file: $t" >&2; exit 4; }
     cp -a -- "$t" "$t.$(date +%Y%m%d-%H%M%S).bak"
     cat "$f" > "$t"
   else
@@ -184,7 +184,7 @@ for f in "$src"/*; do
     chmod 0644 -- "$t"
     chown --reference="$dest" -- "$t" 2>/dev/null || true
   fi
-  echo "instalado: $t ($(stat -Lc %s -- "$t") bytes)"
+  echo "installed: $t ($(stat -Lc %s -- "$t") bytes)"
 done
 """
 

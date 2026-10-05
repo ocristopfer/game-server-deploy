@@ -223,7 +223,7 @@ def test_antivirus_no_modo_helper_instala_pelo_helper_e_verifica_como_steam():
 def test_a_variante_do_steam_nao_instala_nada_e_continua_falhando_fechada(script):
     assert "apt-get" not in script
     assert "freshclam" not in script
-    assert 'refuse "o ClamAV nao esta instalado neste servidor" 2' in script
+    assert 'refuse "ClamAV is not installed on this server" 2' in script
     assert "CLAMSCAN_OPTS" in script
 
 

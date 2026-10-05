@@ -90,7 +90,7 @@ def test_achado_recusa_e_apaga_a_espera(env, staging):
     proc = _scan(env, staging)
     assert proc.returncode == 1
     assert "Fake.Malware FOUND" in proc.stderr
-    assert "NAO foi instalado" in proc.stderr
+    assert "was NOT installed" in proc.stderr
     assert not staging.exists()
 
 
@@ -116,7 +116,7 @@ def test_sem_assinatura_recente_e_sem_atualizacao_recusa(env, staging):
     (staging / "Mod.pak").write_bytes(b"limpo")
     proc = _scan(env, staging)
     assert proc.returncode == 2
-    assert "sem assinaturas" in proc.stderr
+    assert "no signatures" in proc.stderr
     assert not staging.exists()
 
 
@@ -130,7 +130,7 @@ def test_atualizacao_que_falha_ainda_aceita_assinatura_de_poucos_dias(env, stagi
     (staging / "Mod.pak").write_bytes(b"limpo")
     proc = _scan(env, staging)
     assert proc.returncode == 0, proc.stderr
-    assert "a atualizacao falhou" in proc.stdout
+    assert "the update failed" in proc.stdout
 
 
 def test_sem_clamav_instala_e_se_o_apt_falha_recusa(env, staging):
@@ -141,7 +141,7 @@ def test_sem_clamav_instala_e_se_o_apt_falha_recusa(env, staging):
     (staging / "Mod.pak").write_bytes(b"limpo")
     proc = _scan(env, staging)
     assert proc.returncode == 2
-    assert "nao consegui instalar o ClamAV" in proc.stderr
+    assert "could not install ClamAV" in proc.stderr
     assert not staging.exists()
 
 
@@ -150,7 +150,7 @@ def test_caminho_fora_da_area_de_verificacao_nao_e_tocado(env, tmp_path, bad):
     """The script DELETES what it refuses: a wrong path must not become rm -rf on the game folder."""
     proc = _scan(env, bad)
     assert proc.returncode == 2
-    assert "caminho" in proc.stderr
+    assert "path" in proc.stderr
 
 
 # ------------------------------------------------------------------ moving into the mods folder
@@ -228,7 +228,7 @@ def test_verificar_instalados_acusa_e_nao_apaga_nada(env, tmp_path):
     proc = _audit(env, mods)
     assert proc.returncode == 1
     assert "FOUND" in proc.stdout
-    assert "Nada foi apagado" in proc.stderr
+    assert "Nothing was deleted" in proc.stderr
     assert sorted(p.name for p in mods.iterdir()) == ["Bom.dll", "Ruim.dll"]
 
 
@@ -237,8 +237,8 @@ def test_verificar_instalados_limpo_e_caminho_que_falta_e_pulado(env, tmp_path):
     loader.write_bytes(b"limpo")
     proc = _audit(env, loader, tmp_path / "nao-existe")
     assert proc.returncode == 0, proc.stderr
-    assert "pulado" in proc.stdout
-    assert "nada encontrado" in proc.stdout
+    assert "skipped" in proc.stdout
+    assert "nothing found" in proc.stdout
     args = Path(env["CLAMSCAN_ARGS"]).read_text()
     assert str(loader) in args and "nao-existe" not in args
     assert "--alert-exceeds-max=yes" in args, "a mesma regra da verificacao de envio"
@@ -250,7 +250,7 @@ def test_servidor_sem_mod_nenhum_nem_instala_o_clamav(env, tmp_path):
     _tool(env["bin"], "apt-get", "#!/bin/sh\necho apt chamado >&2\nexit 100\n")
     proc = _audit(env, tmp_path / "nao-existe")
     assert proc.returncode == 0
-    assert "nenhum mod instalado" in proc.stdout
+    assert "no installed mod" in proc.stdout
     assert "apt chamado" not in proc.stderr
 
 
@@ -259,4 +259,4 @@ def test_verificar_instalados_sem_assinatura_falha_fechado(env, tmp_path):
     (tmp_path / "Mod.pak").write_bytes(b"limpo")
     proc = _audit(env, tmp_path / "Mod.pak")
     assert proc.returncode == 2
-    assert "nada foi verificado" in proc.stderr
+    assert "nothing was scanned" in proc.stderr

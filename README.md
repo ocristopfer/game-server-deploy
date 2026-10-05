@@ -642,7 +642,7 @@ three ways to get that:
 | Situation | What to do |
 |-----------|------------|
 | New game CT | nothing: `deploy-game.ps1` reads the panel key and leaves the CT ready (or set `PANEL_PUBKEY` in `.env` to pin one) |
-| Existing game CTs | set `ADMIN_AUTHORIZE_CTIDS=210,211,212,213` and run `deploy-admin.ps1` |
+| Existing game CTs | `deploy/game/migrate-ct.ps1 -Ctid <CTID>`: installs the `gamepanel` user, proves it from the panel, switches the server record, then locks root (`ADMIN_AUTHORIZE_CTIDS` is the legacy way: it authorizes the key on root) |
 | Case by case | copy the ready-made command from the panel's **SSH access** screen |
 
 The public key appears in the panel deploy summary and on the "SSH access" screen.

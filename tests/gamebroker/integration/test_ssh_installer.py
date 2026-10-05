@@ -479,12 +479,12 @@ def test_root_e_trancado_no_mesmo_comando_que_tira_a_chave_do_broker(panel_insta
 
 def test_trava_que_falha_derruba_a_criacao_mas_a_chave_sai(panel_installer, game, ports):
     inst, executor = panel_installer
-    executor.outputs["ct-panel-access.sh lock"] = (3, ["ct-panel-access.sh: ERRO: o root NAO foi trancado"])
+    executor.outputs["ct-panel-access.sh lock"] = (3, ["ct-panel-access.sh: ERROR: root was NOT locked"])
     lines: list[str] = []
     with pytest.raises(InstallError, match="trancar o root"):
         inst.install("10.0.0.30", game, ports, lines.append)
     assert f"grep -vF -- {BLOB}" in executor.commands()[-1], "a chave do broker sai do mesmo jeito"
-    assert any("NAO foi trancado" in line for line in lines), "o motivo vai para o log da operacao"
+    assert any("NOT locked" in line for line in lines), "o motivo vai para o log da operacao"
 
 
 def test_instalacao_que_falha_nao_tranca_o_root(panel_installer, game, ports):

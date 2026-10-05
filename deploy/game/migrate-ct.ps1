@@ -116,13 +116,13 @@ function Disable-PasswordAuth {
 }
 
 # ----- Configuration -----
-if ($Ctid -notmatch '^\d{2,9}$') { throw "-Ctid '$Ctid' nao e um numero de CT." }
-if ($Service -ne "" -and $Service -notmatch '^[A-Za-z0-9@._-]+$') { throw "-Service '$Service' invalido." }
+if ($Ctid -notmatch '^\d{2,9}$') { throw "-Ctid '$Ctid' is not a CT number." }
+if ($Service -ne "" -and $Service -notmatch '^[A-Za-z0-9@._-]+$') { throw "-Service '$Service' is invalid." }
 $cfg = Read-EnvFile $EnvFile
 if ($ProxmoxHost -eq "") { $ProxmoxHost = Get-Cfg $cfg "PROXMOX_HOST" }
-if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST nao definido no .env (ou use -ProxmoxHost)." }
+if ($ProxmoxHost -eq "") { throw "PROXMOX_HOST is not set in .env (or use -ProxmoxHost)." }
 $panelCtid = Get-Cfg $cfg "ADMIN_CTID"
-if ($panelCtid -eq "") { throw "ADMIN_CTID nao definido no .env: o teste do caminho novo parte do painel." }
+if ($panelCtid -eq "") { throw "ADMIN_CTID is not set in .env: the new path is tested from the panel." }
 if ($ProxmoxPassword -eq "") { $ProxmoxPassword = Get-Cfg $cfg "PROXMOX_PASSWORD" }
 
 # ----- Bundle -----
@@ -142,15 +142,15 @@ Write-LfFile (Join-Path $BundleDir "migrate.env") ((@(
 $code = 1
 try {
     if (-not (Test-KeyAuth $ProxmoxHost)) {
-        if ($ProxmoxPassword -eq "") { throw "Sem chave nem PROXMOX_PASSWORD para entrar em root@$ProxmoxHost." }
+        if ($ProxmoxPassword -eq "") { throw "No key and no PROXMOX_PASSWORD to log in to root@$ProxmoxHost." }
         Enable-PasswordAuth $ProxmoxPassword
     }
-    Write-Host "`nEnviando para root@$ProxmoxHost..." -ForegroundColor Cyan
+    Write-Host "`nSending to root@$ProxmoxHost..." -ForegroundColor Cyan
     Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir' && mkdir -p '$RemoteBundleDir'"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar $RemoteBundleDir em root@$ProxmoxHost" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to prepare $RemoteBundleDir on root@$ProxmoxHost" }
     $items = @(Get-ChildItem -Path $BundleDir | ForEach-Object { $_.FullName })
     Invoke-Scp $items "root@${ProxmoxHost}:$RemoteBundleDir/"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar os arquivos para root@$ProxmoxHost" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to send the files to root@$ProxmoxHost" }
 
     Invoke-Ssh $ProxmoxHost "cd '$RemoteBundleDir' && bash ./migrate-ct.sh"
     $code = $LASTEXITCODE
@@ -159,4 +159,4 @@ try {
     try { Invoke-Ssh $ProxmoxHost "rm -rf '$RemoteBundleDir'" | Out-Null } catch { }
     Disable-PasswordAuth
 }
-if ($code -ne 0) { throw "A migracao do CT $Ctid parou (veja [ERROR] acima). Emergencia: pct enter $Ctid" }
+if ($code -ne 0) { throw "The migration of CT $Ctid stopped (see [ERROR] above). Emergency: pct enter $Ctid" }

@@ -35,7 +35,7 @@ def overlay(tmp_path, monkeypatch):
     env_dir = tmp_path / "game-env"
     env_dir.mkdir()
     for name in ("service.env", "runtime.env"):
-        (env_dir / name).write_text("# Escrito pelo painel\n", encoding="utf-8")
+        (env_dir / name).write_text("# Written by the panel\n", encoding="utf-8")
     systemd = tmp_path / "systemd"
     for unit in ("palworld.service", "valheim.service"):
         (systemd / f"{unit}.d").mkdir(parents=True)
@@ -75,7 +75,7 @@ def test_overlay_set_troca_no_lugar_remove_e_mantem_comentario(overlay):
     m.overlay_set("service.env", "X_Y", "1")
     m.overlay_set("service.env", "LD_PRELOAD", "/b.so")
     text = (overlay["dir"] / "service.env").read_text(encoding="utf-8")
-    assert text == "# Escrito pelo painel\nLD_PRELOAD='/b.so'\nX_Y='1'\n"
+    assert text == "# Written by the panel\nLD_PRELOAD='/b.so'\nX_Y='1'\n"
     assert m.overlay_get("service.env", "LD_PRELOAD") == "/b.so"
     m.overlay_set("service.env", "LD_PRELOAD", None)
     assert m.overlay_get("service.env", "LD_PRELOAD") is None

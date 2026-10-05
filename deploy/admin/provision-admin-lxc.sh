@@ -398,26 +398,33 @@ start_panel() {
 }
 
 authorize_in_game_cts() {
-  # Optional bootstrap: prepares the game containers to accept the panel.
+  # LEGACY bootstrap: puts the panel key in ROOT's authorized_keys of the listed game CTs, which
+  # is the old root access mode (docs/security-hardening.md). Kept as it was for whoever still has
+  # servers registered as root, but no longer recommended: the panel registers new servers as
+  # `gamepanel`, and a CT that only has the key on root refuses that user. The way forward is
+  # deploy/game/migrate-ct.ps1, which installs `gamepanel` through lib/ct-panel-access.sh, proves
+  # it FROM the panel and switches the server record. Not done here: installing gamepanel without
+  # switching the record would convert the CT's mod drop-ins under a panel still talking as root.
   # Runs here (on the host, during the deploy) because only the host can get into the CTs without
   # prior SSH - the panel itself never has access to the hypervisor.
   local raw="${ADMIN_AUTHORIZE_CTIDS:-}"
   [[ -n "$raw" ]] || return 0
+  warn "ADMIN_AUTHORIZE_CTIDS is legacy: it authorizes the panel as ROOT. Move each CT to the gamepanel user with deploy/game/migrate-ct.ps1 -Ctid <CTID>."
 
   local target
   for target in ${raw//,/ }; do
     if [[ ! "$target" =~ ^[0-9]+$ ]]; then
-      warn "ADMIN_AUTHORIZE_CTIDS: ignorando valor nao numerico '$target'"
+      warn "ADMIN_AUTHORIZE_CTIDS: ignoring non-numeric value '$target'"
       continue
     fi
     if ! pct status "$target" >/dev/null 2>&1; then
-      warn "CT $target nao existe; pulando"
+      warn "CT $target does not exist; skipping"
       continue
     fi
-    msg "Autorizando o painel no CT $target"
+    msg "Authorizing the panel key for root on CT $target (legacy mode)"
     pct start "$target" >/dev/null 2>&1 || true
     if ! pct exec "$target" -- true >/dev/null 2>&1; then
-      warn "CT $target nao respondeu; pulando"
+      warn "CT $target did not answer; skipping"
       continue
     fi
     pct exec "$target" -- bash -lc "
@@ -431,7 +438,7 @@ authorize_in_game_cts() {
       touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
       grep -qF '${PANEL_PUBKEY}' /root/.ssh/authorized_keys \
         || echo '${PANEL_PUBKEY}' >> /root/.ssh/authorized_keys
-    " || warn "Falha ao autorizar o painel no CT $target (faca manualmente pela tela 'Acesso SSH')"
+    " || warn "Failed to authorize the panel on CT $target (use deploy/game/migrate-ct.ps1 -Ctid $target)"
     AUTHORIZED_CTS="${AUTHORIZED_CTS:-} $target"
   done
 }
@@ -439,7 +446,7 @@ authorize_in_game_cts() {
 get_ct_ip() {
   if [[ "$IP_CIDR" == "dhcp" ]]; then
     CT_IP="$(run_ct "hostname -I | awk '{print \$1}'" | tr -d '\r' | tr -d ' \n' || true)"
-    [[ -n "$CT_IP" ]] || CT_IP="<verifique com: pct exec $CTID -- hostname -I>"
+    [[ -n "$CT_IP" ]] || CT_IP="<check with: pct exec $CTID -- hostname -I>"
   else
     CT_IP="${IP_CIDR%%/*}"
   fi
@@ -450,61 +457,64 @@ print_summary() {
   cat <<EOF
 
 ========================================================================
- Painel administrativo pronto
+ Admin panel ready
 ========================================================================
 
 Container : CT ${CTID} (${CT_HOSTNAME}) - ${CORES} core(s), ${MEMORY}MB RAM, ${ROOTFS_SIZE_GB}GB
-Acesse em : http://${CT_IP}:${PANEL_PORT}
-Usuario   : ${PANEL_USER}
+Open at   : http://${CT_IP}:${PANEL_PORT}
+User      : ${PANEL_USER}
 EOF
   if [[ "${GENERATED_PASSWORD:-0}" == "1" ]]; then
     cat <<EOF
-Senha     : ${PANEL_PASSWORD}
-            ^ senha gerada automaticamente - anote agora e troque em "Conta" apos entrar
+Password  : ${PANEL_PASSWORD}
+            ^ generated automatically - write it down now and change it under "Account" after logging in
 EOF
   else
-    echo "Senha     : a definida em ADMIN_PASSWORD no .env"
+    echo "Password  : the one set in ADMIN_PASSWORD in .env"
   fi
   cat <<EOF
 
-O painel controla os servidores por SSH direto nos containers de jogo - ele nao tem
-acesso nenhum ao host Proxmox.
+The panel controls the servers over SSH straight into the game containers - it has no
+access at all to the Proxmox host. It logs in as the unprivileged 'gamepanel' user,
+never as root.
 
-Chave publica do painel (autorize nos containers de jogo):
+Panel public key:
   ${PANEL_PUBKEY}
+
+Game containers:
+  New CTs (deploy-game.ps1 or the broker) already come with the gamepanel user and this
+  key: nothing to do.
+  Existing CTs: move each one to the gamepanel user, from the repository on your machine:
+    .\\deploy\\game\\migrate-ct.ps1 -Ctid <CTID>
+  It installs the user, proves the access FROM the panel, switches the server record and
+  only then locks root (-NoLock keeps root login open for a first, softer step).
 EOF
   if [[ -n "${AUTHORIZED_CTS:-}" ]]; then
-    echo "  ja autorizada automaticamente nos CTs:${AUTHORIZED_CTS}"
-  else
     cat <<EOF
 
-Para autorizar num container de jogo (a partir deste host):
-  pct exec <CTID> -- bash -lc "apt-get update -qq && apt-get install -y -qq openssh-server && \\
-    systemctl enable --now ssh && install -d -m 700 /root/.ssh && \\
-    echo '${PANEL_PUBKEY}' >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys"
-
-  Ou preencha ADMIN_AUTHORIZE_CTIDS no .env e rode o deploy do painel de novo.
+  WARNING: ADMIN_AUTHORIZE_CTIDS put this key in ROOT's authorized_keys (legacy mode) on
+  CTs:${AUTHORIZED_CTS}. Run migrate-ct.ps1 on each of them and empty ADMIN_AUTHORIZE_CTIDS.
 EOF
   fi
   cat <<EOF
 
-Proximo passo: entre no painel e cadastre seus servidores em "Adicionar", informando o
-IP do container e o servico (ex.: 10.20.1.20, dragonwilds.service). Preencha tambem a
-"Pasta de configuracao" (ex.: /opt/game) para a tela Arquivos abrir no lugar certo, e a
-"Porta de consulta" (Palworld: 27015) para o painel contar os jogadores online.
+Next step: log in to the panel and register your servers under "Add server", giving the
+container IP and the service (e.g. 10.20.1.20, dragonwilds.service). Also fill in the
+"Configuration folder" (e.g. /opt/game) so the Files screen opens in the right place, and
+the "Query port" (Palworld: 27015) so the panel can count the players online.
 
-Cada servidor tem tres formas de mexer no container:
-  Terminal  - shell interativo de verdade (htop, nano, prompts) direto no navegador
-  Arquivos  - editor de texto dos .ini/.cfg do jogo, com backup .bak automatico
-  Console   - um comando por vez, com o resultado gravado no historico
+Each server has three ways to work inside the container:
+  Terminal  - a real interactive shell (htop, nano, prompts) right in the browser
+  Files     - text editor for the game's .ini/.cfg files, with an automatic .bak backup
+  Console   - one command at a time, with the result recorded in the history
 
-Comandos uteis (no host Proxmox):
+Useful commands (on the Proxmox host):
   pct exec ${CTID} -- systemctl status gamepanel.service --no-pager
   pct exec ${CTID} -- journalctl -u gamepanel.service -f
 
-Proximos deploys: com o CT ja criado, .\\deploy-admin.ps1 manda o codigo direto para
-ele por SSH (segundos, sem tocar no Proxmox). Use -Full para mexer no CT em si
-(recursos, rede, senha do painel) ou recriar.
+Next deploys: with the CT already created, .\\deploy\\admin\\deploy-admin.ps1 sends the code
+straight to it over SSH (seconds, without touching Proxmox). Use -Full to change the CT
+itself (resources, network, panel password) or to recreate it.
 
 EOF
 }

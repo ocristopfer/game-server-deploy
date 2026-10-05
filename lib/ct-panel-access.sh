@@ -58,7 +58,7 @@ GP_SYSTEMD_DIR=/etc/systemd/system
 GP_ENV_VALUE_RE='^[A-Za-z0-9_./:,;=@+ -]*$'
 
 gp_msg() { printf 'ct-panel-access: %s\n' "$*"; }
-gp_die() { printf 'ct-panel-access: ERRO: %s\n' "$*" >&2; exit 1; }
+gp_die() { printf 'ct-panel-access: ERROR: %s\n' "$*" >&2; exit 1; }
 
 # A systemd unit name, and nothing that could become a second word or an option for systemctl.
 gp_valid_unit() {
@@ -115,7 +115,7 @@ set -u
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 CONF=/etc/gamepanel/ct.env
 
-usage() { echo "uso: gp-service start|stop|restart|--version" >&2; exit 2; }
+usage() { echo "usage: gp-service start|stop|restart|--version" >&2; exit 2; }
 
 [ "$#" -eq 1 ] || usage
 case "$1" in
@@ -124,18 +124,18 @@ case "$1" in
   *) usage ;;
 esac
 
-[ -f "$CONF" ] || { echo "gp-service: $CONF ausente" >&2; exit 3; }
+[ -f "$CONF" ] || { echo "gp-service: $CONF is missing" >&2; exit 3; }
 # Root-owned and not writable by anyone else: otherwise whoever can write it picks the unit.
 owner="$(stat -c '%u' "$CONF")"
 mode="$(stat -c '%a' "$CONF")"
 if [ "$owner" != 0 ] || [ $(( 8#$mode & 8#022 )) -ne 0 ]; then
-  echo "gp-service: $CONF precisa ser do root e sem escrita para grupo/outros" >&2
+  echo "gp-service: $CONF must be owned by root and not writable by group/others" >&2
   exit 3
 fi
 unit="$(sed -n 's/^GAME_UNIT=//p' "$CONF" | head -n 1)"
 # A unit name and nothing else: no second word, no leading dash systemctl would read as an option.
 if ! printf '%s' "$unit" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9@._-]*\.service$'; then
-  echo "gp-service: GAME_UNIT invalido em $CONF" >&2
+  echo "gp-service: invalid GAME_UNIT in $CONF" >&2
   exit 3
 fi
 exec systemctl "$verb" "$unit"
@@ -159,26 +159,26 @@ FRESH_DAYS=1
 MAX_AGE_DAYS=7
 refuse() { echo "ANTIVIRUS: $1" >&2; exit "$2"; }
 
-[ "$#" -eq 0 ] || { echo "uso: gp-clamav-ensure (sem argumentos)" >&2; exit 2; }
+[ "$#" -eq 0 ] || { echo "usage: gp-clamav-ensure (no arguments)" >&2; exit 2; }
 
 if ! command -v clamscan >/dev/null 2>&1; then
-  echo "antivirus: instalando o ClamAV (so na primeira vez neste servidor)..."
+  echo "antivirus: installing ClamAV (only the first time on this server)..."
   export DEBIAN_FRONTEND=noninteractive
   { apt-get update -qq && apt-get install -y -qq --no-install-recommends clamav clamav-freshclam; } >/dev/null 2>&1 \
-    || refuse "nao consegui instalar o ClamAV (apt)" 2
+    || refuse "could not install ClamAV (apt)" 2
 fi
 
 db=/var/lib/clamav
 newest() { find "$db" -maxdepth 1 \( -name '*.cvd' -o -name '*.cld' \) -mtime "-$1" 2>/dev/null | head -n 1; }
 if [ -z "$(newest "$FRESH_DAYS")" ]; then
-  echo "antivirus: atualizando as assinaturas..."
+  echo "antivirus: updating the signatures..."
   # The freshclam daemon holds the log lock: running freshclam while it is up fails.
   systemctl stop clamav-freshclam >/dev/null 2>&1 || true
-  freshclam --quiet >/dev/null 2>&1 || echo "antivirus: a atualizacao falhou; usando as assinaturas que ja havia"
+  freshclam --quiet >/dev/null 2>&1 || echo "antivirus: the update failed; using the signatures already here"
   systemctl start clamav-freshclam >/dev/null 2>&1 || true
-  [ -n "$(newest "$MAX_AGE_DAYS")" ] || refuse "sem assinaturas dos ultimos ${MAX_AGE_DAYS} dias" 2
+  [ -n "$(newest "$MAX_AGE_DAYS")" ] || refuse "no signatures from the last ${MAX_AGE_DAYS} days" 2
 fi
-echo "antivirus: ClamAV pronto"
+echo "antivirus: ClamAV ready"
 EOF
 }
 
@@ -227,10 +227,10 @@ gp_ensure_sudo() {
   if command -v sudo >/dev/null 2>&1 && command -v visudo >/dev/null 2>&1; then
     return 0
   fi
-  gp_msg "instalando o sudo"
+  gp_msg "installing sudo"
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq && apt-get install -y -qq --no-install-recommends sudo
-  command -v visudo >/dev/null 2>&1 || gp_die "o sudo nao ficou disponivel"
+  command -v visudo >/dev/null 2>&1 || gp_die "sudo is still not available"
 }
 
 gp_ensure_user() {
@@ -284,7 +284,7 @@ gp_install_sudoers() {
   chmod 0440 "$tmp"
   if ! visudo -cf "$tmp" >/dev/null; then
     rm -f "$tmp"
-    gp_die "o arquivo do sudoers nao passou no visudo -cf (nada foi instalado)"
+    gp_die "the sudoers file failed visudo -cf (nothing was installed)"
   fi
   if [[ -f "$GP_SUDOERS" ]] && cmp -s "$tmp" "$GP_SUDOERS"; then
     rm -f "$tmp"
@@ -295,9 +295,9 @@ gp_install_sudoers() {
 
 gp_install() {
   local unit="$1" pubkey="$2"
-  gp_valid_unit "$unit" || gp_die "unidade invalida: '${unit}'"
-  gp_valid_pubkey "$pubkey" || gp_die "chave publica do painel invalida"
-  id -u steam >/dev/null 2>&1 || gp_die "o usuario steam precisa existir antes (a regra do sudo aponta para ele)"
+  gp_valid_unit "$unit" || gp_die "invalid unit: '${unit}'"
+  gp_valid_pubkey "$pubkey" || gp_die "invalid panel public key"
+  id -u steam >/dev/null 2>&1 || gp_die "the steam user must exist first (the sudo rule points at it)"
 
   gp_ensure_sudo
   gp_ensure_user
@@ -314,7 +314,7 @@ gp_install() {
   install -d -m 0750 -o steam -g steam "$GP_BACKUP_DIR"
   chown -R steam:steam "$GP_BACKUP_DIR"
   gp_install_overlay "$unit"
-  gp_msg "acesso do painel pronto: usuario ${GP_USER}, servico ${unit}"
+  gp_msg "panel access ready: user ${GP_USER}, service ${unit}"
 }
 
 # --- mod environment overlay (phase 6) -----------------------------------------------------------
@@ -339,7 +339,7 @@ gp_read_kv() {
 # `mv`: the overlay files are steam's, and a new inode would come out root's.
 gp_set_kv() {
   local file="$1" key="$2" value="$3" tmp
-  gp_valid_env_value "$value" || gp_die "valor invalido para ${key} (aspas, \$ ou crase nao entram)"
+  gp_valid_env_value "$value" || gp_die "invalid value for ${key} (no quotes, \$ or backticks)"
   tmp="$(mktemp)"
   awk -v k="$key" -v line="${key}='${value}'" '
     index($0, k "=") == 1 { if (!done) print line; done = 1; next }
@@ -393,7 +393,7 @@ gp_ensure_overlay_files() {
   for f in "$GP_SERVICE_ENV" "$GP_RUNTIME_OVERLAY"; do
     if [[ -L "$f" || ( -e "$f" && ! -f "$f" ) ]]; then rm -rf -- "$f"; fi
     if [[ ! -f "$f" ]]; then
-      printf '# Escrito pelo painel como steam (tela Mods). Apagar uma linha desfaz o ajuste dela.\n' >"$f"
+      printf '# Written by the panel as steam (Mods screen). Deleting a line undoes its setting.\n' >"$f"
     fi
     chown steam:steam "$f"
     chmod 0644 "$f"
@@ -411,7 +411,7 @@ gp_convert_loader_dropins() {
     # gamepanel-sandbox.conf is the unit sandbox (lib/ct-sandbox-unit.sh): not a loader, never converted.
     case "${f##*/}" in "$GP_ENV_DROPIN"|gamepanel-mods.conf|gamepanel-sandbox.conf) continue ;; esac
     if grep -qvE '^(\[Service\]|Environment=[A-Z_][A-Z0-9_]*=[A-Za-z0-9_./:,;=@+-]*|)$' "$f"; then
-      gp_msg "AVISO: ${f} tem algo alem de Environment=: ficou como estava (converta a mao)"
+      gp_msg "WARNING: ${f} has more than Environment= lines: left as it was (convert it by hand)"
       continue
     fi
     while IFS= read -r line; do
@@ -421,7 +421,7 @@ gp_convert_loader_dropins() {
     done <"$f"
     rm -f -- "$f"
     GP_NEEDS_RELOAD=1
-    gp_msg "drop-in ${f##*/} convertido para ${GP_SERVICE_ENV}"
+    gp_msg "drop-in ${f##*/} converted to ${GP_SERVICE_ENV}"
   done
 }
 
@@ -433,7 +433,7 @@ gp_convert_ark_dropin() {
   local unit="$1" f="$GP_SYSTEMD_DIR/${unit}.d/gamepanel-mods.conf" base current mods
   [[ -f "$f" ]] || return 0
   if ! gp_win_run_hooked; then
-    gp_msg "AVISO: ${f} nao foi convertido (o win-run nao le o ambiente dos mods)"
+    gp_msg "WARNING: ${f} was not converted (win-run does not read the mod environment)"
     return 0
   fi
   base="$(sed -n 's/^# gamepanel-base: //p' "$f" | head -n 1)"
@@ -442,13 +442,13 @@ gp_convert_ark_dropin() {
   current="$(printf '%s' "$current" | tr ' ' '\n' | { grep -v '^-mods=' || true; } | paste -sd ' ' -)"
   mods="$({ grep -oE -- '-mods=[0-9,]+' "$f" || true; } | tail -n 1)"
   if [[ -z "$mods" || -z "$base" || "$base" != "$current" || "$base" != /usr/local/bin/win-run\ * ]]; then
-    gp_msg "AVISO: ${f} nao foi convertido (comando do servico mudou ou nao passa pelo win-run)"
+    gp_msg "WARNING: ${f} was not converted (the service command changed or does not go through win-run)"
     return 0
   fi
   gp_set_kv "$GP_RUNTIME_OVERLAY" GAMEPANEL_EXTRA_ARGS "$mods"
   rm -f -- "$f"
   GP_NEEDS_RELOAD=1
-  gp_msg "lista de mods do ARK convertida para ${GP_RUNTIME_OVERLAY}"
+  gp_msg "ARK mod list converted to ${GP_RUNTIME_OVERLAY}"
 }
 
 # What the Wine loaders (BepInEx, Shroudtopia, UE4SS) changed in /etc/game-runtime.env moves to
@@ -476,7 +476,7 @@ gp_convert_wine_overrides() {
   [[ "$original" != "$cur" ]] && gp_valid_env_value "$original" || return 0
   gp_set_kv "$GP_RUNTIME_OVERLAY" WINE_DLL_OVERRIDES "$cur"
   gp_set_kv "$GP_GAME_RUNTIME_ENV" WINE_DLL_OVERRIDES "$original"
-  gp_msg "WINE_DLL_OVERRIDES do carregador movido para ${GP_RUNTIME_OVERLAY} (base: '${original}')"
+  gp_msg "the loader's WINE_DLL_OVERRIDES moved to ${GP_RUNTIME_OVERLAY} (base: '${original}')"
 }
 
 # win-run reads runtime.env. New CTs get it from lib/ct-phases.sh; an older win-run gets the hook
@@ -488,7 +488,7 @@ gp_patch_win_run() {
   [[ -f "$GP_WIN_RUN" ]] || return 0
   gp_win_run_hooked && return 0
   if [[ "$(grep -cxF 'exe="$1"; shift' "$GP_WIN_RUN")" != 1 ]]; then
-    gp_msg "AVISO: ${GP_WIN_RUN} sem a linha esperada: carregadores do Wine ficam so no modo root"
+    gp_msg "WARNING: ${GP_WIN_RUN} lacks the expected line: Wine loaders stay root mode only"
     return 0
   fi
   hook="$(mktemp)"
@@ -500,9 +500,9 @@ gp_patch_win_run() {
   rm -f "$hook"
   chown root:root "$tmp"
   chmod 0755 "$tmp"
-  bash -n "$tmp" || { rm -f "$tmp"; gp_die "win-run com o gancho nao passou no bash -n (nada mudou)"; }
+  bash -n "$tmp" || { rm -f "$tmp"; gp_die "win-run with the hook failed bash -n (nothing changed)"; }
   mv -f "$tmp" "$GP_WIN_RUN"
-  gp_msg "win-run passa a ler ${GP_RUNTIME_OVERLAY}"
+  gp_msg "win-run now reads ${GP_RUNTIME_OVERLAY}"
 }
 
 # What the root installers created inside the game folder (BepInEx, ue4ss/, winmm.dll...) was
@@ -514,7 +514,7 @@ gp_chown_game_dir() {
   [[ -n "$dir" ]] || return 0
   [[ -n "$(find "$dir" -xdev ! -user steam -print -quit 2>/dev/null)" ]] || return 0
   chown -R -P steam:steam -- "$dir"
-  gp_msg "arquivos do jogo devolvidos ao steam em ${dir}"
+  gp_msg "game files handed back to steam in ${dir}"
 }
 
 gp_install_overlay() {
@@ -543,16 +543,16 @@ gp_install_overlay() {
 # What the panel itself checks before switching a server to helper mode. runuser and not su: it
 # needs no PAM session and no password, and works in a container without a login shell setup.
 gp_verify() {
-  id -u "$GP_USER" >/dev/null 2>&1 || { gp_msg "usuario ${GP_USER} ausente"; return 1; }
-  [[ -s "$GP_HOME/.ssh/authorized_keys" ]] || { gp_msg "${GP_USER} sem chave do painel"; return 1; }
+  id -u "$GP_USER" >/dev/null 2>&1 || { gp_msg "user ${GP_USER} is missing"; return 1; }
+  [[ -s "$GP_HOME/.ssh/authorized_keys" ]] || { gp_msg "${GP_USER} has no panel key"; return 1; }
   if ! runuser -u "$GP_USER" -- sudo -n -u steam true </dev/null >/dev/null 2>&1; then
-    gp_msg "${GP_USER} nao consegue agir como steam (sudo -n -u steam true)"
+    gp_msg "${GP_USER} cannot act as steam (sudo -n -u steam true)"
     return 1
   fi
   local version
   version="$(runuser -u "$GP_USER" -- sudo -n "$GP_SERVICE_HELPER" --version </dev/null 2>/dev/null || true)"
   if [[ "$version" != "gp-helpers ${GP_HELPERS_VERSION}" ]]; then
-    gp_msg "${GP_USER} nao consegue rodar ${GP_SERVICE_HELPER} --version pelo sudo"
+    gp_msg "${GP_USER} cannot run ${GP_SERVICE_HELPER} --version through sudo"
     return 1
   fi
   return 0
@@ -590,7 +590,7 @@ gp_reload_sshd() {
 
 gp_lock() {
   if ! gp_verify; then
-    gp_die "o acesso pelo ${GP_USER} nao funcionou: o root NAO foi trancado (o painel ficaria sem entrada)"
+    gp_die "access as ${GP_USER} does not work: root was NOT locked (the panel would have no way in)"
   fi
   local tmp
   install -d -m 0755 /etc/ssh/sshd_config.d
@@ -607,23 +607,23 @@ gp_lock() {
     # Put back what was there: a config sshd refuses would leave the CT with no SSH at all at
     # the next restart, and that is worse than root still being allowed.
     if [[ -n "$previous" ]]; then printf '%s\n' "$previous" >"$GP_SSHD_DROPIN"; else rm -f "$GP_SSHD_DROPIN"; fi
-    gp_die "o sshd recusou a configuracao (sshd -t): o root NAO foi trancado"
+    gp_die "sshd refused the configuration (sshd -t): root was NOT locked"
   fi
   gp_remove_panel_keys_from_root
   gp_reload_sshd
-  gp_msg "root trancado: SSH so como ${GP_USER}"
+  gp_msg "root locked: SSH only as ${GP_USER}"
 }
 
 gp_main() {
-  [[ "$(id -u)" == 0 ]] || gp_die "rode como root"
+  [[ "$(id -u)" == 0 ]] || gp_die "run as root"
   case "${1:-}" in
     install)
-      [[ $# -eq 3 ]] || gp_die "uso: ct-panel-access.sh install <unit> <chave publica do painel>"
+      [[ $# -eq 3 ]] || gp_die "usage: ct-panel-access.sh install <unit> <panel public key>"
       gp_install "$2" "$3" ;;
     verify)
-      if gp_verify; then gp_msg "acesso do ${GP_USER} OK"; else exit 1; fi ;;
+      if gp_verify; then gp_msg "access as ${GP_USER} OK"; else exit 1; fi ;;
     lock) gp_lock ;;
-    *) gp_die "uso: ct-panel-access.sh install <unit> <chave> | verify | lock" ;;
+    *) gp_die "usage: ct-panel-access.sh install <unit> <key> | verify | lock" ;;
   esac
 }
 
