@@ -185,3 +185,51 @@ def test_host_e_porta_podem_ser_trocados():
     d = deps(_chamadas=calls, app=_FakeApp(calls))
     cli.main(d, ["--host", "127.0.0.1", "--port", "9999"])
     assert calls["run"] == ("127.0.0.1", 9999)
+
+
+# --------------------------------------------------------------- set-ssh-user
+
+@pytest.fixture
+def servers_database(tmp_path):
+    """Two servers; only the one at the given address may change."""
+    path = tmp_path / "servers.db"
+    con = sqlite3.connect(path)
+    con.execute("""CREATE TABLE servers (
+        id INTEGER PRIMARY KEY, name TEXT, host TEXT, ssh_port INTEGER, ssh_user TEXT,
+        service TEXT, notes TEXT DEFAULT '')""")
+    con.execute("INSERT INTO servers (name, host, ssh_port, ssh_user, service, notes)"
+                " VALUES ('valheim', '10.20.1.21', 22, 'root', 'valheim.service', 'editado')")
+    con.execute("INSERT INTO servers (name, host, ssh_port, ssh_user, service)"
+                " VALUES ('outro', '10.20.1.22', 22, 'root', 'outro.service')")
+    con.commit()
+    con.close()
+
+    def connect():
+        c = sqlite3.connect(path)
+        c.row_factory = sqlite3.Row
+        return c
+
+    return connect
+
+
+def test_set_ssh_user_troca_so_o_usuario_daquele_endereco(servers_database, capsys):
+    cli.main(deps(connect=servers_database),
+             ["--set-ssh-user", "gamepanel", "--server-host", "10.20.1.21"])
+    rows = {r["name"]: r for r in servers_database().execute("SELECT * FROM servers")}
+    assert rows["valheim"]["ssh_user"] == "gamepanel"
+    # The rest of the record is untouched - that is the point of not reusing --register-server.
+    assert rows["valheim"]["notes"] == "editado"
+    assert rows["valheim"]["service"] == "valheim.service"
+    assert rows["outro"]["ssh_user"] == "root"
+    assert "valheim" in capsys.readouterr().out
+
+
+def test_set_ssh_user_sem_servidor_naquele_endereco_falha(servers_database):
+    with pytest.raises(SystemExit, match="nenhum servidor"):
+        cli.main(deps(connect=servers_database),
+                 ["--set-ssh-user", "gamepanel", "--server-host", "10.20.1.99"])
+
+
+def test_set_ssh_user_exige_o_endereco():
+    with pytest.raises(SystemExit, match="--server-host"):
+        cli.main(deps(), ["--set-ssh-user", "gamepanel"])

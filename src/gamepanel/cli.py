@@ -22,6 +22,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple
 
 from gamepanel import config
+from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.persistence.repositories import users as users_repo
 
 # The command line does not take line breaks comfortably: the lists (config
@@ -59,6 +60,9 @@ def build_parser(roles: Sequence[str]) -> argparse.ArgumentParser:
     parser.add_argument("--host", default="0.0.0.0")  # noqa: S104  # NOSONAR - the panel serves the LAN
     parser.add_argument("--port", type=int, default=config.load().port)
     # Used by the deploy (deploy-docker.ps1) to leave the server already registered.
+    # Used by deploy/game/migrate-ct.sh after a container got the `gamepanel` user: switches
+    # ONLY the login user of the server at --server-host/--ssh-port, nothing else.
+    parser.add_argument("--set-ssh-user", metavar="USUARIO")
     parser.add_argument("--register-server", metavar="NOME")
     parser.add_argument("--server-host", default="")
     parser.add_argument("--service", default="")
@@ -91,6 +95,20 @@ def reset_2fa(deps: CliDeps, user: str) -> None:
             raise SystemExit(f"usuario '{user}' nao existe")
         users_repo.disable_two_factor(conn, target["id"])
     print(f"Segundo fator de '{user}' desligado.")
+
+
+def set_ssh_user(deps: CliDeps, opts: argparse.Namespace) -> None:
+    """Switch the SSH login user of one registered server, found by its address."""
+    if not opts.server_host:
+        raise SystemExit("--set-ssh-user exige --server-host")
+    deps.init_db()
+    conn = deps.connect()
+    with conn:
+        row = servers_repo.by_address(conn, opts.server_host, opts.ssh_port)
+        if row is None:
+            raise SystemExit(f"nenhum servidor cadastrado em {opts.server_host}:{opts.ssh_port}")
+        servers_repo.set_ssh_user(conn, row["id"], opts.set_ssh_user)
+    print(f"servidor '{row['name']}' ({opts.server_host}) agora entra como {opts.set_ssh_user}")
 
 
 def register_server(deps: CliDeps, opts: argparse.Namespace) -> None:
@@ -127,6 +145,8 @@ def main(deps: CliDeps, argv: Sequence[str] | None = None) -> None:
         if not opts.password:
             raise SystemExit("--create-user exige --password")
         deps.ensure_admin_user(opts.create_user, opts.password, opts.role)
+    elif opts.set_ssh_user:
+        set_ssh_user(deps, opts)
     elif opts.register_server:
         register_server(deps, opts)
     else:

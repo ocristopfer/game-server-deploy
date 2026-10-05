@@ -72,6 +72,12 @@ def id_by_host(conn: sqlite3.Connection, host: str) -> sqlite3.Row | None:
         "SELECT id FROM servers WHERE host = ? AND ssh_port = 22", (host,)).fetchone()
 
 
+def set_ssh_user(conn: sqlite3.Connection, sid: int, user: str) -> None:
+    # Only this column: the migration to the unprivileged user must not touch the rest of
+    # the record (a full update from the deploy would reset fields the admin edited).
+    conn.execute("UPDATE servers SET ssh_user = ? WHERE id = ?", (user, sid))
+
+
 def from_broker(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """The ones the broker created: the only ones with `broker_id` filled in."""
     return conn.execute(
