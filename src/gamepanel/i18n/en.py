@@ -567,10 +567,8 @@ MESSAGES: dict[str, str] = {
         "each player installs their own.",
     "mods.status_failed": "Could not read the server mods: {reason}",
     "mods.not_thunderstore": "This server does not use Thunderstore mods.",
-    "mods.needs_root":
-        "This server is accessed without root (user {user}), and this installer still needs root "
-        "to write the game service settings. That arrives in phase 6 of the security plan "
-        "(docs/security-hardening.md); until then it cannot be installed, enabled or removed from this screen.",
+    "mods.overlay_problem":
+        "The loader setting would not reach the game on this server (accessed without root): {reason}",
     "mods.bad_package":
         "Package not recognised. Paste the link to its Thunderstore page, or author/package.",
     "mods.loader_title": "BepInEx (mod loader)",
@@ -775,6 +773,13 @@ MESSAGES: dict[str, str] = {
     "mods.workshop_rejected_badge": "refused",
     "mods.workshop_refresh":
         "Download every mod again (to pick up their updates after a game update)",
+    "mods.workshop_problem_root_dropin":
+        "The mod list was written as root before this server was migrated, and it cannot be changed "
+        "without root. Run deploy/game/migrate-ct.ps1 again on this CT: it converts the list.",
+    "mods.workshop_problem_no_win_run":
+        "The server command does not go through win-run, which is how the list reaches the game without root.",
+    "mods.workshop_problem_no_overlay":
+        "This CT was not prepared for mods without root yet: run deploy/game/migrate-ct.ps1 again on it.",
     "mods.workshop_problem_no_unit":
         "The server command was not found in systemd: check the service name on the Edit screen.",
     "mods.workshop_bad_ids": "No mod ID found in what was pasted: nothing was changed.",

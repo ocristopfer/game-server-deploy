@@ -301,6 +301,34 @@ only game identity every server has.
   `KIND_FOLDER` (Palworld: lists, receives and removes the files in the mods folder). New
   profile = one entry in `PROFILES`; a test ensures two profiles do not claim the same
   service.
+- **Where a loader's ENVIRONMENT goes depends on the access mode.** Legacy (root): the systemd
+  drop-ins and `/etc/game-runtime.env` described below, byte-identical to before. Helper mode
+  (phase 6): the installer runs as steam with `--overlay` (`mods.uses_overlay`) and writes the
+  SAME variables into steam's overlay - `/etc/gamepanel/game-env/service.env` (reaches the unit
+  through the `gamepanel-env.conf` drop-in's `EnvironmentFile=`) and `runtime.env` (win-run
+  sources it after `/etc/game-runtime.env`, and appends `GAMEPANEL_EXTRA_ARGS` to the game's
+  arguments - that is how ARK's `-mods=` gets in without an ExecStart drop-in). Removing a line
+  restores the original, no `daemon-reload` is needed, and the job's restart step applies it.
+  - **The folder is root's, the files are steam's, on purpose**: systemd reads the
+    EnvironmentFile AS ROOT, so a file steam could swap for a symlink would leak the
+    `KEY=value` lines of root-only files into the game's environment. That is why it is not in
+    `/home/steam` (the first idea in the plan). steam changes the content, never WHICH file;
+    and it cannot create one, so a missing file is "CT never prepared" (`overlay_problem`).
+  - **win-run reads runtime.env only when the file belongs to whoever runs it**: root never
+    sources a file steam can write.
+  - **The overlay block is copied into five standalone installers** (`thunderstore`,
+    `shroudtopia`, `ue4ss`, `ue4ss_linux`, `workshop` remotes), between markers; a test
+    (`test_mod_overlay.py`) requires the five copies to be identical, like `scanner`.
+  - **What a ROOT installer left before migration is converted by `ct-panel-access.sh install`**
+    (rerun `migrate-ct.ps1`): loader drop-ins -> service.env, the loader's WINE_DLL_OVERRIDES ->
+    runtime.env (the base goes back to BepInEx's `overrides_before`, or loses only `winmm=n,b`/
+    `dwmapi=n,b`), ARK's `gamepanel-mods.conf` -> `GAMEPANEL_EXTRA_ARGS` (only if its recorded
+    base is the unit's current ExecStart and goes through win-run), an old win-run gets the hook
+    inserted (never rewritten, and BEFORE the runtime.env conversions, which are skipped without
+    it - a value moved where win-run does not look would turn the loader off at the next restart), and the game folder goes back to steam (`chown -R -P`, what every
+    deploy already does). A drop-in that is not exactly ours stays, with a warning. Until that
+    rerun, helper mode refuses the loader with `overlay_problem`/`root_dropin` instead of
+    "disabling" something steam cannot remove. Proven by `docker/ct-sandbox/panel-access.sh`.
 - **Upload only accepts what the profile declares** (`accepts`): exact name or extension,
   and only the last part of the name the browser sent. Removal is by NAME, inside the
   profile's folder - the form never sends a path.
@@ -521,8 +549,9 @@ only game identity every server has.
   - **ARK: Survival Ascended only takes `-mods=` on the command line.** `ActiveMods=` in
     GameUserSettings.ini is ignored ("LoadGameMods with 0 mods", measured), and a mod folder
     left on disk does not load either. The list is a systemd drop-in repeating the unit's own
-    ExecStart plus `-mods=`, so the `ark` format is in `profiles.ROOT_WORKSHOP_FORMATS`:
-    refused in helper mode, like the loader installers. The base command is read from the
+    ExecStart plus `-mods=` in legacy mode; in helper mode it is `GAMEPANEL_EXTRA_ARGS` in steam's
+    runtime.env, which win-run appends (`profiles.ENV_WORKSHOP_FORMATS`; ExecStart cannot come
+    from an EnvironmentFile, but ARK already starts through win-run). The base command is read from the
     UNIT section of `systemctl cat` (`workshop_remote.ark_base`), never from a drop-in - ours
     would feed itself back - and is recorded in the drop-in, so a redeploy that changes the
     command shows up as `base_changed` instead of being masked by the stale copy.
@@ -1339,9 +1368,12 @@ the reasoning is [docs/security-hardening.md](docs/security-hardening.md). In sh
 - **Root helpers take no free argument.** `gp-service` reads the unit from the root-owned
   `/etc/gamepanel/ct.env`; helpers without arguments are written with `""` in sudoers, because a
   command written without arguments accepts ANY arguments.
-- **Loader installers that write systemd drop-ins or `/etc/game-runtime.env` are refused in
-  helper mode** (`mods.needs_root`) until phase 6 moves their environment to a file owned by
-  `steam`.
+- **Loader installers work in helper mode (phase 6) without any new sudo rule**: they run as
+  steam and write steam's overlay in `/etc/gamepanel/game-env` instead of root's drop-ins and
+  `/etc/game-runtime.env` (see the Mod manager section). `ct-panel-access.sh install` prepares
+  the overlay, the `EnvironmentFile=` drop-in and the win-run hook once, and converts what a
+  root installer had left; rerunning `migrate-ct.ps1` on an already migrated CT is how an old CT
+  gets it.
 - **`lib/ct-panel-access.sh` is the one place that creates the user, helpers, sudoers and the
   root lock**, used by `ct-phases.sh` (host and broker), both Docker images and the future
   migration. `lock` only runs after `verify` passes, so a broken sudo never locks anyone out.

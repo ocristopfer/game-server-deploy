@@ -8,7 +8,8 @@
 {{ srv.tabs(server, 'mods.index') }}
 
 {% for e in errors %}<p class="flash error">{{ e }}</p>{% endfor %}
-{% if needs_root %}<p class="flash error">{{ _('mods.needs_root', user=server.ssh_user) }}</p>{% endif %}
+{# Helper mode: the loader setting would not reach the game (CT never prepared for phase 6). #}
+{% if view.state and view.state.overlay_problem %}<p class="flash error">{{ _('mods.overlay_problem', reason=view.state.overlay_problem) }}</p>{% endif %}
 
 {% if not profile %}
 <div class="card">
@@ -533,7 +534,7 @@
       {% else %}
         <p class="muted">{{ _('mods.no_files') }}</p>
       {% endif %}
-      {% if not st.problem and not needs_root %}
+      {% if not st.problem %}
       <form method="post" action="{{ url_for('mods.workshop_save', sid=server.id) }}" class="mt-4">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <label>{{ _('mods.workshop_ids_label') }}

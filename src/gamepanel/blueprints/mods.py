@@ -15,7 +15,6 @@ from pathlib import Path
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from gamepanel import app as panel
-from gamepanel import i18n
 from gamepanel.games.mods import (
     antivirus,
     oxide_remote,
@@ -112,66 +111,71 @@ LOADER_NAMES = {profiles.KIND_SHROUDTOPIA: "Shroudtopia", profiles.KIND_UE4SS: "
 # Every action that DOWNLOADS something brings the antivirus along; the remote installer refuses to install without it.
 SCANNED_ACTIONS = ("loader-install", "plugin-install", "mod-install")
 
-# Installers that write a systemd drop-in or /etc/game-runtime.env (and install ClamAV inline):
-# they need root, and a server in helper mode has no root to give them. Moving what they write to
-# steam's own overlay is phase 6 of docs/security-hardening.md; until then every action of theirs
-# except the read-only `status` is refused, with the reason on screen, instead of failing halfway.
-ROOT_INSTALLER_KINDS = (profiles.KIND_THUNDERSTORE, profiles.KIND_SHROUDTOPIA, profiles.KIND_UE4SS,
-                        profiles.KIND_OXIDE, profiles.KIND_SML, profiles.KIND_UE4SS_LINUX)
+# The installers that change the game's ENVIRONMENT (a systemd drop-in, /etc/game-runtime.env, ARK's
+# ExecStart). In legacy mode they write those as root, exactly as always. In helper mode they run as
+# steam with `--overlay` and write steam's overlay instead (/etc/gamepanel/game-env, which
+# lib/ct-panel-access.sh prepared once, as root): phase 6 of docs/security-hardening.md.
+OVERLAY_KINDS = (profiles.KIND_THUNDERSTORE, profiles.KIND_SHROUDTOPIA, profiles.KIND_UE4SS,
+                 profiles.KIND_UE4SS_LINUX)
 
 
-def needs_root(server, profile: profiles.ModProfile | None) -> bool:
-    """True when this profile's installer cannot run on this server (helper mode, root installer)."""
-    if profile is None or remote_cmd.privileged(server):
-        return False
-    return profile.kind in ROOT_INSTALLER_KINDS or profile.workshop_format in profiles.ROOT_WORKSHOP_FORMATS
-
-
-def _root_refusal(server) -> i18n.Message:
-    return i18n.Message("mods.needs_root", user=remote_cmd.ssh_user(server))
+def uses_overlay(profile: profiles.ModProfile) -> bool:
+    return profile.kind in OVERLAY_KINDS or profile.workshop_format in profiles.ENV_WORKSHOP_FORMATS
 
 
 def _remote_cmd(server, profile: profiles.ModProfile, action: str, *args: str, service: str = "") -> str:
-    """The installer command for this server: as root in legacy mode, as steam in helper mode.
+    """The installer command for this server: as root in legacy mode, as steam in helper mode."""
+    helper = not remote_cmd.privileged(server)
+    return remote_cmd.as_steam(server, *_installer_argv(profile, action, *args, service=service, helper=helper))
 
-    Raises ValueError for a root installer in helper mode (anything but `status`): the routes
-    already refuse before getting here, and this is the line that keeps a new route from
-    forgetting to.
+
+def _installer_steps(server, profile: profiles.ModProfile, action: str, *args: str, service: str = "") -> list[str]:
+    """The job steps of one installer action.
+
+    Helper mode: an action that downloads gets the ClamAV install through the fixed root helper
+    first (steam can neither apt-get nor stop the freshclam daemon), and its scan script only
+    CHECKS - the same split the mod upload uses (`antivirus.scan_steps`).
     """
-    if action != "status" and needs_root(server, profile):
-        raise ValueError(_root_refusal(server))
-    return remote_cmd.as_steam(server, *_installer_argv(profile, action, *args, service=service))
+    command = _remote_cmd(server, profile, action, *args, service=service)
+    if action in SCANNED_ACTIONS and not remote_cmd.privileged(server):
+        return [remote_cmd.clamav_ensure(), command]
+    return [command]
 
 
-def _installer_argv(profile: profiles.ModProfile, action: str, *args: str, service: str = "") -> tuple[str, ...]:
-    scan = ("--scan", antivirus.SCAN_SCRIPT) if action in SCANNED_ACTIONS else ()
+def _installer_argv(profile: profiles.ModProfile, action: str, *args: str, service: str = "",
+                    helper: bool = False) -> tuple[str, ...]:
+    script = antivirus.SCAN_SCRIPT_AS_STEAM if helper else antivirus.SCAN_SCRIPT
+    scan = ("--scan", script) if action in SCANNED_ACTIONS else ()
+    # First word, so every installer can take it off before its own options.
+    overlay = ("--overlay",) if helper and uses_overlay(profile) else ()
     # The drop-in goes on THIS server's service: the profile serves more than one name (the curated
     # catalog's and the LinuxGSM suggestion's), and the first in the list may not even exist on this CT.
     unit_name = profiles.service_stem(service) or profile.services[0]
     if profile.kind == profiles.KIND_WORKSHOP:
         # The config comes from THIS service's ExecStart (-servername, -config, +InternetServer/...).
-        return ("python3", "-c", WORKSHOP_SOURCE, "--unit", f"{unit_name}.service",
+        return ("python3", "-c", WORKSHOP_SOURCE, *overlay, "--unit", f"{unit_name}.service",
                 profile.workshop_format, action, profile.folder, *args)
     if profile.kind == profiles.KIND_SML:
         return ("python3", "-c", SML_SOURCE, *scan, action, profile.loader_dir, *args)
     if profile.kind == profiles.KIND_UE4SS_LINUX:
-        # LD_PRELOAD in a drop-in of this service; the name comes from the profile (chosen by it).
+        # LD_PRELOAD for this service; the name comes from the profile (chosen by it).
         unit = ("--unit", f"{unit_name}.service")
         # The release only matters when installing (the generators are ~40 KB of wasted text in the status).
         release = ("--release", profile.ue4ss_release, "--engine", profile.engine_version,
                    "--symfiles", UE_SYM_SOURCE, "--layout", UE_LINUX_LAYOUT_SOURCE,
                    ) if action == "loader-install" else ()
-        return ("python3", "-c", UE4SS_LINUX_SOURCE, *scan, *unit, *release, action, profile.loader_dir,
+        return ("python3", "-c", UE4SS_LINUX_SOURCE, *overlay, *scan, *unit, *release, action, profile.loader_dir,
                 *args)
     if profile.kind in NATIVE_LOADERS:
         # The loader lives one level above the mods folder: next to the game executable.
         source = NATIVE_LOADERS[profile.kind]
         game_dir = profile.loader_dir or posixpath.dirname(profile.folder)
-        return ("python3", "-c", source, *scan, action, game_dir, *args)
+        return ("python3", "-c", source, *overlay, *scan, action, game_dir, *args)
     # Native Linux server (Valheim): the installer writes this service's drop-in. The name comes
     # from the profile, which was chosen precisely by the service name.
     unit_args: tuple[str, ...] = ("--unit", f"{unit_name}.service") if profile.linux_bepinex else ()
-    return ("python3", "-c", REMOTE_SOURCE, *scan, *unit_args, action, profile.folder, *profile.loader, *args)
+    return ("python3", "-c", REMOTE_SOURCE, *overlay, *scan, *unit_args, action, profile.folder, *profile.loader,
+            *args)
 
 
 def _remote_state(server, profile: profiles.ModProfile, errors: list[str]) -> dict | None:
@@ -262,8 +266,6 @@ def index(sid: int):
         view = {**_shroudtopia_view(server, profile, errors), **_folder_view(server, profile)}
     return render_template(
         "mods.html", server=server, profile=profile, view=view, errors=errors,
-        # Said up front: the loader buttons would only be refused on click (helper mode, phase 6).
-        needs_root=needs_root(server, profile),
         expected_text="\n".join(str(i) for i in _expected_ids(server)),
         workshop_url=workshop.url, kind_packages=profiles.KIND_PACKAGES,
         kind_thunderstore=profiles.KIND_THUNDERSTORE, kind_folder=profiles.KIND_FOLDER,
@@ -304,14 +306,6 @@ def _loader_profile_or_back(sid: int):
     if not profile or profile.kind not in LOADER_KINDS:
         flash(panel.translate("mods.not_thunderstore"), "error")
         return None
-    return _unless_root_needed(server, profile)
-
-
-def _unless_root_needed(server, profile: profiles.ModProfile) -> profiles.ModProfile | None:
-    """The profile, or None (with the reason on screen) when its installer needs root here."""
-    if needs_root(server, profile):
-        flash(panel.translate(_root_refusal(server)), "error")
-        return None
     return profile
 
 
@@ -322,7 +316,7 @@ def _thunderstore_profile_or_back(sid: int):
     if not profile or profile.kind != profiles.KIND_THUNDERSTORE:
         flash(panel.translate("mods.not_thunderstore"), "error")
         return None
-    return _unless_root_needed(server, profile)
+    return profile
 
 
 def _form_version() -> str | None:
@@ -355,9 +349,9 @@ def loader(sid: int):
         # SML is a ficsit.app mod like the others: it is only installed or updated, never disabled.
         if action != "install":
             return redirect(url_for(INDEX, sid=sid))
-        return _thunderstore_job(sid, "mod-loader", _remote_cmd(server, profile, "mod-install", "SML", *args),
+        return _thunderstore_job(sid, "mod-loader", _installer_steps(server, profile, "mod-install", "SML", *args),
                                  _with_version("SML: install", version))
-    command = _remote_cmd(server, profile, f"loader-{action}", *args, service=server["service"] or "")
+    command = _installer_steps(server, profile, f"loader-{action}", *args, service=server["service"] or "")
     return _thunderstore_job(sid, "mod-loader", command, _with_version(f"{name}: {action}", version))
 
 
@@ -379,7 +373,7 @@ def plugin_install(sid: int):
         return redirect(url_for(INDEX, sid=sid))
     version = version or pasted_version
     args = (ns, name, version) if version else (ns, name)
-    command = _remote_cmd(panel._server_or_404(sid), profile, "plugin-install", *args)
+    command = _installer_steps(panel._server_or_404(sid), profile, "plugin-install", *args)
     return _thunderstore_job(sid, "mod-install", command,
                              _with_version(f"{ns}/{name}", version))
 
@@ -392,7 +386,7 @@ def plugin_remove(sid: int):
     if not profile or not parsed:
         return redirect(url_for(INDEX, sid=sid))
     ns, name = parsed
-    command = _remote_cmd(panel._server_or_404(sid), profile, "plugin-remove", ns, name)
+    command = _installer_steps(panel._server_or_404(sid), profile, "plugin-remove", ns, name)
     return _thunderstore_job(sid, "mod-remove", command, f"{ns}/{name}")
 
 
@@ -403,7 +397,7 @@ def _sml_profile_or_back(sid: int):
     if not profile or profile.kind != profiles.KIND_SML:
         flash(panel.translate("mods.not_thunderstore"), "error")
         return None
-    return _unless_root_needed(server, profile)
+    return profile
 
 
 @bp.post("/servers/<int:sid>/mods/sml/install")
@@ -421,7 +415,7 @@ def sml_install(sid: int):
     if version is None:
         return redirect(url_for(INDEX, sid=sid))
     args = (ref, version) if version else (ref,)
-    command = _remote_cmd(panel._server_or_404(sid), profile, "mod-install", *args)
+    command = _installer_steps(panel._server_or_404(sid), profile, "mod-install", *args)
     return _thunderstore_job(sid, "mod-install", command,
                              _with_version(ref, version))
 
@@ -433,7 +427,7 @@ def sml_remove(sid: int):
     ref = profiles.ficsit_ref(request.form.get("mod", ""))
     if not profile or not ref:
         return redirect(url_for(INDEX, sid=sid))
-    command = _remote_cmd(panel._server_or_404(sid), profile, "mod-remove", ref)
+    command = _installer_steps(panel._server_or_404(sid), profile, "mod-remove", ref)
     return _thunderstore_job(sid, "mod-remove", command, ref)
 
 
@@ -447,9 +441,6 @@ def workshop_save(sid: int):
     go_back = url_for(INDEX, sid=sid)
     if not profile or profile.kind != profiles.KIND_WORKSHOP:
         flash(panel.translate("mods.not_thunderstore"), "error")
-        return redirect(go_back)
-    if needs_root(server, profile):
-        flash(panel.translate(_root_refusal(server)), "error")
         return redirect(go_back)
     text = (request.form.get("ids") or "")[:EXPECTED_MAX_CHARS]
     if profile.workshop_format == "reforger":

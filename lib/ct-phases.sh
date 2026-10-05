@@ -295,6 +295,13 @@ set -Eeuo pipefail
 
 [ $# -ge 1 ] || { echo "uso: win-run <exe> [args...]"; exit 2; }
 exe="$1"; shift
+# gamepanel-overlay: the Mods screen's Wine setting and extra arguments (lib/ct-panel-access.sh).
+gp_overlay=/etc/gamepanel/game-env/runtime.env
+if [ -f "$gp_overlay" ] && [ "$(stat -c %u "$gp_overlay")" = "$(id -u)" ]; then
+  # shellcheck disable=SC1090
+  . "$gp_overlay"
+  if [ -n "${GAMEPANEL_EXTRA_ARGS:-}" ]; then read -r -a gp_extra <<<"$GAMEPANEL_EXTRA_ARGS"; set -- "$@" "${gp_extra[@]}"; fi
+fi
 [ -f "$exe" ] || { echo "win-run: executavel nao encontrado: $exe"; exit 1; }
 
 export HOME="${HOME:-/home/steam}"

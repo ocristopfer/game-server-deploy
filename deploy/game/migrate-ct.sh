@@ -69,13 +69,17 @@ pct push "$CTID" "$ACCESS" "$ACCESS_IN_CT" --perms 0755
 in_ct "bash $ACCESS_IN_CT install '$SERVICE' '$PANEL_PUBKEY'"
 ok "instalado"
 
-# Mod loaders write systemd drop-ins as root; in unprivileged mode the panel refuses to
-# install/remove them (phase 6). What is installed keeps running - this is only a warning.
-dropins="$(in_ct "ls /etc/systemd/system/${SERVICE}.d/ 2>/dev/null | grep -i gamepanel || true")"
-if [[ -n "$dropins" ]]; then
-  printf '  AVISO carregador de mod instalado (%s): continua funcionando, mas instalar/remover\n' "${dropins//$'\n'/ }"
-  printf '        carregador pelo painel fica bloqueado ate a fase 6 do plano.\n'
+# `install` also prepared the mod environment overlay (phase 6) and converted what the ROOT mod
+# installers had left: loader drop-ins -> service.env, the loader's WINE_DLL_OVERRIDES ->
+# runtime.env, root files in the game folder -> steam. The running game is NOT restarted: the
+# environment it gets on the next start is the same it had, now from files steam can change.
+# What could not be converted (a drop-in written by hand) stays, and is listed here.
+leftover="$(in_ct "ls /etc/systemd/system/${SERVICE}.d/ 2>/dev/null | grep '^gamepanel-' | grep -vx 'gamepanel-env.conf' || true")"
+if [[ -n "$leftover" ]]; then
+  printf '  AVISO drop-in que ficou como estava (%s): o painel sem root nao consegue muda-lo.\n' "${leftover//$'\n'/ }"
 fi
+in_ct "grep -v '^#' /etc/gamepanel/game-env/service.env /etc/gamepanel/game-env/runtime.env || true" \
+  | sed 's/^/  ambiente dos mods: /'
 
 msg "2/5 Conferindo o sudo dentro do CT"
 in_ct "bash $ACCESS_IN_CT verify" || die "verify falhou - o CT continua em modo root, nada foi trancado"

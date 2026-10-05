@@ -41,6 +41,13 @@ for candidate in ct-phases.sh ct-fases.sh; do
   fi
 done
 rmdir "$work/orig/lib"
+# The other pieces the reference's bundle carried next to it. Without them the reference run of
+# painel-pubkey died at "ct-panel-access.sh nao encontrado", and every new file showed as a diff.
+for piece in ct-firewall.sh ct-panel-access.sh; do
+  if git cat-file -e "$BASE_REF:lib/${piece}" 2>/dev/null; then
+    git show "$BASE_REF:lib/${piece}" > "$work/orig/${piece}"
+  fi
+done
 cp deploy/game/provision-game-lxc.sh "$work/novo/"
 # REAL layout of the deploy-game.ps1 bundle: no subfolders, the lib loose next to the script.
 cp lib/ct-phases.sh lib/ct-firewall.sh lib/ct-panel-access.sh "$work/novo/"

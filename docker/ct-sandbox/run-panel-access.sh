@@ -201,6 +201,158 @@ check "o sudoers bom continua la" "$expected_sudoers" "$(cat /etc/sudoers.d/game
 check "nenhum temporario sobrou em /etc" "" "$(ls -A /etc | grep '^\.gp-' || true)"
 if runuser -u gamepanel -- sudo -n -u steam true >/dev/null 2>&1; then ok "o sudo segue funcionando"; else fail "o sudo quebrou"; fi
 
+# ----- mod environment overlay (phase 6) -----
+# What a loader needs in the game's environment goes to two files STEAM owns in a folder ROOT owns.
+# The folder being root's is the point: systemd reads the EnvironmentFile as root, and a file steam
+# could swap for a symlink would leak root-only files into the game's environment.
+ENV_DIR=/etc/gamepanel/game-env
+check "pasta do overlay 0755 do root" "755 root:root" "$(stat -c '%a %U:%G' "$ENV_DIR")"
+check "service.env 0644 do steam" "644 steam:steam" "$(stat -c '%a %U:%G' "$ENV_DIR/service.env")"
+check "runtime.env 0644 do steam" "644 steam:steam" "$(stat -c '%a %U:%G' "$ENV_DIR/runtime.env")"
+check "drop-in que entrega o overlay ao servico" \
+  "$(printf '[Service]\nEnvironmentFile=-%s' "$ENV_DIR/service.env")" \
+  "$(cat /etc/systemd/system/palworld.service.d/gamepanel-env.conf)"
+if runuser -u gamepanel -- sudo -n -u steam sh -c "echo 'X_PROVA=1' >> $ENV_DIR/service.env" 2>/dev/null; then
+  ok "gamepanel, como steam, escreve no overlay"; else fail "o steam nao escreve no overlay"; fi
+sed -i '/^X_PROVA=/d' "$ENV_DIR/service.env"
+if runuser -u steam -- ln -sf /etc/shadow "$ENV_DIR/service.env" 2>/dev/null; then
+  fail "steam trocou o service.env por um link"; else ok "steam nao troca o arquivo por um link"; fi
+if runuser -u steam -- rm -f "$ENV_DIR/runtime.env" 2>/dev/null && [ ! -e "$ENV_DIR/runtime.env" ]; then
+  fail "steam apagou o runtime.env"; else ok "steam nao apaga nem cria arquivo na pasta"; fi
+if runuser -u steam -- touch "$ENV_DIR/outro.env" 2>/dev/null; then fail "steam criou arquivo na pasta"; else ok "steam nao cria arquivo na pasta"; fi
+check "nenhuma regra nova no sudoers" "$expected_sudoers" "$(cat /etc/sudoers.d/gamepanel)"
+
+# A CT migrated with mods a ROOT installer put in place: drop-ins, /etc/game-runtime.env, root
+# files in the game folder, a win-run from before the hook. Rerunning `install` converts it.
+win_run_new="$(python3 - "$REPO/lib/ct-phases.sh" <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+print(re.search(r"<<'EOF'\n(#!/usr/bin/env bash\n# win-run .*?\n)EOF\n", text, re.S).group(1), end="")
+PY
+)"
+printf '%s' "$win_run_new" | python3 -c '
+import re, sys
+text = sys.stdin.read()
+print(re.sub(r"# gamepanel-overlay:.*?\nfi\n", "", text, count=1, flags=re.S), end="")' > /usr/local/bin/win-run
+chmod 0755 /usr/local/bin/win-run
+if grep -q gamepanel-overlay /usr/local/bin/win-run; then fail "o win-run antigo ainda tem o gancho"; fi
+install -d -o steam -g steam /opt/game /home/steam/pfx
+printf '[Unit]\nDescription=x\n[Service]\nUser=steam\nWorkingDirectory=/opt/game\nExecStart=/usr/local/bin/win-run /opt/game/x.exe -log\n' \
+  > /etc/systemd/system/palworld.service
+dropins=/etc/systemd/system/palworld.service.d
+printf '[Service]\nEnvironment=LD_PRELOAD=/opt/game/ue4ss/libUE4SS.so\nEnvironment=UE4SS_TARGET_EXE=TheFrontServer\n' \
+  > "$dropins/gamepanel-ue4ss.conf"
+printf '[Service]\nExecStartPre=/bin/true\n' > "$dropins/gamepanel-feito-a-mao.conf"
+printf '# Written by the game panel\n# gamepanel-base: /usr/local/bin/win-run /opt/game/x.exe -log\n[Service]\nExecStart=\nExecStart=/usr/local/bin/win-run /opt/game/x.exe -log -mods=928988,929420\n' \
+  > "$dropins/gamepanel-mods.conf"
+printf "RUNTIME='wine'\nGAME_KEY='prova'\nWINE_PREFIX='/home/steam/pfx'\nWINE_DLL_OVERRIDES='mshtml=;winhttp=n,b'\nUSE_XVFB='0'\n" \
+  > /etc/game-runtime.env
+install -d /opt/game/BepInEx/core
+printf '{"full_name": "BepInEx-BepInExPack", "overrides_before": "mscoree,mshtml=", "files": ["BepInEx"]}' \
+  > /opt/game/BepInEx/.gamepanel.json
+echo dll > /opt/game/BepInEx/core/BepInEx.dll
+: > /opt/game/x.exe
+chown -R steam:steam /opt/game/x.exe
+ln -sfn /etc/shadow /opt/game/link-plantado
+chown -h root:root /opt/game/link-plantado
+shadow_owner="$(stat -c '%U:%G' /etc/shadow)"
+
+if bash "$PIECE" install palworld.service "$panel_key" >"$work/convert.log" 2>&1; then
+  ok "install converte o CT antigo"; else fail "install na conversao falhou: $(tail -3 "$work/convert.log")"; fi
+check "variaveis do drop-in do UE4SS no service.env" \
+  "LD_PRELOAD='/opt/game/ue4ss/libUE4SS.so'
+UE4SS_TARGET_EXE='TheFrontServer'" "$(grep -v '^#' "$ENV_DIR/service.env")"
+if [ -e "$dropins/gamepanel-ue4ss.conf" ]; then fail "o drop-in do UE4SS ficou"; else ok "o drop-in do UE4SS saiu"; fi
+if [ -e "$dropins/gamepanel-feito-a-mao.conf" ]; then ok "drop-in feito a mao ficou"; else fail "apagou um drop-in feito a mao"; fi
+if grep -q 'gamepanel-feito-a-mao.conf' "$work/convert.log"; then ok "o drop-in feito a mao foi avisado"; else fail "sem aviso do drop-in feito a mao"; fi
+if [ -e "$dropins/gamepanel-mods.conf" ]; then fail "o drop-in do ARK ficou"; else ok "o drop-in do ARK saiu"; fi
+check "runtime.env com o Wine do carregador e a lista do ARK" \
+  "GAMEPANEL_EXTRA_ARGS='-mods=928988,929420'
+WINE_DLL_OVERRIDES='mshtml=;winhttp=n,b'" "$(grep -v '^#' "$ENV_DIR/runtime.env" | sort)"
+check "game-runtime.env volta ao original e mantem o resto" \
+  "RUNTIME='wine'
+GAME_KEY='prova'
+WINE_PREFIX='/home/steam/pfx'
+WINE_DLL_OVERRIDES='mscoree,mshtml='
+USE_XVFB='0'" "$(cat /etc/game-runtime.env)"
+check "win-run migrado e igual ao de um CT novo" "$win_run_new" "$(cat /usr/local/bin/win-run)"
+check "win-run 0755 do root" "755 root:root" "$(stat -c '%a %U:%G' /usr/local/bin/win-run)"
+check "arquivo do carregador devolvido ao steam" steam "$(stat -c '%U' /opt/game/BepInEx/core/BepInEx.dll)"
+check "o link plantado muda de dono, o alvo nao" "steam $shadow_owner" \
+  "$(stat -c '%U' /opt/game/link-plantado) $(stat -c '%U:%G' /etc/shadow)"
+
+# win-run really reads the overlay - as steam, and only as steam.
+printf '#!/bin/sh\necho "WINEDLLOVERRIDES=$WINEDLLOVERRIDES ARGS=$*"\n' > /usr/local/sbin/wine
+chmod 0755 /usr/local/sbin/wine
+check "win-run como steam usa o overlay e acrescenta a lista" \
+  "WINEDLLOVERRIDES=mshtml=;winhttp=n,b ARGS=/opt/game/x.exe -log -mods=928988,929420" \
+  "$(cd /opt/game && runuser -u steam -- env HOME=/home/steam /usr/local/bin/win-run /opt/game/x.exe -log 2>&1)"
+check "win-run como root NAO le o arquivo do steam" \
+  "WINEDLLOVERRIDES=mscoree,mshtml= ARGS=/opt/game/x.exe -log" \
+  "$(cd /opt/game && HOME=/root /usr/local/bin/win-run /opt/game/x.exe -log 2>&1)"
+
+# The installers themselves, as steam, against these real files: what the panel runs in helper mode.
+# The workshop installer reads the unit with `systemctl cat`: the fake answers it from the file.
+cp /usr/local/sbin/systemctl "$work/systemctl.fake"
+cat > /usr/local/sbin/systemctl <<'SH'
+#!/bin/bash
+if [ "$1" = cat ]; then echo "# /etc/systemd/system/$2"; cat "/etc/systemd/system/$2"; exit; fi
+echo "systemctl $*" >> /var/log/fake-calls.log
+SH
+remote() { # script, args...
+  local src="$REPO/src/gamepanel/games/mods/$1"; shift
+  runuser -u gamepanel -- sudo -n -u steam -- python3 -c "$(cat "$src")" "$@" 2>&1 | tail -n 1
+}
+check "UE4SS Linux desligado como steam" '{"enabled": false}' \
+  "$(remote ue4ss_linux_remote.py --overlay --unit palworld.service loader-disable /opt/game/Pal/Binaries/Linux)"
+check "service.env sem as variaveis do UE4SS" "" "$(grep -v '^#' "$ENV_DIR/service.env")"
+check "Shroudtopia ligado como steam" '{"enabled": true}' "$(remote shroudtopia_remote.py --overlay loader-enable /opt/game)"
+check "runtime.env com o winmm" "WINE_DLL_OVERRIDES='mshtml=;winhttp=n,b;winmm=n,b'" \
+  "$(grep '^WINE_DLL_OVERRIDES=' "$ENV_DIR/runtime.env")"
+check "Shroudtopia desligado como steam" '{"enabled": false}' "$(remote shroudtopia_remote.py --overlay loader-disable /opt/game)"
+check "base intocada pelo steam" "WINE_DLL_OVERRIDES='mscoree,mshtml='" "$(grep '^WINE_DLL_OVERRIDES=' /etc/game-runtime.env)"
+check "ARK sem mods como steam" '{"ids": [], "config": "/etc/gamepanel/game-env/runtime.env"}' \
+  "$(remote workshop_remote.py --overlay --unit palworld.service ark set /opt/game)"
+check "runtime.env sem a lista" "" "$(grep '^GAMEPANEL_EXTRA_ARGS=' "$ENV_DIR/runtime.env" || true)"
+cp "$work/systemctl.fake" /usr/local/sbin/systemctl
+check "o steam continua dono dos arquivos do overlay" "steam steam" \
+  "$(stat -c '%U' "$ENV_DIR/service.env") $(stat -c '%U' "$ENV_DIR/runtime.env")"
+
+overlay_snapshot() {
+  for f in "$ENV_DIR"/* /usr/local/bin/win-run /etc/game-runtime.env "$dropins"/*; do
+    stat -c '%n %a %U:%G' "$f"; sha256sum "$f"
+  done
+}
+overlay_snapshot > "$work/ov1"
+bash "$PIECE" install palworld.service "$panel_key" >/dev/null 2>&1 || fail "install de novo falhou"
+overlay_snapshot > "$work/ov2"
+if diff "$work/ov1" "$work/ov2" >/dev/null; then ok "install de novo nao muda o overlay convertido"
+else fail "o install de novo mudou: $(diff "$work/ov1" "$work/ov2" | head -5)"; fi
+
+# Shroudtopia/UE4SS (Windows) conversions: only their group comes out of the base.
+(
+  # shellcheck source=/dev/null
+  source "$PIECE"
+  set -Eeuo pipefail
+  GP_GAME_RUNTIME_ENV="$work/base.env" GP_RUNTIME_OVERLAY="$work/over.env"
+  printf "WINE_DLL_OVERRIDES='mscoree,mshtml=;winmm=n,b'\n" > "$work/base.env"
+  : > "$work/over.env"
+  # A win-run without the hook: nothing may move (the loader would vanish at the next restart).
+  GP_WIN_RUN="$work/win-run-sem-gancho"
+  printf '#!/bin/bash\n' > "$GP_WIN_RUN"
+  gp_convert_wine_overrides /nao-existe
+  printf '%s|%s\n' "$(cat "$work/base.env")" "$(cat "$work/over.env")"
+  GP_WIN_RUN=/usr/local/bin/win-run
+  gp_convert_wine_overrides /nao-existe
+  printf '%s|%s\n' "$(cat "$work/base.env")" "$(cat "$work/over.env")"
+) > "$work/winmm.out" 2>&1
+check "sem o gancho no win-run nada e convertido" "WINE_DLL_OVERRIDES='mscoree,mshtml=;winmm=n,b'|" \
+  "$(head -n 1 "$work/winmm.out")"
+check "conversao do Shroudtopia" "WINE_DLL_OVERRIDES='mscoree,mshtml='|WINE_DLL_OVERRIDES='mscoree,mshtml=;winmm=n,b'" \
+  "$(tail -n 1 "$work/winmm.out")"
+rm -f /etc/systemd/system/palworld.service "$dropins/gamepanel-feito-a-mao.conf" /etc/game-runtime.env /usr/local/bin/win-run
+rm -rf /opt/game
+
 # ----- verify and lock -----
 if bash "$PIECE" verify >/dev/null 2>&1; then ok "verify passa"; else fail "verify falhou"; fi
 # Lock refused while the helper path is broken: nothing may be locked then.

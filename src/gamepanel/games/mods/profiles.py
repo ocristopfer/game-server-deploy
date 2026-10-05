@@ -354,8 +354,9 @@ CONAN = ModProfile(
 WORKSHOP_BY_CONFIG = (DST, ZOMBOID, UNTURNED, REFORGER, ARK_ASCENDED, CONAN)
 # The Workshop formats the panel itself downloads and scans, before the game sees anything.
 SCANNED_WORKSHOP_FORMATS = ("conan",)
-# The ones that write outside steam's reach (a systemd drop-in): legacy mode only, for now.
-ROOT_WORKSHOP_FORMATS = ("ark",)
+# The ones that change the game's command line (ARK's -mods=): a root drop-in in legacy mode, steam's
+# overlay read by win-run in helper mode (blueprints/mods.py, OVERLAY_KINDS).
+ENV_WORKSHOP_FORMATS = ("ark",)
 
 PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED, ICARUS, SATISFACTORY, VALHEIM, RUST, *UNREAL_LINUX,
             *WORKSHOP_BY_CONFIG)

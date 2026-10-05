@@ -568,10 +568,8 @@ MESSAGES: dict[str, str] = {
         "instala o seu.",
     "mods.status_failed": "Não consegui ler os mods do servidor: {reason}",
     "mods.not_thunderstore": "Este servidor não usa mods do Thunderstore.",
-    "mods.needs_root":
-        "Este servidor é acessado sem root (usuário {user}), e este instalador ainda precisa de root "
-        "para gravar o ajuste do serviço do jogo. Isso chega na fase 6 do plano de segurança "
-        "(docs/security-hardening.md); até lá, ele não pode ser instalado, ligado nem removido por esta tela.",
+    "mods.overlay_problem":
+        "O ajuste do carregador não chegaria ao jogo neste servidor (acessado sem root): {reason}",
     "mods.bad_package":
         "Não reconheci o pacote. Cole o link da página dele no Thunderstore, ou autor/pacote.",
     "mods.loader_title": "BepInEx (carregador de mods)",
@@ -774,6 +772,13 @@ MESSAGES: dict[str, str] = {
     "mods.workshop_rejected_badge": "recusado",
     "mods.workshop_refresh":
         "Baixar de novo todos os mods (para pegar as atualizações depois de um update do jogo)",
+    "mods.workshop_problem_root_dropin":
+        "A lista de mods foi gravada como root antes da migração do servidor, e sem root ela não pode "
+        "ser mudada. Rode deploy/game/migrate-ct.ps1 de novo neste CT: ele converte a lista.",
+    "mods.workshop_problem_no_win_run":
+        "O comando do servidor não passa pelo win-run, que é por onde a lista chega ao jogo sem root.",
+    "mods.workshop_problem_no_overlay":
+        "Este CT ainda não foi preparado para mods sem root: rode deploy/game/migrate-ct.ps1 de novo nele.",
     "mods.workshop_problem_no_unit":
         "Não achei o comando do servidor no systemd: confira o nome do serviço na tela Editar.",
     "mods.workshop_bad_ids": "Não achei nenhum ID de mod no que foi colado: nada foi mudado.",

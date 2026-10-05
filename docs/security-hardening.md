@@ -1,9 +1,11 @@
 # Security hardening: no more root inside the game containers
 
-Status: **phases 1-5, 7 and 8 implemented** (see the table at the end and
+Status: **phases 1-8 implemented** (see the table at the end and
 [security-hardening-contract.md](security-hardening-contract.md)). Phase 8 ran on a real Proxmox:
 four existing game CTs were migrated with `deploy/game/migrate-ct.ps1 -Ctid <CT>` and root SSH
-is refused on them. Phases 6, 9 and 10 still need a real CT to be validated. Root stays only where it is unavoidable: provisioning a container
+is refused on them. Phase 6 (mod loaders without root) is proven in the sandbox (real Debian 13
+sudo) and in the dev compose (UE4SS Linux install/uninstall on the helper-mode fake Palworld),
+and still needs one real CT per loader. Phases 9 and 10 still need a real CT to be validated. Root stays only where it is unavoidable: provisioning a container
 (`pct exec` on the host, or the broker's one-time install).
 
 ## Goal
@@ -91,13 +93,33 @@ the console/terminal (`sudo -u steam -i`). Files end up owned by their real owne
 is better than group write: SteamCMD and the games create files with umask 022, so `g+w` would
 need setgid directories plus ACLs and would still leave root-written files around.
 
-**Mod environment without root.** Provisioning adds, once, a drop-in with
-`EnvironmentFile=-/home/steam/.config/gamepanel/service.env`, and `win-run` sources
-`/home/steam/.config/gamepanel/runtime.env` after `/etc/game-runtime.env`. The installers write
-`LD_PRELOAD`, `DOORSTOP_*`, `UE4SS_TARGET_EXE` and `WINE_DLL_OVERRIDES` there. They only affect a
-process that already runs as `steam` (no escalation), and `EnvironmentFile` needs no
-`daemon-reload`. Fallback if some game ignores it: a root `gp-modenv enable|disable` that only
-renders fixed templates.
+**Mod environment without root (phase 6, implemented).** `lib/ct-panel-access.sh install`
+adds, once, a drop-in `gamepanel-env.conf` with `EnvironmentFile=-/etc/gamepanel/game-env/service.env`,
+and `win-run` sources `/etc/gamepanel/game-env/runtime.env` after `/etc/game-runtime.env`. The
+installers, run as steam with `--overlay`, write `LD_PRELOAD`, `DOORSTOP_*`, `UE4SS_TARGET_EXE`
+(service.env) and `WINE_DLL_OVERRIDES` (runtime.env) there; removing a line restores the
+original. They only affect a process that already runs as `steam` (no escalation), and
+`EnvironmentFile` needs no `daemon-reload`: the restart step of the same job applies it. No new
+sudo rule, no `gp-modenv`.
+
+Refinements over the first idea, each found while building it:
+
+- **The files are steam's, the folder is root's** (`/etc/gamepanel/game-env`, 0755 root; files
+  0644 steam), not `/home/steam/.config/gamepanel/`. systemd reads an `EnvironmentFile` as ROOT;
+  in a folder steam controls, steam could replace the file by a symlink to any root-only file
+  and read its `KEY=value` lines back from `/proc/self/environ` of the game. In a root folder
+  steam edits the content but can neither replace, delete nor create the files.
+- **win-run sources runtime.env only when the file belongs to the user running it**, so root
+  never sources a steam-writable file (nothing runs win-run as root today; this keeps it true).
+- **ARK's `-mods=`** cannot come from an `EnvironmentFile` (ExecStart is not an environment
+  variable) and an `ExecStart=` drop-in needs root. ARK starts through win-run (an .exe under
+  Proton), so win-run appends `GAMEPANEL_EXTRA_ARGS` from runtime.env to the game's arguments -
+  the same place the root drop-in put `-mods=`. An ARK unit that does not go through win-run is
+  refused in helper mode (`no_win_run`).
+- **Existing win-run files are patched, not rewritten**: the hook is inserted after
+  `exe="$1"; shift`; rewriting would also bring every other win-run change (ntsync, xvfb) to a
+  live server during a migration. New CTs get the same lines from `lib/ct-phases.sh` (a test
+  compares both texts; the sandbox compares a patched win-run with a new one byte by byte).
 
 **Restore.** `sudo gp-service stop`, extract as `steam` with `--no-same-owner
 --no-same-permissions` after checking every member (no absolute paths, no `..`, inside the
@@ -157,7 +179,9 @@ Implemented as `deploy/game/migrate-ct.ps1 -Ctid <CT> [-Service x] [-NoLock]`, w
 
 1. install `sudo`, create `gamepanel`, write `/etc/gamepanel/ct.env`, install helpers and
    sudoers, copy the panel key;
-2. convert the existing mod drop-ins and `WINE_DLL_OVERRIDES` line into the `steam` overlay;
+2. convert the existing mod drop-ins and `WINE_DLL_OVERRIDES` line into the `steam` overlay
+   (done by `ct-panel-access.sh install`, so rerunning the migration on an already migrated CT
+   converts a CT migrated before phase 6);
 3. `chown -R steam:steam` the backup folder;
 4. the panel checks `ssh gamepanel@ct sudo -n /usr/local/sbin/gp-service --version` and
    `sudo -n -u steam true`;
@@ -198,7 +222,7 @@ If step 4 fails nothing has been locked and the server stays in legacy mode.
 
 | # | Step | Risk | Validated by |
 |---|---|---|---|
-| | **Done: 1, 2, 3, 4, 5, 7, 8** (tests, `docker/ct-sandbox/panel-access.sh`, dev compose; 8 on a real Proxmox). **Open: 6, 9, 10.** | | |
+| | **Done: 1-8** (tests, `docker/ct-sandbox/panel-access.sh`, dev compose; 8 on a real Proxmox; 6 still needs one real CT per loader). **Open: 9, 10.** | | |
 | 1 | Safe restore (member check, `--no-same-owner`) and narrower `FILE_ROOTS` default, still in root mode | low | pytest, compose |
 | 2 | `remote_cmd` builder + `privileged(server)`; behavior unchanged for `root` | low | full pytest (same strings for root) |
 | 3 | `gp-service`, `gp-clamav-ensure`, sudoers and sshd templates in `lib/`, shared by `ct-phases.sh`, Docker and migration | low | `docker/ct-sandbox` (`visudo -cf`) |

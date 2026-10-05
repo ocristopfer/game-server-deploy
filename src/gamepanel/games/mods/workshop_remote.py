@@ -473,6 +473,101 @@ def reforger_set(ctx: dict, items: list[tuple[str, str]]) -> dict:
     return {"ids": [g for g, _ in items], "config": path}
 
 
+# ------------------------------------------------------------------ steam overlay (helper mode)
+# IDENTICAL in every installer that touches the game's environment (a test compares them): they
+# run standalone in the CT and do not import each other. On a server in helper mode the installer
+# runs as steam, which can write neither a systemd drop-in nor /etc/game-runtime.env. It writes
+# these two files instead - steam's, inside a folder root owns (lib/ct-panel-access.sh prepares
+# them once): service.env reaches the game unit through EnvironmentFile=, runtime.env reaches
+# win-run after /etc/game-runtime.env. No daemon-reload: systemd reads the file at every start,
+# and the restart that follows the install (a step of the same job) is what applies it.
+OVERLAY_DIR = "/etc/gamepanel/game-env"
+OVERLAY_SERVICE = "service.env"
+OVERLAY_RUNTIME = "runtime.env"
+OVERLAY_SYSTEMD_DIR = "/etc/systemd/system"
+OVERLAY_DROPIN = "gamepanel-env.conf"
+OVERLAY_WIN_RUN = "/usr/local/bin/win-run"
+OVERLAY_HOOK = "gamepanel-overlay"
+OVERLAY_KEY = re.compile(r"[A-Z_][A-Z0-9_]{0,63}")
+# It goes between single quotes in a file bash sources: never a quote, $ or backtick.
+OVERLAY_VALUE = re.compile(r"[A-Za-z0-9_./:,;=@+ -]{0,4096}")
+OVERLAY_HINT = "rode deploy/game/migrate-ct.ps1 de novo neste CT (ele prepara o ambiente dos mods)"
+
+
+def overlay_path(name: str) -> str:
+    return os.path.join(OVERLAY_DIR, name)
+
+
+def _overlay_lines(name: str) -> list[str]:
+    try:
+        with open(overlay_path(name), encoding="utf-8") as f:
+            return f.read().splitlines()
+    except OSError:
+        return []
+
+
+def overlay_get(name: str, key: str) -> str | None:
+    """KEY's value in the overlay file, without quotes; None when the line is not there."""
+    for line in _overlay_lines(name):
+        if line.startswith(key + "="):
+            return line.split("=", 1)[1].strip().strip("'\"")
+    return None
+
+
+def overlay_set(name: str, key: str, value: str | None) -> None:
+    """KEY='value' in the overlay file, replaced where it is; None removes the line.
+
+    The file has to exist: steam cannot create anything in the folder, and that is precisely what
+    keeps it from being swapped for a link. Written in place (same inode, still steam's).
+    """
+    if not OVERLAY_KEY.fullmatch(key) or (value is not None and not OVERLAY_VALUE.fullmatch(value)):
+        raise ValueError(f"valor invalido para o ambiente do jogo: {key}")
+    path = overlay_path(name)
+    if not os.path.isfile(path):
+        raise ValueError(f"{path} nao existe: {OVERLAY_HINT}")
+    new = None if value is None else f"{key}='{value}'"
+    lines, placed = [], False
+    for line in _overlay_lines(name):
+        if line.startswith(key + "="):
+            if new is not None and not placed:
+                lines.append(new)
+            placed = True
+            continue
+        lines.append(line)
+    if new is not None and not placed:
+        lines.append(new)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def overlay_wine_problem() -> str:
+    """Why runtime.env would not reach the game ('' = it will)."""
+    if not os.path.isfile(overlay_path(OVERLAY_RUNTIME)):
+        return f"{overlay_path(OVERLAY_RUNTIME)} nao existe: {OVERLAY_HINT}"
+    try:
+        with open(OVERLAY_WIN_RUN, encoding="utf-8", errors="replace") as f:
+            hooked = OVERLAY_HOOK in f.read()
+    except OSError:
+        hooked = False
+    return "" if hooked else f"o win-run deste CT nao le o ambiente dos mods: {OVERLAY_HINT}"
+
+
+def overlay_unit_problem(unit: str, root_dropin: str = "") -> str:
+    """Why service.env would not reach this unit ('' = it will).
+
+    A drop-in a ROOT installer wrote before the CT was migrated is a problem too: steam cannot
+    remove it, so "disable" would only look like it worked.
+    """
+    if not os.path.isfile(overlay_path(OVERLAY_SERVICE)):
+        return f"{overlay_path(OVERLAY_SERVICE)} nao existe: {OVERLAY_HINT}"
+    if not os.path.isfile(os.path.join(OVERLAY_SYSTEMD_DIR, f"{unit}.d", OVERLAY_DROPIN)):
+        return f"o servico {unit} nao le o ambiente dos mods: {OVERLAY_HINT}"
+    if root_dropin and os.path.lexists(root_dropin):
+        return f"o carregador foi instalado como root antes da migracao ({root_dropin}): {OVERLAY_HINT}"
+    return ""
+# ------------------------------------------------------------------ end of the steam overlay
+
+
 # --- ARK: Survival Ascended -------------------------------------------------------------------
 
 ARK_DROPIN = "gamepanel-mods.conf"
@@ -511,7 +606,39 @@ def ark_dropin(ctx: dict) -> str:
     return os.path.join("/etc/systemd/system", f"{ctx['unit']}.d", ARK_DROPIN)
 
 
+ARK_ARGS = "GAMEPANEL_EXTRA_ARGS"
+WIN_RUN_PREFIX = "/usr/local/bin/win-run "
+
+
+def ark_overlay_problem(ctx: dict) -> str:
+    """Helper mode: why the list could not go through win-run's overlay ('' = it can).
+
+    ExecStart cannot come from an EnvironmentFile, but the game already starts through win-run
+    (an .exe under Proton), and win-run appends GAMEPANEL_EXTRA_ARGS from steam's runtime.env to
+    the game's arguments - the same place the drop-in's -mods= ended up, at the end.
+    """
+    if os.path.lexists(ark_dropin(ctx)):
+        return "root_dropin"
+    base = ark_base(ctx)
+    if not base:
+        return "no_unit"
+    if not base.startswith(WIN_RUN_PREFIX):
+        return "no_win_run"
+    return "no_overlay" if overlay_wine_problem() else ""
+
+
+def ark_overlay_status(ctx: dict) -> dict:
+    found = re.search(r"-mods=(\S+)", overlay_get(OVERLAY_RUNTIME, ARK_ARGS) or "")
+    ids = [i for i in (found.group(1).split(",") if found else []) if i]
+    mods_dir = os.path.join(ctx["game_dir"], ARK_MODS_DIR)
+    installed = [i for i in ids if glob.glob(os.path.join(mods_dir, "*", f"{i}_*"))]
+    return {"config": overlay_path(OVERLAY_RUNTIME), "ids": ids, "installed": installed, "base_changed": False,
+            "problem": ark_overlay_problem(ctx)}
+
+
 def ark_status(ctx: dict) -> dict:
+    if ctx.get("overlay") and not os.path.lexists(ark_dropin(ctx)):
+        return ark_overlay_status(ctx)
     path = ark_dropin(ctx)
     text = read_text(path)
     stored = next((ln[len(ARK_BASE_MARK):] for ln in text.splitlines() if ln.startswith(ARK_BASE_MARK)), "")
@@ -520,12 +647,22 @@ def ark_status(ctx: dict) -> dict:
     mods_dir = os.path.join(ctx["game_dir"], ARK_MODS_DIR)
     installed = [i for i in ids if glob.glob(os.path.join(mods_dir, "*", f"{i}_*"))]
     base = ark_base(ctx)
+    problem = "" if base else "no_unit"
+    # A list a root install left on a server that is now in helper mode: steam cannot change it.
+    if not problem and ctx.get("overlay"):
+        problem = "root_dropin"
     return {"config": path if text else "", "ids": ids, "installed": installed,
             "base_changed": bool(text) and stored != base,
-            "problem": "" if base else "no_unit"}
+            "problem": problem}
 
 
 def ark_set(ctx: dict, items: list[str]) -> dict:
+    if ctx.get("overlay"):
+        problem = ark_overlay_problem(ctx)
+        if problem:
+            raise ValueError(f"a lista do ARK nao pode ser gravada sem root aqui ({problem}): {OVERLAY_HINT}")
+        overlay_set(OVERLAY_RUNTIME, ARK_ARGS, f"-mods={','.join(items)}" if items else None)
+        return {"ids": items, "config": overlay_path(OVERLAY_RUNTIME)}
     if hasattr(os, "geteuid") and os.geteuid() != 0:
         raise ValueError("the ARK mod list is a systemd drop-in, and only root can write it")
     base = ark_base(ctx)
@@ -742,11 +879,12 @@ def parse_items(fmt: str, raw: list[str]) -> list:
     return list(dict.fromkeys(raw))
 
 
-def context(unit: str, game_dir: str) -> dict:
+def context(unit: str, game_dir: str, overlay: bool = False) -> dict:
     text = unit_text(unit)
     user = unit_value(text, "User") or OWNER
     return {"game_dir": game_dir, "args": exec_args(text), "user": user, "home": home_of(user),
-            "workdir": unit_value(text, "WorkingDirectory"), "unit": unit, "unit_text": text}
+            "workdir": unit_value(text, "WorkingDirectory"), "unit": unit, "unit_text": text,
+            "overlay": overlay}
 
 
 STATUS = {"dst": dst_status, "zomboid": zomboid_status, "unturned": unturned_status,
@@ -778,6 +916,11 @@ def run(fmt: str, action: str, ctx: dict, raw: list[str], mods: str, staging: st
 
 def main(argv: list[str]) -> int:
     unit = ""
+    # Helper mode (the panel logs in without root): what needs the game's environment (ARK) goes to
+    # steam's overlay. The other formats only write the game's own files, as steam, in both modes.
+    overlay = argv[:1] == ["--overlay"]
+    if overlay:
+        argv = argv[1:]
     if argv[:1] == ["--unit"]:
         unit, argv = argv[1], argv[2:]
     options = {"--mods": "", "--staging": ""}
@@ -787,7 +930,7 @@ def main(argv: list[str]) -> int:
             options[flag], argv = argv[i + 1] if i + 1 < len(argv) else "", argv[:i] + argv[i + 2:]
     try:
         fmt, action, game_dir, *items = argv
-        result = run(fmt, action, context(unit, game_dir), items, options["--mods"], options["--staging"])
+        result = run(fmt, action, context(unit, game_dir, overlay), items, options["--mods"], options["--staging"])
     except (ValueError, KeyError, OSError, TypeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"error": str(exc)}))
         return 1

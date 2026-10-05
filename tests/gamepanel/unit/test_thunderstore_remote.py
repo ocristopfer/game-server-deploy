@@ -395,7 +395,7 @@ def test_desinstalar_no_linux_apaga_o_drop_in(tmp_path, monkeypatch):
     game_dir = tmp_path / "valheim"
     game_dir.mkdir()
     ts.install_loader(str(game_dir), "BepInEx", "BepInExPack_V_Rising", fake_fetch,
-                      env_path=str(tmp_path / "nao-existe.env"), unit="valheim.service")
+                      env_path=str(tmp_path / "nao-existe.env"), target=ts.Target("valheim.service"))
     assert ts.status(str(game_dir), unit="valheim.service")["enabled"] is True
     ts.uninstall_loader(str(game_dir), env_path=str(tmp_path / "nao-existe.env"), unit="valheim.service")
     assert ts.status(str(game_dir), unit="valheim.service")["enabled"] is False

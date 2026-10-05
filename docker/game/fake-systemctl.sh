@@ -43,11 +43,31 @@ running() {
   [ -n "$pid" ] && [ -d "/proc/$pid" ]
 }
 
+# What systemd would hand the unit from its drop-ins (Environment= and EnvironmentFile=), written
+# to the log instead of applied: a real libUE4SS.so preloaded into the fake loop could take it
+# down, and what matters here is proving the overlay chain (drop-in -> service.env -> the unit).
+log_unit_environment() {
+  local dir="/etc/systemd/system/${unit}.service.d" f line file
+  for f in "$dir"/*.conf; do
+    [ -f "$f" ] || continue
+    while IFS= read -r line; do
+      case "$line" in
+        Environment=*) echo "fake systemd: ambiente ${line#Environment=} (${f##*/})" ;;
+        EnvironmentFile=*)
+          file="${line#EnvironmentFile=}"; file="${file#-}"
+          [ -r "$file" ] && grep -v '^#' "$file" | sed "s|^|fake systemd: ambiente |; s|\$| (${file##*/})|"
+          ;;
+      esac
+    done <"$f"
+  done
+}
+
 start_unit() {
   running && return 0
   # Readable by everyone: the panel reads it through the fake journalctl as gamepanel.
   touch "$log"
   chmod 0644 "$log"
+  log_unit_environment >>"$log" 2>/dev/null || true
   # setsid: the process has to outlive the end of the ssh session that started it.
   setsid nohup /usr/local/bin/fake-game-loop "$unit" >>"$log" 2>&1 &
   echo $! >"$pidfile"

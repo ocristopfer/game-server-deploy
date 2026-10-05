@@ -69,6 +69,101 @@ def fetch(url: str) -> bytes:
         return r.read()
 
 
+# ------------------------------------------------------------------ steam overlay (helper mode)
+# IDENTICAL in every installer that touches the game's environment (a test compares them): they
+# run standalone in the CT and do not import each other. On a server in helper mode the installer
+# runs as steam, which can write neither a systemd drop-in nor /etc/game-runtime.env. It writes
+# these two files instead - steam's, inside a folder root owns (lib/ct-panel-access.sh prepares
+# them once): service.env reaches the game unit through EnvironmentFile=, runtime.env reaches
+# win-run after /etc/game-runtime.env. No daemon-reload: systemd reads the file at every start,
+# and the restart that follows the install (a step of the same job) is what applies it.
+OVERLAY_DIR = "/etc/gamepanel/game-env"
+OVERLAY_SERVICE = "service.env"
+OVERLAY_RUNTIME = "runtime.env"
+OVERLAY_SYSTEMD_DIR = "/etc/systemd/system"
+OVERLAY_DROPIN = "gamepanel-env.conf"
+OVERLAY_WIN_RUN = "/usr/local/bin/win-run"
+OVERLAY_HOOK = "gamepanel-overlay"
+OVERLAY_KEY = re.compile(r"[A-Z_][A-Z0-9_]{0,63}")
+# It goes between single quotes in a file bash sources: never a quote, $ or backtick.
+OVERLAY_VALUE = re.compile(r"[A-Za-z0-9_./:,;=@+ -]{0,4096}")
+OVERLAY_HINT = "rode deploy/game/migrate-ct.ps1 de novo neste CT (ele prepara o ambiente dos mods)"
+
+
+def overlay_path(name: str) -> str:
+    return os.path.join(OVERLAY_DIR, name)
+
+
+def _overlay_lines(name: str) -> list[str]:
+    try:
+        with open(overlay_path(name), encoding="utf-8") as f:
+            return f.read().splitlines()
+    except OSError:
+        return []
+
+
+def overlay_get(name: str, key: str) -> str | None:
+    """KEY's value in the overlay file, without quotes; None when the line is not there."""
+    for line in _overlay_lines(name):
+        if line.startswith(key + "="):
+            return line.split("=", 1)[1].strip().strip("'\"")
+    return None
+
+
+def overlay_set(name: str, key: str, value: str | None) -> None:
+    """KEY='value' in the overlay file, replaced where it is; None removes the line.
+
+    The file has to exist: steam cannot create anything in the folder, and that is precisely what
+    keeps it from being swapped for a link. Written in place (same inode, still steam's).
+    """
+    if not OVERLAY_KEY.fullmatch(key) or (value is not None and not OVERLAY_VALUE.fullmatch(value)):
+        raise ValueError(f"valor invalido para o ambiente do jogo: {key}")
+    path = overlay_path(name)
+    if not os.path.isfile(path):
+        raise ValueError(f"{path} nao existe: {OVERLAY_HINT}")
+    new = None if value is None else f"{key}='{value}'"
+    lines, placed = [], False
+    for line in _overlay_lines(name):
+        if line.startswith(key + "="):
+            if new is not None and not placed:
+                lines.append(new)
+            placed = True
+            continue
+        lines.append(line)
+    if new is not None and not placed:
+        lines.append(new)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def overlay_wine_problem() -> str:
+    """Why runtime.env would not reach the game ('' = it will)."""
+    if not os.path.isfile(overlay_path(OVERLAY_RUNTIME)):
+        return f"{overlay_path(OVERLAY_RUNTIME)} nao existe: {OVERLAY_HINT}"
+    try:
+        with open(OVERLAY_WIN_RUN, encoding="utf-8", errors="replace") as f:
+            hooked = OVERLAY_HOOK in f.read()
+    except OSError:
+        hooked = False
+    return "" if hooked else f"o win-run deste CT nao le o ambiente dos mods: {OVERLAY_HINT}"
+
+
+def overlay_unit_problem(unit: str, root_dropin: str = "") -> str:
+    """Why service.env would not reach this unit ('' = it will).
+
+    A drop-in a ROOT installer wrote before the CT was migrated is a problem too: steam cannot
+    remove it, so "disable" would only look like it worked.
+    """
+    if not os.path.isfile(overlay_path(OVERLAY_SERVICE)):
+        return f"{overlay_path(OVERLAY_SERVICE)} nao existe: {OVERLAY_HINT}"
+    if not os.path.isfile(os.path.join(OVERLAY_SYSTEMD_DIR, f"{unit}.d", OVERLAY_DROPIN)):
+        return f"o servico {unit} nao le o ambiente dos mods: {OVERLAY_HINT}"
+    if root_dropin and os.path.lexists(root_dropin):
+        return f"o carregador foi instalado como root antes da migracao ({root_dropin}): {OVERLAY_HINT}"
+    return ""
+# ------------------------------------------------------------------ end of the steam overlay
+
+
 # ------------------------------------------------------------------ antivirus
 # IDENTICAL in thunderstore_remote.py (a test compares them): both run standalone in the CT and
 # do not import each other. The rule (what counts as a finding) does not live here, but in the
@@ -150,13 +245,33 @@ def _write_overrides(env_path: str, value: str) -> None:
         f.write("\n".join(lines) + "\n")
 
 
-def set_enabled(env_path: str, enabled: bool) -> None:
-    old = _read_overrides(env_path)
-    _write_overrides(env_path, with_winmm(old) if enabled else without_winmm(old))
+def effective_overrides(env_path: str, overlay: bool = False) -> str:
+    """What win-run will use: the overlay's line (helper mode) wins over /etc/game-runtime.env."""
+    if overlay:
+        value = overlay_get(OVERLAY_RUNTIME, "WINE_DLL_OVERRIDES")
+        if value is not None:
+            return value
+    return _read_overrides(env_path)
 
 
-def is_enabled(env_path: str) -> bool:
-    return OVERRIDE in _groups(_read_overrides(env_path))
+def set_enabled(env_path: str, enabled: bool, overlay: bool = False) -> None:
+    old = effective_overrides(env_path, overlay)
+    value = with_winmm(old) if enabled else without_winmm(old)
+    if not overlay:
+        _write_overrides(env_path, value)
+        return
+    # Helper mode: steam's overlay, and no line at all when the value is the base one - disabling
+    # or uninstalling then leaves /etc/game-runtime.env in charge again, exactly as before the loader.
+    overlay_set(OVERLAY_RUNTIME, "WINE_DLL_OVERRIDES", None if value == _read_overrides(env_path) else value)
+
+
+def is_enabled(env_path: str, overlay: bool = False) -> bool:
+    return OVERRIDE in _groups(effective_overrides(env_path, overlay))
+
+
+def overlay_problem(env_path: str = RUNTIME_ENV) -> str:
+    """Helper mode: why the Wine setting would not reach the game ('' = it will)."""
+    return overlay_wine_problem() if os.path.exists(env_path) else ""
 
 
 # ------------------------------------------------------------------ the loader
@@ -187,7 +302,7 @@ def release_for(version: str = "", fetcher=fetch) -> dict:
 
 
 def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, version: str = "",
-                   scan=_no_scan) -> dict:
+                   scan=_no_scan, overlay: bool = False) -> dict:
     release = release_for(version, fetcher)
     name, url = _asset_url(release)
     print(f"baixando {name}")
@@ -209,7 +324,7 @@ def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, ve
             json.dump(DEFAULT_CONFIG, f, indent=4)
     os.makedirs(os.path.join(game_dir, MODS), exist_ok=True)
     if os.path.exists(env_path):
-        set_enabled(env_path, True)
+        set_enabled(env_path, True, overlay)
     tag = release.get("tag_name", "")
     with open(os.path.join(game_dir, MARK), "w", encoding="utf-8") as f:
         json.dump({"version": tag, "asset": name, "pinned": bool(version)}, f)
@@ -217,14 +332,14 @@ def install_loader(game_dir: str, fetcher=fetch, env_path: str = RUNTIME_ENV, ve
     return {"loader": "Shroudtopia", "version": tag}
 
 
-def uninstall_loader(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
+def uninstall_loader(game_dir: str, env_path: str = RUNTIME_ENV, overlay: bool = False) -> dict:
     """Remove Shroudtopia and winmm=n,b: Enshrouded starts again without any of its code.
 
     The mods (DLLs in mods/) depend on it and go along (the screen warns first). These are the
     loader's fixed names next to the executable, never the whole game folder.
     """
     if os.path.exists(env_path):
-        set_enabled(env_path, False)
+        set_enabled(env_path, False, overlay)
     removed = []
     for name in (*LOADER_FILES, CONFIG, LOG, MODS, MARK):
         path = os.path.join(game_dir, name)
@@ -239,7 +354,7 @@ def uninstall_loader(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
     return {"uninstalled": True, "removed": removed}
 
 
-def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
+def status(game_dir: str, env_path: str = RUNTIME_ENV, overlay: bool = False) -> dict:
     mods_dir = os.path.join(game_dir, MODS)
     mods = []
     for entry in sorted(os.listdir(mods_dir)) if os.path.isdir(mods_dir) else []:
@@ -253,7 +368,8 @@ def status(game_dir: str, env_path: str = RUNTIME_ENV) -> dict:
         "loader_installed": all(os.path.exists(os.path.join(game_dir, f)) for f in LOADER_FILES),
         "loader": "Shroudtopia", "loader_version": mark.get("version", ""),
         "loader_pinned": bool(mark.get("pinned")),
-        "enabled": is_enabled(env_path) if os.path.exists(env_path) else False,
+        "enabled": is_enabled(env_path, overlay) if os.path.exists(env_path) else False,
+        "overlay_problem": overlay_problem(env_path) if overlay else "",
         "mods": mods, "log": log,
     }
 
@@ -273,21 +389,28 @@ def _chown(game_dir: str) -> None:
 
 def main(argv: list[str]) -> int:
     script = ""
+    # Helper mode (the panel logs in without root): the Wine setting goes to steam's overlay.
+    overlay = argv[:1] == ["--overlay"]
+    if overlay:
+        argv = argv[1:]
     if argv[:1] == ["--scan"]:
         script, argv = argv[1], argv[2:]
     action, game_dir, *rest = argv
     try:
         if action == "loader-install" and not script:
             raise ValueError("instalar sem a verificacao do antivirus nao e caminho do painel")
+        # Before downloading anything: a setting that would not reach the game is a broken install.
+        if overlay and action != "status" and overlay_problem():
+            raise ValueError(overlay_problem())
         if action == "status":
-            result = status(game_dir)
+            result = status(game_dir, overlay=overlay)
         elif action == "loader-install":
-            result = install_loader(game_dir, version=rest[0] if rest else "", scan=scanner(script))
+            result = install_loader(game_dir, version=rest[0] if rest else "", scan=scanner(script), overlay=overlay)
         elif action in ("loader-enable", "loader-disable"):
-            set_enabled(RUNTIME_ENV, action == "loader-enable")
+            set_enabled(RUNTIME_ENV, action == "loader-enable", overlay)
             result = {"enabled": action == "loader-enable"}
         elif action == "loader-uninstall":
-            result = uninstall_loader(game_dir)
+            result = uninstall_loader(game_dir, overlay=overlay)
         else:
             raise ValueError(f"acao desconhecida: {action}")
         if action not in ("status", "loader-uninstall"):

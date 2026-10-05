@@ -17,7 +17,6 @@ import threading
 import pytest
 
 from gamepanel import app as panel
-from gamepanel import i18n
 from gamepanel.persistence.repositories import servers as servers_repo
 from gamepanel.tasks import broker_jobs
 
@@ -156,25 +155,61 @@ def _status_reply(state: dict):
     return ssh_run
 
 
-def test_instalador_que_precisa_de_root_e_recusado_no_modo_helper(database, admin, post, jobs, monkeypatch):
-    sid = _insert(database, "vampiro", "gamepanel", "vrising.service")
+@pytest.mark.parametrize(("service", "action"), [
+    ("vrising.service", "install"),        # BepInEx under Proton: WINE_DLL_OVERRIDES
+    ("valheim.service", "install"),        # BepInEx native Linux: doorstop variables
+    ("enshrouded.service", "disable"),     # Shroudtopia: winmm=n,b
+    ("icarus.service", "enable"),          # UE4SS (Windows): dwmapi=n,b
+    ("palworld.service", "uninstall"),     # UE4SS Linux: LD_PRELOAD
+])
+def test_carregador_no_modo_helper_roda_como_steam_e_escreve_no_overlay(database, admin, post, jobs, monkeypatch,
+                                                                        service, action):
+    """Phase 6: the loaders no longer need root. They run as steam with --overlay, which makes them
+    write steam's files in /etc/gamepanel/game-env instead of a drop-in or /etc/game-runtime.env."""
+    sid = _insert(database, "jogo", "gamepanel", service)
     monkeypatch.setattr(panel, "ssh_run", _status_reply({}))
-    response = post(admin, f"/servers/{sid}/mods/loader", {"action": "install"})
-    assert response.status_code == 302
-    assert jobs == [], "o instalador nao pode nem virar job: no CT sem root ele quebraria no meio"
-    with admin.session_transaction() as sess:
-        flashes = [text for _cat, text in sess.get("_flashes", [])]
-    with panel.app.test_request_context("/"):
-        expected = panel.translate(i18n.Message("mods.needs_root", user="gamepanel"))
-    assert flashes == [expected]
-    assert "gamepanel" in expected, "a frase tem de estar no catalogo, nao a chave crua"
+    post(admin, f"/servers/{sid}/mods/loader", {"action": action, "restart": "1"})
+    steps = jobs[0]["steps"]
+    installer = steps[-2]
+    assert installer.startswith(AS_STEAM + "python3 -c ")
+    assert "' --overlay " in installer
+    # The restart is still a step of the same job, through the fixed helper: it applies the overlay.
+    assert steps[-1] == "sudo -n /usr/local/sbin/gp-service restart"
+    if action == "install":
+        # Downloading: ClamAV through the root helper first, and the scan script only checks.
+        assert steps[0] == "sudo -n /usr/local/sbin/gp-clamav-ensure"
+        assert "apt-get" not in installer
+    else:
+        assert len(steps) == 2
 
 
-def test_tela_de_mods_avisa_antes_do_clique_no_modo_helper(database, admin, monkeypatch):
-    sid = _insert(database, "vampiro", "gamepanel", "vrising.service")
+@pytest.mark.parametrize("service", ["satisfactory.service", "rust.service"])
+def test_sml_e_oxide_no_modo_helper_nao_precisam_do_overlay(database, admin, post, jobs, monkeypatch, service):
+    """SML and Oxide only write inside the game folder: as steam, with the steam scan, no --overlay."""
+    sid = _insert(database, "jogo", "gamepanel", service)
     monkeypatch.setattr(panel, "ssh_run", _status_reply({}))
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "install"})
+    ensure, installer = jobs[0]["steps"]
+    assert ensure == "sudo -n /usr/local/sbin/gp-clamav-ensure"
+    assert installer.startswith(AS_STEAM + "python3 -c ")
+    assert "' --overlay " not in installer and "apt-get" not in installer
+
+
+def test_carregador_no_modo_root_nao_mudou(database, admin, post, jobs, monkeypatch):
+    sid = _insert(database, "jogo", "root", "palworld.service")
+    post(admin, f"/servers/{sid}/mods/loader", {"action": "uninstall"})
+    (installer,) = jobs[0]["steps"]
+    assert installer.startswith("python3 -c ")
+    assert "' --overlay " not in installer
+
+
+def test_tela_de_mods_mostra_o_problema_do_overlay(database, admin, monkeypatch):
+    sid = _insert(database, "vampiro", "gamepanel", "vrising.service")
+    monkeypatch.setattr(panel, "ssh_run", _status_reply({"overlay_problem": "rode o migrate-ct de novo"}))
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
-    assert "docs/security-hardening.md" in html
+    assert "rode o migrate-ct de novo" in html
+    with panel.app.test_request_context("/"):
+        assert panel.translate("mods.overlay_problem", reason="")[:20] in html
 
 
 def test_tela_do_servidor_mostra_o_modo_de_acesso(helper, legacy, admin, monkeypatch):
@@ -268,14 +303,23 @@ def test_o_modo_de_acesso_chega_aos_templates(helper, legacy, database):
 
 # ------------------------------------------------------------- Workshop: ARK and Conan
 
-def test_lista_do_ark_e_recusada_no_modo_helper(database, admin, post, jobs, monkeypatch):
-    """The ARK list is a systemd drop-in: without root it would fail halfway, so it never becomes a job."""
+def test_lista_do_ark_no_modo_helper_vai_para_o_overlay(database, admin, post, jobs, monkeypatch):
+    """ARK in helper mode: as steam with --overlay (GAMEPANEL_EXTRA_ARGS, which win-run appends)."""
     sid = _insert(database, "arca", "gamepanel", "ark-ascended.service")
     monkeypatch.setattr(panel, "ssh_run", _status_reply({"ids": [], "installed": [], "problem": ""}))
     post(admin, f"/servers/{sid}/mods/workshop", {"ids": "928988"})
-    assert jobs == []
+    (save,) = jobs[0]["steps"]
+    assert save.startswith(AS_STEAM + "python3 -c ")
+    assert save.endswith("' --overlay --unit ark-ascended.service ark set /opt/game 928988")
+
+
+def test_lista_do_ark_com_problema_no_overlay_esconde_o_formulario(database, admin, monkeypatch):
+    sid = _insert(database, "arca", "gamepanel", "ark-ascended.service")
+    monkeypatch.setattr(panel, "ssh_run", _status_reply({"ids": [], "installed": [], "problem": "root_dropin"}))
     html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
     assert 'name="ids"' not in html
+    with panel.app.test_request_context("/"):
+        assert panel.translate("mods.workshop_problem_root_dropin") in html
 
 
 def test_lista_do_ark_vira_drop_in_no_modo_root(database, admin, post, jobs, monkeypatch):

@@ -1,6 +1,6 @@
 # Unprivileged access: the contract between the panel and the containers
 
-Implementation contract for phases 1-5 and 7 of [security-hardening.md](security-hardening.md).
+Implementation contract for phases 1-8 of [security-hardening.md](security-hardening.md).
 Both sides (panel code and the container provisioning) build against exactly this.
 
 ## Users
@@ -41,6 +41,28 @@ gamepanel ALL=(steam) NOPASSWD: ALL
 A trailing `""` means "no arguments": in sudoers a command written without arguments
 accepts ANY arguments, so the helpers that take none say so explicitly.
 
+## Mod environment overlay (phase 6), written by `ct-panel-access.sh install`
+
+| Path | Owner, mode | Read by |
+|---|---|---|
+| `/etc/gamepanel/game-env/` | root:root 0755 | - (steam can neither create, delete nor replace files in it) |
+| `/etc/gamepanel/game-env/service.env` | steam:steam 0644 | systemd, through the drop-in below (`KEY='value'` lines) |
+| `/etc/gamepanel/game-env/runtime.env` | steam:steam 0644 | `win-run`, sourced after `/etc/game-runtime.env`, only when owned by the running user; `GAMEPANEL_EXTRA_ARGS` is appended to the game's arguments |
+| `/etc/systemd/system/<GAME_UNIT>.d/gamepanel-env.conf` | root:root 0644 | systemd: `[Service]` + `EnvironmentFile=-/etc/gamepanel/game-env/service.env` |
+
+Values are limited to `[A-Za-z0-9_./:,;=@+ -]` on both sides (they go between single quotes in a
+file bash sources). No sudoers line changes: the panel writes these files as `steam`.
+
+`install` also converts, idempotently, what a root installer left before a CT was migrated:
+`gamepanel-*.conf` loader drop-ins of the game unit (only `[Service]`/`Environment=` lines) move
+to service.env; ARK's `gamepanel-mods.conf` becomes `GAMEPANEL_EXTRA_ARGS` (only when its recorded
+base is the unit's current ExecStart and runs through win-run); a loader `WINE_DLL_OVERRIDES` in
+`/etc/game-runtime.env` moves to runtime.env and the base gets the original back (BepInEx's
+`overrides_before`, or without `winmm=n,b`/`dwmapi=n,b`); a win-run without the hook gets it
+inserted after `exe="$1"; shift` (FIRST: the runtime.env conversions only run once win-run reads
+it, otherwise the loader would vanish at the next restart); root-owned files under the unit's `WorkingDirectory` (under
+`/opt`) go back to steam (`chown -R -P`). `daemon-reload` runs only when a drop-in changed.
+
 ## sshd (`/etc/ssh/sshd_config.d/10-gamepanel.conf`), written only when root is locked
 
 ```
@@ -60,7 +82,9 @@ AllowUsers gamepanel
 | presence | `nft -j list set inet ct_firewall players` | `sudo -n /usr/sbin/nft -j list set inet ct_firewall players` |
 | files, backups, port probe, console, terminal, workshop/folder mods, antivirus scan | as root (unchanged) | `sudo -n -u steam -- <same command>`; terminal: `sudo -n -u steam -i` |
 | ClamAV install | inline apt (unchanged) | `sudo -n /usr/local/sbin/gp-clamav-ensure` |
-| loader installers that write systemd drop-ins or `/etc/game-runtime.env` (BepInEx, UE4SS, UE4SS Linux, Shroudtopia, Oxide, SML) | unchanged | refused with a clear message: phase 6 of the plan (not implemented yet) |
+| loader installers (BepInEx, UE4SS, UE4SS Linux, Shroudtopia) and the ARK mod list | unchanged (systemd drop-ins, `/etc/game-runtime.env`, as root) | as `steam` with `--overlay`: they write the mod environment overlay below, never root's files |
+| Oxide, SML | unchanged | as `steam` (they only write inside the game folder) |
+| antivirus for an installer that downloads | inline in the scan script | `sudo -n /usr/local/sbin/gp-clamav-ensure` as the step before, then the check-only scan as `steam` |
 
 ## Who uses which user
 

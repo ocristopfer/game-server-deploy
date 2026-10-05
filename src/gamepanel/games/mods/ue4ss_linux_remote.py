@@ -107,6 +107,101 @@ def fetch(url: str) -> bytes:
         return r.read()
 
 
+# ------------------------------------------------------------------ steam overlay (helper mode)
+# IDENTICAL in every installer that touches the game's environment (a test compares them): they
+# run standalone in the CT and do not import each other. On a server in helper mode the installer
+# runs as steam, which can write neither a systemd drop-in nor /etc/game-runtime.env. It writes
+# these two files instead - steam's, inside a folder root owns (lib/ct-panel-access.sh prepares
+# them once): service.env reaches the game unit through EnvironmentFile=, runtime.env reaches
+# win-run after /etc/game-runtime.env. No daemon-reload: systemd reads the file at every start,
+# and the restart that follows the install (a step of the same job) is what applies it.
+OVERLAY_DIR = "/etc/gamepanel/game-env"
+OVERLAY_SERVICE = "service.env"
+OVERLAY_RUNTIME = "runtime.env"
+OVERLAY_SYSTEMD_DIR = "/etc/systemd/system"
+OVERLAY_DROPIN = "gamepanel-env.conf"
+OVERLAY_WIN_RUN = "/usr/local/bin/win-run"
+OVERLAY_HOOK = "gamepanel-overlay"
+OVERLAY_KEY = re.compile(r"[A-Z_][A-Z0-9_]{0,63}")
+# It goes between single quotes in a file bash sources: never a quote, $ or backtick.
+OVERLAY_VALUE = re.compile(r"[A-Za-z0-9_./:,;=@+ -]{0,4096}")
+OVERLAY_HINT = "rode deploy/game/migrate-ct.ps1 de novo neste CT (ele prepara o ambiente dos mods)"
+
+
+def overlay_path(name: str) -> str:
+    return os.path.join(OVERLAY_DIR, name)
+
+
+def _overlay_lines(name: str) -> list[str]:
+    try:
+        with open(overlay_path(name), encoding="utf-8") as f:
+            return f.read().splitlines()
+    except OSError:
+        return []
+
+
+def overlay_get(name: str, key: str) -> str | None:
+    """KEY's value in the overlay file, without quotes; None when the line is not there."""
+    for line in _overlay_lines(name):
+        if line.startswith(key + "="):
+            return line.split("=", 1)[1].strip().strip("'\"")
+    return None
+
+
+def overlay_set(name: str, key: str, value: str | None) -> None:
+    """KEY='value' in the overlay file, replaced where it is; None removes the line.
+
+    The file has to exist: steam cannot create anything in the folder, and that is precisely what
+    keeps it from being swapped for a link. Written in place (same inode, still steam's).
+    """
+    if not OVERLAY_KEY.fullmatch(key) or (value is not None and not OVERLAY_VALUE.fullmatch(value)):
+        raise ValueError(f"valor invalido para o ambiente do jogo: {key}")
+    path = overlay_path(name)
+    if not os.path.isfile(path):
+        raise ValueError(f"{path} nao existe: {OVERLAY_HINT}")
+    new = None if value is None else f"{key}='{value}'"
+    lines, placed = [], False
+    for line in _overlay_lines(name):
+        if line.startswith(key + "="):
+            if new is not None and not placed:
+                lines.append(new)
+            placed = True
+            continue
+        lines.append(line)
+    if new is not None and not placed:
+        lines.append(new)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def overlay_wine_problem() -> str:
+    """Why runtime.env would not reach the game ('' = it will)."""
+    if not os.path.isfile(overlay_path(OVERLAY_RUNTIME)):
+        return f"{overlay_path(OVERLAY_RUNTIME)} nao existe: {OVERLAY_HINT}"
+    try:
+        with open(OVERLAY_WIN_RUN, encoding="utf-8", errors="replace") as f:
+            hooked = OVERLAY_HOOK in f.read()
+    except OSError:
+        hooked = False
+    return "" if hooked else f"o win-run deste CT nao le o ambiente dos mods: {OVERLAY_HINT}"
+
+
+def overlay_unit_problem(unit: str, root_dropin: str = "") -> str:
+    """Why service.env would not reach this unit ('' = it will).
+
+    A drop-in a ROOT installer wrote before the CT was migrated is a problem too: steam cannot
+    remove it, so "disable" would only look like it worked.
+    """
+    if not os.path.isfile(overlay_path(OVERLAY_SERVICE)):
+        return f"{overlay_path(OVERLAY_SERVICE)} nao existe: {OVERLAY_HINT}"
+    if not os.path.isfile(os.path.join(OVERLAY_SYSTEMD_DIR, f"{unit}.d", OVERLAY_DROPIN)):
+        return f"o servico {unit} nao le o ambiente dos mods: {OVERLAY_HINT}"
+    if root_dropin and os.path.lexists(root_dropin):
+        return f"o carregador foi instalado como root antes da migracao ({root_dropin}): {OVERLAY_HINT}"
+    return ""
+# ------------------------------------------------------------------ end of the steam overlay
+
+
 # ------------------------------------------------------------------ antivirus
 # IDENTICAL in the other remote installers (a test compares them): they run standalone in the CT
 # and do not import each other. The rule (what counts as a finding) does not live here, but in the
@@ -174,18 +269,30 @@ def _daemon_reload() -> None:
     subprocess.run(["systemctl", "daemon-reload"], check=False)  # noqa: S607
 
 
-def set_enabled(exe_dir: str, unit: str, enabled: bool, executable: str = "") -> None:
+def loader_env(exe_dir: str, executable: str = "") -> dict[str, str]:
+    """The variables that load UE4SS into the game, in the order the drop-in has always had them."""
+    if not executable:
+        # Re-enabling without reinstalling: the executable is the one the install recorded in the mark.
+        executable = _read_json(os.path.join(exe_dir, UE4SS_DIR, MARK)).get("executable", "")
+    env = {"LD_PRELOAD": posixpath.join(exe_dir, UE4SS_DIR, LIB)}
+    # The library only starts in an executable with -Linux- in its name; TheFrontServer,
+    # SquadGameServer and AstroColonyServer do not have it, and without the name here UE4SS never starts in them.
+    if executable and "-Linux-" not in executable and EXE_NAME.fullmatch(executable):
+        env["UE4SS_TARGET_EXE"] = executable
+    return env
+
+
+def set_enabled(exe_dir: str, unit: str, enabled: bool, executable: str = "", overlay: bool = False) -> None:
+    if overlay:
+        # Helper mode: steam's service.env, which the game unit reads at every start (no daemon-reload).
+        env = loader_env(exe_dir, executable) if enabled else {}
+        for key in ("LD_PRELOAD", "UE4SS_TARGET_EXE"):
+            overlay_set(OVERLAY_SERVICE, key, env.get(key))
+        return
     path = dropin_path(unit)
     if enabled:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        if not executable:
-            # Re-enabling without reinstalling: the executable is the one the install recorded in the mark.
-            executable = _read_json(os.path.join(exe_dir, UE4SS_DIR, MARK)).get("executable", "")
-        lines = ["[Service]", f"Environment=LD_PRELOAD={posixpath.join(exe_dir, UE4SS_DIR, LIB)}"]
-        # The library only starts in an executable with -Linux- in its name; TheFrontServer,
-        # SquadGameServer and AstroColonyServer do not have it, and without the name here UE4SS never starts in them.
-        if executable and "-Linux-" not in executable and EXE_NAME.fullmatch(executable):
-            lines.append(f"Environment=UE4SS_TARGET_EXE={executable}")
+        lines = ["[Service]", *(f"Environment={k}={v}" for k, v in loader_env(exe_dir, executable).items())]
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
     else:
@@ -409,7 +516,8 @@ def migrate_old_layout(exe_dir: str, ue4ss_dir: str) -> None:
             os.remove(os.path.join(exe_dir, name))
 
 
-def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, scan=_no_scan) -> dict:
+def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, scan=_no_scan,
+                   overlay: bool = False) -> dict:
     if not os.path.isdir(exe_dir):
         raise ValueError(f"a pasta do executavel nao existe: {exe_dir}")
     dropin_path(unit)  # check the service before downloading anything
@@ -456,7 +564,7 @@ def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, sca
         os.makedirs(os.path.dirname(path), exist_ok=True)
         _write(path, text.encode("utf-8"))
     exe_name = os.path.basename(executable) if executable else ""
-    set_enabled(exe_dir, unit, True, exe_name)
+    set_enabled(exe_dir, unit, True, exe_name, overlay)
     with open(os.path.join(ue4ss_dir, MARK), "w", encoding="utf-8") as f:
         json.dump({"version": release.tag, "sym_files": sorted(symfiles), "executable": exe_name}, f)
     extra = f", {len(symfiles)} arquivo(s) gerado(s)" if symfiles else ", layouts embutidos"
@@ -464,14 +572,14 @@ def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, sca
     return {"loader": "UE4SS Linux", "version": release.tag}
 
 
-def uninstall_loader(exe_dir: str, unit: str) -> dict:
+def uninstall_loader(exe_dir: str, unit: str, overlay: bool = False) -> dict:
     """Remove UE4SS: the drop-in (the game starts again without LD_PRELOAD) and the whole ue4ss/ folder.
 
     The Lua mods live in ue4ss/Mods and go along (the screen warns first); the game's .pak files
     are not UE4SS's and stay. Leftovers from the old fork's install (next to the executable, with
     its mark) are removed too, with its Mods/ - only the names the fork used to write.
     """
-    set_enabled(exe_dir, unit, False)
+    set_enabled(exe_dir, unit, False, overlay=overlay)
     removed = []
     ue4ss_dir = os.path.join(exe_dir, UE4SS_DIR)
     if os.path.isdir(ue4ss_dir) and not os.path.islink(ue4ss_dir):
@@ -500,7 +608,12 @@ def enabled_mods(text: str) -> dict[str, bool]:
     return result
 
 
-def status(exe_dir: str, unit: str) -> dict:
+def overlay_problem(unit: str) -> str:
+    """Helper mode: why LD_PRELOAD would not reach the game ('' = it will)."""
+    return overlay_unit_problem(unit, dropin_path(unit))
+
+
+def status(exe_dir: str, unit: str, overlay: bool = False) -> dict:
     ue4ss_dir = os.path.join(exe_dir, UE4SS_DIR)
     mods_dir = os.path.join(ue4ss_dir, MODS)
     flags = enabled_mods(_read_text(os.path.join(mods_dir, MODS_TXT)))
@@ -516,7 +629,9 @@ def status(exe_dir: str, unit: str) -> dict:
         "loader": "UE4SS Linux", "loader_version": mark.get("version", ""),
         "loader_pinned": False,
         "sym_files": mark.get("sym_files", []),
-        "enabled": os.path.exists(dropin_path(unit)),
+        "enabled": os.path.exists(dropin_path(unit)) or (
+            overlay and overlay_get(OVERLAY_SERVICE, "LD_PRELOAD") == posixpath.join(exe_dir, UE4SS_DIR, LIB)),
+        "overlay_problem": overlay_problem(unit) if overlay else "",
         # The old fork's install is still in place: reinstalling migrates it.
         "old_layout": os.path.exists(os.path.join(exe_dir, MARK)),
         "mods": mods,
@@ -537,30 +652,43 @@ def _chown(exe_dir: str) -> None:
                 os.chown(n, pw.pw_uid, pw.pw_gid)
 
 
-def main(argv: list[str]) -> int:
-    script = unit = ""
-    release_args: dict[str, str] = {}
-    if argv[:1] == ["--scan"]:
-        script, argv = argv[1], argv[2:]
-    if argv[:1] == ["--unit"]:
-        unit, argv = argv[1], argv[2:]
+def parse_options(argv: list[str]) -> tuple[dict[str, str], list[str]]:
+    """The leading options, in the order the panel sends them; the rest is the action and the folder.
+
+    `--overlay` (helper mode: LD_PRELOAD goes to steam's overlay) takes no value.
+    """
+    options: dict[str, str] = {}
+    if argv[:1] == ["--overlay"]:
+        options["overlay"], argv = "1", argv[1:]
+    for flag in ("--scan", "--unit"):
+        if argv[:1] == [flag]:
+            options[flag[2:]], argv = argv[1], argv[2:]
     while argv[:1] and argv[0] in ("--release", "--engine", "--symfiles", "--layout"):
-        release_args[argv[0][2:]], argv = argv[1], argv[2:]
+        options[argv[0][2:]], argv = argv[1], argv[2:]
+    return options, argv
+
+
+def main(argv: list[str]) -> int:
+    options, argv = parse_options(argv)
+    script, unit, overlay = options.get("scan", ""), options.get("unit", ""), "overlay" in options
     action, exe_dir, *_rest = argv
     try:
         if action == "loader-install" and not script:
             raise ValueError("instalar sem a verificacao do antivirus nao e caminho do painel")
+        # Before downloading anything: a setting that would not reach the game is a broken install.
+        if overlay and action != "status" and overlay_problem(unit):
+            raise ValueError(overlay_problem(unit))
         if action == "status":
-            result = status(exe_dir, unit)
+            result = status(exe_dir, unit, overlay)
         elif action == "loader-install":
-            release = Release(release_args.get("release", ""), release_args.get("engine", ""),
-                              release_args.get("symfiles", ""), release_args.get("layout", ""))
-            result = install_loader(exe_dir, unit, release, scan=scanner(script))
+            release = Release(options.get("release", ""), options.get("engine", ""),
+                              options.get("symfiles", ""), options.get("layout", ""))
+            result = install_loader(exe_dir, unit, release, scan=scanner(script), overlay=overlay)
         elif action in ("loader-enable", "loader-disable"):
-            set_enabled(exe_dir, unit, action == "loader-enable")
+            set_enabled(exe_dir, unit, action == "loader-enable", overlay=overlay)
             result = {"enabled": action == "loader-enable"}
         elif action == "loader-uninstall":
-            result = uninstall_loader(exe_dir, unit)
+            result = uninstall_loader(exe_dir, unit, overlay)
         else:
             raise ValueError(f"acao desconhecida: {action}")
         if action not in ("status", "loader-uninstall"):

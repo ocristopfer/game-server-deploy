@@ -14,6 +14,9 @@
 #
 # Usage (as root, inside the container):
 #   ct-panel-access.sh install <unit> <panel public key line>
+#                     also the mod environment overlay (phase 6): the steam-owned files, the
+#                     EnvironmentFile drop-in, the win-run hook, and the conversion of what a ROOT
+#                     mod installer left before the CT was migrated (see gp_install_overlay)
 #   ct-panel-access.sh verify     gamepanel can reach steam and the helpers through sudo
 #   ct-panel-access.sh lock       verify, then refuse root over SSH (only after verify passes)
 #
@@ -36,6 +39,23 @@ GP_SSHD_DROPIN=/etc/ssh/sshd_config.d/10-gamepanel.conf
 # tunnel cannot be turned into a pivot into the internal network if it leaks. No `from=`: the
 # address the CT sees may be NATed, and the CT firewall already limits who reaches port 22.
 GP_KEY_OPTIONS="no-agent-forwarding,no-port-forwarding,no-X11-forwarding"
+# The mod environment overlay (phase 6): two files STEAM owns inside a folder ROOT owns. The panel
+# writes them as steam (the Mods screen), and they reach the game through two readers set up here
+# once: systemd (EnvironmentFile= in a drop-in of the game unit) and win-run (sourced after
+# /etc/game-runtime.env). The folder is root's on purpose: systemd reads the EnvironmentFile AS
+# ROOT, and a file steam could replace by a symlink would hand steam the KEY=value lines of any
+# root-only file through /proc/self/environ of the game. Here steam changes the content, never
+# which file it is.
+GP_ENV_DIR=/etc/gamepanel/game-env
+GP_SERVICE_ENV=/etc/gamepanel/game-env/service.env
+GP_RUNTIME_OVERLAY=/etc/gamepanel/game-env/runtime.env
+GP_ENV_DROPIN=gamepanel-env.conf
+GP_WIN_RUN=/usr/local/bin/win-run
+GP_GAME_RUNTIME_ENV=/etc/game-runtime.env
+GP_SYSTEMD_DIR=/etc/systemd/system
+# What a value in the overlay may hold: it ends up between single quotes in a file bash sources and
+# in an EnvironmentFile. Paths, dll lists (,;=) and arguments - never a quote, $ or backtick.
+GP_ENV_VALUE_RE='^[A-Za-z0-9_./:,;=@+ -]*$'
 
 gp_msg() { printf 'ct-panel-access: %s\n' "$*"; }
 gp_die() { printf 'ct-panel-access: ERRO: %s\n' "$*" >&2; exit 1; }
@@ -162,6 +182,28 @@ echo "antivirus: ClamAV pronto"
 EOF
 }
 
+# The drop-in that hands the steam-owned overlay to the game unit. `-`: a missing file is not an
+# error (the unit must start even if someone deleted it by hand).
+gp_render_env_dropin() {
+  printf '[Service]\nEnvironmentFile=-%s\n' "$GP_SERVICE_ENV"
+}
+
+# The block win-run runs right after taking the executable off its arguments. lib/ct-phases.sh
+# writes the SAME lines into every new win-run (a test compares the two texts), and `install`
+# inserts them into the win-run of a CT deployed before this existed. Read only when the file
+# belongs to whoever runs win-run: root never sources a file steam can write.
+gp_render_win_run_hook() {
+  cat <<'EOF'
+# gamepanel-overlay: the Mods screen's Wine setting and extra arguments (lib/ct-panel-access.sh).
+gp_overlay=/etc/gamepanel/game-env/runtime.env
+if [ -f "$gp_overlay" ] && [ "$(stat -c %u "$gp_overlay")" = "$(id -u)" ]; then
+  # shellcheck disable=SC1090
+  . "$gp_overlay"
+  if [ -n "${GAMEPANEL_EXTRA_ARGS:-}" ]; then read -r -a gp_extra <<<"$GAMEPANEL_EXTRA_ARGS"; set -- "$@" "${gp_extra[@]}"; fi
+fi
+EOF
+}
+
 # --- install -------------------------------------------------------------------------------------
 
 # Writes <dest> from stdin only when the content changed, through a temp file on the same
@@ -271,7 +313,228 @@ gp_install() {
   # archives were root's: they move to steam so retention can delete them.
   install -d -m 0750 -o steam -g steam "$GP_BACKUP_DIR"
   chown -R steam:steam "$GP_BACKUP_DIR"
+  gp_install_overlay "$unit"
   gp_msg "acesso do painel pronto: usuario ${GP_USER}, servico ${unit}"
+}
+
+# --- mod environment overlay (phase 6) -----------------------------------------------------------
+
+gp_valid_env_value() { [[ "$1" =~ $GP_ENV_VALUE_RE ]]; }
+
+# The value of KEY in an env file (first line), without the quotes; status 1 when absent. The same
+# reading the Python installers do (`_read_overrides`).
+gp_read_kv() {
+  local line
+  line="$(grep -m1 "^$2=" "$1" 2>/dev/null || true)"
+  [[ -n "$line" ]] || return 1
+  line="${line#*=}"
+  line="${line#"${line%%[![:space:]]*}"}"
+  line="${line%"${line##*[![:space:]]}"}"
+  while [[ "$line" == [\'\"]* ]]; do line="${line:1}"; done
+  while [[ "$line" == *[\'\"] ]]; do line="${line:0:${#line}-1}"; done
+  printf '%s' "$line"
+}
+
+# Sets KEY='value' in an env file: the line is replaced where it is (or appended). `cat >` and not
+# `mv`: the overlay files are steam's, and a new inode would come out root's.
+gp_set_kv() {
+  local file="$1" key="$2" value="$3" tmp
+  gp_valid_env_value "$value" || gp_die "valor invalido para ${key} (aspas, \$ ou crase nao entram)"
+  tmp="$(mktemp)"
+  awk -v k="$key" -v line="${key}='${value}'" '
+    index($0, k "=") == 1 { if (!done) print line; done = 1; next }
+    { print }
+    END { if (!done) print line }' "$file" >"$tmp"
+  cat "$tmp" >"$file"
+  rm -f "$tmp"
+}
+
+# A WINE_DLL_OVERRIDES value without the given groups (exact text), keeping the order of the rest.
+gp_without_groups() {
+  local value="$1" g drop out="" keep
+  shift
+  local -a parts=()
+  IFS=';' read -r -a parts <<<"$value"
+  for g in "${parts[@]}"; do
+    g="${g#"${g%%[![:space:]]*}"}"
+    g="${g%"${g##*[![:space:]]}"}"
+    [[ -n "$g" ]] || continue
+    keep=1
+    for drop in "$@"; do [[ "$g" == "$drop" ]] && keep=0; done
+    ((keep)) && out="${out:+$out;}$g"
+  done
+  printf '%s' "$out"
+}
+
+# The game folder, from the unit's WorkingDirectory (what the deploy writes). Only a real folder
+# under /opt: this feeds a recursive chown run by root.
+gp_game_dir() {
+  local unit_file="$GP_SYSTEMD_DIR/$1" dir
+  [[ -f "$unit_file" ]] || return 0
+  dir="$(sed -n 's/^WorkingDirectory=//p' "$unit_file" | tail -n 1)"
+  if [[ "$dir" =~ ^/opt/[A-Za-z0-9._/-]+$ && "$dir" != *..* && -d "$dir" && ! -L "$dir" ]]; then
+    printf '%s' "${dir%/}"
+  fi
+}
+
+gp_win_run_hooked() { [[ -f "$GP_WIN_RUN" ]] && grep -q 'gamepanel-overlay' "$GP_WIN_RUN"; }
+
+gp_daemon_reload() {
+  # Only where systemd is PID 1. In Docker the fake systemctl reads the drop-ins at each start.
+  [[ -d /run/systemd/system ]] || return 0
+  systemctl daemon-reload
+}
+
+# The folder (root's) and the two files (steam's). A file that is not a regular file (a link, a
+# folder) can only have been put there by root, and is replaced; content that exists is kept.
+gp_ensure_overlay_files() {
+  local f
+  install -d -m 0755 -o root -g root "$GP_ENV_DIR"
+  for f in "$GP_SERVICE_ENV" "$GP_RUNTIME_OVERLAY"; do
+    if [[ -L "$f" || ( -e "$f" && ! -f "$f" ) ]]; then rm -rf -- "$f"; fi
+    if [[ ! -f "$f" ]]; then
+      printf '# Escrito pelo painel como steam (tela Mods). Apagar uma linha desfaz o ajuste dela.\n' >"$f"
+    fi
+    chown steam:steam "$f"
+    chmod 0644 "$f"
+  done
+}
+
+# Variables of the loader drop-ins the ROOT installers wrote before the CT was migrated
+# (gamepanel-ue4ss.conf, gamepanel-bepinex.conf) move to service.env, and the drop-in goes: from
+# now on the panel, as steam, can turn them off. Only a file with exactly our shape is converted
+# ([Service] and Environment=KEY=value); anything else was written by hand, and stays.
+gp_convert_loader_dropins() {
+  local unit="$1" f line kv
+  for f in "$GP_SYSTEMD_DIR/${unit}.d"/gamepanel-*.conf; do
+    [[ -f "$f" ]] || continue
+    case "${f##*/}" in "$GP_ENV_DROPIN"|gamepanel-mods.conf) continue ;; esac
+    if grep -qvE '^(\[Service\]|Environment=[A-Z_][A-Z0-9_]*=[A-Za-z0-9_./:,;=@+-]*|)$' "$f"; then
+      gp_msg "AVISO: ${f} tem algo alem de Environment=: ficou como estava (converta a mao)"
+      continue
+    fi
+    while IFS= read -r line; do
+      [[ "$line" == Environment=* ]] || continue
+      kv="${line#Environment=}"
+      gp_set_kv "$GP_SERVICE_ENV" "${kv%%=*}" "${kv#*=}"
+    done <"$f"
+    rm -f -- "$f"
+    GP_NEEDS_RELOAD=1
+    gp_msg "drop-in ${f##*/} convertido para ${GP_SERVICE_ENV}"
+  done
+}
+
+# The ARK mod list a root install wrote (gamepanel-mods.conf: the unit's ExecStart repeated with
+# -mods=). In helper mode the list is GAMEPANEL_EXTRA_ARGS in runtime.env, which win-run appends to
+# the game's arguments. Converted only when nothing else changes: the drop-in was built from the
+# unit's CURRENT command, and that command goes through win-run.
+gp_convert_ark_dropin() {
+  local unit="$1" f="$GP_SYSTEMD_DIR/${unit}.d/gamepanel-mods.conf" base current mods
+  [[ -f "$f" ]] || return 0
+  if ! gp_win_run_hooked; then
+    gp_msg "AVISO: ${f} nao foi convertido (o win-run nao le o ambiente dos mods)"
+    return 0
+  fi
+  base="$(sed -n 's/^# gamepanel-base: //p' "$f" | head -n 1)"
+  current="$({ grep -E '^ExecStart=.' "$GP_SYSTEMD_DIR/$unit" 2>/dev/null || true; } | tail -n 1 | cut -d= -f2-)"
+  # Word by word, as workshop_remote.ark_base does: the -mods= words are what the drop-in adds.
+  current="$(printf '%s' "$current" | tr ' ' '\n' | { grep -v '^-mods=' || true; } | paste -sd ' ' -)"
+  mods="$({ grep -oE -- '-mods=[0-9,]+' "$f" || true; } | tail -n 1)"
+  if [[ -z "$mods" || -z "$base" || "$base" != "$current" || "$base" != /usr/local/bin/win-run\ * ]]; then
+    gp_msg "AVISO: ${f} nao foi convertido (comando do servico mudou ou nao passa pelo win-run)"
+    return 0
+  fi
+  gp_set_kv "$GP_RUNTIME_OVERLAY" GAMEPANEL_EXTRA_ARGS "$mods"
+  rm -f -- "$f"
+  GP_NEEDS_RELOAD=1
+  gp_msg "lista de mods do ARK convertida para ${GP_RUNTIME_OVERLAY}"
+}
+
+# What the Wine loaders (BepInEx, Shroudtopia, UE4SS) changed in /etc/game-runtime.env moves to
+# runtime.env, and the base line goes back to what it was before them. The original comes from
+# BepInEx's own record (overrides_before) when there is one; Shroudtopia and UE4SS only ever ADD
+# their group (winmm=n,b / dwmapi=n,b), so removing it is the original. Done once: an overlay that
+# already has the line was converted (or written by the panel) and is never overwritten.
+gp_convert_wine_overrides() {
+  local game_dir="$1" cur original mark
+  [[ -f "$GP_GAME_RUNTIME_ENV" ]] || return 0
+  gp_win_run_hooked || return 0
+  gp_read_kv "$GP_RUNTIME_OVERLAY" WINE_DLL_OVERRIDES >/dev/null && return 0
+  cur="$(gp_read_kv "$GP_GAME_RUNTIME_ENV" WINE_DLL_OVERRIDES || true)"
+  [[ -n "$cur" ]] && gp_valid_env_value "$cur" || return 0
+  original="$cur"
+  mark="${game_dir:-/opt/game}/BepInEx/.gamepanel.json"
+  if [[ -f "$mark" ]]; then
+    if grep -qE '"overrides_before": *"' "$mark"; then
+      original="$(sed -nE 's/.*"overrides_before": *"([^"]*)".*/\1/p' "$mark")"
+    else
+      original="$(gp_without_groups "$original" 'winhttp=n,b')"
+    fi
+  fi
+  original="$(gp_without_groups "$original" 'winmm=n,b' 'dwmapi=n,b')"
+  [[ "$original" != "$cur" ]] && gp_valid_env_value "$original" || return 0
+  gp_set_kv "$GP_RUNTIME_OVERLAY" WINE_DLL_OVERRIDES "$cur"
+  gp_set_kv "$GP_GAME_RUNTIME_ENV" WINE_DLL_OVERRIDES "$original"
+  gp_msg "WINE_DLL_OVERRIDES do carregador movido para ${GP_RUNTIME_OVERLAY} (base: '${original}')"
+}
+
+# win-run reads runtime.env. New CTs get it from lib/ct-phases.sh; an older win-run gets the hook
+# inserted after the line that takes the executable off the arguments - the rest of the file is
+# NOT rewritten (a migration must not change how a live server starts, ntsync and all). Without
+# that exact line nothing is touched, and the Wine loaders refuse in helper mode saying why.
+gp_patch_win_run() {
+  local tmp hook
+  [[ -f "$GP_WIN_RUN" ]] || return 0
+  gp_win_run_hooked && return 0
+  if [[ "$(grep -cxF 'exe="$1"; shift' "$GP_WIN_RUN")" != 1 ]]; then
+    gp_msg "AVISO: ${GP_WIN_RUN} sem a linha esperada: carregadores do Wine ficam so no modo root"
+    return 0
+  fi
+  hook="$(mktemp)"
+  gp_render_win_run_hook >"$hook"
+  tmp="$(mktemp "$(dirname "$GP_WIN_RUN")/.gp-tmp.XXXXXX")"
+  awk -v hookfile="$hook" '
+    { print }
+    $0 == "exe=\"$1\"; shift" { while ((getline l < hookfile) > 0) print l }' "$GP_WIN_RUN" >"$tmp"
+  rm -f "$hook"
+  chown root:root "$tmp"
+  chmod 0755 "$tmp"
+  bash -n "$tmp" || { rm -f "$tmp"; gp_die "win-run com o gancho nao passou no bash -n (nada mudou)"; }
+  mv -f "$tmp" "$GP_WIN_RUN"
+  gp_msg "win-run passa a ler ${GP_RUNTIME_OVERLAY}"
+}
+
+# What the root installers created inside the game folder (BepInEx, ue4ss/, winmm.dll...) was
+# root's: steam could not update or remove it from the Mods screen. The deploy already runs this
+# same chown on every deploy (render_systemd_unit); -P (the default with -R) changes a link, never
+# what it points to. Only runs when something there is not steam's.
+gp_chown_game_dir() {
+  local dir="$1"
+  [[ -n "$dir" ]] || return 0
+  [[ -n "$(find "$dir" -xdev ! -user steam -print -quit 2>/dev/null)" ]] || return 0
+  chown -R -P steam:steam -- "$dir"
+  gp_msg "arquivos do jogo devolvidos ao steam em ${dir}"
+}
+
+gp_install_overlay() {
+  local unit="$1" dropin_dir="$GP_SYSTEMD_DIR/${1}.d" tmp game_dir
+  GP_NEEDS_RELOAD=0
+  gp_ensure_overlay_files
+  install -d -m 0755 "$dropin_dir"
+  tmp="$(mktemp)"
+  gp_render_env_dropin >"$tmp"
+  if ! cmp -s "$tmp" "$dropin_dir/$GP_ENV_DROPIN"; then GP_NEEDS_RELOAD=1; fi
+  gp_write_file "$dropin_dir/$GP_ENV_DROPIN" 0644 <"$tmp"
+  rm -f "$tmp"
+  game_dir="$(gp_game_dir "$unit")"
+  gp_convert_loader_dropins "$unit"
+  # win-run first: the two conversions below move values to runtime.env, which only a hooked
+  # win-run reads - converting without the hook would turn the loader off at the next restart.
+  gp_patch_win_run
+  gp_convert_ark_dropin "$unit"
+  gp_convert_wine_overrides "$game_dir"
+  gp_chown_game_dir "$game_dir"
+  if [[ "$GP_NEEDS_RELOAD" == 1 ]]; then gp_daemon_reload; fi
 }
 
 # --- verify and lock -----------------------------------------------------------------------------

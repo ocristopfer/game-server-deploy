@@ -50,7 +50,8 @@ lock_root() {
 
 seed_palworld() {
   local cfg=/opt/game/Pal/Saved/Config/LinuxServer
-  install -d -o steam -g steam "$cfg" /opt/game/Pal/Saved/SaveGames/0
+  # Binaries/Linux: where the Mods screen installs UE4SS (the profile loader_dir).
+  install -d -o steam -g steam "$cfg" /opt/game/Pal/Saved/SaveGames/0 /opt/game/Pal/Binaries/Linux
   [ -s "$cfg/PalWorldSettings.ini" ] && return 0
   cat >"$cfg/PalWorldSettings.ini" <<'INI'
 [/Script/Pal.PalGameWorldSettings]
