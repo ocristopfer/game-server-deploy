@@ -67,8 +67,6 @@ msg "1/5 Instalando o usuario gamepanel, os helpers e o sudoers"
 in_ct "install -d -m 0755 $(dirname "$ACCESS_IN_CT")"
 pct push "$CTID" "$ACCESS" "$ACCESS_IN_CT" --perms 0755
 in_ct "bash $ACCESS_IN_CT install '$SERVICE' '$PANEL_PUBKEY'"
-# Backups are written as steam from now on; the old ones were root's.
-in_ct "[ -d /var/backups/gamepanel ] && chown -R steam:steam /var/backups/gamepanel || true"
 ok "instalado"
 
 # Mod loaders write systemd drop-ins as root; in unprivileged mode the panel refuses to

@@ -29,6 +29,8 @@ GP_CT_ENV=/etc/gamepanel/ct.env
 GP_SUDOERS=/etc/sudoers.d/gamepanel
 GP_SERVICE_HELPER=/usr/local/sbin/gp-service
 GP_CLAMAV_HELPER=/usr/local/sbin/gp-clamav-ensure
+# Must match the panel default (GAMEPANEL_BACKUP_DIR): the panel writes backups there as steam.
+GP_BACKUP_DIR=/var/backups/gamepanel
 GP_SSHD_DROPIN=/etc/ssh/sshd_config.d/10-gamepanel.conf
 # Options on the panel key: the panel never forwards anything, and a key that cannot open a
 # tunnel cannot be turned into a pivot into the internal network if it leaks. No `from=`: the
@@ -263,6 +265,12 @@ gp_install() {
   gp_render_clamav_helper | gp_write_file "$GP_CLAMAV_HELPER" 0755
   gp_install_sudoers
   gp_install_key "$pubkey"
+  # Backups are written AS STEAM in helper mode, and steam cannot create anything under
+  # /var/backups (root's). Without this the first backup of a CT that never had one failed with
+  # "mkdir: cannot create directory '/var/backups/gamepanel': Permission denied". Existing
+  # archives were root's: they move to steam so retention can delete them.
+  install -d -m 0750 -o steam -g steam "$GP_BACKUP_DIR"
+  chown -R steam:steam "$GP_BACKUP_DIR"
   gp_msg "acesso do painel pronto: usuario ${GP_USER}, servico ${unit}"
 }
 

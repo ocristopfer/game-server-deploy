@@ -94,6 +94,10 @@ check "sudoers e o texto do contrato" "$expected_sudoers" "$(cat /etc/sudoers.d/
 check "ct.env" "$(printf 'GAME_UNIT=palworld.service\nGP_HELPERS_VERSION=1')" "$(cat /etc/gamepanel/ct.env)"
 check "ct.env 0644 do root" "644 root:root" "$(stat -c '%a %U:%G' /etc/gamepanel/ct.env)"
 check "gp-service 0755 do root" "755 root:root" "$(stat -c '%a %U:%G' /usr/local/sbin/gp-service)"
+# Backups are written as steam: the folder must exist and be steam's, or the first backup of a
+# CT that never had one dies on mkdir (it happened on a real CT right after migrating).
+check "pasta de backup 0750 do steam" "750 steam:steam" "$(stat -c '%a %U:%G' /var/backups/gamepanel)"
+check "steam escreve na pasta de backup" "0" "$(runuser -u steam -- touch /var/backups/gamepanel/x 2>/dev/null; echo $?)"
 check "gp-clamav-ensure 0755 do root" "755 root:root" "$(stat -c '%a %U:%G' /usr/local/sbin/gp-clamav-ensure)"
 if bash -n /usr/local/sbin/gp-service && bash -n /usr/local/sbin/gp-clamav-ensure; then
   ok "helpers passam no bash -n"; else fail "helper com erro de sintaxe"; fi
