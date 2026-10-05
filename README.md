@@ -1807,9 +1807,9 @@ proven by the sandboxes in `docker/ct-sandbox/` (`compare.sh`, `broker.sh`, `rel
   OpenWrt, UniFi). The broker keeps the same contract - "open these ports for this CT",
   "close them" - so the panel does not change.
 - **Finish the move away from root** ([docs/security-hardening.md](docs/security-hardening.md)):
-  new containers already use the unprivileged `gamepanel` user; what is left is running the mod
-  loader installers without root, a one-click migration for existing containers, and sandboxing
-  the game service itself. These need validation on a real Proxmox CT.
+  new containers use the unprivileged `gamepanel` user and existing ones migrate with
+  `deploy/game/migrate-ct.ps1 -Ctid <CT>`; what is left is running the mod loader installers
+  without root and sandboxing the game service itself.
 - **First real end-to-end creation through the broker** against a live Proxmox and OPNsense,
   and a published release built by the release workflow.
 

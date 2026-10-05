@@ -1,8 +1,9 @@
 # Security hardening: no more root inside the game containers
 
-Status: **phases 1-5 and 7 implemented** (see the table at the end and
-[security-hardening-contract.md](security-hardening-contract.md)); phases 6, 8, 9 and 10 still
-need a real Proxmox CT to be validated. Root stays only where it is unavoidable: provisioning a container
+Status: **phases 1-5, 7 and 8 implemented** (see the table at the end and
+[security-hardening-contract.md](security-hardening-contract.md)). Phase 8 ran on a real Proxmox:
+four existing game CTs were migrated with `deploy/game/migrate-ct.ps1 -Ctid <CT>` and root SSH
+is refused on them. Phases 6, 9 and 10 still need a real CT to be validated. Root stays only where it is unavoidable: provisioning a container
 (`pct exec` on the host, or the broker's one-time install).
 
 ## Goal
@@ -150,8 +151,9 @@ states its intent (`as_steam(...)`, `as_root("gp-service", "stop")`) instead of 
 
 ### Migrating existing servers
 
-`lib/ct-migrate-user.sh` (idempotent), run over the current root SSH (admin-only "Migrate access"
-button) or with `deploy/game/migrate-ct.sh` (`pct exec`):
+Implemented as `deploy/game/migrate-ct.ps1 -Ctid <CT> [-Service x] [-NoLock]`, which runs
+`deploy/game/migrate-ct.sh` on the Proxmox host (everything through `pct`) and reuses
+`lib/ct-panel-access.sh`. The steps:
 
 1. install `sudo`, create `gamepanel`, write `/etc/gamepanel/ct.env`, install helpers and
    sudoers, copy the panel key;
@@ -196,7 +198,7 @@ If step 4 fails nothing has been locked and the server stays in legacy mode.
 
 | # | Step | Risk | Validated by |
 |---|---|---|---|
-| | **Done: 1, 2, 3, 4, 5, 7** (tests, `docker/ct-sandbox/panel-access.sh`, dev compose). **Open: 6, 8, 9, 10.** | | |
+| | **Done: 1, 2, 3, 4, 5, 7, 8** (tests, `docker/ct-sandbox/panel-access.sh`, dev compose; 8 on a real Proxmox). **Open: 6, 9, 10.** | | |
 | 1 | Safe restore (member check, `--no-same-owner`) and narrower `FILE_ROOTS` default, still in root mode | low | pytest, compose |
 | 2 | `remote_cmd` builder + `privileged(server)`; behavior unchanged for `root` | low | full pytest (same strings for root) |
 | 3 | `gp-service`, `gp-clamav-ensure`, sudoers and sshd templates in `lib/`, shared by `ct-phases.sh`, Docker and migration | low | `docker/ct-sandbox` (`visudo -cf`) |
