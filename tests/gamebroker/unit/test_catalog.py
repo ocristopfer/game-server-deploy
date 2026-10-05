@@ -114,6 +114,7 @@ INVALID_CASES = [
     # numbers
     ("app_id", "123"), ("app_id", True), ("app_id", 0), ("app_id", 2**31),
     ("memory_mb", 10**9), ("cores", True), ("disk_gb", 1),
+    ("client_app_id", -1), ("client_app_id", "440900"), ("client_app_id", 2**31),
     # ports
     ("ports", []), ("ports", ["80/tcp"]), ("ports", ["1023/udp"]), ("ports", ["8080/tcp"]),
     ("ports", ["8006/tcp"]), ("ports", ["25575/tcp"]), ("ports", ["99999/udp"]),
@@ -199,6 +200,23 @@ def test_xvfb_so_vale_junto_de_um_runtime_de_windows(game_data):
         cat.validate_dynamic(game_data)
     game_data.update(platform="windows", recipes=["proton", "xvfb"])
     assert cat.validate_dynamic(game_data).recipes == ("proton", "xvfb")
+
+
+def test_vulkan_so_vale_junto_de_um_runtime_de_windows(game_data):
+    """The software Vulkan driver only matters to Proton/Wine turning D3D12 into Vulkan."""
+    game_data["recipes"] = ["vulkan"]
+    with pytest.raises(ValidationError, match="vulkan"):
+        cat.validate_dynamic(game_data)
+    game_data.update(platform="windows", recipes=["proton", "xvfb", "vulkan"])
+    assert cat.validate_dynamic(game_data).recipes == ("proton", "xvfb", "vulkan")
+
+
+def test_appid_do_cliente_vai_e_volta_pelo_disco(game_data):
+    game_data.update(platform="windows", recipes=["proton"], client_app_id=440900)
+    game = cat.validate_dynamic(game_data)
+    assert game.client_app_id == 440900
+    assert cat.validate_dynamic(game.as_stored()).client_app_id == 440900
+    assert game.as_public()["client_app_id"] == 440900
 
 
 def test_curado_com_x_virtual_leva_a_receita_xvfb():

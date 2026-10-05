@@ -36,7 +36,9 @@ SUGGESTIONS = (
      'start_args': 'TheIsland_WP?listen?Port={PORT} -server -log -NoBattlEye',
      'shiftable': True,
      'platform': 'windows',
-     'recipes': ['proton'],
+     # Measured in Docker (GE-Proton11-5): without the virtual X and a software Vulkan driver the
+     # server dies at boot inside d3d12/dxgi (it creates a Direct3D 12 device even headless).
+     'recipes': ['proton', 'xvfb', 'vulkan'],
      'config_path': '/opt/game/ShooterGame/Saved/Config/WindowsServer',
      'config_files': ['/opt/game/ShooterGame/Saved/Config/WindowsServer/GameUserSettings.ini',
                       '/opt/game/ShooterGame/Saved/Config/WindowsServer/Game.ini'],
@@ -46,7 +48,8 @@ SUGGESTIONS = (
      'warnings': [_PROTON_NOTE,
                   'catalog.suggestion.ark_ascended.no_steam_query',
                   'catalog.suggestion.ark_ascended.map_argument',
-                  'catalog.suggestion.ark_ascended.memory']},
+                  'catalog.suggestion.ark_ascended.memory',
+                  'catalog.suggestion.ark_ascended.vulkan']},
     {'appid': 2857200,
      'name': 'Abiotic Factor',
      'key': 'abiotic-factor',
@@ -78,7 +81,12 @@ SUGGESTIONS = (
      'start_args': '-stdout -FullStdOutLogOutput -Port={PORT} -QueryPort={QUERY_PORT}',
      'shiftable': False,
      'platform': 'windows',
-     'recipes': ['proton'],
+     # Measured in Docker (GE-Proton11-5): without the virtual X the server hangs forever right
+     # after mounting its paks (zero CPU, log stopped). There is no steam_appid.txt next to the
+     # .exe, so the client appid goes explicitly: with 0 it answers A2S as appid 0 and the
+     # game's server browser never lists it.
+     'recipes': ['proton', 'xvfb'],
+     'client_app_id': 440900,
      'config_path': '/opt/game/ConanSandbox/Saved/Config/WindowsServer',
      'config_files': ['/opt/game/ConanSandbox/Saved/Config/WindowsServer/ServerSettings.ini',
                       '/opt/game/ConanSandbox/Saved/Config/WindowsServer/Engine.ini'],
@@ -87,7 +95,8 @@ SUGGESTIONS = (
      'memory_mb': 8192, 'cores': 4, 'disk_gb': 40,
      'warnings': [_PROTON_NOTE,
                   'catalog.suggestion.conan_exiles.port_plus_one',
-                  'catalog.suggestion.conan_exiles.save']},
+                  'catalog.suggestion.conan_exiles.save',
+                  'catalog.suggestion.conan_exiles.xvfb_appid']},
     {'appid': 2465200,
      'name': 'Sons of the Forest',
      'key': 'sons-of-the-forest',

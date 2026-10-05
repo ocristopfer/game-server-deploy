@@ -132,6 +132,20 @@ def test_xvfb_vira_windows_runtime_xvfb_e_nao_receita(game_data, ports):
     assert values["RECIPES"] == ""
 
 
+def test_vulkan_fica_nas_receitas_para_o_apply_recipes(game_data, ports):
+    game_data.update(platform="windows", recipes=["proton", "xvfb", "vulkan"])
+    values = _values(build_env(validate_dynamic(game_data), ports))
+    assert values["RECIPES"] == "vulkan"
+    assert values["WINDOWS_RUNTIME_XVFB"] == "1"
+
+
+def test_appid_do_cliente_so_vai_quando_existe(game_data, game, ports):
+    """Conan Exiles has no steam_appid.txt next to the .exe: win-run reads CLIENT_APP_ID instead."""
+    assert "CLIENT_APP_ID" not in _values(build_env(game, ports))
+    game_data.update(platform="windows", recipes=["proton"], client_app_id=440900)
+    assert _values(build_env(validate_dynamic(game_data), ports))["CLIENT_APP_ID"] == "440900"
+
+
 def test_sem_xvfb_o_x_virtual_fica_desligado(game, ports):
     assert _values(build_env(game, ports))["WINDOWS_RUNTIME_XVFB"] == "0"
 

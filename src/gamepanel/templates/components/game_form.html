@@ -17,6 +17,10 @@
   <input name="app_id" value="{{ form.get('app_id', '') }}" required inputmode="numeric" placeholder="2394010">
   <small>{{ _h('catalog.app_id_hint') }}</small>
 </label>
+<label>{{ _('catalog.client_app_id') }}
+  <input name="client_app_id" value="{{ form.get('client_app_id', '') }}" inputmode="numeric" placeholder="440900">
+  <small>{{ _h('catalog.client_app_id_hint') }}</small>
+</label>
 <div class="row">
   <label>{{ _('catalog.ports') }}
     <input name="ports" value="{{ form.get('ports', '') }}" required spellcheck="false" placeholder="{{ _('catalog.example', value='7777/udp 27015/udp') }}">

@@ -76,6 +76,12 @@ resolve_game_variables() {
   esac
   # 1 when the .exe insists on creating a window even though it is a server.
   WINDOWS_RUNTIME_XVFB="${WINDOWS_RUNTIME_XVFB:-0}"
+  # The CLIENT's appid (Conan Exiles: 440900; the server app is 443030), for a .exe without a
+  # steam_appid.txt next to it. Without it win-run starts Proton with appid 0: the server comes
+  # up and answers A2S, but reporting appid 0, and the game's server browser never lists it.
+  CLIENT_APP_ID="${CLIENT_APP_ID:-}"
+  # A number or nothing: it is written into /etc/game-runtime.env, which win-run sources.
+  [[ "$CLIENT_APP_ID" =~ ^[0-9]{0,10}$ ]] || die "invalid CLIENT_APP_ID: '${CLIENT_APP_ID}' (digits only)"
   WINE_PREFIX_DIR="${WINE_PREFIX_DIR:-/home/steam/.wine-${GAME_KEY}}"
   PROTON_PREFIX_DIR="${PROTON_PREFIX_DIR:-/home/steam/.proton-${GAME_KEY}}"
 
@@ -271,6 +277,7 @@ PROTON_PREFIX='${PROTON_PREFIX_DIR}'
 WINE_PREFIX='${WINE_PREFIX_DIR}'
 WINE_DLL_OVERRIDES='${WINE_DLL_OVERRIDES}'
 USE_XVFB='${WINDOWS_RUNTIME_XVFB}'
+CLIENT_APP_ID='${CLIENT_APP_ID}'
 EOF
   push_file_to_ct "$tmp_file" "/etc/game-runtime.env" 0644
   rm -f "$tmp_file"
@@ -336,6 +343,10 @@ if [ "${RUNTIME}" = "proton" ]; then
     arq_appid="$(dirname "$exe")/steam_appid.txt"
     if [ -r "$arq_appid" ]; then
       UMU_ID="$(tr -d '\r\n' < "$arq_appid")"
+      export SteamAppId="$UMU_ID" SteamGameId="$UMU_ID"
+    elif [ -n "${CLIENT_APP_ID:-}" ]; then
+      # No steam_appid.txt (Conan Exiles): the client appid the deploy was given.
+      UMU_ID="$CLIENT_APP_ID"
       export SteamAppId="$UMU_ID" SteamGameId="$UMU_ID"
     fi
   fi
@@ -447,6 +458,21 @@ apply_recipes() {
           install -d -o steam -g steam /home/steam/.steam /home/steam/.steam/sdk64
           ln -sf ${STEAMCMD_DIR}/linux64/steamclient.so /home/steam/.steam/sdk64/steamclient.so
           chown -h steam:steam /home/steam/.steam/sdk64/steamclient.so
+        "
+        ;;
+      vulkan)
+        # A software Vulkan driver (Mesa's lavapipe). Some servers create a Direct3D 12 device
+        # even headless (ARK: Survival Ascended), and Proton turns D3D12 into Vulkan: with only
+        # the libvulkan1 loader and no driver, the server died at boot in d3d12/dxgi with an
+        # EXCEPTION_ACCESS_VIOLATION. Measured in Docker with GE-Proton11-5.
+        msg "Recipe vulkan: installing the software Vulkan driver (mesa-vulkan-drivers)"
+        run_ct "
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          dpkg -s mesa-vulkan-drivers >/dev/null 2>&1 || {
+            apt-get update
+            apt-get install -y --no-install-recommends mesa-vulkan-drivers
+          }
         "
         ;;
       wine|proton|xvfb) ;;  # Windows runtime and virtual X: setup_windows_runtime handles them

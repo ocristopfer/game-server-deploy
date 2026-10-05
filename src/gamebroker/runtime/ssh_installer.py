@@ -201,10 +201,15 @@ def build_env(game: Game, ports: Sequence[AllocatedPort], steam: SteamAccount | 
         "GAME_PORTS": " ".join(str(p) for p in ports),
         "WINDOWS_RUNTIME": runtimes[0] if runtimes else "",
         "WINDOWS_RUNTIME_XVFB": "1" if RECIPE_XVFB in game.recipes else "0",
+        # vulkan stays in RECIPES: apply_recipes in ct-phases.sh installs the driver.
         "RECIPES": " ".join(r for r in game.recipes if r not in (*RECIPES_WINDOWS, RECIPE_XVFB)),
         # Shell only exists in the curated catalog, reviewed in git; a game registered via the API comes empty.
         "PRE_INSTALL_CMD": game.pre_install, "POST_INSTALL_CMD": game.post_install,
     }
+    if game.client_app_id:
+        # Only when set: an empty value would still reach /etc/game-runtime.env, harmlessly,
+        # but the install.env of every other game would change for nothing.
+        variables["CLIENT_APP_ID"] = str(game.client_app_id)
     if game.wine_overrides:
         # Only when the curated .env says so: without it, ct-phases.sh applies its own default.
         variables["WINE_DLL_OVERRIDES"] = game.wine_overrides

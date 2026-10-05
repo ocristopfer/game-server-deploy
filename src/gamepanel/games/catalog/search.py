@@ -121,6 +121,8 @@ def to_form(s: dict) -> dict[str, str]:
         # A LinuxGSM game is always Linux: empty platform and recipes CLEAR the Windows and
         # Proton of a previous suggestion, which would turn into a Wine install for no reason.
         "platform": s.get("platform", ""), "recipes": " ".join(s.get("recipes") or []),
+        # Only the manual list knows it (Conan Exiles); every other game clears it.
+        "client_app_id": str(s.get("client_app_id") or ""),
     }
 
 

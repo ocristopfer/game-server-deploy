@@ -29,12 +29,18 @@ SOURCE_CURATED = "curado"
 SOURCE_DYNAMIC = "dinamico"
 
 # Recipes: a CLOSED list in the code. A dynamic game picks from here, never writes shell.
-RECIPES = ("wine", "proton", "xvfb", "steamclient-sdk64")
+RECIPES = ("wine", "proton", "xvfb", "vulkan", "steamclient-sdk64")
 RECIPES_WINDOWS = ("wine", "proton")
 # Virtual X for the .exe that creates a window even headless (Icarus, V Rising). It is a recipe,
 # not a field, because it only makes sense together with a Windows runtime: on its own it would
 # install xvfb on a CT that never calls it.
 RECIPE_XVFB = "xvfb"
+# Software Vulkan driver (Mesa's lavapipe), for the .exe that creates a Direct3D 12 device even
+# headless (ARK: Survival Ascended): Proton turns D3D12 into Vulkan, and with no driver the server
+# dies at boot. Same reasoning as xvfb: it only means anything next to a Windows runtime.
+RECIPE_VULKAN = "vulkan"
+# Recipes that need a Windows runtime next to them.
+RECIPES_NEED_RUNTIME = (RECIPE_XVFB, RECIPE_VULKAN)
 
 # Ports no game may ever expose: panel, Proxmox, REST API and RCON
 # (see PORT_NOTES in palworld.env - the panel talks to them from inside the container).
@@ -125,6 +131,10 @@ class Game:
     # Server slots (MAX_PLAYERS from the .env). The panel only uses it when the count does not
     # bring the total - log or active connections; A2S brings its own. 0 = unknown.
     max_players: int = 0
+    # The CLIENT's Steam appid, for a Windows .exe without a steam_appid.txt next to it (Conan
+    # Exiles: 440900, while the server app is 443030). win-run hands it to Proton; without it the
+    # server reports appid 0 and the game's server browser never lists it. 0 = not needed.
+    client_app_id: int = 0
 
     @property
     def has_hooks(self) -> bool:
@@ -140,7 +150,7 @@ class Game:
             "cores": self.cores, "disk_gb": self.disk_gb,
             "recipes": list(self.recipes), "shiftable": self.shiftable,
             "source": self.source, "creatable": self.creatable, "reason": self.reason,
-            "edited": self.edited,
+            "edited": self.edited, "client_app_id": self.client_app_id,
         }
 
     def as_stored(self) -> dict:
@@ -156,7 +166,7 @@ class Game:
             "backup_paths": list(self.backup_paths), "player_source": self.player_source,
             "join_re": self.join_re, "leave_re": self.leave_re, "log_path": self.log_path,
             "recipes": list(self.recipes), "shiftable": self.shiftable,
-            "max_players": self.max_players,
+            "max_players": self.max_players, "client_app_id": self.client_app_id,
         }
 
 
@@ -317,6 +327,7 @@ def game_from_env(file_name: str, data: dict[str, str], steam_account: bool = Fa
         wine_overrides=data.get("WINE_DLL_OVERRIDES", ""),
         pre_install=data.get("PRE_INSTALL_CMD", ""),
         max_players=_env_int(data, "MAX_PLAYERS", 0),
+        client_app_id=_env_int(data, "CLIENT_APP_ID", 0),
         post_install=data.get("POST_INSTALL_CMD", ""),
     )
 
@@ -355,7 +366,7 @@ _DYNAMIC_FIELDS = frozenset({
     "key", "name", "app_id", "platform", "start_script", "start_args", "ports",
     "game_port", "query_port", "extra_port", "memory_mb", "cores", "disk_gb", "config_path",
     "config_files", "backup_paths", "player_source", "join_re", "leave_re", "log_path",
-    "recipes", "shiftable", "max_players",
+    "recipes", "shiftable", "max_players", "client_app_id",
 })
 _REQUIRED_FIELDS = ("key", "name", "app_id", "ports", "game_port")
 
@@ -466,8 +477,9 @@ def _recipes_field(data: dict, platform: str) -> tuple[str, ...]:
         raise ValidationError("recipes", f"receita desconhecida: {unknown!r}")
     if platform == "windows" and not set(items) & set(RECIPES_WINDOWS):
         raise ValidationError("recipes", "jogo de Windows precisa da receita 'proton' ou 'wine'")
-    if RECIPE_XVFB in items and not set(items) & set(RECIPES_WINDOWS):
-        raise ValidationError("recipes", "'xvfb' so vale junto de 'proton' ou 'wine'")
+    for recipe in RECIPES_NEED_RUNTIME:
+        if recipe in items and not set(items) & set(RECIPES_WINDOWS):
+            raise ValidationError("recipes", f"'{recipe}' only works together with 'proton' or 'wine'")
     return tuple(dict.fromkeys(items))
 
 
@@ -552,6 +564,7 @@ def validate_dynamic(data: object) -> Game:
         recipes=_recipes_field(data, platform), shiftable=shiftable,
         source=SOURCE_DYNAMIC, creatable=True, reason="",
         max_players=_int_field(data, "max_players", 0, 1000, default=0),
+        client_app_id=_int_field(data, "client_app_id", 0, 2**31 - 1, default=0),
     )
 
 
@@ -577,7 +590,8 @@ def _as_override(curated: Game, edited: Game) -> Game:
         needs_account=curated.needs_account, wine_overrides=curated.wine_overrides, edited=True,
         # The catalog edit screen does not have this field: without this, editing Dragonwilds
         # would zero the 6 slots that only the .env knows.
-        max_players=edited.max_players or curated.max_players)
+        max_players=edited.max_players or curated.max_players,
+        client_app_id=edited.client_app_id or curated.client_app_id)
 
 
 def _checked_key(key: str) -> str:

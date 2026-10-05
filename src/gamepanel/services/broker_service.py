@@ -15,7 +15,7 @@ from gamepanel.i18n import Message
 # comes before wine on purpose: it is the preferred runtime for a server without a Linux
 # build (fsync and ntsync, which the distro's wine lacks), and wine is for when Proton
 # does not work.
-BROKER_RECIPES = ("proton", "wine", "xvfb", "steamclient-sdk64")
+BROKER_RECIPES = ("proton", "wine", "xvfb", "vulkan", "steamclient-sdk64")
 NUMBER_RE = re.compile(r"[0-9]{1,10}", re.ASCII)
 
 # Fields that go in as text, when filled in.
@@ -28,6 +28,7 @@ NUMERIC_FIELDS = (
     ("app_id", "broker_form.app_id"), ("game_port", "catalog.game_port"),
     ("query_port", "catalog.query_port"), ("extra_port", "catalog.extra_port"),
     ("memory_mb", "broker_form.memory"), ("cores", "catalog.cpus"), ("disk_gb", "metrics.disk"),
+    ("client_app_id", "catalog.client_app_id"),
 )
 
 

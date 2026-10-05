@@ -805,7 +805,8 @@ MESSAGES: dict[str, str] = {
     "catalog.search_failed": "Não consegui buscar:",
     "catalog.recipes_hint":
         "Servidor só de Windows: marque <strong>proton</strong> (o preferido; <strong>wine</strong> "
-        "só se o Proton não funcionar) e <strong>xvfb</strong> se ele criar janela ao subir.",
+        "só se o Proton não funcionar), <strong>xvfb</strong> se ele criar janela ao subir e "
+        "<strong>vulkan</strong> se ele cair no Direct3D 12 sem placa de vídeo.",
     "catalog.template.unreal_linux": "Unreal Engine (servidor nativo Linux)",
     "catalog.template.unreal_linux_help":
         "Palworld, Satisfactory, Dragonwilds e a maioria dos jogos Unreal com build Linux. Troque "
@@ -833,6 +834,17 @@ MESSAGES: dict[str, str] = {
     "catalog.name": "Nome",
     "catalog.name_example": "Meu Jogo",
     "catalog.app_id": "App ID do servidor dedicado (Steam)",
+    "catalog.client_app_id": "App ID do jogo (cliente)",
+    "catalog.client_app_id_hint":
+        "Só para servidor de Windows sem <code>steam_appid.txt</code> ao lado do executável "
+        "(Conan Exiles: 440900). Sem ele o servidor responde à Steam com appid 0 e não aparece na"
+        " lista de servidores do jogo. Em branco na maioria dos jogos.",
+    "catalog.suggestion.ark_ascended.vulkan":
+        "Mesmo sem tela, o servidor cria um dispositivo Direct3D 12: sem o X virtual (xvfb) e sem"
+        " o driver Vulkan por software (vulkan) ele cai ao subir.",
+    "catalog.suggestion.conan_exiles.xvfb_appid":
+        "Sem o X virtual (xvfb) o servidor trava logo depois de montar os arquivos do jogo. O App"
+        " ID do cliente (440900) é o que faz ele aparecer na lista de servidores.",
     "catalog.app_id_hint": "O do <strong>servidor dedicado</strong>, não o do jogo. Consulte o SteamDB.",
     "catalog.ports_hint": "Porta/protocolo, separadas por espaço. Abaixo de 1024 não é permitido.",
     "catalog.game_port": "Porta do jogo",

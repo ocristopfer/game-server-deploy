@@ -806,7 +806,8 @@ MESSAGES: dict[str, str] = {
     "catalog.search_failed": "Could not search:",
     "catalog.recipes_hint":
         "Windows-only server: tick <strong>proton</strong> (preferred; <strong>wine</strong> only "
-        "if Proton does not work) and <strong>xvfb</strong> if it opens a window on start.",
+        "if Proton does not work), <strong>xvfb</strong> if it opens a window on start and "
+        "<strong>vulkan</strong> if it crashes in Direct3D 12 without a graphics card.",
     "catalog.template.unreal_linux": "Unreal Engine (native Linux server)",
     "catalog.template.unreal_linux_help":
         "Palworld, Satisfactory, Dragonwilds and most Unreal games with a Linux build. Replace "
@@ -836,6 +837,17 @@ MESSAGES: dict[str, str] = {
     "catalog.name": "Name",
     "catalog.name_example": "My Game",
     "catalog.app_id": "Dedicated server App ID (Steam)",
+    "catalog.client_app_id": "Game App ID (client)",
+    "catalog.client_app_id_hint":
+        "Only for a Windows server without a <code>steam_appid.txt</code> next to the executable "
+        "(Conan Exiles: 440900). Without it the server answers Steam with appid 0 and does not "
+        "show up in the game's server list. Blank for most games.",
+    "catalog.suggestion.ark_ascended.vulkan":
+        "Even headless, the server creates a Direct3D 12 device: without the virtual X (xvfb) and"
+        " the software Vulkan driver (vulkan) it crashes on start.",
+    "catalog.suggestion.conan_exiles.xvfb_appid":
+        "Without the virtual X (xvfb) the server hangs right after mounting the game files. The "
+        "client App ID (440900) is what makes it show up in the server list.",
     "catalog.app_id_hint": "The <strong>dedicated server</strong> one, not the game's. Check SteamDB.",
     "catalog.ports_hint": "Port/protocol, separated by a space. Below 1024 is not allowed.",
     "catalog.game_port": "Game port",

@@ -56,7 +56,7 @@ def test_valores_do_formulario_sempre_trazem_todas_as_chaves():
     keys = {"key", "name", "app_id", "ports", "game_port", "query_port", "extra_port",
               "start_script", "start_args", "shiftable", "config_path", "config_files",
               "player_source", "backup_paths", "join_re", "leave_re", "memory_mb", "cores",
-              "disk_gb", "platform", "recipes"}
+              "disk_gb", "platform", "recipes", "client_app_id"}
     for s in (*sugestoes_de_jogos.SUGGESTIONS, *manual_suggestions.SUGGESTIONS,
               *pterodactyl_suggestions.SUGGESTIONS):
         assert set(busca.to_form(s)) == keys

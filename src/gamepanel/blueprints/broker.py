@@ -91,7 +91,7 @@ def _form_of(game: dict) -> dict:
     form["backup_paths"] = "\n".join(game.get("backup_paths") or [])
     form["shiftable"] = "1" if game.get("shiftable") else ""
     # Port 0 means "none": in the form it is the empty field, which is how it was registered.
-    for field in ("query_port", "extra_port"):
+    for field in ("query_port", "extra_port", "client_app_id"):
         if form.get(field) == "0":
             form[field] = ""
     return form
