@@ -20,8 +20,23 @@ each one was proven on a real server (Docker, 2026-10-05), with the mod download
   downloads the dependencies (a map and its assets).
 - **reforger** (Arma Reforger): `game.mods` in the `-config` JSON, with the GUID from Bohemia's
   workshop (it is not Steam) and a name.
+- **ark** (ARK: Survival Ascended): the server downloads from CurseForge by itself, but ONLY
+  through `-mods=<id,...>` on its command line - `ActiveMods=` in GameUserSettings.ini is ignored
+  ("LoadGameMods with 0 mods", measured), and a mod folder left on disk does not load either. The
+  list goes into a systemd drop-in that repeats the unit's ExecStart with `-mods=` appended, so it
+  needs root. The drop-in records the command it was built from: a redeploy that changes the
+  unit's ExecStart would otherwise be masked by the stale copy, and the status flags it
+  (`base_changed`).
+- **conan** (Conan Exiles Enhanced): the exception - the server does NOT download mods. The CT
+  does, with SteamCMD (anonymous login works for app 440900), into a holding folder the panel's
+  antivirus checks before anything reaches the game (`fetch`, then the scan step, then `set`).
+  `set` puts the files in `ConanSandbox/Mods` under their ORIGINAL names (a renamed pak fails to
+  load in silence), writes `modlist.txt` as `*Name.pak` lines in list order and turns on
+  `ServerModList=modlist.txt` in ServerSettings.ini. Measured: a "[Legacy]" (UE4) item is ignored
+  without a word, and a mod "too old for this game version" makes the server EXIT at boot - the
+  status reads those refusals from the game log (`rejected`).
 
-What applies to all four, each with its reason:
+What applies to all of them, each with its reason:
 - **What the person already configured stays.** Each mod's options in `modoverrides.lua` (the
   mod's whole block, copied as text), the other JSON keys and the other .ini lines: the panel only
   replaces the LIST. A mod that left the list loses its block, and that is what "remove" means.
@@ -31,11 +46,13 @@ What applies to all four, each with its reason:
   as steam, and a root-owned file it cannot rewrite blocks the next startup.
 - **Where the config lives comes from the service ExecStart** (`-servername`, `-cachedir`,
   `-config`, `+InternetServer/`), and not from a guess: it is the same command the game receives.
-- **Nothing goes through the antivirus before getting in**, because the downloader is the game,
-  on startup. The panel's "Check installed mods" runs ClamAV over the folder where each game keeps them.
+- **Nothing goes through the antivirus before getting in** (except conan), because the
+  downloader is the game, on startup. The panel's "Check installed mods" runs ClamAV over the
+  folder where each game keeps them.
 
-Actions (argv): --unit SERVICE FORMAT status|set GAME_FOLDER [ITEMS...] [--mods LIST]
-ITEM is the ID (Steam) or `GUID=Name` (reforger). Ends with ONE JSON line.
+Actions (argv): --unit SERVICE FORMAT status|fetch|set GAME_FOLDER [ITEMS...] [--mods LIST]
+[--staging DIR]. ITEM is the ID (Steam, CurseForge) or `GUID=Name` (reforger). `fetch` exists
+only for conan. Ends with ONE JSON line.
 """
 from __future__ import annotations
 
@@ -50,7 +67,7 @@ import subprocess
 import sys
 import tempfile
 
-FORMATS = ("dst", "zomboid", "unturned", "reforger")
+FORMATS = ("dst", "zomboid", "unturned", "reforger", "ark", "conan")
 OWNER = "steam"
 BACKUP_SUFFIX = ".gamepanel.bak"
 
@@ -151,7 +168,8 @@ def write_atomic(path: str, text: str, user: str) -> None:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         _chown(tmp, owner)
-        os.chmod(tmp, 0o644)
+        # World-readable on purpose: the game (steam) reads what root wrote in legacy mode.
+        os.chmod(tmp, 0o644)  # NOSONAR - a game config/mod file, readable by the game
         os.replace(tmp, path)
     except BaseException:
         with contextlib.suppress(OSError):
@@ -159,9 +177,10 @@ def write_atomic(path: str, text: str, user: str) -> None:
         raise
 
 
-def read_text(path: str) -> str:
+def read_text(path: str, raw: bool = False) -> str:
+    """The file's text, or empty. `raw` keeps the line endings as they are on disk."""
     try:
-        with open(path, encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace", newline="" if raw else None) as f:
             return f.read()
     except OSError:
         return ""
@@ -454,6 +473,256 @@ def reforger_set(ctx: dict, items: list[tuple[str, str]]) -> dict:
     return {"ids": [g for g, _ in items], "config": path}
 
 
+# --- ARK: Survival Ascended -------------------------------------------------------------------
+
+ARK_DROPIN = "gamepanel-mods.conf"
+ARK_BASE_MARK = "# gamepanel-base: "
+# CurseForge unpacks each mod into <Binaries/Win64>/ShooterGame/Mods/<game id>/<mod id>_<file id>.
+ARK_MODS_DIR = "ShooterGame/Binaries/Win64/ShooterGame/Mods"
+
+
+def unit_sections(text: str) -> list[str]:
+    """`systemctl cat` prints each file under a `# /path` header: the unit first, then its drop-ins."""
+    sections: list[list[str]] = []
+    for line in text.splitlines():
+        if line.startswith("# /"):
+            sections.append([])
+        elif sections:
+            sections[-1].append(line)
+    return ["\n".join(s) for s in sections]
+
+
+def ark_base(ctx: dict) -> str:
+    """The unit file's OWN ExecStart, raw (quotes included), without any `-mods=`.
+
+    Read from the unit and never from a drop-in: ours would otherwise feed its own output back
+    in, and a redeploy's new command would never be seen.
+    """
+    sections = unit_sections(ctx["unit_text"])
+    lines = [ln.split("=", 1)[1].strip() for ln in (sections[0] if sections else "").splitlines()
+             if ln.strip().startswith("ExecStart=")]
+    lines = [ln for ln in lines if ln]
+    # Word by word and not a regex: the unit may repeat -mods= from a hand edit, and only the
+    # words change - the quoting of the map argument stays exactly as written.
+    return " ".join(w for w in lines[-1].split(" ") if not w.startswith("-mods=")) if lines else ""
+
+
+def ark_dropin(ctx: dict) -> str:
+    return os.path.join("/etc/systemd/system", f"{ctx['unit']}.d", ARK_DROPIN)
+
+
+def ark_status(ctx: dict) -> dict:
+    path = ark_dropin(ctx)
+    text = read_text(path)
+    stored = next((ln[len(ARK_BASE_MARK):] for ln in text.splitlines() if ln.startswith(ARK_BASE_MARK)), "")
+    found = re.search(r"-mods=(\S+)", text)
+    ids = [i for i in (found.group(1).split(",") if found else []) if i]
+    mods_dir = os.path.join(ctx["game_dir"], ARK_MODS_DIR)
+    installed = [i for i in ids if glob.glob(os.path.join(mods_dir, "*", f"{i}_*"))]
+    base = ark_base(ctx)
+    return {"config": path if text else "", "ids": ids, "installed": installed,
+            "base_changed": bool(text) and stored != base,
+            "problem": "" if base else "no_unit"}
+
+
+def ark_set(ctx: dict, items: list[str]) -> dict:
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        raise ValueError("the ARK mod list is a systemd drop-in, and only root can write it")
+    base = ark_base(ctx)
+    if not base:
+        raise ValueError(f"no ExecStart found in {ctx['unit']}")
+    path = ark_dropin(ctx)
+    if items:
+        text = (f"# Written by the game panel: the mod list. Remove it to start the server without mods.\n"
+                f"{ARK_BASE_MARK}{base}\n[Service]\nExecStart=\nExecStart={base} -mods={','.join(items)}\n")
+        write_atomic(path, text, "root")
+    elif os.path.exists(path):
+        os.unlink(path)
+    # Without daemon-reload systemd keeps starting the server with the previous command.
+    subprocess.run(["systemctl", "daemon-reload"], check=False)  # noqa: S607
+    return {"ids": items, "config": path}
+
+
+# --- Conan Exiles Enhanced --------------------------------------------------------------------
+
+CONAN_APP = "440900"
+STEAMCMD = "/opt/steamcmd/steamcmd.sh"
+CONAN_MODS = "ConanSandbox/Mods"
+CONAN_SETTINGS = "ConanSandbox/Saved/Config/WindowsServer/ServerSettings.ini"
+CONAN_LOG = "ConanSandbox/Saved/Logs/ConanSandbox.log"
+CONAN_MARK = ".gamepanel-workshop.json"
+# The pak and its UE5 IoStore companions; anything else in a Workshop item is not for the server.
+CONAN_FILE = re.compile(r"^[A-Za-z0-9 ._()+-]{1,120}$", re.ASCII)
+CONAN_EXTENSIONS = (".pak", ".utoc", ".ucas")
+# Same prefix the panel's antivirus agrees to scan and delete (see antivirus.STAGING_PREFIX).
+# /var/tmp and not /tmp: on Debian 13 /tmp is tmpfs (memory), and a mod can be hundreds of MB.
+STAGING_PREFIX = "/var/tmp/gamepanel-incoming-"  # noqa: S108  # NOSONAR - created 0700 by the panel
+CONAN_REJECTED = re.compile(r"Mod pak file: (\S+) failed check and will be excluded[^(\n]*\(Error: ([^)\n]*)")
+SETTINGS_SECTION = "[ServerSettings]"
+MODLIST_SETTING = "ServerModList=modlist.txt"
+
+
+def _checked_staging(staging: str) -> str:
+    if not staging.startswith(STAGING_PREFIX) or ".." in staging or not os.path.isdir(staging):
+        raise ValueError(f"invalid holding folder: {staging!r}")
+    return staging
+
+
+def _conan_mark(ctx: dict) -> dict:
+    try:
+        data = json.loads(read_text(os.path.join(ctx["game_dir"], CONAN_MODS, CONAN_MARK)) or "{}")
+    except ValueError:
+        data = {}
+    files = data.get("files") if isinstance(data.get("files"), dict) else {}
+    return {"ids": [str(i) for i in data.get("ids", []) if str(i) in files], "files": files}
+
+
+def _steamcmd(ctx: dict, items: list[str]) -> subprocess.CompletedProcess:
+    """One SteamCMD run for every item, as steam (the panel may be root, in legacy mode)."""
+    args = [STEAMCMD, "+@sSteamCmdForcePlatformType", "windows", "+login", "anonymous"]
+    for item in items:
+        args += ["+workshop_download_item", CONAN_APP, item]
+    args.append("+quit")
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        args = ["runuser", "-u", OWNER, "--", *args]
+    # HOME decides where SteamCMD puts the download: steam's, whoever runs the script.
+    env = {**os.environ, "HOME": ctx["home"]}
+    sys.stdout.flush()
+    return subprocess.run(args, env=env, capture_output=True, text=True, timeout=3600, check=False)  # noqa: S603
+
+
+def _conan_file(name: str) -> bool:
+    return bool(CONAN_FILE.match(name)) and name.lower().endswith(CONAN_EXTENSIONS)
+
+
+def _copy_item(content: str, item: str, staging: str, output: str) -> bool:
+    """Copy one downloaded item to <staging>/<id>/; False if SteamCMD did not deliver a .pak."""
+    src = os.path.join(content, item)
+    names = sorted(n for n in (os.listdir(src) if os.path.isdir(src) else []) if _conan_file(n))
+    if f"Success. Downloaded item {item}" not in output or not any(n.lower().endswith(".pak") for n in names):
+        return False
+    dest = os.path.join(staging, item)
+    os.makedirs(dest, exist_ok=True)
+    for name in names:
+        shutil.copyfile(os.path.join(src, name), os.path.join(dest, name))
+    return True
+
+
+def conan_fetch(ctx: dict, items: list[str], staging: str) -> dict:
+    """Downloads the items into <staging>/<id>/ - nothing touches the game folder yet."""
+    staging = _checked_staging(staging)
+    content = os.path.join(ctx["home"], "Steam", "steamapps", "workshop", "content", CONAN_APP)
+    failed = list(items)
+    # Three tries, like the game install in ct-phases.sh: SteamCMD sometimes updates itself or
+    # drops the connection on a run and reports nothing for an item that the next run gets.
+    for _attempt in range(3):
+        if not failed:
+            break
+        proc = _steamcmd(ctx, failed)
+        print((proc.stdout or "")[-4000:])
+        failed = [item for item in failed if not _copy_item(content, item, staging, proc.stdout or "")]
+    if failed:
+        raise ValueError(f"SteamCMD did not download a .pak for: {', '.join(failed)}")
+    return {"fetched": items}
+
+
+def _settings_with_modlist(text: str) -> str:
+    """ServerModList=modlist.txt in [ServerSettings], keeping the file's own line endings."""
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("ServerModList="):
+            lines[i] = MODLIST_SETTING
+            return newline.join(lines) + newline
+    if SETTINGS_SECTION in lines:
+        lines.insert(lines.index(SETTINGS_SECTION) + 1, MODLIST_SETTING)
+    else:
+        lines = [SETTINGS_SECTION, MODLIST_SETTING, *lines]
+    return newline.join(lines) + newline
+
+
+def _place(src: str, dest: str, owner: tuple[int, int] | None) -> None:
+    """Copy next to the target and rename over it: the server may hold the old pak open."""
+    tmp = dest + ".gamepanel-new"
+    shutil.copyfile(src, tmp)
+    _chown(tmp, owner)
+    os.chmod(tmp, 0o644)  # NOSONAR - a mod file, readable by the game
+    os.replace(tmp, dest)
+
+
+def _conan_plan(mark: dict, items: list[str], fresh: str) -> dict[str, list[str]]:
+    """Which files each mod of the new list ends up with: freshly downloaded, or the ones it has."""
+    plan: dict[str, list[str]] = {}
+    for item in items:
+        new_dir = os.path.join(fresh, item) if fresh else ""
+        if new_dir and os.path.isdir(new_dir):
+            plan[item] = sorted(os.listdir(new_dir))
+        elif item in mark["files"]:
+            plan[item] = list(mark["files"][item])
+        else:
+            raise ValueError(f"mod {item} was not downloaded")
+    names = [n.lower() for files in plan.values() for n in files]
+    if len(set(names)) != len(names):
+        raise ValueError("two mods ship a file with the same name")
+    return plan
+
+
+def _conan_files(ctx: dict, mark: dict, plan: dict[str, list[str]], fresh: str) -> None:
+    """Remove what left the list and place what was downloaded."""
+    mods_dir = os.path.join(ctx["game_dir"], CONAN_MODS)
+    os.makedirs(mods_dir, exist_ok=True)
+    keep = {n.lower() for files in plan.values() for n in files}
+    # Only what the panel itself placed is removed: a pak someone put there by hand is not ours.
+    stale = [n for files in mark["files"].values() for n in files if n.lower() not in keep and _conan_file(n)]
+    for name in stale:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(os.path.join(mods_dir, name))
+    owner = _ids_of(ctx["user"])
+    for item, files in plan.items():
+        src = os.path.join(fresh, item) if fresh else ""
+        for name in files if src and os.path.isdir(src) else ():
+            _place(os.path.join(src, name), os.path.join(mods_dir, name), owner)
+
+
+def _conan_modlist(ctx: dict, mark: dict, plan: dict[str, list[str]]) -> str:
+    path = os.path.join(ctx["game_dir"], CONAN_MODS, "modlist.txt")
+    managed = {f"*{n}".lower() for files in mark["files"].values() for n in files}
+    # Lines the panel did not write (a hand-installed mod) stay first, in their order.
+    hand = [ln for ln in read_text(path).splitlines() if ln.strip() and ln.strip().lower() not in managed]
+    ours = [f"*{n}" for files in plan.values() for n in files if n.lower().endswith(".pak")]
+    write_atomic(path, "\n".join([*hand, *ours]) + "\n", ctx["user"])
+    return path
+
+
+def conan_set(ctx: dict, items: list[str], staging: str) -> dict:
+    mark = _conan_mark(ctx)
+    fresh = _checked_staging(staging) if staging else ""
+    plan = _conan_plan(mark, items, fresh)
+    _conan_files(ctx, mark, plan, fresh)
+    modlist = _conan_modlist(ctx, mark, plan)
+    settings = os.path.join(ctx["game_dir"], CONAN_SETTINGS)
+    # Raw: the server writes this file with CRLF, and text mode would quietly turn it into LF.
+    write_atomic(settings, _settings_with_modlist(read_text(settings, raw=True)), ctx["user"])
+    mark_path = os.path.join(ctx["game_dir"], CONAN_MODS, CONAN_MARK)
+    write_atomic(mark_path, json.dumps({"ids": items, "files": plan}) + "\n", ctx["user"])
+    if fresh:
+        shutil.rmtree(fresh, ignore_errors=True)
+    return {"ids": items, "config": modlist}
+
+
+def conan_status(ctx: dict) -> dict:
+    mods_dir = os.path.join(ctx["game_dir"], CONAN_MODS)
+    mark = _conan_mark(ctx)
+    present = set(os.listdir(mods_dir)) if os.path.isdir(mods_dir) else set()
+    installed = [i for i in mark["ids"] if mark["files"][i] and set(mark["files"][i]) <= present]
+    refused = {os.path.basename(p): reason for p, reason in CONAN_REJECTED.findall(
+        read_text(os.path.join(ctx["game_dir"], CONAN_LOG)))}
+    rejected = {i: refused[n] for i in mark["ids"] for n in mark["files"][i] if n in refused}
+    on = MODLIST_SETTING in read_text(os.path.join(ctx["game_dir"], CONAN_SETTINGS))
+    return {"config": os.path.join(mods_dir, "modlist.txt"), "ids": mark["ids"], "installed": installed,
+            "rejected": rejected, "modlist_off": bool(mark["ids"]) and not on, "problem": ""}
+
+
 # --- entry point ------------------------------------------------------------------------------
 
 def parse_items(fmt: str, raw: list[str]) -> list:
@@ -466,7 +735,7 @@ def parse_items(fmt: str, raw: list[str]) -> list:
             if not GUID.match(guid) or (name and not REFORGER_NAME.match(name)):
                 raise ValueError(f"mod do Reforger invalido: {item!r}")
             out.append((guid, name))
-        return list(dict((g, (g, n)) for g, n in out).values())
+        return list({g: (g, n) for g, n in out}.values())
     for item in raw:
         if not STEAM_ID.match(item):
             raise ValueError(f"ID da Workshop invalido: {item!r}")
@@ -477,20 +746,25 @@ def context(unit: str, game_dir: str) -> dict:
     text = unit_text(unit)
     user = unit_value(text, "User") or OWNER
     return {"game_dir": game_dir, "args": exec_args(text), "user": user, "home": home_of(user),
-            "workdir": unit_value(text, "WorkingDirectory")}
+            "workdir": unit_value(text, "WorkingDirectory"), "unit": unit, "unit_text": text}
 
 
-STATUS = {"dst": dst_status, "zomboid": zomboid_status, "unturned": unturned_status, "reforger": reforger_status}
+STATUS = {"dst": dst_status, "zomboid": zomboid_status, "unturned": unturned_status,
+          "reforger": reforger_status, "ark": ark_status, "conan": conan_status}
 
 
-def run(fmt: str, action: str, ctx: dict, raw: list[str], mods: str) -> dict:
+def run(fmt: str, action: str, ctx: dict, raw: list[str], mods: str, staging: str = "") -> dict:
     if fmt not in FORMATS:
         raise ValueError(f"formato desconhecido: {fmt}")
     if action == "status":
         return {"format": fmt, **STATUS[fmt](ctx)}
-    if action != "set":
+    if action not in ("set", "fetch") or (action == "fetch" and fmt != "conan"):
         raise ValueError(f"acao desconhecida: {action}")
     items = parse_items(fmt, raw)
+    if fmt == "conan":
+        return conan_fetch(ctx, items, staging) if action == "fetch" else conan_set(ctx, items, staging)
+    if fmt == "ark":
+        return ark_set(ctx, items)
     if fmt == "dst":
         return dst_set(ctx, items)
     if fmt == "zomboid":
@@ -503,16 +777,18 @@ def run(fmt: str, action: str, ctx: dict, raw: list[str], mods: str) -> dict:
 
 
 def main(argv: list[str]) -> int:
-    unit = mods = ""
+    unit = ""
     if argv[:1] == ["--unit"]:
         unit, argv = argv[1], argv[2:]
-    if "--mods" in argv:
-        i = argv.index("--mods")
-        mods, argv = argv[i + 1] if i + 1 < len(argv) else "", argv[:i] + argv[i + 2:]
+    options = {"--mods": "", "--staging": ""}
+    for flag in options:
+        if flag in argv:
+            i = argv.index(flag)
+            options[flag], argv = argv[i + 1] if i + 1 < len(argv) else "", argv[:i] + argv[i + 2:]
     try:
         fmt, action, game_dir, *items = argv
-        result = run(fmt, action, context(unit, game_dir), items, mods)
-    except (ValueError, KeyError, OSError, TypeError) as exc:
+        result = run(fmt, action, context(unit, game_dir), items, options["--mods"], options["--staging"])
+    except (ValueError, KeyError, OSError, TypeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"error": str(exc)}))
         return 1
     print(json.dumps(result))

@@ -254,6 +254,7 @@ def test_instalador_sem_prova_e_marcado_na_tela():
 @pytest.mark.parametrize(("service", "fmt"), [
     ("don-t-starve-together.service", "dst"), ("project-zomboid.service", "zomboid"),
     ("unturned.service", "unturned"), ("arma-reforger.service", "reforger"),
+    ("ark-ascended.service", "ark"), ("conan-exiles.service", "conan"),
 ])
 def test_workshop_pela_config_escolhe_o_formato_pelo_servico(service, fmt):
     p = profiles.profile_for(service)

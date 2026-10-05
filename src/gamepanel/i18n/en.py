@@ -750,6 +750,33 @@ MESSAGES: dict[str, str] = {
     "mods.zomboid_mods_help":
         "Mod IDs separated by semicolons, as listed on this screen after the download.",
     "mods.workshop_save": "Save the list",
+    "mods.help_workshop_ark":
+        "In ARK: Survival Ascended the <strong>server itself</strong> downloads the mods from "
+        "CurseForge when it starts. The list goes into the server command (<code>-mods=</code>), "
+        "through a systemd override the panel writes; the game ignores <code>ActiveMods</code> in "
+        "GameUserSettings.ini. Every player needs the same mods.",
+    "mods.help_workshop_conan":
+        "Conan Exiles' server <strong>does not download any mod</strong>: the container downloads "
+        "each item from the Steam Workshop, the antivirus checks it, and only then do the files go "
+        "into <code>ConanSandbox/Mods</code>, in list order (the <code>modlist.txt</code>). Use the "
+        "items marked Enhanced: the old (Legacy) ones are ignored, and a mod outdated for the game "
+        "version keeps the server from starting.",
+    "mods.source_curseforge": "CurseForge",
+    "mods.workshop_ark_help":
+        "The mod's CurseForge Project ID (the number on the side of the mod page), one per line. "
+        "Removing a line removes the mod.",
+    "mods.workshop_ark_base_changed":
+        "The server command changed after the mod list was saved (a redeploy?): the server still "
+        "starts with the old command. Save the list again to use the new one.",
+    "mods.workshop_conan_modlist_off":
+        "ServerModList is off in ServerSettings.ini: the mods do not load. Save the list again to "
+        "turn it back on.",
+    "mods.workshop_rejected": "The server refused this mod: {reason}",
+    "mods.workshop_rejected_badge": "refused",
+    "mods.workshop_refresh":
+        "Download every mod again (to pick up their updates after a game update)",
+    "mods.workshop_problem_no_unit":
+        "The server command was not found in systemd: check the service name on the Edit screen.",
     "mods.workshop_bad_ids": "No mod ID found in what was pasted: nothing was changed.",
     "mods.zomboid_bad_mods": "The Mods= list only takes letters, digits, _ . - and semicolons.",
     "mods.source_umod": "uMod (plugins)",

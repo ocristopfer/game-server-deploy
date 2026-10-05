@@ -1087,6 +1087,16 @@ understands mods:
     `+InternetServer/<name>`.
   - Reforger: `game.mods` in the `-config` JSON, by Bohemia workshop GUID (the page link works).
     Without `-config` in the command the screen explains what is missing.
+  - ARK: Survival Ascended: the CurseForge **Project ID** of each mod. The server downloads them
+    itself, but only through `-mods=` in its command, so the panel writes a systemd override
+    with the list: it needs root, and a container in the hardened (helper) mode refuses it with a
+    message. If a redeploy changes the server command, the screen asks you to save the list again.
+- **Conan Exiles**: the server does not download mods, so the **container** downloads each Steam
+  Workshop item, the **antivirus checks it** and only then the files go into `ConanSandbox/Mods`,
+  in list order (`modlist.txt`). Only new items are downloaded; tick "download every mod again"
+  after a game update. Use the items marked **Enhanced**: the old (Legacy) ones are ignored, and
+  a mod outdated for the game version keeps the server from starting - the screen shows the
+  reason the server gave.
 
   Proven on real servers in Docker (the game downloaded and loaded the mod), not yet through this
   screen on a production container: the screen warns. **The antivirus does not scan beforehand**,

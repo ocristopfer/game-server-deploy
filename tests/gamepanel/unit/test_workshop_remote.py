@@ -235,3 +235,185 @@ def test_guid_colado_de_varios_jeitos():
     assert workshop.parse_guids(text) == [("5965550F24A0C152", "Where Am I"),
                                           ("59727DAE364DEADB", "WeaponSwitching"),
                                           ("ABCDEF0123456789", "com igual")]
+
+
+# ------------------------------------------------------------------------------- ARK
+
+ARK_UNIT = (
+    "# /etc/systemd/system/ark-ascended.service\n[Service]\nUser=steam\n"
+    'ExecStart=/usr/local/bin/win-run /opt/game/ShooterGame/Binaries/Win64/ArkAscendedServer.exe '
+    '"TheIsland_WP?listen?Port=7777" -server -log -NoBattlEye\n'
+)
+ARK_BASE = ('/usr/local/bin/win-run /opt/game/ShooterGame/Binaries/Win64/ArkAscendedServer.exe '
+            '"TheIsland_WP?listen?Port=7777" -server -log -NoBattlEye')
+
+
+def _ark(tmp_path, unit_text: str = ARK_UNIT, monkeypatch=None) -> dict:
+    ctx = _ctx(tmp_path)
+    ctx.update(unit="ark-ascended.service", unit_text=unit_text)
+    if monkeypatch is not None:
+        dropin = tmp_path / "etc" / "ark-ascended.service.d" / wr.ARK_DROPIN
+        monkeypatch.setattr(wr, "ark_dropin", lambda _ctx: str(dropin))
+        monkeypatch.setattr(wr.os, "geteuid", lambda: 0, raising=False)
+        monkeypatch.setattr(wr.subprocess, "run", lambda *a, **k: None)
+    return ctx
+
+
+def test_ark_le_o_comando_da_propria_unit_e_nunca_do_drop_in(tmp_path):
+    """Reading our own drop-in back would freeze the command: a redeploy would never be seen."""
+    text = (ARK_UNIT + "# /etc/systemd/system/ark-ascended.service.d/gamepanel-mods.conf\n[Service]\n"
+            "ExecStart=\nExecStart=/velho -mods=1\n")
+    assert wr.ark_base(_ark(tmp_path, text)) == ARK_BASE
+
+
+def test_ark_tira_o_mods_que_alguem_pos_a_mao_e_mantem_as_aspas(tmp_path):
+    unit = ARK_UNIT.replace("-NoBattlEye", "-mods=111111 -NoBattlEye")
+    assert wr.ark_base(_ark(tmp_path, unit)) == ARK_BASE
+
+
+def test_ark_grava_o_drop_in_com_o_comando_de_base(tmp_path, monkeypatch):
+    ctx = _ark(tmp_path, monkeypatch=monkeypatch)
+    wr.ark_set(ctx, ["928988", "929420"])
+    text = _read(wr.ark_dropin(ctx))
+    assert f"{wr.ARK_BASE_MARK}{ARK_BASE}\n" in text
+    assert text.endswith(f"[Service]\nExecStart=\nExecStart={ARK_BASE} -mods=928988,929420\n")
+    state = wr.ark_status(ctx)
+    assert state["ids"] == ["928988", "929420"]
+    assert state["base_changed"] is False
+
+
+def test_ark_acusa_quando_um_redeploy_muda_o_comando(tmp_path, monkeypatch):
+    ctx = _ark(tmp_path, monkeypatch=monkeypatch)
+    wr.ark_set(ctx, ["928988"])
+    ctx["unit_text"] = ARK_UNIT.replace("TheIsland_WP", "ScorchedEarth_WP")
+    assert wr.ark_status(ctx)["base_changed"] is True
+
+
+def test_ark_lista_vazia_apaga_o_drop_in(tmp_path, monkeypatch):
+    ctx = _ark(tmp_path, monkeypatch=monkeypatch)
+    wr.ark_set(ctx, ["928988"])
+    wr.ark_set(ctx, [])
+    assert not os.path.exists(wr.ark_dropin(ctx))
+
+
+def test_ark_mostra_o_que_o_curseforge_ja_instalou(tmp_path, monkeypatch):
+    ctx = _ark(tmp_path, monkeypatch=monkeypatch)
+    wr.ark_set(ctx, ["928988", "929420"])
+    _write(tmp_path / "game" / wr.ARK_MODS_DIR / "83374" / "928988_6570486" / "x.uasset", "")
+    assert wr.ark_status(ctx)["installed"] == ["928988"]
+
+
+def test_ark_sem_root_nao_escreve(tmp_path, monkeypatch):
+    ctx = _ark(tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.setattr(wr.os, "geteuid", lambda: 1000, raising=False)
+    with pytest.raises(ValueError, match="root"):
+        wr.ark_set(ctx, ["928988"])
+
+
+# ------------------------------------------------------------------------------- Conan
+
+def _conan(tmp_path, monkeypatch) -> tuple[dict, str]:
+    """A Conan game folder and a holding folder under a prefix the test controls."""
+    monkeypatch.setattr(wr, "STAGING_PREFIX", str(tmp_path / "staging-"))
+    staging = tmp_path / "staging-abc"
+    staging.mkdir()
+    _write(tmp_path / "game" / wr.CONAN_SETTINGS, "[ServerSettings]\r\nMaxNudity=0\r\nServerModList=\r\n")
+    return _ctx(tmp_path), str(staging)
+
+
+def _downloaded(staging: str, item: str, *names: str) -> None:
+    for name in names:
+        _write(os.path.join(staging, item, name), name)
+
+
+def test_conan_poe_os_arquivos_com_o_nome_original_e_monta_o_modlist_na_ordem(tmp_path, monkeypatch):
+    ctx, staging = _conan(tmp_path, monkeypatch)
+    _downloaded(staging, "3750659229", "PIPPI_Resources.pak")
+    _downloaded(staging, "880454836", "Pippi.pak", "Pippi.utoc", "Pippi.ucas")
+    wr.conan_set(ctx, ["880454836", "3750659229"], staging)
+    mods = tmp_path / "game" / wr.CONAN_MODS
+    assert sorted(os.listdir(mods)) == sorted(
+        [wr.CONAN_MARK, "modlist.txt", "PIPPI_Resources.pak", "Pippi.pak", "Pippi.utoc", "Pippi.ucas"])
+    # Only the .pak goes into the list; .utoc/.ucas are found next to it by the game.
+    assert _read(mods / "modlist.txt") == "*Pippi.pak\n*PIPPI_Resources.pak\n"
+    # CRLF kept, and the setting turned on where it already was.
+    settings = wr.read_text(str(tmp_path / "game" / wr.CONAN_SETTINGS), raw=True)
+    assert settings == "[ServerSettings]\r\nMaxNudity=0\r\nServerModList=modlist.txt\r\n"
+    assert not os.path.exists(staging)
+
+
+def test_conan_tirar_um_mod_apaga_so_os_arquivos_dele(tmp_path, monkeypatch):
+    ctx, staging = _conan(tmp_path, monkeypatch)
+    _downloaded(staging, "1", "A.pak")
+    _downloaded(staging, "2", "B.pak")
+    with pytest.raises(ValueError):  # IDs below 6 digits are not Workshop IDs; the plan uses them as-is
+        wr.parse_items("conan", ["1"])
+    wr.conan_set(ctx, ["1", "2"], staging)
+    mods = tmp_path / "game" / wr.CONAN_MODS
+    _write(mods / "hand.pak", "x")
+    _write(mods / "modlist.txt", "*hand.pak\n*A.pak\n*B.pak\n")
+    wr.conan_set(ctx, ["2"], "")
+    kept = sorted(n for n in os.listdir(mods) if not n.endswith(wr.BACKUP_SUFFIX))
+    assert kept == sorted([wr.CONAN_MARK, "modlist.txt", "B.pak", "hand.pak"])
+    # The hand-installed mod stays first; the panel's own lines follow the list.
+    assert _read(mods / "modlist.txt") == "*hand.pak\n*B.pak\n"
+
+
+def test_conan_mod_que_nao_foi_baixado_nao_entra(tmp_path, monkeypatch):
+    ctx, staging = _conan(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match="not downloaded"):
+        wr.conan_set(ctx, ["3750659229"], staging)
+    assert not os.path.exists(tmp_path / "game" / wr.CONAN_MODS / "modlist.txt")
+
+
+def test_conan_dois_mods_com_o_mesmo_arquivo_sao_recusados(tmp_path, monkeypatch):
+    ctx, staging = _conan(tmp_path, monkeypatch)
+    _downloaded(staging, "3750659229", "Same.pak")
+    _downloaded(staging, "880454836", "same.pak")
+    with pytest.raises(ValueError, match="same name"):
+        wr.conan_set(ctx, ["3750659229", "880454836"], staging)
+
+
+def test_conan_pasta_de_espera_fora_do_prefixo_e_recusada(tmp_path, monkeypatch):
+    ctx, _ = _conan(tmp_path, monkeypatch)
+    for bad in (str(tmp_path / "game"), str(tmp_path / "staging-x" / ".." / "game")):
+        with pytest.raises(ValueError, match="holding folder"):
+            wr.conan_set(ctx, [], bad)
+
+
+def test_conan_status_traz_o_que_o_servidor_recusou(tmp_path, monkeypatch):
+    ctx, staging = _conan(tmp_path, monkeypatch)
+    _downloaded(staging, "3725018456", "Pippi.pak")
+    wr.conan_set(ctx, ["3725018456"], staging)
+    _write(tmp_path / "game" / wr.CONAN_LOG,
+           "LogModManager: Error: Mod pak file: Z:/opt/game/ConanSandbox/Mods/Pippi.pak failed check and will "
+           "be excluded. This could be due to an out of date or corrupted pak file. (Error: Mod is too old and "
+           "needs to be updated for this game version)\n")
+    state = wr.conan_status(ctx)
+    assert state["installed"] == ["3725018456"]
+    assert state["rejected"] == {"3725018456": "Mod is too old and needs to be updated for this game version"}
+    assert state["modlist_off"] is False
+
+
+def test_conan_settings_sem_a_chave_ganha_a_linha_na_secao():
+    assert wr._settings_with_modlist("[ServerSettings]\nA=1\n") == "[ServerSettings]\nServerModList=modlist.txt\nA=1\n"
+    assert wr._settings_with_modlist("") == "[ServerSettings]\nServerModList=modlist.txt\n"
+
+
+def test_conan_fetch_tenta_de_novo_o_que_a_steamcmd_nao_entregou(tmp_path, monkeypatch):
+    ctx, staging = _conan(tmp_path, monkeypatch)
+    content = tmp_path / "home" / "Steam" / "steamapps" / "workshop" / "content" / wr.CONAN_APP
+    calls: list[list[str]] = []
+
+    def fake_steamcmd(_ctx, items):
+        calls.append(list(items))
+        if len(calls) == 1:
+            return type("P", (), {"stdout": "Timeout downloading item"})()
+        _write(content / items[0] / "Pippi.pak", "x")
+        _write(content / items[0] / "readme.txt", "not for the server")
+        return type("P", (), {"stdout": f"Success. Downloaded item {items[0]} to ..."})()
+
+    monkeypatch.setattr(wr, "_steamcmd", fake_steamcmd)
+    assert wr.conan_fetch(ctx, ["3725018456"], staging) == {"fetched": ["3725018456"]}
+    assert calls == [["3725018456"], ["3725018456"]]
+    assert os.listdir(os.path.join(staging, "3725018456")) == ["Pippi.pak"]

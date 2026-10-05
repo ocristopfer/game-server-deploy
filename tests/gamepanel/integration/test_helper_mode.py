@@ -264,3 +264,67 @@ def test_o_modo_de_acesso_chega_aos_templates(helper, legacy, database):
         privileged = context["privileged_access"]
         assert privileged(servers_repo.by_id(database, legacy)) is True
         assert privileged(servers_repo.by_id(database, helper)) is False
+
+
+# ------------------------------------------------------------- Workshop: ARK and Conan
+
+def test_lista_do_ark_e_recusada_no_modo_helper(database, admin, post, jobs, monkeypatch):
+    """The ARK list is a systemd drop-in: without root it would fail halfway, so it never becomes a job."""
+    sid = _insert(database, "arca", "gamepanel", "ark-ascended.service")
+    monkeypatch.setattr(panel, "ssh_run", _status_reply({"ids": [], "installed": [], "problem": ""}))
+    post(admin, f"/servers/{sid}/mods/workshop", {"ids": "928988"})
+    assert jobs == []
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert 'name="ids"' not in html
+
+
+def test_lista_do_ark_vira_drop_in_no_modo_root(database, admin, post, jobs, monkeypatch):
+    sid = _insert(database, "arca", "root", "ark-ascended.service")
+    post(admin, f"/servers/{sid}/mods/workshop", {"ids": "928988\n929420", "restart": "1"})
+    save, restart = jobs[0]["steps"]
+    assert save.endswith("--unit ark-ascended.service ark set /opt/game 928988 929420")
+    assert restart.endswith("restart ark-ascended.service")
+
+
+def test_conan_baixa_so_o_que_e_novo_verifica_e_so_depois_poe_no_jogo(database, admin, post, jobs, monkeypatch):
+    sid = _insert(database, "conan", "gamepanel", "conan-exiles.service")
+    monkeypatch.setattr(panel, "ssh_run", _status_reply({"ids": ["3750659229"], "installed": ["3750659229"]}))
+    post(admin, f"/servers/{sid}/mods/workshop", {"ids": "3750659229\n880454836"})
+    steps = jobs[0]["steps"]
+    incoming, fetch, *scan, place = steps
+    staging = incoming.split()[-1]
+    assert staging.startswith("/var/tmp/gamepanel-incoming-")
+    # Everything as steam: the download, the scan and placing the files are game content.
+    assert all(s.startswith(AS_STEAM) for s in (incoming, fetch, place))
+    assert fetch.endswith(f"conan fetch /opt/game 880454836 --staging {staging}")
+    assert any("clamscan" in s for s in scan)
+    assert place.endswith(f"conan set /opt/game 3750659229 880454836 --staging {staging}")
+
+
+def test_conan_sem_mod_novo_nao_baixa_nem_instala_o_clamav(database, admin, post, jobs, monkeypatch):
+    sid = _insert(database, "conan", "root", "conan-exiles.service")
+    monkeypatch.setattr(panel, "ssh_run", _status_reply({"ids": ["3750659229", "880454836"],
+                                                         "installed": ["3750659229", "880454836"]}))
+    post(admin, f"/servers/{sid}/mods/workshop", {"ids": "3750659229"})
+    (place,) = jobs[0]["steps"]
+    assert place.endswith("conan set /opt/game 3750659229")
+
+
+def test_conan_atualizar_todos_baixa_a_lista_inteira(database, admin, post, jobs, monkeypatch):
+    sid = _insert(database, "conan", "root", "conan-exiles.service")
+    monkeypatch.setattr(panel, "ssh_run", _status_reply({"ids": ["3750659229"], "installed": ["3750659229"]}))
+    post(admin, f"/servers/{sid}/mods/workshop", {"ids": "3750659229", "refresh": "1"})
+    assert "conan fetch /opt/game 3750659229 --staging" in jobs[0]["steps"][1]
+
+
+def test_conan_mostra_o_mod_que_o_servidor_recusou(database, admin, monkeypatch):
+    sid = _insert(database, "conan", "root", "conan-exiles.service")
+    monkeypatch.setattr(panel, "ssh_run", _status_reply({
+        "ids": ["3725018456"], "installed": ["3725018456"], "problem": "", "config": "/x",
+        "rejected": {"3725018456": "Mod is too old and needs to be updated for this game version"}}))
+    html = admin.get(f"/servers/{sid}/mods").get_data(as_text=True)
+    assert "Mod is too old" in html
+    with panel.app.test_request_context("/"):
+        assert panel.translate("mods.workshop_rejected_badge") in html
+        # Conan's download goes through the antivirus, so the screen says that and not the opposite.
+        assert panel.translate("mods.workshop_antivirus_note")[:30] not in html

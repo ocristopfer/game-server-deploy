@@ -122,7 +122,9 @@ ROOT_INSTALLER_KINDS = (profiles.KIND_THUNDERSTORE, profiles.KIND_SHROUDTOPIA, p
 
 def needs_root(server, profile: profiles.ModProfile | None) -> bool:
     """True when this profile's installer cannot run on this server (helper mode, root installer)."""
-    return profile is not None and profile.kind in ROOT_INSTALLER_KINDS and not remote_cmd.privileged(server)
+    if profile is None or remote_cmd.privileged(server):
+        return False
+    return profile.kind in ROOT_INSTALLER_KINDS or profile.workshop_format in profiles.ROOT_WORKSHOP_FORMATS
 
 
 def _root_refusal(server) -> i18n.Message:
@@ -196,16 +198,29 @@ def _workshop_view(server, profile: profiles.ModProfile, errors: list[str]) -> d
     installed = set(state.get("installed", []))
     names = state.get("names", {})
     available = state.get("available", {})
+    rejected = state.get("rejected", {})
     state["items"] = [{
         "id": i,
-        "url": workshop.reforger_url(i) if reforger else workshop.url(int(i)),
+        "url": _item_url(profile, i),
         "name": names.get(i, ""),
         "installed": i in installed,
         "mod_ids": available.get(i, []),
+        "rejected": rejected.get(i, ""),
     } for i in state.get("ids", [])]
     # What goes in the field: the same list, one per line (with the name, in Reforger).
     state["text"] = "\n".join(f"{i} {names.get(i, '')}".strip() if reforger else i for i in state.get("ids", []))
     return {"state": state}
+
+
+def _item_url(profile: profiles.ModProfile, item: str) -> str:
+    if profile.workshop_format == "reforger":
+        return workshop.reforger_url(item)
+    if profile.workshop_format == "ark":
+        # CurseForge has no page address built from the project ID alone that could be checked
+        # (it answers 403 to anything but a browser): the screen shows the number, and the
+        # "where to find" button goes to the game's mod listing.
+        return ""
+    return workshop.url(int(item))
 
 
 def _shroudtopia_view(server, profile: profiles.ModProfile, errors: list[str]) -> dict:
@@ -264,10 +279,10 @@ def _loader_url(profile: profiles.ModProfile | None) -> str:
     return thunderstore.package_url(profile.community, *profile.loader)
 
 
-def _thunderstore_job(sid: int, action: str, step: str, label: str):
+def _thunderstore_job(sid: int, action: str, step: str | list[str], label: str):
     """Trigger the Thunderstore job (and the restart, if asked) and go to its screen."""
     server = panel._server_or_404(sid)
-    steps: list[panel.JobStep] = [step]
+    steps: list[panel.JobStep] = list(step) if isinstance(step, list) else [step]
     # Plugin and BepInEx only take effect when the server starts again. The restart is a STEP of the same
     # job: if the install fails, the server does not restart in the middle of a broken install.
     if request.form.get("restart") == "1":
@@ -433,6 +448,9 @@ def workshop_save(sid: int):
     if not profile or profile.kind != profiles.KIND_WORKSHOP:
         flash(panel.translate("mods.not_thunderstore"), "error")
         return redirect(go_back)
+    if needs_root(server, profile):
+        flash(panel.translate(_root_refusal(server)), "error")
+        return redirect(go_back)
     text = (request.form.get("ids") or "")[:EXPECTED_MAX_CHARS]
     if profile.workshop_format == "reforger":
         items = [f"{guid}={name}" if name else guid for guid, name in workshop.parse_guids(text)]
@@ -450,9 +468,33 @@ def workshop_save(sid: int):
             flash(panel.translate("mods.zomboid_bad_mods"), "error")
             return redirect(go_back)
         extra = ("--mods", mods)
-    command = _remote_cmd(server, profile, "set", *items, *extra, service=server["service"])
     label = f"workshop: {len(items)}"
+    if profile.workshop_format in profiles.SCANNED_WORKSHOP_FORMATS:
+        return _thunderstore_job(sid, "mod-workshop", _download_steps(server, profile, items), label)
+    command = _remote_cmd(server, profile, "set", *items, *extra, service=server["service"])
     return _thunderstore_job(sid, "mod-workshop", command, label)
+
+
+def _download_steps(server, profile: profiles.ModProfile, items: list[str]) -> list[str]:
+    """Download what is new, scan it, and only then put it in the game (Conan).
+
+    Only the IDs the server does not have yet are downloaded, unless the person asks to update
+    all of them: re-fetching hundreds of MB to remove one mod would be a slow way to say no. With
+    nothing to download there is nothing to scan either, and ClamAV is not installed for it.
+    """
+    service = server["service"]
+    state = _remote_state(server, profile, [])
+    have = set((state or {}).get("installed", []))
+    new = list(items) if request.form.get("refresh") == "1" else [i for i in items if i not in have]
+    if not new:
+        return [_remote_cmd(server, profile, "set", *items, service=service)]
+    staging = antivirus.incoming_dir(secrets.token_hex(16))
+    return [
+        antivirus.incoming_command(server, staging),
+        _remote_cmd(server, profile, "fetch", *new, "--staging", staging, service=service),
+        *antivirus.scan_steps(server, staging),
+        _remote_cmd(server, profile, "set", *items, "--staging", staging, service=service),
+    ]
 
 
 def _checked_name(profile: profiles.ModProfile, sent) -> str:

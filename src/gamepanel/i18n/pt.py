@@ -749,6 +749,33 @@ MESSAGES: dict[str, str] = {
     "mods.zomboid_mods_help":
         "Os IDs de mod separados por ponto e vírgula, como na lista que a tela mostra depois de baixar.",
     "mods.workshop_save": "Salvar a lista",
+    "mods.help_workshop_ark":
+        "No ARK: Survival Ascended quem baixa os mods é o <strong>próprio servidor</strong>, do "
+        "CurseForge, na subida. A lista vai no comando do servidor (<code>-mods=</code>), por um "
+        "ajuste do systemd que o painel escreve; o <code>ActiveMods</code> do "
+        "GameUserSettings.ini é ignorado pelo jogo. Todo jogador precisa dos mesmos mods.",
+    "mods.help_workshop_conan":
+        "No Conan Exiles o servidor <strong>não baixa mod nenhum</strong>: o container baixa cada "
+        "item da Steam Workshop, o antivírus verifica e só então os arquivos vão para "
+        "<code>ConanSandbox/Mods</code>, na ordem da lista (o <code>modlist.txt</code>). Use os "
+        "itens marcados como Enhanced: os antigos (Legacy) são ignorados, e um mod desatualizado "
+        "para a versão do jogo impede o servidor de subir.",
+    "mods.source_curseforge": "CurseForge",
+    "mods.workshop_ark_help":
+        "O Project ID do mod no CurseForge (o número na lateral da página do mod), um por linha. "
+        "Tirar uma linha remove o mod.",
+    "mods.workshop_ark_base_changed":
+        "O comando do servidor mudou depois que a lista de mods foi salva (um redeploy?): o "
+        "servidor ainda sobe com o comando antigo. Salve a lista de novo para usar o novo.",
+    "mods.workshop_conan_modlist_off":
+        "O ServerModList está desligado no ServerSettings.ini: os mods não carregam. Salve a "
+        "lista de novo para religá-lo.",
+    "mods.workshop_rejected": "O servidor recusou este mod: {reason}",
+    "mods.workshop_rejected_badge": "recusado",
+    "mods.workshop_refresh":
+        "Baixar de novo todos os mods (para pegar as atualizações depois de um update do jogo)",
+    "mods.workshop_problem_no_unit":
+        "Não achei o comando do servidor no systemd: confira o nome do serviço na tela Editar.",
     "mods.workshop_bad_ids": "Não achei nenhum ID de mod no que foi colado: nada foi mudado.",
     "mods.zomboid_bad_mods": "A lista Mods= só aceita letras, números, _ . - e ponto e vírgula.",
     "mods.source_umod": "uMod (plugins)",

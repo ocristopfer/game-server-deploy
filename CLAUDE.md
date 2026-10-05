@@ -518,6 +518,23 @@ only game identity every server has.
     use "Scan installed mods".
   - **A list that yielded no ID at all is refused**; only an EMPTY field clears the list.
     A wrong paste would delete all of the server's mods.
+  - **ARK: Survival Ascended only takes `-mods=` on the command line.** `ActiveMods=` in
+    GameUserSettings.ini is ignored ("LoadGameMods with 0 mods", measured), and a mod folder
+    left on disk does not load either. The list is a systemd drop-in repeating the unit's own
+    ExecStart plus `-mods=`, so the `ark` format is in `profiles.ROOT_WORKSHOP_FORMATS`:
+    refused in helper mode, like the loader installers. The base command is read from the
+    UNIT section of `systemctl cat` (`workshop_remote.ark_base`), never from a drop-in - ours
+    would feed itself back - and is recorded in the drop-in, so a redeploy that changes the
+    command shows up as `base_changed` instead of being masked by the stale copy.
+  - **Conan Exiles is the exception: the server does NOT download mods**, the CT does, so it is
+    the one Workshop format that goes through the antivirus (`profiles.SCANNED_WORKSHOP_FORMATS`).
+    The job is: holding folder, `fetch` (SteamCMD, anonymous, three tries, only the IDs the
+    server does not have yet), the scan steps, `set` (files under their ORIGINAL names - a renamed
+    pak fails in silence -, `modlist.txt` as `*Name.pak` in list order, `ServerModList=modlist.txt`).
+    `set` only deletes files the panel placed (`workshop_remote.CONAN_MARK`), and keeps the CRLF of
+    ServerSettings.ini (`read_text(..., raw=True)`: text mode turned it into LF). Measured: a
+    "[Legacy]" (UE4) item is ignored without a word, and a mod "too old for this game version"
+    makes the server EXIT at boot; the status reads those refusals from ConanSandbox.log.
 
 ### A new game with its own screen = one file, one line and its keys
 
@@ -1376,6 +1393,14 @@ starts a toy broker (`gamebroker/dev.py`, fake backends): `docker compose up --b
   `.env`. The price of Proton is the appid: Steam's game server API needs the REAL one
   (UMU_ID/SteamAppId), otherwise the query never opens - see `icarus.env` and
   `vrising.env`. `test_templates.py` and `test_suggestions.py` enforce the rule.
+- **A software Vulkan driver is the `vulkan` recipe** (mesa-vulkan-drivers, installed by
+  `apply_recipes`), also only next to `proton`/`wine`. ARK: Survival Ascended creates a
+  Direct3D 12 device even headless; Proton turns it into Vulkan, and with only the libvulkan1
+  loader the server died at boot in d3d12/dxgi (measured, GE-Proton11-5).
+- **`client_app_id` is the client's Steam appid for a .exe with no steam_appid.txt next to it**
+  (Conan Exiles: 440900, while the server app is 443030). It goes to `install.env` as
+  `CLIENT_APP_ID`, `ct-phases.sh` writes it to `/etc/game-runtime.env`, and win-run falls back to
+  it. Without it the server answers A2S with appid 0 and the game's server browser never lists it.
 - **Virtual X is the `xvfb` recipe**, which only applies together with `proton`/`wine`.
   A curated game with `WINDOWS_RUNTIME_XVFB=1` gets it in `catalog._curated_recipes`:
   before, only the runtime went to the broker's `install.env`, and an Icarus created by

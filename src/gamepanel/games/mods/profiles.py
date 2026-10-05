@@ -332,7 +332,30 @@ REFORGER = ModProfile(
     sources=(("mods.source_reforger_workshop", "https://reforger.armaplatform.com/workshop"),),
     proven=False,
 )
-WORKSHOP_BY_CONFIG = (DST, ZOMBOID, UNTURNED, REFORGER)
+# ARK: Survival Ascended downloads from CurseForge by itself, but only through -mods= on its
+# command line: the list goes into a systemd drop-in, so it needs root (refused in helper mode,
+# like the loader installers). Proven in Docker under GE-Proton11-5 with 928988 (Super Spyglass).
+ARK_ASCENDED = ModProfile(
+    key="ark-ascended", kind=KIND_WORKSHOP, services=("ark-ascended", "ark-survival-ascended"),
+    folder="/opt/game", help_key="mods.help_workshop_ark", workshop_format="ark",
+    audit_paths=("/opt/game/ShooterGame/Binaries/Win64/ShooterGame/Mods",),
+    sources=(("mods.source_curseforge", "https://www.curseforge.com/ark-survival-ascended"),),
+    proven=False,
+)
+# Conan Exiles Enhanced does NOT download mods: the CT does it with SteamCMD and the antivirus checks
+# the files before they reach the game. Proven in Docker with 3750659229 (Archivist's PIPPI Resources).
+CONAN = ModProfile(
+    key="conan-exiles", kind=KIND_WORKSHOP, services=("conan-exiles", "conan"),
+    folder="/opt/game", help_key="mods.help_workshop_conan", workshop_appid=440900, workshop_format="conan",
+    audit_paths=("/opt/game/ConanSandbox/Mods",),
+    sources=(("mods.source_workshop", "https://steamcommunity.com/app/440900/workshop/"),),
+    proven=False,
+)
+WORKSHOP_BY_CONFIG = (DST, ZOMBOID, UNTURNED, REFORGER, ARK_ASCENDED, CONAN)
+# The Workshop formats the panel itself downloads and scans, before the game sees anything.
+SCANNED_WORKSHOP_FORMATS = ("conan",)
+# The ones that write outside steam's reach (a systemd drop-in): legacy mode only, for now.
+ROOT_WORKSHOP_FORMATS = ("ark",)
 
 PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED, ICARUS, SATISFACTORY, VALHEIM, RUST, *UNREAL_LINUX,
             *WORKSHOP_BY_CONFIG)
