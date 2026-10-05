@@ -29,6 +29,13 @@ import tempfile
 # "outro" and "Sem consulta". Direct assignment guarantees a throwaway database in ANY
 # environment, container or local machine, whatever came in the environment.
 os.environ["GAMEPANEL_DB"] = os.path.join(tempfile.mkdtemp(), "teste.db")
+# Same reasoning for the files the panel creates at import time. The defaults live under
+# /etc/gamepanel: as root (the container) the suite would overwrite the dev panel's real
+# session key, and as an ordinary user (CI, a Linux laptop) importing the app dies with
+# PermissionError before a single test runs.
+os.environ["GAMEPANEL_SECRET_FILE"] = os.path.join(tempfile.mkdtemp(), "secret_key")
+os.environ["GAMEPANEL_SSH_KEY"] = os.path.join(tempfile.mkdtemp(), "id_ed25519")
+os.environ["GAMEPANEL_KNOWN_HOSTS"] = os.path.join(tempfile.mkdtemp(), "known_hosts")
 # Alerts never go out to the network from here: a test that wants to exercise sending
 # swaps `panel.envia_webhook` for a capturer (see the `webhooks` fixture).
 os.environ["GAMEPANEL_WEBHOOK_URL"] = ""
