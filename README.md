@@ -14,7 +14,7 @@ the ports on the router (**OPNsense** today) without the panel ever holding the
 credentials. Generic port forwarding for common home routers is on the
 [roadmap](#roadmap).
 
-[![CI](https://github.com/ocristopfer/games/actions/workflows/ci.yml/badge.svg)](https://github.com/ocristopfer/games/actions/workflows/ci.yml)
+[![CI](https://github.com/ocristopfer/game-server-deploy/actions/workflows/ci.yml/badge.svg)](https://github.com/ocristopfer/game-server-deploy/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Screenshots
