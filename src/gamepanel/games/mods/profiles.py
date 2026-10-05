@@ -128,7 +128,7 @@ PALWORLD = ModProfile(
     help_key="mods.help_palworld",
     extensions=(".pak",),
     loader_dir="/opt/game/Pal/Binaries/Linux",
-    ue4ss_release="linux-v1",
+    ue4ss_release="linux-v2",
     engine_version="5.1",
     audit_paths=("/opt/game/Pal/Content/Paks/~mods", "/opt/game/Pal/Binaries/Linux/ue4ss"),
     sources=(("mods.source_nexus", NEXUS + "palworld/mods/"),
@@ -153,7 +153,7 @@ DRAGONWILDS = ModProfile(
     # mais na AActor): o CT gera do .sym o VTableLayout.ini e as UE4SS_Signatures deste build. Um
     # update do jogo pede reinstalar. proven=False ate a primeira instalacao por esta tela num CT.
     loader_dir="/opt/game/RSDragonwilds/Binaries/Linux",
-    ue4ss_release="linux-v1",
+    ue4ss_release="linux-v2",
     engine_version="5.6",
     audit_paths=("/opt/game/RSDragonwilds/Content/Paks/~mods", "/opt/game/RSDragonwilds/Binaries/Linux/ue4ss"),
     sources=(("mods.source_nexus", NEXUS + "runescapedragonwilds/mods/"),
@@ -251,7 +251,48 @@ RUST = ModProfile(
     proven=False,
 )
 
-PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED, ICARUS, SATISFACTORY, VALHEIM, RUST)
+UE4SS_LINUX_DOCS = "https://github.com/ocristopfer/RE-UE4SS/blob/linux/docs/linux.md"
+
+
+def _unreal_linux(key: str, services: tuple[str, ...], project: str, engine: str) -> ModProfile:
+    """Servidor Unreal Linux nativo com o UE4SS do release linux-v2, provado em servidor de verdade
+    em Docker (2026-10-04/05) com a prova completa: Lua, FindFirstOf achando o GameState do mapa,
+    RegisterHook nativo e de Blueprint, ExecuteInGameThread. O CT gera os arquivos deste jogo a partir
+    do pacote de referencia da versao (ue_linux_layout): todo estudio mexe no motor, e o layout
+    embutido sozinho derrubava mais da metade destes servidores. proven=False ate a primeira
+    instalacao por esta tela num CT de verdade."""
+    paks = f"/opt/game/{project}/Content/Paks/~mods"
+    loader = f"/opt/game/{project}/Binaries/Linux"
+    # Unreal 5 (IoStore): o mod vem em tres arquivos de mesmo nome, e o .pak sozinho nao carrega.
+    extensions = (".pak", ".utoc", ".ucas") if engine.startswith("5.") else (".pak",)
+    return ModProfile(
+        key=key, kind=KIND_UE4SS_LINUX, services=services, folder=paks, help_key="mods.help_unreal_linux",
+        extensions=extensions, loader_dir=loader, ue4ss_release="linux-v2", engine_version=engine,
+        audit_paths=(paks, f"{loader}/ue4ss"), sources=(("mods.source_ue4ss_linux", UE4SS_LINUX_DOCS),),
+        proven=False)
+
+
+# Os nomes de servico sao o do catalogo curado (quando ha) e a chave da sugestao do LinuxGSM ou do
+# Pterodactyl, que vira o nome do servico de um jogo criado pelo painel.
+SOULMASK = _unreal_linux("soulmask", ("soulmask",), "WS", "4.27")
+# The Front: caiu UMA vez em quatro subidas com o UE4SS (sem rastro no log; nas outras tres a prova
+# passou inteira). Conhecido e nao explicado: se acontecer num CT, o servico sobe de novo sozinho.
+THE_FRONT = _unreal_linux("the-front", ("the-front", "thefront"), "ProjectWar", "4.27")
+SMALLAND = _unreal_linux("smalland", ("smalland", "smalland-survive-the-wil"), "SMALLAND", "4.27")
+SANDSTORM = _unreal_linux("insurgency-sandstorm", ("insurgency-sandstorm", "sandstorm"), "Insurgency", "4.27")
+ASTRO_COLONY = _unreal_linux("astro-colony", ("astro-colony",), "AstroColony", "4.27")
+SQUAD_44 = _unreal_linux("squad-44", ("squad-44", "squad44"), "PostScriptum", "4.27")
+MORDHAU = _unreal_linux("mordhau", ("mordhau",), "Mordhau", "4.26")
+HYPERCHARGE = _unreal_linux("hypercharge-unboxed", ("hypercharge-unboxed",), "Unboxed", "4.26")
+PAVLOV = _unreal_linux("pavlov-vr", ("pavlov-vr", "pavlov"), "Pavlov", "5.1")
+THE_BUS = _unreal_linux("the-bus", ("the-bus",), "TheBus", "5.6")
+VEIN = _unreal_linux("vein", ("vein",), "Vein", "5.6")
+SQUAD = _unreal_linux("squad", ("squad",), "SquadGame", "5.7")
+QANGA = _unreal_linux("qanga", ("qanga",), "Qanga", "5.7")
+UNREAL_LINUX = (SOULMASK, THE_FRONT, SMALLAND, SANDSTORM, ASTRO_COLONY, SQUAD_44, MORDHAU, HYPERCHARGE, PAVLOV,
+                THE_BUS, VEIN, SQUAD, QANGA)
+
+PROFILES = (ETS2, PALWORLD, VRISING, DRAGONWILDS, ENSHROUDED, ICARUS, SATISFACTORY, VALHEIM, RUST, *UNREAL_LINUX)
 
 
 def service_stem(service: str) -> str:

@@ -537,6 +537,13 @@ MESSAGES: dict[str, str] = {
         "mods come inside the <code>server_packages</code>, exported from the GAME with the mods "
         "active in the profile (console, with the map loaded: <code>export_server_packages</code>). "
         "Every player needs the SAME mods. Changed the list? Export and upload the packages again.",
+    "mods.help_unreal_linux":
+        "The server's <code>.pak</code> mods live in <code>{folder}</code>. Visual-only mods are "
+        "client-side; gameplay mods must be here AND, usually, on the players too. Script mods "
+        "(UE4SS) run through the official UE4SS built for Linux, below: Lua mods live in the "
+        "<code>ue4ss/Mods</code> folder next to the game's executable. Installing generates this "
+        "server's files (every game's engine carries the studio's changes); after a game update, "
+        "install again.",
     "mods.help_palworld":
         "The server's <code>.pak</code> mods live in <code>{folder}</code>. Visual-only mods are "
         "client-side; gameplay mods must be here AND, usually, on the players too. Script mods "

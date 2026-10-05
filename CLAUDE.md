@@ -367,9 +367,9 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   systemd com as variaveis do script de partida que vem DENTRO do pacote do BepInEx (start_server_bepinex, fora do repo) (`DOORSTOP_*`, `LD_PRELOAD` do
   `libdoorstop_x64.so`), com caminho absoluto, sem trocar o wrapper do jogo. Desligar apaga o
   drop-in; sem `daemon-reload` o systemd seguiria com o ambiente antigo.
-- **UE4SS para Linux (Palworld, Dragonwilds) e `KIND_UE4SS_LINUX`: o UE4SS OFICIAL compilado
-  para Linux**, no nosso fork (github.com/ocristopfer/RE-UE4SS, branch `linux`, release
-  `linux-v1`; o README do fork, docs/linux.md, lista os jogos testados). Nao e mais port: sao os
+- **UE4SS para Linux (15 servidores Unreal Linux, 4.26 a 5.7) e `KIND_UE4SS_LINUX`: o UE4SS
+  OFICIAL compilado para Linux**, no nosso fork (github.com/ocristopfer/RE-UE4SS, branch `linux`,
+  release `linux-v2`; o README do fork, docs/linux.md, lista os jogos testados). Nao e mais port: sao os
   mecanismos oficiais (patternsleuth, UE4SS_Signatures, VTableLayout.ini, mods Lua) com o que o
   Linux pede - e o que o Linux pede foi MEDIDO, cada item no gdb: o runtime C++ e o unwinder
   ligados dentro da biblioteca (o jogo exporta os dele, e todo `throw` do UE4SS morria neles); o
@@ -399,8 +399,32 @@ DO SERVICO (`profiles.profile_for`) - e a unica identidade de jogo que todo serv
   - **Migra a instalacao do fork antigo** (tudo ao lado do executavel, com a marca
     .gamepanel-ue4ss-linux.json): os mods Lua vao para `ue4ss/Mods` e so os arquivos que o fork
     escrevia saem. Sem a marca nada ao lado do executavel e tocado.
-  - **`proven=False` nos dois** ate a primeira instalacao por esta tela num CT de verdade. O jogo
-    ACUSA o `.so` (o Dragonwilds marca a sessao como modificada, `CheckForMods`): e so aviso.
+  - **Todo estudio mexe no motor, e sem simbolo o layout sai de um jogo de REFERENCIA.** MEDIDO
+    nos servidores 4.27: o Soulmask tem 62 virtuais a mais no AGameModeBase, o The Front 0x18 bytes
+    a mais no FUObjectArray, o proprio Squad 44 uma virtual na AActor. Um layout por versao derrubava
+    mais da metade deles. O que passa de um jogo a outro da mesma versao e o CODIGO de cada funcao
+    do motor e as vtables do proprio alvo, que os servidores exportam no `.dynsym` (_ZTV*). O release
+    traz um pacote por versao (LinuxReferencePacks.tar.gz, feito pelo ue_reference_pack.py do fork
+    a partir de um jogo com `.sym` e `.debug`: o DWARF da o layout completo), e `ue_linux_layout.py`
+    (texto para o CT, como o `ue_sym_layout.py`) gera deste executavel: as assinaturas pelo menor
+    prefixo do codigo da referencia que casa aqui (e nunca menor que o unico NA referencia: curto
+    demais casa unico no lugar errado), o VTableLayout.ini alinhando as vtables pelo codigo, e o
+    MemberVariableLayout.ini do FUObjectArray quando o historico de acessos do codigo esta deslocado.
+    Servidor COM `.sym` usa o `ue_sym_layout.py` como antes e o pacote so para os globais.
+  - **GMalloc e console manager sao conferidos NA HORA, no Lua**: candidatos sao globais lidos pelas
+    funcoes mais chamadas, e vale o que aponta para um objeto com a vtable de um alocador (ou do
+    FConsoleManager). Um padrao de bytes pegou o console manager no lugar do GMalloc no Smalland.
+    O `DerefToInt32` do UE4SS devolve nil ao LER zero (a metade alta de toda vtable nao-PIE): sem o
+    `or 0`, o erro de Lua derruba a passada inteira de assinaturas.
+  - **O scanner do UE4SS recusa padrao que COMECA com coringa**, e uma recusa leva as outras
+    assinaturas junto: o gerador poe na frente os bytes da instrucao, tirados deste executavel.
+  - **Binario sem `-Linux-` no nome** (TheFrontServer, SquadGameServer, AstroColonyServer): o drop-in
+    leva `UE4SS_TARGET_EXE`, senao o UE4SS nunca inicia. O drop-in vai no servico DO SERVIDOR (o
+    perfil serve a mais de um nome: o curado e a chave da sugestao do LinuxGSM).
+  - **`proven=False` em todos** ate a primeira instalacao por esta tela num CT de verdade (a prova foi
+    em Docker). O jogo ACUSA o `.so` (o Dragonwilds marca a sessao como modificada, `CheckForMods`):
+    e so aviso. Sem pacote: 4.18, 4.22, 4.25, 5.2 e 5.4 (nenhum servidor do catalogo traz simbolos
+    dessas versoes para servir de referencia); 5.1 nao precisa (layout embutido, Palworld e Pavlov).
   - **Hook em funcao chamada fora da thread do jogo e caro**: o lock serializa as threads de
     animacao com a do jogo. Mod que hookeia `KismetMathLibrary` funciona, mas pesa.
 - **Rust e `KIND_OXIDE`** (`oxide_remote.py`): o pacote SOBRESCREVE DLLs do jogo, entao o

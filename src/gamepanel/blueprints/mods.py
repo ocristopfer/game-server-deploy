@@ -25,6 +25,7 @@ from gamepanel.games.mods import (
     thunderstore_remote,
     ue4ss_linux_remote,
     ue4ss_remote,
+    ue_linux_layout,
     ue_sym_layout,
     workshop,
 )
@@ -44,6 +45,8 @@ UE4SS_LINUX_SOURCE = Path(ue4ss_linux_remote.__file__).read_text(encoding="utf-8
 # O gerador do VTableLayout.ini e das UE4SS_Signatures: vai como texto para o CT, que o roda
 # contra o .sym do jogo (so servidor que traz um; motor modificado, como o Dragonwilds, pede).
 UE_SYM_SOURCE = Path(ue_sym_layout.__file__).read_text(encoding="utf-8")
+# O gerador que usa o pacote de referencia da versao (servidor SEM .sym, e os globais de quem tem).
+UE_LINUX_LAYOUT_SOURCE = Path(ue_linux_layout.__file__).read_text(encoding="utf-8")
 # Baixar o BepInEx (33 MB) e as dependencias leva minutos: vira job, com log e prazo proprio.
 INSTALL_TIMEOUT = 1800
 LOADER_ACTIONS = ("install", "enable", "disable", "uninstall")
@@ -105,17 +108,21 @@ LOADER_NAMES = {profiles.KIND_SHROUDTOPIA: "Shroudtopia", profiles.KIND_UE4SS: "
 SCANNED_ACTIONS = ("loader-install", "plugin-install", "mod-install")
 
 
-def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str) -> str:
+def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str, service: str = "") -> str:
     scan = ("--scan", antivirus.SCAN_SCRIPT) if action in SCANNED_ACTIONS else ()
+    # O drop-in vai no servico DESTE servidor: o perfil serve a mais de um nome (o do catalogo
+    # curado e o da sugestao do LinuxGSM), e o primeiro da lista pode nem existir neste CT.
+    unit_name = profiles.service_stem(service) or profile.services[0]
     if profile.kind == profiles.KIND_SML:
         return panel.q("python3", "-c", SML_SOURCE, *scan, action, profile.loader_dir, *args)
     if profile.kind == profiles.KIND_UE4SS_LINUX:
         # LD_PRELOAD num drop-in deste servico; o nome sai do perfil (escolhido por ele).
-        service = ("--unit", f"{profile.services[0]}.service")
-        # O release so importa ao instalar (o gerador sao ~20 KB de texto a toa no status).
+        unit = ("--unit", f"{unit_name}.service")
+        # O release so importa ao instalar (os geradores sao ~40 KB de texto a toa no status).
         release = ("--release", profile.ue4ss_release, "--engine", profile.engine_version,
-                   "--symfiles", UE_SYM_SOURCE) if action == "loader-install" else ()
-        return panel.q("python3", "-c", UE4SS_LINUX_SOURCE, *scan, *service, *release, action, profile.loader_dir,
+                   "--symfiles", UE_SYM_SOURCE, "--layout", UE_LINUX_LAYOUT_SOURCE,
+                   ) if action == "loader-install" else ()
+        return panel.q("python3", "-c", UE4SS_LINUX_SOURCE, *scan, *unit, *release, action, profile.loader_dir,
                        *args)
     if profile.kind in NATIVE_LOADERS:
         # O carregador mora um nivel acima da pasta de mods: ao lado do executavel do jogo.
@@ -124,14 +131,14 @@ def _remote_cmd(profile: profiles.ModProfile, action: str, *args: str) -> str:
         return panel.q("python3", "-c", source, *scan, action, game_dir, *args)
     # Servidor Linux nativo (Valheim): o instalador escreve o drop-in deste servico. O nome sai
     # do perfil, que foi escolhido justamente pelo nome do servico.
-    unit = ("--unit", f"{profile.services[0]}.service") if profile.linux_bepinex else ()
+    unit = ("--unit", f"{unit_name}.service") if profile.linux_bepinex else ()
     return panel.q("python3", "-c", REMOTE_SOURCE, *scan, *unit, action, profile.folder, *profile.loader, *args)
 
 
 def _remote_state(server, profile: profiles.ModProfile, errors: list[str]) -> dict | None:
     """A ultima linha JSON do instalador remoto, ou None (com o motivo em `errors`)."""
     try:
-        proc = panel.ssh_run(server, _remote_cmd(profile, "status"), timeout=40)
+        proc = panel.ssh_run(server, _remote_cmd(profile, "status", service=server["service"]), timeout=40)
         lines = (proc.stdout or "").strip().splitlines()
         state = json.loads(lines[-1]) if lines else {}
     except (panel.RemoteError, ValueError) as exc:
@@ -223,6 +230,10 @@ def _loader_profile_or_back(sid: int):
     return profile
 
 
+def _service_of(sid: int) -> str:
+    return panel._server_or_404(sid)["service"] or ""
+
+
 def _thunderstore_profile_or_back(sid: int):
     panel._files_guard()
     server = panel._server_or_404(sid)
@@ -264,8 +275,8 @@ def loader(sid: int):
             return redirect(url_for(INDEX, sid=sid))
         return _thunderstore_job(sid, "mod-loader", _remote_cmd(profile, "mod-install", "SML", *args),
                                  _with_version("SML: install", version))
-    return _thunderstore_job(sid, "mod-loader", _remote_cmd(profile, f"loader-{action}", *args),
-                             _with_version(f"{name}: {action}", version))
+    command = _remote_cmd(profile, f"loader-{action}", *args, service=_service_of(sid))
+    return _thunderstore_job(sid, "mod-loader", command, _with_version(f"{name}: {action}", version))
 
 
 @bp.post("/servers/<int:sid>/mods/plugin/install")

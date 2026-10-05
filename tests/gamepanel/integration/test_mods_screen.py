@@ -586,11 +586,17 @@ def test_rust_recebe_plugin_cs_e_instala_o_oxide(admin, post, database, remote):
 @pytest.mark.parametrize("case", [
     ("palworld.service", "/opt/game/Pal/Binaries/Linux", "5.1", ".pak"),
     ("dragonwilds.service", "/opt/game/RSDragonwilds/Binaries/Linux", "5.6", ".pak,.utoc,.ucas"),
+    ("soulmask.service", "/opt/game/WS/Binaries/Linux", "4.27", ".pak"),
+    ("the-front.service", "/opt/game/ProjectWar/Binaries/Linux", "4.27", ".pak"),
+    ("squad.service", "/opt/game/SquadGame/Binaries/Linux", "5.7", ".pak,.utoc,.ucas"),
+    # O segundo nome do perfil (a chave da sugestao, cortada): o drop-in vai no servico DESTE servidor.
+    ("smalland-survive-the-wil.service", "/opt/game/SMALLAND/Binaries/Linux", "4.27", ".pak"),
 ])
 def test_unreal_linux_instala_o_ue4ss_do_release_e_continua_recebendo_pak(
         admin, post, database, remote, monkeypatch, case):
-    """Palworld e Dragonwilds: o UE4SS oficial para Linux, numa tag fixa do release, com a versao do
-    motor e o gerador dos arquivos do .sym - so ao INSTALAR, que o status nao precisa deles."""
+    """Os servidores Unreal Linux: o UE4SS oficial para Linux, numa tag fixa do release, com a versao do
+    motor e os DOIS geradores (o do .sym e o do pacote de referencia) - so ao INSTALAR, que o status
+    nao precisa deles."""
     service, exe_dir, engine, accept = case
     calls, jobs, _ = remote
     monkeypatch.setattr(panel, "list_dir", lambda *a, **k: ([{"name": "MeuMod_P.pak", "dir": False, "size": 10}], None))
@@ -599,15 +605,17 @@ def test_unreal_linux_instala_o_ue4ss_do_release_e_continua_recebendo_pak(
     assert "MeuMod_P.pak" in html
     assert f'accept="{accept}"' in html
     assert "value=install" in html
-    assert "linux-v1" in html
+    assert "linux-v2" in html
     # Tag fixa: o campo de versao (x.y.z do UE4SS de Windows) nao vale aqui.
     assert 'name="version"' not in html
-    assert "--release linux-v1" not in calls[0]
+    assert "--release linux-v2" not in calls[0]
     assert calls[0].endswith(f"--unit {service} status {exe_dir}")
     post(admin, f"/servers/{sid}/mods/loader", {"action": "install", "restart": "1"})
     install, restart = jobs[0][1]["steps"]
     assert "--scan" in install
-    assert f"--release linux-v1 --engine {engine} --symfiles" in install
-    assert "UE4SS_Signatures" in install  # o texto do gerador foi junto
+    assert f"--unit {service} " in install
+    assert f"--release linux-v2 --engine {engine} --symfiles" in install
+    assert "UE4SS_Signatures" in install  # o texto dos geradores foi junto
+    assert "ue_linux_layout" in install
     assert install.endswith(f"loader-install {exe_dir}")
     assert restart.endswith(f"restart {service}")

@@ -22,6 +22,14 @@ O que a instalacao faz, cada passo com o motivo:
   painel): VTableLayout.ini e UE4SS_Signatures/*.lua deste executavel. Um motor modificado pelo
   estudio (o Dragonwilds acrescenta virtuais na AActor) so roda certo com eles. Sao refeitos a
   cada instalacao: um update do jogo muda os enderecos, e os velhos derrubariam o servidor.
+- **Sem .sym, o pacote de referencia da versao** (`--layout`, o texto do ue_linux_layout do
+  painel, mais o pack-<versao>.json do release): todo estudio mexe nas classes do motor (o
+  Soulmask tem 62 virtuais a mais no AGameModeBase, o The Front 0x18 bytes a mais no
+  FUObjectArray), e o layout embutido por versao nao basta. O gerador alinha as vtables
+  exportadas deste jogo com as de um jogo de referencia da mesma versao, pelo codigo de cada
+  funcao, e acha as assinaturas pelo menor trecho de codigo da referencia que casa aqui. Com .sym
+  ele roda tambem, so para os globais (GMalloc, console manager, GUObjectArray) e o FUObjectArray.
+  Versao sem pacote no release e sem .sym fica com o layout embutido (o Palworld, 5.1).
 - **Config e mods.txt do dono preservados**; o `Mods/shared` (as bibliotecas Lua que muitos mods
   pedem, UEHelpers) vem do release e e trocado por inteiro.
 - **Migra a instalacao do fork antigo** (tudo ao lado do executavel): os mods Lua vao para
@@ -30,7 +38,7 @@ O que a instalacao faz, cada passo com o motivo:
   inicia num processo cujo executavel tem `-Linux-` no nome: o script e o que ele chama ficam de
   fora. Desligar e apagar o drop-in (nenhum codigo do UE4SS roda, sem apagar mod nenhum).
 
-Acoes (argv): [--scan SCRIPT] --unit SERVICO [--release TAG --engine X.Y --symfiles SCRIPT]
+Acoes (argv): [--scan SCRIPT] --unit SERVICO [--release TAG --engine X.Y --symfiles SCRIPT --layout SCRIPT]
 status|loader-install|loader-enable|loader-disable|loader-uninstall, seguidas da pasta do executavel
 (Binaries/Linux). Termina com UMA linha JSON.
 """
@@ -59,23 +67,28 @@ LIB = "libUE4SS.so"
 SETTINGS = "UE4SS-settings.ini"
 SHARED = "ue4ss-mods-shared.tar.gz"
 TEMPLATES = "VTableLayoutTemplates.tar.gz"
-RELEASE_FILES = (LIB, SETTINGS, SHARED, TEMPLATES)
+PACKS = "LinuxReferencePacks.tar.gz"
+RELEASE_FILES = (LIB, SETTINGS, SHARED, TEMPLATES, PACKS)
 UE4SS_DIR = "ue4ss"
 LOG = "UE4SS.log"
 MODS = "Mods"
 MODS_TXT = "mods.txt"
 SHARED_DIR = "shared"
 VTABLE_INI = "VTableLayout.ini"
+MEMBER_INI = "MemberVariableLayout.ini"
 SIGNATURES_DIR = "UE4SS_Signatures"
 # Cabecalho que o ue_sym_layout poe no ini: so o que tem ele e apagado ao reinstalar sem .sym.
 GENERATED_MARK = "; Gerado pelo painel"
-SIGNATURE_FILES = ("FName_ToString.lua", "FName_Constructor.lua", "StaticConstructObject.lua", "GNatives.lua")
+SIGNATURE_FILES = ("FName_ToString.lua", "FName_Constructor.lua", "StaticConstructObject.lua", "GNatives.lua",
+                   "GMalloc.lua", "ConsoleManager.lua", "GUObjectArray.lua", "GUObjectHashTables.lua")
+GENERATED_FILES = frozenset({VTABLE_INI, MEMBER_INI} | {f"{SIGNATURES_DIR}/{n}" for n in SIGNATURE_FILES})
 MARK = ".gamepanel-ue4ss-linux.json"
 # O que o fork antigo (ocristopfer/ue4ss-linux) deixava ao lado do executavel.
 OLD_FILES = (LIB, SETTINGS, LOG, "UE4SS_Addresses.ini", VTABLE_INI, "MemberVariableLayout.ini", MARK)
 SYSTEMD_DIR = "/etc/systemd/system"
 DROPIN = "gamepanel-ue4ss.conf"
 UNIT = re.compile(r"[A-Za-z0-9_.@-]{1,120}\.service")
+EXE_NAME = re.compile(r"[A-Za-z0-9_.-]{1,120}")
 OWNER = "steam"
 TIMEOUT = 120
 # Varrer o .sym (300 MB, ~12 milhoes de registros) e o executavel leva da ordem de um minuto.
@@ -158,12 +171,20 @@ def _daemon_reload() -> None:
     subprocess.run(["systemctl", "daemon-reload"], check=False)  # noqa: S607
 
 
-def set_enabled(exe_dir: str, unit: str, enabled: bool) -> None:
+def set_enabled(exe_dir: str, unit: str, enabled: bool, executable: str = "") -> None:
     path = dropin_path(unit)
     if enabled:
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        if not executable:
+            # Religar sem reinstalar: o executavel e o que a instalacao anotou na marca.
+            executable = _read_json(os.path.join(exe_dir, UE4SS_DIR, MARK)).get("executable", "")
+        lines = ["[Service]", f"Environment=LD_PRELOAD={posixpath.join(exe_dir, UE4SS_DIR, LIB)}"]
+        # A biblioteca so inicia num executavel com -Linux- no nome; TheFrontServer, SquadGameServer e
+        # AstroColonyServer nao tem, e sem o nome aqui o UE4SS nunca sobe neles.
+        if executable and "-Linux-" not in executable and EXE_NAME.fullmatch(executable):
+            lines.append(f"Environment=UE4SS_TARGET_EXE={executable}")
         with open(path, "w", encoding="utf-8") as f:
-            f.write(f"[Service]\nEnvironment=LD_PRELOAD={posixpath.join(exe_dir, UE4SS_DIR, LIB)}\n")
+            f.write("\n".join(lines) + "\n")
     else:
         with contextlib.suppress(FileNotFoundError):
             os.remove(path)
@@ -177,12 +198,21 @@ class Release:
     """O que a instalacao precisa saber do perfil: a tag do release, a versao do motor e o
     gerador dos arquivos do .sym."""
 
-    def __init__(self, tag: str, engine: str, symfiles_script: str) -> None:
+    def __init__(self, tag: str, engine: str, symfiles_script: str, layout_script: str = "") -> None:
         if not RELEASE_TAG.fullmatch(tag or ""):
             raise ValueError(f"tag do release invalida: {tag!r}")
         if not ENGINE.fullmatch(engine or ""):
             raise ValueError(f"versao do motor invalida: {engine!r}")
         self.tag, self.engine, self.symfiles_script = tag, engine, symfiles_script
+        self.layout_script = layout_script
+
+    @property
+    def pack_name(self) -> str:
+        """pack-4.27.json para o motor 4.27 (os pacotes de referencia do release)."""
+        found = ENGINE.fullmatch(self.engine)
+        if not found:
+            raise ValueError(f"versao do motor invalida: {self.engine!r}")
+        return f"pack-{int(found.group(1))}.{int(found.group(2))}.json"
 
     @property
     def template_name(self) -> str:
@@ -205,15 +235,17 @@ def parse_sums(text: str) -> dict[str, str]:
 
 
 def release_files(release: Release, fetcher=fetch) -> dict[str, bytes]:
-    """Os arquivos do release, cada um conferido contra o SHA256SUMS dele."""
+    """Os arquivos do release, cada um conferido contra o SHA256SUMS dele. Os pacotes de
+    referencia chegaram no linux-v2: um release que nao os traz instala como antes."""
     data = json.loads(fetcher(RELEASE.format(tag=release.tag)))
     urls = {a.get("name", ""): a.get("browser_download_url", "") for a in data.get("assets", [])}
-    for name in (SUMS, *RELEASE_FILES):
+    wanted = [n for n in RELEASE_FILES if n != PACKS or n in urls]
+    for name in (SUMS, *wanted):
         if not urls.get(name, "").startswith("https://github.com/"):
             raise ValueError(f"o release {release.tag} nao traz {name}")
     sums = parse_sums(fetcher(urls[SUMS]).decode("utf-8", "replace"))
     files = {}
-    for name in RELEASE_FILES:
+    for name in wanted:
         print(f"baixando {name}")
         blob = fetcher(urls[name])
         if hashlib.sha256(blob).hexdigest() != sums.get(name):
@@ -265,15 +297,37 @@ def template_text(release: Release, data: bytes) -> str:
     raise ValueError(f"o release nao tem o template {release.template_name}: motor {release.engine} nao suportado")
 
 
-# ------------------------------------------------------------------ arquivos do .sym
+def pack_text(release: Release, data: bytes | None) -> str:
+    """O pacote de referencia desta versao do motor ('' quando o release nao tem um para ela)."""
+    if not data:
+        return ""
+    wanted = f"LinuxReferencePacks/{release.pack_name}"
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        for member in _safe_members(tar, "LinuxReferencePacks"):
+            src = tar.extractfile(member) if member.isfile() else None
+            if src is not None and posixpath.normpath(member.name) == wanted:
+                return src.read().decode("utf-8", "replace")
+    return ""
+
+
+# ------------------------------------------------------------------ arquivos do .sym e do pacote
 
 def find_executable(exe_dir: str) -> str:
-    """O executavel do servidor: o arquivo da pasta que tem um `.sym` ao lado ('' se nenhum)."""
+    """O executavel do servidor: o que tem um `.sym` ao lado, senao o maior ELF da pasta (o script
+    de partida, as .so e os arquivos de simbolo ficam de fora). '' se nao ha nenhum."""
+    best, size = "", -1
     for name in sorted(os.listdir(exe_dir)):
         path = os.path.join(exe_dir, name)
-        if os.path.isfile(path) and os.path.isfile(path + ".sym"):
+        if not os.path.isfile(path) or name.endswith((".so", ".sym", ".debug")) or ".so." in name:
+            continue
+        if os.path.isfile(path + ".sym"):
             return path
-    return ""
+        with open(path, "rb") as f:
+            if f.read(4) != b"\x7fELF":
+                continue
+        if os.path.getsize(path) > size:
+            best, size = path, os.path.getsize(path)
+    return best
 
 
 def generate_symfiles(executable: str, script: str, template: str) -> dict[str, str]:
@@ -295,17 +349,42 @@ def generate_symfiles(executable: str, script: str, template: str) -> dict[str, 
     for line in result.get("report", []):
         print(f"  {line}")
     files = result.get("files", {})
-    allowed = {VTABLE_INI} | {f"{SIGNATURES_DIR}/{n}" for n in SIGNATURE_FILES}
-    if not isinstance(files, dict) or set(files) - allowed:
+    if not isinstance(files, dict) or set(files) - GENERATED_FILES:
+        raise ValueError("o gerador devolveu arquivos inesperados: nada foi gravado")
+    return files
+
+
+def generate_layout(executable: str, script: str, pack: str, with_sym: bool) -> dict[str, str]:
+    """{caminho relativo a ue4ss/: texto} pelo gerador do pacote de referencia (ue_linux_layout)."""
+    print(f"gerando os arquivos de {posixpath.basename(executable)} a partir do pacote de referencia")
+    sys.stdout.flush()
+    with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as f:
+        f.write(pack)
+        pack_path = f.name
+    try:
+        args = [executable, pack_path] + (["--com-sym"] if with_sym else [])
+        # O script e o gerador do painel (texto fixo dele); o executavel foi achado nesta pasta.
+        proc = subprocess.run(["python3", "-c", script, *args],  # noqa: S603, S607
+                              capture_output=True, text=True, check=False, timeout=SYMFILES_TIMEOUT)
+    finally:
+        os.remove(pack_path)
+    if proc.returncode != 0:
+        raise ValueError(f"o gerador do pacote de referencia falhou: {(proc.stderr or '').strip()[-300:]}")
+    result = json.loads(proc.stdout.strip().splitlines()[-1])
+    for line in result.get("report", []):
+        print(f"  {line}")
+    files = result.get("files", {})
+    if not isinstance(files, dict) or set(files) - GENERATED_FILES:
         raise ValueError("o gerador devolveu arquivos inesperados: nada foi gravado")
     return files
 
 
 def remove_generated(ue4ss_dir: str) -> None:
     """Apaga o que um .sym gerou antes - so os arquivos do painel, nunca um ini escrito a mao."""
-    ini = os.path.join(ue4ss_dir, VTABLE_INI)
-    if _read_text(ini).startswith(GENERATED_MARK):
-        os.remove(ini)
+    for name in (VTABLE_INI, MEMBER_INI):
+        ini = os.path.join(ue4ss_dir, name)
+        if _read_text(ini).startswith(GENERATED_MARK):
+            os.remove(ini)
     for name in SIGNATURE_FILES:
         with contextlib.suppress(FileNotFoundError):
             os.remove(os.path.join(ue4ss_dir, SIGNATURES_DIR, name))
@@ -334,12 +413,21 @@ def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, sca
     files = release_files(release, fetcher)
     scan(sorted(files.items()))
     executable = find_executable(exe_dir)
+    with_sym = bool(executable) and os.path.isfile(executable + ".sym")
     symfiles: dict[str, str] = {}
-    if executable:
+    # ANTES de mexer na pasta: um .sym ou um executavel que o gerador nao entende para tudo, sem
+    # meia instalacao.
+    if with_sym:
         if not release.symfiles_script:
             raise ValueError("o servidor traz .sym, mas o painel nao mandou o gerador dos arquivos dele")
-        # ANTES de mexer na pasta: um .sym que o gerador nao entende para tudo sem meia instalacao.
         symfiles = generate_symfiles(executable, release.symfiles_script, template_text(release, files[TEMPLATES]))
+    pack = pack_text(release, files.get(PACKS))
+    if executable and pack and release.layout_script:
+        layout = generate_layout(executable, release.layout_script, pack, with_sym)
+        # O que veio do .sym deste executavel vale mais que o transposto da referencia.
+        symfiles = {**layout, **symfiles}
+    elif executable and not with_sym:
+        print(f"sem pacote de referencia do motor {release.engine} neste release: layout embutido")
     ue4ss_dir = os.path.join(exe_dir, UE4SS_DIR)
     os.makedirs(ue4ss_dir, exist_ok=True)
     migrate_old_layout(exe_dir, ue4ss_dir)
@@ -364,10 +452,11 @@ def install_loader(exe_dir: str, unit: str, release: Release, fetcher=fetch, sca
         path = os.path.join(ue4ss_dir, *rel.split("/"))
         os.makedirs(os.path.dirname(path), exist_ok=True)
         _write(path, text.encode("utf-8"))
-    set_enabled(exe_dir, unit, True)
+    exe_name = os.path.basename(executable) if executable else ""
+    set_enabled(exe_dir, unit, True, exe_name)
     with open(os.path.join(ue4ss_dir, MARK), "w", encoding="utf-8") as f:
-        json.dump({"version": release.tag, "sym_files": sorted(symfiles)}, f)
-    extra = f", {len(symfiles)} arquivo(s) do .sym" if symfiles else ", layouts embutidos (sem .sym)"
+        json.dump({"version": release.tag, "sym_files": sorted(symfiles), "executable": exe_name}, f)
+    extra = f", {len(symfiles)} arquivo(s) gerado(s)" if symfiles else ", layouts embutidos"
     print(f"UE4SS {release.tag} em {ue4ss_dir} (LD_PRELOAD no {unit}{extra})")
     return {"loader": "UE4SS Linux", "version": release.tag}
 
@@ -452,7 +541,7 @@ def main(argv: list[str]) -> int:
         script, argv = argv[1], argv[2:]
     if argv[:1] == ["--unit"]:
         unit, argv = argv[1], argv[2:]
-    while argv[:1] and argv[0] in ("--release", "--engine", "--symfiles"):
+    while argv[:1] and argv[0] in ("--release", "--engine", "--symfiles", "--layout"):
         release_args[argv[0][2:]], argv = argv[1], argv[2:]
     action, exe_dir, *_rest = argv
     try:
@@ -462,7 +551,7 @@ def main(argv: list[str]) -> int:
             result = status(exe_dir, unit)
         elif action == "loader-install":
             release = Release(release_args.get("release", ""), release_args.get("engine", ""),
-                              release_args.get("symfiles", ""))
+                              release_args.get("symfiles", ""), release_args.get("layout", ""))
             result = install_loader(exe_dir, unit, release, scan=scanner(script))
         elif action in ("loader-enable", "loader-disable"):
             set_enabled(exe_dir, unit, action == "loader-enable")

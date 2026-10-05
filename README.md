@@ -1197,8 +1197,7 @@ jogo entende mod:
   CT antes de instalar (`pct set <ctid> --memory 12288` no Proxmox), senao ele cai por falta
   de memoria em laco - a tela avisa.
 - **RuneScape: Dragonwilds**: os `.pak` de mod (com o `.utoc` e o `.ucas` de mesmo nome, que a
-  Unreal 5 exige - mande os tres juntos) vao em `RSDragonwilds/Content/Paks/~mods`. Mod de
-  script (UE4SS) nao roda no servidor dedicado.
+  Unreal 5 exige - mande os tres juntos) vao em `RSDragonwilds/Content/Paks/~mods`.
 - **Enshrouded**: botao **Instalar o Shroudtopia** (o carregador). O container baixa do
   GitHub a versao mais recente (ou a que voce escolher), poe o `winmm.dll` e o `shroudtopia.dll` ao lado do `.exe` e liga o
   `winmm=n,b` do Wine; os mods de exemplo do pacote oficial NAO entram (trazem trapaca ligada).
@@ -1214,11 +1213,15 @@ jogo entende mod:
     por um drop-in do systemd.
   - Rust: **Oxide** (uMod). Ele sobrescreve arquivos do jogo (o painel guarda os originais para
     desligar), e **toda atualizacao do Rust o apaga**: reinstale depois. Plugins `.cs` pela tela.
-- **Palworld**: alem dos `.pak`, botao **Instalar o UE4SS Linux** (o port XarminaEu/ue4ss-linux,
-  feito para o Palworld; ainda nao testado aqui). Ele entra por `LD_PRELOAD` no servico; mods em
-  Lua ou `.so` de Linux, nunca `.dll` de Windows.
-- **Dragonwilds**: so `.pak`. Os ports Linux do UE4SS foram testados no servidor de verdade e nao
-  servem (o melhor roda Lua puro, mas qualquer mod que toque o jogo derruba o servidor).
+- **Servidores Unreal Linux** - Palworld, Dragonwilds, Soulmask, The Front, Smalland, Insurgency:
+  Sandstorm, Astro Colony, Squad, Squad 44, Mordhau, HYPERCHARGE, Pavlov VR, The Bus, VEIN e QANGA:
+  alem dos `.pak` (em `<Projeto>/Content/Paks/~mods`; na Unreal 5 com o `.utoc` e o `.ucas`), botao
+  **Instalar o UE4SS Linux**: o UE4SS oficial compilado para Linux (o nosso fork, release
+  `linux-v2`). Ele entra por `LD_PRELOAD` no servico, e os mods Lua ficam em `ue4ss/Mods` ao lado
+  do executavel. Cada estudio mexe no motor do seu jogo, entao a instalacao gera no container os
+  arquivos daquele servidor (leva um ou dois minutos); depois de um update do jogo, instale de novo.
+  Todos foram provados num servidor de verdade em Docker (Lua, busca de objetos, hooks), mas ainda
+  nao por esta tela num container de producao: a tela avisa. Mods `.dll` de Windows nao servem.
 - **Icarus**: botao **Instalar o UE4SS** (o carregador de mods de script). O container baixa a
   versao experimental do GitHub - a estavel (v3.0.1) quebra a Steam do servidor sob o Proton e
   ele some do navegador -, verifica no antivirus, poe o `dwmapi.dll` ao lado do `.exe` e o resto

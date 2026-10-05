@@ -290,3 +290,105 @@ def test_desinstalar_tambem_limpa_a_sobra_do_fork_antigo(game):
     (exe_dir / ".gamepanel-ue4ss-linux.json").write_text("{}", encoding="utf-8")
     ul.uninstall_loader(str(exe_dir), "palworld.service")
     assert sorted(p.name for p in exe_dir.iterdir()) == ["PalServer-Linux-Shipping"]
+
+
+# ------------------------------------------------------------------ servidor sem .sym, com o pacote de referencia
+
+PACK = '{"version": "4.27", "reference": "Squad 44", "signatures": {}, "sections": {}}'
+LAYOUT = {
+    "VTableLayout.ini": "; Gerado pelo painel (ue_linux_layout.py) ...\n[AGameModeBase]\n__vecDelDtor\n",
+    "MemberVariableLayout.ini": ("; Gerado pelo painel (ue_linux_layout.py) ...\n"
+                                 "[FUObjectArray]\nUObjectCreateListeners = 128\n"),
+    "UE4SS_Signatures/GMalloc.lua": "function Register()\n    return \"48 8B 3D ?? ?? ?? ??\"\nend\n",
+}
+
+
+def with_packs(**packs: str) -> dict[str, bytes]:
+    return release_assets(**{"LinuxReferencePacks.tar.gz": tar_of(
+        {f"LinuxReferencePacks/{n}": t.encode() for n, t in packs.items()})})
+
+
+@pytest.fixture
+def the_front(game, monkeypatch):
+    """O The Front: binario sem -Linux- no nome, sem .sym, motor 4.27."""
+    exe_dir, root, _ = game
+    (exe_dir / "PalServer-Linux-Shipping").unlink()
+    (exe_dir / "TheFrontServer").write_bytes(b"\x7fELF" + b"\0" * 4096)
+    (exe_dir / "libsteam_api.so").write_bytes(b"\x7fELF" + b"\0" * 9000)
+    (exe_dir / "TheFrontServer.sh").write_bytes(b"#!/bin/sh\n" + b"#" * 9000)
+    calls: list[tuple[str, str, bool]] = []
+
+    def fake_layout(executable, script, pack, with_sym):
+        calls.append((executable, pack, with_sym))
+        return dict(LAYOUT)
+    monkeypatch.setattr(ul, "generate_layout", fake_layout)
+    return exe_dir, root, calls
+
+
+def test_sem_sym_gera_pelo_pacote_da_versao_e_o_drop_in_nomeia_o_executavel(the_front):
+    exe_dir, root, calls = the_front
+    release = ul.Release("linux-v1", "4.27", "gerador-sym", "gerador-pacote")
+    ul.install_loader(str(exe_dir), "the-front.service", release, fetcher=gh(with_packs(**{"pack-4.27.json": PACK})))
+    # O executavel e o maior ELF da pasta: nem a .so (maior) nem o script de partida contam.
+    assert calls == [(str(exe_dir / "TheFrontServer"), PACK, False)]
+    ue4ss = exe_dir / "ue4ss"
+    assert (ue4ss / "MemberVariableLayout.ini").read_text(encoding="utf-8") == LAYOUT["MemberVariableLayout.ini"]
+    assert (ue4ss / "UE4SS_Signatures" / "GMalloc.lua").exists()
+    # Sem -Linux- no nome o UE4SS nao iniciaria: o drop-in diz qual e o processo do jogo.
+    dropin = (root / "systemd" / "the-front.service.d" / "gamepanel-ue4ss.conf").read_text(encoding="utf-8")
+    assert "Environment=UE4SS_TARGET_EXE=TheFrontServer" in dropin
+    # Religar depois de desligar mantem o nome (vem da marca da instalacao).
+    ul.set_enabled(str(exe_dir), "the-front.service", False)
+    ul.set_enabled(str(exe_dir), "the-front.service", True)
+    assert "UE4SS_TARGET_EXE=TheFrontServer" in (
+        root / "systemd" / "the-front.service.d" / "gamepanel-ue4ss.conf").read_text(encoding="utf-8")
+
+
+def test_executavel_com_linux_no_nome_nao_ganha_target_exe(game):
+    exe_dir, root, _ = game
+    ul.install_loader(str(exe_dir), "palworld.service", RELEASE, fetcher=gh())
+    dropin = (root / "systemd" / "palworld.service.d" / "gamepanel-ue4ss.conf").read_text(encoding="utf-8")
+    assert "UE4SS_TARGET_EXE" not in dropin
+
+
+def test_versao_sem_pacote_instala_com_o_layout_embutido(the_front, capsys):
+    exe_dir, _, calls = the_front
+    release = ul.Release("linux-v1", "5.1", "gerador-sym", "gerador-pacote")
+    ul.install_loader(str(exe_dir), "pavlov.service", release, fetcher=gh(with_packs(**{"pack-4.27.json": PACK})))
+    assert calls == []
+    assert "layout embutido" in capsys.readouterr().out
+    assert not (exe_dir / "ue4ss" / "VTableLayout.ini").exists()
+
+
+def test_com_sym_e_pacote_o_que_veio_do_sym_vence(dragonwilds, monkeypatch):
+    exe_dir, _, _ = dragonwilds
+    layout_calls: list[bool] = []
+
+    def fake_layout(executable, script, pack, with_sym):
+        layout_calls.append(with_sym)
+        return {"VTableLayout.ini": "; Gerado pelo painel (ue_linux_layout.py) - perde\n",
+                "UE4SS_Signatures/GMalloc.lua": "-- do pacote\n"}
+    monkeypatch.setattr(ul, "generate_layout", fake_layout)
+    release = ul.Release("linux-v1", "5.6", "gerador-sym", "gerador-pacote")
+    ul.install_loader(str(exe_dir), "dragonwilds.service", release, fetcher=gh(with_packs(**{"pack-5.6.json": PACK})))
+    ue4ss = exe_dir / "ue4ss"
+    assert layout_calls == [True]   # com .sym o gerador do pacote so faz os globais
+    assert (ue4ss / "VTableLayout.ini").read_text(encoding="utf-8") == GENERATED["VTableLayout.ini"]
+    assert (ue4ss / "UE4SS_Signatures" / "GMalloc.lua").read_text(encoding="utf-8") == "-- do pacote\n"
+
+
+def test_reinstalar_apaga_o_member_layout_gerado_mas_nao_o_escrito_a_mao(the_front):
+    exe_dir, _, _ = the_front
+    release = ul.Release("linux-v1", "4.27", "x", "y")
+    ul.install_loader(str(exe_dir), "the-front.service", release, fetcher=gh(with_packs(**{"pack-4.27.json": PACK})))
+    ue4ss = exe_dir / "ue4ss"
+    ul.remove_generated(str(ue4ss))
+    assert not (ue4ss / "MemberVariableLayout.ini").exists()
+    (ue4ss / "MemberVariableLayout.ini").write_text("[FUObjectArray]\nObjObjects = 16\n", encoding="utf-8")
+    ul.remove_generated(str(ue4ss))
+    assert (ue4ss / "MemberVariableLayout.ini").exists()
+
+
+def test_nome_do_pacote_segue_a_versao_do_motor():
+    assert ul.Release("linux-v2", "4.27", "").pack_name == "pack-4.27.json"
+    assert ul.Release("linux-v2", "5.07", "").pack_name == "pack-5.7.json"

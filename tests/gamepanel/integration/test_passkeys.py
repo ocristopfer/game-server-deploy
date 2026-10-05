@@ -61,7 +61,10 @@ def _assertion(cli, count=1, handle=None):
     return body
 
 
-def test_desligado_as_rotas_nao_existem_e_o_botao_nao_aparece(client):
+def test_desligado_as_rotas_nao_existem_e_o_botao_nao_aparece(client, monkeypatch):
+    # Desligado de proposito: o compose de dev liga a biometria (http://localhost:8080), e no
+    # container este teste herdaria o endereco dele.
+    monkeypatch.setattr(panel, "WEBAUTHN_ORIGIN", "")
     assert _post_json(client, "/login/passkey/options", {}).status_code == 404
     assert b"data-passkey-login" not in client.get("/login").data
 

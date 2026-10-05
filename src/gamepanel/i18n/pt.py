@@ -539,6 +539,13 @@ MESSAGES: dict[str, str] = {
         "DLCs e mods vem dentro dos <code>server_packages</code>, exportados do JOGO com os mods "
         "ativos no perfil (console, com o mapa carregado: <code>export_server_packages</code>). "
         "Cada jogador precisa ter os MESMOS mods. Trocou a lista? Exporte e envie os pacotes de novo.",
+    "mods.help_unreal_linux":
+        "Os mods <code>.pak</code> do servidor ficam em <code>{folder}</code>. Mod que mexe so no "
+        "visual e do cliente; mod de regra de jogo precisa estar aqui E, em geral, nos jogadores. "
+        "Mods de script (UE4SS) rodam pelo UE4SS oficial compilado para Linux, logo abaixo: os mods "
+        "Lua ficam na pasta <code>ue4ss/Mods</code> ao lado do executavel do jogo. Instalar gera os "
+        "arquivos deste servidor (o motor de cada jogo tem mudancas do estudio); depois de um update "
+        "do jogo, instale de novo.",
     "mods.help_palworld":
         "Os mods <code>.pak</code> do servidor ficam em <code>{folder}</code>. Mod que mexe so no "
         "visual e do cliente; mod de regra de jogo precisa estar aqui E, em geral, nos jogadores. "
