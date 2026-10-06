@@ -176,6 +176,38 @@ Without git (e.g. a source archive), a self-built package has no commit and an e
 date; its version shows as `X.Y.Z+dev`. A dirty tree is marked `.dirty` in the file name and
 on screen.
 
+### The panel updates itself from these releases
+
+A panel CT provisioned with `deploy-admin.ps1 -Full` gets an **automatic updater**: a
+`gamepanel-update.service` that runs **as root** once a day (`gamepanel-update.timer`, at a
+random time) and when an admin asks on the **Updates** screen (`gamepanel-update.path`). Each
+round reads the latest release of `ADMIN_UPDATE_REPO` from the GitHub API, downloads
+`gamepanel-<version>.tar.gz`, checks it against its `.sha256` and hands it to the same
+`install-release.sh` the deploys use, so a release that does not answer `/health` is **rolled
+back on its own**. Drafts and pre-releases are ignored, and an older version is never installed.
+
+| `ADMIN_AUTO_UPDATE` | What happens |
+|---------------------|--------------|
+| `auto` (default) | installs every new release by itself; a new **major** version is only announced |
+| `notify` | checks daily and shows "update X available" in the footer for admins; you click **Update** |
+| `off` | never contacts GitHub; **Check now** still works |
+
+The **Updates** screen (admin menu) shows the running version, the latest release, the last
+check and the installer output, and changes the mode without a redeploy. The panel itself never
+writes its own code: it runs unprivileged and only leaves a request file in
+`/var/lib/gamepanel/update/`; root answers in `/var/lib/gamepanel-updater/status.json`.
+
+```bash
+pct exec <CTID> -- systemctl list-timers gamepanel-update.timer     # next check
+pct exec <CTID> -- systemctl start gamepanel-update.service         # check (and maybe install) now
+pct exec <CTID> -- journalctl -u gamepanel-update.service -n 30     # what it did
+```
+
+What is trusted is HTTPS to GitHub and whoever can push a `v*` tag to the repository (the
+release workflow builds the assets). A CT deployed before the updater existed needs one
+`deploy-admin.ps1 -Full` to get it; the direct (fast) deploy path does not install units. To
+publish a release: bump `VERSION`, commit, `git tag vX.Y.Z && git push --tags`.
+
 ### Prerequisites
 
 - A Windows machine to run the `.ps1` deploy scripts (Windows PowerShell 5.1 is enough), with

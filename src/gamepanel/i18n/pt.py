@@ -1701,6 +1701,47 @@ MESSAGES: dict[str, str] = {
     "passkey.registered": "Aparelho cadastrado: da próxima vez, entre com a biometria.",
     "passkey.removed": "Aparelho removido.",
     "passkey.not_found": "Aparelho não encontrado.",
+    "nav.updates": "Atualizações",
+    "updates.intro":
+        "O painel se atualiza sozinho a partir das releases publicadas no GitHub ({repo}). Quem "
+        "instala é um serviço separado, como root, uma vez por dia: confere o sha256 do pacote, "
+        "reinicia o painel e volta para a versão anterior se a nova não responder.",
+    "updates.status": "Situação",
+    "updates.running": "Versão em uso",
+    "updates.latest": "Última release",
+    "updates.checked_at": "Última verificação",
+    "updates.installed_at": "Última instalação automática",
+    "updates.not_installed":
+        "O atualizador automático ainda não rodou neste painel. Ele é instalado pelo deploy "
+        "completo (deploy-admin.ps1 -Full); no ambiente de desenvolvimento ele não existe.",
+    "updates.result.error": "a última tentativa falhou",
+    "updates.result.available": "versão {version} disponível",
+    "updates.result.installed": "atualizado pela última verificação",
+    "updates.result.off": "verificação desligada",
+    "updates.result.up_to_date": "em dia",
+    "updates.install_log": "Saída do instalador",
+    "updates.check_now": "Verificar agora",
+    "updates.install_now": "Atualizar para {version}",
+    "updates.install_confirm":
+        "Instalar a versão {version} agora? O painel será REINICIADO e quem estiver usando "
+        "perde a tela por alguns segundos (terminais abertos caem).",
+    "updates.mode": "Atualização automática",
+    "updates.mode.auto": "Automática",
+    "updates.mode.auto.help":
+        "Instala sozinho cada release nova. Uma versão MAJOR nova só é avisada: pode pedir "
+        "um passo manual.",
+    "updates.mode.notify": "Só avisar",
+    "updates.mode.notify.help": "Verifica todo dia e mostra o aviso; você decide quando atualizar.",
+    "updates.mode.off": "Desligada",
+    "updates.mode.off.help": "Não consulta o GitHub. O botão Verificar agora continua funcionando.",
+    "updates.bad_mode": "Modo de atualização desconhecido.",
+    "updates.write_failed": "Não consegui gravar o pedido para o atualizador (veja o log do painel).",
+    "updates.mode_saved": "Modo de atualização salvo.",
+    "updates.check_requested": "Verificação pedida: recarregue a página em alguns segundos.",
+    "updates.install_requested":
+        "Atualização pedida: o painel será reiniciado em instantes. Recarregue a página em "
+        "um minuto.",
+    "updates.footer_available": "atualização {version} disponível",
     "push.title": "Notificações neste aparelho",
     "push.hint":
         "Receba os alertas do painel (servidor caiu, CPU, memória ou disco alto, tarefa que "

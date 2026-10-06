@@ -142,6 +142,9 @@ NOT_SCREEN_FILES = {
     "blueprints/passkeys.py": "so vai para o log; a tela mostra a chave generica de passkey",
     # Every PushError is caught by push_client/push_keys and becomes push.bad_keys or a log line.
     "security/webpush.py": "so vai para o log; a tela mostra push.bad_keys",
+    # The root updater: its text goes to the journal and to the status JSON, shown on the
+    # Updates screen as LOG output (like a job), never as a sentence of the panel.
+    "updater.py": "servico root; a mensagem e saida de log, como a de um job",
 }
 
 # Single raises that stay literal, each with its reason: (file, start of the message).

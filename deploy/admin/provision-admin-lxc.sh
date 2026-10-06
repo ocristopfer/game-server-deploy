@@ -13,6 +13,7 @@ SERVICE_NAME=gamepanel.service
 CONF_DIR=/etc/gamepanel
 DATA_DIR=/var/lib/gamepanel
 APP_USER=gamepanel
+UPDATER_DIR=/var/lib/gamepanel-updater
 
 msg() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
@@ -74,6 +75,9 @@ resolve_variables() {
   # Screen language for whoever has not chosen one in Account YET, AND for what goes out through
   # the webhook (there is a single channel: the message cannot switch language based on who clicked).
   DEFAULT_LANG="${ADMIN_LANG:-pt}"
+  # Automatic update from the GitHub releases (src/gamepanel/updater.py): auto|notify|off.
+  UPDATE_MODE="${ADMIN_AUTO_UPDATE:-auto}"
+  UPDATE_REPO="${ADMIN_UPDATE_REPO:-ocristopfer/game-server-deploy}"
   FILE_MAX_KB="${ADMIN_FILE_MAX_KB:-4096}"
   FILE_PREVIEW_KB="${ADMIN_FILE_PREVIEW_KB:-256}"
   FILE_DOWNLOAD_MAX_MB="${ADMIN_FILE_DOWNLOAD_MAX_MB:-2048}"
@@ -200,6 +204,10 @@ ensure_app_user() {
   run_ct "id ${APP_USER} >/dev/null 2>&1 || useradd --system --home-dir ${APP_DIR} --shell /usr/sbin/nologin ${APP_USER}"
   run_ct "install -d -o ${APP_USER} -g ${APP_USER} -m 0750 ${DATA_DIR} ${CONF_DIR}"
   run_ct "install -d -o root -g root -m 0755 ${APP_DIR}"
+  # The updater's two folders: the panel leaves requests in its own (it can write nowhere else),
+  # root answers in one only root writes (see the docstring of src/gamepanel/updater.py).
+  run_ct "install -d -o ${APP_USER} -g ${APP_USER} -m 0755 ${DATA_DIR}/update"
+  run_ct "install -d -o root -g root -m 0755 ${UPDATER_DIR}"
 }
 
 publish_release() {
@@ -294,6 +302,10 @@ GAMEPANEL_FILE_DEFAULT=${FILE_DEFAULT}
 GAMEPANEL_REQUIRE_2FA=${REQUIRE_2FA}
 GAMEPANEL_WEBAUTHN_ORIGIN=${WEBAUTHN_ORIGIN}
 GAMEPANEL_LANG=${DEFAULT_LANG}
+GAMEPANEL_UPDATE_MODE=${UPDATE_MODE}
+GAMEPANEL_UPDATE_REPO=${UPDATE_REPO}
+GAMEPANEL_UPDATE_DIR=${DATA_DIR}/update
+GAMEPANEL_UPDATE_STATUS=${UPDATER_DIR}/status.json
 EOF
   [[ -z "$preserved" ]] || printf '%s\n' "$preserved" >> "$tmp_file"
   push_file_to_ct "$tmp_file" "${CONF_DIR}/panel.env" 0640
@@ -374,6 +386,81 @@ LockPersonality=true
 [Install]
 WantedBy=multi-user.target
 EOF
+}
+
+# The automatic updater, on stdout, one unit per call: a oneshot service that runs as ROOT
+# (it installs releases and restarts the panel), a daily timer, and a path unit that wakes it
+# when the panel leaves a request ("check now" / "update now" on the Updates screen).
+render_update_unit() {
+  case "$1" in
+    service) cat <<UNIT
+[Unit]
+Description=Game panel automatic update (GitHub releases)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The CURRENT release's code runs the update, so the updater updates along with the panel. It
+# is root-owned (install-release.sh chowns every release) and the panel cannot write there.
+WorkingDirectory=${APP_DIR}/current
+EnvironmentFile=${CONF_DIR}/panel.env
+ExecStart=/usr/bin/python3 -m gamepanel.updater run
+TimeoutStartSec=900
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+# What installing a release writes: the releases and the symlink, the installer's own copy,
+# the status, and the panel's request file (deleted once read).
+ReadWritePaths=${APP_DIR} /usr/local/lib/gamepanel ${UPDATER_DIR} ${DATA_DIR}/update
+UNIT
+      ;;
+    timer) cat <<UNIT
+[Unit]
+Description=Daily check for a new game panel release
+
+[Timer]
+OnCalendar=daily
+# Spread out, so every panel does not hit the GitHub API at the same minute.
+RandomizedDelaySec=4h
+# A CT that was off at the scheduled time checks when it comes back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+      ;;
+    path) cat <<UNIT
+[Unit]
+Description=Game panel update requests from the Updates screen
+
+[Path]
+PathExists=${DATA_DIR}/update/request
+Unit=gamepanel-update.service
+
+[Install]
+WantedBy=paths.target
+UNIT
+      ;;
+    *) die "unknown updater unit: $1" ;;
+  esac
+}
+
+render_update_units() {
+  msg "Installing the automatic updater (mode: ${UPDATE_MODE})"
+  # The updater runs install-release.sh from here. The installer refreshes this copy on every
+  # install; this line covers a CT that has not been through a release since it existed.
+  run_ct "install -d -m 0755 /usr/local/lib/gamepanel"
+  pct push "$CTID" "$INSTALLER" /usr/local/lib/gamepanel/install-release.sh --perms 0755
+  local kind tmp_file
+  for kind in service timer path; do
+    tmp_file="$(mktemp)"
+    render_update_unit "$kind" > "$tmp_file"
+    push_file_to_ct "$tmp_file" "/etc/systemd/system/gamepanel-update.${kind}" 0644
+    rm -f "$tmp_file"
+  done
+  run_ct "systemctl daemon-reload && systemctl enable --now gamepanel-update.timer gamepanel-update.path >/dev/null"
 }
 
 render_service() {
@@ -536,6 +623,7 @@ main() {
   # renamed, and it spewed `no such column: nome` for a few seconds.
   bootstrap_admin_user
   start_panel
+  render_update_units
   apply_panel_firewall
   print_summary
 }

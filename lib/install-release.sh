@@ -122,6 +122,15 @@ restart_and_check() {
 
 if restart_and_check; then
   msg "live: ${version}"
+  # Keep a copy of THIS installer where the automatic updater looks for it
+  # (gamepanel/updater.py): the deploys only bring it to a temporary folder they delete, and
+  # without a copy that every deploy refreshes, the updater would run whatever version of the
+  # installer was left behind - or none at all.
+  persisted="/usr/local/lib/${PACKAGE}/install-release.sh"
+  self_path="$(readlink -f "${BASH_SOURCE[0]}" || true)"
+  if [[ -n "$self_path" && "$self_path" != "$(readlink -f "$persisted" 2>/dev/null || true)" ]]; then
+    install -D -m 0755 "$self_path" "$persisted" || echo "   could not keep a copy of the installer in ${persisted}"
+  fi
 else
   if [[ -n "$previous" && -d "$previous" && "$previous" != "$target" ]]; then
     msg "did NOT come up - rolling back to $(basename "$previous")"

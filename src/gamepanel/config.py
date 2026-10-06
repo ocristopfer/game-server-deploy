@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 from collections.abc import Mapping
 from typing import NamedTuple
 from urllib.parse import urlsplit
@@ -110,10 +111,30 @@ class _Reader:
             return ""
         return raw
 
+    def choice(self, name: str, default: str, allowed: tuple[str, ...]) -> str:
+        value = self.text(name, default).strip().lower() or default
+        if value not in allowed:
+            self.problems.append(f"{PREFIX}{name}: esperado um de {'/'.join(allowed)}")
+            return default
+        return value
+
+    def repo(self, name: str, default: str) -> str:
+        """`owner/name` of a GitHub repository: it becomes part of an API URL."""
+        value = self.text(name, default).strip()
+        owner, _, repo = value.partition("/")
+        if not (_REPO_PART.fullmatch(owner) and _REPO_PART.fullmatch(repo)):
+            self.problems.append(f"{PREFIX}{name}: esperado dono/repositorio")
+            return default
+        return value
+
     def path_list(self, name: str, default: str) -> tuple[str, ...]:
         raw = self.text(name, default)
         return tuple(p.strip() for p in raw.split(",") if p.strip())
 
+
+# GitHub's own rule for owner and repository names, tight enough to go into a URL as is.
+_REPO_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", re.ASCII)
+UPDATE_MODES = ("off", "notify", "auto")
 
 # Comma-separated, like every list option here.
 DEFAULT_FILE_ROOTS = "/opt/game,/home/steam"
@@ -191,6 +212,15 @@ class Settings(NamedTuple):
     webauthn_origin: str
     # --- development server (`python -m gamepanel.cli`) ---
     port: int
+    # --- automatic update from GitHub releases (see `updater.py`) ---
+    update_repo: str
+    update_mode: str
+    # Where the panel leaves its requests ("check now", "update now", the mode chosen on screen)
+    # for the root updater: inside the panel's data folder, the only place it can write.
+    update_dir: str
+    # Where the updater writes what it found. NOT in the panel's folder: root writing a file the
+    # panel could have swapped for a symlink would let the panel aim root's write elsewhere.
+    update_status: str
 
 
 def load(env: Mapping[str, str] | None = None) -> Settings:
@@ -279,6 +309,10 @@ def load(env: Mapping[str, str] | None = None) -> Settings:
         require_2fa=reader.flag("REQUIRE_2FA", False),
         webauthn_origin=reader.origin("WEBAUTHN_ORIGIN"),
         port=reader.integer("PORT", 8080, minimum=1, maximum=65535),
+        update_repo=reader.repo("UPDATE_REPO", "ocristopfer/game-server-deploy"),
+        update_mode=reader.choice("UPDATE_MODE", "auto", UPDATE_MODES),
+        update_dir=reader.text("UPDATE_DIR", os.path.join(os.path.dirname(db_path), "update")),
+        update_status=reader.text("UPDATE_STATUS", "/var/lib/gamepanel-updater/status.json"),
     )
     if reader.problems:
         raise ConfigError("configuracao do painel invalida:\n  - "

@@ -1821,6 +1821,17 @@ purpose.
   flip, removal of the old layout, rollback) and `bash docker/ct-sandbox/broker.sh`.
   There are no shell tests in the repository; the proof is the sandbox.
 
+**The panel updates itself from the GitHub releases (`updater.py`), but never AS the panel.**
+The gamepanel-update service runs `python3 -m gamepanel.updater run` as root from
+`/opt/gamepanel/current` (so the updater updates with the code), checks the asset's sha256 and
+calls `/usr/local/lib/gamepanel/install-release.sh` - a copy the installer refreshes on every
+install, because the deploys only bring it to `/tmp`. The unprivileged panel only writes
+`request`/`mode` into its own `update/` folder; root reads them with `O_NOFOLLOW`, accepts only the
+fixed values, and writes its status in a folder the panel cannot write (root writing into the
+panel's folder would follow a planted symlink). A new major version is never installed by the
+timer. The units are rendered by `provision-admin-lxc.sh` (`render_update_unit`); the direct
+deploy does not touch units.
+
 **`ADMIN_HOST` from `.env` beats `ADMIN_IP_CIDR`** in the direct-push shortcut of
 `deploy-admin.ps1` (without `-Full`): when moving the panel to another CT/IP, change BOTH,
 otherwise the deploy lands on the old CT and publishes there (that is how the old public

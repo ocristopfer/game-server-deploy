@@ -77,6 +77,7 @@ NAV_SECONDARY = (
     # server: without this screen, the copy of a removed server had nowhere to show up.
     Item("backups", "nav.backups.help", "💾", "backups.archive", admin=True, short="nav.backups"),
     Item("ssh", "nav.ssh_key", "🔑", "account.ssh_key"),
+    Item("atualizacoes", "nav.updates", "⬆️", "updates.index", admin=True),
 )
 
 
@@ -103,7 +104,7 @@ _ACTIVE_EXTRA = {
     "conta": ("account.index", "account.two_factor", "account.two_factor_off",
               "account.two_factor_codes", "account.ssh_key",
               "users.index", "users.new", "users.role", "users.password", "users.delete",
-              "users.two_factor_off"),
+              "users.two_factor_off", "updates.index"),
     "historico": ("history.index",),
 }
 
@@ -130,7 +131,7 @@ def active_nav_for(endpoint: str | None) -> str:
 # go in the menu under their name. These are KEYS of the items above, not copies of them: the label, the
 # icon, the admin rule and the feature stay defined in one place.
 NAV_DESKTOP_BAR = ("servidores", "instancias", "catalogo", "historico", "backups", "alertas", "usuarios")
-NAV_DESKTOP_ACCOUNT = ("conta", "ssh")
+NAV_DESKTOP_ACCOUNT = ("conta", "ssh", "atualizacoes")
 
 _ALL_ITEMS = {i.key: i for i in NAV_MAIN + NAV_SECONDARY}
 
@@ -147,6 +148,7 @@ _ACTIVE_ON_DESKTOP = {
     "backups": ("backups.archive", "backups.archive_download", "backups.archive_delete"),
     "ssh": ("account.ssh_key",),
     "conta": ("account.index", "account.two_factor", "account.two_factor_off", "account.two_factor_codes"),
+    "atualizacoes": ("updates.index",),
 }
 _BY_ENDPOINT_ON_DESKTOP = {
     endpoint: key

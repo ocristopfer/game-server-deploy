@@ -1696,6 +1696,46 @@ MESSAGES: dict[str, str] = {
     "passkey.registered": "Device registered: next time, sign in with biometrics.",
     "passkey.removed": "Device removed.",
     "passkey.not_found": "Device not found.",
+    "nav.updates": "Updates",
+    "updates.intro":
+        "The panel updates itself from the releases published on GitHub ({repo}). A separate "
+        "service installs them, as root, once a day: it checks the package sha256, restarts the "
+        "panel and goes back to the previous version if the new one does not answer.",
+    "updates.status": "Status",
+    "updates.running": "Running version",
+    "updates.latest": "Latest release",
+    "updates.checked_at": "Last check",
+    "updates.installed_at": "Last automatic install",
+    "updates.not_installed":
+        "The automatic updater has not run on this panel yet. It is installed by the full "
+        "deploy (deploy-admin.ps1 -Full); the development environment does not have it.",
+    "updates.result.error": "the last attempt failed",
+    "updates.result.available": "version {version} available",
+    "updates.result.installed": "updated by the last check",
+    "updates.result.off": "checking is off",
+    "updates.result.up_to_date": "up to date",
+    "updates.install_log": "Installer output",
+    "updates.check_now": "Check now",
+    "updates.install_now": "Update to {version}",
+    "updates.install_confirm":
+        "Install version {version} now? The panel will be RESTARTED and whoever is using it "
+        "loses the screen for a few seconds (open terminals drop).",
+    "updates.mode": "Automatic update",
+    "updates.mode.auto": "Automatic",
+    "updates.mode.auto.help":
+        "Installs every new release on its own. A new MAJOR version is only announced: it may "
+        "need a manual step.",
+    "updates.mode.notify": "Notify only",
+    "updates.mode.notify.help": "Checks every day and shows the notice; you decide when to update.",
+    "updates.mode.off": "Off",
+    "updates.mode.off.help": "Does not contact GitHub. The Check now button still works.",
+    "updates.bad_mode": "Unknown update mode.",
+    "updates.write_failed": "Could not leave the request for the updater (see the panel log).",
+    "updates.mode_saved": "Update mode saved.",
+    "updates.check_requested": "Check requested: reload the page in a few seconds.",
+    "updates.install_requested":
+        "Update requested: the panel will restart shortly. Reload the page in a minute.",
+    "updates.footer_available": "update {version} available",
     "push.title": "Notifications on this device",
     "push.hint":
         "Get the panel's alerts (server down, high CPU, memory or disk, a failed task...) as "

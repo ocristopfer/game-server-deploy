@@ -12,7 +12,7 @@ def test_admin_com_broker_ve_tudo_na_barra_larga():
     slash, account = ui.nav_desktop(admin=True, broker=True)
     assert _keys(slash) == ["servidores", "instancias", "catalogo", "historico", "backups", "alertas",
                             "usuarios"]
-    assert _keys(account) == ["conta", "ssh"]
+    assert _keys(account) == ["conta", "ssh", "atualizacoes"]
 
 
 def test_sem_broker_a_barra_nao_oferece_link_que_da_403():

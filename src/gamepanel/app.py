@@ -52,7 +52,7 @@ if __name__ == "__main__":  # pragma: no cover - only applies outside a normal i
 # new dependency. It is the same escaping the template autoescape uses.
 from markupsafe import Markup, escape
 
-from gamepanel import cli, config, i18n, version
+from gamepanel import cli, config, i18n, updater, version
 from gamepanel import navigation as ui
 from gamepanel.blueprints import register_all
 from gamepanel.games import config_format as gameconf
@@ -305,6 +305,12 @@ PUSH_MAX_PER_USER = 10
 # whoever sends. Apple refuses anything that is not https:// or mailto:, so the panel's own
 # address wins when there is one, and the project page otherwise.
 PUSH_SUBJECT = settings.webauthn_origin or "https://github.com/ocristopfer/game-server-deploy"
+# Automatic update (see `updater.py`): the panel only reads what the root updater found and
+# leaves requests for it. The mode written on the Updates screen wins over the deploy's.
+UPDATE_REPO = settings.update_repo
+UPDATE_MODE = settings.update_mode
+UPDATE_DIR = settings.update_dir
+UPDATE_STATUS = settings.update_status
 # How often the panel checks the state of each server. Each round costs
 # one SSH round trip per server: going too low does not help.
 MONITOR_EVERY = settings.monitor_every
@@ -714,6 +720,32 @@ def _chosen_theme() -> str:
     return raw if raw in ("light", "dark") else ""
 
 
+def update_state() -> dict:
+    """What the Updates screen shows: the root updater's last status and the mode in force."""
+    status = updater.read_status(UPDATE_STATUS)
+    return {
+        "status": status,
+        # No status file = the updater never ran on this machine: not installed (dev compose, or a
+        # CT deployed before it existed - a `-Full` deploy installs it).
+        "installed": status is not None,
+        "mode": updater.read_mode(UPDATE_DIR, UPDATE_MODE),
+        "repo": UPDATE_REPO,
+    }
+
+
+def update_available() -> str:
+    """The newer released version, or "" - for the footer link every admin screen shows."""
+    status = updater.read_status(UPDATE_STATUS)
+    if not status or not status.get("available"):
+        return ""
+    latest = updater.parse_version(str(status.get("latest", "")))
+    running = updater.parse_version(version.BUILD.version)
+    # The status can be older than the running code (a manual deploy after the last check).
+    if latest is None or (running is not None and latest <= running):
+        return ""
+    return updater.show(latest)
+
+
 @app.context_processor
 def _inject():
     user = logged_user()
@@ -743,6 +775,8 @@ def _inject():
         # whoever opens a ticket ("the screen did not update") is looking at the SCREEN, and the
         # answer fits in a line they can read out loud.
         "app_version": version.BUILD.version,
+        # Only for admins: an operator cannot update, and a banner they cannot act on is noise.
+        "update_available": update_available() if user and user["role"] == ROLE_ADMIN else "",
         "allow_shell": ALLOW_SHELL,
         "allow_term": ALLOW_SHELL and HAVE_PTY,
         "allow_files": ALLOW_FILES,

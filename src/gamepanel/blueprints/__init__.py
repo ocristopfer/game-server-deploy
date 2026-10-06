@@ -47,12 +47,13 @@ def register_all(app: Flask) -> None:
         schedules,
         servers,
         terminal,
+        updates,
         users,
     )
 
     for module in (
         account, alerts, auth, backups, broker, charts, config_quick, console,
         dashboard, files, health, history, jobs, mods, passkeys, players, preferences, push, pwa,
-        schedules, servers, terminal, users,
+        schedules, servers, terminal, updates, users,
     ):
         app.register_blueprint(module.bp)

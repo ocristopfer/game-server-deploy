@@ -134,7 +134,8 @@
 
   {# Discreet on purpose: it is supporting information, not content. It stays inside
      `main` to inherit the same column as the rest, otherwise it touches the phone's edge. #}
-  <p class="app-version muted small">{{ _('app.version', version=app_version) }}</p>
+  <p class="app-version muted small">{{ _('app.version', version=app_version) }}
+    {%- if update_available %} &middot; <a href="{{ url_for('updates.index') }}">{{ _('updates.footer_available', version=update_available) }}</a>{% endif %}</p>
 </main>
 
 {% if current_user %}
