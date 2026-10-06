@@ -43,6 +43,7 @@ EXTRA_LABELS: Mapping[str, str] = {
     "broker-jogo": "job.game_added",
     "broker-jogo-editar": "job.game_edited",
     "broker-jogo-apagar": "job.game_removed",
+    "broker-atualizar": "job.broker_update_requested",
 }
 
 # The history keeps the WHOLE output of what ran. Only an admin can trigger these actions
@@ -62,7 +63,7 @@ ADMIN_ONLY_ACTIONS = frozenset({
     # Everything from the broker is admin-only: the output names IPs, CTIDs and ports of
     # the infrastructure.
     "broker-criar", "broker-desativar", "broker-remover", "broker-jogo",
-    "broker-jogo-editar", "broker-jogo-apagar",
+    "broker-jogo-editar", "broker-jogo-apagar", "broker-atualizar",
     # 'edit-config' is left out on purpose: changing the game configuration is an operator
     # task, and its output goes no further than that.
 })

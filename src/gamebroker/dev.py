@@ -58,7 +58,10 @@ def main() -> None:
         Db(str(state_dir / "broker.db")), catalog, FakeCompute(), FakeIngress(),
         SlowInstaller(float(os.environ.get("BROKER_DEV_PASSO", "1.5"))), FakeNetwork(),
         Config(ctid_base=200, ips=ips_in_range("10.77.0", 102, 199)))
-    app = create_app(service, token)
+    # Requests land in the toy's state dir and nothing reads them: there is no root updater in the
+    # compose, so the panel's broker update screen shows "never ran" and its buttons still answer.
+    app = create_app(service, token, update_dir=str(state_dir / "update"),
+                     update_status=str(state_dir / "update-status.json"))
     # Listening on all interfaces is only acceptable here: this module is the TOY broker of
     # the dev compose (fake backends) and is not part of the release package - see
     # `SKIPPED_NAMES` in tools/build-release.py. The production one runs under gunicorn with TLS.

@@ -19,6 +19,7 @@ from typing import Any
 
 from flask import Flask
 
+from gamebroker import updater
 from gamebroker.app import create_app
 from gamebroker.config import ConfigBroker, ConfigError, load
 from gamebroker.integrations.http_client import Client
@@ -54,7 +55,10 @@ def build_service(cfg: ConfigBroker, executor: Executor | None = None, network: 
 
 
 def create_app_from_config(cfg: ConfigBroker, **kwargs) -> Flask:
-    return create_app(build_service(cfg, **kwargs), cfg.token, cfg.allowed_ips)
+    # The request folder lives in the broker's state dir (the one folder it may write); the
+    # provisioning creates it and points the updater's path unit at the same place.
+    return create_app(build_service(cfg, **kwargs), cfg.token, cfg.allowed_ips,
+                      update_dir=str(cfg.state_dir / "update"), update_status=updater.STATUS_PATH)
 
 
 def create_app_from_env(env: Mapping[str, str] | None = None) -> Flask:

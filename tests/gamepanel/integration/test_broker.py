@@ -95,6 +95,9 @@ class FakeBroker:
         self.forgotten: list[str] = []
         # What the game DELETE returns: {} = deleted; a game = curated one restored.
         self.restored: dict = {}
+        # GET /v1/update: the broker's version and its updater's status.json (None = never ran).
+        self.update: dict = {"version": "0.2.0+05bbf45", "commit": "05bbf45", "built_at": "",
+                             "status": None, "requests": True}
 
     def _call(self, name: str, *args) -> None:
         self.calls.append((name, *args))
@@ -150,6 +153,14 @@ class FakeBroker:
         self._call("remove", instance_id, confirm, actor, db_only)
         return {"id": instance_id, "removed": True}
 
+    def update_info(self):
+        self._call("update_info")
+        return self.update
+
+    def request_update(self, action, actor):
+        self._call("request_update", action, actor)
+        return {"requested": action}
+
     def called(self, name: str) -> list[tuple]:
         return [c for c in self.calls if c[0] == name]
 
@@ -165,7 +176,8 @@ def broker(monkeypatch, database):
     # Never the real known_hosts: in the container it is the dev panel's.
     monkeypatch.setattr(panel, "forget_host_key", fake.forgotten.append)
     for name in ("catalog", "add_game", "game", "update_game", "remove_game", "instances",
-                 "create", "operation", "deactivate", "remove", "preview", "cancel"):
+                 "create", "operation", "deactivate", "remove", "preview", "cancel",
+                 "update_info", "request_update"):
         monkeypatch.setattr(panel.broker_client, name, getattr(fake, name))
     return fake
 
@@ -193,9 +205,10 @@ def servers(database) -> list:
 
 # --------------------------------------------------------------------------- who opens
 
-ROTAS_GET = ["/catalog", "/instances", "/api/v1/catalog/suggestions?q=palworld", "/catalog/alfa/edit"]
+ROTAS_GET = ["/catalog", "/instances", "/api/v1/catalog/suggestions?q=palworld", "/catalog/alfa/edit",
+             "/broker/update"]
 ROTAS_POST = ["/catalog/new", "/instances/new", "/instances/7/deactivate", "/instances/7/delete",
-              "/catalog/alfa/edit", "/catalog/alfa/delete"]
+              "/catalog/alfa/edit", "/catalog/alfa/delete", "/broker/update/check", "/broker/update/install"]
 
 
 @pytest.mark.parametrize("rota", ROTAS_GET)
@@ -979,3 +992,60 @@ def test_cancelar_job_que_nao_e_de_criacao_e_404(admin, broker, post, database):
 def test_desativar_sem_backup_diz_o_que_faz(admin, broker):
     broker.lista = [INSTANCE]
     assert "Desativar sem backup" in admin.get("/instances").get_data(as_text=True)
+
+
+# ------------------------------------------------------------------ the broker's own updates
+
+def test_tela_de_atualizacao_mostra_a_versao_do_broker(admin, broker):
+    html = admin.get("/broker/update").get_data(as_text=True)
+    assert "0.2.0+05bbf45" in html
+    # status None: the root updater never ran there (dev compose, or a broker deployed before it).
+    assert "ainda não rodou" in html
+
+
+def test_tela_de_atualizacao_mostra_a_release_nova_e_o_botao_de_instalar(admin, broker):
+    broker.update["status"] = {"result": "available", "latest": "0.3.0", "mode": "notify",
+                               "checked_at": "2026-10-06T10:00:00Z", "page": "", "message": "", "log": ""}
+    html = unescape(admin.get("/broker/update").get_data(as_text=True))
+    assert "versão 0.3.0 disponível" in html
+    assert "/broker/update/install" in html
+    assert "Só avisar" in html
+
+
+def test_sem_release_nova_nao_ha_botao_de_instalar(admin, broker):
+    broker.update["status"] = {"result": "up_to_date", "latest": "0.2.0", "mode": "auto"}
+    html = admin.get("/broker/update").get_data(as_text=True)
+    assert "/broker/update/check" in html
+    assert "/broker/update/install" not in html
+
+
+@pytest.mark.parametrize(("rota", "action"), [("/broker/update/check", "check"),
+                                              ("/broker/update/install", "install")])
+def test_botao_pede_ao_broker_e_fica_no_historico(admin, broker, post, database, rota, action):
+    response = post(admin, rota, {})
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/broker/update")
+    assert broker.called("request_update") == [("request_update", action, "chefe")]
+    recorded = jobs(database)[-1]
+    assert (recorded["action"], recorded["command"], recorded["status"]) == ("broker-atualizar", action, "ok")
+
+
+def test_pedido_recusado_pelo_broker_aparece_e_fica_no_historico_como_erro(admin, broker, post, database):
+    broker.error = refusal("este broker nao tem o atualizador", 503)
+    response = post(admin, "/broker/update/check", {})
+    assert response.status_code == 302
+    assert jobs(database)[-1]["status"] == "error"
+    assert "este broker nao tem o atualizador" in admin.get("/broker/update").get_data(as_text=True)
+
+
+def test_broker_fora_do_ar_na_tela_de_atualizacao_nao_e_500(admin, broker):
+    broker.error = refusal("nao consegui falar com o broker (ConnectionRefusedError)", 0)
+    response = admin.get("/broker/update")
+    assert response.status_code == 200
+    assert "nao consegui falar com o broker" in response.get_data(as_text=True)
+
+
+def test_atualizacoes_so_mostra_o_cartao_do_broker_com_ele_ligado(admin, broker, monkeypatch):
+    assert "/broker/update" in admin.get("/updates").get_data(as_text=True)
+    monkeypatch.setattr(panel, "ALLOW_BROKER", False)
+    assert "/broker/update" not in admin.get("/updates").get_data(as_text=True)

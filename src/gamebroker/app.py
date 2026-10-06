@@ -12,7 +12,7 @@ import re
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 
-from gamebroker import version
+from gamebroker import updater, version
 from gamebroker.domain.exceptions import Refusal, ValidationError
 from gamebroker.services.instance_service import Service
 
@@ -25,11 +25,15 @@ log = logging.getLogger("broker")
 
 
 def create_app(service: Service, token: str,  # noqa: C901 - see the note below
-               allowed_ips: tuple[str, ...] = ()) -> Flask:
-    """Builds the app: authentication, error handlers and the 11 routes.
+               allowed_ips: tuple[str, ...] = (), update_dir: str = "", update_status: str = "") -> Flask:
+    """Builds the app: authentication, error handlers and the 13 routes.
+
+    `update_dir`/`update_status` are the updater's two folders (see `updater.REQUEST_DIR`). Empty
+    `update_dir` = no updater here (the dev broker, the tests that do not ask for one): the request
+    route answers 503 instead of writing somewhere nothing reads.
 
     The `# noqa: C901` is not giving up. mccabe counts every nested `def` as a branch, and
-    a Flask factory is a LIST of registrations: 11 routes of one to three lines. The
+    a Flask factory is a LIST of registrations: 13 routes of one to three lines. The
     repository's limit of 15 exists to force 'separate deciding from doing', and here there
     is no decision to separate - splitting into `_register_routes`/`_register_errors` would
     trade one number for three indirections and nothing would get easier to read.
@@ -75,6 +79,28 @@ def create_app(service: Service, token: str,  # noqa: C901 - see the note below
         # that answered, not a fact about Proxmox or OPNsense. The panel uses it to tell
         # whether the broker it reaches is the one the last deploy published.
         return jsonify({**service.health(), **version.BUILD.as_public()})
+
+    @app.get("/v1/update")
+    def update_state():
+        # `status` is None until the root updater has run once (not installed, or the dev broker).
+        status = updater.read_status(update_status) if update_status else None
+        return jsonify({**version.BUILD.as_public(), "status": status, "requests": bool(update_dir)})
+
+    @app.post("/v1/update")
+    def update_request():
+        # Only the two fixed words reach the file: root reads it, and anything else is ignored there too.
+        what = _body().get("action")
+        if what not in updater.REQUESTS:
+            raise ValidationError("action", "esperado check ou install")
+        if not update_dir:
+            return _error("este broker nao tem o atualizador", "sem-atualizador", 503)
+        try:
+            updater.leave_request(update_dir, what)
+        except OSError:
+            log.exception("nao consegui deixar o pedido de atualizacao")
+            return _error("nao consegui deixar o pedido de atualizacao", "sem-atualizador", 503)
+        log.info("pedido de atualizacao '%s' de %s", what, actor() or "?")
+        return jsonify({"requested": what}), 202
 
     @app.get("/v1/catalog")
     def catalog():

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui with context %}
+{% import "components/updates.html" as upd with context %}
+{% block title %}{{ _('broker_update.title') }} &mdash; {{ _('app.name') }}{% endblock %}
+
+{% block content %}
+{{ ui.page_header(_('broker_update.title')) }}
+
+<p class="muted intro">{{ _('broker_update.intro') }}</p>
+
+{% if info %}
+<div class="card">
+  <h2>{{ _('updates.status') }}</h2>
+  {% set st = info.status or {} %}
+  {{ upd.update_status(st, info.status is not none, info.version, _('broker_update.not_installed'),
+                       url_for('broker.update_check'), url_for('broker.update_install'),
+                       _('broker_update.install_confirm', version=st.latest),
+                       st.result == 'available') }}
+  {% if st.mode %}
+  <p class="muted">{{ _('broker_update.mode', mode=_('updates.mode.' ~ st.mode)) }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<p><a href="{{ url_for('updates.index') }}">{{ _('broker_update.back') }}</a></p>
+{% endblock %}

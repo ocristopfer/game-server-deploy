@@ -1850,7 +1850,12 @@ carries the SAME core as the panel's between `# >>> shared updater core` markers
 `gamepanel` to import it from; a test compares the two copies), takes its options from the unit's
 command line (`BROKER_AUTO_UPDATE`, and `ADMIN_UPDATE_REPO` for the repository), and decides the
 rollback with `gamebroker.healthcheck`, which pins the CT's own certificate and only asks whether
-the broker answers - Proxmox or OPNsense being down is no reason to throw a release away.
+the broker answers - Proxmox or OPNsense being down is no reason to throw a release away. The
+panel's "Broker update" screen goes through the broker API (its `/v1/update`, read and post), never to the
+CT: the broker writes `check`/`install` into its own folder (`updater.REQUEST_DIR`, under its
+state dir) and `gamebroker-update.path` wakes root, the panel's own arrangement. The status stays
+in root's folder, which the broker can read and not write: a compromised broker can ask for the
+official release, never forge what the screen says it is running.
 
 ### PowerShell (`.ps1`)
 

@@ -325,3 +325,45 @@ def instance_remove(iid: int):
         "So o registro foi esquecido." if db_only else "Container destruido e servidor removido do painel.")
     flash(panel.translate("flash.instance_removed"), "ok")
     return redirect(url_for("broker.instances"))
+
+
+# ------------------------------------------------------------------ the broker's own updates
+
+@bp.get("/broker/update")
+@panel.admin_required
+@panel.broker_required
+def update():
+    """The broker's version and its root updater's last status, read through the broker API."""
+    try:
+        info = panel.broker_client.update_info()
+    except panel.broker_client.BrokerError as failure:
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
+        info = None
+    return render_template("broker_update.html", info=info)
+
+
+def _update_request(action: str, done_key: str):
+    try:
+        panel.broker_client.request_update(action, panel._actor())
+    except panel.broker_client.BrokerError as failure:
+        panel._log_broker_action("broker-atualizar", panel._actor(), action, str(failure.message), "error")
+        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
+    else:
+        # An install restarts the broker: the history says who asked for it, and when.
+        panel._log_broker_action("broker-atualizar", panel._actor(), action, "Pedido enviado ao atualizador do broker.")
+        flash(panel.translate(done_key), "ok")
+    return redirect(url_for("broker.update"))
+
+
+@bp.post("/broker/update/check")
+@panel.admin_required
+@panel.broker_required
+def update_check():
+    return _update_request("check", "broker_update.check_requested")
+
+
+@bp.post("/broker/update/install")
+@panel.admin_required
+@panel.broker_required
+def update_install():
+    return _update_request("install", "broker_update.install_requested")

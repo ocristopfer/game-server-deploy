@@ -366,8 +366,14 @@ BROKER = Target(
     health="",  # filled in main(): the port comes from the unit's command line
     install_hint="deploy the broker once with deploy-broker.ps1",
 )
-# Only root writes here; it holds the status and nothing else (no one leaves requests).
+# Only root writes here: the status lives where the broker can READ it but never change it.
 STATE_DIR = "/var/lib/gamebroker-updater"
+STATUS_PATH = f"{STATE_DIR}/status.json"
+# The broker's own folder (its BROKER_STATE_DIR in the provisioning), where the API leaves the
+# panel's "check"/"install" request and the path unit wakes this updater. It is the panel's
+# arrangement: the unprivileged side writes the request, root reads it with O_NOFOLLOW and accepts
+# only the fixed values, and the status goes to a folder the broker cannot write.
+REQUEST_DIR = "/var/lib/gamebroker/update"
 REPO_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}", re.ASCII)
 MAX_PORT = 65535
 
@@ -396,8 +402,8 @@ def main(argv: list[str] | None = None) -> int:
     # `cd` first: the probe must import the NEW release, which `current` points to by then.
     target = BROKER._replace(
         health=f"cd {BROKER.app_dir}/current && python3 -m gamebroker.healthcheck --port {port}")
-    status = run_round(target=target, repo=repo, default_mode=mode, update_dir=STATE_DIR,
-                       status_path=f"{STATE_DIR}/status.json", current_version=version.BUILD.version)
+    status = run_round(target=target, repo=repo, default_mode=mode, update_dir=REQUEST_DIR,
+                       status_path=STATUS_PATH, current_version=version.BUILD.version)
     return report(status)
 
 

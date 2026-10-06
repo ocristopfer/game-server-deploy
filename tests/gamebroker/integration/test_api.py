@@ -25,7 +25,8 @@ def test_token_curto_nao_sobe():
                                         {"Authorization": f"Basic {TOKEN}"}, {"Authorization": "Bearer "}])
 @pytest.mark.parametrize(("method", "url"), [("get", "/v1/health"), ("get", "/v1/catalog"),
                                              ("get", "/v1/instances"), ("post", "/v1/instances"),
-                                             ("post", "/v1/catalog")])
+                                             ("post", "/v1/catalog"), ("get", "/v1/update"),
+                                             ("post", "/v1/update")])
 def test_sem_token_valido_nada_responde(http, method, url, headers):
     response = getattr(http, method)(url, headers=headers, json={})
     assert response.status_code == 401
@@ -192,3 +193,53 @@ def test_cancelar_pela_api_operacao_ja_terminada_e_409(http):
 
 def test_cancelar_pela_api_recusa_id_malformado(http):
     assert http.post("/v1/operations/x/cancel", headers=AUTH).status_code == 400
+
+
+# ------------------------------------------------------------------ update requests from the panel
+
+@pytest.fixture
+def updatable(environment, tmp_path):
+    """The app with the updater's two folders: requests (the broker's) and the status (root's)."""
+    status = tmp_path / "updater" / "status.json"
+    status.parent.mkdir()
+    app = create_app(environment.servico, TOKEN, update_dir=str(tmp_path / "update"), update_status=str(status))
+    app.config["TESTING"] = False
+    return app.test_client(), tmp_path / "update", status
+
+
+def test_atualizacao_traz_a_versao_e_nenhum_status_antes_da_primeira_rodada(updatable):
+    client, _requests, _status = updatable
+    data = client.get("/v1/update", headers=AUTH).get_json()
+    assert {"version", "commit", "built_at"} <= set(data)
+    assert data["status"] is None
+    assert data["requests"] is True
+
+
+def test_atualizacao_devolve_o_status_que_o_root_gravou(updatable):
+    client, _requests, status = updatable
+    status.write_text('{"result": "available", "latest": "9.9.9"}', encoding="utf-8")
+    assert client.get("/v1/update", headers=AUTH).get_json()["status"] == {"result": "available", "latest": "9.9.9"}
+
+
+@pytest.mark.parametrize("action", ["check", "install"])
+def test_pedido_de_atualizacao_vira_o_arquivo_que_o_root_le(updatable, action):
+    client, requests_dir, _status = updatable
+    response = client.post("/v1/update", headers=AUTH, json={"action": action})
+    assert response.status_code == 202
+    assert (requests_dir / "request").read_text(encoding="ascii").strip() == action
+
+
+@pytest.mark.parametrize("body", [{}, {"action": "rm -rf /"}, {"action": "off"}, {"action": ["check"]}])
+def test_pedido_de_atualizacao_so_aceita_as_duas_palavras(updatable, body):
+    client, requests_dir, _status = updatable
+    response = client.post("/v1/update", headers=AUTH, json=body)
+    assert response.status_code == 400
+    assert response.get_json()["codigo"] == "validacao"
+    assert not (requests_dir / "request").exists()
+
+
+def test_sem_atualizador_o_pedido_e_503_e_nao_grava_nada(http):
+    response = http.post("/v1/update", headers=AUTH, json={"action": "check"})
+    assert response.status_code == 503
+    assert response.get_json()["codigo"] == "sem-atualizador"
+    assert http.get("/v1/update", headers=AUTH).get_json()["requests"] is False

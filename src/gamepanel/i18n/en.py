@@ -1445,6 +1445,7 @@ MESSAGES: dict[str, str] = {
     "job.instance_removed": "Instance removed (broker)",
     "job.game_edited": "Catalog game edited",
     "job.game_removed": "Catalog game deleted (or edit undone)",
+    "job.broker_update_requested": "Broker update requested",
     "job.game_added": "Game added to the catalog",
     "player_action.announce": "Announce to everyone",
     "player_action.kick": "Kick",
@@ -1736,6 +1737,25 @@ MESSAGES: dict[str, str] = {
     "updates.install_requested":
         "Update requested: the panel will restart shortly. Reload the page in a minute.",
     "updates.footer_available": "update {version} available",
+    "broker_update.title": "Broker update",
+    "broker_update.card_help":
+        "The broker has its own updater, which runs as root in its CT. See the version it runs "
+        "and ask for a check or an update.",
+    "broker_update.open": "Open the broker",
+    "broker_update.intro":
+        "The broker updates itself from the same GitHub releases, once a day. From here you see "
+        "the version it runs and ask for a check or an install right away.",
+    "broker_update.not_installed":
+        "The broker's updater has not run yet. It is installed by the broker deploy "
+        "(deploy-broker.ps1); the development environment does not have it.",
+    "broker_update.install_confirm":
+        "Install version {version} on the broker now? It will be RESTARTED and stop answering "
+        "for a few seconds; an instance creation in progress may fail.",
+    "broker_update.mode": "Broker automatic update mode: {mode}.",
+    "broker_update.back": "Back to Updates",
+    "broker_update.check_requested": "Check requested from the broker: reload the page in a few seconds.",
+    "broker_update.install_requested":
+        "Update requested from the broker: it will restart shortly. Reload the page in a minute.",
     "push.title": "Notifications on this device",
     "push.hint":
         "Get the panel's alerts (server down, high CPU, memory or disk, a failed task...) as "

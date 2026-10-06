@@ -401,8 +401,9 @@ render_broker_config() {
 }
 
 # The automatic updater (src/gamebroker/updater.py): a oneshot service that runs as ROOT (it
-# installs releases and restarts the broker) and a daily timer. No path unit: unlike the panel,
-# nothing leaves requests for it.
+# installs releases and restarts the broker), a daily timer, and a path unit for the requests the
+# panel leaves through the broker API ("check"/"install", written by the unprivileged broker in
+# ${DATA_DIR}/update - the panel's own arrangement: root only reads that folder, with O_NOFOLLOW).
 render_update_unit() {
   case "$1" in
     service) cat <<UNIT
@@ -421,8 +422,9 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-# The releases and the symlink, the installer's own copy, and the status.
-ReadWritePaths=${APP_DIR} /usr/local/lib/gamebroker ${UPDATER_DIR}
+# The releases and the symlink, the installer's own copy, the status, and the request folder
+# (the updater deletes the request once it has read it).
+ReadWritePaths=${APP_DIR} /usr/local/lib/gamebroker ${UPDATER_DIR} ${DATA_DIR}/update
 UNIT
       ;;
     timer) cat <<UNIT
@@ -439,6 +441,18 @@ Persistent=true
 WantedBy=timers.target
 UNIT
       ;;
+    path) cat <<UNIT
+[Unit]
+Description=Game broker update requests from the panel
+
+[Path]
+PathExists=${DATA_DIR}/update/request
+Unit=gamebroker-update.service
+
+[Install]
+WantedBy=paths.target
+UNIT
+      ;;
     *) die "unknown updater unit: $1" ;;
   esac
 }
@@ -446,16 +460,18 @@ UNIT
 render_update_units() {
   msg "Installing the automatic updater (mode: ${UPDATE_MODE})"
   run_ct "install -d -m 0755 /usr/local/lib/gamebroker && install -d -o root -g root -m 0755 ${UPDATER_DIR}"
+  # The broker's to write (its API leaves the panel's requests here), root's to read.
+  run_ct "install -d -o ${APP_USER} -g ${APP_USER} -m 0755 ${DATA_DIR}/update"
   # The installer refreshes this copy on every install; this covers the very first one.
   pct push "$CTID" "$INSTALLER" /usr/local/lib/gamebroker/install-release.sh --perms 0755
   local kind tmp_file
-  for kind in service timer; do
+  for kind in service timer path; do
     tmp_file="$(mktemp)"
     render_update_unit "$kind" > "$tmp_file"
     push_file_to_ct "$tmp_file" "/etc/systemd/system/gamebroker-update.${kind}" 0644
     rm -f "$tmp_file"
   done
-  run_ct "systemctl daemon-reload && systemctl enable --now gamebroker-update.timer >/dev/null"
+  run_ct "systemctl daemon-reload && systemctl enable --now gamebroker-update.timer gamebroker-update.path >/dev/null"
 }
 
 render_service() {

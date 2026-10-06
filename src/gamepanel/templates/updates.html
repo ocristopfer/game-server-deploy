@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
+{% import "components/updates.html" as upd with context %}
 {% block title %}{{ _('nav.updates') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
@@ -11,47 +12,10 @@
 <div class="card">
   <h2>{{ _('updates.status') }}</h2>
   {% set st = update.status or {} %}
-  <dl class="meta wide">
-    <div><dt>{{ _('updates.running') }}</dt><dd><code>{{ app_version }}</code></dd></div>
-    <div><dt>{{ _('updates.latest') }}</dt><dd>
-      {%- if st.latest %}
-        {%- if st.page %}<a href="{{ st.page }}" rel="noopener noreferrer" target="_blank">{{ st.latest }}</a>{% else %}{{ st.latest }}{% endif %}
-      {%- else %}&mdash;{% endif %}</dd></div>
-    <div><dt>{{ _('updates.checked_at') }}</dt><dd>{{ (st.checked_at or '')[:16] | replace('T', ' ') or '—' }}</dd></div>
-    {% if st.installed_at %}
-    <div><dt>{{ _('updates.installed_at') }}</dt><dd>{{ st.installed_at[:16] | replace('T', ' ') }}</dd></div>
-    {% endif %}
-  </dl>
-
-  {% if not update.installed %}
-    <p class="flash pending">{{ _('updates.not_installed') }}</p>
-  {% elif st.result == 'error' %}
-    <p>{{ ui.badge(_('updates.result.error'), 'off') }}</p>
-  {% elif st.result == 'available' or update_available %}
-    <p>{{ ui.badge(_('updates.result.available', version=st.latest), 'cold') }}</p>
-  {% elif st.result == 'installed' %}
-    <p>{{ ui.badge(_('updates.result.installed'), 'on') }}</p>
-  {% elif st.result == 'off' %}
-    <p>{{ ui.badge(_('updates.result.off'), 'cold') }}</p>
-  {% elif st.result %}
-    <p>{{ ui.badge(_('updates.result.up_to_date'), 'on') }}</p>
-  {% endif %}
-
-  {% if st.message %}<pre class="log">{{ st.message }}</pre>{% endif %}
-  {% if st.log %}
-  <details class="stack--sm mt-4">
-    <summary>{{ _('updates.install_log') }}</summary>
-    <pre class="log">{{ st.log }}</pre>
-  </details>
-  {% endif %}
-
-  <div class="form-actions">
-    {{ ui.action(url_for('updates.check'), _('updates.check_now'), size='sm') }}
-    {% if update_available or st.result == 'available' %}
-    {{ ui.action(url_for('updates.install'), _('updates.install_now', version=st.latest), variant='primary',
-                 size='sm', confirm=_('updates.install_confirm', version=st.latest)) }}
-    {% endif %}
-  </div>
+  {{ upd.update_status(st, update.installed, app_version, _('updates.not_installed'),
+                       url_for('updates.check'), url_for('updates.install'),
+                       _('updates.install_confirm', version=st.latest),
+                       update_available or st.result == 'available') }}
 </div>
 
 <div class="card">
@@ -71,5 +35,15 @@
     </div>
   </form>
 </div>
+
+{% if allow_broker %}
+<div class="card">
+  <h2>{{ _('broker_update.title') }}</h2>
+  <p class="muted">{{ _('broker_update.card_help') }}</p>
+  <div class="form-actions">
+    {{ ui.button(_('broker_update.open'), href=url_for('broker.update'), size='sm') }}
+  </div>
+</div>
+{% endif %}
 </div>
 {% endblock %}

@@ -5,6 +5,9 @@ checks that the two copies are identical.
 """
 from __future__ import annotations
 
+import pathlib
+import re
+
 import pytest
 
 from gamebroker import healthcheck, updater
@@ -47,3 +50,25 @@ def test_sonda_sem_token_ou_certificado_falha_sem_vazar_nada(tmp_path, monkeypat
 @pytest.mark.parametrize("args", [[], ["--port"], ["--port", "abc"], ["--port", "0"], ["--porta", "1"]])
 def test_sonda_com_argumento_ruim(args):
     assert healthcheck.main(args) == 2
+
+
+def test_o_pedido_fica_na_pasta_do_broker_e_o_status_na_do_root():
+    """The broker (unprivileged) writes the request; only root writes the status. If both lived in
+    one folder, a compromised broker could forge the status the panel shows."""
+    assert updater.REQUEST_DIR == "/var/lib/gamebroker/update"
+    assert updater.STATUS_PATH.startswith(updater.STATE_DIR + "/")
+    assert not updater.REQUEST_DIR.startswith(updater.STATE_DIR)
+
+
+def test_o_provisionamento_vigia_a_mesma_pasta_de_pedidos_que_o_atualizador_le():
+    """The path unit, the folder the broker may write and the updater's REQUEST_DIR are the same
+    place written three times; one of them drifting leaves the panel's button silently ignored."""
+    script = (pathlib.Path(__file__).resolve().parents[3] / "deploy/broker/provision-broker-lxc.sh").read_text(
+        encoding="utf-8")
+    data_dir = re.search(r"^DATA_DIR=(\S+)$", script, re.MULTILINE)
+    assert data_dir is not None
+    assert f"{data_dir.group(1)}/update" == updater.REQUEST_DIR
+    assert "PathExists=${DATA_DIR}/update/request" in script
+    assert "install -d -o ${APP_USER} -g ${APP_USER} -m 0755 ${DATA_DIR}/update" in script
+    assert "ReadWritePaths=${APP_DIR} /usr/local/lib/gamebroker ${UPDATER_DIR} ${DATA_DIR}/update" in script
+    assert "gamebroker-update.path" in script

@@ -1,0 +1,47 @@
+{# The status block of an updater: the panel's (Updates) and the broker's (Broker update) show the
+   same status.json, written by the same shared updater core, so they read it in one place. #}
+{% import "components/ui.html" as ui with context %}
+
+{% macro update_status(st, installed, running, not_installed, check_url, install_url, install_confirm, available) -%}
+  <dl class="meta wide">
+    <div><dt>{{ _('updates.running') }}</dt><dd><code>{{ running }}</code></dd></div>
+    <div><dt>{{ _('updates.latest') }}</dt><dd>
+      {%- if st.latest %}
+        {%- if st.page %}<a href="{{ st.page }}" rel="noopener noreferrer" target="_blank">{{ st.latest }}</a>{% else %}{{ st.latest }}{% endif %}
+      {%- else %}&mdash;{% endif %}</dd></div>
+    <div><dt>{{ _('updates.checked_at') }}</dt><dd>{{ (st.checked_at or '')[:16] | replace('T', ' ') or '—' }}</dd></div>
+    {% if st.installed_at %}
+    <div><dt>{{ _('updates.installed_at') }}</dt><dd>{{ st.installed_at[:16] | replace('T', ' ') }}</dd></div>
+    {% endif %}
+  </dl>
+
+  {% if not installed %}
+    <p class="flash pending">{{ not_installed }}</p>
+  {% elif st.result == 'error' %}
+    <p>{{ ui.badge(_('updates.result.error'), 'off') }}</p>
+  {% elif available %}
+    <p>{{ ui.badge(_('updates.result.available', version=st.latest), 'cold') }}</p>
+  {% elif st.result == 'installed' %}
+    <p>{{ ui.badge(_('updates.result.installed'), 'on') }}</p>
+  {% elif st.result == 'off' %}
+    <p>{{ ui.badge(_('updates.result.off'), 'cold') }}</p>
+  {% elif st.result %}
+    <p>{{ ui.badge(_('updates.result.up_to_date'), 'on') }}</p>
+  {% endif %}
+
+  {% if st.message %}<pre class="log">{{ st.message }}</pre>{% endif %}
+  {% if st.log %}
+  <details class="stack--sm mt-4">
+    <summary>{{ _('updates.install_log') }}</summary>
+    <pre class="log">{{ st.log }}</pre>
+  </details>
+  {% endif %}
+
+  <div class="form-actions">
+    {{ ui.action(check_url, _('updates.check_now'), size='sm') }}
+    {% if available %}
+    {{ ui.action(install_url, _('updates.install_now', version=st.latest), variant='primary',
+                 size='sm', confirm=install_confirm) }}
+    {% endif %}
+  </div>
+{%- endmacro %}

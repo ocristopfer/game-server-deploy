@@ -99,10 +99,14 @@ def test_verbos_e_caminhos(server):
     bc.add_game({"key": "x"}, "chefe")
     bc.operation("a" * 32)
     bc.health()
+    bc.update_info()
+    bc.request_update("install", "chefe")
     assert [(p["metodo"], p["caminho"]) for p in server.pedidos] == [
         ("POST", "/v1/instances/7/deactivate"), ("DELETE", "/v1/instances/7"),
-        ("POST", "/v1/catalog"), ("GET", f"/v1/operations/{'a' * 32}"), ("GET", "/v1/health")]
+        ("POST", "/v1/catalog"), ("GET", f"/v1/operations/{'a' * 32}"), ("GET", "/v1/health"),
+        ("GET", "/v1/update"), ("POST", "/v1/update")]
     assert server.pedidos[1]["corpo"] == {"confirmation": "Um", "db_only": True}
+    assert server.pedidos[-1]["corpo"] == {"action": "install"}
 
 
 def test_id_de_operacao_e_codificado_no_caminho(server):

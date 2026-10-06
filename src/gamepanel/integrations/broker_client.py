@@ -216,3 +216,13 @@ def deactivate(instance_id: int, actor: str) -> dict:
 def remove(instance_id: int, confirmation: str, actor: str, db_only: bool = False) -> dict:
     body = {"confirmation": confirmation, "db_only": bool(db_only)}
     return _as_object(_request("DELETE", f"/v1/instances/{int(instance_id)}", body, actor))
+
+
+def update_info() -> dict:
+    """The broker's version and its updater's last status (`status` None = it never ran there)."""
+    return _as_object(_request("GET", "/v1/update"))
+
+
+def request_update(action: str, actor: str) -> dict:
+    """Ask the broker's root updater to `check` or `install`; it runs within a second."""
+    return _as_object(_request("POST", "/v1/update", {"action": action}, actor))

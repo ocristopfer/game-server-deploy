@@ -1639,9 +1639,11 @@ Copy-Item broker.secrets.env.example broker.secrets.env   # Proxmox and OPNsense
   of `ADMIN_UPDATE_REPO` once a day and, with `BROKER_AUTO_UPDATE=auto` (the default), installs
   the new `gamebroker-*.tar.gz` after checking its sha256 (a new major version is only logged;
   `notify` only logs, `off` never checks). The release carries `lib/` and `games/` with the code,
-  and a release whose broker does not answer its `/v1/health` is rolled back on its own. There
-  is no screen for it: `journalctl -u gamebroker-update.service` says what it did, and a CT
-  deployed before this needs one `deploy-broker.ps1` run to get it.
+  and a release whose broker does not answer its `/v1/health` is rolled back on its own. The
+  panel shows it in **Updates > Broker update** (admin with 2FA): the version the broker runs,
+  the last check, and the **Check now** / **Update to X** buttons, which reach the root updater
+  within a second through `gamebroker-update.path`. `journalctl -u gamebroker-update.service`
+  has the details, and a CT deployed before this needs one `deploy-broker.ps1` run to get it.
 - The deploy **does not turn the feature on in the panel**: `-ConfigurePanel` writes the URL,
   token and fingerprint with `GAMEPANEL_ALLOW_BROKER=0`, and `-EnableOnPanel` asks for
   confirmation. The old Portuguese names (`-ConfigurarPainel`, `-LigarNoPainel`) still work as
