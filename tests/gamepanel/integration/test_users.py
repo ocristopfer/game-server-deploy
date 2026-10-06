@@ -329,6 +329,8 @@ def test_admin_tambem_modera_jogador(target_server, admin, post):
 @pytest.mark.parametrize("raw", [
     "//evil.example.com/x", "/\\evil.example.com", "https://evil.example.com",
     "http://evil.example.com", "evil", "", "/conta\r\nSet-Cookie: x=1",
+    # Control characters: the browser drops them, and "/\t/host" becomes "//host".
+    "/\t/evil.example.com", "/\x00/evil.example.com", "/\x0b/evil.example.com", "/\x7f",
 ])
 def test_destino_de_login_recusa_endereco_de_fora(raw):
     """"/" at the start is not enough: to the browser "//host" and "/\\host" are absolute

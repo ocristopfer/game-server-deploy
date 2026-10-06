@@ -99,6 +99,12 @@ def test_prefixo_que_sairia_da_pasta_e_recusado(tmp_path):
         _store(tmp_path, "x-1.tar.gz", prefix="../etc")
 
 
+def test_prefixo_com_quebra_de_linha_no_fim_e_recusado(tmp_path):
+    """The prefix comes from the URL, and a regex ending in `$` would accept "valheim\\n"."""
+    with pytest.raises(ValueError):
+        _store(tmp_path, "x-1.tar.gz", prefix="valheim\n")
+
+
 # ------------------------------------------------------------ listing and deleting
 
 def test_lista_marca_a_copia_de_seguranca_e_poe_a_mais_nova_em_cima(tmp_path):

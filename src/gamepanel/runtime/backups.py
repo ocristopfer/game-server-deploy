@@ -347,7 +347,8 @@ mv -f -- "$tmp" "$dir/$arq"
 echo "copia do painel enviada ao container: $arq ($(stat -Lc %s -- "$dir/$arq") bytes)"
 """
 
-BACKUP_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}\.tar\.gz$")
+# `\Z`, not `$`: `$` also matches before a trailing newline, and the name becomes a path.
+BACKUP_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}\.tar\.gz\Z")
 
 
 def validate_backup_name(raw: str) -> str:

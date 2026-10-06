@@ -30,7 +30,8 @@ from gamepanel.runtime.backups import validate_backup_name
 # the sentence there without changing it here leaves the backup without a second copy -
 # the test compares the two.
 DONE_RE = re.compile(r"^backup pronto: (.+) \((\d+) bytes\)$", re.MULTILINE)
-PREFIX_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$", re.ASCII)
+# `\Z`, not `$`: the prefix comes from the URL, and `$` would also accept it with a trailing newline.
+PREFIX_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}\Z", re.ASCII)
 PARTIAL_SUFFIX = ".parcial"
 SAFETY_SUFFIX = "-antes-de-restaurar.tar.gz"
 _CHMOD_PRIVATE = 0o700

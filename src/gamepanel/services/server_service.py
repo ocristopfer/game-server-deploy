@@ -25,8 +25,11 @@ from gamepanel.runtime.http_probe import URL_RE
 from gamepanel.runtime.log_probe import compile_pattern, valid_log_path
 
 UNIT_RE = re.compile(r"^[A-Za-z0-9@._-]{1,80}\.service$")
-HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
-USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+# The host ends up as an ssh argument, so it must not start with "-": a host like
+# "-oProxyCommand..." would be read as an option, and that option runs a command ON THE PANEL.
+# `\Z`, not `$`: `$` also matches before a trailing newline.
+HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,252}\Z")
+USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\Z")
 JSON_PATH_RE = re.compile(r"^[A-Za-z0-9_.\[\]-]{0,120}$")
 
 MAX_PORT = 65535

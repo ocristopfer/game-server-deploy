@@ -64,6 +64,14 @@ def test_host_invalido_e_recusado(host):
     assert any("Host inválido" in e for e in errors)
 
 
+@pytest.mark.parametrize("host", ["-oProxyCommand", "-F.ssh-config", "-"])
+def test_host_que_comeca_com_hifen_e_recusado(host):
+    """The host becomes an ssh argument: starting with "-" it would be read as an OPTION, and
+    ProxyCommand/-F run commands on the panel itself."""
+    _data, errors = validate(host=host)
+    assert any("Host inválido" in e for e in errors)
+
+
 @pytest.mark.parametrize("user", ["Root", "1nome", "com espaco", "x" * 40])
 def test_usuario_ssh_invalido_e_recusado(user):
     _data, errors = validate(ssh_user=user)

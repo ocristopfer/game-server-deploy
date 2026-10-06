@@ -361,8 +361,6 @@ TPL_LOGIN = "login.html"
 MSG_TIMEOUT = i18n.Message("error.timed_out")
 
 UNIT_RE = re.compile(r"^[A-Za-z0-9@._-]{1,80}\.service$")
-HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
-USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
 # Panel roles. The split follows what gives root power on the container: shell, file
 # editor and server registration are admin; operating what is already registered
@@ -2061,7 +2059,13 @@ def safe_target(raw: str) -> str:
     target = (raw or "").strip()
     if not target.startswith("/") or target[:2] in ("//", "/\\"):
         return ""
-    if any(c in target for c in "\r\n\t"):
+    # Browsers drop control characters from a URL before reading it, so "/\t/evil.com"
+    # becomes "//evil.com"; refusing them all (not only \r\n\t) closes that door for good.
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in target):
+        return ""
+    # The second check, by the parser itself: a local path has neither scheme nor host.
+    parts = urllib.parse.urlsplit(target)
+    if parts.scheme or parts.netloc:
         return ""
     return target
 
