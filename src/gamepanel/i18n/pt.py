@@ -1738,19 +1738,21 @@ MESSAGES: dict[str, str] = {
     "updates.bad_mode": "Modo de atualização desconhecido.",
     "updates.write_failed": "Não consegui gravar o pedido para o atualizador (veja o log do painel).",
     "updates.mode_saved": "Modo de atualização salvo.",
-    "updates.check_requested": "Verificação pedida: recarregue a página em alguns segundos.",
+    "updates.check_requested":
+        "Verificação pedida: aguardando o atualizador.",
     "updates.install_requested":
-        "Atualização pedida: o painel será reiniciado em instantes. Recarregue a página em "
-        "um minuto.",
+        "Atualização pedida: o painel será reiniciado em instantes.",
     "updates.footer_available": "atualização {version} disponível",
     "broker_update.title": "Atualização do broker",
-    "broker_update.card_help":
-        "O broker tem o próprio atualizador, que roda como root no CT dele. Veja a versão em uso "
-        "e peça uma verificação ou atualização.",
-    "broker_update.open": "Ver o broker",
+    "broker_update.needs_2fa":
+        "A versão do broker só aparece para quem tem a verificação em duas etapas ligada, como "
+        "todo o resto do broker.",
+    "broker_update.enable_2fa": "Ligar a verificação em duas etapas",
+    "updates.no_answer":
+        "O atualizador ainda não respondeu. A situação acima é a da última vez em que ele rodou.",
     "broker_update.intro":
-        "O broker se atualiza sozinho a partir das mesmas releases do GitHub, uma vez por dia. "
-        "Daqui você vê a versão em uso e pede uma verificação ou a instalação na hora.",
+        "O broker se atualiza sozinho a partir das mesmas releases do GitHub, uma vez por dia, "
+        "pelo atualizador do CT dele.",
     "broker_update.not_installed":
         "O atualizador do broker ainda não rodou. Ele é instalado pelo deploy do broker "
         "(deploy-broker.ps1); no ambiente de desenvolvimento ele não existe.",
@@ -1758,10 +1760,10 @@ MESSAGES: dict[str, str] = {
         "Instalar a versão {version} no broker agora? Ele será REINICIADO e para de responder "
         "por alguns segundos; uma criação de instância em andamento pode falhar.",
     "broker_update.mode": "Modo de atualização automática do broker: {mode}.",
-    "broker_update.back": "Voltar para Atualizações",
-    "broker_update.check_requested": "Verificação pedida ao broker: recarregue a página em alguns segundos.",
+    "broker_update.check_requested":
+        "Verificação pedida ao broker: aguardando o atualizador.",
     "broker_update.install_requested":
-        "Atualização pedida ao broker: ele será reiniciado em instantes. Recarregue a página em um minuto.",
+        "Atualização pedida ao broker: ele será reiniciado em instantes.",
     "push.title": "Notificações neste aparelho",
     "push.hint":
         "Receba os alertas do painel (servidor caiu, CPU, memória ou disco alto, tarefa que "

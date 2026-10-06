@@ -5,6 +5,7 @@ from flask import Blueprint, abort, flash, jsonify, redirect, render_template, r
 
 from gamepanel import app as panel
 from gamepanel import i18n
+from gamepanel.blueprints import updates as updates_screen
 from gamepanel.games.catalog import search as catalog_search
 from gamepanel.games.catalog import templates as game_templates
 from gamepanel.persistence.repositories import jobs as jobs_repo
@@ -328,31 +329,18 @@ def instance_remove(iid: int):
 
 
 # ------------------------------------------------------------------ the broker's own updates
-
-@bp.get("/broker/update")
-@panel.admin_required
-@panel.broker_required
-def update():
-    """The broker's version and its root updater's last status, read through the broker API."""
-    try:
-        info = panel.broker_client.update_info()
-    except panel.broker_client.BrokerError as failure:
-        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
-        info = None
-    return render_template("broker_update.html", info=info)
-
+# The status card lives on the Updates screen (`updates.broker_view`); these two only pass the
+# request on. They answer JSON to the card's JavaScript, or go back to that screen.
 
 def _update_request(action: str, done_key: str):
     try:
         panel.broker_client.request_update(action, panel._actor())
     except panel.broker_client.BrokerError as failure:
         panel._log_broker_action("broker-atualizar", panel._actor(), action, str(failure.message), "error")
-        flash(panel.translate("flash.broker_error", reason=failure.message), "error")
-    else:
-        # An install restarts the broker: the history says who asked for it, and when.
-        panel._log_broker_action("broker-atualizar", panel._actor(), action, "Pedido enviado ao atualizador do broker.")
-        flash(panel.translate(done_key), "ok")
-    return redirect(url_for("broker.update"))
+        return updates_screen.answer(False, panel.translate("flash.broker_error", reason=failure.message))
+    # An install restarts the broker: the history says who asked for it, and when.
+    panel._log_broker_action("broker-atualizar", panel._actor(), action, "Pedido enviado ao atualizador do broker.")
+    return updates_screen.answer(True, panel.translate(done_key))
 
 
 @bp.post("/broker/update/check")

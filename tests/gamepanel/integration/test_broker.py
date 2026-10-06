@@ -206,7 +206,7 @@ def servers(database) -> list:
 # --------------------------------------------------------------------------- who opens
 
 ROTAS_GET = ["/catalog", "/instances", "/api/v1/catalog/suggestions?q=palworld", "/catalog/alfa/edit",
-             "/broker/update"]
+             "/api/v1/updates/broker"]
 ROTAS_POST = ["/catalog/new", "/instances/new", "/instances/7/deactivate", "/instances/7/delete",
               "/catalog/alfa/edit", "/catalog/alfa/delete", "/broker/update/check", "/broker/update/install"]
 
@@ -995,28 +995,59 @@ def test_desativar_sem_backup_diz_o_que_faz(admin, broker):
 
 
 # ------------------------------------------------------------------ the broker's own updates
+# The broker card lives on the Updates screen; its buttons are the two POST routes in ROTAS_POST.
 
-def test_tela_de_atualizacao_mostra_a_versao_do_broker(admin, broker):
-    html = admin.get("/broker/update").get_data(as_text=True)
+def _post_json(cli, url):
+    with cli.session_transaction() as sess:
+        token = sess.get("csrf", "")
+    return cli.post(url, data={"csrf": token}, headers={"Accept": "application/json"})
+
+
+def test_atualizacoes_mostra_a_versao_do_broker(admin, broker):
+    html = admin.get("/updates").get_data(as_text=True)
     assert "0.2.0+05bbf45" in html
     # status None: the root updater never ran there (dev compose, or a broker deployed before it).
-    assert "ainda não rodou" in html
+    assert "deploy-broker.ps1" in html
+    assert "/api/v1/updates/broker" in html
 
 
-def test_tela_de_atualizacao_mostra_a_release_nova_e_o_botao_de_instalar(admin, broker):
+def test_cartao_do_broker_mostra_a_release_nova_e_o_botao_de_instalar(admin, broker):
     broker.update["status"] = {"result": "available", "latest": "0.3.0", "mode": "notify",
                                "checked_at": "2026-10-06T10:00:00Z", "page": "", "message": "", "log": ""}
-    html = unescape(admin.get("/broker/update").get_data(as_text=True))
+    data = admin.get("/api/v1/updates/broker").get_json()
+    html = unescape(data["html"])
     assert "versão 0.3.0 disponível" in html
     assert "/broker/update/install" in html
     assert "Só avisar" in html
+    assert data["stamp"].startswith("0.2.0+05bbf45|")
 
 
-def test_sem_release_nova_nao_ha_botao_de_instalar(admin, broker):
+def test_sem_release_nova_o_broker_so_tem_o_botao_de_verificar(admin, broker):
     broker.update["status"] = {"result": "up_to_date", "latest": "0.2.0", "mode": "auto"}
-    html = admin.get("/broker/update").get_data(as_text=True)
+    html = admin.get("/api/v1/updates/broker").get_json()["html"]
     assert "/broker/update/check" in html
     assert "/broker/update/install" not in html
+
+
+def test_sem_2fa_o_cartao_do_broker_pede_o_2fa_e_nao_chama_o_broker(admin_without_2fa, broker):
+    html = admin_without_2fa.get("/updates").get_data(as_text=True)
+    assert "verificação em duas etapas" in html
+    assert broker.called("update_info") == []
+    assert admin_without_2fa.get("/api/v1/updates/broker").status_code == 403
+
+
+def test_broker_desligado_nao_tem_cartao(admin, broker, monkeypatch):
+    monkeypatch.setattr(panel, "ALLOW_BROKER", False)
+    html = admin.get("/updates").get_data(as_text=True)
+    assert "/api/v1/updates/broker" not in html
+    assert broker.called("update_info") == []
+
+
+def test_broker_fora_do_ar_nao_derruba_a_tela_de_atualizacoes(admin, broker):
+    broker.error = refusal("nao consegui falar com o broker (ConnectionRefusedError)", 0)
+    response = admin.get("/updates")
+    assert response.status_code == 200
+    assert "nao consegui falar com o broker" in response.get_data(as_text=True)
 
 
 @pytest.mark.parametrize(("rota", "action"), [("/broker/update/check", "check"),
@@ -1024,28 +1055,21 @@ def test_sem_release_nova_nao_ha_botao_de_instalar(admin, broker):
 def test_botao_pede_ao_broker_e_fica_no_historico(admin, broker, post, database, rota, action):
     response = post(admin, rota, {})
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/broker/update")
+    assert response.headers["Location"].endswith("/updates")
     assert broker.called("request_update") == [("request_update", action, "chefe")]
     recorded = jobs(database)[-1]
     assert (recorded["action"], recorded["command"], recorded["status"]) == ("broker-atualizar", action, "ok")
 
 
-def test_pedido_recusado_pelo_broker_aparece_e_fica_no_historico_como_erro(admin, broker, post, database):
-    broker.error = refusal("este broker nao tem o atualizador", 503)
-    response = post(admin, "/broker/update/check", {})
-    assert response.status_code == 302
-    assert jobs(database)[-1]["status"] == "error"
-    assert "este broker nao tem o atualizador" in admin.get("/broker/update").get_data(as_text=True)
-
-
-def test_broker_fora_do_ar_na_tela_de_atualizacao_nao_e_500(admin, broker):
-    broker.error = refusal("nao consegui falar com o broker (ConnectionRefusedError)", 0)
-    response = admin.get("/broker/update")
+def test_botao_do_broker_pelo_javascript_recebe_a_frase(admin, broker):
+    response = _post_json(admin, "/broker/update/check")
     assert response.status_code == 200
-    assert "nao consegui falar com o broker" in response.get_data(as_text=True)
+    assert response.get_json() == {"message": "Verificação pedida ao broker: aguardando o atualizador."}
 
 
-def test_atualizacoes_so_mostra_o_cartao_do_broker_com_ele_ligado(admin, broker, monkeypatch):
-    assert "/broker/update" in admin.get("/updates").get_data(as_text=True)
-    monkeypatch.setattr(panel, "ALLOW_BROKER", False)
-    assert "/broker/update" not in admin.get("/updates").get_data(as_text=True)
+def test_pedido_recusado_pelo_broker_chega_ao_cartao_e_fica_no_historico_como_erro(admin, broker, database):
+    broker.error = refusal("este broker nao tem o atualizador", 503)
+    response = _post_json(admin, "/broker/update/check")
+    assert response.status_code == 503
+    assert "este broker nao tem o atualizador" in response.get_json()["error"]
+    assert jobs(database)[-1]["status"] == "error"

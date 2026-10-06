@@ -1733,18 +1733,21 @@ MESSAGES: dict[str, str] = {
     "updates.bad_mode": "Unknown update mode.",
     "updates.write_failed": "Could not leave the request for the updater (see the panel log).",
     "updates.mode_saved": "Update mode saved.",
-    "updates.check_requested": "Check requested: reload the page in a few seconds.",
+    "updates.check_requested":
+        "Check requested: waiting for the updater.",
     "updates.install_requested":
-        "Update requested: the panel will restart shortly. Reload the page in a minute.",
+        "Update requested: the panel will restart shortly.",
     "updates.footer_available": "update {version} available",
     "broker_update.title": "Broker update",
-    "broker_update.card_help":
-        "The broker has its own updater, which runs as root in its CT. See the version it runs "
-        "and ask for a check or an update.",
-    "broker_update.open": "Open the broker",
+    "broker_update.needs_2fa":
+        "The broker version only shows for someone with two-step verification on, like the rest "
+        "of the broker.",
+    "broker_update.enable_2fa": "Turn on two-step verification",
+    "updates.no_answer":
+        "The updater has not answered yet. The status above is from the last time it ran.",
     "broker_update.intro":
-        "The broker updates itself from the same GitHub releases, once a day. From here you see "
-        "the version it runs and ask for a check or an install right away.",
+        "The broker updates itself from the same GitHub releases, once a day, through the "
+        "updater in its CT.",
     "broker_update.not_installed":
         "The broker's updater has not run yet. It is installed by the broker deploy "
         "(deploy-broker.ps1); the development environment does not have it.",
@@ -1752,10 +1755,10 @@ MESSAGES: dict[str, str] = {
         "Install version {version} on the broker now? It will be RESTARTED and stop answering "
         "for a few seconds; an instance creation in progress may fail.",
     "broker_update.mode": "Broker automatic update mode: {mode}.",
-    "broker_update.back": "Back to Updates",
-    "broker_update.check_requested": "Check requested from the broker: reload the page in a few seconds.",
+    "broker_update.check_requested":
+        "Check requested from the broker: waiting for the updater.",
     "broker_update.install_requested":
-        "Update requested from the broker: it will restart shortly. Reload the page in a minute.",
+        "Update requested from the broker: it will restart shortly.",
     "push.title": "Notifications on this device",
     "push.hint":
         "Get the panel's alerts (server down, high CPU, memory or disk, a failed task...) as "

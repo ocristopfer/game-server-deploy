@@ -33,13 +33,14 @@ import { gameSearch } from './features/game-search.js';
 import { passkeyLogin, passkeyRegister } from './features/passkey.js';
 import { pushToggle } from './features/push.js';
 import { themeToggle } from './features/theme.js';
+import { updateCard } from './features/update.js';
 
 export const FEATURES = [
   // structure
   dropdownMenu, confirmAction, copyToClipboard, offlineWorker, installButton, themeToggle,
   // live reading
   initialBars, panelMeters, serverMeters,
-  panelPlayers, serverPlayers, followLog, watchJob,
+  panelPlayers, serverPlayers, followLog, watchJob, updateCard,
   // forms
   fileEditor, configFilter, moreConfigRows, dirtyConfig, commandBox, gameTemplate, gameSearch,
   passkeyLogin, passkeyRegister, pushToggle,

@@ -77,3 +77,46 @@ def test_operador_nao_pede_atualizacao(operator, paths, post):
     folder, _ = paths
     assert post(operator, "/updates/install").status_code == 403
     assert not (folder / "update").exists()
+
+
+# ------------------------------------------------------------------ the card that refreshes itself
+
+def _post_json(cli, url):
+    """What the card's JavaScript sends: the form (with its CSRF), asking for JSON back."""
+    with cli.session_transaction() as sess:
+        token = sess.get("csrf", "")
+    return cli.post(url, data={"csrf": token}, headers={"Accept": "application/json"})
+
+
+def test_o_cartao_devolve_o_mesmo_miolo_da_tela_e_a_marca_muda_com_o_status(admin, paths):
+    _, status = paths
+    before = admin.get("/api/v1/updates/panel").get_json()
+    assert "deploy-admin.ps1 -Full" in before["html"]
+    _status(status, checked_at="2026-10-06T12:00:00Z")
+    after = admin.get("/api/v1/updates/panel").get_json()
+    assert "99.0.0" in after["html"]
+    assert "/updates/install" in after["html"]
+    assert after["stamp"] != before["stamp"]
+    # The page carries the same stamp, so the card knows what "nothing new yet" looks like.
+    assert f'data-update-stamp="{after["stamp"]}"' in admin.get("/updates").get_data(as_text=True)
+
+
+def test_o_botao_pelo_javascript_recebe_a_frase_em_vez_de_um_redirect(admin, paths):
+    folder, _ = paths
+    response = _post_json(admin, "/updates/check")
+    assert response.status_code == 200
+    assert response.get_json() == {"message": "Verificação pedida: aguardando o atualizador."}
+    assert updater.take_request(str(folder / "update")) == "check"
+
+
+def test_falha_ao_gravar_o_pedido_chega_ao_cartao_como_erro(admin, paths, monkeypatch):
+    def no_disk(*_args):
+        raise OSError("read-only")
+    monkeypatch.setattr(updater, "leave_request", no_disk)
+    response = _post_json(admin, "/updates/install")
+    assert response.status_code == 503
+    assert "Não consegui gravar o pedido" in response.get_json()["error"]
+
+
+def test_operador_nao_le_o_cartao(operator, paths):
+    assert operator.get("/api/v1/updates/panel").status_code == 403

@@ -104,7 +104,7 @@ _ACTIVE_EXTRA = {
     "conta": ("account.index", "account.two_factor", "account.two_factor_off",
               "account.two_factor_codes", "account.ssh_key",
               "users.index", "users.new", "users.role", "users.password", "users.delete",
-              "users.two_factor_off", "updates.index", "broker.update"),
+              "users.two_factor_off", "updates.index"),
     "historico": ("history.index",),
 }
 
@@ -148,7 +148,7 @@ _ACTIVE_ON_DESKTOP = {
     "backups": ("backups.archive", "backups.archive_download", "backups.archive_delete"),
     "ssh": ("account.ssh_key",),
     "conta": ("account.index", "account.two_factor", "account.two_factor_off", "account.two_factor_codes"),
-    "atualizacoes": ("updates.index", "broker.update"),
+    "atualizacoes": ("updates.index",),
 }
 _BY_ENDPOINT_ON_DESKTOP = {
     endpoint: key

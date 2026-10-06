@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% import "components/ui.html" as ui with context %}
-{% import "components/updates.html" as upd with context %}
 {% block title %}{{ _('nav.updates') }} &mdash; {{ _('app.name') }}{% endblock %}
 
 {% block content %}
@@ -9,13 +8,13 @@
 <p class="muted intro">{{ _('updates.intro', repo=update.repo) }}</p>
 
 <div class="card-grid">
-<div class="card">
+{# data-update-status: the buttons post in the background and the card body is swapped for the new
+   status as soon as the updater writes it. Without JavaScript the forms post and come back here. #}
+<div class="card" data-update-status="{{ url_for('updates.api_panel') }}" data-update-stamp="{{ panel_stamp }}"
+     data-update-no-answer="{{ _('updates.no_answer') }}">
   <h2>{{ _('updates.status') }}</h2>
-  {% set st = update.status or {} %}
-  {{ upd.update_status(st, update.installed, app_version, _('updates.not_installed'),
-                       url_for('updates.check'), url_for('updates.install'),
-                       _('updates.install_confirm', version=st.latest),
-                       update_available or st.result == 'available') }}
+  <div data-update-body>{% include "partials/update_panel.html" %}</div>
+  <p class="muted" data-update-note aria-live="polite" hidden></p>
 </div>
 
 <div class="card">
@@ -36,13 +35,13 @@
   </form>
 </div>
 
-{% if allow_broker %}
-<div class="card">
+{% if broker.enabled %}
+<div class="card" data-update-status="{{ url_for('updates.api_broker') }}" data-update-stamp="{{ broker_stamp }}"
+     data-update-no-answer="{{ _('updates.no_answer') }}">
   <h2>{{ _('broker_update.title') }}</h2>
-  <p class="muted">{{ _('broker_update.card_help') }}</p>
-  <div class="form-actions">
-    {{ ui.button(_('broker_update.open'), href=url_for('broker.update'), size='sm') }}
-  </div>
+  <p class="muted">{{ _('broker_update.intro') }}</p>
+  <div data-update-body>{% include "partials/update_broker.html" %}</div>
+  <p class="muted" data-update-note aria-live="polite" hidden></p>
 </div>
 {% endif %}
 </div>

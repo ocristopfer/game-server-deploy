@@ -1851,11 +1851,16 @@ carries the SAME core as the panel's between `# >>> shared updater core` markers
 command line (`BROKER_AUTO_UPDATE`, and `ADMIN_UPDATE_REPO` for the repository), and decides the
 rollback with `gamebroker.healthcheck`, which pins the CT's own certificate and only asks whether
 the broker answers - Proxmox or OPNsense being down is no reason to throw a release away. The
-panel's "Broker update" screen goes through the broker API (its `/v1/update`, read and post), never to the
+broker card on the panel's Updates screen goes through the broker API (its `/v1/update`, read and post), never to the
 CT: the broker writes `check`/`install` into its own folder (`updater.REQUEST_DIR`, under its
 state dir) and `gamebroker-update.path` wakes root, the panel's own arrangement. The status stays
 in root's folder, which the broker can read and not write: a compromised broker can ask for the
-official release, never forge what the screen says it is running.
+official release, never forge what the screen says it is running. Both status cards (panel and
+broker) are one partial each (`templates/partials/`), included by the page AND rendered alone by
+`updates.api_panel`/`updates.api_broker` for `update.js`, which posts the button in the
+background and swaps the card body when the status stamp changes: one template, so the page and
+the refresh cannot disagree. The broker card asks the broker only when the person has 2FA, the
+same rule as `broker_required`.
 
 ### PowerShell (`.ps1`)
 

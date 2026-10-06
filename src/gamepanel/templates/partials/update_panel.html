@@ -1,0 +1,8 @@
+{# The panel card's body: included by updates.html and rendered alone for the screen's live refresh,
+   so the page and the refresh can never disagree on what a status looks like. #}
+{% import "components/updates.html" as upd with context %}
+{% set st = update.status or {} %}
+{{ upd.update_status(st, update.installed, app_version, _('updates.not_installed'),
+                     url_for('updates.check'), url_for('updates.install'),
+                     _('updates.install_confirm', version=st.latest),
+                     update_available or st.result == 'available') }}

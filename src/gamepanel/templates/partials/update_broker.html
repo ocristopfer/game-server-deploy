@@ -1,0 +1,20 @@
+{# The broker card's body, the same arrangement as partials/update_panel.html. #}
+{% import "components/ui.html" as ui with context %}
+{% import "components/updates.html" as upd with context %}
+{% if broker.needs_2fa %}
+  <p class="flash pending">{{ _('broker_update.needs_2fa') }}</p>
+  <div class="form-actions">
+    {{ ui.button(_('broker_update.enable_2fa'), href=url_for('account.two_factor'), size='sm') }}
+  </div>
+{% elif broker.error %}
+  <p class="flash error">{{ broker.error }}</p>
+{% else %}
+  {% set st = broker.info.status or {} %}
+  {{ upd.update_status(st, broker.info.status is not none, broker.info.version, _('broker_update.not_installed'),
+                       url_for('broker.update_check'), url_for('broker.update_install'),
+                       _('broker_update.install_confirm', version=st.latest),
+                       st.result == 'available') }}
+  {% if st.mode %}
+  <p class="muted">{{ _('broker_update.mode', mode=_('updates.mode.' ~ st.mode)) }}</p>
+  {% endif %}
+{% endif %}
