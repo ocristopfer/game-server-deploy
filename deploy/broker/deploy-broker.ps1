@@ -253,6 +253,7 @@ $conf = [ordered]@{
     BROKER_MAX_CREATIONS_PER_HOUR = (Get-Cfg $cfg "BROKER_MAX_CREATIONS_PER_HOUR")
     BROKER_CTID_BASE = (Get-Cfg $cfg "BROKER_CTID_BASE"); BROKER_PORT_INICIO = (Get-Cfg $cfg "BROKER_PORT_INICIO")
     BROKER_PORT_FIM = (Get-Cfg $cfg "BROKER_PORT_FIM"); CT_FIREWALL = (Get-Cfg $cfg "CT_FIREWALL")
+    BROKER_AUTO_UPDATE = (Get-Cfg $cfg "BROKER_AUTO_UPDATE"); BROKER_UPDATE_REPO = (Get-Cfg $cfg "ADMIN_UPDATE_REPO")
     BROKER_ALLOW_IPS = (Get-Cfg $cfg "BROKER_ALLOW_IPS" $panelIp)
     ADMIN_CTID = (Get-Cfg $cfg "ADMIN_CTID"); BROKER_PANEL_PUBKEY = (Get-Cfg $cfg "PANEL_PUBKEY")
     RECREATE_BROKER_CT = $(if ($RecreateCt) { "1" } else { "0" })

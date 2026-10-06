@@ -111,6 +111,27 @@ def test_o_pacote_carrega_o_stamp_e_nenhum_bytecode(tmp_path):
     assert "VERSION = " in stamp
 
 
+def test_o_pacote_do_painel_nao_leva_lib_nem_games(tmp_path):
+    subprocess.run([sys.executable, str(BUILDER), "gamepanel", "--out", str(tmp_path)],
+                   cwd=ROOT, check=True, capture_output=True)
+    with tarfile.open(next(tmp_path.glob("gamepanel-*.tar.gz"))) as tar:
+        assert {n.split("/", 1)[0] for n in tar.getnames()} == {"gamepanel"}
+
+
+def test_o_pacote_do_broker_leva_lib_e_games_junto_do_codigo(tmp_path):
+    """The broker runs the install scripts and reads the catalog at runtime: in the release
+    folder they switch versions (and roll back) together with the code."""
+    subprocess.run([sys.executable, str(BUILDER), "gamebroker", "--out", str(tmp_path)],
+                   cwd=ROOT, check=True, capture_output=True)
+    with tarfile.open(next(tmp_path.glob("gamebroker-*.tar.gz"))) as tar:
+        names = set(tar.getnames())
+    assert {n.split("/", 1)[0] for n in names} == {"gamebroker", "lib", "games"}
+    assert {f"lib/{p.name}" for p in (ROOT / "lib").glob("*.sh")} <= names
+    assert {f"games/{p.name}" for p in (ROOT / "games").glob("*.env")} <= names
+    assert "gamebroker/healthcheck.py" in names
+    assert "gamebroker/updater.py" in names
+
+
 def test_o_stamp_nunca_e_gravado_na_arvore(tmp_path):
     """`_build.py` only exists inside the tarball: in the tree it would dirty `git status`
     and, worse, make the development panel present itself as a release."""

@@ -1,32 +1,19 @@
-"""Automatic update of the panel from the GitHub releases.
+"""Automatic update of the broker from the GitHub releases.
 
-Two sides, one file, because they share the file formats and nothing else ties them:
+Run AS ROOT by `gamebroker-update.service` from a daily timer: it reads the latest release of the
+repository, compares it with what is running and, when the mode allows, downloads the
+`gamebroker-*.tar.gz`, checks its sha256 and hands it to `install-release.sh` - the same installer
+the deploy uses. The release carries `lib/` and `games/` next to the package (EXTRA_TREES in
+tools/build-release.py), so the game installer scripts and the curated catalog move with the code,
+and a rollback takes them back too.
 
-- the **updater** (`python3 -m gamepanel.updater run`), run AS ROOT by `gamepanel-update.service`
-  from a timer (daily) and from a path unit (the panel asked). It reads the latest release of
-  `GAMEPANEL_UPDATE_REPO`, compares it with what is running and, when the mode allows, downloads
-  the tarball, checks its sha256 and hands it to `install-release.sh` - the same installer every
-  deploy uses, with its health probe and its automatic rollback;
-- the **panel** (unprivileged), which only reads the status and leaves requests.
+The core is the panel's (`gamepanel/updater.py`), copied between the markers: the CT of the broker
+has no `gamepanel` package to import it from. What differs is below the core - the target, the
+health probe and where the options come from (the unit's command line: the broker has no screen,
+so there is no mode file and no request from anyone).
 
-Why the panel does not update itself: it runs as `gamepanel` under `ProtectSystem=strict`, and
-code that can rewrite its own code is code a bug turns into persistence. The panel can ask; only
-root acts, and root only ever does one fixed thing - "install the latest release" - whatever the
-request says. The two talk through files:
-
-- `update_dir/request` (panel -> root): "check" or "install". Root reads it with O_NOFOLLOW, and
-  anything else is ignored. Deleting it is safe even in a folder the panel writes: unlink does
-  not follow a link.
-- `update_dir/mode` (panel -> root): "off", "notify" or "auto", chosen on the Updates screen; it
-  wins over `GAMEPANEL_UPDATE_MODE` (the deploy's default).
-- `update_status` (root -> panel): JSON, in a folder only root writes.
-
-What is trusted: the HTTPS to github.com and whoever can publish a release in the repository.
-The sha256 next to the tarball proves the download is whole, not who made it - the release is
-built by the repository's own workflow (`.github/workflows/release.yml`) from a tag.
-
-Only stdlib plus `gamepanel.config`/`gamepanel.version`: no Flask, so the root service imports
-none of the web panel.
+The health probe that decides the rollback (`gamebroker.healthcheck`) only asks whether the
+broker answers; Proxmox or OPNsense being down is not a reason to throw away a release.
 """
 
 # >>> shared updater core: identical in gamepanel/updater.py and gamebroker/updater.py
@@ -373,25 +360,44 @@ def report(status: dict) -> int:
 # <<< shared updater core
 
 
-PANEL = Target(
-    package="gamepanel", service="gamepanel.service", app_dir="/opt/gamepanel",
-    installer="/usr/local/lib/gamepanel/install-release.sh",
-    health="",  # filled in main(): the port comes from the panel's config
-    install_hint="deploy the panel once with -Full",
+BROKER = Target(
+    package="gamebroker", service="gamebroker.service", app_dir="/opt/gamebroker",
+    installer="/usr/local/lib/gamebroker/install-release.sh",
+    health="",  # filled in main(): the port comes from the unit's command line
+    install_hint="deploy the broker once with deploy-broker.ps1",
 )
+# Only root writes here; it holds the status and nothing else (no one leaves requests).
+STATE_DIR = "/var/lib/gamebroker-updater"
+REPO_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}", re.ASCII)
+MAX_PORT = 65535
+
+
+def parse_args(args: list[str]) -> tuple[str, str, int] | None:
+    """`run --repo owner/name --mode auto --port 8443` -> (repo, mode, port), or None."""
+    if not args or args[0] != "run" or len(args) != 7:
+        return None
+    options = dict(zip(args[1::2], args[2::2], strict=True))
+    repo, mode, port = options.get("--repo", ""), options.get("--mode", ""), options.get("--port", "")
+    if set(options) != {"--repo", "--mode", "--port"} or not REPO_RE.fullmatch(repo) or mode not in MODES:
+        return None
+    if not port.isdigit() or not 1 <= int(port) <= MAX_PORT:
+        return None
+    return repo, mode, int(port)
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = sys.argv[1:] if argv is None else argv
-    if args != ["run"]:
-        print("usage: python3 -m gamepanel.updater run", file=sys.stderr)
+    parsed = parse_args(sys.argv[1:] if argv is None else argv)
+    if parsed is None:
+        print("usage: python3 -m gamebroker.updater run --repo OWNER/NAME --mode auto|notify|off --port N",
+              file=sys.stderr)
         return 2
-    from gamepanel import config, version
-    settings = config.load()
-    target = PANEL._replace(health=f"wget -q -O /dev/null http://127.0.0.1:{int(settings.port)}/health")
-    status = run_round(target=target, repo=settings.update_repo, default_mode=settings.update_mode,
-                       update_dir=settings.update_dir, status_path=settings.update_status,
-                       current_version=version.BUILD.version)
+    repo, mode, port = parsed
+    from gamebroker import version
+    # `cd` first: the probe must import the NEW release, which `current` points to by then.
+    target = BROKER._replace(
+        health=f"cd {BROKER.app_dir}/current && python3 -m gamebroker.healthcheck --port {port}")
+    status = run_round(target=target, repo=repo, default_mode=mode, update_dir=STATE_DIR,
+                       status_path=f"{STATE_DIR}/status.json", current_version=version.BUILD.version)
     return report(status)
 
 

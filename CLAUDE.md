@@ -1838,9 +1838,19 @@ otherwise the deploy lands on the old CT and publishes there (that is how the ol
 panel received new code without anyone asking). `-Full` follows `ADMIN_CTID`. The broker
 deploy also derives the allowed IP from `ADMIN_HOST`.
 
-The broker's `lib/` and `games/` keep traveling loose: they are not the Python package,
-but install scripts and the curated catalog, read from an absolute path. Provisioning
-replaces both as a whole.
+The broker's `lib/` and `games/` travel INSIDE its release tarball, next to the package
+(`EXTRA_TREES` in `tools/build-release.py`), and `install-release.sh` moves every top-level folder
+of the tarball into the release folder: `BROKER_LIB_DIR`/`BROKER_GAMES_DIR` point at
+`/opt/gamebroker/current/...`. They used to go loose in `/opt/gamebroker`, which is fine for a
+deploy that sends everything at once and wrong for an automatic update: new code with last
+deploy's install scripts, and a rollback that kept the new scripts with the old code.
+
+The broker updates itself too (gamebroker-update timer, daily, root): `gamebroker/updater.py`
+carries the SAME core as the panel's between `# >>> shared updater core` markers (its CT has no
+`gamepanel` to import it from; a test compares the two copies), takes its options from the unit's
+command line (`BROKER_AUTO_UPDATE`, and `ADMIN_UPDATE_REPO` for the repository), and decides the
+rollback with `gamebroker.healthcheck`, which pins the CT's own certificate and only asks whether
+the broker answers - Proxmox or OPNsense being down is no reason to throw a release away.
 
 ### PowerShell (`.ps1`)
 

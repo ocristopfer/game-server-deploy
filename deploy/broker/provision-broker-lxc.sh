@@ -19,8 +19,7 @@ INSTALLER="${INSTALLER:-$SCRIPT_DIR/install-release.sh}"
 CONF_DIR=/etc/gamebroker
 DATA_DIR=/var/lib/gamebroker
 APP_USER=gamebroker
-# Modules kept OUT of the production CT: test doubles and the compose toy broker.
-DO_NOT_SHIP='^(test_.*|conftest|fakes|fake_http|dev)\.py$'
+UPDATER_DIR=/var/lib/gamebroker-updater
 
 msg() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
@@ -87,6 +86,12 @@ resolve_variables() {
   ROOTFS_SIZE_GB="${BROKER_DISK_GB:-4}"
   SWAP="${BROKER_SWAP:-256}"
   BROKER_PORT="${BROKER_PORT:-8443}"
+  # Automatic update from the GitHub releases: auto|notify|off, and the repository it follows.
+  UPDATE_MODE="${BROKER_AUTO_UPDATE:-auto}"
+  UPDATE_REPO="${BROKER_UPDATE_REPO:-ocristopfer/game-server-deploy}"
+  [[ "$UPDATE_MODE" =~ ^(auto|notify|off)$ ]] || die "BROKER_AUTO_UPDATE must be auto, notify or off"
+  [[ "$UPDATE_REPO" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
+    || die "ADMIN_UPDATE_REPO must be owner/name"
 
   # Without these the broker does not even start (config.py refuses); better to fail here, at deploy, with the name.
   local var
@@ -227,32 +232,13 @@ ensure_app_user() {
   run_ct "install -d -o root -g root -m 0755 ${APP_DIR}"
 }
 
-# `pct push` does not create directories and is not recursive: create the folders as they show up.
-push_tree() {
-  local source_dir="$1" dest_dir="$2" src rel
-  while IFS= read -r src; do
-    rel="${src#"$source_dir"/}"
-    [[ "$(basename "$src")" =~ $DO_NOT_SHIP ]] && continue
-    if [[ "$rel" == */* ]]; then
-      run_ct "install -d '${dest_dir}/${rel%/*}'"
-    fi
-    pct push "$CTID" "$src" "${dest_dir}/${rel}" --perms 0644
-  done < <(find "$source_dir" -type f ! -name '*.pyc' ! -path '*__pycache__*' | sort)
-}
-
 publish_application() {
   msg "Publishing the broker to ${APP_DIR}"
 
-  # lib/ and games/ are not the Python package: they are the game install scripts and the
-  # curated catalog, read by the broker at an absolute path. They still go loose, and are
-  # replaced ENTIRELY - there is no subfolder list to fall behind.
-  run_ct "rm -rf ${APP_DIR}/lib ${APP_DIR}/games"
-  run_ct "install -d ${APP_DIR}/lib ${APP_DIR}/games"
-  push_tree "$SCRIPT_DIR/lib" "${APP_DIR}/lib"
-  push_tree "$SCRIPT_DIR/games" "${APP_DIR}/games"
-
-  # The CODE comes in the release tarball, verified by its sha256 and installed in its own
-  # folder with the `current` symlink pointing to it.
+  # The CODE comes in the release tarball, and so do lib/ and games/ (the game install scripts
+  # and the curated catalog, EXTRA_TREES in tools/build-release.py): they land in the release
+  # folder, so an automatic update or a rollback moves them together with the code. Verified by
+  # its sha256 and installed in its own folder with the `current` symlink pointing to it.
   local remote_tmp=/tmp/gamebroker-release
   run_ct "rm -rf '$remote_tmp' && install -d '$remote_tmp'"
   # pct push, and not the `tee` of push_file_to_ct: the tarball is binary and must arrive byte
@@ -269,7 +255,9 @@ publish_application() {
   run_ct "bash '${remote_tmp}/install-release.sh' gamebroker '${remote_tmp}/${RELEASE_TARBALL}' '${RELEASE_SHA256}' ${APP_DIR} ${SERVICE_NAME}" \
     || die "Installing the release failed inside the CT (see the output above)"
   run_ct "rm -rf '$remote_tmp'"
-  run_ct "chown -R root:root ${APP_DIR}/lib ${APP_DIR}/games"
+  # The loose copies an older deploy left next to the releases: the broker reads the ones inside
+  # the release now (BROKER_LIB_DIR/BROKER_GAMES_DIR), and a stale copy only misleads whoever looks.
+  run_ct "rm -rf ${APP_DIR}/lib ${APP_DIR}/games"
 
   # Failing here is better than the service dying at start with ModuleNotFoundError.
   run_ct "cd ${APP_DIR}/current && python3 -c 'import gamebroker.wsgi'" \
@@ -373,8 +361,8 @@ render_broker_config() {
       env_line BROKER_FIREWALL_SOURCES "${PANEL_IP},${CT_IP}"
     fi
     env_line BROKER_STATE_DIR "$DATA_DIR"
-    env_line BROKER_GAMES_DIR "${APP_DIR}/games"
-    env_line BROKER_LIB_DIR "${APP_DIR}/lib"
+    env_line BROKER_GAMES_DIR "${APP_DIR}/current/games"
+    env_line BROKER_LIB_DIR "${APP_DIR}/current/lib"
     env_line BROKER_SSH_KEY "${CONF_DIR}/ssh/id_ed25519"
     env_line BROKER_PANEL_PUBKEY "$BROKER_PANEL_PUBKEY"
     env_line BROKER_GATEWAY "$GATEWAY"
@@ -410,6 +398,64 @@ render_broker_config() {
   push_file_to_ct "$tmp_file" "${CONF_DIR}/broker.env" 0640
   rm -f "$tmp_file"
   run_ct "chown root:${APP_USER} ${CONF_DIR}/broker.env"
+}
+
+# The automatic updater (src/gamebroker/updater.py): a oneshot service that runs as ROOT (it
+# installs releases and restarts the broker) and a daily timer. No path unit: unlike the panel,
+# nothing leaves requests for it.
+render_update_unit() {
+  case "$1" in
+    service) cat <<UNIT
+[Unit]
+Description=Game broker automatic update (GitHub releases)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The CURRENT release's code runs the update, so the updater updates along with the broker.
+WorkingDirectory=${APP_DIR}/current
+ExecStart=/usr/bin/python3 -m gamebroker.updater run --repo ${UPDATE_REPO} --mode ${UPDATE_MODE} --port ${BROKER_PORT}
+TimeoutStartSec=900
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+# The releases and the symlink, the installer's own copy, and the status.
+ReadWritePaths=${APP_DIR} /usr/local/lib/gamebroker ${UPDATER_DIR}
+UNIT
+      ;;
+    timer) cat <<UNIT
+[Unit]
+Description=Daily check for a new game broker release
+
+[Timer]
+OnCalendar=daily
+# Spread out, and away from the panel's own check, so both CTs do not restart together.
+RandomizedDelaySec=4h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+      ;;
+    *) die "unknown updater unit: $1" ;;
+  esac
+}
+
+render_update_units() {
+  msg "Installing the automatic updater (mode: ${UPDATE_MODE})"
+  run_ct "install -d -m 0755 /usr/local/lib/gamebroker && install -d -o root -g root -m 0755 ${UPDATER_DIR}"
+  # The installer refreshes this copy on every install; this covers the very first one.
+  pct push "$CTID" "$INSTALLER" /usr/local/lib/gamebroker/install-release.sh --perms 0755
+  local kind tmp_file
+  for kind in service timer; do
+    tmp_file="$(mktemp)"
+    render_update_unit "$kind" > "$tmp_file"
+    push_file_to_ct "$tmp_file" "/etc/systemd/system/gamebroker-update.${kind}" 0644
+    rm -f "$tmp_file"
+  done
+  run_ct "systemctl daemon-reload && systemctl enable --now gamebroker-update.timer >/dev/null"
 }
 
 render_service() {
@@ -677,6 +723,7 @@ main() {
   publish_application
   apply_broker_firewall
   start_broker
+  render_update_units
   configure_panel
   print_summary
   cleanup_secrets

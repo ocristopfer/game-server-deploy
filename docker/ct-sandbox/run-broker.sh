@@ -89,10 +89,18 @@ enviados="$(ls /opt/gamebroker/current/gamebroker)"
 if echo "$enviados" | grep -Eq '^(test_|conftest|fakes|fake_http|dev\.py)'; then fail "dobles de teste foram para o CT: $(echo "$enviados" | tr '\n' ' ')"; else ok "sem dobles de teste no CT ($(echo "$enviados" | wc -l) modulos)"; fi
 [ -L /opt/gamebroker/current ] && ok "current e um symlink" || fail "current nao e symlink"
 [ -f /opt/gamebroker/current/gamebroker/_build.py ] && ok "o carimbo de versao chegou"   || fail "_build.py ausente no CT"
-[ -f /opt/gamebroker/lib/ct-install.sh ] && [ -f /opt/gamebroker/lib/ct-phases.sh ] && ok "lib/ enviada" || fail "lib/ ausente"
-[ "$(ls /opt/gamebroker/games/*.env | wc -l)" -ge 8 ] && ok "games/*.env enviados" || fail "games/ incompleto"
-[ -f /opt/gamebroker/lib/ct-firewall.sh ] && ok "lib/ct-firewall.sh enviada (vai para cada CT de jogo)" || fail "lib/ct-firewall.sh ausente"
-[ -f /opt/gamebroker/lib/ct-panel-access.sh ] && ok "lib/ct-panel-access.sh enviada (usuario gamepanel em cada CT de jogo)" || fail "lib/ct-panel-access.sh ausente"
+# lib/ and games/ travel INSIDE the release (EXTRA_TREES in build-release.py), so an automatic
+# update or a rollback moves them with the code; the loose copies of older deploys are gone.
+rel=/opt/gamebroker/current
+[ -f $rel/lib/ct-install.sh ] && [ -f $rel/lib/ct-phases.sh ] && ok "lib/ no release" || fail "lib/ ausente do release"
+[ "$(ls $rel/games/*.env | wc -l)" -ge 8 ] && ok "games/*.env no release" || fail "games/ incompleto no release"
+[ -f $rel/lib/ct-firewall.sh ] && ok "lib/ct-firewall.sh no release (vai para cada CT de jogo)" || fail "lib/ct-firewall.sh ausente"
+[ -f $rel/lib/ct-panel-access.sh ] && ok "lib/ct-panel-access.sh no release (usuario gamepanel em cada CT de jogo)" || fail "lib/ct-panel-access.sh ausente"
+[ ! -e /opt/gamebroker/lib ] && [ ! -e /opt/gamebroker/games ] && ok "sem copia solta de lib/ e games/" || fail "copia solta de lib/ ou games/ sobrou"
+grep -q "^BROKER_LIB_DIR=\"/opt/gamebroker/current/lib\"" /etc/gamebroker/broker.env && ok "BROKER_LIB_DIR aponta para o release" || fail "BROKER_LIB_DIR fora do release"
+[ -f /etc/systemd/system/gamebroker-update.service ] && [ -f /etc/systemd/system/gamebroker-update.timer ] \
+  && ok "atualizador automatico instalado" || fail "unidades do atualizador ausentes"
+[ -x /usr/local/lib/gamebroker/install-release.sh ] && ok "copia do instalador para o atualizador" || fail "instalador do atualizador ausente"
 
 echo "== firewall de dentro do CT do broker =="
 check "papel do firewall" "FW_ROLE=broker" "$(grep '^FW_ROLE=' /etc/ct-firewall.env)"
@@ -235,7 +243,7 @@ cp "$work/secrets.modelo" "$work/broker.secrets.env"
 # The line replaced by `false` must EXIST in the script: if its text changes, the sed
 # does not match, nothing breaks and the test passes without having tested anything. Hence
 # the check below, before running.
-target_line='^  run_ct "chown -R root:root ${APP_DIR}/lib ${APP_DIR}/games"$'
+target_line='^  run_ct "rm -rf ${APP_DIR}/lib ${APP_DIR}/games"$'
 grep -q "$target_line" "$work/provision-broker-lxc.sh"   || fail "a linha que este teste derruba de proposito sumiu do provision-broker-lxc.sh"
 sed "s#${target_line}#  false#" "$work/provision-broker-lxc.sh" > "$work/quebrado.sh"
 ( cd "$work" && BROKER_SKIP_HEALTHCHECK=1 bash ./quebrado.sh ) > /tmp/deploy8.log 2>&1

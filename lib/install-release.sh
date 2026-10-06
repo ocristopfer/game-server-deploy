@@ -76,6 +76,12 @@ install -d -m 0755 "$RELEASES_DIR"
 rm -rf "$target"
 install -d -m 0755 "$target"
 mv "${staging}/${PACKAGE}" "${target}/${PACKAGE}"
+# What the package carries next to it (the broker's lib/ and games/, see EXTRA_TREES in
+# tools/build-release.py) lives in the SAME folder, so it switches versions with the symlink.
+for extra in "${staging}"/*; do
+  [[ -d "$extra" ]] || continue
+  mv "$extra" "${target}/$(basename "$extra")"
+done
 chown -R root:root "$target"
 chmod -R a+rX "$target"
 

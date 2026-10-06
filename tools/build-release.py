@@ -49,6 +49,14 @@ SKIPPED_SUFFIXES = (".pyc", ".pyo")
 SKIPPED_NAMES = ("dev.py", "conftest.py", "fakes.py", "fake_http.py")
 SKIPPED_PREFIXES = ("test_",)
 FILE_MODE = 0o644
+# What travels NEXT TO the package, at the top of the tarball (`lib/`, `games/`), and lands in
+# the same release folder. The broker runs the game installer scripts and reads the curated
+# catalog at runtime: while they went loose in /opt/gamebroker, an automatic update would have
+# brought new code with last deploy's scripts, and a rollback would have kept the new scripts
+# with the old code. In the release folder they move with the symlink, together.
+EXTRA_TREES: dict[str, tuple[tuple[str, str], ...]] = {
+    "gamebroker": (("lib", "*.sh"), ("games", "*.env")),
+}
 READ_BLOCK = 1 << 20
 
 BUILD_TEMPLATE = '''"""GERADO por tools/build-release.py ao empacotar. Nao edite, nao commite."""
@@ -145,6 +153,10 @@ def build(package: str, out_dir: Path, release: Release) -> Path:
             name = path.relative_to(source).as_posix()
             data = path.read_bytes()
             tar.addfile(_entry(f"{package}/{name}", data, when), io.BytesIO(data))
+        for folder, pattern in EXTRA_TREES.get(package, ()):
+            for path in sorted((ROOT / folder).glob(pattern)):
+                data = path.read_bytes()
+                tar.addfile(_entry(f"{folder}/{path.name}", data, when), io.BytesIO(data))
         stamp = BUILD_TEMPLATE.format(
             version=release.version, commit=release.commit, built_at=release.built_at,
         ).encode("utf-8")

@@ -193,7 +193,7 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
     _check_url(reader, "OPNSENSE_URL", op_url)
     state_dir = Path(reader.text("BROKER_STATE_DIR", "/var/lib/gamebroker"))
     ssh_key = Path(reader.text("BROKER_SSH_KEY", "/etc/gamebroker/ssh/id_ed25519"))
-    lib_dir = Path(reader.text("BROKER_LIB_DIR", "/opt/gamebroker/lib"))
+    lib_dir = Path(reader.text("BROKER_LIB_DIR", "/opt/gamebroker/current/lib"))
     panel_key = reader.text("BROKER_PANEL_PUBKEY")
     broker_key = reader.attempt(
         "BROKER_SSH_KEY.pub",
@@ -244,6 +244,7 @@ def load(env: Mapping[str, str]) -> ConfigBroker:
     if reader.problems or proxmox is None or ssh is None:
         raise ConfigError(reader.problems or ["configuracao incompleta"])
     return ConfigBroker(
-        token=token, state_dir=state_dir, games_dir=Path(reader.text("BROKER_GAMES_DIR", "/opt/gamebroker/games")),
+        token=token, state_dir=state_dir,
+        games_dir=Path(reader.text("BROKER_GAMES_DIR", "/opt/gamebroker/current/games")),
         lib_dir=lib_dir, proxmox_url=px_url, proxmox=proxmox, opnsense_url=op_url,
         ctids=ctids, ctid_base=ctid_base, ips=ips, ports=ports, ssh=ssh, **cfg_parcial)

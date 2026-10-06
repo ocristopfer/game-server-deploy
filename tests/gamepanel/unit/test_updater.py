@@ -15,6 +15,8 @@ import pytest
 
 from gamepanel import updater
 
+ROOT = __import__("pathlib").Path(__file__).resolve().parents[3]
+
 TARBALL = b"conteudo do pacote"
 NAME = "gamepanel-0.2.0+abc1234.tar.gz"
 REPO = "dono/repo"
@@ -67,20 +69,23 @@ class FakeRun:
         return subprocess.CompletedProcess(args, self.code, self.output, "")
 
 
+HEALTH = "wget -q -O /dev/null http://127.0.0.1:8080/health"
+
+
 @pytest.fixture
-def dirs(tmp_path, monkeypatch):
+def dirs(tmp_path):
     installer = tmp_path / "install-release.sh"
     installer.write_text("#!/bin/bash\n")
-    monkeypatch.setattr(updater, "INSTALLER", str(installer))
-    return {"update_dir": str(tmp_path / "update"), "status_path": str(tmp_path / "st" / "status.json")}
+    target = updater.PANEL._replace(installer=str(installer), health=HEALTH)
+    return {"update_dir": str(tmp_path / "update"), "status_path": str(tmp_path / "st" / "status.json"),
+            "target": target}
 
 
 def _round(dirs, github, run, *, mode="auto", current="0.1.0+old", request=""):
     if request:
         updater.leave_request(dirs["update_dir"], request)
     deps = updater.Deps(github, run, lambda: "2026-10-06T03:00:00+0000")
-    return updater.run_round(repo=REPO, default_mode=mode, current_version=current, port=8080,
-                             deps=deps, **dirs)
+    return updater.run_round(repo=REPO, default_mode=mode, current_version=current, deps=deps, **dirs)
 
 
 @pytest.mark.parametrize(("text", "expected"), [
@@ -96,7 +101,7 @@ def test_versao_compara_como_numero_e_nao_como_texto():
 
 
 def test_escolhe_o_pacote_do_painel_e_o_sha():
-    release = updater.pick_release(_release())
+    release = updater.pick_release(_release(), "gamepanel")
     assert release.tarball_name == NAME
     assert release.sha_url == API_ASSETS + "2"
 
@@ -111,7 +116,7 @@ def test_escolhe_o_pacote_do_painel_e_o_sha():
 ])
 def test_release_que_nao_serve_e_recusada(data):
     with pytest.raises(updater.UpdateError):
-        updater.pick_release(data)
+        updater.pick_release(data, "gamepanel")
 
 
 @pytest.mark.parametrize(("mode", "request_", "current", "latest", "expected"), [
@@ -143,10 +148,9 @@ def test_modo_automatico_instala_a_versao_nova(dirs):
     assert status["result"] == "installed"
     assert status["current"] == "0.2.0+abc1234"
     [args] = run.calls
-    assert args[:3] == ["bash", updater.INSTALLER, "gamepanel"]
+    assert args[:3] == ["bash", dirs["target"].installer, "gamepanel"]
     assert args[4] == hashlib.sha256(TARBALL).hexdigest()
-    assert args[5:7] == [updater.APP_DIR, updater.SERVICE]
-    assert "127.0.0.1:8080/health" in args[7]
+    assert args[5:8] == ["/opt/gamepanel", "gamepanel.service", HEALTH]
     assert updater.read_status(dirs["status_path"])["installed_at"]
 
 
@@ -207,8 +211,8 @@ def test_url_fora_do_github_e_recusada(dirs):
     assert run.calls == []
 
 
-def test_sem_instalador_explica_o_que_fazer(dirs, monkeypatch):
-    monkeypatch.setattr(updater, "INSTALLER", "/nao/existe/install-release.sh")
+def test_sem_instalador_explica_o_que_fazer(dirs):
+    dirs["target"] = dirs["target"]._replace(installer="/nao/existe/install-release.sh")
     status = _round(dirs, FakeGitHub(_release()), FakeRun())
     assert status["result"] == "error"
     assert "-Full" in status["message"]
@@ -244,3 +248,28 @@ def test_status_ausente_ou_quebrado_e_none(tmp_path):
 
 def test_main_recusa_argumento_desconhecido():
     assert updater.main(["instalar"]) == 2
+
+
+def _core(path) -> str:
+    text = path.read_text(encoding="utf-8")
+    begin, end = "# >>> shared updater core", "# <<< shared updater core"
+    assert text.count(begin) == 1 and text.count(end) == 1, path
+    return text[text.index(begin):text.index(end)]
+
+
+def test_o_nucleo_do_atualizador_e_o_mesmo_no_painel_e_no_broker():
+    """The broker's CT has no `gamepanel` to import it from, so the core is copied; a fix made in
+    one copy only would leave the other updating with the old bug."""
+    assert _core(ROOT / "src/gamepanel/updater.py") == _core(ROOT / "src/gamebroker/updater.py")
+
+
+def test_o_broker_escolhe_o_pacote_dele_na_release():
+    from gamebroker import updater as broker_updater
+    data = _release()
+    data["assets"].append({"name": "gamebroker-0.2.0+abc1234.tar.gz.sha256", "url": API_ASSETS + "4"})
+    release = broker_updater.pick_release(data, broker_updater.BROKER.package)
+    assert (release.tarball_name, release.sha_url) == ("gamebroker-0.2.0+abc1234.tar.gz", API_ASSETS + "4")
+
+
+def test_o_painel_sabe_rodar_o_proprio_atualizador_com_a_config():
+    assert updater.main(["run", "extra"]) == 2
