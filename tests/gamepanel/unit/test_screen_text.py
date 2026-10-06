@@ -140,6 +140,8 @@ NOT_SCREEN_FILES = {
     # on purpose (the detail would tell an attacker which check failed).
     "security/webauthn.py": "so vai para o log; a tela mostra a chave generica de passkey",
     "blueprints/passkeys.py": "so vai para o log; a tela mostra a chave generica de passkey",
+    # Every PushError is caught by push_client/push_keys and becomes push.bad_keys or a log line.
+    "security/webpush.py": "so vai para o log; a tela mostra push.bad_keys",
 }
 
 # Single raises that stay literal, each with its reason: (file, start of the message).

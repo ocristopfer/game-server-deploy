@@ -31,6 +31,7 @@ import { installButton, offlineWorker } from './features/pwa.js';
 import { gameTemplate } from './features/game-template.js';
 import { gameSearch } from './features/game-search.js';
 import { passkeyLogin, passkeyRegister } from './features/passkey.js';
+import { pushToggle } from './features/push.js';
 import { themeToggle } from './features/theme.js';
 
 export const FEATURES = [
@@ -41,7 +42,7 @@ export const FEATURES = [
   panelPlayers, serverPlayers, followLog, watchJob,
   // forms
   fileEditor, configFilter, moreConfigRows, dirtyConfig, commandBox, gameTemplate, gameSearch,
-  passkeyLogin, passkeyRegister,
+  passkeyLogin, passkeyRegister, pushToggle,
   // visualization
   chart,
 ];

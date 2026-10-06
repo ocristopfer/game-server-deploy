@@ -1701,6 +1701,39 @@ MESSAGES: dict[str, str] = {
     "passkey.registered": "Aparelho cadastrado: da próxima vez, entre com a biometria.",
     "passkey.removed": "Aparelho removido.",
     "passkey.not_found": "Aparelho não encontrado.",
+    "push.title": "Notificações neste aparelho",
+    "push.hint":
+        "Receba os alertas do painel (servidor caiu, CPU, memória ou disco alto, tarefa que "
+        "falhou...) como notificação no celular ou no navegador. Cada aparelho escolhe os seus "
+        "eventos.",
+    "push.enable": "Ativar notificações neste aparelho",
+    "push.disable_here": "Desativar neste aparelho",
+    "push.denied": "O navegador bloqueou as notificações. Libere nas configurações do site e tente de novo.",
+    "push.unsupported":
+        "Este navegador não recebe notificações do painel. É preciso abrir o painel por https; no "
+        "iPhone, adicione o painel à tela de início e ative por lá.",
+    "push.default_label": "Aparelho",
+    "push.label": "Nome do aparelho",
+    "push.created": "cadastrado em {when}",
+    "push.last_ok": "último envio {when}",
+    "push.failing": "falhando",
+    "push.remove_confirm": "Parar de enviar notificações para \"{name}\"?",
+    "push.limit": "Limite de {n} aparelhos por pessoa atingido: remova um para cadastrar outro.",
+    "push.subscribed": "Notificações ativadas neste aparelho.",
+    "push.unsubscribed": "Notificações desativadas neste aparelho.",
+    "push.saved": "Aparelho salvo.",
+    "push.removed": "Aparelho removido: ele não recebe mais notificações.",
+    "push.not_found": "Aparelho não encontrado.",
+    "push.bad_subscription": "O navegador enviou uma inscrição que o painel não aceita.",
+    "push.bad_endpoint": "endereço de push fora dos serviços conhecidos",
+    "push.bad_keys": "chaves de criptografia do aparelho inválidas",
+    "push.http_status": "o serviço de push respondeu HTTP {status}",
+    "push.http_status_reason": "o serviço de push respondeu HTTP {status}: {reason}",
+    "push.call_failed": "não consegui chamar o serviço de push: {reason}",
+    "push.test_title": "Teste do painel de jogos",
+    "push.test_body": "Se você está lendo isto, as notificações funcionam neste aparelho.",
+    "push.test_sent": "Notificação de teste enviada para \"{name}\".",
+    "push.test_failed": "A notificação de teste não saiu para \"{name}\": {reason}",
     # ------------------------------ screen text moved out of templates and scripts
     "account.operator_scope":
         "Como operador você liga, desliga, atualiza e edita a configuração dos servidores já "

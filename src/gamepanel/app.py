@@ -57,10 +57,11 @@ from gamepanel import navigation as ui
 from gamepanel.blueprints import register_all
 from gamepanel.games import config_format as gameconf
 from gamepanel.games import registry as game_fields
-from gamepanel.integrations import broker_client, webhook_client
+from gamepanel.integrations import broker_client, push_client, webhook_client
 from gamepanel.persistence import schema
 from gamepanel.persistence.repositories import alerts as alerts_repo
 from gamepanel.persistence.repositories import jobs as jobs_repo
+from gamepanel.persistence.repositories import push as push_repo
 from gamepanel.persistence.repositories import samples as samples_repo
 from gamepanel.persistence.repositories import schedules as schedules_repo
 from gamepanel.persistence.repositories import servers as servers_repo
@@ -85,7 +86,7 @@ from gamepanel.runtime import backups as backups_rt
 from gamepanel.runtime import files as files_rt
 from gamepanel.runtime import ssh as ssh_transport
 from gamepanel.runtime import terminal as term_runtime
-from gamepanel.security import csrf, passwords, totp, webauthn
+from gamepanel.security import csrf, passwords, totp, webauthn, webpush
 from gamepanel.services import (
     alert_service,
     auth_service,
@@ -297,6 +298,13 @@ WEBHOOK_UA = settings.webhook_ua
 # Cap on destinations. Each alert becomes one POST per destination, in series, inside the
 # monitor round: an endless list would make the round wait for all of them.
 WEBHOOK_MAX = settings.webhook_max
+# Push notifications: devices per PERSON. Each alert is one encrypted POST per device, in series,
+# inside the monitor round - the same reason the webhooks have a cap.
+PUSH_MAX_PER_USER = 10
+# The VAPID `sub` claim: a contact the push service operator (Google, Apple) can use to reach
+# whoever sends. Apple refuses anything that is not https:// or mailto:, so the panel's own
+# address wins when there is one, and the project page otherwise.
+PUSH_SUBJECT = settings.webauthn_origin or "https://github.com/ocristopfer/game-server-deploy"
 # How often the panel checks the state of each server. Each round costs
 # one SSH round trip per server: going too low does not help.
 MONITOR_EVERY = settings.monitor_every
@@ -1331,8 +1339,9 @@ def webhook_list(conn: sqlite3.Connection) -> list:
 def webhook_config(conn: sqlite3.Connection) -> dict:
     """Alert state: the destinations, what their union covers, and the disk limit.
 
-    'events' is the UNION of the enabled destinations: it is what the monitor uses to decide whether it is
-    worth looking at anything. Who receives what is resolved later, destination by destination.
+    'events' is the UNION of the enabled destinations (webhooks AND push devices): it is what the
+    monitor uses to decide whether it is worth looking at anything. Who receives what is resolved
+    later, destination by destination.
     """
     try:
         disk = int(config_get(conn, "webhook_disk_pct", str(DISK_PCT_DEFAULT)))
@@ -1351,6 +1360,10 @@ def webhook_config(conn: sqlite3.Connection) -> dict:
     for d in targets:
         if d["enabled"] and d["url"]:
             covered |= d["events"]
+    # The phones count too: a panel whose only destination is someone's installed app must still
+    # look at the servers, otherwise the monitor would decide nobody is listening and skip the round.
+    for device in push_repo.all_devices(conn):
+        covered |= clean_events(device["events"])
     return {
         "targets": targets,
         "active": [d for d in targets if d["enabled"] and d["url"]],
@@ -1372,7 +1385,7 @@ def send_webhook(url: str, text: str) -> str:
 
 
 def notify(conn: sqlite3.Connection, event: str, title: str, detail: str = "") -> bool:
-    """Send the alert to each destination that asked for this event.
+    """Send the alert to each destination that asked for this event: webhooks and push devices.
 
     Return whether it went out to ANYONE. A destination that is down (Discord up, Slack down) does not
     silence the others: each one is tried and each failure goes to the log with the destination name,
@@ -1380,7 +1393,8 @@ def notify(conn: sqlite3.Connection, event: str, title: str, detail: str = "") -
     """
     targets = [d for d in webhook_list(conn)
              if d["enabled"] and d["url"] and event in d["events"]]
-    if not targets:
+    devices = [d for d in push_repo.all_devices(conn) if event in clean_events(d["events"])]
+    if not targets and not devices:
         # Recorded on purpose: "the alert fired and nobody asked for it" is the
         # most common cause of a silent channel, and it is indistinguishable from "nothing happened" for whoever
         # only looks at Discord. In the log the two become different things.
@@ -1401,7 +1415,84 @@ def notify(conn: sqlite3.Connection, event: str, title: str, detail: str = "") -
         else:
             left = True
             _record_alert(conn, event, title, detail, target["name"], "enviado")
+    for device in devices:
+        left = _push_alert(conn, device, event, title, detail) or left
     return left
+
+
+PUSH_KEY_SETTING = "push_vapid_private"
+# What the notification shows. The push services cap the body at 4 KB AFTER encryption, and a
+# phone shows a few lines anyway: the detail is cut well before that.
+PUSH_DETAIL_MAX = 400
+
+
+def push_keys(conn: sqlite3.Connection) -> webpush.KeyPair:
+    """The panel's VAPID key pair, created on first use and kept in `settings`.
+
+    In the database and not in an environment variable: every subscription is bound to the public
+    key it was created with, so a key that changed with a redeploy would silently mute every phone.
+    The private key sits next to the TOTP secrets, protected by the same 0600 file.
+    """
+    stored = config_get(conn, PUSH_KEY_SETTING)
+    if stored:
+        try:
+            return webpush.keypair_from_text(stored)
+        except webpush.PushError:
+            app.logger.exception("chave VAPID guardada invalida; gerando outra")
+    pair = webpush.new_keypair()
+    config_set(conn, PUSH_KEY_SETTING, webpush.private_to_text(pair))
+    return pair
+
+
+def send_push(device: ServerRow, payload: bytes, vapid: webpush.KeyPair) -> push_client.Result:
+    # Its own name for the same reason as `send_webhook`: the tests swap THIS for a capturer.
+    target = push_client.Device(device["endpoint"], device["p256dh"], device["auth"])
+    sender = push_client.Sender(vapid, PUSH_SUBJECT, WEBHOOK_TIMEOUT, WEBHOOK_UA)
+    return push_client.send(target, payload, sender)
+
+
+def push_payload(title: str, detail: str, tag: str, language: str) -> bytes:
+    """The JSON the service worker turns into a notification, in the device owner's language.
+
+    A `Message` title is rebuilt in that language; text that arrived already composed (a job's
+    output) goes as it is. `tag` makes a newer alert of the same kind replace the older one on the
+    phone instead of stacking ten "server down" banners.
+    """
+    def text(value: str) -> str:
+        return i18n.translate(value, language) if isinstance(value, i18n.Message) else str(value)
+    body = text(detail)
+    if len(body) > PUSH_DETAIL_MAX:
+        body = body[:PUSH_DETAIL_MAX - 1] + "\u2026"
+    return json.dumps({"title": text(title), "body": body, "tag": tag, "url": "/"},
+                      ensure_ascii=False).encode("utf-8")
+
+
+def _push_alert(conn: sqlite3.Connection, device: ServerRow, event: str, title: str,
+                detail: str) -> bool:
+    """One device, in its owner's language. A dead subscription (the app was uninstalled) is
+    deleted, not retried forever."""
+    owner = users_repo.by_id(conn, device["user_id"])
+    name = f"push: {owner['username'] if owner else '?'} ({device['label']})"
+    language = i18n.valid_language((owner["lang"] if owner else "") or DEFAULT_LANG)
+    try:
+        payload = push_payload(title, detail, event, language)
+        result = send_push(device, payload, push_keys(conn))
+    # An alert never takes the monitor down, and one bad device must not silence the others.
+    except Exception as exc:
+        app.logger.exception("push para '%s' falhou", name)
+        _record_alert(conn, event, title, detail, name, "falhou", str(exc))
+        return False
+    with conn:
+        if result.gone:
+            push_repo.forget(conn, device["id"])
+        else:
+            push_repo.mark_result(conn, device["id"], now_iso(), result.error)
+    if result.error:
+        app.logger.warning("alerta '%s' nao saiu para '%s': %s", event, name, result.error)
+        _record_alert(conn, event, title, detail, name, "falhou", result.error)
+        return False
+    _record_alert(conn, event, title, detail, name, "enviado")
+    return True
 
 
 def _record_alert(conn: sqlite3.Connection, event: str, title: str, detail: str,

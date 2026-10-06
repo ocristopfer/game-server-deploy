@@ -19,10 +19,15 @@
  *     state of a real server - which is worse than showing no number at all.
  *   - it does not go near file or backup downloads: those are multi-GB
  *     streaming responses, and going through the worker would only make them slower.
+ *
+ * It also shows the PUSH notifications (alerts the panel encrypted to this device; see
+ * security/webpush.py). The text arrives inside the message, already in the owner's language:
+ * the worker asks the panel for nothing, so an alert still shows with the session expired.
  */
 const VERSION = '{{ version }}';
 const CACHE = `gamepanel-${VERSION}`;
 const OFFLINE = '{{ url_for("pwa.offline") }}';
+const ICON = '{{ static_url("icons/icon-192.png") }}';
 
 /* The app shell: what needs to be on the device for the "no
  * connection" page to open whole, with the same look as the rest of the panel. */
@@ -61,6 +66,42 @@ self.addEventListener('activate', (ev) => {
 /* The page asks for the new version to take over now ("update" button). */
 self.addEventListener('message', (ev) => {
   if (ev.data && ev.data.tipo === 'assumir') self.skipWaiting();
+});
+
+/* An alert from the panel. Every push MUST show a notification: a worker that receives one and
+ * shows nothing gets its subscription revoked by Safari after a few times, and a broken message
+ * still becomes a (generic) notification for that reason. */
+self.addEventListener('push', (ev) => {
+  let data = {};
+  try {
+    data = ev.data ? ev.data.json() : {};
+  } catch {
+    data = { body: ev.data ? ev.data.text() : '' };
+  }
+  const title = data.title || {{ _('app.name') | tojson }};
+  ev.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    icon: ICON,
+    // Same tag = the newer alert replaces the older one instead of stacking up; renotify makes
+    // the replacement ring again, otherwise a second "server down" would arrive in silence.
+    tag: data.tag || undefined,
+    renotify: Boolean(data.tag),
+    data: { url: data.url || '/' },
+  }));
+});
+
+/* Tapping the notification opens the panel: an already open window is reused, not duplicated. */
+self.addEventListener('notificationclick', (ev) => {
+  ev.notification.close();
+  const target = new URL(ev.notification.data?.url || '/', self.location.origin).href;
+  ev.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+      const open = windows.find((w) => w.url.startsWith(self.location.origin));
+      if (!open) return self.clients.openWindow(target);
+      // navigate() only works on a window this worker controls; focusing is what matters.
+      return open.focus().then((w) => w?.navigate?.(target)).catch(() => undefined);
+    }),
+  );
 });
 
 self.addEventListener('fetch', (ev) => {

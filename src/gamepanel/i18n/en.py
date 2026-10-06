@@ -1696,6 +1696,38 @@ MESSAGES: dict[str, str] = {
     "passkey.registered": "Device registered: next time, sign in with biometrics.",
     "passkey.removed": "Device removed.",
     "passkey.not_found": "Device not found.",
+    "push.title": "Notifications on this device",
+    "push.hint":
+        "Get the panel's alerts (server down, high CPU, memory or disk, a failed task...) as "
+        "notifications on your phone or browser. Each device picks its own events.",
+    "push.enable": "Turn on notifications on this device",
+    "push.disable_here": "Turn off on this device",
+    "push.denied": "The browser blocked notifications. Allow them in the site settings and try again.",
+    "push.unsupported":
+        "This browser cannot receive the panel's notifications. The panel must be opened over "
+        "https; on an iPhone, add the panel to the home screen and turn them on from there.",
+    "push.default_label": "Device",
+    "push.label": "Device name",
+    "push.created": "added on {when}",
+    "push.last_ok": "last delivery {when}",
+    "push.failing": "failing",
+    "push.remove_confirm": "Stop sending notifications to \"{name}\"?",
+    "push.limit": "Limit of {n} devices per person reached: remove one to add another.",
+    "push.subscribed": "Notifications turned on for this device.",
+    "push.unsubscribed": "Notifications turned off for this device.",
+    "push.saved": "Device saved.",
+    "push.removed": "Device removed: it no longer receives notifications.",
+    "push.not_found": "Device not found.",
+    "push.bad_subscription": "The browser sent a subscription the panel does not accept.",
+    "push.bad_endpoint": "push address outside the known services",
+    "push.bad_keys": "invalid device encryption keys",
+    "push.http_status": "the push service answered HTTP {status}",
+    "push.http_status_reason": "the push service answered HTTP {status}: {reason}",
+    "push.call_failed": "could not reach the push service: {reason}",
+    "push.test_title": "Game panel test",
+    "push.test_body": "If you are reading this, notifications work on this device.",
+    "push.test_sent": "Test notification sent to \"{name}\".",
+    "push.test_failed": "The test notification did not reach \"{name}\": {reason}",
     # ------------------------------ screen text moved out of templates and scripts
     "account.operator_scope":
         "As an operator you start, stop, update and edit the configuration of servers already "

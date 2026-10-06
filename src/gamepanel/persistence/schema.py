@@ -188,6 +188,25 @@ CREATE TABLE IF NOT EXISTS passkeys (
   last_used_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_passkeys_user ON passkeys (user_id);
+
+-- Push notifications: one row per browser that said yes (the installed app on a phone, a
+-- desktop browser). The endpoint is the push service's URL for THAT browser, and p256dh/auth
+-- are the keys the message is encrypted to. Each device has its own event list, like a
+-- webhook, so the phone can ring only for "server down" while Discord gets everything.
+-- CASCADE: deleting the user stops their devices from receiving anything.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint    TEXT NOT NULL UNIQUE,
+  p256dh      TEXT NOT NULL,
+  auth        TEXT NOT NULL,
+  events      TEXT NOT NULL DEFAULT '',
+  label       TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL,
+  last_ok_at  TEXT NOT NULL DEFAULT '',
+  last_error  TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_push_user ON push_subscriptions (user_id);
 """
 
 

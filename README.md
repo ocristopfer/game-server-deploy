@@ -47,7 +47,8 @@ credentials. Generic port forwarding for common home routers is on the
   - **backups** stored in the game container and copied to the panel, with restore;
   - **schedules** (daily, weekly, every N hours) for restart, stop, start, update and backup;
   - **alerts** to Discord, Slack or any JSON webhook (server down, crashed, restart loop,
-    not responding, lost contact, disk almost full, errors in the log...);
+    not responding, lost contact, disk almost full, errors in the log...), and as **push
+    notifications** on the phone (installed app) or desktop browser;
   - **mod manager per game** (BepInEx/Thunderstore, UE4SS, UE4SS for Linux, Shroudtopia,
     Oxide, SML, Steam Workshop through the game config, ETS2 server packages), with every
     downloaded or uploaded mod scanned by ClamAV first;
@@ -613,6 +614,17 @@ eleven at night, not from the office desk.
   (`https://panel.yourdomain.com`) and redeploy the panel. Empty, the button does not appear.
   The passkey counts as password **and** second factor together, because the device only signs
   after verifying the person; changing the address later invalidates registered passkeys.
+- **Push notifications**: in _Account > Notifications on this device_, **Turn on** asks the
+  browser for permission and registers this device; from then on every alert the panel sends
+  (server down, high CPU/memory/disk, failed scheduled task, ...) also arrives as a phone
+  notification, even with the app closed. Each device picks its own events, has a **Test**
+  button, and can be renamed or removed; every person (operators too) manages only their own.
+  Like the passkey it needs a **secure context** (https; `localhost` also works), and on an
+  **iPhone** (iOS 16.4+) it only works in the app **added to the home screen**. The message is
+  encrypted to the device (RFC 8291) and signed with the panel's own VAPID key, created on first
+  use and kept in the database: Google/Apple/Mozilla only carry it. Deliveries show in the
+  Alerts log as `push: <user> (<device>)`, and a device the push service reports as gone
+  (uninstalled app, revoked permission) is removed on its own.
 - **New version**: when a deploy changes the files, the panel shows a _"There is a new
   version"_ banner with a button. It does not reload by itself on purpose: there may be a
   terminal session open in the middle of an edit.

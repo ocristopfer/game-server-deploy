@@ -134,6 +134,66 @@
 {% endif %}
 
 <div class="card">
+  <h2>{{ _('push.title') }}</h2>
+  <p class="muted small">{{ _('push.hint') }}</p>
+  {# Born hidden: only the module knows whether this browser can receive push (secure context,
+     PushManager; on an iPhone, only the app added to the home screen). Without JavaScript the
+     fallback paragraph stays, and the devices below can still be edited and removed. #}
+  <div class="stack--sm mt-4" hidden data-push="{{ push_key }}"
+       data-push-subscribe="{{ url_for('push.subscribe') }}"
+       data-push-unsubscribe="{{ url_for('push.unsubscribe') }}"
+       data-push-denied="{{ _('push.denied') }}">
+    <div class="cluster">
+      {{ ui.button(_('push.enable'), variant='primary', size='sm', type='button', extra='data-push-on hidden') }}
+      {{ ui.button(_('push.disable_here'), variant='ghost', size='sm', type='button', extra='data-push-off hidden') }}
+    </div>
+    <p class="muted small" role="status" data-push-status></p>
+  </div>
+  <p class="muted small mt-4" data-push-unsupported>{{ _('push.unsupported') }}</p>
+
+  {% for d in push_devices %}
+  <details class="stack--sm mt-4" data-push-endpoint="{{ d.endpoint }}">
+    <summary class="cluster">
+      <strong>{{ d.label }}</strong>
+      {% if d.last_error %}{{ ui.badge(_('push.failing'), 'off') }}{% endif %}
+      <span class="muted small">{{ _('push.created', when=d.created_at[:10]) }}
+      {%- if d.last_ok_at %} &middot; {{ _('push.last_ok', when=d.last_ok_at[:16] | replace('T', ' ')) }}{% endif %}</span>
+    </summary>
+    {% if d.last_error %}<p class="muted small">{{ d.last_error }}</p>{% endif %}
+    <form method="post" action="{{ url_for('push.save', sid=d.id) }}" class="mt-4">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label>{{ _('push.label') }}
+        <input name="label" value="{{ d.label }}" maxlength="60">
+      </label>
+      <fieldset class="fieldgroup">
+        <legend>{{ _('alerts.notify_about') }}</legend>
+        <div class="options">
+          {% for chave, rotulo in events.items() %}
+          <label class="checkbox" for="p{{ d.id }}-{{ chave }}">
+            <input type="checkbox" id="p{{ d.id }}-{{ chave }}" name="events"
+                   value="{{ chave }}" {% if chave in d.events %}checked{% endif %}>
+            <span>{{ rotulo }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <div class="form-actions">
+        {{ ui.button(_('action.save'), variant='primary', size='sm') }}
+        {{ ui.button(_('alerts.test'), size='sm',
+                    extra='formaction="' ~ url_for('push.test', sid=d.id) ~ '" formnovalidate') }}
+        {{ ui.button(_('alerts.remove'), variant='danger', size='sm',
+                    confirm=_('push.remove_confirm', name=d.label),
+                    extra='formaction="' ~ url_for('push.delete', sid=d.id) ~ '" formnovalidate') }}
+      </div>
+    </form>
+  </details>
+  {% endfor %}
+  {% if push_devices | length >= push_limit %}
+  <p class="muted small mt-4">{{ _('push.limit', n=push_limit) }}</p>
+  {% endif %}
+</div>
+
+<div class="card">
   <h2>{{ _('account.change_password') }}</h2>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">

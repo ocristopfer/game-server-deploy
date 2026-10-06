@@ -37,6 +37,7 @@ OWNED = {
     "settings": "settings.py",
     "users": "users.py",
     "passkeys": "passkeys.py",
+    "push_subscriptions": "push.py",
 }
 
 STATEMENT = re.compile(

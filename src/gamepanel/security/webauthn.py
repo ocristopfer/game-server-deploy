@@ -236,6 +236,11 @@ def _mul_add(k1: int, p1: tuple[int, int], k2: int, p2: tuple[int, int]) -> Jaco
     return acc
 
 
+def multiply(k: int, point: tuple[int, int]) -> tuple[int, int] | None:
+    """k * point, affine. WebAuthn only verifies; Web Push (`webpush.py`) signs and does ECDH."""
+    return _affine(_mul_add(k, point, 0, point))
+
+
 def on_curve(x: int, y: int) -> bool:
     return 0 <= x < P and 0 <= y < P and (y * y - (x * x * x + A * x + B)) % P == 0
 

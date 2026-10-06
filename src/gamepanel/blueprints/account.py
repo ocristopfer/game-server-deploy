@@ -1,4 +1,4 @@
-"""The signed-in person's account: password, language, second factor and the SSH key."""
+"""The signed-in person's account: password, language, second factor, push devices and the SSH key."""
 from __future__ import annotations
 
 import json
@@ -8,8 +8,9 @@ from flask import Blueprint, flash, g, redirect, render_template, request, sessi
 
 from gamepanel import app as panel
 from gamepanel.persistence.repositories import passkeys as passkeys_repo
+from gamepanel.persistence.repositories import push as push_repo
 from gamepanel.persistence.repositories import users as users_repo
-from gamepanel.security import qr
+from gamepanel.security import qr, webauthn
 
 bp = Blueprint("account", __name__)
 
@@ -59,7 +60,15 @@ def index():
             return redirect(url_for("dashboard.index"))
     return render_template("account.html", two_factor=panel._two_factor_state(),
                            requires_2fa=panel.REQUIRE_2FA, broker_enabled=panel.ALLOW_BROKER,
-                           passkeys=passkeys_repo.for_user(panel.db(), session["uid"]))
+                           passkeys=passkeys_repo.for_user(panel.db(), session["uid"]),
+                           push_devices=_push_devices(), push_key=webauthn.b64url(panel.push_keys(panel.db()).public),
+                           push_limit=panel.PUSH_MAX_PER_USER, events=panel.labels_of(panel.ALERT_EVENTS))
+
+
+def _push_devices() -> list[dict]:
+    """This person's devices, with the events already as a set (the checkboxes test membership)."""
+    return [{**dict(row), "events": panel.clean_events(row["events"])}
+            for row in push_repo.for_user(panel.db(), session["uid"])]
 
 
 @bp.route("/account/2fa", methods=["GET", "POST"])

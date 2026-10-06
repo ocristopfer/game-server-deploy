@@ -50,7 +50,7 @@ from gamepanel.security import totp
 
 # Every table in SCHEMA. Emptying beats recreating: `init_db()` also runs the
 # migrations, and repeating them on every test would measure their time, not the test's.
-TABLES = ("alert_log", "jobs", "samples", "schedules", "servers", "settings",
+TABLES = ("alert_log", "jobs", "push_subscriptions", "samples", "schedules", "servers", "settings",
            "users", "webhooks")
 
 
