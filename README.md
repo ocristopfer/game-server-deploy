@@ -1915,4 +1915,5 @@ uv sync && uv run pytest
 
 ## License
 
-MIT; see [LICENSE](LICENSE).
+MIT; see [LICENSE](LICENSE). The game suggestions generated from LinuxGSM and the
+Pterodactyl/pelican eggs carry their MIT notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

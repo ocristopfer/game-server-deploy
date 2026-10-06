@@ -80,8 +80,8 @@ globalThis.document = {
 };
 Object.defineProperty(globalThis, 'navigator', {
   value: {
-    // `register` devolve um ServiceWorkerRegistration, nao um objeto vazio: o pwa.js
-    // escuta `updatefound` nele.
+    // `register` returns a ServiceWorkerRegistration, not an empty object: pwa.js
+    // listens for `updatefound` on it.
     serviceWorker: {
       addEventListener(){}, controller: null,
       register(){ return Promise.resolve({ addEventListener(){}, installing: null, waiting: null }); },
